@@ -3,8 +3,10 @@
 DCODEX is a zero-runtime-dependency Node.js harness for running Codex CLI in a more controlled project workflow. It adds mandatory clarification before autonomous work, a Ralph no-question execution loop, H-Proof completion gates, conservative database safety checks, bounded logs/storage, and optional GPT Image 2 visual cartridges.
 
 ```bash
-npm i -g dcodex
+npm i -g dcodex-cli
 ```
+
+The npm package name is `dcodex-cli`; the installed command is `dcodex`.
 
 `@openai/codex` is intentionally not bundled. Install Codex separately, or set `DCODEX_CODEX_BIN` to the Codex executable you want DCODEX to supervise.
 

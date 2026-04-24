@@ -4,6 +4,7 @@ npm-debug.log*
 coverage/
 *.tgz
 *.zip
+.omx/
 .dcodex/
 .codex/
 .agents/

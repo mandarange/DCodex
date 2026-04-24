@@ -1,11 +1,11 @@
 {
-  "name": "dcodex",
+  "name": "dcodex-cli",
   "displayName": "DCODEX",
   "version": "0.3.0",
   "description": "DCODEX: database-safe, performance-bounded Codex CLI harness with Ralph no-question loop, H-Proof gates, GPT Image 2 workflow, and TriWiki compression.",
   "type": "module",
   "bin": {
-    "dcodex": "./bin/dcodex.mjs"
+    "dcodex": "bin/dcodex.mjs"
   },
   "files": [
     "bin",
@@ -20,7 +20,9 @@
   "scripts": {
     "selftest": "node ./bin/dcodex.mjs selftest --mock",
     "doctor": "node ./bin/dcodex.mjs doctor",
-    "packcheck": "node --check ./bin/dcodex.mjs && node --check ./src/cli/main.mjs"
+    "packcheck": "find bin src -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+    "prepack": "npm run packcheck && npm run selftest",
+    "prepublishOnly": "npm run packcheck && npm run selftest"
   },
   "keywords": [
     "codex",
