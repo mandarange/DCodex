@@ -280,7 +280,10 @@ The published npm package is allowlisted to `bin`, `src`, `docs`, `README.md`, a
 ```bash
 npm run packcheck
 npm run selftest
+npm run sizecheck
 npm run doctor
 ```
+
+`npm run sizecheck` blocks accidental package bloat before `npm pack` or `npm publish`. Defaults: packed tarball `<=96 KiB`, unpacked package `<=320 KiB`, package files `<=40`, and each tracked file `<=256 KiB`. Override only for an intentional release with `SKS_MAX_PACK_BYTES`, `SKS_MAX_UNPACKED_BYTES`, `SKS_MAX_PACK_FILES`, or `SKS_MAX_TRACKED_FILE_BYTES`.
 
 `npm run selftest` uses the mock path and does not call a model. Live Ralph runs require a working Codex CLI installation and authentication.

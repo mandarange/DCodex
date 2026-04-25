@@ -20,9 +20,10 @@
   "scripts": {
     "selftest": "node ./bin/sks.mjs selftest --mock",
     "doctor": "node ./bin/sks.mjs doctor",
-    "packcheck": "find bin src -name '*.mjs' -print0 | xargs -0 -n1 node --check",
-    "prepack": "npm run packcheck && npm run selftest",
-    "prepublishOnly": "npm run packcheck && npm run selftest"
+    "packcheck": "find bin src scripts -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+    "sizecheck": "node ./scripts/sizecheck.mjs",
+    "prepack": "npm run packcheck && npm run selftest && npm run sizecheck",
+    "prepublishOnly": "npm run packcheck && npm run selftest && npm run sizecheck"
   },
   "keywords": [
     "sneakoscope",

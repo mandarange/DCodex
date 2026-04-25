@@ -16,6 +16,7 @@ Sneakoscope Codex v0.4 is designed to keep runtime, package size, RAM, and stora
 - `@openai/codex` is no longer bundled. Users install Codex separately or set `SKS_CODEX_BIN`.
 - Optional Rust source is in `crates/` for the Git repo, but is excluded from the npm package by the `files` allowlist.
 - GX rendering uses only built-in Node.js APIs and ships as source in the npm package.
+- `npm run sizecheck` enforces package limits before pack/publish: `<=96 KiB` packed, `<=320 KiB` unpacked, `<=40` package files, and `<=256 KiB` per tracked file by default.
 
 ## Memory leaks
 
