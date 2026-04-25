@@ -2,7 +2,7 @@ import path from 'node:path';
 import { exists, readJson, writeJsonAtomic, nowIso, fileSize } from './fsx.mjs';
 
 export async function evaluateDoneGate(root, missionId) {
-  const dir = path.join(root, '.dcodex', 'missions', missionId);
+  const dir = path.join(root, '.sneakoscope', 'missions', missionId);
   const gatePath = path.join(dir, 'done-gate.json');
   const contractPath = path.join(dir, 'decision-contract.json');
   const contractExists = await exists(contractPath);

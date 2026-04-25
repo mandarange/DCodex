@@ -6,7 +6,7 @@ export const DEFAULT_RETENTION_POLICY = Object.freeze({
   schema_version: 1,
   max_missions: 30,
   max_mission_age_days: 14,
-  max_dcodex_bytes: 256 * 1024 * 1024,
+  max_sneakoscope_bytes: 256 * 1024 * 1024,
   max_mission_bytes: 64 * 1024 * 1024,
   max_event_log_bytes: 5 * 1024 * 1024,
   max_tmp_age_hours: 2,
@@ -15,23 +15,23 @@ export const DEFAULT_RETENTION_POLICY = Object.freeze({
 });
 
 export async function ensureRetentionPolicy(root) {
-  const p = path.join(root, '.dcodex', 'policy.json');
+  const p = path.join(root, '.sneakoscope', 'policy.json');
   if (!(await exists(p))) await writeJsonAtomic(p, { retention: DEFAULT_RETENTION_POLICY });
   return p;
 }
 
 export async function loadRetentionPolicy(root) {
-  const p = path.join(root, '.dcodex', 'policy.json');
+  const p = path.join(root, '.sneakoscope', 'policy.json');
   const data = await readJson(p, {});
   return { ...DEFAULT_RETENTION_POLICY, ...(data.retention || data || {}) };
 }
 
 export async function storageReport(root) {
-  const dcodex = path.join(root, '.dcodex');
-  const report = { root, exists: await exists(dcodex), generated_at: nowIso(), sections: {}, total_bytes: 0 };
+  const sks = path.join(root, '.sneakoscope');
+  const report = { root, exists: await exists(sks), generated_at: nowIso(), sections: {}, total_bytes: 0 };
   if (!report.exists) return report;
   for (const name of ['missions', 'memory', 'gx', 'hproof', 'tmp', 'arenas', 'state', 'model', 'genome', 'trajectories', 'locks', 'reports']) {
-    const p = path.join(dcodex, name);
+    const p = path.join(sks, name);
     const bytes = await dirSize(p).catch(() => 0);
     report.sections[name] = { bytes, human: formatBytes(bytes) };
     report.total_bytes += bytes;
@@ -41,7 +41,7 @@ export async function storageReport(root) {
 }
 
 async function listMissionDirs(root) {
-  const base = path.join(root, '.dcodex', 'missions');
+  const base = path.join(root, '.sneakoscope', 'missions');
   if (!(await exists(base))) return [];
   const entries = await fs.readdir(base, { withFileTypes: true });
   const out = [];
@@ -55,7 +55,7 @@ async function listMissionDirs(root) {
 }
 
 async function pruneTmp(root, policy, dryRun, actions) {
-  const tmp = path.join(root, '.dcodex', 'tmp');
+  const tmp = path.join(root, '.sneakoscope', 'tmp');
   if (!(await exists(tmp))) return;
   const now = Date.now();
   const maxAge = policy.max_tmp_age_hours * 60 * 60 * 1000;
@@ -115,7 +115,7 @@ async function compactMission(mission, policy, dryRun, actions) {
 }
 
 async function rotateLargeJsonl(root, policy, dryRun, actions) {
-  const files = await listFilesRecursive(path.join(root, '.dcodex'), { maxFiles: 100000 }).catch(() => []);
+  const files = await listFilesRecursive(path.join(root, '.sneakoscope'), { maxFiles: 100000 }).catch(() => []);
   for (const f of files) {
     if (!f.endsWith('.jsonl')) continue;
     const size = await fileSize(f);
@@ -129,12 +129,12 @@ export async function enforceRetention(root, opts = {}) {
   const policy = { ...(await loadRetentionPolicy(root)), ...(opts.policy || {}) };
   const dryRun = Boolean(opts.dryRun);
   const actions = [];
-  await ensureDir(path.join(root, '.dcodex', 'reports'));
+  await ensureDir(path.join(root, '.sneakoscope', 'reports'));
   await pruneTmp(root, policy, dryRun, actions);
   await pruneOldMissions(root, policy, dryRun, actions);
   for (const m of await listMissionDirs(root)) await compactMission(m, policy, dryRun, actions);
   await rotateLargeJsonl(root, policy, dryRun, actions);
   const report = await storageReport(root);
-  if (!dryRun) await writeJsonAtomic(path.join(root, '.dcodex', 'reports', 'storage.json'), report);
+  if (!dryRun) await writeJsonAtomic(path.join(root, '.sneakoscope', 'reports', 'storage.json'), report);
   return { dryRun, policy, actions, report };
 }

@@ -19,10 +19,10 @@ export function buildQuestionSchema(prompt) {
     { id: 'MID_RALPH_UNKNOWN_POLICY', question: 'Ralph 중 새 모호성이 생기면 사용자에게 묻지 않고 어떤 fallback 순서로 해결할까요?', required: true, type: 'array', options: ['preserve_existing_behavior', 'smallest_reversible_change', 'defer_optional_scope', 'block_only_if_no_safe_path'] },
     { id: 'RISK_BOUNDARY', question: '보안, 결제, 데이터 손상, 권한, 인증 등 절대 넘으면 안 되는 위험 경계를 적어주세요.', required: true, type: 'array_or_string' },
 
-    { id: 'DATABASE_TARGET_ENVIRONMENT', question: 'DB 관련 작업의 대상 환경을 지정해주세요. production write는 DCODEX가 허용하지 않습니다.', required: true, type: 'enum', options: ['no_database', 'local_dev', 'preview_branch', 'supabase_branch', 'production_read_only'] },
+    { id: 'DATABASE_TARGET_ENVIRONMENT', question: 'DB 관련 작업의 대상 환경을 지정해주세요. production write는 Sneakoscope Codex가 허용하지 않습니다.', required: true, type: 'enum', options: ['no_database', 'local_dev', 'preview_branch', 'supabase_branch', 'production_read_only'] },
     { id: 'DATABASE_WRITE_MODE', question: 'DB 쓰기 정책을 선택해주세요. Supabase/Postgres MCP live write는 기본 차단됩니다.', required: true, type: 'enum', options: ['read_only_only', 'migration_files_only', 'non_destructive_writes_to_local_or_branch_only'] },
     { id: 'SUPABASE_MCP_POLICY', question: 'Supabase MCP를 사용한다면 어떤 안전 정책을 적용할까요?', required: true, type: 'enum', options: ['not_used', 'read_only_project_scoped_only', 'branch_only_no_live_writes'] },
-    { id: 'DESTRUCTIVE_DB_OPERATIONS_ALLOWED', question: 'DROP/TRUNCATE/DB reset/mass DELETE/branch reset/project delete 같은 파괴적 DB 작업을 허용하나요? DCODEX는 never만 허용합니다.', required: true, type: 'enum', options: ['never'] },
+    { id: 'DESTRUCTIVE_DB_OPERATIONS_ALLOWED', question: 'DROP/TRUNCATE/DB reset/mass DELETE/branch reset/project delete 같은 파괴적 DB 작업을 허용하나요? Sneakoscope Codex는 never만 허용합니다.', required: true, type: 'enum', options: ['never'] },
     { id: 'DB_BACKUP_OR_BRANCH_REQUIRED', question: 'DB 쓰기가 필요한 경우 local/preview branch 또는 백업이 있어야만 진행하도록 할까요?', required: true, type: 'enum', options: ['yes_for_any_write'] },
     { id: 'DB_MAX_BLAST_RADIUS', question: 'DML이 꼭 필요한 경우 허용 가능한 최대 영향 범위를 적어주세요. 기본 권장값은 no_live_dml입니다.', required: true, type: 'string' }
   ];
@@ -61,7 +61,7 @@ export function buildQuestionSchema(prompt) {
 
 export function questionsMarkdown(schema) {
   const lines = [];
-  lines.push('# DCODEX Ralph Prepare Questions');
+  lines.push('# Sneakoscope Codex Ralph Prepare Questions');
   lines.push('');
   lines.push('Ralph는 이 질문들에 모두 답변하고 Decision Contract가 봉인된 뒤에만 실행됩니다.');
   lines.push('Ralph 실행 중에는 사용자에게 절대 질문하지 않습니다.');

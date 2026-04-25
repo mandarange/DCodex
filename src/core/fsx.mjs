@@ -129,7 +129,7 @@ export async function findUp(start, names) {
 
 export async function projectRoot(start = process.cwd()) {
   const resolved = path.resolve(start);
-  const sine = await findUp(resolved, ['.dcodex']);
+  const sine = await findUp(resolved, ['.sneakoscope', '.dcodex']);
   if (sine) {
     const root = path.dirname(sine);
     if (root !== path.parse(root).root) return root;
@@ -152,7 +152,7 @@ export function rel(root, p) {
 
 export async function listFilesRecursive(dir, opts = {}) {
   const {
-    ignore = ['.git', 'node_modules', '.dcodex/arenas', '.dcodex/tmp'],
+    ignore = ['.git', 'node_modules', '.sneakoscope/arenas', '.sneakoscope/tmp'],
     maxFiles = 50000,
     maxDepth = 40
   } = opts;
@@ -300,7 +300,7 @@ export async function readStdin() {
   });
 }
 
-export function tmpdir(prefix = 'dcodex-') {
+export function tmpdir(prefix = 'sks-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 

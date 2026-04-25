@@ -6,6 +6,7 @@ coverage/
 .git/
 .omx/
 .dcodex/
+.sneakoscope/
 .codex/
 .agents/
 AGENTS.md

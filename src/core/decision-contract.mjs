@@ -26,7 +26,7 @@ export function validateAnswers(schema, answers) {
     if (!isEmptyAnswer(value)) resolved.push(slot.id);
   }
   if (answers.DESTRUCTIVE_DB_OPERATIONS_ALLOWED && answers.DESTRUCTIVE_DB_OPERATIONS_ALLOWED !== 'never') {
-    errors.push({ slot: 'DESTRUCTIVE_DB_OPERATIONS_ALLOWED', error: 'dcodex_never_allows_destructive_database_operations' });
+    errors.push({ slot: 'DESTRUCTIVE_DB_OPERATIONS_ALLOWED', error: 'sneakoscope_never_allows_destructive_database_operations' });
   }
   if (answers.DATABASE_TARGET_ENVIRONMENT === 'production_write') {
     errors.push({ slot: 'DATABASE_TARGET_ENVIRONMENT', error: 'production_write_target_forbidden' });

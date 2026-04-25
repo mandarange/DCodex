@@ -2,7 +2,7 @@ import path from 'node:path';
 import { exists, packageRoot, runProcess, which } from './fsx.mjs';
 
 export async function findCodexBinary() {
-  const env = process.env.DCODEX_CODEX_BIN || process.env.CODEX_BIN;
+  const env = process.env.SKS_CODEX_BIN || process.env.DCODEX_CODEX_BIN || process.env.CODEX_BIN;
   if (env && await exists(env)) return env;
   const global = await which('codex');
   if (global) return global;
@@ -28,7 +28,7 @@ export async function getCodexInfo() {
 export async function runCodexExec({ root, prompt, outputFile, json = true, profile = null, extraArgs = [], onStdout, onStderr, logDir = null, stdoutFile = null, stderrFile = null, maxBufferBytes = 256 * 1024, timeoutMs = null }) {
   const bin = await findCodexBinary();
   if (!bin) {
-    return { code: 127, stdout: '', stderr: 'Codex CLI not found. Install @openai/codex or set DCODEX_CODEX_BIN.' };
+    return { code: 127, stdout: '', stderr: 'Codex CLI not found. Install @openai/codex or set SKS_CODEX_BIN.' };
   }
   const args = ['exec', '--cd', root];
   if (profile) args.push('--profile', profile);
@@ -36,7 +36,7 @@ export async function runCodexExec({ root, prompt, outputFile, json = true, prof
   if (outputFile) args.push('--output-last-message', outputFile);
   args.push(...extraArgs);
   args.push(prompt);
-  const effectiveTimeoutMs = Number(timeoutMs || process.env.DCODEX_CODEX_TIMEOUT_MS || 30 * 60 * 1000);
+  const effectiveTimeoutMs = Number(timeoutMs || process.env.SKS_CODEX_TIMEOUT_MS || process.env.DCODEX_CODEX_TIMEOUT_MS || 30 * 60 * 1000);
   return runProcess(bin, args, {
     cwd: root,
     onStdout,

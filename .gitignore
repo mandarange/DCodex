@@ -6,6 +6,7 @@ coverage/
 *.zip
 .omx/
 .dcodex/
+.sneakoscope/
 .codex/
 .agents/
 AGENTS.md

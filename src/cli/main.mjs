@@ -38,7 +38,7 @@ export async function main(args) {
 }
 
 function help() {
-  console.log(`DCODEX\n\nUsage:\n  dcodex doctor [--fix] [--json]\n  dcodex init\n  dcodex selftest [--mock]\n  dcodex ralph prepare "task"\n  dcodex ralph answer <mission-id|latest> <answers.json>\n  dcodex ralph run <mission-id|latest> [--mock] [--max-cycles N]\n  dcodex ralph status <mission-id|latest>\n  dcodex db policy\n  dcodex db scan [--migrations] [--json]\n  dcodex db mcp-config --project-ref <ref>\n  dcodex db check --sql "DROP TABLE users"\n  dcodex db check --command "supabase db reset"\n  dcodex gc [--dry-run] [--json]\n  dcodex stats [--json]\n`);
+  console.log(`Sneakoscope Codex\n\nUsage:\n  sks doctor [--fix] [--json]\n  sks init\n  sks selftest [--mock]\n  sks ralph prepare "task"\n  sks ralph answer <mission-id|latest> <answers.json>\n  sks ralph run <mission-id|latest> [--mock] [--max-cycles N]\n  sks ralph status <mission-id|latest>\n  sks db policy\n  sks db scan [--migrations] [--json]\n  sks db mcp-config --project-ref <ref>\n  sks db check --sql "DROP TABLE users"\n  sks db check --command "supabase db reset"\n  sks gc [--dry-run] [--json]\n  sks stats [--json]\n`);
 }
 
 async function doctor(args) {
@@ -49,38 +49,38 @@ async function doctor(args) {
   const nodeOk = Number(process.versions.node.split('.')[0]) >= 20;
   const storage = await storageReport(root);
   const pkgBytes = await dirSize(packageRoot()).catch(() => 0);
-  const dbPolicyExists = await exists(path.join(root, '.dcodex', 'db-safety.json'));
+  const dbPolicyExists = await exists(path.join(root, '.sneakoscope', 'db-safety.json'));
   const dbScan = await scanDbSafety(root).catch((err) => ({ ok: false, findings: [{ id: 'db_safety_scan_failed', severity: 'high', reason: err.message }] }));
   const result = {
     node: { ok: nodeOk, version: process.version }, root, codex, rust,
-    dcodex: { ok: await exists(path.join(root, '.dcodex')) },
+    sneakoscope: { ok: await exists(path.join(root, '.sneakoscope')) },
     db_guard: { ok: dbPolicyExists && dbScan.ok, policy: dbPolicyExists ? await loadDbSafetyPolicy(root) : null, scan: dbScan },
     hooks: { ok: await exists(path.join(root, '.codex', 'hooks.json')) },
     skills: { ok: await exists(path.join(root, '.agents', 'skills')) },
     package: { bytes: pkgBytes, human: formatBytes(pkgBytes) }, storage
   };
-  result.ready = nodeOk && Boolean(codex.bin) && result.dcodex.ok && result.db_guard.ok;
+  result.ready = nodeOk && Boolean(codex.bin) && result.sneakoscope.ok && result.db_guard.ok;
   if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
-  console.log('DCODEX Doctor\n');
+  console.log('Sneakoscope Codex Doctor\n');
   console.log(`Node:      ${nodeOk ? 'ok' : 'fail'} ${process.version}`);
   console.log(`Project:   ${root}`);
   console.log(`Codex:     ${codex.bin ? 'ok' : 'missing'} ${codex.version || ''}`);
   console.log(`Rust acc.: ${rust.available ? rust.version : 'optional-missing'}`);
-  console.log(`State:     ${result.dcodex.ok ? 'ok' : 'missing .dcodex'}`);
+  console.log(`State:     ${result.sneakoscope.ok ? 'ok' : 'missing .sneakoscope'}`);
   console.log(`DB Guard:  ${result.db_guard.ok ? 'ok' : 'blocked'} ${dbScan.findings?.length || 0} finding(s)`);
   console.log(`Hooks:     ${result.hooks.ok ? 'ok' : 'missing .codex/hooks.json'}`);
   console.log(`Skills:    ${result.skills.ok ? 'ok' : 'missing .agents/skills'}`);
   console.log(`Package:   ${result.package.human}`);
   console.log(`Storage:   ${storage.total_human || '0 B'}`);
   console.log(`Ready:     ${result.ready ? 'yes' : 'no'}`);
-  if (!codex.bin) console.log('\nCodex CLI missing. Install separately: npm i -g @openai/codex, or set DCODEX_CODEX_BIN.');
-  if (!result.ready && !flag(args, '--fix')) console.log('Run: dcodex doctor --fix');
+  if (!codex.bin) console.log('\nCodex CLI missing. Install separately: npm i -g @openai/codex, or set SKS_CODEX_BIN.');
+  if (!result.ready && !flag(args, '--fix')) console.log('Run: sks doctor --fix');
 }
 
 async function init(args) {
   const root = await projectRoot();
   const res = await initProject(root, { force: flag(args, '--force') });
-  console.log(`Initialized DCODEX in ${root}`);
+  console.log(`Initialized Sneakoscope Codex in ${root}`);
   for (const x of res.created) console.log(`- ${x}`);
 }
 
@@ -89,13 +89,13 @@ async function ralph(sub, args) {
   if (sub === 'answer') return ralphAnswer(args);
   if (sub === 'run') return ralphRun(args);
   if (sub === 'status') return ralphStatus(args);
-  console.error('Usage: dcodex ralph <prepare|answer|run|status>');
+  console.error('Usage: sks ralph <prepare|answer|run|status>');
   process.exitCode = 1;
 }
 
 async function ralphPrepare(args) {
   const root = await projectRoot();
-  if (!(await exists(path.join(root, '.dcodex')))) await initProject(root, {});
+  if (!(await exists(path.join(root, '.sneakoscope')))) await initProject(root, {});
   const prompt = promptOf(args);
   if (!prompt) throw new Error('Missing task prompt.');
   const { id, dir } = await createMission(root, { mode: 'ralph', prompt });
@@ -112,7 +112,7 @@ async function ralphAnswer(args) {
   const root = await projectRoot();
   const [missionArg, answerFile] = args;
   const id = await resolveMissionId(root, missionArg);
-  if (!id || !answerFile) throw new Error('Usage: dcodex ralph answer <mission-id|latest> <answers.json>');
+  if (!id || !answerFile) throw new Error('Usage: sks ralph answer <mission-id|latest> <answers.json>');
   const { dir, mission } = await loadMission(root, id);
   const answers = await readJson(path.resolve(answerFile));
   await writeJsonAtomic(path.join(dir, 'answers.json'), answers);
@@ -132,7 +132,7 @@ async function ralphAnswer(args) {
 async function ralphRun(args) {
   const root = await projectRoot();
   const id = await resolveMissionId(root, args[0]);
-  if (!id) throw new Error('Usage: dcodex ralph run <mission-id|latest> [--mock]');
+  if (!id) throw new Error('Usage: sks ralph run <mission-id|latest> [--mock]');
   const { dir, mission } = await loadMission(root, id);
   const contractPath = path.join(dir, 'decision-contract.json');
   if (!(await exists(contractPath))) throw new Error('Ralph cannot run: decision-contract.json is missing.');
@@ -165,7 +165,7 @@ async function ralphRun(args) {
     const outputFile = path.join(cycleDir, 'final.md');
     const prompt = buildRalphPrompt({ id, mission, contract, cycle, previous: last });
     await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'ralph.cycle.start', cycle });
-    const result = await runCodexExec({ root, prompt, outputFile, json: true, profile: 'dcodex-ralph', logDir: cycleDir });
+    const result = await runCodexExec({ root, prompt, outputFile, json: true, profile: 'sks-ralph', logDir: cycleDir });
     await writeJsonAtomic(path.join(cycleDir, 'process.json'), { code: result.code, stdout_tail: result.stdout, stderr_tail: result.stderr, stdout_bytes: result.stdoutBytes, stderr_bytes: result.stderrBytes, truncated: result.truncated, timed_out: result.timedOut });
     last = await safeReadText(outputFile, result.stdout || result.stderr || '');
     if (containsUserQuestion(last)) {
@@ -189,7 +189,7 @@ async function ralphRun(args) {
 }
 
 function buildRalphPrompt({ id, mission, contract, cycle, previous }) {
-  return `You are running DCODEX Ralph mode.\nMISSION: ${id}\nTASK: ${mission.prompt}\nCYCLE: ${cycle}\nNO-QUESTION LOCK: Do not ask the user. Resolve using decision-contract.json.\nDATABASE SAFETY: Destructive database operations are forbidden. Do not run DROP, TRUNCATE, db reset, db push, branch reset/merge/delete, project deletion, RLS disable, or live execute_sql writes. Use read-only/project-scoped Supabase MCP only unless the sealed contract explicitly allows migration files for local or preview branch.\nDECISION CONTRACT:\n${JSON.stringify(contract, null, 2)}\nPERFORMANCE POLICY: keep outputs concise; raw logs stay in files; summarize evidence only.\nLOOP: plan, read before write, implement within contract, run/justify tests, update .dcodex/missions/${id}/done-gate.json.\nPrevious cycle tail:\n${String(previous || '').slice(-2500)}\n`;
+  return `You are running Sneakoscope Codex Ralph mode.\nMISSION: ${id}\nTASK: ${mission.prompt}\nCYCLE: ${cycle}\nNO-QUESTION LOCK: Do not ask the user. Resolve using decision-contract.json.\nDATABASE SAFETY: Destructive database operations are forbidden. Do not run DROP, TRUNCATE, db reset, db push, branch reset/merge/delete, project deletion, RLS disable, or live execute_sql writes. Use read-only/project-scoped Supabase MCP only unless the sealed contract explicitly allows migration files for local or preview branch.\nDECISION CONTRACT:\n${JSON.stringify(contract, null, 2)}\nPERFORMANCE POLICY: keep outputs concise; raw logs stay in files; summarize evidence only.\nLOOP: plan, read before write, implement within contract, run/justify tests, update .sneakoscope/missions/${id}/done-gate.json.\nPrevious cycle tail:\n${String(previous || '').slice(-2500)}\n`;
 }
 
 async function safeReadText(file, fallback = '') {
@@ -208,7 +208,7 @@ async function ralphRunMock(root, id, dir) {
 async function ralphStatus(args) {
   const root = await projectRoot();
   const id = await resolveMissionId(root, args[0]);
-  if (!id) throw new Error('Usage: dcodex ralph status <mission-id|latest>');
+  if (!id) throw new Error('Usage: sks ralph status <mission-id|latest>');
   const { dir, mission } = await loadMission(root, id);
   const state = await readJson(stateFile(root), {});
   const contract = await readJson(path.join(dir, 'decision-contract.json'), null);
@@ -243,19 +243,19 @@ async function selftest() {
   if (!gate.passed) throw new Error('selftest failed: done gate');
   const gc = await enforceRetention(tmp, { dryRun: true });
   if (!gc.report.exists) throw new Error('selftest failed: storage report');
-  console.log('DCODEX selftest passed.');
+  console.log('Sneakoscope Codex selftest passed.');
   console.log(`temp: ${tmp}`);
 }
 
 async function profile(sub, args) {
   const root = await projectRoot();
-  if (sub === 'show') return console.log(JSON.stringify(await readJson(path.join(root, '.dcodex', 'model', 'current.json'), { model: 'gpt-5.5' }), null, 2));
-  if (sub === 'set') { await writeJsonAtomic(path.join(root, '.dcodex', 'model', 'current.json'), { model: args[0] || 'gpt-5.5', set_at: nowIso() }); return console.log(`Model profile set: ${args[0] || 'gpt-5.5'}`); }
-  console.error('Usage: dcodex profile show|set <model>');
+  if (sub === 'show') return console.log(JSON.stringify(await readJson(path.join(root, '.sneakoscope', 'model', 'current.json'), { model: 'gpt-5.5' }), null, 2));
+  if (sub === 'set') { await writeJsonAtomic(path.join(root, '.sneakoscope', 'model', 'current.json'), { model: args[0] || 'gpt-5.5', set_at: nowIso() }); return console.log(`Model profile set: ${args[0] || 'gpt-5.5'}`); }
+  console.error('Usage: sks profile show|set <model>');
 }
 
 async function hproof(sub, args) {
-  if (sub !== 'check') return console.error('Usage: dcodex hproof check [mission-id]');
+  if (sub !== 'check') return console.error('Usage: sks hproof check [mission-id]');
   const root = await projectRoot();
   const id = await resolveMissionId(root, args[0]);
   if (!id) throw new Error('No mission found.');
@@ -268,7 +268,7 @@ async function gc(args) {
   const root = await projectRoot();
   const res = await enforceRetention(root, { dryRun: flag(args, '--dry-run') });
   if (flag(args, '--json')) return console.log(JSON.stringify(res, null, 2));
-  console.log(flag(args, '--dry-run') ? 'DCODEX GC dry run' : 'DCODEX GC completed');
+  console.log(flag(args, '--dry-run') ? 'Sneakoscope Codex GC dry run' : 'Sneakoscope Codex GC completed');
   console.log(`Storage: ${res.report.total_human || '0 B'}`);
   console.log(`Actions: ${res.actions.length}`);
   for (const a of res.actions.slice(0, 20)) console.log(`- ${a.action} ${a.path || a.mission || ''} ${a.bytes ? formatBytes(a.bytes) : ''}`);
@@ -280,7 +280,7 @@ async function stats(args) {
   const pkgBytes = await dirSize(packageRoot()).catch(() => 0);
   const out = { package: { bytes: pkgBytes, human: formatBytes(pkgBytes) }, storage: report };
   if (flag(args, '--json')) return console.log(JSON.stringify(out, null, 2));
-  console.log('DCODEX Stats');
+  console.log('Sneakoscope Codex Stats');
   console.log(`Package: ${out.package.human}`);
   console.log(`State:   ${report.total_human || '0 B'}`);
   for (const [name, sec] of Object.entries(report.sections || {})) console.log(`- ${name}: ${sec.human}`);
@@ -290,7 +290,7 @@ async function gx(sub, args) {
   const root = await projectRoot();
   if (sub === 'init') {
     const name = args[0] || 'architecture-atlas';
-    const dir = path.join(root, '.dcodex', 'gx', 'cartridges', name);
+    const dir = path.join(root, '.sneakoscope', 'gx', 'cartridges', name);
     await writeJsonAtomic(path.join(dir, 'vgraph.json'), { id: name, version: 1, nodes: [], edges: [], invariants: [], tests: [] });
     await writeJsonAtomic(path.join(dir, 'beta.json'), { id: name, version: 1, read_order: ['grid', 'layers', 'nodes', 'edges', 'tests'] });
     await writeTextAtomic(path.join(dir, 'image-prompt.md'), 'Create a clean technical architecture sheet from vgraph.json. Use GPT Image 2 only.');
@@ -298,7 +298,7 @@ async function gx(sub, args) {
     return;
   }
   if (['render', 'validate', 'drift'].includes(sub)) return console.log(`GX ${sub}: metadata only; image generation is performed by Codex $imagegen in live mode.`);
-  console.error('Usage: dcodex gx init|render|validate|drift');
+  console.error('Usage: sks gx init|render|validate|drift');
 }
 
 async function team(args) {
@@ -353,6 +353,6 @@ async function db(sub, args) {
     process.exitCode = decision.action === 'block' ? 2 : 0;
     return;
   }
-  console.error('Usage: dcodex db policy | db scan [--migrations] | db mcp-config --project-ref <id> | db check --sql "..." | db check --command "..." | db check --file file.sql');
+  console.error('Usage: sks db policy | db scan [--migrations] | db mcp-config --project-ref <id> | db check --sql "..." | db check --command "..." | db check --file file.sql');
   process.exitCode = 1;
 }

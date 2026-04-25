@@ -8,7 +8,7 @@ export function missionId() {
   return `M-${stamp}-${randomId(4)}`;
 }
 
-export function sineDir(root) { return path.join(root, '.dcodex'); }
+export function sineDir(root) { return path.join(root, '.sneakoscope'); }
 export function missionsDir(root) { return path.join(sineDir(root), 'missions'); }
 export function missionDir(root, id) { return path.join(missionsDir(root), id); }
 export function stateFile(root) { return path.join(sineDir(root), 'state', 'current.json'); }

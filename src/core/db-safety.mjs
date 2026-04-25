@@ -27,7 +27,7 @@ export const DEFAULT_DB_SAFETY_POLICY = Object.freeze({
 });
 
 export async function ensureDbSafetyPolicy(root) {
-  const p = path.join(root, '.dcodex', 'db-safety.json');
+  const p = path.join(root, '.sneakoscope', 'db-safety.json');
   if (!(await exists(p))) await writeJsonAtomic(p, DEFAULT_DB_SAFETY_POLICY);
   return p;
 }
@@ -254,7 +254,7 @@ export async function checkSqlFile(file) {
 
 export function dbBlockReason(decision) {
   return [
-    'DCODEX Database Safety Gate blocked this operation.',
+    'Sneakoscope Codex Database Safety Gate blocked this operation.',
     `Reasons: ${(decision.reasons || []).join(', ') || 'unknown'}.`,
     'Destructive database operations are never allowed. Production writes are forbidden. Supabase/Postgres MCP write tools must not be used for live destructive changes.',
     'Use read-only/project-scoped Supabase MCP URLs, create migration files, and apply them only to local or preview/branch environments when explicitly allowed by the sealed contract.'
@@ -267,7 +267,7 @@ export async function scanDbSafety(root, opts = {}) {
   if (opts.includeMigrations) findings.push(...await scanMissionMigrationFiles(root, opts));
   const ok = !findings.some((f) => ['critical', 'high'].includes(f.severity));
   const report = { checked_at: nowIso(), ok, findings };
-  await writeJsonAtomic(path.join(root, '.dcodex', 'db-safety-scan.json'), report).catch(() => {});
+  await writeJsonAtomic(path.join(root, '.sneakoscope', 'db-safety-scan.json'), report).catch(() => {});
   return report;
 }
 
@@ -312,7 +312,7 @@ function checkSupabaseMcpUrl(url) {
     const forbidden = new Set(['account', 'account_management', 'branching', 'storage', 'edge_functions', 'edge-functions']);
     for (const f of featuresRaw.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean)) {
       if (forbidden.has(f)) findings.push({ id: 'supabase_mcp_forbidden_feature', severity: 'critical', feature: f, reason: `Supabase MCP feature '${f}' is forbidden.` });
-      else if (!allowed.has(f)) findings.push({ id: 'supabase_mcp_unapproved_feature', severity: 'high', feature: f, reason: `Supabase MCP feature '${f}' is not in DCODEX allowlist.` });
+      else if (!allowed.has(f)) findings.push({ id: 'supabase_mcp_unapproved_feature', severity: 'high', feature: f, reason: `Supabase MCP feature '${f}' is not in Sneakoscope Codex allowlist.` });
     }
   }
   return findings;
@@ -328,7 +328,7 @@ async function scanMissionMigrationFiles(root, opts = {}) {
     for (const e of entries) {
       const p = path.join(dir, e.name);
       const rp = rel(root, p);
-      if (rp.startsWith('.git/') || rp.startsWith('node_modules/') || rp.startsWith('.dcodex/')) continue;
+      if (rp.startsWith('.git/') || rp.startsWith('node_modules/') || rp.startsWith('.sneakoscope/')) continue;
       if (e.isDirectory()) await walk(p, depth + 1);
       else if (e.isFile() && /(^|\/)(supabase\/migrations|migrations|db\/migrations|database\/migrations)\/.*\.sql$/i.test(rp)) {
         let st; try { st = await (await import('node:fs/promises')).stat(p); } catch { continue; }
