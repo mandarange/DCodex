@@ -30,6 +30,8 @@ export async function main(args) {
   const [cmd, sub, ...rest] = args;
   const tail = sub === undefined ? [] : [sub, ...rest];
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') return help();
+  if (cmd === 'setup') return setup(tail);
+  if (cmd === 'fix-path') return fixPath(tail);
   if (cmd === 'doctor') return doctor(tail);
   if (cmd === 'init') return init(tail);
   if (cmd === 'selftest') return selftest(tail);
@@ -53,6 +55,8 @@ function help() {
   console.log(`Sneakoscope Codex
 
 Usage:
+  sks setup [--install-scope global|project] [--force] [--json]
+  sks fix-path [--install-scope global|project] [--json]
   sks doctor [--fix] [--json] [--install-scope global|project]
   sks init [--install-scope global|project]
   sks selftest [--mock]
@@ -80,12 +84,65 @@ Usage:
 `);
 }
 
+async function setup(args) {
+  const root = await projectRoot();
+  const installScope = installScopeFromArgs(args);
+  const globalCommand = await globalSksCommand();
+  const res = await initProject(root, { force: flag(args, '--force'), installScope, globalCommand });
+  const install = await installStatus(root, installScope, { globalCommand });
+  const hooksPath = path.join(root, '.codex', 'hooks.json');
+  const result = {
+    root,
+    install,
+    hooks: hooksPath,
+    created: res.created,
+    next: ['sks selftest --mock', 'sks doctor']
+  };
+  if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
+  console.log('Sneakoscope Codex Setup\n');
+  console.log(`Project:   ${root}`);
+  console.log(`Install:   ${install.ok ? 'ok' : 'missing'} ${install.scope} (${install.command_prefix})`);
+  console.log(`Hooks:     ${path.relative(root, hooksPath)}`);
+  console.log(`Skills:    .agents/skills`);
+  console.log(`Next:      sks selftest --mock`);
+  if (!install.ok && install.scope === 'global') console.log('\nGlobal command missing. Run: npm i -g sneakoscope');
+  if (!install.ok && install.scope === 'project') console.log('\nProject package missing. Run: npm i -D sneakoscope');
+}
+
+async function fixPath(args) {
+  const root = await projectRoot();
+  const manifest = await readJson(path.join(root, '.sneakoscope', 'manifest.json'), null);
+  const installScope = args.includes('--install-scope') || flag(args, '--project') || flag(args, '--global')
+    ? installScopeFromArgs(args)
+    : normalizeInstallScope(manifest?.installation?.scope || 'global');
+  const globalCommand = await globalSksCommand();
+  await initProject(root, { installScope, globalCommand });
+  const install = await installStatus(root, installScope, { globalCommand });
+  const result = {
+    root,
+    install_scope: installScope,
+    hook_command_prefix: sksCommandPrefix(installScope, { globalCommand }),
+    hooks: path.join(root, '.codex', 'hooks.json'),
+    install
+  };
+  if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
+  console.log('SKS hook path refreshed\n');
+  console.log(`Project:   ${root}`);
+  console.log(`Install:   ${install.ok ? 'ok' : 'missing'} ${install.scope} (${install.command_prefix})`);
+  console.log(`Hooks:     .codex/hooks.json`);
+  if (!install.ok && install.scope === 'global') console.log('\nGlobal command missing. Run: npm i -g sneakoscope');
+  if (!install.ok && install.scope === 'project') console.log('\nProject package missing. Run: npm i -D sneakoscope');
+}
+
 async function doctor(args) {
   const root = await projectRoot();
   const requestedScope = args.includes('--install-scope') || flag(args, '--project') || flag(args, '--global')
     ? installScopeFromArgs(args)
     : null;
-  if (flag(args, '--fix')) await initProject(root, { installScope: requestedScope || 'global' });
+  if (flag(args, '--fix')) {
+    const fixScope = requestedScope || 'global';
+    await initProject(root, { installScope: fixScope, globalCommand: await globalSksCommand() });
+  }
   const codex = await getCodexInfo();
   const rust = await rustInfo();
   const nodeOk = Number(process.versions.node.split('.')[0]) >= 20;
@@ -129,15 +186,22 @@ async function doctor(args) {
 async function init(args) {
   const root = await projectRoot();
   const installScope = installScopeFromArgs(args);
-  const res = await initProject(root, { force: flag(args, '--force'), installScope });
+  const globalCommand = await globalSksCommand();
+  const res = await initProject(root, { force: flag(args, '--force'), installScope, globalCommand });
   console.log(`Initialized Sneakoscope Codex in ${root}`);
-  console.log(`Install scope: ${installScope} (${sksCommandPrefix(installScope)})`);
+  console.log(`Install scope: ${installScope} (${sksCommandPrefix(installScope, { globalCommand })})`);
   for (const x of res.created) console.log(`- ${x}`);
 }
 
-async function installStatus(root, scope) {
-  const commandPrefix = sksCommandPrefix(scope);
-  const globalBin = await which('sks').catch(() => null);
+async function globalSksCommand() {
+  return process.env.SKS_BIN || await which('sks').catch(() => null) || 'sks';
+}
+
+async function installStatus(root, scope, opts = {}) {
+  const discoveredGlobalBin = await which('sks').catch(() => null);
+  const configuredGlobalBin = process.env.SKS_BIN || (opts.globalCommand && opts.globalCommand !== 'sks' ? opts.globalCommand : null);
+  const globalBin = configuredGlobalBin || discoveredGlobalBin;
+  const commandPrefix = sksCommandPrefix(scope, { globalCommand: globalBin || undefined });
   const projectBin = path.join(root, 'node_modules', 'sneakoscope', 'bin', 'sks.mjs');
   const projectBinExists = await exists(projectBin);
   return {
@@ -386,6 +450,10 @@ async function selftest() {
   await initProject(tmp, {});
   const defaultHooks = await readJson(path.join(tmp, '.codex', 'hooks.json'));
   if (defaultHooks.hooks.PreToolUse[0].hooks[0].command !== 'sks hook pre-tool') throw new Error('selftest failed: global install hook command changed');
+  const absoluteHookTmp = tmpdir();
+  await initProject(absoluteHookTmp, { globalCommand: '/usr/local/bin/sks' });
+  const absoluteHooks = await readJson(path.join(absoluteHookTmp, '.codex', 'hooks.json'));
+  if (absoluteHooks.hooks.PreToolUse[0].hooks[0].command !== '/usr/local/bin/sks hook pre-tool') throw new Error('selftest failed: absolute global hook command missing');
   const projectScopeTmp = tmpdir();
   await initProject(projectScopeTmp, { installScope: 'project' });
   const projectHooks = await readJson(path.join(projectScopeTmp, '.codex', 'hooks.json'));

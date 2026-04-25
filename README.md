@@ -10,8 +10,8 @@ Sneakoscope Codex is a zero-runtime-dependency Node.js harness for running Codex
 npm i -g sneakoscope
 ```
 
-The npm package name is `sneakoscope`; the command is branded as SKS and exposed as lowercase `sks` for shell portability.
-Global installation is the default and recommended setup. For a project-only install, use `npm i -D sneakoscope` and initialize hooks with `npx sks init --install-scope project`; this writes hook commands that call the local `node_modules/sneakoscope` binary instead of global `sks`.
+The npm package name is `sneakoscope`; the command is branded as SKS and exposed as lowercase `sks` for shell portability. The package also exposes a `sneakoscope` command alias, so `sks setup` and `sneakoscope setup` are equivalent.
+Global installation is the default and recommended setup. During `sks setup` or `sks init`, SKS resolves the global binary when possible and writes that absolute path into `.codex/hooks.json`, which avoids PATH issues in GUI or hook execution environments. For a project-only install, use `npm i -D sneakoscope` and initialize hooks with `npx sks setup --install-scope project`; this writes hook commands that call the local `node_modules/sneakoscope` binary.
 
 `@openai/codex` is intentionally not bundled. Install Codex separately, or set `SKS_CODEX_BIN` to the Codex executable you want Sneakoscope Codex to supervise.
 
@@ -25,8 +25,7 @@ Global installation is the default and recommended setup. For a project-only ins
 ## Quick Start
 
 ```bash
-sks doctor --fix
-sks init
+sks setup
 sks selftest --mock
 ```
 
@@ -34,8 +33,19 @@ Project-only setup:
 
 ```bash
 npm i -D sneakoscope
-npx sks doctor --fix --install-scope project
-npx sks init --install-scope project
+npx sks setup --install-scope project
+```
+
+If a GUI hook, Codex session, or another project cannot find `sks`, refresh the hook command with the resolved binary path:
+
+```bash
+sks fix-path
+```
+
+If your shell cannot find the global command yet, run through npm without relying on PATH:
+
+```bash
+npx -y -p sneakoscope sks setup
 ```
 
 Create a Ralph mission:
@@ -111,6 +121,8 @@ Core invariants:
 ## Commands
 
 ```bash
+sks setup [--install-scope global|project] [--force] [--json]
+sks fix-path [--install-scope global|project] [--json]
 sks doctor [--fix] [--json] [--install-scope global|project]
 sks init [--force] [--install-scope global|project]
 sks selftest [--mock]
@@ -279,7 +291,7 @@ AGENTS.md             managed repository rules block
 Install scope controls `.codex/hooks.json`:
 
 ```text
-global  -> sks hook ...
+global  -> /absolute/path/to/sks hook ... when resolvable, otherwise sks hook ...
 project -> node ./node_modules/sneakoscope/bin/sks.mjs hook ...
 ```
 

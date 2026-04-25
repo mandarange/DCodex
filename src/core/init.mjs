@@ -9,14 +9,14 @@ export function normalizeInstallScope(scope = 'global') {
   throw new Error(`Invalid install scope: ${scope}. Use "global" or "project".`);
 }
 
-export function sksCommandPrefix(scope = 'global') {
+export function sksCommandPrefix(scope = 'global', opts = {}) {
   return normalizeInstallScope(scope) === 'project'
     ? 'node ./node_modules/sneakoscope/bin/sks.mjs'
-    : 'sks';
+    : (opts.globalCommand || 'sks');
 }
 
-function sksHookCommand(scope, hookName) {
-  return `${sksCommandPrefix(scope)} hook ${hookName}`;
+function sksHookCommand(commandPrefix, hookName) {
+  return `${commandPrefix} hook ${hookName}`;
 }
 
 const AGENTS_BLOCK = `
@@ -66,6 +66,7 @@ A task is not done until relevant tests are run or justified, unsupported critic
 export async function initProject(root, opts = {}) {
   const created = [];
   const installScope = normalizeInstallScope(opts.installScope || 'global');
+  const hookCommandPrefix = opts.hookCommandPrefix || sksCommandPrefix(installScope, { globalCommand: opts.globalCommand });
   const sine = path.join(root, '.sneakoscope');
   const dirs = [
     '.sneakoscope/state', '.sneakoscope/missions', '.sneakoscope/db', '.sneakoscope/bus', '.sneakoscope/hproof', '.sneakoscope/db', '.sneakoscope/memory/q0_raw', '.sneakoscope/memory/q1_evidence', '.sneakoscope/memory/q2_facts', '.sneakoscope/memory/q3_tags', '.sneakoscope/memory/q4_bits', '.sneakoscope/gx/cartridges', '.sneakoscope/model/fingerprints', '.sneakoscope/genome/candidates', '.sneakoscope/trajectories/raw', '.sneakoscope/locks', '.sneakoscope/tmp', '.sneakoscope/arenas', '.sneakoscope/reports', '.codex', '.agents/skills'
@@ -82,7 +83,8 @@ export async function initProject(root, opts = {}) {
     installation: {
       scope: installScope,
       default_scope: 'global',
-      global_command: 'sks',
+      hook_command_prefix: hookCommandPrefix,
+      global_command: opts.globalCommand || 'sks',
       project_command: 'node ./node_modules/sneakoscope/bin/sks.mjs'
     },
     database_safety: 'destructive_db_operations_denied_always',
@@ -98,20 +100,20 @@ export async function initProject(root, opts = {}) {
 
   const policyPath = path.join(sine, 'policy.json');
   if (!(await exists(policyPath)) || opts.force) {
-    await writeJsonAtomic(policyPath, defaultPolicy(installScope));
+    await writeJsonAtomic(policyPath, defaultPolicy(installScope, hookCommandPrefix));
     created.push('.sneakoscope/policy.json');
   } else {
     const policy = await readJson(policyPath, {});
     await writeJsonAtomic(policyPath, {
       ...policy,
-      installation: installPolicy(installScope)
+      installation: installPolicy(installScope, hookCommandPrefix)
     });
   }
 
-  function defaultPolicy(scope) {
+  function defaultPolicy(scope, commandPrefix) {
     return {
       schema_version: 1,
-      installation: installPolicy(scope),
+      installation: installPolicy(scope, commandPrefix),
       retention: DEFAULT_RETENTION_POLICY,
       database_safety: DEFAULT_DB_SAFETY_POLICY,
       performance: {
@@ -144,13 +146,13 @@ export async function initProject(root, opts = {}) {
     };
   }
 
-  function installPolicy(scope) {
+  function installPolicy(scope, commandPrefix) {
     return {
       scope,
       default_scope: 'global',
-      hook_command_prefix: sksCommandPrefix(scope),
+      hook_command_prefix: commandPrefix,
       global_install: 'npm i -g sneakoscope',
-      project_install: 'npm i -D sneakoscope && npx sks init --install-scope project'
+      project_install: 'npm i -D sneakoscope && npx sks setup --install-scope project'
     };
   }
 
@@ -168,11 +170,11 @@ export async function initProject(root, opts = {}) {
 
   await writeJsonAtomic(path.join(root, '.codex', 'hooks.json'), {
     hooks: {
-      UserPromptSubmit: [{ hooks: [{ type: 'command', command: sksHookCommand(installScope, 'user-prompt-submit') }] }],
-      PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: sksHookCommand(installScope, 'pre-tool') }] }],
-      PostToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: sksHookCommand(installScope, 'post-tool') }] }],
-      PermissionRequest: [{ matcher: '*', hooks: [{ type: 'command', command: sksHookCommand(installScope, 'permission-request') }] }],
-      Stop: [{ hooks: [{ type: 'command', command: sksHookCommand(installScope, 'stop') }] }]
+      UserPromptSubmit: [{ hooks: [{ type: 'command', command: sksHookCommand(hookCommandPrefix, 'user-prompt-submit') }] }],
+      PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: sksHookCommand(hookCommandPrefix, 'pre-tool') }] }],
+      PostToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: sksHookCommand(hookCommandPrefix, 'post-tool') }] }],
+      PermissionRequest: [{ matcher: '*', hooks: [{ type: 'command', command: sksHookCommand(hookCommandPrefix, 'permission-request') }] }],
+      Stop: [{ hooks: [{ type: 'command', command: sksHookCommand(hookCommandPrefix, 'stop') }] }]
     }
   });
   created.push(`.codex/hooks.json (${installScope})`);

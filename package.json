@@ -5,7 +5,8 @@
   "description": "Sneakoscope Codex: database-safe, performance-bounded Codex CLI harness with Ralph no-question loop, H-Proof gates, deterministic GX visual context, and TriWiki compression.",
   "type": "module",
   "bin": {
-    "sks": "bin/sks.mjs"
+    "sks": "bin/sks.mjs",
+    "sneakoscope": "bin/sks.mjs"
   },
   "files": [
     "bin",
