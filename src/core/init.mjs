@@ -44,6 +44,18 @@ When the user asks for research, new discoveries, hypothesis generation, frontie
 
 When creating HTML, UI, prototype, deck-like, or visual artifacts, use the local design artifact skill. Gather design context first, build the actual usable experience rather than a marketing placeholder, expose variations when useful, and verify the rendered artifact before handoff.
 
+## Prompt Optimization Pipeline
+
+Every user prompt enters the SKS prompt optimization pipeline even when the user does not type a command. Extract intent, target files or surfaces, constraints, acceptance criteria, risks, and the smallest safe execution path before acting. Choose the lightest matching route: fast edit, normal implementation, Ralph, Research, DB safety, GX, or evaluation. Do not run heavy Ralph/research/evaluation loops for simple direct edits.
+
+## Dollar Commands
+
+Codex App users may invoke local SKS modes with skill-style dollar commands. \`$DF\` is the fast design/content fix route for small changes such as text color, copy edits, label changes, spacing tweaks, or translating visible text. \`$DF\` should avoid broad redesign, avoid unnecessary planning loops, and make the requested change directly with only cheap verification when useful.
+
+## Codex App Usage
+
+When this repository is opened in Codex App, use the local Sneakoscope files as the app control surface. Read \`.codex/SNEAKOSCOPE.md\` for the quick reference, load project skills from \`.codex/skills\` when applicable, and use the generated \`.codex/hooks.json\` hooks for DB safety, no-question Ralph runs, retention, and done-gate enforcement.
+
 ## Source Priority
 
 1. Current code, tests, config
@@ -69,7 +81,7 @@ export async function initProject(root, opts = {}) {
   const hookCommandPrefix = opts.hookCommandPrefix || sksCommandPrefix(installScope, { globalCommand: opts.globalCommand });
   const sine = path.join(root, '.sneakoscope');
   const dirs = [
-    '.sneakoscope/state', '.sneakoscope/missions', '.sneakoscope/db', '.sneakoscope/bus', '.sneakoscope/hproof', '.sneakoscope/db', '.sneakoscope/memory/q0_raw', '.sneakoscope/memory/q1_evidence', '.sneakoscope/memory/q2_facts', '.sneakoscope/memory/q3_tags', '.sneakoscope/memory/q4_bits', '.sneakoscope/gx/cartridges', '.sneakoscope/model/fingerprints', '.sneakoscope/genome/candidates', '.sneakoscope/trajectories/raw', '.sneakoscope/locks', '.sneakoscope/tmp', '.sneakoscope/arenas', '.sneakoscope/reports', '.codex', '.agents/skills'
+    '.sneakoscope/state', '.sneakoscope/missions', '.sneakoscope/db', '.sneakoscope/bus', '.sneakoscope/hproof', '.sneakoscope/db', '.sneakoscope/memory/q0_raw', '.sneakoscope/memory/q1_evidence', '.sneakoscope/memory/q2_facts', '.sneakoscope/memory/q3_tags', '.sneakoscope/memory/q4_bits', '.sneakoscope/gx/cartridges', '.sneakoscope/model/fingerprints', '.sneakoscope/genome/candidates', '.sneakoscope/trajectories/raw', '.sneakoscope/locks', '.sneakoscope/tmp', '.sneakoscope/arenas', '.sneakoscope/reports', '.codex', '.codex/skills', '.agents/skills'
   ];
   for (const d of dirs) await ensureDir(path.join(root, d));
 
@@ -79,6 +91,7 @@ export async function initProject(root, opts = {}) {
     initialized_at: nowIso(),
     no_external_tools: true,
     codex_required: true,
+    codex_app_supported: true,
     native_runtime_dependencies: 0,
     installation: {
       scope: installScope,
@@ -86,6 +99,18 @@ export async function initProject(root, opts = {}) {
       hook_command_prefix: hookCommandPrefix,
       global_command: opts.globalCommand || 'sks',
       project_command: 'node ./node_modules/sneakoscope/bin/sks.mjs'
+    },
+    codex_app: {
+      config: '.codex/config.toml',
+      hooks: '.codex/hooks.json',
+      skills: '.codex/skills',
+      quick_reference: '.codex/SNEAKOSCOPE.md',
+      agents_rules: 'AGENTS.md'
+    },
+    prompt_pipeline: {
+      default_enabled: true,
+      dollar_commands: ['$DF', '$SKS', '$Ralph', '$Research', '$DB', '$GX', '$Help'],
+      fast_design_command: '$DF'
     },
     database_safety: 'destructive_db_operations_denied_always',
     gx_renderer: 'deterministic_svg_html'
@@ -142,6 +167,20 @@ export async function initProject(root, opts = {}) {
         renderer: 'deterministic_svg_html',
         source_of_truth: 'vgraph.json',
         external_image_generation: false
+      },
+      codex_app: {
+        supported: true,
+        config: '.codex/config.toml',
+        hooks: '.codex/hooks.json',
+        skills: '.codex/skills',
+        quick_reference: '.codex/SNEAKOSCOPE.md',
+        agents_rules: 'AGENTS.md'
+      },
+      prompt_pipeline: {
+        default_enabled: true,
+        route_without_command: true,
+        dollar_commands: ['$DF', '$SKS', '$Ralph', '$Research', '$DB', '$GX', '$Help'],
+        fast_design_command: '$DF'
       }
     };
   }
@@ -168,6 +207,9 @@ export async function initProject(root, opts = {}) {
   await writeTextAtomic(path.join(root, '.codex', 'config.toml'), `[features]\ncodex_hooks = true\n\n[profiles.sks-ralph]\nmodel = "gpt-5.5"\napproval_policy = "never"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "high"\n\n[profiles.sks-research]\nmodel = "gpt-5.5"\napproval_policy = "never"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "xhigh"\n\n[profiles.sks-default]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "medium"\n`);
   created.push('.codex/config.toml');
 
+  await writeTextAtomic(path.join(root, '.codex', 'SNEAKOSCOPE.md'), codexAppQuickReference(installScope, hookCommandPrefix));
+  created.push('.codex/SNEAKOSCOPE.md');
+
   await writeJsonAtomic(path.join(root, '.codex', 'hooks.json'), {
     hooks: {
       UserPromptSubmit: [{ hooks: [{ type: 'command', command: sksHookCommand(hookCommandPrefix, 'user-prompt-submit') }] }],
@@ -180,12 +222,91 @@ export async function initProject(root, opts = {}) {
   created.push(`.codex/hooks.json (${installScope})`);
 
   await installSkills(root);
+  created.push('.codex/skills/*');
   created.push('.agents/skills/*');
   return { created };
 }
 
+function codexAppQuickReference(scope, commandPrefix) {
+  return `# Sneakoscope Codex for Codex App
+
+This project has been initialized for both the SKS CLI and Codex App.
+
+## App Control Surface
+
+- Rules: \`AGENTS.md\`
+- Hooks: \`.codex/hooks.json\`
+- Profiles: \`.codex/config.toml\`
+- App skills: \`.codex/skills/\`
+- Mission state: \`.sneakoscope/missions/\`
+- Current state: \`.sneakoscope/state/current.json\`
+
+## Installed Command
+
+\`\`\`bash
+${commandPrefix} <command>
+\`\`\`
+
+Install scope: \`${scope}\`
+
+## Discovery Commands
+
+\`\`\`bash
+${commandPrefix} help
+${commandPrefix} commands
+${commandPrefix} usage ralph
+${commandPrefix} quickstart
+${commandPrefix} install-prompt
+${commandPrefix} codex-app
+\`\`\`
+
+## Dollar Commands
+
+- \`$DF\`: fast design/content fix. Use for color, copy, label, spacing, translation, or small UI edits.
+- \`$SKS\`: general Sneakoscope workflow/help route.
+- \`$Ralph\`: clarification-gated autonomous mission route.
+- \`$Research\`: frontier research route.
+- \`$DB\`: database/Supabase safety route.
+- \`$GX\`: deterministic visual context route.
+- \`$Help\`: explain installed commands and workflows.
+
+The prompt optimization pipeline also runs without a dollar command and infers the lightest route automatically.
+
+## Common App Prompts
+
+- "Use Sneakoscope Ralph mode to prepare this task."
+- "$DF change the button text to English."
+- "Run the latest Ralph mission with the sealed decision contract."
+- "Use SKS DB safety before touching database or Supabase files."
+- "Use SKS research mode for this investigation."
+
+## CLI Bridge
+
+Codex App can call the same project-local control surface through terminal commands:
+
+\`\`\`bash
+${commandPrefix} setup
+${commandPrefix} doctor
+${commandPrefix} ralph prepare "task"
+${commandPrefix} ralph status latest
+${commandPrefix} research prepare "topic"
+${commandPrefix} db scan --migrations
+\`\`\`
+
+The hooks file routes Codex App tool events through SKS guards for no-question mode, DB safety, permission requests, and done-gate checks.
+`;
+}
+
 async function installSkills(root) {
   const skills = {
+    'DF': `---\nname: DF\ndescription: Fast design/content fix mode for $DF requests and inferred simple edits such as text color, copy, labels, spacing, or translation.\n---\n\nYou are running SKS DF mode.\n\nPurpose:\n- Quickly convert a small design/content request into the exact implementation change.\n- Use for requests like 글자 색 바꿔줘, 내용을 영어로 바꿔줘, button label 수정, spacing 조정, copy replacement, simple style tweaks.\n\nRules:\n- Do not start Ralph, Research, eval, or broad redesign unless the user explicitly asks.\n- Do not ask for more requirements when the target can be inferred from local context.\n- Inspect only the files needed to locate the target.\n- Make the smallest scoped edit that satisfies the request.\n- Preserve the existing design system and component patterns.\n- Run only cheap verification when useful, such as syntax check, focused test, or local render check for visual risk.\n- Final response should be short: what changed and any verification.\n`,
+    'SKS': `---\nname: SKS\ndescription: General Sneakoscope Codex command route for $SKS usage, setup, status, and workflow help.\n---\n\nUse the local SKS control surface. Prefer these discovery commands when the user asks what is available: sks commands, sks usage <topic>, sks quickstart, sks codex-app, sks install-prompt. If implementation is requested, route to the lightest matching SKS path.\n`,
+    'Ralph': `---\nname: Ralph\ndescription: Dollar-command route for SKS Ralph mandatory clarification and no-question mission workflows.\n---\n\nUse when the user invokes $Ralph or requests a clarification-gated autonomous implementation mission. Prepare with sks ralph prepare, answer/seal required slots when answers are provided, then run only after decision-contract.json exists.\n`,
+    'Research': `---\nname: Research\ndescription: Dollar-command route for SKS Research frontier discovery workflows.\n---\n\nUse when the user invokes $Research or asks for research, hypotheses, new mechanisms, falsification, or testable predictions. Prefer sks research prepare and sks research run. Do not use for ordinary code edits.\n`,
+    'DB': `---\nname: DB\ndescription: Dollar-command route for database and Supabase safety checks.\n---\n\nUse when the user invokes $DB or the task touches SQL, Supabase, Postgres, migrations, Prisma, Drizzle, Knex, MCP database tools, or production data. Run or follow sks db policy, sks db scan, sks db classify, and sks db check. Destructive database operations remain forbidden.\n`,
+    'GX': `---\nname: GX\ndescription: Dollar-command route for deterministic GX visual context cartridges.\n---\n\nUse when the user invokes $GX or asks for architecture/context visualization through SKS. Prefer sks gx init, render, validate, drift, and snapshot. vgraph.json remains the source of truth.\n`,
+    'Help': `---\nname: Help\ndescription: Dollar-command route for explaining installed SKS commands and workflows.\n---\n\nUse when the user invokes $Help or asks what commands exist. Prefer concise output from sks commands, sks usage <topic>, sks quickstart, sks aliases, and sks codex-app.\n`,
+    'prompt-pipeline': `---\nname: prompt-pipeline\ndescription: Default SKS prompt optimization pipeline that runs even without an explicit command.\n---\n\nFor every user request, silently extract intent, target surface, constraints, acceptance criteria, risk level, and the smallest safe route. Infer $DF for simple design/content edits. Use Ralph only for work that needs clarification gates, Research only for discovery work, DB only for database-risk work, GX only for visual context artifacts, and eval only when performance or context-quality claims need evidence.\n`,
     'ralph-supervisor': `---\nname: ralph-supervisor\ndescription: Run the Ralph no-question loop after a decision contract is sealed.\n---\n\nYou are the Ralph Supervisor.\n\nRules:\n- Never ask the user during Ralph run.\n- Use decision-contract.json and the decision ladder.\n- Continue until done-gate.json passes or safe scope is completed with explicit limitation.\n- Keep outputs bounded. Write raw logs to files and summarize only tails.\n- Database destructive operations are never allowed.\n- Write progress to .sneakoscope mission files.\n`,
     'ralph-resolver': `---\nname: ralph-resolver\ndescription: Resolve newly discovered ambiguity during Ralph using the sealed decision ladder, without asking the user.\n---\n\nResolve ambiguity in this order: seed contract, explicit answers, approved defaults, AGENTS.md, current code/tests, smallest reversible change, defer optional scope. Never ask the user. If database risk is involved, prefer read-only, no-op, local-only migration file, or safe limitation; never run destructive SQL.\n`,
     'hproof-claim-ledger': `---\nname: hproof-claim-ledger\ndescription: Extract atomic claims and classify support status.\n---\n\nEvery factual statement must become an atomic claim. Unsupported critical claims cannot be used for implementation or final answer. Database claims require DB safety evidence.\n`,
@@ -200,8 +321,10 @@ async function installSkills(root) {
     'design-artifact-expert': `---\nname: design-artifact-expert\ndescription: Create or revise high-fidelity HTML, UI, prototype, deck-like, or visual design artifacts using project design context, variations, and rendered verification.\n---\n\nUse when the user asks for design, UI, prototype, HTML artifact, landing page, deck-like visual work, interaction design, or visual refinement.\n\nWorkflow:\n1. Understand the artifact, audience, constraints, fidelity, variants, and existing brand/design system.\n2. Inspect local code, assets, screenshots, or design-system docs before inventing visuals. If context exists, follow its visual vocabulary.\n3. Build the actual usable screen or artifact first; avoid empty landing-page framing unless the task is explicitly marketing.\n4. Use descriptive HTML filenames. Keep large artifacts split into small support files when needed.\n5. For screens/slides, add data-screen-label attributes for comment context. Slide labels are 1-indexed.\n6. Preserve state for decks, videos, or multi-step prototypes with localStorage when refresh continuity matters.\n7. Expose a small Tweaks surface for useful variants such as layout, density, color, copy, or interaction options.\n8. Verify the artifact renders cleanly in a browser or preview. For design tasks, set done-gate.json design_verification_required/present fields and cite evidence.\n\nQuality bar:\n- Root design decisions in available assets and components.\n- Use restrained, domain-appropriate layout and typography.\n- Avoid text overlap, unreadable controls, decorative clutter, one-note palettes, and placeholder-only deliverables.\n- Prefer icons and familiar controls for tool actions, and make repeated UI dimensions stable.\n`
   };
   for (const [name, content] of Object.entries(skills)) {
-    const dir = path.join(root, '.agents', 'skills', name);
-    await ensureDir(dir);
-    await writeTextAtomic(path.join(dir, 'SKILL.md'), `${content.trim()}\n`);
+    for (const base of ['.codex/skills', '.agents/skills']) {
+      const dir = path.join(root, base, name);
+      await ensureDir(dir);
+      await writeTextAtomic(path.join(dir, 'SKILL.md'), `${content.trim()}\n`);
+    }
   }
 }

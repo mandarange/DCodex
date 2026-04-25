@@ -18,6 +18,46 @@ import { buildResearchPrompt, evaluateResearchGate, writeMockResearchResult, wri
 
 const flag = (args, name) => args.includes(name);
 const promptOf = (args) => args.filter((x) => !String(x).startsWith('--')).join(' ').trim();
+const REPOSITORY_URL = 'https://github.com/mandarange/Sneakoscope-Codex.git';
+const USAGE_TOPICS = 'install|setup|ralph|research|db|codex-app|df|dollar|eval|gx';
+
+const DOLLAR_COMMANDS = [
+  { command: '$DF', route: 'fast design/content fix', description: 'Small UI/content edits such as text color, copy, label, spacing, or translation. Avoids heavy loops.' },
+  { command: '$SKS', route: 'general SKS workflow', description: 'General Sneakoscope setup, help, status, and workflow routing.' },
+  { command: '$Ralph', route: 'Ralph mission', description: 'Mandatory clarification and no-question autonomous mission workflow.' },
+  { command: '$Research', route: 'research mission', description: 'Frontier discovery, hypotheses, falsification, and testable predictions.' },
+  { command: '$DB', route: 'database safety', description: 'Database, Supabase, migration, SQL, or MCP safety checks.' },
+  { command: '$GX', route: 'visual context', description: 'Deterministic GX visual context cartridges.' },
+  { command: '$Help', route: 'command help', description: 'Explain installed SKS commands and workflows.' }
+];
+
+const COMMAND_CATALOG = [
+  { name: 'help', usage: 'sks help [topic]', description: 'Show CLI help or focused help for a topic.' },
+  { name: 'commands', usage: 'sks commands [--json]', description: 'List every user-facing command with a short description.' },
+  { name: 'usage', usage: `sks usage [${USAGE_TOPICS}]`, description: 'Print copy-ready workflows for common tasks.' },
+  { name: 'quickstart', usage: 'sks quickstart', description: 'Show the shortest safe setup and verification flow.' },
+  { name: 'install-prompt', usage: 'sks install-prompt [--project]', description: 'Print an LLM-ready prompt that installs and configures SKS automatically.' },
+  { name: 'codex-app', usage: 'sks codex-app', description: 'Show Codex App setup files and example prompts.' },
+  { name: 'dollar-commands', usage: 'sks dollar-commands [--json]', description: 'List Codex App $ commands such as $DF.' },
+  { name: 'df', usage: 'sks df', description: 'Explain $DF fast design/content fix mode.' },
+  { name: 'aliases', usage: 'sks aliases', description: 'Show command aliases and npm binary names.' },
+  { name: 'setup', usage: 'sks setup [--install-scope global|project] [--force] [--json]', description: 'Initialize SKS state, Codex App files, hooks, skills, and rules.' },
+  { name: 'fix-path', usage: 'sks fix-path [--install-scope global|project] [--json]', description: 'Refresh hook commands with the resolved SKS binary path.' },
+  { name: 'doctor', usage: 'sks doctor [--fix] [--json] [--install-scope global|project]', description: 'Check Node, Codex CLI, install scope, hooks, skills, DB guard, and Codex App files.' },
+  { name: 'init', usage: 'sks init [--force] [--install-scope global|project]', description: 'Initialize the local SKS control surface.' },
+  { name: 'selftest', usage: 'sks selftest [--mock]', description: 'Run local smoke tests without calling a model.' },
+  { name: 'ralph', usage: 'sks ralph prepare|answer|run|status ...', description: 'Run mandatory-clarification Ralph missions with a no-question execution loop.' },
+  { name: 'research', usage: 'sks research prepare|run|status ...', description: 'Run frontier-style research missions with novelty and falsification gates.' },
+  { name: 'db', usage: 'sks db policy|scan|mcp-config|classify|check ...', description: 'Inspect and enforce database/Supabase safety policy.' },
+  { name: 'eval', usage: 'sks eval run|compare|thresholds ...', description: 'Run deterministic context-quality and performance evidence checks.' },
+  { name: 'hproof', usage: 'sks hproof check [mission-id|latest]', description: 'Evaluate the H-Proof done gate for a mission.' },
+  { name: 'team', usage: 'sks team "task"', description: 'Create a clarification-gated team mission.' },
+  { name: 'gx', usage: 'sks gx init|render|validate|drift|snapshot [name]', description: 'Create and verify deterministic SVG/HTML visual context cartridges.' },
+  { name: 'profile', usage: 'sks profile show|set <model>', description: 'Inspect or set the current SKS model profile metadata.' },
+  { name: 'gc', usage: 'sks gc [--dry-run] [--json]', description: 'Compact oversized logs and prune stale runtime artifacts.' },
+  { name: 'memory', usage: 'sks memory [--dry-run] [--json]', description: 'Alias for SKS garbage collection and retention handling.' },
+  { name: 'stats', usage: 'sks stats [--json]', description: 'Show package and .sneakoscope storage size.' }
+];
 
 function installScopeFromArgs(args = [], fallback = 'global') {
   if (flag(args, '--project')) return 'project';
@@ -29,7 +69,16 @@ function installScopeFromArgs(args = [], fallback = 'global') {
 export async function main(args) {
   const [cmd, sub, ...rest] = args;
   const tail = sub === undefined ? [] : [sub, ...rest];
-  if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') return help();
+  if (!cmd || cmd === '--help' || cmd === '-h') return help();
+  if (cmd === 'help') return help(tail);
+  if (cmd === 'commands') return commands(tail);
+  if (cmd === 'usage') return usage(tail);
+  if (cmd === 'quickstart') return quickstart();
+  if (cmd === 'install-prompt') return installPrompt(tail);
+  if (cmd === 'codex-app') return codexAppHelp();
+  if (cmd === 'dollar-commands' || cmd === 'dollars' || cmd === '$') return dollarCommands(tail);
+  if (String(cmd).toLowerCase() === 'df') return dfHelp();
+  if (cmd === 'aliases') return aliases();
   if (cmd === 'setup') return setup(tail);
   if (cmd === 'fix-path') return fixPath(tail);
   if (cmd === 'doctor') return doctor(tail);
@@ -51,10 +100,21 @@ export async function main(args) {
   process.exitCode = 1;
 }
 
-function help() {
+function help(args = []) {
+  const topic = args[0];
+  if (topic) return usage([topic]);
   console.log(`Sneakoscope Codex
 
 Usage:
+  sks help [topic]
+  sks commands [--json]
+  sks usage [${USAGE_TOPICS}]
+  sks quickstart
+  sks install-prompt [--project]
+  sks codex-app
+  sks dollar-commands [--json]
+  sks df
+  sks aliases
   sks setup [--install-scope global|project] [--force] [--json]
   sks fix-path [--install-scope global|project] [--json]
   sks doctor [--fix] [--json] [--install-scope global|project]
@@ -79,9 +139,371 @@ Usage:
   sks gx validate [name]
   sks gx drift [name]
   sks gx snapshot [name]
+  sks profile show
+  sks profile set <model>
   sks gc [--dry-run] [--json]
+  sks memory [--dry-run] [--json]
   sks stats [--json]
+
+Discovery:
+  sks commands       Full command list with descriptions
+  sks usage ralph    Workflow examples for one topic
+  sks install-prompt Copy/paste prompt for an LLM installer
+  sks dollar-commands Codex App $ commands, including $DF
 `);
+}
+
+function commands(args = []) {
+  if (flag(args, '--json')) return console.log(JSON.stringify({ aliases: ['sks', 'sneakoscope'], dollar_commands: DOLLAR_COMMANDS, commands: COMMAND_CATALOG }, null, 2));
+  console.log('Sneakoscope Codex Commands\n');
+  console.log('Aliases: sks, sneakoscope\n');
+  const width = Math.max(...COMMAND_CATALOG.map((c) => c.usage.length));
+  for (const c of COMMAND_CATALOG) console.log(`${c.usage.padEnd(width)}  ${c.description}`);
+}
+
+function dollarCommands(args = []) {
+  if (flag(args, '--json')) return console.log(JSON.stringify({ dollar_commands: DOLLAR_COMMANDS }, null, 2));
+  console.log('Sneakoscope Codex $ Commands\n');
+  console.log('Use these inside Codex App or another agent prompt. Shells treat $ as variable syntax, so these are prompt commands, not terminal commands.\n');
+  const width = Math.max(...DOLLAR_COMMANDS.map((c) => c.command.length));
+  for (const c of DOLLAR_COMMANDS) console.log(`${c.command.padEnd(width)}  ${c.route}: ${c.description}`);
+  console.log('\nDefault pipeline: even without a $ command, SKS optimizes the prompt and infers the lightest route. Simple design/content edits infer $DF.');
+}
+
+function dfHelp() {
+  console.log(`SKS DF Mode
+
+Prompt command:
+  $DF <small design/content request>
+
+Examples:
+  $DF 글자 색 파란색으로 바꿔줘
+  $DF 내용을 영어로 바꿔줘
+  $DF Change the CTA label to "Start"
+
+Purpose:
+  Fast design/content fixes only. DF should prompt-engineer the user's request into the smallest implementation change.
+
+Rules:
+  Do not run Ralph, Research, eval, or broad redesign.
+  Inspect only what is needed, edit only what is requested, and run cheap verification when useful.
+`);
+}
+
+function quickstart() {
+  console.log(`Sneakoscope Codex Quickstart
+
+Install from npm:
+  npm i -g sneakoscope
+
+Install from GitHub:
+  npm i -g git+${REPOSITORY_URL}
+
+Initialize this project for CLI and Codex App:
+  sks setup
+
+Verify:
+  sks doctor --fix
+  sks selftest --mock
+  sks commands
+
+If hooks cannot find the command:
+  sks fix-path
+
+Project-only install:
+  npm i -D sneakoscope
+  npx sks setup --install-scope project
+`);
+}
+
+function installPrompt(args = []) {
+  const projectOnly = flag(args, '--project');
+  const install = projectOnly
+    ? `npm i -D git+${REPOSITORY_URL}\nnpx sks setup --install-scope project`
+    : `npm i -g git+${REPOSITORY_URL}\nsks setup`;
+  console.log(`Copy this prompt into an LLM coding assistant:
+
+You are installing Sneakoscope Codex in the current project. Do the setup end to end without asking follow-up questions unless a command needs user approval.
+
+Repository:
+${REPOSITORY_URL}
+
+Requirements:
+- Node.js must be >=20.11.
+- Codex CLI is installed separately; if missing, report that @openai/codex must be installed or SKS_CODEX_BIN must be set.
+- Prefer safe, local verification. Do not modify application source files unless needed for SKS setup.
+
+Run:
+\`\`\`bash
+${install}
+${projectOnly ? 'npx sks doctor --fix --install-scope project\nnpx sks selftest --mock\nnpx sks commands' : 'sks doctor --fix\nsks selftest --mock\nsks commands'}
+\`\`\`
+
+If the global command is not on PATH, use:
+\`\`\`bash
+npx -y -p git+${REPOSITORY_URL} sks setup
+npx -y -p git+${REPOSITORY_URL} sks doctor --fix
+\`\`\`
+
+After setup, explain these outputs to the user:
+- \`.sneakoscope/\` mission state and policy
+- \`.codex/config.toml\` Codex App profiles
+- \`.codex/hooks.json\` SKS hook integration
+- \`.codex/skills/\` local Codex App skills
+- \`.codex/SNEAKOSCOPE.md\` Codex App quick reference
+- \`AGENTS.md\` repository rules
+
+Show the user how to discover commands:
+\`\`\`bash
+sks help
+sks commands
+sks usage ralph
+sks quickstart
+sks codex-app
+sks dollar-commands
+\`\`\`
+
+Tell the user they can use these prompt commands inside Codex App:
+\`\`\`text
+$DF 글자 색 바꿔줘
+$DF 내용을 영어로 바꿔줘
+$Ralph implement this with mandatory clarification
+$Research investigate this idea
+$DB check this migration safely
+\`\`\`
+`);
+}
+
+function codexAppHelp() {
+  console.log(`Sneakoscope Codex App Usage
+
+Run once in the project:
+  sks setup
+
+Generated app files:
+  .codex/config.toml       profiles for SKS Ralph, research, and default work
+  .codex/hooks.json        hook events routed through SKS guards
+  .codex/skills/           local project skills
+  .codex/SNEAKOSCOPE.md    app quick reference
+  AGENTS.md                repository rules
+
+Useful prompts inside Codex App:
+  $DF 글자 색 바꿔줘
+  $DF 내용을 영어로 바꿔줘
+  Use Sneakoscope Ralph mode to prepare this task.
+  Run the latest Ralph mission with the sealed decision contract.
+  Use SKS DB safety before touching database or Supabase files.
+  Use SKS research mode for this investigation.
+
+Repair hook PATH issues:
+  sks fix-path
+
+Discover usage:
+  sks commands
+  sks usage codex-app
+  sks dollar-commands
+  sks df
+  sks install-prompt
+`);
+}
+
+function aliases() {
+  console.log(`Sneakoscope Codex Aliases
+
+Binary aliases:
+  sks
+  sneakoscope
+
+Command aliases:
+  sks memory    -> sks gc
+  sks --help    -> sks help
+  sks -h        -> sks help
+
+Codex App prompt commands:
+  $DF       fast design/content fix
+  $SKS      general Sneakoscope route
+  $Ralph    Ralph mission route
+  $Research research mission route
+  $DB       database safety route
+  $GX       visual context route
+  $Help     command help route
+
+Examples:
+  sks setup
+  sneakoscope setup
+  sks commands
+  sneakoscope commands
+`);
+}
+
+function usage(args = []) {
+  const topic = String(args[0] || 'overview').toLowerCase();
+  const blocks = {
+    overview: `Sneakoscope Codex Usage
+
+Discovery:
+  sks help
+  sks commands
+  sks quickstart
+  sks install-prompt
+  sks codex-app
+  sks dollar-commands
+
+Common workflows:
+  sks usage install
+  sks usage ralph
+  sks usage research
+  sks usage db
+  sks usage df
+`,
+    install: `Install and Setup
+
+Global install:
+  npm i -g sneakoscope
+  sks setup
+  sks doctor --fix
+  sks selftest --mock
+
+GitHub install:
+  npm i -g git+${REPOSITORY_URL}
+  sks setup
+
+Project-only install:
+  npm i -D sneakoscope
+  npx sks setup --install-scope project
+
+LLM-assisted install:
+  sks install-prompt
+`,
+    setup: `Setup Repair
+
+Initialize:
+  sks setup
+
+Refresh hook command paths:
+  sks fix-path
+
+Inspect readiness:
+  sks doctor
+  sks doctor --fix
+  sks doctor --json
+`,
+    ralph: `Ralph Workflow
+
+Prepare:
+  sks ralph prepare "task"
+
+Answer generated slots:
+  cat .sneakoscope/missions/<MISSION_ID>/questions.md
+  cp .sneakoscope/missions/<MISSION_ID>/required-answers.schema.json answers.json
+  sks ralph answer <MISSION_ID> answers.json
+
+Run:
+  sks ralph run <MISSION_ID> --max-cycles 8
+  sks ralph status latest
+
+Local smoke run:
+  sks ralph run latest --mock
+`,
+    research: `Research Workflow
+
+Prepare:
+  sks research prepare "topic" --depth frontier
+
+Run:
+  sks research run latest --max-cycles 3
+
+Inspect:
+  sks research status latest
+`,
+    db: `Database Safety
+
+Policy:
+  sks db policy
+
+Scan project config:
+  sks db scan --migrations
+
+Generate safe Supabase MCP config:
+  sks db mcp-config --project-ref <ref> --features database,docs
+
+Classify/check operations:
+  sks db classify --sql "DROP TABLE users"
+  sks db check --command "supabase db reset"
+  sks db check --file ./migration.sql
+`,
+    'codex-app': `Codex App
+
+Initialize app files:
+  sks setup
+
+Inspect app guidance:
+  sks codex-app
+  sks dollar-commands
+  cat .codex/SNEAKOSCOPE.md
+
+Use inside Codex App:
+  $DF 글자 색 바꿔줘
+  $DF 내용을 영어로 바꿔줘
+  Use Sneakoscope Ralph mode to prepare this task.
+  Use SKS DB safety before touching database or Supabase files.
+`,
+    df: `DF Fast Design/Content Fix
+
+Use inside Codex App:
+  $DF 글자 색 파란색으로 바꿔줘
+  $DF 내용을 영어로 바꿔줘
+  $DF Change the button label to "Start"
+
+Behavior:
+  Prompt-engineer the request into the smallest design/content edit.
+  Do not start Ralph, Research, eval, or a broad redesign.
+  Inspect only relevant files and run only cheap verification when useful.
+
+CLI help:
+  sks df
+`,
+    dollar: `Dollar Commands
+
+Use inside Codex App or an agent prompt:
+  $DF        fast design/content fix
+  $SKS       general Sneakoscope route
+  $Ralph     Ralph mission route
+  $Research  research mission route
+  $DB        database safety route
+  $GX        visual context route
+  $Help      command help route
+
+Terminal discovery:
+  sks dollar-commands
+  sks dollar-commands --json
+`,
+    eval: `Evaluation
+
+Run benchmark:
+  sks eval run
+  sks eval run --json --out report.json
+
+Compare reports:
+  sks eval compare --baseline old.json --candidate new.json
+
+Show thresholds:
+  sks eval thresholds
+`,
+    gx: `GX Visual Context
+
+Create:
+  sks gx init architecture-atlas
+
+Render and verify:
+  sks gx render architecture-atlas --format all
+  sks gx validate architecture-atlas
+  sks gx drift architecture-atlas
+  sks gx snapshot architecture-atlas
+`
+  };
+  const text = blocks[topic] || blocks.overview;
+  console.log(text);
 }
 
 async function setup(args) {
@@ -95,16 +517,25 @@ async function setup(args) {
     root,
     install,
     hooks: hooksPath,
+    codex_app: {
+      config: path.join(root, '.codex', 'config.toml'),
+      hooks: hooksPath,
+      skills: path.join(root, '.codex', 'skills'),
+      quick_reference: path.join(root, '.codex', 'SNEAKOSCOPE.md'),
+      agents_rules: path.join(root, 'AGENTS.md')
+    },
     created: res.created,
-    next: ['sks selftest --mock', 'sks doctor']
+    next: ['sks selftest --mock', 'sks doctor', 'sks commands']
   };
   if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
   console.log('Sneakoscope Codex Setup\n');
   console.log(`Project:   ${root}`);
   console.log(`Install:   ${install.ok ? 'ok' : 'missing'} ${install.scope} (${install.command_prefix})`);
   console.log(`Hooks:     ${path.relative(root, hooksPath)}`);
-  console.log(`Skills:    .agents/skills`);
-  console.log(`Next:      sks selftest --mock`);
+  console.log(`Codex App: .codex/config.toml, .codex/hooks.json, .codex/skills, .codex/SNEAKOSCOPE.md`);
+  console.log(`Prompt:    default optimization pipeline, $DF fast design/content route`);
+  console.log(`Skills:    .codex/skills, .agents/skills`);
+  console.log(`Next:      sks selftest --mock; sks commands; sks dollar-commands`);
   if (!install.ok && install.scope === 'global') console.log('\nGlobal command missing. Run: npm i -g sneakoscope');
   if (!install.ok && install.scope === 'project') console.log('\nProject package missing. Run: npm i -D sneakoscope');
 }
@@ -153,16 +584,27 @@ async function doctor(args) {
   const install = await installStatus(root, installScope);
   const dbPolicyExists = await exists(path.join(root, '.sneakoscope', 'db-safety.json'));
   const dbScan = await scanDbSafety(root).catch((err) => ({ ok: false, findings: [{ id: 'db_safety_scan_failed', severity: 'high', reason: err.message }] }));
+  const codexApp = {
+    config: { ok: await exists(path.join(root, '.codex', 'config.toml')) },
+    hooks: { ok: await exists(path.join(root, '.codex', 'hooks.json')) },
+    skills: { ok: await exists(path.join(root, '.codex', 'skills')) },
+    quick_reference: { ok: await exists(path.join(root, '.codex', 'SNEAKOSCOPE.md')) },
+    agents_rules: { ok: await exists(path.join(root, 'AGENTS.md')) }
+  };
   const result = {
     node: { ok: nodeOk, version: process.version }, root, codex, rust,
     install,
     sneakoscope: { ok: await exists(path.join(root, '.sneakoscope')) },
     db_guard: { ok: dbPolicyExists && dbScan.ok, policy: dbPolicyExists ? await loadDbSafetyPolicy(root) : null, scan: dbScan },
     hooks: { ok: await exists(path.join(root, '.codex', 'hooks.json')) },
-    skills: { ok: await exists(path.join(root, '.agents', 'skills')) },
+    skills: { ok: (await exists(path.join(root, '.codex', 'skills'))) && (await exists(path.join(root, '.agents', 'skills'))) },
+    codex_app: {
+      ...codexApp,
+      ok: codexApp.config.ok && codexApp.hooks.ok && codexApp.skills.ok && codexApp.quick_reference.ok && codexApp.agents_rules.ok
+    },
     package: { bytes: pkgBytes, human: formatBytes(pkgBytes) }, storage
   };
-  result.ready = nodeOk && Boolean(codex.bin) && install.ok && result.sneakoscope.ok && result.db_guard.ok;
+  result.ready = nodeOk && Boolean(codex.bin) && install.ok && result.sneakoscope.ok && result.db_guard.ok && result.codex_app.ok;
   if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
   console.log('Sneakoscope Codex Doctor\n');
   console.log(`Node:      ${nodeOk ? 'ok' : 'fail'} ${process.version}`);
@@ -173,7 +615,8 @@ async function doctor(args) {
   console.log(`State:     ${result.sneakoscope.ok ? 'ok' : 'missing .sneakoscope'}`);
   console.log(`DB Guard:  ${result.db_guard.ok ? 'ok' : 'blocked'} ${dbScan.findings?.length || 0} finding(s)`);
   console.log(`Hooks:     ${result.hooks.ok ? 'ok' : 'missing .codex/hooks.json'}`);
-  console.log(`Skills:    ${result.skills.ok ? 'ok' : 'missing .agents/skills'}`);
+  console.log(`Codex App: ${result.codex_app.ok ? 'ok' : 'missing app files'} .codex/config.toml .codex/hooks.json .codex/skills .codex/SNEAKOSCOPE.md`);
+  console.log(`Skills:    ${result.skills.ok ? 'ok' : 'missing .codex/skills or .agents/skills'}`);
   console.log(`Package:   ${result.package.human}`);
   console.log(`Storage:   ${storage.total_human || '0 B'}`);
   console.log(`Ready:     ${result.ready ? 'yes' : 'no'}`);
@@ -460,6 +903,14 @@ async function selftest() {
   if (projectHooks.hooks.PreToolUse[0].hooks[0].command !== 'node ./node_modules/sneakoscope/bin/sks.mjs hook pre-tool') throw new Error('selftest failed: project install hook command missing');
   const researchSkillExists = await exists(path.join(tmp, '.agents', 'skills', 'research-discovery', 'SKILL.md'));
   if (!researchSkillExists) throw new Error('selftest failed: research skill not installed');
+  const codexAppSkillExists = await exists(path.join(tmp, '.codex', 'skills', 'research-discovery', 'SKILL.md'));
+  if (!codexAppSkillExists) throw new Error('selftest failed: Codex App skill not installed');
+  const dfSkillExists = await exists(path.join(tmp, '.codex', 'skills', 'DF', 'SKILL.md'));
+  if (!dfSkillExists) throw new Error('selftest failed: $DF skill not installed');
+  const promptPipelineSkillExists = await exists(path.join(tmp, '.codex', 'skills', 'prompt-pipeline', 'SKILL.md'));
+  if (!promptPipelineSkillExists) throw new Error('selftest failed: prompt pipeline skill not installed');
+  const codexAppQuickRefExists = await exists(path.join(tmp, '.codex', 'SNEAKOSCOPE.md'));
+  if (!codexAppQuickRefExists) throw new Error('selftest failed: Codex App quick reference missing');
   const { id, dir, mission } = await createMission(tmp, { mode: 'ralph', prompt: '로그인 세션 만료 UX 개선 supabase db' });
   const schema = buildQuestionSchema(mission.prompt);
   await writeQuestions(dir, schema);

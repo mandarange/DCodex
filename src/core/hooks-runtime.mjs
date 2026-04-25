@@ -22,8 +22,41 @@ function extractLastMessage(payload) {
   return payload.last_assistant_message || payload.assistant_message || payload.message || payload.response || payload.raw || '';
 }
 
+function extractUserPrompt(payload) {
+  return payload.prompt
+    || payload.user_prompt
+    || payload.userPrompt
+    || payload.message
+    || payload.input?.prompt
+    || payload.input?.message
+    || payload.raw
+    || '';
+}
+
 function extractCommand(payload) {
   return payload.command || payload.tool_input?.command || payload.input?.command || payload.tool?.input?.command || '';
+}
+
+function dollarCommand(prompt) {
+  const match = String(prompt || '').trim().match(/^\$([A-Za-z][A-Za-z0-9_-]*)(?:\s|:|$)/);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function looksLikeFastDesignFix(prompt) {
+  const text = String(prompt || '');
+  const designCue = /(글자|텍스트|문구|내용|색|컬러|폰트|간격|여백|정렬|버튼|라벨|영어|한국어|번역|copy|text|color|font|spacing|padding|margin|align|label|button|translate)/i.test(text);
+  const changeCue = /(바꿔|변경|수정|교체|고쳐|영어로|한국어로|change|replace|update|make|turn|translate|fix)/i.test(text);
+  return designCue && changeCue;
+}
+
+function promptPipelineContext(prompt) {
+  const command = dollarCommand(prompt);
+  const fastDesign = command === 'DF' || looksLikeFastDesignFix(prompt);
+  const route = command ? `$${command}` : (fastDesign ? '$DF inferred' : 'default');
+  const dfLine = fastDesign
+    ? '\nFast design fix: treat this as $DF. Do the smallest relevant edit, avoid Ralph/research loops, avoid broad redesign, and run only cheap verification when useful.'
+    : '';
+  return `SKS prompt pipeline active. Route: ${route}. Optimize the user request before acting: extract intent, target files/surfaces, constraints, acceptance criteria, and the smallest safe execution path. Use explicit $ commands when present: $DF fast design/content edit, $Ralph clarification-gated mission, $Research discovery run, $DB database safety, $GX visual context, $SKS general SKS help. Without a command, infer the lightest matching route and avoid heavy loops unless the task requires them.${dfLine}`;
 }
 
 export async function hookMain(name) {
@@ -40,7 +73,7 @@ export async function hookMain(name) {
 }
 
 async function hookUserPrompt(root, state, payload, noQuestion) {
-  if (!noQuestion) return { continue: true };
+  if (!noQuestion) return { continue: true, additionalContext: promptPipelineContext(extractUserPrompt(payload)) };
   const id = state.mission_id;
   if (id) await appendJsonl(path.join(missionDir(root, id), 'user_queue.jsonl'), { ts: nowIso(), payload });
   return {
