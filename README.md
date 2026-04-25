@@ -1,4 +1,8 @@
-# Sneakoscope Codex
+<p align="center">
+  <img src="docs/assets/sneakoscope-codex-logo.svg" alt="Sneakoscope Codex logo" width="180">
+</p>
+
+<h1 align="center">Sneakoscope Codex</h1>
 
 Sneakoscope Codex is a zero-runtime-dependency Node.js harness for running Codex CLI in a more controlled project workflow. It adds mandatory clarification before autonomous work, a Ralph no-question execution loop, H-Proof completion gates, conservative database safety checks, bounded logs/storage, and optional GPT Image 2 visual cartridges.
 

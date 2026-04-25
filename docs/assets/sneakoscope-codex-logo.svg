@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Sneakoscope Codex logo</title>
+  <desc id="desc">A brass magical danger-sensing lens with a red core, orbiting rings, and SKS initials.</desc>
+  <defs>
+    <radialGradient id="lens" cx="50%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#fff4c2"/>
+      <stop offset="42%" stop-color="#f0b54f"/>
+      <stop offset="100%" stop-color="#7b241f"/>
+    </radialGradient>
+    <linearGradient id="brass" x1="92" x2="420" y1="80" y2="432">
+      <stop offset="0%" stop-color="#ffe28a"/>
+      <stop offset="46%" stop-color="#c9872e"/>
+      <stop offset="100%" stop-color="#6c3218"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="160" x2="352" y1="154" y2="358">
+      <stop offset="0%" stop-color="#311018"/>
+      <stop offset="100%" stop-color="#15070b"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#12070a" flood-opacity=".28"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="108" fill="#16080d"/>
+  <path fill="#241016" d="M64 346c61 66 122 96 193 96 72 0 138-34 197-101v106c0 21-17 38-38 38H102c-21 0-38-17-38-38V346Z" opacity=".65"/>
+
+  <g filter="url(#shadow)">
+    <path fill="none" stroke="url(#brass)" stroke-width="16" stroke-linecap="round" d="M99 256c41-82 95-123 158-123 62 0 115 41 156 123-41 82-94 123-156 123-63 0-117-41-158-123Z"/>
+    <path fill="none" stroke="#f4c56a" stroke-width="5" stroke-linecap="round" d="M126 256c34-61 78-92 131-92 52 0 96 31 130 92-34 61-78 92-130 92-53 0-97-31-131-92Z" opacity=".86"/>
+
+    <circle cx="256" cy="256" r="93" fill="url(#brass)"/>
+    <circle cx="256" cy="256" r="74" fill="url(#ink)"/>
+    <circle cx="256" cy="256" r="56" fill="url(#lens)"/>
+    <circle cx="237" cy="236" r="16" fill="#fff8d8" opacity=".82"/>
+    <circle cx="283" cy="282" r="9" fill="#5b1017" opacity=".75"/>
+
+    <path fill="#fff0a4" d="M256 176l14 57 55-18-42 39 43 38-56-16-14 57-14-57-56 16 43-38-42-39 55 18 14-57Z"/>
+    <circle cx="256" cy="256" r="17" fill="#7b0f17"/>
+
+    <path fill="none" stroke="#f6d37c" stroke-width="11" stroke-linecap="round" d="M256 75v36M256 401v36M75 256h36M401 256h36"/>
+    <path fill="none" stroke="#b86232" stroke-width="8" stroke-linecap="round" d="M133 132l26 26M353 354l26 26M379 132l-26 26M159 354l-26 26"/>
+
+    <g fill="#fff0bc">
+      <circle cx="127" cy="113" r="7"/>
+      <circle cx="385" cy="113" r="7"/>
+      <circle cx="127" cy="399" r="7"/>
+      <circle cx="385" cy="399" r="7"/>
+    </g>
+  </g>
+
+</svg>
