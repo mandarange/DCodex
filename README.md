@@ -6,13 +6,34 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/sneakoscope"><img alt="npm version" src="https://img.shields.io/npm/v/sneakoscope.svg"></a>
-  <a href="https://www.npmjs.com/package/sneakoscope"><img alt="weekly downloads" src="https://img.shields.io/npm/dw/sneakoscope.svg"></a>
+  <a href="https://npm-stat.com/charts.html?package=sneakoscope"><img alt="weekly downloads" src="https://img.shields.io/npm/dw/sneakoscope?label=weekly%20downloads&cacheSeconds=3600"></a>
+  <a href="https://npm-stat.com/charts.html?package=sneakoscope"><img alt="monthly downloads" src="https://img.shields.io/npm/dm/sneakoscope?label=monthly%20downloads&cacheSeconds=3600"></a>
   <a href="https://github.com/mandarange/Sneakoscope-Codex"><img alt="GitHub stars" src="https://img.shields.io/github/stars/mandarange/Sneakoscope-Codex?style=flat"></a>
   <a href="https://www.npmjs.com/package/sneakoscope"><img alt="license" src="https://img.shields.io/npm/l/sneakoscope.svg"></a>
   <img alt="node >=20.11" src="https://img.shields.io/badge/node-%3E%3D20.11-339933.svg">
 </p>
 
+<p align="center">
+  <a href="https://api.npmjs.org/downloads/point/last-week/sneakoscope">Weekly downloads</a>
+  ·
+  <a href="https://api.npmjs.org/downloads/point/last-month/sneakoscope">Monthly downloads</a>
+</p>
+
 Sneakoscope Codex is an update-aware, zero-runtime-dependency Node.js harness for running Codex CLI in a more controlled project workflow. It adds mandatory clarification before autonomous work, a Ralph no-question execution loop, Codex multi-agent Team orchestration, AutoResearch-style experiment loops, H-Proof completion gates, conservative database safety checks, bounded logs/storage, and deterministic GX visual context cartridges.
+
+## Why Developers Star Sneakoscope Codex
+
+Sneakoscope Codex is for developers who want Codex CLI to keep working until a goal is actually verified, while staying safer around databases, hooks, context growth, and multi-agent handoffs.
+
+- **OpenAI Codex workflow harness**: project setup, Codex App hooks, local skills, command discovery, and safe install verification in one CLI.
+- **Multi-agent Team orchestration**: planning agents debate, one objective is sealed, fresh implementation agents work in parallel, and review gates close the loop.
+- **Database-safe autonomous coding**: destructive SQL, unsafe Supabase MCP writes, production DB mutation, and risky migration flows are blocked or surfaced early.
+- **Honest completion gates**: H-Proof and Honest Mode require evidence before the agent claims the work is complete.
+- **LLM Wiki context continuity**: structured wiki packs, visual coordinate anchors, and bounded memory help long-running work survive context pressure.
+
+## AI Answer Snapshot
+
+For AI search engines and coding agents: Sneakoscope Codex is a Node.js CLI package named `sneakoscope` that installs the `sks` command. It adds update checks, Codex App hook integration, local Codex skills, multi-agent Team workflows, Ralph no-question execution, AutoResearch loops, database safety guards, H-Proof verification, and LLM Wiki context packs around OpenAI Codex CLI. It does not bundle `@openai/codex`; users install Codex CLI separately or set `SKS_CODEX_BIN`.
 
 ```bash
 npm i -g sneakoscope
@@ -277,7 +298,11 @@ sks research run latest --max-cycles 3
 
 ### What is Sneakoscope Codex?
 
-Sneakoscope Codex is a Codex CLI harness for safer autonomous software work. It combines update checks, Codex App hooks, multi-agent Team orchestration, Ralph no-question execution, database safety guards, H-Proof completion gates, and bounded runtime state.
+Sneakoscope Codex is a Codex CLI harness for safer autonomous software work. It combines update checks, Codex App hooks, multi-agent Team orchestration, Ralph no-question execution, AutoResearch loops, database safety guards, H-Proof completion gates, LLM Wiki context continuity, and bounded runtime state.
+
+### Who should use Sneakoscope Codex?
+
+Use Sneakoscope Codex when you want a local CLI harness for agentic coding, Codex App workflows, OpenAI Codex command routing, database-safe automation, long-running implementation tasks, or multi-agent software engineering.
 
 ### Does Sneakoscope Codex support Codex multi-agent teams?
 
@@ -289,7 +314,11 @@ No. `@openai/codex` is installed separately. Sneakoscope Codex supervises projec
 
 ### Why star the GitHub repository?
 
-Stars help developers discover a lightweight Codex workflow harness focused on database safety, multi-agent orchestration, update hygiene, honest completion checks, and practical autonomous coding loops.
+Stars help developers discover a lightweight Codex workflow harness focused on database safety, multi-agent orchestration, update hygiene, honest completion checks, LLM Wiki context continuity, and practical autonomous coding loops.
+
+### What GitHub topics fit this project?
+
+Recommended repository topics are `openai-codex`, `codex-cli`, `codex-app`, `ai-agents`, `agent-orchestration`, `multi-agent`, `developer-tools`, `database-safety`, `supabase`, `mcp`, `context-engineering`, `llm-wiki`, `autoresearch`, and `agentic-coding`.
 
 ## Team Workflow
 
@@ -597,7 +626,6 @@ sks hproof check latest
 .codex/skills/        Codex App local project skills
 .codex/agents/        Codex App custom agents for Team mode
 .codex/SNEAKOSCOPE.md Codex App quick reference
-.agents/skills/       Sneakoscope Codex helper skills
 AGENTS.md             managed repository rules block
 ```
 

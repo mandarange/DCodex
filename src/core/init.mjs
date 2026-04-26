@@ -1,4 +1,5 @@
 import path from 'node:path';
+import fsp from 'node:fs/promises';
 import { ensureDir, readJson, readText, writeJsonAtomic, writeTextAtomic, mergeManagedBlock, nowIso, PACKAGE_VERSION, exists } from './fsx.mjs';
 import { DEFAULT_RETENTION_POLICY } from './retention.mjs';
 import { DEFAULT_DB_SAFETY_POLICY } from './db-safety.mjs';
@@ -102,7 +103,7 @@ export async function initProject(root, opts = {}) {
   const hookCommandPrefix = opts.hookCommandPrefix || sksCommandPrefix(installScope, { globalCommand: opts.globalCommand });
   const sine = path.join(root, '.sneakoscope');
   const dirs = [
-    '.sneakoscope/state', '.sneakoscope/missions', '.sneakoscope/db', '.sneakoscope/bus', '.sneakoscope/hproof', '.sneakoscope/db', '.sneakoscope/wiki', '.sneakoscope/memory/q0_raw', '.sneakoscope/memory/q1_evidence', '.sneakoscope/memory/q2_facts', '.sneakoscope/memory/q3_tags', '.sneakoscope/memory/q4_bits', '.sneakoscope/gx/cartridges', '.sneakoscope/model/fingerprints', '.sneakoscope/genome/candidates', '.sneakoscope/trajectories/raw', '.sneakoscope/locks', '.sneakoscope/tmp', '.sneakoscope/arenas', '.sneakoscope/reports', '.codex', '.codex/skills', '.codex/agents', '.agents/skills'
+    '.sneakoscope/state', '.sneakoscope/missions', '.sneakoscope/db', '.sneakoscope/bus', '.sneakoscope/hproof', '.sneakoscope/db', '.sneakoscope/wiki', '.sneakoscope/memory/q0_raw', '.sneakoscope/memory/q1_evidence', '.sneakoscope/memory/q2_facts', '.sneakoscope/memory/q3_tags', '.sneakoscope/memory/q4_bits', '.sneakoscope/gx/cartridges', '.sneakoscope/model/fingerprints', '.sneakoscope/genome/candidates', '.sneakoscope/trajectories/raw', '.sneakoscope/locks', '.sneakoscope/tmp', '.sneakoscope/arenas', '.sneakoscope/reports', '.codex', '.codex/skills', '.codex/agents'
   ];
   for (const d of dirs) await ensureDir(path.join(root, d));
   const localExclude = localOnly ? await ensureLocalOnlyGitExclude(root) : null;
@@ -288,9 +289,9 @@ export async function initProject(root, opts = {}) {
   });
   created.push(`.codex/hooks.json (${installScope})`);
 
-  await installSkills(root);
+  const skillInstall = await installSkills(root);
   created.push('.codex/skills/*');
-  created.push('.agents/skills/*');
+  if (skillInstall.removed_legacy_agent_skill_dirs.length) created.push(`.agents/skills legacy mirrors removed (${skillInstall.removed_legacy_agent_skill_dirs.length})`);
   await installCodexAgents(root);
   created.push('.codex/agents/*');
   return { created };
@@ -435,12 +436,44 @@ async function installSkills(root) {
     'design-artifact-expert': `---\nname: design-artifact-expert\ndescription: Create or revise high-fidelity HTML, UI, prototype, deck-like, or visual design artifacts using project design context, variations, and rendered verification.\n---\n\nUse when the user asks for design, UI, prototype, HTML artifact, landing page, deck-like visual work, interaction design, or visual refinement.\n\nWorkflow:\n1. Understand the artifact, audience, constraints, fidelity, variants, and existing brand/design system.\n2. Inspect local code, assets, screenshots, or design-system docs before inventing visuals. If context exists, follow its visual vocabulary.\n3. Build the actual usable screen or artifact first; avoid empty landing-page framing unless the task is explicitly marketing.\n4. Use descriptive HTML filenames. Keep large artifacts split into small support files when needed.\n5. For screens/slides, add data-screen-label attributes for comment context. Slide labels are 1-indexed.\n6. Preserve state for decks, videos, or multi-step prototypes with localStorage when refresh continuity matters.\n7. Expose a small Tweaks surface for useful variants such as layout, density, color, copy, or interaction options.\n8. Verify the artifact renders cleanly in a browser or preview. For design tasks, set done-gate.json design_verification_required/present fields and cite evidence.\n\nQuality bar:\n- Root design decisions in available assets and components.\n- Use restrained, domain-appropriate layout and typography.\n- Avoid text overlap, unreadable controls, decorative clutter, one-note palettes, and placeholder-only deliverables.\n- Prefer icons and familiar controls for tool actions, and make repeated UI dimensions stable.\n`
   };
   for (const [name, content] of Object.entries(skills)) {
-    for (const base of ['.codex/skills', '.agents/skills']) {
-      const dir = path.join(root, base, name);
-      await ensureDir(dir);
-      await writeTextAtomic(path.join(dir, 'SKILL.md'), `${content.trim()}\n`);
-    }
+    const dir = path.join(root, '.codex', 'skills', name);
+    await ensureDir(dir);
+    await writeTextAtomic(path.join(dir, 'SKILL.md'), `${content.trim()}\n`);
   }
+  return { removed_legacy_agent_skill_dirs: await removeLegacyAgentSkillMirrors(root, Object.keys(skills)) };
+}
+
+async function removeLegacyAgentSkillMirrors(root, skillNames) {
+  const legacyRoot = path.join(root, '.agents', 'skills');
+  if (!(await exists(legacyRoot))) return [];
+  const removed = [];
+  for (const name of skillNames) {
+    const dir = path.join(legacyRoot, name);
+    const skillPath = path.join(dir, 'SKILL.md');
+    const text = await readText(skillPath, null);
+    if (!isGeneratedSksLegacySkill(text, name)) continue;
+    await fsp.rm(dir, { recursive: true, force: true });
+    removed.push(path.relative(root, dir));
+  }
+  await removeDirIfEmpty(legacyRoot);
+  await removeDirIfEmpty(path.join(root, '.agents'));
+  return removed;
+}
+
+function isGeneratedSksLegacySkill(text, name) {
+  if (typeof text !== 'string') return false;
+  return text.startsWith('---') && new RegExp(`^name:\\s*${escapeRegExp(name)}\\s*$`, 'm').test(text);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function removeDirIfEmpty(dir) {
+  try {
+    const entries = await fsp.readdir(dir);
+    if (!entries.length) await fsp.rmdir(dir);
+  } catch {}
 }
 
 async function installCodexAgents(root) {

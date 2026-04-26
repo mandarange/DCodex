@@ -789,7 +789,7 @@ async function setup(args) {
   if (localOnly) console.log('Git:       local-only (.git/info/exclude; existing AGENTS.md not modified)');
   console.log(`Codex App: .codex/config.toml, .codex/hooks.json, .codex/skills, .codex/agents, .codex/SNEAKOSCOPE.md`);
   console.log(`Prompt:    default optimization pipeline, $DF fast design/content route`);
-  console.log(`Skills:    .codex/skills, .agents/skills`);
+  console.log(`Skills:    .codex/skills`);
   console.log(`Next:      sks selftest --mock; sks commands; sks dollar-commands`);
   if (!install.ok && install.scope === 'global') console.log('\nGlobal command missing. Run: npm i -g sneakoscope');
   if (!install.ok && install.scope === 'project') console.log('\nProject package missing. Run: npm i -D sneakoscope');
@@ -854,7 +854,7 @@ async function doctor(args) {
     sneakoscope: { ok: await exists(path.join(root, '.sneakoscope')) },
     db_guard: { ok: dbPolicyExists && dbScan.ok, policy: dbPolicyExists ? await loadDbSafetyPolicy(root) : null, scan: dbScan },
     hooks: { ok: await exists(path.join(root, '.codex', 'hooks.json')) },
-    skills: { ok: (await exists(path.join(root, '.codex', 'skills'))) && (await exists(path.join(root, '.agents', 'skills'))) },
+    skills: { ok: await exists(path.join(root, '.codex', 'skills')) },
     codex_app: {
       ...codexApp,
       ok: codexApp.config.ok && codexApp.hooks.ok && codexApp.skills.ok && codexApp.agents.ok && codexApp.quick_reference.ok && codexApp.agents_rules.ok
@@ -873,7 +873,7 @@ async function doctor(args) {
   console.log(`DB Guard:  ${result.db_guard.ok ? 'ok' : 'blocked'} ${dbScan.findings?.length || 0} finding(s)`);
   console.log(`Hooks:     ${result.hooks.ok ? 'ok' : 'missing .codex/hooks.json'}`);
   console.log(`Codex App: ${result.codex_app.ok ? 'ok' : 'missing app files'} .codex/config.toml .codex/hooks.json .codex/skills .codex/agents .codex/SNEAKOSCOPE.md`);
-  console.log(`Skills:    ${result.skills.ok ? 'ok' : 'missing .codex/skills or .agents/skills'}`);
+  console.log(`Skills:    ${result.skills.ok ? 'ok' : 'missing .codex/skills'}`);
   console.log(`Package:   ${result.package.human}`);
   console.log(`Storage:   ${storage.total_human || '0 B'}`);
   console.log(`Ready:     ${result.ready ? 'yes' : 'no'}`);
@@ -1252,8 +1252,8 @@ async function selftest() {
     if (oldSksBin === undefined) delete process.env.SKS_BIN;
     else process.env.SKS_BIN = oldSksBin;
   }
-  const researchSkillExists = await exists(path.join(tmp, '.agents', 'skills', 'research-discovery', 'SKILL.md'));
-  if (!researchSkillExists) throw new Error('selftest failed: research skill not installed');
+  const legacySkillMirrorExists = await exists(path.join(tmp, '.agents', 'skills', 'research-discovery', 'SKILL.md'));
+  if (legacySkillMirrorExists) throw new Error('selftest failed: legacy .agents/skills mirror still installed');
   const codexAppSkillExists = await exists(path.join(tmp, '.codex', 'skills', 'research-discovery', 'SKILL.md'));
   if (!codexAppSkillExists) throw new Error('selftest failed: Codex App skill not installed');
   const dfSkillExists = await exists(path.join(tmp, '.codex', 'skills', 'DF', 'SKILL.md'));
@@ -1439,7 +1439,7 @@ async function projectWikiClaims(root) {
   const claims = [
     ['wiki-hooks', '.codex/hooks.json routes UserPromptSubmit, tool, permission, and Stop events through SKS guards.', '.codex/hooks.json', 'code', 'high'],
     ['wiki-config', '.codex/config.toml enables Codex App profiles, multi-agent support, and Team agent limits.', '.codex/config.toml', 'code', 'high'],
-    ['wiki-skills', '.codex/skills and .agents/skills provide local routes for DF, Team, Ralph, Research, AutoResearch, DB, GX, wiki, and evaluation workflows.', '.codex/skills', 'code', 'medium'],
+    ['wiki-skills', '.codex/skills provides local routes for DF, Team, Ralph, Research, AutoResearch, DB, GX, wiki, and evaluation workflows.', '.codex/skills', 'code', 'medium'],
     ['wiki-agents', '.codex/agents defines Team planning, implementation, DB safety, and QA reviewer roles.', '.codex/agents', 'code', 'medium'],
     ['wiki-policy', '.sneakoscope/policy.json stores update-check, honest-mode, retention, database, performance, and prompt-pipeline policy.', '.sneakoscope/policy.json', 'contract', 'high'],
     ['wiki-memory', '.sneakoscope/memory stores Q0 raw, Q1 evidence, Q2 facts, Q3 tags, and Q4 control bits for hydratable context.', '.sneakoscope/memory', 'wiki', 'high'],
