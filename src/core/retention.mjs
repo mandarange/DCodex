@@ -11,7 +11,14 @@ export const DEFAULT_RETENTION_POLICY = Object.freeze({
   max_event_log_bytes: 5 * 1024 * 1024,
   max_tmp_age_hours: 2,
   keep_last_cycles_per_mission: 3,
-  run_gc_after_each_cycle: true
+  run_gc_after_each_cycle: true,
+  max_wiki_artifacts: 40,
+  max_wiki_artifact_age_days: 30,
+  max_wiki_scan_files: 250,
+  max_wiki_prune_files: 25,
+  max_wiki_artifact_read_bytes: 256 * 1024,
+  min_wiki_trust_score: 0.3,
+  prune_wiki_artifacts: false
 });
 
 export async function ensureRetentionPolicy(root) {
@@ -30,7 +37,7 @@ export async function storageReport(root) {
   const sks = path.join(root, '.sneakoscope');
   const report = { root, exists: await exists(sks), generated_at: nowIso(), sections: {}, total_bytes: 0 };
   if (!report.exists) return report;
-  for (const name of ['missions', 'memory', 'gx', 'hproof', 'tmp', 'arenas', 'state', 'model', 'genome', 'trajectories', 'locks', 'reports']) {
+  for (const name of ['missions', 'memory', 'gx', 'hproof', 'tmp', 'arenas', 'state', 'model', 'genome', 'trajectories', 'locks', 'reports', 'wiki']) {
     const p = path.join(sks, name);
     const bytes = await dirSize(p).catch(() => 0);
     report.sections[name] = { bytes, human: formatBytes(bytes) };
@@ -125,6 +132,86 @@ async function rotateLargeJsonl(root, policy, dryRun, actions) {
   }
 }
 
+function wikiTrustScore(data = {}) {
+  const summaryAvg = Number(data.trust_summary?.avg);
+  if (Number.isFinite(summaryAvg)) return summaryAvg;
+  const wiki = data.wiki || data;
+  const scores = [];
+  if (Array.isArray(wiki.anchors)) {
+    for (const anchor of wiki.anchors) {
+      const score = Number(anchor?.trust_score);
+      if (Number.isFinite(score)) scores.push(score);
+    }
+  }
+  if (Array.isArray(wiki.a)) {
+    for (const row of wiki.a) {
+      const score = Number(row?.[9]);
+      if (Number.isFinite(score)) scores.push(score);
+    }
+  }
+  if (!scores.length) return null;
+  return scores.reduce((sum, score) => sum + score, 0) / scores.length;
+}
+
+async function wikiArtifactTrust(file, maxReadBytes) {
+  const size = await fileSize(file).catch(() => 0);
+  if (!size || size > maxReadBytes) return null;
+  try {
+    return wikiTrustScore(JSON.parse(await fs.readFile(file, 'utf8')));
+  } catch {
+    return null;
+  }
+}
+
+export async function pruneWikiArtifacts(root, opts = {}) {
+  const policy = { ...(await loadRetentionPolicy(root)), ...(opts.policy || {}) };
+  const dryRun = Boolean(opts.dryRun);
+  const actions = opts.actions || [];
+  const wikiDir = path.join(root, '.sneakoscope', 'wiki');
+  if (!(await exists(wikiDir))) return { dryRun, policy, actions, scanned: 0, candidates: 0 };
+  const files = (await listFilesRecursive(wikiDir, { maxFiles: Number(policy.max_wiki_scan_files) || 250 }).catch(() => []))
+    .filter((file) => path.extname(file) === '.json');
+  const keep = new Set([
+    path.join(wikiDir, 'context-pack.json')
+  ]);
+  const entries = [];
+  for (const file of files) {
+    const st = await fs.stat(file).catch(() => null);
+    if (!st || keep.has(file)) continue;
+    entries.push({ path: file, mtimeMs: st.mtimeMs, bytes: st.size });
+  }
+  entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const now = Date.now();
+  const maxAge = Number(policy.max_wiki_artifact_age_days) * 24 * 60 * 60 * 1000;
+  const maxArtifacts = Math.max(0, Number(policy.max_wiki_artifacts) || 0);
+  const minTrust = Number(policy.min_wiki_trust_score);
+  const maxReadBytes = Math.max(1024, Number(policy.max_wiki_artifact_read_bytes) || 256 * 1024);
+  const maxPrune = Math.max(0, Number(policy.max_wiki_prune_files) || 0);
+  let candidates = 0;
+  for (let i = 0; i < entries.length; i++) {
+    if (candidates >= maxPrune) break;
+    const entry = entries[i];
+    const tooMany = maxArtifacts > 0 && i >= maxArtifacts;
+    const tooOld = Number.isFinite(maxAge) && maxAge > 0 && now - entry.mtimeMs > maxAge;
+    const trustScore = opts.lowTrust === false || !Number.isFinite(minTrust)
+      ? null
+      : await wikiArtifactTrust(entry.path, maxReadBytes);
+    const lowTrust = trustScore != null && trustScore < minTrust;
+    const reason = tooMany ? 'max_wiki_artifacts' : (tooOld ? 'max_wiki_artifact_age' : (lowTrust ? 'low_wiki_trust' : null));
+    if (!reason) continue;
+    candidates += 1;
+    actions.push({
+      action: 'remove_wiki_artifact',
+      path: entry.path,
+      bytes: entry.bytes,
+      reason,
+      ...(trustScore != null ? { trust_score: Number(trustScore.toFixed(4)) } : {})
+    });
+    if (!dryRun) await rmrf(entry.path);
+  }
+  return { dryRun, policy, actions, scanned: entries.length, candidates };
+}
+
 export async function enforceRetention(root, opts = {}) {
   const policy = { ...(await loadRetentionPolicy(root)), ...(opts.policy || {}) };
   const dryRun = Boolean(opts.dryRun);
@@ -134,6 +221,7 @@ export async function enforceRetention(root, opts = {}) {
   await pruneOldMissions(root, policy, dryRun, actions);
   for (const m of await listMissionDirs(root)) await compactMission(m, policy, dryRun, actions);
   await rotateLargeJsonl(root, policy, dryRun, actions);
+  if (opts.pruneWikiArtifacts || policy.prune_wiki_artifacts) await pruneWikiArtifacts(root, { policy, dryRun, actions, lowTrust: opts.pruneWikiLowTrust });
   const report = await storageReport(root);
   if (!dryRun) await writeJsonAtomic(path.join(root, '.sneakoscope', 'reports', 'storage.json'), report);
   return { dryRun, policy, actions, report };

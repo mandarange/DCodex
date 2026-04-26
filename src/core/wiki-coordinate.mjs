@@ -20,6 +20,26 @@ function wrapTau(x) {
   return ((value % WIKI_TAU) + WIKI_TAU) % WIKI_TAU;
 }
 
+function hasOwn(obj = {}, key) {
+  return Object.prototype.hasOwnProperty.call(Object(obj), key);
+}
+
+function trustFieldsFrom(source = {}) {
+  const fields = {};
+  if (hasOwn(source, 'trust_score')) fields.trust_score = source.trust_score;
+  if (hasOwn(source, 'trust_band')) fields.trust_band = source.trust_band;
+  return fields;
+}
+
+function appendTrustSlots(row, anchor = {}) {
+  const trustSlots = [
+    hasOwn(anchor, 'trust_score') ? anchor.trust_score : null,
+    hasOwn(anchor, 'trust_band') ? anchor.trust_band : null
+  ];
+  while (trustSlots.length && trustSlots.at(-1) == null) trustSlots.pop();
+  return trustSlots.length ? [...row, ...trustSlots] : row;
+}
+
 export function rgbaFromHash(seed = '') {
   const hex = sha256(String(seed || 'wiki-anchor'));
   return {
@@ -135,7 +155,8 @@ export function wikiAnchorFromClaim(claim = {}, index = 0) {
     src: source,
     h: sha256(`${id}\n${text}`).slice(0, 16),
     tc: Math.max(1, Math.ceil(Number(claim.tokenCost) || text.length / 4)),
-    p: claim.hydrate || claim.path || claim.evidence_path || claim.file || null
+    p: claim.hydrate || claim.path || claim.evidence_path || claim.file || null,
+    ...trustFieldsFrom(claim)
   };
 }
 
@@ -178,7 +199,7 @@ export function compactWikiCoordinateIndex(index = {}) {
     m: [index.mission?.rgba || '000000ff', index.mission?.c || [0, 0, 0, 1]],
     q: index.q4_hash || null,
     q3: index.q3 || [],
-    a: (index.anchors || []).map((anchor) => [
+    a: (index.anchors || []).map((anchor) => appendTrustSlots([
       anchor.id,
       anchor.rgba,
       anchor.c,
@@ -188,7 +209,7 @@ export function compactWikiCoordinateIndex(index = {}) {
       anchor.src,
       anchor.h,
       anchor.p
-    ]),
+    ], anchor)),
     o: index.overflow_count || 0,
     hp: 'id+rgba+coord+source+hash hydrate Q2/Q1/Q0 on demand'
   };
@@ -197,17 +218,37 @@ export function compactWikiCoordinateIndex(index = {}) {
 function expandedAnchors(index = {}) {
   if (Array.isArray(index.anchors)) return index.anchors;
   if (!Array.isArray(index.a)) return [];
-  return index.a.map((row) => ({
-    id: row[0],
-    rgba: row[1],
-    c: row[2],
-    k: row[3],
-    st: row[4],
-    r: row[5],
-    src: row[6],
-    h: row[7],
-    p: row[8]
-  }));
+  return index.a.map((row) => {
+    const anchor = {
+      id: row[0],
+      rgba: row[1],
+      c: row[2],
+      k: row[3],
+      st: row[4],
+      r: row[5],
+      src: row[6],
+      h: row[7],
+      p: row[8]
+    };
+    if (row.length > 9 && row[9] != null) anchor.trust_score = row[9];
+    if (row.length > 10 && row[10] != null) anchor.trust_band = row[10];
+    return anchor;
+  });
+}
+
+function validateTrustFields(anchor = {}, issues = []) {
+  if (hasOwn(anchor, 'trust_score')) {
+    const score = Number(anchor.trust_score);
+    if (!Number.isFinite(score) || score < 0 || score > 1) {
+      issues.push({ id: 'invalid_trust_score', severity: 'error', anchor: anchor.id });
+    }
+  }
+  if (hasOwn(anchor, 'trust_band') && (typeof anchor.trust_band !== 'string' || !anchor.trust_band.trim())) {
+    issues.push({ id: 'invalid_trust_band', severity: 'error', anchor: anchor.id });
+  }
+  if (hasOwn(anchor, 'trust_action') && (typeof anchor.trust_action !== 'string' || !anchor.trust_action.trim())) {
+    issues.push({ id: 'invalid_trust_action', severity: 'error', anchor: anchor.id });
+  }
 }
 
 export function validateWikiCoordinateIndex(index = {}) {
@@ -223,6 +264,7 @@ export function validateWikiCoordinateIndex(index = {}) {
     seen.add(anchor.id);
     if (!/^[0-9a-f]{8}$/i.test(String(anchor.rgba || ''))) issues.push({ id: 'invalid_rgba_key', severity: 'error', anchor: anchor.id });
     if (!Array.isArray(anchor.c) || anchor.c.length !== 4) issues.push({ id: 'invalid_coord_tuple', severity: 'error', anchor: anchor.id });
+    validateTrustFields(anchor, issues);
   }
   return { ok: issues.length === 0, checked: anchors.length, issues };
 }

@@ -1,8 +1,15 @@
 import path from 'node:path';
-import { projectRoot, readJson, writeJsonAtomic, appendJsonl, readStdin, nowIso, exists, runProcess, which, PACKAGE_VERSION } from './fsx.mjs';
-import { containsUserQuestion, looksInteractiveCommand, noQuestionContinuationReason, interactiveCommandReason } from './no-question-guard.mjs';
-import { stateFile, missionDir } from './mission.mjs';
+import { projectRoot, readJson, readText, writeJsonAtomic, appendJsonl, readStdin, nowIso, runProcess, which, PACKAGE_VERSION } from './fsx.mjs';
+import { looksInteractiveCommand, interactiveCommandReason } from './no-question-guard.mjs';
+import { missionDir, stateFile } from './mission.mjs';
 import { checkDbOperation, dbBlockReason } from './db-safety.mjs';
+import { checkHarnessModification, harnessGuardBlockReason } from './harness-guard.mjs';
+import { activeRouteContext, evaluateStop, prepareRoute, promptPipelineContext as routePipelineContext, recordContext7Evidence, recordSubagentEvidence, routePrompt } from './pipeline.mjs';
+
+const TEAM_DIGEST_MAX_EVENTS = 4;
+const TEAM_DIGEST_MESSAGE_CHARS = 180;
+const TEAM_DIGEST_CONTEXT_CHARS = 1600;
+const TEAM_DIGEST_SYSTEM_CHARS = 260;
 
 async function loadHookPayload() {
   const raw = await readStdin();
@@ -15,7 +22,8 @@ async function loadState(root) {
 
 function isNoQuestionRunning(state) {
   return (state.mode === 'RALPH' && state.phase === 'RALPH_RUNNING_NO_QUESTIONS')
-    || (state.mode === 'RESEARCH' && state.phase === 'RESEARCH_RUNNING_NO_QUESTIONS');
+    || (state.mode === 'RESEARCH' && state.phase === 'RESEARCH_RUNNING_NO_QUESTIONS')
+    || (state.mode === 'QALOOP' && state.phase === 'QALOOP_RUNNING_NO_QUESTIONS');
 }
 
 function extractLastMessage(payload) {
@@ -38,7 +46,26 @@ function conversationId(payload) {
 }
 
 function extractCommand(payload) {
-  return payload.command || payload.tool_input?.command || payload.input?.command || payload.tool?.input?.command || '';
+  return payload.command || payload.tool_input?.command || payload.toolInput?.command || payload.input?.command || payload.tool?.input?.command || '';
+}
+
+function toolFailed(payload = {}) {
+  const candidates = [
+    payload.exit_code,
+    payload.exitCode,
+    payload.tool_response?.exit_code,
+    payload.toolResponse?.exitCode,
+    payload.result?.exit_code,
+    payload.result?.exitCode
+  ];
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null || candidate === '') continue;
+    const n = Number(candidate);
+    if (Number.isFinite(n)) return n !== 0;
+  }
+  if (payload.success === false || payload.tool_response?.success === false || payload.toolResponse?.success === false || payload.result?.success === false) return true;
+  if (payload.executed === false) return true;
+  return false;
 }
 
 function dollarCommand(prompt) {
@@ -52,35 +79,6 @@ function looksLikeUpdateDecline(prompt) {
 
 function looksLikeUpdateAccept(prompt) {
   return /^(yes|y|ok|okay|update|upgrade|do it|go ahead|응|네|예|업데이트|해줘|진행)/i.test(String(prompt || '').trim());
-}
-
-function looksLikeFastDesignFix(prompt) {
-  const text = String(prompt || '');
-  const designCue = /(글자|텍스트|문구|내용|색|컬러|폰트|간격|여백|정렬|버튼|라벨|영어|한국어|번역|copy|text|color|font|spacing|padding|margin|align|label|button|translate)/i.test(text);
-  const changeCue = /(바꿔|변경|수정|교체|고쳐|영어로|한국어로|change|replace|update|make|turn|translate|fix)/i.test(text);
-  return designCue && changeCue;
-}
-
-function promptPipelineContext(prompt) {
-  const command = dollarCommand(prompt);
-  const fastDesign = command === 'DF' || looksLikeFastDesignFix(prompt);
-  const team = command === 'TEAM';
-  const wiki = command === 'GX' || /\b(llm wiki|wiki|context compression|context pack|hydrate|rgba|coordinate|좌표|컨텍스트|압축)\b/i.test(String(prompt || ''));
-  const autoresearch = command === 'AUTORESEARCH' || command === 'RESEARCH' || /\b(autoresearch|experiment|benchmark|hypothesis|research|optimi[sz]e|improve metric|falsify|novelty|SEO|GEO)\b/i.test(String(prompt || ''));
-  const route = command ? `$${command}` : (fastDesign ? '$DF inferred' : 'default');
-  const dfLine = fastDesign
-    ? '\nFast design fix: treat this as $DF. Do the smallest relevant edit, avoid Ralph/research loops, avoid broad redesign, and run only cheap verification when useful.'
-    : '';
-  const teamLine = team
-    ? '\nTeam route: first use a planning/debate team, synthesize one agreed objective, close planning agents, then form a fresh implementation team with disjoint write scopes.'
-    : '';
-  const autoresearchLine = autoresearch
-    ? '\nAutoResearch route: use an experiment loop with a clear program, fixed budget, metric, keep/discard decision, ledger, falsification, and next experiment.'
-    : '';
-  const wikiLine = wiki
-    ? '\nLLM Wiki route: preserve context through TriWiki RGBA/trig coordinate anchors. Prefer sks wiki pack for hydratable context; keep ids, hashes, source paths, and coordinates for non-selected claims instead of lossy summaries.'
-    : '';
-  return `SKS prompt pipeline active. Route: ${route}. Before work, respect the SKS update-check context if present. Optimize the user request before acting: extract intent, target files/surfaces, constraints, acceptance criteria, and the smallest safe execution path. Use explicit $ commands when present: $DF fast design/content edit, $Team multi-agent orchestration, $Ralph clarification-gated mission, $Research discovery run, $AutoResearch iterative experiment loop, $DB database safety, $GX visual context, $SKS general SKS help. Without a command, infer the lightest matching route and avoid heavy loops unless the task requires them. Preserve multi-turn context with LLM Wiki coordinate packs when compression or continuity matters. Do not stop at a plan when implementation was requested; continue until the stated goal is actually handled or a hard blocker is honestly reported. Before final answer, perform SKS Honest Mode: verify evidence, list tests run or gaps, call out uncertainty, and confirm the goal is actually complete.${dfLine}${teamLine}${autoresearchLine}${wikiLine}`;
 }
 
 export async function hookMain(name) {
@@ -100,7 +98,17 @@ async function hookUserPrompt(root, state, payload, noQuestion) {
   if (!noQuestion) {
     const prompt = extractUserPrompt(payload);
     const updateContext = await updateCheckContext(root, payload, prompt);
-    return { continue: true, additionalContext: `${updateContext}${updateContext ? '\n\n' : ''}${promptPipelineContext(prompt)}` };
+    const command = dollarCommand(prompt);
+    const route = routePrompt(prompt);
+    const bypassActiveRoute = route?.id === 'DFix' || route?.id === 'Answer';
+    const teamDigest = bypassActiveRoute ? null : await teamLiveDigest(root, state);
+    const activeContext = await activeRouteContext(root, state);
+    const contexts = [updateContext];
+    if (activeContext && !command && !bypassActiveRoute) contexts.push(routePipelineContext(prompt), activeContext);
+    else contexts.push((await prepareRoute(root, prompt, state)).additionalContext);
+    if (teamDigest?.context) contexts.push(teamDigest.context);
+    const additionalContext = contexts.filter(Boolean).join('\n\n');
+    return { continue: true, additionalContext, systemMessage: joinSystemMessages(visibleHookMessage('user-prompt-submit', additionalContext), teamDigest?.system) };
   }
   const id = state.mission_id;
   if (id) await appendJsonl(path.join(missionDir(root, id), 'user_queue.jsonl'), { ts: nowIso(), payload });
@@ -111,6 +119,10 @@ async function hookUserPrompt(root, state, payload, noQuestion) {
 }
 
 async function hookPreTool(root, state, payload, noQuestion) {
+  const harnessDecision = await checkHarnessModification(root, payload, { phase: 'pre-tool' });
+  if (harnessDecision.action === 'block') {
+    return { decision: 'block', permissionDecision: 'deny', reason: harnessGuardBlockReason(harnessDecision) };
+  }
   const dbDecision = await checkDbOperation(root, state, payload, { duringRalph: noQuestion });
   if (dbDecision.action === 'block') {
     return { decision: 'block', permissionDecision: 'deny', reason: dbBlockReason(dbDecision) };
@@ -125,17 +137,33 @@ async function hookPostTool(root, state, payload, noQuestion) {
   if (dbDecision.action === 'block') {
     return { decision: 'block', reason: dbBlockReason(dbDecision) };
   }
-  if (!noQuestion) return { continue: true };
-  const failed = payload.exit_code && payload.exit_code !== 0;
-  if (failed) {
+  await recordContext7Evidence(root, state, payload).catch(() => null);
+  await recordSubagentEvidence(root, state, payload).catch(() => null);
+  const teamDigest = await teamLiveDigest(root, state);
+  if (!noQuestion) {
+    return teamDigest?.context
+      ? { continue: true, additionalContext: teamDigest.context, systemMessage: joinSystemMessages(visibleHookMessage('post-tool'), teamDigest.system) }
+      : { continue: true };
+  }
+  if (toolFailed(payload)) {
     return {
-      additionalContext: 'SKS no-question mode is active. Do not ask the user about this tool failure. Apply the active plan fallback ladder, create a fix task, and continue.'
+      additionalContext: [
+        'SKS no-question mode is active. Do not ask the user about this tool failure. Apply the active plan fallback ladder, create a fix task, and continue.',
+        teamDigest?.context
+      ].filter(Boolean).join('\n\n'),
+      systemMessage: joinSystemMessages(visibleHookMessage('post-tool'), teamDigest?.system)
     };
   }
-  return { continue: true };
+  return teamDigest?.context
+    ? { continue: true, additionalContext: teamDigest.context, systemMessage: joinSystemMessages(visibleHookMessage('post-tool'), teamDigest.system) }
+    : { continue: true };
 }
 
 async function hookPermission(root, state, payload, noQuestion) {
+  const harnessDecision = await checkHarnessModification(root, payload, { phase: 'permission-request' });
+  if (harnessDecision.action === 'block') {
+    return { decision: 'deny', permissionDecision: 'deny', reason: harnessGuardBlockReason(harnessDecision) };
+  }
   const dbDecision = await checkDbOperation(root, state, payload, { duringRalph: noQuestion });
   if (dbDecision.action === 'block') {
     return { decision: 'deny', permissionDecision: 'deny', reason: dbBlockReason(dbDecision) };
@@ -149,6 +177,8 @@ async function hookPermission(root, state, payload, noQuestion) {
 }
 
 async function hookStop(root, state, payload, noQuestion) {
+  const routeDecision = await evaluateStop(root, state, payload, { noQuestion });
+  if (routeDecision) return routeDecision;
   if (!noQuestion) {
     const last = extractLastMessage(payload);
     if (!hasHonestMode(last)) {
@@ -158,18 +188,6 @@ async function hookStop(root, state, payload, noQuestion) {
       };
     }
     return { continue: true };
-  }
-  const id = state.mission_id;
-  const last = extractLastMessage(payload);
-  if (containsUserQuestion(last)) return { decision: 'block', reason: noQuestionContinuationReason() };
-  if (id) {
-    for (const gateName of ['done-gate.json', 'research-gate.json']) {
-      const gatePath = path.join(missionDir(root, id), gateName);
-      if (await exists(gatePath)) {
-        const gate = await readJson(gatePath, {});
-        if (gate.passed === true) return { continue: true };
-      }
-    }
   }
   return {
     decision: 'block',
@@ -246,7 +264,180 @@ function hasHonestMode(text) {
     && /(verified|verification|검증|tests?|테스트|evidence|근거|gap|제약|uncertainty|불확실)/i.test(s);
 }
 
+async function teamLiveDigest(root, state = {}) {
+  if (!isTeamState(state) || !state.mission_id) return null;
+  const id = String(state.mission_id);
+  const dir = missionDir(root, id);
+  const dashboard = await readJson(path.join(dir, 'team-dashboard.json'), null).catch(() => null);
+  const transcript = await readText(path.join(dir, 'team-transcript.jsonl'), '').catch(() => '');
+  let events = transcript.split(/\n/).filter(Boolean).slice(-TEAM_DIGEST_MAX_EVENTS * 3).map(parseTeamTranscriptLine).filter(Boolean);
+  let source = 'team-transcript.jsonl';
+  if (!events.length) {
+    const live = await readText(path.join(dir, 'team-live.md'), '').catch(() => '');
+    events = live.split(/\n/).filter((line) => /^- \d{4}-\d{2}-\d{2}T/.test(line.trim())).slice(-TEAM_DIGEST_MAX_EVENTS).map(parseTeamLiveLine).filter(Boolean);
+    source = 'team-live.md';
+  }
+  if (!events.length) {
+    events = dashboard?.latest_messages || [];
+    source = 'team-dashboard.json';
+  }
+  events = normalizeTeamEvents(events).slice(-TEAM_DIGEST_MAX_EVENTS);
+  if (!events.length) return null;
+
+  const phase = oneLine(state.phase || dashboard?.phase || 'TEAM', 48);
+  const lines = events.map(formatTeamDigestEvent);
+  const context = boundText([
+    `SKS Team live digest: mission ${id}, phase ${phase}, source ${source}.`,
+    `Open live view with: sks team watch ${id}`,
+    'Recent events:',
+    ...lines.map((line) => `- ${line}`)
+  ].join('\n'), TEAM_DIGEST_CONTEXT_CHARS);
+  const system = boundText(`SKS Team live: ${lines.at(-1) || `${id} ${phase}`}`, TEAM_DIGEST_SYSTEM_CHARS);
+  return { context, system };
+}
+
+function isTeamState(state = {}) {
+  const values = [state.mode, state.route, state.route_command, state.stop_gate].map((value) => String(value || '').toLowerCase());
+  return values.some((value) => value === 'team' || value === '$team' || value.includes('team-gate'));
+}
+
+function normalizeTeamEvents(events = []) {
+  return events.map((event) => ({
+    ts: String(event?.ts || ''),
+    agent: oneLine(event?.agent || 'unknown', 40),
+    phase: oneLine(event?.phase || 'general', 48),
+    message: oneLine(event?.message || '', TEAM_DIGEST_MESSAGE_CHARS)
+  })).filter((event) => event.message);
+}
+
+function parseTeamTranscriptLine(line) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    return null;
+  }
+}
+
+function parseTeamLiveLine(line) {
+  const match = String(line || '').trim().match(/^-\s+(\S+)\s+\[([^\]]+)\]\s+([^:]+):\s*(.*)$/);
+  if (!match) return null;
+  return { ts: match[1], phase: match[2], agent: match[3], message: match[4] };
+}
+
+function formatTeamDigestEvent(event) {
+  const ts = shortIsoTime(event.ts);
+  return `${ts} [${event.phase}] ${event.agent}: ${event.message}`;
+}
+
+function shortIsoTime(ts) {
+  return String(ts || '').replace(/^\d{4}-\d{2}-\d{2}T/, '').replace(/\.\d{3}Z$/, 'Z') || 'recent';
+}
+
+function oneLine(value, limit) {
+  return boundText(String(value || '').replace(/\s+/g, ' ').trim(), limit);
+}
+
+function boundText(value, limit) {
+  const text = String(value || '');
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+}
+
+function joinSystemMessages(...parts) {
+  return boundText(parts.filter(Boolean).join(' | '), 420);
+}
+
 export async function emitHook(name) {
   const result = await hookMain(name);
-  process.stdout.write(`${JSON.stringify(result)}\n`);
+  process.stdout.write(`${JSON.stringify(normalizeHookResult(name, result))}\n`);
+}
+
+function normalizeHookResult(name, result = {}) {
+  const eventName = codexHookEventName(name);
+  const out = { ...result };
+  const systemMessage = out.systemMessage || visibleHookMessage(name, out.reason || out.additionalContext || '');
+  const normalized = { continue: out.continue !== false, systemMessage };
+  const reason = out.reason || 'SKS guard denied this action.';
+
+  if (eventName === 'UserPromptSubmit' || eventName === 'PostToolUse') {
+    if (out.decision === 'block') {
+      normalized.decision = 'block';
+      normalized.reason = reason;
+    }
+    if (out.additionalContext) {
+      normalized.hookSpecificOutput = {
+        hookEventName: eventName,
+        additionalContext: out.additionalContext
+      };
+    }
+    return normalized;
+  }
+
+  if (eventName === 'PreToolUse') {
+    if (out.decision === 'block' || out.permissionDecision === 'deny' || out.decision === 'deny') {
+      normalized.decision = 'block';
+      normalized.reason = reason;
+    }
+    return normalized;
+  }
+
+  if (eventName === 'PermissionRequest') {
+    if (out.decision === 'deny' || out.permissionDecision === 'deny') {
+      normalized.hookSpecificOutput = {
+        hookEventName: 'PermissionRequest',
+        decision: {
+          behavior: 'deny',
+          message: reason
+        }
+      };
+    } else if (out.decision === 'allow' || out.permissionDecision === 'allow') {
+      normalized.hookSpecificOutput = {
+        hookEventName: 'PermissionRequest',
+        decision: { behavior: 'allow' }
+      };
+    }
+    return normalized;
+  }
+
+  if (eventName === 'Stop') {
+    if (out.decision === 'block') {
+      normalized.decision = 'block';
+      normalized.reason = reason;
+    }
+    return normalized;
+  }
+
+  return normalized;
+}
+
+function codexHookEventName(name) {
+  return {
+    'user-prompt-submit': 'UserPromptSubmit',
+    'pre-tool': 'PreToolUse',
+    'post-tool': 'PostToolUse',
+    'permission-request': 'PermissionRequest',
+    'stop': 'Stop'
+  }[name] || name;
+}
+
+function visibleHookMessage(name, text = '') {
+  const body = String(text || '');
+  if (name === 'user-prompt-submit') {
+    if (body.includes('DFix ultralight pipeline active')) return 'SKS: DFix ultralight task list injected.';
+    if (body.includes('SKS answer-only pipeline active')) return 'SKS: answer-only research context injected.';
+    if (body.includes('SKS wiki pipeline active')) return 'SKS: wiki refresh context injected.';
+    if (body.includes('MANDATORY $Ralph')) return 'SKS: Ralph clarification gate prepared in Codex App.';
+    if (body.includes('$Team route prepared') || body.includes('Team route')) return 'SKS: Team route, live transcript, and subagent plan injected.';
+    if (body.includes('$QALoop route prepared') || body.includes('QA-Loop')) return 'SKS: QA-Loop route and safety checklist injected.';
+    if (body.includes('Subagent policy: REQUIRED')) return 'SKS: route context injected; subagent execution gate is active.';
+    return 'SKS: skill-first route context injected.';
+  }
+  if (name === 'post-tool') return 'SKS: tool result inspected; Context7/subagent/DB evidence updated when relevant.';
+  if (name === 'stop') {
+    if (body.includes('Required questions')) return 'SKS: clarification questions reprinted; waiting for answers.';
+    return body ? 'SKS: stop gate checked; continuing until route evidence passes.' : 'SKS: stop gate checked.';
+  }
+  if (name === 'permission-request') return body ? 'SKS: permission request evaluated by harness guards.' : 'SKS: permission request inspected.';
+  if (name === 'pre-tool') return body ? 'SKS: tool call inspected by harness guards.' : 'SKS: tool call inspected.';
+  return 'SKS: hook evaluated.';
 }

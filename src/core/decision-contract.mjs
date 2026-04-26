@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { readJson, writeJsonAtomic, nowIso, sha256 } from './fsx.mjs';
+import { validateQaLoopAnswers } from './qa-loop.mjs';
 
 function isEmptyAnswer(v) {
   if (v === undefined || v === null) return true;
@@ -31,6 +32,7 @@ export function validateAnswers(schema, answers) {
   if (answers.DATABASE_TARGET_ENVIRONMENT === 'production_write') {
     errors.push({ slot: 'DATABASE_TARGET_ENVIRONMENT', error: 'production_write_target_forbidden' });
   }
+  errors.push(...validateQaLoopAnswers(schema, answers));
   return { ok: errors.length === 0, errors, resolved, totalRequired: schema.slots.filter((s) => s.required).length };
 }
 
@@ -72,6 +74,11 @@ export function buildDecisionContract({ mission, schema, answers }) {
       supabase_mcp_policy: answers.SUPABASE_MCP_POLICY || 'not_used',
       db_backup_or_branch_required: answers.DB_BACKUP_OR_BRANCH_REQUIRED || 'yes_for_any_write',
       db_max_blast_radius: answers.DB_MAX_BLAST_RADIUS || 'no_live_dml',
+      qa_loop_scope: answers.QA_SCOPE || null,
+      qa_loop_target_environment: answers.TARGET_ENVIRONMENT || null,
+      qa_loop_mutation_policy: answers.QA_MUTATION_POLICY || null,
+      qa_loop_credentials_saved: false,
+      qa_loop_ui_requires_computer_use: Boolean(answers.QA_SCOPE && answers.QA_SCOPE !== 'api_e2e_only'),
       production_database_writes_allowed: false,
       mcp_direct_execute_sql_writes_allowed: false,
       db_reset_allowed: false,

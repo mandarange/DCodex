@@ -38,7 +38,7 @@ export function defaultEvaluationScenario() {
     ['req-wiki-rgba', 'TriWiki stores RGBA-derived trigonometric wiki anchors so compressed context remains hydratable by id, hash, source, and coordinate.', 'code', 'high', 1.2],
     ['req-retention', 'runtime logs and mission artifacts are bounded through retention policy and sks gc.', 'code', 'medium', 0.85],
     ['req-selftest', 'selftest covers contract sealing, DB guard blocking, done-gate evaluation, GX render/validate/drift, snapshot, and retention report.', 'test', 'high', 1.1],
-    ['req-skill', 'sks init installs one canonical local skill set under .codex/skills so project workflows can trigger domain-specific guidance without duplicate commands.', 'code', 'medium', 0.9],
+    ['req-skill', 'sks init installs one canonical repo-local Codex App skill set under .agents/skills so project workflows can trigger domain-specific guidance without duplicate commands.', 'code', 'medium', 0.9],
     ['req-design', 'design artifact work should gather design context, build an HTML artifact, expose variations when useful, and verify rendered output.', 'code', 'medium', 0.8]
   ];
   const noise = [

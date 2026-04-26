@@ -1,5 +1,11 @@
 import path from 'node:path';
 import { writeJsonAtomic, writeTextAtomic } from './fsx.mjs';
+import { buildQaLoopQuestionSchema } from './qa-loop.mjs';
+
+export function buildQuestionSchemaForRoute(route, prompt) {
+  if (String(route?.id || '') === 'QALoop') return buildQaLoopQuestionSchema(prompt);
+  return buildQuestionSchema(prompt);
+}
 
 export function buildQuestionSchema(prompt) {
   const lower = prompt.toLowerCase();
@@ -61,11 +67,20 @@ export function buildQuestionSchema(prompt) {
 
 export function questionsMarkdown(schema) {
   const lines = [];
-  lines.push('# Sneakoscope Codex Ralph Prepare Questions');
+  const isQaLoop = schema?.route === 'QALoop';
+  lines.push(isQaLoop ? '# Sneakoscope Codex QA-Loop Prepare Questions' : '# Sneakoscope Codex Ralph Prepare Questions');
   lines.push('');
-  lines.push('Ralph는 이 질문들에 모두 답변하고 Decision Contract가 봉인된 뒤에만 실행됩니다.');
-  lines.push('Ralph 실행 중에는 사용자에게 절대 질문하지 않습니다.');
-  lines.push('DB 작업은 특히 안전 게이트가 적용됩니다. 파괴적 DB 작업은 절대 허용되지 않습니다.');
+  if (isQaLoop) {
+    lines.push('QA-Loop는 이 질문들에 모두 답변하고 Decision Contract가 봉인된 뒤에만 실행됩니다.');
+    lines.push('로그인이 필요하면 테스트 전용 계정 정보만 임시 런타임 입력으로 제공해야 하며, answers.json/리포트/로그/wiki에는 절대 저장하지 않습니다.');
+    lines.push('UI E2E는 @Computer Use 증거가 없으면 검증 완료로 주장할 수 없습니다.');
+    lines.push('개발 서버가 아닌 배포/스테이징 도메인에서는 삭제성 테스트를 절대 실행하지 않습니다.');
+  } else {
+    lines.push('Ralph는 이 질문들에 모두 답변하고 Decision Contract가 봉인된 뒤에만 실행됩니다.');
+    lines.push('Ralph 실행 중에는 사용자에게 절대 질문하지 않습니다.');
+    lines.push('DB 작업은 특히 안전 게이트가 적용됩니다. 파괴적 DB 작업은 절대 허용되지 않습니다.');
+  }
+  if (schema.description) lines.push(schema.description);
   lines.push('');
   for (let i = 0; i < schema.slots.length; i++) {
     const s = schema.slots[i];
