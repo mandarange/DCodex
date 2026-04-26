@@ -33,7 +33,7 @@ export async function ensureDbSafetyPolicy(root) {
 }
 
 export async function loadDbSafetyPolicy(root) {
-  const p = await ensureDbSafetyPolicy(root);
+  const p = path.join(root, '.sneakoscope', 'db-safety.json');
   const data = await readJson(p, {});
   return { ...DEFAULT_DB_SAFETY_POLICY, ...(data || {}) };
 }
@@ -189,7 +189,7 @@ function looksLikeSqlText(text = '') {
 
 export function classifyToolPayload(payload = {}) {
   const strings = recursivelyCollectStrings(payload).slice(0, 200);
-  const toolName = [payload.tool_name, payload.name, payload.tool?.name, payload.server, payload.mcp_tool, payload.tool, payload.type].filter(Boolean).join(' ').toLowerCase();
+  const toolName = [payload.tool_name, payload.toolName, payload.name, payload.tool?.name, payload.server, payload.mcp_tool, payload.tool, payload.type].filter(Boolean).join(' ').toLowerCase();
   const combined = strings.filter(looksLikeSqlText).join('\n');
   const sqlClass = classifySql(combined);
   const commandClass = classifyCommand(strings.find((s) => /\b(supabase|psql|prisma|drizzle|knex|sequelize)\b/i.test(s)) || '');

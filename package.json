@@ -1,7 +1,7 @@
 {
   "name": "sneakoscope",
   "displayName": "Sneakoscope Codex",
-  "version": "0.6.24",
+  "version": "0.6.25",
   "description": "Sneakoscope Codex: update-aware, database-safe Codex CLI harness with multi-agent Team orchestration, Ralph no-question execution, autoresearch-style loops, and H-Proof gates.",
   "type": "module",
   "homepage": "https://github.com/mandarange/Sneakoscope-Codex#readme",
@@ -23,7 +23,6 @@
   "files": [
     "bin",
     "src",
-    "docs",
     "README.md",
     "LICENSE"
   ],

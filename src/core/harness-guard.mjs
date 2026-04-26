@@ -130,7 +130,7 @@ export function harnessGuardBlockReason(decision = {}) {
 export function classifyHarnessPayload(root, payload = {}, policy = {}) {
   const strings = collectPayloadStrings(payload).slice(0, 300);
   const hay = strings.join('\n');
-  const toolName = [payload.tool_name, payload.name, payload.tool?.name, payload.server, payload.mcp_tool, payload.tool, payload.type].filter(Boolean).join(' ').toLowerCase();
+  const toolName = [payload.tool_name, payload.toolName, payload.name, payload.tool?.name, payload.server, payload.mcp_tool, payload.tool, payload.type].filter(Boolean).join(' ').toLowerCase();
   const command = extractCommand(payload);
   const writeIntent = hasWriteIntent(toolName, command, hay);
   const maintenance = classifyMaintenanceCommand(command || hay);
@@ -175,7 +175,7 @@ async function listFiles(dir) {
 }
 
 function extractCommand(payload = {}) {
-  return payload.command || payload.tool_input?.command || payload.input?.command || payload.tool?.input?.command || '';
+  return payload.command || payload.tool_input?.command || payload.toolInput?.command || payload.input?.command || payload.tool?.input?.command || '';
 }
 
 function collectPayloadStrings(obj, out = [], depth = 0) {

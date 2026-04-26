@@ -1,4 +1,4 @@
-export const USAGE_TOPICS = 'install|setup|team|ralph|research|db|codex-app|df|dollar|context7|pipeline|reasoning|guard|conflicts|eval|gx|wiki';
+export const USAGE_TOPICS = 'install|setup|team|ralph|research|db|codex-app|df|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|gx|wiki';
 
 export const RECOMMENDED_MCP_SERVERS = [
   {
@@ -81,6 +81,7 @@ export const ROUTES = [
     mode: 'TEAM',
     route: 'multi-agent team orchestration',
     description: 'Run parallel analysis scouts, refresh TriWiki, debate with role personas, agree on an objective, close debate agents, then form a fresh executor development team for parallel work.',
+    appSkillAliases: ['agent-team'],
     requiredSkills: ['team', 'pipeline-runner', 'context7-docs', 'prompt-pipeline', 'honest-mode'],
     lifecycle: ['parallel_analysis_scouting', 'triwiki_refresh', 'planning_debate', 'live_transcript', 'consensus_artifact', 'fresh_implementation_team', 'review_artifact', 'integration_evidence', 'honest_mode'],
     context7Policy: 'required',
@@ -176,8 +177,14 @@ export const ROUTES = [
 ];
 
 export const DOLLAR_COMMANDS = ROUTES.map(({ command, route, description }) => ({ command, route, description }));
-export const DOLLAR_SKILL_NAMES = DOLLAR_COMMANDS.map((c) => dollarSkillName(c.command));
-export const DOLLAR_COMMAND_ALIASES = DOLLAR_COMMANDS.map((c) => ({ canonical: c.command, app_skill: `$${dollarSkillName(c.command)}` }));
+export const DOLLAR_SKILL_NAMES = ROUTES.flatMap((route) => [
+  dollarSkillName(route.command),
+  ...(route.appSkillAliases || [])
+]);
+export const DOLLAR_COMMAND_ALIASES = ROUTES.flatMap((route) => [
+  { canonical: route.command, app_skill: `$${dollarSkillName(route.command)}` },
+  ...(route.appSkillAliases || []).map((alias) => ({ canonical: route.command, app_skill: `$${alias}` }))
+]);
 
 export const COMMAND_CATALOG = [
   { name: 'help', usage: 'sks help [topic]', description: 'Show CLI help or focused help for a topic.' },
@@ -194,6 +201,7 @@ export const COMMAND_CATALOG = [
   { name: 'pipeline', usage: 'sks pipeline status|resume [--json]', description: 'Inspect the active skill-first route and its completion gates.' },
   { name: 'guard', usage: 'sks guard check [--json]', description: 'Check SKS harness self-protection lock, fingerprints, and source-repo exception state.' },
   { name: 'conflicts', usage: 'sks conflicts check|prompt [--json]', description: 'Detect other Codex harnesses such as OMX/DCodex and print the GPT-5.5 high cleanup prompt.' },
+  { name: 'versioning', usage: 'sks versioning status|bump|pre-commit [--json]', description: 'Manage automatic project version bumps on every commit with a shared Git lock.' },
   { name: 'aliases', usage: 'sks aliases', description: 'Show command aliases and npm binary names.' },
   { name: 'setup', usage: 'sks setup [--install-scope global|project] [--local-only] [--force] [--json]', description: 'Initialize SKS state, Codex App files, hooks, skills, and rules.' },
   { name: 'fix-path', usage: 'sks fix-path [--install-scope global|project] [--json]', description: 'Refresh hook commands with the resolved SKS binary path.' },
@@ -217,7 +225,15 @@ export const COMMAND_CATALOG = [
 
 export function routeById(id) {
   const key = String(id || '').replace(/^\$/, '').toLowerCase();
-  return ROUTES.find((route) => route.id.toLowerCase() === key || route.mode.toLowerCase() === key) || null;
+  return ROUTES.find((route) => {
+    const aliases = [
+      route.id,
+      route.mode,
+      dollarSkillName(route.command),
+      ...(route.appSkillAliases || [])
+    ].map((x) => String(x || '').toLowerCase());
+    return aliases.includes(key);
+  }) || null;
 }
 
 export function dollarCommand(prompt) {

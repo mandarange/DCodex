@@ -40,7 +40,26 @@ function conversationId(payload) {
 }
 
 function extractCommand(payload) {
-  return payload.command || payload.tool_input?.command || payload.input?.command || payload.tool?.input?.command || '';
+  return payload.command || payload.tool_input?.command || payload.toolInput?.command || payload.input?.command || payload.tool?.input?.command || '';
+}
+
+function toolFailed(payload = {}) {
+  const candidates = [
+    payload.exit_code,
+    payload.exitCode,
+    payload.tool_response?.exit_code,
+    payload.toolResponse?.exitCode,
+    payload.result?.exit_code,
+    payload.result?.exitCode
+  ];
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null || candidate === '') continue;
+    const n = Number(candidate);
+    if (Number.isFinite(n)) return n !== 0;
+  }
+  if (payload.success === false || payload.tool_response?.success === false || payload.toolResponse?.success === false || payload.result?.success === false) return true;
+  if (payload.executed === false) return true;
+  return false;
 }
 
 function dollarCommand(prompt) {
@@ -111,8 +130,7 @@ async function hookPostTool(root, state, payload, noQuestion) {
   await recordContext7Evidence(root, state, payload).catch(() => null);
   await recordSubagentEvidence(root, state, payload).catch(() => null);
   if (!noQuestion) return { continue: true };
-  const failed = payload.exit_code && payload.exit_code !== 0;
-  if (failed) {
+  if (toolFailed(payload)) {
     return {
       additionalContext: 'SKS no-question mode is active. Do not ask the user about this tool failure. Apply the active plan fallback ladder, create a fix task, and continue.'
     };
@@ -231,22 +249,61 @@ export async function emitHook(name) {
 }
 
 function normalizeHookResult(name, result = {}) {
-  const out = { ...result };
   const eventName = codexHookEventName(name);
-  const specific = { ...(out.hookSpecificOutput || {}) };
-  if (out.additionalContext && (eventName === 'UserPromptSubmit' || eventName === 'PostToolUse')) {
-    specific.hookEventName = eventName;
-    specific.additionalContext = out.additionalContext;
+  const out = { ...result };
+  const systemMessage = out.systemMessage || visibleHookMessage(name, out.reason || out.additionalContext || '');
+  const normalized = { continue: out.continue !== false, systemMessage };
+  const reason = out.reason || 'SKS guard denied this action.';
+
+  if (eventName === 'UserPromptSubmit' || eventName === 'PostToolUse') {
+    if (out.decision === 'block') {
+      normalized.decision = 'block';
+      normalized.reason = reason;
+    }
+    if (out.additionalContext) {
+      normalized.hookSpecificOutput = {
+        hookEventName: eventName,
+        additionalContext: out.additionalContext
+      };
+    }
+    return normalized;
   }
-  if ((eventName === 'PreToolUse' || eventName === 'PermissionRequest') && (out.decision === 'block' || out.permissionDecision === 'deny' || out.decision === 'deny')) {
-    specific.hookEventName = eventName;
-    specific.permissionDecision = out.permissionDecision || 'deny';
-    specific.reason = out.reason || 'SKS guard denied this action.';
+
+  if (eventName === 'PreToolUse') {
+    if (out.decision === 'block' || out.permissionDecision === 'deny' || out.decision === 'deny') {
+      normalized.decision = 'block';
+      normalized.reason = reason;
+    }
+    return normalized;
   }
-  if (Object.keys(specific).length) out.hookSpecificOutput = { hookEventName: eventName, ...specific };
-  if (!out.systemMessage) out.systemMessage = visibleHookMessage(name, out.reason || out.additionalContext || '');
-  if (!out.statusMessage) out.statusMessage = out.systemMessage;
-  return out;
+
+  if (eventName === 'PermissionRequest') {
+    if (out.decision === 'deny' || out.permissionDecision === 'deny') {
+      normalized.hookSpecificOutput = {
+        hookEventName: 'PermissionRequest',
+        decision: {
+          behavior: 'deny',
+          message: reason
+        }
+      };
+    } else if (out.decision === 'allow' || out.permissionDecision === 'allow') {
+      normalized.hookSpecificOutput = {
+        hookEventName: 'PermissionRequest',
+        decision: { behavior: 'allow' }
+      };
+    }
+    return normalized;
+  }
+
+  if (eventName === 'Stop') {
+    if (out.decision === 'block') {
+      normalized.decision = 'block';
+      normalized.reason = reason;
+    }
+    return normalized;
+  }
+
+  return normalized;
 }
 
 function codexHookEventName(name) {

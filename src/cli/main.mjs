@@ -16,6 +16,7 @@ import { classifySql, classifyCommand, loadDbSafetyPolicy, safeSupabaseMcpConfig
 import { checkHarnessModification, harnessGuardStatus, isHarnessSourceProject } from '../core/harness-guard.mjs';
 import { formatHarnessConflictReport, llmHarnessCleanupPrompt, scanHarnessConflicts } from '../core/harness-conflicts.mjs';
 import { context7Docs, context7Resolve, context7Text, context7Tools } from '../core/context7-client.mjs';
+import { installVersionGitHook, runVersionPreCommit, versioningStatus } from '../core/version-manager.mjs';
 import { rustInfo } from '../core/rust-accelerator.mjs';
 import { renderCartridge, validateCartridge, driftCartridge, snapshotCartridge } from '../core/gx-renderer.mjs';
 import { DEFAULT_EVAL_THRESHOLDS, compareEvaluationReports, defaultEvaluationScenario, runEvaluationBenchmark } from '../core/evaluation.mjs';
@@ -57,6 +58,7 @@ export async function main(args) {
   if (cmd === 'pipeline') return pipeline(sub, rest);
   if (cmd === 'guard') return guard(sub, rest);
   if (cmd === 'conflicts') return conflicts(sub, rest);
+  if (cmd === 'versioning') return versioning(sub, rest);
   if (cmd === 'reasoning') return reasoningCommand(tail);
   if (cmd === 'aliases') return aliases();
   if (cmd === 'setup') return setup(tail);
@@ -101,6 +103,7 @@ Usage:
   sks pipeline status|resume [--json]
   sks guard check [--json]
   sks conflicts check|prompt [--json]
+  sks versioning status|bump|pre-commit [--json]
   sks reasoning ["prompt"] [--json]
   sks aliases
   sks setup [--install-scope global|project] [--local-only] [--force] [--json]
@@ -177,6 +180,11 @@ async function postinstall() {
   else if (context7Install.status === 'codex_missing') console.log('Context7 MCP: Codex CLI missing. Install @openai/codex or set SKS_CODEX_BIN, then run `sks context7 setup --scope global` or `sks setup` in a project.');
   else if (context7Install.status === 'skipped') console.log(`Context7 MCP: skipped (${context7Install.reason}).`);
   else if (context7Install.status === 'failed') console.log(`Context7 MCP: auto setup failed. Run \`sks context7 setup --scope global\` or \`sks setup\`. ${context7Install.error || ''}`.trim());
+  const appSetup = await ensureCodexAppProjectDuringInstall(installRoot, { shim });
+  if (appSetup.status === 'installed') console.log(`Codex App project setup: installed in ${appSetup.root} (${appSetup.install_scope}; picker aliases include ${appSetup.aliases.join(', ')}).`);
+  else if (appSetup.status === 'partial') console.log(`Codex App project setup: repaired with missing skill warning (${appSetup.missing_skills.join(', ')}). Run \`sks doctor --fix\`.`);
+  else if (appSetup.status === 'skipped') console.log(`Codex App project setup: skipped (${appSetup.reason}).`);
+  else if (appSetup.status === 'failed') console.log(`Codex App project setup: auto setup failed. Run \`sks doctor --fix\`. ${appSetup.error || ''}`.trim());
   console.log('Run `sks` to open the interactive setup UI, or run `sks setup` for the default global setup.');
   console.log('Project-only setup: `sks wizard` -> choose project, or `npx sks setup --install-scope project`.\n');
 }
@@ -283,6 +291,47 @@ async function ensureGlobalContext7DuringInstall() {
   const add = await runProcess(codex.bin, ['mcp', 'add', 'context7', '--', 'npx', '-y', '@upstash/context7-mcp@latest'], { timeoutMs: 30000, maxOutputBytes: 64 * 1024 }).catch((err) => ({ code: 1, stderr: err.message, stdout: '' }));
   if (add.code === 0) return { status: 'installed' };
   return { status: 'failed', error: `${add.stderr || add.stdout || 'codex mcp add failed'}`.trim() };
+}
+
+async function ensureCodexAppProjectDuringInstall(installRoot, opts = {}) {
+  if (process.env.SKS_SKIP_POSTINSTALL_SETUP === '1') return { status: 'skipped', reason: 'SKS_SKIP_POSTINSTALL_SETUP=1' };
+  if (process.env.CI === 'true') return { status: 'skipped', reason: 'CI=true' };
+  const root = path.resolve(installRoot || process.cwd());
+  if (!(await isProjectSetupCandidate(root))) return { status: 'skipped', reason: 'no package.json, .git, .codex, .agents, or AGENTS.md in INIT_CWD' };
+  try {
+    const installScope = await isProjectPackageInstall(root) ? 'project' : 'global';
+    const globalCommand = opts.shim?.command && opts.shim.status !== 'created_not_on_path'
+      ? opts.shim.command
+      : await globalSksCommand();
+    await initProject(root, { installScope, globalCommand, localOnly: false });
+    const skills = await checkRequiredSkills(root);
+    return {
+      status: skills.ok ? 'installed' : 'partial',
+      root,
+      install_scope: installScope,
+      aliases: DOLLAR_COMMAND_ALIASES.map((x) => x.app_skill),
+      missing_skills: skills.missing
+    };
+  } catch (err) {
+    return { status: 'failed', root, error: err.message };
+  }
+}
+
+async function isProjectSetupCandidate(root) {
+  for (const marker of ['package.json', '.git', '.codex', '.agents', 'AGENTS.md']) {
+    if (await exists(path.join(root, marker))) return true;
+  }
+  return false;
+}
+
+async function isProjectPackageInstall(root) {
+  const installedPackage = path.join(root, 'node_modules', 'sneakoscope');
+  if (!(await exists(path.join(installedPackage, 'package.json')))) return false;
+  const [installedReal, packageReal] = await Promise.all([
+    fsp.realpath(installedPackage).catch(() => installedPackage),
+    fsp.realpath(packageRoot()).catch(() => packageRoot())
+  ]);
+  return installedReal === packageReal;
 }
 
 async function wizard(args = []) {
@@ -595,6 +644,55 @@ async function conflicts(sub = 'check', args = []) {
   console.log(`Status:    ${scan.hard_block ? 'blocked' : 'ok'}`);
   console.log(`Conflicts: ${scan.conflicts.length}`);
   if (scan.conflicts.length) console.log(formatHarnessConflictReport(scan));
+}
+
+async function versioning(sub = 'status', args = []) {
+  const root = await projectRoot();
+  const action = sub || 'status';
+  if (action === 'status' || action === 'check') {
+    const status = await versioningStatus(root);
+    if (flag(args, '--json')) return console.log(JSON.stringify(status, null, 2));
+    console.log('SKS Project Versioning\n');
+    console.log(`Enabled:   ${status.enabled ? 'yes' : 'no'}${status.reason ? ` (${status.reason})` : ''}`);
+    console.log(`Version:   ${status.package_version || 'none'}`);
+    console.log(`Bump:      ${status.bump || 'patch'}`);
+    console.log(`Hook:      ${status.hook_installed ? 'installed' : 'missing'}${status.hook_path ? ` ${status.hook_path}` : ''}`);
+    console.log(`Last seen: ${status.last_version || 'none'}`);
+    if (!status.ok) console.log('Run: sks doctor --fix');
+    return;
+  }
+  if (action === 'hook' || action === 'install-hook') {
+    const res = await installVersionGitHook(root, await globalSksCommand());
+    if (flag(args, '--json')) return console.log(JSON.stringify(res, null, 2));
+    console.log(res.installed ? `Version hook installed: ${res.hook_path}` : `Version hook skipped: ${res.reason}`);
+    return;
+  }
+  if (action === 'bump') {
+    const res = await runVersionPreCommit(root, { force: true });
+    if (flag(args, '--json')) return console.log(JSON.stringify(res, null, 2));
+    if (!res.ok) {
+      console.error(`Version bump failed: ${res.reason || 'unknown'}`);
+      process.exitCode = 2;
+      return;
+    }
+    console.log(res.changed ? `Project version bumped: ${res.previous_version} -> ${res.version}` : `Project version already advanced: ${res.version}`);
+    console.log(`Staged: ${res.staged_files?.join(', ') || 'none'}`);
+    return;
+  }
+  if (action === 'pre-commit') {
+    const res = await runVersionPreCommit(root);
+    if (flag(args, '--json')) return console.log(JSON.stringify(res, null, 2));
+    if (!res.ok) {
+      console.error(`SKS versioning failed: ${res.reason || 'unknown'}`);
+      process.exitCode = 2;
+      return;
+    }
+    if (res.skipped) return;
+    console.log(res.changed ? `SKS versioning: ${res.previous_version} -> ${res.version}` : `SKS versioning: ${res.version} already unique`);
+    return;
+  }
+  console.error('Usage: sks versioning status|bump|pre-commit [--json]');
+  process.exitCode = 1;
 }
 
 async function reasoningCommand(args = []) {
@@ -1048,6 +1146,26 @@ Cleanup operator:
   Paste the prompt from sks conflicts prompt.
   The LLM must ask for explicit approval before deleting or moving conflicting harness artifacts.
 `,
+    versioning: `Project Versioning
+
+SKS installs a managed Git pre-commit hook during setup.
+Every commit in a package.json project gets a patch version bump in the same commit:
+  sks versioning status
+  sks versioning bump
+  sks versioning hook
+
+Commit behavior:
+  package.json version is bumped before Git writes the commit.
+  package-lock.json and npm-shrinkwrap.json are kept in sync when present.
+  The hook stages those version files automatically.
+
+Collision policy:
+  SKS uses a lock in the Git common directory, so multiple workers or worktrees cannot reuse the same version.
+  If another worker already used a version, the next commit bumps above the last seen version.
+
+Emergency bypass:
+  SKS_DISABLE_VERSIONING=1 git commit ...
+`,
     reasoning: `Reasoning Routing
 
 Inspect:
@@ -1120,6 +1238,7 @@ async function setup(args) {
   const globalCommand = await globalSksCommand();
   const res = await initProject(root, { force: flag(args, '--force'), installScope, globalCommand, localOnly });
   const install = await installStatus(root, installScope, { globalCommand });
+  const versioningInfo = await versioningStatus(root);
   const hooksPath = path.join(root, '.codex', 'hooks.json');
   const result = {
     root,
@@ -1134,6 +1253,7 @@ async function setup(args) {
       agents_rules: path.join(root, 'AGENTS.md')
     },
     created: res.created,
+    versioning: versioningInfo,
     local_only: localOnly,
     next: ['sks context7 check', 'sks selftest --mock', 'sks doctor', 'sks commands']
   };
@@ -1142,6 +1262,7 @@ async function setup(args) {
   console.log(`Project:   ${root}`);
   console.log(`Install:   ${install.ok ? 'ok' : 'missing'} ${install.scope} (${install.command_prefix})`);
   console.log(`Hooks:     ${path.relative(root, hooksPath)}`);
+  console.log(`Version:   ${versioningInfo.enabled ? (versioningInfo.hook_installed ? 'auto-bump enabled' : 'auto-bump hook missing') : 'not enabled'}${versioningInfo.package_version ? ` (${versioningInfo.package_version})` : ''}`);
   if (localOnly) console.log('Git:       local-only (.git/info/exclude; user AGENTS preserved, SKS managed block refreshed)');
   console.log(`Codex App: .codex/config.toml, .codex/hooks.json, .agents/skills, .codex/agents, .codex/SNEAKOSCOPE.md`);
   console.log(`Prompt:    skill-first pipeline, $DF fast design/content route, Context7 gate`);
@@ -1205,9 +1326,11 @@ async function doctor(args) {
   const context7Status = await checkContext7(root);
   const skillStatus = await checkRequiredSkills(root);
   const guardStatus = await harnessGuardStatus(root);
+  const versioningInfo = await versioningStatus(root);
   const codexApp = {
     config: { ok: await exists(path.join(root, '.codex', 'config.toml')) },
     hooks: { ok: await exists(path.join(root, '.codex', 'hooks.json')) },
+    versioning: versioningInfo,
     skills: skillStatus,
     agents: { ok: await exists(path.join(root, '.codex', 'agents')) },
     quick_reference: { ok: await exists(path.join(root, '.codex', 'SNEAKOSCOPE.md')) },
@@ -1227,6 +1350,7 @@ async function doctor(args) {
     sneakoscope: { ok: await exists(path.join(root, '.sneakoscope')) },
     context7: context7Status,
     harness_guard: guardStatus,
+    versioning: versioningInfo,
     db_guard: { ok: dbPolicyExists && dbScan.ok, policy: dbPolicyExists ? await loadDbSafetyPolicy(root) : null, scan: dbScan },
     hooks: { ok: await exists(path.join(root, '.codex', 'hooks.json')) },
     skills: { ok: await exists(path.join(root, '.agents', 'skills')) },
@@ -1236,7 +1360,7 @@ async function doctor(args) {
     },
     package: { bytes: pkgBytes, human: formatBytes(pkgBytes) }, storage
   };
-  result.ready = !result.harness_conflicts.hard_block && nodeOk && Boolean(codex.bin) && install.ok && result.sneakoscope.ok && result.context7.ok && result.harness_guard.ok && result.db_guard.ok && result.codex_app.ok && result.skills.ok;
+  result.ready = !result.harness_conflicts.hard_block && nodeOk && Boolean(codex.bin) && install.ok && result.sneakoscope.ok && result.context7.ok && result.harness_guard.ok && result.versioning.ok && result.db_guard.ok && result.codex_app.ok && result.skills.ok;
   if (result.harness_conflicts.hard_block) process.exitCode = 1;
   if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
   console.log('Sneakoscope Codex Doctor\n');
@@ -1251,6 +1375,7 @@ async function doctor(args) {
   console.log(`State:     ${result.sneakoscope.ok ? 'ok' : 'missing .sneakoscope'}`);
   console.log(`Context7:  ${result.context7.ok ? 'ok' : 'missing MCP config'} project=${result.context7.project.ok ? 'ok' : 'missing'} global=${result.context7.global.ok ? 'ok' : 'missing'}`);
   console.log(`Guard:     ${result.harness_guard.ok ? 'ok' : 'blocked'}${result.harness_guard.source_exception ? ' source-exception' : ''}`);
+  console.log(`Version:   ${result.versioning.ok ? 'ok' : 'missing'}${result.versioning.enabled ? ` ${result.versioning.package_version || ''}` : ` ${result.versioning.reason || 'disabled'}`}`);
   console.log(`DB Guard:  ${result.db_guard.ok ? 'ok' : 'blocked'} ${dbScan.findings?.length || 0} finding(s)`);
   console.log(`Hooks:     ${result.hooks.ok ? 'ok' : 'missing .codex/hooks.json'}`);
   console.log(`Codex App: ${result.codex_app.ok ? 'ok' : 'missing app files'} .codex/config.toml .codex/hooks.json .agents/skills .codex/agents .codex/SNEAKOSCOPE.md`);
@@ -1264,6 +1389,7 @@ async function doctor(args) {
   if (result.harness_conflicts.hard_block) console.log(`\n${formatHarnessConflictReport(conflictScan)}`);
   if (!result.context7.ok) console.log('Context7 MCP missing. Run: sks context7 setup --scope project');
   if (!result.harness_guard.ok) console.log('Harness guard failed. Run: sks setup from a real terminal, then sks guard check.');
+  if (!result.versioning.ok) console.log('Versioning hook missing. Run: sks versioning hook, or sks doctor --fix.');
   if (!result.skills.ok) console.log(`Missing skills: ${result.skills.missing.join(', ')}. Run: sks setup`);
   if (!result.ready && !flag(args, '--fix')) console.log('Run: sks doctor --fix');
 }
@@ -1636,10 +1762,13 @@ async function selftest() {
   const repairTmp = tmpdir();
   await initProject(repairTmp, {});
   await writeTextAtomic(path.join(repairTmp, '.agents', 'skills', 'team', 'SKILL.md'), 'tampered\n');
+  await fsp.rm(path.join(repairTmp, '.agents', 'skills', 'agent-team'), { recursive: true, force: true });
   await writeTextAtomic(path.join(repairTmp, '.codex', 'skills', 'team', 'SKILL.md'), 'legacy mirror\n');
   await initProject(repairTmp, { force: true, repair: true });
   const repairedTeamSkill = await safeReadText(path.join(repairTmp, '.agents', 'skills', 'team', 'SKILL.md'));
   if (!repairedTeamSkill.includes('SKS Team multi-agent orchestration') || repairedTeamSkill.includes('tampered')) throw new Error('selftest failed: doctor repair did not regenerate team skill');
+  const repairedTeamAliasSkill = await safeReadText(path.join(repairTmp, '.agents', 'skills', 'agent-team', 'SKILL.md'));
+  if (!repairedTeamAliasSkill.includes('Fallback Codex App picker alias')) throw new Error('selftest failed: doctor repair did not regenerate agent-team fallback skill');
   if (await exists(path.join(repairTmp, '.codex', 'skills', 'team', 'SKILL.md'))) throw new Error('selftest failed: doctor repair did not remove legacy .codex/skills');
   const conflictTmp = tmpdir();
   await ensureDir(path.join(conflictTmp, '.omx'));
@@ -1651,6 +1780,12 @@ async function selftest() {
   if (!postinstallConflictOutput.includes('SKS setup is blocked') || postinstallConflictOutput.includes('Cleanup prompt:')) throw new Error('selftest failed: postinstall conflict notice did not stay informational');
   const postinstallConflictPrompt = await runProcess(process.execPath, [path.join(packageRoot(), 'bin', 'sks.mjs'), 'postinstall'], { cwd: conflictTmp, input: 'y\n', env: { INIT_CWD: conflictTmp, HOME: path.join(conflictTmp, 'home'), SKS_SKIP_POSTINSTALL_SHIM: '1', SKS_SKIP_POSTINSTALL_CONTEXT7: '1', SKS_POSTINSTALL_PROMPT: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
   if (postinstallConflictPrompt.code !== 0 || !String(postinstallConflictPrompt.stdout || '').includes('Goal: completely remove the conflicting Codex harnesses')) throw new Error('selftest failed: interactive postinstall prompt did not print cleanup prompt');
+  const postinstallSetupTmp = tmpdir();
+  await writeJsonAtomic(path.join(postinstallSetupTmp, 'package.json'), { name: 'postinstall-setup-smoke', version: '0.0.0' });
+  const postinstallSetup = await runProcess(process.execPath, [path.join(packageRoot(), 'bin', 'sks.mjs'), 'postinstall'], { cwd: postinstallSetupTmp, env: { INIT_CWD: postinstallSetupTmp, HOME: path.join(postinstallSetupTmp, 'home'), SKS_SKIP_POSTINSTALL_SHIM: '1', SKS_SKIP_POSTINSTALL_CONTEXT7: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
+  if (postinstallSetup.code !== 0) throw new Error(`selftest failed: postinstall setup exited ${postinstallSetup.code}: ${postinstallSetup.stderr}`);
+  if (!(await exists(path.join(postinstallSetupTmp, '.agents', 'skills', 'agent-team', 'SKILL.md')))) throw new Error('selftest failed: postinstall did not install agent-team fallback skill');
+  if (!String(postinstallSetup.stdout || '').includes('Codex App project setup: installed')) throw new Error('selftest failed: postinstall did not report automatic Codex App setup');
   const guardBlocked = await checkHarnessModification(tmp, { tool_name: 'apply_patch', command: '*** Update File: .agents/skills/team/SKILL.md\n+tamper\n' });
   if (guardBlocked.action !== 'block') throw new Error('selftest failed: harness guard allowed skill tampering');
   const setupBlocked = await checkHarnessModification(tmp, { command: 'sks setup --force' });
@@ -1687,6 +1822,46 @@ async function selftest() {
   await initProject(projectScopeTmp, { installScope: 'project' });
   const projectHooks = await readJson(path.join(projectScopeTmp, '.codex', 'hooks.json'));
   if (projectHooks.hooks.PreToolUse[0].hooks[0].command !== 'node ./node_modules/sneakoscope/bin/sks.mjs hook pre-tool') throw new Error('selftest failed: project install hook command missing');
+  const sourceHookTmp = tmpdir();
+  await writeJsonAtomic(path.join(sourceHookTmp, 'package.json'), { name: 'sneakoscope', version: '0.0.0' });
+  await ensureDir(path.join(sourceHookTmp, 'bin'));
+  await ensureDir(path.join(sourceHookTmp, 'src', 'core'));
+  await writeTextAtomic(path.join(sourceHookTmp, 'bin', 'sks.mjs'), '#!/usr/bin/env node\n');
+  await writeTextAtomic(path.join(sourceHookTmp, 'src', 'core', 'init.mjs'), '');
+  await writeTextAtomic(path.join(sourceHookTmp, 'src', 'core', 'hooks-runtime.mjs'), '');
+  await initProject(sourceHookTmp, { installScope: 'global', globalCommand: '/usr/local/bin/sks' });
+  const sourceHooks = await readJson(path.join(sourceHookTmp, '.codex', 'hooks.json'));
+  if (sourceHooks.hooks.PreToolUse[0].hooks[0].command !== 'node ./bin/sks.mjs hook pre-tool') throw new Error('selftest failed: source repo hook command should use local bin');
+  const versionTmp = tmpdir();
+  await runProcess('git', ['init'], { cwd: versionTmp, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  await runProcess('git', ['config', 'user.email', 'sks-selftest@example.invalid'], { cwd: versionTmp, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  await runProcess('git', ['config', 'user.name', 'SKS Selftest'], { cwd: versionTmp, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  await writeJsonAtomic(path.join(versionTmp, 'package.json'), { name: 'sks-version-selftest', version: '0.1.0' });
+  await writeJsonAtomic(path.join(versionTmp, 'package-lock.json'), { name: 'sks-version-selftest', version: '0.1.0', lockfileVersion: 3, packages: { '': { name: 'sks-version-selftest', version: '0.1.0' } } });
+  await runProcess('git', ['add', 'package.json', 'package-lock.json'], { cwd: versionTmp, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  await runProcess('git', ['commit', '--no-verify', '-m', 'initial'], { cwd: versionTmp, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  await writeTextAtomic(path.join(versionTmp, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\nexit 0\n');
+  await initProject(versionTmp, {});
+  const versionStatus = await versioningStatus(versionTmp);
+  if (!versionStatus.ok || !versionStatus.enabled || !versionStatus.hook_installed) throw new Error('selftest failed: versioning hook not installed');
+  const versionHookText = await safeReadText(versionStatus.hook_path);
+  if (!versionHookText.includes('versioning pre-commit')) throw new Error('selftest failed: versioning hook command missing');
+  if (versionHookText.indexOf('versioning pre-commit') > versionHookText.indexOf('exit 0')) throw new Error('selftest failed: versioning hook was appended after an early exit');
+  await writeTextAtomic(path.join(versionTmp, 'README.md'), 'version selftest\n');
+  await runProcess('git', ['add', 'README.md'], { cwd: versionTmp, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  const firstVersionBump = await runVersionPreCommit(versionTmp);
+  if (!firstVersionBump.ok || firstVersionBump.version !== '0.1.1' || !firstVersionBump.changed) throw new Error('selftest failed: first version bump did not advance patch version');
+  const bumpedPackage = await readJson(path.join(versionTmp, 'package.json'));
+  const bumpedLock = await readJson(path.join(versionTmp, 'package-lock.json'));
+  if (bumpedPackage.version !== '0.1.1' || bumpedLock.version !== '0.1.1' || bumpedLock.packages[''].version !== '0.1.1') throw new Error('selftest failed: package lock versions not synced');
+  const firstCached = await runProcess('git', ['diff', '--cached', '--name-only'], { cwd: versionTmp, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  if (!firstCached.stdout.includes('package.json') || !firstCached.stdout.includes('package-lock.json')) throw new Error('selftest failed: version files not staged');
+  await runProcess('git', ['commit', '--no-verify', '-m', 'first versioned commit'], { cwd: versionTmp, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  await writeJsonAtomic(versionStatus.state_path, { schema_version: 1, last_version: '0.1.5', updated_at: nowIso(), pid: process.pid, changed: true });
+  await writeTextAtomic(path.join(versionTmp, 'CHANGELOG.md'), 'collision selftest\n');
+  await runProcess('git', ['add', 'CHANGELOG.md'], { cwd: versionTmp, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  const collisionBump = await runVersionPreCommit(versionTmp);
+  if (!collisionBump.ok || collisionBump.version !== '0.1.6') throw new Error('selftest failed: version collision state did not bump above last seen version');
   const localOnlyTmp = tmpdir();
   await ensureDir(path.join(localOnlyTmp, '.git'));
   await writeTextAtomic(path.join(localOnlyTmp, 'AGENTS.md'), 'existing local rules\n');
@@ -1747,7 +1922,13 @@ async function selftest() {
   const hookGuardResult = await runProcess(process.execPath, [path.join(packageRoot(), 'bin', 'sks.mjs'), 'hook', 'pre-tool'], { cwd: tmp, input: hookGuardPayload, env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
   const hookGuardJson = JSON.parse(hookGuardResult.stdout);
   if (hookGuardJson.decision !== 'block' || !String(hookGuardJson.reason || '').includes('harness guard')) throw new Error('selftest failed: hook did not block harness tampering');
+  const camelHookGuardPayload = JSON.stringify({ cwd: tmp, toolName: 'apply_patch', toolInput: { command: '*** Update File: .agents/skills/team/SKILL.md\n+tamper\n' } });
+  const camelHookGuardResult = await runProcess(process.execPath, [path.join(packageRoot(), 'bin', 'sks.mjs'), 'hook', 'pre-tool'], { cwd: tmp, input: camelHookGuardPayload, env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  const camelHookGuardJson = JSON.parse(camelHookGuardResult.stdout);
+  if (camelHookGuardJson.decision !== 'block') throw new Error('selftest failed: hook did not block camelCase Codex tool payload');
   if (new Set(DOLLAR_COMMANDS.map((c) => c.command)).size !== DOLLAR_COMMANDS.length) throw new Error('selftest failed: duplicate dollar commands');
+  if (!DOLLAR_COMMAND_ALIASES.some((alias) => alias.canonical === '$Team' && alias.app_skill === '$agent-team')) throw new Error('selftest failed: $Team fallback picker alias missing');
+  if (routePrompt('$agent-team run specialists')?.id !== 'Team') throw new Error('selftest failed: $agent-team did not route to Team');
   if (!COMMAND_CATALOG.some((c) => c.name === 'context7') || !COMMAND_CATALOG.some((c) => c.name === 'pipeline')) throw new Error('selftest failed: context7/pipeline commands missing from catalog');
   const registryDollarCommands = DOLLAR_COMMANDS.map((c) => c.command);
   const manifest = await readJson(path.join(tmp, '.sneakoscope', 'manifest.json'));
@@ -1773,10 +1954,11 @@ async function selftest() {
   const hookResult = await runProcess(process.execPath, [hookBin, 'hook', 'user-prompt-submit'], { cwd: hookRalphTmp, input: hookPayload, env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 256 * 1024 });
   if (hookResult.code !== 0) throw new Error(`selftest failed: $Ralph hook exited ${hookResult.code}: ${hookResult.stderr}`);
   const hookJson = JSON.parse(hookResult.stdout);
-  if (!hookJson.additionalContext?.includes('MANDATORY $Ralph route activated')) throw new Error('selftest failed: $Ralph hook did not activate Ralph prepare pipeline');
+  if ('statusMessage' in hookJson || 'additionalContext' in hookJson) throw new Error('selftest failed: hook emitted Codex schema-invalid top-level fields');
+  if (!hookJson.hookSpecificOutput?.additionalContext?.includes('MANDATORY $Ralph route activated')) throw new Error('selftest failed: $Ralph hook did not activate Ralph prepare pipeline');
   if (hookJson.hookSpecificOutput?.hookEventName !== 'UserPromptSubmit' || !hookJson.hookSpecificOutput?.additionalContext?.includes('MANDATORY $Ralph route activated')) throw new Error('selftest failed: $Ralph hook did not emit official UserPromptSubmit additionalContext');
   if (!String(hookJson.systemMessage || '').includes('Ralph clarification gate')) throw new Error('selftest failed: $Ralph hook missing visible status message');
-  if (!hookJson.additionalContext?.includes('GOAL_PRECISE')) throw new Error('selftest failed: $Ralph hook did not provide clarification questions');
+  if (!hookJson.hookSpecificOutput?.additionalContext?.includes('GOAL_PRECISE')) throw new Error('selftest failed: $Ralph hook did not provide clarification questions');
   const hookState = await readJson(stateFile(hookRalphTmp), {});
   if (hookState.phase !== 'RALPH_AWAITING_ANSWERS') throw new Error('selftest failed: $Ralph hook did not set awaiting-answers state');
   if (!(await exists(path.join(missionDir(hookRalphTmp, hookState.mission_id), 'questions.md')))) throw new Error('selftest failed: $Ralph hook did not write questions.md');

@@ -3,8 +3,9 @@ import fsp from 'node:fs/promises';
 import { ensureDir, readJson, readText, writeJsonAtomic, writeTextAtomic, mergeManagedBlock, nowIso, PACKAGE_VERSION, exists } from './fsx.mjs';
 import { DEFAULT_RETENTION_POLICY } from './retention.mjs';
 import { DEFAULT_DB_SAFETY_POLICY } from './db-safety.mjs';
-import { writeHarnessGuardPolicy } from './harness-guard.mjs';
+import { isHarnessSourceProject, writeHarnessGuardPolicy } from './harness-guard.mjs';
 import { repairSksGeneratedArtifacts } from './harness-conflicts.mjs';
+import { installVersionGitHook } from './version-manager.mjs';
 import { DOLLAR_COMMANDS, DOLLAR_COMMAND_ALIASES, DOLLAR_SKILL_NAMES, RECOMMENDED_MCP_SERVERS, RECOMMENDED_SKILLS, context7ConfigToml, triwikiContextTracking, triwikiContextTrackingText } from './routes.mjs';
 
 export function normalizeInstallScope(scope = 'global') {
@@ -99,6 +100,10 @@ Sneakoscope Codex keeps runtime state bounded. Do not write large raw logs into 
 
 Before any substantive work, SKS hooks check whether the installed SKS package is behind the latest published package. If an update is available, ask the user to choose between updating now and skipping the update for this conversation only. If the user skips, continue the current conversation without asking again, but check again in the next conversation. If the user accepts, update SKS, rerun setup/doctor, then continue the original task.
 
+## Project Versioning
+
+SKS manages the worker project's package version through a managed Git pre-commit hook. Every commit in a project with \`package.json\` gets a patch version bump in the same commit, with \`package-lock.json\` and \`npm-shrinkwrap.json\` kept in sync when present. The version guard uses a lock in the Git common directory so parallel workers or multiple worktrees do not reuse the same version. Check with \`sks versioning status\`; bypass only for exceptional maintenance with \`SKS_DISABLE_VERSIONING=1\`.
+
 ## Harness Self-Protection
 
 After setup, installed Sneakoscope harness control files are immutable to LLM tool edits. Do not edit \`.codex/hooks.json\`, \`.codex/config.toml\`, \`.codex/SNEAKOSCOPE.md\`, \`.agents/skills/\`, \`.codex/agents/\`, \`.sneakoscope/manifest.json\`, \`.sneakoscope/policy.json\`, \`.sneakoscope/db-safety.json\`, \`.sneakoscope/harness-guard.json\`, \`AGENTS.md\`, or \`node_modules/sneakoscope\` from the agent. SKS hooks block direct writes and SKS maintenance commands from LLM tool calls. The only automatic exception is the Sneakoscope engine source repository itself, detected by \`package.json\` name \`sneakoscope\` plus \`bin/sks.mjs\` and \`src/core/*\`.
@@ -186,7 +191,9 @@ export async function initProject(root, opts = {}) {
   const created = [];
   const installScope = normalizeInstallScope(opts.installScope || 'global');
   const localOnly = Boolean(opts.localOnly);
-  const hookCommandPrefix = opts.hookCommandPrefix || sksCommandPrefix(installScope, { globalCommand: opts.globalCommand });
+  const sourceProject = await isHarnessSourceProject(root).catch(() => false);
+  const requestedHookCommandPrefix = opts.hookCommandPrefix || sksCommandPrefix(installScope, { globalCommand: opts.globalCommand });
+  const hookCommandPrefix = sourceProject ? 'node ./bin/sks.mjs' : requestedHookCommandPrefix;
   const sine = path.join(root, '.sneakoscope');
   if (opts.repair) {
     const repair = await repairSksGeneratedArtifacts(root, { resetState: Boolean(opts.resetState) });
@@ -253,7 +260,14 @@ export async function initProject(root, opts = {}) {
     git: {
       local_only: localOnly,
       exclude_path: localExclude?.path ? path.relative(root, localExclude.path) : null,
-      excluded_patterns: localExclude?.patterns || []
+      excluded_patterns: localExclude?.patterns || [],
+      versioning: {
+        enabled: true,
+        hook: 'pre-commit',
+        bump: 'patch',
+        lock: 'git-common-dir/sks-version.lock',
+        state: 'git-common-dir/sks-version-state.json'
+      }
     },
     database_safety: 'destructive_db_operations_denied_always',
     gx_renderer: 'deterministic_svg_html'
@@ -279,7 +293,23 @@ export async function initProject(root, opts = {}) {
         ...(policy.git || {}),
         local_only: localOnly || Boolean(policy.git?.local_only),
         exclude_path: localExclude?.path ? path.relative(root, localExclude.path) : policy.git?.exclude_path || null,
-        excluded_patterns: localExclude?.patterns || policy.git?.excluded_patterns || []
+        excluded_patterns: localExclude?.patterns || policy.git?.excluded_patterns || [],
+        versioning: {
+          ...(policy.git?.versioning || {}),
+          enabled: true,
+          hook: 'pre-commit',
+          bump: policy.git?.versioning?.bump || 'patch',
+          lock: 'git-common-dir/sks-version.lock',
+          state: 'git-common-dir/sks-version-state.json'
+        }
+      },
+      versioning: {
+        ...(policy.versioning || {}),
+        enabled: true,
+        bump: policy.versioning?.bump || 'patch',
+        trigger: 'git-pre-commit',
+        lock_scope: 'git-common-dir',
+        managed_files: ['package.json', 'package-lock.json', 'npm-shrinkwrap.json']
       },
       prompt_pipeline: {
         ...(policy.prompt_pipeline || {}),
@@ -329,7 +359,14 @@ export async function initProject(root, opts = {}) {
       git: {
         local_only: localOnly,
         exclude_path: localExclude?.path ? path.relative(root, localExclude.path) : null,
-        excluded_patterns: localExclude?.patterns || []
+        excluded_patterns: localExclude?.patterns || [],
+        versioning: {
+          enabled: true,
+          hook: 'pre-commit',
+          bump: 'patch',
+          lock: 'git-common-dir/sks-version.lock',
+          state: 'git-common-dir/sks-version-state.json'
+        }
       },
       retention: DEFAULT_RETENTION_POLICY,
       update_check: {
@@ -337,6 +374,14 @@ export async function initProject(root, opts = {}) {
         package: 'sneakoscope',
         prompt_user_before_work: true,
         skip_scope: 'conversation_only'
+      },
+      versioning: {
+        enabled: true,
+        bump: 'patch',
+        trigger: 'git-pre-commit',
+        lock_scope: 'git-common-dir',
+        managed_files: ['package.json', 'package-lock.json', 'npm-shrinkwrap.json'],
+        collision_policy: 'lock_then_bump_above_last_seen_version'
       },
       honest_mode: {
         required_before_final: true,
@@ -463,6 +508,10 @@ export async function initProject(root, opts = {}) {
   created.push('.codex/agents/*');
   await writeHarnessGuardPolicy(root);
   created.push('.sneakoscope/harness-guard.json');
+  const versionHookCommand = sourceProject ? 'node ./bin/sks.mjs' : hookCommandPrefix;
+  const versionHook = await installVersionGitHook(root, versionHookCommand);
+  if (versionHook.installed) created.push('.git/hooks/pre-commit SKS version guard');
+  else created.push(`version guard skipped (${versionHook.reason})`);
   return { created };
 }
 
@@ -638,6 +687,7 @@ async function installSkills(root) {
     'df': `---\nname: df\ndescription: Fast design/content fix mode for $DF or $df requests and inferred simple edits such as text color, copy, labels, spacing, or translation.\n---\n\nYou are running SKS DF mode.\n\nPurpose:\n- Quickly convert a small design/content request into the exact implementation change.\n- Use for requests like 글자 색 바꿔줘, 내용을 영어로 바꿔줘, button label 수정, spacing 조정, copy replacement, simple style tweaks.\n\nRules:\n- Do not start Ralph, Research, eval, or broad redesign unless the user explicitly asks.\n- Do not ask for more requirements when the target can be inferred from local context.\n- Inspect only the files needed to locate the target.\n- Make the smallest scoped edit that satisfies the request.\n- Preserve the existing design system and component patterns.\n- Run only cheap verification when useful, such as syntax check, focused test, or local render check for visual risk.\n- Final response should be short: what changed and any verification.\n`,
     'sks': `---\nname: sks\ndescription: General Sneakoscope Codex command route for $SKS or $sks usage, setup, status, and workflow help.\n---\n\nUse the local SKS control surface. Prefer these discovery commands when the user asks what is available: sks commands, sks usage <topic>, sks quickstart, sks codex-app, sks context7 check, sks guard check, sks conflicts check, sks reasoning, sks wiki pack, and sks pipeline status. If implementation is requested, route to the lightest matching SKS path and keep reasoning-profile changes temporary. For code-changing execution, first surface route/guard/write-scope status, then use worker subagents by default when scopes are independent; the parent integrates and verifies, while urgent blocking work stays local. Context tracking uses TriWiki as the SSOT for long-running or cross-turn work. Do not edit installed harness control files; the harness guard blocks LLM writes after setup except in the Sneakoscope engine source repo. If OMX/DCodex or another explicit Codex harness is detected, do not install SKS; use sks conflicts prompt and require human approval before cleanup.\n`,
     'team': `---\nname: team\ndescription: Dollar-command route for $Team or $team SKS Team multi-agent orchestration: parallel analysis scouts, TriWiki refresh, role-counted debate, fresh executor development team, live transcript, and final integration.\n---\n\nUse when the user invokes $Team/$team, asks for a team of agents, or asks for parallel specialist implementation.\n\nWorkflow:\n1. Create or inspect the Team mission with sks team \"task\" when useful. Role counts use executor:5 reviewer:2 user:1 planner:1. executor:N means exactly N analysis_scout_N agents first, exactly N debate participants next, and then a separate N-person executor development team. --agents N, --sessions N, and --team-size N remain aliases for executor/session budget; --max-agents uses the configured default maximum of 6 sessions/agents; default is executor:3 reviewer:1 user:1 planner:1.\n2. Parallel analysis scouts: spawn the concrete analysis_scout_N roster read-only. Split repo, docs, tests, API, DB-risk, UX-friction, and implementation-surface investigation into independent slices. Each scout returns source-backed findings for team-analysis.md.\n3. TriWiki refresh: parent turns scout findings into TriWiki-ready claims, runs sks wiki pack, then runs sks wiki validate .sneakoscope/wiki/context-pack.json. Do not move to debate or implementation until the pack is refreshed and validated.\n4. Debate bundle: spawn the concrete debate_team roster using the refreshed TriWiki context. Users are intentionally low-context, self-interested, stubborn, and inconvenience-averse. Executor voices are capable developers. Reviewers are strict. Planners force one coherent objective and required ambiguity-removal questions.\n5. Live visibility phase: after every useful scout finding, subagent status/result/handoff, record it with sks team event <mission-id|latest> --agent <name> --phase <phase> --message \"...\" so the user can see the team conversation without tmux.\n6. Consensus phase: synthesize debate into one objective, explicit constraints, acceptance criteria, and disjoint implementation slices.\n7. Close or stop the debate team after their results are captured.\n8. Development bundle: form a fresh development_team where exactly executor_N developers implement slices in parallel with non-overlapping ownership. Tell workers they are not alone in the codebase and must not revert others' edits.\n9. Review phase: validation_team reviewers check correctness, DB safety, missing tests, and evidence; user personas reject outcomes that create practical friction.\n10. Verification phase: run focused tests or justify gaps, update mission artifacts when present, and produce final evidence.\n\nLive files:\n- .sneakoscope/missions/<id>/team-analysis.md stores source-backed scout findings and TriWiki-ready claims.\n- .sneakoscope/missions/<id>/team-live.md is the user-readable live transcript inside Codex App.\n- .sneakoscope/missions/<id>/team-transcript.jsonl is the machine-readable event stream.\n- .sneakoscope/missions/<id>/team-dashboard.json is the current dashboard.\n\nRules:\n- The parent agent remains orchestrator and owns final integration.\n- Before spawning development workers, surface visible SKS route, guard, write-scope, TriWiki, and verification status.\n- Do not delegate the immediate blocking task when the parent can do it faster.\n- Use high reasoning only while the Team route is active, then return to the default/user-selected profile.\n- Never let subagents bypass SKS hooks, DB safety, no-question Ralph rules, or H-Proof completion gates.\n- Destructive database actions remain forbidden.\n`,
+    'agent-team': `---\nname: agent-team\ndescription: Fallback Codex App picker alias for $Team/$team when the app hides or reserves the plain team skill name.\n---\n\nUse exactly like $Team. This skill exists so npm install, sks setup, and sks doctor --fix can repair Codex App discovery when the plain \`team\` skill file exists but does not appear in the picker.\n\nRoute:\n- Treat $agent-team as $Team.\n- Create or inspect the Team mission with sks team \"task\" when useful.\n- Follow the same scout-first Team orchestration protocol: parallel analysis scouts, TriWiki refresh and validation, read-only debate, one sealed objective, fresh executor_N implementation team, strict review, and final evidence.\n- Record live progress with sks team event <mission-id|latest> --agent <name> --phase <phase> --message \"...\".\n\nRules:\n- The parent agent remains orchestrator and owns final integration.\n- Never let subagents bypass SKS hooks, DB safety, no-question Ralph rules, Context7 gates, or H-Proof/Honest Mode.\n- Destructive database actions remain forbidden.\n`,
     'ralph': `---\nname: ralph\ndescription: Dollar-command route for $Ralph or $ralph mandatory clarification and no-question mission workflows.\n---\n\nUse when the user invokes $Ralph/$ralph or requests a clarification-gated autonomous implementation mission. Prepare with sks ralph prepare, answer/seal required slots when answers are provided, then run only after decision-contract.json exists.\n`,
     'research': `---\nname: research\ndescription: Dollar-command route for $Research or $research frontier discovery workflows.\n---\n\nUse when the user invokes $Research/$research or asks for research, hypotheses, new mechanisms, falsification, or testable predictions. Prefer sks research prepare and sks research run. Do not use for ordinary code edits.\n`,
     'autoresearch': `---\nname: autoresearch\ndescription: Dollar-command route for $AutoResearch or $autoresearch iterative experiment loops.\n---\n\nUse when the user invokes $AutoResearch/$autoresearch or asks for iterative improvement, SEO/GEO, ranking, prompt/workflow improvement, benchmark gains, or open-ended experimentation. Follow the autoresearch-loop skill and load seo-geo-optimizer for README, npm, GitHub stars, schema, keyword, AI-search, or discoverability work. Define program, hypothesis, experiment, metric, keep/discard decision, falsification, next experiment, and Honest Mode conclusion.\n`,
@@ -675,7 +725,7 @@ async function installSkills(root) {
 }
 
 function enrichSkillContent(name, content) {
-  if (!['sks', 'team', 'ralph', 'research', 'autoresearch', 'db', 'gx', 'prompt-pipeline', 'pipeline-runner', 'turbo-context-pack', 'hproof-evidence-bind'].includes(name)) return content;
+  if (!['sks', 'team', 'agent-team', 'ralph', 'research', 'autoresearch', 'db', 'gx', 'prompt-pipeline', 'pipeline-runner', 'turbo-context-pack', 'hproof-evidence-bind'].includes(name)) return content;
   const text = String(content || '').trimEnd();
   if (text.includes('TriWiki context-tracking SSOT')) return text;
   return `${text}

@@ -229,6 +229,7 @@ function formatRalphQuestions(schema) {
 export async function recordContext7Evidence(root, state, payload) {
   const stage = context7Stage(payload);
   if (!stage) return null;
+  if (!await shouldWritePipelineEvidence(root, state)) return null;
   const record = { ts: nowIso(), stage, tool: context7ToolName(payload), payload_keys: Object.keys(payload || {}).sort() };
   const id = state?.mission_id;
   const file = id ? path.join(missionDir(root, id), 'context7-evidence.jsonl') : path.join(root, '.sneakoscope', 'state', 'context7-evidence.jsonl');
@@ -243,6 +244,7 @@ export async function recordContext7Evidence(root, state, payload) {
 export async function recordSubagentEvidence(root, state, payload) {
   const stage = subagentStage(payload);
   if (!stage) return null;
+  if (!await shouldWritePipelineEvidence(root, state)) return null;
   const record = { ts: nowIso(), stage, tool: subagentToolName(payload), payload_keys: Object.keys(payload || {}).sort() };
   const id = state?.mission_id;
   const file = id ? path.join(missionDir(root, id), 'subagent-evidence.jsonl') : path.join(root, '.sneakoscope', 'state', 'subagent-evidence.jsonl');
@@ -252,6 +254,11 @@ export async function recordSubagentEvidence(root, state, payload) {
     await setCurrent(root, { subagents_spawned: evidence.spawn, subagents_reported: evidence.result, subagents_verified: evidence.ok });
   }
   return record;
+}
+
+async function shouldWritePipelineEvidence(root, state = {}) {
+  if (state?.mission_id) return exists(missionDir(root, state.mission_id));
+  return exists(path.join(root, '.sneakoscope', 'state', 'current.json'));
 }
 
 function subagentToolName(payload) {
