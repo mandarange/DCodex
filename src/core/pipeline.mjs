@@ -23,6 +23,8 @@ export function promptPipelineContext(prompt, route = routePrompt(prompt)) {
     'Codex App visibility: briefly surface what SKS is doing before tools run, mirror important worker/tool status to mission artifacts, and keep progress legible to the user.',
     'Hook visibility limit: hooks can inject context/status or block/continue a turn, but they cannot create arbitrary live chat bubbles; use team events, mission files, or normal assistant updates for live transcript details.',
     'Ambiguity gate: every execution route must start with mandatory ambiguity-removal questions before execution. DFix and Answer bypass this gate because they do not start implementation.',
+    'Plan-first interaction: when ambiguity questions are required, call the Codex plan tool first so the user sees Ask questions -> Seal decision contract -> Execute/verify as the visible workflow.',
+    'Best-practice prompt shape: extract Goal, Context, Constraints, and Done-when before implementation; keep questions compact and only ask for answers that can change scope, safety, user-facing behavior, or acceptance criteria.',
     'Stance: infer the user intent aggressively from rough wording and local context, but ask short ambiguity-removal questions before work when a missing answer can change the target, scope, safety boundary, or acceptance criteria.',
     subagentExecutionPolicyText(route, prompt),
     triwikiContextTrackingText(),
@@ -178,6 +180,7 @@ Answer schema: .sneakoscope/missions/${id}/required-answers.schema.json
 
 Do not execute the route yet. Ask the user the required ambiguity-removal questions now. After the user answers, convert the answers to answers.json, run "${answerCommand}".
 ${context7RequirementText(required)}
+${clarificationPlanHint(route, id, opts.ralph)}
 
 Required questions:
 ${formatRalphQuestions(schema)}`
@@ -298,7 +301,7 @@ async function ralphAwaitingAnswersContext(root, state) {
   if (!id) return '';
   const schema = await readJson(path.join(missionDir(root, id), 'required-answers.schema.json'), null);
   const questionBlock = schema ? `\n\nRequired questions still pending:\n${formatRalphQuestions(schema)}` : '';
-  return `Active Ralph mission ${id} is waiting for mandatory clarification answers. If the user answered, write answers.json, run "sks ralph answer ${id} answers.json", then "sks ralph run ${id}". If required answers are missing, ask only those questions. Do not implement outside Ralph.${questionBlock}`;
+  return `Active Ralph mission ${id} is waiting for mandatory clarification answers. If the user answered, write answers.json, run "sks ralph answer ${id} answers.json", then "sks ralph run ${id}". If required answers are missing, use the Codex plan tool first, then ask only those questions. Do not implement outside Ralph.${clarificationPlanHint({ command: '$Ralph', route: 'Ralph mission' }, id, true)}${questionBlock}`;
 }
 
 async function clarificationAwaitingAnswersContext(root, state) {
@@ -306,7 +309,19 @@ async function clarificationAwaitingAnswersContext(root, state) {
   if (!id) return '';
   const schema = await readJson(path.join(missionDir(root, id), 'required-answers.schema.json'), null);
   const questionBlock = schema ? `\n\nRequired questions still pending:\n${formatRalphQuestions(schema)}` : '';
-  return `Active SKS route ${state.route_command || state.route || state.mode} is waiting for mandatory ambiguity-removal answers. If the user answered, write answers.json, run "sks pipeline answer ${id} answers.json", then continue the original route lifecycle. If required answers are missing, ask only those questions. Do not execute the route before this gate passes.${questionBlock}`;
+  return `Active SKS route ${state.route_command || state.route || state.mode} is waiting for mandatory ambiguity-removal answers. If the user answered, write answers.json, run "sks pipeline answer ${id} answers.json", then continue the original route lifecycle. If required answers are missing, use the Codex plan tool first, then ask only those questions. Do not execute the route before this gate passes.${clarificationPlanHint({ command: state.route_command || state.route || '$SKS', route: state.route || state.mode || 'SKS route' }, id, false)}${questionBlock}`;
+}
+
+function clarificationPlanHint(route, id, ralph = false) {
+  const command = ralph ? `sks ralph answer ${id} answers.json` : `sks pipeline answer ${id} answers.json`;
+  return `
+
+Codex plan-tool interaction:
+Before asking the user, call update_plan with:
+- in_progress: Ask mandatory ambiguity-removal questions for ${route.command || '$SKS'}
+- pending: Convert the user's answers to answers.json and run \`${command}\`
+- pending: Continue the original route lifecycle with the sealed decision-contract.json
+Then ask the questions in one compact message.`;
 }
 
 function formatRalphQuestions(schema) {
@@ -341,6 +356,8 @@ ACCEPTANCE_CRITERIA:
 - ...
 NON_GOALS:
 - ...
+
+${clarificationPlanHint({ command: routeName, route: routeName }, id, isRalph)}
 
 After the user answers, convert the reply to answers.json and run: ${command}.${questionBlock}`;
 }

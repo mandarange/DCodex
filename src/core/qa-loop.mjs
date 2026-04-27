@@ -7,7 +7,7 @@ export function buildQaLoopQuestionSchema(prompt) {
   return {
     schema_version: 1,
     route: QA_LOOP_ROUTE,
-    description: 'QA-Loop questions must be answered before execution. Login secrets and browser auth state are runtime-only and must not be saved to mission files or TriWiki.',
+    description: 'QA-LOOP questions must be answered before execution. Login secrets and browser auth state are runtime-only and must not be saved to mission files or TriWiki. UI evidence must prefer official Codex Browser Use and Computer Use MCP/plugin tools.',
     prompt,
     slots: [
       { id: 'GOAL_PRECISE', question: 'Define the QA objective in one sentence.', required: true, type: 'string' },
@@ -23,11 +23,11 @@ export function buildQaLoopQuestionSchema(prompt) {
       { id: 'TEMP_TEST_CREDENTIALS_READY', question: 'If login is required, are test-only credentials ready to provide ephemerally during the run?', required: true, type: 'enum', options: ['not_required', 'yes_temp_only', 'no_block_authenticated_tests'] },
       { id: 'TEST_CREDENTIALS_RUNTIME_SOURCE', question: 'If login is required, how will test-only credentials be provided without saving the values?', required: true, type: 'enum', options: ['not_required', 'ephemeral_chat_only', 'environment_variables', 'secret_manager'] },
       { id: 'CREDENTIAL_STORAGE_ACK', question: 'Acknowledge credential handling policy.', required: true, type: 'enum', options: ['never_store_credentials_in_artifacts_or_wiki'] },
-      { id: 'UI_COMPUTER_USE_ACK', question: 'Acknowledge UI E2E evidence policy.', required: true, type: 'enum', options: ['use_computer_use_for_ui_e2e_or_mark_ui_not_verified'] },
-      { id: 'TEAM_MODE_ALLOWED', question: 'May QA-Loop use Team/subagents where useful?', required: true, type: 'enum', options: ['yes_parallel_where_safe', 'no_parent_only'] },
+      { id: 'UI_COMPUTER_USE_ACK', question: 'Acknowledge UI E2E evidence policy.', required: true, type: 'enum', options: ['use_browser_use_or_computer_use_for_ui_e2e_or_mark_ui_not_verified'] },
+      { id: 'TEAM_MODE_ALLOWED', question: 'May QA-LOOP use Team/subagents where useful?', required: true, type: 'enum', options: ['yes_parallel_where_safe', 'no_parent_only'] },
       { id: 'MAX_QA_CYCLES', question: 'How many no-question QA cycles are allowed before pausing?', required: true, type: 'string' },
       { id: 'ACCEPTANCE_CRITERIA', question: 'List the QA completion criteria.', required: true, type: 'array_or_string' },
-      { id: 'NON_GOALS', question: 'List anything QA-Loop must not test.', required: true, type: 'array_or_string' },
+      { id: 'NON_GOALS', question: 'List anything QA-LOOP must not test.', required: true, type: 'array_or_string', allow_empty: true },
       { id: 'RISK_BOUNDARY', question: 'List hard safety boundaries for data, auth, permissions, money, messages, and third-party systems.', required: true, type: 'array_or_string' },
       { id: 'MID_RALPH_UNKNOWN_POLICY', question: 'If ambiguity appears during no-question QA, choose the fallback order.', required: true, type: 'array', options: ['preserve_existing_behavior', 'smallest_reversible_change', 'defer_optional_scope', 'block_only_if_no_safe_path'] }
     ]
@@ -44,7 +44,7 @@ export function validateQaLoopAnswers(schema, answers = {}) {
   if (env !== 'local_dev_server' && mutation === 'seeded_create_change_remove_local_only') errors.push({ slot: 'QA_MUTATION_POLICY', error: 'destructive_removal_tests_are_local_dev_only' });
   if (env === 'deployed_production_domain' && mutation !== 'read_only_smoke_only') errors.push({ slot: 'QA_MUTATION_POLICY', error: 'production_deployed_qa_is_read_only_smoke_only' });
   if (answers.DESTRUCTIVE_DEPLOYED_TESTS_ALLOWED !== 'never') errors.push({ slot: 'DESTRUCTIVE_DEPLOYED_TESTS_ALLOWED', error: 'destructive_deployed_tests_never_allowed' });
-  if (isUiScope(answers.QA_SCOPE) && answers.UI_COMPUTER_USE_ACK !== 'use_computer_use_for_ui_e2e_or_mark_ui_not_verified') errors.push({ slot: 'UI_COMPUTER_USE_ACK', error: 'ui_e2e_requires_computer_use_ack' });
+  if (isUiScope(answers.QA_SCOPE) && answers.UI_COMPUTER_USE_ACK !== 'use_browser_use_or_computer_use_for_ui_e2e_or_mark_ui_not_verified') errors.push({ slot: 'UI_COMPUTER_USE_ACK', error: 'ui_e2e_requires_browser_or_computer_use_ack' });
   if (answers.LOGIN_REQUIRED === 'yes' && answers.TEMP_TEST_CREDENTIALS_READY !== 'yes_temp_only') errors.push({ slot: 'TEMP_TEST_CREDENTIALS_READY', error: 'authenticated_tests_require_ephemeral_test_credentials_or_must_be_blocked' });
   if (answers.LOGIN_REQUIRED === 'yes' && answers.TEST_CREDENTIALS_RUNTIME_SOURCE === 'not_required') errors.push({ slot: 'TEST_CREDENTIALS_RUNTIME_SOURCE', error: 'credential_runtime_source_required' });
   if (answers.CREDENTIAL_STORAGE_ACK !== 'never_store_credentials_in_artifacts_or_wiki') errors.push({ slot: 'CREDENTIAL_STORAGE_ACK', error: 'credential_temp_only_ack_required' });
@@ -88,7 +88,7 @@ export async function writeQaLoopArtifacts(dir, mission, contract) {
     generated_at: nowIso(),
     mission_id: mission.id,
     target: { scope: a.QA_SCOPE, environment: a.TARGET_ENVIRONMENT, base_url: a.TARGET_BASE_URL, api_base_url: a.API_BASE_URL },
-    safety: { mutation_policy: a.QA_MUTATION_POLICY, deployed_destructive_tests_allowed: 'never', credentials: 'temp_only_never_saved', ui_evidence: 'computer_use_required_for_ui_e2e' },
+    safety: { mutation_policy: a.QA_MUTATION_POLICY, deployed_destructive_tests_allowed: 'never', credentials: 'temp_only_never_saved', ui_evidence: 'browser_use_or_computer_use_required_for_ui_e2e' },
     checklist
   });
   await writeJsonAtomic(path.join(dir, 'qa-gate.json'), defaultQaGate(contract));
@@ -112,13 +112,13 @@ export async function evaluateQaGate(dir) {
 }
 
 export async function writeMockQaResult(dir, mission, contract) {
-  await writeTextAtomic(path.join(dir, 'qa-report.md'), `# QA-Loop Report\n\nMission: ${mission.id}\nMode: mock verification\n\nMock QA-Loop completed. No live UI/API actions were executed.\n\n## Honest Mode\n\nThis is a mock smoke run for command verification, not production QA evidence.\n`);
-  await writeJsonAtomic(path.join(dir, 'qa-gate.json'), { ...defaultQaGate(contract), passed: true, qa_report_written: true, qa_ledger_complete: true, checklist_completed: true, safety_reviewed: true, credentials_not_persisted: true, ui_computer_use_evidence: true, honest_mode_complete: true, evidence: ['mock QA-Loop smoke completed'], notes: ['No live UI/API verification was claimed.'] });
+  await writeTextAtomic(path.join(dir, 'qa-report.md'), `# QA-LOOP Report\n\nMission: ${mission.id}\nMode: mock verification\n\nMock QA-LOOP completed. No live UI/API actions were executed.\n\n## Honest Mode\n\nThis is a mock smoke run for command verification, not production QA evidence.\n`);
+  await writeJsonAtomic(path.join(dir, 'qa-gate.json'), { ...defaultQaGate(contract), passed: true, qa_report_written: true, qa_ledger_complete: true, checklist_completed: true, safety_reviewed: true, credentials_not_persisted: true, ui_computer_use_evidence: true, honest_mode_complete: true, evidence: ['mock QA-LOOP smoke completed'], notes: ['No live UI/API verification was claimed.'] });
   return evaluateQaGate(dir);
 }
 
 export function buildQaLoopPrompt({ id, mission, contract, cycle, previous }) {
-  return `You are running SKS QA-Loop.\nMISSION: ${id}\nTASK: ${mission.prompt}\nCYCLE: ${cycle}\nNO QUESTIONS: use decision-contract.json and the decision ladder.\nUI E2E: if UI is in scope, use @Computer Use for live browser interaction or mark UI not verified. Do not claim UI E2E from text logs alone.\nCREDENTIALS: use only test credentials already provided ephemerally or through the approved runtime source. If they are unavailable, mark authenticated checks blocked; never save login secrets, cookies, auth state, or screenshots containing secrets to files, Team transcript, reports, logs, or TriWiki.\nDEPLOYED SAFETY: deployed domains are read-only smoke only; never run destructive removal scenarios on deployed domains.\nEXTERNAL SAFETY: payment/billing, email/SMS/webhook sends, admin permission changes, and bulk writes are forbidden unless safely mocked/sandboxed by the sealed contract.\nARTIFACTS: check qa-ledger.json case by case, save bounded raw output under qa-loop/cycle-${cycle}/, refresh qa-report.md and qa-gate.json. Continue until qa-gate.json passes or a hard blocker is documented.\nDECISION CONTRACT:\n${JSON.stringify(contract, null, 2)}\nPrevious cycle tail:\n${String(previous || '').slice(-2500)}\n`;
+  return `You are running SKS QA-LOOP.\nMISSION: ${id}\nTASK: ${mission.prompt}\nCYCLE: ${cycle}\nNO QUESTIONS: use decision-contract.json and the decision ladder.\nUI E2E: if UI is in scope, prefer official Codex MCP/plugin tools. Use Browser Use first for local browser targets such as localhost, 127.0.0.1, file:// URLs, and current browser-tab inspection. Use Computer Use for desktop app interaction, screenshots, and browser/app evidence. If neither evidence path is available, mark UI not verified. Do not claim UI E2E from text logs alone.\nCREDENTIALS: use only test credentials already provided ephemerally or through the approved runtime source. If they are unavailable, mark authenticated checks blocked; never save login secrets, cookies, auth state, or screenshots containing secrets to files, Team transcript, reports, logs, or TriWiki.\nDEPLOYED SAFETY: deployed domains are read-only smoke only; never run destructive removal scenarios on deployed domains.\nEXTERNAL SAFETY: payment/billing, email/SMS/webhook sends, admin permission changes, and bulk writes are forbidden unless safely mocked/sandboxed by the sealed contract.\nARTIFACTS: check qa-ledger.json case by case, save bounded raw output under qa-loop/cycle-${cycle}/, refresh qa-report.md and qa-gate.json. Continue until qa-gate.json passes or a hard blocker is documented.\nDECISION CONTRACT:\n${JSON.stringify(contract, null, 2)}\nPrevious cycle tail:\n${String(previous || '').slice(-2500)}\n`;
 }
 
 export async function qaStatus(dir) {
@@ -137,7 +137,7 @@ function qaChecklist(a) {
     ['preflight.roles', 'Map user roles, permissions, and protected areas in scope.']
   ];
   if (isUiScope(a.QA_SCOPE)) cases.push(
-    ['ui.computer_use', 'Use @Computer Use for live browser UI checks or mark UI not verified.'],
+    ['ui.official_mcp_tools', 'Use Browser Use for local browser targets and Computer Use for desktop/browser evidence, or mark UI not verified.'],
     ['ui.navigation', 'Check primary navigation, deep links, back/forward, refresh, and protected routes.'],
     ['ui.auth', 'Check login, logout, session expiry, unauthorized access, and role-specific visibility.'],
     ['ui.forms', 'Check required fields, validation, disabled states, optimistic UI, submit success, and submit failure.'],
@@ -165,5 +165,5 @@ function qaChecklist(a) {
 
 function qaReportTemplate(mission, contract, checklist) {
   const a = contract.answers || {};
-  return `# QA-Loop Report\n\nMission: ${mission.id}\nTarget: ${a.TARGET_BASE_URL || 'unset'}\nScope: ${a.QA_SCOPE || 'unset'}\nEnvironment: ${a.TARGET_ENVIRONMENT || 'unset'}\n\n## Safety\n\n- Deployed destructive tests: never\n- Credentials: temp-only, never saved to artifacts or TriWiki\n- UI evidence: @Computer Use required when UI E2E is in scope\n\n## Checklist\n\n${checklist.map((item) => `- [ ] ${item.id}: ${item.title}`).join('\n')}\n\n## Findings\n\nTBD\n\n## Honest Mode\n\nTBD\n`;
+  return `# QA-LOOP Report\n\nMission: ${mission.id}\nTarget: ${a.TARGET_BASE_URL || 'unset'}\nScope: ${a.QA_SCOPE || 'unset'}\nEnvironment: ${a.TARGET_ENVIRONMENT || 'unset'}\n\n## Safety\n\n- Deployed destructive tests: never\n- Credentials: temp-only, never saved to artifacts or TriWiki\n- UI evidence: Browser Use or Computer Use evidence required when UI E2E is in scope\n\n## Checklist\n\n${checklist.map((item) => `- [ ] ${item.id}: ${item.title}`).join('\n')}\n\n## Findings\n\nTBD\n\n## Honest Mode\n\nTBD\n`;
 }

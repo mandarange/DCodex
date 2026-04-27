@@ -428,7 +428,7 @@ function visibleHookMessage(name, text = '') {
     if (body.includes('SKS wiki pipeline active')) return 'SKS: wiki refresh context injected.';
     if (body.includes('MANDATORY $Ralph')) return 'SKS: Ralph clarification gate prepared in Codex App.';
     if (body.includes('$Team route prepared') || body.includes('Team route')) return 'SKS: Team route, live transcript, and subagent plan injected.';
-    if (body.includes('$QALoop route prepared') || body.includes('QA-Loop')) return 'SKS: QA-Loop route and safety checklist injected.';
+    if (body.includes('$QA-LOOP route prepared') || body.includes('QA-LOOP')) return 'SKS: QA-LOOP route and safety checklist injected.';
     if (body.includes('Subagent policy: REQUIRED')) return 'SKS: route context injected; subagent execution gate is active.';
     return 'SKS: skill-first route context injected.';
   }

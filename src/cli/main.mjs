@@ -27,6 +27,9 @@ import { rgbaKey, rgbaToWikiCoord, validateWikiCoordinateIndex } from '../core/w
 import { COMMAND_CATALOG, DOLLAR_COMMAND_ALIASES, DOLLAR_COMMANDS, DOLLAR_SKILL_NAMES, RECOMMENDED_SKILLS, ROUTES, USAGE_TOPICS, context7ConfigToml, hasContext7ConfigText, reasoningInstruction, routePrompt, routeReasoning, routeRequiresSubagents, triwikiContextTracking } from '../core/routes.mjs';
 import { context7Evidence, evaluateStop, recordContext7Evidence, recordSubagentEvidence } from '../core/pipeline.mjs';
 import { appendTeamEvent, formatRoleCounts, initTeamLive, normalizeTeamSpec, parseTeamSpecArgs, parseTeamSpecText, readTeamDashboard, readTeamLive, readTeamTranscriptTail } from '../core/team-live.mjs';
+import { CODEX_APP_DOCS_URL, codexAppIntegrationStatus, formatCodexAppStatus } from '../core/codex-app.mjs';
+import { buildTmuxLaunchPlan, defaultTmuxSessionName, formatTmuxBanner, launchTmuxUi, runTmuxStatus, sanitizeTmuxSessionName } from '../core/tmux-ui.mjs';
+import { autoReviewProfileName, autoReviewStatus, autoReviewSummary, enableAutoReview, disableAutoReview } from '../core/auto-review.mjs';
 
 const flag = (args, name) => args.includes(name);
 const promptOf = (args) => args.filter((x) => !String(x).startsWith('--')).join(' ').trim();
@@ -40,22 +43,25 @@ function installScopeFromArgs(args = [], fallback = 'global') {
 }
 
 export async function main(args) {
+  if (isAutoReviewFlag(args[0])) return autoReviewCommand('start', args.slice(1));
   const [cmd, sub, ...rest] = args;
   const tail = sub === undefined ? [] : [sub, ...rest];
-  if (!cmd) return shouldShowWizard() ? wizard([]) : help();
+  if (!cmd) return shouldLaunchTmuxUi() ? tmuxCommand('start', []) : help();
   if (cmd === '--help' || cmd === '-h') return help();
   if (cmd === '--version' || cmd === '-v' || cmd === 'version') return version();
   if (cmd === 'postinstall') return postinstall();
   if (cmd === 'wizard' || cmd === 'ui') return wizard(tail);
+  if (cmd === 'tmux') return String(sub || '').startsWith('--') ? tmuxCommand('start', tail) : tmuxCommand(sub, rest);
+  if (cmd === 'auto-review' || cmd === 'autoreview') return autoReviewCommand(sub, rest);
   if (cmd === 'update-check') return updateCheck(tail);
   if (cmd === 'help') return help(tail);
   if (cmd === 'commands') return commands(tail);
   if (cmd === 'usage') return usage(tail);
   if (cmd === 'quickstart') return quickstart();
-  if (cmd === 'codex-app') return codexAppHelp();
+  if (cmd === 'codex-app') return codexAppHelp(tail);
   if (cmd === 'dollar-commands' || cmd === 'dollars' || cmd === '$') return dollarCommands(tail);
   if (String(cmd).toLowerCase() === 'dfix') return dfixHelp();
-  if (cmd === 'qa-loop' || cmd === 'qaloop') return qaLoop(sub, rest);
+  if (cmd === 'qa-loop') return qaLoop(sub, rest);
   if (cmd === 'context7') return context7(sub, rest);
   if (cmd === 'pipeline') return pipeline(sub, rest);
   if (cmd === 'guard') return guard(sub, rest);
@@ -99,6 +105,10 @@ Usage:
   sks usage [${USAGE_TOPICS}]
   sks quickstart
   sks codex-app
+  sks auto-review status|enable|start [--high]
+  sks --Auto-review [--high]
+  sks tmux [--session name] [--no-attach]
+  sks tmux status [--once]
   sks dollar-commands [--json]
   sks dfix
   sks qa-loop prepare "target"
@@ -133,6 +143,7 @@ Usage:
   sks db mcp-config --project-ref <ref>
   sks db check --sql "DROP TABLE users"
   sks db check --command "supabase db reset"
+  sks hproof check [mission-id|latest]
   sks eval run [--json] [--out report.json]
   sks eval compare --baseline old.json --candidate new.json [--json]
   sks wiki coords --rgba 12,34,56,255
@@ -169,6 +180,14 @@ function shouldShowWizard() {
   return Boolean(input.isTTY && output.isTTY && process.env.SKS_NO_WIZARD !== '1' && process.env.CI !== 'true');
 }
 
+function shouldLaunchTmuxUi() {
+  return Boolean(input.isTTY && output.isTTY && process.env.SKS_NO_TMUX !== '1' && process.env.CI !== 'true');
+}
+
+function isAutoReviewFlag(value) {
+  return /^--?auto[-_]?review$/i.test(String(value || ''));
+}
+
 async function postinstall() {
   const installRoot = path.resolve(process.env.INIT_CWD || process.cwd());
   const conflictScan = await scanHarnessConflicts(installRoot);
@@ -190,11 +209,12 @@ async function postinstall() {
   else if (context7Install.status === 'skipped') console.log(`Context7 MCP: skipped (${context7Install.reason}).`);
   else if (context7Install.status === 'failed') console.log(`Context7 MCP: auto setup failed. Run \`sks context7 setup --scope global\` or \`sks setup\`. ${context7Install.error || ''}`.trim());
   const appSetup = await ensureCodexAppProjectDuringInstall(installRoot, { shim });
-  if (appSetup.status === 'installed') console.log(`Codex App project setup: installed in ${appSetup.root} (${appSetup.install_scope}; picker aliases include ${appSetup.aliases.join(', ')}).`);
+  if (appSetup.status === 'installed') console.log(`Codex App project setup: installed in ${appSetup.root} (${appSetup.install_scope}; canonical picker skills include ${appSetup.aliases.join(', ')}).`);
   else if (appSetup.status === 'partial') console.log(`Codex App project setup: repaired with missing skill warning (${appSetup.missing_skills.join(', ')}). Run \`sks doctor --fix\`.`);
   else if (appSetup.status === 'skipped') console.log(`Codex App project setup: skipped (${appSetup.reason}).`);
   else if (appSetup.status === 'failed') console.log(`Codex App project setup: auto setup failed. Run \`sks doctor --fix\`. ${appSetup.error || ''}`.trim());
-  console.log('Run `sks` to open the interactive setup UI, or run `sks setup` for the default global setup.');
+  console.log('Run `sks` to open the tmux-based SKS/Codex CLI runtime. If Codex App or its first-party MCP/plugin tools are missing, SKS will block launch and print the setup path.');
+  console.log('Check app/tool readiness with: `sks codex-app check` and `sks tmux check`.');
   console.log('Project-only setup: `sks wizard` -> choose project, or `npx sks setup --install-scope project`.\n');
 }
 
@@ -429,7 +449,7 @@ function commands(args = []) {
   console.log('\nCodex App $ Commands\n');
   console.log('Use these inside Codex App or another agent prompt. They are prompt routes, not terminal commands.\n');
   console.log(formatDollarCommandsDetailed());
-  console.log(`\nCodex App picker aliases: ${DOLLAR_COMMAND_ALIASES.map((x) => x.app_skill).join(', ')}`);
+  console.log(`\nCanonical Codex App picker skills: ${DOLLAR_COMMAND_ALIASES.map((x) => x.app_skill).join(', ')}`);
 }
 
 function dollarCommands(args = []) {
@@ -437,7 +457,7 @@ function dollarCommands(args = []) {
   console.log('Sneakoscope Codex $ Commands\n');
   console.log('Use these inside Codex App or another agent prompt. Shells treat $ as variable syntax, so these are prompt commands, not terminal commands.\n');
   console.log(formatDollarCommandsDetailed());
-  console.log(`\nCodex App picker aliases: ${DOLLAR_COMMAND_ALIASES.map((x) => x.app_skill).join(', ')}`);
+  console.log(`\nCanonical Codex App picker skills: ${DOLLAR_COMMAND_ALIASES.map((x) => x.app_skill).join(', ')}`);
   console.log('\nDefault pipeline: questions infer $Answer, simple design/content edits infer $DFix, and execution prompts use SKS routing with ambiguity gates.');
 }
 
@@ -819,17 +839,92 @@ function readNumberOption(args, name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+async function tmuxCommand(sub = 'start', args = []) {
+  const action = sub || 'start';
+  if (action === 'status' || action === 'banner') {
+    if (flag(args, '--json')) {
+      const status = await codexAppIntegrationStatus();
+      return console.log(JSON.stringify(status, null, 2));
+    }
+    await runTmuxStatus(action === 'banner' ? ['--once', ...args] : args);
+    return;
+  }
+  if (action === 'check') {
+    const root = await projectRoot();
+    const plan = await buildTmuxLaunchPlan({ root, session: readOption(args, '--session', null) });
+    if (flag(args, '--json')) return console.log(JSON.stringify(plan, null, 2));
+    console.log(formatTmuxBanner(plan.app));
+    console.log('');
+    console.log(`tmux:      ${plan.tmux.ok ? 'ok' : 'missing'} ${plan.tmux.version || ''}`.trim());
+    console.log(`Session:   ${plan.session}`);
+    console.log(`Project:   ${plan.root}`);
+    console.log(`Ready:     ${plan.ready ? 'yes' : 'no'}`);
+    if (!plan.ready) {
+      console.log('\nBlockers:');
+      for (const blocker of Array.from(new Set(plan.blockers))) console.log(`- ${blocker}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+  if (['start', 'attach', 'connect', 'open'].includes(action)) return launchTmuxUi(args);
+  console.error('Usage: sks tmux [check|status|banner] [--session name] [--no-attach]');
+  process.exitCode = 1;
+}
+
+async function autoReviewCommand(sub = 'status', args = []) {
+  const action = sub || 'status';
+  const high = flag(args, '--high') || action === '--high';
+  const cleanArgs = args.filter((arg) => arg !== '--high');
+  if (action === 'status' || action === 'check') {
+    const status = await autoReviewStatus();
+    if (flag(args, '--json')) return console.log(JSON.stringify(status, null, 2));
+    console.log(autoReviewSummary(status));
+    return;
+  }
+  if (action === 'disable') {
+    const status = await disableAutoReview();
+    if (flag(args, '--json')) return console.log(JSON.stringify(status, null, 2));
+    console.log(autoReviewSummary(status));
+    return;
+  }
+  if (action === 'enable') {
+    const status = await enableAutoReview({ high });
+    if (flag(args, '--json')) return console.log(JSON.stringify(status, null, 2));
+    console.log(autoReviewSummary(status));
+    console.log(`\nProfile ready: ${status.profile_name}`);
+    console.log(`Launch: codex --profile ${status.profile_name}`);
+    return;
+  }
+  if (['start', 'open', 'attach', '--high'].includes(action)) {
+    const profile = autoReviewProfileName({ high });
+    const status = await enableAutoReview({ high });
+    if (flag(args, '--json')) return console.log(JSON.stringify(status, null, 2));
+    console.log(`SKS Auto-Review enabled: ${profile}`);
+    const sessionArg = readOption(cleanArgs, '--session', null);
+    const session = sessionArg || sanitizeTmuxSessionName(`${profile}-${defaultTmuxSessionName(process.cwd())}`);
+    return launchTmuxUi([...cleanArgs, '--session', session], { codexArgs: ['--profile', profile] });
+  }
+  console.error('Usage: sks auto-review status|enable|disable|start [--high] [--json]');
+  console.error('Alias: sks --Auto-review [--high]');
+  process.exitCode = 1;
+}
+
 function quickstart() {
   console.log(`Sneakoscope Codex Quickstart
 
-Install from npm:
+Install from npm and make the CLI/App pair ready:
   npm i -g sneakoscope
+  npm i -g @openai/codex
+  # Install and open Codex App too: ${CODEX_APP_DOCS_URL}
   sks
 
 Initialize this project for CLI and Codex App:
   sks setup
 
 Verify:
+  sks codex-app check
+  sks tmux check
+  sks auto-review status
   sks doctor --fix
   sks context7 check
   sks selftest --mock
@@ -853,11 +948,34 @@ GitHub install for unreleased commits:
 `);
 }
 
-function codexAppHelp() {
+async function codexAppHelp(args = []) {
+  const action = args[0] || 'help';
+  if (action === 'check' || action === 'status') {
+    const status = await codexAppIntegrationStatus();
+    if (flag(args, '--json')) return console.log(JSON.stringify(status, null, 2));
+    console.log(formatCodexAppStatus(status, { includeRaw: flag(args, '--verbose') }));
+    if (!status.ok) process.exitCode = 1;
+    return;
+  }
+  if (action === 'open') {
+    const status = await codexAppIntegrationStatus();
+    if (status.app.installed && process.platform === 'darwin') await runProcess('open', ['-a', 'Codex'], { timeoutMs: 5000, maxOutputBytes: 16 * 1024 }).catch(() => null);
+    else if (process.platform === 'darwin') await runProcess('open', [CODEX_APP_DOCS_URL], { timeoutMs: 5000, maxOutputBytes: 16 * 1024 }).catch(() => null);
+    console.log(formatCodexAppStatus(status));
+    return;
+  }
+  const status = await codexAppIntegrationStatus();
   console.log(`Sneakoscope Codex App Usage
+
+${formatCodexAppStatus(status)}
 
 Run once in the project:
   sks setup
+
+CLI tmux runtime:
+  sks
+  sks tmux check
+  sks tmux --session ${sanitizeTmuxSessionName(defaultTmuxSessionName(process.cwd()))}
 
 Generated app files:
   .codex/config.toml       profiles, multi_agent, Team limits, and Context7 MCP
@@ -876,7 +994,7 @@ Useful prompts inside Codex App:
   $Answer 이 훅은 왜 이렇게 동작해?
   $SKS show me available workflows
   $Team agree on the plan, then implement with specialists
-  $QALoop run UI and API E2E against local dev
+  $QA-LOOP run UI and API E2E against local dev
   $Ralph implement this with mandatory clarification
   $Research investigate this idea
   $AutoResearch improve this workflow with experiments.
@@ -890,6 +1008,8 @@ Repair hook PATH issues:
 Discover usage:
   sks commands
   sks usage codex-app
+  sks codex-app check
+  sks tmux check
   sks dollar-commands
   sks context7 check
   sks pipeline status
@@ -935,29 +1055,37 @@ Discovery:
   sks commands
   sks quickstart
   sks codex-app
+  sks codex-app check
+  sks tmux check
   sks dollar-commands
   sks context7 check
   sks pipeline status
 
 Common workflows:
   sks usage install
+  sks usage tmux
   sks usage team
   sks usage qa-loop
   sks usage ralph
   sks usage research
   sks usage db
-  sks usage wiki
   sks usage context7
   sks usage pipeline
   sks usage guard
   sks usage reasoning
+  sks usage hproof
+  sks usage wiki
   sks usage dfix
 `,
     install: `Install and Setup
 
 Global install:
   npm i -g sneakoscope
+  npm i -g @openai/codex
+  # Install and open Codex App too: ${CODEX_APP_DOCS_URL}
   sks setup
+  sks codex-app check
+  sks tmux check
   sks doctor --fix
   sks context7 check
   sks selftest --mock
@@ -983,6 +1111,46 @@ Local-only install artifacts:
 GitHub install for unreleased commits:
   npm i -g git+${REPOSITORY_URL}
   sks setup
+`,
+    tmux: `SKS tmux Runtime
+
+Open the managed tmux runtime:
+  sks
+
+Check readiness without attaching:
+  sks tmux check
+
+Create or attach a named session:
+  sks tmux --session sks-my-project
+
+Inspect the ㅅㅋㅅ ASCII status surface:
+  sks tmux status --once
+
+Requirements:
+  Codex App must be installed and opened at least once so first-party MCP/plugin tools are available to Codex CLI.
+  Codex CLI must be installed: npm i -g @openai/codex
+  tmux must be installed: macOS brew install tmux; Linux use your distro package manager.
+
+QA priority inside this runtime:
+  Browser Use first for local browser targets such as localhost, 127.0.0.1, file://, and browser-tab inspection.
+  Computer Use for desktop apps, screenshots, and browser/app evidence.
+`,
+    'auto-review': `Codex Auto-Review
+
+Enable persistent Codex automatic approval review:
+  sks auto-review enable
+
+Enable and launch high-reasoning SKS tmux:
+  sks --Auto-review --high
+  sks auto-review start --high
+
+Inspect or disable:
+  sks auto-review status
+  sks auto-review disable
+
+Effect:
+  Writes approvals_reviewer = "auto_review" to Codex config and creates sks-auto-review / sks-auto-review-high profiles.
+  Automatic review applies only to approval prompts that are already interactive under approval_policy = "on-request" or granular approval policies.
 `,
     team: `Team Workflow
 
@@ -1027,7 +1195,7 @@ Generated Codex App support:
   .codex/agents/*.toml defines analysis_scout, team_consensus, implementation_worker, db_safety_reviewer, and qa_reviewer.
   .agents/skills/team/SKILL.md explains the orchestration protocol.
 `,
-    'qa-loop': `QA-Loop Workflow
+    'qa-loop': `QA-LOOP Workflow
 
 Prepare:
   sks qa-loop prepare "QA this app"
@@ -1042,10 +1210,10 @@ Run:
   sks qa-loop status latest
 
 Inside Codex App:
-  $QALoop run UI and API E2E against local dev
+  $QA-LOOP run UI and API E2E against local dev
 
 Safety:
-  UI E2E requires @Computer Use evidence or it must be reported as not verified.
+  UI E2E requires Browser Use or Computer Use evidence, or it must be reported as not verified.
   Login credentials are test-only, runtime-only, and must not be saved to artifacts or TriWiki.
   Non-local/deployed targets are read-only smoke by default; destructive removal scenarios are never allowed there.
 
@@ -1118,6 +1286,8 @@ Initialize app files:
 
 Inspect app guidance:
   sks codex-app
+  sks codex-app check
+  sks tmux check
   sks dollar-commands
   cat .codex/SNEAKOSCOPE.md
 
@@ -1126,7 +1296,7 @@ Use inside Codex App:
   $DFix 내용을 영어로 바꿔줘
   $SKS show me available workflows
   $Team agree on the plan, then implement with specialists
-  $QALoop run UI and API E2E against local dev
+  $QA-LOOP run UI and API E2E against local dev
   $Ralph implement this with mandatory clarification
   $Research investigate this idea
   $AutoResearch improve this workflow with experiments
@@ -1288,6 +1458,15 @@ Compare reports:
 Show thresholds:
   sks eval thresholds
 `,
+    hproof: `H-Proof
+
+Evaluate a mission done gate:
+  sks hproof check latest
+  sks hproof check <mission-id>
+
+Purpose:
+  Blocks completion when unsupported critical claims, DB safety issues, missing tests, or high visual/wiki drift remain.
+`,
     wiki: `LLM Wiki Context Continuity
 
 Convert RGBA channels to deterministic wiki coordinates:
@@ -1343,6 +1522,7 @@ async function setup(args) {
   const res = await initProject(root, { force: flag(args, '--force'), installScope, globalCommand, localOnly });
   const install = await installStatus(root, installScope, { globalCommand });
   const versioningInfo = await versioningStatus(root);
+  const appRuntime = await codexAppIntegrationStatus();
   const hooksPath = path.join(root, '.codex', 'hooks.json');
   const result = {
     root,
@@ -1356,6 +1536,7 @@ async function setup(args) {
       quick_reference: path.join(root, '.codex', 'SNEAKOSCOPE.md'),
       agents_rules: path.join(root, 'AGENTS.md')
     },
+    codex_app_runtime: appRuntime,
     created: res.created,
     versioning: versioningInfo,
     local_only: localOnly,
@@ -1369,11 +1550,13 @@ async function setup(args) {
   console.log(`Version:   ${versioningInfo.enabled ? (versioningInfo.hook_installed ? 'auto-bump enabled' : 'auto-bump hook missing') : 'not enabled'}${versioningInfo.package_version ? ` (${versioningInfo.package_version})` : ''}`);
   if (localOnly) console.log('Git:       local-only (.git/info/exclude; user AGENTS preserved, SKS managed block refreshed)');
   console.log(`Codex App: .codex/config.toml, .codex/hooks.json, .agents/skills, .codex/agents, .codex/SNEAKOSCOPE.md`);
+  console.log(`App tools: ${appRuntime.ok ? 'ok' : 'needs setup'} Codex App=${appRuntime.app.installed ? 'ok' : 'missing'} Browser Use=${appRuntime.mcp.has_browser_use ? 'ok' : 'missing'} Computer Use=${appRuntime.mcp.has_computer_use ? 'ok' : 'missing'}`);
   console.log(`Prompt:    intent-first routing, $Answer fact-check route, $DFix ultralight design/content route, Context7 gate`);
   console.log(`Skills:    .agents/skills`);
   console.log(`Next:      sks context7 check; sks selftest --mock; sks commands; sks dollar-commands`);
   if (!install.ok && install.scope === 'global') console.log('\nGlobal command missing. Run: npm i -g sneakoscope');
   if (!install.ok && install.scope === 'project') console.log('\nProject package missing. Run: npm i -D sneakoscope');
+  if (!appRuntime.ok) console.log('\nCodex App and first-party Browser Use/Computer Use tools are required for SKS tmux/QA parity. Run: sks codex-app check');
 }
 
 async function fixPath(args) {
@@ -1428,6 +1611,7 @@ async function doctor(args) {
   const dbPolicyExists = await exists(path.join(root, '.sneakoscope', 'db-safety.json'));
   const dbScan = await scanDbSafety(root).catch((err) => ({ ok: false, findings: [{ id: 'db_safety_scan_failed', severity: 'high', reason: err.message }] }));
   const context7Status = await checkContext7(root);
+  const appRuntime = await codexAppIntegrationStatus({ codex });
   const skillStatus = await checkRequiredSkills(root);
   const guardStatus = await harnessGuardStatus(root);
   const versioningInfo = await versioningStatus(root);
@@ -1453,6 +1637,7 @@ async function doctor(args) {
     },
     sneakoscope: { ok: await exists(path.join(root, '.sneakoscope')) },
     context7: context7Status,
+    codex_app_runtime: appRuntime,
     harness_guard: guardStatus,
     versioning: versioningInfo,
     db_guard: { ok: dbPolicyExists && dbScan.ok, policy: dbPolicyExists ? await loadDbSafetyPolicy(root) : null, scan: dbScan },
@@ -1464,7 +1649,7 @@ async function doctor(args) {
     },
     package: { bytes: pkgBytes, human: formatBytes(pkgBytes) }, storage
   };
-  result.ready = !result.harness_conflicts.hard_block && nodeOk && Boolean(codex.bin) && install.ok && result.sneakoscope.ok && result.context7.ok && result.harness_guard.ok && result.versioning.ok && result.db_guard.ok && result.codex_app.ok && result.skills.ok;
+  result.ready = !result.harness_conflicts.hard_block && nodeOk && Boolean(codex.bin) && install.ok && result.sneakoscope.ok && result.context7.ok && appRuntime.ok && result.harness_guard.ok && result.versioning.ok && result.db_guard.ok && result.codex_app.ok && result.skills.ok;
   if (result.harness_conflicts.hard_block) process.exitCode = 1;
   if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
   console.log('Sneakoscope Codex Doctor\n');
@@ -1478,6 +1663,7 @@ async function doctor(args) {
   console.log(`Rust acc.: ${rust.available ? rust.version : 'optional-missing'}`);
   console.log(`State:     ${result.sneakoscope.ok ? 'ok' : 'missing .sneakoscope'}`);
   console.log(`Context7:  ${result.context7.ok ? 'ok' : 'missing MCP config'} project=${result.context7.project.ok ? 'ok' : 'missing'} global=${result.context7.global.ok ? 'ok' : 'missing'}`);
+  console.log(`App tools: ${appRuntime.ok ? 'ok' : 'needs setup'} Codex App=${appRuntime.app.installed ? 'ok' : 'missing'} Browser Use=${appRuntime.mcp.has_browser_use ? 'ok' : 'missing'} Computer Use=${appRuntime.mcp.has_computer_use ? 'ok' : 'missing'}`);
   console.log(`Guard:     ${result.harness_guard.ok ? 'ok' : 'blocked'}${result.harness_guard.source_exception ? ' source-exception' : ''}`);
   console.log(`Version:   ${result.versioning.ok ? 'ok' : 'missing'}${result.versioning.enabled ? ` ${result.versioning.package_version || ''}` : ` ${result.versioning.reason || 'disabled'}`}`);
   console.log(`DB Guard:  ${result.db_guard.ok ? 'ok' : 'blocked'} ${dbScan.findings?.length || 0} finding(s)`);
@@ -1492,6 +1678,7 @@ async function doctor(args) {
   if (!install.ok && install.scope === 'project') console.log('SKS project package missing. Install in this project: npm i -D sneakoscope');
   if (result.harness_conflicts.hard_block) console.log(`\n${formatHarnessConflictReport(conflictScan)}`);
   if (!result.context7.ok) console.log('Context7 MCP missing. Run: sks context7 setup --scope project');
+  if (!appRuntime.ok) console.log('Codex App or first-party MCP/plugin tools missing. Run: sks codex-app check');
   if (!result.harness_guard.ok) console.log('Harness guard failed. Run: sks setup from a real terminal, then sks guard check.');
   if (!result.versioning.ok) console.log('Versioning hook missing. Run: sks versioning hook, or sks doctor --fix.');
   if (!result.skills.ok) console.log(`Missing skills: ${result.skills.missing.join(', ')}. Run: sks setup`);
@@ -1641,7 +1828,7 @@ async function qaLoop(sub, args) {
   if (action === 'answer') return qaLoopAnswer(actionArgs);
   if (action === 'run') return qaLoopRun(actionArgs);
   if (action === 'status') return qaLoopStatus(actionArgs);
-  console.log(`SKS QA-Loop
+  console.log(`SKS QA-LOOP
 
 Usage:
   sks qa-loop prepare "target"
@@ -1650,12 +1837,12 @@ Usage:
   sks qa-loop status <mission-id|latest>
 
 Prompt route:
-  $QALoop run UI and API E2E against local dev
+  $QA-LOOP run UI and API E2E against local dev
 `);
 }
 
 function qaRoute() {
-  return ROUTES.find((route) => route.id === 'QALoop') || routePrompt('$QALoop');
+  return ROUTES.find((route) => route.id === 'QALoop') || routePrompt('$QA-LOOP');
 }
 
 async function qaLoopPrepare(args) {
@@ -1667,11 +1854,11 @@ async function qaLoopPrepare(args) {
   const schema = buildQaLoopQuestionSchema(prompt);
   const route = qaRoute();
   await writeQuestions(dir, schema);
-  await writeJsonAtomic(path.join(dir, 'route-context.json'), { route: 'QALoop', command: '$QALoop', mode: 'QALOOP', task: prompt, required_skills: route?.requiredSkills || [], context7_required: false, original_stop_gate: 'qa-gate.json', clarification_gate: true });
+  await writeJsonAtomic(path.join(dir, 'route-context.json'), { route: 'QALoop', command: '$QA-LOOP', mode: 'QALOOP', task: prompt, required_skills: route?.requiredSkills || [], context7_required: false, original_stop_gate: 'qa-gate.json', clarification_gate: true });
   await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.prepare.questions_created', slots: schema.slots.length });
-  await setCurrent(root, { mission_id: id, route: 'QALoop', route_command: '$QALoop', mode: 'QALOOP', phase: 'QALOOP_CLARIFICATION_AWAITING_ANSWERS', questions_allowed: true, implementation_allowed: false, clarification_required: true, ambiguity_gate_required: true, stop_gate: 'clarification-gate', reasoning_effort: 'high', reasoning_profile: 'sks-logic-high', reasoning_temporary: true });
-  console.log(`QA-Loop mission created: ${id}`);
-  console.log('QA-Loop is locked until all required answers are supplied.');
+  await setCurrent(root, { mission_id: id, route: 'QALoop', route_command: '$QA-LOOP', mode: 'QALOOP', phase: 'QALOOP_CLARIFICATION_AWAITING_ANSWERS', questions_allowed: true, implementation_allowed: false, clarification_required: true, ambiguity_gate_required: true, stop_gate: 'clarification-gate', reasoning_effort: 'high', reasoning_profile: 'sks-logic-high', reasoning_temporary: true });
+  console.log(`QA-LOOP mission created: ${id}`);
+  console.log('QA-LOOP is locked until all required answers are supplied.');
   console.log(`Questions: ${path.relative(root, path.join(dir, 'questions.md'))}`);
   console.log(`Answer schema: ${path.relative(root, path.join(dir, 'required-answers.schema.json'))}`);
   console.log('\nRequired questions:');
@@ -1688,15 +1875,15 @@ async function qaLoopAnswer(args) {
   await writeJsonAtomic(path.join(dir, 'answers.json'), answers);
   const result = await sealContract(dir, mission);
   if (!result.ok) {
-    console.error('Answer validation failed. QA-Loop remains locked.');
+    console.error('Answer validation failed. QA-LOOP remains locked.');
     console.error(JSON.stringify(result.validation, null, 2));
     process.exitCode = 2;
     return;
   }
   const artifactResult = await writeQaLoopArtifacts(dir, mission, result.contract);
   await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.contract.sealed', hash: result.contract.sealed_hash, checklist_count: artifactResult.checklist_count });
-  await setCurrent(root, { mission_id: id, route: 'QALoop', route_command: '$QALoop', mode: 'QALOOP', phase: 'QALOOP_CLARIFICATION_CONTRACT_SEALED', questions_allowed: false, implementation_allowed: true, clarification_required: false, clarification_passed: true, ambiguity_gate_passed: true, stop_gate: 'qa-gate.json', reasoning_effort: 'high', reasoning_profile: 'sks-logic-high', reasoning_temporary: true });
-  console.log(`QA-Loop contract sealed for ${id}`);
+  await setCurrent(root, { mission_id: id, route: 'QALoop', route_command: '$QA-LOOP', mode: 'QALOOP', phase: 'QALOOP_CLARIFICATION_CONTRACT_SEALED', questions_allowed: false, implementation_allowed: true, clarification_required: false, clarification_passed: true, ambiguity_gate_passed: true, stop_gate: 'qa-gate.json', reasoning_effort: 'high', reasoning_profile: 'sks-logic-high', reasoning_temporary: true });
+  console.log(`QA-LOOP contract sealed for ${id}`);
   console.log(`Hash: ${result.contract.sealed_hash}`);
   console.log(`Checklist: ${artifactResult.checklist_count} cases`);
   console.log(`Report: ${path.relative(root, path.join(dir, 'qa-report.md'))}`);
@@ -1709,12 +1896,12 @@ async function qaLoopRun(args) {
   if (!id) throw new Error('Usage: sks qa-loop run <mission-id|latest> [--mock] [--max-cycles N]');
   const { dir, mission } = await loadMission(root, id);
   const contractPath = path.join(dir, 'decision-contract.json');
-  if (!(await exists(contractPath))) throw new Error('QA-Loop cannot run: decision-contract.json is missing.');
+  if (!(await exists(contractPath))) throw new Error('QA-LOOP cannot run: decision-contract.json is missing.');
   const contract = await readJson(contractPath);
   if (!(await exists(path.join(dir, 'qa-ledger.json')))) await writeQaLoopArtifacts(dir, mission, contract);
   const safetyScan = await scanDbSafety(root);
   if (!safetyScan.ok) {
-    console.error('QA-Loop cannot run: SKS safety scan found unsafe project data-tool configuration.');
+    console.error('QA-LOOP cannot run: SKS safety scan found unsafe project data-tool configuration.');
     console.error(JSON.stringify(safetyScan.findings, null, 2));
     process.exitCode = 2;
     return;
@@ -1722,21 +1909,21 @@ async function qaLoopRun(args) {
   const fallbackCycles = Number.parseInt(contract.answers?.MAX_QA_CYCLES, 10) || 8;
   const maxCycles = readMaxCycles(args, fallbackCycles);
   const mock = flag(args, '--mock');
-  await setCurrent(root, { mission_id: id, route: 'QALoop', route_command: '$QALoop', mode: 'QALOOP', phase: 'QALOOP_RUNNING_NO_QUESTIONS', questions_allowed: false, stop_gate: 'qa-gate.json', reasoning_effort: 'high', reasoning_profile: 'sks-logic-high', reasoning_temporary: true });
+  await setCurrent(root, { mission_id: id, route: 'QALoop', route_command: '$QA-LOOP', mode: 'QALOOP', phase: 'QALOOP_RUNNING_NO_QUESTIONS', questions_allowed: false, stop_gate: 'qa-gate.json', reasoning_effort: 'high', reasoning_profile: 'sks-logic-high', reasoning_temporary: true });
   await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.run.started', maxCycles, mock });
   if (mock) {
     const gate = await writeMockQaResult(dir, mission, contract);
     await setCurrent(root, { mission_id: id, mode: 'QALOOP', phase: gate.passed ? 'QALOOP_DONE' : 'QALOOP_PAUSED', questions_allowed: true });
-    console.log(`Mock QA-Loop done: ${id}`);
+    console.log(`Mock QA-LOOP done: ${id}`);
     console.log(`Gate: ${gate.passed ? 'passed' : 'blocked'}`);
     return;
   }
   const codex = await getCodexInfo();
   if (!codex.bin) {
-    console.error('Codex CLI not found. Running mock QA-Loop instead.');
+    console.error('Codex CLI not found. Running mock QA-LOOP instead.');
     const gate = await writeMockQaResult(dir, mission, contract);
     await setCurrent(root, { mission_id: id, mode: 'QALOOP', phase: gate.passed ? 'QALOOP_DONE' : 'QALOOP_PAUSED', questions_allowed: true });
-    console.log(`Mock QA-Loop done: ${id}`);
+    console.log(`Mock QA-LOOP done: ${id}`);
     return;
   }
   let last = '';
@@ -1757,13 +1944,13 @@ async function qaLoopRun(args) {
     if (gate.passed) {
       await setCurrent(root, { mission_id: id, mode: 'QALOOP', phase: 'QALOOP_DONE', questions_allowed: true });
       await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.done', cycle });
-      console.log(`QA-Loop done: ${id}`);
+      console.log(`QA-LOOP done: ${id}`);
       return;
     }
     await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.cycle.continue', cycle, reasons: gate.reasons });
   }
   await setCurrent(root, { mission_id: id, mode: 'QALOOP', phase: 'QALOOP_PAUSED_MAX_CYCLES', questions_allowed: true });
-  console.log(`QA-Loop paused after max cycles: ${id}`);
+  console.log(`QA-LOOP paused after max cycles: ${id}`);
 }
 
 async function qaLoopStatus(args) {
@@ -1774,7 +1961,7 @@ async function qaLoopStatus(args) {
   const state = await readJson(stateFile(root), {});
   const status = await qaStatus(dir);
   if (flag(args, '--json')) return console.log(JSON.stringify({ mission, state, qa: status }, null, 2));
-  console.log('SKS QA-Loop Status\n');
+  console.log('SKS QA-LOOP Status\n');
   console.log(`Mission:   ${id}`);
   console.log(`Phase:     ${state.phase || mission.phase}`);
   console.log(`Checklist: ${status.checklist_count ?? 'none'}`);
@@ -2016,13 +2203,12 @@ async function selftest() {
   const repairTmp = tmpdir();
   await initProject(repairTmp, {});
   await writeTextAtomic(path.join(repairTmp, '.agents', 'skills', 'team', 'SKILL.md'), 'tampered\n');
-  await fsp.rm(path.join(repairTmp, '.agents', 'skills', 'agent-team'), { recursive: true, force: true });
+  await writeTextAtomic(path.join(repairTmp, '.agents', 'skills', 'agent-team', 'SKILL.md'), '---\nname: agent-team\ndescription: Fallback Codex App picker alias for $Team.\n---\n');
   await writeTextAtomic(path.join(repairTmp, '.codex', 'skills', 'team', 'SKILL.md'), 'legacy mirror\n');
   await initProject(repairTmp, { force: true, repair: true });
   const repairedTeamSkill = await safeReadText(path.join(repairTmp, '.agents', 'skills', 'team', 'SKILL.md'));
   if (!repairedTeamSkill.includes('SKS Team multi-agent orchestration') || repairedTeamSkill.includes('tampered')) throw new Error('selftest failed: doctor repair did not regenerate team skill');
-  const repairedTeamAliasSkill = await safeReadText(path.join(repairTmp, '.agents', 'skills', 'agent-team', 'SKILL.md'));
-  if (!repairedTeamAliasSkill.includes('Fallback Codex App picker alias')) throw new Error('selftest failed: doctor repair did not regenerate agent-team fallback skill');
+  if (await exists(path.join(repairTmp, '.agents', 'skills', 'agent-team', 'SKILL.md'))) throw new Error('selftest failed: doctor repair did not remove deprecated agent-team alias skill');
   if (await exists(path.join(repairTmp, '.codex', 'skills', 'team', 'SKILL.md'))) throw new Error('selftest failed: doctor repair did not remove legacy .codex/skills');
   const conflictTmp = tmpdir();
   await ensureDir(path.join(conflictTmp, '.omx'));
@@ -2038,7 +2224,7 @@ async function selftest() {
   await writeJsonAtomic(path.join(postinstallSetupTmp, 'package.json'), { name: 'postinstall-setup-smoke', version: '0.0.0' });
   const postinstallSetup = await runProcess(process.execPath, [path.join(packageRoot(), 'bin', 'sks.mjs'), 'postinstall'], { cwd: postinstallSetupTmp, env: { INIT_CWD: postinstallSetupTmp, HOME: path.join(postinstallSetupTmp, 'home'), SKS_SKIP_POSTINSTALL_SHIM: '1', SKS_SKIP_POSTINSTALL_CONTEXT7: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
   if (postinstallSetup.code !== 0) throw new Error(`selftest failed: postinstall setup exited ${postinstallSetup.code}: ${postinstallSetup.stderr}`);
-  if (!(await exists(path.join(postinstallSetupTmp, '.agents', 'skills', 'agent-team', 'SKILL.md')))) throw new Error('selftest failed: postinstall did not install agent-team fallback skill');
+  if (await exists(path.join(postinstallSetupTmp, '.agents', 'skills', 'agent-team', 'SKILL.md'))) throw new Error('selftest failed: postinstall installed deprecated agent-team fallback skill');
   if (!String(postinstallSetup.stdout || '').includes('Codex App project setup: installed')) throw new Error('selftest failed: postinstall did not report automatic Codex App setup');
   const guardBlocked = await checkHarnessModification(tmp, { tool_name: 'apply_patch', command: '*** Update File: .agents/skills/team/SKILL.md\n+tamper\n' });
   if (guardBlocked.action !== 'block') throw new Error('selftest failed: harness guard allowed skill tampering');
@@ -2182,12 +2368,11 @@ async function selftest() {
   const camelHookGuardJson = JSON.parse(camelHookGuardResult.stdout);
   if (camelHookGuardJson.decision !== 'block') throw new Error('selftest failed: hook did not block camelCase Codex tool payload');
   if (new Set(DOLLAR_COMMANDS.map((c) => c.command)).size !== DOLLAR_COMMANDS.length) throw new Error('selftest failed: duplicate dollar commands');
-  if (!DOLLAR_COMMAND_ALIASES.some((alias) => alias.canonical === '$Team' && alias.app_skill === '$agent-team')) throw new Error('selftest failed: $Team fallback picker alias missing');
-  if (!DOLLAR_COMMAND_ALIASES.some((alias) => alias.canonical === '$Wiki' && alias.app_skill === '$wiki-refresh')) throw new Error('selftest failed: $WikiRefresh picker alias missing');
-  if (!DOLLAR_COMMAND_ALIASES.some((alias) => alias.canonical === '$QALoop' && alias.app_skill === '$qa-loop')) throw new Error('selftest failed: $QALoop picker alias missing');
-  if (routePrompt('$agent-team run specialists')?.id !== 'Team') throw new Error('selftest failed: $agent-team did not route to Team');
-  if (routePrompt('$QALoop run UI E2E')?.id !== 'QALoop' || routePrompt('$QA-Loop deployed smoke')?.id !== 'QALoop') throw new Error('selftest failed: $QALoop did not route to QA-Loop');
-  if (routePrompt('$WikiRefresh 갱신')?.id !== 'Wiki') throw new Error('selftest failed: $WikiRefresh did not route to Wiki');
+  if (!DOLLAR_COMMAND_ALIASES.some((alias) => alias.canonical === '$QA-LOOP' && alias.app_skill === '$qa-loop')) throw new Error('selftest failed: $QA-LOOP picker skill missing');
+  if (DOLLAR_COMMAND_ALIASES.some((alias) => ['$agent-team', '$qaloop', '$wiki-refresh', '$wikirefresh'].includes(alias.app_skill))) throw new Error('selftest failed: duplicate picker aliases still present');
+  if (routePrompt('$agent-team run specialists')) throw new Error('selftest failed: deprecated $agent-team route still resolved');
+  if (routePrompt('$QA-LOOP run UI E2E')?.id !== 'QALoop' || routePrompt('$QALoop deployed smoke')) throw new Error('selftest failed: QA-LOOP route is not standardized to $QA-LOOP');
+  if (routePrompt('$WikiRefresh 갱신')) throw new Error('selftest failed: deprecated $WikiRefresh route still resolved');
   if (routePrompt('위키 갱신해줘')?.id !== 'Wiki') throw new Error('selftest failed: wiki refresh text did not route to Wiki');
   if (!COMMAND_CATALOG.some((c) => c.name === 'context7') || !COMMAND_CATALOG.some((c) => c.name === 'pipeline') || !COMMAND_CATALOG.some((c) => c.name === 'qa-loop')) throw new Error('selftest failed: context7/pipeline/qa-loop commands missing from catalog');
   const registryDollarCommands = DOLLAR_COMMANDS.map((c) => c.command);
@@ -2238,6 +2423,7 @@ async function selftest() {
   const hookTeamJson = JSON.parse(hookTeamResult.stdout);
   if (!hookTeamJson.hookSpecificOutput?.additionalContext?.includes('MANDATORY ambiguity-removal gate activated')) throw new Error('selftest failed: $Team hook did not force ambiguity gate before Team execution');
   if (!hookTeamJson.hookSpecificOutput?.additionalContext?.includes('GOAL_PRECISE')) throw new Error('selftest failed: $Team ambiguity gate did not provide questions');
+  if (!hookTeamJson.hookSpecificOutput?.additionalContext?.includes('Codex plan-tool interaction')) throw new Error('selftest failed: $Team ambiguity gate did not inject plan-tool guidance');
   const hookTeamState = await readJson(stateFile(hookTeamTmp), {});
   if (hookTeamState.phase !== 'TEAM_CLARIFICATION_AWAITING_ANSWERS' || hookTeamState.implementation_allowed !== false) throw new Error('selftest failed: $Team hook did not lock execution behind ambiguity gate');
   if (await exists(path.join(missionDir(hookTeamTmp, hookTeamState.mission_id), 'team-plan.json'))) throw new Error('selftest failed: Team plan was created before ambiguity gate passed');
@@ -2247,9 +2433,12 @@ async function selftest() {
   if (hookTeamStopJson.decision !== 'block' || !String(hookTeamStopJson.reason || '').includes('mandatory ambiguity-removal')) throw new Error('selftest failed: Stop hook did not block missing Team ambiguity answers');
   if (!String(hookTeamStopJson.reason || '').includes('Required questions') || !String(hookTeamStopJson.reason || '').includes('GOAL_PRECISE')) throw new Error('selftest failed: Stop hook did not reprint Team ambiguity questions');
   if (!String(hookTeamStopJson.reason || '').includes('sks pipeline answer')) throw new Error('selftest failed: Stop hook did not provide pipeline answer command');
+  if (!String(hookTeamStopJson.reason || '').includes('Codex plan-tool interaction')) throw new Error('selftest failed: Stop hook did not reprint plan-tool guidance');
   const hookTeamSchema = await readJson(path.join(missionDir(hookTeamTmp, hookTeamState.mission_id), 'required-answers.schema.json'));
+  if (!hookTeamSchema.slots.find((s) => s.id === 'NON_GOALS')?.allow_empty) throw new Error('selftest failed: NON_GOALS does not allow an empty array answer');
   const hookTeamAnswers = {};
   for (const s of hookTeamSchema.slots) hookTeamAnswers[s.id] = s.options ? (s.type === 'array' ? [s.options[0]] : s.options[0]) : (s.type.includes('array') ? ['selftest'] : (s.id === 'DB_MAX_BLAST_RADIUS' ? 'no_live_dml' : 'selftest'));
+  hookTeamAnswers.NON_GOALS = [];
   const hookTeamAnswersPath = path.join(hookTeamTmp, 'team-answers.json');
   await writeJsonAtomic(hookTeamAnswersPath, hookTeamAnswers);
   const pipelineAnswerResult = await runProcess(process.execPath, [hookBin, 'pipeline', 'answer', 'latest', hookTeamAnswersPath], { cwd: hookTeamTmp, env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
@@ -2259,14 +2448,14 @@ async function selftest() {
   if (!(await exists(path.join(missionDir(hookTeamTmp, hookTeamState.mission_id), 'decision-contract.json')))) throw new Error('selftest failed: pipeline answer did not seal decision contract');
   const hookQaTmp = tmpdir();
   await initProject(hookQaTmp, {});
-  const hookQaPayload = JSON.stringify({ cwd: hookQaTmp, prompt: '$QALoop run UI and API E2E against local dev' });
+  const hookQaPayload = JSON.stringify({ cwd: hookQaTmp, prompt: '$QA-LOOP run UI and API E2E against local dev' });
   const hookQaResult = await runProcess(process.execPath, [hookBin, 'hook', 'user-prompt-submit'], { cwd: hookQaTmp, input: hookQaPayload, env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 256 * 1024 });
-  if (hookQaResult.code !== 0) throw new Error(`selftest failed: $QALoop hook exited ${hookQaResult.code}: ${hookQaResult.stderr}`);
+  if (hookQaResult.code !== 0) throw new Error(`selftest failed: $QA-LOOP hook exited ${hookQaResult.code}: ${hookQaResult.stderr}`);
   const hookQaJson = JSON.parse(hookQaResult.stdout);
   const hookQaContext = hookQaJson.hookSpecificOutput?.additionalContext || '';
-  if (!hookQaContext.includes('MANDATORY ambiguity-removal gate activated') || !hookQaContext.includes('QA_SCOPE') || !hookQaContext.includes('UI_COMPUTER_USE_ACK')) throw new Error('selftest failed: $QALoop hook did not provide QA-specific questions');
+  if (!hookQaContext.includes('MANDATORY ambiguity-removal gate activated') || !hookQaContext.includes('QA_SCOPE') || !hookQaContext.includes('UI_COMPUTER_USE_ACK')) throw new Error('selftest failed: $QA-LOOP hook did not provide QA-specific questions');
   const hookQaState = await readJson(stateFile(hookQaTmp), {});
-  if (hookQaState.phase !== 'QALOOP_CLARIFICATION_AWAITING_ANSWERS' || hookQaState.implementation_allowed !== false) throw new Error('selftest failed: $QALoop hook did not lock execution behind ambiguity gate');
+  if (hookQaState.phase !== 'QALOOP_CLARIFICATION_AWAITING_ANSWERS' || hookQaState.implementation_allowed !== false) throw new Error('selftest failed: $QA-LOOP hook did not lock execution behind ambiguity gate');
   const hookQaSchema = await readJson(path.join(missionDir(hookQaTmp, hookQaState.mission_id), 'required-answers.schema.json'));
   const hookQaAnswers = {};
   for (const s of hookQaSchema.slots) hookQaAnswers[s.id] = s.options ? (s.type === 'array' ? [s.options[0]] : s.options[0]) : (s.type.includes('array') ? ['selftest'] : 'selftest');
@@ -2309,12 +2498,12 @@ async function selftest() {
   if (!answerContext.includes('SKS answer-only pipeline active')) throw new Error('selftest failed: question prompt did not use Answer route');
   if (answerContext.includes('MANDATORY ambiguity-removal gate activated') || answerContext.includes('SKS skill-first pipeline active') || answerContext.includes('Active Team mission') || answerContext.includes('Mission:')) throw new Error('selftest failed: Answer route leaked execution pipeline or active Team context');
   if (!answerJson.systemMessage?.includes('answer-only')) throw new Error('selftest failed: Answer route missing system message');
-  const wikiPayload = JSON.stringify({ cwd: hookTeamTmp, prompt: '$WikiRefresh 갱신' });
+  const wikiPayload = JSON.stringify({ cwd: hookTeamTmp, prompt: '$Wiki 갱신' });
   const wikiResult = await runProcess(process.execPath, [hookBin, 'hook', 'user-prompt-submit'], { cwd: hookTeamTmp, input: wikiPayload, env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
   if (wikiResult.code !== 0) throw new Error(`selftest failed: Wiki hook exited ${wikiResult.code}: ${wikiResult.stderr}`);
   const wikiJson = JSON.parse(wikiResult.stdout);
   const wikiContext = wikiJson.hookSpecificOutput?.additionalContext || '';
-  if (!wikiContext.includes('SKS wiki pipeline active') || !wikiContext.includes('sks wiki refresh')) throw new Error('selftest failed: $WikiRefresh hook did not inject wiki route');
+  if (!wikiContext.includes('SKS wiki pipeline active') || !wikiContext.includes('sks wiki refresh')) throw new Error('selftest failed: $Wiki hook did not inject wiki route');
   if (wikiContext.includes('MANDATORY ambiguity-removal gate activated') || wikiContext.includes('Mission:')) throw new Error('selftest failed: Wiki route created ambiguity mission state');
   if (!wikiJson.systemMessage?.includes('wiki refresh')) throw new Error('selftest failed: Wiki route missing system message');
   const codexConfigText = await safeReadText(path.join(tmp, '.codex', 'config.toml'));
@@ -2323,6 +2512,14 @@ async function selftest() {
   if (!codexConfigText.includes('[profiles.sks-task-medium]') || !codexConfigText.includes('[profiles.sks-logic-high]') || !codexConfigText.includes('[profiles.sks-research-xhigh]')) throw new Error('selftest failed: reasoning profiles not configured');
   if (!codexConfigText.includes('[agents.analysis_scout]')) throw new Error('selftest failed: analysis_scout agent not configured');
   if (!codexConfigText.includes('[agents.team_consensus]')) throw new Error('selftest failed: team_consensus agent not configured');
+  const autoReviewHome = path.join(tmp, 'auto-review-home');
+  const autoReviewEnv = { HOME: autoReviewHome };
+  const autoReviewEnabled = await enableAutoReview({ env: autoReviewEnv, high: true });
+  if (!autoReviewEnabled.enabled || autoReviewEnabled.profile_name !== 'sks-auto-review-high' || !autoReviewEnabled.high_profile) throw new Error('selftest failed: auto-review high profile was not enabled');
+  const autoReviewConfig = await safeReadText(path.join(autoReviewHome, '.codex', 'config.toml'));
+  if (!autoReviewConfig.includes('approvals_reviewer = "auto_review"') || !autoReviewConfig.includes('[profiles.sks-auto-review-high]')) throw new Error('selftest failed: auto-review config not written');
+  const autoReviewDisabled = await disableAutoReview({ env: autoReviewEnv });
+  if (autoReviewDisabled.enabled || autoReviewDisabled.approvals_reviewer !== 'user') throw new Error('selftest failed: auto-review disable did not restore user reviewer');
   const analysisAgentExists = await exists(path.join(tmp, '.codex', 'agents', 'analysis-scout.toml'));
   if (!analysisAgentExists) throw new Error('selftest failed: analysis scout agent not installed');
   const teamAgentExists = await exists(path.join(tmp, '.codex', 'agents', 'team-consensus.toml'));

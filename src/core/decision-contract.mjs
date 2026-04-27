@@ -2,10 +2,10 @@ import path from 'node:path';
 import { readJson, writeJsonAtomic, nowIso, sha256 } from './fsx.mjs';
 import { validateQaLoopAnswers } from './qa-loop.mjs';
 
-function isEmptyAnswer(v) {
+function isEmptyAnswer(v, slot = {}) {
   if (v === undefined || v === null) return true;
   if (typeof v === 'string' && v.trim() === '') return true;
-  if (Array.isArray(v) && v.length === 0) return true;
+  if (Array.isArray(v) && v.length === 0) return !slot.allow_empty;
   return false;
 }
 
@@ -14,17 +14,17 @@ export function validateAnswers(schema, answers) {
   const resolved = [];
   for (const slot of schema.slots) {
     const value = answers[slot.id];
-    if (slot.required && isEmptyAnswer(value)) {
+    if (slot.required && isEmptyAnswer(value, slot)) {
       errors.push({ slot: slot.id, error: 'required_answer_missing' });
       continue;
     }
-    if (!isEmptyAnswer(value) && slot.options) {
+    if (!isEmptyAnswer(value, slot) && slot.options) {
       const values = Array.isArray(value) ? value : [value];
       for (const val of values) {
         if (!slot.options.includes(val)) errors.push({ slot: slot.id, error: 'invalid_option', value: val, allowed: slot.options });
       }
     }
-    if (!isEmptyAnswer(value)) resolved.push(slot.id);
+    if (!isEmptyAnswer(value, slot) || (Array.isArray(value) && value.length === 0 && slot.allow_empty)) resolved.push(slot.id);
   }
   if (answers.DESTRUCTIVE_DB_OPERATIONS_ALLOWED && answers.DESTRUCTIVE_DB_OPERATIONS_ALLOWED !== 'never') {
     errors.push({ slot: 'DESTRUCTIVE_DB_OPERATIONS_ALLOWED', error: 'sneakoscope_never_allows_destructive_database_operations' });
@@ -78,7 +78,7 @@ export function buildDecisionContract({ mission, schema, answers }) {
       qa_loop_target_environment: answers.TARGET_ENVIRONMENT || null,
       qa_loop_mutation_policy: answers.QA_MUTATION_POLICY || null,
       qa_loop_credentials_saved: false,
-      qa_loop_ui_requires_computer_use: Boolean(answers.QA_SCOPE && answers.QA_SCOPE !== 'api_e2e_only'),
+      qa_loop_ui_requires_official_browser_or_computer_use: Boolean(answers.QA_SCOPE && answers.QA_SCOPE !== 'api_e2e_only'),
       production_database_writes_allowed: false,
       mcp_direct_execute_sql_writes_allowed: false,
       db_reset_allowed: false,
