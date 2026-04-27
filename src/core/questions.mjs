@@ -17,7 +17,7 @@ export function buildQuestionSchema(prompt) {
   const slots = [
     { id: 'GOAL_PRECISE', question: '이번 작업의 최종 목표를 한 문장으로 정확히 정의해주세요.', required: true, type: 'string' },
     { id: 'ACCEPTANCE_CRITERIA', question: '완료 기준을 항목으로 적어주세요. 최소 2개 이상 권장합니다.', required: true, type: 'array_or_string' },
-    { id: 'NON_GOALS', question: '이번 작업에서 제외할 범위가 있나요? 없으면 빈 배열로 답해주세요.', required: true, type: 'array_or_string' },
+    { id: 'NON_GOALS', question: '이번 작업에서 제외할 범위가 있나요? 없으면 빈 배열로 답해주세요.', required: true, type: 'array_or_string', allow_empty: true },
     { id: 'PUBLIC_API_CHANGE_ALLOWED', question: 'public API 또는 외부 계약 변경을 허용하나요?', required: true, type: 'enum', options: ['no', 'yes_if_needed', 'yes'] },
     { id: 'DB_SCHEMA_CHANGE_ALLOWED', question: 'DB schema 또는 migration 변경을 허용하나요?', required: true, type: 'enum', options: ['no', 'yes_if_needed', 'yes_with_migration'] },
     { id: 'DEPENDENCY_CHANGE_ALLOWED', question: '새 dependency 추가를 허용하나요?', required: true, type: 'enum', options: ['no', 'yes_if_already_approved', 'yes'] },
@@ -68,16 +68,16 @@ export function buildQuestionSchema(prompt) {
 export function questionsMarkdown(schema) {
   const lines = [];
   const isQaLoop = schema?.route === 'QALoop';
-  lines.push(isQaLoop ? '# Sneakoscope Codex QA-Loop Prepare Questions' : '# Sneakoscope Codex Ralph Prepare Questions');
+  lines.push(isQaLoop ? '# Sneakoscope Codex QA-LOOP Prepare Questions' : '# Sneakoscope Codex Ambiguity Questions');
   lines.push('');
   if (isQaLoop) {
-    lines.push('QA-Loop는 이 질문들에 모두 답변하고 Decision Contract가 봉인된 뒤에만 실행됩니다.');
+    lines.push('QA-LOOP는 이 질문들에 모두 답변하고 Decision Contract가 봉인된 뒤에만 실행됩니다.');
     lines.push('로그인이 필요하면 테스트 전용 계정 정보만 임시 런타임 입력으로 제공해야 하며, answers.json/리포트/로그/wiki에는 절대 저장하지 않습니다.');
-    lines.push('UI E2E는 @Computer Use 증거가 없으면 검증 완료로 주장할 수 없습니다.');
+    lines.push('UI E2E는 Browser Use 또는 Computer Use 증거가 없으면 검증 완료로 주장할 수 없습니다.');
     lines.push('개발 서버가 아닌 배포/스테이징 도메인에서는 삭제성 테스트를 절대 실행하지 않습니다.');
   } else {
-    lines.push('Ralph는 이 질문들에 모두 답변하고 Decision Contract가 봉인된 뒤에만 실행됩니다.');
-    lines.push('Ralph 실행 중에는 사용자에게 절대 질문하지 않습니다.');
+    lines.push('이 질문들에 모두 답변하고 Decision Contract가 봉인된 뒤에만 실행됩니다.');
+    lines.push('봉인 후 실행 중에는 사용자에게 새 질문을 하지 않고 decision ladder로 해결합니다.');
     lines.push('DB 작업은 특히 안전 게이트가 적용됩니다. 파괴적 DB 작업은 절대 허용되지 않습니다.');
   }
   if (schema.description) lines.push(schema.description);

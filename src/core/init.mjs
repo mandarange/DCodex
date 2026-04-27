@@ -574,6 +574,9 @@ ${commandPrefix} usage team
 ${commandPrefix} usage ralph
 ${commandPrefix} quickstart
 ${commandPrefix} codex-app
+${commandPrefix} codex-app check
+${commandPrefix} tmux check
+${commandPrefix} auto-review status
 ${commandPrefix} dollar-commands
 ${commandPrefix} context7 check
 ${commandPrefix} context7 tools
@@ -581,6 +584,7 @@ ${commandPrefix} context7 docs /websites/developers_openai_codex --query "hooks 
 ${commandPrefix} pipeline status
 ${commandPrefix} pipeline answer latest answers.json
 ${commandPrefix} guard check
+${commandPrefix} hproof check latest
 ${commandPrefix} conflicts check
 ${commandPrefix} reasoning "simple copy edit"
 ${commandPrefix} wiki refresh
@@ -593,7 +597,9 @@ ${commandPrefix} wiki validate .sneakoscope/wiki/context-pack.json
 
 ${DOLLAR_COMMANDS.map((c) => `- \`${c.command}\`: ${c.route}. ${c.description}`).join('\n')}
 
-Codex App skills are installed in the official repo-local path \`.agents/skills\` with lowercase names, so the picker should find \`${DOLLAR_COMMAND_ALIASES.map((x) => x.app_skill).join('`, `')}\`. SKS routing is case-insensitive, so \`$Team\` and \`$team\` both activate the same route.
+Codex App skills are installed in the official repo-local path \`.agents/skills\` with one canonical lowercase skill per dollar command: \`${DOLLAR_COMMAND_ALIASES.map((x) => x.app_skill).join('`, `')}\`. SKS routing is case-insensitive for canonical command spelling, so \`$Team\` and \`$team\` both activate the same route; duplicate spellings such as \`$QALoop\` are intentionally not separate commands.
+
+Codex CLI tmux parity requires Codex App to be installed and opened at least once because the first-party Browser Use and Computer Use MCP/plugin tools are provisioned through the App. Check with \`${commandPrefix} codex-app check\` and \`${commandPrefix} tmux check\`; run \`${commandPrefix}\` to enter the ㅅㅋㅅ tmux runtime. Use \`${commandPrefix} --Auto-review --high\` to enable Codex automatic approval review and launch with the high-reasoning auto-review profile.
 
 The prompt optimization pipeline also runs without a dollar command and infers the lightest route automatically. Answer-only prompts use the Answer path: TriWiki/web/Context7 evidence when useful, Honest Mode fact-checking, then direct reply. DFix bypasses the general pipeline and uses an ultralight task-list path for simple design/content fixes. Every execution route starts with a mandatory ambiguity-removal gate before execution. Answer the generated questions, then seal them with \`${commandPrefix} pipeline answer latest answers.json\` (or \`${commandPrefix} ralph answer latest answers.json\` for Ralph).
 
@@ -650,7 +656,7 @@ The prompt optimization pipeline also runs without a dollar command and infers t
 - "$Team agree on the best plan, then implement it with a fresh specialist team."
 - "$DFix change the button text to English."
 - "$Answer why does this hook behave this way?"
-- "$QALoop run UI and API E2E against local dev."
+- "$QA-LOOP run UI and API E2E against local dev."
 - "$Ralph implement this with mandatory clarification."
 - "$Research investigate this idea."
 - "$AutoResearch improve this workflow with experiments."
@@ -668,6 +674,9 @@ Codex App can call the same project-local control surface through terminal comma
 \`\`\`bash
 ${commandPrefix} setup
 ${commandPrefix} doctor
+${commandPrefix} codex-app check
+${commandPrefix} tmux check
+${commandPrefix} auto-review status
 ${commandPrefix} context7 check
 ${commandPrefix} context7 tools
 ${commandPrefix} context7 docs /websites/developers_openai_codex --query "hooks customization"
@@ -696,13 +705,9 @@ async function installSkills(root) {
     'dfix': `---\nname: dfix\ndescription: Ultralight fast design/content fix mode for $DFix or $dfix requests and inferred simple edits such as text color, copy, labels, spacing, or translation.\n---\n\nYou are running SKS DFix mode.\n\nPurpose:\n- Bypass the general SKS prompt pipeline for small design/content requests.\n- Convert the request into a tiny task list, then execute only those tasks.\n- Use for requests like 글자 색 바꿔줘, 내용을 영어로 바꿔줘, button label 수정, spacing 조정, copy replacement, simple style tweaks.\n\nUltralight loop:\n1. List the exact micro-edits implied by the request.\n2. Inspect only the files needed to locate those targets.\n3. Apply only the listed edits.\n4. Run only cheap verification when useful.\n5. Final response should be short: what changed and any verification.\n\nRules:\n- Do not enter the general prompt pipeline, mission workflow, ambiguity gate, TriWiki refresh, Context7 routing, subagent orchestration, Ralph, Research, eval, or broad redesign.\n- Do not ask for more requirements when the target can be inferred from local context.\n- Preserve the existing design system and component patterns.\n`,
     'answer': `---\nname: answer\ndescription: Answer-only research route for ordinary questions that should not start implementation.\n---\n\nUse when the user is asking for an explanation, comparison, status, facts, source-backed research, or documentation guidance rather than asking you to change files or run work.\n\nEvidence flow:\n1. Use current repo files and TriWiki first when the answer is project-local.\n2. Hydrate low-trust wiki claims from source paths before relying on them.\n3. Use web search for current, external, or uncertain facts when browsing is available or the user asks for latest/source-backed information.\n4. Use Context7 resolve-library-id plus query-docs when the answer depends on package, API, framework, SDK, MCP, or generated documentation behavior.\n5. End with Honest Mode fact-checking: separate verified facts, source-backed inferences, and uncertainty.\n\nRules:\n- Do not create route mission state, ambiguity-gate questions, subagents, Team handoffs, Ralph, Research loops, eval loops, or file edits.\n- If the prompt turns out to request implementation, state the reroute and use the proper execution pipeline.\n`,
     'sks': `---\nname: sks\ndescription: General Sneakoscope Codex command route for $SKS or $sks usage, setup, status, and workflow help.\n---\n\nUse the local SKS control surface. Prefer these discovery commands when the user asks what is available: sks commands, sks usage <topic>, sks quickstart, sks codex-app, sks context7 check, sks guard check, sks conflicts check, sks reasoning, sks wiki pack, and sks pipeline status. If implementation is requested, route to the lightest matching SKS path and keep reasoning-profile changes temporary. For code-changing execution, first surface route/guard/write-scope status, then use worker subagents by default when scopes are independent; the parent integrates and verifies, while urgent blocking work stays local. Context tracking uses TriWiki as the SSOT for long-running or cross-turn work. Do not edit installed harness control files; the harness guard blocks LLM writes after setup except in the Sneakoscope engine source repo. If OMX/DCodex or another explicit Codex harness is detected, do not install SKS; use sks conflicts prompt and require human approval before cleanup.\n`,
-    'wiki': `---\nname: wiki\ndescription: Dollar-command route for $Wiki TriWiki refresh, pack, validate, and prune commands.\n---\n\nUse for $Wiki/$WikiRefresh or Korean wiki-refresh requests. Refresh/update/갱신: run sks wiki refresh, then validate .sneakoscope/wiki/context-pack.json. Pack: run sks wiki pack, then validate. Prune/clean/정리: use sks wiki refresh --prune, or sks wiki prune --dry-run for inspection. Report claims, anchors, trust, validation, and blockers. Do not start ambiguity-gated implementation, subagents, or unrelated work.\n`,
-    'wiki-refresh': `---\nname: wiki-refresh\ndescription: Codex App picker alias for $WikiRefresh.\n---\n\nUse exactly like $Wiki.\n`,
-    'wikirefresh': `---\nname: wikirefresh\ndescription: Compact Codex App picker alias for $WikiRefresh.\n---\n\nUse exactly like $Wiki.\n`,
+    'wiki': `---\nname: wiki\ndescription: Dollar-command route for $Wiki TriWiki refresh, pack, validate, and prune commands.\n---\n\nUse for $Wiki or Korean wiki-refresh requests. Refresh/update/갱신: run sks wiki refresh, then validate .sneakoscope/wiki/context-pack.json. Pack: run sks wiki pack, then validate. Prune/clean/정리: use sks wiki refresh --prune, or sks wiki prune --dry-run for inspection. Report claims, anchors, trust, validation, and blockers. Do not start ambiguity-gated implementation, subagents, or unrelated work.\n`,
     'team': `---\nname: team\ndescription: Dollar-command route for $Team or $team SKS Team multi-agent orchestration: mandatory ambiguity gate, parallel analysis scouts, TriWiki refresh, role-counted debate, fresh executor development team, live transcript, and final integration.\n---\n\nUse when the user invokes $Team/$team, asks for a team of agents, or asks for parallel specialist implementation.\n\nWorkflow:\n1. Mandatory ambiguity-removal gate: before any scout/debate/implementation work, ask the generated questions, write answers.json, and run sks pipeline answer latest answers.json. Do not spawn analysis scouts until this gate passes.\n2. Create or inspect the Team mission with sks team \"task\" when useful. Role counts use executor:5 reviewer:2 user:1 planner:1. executor:N means exactly N analysis_scout_N agents first, exactly N debate participants next, and then a separate N-person executor development team. --agents N, --sessions N, and --team-size N remain aliases for executor/session budget; --max-agents uses the configured default maximum of 6 sessions/agents; default is executor:3 reviewer:1 user:1 planner:1.\n3. Parallel analysis scouts: spawn the concrete analysis_scout_N roster read-only. Split repo, docs, tests, API, DB-risk, UX-friction, and implementation-surface investigation into independent slices. Each scout returns source-backed findings for team-analysis.md.\n4. TriWiki refresh: parent turns scout findings into TriWiki-ready claims, runs sks wiki pack, then runs sks wiki validate .sneakoscope/wiki/context-pack.json. Do not move to debate or implementation until the pack is refreshed and validated.\n5. Debate bundle: spawn the concrete debate_team roster using the refreshed TriWiki context. Users are intentionally low-context, self-interested, stubborn, and inconvenience-averse. Executor voices are capable developers. Reviewers are strict. Planners force one coherent objective.\n6. Live visibility phase: after every useful scout finding, subagent status/result/handoff, record it with sks team event <mission-id|latest> --agent <name> --phase <phase> --message \"...\" so the user can see the team conversation without tmux.\n7. Consensus phase: synthesize debate into one objective, explicit constraints, acceptance criteria, and disjoint implementation slices.\n8. Close or stop the debate team after their results are captured.\n9. Development bundle: form a fresh development_team where exactly executor_N developers implement slices in parallel with non-overlapping ownership. Tell workers they are not alone in the codebase and must not revert others' edits.\n10. Review phase: validation_team reviewers check correctness, DB safety, missing tests, and evidence; user personas reject outcomes that create practical friction.\n11. Verification phase: run focused tests or justify gaps, update mission artifacts when present, and produce final evidence.\n\nLive files:\n- .sneakoscope/missions/<id>/team-analysis.md stores source-backed scout findings and TriWiki-ready claims.\n- .sneakoscope/missions/<id>/team-live.md is the user-readable live transcript inside Codex App.\n- .sneakoscope/missions/<id>/team-transcript.jsonl is the machine-readable event stream.\n- .sneakoscope/missions/<id>/team-dashboard.json is the current dashboard.\n\nRules:\n- The parent agent remains orchestrator and owns final integration.\n- Before spawning development workers, surface visible SKS route, guard, write-scope, TriWiki, and verification status.\n- Do not delegate the immediate blocking task when the parent can do it faster.\n- Use high reasoning only while the Team route is active, then return to the default/user-selected profile.\n- Never let subagents bypass SKS hooks, DB safety, no-question Ralph rules, or H-Proof completion gates.\n- Destructive database actions remain forbidden.\n`,
-    'agent-team': `---\nname: agent-team\ndescription: Fallback Codex App picker alias for $Team/$team when the app hides or reserves the plain team skill name.\n---\n\nUse exactly like $Team. This skill exists so npm install, sks setup, and sks doctor --fix can repair Codex App discovery when the plain \`team\` skill file exists but does not appear in the picker.\n\nRoute:\n- Treat $agent-team as $Team.\n- Create or inspect the Team mission with sks team \"task\" when useful.\n- Follow the same scout-first Team orchestration protocol: parallel analysis scouts, TriWiki refresh and validation, read-only debate, one sealed objective, fresh executor_N implementation team, strict review, and final evidence.\n- Record live progress with sks team event <mission-id|latest> --agent <name> --phase <phase> --message \"...\".\n\nRules:\n- The parent agent remains orchestrator and owns final integration.\n- Never let subagents bypass SKS hooks, DB safety, no-question Ralph rules, Context7 gates, or H-Proof/Honest Mode.\n- Destructive database actions remain forbidden.\n`,
-    'qaloop': `---\nname: qaloop\ndescription: Dollar-command route for $QALoop QA-Loop UI/API E2E verification with mandatory ambiguity questions, safety gates, Computer Use UI evidence, and a QA report.\n---\n\nUse when the user invokes $QALoop/$qaloop or asks for QA-Loop.\n\nWorkflow:\n1. Start with the mandatory QA ambiguity gate. Ask whether scope is UI E2E, API E2E, both, or all available; ask local dev server versus preview/staging/deployed target; ask allowed data mutation policy; ask whether login is required.\n2. If login is required, ask for test-only credentials as ephemeral runtime input only. Tell the user these credentials are for testing only. Never save usernames, passwords, tokens, cookies, auth state, or screenshots containing secrets in mission files, reports, logs, team events, or TriWiki.\n3. UI E2E must use @Computer Use for live browser interaction. If @Computer Use evidence is not available, mark UI verification as not performed.\n4. Non-local/deployed targets are read-only smoke by default. Destructive removal scenarios are never allowed on deployed targets.\n5. After answers are sealed, use sks qa-loop answer latest answers.json, then sks qa-loop run latest. Work through qa-ledger.json case by case until qa-gate.json passes or a hard blocker is recorded.\n6. End by writing qa-report.md and running Honest Mode with passed checks, gaps, risks, and unverified areas.\n\nArtifacts:\n- .sneakoscope/missions/<id>/qa-ledger.json\n- .sneakoscope/missions/<id>/qa-report.md\n- .sneakoscope/missions/<id>/qa-gate.json\n\nRules:\n- Do not skip the ambiguity gate.\n- Do not save credentials or auth state to artifacts or wiki.\n- Do not claim UI E2E without @Computer Use evidence.\n- Keep raw logs bounded under the mission cycle folder and summarize only evidence in the report.\n`,
-    'qa-loop': `---\nname: qa-loop\ndescription: Codex App picker alias for $QALoop.\n---\n\nUse exactly like $QALoop.\n`,
+    'qa-loop': `---\nname: qa-loop\ndescription: Dollar-command route for $QA-LOOP UI/API E2E verification with mandatory ambiguity questions, safety gates, Browser Use and Computer Use MCP/plugin evidence, and a QA report.\n---\n\nUse when the user invokes $QA-LOOP or asks for QA-LOOP. $QALoop and $qaloop are intentionally not separate command names; keep this route standardized as $QA-LOOP.\n\nWorkflow:\n1. Start with the mandatory QA ambiguity gate. Ask whether scope is UI E2E, API E2E, both, or all available; ask local dev server versus preview/staging/deployed target; ask allowed data mutation policy; ask whether login is required.\n2. If login is required, ask for test-only credentials as ephemeral runtime input only. Tell the user these credentials are for testing only. Never save usernames, passwords, tokens, cookies, auth state, or screenshots containing secrets in mission files, reports, logs, team events, or TriWiki.\n3. UI E2E must prefer official Codex MCP/plugin tools: use Browser Use first for local browser targets such as localhost, 127.0.0.1, file:// URLs, and current browser-tab inspection; use Computer Use for desktop app interaction, screenshots, and browser/app evidence. If neither evidence path is available, mark UI verification as not performed.\n4. Non-local/deployed targets are read-only smoke by default. Destructive removal scenarios are never allowed on deployed targets.\n5. After answers are sealed, use sks qa-loop answer latest answers.json, then sks qa-loop run latest. Work through qa-ledger.json case by case until qa-gate.json passes or a hard blocker is recorded.\n6. End by writing qa-report.md and running Honest Mode with passed checks, gaps, risks, and unverified areas.\n\nArtifacts:\n- .sneakoscope/missions/<id>/qa-ledger.json\n- .sneakoscope/missions/<id>/qa-report.md\n- .sneakoscope/missions/<id>/qa-gate.json\n\nRules:\n- Do not skip the ambiguity gate.\n- Do not save credentials or auth state to artifacts or wiki.\n- Do not claim UI E2E without Browser Use or Computer Use evidence.\n- Keep raw logs bounded under the mission cycle folder and summarize only evidence in the report.\n`,
     'ralph': `---\nname: ralph\ndescription: Dollar-command route for $Ralph or $ralph mandatory clarification and no-question mission workflows.\n---\n\nUse when the user invokes $Ralph/$ralph or requests a clarification-gated autonomous implementation mission. Prepare with sks ralph prepare, answer/seal required slots when answers are provided, then run only after decision-contract.json exists.\n`,
     'research': `---\nname: research\ndescription: Dollar-command route for $Research or $research frontier discovery workflows.\n---\n\nUse when the user invokes $Research/$research or asks for research, hypotheses, new mechanisms, falsification, or testable predictions. Prefer sks research prepare and sks research run. Do not use for ordinary code edits.\n`,
     'autoresearch': `---\nname: autoresearch\ndescription: Dollar-command route for $AutoResearch or $autoresearch iterative experiment loops.\n---\n\nUse when the user invokes $AutoResearch/$autoresearch or asks for iterative improvement, SEO/GEO, ranking, prompt/workflow improvement, benchmark gains, or open-ended experimentation. Follow the autoresearch-loop skill and load seo-geo-optimizer for README, npm, GitHub stars, schema, keyword, AI-search, or discoverability work. Define program, hypothesis, experiment, metric, keep/discard decision, falsification, next experiment, and Honest Mode conclusion.\n`,
@@ -736,17 +741,20 @@ async function installSkills(root) {
     await writeTextAtomic(path.join(dir, 'SKILL.md'), `${skillContent.trim()}\n`);
     await writeSkillMetadata(dir, name);
   }
-  return { removed_codex_skill_mirrors: await removeGeneratedCodexSkillMirrors(root, Object.keys(skills)) };
+  return {
+    removed_agent_skill_aliases: await removeGeneratedAgentSkillAliases(root, Object.keys(skills)),
+    removed_codex_skill_mirrors: await removeGeneratedCodexSkillMirrors(root, Object.keys(skills))
+  };
 }
 
 function enrichSkillContent(name, content) {
-  if (!['sks', 'answer', 'wiki', 'wiki-refresh', 'wikirefresh', 'team', 'agent-team', 'qaloop', 'qa-loop', 'ralph', 'research', 'autoresearch', 'db', 'gx', 'prompt-pipeline', 'pipeline-runner', 'turbo-context-pack', 'hproof-evidence-bind'].includes(name)) return content;
+  if (!['sks', 'answer', 'wiki', 'team', 'qa-loop', 'ralph', 'research', 'autoresearch', 'db', 'gx', 'prompt-pipeline', 'pipeline-runner', 'turbo-context-pack', 'hproof-evidence-bind'].includes(name)) return content;
   const text = String(content || '').trimEnd();
   if (text.includes('TriWiki context-tracking SSOT')) return text;
   return `${text}
 
 Context tracking:
-- Mandatory ambiguity-removal happens before execution routes. Answer-only prompts use TriWiki/web/Context7 evidence and Honest Mode fact-checking without starting implementation. DFix bypasses this pipeline and uses its own ultralight task-list path. Ask the generated questions first, then seal answers with sks pipeline answer latest answers.json before implementing or spawning Team agents.
+- Mandatory ambiguity-removal happens before execution routes. Answer-only prompts use TriWiki/web/Context7 evidence and Honest Mode fact-checking without starting implementation. DFix bypasses this pipeline and uses its own ultralight task-list path. When questions are required, use the Codex plan tool first to show Ask questions -> Seal decision contract -> Execute/verify, then ask the generated questions. Seal answers with sks pipeline answer latest answers.json before implementing or spawning Team agents.
 - TriWiki context-tracking SSOT is .sneakoscope/wiki/context-pack.json.
 - Use sks wiki refresh or sks wiki pack before each work stage when relevant, after new findings/artifact changes, and before handoffs or final claims.
 - Use sks wiki prune when stale or oversized wiki state would pollute handoffs.
@@ -781,6 +789,29 @@ async function removeGeneratedCodexSkillMirrors(root, skillNames) {
   await removeDirIfEmpty(legacyRoot);
   await removeDirIfEmpty(path.join(root, '.agents'));
   return removed;
+}
+
+async function removeGeneratedAgentSkillAliases(root, skillNames) {
+  const current = new Set(skillNames);
+  const obsolete = ['agent-team', 'qaloop', 'wiki-refresh', 'wikirefresh'];
+  const removed = [];
+  for (const name of obsolete) {
+    if (current.has(name)) continue;
+    const dir = path.join(root, '.agents', 'skills', name);
+    const skillPath = path.join(dir, 'SKILL.md');
+    const text = await readText(skillPath, null);
+    if (!isGeneratedSksAgentSkill(text, name)) continue;
+    await fsp.rm(dir, { recursive: true, force: true });
+    removed.push(path.relative(root, dir));
+  }
+  return removed;
+}
+
+function isGeneratedSksAgentSkill(text, name) {
+  if (!text) return false;
+  const s = String(text);
+  if (!new RegExp(`name:\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(s)) return false;
+  return /Sneakoscope|SKS|Codex App picker alias|Dollar-command route/i.test(s);
 }
 
 function isGeneratedSksLegacySkill(text, name) {

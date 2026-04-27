@@ -1,4 +1,4 @@
-export const USAGE_TOPICS = 'install|setup|team|qa-loop|ralph|research|db|codex-app|dfix|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|gx|wiki';
+export const USAGE_TOPICS = 'install|setup|tmux|auto-review|team|qa-loop|ralph|research|db|codex-app|dfix|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|hproof|gx|wiki';
 
 export const RECOMMENDED_MCP_SERVERS = [
   {
@@ -115,7 +115,6 @@ export const ROUTES = [
     mode: 'TEAM',
     route: 'multi-agent team orchestration',
     description: 'Run parallel analysis scouts, refresh TriWiki, debate with role personas, agree on an objective, close debate agents, then form a fresh executor development team for parallel work.',
-    appSkillAliases: ['agent-team'],
     requiredSkills: ['team', 'pipeline-runner', 'context7-docs', 'prompt-pipeline', 'honest-mode'],
     lifecycle: ['parallel_analysis_scouting', 'triwiki_refresh', 'planning_debate', 'live_transcript', 'consensus_artifact', 'fresh_implementation_team', 'review_artifact', 'integration_evidence', 'honest_mode'],
     context7Policy: 'required',
@@ -126,18 +125,17 @@ export const ROUTES = [
   },
   {
     id: 'QALoop',
-    command: '$QALoop',
+    command: '$QA-LOOP',
     mode: 'QALOOP',
     route: 'QA loop',
-    description: 'Clarification-gated UI/API E2E QA loop with local/deployed safety policy, Computer Use UI evidence, temp-only credentials, detailed checklist, QA report, and Honest Mode.',
-    appSkillAliases: ['qa-loop'],
-    requiredSkills: ['qaloop', 'qa-loop', 'pipeline-runner', 'honest-mode'],
+    description: 'Clarification-gated UI/API E2E QA loop with local/deployed safety policy, Browser Use/Computer Use UI evidence, temp-only credentials, detailed checklist, QA report, and Honest Mode.',
+    requiredSkills: ['qa-loop', 'pipeline-runner', 'honest-mode'],
     lifecycle: ['qa_questions_answered', 'contract_sealed', 'qa_checklist', 'qa_loop_cycles', 'qa_report_md', 'qa_gate', 'honest_mode'],
     context7Policy: 'optional',
     reasoningPolicy: 'high',
     stopGate: 'qa-gate.json',
     cliEntrypoint: 'sks qa-loop prepare|answer|run|status',
-    examples: ['$QALoop run UI and API E2E against local dev', '$QA-Loop deployed smoke only']
+    examples: ['$QA-LOOP run UI and API E2E against local dev', '$QA-LOOP deployed smoke only']
   },
   {
     id: 'Ralph',
@@ -215,14 +213,13 @@ export const ROUTES = [
     mode: 'WIKI',
     route: 'TriWiki refresh and maintenance',
     description: 'Refresh, pack, validate, or prune TriWiki context packs from Codex App.',
-    appSkillAliases: ['wiki-refresh', 'wikirefresh'],
     requiredSkills: ['wiki', 'sks', 'honest-mode'],
     lifecycle: ['intent_classification', 'wiki_refresh_or_pack', 'wiki_validate', 'honest_mode'],
     context7Policy: 'optional',
     reasoningPolicy: 'medium',
     stopGate: 'none',
     cliEntrypoint: 'sks wiki refresh|pack|validate|prune',
-    examples: ['$Wiki refresh', '$WikiRefresh prune and validate']
+    examples: ['$Wiki refresh', '$Wiki prune and validate']
   },
   {
     id: 'Help',
@@ -258,10 +255,12 @@ export const COMMAND_CATALOG = [
   { name: 'commands', usage: 'sks commands [--json]', description: 'List every user-facing command with a short description.' },
   { name: 'usage', usage: `sks usage [${USAGE_TOPICS}]`, description: 'Print copy-ready workflows for common tasks.' },
   { name: 'quickstart', usage: 'sks quickstart', description: 'Show the shortest safe setup and verification flow.' },
-  { name: 'codex-app', usage: 'sks codex-app', description: 'Show Codex App setup files and example prompts.' },
+  { name: 'codex-app', usage: 'sks codex-app [check|open]', description: 'Check Codex App install and first-party MCP/plugin readiness, then show app setup files and examples.' },
+  { name: 'tmux', usage: 'sks tmux [check|status] [--session name] [--no-attach]', description: 'Open the SKS tmux runtime with the ㅅㅋㅅ ASCII status pane and Codex CLI.' },
+  { name: 'auto-review', usage: 'sks auto-review status|enable|start [--high] | sks --Auto-review --high', description: 'Enable Codex automatic approval review and launch SKS tmux with the auto-review profile.' },
   { name: 'dollar-commands', usage: 'sks dollar-commands [--json]', description: 'List Codex App $ commands such as $DFix and $Team.' },
   { name: 'dfix', usage: 'sks dfix', description: 'Explain $DFix ultralight design/content fix mode.' },
-  { name: 'qa-loop', usage: 'sks qa-loop prepare|answer|run|status ...', description: 'Run clarification-gated UI/API E2E QA with safety gates, Computer Use evidence, and a QA report.' },
+  { name: 'qa-loop', usage: 'sks qa-loop prepare|answer|run|status ...', description: 'Run clarification-gated UI/API E2E QA with safety gates, Browser Use/Computer Use evidence, and a QA report.' },
   { name: 'context7', usage: 'sks context7 check|setup|tools|resolve|docs|evidence ...', description: 'Check, configure, and call the local Context7 MCP requirement.' },
   { name: 'pipeline', usage: 'sks pipeline status|resume|answer ...', description: 'Inspect the active skill-first route, pass mandatory ambiguity gates, and inspect completion gates.' },
   { name: 'guard', usage: 'sks guard check [--json]', description: 'Check SKS harness self-protection lock, fingerprints, and source-repo exception state.' },
@@ -301,6 +300,11 @@ export function routeById(id) {
   }) || null;
 }
 
+export function routeByDollarCommand(commandName) {
+  const key = String(commandName || '').replace(/^\$/, '').toLowerCase();
+  return ROUTES.find((route) => dollarSkillName(route.command) === key) || null;
+}
+
 export function dollarCommand(prompt) {
   const match = String(prompt || '').trim().match(/^\$([A-Za-z][A-Za-z0-9_-]*)(?:\s|:|$)/);
   return match ? match[1].toUpperCase() : null;
@@ -319,7 +323,7 @@ export function looksLikeFastDesignFix(prompt) {
 
 export function routePrompt(prompt) {
   const command = dollarCommand(prompt);
-  if (command) return routeById(command) || null;
+  if (command) return routeByDollarCommand(command) || null;
   const text = String(prompt || '');
   if (looksLikeFastDesignFix(text)) return routeById('DFix');
   if (looksLikeAnswerOnlyRequest(text)) return routeById('Answer');
