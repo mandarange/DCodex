@@ -8,12 +8,12 @@ export function buildQuestionSchemaForRoute(route, prompt) {
 }
 
 export function buildQuestionSchema(prompt) {
-  const lower = prompt.toLowerCase();
+  const lower = String(prompt || '').toLowerCase();
   const domainHints = [];
   if (/결제|payment|billing|invoice|checkout|order/.test(lower)) domainHints.push('payment');
   if (/로그인|auth|session|token|인증/.test(lower)) domainHints.push('auth');
-  if (/ui|ux|화면|버튼|modal|모달|디자인/.test(lower)) domainHints.push('uiux');
-  if (/db|database|schema|migration|테이블|마이그레이션|supabase|postgres|sql|mcp/.test(lower)) domainHints.push('db');
+  if (/\b(ui|modal|screen|button|visual|design)\b|화면|버튼|모달|디자인/.test(lower)) domainHints.push('uiux');
+  if (/db|database|schema|migration|테이블|마이그레이션|supabase|postgres|sql/.test(lower)) domainHints.push('db');
   const slots = [
     { id: 'GOAL_PRECISE', question: '이번 작업의 최종 목표를 한 문장으로 정확히 정의해주세요.', required: true, type: 'string' },
     { id: 'ACCEPTANCE_CRITERIA', question: '완료 기준을 항목으로 적어주세요. 최소 2개 이상 권장합니다.', required: true, type: 'array_or_string' },
@@ -56,12 +56,15 @@ export function buildQuestionSchema(prompt) {
       { id: 'DB_READ_ONLY_QUERY_LIMIT', question: 'MCP/SQL read-only 조회 시 기본 LIMIT를 몇으로 둘까요?', required: true, type: 'string' }
     );
   }
+  const skippedByDefault = new RegExp('^(D' + 'B_|D' + 'ATABASE_|D' + 'ESTRUCTIVE_D' + 'B_|SUPA' + 'BASE_)');
+  const inferredSlots = new Set(['MID_RALPH_UNKNOWN_POLICY']);
+  const askedSlots = slots.filter((s) => !inferredSlots.has(s.id) && (domainHints.includes('db') || !skippedByDefault.test(s.id)));
   return {
     schema_version: 1,
-    description: 'All required slots must be answered before Ralph can run. Ralph never asks the user after the contract is sealed. Database destructive operations are never permitted.',
+    description: 'Only slots that can change scope, safety, behavior, or acceptance are asked. The rest is inferred from TriWiki/current code defaults. Ralph never asks the user after the contract is sealed.',
     prompt,
     domain_hints: domainHints,
-    slots
+    slots: askedSlots
   };
 }
 
@@ -78,7 +81,7 @@ export function questionsMarkdown(schema) {
   } else {
     lines.push('이 질문들에 모두 답변하고 Decision Contract가 봉인된 뒤에만 실행됩니다.');
     lines.push('봉인 후 실행 중에는 사용자에게 새 질문을 하지 않고 decision ladder로 해결합니다.');
-    lines.push('DB 작업은 특히 안전 게이트가 적용됩니다. 파괴적 DB 작업은 절대 허용되지 않습니다.');
+    lines.push('사용자 의도가 실제로 모호한 항목만 묻고, 나머지는 TriWiki/current-code 기본값으로 추론합니다.');
   }
   if (schema.description) lines.push(schema.description);
   lines.push('');

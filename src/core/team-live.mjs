@@ -70,7 +70,7 @@ export function defaultTeamDashboard(id, prompt, opts = {}) {
       event: `sks team event ${id} --agent <agent> --phase <phase> --message "..."`
     },
     agents: Object.fromEntries([...new Set([...DEFAULT_AGENTS, ...spec.roster.all_agents.map((agent) => agent.id)])].map((name) => [name, { status: 'pending', phase: null, last_seen: null }])),
-    phases: ['parallel_analysis_scouting', 'triwiki_refresh', 'debate_team', 'triwiki_refresh_after_consensus', 'parallel_development_team', 'triwiki_refresh_after_implementation', 'strict_review_and_user_acceptance'],
+    phases: ['parallel_analysis_scouting', 'triwiki_refresh', 'debate_team', 'triwiki_refresh_after_consensus', 'parallel_development_team', 'triwiki_refresh_after_implementation', 'strict_review_and_user_acceptance', 'session_cleanup'],
     latest_messages: []
   };
 }
@@ -103,6 +103,7 @@ ${prompt}
 - Executors are capable developers with disjoint ownership.
 - Reviewers are strict and adversarial about correctness, safety, tests, and evidence.
 - Every useful subagent status, debate result, handoff, review finding, and integration decision must be appended here.
+- Before reflection/final, close or account for all Team subagent sessions and write team-session-cleanup.json.
 - Machine-readable events are mirrored to team-transcript.jsonl.
 - Dashboard state is mirrored to team-dashboard.json.
 - ${contextTracking}

@@ -1,4 +1,5 @@
-export const USAGE_TOPICS = 'install|setup|tmux|auto-review|team|qa-loop|ralph|research|db|codex-app|dfix|design|imagegen|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|hproof|gx|wiki';
+const REFLECTION_SKILL_NAME = 'reflection';
+export const USAGE_TOPICS = 'install|setup|bootstrap|deps|tmux|auto-review|team|qa-loop|ralph|research|db|codex-app|dfix|design|imagegen|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|hproof|gx|wiki';
 
 export const RECOMMENDED_MCP_SERVERS = [
   {
@@ -24,6 +25,7 @@ export const RECOMMENDED_SKILLS = [
   'design-ui-editor',
   'imagegen',
   'db-safety-guard',
+  REFLECTION_SKILL_NAME,
   'honest-mode'
 ];
 
@@ -117,9 +119,9 @@ export const ROUTES = [
     command: '$Team',
     mode: 'TEAM',
     route: 'multi-agent team orchestration',
-    description: 'Run parallel analysis scouts, refresh TriWiki, debate with role personas, agree on an objective, close debate agents, then form a fresh executor development team for parallel work.',
-    requiredSkills: ['team', 'pipeline-runner', 'context7-docs', 'prompt-pipeline', 'honest-mode'],
-    lifecycle: ['parallel_analysis_scouting', 'triwiki_refresh', 'planning_debate', 'live_transcript', 'consensus_artifact', 'fresh_implementation_team', 'review_artifact', 'integration_evidence', 'honest_mode'],
+    description: 'Run parallel analysis scouts, refresh TriWiki, debate, form a fresh executor team, then clean up team sessions before final evidence.',
+    requiredSkills: ['team', 'pipeline-runner', 'context7-docs', 'prompt-pipeline', REFLECTION_SKILL_NAME, 'honest-mode'],
+    lifecycle: ['parallel_analysis_scouting', 'triwiki_refresh', 'planning_debate', 'live_transcript', 'consensus_artifact', 'fresh_implementation_team', 'review_artifact', 'integration_evidence', 'session_cleanup', 'post_route_reflection', 'honest_mode'],
     context7Policy: 'required',
     reasoningPolicy: 'high',
     stopGate: 'team-gate.json',
@@ -132,8 +134,8 @@ export const ROUTES = [
     mode: 'QALOOP',
     route: 'QA loop',
     description: 'Clarification-gated UI/API E2E QA loop with local/deployed safety policy, Browser Use/Computer Use UI evidence, temp-only credentials, detailed checklist, QA report, and Honest Mode.',
-    requiredSkills: ['qa-loop', 'pipeline-runner', 'honest-mode'],
-    lifecycle: ['qa_questions_answered', 'contract_sealed', 'qa_checklist', 'qa_loop_cycles', 'qa_report_md', 'qa_gate', 'honest_mode'],
+    requiredSkills: ['qa-loop', 'pipeline-runner', REFLECTION_SKILL_NAME, 'honest-mode'],
+    lifecycle: ['qa_questions_answered', 'contract_sealed', 'qa_checklist', 'qa_loop_cycles', 'qa_report_md', 'qa_gate', 'post_route_reflection', 'honest_mode'],
     context7Policy: 'optional',
     reasoningPolicy: 'high',
     stopGate: 'qa-gate.json',
@@ -146,8 +148,8 @@ export const ROUTES = [
     mode: 'RALPH',
     route: 'Ralph mission',
     description: 'Mandatory clarification and no-question autonomous mission workflow.',
-    requiredSkills: ['ralph', 'ralph-supervisor', 'ralph-resolver', 'pipeline-runner', 'context7-docs', 'honest-mode'],
-    lifecycle: ['questions_answered', 'contract_sealed', 'sks_ralph_run', 'done_gate_passed', 'honest_mode'],
+    requiredSkills: ['ralph', 'ralph-supervisor', 'ralph-resolver', 'pipeline-runner', 'context7-docs', REFLECTION_SKILL_NAME, 'honest-mode'],
+    lifecycle: ['questions_answered', 'contract_sealed', 'sks_ralph_run', 'done_gate_passed', 'post_route_reflection', 'honest_mode'],
     context7Policy: 'required',
     reasoningPolicy: 'high',
     stopGate: 'done-gate.json',
@@ -160,8 +162,8 @@ export const ROUTES = [
     mode: 'RESEARCH',
     route: 'research mission',
     description: 'Frontier discovery, hypotheses, falsification, and testable predictions.',
-    requiredSkills: ['research', 'research-discovery', 'pipeline-runner', 'context7-docs', 'honest-mode'],
-    lifecycle: ['research_plan', 'report', 'novelty_ledger', 'falsification', 'research_gate', 'honest_mode'],
+    requiredSkills: ['research', 'research-discovery', 'pipeline-runner', 'context7-docs', REFLECTION_SKILL_NAME, 'honest-mode'],
+    lifecycle: ['research_plan', 'report', 'novelty_ledger', 'falsification', 'research_gate', 'post_route_reflection', 'honest_mode'],
     context7Policy: 'required',
     reasoningPolicy: 'xhigh',
     stopGate: 'research-gate.json',
@@ -174,8 +176,8 @@ export const ROUTES = [
     mode: 'AUTORESEARCH',
     route: 'iterative experiment loop',
     description: 'Program, hypothesize, test, measure, keep/discard, falsify, and report evidence.',
-    requiredSkills: ['autoresearch', 'autoresearch-loop', 'seo-geo-optimizer', 'performance-evaluator', 'pipeline-runner', 'context7-docs', 'honest-mode'],
-    lifecycle: ['experiment_ledger', 'metric', 'keep_or_discard', 'falsification', 'honest_conclusion'],
+    requiredSkills: ['autoresearch', 'autoresearch-loop', 'seo-geo-optimizer', 'performance-evaluator', 'pipeline-runner', 'context7-docs', REFLECTION_SKILL_NAME, 'honest-mode'],
+    lifecycle: ['experiment_ledger', 'metric', 'keep_or_discard', 'falsification', 'post_route_reflection', 'honest_conclusion'],
     context7Policy: 'required',
     reasoningPolicy: 'xhigh',
     stopGate: 'autoresearch-gate.json',
@@ -188,8 +190,8 @@ export const ROUTES = [
     mode: 'DB',
     route: 'database safety',
     description: 'Database, Supabase, migration, SQL, or MCP safety checks.',
-    requiredSkills: ['db', 'db-safety-guard', 'pipeline-runner', 'context7-docs', 'honest-mode'],
-    lifecycle: ['db_scan', 'safe_mcp_policy', 'destructive_operation_zero', 'context7_docs', 'honest_mode'],
+    requiredSkills: ['db', 'db-safety-guard', 'pipeline-runner', 'context7-docs', REFLECTION_SKILL_NAME, 'honest-mode'],
+    lifecycle: ['db_scan', 'safe_mcp_policy', 'destructive_operation_zero', 'context7_docs', 'post_route_reflection', 'honest_mode'],
     context7Policy: 'required',
     reasoningPolicy: 'high',
     stopGate: 'db-review.json',
@@ -202,8 +204,8 @@ export const ROUTES = [
     mode: 'GX',
     route: 'visual context',
     description: 'Deterministic GX visual context cartridges.',
-    requiredSkills: ['gx', 'gx-visual-generate', 'gx-visual-read', 'gx-visual-validate', 'pipeline-runner', 'honest-mode'],
-    lifecycle: ['vgraph_beta_render', 'validate', 'drift_snapshot', 'honest_mode'],
+    requiredSkills: ['gx', 'gx-visual-generate', 'gx-visual-read', 'gx-visual-validate', 'pipeline-runner', REFLECTION_SKILL_NAME, 'honest-mode'],
+    lifecycle: ['vgraph_beta_render', 'validate', 'drift_snapshot', 'post_route_reflection', 'honest_mode'],
     context7Policy: 'required',
     reasoningPolicy: 'high',
     stopGate: 'gx-gate.json',
@@ -258,6 +260,8 @@ export const COMMAND_CATALOG = [
   { name: 'commands', usage: 'sks commands [--json]', description: 'List every user-facing command with a short description.' },
   { name: 'usage', usage: `sks usage [${USAGE_TOPICS}]`, description: 'Print copy-ready workflows for common tasks.' },
   { name: 'quickstart', usage: 'sks quickstart', description: 'Show the shortest safe setup and verification flow.' },
+  { name: 'bootstrap', usage: 'sks bootstrap [--install-scope global|project] [--local-only] [--json]', description: 'Initialize the current project, install SKS Codex App files/skills, check Context7/Codex App/tmux, and print ready true/false.' },
+  { name: 'deps', usage: 'sks deps check|install [tmux|codex|context7|all] [--yes]', description: 'Check or guided-install Node/npm PATH, Codex CLI/App, Context7, Browser Use, Computer Use, tmux, and Homebrew on macOS.' },
   { name: 'codex-app', usage: 'sks codex-app [check|open]', description: 'Check Codex App install and first-party MCP/plugin readiness, then show app setup files and examples.' },
   { name: 'tmux', usage: 'sks tmux [check|status] [--session name] [--no-attach]', description: 'Open the SKS tmux runtime with the ㅅㅋㅅ ASCII status pane and Codex CLI.' },
   { name: 'auto-review', usage: 'sks auto-review status|enable|start [--high] | sks --Auto-review --high', description: 'Enable Codex automatic approval review and launch SKS tmux with the auto-review profile.' },
@@ -270,7 +274,7 @@ export const COMMAND_CATALOG = [
   { name: 'conflicts', usage: 'sks conflicts check|prompt [--json]', description: 'Detect other Codex harnesses such as OMX/DCodex and print the GPT-5.5 high cleanup prompt.' },
   { name: 'versioning', usage: 'sks versioning status|bump|pre-commit [--json]', description: 'Manage automatic project version bumps on every commit with a shared Git lock.' },
   { name: 'aliases', usage: 'sks aliases', description: 'Show command aliases and npm binary names.' },
-  { name: 'setup', usage: 'sks setup [--install-scope global|project] [--local-only] [--force] [--json]', description: 'Initialize SKS state, Codex App files, hooks, skills, and rules.' },
+  { name: 'setup', usage: 'sks setup [--bootstrap] [--install-scope global|project] [--local-only] [--force] [--json]', description: 'Initialize SKS state, Codex App files, hooks, skills, and rules.' },
   { name: 'fix-path', usage: 'sks fix-path [--install-scope global|project] [--json]', description: 'Refresh hook commands with the resolved SKS binary path.' },
   { name: 'doctor', usage: 'sks doctor [--fix] [--local-only] [--json] [--install-scope global|project]', description: 'Check and repair SKS generated files, while blocking setup if another Codex harness is detected.' },
   { name: 'init', usage: 'sks init [--force] [--local-only] [--install-scope global|project]', description: 'Initialize the local SKS control surface.' },
@@ -383,6 +387,11 @@ export function routeRequiresSubagents(route, prompt = '') {
   if (route.id === 'Ralph' || route.id === 'DB' || route.id === 'GX') return looksLikeExecutionWork(prompt);
   if (route.id === 'DFix') return looksLikeCodeChangingWork(prompt) && !looksLikeFastDesignFix(prompt);
   return looksLikeExecutionWork(prompt);
+}
+
+export function reflectionRequiredForRoute(route) {
+  const id = String(route?.id || route?.mode || route?.route || route || '').replace(/^\$/, '');
+  return /^(team|qaloop|qa-loop|ralph|research|autoresearch|db|database|gx)$/i.test(id);
 }
 
 export function looksLikeCodeChangingWork(prompt = '') {

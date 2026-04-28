@@ -1,7 +1,7 @@
 {
   "name": "sneakoscope",
   "displayName": "ㅅㅋㅅ",
-  "version": "0.6.41",
+  "version": "0.6.42",
   "description": "Sneakoscope Codex: database-safe Codex CLI/App harness with Team, Ralph, AutoResearch, TriWiki, and Honest Mode.",
   "type": "module",
   "homepage": "https://github.com/mandarange/Sneakoscope-Codex#readme",
@@ -23,7 +23,6 @@
   "files": [
     "bin",
     "src",
-    "docs/assets/sneakoscope-codex-logo.png",
     "README.md",
     "LICENSE"
   ],
