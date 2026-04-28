@@ -5,7 +5,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 
-export const PACKAGE_VERSION = '0.6.51';
+export const PACKAGE_VERSION = '0.6.52';
 export const DEFAULT_PROCESS_TAIL_BYTES = 256 * 1024;
 export const DEFAULT_PROCESS_TIMEOUT_MS = 30 * 60 * 1000;
 

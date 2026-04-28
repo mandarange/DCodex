@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.6.52] - 2026-04-28
+
+### Changed
+
+- Expand README with feature coverage for route commands, Codex App surfaces, workflow rules, release checks, and requirements.
+- Raise package size gates to 256 KiB packed and 1 MiB unpacked so shipped README documentation has practical headroom while npm dry-run packaging remains verified.
+
 ## [0.6.51] - 2026-04-28
 
 ### Changed
