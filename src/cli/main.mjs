@@ -25,7 +25,7 @@ import { DEFAULT_EVAL_THRESHOLDS, compareEvaluationReports, defaultEvaluationSce
 import { buildResearchPrompt, evaluateResearchGate, writeMockResearchResult, writeResearchPlan } from '../core/research.mjs';
 import { contextCapsule } from '../core/triwiki-attention.mjs';
 import { rgbaKey, rgbaToWikiCoord, validateWikiCoordinateIndex } from '../core/wiki-coordinate.mjs';
-import { COMMAND_CATALOG, DOLLAR_COMMAND_ALIASES, DOLLAR_COMMANDS, DOLLAR_SKILL_NAMES, RECOMMENDED_SKILLS, ROUTES, USAGE_TOPICS, context7ConfigToml, hasContext7ConfigText, looksLikeAnswerOnlyRequest, reflectionRequiredForRoute, reasoningInstruction, routePrompt, routeReasoning, routeRequiresSubagents, triwikiContextTracking } from '../core/routes.mjs';
+import { COMMAND_CATALOG, DOLLAR_COMMAND_ALIASES, DOLLAR_COMMANDS, DOLLAR_SKILL_NAMES, RECOMMENDED_SKILLS, ROUTES, USAGE_TOPICS, context7ConfigToml, hasContext7ConfigText, looksLikeAnswerOnlyRequest, reflectionRequiredForRoute, reasoningInstruction, routePrompt, routeReasoning, routeRequiresSubagents, stackCurrentDocsPolicy, triwikiContextTracking } from '../core/routes.mjs';
 import { context7Evidence, evaluateStop, recordContext7Evidence, recordSubagentEvidence } from '../core/pipeline.mjs';
 import { appendTeamEvent, formatRoleCounts, initTeamLive, normalizeTeamSpec, parseTeamSpecArgs, parseTeamSpecText, readTeamDashboard, readTeamLive, readTeamTranscriptTail } from '../core/team-live.mjs';
 import { CODEX_APP_DOCS_URL, codexAppIntegrationStatus, formatCodexAppStatus } from '../core/codex-app.mjs';
@@ -483,7 +483,7 @@ async function updateCheck(args = []) {
   if (result.update_available) console.log('Run:     npm i -g sneakoscope');
 }
 
-const DOLLAR_DEFAULT_PIPELINE_TEXT = 'Default pipeline: questions -> $Answer, small design/content -> $DFix, implementation/code-changing -> $Team parallel orchestration.';
+const DOLLAR_DEFAULT_PIPELINE_TEXT = 'Default pipeline: questions -> $Answer, small design/content -> $DFix, code -> $Team. Use $From-Chat-IMG only for chat screenshot plus original attachments.';
 
 function commands(args = []) {
   if (flag(args, '--json')) return console.log(JSON.stringify({ aliases: ['sks', 'sneakoscope'], dollar_commands: DOLLAR_COMMANDS, app_skill_aliases: DOLLAR_COMMAND_ALIASES, commands: COMMAND_CATALOG }, null, 2));
@@ -755,6 +755,7 @@ async function materializeAfterPipelineAnswer(root, id, dir, mission, route, rou
     roster: spec.roster
   });
   await writeJsonAtomic(path.join(dir, 'team-plan.json'), plan);
+  await writeJsonAtomic(path.join(dir, 'team-roster.json'), { schema_version: 1, mission_id: id, role_counts: spec.roleCounts, agent_sessions: spec.agentSessions, bundle_size: spec.roster.bundle_size, roster: spec.roster, confirmed: true, source: 'default_or_prompt_team_spec' });
   await writeTextAtomic(path.join(dir, 'team-workflow.md'), teamWorkflowMarkdown(plan));
   await initTeamLive(id, dir, prompt, {
     agentSessions: spec.agentSessions,
@@ -787,6 +788,7 @@ async function materializeAfterPipelineAnswer(root, id, dir, mission, route, rou
     state: {
       agent_sessions: spec.agentSessions,
       role_counts: spec.roleCounts,
+      team_roster_confirmed: true,
       team_plan_ready: true,
       team_live_ready: true
     }
@@ -1276,6 +1278,7 @@ async function bootstrap(args = []) {
   const localOnly = flag(args, '--local-only');
   const globalCommand = await globalSksCommand();
   const initRes = await initProject(root, { force: flag(args, '--force'), installScope, globalCommand, localOnly, repair: true });
+  const wikiMigration = await migrateWikiContextPack(root);
   const globalSkills = localOnly
     ? { status: 'skipped', reason: '--local-only', root: globalCodexSkillsRoot() }
     : await ensureGlobalCodexSkillsDuringInstall({ force: flag(args, '--force') });
@@ -1293,6 +1296,7 @@ async function bootstrap(args = []) {
     root,
     ready,
     project_setup: { ok: files.ok, files, created: initRes.created },
+    triwiki: { migrated: wikiMigration },
     install,
     cli_tools: cliTools,
     codex_app: appRuntime,
@@ -1356,6 +1360,7 @@ async function setup(args) {
   const cliTools = await ensureRelatedCliTools(args);
   const globalCommand = await globalSksCommand();
   const res = await initProject(root, { force: flag(args, '--force'), installScope, globalCommand, localOnly });
+  const wikiMigration = await migrateWikiContextPack(root);
   const globalSkills = localOnly
     ? { status: 'skipped', reason: '--local-only', root: globalCodexSkillsRoot() }
     : await ensureGlobalCodexSkillsDuringInstall({ force: flag(args, '--force') });
@@ -1379,6 +1384,7 @@ async function setup(args) {
     },
     codex_app_runtime: appRuntime,
     global_skills: globalSkills,
+    triwiki: { migrated: wikiMigration },
     created: res.created,
     versioning: versioningInfo,
     local_only: localOnly,
@@ -1716,7 +1722,7 @@ Usage:
   sks qa-loop status <mission-id|latest>
 
 Prompt route:
-  $QA-LOOP run UI and API E2E against local dev
+  $QA-LOOP dogfood UI/API, fix safe issues, reverify
 `);
 }
 
@@ -2090,7 +2096,7 @@ async function selftest() {
   await writeTextAtomic(path.join(repairTmp, '.codex', 'skills', 'team', 'SKILL.md'), 'legacy mirror\n');
   await initProject(repairTmp, { force: true, repair: true });
   const repairedTeamSkill = await safeReadText(path.join(repairTmp, '.agents', 'skills', 'team', 'SKILL.md'));
-  if (!repairedTeamSkill.includes('SKS Team multi-agent orchestration') || repairedTeamSkill.includes('tampered')) throw new Error('selftest failed: doctor repair did not regenerate team skill');
+  if (!repairedTeamSkill.includes('SKS Team orchestration') || repairedTeamSkill.includes('tampered')) throw new Error('selftest failed: doctor repair did not regenerate team skill');
   if (await exists(path.join(repairTmp, '.agents', 'skills', 'agent-team', 'SKILL.md'))) throw new Error('selftest failed: doctor repair did not remove deprecated agent-team alias skill');
   if (!(await exists(path.join(repairTmp, '.agents', 'skills', 'custom-keep', 'SKILL.md')))) throw new Error('selftest failed: doctor repair removed a user-owned custom skill');
   if (await exists(path.join(repairTmp, '.codex', 'skills', 'team', 'SKILL.md'))) throw new Error('selftest failed: doctor repair did not remove legacy .codex/skills');
@@ -2266,6 +2272,9 @@ async function selftest() {
   if (!promptPipelineText.includes('TriWiki context-tracking SSOT')) throw new Error('selftest failed: prompt pipeline missing TriWiki context-tracking SSOT');
   if (!promptPipelineText.includes('before every route stage') || !promptPipelineText.includes('sks wiki refresh')) throw new Error('selftest failed: prompt pipeline missing per-stage TriWiki policy');
   if (!promptPipelineText.includes('design.md') || !promptPipelineText.includes('imagegen')) throw new Error('selftest failed: prompt pipeline missing design/image asset routing');
+  if (!promptPipelineText.includes('From-Chat-IMG') || !promptPipelineText.includes('Do not assume ordinary image prompts are chat captures')) throw new Error('selftest failed: prompt pipeline missing explicit From-Chat-IMG gating');
+  const fromChatImgSkillText = await safeReadText(path.join(tmp, '.agents', 'skills', 'from-chat-img', 'SKILL.md'));
+  if (!fromChatImgSkillText.includes('normal Team pipeline') || !fromChatImgSkillText.includes('Computer Use/browser visual inspection')) throw new Error('selftest failed: from-chat-img skill missing Team/browser inspection guidance');
   for (const supportSkill of ['reasoning-router', 'pipeline-runner', 'context7-docs', 'seo-geo-optimizer', 'reflection', 'design-system-builder', 'design-ui-editor', 'imagegen']) {
     if (!(await exists(path.join(tmp, '.agents', 'skills', supportSkill, 'SKILL.md')))) throw new Error(`selftest failed: ${supportSkill} skill not installed`);
   }
@@ -2280,6 +2289,8 @@ async function selftest() {
   if (camelHookGuardJson.decision !== 'block') throw new Error('selftest failed: hook did not block camelCase Codex tool payload');
   if (new Set(DOLLAR_COMMANDS.map((c) => c.command)).size !== DOLLAR_COMMANDS.length) throw new Error('selftest failed: duplicate dollar commands');
   if (!DOLLAR_COMMAND_ALIASES.some((alias) => alias.canonical === '$QA-LOOP' && alias.app_skill === '$qa-loop')) throw new Error('selftest failed: $QA-LOOP picker skill missing');
+  if (!DOLLAR_COMMAND_ALIASES.some((alias) => alias.canonical === '$Team' && alias.app_skill === '$from-chat-img')) throw new Error('selftest failed: $From-Chat-IMG picker skill missing');
+  if (!DOLLAR_COMMANDS.some((entry) => entry.command === '$From-Chat-IMG')) throw new Error('selftest failed: $From-Chat-IMG missing from dollar command list');
   if (DOLLAR_COMMAND_ALIASES.some((alias) => ['$agent-team', '$qaloop', '$wiki-refresh', '$wikirefresh'].includes(alias.app_skill))) throw new Error('selftest failed: duplicate picker aliases still present');
   if (routePrompt('$agent-team run specialists')) throw new Error('selftest failed: deprecated $agent-team route still resolved');
   if (routePrompt('$QA-LOOP run UI E2E')?.id !== 'QALoop' || routePrompt('$QALoop deployed smoke')) throw new Error('selftest failed: QA-LOOP route is not standardized to $QA-LOOP');
@@ -2289,7 +2300,11 @@ async function selftest() {
   if (routePrompt(koreanReadmeInstallPrompt)?.id !== 'Team') throw new Error('selftest failed: Korean README implementation prompt did not route to Team by default');
   if (looksLikeAnswerOnlyRequest(koreanReadmeInstallPrompt)) throw new Error('selftest failed: Korean README implementation prompt still looked answer-only');
   if (routePrompt('왜 팀 커맨드 없어졌어 병렬처리까지 제대로 작업해줘')?.id !== 'Team') throw new Error('selftest failed: Korean Team/parallel implementation prompt did not route to Team');
+  if (routePrompt('$From-Chat-IMG 채팅내역 이미지와 첨부 원본 이미지로 수정 작업 지시서 작성')?.id !== 'Team') throw new Error('selftest failed: $From-Chat-IMG did not route to Team');
+  if (routePrompt('From-Chat-IMG 채팅내역 이미지와 원본 첨부 이미지 분석해서 작업 지시서 만들어줘')?.id !== 'Team') throw new Error('selftest failed: bare From-Chat-IMG signal did not route to Team');
+  if (routePrompt('채팅 이미지랑 첨부 이미지 분석 방식 설명해줘')?.id === 'Team') throw new Error('selftest failed: ordinary chat-image question activated Team without From-Chat-IMG');
   if (!DOLLAR_DEFAULT_PIPELINE_TEXT.includes('$Team')) throw new Error('selftest failed: dollar-commands missing Team default routing guidance');
+  if (!DOLLAR_DEFAULT_PIPELINE_TEXT.includes('$From-Chat-IMG')) throw new Error('selftest failed: dollar-commands missing From-Chat-IMG guidance');
   if (!COMMAND_CATALOG.some((c) => c.name === 'context7') || !COMMAND_CATALOG.some((c) => c.name === 'pipeline') || !COMMAND_CATALOG.some((c) => c.name === 'qa-loop')) throw new Error('selftest failed: context7/pipeline/qa-loop commands missing from catalog');
   const registryDollarCommands = DOLLAR_COMMANDS.map((c) => c.command);
   const manifest = await readJson(path.join(tmp, '.sneakoscope', 'manifest.json'));
@@ -2363,7 +2378,9 @@ async function selftest() {
   if (!String(hookTeamStopJson.reason || '').includes('sks pipeline answer')) throw new Error('selftest failed: Stop hook did not provide pipeline answer command');
   if (!String(hookTeamStopJson.reason || '').includes('Codex plan-tool interaction')) throw new Error('selftest failed: Stop hook did not reprint plan-tool guidance');
   const hookTeamSchema = await readJson(path.join(missionDir(hookTeamTmp, hookTeamState.mission_id), 'required-answers.schema.json'));
-  if (!hookTeamSchema.slots.find((s) => s.id === 'NON_GOALS')?.allow_empty) throw new Error('selftest failed: NON_GOALS does not allow an empty array answer');
+  const nonGoalsSlot = hookTeamSchema.slots.find((s) => s.id === 'NON_GOALS');
+  if (nonGoalsSlot && !nonGoalsSlot.allow_empty) throw new Error('selftest failed: NON_GOALS does not allow an empty array answer');
+  if (!nonGoalsSlot && !Array.isArray(hookTeamSchema.inferred_answers?.NON_GOALS)) throw new Error('selftest failed: NON_GOALS was neither asked nor inferred');
   const hookTeamAnswers = {};
   for (const s of hookTeamSchema.slots) hookTeamAnswers[s.id] = s.options ? (s.type === 'array' ? [s.options[0]] : s.options[0]) : (s.type.includes('array') ? ['selftest'] : (s.id === 'DB_MAX_BLAST_RADIUS' ? 'no_live_dml' : 'selftest'));
   hookTeamAnswers.NON_GOALS = [];
@@ -2380,23 +2397,39 @@ async function selftest() {
   const { id: honestLoopId, dir: honestLoopDir } = await createMission(honestLoopTmp, { mode: 'sks', prompt: 'honest loopback selftest' });
   await writeJsonAtomic(path.join(honestLoopDir, 'decision-contract.json'), { sealed_hash: 'selftest', answers: { GOAL_PRECISE: 'selftest' } });
   await setCurrent(honestLoopTmp, { mission_id: honestLoopId, route: 'SKS', route_command: '$SKS', mode: 'SKS', phase: 'SKS_CLARIFICATION_CONTRACT_SEALED', implementation_allowed: true, clarification_required: false, ambiguity_gate_passed: true, stop_gate: 'honest_mode' });
-  const honestLoopResult = await runProcess(process.execPath, [hookBin, 'hook', 'stop'], { cwd: honestLoopTmp, input: JSON.stringify({ cwd: honestLoopTmp, last_assistant_message: '**솔직모드**\n검증: selftest ran\n남은 gap: CHANGELOG.md 없음' }), env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
+  const honestLoopResult = await runProcess(process.execPath, [hookBin, 'hook', 'stop'], { cwd: honestLoopTmp, input: JSON.stringify({ cwd: honestLoopTmp, last_assistant_message: '**작업 요약**\nSelftest 경로의 Honest Mode loopback 동작을 검증했습니다.\n**솔직모드**\n검증: selftest ran\n남은 gap: CHANGELOG.md 없음' }), env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
   if (honestLoopResult.code !== 0) throw new Error(`selftest failed: honest loopback hook exited ${honestLoopResult.code}: ${honestLoopResult.stderr}`);
   const honestLoopJson = JSON.parse(honestLoopResult.stdout);
   if (honestLoopJson.decision !== 'block' || !String(honestLoopJson.reason || '').includes('post-ambiguity execution phase')) throw new Error('selftest failed: Honest Mode gap did not trigger loopback');
   const honestLoopState = await readJson(stateFile(honestLoopTmp), {});
   if (honestLoopState.phase !== 'SKS_HONEST_LOOPBACK_AFTER_CLARIFICATION' || honestLoopState.implementation_allowed !== true || honestLoopState.clarification_required !== false || honestLoopState.ambiguity_gate_passed !== true) throw new Error('selftest failed: honest loopback did not preserve post-ambiguity execution state');
   if (!(await exists(path.join(honestLoopDir, 'honest-loopback.json')))) throw new Error('selftest failed: honest-loopback artifact missing');
-  const honestCleanResult = await runProcess(process.execPath, [hookBin, 'hook', 'stop'], { cwd: honestLoopTmp, input: JSON.stringify({ cwd: honestLoopTmp, last_assistant_message: '**솔직모드**\n검증: CHANGELOG.md check and selftest passed\n남은 gap: 없음' }), env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
+  const honestCleanResult = await runProcess(process.execPath, [hookBin, 'hook', 'stop'], { cwd: honestLoopTmp, input: JSON.stringify({ cwd: honestLoopTmp, last_assistant_message: '**작업 요약**\nCHANGELOG 확인과 selftest 통과 상태로 loopback을 닫았습니다.\n**솔직모드**\n검증: CHANGELOG.md check and selftest passed\n남은 gap: 없음' }), env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
   if (honestCleanResult.code !== 0) throw new Error(`selftest failed: clean honest hook exited ${honestCleanResult.code}: ${honestCleanResult.stderr}`);
   const honestCleanJson = JSON.parse(honestCleanResult.stdout);
   if (honestCleanJson.decision === 'block') throw new Error('selftest failed: clean Honest Mode was blocked after loopback was resolved');
   const honestCleanState = await readJson(stateFile(honestLoopTmp), {});
   if (honestCleanState.honest_loop_required !== false || honestCleanState.phase !== 'SKS_HONEST_COMPLETE') throw new Error('selftest failed: honest loopback was not marked resolved');
-  const honestBlockedAsExpectedResult = await runProcess(process.execPath, [hookBin, 'hook', 'stop'], { cwd: honestLoopTmp, input: JSON.stringify({ cwd: honestLoopTmp, last_assistant_message: '**솔직모드**\n검증: selftest 통과, legacy `qa-report.md` 차단 확인\n제약: registry publish excluded' }), env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
+  const honestMissingSummaryResult = await runProcess(process.execPath, [hookBin, 'hook', 'stop'], { cwd: honestLoopTmp, input: JSON.stringify({ cwd: honestLoopTmp, last_assistant_message: '**솔직모드**\n검증: selftest 통과\n남은 gap: 없음' }), env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
+  if (honestMissingSummaryResult.code !== 0) throw new Error(`selftest failed: missing-summary honest hook exited ${honestMissingSummaryResult.code}: ${honestMissingSummaryResult.stderr}`);
+  const honestMissingSummaryJson = JSON.parse(honestMissingSummaryResult.stdout);
+  if (honestMissingSummaryJson.decision !== 'block' || !String(honestMissingSummaryJson.reason || '').includes('completion summary')) throw new Error('selftest failed: Honest Mode without completion summary was accepted');
+  const honestBlockedAsExpectedResult = await runProcess(process.execPath, [hookBin, 'hook', 'stop'], { cwd: honestLoopTmp, input: JSON.stringify({ cwd: honestLoopTmp, last_assistant_message: '**작업 요약**\nlegacy QA report 차단 확인을 검증했습니다.\n**솔직모드**\n검증: selftest 통과, legacy `qa-report.md` 차단 확인\n제약: registry publish excluded' }), env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
   if (honestBlockedAsExpectedResult.code !== 0) throw new Error(`selftest failed: blocked-as-expected honest hook exited ${honestBlockedAsExpectedResult.code}: ${honestBlockedAsExpectedResult.stderr}`);
   const honestBlockedAsExpectedJson = JSON.parse(honestBlockedAsExpectedResult.stdout);
   if (honestBlockedAsExpectedJson.decision === 'block') throw new Error('selftest failed: blocked-as-expected evidence was treated as an unresolved gap');
+  const honestNoActiveGateResult = await runProcess(process.execPath, [hookBin, 'hook', 'stop'], { cwd: honestLoopTmp, input: JSON.stringify({ cwd: honestLoopTmp, last_assistant_message: '**Completion Summary**\nWhat changed: verified route-gate closure evidence handling.\n**SKS Honest Mode**\nVerified: pipeline status returned `No active blocking route gate detected`; post-reflection work blocking was verified by selftest.\nRemaining gaps: none' }), env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
+  if (honestNoActiveGateResult.code !== 0) throw new Error(`selftest failed: no-active-gate honest hook exited ${honestNoActiveGateResult.code}: ${honestNoActiveGateResult.stderr}`);
+  const honestNoActiveGateJson = JSON.parse(honestNoActiveGateResult.stdout);
+  if (honestNoActiveGateJson.decision === 'block') throw new Error('selftest failed: no-active-blocking status was treated as an unresolved gap');
+  const honestNotBlockerResult = await runProcess(process.execPath, [hookBin, 'hook', 'stop'], { cwd: honestLoopTmp, input: JSON.stringify({ cwd: honestLoopTmp, last_assistant_message: '**Completion Summary**\nWhat changed: verified non-blocker wording in final closeout.\n**SKS Honest Mode**\nVerified: selftest passed.\nRemaining gaps: none. Unrelated dirty worktree entries are not a blocker for this scoped task.' }), env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
+  if (honestNotBlockerResult.code !== 0) throw new Error(`selftest failed: not-blocker honest hook exited ${honestNotBlockerResult.code}: ${honestNotBlockerResult.stderr}`);
+  const honestNotBlockerJson = JSON.parse(honestNotBlockerResult.stdout);
+  if (honestNotBlockerJson.decision === 'block') throw new Error('selftest failed: non-blocker boundary wording was treated as unresolved gap');
+  const honestSummaryCaseResult = await runProcess(process.execPath, [hookBin, 'hook', 'stop'], { cwd: honestLoopTmp, input: JSON.stringify({ cwd: honestLoopTmp, last_assistant_message: '**작업 요약**\n[src/cli/main.mjs]: selftest에 요약 없으면 차단, 요약 있으면 통과 케이스 추가.\n**솔직모드**\n검증: selftest 통과.\n남은 gap: 없음' }), env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
+  if (honestSummaryCaseResult.code !== 0) throw new Error(`selftest failed: summary-case honest hook exited ${honestSummaryCaseResult.code}: ${honestSummaryCaseResult.stderr}`);
+  const honestSummaryCaseJson = JSON.parse(honestSummaryCaseResult.stdout);
+  if (honestSummaryCaseJson.decision === 'block') throw new Error('selftest failed: summary block/pass wording was treated as unresolved gap');
   const hookQaTmp = tmpdir();
   await initProject(hookQaTmp, {});
   const hookQaPayload = JSON.stringify({ cwd: hookQaTmp, prompt: '$QA-LOOP run UI and API E2E against local dev' });
@@ -2421,11 +2454,20 @@ async function selftest() {
   if ((await exists(path.join(qaMissionDir, 'qa-report.md')))) throw new Error('selftest failed: legacy QA report filename was created');
   if (!(await exists(path.join(qaMissionDir, qaReportFile))) || !(await exists(path.join(qaMissionDir, 'qa-ledger.json'))) || !(await exists(path.join(qaMissionDir, 'qa-gate.json')))) throw new Error('selftest failed: QA artifacts missing after answer');
   const legacyQaTmp = tmpdir();
-  await writeJsonAtomic(path.join(legacyQaTmp, 'qa-gate.json'), { ...defaultQaGate({ sealed_hash: 'selftest', answers: { QA_SCOPE: 'all_available', TARGET_BASE_URL: 'none', API_BASE_URL: 'same_as_target', TARGET_ENVIRONMENT: 'local_dev_server', DESTRUCTIVE_DEPLOYED_TESTS_ALLOWED: 'never' } }, { reportFile: 'qa-report.md' }), passed: true, qa_report_written: true, qa_ledger_complete: true, checklist_completed: true, safety_reviewed: true, credentials_not_persisted: true, ui_computer_use_evidence: true, honest_mode_complete: true });
+  await writeJsonAtomic(path.join(legacyQaTmp, 'qa-gate.json'), { ...defaultQaGate({ sealed_hash: 'selftest', answers: { QA_SCOPE: 'all_available', TARGET_BASE_URL: 'none', API_BASE_URL: 'same_as_target', TARGET_ENVIRONMENT: 'local_dev_server', DESTRUCTIVE_DEPLOYED_TESTS_ALLOWED: 'never' } }, { reportFile: 'qa-report.md' }), passed: true, qa_report_written: true, qa_ledger_complete: true, checklist_completed: true, safety_reviewed: true, credentials_not_persisted: true, ui_computer_use_evidence: true, post_fix_verification_complete: true, honest_mode_complete: true });
   await writeJsonAtomic(path.join(legacyQaTmp, 'qa-ledger.json'), { checklist: [] });
   await writeTextAtomic(path.join(legacyQaTmp, 'qa-report.md'), '# legacy\n');
   const legacyQaGate = await evaluateQaGate(legacyQaTmp);
   if (legacyQaGate.passed || !legacyQaGate.reasons.includes('qa_report_filename_prefix_invalid')) throw new Error('selftest failed: legacy QA report filename was accepted');
+  const unresolvedQaTmp = tmpdir();
+  await writeJsonAtomic(path.join(unresolvedQaTmp, 'qa-gate.json'), { ...defaultQaGate({ sealed_hash: 'selftest', answers: { QA_SCOPE: 'all_available', TARGET_BASE_URL: 'none', API_BASE_URL: 'same_as_target', TARGET_ENVIRONMENT: 'local_dev_server', DESTRUCTIVE_DEPLOYED_TESTS_ALLOWED: 'never' } }), passed: true, qa_report_written: true, qa_ledger_complete: true, checklist_completed: true, safety_reviewed: true, credentials_not_persisted: true, ui_computer_use_evidence: true, unresolved_findings: 0, unresolved_fixable_findings: 1, post_fix_verification_complete: true, honest_mode_complete: true });
+  const unresolvedQaGateFile = (await readJson(path.join(unresolvedQaTmp, 'qa-gate.json'))).qa_report_file;
+  await writeJsonAtomic(path.join(unresolvedQaTmp, 'qa-ledger.json'), { checklist: [] });
+  await writeTextAtomic(path.join(unresolvedQaTmp, unresolvedQaGateFile), '# unresolved\n');
+  const unresolvedQaGate = await evaluateQaGate(unresolvedQaTmp);
+  if (unresolvedQaGate.passed || !unresolvedQaGate.reasons.includes('unresolved_fixable_findings_remaining')) throw new Error('selftest failed: unresolved fixable QA finding was accepted');
+  const promptQa = buildQaLoopPrompt({ id: 'selftest', mission: { prompt: 'QA and fix' }, contract: { answers: { QA_CORRECTIVE_POLICY: 'apply_safe_fixes_and_reverify' } }, cycle: 1, previous: '', reportFile: qaReportFile });
+  if (!promptQa.includes('dogfood as human proxy') || !promptQa.includes('fix safe code/test/docs now') || !promptQa.includes('post_fix_verification_complete')) throw new Error('selftest failed: QA-LOOP dogfood prompt');
   const pkgQa = defaultQaGate({ sealed_hash: 'selftest', answers: { QA_SCOPE: 'all_available', TARGET_BASE_URL: 'none', API_BASE_URL: 'same_as_target', TARGET_ENVIRONMENT: 'local_dev_server', DESTRUCTIVE_DEPLOYED_TESTS_ALLOWED: 'never' } });
   if (pkgQa.ui_e2e_required || pkgQa.api_e2e_required || !pkgQa.ui_computer_use_evidence) throw new Error('selftest failed: package QA target gate');
   const qaRunResult = await runProcess(process.execPath, [hookBin, 'qa-loop', 'run', 'latest', '--mock'], { cwd: hookQaTmp, env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
@@ -2504,7 +2546,7 @@ async function selftest() {
   await writeTextAtomic(mockContext7Path, `process.stdin.setEncoding('utf8');\nlet buf='';\nfunction send(id,result){process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\\n');}\nprocess.stdin.on('data',(chunk)=>{buf+=chunk;for(;;){const i=buf.indexOf('\\n');if(i<0)break;const line=buf.slice(0,i).trim();buf=buf.slice(i+1);if(!line)continue;const msg=JSON.parse(line);if(!msg.id)continue;if(msg.method==='initialize')send(msg.id,{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'Mock Context7',version:'0.0.0'}});else if(msg.method==='tools/list')send(msg.id,{tools:[{name:'resolve-library-id'},{name:'query-docs'}]});else if(msg.method==='tools/call'&&msg.params.name==='resolve-library-id')send(msg.id,{content:[{type:'text',text:'Context7-compatible library ID: /mock/lib'}]});else if(msg.method==='tools/call'&&msg.params.name==='query-docs')send(msg.id,{content:[{type:'text',text:'mock docs for '+msg.params.arguments.libraryId}]});else send(msg.id,{content:[{type:'text',text:'unknown'}],isError:true});}});\n`);
   const mockContext7Docs = await context7Docs('Mock Lib', { command: process.execPath, args: [mockContext7Path], query: 'hooks', timeoutMs: 5000 });
   if (!mockContext7Docs.ok || mockContext7Docs.docs_tool !== 'query-docs' || mockContext7Docs.library_id !== '/mock/lib') throw new Error('selftest failed: local Context7 MCP client did not resolve/query docs');
-  const passedTeamGate = { passed: true, analysis_artifact: true, triwiki_refreshed: true, triwiki_validated: true, consensus_artifact: true, implementation_team_fresh: true, review_artifact: true, integration_evidence: true, session_cleanup: true };
+  const passedTeamGate = { passed: true, analysis_artifact: true, triwiki_refreshed: true, triwiki_validated: true, consensus_artifact: true, team_roster_confirmed: true, implementation_team_fresh: true, review_artifact: true, integration_evidence: true, session_cleanup: true };
   const passedTeamSessionCleanup = { schema_version: 1, passed: true, all_sessions_closed: true, outstanding_sessions: 0, live_transcript_finalized: true, closed_at: nowIso() };
   const incompleteTeamGateTmp = tmpdir();
   await initProject(incompleteTeamGateTmp, {});
@@ -2517,11 +2559,20 @@ async function selftest() {
   const routeGateTmp = tmpdir();
   await initProject(routeGateTmp, {});
   const { id: gateId, dir: gateDir } = await createMission(routeGateTmp, { mode: 'team', prompt: 'Context7 gate test' });
+  await writeJsonAtomic(path.join(gateDir, 'team-roster.json'), { schema_version: 1, mission_id: gateId, confirmed: true, source: 'selftest' });
   await writeJsonAtomic(path.join(gateDir, 'team-gate.json'), passedTeamGate);
   await setCurrent(routeGateTmp, { mission_id: gateId, mode: 'TEAM', route: 'Team', route_command: '$Team', phase: 'TEAM_REVIEW', context7_required: true, stop_gate: 'team-gate.json' });
   const gateState = await readJson(stateFile(routeGateTmp), {});
   const missingC7Stop = await evaluateStop(routeGateTmp, gateState, { last_assistant_message: 'SKS Honest Mode verification evidence gap' }, { noQuestion: false });
   if (missingC7Stop?.decision !== 'block' || !String(missingC7Stop.reason || '').includes('Context7')) throw new Error('selftest failed: Stop hook did not block missing Context7 evidence');
+  const rosterArtifactGateTmp = tmpdir();
+  await initProject(rosterArtifactGateTmp, {});
+  const { id: rosterArtifactGateId, dir: rosterArtifactGateDir } = await createMission(rosterArtifactGateTmp, { mode: 'team', prompt: 'team roster artifact gate test' });
+  await writeJsonAtomic(path.join(rosterArtifactGateDir, 'team-gate.json'), { ...passedTeamGate, session_cleanup: false });
+  await setCurrent(rosterArtifactGateTmp, { mission_id: rosterArtifactGateId, mode: 'TEAM', route: 'Team', route_command: '$Team', phase: 'TEAM_REVIEW', context7_required: false, stop_gate: 'team-gate.json' });
+  const rosterArtifactGateState = await readJson(stateFile(rosterArtifactGateTmp), {});
+  const missingRosterArtifactStop = await evaluateStop(rosterArtifactGateTmp, rosterArtifactGateState, { last_assistant_message: 'SKS Honest Mode verification evidence gap' }, { noQuestion: false });
+  if (missingRosterArtifactStop?.decision !== 'block' || !String(missingRosterArtifactStop.reason || '').includes('team-roster.json')) throw new Error('selftest failed: Team gate did not block missing team roster artifact');
   await recordContext7Evidence(routeGateTmp, gateState, { tool_name: 'resolve-library-id', library: 'react' });
   const resolveOnlyStop = await evaluateStop(routeGateTmp, gateState, { last_assistant_message: 'SKS Honest Mode verification evidence gap' }, { noQuestion: false });
   if (resolveOnlyStop?.decision !== 'block') throw new Error('selftest failed: resolve-only Context7 evidence unblocked route');
@@ -2537,9 +2588,13 @@ async function selftest() {
   await writeJsonAtomic(path.join(gateDir, REFLECTION_GATE), { schema_version: 1, passed: true, mission_id: gateId, route: '$Team', reflection_artifact: true, lessons_recorded: false, no_issue_acknowledged: true, triwiki_recorded: false, wiki_refreshed_or_packed: true, wiki_validated: true, created_at: nowIso() });
   const c7Unblocked = await evaluateStop(routeGateTmp, gateState, { last_assistant_message: 'SKS Honest Mode verification evidence gap' }, { noQuestion: false });
   if (c7Unblocked?.decision === 'block') throw new Error('selftest failed: full Context7 evidence did not unblock route gate');
+  await appendJsonlBounded(path.join(gateDir, 'team-transcript.jsonl'), { ts: new Date(Date.now() + 5000).toISOString(), agent: 'parent_orchestrator', phase: 'IMPLEMENTATION', type: 'status', message: 'work after reflection selftest' });
+  const staleReflectionStop = await evaluateStop(routeGateTmp, gateState, { last_assistant_message: 'SKS Honest Mode verification evidence gap' }, { noQuestion: false });
+  if (staleReflectionStop?.decision !== 'block' || !String(staleReflectionStop.reason || '').includes('work_after_reflection')) throw new Error('selftest failed: post-reflection work did not stale the reflection gate');
   const subagentGateTmp = tmpdir();
   await initProject(subagentGateTmp, {});
   const { id: subagentGateId, dir: subagentGateDir } = await createMission(subagentGateTmp, { mode: 'team', prompt: 'subagent evidence gate test' });
+  await writeJsonAtomic(path.join(subagentGateDir, 'team-roster.json'), { schema_version: 1, mission_id: subagentGateId, confirmed: true, source: 'selftest' });
   await writeJsonAtomic(path.join(subagentGateDir, 'team-gate.json'), passedTeamGate);
   await setCurrent(subagentGateTmp, { mission_id: subagentGateId, mode: 'TEAM', route: 'Team', route_command: '$Team', phase: 'TEAM_REVIEW', context7_required: false, subagents_required: true, stop_gate: 'team-gate.json' });
   const subagentGateState = await readJson(stateFile(subagentGateTmp), {});
@@ -2556,12 +2611,13 @@ async function selftest() {
   await writeJsonAtomic(path.join(teamDir, 'team-plan.json'), teamPlan);
   if (teamPlan.agent_session_count !== 3) throw new Error('selftest failed: team default sessions not 3');
   if (teamPlan.role_counts.executor !== 3 || teamPlan.role_counts.user !== 1 || teamPlan.role_counts.reviewer !== 1) throw new Error('selftest failed: team default role counts invalid');
-  if (teamPlan.phases[0]?.id !== 'parallel_analysis_scouting' || teamPlan.phases[1]?.id !== 'triwiki_refresh') throw new Error('selftest failed: team plan is not scout-first');
+  if (teamPlan.phases[0]?.id !== 'team_roster_confirmation' || teamPlan.phases[1]?.id !== 'parallel_analysis_scouting' || teamPlan.phases[2]?.id !== 'triwiki_refresh') throw new Error('selftest failed: team plan is not roster-first then scout-first');
   if (teamPlan.roster.debate_team.length !== 3 || !teamPlan.roster.debate_team.some((agent) => agent.id === 'debate_user_1') || !teamPlan.roster.development_team.some((agent) => agent.id === 'executor_3')) throw new Error('selftest failed: team roster missing default agents');
   if (teamPlan.roster.analysis_team.length !== teamPlan.role_counts.executor || !teamPlan.roster.analysis_team.some((agent) => agent.id === 'analysis_scout_3')) throw new Error('selftest failed: team analysis scout roster missing default agents');
-  if (!teamPlan.required_artifacts.includes('team-analysis.md') || !teamPlan.required_artifacts.includes(TEAM_SESSION_CLEANUP_ARTIFACT)) throw new Error('selftest failed: team plan missing required artifacts');
+  if (!teamPlan.required_artifacts.includes('team-roster.json') || !teamPlan.required_artifacts.includes('team-analysis.md') || !teamPlan.required_artifacts.includes(TEAM_SESSION_CLEANUP_ARTIFACT)) throw new Error('selftest failed: team plan missing required artifacts');
   if (teamPlan.context_tracking?.ssot !== 'triwiki' || !teamPlan.required_artifacts.includes('.sneakoscope/wiki/context-pack.json')) throw new Error('selftest failed: team plan missing TriWiki context tracking');
   if (!teamPlan.context_tracking?.stage_policy?.includes('before_each_route_stage_read_relevant_context_pack')) throw new Error('selftest failed: team plan missing per-stage TriWiki policy');
+  if (!teamPlan.invariants.some((item) => item.includes('chat-history screenshots'))) throw new Error('selftest failed: team invariants missing chat capture matching');
   if (!teamPlan.phases.some((phase) => String(phase.goal || '').includes('refreshes/validates TriWiki before implementation handoff'))) throw new Error('selftest failed: team plan missing mid-pipeline TriWiki refresh');
   const teamWorkflow = teamWorkflowMarkdown(teamPlan);
   if (!teamWorkflow.includes('SSOT: triwiki') || !teamWorkflow.includes('Analysis Scouts') || !teamWorkflow.includes('sks wiki validate')) throw new Error('selftest failed: team workflow missing scout-first TriWiki context tracking');
@@ -2585,9 +2641,12 @@ async function selftest() {
   if (routeReasoning(routePrompt('$DFix button label'), '$DFix button label').effort !== 'medium') throw new Error('selftest failed: simple reasoning not medium');
   if (routePrompt('이 파이프라인은 왜 이렇게 동작해?')?.id !== 'Answer') throw new Error('selftest failed: question prompt did not route to Answer');
   if (routePrompt('React useEffect 최신 문서 기준으로 설명해줘')?.id !== 'Answer') throw new Error('selftest failed: docs question did not route to Answer');
+  if (routePrompt('질문을 하더라도 진짜 질문인지 아니면 질문형태를 띄는 암묵적인 지시인지를 반드시 파악해야해')?.id !== 'Team') throw new Error('selftest failed: question-shaped directive did not route to Team');
+  if (routePrompt('근데 왜 팀원 구성을 안하고 작업을 하는 경우가 이렇게 많지?')?.id !== 'Team') throw new Error('selftest failed: question-shaped Team complaint did not route to Team');
   if (routePrompt('$DF button label')) throw new Error('selftest failed: deprecated $DF route still resolved');
   if (routePrompt('implement feature')?.id !== 'Team') throw new Error('selftest failed: implementation prompt did not default to Team');
   if (routePrompt('$SKS implement feature')?.id !== 'Team') throw new Error('selftest failed: $SKS implementation prompt did not promote to Team');
+  if (routePrompt('$From-Chat-IMG 채팅 기록 이미지와 첨부 이미지로 고객사 요청 수정 작업 수행해줘')?.id !== 'Team') throw new Error('selftest failed: explicit chat capture client work did not promote to Team');
   if (routePrompt('$SKS show me available workflows')?.id !== 'SKS') throw new Error('selftest failed: $SKS workflow discovery should remain SKS');
   if (routeRequiresSubagents(routePrompt('이 파이프라인은 왜 이렇게 동작해?'), '이 파이프라인은 왜 이렇게 동작해?')) throw new Error('selftest failed: Answer route requires subagents');
   if (!routeRequiresSubagents(routePrompt('implement feature'), 'implement feature')) throw new Error('selftest failed: default Team implementation route does not require subagents');
@@ -2639,9 +2698,12 @@ async function selftest() {
   const evalReport = runEvaluationBenchmark({ iterations: 5 });
   if (!evalReport.comparison.meaningful_improvement) throw new Error('selftest failed: evaluation benchmark did not show meaningful improvement');
   if (!evalReport.candidate.wiki?.valid) throw new Error('selftest failed: wiki coordinate index invalid in eval');
+  if (evalReport.candidate.wiki?.voxel_schema !== 'sks.wiki-voxel.v1' || evalReport.candidate.wiki?.voxel_rows < 1) throw new Error('selftest failed: eval did not include voxel overlay metrics');
   const coord = rgbaToWikiCoord({ r: 12, g: 34, b: 56, a: 255 });
   if (coord.schema !== 'sks.wiki-coordinate.v1' || coord.xyzw.length !== 4) throw new Error('selftest failed: RGBA wiki coordinate conversion');
   await writeTextAtomic(path.join(tmp, '.sneakoscope', 'memory', 'q2_facts', 'selftest.md'), '- claim: Selftest memory claim must be selected before lower-weight mission notes. | id: selftest-memory-priority | source: src/cli/main.mjs | risk: high | status: supported | evidence_count: 3 | required_weight: 1.0 | trust_score: 0.9\n');
+  await createMission(tmp, { mode: 'sks', prompt: '모호한 질문은 그만 물어봐야지;; triwiki로 예측해' });
+  await createMission(tmp, { mode: 'sks', prompt: 'triwiki에서 자주 요청하는 것들은 카운팅해서 더 우선 참고해줘' });
   const wikiPack = contextCapsule({
     mission: { id: 'selftest-wiki', coord: { rgba: { r: 48, g: 132, b: 212, a: 240 } } },
     role: 'verifier',
@@ -2652,12 +2714,22 @@ async function selftest() {
   });
   const wikiValidation = validateWikiCoordinateIndex(wikiPack.wiki);
   if (!wikiValidation.ok) throw new Error('selftest failed: wiki coordinate pack invalid');
+  if (wikiPack.wiki.vx?.s !== 'sks.wiki-voxel.v1' || wikiVoxelRowCount(wikiPack.wiki) < 1) throw new Error('selftest failed: wiki voxel overlay missing');
+  const legacyWiki = { ...wikiPack.wiki };
+  delete legacyWiki.vx;
+  const legacyValidation = validateWikiCoordinateIndex(legacyWiki);
+  if (legacyValidation.ok || !legacyValidation.issues.some((issue) => issue.id === 'vx_missing')) throw new Error('selftest failed: legacy coordinate-only wiki pack was accepted');
   if (!wikiPack.trust_summary || !Number.isFinite(Number(wikiPack.trust_summary.needs_evidence))) throw new Error('selftest failed: wiki trust summary missing');
   if (!(wikiPack.wiki.anchors || wikiPack.wiki.a || []).some((anchor) => Array.isArray(anchor) ? Number.isFinite(Number(anchor[9])) : Number.isFinite(Number(anchor.trust_score)))) throw new Error('selftest failed: wiki anchor trust score missing');
   if (!(wikiPack.wiki.anchors || wikiPack.wiki.a || []).some((anchor) => (Array.isArray(anchor) ? anchor[0] : anchor.id) === 'wiki-trig')) throw new Error('selftest failed: wiki trig anchor missing');
   if (!(wikiPack.wiki.anchors || wikiPack.wiki.a || []).some((anchor) => String(Array.isArray(anchor) ? anchor[0] : anchor.id).startsWith('team-analysis-'))) throw new Error('selftest failed: team analysis claim missing from TriWiki pack');
-  if (wikiPack.claims?.[0]?.id !== 'selftest-memory-priority') throw new Error('selftest failed: memory required_weight did not take priority in TriWiki pack');
+  if (!wikiPack.claims?.some((claim) => String(claim.id).startsWith('user-request-frequency-'))) throw new Error('selftest failed: repeated user request frequency claim missing from TriWiki pack');
+  if (!wikiPack.claims?.some((claim) => String(claim.id).startsWith('user-strong-feedback-'))) throw new Error('selftest failed: strong user feedback claim missing from TriWiki pack');
+  if (!wikiPack.claims?.some((claim) => claim.id === 'selftest-memory-priority')) throw new Error('selftest failed: memory required_weight claim was not selected in TriWiki pack');
+  if (!wikiPack.claims?.some((claim) => claim.id === 'wiki-stack-current-docs-policy')) throw new Error('selftest failed: stack current-docs policy claim missing from TriWiki pack');
+  if (!wikiPack.claims?.some((claim) => claim.id === 'wiki-stack-current-docs-vercel-duration')) throw new Error('selftest failed: Vercel duration current-docs claim missing from TriWiki pack');
   const dryRunPack = await writeWikiContextPack(tmp, ['--max-anchors', '4'], { dryRun: true });
+  if (wikiVoxelRowCount(dryRunPack.pack.wiki) !== 4) throw new Error('selftest failed: dry-run wiki pack did not build voxel rows');
   if (await exists(dryRunPack.file)) throw new Error('selftest failed: wiki refresh dry-run wrote context pack');
   await ensureDir(path.dirname(dryRunPack.file));
   await writeJsonAtomic(path.join(path.dirname(dryRunPack.file), 'low-trust-artifact.json'), { trust_summary: { avg: 0.1 }, wiki: { anchors: [] } });
@@ -2844,8 +2916,22 @@ async function writeWikiContextPack(root, args = [], opts = {}) {
   return { pack, file, role, maxAnchors };
 }
 
+async function migrateWikiContextPack(root) {
+  try {
+    const { pack } = await writeWikiContextPack(root, ['--max-anchors', '32']);
+    return wikiValidationResult(pack).result.ok;
+  } catch (err) {
+    return false;
+  }
+}
+
 function wikiAnchorCount(wiki = {}) {
   return (wiki.anchors || wiki.a || []).length;
+}
+
+function wikiVoxelRowCount(wiki = {}) {
+  const overlay = wiki.vx || wiki.voxel_overlay || {};
+  return (overlay.rows || overlay.v || []).length;
 }
 
 function wikiValidationResult(pack = {}) {
@@ -2859,9 +2945,10 @@ function printWikiPackSummary(root, file, pack) {
   console.log(`Path:     ${path.relative(root, file)}`);
   console.log(`Claims:   ${pack.claims.length} hydrated text claims`);
   console.log(`Anchors:  ${wikiAnchorCount(pack.wiki)} coordinate anchors (${pack.wiki.overflow_count ?? pack.wiki.o ?? 0} overflow)`);
+  console.log(`Voxels:   ${wikiVoxelRowCount(pack.wiki)} metadata rows (${pack.wiki.vx?.s || pack.wiki.vx?.schema || 'none'})`);
   console.log(`Schema:   ${pack.wiki.schema}`);
   console.log(`Trust:    avg=${pack.trust_summary.avg} needs_evidence=${pack.trust_summary.needs_evidence}`);
-  console.log('Guidance: follow high-trust claims; hydrate source/evidence before relying on lower-trust claims.');
+  console.log('Guidance: follow high-trust claims; hydrate source/evidence before relying on lower-trust claims. Stack/version changes require current Context7 or official-doc TriWiki claims before coding.');
   console.log(`Validate: sks wiki validate ${path.relative(root, file)}`);
 }
 
@@ -2900,7 +2987,49 @@ async function projectWikiClaims(root) {
       evidence_count: await exists(path.join(root, file)) ? 1 : 0
     });
   }
+
+  const stackPolicy = stackCurrentDocsPolicy();
+  out.push({
+    id: 'wiki-stack-current-docs-policy',
+    text: `When project tech stack, framework, package, runtime, SDK, MCP, or deployment-platform versions change, use Context7 or official vendor docs, write current syntax/security/limit guidance to ${stackPolicy.memory_path}, refresh TriWiki, validate it, and prefer those claims over stale model defaults before coding.`,
+    authority: 'contract',
+    risk: 'critical',
+    status: 'supported',
+    freshness: 'fresh',
+    source: 'src/core/routes.mjs',
+    file: 'src/core/routes.mjs',
+    evidence_count: 3,
+    required_weight: 1.35,
+    trust_score: 0.95
+  });
+  out.push({
+    id: 'wiki-stack-current-docs-examples',
+    text: `Current-doc examples that belong in TriWiki when relevant: Supabase hosted keys prefer sb_publishable_/sb_secret_ over legacy anon/service_role defaults, Next.js 16 uses proxy.ts/proxy.js instead of deprecated middleware convention, and Vercel duration limits such as the 300s Fluid Compute default constrain long-running server work.`,
+    authority: 'wiki',
+    risk: 'critical',
+    status: 'supported',
+    freshness: 'fresh',
+    source: 'src/core/routes.mjs',
+    file: 'src/core/routes.mjs',
+    evidence_count: 4,
+    required_weight: 1.25,
+    trust_score: 0.92
+  });
+  out.push({
+    id: 'wiki-stack-current-docs-vercel-duration',
+    text: 'Vercel Function duration limits are deployment constraints; record current official limits in TriWiki before designing long-running server work, including the 300s Fluid Compute default when applicable.',
+    authority: 'wiki',
+    risk: 'high',
+    status: 'supported',
+    freshness: 'fresh',
+    source: 'https://vercel.com/docs/functions/limitations',
+    file: 'https://vercel.com/docs/functions/limitations',
+    evidence_count: 2,
+    required_weight: 1.2,
+    trust_score: 0.9
+  });
   out.push(...(await memoryWikiClaims(root)));
+  out.push(...(await userRequestSignalWikiClaims(root)));
   out.push(...(await teamAnalysisWikiClaims(root)));
   return out;
 }
@@ -3028,6 +3157,91 @@ function parseOptionalNumber(value) {
 
 function slugifyClaimId(value) {
   return String(value || 'claim').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'claim';
+}
+
+async function userRequestSignalWikiClaims(root) {
+  const base = path.join(root, '.sneakoscope', 'missions');
+  let entries = [];
+  try {
+    entries = await fsp.readdir(base, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const topics = new Map();
+  const strong = [];
+  const missionIds = entries.filter((item) => item.isDirectory() && item.name.startsWith('M-')).map((item) => item.name).sort().reverse().slice(0, 120);
+  for (const id of missionIds) {
+    const mission = await readJson(path.join(base, id, 'mission.json'), null);
+    const prompt = String(mission?.prompt || '').trim();
+    if (!prompt) continue;
+    const signal = userRequestSignal(prompt);
+    for (const topic of signal.topics) {
+      const current = topics.get(topic) || { count: 0, strong: 0, examples: [] };
+      current.count += 1;
+      if (signal.intensity >= 1) current.strong += 1;
+      if (current.examples.length < 3) current.examples.push(id);
+      topics.set(topic, current);
+    }
+    if (signal.intensity >= 1) strong.push({ id, signal });
+  }
+  const claims = [];
+  for (const [topic, row] of [...topics.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 16)) {
+    const weight = Math.min(1.25, 0.45 + row.count * 0.12 + row.strong * 0.18);
+    claims.push({
+      id: `user-request-frequency-${slugifyClaimId(topic)}`,
+      text: `User request topic "${topic}" appeared ${row.count} time(s); repeated topics should be consulted before asking predictable clarification questions.`,
+      authority: 'wiki',
+      risk: row.strong ? 'high' : 'medium',
+      status: 'supported',
+      freshness: 'fresh',
+      source: '.sneakoscope/missions',
+      file: '.sneakoscope/missions',
+      evidence_count: row.count,
+      request_count: row.count,
+      strong_feedback_count: row.strong,
+      required_weight: Number(weight.toFixed(2)),
+      trust_score: row.strong ? 0.92 : undefined
+    });
+  }
+  for (const item of strong.slice(0, 12)) {
+    claims.push({
+      id: `user-strong-feedback-${item.id}`,
+      text: `Mission ${item.id} contains strong user feedback markers; treat the underlying preference as high-priority context and avoid repeating the same friction.`,
+      authority: 'wiki',
+      risk: 'high',
+      status: 'supported',
+      freshness: 'fresh',
+      source: `.sneakoscope/missions/${item.id}/mission.json`,
+      file: `.sneakoscope/missions/${item.id}/mission.json`,
+      evidence_count: item.signal.markers.length,
+      request_count: 1,
+      strong_feedback_count: 1,
+      required_weight: 1.15,
+      trust_score: 0.94
+    });
+  }
+  return claims;
+}
+
+function userRequestSignal(prompt = '') {
+  const lower = String(prompt || '').toLowerCase();
+  const markers = [];
+  for (const pattern of [/;;+/g, /!!+/g, /\b왜\b/g, /화|짜증|답답|문제|제발|강력|두번다시|자꾸|계속/g]) {
+    const found = String(prompt || '').match(pattern);
+    if (found) markers.push(...found);
+  }
+  const topicRules = [
+    ['ambiguity-questions', /모호|ambiguity|clarification|질문|답변|answers?\.json|decision-contract|추론|예측/],
+    ['triwiki-priority-memory', /triwiki|wiki|메모리|memory|기억|우선|반복|자주|카운팅|count|frequency|weight/],
+    ['install-bootstrap', /bootstrap|postinstall|doctor|deps|tmux|homebrew|최초\s*설치|셋업|setup/],
+    ['version-release', /버전|version|publish:dry|release|npm\s+pack/],
+    ['qa-loop', /qa|e2e|검증|리포트|report/],
+    ['team-pipeline', /team|subagent|세션|cleanup|reflection|회고|반성/],
+    ['safety-boundary', /삭제|파괴|destructive|production|권한|보안|인증|결제/]
+  ];
+  const topics = topicRules.filter(([, pattern]) => pattern.test(lower)).map(([topic]) => topic);
+  if (!topics.length) topics.push('general-user-preference');
+  return { intensity: Math.min(3, markers.length), markers, topics };
 }
 
 async function teamAnalysisWikiClaims(root) {
@@ -3278,7 +3492,8 @@ async function team(args) {
   await writeJsonAtomic(path.join(dir, 'team-plan.json'), plan);
   await writeTextAtomic(path.join(dir, 'team-workflow.md'), teamWorkflowMarkdown(plan));
   const liveFiles = await initTeamLive(id, dir, prompt, { agentSessions, roleCounts, roster });
-  await writeJsonAtomic(path.join(dir, 'team-gate.json'), { passed: false, analysis_artifact: false, triwiki_refreshed: false, triwiki_validated: false, consensus_artifact: false, implementation_team_fresh: false, review_artifact: false, integration_evidence: false, session_cleanup: false, context7_evidence: false });
+  await writeJsonAtomic(path.join(dir, 'team-roster.json'), { schema_version: 1, mission_id: id, role_counts: roleCounts, agent_sessions: agentSessions, bundle_size: roster.bundle_size, roster, confirmed: true, source: 'default_or_prompt_team_spec' });
+  await writeJsonAtomic(path.join(dir, 'team-gate.json'), { passed: false, team_roster_confirmed: true, analysis_artifact: false, triwiki_refreshed: false, triwiki_validated: false, consensus_artifact: false, implementation_team_fresh: false, review_artifact: false, integration_evidence: false, session_cleanup: false, context7_evidence: false });
   const result = {
     mission_id: id,
     mission_dir: dir,
@@ -3345,8 +3560,14 @@ function buildTeamPlan(id, prompt, opts = {}) {
     context_tracking: triwikiContextTracking(),
     phases: [
       {
+        id: 'team_roster_confirmation',
+        goal: 'Materialize Team roster from default SKS counts or explicit user counts, write team-roster.json, and surface role counts before any implementation.',
+        agents: ['parent_orchestrator'],
+        output: 'team-roster.json'
+      },
+      {
         id: 'parallel_analysis_scouting',
-        goal: 'Read relevant TriWiki context first, then read-only analysis scouts split repo, docs, tests, API, DB risk, UX friction, and implementation-surface investigation in parallel before debate.',
+        goal: 'Read relevant TriWiki context first. If chat-history screenshots or attached images are present, list visible chat text and image-region matches as evidence, then read-only analysis scouts split repo, docs, tests, API, DB risk, UX friction, and implementation-surface investigation in parallel before debate.',
         agents: roster.analysis_team.map((agent) => agent.id),
         max_parallel_subagents: agentSessions,
         write_policy: 'read-only',
@@ -3398,6 +3619,8 @@ function buildTeamPlan(id, prompt, opts = {}) {
     ],
     invariants: [
       'The parent thread remains the orchestrator and owns final integration.',
+      'Team roster confirmation is mandatory before implementation: default SKS counts are materialized when the user did not specify counts, explicit counts are honored, and team-gate.json must include team_roster_confirmed=true with team-roster.json present.',
+      'When and only when From-Chat-IMG/$From-Chat-IMG is explicit, treat client requests as chat-history screenshots plus separate attachments: extract visible text in reading order, use Computer Use/browser visual inspection to match screenshot image regions to attachments with confidence notes, and turn that evidence into a complete modification work order before editing.',
       'Every useful subagent message, result, handoff, review finding, and integration decision is mirrored to team-live.md and team-transcript.jsonl.',
       'Analysis scouts, debate team, and development team are separate bundles; scouts finish before debate and debate closes before implementation workers start.',
       'Analysis scouts are read-only and maximize the available session budget for independent investigation before any code edit.',
@@ -3408,7 +3631,7 @@ function buildTeamPlan(id, prompt, opts = {}) {
       'Implementation workers receive disjoint ownership scopes.',
       'Workers are told they are not alone in the codebase and must not revert others edits.',
       'Team completion requires session cleanup evidence with zero outstanding subagent sessions before reflection.',
-      'Context tracking uses TriWiki as the SSOT throughout the whole pipeline; team handoffs and final claims must preserve id, hash, source path, and RGBA/trig coordinate anchors.',
+      'Context tracking uses the latest coordinate+voxel TriWiki pack as the SSOT throughout the whole pipeline; coordinate-only legacy packs are invalid, and team handoffs/final claims must preserve id, hash, source path, and RGBA/trig coordinate anchors.',
       'SKS hooks, DB safety rules, Ralph no-question rules, and H-Proof gates remain active.',
       'Destructive database operations remain forbidden.'
     ],
@@ -3424,7 +3647,7 @@ function buildTeamPlan(id, prompt, opts = {}) {
         'sks team event <mission-id> --agent <name> --phase <phase> --message "..."'
       ]
     },
-    required_artifacts: ['team-analysis.md', 'team-consensus.md', 'team-review.md', 'team-gate.json', TEAM_SESSION_CLEANUP_ARTIFACT, 'team-live.md', 'team-transcript.jsonl', 'team-dashboard.json', '.sneakoscope/wiki/context-pack.json', 'context7-evidence.jsonl'],
+    required_artifacts: ['team-roster.json', 'team-analysis.md', 'team-consensus.md', 'team-review.md', 'team-gate.json', TEAM_SESSION_CLEANUP_ARTIFACT, 'team-live.md', 'team-transcript.jsonl', 'team-dashboard.json', '.sneakoscope/wiki/context-pack.json', 'context7-evidence.jsonl'],
     prompt_command: '$Team'
   };
 }
@@ -3445,7 +3668,7 @@ $Team ${plan.prompt}
 
 Use high reasoning for the Team route only, then return to the default/user-selected profile after completion. Use at most ${plan.agent_session_count || 3} subagent sessions at a time; the parent orchestrator is not counted.
 
-Before each stage, read the relevant TriWiki context pack and hydrate low-trust claims from source. First run exactly ${plan.roster.bundle_size} read-only analysis_scout_N agents in parallel. Split repo, docs, tests, API, DB risk, UX friction, and implementation-surface investigation into independent slices, then capture source-backed findings in team-analysis.md. Refresh and validate TriWiki before debate. Then run the debate team with exactly ${plan.roster.bundle_size} participants using the refreshed pack. Use the concrete roster below: final-user voices are stubborn and inconvenience-averse, executor voices are capable developers, reviewers are strict, and planners force consensus. Synthesize one agreed objective with acceptance criteria and disjoint implementation slices, then refresh and validate TriWiki again. Close the debate team. Then form a fresh development team with exactly ${plan.roster.bundle_size} executor_N developers implementing slices in parallel with non-overlapping ownership. Refresh TriWiki after implementation changes or blockers. Review with the validation team, validate TriWiki again, integrate results in the parent thread, close or account for all Team sessions in team-session-cleanup.json, run verification, and report evidence.
+Before each stage, read the relevant latest coordinate+voxel TriWiki context pack and hydrate low-trust claims from source. Coordinate-only legacy packs are invalid; refresh and validate before using TriWiki for pipeline decisions. First run exactly ${plan.roster.bundle_size} read-only analysis_scout_N agents in parallel. Split repo, docs, tests, API, DB risk, UX friction, and implementation-surface investigation into independent slices, then capture source-backed findings in team-analysis.md. Refresh and validate TriWiki before debate. Then run the debate team with exactly ${plan.roster.bundle_size} participants using the refreshed pack. Use the concrete roster below: final-user voices are stubborn and inconvenience-averse, executor voices are capable developers, reviewers are strict, and planners force consensus. Synthesize one agreed objective with acceptance criteria and disjoint implementation slices, then refresh and validate TriWiki again. Close the debate team. Then form a fresh development team with exactly ${plan.roster.bundle_size} executor_N developers implementing slices in parallel with non-overlapping ownership. Refresh TriWiki after implementation changes or blockers. Review with the validation team, validate TriWiki again, integrate results in the parent thread, close or account for all Team sessions in team-session-cleanup.json, run verification, and report evidence.
 \`\`\`
 
 ## Session Budget
@@ -3464,7 +3687,7 @@ Before each stage, read the relevant TriWiki context pack and hydrate low-trust 
 - Pack: ${ctx.default_pack}
 - Refresh: \`${ctx.pack_command}\`
 - Validate: \`${ctx.validate_command}\`
-- Rule: use relevant TriWiki before every stage, hydrate low-trust claims during the stage, refresh after findings/artifact changes, validate before handoffs/final claims, and keep id, hash, source path, and RGBA/trig coordinate anchors hydratable.
+- Rule: use only the latest coordinate+voxel TriWiki pack before every stage, hydrate low-trust claims during the stage, refresh after findings/artifact changes, validate before handoffs/final claims, reject coordinate-only legacy packs, and keep id, hash, source path, and RGBA/trig coordinate anchors hydratable.
 
 ## Analysis Scouts
 

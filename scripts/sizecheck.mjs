@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const limits = {
-  packedBytes: Number(process.env.SKS_MAX_PACK_BYTES || 160 * 1024),
-  unpackedBytes: Number(process.env.SKS_MAX_UNPACKED_BYTES || 600 * 1024),
+  packedBytes: Number(process.env.SKS_MAX_PACK_BYTES || 168 * 1024),
+  unpackedBytes: Number(process.env.SKS_MAX_UNPACKED_BYTES || 644 * 1024),
   packFiles: Number(process.env.SKS_MAX_PACK_FILES || 40),
   trackedFileBytes: Number(process.env.SKS_MAX_TRACKED_FILE_BYTES || 256 * 1024)
 };

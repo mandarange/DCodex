@@ -1,11 +1,13 @@
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { appendJsonl, exists, nowIso, readJson, readText, writeJsonAtomic, writeTextAtomic } from './fsx.mjs';
 import { containsUserQuestion, noQuestionContinuationReason } from './no-question-guard.mjs';
 import { createMission, missionDir, setCurrent } from './mission.mjs';
 import { buildQuestionSchemaForRoute, writeQuestions } from './questions.mjs';
+import { sealContract } from './decision-contract.mjs';
 import { scanDbSafety } from './db-safety.mjs';
 import { writeResearchPlan } from './research.mjs';
-import { context7RequirementText, dollarCommand, reflectionRequiredForRoute, reasoningInstruction, routeNeedsContext7, routePrompt, routeReasoning, routeRequiresSubagents, stripDollarCommand, subagentExecutionPolicyText, triwikiContextTracking, triwikiContextTrackingText, triwikiStagePolicyText } from './routes.mjs';
+import { chatCaptureIntakeText, context7RequirementText, dollarCommand, hasFromChatImgSignal, reflectionRequiredForRoute, reasoningInstruction, routeNeedsContext7, routePrompt, routeReasoning, routeRequiresSubagents, stripDollarCommand, subagentExecutionPolicyText, stackCurrentDocsPolicyText, triwikiContextTracking, triwikiContextTrackingText, triwikiStagePolicyText } from './routes.mjs';
 import { formatRoleCounts, initTeamLive, parseTeamSpecText } from './team-live.mjs';
 
 export { routePrompt };
@@ -33,17 +35,20 @@ export function promptPipelineContext(prompt, route = routePrompt(prompt)) {
     'Hook visibility limit: hooks can inject context/status or block/continue a turn, but they cannot create arbitrary live chat bubbles; use team events, mission files, or normal assistant updates for live transcript details.',
     'Ambiguity gate: every execution route must start with mandatory ambiguity-removal questions before execution. DFix and Answer bypass this gate because they do not start implementation.',
     'Plan-first interaction: when ambiguity questions are required, call the Codex plan tool first so the user sees Ask questions -> Seal decision contract -> Execute/verify as the visible workflow.',
+    'Question-shaped directive policy: before using Answer, decide whether a question is a real information request or an implicit instruction/complaint about broken behavior. Rhetorical bug reports, mandatory-policy statements, and "why is this not happening?" execution complaints must route to Team, not Answer.',
     'Best-practice prompt shape: extract Goal, Context, Constraints, and Done-when before implementation; keep questions compact and only ask for answers that can change scope, safety, user-facing behavior, or acceptance criteria.',
+    chatCaptureIntakeText(),
     'Default execution routing: general implementation/code-changing prompts promote to Team so the normal path is parallel analysis, TriWiki refresh, debate/consensus, then fresh parallel executors. Answer, DFix, Help, Wiki maintenance, and safety-specific routes are intentional exceptions.',
     'Stance: infer the user intent aggressively from rough wording and local context, but ask short ambiguity-removal questions before work when a missing answer can change the target, scope, safety boundary, or acceptance criteria.',
     subagentExecutionPolicyText(route, prompt),
     'Design routing: UI/UX reads design.md first; if missing, use design-system-builder from docs/Design-Sys-Prompt.md with plan-tool clarification and a default font recommendation. Existing designs use design-ui-editor plus design-artifact-expert. Image/logo/raster assets use imagegen.',
     triwikiContextTrackingText(),
     triwikiStagePolicyText(),
+    stackCurrentDocsPolicyText(),
     'Extract intent, target files/surfaces, constraints, acceptance criteria, risks, and the smallest safe atomic step before acting.',
     'Do not stop at a plan when implementation was requested; continue until the route gate passes or a hard blocker is honestly recorded.',
     context7RequirementText(required),
-    'Before final answer, run SKS Honest Mode: verify evidence/tests, state gaps, and confirm the goal is genuinely complete.'
+    'Before final answer, include a user-visible completion summary that explains what changed and how it was verified, then run SKS Honest Mode: verify evidence/tests, state gaps, and confirm the goal is genuinely complete.'
   ];
   if (reflectionRequiredForRoute(route)) lines.push(reflectionInstructionText());
   if (route?.id === 'Team') lines.push(`Team route: scouts, TriWiki refresh, debate, consensus, close planning agents, fresh executors, review/integration, ${TEAM_SESSION_CLEANUP_ARTIFACT}, reflection, and Honest Mode.`);
@@ -66,7 +71,7 @@ export function dfixQuickContext(prompt, route = routePrompt(prompt)) {
     '2. Inspect only the files needed to locate that target.',
     '3. Apply only the listed design/content edit; for UI/UX micro-edits read design.md when present, and use imagegen for any image/logo/raster asset.',
     '4. Run only cheap verification when useful, such as syntax check, focused test, or local render smoke.',
-    '5. Final response: one short change summary plus verification or the exact blocker.'
+    '5. Final response: one short completion summary explaining what changed, plus verification or the exact blocker.'
   ].join('\n');
 }
 
@@ -81,8 +86,9 @@ export function answerOnlyContext(prompt, route = routePrompt(prompt)) {
     '1. Check current repo facts and TriWiki context first; hydrate low-trust wiki claims from source paths before relying on them.',
     '2. Use web search for current, external, or uncertain facts when browsing is available or the user asks for latest/source-backed information.',
     '3. Use Context7 resolve-library-id plus query-docs when the answer depends on package, API, framework, SDK, MCP, or generated documentation behavior.',
-    `4. ${context7RequirementText(required)}`,
-    '5. Finish with Honest Mode fact-checking: separate verified facts, source-backed inferences, and remaining uncertainty.',
+    '4. For stack additions or version changes, preserve current-doc findings as high-priority TriWiki claims before recommending syntax or implementation.',
+    `5. ${context7RequirementText(required)}`,
+    '6. Finish with a clear answer summary plus Honest Mode fact-checking: separate verified facts, source-backed inferences, and remaining uncertainty.',
     'Answer directly and concisely. If the prompt is actually asking for code/work after inspection, state the re-route and use the proper execution pipeline.'
   ].join('\n');
 }
@@ -133,6 +139,7 @@ async function prepareWikiQuickRoute(route, task) {
       `SKS wiki pipeline active. Route: ${route.command} (${route.route}).`,
       `Task: ${task || 'refresh and validate TriWiki'}`,
       'Run policy: refresh/update/갱신 -> `sks wiki refresh` then validate; prune/clean/정리 -> `sks wiki refresh --prune` or dry-run prune first; pack -> `sks wiki pack` then validate.',
+      stackCurrentDocsPolicyText(),
       'Report claims, anchors, trust, validation, and blockers. Do not create mission state, ask ambiguity-gate questions, spawn subagents, or run unrelated work.'
     ].join('\n')
   };
@@ -172,10 +179,37 @@ async function prepareRalph(root, route, task, required) {
 }
 
 async function prepareClarificationGate(root, route, task, required, opts = {}) {
-  const { id, dir } = await createMission(root, { mode: String(route.mode || route.id || 'route').toLowerCase(), prompt: task });
+  const { id, dir, mission } = await createMission(root, { mode: String(route.mode || route.id || 'route').toLowerCase(), prompt: task });
   const schema = buildQuestionSchemaForRoute(route, task);
   await writeQuestions(dir, schema);
-  await writeJsonAtomic(path.join(dir, 'route-context.json'), { route: route.id, command: route.command, mode: route.mode, task, required_skills: route.requiredSkills, context7_required: required, original_stop_gate: route.stopGate, clarification_gate: true });
+  const routeContext = { route: route.id, command: route.command, mode: route.mode, task, required_skills: route.requiredSkills, context7_required: required, original_stop_gate: route.stopGate, clarification_gate: true };
+  await writeJsonAtomic(path.join(dir, 'route-context.json'), routeContext);
+  if (!opts.ralph && schema.slots.length === 0) {
+    await writeJsonAtomic(path.join(dir, 'answers.json'), schema.inferred_answers || {});
+    const result = await sealContract(dir, mission);
+    await appendJsonl(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'route.clarification.auto_sealed', route: route.id, slots: 0, ok: result.ok });
+    await setCurrent(root, routeState(id, route, result.ok ? `${route.mode}_CLARIFICATION_CONTRACT_SEALED` : `${route.mode}_CLARIFICATION_AWAITING_ANSWERS`, required, {
+      prompt: task,
+      questions_allowed: false,
+      implementation_allowed: result.ok,
+      clarification_required: false,
+      clarification_passed: result.ok,
+      ambiguity_gate_required: true,
+      ambiguity_gate_passed: result.ok,
+      original_stop_gate: route.stopGate,
+      stop_gate: route.stopGate
+    }));
+    return {
+      route,
+      additionalContext: `${promptPipelineContext(task, route)}
+
+Ambiguity gate auto-sealed for ${route.command}: all contract answers were inferred from the prompt, TriWiki/current-code defaults, and conservative SKS safety policy.
+Mission: ${id}
+Decision contract: .sneakoscope/missions/${id}/decision-contract.json
+Resolved answers: .sneakoscope/missions/${id}/resolved-answers.json
+Next atomic action: continue the original route lifecycle with the sealed decision-contract.json.`
+    };
+  }
   await appendJsonl(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: opts.ralph ? 'route.ralph.questions_created' : 'route.clarification.questions_created', route: route.id, slots: schema.slots.length });
   const phase = opts.ralph ? 'RALPH_AWAITING_ANSWERS' : `${route.mode}_CLARIFICATION_AWAITING_ANSWERS`;
   await setCurrent(root, routeState(id, route, phase, required, { prompt: task, questions_allowed: true, implementation_allowed: false, clarification_required: true, ambiguity_gate_required: true, original_stop_gate: route.stopGate, stop_gate: 'clarification-gate' }));
@@ -225,7 +259,8 @@ async function prepareTeam(root, route, task, required) {
     },
     context_tracking: triwikiContextTracking(),
     phases: [
-      { id: 'parallel_analysis_scouting', goal: `Before scouting, read relevant TriWiki context. Spawn exactly ${roster.bundle_size} read-only analysis_scout_N agents in parallel, using the full available session budget without exceeding ${agentSessions}. Split repo/docs/tests/API/user-flow/risk investigation into independent slices, hydrate relevant low-trust claims from source, and record source-backed findings.`, agents: roster.analysis_team.map((agent) => agent.id), max_parallel_subagents: agentSessions, write_policy: 'read-only' },
+      { id: 'team_roster_confirmation', goal: `Before any implementation, materialize the Team roster from default SKS counts or explicit user counts, write team-roster.json, and surface role counts ${formatRoleCounts(roleCounts)}. Implementation cannot be considered complete unless team-gate.json has team_roster_confirmed=true.`, agents: ['parent_orchestrator'], output: 'team-roster.json' },
+      { id: 'parallel_analysis_scouting', goal: `Before scouting, read TriWiki context. ${hasFromChatImgSignal(cleanTask) ? 'From-Chat-IMG active: use Computer Use/browser visual inspection, list requirements, match regions to attachments, and write the work order before edits.' : 'From-Chat-IMG inactive: do not assume ordinary images are chat captures.'} Spawn exactly ${roster.bundle_size} read-only analysis_scout_N agents in parallel, using the full available session budget without exceeding ${agentSessions}. Split repo/docs/tests/API/user-flow/risk investigation into independent slices, hydrate relevant low-trust claims from source, and record source-backed findings.`, agents: roster.analysis_team.map((agent) => agent.id), max_parallel_subagents: agentSessions, write_policy: 'read-only' },
       { id: 'triwiki_refresh', goal: `Parent orchestrator updates Team analysis artifacts, then runs ${triwikiContextTracking().refresh_command} or ${triwikiContextTracking().pack_command}, prunes with ${triwikiContextTracking().prune_command} when stale/oversized wiki state would pollute handoffs, and runs ${triwikiContextTracking().validate_command} so the next stage uses current TriWiki context.`, agents: ['parent_orchestrator'], output: '.sneakoscope/wiki/context-pack.json' },
       { id: 'planning_debate', goal: `Before debate, read the refreshed TriWiki pack. Debate team of exactly ${roster.bundle_size} participants maps user inconvenience, options, constraints, affected files, DB/test risk, and tradeoffs while hydrating low-trust claims from source.`, agents: roster.debate_team.map((agent) => agent.id) },
       { id: 'consensus', goal: `Seal one objective with acceptance criteria and disjoint implementation slices, then refresh/validate TriWiki so implementation receives current consensus context.` },
@@ -239,14 +274,15 @@ async function prepareTeam(root, route, task, required) {
       dashboard: 'team-dashboard.json',
       commands: ['sks team status latest', 'sks team log latest', 'sks team tail latest', 'sks team watch latest', 'sks team event latest --agent <name> --phase <phase> --message "..."']
     },
-    required_artifacts: ['team-analysis.md', 'team-consensus.md', 'team-review.md', 'team-gate.json', TEAM_SESSION_CLEANUP_ARTIFACT, 'reflection.md', 'reflection-gate.json', 'team-live.md', 'team-transcript.jsonl', 'team-dashboard.json', '.sneakoscope/wiki/context-pack.json', 'context7-evidence.jsonl']
+    required_artifacts: ['team-roster.json', 'team-analysis.md', 'team-consensus.md', 'team-review.md', 'team-gate.json', TEAM_SESSION_CLEANUP_ARTIFACT, 'reflection.md', 'reflection-gate.json', 'team-live.md', 'team-transcript.jsonl', 'team-dashboard.json', '.sneakoscope/wiki/context-pack.json', 'context7-evidence.jsonl']
   };
   await writeJsonAtomic(path.join(dir, 'team-plan.json'), plan);
+  await writeJsonAtomic(path.join(dir, 'team-roster.json'), { schema_version: 1, mission_id: id, role_counts: roleCounts, agent_sessions: agentSessions, bundle_size: roster.bundle_size, roster, confirmed: true, source: 'default_or_prompt_team_spec' });
   const contextTracking = triwikiContextTracking();
   await writeTextAtomic(path.join(dir, 'team-workflow.md'), `# SKS Team Workflow\n\nTask: ${cleanTask}\n\nAgent session budget: ${agentSessions}\nBundle size: ${roster.bundle_size}\nRole counts: ${formatRoleCounts(roleCounts)}\nReasoning: high for team logic, temporary for this route only.\nContext tracking: ${contextTracking.ssot} SSOT, ${contextTracking.default_pack}; use relevant TriWiki context before every work stage, refresh/validate after findings, and preserve hydratable source anchors.\n\n1. Run exactly ${roster.bundle_size} read-only analysis_scout_N agents and write team-analysis.md.\n2. Refresh/validate TriWiki before debate.\n3. Run exactly ${roster.bundle_size} debate participants, then write consensus and implementation slices.\n4. Close debate agents before starting a fresh ${roster.bundle_size}-person executor team.\n5. Review, integrate, verify, and record evidence.\n6. Close/clean remaining Team sessions, finalize live transcript state, and write ${TEAM_SESSION_CLEANUP_ARTIFACT} before reflection/final.\n\nLive visibility:\n- sks team log ${id}\n- sks team tail ${id}\n- sks team watch ${id}\n- sks team event ${id} --agent <name> --phase <phase> --message \"...\"\n`);
   await initTeamLive(id, dir, cleanTask, { agentSessions, roleCounts, roster });
-  await writeJsonAtomic(path.join(dir, 'team-gate.json'), { passed: false, analysis_artifact: false, triwiki_refreshed: false, triwiki_validated: false, consensus_artifact: false, implementation_team_fresh: false, review_artifact: false, integration_evidence: false, session_cleanup: false, context7_evidence: false });
-  await setCurrent(root, routeState(id, route, 'TEAM_PARALLEL_ANALYSIS_SCOUTING', required, { prompt: cleanTask, agent_sessions: agentSessions, role_counts: roleCounts, context_tracking: 'triwiki' }));
+  await writeJsonAtomic(path.join(dir, 'team-gate.json'), { passed: false, team_roster_confirmed: true, analysis_artifact: false, triwiki_refreshed: false, triwiki_validated: false, consensus_artifact: false, implementation_team_fresh: false, review_artifact: false, integration_evidence: false, session_cleanup: false, context7_evidence: false });
+  await setCurrent(root, routeState(id, route, 'TEAM_PARALLEL_ANALYSIS_SCOUTING', required, { prompt: cleanTask, agent_sessions: agentSessions, role_counts: roleCounts, team_roster_confirmed: true, context_tracking: 'triwiki' }));
   return routeContext(route, id, cleanTask, required, `Run scouts, refresh/validate TriWiki, debate, close debate agents, form a fresh ${roster.bundle_size}-person executor team, then close/clean Team sessions and write ${TEAM_SESSION_CLEANUP_ARTIFACT} before reflection.`);
 }
 
@@ -306,7 +342,8 @@ Task: ${task}
 Required skills: ${route.requiredSkills.join(', ')}
 Stop gate: ${route.stopGate}
 Subagents: ${routeRequiresSubagents(route, task) ? 'required before code-changing execution; spawn parallel workers/reviewers with disjoint ownership or record explicit unavailable/unsplittable evidence.' : 'optional'}
-TriWiki: use relevant context before each route phase, hydrate low-trust claims during the phase, refresh after new findings or artifact changes, and validate before handoffs/final claims.
+TriWiki: use only the latest coordinate+voxel-overlay context pack before each route phase, hydrate low-trust claims during the phase, refresh after new findings or artifact changes, and validate before handoffs/final claims. Coordinate-only legacy packs are invalid and must be refreshed before pipeline decisions.
+Final closeout: every pipeline final answer must summarize what was done, what changed for the user/repo, what was verified, and any remaining gaps.
 ${reflectionRequiredForRoute(route) ? `Reflection: ${reflectionInstructionText()}` : 'Reflection: not required for this lightweight route.'}
 Reasoning: ${routeReasoning(route, task).effort} temporary; return to default after completion.
 Next atomic action: ${next}`
@@ -510,7 +547,43 @@ async function reflectionGateStatus(root, state = {}) {
   if (hasMemory && !(await exists(path.join(root, REFLECTION_MEMORY_PATH)))) missing.push(REFLECTION_MEMORY_PATH);
   if (gate.wiki_refreshed_or_packed !== true && gate.triwiki_refreshed !== true) missing.push('wiki_refreshed_or_packed');
   if (gate.wiki_validated !== true) missing.push('wiki_validated');
+  missing.push(...await staleReflectionReasons(root, state, gate));
   return { ok: missing.length === 0, missing };
+}
+
+async function staleReflectionReasons(root, state = {}, gate = {}) {
+  const created = Date.parse(gate.created_at || gate.updated_at || '');
+  if (!Number.isFinite(created)) return ['reflection-gate:created_at'];
+  const id = state?.mission_id;
+  if (!id) return [];
+  const dir = missionDir(root, id);
+  const missing = [];
+  for (const file of gateFilesForState(state).filter((file) => file && !['none', 'honest_mode'].includes(file))) {
+    if (await fileUpdatedAfter(path.join(dir, file), created)) missing.push(`${file}:updated_after_reflection`);
+  }
+  const transcript = await readText(path.join(dir, 'team-transcript.jsonl'), '');
+  const newerWorkEvent = transcript
+    .split(/\n/)
+    .filter(Boolean)
+    .map((line) => {
+      try { return JSON.parse(line); } catch { return null; }
+    })
+    .find((event) => {
+      const ts = Date.parse(event?.ts || '');
+      if (!Number.isFinite(ts) || ts <= created) return false;
+      return !/^(REFLECTION|HONEST|TEAM_CLEANUP)$/i.test(String(event?.phase || ''));
+    });
+  if (newerWorkEvent) missing.push('team-transcript.jsonl:work_after_reflection');
+  return missing;
+}
+
+async function fileUpdatedAfter(file, timeMs) {
+  try {
+    const stat = await fsp.stat(file);
+    return stat.mtimeMs > timeMs + 1000;
+  } catch {
+    return false;
+  }
 }
 
 function reflectionStopReason(state = {}, status = {}) {
@@ -568,6 +641,8 @@ export async function evaluateStop(root, state, payload, opts = {}) {
 async function passedActiveGate(root, state) {
   const id = state?.mission_id;
   if (!id) return { ok: false, file: null };
+  const hardBlocker = await passedHardBlocker(root, state);
+  if (hardBlocker.ok) return hardBlocker;
   const files = gateFilesForState(state);
   for (const file of files) {
     const p = path.join(missionDir(root, id), file);
@@ -585,10 +660,18 @@ async function passedActiveGate(root, state) {
   return { ok: false, file: files[0] || null };
 }
 
+async function passedHardBlocker(root, state) {
+  if (!state?.mission_id) return { ok: false };
+  const file = 'hard-blocker.json';
+  const blocker = await readJson(path.join(missionDir(root, state.mission_id), file), null);
+  if (!blocker) return { ok: false };
+  return { ok: blocker.passed === true && String(blocker.reason || '').trim() && Array.isArray(blocker.evidence) && blocker.evidence.length > 0, file };
+}
+
 function missingRequiredGateFields(file, state, gate = {}) {
   const mode = String(state?.mode || '').toUpperCase();
   if (file === 'team-gate.json' || mode === 'TEAM') {
-    return ['analysis_artifact', 'triwiki_refreshed', 'triwiki_validated', 'consensus_artifact', 'implementation_team_fresh', 'review_artifact', 'integration_evidence', 'session_cleanup']
+    return ['team_roster_confirmed', 'analysis_artifact', 'triwiki_refreshed', 'triwiki_validated', 'consensus_artifact', 'implementation_team_fresh', 'review_artifact', 'integration_evidence', 'session_cleanup']
       .filter((key) => gate[key] !== true);
   }
   if (file === 'qa-gate.json' || mode === 'QALOOP') {
@@ -601,10 +684,11 @@ function missingRequiredGateFields(file, state, gate = {}) {
 async function missingRequiredGateArtifacts(root, file, state, gate = {}) {
   const mode = String(state?.mode || '').toUpperCase();
   if (file !== 'team-gate.json' && mode !== 'TEAM') return [];
-  if (gate.session_cleanup !== true) return [];
-  const cleanup = await readJson(path.join(missionDir(root, state.mission_id), TEAM_SESSION_CLEANUP_ARTIFACT), null);
-  if (!cleanup) return [TEAM_SESSION_CLEANUP_ARTIFACT];
   const missing = [];
+  if (gate.team_roster_confirmed === true && !(await exists(path.join(missionDir(root, state.mission_id), 'team-roster.json')))) missing.push('team-roster.json');
+  if (gate.session_cleanup !== true) return missing;
+  const cleanup = await readJson(path.join(missionDir(root, state.mission_id), TEAM_SESSION_CLEANUP_ARTIFACT), null);
+  if (!cleanup) return [...missing, TEAM_SESSION_CLEANUP_ARTIFACT];
   if (cleanup.passed !== true) missing.push(`${TEAM_SESSION_CLEANUP_ARTIFACT}:passed`);
   if (cleanup.all_sessions_closed !== true && cleanup.outstanding_sessions !== 0) missing.push(`${TEAM_SESSION_CLEANUP_ARTIFACT}:all_sessions_closed`);
   if (cleanup.live_transcript_finalized !== true) missing.push(`${TEAM_SESSION_CLEANUP_ARTIFACT}:live_transcript_finalized`);

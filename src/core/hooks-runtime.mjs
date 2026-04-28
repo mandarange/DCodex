@@ -187,6 +187,12 @@ async function hookStop(root, state, payload, noQuestion) {
         reason: 'SKS Honest Mode is required before finishing. Re-check the actual goal, verify evidence/tests, state gaps honestly, and only then provide the final answer. Include a short "SKS Honest Mode" or "솔직모드" section.'
       };
     }
+    if (!hasCompletionSummary(last)) {
+      return {
+        decision: 'block',
+        reason: 'SKS final completion summary is required before finishing. Explain what was done, what changed for the user/repo, what was verified, and any remaining gaps before or alongside SKS Honest Mode.'
+      };
+    }
     if (shouldLoopBackAfterHonestMode(state) && hasHonestModeUnresolvedGap(last)) {
       const loopback = await recordHonestModeLoopback(root, state, last);
       return {
@@ -272,6 +278,14 @@ function hasHonestMode(text) {
     && /(verified|verification|검증|tests?|테스트|evidence|근거|gap|제약|uncertainty|불확실)/i.test(s);
 }
 
+function hasCompletionSummary(text) {
+  const s = String(text || '');
+  const summary = /(completion summary|change summary|what changed|what was done|done summary|작업\s*요약|완료\s*요약|변경\s*요약|무엇을\s*(?:했|했고|변경)|뭐가\s*어떻게|정리)/i.test(s);
+  const verification = /(verified|verification|검증|tests?|테스트|evidence|근거|확인|통과)/i.test(s);
+  const gap = /(gap|gaps|remaining|제약|남은|미검증|not verified|not run|not claimed|불확실|없음|none)/i.test(s);
+  return summary && verification && gap;
+}
+
 function hasHonestModeUnresolvedGap(text) {
   return honestModeGapLines(text).length > 0;
 }
@@ -287,7 +301,10 @@ function honestModeGapLines(text) {
 
 function honestGapLineResolved(line) {
   if (/(남은\s*(?:gap|갭|문제)\s*:\s*없음|남은\s*(?:gap|갭|문제)\s*없음|remaining\s+gaps?\s*:\s*(none|no|0)|no\s+remaining\s+gaps?)/i.test(line)) return true;
-  if (/(차단\s*(?:확인|검증)|blocked\s+(?:as\s+expected|verified))/i.test(line) && !/(미확인|미검증|못|안\s*됨|실패|failed|not\s+verified|not\s+blocked)/i.test(line)) return true;
+  if (/no\s+active\s+blocking\s+route\s+gate\s+detected/i.test(line)) return true;
+  if (/(non[-\s]?blocker|non[-\s]?blocking|not\s+(?:a\s+)?blocker|no\s+blocker|does\s+not\s+block|not\s+blocking|blocker\s*(?:는|가)?\s*(?:아님|아닙니다|없음)|차단(?:하지|하진|하지는)\s*않|막(?:지|지는)\s*않)/i.test(line)) return true;
+  if (/(요약\s*(?:없으면|없는\s*경우).*(?:차단|block).*(?:요약\s*(?:있으면|있는\s*경우)|통과|pass)|(?:missing|without)\s+summary.*(?:block|blocked).*(?:with\s+summary|pass|accepted))/i.test(line)) return true;
+  if (/(차단(?:되는지)?\s*검증|차단\s*(?:확인|검증)|blocked\s+(?:as\s+expected|verified))/i.test(line) && !/(미확인|미검증|못|안\s*됨|실패|failed|not\s+verified|not\s+blocked)/i.test(line)) return true;
   if (/(CHANGELOG|README|\.md|missing|누락|미완료|미검증|미실행|안 했|못했|못 했)/i.test(line)) return false;
   return /(없음|없습니다|없다|해당 없음|none|no unresolved|no remaining|no gaps|zero|0개|n\/a|not applicable)\.?\s*$/i.test(line);
 }

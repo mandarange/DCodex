@@ -1,7 +1,9 @@
 import { sha256 } from './fsx.mjs';
 
 export const WIKI_COORD_SCHEMA = 'sks.wiki-coordinate.v1';
+export const WIKI_VOXEL_SCHEMA = 'sks.wiki-voxel.v1';
 export const WIKI_TAU = Math.PI * 2;
+export const WIKI_VOXEL_LAYERS = Object.freeze(['sem', 'trust', 'fresh', 'prio', 'conflict', 'route', 'cost']);
 
 export function clamp01(x) {
   return Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0));
@@ -38,6 +40,10 @@ function appendTrustSlots(row, anchor = {}) {
   ];
   while (trustSlots.length && trustSlots.at(-1) == null) trustSlots.pop();
   return trustSlots.length ? [...row, ...trustSlots] : row;
+}
+
+function round4(x) {
+  return Number((Number.isFinite(x) ? x : 0).toFixed(4));
 }
 
 export function rgbaFromHash(seed = '') {
@@ -162,6 +168,7 @@ export function wikiAnchorFromClaim(claim = {}, index = 0) {
 
 export function buildWikiCoordinateIndex({ mission = {}, claims = [], q4 = {}, q3 = [], maxAnchors = 24 } = {}) {
   const missionCoord = normalizeWikiCoord(mission.coord || {}, mission.id || JSON.stringify(q3 || []));
+  const claimsById = new Map((claims || []).map((claim, index) => [String(claim.id || `claim-${index + 1}`), claim]));
   const anchors = (claims || [])
     .map((claim, index) => {
       const anchor = wikiAnchorFromClaim(claim, index);
@@ -188,6 +195,7 @@ export function buildWikiCoordinateIndex({ mission = {}, claims = [], q4 = {}, q
     q3,
     anchors,
     overflow_count: Math.max(0, (claims || []).length - anchors.length),
+    vx: buildWikiVoxelOverlay({ anchors, claimsById, q3 }),
     hydration_policy: 'anchor_ids_hashes_and_paths_keep_context_hydratable_without_pasting_raw_q0'
   };
 }
@@ -211,8 +219,94 @@ export function compactWikiCoordinateIndex(index = {}) {
       anchor.p
     ], anchor)),
     o: index.overflow_count || 0,
+    vx: index.vx,
     hp: 'id+rgba+coord+source+hash hydrate Q2/Q1/Q0 on demand'
   };
+}
+
+function statusScore(status) {
+  return { supported: 1, weak: 0.62, stale: 0.35, unknown: 0.32, unsupported: 0.06, conflicted: 0 }[status || 'unknown'] ?? 0.32;
+}
+
+function freshnessScore(value) {
+  return { fresh: 1, unknown: 0.55, stale: 0.18 }[value || 'unknown'] ?? 0.55;
+}
+
+function riskScore(value) {
+  return { low: 0.12, medium: 0.35, high: 0.74, critical: 1 }[value || 'medium'] ?? 0.35;
+}
+
+function quantizeVoxelCoord(c = []) {
+  const domain = Math.max(0, Math.min(63, Math.floor((wrapTau(c[0]) / WIKI_TAU) * 64)));
+  const radius = Math.max(0, Math.min(15, Math.floor(clamp01(Number(c[1])) * 16)));
+  const phase = Math.max(0, Math.min(63, Math.floor((wrapTau(c[2]) / WIKI_TAU) * 64)));
+  return `${domain}:${radius}:${phase}`;
+}
+
+function conflictShadow(anchor = {}, claim = {}) {
+  const status = claim.status || anchor.st || 'unknown';
+  if (status === 'conflicted') return 1;
+  if (status === 'unsupported') return riskScore(claim.risk || anchor.r);
+  if (status === 'stale') return 0.6;
+  return 0;
+}
+
+function layerVector(anchor = {}, claim = {}, q3 = []) {
+  const tokenCost = Math.max(1, Number(anchor.tc) || String(claim.text || '').length / 4 || 1);
+  const required = Math.max(0, Number(claim.required_weight) || 0);
+  const requestCount = Math.max(0, Number(claim.request_count) || 0);
+  const strongFeedback = Math.max(0, Number(claim.strong_feedback_count) || 0);
+  const route = `${anchor.id || ''} ${anchor.src || ''} ${claim.text || ''} ${(q3 || []).join(' ')}`.toLowerCase();
+  const trust = Number.isFinite(Number(anchor.trust_score))
+    ? Number(anchor.trust_score)
+    : clamp01((0.7 * statusScore(claim.status || anchor.st)) + (0.3 * Math.log1p(Number(claim.evidence_count) || 0) / Math.log1p(8)));
+  return [
+    clamp01((Number(anchor.c?.[3]) || 0.85) * (Number(anchor.sim) || 1)),
+    clamp01(trust),
+    freshnessScore(claim.freshness),
+    clamp01((required / 1.25) + (requestCount * 0.04) + (strongFeedback * 0.18)),
+    conflictShadow(anchor, claim),
+    clamp01((/wiki|memory|triwiki/.test(route) ? 0.45 : 0) + (/team|agent/.test(route) ? 0.25 : 0) + (/qa|test|gx|version|setup|npm/.test(route) ? 0.2 : 0)),
+    clamp01(tokenCost / 360)
+  ].map(round4);
+}
+
+export function buildWikiVoxelOverlay({ anchors = [], claimsById = new Map(), q3 = [], quantization = { domain: 64, radius: 16, phase: 64 } } = {}) {
+  const rows = (anchors || []).map((anchor) => {
+    const claim = claimsById instanceof Map ? claimsById.get(anchor.id) || {} : {};
+    return [quantizeVoxelCoord(anchor.c), anchor.id, layerVector(anchor, claim, q3)];
+  });
+  return {
+    s: WIKI_VOXEL_SCHEMA,
+    base: WIKI_COORD_SCHEMA,
+    q: quantization,
+    l: WIKI_VOXEL_LAYERS,
+    v: rows
+  };
+}
+
+export function validateWikiVoxelOverlay(overlay = {}, anchorIds = null) {
+  const issues = [];
+  if (!overlay) return { ok: true, checked: 0, issues };
+  if (overlay.s !== WIKI_VOXEL_SCHEMA) issues.push({ id: 'vx_schema', severity: 'error' });
+  if (overlay.base !== WIKI_COORD_SCHEMA) issues.push({ id: 'vx_base', severity: 'error' });
+  if (!Array.isArray(overlay.l) || overlay.l.join('|') !== WIKI_VOXEL_LAYERS.join('|')) issues.push({ id: 'vx_layers', severity: 'error' });
+  const rows = Array.isArray(overlay.v) ? overlay.v : [];
+  for (const row of rows) {
+    const id = row[1];
+    const values = row[2];
+    if (!/^\d{1,2}:\d{1,2}:\d{1,2}$/.test(String(row[0] || ''))) issues.push({ id: 'vx_key', severity: 'error', anchor: id });
+    if (!id) issues.push({ id: 'vx_id', severity: 'error' });
+    if (anchorIds && !anchorIds.has(id)) issues.push({ id: 'vx_anchor', severity: 'error', anchor: id });
+    if (!Array.isArray(values) || values.length !== WIKI_VOXEL_LAYERS.length) issues.push({ id: 'vx_tuple', severity: 'error', anchor: id });
+    else {
+      for (const value of values) {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 0 || n > 1) issues.push({ id: 'vx_value', severity: 'error', anchor: id });
+      }
+    }
+  }
+  return { ok: issues.length === 0, checked: rows.length, issues };
 }
 
 function expandedAnchors(index = {}) {
@@ -265,6 +359,12 @@ export function validateWikiCoordinateIndex(index = {}) {
     if (!/^[0-9a-f]{8}$/i.test(String(anchor.rgba || ''))) issues.push({ id: 'invalid_rgba_key', severity: 'error', anchor: anchor.id });
     if (!Array.isArray(anchor.c) || anchor.c.length !== 4) issues.push({ id: 'invalid_coord_tuple', severity: 'error', anchor: anchor.id });
     validateTrustFields(anchor, issues);
+  }
+  const voxel = index.vx || index.voxel_overlay;
+  if (!voxel) issues.push({ id: 'vx_missing', severity: 'error' });
+  else {
+    const voxelValidation = validateWikiVoxelOverlay(voxel, seen);
+    for (const issue of voxelValidation.issues) issues.push(issue);
   }
   return { ok: issues.length === 0, checked: anchors.length, issues };
 }
