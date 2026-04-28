@@ -7,7 +7,7 @@ import { codexAppIntegrationStatus, formatCodexAppStatus } from './codex-app.mjs
 export const SKS_TMUX_LOGO = [
   '+----------------------+',
   '|        ㅅㅋㅅ         |',
-  '|  Sneakoscope Codex   |',
+  '|        SKS CLI       |',
   '+----------------------+'
 ].join('\n');
 
@@ -91,7 +91,7 @@ export function formatTmuxBanner(status = null) {
   const lines = [
     SKS_TMUX_LOGO,
     '',
-    'Sneakoscope Codex tmux runtime',
+    'ㅅㅋㅅ tmux runtime',
     '',
     'Canonical prompt commands:',
     '  $DFix  $Answer  $SKS  $Team  $QA-LOOP  $Ralph  $Research  $AutoResearch  $DB  $GX  $Wiki  $Help',

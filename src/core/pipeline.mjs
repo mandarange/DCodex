@@ -25,8 +25,10 @@ export function promptPipelineContext(prompt, route = routePrompt(prompt)) {
     'Ambiguity gate: every execution route must start with mandatory ambiguity-removal questions before execution. DFix and Answer bypass this gate because they do not start implementation.',
     'Plan-first interaction: when ambiguity questions are required, call the Codex plan tool first so the user sees Ask questions -> Seal decision contract -> Execute/verify as the visible workflow.',
     'Best-practice prompt shape: extract Goal, Context, Constraints, and Done-when before implementation; keep questions compact and only ask for answers that can change scope, safety, user-facing behavior, or acceptance criteria.',
+    'Default execution routing: general implementation/code-changing prompts promote to Team so the normal path is parallel analysis, TriWiki refresh, debate/consensus, then fresh parallel executors. Answer, DFix, Help, Wiki maintenance, and safety-specific routes are intentional exceptions.',
     'Stance: infer the user intent aggressively from rough wording and local context, but ask short ambiguity-removal questions before work when a missing answer can change the target, scope, safety boundary, or acceptance criteria.',
     subagentExecutionPolicyText(route, prompt),
+    'Design routing: UI/UX reads design.md first; if missing, use design-system-builder from docs/Design-Sys-Prompt.md with plan-tool clarification and a default font recommendation. Existing designs use design-ui-editor plus design-artifact-expert. Image/logo/raster assets use imagegen.',
     triwikiContextTrackingText(),
     triwikiStagePolicyText(),
     'Extract intent, target files/surfaces, constraints, acceptance criteria, risks, and the smallest safe atomic step before acting.',
@@ -52,7 +54,7 @@ export function dfixQuickContext(prompt, route = routePrompt(prompt)) {
     'Task list:',
     '1. Infer the smallest visible design/content target from the request and current files.',
     '2. Inspect only the files needed to locate that target.',
-    '3. Apply only the listed design/content edit; do not refactor, redesign, or expand scope.',
+    '3. Apply only the listed design/content edit; for UI/UX micro-edits read design.md when present, and use imagegen for any image/logo/raster asset.',
     '4. Run only cheap verification when useful, such as syntax check, focused test, or local render smoke.',
     '5. Final response: one short change summary plus verification or the exact blocker.'
   ].join('\n');
@@ -130,6 +132,9 @@ export async function activeRouteContext(root, state) {
   if (!state?.route && !state?.mode) return '';
   const id = state.route || state.mode;
   const reasoningNote = state.reasoning_effort ? ` Temporary reasoning remains ${state.reasoning_effort} (${state.reasoning_profile}); return to the default profile after this route completes.` : '';
+  if (state.honest_loop_required || /HONEST_LOOPBACK_AFTER_CLARIFICATION/.test(String(state.phase || ''))) {
+    return `SKS Honest Mode found unresolved gaps for ${state.route_command || state.route || state.mode}. Do not ask ambiguity questions again. Continue from the sealed decision-contract.json, inspect .sneakoscope/missions/${state.mission_id}/honest-loopback.json, fix gaps, rerun verification, refresh/validate TriWiki, then retry final Honest Mode.${reasoningNote}`;
+  }
   if (state.clarification_required && String(state.phase || '').includes('CLARIFICATION_AWAITING_ANSWERS')) return clarificationAwaitingAnswersContext(root, state);
   if (state.clarification_passed && String(state.phase || '').includes('CLARIFICATION_CONTRACT_SEALED')) {
     return `Mandatory ambiguity-removal gate passed for ${state.route_command || state.route || state.mode}. Use the sealed decision-contract.json before executing the route. Before the next route phase, read relevant TriWiki context, hydrate low-trust claims from source, and refresh/validate TriWiki again after new findings or artifact changes. Next atomic action: continue the original route lifecycle with the clarified goal, constraints, non-goals, risk boundary, and test scope.`;
@@ -497,7 +502,7 @@ export async function evaluateStop(root, state, payload, opts = {}) {
     const missing = gate.missing?.length ? ` Missing gate fields: ${gate.missing.join(', ')}.` : '';
     return { decision: 'block', reason: `SKS no-question run is not done. Continue autonomously, fix failing checks, update ${gate.file || 'the active gate file'}, and do not ask the user.${missing}` };
   }
-  if (state?.mission_id && state?.stop_gate && state.stop_gate !== 'none') {
+  if (state?.mission_id && state?.stop_gate && !['none', 'honest_mode'].includes(state.stop_gate)) {
     const gate = await passedActiveGate(root, state);
     if (!gate.ok) {
       const missing = gate.missing?.length ? ` Missing gate fields: ${gate.missing.join(', ')}.` : '';

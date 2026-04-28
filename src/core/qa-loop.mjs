@@ -59,8 +59,33 @@ export function isApiScope(scope) {
   return ['api_e2e_only', 'ui_and_api_e2e', 'all_available'].includes(scope);
 }
 
+function targetUrl(value) {
+  const text = String(value || '').trim().toLowerCase();
+  return Boolean(text) && !['none', 'not_required', 'n/a', 'na', 'unset'].includes(text);
+}
+
+function hasUiTarget(a = {}) {
+  return targetUrl(a.TARGET_BASE_URL);
+}
+
+function hasApiTarget(a = {}) {
+  const api = String(a.API_BASE_URL || '').trim();
+  if (!api || /^same_as_target$/i.test(api)) return hasUiTarget(a);
+  return targetUrl(api);
+}
+
+export function qaUiRequired(a = {}) {
+  return a.QA_SCOPE === 'all_available' ? hasUiTarget(a) : isUiScope(a.QA_SCOPE);
+}
+
+export function qaApiRequired(a = {}) {
+  return a.QA_SCOPE === 'all_available' ? hasApiTarget(a) : isApiScope(a.QA_SCOPE);
+}
+
 export function defaultQaGate(contract = {}) {
   const a = contract.answers || {};
+  const uiRequired = qaUiRequired(a);
+  const apiRequired = qaApiRequired(a);
   return {
     passed: false,
     clarification_contract_sealed: Boolean(contract.sealed_hash),
@@ -70,9 +95,9 @@ export function defaultQaGate(contract = {}) {
     safety_reviewed: false,
     deployed_destructive_tests_blocked: a.TARGET_ENVIRONMENT === 'local_dev_server' || a.DESTRUCTIVE_DEPLOYED_TESTS_ALLOWED === 'never',
     credentials_not_persisted: false,
-    ui_e2e_required: isUiScope(a.QA_SCOPE),
-    ui_computer_use_evidence: !isUiScope(a.QA_SCOPE),
-    api_e2e_required: isApiScope(a.QA_SCOPE),
+    ui_e2e_required: uiRequired,
+    ui_computer_use_evidence: !uiRequired,
+    api_e2e_required: apiRequired,
     unsafe_external_side_effects: false,
     honest_mode_complete: false,
     evidence: [],
@@ -118,7 +143,7 @@ export async function writeMockQaResult(dir, mission, contract) {
 }
 
 export function buildQaLoopPrompt({ id, mission, contract, cycle, previous }) {
-  return `You are running SKS QA-LOOP.\nMISSION: ${id}\nTASK: ${mission.prompt}\nCYCLE: ${cycle}\nNO QUESTIONS: use decision-contract.json and the decision ladder.\nUI E2E: if UI is in scope, prefer official Codex MCP/plugin tools. Use Browser Use first for local browser targets such as localhost, 127.0.0.1, file:// URLs, and current browser-tab inspection. Use Computer Use for desktop app interaction, screenshots, and browser/app evidence. If neither evidence path is available, mark UI not verified. Do not claim UI E2E from text logs alone.\nCREDENTIALS: use only test credentials already provided ephemerally or through the approved runtime source. If they are unavailable, mark authenticated checks blocked; never save login secrets, cookies, auth state, or screenshots containing secrets to files, Team transcript, reports, logs, or TriWiki.\nDEPLOYED SAFETY: deployed domains are read-only smoke only; never run destructive removal scenarios on deployed domains.\nEXTERNAL SAFETY: payment/billing, email/SMS/webhook sends, admin permission changes, and bulk writes are forbidden unless safely mocked/sandboxed by the sealed contract.\nARTIFACTS: check qa-ledger.json case by case, save bounded raw output under qa-loop/cycle-${cycle}/, refresh qa-report.md and qa-gate.json. Continue until qa-gate.json passes or a hard blocker is documented.\nDECISION CONTRACT:\n${JSON.stringify(contract, null, 2)}\nPrevious cycle tail:\n${String(previous || '').slice(-2500)}\n`;
+  return `SKS QA-LOOP\nMISSION: ${id}\nTASK: ${mission.prompt}\nCYCLE: ${cycle}\nNO QUESTIONS: use decision-contract.json and the ladder.\nUI: use Browser Use/Computer Use evidence; otherwise mark UI unverified.\nCREDENTIALS: runtime-only; never save secrets, cookies, auth state, or secret screenshots.\nSAFETY: deployed targets are read-only smoke; no destructive, billing, message, webhook, admin, or bulk-write side effects unless mocked/sandboxed by contract.\nARTIFACTS: update qa-ledger.json, qa-report.md, qa-gate.json, and bounded output under qa-loop/cycle-${cycle}/.\nCONTRACT:\n${JSON.stringify(contract, null, 2)}\nPrevious tail:\n${String(previous || '').slice(-2500)}\n`;
 }
 
 export async function qaStatus(dir) {
@@ -130,24 +155,24 @@ export async function qaStatus(dir) {
 
 function qaChecklist(a) {
   const cases = [
-    ['preflight.target', 'Confirm target URL, environment, and allowed mutation policy.'],
-    ['preflight.safety', 'Block destructive, billing, email/SMS/webhook, admin, and bulk-write side effects outside local disposable data.'],
-    ['preflight.auth', 'Confirm login requirement and ephemeral test credential handling without saving secrets.'],
+    ['preflight.target', 'Confirm target, environment, and mutation policy.'],
+    ['preflight.safety', 'Block destructive, billing, messaging, webhook, admin, bulk writes.'],
+    ['preflight.auth', 'Confirm login and temp credential handling.'],
     ['preflight.data', 'Identify seed data, cleanup limits, and rollback expectations.'],
-    ['preflight.roles', 'Map user roles, permissions, and protected areas in scope.']
+    ['preflight.roles', 'Map roles, permissions, protected areas.']
   ];
-  if (isUiScope(a.QA_SCOPE)) cases.push(
-    ['ui.official_mcp_tools', 'Use Browser Use for local browser targets and Computer Use for desktop/browser evidence, or mark UI not verified.'],
+  if (qaUiRequired(a)) cases.push(
+    ['ui.official_mcp_tools', 'Use Browser Use or Computer Use evidence, or mark UI unverified.'],
     ['ui.navigation', 'Check primary navigation, deep links, back/forward, refresh, and protected routes.'],
     ['ui.auth', 'Check login, logout, session expiry, unauthorized access, and role-specific visibility.'],
-    ['ui.forms', 'Check required fields, validation, disabled states, optimistic UI, submit success, and submit failure.'],
+    ['ui.forms', 'Check required fields, validation, disabled states, success, and failure.'],
     ['ui.states', 'Check loading, empty, error, retry, offline/timeout, and slow network states.'],
     ['ui.crud', 'Check allowed create/change flows and block forbidden destructive flows by environment.'],
     ['ui.responsive', 'Check desktop, tablet, mobile, overflow, long text, and keyboard focus order.'],
     ['ui.a11y', 'Check labels, focus traps, modals, contrast-sensitive controls, and screen-reader names.'],
     ['ui.visual', 'Capture evidence for meaningful UI regressions without storing secrets.']
   );
-  if (isApiScope(a.QA_SCOPE)) cases.push(
+  if (qaApiRequired(a)) cases.push(
     ['api.health', 'Check health/version/readiness endpoints when available.'],
     ['api.auth', 'Check anonymous, authenticated, expired, and wrong-role access.'],
     ['api.contract', 'Check status codes, response shape, headers, content type, and error format.'],
@@ -165,5 +190,5 @@ function qaChecklist(a) {
 
 function qaReportTemplate(mission, contract, checklist) {
   const a = contract.answers || {};
-  return `# QA-LOOP Report\n\nMission: ${mission.id}\nTarget: ${a.TARGET_BASE_URL || 'unset'}\nScope: ${a.QA_SCOPE || 'unset'}\nEnvironment: ${a.TARGET_ENVIRONMENT || 'unset'}\n\n## Safety\n\n- Deployed destructive tests: never\n- Credentials: temp-only, never saved to artifacts or TriWiki\n- UI evidence: Browser Use or Computer Use evidence required when UI E2E is in scope\n\n## Checklist\n\n${checklist.map((item) => `- [ ] ${item.id}: ${item.title}`).join('\n')}\n\n## Findings\n\nTBD\n\n## Honest Mode\n\nTBD\n`;
+  return `# QA-LOOP Report\n\nMission: ${mission.id}\nTarget: ${a.TARGET_BASE_URL || 'unset'}\nScope: ${a.QA_SCOPE || 'unset'}\nEnvironment: ${a.TARGET_ENVIRONMENT || 'unset'}\n\n## Safety\n\n- Deployed destructive tests: never\n- Credentials: temp-only, never saved\n- UI evidence: Browser Use or Computer Use when a runnable UI target is in scope\n\n## Checklist\n\n${checklist.map((item) => `- [ ] ${item.id}: ${item.title}`).join('\n')}\n\n## Findings\n\nTBD\n\n## Honest Mode\n\nTBD\n`;
 }

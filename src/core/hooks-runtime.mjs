@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { projectRoot, readJson, readText, writeJsonAtomic, appendJsonl, readStdin, nowIso, runProcess, which, PACKAGE_VERSION } from './fsx.mjs';
 import { looksInteractiveCommand, interactiveCommandReason } from './no-question-guard.mjs';
-import { missionDir, stateFile } from './mission.mjs';
+import { missionDir, setCurrent, stateFile } from './mission.mjs';
 import { checkDbOperation, dbBlockReason } from './db-safety.mjs';
 import { checkHarnessModification, harnessGuardBlockReason } from './harness-guard.mjs';
 import { activeRouteContext, evaluateStop, prepareRoute, promptPipelineContext as routePipelineContext, recordContext7Evidence, recordSubagentEvidence, routePrompt } from './pipeline.mjs';
@@ -187,6 +187,14 @@ async function hookStop(root, state, payload, noQuestion) {
         reason: 'SKS Honest Mode is required before finishing. Re-check the actual goal, verify evidence/tests, state gaps honestly, and only then provide the final answer. Include a short "SKS Honest Mode" or "솔직모드" section.'
       };
     }
+    if (shouldLoopBackAfterHonestMode(state) && hasHonestModeUnresolvedGap(last)) {
+      const loopback = await recordHonestModeLoopback(root, state, last);
+      return {
+        decision: 'block',
+        reason: `SKS Honest Mode found unresolved gaps. Continue from the post-ambiguity execution phase using decision-contract.json, fix them, rerun verification, refresh/validate TriWiki, then retry final Honest Mode. Loopback: ${loopback.relative_file}`
+      };
+    }
+    if (state?.honest_loop_required) await resolveHonestModeLoopback(root, state);
     return { continue: true };
   }
   return {
@@ -262,6 +270,77 @@ function hasHonestMode(text) {
   const s = String(text || '');
   return /(SKS Honest Mode|솔직모드|Honest Mode)/i.test(s)
     && /(verified|verification|검증|tests?|테스트|evidence|근거|gap|제약|uncertainty|불확실)/i.test(s);
+}
+
+function hasHonestModeUnresolvedGap(text) {
+  return honestModeGapLines(text).length > 0;
+}
+
+function honestModeGapLines(text) {
+  const issue = /(gap|remaining|unverified|not verified|not run|not complete|incomplete|failed|blocked|blocker|could not|couldn't|missing|미완료|미검증|미실행|실패|차단|누락|못했|못 했|안 했|안함|아직|남은)/i;
+  return String(text || '')
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => issue.test(line) && !honestGapLineResolved(line))
+    .slice(0, 12);
+}
+
+function honestGapLineResolved(line) {
+  if (/(남은\s*(?:gap|갭|문제)\s*:\s*없음|남은\s*(?:gap|갭|문제)\s*없음|remaining\s+gaps?\s*:\s*(none|no|0)|no\s+remaining\s+gaps?)/i.test(line)) return true;
+  if (/(CHANGELOG|README|\.md|missing|누락|미완료|미검증|미실행|안 했|못했|못 했)/i.test(line)) return false;
+  return /(없음|없습니다|없다|해당 없음|none|no unresolved|no remaining|no gaps|zero|0개|n\/a|not applicable)\.?\s*$/i.test(line);
+}
+
+function shouldLoopBackAfterHonestMode(state = {}) {
+  if (!state?.mission_id) return false;
+  if (state.implementation_allowed === false) return false;
+  const route = String(state.route || state.mode || '').toLowerCase();
+  if (['answer', 'dfix', 'wiki'].includes(route)) return false;
+  return Boolean(state.ambiguity_gate_passed || state.clarification_passed || /CONTRACT_SEALED|HONEST_LOOPBACK/i.test(String(state.phase || '')));
+}
+
+async function recordHonestModeLoopback(root, state = {}, lastMessage = '') {
+  const id = state.mission_id;
+  const dir = missionDir(root, id);
+  const previousPhase = state.phase || null;
+  const mode = String(state.mode || state.route || 'SKS').toUpperCase();
+  const phase = `${mode}_HONEST_LOOPBACK_AFTER_CLARIFICATION`;
+  const artifact = {
+    schema_version: 1,
+    mission_id: id,
+    previous_phase: previousPhase,
+    phase,
+    created_at: nowIso(),
+    reason: 'honest_mode_unresolved_gap',
+    issue_lines: honestModeGapLines(lastMessage),
+    next_action: 'continue_from_sealed_contract_without_reasking'
+  };
+  const file = path.join(dir, 'honest-loopback.json');
+  await writeJsonAtomic(file, artifact);
+  await appendJsonl(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'pipeline.honest_mode.loopback', previous_phase: previousPhase, phase, issues: artifact.issue_lines });
+  await setCurrent(root, {
+    phase,
+    honest_loop_required: true,
+    honest_loop_detected_at: artifact.created_at,
+    implementation_allowed: true,
+    clarification_required: false,
+    questions_allowed: false,
+    ambiguity_gate_required: true,
+    ambiguity_gate_passed: true
+  });
+  return { file, relative_file: path.relative(root, file).split(path.sep).join('/') };
+}
+
+async function resolveHonestModeLoopback(root, state = {}) {
+  const id = state.mission_id;
+  const mode = String(state.mode || state.route || 'SKS').toUpperCase();
+  if (id) await appendJsonl(path.join(missionDir(root, id), 'events.jsonl'), { ts: nowIso(), type: 'pipeline.honest_mode.loopback_resolved', previous_phase: state.phase || null });
+  await setCurrent(root, {
+    phase: `${mode}_HONEST_COMPLETE`,
+    honest_loop_required: false,
+    honest_loop_resolved_at: nowIso(),
+    questions_allowed: true
+  });
 }
 
 async function teamLiveDigest(root, state = {}) {

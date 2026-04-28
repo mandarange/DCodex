@@ -1,4 +1,4 @@
-export const USAGE_TOPICS = 'install|setup|tmux|auto-review|team|qa-loop|ralph|research|db|codex-app|dfix|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|hproof|gx|wiki';
+export const USAGE_TOPICS = 'install|setup|tmux|auto-review|team|qa-loop|ralph|research|db|codex-app|dfix|design|imagegen|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|hproof|gx|wiki';
 
 export const RECOMMENDED_MCP_SERVERS = [
   {
@@ -20,6 +20,9 @@ export const RECOMMENDED_SKILLS = [
   'autoresearch-loop',
   'performance-evaluator',
   'design-artifact-expert',
+  'design-system-builder',
+  'design-ui-editor',
+  'imagegen',
   'db-safety-guard',
   'honest-mode'
 ];
@@ -323,18 +326,30 @@ export function looksLikeFastDesignFix(prompt) {
 
 export function routePrompt(prompt) {
   const command = dollarCommand(prompt);
-  if (command) return routeByDollarCommand(command) || null;
   const text = String(prompt || '');
+  if (command) {
+    const route = routeByDollarCommand(command) || null;
+    if (route?.id === 'SKS' && looksLikeTeamDefaultWork(stripDollarCommand(text))) return routeById('Team');
+    return route;
+  }
   if (looksLikeFastDesignFix(text)) return routeById('DFix');
   if (looksLikeAnswerOnlyRequest(text)) return routeById('Answer');
   if (/\b(SQL|Supabase|Postgres|migration|RLS|Prisma|Drizzle|Knex|database|DB|execute_sql|mcp)\b/i.test(text)) return routeById('DB');
-  if (/\b(team|multi-agent|subagent|parallel agents|agent team|병렬|팀)\b/i.test(text)) return routeById('Team');
+  if (/\b(team|multi-agent|subagent|parallel agents|agent team)\b|병렬|팀/i.test(text)) return routeById('Team');
   if (/\b(qa[-\s]?loop|qaloop|e2e\s+qa|qa\s+e2e)\b/i.test(text)) return routeById('QALoop');
   if (/\b(autoresearch|experiment|benchmark|SEO|GEO|ranking|optimi[sz]e|improve metric|discoverability|visibility|github stars?|npm downloads?|검색|노출|스타|다운로드)\b/i.test(text)) return routeById('AutoResearch');
   if (/\b(research|hypothesis|falsify|novelty|frontier|조사|연구)\b/i.test(text)) return routeById('Research');
   if (/(wiki\s+(refresh|pack|validate|prune)|triwiki\s+(refresh|pack|validate)|위키\s*(갱신|리프레시|정리|검증|패킹)|트라이위키|triwiki)/i.test(text)) return routeById('Wiki');
   if (/\b(GX|vgraph|visual context|render cartridge|wiki coordinate|rgba|trig|llm wiki)\b/i.test(text)) return routeById('GX');
+  if (looksLikeTeamDefaultWork(text)) return routeById('Team');
   return routeById('SKS');
+}
+
+export function looksLikeTeamDefaultWork(prompt = '') {
+  const text = String(prompt || '').trim();
+  if (!text) return false;
+  if (looksLikeFastDesignFix(text) || looksLikeAnswerOnlyRequest(text)) return false;
+  return looksLikeCodeChangingWork(text) || looksLikeDirectWorkRequest(text);
 }
 
 export function looksLikeAnswerOnlyRequest(prompt = '') {
@@ -348,8 +363,8 @@ export function looksLikeAnswerOnlyRequest(prompt = '') {
 export function looksLikeDirectWorkRequest(prompt = '') {
   const text = String(prompt || '');
   return looksLikeCodeChangingWork(text)
-    || /(작업|파이프라인|구현|수정|변경|추가|적용|반영|처리|수행).*(해줘|해달)/i.test(text)
-    || /(진행해|수행해|작업해|처리해|적용해|반영해|고쳐줘|바꿔줘|만들어줘|install|run|execute|test|deploy|commit|push)/i.test(text);
+    || /(작업|파이프라인|구현|수정|변경|추가|적용|반영|처리|수행|검수|설치|리드미|README).*(해줘|해달|해라|해야|되게|줘야|줘야지|달라)/i.test(text)
+    || /(진행해|수행해|작업해|처리해|적용해|반영해|검수해|고쳐줘|바꿔줘|만들어줘|해줘야|해줘야지|해달라|해야지|되게 해|install|run|execute|test|deploy|commit|push)/i.test(text);
 }
 
 export function routeNeedsContext7(route, prompt = '') {
@@ -362,7 +377,8 @@ export function routeNeedsContext7(route, prompt = '') {
 export function routeRequiresSubagents(route, prompt = '') {
   if (!route) return false;
   if (route.id === 'Team') return true;
-  if (route.id === 'Help' || route.id === 'SKS' || route.id === 'Answer' || route.id === 'Wiki') return false;
+  if (route.id === 'SKS') return looksLikeTeamDefaultWork(prompt);
+  if (route.id === 'Help' || route.id === 'Answer' || route.id === 'Wiki') return false;
   if (route.id === 'Research' || route.id === 'AutoResearch') return true;
   if (route.id === 'Ralph' || route.id === 'DB' || route.id === 'GX') return looksLikeExecutionWork(prompt);
   if (route.id === 'DFix') return looksLikeCodeChangingWork(prompt) && !looksLikeFastDesignFix(prompt);
