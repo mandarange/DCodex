@@ -6,7 +6,12 @@ import { DEFAULT_DB_SAFETY_POLICY } from './db-safety.mjs';
 import { isHarnessSourceProject, writeHarnessGuardPolicy } from './harness-guard.mjs';
 import { repairSksGeneratedArtifacts } from './harness-conflicts.mjs';
 import { installVersionGitHook } from './version-manager.mjs';
-import { DOLLAR_COMMANDS, DOLLAR_COMMAND_ALIASES, DOLLAR_SKILL_NAMES, RECOMMENDED_MCP_SERVERS, RECOMMENDED_SKILLS, context7ConfigToml, triwikiContextTracking, triwikiContextTrackingText, triwikiStagePolicyText } from './routes.mjs';
+import { DOLLAR_COMMANDS, DOLLAR_COMMAND_ALIASES, DOLLAR_SKILL_NAMES, RECOMMENDED_MCP_SERVERS, RECOMMENDED_SKILLS, chatCaptureIntakeText, context7ConfigToml, stackCurrentDocsPolicyText, triwikiContextTracking, triwikiContextTrackingText, triwikiStagePolicyText } from './routes.mjs';
+
+const REFLECTION_MEMORY_PATH = '.sneakoscope/memory/q2_facts/post-route-reflection.md';
+function reflectionInstructionText(commandPrefix = 'sks') {
+  return `Post-route reflection: full routes load \`reflection\` after work/tests and before final; DFix/Answer/Help/Wiki/SKS discovery are exempt. Write reflection.md; record only real misses/gaps, or no_issue_acknowledged. For lessons, append TriWiki claim rows to ${REFLECTION_MEMORY_PATH}. Run "${commandPrefix} wiki refresh" or pack, validate, then pass reflection-gate.json.`;
+}
 
 export function normalizeInstallScope(scope = 'global') {
   const value = String(scope || 'global').trim().toLowerCase();
@@ -83,109 +88,7 @@ function isSksManagedHook(hook) {
   return hook.type === 'command' && /\bhook\s+(?:user-prompt-submit|pre-tool|post-tool|permission-request|stop)\b/.test(command) && /\b(?:sks|sneakoscope|sks\.mjs)\b/.test(command);
 }
 
-const AGENTS_BLOCK = `
-# Sneakoscope Codex Managed Rules
-
-This repository uses Sneakoscope Codex.
-
-## Ralph No-Question Rule
-
-Ralph may ask questions only during prepare. After decision-contract.json is sealed and Ralph run starts, the assistant must not ask the user questions, request confirmation, or present choices. Resolve using the decision ladder.
-
-## Performance and Retention
-
-Sneakoscope Codex keeps runtime state bounded. Do not write large raw logs into prompts. Store raw outputs in files, keep only tails/summaries in JSON, and allow sks gc to remove old arenas, temp files, and stale mission logs.
-
-## Update Check Before Work
-
-Before any substantive work, SKS hooks check whether the installed SKS package is behind the latest published package. If an update is available, ask the user to choose between updating now and skipping the update for this conversation only. If the user skips, continue the current conversation without asking again, but check again in the next conversation. If the user accepts, update SKS, rerun setup/doctor, then continue the original task.
-
-## Project Versioning
-
-SKS manages the worker project's package version through a managed Git pre-commit hook. Every commit in a project with \`package.json\` gets a patch version bump in the same commit, with \`package-lock.json\` and \`npm-shrinkwrap.json\` kept in sync when present. The version guard uses a lock in the Git common directory so parallel workers or multiple worktrees do not reuse the same version. Check with \`sks versioning status\`; bypass only for exceptional maintenance with \`SKS_DISABLE_VERSIONING=1\`.
-
-## Harness Self-Protection
-
-After setup, installed Sneakoscope harness control files are immutable to LLM tool edits. Do not edit \`.codex/hooks.json\`, \`.codex/config.toml\`, \`.codex/SNEAKOSCOPE.md\`, \`.agents/skills/\`, \`.codex/agents/\`, \`.sneakoscope/manifest.json\`, \`.sneakoscope/policy.json\`, \`.sneakoscope/db-safety.json\`, \`.sneakoscope/harness-guard.json\`, \`AGENTS.md\`, or \`node_modules/sneakoscope\` from the agent. SKS hooks block direct writes and SKS maintenance commands from LLM tool calls. The only automatic exception is the Sneakoscope engine source repository itself, detected by \`package.json\` name \`sneakoscope\` plus \`bin/sks.mjs\` and \`src/core/*\`.
-
-## Other Harness Conflict Gate
-
-Before installing, setting up, or repairing SKS, check for incompatible Codex harnesses such as OMX or DCodex. OMX is a hard blocker. If another harness is found, SKS setup/doctor must stop and show \`sks conflicts prompt\`. Cleanup requires explicit human approval and should be performed by an LLM operator in Codex App using GPT-5.5 high mode. If the human does not approve cleanup, SKS cannot be installed in that environment.
-
-## Honest Mode Completion
-
-Do not stop at a plan when implementation was requested. Continue until the stated goal is actually handled or a hard blocker is explicitly reported. Before the final answer, run SKS Honest Mode: re-check the goal, evidence, tests, risk boundaries, and remaining gaps. The final answer must be honest about what passed, what was not verified, and whether the goal is genuinely complete.
-
-## Evaluation
-
-When a task claims performance, token, accuracy, context-compression, or workflow improvement, produce evidence with sks eval run or sks eval compare. Do not claim live model accuracy unless the run used an explicitly scored task dataset; otherwise call it an evidence-weighted accuracy proxy.
-
-## Research Mode
-
-When the user asks for research, new discoveries, hypothesis generation, frontier exploration, or deep investigation, use SKS Research Mode. Research must produce candidate insights, falsification attempts, a novelty ledger, and testable next experiments. Do not present a breakthrough claim unless it is explicitly marked with evidence, confidence, falsifiers, and uncertainty.
-
-## AutoResearch Loop
-
-For open-ended improvement, discovery, prompt, evaluation, ranking, SEO/GEO, or workflow-quality tasks, use the SKS AutoResearch loop inspired by iterative hypothesis search: define a program, choose a metric, run the smallest useful experiment, keep or discard the result, record the ledger, falsify the best candidate, and repeat within budget. Do not claim an improvement without evidence.
-
-## Team Orchestration
-
-When the user invokes Team mode, \`$Team\`, or a general implementation/code-changing prompt, default to Codex multi-agent orchestration: parallel analysis scouts, TriWiki refresh, read-only debate, then a fresh parallel executor team. Answer, DFix, Help, Wiki maintenance, and safety-specific routes are lightweight exceptions. TriWiki is not one-time setup: before each stage read \`.sneakoscope/wiki/context-pack.json\`; hydrate low-trust claims from source/hash/RGBA anchors; refresh or pack after scout, debate, consensus, implementation, review, or blockers; validate before handoff/final claims. Role counts like \`executor:5 reviewer:2 user:1\` create exactly N \`analysis_scout_N\`, N debate participants, and a separate N-person \`executor_N\` team. Scouts split repo, docs, tests, API, DB-risk, UX-friction, and implementation surfaces. Debate is read-only and includes stubborn users, capable executors, strict reviewers, and planners. Close debate agents once the objective is sealed, refresh/validate TriWiki, then launch disjoint executor slices in parallel. The parent orchestrates, integrates, verifies, and records useful scout/debate/handoff/review lines with \`sks team event <mission-id|latest> --agent <name> --phase <phase> --message "..."\`. Do not let subagents bypass SKS hooks or destructive DB safety.
-
-## Code-Changing Execution
-
-For code-changing work, first surface SKS route, guard, write scopes, and verification. General implementation prompts route to Team by default, then split independent write scopes across worker subagents. The parent assigns ownership, keeps urgent blockers local, integrates, and verifies. Subagents must not bypass DB safety, harness guard, Ralph, Context7, H-Proof, or Honest Mode.
-
-## Design Execution
-
-When creating or editing UI/UX, always look for \`design.md\` first. If it does not exist, use the local design-system-builder skill to create it from \`docs/Design-Sys-Prompt.md\`; that flow must use the Codex plan tool to remove ambiguity and recommend a default font choice before implementation. When \`design.md\` exists, use the design-ui-editor skill plus the local design artifact skill, follow the design guidelines exactly, and verify the rendered result. Any image, logo, raster, or bitmap asset generation must use the Codex \`imagegen\` skill.
-
-## Prompt Optimization Pipeline
-
-Every prompt starts with intent classification. Answer-only uses TriWiki/web/Context7 when useful plus Honest Mode, then direct reply. DFix uses its ultralight task list. General execution/code-changing prompts default to Team unless a more specific safety/research/DB/GX route applies. Extract intent, target surface, constraints, acceptance criteria, risks, and the smallest safe path before acting.
-
-## Intent Inference And Clarification
-
-The default stance is strong intent inference: when the user speaks roughly, infer the likely goal from local context, repo conventions, current route state, and prior artifacts. Do not ask lazy discovery questions. However, ambiguity removal is mandatory when a missing answer can change the target, scope, safety boundary, data risk, irreversible operation, user-facing behavior, or acceptance criteria. Ask the smallest set of concrete questions, then seal the inferred contract before implementation.
-
-## Reasoning Effort Routing
-
-Use temporary route-specific reasoning only. Simple fulfillment uses medium, any logical/safety/orchestration work uses high, and research or experiment loops use xhigh. Do not persist profile changes; return to the default or user-selected profile when the route gate passes.
-
-## Context7 MCP Requirement
-
-When work depends on external libraries, frameworks, APIs, MCPs, package managers, DB SDKs, or generated documentation, use Context7 MCP before completion. The required evidence flow is resolve-library-id followed by query-docs (or legacy get-library-docs). SKS PostToolUse records these calls in context7-evidence.jsonl, and Stop hooks block required routes until evidence exists. Pure command discovery and simple $DFix copy/color/spacing edits do not require Context7.
-
-## LLM Wiki Continuity
-
-TriWiki is the context-tracking SSOT for long-running missions, Team handoffs, and context-pressure recovery. It is anchor-first, not lossy-summary-first. Use relevant TriWiki context at every work stage, not only at the beginning: read the pack before a stage, hydrate low-trust claims during the stage, refresh after new findings or artifact changes, and validate before handoffs/final claims. Important claims, visual nodes, policy facts, and evidence pointers should receive deterministic RGBA wiki coordinates: R maps to domain angle, G maps to layer radius through sine, B maps to phase angle, and A maps to concentration/confidence. Use those trigonometric coordinates to preserve stable retrieval anchors across turns. Selected claims may be pasted as text, but non-selected claims must remain hydratable through id, hash, source path, and RGBA coordinate anchors instead of disappearing from the workflow. Refresh with \`sks wiki refresh\` or \`sks wiki pack\` and validate with \`sks wiki validate .sneakoscope/wiki/context-pack.json\` whenever route continuity, stage context, source evidence, or handoff context changes.
-
-## Dollar Commands
-
-Codex App users may invoke local SKS modes with skill-style dollar commands. \`$DFix\` is the fast design/content fix route for small changes such as text color, copy edits, label changes, spacing tweaks, or translating visible text. \`$DFix\` bypasses the general SKS prompt pipeline and runs an ultralight task-list path: list the exact micro-edits, inspect only needed files, apply only those edits, and run only cheap verification when useful.
-
-## Codex App Usage
-
-When this repository is opened in Codex App, use the local Sneakoscope files as the app control surface. Read \`.codex/SNEAKOSCOPE.md\` for the quick reference, load project skills from \`.agents/skills\` when applicable, and use the generated \`.codex/hooks.json\` hooks for DB safety, no-question Ralph runs, retention, and done-gate enforcement.
-
-## Source Priority
-
-1. Current code, tests, config
-2. decision-contract.json
-3. vgraph.json
-4. beta.json
-5. GX render/snapshot metadata
-6. LLM Wiki coordinate index
-7. model knowledge only if explicitly allowed
-
-## Database Safety
-
-Sneakoscope Codex treats database access as high risk. Destructive database operations are never allowed: DROP, TRUNCATE, mass DELETE/UPDATE, reset, push, repair, project deletion, branch reset/merge/delete, RLS disabling, broad grants/revokes, and any operation that could erase or overwrite data. Supabase/Postgres MCP should be read-only and project-scoped by default. Live database writes must not be performed through direct execute_sql; schema changes must be migration-file based and allowed only for local or preview/branch environments by the sealed contract.
-
-## Done Means
-
-A task is not done until relevant tests are run or justified, unsupported critical claims are zero, database safety violations are zero, visual/wiki drift is low or explicitly accepted, and final output includes evidence.
-`;
+const AGENTS_BLOCK = "\n# Sneakoscope Codex Managed Rules\n\nThis repository uses Sneakoscope Codex.\n\n## Core Rules\n\n- Ralph asks only during prepare. After `decision-contract.json` is sealed, do not ask the user; resolve with the decision ladder.\n- Keep runtime state bounded: raw logs go to files, prompts get tails/summaries, and `sks gc` may prune stale artifacts.\n- Before substantive work, SKS checks npm for a newer package. If newer, ask update-now vs skip-for-this-conversation.\n- Versioning is managed by the SKS pre-commit hook; check `sks versioning status`. Bypass only with `SKS_DISABLE_VERSIONING=1`.\n- Installed harness files are immutable to LLM edits: `.codex/*`, `.agents/skills/`, `.codex/agents/`, `.sneakoscope/*policy*.json`, `AGENTS.md`, and `node_modules/sneakoscope`. The Sneakoscope engine source repo is the only automatic exception.\n- OMX/DCodex conflicts block setup/doctor. Show `sks conflicts prompt`; cleanup requires explicit human approval.\n- Do not stop at a plan when implementation was requested. Finish, verify, or report the hard blocker.\n\n## Routes\n\n- General execution/code-changing prompts default to `$Team`: analysis scouts, TriWiki refresh/validate, read-only debate, consensus, fresh executor team, review, integration, Honest Mode.\n- `$DFix` is only for tiny design/content edits and bypasses the main pipeline. `$Answer`, `$Help`, and `$Wiki` stay lightweight.\n- For code work, surface route/guard/write scopes first, split independent worker scopes when available, and keep parent-owned integration and verification.\n- Design work reads `design.md`; if missing, use `design-system-builder`. Image/logo/raster assets use `imagegen`.\n- Research, AutoResearch, performance, token, accuracy, SEO/GEO, or workflow-improvement claims need experiment/eval evidence. Do not claim live model accuracy without a scored dataset.\n\n## Evidence And Context\n\n- Context7 is required for external libraries, APIs, MCPs, package managers, SDKs, and generated docs: resolve-library-id then query-docs.\n- When tech stack, framework, package, runtime, or deployment-platform versions change, use Context7 or official vendor web docs, record current syntax/security/limit guidance as high-priority TriWiki claims, then refresh and validate before coding.\n- TriWiki is the context-tracking SSOT for long-running missions, Team handoffs, and context-pressure recovery. Read `.sneakoscope/wiki/context-pack.json` before each stage, hydrate low-trust claims from source/hash/RGBA anchors, refresh after findings or artifact changes, and validate before handoffs/final claims.\n- Source priority: current code/tests/config, decision contract, vgraph, beta, GX render/snapshot metadata, LLM Wiki coordinate index, then model knowledge only if allowed.\n- Final response before stop: summarize what was done, what changed for the user/repo, what was verified, and what remains unverified or blocked; then run Honest Mode. Say what passed and what was not verified.\n\n## Safety\n\n- Database access is high risk. Use read-only inspection by default; live data mutation is out of scope unless a sealed contract allows local or branch-only migration files.\n- Task completion requires relevant tests or justification, zero unsupported critical claims, accepted visual/wiki drift, and final evidence.\n\n## Codex App\n\nUse `.codex/SNEAKOSCOPE.md`, generated `.agents/skills`, `.codex/hooks.json`, and SKS dollar commands (`$sks`, `$team`, `$dfix`, `$qa-loop`, etc.) as the app control surface.\n";
 
 export async function initProject(root, opts = {}) {
   const created = [];
@@ -252,10 +155,13 @@ export async function initProject(root, opts = {}) {
     llm_wiki: {
       ssot: 'triwiki',
       coordinate_schema: 'sks.wiki-coordinate.v1',
+      voxel_overlay_schema: 'sks.wiki-voxel.v1',
       default_pack: triwikiContextTracking().default_pack,
       context_tracking: triwikiContextTracking(),
       channel_map: { r: 'domainAngle', g: 'layerRadius', b: 'phase', a: 'concentration' },
-      continuity_model: 'selected_text_plus_hydratable_rgba_trig_anchors'
+      continuity_model: 'selected_text_plus_hydratable_rgba_trig_anchors',
+      required_pack_shape: 'coordinate_index_with_voxel_overlay',
+      migration_model: 'setup_or_wiki_refresh_regenerates_required_voxel_overlay'
     },
     git: {
       local_only: localOnly,
@@ -343,9 +249,12 @@ export async function initProject(root, opts = {}) {
       llm_wiki: {
         ...(policy.llm_wiki || {}),
         ssot: 'triwiki',
+        voxel_overlay_schema: 'sks.wiki-voxel.v1',
         default_pack: triwikiContextTracking().default_pack,
         context_tracking: triwikiContextTracking(),
-        compression_policy: 'preserve_ids_hashes_sources_rgba_coordinates_for_hydration'
+        compression_policy: 'preserve_ids_hashes_sources_rgba_coordinates_for_hydration',
+        required_pack_shape: 'coordinate_index_with_voxel_overlay',
+        migration_model: 'setup_or_wiki_refresh_regenerates_required_voxel_overlay'
       },
       recommended_skills: RECOMMENDED_SKILLS,
       recommended_mcp_servers: RECOMMENDED_MCP_SERVERS
@@ -394,7 +303,7 @@ export async function initProject(root, opts = {}) {
         codex_timeout_ms: 1800000,
         prefer_streaming_logs: true,
         eval_thresholds: {
-          min_token_savings_pct: 0.25,
+          min_token_savings_pct: 0.1,
           min_accuracy_delta: 0.03,
           min_required_recall: 0.95
         }
@@ -402,9 +311,11 @@ export async function initProject(root, opts = {}) {
       llm_wiki: {
         ssot: 'triwiki',
         coordinate_schema: 'sks.wiki-coordinate.v1',
+        voxel_overlay_schema: 'sks.wiki-voxel.v1',
         default_pack: '.sneakoscope/wiki/context-pack.json',
         context_tracking: triwikiContextTracking(),
         compression_policy: 'preserve_ids_hashes_sources_rgba_coordinates_for_hydration',
+        required_pack_shape: 'coordinate_index_with_voxel_overlay',
         channel_map: { r: 'domainAngle', g: 'layerRadius_sin', b: 'phase', a: 'concentration' }
       },
       package: {
@@ -491,7 +402,7 @@ export async function initProject(root, opts = {}) {
     created.push('AGENTS.md managed block');
   }
 
-  await writeTextAtomic(path.join(root, '.codex', 'config.toml'), `[features]\ncodex_hooks = true\nmulti_agent = true\n\n[agents]\nmax_threads = 6\nmax_depth = 1\n\n${context7ConfigToml()}\n[agents.analysis_scout]\ndescription = "Read-only analysis scout for SKS Team mode. Maps one independent repo/docs/tests/API/risk slice and returns TriWiki-ready source-backed findings before debate starts."\nconfig_file = "./agents/analysis-scout.toml"\nnickname_candidates = ["Scout", "Mapper"]\n\n[agents.team_consensus]\ndescription = "Planning and debate agent for SKS Team mode. Maps options, constraints, risks, and proposes the agreed objective before implementation starts."\nconfig_file = "./agents/team-consensus.toml"\nnickname_candidates = ["Consensus", "Atlas"]\n\n[agents.implementation_worker]\ndescription = "Implementation worker for SKS Team mode. Owns a clearly bounded write set and coordinates with other workers without reverting their edits."\nconfig_file = "./agents/implementation-worker.toml"\nnickname_candidates = ["Builder", "Mason"]\n\n[agents.db_safety_reviewer]\ndescription = "Read-only database safety reviewer for SQL, migrations, RLS, destructive-operation risk, and rollback safety."\nconfig_file = "./agents/db-safety-reviewer.toml"\nnickname_candidates = ["Sentinel", "Ledger"]\n\n[agents.qa_reviewer]\ndescription = "Read-only verification reviewer for correctness, tests, regressions, and missing evidence."\nconfig_file = "./agents/qa-reviewer.toml"\nnickname_candidates = ["Verifier", "Scout"]\n\n[profiles.sks-task-medium]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "medium"\n\n[profiles.sks-logic-high]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "high"\n\n[profiles.sks-research-xhigh]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "xhigh"\n\n[profiles.sks-ralph]\nmodel = "gpt-5.5"\napproval_policy = "never"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "high"\n\n[profiles.sks-research]\nmodel = "gpt-5.5"\napproval_policy = "never"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "xhigh"\n\n[profiles.sks-team]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "high"\n\n[profiles.sks-default]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "medium"\n`);
+  await writeTextAtomic(path.join(root, '.codex', 'config.toml'), `[features]\ncodex_hooks = true\nmulti_agent = true\n\n[agents]\nmax_threads = 6\nmax_depth = 1\n\n${context7ConfigToml()}\n[agents.analysis_scout]\ndescription = "Read-only SKS scout."\nconfig_file = "./agents/analysis-scout.toml"\nnickname_candidates = ["Scout", "Mapper"]\n\n[agents.team_consensus]\ndescription = "SKS planning/debate agent."\nconfig_file = "./agents/team-consensus.toml"\nnickname_candidates = ["Consensus", "Atlas"]\n\n[agents.implementation_worker]\ndescription = "SKS bounded implementation worker."\nconfig_file = "./agents/implementation-worker.toml"\nnickname_candidates = ["Builder", "Mason"]\n\n[agents.db_safety_reviewer]\ndescription = "Read-only DB safety reviewer."\nconfig_file = "./agents/db-safety-reviewer.toml"\nnickname_candidates = ["Sentinel", "Ledger"]\n\n[agents.qa_reviewer]\ndescription = "Read-only QA reviewer."\nconfig_file = "./agents/qa-reviewer.toml"\nnickname_candidates = ["Verifier", "Scout"]\n\n[profiles.sks-task-medium]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "medium"\n\n[profiles.sks-logic-high]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "high"\n\n[profiles.sks-research-xhigh]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "xhigh"\n\n[profiles.sks-ralph]\nmodel = "gpt-5.5"\napproval_policy = "never"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "high"\n\n[profiles.sks-research]\nmodel = "gpt-5.5"\napproval_policy = "never"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "xhigh"\n\n[profiles.sks-team]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "high"\n\n[profiles.sks-default]\nmodel = "gpt-5.5"\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\nmodel_reasoning_effort = "medium"\n`);
   created.push('.codex/config.toml');
 
   await writeTextAtomic(path.join(root, '.codex', 'SNEAKOSCOPE.md'), codexAppQuickReference(installScope, hookCommandPrefix));
@@ -542,166 +453,62 @@ async function resolveGitDir(root) {
 }
 
 function codexAppQuickReference(scope, commandPrefix) {
-  return `# ㅅㅋㅅ
-
-Sneakoscope Codex for Codex App
-
-This project has been initialized for both the SKS CLI and Codex App.
-
-## App Control Surface
-
-- Rules: \`AGENTS.md\`
-- Hooks: \`.codex/hooks.json\`
-- Profiles: \`.codex/config.toml\`
-- App skills: \`.agents/skills/\`
-- App agents: \`.codex/agents/\`
-- Mission state: \`.sneakoscope/missions/\`
-- Current state: \`.sneakoscope/state/current.json\`
-
-## Installed Command
-
-\`\`\`bash
-${commandPrefix} <command>
-${commandPrefix} --auto-review --high
-\`\`\`
-
-Install scope: \`${scope}\`
-
-## Discovery Commands
-
-\`\`\`bash
-${commandPrefix} help
-${commandPrefix} commands
-${commandPrefix} usage team
-${commandPrefix} quickstart
-${commandPrefix} codex-app
-${commandPrefix} codex-app check
-${commandPrefix} tmux check
-${commandPrefix} auto-review status
-${commandPrefix} dollar-commands
-${commandPrefix} context7 check
-${commandPrefix} pipeline status
-${commandPrefix} pipeline answer latest answers.json
-${commandPrefix} guard check
-${commandPrefix} reasoning "simple copy edit"
-${commandPrefix} wiki refresh
-${commandPrefix} wiki validate .sneakoscope/wiki/context-pack.json
-\`\`\`
-
-## Dollar Commands
-
-${DOLLAR_COMMANDS.map((c) => `- \`${c.command}\`: ${c.route}. ${c.description}`).join('\n')}
-
-Codex App skills live in \`.agents/skills\` with picker names: \`${DOLLAR_COMMAND_ALIASES.map((x) => x.app_skill).join('`, `')}\`. Routing is case-insensitive for canonical commands.
-
-CLI tmux parity requires Codex App opened once for first-party MCP/plugin tools. \`${commandPrefix} setup\` installs \`@openai/codex\` when missing and checks tmux. Verify with \`${commandPrefix} codex-app check\` and \`${commandPrefix} tmux check\`; open with \`${commandPrefix}\` or \`${commandPrefix} --auto-review --high\`.
-
-Prompt routing infers the lightest route. Answer is direct; DFix is ultralight; execution routes ask mandatory ambiguity questions, then seal with \`${commandPrefix} pipeline answer latest answers.json\`.
-
-Design work reads \`design.md\`; if missing, \`design-system-builder\` creates it from \`docs/Design-Sys-Prompt.md\` with plan-tool questions and a default font decision. Existing designs use \`design-ui-editor\` plus \`design-artifact-expert\`. Image/logo/raster assets must use Codex \`imagegen\`.
-
-## Context Tracking
-
-- ${triwikiContextTrackingText(commandPrefix)}
-- ${triwikiStagePolicyText(commandPrefix).replace(/\n/g, '\n- ')}
-- Long-running handoffs use TriWiki context during every stage.
-
-## Code-Changing Execution
-
-- Surface route, guard, write scopes, and verification before edits.
-- Split independent code work into worker subagents; parent integrates and verifies.
-- Keep blockers local and respect SKS gates.
-
-## Codex Hooks
-
-- Hooks inject route/status context, block unsafe turns, and expose SKS guard/done-gate status.
-- For live Team detail, use \`sks team event\` and mission files.
-
-## Harness Guard
-
-- Installed harness files are immutable after setup except in the Sneakoscope engine source repo.
-- Check \`${commandPrefix} guard check\`. Harness conflicts block setup/doctor until human-approved cleanup via \`${commandPrefix} conflicts prompt\`.
-
-## Context7 MCP
-
-- \`.codex/config.toml\` includes Context7 MCP.
-- Required docs/API routes need resolve plus query-docs evidence.
-- Check: \`${commandPrefix} context7 check\`, \`${commandPrefix} context7 tools\`, \`${commandPrefix} context7 docs <library|/org/project>\`.
-
-## Recommended Skills
-
-- \`reasoning-router\`, \`context7-docs\`, \`seo-geo-optimizer\`, \`autoresearch-loop\`, \`performance-evaluator\`
-
-## Update And Honest Mode
-
-- Before work: hooks check for a newer \`sneakoscope\` package and ask whether to update now or skip for this conversation only.
-- Before final: hooks require SKS Honest Mode, a short verification pass covering goal completion, evidence/tests, and remaining gaps.
-- Reasoning route is temporary: simple fulfillment uses medium, logical work uses high, and research/experiments use xhigh before returning to the default profile.
-
-## Common App Prompts
-
-- "$SKS show workflows."
-- "$DB check this migration safely."
-- "$Help show commands."
-- "Use SKS DB safety before touching database or Supabase files."
-
-## CLI Bridge
-
-Codex App can call the same project-local control surface through terminal commands:
-
-\`\`\`bash
-${commandPrefix} setup
-${commandPrefix} doctor
-${commandPrefix} codex-app check
-${commandPrefix} tmux check
-${commandPrefix} pipeline status
-${commandPrefix} guard check
-${commandPrefix} team "task"
-${commandPrefix} team watch latest
-${commandPrefix} wiki refresh
-${commandPrefix} wiki validate .sneakoscope/wiki/context-pack.json
-\`\`\`
-
-Hooks route Codex App events through SKS guards; status messages show checks, while live detail belongs in mission files or normal assistant updates.
-`;
+  return [
+    '# ㅅㅋㅅ',
+    `Install scope: \`${scope}\``,
+    `Command: \`${commandPrefix} <command>\``,
+    'Files: AGENTS.md, .codex/hooks.json, .codex/config.toml, .codex/SNEAKOSCOPE.md, .agents/skills, .codex/agents, .sneakoscope/missions.',
+    `Discover: ${commandPrefix} bootstrap; ${commandPrefix} deps check; ${commandPrefix} commands; ${commandPrefix} codex-app check; ${commandPrefix} tmux check; ${commandPrefix} dollar-commands; ${commandPrefix} pipeline status.`,
+    'dollar-commands:',
+    ...DOLLAR_COMMANDS.map((c) => `- \`${c.command}\`: ${c.route}`),
+    `Picker skills: ${DOLLAR_COMMAND_ALIASES.map((x) => x.app_skill).join(', ')}.`,
+    'Routing: Answer direct, DFix ultralight, execution routes ask only scope/safety/behavior/acceptance-changing questions before sealing answers.',
+    `Full routes write reflection.md, record lessons to ${REFLECTION_MEMORY_PATH}, refresh/pack TriWiki, validate, then final-answer with a user-visible completion summary plus Honest Mode.`,
+    `Context Tracking: TriWiki SSOT. Before each route phase read only the latest coordinate+voxel overlay pack at .sneakoscope/wiki/context-pack.json; coordinate-only legacy packs are invalid. During every stage hydrate low-trust claims from source/hash/RGBA anchors; after changes run ${commandPrefix} wiki refresh or pack; before handoff/final run ${commandPrefix} wiki validate .sneakoscope/wiki/context-pack.json.`,
+    stackCurrentDocsPolicyText(commandPrefix),
+    `Runtime: open Codex App once, then run ${commandPrefix} bootstrap, ${commandPrefix} deps check, or ${commandPrefix} deps install tmux.`,
+    `Guard: generated harness files are immutable outside the engine source repo; check ${commandPrefix} guard check; conflicts use ${commandPrefix} conflicts prompt with human approval.`
+  ].join('\n') + '\n';
 }
 
-async function installSkills(root) {
+export async function installSkills(root) {
   const skills = {
-    'dfix': `---\nname: dfix\ndescription: Ultralight fast design/content fix mode for $DFix or $dfix requests and inferred simple edits such as text color, copy, labels, spacing, or translation.\n---\n\nYou are running SKS DFix mode.\n\nPurpose:\n- Bypass the general SKS prompt pipeline for small design/content requests.\n- Convert the request into a tiny task list, then execute only those tasks.\n- Use for requests like 글자 색 바꿔줘, 내용을 영어로 바꿔줘, button label 수정, spacing 조정, copy replacement, simple style tweaks.\n\nUltralight loop:\n1. List the exact micro-edits implied by the request.\n2. Inspect only the files needed to locate those targets.\n3. Apply only the listed edits.\n4. Run only cheap verification when useful.\n5. Final response should be short: what changed and any verification.\n\nRules:\n- Do not enter the general prompt pipeline, mission workflow, ambiguity gate, TriWiki refresh, Context7 routing, subagent orchestration, Ralph, Research, eval, or broad redesign.\n- Do not ask for more requirements when the target can be inferred from local context.\n- For UI/UX micro-edits, read \`design.md\` when present and preserve the existing design system and component patterns.\n- If \`design.md\` is missing and the change requires design judgment instead of a tiny mechanical edit, reroute to design-system-builder before editing.\n- Use imagegen for any image/logo/raster asset.\n`,
-    'answer': `---\nname: answer\ndescription: Answer-only research route for ordinary questions that should not start implementation.\n---\n\nUse when the user is asking for an explanation, comparison, status, facts, source-backed research, or documentation guidance rather than asking you to change files or run work.\n\nEvidence flow:\n1. Use current repo files and TriWiki first when the answer is project-local.\n2. Hydrate low-trust wiki claims from source paths before relying on them.\n3. Use web search for current, external, or uncertain facts when browsing is available or the user asks for latest/source-backed information.\n4. Use Context7 resolve-library-id plus query-docs when the answer depends on package, API, framework, SDK, MCP, or generated documentation behavior.\n5. End with Honest Mode fact-checking: separate verified facts, source-backed inferences, and uncertainty.\n\nRules:\n- Do not create route mission state, ambiguity-gate questions, subagents, Team handoffs, Ralph, Research loops, eval loops, or file edits.\n- If the prompt turns out to request implementation, state the reroute and use the proper execution pipeline.\n`,
-    'sks': `---\nname: sks\ndescription: General Sneakoscope Codex command route for $SKS or $sks usage, setup, status, and workflow help.\n---\n\nUse the local SKS control surface. Prefer discovery commands for availability questions: sks commands, sks usage <topic>, sks quickstart, sks codex-app, sks context7 check, sks guard check, sks conflicts check, sks reasoning, sks wiki pack, and sks pipeline status. If implementation or code-changing work is requested through $SKS or rough natural language, promote it to Team by default unless Answer, DFix, Help, Wiki maintenance, or a safety-specific route applies. Surface route/guard/write-scope status, then use worker subagents for independent scopes; parent integrates and verifies. Context tracking uses TriWiki as SSOT. Do not edit installed harness control files except in this engine source repo. Harness conflicts require sks conflicts prompt and human-approved cleanup.\n`,
+    'dfix': `---\nname: dfix\ndescription: Ultralight fast design/content fix mode for $DFix or $dfix requests and inferred simple edits such as text color, copy, labels, spacing, or translation.\n---\n\nUse for tiny copy/color/label/spacing/translation edits. List exact micro-edits, inspect only needed files, apply only those edits, and run cheap verification. Bypass broad SKS routing, Ralph, Research, eval, and redesign. Read \`design.md\` for UI work when present; use imagegen for image/logo/raster assets.\n`,
+    'answer': `---\nname: answer\ndescription: Answer-only research route for ordinary questions that should not start implementation.\n---\n\nUse for explanations, comparisons, status, facts, source-backed research, or docs guidance. Use repo/TriWiki first for project-local facts; hydrate low-trust claims from source. Browse or use Context7 for current external package/API/framework/MCP docs. End with a concise answer summary plus Honest Mode; do not create missions, subagents, or file edits.\n`,
+    'sks': `---\nname: sks\ndescription: General Sneakoscope Codex command route for $SKS or $sks usage, setup, status, and workflow help.\n---\n\nUse local SKS commands: bootstrap, deps, commands, quickstart, codex-app, context7, guard, conflicts, reasoning, wiki, pipeline. Promote code-changing work to Team unless Answer/DFix/Help/Wiki/safety route fits. Surface route/guard/scope, use TriWiki, do not edit installed harness files outside this engine repo, and require human-approved conflict cleanup.\n`,
     'wiki': `---\nname: wiki\ndescription: Dollar-command route for $Wiki TriWiki refresh, pack, validate, and prune commands.\n---\n\nUse for $Wiki or Korean wiki-refresh requests. Refresh/update/갱신: run sks wiki refresh, then validate .sneakoscope/wiki/context-pack.json. Pack: run sks wiki pack, then validate. Prune/clean/정리: use sks wiki refresh --prune, or sks wiki prune --dry-run for inspection. Report claims, anchors, trust, validation, and blockers. Do not start ambiguity-gated implementation, subagents, or unrelated work.\n`,
-    'team': `---\nname: team\ndescription: SKS Team multi-agent orchestration for $Team and default implementation/code-changing routes.\n---\n\nUse for $Team/$team, rough implementation prompts, code-changing work, team-of-agents, or parallel specialist implementation. Answer, DFix, Help, Wiki maintenance, and safety-specific routes are intentional exceptions.\n\nWorkflow:\n1. Mandatory ambiguity gate first: ask generated questions, write answers.json, run sks pipeline answer latest answers.json, then start Team work.\n2. Role counts: executor:5 reviewer:2 user:1. executor:N means N read-only analysis_scout_N agents, N debate participants, then a separate N-person executor team. --agents/--sessions/--team-size are aliases; --max-agents uses 6.\n3. Scouts split repo/docs/tests/API/DB-risk/UX/implementation slices and return source-backed team-analysis.md findings.\n4. Refresh/validate TriWiki before debate, implementation, review, and final claims.\n5. Debate seals one objective and disjoint slices; close debate agents before a fresh executor_N development team starts parallel work.\n6. Mirror useful scout/debate/handoff/review/integration events with sks team event <mission-id|latest> --agent <name> --phase <phase> --message \"...\".\n\nLive files: team-analysis.md, team-live.md, team-transcript.jsonl, team-dashboard.json, team-gate.json. Parent orchestrates, integrates, verifies, and never bypasses SKS gates.\n`,
-    'qa-loop': `---\nname: qa-loop\ndescription: Dollar-command route for $QA-LOOP UI/API E2E verification with ambiguity questions, safety gates, Browser Use/Computer Use evidence, and a QA report.\n---\n\nUse only $QA-LOOP. Start with mandatory QA questions: UI/API/both, local vs deployed target, mutation policy, login need. Credentials are test-only runtime input; never save secrets, cookies, auth state, or secret screenshots. UI E2E requires Browser Use or Computer Use evidence, otherwise mark it unverified. Deployed targets are read-only smoke by default; destructive removal tests are forbidden. After answers seal, run sks qa-loop answer/run, complete qa-ledger.json, qa-report.md, qa-gate.json, and Honest Mode.\n`,
+    'team': `---\nname: team\ndescription: SKS Team orchestration for $Team/code work; $From-Chat-IMG is the explicit chat-image alias.\n---\n\nUse for $Team/code work. Ambiguity gate first. Write team-roster.json; team-gate.json needs team_roster_confirmed=true. executor:N means N scouts, N debate voices, then fresh N executors. Refresh/validate TriWiki before debate, implementation, review, and final. Log events, close sessions, pass team-session-cleanup.json, then reflection and Honest Mode. Parent integrates/verifies.\n\n${chatCaptureIntakeText()}\n`,
+    'from-chat-img': `---\nname: from-chat-img\ndescription: Explicit $From-Chat-IMG Team alias for chat screenshot plus attachment analysis.\n---\n\nUse only for From-Chat-IMG/$From-Chat-IMG. It enters the normal Team pipeline. Treat uploads as chat screenshot plus originals. Use Computer Use/browser visual inspection when available, list requirements first, match regions to attachments with confidence, write the work order, then continue Team gates, review, reflection, and Honest Mode.\n`,
+    'qa-loop': `---\nname: qa-loop\ndescription: $QA-LOOP dogfoods UI/API as human proxy with safety gates, Browser/Computer evidence, safe fixes, rechecks, and a QA report.\n---\n\nUse only $QA-LOOP. Ask scope, target, mutation, login. Credentials are runtime-only; never save secrets. UI needs Browser/Computer evidence or mark unverified. Deployed targets are read-only; destructive removal is forbidden. After answer/run, dogfood real flows, apply safe contract-allowed code/test/docs fixes, recheck, and do not pass qa-gate.json with unresolved findings or without post_fix_verification_complete. Finish qa-ledger, date/version report, gate, completion summary, and Honest Mode.\n`,
     'ralph': `---\nname: ralph\ndescription: Dollar-command route for $Ralph or $ralph mandatory clarification and no-question mission workflows.\n---\n\nUse when the user invokes $Ralph/$ralph or requests a clarification-gated autonomous implementation mission. Prepare with sks ralph prepare, answer/seal required slots when answers are provided, then run only after decision-contract.json exists.\n`,
     'research': `---\nname: research\ndescription: Dollar-command route for $Research or $research frontier discovery workflows.\n---\n\nUse when the user invokes $Research/$research or asks for research, hypotheses, new mechanisms, falsification, or testable predictions. Prefer sks research prepare and sks research run. Do not use for ordinary code edits.\n`,
-    'autoresearch': `---\nname: autoresearch\ndescription: Dollar-command route for $AutoResearch or $autoresearch iterative experiment loops.\n---\n\nUse when the user invokes $AutoResearch/$autoresearch or asks for iterative improvement, SEO/GEO, ranking, prompt/workflow improvement, benchmark gains, or open-ended experimentation. Follow the autoresearch-loop skill and load seo-geo-optimizer for README, npm, GitHub stars, schema, keyword, AI-search, or discoverability work. Define program, hypothesis, experiment, metric, keep/discard decision, falsification, next experiment, and Honest Mode conclusion.\n`,
+    'autoresearch': `---\nname: autoresearch\ndescription: Dollar-command route for $AutoResearch or $autoresearch iterative experiment loops.\n---\n\nUse for $AutoResearch, iterative improvement, SEO/GEO, ranking, workflow, benchmark, or experiments. Define program, hypothesis, experiment, metric, keep/discard, falsification, next step, and Honest Mode. Load seo-geo-optimizer for README/npm/GitHub/schema/AI-search work.\n`,
     'db': `---\nname: db\ndescription: Dollar-command route for $DB or $db database and Supabase safety checks.\n---\n\nUse when the user invokes $DB/$db or the task touches SQL, Supabase, Postgres, migrations, Prisma, Drizzle, Knex, MCP database tools, or production data. Run or follow sks db policy, sks db scan, sks db classify, and sks db check. Destructive database operations remain forbidden.\n`,
     'gx': `---\nname: gx\ndescription: Dollar-command route for $GX or $gx deterministic GX visual context cartridges.\n---\n\nUse when the user invokes $GX/$gx or asks for architecture/context visualization through SKS. Prefer sks gx init, render, validate, drift, and snapshot. vgraph.json remains the source of truth.\n`,
     'help': `---\nname: help\ndescription: Dollar-command route for $Help or $help explaining installed SKS commands and workflows.\n---\n\nUse when the user invokes $Help/$help or asks what commands exist. Prefer concise output from sks commands, sks usage <topic>, sks quickstart, sks aliases, and sks codex-app.\n`,
-    'prompt-pipeline': `---\nname: prompt-pipeline\ndescription: Default SKS prompt optimization pipeline for execution prompts; Answer and DFix bypass it.\n---\n\nEvery prompt starts with intent classification. $Answer handles questions; $DFix handles tiny design/content edits. General implementation/code-changing routes default to Team, unless a more specific safety/research/DB/GX route applies. Execution routes infer goal, target surface, constraints, acceptance criteria, risk, and smallest safe route, then run the mandatory ambiguity gate before implementation.\n\nAsk generated questions, write answers.json, and seal with sks pipeline answer latest answers.json. Ralph uses sks ralph answer latest answers.json. Do not execute, spawn Team scouts, touch DB, or edit code before the gate passes.\n\nFor code-changing work, surface route/guard/write scopes, then use Team worker subagents for independent non-overlapping scopes; parent owns integration, tests, DB safety, harness guard, Context7, H-Proof, and Honest Mode.\n\nDesign routing:\n- UI/UX work must read \`design.md\` first.\n- If \`design.md\` is missing, use design-system-builder with plan-tool ambiguity removal and a default font recommendation before UI implementation.\n- If \`design.md\` exists, use design-ui-editor and design-artifact-expert for design-system-conformant edits and rendered verification.\n- Image, logo, raster, and bitmap assets must use imagegen.\n\nContext continuity:\n- TriWiki context-tracking SSOT is .sneakoscope/wiki/context-pack.json.\n- Use relevant TriWiki context before every route stage.\n- Hydrate low-trust/stale claims from source path/hash/RGBA anchor before relying on them.\n- Run \`sks wiki refresh\` or \`sks wiki pack\` after findings/artifact changes.\n- Validate with \`sks wiki validate .sneakoscope/wiki/context-pack.json\` before handoffs and final claims.\n`,
-    'reasoning-router': `---\nname: reasoning-router\ndescription: Temporary SKS reasoning-effort routing for every command and pipeline route.\n---\n\nUse medium for simple fulfillment such as copy, color, command discovery, setup display, or mechanical edits. Use high for any logical, safety, architecture, database, orchestration, refactor, or multi-file implementation work. Use xhigh for research, AutoResearch, hypotheses, falsification, benchmarks, SEO/GEO experiments, and open-ended discovery.\n\nRules:\n- Treat the routing as temporary for the current route only.\n- Do not persist profile changes.\n- Return to the default or user-selected profile when the route gate passes.\n- Inspect with sks reasoning \"prompt\" and sks pipeline status.\n`,
-    'pipeline-runner': `---\nname: pipeline-runner\ndescription: Execute SKS dollar-command routes as stateful pipelines with mission artifacts, route gates, Context7 evidence, temporary reasoning routing, and Honest Mode.\n---\n\nEvery $ command is a route, not decorative context. Use the active route state in .sneakoscope/state/current.json, write route artifacts under .sneakoscope/missions/<id>/, and do not finish until the route stop gate passes or a hard blocker is recorded with evidence.\n\nAtomic loop:\n1. Load the route skill and required supporting skills.\n2. Apply temporary reasoning routing: medium for simple work, high for logical work, xhigh for research.\n3. Before each route stage, read relevant TriWiki context from .sneakoscope/wiki/context-pack.json and hydrate low-trust claims from source before relying on them.\n4. Before code edits, surface visible SKS route/guard/write-scope status, then spawn worker subagents by default for independent write scopes; keep immediate blockers local.\n5. Execute exactly the next useful atomic action.\n6. Record evidence in the mission artifact named by the route, then refresh or pack TriWiki when new findings/artifact changes should affect later stages.\n7. Respect harness self-protection: never edit installed SKS control files, generated skills, hooks, policy, AGENTS.md, or node_modules/sneakoscope from an LLM tool call.\n8. Re-check Context7 evidence when required.\n9. Validate TriWiki before handoffs/final claims, re-check the stop gate before final output, and return to the default profile.\n\nUse \`sks pipeline status\` for the current route and \`sks pipeline resume\` for the next action hint.\n`,
-    'context7-docs': `---\nname: context7-docs\ndescription: Enforce Context7 MCP documentation evidence for SKS routes that depend on external libraries, frameworks, APIs, MCPs, package managers, DB SDKs, or generated docs.\n---\n\nWhen Context7 is required:\n- Use Context7 resolve-library-id for the relevant package/API.\n- Then use Context7 query-docs for the resolved id. Legacy Context7 get-library-docs evidence is also accepted.\n- Prefer the local stdio MCP path: sks context7 tools, sks context7 resolve, sks context7 docs, or sks context7 evidence.\n- Let SKS PostToolUse record both events in context7-evidence.jsonl.\n- Do not mark the route complete until both stages are present.\n\nCheck project setup with \`sks context7 check\`. The default project-local MCP lives in .codex/config.toml as npx -y @upstash/context7-mcp@latest.\n`,
-    'seo-geo-optimizer': `---\nname: seo-geo-optimizer\ndescription: SEO/GEO support for README, npm, GitHub, keywords, snippets, schema, and AI-search visibility.\n---\n\nUse for SEO, GEO, GitHub stars, npm discoverability/downloads, package keywords, README ranking, AI search, schema markup, or search snippets.\n\nRules:\n- Load Context7 first when package, npm, GitHub, framework, API, or generated-doc behavior matters.\n- Optimize concrete surfaces: README, package.json, docs, badges, npm metadata, GitHub topics, quickstart, examples, and command discovery.\n- Improve exact package name, command name, audience, use cases, keywords, install path, AI Answer Snapshot, and supportable examples.\n- Do not invent downloads, stars, benchmarks, compatibility, or ranking impact.\n- Route SEO/GEO work through $AutoResearch unless it is only a tiny copy edit.\n`,
-    'honest-mode': `---\nname: honest-mode\ndescription: Required final SKS verification pass before claiming a task is complete.\n---\n\nUse before every final answer.\n\nChecklist:\n- Restate the actual user goal in one sentence.\n- Verify the implemented result against that goal.\n- List tests, commands, screenshots, or inspections that prove it.\n- State any missing verification, uncertainty, or hard blocker plainly.\n- Do not claim complete if the evidence does not support it.\n- If implementation was requested, do not stop at a plan.\n\nThe final response should include a concise SKS Honest Mode or 솔직모드 note when the hook requires it.\n`,
-    'autoresearch-loop': `---\nname: autoresearch-loop\ndescription: Iterative AutoResearch-style loop for open-ended improvement, discovery, prompt, ranking, SEO/GEO, and workflow-quality tasks.\n---\n\nUse when the task asks for research, better ranking, SEO/GEO, prompt or workflow improvement, benchmark gains, non-obvious ideas, or repeated refinement.\n\nLoop:\n1. Program: define the objective, constraints, and budget.\n2. Hypothesis: propose one concrete change or experiment.\n3. Experiment: run the smallest local or documented check that can falsify it.\n4. Measure: record the metric, evidence, and artifact paths.\n5. Decision: keep, discard, or revise the hypothesis.\n6. Falsify: actively search for why the result could be wrong.\n7. Next: choose the next experiment or stop with an honest conclusion.\n\nRules:\n- Prefer small decisive experiments over broad speculation.\n- Keep a ledger in the mission/report when relevant.\n- Do not claim improvement without evidence.\n- End with Honest Mode: what improved, what did not, what remains unverified.\n`,
+    'prompt-pipeline': `---\nname: prompt-pipeline\ndescription: Default SKS prompt optimization pipeline for execution prompts; Answer and DFix bypass it.\n---\n\nClassify intent: Answer only for real questions; question-shaped implicit instructions, complaints, and mandatory-policy statements route to Team. DFix handles tiny design/content; code defaults to Team unless safety/research/GX route fits. Infer goal, target, constraints, acceptance, risk, and smallest safe route. Ask only scope/safety/behavior/acceptance-changing questions; otherwise seal inferred answers. Code work surfaces route/guard/scopes, materializes team-roster.json from default or explicit counts before implementation, and parent owns integration/tests/Context7/Honest Mode.\n\n${chatCaptureIntakeText()}\n\nDesign: read design.md; if missing use design-system-builder; use imagegen for image/logo/raster. TriWiki context-tracking SSOT: .sneakoscope/wiki/context-pack.json; read only the latest coordinate+voxel overlay pack before every route stage, run sks wiki refresh/pack after changes, validate before handoffs/final.\n`,
+    'reasoning-router': `---\nname: reasoning-router\ndescription: Temporary SKS reasoning-effort routing for every command and pipeline route.\n---\n\nmedium: simple copy/color/discovery/setup/mechanical edits. high: logic, safety, architecture, DB, orchestration, refactor, multi-file work. xhigh: research, AutoResearch, falsification, benchmarks, SEO/GEO, open-ended discovery. Routing is temporary; return to default after the gate. Inspect with sks reasoning and sks pipeline status.\n`,
+    'pipeline-runner': `---\nname: pipeline-runner\ndescription: Execute SKS dollar-command routes as stateful pipelines with mission artifacts, route gates, Context7 evidence, temporary reasoning routing, reflection, and Honest Mode.\n---\n\nEvery $ command is a route. Use current.json and mission artifacts, temporary reasoning, TriWiki before stages, source hydration, Context7 when required, Team cleanup before reflection, reflection for full routes, and completion summary plus Honest Mode before final. Surface guard/scopes, record evidence, refresh/pack/validate TriWiki, and check sks pipeline status/resume.\n`,
+    'context7-docs': `---\nname: context7-docs\ndescription: Enforce Context7 MCP documentation evidence for SKS routes that depend on external libraries, frameworks, APIs, MCPs, package managers, DB SDKs, or generated docs.\n---\n\nWhen required, resolve-library-id, then query-docs for the resolved id. Legacy get-library-docs evidence is accepted. Prefer sks context7 tools/resolve/docs/evidence and finish only after both evidence stages exist. Check setup with sks context7 check.\n`,
+    'seo-geo-optimizer': `---\nname: seo-geo-optimizer\ndescription: SEO/GEO support for README, npm, GitHub, keywords, snippets, schema, and AI-search visibility.\n---\n\nUse for SEO/GEO, package metadata, README ranking, snippets, schema, and AI search. Optimize README, package.json, docs, badges, topics, quickstart, examples, command discovery, exact names, keywords, and AI Answer Snapshot. Do not invent metrics; use $AutoResearch unless it is a tiny copy edit.\n`,
+    'reflection': `---\nname: reflection\ndescription: Post-route self-review for full SKS routes that records real misses, gaps, and corrective lessons into TriWiki memory.\n---\n\nUse after full route work/tests and before final. DFix, Answer, Help, Wiki, SKS discovery are exempt. Do not invent faults. Write reflection.md; append real lessons to ${REFLECTION_MEMORY_PATH}; refresh/pack, validate context-pack.json, pass reflection-gate.json.\n\n${reflectionInstructionText()}\n`,
+    'honest-mode': `---\nname: honest-mode\ndescription: Required final SKS verification pass before claiming a task is complete.\n---\n\nBefore final: include a completion summary explaining what was done, what changed for the user/repo, what was verified, and what remains unverified or blocked. Then restate the goal, compare result to evidence, list tests/commands/inspections, state uncertainty or blockers plainly, and do not claim completion beyond evidence. Full routes must pass reflection-gate.json first. Include concise SKS Honest Mode or 솔직모드 when required.\n`,
+    'autoresearch-loop': `---\nname: autoresearch-loop\ndescription: Iterative AutoResearch-style loop for open-ended improvement, discovery, prompt, ranking, SEO/GEO, and workflow-quality tasks.\n---\n\nUse for research, ranking, prompt/workflow improvement, benchmark gains, or repeated refinement. Loop: program, hypothesis, smallest falsifying experiment, metric, keep/discard, falsify, next step. Keep a ledger and do not claim improvement without evidence.\n`,
     'ralph-supervisor': `---\nname: ralph-supervisor\ndescription: Run the Ralph no-question loop after a decision contract is sealed.\n---\n\nYou are the Ralph Supervisor.\n\nRules:\n- Never ask the user during Ralph run.\n- Use decision-contract.json and the decision ladder.\n- Continue until done-gate.json passes or safe scope is completed with explicit limitation.\n- Keep outputs bounded. Write raw logs to files and summarize only tails.\n- Database destructive operations are never allowed.\n- Write progress to .sneakoscope mission files.\n`,
     'ralph-resolver': `---\nname: ralph-resolver\ndescription: Resolve newly discovered ambiguity during Ralph using the sealed decision ladder, without asking the user.\n---\n\nResolve ambiguity in this order: seed contract, explicit answers, approved defaults, AGENTS.md, current code/tests, smallest reversible change, defer optional scope. Never ask the user. If database risk is involved, prefer read-only, no-op, local-only migration file, or safe limitation; never run destructive SQL.\n`,
     'hproof-claim-ledger': `---\nname: hproof-claim-ledger\ndescription: Extract atomic claims and classify support status.\n---\n\nEvery factual statement must become an atomic claim. Unsupported critical claims cannot be used for implementation or final answer. Database claims require DB safety evidence.\n`,
     'hproof-evidence-bind': `---\nname: hproof-evidence-bind\ndescription: Bind claims to code, tests, decision contract, vgraph, beta, wiki, or GX render evidence.\n---\n\nEvidence priority: current code/tests, decision-contract.json, vgraph.json, beta.json, GX snapshot/render metadata, LLM Wiki coordinate index, user prompt. Database claims must respect .sneakoscope/db-safety.json. Wiki claims should carry id, hash, source path, and RGBA/trig coordinate anchors so they can be hydrated instead of treated as unsupported summaries.\n`,
     'db-safety-guard': `---\nname: db-safety-guard\ndescription: Enforce Sneakoscope Codex database safety before using SQL, Supabase MCP, Postgres, Prisma, Drizzle, Knex, or migration commands.\n---\n\nRules:\n- Never run DROP, TRUNCATE, mass DELETE/UPDATE, db reset, db push, project deletion, branch reset/merge/delete, or RLS-disabling operations.\n- Supabase MCP must be read-only and project-scoped by default.\n- Live writes through execute_sql are blocked; use migration files and only local/preview branches if explicitly allowed.\n- Production writes are forbidden.\n- If unsure, read-only only.\n`,
-    'gx-visual-generate': `---\nname: gx-visual-generate\ndescription: Render a deterministic SVG/HTML visual sheet from vgraph.json and beta.json.\n---\n\nUse sks gx render. Do not use external image generation. vgraph.json is the source of truth and the SVG embeds its source hash. GX renders also expose RGBA wiki-coordinate pixels/data attributes for nodes so visual context and LLM Wiki anchors share one coordinate system.\n`,
-    'gx-visual-read': `---\nname: gx-visual-read\ndescription: Read a Sneakoscope Codex deterministic visual sheet and produce context notes.\n---\n\nExtract nodes, edges, invariants, tests, risks, uncertainties, and RGBA wiki-coordinate anchors from vgraph.json, beta.json, render.svg, or snapshot.json. Do not infer hidden nodes.\n`,
-    'gx-visual-validate': `---\nname: gx-visual-validate\ndescription: Validate render metadata against vgraph.json and beta.json.\n---\n\nRun sks gx validate and sks gx drift. If critical nodes, edges, invariants, source hash, or wiki-coordinate anchors are missing or stale, mark validation failed.\n`,
-    'turbo-context-pack': `---\nname: turbo-context-pack\ndescription: Build ultra-low-token context packet with Q4 bits, Q3 tags, top-K claims, and minimal evidence.\n---\n\nDefault to Q4/Q3 plus TriWiki RGBA coordinate anchors. Add Q2 or Q1 text only when needed for support or verification. Non-selected claims should not disappear: keep id, hash, source path, RGBA key, and [domain, layer, phase, concentration] tuple so the harness can hydrate them later.\n`,
-    'research-discovery': `---\nname: research-discovery\ndescription: Run SKS Research Mode for frontier-style research, hypotheses, novelty ledgers, falsification, and experiments.\n---\n\nUse for research, frontier exploration, hypothesis generation, or non-obvious insights. Define discovery criteria, map assumptions/baselines, generate competing hypotheses, falsify aggressively, keep only surviving insights, and write novelty/confidence/falsifiers/next_experiment to novelty-ledger.json plus research-report.md. Do not claim breakthrough novelty without evidence and uncertainty.\n`,
-    'performance-evaluator': `---\nname: performance-evaluator\ndescription: Evaluate SKS performance, token-saving, accuracy-proxy, context-compression, or workflow improvements.\n---\n\nUse when claiming faster execution, smaller prompts, better context quality, or lower token cost. Run sks eval run or compare reports with sks eval compare. Report token_savings_pct, accuracy_delta, required_recall, unsupported_critical_selected, meaningful_improvement, and treat accuracy_proxy as context-quality evidence unless a scored dataset was used.\n`,
-    'imagegen': `---\nname: imagegen\ndescription: Required bridge to Codex image generation for logos, image assets, raster visuals, and image edits.\n---\n\nUse whenever a task needs a generated or edited image asset: logo, product image, illustration, texture, sprite, mockup, cutout, or bitmap visual. Load/follow the installed Codex system imagegen skill and use the image generation tool for the asset.\n\nRules:\n- Do not replace requested image assets with placeholder SVG/HTML/CSS.\n- Do not edit the system imagegen skill source.\n- For UI/UX, match \`design.md\` through design-system-builder or design-ui-editor.\n`,
-    'design-system-builder': `---\nname: design-system-builder\ndescription: Create design.md from docs/Design-Sys-Prompt.md when UI/UX work has no design system.\n---\n\nUse before UI/UX implementation when \`design.md\` is missing. Read \`docs/Design-Sys-Prompt.md\`, inspect product/UI context, then use the Codex plan tool to resolve ambiguity before writing \`design.md\`.\n\nRequired plan questions: product/audience/workflow; brand tone, density, platform, accessibility, fidelity; recommended default font first with tradeoff; existing UI kit, screenshots, Figma, brand assets, or code surfaces.\n\nOutput: \`design.md\` with typography/default font, color tokens, layout density, components, states, imagery, accessibility, and verification rules. Use imagegen for image assets. Do not edit UI until ambiguity is resolved or safely scoped.\n`,
-    'design-ui-editor': `---\nname: design-ui-editor\ndescription: Edit UI/UX using design.md and design-artifact-expert.\n---\n\nUse for every UI/UX edit after \`design.md\` exists. Read it first, inspect only relevant components/routes/screenshots/assets/tests, apply the smallest design-system-conformant change, use imagegen for any image/logo/raster asset, and verify render quality for overlap, readability, responsive fit, states, and AI-looking artifacts. If \`design.md\` is missing, stop and use design-system-builder first.\n`,
-    'design-artifact-expert': `---\nname: design-artifact-expert\ndescription: Create or revise high-fidelity HTML, UI, prototype, deck-like, or visual design artifacts with rendered verification.\n---\n\nUse for design, UI, prototype, HTML artifact, landing page, deck-like visual work, or refinement. Read \`design.md\` when present; if it is missing and the task needs UI/UX design judgment, use design-system-builder first. Inspect local code/assets/design context, build the actual usable artifact first, preserve relevant state, expose useful variants when helpful, and verify render quality. Use imagegen for any required image/logo/raster asset. Avoid overlap, unreadable controls, placeholder-only output, one-note palettes, and unmanaged visual drift.\n`
+    'gx-visual-generate': `---\nname: gx-visual-generate\ndescription: Render a deterministic SVG/HTML visual sheet from vgraph.json and beta.json.\n---\n\nUse sks gx render. vgraph.json is source of truth; renders embed source hash and RGBA wiki anchors.\n`,
+    'gx-visual-read': `---\nname: gx-visual-read\ndescription: Read a Sneakoscope Codex deterministic visual sheet and produce context notes.\n---\n\nExtract nodes, edges, invariants, tests, risks, uncertainties, and RGBA anchors from source/render/snapshot. Do not infer hidden nodes.\n`,
+    'gx-visual-validate': `---\nname: gx-visual-validate\ndescription: Validate render metadata against vgraph.json and beta.json.\n---\n\nRun sks gx validate and drift; fail stale or incomplete hashes, nodes, edges, invariants, or anchors.\n`,
+    'turbo-context-pack': `---\nname: turbo-context-pack\ndescription: Build ultra-low-token context packet with Q4 bits, Q3 tags, top-K claims, and minimal evidence.\n---\n\nDefault to Q4/Q3 plus TriWiki RGBA anchors; add Q2/Q1 only when needed. Keep id, hash, path, and coordinate tuple for hydration.\n`,
+    'research-discovery': `---\nname: research-discovery\ndescription: Run SKS Research Mode for frontier-style research, hypotheses, novelty ledgers, falsification, and experiments.\n---\n\nFrame criteria, map assumptions, generate hypotheses, falsify, keep surviving insights, and record novelty/confidence/falsifiers/next experiments. Do not overclaim.\n`,
+    'performance-evaluator': `---\nname: performance-evaluator\ndescription: Evaluate SKS performance, token-saving, accuracy-proxy, context-compression, or workflow improvements.\n---\n\nUse sks eval run/compare before claims. Report token_savings_pct, accuracy_delta/proxy, required_recall, support, and meaningful_improvement.\n`,
+    'imagegen': `---\nname: imagegen\ndescription: Required bridge to Codex image generation for logos, image assets, raster visuals, and image edits.\n---\n\nUse for generated or edited image assets: logo, product image, illustration, sprite, mockup, texture, cutout, or bitmap. Do not substitute placeholder SVG/HTML/CSS; follow design.md when relevant.\n`,
+    'design-system-builder': `---\nname: design-system-builder\ndescription: Create design.md from docs/Design-Sys-Prompt.md when UI/UX work has no design system.\n---\n\nWhen \`design.md\` is missing, read docs/Design-Sys-Prompt.md, inspect product/UI context, use the plan tool for ambiguity plus default font recommendation, then create tokens, components, states, imagery, accessibility, and verification rules. Use imagegen for assets.\n`,
+    'design-ui-editor': `---\nname: design-ui-editor\ndescription: Edit UI/UX using design.md and design-artifact-expert.\n---\n\nRead \`design.md\`, inspect relevant UI/assets/tests, apply the smallest design-system-conformant change, use imagegen for image/logo/raster assets, and verify render quality. If missing, use design-system-builder first.\n`,
+    'design-artifact-expert': `---\nname: design-artifact-expert\ndescription: Create or revise high-fidelity HTML, UI, prototype, deck-like, or visual design artifacts with rendered verification.\n---\n\nUse for design/UI/prototype/HTML visual work. Read design.md when present, build the usable artifact first, preserve state, verify overlap/readability/responsiveness, and use imagegen for required assets.\n`
   };
   for (const [name, content] of Object.entries(skills)) {
     const dir = path.join(root, '.agents', 'skills', name);
@@ -710,27 +517,26 @@ async function installSkills(root) {
     await writeTextAtomic(path.join(dir, 'SKILL.md'), `${skillContent.trim()}\n`);
     await writeSkillMetadata(dir, name);
   }
+  const skillNames = Object.keys(skills);
   return {
-    removed_agent_skill_aliases: await removeGeneratedAgentSkillAliases(root, Object.keys(skills)),
-    removed_codex_skill_mirrors: await removeGeneratedCodexSkillMirrors(root, Object.keys(skills))
+    installed_skills: skillNames,
+    removed_agent_skill_aliases: await removeGeneratedAgentSkillAliases(root, skillNames),
+    removed_codex_skill_mirrors: await removeGeneratedCodexSkillMirrors(root, skillNames)
   };
 }
 
 function enrichSkillContent(name, content) {
-  if (!['sks', 'answer', 'wiki', 'team', 'qa-loop', 'ralph', 'research', 'autoresearch', 'db', 'gx', 'prompt-pipeline', 'pipeline-runner', 'turbo-context-pack', 'hproof-evidence-bind'].includes(name)) return content;
+  if (!['sks', 'answer', 'wiki', 'team', 'qa-loop', 'ralph', 'research', 'autoresearch', 'db', 'gx', 'reflection', 'prompt-pipeline', 'pipeline-runner', 'context7-docs', 'turbo-context-pack', 'hproof-evidence-bind'].includes(name)) return content;
   const text = String(content || '').trimEnd();
   if (text.includes('TriWiki context-tracking SSOT')) return text;
   return `${text}
 
 Context tracking:
-- Mandatory ambiguity-removal happens before execution routes. Answer-only prompts use TriWiki/web/Context7 evidence and Honest Mode fact-checking without starting implementation. DFix bypasses this pipeline and uses its own ultralight task-list path. When questions are required, use the Codex plan tool first to show Ask questions -> Seal decision contract -> Execute/verify, then ask the generated questions. Seal answers with sks pipeline answer latest answers.json before implementing or spawning Team agents.
-- TriWiki context-tracking SSOT is .sneakoscope/wiki/context-pack.json.
-- Use sks wiki refresh or sks wiki pack before each work stage when relevant, after new findings/artifact changes, and before handoffs or final claims.
-- Use sks wiki prune when stale or oversized wiki state would pollute handoffs.
-- Validate with sks wiki validate .sneakoscope/wiki/context-pack.json before relying on a refreshed pack.
-- Selected text is only the visible slice; keep non-selected claims hydratable by id, hash, source path, and RGBA/trig coordinate.
-- Trust scores guide usage: high-trust claims may guide work; low-trust claims require evidence hydration before implementation or final claims.
-- Hook visibility is limited to injected context/status and block/continue digests; hooks cannot create arbitrary live chat bubbles. Use team events, mission files, or normal assistant updates for live detail.
+- Ask only ambiguity that can change scope, safety, behavior, or acceptance; infer the rest from TriWiki/current code and seal answers before execution.
+- TriWiki SSOT: .sneakoscope/wiki/context-pack.json. Use only the latest coordinate+voxel overlay pack; coordinate-only legacy packs are invalid and must be refreshed before use. Refresh/pack after findings or artifact changes; validate before handoffs/final claims.
+- ${stackCurrentDocsPolicyText()}
+- Keep non-selected claims hydratable by id, hash, source path, and RGBA/trig coordinate. Hydrate low-trust claims before relying on them.
+- Hook output is limited; use mission files, team events, or normal updates for live detail.
 `;
 }
 
@@ -780,7 +586,8 @@ function isGeneratedSksAgentSkill(text, name) {
   if (!text) return false;
   const s = String(text);
   if (!new RegExp(`name:\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(s)) return false;
-  return /Sneakoscope|SKS|Codex App picker alias|Dollar-command route/i.test(s);
+  if (/\bnot generated by SKS\b/i.test(s)) return false;
+  return /Sneakoscope generated|Fallback Codex App picker alias|Codex App picker alias for|Dollar-command route generated by SKS/i.test(s);
 }
 
 function isGeneratedSksLegacySkill(text, name) {

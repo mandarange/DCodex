@@ -79,6 +79,7 @@ id_ed25519
 
 # Generated or heavy visual/runtime artifacts should not enter git.
 *.png
+!docs/assets/sneakoscope-codex-logo.png
 *.jpg
 *.jpeg
 *.webp

@@ -197,7 +197,6 @@ export async function repairSksGeneratedArtifacts(root, opts = {}) {
     '.codex/config.toml',
     '.codex/SNEAKOSCOPE.md',
     '.codex/agents',
-    '.agents/skills',
     '.codex/skills',
     '.sneakoscope/manifest.json',
     '.sneakoscope/policy.json',

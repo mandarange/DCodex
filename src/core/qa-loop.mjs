@@ -1,7 +1,28 @@
 import path from 'node:path';
-import { exists, nowIso, readJson, readText, writeJsonAtomic, writeTextAtomic } from './fsx.mjs';
+import { exists, nowIso, readJson, readText, writeJsonAtomic, writeTextAtomic, PACKAGE_VERSION } from './fsx.mjs';
 
 export const QA_LOOP_ROUTE = 'QALoop';
+const QA_REPORT_SUFFIX = 'qa-report.md';
+
+function qaReportDateStamp(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function sanitizeVersion(version = PACKAGE_VERSION) {
+  return String(version || PACKAGE_VERSION).replace(/^v/i, '').replace(/[^0-9A-Za-z.-]/g, '_');
+}
+
+export function qaReportFilename(date = new Date(), version = PACKAGE_VERSION) {
+  return `${qaReportDateStamp(date)}-v${sanitizeVersion(version)}-${QA_REPORT_SUFFIX}`;
+}
+
+export function isQaReportFilename(name = '') {
+  return /^\d{4}-\d{2}-\d{2}-v[0-9A-Za-z][0-9A-Za-z.-]*-qa-report\.md$/.test(String(name || ''));
+}
+
+function qaReportFileFromGate(gate = {}) {
+  return String(gate?.qa_report_file || '').trim();
+}
 
 export function buildQaLoopQuestionSchema(prompt) {
   return {
@@ -82,14 +103,17 @@ export function qaApiRequired(a = {}) {
   return a.QA_SCOPE === 'all_available' ? hasApiTarget(a) : isApiScope(a.QA_SCOPE);
 }
 
-export function defaultQaGate(contract = {}) {
+export function defaultQaGate(contract = {}, opts = {}) {
   const a = contract.answers || {};
   const uiRequired = qaUiRequired(a);
   const apiRequired = qaApiRequired(a);
+  const reportFile = opts.reportFile || qaReportFilename();
+  const corrective = a.QA_CORRECTIVE_POLICY !== 'report_only_no_code_changes';
   return {
     passed: false,
     clarification_contract_sealed: Boolean(contract.sealed_hash),
     qa_report_written: false,
+    qa_report_file: reportFile,
     qa_ledger_complete: false,
     checklist_completed: false,
     safety_reviewed: false,
@@ -99,6 +123,13 @@ export function defaultQaGate(contract = {}) {
     ui_computer_use_evidence: !uiRequired,
     api_e2e_required: apiRequired,
     unsafe_external_side_effects: false,
+    corrective_loop_enabled: corrective,
+    safe_remediation_required: corrective,
+    unresolved_findings: 0,
+    unresolved_fixable_findings: 0,
+    unsafe_or_deferred_findings: 0,
+    safe_fix_attempts: 0,
+    post_fix_verification_complete: false,
     honest_mode_complete: false,
     evidence: [],
     notes: []
@@ -108,27 +139,38 @@ export function defaultQaGate(contract = {}) {
 export async function writeQaLoopArtifacts(dir, mission, contract) {
   const a = contract.answers || {};
   const checklist = qaChecklist(a);
+  const reportFile = qaReportFilename();
   await writeJsonAtomic(path.join(dir, 'qa-ledger.json'), {
     schema_version: 1,
     generated_at: nowIso(),
     mission_id: mission.id,
+    qa_report_file: reportFile,
     target: { scope: a.QA_SCOPE, environment: a.TARGET_ENVIRONMENT, base_url: a.TARGET_BASE_URL, api_base_url: a.API_BASE_URL },
     safety: { mutation_policy: a.QA_MUTATION_POLICY, deployed_destructive_tests_allowed: 'never', credentials: 'temp_only_never_saved', ui_evidence: 'browser_use_or_computer_use_required_for_ui_e2e' },
     checklist
   });
-  await writeJsonAtomic(path.join(dir, 'qa-gate.json'), defaultQaGate(contract));
-  await writeTextAtomic(path.join(dir, 'qa-report.md'), qaReportTemplate(mission, contract, checklist));
-  return { checklist_count: checklist.length };
+  await writeJsonAtomic(path.join(dir, 'qa-gate.json'), defaultQaGate(contract, { reportFile }));
+  await writeTextAtomic(path.join(dir, reportFile), qaReportTemplate(mission, contract, checklist));
+  return { checklist_count: checklist.length, report_file: reportFile };
 }
 
 export async function evaluateQaGate(dir) {
   const gate = await readJson(path.join(dir, 'qa-gate.json'), {});
+  const reportFile = qaReportFileFromGate(gate);
   const reasons = [];
   for (const key of ['clarification_contract_sealed', 'qa_report_written', 'qa_ledger_complete', 'checklist_completed', 'safety_reviewed', 'deployed_destructive_tests_blocked', 'credentials_not_persisted', 'ui_computer_use_evidence', 'honest_mode_complete']) {
     if (gate[key] !== true) reasons.push(`${key}_missing`);
   }
+  if (gate.corrective_loop_enabled === true) {
+    if (gate.safe_remediation_required !== true) reasons.push('safe_remediation_required_missing');
+    if (gate.post_fix_verification_complete !== true) reasons.push('post_fix_verification_complete_missing');
+    if (positiveCount(gate.unresolved_findings)) reasons.push('unresolved_findings_remaining');
+    if (positiveCount(gate.unresolved_fixable_findings)) reasons.push('unresolved_fixable_findings_remaining');
+  }
   if (gate.unsafe_external_side_effects === true) reasons.push('unsafe_external_side_effects');
-  if (!(await exists(path.join(dir, 'qa-report.md')))) reasons.push('qa_report_missing');
+  if (!reportFile) reasons.push('qa_report_file_missing');
+  else if (!isQaReportFilename(reportFile)) reasons.push('qa_report_filename_prefix_invalid');
+  else if (!(await exists(path.join(dir, reportFile)))) reasons.push('qa_report_missing');
   if (!(await exists(path.join(dir, 'qa-ledger.json')))) reasons.push('qa_ledger_missing');
   const passed = gate.passed === true && reasons.length === 0;
   const result = { checked_at: nowIso(), passed, reasons, gate };
@@ -137,26 +179,46 @@ export async function evaluateQaGate(dir) {
 }
 
 export async function writeMockQaResult(dir, mission, contract) {
-  await writeTextAtomic(path.join(dir, 'qa-report.md'), `# QA-LOOP Report\n\nMission: ${mission.id}\nMode: mock verification\n\nMock QA-LOOP completed. No live UI/API actions were executed.\n\n## Honest Mode\n\nThis is a mock smoke run for command verification, not production QA evidence.\n`);
-  await writeJsonAtomic(path.join(dir, 'qa-gate.json'), { ...defaultQaGate(contract), passed: true, qa_report_written: true, qa_ledger_complete: true, checklist_completed: true, safety_reviewed: true, credentials_not_persisted: true, ui_computer_use_evidence: true, honest_mode_complete: true, evidence: ['mock QA-LOOP smoke completed'], notes: ['No live UI/API verification was claimed.'] });
+  const previousGate = await readJson(path.join(dir, 'qa-gate.json'), {});
+  const previousReportFile = qaReportFileFromGate(previousGate);
+  const reportFile = isQaReportFilename(previousReportFile) ? previousReportFile : qaReportFilename();
+  await writeTextAtomic(path.join(dir, reportFile), `# QA-LOOP Report\n\nMission: ${mission.id}\nMode: mock verification\n\nMock QA-LOOP completed. No live UI/API actions were executed.\n\n## Honest Mode\n\nThis is a mock smoke run for command verification, not production QA evidence.\n`);
+  await writeJsonAtomic(path.join(dir, 'qa-gate.json'), { ...defaultQaGate(contract, { reportFile }), passed: true, qa_report_written: true, qa_ledger_complete: true, checklist_completed: true, safety_reviewed: true, credentials_not_persisted: true, ui_computer_use_evidence: true, unresolved_findings: 0, unresolved_fixable_findings: 0, unsafe_or_deferred_findings: 0, post_fix_verification_complete: true, honest_mode_complete: true, evidence: ['mock QA-LOOP smoke completed'], notes: ['No live UI/API verification was claimed.'] });
   return evaluateQaGate(dir);
 }
 
-export function buildQaLoopPrompt({ id, mission, contract, cycle, previous }) {
-  return `SKS QA-LOOP\nMISSION: ${id}\nTASK: ${mission.prompt}\nCYCLE: ${cycle}\nNO QUESTIONS: use decision-contract.json and the ladder.\nUI: use Browser Use/Computer Use evidence; otherwise mark UI unverified.\nCREDENTIALS: runtime-only; never save secrets, cookies, auth state, or secret screenshots.\nSAFETY: deployed targets are read-only smoke; no destructive, billing, message, webhook, admin, or bulk-write side effects unless mocked/sandboxed by contract.\nARTIFACTS: update qa-ledger.json, qa-report.md, qa-gate.json, and bounded output under qa-loop/cycle-${cycle}/.\nCONTRACT:\n${JSON.stringify(contract, null, 2)}\nPrevious tail:\n${String(previous || '').slice(-2500)}\n`;
+export function buildQaLoopPrompt({ id, mission, contract, cycle, previous, reportFile }) {
+  const report = reportFile && isQaReportFilename(reportFile) ? reportFile : 'the date/version-prefixed report named by qa-gate.json.qa_report_file';
+  return `SKS QA-LOOP
+MISSION: ${id}
+TASK: ${mission.prompt}
+CYCLE: ${cycle}
+NO QUESTIONS: use decision-contract.json.
+MODE: dogfood as human proxy; use real flows, fix safe code/test/docs now, then recheck.
+UI: Browser/Computer Use evidence or mark unverified. Secrets runtime-only.
+SAFETY: deployed read-only smoke; no destructive, billing, message, webhook, admin, bulk-write, global-config, or live-data edits unless contract allows.
+GATE: passed=false while unresolved_findings or unresolved_fixable_findings > 0, or post_fix_verification_complete is not true.
+ARTIFACTS: update qa-ledger.json, ${report}, qa-gate.json, and qa-loop/cycle-${cycle}/.
+CONTRACT:
+${JSON.stringify(contract, null, 2)}
+Previous tail:
+${String(previous || '').slice(-2500)}
+`;
 }
 
 export async function qaStatus(dir) {
   const gate = await readJson(path.join(dir, 'qa-gate.evaluated.json'), await readJson(path.join(dir, 'qa-gate.json'), null));
   const ledger = await readJson(path.join(dir, 'qa-ledger.json'), null);
-  const report = await readText(path.join(dir, 'qa-report.md'), '');
-  return { gate, checklist_count: ledger?.checklist?.length ?? null, report_written: Boolean(report.trim()) };
+  const reportFile = qaReportFileFromGate(gate?.gate || gate || {}) || ledger?.qa_report_file || null;
+  const report = reportFile && isQaReportFilename(reportFile) ? await readText(path.join(dir, reportFile), '') : '';
+  return { gate, checklist_count: ledger?.checklist?.length ?? null, report_file: reportFile, report_written: Boolean(report.trim()) };
 }
 
 function qaChecklist(a) {
   const cases = [
     ['preflight.target', 'Confirm target, environment, and mutation policy.'],
     ['preflight.safety', 'Block destructive, billing, messaging, webhook, admin, bulk writes.'],
+    ['preflight.corrective_policy', 'Confirm safe fixes plus reverify.'],
     ['preflight.auth', 'Confirm login and temp credential handling.'],
     ['preflight.data', 'Identify seed data, cleanup limits, and rollback expectations.'],
     ['preflight.roles', 'Map roles, permissions, protected areas.']
@@ -184,11 +246,16 @@ function qaChecklist(a) {
     ['api.failure', 'Check timeout, upstream error, rate-limit, and rollback-visible failure paths.'],
     ['api.security', 'Check CORS, auth headers, PII redaction, and permission boundaries.']
   );
-  cases.push(['report.evidence', 'Record pass/fail/blocked/skipped with evidence path for every case.'], ['report.honest', 'Run Honest Mode: list passed checks, gaps, risks, and non-verified areas.']);
+  cases.push(['report.evidence', 'Record pass/fail/blocked/skipped with evidence.'], ['report.corrective_loop', 'Record fixes, rechecks, unresolved findings, deferred blockers.'], ['report.honest', 'Run Honest Mode.']);
   return cases.map(([id, title]) => ({ id, title, status: 'pending', evidence: [] }));
 }
 
 function qaReportTemplate(mission, contract, checklist) {
   const a = contract.answers || {};
-  return `# QA-LOOP Report\n\nMission: ${mission.id}\nTarget: ${a.TARGET_BASE_URL || 'unset'}\nScope: ${a.QA_SCOPE || 'unset'}\nEnvironment: ${a.TARGET_ENVIRONMENT || 'unset'}\n\n## Safety\n\n- Deployed destructive tests: never\n- Credentials: temp-only, never saved\n- UI evidence: Browser Use or Computer Use when a runnable UI target is in scope\n\n## Checklist\n\n${checklist.map((item) => `- [ ] ${item.id}: ${item.title}`).join('\n')}\n\n## Findings\n\nTBD\n\n## Honest Mode\n\nTBD\n`;
+  return `# QA-LOOP Report\n\nMission: ${mission.id}\nTarget: ${a.TARGET_BASE_URL || 'unset'}\nScope: ${a.QA_SCOPE || 'unset'}\nEnvironment: ${a.TARGET_ENVIRONMENT || 'unset'}\n\n## Safety\n\n- Deployed destructive tests: never\n- Credentials: temp-only, never saved\n- UI evidence: Browser Use or Computer Use when runnable\n\n## Checklist\n\n${checklist.map((item) => `- [ ] ${item.id}: ${item.title}`).join('\n')}\n\n## Findings\n\nTBD\n\n## Corrections And Rechecks\n\nTBD\n\n## Honest Mode\n\nTBD\n`;
+}
+
+function positiveCount(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0;
 }

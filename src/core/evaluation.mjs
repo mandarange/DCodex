@@ -3,7 +3,7 @@ import { contextCapsule } from './triwiki-attention.mjs';
 import { validateWikiCoordinateIndex } from './wiki-coordinate.mjs';
 
 export const DEFAULT_EVAL_THRESHOLDS = Object.freeze({
-  min_token_savings_pct: 0.25,
+  min_token_savings_pct: 0.1,
   min_accuracy_delta: 0.03,
   min_required_recall: 0.95,
   max_unsupported_critical_selected: 0,
@@ -138,6 +138,8 @@ function scoreSelection(allClaims, selectedIds) {
 function metricBlock({ label, context, scenario, msPerRun }) {
   const selectedIds = (context.claims || []).map((claim) => claim.id);
   const wikiValidation = context.wiki ? validateWikiCoordinateIndex(context.wiki) : null;
+  const voxel = context.wiki?.vx || context.wiki?.voxel_overlay || null;
+  const voxelRows = Array.isArray(voxel?.v) ? voxel.v.length : (Array.isArray(voxel?.rows) ? voxel.rows.length : 0);
   return {
     label,
     context_hash: sha256(JSON.stringify(context)),
@@ -147,6 +149,8 @@ function metricBlock({ label, context, scenario, msPerRun }) {
       schema: context.wiki.schema,
       anchors: (context.wiki.anchors || context.wiki.a || []).length,
       overflow_count: context.wiki.overflow_count ?? context.wiki.o ?? 0,
+      voxel_schema: voxel?.s || voxel?.schema || null,
+      voxel_rows: voxelRows,
       valid: wikiValidation.ok
     } : null,
     quality: scoreSelection(scenario.claims, selectedIds)

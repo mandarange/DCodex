@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { readJson, writeJsonAtomic, nowIso, sha256 } from './fsx.mjs';
 import { validateQaLoopAnswers } from './qa-loop.mjs';
+import { inferAnswersForPrompt } from './questions.mjs';
 
 function isEmptyAnswer(v, slot = {}) {
   if (v === undefined || v === null) return true;
@@ -117,10 +118,22 @@ export function buildDecisionContract({ mission, schema, answers }) {
 
 export async function sealContract(missionDir, mission) {
   const schema = await readJson(path.join(missionDir, 'required-answers.schema.json'));
-  const answers = await readJson(path.join(missionDir, 'answers.json'));
+  const explicitAnswers = await readJson(path.join(missionDir, 'answers.json'));
+  const inferred = inferAnswersForPrompt(mission?.prompt || schema?.prompt || '', explicitAnswers);
+  const answers = {
+    ...(schema.inferred_answers || {}),
+    ...inferred.answers,
+    ...explicitAnswers
+  };
   const validation = validateAnswers(schema, answers);
   if (!validation.ok) return { ok: false, validation };
   const contract = buildDecisionContract({ mission, schema, answers });
+  await writeJsonAtomic(path.join(missionDir, 'resolved-answers.json'), {
+    explicit_answers: explicitAnswers,
+    inferred_answers: { ...(schema.inferred_answers || {}), ...inferred.answers },
+    inference_notes: { ...(schema.inference_notes || {}), ...inferred.notes },
+    answers
+  });
   await writeJsonAtomic(path.join(missionDir, 'decision-contract.json'), contract);
   await writeJsonAtomic(path.join(missionDir, 'answer-validation.json'), validation);
   return { ok: true, validation, contract };

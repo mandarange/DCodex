@@ -6,7 +6,7 @@ Sneakoscope Codex v0.6 is designed to keep runtime, package size, RAM, and stora
 
 - `codex exec` output is streamed to files and only a bounded tail is retained in memory.
 - Ralph cycles run under a timeout and bounded max cycles.
-- TriWiki claim selection uses bounded top-K selection plus RGBA/trig wiki anchors instead of sorting unbounded context into prompts.
+- TriWiki claim selection uses bounded top-K selection plus the latest RGBA/trig wiki anchors and required voxel overlay metadata instead of sorting unbounded context into prompts.
 - GX visual context renders deterministic SVG/HTML from JSON sources, avoiding external image-generation latency, cost, and nondeterminism. Rendered nodes expose the same RGBA wiki-coordinate anchors used by TriWiki.
 - `sks gc` runs after Ralph cycles by default.
 
@@ -26,13 +26,13 @@ Tracked metrics:
 - `context_build_ms_per_run`: local context construction runtime
 - `meaningful_improvement`: true only when token savings, accuracy delta, recall, unsupported-critical filtering, and runtime thresholds pass
 
-Default meaningful-improvement thresholds are intentionally explicit: at least 25% token savings, at least +0.03 accuracy-proxy delta, at least 0.95 required recall, zero unsupported critical claims selected, and candidate context construction under 25 ms per run. `sks eval compare --baseline old.json --candidate new.json` compares saved reports across implementations.
+Default meaningful-improvement thresholds are intentionally explicit: at least 10% token savings with the required voxel overlay included, at least +0.03 accuracy-proxy delta, at least 0.95 required recall, zero unsupported critical claims selected, and candidate context construction under 25 ms per run. `sks eval compare --baseline old.json --candidate new.json` compares saved reports across implementations.
 
 The accuracy metric is not a live model task score. It is a deterministic proxy for whether the context handed to a model is smaller, better supported, and less contaminated by unsupported critical claims.
 
 ## LLM Wiki coordinate continuity
 
-TriWiki does not treat compression as permanent deletion. The visible context pack includes selected claim text plus a compact LLM Wiki coordinate index:
+TriWiki does not treat compression as permanent deletion. The visible context pack includes selected claim text plus the latest compact LLM Wiki coordinate index and required voxel overlay metadata:
 
 ```text
 R channel -> domain angle
@@ -41,7 +41,7 @@ B channel -> phase angle
 A channel -> concentration/confidence
 ```
 
-Each anchor stores id, RGBA key, `[domain, layer, phase, concentration]`, source path, status/risk, and a text hash. This keeps non-selected claims hydratable across turns while keeping raw Q0 logs and large Q1 evidence out of the prompt until verification needs them.
+Each anchor stores id, RGBA key, `[domain, layer, phase, concentration]`, source path, status/risk, and a text hash. Each valid pack also includes `sks.wiki-voxel.v1` rows keyed by quantized domain/radius/phase with semantic, trust, freshness, priority, conflict, route, and cost metadata. Coordinate-only legacy packs are invalid and should be regenerated with `sks wiki refresh` or `sks wiki pack` before any pipeline uses them.
 
 ## Package size
 

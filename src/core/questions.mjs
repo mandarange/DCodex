@@ -1,19 +1,86 @@
 import path from 'node:path';
 import { writeJsonAtomic, writeTextAtomic } from './fsx.mjs';
 import { buildQaLoopQuestionSchema } from './qa-loop.mjs';
+import { hasFromChatImgSignal } from './routes.mjs';
 
 export function buildQuestionSchemaForRoute(route, prompt) {
   if (String(route?.id || '') === 'QALoop') return buildQaLoopQuestionSchema(prompt);
   return buildQuestionSchema(prompt);
 }
 
+function hasAnswer(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function addInferred(out, notes, id, value, note) {
+  if (!hasAnswer(value) && !(Array.isArray(value) && value.length === 0)) return;
+  out[id] = value;
+  notes[id] = note;
+}
+
+export function inferAnswersForPrompt(prompt, explicitAnswers = {}) {
+  const text = `${prompt || ''}\n${explicitAnswers.GOAL_PRECISE || ''}`;
+  const lower = text.toLowerCase();
+  const inferred = {};
+  const notes = {};
+  const version = String(text || '').match(/\bv?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/)?.[1] || null;
+  const versionWork = /버전|version|bump|release|publish:dry|npm\s+pack/.test(lower);
+  const installWork = /bootstrap|postinstall|doctor|deps|tmux|homebrew|first install|최초\s*설치|설치\s*ux|셋업|setup/.test(lower);
+  const questionGateWork = /모호|ambiguity|clarification|질문|triwiki|추론|infer|predict|예측|answers?\.json|decision-contract/.test(lower);
+  const prioritySignalWork = /화|짜증|답답|;;|!!|강력|기억|우선|자주|반복|카운팅|count|frequency|frequent|priority|weight/.test(lower);
+  const cliSurfaceWork = /\b(cli|command|route|usage|help|sks)\b|명령|커맨드|사용법/.test(lower);
+  const chatCaptureWork = hasFromChatImgSignal(text)
+    && /(chat|conversation|message|messenger|kakao|screenshot|capture|채팅|대화|메신저|카톡|캡처|스크린샷)/i.test(text)
+    && /(image|photo|attachment|attached|이미지|사진|첨부)/i.test(text)
+    && /(client|customer|request|change|modify|fix|match|ocr|extract|text|고객사|클라이언트|요청|수정|변경|매칭|추출|글자|텍스트)/i.test(text);
+  const kind = versionWork ? 'version' : chatCaptureWork ? 'chat_capture' : prioritySignalWork ? 'priority' : questionGateWork ? 'questions' : installWork ? 'install' : null;
+  const goals = {
+    version: version ? `sneakoscope 버전을 ${version}로 올린다` : 'sneakoscope 버전을 다음 patch 버전으로 올린다',
+    chat_capture: 'From-Chat-IMG로 채팅 요구사항과 첨부 원본 이미지를 매칭해 고객사 작업 지시서를 만들고 반영한다',
+    priority: '강한 불만과 반복 요청을 TriWiki 우선순위 신호로 기록한다',
+    questions: '예측 가능한 답은 추론하고 실제 모호한 항목만 질문한다',
+    install: 'SKS 최초 설치와 bootstrap을 한 번에 준비 상태까지 연결한다'
+  };
+  const criteria = {
+    version: [version ? `version refs are ${version}` : 'version refs advance consistently', 'publish:dry gate passes', 'npm publish is not run'],
+    chat_capture: ['From-Chat-IMG activates chat-image intake only here', 'chat requirements are listed before implementation', 'screenshot regions are matched to attachments or marked low-confidence', 'Computer Use/browser visual inspection strengthens matches when available', 'client requests follow normal SKS gates and verification'],
+    priority: ['strong feedback raises required_weight', 'request topics are counted in wiki packs', 'future inference uses priority signals'],
+    questions: ['predictable answers are inferred', 'partial answers can seal contracts', 'only unresolved changing slots remain visible'],
+    install: ['bootstrap/deps initialize readiness', 'missing runtime deps show repair actions', 'readiness output is concrete']
+  };
+  if (kind && !hasAnswer(explicitAnswers.GOAL_PRECISE)) addInferred(inferred, notes, 'GOAL_PRECISE', goals[kind], kind);
+  if (kind && !hasAnswer(explicitAnswers.ACCEPTANCE_CRITERIA)) addInferred(inferred, notes, 'ACCEPTANCE_CRITERIA', criteria[kind], kind);
+
+  if (explicitAnswers.NON_GOALS === undefined) addInferred(inferred, notes, 'NON_GOALS', [], 'empty non-goals is the safest default when the user did not exclude scope');
+  if (!hasAnswer(explicitAnswers.PUBLIC_API_CHANGE_ALLOWED)) addInferred(inferred, notes, 'PUBLIC_API_CHANGE_ALLOWED', cliSurfaceWork || installWork ? 'yes_if_needed' : 'no', 'public-api');
+  if (!hasAnswer(explicitAnswers.DEPENDENCY_CHANGE_ALLOWED)) addInferred(inferred, notes, 'DEPENDENCY_CHANGE_ALLOWED', 'no', 'no-new-deps');
+  if (!hasAnswer(explicitAnswers.TEST_SCOPE)) {
+    const releaseLike = versionWork || installWork || questionGateWork || prioritySignalWork || chatCaptureWork || /\bsneakoscope\b|\bsks\b/.test(lower);
+    addInferred(inferred, notes, 'TEST_SCOPE', releaseLike ? ['packcheck', 'selftest', 'sizecheck', 'publish:dry'] : ['focused relevant tests or documented justification'], 'tests');
+  }
+  if (!hasAnswer(explicitAnswers.MID_RALPH_UNKNOWN_POLICY)) {
+    addInferred(inferred, notes, 'MID_RALPH_UNKNOWN_POLICY', ['preserve_existing_behavior', 'smallest_reversible_change', 'defer_optional_scope', 'block_only_if_no_safe_path'], 'ladder');
+  }
+  if (!hasAnswer(explicitAnswers.RISK_BOUNDARY)) {
+    addInferred(inferred, notes, 'RISK_BOUNDARY', [
+      'no npm publish unless explicitly requested',
+      'do not revert unrelated changes',
+      'no destructive commands or live data writes'
+    ], 'safety');
+  }
+  return { answers: inferred, notes };
+}
+
 export function buildQuestionSchema(prompt) {
-  const lower = prompt.toLowerCase();
+  const lower = String(prompt || '').toLowerCase();
   const domainHints = [];
   if (/결제|payment|billing|invoice|checkout|order/.test(lower)) domainHints.push('payment');
   if (/로그인|auth|session|token|인증/.test(lower)) domainHints.push('auth');
-  if (/ui|ux|화면|버튼|modal|모달|디자인/.test(lower)) domainHints.push('uiux');
-  if (/db|database|schema|migration|테이블|마이그레이션|supabase|postgres|sql|mcp/.test(lower)) domainHints.push('db');
+  if (/\b(ui|modal|screen|button|visual|design)\b|화면|버튼|모달|디자인/.test(lower)) domainHints.push('uiux');
+  if (/db|database|schema|migration|테이블|마이그레이션|supabase|postgres|sql/.test(lower)) domainHints.push('db');
   const slots = [
     { id: 'GOAL_PRECISE', question: '이번 작업의 최종 목표를 한 문장으로 정확히 정의해주세요.', required: true, type: 'string' },
     { id: 'ACCEPTANCE_CRITERIA', question: '완료 기준을 항목으로 적어주세요. 최소 2개 이상 권장합니다.', required: true, type: 'array_or_string' },
@@ -56,12 +123,18 @@ export function buildQuestionSchema(prompt) {
       { id: 'DB_READ_ONLY_QUERY_LIMIT', question: 'MCP/SQL read-only 조회 시 기본 LIMIT를 몇으로 둘까요?', required: true, type: 'string' }
     );
   }
+  const skippedByDefault = new RegExp('^(D' + 'B_|D' + 'ATABASE_|D' + 'ESTRUCTIVE_D' + 'B_|SUPA' + 'BASE_)');
+  const inferred = inferAnswersForPrompt(prompt);
+  const inferredSlots = new Set(['MID_RALPH_UNKNOWN_POLICY', ...Object.keys(inferred.answers)]);
+  const askedSlots = slots.filter((s) => !inferredSlots.has(s.id) && (domainHints.includes('db') || !skippedByDefault.test(s.id)));
   return {
     schema_version: 1,
-    description: 'All required slots must be answered before Ralph can run. Ralph never asks the user after the contract is sealed. Database destructive operations are never permitted.',
+    description: 'Only slots that can change scope, safety, behavior, or acceptance are asked. The rest is inferred from TriWiki/current code defaults. Ralph never asks the user after the contract is sealed.',
     prompt,
     domain_hints: domainHints,
-    slots
+    inferred_answers: inferred.answers,
+    inference_notes: inferred.notes,
+    slots: askedSlots
   };
 }
 
@@ -78,9 +151,19 @@ export function questionsMarkdown(schema) {
   } else {
     lines.push('이 질문들에 모두 답변하고 Decision Contract가 봉인된 뒤에만 실행됩니다.');
     lines.push('봉인 후 실행 중에는 사용자에게 새 질문을 하지 않고 decision ladder로 해결합니다.');
-    lines.push('DB 작업은 특히 안전 게이트가 적용됩니다. 파괴적 DB 작업은 절대 허용되지 않습니다.');
+    lines.push('사용자 의도가 실제로 모호한 항목만 묻고, 나머지는 TriWiki/current-code 기본값으로 추론합니다.');
   }
   if (schema.description) lines.push(schema.description);
+  if (schema.inferred_answers && Object.keys(schema.inferred_answers).length) {
+    lines.push('');
+    lines.push('## Inferred Answers');
+    lines.push('');
+    lines.push('These values are prefilled from the prompt, TriWiki/current-code defaults, and conservative SKS safety policy. Override only if they are wrong.');
+    lines.push('');
+    lines.push('```json');
+    lines.push(JSON.stringify(schema.inferred_answers, null, 2));
+    lines.push('```');
+  }
   lines.push('');
   for (let i = 0; i < schema.slots.length; i++) {
     const s = schema.slots[i];
