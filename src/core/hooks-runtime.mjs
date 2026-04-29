@@ -2,7 +2,7 @@ import path from 'node:path';
 import { projectRoot, readJson, readText, writeJsonAtomic, appendJsonl, readStdin, nowIso, runProcess, which, PACKAGE_VERSION } from './fsx.mjs';
 import { looksInteractiveCommand, interactiveCommandReason } from './no-question-guard.mjs';
 import { missionDir, setCurrent, stateFile } from './mission.mjs';
-import { checkDbOperation, dbBlockReason } from './db-safety.mjs';
+import { checkDbOperation, dbBlockReason, handleMadSksUserConfirmation } from './db-safety.mjs';
 import { checkHarnessModification, harnessGuardBlockReason } from './harness-guard.mjs';
 import { activeRouteContext, evaluateStop, prepareRoute, promptPipelineContext as routePipelineContext, recordContext7Evidence, recordSubagentEvidence, routePrompt } from './pipeline.mjs';
 
@@ -97,6 +97,12 @@ export async function hookMain(name) {
 async function hookUserPrompt(root, state, payload, noQuestion) {
   if (!noQuestion) {
     const prompt = extractUserPrompt(payload);
+    const madSksConfirmation = await handleMadSksUserConfirmation(root, state, prompt);
+    if (madSksConfirmation?.handled) {
+      const teamDigest = await teamLiveDigest(root, state);
+      const additionalContext = [madSksConfirmation.additionalContext, teamDigest?.context].filter(Boolean).join('\n\n');
+      return { continue: true, additionalContext, systemMessage: joinSystemMessages(visibleHookMessage('user-prompt-submit', additionalContext), teamDigest?.system) };
+    }
     const updateContext = await updateCheckContext(root, payload, prompt);
     const command = dollarCommand(prompt);
     const route = routePrompt(prompt);
@@ -124,7 +130,7 @@ async function hookPreTool(root, state, payload, noQuestion) {
     return { decision: 'block', permissionDecision: 'deny', reason: harnessGuardBlockReason(harnessDecision) };
   }
   const dbDecision = await checkDbOperation(root, state, payload, { duringRalph: noQuestion });
-  if (dbDecision.action === 'block') {
+  if (dbDecision.action === 'block' || dbDecision.action === 'confirm') {
     return { decision: 'block', permissionDecision: 'deny', reason: dbBlockReason(dbDecision) };
   }
   const command = extractCommand(payload);
@@ -134,7 +140,7 @@ async function hookPreTool(root, state, payload, noQuestion) {
 
 async function hookPostTool(root, state, payload, noQuestion) {
   const dbDecision = await checkDbOperation(root, state, payload, { duringRalph: noQuestion });
-  if (dbDecision.action === 'block') {
+  if (dbDecision.action === 'block' || dbDecision.action === 'confirm') {
     return { decision: 'block', reason: dbBlockReason(dbDecision) };
   }
   await recordContext7Evidence(root, state, payload).catch(() => null);
@@ -165,7 +171,7 @@ async function hookPermission(root, state, payload, noQuestion) {
     return { decision: 'deny', permissionDecision: 'deny', reason: harnessGuardBlockReason(harnessDecision) };
   }
   const dbDecision = await checkDbOperation(root, state, payload, { duringRalph: noQuestion });
-  if (dbDecision.action === 'block') {
+  if (dbDecision.action === 'block' || dbDecision.action === 'confirm') {
     return { decision: 'deny', permissionDecision: 'deny', reason: dbBlockReason(dbDecision) };
   }
   if (!noQuestion) return { continue: true };

@@ -93,7 +93,7 @@ ${prompt}
 
 ## How to Read
 
-- This file is the Codex App-visible replacement for tmux-style team panes.
+- This file is the Codex App-visible replacement for cmux-style team panes.
 - Use at most ${spec.agentSessions} subagent sessions at a time unless the mission is recreated with a different budget.
 - Team mode has three bundles: parallel analysis scouts first, debate team second, then fresh parallel development team.
 - Use relevant TriWiki context before every stage, hydrate low-trust claims from source during the stage, refresh after findings/artifact changes, and validate before handoffs or final claims.

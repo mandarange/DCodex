@@ -2,6 +2,66 @@
 
 ## [Unreleased]
 
+## [0.6.68] - 2026-04-29
+
+### Changed
+
+- Align the `main` merge release metadata after SKS versioning advanced the merge package version during the final commit.
+
+## [0.6.67] - 2026-04-29
+
+### Changed
+
+- Merge the verified 0.6.66 MAD cmux repair line from `dev` into `main`, preserving the public README emphasis for From-Chat-IMG and TriWiki voxels.
+
+## [0.6.66] - 2026-04-29
+
+### Changed
+
+- Make `sks --mad` check npm for a newer Sneakoscope release before launch and prompt y/n for updating in interactive terminals.
+- Make MAD dependency repair install missing Codex CLI with `@latest`, install or upgrade cmux through Homebrew, and re-probe real cmux app bundle binaries after cask installation.
+- Update README MAD/cmux troubleshooting docs for update prompts, `--yes`, and direct cmux app bundle discovery.
+
+## [0.6.65] - 2026-04-29
+
+### Changed
+
+- Make `sks --mad` launch the cmux MAD profile as full-access high reasoning with Codex automatic approval review enabled via `approvals_reviewer = "auto_review"`.
+- Align SKS auto-review profile generation with current OpenAI Codex docs by using `auto_review` instead of the legacy `guardian_subagent` reviewer value.
+
+## [0.6.64] - 2026-04-29
+
+### Changed
+
+- Expand the README into a fuller open-source CLI guide with quick start, requirements, installation modes, terminal CLI usage, Codex App `$` commands, common workflows, troubleshooting, and release checks.
+
+## [0.6.63] - 2026-04-29
+
+### Changed
+
+- Make `sks --mad --high` attempt Homebrew cmux installation and re-probe before launch when cmux is missing, with a concise launch blocker if installation cannot complete.
+- Replace the first cmux banner box with a stronger SKS/cmux ASCII mark for the CLI workspace header.
+
+## [0.6.62] - 2026-04-29
+
+### Changed
+
+- Make plain `sks --mad --high` wake the cmux app before creating the `sks-mad-high` Codex CLI workspace, so the command opens the cmux UI path directly.
+
+## [0.6.61] - 2026-04-29
+
+### Changed
+
+- Replace the SKS terminal runtime with a cmux-based Codex CLI workspace flow, including cmux dependency checks, help/discovery surfaces, setup guidance, and Team cmux live lanes.
+- Add `sks --mad --high` as an explicit one-shot cmux launch that writes and uses the `sks-mad-high` full-access high-reasoning Codex profile without changing the normal default route.
+
+## [0.6.60] - 2026-04-29
+
+### Changed
+
+- Add `$MAD-SKS` as an explicit scoped database authorization modifier that can compose with other dollar-command routes while keeping the widened permission limited to the active invocation.
+- Require table-removal operations to pause for short user confirmation even under MAD-SKS, and close the override when the active mission gate is complete.
+
 ## [0.6.59] - 2026-04-29
 
 ### Changed
@@ -160,5 +220,5 @@
 
 ## [0.6.37] - 2026-04-28
 
-- Add Korean `ㅅㅋㅅ` branding, tmux/setup guidance, Team live event logging, Codex CLI readiness handling, design/image skills, and Team-default execution routing.
+- Add Korean `ㅅㅋㅅ` branding, cmux/setup guidance, Team live event logging, Codex CLI readiness handling, design/image skills, and Team-default execution routing.
 - Fix Korean execution-prompt routing, Team continuation after ambiguity gates, Context7 readiness checks, changelog release checks, and Honest Mode loop-back/no-gap handling.

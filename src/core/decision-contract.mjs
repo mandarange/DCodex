@@ -27,10 +27,11 @@ export function validateAnswers(schema, answers) {
     }
     if (!isEmptyAnswer(value, slot) || (Array.isArray(value) && value.length === 0 && slot.allow_empty)) resolved.push(slot.id);
   }
-  if (answers.DESTRUCTIVE_DB_OPERATIONS_ALLOWED && answers.DESTRUCTIVE_DB_OPERATIONS_ALLOWED !== 'never') {
+  const madSks = answers.MAD_SKS_MODE === 'explicit_invocation_only';
+  if (answers.DESTRUCTIVE_DB_OPERATIONS_ALLOWED && answers.DESTRUCTIVE_DB_OPERATIONS_ALLOWED !== 'never' && !madSks) {
     errors.push({ slot: 'DESTRUCTIVE_DB_OPERATIONS_ALLOWED', error: 'sneakoscope_never_allows_destructive_database_operations' });
   }
-  if (answers.DATABASE_TARGET_ENVIRONMENT === 'production_write') {
+  if (answers.DATABASE_TARGET_ENVIRONMENT === 'production_write' && !madSks) {
     errors.push({ slot: 'DATABASE_TARGET_ENVIRONMENT', error: 'production_write_target_forbidden' });
   }
   errors.push(...validateQaLoopAnswers(schema, answers));
@@ -38,6 +39,7 @@ export function validateAnswers(schema, answers) {
 }
 
 export function buildDecisionContract({ mission, schema, answers }) {
+  const madSks = answers.MAD_SKS_MODE === 'explicit_invocation_only';
   const defaults = {
     if_multiple_valid_implementations: 'choose_smallest_reversible_change',
     if_test_command_unknown: 'infer_from_repo_scripts_and_run_most_local_relevant_test',
@@ -69,7 +71,7 @@ export function buildDecisionContract({ mission, schema, answers }) {
       db_schema_change_allowed: answers.DB_SCHEMA_CHANGE_ALLOWED || 'no',
       dependency_change_allowed: answers.DEPENDENCY_CHANGE_ALLOWED || 'no',
       auth_protocol_change_allowed: answers.AUTH_PROTOCOL_CHANGE_ALLOWED || 'no',
-      destructive_db_operations_allowed: false,
+      destructive_db_operations_allowed: madSks ? 'mad_sks_scoped' : false,
       database_target_environment: answers.DATABASE_TARGET_ENVIRONMENT || 'no_database',
       database_write_mode: answers.DATABASE_WRITE_MODE || 'read_only_only',
       supabase_mcp_policy: answers.SUPABASE_MCP_POLICY || 'not_used',
@@ -80,18 +82,25 @@ export function buildDecisionContract({ mission, schema, answers }) {
       qa_loop_mutation_policy: answers.QA_MUTATION_POLICY || null,
       qa_loop_credentials_saved: false,
       qa_loop_ui_requires_official_browser_or_computer_use: Boolean(answers.QA_SCOPE && answers.QA_SCOPE !== 'api_e2e_only'),
-      production_database_writes_allowed: false,
-      mcp_direct_execute_sql_writes_allowed: false,
-      db_reset_allowed: false,
-      db_drop_allowed: false,
-      db_truncate_allowed: false,
-      db_mass_delete_update_allowed: false
+      mad_sks_mode: madSks ? 'explicit_invocation_only' : false,
+      production_database_writes_allowed: madSks ? 'mad_sks_scoped' : false,
+      mcp_direct_execute_sql_writes_allowed: madSks ? 'mad_sks_scoped' : false,
+      db_reset_allowed: madSks ? 'mad_sks_scoped' : false,
+      db_drop_allowed: madSks ? 'requires_table_delete_confirmation_when_table_removal' : false,
+      db_truncate_allowed: madSks ? 'requires_table_delete_confirmation_when_table_removal' : false,
+      db_mass_delete_update_allowed: madSks ? 'mad_sks_scoped' : false
     },
     database_safety: {
-      policy: 'destructive_denied_always',
+      policy: madSks ? 'mad_sks_scoped_override_table_delete_confirmation_required' : 'destructive_denied_always',
       supabase_mcp_recommended_url: 'https://mcp.supabase.com/mcp?project_ref=<project_ref>&read_only=true&features=database,docs',
-      allowed_targets_for_write: ['local_dev', 'preview_branch', 'supabase_branch'],
-      forbidden_operations: ['DROP', 'TRUNCATE', 'DELETE_WITHOUT_WHERE', 'UPDATE_WITHOUT_WHERE', 'DB_RESET', 'DB_PUSH', 'PROJECT_DELETE', 'BRANCH_RESET_OR_MERGE_OR_DELETE', 'DISABLE_RLS', 'BROAD_GRANT_REVOKE'],
+      allowed_targets_for_write: madSks ? ['main_branch', 'production', 'local_dev', 'preview_branch', 'supabase_branch'] : ['local_dev', 'preview_branch', 'supabase_branch'],
+      forbidden_operations: madSks ? ['TABLE_REMOVAL_WITHOUT_RUNTIME_CONFIRMATION'] : ['DROP', 'TRUNCATE', 'DELETE_WITHOUT_WHERE', 'UPDATE_WITHOUT_WHERE', 'DB_RESET', 'DB_PUSH', 'PROJECT_DELETE', 'BRANCH_RESET_OR_MERGE_OR_DELETE', 'DISABLE_RLS', 'BROAD_GRANT_REVOKE'],
+      mad_sks_scope: madSks ? {
+        active_only_when_prompt_contains: '$MAD-SKS',
+        may_combine_with_primary_route: true,
+        deactivates_when_active_mission_gate_passes: true,
+        table_delete_confirmation_timeout_ms: 30000
+      } : null,
       migration_apply_allowed: answers.DB_MIGRATION_APPLY_ALLOWED || 'no',
       read_only_query_limit: answers.DB_READ_ONLY_QUERY_LIMIT || '1000'
     },

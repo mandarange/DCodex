@@ -7,7 +7,7 @@ import { buildQuestionSchemaForRoute, writeQuestions } from './questions.mjs';
 import { sealContract } from './decision-contract.mjs';
 import { scanDbSafety } from './db-safety.mjs';
 import { writeResearchPlan } from './research.mjs';
-import { FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, chatCaptureIntakeText, context7RequirementText, dollarCommand, hasFromChatImgSignal, reflectionRequiredForRoute, reasoningInstruction, routeNeedsContext7, routePrompt, routeReasoning, routeRequiresSubagents, stripDollarCommand, subagentExecutionPolicyText, stackCurrentDocsPolicyText, triwikiContextTracking, triwikiContextTrackingText, triwikiStagePolicyText } from './routes.mjs';
+import { FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, chatCaptureIntakeText, context7RequirementText, dollarCommand, hasFromChatImgSignal, hasMadSksSignal, reflectionRequiredForRoute, reasoningInstruction, routeNeedsContext7, routePrompt, routeReasoning, routeRequiresSubagents, stripDollarCommand, stripMadSksSignal, subagentExecutionPolicyText, stackCurrentDocsPolicyText, triwikiContextTracking, triwikiContextTrackingText, triwikiStagePolicyText } from './routes.mjs';
 import { TEAM_DECOMPOSITION_ARTIFACT, TEAM_GRAPH_ARTIFACT, TEAM_INBOX_DIR, TEAM_RUNTIME_TASKS_ARTIFACT, teamRuntimePlanMetadata, teamRuntimeRequiredArtifacts, validateTeamRuntimeArtifacts, writeTeamRuntimeArtifacts } from './team-dag.mjs';
 import { formatRoleCounts, initTeamLive, parseTeamSpecText } from './team-live.mjs';
 
@@ -99,7 +99,8 @@ export function answerOnlyContext(prompt, route = routePrompt(prompt)) {
 
 export async function prepareRoute(root, prompt, state = {}) {
   const route = routePrompt(prompt);
-  const task = stripDollarCommand(prompt) || String(prompt || '').trim();
+  const madSksAuthorization = hasMadSksSignal(prompt);
+  const task = stripDollarCommand(stripMadSksSignal(prompt)) || stripMadSksSignal(stripDollarCommand(prompt)) || String(prompt || '').trim();
   const explicit = Boolean(dollarCommand(prompt));
   if (!route) return { route: null, additionalContext: promptPipelineContext(prompt, null) };
   if (route.id === 'DFix') return prepareDfixQuickRoute(route, task);
@@ -108,7 +109,7 @@ export async function prepareRoute(root, prompt, state = {}) {
   const required = routeNeedsContext7(route, prompt);
   const reasoning = routeReasoning(route, prompt);
   const subagentsRequired = routeRequiresSubagents(route, prompt);
-  if (route.id !== 'Help') return prepareClarificationGate(root, route, task, required, { ralph: route.id === 'Ralph' });
+  if (route.id !== 'Help') return prepareClarificationGate(root, route, task, required, { ralph: route.id === 'Ralph', madSksAuthorization });
   if (route.id === 'Ralph') return prepareRalph(root, route, task, required);
   if (route.id === 'Team') return prepareTeam(root, route, task, required);
   if (route.id === 'Research') return prepareResearch(root, route, task, required);
@@ -185,8 +186,9 @@ async function prepareRalph(root, route, task, required) {
 async function prepareClarificationGate(root, route, task, required, opts = {}) {
   const { id, dir, mission } = await createMission(root, { mode: String(route.mode || route.id || 'route').toLowerCase(), prompt: task });
   const schema = buildQuestionSchemaForRoute(route, task);
+  if (opts.madSksAuthorization) applyMadSksAuthorizationToSchema(schema);
   await writeQuestions(dir, schema);
-  const routeContext = { route: route.id, command: route.command, mode: route.mode, task, required_skills: route.requiredSkills, context7_required: required, original_stop_gate: route.stopGate, clarification_gate: true };
+  const routeContext = { route: route.id, command: route.command, mode: route.mode, task, required_skills: route.requiredSkills, context7_required: required, original_stop_gate: route.stopGate, clarification_gate: true, mad_sks_authorization: Boolean(opts.madSksAuthorization || route.id === 'MadSKS') };
   await writeJsonAtomic(path.join(dir, 'route-context.json'), routeContext);
   if (!opts.ralph && schema.slots.length === 0) {
     await writeJsonAtomic(path.join(dir, 'answers.json'), schema.inferred_answers || {});
@@ -240,6 +242,29 @@ ${formatRalphQuestions(schema)}`
   };
 }
 
+function applyMadSksAuthorizationToSchema(schema = {}) {
+  schema.domain_hints = Array.from(new Set([...(schema.domain_hints || []), 'mad-sks']));
+  schema.inferred_answers = {
+    ...(schema.inferred_answers || {}),
+    MAD_SKS_MODE: 'explicit_invocation_only',
+    DATABASE_TARGET_ENVIRONMENT: 'main_branch',
+    DATABASE_WRITE_MODE: 'mad_sks_full_mcp_write_for_invocation',
+    SUPABASE_MCP_POLICY: 'mad_sks_project_scoped_write_for_invocation',
+    DESTRUCTIVE_DB_OPERATIONS_ALLOWED: 'mad_sks_scoped_with_table_delete_confirmation',
+    DB_BACKUP_OR_BRANCH_REQUIRED: 'recommended_but_not_required_in_mad_sks',
+    DB_MAX_BLAST_RADIUS: 'mad_sks_active_invocation_only_table_delete_confirmation_required',
+    DB_MIGRATION_APPLY_ALLOWED: 'mad_sks_active_invocation_only',
+    DB_READ_ONLY_QUERY_LIMIT: '100'
+  };
+  schema.inference_notes = {
+    ...(schema.inference_notes || {}),
+    MAD_SKS_MODE: 'explicit dollar command modifier is the permission boundary',
+    DESTRUCTIVE_DB_OPERATIONS_ALLOWED: 'MAD-SKS scoped override with table deletion confirmation'
+  };
+  schema.slots = (schema.slots || []).filter((slot) => !/^(DB_|DATABASE_|DESTRUCTIVE_DB_|SUPABASE_MCP_POLICY$)/.test(slot.id));
+  return schema;
+}
+
 async function prepareTeam(root, route, task, required) {
   const spec = parseTeamSpecText(task);
   const cleanTask = spec.prompt || task;
@@ -279,6 +304,7 @@ async function prepareTeam(root, route, task, required) {
       markdown: 'team-live.md',
       transcript: 'team-transcript.jsonl',
       dashboard: 'team-dashboard.json',
+      cmux: 'CLI Team entrypoints open cmux live lanes for the visible Team agent budget when cmux is available.',
       commands: ['sks team status latest', 'sks team log latest', 'sks team tail latest', 'sks team watch latest', 'sks team event latest --agent <name> --phase <phase> --message "..."']
     },
     required_artifacts: ['team-roster.json', 'team-analysis.md', ...(fromChatImgRequired ? [FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT] : []), 'team-consensus.md', ...teamRuntimeRequiredArtifacts(), 'team-review.md', 'team-gate.json', TEAM_SESSION_CLEANUP_ARTIFACT, 'reflection.md', 'reflection-gate.json', 'team-live.md', 'team-transcript.jsonl', 'team-dashboard.json', '.sneakoscope/wiki/context-pack.json', 'context7-evidence.jsonl']

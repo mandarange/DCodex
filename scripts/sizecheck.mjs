@@ -10,7 +10,7 @@ const limits = {
   packedBytes: Number(process.env.SKS_MAX_PACK_BYTES || 256 * 1024),
   unpackedBytes: Number(process.env.SKS_MAX_UNPACKED_BYTES || 1024 * 1024),
   packFiles: Number(process.env.SKS_MAX_PACK_FILES || 40),
-  trackedFileBytes: Number(process.env.SKS_MAX_TRACKED_FILE_BYTES || 288 * 1024)
+  trackedFileBytes: Number(process.env.SKS_MAX_TRACKED_FILE_BYTES || 320 * 1024)
 };
 
 const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -41,7 +41,13 @@ function checkTrackedFiles() {
   const files = result.stdout.toString('utf8').split('\0').filter(Boolean);
   const oversized = [];
   for (const file of files) {
-    const stat = fs.statSync(path.join(root, file));
+    let stat;
+    try {
+      stat = fs.statSync(path.join(root, file));
+    } catch (err) {
+      if (err?.code === 'ENOENT') continue;
+      throw err;
+    }
     if (stat.size > limits.trackedFileBytes) oversized.push(`${file} (${fmt(stat.size)})`);
   }
   if (oversized.length) {

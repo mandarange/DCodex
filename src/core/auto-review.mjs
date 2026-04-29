@@ -2,10 +2,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { ensureDir, exists, readText, writeTextAtomic } from './fsx.mjs';
 
-export const AUTO_REVIEW_REVIEWER = 'guardian_subagent';
-export const LEGACY_AUTO_REVIEW_REVIEWER = 'auto_review';
+export const AUTO_REVIEW_REVIEWER = 'auto_review';
+export const LEGACY_AUTO_REVIEW_REVIEWER = 'guardian_subagent';
 export const AUTO_REVIEW_PROFILE = 'sks-auto-review';
 export const AUTO_REVIEW_HIGH_PROFILE = 'sks-auto-review-high';
+export const MAD_HIGH_PROFILE = 'sks-mad-high';
 
 export function codexHome(env = process.env) {
   return path.resolve(env.CODEX_HOME || path.join(env.HOME || os.homedir(), '.codex'));
@@ -56,6 +57,37 @@ export async function enableAutoReview(opts = {}) {
   };
 }
 
+export async function enableMadHighProfile(opts = {}) {
+  const configPath = opts.configPath || codexConfigPath(opts.env || process.env);
+  await ensureDir(path.dirname(configPath));
+  const current = await readText(configPath, '');
+  let next = upsertTable(current, `profiles.${MAD_HIGH_PROFILE}`, [
+    `[profiles.${MAD_HIGH_PROFILE}]`,
+    'model = "gpt-5.5"',
+    'approval_policy = "on-request"',
+    `approvals_reviewer = "${AUTO_REVIEW_REVIEWER}"`,
+    'sandbox_mode = "danger-full-access"',
+    'model_reasoning_effort = "high"'
+  ].join('\n'));
+  next = upsertAutoReviewPolicy(next);
+  if (!next.endsWith('\n')) next += '\n';
+  await writeTextAtomic(configPath, next);
+  return {
+    config_path: configPath,
+    profile_name: MAD_HIGH_PROFILE,
+    launch_args: ['--profile', MAD_HIGH_PROFILE],
+    sandbox_mode: 'danger-full-access',
+    approval_policy: 'on-request',
+    approvals_reviewer: AUTO_REVIEW_REVIEWER,
+    model_reasoning_effort: 'high',
+    scope: 'explicit_launch_only'
+  };
+}
+
+export function madHighProfileName() {
+  return MAD_HIGH_PROFILE;
+}
+
 export async function disableAutoReview(opts = {}) {
   const configPath = opts.configPath || codexConfigPath(opts.env || process.env);
   const current = await readText(configPath, '');
@@ -82,7 +114,7 @@ export function autoReviewSummary(status = {}) {
     lines.push('Launch high mode with: sks --Auto-review --high');
   }
   if (status.legacy_invalid) {
-    lines.push('', 'Legacy invalid reviewer value found: run sks auto-review enable or sks auto-review disable to rewrite Codex config.');
+    lines.push('', 'Legacy reviewer value found: run sks auto-review enable or sks auto-review disable to rewrite Codex config.');
   }
   return lines.join('\n');
 }

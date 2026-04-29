@@ -2,131 +2,416 @@
 
 ![](https://github.com/mandarange/Sneakoscope-Codex/raw/dev/docs/assets/sneakoscope-codex-logo.png)
 
-Codex CLI/App harness for `$` routes, Team/Ralph/QA/Research, Context7, Honest Mode, DB safety, TriWiki, Codex App skills, and release readiness.
+Sneakoscope Codex (`sks`, displayed as `ㅅㅋㅅ`) is a Codex CLI/App harness for repeatable agent workflows. It adds terminal commands, Codex App `$` prompt commands, cmux-native CLI workspaces, Team/Ralph/QA/Research routes, Context7 evidence checks, DB safety, TriWiki context tracking, Honest Mode, and release-readiness gates.
 
-Install: `npm i -g sneakoscope && sks bootstrap`
-Fallback: `npx -y -p sneakoscope sks bootstrap`
-Project: `npm i -D sneakoscope && npx sks setup --install-scope project`
+## Quick Start
 
-Discover: `sks commands`, `sks dollar-commands`, `sks usage <topic>`
-Check: `sks deps check`, `sks doctor --fix`, `sks selftest --mock`
+Install globally, initialize the current project, then open the cmux runtime:
 
-## What It Adds
+```sh
+npm i -g sneakoscope
+sks bootstrap
+sks
+```
 
-Sneakoscope (`sks`, displayed as `ㅅㅋㅅ`) wraps Codex with a repeatable control surface. Its core idea is not just "more commands": it gives Codex a memory-and-evidence harness so it can keep the mission goal, source facts, visual/context anchors, and verification state intact instead of drifting or silently skipping the thing the user actually asked for.
+If you only want a one-shot run without keeping `sks` installed globally:
+
+```sh
+npx -y -p sneakoscope sks bootstrap
+```
+
+For a repo-local install:
+
+```sh
+npm i -D sneakoscope
+npx sks setup --install-scope project
+```
+
+Check that the install is usable:
+
+```sh
+sks deps check
+sks codex-app check
+sks dollar-commands
+sks selftest --mock
+```
+
+## What Sneakoscope Adds
 
 | Area | What it does |
 | --- | --- |
-| Codex App commands | Installs generated skills so `$Team`, `$From-Chat-IMG`, `$DFix`, `$QA-LOOP`, `$Ralph`, `$DB`, `$Wiki`, `$Help`, and related routes are discoverable in prompt workflows. |
-| CLI commands | Provides `sks commands`, `sks dollar-commands`, `sks usage <topic>`, bootstrap, setup, doctor, deps, selftest, wiki, team, QA, Ralph, DB, and GX commands. |
-| Team orchestration | Routes substantial code work through ambiguity removal, scouts, TriWiki refresh, debate, consensus, concrete runtime task graph/inboxes, implementation, review, integration, reflection, and Honest Mode. |
-| Ralph | Seals a decision contract up front, then continues without more user questions by using the agreed decision ladder. |
-| QA loop | Dogfoods UI/API behavior with safety boundaries, evidence capture, safe remediation, and focused rechecks. |
-| TriWiki + voxels | Keeps `.sneakoscope/wiki/context-pack.json` as the context SSOT, combining coordinate anchors, voxel metadata, active attention ranking, and hydratable source-backed claims so Codex can recover the right evidence, source paths, trust weights, and visual/context positions after long missions or context pressure. |
-| Context7 | Requires current external library/API/framework docs for routes whose correctness depends on live package or platform behavior. |
-| DB safety | Treats SQL, migrations, Supabase, RLS, and destructive operations as high risk; defaults to inspection and guarded local/branch-safe migration work. |
-| Honest Mode | Finishes work with a claim/evidence pass that separates verified facts, unsupported claims, blocked checks, and not-applicable items. |
-| GX visual context | Generates deterministic visual context cartridges for structured visual review and drift checks, feeding the same coordinate/voxel idea into UI and image-heavy work. |
-| Research loops | Supports Research and AutoResearch workflows with hypotheses, experiments, falsification, novelty ledgers, SEO/GEO, and evidence-backed conclusions. |
-| Release hygiene | Checks versioning, changelog, package contents, tarball size, syntax, selftests, and dry-run packaging before publish. |
-
-## Prompt `$` Commands
-
-Use these inside Codex App or another agent prompt. They are prompt commands, not terminal commands.
-
-| Prompt | Purpose |
-| --- | --- |
-| `$Team` | Default route for code-changing work and substantial implementation. |
-| `$From-Chat-IMG` | Explicit Team route for chat screenshot plus original attachment intake. It extracts visible chat requirements first, matches screenshot regions to the attached originals, then turns that into a concrete work order before implementation. |
-| `$DFix` | Tiny design/content fixes: labels, copy, colors, spacing, translation. |
-| `$Answer` | Answer-only route when no implementation should start. |
-| `$SKS` | Setup, status, usage, and Sneakoscope workflow help. |
-| `$QA-LOOP` | UI/API dogfooding, safe fixes, and rechecks. |
-| `$Ralph` | Clarify once, seal a decision contract, then execute. |
-| `$Research` | Frontier-style research with hypotheses and falsification. |
-| `$AutoResearch` | Iterative improve-test-keep/discard optimization loop. |
-| `$DB` | Database and Supabase safety checks. |
-| `$GX` | Deterministic visual context generation and validation. |
-| `$Wiki` | TriWiki refresh, pack, prune, validate, and maintenance. |
-| `$Help` | Installed command and workflow explanation. |
-
-Run `sks dollar-commands` to verify the terminal and Codex App command surfaces agree.
-
-## TriWiki Voxels
-
-TriWiki is the main differentiator. It is a compact mission memory that helps Codex finish the actual job instead of improvising from a stale chat tail.
-
-The coordinate layer records where important claims came from: source files, command evidence, wiki claims, visual anchors, and route artifacts. The voxel layer adds compact metadata over those coordinates: trust, risk, recency, source path, hash, and hydration pointers. Together they let SKS tell Codex what to trust, what to re-check, and what evidence must be refreshed before it can honestly claim completion.
-
-This matters most in long or high-stakes work:
-
-- Team handoffs can recover the same mission facts instead of restarting from vibes.
-- Honest Mode can bind final claims to tests, source files, route gates, and package evidence.
-- Context pressure does not erase the decision contract or the proof trail.
-- Visual/GX work can keep deterministic anchors for what changed and what drifted.
-- QA, DB, and release workflows can distinguish verified, stale, blocked, and not-applicable claims.
-
-In short: TriWiki voxels are the part that keeps Codex oriented, evidence-bound, and less likely to miss the user's real objective.
-
-## Terminal Examples
-
-```sh
-sks usage install
-sks usage team
-sks usage qa-loop
-sks usage codex-app
-sks setup --install-scope project
-sks wiki refresh
-sks wiki validate .sneakoscope/wiki/context-pack.json
-sks versioning status
-```
-
-Route examples:
-
-```sh
-sks team "implement this" executor:3 reviewer:1
-sks team watch <mission-id>
-sks qa-loop prepare
-sks qa-loop run
-sks ralph prepare
-sks ralph run
-sks db scan
-sks gx init
-```
-
-## Workflow Rules
-
-For code work, Sneakoscope defaults to Team. The normal flow is: remove ambiguity that can change scope or safety, read/validate TriWiki, consume `attention.use_first` for compact high-trust context, hydrate `attention.hydrate_first` from source before risky decisions, gather current source evidence, synthesize consensus, compile a concrete runtime task graph plus worker inboxes, implement bounded changes, refresh/validate context after meaningful findings, run relevant checks, then finish with reflection and Honest Mode.
-
-For tiny text/design edits use `$DFix`. For questions that should not change files use `$Answer`.
-
-## Codex App Surface
-
-`sks bootstrap` and `sks setup` install `.codex/SNEAKOSCOPE.md`, generated `.agents/skills`, `.codex/hooks.json`, route instructions for `$` commands, and user-home skill state for first-install discoverability.
-
-After install, check:
-
-```sh
-sks dollar-commands
-sks usage codex-app
-```
-
-## Release Checks
-
-Before publish:
-
-```sh
-npm run publish:dry
-```
-
-This runs repo audit, changelog check, syntax packcheck, mock selftest, sizecheck, and `npm pack --dry-run`. A dry run proves the local package is packable; npm account ownership or OTP can still block the real registry upload.
+| CLI runtime | `sks`, `sks cmux`, and `sks --mad` open Codex CLI in a cmux workspace. |
+| Codex App commands | Installs generated skills so `$Team`, `$From-Chat-IMG`, `$DFix`, `$QA-LOOP`, `$Ralph`, `$DB`, `$Wiki`, `$Help`, and related routes are visible in prompt workflows. |
+| Team orchestration | Runs substantial work through ambiguity handling, scouts, TriWiki refresh, debate, runtime task graphs, worker inboxes, implementation, review, cleanup, reflection, and Honest Mode. |
+| From-Chat-IMG | Turns chat screenshots plus original attachments into source-bound work orders, then requires scoped QA evidence before completion. |
+| QA loop | Dogfoods UI/API behavior with safety gates, Browser/Computer evidence, safe fixes, and rechecks. |
+| Ralph | Clarifies once, seals a decision contract, then continues without repeatedly asking the user. |
+| TriWiki voxels | Maintains `.sneakoscope/wiki/context-pack.json` as the context SSOT with coordinate anchors, voxel metadata, `attention.use_first`, and `attention.hydrate_first`. |
+| Context7 | Requires current docs for external packages, APIs, MCPs, SDKs, and framework/runtime behavior when correctness depends on current guidance. |
+| DB safety | Treats SQL, migrations, Supabase, RLS, and destructive operations as high risk. |
+| Release hygiene | Checks versioning, changelog, package contents, tarball size, syntax, selftests, and dry-run publishing. |
 
 ## Requirements
 
 - Node.js `>=20.11`
 - npm
-- Codex CLI/App for app-facing workflows
+- Codex CLI for terminal workflows
+- Codex App for app-facing workflows and first-party Browser Use / Computer Use parity
+- cmux for the CLI-first runtime
 - Context7 MCP for current-docs-gated routes
+
+On macOS, `sks --mad` can install cmux through Homebrew when cmux is missing. You can also install it manually:
+
+```sh
+brew tap manaflow-ai/cmux
+brew install --cask cmux
+```
+
+If the CLI is not on `PATH`, SKS also checks the app bundle path:
+
+```sh
+/Applications/cmux.app/Contents/Resources/bin/cmux
+/Applications/cmux.app/Contents/MacOS/cmux
+```
+
+`sks --mad` is stricter than the normal runtime path:
+
+- Checks npm for a newer `sneakoscope` before launch and asks whether to update when the terminal can answer y/n.
+- Installs the latest Codex CLI with `npm i -g @openai/codex@latest` when it is missing and you approve or pass `--yes`.
+- Installs or upgrades the latest cmux cask through Homebrew when cmux is missing or not launchable.
+- Re-probes the real cmux binary after install instead of trusting Homebrew's success text alone.
+- Wakes cmux and retries the socket probe; if the socket is broken, SKS attempts a cmux app restart during that explicit launch.
+
+## Installation
+
+### Global Install
+
+Use this when you want `sks` available from any repo:
+
+```sh
+npm i -g sneakoscope
+sks bootstrap
+```
+
+`sks bootstrap` initializes the current project, installs Codex App skills/hooks/config, checks Context7/Codex App/cmux readiness, and prints a ready status.
+
+### One-Shot Install
+
+Use this when you do not want to keep a global install:
+
+```sh
+npx -y -p sneakoscope sks bootstrap
+```
+
+`npx` fetches the package into npm's cache and runs the binary for that command. This is useful for first-time setup or CI-style verification.
+
+### Project Install
+
+Use this when a repo should pin Sneakoscope as a development dependency:
+
+```sh
+npm i -D sneakoscope
+npx sks setup --install-scope project
+```
+
+Project installs are useful when a team wants a repeatable harness version checked through `package-lock.json`.
+
+### Source Checkout
+
+Use this when developing Sneakoscope itself:
+
+```sh
+git clone https://github.com/mandarange/Sneakoscope-Codex.git
+cd Sneakoscope-Codex
+npm install
+npm install -g .
+sks --version
+```
+
+## Terminal CLI Usage
+
+Use terminal commands when you want to inspect, set up, verify, or start a CLI-first workspace.
+
+### Discovery
+
+```sh
+sks commands
+sks usage install
+sks usage team
+sks usage codex-app
+sks dollar-commands
+sks --version
+```
+
+### Setup And Repair
+
+```sh
+sks bootstrap
+sks deps check
+sks deps install cmux
+sks codex-app check
+sks doctor --fix
+sks fix-path
+```
+
+### Open Codex CLI With cmux
+
+```sh
+sks
+sks cmux check
+sks cmux status --once
+```
+
+`sks` opens a cmux workspace for Codex CLI when running in an interactive terminal. `sks cmux check` is diagnostic and prints readiness without starting a workspace.
+
+### MAD cmux Workspace
+
+```sh
+sks --mad
+sks --mad --yes
+```
+
+This creates/uses the `sks-mad-high` Codex profile for a one-shot full-access, high-reasoning cmux workspace with `approval_policy = "on-request"` and `approvals_reviewer = "auto_review"`. It is scoped to that explicit command and does not change normal SKS/DB safety defaults.
+
+Before launching, SKS checks whether a newer `sneakoscope` exists on npm. In an interactive terminal it prompts:
+
+```text
+SKS 0.x.y -> 0.x.z update before MAD launch? [Y/n]
+```
+
+Answer `y` to install `sneakoscope@latest`, then rerun `sks --mad`. Answer `n` to continue with the current version. Use `--yes` to approve missing dependency installs automatically.
+
+### Team Missions
+
+```sh
+sks team "implement this feature" executor:3 reviewer:1
+sks team watch latest
+sks team status latest
+sks team log latest
+```
+
+Team mode prepares the mission, records live events, compiles runtime tasks and worker inboxes, and opens cmux live lanes when cmux is available.
+
+### QA, Ralph, Research, DB, Wiki, GX
+
+```sh
+sks qa-loop prepare "http://localhost:3000"
+sks qa-loop run latest --max-cycles 2
+sks ralph prepare "migrate this workflow without asking after prepare"
+sks research prepare "evaluate this approach"
+sks db scan --json
+sks wiki refresh
+sks wiki validate .sneakoscope/wiki/context-pack.json
+sks gx init homepage
+sks gx render homepage --format html
+```
+
+## Codex App Usage
+
+Sneakoscope has two surfaces:
+
+- Terminal commands such as `sks deps check`, `sks team "task"`, and `sks --mad`
+- Codex App prompt commands such as `$Team`, `$DFix`, `$QA-LOOP`, and `$Wiki`
+
+After installing, run:
+
+```sh
+sks bootstrap
+sks codex-app check
+sks dollar-commands
+```
+
+Then open Codex App and use prompt commands directly in the chat. Examples:
+
+```text
+$Team implement the checkout fix and verify it
+$DFix change this label and spacing only
+$QA-LOOP dogfood localhost:3000 and fix safe issues
+$Ralph clarify once, then finish the migration without more questions
+$Wiki refresh and validate the context pack
+$DB inspect this migration for destructive risk
+```
+
+Generated app files include:
+
+| Path | Purpose |
+| --- | --- |
+| `.codex/SNEAKOSCOPE.md` | Codex App quick reference and route guidance. |
+| `.agents/skills/` | Generated skill instructions for `$` commands. |
+| `.codex/hooks.json` | Stop/finalization hooks for Honest Mode and completion summaries. |
+| `.codex/config.toml` | Codex profiles, agents, and MCP configuration. |
+| `.sneakoscope/` | Runtime state, missions, wiki packs, policies, and artifacts. |
+
+Use `sks dollar-commands` to confirm that terminal discovery and Codex App prompt commands agree.
+
+## Prompt `$` Commands
+
+Use these inside Codex App or another agent prompt. They are prompt commands, not terminal commands.
+
+| Prompt | Use when |
+| --- | --- |
+| `$Team` | You want implementation, code changes, or substantial repo work. |
+| `$From-Chat-IMG` | You have a chat screenshot plus original attachments and want each visible request mapped to work. |
+| `$DFix` | You need a tiny design/content edit such as copy, label, color, spacing, or translation. |
+| `$Answer` | You want an answer only and no implementation should start. |
+| `$SKS` | You need setup, status, usage, or workflow help. |
+| `$QA-LOOP` | You want UI/API dogfooding, safe fixes, and rechecks. |
+| `$Ralph` | You want one prepare-time clarification pass, then no more user questions. |
+| `$Research` | You need frontier-style research with hypotheses and falsification. |
+| `$AutoResearch` | You want iterative improve/test/keep-or-discard optimization. |
+| `$DB` | You need database, Supabase, migration, SQL, or MCP safety checks. |
+| `$MAD-SKS` | You explicitly authorize a scoped high-risk DB permission modifier for the active invocation only. |
+| `$GX` | You need deterministic visual context cartridges. |
+| `$Wiki` | You want TriWiki refresh, pack, prune, validate, or maintenance. |
+| `$Help` | You want installed command and workflow explanation. |
+
+## Common Workflows
+
+### First Install Checklist
+
+```sh
+npm i -g sneakoscope
+sks bootstrap
+sks deps check
+sks codex-app check
+sks dollar-commands
+sks selftest --mock
+```
+
+### Start A CLI Workspace
+
+```sh
+sks cmux check
+sks
+```
+
+For the high-reasoning full-access profile:
+
+```sh
+sks --mad
+```
+
+### Use Codex App `$Team`
+
+```text
+$Team implement the requested change, update docs if needed, and verify with the relevant tests
+```
+
+Team mode records a mission under `.sneakoscope/missions/`, keeps a live transcript, uses TriWiki context, and finishes with evidence and Honest Mode.
+
+### Dogfood A UI Or API
+
+```sh
+sks qa-loop prepare "http://localhost:3000"
+sks qa-loop run latest --max-cycles 2
+sks qa-loop status latest
+```
+
+Use `$QA-LOOP` in Codex App when Browser Use or Computer Use evidence should be part of the workflow.
+
+### Refresh Context Before Risky Work
+
+```sh
+sks wiki refresh
+sks wiki validate .sneakoscope/wiki/context-pack.json
+```
+
+TriWiki is the long-running context source of truth. It keeps compact high-trust recall in `attention.use_first` and source-hydration targets in `attention.hydrate_first`.
+
+## Safety Model
+
+Sneakoscope intentionally treats these as high-risk:
+
+- SQL and migrations
+- Supabase MCP and RLS changes
+- destructive filesystem operations
+- user-global harness config
+- published package/release state
+
+By default, SKS favors inspection, local files, branch-safe changes, explicit confirmation for destructive DB operations, and completion claims backed by tests or artifacts.
+
+## Troubleshooting
+
+### `sks` points to an old version
+
+```sh
+which sks
+sks --version
+node ./bin/sks.mjs --version
+npm install -g .
+```
+
+If the global command is stale, reinstall globally from the repo or from npm.
+
+### cmux is missing
+
+```sh
+sks deps install cmux
+sks cmux check
+```
+
+`sks --mad` also attempts Homebrew installation or upgrade automatically on macOS when cmux is missing. If Homebrew reports the cask installed but the CLI still is not reachable, SKS checks the cmux app bundle paths directly, wakes the app, and retries the socket before reporting a remaining cmux app/socket issue.
+
+### Codex App tools are missing
+
+```sh
+sks codex-app check
+codex mcp list
+```
+
+Codex App workflows need the app installed and the first-party Browser Use / Computer Use tools available for parity with QA and visual workflows.
+
+### Setup is blocked by another harness
+
+```sh
+sks conflicts check
+sks conflicts prompt
+```
+
+OMX/DCodex conflicts intentionally block setup/doctor until the user approves cleanup.
+
+### The route is stuck or a final hook keeps reopening
+
+```sh
+sks pipeline status --json
+sks team watch latest
+sks wiki validate .sneakoscope/wiki/context-pack.json
+```
+
+Finalization requires real evidence, no unsupported critical claims, valid Team cleanup artifacts, reflection when required, and Honest Mode.
+
+## Development And Release
+
+Run local checks:
+
+```sh
+npm run repo-audit
+npm run changelog:check
+npm run packcheck
+npm run selftest
+npm run sizecheck
+npm run release:check
+```
+
+Dry-run publish:
+
+```sh
+npm run publish:dry
+```
+
+`publish:dry` proves the local package is packable. It does not prove npm ownership, OTP, or registry publish permission.
+
+## Documentation Style
+
+This README follows a common open-source CLI shape:
+
+- quick start first
+- explicit install paths
+- separate CLI and app/plugin usage
+- command examples before internal architecture
+- troubleshooting and release checks near the end
+
+That shape mirrors how projects such as `rdme` and Vite separate quick start, setup/configuration, and CLI usage while keeping copy-ready commands visible.
 
 ## License
 

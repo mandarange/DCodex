@@ -118,7 +118,7 @@ export async function codexAppIntegrationStatus(opts = {}) {
 export function codexAppGuidance({ appInstalled, codex, mcpList, computerUseReady, browserUseReady }) {
   const lines = [];
   if (!appInstalled) {
-    lines.push('Install and open Codex App first. SKS CLI blocks tmux launch until Codex App is present because first-party MCP/plugin tools are App-provisioned.');
+    lines.push('Install and open Codex App for first-party MCP/plugin tools. SKS cmux launch can still run with Codex CLI alone, but Browser Use and Computer Use evidence will be unavailable until Codex App is ready.');
     lines.push(`Docs: ${CODEX_APP_DOCS_URL}`);
   }
   if (!codex?.bin) lines.push('Install Codex CLI too: npm i -g @openai/codex, or set SKS_CODEX_BIN.');

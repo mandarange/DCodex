@@ -4,7 +4,7 @@ export const FROM_CHAT_IMG_CHECKLIST_ARTIFACT = 'from-chat-img-checklist.md';
 export const FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT = 'from-chat-img-temp-triwiki.json';
 export const FROM_CHAT_IMG_QA_LOOP_ARTIFACT = 'from-chat-img-qa-loop.json';
 export const FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS = 5;
-export const USAGE_TOPICS = 'install|setup|bootstrap|deps|tmux|auto-review|team|qa-loop|ralph|research|db|codex-app|dfix|design|imagegen|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|hproof|gx|wiki';
+export const USAGE_TOPICS = 'install|setup|bootstrap|deps|cmux|auto-review|team|qa-loop|ralph|research|db|codex-app|dfix|design|imagegen|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|hproof|gx|wiki';
 
 export const RECOMMENDED_MCP_SERVERS = [
   {
@@ -252,6 +252,20 @@ export const ROUTES = [
     examples: ['$DB check this migration safely']
   },
   {
+    id: 'MadSKS',
+    command: '$MAD-SKS',
+    mode: 'MADSKS',
+    route: 'explicit scoped database authorization modifier',
+    description: 'Explicit high-risk authorization modifier that can be combined with other $ commands to temporarily widen Supabase MCP DB permissions for that active invocation only; table deletion still requires user confirmation with an approximately 30 second timeout.',
+    requiredSkills: ['mad-sks', 'db-safety-guard', 'pipeline-runner', 'context7-docs', REFLECTION_SKILL_NAME, 'honest-mode'],
+    lifecycle: ['explicit_invocation', 'auto_sealed_permission_scope', 'scoped_db_override', 'table_delete_confirmation_gate', 'permission_deactivation', 'post_route_reflection', 'honest_mode'],
+    context7Policy: 'required',
+    reasoningPolicy: 'high',
+    stopGate: 'mad-sks-gate.json',
+    cliEntrypoint: 'Codex App prompt route only: $MAD-SKS <task>',
+    examples: ['$MAD-SKS $Team Supabase MCP로 main 대상 DB 작업을 수행하되 테이블 삭제는 확인받아', '$DB Supabase 점검 $MAD-SKS']
+  },
+  {
     id: 'GX',
     command: '$GX',
     mode: 'GX',
@@ -316,11 +330,12 @@ export const COMMAND_CATALOG = [
   { name: 'commands', usage: 'sks commands [--json]', description: 'List every user-facing command with a short description.' },
   { name: 'usage', usage: `sks usage [${USAGE_TOPICS}]`, description: 'Print copy-ready workflows for common tasks.' },
   { name: 'quickstart', usage: 'sks quickstart', description: 'Show the shortest safe setup and verification flow.' },
-  { name: 'bootstrap', usage: 'sks bootstrap [--install-scope global|project] [--local-only] [--json]', description: 'Initialize the current project, install SKS Codex App files/skills, check Context7/Codex App/tmux, and print ready true/false.' },
-  { name: 'deps', usage: 'sks deps check|install [tmux|codex|context7|all] [--yes]', description: 'Check or guided-install Node/npm PATH, Codex CLI/App, Context7, Browser Use, Computer Use, tmux, and Homebrew on macOS.' },
+  { name: 'bootstrap', usage: 'sks bootstrap [--install-scope global|project] [--local-only] [--json]', description: 'Initialize the current project, install SKS Codex App files/skills, check Context7/Codex App/cmux, and print ready true/false.' },
+  { name: 'deps', usage: 'sks deps check|install [cmux|codex|context7|all] [--yes]', description: 'Check or guided-install Node/npm PATH, Codex CLI/App, Context7, Browser Use, Computer Use, cmux, and Homebrew on macOS.' },
   { name: 'codex-app', usage: 'sks codex-app [check|open]', description: 'Check Codex App install and first-party MCP/plugin readiness, then show app setup files and examples.' },
-  { name: 'tmux', usage: 'sks tmux [check|status] [--session name] [--no-attach]', description: 'Open the SKS tmux runtime with the ㅅㅋㅅ ASCII status pane and Codex CLI.' },
-  { name: 'auto-review', usage: 'sks auto-review status|enable|start [--high] | sks --Auto-review --high', description: 'Enable Codex automatic approval review and launch SKS tmux with the auto-review profile.' },
+  { name: 'cmux', usage: 'sks cmux [check|status] [--workspace name]', description: 'Open the SKS cmux runtime with the ㅅㅋㅅ ASCII status pane and Codex CLI.' },
+  { name: 'mad', usage: 'sks --mad [--high]', description: 'Open a one-shot cmux Codex CLI workspace with the SKS MAD full-access auto-review profile.' },
+  { name: 'auto-review', usage: 'sks auto-review status|enable|start [--high] | sks --Auto-review --high', description: 'Enable Codex automatic approval review and launch SKS cmux with the auto-review profile.' },
   { name: 'dollar-commands', usage: 'sks dollar-commands [--json]', description: 'List Codex App $ commands such as $DFix and $Team.' },
   { name: 'dfix', usage: 'sks dfix', description: 'Explain $DFix ultralight design/content fix mode.' },
   { name: 'qa-loop', usage: 'sks qa-loop prepare|answer|run|status ...', description: 'Dogfood UI/API as human proxy with safety gates, safe fixes, rechecks, Browser/Computer evidence, report.' },
@@ -377,6 +392,14 @@ export function dollarCommand(prompt) {
   return match ? match[1].toUpperCase() : null;
 }
 
+export function hasMadSksSignal(prompt = '') {
+  return /(?:^|\s)\$MAD-SKS(?:\s|:|$)/i.test(String(prompt || ''));
+}
+
+export function stripMadSksSignal(prompt = '') {
+  return String(prompt || '').replace(/(?:^|\s)\$MAD-SKS(?:\s|:)?/ig, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function stripDollarCommand(prompt) {
   return String(prompt || '').trim().replace(/^\$[A-Za-z][A-Za-z0-9_-]*(?:\s|:)?\s*/, '').trim();
 }
@@ -392,6 +415,15 @@ export function routePrompt(prompt) {
   const command = dollarCommand(prompt);
   const text = String(prompt || '');
   if (command) {
+    if (command === 'MAD-SKS') {
+      const afterModifier = stripMadSksSignal(text);
+      const nestedCommand = dollarCommand(afterModifier);
+      if (nestedCommand) return routeByDollarCommand(nestedCommand) || routeById('MadSKS');
+      if (looksLikeAnswerOnlyRequest(afterModifier)) return routeById('Answer');
+      if (looksLikeFastDesignFix(afterModifier)) return routeById('DFix');
+      if (looksLikeCodeChangingWork(afterModifier) || looksLikeDirectWorkRequest(afterModifier)) return routeById('Team');
+      return routeById('MadSKS');
+    }
     const route = routeByDollarCommand(command) || null;
     if (route?.id === 'SKS' && looksLikeTeamDefaultWork(stripDollarCommand(text))) return routeById('Team');
     return route;
@@ -466,7 +498,7 @@ export function routeRequiresSubagents(route, prompt = '') {
 
 export function reflectionRequiredForRoute(route) {
   const id = String(route?.id || route?.mode || route?.route || route || '').replace(/^\$/, '');
-  return /^(team|qaloop|qa-loop|ralph|research|autoresearch|db|database|gx)$/i.test(id);
+  return /^(team|qaloop|qa-loop|ralph|research|autoresearch|db|database|madsks|mad-sks|gx)$/i.test(id);
 }
 
 export function looksLikeCodeChangingWork(prompt = '') {

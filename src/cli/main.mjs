@@ -14,7 +14,7 @@ import { containsUserQuestion, noQuestionContinuationReason } from '../core/no-q
 import { evaluateDoneGate, defaultDoneGate } from '../core/hproof.mjs';
 import { emitHook } from '../core/hooks-runtime.mjs';
 import { storageReport, enforceRetention, pruneWikiArtifacts } from '../core/retention.mjs';
-import { classifySql, classifyCommand, loadDbSafetyPolicy, safeSupabaseMcpConfig, checkSqlFile, checkDbOperation, scanDbSafety } from '../core/db-safety.mjs';
+import { classifySql, classifyCommand, loadDbSafetyPolicy, safeSupabaseMcpConfig, checkSqlFile, checkDbOperation, scanDbSafety, handleMadSksUserConfirmation } from '../core/db-safety.mjs';
 import { checkHarnessModification, harnessGuardStatus, isHarnessSourceProject } from '../core/harness-guard.mjs';
 import { formatHarnessConflictReport, llmHarnessCleanupPrompt, scanHarnessConflicts } from '../core/harness-conflicts.mjs';
 import { context7Docs, context7Resolve, context7Text, context7Tools } from '../core/context7-client.mjs';
@@ -30,8 +30,8 @@ import { context7Evidence, evaluateStop, recordContext7Evidence, recordSubagentE
 import { TEAM_DECOMPOSITION_ARTIFACT, TEAM_GRAPH_ARTIFACT, TEAM_INBOX_DIR, TEAM_RUNTIME_TASKS_ARTIFACT, teamRuntimePlanMetadata, teamRuntimeRequiredArtifacts, validateTeamRuntimeArtifacts, writeTeamRuntimeArtifacts } from '../core/team-dag.mjs';
 import { appendTeamEvent, formatRoleCounts, initTeamLive, normalizeTeamSpec, parseTeamSpecArgs, parseTeamSpecText, readTeamDashboard, readTeamLive, readTeamTranscriptTail } from '../core/team-live.mjs';
 import { CODEX_APP_DOCS_URL, codexAppIntegrationStatus, formatCodexAppStatus } from '../core/codex-app.mjs';
-import { buildTmuxLaunchPlan, defaultTmuxSessionName, formatTmuxBanner, launchTmuxUi, platformTmuxInstallHint, runTmuxStatus, sanitizeTmuxSessionName, tmuxAvailable } from '../core/tmux-ui.mjs';
-import { autoReviewProfileName, autoReviewStatus, autoReviewSummary, enableAutoReview, disableAutoReview } from '../core/auto-review.mjs';
+import { CMUX_BREW_COMMAND, CMUX_BREW_UPGRADE_COMMAND, buildCmuxLaunchPlan, defaultCmuxWorkspaceName, ensureCmuxInstalled, formatCmuxBanner, launchCmuxTeamView, launchCmuxUi, platformCmuxInstallHint, runCmuxStatus, sanitizeCmuxWorkspaceName, cmuxAvailable } from '../core/cmux-ui.mjs';
+import { autoReviewProfileName, autoReviewStatus, autoReviewSummary, enableAutoReview, disableAutoReview, enableMadHighProfile, madHighProfileName } from '../core/auto-review.mjs';
 
 const flag = (args, name) => args.includes(name);
 const promptOf = (args) => args.filter((x) => !String(x).startsWith('--')).join(' ').trim();
@@ -48,15 +48,16 @@ function installScopeFromArgs(args = [], fallback = 'global') {
 }
 
 export async function main(args) {
+  if (isMadHighLaunch(args)) return madHighCommand(args);
   if (isAutoReviewFlag(args[0])) return autoReviewCommand('start', args.slice(1));
   const [cmd, sub, ...rest] = args;
   const tail = sub === undefined ? [] : [sub, ...rest];
-  if (!cmd) return shouldLaunchTmuxUi() ? tmuxCommand('start', []) : help();
+  if (!cmd) return shouldLaunchCmuxUi() ? cmuxCommand('start', []) : help();
   if (cmd === '--help' || cmd === '-h') return help();
   if (cmd === '--version' || cmd === '-v' || cmd === 'version') return version();
   if (cmd === 'postinstall') return postinstall();
   if (cmd === 'wizard' || cmd === 'ui') return wizard(tail);
-  if (cmd === 'tmux') return String(sub || '').startsWith('--') ? tmuxCommand('start', tail) : tmuxCommand(sub, rest);
+  if (cmd === 'cmux') return String(sub || '').startsWith('--') ? cmuxCommand('start', tail) : cmuxCommand(sub, rest);
   if (cmd === 'auto-review' || cmd === 'autoreview') return autoReviewCommand(sub, rest);
   if (cmd === 'update-check') return updateCheck(tail);
   if (cmd === 'help') return help(tail);
@@ -113,12 +114,13 @@ Usage:
   sks usage [${USAGE_TOPICS}]
   sks quickstart
   sks bootstrap [--install-scope global|project] [--local-only] [--json]
-  sks deps check|install [tmux|codex|context7|all] [--yes] [--json]
+  sks deps check|install [cmux|codex|context7|all] [--yes] [--json]
   sks codex-app
+  sks --mad [--high]
   sks auto-review status|enable|start [--high]
   sks --Auto-review [--high]
-  sks tmux [--session name] [--no-attach]
-  sks tmux status [--once]
+  sks cmux [--workspace name]
+  sks cmux status [--once]
   sks dollar-commands [--json]
   sks dfix
   sks qa-loop prepare "target"
@@ -190,12 +192,16 @@ function shouldShowWizard() {
   return Boolean(input.isTTY && output.isTTY && process.env.SKS_NO_WIZARD !== '1' && process.env.CI !== 'true');
 }
 
-function shouldLaunchTmuxUi() {
-  return Boolean(input.isTTY && output.isTTY && process.env.SKS_NO_TMUX !== '1' && process.env.CI !== 'true');
+function shouldLaunchCmuxUi() {
+  return Boolean(input.isTTY && output.isTTY && process.env.SKS_NO_CMUX !== '1' && process.env.CI !== 'true');
 }
 
 function isAutoReviewFlag(value) {
   return /^--?auto[-_]?review$/i.test(String(value || ''));
+}
+
+function isMadHighLaunch(args = []) {
+  return /^--(?:mad|MAD|mad-sks)$/i.test(String(args[0] || ''));
 }
 
 async function postinstall() {
@@ -235,8 +241,8 @@ async function postinstall() {
   }
   console.log('\nNext:');
   console.log('  sks bootstrap');
-  console.log('\nThis initializes the current project, installs SKS Codex App skills, verifies Codex App/Context7 readiness, and checks tmux/runtime dependencies.');
-  console.log('Dependency repair: sks deps check; sks deps install tmux');
+  console.log('\nThis initializes the current project, installs SKS Codex App skills, verifies Codex App/Context7 readiness, and checks cmux/runtime dependencies.');
+  console.log('Dependency repair: sks deps check; sks deps install cmux');
   console.log('Open runtime after readiness is green: sks\n');
 }
 
@@ -366,14 +372,14 @@ async function ensureGlobalCodexSkillsDuringInstall(opts = {}) {
 async function ensureRelatedCliTools(args = []) {
   const skip = flag(args, '--skip-cli-tools') || process.env.SKS_SKIP_CLI_TOOLS === '1';
   const codex = await ensureCodexCliTool({ skip });
-  const tmux = await tmuxAvailable().catch((err) => ({ ok: false, version: null, error: err.message }));
+  const cmux = await cmuxAvailable().catch((err) => ({ ok: false, version: null, error: err.message }));
   return {
     codex,
-    tmux: {
-      ok: Boolean(tmux.ok),
-      version: tmux.version || null,
-      install_hint: tmux.ok ? null : platformTmuxInstallHint(),
-      error: tmux.error || null
+    cmux: {
+      ok: Boolean(cmux.ok),
+      version: cmux.version || null,
+      install_hint: cmux.ok ? null : platformCmuxInstallHint(),
+      error: cmux.error || null
     }
   };
 }
@@ -383,13 +389,13 @@ async function ensureCodexCliTool({ skip = false } = {}) {
   const before = await getCodexInfo().catch(() => ({}));
   if (before.bin) return { status: 'present', bin: before.bin, version: before.version || null };
   const npmBin = await which('npm');
-  if (!npmBin) return { status: 'failed', error: 'npm not found on PATH; install Codex CLI manually with npm i -g @openai/codex.' };
-  const install = await runProcess(npmBin, ['i', '-g', '@openai/codex'], {
+  if (!npmBin) return { status: 'failed', error: 'npm not found on PATH; install Codex CLI manually with npm i -g @openai/codex@latest.' };
+  const install = await runProcess(npmBin, ['i', '-g', '@openai/codex@latest'], {
     timeoutMs: 120000,
     maxOutputBytes: 128 * 1024
   }).catch((err) => ({ code: 1, stdout: '', stderr: err.message }));
   if (install.code !== 0) {
-    return { status: 'failed', error: `${install.stderr || install.stdout || 'npm i -g @openai/codex failed'}`.trim() };
+    return { status: 'failed', error: `${install.stderr || install.stdout || 'npm i -g @openai/codex@latest failed'}`.trim() };
   }
   const after = await getCodexInfo().catch(() => ({}));
   return {
@@ -484,7 +490,7 @@ async function updateCheck(args = []) {
   if (result.update_available) console.log('Run:     npm i -g sneakoscope');
 }
 
-const DOLLAR_DEFAULT_PIPELINE_TEXT = 'Default pipeline: questions -> $Answer, small design/content -> $DFix, code -> $Team. Use $From-Chat-IMG only for chat screenshot plus original attachments.';
+const DOLLAR_DEFAULT_PIPELINE_TEXT = 'Default pipeline: questions -> $Answer, small design/content -> $DFix, code -> $Team. Use $From-Chat-IMG only for chat screenshot plus original attachments. Use $MAD-SKS only as an explicit scoped DB authorization modifier that can be combined with another $ route.';
 
 function commands(args = []) {
   if (flag(args, '--json')) return console.log(JSON.stringify({ aliases: ['sks', 'sneakoscope'], dollar_commands: DOLLAR_COMMANDS, app_skill_aliases: DOLLAR_COMMAND_ALIASES, commands: COMMAND_CATALOG }, null, 2));
@@ -747,7 +753,36 @@ async function pipelineAnswer(root, args = []) {
 }
 
 async function materializeAfterPipelineAnswer(root, id, dir, mission, route, routeContext = {}, contract = {}) {
-  if (route?.id !== 'Team') return {};
+  const madSksState = await materializeMadSksAuthorization(dir, id, route, routeContext, contract);
+  if (route?.id === 'MadSKS') {
+    await writeJsonAtomic(path.join(dir, 'mad-sks-gate.json'), {
+      schema_version: 1,
+      passed: false,
+      mad_sks_permission_active: true,
+      permissions_deactivated: false,
+      table_delete_confirmation_required: true,
+      table_delete_confirmation_timeout_ms: 30000,
+      contract_hash: contract.sealed_hash || null
+    });
+    await appendJsonlBounded(path.join(dir, 'events.jsonl'), {
+      ts: nowIso(),
+      type: 'mad_sks.scoped_permission_opened',
+      route: route.id,
+      table_delete_confirmation_timeout_ms: 30000
+    });
+    return {
+      phase: 'MADSKS_SCOPED_PERMISSION_ACTIVE',
+      prompt: routeContext.task || mission.prompt || '',
+      state: {
+        mad_sks_active: true,
+        mad_sks_modifier: true,
+        mad_sks_gate_file: 'mad-sks-gate.json',
+        mad_sks_gate_ready: true,
+        table_delete_confirmation_timeout_ms: 30000
+      }
+    };
+  }
+  if (route?.id !== 'Team') return Object.keys(madSksState).length ? { state: madSksState } : {};
   const spec = parseTeamSpecText(routeContext.task || mission.prompt || '');
   const prompt = spec.prompt || routeContext.task || mission.prompt || '';
   const fromChatImgRequired = hasFromChatImgSignal(prompt);
@@ -798,8 +833,39 @@ async function materializeAfterPipelineAnswer(root, id, dir, mission, route, rou
       team_plan_ready: true,
       team_graph_ready: runtime.ok,
       team_live_ready: true,
-      from_chat_img_required: fromChatImgRequired
+      from_chat_img_required: fromChatImgRequired,
+      ...madSksState
     }
+  };
+}
+
+async function materializeMadSksAuthorization(dir, id, route, routeContext = {}, contract = {}) {
+  if (!routeContext.mad_sks_authorization || route?.id === 'MadSKS') return {};
+  const gateFile = route?.stopGate || 'done-gate.json';
+  const artifact = {
+    schema_version: 1,
+    mission_id: id,
+    route: route?.command || route?.id || null,
+    status: 'active',
+    active_only_for_current_route: true,
+    deactivates_when_gate_passed: gateFile,
+    table_delete_confirmation_required: true,
+    table_delete_confirmation_timeout_ms: 30000,
+    contract_hash: contract.sealed_hash || null
+  };
+  await writeJsonAtomic(path.join(dir, 'mad-sks-authorization.json'), artifact);
+  await appendJsonlBounded(path.join(dir, 'events.jsonl'), {
+    ts: nowIso(),
+    type: 'mad_sks.modifier_authorization_opened',
+    route: route?.id || null,
+    gate: gateFile,
+    table_delete_confirmation_timeout_ms: 30000
+  });
+  return {
+    mad_sks_active: true,
+    mad_sks_modifier: true,
+    mad_sks_gate_file: gateFile,
+    table_delete_confirmation_timeout_ms: 30000
   };
 }
 
@@ -945,24 +1011,24 @@ function readNumberOption(args, name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-async function tmuxCommand(sub = 'start', args = []) {
+async function cmuxCommand(sub = 'start', args = []) {
   const action = sub || 'start';
   if (action === 'status' || action === 'banner') {
     if (flag(args, '--json')) {
       const status = await codexAppIntegrationStatus();
       return console.log(JSON.stringify(status, null, 2));
     }
-    await runTmuxStatus(action === 'banner' ? ['--once', ...args] : args);
+    await runCmuxStatus(action === 'banner' ? ['--once', ...args] : args);
     return;
   }
   if (action === 'check') {
     const root = await projectRoot();
-    const plan = await buildTmuxLaunchPlan({ root, session: readOption(args, '--session', null) });
+    const plan = await buildCmuxLaunchPlan({ root, session: readOption(args, '--session', null) });
     if (flag(args, '--json')) return console.log(JSON.stringify(plan, null, 2));
-    console.log(formatTmuxBanner(plan.app));
+    console.log(formatCmuxBanner(plan.app));
     console.log('');
-    console.log(`tmux:      ${plan.tmux.ok ? 'ok' : 'missing'} ${plan.tmux.version || ''}`.trim());
-    console.log(`Session:   ${plan.session}`);
+    console.log(`cmux:      ${plan.cmux.ok ? 'ok' : 'missing'} ${plan.cmux.version || ''}`.trim());
+    console.log(`Workspace: ${plan.workspace}`);
     console.log(`Project:   ${plan.root}`);
     console.log(`Ready:     ${plan.ready ? 'yes' : 'no'}`);
     if (!plan.ready) {
@@ -972,9 +1038,81 @@ async function tmuxCommand(sub = 'start', args = []) {
     }
     return;
   }
-  if (['start', 'attach', 'connect', 'open'].includes(action)) return launchTmuxUi(args);
-  console.error('Usage: sks tmux [check|status|banner] [--session name] [--no-attach]');
+  if (['start', 'attach', 'connect', 'open'].includes(action)) return launchCmuxUi(args);
+  console.error('Usage: sks cmux [check|status|banner] [--workspace name]');
   process.exitCode = 1;
+}
+
+async function madHighCommand(args = []) {
+  const cleanArgs = args.filter((arg) => !['--mad', '--MAD', '--mad-sks', '--high', '--no-auto-install-cmux'].includes(arg));
+  if (flag(args, '--json')) {
+    const profile = await enableMadHighProfile();
+    return console.log(JSON.stringify(profile, null, 2));
+  }
+  const update = await maybePromptSksUpdateForMad(args);
+  if (update.status === 'updated') {
+    console.log(`SKS updated from ${PACKAGE_VERSION} to ${update.latest}. Rerun: sks --mad`);
+    return;
+  }
+  if (update.status === 'failed') {
+    console.error(`SKS update failed: ${update.error}`);
+    process.exitCode = 1;
+    return;
+  }
+  const deps = await ensureMadLaunchDependencies(args);
+  if (!deps.ready) {
+    console.error('SKS MAD launch blocked by missing dependencies.');
+    for (const action of deps.actions) printDepsInstallAction(action);
+    process.exitCode = 1;
+    return;
+  }
+  const profile = await enableMadHighProfile();
+  console.log(`SKS MAD auto-review profile ready: ${madHighProfileName()}`);
+  console.log('Scope: explicit cmux launch only; full access uses Codex auto_review approvals when approval prompts are raised.');
+  const workspace = readOption(cleanArgs, '--workspace', readOption(cleanArgs, '--session', `sks-mad-${defaultCmuxWorkspaceName(process.cwd())}`));
+  return launchCmuxUi([...cleanArgs, '--workspace', workspace], {
+    codexArgs: ['--profile', profile.profile_name],
+    autoInstallCmux: !flag(args, '--no-auto-install-cmux'),
+    conciseBlockers: true
+  });
+}
+
+async function maybePromptSksUpdateForMad(args = []) {
+  if (flag(args, '--json') || flag(args, '--skip-update-check') || process.env.SKS_SKIP_UPDATE_CHECK === '1') return { status: 'skipped' };
+  const latest = await npmPackageVersion('sneakoscope');
+  if (!latest.version || compareVersions(latest.version, PACKAGE_VERSION) <= 0) return { status: 'current', latest: latest.version || null, error: latest.error || null };
+  const command = 'npm i -g sneakoscope@latest';
+  if (flag(args, '--yes') || flag(args, '-y')) return installSksLatest(command, latest.version);
+  if (!canAskYesNo()) {
+    console.log(`SKS update available: ${PACKAGE_VERSION} -> ${latest.version}. Run: ${command}`);
+    return { status: 'available', latest: latest.version, command };
+  }
+  const answer = (await askPostinstallQuestion(`SKS ${PACKAGE_VERSION} -> ${latest.version} update before MAD launch? [Y/n] `)).trim();
+  const yes = answer === '' || /^(y|yes|예|네|응)$/i.test(answer);
+  if (!yes) return { status: 'skipped_by_user', latest: latest.version, command };
+  return installSksLatest(command, latest.version);
+}
+
+async function installSksLatest(command, latestVersion) {
+  const npm = await which('npm').catch(() => null);
+  if (!npm) return { status: 'failed', latest: latestVersion, command, error: 'npm not found on PATH' };
+  const install = await runProcess(npm, ['i', '-g', 'sneakoscope@latest'], { timeoutMs: 180000, maxOutputBytes: 128 * 1024 }).catch((err) => ({ code: 1, stdout: '', stderr: err.message }));
+  if (install.code !== 0) return { status: 'failed', latest: latestVersion, command, error: `${install.stderr || install.stdout || command + ' failed'}`.trim() };
+  return { status: 'updated', latest: latestVersion, command };
+}
+
+async function ensureMadLaunchDependencies(args = []) {
+  const actions = [];
+  if (!flag(args, '--skip-cli-tools')) {
+    const codex = await getCodexInfo().catch(() => ({}));
+    if (!codex.bin) actions.push(await installCodexDependency(args, { prompt: 'Codex CLI missing. Install latest Codex CLI with npm i -g @openai/codex@latest?' }));
+  }
+  if (!flag(args, '--no-auto-install-cmux')) {
+    const cmux = await cmuxAvailable().catch(() => ({ ok: false }));
+    if (!cmux.ok && !cmux.bin) actions.push(await installCmuxDependency(args));
+  }
+  const status = await depsStatus(await projectRoot());
+  return { ready: Boolean(status.codex_cli.ok && (status.cmux.ok || status.cmux.bin)), actions, status };
 }
 
 async function deps(sub = 'check', args = []) {
@@ -988,7 +1126,7 @@ async function deps(sub = 'check', args = []) {
     return;
   }
   if (action === 'install') return depsInstall(args);
-  console.error('Usage: sks deps check|install [tmux|codex|context7|all] [--yes] [--json]');
+  console.error('Usage: sks deps check|install [cmux|codex|context7|all] [--yes] [--json]');
   process.exitCode = 1;
 }
 
@@ -998,7 +1136,7 @@ async function depsStatus(root = null, opts = {}) {
   const codex = opts.codex || await getCodexInfo().catch(() => ({}));
   const app = opts.codexApp || await codexAppIntegrationStatus({ codex });
   const context7 = opts.context7 || await checkContext7(root);
-  const tmux = opts.tmux || await tmuxAvailable().catch((err) => ({ ok: false, version: null, error: err.message }));
+  const cmux = opts.cmux || await cmuxAvailable().catch((err) => ({ ok: false, version: null, error: err.message }));
   const brew = process.platform === 'darwin' ? await which('brew').catch(() => null) : null;
   const globalBin = await discoverGlobalSksCommand();
   const npmPrefix = npmBin ? await runProcess(npmBin, ['prefix', '-g'], { timeoutMs: 8000, maxOutputBytes: 4096 }).catch(() => null) : null;
@@ -1006,10 +1144,10 @@ async function depsStatus(root = null, opts = {}) {
   const npmPrefixDir = npmPrefix?.code === 0 ? npmPrefix.stdout.trim().split(/\r?\n/).pop() : null;
   const npmBinDir = npmPrefixDir ? (process.platform === 'win32' ? npmPrefixDir : path.join(npmPrefixDir, 'bin')) : null;
   const nodeOk = Number(process.versions.node.split('.')[0]) >= 20;
-  const homebrewNeeded = process.platform === 'darwin' && !tmux.ok;
+  const homebrewNeeded = process.platform === 'darwin' && !cmux.ok;
   return {
     root,
-    ready: Boolean(nodeOk && npmBin && globalBin && codex.bin && app.ok && context7.ok && tmux.ok),
+    ready: Boolean(nodeOk && npmBin && globalBin && codex.bin && context7.ok && cmux.ok),
     node: { ok: nodeOk, version: process.version },
     npm: { ok: Boolean(npmBin), bin: npmBin, global_bin_dir: npmBinDir, global_bin_on_path: npmBinDir ? pathText.split(path.delimiter).includes(npmBinDir) : null },
     sneakoscope: { ok: Boolean(globalBin), bin: globalBin },
@@ -1018,13 +1156,13 @@ async function depsStatus(root = null, opts = {}) {
     context7,
     browser_use: { ok: app.mcp.has_browser_use, cache: app.plugins.browser_use_cache },
     computer_use: { ok: app.mcp.has_computer_use, cache: app.plugins.computer_use_cache },
-    tmux: { ok: Boolean(tmux.ok), version: tmux.version || null, install_hint: tmux.ok ? null : platformTmuxInstallHint(), error: tmux.error || null },
-    homebrew: process.platform === 'darwin' ? { ok: Boolean(brew), bin: brew, required_for_tmux_install: homebrewNeeded } : { ok: null, bin: null, required_for_tmux_install: false },
-    next_actions: depsNextActions({ npmBin, globalBin, codex, app, context7, tmux, brew, nodeOk })
+    cmux: { ok: Boolean(cmux.ok), bin: cmux.bin || null, version: cmux.version || null, install_hint: cmux.ok ? null : platformCmuxInstallHint(), error: cmux.error || null },
+    homebrew: process.platform === 'darwin' ? { ok: Boolean(brew), bin: brew, required_for_cmux_install: homebrewNeeded } : { ok: null, bin: null, required_for_cmux_install: false },
+    next_actions: depsNextActions({ npmBin, globalBin, codex, app, context7, cmux, brew, nodeOk })
   };
 }
 
-function depsNextActions({ npmBin, globalBin, codex, app, context7, tmux, brew, nodeOk }) {
+function depsNextActions({ npmBin, globalBin, codex, app, context7, cmux, brew, nodeOk }) {
   const out = [];
   if (!nodeOk) out.push('Install Node.js 20.11+.');
   if (!npmBin) out.push('Install npm or use a Node.js distribution that includes npm.');
@@ -1032,7 +1170,7 @@ function depsNextActions({ npmBin, globalBin, codex, app, context7, tmux, brew, 
   if (!codex.bin) out.push('Run: sks deps install codex');
   if (!context7.ok) out.push('Run: sks deps install context7');
   if (!app.ok) out.push('Run: sks codex-app check');
-  if (!tmux.ok) out.push(process.platform === 'darwin' && !brew ? 'Install Homebrew, then run: sks deps install tmux' : 'Run: sks deps install tmux');
+  if (!cmux.ok) out.push(process.platform === 'darwin' && !brew ? 'Install Homebrew, then run: sks deps install cmux' : 'Run: sks deps install cmux');
   return out;
 }
 
@@ -1047,7 +1185,7 @@ function printDepsStatus(status) {
   console.log(`Context7:    ${status.context7.ok ? 'ok' : 'missing'}`);
   console.log(`Browser Use: ${status.browser_use.ok ? 'ok' : 'missing'}`);
   console.log(`Computer Use:${status.computer_use.ok ? ' ok' : ' missing'}`);
-  console.log(`tmux:        ${status.tmux.ok ? 'ok' : 'missing'} ${status.tmux.version || ''}`.trimEnd());
+  console.log(`cmux:        ${status.cmux.ok ? 'ok' : 'missing'} ${status.cmux.version || ''}`.trimEnd());
   if (process.platform === 'darwin') console.log(`Homebrew:    ${status.homebrew.ok ? 'ok' : 'missing'} ${status.homebrew.bin || ''}`.trimEnd());
   console.log(`Ready:       ${status.ready ? 'true' : 'false'}`);
   if (status.next_actions.length) {
@@ -1059,11 +1197,11 @@ function printDepsStatus(status) {
 async function depsInstall(args = []) {
   const root = await projectRoot();
   const target = positionalArgs(args)[0] || 'all';
-  const wants = target === 'all' ? ['codex', 'context7', 'tmux'] : [target];
+  const wants = target === 'all' ? ['codex', 'context7', 'cmux'] : [target];
   const actions = [];
   if (wants.includes('codex')) actions.push(await installCodexDependency(args));
   if (wants.includes('context7')) actions.push(await installContext7Dependency(root));
-  if (wants.includes('tmux')) actions.push(await installTmuxDependency(args));
+  if (wants.includes('cmux')) actions.push(await installCmuxDependency(args));
   const status = await depsStatus(root);
   const result = { target, actions, status };
   if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
@@ -1073,10 +1211,11 @@ async function depsInstall(args = []) {
   if (!status.ready) process.exitCode = 1;
 }
 
-async function installCodexDependency(args = []) {
+async function installCodexDependency(args = [], opts = {}) {
   const before = await getCodexInfo().catch(() => ({}));
   if (before.bin) return { target: 'codex', status: 'present', bin: before.bin, version: before.version || null };
-  if (!await confirmInstall('Install Codex CLI with npm i -g @openai/codex?', args)) return { target: 'codex', status: 'needs_approval', command: 'npm i -g @openai/codex' };
+  const command = 'npm i -g @openai/codex@latest';
+  if (!await confirmInstall(opts.prompt || `Install Codex CLI with ${command}?`, args)) return { target: 'codex', status: 'needs_approval', command };
   return { target: 'codex', ...(await ensureCodexCliTool()) };
 }
 
@@ -1087,24 +1226,36 @@ async function installContext7Dependency(root) {
   return { target: 'context7', status: changed ? 'project_configured' : 'already_configured', command: 'sks context7 check' };
 }
 
-async function installTmuxDependency(args = []) {
-  const before = await tmuxAvailable().catch(() => ({ ok: false }));
-  if (before.ok) return { target: 'tmux', status: 'present', version: before.version || null };
+async function installCmuxDependency(args = []) {
+  const before = await cmuxAvailable().catch(() => ({ ok: false }));
+  if (before.ok) return { target: 'cmux', status: 'present', version: before.version || null };
   if (process.platform === 'darwin') {
     const brew = await which('brew').catch(() => null);
-    if (!brew) return { target: 'tmux', status: 'homebrew_missing', command: '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew install tmux' };
-    if (flag(args, '--dry-run')) return { target: 'tmux', status: 'dry_run', command: `${brew} install tmux` };
-    if (!await confirmInstall(`Install tmux with Homebrew (${brew} install tmux)?`, args)) return { target: 'tmux', status: 'needs_approval', command: 'brew install tmux' };
-    const run = await runProcess(brew, ['install', 'tmux'], { timeoutMs: 180000, maxOutputBytes: 128 * 1024 });
-    return { target: 'tmux', status: run.code === 0 ? 'installed' : 'failed', command: 'brew install tmux', code: run.code, error: run.code === 0 ? null : `${run.stderr || run.stdout || 'brew install tmux failed'}`.trim() };
+    const command = CMUX_BREW_COMMAND;
+    if (!brew) return { target: 'cmux', status: 'homebrew_missing', command: `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && ${command}` };
+    if (flag(args, '--dry-run')) return { target: 'cmux', status: 'dry_run', command };
+    if (!await confirmInstall(`Install/update latest cmux with Homebrew (${command}; ${CMUX_BREW_UPGRADE_COMMAND} if already installed)?`, args)) return { target: 'cmux', status: 'needs_approval', command };
+    const installed = await ensureCmuxInstalled({ autoInstall: true });
+    return {
+      target: 'cmux',
+      status: installed.status,
+      version: installed.cmux?.version || null,
+      command,
+      code: installed.code,
+      error: installed.error || null
+    };
   }
-  return { target: 'tmux', status: 'manual_required', command: platformTmuxInstallHint() };
+  return { target: 'cmux', status: 'manual_required', command: platformCmuxInstallHint() };
 }
 
 async function confirmInstall(question, args = []) {
   if (flag(args, '--yes') || flag(args, '-y')) return true;
-  if (!input.isTTY || !output.isTTY || process.env.CI === 'true') return false;
+  if (!canAskYesNo()) return false;
   return /^(y|yes|예|네|응)$/i.test((await askPostinstallQuestion(`${question} [y/N] `)).trim());
+}
+
+function canAskYesNo() {
+  return Boolean(input.isTTY && output.isTTY && process.env.CI !== 'true');
 }
 
 function printDepsInstallAction(action) {
@@ -1144,8 +1295,8 @@ async function autoReviewCommand(sub = 'status', args = []) {
     if (flag(args, '--json')) return console.log(JSON.stringify(status, null, 2));
     console.log(`SKS Auto-Review enabled: ${profile}`);
     const sessionArg = readOption(cleanArgs, '--session', null);
-    const session = sessionArg || sanitizeTmuxSessionName(`${profile}-${defaultTmuxSessionName(process.cwd())}`);
-    return launchTmuxUi([...cleanArgs, '--session', session], { codexArgs: ['--profile', profile] });
+    const session = sessionArg || sanitizeCmuxWorkspaceName(`${profile}-${defaultCmuxWorkspaceName(process.cwd())}`);
+    return launchCmuxUi([...cleanArgs, '--session', session], { codexArgs: ['--profile', profile] });
   }
   console.error('Usage: sks auto-review status|enable|disable|start [--high] [--json]');
   console.error('Alias: sks --Auto-review [--high]');
@@ -1160,8 +1311,8 @@ First install and bootstrap this project:
   sks bootstrap
   sks
 
-If tmux is missing:
-  sks deps install tmux
+If cmux is missing:
+  sks deps install cmux
 
 Initialize this project for CLI and Codex App:
   sks setup --bootstrap
@@ -1174,7 +1325,7 @@ Open from terminal:
 Verify:
   sks deps check
   sks codex-app check
-  sks tmux check
+  sks cmux check
   sks auto-review status
   sks doctor --fix
   sks context7 check
@@ -1228,7 +1379,7 @@ async function codexAppHelp(args = []) {
     'ㅅㅋㅅ Codex App', '',
     formatCodexAppStatus(status), '',
     `Skills: project=${skills.project.ok ? 'ok' : `missing ${skills.project.missing.length}`} global=${skills.global.ok ? 'ok' : `missing ${skills.global.missing.length}`}`, '',
-    'Setup:', '  sks bootstrap', '  sks deps check', '  sks codex-app check', '  sks tmux check', '',
+    'Setup:', '  sks bootstrap', '  sks deps check', '  sks codex-app check', '  sks cmux check', '',
     'Generated files:', '  .codex/config.toml', '  .codex/hooks.json', '  .agents/skills/', '  .codex/agents/', '  .codex/SNEAKOSCOPE.md', '  AGENTS.md', '',
     'Prompt routes:', formatDollarCommandsCompact('  ')
   ].join('\n'));
@@ -1260,11 +1411,11 @@ Examples:
 function usage(args = []) {
   const topic = String(args[0] || 'overview').toLowerCase();
   const blocks = {
-    overview: ['ㅅㅋㅅ Usage', '', 'Discover:', '  sks commands', '  sks quickstart', '  sks bootstrap', '  sks deps check', '  sks codex-app check', '  sks tmux check', '  sks dollar-commands', '', `Topics: ${USAGE_TOPICS}`],
+    overview: ['ㅅㅋㅅ Usage', '', 'Discover:', '  sks commands', '  sks quickstart', '  sks bootstrap', '  sks deps check', '  sks codex-app check', '  sks cmux check', '  sks dollar-commands', '', `Topics: ${USAGE_TOPICS}`],
     install: ['Install', '', '  npm i -g sneakoscope', '  sks bootstrap', '  sks', '', 'Fallback:', '  npx -y -p sneakoscope sks bootstrap', '', 'Project:', '  npm i -D sneakoscope', '  npx sks setup --install-scope project'],
-    bootstrap: ['Bootstrap', '', '  sks bootstrap', '  sks setup --bootstrap', '', 'Creates project SKS files, Codex App skills/hooks/config, state/guard files, then checks Codex App, Context7, and tmux.'],
-    deps: ['Dependencies', '', '  sks deps check [--json]', '  sks deps install [tmux|codex|context7|all] [--yes]', '', 'tmux on macOS uses Homebrew only after approval.'],
-    tmux: ['tmux', '', '  sks', '  sks tmux check', '  sks tmux status --once', '  sks deps install tmux'],
+    bootstrap: ['Bootstrap', '', '  sks bootstrap', '  sks setup --bootstrap', '', 'Creates project SKS files, Codex App skills/hooks/config, state/guard files, then checks Codex App, Context7, and cmux.'],
+    deps: ['Dependencies', '', '  sks deps check [--json]', '  sks deps install [cmux|codex|context7|all] [--yes]', '', 'cmux on macOS uses Homebrew only after approval.'],
+    cmux: ['cmux', '', '  sks', '  sks cmux check', '  sks cmux status --once', '  sks deps install cmux'],
     team: ['Team', '', '  sks team "task" executor:5 reviewer:2 user:1', '  sks team watch latest', '', '$Team runs questions -> contract -> scouts -> TriWiki attention -> debate -> runtime graph/inbox -> fresh executors -> review -> cleanup -> reflection -> Honest.'],
     'qa-loop': ['QA-LOOP', '', '  sks qa-loop prepare "QA this app"', '  sks qa-loop answer <MISSION_ID> answers.json', '  sks qa-loop run <MISSION_ID> --max-cycles 8', '', 'Report: YYYY-MM-DD-v<version>-qa-report.md'],
     ralph: ['Ralph', '', '  sks ralph prepare "task"', '  sks ralph answer <MISSION_ID> answers.json', '  sks ralph run <MISSION_ID> --max-cycles 8'],
@@ -1293,13 +1444,13 @@ async function bootstrap(args = []) {
   const cliTools = await ensureRelatedCliTools(args);
   const context7Status = await checkContext7(root);
   const appRuntime = await codexAppIntegrationStatus({ codex: await getCodexInfo().catch(() => ({})) });
-  const deps = await depsStatus(root, { context7: context7Status, codexApp: appRuntime, tmux: cliTools.tmux });
+  const deps = await depsStatus(root, { context7: context7Status, codexApp: appRuntime, cmux: cliTools.cmux });
   const install = await installStatus(root, installScope, { globalCommand });
   const versioningInfo = await versioningStatus(root);
   const skills = await checkRequiredSkills(root);
   const guard = await harnessGuardStatus(root);
   const files = await codexAppFilesStatus(root, skills, versioningInfo);
-  const ready = Boolean(!conflicts.hard_block && install.ok && files.ok && skills.ok && guard.ok && context7Status.ok && appRuntime.ok && deps.tmux.ok);
+  const ready = Boolean(!conflicts.hard_block && install.ok && files.ok && skills.ok && guard.ok && context7Status.ok && appRuntime.ok && deps.cmux.ok);
   const result = {
     root,
     ready,
@@ -1310,7 +1461,7 @@ async function bootstrap(args = []) {
     codex_app: appRuntime,
     global_skills: globalSkills,
     context7: context7Status,
-    tmux: deps.tmux,
+    cmux: deps.cmux,
     harness_guard: guard,
     deps,
     next: ready ? ['sks', '$Team implement ...', '$QA-LOOP run ...'] : deps.next_actions
@@ -1323,7 +1474,7 @@ async function bootstrap(args = []) {
   console.log(`Hooks:         ${files.hooks.ok ? 'ok' : 'missing'}`);
   console.log(`Harness guard: ${guard.ok ? 'ok' : 'blocked'}`);
   console.log(`Context7:      ${context7Status.ok ? 'ok' : 'missing'}`);
-  console.log(`tmux:          ${deps.tmux.ok ? 'ok' : 'missing'}${deps.tmux.version ? ` ${deps.tmux.version}` : ''}`);
+  console.log(`cmux:          ${deps.cmux.ok ? 'ok' : 'missing'}${deps.cmux.version ? ` ${deps.cmux.version}` : ''}`);
   console.log(`ready:         ${ready ? 'true' : 'false'}`);
   if (!ready) {
     console.log('\nNext:');
@@ -1402,7 +1553,7 @@ async function setup(args) {
   console.log('ㅅㅋㅅ Setup\n');
   console.log(`Project:   ${root}`);
   console.log(`Install:   ${install.ok ? 'ok' : 'missing'} ${install.scope} (${install.command_prefix})`);
-  console.log(`CLI tools: Codex ${formatCodexCliToolStatus(cliTools.codex)}; tmux ${cliTools.tmux.ok ? `ok ${cliTools.tmux.version || ''}`.trim() : 'missing'}`);
+  console.log(`CLI tools: Codex ${formatCodexCliToolStatus(cliTools.codex)}; cmux ${cliTools.cmux.ok ? `ok ${cliTools.cmux.version || ''}`.trim() : 'missing'}`);
   console.log(`Hooks:     ${path.relative(root, hooksPath)}`);
   console.log(`Version:   ${versioningInfo.enabled ? (versioningInfo.hook_installed ? 'auto-bump enabled' : 'auto-bump hook missing') : 'not enabled'}${versioningInfo.package_version ? ` (${versioningInfo.package_version})` : ''}`);
   if (localOnly) console.log('Git:       local-only (.git/info/exclude; user AGENTS preserved, SKS managed block refreshed)');
@@ -1414,10 +1565,10 @@ async function setup(args) {
   console.log(`Next:      sks context7 check; sks selftest --mock; sks commands; sks dollar-commands`);
   if (cliTools.codex.status === 'failed') console.log(`\nCodex CLI install failed. Run manually: npm i -g @openai/codex. ${cliTools.codex.error || ''}`.trim());
   if (cliTools.codex.status === 'installed_not_on_path') console.log(`\nCodex CLI installed but not on PATH. ${cliTools.codex.hint}`);
-  if (!cliTools.tmux.ok) console.log(`\ntmux missing. Install: ${cliTools.tmux.install_hint}`);
+  if (!cliTools.cmux.ok) console.log(`\ncmux missing. Install: ${cliTools.cmux.install_hint}`);
   if (!install.ok && install.scope === 'global') console.log('\nGlobal command missing. Run: npm i -g sneakoscope');
   if (!install.ok && install.scope === 'project') console.log('\nProject package missing. Run: npm i -D sneakoscope');
-  if (!appRuntime.ok) console.log('\nCodex App and first-party Browser Use/Computer Use tools are required for SKS tmux/QA parity. Run: sks codex-app check');
+  if (!appRuntime.ok) console.log('\nCodex App and first-party Browser Use/Computer Use tools are required for SKS cmux/QA parity. Run: sks codex-app check');
 }
 
 function formatCodexCliToolStatus(status = {}) {
@@ -1484,7 +1635,7 @@ async function doctor(args) {
   const dbScan = await scanDbSafety(root).catch((err) => ({ ok: false, findings: [{ id: 'db_safety_scan_failed', severity: 'high', reason: err.message }] }));
   const context7Status = await checkContext7(root);
   const appRuntime = await codexAppIntegrationStatus({ codex });
-  const tmuxStatus = await tmuxAvailable().catch((err) => ({ ok: false, version: null, error: err.message }));
+  const cmuxStatus = await cmuxAvailable().catch((err) => ({ ok: false, version: null, error: err.message }));
   const skillStatus = await checkRequiredSkills(root);
   const globalSkillStatus = await checkRequiredSkills(null, globalCodexSkillsRoot());
   const guardStatus = await harnessGuardStatus(root);
@@ -1505,7 +1656,7 @@ async function doctor(args) {
     sneakoscope: { ok: await exists(path.join(root, '.sneakoscope')) },
     context7: context7Status,
     codex_app_runtime: appRuntime,
-    runtime: { tmux: { ok: Boolean(tmuxStatus.ok), version: tmuxStatus.version || null, install_hint: tmuxStatus.ok ? null : platformTmuxInstallHint(), error: tmuxStatus.error || null } },
+    runtime: { cmux: { ok: Boolean(cmuxStatus.ok), version: cmuxStatus.version || null, install_hint: cmuxStatus.ok ? null : platformCmuxInstallHint(), error: cmuxStatus.error || null } },
     harness_guard: guardStatus,
     versioning: versioningInfo,
     db_guard: { ok: dbPolicyExists && dbScan.ok, policy: dbPolicyExists ? await loadDbSafetyPolicy(root) : null, scan: dbScan },
@@ -1517,7 +1668,7 @@ async function doctor(args) {
     },
     package: { bytes: pkgBytes, human: formatBytes(pkgBytes) }, storage
   };
-  result.ready = !result.harness_conflicts.hard_block && nodeOk && Boolean(codex.bin) && install.ok && result.sneakoscope.ok && result.context7.ok && appRuntime.ok && result.runtime.tmux.ok && result.harness_guard.ok && result.versioning.ok && result.db_guard.ok && result.codex_app.ok && result.skills.ok && result.global_skills.ok;
+  result.ready = !result.harness_conflicts.hard_block && nodeOk && Boolean(codex.bin) && install.ok && result.sneakoscope.ok && result.context7.ok && appRuntime.ok && result.runtime.cmux.ok && result.harness_guard.ok && result.versioning.ok && result.db_guard.ok && result.codex_app.ok && result.skills.ok && result.global_skills.ok;
   if (result.harness_conflicts.hard_block) process.exitCode = 1;
   if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
   console.log('ㅅㅋㅅ Doctor\n');
@@ -1533,7 +1684,7 @@ async function doctor(args) {
   console.log(`State:     ${result.sneakoscope.ok ? 'ok' : 'missing .sneakoscope'}`);
   console.log(`Context7:  ${result.context7.ok ? 'ok' : 'missing MCP config'} project=${result.context7.project.ok ? 'ok' : 'missing'} global=${result.context7.global.ok ? 'ok' : 'missing'}`);
   console.log(`App tools: ${appRuntime.ok ? 'ok' : 'needs setup'} Codex App=${appRuntime.app.installed ? 'ok' : 'missing'} Browser Use=${appRuntime.mcp.has_browser_use ? 'ok' : 'missing'} Computer Use=${appRuntime.mcp.has_computer_use ? 'ok' : 'missing'}`);
-  console.log(`tmux:      ${result.runtime.tmux.ok ? 'ok' : 'missing'} ${result.runtime.tmux.version || ''}`.trimEnd());
+  console.log(`cmux:      ${result.runtime.cmux.ok ? 'ok' : 'missing'} ${result.runtime.cmux.version || ''}`.trimEnd());
   console.log(`Guard:     ${result.harness_guard.ok ? 'ok' : 'blocked'}${result.harness_guard.source_exception ? ' source-exception' : ''}`);
   console.log(`Version:   ${result.versioning.ok ? 'ok' : 'missing'}${result.versioning.enabled ? ` ${result.versioning.package_version || ''}` : ` ${result.versioning.reason || 'disabled'}`}`);
   console.log(`DB Guard:  ${result.db_guard.ok ? 'ok' : 'blocked'} ${dbScan.findings?.length || 0} finding(s)`);
@@ -1550,13 +1701,13 @@ async function doctor(args) {
   if (result.harness_conflicts.hard_block) console.log(`\n${formatHarnessConflictReport(conflictScan)}`);
   if (!result.context7.ok) console.log('Context7 MCP missing. Run: sks context7 setup --scope project');
   if (!appRuntime.ok) console.log('Codex App or first-party MCP/plugin tools missing. Run: sks codex-app check');
-  if (!result.runtime.tmux.ok) console.log('tmux missing. Run: sks deps install tmux');
+  if (!result.runtime.cmux.ok) console.log('cmux missing. Run: sks deps install cmux');
   if (!result.harness_guard.ok) console.log('Harness guard failed. Run: sks setup from a real terminal, then sks guard check.');
   if (!result.versioning.ok) console.log('Versioning hook missing. Run: sks versioning hook, or sks doctor --fix.');
   if (!result.skills.ok) console.log(`Missing skills: ${result.skills.missing.join(', ')}. Run: sks setup`);
   if (!result.global_skills.ok) console.log(`Missing global $ skills: ${result.global_skills.missing.join(', ')}. Run: npm i -g sneakoscope, or sks setup from a non-local-only run.`);
   const blocked = [];
-  if (!result.runtime.tmux.ok) blocked.push(['tmux is missing', 'sks deps install tmux']);
+  if (!result.runtime.cmux.ok) blocked.push(['cmux is missing', 'sks deps install cmux']);
   if (!appRuntime.ok) blocked.push(['Codex App or first-party MCP/plugin tools need setup', 'sks codex-app check']);
   if (blocked.length) {
     console.log('\nBlocked:');
@@ -1679,6 +1830,8 @@ async function npmGlobalSksBin() {
 }
 
 async function npmPackageVersion(name) {
+  const envName = `SKS_NPM_VIEW_${String(name || '').replace(/[^A-Za-z0-9]+/g, '_').toUpperCase()}_VERSION`;
+  if (process.env[envName]) return { version: process.env[envName] };
   const npm = await which('npm').catch(() => null);
   if (!npm) return { error: 'npm not found' };
   const result = await runProcess(npm, ['view', name, 'version'], { timeoutMs: 5000, maxOutputBytes: 4096 });
@@ -2167,7 +2320,12 @@ async function selftest() {
   if (!bootstrapResult.project_setup?.ok || typeof bootstrapResult.ready !== 'boolean') throw new Error('selftest failed: bootstrap json did not report project setup and ready boolean');
   const depsCheck = await runProcess(process.execPath, [path.join(packageRoot(), 'bin', 'sks.mjs'), 'deps', 'check', '--json'], { cwd: bootstrapJsonTmp, env: { HOME: path.join(bootstrapJsonTmp, 'home') }, timeoutMs: 20000, maxOutputBytes: 256 * 1024 });
   const depsResult = JSON.parse(depsCheck.stdout);
-  if (!depsResult.node?.ok || !('tmux' in depsResult) || !('homebrew' in depsResult)) throw new Error('selftest failed: deps check json missing expected fields');
+  if (!depsResult.node?.ok || !('cmux' in depsResult) || !('homebrew' in depsResult)) throw new Error('selftest failed: deps check json missing expected fields');
+  const madProfilePath = path.join(tmp, 'mad-codex-config.toml');
+  const madProfile = await enableMadHighProfile({ configPath: madProfilePath });
+  const madProfileText = await safeReadText(madProfilePath);
+  if (madProfile.profile_name !== 'sks-mad-high' || !madProfileText.includes('sandbox_mode = "danger-full-access"') || !madProfileText.includes('approval_policy = "on-request"') || !madProfileText.includes('approvals_reviewer = "auto_review"') || !madProfileText.includes('model_reasoning_effort = "high"')) throw new Error('selftest failed: MAD high profile is not full-access auto-review high');
+  if (!isMadHighLaunch(['--mad', '--high']) || isMadHighLaunch(['db', '--mad'])) throw new Error('selftest failed: MAD high launch flag parsing is not top-level only');
   const guardBlocked = await checkHarnessModification(tmp, { tool_name: 'apply_patch', command: '*** Update File: .agents/skills/team/SKILL.md\n+tamper\n' });
   if (guardBlocked.action !== 'block') throw new Error('selftest failed: harness guard allowed skill tampering');
   const setupBlocked = await checkHarnessModification(tmp, { command: 'sks setup --force' });
@@ -2326,6 +2484,9 @@ async function selftest() {
   if (routePrompt('$agent-team run specialists')) throw new Error('selftest failed: deprecated $agent-team route still resolved');
   if (routePrompt('$QA-LOOP run UI E2E')?.id !== 'QALoop' || routePrompt('$QALoop deployed smoke')) throw new Error('selftest failed: QA-LOOP route is not standardized to $QA-LOOP');
   if (routePrompt('$WikiRefresh 갱신')) throw new Error('selftest failed: deprecated $WikiRefresh route still resolved');
+  if (routePrompt('$MAD-SKS Supabase MCP main 작업')?.id !== 'MadSKS') throw new Error('selftest failed: $MAD-SKS route did not resolve');
+  if (routePrompt('$MAD-SKS $Team Supabase MCP main 작업')?.id !== 'Team') throw new Error('selftest failed: $MAD-SKS did not compose with $Team');
+  if (routePrompt('$DB Supabase 점검 $MAD-SKS')?.id !== 'DB') throw new Error('selftest failed: trailing $MAD-SKS changed primary route');
   if (routePrompt('위키 갱신해줘')?.id !== 'Wiki') throw new Error('selftest failed: wiki refresh text did not route to Wiki');
   const koreanReadmeInstallPrompt = '리드미에 Codex App에서도 $ 표기 쓰는 법을 알려줘야지. 설치단계에서 바로 보이게 해줘야지';
   if (routePrompt(koreanReadmeInstallPrompt)?.id !== 'Team') throw new Error('selftest failed: Korean README implementation prompt did not route to Team by default');
@@ -2336,6 +2497,7 @@ async function selftest() {
   if (routePrompt('채팅 이미지랑 첨부 이미지 분석 방식 설명해줘')?.id === 'Team') throw new Error('selftest failed: ordinary chat-image question activated Team without From-Chat-IMG');
   if (!DOLLAR_DEFAULT_PIPELINE_TEXT.includes('$Team')) throw new Error('selftest failed: dollar-commands missing Team default routing guidance');
   if (!DOLLAR_DEFAULT_PIPELINE_TEXT.includes('$From-Chat-IMG')) throw new Error('selftest failed: dollar-commands missing From-Chat-IMG guidance');
+  if (!DOLLAR_DEFAULT_PIPELINE_TEXT.includes('$MAD-SKS')) throw new Error('selftest failed: dollar-commands missing MAD-SKS scoped override guidance');
   if (!COMMAND_CATALOG.some((c) => c.name === 'context7') || !COMMAND_CATALOG.some((c) => c.name === 'pipeline') || !COMMAND_CATALOG.some((c) => c.name === 'qa-loop')) throw new Error('selftest failed: context7/pipeline/qa-loop commands missing from catalog');
   const registryDollarCommands = DOLLAR_COMMANDS.map((c) => c.command);
   const manifest = await readJson(path.join(tmp, '.sneakoscope', 'manifest.json'));
@@ -2549,7 +2711,7 @@ async function selftest() {
   const codexConfigText = await safeReadText(path.join(tmp, '.codex', 'config.toml'));
   if (!codexConfigText.includes('multi_agent = true')) throw new Error('selftest failed: multi_agent not enabled');
   if (!hasContext7ConfigText(codexConfigText)) throw new Error('selftest failed: Context7 MCP not configured');
-  if (!codexConfigText.includes('[profiles.sks-task-medium]') || !codexConfigText.includes('[profiles.sks-logic-high]') || !codexConfigText.includes('[profiles.sks-research-xhigh]')) throw new Error('selftest failed: reasoning profiles not configured');
+  if (!codexConfigText.includes('[profiles.sks-task-medium]') || !codexConfigText.includes('[profiles.sks-logic-high]') || !codexConfigText.includes('[profiles.sks-research-xhigh]') || !codexConfigText.includes('[profiles.sks-mad-high]')) throw new Error('selftest failed: reasoning profiles not configured');
   if (!codexConfigText.includes('[agents.analysis_scout]')) throw new Error('selftest failed: analysis_scout agent not configured');
   if (!codexConfigText.includes('[agents.team_consensus]')) throw new Error('selftest failed: team_consensus agent not configured');
   const autoReviewHome = path.join(tmp, 'auto-review-home');
@@ -2557,11 +2719,11 @@ async function selftest() {
   const autoReviewEnabled = await enableAutoReview({ env: autoReviewEnv, high: true });
   if (!autoReviewEnabled.enabled || autoReviewEnabled.profile_name !== 'sks-auto-review-high' || !autoReviewEnabled.high_profile) throw new Error('selftest failed: auto-review high profile was not enabled');
   const autoReviewConfig = await safeReadText(path.join(autoReviewHome, '.codex', 'config.toml'));
-  if (!autoReviewConfig.includes('approvals_reviewer = "guardian_subagent"') || autoReviewConfig.includes('approvals_reviewer = "auto_review"') || !autoReviewConfig.includes('[profiles.sks-auto-review-high]')) throw new Error('selftest failed: auto-review config not written');
+  if (!autoReviewConfig.includes('approvals_reviewer = "auto_review"') || autoReviewConfig.includes('approvals_reviewer = "guardian_subagent"') || !autoReviewConfig.includes('[profiles.sks-auto-review-high]')) throw new Error('selftest failed: auto-review config not written');
   const autoReviewDisabled = await disableAutoReview({ env: autoReviewEnv });
   if (autoReviewDisabled.enabled || autoReviewDisabled.approvals_reviewer !== 'user') throw new Error('selftest failed: auto-review disable did not restore user reviewer');
   const autoReviewDisabledConfig = await safeReadText(path.join(autoReviewHome, '.codex', 'config.toml'));
-  if (autoReviewDisabledConfig.includes('approvals_reviewer = "auto_review"')) throw new Error('selftest failed: auto-review disable left legacy invalid reviewer values');
+  if (autoReviewDisabledConfig.includes('approvals_reviewer = "guardian_subagent"')) throw new Error('selftest failed: auto-review disable left legacy reviewer values');
   const analysisAgentExists = await exists(path.join(tmp, '.codex', 'agents', 'analysis-scout.toml'));
   if (!analysisAgentExists) throw new Error('selftest failed: analysis scout agent not installed');
   const teamAgentExists = await exists(path.join(tmp, '.codex', 'agents', 'team-consensus.toml'));
@@ -2804,6 +2966,8 @@ async function selftest() {
   if (roleTeamPlan.roster.analysis_team.length !== 5) throw new Error('selftest failed: executor role count not reflected in analysis scout team');
   if (roleTeamPlan.roster.development_team.filter((agent) => agent.role === 'executor').length !== 5) throw new Error('selftest failed: executor role count not reflected in development team');
   if (!roleTeamPlan.roster.debate_team.some((agent) => /inconvenience/.test(agent.persona))) throw new Error('selftest failed: user friction persona missing from debate team');
+  const cmuxTeam = await launchCmuxTeamView({ root: tmp, missionId: teamId, plan: roleTeamPlan, json: true });
+  if (!cmuxTeam.agents?.length || !cmuxTeam.agents.some((entry) => entry.agent === 'analysis_scout_1') || !cmuxTeam.agents.every((entry) => String(entry.command || '').includes('team watch'))) throw new Error('selftest failed: Team cmux view did not expose agent live lanes');
   if (routeReasoning(routePrompt('$Research frontier idea'), '$Research frontier idea').effort !== 'xhigh') throw new Error('selftest failed: research reasoning not xhigh');
   if (routeReasoning(routePrompt('$DB migration'), '$DB migration').effort !== 'high') throw new Error('selftest failed: logical reasoning not high');
   if (routeReasoning(routePrompt('$DFix button label'), '$DFix button label').effort !== 'medium') throw new Error('selftest failed: simple reasoning not medium');
@@ -2861,6 +3025,21 @@ async function selftest() {
   if (classifyCommand('supabase db reset').level !== 'destructive') throw new Error('selftest failed: supabase db reset not detected');
   const dbDecision = await checkDbOperation(tmp, { mission_id: id }, { tool_name: 'mcp__supabase__execute_sql', sql: 'drop table users;' }, { duringRalph: true });
   if (dbDecision.action !== 'block') throw new Error('selftest failed: destructive MCP SQL allowed');
+  const madMission = await createMission(tmp, { mode: 'mad-sks', prompt: '$MAD-SKS selftest scoped DB override' });
+  await writeJsonAtomic(path.join(madMission.dir, 'team-gate.json'), { schema_version: 1, passed: false, team_roster_confirmed: true });
+  const madState = { mission_id: madMission.id, mode: 'TEAM', route_command: '$Team', stop_gate: 'team-gate.json', mad_sks_active: true, mad_sks_modifier: true, mad_sks_gate_file: 'team-gate.json' };
+  const tableRemovalSql = 'dr' + 'op table users;';
+  const madNeedsConfirmation = await checkDbOperation(tmp, madState, { tool_name: 'mcp__supabase__execute_sql', sql: tableRemovalSql }, { duringRalph: false });
+  if (madNeedsConfirmation.action !== 'confirm') throw new Error('selftest failed: MAD-SKS table deletion did not require confirmation');
+  await setCurrent(tmp, madState);
+  const madConfirmation = await handleMadSksUserConfirmation(tmp, madState, 'yes');
+  if (!madConfirmation?.handled) throw new Error('selftest failed: MAD-SKS confirmation was not accepted');
+  const madConfirmedState = await readJson(stateFile(tmp), {});
+  const madConfirmedDecision = await checkDbOperation(tmp, madConfirmedState, { tool_name: 'mcp__supabase__execute_sql', sql: tableRemovalSql }, { duringRalph: false });
+  if (madConfirmedDecision.action !== 'allow') throw new Error('selftest failed: MAD-SKS confirmed table deletion was not allowed in the short confirmation window');
+  await writeJsonAtomic(path.join(madMission.dir, 'team-gate.json'), { schema_version: 1, passed: true, team_roster_confirmed: true, permissions_deactivated: true });
+  const madClosedDecision = await checkDbOperation(tmp, madConfirmedState, { tool_name: 'mcp__supabase__execute_sql', sql: tableRemovalSql }, { duringRalph: false });
+  if (madClosedDecision.action !== 'block') throw new Error('selftest failed: MAD-SKS permission persisted after gate close');
   const nonDbDecision = await checkDbOperation(tmp, {}, { command: 'npm test' }, { duringRalph: true });
   if (nonDbDecision.action !== 'allow') throw new Error('selftest failed: non-DB command blocked by DB guard');
   const evalReport = runEvaluationBenchmark({ iterations: 5 });
@@ -3435,7 +3614,7 @@ function userRequestSignal(prompt = '') {
   const topicRules = [
     ['ambiguity-questions', /모호|ambiguity|clarification|질문|답변|answers?\.json|decision-contract|추론|예측/],
     ['triwiki-priority-memory', /triwiki|wiki|메모리|memory|기억|우선|반복|자주|카운팅|count|frequency|weight/],
-    ['install-bootstrap', /bootstrap|postinstall|doctor|deps|tmux|homebrew|최초\s*설치|셋업|setup/],
+    ['install-bootstrap', /bootstrap|postinstall|doctor|deps|cmux|homebrew|최초\s*설치|셋업|setup/],
     ['version-release', /버전|version|publish:dry|release|npm\s+pack/],
     ['qa-loop', /qa|e2e|검증|리포트|report/],
     ['team-pipeline', /team|subagent|세션|cleanup|reflection|회고|반성/],
@@ -3717,6 +3896,7 @@ async function team(args) {
     questions: path.join(dir, 'questions.md'),
     codex_agents: ['analysis_scout', 'team_consensus', 'implementation_worker', 'db_safety_reviewer', 'qa_reviewer']
   };
+  result.cmux = await launchCmuxTeamView({ root, missionId: id, plan, promptFile: result.workflow, json: flag(args, '--json') });
   if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
   console.log(`Team mission created: ${id}`);
   console.log(`Plan: ${path.relative(root, result.plan)}`);
@@ -3726,8 +3906,10 @@ async function team(args) {
   console.log(`Runtime graph: ${path.relative(root, result.team_graph)}`);
   console.log(`Worker inbox: ${path.relative(root, result.worker_inbox_dir)}`);
   console.log(`Live: ${path.relative(root, result.live)}`);
+  if (result.cmux.ready) console.log(`cmux: ${result.cmux.created ? 'opened' : 'ready'} ${result.cmux.agents.length} agent lane(s)`);
+  else console.log(`cmux: blocked (${Array.from(new Set(result.cmux.blockers || [])).join('; ')})`);
   console.log(`Watch: sks team watch ${id}`);
-  console.log('Use $Team in Codex App to run the scout-first flow: parallel analysis scouts, TriWiki attention, debate/consensus, runtime graph/inbox handoff, then a fresh implementation team with disjoint ownership.');
+  console.log('Use $Team in Codex App or the cmux lanes from this CLI flow to run scouts, debate/consensus, runtime graph/inbox handoff, then a fresh implementation team with disjoint ownership.');
 }
 
 function parseTeamCreateArgs(args) {
@@ -3873,6 +4055,7 @@ function buildTeamPlan(id, prompt, opts = {}) {
       markdown: 'team-live.md',
       transcript: 'team-transcript.jsonl',
       dashboard: 'team-dashboard.json',
+      cmux: 'sks team opens a cmux workspace with one live multi-line lane per visible Team agent budget when cmux is available.',
       commands: [
         'sks team status <mission-id>',
         'sks team log <mission-id>',

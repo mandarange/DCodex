@@ -5,7 +5,52 @@ import { FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM
 
 export function buildQuestionSchemaForRoute(route, prompt) {
   if (String(route?.id || '') === 'QALoop') return buildQaLoopQuestionSchema(prompt);
+  if (String(route?.id || '') === 'MadSKS') return buildMadSksQuestionSchema(prompt);
   return buildQuestionSchema(prompt);
+}
+
+function buildMadSksQuestionSchema(prompt) {
+  const task = String(prompt || '').trim() || 'MAD-SKS scoped database override';
+  return {
+    schema_version: 1,
+    description: 'MAD-SKS is explicit-invocation-only. It auto-seals because the dollar command itself is the permission boundary; table deletion still requires runtime user confirmation with an approximately 30 second timeout.',
+    prompt,
+    domain_hints: ['db', 'mad-sks'],
+    inferred_answers: {
+      GOAL_PRECISE: `명시적인 MAD-SKS 호출 범위에서만 DB 권한 조건을 넓혀 작업한다: ${task}`,
+      ACCEPTANCE_CRITERIA: [
+        '$MAD-SKS is listed in dollar commands and routes to MADSKS mode',
+        'broad Supabase MCP DB manipulation is allowed only while the active MAD-SKS mission gate remains open',
+        'the widened permission is inactive after the MAD-SKS gate is passed or permissions_deactivated is true',
+        'table deletion requires explicit user confirmation and expires after about 30 seconds without confirmation'
+      ],
+      NON_GOALS: [],
+      PUBLIC_API_CHANGE_ALLOWED: 'yes_if_needed',
+      DB_SCHEMA_CHANGE_ALLOWED: 'yes_if_needed',
+      DEPENDENCY_CHANGE_ALLOWED: 'no',
+      TEST_SCOPE: ['packcheck', 'selftest'],
+      MID_RALPH_UNKNOWN_POLICY: ['preserve_existing_behavior', 'smallest_reversible_change', 'defer_optional_scope', 'block_only_if_no_safe_path'],
+      RISK_BOUNDARY: [
+        'MAD-SKS permission widening is explicit-invocation-only',
+        'MAD-SKS permission widening does not persist after the active task gate closes',
+        'table deletion must pause for explicit user confirmation and timeout-abort after about 30 seconds'
+      ],
+      MAD_SKS_MODE: 'explicit_invocation_only',
+      DATABASE_TARGET_ENVIRONMENT: 'main_branch',
+      DATABASE_WRITE_MODE: 'mad_sks_full_mcp_write_for_invocation',
+      SUPABASE_MCP_POLICY: 'mad_sks_project_scoped_write_for_invocation',
+      DESTRUCTIVE_DB_OPERATIONS_ALLOWED: 'mad_sks_scoped_with_table_delete_confirmation',
+      DB_BACKUP_OR_BRANCH_REQUIRED: 'recommended_but_not_required_in_mad_sks',
+      DB_MAX_BLAST_RADIUS: 'mad_sks_active_invocation_only_table_delete_confirmation_required',
+      DB_MIGRATION_APPLY_ALLOWED: 'mad_sks_active_invocation_only',
+      DB_READ_ONLY_QUERY_LIMIT: '100'
+    },
+    inference_notes: {
+      MAD_SKS_MODE: 'explicit dollar command is the permission boundary',
+      DESTRUCTIVE_DB_OPERATIONS_ALLOWED: 'MAD-SKS scoped override with table deletion confirmation'
+    },
+    slots: []
+  };
 }
 
 function hasAnswer(value) {
@@ -33,7 +78,7 @@ export function inferAnswersForPrompt(prompt, explicitAnswers = {}) {
     .trim();
   const version = String(text || '').match(/\bv?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/)?.[1] || null;
   const versionWork = /버전|version|bump|release|publish:dry|npm\s+pack/.test(lower);
-  const installWork = /bootstrap|postinstall|doctor|deps|tmux|homebrew|first install|최초\s*설치|설치\s*ux|셋업|setup/.test(lower);
+  const installWork = /bootstrap|postinstall|doctor|deps|cmux|homebrew|first install|최초\s*설치|설치\s*ux|셋업|setup/.test(lower);
   const questionGateWork = /모호|ambiguity|clarification|질문|triwiki|추론|infer|predict|예측|answers?\.json|decision-contract/.test(lower);
   const prioritySignalWork = /화|짜증|답답|;;|!!|강력|기억|우선|자주|반복|카운팅|count|frequency|frequent|priority|weight/.test(lower);
   const cliSurfaceWork = /\b(cli|command|route|usage|help|sks)\b|명령|커맨드|사용법/.test(lower);

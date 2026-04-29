@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { exists, readJson, writeJsonAtomic, readText, nowIso, appendJsonlBounded } from './fsx.mjs';
-import { missionDir } from './mission.mjs';
+import { missionDir, setCurrent } from './mission.mjs';
 
 export const DEFAULT_DB_SAFETY_POLICY = Object.freeze({
   schema_version: 1,
@@ -25,6 +25,10 @@ export const DEFAULT_DB_SAFETY_POLICY = Object.freeze({
     'supabase db reset', 'supabase db push', 'supabase migration repair'
   ]
 });
+
+const MAD_SKS_GATE_FILE = 'mad-sks-gate.json';
+const MAD_SKS_TABLE_DELETE_CONFIRMATION_FILE = 'mad-sks-table-delete-confirmation.json';
+const MAD_SKS_TABLE_DELETE_TIMEOUT_MS = 30_000;
 
 export async function ensureDbSafetyPolicy(root) {
   const p = path.join(root, '.sneakoscope', 'db-safety.json');
@@ -216,13 +220,63 @@ function contractAllowsDbWrite(contract = {}) {
   return { mode, env, destructive, migrationApply };
 }
 
-export function evaluateDbSafety({ classification, policy = DEFAULT_DB_SAFETY_POLICY, contract = null, duringRalph = false } = {}) {
+function hasTableRemovalRisk(cls = {}) {
+  const reasons = new Set([
+    ...(cls.reasons || []),
+    ...(cls.sql?.reasons || []),
+    ...(cls.command?.reasons || [])
+  ]);
+  return ['drop_table', 'alter_table_drop', 'truncate'].some((reason) => reasons.has(reason));
+}
+
+function isMadSksRouteState(state = {}) {
+  return state.mad_sks_active === true
+    || String(state.mode || '').toUpperCase() === 'MADSKS'
+    || String(state.route_command || '').toUpperCase() === '$MAD-SKS'
+    || String(state.route || '').toUpperCase() === 'MADSKS';
+}
+
+async function madSksOverrideState(root, state = {}) {
+  if (!isMadSksRouteState(state) || !state.mission_id || state.mad_sks_active === false) return { active: false };
+  const gateFile = state.mad_sks_gate_file || state.stop_gate || MAD_SKS_GATE_FILE;
+  const gate = await readJson(path.join(missionDir(root, state.mission_id), gateFile), null);
+  if (gate?.passed === true || gate?.permissions_deactivated === true) return { active: false, reason: 'mad_sks_gate_already_closed', gate_file: gateFile };
+  const confirmedUntil = Date.parse(state.mad_sks_table_delete_confirmed_until || '');
+  return {
+    active: true,
+    gateFile,
+    tableDeleteConfirmed: Number.isFinite(confirmedUntil) && confirmedUntil > Date.now(),
+    tableDeleteConfirmedUntil: Number.isFinite(confirmedUntil) ? new Date(confirmedUntil).toISOString() : null
+  };
+}
+
+export function evaluateDbSafety({ classification, policy = DEFAULT_DB_SAFETY_POLICY, contract = null, duringRalph = false, madSks = null } = {}) {
   const cls = classification || { level: 'none', reasons: [] };
   const reasons = [];
   const effective = contractAllowsDbWrite(contract || {});
   if (cls.level === 'none') return { allowed: true, action: 'allow', reasons: [], classification: cls };
   if (cls.level === 'safe') return { allowed: true, action: 'allow', reasons: ['read_only_operation'], classification: cls };
   if (cls.level === 'possible_db') return { allowed: !duringRalph, action: duringRalph ? 'block' : 'warn', reasons: duringRalph ? ['unknown_database_operation_blocked_during_ralph'] : ['unknown_database_operation'], classification: cls };
+  if (madSks?.active && (cls.level === 'write' || cls.level === 'destructive')) {
+    if (hasTableRemovalRisk(cls) && !madSks.tableDeleteConfirmed) {
+      return {
+        allowed: false,
+        action: 'confirm',
+        reasons: ['mad_sks_table_delete_requires_user_confirmation_30s'],
+        classification: cls,
+        effective,
+        mad_sks: { active: true, table_delete_confirmation_required: true, timeout_ms: MAD_SKS_TABLE_DELETE_TIMEOUT_MS }
+      };
+    }
+    return {
+      allowed: true,
+      action: 'allow',
+      reasons: hasTableRemovalRisk(cls) ? ['mad_sks_table_delete_confirmed'] : ['mad_sks_scoped_override_active'],
+      classification: cls,
+      effective,
+      mad_sks: { active: true, table_delete_confirmed_until: madSks.tableDeleteConfirmedUntil || null }
+    };
+  }
   if (cls.level === 'destructive') reasons.push('destructive_database_operation_blocked_always');
   if (cls.level === 'write') {
     if (effective.mode === 'read_only_only') reasons.push('database_write_mode_is_read_only_only');
@@ -233,6 +287,74 @@ export function evaluateDbSafety({ classification, policy = DEFAULT_DB_SAFETY_PO
   if (effective.destructive) reasons.push('contract_attempted_to_allow_destructive_but_policy_denies');
   if (reasons.length) return { allowed: false, action: 'block', reasons, classification: cls, effective };
   return { allowed: true, action: 'allow', reasons: ['write_allowed_by_contract_to_safe_target'], classification: cls, effective };
+}
+
+async function writeMadSksTableDeletePending(root, state = {}, decision = {}) {
+  if (!state?.mission_id) return null;
+  const dir = missionDir(root, state.mission_id);
+  const createdAt = nowIso();
+  const expiresAt = new Date(Date.now() + MAD_SKS_TABLE_DELETE_TIMEOUT_MS).toISOString();
+  const pending = {
+    schema_version: 1,
+    status: 'pending',
+    mission_id: state.mission_id,
+    created_at: createdAt,
+    expires_at: expiresAt,
+    timeout_ms: MAD_SKS_TABLE_DELETE_TIMEOUT_MS,
+    reason: 'table_delete_requires_explicit_user_confirmation',
+    classification: decision.classification || null
+  };
+  await writeJsonAtomic(path.join(dir, MAD_SKS_TABLE_DELETE_CONFIRMATION_FILE), pending);
+  await appendJsonlBounded(path.join(dir, 'mad-sks-confirmation.jsonl'), pending);
+  return pending;
+}
+
+function looksLikeConfirmationYes(prompt = '') {
+  return /^(yes|y|confirm|confirmed|approve|approved|proceed|continue|ok|okay|네|예|응|허용|승인|진행|계속|삭제\s*허용|테이블\s*삭제\s*허용)\b/i.test(String(prompt || '').trim());
+}
+
+function looksLikeConfirmationNo(prompt = '') {
+  return /^(no|n|stop|abort|cancel|deny|denied|아니|아니요|중단|취소|거부|멈춰)\b/i.test(String(prompt || '').trim());
+}
+
+export async function handleMadSksUserConfirmation(root, state = {}, prompt = '') {
+  if (!isMadSksRouteState(state) || !state?.mission_id) return null;
+  const file = path.join(missionDir(root, state.mission_id), MAD_SKS_TABLE_DELETE_CONFIRMATION_FILE);
+  const pending = await readJson(file, null);
+  if (!pending || pending.status !== 'pending') return null;
+  const expiresAtMs = Date.parse(pending.expires_at || '');
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+    const expired = { ...pending, status: 'expired', resolved_at: nowIso() };
+    await writeJsonAtomic(file, expired);
+    await appendJsonlBounded(path.join(missionDir(root, state.mission_id), 'mad-sks-confirmation.jsonl'), expired);
+    return {
+      handled: true,
+      additionalContext: 'MAD-SKS table deletion confirmation expired after about 30 seconds. Abort the table deletion operation and do not retry it unless the user invokes a new explicit confirmation flow.'
+    };
+  }
+  if (looksLikeConfirmationNo(prompt)) {
+    const denied = { ...pending, status: 'denied', resolved_at: nowIso() };
+    await writeJsonAtomic(file, denied);
+    await appendJsonlBounded(path.join(missionDir(root, state.mission_id), 'mad-sks-confirmation.jsonl'), denied);
+    return {
+      handled: true,
+      additionalContext: 'MAD-SKS table deletion confirmation was denied. Abort the table deletion operation and continue only with non-table-deletion work.'
+    };
+  }
+  if (!looksLikeConfirmationYes(prompt)) return null;
+  const confirmedUntil = new Date(Math.min(expiresAtMs, Date.now() + MAD_SKS_TABLE_DELETE_TIMEOUT_MS)).toISOString();
+  const accepted = { ...pending, status: 'accepted', resolved_at: nowIso(), confirmed_until: confirmedUntil };
+  await writeJsonAtomic(file, accepted);
+  await appendJsonlBounded(path.join(missionDir(root, state.mission_id), 'mad-sks-confirmation.jsonl'), accepted);
+  await setCurrent(root, {
+    ...state,
+    mad_sks_active: true,
+    mad_sks_table_delete_confirmed_until: confirmedUntil
+  });
+  return {
+    handled: true,
+    additionalContext: `MAD-SKS table deletion confirmation accepted until ${confirmedUntil}. Retry the exact table deletion only if it is still required; otherwise continue without using the confirmation.`
+  };
 }
 
 export async function loadMissionContract(root, state = {}) {
@@ -246,7 +368,9 @@ export async function checkDbOperation(root, state, payload, { duringRalph = fal
   const policy = await loadDbSafetyPolicy(root);
   const contract = await loadMissionContract(root, state);
   const classification = classifyToolPayload(payload);
-  const decision = evaluateDbSafety({ classification, policy, contract, duringRalph });
+  const madSks = await madSksOverrideState(root, state);
+  const decision = evaluateDbSafety({ classification, policy, contract, duringRalph, madSks });
+  if (decision.action === 'confirm') await writeMadSksTableDeletePending(root, state, decision);
   if (decision.action !== 'allow' && state?.mission_id) {
     await appendJsonlBounded(path.join(missionDir(root, state.mission_id), 'db-safety.jsonl'), { ts: nowIso(), decision });
   }
@@ -259,6 +383,14 @@ export async function checkSqlFile(file) {
 }
 
 export function dbBlockReason(decision) {
+  if ((decision.reasons || []).includes('mad_sks_table_delete_requires_user_confirmation_30s')) {
+    return [
+      'Sneakoscope Codex MAD-SKS gate paused a table deletion operation.',
+      'Explicit user confirmation is required for table deletion, even in MAD-SKS mode.',
+      'Ask the user to confirm now; if no confirmation arrives within about 30 seconds, abort this operation.',
+      'After confirmation, retry only the same table deletion while the short confirmation window is still valid.'
+    ].join(' ');
+  }
   return [
     'Sneakoscope Codex Database Safety Gate blocked this operation.',
     `Reasons: ${(decision.reasons || []).join(', ') || 'unknown'}.`,
