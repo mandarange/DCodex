@@ -6,18 +6,21 @@ Sneakoscope Codex (`sks`, displayed as `ㅅㅋㅅ`) is a Codex CLI/App harness f
 
 ## Quick Start
 
-Install globally, initialize the current project, then open the cmux runtime:
+Install globally, then run `sks` from either a project or any global shell location:
 
 ```sh
 npm i -g sneakoscope
+sks root
 sks bootstrap
 sks
 ```
 
+`sks root` tells you whether SKS found a project root or is using the per-user global runtime root. Outside a repo/project marker, runtime commands such as `sks`, `sks deps check`, `sks pipeline status`, and `sks team ...` use that global root instead of writing `.sneakoscope` into the random current directory.
+
 If you only want a one-shot run without keeping `sks` installed globally:
 
 ```sh
-npx -y -p sneakoscope sks bootstrap
+npx -y -p sneakoscope sks root
 ```
 
 For a repo-local install:
@@ -80,6 +83,7 @@ If the CLI is not on `PATH`, SKS also checks the app bundle path:
 - Installs or upgrades the latest cmux cask through Homebrew when cmux is missing or not launchable.
 - Re-probes the real cmux binary after install instead of trusting Homebrew's success text alone.
 - Wakes cmux and retries the socket probe; if the socket is broken, SKS attempts a cmux app restart during that explicit launch.
+- Reuses the named SKS MAD cmux workspace when it already exists and closes duplicate SKS-named MAD workspaces instead of increasing the workspace count on every launch.
 
 ## Installation
 
@@ -89,10 +93,11 @@ Use this when you want `sks` available from any repo:
 
 ```sh
 npm i -g sneakoscope
+sks root
 sks bootstrap
 ```
 
-`sks bootstrap` initializes the current project, installs Codex App skills/hooks/config, checks Context7/Codex App/cmux readiness, and prints a ready status.
+`sks` commands work even when no project root is present. Project-aware commands use the nearest `.sneakoscope`, `.dcodex`, or `.git` root; if none exists, SKS uses a per-user global runtime root. `sks bootstrap` still initializes the current project when you want project-local hooks, skills, and TriWiki state.
 
 ### One-Shot Install
 
@@ -170,7 +175,9 @@ sks --mad
 sks --mad --yes
 ```
 
-This creates/uses the `sks-mad-high` Codex profile for a one-shot full-access, high-reasoning cmux workspace with `approval_policy = "on-request"` and `approvals_reviewer = "auto_review"`. It is scoped to that explicit command and does not change normal SKS/DB safety defaults.
+This creates/uses the `sks-mad-high` Codex profile for a one-shot full-access, high-reasoning cmux workspace with `approval_policy = "on-request"` and `approvals_reviewer = "auto_review"`. It is scoped to that explicit command and does not change normal SKS/DB safety defaults. Repeat launches select the existing named SKS MAD workspace and clean duplicate SKS-named MAD workspaces instead of creating an endless workspace list.
+
+MAD does not disable the pipeline contract: stages, executors, reviewers, and auto-review policy still must not invent unrequested fallback implementation code. If the requested path cannot be implemented, SKS should block with evidence rather than add substitute behavior.
 
 Before launching, SKS checks whether a newer `sneakoscope` exists on npm. In an interactive terminal it prompts:
 
@@ -185,11 +192,12 @@ Answer `y` to install `sneakoscope@latest`, then rerun `sks --mad`. Answer `n` t
 ```sh
 sks team "implement this feature" executor:3 reviewer:1
 sks team watch latest
+sks team lane latest --agent analysis_scout_1 --follow
 sks team status latest
 sks team log latest
 ```
 
-Team mode prepares the mission, records live events, compiles runtime tasks and worker inboxes, and opens cmux live lanes when cmux is available.
+Team mode prepares the mission, records live events, compiles runtime tasks and worker inboxes, and opens cmux live lanes when cmux is available. `sks team lane` renders one agent's status, assigned runtime tasks, recent events, and a fallback global tail for multi-pane monitoring.
 
 ### QA, Ralph, Research, DB, Wiki, GX
 
@@ -374,6 +382,7 @@ OMX/DCodex conflicts intentionally block setup/doctor until the user approves cl
 ```sh
 sks pipeline status --json
 sks team watch latest
+sks team lane latest --agent parent_orchestrator --follow
 sks wiki validate .sneakoscope/wiki/context-pack.json
 ```
 

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.6.70] - 2026-04-30
+
+### Changed
+
+- Make `sks --mad` reuse its named cmux workspace and close duplicate SKS-named MAD workspaces instead of creating another workspace on every launch.
+- Add pipeline, Team inbox, generated agent, auto-review, and MAD/MAD-SKS policy text that blocks unrequested fallback implementation code.
+
+## [0.6.69] - 2026-04-30
+
+### Changed
+
+- Add `sks team lane` per-agent monitoring for cmux Team panes, showing agent status, assigned runtime tasks, recent agent events, and a fallback global tail.
+- Promote explicit `$From-Chat-IMG` work-order analysis to xhigh temporary reasoning and generated skill metadata.
+- Allow runtime commands to work outside any project by falling back to a per-user global SKS root, with `sks root` showing the active project/global root.
+
 ## [0.6.66] - 2026-04-29
 
 ### Changed

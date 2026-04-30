@@ -180,9 +180,10 @@ function upsertProfile(text, profile, effort, reviewer = AUTO_REVIEW_REVIEWER) {
 function upsertAutoReviewPolicy(text) {
   const policy = [
     '[auto_review]',
-    'policy = "Deny destructive database operations, credential exfiltration, persistent security weakening, broad file deletion, and writes outside the workspace unless explicitly authorized by the user."'
+    'policy = "Deny destructive database operations, credential exfiltration, persistent security weakening, broad file deletion, writes outside the workspace, and unrequested fallback implementation code unless explicitly authorized by the user or sealed decision contract."'
   ].join('\n');
-  if (readTableString(text, 'auto_review', 'policy')) return text;
+  const existing = readTableString(text, 'auto_review', 'policy');
+  if (existing && /unrequested fallback implementation code/i.test(existing)) return text;
   return upsertTable(text, 'auto_review', policy);
 }
 

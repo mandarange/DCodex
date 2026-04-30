@@ -5,7 +5,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 
-export const PACKAGE_VERSION = '0.6.66';
+export const PACKAGE_VERSION = '0.6.70';
 export const DEFAULT_PROCESS_TAIL_BYTES = 256 * 1024;
 export const DEFAULT_PROCESS_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -145,7 +145,7 @@ export async function findUp(start, names) {
   }
 }
 
-export async function projectRoot(start = process.cwd()) {
+export async function findProjectRoot(start = process.cwd()) {
   const resolved = path.resolve(start);
   const sine = await findUp(resolved, ['.sneakoscope', '.dcodex']);
   if (sine) {
@@ -157,6 +157,22 @@ export async function projectRoot(start = process.cwd()) {
     const root = path.dirname(git);
     if (root !== path.parse(root).root) return root;
   }
+  return null;
+}
+
+export function globalSksRoot() {
+  if (process.env.SKS_GLOBAL_ROOT) return path.resolve(process.env.SKS_GLOBAL_ROOT);
+  return path.join(process.env.HOME || os.homedir(), '.sneakoscope-global');
+}
+
+export async function sksRoot(start = process.cwd()) {
+  return await findProjectRoot(start) || globalSksRoot();
+}
+
+export async function projectRoot(start = process.cwd()) {
+  const resolved = path.resolve(start);
+  const root = await findProjectRoot(resolved);
+  if (root) return root;
   return resolved;
 }
 

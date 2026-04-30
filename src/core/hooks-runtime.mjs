@@ -154,7 +154,7 @@ async function hookPostTool(root, state, payload, noQuestion) {
   if (toolFailed(payload)) {
     return {
       additionalContext: [
-        'SKS no-question mode is active. Do not ask the user about this tool failure. Apply the active plan fallback ladder, create a fix task, and continue.',
+        'SKS no-question mode is active. Do not ask the user about this tool failure. Apply the active decision ladder, create a fix task only inside the sealed contract, and continue. Do not create unrequested fallback implementation code; block with evidence if the requested path is impossible.',
         teamDigest?.context
       ].filter(Boolean).join('\n\n'),
       systemMessage: joinSystemMessages(visibleHookMessage('post-tool'), teamDigest?.system)

@@ -373,6 +373,7 @@ function inboxMarkdown(worker, tasks, compiled) {
     '',
     'Use concrete task ids for readiness and handoff. Dependencies below are runtime task ids, not plan-only symbolic ids.',
     'Before task work, read `.sneakoscope/wiki/context-pack.json`: use `attention.use_first` for compact high-trust context and hydrate `attention.hydrate_first` from source before risky or lower-trust decisions.',
+    'Do not create fallback implementation code, substitute behavior, mock behavior, or compatibility shims unless the user or sealed decision contract explicitly requested them.',
     ''
   ];
   for (const task of tasks) {

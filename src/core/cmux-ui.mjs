@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { exists, packageRoot, projectRoot, runProcess, sha256, which } from './fsx.mjs';
+import { exists, packageRoot, runProcess, sha256, sksRoot, which } from './fsx.mjs';
 import { getCodexInfo } from './codex-adapter.mjs';
 import { codexAppIntegrationStatus, formatCodexAppStatus } from './codex-app.mjs';
 
@@ -26,6 +26,52 @@ export function defaultCmuxWorkspaceName(root) {
   const base = sanitizeCmuxWorkspaceName(path.basename(root || process.cwd()) || 'project');
   const hash = sha256(path.resolve(root || process.cwd())).slice(0, 8);
   return sanitizeCmuxWorkspaceName(`sks-${base}-${hash}`);
+}
+
+export function cmuxWorkspaceDescription(plan = {}) {
+  const profile = codexProfileFromArgs(plan.codexArgs);
+  return [
+    'managed-by=sneakoscope',
+    `workspace=${sanitizeCmuxWorkspaceName(plan.workspace || defaultCmuxWorkspaceName(plan.root))}`,
+    `root=${path.resolve(plan.root || process.cwd())}`,
+    `profile=${profile || 'default'}`
+  ].join('; ');
+}
+
+export function buildCmuxNewWorkspaceArgs(plan = {}, command = '') {
+  return [
+    'new-workspace',
+    '--name', sanitizeCmuxWorkspaceName(plan.workspace || defaultCmuxWorkspaceName(plan.root)),
+    '--description', cmuxWorkspaceDescription(plan),
+    '--cwd', path.resolve(plan.root || process.cwd()),
+    '--command', command
+  ];
+}
+
+export function parseCmuxWorkspaceList(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  try {
+    return normalizeWorkspacePayload(JSON.parse(raw));
+  } catch {}
+  return raw.split('\n').map(parseWorkspaceLine).filter(Boolean);
+}
+
+export function matchingCmuxWorkspaces(workspaces = [], plan = {}) {
+  const targetName = sanitizeCmuxWorkspaceName(plan.workspace || defaultCmuxWorkspaceName(plan.root));
+  const root = path.resolve(plan.root || process.cwd());
+  return workspaces.filter((workspace) => {
+    const name = workspaceName(workspace);
+    const description = workspaceDescription(workspace);
+    const cwd = workspaceCwd(workspace);
+    if (name !== targetName && !description.includes(`workspace=${targetName}`)) return false;
+    if (!cwd && !description.includes(`root=${root}`)) return true;
+    return path.resolve(cwd || root) === root || description.includes(`root=${root}`);
+  });
+}
+
+export function cmuxWorkspaceRef(workspace = {}) {
+  return String(workspace.ref || workspace.workspace_ref || workspace.handle || workspace.id || workspace.workspace_id || workspace.uuid || '').trim();
 }
 
 export function shellEscape(value) {
@@ -137,12 +183,12 @@ export function teamAgentCommand(root, missionId, agentId, phase) {
   return [
     `printf '%s\\n' ${shellEscape(`${SKS_CMUX_LOGO}\n\nTeam mission: ${missionId}\nAgent: ${agentId}\nPhase: ${phase}\n`)}`,
     `cd ${shellEscape(root)}`,
-    `node ${shellEscape(path.join(packageRoot(), 'bin', 'sks.mjs'))} team watch ${shellEscape(missionId)} --follow --lines 12`
+    `node ${shellEscape(path.join(packageRoot(), 'bin', 'sks.mjs'))} team lane ${shellEscape(missionId)} --agent ${shellEscape(agentId)} --phase ${shellEscape(phase)} --follow --lines 12`
   ].join('; ');
 }
 
 export async function buildCmuxLaunchPlan(opts = {}) {
-  const root = path.resolve(opts.root || await projectRoot());
+  const root = path.resolve(opts.root || await sksRoot());
   const workspace = sanitizeCmuxWorkspaceName(opts.workspace || opts.session || defaultCmuxWorkspaceName(root));
   const sksBin = opts.sksBin || path.join(packageRoot(), 'bin', 'sks.mjs');
   const codex = opts.codex || await getCodexInfo().catch(() => ({}));
@@ -216,9 +262,25 @@ export async function launchCmuxUi(args = [], opts = {}) {
     process.exitCode = 1;
     return { plan: blocked };
   }
+  if (args.includes('--status-only')) return { plan };
   if (!args.includes('--no-open')) await openCmuxApp().catch(() => null);
   const command = codexLaunchCommand(plan.root, plan.codex.bin, plan.codexArgs);
-  const created = spawnSync(plan.cmux.bin, ['new-workspace', '--cwd', plan.root, '--command', command], { encoding: 'utf8', stdio: args.includes('--quiet') ? 'pipe' : 'inherit' });
+  if (!args.includes('--status-only')) {
+    const reuse = await reuseExistingCmuxWorkspace(plan, { cleanup: opts.cleanupWorkspaces !== false });
+    if (reuse.reused) {
+      if (!args.includes('--quiet')) {
+        const suffix = reuse.closed_duplicates ? `; closed duplicate workspace(s): ${reuse.closed_duplicates}` : '';
+        console.log(`SKS cmux workspace reused: ${plan.workspace}${suffix}`);
+      }
+      return { plan, created: false, reused: true, workspace: reuse.workspace, cleanup: reuse };
+    }
+    if (!reuse.ok) {
+      process.exitCode = 1;
+      console.error(`SKS cmux workspace check failed: ${reuse.error}`);
+      return { plan, workspace_reuse: reuse };
+    }
+  }
+  const created = spawnSync(plan.cmux.bin, buildCmuxNewWorkspaceArgs(plan, command), { encoding: 'utf8', stdio: args.includes('--quiet') ? 'pipe' : 'inherit' });
   if (created.status !== 0) {
     process.exitCode = created.status || 1;
     if (created.stderr) process.stderr.write(created.stderr);
@@ -228,6 +290,35 @@ export async function launchCmuxUi(args = [], opts = {}) {
     console.log(`SKS cmux workspace requested: ${plan.workspace}`);
   }
   return { plan, created: true };
+}
+
+async function reuseExistingCmuxWorkspace(plan = {}, opts = {}) {
+  const listed = await listCmuxWorkspaces(plan.cmux?.bin);
+  if (!listed.ok) return listed;
+  const matches = matchingCmuxWorkspaces(listed.workspaces, plan);
+  if (!matches.length) return { ok: true, reused: false, closed_duplicates: 0 };
+  const [keep, ...duplicates] = matches;
+  const ref = cmuxWorkspaceRef(keep);
+  if (!ref) return { ok: false, error: 'matching cmux workspace has no usable id/ref' };
+  const selected = await runProcess(plan.cmux.bin, ['select-workspace', '--workspace', ref], { timeoutMs: 5000, maxOutputBytes: 16 * 1024 }).catch((err) => ({ code: 1, stdout: '', stderr: err.message }));
+  if (selected.code !== 0) return { ok: false, error: `${selected.stderr || selected.stdout || 'cmux select-workspace failed'}`.trim() };
+  let closed = 0;
+  if (opts.cleanup !== false) {
+    for (const duplicate of duplicates) {
+      const duplicateRef = cmuxWorkspaceRef(duplicate);
+      if (!duplicateRef || duplicateRef === ref) continue;
+      const close = await runProcess(plan.cmux.bin, ['close-workspace', '--workspace', duplicateRef], { timeoutMs: 5000, maxOutputBytes: 16 * 1024 }).catch((err) => ({ code: 1, stdout: '', stderr: err.message }));
+      if (close.code === 0) closed += 1;
+    }
+  }
+  return { ok: true, reused: true, workspace: keep, workspace_ref: ref, closed_duplicates: closed, total_matches: matches.length };
+}
+
+async function listCmuxWorkspaces(bin) {
+  if (!bin) return { ok: false, error: 'cmux CLI not found' };
+  const run = await runProcess(bin, ['list-workspaces', '--json'], { timeoutMs: 5000, maxOutputBytes: 128 * 1024 }).catch((err) => ({ code: 1, stdout: '', stderr: err.message }));
+  if (run.code !== 0) return { ok: false, error: `${run.stderr || run.stdout || 'cmux list-workspaces failed'}`.trim() };
+  return { ok: true, workspaces: parseCmuxWorkspaceList(run.stdout || run.stderr || '') };
 }
 
 function printCmuxLaunchBlocked(plan, opts = {}) {
@@ -366,4 +457,38 @@ export async function runCmuxStatus(args = [], opts = {}) {
 function readOption(args, name, fallback = null) {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
+}
+
+function codexProfileFromArgs(args = []) {
+  const i = Array.isArray(args) ? args.indexOf('--profile') : -1;
+  return i >= 0 && args[i + 1] ? String(args[i + 1]) : '';
+}
+
+function normalizeWorkspacePayload(payload) {
+  if (Array.isArray(payload)) return payload.filter((item) => item && typeof item === 'object');
+  if (!payload || typeof payload !== 'object') return [];
+  for (const key of ['workspaces', 'workspace', 'items', 'data']) {
+    if (Array.isArray(payload[key])) return normalizeWorkspacePayload(payload[key]);
+  }
+  if (payload.result) return normalizeWorkspacePayload(payload.result);
+  return [];
+}
+
+function parseWorkspaceLine(line) {
+  const text = String(line || '').trim();
+  if (!text) return null;
+  const ref = text.match(/\bworkspace:\d+\b/i)?.[0] || text.match(/[0-9a-f]{8}-[0-9a-f-]{27,}/i)?.[0] || '';
+  return ref ? { ref, title: text.replace(ref, '').trim(), raw: text } : null;
+}
+
+function workspaceName(workspace = {}) {
+  return String(workspace.name || workspace.title || workspace.label || workspace.workspace_name || workspace.raw_name || '').trim();
+}
+
+function workspaceDescription(workspace = {}) {
+  return String(workspace.description || workspace.desc || workspace.subtitle || workspace.raw || '').trim();
+}
+
+function workspaceCwd(workspace = {}) {
+  return String(workspace.cwd || workspace.path || workspace.root || workspace.working_directory || workspace.workspace_cwd || '').trim();
 }

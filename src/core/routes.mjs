@@ -4,7 +4,7 @@ export const FROM_CHAT_IMG_CHECKLIST_ARTIFACT = 'from-chat-img-checklist.md';
 export const FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT = 'from-chat-img-temp-triwiki.json';
 export const FROM_CHAT_IMG_QA_LOOP_ARTIFACT = 'from-chat-img-qa-loop.json';
 export const FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS = 5;
-export const USAGE_TOPICS = 'install|setup|bootstrap|deps|cmux|auto-review|team|qa-loop|ralph|research|db|codex-app|dfix|design|imagegen|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|hproof|gx|wiki';
+export const USAGE_TOPICS = 'install|setup|bootstrap|root|deps|cmux|auto-review|team|qa-loop|ralph|research|db|codex-app|dfix|design|imagegen|dollar|context7|pipeline|reasoning|guard|conflicts|versioning|eval|hproof|gx|wiki';
 
 export const RECOMMENDED_MCP_SERVERS = [
   {
@@ -108,6 +108,10 @@ export function triwikiStagePolicyText(commandPrefix = 'sks') {
 
 export function chatCaptureIntakeText() {
   return `From-Chat-IMG intake: explicit signal only. Treat uploads as chat screenshot plus originals, use Computer Use/browser visual inspection when available, list requirements first in source order, match regions to attachments with confidence, and write ${FROM_CHAT_IMG_COVERAGE_ARTIFACT}, ${FROM_CHAT_IMG_CHECKLIST_ARTIFACT}, ${FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT}, and ${FROM_CHAT_IMG_QA_LOOP_ARTIFACT}. Preserve each visible customer request as source-bound text, account for every screenshot image region and separate attachment, map each item to work-order actions, perform the customer-request work, then run a scoped QA-LOOP over that exact work-order range before Team completion. Update checklist checkboxes as work proceeds until all boxes are checked, unresolved_items is empty, scoped_qa_loop_completed=true, and QA unresolved findings are zero. ${FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT} is temporary TriWiki-backed session context with expires_after_sessions=${FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS}, so it can be forgotten by retention after enough later sessions. Do not assume ordinary image prompts are chat captures.`;
+}
+
+export function noUnrequestedFallbackCodePolicyText() {
+  return 'No unrequested fallback implementation code: every pipeline stage, executor, reviewer, auto-review profile, and MAD/MAD-SKS invocation must implement only the requested contract. Do not invent alternate code paths, substitute features, compatibility shims, mock behavior, or hidden fallbacks unless the user explicitly requested them or the sealed decision contract names them; if the requested path is impossible, block with evidence instead.';
 }
 
 export function hasFromChatImgSignal(prompt = '') {
@@ -331,6 +335,7 @@ export const COMMAND_CATALOG = [
   { name: 'usage', usage: `sks usage [${USAGE_TOPICS}]`, description: 'Print copy-ready workflows for common tasks.' },
   { name: 'quickstart', usage: 'sks quickstart', description: 'Show the shortest safe setup and verification flow.' },
   { name: 'bootstrap', usage: 'sks bootstrap [--install-scope global|project] [--local-only] [--json]', description: 'Initialize the current project, install SKS Codex App files/skills, check Context7/Codex App/cmux, and print ready true/false.' },
+  { name: 'root', usage: 'sks root [--json]', description: 'Show whether SKS is using a project root or the per-user global SKS runtime root.' },
   { name: 'deps', usage: 'sks deps check|install [cmux|codex|context7|all] [--yes]', description: 'Check or guided-install Node/npm PATH, Codex CLI/App, Context7, Browser Use, Computer Use, cmux, and Homebrew on macOS.' },
   { name: 'codex-app', usage: 'sks codex-app [check|open]', description: 'Check Codex App install and first-party MCP/plugin readiness, then show app setup files and examples.' },
   { name: 'cmux', usage: 'sks cmux [check|status] [--workspace name]', description: 'Open the SKS cmux runtime with the ㅅㅋㅅ ASCII status pane and Codex CLI.' },
@@ -356,7 +361,7 @@ export const COMMAND_CATALOG = [
   { name: 'eval', usage: 'sks eval run|compare|thresholds ...', description: 'Run deterministic context-quality and performance evidence checks.' },
   { name: 'wiki', usage: 'sks wiki coords|pack|refresh|prune|validate ...', description: 'Build, refresh, prune, and validate RGBA/trig LLM Wiki context packs with attention.use_first and attention.hydrate_first for compact recall plus source hydration.' },
   { name: 'hproof', usage: 'sks hproof check [mission-id|latest]', description: 'Evaluate the H-Proof done gate for a mission.' },
-  { name: 'team', usage: 'sks team "task" [executor:5 reviewer:2 user:1]|log|tail|watch|status|event ...', description: 'Create and observe a scout-first Team mission: parallel analysis, TriWiki attention, role debate, runtime graph/inbox handoff, then executor parallel development.' },
+  { name: 'team', usage: 'sks team "task" [executor:5 reviewer:2 user:1]|log|tail|watch|lane|status|event ...', description: 'Create and observe a scout-first Team mission: parallel analysis, TriWiki attention, role debate, runtime graph/inbox handoff, then executor parallel development.' },
   { name: 'reasoning', usage: 'sks reasoning ["prompt"] [--json]', description: 'Show SKS temporary reasoning-effort routing: medium for simple tasks, high for logic, xhigh for research.' },
   { name: 'gx', usage: 'sks gx init|render|validate|drift|snapshot [name]', description: 'Create and verify deterministic SVG/HTML visual context cartridges.' },
   { name: 'profile', usage: 'sks profile show|set <model>', description: 'Inspect or set the current SKS model profile metadata.' },
@@ -520,13 +525,15 @@ export function subagentExecutionPolicyText(route, prompt = '') {
     'Subagent policy: REQUIRED for code-changing or execution work in this route.',
     'Before editing, the parent orchestrator must visibly state the SKS route, split independent write scopes, and spawn worker/reviewer subagents whenever the tools are available.',
     'Run workers in parallel only with disjoint ownership. The parent owns integration, verification, and final evidence.',
-    'If subagent tools are unavailable or the work cannot be safely split, record that as explicit subagent evidence before editing.'
+    'If subagent tools are unavailable or the work cannot be safely split, record that as explicit subagent evidence before editing.',
+    noUnrequestedFallbackCodePolicyText()
   ].join(' ');
 }
 
 export function routeReasoning(route, prompt = '') {
   const text = String(prompt || '');
   const base = route?.reasoningPolicy || 'medium';
+  if (hasFromChatImgSignal(text)) return reasoning('xhigh', 'from_chat_img_image_work_order_analysis');
   if (route?.id === 'Research' || route?.id === 'AutoResearch') return reasoning('xhigh', 'research_or_experiment_route');
   if (/\b(research|autoresearch|hypothesis|falsify|novelty|frontier|benchmark|experiment|SEO|GEO|ranking|연구|실험|가설|검증)\b/i.test(text)) return reasoning('xhigh', 'research_level_prompt');
   if (base === 'high' || /\b(architecture|design|migration|database|security|parallel|orchestrat|refactor|algorithm|logic|tradeoff|검토|설계|마이그레이션|보안|병렬|팀|논리)\b/i.test(text)) return reasoning('high', 'logical_or_safety_work');

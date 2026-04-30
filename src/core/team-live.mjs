@@ -3,6 +3,7 @@ import { appendJsonlBounded, nowIso, readJson, readText, writeJsonAtomic, writeT
 import { triwikiContextTracking, triwikiContextTrackingText } from './routes.mjs';
 
 const MAX_LIVE_BYTES = 192 * 1024;
+const TEAM_RUNTIME_TASKS_ARTIFACT = 'team-runtime-tasks.json';
 const DEFAULT_AGENTS = ['parent_orchestrator', 'analysis_scout', 'team_consensus', 'implementation_worker', 'db_safety_reviewer', 'qa_reviewer'];
 export const DEFAULT_TEAM_ROLE_COUNTS = { user: 1, planner: 1, reviewer: 1, executor: 3 };
 export const DEFAULT_MAX_TEAM_AGENT_SESSIONS = 6;
@@ -67,6 +68,7 @@ export function defaultTeamDashboard(id, prompt, opts = {}) {
       log: `sks team log ${id}`,
       tail: `sks team tail ${id}`,
       watch: `sks team watch ${id}`,
+      lane: `sks team lane ${id} --agent <agent> --follow`,
       event: `sks team event ${id} --agent <agent> --phase <phase> --message "..."`
     },
     agents: Object.fromEntries([...new Set([...DEFAULT_AGENTS, ...spec.roster.all_agents.map((agent) => agent.id)])].map((name) => [name, { status: 'pending', phase: null, last_seen: null }])),
@@ -115,6 +117,7 @@ sks team status ${id}
 sks team log ${id}
 sks team tail ${id}
 sks team watch ${id}
+sks team lane ${id} --agent analysis_scout_1 --follow
 sks team event ${id} --agent analysis_scout_1 --phase parallel_analysis_scouting --message "mapped repo slice"
 \`\`\`
 
@@ -337,6 +340,42 @@ export async function readTeamTranscriptTail(dir, count = 20) {
   return text.split(/\n/).filter(Boolean).slice(-Math.max(1, Number(count) || 20));
 }
 
+export async function renderTeamAgentLane(dir, opts = {}) {
+  const agent = String(opts.agent || opts.agentId || 'parent_orchestrator');
+  const phase = opts.phase ? String(opts.phase) : null;
+  const lines = Math.max(1, Number(opts.lines) || 12);
+  const dashboard = await readTeamDashboard(dir);
+  const runtime = await readJson(path.join(dir, TEAM_RUNTIME_TASKS_ARTIFACT), null);
+  const missionId = opts.missionId || dashboard?.mission_id || runtime?.mission_id || path.basename(dir);
+  const status = dashboard?.agents?.[agent] || {};
+  const runtimeTasks = Array.isArray(runtime?.tasks) ? runtime.tasks : Array.isArray(runtime) ? runtime : [];
+  const assignedTasks = runtimeTasks.filter((task) => task?.worker === agent || task?.agent_hint === agent);
+  const eventWindow = await readTeamTranscriptTail(dir, Math.max(lines * 8, 80));
+  const agentEvents = eventWindow.map(parseTranscriptLine).filter((event) => event?.agent === agent).slice(-lines);
+  const globalTail = (await readTeamTranscriptTail(dir, lines)).map(parseTranscriptLine).filter(Boolean);
+  return [
+    `# SKS Team Agent Lane`,
+    '',
+    `Mission: ${missionId}`,
+    `Agent: ${agent}`,
+    `Requested phase: ${phase || 'any'}`,
+    '',
+    `## Agent Status`,
+    `- status: ${status.status || 'pending'}`,
+    `- phase: ${status.phase || 'unknown'}`,
+    `- last_seen: ${status.last_seen || 'never'}`,
+    '',
+    `## Assigned Runtime Tasks`,
+    ...(runtime ? formatRuntimeTasks(assignedTasks) : ['- team-runtime-tasks.json not available yet.']),
+    '',
+    `## Recent Agent Events`,
+    ...(agentEvents.length ? agentEvents.map(formatTranscriptEvent) : ['- No recent agent-specific events in the bounded tail.']),
+    '',
+    `## Fallback Global Tail`,
+    ...(globalTail.length ? globalTail.map(formatTranscriptEvent) : ['- No transcript events yet.'])
+  ].join('\n');
+}
+
 function normalizeEvent(event = {}) {
   return {
     ts: event.ts || nowIso(),
@@ -346,6 +385,39 @@ function normalizeEvent(event = {}) {
     message: String(event.message || '').slice(0, 4000),
     artifact: event.artifact ? String(event.artifact) : undefined
   };
+}
+
+function parseTranscriptLine(line) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    return { raw: String(line || '').slice(0, 1000) };
+  }
+}
+
+function formatTranscriptEvent(event = {}) {
+  if (event.raw) return `- ${event.raw}`;
+  const parts = [
+    event.ts || 'no-ts',
+    `[${event.phase || 'general'}]`,
+    event.agent || 'unknown',
+    event.type ? `(${event.type})` : null
+  ].filter(Boolean);
+  const suffix = event.artifact ? ` (${event.artifact})` : '';
+  return `- ${parts.join(' ')}: ${String(event.message || '').slice(0, 500)}${suffix}`;
+}
+
+function formatRuntimeTasks(tasks = []) {
+  if (!tasks.length) return ['- No assigned runtime tasks found.'];
+  return tasks.slice(0, 12).map((task) => {
+    const details = [
+      task.status || 'pending',
+      task.phase || task.role || 'team',
+      task.depends_on?.length ? `deps:${task.depends_on.join(',')}` : null,
+      task.file_paths?.length ? `files:${task.file_paths.slice(0, 3).join(',')}` : null
+    ].filter(Boolean).join(' | ');
+    return `- ${task.task_id || 'task'} ${task.subject || task.symbolic_id || 'untitled'} (${details})`;
+  });
 }
 
 function trimLiveMarkdown(text) {

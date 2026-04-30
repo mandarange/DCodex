@@ -138,7 +138,8 @@ export function inferAnswersForPrompt(prompt, explicitAnswers = {}) {
     addInferred(inferred, notes, 'RISK_BOUNDARY', [
       'no npm publish unless explicitly requested',
       'do not revert unrelated changes',
-      'no destructive commands or live data writes'
+      'no destructive commands or live data writes',
+      'no unrequested fallback implementation code'
     ], 'safety');
   }
   return { answers: inferred, notes };
@@ -159,7 +160,7 @@ export function buildQuestionSchema(prompt) {
     { id: 'DB_SCHEMA_CHANGE_ALLOWED', question: 'DB schema 또는 migration 변경을 허용하나요?', required: true, type: 'enum', options: ['no', 'yes_if_needed', 'yes_with_migration'] },
     { id: 'DEPENDENCY_CHANGE_ALLOWED', question: '새 dependency 추가를 허용하나요?', required: true, type: 'enum', options: ['no', 'yes_if_already_approved', 'yes'] },
     { id: 'TEST_SCOPE', question: 'Ralph가 완료 전 실행 또는 정당화해야 할 테스트 범위를 지정해주세요.', required: true, type: 'array_or_string', examples: ['unit', 'integration', 'e2e', 'lint', 'typecheck'] },
-    { id: 'MID_RALPH_UNKNOWN_POLICY', question: 'Ralph 중 새 모호성이 생기면 사용자에게 묻지 않고 어떤 fallback 순서로 해결할까요?', required: true, type: 'array', options: ['preserve_existing_behavior', 'smallest_reversible_change', 'defer_optional_scope', 'block_only_if_no_safe_path'] },
+    { id: 'MID_RALPH_UNKNOWN_POLICY', question: 'Ralph 중 새 모호성이 생기면 사용자에게 묻지 않고 어떤 해결 순서로 판단할까요? 이 항목은 대체 구현 또는 fallback 코드를 새로 만드는 허가가 아닙니다.', required: true, type: 'array', options: ['preserve_existing_behavior', 'smallest_reversible_change', 'defer_optional_scope', 'block_only_if_no_safe_path'] },
     { id: 'RISK_BOUNDARY', question: '보안, 결제, 데이터 손상, 권한, 인증 등 절대 넘으면 안 되는 위험 경계를 적어주세요.', required: true, type: 'array_or_string' },
 
     { id: 'DATABASE_TARGET_ENVIRONMENT', question: 'DB 관련 작업의 대상 환경을 지정해주세요. production write는 Sneakoscope Codex가 허용하지 않습니다.', required: true, type: 'enum', options: ['no_database', 'local_dev', 'preview_branch', 'supabase_branch', 'production_read_only'] },

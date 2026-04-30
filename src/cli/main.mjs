@@ -3,7 +3,7 @@ import os from 'node:os';
 import fsp from 'node:fs/promises';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { projectRoot, readJson, writeJsonAtomic, writeTextAtomic, appendJsonlBounded, nowIso, exists, ensureDir, tmpdir, packageRoot, dirSize, formatBytes, which, runProcess, PACKAGE_VERSION } from '../core/fsx.mjs';
+import { projectRoot, readJson, writeJsonAtomic, writeTextAtomic, appendJsonlBounded, nowIso, exists, ensureDir, tmpdir, packageRoot, dirSize, formatBytes, which, runProcess, PACKAGE_VERSION, sksRoot, globalSksRoot, findProjectRoot } from '../core/fsx.mjs';
 import { initProject, installSkills, normalizeInstallScope, sksCommandPrefix } from '../core/init.mjs';
 import { getCodexInfo, runCodexExec } from '../core/codex-adapter.mjs';
 import { createMission, loadMission, findLatestMission, missionDir, setCurrent, stateFile } from '../core/mission.mjs';
@@ -25,12 +25,12 @@ import { DEFAULT_EVAL_THRESHOLDS, compareEvaluationReports, defaultEvaluationSce
 import { buildResearchPrompt, evaluateResearchGate, writeMockResearchResult, writeResearchPlan } from '../core/research.mjs';
 import { contextCapsule } from '../core/triwiki-attention.mjs';
 import { rgbaKey, rgbaToWikiCoord, validateWikiCoordinateIndex } from '../core/wiki-coordinate.mjs';
-import { COMMAND_CATALOG, DOLLAR_COMMAND_ALIASES, DOLLAR_COMMANDS, DOLLAR_SKILL_NAMES, FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, RECOMMENDED_SKILLS, ROUTES, USAGE_TOPICS, context7ConfigToml, hasContext7ConfigText, hasFromChatImgSignal, looksLikeAnswerOnlyRequest, reflectionRequiredForRoute, reasoningInstruction, routePrompt, routeReasoning, routeRequiresSubagents, stackCurrentDocsPolicy, triwikiContextTracking } from '../core/routes.mjs';
+import { COMMAND_CATALOG, DOLLAR_COMMAND_ALIASES, DOLLAR_COMMANDS, DOLLAR_SKILL_NAMES, FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, RECOMMENDED_SKILLS, ROUTES, USAGE_TOPICS, context7ConfigToml, hasContext7ConfigText, hasFromChatImgSignal, looksLikeAnswerOnlyRequest, noUnrequestedFallbackCodePolicyText, reflectionRequiredForRoute, reasoningInstruction, routePrompt, routeReasoning, routeRequiresSubagents, stackCurrentDocsPolicy, triwikiContextTracking } from '../core/routes.mjs';
 import { context7Evidence, evaluateStop, recordContext7Evidence, recordSubagentEvidence } from '../core/pipeline.mjs';
 import { TEAM_DECOMPOSITION_ARTIFACT, TEAM_GRAPH_ARTIFACT, TEAM_INBOX_DIR, TEAM_RUNTIME_TASKS_ARTIFACT, teamRuntimePlanMetadata, teamRuntimeRequiredArtifacts, validateTeamRuntimeArtifacts, writeTeamRuntimeArtifacts } from '../core/team-dag.mjs';
-import { appendTeamEvent, formatRoleCounts, initTeamLive, normalizeTeamSpec, parseTeamSpecArgs, parseTeamSpecText, readTeamDashboard, readTeamLive, readTeamTranscriptTail } from '../core/team-live.mjs';
+import { appendTeamEvent, formatRoleCounts, initTeamLive, normalizeTeamSpec, parseTeamSpecArgs, parseTeamSpecText, readTeamDashboard, readTeamLive, readTeamTranscriptTail, renderTeamAgentLane } from '../core/team-live.mjs';
 import { CODEX_APP_DOCS_URL, codexAppIntegrationStatus, formatCodexAppStatus } from '../core/codex-app.mjs';
-import { CMUX_BREW_COMMAND, CMUX_BREW_UPGRADE_COMMAND, buildCmuxLaunchPlan, defaultCmuxWorkspaceName, ensureCmuxInstalled, formatCmuxBanner, launchCmuxTeamView, launchCmuxUi, platformCmuxInstallHint, runCmuxStatus, sanitizeCmuxWorkspaceName, cmuxAvailable } from '../core/cmux-ui.mjs';
+import { CMUX_BREW_COMMAND, CMUX_BREW_UPGRADE_COMMAND, buildCmuxLaunchPlan, buildCmuxNewWorkspaceArgs, cmuxWorkspaceRef, defaultCmuxWorkspaceName, ensureCmuxInstalled, formatCmuxBanner, launchCmuxTeamView, launchCmuxUi, matchingCmuxWorkspaces, parseCmuxWorkspaceList, platformCmuxInstallHint, runCmuxStatus, sanitizeCmuxWorkspaceName, cmuxAvailable } from '../core/cmux-ui.mjs';
 import { autoReviewProfileName, autoReviewStatus, autoReviewSummary, enableAutoReview, disableAutoReview, enableMadHighProfile, madHighProfileName } from '../core/auto-review.mjs';
 
 const flag = (args, name) => args.includes(name);
@@ -63,6 +63,7 @@ export async function main(args) {
   if (cmd === 'help') return help(tail);
   if (cmd === 'commands') return commands(tail);
   if (cmd === 'usage') return usage(tail);
+  if (cmd === 'root') return rootCommand(tail);
   if (cmd === 'quickstart') return quickstart();
   if (cmd === 'codex-app') return codexAppHelp(tail);
   if (cmd === 'bootstrap') return bootstrap(tail);
@@ -112,6 +113,7 @@ Usage:
   sks wizard
   sks commands [--json]
   sks usage [${USAGE_TOPICS}]
+  sks root [--json]
   sks quickstart
   sks bootstrap [--install-scope global|project] [--local-only] [--json]
   sks deps check|install [cmux|codex|context7|all] [--yes] [--json]
@@ -145,7 +147,7 @@ Usage:
   sks ralph run <mission-id|latest> [--mock] [--max-cycles N]
   sks ralph status <mission-id|latest>
   sks team "task" [executor:5 reviewer:2 user:1] [--json]
-  sks team log|tail|watch|status [mission-id|latest]
+  sks team log|tail|watch|lane|status [mission-id|latest]
   sks team event [mission-id|latest] --agent <name> --phase <phase> --message "..."
   sks research prepare "topic" [--depth frontier]
   sks research run <mission-id|latest> [--mock] [--max-cycles N]
@@ -490,7 +492,7 @@ async function updateCheck(args = []) {
   if (result.update_available) console.log('Run:     npm i -g sneakoscope');
 }
 
-const DOLLAR_DEFAULT_PIPELINE_TEXT = 'Default pipeline: questions -> $Answer, small design/content -> $DFix, code -> $Team. Use $From-Chat-IMG only for chat screenshot plus original attachments. Use $MAD-SKS only as an explicit scoped DB authorization modifier that can be combined with another $ route.';
+const DOLLAR_DEFAULT_PIPELINE_TEXT = 'Default pipeline: questions -> $Answer, small design/content -> $DFix, code -> $Team. Use $From-Chat-IMG only for chat screenshot plus original attachments. Use $MAD-SKS only as an explicit scoped DB authorization modifier that can be combined with another $ route. No route may invent unrequested fallback implementation code.';
 
 function commands(args = []) {
   if (flag(args, '--json')) return console.log(JSON.stringify({ aliases: ['sks', 'sneakoscope'], dollar_commands: DOLLAR_COMMANDS, app_skill_aliases: DOLLAR_COMMAND_ALIASES, commands: COMMAND_CATALOG }, null, 2));
@@ -502,6 +504,27 @@ function commands(args = []) {
   console.log('Use these inside Codex App or another agent prompt. They are prompt routes, not terminal commands.\n');
   console.log(formatDollarCommandsDetailed());
   console.log(`\nCanonical Codex App picker skills: ${DOLLAR_COMMAND_ALIASES.map((x) => x.app_skill).join(', ')}`);
+}
+
+async function rootCommand(args = []) {
+  const project = await findProjectRoot();
+  const global = globalSksRoot();
+  const active = await sksRoot();
+  const result = {
+    cwd: process.cwd(),
+    mode: project ? 'project' : 'global',
+    active_root: active,
+    project_root: project,
+    global_root: global,
+    using_global_root: !project
+  };
+  if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
+  console.log('SKS Root\n');
+  console.log(`Mode:        ${result.mode}`);
+  console.log(`Active root: ${active}`);
+  console.log(`Project:     ${project || 'none'}`);
+  console.log(`Global root: ${global}`);
+  if (!project) console.log('\nNo project marker was found here, so SKS will use the per-user global runtime root. Run `sks bootstrap` to initialize the current directory as a project.');
 }
 
 function dollarCommands(args = []) {
@@ -549,8 +572,9 @@ Rules:
 }
 
 async function context7(sub = 'check', args = []) {
-  const root = await projectRoot();
   const action = sub || 'check';
+  const setupScope = action === 'setup' ? readOption(args, '--scope', flag(args, '--global') ? 'global' : 'project') : null;
+  const root = action === 'setup' && setupScope === 'project' ? await projectRoot() : await sksRoot();
   if (action === 'check') {
     const result = await checkContext7(root);
     if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
@@ -636,7 +660,7 @@ async function context7(sub = 'check', args = []) {
     return;
   }
   if (action === 'setup') {
-    const scope = readOption(args, '--scope', flag(args, '--global') ? 'global' : 'project');
+    const scope = setupScope;
     const transport = readOption(args, '--transport', flag(args, '--remote') ? 'remote' : 'local');
     if (!['project', 'global'].includes(scope)) throw new Error('Invalid Context7 scope. Use project or global.');
     if (!['local', 'remote'].includes(transport)) throw new Error('Invalid Context7 transport. Use local or remote.');
@@ -673,7 +697,7 @@ function printContext7DocsResult(result, opts = {}) {
 }
 
 async function pipeline(sub = 'status', args = []) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const action = sub || 'status';
   if (action === 'answer') return pipelineAnswer(root, args);
   const state = await readJson(stateFile(root), {});
@@ -1022,7 +1046,7 @@ async function cmuxCommand(sub = 'start', args = []) {
     return;
   }
   if (action === 'check') {
-    const root = await projectRoot();
+    const root = await sksRoot();
     const plan = await buildCmuxLaunchPlan({ root, session: readOption(args, '--session', null) });
     if (flag(args, '--json')) return console.log(JSON.stringify(plan, null, 2));
     console.log(formatCmuxBanner(plan.app));
@@ -1111,14 +1135,14 @@ async function ensureMadLaunchDependencies(args = []) {
     const cmux = await cmuxAvailable().catch(() => ({ ok: false }));
     if (!cmux.ok && !cmux.bin) actions.push(await installCmuxDependency(args));
   }
-  const status = await depsStatus(await projectRoot());
+  const status = await depsStatus(await sksRoot());
   return { ready: Boolean(status.codex_cli.ok && (status.cmux.ok || status.cmux.bin)), actions, status };
 }
 
 async function deps(sub = 'check', args = []) {
   const action = sub || 'check';
   if (action === 'check' || action === 'status') {
-    const root = await projectRoot();
+    const root = await sksRoot();
     const status = await depsStatus(root);
     if (flag(args, '--json')) return console.log(JSON.stringify(status, null, 2));
     printDepsStatus(status);
@@ -1131,7 +1155,7 @@ async function deps(sub = 'check', args = []) {
 }
 
 async function depsStatus(root = null, opts = {}) {
-  root ||= await projectRoot();
+  root ||= await sksRoot();
   const npmBin = await which('npm').catch(() => null);
   const codex = opts.codex || await getCodexInfo().catch(() => ({}));
   const app = opts.codexApp || await codexAppIntegrationStatus({ codex });
@@ -1195,7 +1219,7 @@ function printDepsStatus(status) {
 }
 
 async function depsInstall(args = []) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const target = positionalArgs(args)[0] || 'all';
   const wants = target === 'all' ? ['codex', 'context7', 'cmux'] : [target];
   const actions = [];
@@ -1308,8 +1332,14 @@ function quickstart() {
 
 First install and bootstrap this project:
   npm i -g sneakoscope
+  sks root
   sks bootstrap
   sks
+
+Use outside a project:
+  sks root
+  sks deps check
+  sks team "global mission"
 
 If cmux is missing:
   sks deps install cmux
@@ -1411,12 +1441,13 @@ Examples:
 function usage(args = []) {
   const topic = String(args[0] || 'overview').toLowerCase();
   const blocks = {
-    overview: ['ㅅㅋㅅ Usage', '', 'Discover:', '  sks commands', '  sks quickstart', '  sks bootstrap', '  sks deps check', '  sks codex-app check', '  sks cmux check', '  sks dollar-commands', '', `Topics: ${USAGE_TOPICS}`],
-    install: ['Install', '', '  npm i -g sneakoscope', '  sks bootstrap', '  sks', '', 'Fallback:', '  npx -y -p sneakoscope sks bootstrap', '', 'Project:', '  npm i -D sneakoscope', '  npx sks setup --install-scope project'],
+    overview: ['ㅅㅋㅅ Usage', '', 'Discover:', '  sks commands', '  sks quickstart', '  sks root', '  sks bootstrap', '  sks deps check', '  sks codex-app check', '  sks cmux check', '  sks dollar-commands', '', `Topics: ${USAGE_TOPICS}`],
+    install: ['Install', '', '  npm i -g sneakoscope', '  sks root', '  sks', '', 'Project bootstrap:', '  sks bootstrap', '', 'Fallback:', '  npx -y -p sneakoscope sks root', '', 'Project:', '  npm i -D sneakoscope', '  npx sks setup --install-scope project'],
     bootstrap: ['Bootstrap', '', '  sks bootstrap', '  sks setup --bootstrap', '', 'Creates project SKS files, Codex App skills/hooks/config, state/guard files, then checks Codex App, Context7, and cmux.'],
+    root: ['Root', '', '  sks root [--json]', '', 'Inside a project, SKS uses that project root. Outside any project marker, runtime commands use the per-user global SKS root instead of writing .sneakoscope into the current random folder.'],
     deps: ['Dependencies', '', '  sks deps check [--json]', '  sks deps install [cmux|codex|context7|all] [--yes]', '', 'cmux on macOS uses Homebrew only after approval.'],
     cmux: ['cmux', '', '  sks', '  sks cmux check', '  sks cmux status --once', '  sks deps install cmux'],
-    team: ['Team', '', '  sks team "task" executor:5 reviewer:2 user:1', '  sks team watch latest', '', '$Team runs questions -> contract -> scouts -> TriWiki attention -> debate -> runtime graph/inbox -> fresh executors -> review -> cleanup -> reflection -> Honest.'],
+    team: ['Team', '', '  sks team "task" executor:5 reviewer:2 user:1', '  sks team watch latest', '  sks team lane latest --agent analysis_scout_1 --follow', '', '$Team runs questions -> contract -> scouts -> TriWiki attention -> debate -> runtime graph/inbox -> fresh executors -> review -> cleanup -> reflection -> Honest.'],
     'qa-loop': ['QA-LOOP', '', '  sks qa-loop prepare "QA this app"', '  sks qa-loop answer <MISSION_ID> answers.json', '  sks qa-loop run <MISSION_ID> --max-cycles 8', '', 'Report: YYYY-MM-DD-v<version>-qa-report.md'],
     ralph: ['Ralph', '', '  sks ralph prepare "task"', '  sks ralph answer <MISSION_ID> answers.json', '  sks ralph run <MISSION_ID> --max-cycles 8'],
     'codex-app': ['Codex App', '', '  sks bootstrap', '  sks codex-app check', '  sks dollar-commands', '  cat .codex/SNEAKOSCOPE.md'],
@@ -1608,7 +1639,7 @@ async function fixPath(args) {
 }
 
 async function doctor(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const requestedScope = args.includes('--install-scope') || flag(args, '--project') || flag(args, '--global')
     ? installScopeFromArgs(args)
     : null;
@@ -1731,7 +1762,7 @@ async function checkRequiredSkills(root, skillRoot = path.join(root, '.agents', 
 }
 
 async function codexAppSkillReadiness(root = null) {
-  root ||= await projectRoot();
+  root ||= await sksRoot();
   const project = await checkRequiredSkills(root);
   const global = await checkRequiredSkills(null, globalCodexSkillsRoot());
   return { ok: project.ok || global.ok, project, global };
@@ -1892,7 +1923,7 @@ function qaRoute() {
 }
 
 async function qaLoopPrepare(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   if (!(await exists(path.join(root, '.sneakoscope')))) await initProject(root, {});
   const prompt = promptOf(args);
   if (!prompt) throw new Error('Missing QA target prompt.');
@@ -1912,7 +1943,7 @@ async function qaLoopPrepare(args) {
 }
 
 async function qaLoopAnswer(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const [missionArg, answerFile] = args;
   const id = await resolveMissionId(root, missionArg);
   if (!id || !answerFile) throw new Error('Usage: sks qa-loop answer <mission-id|latest> <answers.json>');
@@ -1937,7 +1968,7 @@ async function qaLoopAnswer(args) {
 }
 
 async function qaLoopRun(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const id = await resolveMissionId(root, args[0]);
   if (!id) throw new Error('Usage: sks qa-loop run <mission-id|latest> [--mock] [--max-cycles N]');
   const { dir, mission } = await loadMission(root, id);
@@ -2002,7 +2033,7 @@ async function qaLoopRun(args) {
 }
 
 async function qaLoopStatus(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const id = await resolveMissionId(root, args[0]);
   if (!id) throw new Error('Usage: sks qa-loop status <mission-id|latest>');
   const { dir, mission } = await loadMission(root, id);
@@ -2019,7 +2050,7 @@ async function qaLoopStatus(args) {
 }
 
 async function researchPrepare(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   if (!(await exists(path.join(root, '.sneakoscope')))) await initProject(root, {});
   const prompt = positionalArgs(args).join(' ').trim();
   if (!prompt) throw new Error('Missing research topic.');
@@ -2033,7 +2064,7 @@ async function researchPrepare(args) {
 }
 
 async function researchRun(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const id = await resolveMissionId(root, args[0]);
   if (!id) throw new Error('Usage: sks research run <mission-id|latest> [--mock] [--max-cycles N]');
   const { dir, mission } = await loadMission(root, id);
@@ -2095,7 +2126,7 @@ async function researchRun(args) {
 }
 
 async function researchStatus(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const id = await resolveMissionId(root, args[0]);
   if (!id) throw new Error('Usage: sks research status <mission-id|latest>');
   const { dir, mission } = await loadMission(root, id);
@@ -2106,7 +2137,7 @@ async function researchStatus(args) {
 }
 
 async function ralphPrepare(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   if (!(await exists(path.join(root, '.sneakoscope')))) await initProject(root, {});
   const prompt = promptOf(args);
   if (!prompt) throw new Error('Missing task prompt.');
@@ -2124,7 +2155,7 @@ async function ralphPrepare(args) {
 }
 
 async function ralphAnswer(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const [missionArg, answerFile] = args;
   const id = await resolveMissionId(root, missionArg);
   if (!id || !answerFile) throw new Error('Usage: sks ralph answer <mission-id|latest> <answers.json>');
@@ -2145,7 +2176,7 @@ async function ralphAnswer(args) {
 }
 
 async function ralphRun(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const id = await resolveMissionId(root, args[0]);
   if (!id) throw new Error('Usage: sks ralph run <mission-id|latest> [--mock]');
   const { dir, mission } = await loadMission(root, id);
@@ -2229,7 +2260,7 @@ async function ralphRunMock(root, id, dir) {
 }
 
 async function ralphStatus(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const id = await resolveMissionId(root, args[0]);
   if (!id) throw new Error('Usage: sks ralph status <mission-id|latest>');
   const { dir, mission } = await loadMission(root, id);
@@ -2321,11 +2352,32 @@ async function selftest() {
   const depsCheck = await runProcess(process.execPath, [path.join(packageRoot(), 'bin', 'sks.mjs'), 'deps', 'check', '--json'], { cwd: bootstrapJsonTmp, env: { HOME: path.join(bootstrapJsonTmp, 'home') }, timeoutMs: 20000, maxOutputBytes: 256 * 1024 });
   const depsResult = JSON.parse(depsCheck.stdout);
   if (!depsResult.node?.ok || !('cmux' in depsResult) || !('homebrew' in depsResult)) throw new Error('selftest failed: deps check json missing expected fields');
+  const globalCwd = tmpdir();
+  const globalRuntimeRoot = path.join(tmpdir(), 'sks-global-root');
+  const globalRootProbe = await runProcess(process.execPath, [path.join(packageRoot(), 'bin', 'sks.mjs'), 'root', '--json'], { cwd: globalCwd, env: { SKS_GLOBAL_ROOT: globalRuntimeRoot }, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  const globalRootResult = JSON.parse(globalRootProbe.stdout);
+  if (globalRootResult.mode !== 'global' || globalRootResult.active_root !== globalRuntimeRoot || globalRootResult.project_root !== null) throw new Error('selftest failed: global root probe did not use SKS_GLOBAL_ROOT outside a project');
+  const globalPipeline = await runProcess(process.execPath, [path.join(packageRoot(), 'bin', 'sks.mjs'), 'pipeline', 'status', '--json'], { cwd: globalCwd, env: { SKS_GLOBAL_ROOT: globalRuntimeRoot }, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  const globalPipelineResult = JSON.parse(globalPipeline.stdout);
+  if (globalPipelineResult.root !== globalRuntimeRoot) throw new Error('selftest failed: pipeline status did not use global runtime root outside a project');
+  const globalTeam = await runProcess(process.execPath, [path.join(packageRoot(), 'bin', 'sks.mjs'), 'team', 'global path smoke', '--json'], { cwd: globalCwd, env: { SKS_GLOBAL_ROOT: globalRuntimeRoot }, timeoutMs: 30000, maxOutputBytes: 256 * 1024 });
+  const globalTeamResult = JSON.parse(globalTeam.stdout);
+  if (!String(globalTeamResult.mission_dir || '').startsWith(path.join(globalRuntimeRoot, '.sneakoscope', 'missions')) || !(await exists(path.join(globalRuntimeRoot, '.sneakoscope', 'manifest.json')))) throw new Error('selftest failed: team mission did not materialize under global runtime root');
+  if (await exists(path.join(globalCwd, '.sneakoscope'))) throw new Error('selftest failed: global runtime command polluted the caller cwd with .sneakoscope');
   const madProfilePath = path.join(tmp, 'mad-codex-config.toml');
   const madProfile = await enableMadHighProfile({ configPath: madProfilePath });
   const madProfileText = await safeReadText(madProfilePath);
-  if (madProfile.profile_name !== 'sks-mad-high' || !madProfileText.includes('sandbox_mode = "danger-full-access"') || !madProfileText.includes('approval_policy = "on-request"') || !madProfileText.includes('approvals_reviewer = "auto_review"') || !madProfileText.includes('model_reasoning_effort = "high"')) throw new Error('selftest failed: MAD high profile is not full-access auto-review high');
+  if (madProfile.profile_name !== 'sks-mad-high' || !madProfileText.includes('sandbox_mode = "danger-full-access"') || !madProfileText.includes('approval_policy = "on-request"') || !madProfileText.includes('approvals_reviewer = "auto_review"') || !madProfileText.includes('model_reasoning_effort = "high"') || !madProfileText.includes('unrequested fallback implementation code')) throw new Error('selftest failed: MAD high profile is not full-access auto-review high with fallback-code guard');
   if (!isMadHighLaunch(['--mad', '--high']) || isMadHighLaunch(['db', '--mad'])) throw new Error('selftest failed: MAD high launch flag parsing is not top-level only');
+  const workspacePlan = { workspace: 'sks-mad-selftest', root: tmp, codexArgs: ['--profile', 'sks-mad-high'] };
+  const workspaceArgs = buildCmuxNewWorkspaceArgs(workspacePlan, 'codex');
+  if (!workspaceArgs.includes('--name') || !workspaceArgs.includes('sks-mad-selftest') || !workspaceArgs.includes('--description')) throw new Error('selftest failed: MAD cmux workspace is not named for reuse');
+  const workspaceList = parseCmuxWorkspaceList(JSON.stringify({ workspaces: [
+    { id: 'keep-id', ref: 'workspace:1', name: 'sks-mad-selftest', cwd: tmp },
+    { id: 'other-id', ref: 'workspace:2', name: 'other', cwd: tmp }
+  ] }));
+  const workspaceMatches = matchingCmuxWorkspaces(workspaceList, workspacePlan);
+  if (workspaceMatches.length !== 1 || cmuxWorkspaceRef(workspaceMatches[0]) !== 'workspace:1') throw new Error('selftest failed: MAD cmux workspace reuse matching did not select the stable workspace');
   const guardBlocked = await checkHarnessModification(tmp, { tool_name: 'apply_patch', command: '*** Update File: .agents/skills/team/SKILL.md\n+tamper\n' });
   if (guardBlocked.action !== 'block') throw new Error('selftest failed: harness guard allowed skill tampering');
   const setupBlocked = await checkHarnessModification(tmp, { command: 'sks setup --force' });
@@ -2464,6 +2516,8 @@ async function selftest() {
   if (!promptPipelineText.includes('From-Chat-IMG') || !promptPipelineText.includes('Do not assume ordinary image prompts are chat captures')) throw new Error('selftest failed: prompt pipeline missing explicit From-Chat-IMG gating');
   const fromChatImgSkillText = await safeReadText(path.join(tmp, '.agents', 'skills', 'from-chat-img', 'SKILL.md'));
   if (!fromChatImgSkillText.includes('normal Team pipeline') || !fromChatImgSkillText.includes('Computer Use/browser visual inspection') || !fromChatImgSkillText.includes(FROM_CHAT_IMG_CHECKLIST_ARTIFACT) || !fromChatImgSkillText.includes(FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT) || !fromChatImgSkillText.includes(FROM_CHAT_IMG_QA_LOOP_ARTIFACT)) throw new Error('selftest failed: from-chat-img skill missing Team/browser inspection checklist guidance');
+  const fromChatImgSkillMeta = await safeReadText(path.join(tmp, '.agents', 'skills', 'from-chat-img', 'agents', 'openai.yaml'));
+  if (!fromChatImgSkillMeta.includes('model_reasoning_effort: xhigh')) throw new Error('selftest failed: from-chat-img skill metadata is not xhigh');
   for (const supportSkill of ['reasoning-router', 'pipeline-runner', 'context7-docs', 'seo-geo-optimizer', 'reflection', 'design-system-builder', 'design-ui-editor', 'imagegen']) {
     if (!(await exists(path.join(tmp, '.agents', 'skills', supportSkill, 'SKILL.md')))) throw new Error(`selftest failed: ${supportSkill} skill not installed`);
   }
@@ -2498,7 +2552,7 @@ async function selftest() {
   if (!DOLLAR_DEFAULT_PIPELINE_TEXT.includes('$Team')) throw new Error('selftest failed: dollar-commands missing Team default routing guidance');
   if (!DOLLAR_DEFAULT_PIPELINE_TEXT.includes('$From-Chat-IMG')) throw new Error('selftest failed: dollar-commands missing From-Chat-IMG guidance');
   if (!DOLLAR_DEFAULT_PIPELINE_TEXT.includes('$MAD-SKS')) throw new Error('selftest failed: dollar-commands missing MAD-SKS scoped override guidance');
-  if (!COMMAND_CATALOG.some((c) => c.name === 'context7') || !COMMAND_CATALOG.some((c) => c.name === 'pipeline') || !COMMAND_CATALOG.some((c) => c.name === 'qa-loop')) throw new Error('selftest failed: context7/pipeline/qa-loop commands missing from catalog');
+  if (!COMMAND_CATALOG.some((c) => c.name === 'context7') || !COMMAND_CATALOG.some((c) => c.name === 'pipeline') || !COMMAND_CATALOG.some((c) => c.name === 'qa-loop') || !COMMAND_CATALOG.some((c) => c.name === 'root')) throw new Error('selftest failed: context7/pipeline/qa-loop/root commands missing from catalog');
   const registryDollarCommands = DOLLAR_COMMANDS.map((c) => c.command);
   const manifest = await readJson(path.join(tmp, '.sneakoscope', 'manifest.json'));
   const policy = await readJson(path.join(tmp, '.sneakoscope', 'policy.json'));
@@ -2967,8 +3021,9 @@ async function selftest() {
   if (roleTeamPlan.roster.development_team.filter((agent) => agent.role === 'executor').length !== 5) throw new Error('selftest failed: executor role count not reflected in development team');
   if (!roleTeamPlan.roster.debate_team.some((agent) => /inconvenience/.test(agent.persona))) throw new Error('selftest failed: user friction persona missing from debate team');
   const cmuxTeam = await launchCmuxTeamView({ root: tmp, missionId: teamId, plan: roleTeamPlan, json: true });
-  if (!cmuxTeam.agents?.length || !cmuxTeam.agents.some((entry) => entry.agent === 'analysis_scout_1') || !cmuxTeam.agents.every((entry) => String(entry.command || '').includes('team watch'))) throw new Error('selftest failed: Team cmux view did not expose agent live lanes');
+  if (!cmuxTeam.agents?.length || !cmuxTeam.agents.some((entry) => entry.agent === 'analysis_scout_1') || !cmuxTeam.agents.every((entry) => String(entry.command || '').includes('team lane') && String(entry.command || '').includes('--agent'))) throw new Error('selftest failed: Team cmux view did not expose agent live lanes');
   if (routeReasoning(routePrompt('$Research frontier idea'), '$Research frontier idea').effort !== 'xhigh') throw new Error('selftest failed: research reasoning not xhigh');
+  if (routeReasoning(routePrompt('$From-Chat-IMG 채팅 이미지 작업'), '$From-Chat-IMG 채팅 이미지 작업').effort !== 'xhigh') throw new Error('selftest failed: From-Chat-IMG reasoning not xhigh');
   if (routeReasoning(routePrompt('$DB migration'), '$DB migration').effort !== 'high') throw new Error('selftest failed: logical reasoning not high');
   if (routeReasoning(routePrompt('$DFix button label'), '$DFix button label').effort !== 'medium') throw new Error('selftest failed: simple reasoning not medium');
   if (routePrompt('이 파이프라인은 왜 이렇게 동작해?')?.id !== 'Answer') throw new Error('selftest failed: question prompt did not route to Answer');
@@ -3004,6 +3059,10 @@ async function selftest() {
   if (!teamLive.includes('selftest mapped options')) throw new Error('selftest failed: team live transcript missing event');
   if (!teamLive.includes('Context tracking SSOT: TriWiki')) throw new Error('selftest failed: team live transcript missing TriWiki context tracking');
   if (!(await readTeamTranscriptTail(teamDir, 1)).join('\n').includes('selftest mapped options')) throw new Error('selftest failed: team transcript tail missing event');
+  const teamLane = await renderTeamAgentLane(teamDir, { missionId: teamId, agent: 'analysis_scout_1', lines: 4 });
+  if (!teamLane.includes('SKS Team Agent Lane') || !teamLane.includes('analysis_scout_1') || !teamLane.includes('selftest mapped repo slice')) throw new Error('selftest failed: team agent lane missing agent event context');
+  const teamLaneCli = await runProcess(process.execPath, [hookBin, 'team', 'lane', teamId, '--agent', 'analysis_scout_1', '--lines', '4'], { cwd: tmp, env: { SKS_DISABLE_UPDATE_CHECK: '1' }, timeoutMs: 15000, maxOutputBytes: 64 * 1024 });
+  if (teamLaneCli.code !== 0 || !String(teamLaneCli.stdout || '').includes('SKS Team Agent Lane') || !String(teamLaneCli.stdout || '').includes('analysis_scout_1')) throw new Error('selftest failed: sks team lane CLI did not render an agent lane');
   await writeTextAtomic(path.join(teamDir, 'team-analysis.md'), '- claim: analysis scout mapped route registry | source: src/core/routes.mjs | risk: high | confidence: supported\n');
   const installUxSchema = buildQuestionSchema('SKS first install/bootstrap UX and Context7 MCP setup improvement');
   const installUxSlotIds = installUxSchema.slots.map((s) => s.id);
@@ -3118,7 +3177,7 @@ async function selftest() {
 }
 
 async function profile(sub, args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   if (sub === 'show') return console.log(JSON.stringify(await readJson(path.join(root, '.sneakoscope', 'model', 'current.json'), { model: 'gpt-5.5' }), null, 2));
   if (sub === 'set') { await writeJsonAtomic(path.join(root, '.sneakoscope', 'model', 'current.json'), { model: args[0] || 'gpt-5.5', set_at: nowIso() }); return console.log(`Model profile set: ${args[0] || 'gpt-5.5'}`); }
   console.error('Usage: sks profile show|set <model>');
@@ -3126,7 +3185,7 @@ async function profile(sub, args) {
 
 async function hproof(sub, args) {
   if (sub !== 'check') return console.error('Usage: sks hproof check [mission-id]');
-  const root = await projectRoot();
+  const root = await sksRoot();
   const id = await resolveMissionId(root, args[0]);
   if (!id) throw new Error('No mission found.');
   console.log(JSON.stringify(await evaluateDoneGate(root, id), null, 2));
@@ -3138,7 +3197,7 @@ async function evalCommand(sub, args) {
     return;
   }
   if (sub === 'thresholds') return console.log(JSON.stringify(DEFAULT_EVAL_THRESHOLDS, null, 2));
-  const root = await projectRoot();
+  const root = await sksRoot();
   if (sub === 'run') {
     const iterations = Number(readFlagValue(args, '--iterations', 200));
     const report = runEvaluationBenchmark({ iterations });
@@ -3176,14 +3235,14 @@ async function wiki(sub, args = []) {
     return;
   }
   if (sub === 'pack') {
-    const root = await projectRoot();
+    const root = await sksRoot();
     const { pack, file } = await writeWikiContextPack(root, args);
     if (flag(args, '--json')) return console.log(JSON.stringify({ ...pack, path: file }, null, 2));
     printWikiPackSummary(root, file, pack);
     return;
   }
   if (sub === 'refresh') {
-    const root = await projectRoot();
+    const root = await sksRoot();
     const dryRun = flag(args, '--dry-run');
     const { pack, file } = await writeWikiContextPack(root, args, { dryRun });
     const validation = wikiValidationResult(pack);
@@ -3220,7 +3279,7 @@ async function wiki(sub, args = []) {
     return;
   }
   if (sub === 'prune') {
-    const root = await projectRoot();
+    const root = await sksRoot();
     const pruneResult = await pruneWikiArtifacts(root, { dryRun: flag(args, '--dry-run') });
     if (flag(args, '--json')) {
       return console.log(JSON.stringify({
@@ -3237,7 +3296,7 @@ async function wiki(sub, args = []) {
     return;
   }
   if (sub === 'validate') {
-    const root = await projectRoot();
+    const root = await sksRoot();
     const target = positionalArgs(args)[0] || path.join(root, '.sneakoscope', 'wiki', 'context-pack.json');
     const pack = await readJson(path.resolve(target));
     const { result, trustAnchors } = wikiValidationResult(pack);
@@ -3721,7 +3780,7 @@ function printEvalCompare(report, saved) {
 async function memory(sub, args) { return gc(args || []); }
 
 async function gc(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const res = await enforceRetention(root, { dryRun: flag(args, '--dry-run') });
   if (flag(args, '--json')) return console.log(JSON.stringify(res, null, 2));
   console.log(flag(args, '--dry-run') ? 'ㅅㅋㅅ GC dry run' : 'ㅅㅋㅅ GC completed');
@@ -3731,7 +3790,7 @@ async function gc(args) {
 }
 
 async function stats(args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const report = await storageReport(root);
   const pkgBytes = await dirSize(packageRoot()).catch(() => 0);
   const out = { package: { bytes: pkgBytes, human: formatBytes(pkgBytes) }, storage: report };
@@ -3744,7 +3803,7 @@ async function stats(args) {
 
 function positionalArgs(args = []) {
   const out = [];
-  const valueFlags = new Set(['--format', '--iterations', '--out', '--baseline', '--candidate', '--install-scope', '--max-cycles', '--depth', '--scope', '--transport', '--query', '--topic', '--tokens', '--timeout-ms', '--sql', '--command', '--project-ref', '--agent', '--phase', '--message', '--role', '--max-anchors']);
+  const valueFlags = new Set(['--format', '--iterations', '--out', '--baseline', '--candidate', '--install-scope', '--max-cycles', '--depth', '--scope', '--transport', '--query', '--topic', '--tokens', '--timeout-ms', '--sql', '--command', '--project-ref', '--agent', '--phase', '--message', '--role', '--max-anchors', '--lines']);
   for (let i = 0; i < args.length; i++) {
     const arg = String(args[i]);
     if (valueFlags.has(arg)) {
@@ -3806,7 +3865,7 @@ function defaultBeta(name) {
 }
 
 async function gx(sub, args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const name = cartridgeName(args);
   const dir = cartridgeDir(root, name);
   if (sub === 'init') {
@@ -3854,18 +3913,19 @@ async function gx(sub, args) {
 }
 
 async function team(args) {
-  const teamSubcommands = new Set(['log', 'tail', 'watch', 'status', 'event']);
+  const teamSubcommands = new Set(['log', 'tail', 'watch', 'lane', 'status', 'event']);
   if (teamSubcommands.has(args[0])) return teamCommand(args[0], args.slice(1));
   const opts = parseTeamCreateArgs(args);
   const { prompt, agentSessions, roleCounts, roster } = opts;
   if (!prompt) {
     console.error('Usage: sks team "task" [executor:5 reviewer:2 user:1] [--agents N] [--json]');
-    console.error('       sks team log|tail|watch|status [mission-id|latest]');
+    console.error('       sks team log|tail|watch|lane|status [mission-id|latest]');
     console.error('       sks team event [mission-id|latest] --agent <name> --phase <phase> --message "..."');
     process.exitCode = 1;
     return;
   }
-  const root = await projectRoot();
+  const root = await sksRoot();
+  if (!(await exists(path.join(root, '.sneakoscope')))) await initProject(root, {});
   const { id, dir } = await createMission(root, { mode: 'team', prompt });
   const schema = buildQuestionSchema(prompt);
   await writeQuestions(dir, schema);
@@ -4061,6 +4121,7 @@ function buildTeamPlan(id, prompt, opts = {}) {
         'sks team log <mission-id>',
         'sks team tail <mission-id>',
         'sks team watch <mission-id>',
+        'sks team lane <mission-id> --agent <name> --follow',
         'sks team event <mission-id> --agent <name> --phase <phase> --message "..."'
       ]
     },
@@ -4135,7 +4196,7 @@ ${plan.roster.validation_team.map((agent) => `- ${agent.id}: ${agent.persona}`).
 - Keep team-live.md readable for the user inside Codex App.
 - Mirror every useful subagent status, debate result, handoff, review finding, and integration decision to team-transcript.jsonl.
 - Use \`sks team event ${plan.mission_id} --agent <name> --phase <phase> --message "..."\` when recording a live event from the parent thread.
-- The user can inspect the flow with \`sks team log ${plan.mission_id}\`, \`sks team tail ${plan.mission_id}\`, or \`sks team watch ${plan.mission_id}\`.
+- The user can inspect the flow with \`sks team log ${plan.mission_id}\`, \`sks team tail ${plan.mission_id}\`, \`sks team watch ${plan.mission_id}\`, or \`sks team lane ${plan.mission_id} --agent analysis_scout_1 --follow\`.
 
 ## Phases
 
@@ -4148,7 +4209,7 @@ ${plan.invariants.map((x) => `- ${x}`).join('\n')}
 }
 
 async function teamCommand(sub, args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   const missionArg = args[0] && !String(args[0]).startsWith('--') ? args[0] : 'latest';
   const id = await resolveMissionId(root, missionArg);
   if (!id) {
@@ -4191,6 +4252,35 @@ async function teamCommand(sub, args) {
     return;
   }
   if (sub === 'log') return console.log(await readTeamLive(dir));
+  if (sub === 'lane') {
+    const agent = readFlagValue(args, '--agent', 'parent_orchestrator');
+    const phase = readFlagValue(args, '--phase', '');
+    const lines = Number(readFlagValue(args, '--lines', '12'));
+    const printLane = async () => {
+      const text = await renderTeamAgentLane(dir, { missionId: id, agent, phase, lines });
+      if (flag(args, '--json')) {
+        console.log(JSON.stringify({ mission_id: id, agent, phase, lane: text }, null, 2));
+      } else {
+        if (flag(args, '--follow') && process.stdout.isTTY) console.clear();
+        console.log(text);
+      }
+      return text;
+    };
+    let last = await printLane();
+    if (flag(args, '--follow')) {
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const next = await renderTeamAgentLane(dir, { missionId: id, agent, phase, lines });
+        if (next !== last) {
+          if (process.stdout.isTTY) console.clear();
+          else console.log('\n--- team lane update ---\n');
+          console.log(next);
+          last = next;
+        }
+      }
+    }
+    return;
+  }
   if (sub === 'tail' || sub === 'watch') {
     const lines = readFlagValue(args, '--lines', '20');
     const printTail = async () => {
@@ -4213,7 +4303,7 @@ async function teamCommand(sub, args) {
 }
 
 async function db(sub, args) {
-  const root = await projectRoot();
+  const root = await sksRoot();
   if (sub === 'policy') {
     console.log(JSON.stringify(await loadDbSafetyPolicy(root), null, 2));
     return;

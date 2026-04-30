@@ -50,7 +50,7 @@ export function buildQaLoopQuestionSchema(prompt) {
       { id: 'ACCEPTANCE_CRITERIA', question: 'List the QA completion criteria.', required: true, type: 'array_or_string' },
       { id: 'NON_GOALS', question: 'List anything QA-LOOP must not test.', required: true, type: 'array_or_string', allow_empty: true },
       { id: 'RISK_BOUNDARY', question: 'List hard safety boundaries for data, auth, permissions, money, messages, and third-party systems.', required: true, type: 'array_or_string' },
-      { id: 'MID_RALPH_UNKNOWN_POLICY', question: 'If ambiguity appears during no-question QA, choose the fallback order.', required: true, type: 'array', options: ['preserve_existing_behavior', 'smallest_reversible_change', 'defer_optional_scope', 'block_only_if_no_safe_path'] }
+      { id: 'MID_RALPH_UNKNOWN_POLICY', question: 'If ambiguity appears during no-question QA, choose the resolution order. This does not authorize unrequested fallback implementation code.', required: true, type: 'array', options: ['preserve_existing_behavior', 'smallest_reversible_change', 'defer_optional_scope', 'block_only_if_no_safe_path'] }
     ]
   };
 }
