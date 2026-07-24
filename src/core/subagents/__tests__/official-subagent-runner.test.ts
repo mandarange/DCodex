@@ -90,6 +90,7 @@ function hostCapabilityDependencies(toolNames: string[]) {
 function completedHostToolEvent(input: {
   tool: string
   path?: string
+  sourcePath?: string
   artifact?: Record<string, unknown>
 }) {
   return JSON.stringify({
@@ -99,7 +100,11 @@ function completedHostToolEvent(input: {
       server: 'acas-tools',
       tool: input.tool,
       status: 'completed',
-      ...(input.path ? { arguments: { path: input.path } } : {}),
+      ...(input.sourcePath
+        ? { arguments: { source_path: input.sourcePath, ...(input.path ? { output_path: input.path } : {}) } }
+        : input.path
+          ? { arguments: { path: input.path } }
+          : {}),
       result: {
         structured_content: input.artifact
           ? { artifact: input.artifact }
@@ -870,6 +875,30 @@ test('host capability requests select the minimum task tools and recognize workb
   assert.ok(requestHostCapabilities('기존 엑셀 수식 오류를 고쳐줘').workflows.includes('spreadsheet_edit'))
   assert.ok(requestHostCapabilities('이 문서를 PDF 파일로 저장해줘').workflows.includes('document_render'))
   assert.ok(requestHostCapabilities('이 URL 페이지를 캡처해줘').workflows.includes('web_capture'))
+
+  for (const prompt of [
+    '이 CSV에서 월별 합계 내줘',
+    '이 문서의 상위 10건을 정리해줘',
+    '이 JSON 데이터에서 통계 내줘',
+    '매출 DB 현황 조회용 SQL 실행은 금지해줘'
+  ]) {
+    assert.equal(requestHostCapabilities(prompt).workflows.includes('datasource_query'), false, prompt)
+  }
+
+  for (const prompt of [
+    'mysql에서 월별 합계를 뽑아줘',
+    'warehouse:sales 데이터소스의 상위 5건을 보여줘'
+  ]) {
+    assert.equal(requestHostCapabilities(prompt).workflows.includes('datasource_query'), true, prompt)
+  }
+
+  const webPageImage = requestHostCapabilities('이 URL의 웹 페이지를 이미지로 캡처해줘')
+  assert.equal(webPageImage.workflows.includes('web_capture'), true)
+  assert.equal(webPageImage.workflows.includes('document_render'), false)
+
+  const reportRender = requestHostCapabilities('이 HTML 보고서를 PNG로 렌더해줘')
+  assert.equal(reportRender.workflows.includes('document_render'), true)
+  assert.equal(reportRender.workflows.includes('web_capture'), false)
 })
 
 test('spreadsheet evidence allows up to three bounded mutations with inspect after each', async () => {
@@ -1029,9 +1058,22 @@ test('document evidence requires an editable source before render and a render a
     bytes: 20,
     role: 'deliverable'
   }
+  const htmlArtifact = {
+    path: 'reports/brief.html',
+    kind: 'html',
+    media_type: 'text/html',
+    sha256: `sha256:${'e'.repeat(64)}`,
+    bytes: 12,
+    role: 'scratch'
+  }
 
   const renderOnly = createHostCapabilityEventCollector(runtime)
-  renderOnly.push(`${completedHostToolEvent({ tool: 'html_to_pdf', path: 'reports/brief.pdf', artifact: pdfArtifact })}\n`)
+  renderOnly.push(`${completedHostToolEvent({
+    tool: 'html_to_pdf',
+    path: 'reports/brief.pdf',
+    sourcePath: htmlArtifact.path,
+    artifact: pdfArtifact
+  })}\n`)
   const renderOnlyEvidence = renderOnly.finish()
   assert.equal(renderOnlyEvidence.ok, false)
   assert.ok(renderOnlyEvidence.blockers.includes('host_capability_document_source_sequence_invalid'))
@@ -1044,10 +1086,15 @@ test('document evidence requires an editable source before render and a render a
   ]
   for (const invalid of invalidRenderReceipts) {
     const invalidRenderReceipt = createHostCapabilityEventCollector(runtime)
-    invalidRenderReceipt.push(`${completedHostToolEvent({ tool: 'write_file', path: 'reports/brief.html' })}\n`)
+    invalidRenderReceipt.push(`${completedHostToolEvent({
+      tool: 'write_file',
+      path: htmlArtifact.path,
+      artifact: htmlArtifact
+    })}\n`)
     invalidRenderReceipt.push(`${completedHostToolEvent({
       tool: 'html_to_pdf',
       path: 'reports/brief.pdf',
+      sourcePath: htmlArtifact.path,
       artifact: invalid.artifact
     })}\n`)
     const invalidRenderReceiptEvidence = invalidRenderReceipt.finish()
@@ -1056,9 +1103,22 @@ test('document evidence requires an editable source before render and a render a
   }
 
   const detachedRenderReceipt = createHostCapabilityEventCollector(runtime)
-  detachedRenderReceipt.push(`${completedHostToolEvent({ tool: 'write_file', path: 'reports/brief.html' })}\n`)
-  detachedRenderReceipt.push(`${completedHostToolEvent({ tool: 'html_to_pdf', path: 'reports/brief.pdf', artifact: pdfArtifact })}\n`)
-  detachedRenderReceipt.push(`${completedHostToolEvent({ tool: 'html_to_pdf', path: 'reports/final.pdf' })}\n`)
+  detachedRenderReceipt.push(`${completedHostToolEvent({
+    tool: 'write_file',
+    path: htmlArtifact.path,
+    artifact: htmlArtifact
+  })}\n`)
+  detachedRenderReceipt.push(`${completedHostToolEvent({
+    tool: 'html_to_pdf',
+    path: 'reports/brief.pdf',
+    sourcePath: htmlArtifact.path,
+    artifact: pdfArtifact
+  })}\n`)
+  detachedRenderReceipt.push(`${completedHostToolEvent({
+    tool: 'html_to_pdf',
+    path: 'reports/final.pdf',
+    sourcePath: htmlArtifact.path
+  })}\n`)
   const detachedRenderReceiptEvidence = detachedRenderReceipt.finish()
   assert.equal(detachedRenderReceiptEvidence.ok, false)
   assert.ok(detachedRenderReceiptEvidence.blockers.includes('host_capability_document_render_artifact_missing'))
@@ -1066,17 +1126,15 @@ test('document evidence requires an editable source before render and a render a
   const valid = createHostCapabilityEventCollector(runtime)
   valid.push(`${completedHostToolEvent({
     tool: 'write_file',
-    path: 'reports/brief.html',
-    artifact: {
-      path: 'reports/brief.html',
-      kind: 'html',
-      media_type: 'text/html',
-      sha256: `sha256:${'e'.repeat(64)}`,
-      bytes: 12,
-      role: 'scratch'
-    }
+    path: htmlArtifact.path,
+    artifact: htmlArtifact
   })}\n`)
-  valid.push(`${completedHostToolEvent({ tool: 'html_to_pdf', path: 'reports/brief.pdf', artifact: pdfArtifact })}\n`)
+  valid.push(`${completedHostToolEvent({
+    tool: 'html_to_pdf',
+    path: 'reports/brief.pdf',
+    sourcePath: htmlArtifact.path,
+    artifact: pdfArtifact
+  })}\n`)
   const validEvidence = valid.finish()
   assert.equal(validEvidence.ok, true)
   assert.deepEqual(trustedHostCapabilityReceiptBindingBlockers(validEvidence), [])
@@ -1089,10 +1147,15 @@ test('document evidence requires an editable source before render and a render a
     dependencies: hostCapabilityDependencies(['write_file', 'html_to_screenshot'])
   })
   const validPng = createHostCapabilityEventCollector(pngRuntime)
-  validPng.push(`${completedHostToolEvent({ tool: 'write_file', path: 'reports/brief.html' })}\n`)
+  validPng.push(`${completedHostToolEvent({
+    tool: 'write_file',
+    path: htmlArtifact.path,
+    artifact: htmlArtifact
+  })}\n`)
   validPng.push(`${completedHostToolEvent({
     tool: 'html_to_screenshot',
     path: 'reports/brief.png',
+    sourcePath: htmlArtifact.path,
     artifact: {
       path: 'reports/brief.png',
       kind: 'png',
@@ -1105,6 +1168,51 @@ test('document evidence requires an editable source before render and a render a
   const validPngEvidence = validPng.finish()
   assert.equal(validPngEvidence.ok, true)
   assert.deepEqual(trustedHostCapabilityReceiptBindingBlockers(validPngEvidence), [])
+})
+
+test('artifact capability requires a receipt bound to every passed artifact-producing call', async () => {
+  const request = requestHostCapabilities('Create and save files in the workspace.')
+  const runtime = await inspectHostCapabilityRuntime({
+    root: process.cwd(),
+    request,
+    projectTrusted: true,
+    dependencies: hostCapabilityDependencies(['write_file'])
+  })
+  assert.equal(runtime.ok, true)
+  const artifacts = [
+    {
+      path: 'reports/a.txt',
+      kind: 'text',
+      media_type: 'text/plain',
+      sha256: `sha256:${'a'.repeat(64)}`,
+      bytes: 1,
+      role: 'deliverable'
+    },
+    {
+      path: 'reports/b.txt',
+      kind: 'text',
+      media_type: 'text/plain',
+      sha256: `sha256:${'b'.repeat(64)}`,
+      bytes: 1,
+      role: 'deliverable'
+    }
+  ]
+  for (const missingArtifactIndex of [0, 1]) {
+    const collector = createHostCapabilityEventCollector(runtime)
+    for (let index = 0; index < artifacts.length; index += 1) {
+      collector.push(`${completedHostToolEvent({
+        tool: 'write_file',
+        path: artifacts[index]!.path,
+        ...(index === missingArtifactIndex ? {} : { artifact: artifacts[index] })
+      })}\n`)
+    }
+    const evidence = collector.finish()
+    assert.equal(evidence.ok, false, `missing artifact for call ${missingArtifactIndex}`)
+    assert.ok(
+      evidence.blockers.includes('host_capability_artifact_receipt_missing'),
+      `missing artifact for call ${missingArtifactIndex}`
+    )
+  }
 })
 
 test('collector binds 8, 10, 12, and 64 artifacts to exact canonical source events without reconstruction', async () => {

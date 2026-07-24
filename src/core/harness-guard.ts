@@ -48,13 +48,13 @@ export async function writeHarnessGuardPolicy(root: any, opts: any = {}) {
     locked: !sourceException,
     engine_source_exception: sourceException,
     engine_source_detection: 'package.name=sneakoscope + src/bin/sks.ts + src/core/init.ts + src/core/hooks-runtime.ts',
-    rule: 'LLM tool calls must not modify installed Sneakoscope harness control files. Use manual terminal maintenance or update SKS itself.',
+    rule: 'LLM tool calls must not modify installed Sneakoscope harness control files. Agents must never run `sks doctor --fix`; ask the user to run it in their own terminal when repair is needed.',
     protected_files: HARNESS_STATIC_FILES,
     protected_dirs: HARNESS_STATIC_DIRS,
     runtime_mutable_paths: HARNESS_RUNTIME_MUTABLE,
     blocked_maintenance_commands: [
       'sks setup/init/fix-path',
-      'sks doctor --fix',
+      'sks doctor --fix (operator-only; agents must ask the user)',
       'sks context7 setup',
       'npm remove/uninstall sneakoscope'
     ],
@@ -110,10 +110,27 @@ export async function harnessGuardStatus(root: any) {
 
 export async function checkHarnessModification(root: any, payload: any = {}, opts: any = {}) {
   const policy = await loadHarnessGuardPolicy(root);
+  const classification = classifyHarnessPayload(root, payload, policy);
+  // Operator-only: agents must never self-run doctor --fix, including in the
+  // Sneakoscope engine source repo where other harness writes remain allowed.
+  if ((classification.reasons || []).includes('sks_doctor_fix_blocked')) {
+    const decision = {
+      action: 'block',
+      reasons: ['sks_doctor_fix_blocked'],
+      matches: classification.matches,
+      command: classification.command,
+      tool: classification.toolName
+    };
+    await appendJsonlBounded(path.join(root, '.sneakoscope', 'state', 'harness-guard.jsonl'), {
+      ts: nowIso(),
+      decision,
+      payload_keys: Object.keys(payload || {}).sort()
+    }).catch(() => {});
+    return decision;
+  }
   if (!policy.enabled || !policy.locked || policy.engine_source_exception || await isHarnessSourceProject(root)) {
     return { action: 'allow', reason: 'harness_source_exception_or_unlocked' };
   }
-  const classification = classifyHarnessPayload(root, payload, policy);
   if (classification.block) {
     const decision = { action: 'block', reasons: classification.reasons, matches: classification.matches, command: classification.command, tool: classification.toolName };
     await appendJsonlBounded(path.join(root, '.sneakoscope', 'state', 'harness-guard.jsonl'), { ts: nowIso(), decision, payload_keys: Object.keys(payload || {}).sort() }).catch(() => {});
@@ -123,6 +140,9 @@ export async function checkHarnessModification(root: any, payload: any = {}, opt
 }
 
 export function harnessGuardBlockReason(decision: any = {}) {
+  if ((decision.reasons || []).includes('sks_doctor_fix_blocked')) {
+    return 'SKS agents must not run `sks doctor --fix`. Ask the user to run `sks doctor --fix` in their own terminal when repair is needed, then continue after they confirm.';
+  }
   const matches = (decision.matches || []).slice(0, 6).join(', ');
   return `SKS harness guard blocked this tool call. Installed Sneakoscope harness files are immutable to LLM edits after setup${matches ? `: ${matches}` : ''}. Use manual terminal maintenance or update/reinstall SKS outside the agent. This repository is editable only when it is the Sneakoscope engine source repo.`;
 }

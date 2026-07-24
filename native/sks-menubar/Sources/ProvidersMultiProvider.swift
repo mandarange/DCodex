@@ -154,15 +154,31 @@ extension ProvidersViewController {
                 ? "\(models.count) of \(modelCount) catalog models shown"
                 : "\(modelCount) catalog models available"
             let state = json["status"] as? String ?? "unknown"
+            let ownership = json["routing_ownership"] as? [String: Any]
+            let ownershipClass = ownership?["classification"] as? String ?? ""
+            let desktopPicker = json["desktop_picker"] as? [String: Any]
+            let cacheInvalidated = desktopPicker?["models_cache_invalidated"] as? Bool == true
+            let restartRecommended = desktopPicker?["restart_recommended"] as? Bool == true
             if !self.busy {
+                var suffix = ""
+                if ownershipClass == "opencodex_design_b" {
+                    suffix += " · OpenCodex Design B owns openai_base_url (do not overwrite without --force-routing-override)"
+                } else if !ownershipClass.isEmpty && ownershipClass != "sks_router" && ownershipClass != "unconfigured" {
+                    suffix += " · routing owner: \(ownershipClass)"
+                }
+                if restartRecommended {
+                    suffix += cacheInvalidated
+                        ? " · Desktop models cache marked stale; restart Codex App if the picker is still old"
+                        : " · restart Codex App after catalog changes so the Desktop picker refreshes"
+                }
                 if selected && providerReady && catalogReady {
-                    self.multiProvider.status.stringValue = "Router configured · \(activeModel) · \(modelSummary). Runtime adoption is not verified here."
+                    self.multiProvider.status.stringValue = "Router configured · \(activeModel) · \(modelSummary). Runtime adoption is not verified here.\(suffix)"
                     self.multiProvider.status.textColor = .systemGreen
                 } else if providerReady && catalogReady {
-                    self.multiProvider.status.stringValue = "Router definition ready, not selected · \(modelSummary). Choose a model and configure when ready."
+                    self.multiProvider.status.stringValue = "Router definition ready, not selected · \(modelSummary). Choose a model and configure when ready.\(suffix)"
                     self.multiProvider.status.textColor = .secondaryLabelColor
                 } else {
-                    self.multiProvider.status.stringValue = "Router \(state.replacingOccurrences(of: "_", with: " ")) · \(self.multiProviderPublicDetail(json, fallback: result.output))"
+                    self.multiProvider.status.stringValue = "Router \(state.replacingOccurrences(of: "_", with: " ")) · \(self.multiProviderPublicDetail(json, fallback: result.output))\(suffix)"
                     self.multiProvider.status.textColor = .systemOrange
                 }
             }
@@ -256,10 +272,18 @@ extension ProvidersViewController {
             let ok = result.code == 0 && json?["ok"] as? Bool == true && applied && restarted
             _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? "Multi-provider router configured" : applied ? "Router configured; restart needs action" : "Router configuration needs action")
             if ok {
-                self.multiProvider.status.stringValue = "Configuration saved and Codex App restarted · \(values.model). Run a live Codex turn before treating runtime adoption as verified."
+                let desktopPicker = json?["desktop_picker"] as? [String: Any]
+                let cacheNote = desktopPicker?["models_cache_invalidated"] as? Bool == true
+                    ? " Desktop models cache was marked stale."
+                    : ""
+                self.multiProvider.status.stringValue = "Configuration saved and Codex App restarted · \(values.model).\(cacheNote) Run a live Codex turn before treating runtime adoption as verified."
                 self.multiProvider.status.textColor = .systemGreen
             } else if applied {
-                self.multiProvider.status.stringValue = "Router configuration saved, but Codex App did not restart. Reopen the app, then refresh status."
+                let desktopPicker = json?["desktop_picker"] as? [String: Any]
+                let cacheNote = desktopPicker?["models_cache_invalidated"] as? Bool == true
+                    ? " Desktop models cache was marked stale."
+                    : ""
+                self.multiProvider.status.stringValue = "Router configuration saved, but Codex App did not restart.\(cacheNote) Reopen the app, then refresh status."
                 self.multiProvider.status.textColor = .systemOrange
             } else {
                 self.multiProvider.status.stringValue = "Router configuration failed · \(self.multiProviderPublicDetail(json, fallback: result.output))"

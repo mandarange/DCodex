@@ -98,16 +98,33 @@ export function requestHostCapabilities(goal: unknown): HostCapabilityRequest {
     /\b(?:query|retrieve|fetch|load|analy[sz]e|show|list)\b.{0,56}\b(?:database|datasource|data|rows?|records?|results?)\b/i, /\b(?:database|datasource|data|rows?|records?|results?)\b.{0,56}\b(?:query|retrieve|fetch|load|analy[sz]e|show|list)\b/i,
     /\b(?:get|read)\b.{0,56}\b(?:data|rows?|records?|results?)\b.{0,48}\b(?:from|in)\s+(?:the\s+)?(?:database|datasource|db)\b/i, /\bpull\b.{0,64}\b(?:from|out\s+of)\s+(?:the\s+)?(?:database|datasource|db)\b/i,
     /\b(?:from|in)\s+(?:the\s+)?(?:database|datasource|db)\b.{0,56}\b(?:get|read|pull)\b.{0,48}\b(?:data|rows?|records?|results?)\b/i, /(?:db|데이터베이스|데이터소스|데이터).{0,36}(?:조회|가져오|검색|분석|질의)/i, /(?:조회|가져오|검색|분석|질의).{0,36}(?:db|데이터베이스|데이터소스|데이터)/i,
-    /(?:DB에서 뽑아|데이터베이스 집계|월별 합계|통계 내줘|현황 조회|상위\s*(?:N|\d+)\s*건)/i
+    /(?:DB에서 뽑아|데이터베이스 집계)/i
+  ];
+  const genericAggregatePatterns = [/(?:월별 합계|통계 내줘|현황 조회|상위\s*(?:N|\d+)\s*건)/i];
+  const datasourceCuePatterns = [
+    /(?:\bdb\b|데이터베이스|데이터소스|\bmysql\b|\bpostgres(?:ql)?\b|\bsupabase\b|\bconnector\b)/i,
+    /\b[a-z][a-z0-9_-]*:[a-z0-9][a-z0-9_.-]*\b/i
+  ];
+  const fileDataContextPatterns = [
+    /(?:\bcsv\b|\bjson\b|\bxlsx\b|문서|파일)(?:\s*(?:안|내부))?(?:의|에서|에\s*있는)\s*(?:데이터|내용|행|레코드)?/i,
+    /(?:\bcsv\b|\bjson\b|\bxlsx\b)\s*(?:data|데이터)/i
+  ];
+  const queryExecutionExclusions = [
+    ...executionExclusions,
+    /(?:sql|쿼리|질의).{0,24}(?:실행(?:은|을)?\s*(?:금지|하지\s*마|없이)|만\s*(?:작성|생성))/i,
+    /(?:실행(?:은|을)?\s*(?:금지|하지\s*마|없이)|만\s*(?:작성|생성)).{0,24}(?:sql|쿼리|질의)/i
   ];
   const sqlGeneration = matches(text, sqlPatterns);
   const clauses = text.split(/\n+/).map((clause) => clause.trim()).filter(Boolean);
   const datasourceQuery = clauses.some((clause, index) => {
     const nearby = [clauses[index - 1], clause, clauses[index + 1]].filter((value): value is string => Boolean(value));
-    return !(matches(clause, sqlPatterns) && nearby.some((value) => matches(value, executionExclusions))) && matches(clause, queryPatterns);
+    if (matches(clause, fileDataContextPatterns) || matches(clause, queryExecutionExclusions)) return false;
+    if (matches(clause, sqlPatterns) && nearby.some((value) => matches(value, queryExecutionExclusions))) return false;
+    return matches(clause, queryPatterns)
+      || (matches(clause, genericAggregatePatterns) && matches(clause, datasourceCuePatterns));
   });
-  const documentRender = matches(text, [/\b(?:render|generate|create|export|deliver)\b.{0,48}\b(?:pdf|png|document screenshot)\b/i, /\b(?:pdf|png|document screenshot)\b.{0,48}\b(?:render|generate|create|export|deliver)\b/i, /(?:pdf|png|문서).{0,32}(?:렌더|생성|작성|내보내|납품)/i, /(?:렌더|생성|작성|내보내|납품).{0,32}(?:pdf|png|문서)/i, /(?:PDF 파일로 저장|문서를 PDF로|화면을 PNG로|페이지 이미지로)/i]);
-  const webCapture = matches(text, [/\b(?:capture|take|create)\b.{0,40}\b(?:url|web|page)\b.{0,24}\bscreenshot\b/i, /\b(?:url|web|page)\b.{0,40}\bscreenshot\b/i, /(?:url|웹|페이지).{0,32}(?:스크린샷|캡처)/i]);
+  const documentRender = matches(text, [/\b(?:render|generate|create|export|deliver)\b.{0,48}\b(?:pdf|png|document screenshot)\b/i, /\b(?:pdf|png|document screenshot)\b.{0,48}\b(?:render|generate|create|export|deliver)\b/i, /(?:pdf|png|문서).{0,32}(?:렌더|생성|작성|내보내|납품)/i, /(?:렌더|생성|작성|내보내|납품).{0,32}(?:pdf|png|문서)/i, /(?:PDF 파일로 저장|문서를 PDF로|화면을 PNG로)/i, /(?:html|문서|보고서).{0,32}(?:pdf|png|렌더|이미지로)/i]);
+  const webCapture = matches(text, [/\b(?:capture|take|create)\b.{0,40}\b(?:url|web|site|page)\b.{0,24}\bscreenshot\b/i, /\b(?:url|web|site|page)\b.{0,40}\bscreenshot\b/i, /(?:url|웹|사이트|페이지).{0,32}(?:스크린샷|캡처|이미지로)/i]);
   const workspace = (action: string, korean: string) => matches(text, [new RegExp(`\\bworkspace\\b.{0,48}\\b(?:${action})\\b`, 'i'), new RegExp(`\\b(?:${action})\\b.{0,48}\\bworkspace\\b`, 'i'), new RegExp(`워크스페이스.{0,36}(?:${korean})`, 'i'), new RegExp(`(?:${korean}).{0,36}워크스페이스`, 'i')]);
   const workspaceRead = workspace('read|open|inspect', '읽|열|검사|점검');
   const workspaceFind = workspace('find|search', '찾|검색');
@@ -242,16 +259,16 @@ export function renderHostCapabilityBlockedLines(
     '상태: 차단',
     `이유: ${guidance.reason}`,
     `조치: ${guidance.action}`,
-    `코드: ${primary}`,
-    ...(prioritized.length > 1 ? [`details: ${prioritized.slice(1).join(', ')}`] : [])
+    `코드: ${primary}`
   ];
 }
 
 function blockerPriority(code: string): number {
-  if (/^(?:host_capability_project_trust_missing|host_tool_call_not_allowed|host_capability_missing)/.test(code)) return 0;
-  if (/^(?:host_capability_unhealthy|host_capability_project_mcp_inventory_unhealthy)|mcp.*(?:inventory|health)/.test(code)) return 1;
-  if (/(?:datasource|readonly_query).*(?:mismatch|schema)|spreadsheet.*(?:sequence|inspection_not_completed|resource_mismatch|update_count_invalid)/.test(code)) return 2;
-  if (/artifact.*missing|error_cell|(?:proof|receipt).*mismatch|parent_receipts_mismatch/.test(code)) return 3;
+  if (/^(?:host_capability_project_trust_missing|host_tool_call_not_allowed)/.test(code)) return 0;
+  if (/^(?:host_capability_missing|host_capability_unhealthy|host_capability_project_mcp_inventory_unhealthy)|mcp.*(?:connection|inventory|health|missing|tool)/.test(code)) return 1;
+  if (/(?:datasource|readonly_query).*(?:mismatch|schema)|spreadsheet.*(?:sequence|inspection_not_completed|resource_mismatch|update_count_invalid)|document.*(?:source|path|required|resource_mismatch)|(?:input|argument|contract).*(?:invalid|required|mismatch)/.test(code)) return 2;
+  if (/host_tool_response_malformed|artifact.*missing|receipt.*missing|error_cell/.test(code)) return 3;
+  if (/(?:proof|receipt).*mismatch|parent_receipts_mismatch/.test(code)) return 4;
   return 4;
 }
 
@@ -275,6 +292,14 @@ function blockerGuidance(code: string, fallback: HostCapabilityBlockedFallback):
     reason: 'acas-tools MCP 연결 또는 상태 확인에 실패했습니다.',
     action: '프로젝트 MCP inventory와 acas-tools health를 복구한 뒤 다시 실행하세요.'
   };
+  if (code.startsWith('host_tool_response_malformed:datasource_query_readonly')) return {
+    reason: 'DB 조회 결과가 SKS가 검증할 수 있는 응답 형식을 따르지 않았습니다.',
+    action: 'ACAS Agent를 최신 호환 버전으로 업데이트한 뒤 같은 mission을 재실행하세요.'
+  };
+  if (code.startsWith('host_tool_response_malformed')) return {
+    reason: '호스트 도구 결과가 SKS가 검증할 수 있는 응답 형식을 따르지 않았습니다.',
+    action: 'ACAS Agent를 최신 호환 버전으로 업데이트한 뒤 같은 mission을 재실행하세요.'
+  };
   if (/(?:datasource|readonly_query).*(?:mismatch|schema)/.test(code)) return {
     reason: '데이터 조회가 선행 스키마 정보와 일치하지 않습니다.',
     action: '같은 datasource의 schema context를 다시 받고 matching snapshot으로 조회하세요.'
@@ -283,7 +308,7 @@ function blockerGuidance(code: string, fallback: HostCapabilityBlockedFallback):
     reason: '엑셀 작업 순서 또는 대상 파일이 검사 결과와 일치하지 않습니다.',
     action: '같은 파일을 create/update 뒤 inspect하고 허용된 mutation 상한 안에서 다시 실행하세요.'
   };
-  if (blockerPriority(code) === 3) return {
+  if (blockerPriority(code) >= 3) return {
     reason: '최종 산출물 또는 proof receipt 검증이 완료되지 않았습니다.',
     action: '산출물을 다시 생성·검사하고 최종 mutation 또는 render receipt를 제출하세요.'
   };

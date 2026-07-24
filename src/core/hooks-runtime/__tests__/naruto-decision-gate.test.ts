@@ -15,7 +15,8 @@ import {
   createHostCapabilityHookRuntimeBinding,
   createHostCapabilityEventCollector,
   inspectHostCapabilityRuntime,
-  requestHostCapabilities
+  requestHostCapabilities,
+  sanitizeHostCapabilityPostToolUse
 } from '../../agent-bridge/host-capability-runtime.js';
 import {
   decideHookNaruto,
@@ -500,7 +501,7 @@ test('host capability hooks normalize canonical Agent-shaped artifact results', 
         tool: 'write_file',
         id: 'agent-write-file',
         input: { path: 'reports/agent-note.txt', content: 'agent artifact fixture' },
-        response: agentHostToolResponse({
+        response: contentOnlyAgentHostToolResponse({
           artifact: {
             path: 'reports/agent-note.txt',
             kind: 'text',
@@ -521,7 +522,7 @@ test('host capability hooks normalize canonical Agent-shaped artifact results', 
         tool: 'capture_url_screenshot',
         id: 'agent-capture-url',
         input: { url: 'https://example.test', path: 'captures/agent-page.png' },
-        response: agentHostToolResponse({
+        response: contentOnlyAgentHostToolResponse({
           artifact: {
             path: 'captures/agent-page.png',
             kind: 'png',
@@ -543,13 +544,13 @@ test('host capability hooks normalize canonical Agent-shaped artifact results', 
           tool: 'write_file',
           id: 'agent-pdf-source',
           input: { path: htmlScratch.path, content: '<html><body>Brief</body></html>' },
-          response: agentHostToolResponse({ ok: true, path: htmlScratch.path })
+          response: contentOnlyAgentHostToolResponse({ ok: true, path: htmlScratch.path, artifact: htmlScratch })
         },
         {
           tool: 'html_to_pdf',
           id: 'agent-html-to-pdf',
           input: { source_path: htmlScratch.path, output_path: pdfDeliverable.path },
-          response: agentHostToolResponse({ artifacts: [pdfDeliverable, htmlScratch] })
+          response: contentOnlyAgentHostToolResponse({ artifact: pdfDeliverable })
         }
       ]
     },
@@ -563,7 +564,7 @@ test('host capability hooks normalize canonical Agent-shaped artifact results', 
           tool: 'spreadsheet_create',
           id: 'agent-spreadsheet-create',
           input: { path: 'reports/agent-workbook.xlsx' },
-          response: agentHostToolResponse({
+          response: contentOnlyAgentHostToolResponse({
             artifact: {
               path: 'reports/agent-workbook.xlsx',
               kind: 'xlsx',
@@ -578,7 +579,7 @@ test('host capability hooks normalize canonical Agent-shaped artifact results', 
           tool: 'spreadsheet_inspect',
           id: 'agent-spreadsheet-inspect',
           input: { path: 'reports/agent-workbook.xlsx' },
-          response: agentHostToolResponse({
+          response: contentOnlyAgentHostToolResponse({
             ok: true,
             path: 'reports/agent-workbook.xlsx',
             sheet_names: ['Summary'],
@@ -621,6 +622,227 @@ test('host capability hooks normalize canonical Agent-shaped artifact results', 
     } finally {
       await fsp.rm(fixture.root, { recursive: true, force: true });
     }
+  }
+});
+
+test('host capability parser accepts Agent response shapes and rejects ambiguous or malformed content', () => {
+  const query = 'SELECT customer_id FROM customers WHERE active = ?';
+  const schemaResponse = {
+    datasource: 'mysql:customers',
+    schema_snapshot_id: 'schema-customers-v1'
+  };
+  const queryResponse = {
+    ...schemaResponse,
+    query_sha256: `sha256:${sha256(query)}`,
+    row_count: 2,
+    column_count: 1,
+    truncated: false,
+    status: 'passed'
+  };
+  const inspectResponse = {
+    ok: true,
+    path: 'reports/customers.xlsx',
+    sheet_names: ['Customers'],
+    row_counts: { Customers: 2 },
+    formulas: [],
+    error_cells: []
+  };
+  const observe = (tool: string, input: Record<string, unknown>, response: unknown) => (
+    sanitizeHostCapabilityPostToolUse({
+      tool_name: `mcp__acas-tools__${tool}`,
+      tool_input: input,
+      tool_response: response,
+      tool_use_id: `shape-${tool}`
+    })
+  );
+
+  assert.equal(
+    observe('datasource_schema_context', { datasource: 'mysql:customers' }, contentOnlyAgentHostToolResponse(schemaResponse))
+      ?.semantic_receipt?.kind,
+    'datasource_schema'
+  );
+  assert.equal(
+    observe('datasource_query_readonly', {
+      datasource: 'mysql:customers',
+      schema_snapshot_id: schemaResponse.schema_snapshot_id,
+      query
+    }, contentOnlyAgentHostToolResponse(queryResponse))?.semantic_receipt?.kind,
+    'datasource_query'
+  );
+  assert.equal(
+    observe('spreadsheet_inspect', { path: inspectResponse.path }, contentOnlyAgentHostToolResponse(inspectResponse))
+      ?.semantic_receipt?.kind,
+    'spreadsheet_inspection'
+  );
+  assert.equal(
+    observe('datasource_schema_context', { datasource: 'mysql:customers' }, structuredAgentHostToolResponse(schemaResponse))
+      ?.status,
+    'passed'
+  );
+
+  const ambiguous = observe(
+    'datasource_schema_context',
+    { datasource: 'mysql:customers' },
+    structuredAgentHostToolResponse(schemaResponse, { ...schemaResponse, schema_snapshot_id: 'different-snapshot' })
+  );
+  assert.equal(ambiguous?.status, 'failed');
+  assert.equal(ambiguous?.validation_blocker, 'host_tool_response_malformed:datasource_schema_context');
+
+  const malformed = observe('datasource_schema_context', { datasource: 'mysql:customers' }, {
+    content: [{ type: 'text', text: 'schema lookup completed' }],
+    isError: false
+  });
+  assert.equal(malformed?.status, 'failed');
+  assert.equal(malformed?.validation_blocker, 'host_tool_response_malformed:datasource_schema_context');
+});
+
+test('host capability collector compacts near-limit responses and recovers after oversized input', async () => {
+  const runtime = await inspectHostCapabilityRuntime({
+    root: process.cwd(),
+    request: requestHostCapabilities('Get active customer records from the database.'),
+    projectTrusted: true,
+    dependencies: hostCapabilityDependencies(['datasource_schema_context', 'datasource_query_readonly'])
+  });
+  const query = 'SELECT customer_id FROM customers WHERE active = ?';
+  const schemaSnapshotId = 'schema-large-v1';
+  const rawMarker = 'raw-synthetic-row-secret-';
+  const rawPayload = `${rawMarker}${'x'.repeat(3_800_000)}`;
+  const largeResult = {
+    structuredContent: {
+      datasource: 'mysql:customers',
+      schema_snapshot_id: schemaSnapshotId,
+      query_sha256: `sha256:${sha256(query)}`,
+      row_count: 1,
+      column_count: 1,
+      truncated: false,
+      status: 'passed',
+      rows: [{ value: rawPayload }]
+    },
+    content: [{ type: 'text', text: 'bounded query result' }],
+    isError: false
+  };
+  const observation = sanitizeHostCapabilityPostToolUse({
+    tool_name: 'mcp__acas-tools__datasource_query_readonly',
+    tool_input: { datasource: 'mysql:customers', schema_snapshot_id: schemaSnapshotId, query },
+    tool_response: largeResult,
+    tool_use_id: 'large-query-observation'
+  });
+  const observationText = JSON.stringify(observation);
+  assert.equal(observation?.status, 'passed');
+  assert.ok(Buffer.byteLength(observationText, 'utf8') < 32 * 1024);
+  assert.equal(observationText.includes(rawMarker), false);
+
+  const collector = createHostCapabilityEventCollector(runtime);
+  collector.push(`${completedHostToolEvent({
+    tool: 'datasource_schema_context',
+    arguments: { datasource: 'mysql:customers' },
+    result: contentOnlyAgentHostToolResponse({
+      datasource: 'mysql:customers',
+      schema_snapshot_id: schemaSnapshotId
+    })
+  })}\n`);
+  collector.push(`${completedHostToolEvent({
+    tool: 'datasource_query_readonly',
+    arguments: { datasource: 'mysql:customers', schema_snapshot_id: schemaSnapshotId, query },
+    result: largeResult
+  })}\n`);
+  collector.push(`${'z'.repeat(5 * 1024 * 1024 + 1)}\n${completedHostToolEvent({
+    tool: 'datasource_schema_context',
+    arguments: { datasource: 'mysql:customers' },
+    result: structuredAgentHostToolResponse({
+      datasource: 'mysql:customers',
+      schema_snapshot_id: schemaSnapshotId
+    })
+  })}\n`);
+  const evidence = collector.finish();
+  const evidenceText = JSON.stringify(evidence);
+  assert.equal(evidence.tool_calls.length, 3);
+  assert.equal(evidence.tool_calls[1]?.status, 'passed');
+  assert.ok(evidence.blockers.includes('host_tool_event_line_too_large'));
+  assert.ok(Buffer.byteLength(evidenceText, 'utf8') < 32 * 1024);
+  assert.equal(evidenceText.includes(rawMarker), false);
+  const evidenceDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-large-host-evidence-'));
+  try {
+    const evidencePath = path.join(evidenceDir, HOST_CAPABILITY_HOOK_EVIDENCE_FILENAME);
+    await fsp.writeFile(evidencePath, evidenceText);
+    assert.ok((await fsp.stat(evidencePath)).size < 32 * 1024);
+    assert.equal((await fsp.readFile(evidencePath, 'utf8')).includes(rawMarker), false);
+  } finally {
+    await fsp.rm(evidenceDir, { recursive: true, force: true });
+  }
+
+  const bufferCollector = createHostCapabilityEventCollector(runtime);
+  bufferCollector.push('b'.repeat(10 * 1024 * 1024 + 1));
+  bufferCollector.push(`${completedHostToolEvent({
+    tool: 'datasource_schema_context',
+    arguments: { datasource: 'mysql:customers' },
+    result: contentOnlyAgentHostToolResponse({
+      datasource: 'mysql:customers',
+      schema_snapshot_id: schemaSnapshotId
+    })
+  })}\n`);
+  const bufferEvidence = bufferCollector.finish();
+  assert.ok(bufferEvidence.blockers.includes('host_tool_event_buffer_too_large'));
+  assert.equal(bufferEvidence.tool_calls.length, 1);
+});
+
+test('document render hooks require a prior same-source HTML write and reject raw html', async () => {
+  const fixture = await createHostHookFixture({
+    label: 'document-source-binding',
+    goal: 'Create and deliver a PDF document.',
+    toolNames: ['write_file', 'html_to_pdf']
+  });
+  const htmlArtifact = {
+    path: 'reports/a.html',
+    kind: 'html',
+    media_type: 'text/html',
+    sha256: `sha256:${'1'.repeat(64)}`,
+    bytes: 12,
+    role: 'scratch'
+  };
+  try {
+    await recordPassedHostHookCall(fixture, {
+      tool: 'write_file',
+      id: 'document-source-write',
+      input: { path: htmlArtifact.path, content: '<html></html>' },
+      response: contentOnlyAgentHostToolResponse({
+        ok: true,
+        path: htmlArtifact.path,
+        artifact: htmlArtifact
+      })
+    });
+
+    const mismatched: any = await evaluateHookPayload('pre-tool', {
+      session_id: fixture.sessionId,
+      tool_name: 'mcp__acas-tools__html_to_pdf',
+      tool_input: { source_path: 'reports/b.html', output_path: 'reports/b.pdf' },
+      tool_use_id: 'document-render-mismatch'
+    }, { root: fixture.root, state: fixture.state });
+    assert.equal(mismatched.decision, 'block');
+    assert.match(mismatched.reason, /host_capability_document_source_resource_mismatch/);
+
+    const rawHtml: any = await evaluateHookPayload('pre-tool', {
+      session_id: fixture.sessionId,
+      tool_name: 'mcp__acas-tools__html_to_pdf',
+      tool_input: {
+        source_path: htmlArtifact.path,
+        output_path: 'reports/a.pdf',
+        html: '<html></html>'
+      },
+      tool_use_id: 'document-render-raw-html'
+    }, { root: fixture.root, state: fixture.state });
+    assert.equal(rawHtml.decision, 'block');
+    assert.match(rawHtml.reason, /host_capability_document_source_path_required/);
+
+    const matched: any = await evaluateHookPayload('pre-tool', {
+      session_id: fixture.sessionId,
+      tool_name: 'mcp__acas-tools__html_to_pdf',
+      tool_input: { source_path: htmlArtifact.path, output_path: 'reports/a.pdf' },
+      tool_use_id: 'document-render-matched'
+    }, { root: fixture.root, state: fixture.state });
+    assert.equal(matched.decision, undefined);
+  } finally {
+    await fsp.rm(fixture.root, { recursive: true, force: true });
   }
 });
 
@@ -1725,21 +1947,34 @@ async function recordPassedHostHookCall(
   }, { root: fixture.root, state: fixture.state });
 }
 
-function agentHostToolResponse(structuredContent: Record<string, unknown>): Record<string, unknown> {
+function contentOnlyAgentHostToolResponse(content: Record<string, unknown>): Record<string, unknown> {
   return {
     content: [{
       type: 'text',
-      text: JSON.stringify(structuredContent)
+      text: JSON.stringify(content)
+    }],
+    isError: false
+  };
+}
+
+function structuredAgentHostToolResponse(
+  structuredContent: Record<string, unknown>,
+  content: Record<string, unknown> = structuredContent
+): Record<string, unknown> {
+  return {
+    content: [{
+      type: 'text',
+      text: JSON.stringify(content)
     }],
     structuredContent,
     isError: false
   };
 }
 
-function completedDatasourceHostToolEvent(input: {
-  tool: 'datasource_schema_context' | 'datasource_query_readonly';
+function completedHostToolEvent(input: {
+  tool: string;
   arguments: Record<string, unknown>;
-  response: Record<string, unknown>;
+  result: unknown;
 }): string {
   return JSON.stringify({
     type: 'item.completed',
@@ -1749,8 +1984,20 @@ function completedDatasourceHostToolEvent(input: {
       tool: input.tool,
       status: 'completed',
       arguments: input.arguments,
-      result: { structured_content: input.response }
+      result: input.result
     }
+  });
+}
+
+function completedDatasourceHostToolEvent(input: {
+  tool: 'datasource_schema_context' | 'datasource_query_readonly';
+  arguments: Record<string, unknown>;
+  response: Record<string, unknown>;
+}): string {
+  return completedHostToolEvent({
+    tool: input.tool,
+    arguments: input.arguments,
+    result: { structured_content: input.response }
   });
 }
 

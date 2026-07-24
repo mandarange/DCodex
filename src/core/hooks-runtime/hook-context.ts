@@ -126,7 +126,7 @@ export async function authoritativeSksSkillAdmission(root: string, skillNames: r
       resolution: null,
       blocked: {
         decision: 'block',
-        reason: 'SKS managed skill resolution failed. Repair the global SKS installation, then retry.',
+        reason: 'SKS managed skill resolution failed. Ask the user to run `sks doctor --fix` (do not run it yourself), then retry.',
         systemMessage: 'SKS: managed skill availability check blocked this turn.'
       }
     };
@@ -140,7 +140,7 @@ export async function authoritativeSksSkillAdmission(root: string, skillNames: r
       resolution,
       blocked: {
         decision: 'block',
-        reason: `SKS managed skill availability check failed (${details}). Repair the global SKS installation, then retry.`,
+        reason: `SKS managed skill availability check failed (${details}). Ask the user to run \`sks doctor --fix\` (do not run it yourself), then retry.`,
         systemMessage: 'SKS: managed skill availability check blocked this turn.'
       }
     };

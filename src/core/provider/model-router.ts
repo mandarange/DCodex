@@ -113,6 +113,16 @@ export function normalizeNarutoGpt56Model(value: unknown): NarutoGpt56Model | nu
   return (NARUTO_MODELS as readonly string[]).includes(model) ? model as NarutoGpt56Model : null;
 }
 
+/**
+ * Child Naruto threads must keep sealed Luna/Terra/Sol High/Sol Max role profiles
+ * when the Codex App main model is already in the GPT-5.6 family. Only
+ * third-party/session models inherit onto children for provider continuity.
+ */
+export function childInheritsActiveMainModel(value: unknown): boolean {
+  const model = String(value || '').trim();
+  return Boolean(model) && !isNarutoGpt56Model(model);
+}
+
 export function categoryForWorkerRole(role: string, taskText = ''): TaskCategory {
   const text = `${String(role || '')} ${String(taskText || '')}`.toLowerCase();
   if (/(refactor|re-?architect|리팩터|아키텍처)/i.test(text)) return 'refactor';

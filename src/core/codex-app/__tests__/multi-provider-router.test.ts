@@ -197,6 +197,8 @@ test('router activation writes a user-level provider and catalog without storing
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(result.config_applied, true);
   assert.equal(result.restart_ok, true);
+  assert.equal(result.desktop_picker?.models_cache_invalidated, true);
+  assert.equal(result.models_cache?.ok, true);
   assert.equal(result.restart_completed, true);
   assert.equal(result.runtime_verified, false);
   assert.equal(result.status, 'configured_restarted');
@@ -438,4 +440,46 @@ Authorization = "secret"
   assert.equal(result.ok, false);
   assert.ok(result.blockers.includes('multi_provider_router_existing_provider_contract_conflict'));
   assert.equal(await fs.readFile(harness.configPath, 'utf8'), originalConfig);
+});
+
+test('router activation fails closed on OpenCodex Design B unless force-routing-override', async (t) => {
+  const harness = await makeMultiProviderRouterHarness();
+  t.after(async () => fs.rm(harness.temp, { recursive: true, force: true }));
+  const original = [
+    '# Auto-injected by opencodex',
+    'openai_base_url = "http://127.0.0.1:10100/v1"',
+    'model_provider = "openai"',
+    'model = "anthropic/claude-sonnet"',
+    `model_catalog_json = ${JSON.stringify(harness.catalogPath)}`,
+    ''
+  ].join('\n');
+  await fs.writeFile(harness.configPath, original);
+
+  const blocked = await useMultiProviderRouter({
+    home: harness.home,
+    env: harness.env,
+    configPath: harness.configPath,
+    catalogPath: harness.catalogPath,
+    baseUrl: MULTI_PROVIDER_ROUTER_DEFAULT_BASE_URL,
+    model: 'anthropic/claude-sonnet',
+    restartApp: false,
+    fetchImpl: routerModelsFetch()
+  });
+  assert.equal(blocked.ok, false);
+  assert.ok(blocked.blockers.includes('opencodex_design_b_routing_owner'));
+  assert.equal(await fs.readFile(harness.configPath, 'utf8'), original);
+
+  const forced: any = await useMultiProviderRouter({
+    home: harness.home,
+    env: harness.env,
+    configPath: harness.configPath,
+    catalogPath: harness.catalogPath,
+    baseUrl: MULTI_PROVIDER_ROUTER_DEFAULT_BASE_URL,
+    model: 'anthropic/claude-sonnet',
+    forceRoutingOverride: true,
+    restartApp: false,
+    fetchImpl: routerModelsFetch()
+  });
+  assert.equal(forced.ok, true, JSON.stringify(forced));
+  assert.equal(forced.desktop_picker?.models_cache_invalidated, true);
 });

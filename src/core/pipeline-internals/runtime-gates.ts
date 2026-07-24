@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { appendJsonl, exists, nowIso, readJson, readText, writeJsonAtomic } from '../fsx.js';
+import fsp from 'node:fs/promises';
+import { appendJsonl, exists, nowIso, readJson, readText, sha256, writeJsonAtomic } from '../fsx.js';
 import { containsUserQuestion, noQuestionContinuationReason } from '../no-question-guard.js';
 import { missionDir, setCurrent } from '../mission.js';
 import { evaluateResearchGate } from '../research.js';
@@ -14,6 +15,17 @@ import { MISTAKE_RECALL_ARTIFACT, mistakeRecallGateStatus } from '../mistake-rec
 import { SSOT_GUARD_ARTIFACT, validateSsotGuardArtifact } from '../safety/ssot-guard.js';
 import { checkStopGate } from '../stop-gate/stop-gate-check.js';
 import { readWorkOrderLedger, evaluateWorkOrderCoverage } from '../work-order-ledger.js';
+import {
+  DB_ACCESS_REVIEW_ARTIFACT,
+  DB_REVIEW_ARTIFACT,
+  validateDbAccessReviewArtifact,
+  validateDbReview,
+  validateMadSksSqlPlaneCompletion
+} from '../db-review.js';
+import {
+  ENGINEERING_SANITY_REVIEW_ARTIFACT,
+  validateEngineeringSanityReviewArtifact
+} from '../engineering-sanity-review.js';
 import {
   clarificationStopReason,
   context7Evidence,
@@ -93,6 +105,22 @@ async function workOrderCoverageGateStatus(root: any, state: any = {}) {
   return { ok: coverage.ok, blockers: coverage.blockers };
 }
 
+async function dbAccessReviewGateStatus(root: any, state: any = {}, jsonCache?: Map<string, Promise<any>>) {
+  if (state?.db_access_review_required !== true) return { ok: true, blockers: [] };
+  const id = state?.mission_id;
+  if (!id) return { ok: false, blockers: ['mission_id'] };
+  const review = await readJsonCached(jsonCache, path.join(missionDir(root, id), DB_ACCESS_REVIEW_ARTIFACT), null);
+  return validateDbAccessReviewArtifact(root, id, review);
+}
+
+async function engineeringSanityGateStatus(root: any, state: any = {}, jsonCache?: Map<string, Promise<any>>) {
+  if (state?.engineering_sanity_required !== true) return { ok: true, blockers: [] };
+  const id = state?.mission_id;
+  if (!id) return { ok: false, blockers: ['mission_id'] };
+  const review = await readJsonCached(jsonCache, path.join(missionDir(root, id), ENGINEERING_SANITY_REVIEW_ARTIFACT), null);
+  return validateEngineeringSanityReviewArtifact(root, id, review);
+}
+
 async function staleReflectionReasons(root: any, state: any = {}, gate: any = {}) {
   const created = Date.parse(gate.created_at || gate.updated_at || '');
   if (!Number.isFinite(created)) return ['reflection-gate:created_at'];
@@ -123,6 +151,24 @@ export async function projectGateStatus(root: any, state: any = {}) {
       ok: false,
       missing: ['explicit_user_answers', 'pipeline_answer'],
       source: id ? `.sneakoscope/missions/${id}/questions.md` : null
+    });
+  }
+  if (state?.db_access_review_required === true) {
+    const dbAccess = await dbAccessReviewGateStatus(root, state);
+    gates.push({
+      id: DB_ACCESS_REVIEW_ARTIFACT,
+      ok: dbAccess.ok,
+      missing: dbAccess.blockers || [],
+      source: id ? `.sneakoscope/missions/${id}/${DB_ACCESS_REVIEW_ARTIFACT}` : null
+    });
+  }
+  if (state?.engineering_sanity_required === true) {
+    const sanity = await engineeringSanityGateStatus(root, state);
+    gates.push({
+      id: ENGINEERING_SANITY_REVIEW_ARTIFACT,
+      ok: sanity.ok,
+      missing: sanity.blockers || [],
+      source: id ? `.sneakoscope/missions/${id}/${ENGINEERING_SANITY_REVIEW_ARTIFACT}` : null
     });
   }
   if (state?.context7_required) {
@@ -217,14 +263,30 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
     ? await passedActiveGate(root, state, jsonCache)
     : null;
   const activeGateNotApplicable = activeGatePreview?.not_applicable === true;
+  const dbAccessPromise = dbAccessReviewGateStatus(root, state, jsonCache);
+  const engineeringSanityPromise = engineeringSanityGateStatus(root, state, jsonCache);
   const context7Promise = state?.context7_required ? hasContext7DocsEvidence(root, state) : Promise.resolve(true);
   const subagentPromise = state?.subagents_required && !activeGateNotApplicable ? hasSubagentEvidence(root, state) : Promise.resolve(true);
   const mistakeRecallPromise = mistakeRecallGateStatus(root, state);
-  const [context7Ok, subagentOk, mistakeRecall] = await Promise.all([
+  const [dbAccess, engineeringSanity, context7Ok, subagentOk, mistakeRecall] = await Promise.all([
+    dbAccessPromise,
+    engineeringSanityPromise,
     context7Promise,
     subagentPromise,
     mistakeRecallPromise
   ]);
+  await resolveRecoveredComplianceBlocker(root, state, {
+    [DB_ACCESS_REVIEW_ARTIFACT]: dbAccess.ok,
+    [ENGINEERING_SANITY_REVIEW_ARTIFACT]: engineeringSanity.ok,
+    'context7-evidence': context7Ok,
+    'official-subagent-evidence': subagentOk
+  });
+  if (!dbAccess.ok) {
+    return complianceBlock(root, state, `SKS ${state.route_command || state.mode || 'route'} must verify the existing canonical DB access path before completion. Complete ${DB_ACCESS_REVIEW_ARTIFACT} with actual entry points/callers, canonical adapter or query helper, pool ownership/acquire/release/shutdown/exhaustion evidence, N+1 review, and transaction integrity for sensitive or multi-step mutations. Missing: ${(dbAccess.blockers || []).join(', ')}.`, { gate: DB_ACCESS_REVIEW_ARTIFACT, missing: dbAccess.blockers });
+  }
+  if (!engineeringSanity.ok) {
+    return complianceBlock(root, state, `SKS ${state.route_command || state.mode || 'route'} must complete the engineering sanity review before completion. Static candidates are advisory only; inspect added hunks and real callers for SOLID boundaries, N+1/repeated I/O, bounded render/recursion/event/retry/polling behavior, and verification bypasses. Missing: ${(engineeringSanity.blockers || []).join(', ')}.`, { gate: ENGINEERING_SANITY_REVIEW_ARTIFACT, missing: engineeringSanity.blockers });
+  }
   if (state?.context7_required && !context7Ok) {
     return complianceBlock(root, state, `SKS ${state.route_command || state.mode || 'route'} requires Context7 evidence before completion. Use Context7 resolve-library-id, then query-docs, so SKS can record context7-evidence.jsonl.`, { gate: 'context7-evidence' });
   }
@@ -460,6 +522,94 @@ function normalizeComplianceReason(reason: any = '') {
     .slice(0, 1200);
 }
 
+async function resolveRecoveredComplianceBlocker(root: any, state: any = {}, recovered: Record<string, boolean>) {
+  if (!state?.mission_id) return false;
+  const dir = missionDir(root, state.mission_id);
+  const blockerFile = path.join(dir, HARD_BLOCKER_ARTIFACT);
+  const guardFile = path.join(dir, COMPLIANCE_LOOP_GUARD_ARTIFACT);
+  const [blockerText, guardText] = await Promise.all([
+    readText(blockerFile, ''),
+    readText(guardFile, '')
+  ]);
+  if (!blockerText || !guardText) return false;
+
+  let blocker: any;
+  let guard: any;
+  try {
+    blocker = JSON.parse(blockerText);
+    guard = JSON.parse(guardText);
+  } catch {
+    return false;
+  }
+  const gate = String(blocker?.gate || guard?.gate || '');
+  if (
+    blocker?.schema !== 'sks.hard-blocker.v1'
+    || blocker?.status !== 'hard_blocked'
+    || blocker?.reason !== 'compliance_loop_guard_tripped'
+    || guard?.schema_version !== 1
+    || guard?.mission_id !== state.mission_id
+    || guard?.tripped !== true
+    || guard?.gate !== gate
+    || recovered[gate] !== true
+  ) return false;
+
+  const artifactName = gate === 'context7-evidence'
+    ? 'context7-evidence.jsonl'
+    : gate === 'official-subagent-evidence'
+      ? 'subagent-evidence.json'
+      : gate;
+  if (!artifactName || path.isAbsolute(artifactName) || artifactName.includes('..')) return false;
+  const artifactFile = path.join(dir, artifactName);
+  const artifactStat = await fsp.stat(artifactFile).catch(() => null);
+  const blockerAt = Date.parse(String(blocker.created_at || ''));
+  const guardAt = Date.parse(String(guard.updated_at || ''));
+  if (
+    !artifactStat?.isFile()
+    || !Number.isFinite(blockerAt)
+    || !Number.isFinite(guardAt)
+    || artifactStat.mtimeMs <= Math.max(blockerAt, guardAt)
+  ) return false;
+
+  const blockerSha256 = `sha256:${sha256(blockerText)}`;
+  const guardSha256 = `sha256:${sha256(guardText)}`;
+  await writeJsonAtomic(path.join(dir, 'hard-blocker.resolved.json'), {
+    schema: 'sks.hard-blocker-resolution.v1',
+    status: 'resolved',
+    passed: true,
+    mission_id: state.mission_id,
+    resolved_at: nowIso(),
+    resolution_reason: `newer_${gate}_evidence_resolved_compliance_loop`,
+    hard_blocker_sha256: blockerSha256,
+    compliance_loop_guard_sha256: guardSha256,
+    recovery_artifact: artifactName,
+    recovery_artifact_mtime: artifactStat.mtime.toISOString(),
+    original_hard_blocker: blocker,
+    original_compliance_loop_guard: guard
+  });
+  const [currentBlockerText, currentGuardText] = await Promise.all([
+    readText(blockerFile, ''),
+    readText(guardFile, '')
+  ]);
+  if (currentBlockerText !== blockerText || currentGuardText !== guardText) return false;
+  await Promise.all([
+    fsp.unlink(blockerFile).catch((err: any) => {
+      if (err?.code !== 'ENOENT') throw err;
+    }),
+    fsp.unlink(guardFile).catch((err: any) => {
+      if (err?.code !== 'ENOENT') throw err;
+    })
+  ]);
+  await appendJsonl(path.join(dir, 'events.jsonl'), {
+    ts: nowIso(),
+    type: 'pipeline.compliance_loop_guard.resolved',
+    gate,
+    recovery_artifact: artifactName,
+    hard_blocker_sha256: blockerSha256,
+    compliance_loop_guard_sha256: guardSha256
+  });
+  return true;
+}
+
 function readJsonCached<T>(cache: Map<string, Promise<T>> | undefined, file: string, fallback: T): Promise<T> {
   if (!cache) return readJson(file, fallback) as Promise<T>;
   const key = path.resolve(file);
@@ -557,6 +707,29 @@ function missingRequiredGateFields(file: any, state: any, gate: any = {}) {
 
 async function missingRequiredGateArtifacts(root: any, file: any, state: any, gate: any = {}) {
   const mode = String(state?.mode || '').toUpperCase();
+  if (file === DB_REVIEW_ARTIFACT || mode === 'DB') {
+    const evaluated = await validateDbReview(root, String(state.mission_id || ''), gate);
+    if (evaluated.ok) return [];
+    return evaluated.blockers.map((reason) => `${DB_REVIEW_ARTIFACT}:${reason}`);
+  }
+  if (file === 'mad-sks-gate.json' || mode === 'MADSKS') {
+    const evaluated = await validateMadSksSqlPlaneCompletion(root, String(state.mission_id || ''), {
+      capability_schema: 'sks.mad-sks-sql-plane-capability.v2',
+      result_file: 'mad-sks/sql-plane/result.json',
+      cycle_id: gate?.cycle_id || gate?.sql_plane?.cycle_id || null,
+      read_back_passed: gate?.sql_plane?.read_back_passed === true,
+      capability_closed: gate?.sql_plane?.profile_closed === true,
+      read_only_restored: gate?.read_only_restoration?.ok === true
+    });
+    const missing: string[] = [];
+    if (gate?.permissions_deactivated !== true) missing.push('permissions_deactivated');
+    if (gate?.mad_sks_permission_active !== false) missing.push('mad_sks_permission_active_false');
+    if (gate?.sql_plane?.requested !== true) missing.push('sql_plane_requested');
+    if (gate?.control_plane_denied !== true) missing.push('control_plane_denied');
+    if (!Array.isArray(gate?.blockers) || gate.blockers.length > 0) missing.push('blockers_empty');
+    missing.push(...evaluated.blockers);
+    return [...new Set(missing.map((reason) => `mad-sks-gate:${reason}`))];
+  }
   if (file === 'research-gate.json' || mode === 'RESEARCH') {
     const evaluated = await evaluateResearchGate(missionDir(root, state.mission_id));
     if (evaluated.passed === true) return [];

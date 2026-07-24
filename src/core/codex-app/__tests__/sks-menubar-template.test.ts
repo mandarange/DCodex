@@ -419,6 +419,10 @@ test('Providers exposes OpenRouter save key, freeform model id, and Use OpenRout
   assert.match(providers, /\["codex-app", "use-openrouter", "--model", model, "--restart-app", "--json"\]/);
   assert.match(providers, /\["codex-app", "openrouter-status", "--json"\]/);
   assert.match(providers, /\["codex-app", "openrouter-models", "--ids-only", "--json"\]/);
+  assert.match(providers, /Restore previous provider/);
+  assert.match(providers, /\["codex-app", "restore-desktop-routing", "--restart-app", "--json"\]/);
+  assert.match(providers, /thread_sidebar_remap/);
+  assert.match(providers, /previous_routing_restore_available/);
   assert.match(providers, /describeOpenRouterStatus/);
   assert.match(providers, /OpenRouter: key missing/);
   assert.match(providers, /activationJson\?\["config_applied"\]/);
@@ -504,6 +508,7 @@ test('Remote and Telegram page configures a dedicated local Codex session and La
   assert.match(remote, /ordinary text in the paired private chat/);
   assert.match(remote, /first message creates and persists the Codex thread/);
   assert.match(processClient, /arguments\.contains\("--bot-token-stdin"\)/);
+  assert.match(processClient, /extractJsonPayload/);
   assert.match(swift, /RemoteTelegramViewController\(processClient: processClient, operations: operations\)/);
   assert.match(remote, /ControlCenterPage/);
   assert.doesNotMatch(remote, /ssh_alias|arbitrary remote shell.*enabled/i);

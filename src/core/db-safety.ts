@@ -297,24 +297,6 @@ function hasTableRemovalRisk(cls: any = {}) {
   return ['drop_table', 'truncate'].some((reason: any) => reasons.has(reason));
 }
 
-async function madSksOverrideState(root: any, state: any = {}) {
-  if (!isMadSksRouteState(state) || !state.mission_id || state.mad_sks_active === false) return { active: false };
-  const gateFile = state.mad_sks_gate_file || state.stop_gate || MAD_SKS_GATE_FILE;
-  const gate = await readJson(path.join(missionDir(root, state.mission_id), gateFile), null);
-  const owner = gate?.gate_owner?.mission_id || gate?.mission_id || state.gate_owner_mission_id;
-  if (owner && String(owner) !== String(state.mission_id)) {
-    return { active: false, reason: 'mad_sks_gate_owner_mismatch', gate_file: gateFile, gate_owner_mission_id: owner };
-  }
-  if (gate?.passed === true || gate?.permissions_deactivated === true) return { active: false, reason: 'mad_sks_gate_already_closed', gate_file: gateFile };
-  const confirmedUntil = Date.parse(state.mad_sks_table_delete_confirmed_until || '');
-  return {
-    active: true,
-    gateFile,
-    tableDeleteConfirmed: Number.isFinite(confirmedUntil) && confirmedUntil > Date.now(),
-    tableDeleteConfirmedUntil: Number.isFinite(confirmedUntil) ? new Date(confirmedUntil).toISOString() : null
-  };
-}
-
 export function evaluateDbSafety({ classification, policy = DEFAULT_DB_SAFETY_POLICY, contract = null, duringNoQuestion = false, madSks = null }: any = {}) {
   const cls = classification || { level: 'none', reasons: [] };
   const noQuestion = Boolean(duringNoQuestion);
@@ -368,6 +350,7 @@ export function evaluateDbSafety({ classification, policy = DEFAULT_DB_SAFETY_PO
     if (effective.env === 'production' || effective.env === 'production_read_only') reasons.push('production_database_writes_forbidden');
     if (!['local_dev', 'preview_branch', 'supabase_branch'].includes(effective.env)) reasons.push('database_write_target_not_local_or_branch');
     if (policy.block_direct_execute_sql_writes && cls.toolReasons?.includes?.('database_tool')) reasons.push('direct_mcp_execute_sql_writes_blocked');
+    reasons.push('database_mutation_requires_manual_sql_or_active_mad_sks_sql_plane');
   }
   if (effective.destructive) reasons.push('contract_attempted_to_allow_destructive_but_policy_denies');
   if (reasons.length) return { allowed: false, action: 'block', reasons, classification: cls, effective };
@@ -514,8 +497,15 @@ export async function checkDbOperation(root: any, state: any, payload: any, { du
     await appendJsonlBounded(path.join(missionDir(root, madSksSqlPlaneMissionId), 'db-safety.jsonl'), { ts: nowIso(), decision });
     return decision;
   }
-  const madSks = await madSksOverrideState(root, state);
-  const decision = evaluateDbSafety({ classification, policy, contract, duringNoQuestion, madSks });
+  const decision = evaluateDbSafety({ classification, policy, contract, duringNoQuestion, madSks: null });
+  if (isMadSksRouteState(state) && ['write', 'destructive'].includes(classification.level)) {
+    decision.reasons = [...new Set([
+      ...(decision.reasons || []),
+      'mad_sks_sql_plane_capability_v2_required'
+    ])];
+    decision.allowed = false;
+    decision.action = 'block';
+  }
   if (decision.action === 'confirm') await writeMadSksTableDeletePending(root, state, decision);
   if (decision.action !== 'allow' && state?.mission_id) {
     await appendJsonlBounded(path.join(missionDir(root, state.mission_id), 'db-safety.jsonl'), { ts: nowIso(), decision });
@@ -551,7 +541,8 @@ export function dbBlockReason(decision: any) {
   return [
     'Sneakoscope Codex Database Safety Gate blocked this operation.',
     `Reasons: ${(decision.reasons || []).join(', ') || 'unknown'}.`,
-    'Default DB mode is read-only. Destructive SQL-plane operations require an explicit active MAD-SKS SQL-plane capability opened by $MAD-SKS or sks mad-sks sql|apply-migration.',
+    'Default DB mode is read-only. If a migration is required outside MAD-SKS, create one mission-local manual-migration.sql with forward SQL and an inactive rollback section, then ask the user to apply it manually.',
+    'All live database mutations require an explicit active MAD-SKS SQL-plane capability v2 opened by $MAD-SKS or sks mad-sks sql|apply-migration.',
     'Use read-only/project-scoped Supabase MCP URLs outside MAD-SKS SQL-plane. Supabase project/account/billing/credential control-plane operations remain denied even there.'
   ].join(' ');
 }
@@ -630,7 +621,13 @@ async function scanMissionMigrationFiles(root: any, opts: any = {}) {
     for (const e of entries) {
       const p = path.join(dir, e.name);
       const rp = rel(root, p);
-      if (rp.startsWith('.git/') || rp.startsWith('node_modules/') || rp.startsWith('.sneakoscope/')) continue;
+      if (
+        e.name.startsWith('.')
+        || ['node_modules', 'dist', 'build', 'coverage', 'vendor', 'archive'].includes(e.name)
+        || rp.startsWith('.git/')
+        || rp.startsWith('node_modules/')
+        || rp.startsWith('.sneakoscope/')
+      ) continue;
       if (e.isDirectory()) await walk(p, depth + 1);
       else if (e.isFile() && /(^|\/)(supabase\/migrations|migrations|db\/migrations|database\/migrations)\/.*\.sql$/i.test(rp)) {
         let st; try { st = await (await import('node:fs/promises')).stat(p); } catch { continue; }

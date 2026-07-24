@@ -771,6 +771,28 @@ test('official events plus parent summary pass Naruto without legacy process art
       all_work_items_verified: false,
       items: [{ id: 'REQ-1', status: 'pending', implementation_tasks: [], implementation_evidence: [], verification_evidence: [] }]
     }));
+    const sanityFile = path.join(preparedDir, 'engineering-sanity-review.json');
+    const sanity = JSON.parse(await fsp.readFile(sanityFile, 'utf8'));
+    sanity.passed = true;
+    sanity.added_hunks_reviewed = true;
+    sanity.real_callers_traced = true;
+    sanity.reviewed_candidate_ids = sanity.candidate_findings.map((finding: any) => finding.id);
+    sanity.candidate_dispositions = sanity.candidate_findings.map((finding: any) => ({
+      candidate_id: finding.id,
+      status: 'resolved',
+      reason: 'reviewed added hunks and real callers in mission scope',
+      evidence: ['reviewed added hunks and real callers in mission scope'],
+      source_scope: finding.source_scope,
+      added_hunk_line_ranges: finding.added_hunk_line_ranges
+    }));
+    for (const checkId of Object.keys(sanity.checks)) {
+      sanity.checks[checkId] = {
+        status: 'passed',
+        reason: null,
+        evidence: ['reviewed added hunks and real callers in mission scope']
+      };
+    }
+    await fsp.writeFile(sanityFile, JSON.stringify(sanity));
 
     for (const threadId of ['agent-a1', 'agent-a2']) {
       await evaluateHookPayload('subagent-start', officialSubagentHookPayload('SubagentStart', threadId), { root, state });
@@ -957,7 +979,8 @@ test('automatic bounded work materializes the bounded Naruto workflow', async ()
     const dir = missionDir(root, state.mission_id);
     await fsp.access(path.join(dir, 'pipeline-plan.json'));
     const plan = JSON.parse(await fsp.readFile(path.join(dir, 'subagent-plan.json'), 'utf8'));
-    assert.equal(plan.requested_subagents, 2);
+    assert.ok(plan.requested_subagents >= 4);
+    assert.ok(plan.requested_subagents <= 12);
     assert.equal(plan.requested_subagents_explicit, false);
     await fsp.access(path.join(dir, 'naruto-gate.json'));
   } finally {

@@ -1,8 +1,9 @@
 import type { AgentPersona } from './agent-schema.js'
 import { codexModelEffortCapability, type CodexModelEffortCapability } from '../codex-control/codex-model-capabilities.js'
 import { GLM_52_OPENROUTER_MODEL, type Glm52ReasoningEffort } from '../codex-app/openrouter-provider.js'
+import { managedOfficialSubagentRoleByName } from '../managed-assets/managed-assets-manifest.js'
 import { isNarutoGpt56Model } from '../provider/model-router.js'
-import { decideSubagentModel } from '../subagents/model-policy.js'
+import { decideSubagentModel, subagentModelProfile } from '../subagents/model-policy.js'
 
 export type AgentReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 export type AgentModelReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
@@ -98,6 +99,48 @@ export function decideOfficialSubagentModel(input: { persona?: Partial<AgentPers
   const role = String(persona.role || '')
   const agentId = String(input.agentId || persona.id || 'subagent')
   const routingRole = [agentId, persona.naruto_role, persona.work_kind, role].filter(Boolean).join(' ')
+  const managedRole = managedOfficialSubagentRoleByName(agentId)
+    || managedOfficialSubagentRoleByName(String(persona.naruto_role || ''))
+    || managedOfficialSubagentRoleByName(role)
+  // Installed custom-agent roles already seal Luna/Terra/Sol High/Sol Max.
+  // Prefer that catalog contract over re-scoring the parent goal text, which
+  // otherwise collapses almost every child onto Sol.
+  if (managedRole) {
+    const profile = subagentModelProfile(managedRole.model_policy)
+    const effort: AgentReasoningEffort = profile.modelReasoningEffort
+    const modelCapability = codexModelEffortCapability({
+      model: profile.model,
+      advertisedEfforts: [effort],
+      defaultEffort: effort
+    })
+    return {
+      schema: 'sks.agent-effort-decision.v1',
+      policy_version: 1,
+      agent_id: agentId,
+      role,
+      model: profile.model,
+      reasoning_effort: effort,
+      model_reasoning_effort: effort,
+      model_tier: `${profile.model}-${effort}`,
+      model_profile: `sks-official-subagent-${safeProfileSegment(profile.model)}-${effort}-fast`,
+      model_selection_reason: profile.policy,
+      model_effort_capability: modelCapability,
+      reasoning_profile: reasoningProfileName(effort),
+      service_tier: 'fast',
+      reason: `managed_role:${managedRole.codex_name}:${profile.policy}`,
+      dynamic: true,
+      escalation_triggers: [
+        'focused review, debugging, planning, integration, security, database, research, release, or unresolved ambiguity selects Sol Max',
+        'incidental judgment vocabulary does not override a clearly classified implementation or context/tools slice',
+        'requested model/effort profile unavailable blocks instead of silently falling back'
+      ],
+      downshift_triggers: [
+        'ordinary UI, logic, backend, or native implementation selects Sol High',
+        'long-context, Browser/Chrome, Computer Use, image-generation, or large search selects Terra Medium',
+        'tiny short-context mechanical search/typing/rename work selects Luna Max'
+      ]
+    }
+  }
   const promptIsDocsExploration = /\b(?:read|scan|explore|compare|summarize|review)\b[^\n]{0,64}\b(?:docs?|documentation|manual|notes?|references?)\b/i.test(prompt)
   const promptIsFocusedJudgment = !promptIsDocsExploration
     && /^(?:\s*)(?:review|audit|debug(?:ger|ging)?|diagnos|investigat|plan|assess)\b|\b(?:security|database|release|production|high[- ]?risk)\b[^\n]{0,48}\b(?:review|audit|decision|plan|assessment)\b/i.test(prompt)
@@ -108,7 +151,9 @@ export function decideOfficialSubagentModel(input: { persona?: Partial<AgentPers
     ? 'implementation' as const
     : /(?:explorer|docs_maintainer|long_context_analyst|computer_use_operator|browser_use_operator|image_generation_operator)/i.test(routingRole)
       ? 'context_tools' as const
-      : undefined
+      : /\bworker\b/i.test(routingRole)
+        ? 'mechanical' as const
+        : undefined
   const routed = decideSubagentModel({
     title: routingRole,
     description: [prompt, persona.risk_focus, persona.write_policy].filter(Boolean).join(' '),

@@ -12,6 +12,7 @@ import {
   normalizeCodexReasoningEffort,
   readConfiguredCodexModelRoutingContext
 } from '../codex-app/codex-model-catalog.js';
+import { childInheritsActiveMainModel } from '../provider/model-router.js';
 
 export const ROLE_MODEL_PREFERENCES_SCHEMA = 'sks.role-model-preferences.v2' as const;
 const LEGACY_ROLE_MODEL_PREFERENCES_SCHEMA = 'sks.role-model-preferences.v1';
@@ -152,8 +153,13 @@ export async function roleModelPreferencesStatus(input: {
   const supportedProfiles = allProfiles.slice(0, ROLE_MODEL_PROFILE_PRESENTATION_LIMIT);
   const roles = MANAGED_OFFICIAL_SUBAGENT_ROLES.map((role) => {
     const override = read.store.roles[role.codex_name] || null;
-    const effectiveProvider = override?.provider || activeMainModel?.provider || inferProviderFromModel(role.model);
-    const effectiveModel = override?.model || activeMainModel?.model || role.model;
+    const inheritActiveMain = childInheritsActiveMainModel(activeMainModel?.model);
+    const effectiveProvider = override?.provider
+      || (inheritActiveMain ? activeMainModel?.provider : null)
+      || inferProviderFromModel(role.model);
+    const effectiveModel = override?.model
+      || (inheritActiveMain ? activeMainModel?.model : null)
+      || role.model;
     const effectiveReasoning = override?.reasoning_effort || role.model_reasoning_effort;
     return {
       role: role.codex_name,
@@ -167,7 +173,7 @@ export async function roleModelPreferencesStatus(input: {
       effective_reasoning_effort: effectiveReasoning,
       effective_source: override
         ? 'role-override'
-        : activeMainModel
+        : inheritActiveMain
           ? 'selected-main-model'
           : 'managed-default'
     };
@@ -183,7 +189,7 @@ export async function roleModelPreferencesStatus(input: {
     routing: {
       selected_provider: routing.selected_provider,
       selected_model: routing.selected_model,
-      active_main_model_inherited: Boolean(activeMainModel),
+      active_main_model_inherited: childInheritsActiveMainModel(activeMainModel?.model),
       router_selected: routerSelected,
       runtime_verified: false
     },

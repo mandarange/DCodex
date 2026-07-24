@@ -288,3 +288,37 @@ test('Fast UI repair fails closed when codex-lb is selected but its runtime cred
   assert.ok(repaired.selected_provider_blockers.includes('codex_lb_base_url_missing'))
   assert.ok(repaired.blockers.includes('selected_provider:codex_lb_api_key_missing'))
 })
+
+test('Codex App Fast UI repair preserves an active OpenRouter selection under migration markers', async (t) => {
+  const input = [
+    '# SKS moved machine-local Codex config from .codex/config.toml at 2026-07-24T07:04:58.256Z',
+    '',
+    'model_provider = "openrouter"',
+    'model_catalog_json = "/tmp/sks-openrouter-catalog.json"',
+    'model = "moonshotai/kimi-k3"',
+    '',
+    '[model_providers.openrouter]',
+    'name = "OpenRouter"',
+    'base_url = "https://openrouter.ai/api/v1"',
+    'wire_api = "responses"',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n')
+  const { root, codexHome, configPath } = await fixture(t, input)
+  const repaired = await repairCodexAppFastUi(root, {
+    codexHome,
+    apply: true,
+    env: { HOME: path.dirname(codexHome) },
+    codexLbModelCatalog: {
+      ok: true,
+      models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+      blockers: []
+    }
+  } as any)
+  const after = await fs.readFile(configPath, 'utf8')
+  const globalAction = repaired.actions.find((action) => action.scope === 'codex_home')
+  assert.equal(globalAction?.changed, false)
+  assert.match(after, /^model_provider = "openrouter"$/m)
+  assert.match(after, /^model = "moonshotai\/kimi-k3"$/m)
+  assert.match(after, /^model_catalog_json = /m)
+})

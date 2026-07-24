@@ -156,8 +156,8 @@ const CONTEXT_TOOL_TASK_RE = new RegExp([
   'gpt[- ]?image',
   '\\bscreenshot(?:ting)?\\b',
   'long[- ]?context',
-  'large[- ]?(?:file|document|codebase|repository|context)',
-  '(?:repository|repo)[- ]?wide',
+  'large[- ]?(?:file|document|codebase|repository|context|search)',
+  '(?:repository|repo|codebase)[- ]?wide',
   'read[- ]?heavy',
   'supporting[- ]?documents?',
   '\\bdocs?\\b',
@@ -171,6 +171,8 @@ const CONTEXT_TOOL_TASK_RE = new RegExp([
   '\\bextract(?:ion)?\\b',
   '\\binventory\\b',
   'extensive[- ]?logs?',
+  '\\b(?:broad|wide|deep|mass|bulk|repo(?:sitory)?[- ]?wide|codebase)\\b[^\\n]{0,32}\\b(?:search|lookup|find|grep|scan)\\b',
+  '\\b(?:search|lookup|find|grep|scan)\\b[^\\n]{0,40}\\b(?:large|long|across|whole|entire|repository|codebase|many files?)\\b',
   '컴퓨터\\s*유즈',
   '브라우저',
   '크롬',
@@ -187,7 +189,11 @@ const CONTEXT_TOOL_TASK_RE = new RegExp([
   '탐색',
   '스캔',
   '추출',
-  '인벤토리'
+  '인벤토리',
+  '대규모\\s*검색',
+  '전체\\s*검색',
+  '광범위\\s*(?:검색|탐색|스캔)',
+  '코드베이스\\s*(?:검색|탐색|스캔)'
 ].join('|'), 'i')
 
 const SIMPLE_MECHANICAL_TASK_RE = new RegExp([
@@ -197,21 +203,25 @@ const SIMPLE_MECHANICAL_TASK_RE = new RegExp([
   '\\btrivial\\b',
   '\\bmechanical\\b',
   '\\brepeatable\\b',
-  '\\bexact(?:ly)?\\b[^\\n]{0,36}\\b(?:rename|copy|replace|format|fixture|change)\\b',
-  '\\b(?:typo|spacing|label|copy|format)[-_ ]?(?:only|fix|change)?\\b',
+  '\\bexact(?:ly)?\\b[^\\n]{0,36}\\b(?:rename|copy|replace|format|fixture|change|type|typing|paste)\\b',
+  '\\b(?:typo|spacing|label|copy|format|string)[-_ ]?(?:only|fix|change|replace)?\\b',
   '\\brename\\b[^\\n]{0,24}\\b(?:symbol|file|label|key|field)\\b',
+  '\\b(?:simple|quick|bounded)\\b[^\\n]{0,24}\\b(?:search|lookup|find|grep|replace|rename|type|typing)\\b',
+  '\\b(?:search|lookup|find|grep)\\b[^\\n]{0,32}\\b(?:symbol|string|path|file|key)\\b',
   '한\\s*줄',
   '단일\\s*파일',
   '아주\\s*(?:작은|단순한?)',
   '극단적으로\\s*단순',
   '기계적',
   '반복적',
-  '정확한?[^\\n]{0,24}(?:이름\\s*변경|복사|치환|포맷|수정)',
+  '정확한?[^\\n]{0,24}(?:이름\\s*변경|복사|치환|포맷|수정|타이핑)',
   '오타',
   '문구',
   '라벨',
   '간격',
-  '이름\\s*변경'
+  '이름\\s*변경',
+  '단순\\s*(?:검색|조회|찾기|타이핑|입력|치환)',
+  '짧은\\s*(?:검색|조회|찾기)'
 ].join('|'), 'i')
 
 const IMPLEMENTATION_TASK_RE = new RegExp([

@@ -11,7 +11,7 @@ import { buildCodexHookLifecycle } from '../core/codex-app/codex-hook-lifecycle.
 import { resolveCodexAppExecutionProfile } from '../core/codex-app/codex-app-execution-profile.js';
 import { repairCodexNativeManagedAssets } from '../core/codex-native/codex-native-repair-transaction.js';
 import { doctorCodexAppGlmProfile, installCodexAppGlmProfile } from '../core/codex-app/glm-profile-installer.js';
-import { openRouterStatus, useOpenRouter } from '../core/codex-app/openrouter-activate.js';
+import { openRouterStatus, restoreDesktopRoutingSnapshot, useOpenRouter } from '../core/codex-app/openrouter-activate.js';
 import { promptForOpenRouterKeyHidden, writeStoredOpenRouterKey } from '../core/providers/openrouter/openrouter-secret-store.js';
 import { compactOpenRouterModelsResult, listOpenRouterModels, testOpenRouterConnection } from '../core/providers/openrouter/openrouter-account.js';
 import { restartCodexApp } from '../core/codex-app/codex-app-restart.js';
@@ -83,7 +83,15 @@ export async function run(_command: any, args: any = []) {
     const result = await useOpenRouter({
       root,
       model,
-      restartApp: flag(args, '--restart-app') || flag(args, '--restart') || !flag(args, '--no-restart-app')
+      restartApp: flag(args, '--restart-app') || flag(args, '--restart') || !flag(args, '--no-restart-app'),
+      preserveThreadSidebar: !flag(args, '--no-preserve-thread-sidebar')
+    });
+    return printCodexAppResult(args, result);
+  }
+  if (action === 'restore-desktop-routing' || action === 'restore-previous-provider') {
+    const result = await restoreDesktopRoutingSnapshot({
+      restartApp: flag(args, '--restart-app') || flag(args, '--restart') || !flag(args, '--no-restart-app'),
+      restartImpl: restartCodexApp
     });
     return printCodexAppResult(args, result);
   }
@@ -121,6 +129,7 @@ export async function run(_command: any, args: any = []) {
       baseUrl: readOption(args, '--base-url', MULTI_PROVIDER_ROUTER_DEFAULT_BASE_URL),
       catalogPath: readOption(args, '--catalog', ''),
       replaceCatalog: flag(args, '--replace-catalog'),
+      forceRoutingOverride: flag(args, '--force-routing-override'),
       restartApp: flag(args, '--restart-app') || flag(args, '--restart') || !flag(args, '--no-restart-app')
     });
     return printCodexAppResult(args, result);
@@ -194,7 +203,7 @@ export async function run(_command: any, args: any = []) {
     if (!status.ok) process.exitCode = 1;
     return;
   }
-  console.error('Usage: sks codex-app check|status|harness-matrix|skill-sync|agent-role-sync|init-deep|hook-lifecycle|execution-profile|set-openrouter-key [--api-key-stdin]|use-openrouter --model <id>|openrouter-status|openrouter-models [--ids-only]|openrouter-test [--model <id>]|router-status [--base-url <loopback-url>] [--catalog <path>]|router-test --model <provider/model> [--base-url <loopback-url>] [--catalog <path>]|use-router --model <provider/model> [--base-url <loopback-url>] [--catalog <path>] [--replace-catalog]|role-models|set-role-model --role <name> [--provider <id>] --model <catalog-slug> --reasoning <effort>|reset-role-model --role <name>|product-design [--check-only]|ensure-product-design|chrome-extension|pat status|remote-control [--json]');
+  console.error('Usage: sks codex-app check|status|harness-matrix|skill-sync|agent-role-sync|init-deep|hook-lifecycle|execution-profile|set-openrouter-key [--api-key-stdin]|use-openrouter --model <id>|restore-desktop-routing|openrouter-status|openrouter-models [--ids-only]|openrouter-test [--model <id>]|router-status [--base-url <loopback-url>] [--catalog <path>]|router-test --model <provider/model> [--base-url <loopback-url>] [--catalog <path>]|use-router --model <provider/model> [--base-url <loopback-url>] [--catalog <path>] [--replace-catalog] [--force-routing-override]|role-models|set-role-model --role <name> [--provider <id>] --model <catalog-slug> --reasoning <effort>|reset-role-model --role <name>|product-design [--check-only]|ensure-product-design|chrome-extension|pat status|remote-control [--json]');
   console.error('Note: glm-profile is retired (strips leftover Desktop GLM profiles); use set-openrouter-key / use-openrouter.');
   process.exitCode = 1;
 }

@@ -280,3 +280,91 @@ test('OpenRouter status and shared config validation reject env_key plus command
   assert.equal(status.provider_auth_valid, false);
   assert.ok(status.blockers.includes('openrouter_provider_auth_env_key_conflict'));
 });
+
+test('re-activating OpenRouter preserves the cross-provider routing snapshot', async (t) => {
+  const { temp, root, home, configPath, env } = await makeTempOpenRouterHarness();
+  t.after(async () => fs.rm(temp, { recursive: true, force: true }));
+  const storedKey = 'sk-or-v1-stored-desktop-auth-abcdefghijklmnop';
+  await writeStoredOpenRouterKey(storedKey, { paths: openRouterSecretPaths(env) });
+  delete env.OPENROUTER_API_KEY;
+  await fs.writeFile(configPath, [
+    'model_provider = "codex-lb"',
+    'model = "gpt-5.6-sol"',
+    ''
+  ].join('\n'));
+
+  const first = await useOpenRouter({
+    root,
+    home,
+    configPath,
+    env,
+    model: 'moonshotai/kimi-k3',
+    restartApp: false
+  });
+  assert.equal(first.ok, true, JSON.stringify(first.blockers || first));
+  const snapshotFile = path.join(home, '.codex', 'sks-previous-desktop-routing.json');
+  const firstSnapshot = JSON.parse(await fs.readFile(snapshotFile, 'utf8'));
+  assert.equal(firstSnapshot.model_provider, 'codex-lb');
+  assert.equal(firstSnapshot.model, 'gpt-5.6-sol');
+  assert.equal(first.previous_routing_restore_available, true);
+
+  // Second activation runs with OpenRouter already selected (Center
+  // "Refresh Models" re-runs use-openrouter) and must not clobber the
+  // codex-lb snapshot with a self-referential openrouter->openrouter one.
+  const second = await useOpenRouter({
+    root,
+    home,
+    configPath,
+    env,
+    model: 'moonshotai/kimi-k3',
+    restartApp: false
+  });
+  assert.equal(second.ok, true, JSON.stringify(second.blockers || second));
+  const secondSnapshot = JSON.parse(await fs.readFile(snapshotFile, 'utf8'));
+  assert.equal(secondSnapshot.model_provider, 'codex-lb');
+  assert.equal(secondSnapshot.model, 'gpt-5.6-sol');
+  assert.equal(second.previous_routing_restore_available, true);
+  assert.equal(
+    (second.routing_snapshot_write as any)?.skipped,
+    'preserved_existing_cross_provider_snapshot'
+  );
+});
+
+test('activating OpenRouter while already selected without a snapshot does not fabricate restore availability', async (t) => {
+  const { temp, root, home, configPath, env } = await makeTempOpenRouterHarness();
+  t.after(async () => fs.rm(temp, { recursive: true, force: true }));
+  const storedKey = 'sk-or-v1-stored-desktop-auth-abcdefghijklmnop';
+  await writeStoredOpenRouterKey(storedKey, { paths: openRouterSecretPaths(env) });
+  delete env.OPENROUTER_API_KEY;
+  await fs.writeFile(configPath, [
+    'model_provider = "openrouter"',
+    'model = "moonshotai/kimi-k3"',
+    ''
+  ].join('\n'));
+
+  const activated = await useOpenRouter({
+    root,
+    home,
+    configPath,
+    env,
+    model: 'moonshotai/kimi-k3',
+    restartApp: false
+  });
+  assert.equal(activated.ok, true, JSON.stringify(activated.blockers || activated));
+  assert.equal(activated.previous_routing_restore_available, false);
+  assert.equal(
+    (activated.routing_snapshot_write as any)?.skipped,
+    'self_referential_snapshot_not_written'
+  );
+  const snapshotFile = path.join(home, '.codex', 'sks-previous-desktop-routing.json');
+  await assert.rejects(fs.access(snapshotFile));
+  assert.ok(
+    (activated.warnings as string[]).includes(
+      'routing_snapshot_not_written:self_referential_snapshot_not_written'
+    )
+  );
+
+  const status = await openRouterStatus({ home, configPath, env });
+  assert.equal(status.previous_routing_restore_available, false);
+  assert.equal(status.warnings.includes('desktop_routing_snapshot_restore_available'), false);
+});

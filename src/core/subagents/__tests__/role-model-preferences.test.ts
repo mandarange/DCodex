@@ -312,7 +312,7 @@ test('official subagent preparation applies role overrides to routed plan and ex
   assert.match(prepared.delegationPrompt, /pass fork_turns="none" and carry this complete bounded slice contract in message/);
 });
 
-test('app-session roles inherit the selected main model unless a role override exists', async (t) => {
+test('app-session third-party main models inherit onto children unless a role override exists', async (t) => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-role-model-main-inheritance-'));
   t.after(async () => fs.rm(temp, { recursive: true, force: true }));
   const root = path.join(temp, 'repo');
@@ -389,7 +389,78 @@ test('app-session roles inherit the selected main model unless a role override e
   assert.match(parentRequired.delegationPrompt, /do not substitute a managed GPT model for the active main model openrouter:moonshotai\/kimi-k3/);
 });
 
-test('unconfigured roles preserve installed custom-agent defaults without spawn overrides', () => {
+test('GPT-5.6 Sol app-session main keeps sealed Luna and Terra child role models', async (t) => {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-role-model-sol-sealed-'));
+  t.after(async () => fs.rm(temp, { recursive: true, force: true }));
+  const root = path.join(temp, 'repo');
+  const dir = path.join(root, '.sneakoscope', 'missions', 'M-sol-main');
+  const home = path.join(temp, 'home');
+  const codexHome = path.join(home, '.codex');
+  const configPath = path.join(codexHome, 'config.toml');
+  const env = {
+    HOME: home,
+    CODEX_HOME: codexHome,
+    SKS_HOME: path.join(temp, 'sks-home')
+  } as NodeJS.ProcessEnv;
+  await fs.mkdir(dir, { recursive: true });
+  await fs.mkdir(codexHome, { recursive: true });
+  await fs.writeFile(configPath, [
+    'model_provider = "openai"',
+    'model = "gpt-5.6-sol"',
+    ''
+  ].join('\n'));
+
+  const status = await roleModelPreferencesStatus({ env, home, configPath });
+  const explorer = status.roles.find((row) => row.role === 'explorer');
+  const worker = status.roles.find((row) => row.role === 'worker');
+  assert.equal(status.routing.active_main_model_inherited, false);
+  assert.equal(explorer?.effective_model, 'gpt-5.6-terra');
+  assert.equal(explorer?.effective_reasoning_effort, 'medium');
+  assert.equal(explorer?.effective_source, 'managed-default');
+  assert.equal(worker?.effective_model, 'gpt-5.6-luna');
+  assert.equal(worker?.effective_reasoning_effort, 'max');
+
+  const prepared = await prepareOfficialSubagentMission({
+    root,
+    dir,
+    missionId: 'M-sol-main',
+    goal: 'Search broadly then apply a tiny rename',
+    route: '$Naruto',
+    mode: 'naruto',
+    sessionScope: 'codex-app-thread',
+    env,
+    slices: [
+      {
+        id: 'search',
+        title: 'Repository search',
+        description: 'Large repository-wide search for callers',
+        kind: 'worker',
+        agent: 'explorer',
+        paths: ['src'],
+        readOnly: true
+      },
+      {
+        id: 'rename',
+        title: 'Tiny rename',
+        description: 'Exact one-line single-file rename',
+        kind: 'worker',
+        agent: 'worker',
+        paths: ['src/a.ts']
+      }
+    ]
+  });
+  assert.equal(prepared.plan.agents.explorer.routed_model, 'gpt-5.6-terra');
+  assert.equal(prepared.plan.agents.explorer.routed_model_reasoning_effort, 'medium');
+  assert.equal(prepared.plan.agents.explorer.routed_model_policy, 'terra_medium_context_tools');
+  assert.equal(prepared.plan.agents.worker.routed_model, 'gpt-5.6-luna');
+  assert.equal(prepared.plan.agents.worker.routed_model_reasoning_effort, 'max');
+  assert.equal(prepared.plan.agents.worker.routed_model_policy, 'luna_max_mechanical');
+  assert.equal(prepared.plan.role_model_preferences.routing.active_main_model_inherited, false);
+  assert.match(prepared.delegationPrompt, /children must keep sealed Luna\/Terra\/Sol High\/Sol Max role profiles/);
+  assert.doesNotMatch(prepared.delegationPrompt, /pass the exact active main model="gpt-5\.6-sol"/);
+});
+
+test('unconfigured roles spawn with sealed role model policy instead of omitting overrides', () => {
   const prompt = (async () => {
     const { buildOfficialSubagentPrompt } = await import('../official-subagent-prompt.js');
     return buildOfficialSubagentPrompt({
@@ -406,7 +477,8 @@ test('unconfigured roles preserve installed custom-agent defaults without spawn 
     });
   })();
   return prompt.then((value) => {
-    assert.match(value, /omit model\/reasoning overrides and preserve the installed custom-agent default/);
+    assert.match(value, /pass model="gpt-5\.6-sol" and reasoning_effort="high" from the sealed role policy/);
+    assert.match(value, /do not replace Luna\/Terra\/Sol High\/Sol Max with the parent active main model/);
     assert.match(value, /pass fork_turns="none" and carry this complete bounded slice contract in message/);
   });
 });

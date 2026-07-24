@@ -168,7 +168,8 @@ description: Enforce Sneakoscope Codex database safety before using SQL, Supabas
 ---
 
 Rules:
-- Default non-MAD-SKS mode is read-only and routes writes/destructive SQL to the DB safety gate.
+- Default non-MAD-SKS mode is read-only. When a migration is required, produce exactly one mission-local manual-migration.sql with active forward SQL and a complete rollback section that remains commented out, then tell the user to apply it manually.
+- Before any DB change, inspect the existing canonical adapter/query helper, pool/client ownership and acquire/release/shutdown/reconnect behavior, N+1/repeated I/O, and transaction integrity for sensitive or multi-step mutations.
 - Supabase MCP must be read-only and project-scoped by default.
 - Live execute_sql writes are blocked unless a bound active MAD-SKS sql-plane capability v2 is present.
 - Active MAD-SKS sql-plane is the explicit exception: SQL-plane mutations requested by $MAD-SKS or sks mad-sks sql|apply-migration are allowed, including DROP, DELETE, TRUNCATE, RLS/policy changes, and execute_sql/apply_migration, and must be executed with read-back verification.

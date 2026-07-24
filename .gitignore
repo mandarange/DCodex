@@ -109,6 +109,7 @@ id_ed25519
 .sneakoscope/state/
 .sneakoscope/db/
 .sneakoscope/evidence/
+.sneakoscope/guards/
 .sneakoscope/proof/
 .sneakoscope/proof-bank/
 .sneakoscope/perf/

@@ -3,15 +3,18 @@ import {
   managedOfficialSubagentRoleByName,
   type ManagedOfficialSubagentRole
 } from '../managed-assets/managed-assets-manifest.js'
+import { decideNarutoConcurrency } from '../naruto/naruto-concurrency-governor.js'
+import type { HardwareCapacityProbeInput } from '../naruto/hardware-capacity-probe.js'
 import type { SubagentModelPolicyId, SubagentModelReasoningEffort } from './model-policy.js'
+import { DEFAULT_NARUTO_MAX_THREADS } from './thread-budget.js'
 
-export const DEFAULT_AUTOMATIC_SUBAGENT_COUNT = 2
-export const PARALLEL_AUTOMATIC_SUBAGENT_COUNT = 4
-export const LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT = 6
-export const MAX_AUTOMATIC_SUBAGENT_COUNT = 10
+export const DEFAULT_AUTOMATIC_SUBAGENT_COUNT = 4
+export const PARALLEL_AUTOMATIC_SUBAGENT_COUNT = 6
+export const LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT = 8
+export const MAX_AUTOMATIC_SUBAGENT_COUNT = 12
 export const MAX_AUTOMATIC_REVIEWER_COUNT = 2
 export const MAX_CRITICAL_AUTOMATIC_REVIEWER_COUNT = 3
-export const MAX_ON_DEMAND_SUBAGENT_ROLE_COUNT = LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT
+export const MAX_ON_DEMAND_SUBAGENT_ROLE_COUNT = MAX_AUTOMATIC_SUBAGENT_COUNT
 
 export interface OfficialSubagentRoleSummary {
   name: string
@@ -114,6 +117,8 @@ export function officialSubagentFanoutPolicy(input: {
   suggestedRoles?: readonly string[] | null
   goal?: string | null
   independentSliceCount?: number | null
+  maxThreads?: number | null
+  hardware?: HardwareCapacityProbeInput | null
 } = {}) {
   const countSource = input.requestedSource === 'route_contract'
     ? 'route_contract'
@@ -128,7 +133,9 @@ export function officialSubagentFanoutPolicy(input: {
     ...(input.taskProfile === undefined ? {} : { taskProfile: input.taskProfile }),
     ...(input.goal === undefined ? {} : { goal: input.goal }),
     ...(input.suggestedRoles === undefined ? {} : { suggestedRoles: input.suggestedRoles }),
-    ...(input.independentSliceCount === undefined ? {} : { independentSliceCount: input.independentSliceCount })
+    ...(input.independentSliceCount === undefined ? {} : { independentSliceCount: input.independentSliceCount }),
+    ...(input.maxThreads === undefined ? {} : { maxThreads: input.maxThreads }),
+    ...(input.hardware === undefined ? {} : { hardware: input.hardware })
   })
   const requested = explicit ? explicitRequested : automatic.count
   const automaticReviewerCeiling = automatic.criticalMultiDomain
@@ -163,6 +170,8 @@ function automaticSubagentFanout(input: {
   goal?: string | null
   suggestedRoles?: readonly string[] | null
   independentSliceCount?: number | null
+  maxThreads?: number | null
+  hardware?: HardwareCapacityProbeInput | null
 }) {
   const text = normalizeText([input.goal])
   const riskDomains = unique([
@@ -176,6 +185,12 @@ function automaticSubagentFanout(input: {
   const criticalMultiDomain = highRisk && critical && riskDomains.length >= 3
   const reviewerOnly = isReviewerOnlyFanout(input.suggestedRoles || [])
   const decomposedSliceCount = Number(input.independentSliceCount)
+  const roleWidth = unique((input.suggestedRoles || []).map((role) => String(role || '').trim()).filter(Boolean)).length
+  const frameBudget = clamp(
+    Number(input.maxThreads) || DEFAULT_NARUTO_MAX_THREADS,
+    1,
+    MAX_AUTOMATIC_SUBAGENT_COUNT
+  )
 
   if (Number.isFinite(decomposedSliceCount) && decomposedSliceCount > 0) {
     const reviewerCeiling = criticalMultiDomain
@@ -206,52 +221,72 @@ function automaticSubagentFanout(input: {
     }
   }
 
+  let baseCount = DEFAULT_AUTOMATIC_SUBAGENT_COUNT
+  let reason = 'non_trivial_default_parallel'
   if (largeScale) {
-    return {
-      count: LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT,
-      ceiling: MAX_AUTOMATIC_SUBAGENT_COUNT,
-      reason: 'large_scale_dynamic_parallel',
-      riskDomains,
-      criticalMultiDomain
-    }
+    baseCount = LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT
+    reason = 'large_scale_dynamic_parallel'
+  } else if (criticalMultiDomain) {
+    baseCount = Math.min(
+      LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT,
+      Math.max(PARALLEL_AUTOMATIC_SUBAGENT_COUNT, riskDomains.length + 1)
+    )
+    reason = 'critical_multi_domain_risk'
+  } else if (parallel) {
+    baseCount = PARALLEL_AUTOMATIC_SUBAGENT_COUNT
+    reason = 'explicit_parallel_or_independent_slices'
+  } else if (highRisk && riskDomains.length >= 2) {
+    baseCount = Math.max(DEFAULT_AUTOMATIC_SUBAGENT_COUNT, riskDomains.length + 1)
+    reason = 'independent_multi_domain_risk'
+  } else if (roleWidth >= 3) {
+    baseCount = Math.max(DEFAULT_AUTOMATIC_SUBAGENT_COUNT, Math.min(PARALLEL_AUTOMATIC_SUBAGENT_COUNT, roleWidth + 1))
+    reason = 'role_width_parallel'
   }
 
-  if (criticalMultiDomain) {
-    return {
-      count: Math.min(
-        LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT,
-        Math.max(PARALLEL_AUTOMATIC_SUBAGENT_COUNT, riskDomains.length + 1)
-      ),
-      ceiling: MAX_AUTOMATIC_SUBAGENT_COUNT,
-      reason: 'critical_multi_domain_risk',
-      riskDomains,
-      criticalMultiDomain: true
-    }
-  }
-  if (parallel) {
-    return {
-      count: PARALLEL_AUTOMATIC_SUBAGENT_COUNT,
-      ceiling: MAX_AUTOMATIC_SUBAGENT_COUNT,
-      reason: 'explicit_parallel_or_independent_slices',
-      riskDomains,
-      criticalMultiDomain: false
-    }
-  }
-  if (highRisk && riskDomains.length >= 2) {
-    return {
-      count: 3,
-      ceiling: MAX_AUTOMATIC_SUBAGENT_COUNT,
-      reason: 'independent_multi_domain_risk',
-      riskDomains,
-      criticalMultiDomain: false
-    }
-  }
+  const count = hardwareAwareAutomaticCount(
+    baseCount,
+    MAX_AUTOMATIC_SUBAGENT_COUNT,
+    frameBudget,
+    input.hardware
+  )
   return {
-    count: DEFAULT_AUTOMATIC_SUBAGENT_COUNT,
+    count,
     ceiling: MAX_AUTOMATIC_SUBAGENT_COUNT,
-    reason: 'non_trivial_default_parallel',
+    reason: count > baseCount ? `${reason}+hardware_capacity_boost` : reason,
     riskDomains,
-    criticalMultiDomain: false
+    criticalMultiDomain: Boolean(criticalMultiDomain)
+  }
+}
+
+/**
+ * Prefer the largest useful fan-out the machine can sustain. Policy sets a floor;
+ * healthy CPU/memory budget may raise the count up to the sealed ceiling.
+ * Live wave capacity still clamps actual spawns through the thread-budget ledger.
+ */
+function hardwareAwareAutomaticCount(
+  baseCount: number,
+  ceiling: number,
+  frameBudget: number,
+  hardware?: HardwareCapacityProbeInput | null
+): number {
+  const targetCeiling = clamp(Math.min(ceiling, frameBudget), 1, MAX_AUTOMATIC_SUBAGENT_COUNT)
+  const floor = clamp(baseCount, 1, targetCeiling)
+  try {
+    const probe = decideNarutoConcurrency({
+      requestedWorkers: targetCeiling,
+      totalWorkItems: targetCeiling,
+      parallelismMode: 'extreme',
+      maxThreads: frameBudget,
+      ...(hardware ? { hardware } : {})
+    }).hardware
+    const cpuCap = Math.max(1, Math.floor(probe.cpu_core_count * 0.75))
+    const freeGb = probe.free_memory_bytes / (1024 * 1024 * 1024)
+    const memCap = Math.max(1, Math.floor(Math.max(0.5, freeGb - 2) / 1.5))
+    const apiCap = Math.max(1, probe.remote_api_rate_limit_budget)
+    const safe = clamp(Math.min(cpuCap, memCap, apiCap, targetCeiling), 1, targetCeiling)
+    return Math.max(floor, safe)
+  } catch {
+    return floor
   }
 }
 

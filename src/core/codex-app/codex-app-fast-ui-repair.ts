@@ -182,17 +182,29 @@ function stripProjectLocalForbiddenKeys(text: string) {
 
 function stripSksCausedHostOwnedLines(text: string) {
   const sourceLines = String(text || '').split(/\r?\n/)
-  // An active, contract-shaped codex-lb selection is a runtime provider choice,
-  // not a Fast UI lock. Preserve it so Desktop keeps GPT-5.6/tool exposure after
-  // project→global config migration markers are present.
+  // An active, contract-shaped codex-lb or OpenRouter selection is a runtime
+  // provider choice, not a Fast UI lock. Preserve it so Desktop keeps the
+  // selected provider after project→global config migration markers are
+  // present (the "SKS moved machine-local Codex config" note above the key
+  // otherwise makes the selection look like a lock leftover).
   const preserveCodexLbSelection = hasActiveCodexLbProviderSelection(text)
+  const preserveOpenRouterSelection = hasActiveOpenRouterProviderSelection(text)
   const stripped = stripMatchingLines(text, (line, table, _previous, _next, index) => {
     const isLegacyFastTable = table ? FAST_UI_LEGACY_TABLES.has(table) : false
     if (isLegacyFastTable) return true
     if (!table && preserveCodexLbSelection && /^\s*model_provider\s*=\s*"codex-lb"\s*(?:#.*)?$/.test(line)) return false
+    if (!table && preserveOpenRouterSelection && /^\s*(?:model_provider\s*=\s*"openrouter"|model\s*=)/.test(line)) return false
     return !table && FAST_UI_TOP_LEVEL_RE.test(line) && isSksOwnedGlobalUiLock(sourceLines, index)
   })
   return stripped
+}
+
+function hasActiveOpenRouterProviderSelection(text: string) {
+  const source = String(text || '')
+  if (!/(?:^|\n)\s*model_provider\s*=\s*"openrouter"\s*(?:#.*)?(?=\n|$)/.test(source)) return false
+  const body = source.match(/(?:^|\n)\[model_providers\.openrouter\]([^\n]*(?:\n(?!\s*\[)[^\n]*)*)/)?.[1] || ''
+  return /(?:^|\n)\s*base_url\s*=\s*"https:\/\/openrouter\.ai\/api\/v1"\s*(?:#.*)?(?=\n|$)/.test(body)
+    && /(?:^|\n)\s*wire_api\s*=\s*"responses"\s*(?:#.*)?(?=\n|$)/.test(body)
 }
 
 function hasActiveCodexLbProviderSelection(text: string) {

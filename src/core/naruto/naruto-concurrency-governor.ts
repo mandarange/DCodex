@@ -141,9 +141,9 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
 }
 
 function normalizeParallelismMode(value: unknown): 'extreme' | 'balanced' | 'safe' {
-  const text = String(value || process.env.SKS_NARUTO_PARALLELISM || 'safe').toLowerCase()
+  const text = String(value || process.env.SKS_NARUTO_PARALLELISM || 'extreme').toLowerCase()
   if (text === 'safe' || text === 'balanced' || text === 'extreme') return text
-  return 'safe'
+  return 'extreme'
 }
 
 function normalizePositiveInt(value: unknown, fallback: number): number {

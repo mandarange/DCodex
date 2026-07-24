@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 export const LEAN_ENGINEERING_POLICY_ID = 'sks.lean-engineering-policy.v1';
 export const LEAN_DECISION_SCHEMA = 'sks.lean-decision.v1';
 export const LEAN_CHANGE_EVIDENCE_SCHEMA = 'sks.lean-change-evidence.v1';
+export const ENGINEERING_SANITY_POLICY_ID = 'sks.engineering-sanity-policy.v1';
 
 export const LEAN_SOLUTION_RUNGS = Object.freeze([
   'skip',
@@ -16,7 +17,22 @@ export const LEAN_SOLUTION_RUNGS = Object.freeze([
 
 export type LeanSolutionRung = typeof LEAN_SOLUTION_RUNGS[number];
 export type LeanFallbackKind = 'none' | 'capability' | 'compatibility' | 'fail-closed';
-export type LeanFindingTag = 'delete' | 'reuse' | 'stdlib' | 'platform' | 'yagni' | 'shrink' | 'fallback' | 'root-cause' | 'verify';
+export type LeanFindingTag =
+  | 'delete'
+  | 'reuse'
+  | 'stdlib'
+  | 'platform'
+  | 'yagni'
+  | 'shrink'
+  | 'fallback'
+  | 'root-cause'
+  | 'verify'
+  | 'solid'
+  | 'n-plus-one'
+  | 'unbounded-loop'
+  | 'verification-bypass'
+  | 'db-pool'
+  | 'transaction';
 
 export interface LeanFallbackPlan {
   kind: LeanFallbackKind;
@@ -52,11 +68,14 @@ export interface LeanSimplificationMarker {
 }
 
 export interface LeanFinding {
+  id?: string;
   tag: LeanFindingTag;
   severity: 'info' | 'review' | 'blocker';
   summary: string;
   file?: string;
   line?: number;
+  source_scope?: string;
+  added_hunk_line_ranges?: Array<{ start: number; end: number }>;
 }
 
 const CORE_ENGINEERING_DIRECTIVE_LINES = Object.freeze([
@@ -64,6 +83,11 @@ const CORE_ENGINEERING_DIRECTIVE_LINES = Object.freeze([
   'Follow reality. Trace actual callers, inputs, data, and control flow; do not add defenses for unreachable or speculative conditions.',
   'Use the real project mechanism. Follow current code and specifications and use authoritative tools or data; never substitute invented mocks, guessed heuristics, remembered architectures, or unsupported fallbacks.',
   'Preserve security, permissions, data integrity, rollback, accessibility, and explicit user requirements. If the real path is unavailable, stop and report evidence.'
+]);
+
+const ENGINEERING_SANITY_POLICY_LINES = Object.freeze([
+  'Continuously review changed code and its real callers for basic SOLID boundaries, N+1 or repeated I/O, unbounded render/recursion/event/retry/polling loops, and disabled checks, swallowed failures, or other verification bypasses.',
+  'For database work, inspect the existing canonical data-access path first. Preserve one owned connection/pool lifecycle with bounded acquire, release, shutdown, and reconnect behavior; require atomic transactions, rollback and error propagation, idempotency, and post-commit invariant checks for sensitive, payment, ledger, or multi-step mutations.'
 ]);
 
 const LEAN_ENGINEERING_POLICY_CANONICAL = CORE_ENGINEERING_DIRECTIVE_LINES.join('\n');
@@ -77,6 +101,10 @@ export const LEAN_ENGINEERING_POLICY_HASH = createHash('sha256')
 // user-facing directive stays concise and authoritative.
 export const CORE_ENGINEERING_DIRECTIVE_ID = 'sks.core-engineering-directive.v1';
 export const CORE_ENGINEERING_DIRECTIVE_HASH = LEAN_ENGINEERING_POLICY_HASH;
+export const ENGINEERING_SANITY_POLICY_HASH = createHash('sha256')
+  .update(ENGINEERING_SANITY_POLICY_LINES.join('\n'))
+  .digest('hex')
+  .slice(0, 16);
 
 export function leanPolicyReference() {
   return {
@@ -98,6 +126,13 @@ export function coreEngineeringDirectiveText() {
 
 export function coreEngineeringDirectiveReferenceText() {
   return `Apply the Core Engineering Directive (${CORE_ENGINEERING_DIRECTIVE_ID}/${CORE_ENGINEERING_DIRECTIVE_HASH}) from AGENTS.md exactly; do not expand it with legacy global rules.`;
+}
+
+export function engineeringSanityPolicyText() {
+  return [
+    `Engineering Sanity Policy (${ENGINEERING_SANITY_POLICY_ID}/${ENGINEERING_SANITY_POLICY_HASH}):`,
+    ...ENGINEERING_SANITY_POLICY_LINES
+  ].join('\n');
 }
 
 export function leanEngineeringCompactText() {

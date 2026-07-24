@@ -139,10 +139,20 @@ final class ProcessClient {
 
     private func publicOutput(_ value: String, code: Int32, sensitiveValues: [String]) -> String {
         let redacted = redact(value, sensitiveValues: sensitiveValues)
-        guard !sensitiveValues.isEmpty else { return redacted }
-        return code == 0
-            ? "Secure input operation completed. Child output was suppressed."
-            : "Secure input operation failed with exit code \(code). Child output was suppressed."
+        guard sensitiveValues.isEmpty else {
+            return code == 0
+                ? "Secure input operation completed. Child output was suppressed."
+                : "Secure input operation failed with exit code \(code). Child output was suppressed."
+        }
+        return extractJsonPayload(redacted)
+    }
+
+    /// stdout+stderr are merged; keep the JSON object when Node prints warnings first.
+    private func extractJsonPayload(_ value: String) -> String {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.first == "{" || text.first == "[" { return text }
+        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}") else { return text }
+        return String(text[start...end])
     }
 
     private func writeLog(command: [String], output: String, sensitiveValues: [String] = []) {

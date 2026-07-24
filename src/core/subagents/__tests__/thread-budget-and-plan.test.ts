@@ -13,14 +13,14 @@ import {
 } from '../../agents/agent-plan.js'
 import { routePrompt } from '../../routes.js'
 
-test('official thread budget defaults to two children while reserving only the parent frame slot', () => {
-  assert.equal(DEFAULT_NARUTO_REQUESTED_SUBAGENTS, 2)
+test('official thread budget defaults to four children while reserving only the parent frame slot', () => {
+  assert.equal(DEFAULT_NARUTO_REQUESTED_SUBAGENTS, 4)
   assert.equal(DEFAULT_NARUTO_MAX_THREADS, 12)
   assert.equal(HARD_NARUTO_MAX_THREADS, 32)
   const budget = resolveSubagentThreadBudget()
-  assert.equal(budget.requestedSubagents, 2)
+  assert.equal(budget.requestedSubagents, 4)
   assert.equal(budget.maxThreads, 12)
-  assert.equal(budget.firstWave, 2)
+  assert.equal(budget.firstWave, 4)
   assert.equal(budget.waveCount, 1)
   assert.equal(budget.maxDepth, 1)
   assert.equal(budget.capacity.max_threads_is_cap_not_target, true)

@@ -90,6 +90,7 @@ try {
     path.join(home, '.agents', 'skills', 'team'),
     path.join(home, '.agents', 'skills', 'agent'),
     path.join(home, '.agents', 'skills', 'ralph'),
+    path.join(home, '.agents', 'skills', 'sks-research-discovery'),
     path.join(home, '.codex', 'skills', 'mad-db'),
     path.join(home, '.codex', 'sks-team.config.toml'),
     path.join(home, '.sneakoscope-global', '.codex', 'sks-team.config.toml'),
@@ -114,9 +115,10 @@ try {
   ]) {
     assertGate(!fs.existsSync(target), 'simulated update must remove every managed legacy unprefixed SKS skill', { target });
   }
-  for (const name of ['sks-naruto', 'sks-research-discovery', 'sks-answer', 'sks-imagegen', 'sks-qa-loop', 'sks-dfix']) {
+  for (const name of ['sks-naruto', 'sks-research', 'sks-answer', 'sks-imagegen', 'sks-qa-loop', 'sks-dfix']) {
     assertGate(fs.existsSync(path.join(home, '.agents', 'skills', name, 'SKILL.md')), 'simulated update must install the namespaced global picker skill', { name });
   }
+  assertGate(!fs.existsSync(path.join(home, '.agents', 'skills', 'sks-research-discovery')), 'simulated update must remove the duplicate namespaced research-discovery picker skill', {});
   assertGate(!fs.existsSync(path.join(project, '.agents', 'skills', 'research')), 'simulated update must remove a user-authored legacy-name collision from the active picker surface', {});
   const quarantinedLegacySkills = await findFiles(path.join(project, '.sneakoscope', 'quarantine', 'skills'), 'SKILL.md');
   assertGate(quarantinedLegacySkills.length >= 1, 'simulated update must quarantine user-authored legacy-name collisions', { quarantinedLegacySkills });
@@ -433,6 +435,7 @@ async function seedUpgradeFixture(home: string, project: string): Promise<void> 
   await writeManagedSkill(path.join(home, '.agents', 'skills', 'agent'), 'agent');
   await writeManagedSkill(path.join(home, '.agents', 'skills', 'ralph'), 'ralph');
   await writeManagedSkill(path.join(home, '.agents', 'skills', 'naruto'), 'naruto');
+  await writeManagedSkill(path.join(home, '.agents', 'skills', 'sks-research-discovery'), 'sks-research-discovery');
   await writeManagedSkill(path.join(home, '.codex', 'skills', 'mad-db'), 'mad-db');
   await writeManagedSkill(path.join(home, '.codex', 'skills', 'research-discovery'), 'research-discovery');
   await writeManagedSkill(path.join(globalRuntimeRoot, '.agents', 'skills', 'answer'), 'answer');

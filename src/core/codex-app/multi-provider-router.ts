@@ -31,6 +31,15 @@ import {
   tomlTableBody,
   uniqueStrings
 } from './multi-provider-router-support.js';
+import {
+  classifyCodexDesktopRouting,
+  OPENCODEX_DESIGN_B_FORCE_HINT,
+  opencodexDesignBBlocksRouterActivation
+} from './codex-desktop-routing-ownership.js';
+import {
+  desktopPickerStatusFromCache,
+  invalidateCodexModelsCache
+} from './codex-models-cache.js';
 
 export const MULTI_PROVIDER_ROUTER_ID = 'sks-router' as const;
 export const MULTI_PROVIDER_ROUTER_NAME = 'SKS Multi-Provider Router' as const;
@@ -59,6 +68,12 @@ export interface MultiProviderRouterStatus {
   readonly active_model_present: boolean;
   readonly runtime_verified: false;
   readonly config_path: string;
+  readonly routing_ownership: ReturnType<typeof classifyCodexDesktopRouting>;
+  readonly desktop_picker: {
+    readonly catalog_ok: boolean;
+    readonly models_cache_invalidated: boolean;
+    readonly restart_recommended: boolean;
+  };
   readonly blockers: readonly string[];
   readonly warnings: readonly string[];
 }
@@ -148,6 +163,7 @@ export async function multiProviderRouterStatus(input: {
     ...(selected && activeModel && !activeModelPresent ? ['multi_provider_router_active_model_not_in_catalog'] : [])
   ]);
   const ready = providerContractOk && catalog.ok && (!selected || activeModelPresent);
+  const ownership = classifyCodexDesktopRouting(config, { home, env, configPath });
   return {
     schema: 'sks.codex-app-multi-provider-router-status.v1',
     ok: ready,
@@ -174,9 +190,16 @@ export async function multiProviderRouterStatus(input: {
     active_model_present: activeModelPresent,
     runtime_verified: false,
     config_path: configPath,
+    routing_ownership: ownership,
+    desktop_picker: desktopPickerStatusFromCache({
+      catalogOk: catalog.ok,
+      cache: null,
+      restartAppRequested: false
+    }),
     blockers,
     warnings: uniqueStrings([
       ...catalog.warnings,
+      ...ownership.warnings,
       ...(selected
         && activeModel
         && activeModelPresent
@@ -259,6 +282,7 @@ export async function useMultiProviderRouter(input: {
   readonly baseUrl?: string;
   readonly catalogPath?: string;
   readonly replaceCatalog?: boolean;
+  readonly forceRoutingOverride?: boolean;
   readonly restartApp?: boolean;
   readonly home?: string;
   readonly env?: NodeJS.ProcessEnv;
@@ -322,6 +346,23 @@ export async function useMultiProviderRouter(input: {
     };
   }
 
+  const configExistedBefore = await exists(configPath);
+  const current = await readText(configPath, '');
+  const ownership = classifyCodexDesktopRouting(current, { home, env, configPath });
+  const designBBlocker = opencodexDesignBBlocksRouterActivation(ownership, {
+    forceRoutingOverride: input.forceRoutingOverride === true
+  });
+  if (designBBlocker) {
+    return {
+      ...routerBlocked('sks.codex-app-use-multi-provider-router.v1', designBBlocker),
+      model,
+      base_url: baseUrlResult.value,
+      catalog_path: catalogPath,
+      routing_ownership: ownership,
+      hint: OPENCODEX_DESIGN_B_FORCE_HINT
+    };
+  }
+
   // Clear any managed codex-lb selection and its shared-OpenAI routing pin so a
   // later `codex-lb use-oauth` cannot misread leftover managed state and clobber
   // the router selection.
@@ -331,8 +372,6 @@ export async function useMultiProviderRouter(input: {
     allowActiveSharedAuthTransition: true
   }).catch((err: any) => ({ ok: false, status: 'failed', provider_error: err?.message || String(err) }));
 
-  const configExistedBefore = await exists(configPath);
-  const current = await readText(configPath, '');
   const providerBody = tomlTableBody(current, `model_providers.${MULTI_PROVIDER_ROUTER_ID}`);
   const existingProviderName = tomlString(providerBody, 'name');
   if (providerBody && existingProviderName !== MULTI_PROVIDER_ROUTER_NAME) {
@@ -401,6 +440,7 @@ export async function useMultiProviderRouter(input: {
   }
 
   const restart = await (input.restartImpl || restartCodexApp)({ enabled: Boolean(input.restartApp) });
+  const cache = await invalidateCodexModelsCache({ home, env, catalogPath });
   const status = await multiProviderRouterStatus({ home, env, configPath });
   const configApplied = status.selected
     && status.provider_contract_ok
@@ -410,6 +450,11 @@ export async function useMultiProviderRouter(input: {
   const restartRequired = Boolean(input.restartApp);
   const restartCompleted = !restartRequired || (restart.ok && restart.skipped !== true);
   const operationOk = configApplied && restartCompleted;
+  const desktopPicker = desktopPickerStatusFromCache({
+    catalogOk: catalog.ok && configApplied,
+    cache,
+    restartAppRequested: Boolean(input.restartApp)
+  });
   return {
     schema: 'sks.codex-app-use-multi-provider-router.v1',
     generated_at: nowIso(),
@@ -433,20 +478,30 @@ export async function useMultiProviderRouter(input: {
     restart_skipped: restart.skipped === true,
     config_applied: configApplied,
     runtime_verified: false,
-    router: status,
+    models_cache: cache,
+    desktop_picker: desktopPicker,
+    routing_ownership: ownership,
+    router: {
+      ...status,
+      desktop_picker: desktopPicker
+    },
     blockers: uniqueStrings([
       ...(configApplied ? [] : ['multi_provider_router_configuration_incomplete']),
       ...(restartCompleted ? [] : (restart.blockers || ['multi_provider_router_restart_blocked']))
     ]),
     warnings: uniqueStrings([
       ...catalog.warnings,
+      ...ownership.warnings,
+      ...cache.warnings,
       ...((unselect as any)?.ok === false
         ? [`codex_lb_unselect:${(unselect as any).provider_error || (unselect as any).status}`]
         : []),
       ...(catalog.models.find((entry) => entry.model === model)?.multi_agent_version === 'v2'
         ? []
         : ['multi_provider_router_model_multi_agent_v2_missing']),
-      'multi_provider_router_runtime_not_verified'
+      ...(desktopPicker.models_cache_invalidated ? [] : ['multi_provider_router_models_cache_not_invalidated']),
+      'multi_provider_router_runtime_not_verified',
+      'desktop_picker_restart_recommended_after_catalog_change'
     ])
   };
 }

@@ -35,7 +35,7 @@ const PROTECTED_SKILL_NAMES = new Set([
 
 const MERGE_GROUPS = [
   { id: 'computer-use-aliases', skills: ['computer-use-fast', 'cu'], action: 'keep_one_canonical_and_alias_the_rest_when_user_approves; reserve computer-use for the first-party Codex plugin' },
-  { id: 'research-loop-family', skills: ['research', 'research-discovery', 'autoresearch', 'autoresearch-loop'], action: 'compress_overlap_without_removing_distinct_route_semantics' }
+  { id: 'research-loop-family', skills: ['research', 'autoresearch', 'autoresearch-loop'], action: 'compress_overlap_without_removing_distinct_route_semantics' }
 ];
 
 export function skillDreamPolicyText() {

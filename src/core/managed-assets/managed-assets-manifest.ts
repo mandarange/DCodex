@@ -82,7 +82,7 @@ export const MANAGED_OFFICIAL_SUBAGENT_ROLES: readonly ManagedOfficialSubagentRo
     codexName: 'worker',
     description: 'Luna Max execution subagent only for tiny, short-context, mechanical work with an explicit done condition.',
     policy: 'luna_max_mechanical',
-    keywords: ['tiny', 'short context', 'single file', 'mechanical', 'repeatable', 'exact rename', 'format only', 'typo'],
+    keywords: ['tiny', 'short context', 'single file', 'mechanical', 'repeatable', 'exact rename', 'format only', 'typo', 'simple search', 'typing', '단순 검색', '타이핑'],
     nicknames: ['Kite', 'Moss', 'Pico', 'Reed', 'Vale', 'Wren'],
     instructions: `You are a bounded execution subagent.
 
@@ -146,7 +146,7 @@ Return a concise result, evidence, risks, and next action.`
     description: 'Terra Medium read-only codebase explorer for read-heavy scans, entry points, ownership, dependencies, and distilled evidence.',
     policy: 'terra_medium_context_tools',
     sandbox: 'read-only',
-    keywords: ['explore', 'map', 'trace', 'inventory', 'locate', 'search', 'read-only'],
+    keywords: ['explore', 'map', 'trace', 'inventory', 'locate', 'search', 'read-only', 'large search', 'repository-wide search', '대규모 검색'],
     nicknames: ['Beacon', 'Compass', 'Maple', 'Scout'],
     instructions: `You are the read-only code explorer.
 

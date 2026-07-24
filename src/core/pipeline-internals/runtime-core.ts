@@ -5,6 +5,19 @@ import { createMission, getOrCreateSessionMission, missionDir, sessionStateKey, 
 import { buildQuestionSchemaForRoute, buildRequestIntake, REQUEST_INTAKE_ARTIFACT, writeQuestions } from '../questions.js';
 import { sealContract } from '../decision-contract.js';
 import { scanDbSafety } from '../db-safety.js';
+import {
+  createDbAccessReviewSeed,
+  createDbReviewSeed,
+  DB_ACCESS_CANDIDATES_ARTIFACT,
+  DB_ACCESS_REVIEW_ARTIFACT,
+  DB_MANUAL_MIGRATION_ARTIFACT,
+  DB_REVIEW_ARTIFACT,
+  scanDbAccessCandidates
+} from '../db-review.js';
+import {
+  createEngineeringSanityReviewSeed,
+  ENGINEERING_SANITY_REVIEW_ARTIFACT
+} from '../engineering-sanity-review.js';
 import { createAndWriteWorkOrderLedgerForPrompt } from '../work-order-ledger.js';
 import { writeCodeStructureReport } from '../code-structure.js';
 import { writeMemorySweepReport } from '../memory-governor.js';
@@ -25,8 +38,8 @@ import { prepareMadSksSqlPlaneMission } from '../mad-sks/sql-plane/coordinator.j
 import { MAD_SKS_SQL_PLANE_CAPABILITY_FILE, madSksSqlPlaneRelativePath } from '../mad-sks/sql-plane/paths.js';
 import { OFFICIAL_SUBAGENT_EXECUTION_STAGE_ID } from '../agents/agent-schema.js';
 import { normalizeOfficialSubagentPolicy, officialSubagentPipelineStage } from '../agents/agent-plan.js';
-import { CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_EVIDENCE_SOURCE, CODEX_COMPUTER_USE_ONLY_POLICY, CODEX_IMAGEGEN_REQUIRED_POLICY, CODEX_WEB_VERIFICATION_POLICY, FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, chatCaptureIntakeText, context7RequirementText, dollarCommand, evidenceMentionsForbiddenBrowserAutomation, explicitManagedSkillNames, hasFromChatImgSignal, hasMadSksSignal, imageUxReviewPipelinePolicyText, managedSkillNamesForPrompt, pptPipelineAllowlistPolicyText, reflectionRequiredForRoute, reasoningInstruction, routeNeedsContext7, routePrompt, routeReasoning, routeRequiresSubagents, stripDollarCommand, stripMadSksSignal, stripVisibleDecisionAnswerBlocks, subagentExecutionPolicyText, stackCurrentDocsPolicyText, triwikiContextTracking } from '../routes.js';
-import { coreEngineeringDirectiveReferenceText } from '../lean-engineering-policy.js';
+import { CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_EVIDENCE_SOURCE, CODEX_COMPUTER_USE_ONLY_POLICY, CODEX_IMAGEGEN_REQUIRED_POLICY, CODEX_WEB_VERIFICATION_POLICY, FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, chatCaptureIntakeText, context7RequirementText, dollarCommand, evidenceMentionsForbiddenBrowserAutomation, explicitManagedSkillNames, hasFromChatImgSignal, hasMadSksSignal, imageUxReviewPipelinePolicyText, looksLikeCodeChangingWork, managedSkillNamesForPrompt, pptPipelineAllowlistPolicyText, reflectionRequiredForRoute, reasoningInstruction, routeNeedsContext7, routePrompt, routeReasoning, routeRequiresSubagents, stripDollarCommand, stripMadSksSignal, stripVisibleDecisionAnswerBlocks, subagentExecutionPolicyText, stackCurrentDocsPolicyText, triwikiContextTracking } from '../routes.js';
+import { coreEngineeringDirectiveReferenceText, engineeringSanityPolicyText } from '../lean-engineering-policy.js';
 import { classifyTaskProfile, gateProfileForTask, type GateProfile, type TaskProfile } from '../runtime/task-profile.js';
 import { chooseVerificationBudget, type VerificationBudget } from '../runtime/verification-budget.js';
 import { NARUTO_PARENT_MODEL } from '../subagents/model-policy.js';
@@ -97,6 +110,7 @@ const STAGE_BLOCKING_GATE = Object.freeze({
   parent_integration: 'ownership',
   route_materialization: 'ownership',
   work_order_coverage: 'ownership',
+  engineering_sanity_check: 'verification',
   listed_verification: 'verification',
   triwiki_validate_before_final: 'verification',
   completion_proof: 'verification',
@@ -144,7 +158,7 @@ export function buildPipelinePlan(input: any = {}) {
     changedFiles: Array.isArray(input.changedFiles) ? input.changedFiles : []
   });
   const stages = buildPipelineStages(route, task, taskProfile, gateProfile, ambiguity, lane, Boolean(input.required), officialSubagentPolicy);
-  const verification = planVerification(route, proof, verificationBudget);
+  const verification = planVerification(route, task, proof, verificationBudget);
   const skipped = stages.filter((stage: any) => stage.status === 'skipped').map((stage: any) => stage.id);
   const kept = stages.filter((stage: any) => stage.status !== 'skipped' && stage.status !== 'not_applicable').map((stage: any) => stage.id);
   const routeEconomy = routeEconomyPlan(proof);
@@ -227,6 +241,23 @@ export async function writePipelinePlan(dir: any, input: any = {}) {
   const requestIntake = input.requestIntake || await writeRequestIntakeArtifact(dir, input);
   const plan = buildPipelinePlan({ ...input, taskProfile, requestIntake });
   await writeJsonAtomic(path.join(dir, PIPELINE_PLAN_ARTIFACT), plan);
+  if (plan.stages?.some((stage: any) => stage.id === 'engineering_sanity_check' && !['skipped', 'not_applicable'].includes(String(stage.status || '')))) {
+    const root = input.root || rootFromMissionDir(dir);
+    const report = await writeCodeStructureReport(root, dir, {
+      missionId: input.missionId || null,
+      changed: true,
+      includeOk: true
+    });
+    const reportText = await readText(path.join(dir, 'code-structure-report.json'), '');
+    const reviewFile = path.join(dir, ENGINEERING_SANITY_REVIEW_ARTIFACT);
+    if (!(await exists(reviewFile))) {
+      await writeJsonAtomic(reviewFile, createEngineeringSanityReviewSeed(
+        plan.route?.command || plan.route?.id || null,
+        report,
+        reportText
+      ));
+    }
+  }
   return plan;
 }
 
@@ -485,6 +516,7 @@ function buildPipelineStages(
   if ((gateProfile === 'scoped' || gateProfile === 'full') && !LIGHTWEIGHT_ROUTES.has(route?.id)) {
     ids.push('triwiki_use_first', 'triwiki_validate_before_final', 'mistake_recall', 'work_order_coverage');
   }
+  if (routeNeedsEngineeringSanityReview(route, task)) ids.push('engineering_sanity_check');
   if (routeRequiresSubagents(route, task, taskProfile)) ids.push('subagent_plan', 'official_subagent_execution', 'parent_integration');
   if (specializedRoute) ids.push('route_materialization');
   if (specializedRoute) ids.push('completion_proof');
@@ -498,13 +530,29 @@ function buildPipelineStages(
     const blocking = Boolean(blockingGate);
     const metadata = { blocking, blocking_gate: blocking ? blockingGate : null };
     if (id === OFFICIAL_SUBAGENT_EXECUTION_STAGE_ID) return { ...officialSubagentPipelineStage(officialSubagentPolicy), status: 'required', reason: officialSubagentPolicy.reason, ...metadata };
+    if (id === 'engineering_sanity_check') {
+      return {
+        id,
+        status: 'keep',
+        reason: 'required_for_code_and_database_quality',
+        checks: [
+          'trace actual callers and preserve basic SOLID responsibility and dependency boundaries',
+          'inspect loops, collections, resolvers, and serializers for N+1 or repeated I/O',
+          'prove render, recursion, event, retry, and polling loops are bounded and cancellable',
+          'reject disabled checks, swallowed errors, placeholder success, and verification bypasses',
+          'for DB work, verify the existing canonical adapter and connection/pool lifecycle before changes',
+          'for sensitive or multi-step DB work, verify transaction rollback, error propagation, idempotency, and post-commit invariants'
+        ],
+        ...metadata
+      };
+    }
     if (id === 'ambiguity_gate' && ambiguity?.required === false) return { id, status: 'not_applicable', reason: 'ambiguity_gate_not_required_for_entrypoint', ...metadata };
     if (id === 'ambiguity_gate' && ambiguity?.passed) return { id, status: 'passed', reason: 'ambiguity_contract_already_sealed', ...metadata };
     return { id, status: 'keep', reason: lane.fast_lane_allowed ? 'task_profile_minimal_lane' : 'required_by_task_and_route_profile', ...metadata };
   });
 }
 
-function planVerification(route: any, proof: any, budget: VerificationBudget) {
+function planVerification(route: any, task: any, proof: any, budget: VerificationBudget) {
   if (budget === 'none') return [];
   const out = new Set(proof.verification || []);
   if (budget === 'single-check') out.add('run one focused check for the changed surface');
@@ -518,12 +566,19 @@ function planVerification(route: any, proof: any, budget: VerificationBudget) {
     out.add('sks selftest --mock --json');
   }
   if (route?.id === 'Naruto') out.add('validate official subagent evidence and the parent integration summary');
+  if (routeNeedsEngineeringSanityReview(route, task)) {
+    out.add('complete the engineering sanity review for SOLID boundaries, N+1/repeated I/O, bounded loops, and verification bypasses');
+  }
+  if (route?.id === 'DB' || route?.id === 'MadSKS') {
+    out.add('verify existing canonical DB access, pool lifecycle, and transaction integrity for sensitive or multi-step mutations');
+  }
   if (reflectionRequiredForRoute(route)) out.add('sks wiki validate .sneakoscope/wiki/context-pack.json');
   return [...out];
 }
 
 function pipelineInvariants(input: { taskProfile: TaskProfile; gateProfile: GateProfile; stages: any[]; verificationBudget: VerificationBudget }) {
   const out = ['no_unrequested_fallback_code'];
+  if (input.stages.some((stage: any) => stage.id === 'engineering_sanity_check')) out.push('engineering_sanity_check');
   if (input.verificationBudget !== 'none') out.push('listed_verification');
   if (input.stages.some((stage: any) => stage.id === 'ssot_guard' && stage.status !== 'not_applicable')) out.push('ssot_guard');
   if (input.stages.some((stage: any) => stage.id === 'triwiki_validate_before_final')) out.push('triwiki_validate_before_final');
@@ -566,6 +621,7 @@ export function promptPipelineContext(prompt: any, route: any = null) {
     reasoningInstruction(reasoning),
     responseLanguageInstruction(cleanPrompt),
     coreEngineeringDirectiveReferenceText(),
+    engineeringSanityPolicyText(),
     'Load only the selected route skills and route-specific instructions; do not inject unrelated route policy.',
     'Codex native /goal is the only persisted goal owner. Goal persistence must not replace or skip the selected route gates.',
     `When a mission exists, read ${REQUEST_INTAKE_ARTIFACT} as a structured projection of the current request. Preserve the literal request and current code as authority; never let generic intake heuristics replace an explicit requirement.`,
@@ -594,6 +650,7 @@ export function dfixQuickContext(prompt: any, route: any = routePrompt(prompt)) 
   return [
     `DFix ultralight pipeline active. Route: ${routeLabel} (Direct Fix: tiny copy/config/docs/labels/spacing/translation/simple mechanical edits).`,
     responseLanguageInstruction(task),
+    engineeringSanityPolicyText(),
     'Bypass: do not enter the general SKS prompt pipeline, mission creation, ambiguity gate, TriWiki refresh, Context7 routing, native-session orchestration, Goal, Research, eval, or broad planning.',
     `Task: ${task}`,
     'Task list:',
@@ -669,6 +726,19 @@ export async function prepareRoute(root: any, prompt: any, state: any = {}, opts
   if (route.id === 'Goal') return finish(await prepareGoalNativeOnlyRoute(route, task));
   if (route.id === 'ImageUXReview') return finish(await prepareImageUxReview(root, route, task, required, { sessionKey }));
   if (route.id === 'MadSKS') return finish(await prepareMadSksSqlPlane(root, route, task, required, { sessionKey }));
+  if (route.id === 'DB' && madSksAuthorization) {
+    const madRouteBase = routePrompt('$MAD-SKS');
+    if (!madRouteBase) throw new Error('mad_sks_route_missing');
+    const madRoute = {
+      ...madRouteBase,
+      requiredSkills: Array.from(new Set([
+        ...(route.requiredSkills || []),
+        ...(madRouteBase.requiredSkills || [])
+      ]))
+    };
+    const prepared = await prepareMadSksSqlPlane(root, madRoute, task, routeNeedsContext7(madRoute, cleanPrompt), { sessionKey });
+    return withSkillDreamContext(prepared, dreamContext);
+  }
   if (QUESTION_GATE_ROUTES.has(route.id)) return finish(await prepareClarificationGate(root, route, task, required, { madSksAuthorization, sessionKey }));
   if (route.id === 'Naruto' && subagentsRequired) return finish(await prepareNaruto(root, route, task, required, { madSksAuthorization, sessionKey, parentModel: opts.parentModel || null }));
   if (route.id === 'Naruto') return finish(await prepareLightRoute(root, parentOwnedProfileRoute(route, explicitlyInvokedSkills), task, required, { sessionKey }));
@@ -1085,17 +1155,33 @@ async function prepareAutoResearch(root: any, route: any, task: any, required: a
 
 async function prepareDb(root: any, route: any, task: any, required: any, opts: any = {}) {
   const { id, dir } = await createMission(root, { mode: 'db', prompt: task, sessionKey: opts.sessionKey });
-  const scan = await scanDbSafety(root).catch((err: any) => ({ ok: false, findings: [{ id: 'db_scan_failed', severity: 'high', reason: err.message }] }));
+  const [scan, accessCandidates] = await Promise.all([
+    scanDbSafety(root, { includeMigrations: true }).catch((err: any) => ({ ok: false, findings: [{ id: 'db_scan_failed', severity: 'high', reason: err.message }] })),
+    scanDbAccessCandidates(root)
+  ]);
   await writeJsonAtomic(path.join(dir, 'db-safety-scan.json'), scan);
-  await writeJsonAtomic(path.join(dir, 'db-review.json'), { passed: false, scan_ok: scan.ok, destructive_operation_zero: true, safe_mcp_policy: false, context7_evidence: false, notes: [] });
+  await writeJsonAtomic(path.join(dir, DB_ACCESS_CANDIDATES_ARTIFACT), accessCandidates);
+  await writeJsonAtomic(path.join(dir, DB_REVIEW_ARTIFACT), createDbReviewSeed(scan.ok));
+  await writeJsonAtomic(path.join(dir, DB_ACCESS_REVIEW_ARTIFACT), createDbAccessReviewSeed(accessCandidates));
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
-  await setCurrent(root, routeState(id, route, 'DB_REVIEW_REQUIRED', required, { prompt: task, pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok, pipeline_plan_path: PIPELINE_PLAN_ARTIFACT }), { sessionKey: opts.sessionKey });
-  return routeContext(route, id, task, required, 'Inspect the automatically materialized db-safety-scan.json, keep database operations read-only, record safe MCP and current-docs evidence, and pass db-review.json. Explicitly authorized SQL-plane work uses sks mad-sks.');
+  await setCurrent(root, routeState(id, route, 'DB_REVIEW_REQUIRED', required, {
+    prompt: task,
+    engineering_sanity_required: true,
+    db_access_review_required: true,
+    pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok,
+    pipeline_plan_path: PIPELINE_PLAN_ARTIFACT
+  }), { sessionKey: opts.sessionKey });
+  return routeContext(route, id, task, required, `Inspect the real DB entry points and callers first, then complete ${DB_ACCESS_REVIEW_ARTIFACT} for canonical adapter/query-helper reuse, pool ownership/acquire/release/shutdown/exhaustion, N+1/repeated I/O, and sensitive transaction integrity. Outside MAD-SKS, do not mutate any database: when a migration is required, finish with exactly one mission-local ${DB_MANUAL_MIGRATION_ARTIFACT} containing active forward SQL and a complete rollback section that remains commented out, record its SHA-256 and manual-apply notice in ${DB_REVIEW_ARTIFACT}, and tell the user to apply it directly. Only an active capability-v2 MAD-SKS SQL-plane may execute through MCP, with independent read-back and final read-only restoration.`);
 }
 
 async function prepareMadSksSqlPlane(root: any, route: any, task: any, required: any, opts: any = {}) {
   const prepared = await prepareMadSksSqlPlaneMission({ root, task, verifyTools: false, sessionKey: opts.sessionKey, route: 'MadSKS', routeCommand: '$MAD-SKS' });
   const dir = missionDir(root, prepared.mission_id);
+  const accessCandidates = await scanDbAccessCandidates(root);
+  await writeJsonAtomic(path.join(dir, DB_ACCESS_CANDIDATES_ARTIFACT), accessCandidates);
+  if (!(await exists(path.join(dir, DB_ACCESS_REVIEW_ARTIFACT)))) {
+    await writeJsonAtomic(path.join(dir, DB_ACCESS_REVIEW_ARTIFACT), createDbAccessReviewSeed(accessCandidates));
+  }
   const pipelinePlan = await writePipelinePlan(dir, {
     missionId: prepared.mission_id,
     route,
@@ -1123,11 +1209,13 @@ async function prepareMadSksSqlPlane(root: any, route: any, task: any, required:
     mad_sks_sql_plane_capability_mission_id: prepared.mission_id,
     mad_sks_sql_plane_capability_file: madSksSqlPlaneRelativePath(MAD_SKS_SQL_PLANE_CAPABILITY_FILE),
     mad_sks_gate_file: 'mad-sks-gate.json',
+    engineering_sanity_required: true,
+    db_access_review_required: true,
     stop_gate: 'mad-sks-gate.json',
     pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok,
     pipeline_plan_path: PIPELINE_PLAN_ARTIFACT
   }), { sessionKey: opts.sessionKey });
-  return routeContext(route, prepared.mission_id, task, required, `MAD-SKS SQL-plane mission/capability/profile were created atomically for cycle ${prepared.cycle_id}. Verify Supabase MCP tool inventory exposes execute_sql and apply_migration before claiming ready; after execution require read-back proof, finally close the profile/capability and prove read-only restoration.`);
+  return routeContext(route, prepared.mission_id, task, required, `MAD-SKS SQL-plane mission/capability/profile were created atomically for cycle ${prepared.cycle_id}. Inspect the existing canonical DB access and complete ${DB_ACCESS_REVIEW_ARTIFACT} before mutation. Then verify Supabase MCP tool inventory exposes execute_sql and apply_migration, execute the requested SQL immediately through the bound MCP SQL-plane rather than generating a manual migration file, independently read back the postconditions, and finally close the profile/capability and prove normal read-only restoration.`);
 }
 
 async function prepareGx(root: any, route: any, task: any, required: any, opts: any = {}) {
@@ -1331,7 +1419,15 @@ function requestedSubagentsFromTask(task: any) {
 function routeState(id: any, route: any, phase: any, context7Required: any, extra: any = {}) {
   const reasoning = routeReasoning(route, extra.prompt || '');
   const subagentsRequired = routeRequiresSubagents(route, extra.prompt || '');
-  return { mission_id: id, route: route.id, route_command: route.command, mode: route.mode, phase, context7_required: context7Required, context7_verified: false, subagents_required: subagentsRequired, subagents_verified: !subagentsRequired, native_sessions_required: false, native_sessions_verified: false, reflection_required: reflectionRequiredForRoute(route), visible_progress_required: true, context_tracking: 'triwiki', required_skills: route.requiredSkills, stop_gate: route.stopGate, reasoning_effort: reasoning.effort, reasoning_profile: reasoning.profile, reasoning_temporary: true, goal_continuation: ambientGoalContinuation(), ...extra };
+  const engineeringSanityRequired = extra.engineering_sanity_required ?? routeNeedsEngineeringSanityReview(route, extra.prompt || '');
+  return { mission_id: id, route: route.id, route_command: route.command, mode: route.mode, phase, context7_required: context7Required, context7_verified: false, subagents_required: subagentsRequired, subagents_verified: !subagentsRequired, native_sessions_required: false, native_sessions_verified: false, reflection_required: reflectionRequiredForRoute(route), engineering_sanity_required: engineeringSanityRequired, visible_progress_required: true, context_tracking: 'triwiki', required_skills: route.requiredSkills, stop_gate: route.stopGate, reasoning_effort: reasoning.effort, reasoning_profile: reasoning.profile, reasoning_temporary: true, goal_continuation: ambientGoalContinuation(), ...extra };
+}
+
+function routeNeedsEngineeringSanityReview(route: any, task: any) {
+  const id = String(route?.id || '');
+  if (['DB', 'MadSKS'].includes(id)) return true;
+  if (['Answer', 'Help', 'Wiki', 'Goal', 'Research', 'AutoResearch', 'PPT', 'ImageUXReview', 'ComputerUse', 'GX'].includes(id)) return false;
+  return looksLikeCodeChangingWork(String(task || ''));
 }
 
 function routeContext(route: any, id: any, task: any, required: any, next: any) {

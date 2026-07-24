@@ -16,44 +16,80 @@ import {
 import { prepareOfficialSubagentMission } from '../official-subagent-preparation.js'
 
 test('automatic fanout scales bounded, parallel, large-scale, and reviewer-only work differently', () => {
+  const pinned = {
+    cores: 4,
+    freeMemoryBytes: 3 * 1024 * 1024 * 1024,
+    totalMemoryBytes: 16 * 1024 * 1024 * 1024,
+    processCount: 40,
+    fileDescriptorLimit: 64,
+    remoteApiRateLimitBudget: 4,
+    localLlmMaxParallelRequests: 4
+  }
   const bounded = officialSubagentFanoutPolicy({
     taskProfile: classifyTaskProfile('implement the parser fix'),
     goal: 'implement the parser fix',
-    suggestedRoles: ['implementation_specialist']
+    suggestedRoles: ['implementation_specialist'],
+    hardware: pinned,
+    maxThreads: 12
   })
-  assert.equal(bounded.requested_subagents, 2)
-  assert.equal(bounded.default_subagents, 2)
-  assert.equal(bounded.selection_reason, 'non_trivial_default_parallel')
+  assert.equal(bounded.requested_subagents, 4)
+  assert.equal(bounded.default_subagents, 4)
+  assert.match(bounded.selection_reason, /non_trivial_default_parallel/)
 
   const singleRisk = officialSubagentFanoutPolicy({
     taskProfile: classifyTaskProfile('apply the database migration'),
     goal: 'apply the database migration',
-    suggestedRoles: ['database_reviewer']
+    suggestedRoles: ['database_reviewer'],
+    hardware: pinned
   })
   assert.equal(singleRisk.requested_subagents, 2)
 
   const parallel = officialSubagentFanoutPolicy({
     taskProfile: classifyTaskProfile('fix independent files in parallel'),
     goal: 'fix independent files in parallel',
-    suggestedRoles: ['implementation_specialist', 'test_engineer']
+    suggestedRoles: ['implementation_specialist', 'test_engineer'],
+    hardware: pinned,
+    maxThreads: 12
   })
-  assert.equal(parallel.requested_subagents, 4)
-  assert.equal(parallel.selection_reason, 'explicit_parallel_or_independent_slices')
+  assert.equal(parallel.requested_subagents, 6)
+  assert.match(parallel.selection_reason, /explicit_parallel_or_independent_slices/)
   assert.equal(parallel.automatic_reviewer_ceiling, 2)
 
   const largeScale = officialSubagentFanoutPolicy({
     taskProfile: classifyTaskProfile('implement a large-scale repository-wide migration with many independent files'),
     goal: 'implement a large-scale repository-wide migration with many independent files',
-    suggestedRoles: ['implementation_specialist', 'test_engineer', 'integration_reviewer']
+    suggestedRoles: ['implementation_specialist', 'test_engineer', 'integration_reviewer'],
+    hardware: pinned,
+    maxThreads: 12
   })
-  assert.equal(largeScale.requested_subagents, 6)
-  assert.equal(largeScale.automatic_ceiling, 10)
-  assert.equal(largeScale.selection_reason, 'large_scale_dynamic_parallel')
+  assert.equal(largeScale.requested_subagents, 8)
+  assert.equal(largeScale.automatic_ceiling, 12)
+  assert.match(largeScale.selection_reason, /large_scale_dynamic_parallel/)
+
+  const abundant = officialSubagentFanoutPolicy({
+    taskProfile: classifyTaskProfile('fix independent files in parallel'),
+    goal: 'fix independent files in parallel',
+    suggestedRoles: ['implementation_specialist', 'test_engineer'],
+    maxThreads: 12,
+    hardware: {
+      cores: 16,
+      freeMemoryBytes: 64 * 1024 * 1024 * 1024,
+      totalMemoryBytes: 128 * 1024 * 1024 * 1024,
+      processCount: 10,
+      fileDescriptorLimit: 4096,
+      remoteApiRateLimitBudget: 24,
+      localLlmMaxParallelRequests: 12
+    }
+  })
+  assert.ok(abundant.requested_subagents >= 6)
+  assert.ok(abundant.requested_subagents <= 12)
+  assert.match(abundant.selection_reason, /hardware_capacity_boost/)
 
   const independentRisk = officialSubagentFanoutPolicy({
     taskProfile: classifyTaskProfile('audit database migration security and permissions'),
     goal: 'audit database migration security and permissions',
-    suggestedRoles: ['database_reviewer', 'security_reviewer']
+    suggestedRoles: ['database_reviewer', 'security_reviewer'],
+    hardware: pinned
   })
   assert.equal(independentRisk.requested_subagents, 2)
   assert.deepEqual(independentRisk.risk_domains.sort(), ['database', 'security'])
@@ -61,7 +97,8 @@ test('automatic fanout scales bounded, parallel, large-scale, and reviewer-only 
   const critical = officialSubagentFanoutPolicy({
     taskProfile: classifyTaskProfile('critical production database security release audit'),
     goal: 'critical production database security release audit',
-    suggestedRoles: ['database_reviewer', 'security_reviewer', 'release_reviewer']
+    suggestedRoles: ['database_reviewer', 'security_reviewer', 'release_reviewer'],
+    hardware: pinned
   })
   assert.equal(critical.requested_subagents, 3)
   assert.equal(critical.automatic_ceiling, 3)
@@ -189,7 +226,7 @@ test('parent decomposition may expand useful implementation shards but not revie
     independentSliceCount: 8
   })
   assert.equal(implementation.requested_subagents, 8)
-  assert.equal(implementation.automatic_ceiling, 10)
+  assert.equal(implementation.automatic_ceiling, 12)
   assert.equal(implementation.selection_reason, 'parent_decomposed_independent_slices')
 
   const reviewers = officialSubagentFanoutPolicy({
@@ -229,11 +266,12 @@ test('mission preparation writes the selected automatic count into plan, budget,
     route: '$Naruto',
     mode: 'naruto'
   })
-  assert.equal(automatic.plan.requested_subagents, 4)
-  assert.equal(automatic.budget.requestedSubagents, 4)
-  assert.equal(automatic.evidence.requested_subagents, 4)
-  assert.equal(automatic.fanoutPolicy.requested_subagents, 4)
-  assert.match(automatic.delegationPrompt, /requested subagents: 4/)
+  assert.ok(automatic.plan.requested_subagents >= 6)
+  assert.ok(automatic.plan.requested_subagents <= 12)
+  assert.equal(automatic.budget.requestedSubagents, automatic.plan.requested_subagents)
+  assert.equal(automatic.evidence.requested_subagents, automatic.plan.requested_subagents)
+  assert.equal(automatic.fanoutPolicy.requested_subagents, automatic.plan.requested_subagents)
+  assert.match(automatic.delegationPrompt, new RegExp(`requested subagents: ${automatic.plan.requested_subagents}`))
   assert.equal(automatic.plan.capacity_controller.max_threads_is_cap_not_target, true)
   assert.equal(automatic.plan.agent_catalog.mode, 'on_demand')
   assert.equal(automatic.plan.agent_catalog.full_catalog_injected, false)

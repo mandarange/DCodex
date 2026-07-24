@@ -195,12 +195,29 @@ test('agent-bridge blocked output prioritizes one actionable reason and redacts 
   ]);
   const output = lines.join('\n');
 
-  assert.deepEqual(lines.slice(0, 4), [
+  assert.deepEqual(lines, [
     '상태: 차단',
     '이유: 현재 에이전트에 엑셀 수정 도구가 허용되지 않았습니다.',
     '조치: ACAS 에이전트 도구 권한에서 spreadsheet_update를 허용한 뒤 같은 요청을 다시 실행하세요.',
     '코드: host_tool_call_not_allowed:spreadsheet_update'
   ]);
-  assert.match(lines[4] || '', /^details: /);
   assert.doesNotMatch(output, /raw MCP|token=|\/Users\/|secret/);
+
+  assert.deepEqual(renderAgentBridgeBlockedLines([
+    'host_artifact_parent_receipts_mismatch',
+    'host_tool_response_malformed:datasource_query_readonly'
+  ]), [
+    '상태: 차단',
+    '이유: DB 조회 결과가 SKS가 검증할 수 있는 응답 형식을 따르지 않았습니다.',
+    '조치: ACAS Agent를 최신 호환 버전으로 업데이트한 뒤 같은 mission을 재실행하세요.',
+    '코드: host_tool_response_malformed:datasource_query_readonly'
+  ]);
+
+  assert.match(
+    renderAgentBridgeBlockedLines([
+      'host_tool_response_malformed:datasource_query_readonly',
+      'host_capability_missing:host.datasource.query.readonly.v1'
+    ])[3] || '',
+    /^코드: host_capability_missing:/
+  );
 });

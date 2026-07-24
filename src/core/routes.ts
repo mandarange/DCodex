@@ -430,7 +430,7 @@ export const ROUTES = [
     mode: 'RESEARCH',
     route: 'research mission',
     description: 'Frontier discovery with named xhigh persona-lens agents, Eureka ideas, vigorous evidence-bound debate, layered public source retrieval, falsification, a paper manuscript, a final genius-opinion summary, and testable predictions.',
-    requiredSkills: ['research', 'research-discovery', 'pipeline-runner', REFLECTION_SKILL_NAME, 'honest-mode'],
+    requiredSkills: ['research', 'pipeline-runner', REFLECTION_SKILL_NAME, 'honest-mode'],
     lifecycle: ['research_plan', 'source_skill', 'layered_source_ledger', 'xhigh_agent_council', 'eureka_moments', 'debate_ledger', 'report', 'paper', 'genius_opinion_summary', 'novelty_ledger', 'falsification_ledger', 'research_gate', 'post_route_reflection', 'honest_mode'],
     context7Policy: 'if_external_docs',
     reasoningPolicy: 'xhigh',
@@ -486,9 +486,9 @@ export const ROUTES = [
     command: '$DB',
     mode: 'DB',
     route: 'database safety',
-    description: 'Database, Supabase, migration, SQL, or MCP safety checks.',
+    description: 'Database, Supabase, migration, SQL, or MCP safety checks with canonical data-access, pool lifecycle, query-efficiency, and transaction-integrity evidence.',
     requiredSkills: ['db', 'db-safety-guard', 'pipeline-runner', 'context7-docs', REFLECTION_SKILL_NAME, 'honest-mode'],
-    lifecycle: ['db_scan', 'safe_mcp_policy', 'destructive_operation_zero', 'context7_docs', 'post_route_reflection', 'honest_mode'],
+    lifecycle: ['db_scan', 'canonical_db_access_scan', 'pool_lifecycle_review', 'n_plus_one_review', 'transaction_integrity_review', 'manual_sql_or_mad_sks_sql_plane', 'safe_mcp_policy', 'destructive_operation_zero', 'context7_docs', 'post_route_reflection', 'honest_mode'],
     context7Policy: 'required',
     reasoningPolicy: 'high',
     stopGate: 'db-review.json',
@@ -601,7 +601,6 @@ const PACKAGED_MANAGED_SUPPORT_SKILL_NAMES = [
   'sks-prompt-pipeline',
   'sks-reasoning-router',
   'sks-reflection',
-  'sks-research-discovery',
   'sks-solution-scout',
   'sks-turbo-context-pack'
 ];

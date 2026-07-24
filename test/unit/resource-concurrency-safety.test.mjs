@@ -14,8 +14,8 @@ import { defaultReleaseGateMaxTotal } from '../../dist/core/release/release-gate
 import { computeLoopConcurrencyBudget } from '../../dist/core/loops/loop-concurrency-budget.js';
 
 test('Naruto official-subagent fanout stays bounded and preserves max_depth=1', () => {
-  assert.equal(DEFAULT_NARUTO_REQUESTED_SUBAGENTS, 2);
-  assert.equal(MAX_AUTOMATIC_SUBAGENT_COUNT, 10);
+  assert.equal(DEFAULT_NARUTO_REQUESTED_SUBAGENTS, 4);
+  assert.equal(MAX_AUTOMATIC_SUBAGENT_COUNT, 12);
 
   const automatic = officialSubagentFanoutPolicy({
     taskProfile: 'high-risk',

@@ -1,6 +1,6 @@
 export const DEFAULT_NARUTO_MAX_THREADS = 12
 export const HARD_NARUTO_MAX_THREADS = 32
-export const DEFAULT_NARUTO_REQUESTED_SUBAGENTS = 2
+export const DEFAULT_NARUTO_REQUESTED_SUBAGENTS = 4
 /** Parent always keeps one frame-budget slot for integration — never treat this as spawn target. */
 export const DEFAULT_NARUTO_PARENT_THREAD_RESERVATION = 1
 /**

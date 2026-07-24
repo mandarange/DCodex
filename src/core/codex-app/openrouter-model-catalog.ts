@@ -19,6 +19,9 @@ import {
   safeWriteCodexConfigToml,
   upsertTopLevelTomlString
 } from '../codex-runtime/codex-desktop-config-policy.js';
+import { readRoleModelPreferences } from '../subagents/role-model-preferences.js';
+import { stampRoleModelCatalogPriorities } from './role-model-catalog-priority.js';
+import { invalidateCodexModelsCache } from './codex-models-cache.js';
 
 const OPENROUTER_REASONING_LEVEL_DESCRIPTIONS: Record<string, string> = {
   none: 'No extra reasoning pass',
@@ -50,7 +53,7 @@ export function openRouterCatalogModelRow(model: string): Record<string, unknown
     shell_type: 'default',
     visibility: 'list',
     supported_in_api: true,
-    priority: 10,
+    priority: 0,
     base_instructions: OPENROUTER_CATALOG_BASE_INSTRUCTIONS,
     default_reasoning_summary: 'auto',
     supports_reasoning_summaries: true,
@@ -76,6 +79,12 @@ export interface OpenRouterManagedCatalogWriteResult {
   readonly catalog: CodexModelCatalogReadResult | null;
   readonly blockers: readonly string[];
   readonly warnings: readonly string[];
+  readonly models_cache?: unknown;
+  readonly role_model_priority?: {
+    readonly stamped: boolean;
+    readonly stamped_models: readonly string[];
+    readonly missing_from_catalog: readonly string[];
+  };
 }
 
 /**
@@ -133,7 +142,13 @@ export async function writeOpenRouterManagedCatalog(input: {
       warnings.push('openrouter_model_catalog_previous_invalid_json');
     }
   }
-  const rows = [openRouterCatalogModelRow(model), ...existingRows].slice(0, CODEX_MODEL_CATALOG_MAX_MODELS);
+  const baseRows = [openRouterCatalogModelRow(model), ...existingRows].slice(0, CODEX_MODEL_CATALOG_MAX_MODELS);
+  const rolePrefs = await readRoleModelPreferences({ env }).catch(() => null);
+  const stamped = stampRoleModelCatalogPriorities(baseRows, rolePrefs?.store || null);
+  if (stamped.missing_from_catalog.length) {
+    warnings.push(...stamped.missing_from_catalog.map((slug) => `role_model_not_in_openrouter_catalog:${slug}`));
+  }
+  const rows = stamped.rows;
   const nextText = `${JSON.stringify({ generated_at: nowIso(), generated_by: 'sks-openrouter-activation', models: rows }, null, 2)}\n`;
   try {
     await writeTextAtomic(catalogPath, nextText, { mode: 0o600 });
@@ -149,6 +164,9 @@ export async function writeOpenRouterManagedCatalog(input: {
       warnings
     };
   }
+  const cache = await invalidateCodexModelsCache({ home, env, catalogPath, seedMode: 'merge' });
+  if (!cache.ok) warnings.push(...cache.blockers);
+  else warnings.push(...cache.warnings);
   const catalog = await readCodexModelCatalogFile({ filePath: catalogPath, configured: true });
   return {
     schema: 'sks.openrouter-model-catalog-write.v1',
@@ -157,6 +175,12 @@ export async function writeOpenRouterManagedCatalog(input: {
     path: catalogPath,
     models: catalog.models.map((entry) => entry.model),
     catalog,
+    models_cache: cache,
+    role_model_priority: {
+      stamped: stamped.stamped,
+      stamped_models: stamped.stamped_models,
+      missing_from_catalog: stamped.missing_from_catalog
+    },
     blockers: catalog.blockers,
     warnings
   };

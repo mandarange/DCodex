@@ -33,6 +33,7 @@ import {
   inferProviderFromModel,
   readConfiguredCodexModelRoutingContext
 } from '../codex-app/codex-model-catalog.js'
+import { childInheritsActiveMainModel } from '../provider/model-router.js'
 import {
   SUBAGENT_EVIDENCE_FILENAME,
   SUBAGENT_EVENT_LOG_FILENAME,
@@ -179,6 +180,7 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
     taskProfile,
     suggestedRoles: suggestedAgents,
     goal,
+    maxThreads: input.maxThreads ?? officialConfig.maxThreads,
     ...(slices.length > 0 ? { independentSliceCount: slices.length } : {})
   })
   const budget = resolveSubagentThreadBudget({
@@ -242,9 +244,17 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
       readonly: config.sandbox_mode === 'read-only'
     })
     const preference = roleModelPreferences.store.roles[name]
-    const routedProvider = preference?.provider || activeMainModel?.provider || inferProviderFromModel(decision.model)
-    const routedModel = preference?.model || activeMainModel?.model || decision.model
-    const routedReasoning = preference?.reasoning_effort || decision.model_reasoning_effort
+    const inheritActiveMain = childInheritsActiveMainModel(activeMainModel?.model)
+    const routedProvider = preference?.provider
+      || (inheritActiveMain ? activeMainModel?.provider : null)
+      || inferProviderFromModel(config.model || decision.model)
+    const routedModel = preference?.model
+      || (inheritActiveMain ? activeMainModel?.model : null)
+      || config.model
+      || decision.model
+    const routedReasoning = preference?.reasoning_effort
+      || config.model_reasoning_effort
+      || decision.model_reasoning_effort
     return [name, {
       ...config,
       // Catalog TOML remains the spawn-type contract; dynamic decision records why
@@ -254,13 +264,13 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
       routed_model_reasoning_effort: routedReasoning,
       routed_model_policy: preference
         ? 'user_role_model_preference'
-        : activeMainModel
+        : inheritActiveMain
           ? 'active_main_model'
-          : decision.model_selection_reason,
-      routing_dynamic: !preference && !activeMainModel,
+          : (config.model_policy || decision.model_selection_reason),
+      routing_dynamic: !preference && !inheritActiveMain,
       role_model_preference_source: preference
         ? 'user-scoped-owner-only'
-        : activeMainModel
+        : inheritActiveMain
           ? 'active-main-model'
           : 'managed-default'
     }]
@@ -326,7 +336,7 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
       routing: {
         selected_provider: roleModelRouting.selected_provider,
         selected_model: roleModelRouting.selected_model,
-        active_main_model_inherited: Boolean(activeMainModel),
+        active_main_model_inherited: childInheritsActiveMainModel(activeMainModel?.model),
         runtime_verified: false
       },
       catalog: {

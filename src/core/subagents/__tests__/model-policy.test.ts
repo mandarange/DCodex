@@ -60,12 +60,24 @@ test('model decision routes mechanical, implementation, context/tool, and judgme
     'Run browser-only QA in Chrome',
     'Use Computer Use to inspect the native app',
     'Generate an image with gpt-image-2',
-    'Extract a repository-wide long-context inventory'
+    'Extract a repository-wide long-context inventory',
+    'Large repository-wide search for every caller',
+    '코드베이스 전체 검색으로 진입점을 찾아줘'
   ]) {
     const decision = decideSubagentModel({ description })
     assert.equal(decision.policy, 'terra_medium_context_tools', description)
     assert.equal(decision.model, 'gpt-5.6-terra', description)
     assert.equal(decision.modelReasoningEffort, 'medium', description)
+  }
+
+  for (const description of [
+    'Apply this exact one-line single-file rename',
+    'Simple search for the symbol name and type the replacement',
+    '단순 검색으로 키를 찾고 한 줄만 타이핑해줘'
+  ]) {
+    const decision = decideSubagentModel({ description })
+    assert.equal(decision.policy, 'luna_max_mechanical', description)
+    assert.equal(decision.model, 'gpt-5.6-luna', description)
   }
 })
 

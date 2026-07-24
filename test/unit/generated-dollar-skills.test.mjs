@@ -74,6 +74,8 @@ test('generated DB skill uses route-owned safety artifacts and never revives sks
 
   const db = await fs.readFile(path.join(root, '.agents', 'skills', 'sks-db', 'SKILL.md'), 'utf8');
   assert.match(db, /automatically materializes db-safety-scan\.json and db-review\.json/);
+  assert.match(db, /mission-local manual-migration\.sql/);
+  assert.match(db, /rollback section that stays commented out/);
   assert.doesNotMatch(db, /sks db/i);
   assert.match(db, /sks mad-sks plan\|sql\|apply-migration/);
 });
@@ -83,7 +85,7 @@ test('generated Naruto skill keeps official threads lightweight and TriWiki-boun
   await installSkills(root);
 
   const naruto = await fs.readFile(path.join(root, '.agents', 'skills', 'sks-naruto', 'SKILL.md'), 'utf8');
-  assert.match(naruto, /Automatic targets begin at 2\/4\/6 by task size and may expand to 10/i);
+  assert.match(naruto, /Automatic targets begin at 4\/6\/8 by task size and may expand to 12/i);
   assert.match(naruto, /max_threads is a cap, never a target/i);
   assert.match(naruto, /later root-owned waves/i);
   assert.match(naruto, /historical Naruto process runtime is removed/i);
@@ -103,14 +105,16 @@ test('generated pipeline skills reference the single core directive without lega
   }
 });
 
-test('generated Research skills use three official research reviewers without the legacy five-agent scheduler', async () => {
+test('generated Research skill absorbs discovery behavior without a duplicate picker skill', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-research-official-skills-'));
   await installSkills(root);
 
-  for (const name of ['sks-research', 'sks-research-discovery']) {
-    const content = await fs.readFile(path.join(root, '.agents', 'skills', name, 'SKILL.md'), 'utf8');
-    assert.match(content, /three independent official .*research_reviewer/i);
-    assert.match(content, /GPT-5\.6 Sol Max/i);
-    assert.doesNotMatch(content, /Feynman Agent|Turing Agent|five-agent|effort=xhigh|repeat agent\/debate/i);
-  }
+  const content = await fs.readFile(path.join(root, '.agents', 'skills', 'sks-research', 'SKILL.md'), 'utf8');
+  assert.match(content, /Frame the research criteria and map assumptions/i);
+  assert.match(content, /three independent official .*research_reviewer/i);
+  assert.match(content, /GPT-5\.6 Sol Max/i);
+  assert.match(content, /one literal "Eureka!" idea/i);
+  assert.match(content, /Do not overclaim genius, novelty, breakthrough, publication acceptance/i);
+  assert.doesNotMatch(content, /Feynman Agent|Turing Agent|five-agent|effort=xhigh|repeat agent\/debate/i);
+  await assert.rejects(fs.access(path.join(root, '.agents', 'skills', 'sks-research-discovery')));
 });

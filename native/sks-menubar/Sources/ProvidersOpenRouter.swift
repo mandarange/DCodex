@@ -41,7 +41,9 @@ extension ProvidersViewController {
         test.setAccessibilityLabel("Test the selected OpenRouter model")
         let activate = ControlKit.primaryButton("Activate Selected Model", target: self, action: #selector(useOpenRouter))
         activate.setAccessibilityLabel("Activate selected OpenRouter model and restart Codex App")
-        actionButtons += [refreshModels, saveKey, test, activate]
+        let restorePrevious = NativeView.button("Restore previous provider", target: self, action: #selector(restorePreviousDesktopRouting))
+        restorePrevious.setAccessibilityLabel("Restore the previous Codex provider so hidden chats and picker state return")
+        actionButtons += [refreshModels, saveKey, test, activate, restorePrevious]
 
         let catalogLabel = NSTextField(labelWithString: "Catalog")
         catalogLabel.setContentHuggingPriority(.required, for: .horizontal)
@@ -49,7 +51,7 @@ extension ProvidersViewController {
         manualLabel.setContentHuggingPriority(.required, for: .horizontal)
         return NativeView.card(
             title: "OpenRouter",
-            subtitle: "Saving the key prepares OpenRouter but does not switch providers. Choose a catalog model or enter any valid provider/model id, test it, then activate it.",
+            subtitle: "Saving the key prepares OpenRouter but does not switch providers. Activate switches Desktop routing; SKS remaps the local thread sidebar so prior provider chats stay visible, and keeps a one-click restore snapshot.",
             views: [
                 openRouterCredentialStatus,
                 openRouterActiveStatus,
@@ -57,6 +59,7 @@ extension ProvidersViewController {
                 openRouterCatalogStatus,
                 NativeView.row([manualLabel, openRouterModelField]),
                 NativeView.row([saveKey, test, activate]),
+                NativeView.row([restorePrevious]),
                 openRouterStatus
             ]
         )
@@ -253,11 +256,50 @@ extension ProvidersViewController {
         AlertFactory.confirmSheet(
             window: window,
             title: "Activate OpenRouter?",
-            message: "\(model) becomes the Codex main model and Codex App restarts.",
+            message: "\(model) becomes the Codex main model and Codex App restarts. SKS remaps the Desktop thread sidebar so prior provider chats stay listed, snapshots the previous provider for Restore, and merges the model cache instead of wiping it. Codex Desktop may still label third-party models as Custom.",
             destructive: false
         ) { [weak self] approved in
             guard let self = self, approved else { return }
             self.performUseOpenRouter(model: model)
+        }
+    }
+
+    @objc func restorePreviousDesktopRouting() {
+        openRouterActionRan = true
+        guard !busy else { openRouterStatus.stringValue = "Another provider action is already running."; return }
+        guard let window = view.window else { return }
+        AlertFactory.confirmSheet(
+            window: window,
+            title: "Restore previous provider?",
+            message: "Restores the last pre-OpenRouter Desktop provider/model/catalog snapshot, reverses sidebar remap when present, and restarts Codex App.",
+            destructive: false
+        ) { [weak self] approved in
+            guard let self = self, approved else { return }
+            self.performRestorePreviousDesktopRouting()
+        }
+    }
+
+    private func performRestorePreviousDesktopRouting() {
+        guard let snapshot = operations.begin(kind: "desktop-routing-restore", mutationGroup: "codex-config", summary: "Restore previous Desktop provider") else {
+            openRouterStatus.stringValue = "Another guarded mutation is already running. Wait or open Diagnostics."
+            return
+        }
+        setBusy(true)
+        openRouterStatus.stringValue = "Restoring previous Desktop provider and restarting Codex App…"
+        _ = operations.update(snapshot, state: .running, stage: "restoring", progress: nil, summary: "Restore previous Desktop provider")
+        processClient.run(["codex-app", "restore-desktop-routing", "--restart-app", "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
+            guard let self = self else { return }
+            self.setBusy(false)
+            let json = self.json(result.output)
+            let ok = result.code == 0 && json?["ok"] as? Bool == true
+            let status = json?["status"] as? String ?? (ok ? "restored" : "failed")
+            let detail = self.structuredPublicDetail(json, fallback: result.output)
+            _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? "Previous Desktop provider restored" : "Desktop provider restore needs action")
+            self.openRouterStatus.stringValue = ok
+                ? "Previous provider restored · \(status). Fully quit and reopen Codex App if chats or the picker still look stale."
+                : "Restore failed · \(status) · \(detail)"
+            self.refreshOpenRouterStatus()
+            self.refresh()
         }
     }
 
@@ -287,10 +329,16 @@ extension ProvidersViewController {
                     self.openRouterModelSelectionPending = false
                 }
                 let restartOK = activationJson?["restart_ok"] as? Bool == true
+                let remapped = (activationJson?["thread_sidebar_remap"] as? [String: Any])?["remapped"] as? Int ?? 0
+                let restoreAvailable = activationJson?["previous_routing_restore_available"] as? Bool == true
                 let complete = configApplied && restartOK
                 _ = self.operations.update(snapshot, state: complete ? .succeeded : .failed, stage: "complete", progress: 1, summary: complete ? "OpenRouter main model active" : configApplied ? "OpenRouter saved; restart required" : "OpenRouter activation needs action")
                 if complete {
-                    self.openRouterStatus.stringValue = "Activation complete · OpenRouter is active · main model \(model)."
+                    var parts = ["Activation complete · OpenRouter is active · main model \(model)"]
+                    if remapped > 0 { parts.append("sidebar kept \(remapped) prior-provider chats visible") }
+                    if restoreAvailable { parts.append("Restore previous provider is available") }
+                    parts.append("Desktop may still show Custom for third-party models")
+                    self.openRouterStatus.stringValue = parts.joined(separator: " · ") + "."
                 } else if configApplied {
                     self.openRouterStatus.stringValue = "Configuration saved · main model \(model) is selected, but Codex App did not restart. Next: reopen Codex App, then verify status."
                 } else {

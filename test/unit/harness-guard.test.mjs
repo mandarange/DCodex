@@ -4,7 +4,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { classifyHarnessPayload } from '../../dist/core/harness-guard.js';
+import {
+  checkHarnessModification,
+  classifyHarnessPayload,
+  harnessGuardBlockReason
+} from '../../dist/core/harness-guard.js';
 
 const policy = {
   enabled: true,
@@ -68,4 +72,40 @@ test('harness guard blocks protected harness target paths but not runtime missio
   }, policy);
   assert.equal(missionTarget.writeIntent, true);
   assert.equal(missionTarget.block, false);
+});
+
+test('harness guard classifies sks doctor --fix as blocked maintenance', () => {
+  const root = '/tmp/sks-harness-doctor-classify';
+  const classified = classifyHarnessPayload(root, {
+    tool_name: 'Shell',
+    command: 'sks doctor --fix'
+  }, policy);
+  assert.equal(classified.block, true);
+  assert.ok(classified.reasons.includes('sks_doctor_fix_blocked'));
+  assert.match(harnessGuardBlockReason({ reasons: ['sks_doctor_fix_blocked'] }), /Ask the user to run `sks doctor --fix`/);
+});
+
+test('harness guard blocks sks doctor --fix even under engine source exception', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-harness-doctor-engine-'));
+  await fs.mkdir(path.join(root, '.sneakoscope'), { recursive: true });
+  await fs.writeFile(path.join(root, '.sneakoscope', 'harness-guard.json'), JSON.stringify({
+    schema_version: 1,
+    enabled: true,
+    locked: false,
+    engine_source_exception: true,
+    fingerprints: {}
+  }));
+
+  const blocked = await checkHarnessModification(root, {
+    tool_name: 'Shell',
+    command: 'cd /tmp && sks doctor --fix --json'
+  });
+  assert.equal(blocked.action, 'block');
+  assert.deepEqual(blocked.reasons, ['sks_doctor_fix_blocked']);
+
+  const allowedRead = await checkHarnessModification(root, {
+    tool_name: 'Shell',
+    command: 'sks doctor --json'
+  });
+  assert.equal(allowedRead.action, 'allow');
 });

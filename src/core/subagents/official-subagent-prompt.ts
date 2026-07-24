@@ -10,6 +10,7 @@ import {
   selectOfficialSubagentRole
 } from './agent-catalog.js'
 import type { RoleModelPreference } from './role-model-preferences.js'
+import { childInheritsActiveMainModel } from '../provider/model-router.js'
 
 export interface ActiveMainModelRouting {
   provider: string
@@ -82,23 +83,29 @@ export function buildOfficialSubagentPrompt(input: {
     ...(input.recommendedAgents || [])
   ])
   const activeMainModel = normalizedActiveMainModel(input.activeMainModel)
+  const inheritActiveMainOntoChildren = childInheritsActiveMainModel(activeMainModel?.model)
   const spawnModelRouting = renderSpawnModelRouting(activeMainModel)
   const rows = resolvedSlices.map(({ slice, agentName }, index) => {
     const mode = slice.readOnly ? 'read-only' : 'use the parent permission mode'
     const paths = (slice.paths || []).map((entry) => String(entry).trim()).filter(Boolean)
     const role = officialSubagentOnDemandRoleCatalog([agentName])[0]
     const preference = input.roleModelPreferences?.[agentName]
-    const activeMainReasoning = role?.model_reasoning_effort || 'medium'
+    const sealedReasoning = role?.model_reasoning_effort || 'medium'
+    const sealedModel = role?.model || null
     const effectiveModel = preference
       ? `${preference.provider}:${preference.model}/${preference.reasoning_effort} (user override)`
-      : activeMainModel
-        ? `${activeMainModel.provider}:${activeMainModel.model}/${activeMainReasoning} (active main model)`
-        : 'managed default/dynamic routing'
+      : inheritActiveMainOntoChildren && activeMainModel
+        ? `${activeMainModel.provider}:${activeMainModel.model}/${sealedReasoning} (active main model)`
+        : sealedModel
+          ? `${inferDisplayProvider(sealedModel)}:${sealedModel}/${sealedReasoning} (sealed role policy)`
+          : 'managed default/dynamic routing'
     const spawnContract = preference
       ? `pass the exact catalog slug model=${JSON.stringify(preference.model)} and reasoning_effort=${JSON.stringify(preference.reasoning_effort)} when spawning this role; logical provider=${JSON.stringify(preference.provider)} is encoded by the active router/catalog and is not a spawn_agent argument`
-      : activeMainModel
-        ? `pass the exact active main model=${JSON.stringify(activeMainModel.model)} and reasoning_effort=${JSON.stringify(activeMainReasoning)} when spawning this role; the current app session already owns provider=${JSON.stringify(activeMainModel.provider)}`
-        : 'omit model/reasoning overrides and preserve the installed custom-agent default'
+      : inheritActiveMainOntoChildren && activeMainModel
+        ? `pass the exact active main model=${JSON.stringify(activeMainModel.model)} and reasoning_effort=${JSON.stringify(sealedReasoning)} when spawning this role; the current app session already owns provider=${JSON.stringify(activeMainModel.provider)}`
+        : sealedModel
+          ? `pass model=${JSON.stringify(sealedModel)} and reasoning_effort=${JSON.stringify(sealedReasoning)} from the sealed role policy; do not replace Luna/Terra/Sol High/Sol Max with the parent active main model`
+          : 'omit model/reasoning overrides and preserve the installed custom-agent default'
 
     return [
       `${index + 1}. [${slice.id}] use custom agent \`${agentName}\``,
@@ -127,7 +134,7 @@ Host capability policy:
 - confirm requested tools in the project MCP inventory; if unavailable or unhealthy, return blocked proof and never fabricate a fallback
 - DB: schema first. SQL-only may stop there; retrieval defaults to one bounded query and allows at most four total for separate aggregation or verification. Every query needs a prior schema receipt for the same datasource and matching snapshot
 - spreadsheet: prefer the smallest create/edit mutation; allow at most three updates, inspect after create and every update, and require the final mutation artifact receipt
-- document: editable source -> render -> deliverable receipt
+- document: write_file/edit_file then html_to_pdf|html_to_screenshot(source_path=...); never raw html
 - Slack delivery is ACAS-runtime-only, never a model tool
 
 Subagent rules:
@@ -138,13 +145,15 @@ Subagent rules:
 - never combine \`fork_turns="all"\` or the omitted/default full-history mode with \`agent_type\`, \`model\`, or \`reasoning_effort\`; Codex rejects that start before SubagentStart
 - a full-history fork is allowed only when \`agent_type\`, \`model\`, and \`reasoning_effort\` are all omitted
 ${spawnModelRouting}
-- when neither a role override nor an active main model applies, use \`worker\` with gpt-5.6-luna and max reasoning only for tiny, short-context, mechanical work with no exploration or judgment
-- when neither a role override nor an active main model applies, use gpt-5.6-sol with high reasoning for ordinary UI, logic, backend, and native implementation
-- when neither a role override nor an active main model applies, use gpt-5.6-sol with max reasoning only for focused unresolved, high-risk, final-review, architecture, security, database, research, release, or other explicit judgment slices
-- when neither a role override nor an active main model applies, use gpt-5.6-terra with medium reasoning for read-heavy documentation/exploration, long-context analysis, and direct Computer Use, Browser/Chrome, or image-generation execution
-- explicit task class and phase win over incidental keywords: Terra gathers/explores, Sol High implements, and Sol Max performs the focused judgment pass
-- never assign Luna to long-context, exploration, review, debugging, planning, or tool-heavy work
-- automatic fan-out starts at two for bounded non-trivial work, four for explicit parallel work, and six for large-scale work; it may expand only up to ${MAX_AUTOMATIC_SUBAGENT_COUNT} when decomposition proves more independent useful slices
+- use \`worker\` with gpt-5.6-luna and max reasoning for tiny short-context mechanical work such as simple search, typing, rename, copy, label, or one-line edits with no exploration or judgment
+- use gpt-5.6-sol with high reasoning for ordinary UI, logic, backend, and native implementation
+- use gpt-5.6-sol with max reasoning only for focused unresolved, high-risk, final-review, architecture, security, database, research, release, or other explicit judgment slices
+- use gpt-5.6-terra with medium reasoning for read-heavy documentation/exploration, long-context analysis, large or repository-wide search, and direct Computer Use, Browser/Chrome, or image-generation execution
+- explicit task class and phase win over incidental keywords: Terra gathers/explores/searches broadly, Luna handles tiny mechanical edits, Sol High implements, and Sol Max performs the focused judgment pass
+- never assign Luna to long-context, broad exploration, review, debugging, planning, or tool-heavy work
+- never collapse every child onto the parent Sol model when a sealed Luna or Terra role matches the slice
+- automatic fan-out starts at four for bounded non-trivial work, six for explicit parallel work, and eight for large-scale work; it may expand only up to ${MAX_AUTOMATIC_SUBAGENT_COUNT} when independent useful slices and healthy host capacity remain positive
+- prefer the largest useful first wave the host can sustain; shrink only under live resource pressure or unsafe overlapping ownership
 - automatic reviewer-only fan-out is capped at ${MAX_AUTOMATIC_REVIEWER_COUNT} for ordinary work and ${MAX_CRITICAL_AUTOMATIC_REVIEWER_COUNT} for critical multi-domain review
 - requested subagents: ${requestedPolicy}
 - max open agent threads: ${maxThreads} (hard cap, never a utilization target)
@@ -247,7 +256,7 @@ function renderRoleModelPreferenceMetadata(
     reasoning_effort: preference.reasoning_effort,
     source: 'user-scoped-owner-only'
   }))
-  if (activeMainModel) {
+  if (activeMainModel && childInheritsActiveMainModel(activeMainModel.model)) {
     rows.push({
       role: '*',
       provider: activeMainModel.provider,
@@ -265,10 +274,31 @@ function normalizedActiveMainModel(value: ActiveMainModelRouting | null | undefi
   return provider && model ? { provider, model } : null
 }
 
+function inferDisplayProvider(model: string): string {
+  return model.includes('/') ? model.split('/', 1)[0] || 'openai' : 'openai'
+}
+
 function renderSpawnModelRouting(activeMainModel: ActiveMainModelRouting | null): string {
-  const precedence = '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> active main model -> installed custom-agent default'
+  const inheritActiveMain = childInheritsActiveMainModel(activeMainModel?.model)
+  const precedence = inheritActiveMain
+    ? '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> active main model -> installed custom-agent default'
+    : '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> sealed role policy (Luna Max / Terra Medium / Sol High / Sol Max) -> installed custom-agent default'
   const roleOverride = '- when Role model preference metadata lists the selected role with source "user-scoped-owner-only", pass that row\'s exact model and reasoning_effort to spawn_agent'
-  if (!activeMainModel) return `${precedence}\n${roleOverride}`
+  if (!activeMainModel) {
+    return [
+      precedence,
+      roleOverride,
+      '- when no user override exists, pass the sealed role model/effort from the selected custom agent; do not default every child to Sol'
+    ].join('\n')
+  }
+  if (!inheritActiveMain) {
+    return [
+      precedence,
+      roleOverride,
+      `- parent keeps the app-selected main model ${activeMainModel.provider}:${activeMainModel.model}, but children must keep sealed Luna/Terra/Sol High/Sol Max role profiles`,
+      '- for every role without a user override, including slices created after parent decomposition, pass that role\'s sealed model and reasoning_effort; never replace Luna or Terra with the parent Sol model'
+    ].join('\n')
+  }
   return [
     precedence,
     roleOverride,

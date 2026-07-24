@@ -36,7 +36,9 @@ export const HOST_CAPABILITY_HOOK_PENDING_RUNTIME_FILENAME = 'host-capability-ru
 export const HOST_CAPABILITY_HOOK_OBSERVATIONS_FILENAME = 'host-capability-hook-observations.json';
 export const HOST_CAPABILITY_HOOK_EVIDENCE_FILENAME = 'host-capability-evidence.json';
 
-const MAX_EVENT_LINE_BYTES = 512 * 1024;
+const MAX_HOST_TOOL_STRUCTURED_RESULT_BYTES = 4 * 1024 * 1024;
+const MAX_EVENT_LINE_BYTES = 5 * 1024 * 1024;
+const MAX_EVENT_BUFFER_BYTES = 10 * 1024 * 1024;
 const MAX_MCP_TOOL_CALLS = 1024;
 const MAX_PRE_TOOL_OBSERVATIONS = 2048;
 const MAX_RECEIPT_JSON_STRING_BYTES = 64 * 1024;
@@ -318,7 +320,15 @@ export function sanitizeHostCapabilityPreToolUse(
   const toolUseId = boundedIdentity(payload.tool_use_id);
   if (!tool || !toolUseId) return null;
   const toolInput = isRecord(payload.tool_input) ? payload.tool_input : {};
-  const resourceKey = extractToolResourceKey({ arguments: payload.tool_input });
+  const documentRender = tool === 'html_to_pdf' || tool === 'html_to_screenshot';
+  const documentSourcePath = documentRender ? normalizeDocumentSourcePath(toolInput.source_path) : null;
+  const documentSourceBlocker = documentRender
+    && (Object.prototype.hasOwnProperty.call(toolInput, 'html') || !documentSourcePath)
+    ? 'host_capability_document_source_path_required'
+    : null;
+  const resourceKey = documentRender
+    ? documentSourcePath && workspaceResourceKey(documentSourcePath)
+    : extractToolResourceKey({ arguments: payload.tool_input });
   const datasource = tool === 'datasource_schema_context' || tool === 'datasource_query_readonly'
     ? boundedIdentity(toolInput.datasource)
     : null;
@@ -327,14 +337,15 @@ export function sanitizeHostCapabilityPreToolUse(
     : null;
   const allowed = runtime.ok
     && runtime.allowed_tool_names.includes(tool)
-    && !explicitlyDeniedHostCapabilityTool(tool);
+    && !explicitlyDeniedHostCapabilityTool(tool)
+    && !documentSourceBlocker;
   const blocker = !runtime.ok
     ? 'host_capability_runtime_unavailable'
     : explicitlyDeniedHostCapabilityTool(tool)
       ? `host_tool_call_explicitly_denied:${tool}`
       : !runtime.allowed_tool_names.includes(tool)
         ? `host_tool_call_not_allowed:${tool}`
-        : null;
+        : documentSourceBlocker;
   return {
     tool_use_id_sha256: `sha256:${sha256(toolUseId)}`,
     tool,
@@ -364,9 +375,9 @@ export function sanitizeHostCapabilityPostToolUse(payload: unknown): HostCapabil
     ? 'failed'
     : 'passed';
   const artifacts = status === 'passed'
-    ? extractArtifactReceipts(payload.tool_response)
+    ? extractArtifactReceipts(response)
     : [];
-  const resourceKey = extractToolResourceKey({
+  const resourceKey = extractHostToolResourceKey(tool, {
     arguments: payload.tool_input,
     result: payload.tool_response
   });
@@ -530,6 +541,20 @@ function authorizePreToolReservation(
     if (lastMutationSequence !== null
       && !matchingInspections.some((call) => call.sequence > lastMutationSequence)) {
       return denyPreToolReservation(observation, 'host_capability_spreadsheet_update_inspection_not_completed');
+    }
+  }
+
+  if (observation.tool === 'html_to_pdf' || observation.tool === 'html_to_screenshot') {
+    const completedSourceWrites = [
+      ...completedPassedToolCalls(current, 'write_file'),
+      ...completedPassedToolCalls(current, 'edit_file')
+    ];
+    if (completedSourceWrites.length === 0) {
+      return denyPreToolReservation(observation, 'host_capability_document_source_sequence_invalid');
+    }
+    if (!observation.resource_key
+      || !completedSourceWrites.some((call) => call.resource_key === observation.resource_key)) {
+      return denyPreToolReservation(observation, 'host_capability_document_source_resource_mismatch');
     }
   }
 
@@ -819,12 +844,12 @@ export function createHostCapabilityEventCollector(runtime: HostCapabilityRuntim
       event_sha256: rawHash,
       raw_hash: rawHash,
       index: callIndex,
-      resource_key: extractToolResourceKey(item),
+      resource_key: extractHostToolResourceKey(tool, item),
       semantic_receipt: semantic.receipt
     });
     if (semantic.blocker) blockers.push(semantic.blocker);
     if (status === 'passed') {
-      for (const artifact of extractArtifactReceipts(item.result?.structured_content ?? item.result?.structuredContent ?? item.result)) {
+      for (const artifact of extractArtifactReceipts(response)) {
         observedArtifacts.push({ ...artifact, source_tool: tool, source_hash: rawHash, source_index: callIndex });
       }
     }
@@ -832,7 +857,7 @@ export function createHostCapabilityEventCollector(runtime: HostCapabilityRuntim
 
   const push = (chunk: string) => {
     buffer += String(chunk || '');
-    if (Buffer.byteLength(buffer, 'utf8') > MAX_EVENT_LINE_BYTES * 2 && !buffer.includes('\n')) {
+    if (Buffer.byteLength(buffer, 'utf8') > MAX_EVENT_BUFFER_BYTES && !buffer.includes('\n')) {
       blockers.push('host_tool_event_buffer_too_large');
       buffer = '';
       return;
@@ -1103,12 +1128,18 @@ function validateCapabilityWorkflow(
     if (renderCalls.length === 0) {
       blockers.push('host_capability_document_render_call_missing');
     } else {
-      const sourceWrite = allCalls.find((call) => (
+      const firstRender = renderCalls[0]!;
+      const precedingSourceWrites = allCalls.filter((call) => (
         call.status === 'passed'
         && (call.tool === 'write_file' || call.tool === 'edit_file')
-        && call.index < renderCalls[0]!.index
+        && call.index < firstRender.index
       ));
-      if (!sourceWrite) blockers.push('host_capability_document_source_sequence_invalid');
+      if (precedingSourceWrites.length === 0) {
+        blockers.push('host_capability_document_source_sequence_invalid');
+      } else if (!firstRender.resource_key
+        || !precedingSourceWrites.some((call) => call.resource_key === firstRender.resource_key)) {
+        blockers.push('host_capability_document_source_resource_mismatch');
+      }
       const finalRender = renderCalls.at(-1)!;
       if (!artifacts.some((artifact) => (
         artifact.source_tool === finalRender.tool
@@ -1124,10 +1155,52 @@ function validateCapabilityWorkflow(
     && passed('capture_url_screenshot').length === 0) {
     blockers.push('host_capability_web_capture_call_missing');
   }
-  if (descriptor.id === 'host.artifact.receipt.v1' && artifacts.length === 0) {
-    blockers.push('host_capability_artifact_receipt_missing');
+  if (descriptor.id === 'host.artifact.receipt.v1') {
+    const artifactReceiptExceptions = new Set([
+      'spreadsheet_inspect',
+      'read_file',
+      'find_workspace_files',
+      'list_workspace'
+    ]);
+    const artifactProducingTools = new Set(
+      descriptor.tool_names.filter((tool) => !artifactReceiptExceptions.has(tool))
+    );
+    const passedArtifactCalls = calls.filter((call) => (
+      call.status === 'passed' && artifactProducingTools.has(call.tool)
+    ));
+    if (artifacts.length === 0 || passedArtifactCalls.some((call) => !artifacts.some((artifact) => (
+      artifact.source_tool === call.tool && artifact.source_index === call.index
+    )))) {
+      blockers.push('host_capability_artifact_receipt_missing');
+    }
   }
   return uniqueStrings(blockers);
+}
+
+function normalizeDocumentSourcePath(value: unknown): string | null {
+  const normalized = normalizeWorkspaceResourcePath(value);
+  return typeof value === 'string'
+    && value === normalized
+    && /\.html$/i.test(normalized)
+    ? normalized
+    : null;
+}
+
+function workspaceResourceKey(resourcePath: string): string {
+  return `sha256:${sha256(resourcePath)}`;
+}
+
+function extractHostToolResourceKey(tool: string, item: unknown): string | null {
+  if ((tool === 'html_to_pdf' || tool === 'html_to_screenshot') && isRecord(item)) {
+    const toolInput = isRecord(item.arguments)
+      ? item.arguments
+      : isRecord(item.input)
+        ? item.input
+        : {};
+    const sourcePath = normalizeDocumentSourcePath(toolInput.source_path);
+    return sourcePath ? workspaceResourceKey(sourcePath) : null;
+  }
+  return extractToolResourceKey(item);
 }
 
 function extractToolResourceKey(item: unknown): string | null {
@@ -1150,7 +1223,7 @@ function extractToolResourceKey(item: unknown): string | null {
     for (const [key, value] of Object.entries(current.value)) {
       if (/^(?:path|file_path|filepath|workbook_path|workbook|source_path|target_path|output_path)$/i.test(key)) {
         const resourcePath = normalizeWorkspaceResourcePath(value);
-        if (resourcePath) return `sha256:${sha256(resourcePath)}`;
+        if (resourcePath) return workspaceResourceKey(resourcePath);
       }
       queue.push({ value, depth: current.depth + 1 });
     }
@@ -1181,7 +1254,7 @@ function isSpreadsheetDeliverable(artifact: ObservedHostArtifactReceipt): boolea
 
 function artifactMatchesResource(artifact: ObservedHostArtifactReceipt, resourceKey: string | null): boolean {
   const artifactPath = normalizeWorkspaceResourcePath(artifact.path);
-  return Boolean(resourceKey && artifactPath && `sha256:${sha256(artifactPath)}` === resourceKey);
+  return Boolean(resourceKey && artifactPath && workspaceResourceKey(artifactPath) === resourceKey);
 }
 
 function isDocumentRenderDeliverable(
@@ -1475,9 +1548,29 @@ function hostCapabilityRuntimeMatchesRequest(
 }
 function structuredHostToolResponse(value: unknown): Record<string, any> | null {
   if (!isRecord(value)) return null;
-  const nested = value.structured_content ?? value.structuredContent;
-  if (nested !== undefined) return parseJsonObject(nested);
-  return value;
+  const structuredContent = parseBoundedHostToolJsonObject(
+    value.structured_content,
+    MAX_HOST_TOOL_STRUCTURED_RESULT_BYTES
+  ) ?? parseBoundedHostToolJsonObject(
+    value.structuredContent,
+    MAX_HOST_TOOL_STRUCTURED_RESULT_BYTES
+  );
+  const contentObjects = Array.isArray(value.content)
+    ? value.content
+      .filter((item) => isRecord(item) && item.type === 'text')
+      .map((item) => parseBoundedHostToolJsonObject(item.text, MAX_EVENT_LINE_BYTES))
+      .filter((item): item is Record<string, unknown> => item !== null)
+    : [];
+  const distinctContentObjects = distinctJsonObjects(contentObjects);
+  if (distinctContentObjects.length > 1) return null;
+  const contentObject = distinctContentObjects[0] ?? null;
+  if (structuredContent) {
+    return contentObject && !sameJsonObject(structuredContent, contentObject)
+      ? null
+      : structuredContent;
+  }
+  if (value.structured_content !== undefined || value.structuredContent !== undefined) return null;
+  return contentObject;
 }
 
 function normalizeHostToolSemanticReceipt(
@@ -1696,6 +1789,48 @@ function parseJsonObject(value: unknown): Record<string, unknown> | null {
     } catch {}
   }
   return null;
+}
+
+function parseBoundedHostToolJsonObject(
+  value: unknown,
+  maxBytes: number
+): Record<string, unknown> | null {
+  if (isRecord(value)) {
+    try {
+      return Buffer.byteLength(JSON.stringify(value), 'utf8') <= maxBytes
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const trimmed = value.trim();
+  if (Buffer.byteLength(trimmed, 'utf8') > maxBytes) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function distinctJsonObjects(values: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+  const distinct = new Map<string, Record<string, unknown>>();
+  for (const value of values) distinct.set(canonicalJson(value), value);
+  return [...distinct.values()];
+}
+
+function sameJsonObject(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (isRecord(value)) {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
 }
 function uniqueStrings(values: readonly unknown[]): string[] {
   return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))].sort();

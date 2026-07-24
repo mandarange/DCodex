@@ -54,7 +54,7 @@ test('dynamic proof uses run-scoped cumulative starts and rejects a raw target a
   tamperedCeiling.subagent_evidence.completed_threads = 100;
   const tamperedBlocked = mod.evaluateOfficialSubagentExecutionProof(tamperedCeiling, { required: true });
   assert.equal(tamperedBlocked.proof_level, 'blocked');
-  assert.ok(tamperedBlocked.blockers.includes('subagent_automatic_fanout_cap_exceeded:100/10'));
+  assert.ok(tamperedBlocked.blockers.includes('subagent_automatic_fanout_cap_exceeded:100/12'));
 });
 
 function passingOfficialEvidence() {

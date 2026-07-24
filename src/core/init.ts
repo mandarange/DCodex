@@ -303,6 +303,7 @@ const AGENTS_BLOCK = [
   '- Keep trust-boundary validation, secrets, permissions, data integrity, rollback, accessibility, and explicit user requirements intact.',
   '- Database and destructive operations are read-only by default. Live mutation, publishing, deployment, credential changes, and other irreversible external actions require explicit scoped authorization.',
   '- Never fabricate fallback implementations or success evidence. If the real requested path is unavailable, stop with evidence.',
+  '- Never run `sks doctor --fix` yourself. When repair is needed, tell the user to run it in their own terminal and wait for confirmation.',
   '- Conflicting third-party Codex harness markers are removed from the live surface only via `sks conflicts cleanup --yes`; a backup is kept under `.sneakoscope/quarantine/other-harness/`.',
   '',
   '## Codex App',

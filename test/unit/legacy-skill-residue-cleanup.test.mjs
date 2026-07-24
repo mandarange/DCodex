@@ -40,6 +40,7 @@ test('removed SKS skill cleanup covers global, project, and codex mirrors while 
     await writeManagedSkill(path.join(home, '.codex', 'skills', 'mad-db'), 'mad-db');
     await writeManagedSkill(path.join(home, '.agents', 'skills', 'tmux'), 'tmux');
     await writeManagedSkill(path.join(home, '.agents', 'skills', 'ralph'), 'ralph');
+    await writeManagedSkill(path.join(home, '.agents', 'skills', 'sks-research-discovery'), 'sks-research-discovery');
     await writeManagedSkill(path.join(root, '.agents', 'skills', 'swarm'), 'swarm');
     await writeManagedSkill(path.join(root, '.codex', 'skills', 'shadow-clone'), 'shadow-clone');
     await writeManagedSkill(path.join(root, '.codex', 'skills', 'xai'), 'xai');
@@ -50,7 +51,7 @@ test('removed SKS skill cleanup covers global, project, and codex mirrors while 
 
     const first = await cleanupRemovedSksSkillResidue({ root, home, fix: true });
     assert.equal(first.ok, true);
-    assert.equal(first.removed.length, 7);
+    assert.equal(first.removed.length, 8);
     assert.equal(first.quarantined_user_collisions.length, 1);
     assert.deepEqual(first.remaining, []);
     for (const rel of [
@@ -58,6 +59,7 @@ test('removed SKS skill cleanup covers global, project, and codex mirrors while 
       path.join(home, '.codex', 'skills', 'mad-db'),
       path.join(home, '.agents', 'skills', 'tmux'),
       path.join(home, '.agents', 'skills', 'ralph'),
+      path.join(home, '.agents', 'skills', 'sks-research-discovery'),
       path.join(root, '.agents', 'skills', 'swarm'),
       path.join(root, '.codex', 'skills', 'shadow-clone'),
       path.join(root, '.codex', 'skills', 'xai'),

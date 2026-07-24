@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { nowIso, writeJsonAtomic } from './fsx.js';
+import { nowIso, sha256, writeJsonAtomic } from './fsx.js';
 import {
   LEAN_CHANGE_EVIDENCE_SCHEMA,
   type LeanFinding,
@@ -23,9 +23,26 @@ const SOURCE_EXT_RE = /\.(js|ts|tsx|jsx|cjs|mjs|json|md|rs|toml)$/;
 const FALLBACK_RE = /\b(fallback|legacy|shim|compat|mock|catch-all|catch all|default provider)\b/i;
 const CONFIG_FLAG_RE = /\b(process\.env|SKS_[A-Z0-9_]+|CODEX_[A-Z0-9_]+|[A-Z][A-Z0-9_]{5,})\b/;
 const ABSTRACTION_RE = /\b(interface|abstract class|class|factory|provider|adapter|registry|orchestrator|manager)\b/;
+const N_PLUS_ONE_RE = /(?:(?:for\s*(?:await\s*)?\([^)]*\)|for\s+(?:await\s+)?(?:const|let|var)\s+\w+\s+of\s+[^{]+|\.forEach\s*\(\s*async\b|\.map\s*\(\s*async\b))[\s\S]{0,1200}\bawait\s+[\w.$]*(?:query|execute|findMany|findUnique|findFirst|select|insert|update|delete|save)\s*\(/i;
+const UNBOUNDED_LOOP_RE = /\bwhile\s*\(\s*true\s*\)|\bfor\s*\(\s*;\s*;\s*\)/i;
+const RENDER_LOOP_RE = /\buseEffect\s*\(\s*\(\s*\)\s*=>\s*\{[\s\S]{0,1200}\bset[A-Z]\w*\s*\([^)]*\)[\s\S]{0,400}\}\s*\)\s*;?/i;
+const VERIFICATION_BYPASS_RE = /\b(?:test|it|describe)\.(?:skip|only)\s*\(|\b(?:xit|xdescribe)\s*\(|@ts-ignore\b|eslint-disable(?:-next-line)?\b|\.catch\s*\(\s*\(\s*\)\s*=>\s*(?:undefined|\{\s*\})\s*\)|catch\s*\([^)]*\)\s*\{\s*\}/i;
+const DB_POOL_CONSTRUCTOR_RE = /\bnew\s+(?:Pool|PrismaClient|DataSource|Sequelize)\s*\(|\bcreatePool\s*\(|\bknex\s*\(/i;
+const SENSITIVE_DOMAIN_RE = /\b(payment|billing|invoice|charge|refund|ledger|balance|payout|settlement|wallet)\b|결제|청구|환불|원장|잔액|정산/i;
+const DB_WRITE_CALL_RE = /\b(?:insert|update|delete|upsert|save|create|execute|query)\s*\(/gi;
+const TRANSACTION_MARKER_RE = /\b(?:transaction|withTransaction|atomic|begin|commit|rollback|savepoint|\$transaction)\b/i;
+const ENGINEERING_SANITY_TAGS = new Set([
+  'solid',
+  'n-plus-one',
+  'unbounded-loop',
+  'verification-bypass',
+  'db-pool',
+  'transaction'
+]);
 
 export async function scanCodeStructure(root: any, opts: any = {}) {
   const changedScope = await collectChangedScope(root, opts);
+  const addedHunkScopes = await collectAddedHunkScopes(root, changedScope);
   const files = await resolveScanFiles(root, opts, changedScope);
   const touched = new Set((opts.touchedFiles || []).map((file: any) => normalizeRel(root, file)));
   const changedSet = new Set((changedScope.source_files || []).map((file: string) => normalizeSlashes(file)));
@@ -39,7 +56,12 @@ export async function scanCodeStructure(root: any, opts: any = {}) {
     const status = structureStatus(lineCount);
     const changedByDiff = changedSet.has(rel);
     if (status === 'ok' && !opts.includeOk && !changedByDiff) continue;
-    const signals = analyzeTextSignals(rel, text, changedByDiff);
+    const addedScope = addedHunkScopes.get(rel);
+    const signals = analyzeTextSignals(rel, text, changedByDiff, addedScope || {
+      scope: changedByDiff ? 'changed_file_without_added_hunks' : 'full_file_advisory',
+      text: changedByDiff ? '' : text,
+      line_ranges: []
+    });
     intentionalSimplifications.push(...signals.lean_markers);
     entries.push({
       path: rel,
@@ -134,11 +156,16 @@ async function resolveScanFiles(root: string, opts: any, changedScope: any) {
 async function collectChangedScope(root: string, opts: any) {
   if (opts.changedFiles?.length) {
     const changedFiles: string[] = Array.from(new Set<string>(opts.changedFiles.map((file: string) => normalizeRel(root, file))));
+    const entries = [];
+    for (const file of changedFiles) {
+      const text = await fsp.readFile(path.join(root, file), 'utf8').catch(() => '');
+      entries.push({ path: file, status: 'M', lines_added: 0, lines_deleted: 0, source_sha256: isSourceLike(file) ? sha256(text) : null });
+    }
     return {
       ...emptyChangedScope('explicit', opts.changedSince || 'HEAD'),
       changed_files: changedFiles,
       source_files: changedFiles.filter(isSourceLike),
-      entries: changedFiles.map((file) => ({ path: file, status: 'M', lines_added: 0, lines_deleted: 0 }))
+      entries
     };
   }
 
@@ -181,11 +208,17 @@ async function collectChangedScope(root: string, opts: any) {
       path: rel,
       status: 'A',
       lines_added: text ? text.split(/\n/).length : 0,
-      lines_deleted: 0
+      lines_deleted: 0,
+      source_sha256: isSourceLike(rel) ? sha256(text) : null
     });
   }
 
-  const entries = [...entriesByPath.values()].filter((entry) => entry.path);
+  const entries = [...entriesByPath.values()].filter((entry) => entry.path && isChangedScopePath(entry.path));
+  for (const entry of entries) {
+    if (!isSourceLike(entry.path) || entry.source_sha256) continue;
+    const text = await fsp.readFile(path.join(root, entry.path), 'utf8').catch(() => '');
+    entry.source_sha256 = sha256(text);
+  }
   const changedFiles = entries.map((entry) => entry.path);
   const sourceFiles = changedFiles.filter(isSourceLike);
   const linesAdded = entries.reduce((sum, entry) => sum + Number(entry.lines_added || 0), 0);
@@ -272,8 +305,75 @@ async function collectAddedFallbackSites(root: string, changedScope: any) {
   return sites;
 }
 
-function analyzeTextSignals(rel: string, text: string, changedByDiff: boolean) {
+async function collectAddedHunkScopes(root: string, changedScope: any) {
+  const scopes = new Map<string, { scope: string; text: string; line_ranges: Array<{ start: number; end: number }> }>();
+  if (!changedScope?.source_files?.length) return scopes;
+  if (changedScope.mode === 'explicit') {
+    for (const rel of changedScope.source_files) {
+      const text = await fsp.readFile(path.join(root, rel), 'utf8').catch(() => '');
+      const lineCount = text ? text.split(/\r?\n/).length : 0;
+      scopes.set(normalizeSlashes(rel), {
+        scope: 'explicit_changed_file',
+        text,
+        line_ranges: lineCount ? [{ start: 1, end: lineCount }] : []
+      });
+    }
+    return scopes;
+  }
+  if (changedScope.mode !== 'git-diff') return scopes;
+
+  const diff = gitText(root, ['diff', '--unified=0', changedScope.base || 'HEAD', '--', ...changedScope.source_files]);
+  let currentFile = '';
+  let currentLine = 0;
+  const linesByFile = new Map<string, Array<{ line: number; text: string }>>();
+  for (const line of diff.split(/\r?\n/)) {
+    if (line.startsWith('+++ b/')) {
+      currentFile = normalizeSlashes(line.slice('+++ b/'.length));
+      continue;
+    }
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) {
+      currentLine = Number(hunk[1]) || 0;
+      continue;
+    }
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      if (currentFile) {
+        const rows = linesByFile.get(currentFile) || [];
+        rows.push({ line: currentLine, text: line.slice(1) });
+        linesByFile.set(currentFile, rows);
+      }
+      currentLine += 1;
+      continue;
+    }
+    if (!line.startsWith('-')) currentLine += 1;
+  }
+
+  for (const rel of changedScope.source_files) {
+    const normalized = normalizeSlashes(rel);
+    let rows = linesByFile.get(normalized) || [];
+    const entry = changedScope.entries?.find((candidate: any) => normalizeSlashes(candidate.path) === normalized);
+    if (!rows.length && String(entry?.status || '').startsWith('A')) {
+      const text = await fsp.readFile(path.join(root, normalized), 'utf8').catch(() => '');
+      rows = text.split(/\r?\n/).map((value, index) => ({ line: index + 1, text: value }));
+    }
+    scopes.set(normalized, {
+      scope: 'added_hunks',
+      text: joinAddedHunkRows(rows),
+      line_ranges: contiguousLineRanges(rows.map((row) => row.line))
+    });
+  }
+  return scopes;
+}
+
+function analyzeTextSignals(
+  rel: string,
+  text: string,
+  changedByDiff: boolean,
+  sanityScope: { scope: string; text: string; line_ranges: Array<{ start: number; end: number }> }
+) {
   const lines = text.split(/\r?\n/);
+  const scopedText = String(sanityScope.text || '');
+  const scopedCode = stripNonCodeForSanity(scopedText);
   const imports = lines.filter((line) => /^\s*import\s/.test(line));
   const externalImports = imports
     .map((line) => /from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"]/.exec(line)?.[1] || /from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"]/.exec(line)?.[2] || '')
@@ -282,20 +382,65 @@ function analyzeTextSignals(rel: string, text: string, changedByDiff: boolean) {
     .map((line, index) => parseLeanSimplificationMarkerLine(line, rel, index + 1))
     .filter((marker): marker is LeanSimplificationMarker => Boolean(marker));
   const effectiveLines = lines.map((line) => line.trim()).filter(Boolean);
-  const forwardingOnly = effectiveLines.length > 0
+  const scopeCoversWholeFile = sanityScope.line_ranges.length === 1
+    && sanityScope.line_ranges[0]?.start === 1
+    && sanityScope.line_ranges[0]?.end >= lines.length;
+  const forwardingOnly = scopeCoversWholeFile
+    && effectiveLines.length > 0
     && effectiveLines.length <= 10
     && effectiveLines.every((line) => line.startsWith('import ') || line.startsWith('export ') || line.startsWith('//') || line.startsWith('/*') || line.startsWith('*'));
   return {
     import_count: imports.length,
     external_dependency_imports: Array.from(new Set(externalImports)).sort(),
-    ts_nocheck: /^\s*\/\/\s*@ts-nocheck\b/m.test(text),
+    ts_nocheck: /^\s*\/\/\s*@ts-nocheck\b/m.test(scopedText),
     changed_by_diff: changedByDiff,
     forwarding_only: forwardingOnly,
-    fallback_markers: countMatches(text, FALLBACK_RE),
-    config_flag_markers: countMatches(text, CONFIG_FLAG_RE),
-    abstraction_markers: countMatches(text, ABSTRACTION_RE),
+    fallback_markers: countMatches(scopedCode, FALLBACK_RE),
+    config_flag_markers: countMatches(scopedCode, CONFIG_FLAG_RE),
+    abstraction_markers: countMatches(scopedCode, ABSTRACTION_RE),
+    engineering_sanity: engineeringSanitySignals(scopedText, sanityScope),
     lean_markers: leanMarkers
   };
+}
+
+function engineeringSanitySignals(text: string, scope: { scope: string; line_ranges: Array<{ start: number; end: number }> }) {
+  const code = stripNonCodeForSanity(text);
+  const writeCalls = code.match(DB_WRITE_CALL_RE)?.length || 0;
+  return {
+    source_scope: scope.scope,
+    added_hunk_line_ranges: scope.line_ranges,
+    candidate_detection_only: true,
+    n_plus_one_candidates: countMatches(code, N_PLUS_ONE_RE),
+    unbounded_loop_candidates: countMatches(code, UNBOUNDED_LOOP_RE),
+    render_loop_candidates: countMatches(code, RENDER_LOOP_RE),
+    direct_recursion_candidates: countDirectRecursionCandidates(code),
+    verification_bypass_markers: countMatches(code, VERIFICATION_BYPASS_RE),
+    db_pool_constructor_markers: countMatches(code, DB_POOL_CONSTRUCTOR_RE),
+    sensitive_transaction_candidate: SENSITIVE_DOMAIN_RE.test(code)
+      && writeCalls >= 2
+      && !TRANSACTION_MARKER_RE.test(code),
+    db_write_call_markers: writeCalls
+  };
+}
+
+function stripNonCodeForSanity(text: string) {
+  return String(text || '')
+    .replace(/^\s*const\s+[A-Z0-9_]+_RE\s*=\s*\/.*\/[dgimsuvy]*;?\s*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, (value) => value.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:\\])\/\/.*$/gm, '$1')
+    .replace(/(['"`])(?:\\.|(?!\1)[\s\S])*?\1/g, (value) => value.replace(/[^\n]/g, ' '));
+}
+
+function countDirectRecursionCandidates(text: string) {
+  let count = 0;
+  const functions = /(?:function\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)|(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>)\s*\{([\s\S]{0,3000}?)\n?\}/g;
+  let match;
+  while ((match = functions.exec(text))) {
+    const name = match[1] || match[2];
+    const body = match[3] || '';
+    if (name && new RegExp(`\\b${escapeRegExp(name)}\\s*\\(`).test(body)) count += 1;
+  }
+  return count;
 }
 
 function collectRunnableChecks(changedScope: any) {
@@ -355,12 +500,65 @@ function buildSemanticReview(input: any) {
         summary: 'changed file is forwarding-only; confirm it replaces an older path instead of duplicating an SSOT'
       });
     }
+    const sanity = entry.lean_signals.engineering_sanity || {};
     if (entry.lean_signals.config_flag_markers > 6 || entry.lean_signals.abstraction_markers > 12) {
       findings.push({
-        tag: 'yagni',
+        tag: 'solid',
         severity: 'review',
         file: entry.path,
-        summary: 'changed file has dense config/abstraction markers; review for unrequested knobs or layers'
+        source_scope: sanity.source_scope,
+        added_hunk_line_ranges: sanity.added_hunk_line_ranges,
+        summary: 'changed file has dense config/abstraction markers; review single responsibility, dependency direction, and unrequested layers'
+      });
+    }
+    if (sanity.n_plus_one_candidates > 0) {
+      findings.push({
+        tag: 'n-plus-one',
+        severity: 'review',
+        file: entry.path,
+        source_scope: sanity.source_scope,
+        added_hunk_line_ranges: sanity.added_hunk_line_ranges,
+        summary: `${sanity.n_plus_one_candidates} loop-bound database or I/O call candidate(s) require batching, prefetching, or bounded-query review`
+      });
+    }
+    if (sanity.unbounded_loop_candidates > 0 || sanity.render_loop_candidates > 0 || sanity.direct_recursion_candidates > 0) {
+      findings.push({
+        tag: 'unbounded-loop',
+        severity: 'review',
+        file: entry.path,
+        source_scope: sanity.source_scope,
+        added_hunk_line_ranges: sanity.added_hunk_line_ranges,
+        summary: `control-flow review required: unbounded=${sanity.unbounded_loop_candidates || 0}, render=${sanity.render_loop_candidates || 0}, recursion=${sanity.direct_recursion_candidates || 0}`
+      });
+    }
+    if (sanity.verification_bypass_markers > 0) {
+      findings.push({
+        tag: 'verification-bypass',
+        severity: 'review',
+        file: entry.path,
+        source_scope: sanity.source_scope,
+        added_hunk_line_ranges: sanity.added_hunk_line_ranges,
+        summary: `${sanity.verification_bypass_markers} disabled-check or swallowed-failure marker(s) require explicit justification and equivalent verification`
+      });
+    }
+    if (sanity.db_pool_constructor_markers > 0) {
+      findings.push({
+        tag: 'db-pool',
+        severity: 'review',
+        file: entry.path,
+        source_scope: sanity.source_scope,
+        added_hunk_line_ranges: sanity.added_hunk_line_ranges,
+        summary: `${sanity.db_pool_constructor_markers} database client/pool construction marker(s) require canonical ownership, bounded acquire/release, shutdown, and exhaustion review`
+      });
+    }
+    if (sanity.sensitive_transaction_candidate) {
+      findings.push({
+        tag: 'transaction',
+        severity: 'review',
+        file: entry.path,
+        source_scope: sanity.source_scope,
+        added_hunk_line_ranges: sanity.added_hunk_line_ranges,
+        summary: 'sensitive or financial multi-write flow lacks an obvious transaction marker; verify atomic rollback, error propagation, idempotency, and post-commit invariants'
       });
     }
   }
@@ -374,12 +572,16 @@ function buildSemanticReview(input: any) {
       summary: `lean simplification marker is incomplete: ${marker.status}`
     });
   }
-  const status = findings.some((finding) => finding.severity === 'blocker')
+  const finalizedFindings = findings.map((finding) => ({
+    ...finding,
+    id: `eng-${sha256(`${finding.tag}:${finding.file || ''}:${finding.line || 0}:${finding.summary}`).slice(0, 16)}`
+  }));
+  const status = finalizedFindings.some((finding) => finding.severity === 'blocker')
     ? 'blocked'
-    : findings.some((finding) => finding.severity === 'review')
+    : finalizedFindings.some((finding) => finding.severity === 'review')
       ? 'needs-review'
       : 'pass';
-  return { status, findings };
+  return { status, findings: finalizedFindings };
 }
 
 function isLeanOwnedTypeSafetyPath(file: string): boolean {
@@ -417,6 +619,21 @@ function buildLeanChangeEvidence(input: any) {
     fallback_sites_added: input.fallbackSites || [],
     intentional_simplifications: input.intentionalSimplifications || [],
     runnable_checks: input.runnableChecks || [],
+    engineering_sanity: {
+      status: (changedScope.source_files || []).length ? 'manual-review-required' : 'not-applicable',
+      automated_candidate_status: (input.semanticReview?.findings || []).some((finding: LeanFinding) => ENGINEERING_SANITY_TAGS.has(finding.tag))
+        ? 'candidates-found'
+        : 'no-candidates-found',
+      required_checks: [
+        'solid_boundaries',
+        'n_plus_one_and_repeated_io',
+        'bounded_render_recursion_event_retry_polling',
+        'verification_bypass_absent',
+        'canonical_db_pool_lifecycle_when_applicable',
+        'transaction_integrity_when_sensitive_or_multi_step'
+      ],
+      findings: (input.semanticReview?.findings || []).filter((finding: LeanFinding) => ENGINEERING_SANITY_TAGS.has(finding.tag))
+    },
     semantic_review: input.semanticReview || { status: 'needs-review', findings: [] }
   };
 }
@@ -455,9 +672,20 @@ function countMatches(text: string, pattern: RegExp) {
   return [...text.matchAll(new RegExp(pattern.source, flags))].length;
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function isSourceLike(file: string) {
   const rel = normalizeSlashes(file);
   return SOURCE_DIR_RE.test(rel) && SOURCE_EXT_RE.test(rel) && !isGeneratedOrVendor(rel);
+}
+
+function isChangedScopePath(file: string) {
+  const rel = normalizeSlashes(file);
+  const first = rel.split('/')[0] || '';
+  if (first.startsWith('.') && first !== '.agents') return false;
+  return !isGeneratedOrVendor(rel);
 }
 
 function parseNumstat(value: string) {
@@ -506,4 +734,28 @@ function normalizeRel(root: string, file: string) {
 
 function normalizeSlashes(file: string) {
   return String(file || '').replace(/\\/g, '/');
+}
+
+function contiguousLineRanges(lines: number[]) {
+  const sorted = [...new Set(lines.filter((line) => Number.isInteger(line) && line > 0))].sort((a, b) => a - b);
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (const line of sorted) {
+    const last = ranges.at(-1);
+    if (last && line === last.end + 1) last.end = line;
+    else ranges.push({ start: line, end: line });
+  }
+  return ranges;
+}
+
+function joinAddedHunkRows(rows: Array<{ line: number; text: string }>) {
+  const out: string[] = [];
+  let previousLine = 0;
+  for (const row of rows) {
+    if (previousLine > 0 && row.line > previousLine + 1) {
+      out.push(' '.repeat(1301));
+    }
+    out.push(row.text);
+    previousLine = row.line;
+  }
+  return out.join('\n');
 }
