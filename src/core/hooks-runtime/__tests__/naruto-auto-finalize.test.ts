@@ -1,3 +1,6 @@
+// First import: the subagent-skill-availability guard ledger resolves
+// $HOME/.sneakoscope and would otherwise pollute the operator's real home.
+import '../../__tests__/helpers/isolated-test-home.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fsp from 'node:fs/promises'

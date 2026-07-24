@@ -1,3 +1,6 @@
+// First import: this suite spawns the real sks/codex binaries, which write
+// $HOME/.codex/tmp lock files when the default home leaks through.
+import '../../__tests__/helpers/isolated-test-home.js'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'

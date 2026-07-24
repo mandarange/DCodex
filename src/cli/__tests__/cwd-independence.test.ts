@@ -1,3 +1,6 @@
+// First import: every read-only command is spawned with the ambient env; the
+// update-status probe writes $HOME/.sneakoscope-global when home leaks through.
+import '../../core/__tests__/helpers/isolated-test-home.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';

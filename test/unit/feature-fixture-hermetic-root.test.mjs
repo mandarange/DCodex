@@ -1,3 +1,6 @@
+// First import: executed fixtures reach the global skills reconciler, which
+// installs $HOME/.agents/skills when the default home leaks through.
+import '../../dist/core/__tests__/helpers/isolated-test-home.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runFeatureFixture } from '../../dist/core/feature-fixture-runner.js';

@@ -1,3 +1,6 @@
+// First import: machine-feedback cases spawn real npm, which writes
+// $HOME/.npm logs and the update-notifier stamp when home leaks through.
+import '../../dist/core/__tests__/helpers/isolated-test-home.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

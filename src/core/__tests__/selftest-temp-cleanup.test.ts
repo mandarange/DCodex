@@ -1,3 +1,6 @@
+// First import: `sks selftest` runs the install/repair battery (fast-mode
+// config install, managed role configs) against the default home; isolate it.
+import './helpers/isolated-test-home.js'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'

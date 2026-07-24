@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { ensureDir, nowIso, readText, sha256, writeJsonAtomic, writeTextAtomic } from '../fsx.js'
+import { assertTestHomeWriteAllowed, ensureDir, nowIso, readText, sha256, writeJsonAtomic, writeTextAtomic } from '../fsx.js'
 import {
   codexHome,
   isSksOwnedGlobalUiLock,
@@ -29,6 +29,7 @@ export async function repairCodexAppFastUi(root: string = process.cwd(), input: 
 } = {}) {
   const resolvedRoot = path.resolve(root)
   const home = codexHome(input.codexHome === undefined ? {} : { codexHome: input.codexHome })
+  if (input.apply === true) assertTestHomeWriteAllowed(path.join(home, 'config.toml'))
   const before = await snapshotCodexAppUiState(resolvedRoot, { codexHome: home })
   const candidates = [
     { scope: 'project', file: path.join(resolvedRoot, '.codex', 'config.toml'), mode: 'project_forbidden_keys' },

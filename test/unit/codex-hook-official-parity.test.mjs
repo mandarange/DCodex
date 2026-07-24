@@ -1,3 +1,6 @@
+// First import: this suite spawns the real codex binary, which writes
+// $HOME/.codex/tmp lock files when the default home leaks through.
+import '../../dist/core/__tests__/helpers/isolated-test-home.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

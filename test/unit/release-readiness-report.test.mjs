@@ -10,7 +10,16 @@ test('release readiness report writes current readiness artifacts', () => {
   const proof = createReleaseStampProof();
   const workspaceStampPath = '.sneakoscope/reports/release-check-stamp.json';
   const workspaceStampBefore = fs.existsSync(workspaceStampPath) ? fs.readFileSync(workspaceStampPath, 'utf8') : null;
-  const env = { ...process.env, ...proof.env };
+  // Readiness must probe the operator's REAL codex environment (imagegen
+  // capability, desktop state), so under the canonical runner's home isolation
+  // restore the real home for these read-only probes. SKS_TEST_FORBID_REAL_HOME
+  // stays set, so any attempted config write to the real ~/.codex still throws.
+  const realHome = process.env.SKS_TEST_REAL_HOME;
+  const env = {
+    ...process.env,
+    ...proof.env,
+    ...(realHome ? { HOME: realHome, USERPROFILE: realHome } : {})
+  };
   try {
     const stamp = spawnSync(process.execPath, ['dist/scripts/release-check-stamp.js', ...proof.writeArgs], {
       cwd: process.cwd(),

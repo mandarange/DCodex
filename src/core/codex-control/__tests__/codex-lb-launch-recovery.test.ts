@@ -1,3 +1,6 @@
+// First import: this suite spawns real codex/npm processes, which write
+// $HOME/.codex/tmp and $HOME/.npm when the default home leaks through.
+import '../../__tests__/helpers/isolated-test-home.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'

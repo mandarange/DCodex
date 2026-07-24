@@ -1,3 +1,6 @@
+// First import: update-check probes spawn real codex/npm and touch
+// $HOME/.codex and $HOME/.sneakoscope when the default home leaks through.
+import '../../dist/core/__tests__/helpers/isolated-test-home.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

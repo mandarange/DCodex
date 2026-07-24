@@ -1,7 +1,15 @@
+// First import: hook evaluation consults the managed skill availability guard
+// under $HOME/.agents/skills — isolate the home, then seed the managed skills
+// so the guard reflects a healthy install instead of the operator's real one.
+import '../../dist/core/__tests__/helpers/isolated-test-home.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
 import path from 'node:path';
 import { runProcess } from '../../dist/core/fsx.js';
+
+const { reconcileSkills } = await import('../../dist/core/init/skills.js');
+await reconcileSkills({ targetDir: path.join(os.homedir(), '.agents', 'skills'), scope: 'global', fix: true });
 
 const hookBin = path.join(process.cwd(), 'dist', 'bin', 'sks.js');
 

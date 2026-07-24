@@ -134,7 +134,22 @@ export async function readText<T>(p: string, fallback?: T): Promise<string | T> 
   }
 }
 
+// Set by the canonical test runner alongside its HOME redirect: if a test still
+// resolves the operator's real Codex home (hardcoded path, restored env), fail
+// the write loudly instead of mutating the operator's ~/.codex.
+export function assertTestHomeWriteAllowed(p: string): void {
+  if (process.env.SKS_TEST_FORBID_REAL_HOME !== '1') return;
+  const realHome = process.env.SKS_TEST_REAL_HOME;
+  if (!realHome) return;
+  const forbidden = path.join(path.resolve(realHome), '.codex');
+  const target = path.resolve(p);
+  if (target === forbidden || target.startsWith(`${forbidden}${path.sep}`)) {
+    throw new Error(`sks_test_forbid_real_home_write: refusing to write ${target} while SKS_TEST_FORBID_REAL_HOME=1`);
+  }
+}
+
 export async function writeTextAtomic(p: string, text: string, opts: { mode?: number } = {}): Promise<void> {
+  assertTestHomeWriteAllowed(p);
   await ensureDir(path.dirname(p));
   try {
     if ((await fsp.readFile(p, 'utf8')) === text) {

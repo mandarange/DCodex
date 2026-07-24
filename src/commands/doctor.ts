@@ -139,7 +139,7 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     ok: false,
     blockers: [err?.message || String(err)]
   }));
-  const globalFastMode = await ensureGlobalFastModeImpl().catch((err: any) => ({
+  const globalFastMode = await ensureGlobalFastModeImpl({ home }).catch((err: any) => ({
     status: 'failed',
     error: err?.message || String(err)
   }));

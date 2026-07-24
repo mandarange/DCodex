@@ -1,3 +1,6 @@
+// First import: update-migration stages (fastmode normalize, skills install,
+// managed role configs) resolve os.homedir() directly and ignore injected env.
+import './helpers/isolated-test-home.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

@@ -1,8 +1,16 @@
+// First import: hook evaluation consults the operator home (managed skill
+// availability under $HOME/.agents/skills, guard ledgers under
+// $HOME/.sneakoscope). Isolate the home, then seed the managed skills so the
+// availability guard reflects a healthy install instead of the operator's.
+import '../../dist/core/__tests__/helpers/isolated-test-home.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+
+const { reconcileSkills } = await import('../../dist/core/init/skills.js');
+await reconcileSkills({ targetDir: path.join(os.homedir(), '.agents', 'skills'), scope: 'global', fix: true });
 
 async function makeRoot() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-hook-update-check-'));
