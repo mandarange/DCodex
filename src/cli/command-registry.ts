@@ -26,6 +26,11 @@ export type CommandInputProfile =
 
 export interface CommandModule {
   run: CommandRun;
+  /**
+   * Optional richer usage text. The router prints this for `--help` instead of
+   * the manifest-derived default, and never calls `run` for a help request.
+   */
+  usage?: (command: string) => string;
 }
 
 export interface CommandEntry {

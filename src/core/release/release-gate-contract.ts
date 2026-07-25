@@ -3,6 +3,7 @@ import crypto from 'node:crypto'
 export const RELEASE_GATE_CONTRACT_SCHEMA = 'sks.release-gate-contract.v1'
 
 export const RELEASE_GATE_CONTRACT_IDS: readonly string[] = Object.freeze([
+  'agent-guidance:dedup',
   'agent:message-bus-reader',
   'all-features:deep-completion',
   'appshots:thread-attachment-discovery',

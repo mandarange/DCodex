@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { isHelpRequest } from '../../cli/help.js';
 import { globalSksRoot, projectRoot, readJson, sha256 } from '../fsx.js';
 import {
   findRemoteMachine,
@@ -101,12 +102,6 @@ function configFile(args: readonly string[]): string {
 function readOption(args: readonly string[], name: string): string | null {
   const index = args.indexOf(name);
   return index >= 0 && args[index + 1] ? String(args[index + 1]) : null;
-}
-
-// --help/-h/help must render usage and exit 0 on every command surface; it is a
-// pure usage-text request and must never be answered with unknown_action (20차 P2-2).
-function isHelpRequest(args: readonly string[]): boolean {
-  return args.includes('--help') || args.includes('-h') || String(args[0] || '').toLowerCase() === 'help';
 }
 
 function printRemoteUsage(): void {

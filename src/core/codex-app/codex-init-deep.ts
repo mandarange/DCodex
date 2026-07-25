@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { CANONICAL_DIRECTIVES } from '../agent-guidance/directive-registry.js'
 import { ensureDir, nowIso, writeJsonAtomic, writeTextAtomic } from '../fsx.js'
 import { guardContextForRoute, guardedRm } from '../safety/mutation-guard.js'
 import { createRequestedScopeContract } from '../safety/requested-scope-contract.js'
@@ -244,11 +245,38 @@ async function walk(dir: string, root: string, counts: Map<string, { file_count:
   }
 }
 
+/**
+ * The guidance the generator would write, as {path, text} pairs — the input the
+ * dedup gate analyses. Exposed so the gate checks the generator's contract
+ * rather than one machine's generated files.
+ */
+export function renderInitDeepAgentGuidance(rows: DirectoryScore[]): Array<{ path: string; text: string }> {
+  return [
+    { path: 'ROOT', text: renderSharedAgentDirectives() },
+    ...rows.map((row) => ({ path: row.dir, text: renderDirectoryAgentsBlock(row) }))
+  ]
+}
+
+/**
+ * The shared directives, stated once. Every canonical principle is written in
+ * its broadest form so the narrow restatements it implies ("modularize",
+ * "make it reusable", "comment your code") never need to be spelled out.
+ */
+export function renderSharedAgentDirectives(): string {
+  return [
+    '## Shared directives',
+    '',
+    ...CANONICAL_DIRECTIVES.map((entry) => `- ${entry.statement}`)
+  ].join('\n')
+}
+
 function renderGeneratedAgents(rows: DirectoryScore[]): string {
   return [
     '# SKS Init-Deep Generated Context',
     '',
     'This file is generated under `.sneakoscope/context` so user-authored `AGENTS.md` files are preserved.',
+    '',
+    renderSharedAgentDirectives(),
     '',
     ...rows.flatMap((row) => [
       `## ${row.dir}`,
@@ -262,15 +290,19 @@ function renderGeneratedAgents(rows: DirectoryScore[]): string {
 }
 
 function renderDirectoryAgentsBlock(row: DirectoryScore): string {
+  // Every directive here held for every directory, so each one was read N times
+  // to say what one statement at the root already says. The directives moved to
+  // the root shared block; a directory block now carries only what is true of
+  // that directory and nowhere else — observations, not instructions.
+  const risky = CANONICAL_DIRECTIVES.find((entry) => entry.id === 'hydrate')!
+    .subsumes.some((pattern) => pattern.test(row.guidance))
   return [
     `# SKS Init-Deep Local Guidance: ${row.dir}`,
     '',
     `- Files observed: ${row.file_count}`,
     `- Languages: ${row.languages.join(', ') || 'unknown'}`,
-    `- Guidance: ${row.guidance}`,
-    '- Preserve user-authored content outside this managed block.',
-    '- Hydrate TriWiki/current source before risky edits in this directory.'
-  ].join('\n')
+    risky ? '- Risk: high' : ''
+  ].filter(Boolean).join('\n')
 }
 
 function extractManagedSection(text: string, markerName: string): string {

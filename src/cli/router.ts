@@ -4,6 +4,7 @@ import {
   COMMAND_NAME_SET,
   type CommandNameLite,
 } from './command-manifest-lite.js';
+import { helpResult, isHelpRequest, renderManifestHelp } from './help.js';
 import { findRetiredGlobalExecutionArgumentErrors } from './global-mode-router.js';
 
 export interface NormalizedCommand {
@@ -146,19 +147,19 @@ async function dispatchInner(argv: readonly string[]): Promise<unknown> {
   const { COMMANDS } = await import('./command-registry.js');
   const commandEntry = COMMANDS[command as keyof typeof COMMANDS];
   const mod = await commandEntry.lazy();
+  // Usage is answered here, before dispatch. Leaving it to each command module
+  // meant a module that never learned to recognise `--help` ran its real work
+  // instead — `sks commit-and-push --help` performed an actual commit and push.
+  // A command opts into richer text by exporting `usage()`; everything else
+  // gets the manifest-derived floor.
+  if (helpRequest) {
+    console.log(typeof mod.usage === 'function'
+      ? mod.usage(rawCommand || command)
+      : renderManifestHelp(command, entry));
+    return helpResult(command);
+  }
   if (typeof mod.run !== 'function') throw new Error(`Command ${command} must export run(command, args)`);
   return mod.run(rawCommand || command, rest);
-}
-
-// --help/-h/help must skip the active-route and migration gates regardless
-// of where it appears in args — a pure usage-text request should never wait
-// on (or be blocked by) project state (20차 P2-2).
-function isHelpRequest(args: readonly string[]): boolean {
-  // --help/-h are unambiguous flags wherever they appear; bare "help" is
-  // only treated as the request when it's the subcommand position (args[0])
-  // so an arbitrary value elsewhere (e.g. a commit message of "help") can't
-  // accidentally bypass the gates.
-  return args.includes('--help') || args.includes('-h') || String(args[0] || '').toLowerCase() === 'help';
 }
 
 async function ensureActiveRouteCommandGate(command: CommandNameLite, args: readonly string[]) {

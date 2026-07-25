@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { isHelpRequest } from '../../cli/help.js';
 import { globalSksRoot, projectRoot, readJson, readStdin } from '../fsx.js';
 import {
   RemoteCodexSessionBindingStore,
@@ -185,12 +186,6 @@ async function telegramStatus(
       remote_config_issues: [...machineValidation.issues, ...sessionValidation.issues],
       blockers
     };
-}
-
-// --help/-h/help must render usage and exit 0 on every command surface; it is a
-// pure usage-text request and must never be answered with unknown_action (20차 P2-2).
-function isHelpRequest(args: readonly string[]): boolean {
-  return args.includes('--help') || args.includes('-h') || String(args[0] || '').toLowerCase() === 'help';
 }
 
 function printTelegramUsage(): void {

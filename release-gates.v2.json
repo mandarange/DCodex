@@ -1297,6 +1297,34 @@
       "output_contract": "sks.gate-result.v1"
     },
     {
+      "id": "agent-guidance:dedup",
+      "command": "node ./dist/scripts/agent-guidance-dedup-check.js",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 120000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "src/core/agent-guidance/directive-registry.ts",
+          "src/core/codex-app/codex-init-deep.ts",
+          "src/scripts/agent-guidance-dedup-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v1"
+    },
+    {
       "id": "legacy:strong-inventory",
       "command": "node ./dist/scripts/legacy-strong-inventory-check.js",
       "deps": [
@@ -3045,11 +3073,11 @@
           "release-gates.v2.json",
           "src/commands/doctor.ts",
           "src/cli/install-helpers.ts",
-        "src/core/codex-app/**",
-        "src/core/providers/openrouter/openrouter-account.ts",
-        "src/core/providers/openrouter/openrouter-error.ts",
-        "src/core/providers/openrouter/__tests__/openrouter-account.test.ts",
-        "src/core/doctor/**",
+          "src/core/codex-app/**",
+          "src/core/providers/openrouter/openrouter-account.ts",
+          "src/core/providers/openrouter/openrouter-error.ts",
+          "src/core/providers/openrouter/__tests__/openrouter-account.test.ts",
+          "src/core/doctor/**",
           "src/core/init.ts",
           "src/core/init/**",
           "src/core/subagents/official-subagent-config.ts"
@@ -3085,16 +3113,16 @@
           "src/core/subagents/thread-budget.ts",
           "src/core/subagents/agent-catalog.ts",
           "src/core/subagents/official-subagent-prompt.ts",
-        "src/core/subagents/official-subagent-preparation.ts",
-        "src/core/subagents/role-model-preferences.ts",
-        "src/core/subagents/naruto-help-contract.ts",
+          "src/core/subagents/official-subagent-preparation.ts",
+          "src/core/subagents/role-model-preferences.ts",
+          "src/core/subagents/naruto-help-contract.ts",
           "src/core/subagents/__tests__/official-subagent-config.test.ts",
           "src/core/subagents/__tests__/model-policy.test.ts",
           "src/core/subagents/__tests__/task-profile.test.ts",
           "src/core/subagents/__tests__/thread-budget-and-plan.test.ts",
           "src/core/subagents/__tests__/agent-catalog-fanout.test.ts",
-        "src/core/subagents/__tests__/official-subagent-prompt.test.ts",
-        "src/core/subagents/__tests__/role-model-preferences.test.ts",
+          "src/core/subagents/__tests__/official-subagent-prompt.test.ts",
+          "src/core/subagents/__tests__/role-model-preferences.test.ts",
           "src/core/runtime/task-profile.ts",
           "src/core/routes.ts",
           "src/core/routes/**",
