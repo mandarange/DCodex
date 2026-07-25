@@ -12,7 +12,10 @@ export const RUST_ACCELERATOR_CAPABILITIES = Object.freeze([
   'image-hash',
   'image-voxel-index',
   'voxel-validate',
-  'image-voxel-validate-fast'
+  'image-voxel-validate-fast',
+  'search-files',
+  'search-text',
+  'search-batch'
 ]);
 
 export function rustBuildHint() {
@@ -24,8 +27,14 @@ export async function findRustAccelerator() {
   if (env) return await exists(env) ? env : null;
   const global = await which(process.platform === 'win32' ? 'sks-rs.exe' : 'sks-rs');
   if (global) return global;
-  const candidate = path.join(packageRoot(), 'crates', 'sks-core', 'target', 'release', process.platform === 'win32' ? 'sks-rs.exe' : 'sks-rs');
+  const binName = process.platform === 'win32' ? 'sks-rs.exe' : 'sks-rs';
+  const candidate = path.join(packageRoot(), 'crates', 'sks-core', 'target', 'release', binName);
   if (await exists(candidate)) return candidate;
+  const cargoTarget = process.env.CARGO_TARGET_DIR;
+  if (cargoTarget) {
+    const redirected = path.join(cargoTarget, 'release', binName);
+    if (await exists(redirected)) return redirected;
+  }
   return null;
 }
 
