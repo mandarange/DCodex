@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText } from './gate-lib.js'
 const command = readText('src/core/commands/qa-loop-command.ts')
 const core = readText('src/core/qa-loop.ts')
 assertGate(command.includes('discoverImageArtifactsInDir') && command.includes('image-artifact-path-contract.json'), 'QA-LOOP must discover image artifacts and write image path contract')

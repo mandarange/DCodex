@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ensureDistFresh, root as repoRoot } from './lib/ensure-dist-fresh.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 import { writeTextAtomic } from '../core/fsx.js'
 
 const freshness = ensureDistFresh({ rebuild: true })

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
-import { assertGate, emitGate, makeTempRoot, writeManagedCoreSkill, writeUserSkill } from './sks-3-1-8-check-lib.js';
+import { assertGate, emitGate, makeTempRoot, writeManagedCoreSkill, writeUserSkill } from './skill-fixture-check-lib.js';
 import { buildSkillRegistryLedger } from '../core/codex-native/skill-registry-ledger.js';
 
 const root = await makeTempRoot('sks-skill-ledger-');

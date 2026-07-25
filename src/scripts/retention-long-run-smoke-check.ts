@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-retention-long-run-'))
 const projectRoot = path.join(tmp, 'project')

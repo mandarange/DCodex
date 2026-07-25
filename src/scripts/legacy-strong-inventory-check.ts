@@ -1,4 +1,4 @@
-import { assertGate, emitGate, importDist, readJson, readText, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, readJson, readText, root } from './gate-lib.js';
 
 const impactMod = await importDist('core/triwiki/triwiki-gate-impact-map.js');
 const map = impactMod.buildTriWikiGateImpactMap(root);

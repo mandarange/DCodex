@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { releaseGateCacheKey } from '../core/release/release-gate-cache-v2.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const gate = {
   id: 'fixture:release-cache',

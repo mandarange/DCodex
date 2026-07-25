@@ -1,6 +1,6 @@
 // @ts-nocheck
-import { assertGate, emitGate, makeTempRoot } from './sks-3-1-8-check-lib.js';
-import { importDist } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, makeTempRoot } from './skill-fixture-check-lib.js';
+import { importDist } from './gate-lib.js';
 
 const tmp = await makeTempRoot('probe-memo-');
 const mod = await importDist('core/probes/probe-memoization.js');

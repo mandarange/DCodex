@@ -50,7 +50,7 @@ export async function runValidatedReleaseUpgradeLifecycle(
   const baselineDoctor = baselineBootstrap.ok
     ? await doctorProbe(
       input, runner, commands, 'baseline_doctor', bin, RELEASE_UPGRADE_BASELINE_VERSION,
-      'pinned_6_2_stdout_compatible'
+      'pinned_baseline_stdout_compatible'
     )
     : failedReleaseUpgradeProbe('baseline_bootstrap_unverified')
   completeReleaseUpgradeState(states.baseline_package, RELEASE_UPGRADE_BASELINE_VERSION, baselineVersion.version, [
@@ -156,7 +156,7 @@ export async function runValidatedReleaseUpgradeLifecycle(
     const rollbackDoctor = rollbackVersion.ok
       ? await doctorProbe(
         input, runner, commands, 'package_rollback_doctor', bin, RELEASE_UPGRADE_BASELINE_VERSION,
-        'pinned_6_2_stdout_compatible'
+        'pinned_baseline_stdout_compatible'
       )
       : failedReleaseUpgradeProbe('package_rollback_version_unverified')
     completeReleaseUpgradeState(states.package_rollback, RELEASE_UPGRADE_BASELINE_VERSION, rollbackVersion.version, [

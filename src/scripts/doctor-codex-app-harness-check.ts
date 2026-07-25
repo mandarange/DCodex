@@ -1,3 +1,3 @@
 #!/usr/bin/env node
-import { runDirective314Gate } from './sks-3-1-4-directive-check-lib.js'
-await runDirective314Gate('doctor:codex-app-harness')
+import { runRuntimeDomainGate } from './runtime-domain-gate-lib.js'
+await runRuntimeDomainGate('doctor:codex-app-harness')

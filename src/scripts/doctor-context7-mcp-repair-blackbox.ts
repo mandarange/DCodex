@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { assertGate, emitGate, makeTempRoot, writeText } from './sks-3-1-8-check-lib.js';
+import { assertGate, emitGate, makeTempRoot, writeText } from './skill-fixture-check-lib.js';
 import { repairContext7Mcp } from '../core/doctor/context7-mcp-repair.js';
 
 const root = await makeTempRoot('sks-context7-blackbox-');

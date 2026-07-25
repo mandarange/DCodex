@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { slotTelemetrySnapshotPath } from '../core/zellij/zellij-slot-telemetry.js'
 import { renderZellijSlotPaneFromArtifacts, renderZellijSlotPaneStatusFromArtifacts } from '../core/zellij/zellij-slot-pane-renderer.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-zellij-stale-'))
 const missionId = 'M-zellij-stale'

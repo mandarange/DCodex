@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { PACKAGE_VERSION } from './version.js';
 import { EMPTY_CODEX_INFO, getCodexInfo } from './codex-adapter.js';
 import { PRODUCT_DESIGN_PLUGIN, normalizeProductDesignPluginEvidence } from './product-design-plugin.js';
 
@@ -333,7 +334,7 @@ class CodexAppServerJsonRpcClient {
       clientInfo: {
         name: 'sneakoscope-product-design',
         title: 'Sneakoscope Product Design Installer',
-        version: '1.0.0'
+        version: PACKAGE_VERSION
       },
       capabilities: {
         experimentalApi: true,

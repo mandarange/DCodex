@@ -6,7 +6,7 @@
 // cross-skill (multi-doc) edits.
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root, readJson } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root, readJson } from './gate-lib.js';
 
 const cardMod = await importDist('core/skills/core-skill-card.js');
 const patchMod = await importDist('core/skills/core-skill-patch.js');

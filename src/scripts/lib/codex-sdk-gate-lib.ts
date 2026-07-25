@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from '../../core/fsx.js';
-import { assertGate, emitGate, importDist, readJson, readText, root } from '../sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, readJson, readText, root } from '../gate-lib.js';
 
 export { assertGate, emitGate, importDist, readJson, readText, root };
 

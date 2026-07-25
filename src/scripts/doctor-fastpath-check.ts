@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import { spawnSync } from 'node:child_process'
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 
 const started = Date.now()
 const result = spawnSync(process.execPath, ['dist/bin/sks.js', 'doctor', '--json'], {

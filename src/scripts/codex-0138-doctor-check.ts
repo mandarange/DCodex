@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist } from './gate-lib.js'
 import { writeTextAtomic } from '../core/fsx.js'
 process.env.SKS_CODEX_0138_FAKE = '1'
 const mod = await importDist('core/doctor/codex-0138-doctor.js')

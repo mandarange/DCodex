@@ -17,7 +17,7 @@ import { buildLoopSideEffectReport } from '../core/loops/loop-side-effect-scanne
 import { interruptLoopWorkers, readLoopActiveWorkers, registerLoopActiveWorker } from '../core/loops/loop-interrupt-registry.js';
 import { computeLoopConcurrencyBudget } from '../core/loops/loop-concurrency-budget.js';
 import { defaultLoopBudget } from '../core/loops/loop-schema.js';
-import { root } from './sks-1-18-gate-lib.js';
+import { root } from './gate-lib.js';
 
 export async function runLoopHardeningCheck(id) {
   const assertions = [];

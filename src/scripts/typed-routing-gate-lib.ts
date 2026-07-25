@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 
 const CORE_NO_TS_NOCHECK_DIRS = [
   'src/core/zellij',
@@ -28,7 +28,7 @@ const TARGET_TYPED_FILES = [
   'src/core/loops/loop-continuation-enforcer.ts'
 ]
 
-export async function runDirective315Gate(id: string) {
+export async function runTypedRoutingGate(id: string) {
   if (id === 'lint:no-ts-nocheck-core') return noTsNoCheckCore(id)
   if (id === 'codex-app:type-safety') return codexAppTypeSafety(id)
   if (id === 'type-surface:codex-app') return typeSurfaceCodexApp(id)

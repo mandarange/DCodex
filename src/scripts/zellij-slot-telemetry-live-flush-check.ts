@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { appendZellijSlotTelemetry, readZellijSlotTelemetrySnapshot, slotTelemetrySnapshotPath } from '../core/zellij/zellij-slot-telemetry.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 const removeTempDir = fs.rm.bind(fs)
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-zellij-live-flush-'))

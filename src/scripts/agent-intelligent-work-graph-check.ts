@@ -3,14 +3,14 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const inventoryMod = await importDist('core/agents/work-partition/repo-inventory.js');
 const depsMod = await importDist('core/agents/work-partition/dependency-graph.js');
 const graphMod = await importDist('core/agents/intelligent-work-graph.js');
 const inventory = await inventoryMod.collectRepoInventory(root, { maxFiles: 2000 });
 const dependencyGraph = depsMod.buildDependencyGraph(inventory);
-const graph = await graphMod.buildIntelligentWorkGraph({ root, inventory, dependencyGraph, route: '$Naruto', prompt: '6.3.0 intelligent work graph release gate' });
+const graph = await graphMod.buildIntelligentWorkGraph({ root, inventory, dependencyGraph, route: '$Naruto', prompt: 'intelligent work graph release gate' });
 const out = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-work-graph-'));
 await graphMod.writeIntelligentWorkGraphArtifacts(out, graph);
 assertGate(graph.schema === 'sks.intelligent-work-graph.v2', 'intelligent work graph schema mismatch', graph);

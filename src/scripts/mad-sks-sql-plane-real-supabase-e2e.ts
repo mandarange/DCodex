@@ -6,7 +6,7 @@ import { createMission } from '../core/mission.js'
 import { MAD_SKS_SQL_PLANE_ACK, closeMadSksSqlPlaneCycle, createMadSksSqlPlaneCapability } from '../core/mad-sks/sql-plane/capability.js'
 import { MadSksSqlPlaneMcpExecutor } from '../core/mad-sks/sql-plane/mcp-executor.js'
 import { createMadSksSqlPlaneRuntimeProfile, closeMadSksSqlPlaneRuntimeProfile } from '../core/mad-sks/sql-plane/runtime-profile.js'
-import { emitGate } from './sks-1-18-gate-lib.js'
+import { emitGate } from './gate-lib.js'
 
 const requireReal = process.argv.includes('--require-real')
 const projectRef = process.env.SKS_MAD_SKS_SQL_PLANE_E2E_PROJECT_REF || process.env.SKS_MAD_SKS_SQL_PLANE_PROJECT_REF || ''

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText } from './gate-lib.js'
 
 const pane = readText('src/core/zellij/zellij-slot-pane-renderer.ts')
 const command = readText('src/commands/zellij-slot-pane.ts')

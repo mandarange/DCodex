@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate } from './sks-1-18-gate-lib.js';
+import { assertGate } from './gate-lib.js';
 import { runCodex0140FeatureGate } from './codex-0140-feature-gate-lib.js';
 const payload = { text: 'x'.repeat(70_000), attachments: [{ type: 'image', path: '/tmp/codex-0140-goal.png', sha256: 'fixture' }] };
 const restored = JSON.parse(JSON.stringify(payload));

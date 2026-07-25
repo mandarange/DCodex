@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { assertGate, emitGate, makeTempRoot, writeText, writeUserSkill } from './sks-3-1-8-check-lib.js';
+import { assertGate, emitGate, makeTempRoot, writeText, writeUserSkill } from './skill-fixture-check-lib.js';
 import { dedupeProjectSkills } from '../core/codex-native/project-skill-dedupe.js';
 import { syncCodexSksSkills, withSkillSyncLock } from '../core/codex-app/codex-skill-sync.js';
 import { buildSkillRegistryLedger } from '../core/codex-native/skill-registry-ledger.js';

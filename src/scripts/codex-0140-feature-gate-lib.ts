@@ -1,4 +1,4 @@
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate } from './gate-lib.js';
 import { detectCodex0140Capability } from '../core/codex-control/codex-0140-capability.js';
 import type { Codex0140FeatureKey } from '../core/codex-control/codex-0140-feature-probes.js';
 

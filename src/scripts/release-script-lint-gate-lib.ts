@@ -7,14 +7,14 @@ export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 
 const RELEASE_HELPERS = [
   'src/scripts/release-dag-full-coverage-check.ts',
-  'src/scripts/sks-3-1-5-directive-check-lib.ts',
-  'src/scripts/sks-3-1-6-directive-check-lib.ts',
-  'src/scripts/sks-3-1-7-directive-check-lib.ts',
+  'src/scripts/typed-routing-gate-lib.ts',
+  'src/scripts/codex-native-gate-lib.ts',
+  'src/scripts/release-script-lint-gate-lib.ts',
   'src/scripts/release-script-type-safety-check.ts',
   'src/scripts/no-ts-nocheck-release-scripts-check.ts'
 ]
 
-export async function runDirective317Gate(id: string): Promise<void> {
+export async function runReleaseScriptLintGate(id: string): Promise<void> {
   if (id === 'release-scripts:type-safe') return releaseScriptsTypeSafe(id)
   if (id === 'lint:no-ts-nocheck-release-scripts') return noTsNoCheckReleaseScripts(id)
   throw new Error(`unknown_3_1_7_gate:${id}`)

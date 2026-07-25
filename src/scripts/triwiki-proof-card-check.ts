@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist } from './gate-lib.js';
 
 const mod = await importDist('core/triwiki/triwiki-proof-card.js');
 const card = mod.createTriWikiProofCard({

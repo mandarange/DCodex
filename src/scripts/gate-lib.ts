@@ -55,7 +55,7 @@ export const SOURCE_INTELLIGENCE_FILES = [
   'src/core/codex/codex-web-search-adapter.ts'
 ];
 
-export const AGENT_118_FILES = [
+export const AGENT_RUNTIME_FILES = [
   'src/core/agents/scout-policy.ts',
   'src/core/agents/agent-terminal-session.ts',
   'src/core/agents/zellij-right-lane-cockpit.ts',

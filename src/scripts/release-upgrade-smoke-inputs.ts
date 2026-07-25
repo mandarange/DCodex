@@ -86,12 +86,12 @@ export function prepareProvidedReleaseUpgradeBaseline(
   const blockers: string[] = []
   const expected = normalizeSha256(expectedValue)
   if (!expected) blockers.push('provided_baseline_sha256_invalid')
-  if (expected && expected !== RELEASE_UPGRADE_BASELINE_SHA256) blockers.push('provided_baseline_sha256_not_pinned_6_2_0')
+  if (expected && expected !== RELEASE_UPGRADE_BASELINE_SHA256) blockers.push('provided_baseline_sha256_not_pinned_baseline')
   const regular = readRegularFile(tarball, 'baseline_tarball')
   blockers.push(...regular.blockers)
   const sha256 = regular.bytes ? hashBytes(regular.bytes) : ''
   if (expected && sha256 !== expected) blockers.push('provided_baseline_sha256_mismatch')
-  if (sha256 && sha256 !== RELEASE_UPGRADE_BASELINE_SHA256) blockers.push('baseline_tarball_not_pinned_6_2_0')
+  if (sha256 && sha256 !== RELEASE_UPGRADE_BASELINE_SHA256) blockers.push('baseline_tarball_not_pinned_baseline')
   const actual = regular.bytes ? inspectReleaseTarball({ tarball, kind: 'staged' }) : null
   const inspection = classifyPinnedReleaseUpgradeBaselineInspection(actual?.blockers || ['provided_baseline_inspection_failed'])
   blockers.push(...inspection.blockers.map((blocker) => `baseline_tarball:${blocker}`))
@@ -130,7 +130,7 @@ export async function fetchReleaseUpgradeBaseline(
   const regular = readRegularFile(tarball, 'baseline_tarball')
   blockers.push(...regular.blockers)
   const sha256 = regular.bytes ? hashBytes(regular.bytes) : ''
-  if (sha256 && sha256 !== RELEASE_UPGRADE_BASELINE_SHA256) blockers.push('baseline_tarball_not_pinned_6_2_0')
+  if (sha256 && sha256 !== RELEASE_UPGRADE_BASELINE_SHA256) blockers.push('baseline_tarball_not_pinned_baseline')
   const actual = regular.bytes ? inspectReleaseTarball({ tarball, kind: 'staged' }) : null
   const inspection = classifyPinnedReleaseUpgradeBaselineInspection(actual?.blockers || ['baseline_fetch_inspection_failed'])
   blockers.push(...inspection.blockers.map((blocker) => `baseline_tarball:${blocker}`))
@@ -164,7 +164,7 @@ export function classifyPinnedReleaseUpgradeBaselineInspection(values: string[])
       || /^retired_package_file_present:package\/.+/.test(value)
       || value === 'retired_surface_scan_finding_limit_reached'
     ) {
-      warnings.push(`published_6_2_expected_content:${value}`)
+      warnings.push(`published_baseline_expected_content:${value}`)
     } else {
       blockers.push(value)
     }

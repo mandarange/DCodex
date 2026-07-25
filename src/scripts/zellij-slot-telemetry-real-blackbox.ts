@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText } from './gate-lib.js'
 
 const requireZellij = process.env.SKS_REQUIRE_ZELLIJ === '1'
 const zellij = spawnSync('zellij', ['--version'], { encoding: 'utf8', timeout: 10000 })

@@ -2372,12 +2372,6 @@
       "reason": "src/scripts/parallel-production-smoke-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/performance-improvement-report-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "reason": "src/scripts/performance-improvement-report-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
       "file": "src/scripts/pipeline-codex-native-image-routing-real-blackbox.ts",
       "symbol": "imageScenario",
       "token": "fs.writeFile",
@@ -2516,7 +2510,7 @@
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     },
     {
-      "file": "src/scripts/release-metadata-1-19-check.ts",
+      "file": "src/scripts/release-metadata-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
@@ -2768,88 +2762,76 @@
       "reason": "SKSD protocol verification removes only the run-unique hermetic fixture root it created outside the source checkout."
     },
     {
-      "file": "src/scripts/sks-1-11-gate-lib.ts",
+      "file": "src/scripts/sks-cli-gate-lib.ts",
       "symbol": "createHermeticRouteFixtureRoot",
       "token": "rmSync",
       "reason": "Hermetic route fixture cleanup removes only roots created and tracked by createHermeticRouteFixtureRoot for release checks."
     },
     {
-      "file": "src/scripts/sks-1-11-gate-lib.ts",
+      "file": "src/scripts/sks-cli-gate-lib.ts",
       "symbol": "createHermeticRouteFixtureRoot",
       "token": "writeFileSync",
       "reason": "Hermetic route fixture setup writes only the private package manifest inside its newly created temporary fixture root."
     },
     {
-      "file": "src/scripts/sks-3-1-4-directive-check-lib.ts",
+      "file": "src/scripts/runtime-domain-gate-lib.ts",
       "symbol": "codexAppGate",
       "token": "fsp.writeFile",
-      "reason": "src/scripts/sks-3-1-4-directive-check-lib.ts#codexAppGate writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+      "reason": "src/scripts/runtime-domain-gate-lib.ts#codexAppGate writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/sks-3-1-4-directive-check-lib.ts",
+      "file": "src/scripts/runtime-domain-gate-lib.ts",
       "symbol": "loopGate",
       "token": "fsp.writeFile",
-      "reason": "src/scripts/sks-3-1-4-directive-check-lib.ts#loopGate writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+      "reason": "src/scripts/runtime-domain-gate-lib.ts#loopGate writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/sks-3-1-5-directive-check-lib.ts",
+      "file": "src/scripts/typed-routing-gate-lib.ts",
       "symbol": "initDeepGate",
       "token": "fsp.writeFile",
-      "reason": "src/scripts/sks-3-1-5-directive-check-lib.ts#initDeepGate writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+      "reason": "src/scripts/typed-routing-gate-lib.ts#initDeepGate writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/sks-3-1-6-directive-check-lib.ts",
+      "file": "src/scripts/codex-native-gate-lib.ts",
       "symbol": "brandZeroLeakage",
       "token": "fsp.writeFile",
-      "reason": "src/scripts/sks-3-1-6-directive-check-lib.ts#brandZeroLeakage writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+      "reason": "src/scripts/codex-native-gate-lib.ts#brandZeroLeakage writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/sks-3-1-6-directive-check-lib.ts",
+      "file": "src/scripts/codex-native-gate-lib.ts",
       "symbol": "brandZeroLeakageBlackbox",
       "token": "fsp.writeFile",
-      "reason": "src/scripts/sks-3-1-6-directive-check-lib.ts#brandZeroLeakageBlackbox writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+      "reason": "src/scripts/codex-native-gate-lib.ts#brandZeroLeakageBlackbox writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/sks-3-1-6-directive-check-lib.ts",
+      "file": "src/scripts/codex-native-gate-lib.ts",
       "symbol": "ensureCurrentReferenceSeed",
       "token": "fsp.writeFile",
-      "reason": "src/scripts/sks-3-1-6-directive-check-lib.ts#ensureCurrentReferenceSeed writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+      "reason": "src/scripts/codex-native-gate-lib.ts#ensureCurrentReferenceSeed writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/sks-3-1-6-directive-check-lib.ts",
+      "file": "src/scripts/codex-native-gate-lib.ts",
       "symbol": "initDeepBackupRetention",
       "token": "fsp.writeFile",
-      "reason": "src/scripts/sks-3-1-6-directive-check-lib.ts#initDeepBackupRetention writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+      "reason": "src/scripts/codex-native-gate-lib.ts#initDeepBackupRetention writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/sks-3-1-6-directive-check-lib.ts",
+      "file": "src/scripts/codex-native-gate-lib.ts",
       "symbol": "referenceFixture",
       "token": "fsp.writeFile",
-      "reason": "src/scripts/sks-3-1-6-directive-check-lib.ts#referenceFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+      "reason": "src/scripts/codex-native-gate-lib.ts#referenceFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/sks-3-1-6-directive-check-lib.ts",
+      "file": "src/scripts/codex-native-gate-lib.ts",
       "symbol": "tempRoot",
       "token": "fsp.writeFile",
-      "reason": "src/scripts/sks-3-1-6-directive-check-lib.ts#tempRoot writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+      "reason": "src/scripts/codex-native-gate-lib.ts#tempRoot writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
-      "file": "src/scripts/sks-3-1-8-check-lib.ts",
+      "file": "src/scripts/skill-fixture-check-lib.ts",
       "symbol": "writeText",
       "token": "fs.writeFile",
-      "reason": "src/scripts/sks-3-1-8-check-lib.ts#writeText writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/sks-3110-all-feature-regression-blackbox.ts",
-      "symbol": "module",
-      "token": "chmod",
-      "reason": "src/scripts/sks-3110-all-feature-regression-blackbox.ts#module adjusts permissions only on its isolated fixture or generated build artifact during the check."
-    },
-    {
-      "file": "src/scripts/sks-3110-all-feature-regression-blackbox.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "reason": "src/scripts/sks-3110-all-feature-regression-blackbox.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+      "reason": "src/scripts/skill-fixture-check-lib.ts#writeText writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
       "file": "src/scripts/sks-menubar-install-check.ts",

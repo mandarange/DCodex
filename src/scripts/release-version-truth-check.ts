@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, root } from './gate-lib.js';
 
 const pkg = readJson('package.json');
 const expected = String(pkg.version || '');
@@ -88,10 +88,6 @@ function checkReleaseMetadataScript() {
   const script = String(pkg.scripts?.['release:metadata'] || '');
   if (!script.includes('dist/scripts/release-metadata-check.js')) {
     mismatch('package.json', 'scripts.release:metadata', script || null, 'node ./dist/scripts/release-metadata-check.js');
-  }
-  const text = readText('src/scripts/release-metadata-check.ts');
-  if (!text.includes('release-metadata-1-19-check.js')) {
-    warnings.push({ file: 'src/scripts/release-metadata-check.ts', message: 'generic entrypoint does not reference historical implementation wrapper' });
   }
 }
 

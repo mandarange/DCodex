@@ -4586,7 +4586,7 @@
           "src/core/version.ts",
           "src/bin/sks.ts",
           "src/scripts/release-metadata-check.ts",
-          "src/scripts/release-metadata-1-19-check.ts"
+          "src/scripts/release-metadata-check.ts"
         ]
       },
       "isolation": {

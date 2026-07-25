@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate } from './gate-lib.js';
 import { CODEX_0144_FEATURE_KEYS, detectCodex0144Capability, writeCodex0144CapabilityArtifacts } from '../core/codex-control/codex-0144-capability.js';
 
 const requireReal = process.argv.includes('--require-real') || process.env.SKS_REQUIRE_CODEX_0144 === '1';

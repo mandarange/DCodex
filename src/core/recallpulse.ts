@@ -380,7 +380,7 @@ export async function buildRecallPulseGovernanceReport(root: any, opts: any = {}
         existing_research_artifacts: 'Research gates require agent display_name/persona/persona_boundary fields and the research_reviewer GPT-5.6 Sol Max binding; old ledgers must be migrated before claiming pass.',
         generated_skills: 'Do not edit generated installed skills directly; rerun init/bootstrap from engine source when generated text needs refreshing.'
       },
-      release_gate: '0.8.0 remains report-only unless packcheck, selftest, sizecheck, registry metadata check, TriWiki validate, and RecallPulse fixture eval pass.'
+      release_gate: 'RecallPulse remains report-only unless packcheck, selftest, sizecheck, registry metadata check, TriWiki validate, and RecallPulse fixture eval pass.'
     }
   };
   if (missionId) await writeJsonAtomic(path.join(recallPulseMissionDir(root, missionId), RECALLPULSE_GOVERNANCE_ARTIFACT), report);

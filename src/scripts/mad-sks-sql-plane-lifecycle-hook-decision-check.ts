@@ -6,7 +6,7 @@ import path from 'node:path'
 import { checkDbOperation, madSksSqlPlaneLifecycleHookFromDecision } from '../core/db-safety.js'
 import { createMadSksSqlPlaneCapability, MAD_SKS_SQL_PLANE_ACK } from '../core/mad-sks/sql-plane/capability.js'
 import { createMission } from '../core/mission.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-mad-sks-sql-plane-hook-decision-'))
 const mission = await createMission(root, { mode: 'mad-sks', prompt: 'hook fixture' })

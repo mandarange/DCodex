@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText } from './gate-lib.js'
 
 const runtimeCore = readText('src/core/pipeline-internals/runtime-core.ts')
 const agentPlan = readText('src/core/agents/agent-plan.ts')

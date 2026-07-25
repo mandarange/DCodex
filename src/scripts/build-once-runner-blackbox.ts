@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { assertGate, emitGate, makeTempRoot, writeText } from './sks-3-1-8-check-lib.js';
-import { importDist } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, makeTempRoot, writeText } from './skill-fixture-check-lib.js';
+import { importDist } from './gate-lib.js';
 
 const tmp = await makeTempRoot('sks-build-once-');
 await writeText(path.join(tmp, 'package.json'), JSON.stringify({

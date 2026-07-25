@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const { buildDoctorReadinessMatrix } = await importDist('core/doctor/doctor-readiness-matrix.js');
 const { ZELLIJ_LANE_SECTIONS, ZELLIJ_SCREEN_SCRAPEABLE_SECTIONS } = await importDist('core/zellij/zellij-lane-renderer.js');

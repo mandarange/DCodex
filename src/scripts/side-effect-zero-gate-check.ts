@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { root, assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js';
+import { root, assertGate, emitGate, importDist } from './gate-lib.js';
 
 const scope = await importDist('core/safety/requested-scope-contract.js');
 const ledger = await importDist('core/safety/mutation-ledger.js');

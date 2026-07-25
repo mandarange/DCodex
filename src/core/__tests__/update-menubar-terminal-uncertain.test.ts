@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { menuBarInstallIsTerminalUncertain } from '../update-check.js';
-import type { SksMenuBarInstallResult } from '../codex-app/sks-menubar.js';
+import type { SksMenuBarInstallResult } from '../codex-app/menubar/index.js';
 
 test('update outcome treats Menu Bar launch or rollback read-back uncertainty as terminal_uncertain', () => {
   assert.equal(menuBarInstallIsTerminalUncertain(null), false);

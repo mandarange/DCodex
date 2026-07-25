@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 
 const { runSuperSearchLocalHttpSmoke } = await importDist('core/super-search/local-http-smoke.js')
 const report = await runSuperSearchLocalHttpSmoke({ root })

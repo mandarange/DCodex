@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 import { buildOpsDiagnosticsBundle, writeOpsDiagnosticsBundle } from '../core/ops/diagnostics-bundle.js'
 
 const report = await buildOpsDiagnosticsBundle(root)

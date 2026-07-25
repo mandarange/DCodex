@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 import { checkpointWorkerWorktree } from '../core/git/git-worktree-checkpoint.js'
 import { runGitCommand } from '../core/git/git-worktree-runner.js'
 

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import crypto from 'node:crypto'
 import path from 'node:path'
 import { releaseProofDir, writeReleaseJson } from './release-pack-receipt.js'
+import { RELEASE_UPGRADE_BASELINE_VERSION } from './release-upgrade-baseline.js'
 
 export const MACOS_MENUBAR_PROOF_SCHEMA = 'sks.macos-menubar-proof.v2'
 export const MACOS_MENUBAR_REQUIRED_CHECKS = Object.freeze([
@@ -117,7 +118,7 @@ export function validateMacosMenubarProof(value: unknown, expected: {
   if (!proof?.upgrade_report_path || path.isAbsolute(proof.upgrade_report_path) || !proof.upgrade_report_path.startsWith('.sneakoscope/reports/release/')) blockers.push('upgrade_report_path_invalid')
   if (!/^[a-f0-9]{64}$/i.test(String(proof?.upgrade_report_sha256 || ''))) blockers.push('upgrade_report_hash_missing')
   if (proof?.upgrade_report?.schema !== 'sks.release-upgrade-smoke.v2') blockers.push('upgrade_report_schema_invalid')
-  if (proof?.upgrade_report?.baseline_version !== '6.2.0') blockers.push('upgrade_report_baseline_version_invalid')
+  if (proof?.upgrade_report?.baseline_version !== RELEASE_UPGRADE_BASELINE_VERSION) blockers.push('upgrade_report_baseline_version_invalid')
   if (proof?.upgrade_report?.target_version !== proof?.version
     || proof?.upgrade_report?.target_package_version !== proof?.version) blockers.push('upgrade_report_target_version_mismatch')
   if (proof?.upgrade_report?.source_commit !== proof?.source_commit) blockers.push('upgrade_report_source_commit_mismatch')

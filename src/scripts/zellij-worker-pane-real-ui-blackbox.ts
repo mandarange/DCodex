@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
-import { assertGate, emitGate, readText, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText, root } from './gate-lib.js'
 import { ensureDistFresh } from './lib/ensure-dist-fresh.js'
 
 const requireReal = process.env.SKS_REQUIRE_ZELLIJ === '1' || process.argv.includes('--require-real')

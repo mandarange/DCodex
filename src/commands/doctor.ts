@@ -25,7 +25,7 @@ import { buildCodexNativeFeatureMatrix } from '../core/codex-native/codex-native
 import { withSecretPreservationGuard } from '../core/config/config-migration-journal.js';
 import { reconcileDoctorSkills } from '../core/doctor/doctor-skill-reconcile.js';
 import { isUpdateMigrationReceiptCurrent, projectUpdateMigrationReceiptPath, writeProjectUpdateMigrationReceipt } from '../core/update/update-migration-state.js';
-import { inspectSksMenuBarStatus, installSksMenuBar, sksMenuBarRestartDeferred } from '../core/codex-app/sks-menubar.js';
+import { inspectSksMenuBarStatus, installSksMenuBar, sksMenuBarRestartDeferred } from '../core/codex-app/menubar/index.js';
 import { sweepSksTempDirs } from '../core/retention.js';
 import { detectImagegenCapability } from '../core/imagegen/imagegen-capability.js';
 import { CURRENT_CODEX_RELEASE_MANIFEST } from '../core/codex-compat/codex-release-manifest.js';

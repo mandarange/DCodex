@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText } from './gate-lib.js'
 
 const source = readText('src/core/commands/research-command.ts')
 const defaultIndex = source.indexOf('const cycleResult = await runResearchCycle({')

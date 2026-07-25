@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 import {
   evaluateHighRiskCliSmokeResult,
   evaluateHighRiskFixtures,
@@ -106,8 +106,7 @@ async function runCliNegativeSmoke(spec: any) {
       SKS_UPDATE_MIGRATION_GATE_DISABLED: '1',
       SKS_DISABLE_UPDATE_CHECK: '1',
       SKS_UPDATE_QUIET: '1',
-      SKS_SIMPLE_GIT_LOCAL_LLM: '0',
-      SNEAKOSCOPE_VERSION_OVERRIDE: '5.11.0'
+      SKS_SIMPLE_GIT_LOCAL_LLM: '0'
     }
   })
   const after = await smokeAfter(spec, cwd, home)

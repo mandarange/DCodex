@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
-import { assertGate, emitGate, readJson, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, readJson, root } from './gate-lib.js';
 import { readCurrentNpmPackProof } from '../core/release/npm-pack-proof.js';
 
 const pkg = readJson('package.json');

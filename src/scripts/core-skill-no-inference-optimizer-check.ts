@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const cardMod = await importDist('core/skills/core-skill-card.js');
 const runtimeMod = await importDist('core/skills/core-skill-runtime.js');

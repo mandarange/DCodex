@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { nowIso, sha256 } from '../../fsx.js';
+import { PACKAGE_VERSION } from '../../version.js';
 import type { MadSksSqlPlaneRuntimeProfile } from './runtime-profile.js';
 
 export interface MadSksSqlPlaneToolInventory {
@@ -47,7 +48,7 @@ export class MadSksSqlPlaneMcpExecutor {
   async connect(): Promise<void> {
     if (this.client) return;
     const { Client, StreamableHTTPClientTransport } = await loadMcpSdk();
-    this.client = new Client({ name: 'sneakoscope-mad-sks-sql-plane', version: '4.2.0' });
+    this.client = new Client({ name: 'sneakoscope-mad-sks-sql-plane', version: PACKAGE_VERSION });
     const headers = authHeaders();
     const options = headers ? { requestInit: { headers } } : {};
     this.transport = new StreamableHTTPClientTransport(new URL(this.profile.server_url), options);

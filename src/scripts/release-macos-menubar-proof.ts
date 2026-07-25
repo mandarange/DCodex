@@ -10,6 +10,7 @@ import {
   writeMacosMenubarProof,
   type MacosMenubarProof
 } from '../core/release/macos-menubar-proof.js'
+import { RELEASE_UPGRADE_BASELINE_VERSION } from '../core/release/release-upgrade-baseline.js'
 import { NATIVE_SOURCE_FILES } from '../core/codex-app/menubar/constants.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -191,7 +192,7 @@ function validateUpgradeReport(report: any, version: string, sourceCommit: strin
     ...(report?.schema === 'sks.release-upgrade-smoke.v2' ? [] : ['upgrade_report_schema_invalid']),
     ...(report?.ok === true && Array.isArray(report?.blockers) && report.blockers.length === 0 ? [] : ['upgrade_report_not_ok']),
     ...(report?.platform === 'darwin' ? [] : ['upgrade_report_platform_invalid']),
-    ...(report?.baseline_version === '6.2.0' ? [] : ['upgrade_report_baseline_version_invalid']),
+    ...(report?.baseline_version === RELEASE_UPGRADE_BASELINE_VERSION ? [] : ['upgrade_report_baseline_version_invalid']),
     ...(report?.target_version === version && report?.target?.package_version === version ? [] : ['upgrade_report_target_version_mismatch']),
     ...(report?.source_tree?.head === sourceCommit ? [] : ['upgrade_report_source_commit_mismatch']),
     ...(/^[a-f0-9]{64}$/i.test(String(report?.target?.tarball_sha256 || '')) ? [] : ['upgrade_report_target_tarball_sha256_invalid']),

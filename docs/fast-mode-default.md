@@ -1,6 +1,6 @@
 # Fast Mode
 
-Fast is a service-tier choice, not a reasoning-effort preset. SKS 6.5.0 keeps
+Fast is a service-tier choice, not a reasoning-effort preset. SKS keeps
 those controls independent so changing Fast does not pin or hide the native
 Codex Desktop model and effort selectors.
 

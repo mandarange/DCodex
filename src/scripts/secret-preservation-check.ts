@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
-import { assertGate, emitGate, makeTempRoot, writeText } from './sks-3-1-8-check-lib.js';
+import { assertGate, emitGate, makeTempRoot, writeText } from './skill-fixture-check-lib.js';
 import { captureSecretPreservationSnapshot } from '../core/config/secret-preservation.js';
 
 const root = await makeTempRoot('sks-secret-snapshot-');

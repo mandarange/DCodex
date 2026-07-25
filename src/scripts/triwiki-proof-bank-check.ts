@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const bank = await importDist('core/triwiki/triwiki-proof-bank.js');
 const status = bank.summarizeTriWikiProofBank(root);

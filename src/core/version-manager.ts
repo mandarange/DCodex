@@ -2,6 +2,7 @@ import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { exists, nowIso, readJson, runProcess, writeJsonAtomic, writeTextAtomic } from './fsx.js';
 import { escapeRegExp } from './text/regex.js';
+import { RELEASE_UPGRADE_BASELINE_VERSION } from './release/release-upgrade-baseline.js';
 
 const VERSION_HOOK_MARKER = 'Sneakoscope Codex Version Guard';
 const VERSION_STATE_FILE = 'sks-version-state.json';
@@ -315,25 +316,11 @@ async function syncPackageLockVersions(root: any, version: any) {
 async function syncSourcePackageVersion(root: any, version: any) {
   const files: any[] = [];
   const replacements = [
-    {
-      rel: 'src/core/fsx.ts',
-      replace: (text: string) => text.replace(/export const PACKAGE_VERSION = ['"][^'"]+['"];/, `export const PACKAGE_VERSION = '${version}';`)
-    },
+    // src/core/version.ts is the single place the package version is written into source.
+    // Everything else that needs it imports PACKAGE_VERSION, so there is nothing else to stamp.
     {
       rel: 'src/core/version.ts',
       replace: (text: string) => text.replace(/export const PACKAGE_VERSION = ['"][^'"]+['"];/, `export const PACKAGE_VERSION = '${version}';`)
-    },
-    {
-      rel: 'src/bin/sks.ts',
-      replace: (text: string) => text.replace(/const FAST_PACKAGE_VERSION = ['"][^'"]+['"];/, `const FAST_PACKAGE_VERSION = '${version}';`)
-    },
-    {
-      rel: 'src/core/managed-assets/managed-assets-manifest.ts',
-      replace: (text: string) => text.replace(/export const MANAGED_ASSET_VERSION = ['"][^'"]+['"]/, `export const MANAGED_ASSET_VERSION = '${version}'`)
-    },
-    {
-      rel: 'test/unit/agent-role-config.test.mjs',
-      replace: (text: string) => text.replace(/assert\.equal\(manifest\.MANAGED_ASSET_VERSION, ['"][^'"]+['"]\)/, `assert.equal(manifest.MANAGED_ASSET_VERSION, '${version}')`)
     },
     {
       rel: 'crates/sks-core/Cargo.toml',
@@ -373,7 +360,7 @@ async function syncSourcePackageVersion(root: any, version: any) {
         .replace(/not represented as current \d+\.\d+\.\d+ completion proof\./g, `not represented as current ${version} completion proof.`)
         .replace(/^For \d+\.\d+\.\d+, a selected codex-lb/m, `For ${version}, a selected codex-lb`)
         .replace(/^The \d+\.\d+\.\d+ SKS menu bar/m, `The ${version} SKS menu bar`)
-        .replace(/the 6\.2\.0 to \d+\.\d+\.\d+ upgrade smoke/g, `the 6.2.0 to ${version} upgrade smoke`)
+        .replace(/the \d+\.\d+\.\d+ to \d+\.\d+\.\d+ upgrade smoke/g, `the ${RELEASE_UPGRADE_BASELINE_VERSION} to ${version} upgrade smoke`)
         .replace(/under the \d+\.\d+\.\d+ release evidence root/g, `under the ${version} release evidence root`)
         .replace(/^Do not cut \d+\.\d+\.\d+ while/m, `Do not cut ${version} while`)
         .replace(/must agree on \d+\.\d+\.\d+\./g, `must agree on ${version}.`)

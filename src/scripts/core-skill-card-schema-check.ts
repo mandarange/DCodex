@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root, readJson } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root, readJson } from './gate-lib.js';
 
 const cardMod = await importDist('core/skills/core-skill-card.js');
 const typesMod = await importDist('core/skills/core-skill-types.js');

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { emitGate, requireContains } from './sks-1-12-real-execution-check-lib.js';
+import { emitGate, requireContains } from './real-execution-check-lib.js';
 
 requireContains('ppt:real-imagegen-wiring', 'src/core/ppt-review/slide-imagegen-review.ts', [
   'generateGptImage2CalloutReview',

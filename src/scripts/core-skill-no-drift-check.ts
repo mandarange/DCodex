@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { assertGate, emitGate, makeTempRoot, writeText, writeUserSkill } from './sks-3-1-8-check-lib.js';
+import { assertGate, emitGate, makeTempRoot, writeText, writeUserSkill } from './skill-fixture-check-lib.js';
 import { syncCoreSkillsIntegrity } from '../core/codex-native/core-skill-integrity.js';
 import { buildSksCoreSkillManifest, renderCoreSkillTemplate } from '../core/codex-native/core-skill-manifest.js';
 import { sha256 } from '../core/fsx.js';

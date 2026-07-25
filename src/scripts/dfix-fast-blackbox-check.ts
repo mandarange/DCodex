@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { emitGate } from './sks-1-12-real-execution-check-lib.js';
+import { emitGate } from './real-execution-check-lib.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-dfix-fast-blackbox-'));
 fs.mkdirSync(path.join(root, '.sneakoscope'), { recursive: true });

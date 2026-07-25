@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, readText } from './gate-lib.js';
 import { createCodexAppServerV2Client, currentTimeResponse } from '../core/codex-control/codex-app-server-v2-client.js';
 import { CURRENT_CODEX_RELEASE_MANIFEST } from '../core/codex-compat/codex-release-manifest.js';
 

@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { madHighCommand } from '../core/commands/mad-sks-command.js'
 import { checkDbOperation } from '../core/db-safety.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const original = {
   cwd: process.cwd(),

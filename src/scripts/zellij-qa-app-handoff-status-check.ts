@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText } from './gate-lib.js'
 const pane = readText('src/core/zellij/zellij-slot-pane-renderer.ts')
 const anchor = readText('src/core/zellij/zellij-slot-column-anchor.ts')
 assertGate(pane.includes('QA app handoff pending') && pane.includes('app-handoff.json'), 'Zellij slot pane must surface QA app handoff pending status')

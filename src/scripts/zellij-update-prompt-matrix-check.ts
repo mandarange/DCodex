@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import { resolveZellijUpdatePromptMode } from '../core/zellij/zellij-update.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const matrix = [
   ['interactive tty + update available', { env: {}, headless: false }, 'interactive-prompt'],

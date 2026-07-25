@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DEFAULT_MAX_PACK_BYTES, DEFAULT_MAX_UNPACKED_BYTES } from '../core/release/package-size-budget.js';
 import { analyzeRuntimeScriptPackClosure } from '../core/release/runtime-script-pack-closure.js';
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, root } from './gate-lib.js';
 
 const MAX_FILES = Number(process.env.SKS_MAX_PACK_FILES || 2100);
 const MAX_PACKED = Number(process.env.SKS_MAX_PACK_BYTES || DEFAULT_MAX_PACK_BYTES);

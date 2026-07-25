@@ -1,6 +1,6 @@
 # MCP ReadOnly Scheduler
 
-SKS 1.18.11 requires runtime scheduler proof before `readOnlyHint` is treated as parallel-safe evidence.
+SKS requires runtime scheduler proof before `readOnlyHint` is treated as parallel-safe evidence.
 
 MCP `readOnlyHint` is advisory. SKS allows read-only MCP tools to be parallel candidates only after destructive name and schema checks pass.
 

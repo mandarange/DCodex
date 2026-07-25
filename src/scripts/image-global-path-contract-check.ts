@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate, importDist, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, readText } from './gate-lib.js'
 const adapter = readText('src/core/image-ux-review/imagegen-adapter.ts')
 const registry = readText('src/core/image/image-artifact-registry.ts')
 assertGate(adapter.includes('registerImageArtifact') && registry.includes('image-artifact-path-contract.json'), 'global image generation/edit paths must register saved files in mission path contract registry')

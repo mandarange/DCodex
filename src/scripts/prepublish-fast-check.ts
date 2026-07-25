@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { root } from './sks-1-18-gate-lib.js';
+import { root } from './gate-lib.js';
 
 const stampPath =
   process.env.SKS_RELEASE_STAMP_PATH || path.join(root, '.sneakoscope', 'reports', 'release-check-stamp.json');

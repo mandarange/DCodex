@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate } from './gate-lib.js';
 import { buildCodexExecutionPolicy } from '../core/codex-control/codex-sdk-config-policy.js';
 import { buildCodexSdkEnv } from '../core/codex-control/codex-sdk-env-policy.js';
 

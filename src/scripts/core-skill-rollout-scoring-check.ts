@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root, exists } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root, exists } from './gate-lib.js';
 
 const traceMod = await importDist('core/skills/core-rollout-trace.js');
 const scorerMod = await importDist('core/skills/core-skill-scorer.js');

@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertGate, emitGate, root, runSksJson } from './sks-1-11-gate-lib.js';
+import { assertGate, emitGate, root, runSksJson } from './sks-cli-gate-lib.js';
 
 export { assertGate, emitGate, root, runSksJson };
 

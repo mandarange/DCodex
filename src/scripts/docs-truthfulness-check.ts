@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { RELEASE_UPGRADE_BASELINE_VERSION } from '../core/release/release-upgrade-baseline.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const packageVersion = String(JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version || '').trim();
@@ -64,7 +65,7 @@ const required = {
     'proof-aware fleet control',
     'npm stage publish',
     'npm stage approve <stage-id>',
-    `6.2.0 to ${packageVersion} upgrade smoke`
+    `${RELEASE_UPGRADE_BASELINE_VERSION} to ${packageVersion} upgrade smoke`
   ]
 };
 

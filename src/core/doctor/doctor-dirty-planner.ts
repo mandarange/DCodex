@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { MANAGED_ASSET_VERSION } from '../managed-assets/managed-assets-manifest.js';
 import { PACKAGE_VERSION, packageRoot, sha256 } from '../fsx.js';
 import { hashJson } from '../triwiki/triwiki-cache-key.js';
-import { SKS_MENUBAR_LABEL, sksMenuBarPaths } from '../codex-app/sks-menubar.js';
+import { SKS_MENUBAR_LABEL, sksMenuBarPaths } from '../codex-app/menubar/index.js';
 
 export const DOCTOR_DIRTY_PLAN_SCHEMA = 'sks.doctor-dirty-plan.v2';
 
@@ -135,7 +135,7 @@ function phaseInputFiles(id: string): string[] {
   if (id.includes('context7')) return ['src/core/doctor/context7-mcp-repair.ts', '.codex/config.toml'];
   if (id.includes('startup')) return ['src/core/doctor/codex-startup-config-repair.ts', '.codex/config.toml'];
   if (id.includes('supabase')) return ['src/core/doctor/supabase-mcp-repair.ts', '.codex/config.toml'];
-  if (id.includes('menubar')) return ['src/core/codex-app/sks-menubar.ts', 'src/commands/doctor.ts', 'package.json'];
+  if (id.includes('menubar')) return ['src/core/codex-app/menubar/index.ts', 'src/commands/doctor.ts', 'package.json'];
   if (id.includes('skill')) return ['.agents/skills', 'src/scripts/skill-registry-ledger-check.ts'];
   if (id.includes('native')) return ['src/core/codex-native', 'src/scripts/native-capability-postcheck-check.ts'];
   if (id.includes('secret')) return ['safety-mutation-allowlist.json', 'src/scripts/secret-preservation-check.ts'];

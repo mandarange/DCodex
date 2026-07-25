@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, readText, scriptContains } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, readText, scriptContains } from './gate-lib.js';
 
 const source = readText('src/core/update-check.ts');
 

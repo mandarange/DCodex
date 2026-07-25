@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 import { seedUpgradeMigrationFixture } from '../core/ops/upgrade-migration-fixtures.js'
 
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-upgrade-migration-matrix-'))

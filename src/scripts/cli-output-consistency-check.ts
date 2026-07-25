@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, root } from './gate-lib.js';
 import { PACKAGE_VERSION } from '../core/version.js';
 
 const executed = [

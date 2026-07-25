@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root as repoRoot } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root as repoRoot } from './gate-lib.js';
 
 const mod = await importDist('core/agents/native-cli-worker.js');
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-worker-router-'));

@@ -4,11 +4,15 @@ import { fileSha256, gitOk, gitText, readJson, relative, unique } from './releas
 import { releaseOriginIdentity } from './release-origin.js'
 import { releaseProofDir, validateLocalReleasePackBinding } from './release-pack-receipt.js'
 import { validateFullReleaseStamp } from './release-stamp-proof.js'
+import {
+  RELEASE_UPGRADE_BASELINE_SHA256,
+  RELEASE_UPGRADE_BASELINE_VERSION,
+  releaseUpgradeExpectedVersion,
+  releaseUpgradeProofFilename
+} from './release-upgrade-baseline.js'
 
 export const MAIN_PUSH_GUARD_SCHEMA = 'sks.release-main-push-guard.v1'
 const RELEASE_UPGRADE_SMOKE_SCHEMA = 'sks.release-upgrade-smoke.v2'
-const RELEASE_UPGRADE_BASELINE_VERSION = '6.2.0'
-const RELEASE_UPGRADE_BASELINE_SHA256 = 'dd0bfc022348c11dc737055845708f6272beaf2a8f9c16d068acf3c8c612f9bc'
 const RELEASE_UPGRADE_COMMAND_STAGES = Object.freeze([
   'baseline_fetch',
   'baseline_install',
@@ -119,7 +123,7 @@ export function inspectMainPushGuard(input: MainPushGuardInput) {
 }
 
 export function validateReleaseUpgradeProof(root: string, version: string, sourceCommit: string, pack: any) {
-  const file = path.join(releaseProofDir(root, version), `upgrade-6.2-to-${version}.json`)
+  const file = path.join(releaseProofDir(root, version), releaseUpgradeProofFilename(version))
   const report = readJson(file)
   const blockers: string[] = []
   const targetReceipt = path.join(releaseProofDir(root, version), 'pack-receipt.json')
@@ -159,7 +163,7 @@ export function validateReleaseUpgradeProof(root: string, version: string, sourc
   const stateNames = Object.keys(RELEASE_UPGRADE_STATE_STAGES)
   if (Object.keys(report?.states || {}).length !== stateNames.length || stateNames.some((name) => {
     const state = report?.states?.[name]
-    const expected = name.startsWith('target_') ? version : '6.2.0'
+    const expected = releaseUpgradeExpectedVersion(name, version)
     return state?.status !== 'passed' || state?.expected_version !== expected || state?.observed_version !== expected
       || !Array.isArray(state?.command_stages)
       || !sameStringArray(state.command_stages, RELEASE_UPGRADE_STATE_STAGES[name as keyof typeof RELEASE_UPGRADE_STATE_STAGES])
@@ -345,7 +349,7 @@ function validateDoctorCommandReceipt(
       || binding.schema !== 'sks.doctor-status.v3'
       || binding.ok !== true
       || binding.root !== isolation.workspace) blockers.push(`doctor_report_binding_invalid:${stage}`)
-  } else if (stage !== 'target_doctor' && binding.validation_mode === 'pinned_6_2_stdout_only') {
+  } else if (stage !== 'target_doctor' && binding.validation_mode === 'pinned_baseline_stdout_only') {
     if (binding.regular_file !== false
       || binding.symlink_refused !== false
       || binding.matches_stdout !== false

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import { classifyReleaseCacheInputChange } from '../core/release/release-cache-key.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const pkgA = JSON.stringify({ name: 'sneakoscope', version: '3.0.0', scripts: { test: 'node a.js' }, dependencies: { left: '1.0.0' }, files: ['dist'] }, null, 2)
 const pkgB = JSON.stringify({ name: 'sneakoscope', version: '3.0.2', scripts: { test: 'node a.js' }, dependencies: { left: '1.0.0' }, files: ['dist'] }, null, 2)

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { emitGate, requireContains } from './sks-1-12-real-execution-check-lib.js';
+import { emitGate, requireContains } from './real-execution-check-lib.js';
 
 requireContains('dfix:verification-recommendation', 'src/core/dfix.ts', [
   'DFIX_VERIFICATION_SUGGESTION_ARTIFACT',

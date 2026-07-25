@@ -59,8 +59,7 @@ test('rename-aware baseline allows a high-similarity renamed file to use a shrin
       file: 'src/renamed-waived.ts',
       reason: 'fixture renamed legacy debt',
       policy: 'shrink-only',
-      baseline_lines: 7,
-      expires_version: '9.9.9'
+      baseline_lines: 7
     }]);
     git(fixture, ['add', '.']);
     git(fixture, ['commit', '-m', 'rename and shrink waived source']);
@@ -83,8 +82,7 @@ test('architecture waivers remain forbidden for genuinely new files', () => {
       file: 'src/new-waived.ts',
       reason: 'fixture must not waive a new file',
       policy: 'shrink-only',
-      baseline_lines: 6,
-      expires_version: '9.9.9'
+      baseline_lines: 6
     }]);
     git(fixture, ['add', '.']);
     git(fixture, ['commit', '-m', 'add oversized waived source']);
@@ -116,15 +114,14 @@ function createFixture(options = {}) {
     split_review_lines: 20,
     default_new_file_max_lines: 5,
     budgets: [{ id: 'default-handwritten-source', match: '.*', max_lines: 5, new_file_max_lines: 5 }],
-    waiver_policy: { mode: 'shrink-only', required_fields: ['schema', 'file', 'reason', 'policy', 'baseline_lines', 'expires_version'] }
+    waiver_policy: { mode: 'shrink-only', required_fields: ['schema', 'file', 'reason', 'policy', 'baseline_lines'] }
   }));
   const waivers = options.waivedLines ? [{
     schema: 'sks.architecture-waiver.v1',
     file: 'src/waived.ts',
     reason: 'fixture legacy debt',
     policy: 'shrink-only',
-    baseline_lines: options.waivedLines,
-    expires_version: '9.9.9'
+    baseline_lines: options.waivedLines
   }] : [];
   writeWaivers(root, waivers);
   writeLines(path.join(root, 'src/feature.ts'), 5);

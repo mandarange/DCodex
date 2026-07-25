@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs'
 import path from 'node:path'
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 
 const config = JSON.parse(fs.readFileSync(path.join(root, 'config/perf-budgets.v1.json'), 'utf8'))
 const { writePerfBudgetReport } = await importDist('core/perf/perf-budget.js')

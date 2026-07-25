@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs'
 import path from 'node:path'
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 
 const mad = fs.readFileSync(path.join(root, 'src/core/commands/mad-sks-command.ts'), 'utf8')
 const naruto = fs.readFileSync(path.join(root, 'src/core/commands/naruto-command.ts'), 'utf8')

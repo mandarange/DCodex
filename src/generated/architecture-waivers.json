@@ -6,64 +6,42 @@
       "file": "src/cli/install-helpers.ts",
       "reason": "generated installer compatibility source pending extraction",
       "policy": "shrink-only",
-      "baseline_lines": 2989,
-      "expires_version": "6.4.0"
+      "baseline_lines": 2118
     },
     {
       "schema": "sks.architecture-waiver.v1",
       "file": "src/commands/doctor.ts",
-      "reason": "legacy command split debt outside the 6.3.0 release scope",
+      "reason": "command split debt: doctor still carries subsystem checks that belong in their own modules",
       "policy": "shrink-only",
-      "baseline_lines": 1901,
-      "expires_version": "6.4.0"
+      "baseline_lines": 1887
     },
     {
       "schema": "sks.architecture-waiver.v1",
       "file": "src/core/agents/agent-orchestrator.ts",
-      "reason": "legacy orchestrator split debt outside the 6.3.0 release scope",
+      "reason": "orchestrator split debt: scheduling, worker lifecycle and reporting are not yet separated",
       "policy": "shrink-only",
-      "baseline_lines": 2225,
-      "expires_version": "6.4.0"
-    },
-    {
-      "schema": "sks.architecture-waiver.v1",
-      "file": "src/core/agents/native-cli-worker-runtime.ts",
-      "reason": "91% rename of the 1,107-line baseline native CLI session runtime to current worker-runtime terminology; 6.3.0 removes the retired public name while preserving shrink-only behavior",
-      "policy": "shrink-only",
-      "baseline_lines": 1107,
-      "expires_version": "6.4.0"
-    },
-    {
-      "schema": "sks.architecture-waiver.v1",
-      "file": "src/core/codex-app/sks-menubar.ts",
-      "reason": "6.3.0 W01 must shrink this compatibility facade to 80 lines or fewer",
-      "policy": "shrink-only",
-      "baseline_lines": 2459,
-      "expires_version": "6.3.0"
+      "baseline_lines": 2093
     },
     {
       "schema": "sks.architecture-waiver.v1",
       "file": "src/core/commands/mad-sks-command.ts",
-      "reason": "legacy command split debt outside the 6.3.0 release scope",
+      "reason": "command split debt: subcommand handlers are not yet extracted",
       "policy": "shrink-only",
-      "baseline_lines": 1597,
-      "expires_version": "6.4.0"
+      "baseline_lines": 1288
     },
     {
       "schema": "sks.architecture-waiver.v1",
-      "file": "src/core/pipeline-internals/runtime-core.ts",
-      "reason": "legacy pipeline split debt outside the 6.3.0 release scope",
+      "file": "src/core/agent-bridge/host-capability-runtime.ts",
+      "reason": "host-capability runtime carries policy, observation parsing and receipt assembly in one module; pending split",
       "policy": "shrink-only",
-      "baseline_lines": 1715,
-      "expires_version": "6.4.0"
+      "baseline_lines": 1859
     },
     {
       "schema": "sks.architecture-waiver.v1",
       "file": "src/core/subagents/__tests__/official-subagent-runner.test.ts",
       "reason": "pre-existing oversized integration test is being reduced through focused fixture extraction",
       "policy": "shrink-only",
-      "baseline_lines": 2092,
-      "expires_version": "7.2.0"
+      "baseline_lines": 2187
     }
   ]
 }

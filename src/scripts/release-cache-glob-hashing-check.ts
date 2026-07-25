@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 import { expandGlob, releaseGateCacheKey } from '../core/release/release-gate-cache-v2.js'
 
 delete process.env.SKS_RELEASE_GATE_CACHE_MEMOIZE

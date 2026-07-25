@@ -1,6 +1,6 @@
 // @ts-nocheck
 import fs from 'node:fs';
-import { assertGate, emitGate, readText, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, readText, root } from './gate-lib.js';
 
 const registry = readText('src/cli/command-registry.ts');
 const routes = readText('src/core/routes.ts');

@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs'
 import path from 'node:path'
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 
 const uiMode = fs.readFileSync(path.join(root, 'src/core/zellij/zellij-ui-mode.ts'), 'utf8')
 const manager = fs.readFileSync(path.join(root, 'src/core/zellij/zellij-right-column-manager.ts'), 'utf8')

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { PACKAGE_VERSION } from './version.js';
 
 const DEFAULT_CONTEXT7_COMMAND = 'npx';
 const DEFAULT_CONTEXT7_ARGS = ['-y', '@upstash/context7-mcp@latest'];
@@ -188,7 +189,7 @@ class LocalMcpClient {
     const result = await this.request('initialize', {
       protocolVersion: DEFAULT_PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'sneakoscope-context7', version: '1.0.0' }
+      clientInfo: { name: 'sneakoscope-context7', version: PACKAGE_VERSION }
     });
     this.initializeResult = result;
     this.notify('notifications/initialized', {});

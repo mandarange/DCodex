@@ -7,13 +7,10 @@ import { osTempPngFixtureArg } from './lib/valid-png-fixture.js';
 
 const enabled = process.env.SKS_TEST_REAL_IMAGEGEN === '1' || process.env.SKS_REAL_IMAGEGEN === '1';
 const reportDir = path.join(process.cwd(), '.sneakoscope', 'reports');
-const out = path.join(reportDir, 'real-imagegen-smoke-1.14.1.json');
-const stableOut = path.join(reportDir, 'real-imagegen-smoke.json');
+const out = path.join(reportDir, 'real-imagegen-smoke.json');
 fs.mkdirSync(reportDir, { recursive: true });
 function writeReport(report) {
-  const text = `${JSON.stringify(report, null, 2)}\n`;
-  fs.writeFileSync(out, text);
-  fs.writeFileSync(stableOut, text);
+  fs.writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
 }
 function parseUxReviewJson(stdout) {
   const text = String(stdout || '').trim();

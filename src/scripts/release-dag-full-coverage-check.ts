@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs'
 import path from 'node:path'
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 import { releaseGateContractSnapshot } from '../core/release/release-gate-contract.js'
 import { isRecord } from '../core/json/records.js'
 

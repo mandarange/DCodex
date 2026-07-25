@@ -1,6 +1,6 @@
 # Stop Gate Contract
 
-Sneakoscope 4.0.11 treats `sks.stop-gate.v1` as the canonical stop source of truth for Naruto-family routes.
+Sneakoscope treats `sks.stop-gate.v1` as the canonical stop source of truth for Naruto-family routes.
 
 For `Naruto`, `$sks-naruto`, `NARUTO`, and `GLM_NARUTO`, a stop check may return `allow_stop` only when all of these are true:
 

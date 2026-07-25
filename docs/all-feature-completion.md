@@ -1,6 +1,6 @@
 # All-Feature Completion
 
-SKS 1.17.0 treats all-feature completion as deep runtime coverage, not command presence. `sks features complete --json` writes `.sneakoscope/reports/all-feature-completion-1.17.0.json` and checks advertised features against command registry coverage, fixtures, artifact schemas, Evidence Router links, Completion Proof links, Trust Report links, Wrongness mappings, docs, blackbox coverage, mock/real guards, secret redaction, next actions, and recovery paths.
+SKS 1.17.0 treats all-feature completion as deep runtime coverage, not command presence. `sks features complete --json` writes `.sneakoscope/reports/all-feature-completion-<version>.json` and checks advertised features against command registry coverage, fixtures, artifact schemas, Evidence Router links, Completion Proof links, Trust Report links, Wrongness mappings, docs, blackbox coverage, mock/real guards, secret redaction, next actions, and recovery paths.
 
 Required release scripts:
 

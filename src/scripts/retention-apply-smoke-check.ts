@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 
 const { applyRetentionPlan, enforceRetention, retentionStatus } = await importDist('core/retention.js')
 const planned = await enforceRetention(root, {

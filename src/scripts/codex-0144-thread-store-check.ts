@@ -2,7 +2,7 @@
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate } from './gate-lib.js';
 import { readCodexThreadRegistry, recordCodexThread } from '../core/codex-control/codex-thread-registry.js';
 
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-codex-0144-thread-store-'));

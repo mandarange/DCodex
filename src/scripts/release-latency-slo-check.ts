@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, importDist, readJson, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, readJson, root } from './gate-lib.js'
 
 const config = readJson('config/perf-budgets.v1.json')
 const budgets = Array.isArray(config.release_latency_slos) ? config.release_latency_slos : []

@@ -1,6 +1,6 @@
 # Known Gaps
 
-## 1.0.8 Known Gaps
+## Known Gaps
 
 No P0 blocker is intentionally left open for Codex CLI `rust-v0.133.0` compatibility detection, `codex exec resume --output-schema` fixture coverage, UX-Review generated callout ingestion, text-only fallback blocking, mock-as-real blocking, Image Voxel relation validation, memory summary rebuilds, repeated blocker stops, version drift, or release readiness reporting.
 

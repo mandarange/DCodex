@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const mod = await importDist('core/triwiki/triwiki-cache-key.js');
 const a = mod.computeTriWikiCacheKey({ root, id: 'triwiki:cache-key', inputs: ['package.json'], implementationFiles: ['src/core/triwiki/triwiki-cache-key.ts'], envAllowlist: ['CI'], fixtureVersion: 'sks-4.0.0' });

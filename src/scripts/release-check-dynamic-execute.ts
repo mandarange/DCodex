@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { emitGate, importDist, root } from './gate-lib.js';
 
 const { buildGateManifest, selectGates, FORBIDDEN_RECURSIVE_GATES } = await importDist('core/release/gate-manifest.js');
 const { gateCacheKey, readGateCache, writeGateCache, recordGateResult, lookupGateResult } = await importDist('core/release/gate-cache.js');

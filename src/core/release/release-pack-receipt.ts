@@ -317,7 +317,7 @@ const RETIRED_SURFACE_ALLOWLIST: Array<{ path: RegExp; kinds: Set<string> }> = [
   { path: /^dist\/scripts\/docs-truthfulness-check\.js$/, kinds: new Set(['retired_ralph_identity']) },
   { path: /^dist\/scripts\/naruto-ssot-(?:routing|route-normalization|gate-aliases|pipeline-default)-check\.js$/, kinds: new Set(['retired_cli_command', 'retired_dollar_command', 'retired_team_runtime_identity']) },
   { path: /^dist\/scripts\/upgrade-migration-matrix-check\.js$/, kinds: new Set(['retired_team_workdir']) },
-  { path: /^dist\/scripts\/(?:current-command-surface-check|current-surface-update-e2e-check|current-upgrade-matrix-check|legacy-gate-inventory-check|legacy-gate-purge-check|legacy-strong-inventory-check|release-metadata-1-19-check|runtime-current-terminal-check)\.js$/, kinds: new Set(RETIRED_SURFACE_PATTERNS.map((pattern) => pattern.kind)) }
+  { path: /^dist\/scripts\/(?:current-command-surface-check|current-surface-update-e2e-check|current-upgrade-matrix-check|legacy-gate-inventory-check|legacy-gate-purge-check|legacy-strong-inventory-check|runtime-current-terminal-check)\.js$/, kinds: new Set(RETIRED_SURFACE_PATTERNS.map((pattern) => pattern.kind)) }
 ]
 
 function retiredSurfaceFindingAllowed(finding: { file: string; kind: string }): boolean {

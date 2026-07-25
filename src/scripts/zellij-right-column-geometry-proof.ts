@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import path from 'node:path'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 import { tmpdir, writeTextAtomic } from '../core/fsx.js'
 import { checkZellijCapability } from '../core/zellij/zellij-capability.js'
 import { runZellij } from '../core/zellij/zellij-command.js'

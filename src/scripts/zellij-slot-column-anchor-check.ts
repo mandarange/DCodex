@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 import { buildZellijSlotColumnAnchorCommand, renderZellijSlotColumnAnchor } from '../core/zellij/zellij-slot-column-anchor.js'
 
 const rendered = renderZellijSlotColumnAnchor({

@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const { selectGates } = await importDist('core/release/gate-manifest.js');
 const { buildGateManifest } = await importDist('core/release/gate-manifest.js');

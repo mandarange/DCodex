@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { appendAgentMessage, readAgentMessageBus } from '../core/agents/agent-message-bus.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const missionId = 'M-agent-message-reader'
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-agent-message-'))

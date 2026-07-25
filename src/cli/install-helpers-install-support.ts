@@ -13,7 +13,7 @@ import { context7ConfigToml, DOLLAR_SKILL_NAMES, GETDESIGN_REFERENCE, hasContext
 import { checkZellijCapability } from '../core/zellij/zellij-capability.js';
 import { reconcileCodexAppUpgradeProcesses } from '../core/codex-app.js';
 import { restartCodexApp } from '../core/codex-app/codex-app-restart.js';
-import { cleanupMacLaunchSecretEnvironment } from '../core/codex-app/sks-menubar.js';
+import { cleanupMacLaunchSecretEnvironment } from '../core/codex-app/menubar/index.js';
 import { recordCodexLbHealthEvent } from '../core/codex-lb-circuit.js';
 import { loadCodexLbEnv, writeCodexLbKeychain, codexLbMetadataPath } from '../core/codex-lb/codex-lb-env.js';
 import {

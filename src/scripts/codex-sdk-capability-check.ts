@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist } from './gate-lib.js';
 
 const mod = await importDist('core/codex-control/codex-sdk-capability.js');
 const capability = await mod.detectCodexSdkCapability();

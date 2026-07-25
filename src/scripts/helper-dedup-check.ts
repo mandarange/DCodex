@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const { analyzeHelperDuplication, DEFAULT_MAX_COPIES } = await importDist('core/quality/helper-dedup.js');
 
@@ -10,7 +10,7 @@ const { analyzeHelperDuplication, DEFAULT_MAX_COPIES } = await importDist('core/
 // shrink, never grow. Delete an entry once its copies reach the ceiling.
 //
 // Most of the remainder is gate-script boilerplate (`emit`, `assertGate`,
-// `emitGate`, `readOption`) that belongs in ./sks-1-18-gate-lib.ts, plus small
+// `emitGate`, `readOption`) that belongs in ./gate-lib.ts, plus small
 // fs/env helpers that belong in core/fsx.ts.
 const BASELINE: Record<string, number> = {
   emit: 22,

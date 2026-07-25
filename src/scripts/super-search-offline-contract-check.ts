@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 import { writeJsonAtomic } from '../core/fsx.js'
 
 const { runSuperSearch } = await importDist('core/super-search/index.js')

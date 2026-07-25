@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 import { buildOfficialSubagentPrompt } from '../core/subagents/official-subagent-prompt.js'
 import {
   SUBAGENT_PARENT_SUMMARY_FILENAME,

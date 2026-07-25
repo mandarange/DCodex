@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { root, assertGate, emitGate, importDist, readText } from './sks-1-18-gate-lib.js';
+import { root, assertGate, emitGate, importDist, readText } from './gate-lib.js';
 
 // Proves the heartbeat-timeout-as-blocker LOGIC hermetically (no real Zellij):
 // a missing/empty heartbeat must yield a decisive timeout blocker so the

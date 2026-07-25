@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertGate, emitGate, readJson, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, readJson, root } from './gate-lib.js';
 import { writeJsonAtomic } from '../core/fsx.js';
 
 interface ReleaseGateScriptParityReport {

@@ -6,7 +6,7 @@
 // Only a gate exceeding the HARD ceiling is a blocker.
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const { readGateCache } = await importDist('core/release/gate-cache.js');
 
