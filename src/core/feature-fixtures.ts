@@ -108,6 +108,7 @@ const FIXTURES = Object.freeze({
   }),
   'cli-context7': fixture('real_optional', 'sks context7 check --json', [], 'pass'),
   'cli-super-search': fixture('execute', 'sks super-search doctor --json', [], 'pass'),
+  'cli-search': fixture('execute', 'sks search status --json', [], 'pass'),
   'cli-task': fixture('execute', 'sks task instant --plan --json', [], 'pass'),
   'cli-release': fixture('execute', 'sks release affected --json', [], 'blocked', { reason: '18차: the phantom requiredSections schema mismatch (five_lane_review/integration_evidence/session_cleanup, from commit d4526f84 with no producer ever wired up) has been fixed -- missing_sections is now honestly empty. The release-gate DAG still legitimately fails/blocks on other real gates (e.g. release:readiness) independent of this fix, so the command still exits non-zero and this fixture stays honestly blocked rather than claiming full green.' }),
   'cli-triwiki': fixture('execute', 'sks triwiki index --json', [], 'pass'),
