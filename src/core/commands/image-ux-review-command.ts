@@ -31,6 +31,7 @@ import { sha256File, imageDimensions } from '../wiki-image/image-hash.js';
 import { writeRouteCollaborationArtifacts } from '../agents/route-collaboration-ledger.js';
 import { codexChromeExtensionStatus } from '../codex-app.js';
 import { requireCodexImagegen } from '../imagegen/require-imagegen.js';
+import { imagegenEvidenceClassBlockers, isFullImagegenEvidenceClass, isFullImagegenOutputSource } from '../imagegen/imagegen-evidence.js';
 import { evaluateGate } from '../stop-gate/gate-evaluator.js';
 
 const ONE_BY_ONE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axX7V8AAAAASUVORK5CYII=';
@@ -167,7 +168,7 @@ async function runImageUxReview(root: string, command: string, args: any[] = [])
       const response = await readImagegenResponse(dir);
       const evidenceClass = String(response?.evidence_class || '');
       const fakeGenerated = evidenceClass === 'mock_fixture' || result.provider === 'fake_imagegen_adapter';
-      const realGenerated = evidenceClass === 'codex_app_imagegen';
+      const realGenerated = isFullImagegenEvidenceClass(evidenceClass);
       await attachGeneratedReviewImage(root, dir, contract, result.generated_image_path, {
         realGenerated,
         mock: fakeGenerated,
@@ -512,7 +513,7 @@ async function attachGeneratedReviewImage(root: string, dir: string, contract: a
     evidence_class: evidenceClass,
     output_source: outputSource,
     output_sha256: outputSha256 || undefined,
-    real_generated: opts.realGenerated === true && evidenceClass === 'codex_app_imagegen',
+    real_generated: opts.realGenerated === true && isFullImagegenEvidenceClass(evidenceClass),
     mock: opts.mock === true
   });
   if (!response && opts.realGenerated === true) {
@@ -629,12 +630,9 @@ async function validateImagegenResponseEvidence(response: any = null, dir: strin
   if (response.schema !== 'sks.image-ux-gpt-image-2-response.v1') blockers.push('imagegen_response_schema_invalid');
   if (response.ok !== true || response.status !== 'generated') blockers.push(response.blocker || 'imagegen_response_not_generated');
   const evidenceClass = String(response.evidence_class || '');
-  if (!evidenceClass) blockers.push('imagegen_response_evidence_class_missing');
-  if (evidenceClass === 'mock_fixture') blockers.push('imagegen_response_mock_fixture_not_full_evidence');
-  if (evidenceClass === 'non_codex_api_fallback') blockers.push('imagegen_response_non_codex_api_fallback_not_full_evidence');
-  if (evidenceClass && evidenceClass !== 'codex_app_imagegen') blockers.push(`imagegen_response_evidence_class_not_codex_app:${evidenceClass}`);
+  blockers.push(...imagegenEvidenceClassBlockers('imagegen_response', evidenceClass));
   const source = String(response.output_source || '');
-  if (!['manual_attach', 'auto_discovered_generated_images'].includes(source)) blockers.push('imagegen_response_output_source_invalid');
+  if (!isFullImagegenOutputSource(source)) blockers.push('imagegen_response_output_source_invalid');
   const outputPath = String(response.output_image_path || '');
   const expectedSha = String(response.output_sha256 || response.output_image_sha256 || '');
   if (!outputPath) blockers.push('imagegen_response_output_path_missing');

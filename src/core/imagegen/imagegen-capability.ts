@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { codexLbEnvPath, parseShellEnvValue } from '../codex-lb/codex-lb-env.js';
+import { codexLbEnvPath, loadCodexLbEnv, parseShellEnvValue } from '../codex-lb/codex-lb-env.js';
 import { nowIso, readText, runProcess, which } from '../fsx.js';
 import { redactSecrets, redactString } from '../secret-redaction.js';
 import { evaluateImagegenAuthReadiness } from './imagegen-auth-readiness.js';
@@ -111,13 +111,19 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
   const envKey = tomlString(block, 'env_key');
   const baseUrl = tomlString(block, 'base_url') || String(env.CODEX_LB_BASE_URL || '').trim();
   const envPath = opts.codexLbEnvPath || codexLbEnvPath(home);
-  const envText = typeof opts.codexLbEnvText === 'string'
-    ? opts.codexLbEnvText
-    : await readText(envPath, '').catch(() => '');
-  const keyFromEnv = envKey ? String(env[envKey] || '').trim() : '';
-  const keyFromFile = envKey ? parseShellEnvValue(envText, envKey) : '';
-  const apiKeyPresent = Boolean(opts.codexLbApiKey || keyFromEnv || keyFromFile);
-  const apiKeySource = opts.codexLbApiKey ? 'option' : keyFromEnv ? 'process.env' : keyFromFile ? 'env-file' : null;
+  // Resolve through the fingerprint-bound loader rather than re-reading
+  // process.env here: a stale exported key otherwise reports as present and
+  // usable while the proxy rejects it. Callers may still inject a key or an
+  // env-file body directly for hermetic checks.
+  const injectedEnvText = typeof opts.codexLbEnvText === 'string' ? opts.codexLbEnvText : null;
+  const keyFromInjectedFile = injectedEnvText !== null && envKey ? parseShellEnvValue(injectedEnvText, envKey) : '';
+  const loaded = injectedEnvText === null
+    ? await loadCodexLbEnv({ home, processEnv: env, envPath }).catch(() => null)
+    : null;
+  const apiKeyPresent = Boolean(opts.codexLbApiKey || keyFromInjectedFile || loaded?.secret_api_key);
+  const apiKeySource = opts.codexLbApiKey
+    ? 'option'
+    : keyFromInjectedFile ? 'env-file' : loaded?.api_key?.source || null;
   const blocker = codexLbAuthBlocker({
     selected,
     providerConfigured,

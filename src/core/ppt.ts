@@ -11,6 +11,7 @@ export { PPT_DESIGN_REFERENCE_PROFILES, buildPptStyleTokens, selectPptDesignRefe
 import { buildPptHtml } from './ppt/html.js';
 export { buildPptHtml } from './ppt/html.js';
 import { imageDimensions, sha256File } from './wiki-image/image-hash.js';
+import { imagegenEvidenceClassBlockers, isFullImagegenOutputSource } from './imagegen/imagegen-evidence.js';
 
 export const PPT_REQUIRED_GATE_FIELDS = Object.freeze([
   'clarification_contract_sealed',
@@ -425,8 +426,8 @@ function pptImageAssetEvidenceBlockers(asset: any = {}, evidence: any = {}) {
   const evidenceClass = String(asset.evidence_class || '');
   const outputSource = String(asset.output_source || '');
   const outputSha = String(asset.output_sha256 || '');
-  if (evidenceClass !== 'codex_app_imagegen') blockers.push(evidenceClass ? `ppt_image_asset_evidence_class_not_codex_app:${evidenceClass}` : 'ppt_image_asset_evidence_class_missing');
-  if (!['manual_attach', 'auto_discovered_generated_images'].includes(outputSource)) blockers.push(`ppt_image_asset_output_source_invalid:${outputSource || 'missing'}`);
+  blockers.push(...imagegenEvidenceClassBlockers('ppt_image_asset', evidenceClass));
+  if (!isFullImagegenOutputSource(outputSource)) blockers.push(`ppt_image_asset_output_source_invalid:${outputSource || 'missing'}`);
   if (!outputSha) blockers.push('ppt_image_asset_output_sha256_missing');
   else if (evidence.sha && outputSha !== evidence.sha) blockers.push('ppt_image_asset_output_sha256_mismatch');
   return [...new Set(blockers)];

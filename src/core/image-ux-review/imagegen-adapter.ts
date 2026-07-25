@@ -1,10 +1,16 @@
 import path from 'node:path';
 import fsp from 'node:fs/promises';
-import { parseShellEnvValue } from '../codex-lb/codex-lb-env.js';
-import { ensureDir, exists, nowIso, projectRoot, readJson, readText, writeJsonAtomic } from '../fsx.js';
+import { ensureDir, exists, nowIso, projectRoot, readJson, writeJsonAtomic } from '../fsx.js';
 import { sha256File, imageDimensions } from '../wiki-image/image-hash.js';
 import { detectImagegenCapability } from '../imagegen/imagegen-capability.js';
+import { resolveCodexLbImagegenTarget } from '../imagegen/codex-lb-imagegen-target.js';
+import {
+  CODEX_LB_PROVIDER_IMAGEGEN_EVIDENCE_CLASS,
+  CODEX_LB_PROVIDER_OUTPUT_SOURCE,
+  NON_CODEX_API_FALLBACK_EVIDENCE_CLASS
+} from '../imagegen/imagegen-evidence.js';
 import { validateGptImage2Request } from '../imagegen/gpt-image-2-request-validator.js';
+import { parseResponsesSsePayload } from '../responses-stream.js';
 import { withResponsesRetry } from '../responses-retry-policy.js';
 import { discoverCodexAppGeneratedImage } from './codex-app-generated-image-discovery.js';
 import { writeImageArtifactPathContract } from '../image/image-artifact-path-contract.js';
@@ -352,6 +358,15 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
       const auth = await resolveImagesApiAuth({ ...opts, apiKey, codexLb });
       const useResponsesImageTool = auth.auth_source === 'CODEX_LB_API_KEY' && Boolean(auth.responses_endpoint);
       const effectiveEndpoint = useResponsesImageTool ? auth.responses_endpoint : auth.endpoint;
+      const responsesModel = String(auth.responses_model || '');
+      // Only a *selected* codex-lb provider earns the codex-lb evidence class.
+      // codex-lb enabled as a fallback while another provider is active is a
+      // detour and stays classified as one.
+      const codexLbProviderSelected = useResponsesImageTool && (opts.codexLbTarget?.selected === true || codexLb?.selected === true);
+      const responsesEvidenceClass = codexLbProviderSelected
+        ? CODEX_LB_PROVIDER_IMAGEGEN_EVIDENCE_CLASS
+        : NON_CODEX_API_FALLBACK_EVIDENCE_CLASS;
+      const responsesOutputSource = codexLbProviderSelected ? CODEX_LB_PROVIDER_OUTPUT_SOURCE : null;
       const validation = await validateGptImage2Request({
         provider: 'openai_images_api',
         endpoint: effectiveEndpoint,
@@ -369,7 +384,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
         endpoint: effectiveEndpoint,
         auth_source: auth.auth_source,
         model: 'gpt-image-2',
-        responses_model: useResponsesImageTool ? responsesImagegenModel(opts) : null,
+        responses_model: useResponsesImageTool ? responsesModel : null,
         source_screen_id: input.source_screen_id,
         source_image_path: sourcePath,
         source_screenshot_sha256: sourceSha,
@@ -412,7 +427,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
         await writeJsonAtomic(responseArtifact, blocked);
         return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker: auth.blocker, provider: 'openai_images_api', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
       }
-      if (useResponsesImageTool && !responsesImagegenModel(opts)) {
+      if (useResponsesImageTool && !responsesModel) {
         const blocker = 'imagegen_responses_model_missing';
         await writeJsonAtomic(responseArtifact, {
           schema: 'sks.image-ux-gpt-image-2-response.v1',
@@ -436,7 +451,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
               method: 'POST',
               headers: { authorization: `Bearer ${auth.apiKey}`, 'content-type': 'application/json' },
               body: JSON.stringify({
-                model: responsesImagegenModel(opts),
+                model: responsesModel,
                 input: [{
                   role: 'user',
                   content: [
@@ -472,6 +487,8 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
             source_screen_id: input.source_screen_id,
             provider_surface: 'openai_responses_image_generation',
             output_id: generated.id || payload?.id || null,
+            evidence_class: responsesEvidenceClass,
+            output_source: responsesOutputSource,
             real_generated: true
           });
           const imageContract = await writeGeneratedImagePathContract(input, out, 'openai_responses_image_generation').catch(() => null);
@@ -479,16 +496,21 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
             schema: 'sks.image-ux-gpt-image-2-response.v1',
             created_at: nowIso(),
             provider: 'openai_responses_image_generation',
-            evidence_class: 'non_codex_api_fallback',
+            evidence_class: responsesEvidenceClass,
             model: 'gpt-image-2',
-            responses_model: responsesImagegenModel(opts),
+            responses_model: responsesModel,
+            responses_model_source: auth.responses_model_source || null,
             auth_source: auth.auth_source,
+            api_key_source: auth.api_key_source || null,
+            codex_lb_provider_selected: codexLbProviderSelected,
             ok: true,
             status: 'generated',
             output_image_path: out,
             output_image_sha256: meta.sha256,
             output_sha256: meta.sha256,
             output_id: meta.output_id,
+            output_source: responsesOutputSource,
+            image_output_recovered_from_stream: payload?.image_output_recovered_from_stream === true,
             image_artifact_path_contract: imageContract?.artifact_path || null,
             dimensions: { width: meta.width, height: meta.height, format: meta.format },
             latency_ms: Date.now() - started,
@@ -604,12 +626,20 @@ export async function generateGptImage2CalloutReview(input: ImageUxReviewImagege
     return createFakeImagegenAdapter({ ...(opts.fakeAdapter || {}), mockContext: true }).generateCalloutReview(input);
   }
   const capability = await detectImagegenCapability(opts.capability || {}).catch(() => null);
-  // codex-lb imagegen is a direct API fallback, not Codex App imagegen evidence.
-  // It must be explicitly enabled by the caller or environment.
+  // Resolve the provider from the same home/env the capability probe used, so a
+  // caller that supplies a hermetic root is never answered from the operator's
+  // real ~/.codex/config.toml.
+  const codexLbTarget = opts.codexLbTarget || await resolveCodexLbImagegenTarget(codexLbTargetInputs(opts.capability)).catch(() => null);
+  // codex-lb output is still classified as a non-Codex-App fallback, but when
+  // codex-lb is the *selected* provider there is no other route to reach: the
+  // Codex App surface answers through this same proxy. Requiring an opt-in flag
+  // there left the only working path unreachable, so selection enables it and an
+  // explicit `0`/false still switches it off.
   const explicitDisableCodexLbFallback = opts.allowCodexLbApiFallback === false || process.env.SKS_IMAGEGEN_ALLOW_CODEX_LB_API_FALLBACK === '0';
   const allowCodexLbApiFallback = !explicitDisableCodexLbFallback && (
     opts.allowCodexLbApiFallback === true
     || process.env.SKS_IMAGEGEN_ALLOW_CODEX_LB_API_FALLBACK === '1'
+    || codexLbTarget?.selected === true
   );
   const allowApiFallback = (
     opts.allowApiFallback === true
@@ -619,6 +649,7 @@ export async function generateGptImage2CalloutReview(input: ImageUxReviewImagege
   const openaiOptions = {
     ...(opts.openai || {}),
     codexLb: allowCodexLbApiFallback ? opts.openai?.codexLb || capability?.codex_lb || null : null,
+    codexLbTarget,
     allowCodexLbApiFallback
   };
   const codexAdapter = createCodexAppImagegenAdapter({
@@ -628,6 +659,14 @@ export async function generateGptImage2CalloutReview(input: ImageUxReviewImagege
   const codexResult = await codexAdapter.generateCalloutReview(input);
   if (codexResult.ok || !allowApiFallback) return codexResult;
   return createOpenAIImagesApiAdapter(openaiOptions).generateCalloutReview(input);
+}
+
+function codexLbTargetInputs(source: any = {}) {
+  const inputs: { home?: string; env?: NodeJS.ProcessEnv; configText?: string } = {};
+  if (source?.home) inputs.home = source.home;
+  if (source?.env) inputs.env = source.env;
+  if (typeof source?.configText === 'string') inputs.configText = source.configText;
+  return inputs;
 }
 
 function imagegenMockContext(opts: any = {}) {
@@ -655,6 +694,8 @@ async function resolveImagesApiAuth(opts: any = {}) {
     return {
       apiKey: openAiKey,
       auth_source: 'OPENAI_API_KEY',
+      responses_model: responsesImagegenModel(opts),
+      responses_model_source: responsesImagegenModel(opts) ? 'explicit' : null,
       endpoint: imageEditsEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
       responses_endpoint: responsesEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
       blocker: null
@@ -665,21 +706,31 @@ async function resolveImagesApiAuth(opts: any = {}) {
     return {
       apiKey: null,
       auth_source: null,
+      responses_model: responsesImagegenModel(opts),
+      responses_model_source: null,
       endpoint: imageEditsEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
       responses_endpoint: responsesEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
       blocker: 'openai_api_key_missing'
     };
   }
   const envKey = codexLb.env_key || 'CODEX_LB_API_KEY';
-  const envPath = codexLb.env_path || opts.codexLbEnvPath || '';
-  const envText = envPath ? await readText(envPath, '').catch(() => '') : '';
-  const codexLbKey = String(opts.codexLbApiKey || process.env[envKey] || parseShellEnvValue(envText, envKey) || '').trim();
+  // The fingerprint-bound loader, not raw process.env: a stale exported
+  // CODEX_LB_API_KEY otherwise shadows the SKS-managed env file and the proxy
+  // answers 401 while every capability probe still reports "ready".
+  const target = opts.codexLbTarget || await resolveCodexLbImagegenTarget(codexLbTargetInputs(opts)).catch(() => null);
+  const codexLbKey = String(opts.codexLbApiKey || target?.api_key || '').trim();
+  const baseUrl = target?.base_url || codexLb.base_url || opts.baseUrl || '';
   return {
     apiKey: codexLbKey || null,
     auth_source: envKey,
-    endpoint: imageEditsEndpoint(codexLb.base_url || opts.baseUrl || ''),
-    responses_endpoint: responsesEndpoint(codexLb.base_url || opts.baseUrl || ''),
-    blocker: codexLbKey ? null : 'codex_lb_api_key_missing'
+    api_key_source: target?.api_key_source || null,
+    // config.toml's `model` is often a slug this key cannot use; the served
+    // catalog is the only source that is safe to default to.
+    responses_model: responsesImagegenModel(opts) || target?.model || '',
+    responses_model_source: responsesImagegenModel(opts) ? 'explicit' : target?.model_source || null,
+    endpoint: imageEditsEndpoint(baseUrl),
+    responses_endpoint: responsesEndpoint(baseUrl),
+    blocker: codexLbKey ? null : target?.blocker || 'codex_lb_api_key_missing'
   };
 }
 
@@ -718,7 +769,7 @@ async function readResponsePayload(response: Response, timeoutMs = 90000) {
   try {
     return JSON.parse(text);
   } catch {
-    const sse = parseSsePayload(text);
+    const sse = parseResponsesSsePayload(text);
     if (sse) return sse;
     return { error: { message: text.slice(0, 2000) } };
   }
@@ -738,43 +789,6 @@ async function textWithTimeout(response: Response, timeoutMs: number) {
   }
 }
 
-function parseSsePayload(text: string) {
-  const events: any[] = [];
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.startsWith('data:')) continue;
-    const data = line.slice('data:'.length).trim();
-    if (!data || data === '[DONE]') continue;
-    try {
-      events.push(JSON.parse(data));
-    } catch {}
-  }
-  const failed = events.find((event) => event?.type === 'response.failed' || event?.response?.status === 'failed');
-  if (failed) {
-    return {
-      object: 'response.sse',
-      status: 'failed',
-      error: failed?.response?.error || failed?.error || { message: 'responses_sse_failed' },
-      events: events.map((event) => event?.type || null)
-    };
-  }
-  const completed = [...events].reverse().find((event) => event?.type === 'response.completed' && event?.response);
-  if (completed?.response) return completed.response;
-  const imageEvent = [...events].reverse().find((event) => /image_generation_call/.test(String(event?.type || '')) && (event?.result || event?.item?.result || event?.b64_json));
-  if (imageEvent) {
-    return {
-      object: 'response.sse',
-      status: 'completed',
-      output: [{
-        id: imageEvent?.item?.id || imageEvent?.id || null,
-        type: 'image_generation_call',
-        status: imageEvent?.status || imageEvent?.item?.status || 'completed',
-        result: imageEvent?.result || imageEvent?.item?.result || imageEvent?.b64_json || null
-      }],
-      events: events.map((event) => event?.type || null)
-    };
-  }
-  return events.length ? { object: 'response.sse', status: 'unknown', events: events.map((event) => event?.type || null) } : null;
-}
 
 function findResponsesImageGenerationOutput(payload: any): { b64: string | null, id: string | null } | null {
   for (const output of Array.isArray(payload?.output) ? payload.output : []) {
@@ -852,6 +866,10 @@ function payloadRetryCode(payload: any): string | null {
   if (/overloaded|proxy_overloaded|server[_ -]?error|temporarily unavailable|unavailable|5\d\d/.test(haystack)) return 'server_error';
   if (/timeout|timed out|aborted/.test(haystack)) return 'ETIMEDOUT';
   if (status === 'failed' && /server|overload|unavailable|rate/.test(haystack)) return 'server_error';
+  // A stream that ended without a terminal event and without a single output
+  // item was cut short server-side, which is transient — observed against
+  // codex-lb mid-generation. Retry rather than reporting a missing image.
+  if (status === 'unknown' && String(payload?.object || '') === 'response.sse') return 'server_error';
   return null;
 }
 

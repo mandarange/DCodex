@@ -35,7 +35,11 @@ test('Codex App imagegen reports missing generated output separately from missin
   assert.equal(result.blocker, 'codex_app_imagegen_output_missing');
 });
 
-test('gpt-image-2 does not silently fall back to codex-lb when Codex App output is missing', async () => {
+// codex-lb is not a detour around Codex: when it is the selected provider,
+// Codex App's own $imagegen answers through that same proxy, so requiring an
+// opt-in flag there left the only reachable path switched off. The escape hatch
+// is the explicit disable, which must still keep every request local.
+test('gpt-image-2 does not call codex-lb when the fallback is explicitly disabled', async () => {
   const { root, imagePath } = await tempImageRoot('sks-codex-lb-no-silent-fallback-');
   const outputDir = path.join(root, 'out');
   const previousFetch = globalThis.fetch;
@@ -52,6 +56,7 @@ test('gpt-image-2 does not silently fall back to codex-lb when Codex App output 
       requested_fidelity: 'original',
       privacy: 'local-only'
     }, {
+      allowCodexLbApiFallback: false,
       capability: {
         codexBin: path.join(root, 'missing-codex'),
         timeoutMs: 100,
@@ -111,6 +116,62 @@ test('gpt-image-2 fallback uses codex-lb key only when explicitly enabled', asyn
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, 'https://lb.example.test/backend-api/codex/responses');
     assert.equal(calls[0].authorization, 'Bearer sk-clb-test');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('selecting codex-lb as the provider is enough to reach image generation', async () => {
+  const { root, imagePath } = await tempImageRoot('sks-codex-lb-selected-imagegen-');
+  const outputDir = path.join(root, 'out');
+  const calls = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: JSON.parse(String(init?.body || '{}')) });
+    return new Response(JSON.stringify({
+      id: 'resp_lb_2',
+      output: [{
+        id: 'ig_lb_2',
+        type: 'image_generation_call',
+        status: 'completed',
+        result: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l/5gVQAAAABJRU5ErkJggg=='
+      }]
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    // No SKS_IMAGEGEN_* opt-in and no explicit allow flag: provider selection alone.
+    const result = await withoutImagegenOutputEnv(() => generateGptImage2CalloutReview({
+      mission_id: null,
+      source_screen_id: 'screen-1',
+      source_image_path: imagePath,
+      output_dir: outputDir,
+      prompt: buildCalloutPrompt('screen-1'),
+      requested_fidelity: 'original',
+      privacy: 'local-only'
+    }, {
+      capability: {
+        codexBin: path.join(root, 'missing-codex'),
+        timeoutMs: 100,
+        env: { HOME: root, CODEX_LB_API_KEY: 'sk-clb-test' },
+        configText: codexLbConfig()
+      },
+      codexLbTarget: {
+        selected: true,
+        base_url: 'https://lb.example.test/backend-api/codex',
+        api_key: 'sk-clb-test',
+        api_key_source: 'env-file',
+        model: 'gpt-5.6-sol',
+        model_source: 'catalog_default',
+        blocker: null
+      }
+    }));
+
+    assert.equal(result.ok, true);
+    assert.equal(result.provider, 'openai_responses_image_generation');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://lb.example.test/backend-api/codex/responses');
+    // The served catalog slug, not config.toml's `model`, which the key may not allow.
+    assert.equal(calls[0].body.model, 'gpt-5.6-sol');
   } finally {
     globalThis.fetch = previousFetch;
   }

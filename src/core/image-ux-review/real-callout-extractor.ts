@@ -2,6 +2,7 @@ import path from 'node:path';
 import { codexSchemaPath, runCodexExecResumeWithOutputSchema, structuredOutputBlocker } from '../codex-exec-output-schema.js';
 import { readJson } from '../fsx.js';
 import { runOpenAIStructuredOutput } from '../structured-output-adapter.js';
+import { resolveCodexLbImagegenTarget } from '../imagegen/codex-lb-imagegen-target.js';
 import { generatedImageMetadata } from './imagegen-adapter.js';
 import { buildIssueLedgerFromGeneratedCallouts } from './callout-extraction.js';
 
@@ -83,11 +84,19 @@ export async function extractRealCallouts(input: RealCalloutExtractionInput) {
       outputFile: path.join(input.root, '.sneakoscope', 'tmp', `ux-callout-extraction-${Date.now()}.json`)
     });
   } else {
+    // Without a Codex session there is no session to resume, so extraction goes
+    // over the Responses API. Under a selected codex-lb provider that is the
+    // codex-lb endpoint with its own key and a served catalog model — otherwise
+    // the route generates a callout image it can never read back.
+    const codexLb = await resolveCodexLbImagegenTarget({}).catch(() => null);
+    const useCodexLb = codexLb?.selected === true && codexLb.blocker === null;
     providerResult = await runOpenAIStructuredOutput({
       prompt,
       schemaName: 'image_ux_issue_ledger',
       jsonSchema,
-      imagePath: path.resolve(input.root, input.generatedImagePath)
+      imagePath: path.resolve(input.root, input.generatedImagePath),
+      ...(useCodexLb ? { baseUrl: codexLb.base_url, apiKey: codexLb.api_key } : {}),
+      ...(useCodexLb && codexLb.model ? { model: codexLb.model } : {})
     });
   }
 

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { exists, readJson } from '../fsx.js';
 import { imageDimensions, sha256File } from '../wiki-image/image-hash.js';
+import { imagegenEvidenceClassBlockers, isFullImagegenOutputSource } from '../imagegen/imagegen-evidence.js';
 
 export type GateVerdictKind = 'pass' | 'fail' | 'mock_only' | 'missing' | 'invalid';
 
@@ -74,9 +75,9 @@ async function imagegenResponseGateReasons(root: string, missionDir: string) {
   if (response.schema !== 'sks.image-ux-gpt-image-2-response.v1') reasons.push('imagegen_response_schema_invalid');
   if (response.ok !== true || response.status !== 'generated') reasons.push(response.blocker || 'imagegen_response_not_generated');
   const evidenceClass = String(response.evidence_class || '');
-  if (evidenceClass !== 'codex_app_imagegen') reasons.push(evidenceClass ? `imagegen_response_evidence_class_not_codex_app:${evidenceClass}` : 'imagegen_response_evidence_class_missing');
+  reasons.push(...imagegenEvidenceClassBlockers('imagegen_response', evidenceClass));
   const outputSource = String(response.output_source || '');
-  if (!['manual_attach', 'auto_discovered_generated_images'].includes(outputSource)) reasons.push('imagegen_response_output_source_invalid');
+  if (!isFullImagegenOutputSource(outputSource)) reasons.push('imagegen_response_output_source_invalid');
   const outputPath = String(response.output_image_path || '');
   const expectedSha = String(response.output_sha256 || response.output_image_sha256 || '');
   if (!outputPath) reasons.push('imagegen_response_output_path_missing');

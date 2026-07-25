@@ -8,9 +8,19 @@ requireContains('ux-review:run-wires-imagegen', 'src/core/commands/image-ux-revi
   'generateGptImage2CalloutReview',
   'evidence_class',
   'output_sha256',
-  'imagegen_response_non_codex_api_fallback_not_full_evidence',
+  // The evidence taxonomy lives in imagegen-evidence.ts; the route must consult
+  // it rather than restating which classes count.
+  'imagegenEvidenceClassBlockers',
+  'isFullImagegenOutputSource',
   'extractRealCallouts',
   'buildImageUxCalloutExtractionReport'
+]);
+
+requireContains('ux-review:run-wires-imagegen', 'src/core/imagegen/imagegen-evidence.ts', [
+  '_non_codex_api_fallback_not_full_evidence',
+  '_mock_fixture_not_full_evidence',
+  'CODEX_LB_PROVIDER_IMAGEGEN_EVIDENCE_CLASS',
+  'FULL_IMAGEGEN_EVIDENCE_CLASSES'
 ]);
 
 emitGate('ux-review:run-wires-imagegen', { command_path: 'sks ux-review run', imagegen_adapter: 'generateGptImage2CalloutReview' });

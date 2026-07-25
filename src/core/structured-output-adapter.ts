@@ -2,10 +2,13 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { sha256 } from './fsx.js';
 import { redactCodexOutput, structuredOutputBlocker, validateStructuredOutput } from './codex-exec-output-schema.js';
+import { parseResponsesSsePayload } from './responses-stream.js';
 
 export interface StructuredOutputAdapterRequest {
   model?: string;
   apiKey?: string | null;
+  /** Responses base URL; defaults to OpenAI. A selected codex-lb provider passes its own. */
+  baseUrl?: string | null;
   prompt: string;
   schemaName: string;
   jsonSchema: Record<string, unknown>;
@@ -50,6 +53,18 @@ export function ensureStrictObjectSchema(schema: Record<string, unknown>) {
   ]));
   next.required = Object.keys(properties);
   next.additionalProperties = false;
+  // A `$ref` target is validated under the same strict rules as the inline
+  // schema, so reusable definitions must be normalized too.
+  for (const key of ['$defs', 'definitions']) {
+    const defs = next[key];
+    if (!defs || typeof defs !== 'object' || Array.isArray(defs)) continue;
+    next[key] = Object.fromEntries(Object.entries(defs as Record<string, unknown>).map(([name, value]) => [
+      name,
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? ensureNestedStrictSchema(value as Record<string, unknown>)
+        : value
+    ]));
+  }
   return next;
 }
 
@@ -89,7 +104,7 @@ export async function runOpenAIStructuredOutput(request: StructuredOutputAdapter
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), request.timeoutMs || 120_000);
   try {
-    const response = await fetch('https://api.openai.com/v1/responses', {
+    const response = await fetch(responsesEndpoint(request.baseUrl), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${apiKey}`,
@@ -111,7 +126,10 @@ export async function runOpenAIStructuredOutput(request: StructuredOutputAdapter
     if (!response.ok) {
       return blockedResult(model, 'openai_structured_output_api_error', redactCodexOutput(text), sourceSha);
     }
-    const payload = JSON.parse(text) as Record<string, unknown>;
+    // A Responses provider may answer SSE regardless of `stream`, and close
+    // `response.completed` with an empty `output`; recover the streamed items.
+    const payload = parseStructuredOutputBody(text);
+    if (!payload) return blockedResult(model, 'json_parse_failed', 'Responses body was neither JSON nor a readable event stream.', sourceSha);
     const parsed = (payload as any).output_parsed || parseResponseOutputText(payload);
     if (!parsed || typeof parsed !== 'object') return blockedResult(model, 'json_parse_failed', 'Responses output did not contain parsed JSON.', sourceSha);
     const strictSchema = strictJsonSchemaFormat(request.schemaName, request.jsonSchema).schema;
@@ -151,7 +169,54 @@ function ensureNestedStrictSchema(schema: Record<string, unknown>): Record<strin
   if (schema.type === 'array' && schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items)) {
     return { ...schema, items: ensureNestedStrictSchema(schema.items as Record<string, unknown>) };
   }
+  if (schema.type === 'array' && !schema.items && Array.isArray(schema.prefixItems)) {
+    // Strict mode has no tuple form: a 2020-12 `prefixItems` tuple becomes a
+    // homogeneous `items` schema. `minItems`/`maxItems` still pin the arity;
+    // per-index bounds are not expressible and are checked downstream instead.
+    const tuple = schema.prefixItems as Record<string, unknown>[];
+    const types = new Set(tuple.map((entry) => String(entry?.type || '')));
+    const { prefixItems, ...rest } = schema;
+    if (types.size === 1 && !types.has('')) return { ...rest, items: { type: [...types][0] } };
+  }
+  // Strict mode rejects a property with no `type`, which a `const`/`enum`-only
+  // property (e.g. a schema-identifier literal) legitimately omits. The literal
+  // already says what the type is, so state it rather than dropping the field.
+  if (schema.type === undefined) {
+    const inferred = inferJsonSchemaType(schema);
+    if (inferred) return { ...schema, type: inferred };
+  }
   return schema;
+}
+
+function inferJsonSchemaType(schema: Record<string, unknown>): string | null {
+  const samples = 'const' in schema
+    ? [schema.const]
+    : Array.isArray(schema.enum) ? schema.enum : [];
+  const types = new Set(samples.map(jsonTypeOf).filter(Boolean));
+  return types.size === 1 ? [...types][0] as string : null;
+}
+
+function jsonTypeOf(value: unknown): string | null {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  if (typeof value === 'string') return 'string';
+  if (typeof value === 'boolean') return 'boolean';
+  if (typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'number';
+  if (typeof value === 'object') return 'object';
+  return null;
+}
+
+function responsesEndpoint(baseUrl: unknown) {
+  const base = String(baseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '');
+  return /\/responses$/i.test(base) ? base : `${base}/responses`;
+}
+
+function parseStructuredOutputBody(text: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return parseResponsesSsePayload(text) as Record<string, unknown> | null;
+  }
 }
 
 function parseResponseOutputText(payload: Record<string, unknown>) {

@@ -14,6 +14,7 @@ import { runImageUxFixLoop } from './image-ux-review/fix-loop.js';
 import { buildRecapturePlan } from './image-ux-review/recapture.js';
 import { addVisualAnchor, ingestImage } from './wiki-image/image-voxel-ledger.js';
 import { validateFinalHonestModeReport } from './artifact-schemas.js';
+import { imagegenEvidenceClassBlockers, isFullImagegenOutputSource } from './imagegen/imagegen-evidence.js';
 
 export const IMAGE_UX_REVIEW_GATE_ARTIFACT = 'image-ux-review-gate.json';
 export const IMAGE_UX_REVIEW_POLICY_ARTIFACT = 'image-ux-review-policy.json';
@@ -894,9 +895,8 @@ function generatedImageEvidenceBlockers(image: any = {}, evidence: any = {}) {
   const evidenceClass = String(image.evidence_class || '');
   const outputSource = String(image.output_source || '');
   const outputSha = String(image.output_sha256 || image.output_image_sha256 || '');
-  if (!evidenceClass) blockers.push('generated_review_image_evidence_class_missing');
-  else if (evidenceClass !== 'codex_app_imagegen') blockers.push(`generated_review_image_evidence_class_not_codex_app:${evidenceClass}`);
-  if (outputSource && !['manual_attach', 'auto_discovered_generated_images'].includes(outputSource)) blockers.push(`generated_review_image_output_source_invalid:${outputSource}`);
+  blockers.push(...imagegenEvidenceClassBlockers('generated_review_image', evidenceClass));
+  if (outputSource && !isFullImagegenOutputSource(outputSource)) blockers.push(`generated_review_image_output_source_invalid:${outputSource}`);
   if (!outputSha) blockers.push('generated_review_image_output_sha256_missing');
   else if (evidence.sha256 && outputSha !== evidence.sha256) blockers.push('generated_review_image_output_sha256_mismatch');
   if (!image.path) blockers.push('generated_review_image_missing');

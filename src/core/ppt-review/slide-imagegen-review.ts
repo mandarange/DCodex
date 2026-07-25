@@ -4,6 +4,7 @@ import { nowIso, readJson } from '../fsx.js';
 import { CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_IMAGEGEN_REQUIRED_POLICY } from '../routes.js';
 import { sha256File, imageDimensions } from '../wiki-image/image-hash.js';
 import { generateGptImage2CalloutReview } from '../image-ux-review/imagegen-adapter.js';
+import { imagegenEvidenceClassBlockers, isFullImagegenEvidenceClass, isFullImagegenOutputSource } from '../imagegen/imagegen-evidence.js';
 
 export const PPT_SLIDE_CALLOUT_LEDGER_ARTIFACT = 'ppt-slide-callout-ledger.json';
 export const PPT_SLIDE_IMAGEGEN_REQUEST_ARTIFACT = 'ppt-slide-imagegen-request.json';
@@ -99,8 +100,8 @@ export async function generateSlideCalloutReviews({ root, dir, slideExportLedger
       const response = generated.response_artifact ? await readJson(generated.response_artifact, null).catch(() => null) : null;
       const evidenceClass = String(response?.evidence_class || '');
       const fakeGenerated = evidenceClass === 'mock_fixture' || generated.provider === 'fake_imagegen_adapter';
-      const codexGenerated = evidenceClass === 'codex_app_imagegen';
-      if (!codexGenerated) blockers.push(evidenceClass === 'non_codex_api_fallback' ? 'ppt_imagegen_non_codex_api_fallback_not_full_evidence' : fakeGenerated ? 'ppt_imagegen_mock_fixture_not_full_evidence' : 'ppt_imagegen_evidence_class_missing');
+      const codexGenerated = isFullImagegenEvidenceClass(evidenceClass);
+      blockers.push(...imagegenEvidenceClassBlockers('ppt_imagegen', evidenceClass));
       generatedReviewImages.push({
         ...await generatedSlideMetadata(root, generated.generated_image_path, slide, {
           mock: fakeGenerated,
@@ -189,8 +190,8 @@ export function buildSlideImagegenEvidence(calloutLedger: any = {}) {
     const evidenceClass = String(image.evidence_class || '');
     const outputSource = String(image.output_source || '');
     const outputSha = String(image.output_sha256 || '');
-    if (evidenceClass !== 'codex_app_imagegen') blockers.push(evidenceClass ? `ppt_slide_imagegen_evidence_class_not_codex_app:${evidenceClass}` : 'ppt_slide_imagegen_evidence_class_missing');
-    if (!['manual_attach', 'auto_discovered_generated_images'].includes(outputSource)) blockers.push(`ppt_slide_imagegen_output_source_invalid:${outputSource || 'missing'}`);
+    blockers.push(...imagegenEvidenceClassBlockers('ppt_slide_imagegen', evidenceClass));
+    if (!isFullImagegenOutputSource(outputSource)) blockers.push(`ppt_slide_imagegen_output_source_invalid:${outputSource || 'missing'}`);
     if (!outputSha) blockers.push('ppt_slide_imagegen_output_sha256_missing');
     else if (image.sha256 && image.sha256 !== outputSha) blockers.push('ppt_slide_imagegen_output_sha256_mismatch');
     if (image.real_generated !== true) blockers.push('ppt_slide_imagegen_not_real_codex_app_output');
@@ -244,7 +245,8 @@ async function generatedSlideMetadata(root: string, relPath: string, slide: any,
     height: dims.height,
     format: dims.format,
     provider_surface: opts.mock ? 'mock_fixture' : (opts.providerSurface || 'Codex App $imagegen'),
-    real_generated: opts.realGenerated === true && (opts.evidenceClass || (opts.mock ? 'mock_fixture' : 'codex_app_imagegen')) === 'codex_app_imagegen',
+    real_generated: opts.realGenerated === true
+      && isFullImagegenEvidenceClass(opts.evidenceClass || (opts.mock ? 'mock_fixture' : 'codex_app_imagegen')),
     mock: opts.mock === true,
     local_only: true
   };
