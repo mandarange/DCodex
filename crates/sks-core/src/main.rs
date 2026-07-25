@@ -1,3 +1,5 @@
+mod search;
+
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 
@@ -5,6 +7,10 @@ fn main() {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("--version") => println!("sks-rs {}", env!("CARGO_PKG_VERSION")),
+        Some("search") => {
+            let rest: Vec<String> = args.collect();
+            std::process::exit(search::run(&rest));
+        }
         Some("compact-info") => {
             let mut input = String::new();
             let _ = io::stdin().read_to_string(&mut input);
@@ -75,7 +81,7 @@ fn main() {
             }
         }
         _ => {
-            eprintln!("sks-rs optional accelerator. Commands: --version, compact-info, jsonl-tail, secret-scan, evidence-secret-scan, image-hash, image-voxel-index, voxel-validate, image-voxel-validate-fast");
+            eprintln!("sks-rs optional accelerator. Commands: --version, search files|text|batch, compact-info, jsonl-tail, secret-scan, evidence-secret-scan, image-hash, image-voxel-index, voxel-validate, image-voxel-validate-fast");
             std::process::exit(2);
         }
     }
