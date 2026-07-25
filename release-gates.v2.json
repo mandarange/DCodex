@@ -1325,6 +1325,33 @@
       "output_contract": "sks.gate-result.v1"
     },
     {
+      "id": "quality:helper-dedup",
+      "command": "node ./dist/scripts/helper-dedup-check.js",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 120000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "src/core/quality/helper-dedup.ts",
+          "src/scripts/helper-dedup-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v1"
+    },
+    {
       "id": "legacy:strong-inventory",
       "command": "node ./dist/scripts/legacy-strong-inventory-check.js",
       "deps": [
