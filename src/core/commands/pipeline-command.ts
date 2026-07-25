@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { projectRoot, readJson } from '../fsx.js';
-import { listSessionStates, missionDir, stateFile } from '../mission.js';
-import { PIPELINE_PLAN_ARTIFACT, projectGateStatus, writePipelinePlan } from '../pipeline.js';
+import { listSessionStates, missionDir, setCurrent, stateFile } from '../mission.js';
+import { PIPELINE_PLAN_ARTIFACT, pipelinePlanState, projectGateStatus, writePipelinePlan } from '../pipeline.js';
 import { routePrompt } from '../routes.js';
 import { flag, positionalArgs, readFlagValue, resolveMissionId } from './command-utils.js';
 
@@ -42,6 +42,12 @@ export async function pipelineCommand(args: any = []) {
         ambiguity: { required: true, auto_sealed: true, status: 'auto_sealed' },
         agents
       });
+      // Re-planning the active mission re-seeds engineering-sanity-review.json
+      // against a freshly resolved changed-scope base; the route state has to
+      // follow the plan or the Stop gate would validate against a stale base.
+      if (id === state.mission_id) {
+        await setCurrent(root, { mission_id: id, ...pipelinePlanState(plan) }, { sessionKey: state._session_key });
+      }
       if (flag(args, '--json')) return console.log(JSON.stringify({ schema: 'sks.pipeline-plan.v1', ok: true, mission_id: id, plan }, null, 2));
       console.log(`Pipeline plan written: .sneakoscope/missions/${id}/${PIPELINE_PLAN_ARTIFACT}`);
       return;

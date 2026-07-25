@@ -207,7 +207,7 @@ async function collectChangedScope(root: string, opts: any) {
     entriesByPath.set(rel, {
       path: rel,
       status: 'A',
-      lines_added: text ? text.split(/\n/).length : 0,
+      lines_added: addedFileLines(text).length,
       lines_deleted: 0,
       source_sha256: isSourceLike(rel) ? sha256(text) : null
     });
@@ -354,7 +354,7 @@ async function collectAddedHunkScopes(root: string, changedScope: any) {
     const entry = changedScope.entries?.find((candidate: any) => normalizeSlashes(candidate.path) === normalized);
     if (!rows.length && String(entry?.status || '').startsWith('A')) {
       const text = await fsp.readFile(path.join(root, normalized), 'utf8').catch(() => '');
-      rows = text.split(/\r?\n/).map((value, index) => ({ line: index + 1, text: value }));
+      rows = addedFileLines(text).map((value, index) => ({ line: index + 1, text: value }));
     }
     scopes.set(normalized, {
       scope: 'added_hunks',
@@ -699,6 +699,26 @@ function safeJson(text: string) {
   } catch {
     return {};
   }
+}
+
+// Untracked files are read from the working tree instead of a diff, so their
+// line accounting has to match what `git diff` reports for the same file once
+// it is tracked; otherwise a scope bound to a base commit changes shape the
+// moment those files are committed. Git counts a trailing newline as the end
+// of the last line, not as an extra empty line.
+function addedFileLines(text: string): string[] {
+  if (!text) return [];
+  const lines = text.split(/\r?\n/);
+  if (lines[lines.length - 1] === '') lines.pop();
+  return lines;
+}
+
+// The concrete commit a mission's changed scope is measured against. Resolving
+// 'HEAD' to a sha at route-preparation time keeps the scope stable across a
+// route that creates its own commit (for example $Commit).
+export function resolveChangedScopeBase(root: string, fallback = 'HEAD'): string {
+  const sha = gitText(root, ['rev-parse', 'HEAD']).trim();
+  return /^[0-9a-f]{40}$/i.test(sha) ? sha : fallback;
 }
 
 function gitLines(root: string, args: string[]) {

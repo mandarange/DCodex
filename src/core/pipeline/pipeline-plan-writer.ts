@@ -4,5 +4,6 @@ export {
   routePrompt,
   buildPipelinePlan,
   writePipelinePlan,
-  validatePipelinePlan
+  validatePipelinePlan,
+  pipelinePlanState
 } from '../pipeline-internals/runtime-core.js';

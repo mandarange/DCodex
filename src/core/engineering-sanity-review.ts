@@ -78,7 +78,12 @@ export function validateEngineeringSanityReview(review: any = {}) {
   return { ok: blockers.length === 0, blockers: [...new Set(blockers)] };
 }
 
-export async function validateEngineeringSanityReviewArtifact(root: string, missionId: string, review: any = {}) {
+export async function validateEngineeringSanityReviewArtifact(
+  root: string,
+  missionId: string,
+  review: any = {},
+  opts: { base?: string | null } = {}
+) {
   const basic = validateEngineeringSanityReview(review);
   const blockers = [...basic.blockers];
   if (review?.code_structure_report !== ENGINEERING_SANITY_CODE_STRUCTURE_REPORT) blockers.push('code_structure_report');
@@ -88,7 +93,17 @@ export async function validateEngineeringSanityReviewArtifact(root: string, miss
   if (persisted?.schema_version !== 1) blockers.push(`${ENGINEERING_SANITY_CODE_STRUCTURE_REPORT}:schema_version`);
   if (String(review?.code_structure_report_sha256 || '') !== `sha256:${sha256(persistedText)}`) blockers.push('code_structure_report_sha256');
 
-  const fresh = await scanCodeStructure(root, { changed: true, includeOk: true });
+  // The scope base comes from the route state the pipeline wrote when it
+  // seeded this review, not from the agent-authored artifact. Re-scanning
+  // against that same base is what lets a route perform its own commit
+  // ($Commit/$Commit-And-Push) without erasing the diff it just reviewed.
+  const declaredBase = scopeBase(opts.base);
+  const persistedBase = scopeBase(persisted?.changed_scope?.base);
+  if (declaredBase && persistedBase && declaredBase !== persistedBase) {
+    blockers.push(`${ENGINEERING_SANITY_CODE_STRUCTURE_REPORT}:changed_scope_base`);
+  }
+  const base = declaredBase || persistedBase || 'HEAD';
+  const fresh = await scanCodeStructure(root, { changedSince: base, includeOk: true });
   const freshScopeHash = engineeringScopeHash(fresh);
   if (review?.changed_scope_sha256 !== freshScopeHash) blockers.push('changed_scope_sha256');
   if (engineeringScopeHash(persisted) !== freshScopeHash) blockers.push(`${ENGINEERING_SANITY_CODE_STRUCTURE_REPORT}:stale_changed_scope`);
@@ -138,6 +153,11 @@ export function engineeringScopeHash(report: any = {}) {
           .sort((left: any, right: any) => left.path.localeCompare(right.path))
       : []
   }))}`;
+}
+
+function scopeBase(value: unknown): string {
+  const text = String(value ?? '').trim();
+  return text || '';
 }
 
 function engineeringCandidates(report: any = {}) {

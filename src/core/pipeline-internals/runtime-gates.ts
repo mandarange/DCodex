@@ -118,7 +118,9 @@ async function engineeringSanityGateStatus(root: any, state: any = {}, jsonCache
   const id = state?.mission_id;
   if (!id) return { ok: false, blockers: ['mission_id'] };
   const review = await readJsonCached(jsonCache, path.join(missionDir(root, id), ENGINEERING_SANITY_REVIEW_ARTIFACT), null);
-  return validateEngineeringSanityReviewArtifact(root, id, review);
+  return validateEngineeringSanityReviewArtifact(root, id, review, {
+    base: typeof state?.engineering_sanity_scope_base === 'string' ? state.engineering_sanity_scope_base : null
+  });
 }
 
 async function staleReflectionReasons(root: any, state: any = {}, gate: any = {}) {
@@ -256,17 +258,20 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
   const stopGate = String(state?.stop_gate || '');
   const completionProofRequired = state.proof_required === true || routeRequiresCompletionProof(route);
   const reflectionRequired = reflectionRequiredForState(state);
-  // NOTE: engineering_sanity_required / db_access_review_required are set by
-  // routeState for every code-changing prompt, including routes whose stopGate
-  // is 'none' or 'honest_mode', so those gates are seeded but never enforced
-  // here. Adding them to this shortcut is NOT a safe fix on its own:
-  // routeState's requirement predicate (looksLikeCodeChangingWork) and the
-  // artifact-seeding predicate (writePipelinePlan, which returns early for the
-  // 'answer'/'passthrough' task profiles) disagree, so prompts like
-  // "$SKS make the retry loop bounded" would demand an artifact the product
-  // never writes and cannot regenerate. Aligning the two predicates has to come
-  // first; see the tracked follow-up before changing this condition.
-  if (!opts.noQuestion && (stopGate === 'none' || stopGate === 'honest_mode') && !state?.context7_required && !state?.subagents_required && !completionProofRequired && !reflectionRequired) {
+  // engineering_sanity_required / db_access_review_required must be honoured
+  // even on routes whose stopGate is 'none' or 'honest_mode' ($SKS, $Fast-Mode,
+  // $with-local-llm-on, $Commit, $Commit-And-Push): they carry real
+  // code-changing work. Both flags are now set only by pipelinePlanState(),
+  // from a plan that actually seeded the artifact, so requiring them here can
+  // never demand a file the product did not write.
+  if (!opts.noQuestion
+    && (stopGate === 'none' || stopGate === 'honest_mode')
+    && !state?.context7_required
+    && !state?.subagents_required
+    && !completionProofRequired
+    && !reflectionRequired
+    && state?.engineering_sanity_required !== true
+    && state?.db_access_review_required !== true) {
     return null;
   }
   const activeGatePreview: any = state?.subagents_required

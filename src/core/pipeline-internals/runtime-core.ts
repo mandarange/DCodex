@@ -16,10 +16,11 @@ import {
 } from '../db-review.js';
 import {
   createEngineeringSanityReviewSeed,
+  ENGINEERING_SANITY_CODE_STRUCTURE_REPORT,
   ENGINEERING_SANITY_REVIEW_ARTIFACT
 } from '../engineering-sanity-review.js';
 import { createAndWriteWorkOrderLedgerForPrompt } from '../work-order-ledger.js';
-import { writeCodeStructureReport } from '../code-structure.js';
+import { resolveChangedScopeBase, writeCodeStructureReport } from '../code-structure.js';
 import { writeMemorySweepReport } from '../memory-governor.js';
 import { writeMistakeMemoryReport } from '../mistake-memory.js';
 import { MISTAKE_RECALL_ARTIFACT, mistakeRecallGateStatus } from '../mistake-recall.js';
@@ -212,6 +213,10 @@ export function buildPipelinePlan(input: any = {}) {
     kept_stages: kept,
     verification_budget: verificationBudget,
     verification,
+    // Filled in by writePipelinePlan once the mission's changed-scope base is
+    // resolved; a persisted plan without it never seeded the review artifact
+    // and must never turn the engineering-sanity Stop gate on.
+    engineering_sanity_review: null as EngineeringSanityReviewBinding | null,
     invariants,
     proof_field: proof,
     ssot_guard: buildSsotGuard({ route: route?.id || 'SKS', mode: route?.mode || 'SKS', task }),
@@ -240,15 +245,22 @@ export async function writePipelinePlan(dir: any, input: any = {}) {
   }
   const requestIntake = input.requestIntake || await writeRequestIntakeArtifact(dir, input);
   const plan = buildPipelinePlan({ ...input, taskProfile, requestIntake });
+  const root = input.root || rootFromMissionDir(dir);
+  if (planStagesEngineeringSanityReview(plan)) {
+    plan.engineering_sanity_review = {
+      artifact: ENGINEERING_SANITY_REVIEW_ARTIFACT,
+      code_structure_report: ENGINEERING_SANITY_CODE_STRUCTURE_REPORT,
+      changed_scope_base: resolveChangedScopeBase(root)
+    };
+  }
   await writeJsonAtomic(path.join(dir, PIPELINE_PLAN_ARTIFACT), plan);
-  if (plan.stages?.some((stage: any) => stage.id === 'engineering_sanity_check' && !['skipped', 'not_applicable'].includes(String(stage.status || '')))) {
-    const root = input.root || rootFromMissionDir(dir);
+  if (plan.engineering_sanity_review) {
     const report = await writeCodeStructureReport(root, dir, {
       missionId: input.missionId || null,
-      changed: true,
+      changedSince: plan.engineering_sanity_review.changed_scope_base,
       includeOk: true
     });
-    const reportText = await readText(path.join(dir, 'code-structure-report.json'), '');
+    const reportText = await readText(path.join(dir, ENGINEERING_SANITY_CODE_STRUCTURE_REPORT), '');
     const reviewFile = path.join(dir, ENGINEERING_SANITY_REVIEW_ARTIFACT);
     if (!(await exists(reviewFile))) {
       await writeJsonAtomic(reviewFile, createEngineeringSanityReviewSeed(
@@ -259,6 +271,34 @@ export async function writePipelinePlan(dir: any, input: any = {}) {
     }
   }
   return plan;
+}
+
+export interface EngineeringSanityReviewBinding {
+  artifact: string;
+  code_structure_report: string;
+  changed_scope_base: string;
+}
+
+function planStagesEngineeringSanityReview(plan: any) {
+  return Array.isArray(plan?.stages) && plan.stages.some((stage: any) => (
+    String(stage?.id || '') === 'engineering_sanity_check'
+    && !['skipped', 'not_applicable'].includes(String(stage?.status || ''))
+  ));
+}
+
+// Single source of truth for the engineering-sanity Stop gate: the route state
+// may only require the review when this plan actually seeded it. Deriving the
+// requirement from any other predicate (for example the prompt wording alone)
+// re-creates the drift where a route demands an artifact no plan ever wrote,
+// which the Stop gate can only answer with an unsatisfiable blocker.
+export function pipelinePlanState(plan: any) {
+  const sanity = plan?.engineering_sanity_review || null;
+  return {
+    pipeline_plan_ready: validatePipelinePlan(plan).ok,
+    pipeline_plan_path: PIPELINE_PLAN_ARTIFACT,
+    engineering_sanity_required: Boolean(sanity),
+    engineering_sanity_scope_base: sanity?.changed_scope_base || null
+  };
 }
 
 export async function writeRequestIntakeArtifact(dir: any, input: any = {}) {
@@ -891,8 +931,7 @@ async function prepareImageUxReview(root: any, route: any, task: any, required: 
     stop_gate: route.stopGate,
     image_ux_review_gate_ready: true,
     image_ux_review_policy_ready: true,
-    pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok,
-    pipeline_plan_path: PIPELINE_PLAN_ARTIFACT
+    ...pipelinePlanState(pipelinePlan)
   }), { sessionKey: opts.sessionKey });
   return routeContext(route, id, task, required, `Capture or attach source UI screenshots, run Codex App $imagegen/gpt-image-2 to generate annotated review images, extract those generated images into ${IMAGE_UX_REVIEW_ISSUE_LEDGER_ARTIFACT}, then update ${IMAGE_UX_REVIEW_GATE_ARTIFACT}. ${CODEX_IMAGEGEN_REQUIRED_POLICY} Initial gate blockers: ${(artifacts.gate.blockers || []).join(', ') || 'none'}.`);
 }
@@ -993,8 +1032,7 @@ async function prepareClarificationGate(root: any, route: any, task: any, requir
       clarification_passed: result.ok,
       ambiguity_gate_required: true,
       ambiguity_gate_passed: result.ok,
-      pipeline_plan_ready: validatePipelinePlan(plan).ok,
-      pipeline_plan_path: PIPELINE_PLAN_ARTIFACT,
+      ...pipelinePlanState(plan),
       original_stop_gate: route.stopGate,
       stop_gate: route.stopGate,
       ...(materialized.state || {})
@@ -1139,7 +1177,7 @@ async function prepareResearch(root: any, route: any, task: any, required: any, 
   const { id, dir } = await createMission(root, { mode: 'research', prompt: task, sessionKey: opts.sessionKey });
   const researchPlan = await writeResearchPlan(dir, task, {});
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
-  await setCurrent(root, routeState(id, route, 'RESEARCH_PREPARED', required, { prompt: task, pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok, pipeline_plan_path: PIPELINE_PLAN_ARTIFACT }), { sessionKey: opts.sessionKey });
+  await setCurrent(root, routeState(id, route, 'RESEARCH_PREPARED', required, { prompt: task, ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
   return routeContext(route, id, task, required, `Run sks research run latest as a real long-running source-gathering pass, never an automatic mock fallback; do not modify repository source code. Run layered Super Search first and allow only correlated verified-content rows to support real claims. Then run exactly three independent official research_reviewer threads on GPT-5.6 Sol Max. Any objection requires a mission-local research_synthesizer revision and a fresh three-thread review cycle; do not launch a custom scheduler or debate pool. Keep subagent-plan.json, subagent-events.jsonl, subagent-parent-summary.json, and subagent-evidence.json current, write research-report.md and ${researchPaperArtifactForPlan(researchPlan)}, and pass the adversarial convergence, Honest Mode, and research-gate.json checks.`);
 }
 
@@ -1149,7 +1187,7 @@ async function prepareAutoResearch(root: any, route: any, task: any, required: a
   await writeJsonAtomic(path.join(dir, 'experiment-ledger.json'), { schema_version: 1, entries: [] });
   await writeJsonAtomic(path.join(dir, 'autoresearch-gate.json'), { passed: false, experiment_ledger_present: true, metric_present: false, keep_or_discard_decision: false, falsification_present: false, honest_conclusion: false, context7_evidence: false });
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
-  await setCurrent(root, routeState(id, route, 'AUTORESEARCH_EXPERIMENT_LOOP', required, { prompt: task, pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok, pipeline_plan_path: PIPELINE_PLAN_ARTIFACT }), { sessionKey: opts.sessionKey });
+  await setCurrent(root, routeState(id, route, 'AUTORESEARCH_EXPERIMENT_LOOP', required, { prompt: task, ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
   return routeContext(route, id, task, required, 'Run the smallest useful experiment loop, update experiment-ledger.json, falsify the result, and pass autoresearch-gate.json.');
 }
 
@@ -1166,10 +1204,8 @@ async function prepareDb(root: any, route: any, task: any, required: any, opts: 
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
   await setCurrent(root, routeState(id, route, 'DB_REVIEW_REQUIRED', required, {
     prompt: task,
-    engineering_sanity_required: true,
     db_access_review_required: true,
-    pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok,
-    pipeline_plan_path: PIPELINE_PLAN_ARTIFACT
+    ...pipelinePlanState(pipelinePlan)
   }), { sessionKey: opts.sessionKey });
   return routeContext(route, id, task, required, `Inspect the real DB entry points and callers first, then complete ${DB_ACCESS_REVIEW_ARTIFACT} for canonical adapter/query-helper reuse, pool ownership/acquire/release/shutdown/exhaustion, N+1/repeated I/O, and sensitive transaction integrity. Outside MAD-SKS, do not mutate any database: when a migration is required, finish with exactly one mission-local ${DB_MANUAL_MIGRATION_ARTIFACT} containing active forward SQL and a complete rollback section that remains commented out, record its SHA-256 and manual-apply notice in ${DB_REVIEW_ARTIFACT}, and tell the user to apply it directly. Only an active capability-v2 MAD-SKS SQL-plane may execute through MCP, with independent read-back and final read-only restoration.`);
 }
@@ -1209,11 +1245,9 @@ async function prepareMadSksSqlPlane(root: any, route: any, task: any, required:
     mad_sks_sql_plane_capability_mission_id: prepared.mission_id,
     mad_sks_sql_plane_capability_file: madSksSqlPlaneRelativePath(MAD_SKS_SQL_PLANE_CAPABILITY_FILE),
     mad_sks_gate_file: 'mad-sks-gate.json',
-    engineering_sanity_required: true,
     db_access_review_required: true,
     stop_gate: 'mad-sks-gate.json',
-    pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok,
-    pipeline_plan_path: PIPELINE_PLAN_ARTIFACT
+    ...pipelinePlanState(pipelinePlan)
   }), { sessionKey: opts.sessionKey });
   return routeContext(route, prepared.mission_id, task, required, `MAD-SKS SQL-plane mission/capability/profile were created atomically for cycle ${prepared.cycle_id}. Inspect the existing canonical DB access and complete ${DB_ACCESS_REVIEW_ARTIFACT} before mutation. Then verify Supabase MCP tool inventory exposes execute_sql and apply_migration, execute the requested SQL immediately through the bound MCP SQL-plane rather than generating a manual migration file, independently read back the postconditions, and finally close the profile/capability and prove normal read-only restoration.`);
 }
@@ -1222,7 +1256,7 @@ async function prepareGx(root: any, route: any, task: any, required: any, opts: 
   const { id, dir } = await createMission(root, { mode: 'gx', prompt: task, sessionKey: opts.sessionKey });
   await writeJsonAtomic(path.join(dir, 'gx-gate.json'), { passed: false, vgraph_beta_render: false, validation: false, drift_snapshot: false, context7_evidence: false });
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
-  await setCurrent(root, routeState(id, route, 'GX_VALIDATE_REQUIRED', required, { prompt: task, pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok, pipeline_plan_path: PIPELINE_PLAN_ARTIFACT }), { sessionKey: opts.sessionKey });
+  await setCurrent(root, routeState(id, route, 'GX_VALIDATE_REQUIRED', required, { prompt: task, ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
   return routeContext(route, id, task, required, 'Run sks gx init/render/validate/drift/snapshot, then pass gx-gate.json.');
 }
 
@@ -1230,7 +1264,7 @@ async function prepareLightRoute(root: any, route: any, task: any, required: any
   const { id, dir } = await createMission(root, { mode: route.id.toLowerCase(), prompt: task, sessionKey: opts.sessionKey });
   await writeJsonAtomic(path.join(dir, 'route-context.json'), { route: route.id, command: route.command, task, required_skills: route.requiredSkills, context7_required: required, context_tracking: triwikiContextTracking(), stop_gate: 'honest_mode' });
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'light_route' } });
-  await setCurrent(root, routeState(id, route, 'ROUTE_CONTEXT_READY', required, { prompt: task, stop_gate: 'none', pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok, pipeline_plan_path: PIPELINE_PLAN_ARTIFACT }), { sessionKey: opts.sessionKey });
+  await setCurrent(root, routeState(id, route, 'ROUTE_CONTEXT_READY', required, { prompt: task, stop_gate: 'none', ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
   return routeContext(route, id, task, required, 'Load the route skill context, execute the smallest matching action, and finish with Honest Mode.');
 }
 
@@ -1402,8 +1436,7 @@ async function prepareNaruto(root: any, route: any, task: any, required: any, op
     parent_model_match: parentModelMatch,
     from_chat_img_required: fromChatImgRequired,
     naruto_gate_file: NARUTO_GATE_FILENAME,
-    pipeline_plan_ready: validatePipelinePlan(pipelinePlan).ok,
-    pipeline_plan_path: PIPELINE_PLAN_ARTIFACT
+    ...pipelinePlanState(pipelinePlan)
   }), { sessionKey: opts.sessionKey });
   return routeContext(route, id, cleanTask, required, `Use the delegation context below in the current Codex parent session. First replace parent_required with a defensible independent/disjoint decomposition, then spawn and wait for every requested agent thread. Record official events and integrate the parent summary before passing ${NARUTO_GATE_FILENAME}.\n\n${delegationPrompt}`);
 }
@@ -1419,8 +1452,9 @@ function requestedSubagentsFromTask(task: any) {
 function routeState(id: any, route: any, phase: any, context7Required: any, extra: any = {}) {
   const reasoning = routeReasoning(route, extra.prompt || '');
   const subagentsRequired = routeRequiresSubagents(route, extra.prompt || '');
-  const engineeringSanityRequired = extra.engineering_sanity_required ?? routeNeedsEngineeringSanityReview(route, extra.prompt || '');
-  return { mission_id: id, route: route.id, route_command: route.command, mode: route.mode, phase, context7_required: context7Required, context7_verified: false, subagents_required: subagentsRequired, subagents_verified: !subagentsRequired, native_sessions_required: false, native_sessions_verified: false, reflection_required: reflectionRequiredForRoute(route), engineering_sanity_required: engineeringSanityRequired, visible_progress_required: true, context_tracking: 'triwiki', required_skills: route.requiredSkills, stop_gate: route.stopGate, reasoning_effort: reasoning.effort, reasoning_profile: reasoning.profile, reasoning_temporary: true, goal_continuation: ambientGoalContinuation(), ...extra };
+  // Default off: only a caller that spread pipelinePlanState(plan) — i.e. a
+  // plan that seeded engineering-sanity-review.json — may turn this gate on.
+  return { mission_id: id, route: route.id, route_command: route.command, mode: route.mode, phase, context7_required: context7Required, context7_verified: false, subagents_required: subagentsRequired, subagents_verified: !subagentsRequired, native_sessions_required: false, native_sessions_verified: false, reflection_required: reflectionRequiredForRoute(route), engineering_sanity_required: false, engineering_sanity_scope_base: null, visible_progress_required: true, context_tracking: 'triwiki', required_skills: route.requiredSkills, stop_gate: route.stopGate, reasoning_effort: reasoning.effort, reasoning_profile: reasoning.profile, reasoning_temporary: true, goal_continuation: ambientGoalContinuation(), ...extra };
 }
 
 function routeNeedsEngineeringSanityReview(route: any, task: any) {

@@ -4,7 +4,8 @@ export {
   routePrompt,
   buildPipelinePlan,
   writePipelinePlan,
-  validatePipelinePlan
+  validatePipelinePlan,
+  pipelinePlanState
 } from './pipeline/pipeline-plan-writer.js';
 
 export {
