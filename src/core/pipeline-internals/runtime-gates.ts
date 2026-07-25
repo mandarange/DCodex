@@ -32,6 +32,7 @@ import {
   hasContext7DocsEvidence,
   hasSubagentEvidence,
   subagentEvidence,
+  PIPELINE_PLAN_ARTIFACT,
 } from './runtime-core.js';
 import { projectTriwikiToAgentsMd } from '../triwiki/agents-md-projector.js';
 import {
@@ -117,7 +118,18 @@ async function engineeringSanityGateStatus(root: any, state: any = {}, jsonCache
   if (state?.engineering_sanity_required !== true) return { ok: true, blockers: [] };
   const id = state?.mission_id;
   if (!id) return { ok: false, blockers: ['mission_id'] };
-  const review = await readJsonCached(jsonCache, path.join(missionDir(root, id), ENGINEERING_SANITY_REVIEW_ARTIFACT), null);
+  const dir = missionDir(root, id);
+  const reviewFile = path.join(dir, ENGINEERING_SANITY_REVIEW_ARTIFACT);
+  if (!(await exists(reviewFile))) {
+    // Route state written before the plan owned this decision can carry the
+    // flag with nothing ever seeded. Blocking on it is unsatisfiable — no
+    // command regenerates the artifact — and repeating the same reason trips
+    // the compliance loop guard into a false hard blocker. A plan that did
+    // declare the binding still blocks: that case is a deleted artifact.
+    const plan = await readJsonCached(jsonCache, path.join(dir, PIPELINE_PLAN_ARTIFACT), null);
+    if (!plan?.engineering_sanity_review) return { ok: true, blockers: [], not_applicable: true };
+  }
+  const review = await readJsonCached(jsonCache, reviewFile, null);
   return validateEngineeringSanityReviewArtifact(root, id, review, {
     base: typeof state?.engineering_sanity_scope_base === 'string' ? state.engineering_sanity_scope_base : null
   });

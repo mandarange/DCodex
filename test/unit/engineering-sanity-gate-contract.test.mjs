@@ -240,6 +240,45 @@ for (const [routeId, routeCommand, prompt] of [
   });
 }
 
+// Route state persisted before the plan owned this decision can carry the flag
+// with nothing seeded. Enforcement must not turn that into an unsatisfiable
+// blocker (three repeats of one reason trip the compliance loop guard).
+test('pre-migration route state with no seeded review does not block Stop', async (t) => {
+  const root = await gitFixtureRoot(t, 'sanity-legacy');
+  const missionId = 'M-legacy-engineering-sanity';
+  await fs.mkdir(missionDir(root, missionId), { recursive: true });
+  const state = {
+    mission_id: missionId,
+    route: 'SKS',
+    route_command: '$SKS',
+    mode: 'SKS',
+    stop_gate: 'none',
+    engineering_sanity_required: true,
+    reflection_required: false,
+    proof_required: false
+  };
+
+  assert.equal(await evaluateStop(root, state, { message: 'done' }), null);
+  await assert.rejects(fs.access(path.join(missionDir(root, missionId), 'compliance-loop-guard.json')));
+  await assert.rejects(fs.access(path.join(missionDir(root, missionId), 'hard-blocker.json')));
+});
+
+test('a deleted review still blocks when the plan declared the binding', async (t) => {
+  const root = await gitFixtureRoot(t, 'sanity-deleted');
+  const sessionKey = 'sanity-deleted';
+  await fs.appendFile(path.join(root, 'src/retry.ts'), 'export const RETRY_BACKOFF_MS = 250;\n');
+
+  await prepareRoute(root, '$Commit 재시도 루프 수정 커밋해줘', {}, { sessionKey });
+  const state = await loadStateForSession(root, sessionKey);
+  const missionId = String(state.mission_id || '');
+  assert.equal(state.engineering_sanity_required, true);
+
+  await fs.rm(path.join(missionDir(root, missionId), ENGINEERING_SANITY_REVIEW_ARTIFACT));
+  const decision = await evaluateStop(root, state, { message: 'done' });
+  assert.equal(decision?.decision, 'block');
+  assert.equal(decision?.gate, ENGINEERING_SANITY_REVIEW_ARTIFACT);
+});
+
 test('a scope change after the review still blocks the $Commit Stop gate', async (t) => {
   const root = await gitFixtureRoot(t, 'sanity-commit-drift');
   const sessionKey = 'sanity-commit-drift';
