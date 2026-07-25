@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { exists, nowIso, readJson, runProcess, writeJsonAtomic, writeTextAtomic } from './fsx.js';
+import { escapeRegExp } from './text/regex.js';
 
 const VERSION_HOOK_MARKER = 'Sneakoscope Codex Version Guard';
 const VERSION_STATE_FILE = 'sks-version-state.json';
@@ -479,10 +480,6 @@ async function stageVersionFiles(root: any, files: any) {
   if (!existing.length) return { ok: true, relative_files: [] };
   const result = await git(root, ['add', '--', ...existing]);
   return { ok: result.code === 0, relative_files: existing, stderr: result.stderr };
-}
-
-function escapeRegExp(value: any) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function parseSemver(value: any) {

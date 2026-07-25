@@ -4,6 +4,7 @@ import { isUnmanagedProjectCodexConfig, writeCodexConfigGuarded } from '../codex
 import { CONTEXT7_REMOTE_MCP_URL, mcpServerBlock, mcpServerExplicitlyDisabled, readProjectCodexConfig, replaceOrAppendMcpServerBlock } from '../mcp/mcp-config-preservation.js';
 import { guardedWriteFile, guardContextForRoute } from '../safety/mutation-guard.js';
 import { createRequestedScopeContract } from '../safety/requested-scope-contract.js';
+import { messageOf } from '../errors/message.js';
 
 export interface Context7McpRepairReport {
   schema: 'sks.doctor-context7-mcp-repair.v1';
@@ -119,10 +120,6 @@ export async function repairContext7Mcp(input: { root: string; apply?: boolean; 
     }
   }
   return report;
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 async function probeRemoteContext7(): Promise<Context7McpRepairReport['remote_probe_status']> {

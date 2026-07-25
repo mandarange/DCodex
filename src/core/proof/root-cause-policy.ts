@@ -1,12 +1,9 @@
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 type JsonRecord = Record<string, unknown>;
 
 const PROBLEM_PATTERN = /\b(fallback|workaround|bypass|temporary|synthetic|stale|missing|failed|failure|error|blocked|not_ok|not ok|fixture_child_missing|native_agent_proof_false)\b/i;
 const COMPLETE_STATUSES = new Set(['complete', 'completed', 'corrected', 'resolved', 'fixed']);
 const BLOCKING_STATUSES = new Set(['blocked', 'failed', 'not_verified']);
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
-}
 
 function asList(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];

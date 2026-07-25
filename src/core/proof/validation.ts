@@ -1,11 +1,8 @@
 import { containsPlaintextSecret } from '../secret-redaction.js';
 import { COMPLETION_PROOF_SCHEMA, COMPLETION_PROOF_STATUSES } from './proof-schema.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 type JsonRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
-}
 
 export function validateCompletionProof(proof: unknown = {}) {
   const issues: string[] = [];

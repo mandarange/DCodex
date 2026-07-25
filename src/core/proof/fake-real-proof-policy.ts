@@ -6,6 +6,7 @@ import {
   normalizeLegacySubagentCountFields,
   subagentCountContractBlockers
 } from '../subagents/wave-lifecycle.js'
+import { uniqueStrings } from '../text/strings.js'
 
 export const FAKE_REAL_PROOF_POLICY_SCHEMA = 'sks.fake-real-proof-policy.v3'
 export const OFFICIAL_SUBAGENT_EXECUTION_AUTHORITY = 'official_codex_subagent'
@@ -373,8 +374,4 @@ function runScopedObservedStarts(
 
 function record(value: unknown): Record<string, any> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : null
-}
-
-function uniqueStrings(values: unknown[]): string[] {
-  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
 }

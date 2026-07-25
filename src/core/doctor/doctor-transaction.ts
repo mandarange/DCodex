@@ -3,6 +3,7 @@ import { nowIso, writeJsonAtomic } from '../fsx.js';
 import type { DoctorDirtyPlan } from './doctor-dirty-planner.js';
 import { isDoctorPhaseClean, markDoctorPhaseClean } from './doctor-dirty-planner.js';
 import { ui as cliUi } from '../../cli/cli-theme.js';
+import { messageOf } from '../errors/message.js';
 
 export interface DoctorFixTransactionPhase {
   id: string;
@@ -250,8 +251,4 @@ function mergePhase(phase: DoctorFixTransactionPhase, update: Partial<DoctorFixT
     blockers: [...(phase.blockers || []), ...(update.blockers || [])],
     warnings: [...(phase.warnings || []), ...(update.warnings || [])]
   };
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

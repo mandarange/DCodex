@@ -47,6 +47,7 @@ import {
   restoreDesktopRoutingSnapshot,
   writeDesktopRoutingSnapshot
 } from './desktop-routing-snapshot.js';
+import { escapeRegExp } from '../text/regex.js';
 
 export interface OpenRouterStatus {
   readonly schema: 'sks.codex-app-openrouter-status.v1';
@@ -493,8 +494,4 @@ function hasTomlStringArray(text: string, key: string, values: readonly string[]
 
 function hasTomlInteger(text: string, key: string, value: number): boolean {
   return new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*${value}\\s*(?:#.*)?$`, 'm').test(text);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

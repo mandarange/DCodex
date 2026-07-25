@@ -5,6 +5,7 @@ import path from 'node:path';
 import { PACKAGE_VERSION, exists, runProcess, which } from '../fsx.js';
 import { resolveAllowedProjectRoot } from './machine-registry.js';
 import { REMOTE_READINESS_SCHEMA, type RemoteMachineV1, type RemoteReadinessV1 } from './types.js';
+import { asRecordOrNull as asRecord } from '../json/records.js';
 
 interface CommandResult {
   readonly code: number | null;
@@ -174,8 +175,4 @@ function codexAppCandidates(platform: NodeJS.Platform, homeDir: string): string[
     path.join(homeDir, 'Applications', 'Codex.app'),
     path.join(homeDir, 'Applications', 'ChatGPT.app')
   ];
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }

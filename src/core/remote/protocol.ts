@@ -9,6 +9,7 @@ import {
   type WorkerRequestV1,
   type WorkerResponseV1
 } from './types.js';
+import { asRecordOrNull as asRecord } from '../json/records.js';
 
 export const DEFAULT_REMOTE_MAX_LINE_BYTES = 64 * 1024;
 export const DEFAULT_REMOTE_MAX_RESPONSE_BYTES = 512 * 1024;
@@ -261,8 +262,4 @@ function timestamp(value: unknown, field: string): number {
   const parsed = Date.parse(typeof value === 'string' ? value : '');
   if (!Number.isFinite(parsed)) throw new RemoteProtocolError(`${field}_invalid`);
   return parsed;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }

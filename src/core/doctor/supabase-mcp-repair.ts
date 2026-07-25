@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import { nowIso, writeJsonAtomic } from '../fsx.js';
 import { isUnmanagedProjectCodexConfig, writeCodexConfigGuarded } from '../codex/codex-config-guard.js';
 import { mcpServerBlock, mcpServerExplicitlyDisabled, readProjectCodexConfig, replaceOrAppendMcpServerBlock, tomlTableRange } from '../mcp/mcp-config-preservation.js';
+import { messageOf } from '../errors/message.js';
 
 export interface SupabaseMcpRepairReport {
   schema: 'sks.doctor-supabase-mcp-repair.v1';
@@ -162,10 +163,6 @@ export async function repairSupabaseMcp(input: { root: string; apply?: boolean; 
     }
   }
   return report;
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 function setReadOnly(block: string): string {

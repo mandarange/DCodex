@@ -7,6 +7,11 @@ import {
   normalizeCodexModelId,
   sksOpenRouterCatalogPath
 } from './codex-model-catalog.js';
+import { escapeRegExp } from '../text/regex.js';
+import { isRecord } from '../json/records.js';
+import { uniqueStrings } from '../text/strings.js';
+
+export { uniqueStrings };
 
 const MULTI_PROVIDER_ROUTER_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
@@ -174,10 +179,6 @@ export function routerBlocked(schema: string, ...blockers: Array<string | null |
   };
 }
 
-export function uniqueStrings(values: readonly unknown[]): string[] {
-  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
-}
-
 function liveModelIds(value: unknown): string[] {
   const rows = Array.isArray(value)
     ? value
@@ -224,12 +225,4 @@ async function readResponseTextBounded(response: Response, maxBytes: number): Pr
     reader.releaseLock();
   }
   return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), total).toString('utf8');
-}
-
-function escapeRegExp(value: unknown): string {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function isRecord(value: unknown): value is Record<string, any> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

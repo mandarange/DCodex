@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { nowIso, readJson, writeJsonAtomic } from '../fsx.js'
 import { loopPlanPath } from './loop-artifacts.js'
+import { isRecord } from '../json/records.js'
 
 interface LoopContinuationReport {
   schema: 'sks.loop-continuation-enforcer.v1'
@@ -51,8 +52,4 @@ function loopNodes(value: unknown): Array<{ loop_id: string }> {
   if (!isRecord(value) || !isRecord(value.graph) || !Array.isArray(value.graph.nodes)) return []
   return value.graph.nodes
     .filter((node): node is { loop_id: string } => isRecord(node) && typeof node.loop_id === 'string')
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

@@ -10,6 +10,9 @@ import {
   type McpServerConfigV2
 } from './types.js';
 import type { ResolvedMcpScope } from './scope.js';
+import { isRecord } from '../json/records.js';
+
+export { isRecord };
 
 export interface McpConfigDocument {
   readonly ref: ResolvedMcpScope;
@@ -145,10 +148,6 @@ export function privateInlineEnvironment(value: Readonly<Record<string, unknown>
 
 export function rawStringArray(value: unknown): string[] {
   return stringArray(value);
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function parseToolApprovalModes(value: unknown): Record<string, McpApprovalMode> {

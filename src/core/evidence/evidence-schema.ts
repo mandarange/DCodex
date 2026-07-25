@@ -1,4 +1,5 @@
 import { nowIso, randomId } from '../fsx.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 export const EVIDENCE_SCHEMA = 'sks.evidence.v1';
 export const EVIDENCE_INDEX_SCHEMA = 'sks.evidence-index.v1';
@@ -58,10 +59,6 @@ export type EvidenceFreshness = typeof EVIDENCE_FRESHNESS[number];
 export type EvidenceTrust = typeof EVIDENCE_TRUST[number];
 
 type JsonRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
-}
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' ? value : null;

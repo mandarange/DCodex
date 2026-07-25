@@ -8,6 +8,7 @@ import type { McpMutationOptions } from './mutation.js';
 import { redactMcpError } from './redaction.js';
 import { McpScopeError, resolveMcpScope } from './scope.js';
 import { MCP_MUTATION_SCHEMA, type McpMutationResultV2, type McpWritableScope } from './types.js';
+import { messageOf } from '../errors/message.js';
 
 export async function restoreMcpBackup(
   backupId: string,
@@ -105,5 +106,3 @@ function failure(scope: McpWritableScope, blockers: string[], publicError: strin
     public_error: publicError
   };
 }
-
-function messageOf(error: unknown): string { return error instanceof Error ? error.message : String(error); }

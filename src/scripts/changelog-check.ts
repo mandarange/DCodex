@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { escapeRegExp } from '../core/text/regex.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const changelogPath = path.join(root, 'CHANGELOG.md');
@@ -11,10 +12,6 @@ const packagePath = path.join(root, 'package.json');
 function fail(message) {
   console.error(`Changelog check failed: ${message}`);
   process.exit(2);
-}
-
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function sectionFor(text, headingRe) {

@@ -8,6 +8,7 @@ import {
   type CodexHookApprovalState,
   isRecord
 } from './codex-app-types.js'
+import { messageOf } from '../errors/message.js'
 
 export async function probeCodexHookApprovalState(root: string, input: {
   codexBin?: string | null
@@ -183,8 +184,4 @@ function buildProbe(detectable: boolean, approvalState: CodexHookApprovalState, 
 async function persist(root: string, report: CodexHookApprovalProbe, writeReport: boolean): Promise<CodexHookApprovalProbe> {
   if (writeReport) await writeJsonAtomic(path.join(root, '.sneakoscope', 'reports', 'codex-hook-approval-probe.json'), report).catch(() => undefined)
   return report
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }

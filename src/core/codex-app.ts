@@ -16,6 +16,7 @@ import {
 } from './codex-lb/codex-lb-tool-catalog.js';
 import { isSksOwnedGlobalUiLock } from './codex-app/codex-app-ui-state-snapshot.js';
 import { redactString } from './secret-redaction.js';
+import { escapeRegExp } from './text/regex.js';
 
 export const CODEX_APP_DOCS_URL = 'https://developers.openai.com/codex/app/features';
 export const CODEX_CHANGELOG_URL = 'https://developers.openai.com/codex/changelog';
@@ -1205,10 +1206,6 @@ function hasTomlBoolean(text: any = '', key: any = '', value: boolean) {
   const expected = value ? 'true' : 'false';
   const re = new RegExp(`(?:^|\\n)\\s*${escapeRegExp(key)}\\s*=\\s*${expected}\\s*(?:#.*)?(?=\\n|$)`);
   return re.test(String(text || ''));
-}
-
-function escapeRegExp(text: any = '') {
-  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function remoteControlGuidance(status: any = {}) {

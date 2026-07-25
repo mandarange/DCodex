@@ -11,6 +11,7 @@ import {
   type McpMutationOptions,
   type CodexMcpCliPort
 } from '../mcp-config/index.js';
+import { isRecord } from '../json/records.js';
 
 export const CODEX_MCP_LIST_SCHEMA = MCP_INVENTORY_SCHEMA;
 export const CODEX_MCP_MUTATION_SCHEMA = MCP_MUTATION_SCHEMA;
@@ -111,10 +112,6 @@ function scopeOptions(options: CodexMcpManagerOptions): McpMutationOptions {
     ...(options.codexPath ? { codexPath: options.codexPath } : {}),
     ...(options.cli ? { cli: options.cli } : {})
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export * from '../mcp-config/index.js';

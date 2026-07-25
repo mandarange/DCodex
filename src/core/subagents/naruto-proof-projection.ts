@@ -32,6 +32,8 @@ import {
   HOST_CAPABILITY_RUNTIME_SCHEMA,
   type HostCapabilityExecutionEvidence
 } from '../agent-bridge/host-capability-runtime.js'
+import { isRecord } from '../json/records.js'
+import { uniqueStrings } from '../text/strings.js'
 
 export const NARUTO_PROOF_ARTIFACT_FILENAMES = Object.freeze([
   SUBAGENT_PLAN_FILENAME,
@@ -1082,10 +1084,6 @@ function recordValue(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
 function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
@@ -1101,10 +1099,6 @@ function firstText(...values: unknown[]): string {
 function positiveInteger(value: unknown): number | null {
   const number = Number(value)
   return Number.isInteger(number) && number > 0 ? number : null
-}
-
-function uniqueStrings(values: readonly unknown[]): string[] {
-  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
 }
 
 function errorCode(error: unknown): string {

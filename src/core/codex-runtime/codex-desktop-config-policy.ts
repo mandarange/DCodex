@@ -4,6 +4,7 @@ import { DEFAULT_CODEX_APP_PLUGINS } from '../routes.js';
 import { ensureDir, PACKAGE_VERSION, readText, writeTextAtomic } from '../fsx.js';
 import { removeLegacyTopLevelCodexModeLocks, writeCodexConfigGuarded } from '../codex/codex-config-guard.js';
 import { cleanupCodexConfigBackups, validateCodexConfigRoundTrip } from '../codex/codex-config-toml.js';
+import { escapeRegExp } from '../text/regex.js';
 
 export async function ensureGlobalCodexFastModeDuringInstall(opts: any = {}) {
   if (process.env.SKS_SKIP_CODEX_FAST_MODE_REPAIR === '1') return { status: 'skipped', reason: 'SKS_SKIP_CODEX_FAST_MODE_REPAIR=1' };
@@ -307,8 +308,4 @@ export function upsertTomlTable(text: any, table: any, block: any) {
   }
   lines.splice(start, end - start, ...blockLines);
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
-}
-
-function escapeRegExp(value: unknown) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

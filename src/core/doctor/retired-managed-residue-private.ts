@@ -8,6 +8,7 @@ import {
   type ConfinedWalkResult,
   type EmptyTreeRemovalResult
 } from '../managed-path-safety.js';
+import { escapeRegExp } from '../text/regex.js';
 
 /** Cleanup-only inventory. These names are never registered, listed, or redirected. */
 export const REMOVED_PUBLIC_COMMANDS = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui', 'glm'] as const;
@@ -85,8 +86,4 @@ export async function walkEntries(boundary: string, root: string): Promise<Confi
 
 export async function removeEmptyTree(boundary: string, root: string): Promise<EmptyTreeRemovalResult> {
   return removeEmptyTreeVerified(boundary, root);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

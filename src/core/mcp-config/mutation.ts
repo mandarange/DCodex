@@ -9,6 +9,7 @@ import { redactMcpError, redactMcpErrorWithSecrets } from './redaction.js';
 import { isOfficialMcpServerName, McpSecretPolicyError, normalizeApprovalMode, normalizeMcpMutationInput, normalizeMcpServerName } from './secret-policy.js';
 import { McpScopeError, resolveMcpScope, type ResolvedMcpScope } from './scope.js';
 import { MCP_MUTATION_SCHEMA, type McpMutationResultV2, type McpServerMutationInput, type McpWritableScope } from './types.js';
+import { messageOf } from '../errors/message.js';
 
 export interface McpMutationOptions extends McpInventoryOptions {
   readonly cli?: CodexMcpCliPort;
@@ -442,5 +443,3 @@ function fallbackGenerated(text: string, reason: string | null): Awaited<ReturnT
 function generatedFailure(blockers: string[], publicError: string | null = null): Awaited<ReturnType<typeof generateNextText>> {
   return { ok: false, text: null, cliUsed: false, fallbackUsed: false, warnings: [], blockers, publicError };
 }
-
-function messageOf(error: unknown): string { return error instanceof Error ? error.message : String(error); }

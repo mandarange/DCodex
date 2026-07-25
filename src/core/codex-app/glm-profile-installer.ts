@@ -13,6 +13,7 @@ import {
   type SksCodexAppModelProfile
 } from './openrouter-provider.js';
 import { openRouterSecretPaths, resolveOpenRouterApiKey } from '../providers/openrouter/openrouter-secret-store.js';
+import { escapeRegExp } from '../text/regex.js';
 
 type CodexAppGlmConfigWrite = Awaited<ReturnType<typeof ensureGlobalCodexAppGlmProfile>>;
 
@@ -242,8 +243,4 @@ function hasTomlStringArray(text: string, key: string, values: readonly string[]
 
 function hasTomlInteger(text: string, key: string, value: number): boolean {
   return new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*${value}\\s*(?:#.*)?$`, 'm').test(text);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -4,6 +4,7 @@ import { codexLbEnvPath, parseShellEnvValue } from '../codex-lb/codex-lb-env.js'
 import { nowIso, readText, runProcess, which } from '../fsx.js';
 import { redactSecrets, redactString } from '../secret-redaction.js';
 import { evaluateImagegenAuthReadiness } from './imagegen-auth-readiness.js';
+import { escapeRegExp } from '../text/regex.js';
 
 export async function detectImagegenCapability(opts: any = {}) {
   const codexBin = opts.codexBin || await which('codex').catch(() => null);
@@ -269,8 +270,4 @@ function tomlBoolean(text: any = '', key: any = '') {
   const raw = String(text || '').match(re)?.[2];
   if (!raw) return null;
   return raw.toLowerCase() === 'true';
-}
-
-function escapeRegExp(value: unknown) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
 import { releaseGateContractSnapshot } from '../core/release/release-gate-contract.js'
+import { isRecord } from '../core/json/records.js'
 
 interface ReleaseGate {
   id: string
@@ -121,8 +122,4 @@ function isReleaseGate(value: unknown): value is ReleaseGate {
 
 function normalizeStringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean) : []
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

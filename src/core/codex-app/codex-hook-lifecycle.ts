@@ -4,6 +4,7 @@ import { readCodexHookActualState } from '../codex-hooks/codex-hook-actual-disco
 import { installManagedCodexHooks } from '../codex-hooks/codex-hook-managed-install.js'
 import { probeCodexHookApprovalState } from './codex-hook-approval-probe.js'
 import type { CodexHookApprovalProbe, CodexHookApprovalState } from './codex-app-types.js'
+import { messageOf } from '../errors/message.js'
 
 interface HookLifecycleEvent {
   event: string
@@ -83,8 +84,4 @@ export async function buildCodexHookLifecycle(input: { root?: string; apply?: bo
   }
   await writeJsonAtomic(path.join(root, '.sneakoscope', 'reports', 'codex-hook-lifecycle.json'), report).catch(() => undefined)
   return report
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }

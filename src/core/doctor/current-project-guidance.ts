@@ -17,6 +17,7 @@ import {
   uniqueConfinedPath
 } from '../managed-path-safety.js';
 import { collectNestedProjectRoots } from './current-project-guidance-nested.js';
+import { escapeRegExp } from '../text/regex.js';
 
 export const CURRENT_PROJECT_GUIDANCE_SCHEMA = 'sks.current-project-guidance.v1' as const;
 
@@ -429,8 +430,4 @@ function uniqueScopes(scopes: GuidanceScope[]): GuidanceScope[] {
     if (!unique.has(resolved)) unique.set(resolved, { ...scope, root: resolved });
   }
   return [...unique.values()];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

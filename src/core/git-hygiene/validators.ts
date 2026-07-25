@@ -1,6 +1,7 @@
 import fsp from 'node:fs/promises';
 import { GIT_POLICY_SCHEMA, SHARED_MEMORY_MANIFEST_SCHEMA, type SksGitPolicy, type SharedMemoryManifest } from './git-policy.js';
 import { isMockPositiveSharedClaim, sharedRecordHasSecret } from './shared-memory-security.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 export interface ValidationResult {
   ok: boolean;
@@ -52,8 +53,4 @@ export async function validateSharedRecordFile(file: string, policy?: SksGitPoli
   } catch (err) {
     return { ok: false, checked: 1, issues: [`invalid_json:${err instanceof Error ? err.message : String(err)}`] };
   }
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

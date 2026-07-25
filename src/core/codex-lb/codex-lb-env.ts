@@ -1,6 +1,7 @@
 import path from 'node:path';
 import os from 'node:os';
 import { exists, readJson, readText, runProcess, which } from '../fsx.js';
+import { escapeRegExp } from '../text/regex.js';
 
 const KEYCHAIN_WRITER_SWIFT = `import Foundation
 import Security
@@ -452,8 +453,4 @@ async function sha256Full(value: string): Promise<string> {
 
 function redactSecret(text: unknown, secret: unknown): string {
   return String(text || '').split(String(secret || '')).join('[redacted]');
-}
-
-function escapeRegExp(value: unknown): string {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

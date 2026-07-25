@@ -1,3 +1,6 @@
+import { isRecord } from '../json/records.js';
+
+export { isRecord };
 export interface ProbeBlockers {
   blockers: string[]
   warnings?: string[]
@@ -121,10 +124,6 @@ export interface CodexAppExecutionProfile {
   hook_approval_probe_artifact_path: string
   blockers: string[]
   warnings: string[]
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 export function stringList(value: unknown): string[] {

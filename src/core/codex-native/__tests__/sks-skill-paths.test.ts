@@ -11,6 +11,7 @@ import {
   resolveAuthoritativeSksSkillSources
 } from '../sks-skill-paths.js';
 import { installGlobalSkills } from '../../init/skills.js';
+import { escapeRegExp } from '../../text/regex.js';
 
 async function writeManagedSkill(root: string, name: string) {
   const file = path.join(root, name, 'SKILL.md');
@@ -280,7 +281,3 @@ test('shared Codex skill roots include global, project, and CODEX_HOME roots onc
     { scope: 'codex-home', root: '/tmp/codex-home/skills' }
   ]);
 });
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}

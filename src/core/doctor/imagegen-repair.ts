@@ -3,6 +3,7 @@ import { CODEX_APP_IMAGE_GENERATION_DOC_URL } from '../routes.js';
 import { detectImagegenCapability } from '../imagegen/imagegen-capability.js';
 import { ensureDir, nowIso, runProcess, which, writeJsonAtomic } from '../fsx.js';
 import { redactString } from '../secret-redaction.js';
+import { messageOf } from '../errors/message.js';
 
 export const DOCTOR_IMAGEGEN_REPAIR_SCHEMA = 'sks.doctor-imagegen-repair.v1';
 
@@ -222,8 +223,4 @@ export async function repairCodexImagegen(input: {
 function tail(value: unknown, max = 2000) {
   const text = redactString(String(value || ''));
   return text.length > max ? text.slice(-max) : text;
-}
-
-function messageOf(err: unknown) {
-  return err instanceof Error ? err.message : String(err);
 }

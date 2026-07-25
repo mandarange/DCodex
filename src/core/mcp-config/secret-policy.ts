@@ -1,5 +1,6 @@
 import { MCP_APPROVAL_MODES, type McpApprovalMode, type McpServerMutationInput } from './types.js';
 import { isSensitiveMcpArgumentName, looksLikeMcpSecretValue } from './redaction.js';
+import { isRecord } from '../json/records.js';
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SERVER_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
@@ -171,10 +172,6 @@ function boundedString(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
   const text = value.trim();
   return text && Buffer.byteLength(text) <= max && !/[\r\n\0]/.test(text) ? text : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };

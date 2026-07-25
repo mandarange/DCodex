@@ -24,6 +24,7 @@ import {
   codexLbConfigPath,
   normalizeCodexLbBaseUrl
 } from './install-helpers-codex-lb-shared.js';
+import { escapeRegExp } from '../core/text/regex.js';
 
 export function upsertCodexLbConfig(text: any = '', baseUrl: any, selectDefault = true) {
   let next = selectDefault
@@ -295,10 +296,6 @@ function parseShellEnvValue(text: any = '', key: any = '') {
 export async function sha256Text(value: any = '') {
   const { createHash } = await import('node:crypto');
   return createHash('sha256').update(String(value || '')).digest('hex');
-}
-
-function escapeRegExp(value: any) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function topLevelTomlString(text: any = '', key: string) {

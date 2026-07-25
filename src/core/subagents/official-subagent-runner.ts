@@ -23,6 +23,7 @@ import {
   type HostCapabilityExecutionEvidence,
   type HostCapabilityRuntimeDependencies
 } from '../agent-bridge/host-capability-runtime.js'
+import { uniqueStringsSorted as uniqueStrings } from '../text/strings.js'
 
 export const OFFICIAL_SUBAGENT_WORKFLOW_SCHEMA = 'sks.subagent-workflow.v1'
 
@@ -681,8 +682,4 @@ function summarizeCodexJsonlOutput(text: string, secretValues: readonly string[]
     event_count: eventCount,
     event_types: uniqueStrings(eventTypes)
   }
-}
-
-function uniqueStrings(values: readonly unknown[]): string[] {
-  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))].sort()
 }

@@ -3,6 +3,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { nowIso, writeJsonAtomic, writeTextAtomic } from '../fsx.js'
 import { ensureCodexNativeReferenceSnapshot, type CodexNativeReferenceCacheReport } from './codex-native-reference-cache.js'
+import { messageOf } from '../errors/message.js'
 
 export interface CodexNativeReferenceEvidenceRow {
   pattern_id: string
@@ -168,8 +169,4 @@ async function gitSha(sourceDir: string): Promise<string | null> {
   const ref = head.match(/^ref:\s*(.+)$/m)?.[1]
   if (ref) return (await fs.readFile(path.join(sourceDir, '.git', ref), 'utf8').catch(() => '')).trim() || null
   return /^[0-9a-f]{40}$/i.test(head.trim()) ? head.trim() : null
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }

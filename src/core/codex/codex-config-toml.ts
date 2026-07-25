@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { parse } from 'smol-toml'
+import { messageOf } from '../errors/message.js'
 
 export interface CodexConfigRoundTripValidation {
   ok: boolean
@@ -122,8 +123,4 @@ function ownedBackupTag(base: string, file: string): string | null {
   if (/^bak-[A-Za-z0-9_.-]+$/.test(suffix)) return 'bak'
   if (/^codex-app-ui-repair-[A-Za-z0-9_.-]+\.bak$/.test(suffix)) return 'codex-app-ui-repair'
   return null
-}
-
-function messageOf(err: unknown) {
-  return err instanceof Error ? err.message : String(err)
 }

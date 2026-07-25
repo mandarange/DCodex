@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { escapeRegExp } from '../text/regex.js'
 
 export const RELEASE_FILE_OWNERSHIP_REPORT_SCHEMA = 'sks.release-file-ownership-report.v1'
 
@@ -161,10 +162,6 @@ function matchesAny(file: string, patterns: string[]): boolean {
 function isWorkstreamRequest(file: string, owner: string, release: string): boolean {
   if (!release) return false
   return new RegExp(`^${escapeRegExp(sharedFileRequestDir(release))}/${escapeRegExp(owner)}(?:-[^/]+)?\\.json$`).test(file)
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function globToRegExp(pattern: string): RegExp {

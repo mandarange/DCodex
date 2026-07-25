@@ -1,11 +1,8 @@
 import { validateCompletionProof } from '../proof/validation.js';
 import { rootCauseAnalysisIssue } from '../proof/root-cause-policy.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 type JsonRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
-}
 
 function asList(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];

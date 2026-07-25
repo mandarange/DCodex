@@ -1,6 +1,9 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { escapeRegExp } from '../text/regex.js';
+import { isRecord } from '../json/records.js';
+import { uniqueStrings } from '../text/strings.js';
 
 export const CODEX_MODEL_CATALOG_MAX_BYTES = 16 * 1024 * 1024;
 export const CODEX_MODEL_CATALOG_MAX_MODELS = 512;
@@ -423,10 +426,6 @@ function valueType(value: unknown): 'string' | 'number' | 'boolean' | 'array' | 
   return 'undefined';
 }
 
-function uniqueStrings(values: readonly unknown[]): string[] {
-  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
-}
-
 function emptyCatalogResult(
   filePath: string | null,
   configured: boolean,
@@ -452,12 +451,4 @@ function decodeTomlBasicString(value: string): string {
   } catch {
     return value;
   }
-}
-
-function escapeRegExp(value: unknown): string {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function isRecord(value: unknown): value is Record<string, any> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

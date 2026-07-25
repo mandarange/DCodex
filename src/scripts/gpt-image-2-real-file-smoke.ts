@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { escapeRegExp } from '../core/text/regex.js';
 
 const root = process.cwd();
 const enabled = process.env.SKS_TEST_REAL_IMAGEGEN === '1'
@@ -61,10 +62,6 @@ function tomlBoolean(text, key) {
 function tomlTableBlock(text, table) {
   const re = new RegExp(`(^|\\n)\\[${escapeRegExp(table)}\\]([\\s\\S]*?)(?=\\n\\[[^\\]]+\\]|\\s*$)`);
   return String(text || '').match(re)?.[2] || '';
-}
-
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function readCodexLbAuth() {

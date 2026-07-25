@@ -14,6 +14,7 @@ import {
   DEFAULT_SUBAGENT_EFFORT,
   DEFAULT_SUBAGENT_MODEL
 } from './model-policy.js'
+import { escapeRegExp } from '../text/regex.js'
 
 /** Spawned child-thread hard cap (excludes the root/parent thread). */
 export const DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS = 12
@@ -959,10 +960,6 @@ function isTomlTableHeader(line: string, table: string): boolean {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)]
-}
-
-function escapeRegExp(value: string): string {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 const LEGACY_SKS_AGENT_TABLE_SPECS = [

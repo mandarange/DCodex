@@ -5,6 +5,7 @@ import { runProcess, which, type RunProcessResult } from '../fsx.js';
 import type { McpCliInventoryRow } from './config-reader.js';
 import type { ResolvedMcpScope } from './scope.js';
 import type { McpServerMutationInput } from './types.js';
+import { isRecord } from '../json/records.js';
 
 export interface CodexCliListResult {
   readonly available: boolean;
@@ -197,10 +198,6 @@ function failedTransform(publicError: CodexTransformPublicError): CodexCliTransf
     unsupported_reason: null,
     public_error: publicError
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 async function defaultRun(

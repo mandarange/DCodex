@@ -13,6 +13,8 @@ import {
   type HostCapabilityRuntimeEntry,
   type HostCapabilityWorkflow
 } from './host-capability-policy.js';
+import { isRecord } from '../json/records.js';
+import { uniqueStringsSorted as uniqueStrings } from '../text/strings.js';
 export {
   HOST_CAPABILITY_MCP_SERVER,
   HOST_CAPABILITY_RUNTIME_SCHEMA,
@@ -1205,10 +1207,12 @@ function extractHostToolResourceKey(tool: string, item: unknown): string | null 
 
 function extractToolResourceKey(item: unknown): string | null {
   if (!isRecord(item)) return null;
+  const result = item.result;
+  const resultRecord = isRecord(result) ? result : null;
   const queue: Array<{ value: unknown; depth: number }> = [
     { value: item.arguments, depth: 0 },
     { value: item.input, depth: 0 },
-    { value: item.result?.structured_content ?? item.result?.structuredContent ?? item.result, depth: 0 }
+    { value: resultRecord?.structured_content ?? resultRecord?.structuredContent ?? result, depth: 0 }
   ];
   let visited = 0;
   while (queue.length > 0 && visited < 256) {
@@ -1408,7 +1412,7 @@ function normalizePreToolObservation(value: unknown): HostCapabilityPreToolObser
     || (value.decision === 'denied' && reservationStatus !== 'denied')
     || (value.decision === 'allowed' && reservationStatus === 'denied')) return null;
   return {
-    tool_use_id_sha256: value.tool_use_id_sha256,
+    tool_use_id_sha256: String(value.tool_use_id_sha256),
     tool: value.tool,
     resource_key: resourceKey,
     datasource_sha256: datasourceSha256,
@@ -1832,9 +1836,6 @@ function canonicalJson(value: unknown): string {
   }
   return JSON.stringify(value) ?? 'null';
 }
-function uniqueStrings(values: readonly unknown[]): string[] {
-  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))].sort();
-}
 
 function arrayStrings(value: unknown): string[] {
   return Array.isArray(value)
@@ -1854,8 +1855,4 @@ function uniqueWorkflows(values: readonly unknown[]): HostCapabilityWorkflow[] {
     'artifact_delivery'
   ]);
   return uniqueStrings(values).filter((value): value is HostCapabilityWorkflow => valid.has(value as HostCapabilityWorkflow));
-}
-
-function isRecord(value: unknown): value is Record<string, any> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

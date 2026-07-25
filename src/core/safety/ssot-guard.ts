@@ -1,4 +1,5 @@
 import { nowIso } from '../fsx.js'
+import { isRecord } from '../json/records.js'
 
 export const SSOT_GUARD_SCHEMA = 'sks.ssot-guard.v1'
 export const SSOT_GUARD_ARTIFACT = 'ssot-guard.json'
@@ -130,10 +131,6 @@ export function validateSsotGuardArtifact(value: unknown): { ok: boolean; issues
   }
   if (typeof value.gate_rule !== 'string' || !value.gate_rule.includes(SSOT_GUARD_ARTIFACT)) issues.push('gate_rule')
   return { ok: issues.length === 0, issues }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function stringArray(value: unknown): string[] {

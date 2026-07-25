@@ -11,6 +11,7 @@ import {
   type HostCapabilityExecutionEvidence,
   type HostCapabilityUseReceipt
 } from '../agent-bridge/host-capability-runtime.js'
+import { isRecord } from '../json/records.js'
 
 export const SUBAGENT_EVIDENCE_SCHEMA = 'sks.subagent-evidence.v1'
 export const SUBAGENT_EVENT_SCHEMA = 'sks.subagent-event.v1'
@@ -1231,10 +1232,6 @@ function hasMeaningfulSummary(value: unknown): boolean {
 
 function eventSourceOrder(a: SubagentEventName, b: SubagentEventName): number {
   return (a === 'SubagentStart' ? 0 : 1) - (b === 'SubagentStart' ? 0 : 1)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function recordId(value: unknown): unknown {

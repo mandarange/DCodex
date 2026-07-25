@@ -99,6 +99,7 @@ import {
   ensureGlobalGetdesignSkillDuringInstall,
   ensureSksCommandDuringInstall
 } from './install-helpers-install-support.js';
+import { escapeRegExp } from '../core/text/regex.js';
 
 function packagedSksEntrypoint() {
   return path.join(packageRoot(), 'dist', 'bin', 'sks.js');
@@ -2114,7 +2115,3 @@ export {
 } from './install-helpers-codex-lb-config.js';
 export { checkCodexLbResponseChain } from './install-helpers-codex-lb-chain.js';
 export { selftestCodexLb } from './install-helpers-codex-lb-selftest.js';
-
-function escapeRegExp(value: any) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}

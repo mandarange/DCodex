@@ -6,6 +6,7 @@ import {
   type CodexHookIssue,
   type CodexHookIssueCategory
 } from './codex-hook-issues.js';
+import { asRecordOrNull as asRecord } from '../json/records.js';
 
 export type { CodexHookIssue, CodexHookIssueCategory } from './codex-hook-issues.js';
 
@@ -235,10 +236,6 @@ function result(event: CodexHookEventName, issues: CodexHookIssue[]): CodexHookS
     fatal: uniqueFatal,
     reason: uniqueFatal[0] || null
   };
-}
-
-function asRecord(value: unknown): Record<string, any> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : null;
 }
 
 function nonEmpty(value: unknown): boolean {

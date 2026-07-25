@@ -12,6 +12,7 @@ import {
   type RemoteOwnerProofV1,
   type RemoteProcessIdentityV1
 } from './types.js';
+import { asRecordOrNull as asRecord } from '../json/records.js';
 
 export class RemoteOwnerProofError extends Error {
   constructor(readonly code: string) {
@@ -220,10 +221,6 @@ function normalizeSpace(value: string): string {
 
 function normalizeCommand(value: string): string {
   return value.trim();
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function invalid(code: string): never {

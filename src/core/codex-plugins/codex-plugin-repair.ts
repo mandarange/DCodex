@@ -2,6 +2,7 @@ import { findCodexBinary } from '../codex-adapter.js';
 import { nowIso, runProcess } from '../fsx.js';
 import { redactSecrets, redactString } from '../secret-redaction.js';
 import { buildCodexPluginInventory, type CodexPluginInventory } from './codex-plugin-json.js';
+import { messageOf } from '../errors/message.js';
 
 export const CODEX_PLUGIN_REPAIR_SCHEMA = 'sks.codex-plugin-repair.v1';
 
@@ -127,8 +128,4 @@ function failedInventory(err: unknown): CodexPluginInventory {
 function tail(value: unknown, max = 2000) {
   const text = redactString(String(value || ''));
   return text.length > max ? text.slice(-max) : text;
-}
-
-function messageOf(err: unknown) {
-  return err instanceof Error ? err.message : String(err);
 }

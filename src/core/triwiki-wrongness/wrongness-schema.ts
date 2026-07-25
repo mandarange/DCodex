@@ -1,5 +1,6 @@
 import { nowIso, randomId, sha256 } from '../fsx.js';
 import { moduleIdsForPath } from '../triwiki/triwiki-module-card.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -448,10 +449,6 @@ function severityForKind(kind: WrongnessKind): WrongnessSeverity {
   if (kind === 'mock_real_confusion' || kind === 'artifact_schema_error' || kind === 'test_failure') return 'high';
   if (kind === 'image_bbox_error' || kind === 'visual_anchor_error' || kind === 'missing_evidence') return 'medium';
   return 'medium';
-}
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
 function asList(value: unknown): unknown[] {

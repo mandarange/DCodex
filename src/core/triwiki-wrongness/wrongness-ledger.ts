@@ -21,6 +21,7 @@ import {
   type WrongnessRecord,
   type WrongnessSeverity
 } from './wrongness-schema.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 type JsonRecord = Record<string, unknown>;
 const CANONICAL_MISSION_ID_RE = /^M-[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -612,10 +613,6 @@ function countBy(records: readonly WrongnessRecord[], key: (record: WrongnessRec
   const out: Record<string, number> = {};
   for (const record of records) out[key(record)] = Number(out[key(record)] || 0) + 1;
   return out;
-}
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
 export function highSeverityActive(records: readonly WrongnessRecord[]): WrongnessRecord[] {
