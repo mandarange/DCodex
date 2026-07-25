@@ -2,13 +2,17 @@
 
 ## [Unreleased]
 
+
+## [7.2.0] - 2026-07-25
 ### Added
 
+- Modernize local search/file discovery behind `sks.search-provider.v1`: separated `files` / `text` / `structure` / `symbol` / `context` engines, `sks search` CLI (`status|files|text|structure|symbol|context|benchmark|doctor`), and `sks doctor --search`. File/text prefer optional `sks-rs` (`ignore` + grep crates) with labeled JS fallbacks; structure uses the TypeScript compiler API (no required `ast-grep`/`rg`/`fd` install); symbol results carry confidence and never label text hits as `exact_reference`; context reuses TriWiki/code pack metadata without a new vector DB. Inventory and target docs live under `docs/architecture/`; benchmark evidence under `docs/performance/search-engine-benchmark.md` (JSON via `sks search benchmark --json`).
 - Raise Naruto automatic subagent fan-out from 2/4/6 (ceiling 10) to 4/6/8 (ceiling 12), with the ceiling clamped by a hardware capacity probe (CPU cores, free memory, remote API budget). `max_threads = 12` remains a frame budget, never a spawn target.
 - Add an engineering sanity review Stop gate. Routes that prepare code-changing work seed `engineering-sanity-review.json` plus `code-structure-report.json` and must complete the review before Stop. Enforcement now also covers routes whose `stopGate` is `none`/`honest_mode` (`$SKS`, `$Fast-Mode`, `$with-local-llm-on`, `$Commit`, `$Commit-And-Push`); the requirement is derived solely from the pipeline plan that actually seeded the artifact, and route state persisted before that contract is treated as stale rather than blocking.
 
 ### Changed
 
+- Migrate impact-scan / diff-quality reference discovery off per-query `rg`/`ast-grep` CLI spawns onto SearchProvider (text hits remain `text_candidate`). Mistake-rule `ast-grep` detectors stay optional with an explicit capability skip when the binary is absent.
 - Remove 368 release-gate scripts under `src/scripts/` that no tracked file referenced — orphaned one-off compatibility and audit gates from the 1.x/3.x lines and superseded Codex releases (`codex-0139-*`, `codex-0140-*`, and similar). None were registered in `release-gates.v2.json`, listed in `package.json` scripts or `files`, or imported anywhere, so nothing that ships or runs changes.
 - Restructure the SKS Center UI for usability: sidebar gets SF Symbol icons with Providers promoted next to Overview; a shared ControlKit component set (status badges, primary actions, page headers, grouped action rows) backs every page; Providers adds an at-a-glance **Active Provider** card fed by the codex-lb/OpenRouter/router probes, renames the ambiguous OpenRouter "Test Connection" to "Test Model", and asks for confirmation before any activation that restarts Codex App; Updates regroups into Status/Progress/Recovery cards with "Review and Update" as the default action; Diagnostics and Settings gain grouped cards; Remote & Telegram moves project readiness into its own card, promotes Refresh Status to the page level, and routes setup failures to the setup card; MCP separates destructive Remove from routine manage actions. The role-model editor moved to `ProvidersRoleModels.swift` to stay inside per-file line budgets.
 

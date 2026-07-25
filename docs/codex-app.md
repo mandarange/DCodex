@@ -14,7 +14,7 @@ entry, Pro model access, or Fast picker. The repair is provenance-scoped: it
 does not delete unmarked user settings, provider definitions, provider URLs,
 credential references, `service_tier = "fast"`, or `[features].fast_mode`.
 
-SKS 7.1.3 also reports the active nonsecret auth class. When codex-lb API-key
+SKS 7.2.0 also reports the active nonsecret auth class. When codex-lb API-key
 auth is active and a ChatGPT OAuth backup is available, Center labels the
 Chat/Pro surface as inactive and exposes **Restore Chat / Pro (OAuth)**. The
 switch is explicit because the two modes share Codex's active auth slot;
