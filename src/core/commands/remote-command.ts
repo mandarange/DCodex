@@ -13,6 +13,10 @@ import {
 } from '../remote/index.js';
 
 export async function remoteCommand(args: string[] = []): Promise<unknown> {
+  if (isHelpRequest(args)) {
+    printRemoteUsage();
+    return { schema: 'sks.remote-command.v1', ok: true, action: 'help' };
+  }
   const action = args[0] ?? 'readiness';
   const rest = args.slice(1);
   const json = args.includes('--json');
@@ -97,6 +101,26 @@ function configFile(args: readonly string[]): string {
 function readOption(args: readonly string[], name: string): string | null {
   const index = args.indexOf(name);
   return index >= 0 && args[index + 1] ? String(args[index + 1]) : null;
+}
+
+// --help/-h/help must render usage and exit 0 on every command surface; it is a
+// pure usage-text request and must never be answered with unknown_action (20차 P2-2).
+function isHelpRequest(args: readonly string[]): boolean {
+  return args.includes('--help') || args.includes('-h') || String(args[0] || '').toLowerCase() === 'help';
+}
+
+function printRemoteUsage(): void {
+  console.log(`SKS Remote — local machine registry and worker transport
+
+Usage:
+  sks remote readiness [--json]
+  sks remote machines list [--json]
+  sks remote machines validate [--json]
+  sks remote worker --stdio
+
+The machine registry and session targets are written by \`sks telegram setup\`;
+see docs/telegram-and-center.md for the end-to-end pairing flow.
+`);
 }
 
 function fail(error: string, supported: readonly string[], json: boolean): unknown {

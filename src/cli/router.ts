@@ -232,6 +232,19 @@ export function safeReadOnlySubcommand(command: CommandNameLite, args: readonly 
   if (command === 'remote' && ['readiness', 'status', 'show'].includes(sub)) {
     return !args.some((arg) => ['--fix', '--yes', '-y', '--write', '--apply', '--execute', '--force', '--real'].includes(String(arg)));
   }
+  // `remote machines list|validate` only reads and validates the machine registry.
+  if (command === 'remote' && ['machines', 'machine'].includes(sub) && ['list', 'validate'].includes(nested)) {
+    return !args.some((arg) => ['--fix', '--yes', '-y', '--write', '--apply', '--execute', '--force', '--real'].includes(String(arg)));
+  }
+  // Telegram diagnostics must stay reachable while a project migration is blocked:
+  // these are exactly the commands an operator runs to find out why pairing is
+  // broken, and `validate-config` / `hub status` only read config and launchctl
+  // state. Blocking them turns a blocked migration into an undiagnosable one.
+  // `hub` with no explicit action defaults to `run`, which starts the hub, so only
+  // the literal `hub status` qualifies here.
+  if (command === 'telegram' && (sub === 'validate-config' || (sub === 'hub' && nested === 'status'))) {
+    return !args.some((arg) => ['--fix', '--yes', '-y', '--write', '--apply', '--execute', '--force', '--real'].includes(String(arg)));
+  }
   if (!['status', 'show', 'list', 'observe', 'watch', 'doctor', 'help'].includes(sub)) return false;
   return !args.some((arg) => ['--fix', '--yes', '-y', '--write', '--apply', '--execute', '--force', '--real'].includes(String(arg)));
 }

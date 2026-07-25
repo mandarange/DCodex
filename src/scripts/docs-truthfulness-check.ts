@@ -19,11 +19,26 @@ const files = [
   'docs/hooks-pat.md',
   'docs/goal-to-loop-migration.md',
   'docs/known-gaps.md',
-  'docs/release-readiness.md'
+  'docs/release-readiness.md',
+  'docs/telegram-and-center.md'
 ];
 
 const required = {
-  'README.md': ['CHANGELOG.md', 'docs/release-readiness.md', 'gpt-image-2'],
+  'README.md': ['CHANGELOG.md', 'docs/release-readiness.md', 'gpt-image-2', 'docs/telegram-and-center.md'],
+  // Pins the claims a reader acts on: the exact pairing entry point, the stdin-only
+  // token path, the Keychain service, the LaunchAgent label, and the real blocker
+  // strings the troubleshooting table maps. If any of these move, this gate fails.
+  'docs/telegram-and-center.md': [
+    'sks menubar install',
+    'Open SKS Control Center',
+    'Remote & Telegram',
+    '--bot-token-stdin',
+    'com.sneakoscope.telegram.bot',
+    'com.sneakoscope.telegram-hub',
+    'telegram_pairing_start_not_found',
+    'telegram_hub_not_running',
+    'sks telegram hub start'
+  ],
   'CHANGELOG.md': ['1.14.0', 'DFix Extreme Speed Kernel', 'hook trust doctor', 'warning-zero'],
   'docs/computer-use-evidence.md': ['sks.computer-use-live-evidence.v1', 'probe_only', 'live_capture_blocked', 'local-only', 'Codex Chrome Extension'],
   'docs/codex-lb.md': ['durable_env_file', 'durable_keychain', 'shell_profile', 'process_only_ephemeral', 'base URL only'],

@@ -42,6 +42,10 @@ export interface TelegramPairingReadiness {
 }
 
 export async function telegramCommand(args: string[] = []): Promise<unknown> {
+  if (isHelpRequest(args)) {
+    printTelegramUsage();
+    return { schema: 'sks.telegram-command.v1', ok: true, action: 'help' };
+  }
   const action = args[0] ?? 'status';
   const root = globalSksRoot();
   const paths = telegramHubPaths(root);
@@ -181,6 +185,35 @@ async function telegramStatus(
       remote_config_issues: [...machineValidation.issues, ...sessionValidation.issues],
       blockers
     };
+}
+
+// --help/-h/help must render usage and exit 0 on every command surface; it is a
+// pure usage-text request and must never be answered with unknown_action (20차 P2-2).
+function isHelpRequest(args: readonly string[]): boolean {
+  return args.includes('--help') || args.includes('-h') || String(args[0] || '').toLowerCase() === 'help';
+}
+
+function printTelegramUsage(): void {
+  console.log(`SKS Telegram Hub — private, local, single-operator remote coding
+
+Usage:
+  sks telegram status [--project-root <path>] [--json]
+  sks telegram setup --bot-token-stdin --project-root <path> [--paired-chat-id <id>]
+                     [--paired-user-id <id>] [--new-session] [--json]
+  sks telegram validate-config [--config <path>] [--json]
+  sks telegram hub start|stop|restart|status [--project-root <path>] [--json]
+  sks telegram hub run [--project-root <path>] [--json]
+
+Pairing (do these first):
+  1. Create a private bot with @BotFather in Telegram and copy its token.
+  2. Send /start to that bot from the Telegram account you want to pair.
+  3. printf '%s' "<token>" | sks telegram setup --bot-token-stdin --project-root "$PWD" --json
+     The token is read from stdin only and stored in the macOS Keychain.
+  4. sks telegram hub start --project-root "$PWD" --json
+
+The same flow is available in SKS Center → Remote & Telegram.
+See docs/telegram-and-center.md for the full guide and troubleshooting.
+`);
 }
 
 export function telegramPairingReadiness(value: unknown): TelegramPairingReadiness {

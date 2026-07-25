@@ -60,6 +60,8 @@ Open **SKS Center → Remote & Telegram**, create a private bot with BotFather, 
 
 The Hub runs as a user LaunchAgent and uses `caffeinate -i` while the logged-in Mac is available. The Mac still needs to remain powered on, logged in, awake, and network-connected; closing the lid or logging out can stop access. Telegram input has no arbitrary shell path, runs with approvals disabled and network access disabled inside the Codex workspace sandbox, and cannot target an unpaired chat or another project.
 
+SKS Center is the menu bar companion: install it with `sks menubar install`, then click the SKS icon in the macOS menu bar and choose **Open SKS Control Center…**. Every GUI step above has a CLI equivalent (`sks telegram setup --bot-token-stdin`, `sks telegram hub start`, `sks telegram status`). See **[docs/telegram-and-center.md](docs/telegram-and-center.md)** for the full step-by-step guide, storage locations, security model, and a blocker-by-blocker troubleshooting table.
+
 ## The Front Door
 
 | Command | What it does |
