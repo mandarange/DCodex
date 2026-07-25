@@ -7,7 +7,7 @@ import {
 } from '../subagents/model-policy.js'
 
 export const MANAGED_ASSET_SCHEMA_VERSION = 1
-export const MANAGED_ASSET_VERSION = '7.2.0'
+export const MANAGED_ASSET_VERSION = '7.2.1'
 export const MANAGED_ASSET_MARKER = 'SKS-MANAGED-ASSET'
 export const MANAGED_OFFICIAL_SUBAGENT_MARKER = 'SKS-MANAGED-OFFICIAL-SUBAGENT'
 

@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 
+## [7.2.1] - 2026-07-25
+### Added
+
+- Resolve TypeScript/JavaScript symbol hits with an in-process LanguageService so `exact_definition` and `exact_reference` are binding-backed (text hits stay `text_candidate`; unsupported languages return a capability error).
+
+### Fixed
+
+- Align `naruto:canonical-stop-gate` / `official-subagent-workflow-check` with `DEFAULT_NARUTO_REQUESTED_SUBAGENTS` (4) after the 7.2.0 fan-out raise, unblocking `release:check:confidence`.
+- Correct `**/*.ts` brace-glob matching in the JS files engine so symbol scans include root-level TypeScript files.
+
 ## [7.2.0] - 2026-07-25
 ### Added
 

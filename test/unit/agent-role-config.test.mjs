@@ -8,7 +8,7 @@ import { parse } from 'smol-toml';
 test('installed Codex agent catalog exposes only current official roles', async () => {
   const manifest = await import('../../dist/core/managed-assets/managed-assets-manifest.js');
 
-  assert.equal(manifest.MANAGED_ASSET_VERSION, '7.2.0');
+  assert.equal(manifest.MANAGED_ASSET_VERSION, '7.2.1');
   assert.equal(Object.hasOwn(manifest, 'MANAGED_AGENT_ROLES'), false);
 
   for (const role of manifest.MANAGED_OFFICIAL_SUBAGENT_ROLES) {
