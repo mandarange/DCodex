@@ -6,6 +6,7 @@ import {
   LEAN_CHANGE_EVIDENCE_SCHEMA,
   type LeanFinding,
   type LeanSimplificationMarker,
+  assessTestVolume,
   leanPolicyReference,
   parseLeanSimplificationMarkerLine
 } from './lean-engineering-policy.js';
@@ -457,6 +458,14 @@ function collectRunnableChecks(changedScope: any) {
 
 function buildSemanticReview(input: any) {
   const findings: LeanFinding[] = [];
+  const testVolume = assessTestVolume(input.changedScope?.entries || []);
+  if (testVolume.over_budget) {
+    findings.push({
+      tag: 'yagni',
+      severity: 'review',
+      summary: `change adds ${testVolume.added_test_lines} test lines for ${testVolume.added_source_lines} source lines (${testVolume.ratio?.toFixed(1)}x); keep the cases a real defect would produce and drop the rest — exhaustive cases are only owed on money-handling paths`
+    });
+  }
   for (const dep of input.dependencyDelta.added || []) {
     findings.push({
       tag: 'reuse',

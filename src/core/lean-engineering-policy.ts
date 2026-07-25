@@ -246,3 +246,73 @@ function booleanValue(value: unknown, fallback: boolean): boolean {
 function record(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
 }
+
+/**
+ * Test volume is the one place where "more" reads as diligence, so it is where
+ * over-engineering hides best: hundreds of lines exercising branches the code
+ * cannot reach, written because thoroughness feels safe rather than because a
+ * failure was plausible.
+ *
+ * Money is the exception. Where a defect moves funds, exhaustive cases are the
+ * correct cost, so paths that handle payments, ledgers, billing or refunds are
+ * exempt from this budget entirely.
+ */
+// Only code that MOVES money is exempt. Displaying a price does not, and a
+// too-generous exemption silently switches the budget off where it should hold.
+const MONEY_SENSITIVE_PATTERN =
+  /(^|[\/_.-])(payment|payout|billing|invoice|charge|refund|ledger|settlement|transaction|subscription|checkout|wallet|balance|payroll)([\/_.-]|s?\.|$)/i;
+
+export function isMoneySensitivePath(file: unknown): boolean {
+  return MONEY_SENSITIVE_PATTERN.test(String(file || ''));
+}
+
+export function isTestPath(file: unknown): boolean {
+  const path = String(file || '');
+  return /(^|\/)(__tests__|test|tests)(\/|$)/.test(path) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path);
+}
+
+export interface TestVolumeAssessment {
+  readonly added_test_lines: number;
+  readonly added_source_lines: number;
+  readonly ratio: number | null;
+  readonly money_sensitive: boolean;
+  readonly over_budget: boolean;
+}
+
+/**
+ * Deliberately conservative: a one-line fix with a focused regression test must
+ * never trip this. It fires only when the test volume is large in absolute
+ * terms AND dwarfs the code it covers — the "800 lines of tests for a 40-line
+ * helper" shape — and never on money-sensitive paths.
+ */
+export const TEST_VOLUME_ABSOLUTE_FLOOR = 200;
+export const TEST_VOLUME_RATIO_LIMIT = 4;
+
+export function assessTestVolume(
+  entries: ReadonlyArray<{ path?: unknown; lines_added?: unknown }> = []
+): TestVolumeAssessment {
+  let addedTestLines = 0;
+  let addedSourceLines = 0;
+  let moneySensitive = false;
+  for (const entry of entries) {
+    const added = Number(entry?.lines_added || 0);
+    if (!Number.isFinite(added) || added <= 0) continue;
+    if (isTestPath(entry?.path)) addedTestLines += added;
+    else {
+      addedSourceLines += added;
+      if (isMoneySensitivePath(entry?.path)) moneySensitive = true;
+    }
+  }
+  const ratio = addedSourceLines > 0 ? addedTestLines / addedSourceLines : null;
+  const overBudget = !moneySensitive
+    && addedTestLines >= TEST_VOLUME_ABSOLUTE_FLOOR
+    && ratio !== null
+    && ratio >= TEST_VOLUME_RATIO_LIMIT;
+  return {
+    added_test_lines: addedTestLines,
+    added_source_lines: addedSourceLines,
+    ratio,
+    money_sensitive: moneySensitive,
+    over_budget: overBudget
+  };
+}
