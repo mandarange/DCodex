@@ -43,6 +43,11 @@ extension ProvidersViewController {
         activate.setAccessibilityLabel("Activate selected OpenRouter model and restart Codex App")
         let restorePrevious = NativeView.button("Restore previous provider", target: self, action: #selector(restorePreviousDesktopRouting))
         restorePrevious.setAccessibilityLabel("Restore the previous Codex provider so hidden chats and picker state return")
+        // Stays disabled until openrouter-status reports a restorable
+        // cross-provider snapshot, so the button never promises a restore the
+        // CLI would reject with snapshot_missing.
+        restorePrevious.isEnabled = false
+        openRouterRestoreButton = restorePrevious
         actionButtons += [refreshModels, saveKey, test, activate, restorePrevious]
 
         let catalogLabel = NSTextField(labelWithString: "Catalog")
@@ -73,6 +78,11 @@ extension ProvidersViewController {
                     self.openRouterCredentialStatus.stringValue = "Credential: status unavailable — no saved key was assumed."
                     self.openRouterActiveStatus.stringValue = "Active provider: status unavailable — no active provider was assumed."
                 }
+                // An unreadable status cannot vouch for a restore point, so the
+                // button must not keep an enabled state from an earlier reply.
+                self.openRouterRestoreAvailable = false
+                self.openRouterRestoreButton?.isEnabled = false
+                self.openRouterRestoreButton?.toolTip = "Restore availability is unknown — refresh the OpenRouter status first."
                 return
             }
             let keyPresent = json["key_present"] as? Bool == true
@@ -101,6 +111,11 @@ extension ProvidersViewController {
             }
             self.openRouterCredentialStatus.textColor = keyPresent ? .secondaryLabelColor : .systemOrange
             self.openRouterActiveStatus.textColor = selected ? .systemGreen : .secondaryLabelColor
+            self.openRouterRestoreAvailable = json["previous_routing_restore_available"] as? Bool == true
+            self.openRouterRestoreButton?.isEnabled = !self.busy && self.openRouterRestoreAvailable
+            self.openRouterRestoreButton?.toolTip = self.openRouterRestoreAvailable
+                ? "Restore the snapshotted pre-OpenRouter provider, model, and catalog."
+                : "No previous provider snapshot to restore."
         }
     }
 
@@ -294,10 +309,15 @@ extension ProvidersViewController {
             let ok = result.code == 0 && json?["ok"] as? Bool == true
             let status = json?["status"] as? String ?? (ok ? "restored" : "failed")
             let detail = self.structuredPublicDetail(json, fallback: result.output)
-            _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? "Previous Desktop provider restored" : "Desktop provider restore needs action")
+            // Routing rolls back before the sidebar retag, so a blocked retag is
+            // partial success: the snapshot is kept and re-running finishes it.
+            let sidebarBlocked = status.hasPrefix("restored_sidebar")
+            _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? "Previous Desktop provider restored" : sidebarBlocked ? "Desktop provider restored; sidebar retag pending" : "Desktop provider restore needs action")
             self.openRouterStatus.stringValue = ok
                 ? "Previous provider restored · \(status). Fully quit and reopen Codex App if chats or the picker still look stale."
-                : "Restore failed · \(status) · \(detail)"
+                : sidebarBlocked
+                    ? "Provider restored, but prior-provider chats stay hidden · fully quit Codex App, then run Restore previous provider again."
+                    : "Restore failed · \(status) · \(detail)"
             self.refreshOpenRouterStatus()
             self.refresh()
         }

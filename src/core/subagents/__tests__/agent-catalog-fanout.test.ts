@@ -5,7 +5,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { classifyTaskProfile } from '../../runtime/task-profile.js'
 import {
+  DEFAULT_AUTOMATIC_SUBAGENT_COUNT,
+  LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT,
+  MAX_AUTOMATIC_SUBAGENT_COUNT,
   MAX_ON_DEMAND_SUBAGENT_ROLE_COUNT,
+  PARALLEL_AUTOMATIC_SUBAGENT_COUNT,
   officialSubagentFanoutPolicy,
   officialSubagentOnDemandRoleCatalog,
   officialSubagentRoleCatalog,
@@ -380,4 +384,64 @@ test('prepared decomposition applies capacity bounds and fails closed on overlap
   assert.ok(blocked.plan.config_blockers.some((value: string) => value.startsWith('subagent_slice:overlapping_write_scope:')))
   assert.ok(blocked.plan.config_blockers.includes('subagent_capacity_exhausted'))
   assert.equal(blocked.evidence.ok, false)
+})
+
+test('every prose statement of the automatic fanout contract matches the catalog constants', async () => {
+  // The 4/6/8 targets and the ceiling are restated in the route description,
+  // the Codex skill manifest, the runtime subagent prompt, and the docs. When
+  // the constants move and a prose site does not, the model is told a fanout
+  // contract the runtime will not honour.
+  const root = process.cwd()
+  const numberWords: Record<number, string> = {
+    1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six',
+    7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten', 11: 'eleven', 12: 'twelve'
+  }
+  const wordValues: Record<string, number> = Object.fromEntries(
+    Object.entries(numberWords).map(([value, word]) => [word, Number(value)])
+  )
+  const targets = [
+    DEFAULT_AUTOMATIC_SUBAGENT_COUNT,
+    PARALLEL_AUTOMATIC_SUBAGENT_COUNT,
+    LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT
+  ]
+  const sites = [
+    { file: 'src/core/routes.ts', anchor: 'Automatic fan-out starts at', style: 'words' },
+    { file: 'docs/naruto.md', anchor: 'Automatic fan-out starts at', style: 'words' },
+    { file: 'src/core/codex-native/core-skill-manifest.ts', anchor: 'Automatic targets begin at', style: 'digits' },
+    { file: 'src/core/subagents/official-subagent-prompt.ts', anchor: 'automatic fan-out starts at', style: 'words' }
+  ] as const
+  for (const site of sites) {
+    const text = await fs.readFile(path.join(root, site.file), 'utf8')
+    const start = text.indexOf(site.anchor)
+    assert.notEqual(start, -1, `${site.file}: fanout prose anchor "${site.anchor}" not found`)
+    assert.equal(
+      text.indexOf(site.anchor, start + 1),
+      -1,
+      `${site.file}: fanout prose anchor "${site.anchor}" is ambiguous — the guard would only check the first one`
+    )
+    const sentence = text.slice(start, start + 400)
+    // Compare the first three numbers POSITIONALLY, not as a set: every site
+    // states them in bounded → parallel → large-scale order, so unordered
+    // membership would pass when two targets are swapped, or when a changed
+    // value happens to reuse a word already present elsewhere in the sentence.
+    // Only the ceiling may be expressed by interpolating the constant.
+    const found = site.style === 'digits'
+      ? [...sentence.matchAll(/\b(\d+)\b/g)].map((entry) => Number(entry[1]))
+      : [...sentence.matchAll(/\b([a-z]+)\b/gi)]
+        .map((entry) => wordValues[String(entry[1]).toLowerCase()])
+        .filter((value): value is number => typeof value === 'number')
+    assert.deepEqual(
+      found.slice(0, targets.length),
+      targets,
+      `${site.file}: fanout prose is stale or reordered — expected ${targets.join('/')} in bounded/parallel/large-scale order, read ${found.slice(0, targets.length).join('/')} from: ${sentence.slice(0, 220)}`
+    )
+    const ceilingToken = site.style === 'digits'
+      ? String(MAX_AUTOMATIC_SUBAGENT_COUNT)
+      : numberWords[MAX_AUTOMATIC_SUBAGENT_COUNT]
+    assert.ok(ceilingToken, `no prose rendering is defined for ceiling ${MAX_AUTOMATIC_SUBAGENT_COUNT} — extend numberWords`)
+    assert.ok(
+      sentence.includes(ceilingToken) || sentence.includes('MAX_AUTOMATIC_SUBAGENT_COUNT'),
+      `${site.file}: fanout ceiling prose is stale — expected ${ceilingToken} or the interpolated constant in: ${sentence.slice(0, 220)}`
+    )
+  }
 })

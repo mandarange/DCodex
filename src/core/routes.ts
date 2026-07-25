@@ -292,7 +292,7 @@ export const ROUTES = [
     command: '$Naruto',
     mode: 'NARUTO',
     route: 'Codex official subagent workflow',
-    description: '$Naruto prepares a lightweight Codex official subagent workflow. The Sol Max parent owns decomposition, delegates only defensible direct-child slices, reuses bounded query-aware TriWiki attention anchors, waits for every requested thread, integrates the results, and reports scoped verification. Automatic fan-out starts at two for bounded work, four for explicit parallel work, and six for large-scale work, then is capped dynamically by ready DAG width, disjoint ownership, verifier/tool capacity, reserved thread slots, and positive marginal usefulness; explicit --agents remains authoritative.',
+    description: '$Naruto prepares a lightweight Codex official subagent workflow. The Sol Max parent owns decomposition, delegates only defensible direct-child slices, reuses bounded query-aware TriWiki attention anchors, waits for every requested thread, integrates the results, and reports scoped verification. Automatic fan-out starts at four for bounded work, six for explicit parallel work, and eight for large-scale work, may expand up to twelve while independent useful slices and healthy host capacity remain, then is capped dynamically by ready DAG width, disjoint ownership, verifier/tool capacity, reserved thread slots, and positive marginal usefulness; explicit --agents remains authoritative.',
     requiredSkills: ['naruto', 'pipeline-runner', 'prompt-pipeline', 'honest-mode'],
     dollarAliases: ['$Work'],
     appSkillAliases: ['work', 'from-chat-img'],

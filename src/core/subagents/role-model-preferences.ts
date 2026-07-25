@@ -203,6 +203,13 @@ export async function roleModelPreferencesStatus(input: {
       blockers: catalog.blockers
     },
     roles,
+    // Store-level blockers mean the preference file itself could not be used, so
+    // every save/reset below fails closed; preference blockers are recoverable
+    // states a save or reset can clear. Consumers (Center) must keep the
+    // controls usable for the second kind and only lock them for the first.
+    store_readable: read.blockers.length === 0,
+    store_blockers: [...read.blockers],
+    preference_blockers: [...preferenceBlockers],
     blockers: [...read.blockers, ...preferenceBlockers],
     warnings: [
       ...catalog.warnings,

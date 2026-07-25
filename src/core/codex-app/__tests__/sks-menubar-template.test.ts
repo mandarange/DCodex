@@ -18,6 +18,7 @@ import {
   swiftMenuSource
 } from '../sks-menubar.js';
 import { sha256 } from '../../fsx.js';
+import { UPDATE_STAGE_ORDER } from '../../update-check.js';
 
 function source(codexBundleId: string | null = 'com.openai.codex') {
   return swiftMenuSource({
@@ -423,6 +424,17 @@ test('Providers exposes OpenRouter save key, freeform model id, and Use OpenRout
   assert.match(providers, /\["codex-app", "restore-desktop-routing", "--restart-app", "--json"\]/);
   assert.match(providers, /thread_sidebar_remap/);
   assert.match(providers, /previous_routing_restore_available/);
+  // Restore stays disabled until status reports a restorable snapshot, so the
+  // button cannot promise a restore the CLI answers with snapshot_missing.
+  assert.match(providers, /openRouterRestoreButton = restorePrevious/);
+  assert.match(providers, /restorePrevious\.isEnabled = false/);
+  assert.match(providers, /openRouterRestoreAvailable = json\["previous_routing_restore_available"\]/);
+  assert.match(providers, /openRouterRestoreButton\?\.isEnabled = !value && openRouterRestoreAvailable/);
+  assert.match(providers, /No previous provider snapshot to restore\./);
+  // A blocked sidebar retag is partial success, not a failed restore. The
+  // prefix match also covers restored_sidebar_and_restart_blocked.
+  assert.match(providers, /status\.hasPrefix\("restored_sidebar"\)/);
+  assert.match(providers, /prior-provider chats stay hidden/);
   assert.match(providers, /describeOpenRouterStatus/);
   assert.match(providers, /OpenRouter: key missing/);
   assert.match(providers, /activationJson\?\["config_applied"\]/);
@@ -644,4 +656,50 @@ test('all split files remain inside the release line budgets', () => {
     const lines = fs.readFileSync(path.join(root, 'Sources', name), 'utf8').split(/\r?\n/).length;
     assert.ok(lines <= (name === 'AppDelegate.swift' ? 250 : 500), `${name}: ${lines}`);
   }
+});
+
+test('Swift update stage order stays identical to the TypeScript UPDATE_STAGE_ORDER contract', () => {
+  // Center renders update progress as completed/updateStageOrder.count and
+  // intersects receipt stage ids with this list. If the two lists drift, the
+  // progress denominator and the completed-stage count silently disagree with
+  // the receipt the CLI actually wrote.
+  const root = resolvePackagedMenuBarSourceRoot();
+  const swift = fs.readFileSync(path.join(root, 'Sources', 'OperationCoordinator.swift'), 'utf8');
+  const literal = swift.match(/static let updateStageOrder\s*=\s*\[([\s\S]*?)\]/);
+  assert.ok(literal, 'OperationCoordinator.updateStageOrder literal not found');
+  const swiftStages = [...String(literal[1]).matchAll(/"([^"]+)"/g)].map((entry) => entry[1]);
+  assert.deepEqual(swiftStages, [...UPDATE_STAGE_ORDER]);
+});
+
+test('materialized Control Center source typechecks as one Swift translation unit', (t) => {
+  // Split-file regex assertions cannot catch a type or selector error, and the
+  // only other Swift compile in the suite builds OperationCoordinator.swift
+  // alone. Without this gate a broken view controller reaches the user as a
+  // failed menubar_rebuild stage during `sks update`.
+  if (process.platform !== 'darwin') return t.skip('swiftc typecheck is macOS-only');
+  const probe = spawnSync('swiftc', ['--version'], { encoding: 'utf8' });
+  if (probe.status !== 0) return t.skip('swiftc unavailable');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-menubar-typecheck-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'SKSMenuBar.swift');
+  fs.writeFileSync(file, source());
+  const checked = spawnSync('swiftc', ['-typecheck', file], { encoding: 'utf8' });
+  assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
+});
+
+test('Role model controls stay usable when role-models reports recoverable blockers', () => {
+  // `sks codex-app role-models` exits 1 for soft states such as
+  // role_model_preference_not_in_active_catalog while still returning the full
+  // roles/supported_profiles payload. Gating the Center on the exit code locked
+  // every control — including Reset, the only way to clear the bad override.
+  const roleModels = fs.readFileSync(
+    path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersRoleModels.swift'),
+    'utf8'
+  );
+  const refresh = roleModels.slice(roleModels.indexOf('["codex-app", "role-models", "--json"]'));
+  assert.doesNotMatch(refresh, /guard result\.code == 0, let json/);
+  assert.match(refresh, /store_blockers/);
+  assert.match(refresh, /guard let json = self\.json\(result\.output\), storeBlockers\.isEmpty else/);
+  assert.match(refresh, /json\["preference_blockers"\] as\? \[String\]/);
+  assert.match(refresh, /needs attention: \\\(roleBlockers\)/);
 });

@@ -82,12 +82,22 @@ extension ProvidersViewController {
             guard let self = self else { return }
             self.roleRefreshInFlight = false
             self.roleRefreshButton?.isEnabled = !self.busy
-            guard result.code == 0, let json = self.json(result.output) else {
+            // role-models exits 1 on recoverable preference blockers (an override
+            // outside the active catalog, no router selected) while still returning
+            // the full roles/supported_profiles payload. Gating on the exit code
+            // would disable Reset — the only control that clears such an override.
+            // A store-level blocker is different: the preference file could not be
+            // read, so every save/reset fails closed and the controls must lock.
+            let storeBlockers = (self.json(result.output)?["store_blockers"] as? [String] ?? [])
+            guard let json = self.json(result.output), storeBlockers.isEmpty else {
                 self.roleProfilesLoaded = false
                 self.updateRoleControlAvailability()
-                self.roleStatus.stringValue = "Role settings unavailable · existing configuration was not changed."
+                self.roleStatus.stringValue = storeBlockers.isEmpty
+                    ? "Role settings unavailable · existing configuration was not changed."
+                    : "Role settings unavailable · \(storeBlockers.joined(separator: ", ")) · existing configuration was not changed."
                 return
             }
+            let roleBlockers = (json["preference_blockers"] as? [String] ?? json["blockers"] as? [String] ?? []).joined(separator: ", ")
             self.configureSupportedRoleProfiles(json)
             var loaded = 0
             for (role, controls) in self.roleRows {
@@ -124,7 +134,9 @@ extension ProvidersViewController {
             }
             self.roleProfilesLoaded = !self.supportedRoleProfiles.isEmpty
             self.updateRoleControlAvailability()
-            self.roleStatus.stringValue = "Loaded \(loaded) of \(self.roleRows.count) role settings. Save creates an override; Reset removes it."
+            self.roleStatus.stringValue = roleBlockers.isEmpty
+                ? "Loaded \(loaded) of \(self.roleRows.count) role settings. Save creates an override; Reset removes it."
+                : "Loaded \(loaded) of \(self.roleRows.count) role settings · needs attention: \(roleBlockers). Reset removes an override."
         }
     }
 

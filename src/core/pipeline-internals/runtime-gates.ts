@@ -256,6 +256,16 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
   const stopGate = String(state?.stop_gate || '');
   const completionProofRequired = state.proof_required === true || routeRequiresCompletionProof(route);
   const reflectionRequired = reflectionRequiredForState(state);
+  // NOTE: engineering_sanity_required / db_access_review_required are set by
+  // routeState for every code-changing prompt, including routes whose stopGate
+  // is 'none' or 'honest_mode', so those gates are seeded but never enforced
+  // here. Adding them to this shortcut is NOT a safe fix on its own:
+  // routeState's requirement predicate (looksLikeCodeChangingWork) and the
+  // artifact-seeding predicate (writePipelinePlan, which returns early for the
+  // 'answer'/'passthrough' task profiles) disagree, so prompts like
+  // "$SKS make the retry loop bounded" would demand an artifact the product
+  // never writes and cannot regenerate. Aligning the two predicates has to come
+  // first; see the tracked follow-up before changing this condition.
   if (!opts.noQuestion && (stopGate === 'none' || stopGate === 'honest_mode') && !state?.context7_required && !state?.subagents_required && !completionProofRequired && !reflectionRequired) {
     return null;
   }

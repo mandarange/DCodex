@@ -43,6 +43,8 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     var supportedRoleProfiles: [(model: String, reasoning: String)] = []
     var roleProfilesLoaded = false
     weak var openRouterRefreshButton: NSButton?
+    weak var openRouterRestoreButton: NSButton?
+    var openRouterRestoreAvailable = false
     weak var roleRefreshButton: NSButton?
     var catalogRefreshInFlight = false
     var roleRefreshInFlight = false
@@ -96,6 +98,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         openRouterModelField.isEnabled = !value
         openRouterModelPopup.isEnabled = !value && !openRouterModels.isEmpty
         openRouterRefreshButton?.isEnabled = !value && !catalogRefreshInFlight
+        openRouterRestoreButton?.isEnabled = !value && openRouterRestoreAvailable
         roleRefreshButton?.isEnabled = !value && !roleRefreshInFlight
         setMultiProviderRouterBusy(value)
         updateRoleControlAvailability()

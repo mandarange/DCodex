@@ -16,10 +16,11 @@ sks naruto subagents latest --json
 sks naruto proof latest --json
 ```
 
-Automatic fan-out starts at two Naruto children for bounded non-trivial work, four for
-explicitly parallel work, and six for large-scale work. After decomposition the
-parent may resize the automatic plan up to ten children, but only when every
-additional slice is independent, useful, and verifiable. `max_threads = 12` is a
+Automatic fan-out starts at four Naruto children for bounded non-trivial work, six for
+explicitly parallel work, and eight for large-scale work. After decomposition the
+parent may resize the automatic plan up to twelve children, but only when every
+additional slice is independent, useful, and verifiable, and only while the
+hardware capacity probe reports healthy host headroom. `max_threads = 12` is a
 hard **frame budget** (cap), never a spawn target. The GPT-5.6 four-profile matrix
 (Luna / Terra / Sol High / Sol Max) is a **routing LOD**, not an agent-count cap.
 Before each wave Naruto computes:

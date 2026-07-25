@@ -293,23 +293,50 @@ export async function restoreDesktopRoutingSnapshot(input: {
     ? input.restartImpl({ enabled: Boolean(input.restartApp) })
     : Promise.resolve({ ok: true, blockers: [] as string[] }))
 
-  try {
-    await fs.unlink(snapshotPath({ home, env }))
-  } catch {
-    // keep snapshot if delete fails; restore already applied
+  // The snapshot carries the only record of which threads were retagged, so a
+  // failed reverse remap (commonly SQLITE_BUSY while Desktop holds the catalog)
+  // must keep the file for a retry instead of stranding those chats hidden.
+  const sidebarRestoreOk = sidebarRestore === null || sidebarRestore.ok === true
+  if (sidebarRestoreOk) {
+    try {
+      await fs.unlink(snapshotPath({ home, env }))
+    } catch {
+      // keep snapshot if delete fails; restore already applied
+    }
   }
 
+  const sidebarBlocker = sidebarRestoreOk
+    ? []
+    : [`thread_sidebar_restore_failed:${String((sidebarRestore as any)?.error || 'unknown')}`]
+  // A remap can succeed while matching fewer rows than were retagged (Desktop
+  // already moved them, or the rows are gone). That is not a failure — retrying
+  // would never converge — but it must not be reported as a full restore.
+  const sidebarRemapped = Number((sidebarRestore as any)?.remapped ?? 0)
+  const sidebarExpected = Number((sidebarRestore as any)?.expected_ids ?? 0)
+  const sidebarPartial = sidebarRestoreOk && sidebarRestore !== null && sidebarRemapped < sidebarExpected
+  const sidebarWarning = sidebarPartial
+    ? [`thread_sidebar_restore_partial:${sidebarRemapped}_of_${sidebarExpected}`]
+    : []
   return {
     schema: 'sks.codex-app-restore-desktop-routing.v1',
-    ok: Boolean(write.ok && restart.ok),
-    status: write.ok ? (restart.ok ? 'restored' : 'restored_restart_blocked') : 'failed',
+    ok: Boolean(write.ok && restart.ok && sidebarRestoreOk),
+    status: !sidebarRestoreOk
+      ? (restart.ok ? 'restored_sidebar_blocked' : 'restored_sidebar_and_restart_blocked')
+      : restart.ok ? 'restored' : 'restored_restart_blocked',
     snapshot,
     write,
     thread_sidebar_restore: sidebarRestore,
+    thread_sidebar_restore_ok: sidebarRestoreOk,
+    snapshot_retained: !sidebarRestoreOk,
     models_cache: cache,
     restart_app: restart,
-    blockers: [...(restart.ok ? [] : (restart.blockers || ['restore_restart_blocked']))],
-    warnings: cache.warnings || [],
-    hint: 'Codex Desktop may need a full quit/reopen for the sidebar and picker to refresh.'
+    blockers: [
+      ...sidebarBlocker,
+      ...(restart.ok ? [] : (restart.blockers || ['restore_restart_blocked']))
+    ],
+    warnings: [...sidebarWarning, ...(cache.warnings || [])],
+    hint: sidebarRestoreOk
+      ? 'Codex Desktop may need a full quit/reopen for the sidebar and picker to refresh.'
+      : 'Routing was restored but prior-provider chats stay hidden. Fully quit Codex Desktop, then re-run sks codex-app restore-desktop-routing — the snapshot was kept for that retry.'
   }
 }
