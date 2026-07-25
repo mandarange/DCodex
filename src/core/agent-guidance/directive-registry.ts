@@ -60,6 +60,18 @@ export const CANONICAL_DIRECTIVES: readonly CanonicalDirective[] = [
     id: 'owner-scope',
     statement: 'Follow the conventions of the directory you are editing and keep every change owner-scoped.',
     subsumes: [/\buse local source conventions\b/i, /\bowner-scoped\b/i, /\bmatch (?:the )?surrounding (?:code|style)\b/i]
+  },
+  {
+    id: 'proportionate-effort',
+    statement: 'Do the smallest change that solves the request, and test the failures a real defect would produce — exhaustive cases are owed only where money moves.',
+    subsumes: [
+      /\bdo not over-?engineer\b/i,
+      /\bkeep it simple\b|\bKISS\b/i,
+      /\bYAGNI\b|\byou aren'?t gonna need it\b/i,
+      /\bavoid (?:premature|speculative) (?:abstraction|optimi[sz]ation|generali[sz]ation)\b/i,
+      /\bwrite (?:more|exhaustive|comprehensive) tests\b/i,
+      /\btest every (?:branch|edge case|permutation)\b/i
+    ]
   }
 ];
 
