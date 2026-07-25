@@ -11,7 +11,9 @@ coverage/
 .env.*
 !.env.example
 dist/
-build/
+# Anchored: an unanchored `build/` also swallows the source directory
+# src/core/build/, so new files added there never show up in git status.
+/build/
 out/
 target/
 crates/sks-core/target/

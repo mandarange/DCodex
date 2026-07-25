@@ -149,7 +149,13 @@ async function resolveScanFiles(root: string, opts: any, changedScope: any) {
   const changedSourceFiles = (changedScope.source_files || [])
     .filter((file: string) => DEFAULT_INCLUDE.has(path.extname(file)))
     .map((file: string) => path.resolve(root, file));
-  if ((opts.changed || opts.changedSince || opts.changedFiles?.length) && changedSourceFiles.length) return changedSourceFiles;
+  // A caller that asked for a changed scope gets exactly that scope, even when
+  // it is empty. Falling back to the whole tree turned "nothing changed" — the
+  // normal state when a route is prepared, before any edit — into a full-repo
+  // deep scan, which stalls the UserPromptSubmit hook that seeds the
+  // engineering-sanity review. Only a caller that asked for no scope at all
+  // (`sks code-structure scan` without --changed, the wiki sweep) scans it all.
+  if (opts.changed || opts.changedSince || opts.changedFiles?.length) return changedSourceFiles;
   return listSourceFiles(root);
 }
 

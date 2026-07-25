@@ -84,3 +84,29 @@ test('full code structure scan skips hidden worktree and cache repository copies
   assert.equal(paths.some((file) => file.startsWith('.claude/')), false);
   assert.equal(paths.some((file) => file.startsWith('.cache/')), false);
 });
+
+test('a requested changed scope that matched nothing scans nothing instead of the whole tree', async () => {
+  // Route prep asks for the changed scope before any edit exists. Falling back
+  // to a full-repo deep scan there stalled the UserPromptSubmit hook for
+  // minutes; an empty request must stay empty.
+  const mod = await import('../../dist/core/code-structure.js');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-code-structure-empty-scope-'));
+  await fs.mkdir(path.join(root, 'src'), { recursive: true });
+  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'fixture', version: '1.0.0' }));
+  for (let i = 0; i < 5; i += 1) {
+    await fs.writeFile(path.join(root, `src/file-${i}.ts`), `export const v${i} = ${i};\n`);
+  }
+
+  // No git repo and no explicit changed files => the changed scope is empty.
+  const scoped = await mod.scanCodeStructure(root, { changed: true, includeOk: true });
+  assert.equal(scoped.files.length, 0, JSON.stringify(scoped.files.map((e) => e.path)));
+
+  const scopedSince = await mod.scanCodeStructure(root, { changedSince: 'HEAD', includeOk: true });
+  assert.equal(scopedSince.files.length, 0);
+
+  // A caller that asks for no scope at all still gets the full listing.
+  const full = await mod.scanCodeStructure(root, { includeOk: true });
+  assert.equal(full.files.length, 5, JSON.stringify(full.files.map((e) => e.path)));
+
+  await fs.rm(root, { recursive: true, force: true });
+});
