@@ -320,6 +320,12 @@ const COMMAND_DEFINITIONS = {
     'dist/cli/super-search-command.js',
     subcommand(() => import('./super-search-command.js'), 'superSearchCommand', 'dist/cli/super-search-command.js', 'doctor')
   ),
+  search: readOnly(entry(
+    'beta',
+    'Local files/text/structure/symbol/context search engines',
+    'dist/commands/search.js',
+    subcommand(() => import('../commands/search.js'), 'run', 'dist/commands/search.js', 'status')
+  )),
   recallpulse: entry('labs', 'RecallPulse evidence route', 'dist/commands/recallpulse.js', directCommand(() => import('../commands/recallpulse.js'), 'dist/commands/recallpulse.js')),
   pipeline: activeRouteDiagnostic(entry('beta', 'Inspect pipeline missions', 'dist/commands/pipeline.js', directCommand(() => import('../commands/pipeline.js'), 'dist/commands/pipeline.js'))),
   guard: entry('beta', 'Check harness guard', 'dist/commands/guard.js', directCommand(() => import('../commands/guard.js'), 'dist/commands/guard.js')),

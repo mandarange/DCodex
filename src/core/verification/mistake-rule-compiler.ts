@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ensureDir, listFilesRecursive, nowIso, readJson, readText, runProcess, which, writeJsonAtomic } from '../fsx.js';
+import { ensureDir, nowIso, readJson, readText, runProcess, which, writeJsonAtomic } from '../fsx.js';
+import { search, SEARCH_SCHEMA_VERSION } from '../search/index.js';
 import { readWrongnessLedger, writeWrongnessLedger } from '../triwiki-wrongness/wrongness-ledger.js';
 
 export interface CompiledRule {
@@ -55,12 +56,25 @@ export async function compileMistakeRules(root: string): Promise<{ compiled: Com
 export async function runCompiledRules(root: string, changedFiles: string[]): Promise<{ ok: boolean; violations: RuleViolation[]; rule_count: number; skipped_reason?: string }> {
   const rules = await readCompiledRules(root);
   if (!rules.length) return { ok: true, violations: [], rule_count: 0, skipped_reason: 'no_rules' };
-  const files = changedFiles.length ? changedFiles : (await listFilesRecursive(root, { ignore: ['.git', 'node_modules', 'dist'], maxFiles: 2000 })).map((file) => path.relative(root, file));
+  const files = changedFiles.length
+    ? changedFiles
+    : (await search({
+        schemaVersion: SEARCH_SCHEMA_VERSION,
+        mode: 'files',
+        root,
+        exclude: ['.git/**', 'node_modules/**', 'dist/**'],
+        limits: { maxMatches: 2000, maxFiles: 2000 }
+      })).matches.map((m) => m.path);
   const astGrep = await which('ast-grep');
   const violations: RuleViolation[] = [];
+  let skippedAstGrep = 0;
   for (const rule of rules) {
     if (rule.detector.kind === 'ast-grep') {
-      if (!astGrep) continue;
+      if (!astGrep) {
+        // Capability gap: do not silently reinterpret as text/regex.
+        skippedAstGrep += 1;
+        continue;
+      }
       violations.push(...await runAstGrepRule(root, rule, files));
     } else {
       violations.push(...await runRegexRule(root, rule, files));
@@ -69,7 +83,8 @@ export async function runCompiledRules(root: string, changedFiles: string[]): Pr
   return {
     ok: !violations.some((violation) => violation.severity === 'error'),
     violations,
-    rule_count: rules.length
+    rule_count: rules.length,
+    ...(skippedAstGrep ? { skipped_reason: `ast_grep_unavailable:skipped_rules=${skippedAstGrep}` } : {})
   };
 }
 

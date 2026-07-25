@@ -108,6 +108,7 @@ const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'computer-use', summary: 'Record native Mac/non-web Computer Use visual evidence', maturity: 'beta', mutatesRouteState: true },
   { name: 'context7', summary: 'Context7 checks and docs', maturity: 'beta' },
   { name: 'super-search', summary: 'Run Super-Search provider-independent source intelligence', maturity: 'beta' },
+  { name: 'search', summary: 'Local files/text/structure/symbol/context search engines', maturity: 'beta', readonly: true, skipMigrationGate: true, allowedDuringActiveRoute: true, diagnostic: true },
   { name: 'recallpulse', summary: 'RecallPulse evidence route', maturity: 'labs' },
   { name: 'pipeline', summary: 'Inspect pipeline missions', maturity: 'beta', readonly: true, skipMigrationGate: true, allowedDuringActiveRoute: true, diagnostic: true },
   { name: 'guard', summary: 'Check harness guard', maturity: 'beta' },
@@ -200,6 +201,7 @@ const COMMAND_CONTRACT_OVERRIDES_LITE = {
   research: { latency: 'long' },
   review: { risk: 'R1' },
   run: { latency: 'long' },
+  search: { risk: 'R0', latency: 'normal', supportsJson: true, remoteAllowed: true, inputProfile: 'json-only' },
   stats: {
     supportsJson: true, remoteAllowed: true, inputProfile: 'stats',
     requiredCapabilities: ['project.fs.read']

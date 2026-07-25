@@ -18,14 +18,17 @@ and the gates that enforce it.
 ## Rust is an optional accelerator
 
 - The Rust crate lives in `crates/sks-core`, with an optional `sks-rs` binary.
-- Rust handles **pure computation only**: hashing, JSON validation, secret
-  scanning, voxel validation. It performs no I/O side effects.
+- Rust handles **side-effect-free acceleration**: hashing, JSON validation, secret
+  scanning, voxel validation, and **read-only** file discovery / text search
+  (`ignore` + grep crates via `sks-rs search files|text|batch`).
 - Rust **never** mutates files, rewrites config, or performs publish/build
   side-effects. Those operations are exclusively TypeScript's responsibility.
 - Every Rust-accelerated path has a JS/TS fallback. If the binary is missing,
-  the JS/TS implementation runs instead.
+  the JS/TS implementation runs instead (SearchProvider labels `provider: js`).
 - Version-mismatched binaries are rejected and routed to `js_fallback`, so a
   stale or incompatible `sks-rs` can never produce wrong results.
+- Structure/symbol/context modes stay in TypeScript (TypeScript AST + TriWiki);
+  they are not silently remapped to text search when unavailable.
 
 ## Toolchain independence
 

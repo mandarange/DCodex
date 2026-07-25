@@ -41,6 +41,13 @@ export { doctorArgWarnings, doctorMenuBarInstallPolicy, doctorProfileFromArgs } 
 
 export async function run(_command: any, args: any = [], deps: any = {}) {
   const root = await projectRoot();
+  if (flag(args, '--search')) {
+    const { buildSearchDoctorReport, printSearchDoctorReport } = await import('../core/search/doctor.js');
+    const report = await buildSearchDoctorReport(args);
+    printSearchDoctorReport(report, flag(args, '--json'));
+    if (!report.ok) process.exitCode = 1;
+    return report;
+  }
   const doctorFix = flag(args, '--fix');
   const globalOnly = doctorFix && flag(args, '--global-only');
   if (doctorFix) {

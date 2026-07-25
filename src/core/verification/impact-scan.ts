@@ -1,5 +1,5 @@
-import path from 'node:path';
-import { listFilesRecursive, readText, runProcess, which } from '../fsx.js';
+import { search } from '../search/index.js';
+import { SEARCH_SCHEMA_VERSION } from '../search/types.js';
 
 export interface ImpactSymbol {
   name: string;
@@ -12,6 +12,7 @@ export interface ImpactReference {
   file: string;
   line: number;
   text: string;
+  confidence?: 'exact_definition' | 'exact_reference' | 'syntactic_reference' | 'text_candidate' | 'structure_match';
 }
 
 export interface ImpactReport {
@@ -19,20 +20,20 @@ export interface ImpactReport {
   changed_symbols: ImpactSymbol[];
   references: ImpactReference[];
   cochange_required: string[];
-  tool: 'ast-grep' | 'ripgrep' | 'builtin';
+  /** Engine used for reference discovery. Never claims text hits are exact references. */
+  tool: 'search-provider' | 'search-provider-js';
 }
 
-type ScanTool = ImpactReport['tool'];
-
 const DECL_RE = /^\s*export\s+(?:async\s+)?(?:function|const|class|interface|type)\s+([A-Za-z_$][\w$]*)\b/;
-const TEXT_EXT_RE = /\.(?:[cm]?[jt]sx?|json|md|css|scss|html|yml|yaml|toml)$/i;
 
 export async function scanImpact(root: string, changedFiles: string[], patchText: string): Promise<ImpactReport> {
   const symbols = extractChangedExportedSymbols(patchText, changedFiles);
-  const tool = await pickScanTool();
   const references: ImpactReference[] = [];
+  let tool: ImpactReport['tool'] = 'search-provider-js';
   for (const sym of symbols) {
-    references.push(...await findReferences(root, sym.name, tool, { excludeFile: sym.file }));
+    const found = await findReferences(root, sym.name, { excludeFile: sym.file });
+    if (found.provider === 'sks-rs') tool = 'search-provider';
+    references.push(...found.refs);
   }
   const patchFiles = new Set(changedFiles.map(normalizePath));
   const cochange = [...new Set(references.map((ref) => ref.file))]
@@ -63,86 +64,52 @@ export function extractChangedExportedSymbols(patchText: string, changedFiles: s
   return dedupeSymbols(symbols);
 }
 
-export async function pickScanTool(): Promise<ScanTool> {
-  if (await which('ast-grep')) return 'ast-grep';
-  if (await which('rg')) return 'ripgrep';
-  return 'builtin';
+/** @deprecated Prefer SearchProvider; retained for tests that inspect tool selection. */
+export async function pickScanTool(): Promise<ImpactReport['tool']> {
+  return 'search-provider-js';
 }
 
-export async function findReferences(root: string, symbol: string, tool: ScanTool, opts: { excludeFile?: string } = {}): Promise<ImpactReference[]> {
+export async function findReferences(
+  root: string,
+  symbol: string,
+  opts: { excludeFile?: string } = {}
+): Promise<{ refs: ImpactReference[]; provider: string }> {
   const normalizedExclude = normalizePath(opts.excludeFile || '');
-  if (!symbol || !/^[A-Za-z_$][\w$]*$/.test(symbol)) return [];
-  if (tool === 'ast-grep') {
-    const refs = await astGrepReferences(root, symbol, normalizedExclude);
-    if (refs.length) return refs;
-  }
-  if (tool === 'ast-grep' || tool === 'ripgrep') {
-    const refs = await ripgrepReferences(root, symbol, normalizedExclude);
-    if (refs.length || tool === 'ripgrep') return refs;
-  }
-  return builtinReferences(root, symbol, normalizedExclude);
-}
+  if (!symbol || !/^[A-Za-z_$][\w$]*$/.test(symbol)) return { refs: [], provider: 'none' };
 
-async function astGrepReferences(root: string, symbol: string, excludeFile: string): Promise<ImpactReference[]> {
-  const result = await runProcess('ast-grep', ['run', '-p', symbol, '--json', root], {
-    cwd: root,
-    timeoutMs: 15_000,
-    maxOutputBytes: 512 * 1024
-  }).catch(() => null);
-  if (!result || result.code !== 0 || !result.stdout.trim()) return [];
+  const symbolResp = await search({
+    schemaVersion: SEARCH_SCHEMA_VERSION,
+    mode: 'symbol',
+    root,
+    query: symbol,
+    include: ['**/*.{ts,tsx,js,jsx,mjs,cjs,json,md}'],
+    exclude: ['node_modules/**', 'dist/**', '.git/**'],
+    limits: { maxMatches: 500, timeoutMs: 15_000 }
+  });
+
   const refs: ImpactReference[] = [];
-  try {
-    const rows = JSON.parse(result.stdout);
-    for (const row of Array.isArray(rows) ? rows : []) {
-      const file = normalizePath(path.relative(root, String(row.file || row.path || '')));
-      if (!file || file === excludeFile || shouldIgnorePath(file)) continue;
-      refs.push({
-        symbol,
-        file,
-        line: Number(row.range?.start?.line || row.line || 1),
-        text: String(row.text || row.lines || '').trim().slice(0, 240)
-      });
+  for (const m of symbolResp.matches) {
+    const file = normalizePath(m.path);
+    if (!file || file === normalizedExclude || shouldIgnorePath(file)) continue;
+    // Never promote text_candidate to exact_reference.
+    const confidence = m.confidence === 'exact_reference' ? 'syntactic_reference' : m.confidence;
+    if (
+      confidence !== 'exact_definition' &&
+      confidence !== 'syntactic_reference' &&
+      confidence !== 'text_candidate' &&
+      confidence !== 'structure_match'
+    ) {
+      continue;
     }
-  } catch {
-    return [];
+    refs.push({
+      symbol,
+      file,
+      line: m.line || 1,
+      text: String(m.text || '').trim().slice(0, 240),
+      confidence
+    });
   }
-  return capReferences(refs);
-}
-
-async function ripgrepReferences(root: string, symbol: string, excludeFile: string): Promise<ImpactReference[]> {
-  const result = await runProcess('rg', ['-n', '--glob', '!node_modules', '--glob', '!.git', '--glob', '!dist', `\\b${escapeRegex(symbol)}\\b`, '.'], {
-    cwd: root,
-    timeoutMs: 15_000,
-    maxOutputBytes: 512 * 1024
-  }).catch(() => null);
-  if (!result || (result.code !== 0 && !result.stdout)) return [];
-  return capReferences(String(result.stdout || '').split(/\r?\n/).flatMap((line) => {
-    const match = line.match(/^(.+?):(\d+):(.*)$/);
-    if (!match) return [];
-    const file = normalizePath(match[1] || '');
-    if (!file || file === excludeFile || shouldIgnorePath(file)) return [];
-    return [{ symbol, file, line: Number(match[2] || 1), text: String(match[3] || '').trim().slice(0, 240) }];
-  }));
-}
-
-async function builtinReferences(root: string, symbol: string, excludeFile: string): Promise<ImpactReference[]> {
-  const files = await listFilesRecursive(root, { ignore: ['.git', 'node_modules', 'dist', '.sneakoscope/tmp', '.sneakoscope/arenas'], maxFiles: 30_000 });
-  const word = new RegExp(`\\b${escapeRegex(symbol)}\\b`);
-  const refs: ImpactReference[] = [];
-  for (const abs of files) {
-    const file = normalizePath(path.relative(root, abs));
-    if (!TEXT_EXT_RE.test(file) || file === excludeFile || shouldIgnorePath(file)) continue;
-    const text = await readText(abs, '').catch(() => '');
-    if (!word.test(String(text))) continue;
-    const lines = String(text).split(/\r?\n/);
-    let perFile = 0;
-    for (let index = 0; index < lines.length && perFile < 50; index += 1) {
-      if (!word.test(lines[index] || '')) continue;
-      refs.push({ symbol, file, line: index + 1, text: String(lines[index] || '').trim().slice(0, 240) });
-      perFile += 1;
-    }
-  }
-  return capReferences(refs);
+  return { refs: capReferences(refs), provider: symbolResp.provider };
 }
 
 function capReferences(refs: ImpactReference[]): ImpactReference[] {
@@ -174,8 +141,4 @@ function shouldIgnorePath(file: string): boolean {
 
 function normalizePath(value: string): string {
   return String(value || '').replace(/\\/g, '/').replace(/^\.\/+/, '');
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

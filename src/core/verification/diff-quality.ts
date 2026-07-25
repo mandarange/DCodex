@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { findReferences, pickScanTool } from './impact-scan.js';
+import { findReferences } from './impact-scan.js';
 
 export interface DiffQuality {
   schema: 'sks.diff-quality.v1';
@@ -69,11 +69,10 @@ function addedExports(patchText: string, changedFiles: string[]): Array<{ name: 
 async function detectDeadAdditions(root: string, patchText: string, changedFiles: string[]): Promise<string[]> {
   const additions = addedExports(patchText, changedFiles);
   if (!additions.length) return [];
-  const tool = await pickScanTool();
   const dead: string[] = [];
   for (const addition of additions) {
-    const refs = await findReferences(root, addition.name, tool, { excludeFile: addition.file });
-    if (!refs.length) dead.push(addition.name);
+    const found = await findReferences(root, addition.name, { excludeFile: addition.file });
+    if (!found.refs.length) dead.push(addition.name);
   }
   return dead;
 }
