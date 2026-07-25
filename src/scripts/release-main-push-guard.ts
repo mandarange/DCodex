@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { inspectMainPushGuard, RELEASE_630_MISSION_ID } from '../core/release/main-push-guard.js'
+import { inspectMainPushGuard } from '../core/release/main-push-guard.js'
 import { releaseProofDir, writeReleaseJson } from '../core/release/release-pack-receipt.js'
 import { RELEASE_ORIGIN_IDENTITY } from '../core/release/release-origin.js'
 
@@ -16,8 +16,7 @@ const report = inspectMainPushGuard({
   requireReleaseStamp: process.argv.includes('--require-release-stamp'),
   requirePackProof: process.argv.includes('--require-pack-proof'),
   requireMacosProof: process.argv.includes('--require-macos-proof'),
-  requireCleanTree: process.argv.includes('--require-clean-tree'),
-  expectedReleaseMissionId: value('--release-mission') || RELEASE_630_MISSION_ID
+  requireCleanTree: process.argv.includes('--require-clean-tree')
 })
 const output = path.join(releaseProofDir(root, expectedVersion), 'main-push-guard.json')
 writeReleaseJson(output, report)

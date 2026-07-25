@@ -97,6 +97,7 @@ id_ed25519
 .sneakoscope/missions/
 .sneakoscope/layouts/
 .sneakoscope/reports/
+.sneakoscope/release/*/ownership-reports/
 .sneakoscope/app-screenshots/
 .sneakoscope/tmp/
 .sneakoscope/cache/

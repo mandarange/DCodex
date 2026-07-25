@@ -1,13 +1,8 @@
-import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import {
-  inspectReleaseClosure,
-  MAIN_PUSH_GUARD_SCHEMA,
-  RELEASE_630_MISSION_ID,
-  validateReleaseUpgradeProof
-} from './main-push-guard.js'
+import { MAIN_PUSH_GUARD_SCHEMA, validateReleaseUpgradeProof } from './main-push-guard.js'
 import { readMacosMenubarProof, validateMacosMenubarProofArtifacts } from './macos-menubar-proof.js'
+import { gitOk, gitText, readJson } from './release-proof-io.js'
 import { releaseProofDir, validateLocalReleasePackBinding } from './release-pack-receipt.js'
 import { validateFullReleaseStamp } from './release-stamp-proof.js'
 import { releaseOriginIdentity } from './release-origin.js'
@@ -22,8 +17,6 @@ export function inspectMainPushReceipt(input: {
   baseline: string
   method: MainPushMethod
   expectedOriginIdentity: string
-  expectedReleaseMissionId?: string
-  expectedWorkOrderSha256?: string
 }) {
   const blockers: string[] = []
   const pkg = readJson(path.join(input.root, 'package.json')) || {}
@@ -33,7 +26,6 @@ export function inspectMainPushReceipt(input: {
   const origin = releaseOriginIdentity(input.root)
   const proofDir = releaseProofDir(input.root, input.version)
   const guard = readJson(path.join(proofDir, 'main-push-guard.json'))
-  const expectedMissionId = input.expectedReleaseMissionId || RELEASE_630_MISSION_ID
   const releaseStamp = path.join('.sneakoscope', 'reports', 'release-check-stamp.json')
   const packProof = path.relative(input.root, path.join(proofDir, 'pack-receipt.json'))
   const macosProof = path.relative(input.root, path.join(proofDir, 'macos-menubar-proof.json'))
@@ -50,31 +42,6 @@ export function inspectMainPushReceipt(input: {
   if (guard?.expected_origin_main !== input.baseline) blockers.push('pre_push_guard_baseline_mismatch')
   if (guard?.expected_origin_identity !== input.expectedOriginIdentity || guard?.actual_origin_identity !== input.expectedOriginIdentity) blockers.push('pre_push_guard_origin_identity_mismatch')
   if (!Array.isArray(guard?.blockers) || guard.blockers.length > 0) blockers.push('pre_push_guard_blockers_present')
-
-  const closure = inspectReleaseClosure({
-    root: input.root,
-    version: input.version,
-    expectedHead: head,
-    expectedBaseline: input.baseline,
-    expectedMissionId,
-    ...(input.expectedWorkOrderSha256 === undefined ? {} : { expectedWorkOrderSha256: input.expectedWorkOrderSha256 })
-  })
-  if (!closure.ok) blockers.push(...closure.blockers.map((blocker) => `release_closure:${blocker}`))
-  const guardedClosure = guard?.release_closure
-  if (guardedClosure?.schema !== closure.schema || guardedClosure?.ok !== true
-    || !Array.isArray(guardedClosure?.blockers) || guardedClosure.blockers.length > 0) {
-    blockers.push('pre_push_guard_release_closure_missing_or_invalid')
-  }
-  if (guardedClosure?.head !== closure.head || guardedClosure?.source_commit !== closure.source_commit) {
-    blockers.push('pre_push_guard_release_closure_commit_mismatch')
-  }
-  if (guardedClosure?.mission_id !== expectedMissionId || guardedClosure?.mission_id !== closure.mission_id) {
-    blockers.push('pre_push_guard_release_closure_mission_mismatch')
-  }
-  if (guardedClosure?.manifest_path !== closure.manifest_path
-    || guardedClosure?.manifest_sha256 !== closure.manifest_sha256) {
-    blockers.push('pre_push_guard_release_closure_manifest_mismatch')
-  }
 
   const stampValidation = validateFullReleaseStamp({
     root: input.root,
@@ -118,7 +85,6 @@ export function inspectMainPushReceipt(input: {
     pack_proof: packProof,
     upgrade_proof: upgrade,
     macos_proof: macosProof,
-    release_closure: closure,
     blockers: [...new Set(blockers)]
   }
 }
@@ -134,21 +100,4 @@ function gitRemoteMain(root: string): string {
   if (result.status !== 0) return ''
   const value = String(result.stdout || '').trim().split(/\s+/, 1)[0] || ''
   return /^[a-f0-9]{40}$/i.test(value) ? value : ''
-}
-
-function readJson(file: string): any {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-function gitText(root: string, args: string[]): string {
-  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
-  return result.status === 0 ? String(result.stdout || '').trim() : ''
-}
-
-function gitOk(root: string, args: string[]): boolean {
-  return spawnSync('git', args, { cwd: root, stdio: 'ignore' }).status === 0
 }

@@ -3218,12 +3218,6 @@
       "reason": "Menu Bar latency measurement writes only cache, build-stamp, and source fixtures under the run-local temp root."
     },
     {
-      "file": "src/core/release/release-closure.ts",
-      "symbol": "writeReleaseClosureManifest",
-      "token": "writeFileSync",
-      "reason": "Release-closure writer writes only the version-scoped closure manifest path derived from the release root."
-    },
-    {
       "file": "src/core/release/npm-stage-tarball-verifier-support.ts",
       "symbol": "writePrivate",
       "token": "writeFileSync",

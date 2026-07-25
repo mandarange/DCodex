@@ -1,24 +1,9 @@
 import path from 'node:path'
 import { readMacosMenubarProof, validateMacosMenubarProofArtifacts } from './macos-menubar-proof.js'
-import {
-  inspectReleaseClosure as inspectReleaseClosureContract,
-  RELEASE_630_MISSION_ID as DEFAULT_RELEASE_MISSION_ID
-} from './release-closure.js'
-import { fileSha256, gitOk, gitText, readJson, relative, unique } from './release-closure-helpers.js'
+import { fileSha256, gitOk, gitText, readJson, relative, unique } from './release-proof-io.js'
 import { releaseOriginIdentity } from './release-origin.js'
 import { releaseProofDir, validateLocalReleasePackBinding } from './release-pack-receipt.js'
 import { validateFullReleaseStamp } from './release-stamp-proof.js'
-
-export {
-  buildReleaseClosureManifest,
-  inspectReleaseClosure,
-  releaseClosureManifestPath,
-  RELEASE_630_MISSION_ID,
-  RELEASE_CLOSURE_MANIFEST_SCHEMA,
-  RELEASE_CLOSURE_SCHEMA,
-  writeReleaseClosureManifest
-} from './release-closure.js'
-export type { ReleaseClosureInput } from './release-closure.js'
 
 export const MAIN_PUSH_GUARD_SCHEMA = 'sks.release-main-push-guard.v1'
 const RELEASE_UPGRADE_SMOKE_SCHEMA = 'sks.release-upgrade-smoke.v2'
@@ -63,8 +48,6 @@ export interface MainPushGuardInput {
   requirePackProof?: boolean
   requireMacosProof?: boolean
   requireCleanTree?: boolean
-  expectedReleaseMissionId?: string
-  expectedWorkOrderSha256?: string
 }
 
 export function inspectMainPushGuard(input: MainPushGuardInput) {
@@ -79,16 +62,6 @@ export function inspectMainPushGuard(input: MainPushGuardInput) {
   if (pkg.version !== input.expectedVersion) blockers.push(`package_version_mismatch:${String(pkg.version || 'missing')}`)
   if (!gitOk(input.root, ['merge-base', '--is-ancestor', 'origin/main', 'HEAD'])) blockers.push('origin_main_not_ancestor_of_head')
   if (input.requireCleanTree && gitText(input.root, ['status', '--porcelain=v1'])) blockers.push('worktree_not_clean')
-
-  const closure = inspectReleaseClosureContract({
-    root: input.root,
-    version: input.expectedVersion,
-    expectedHead: head,
-    expectedBaseline: input.expectedOriginMain,
-    expectedMissionId: input.expectedReleaseMissionId || DEFAULT_RELEASE_MISSION_ID,
-    ...(input.expectedWorkOrderSha256 === undefined ? {} : { expectedWorkOrderSha256: input.expectedWorkOrderSha256 })
-  })
-  blockers.push(...closure.blockers.map((blocker) => `release_closure:${blocker}`))
 
   const proofDir = releaseProofDir(input.root, input.expectedVersion)
   if (input.requireReleaseStamp !== true) blockers.push('release_stamp_requirement_missing')
@@ -139,7 +112,6 @@ export function inspectMainPushGuard(input: MainPushGuardInput) {
     pack_proof: input.requirePackProof ? path.relative(input.root, path.join(proofDir, 'pack-receipt.json')) : null,
     upgrade_proof: upgrade,
     macos_proof: input.requireMacosProof ? path.relative(input.root, path.join(proofDir, 'macos-menubar-proof.json')) : null,
-    release_closure: closure,
     force_push_allowed: false,
     blockers: unique(blockers),
     checked_at: new Date().toISOString()

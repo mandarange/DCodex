@@ -76,8 +76,12 @@ function checkChangelog() {
 
 function checkReadme() {
   const text = readText('README.md');
-  const displayed = text.match(/SKS \*\*([0-9]+\.[0-9]+\.[0-9]+)\*\*/)?.[1] || null;
-  if (displayed && displayed !== expected) mismatch('README.md', 'displayed current version', displayed);
+  // README renders the banner as `Current release: **SKS 7.1.3**` — the bold wraps `SKS <version>`,
+  // not the version alone. Fail closed when the banner is absent so a stale README cannot pass by
+  // simply not matching.
+  const displayed = text.match(/\*\*SKS ([0-9]+\.[0-9]+\.[0-9]+)\*\*/)?.[1] || null;
+  if (!displayed) mismatch('README.md', 'displayed current version', null);
+  else if (displayed !== expected) mismatch('README.md', 'displayed current version', displayed);
 }
 
 function checkReleaseMetadataScript() {
