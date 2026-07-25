@@ -161,15 +161,42 @@ async function walkIgnoreAware(root: string, maxFiles: number, skipped: SearchRe
 function globMatch(rel: string, pattern: string): boolean {
   const p = pattern.replace(/\\/g, '/');
   if (p.startsWith('!')) return false;
-  if (p.includes('**')) {
-    const re = new RegExp('^' + p.split('**').map(escapeRegex).join('.*') + '$');
-    return re.test(rel);
+  // Expand simple brace sets: **/*.{ts,tsx} → **/*.ts, **/*.tsx
+  const brace = p.match(/^(.*)\{([^}]+)\}(.*)$/);
+  if (brace) {
+    const [, pre, body, post] = brace;
+    return body!.split(',').some((alt) => globMatch(rel, `${pre}${alt.trim()}${post}`));
   }
-  if (p.includes('*')) {
-    const re = new RegExp('^' + p.split('*').map(escapeRegex).join('[^/]*') + '$');
-    return re.test(rel);
+  // `**/foo` also matches root-level `foo`
+  if (p.startsWith('**/') && globMatch(rel, p.slice(3))) return true;
+  return globToRegExp(p).test(rel);
+}
+
+function globToRegExp(pattern: string): RegExp {
+  let out = '^';
+  let i = 0;
+  while (i < pattern.length) {
+    if (pattern.startsWith('**/', i) || pattern.startsWith('**', i)) {
+      out += '.*';
+      i += pattern.startsWith('**/', i) ? 3 : 2;
+      continue;
+    }
+    const ch = pattern[i]!;
+    if (ch === '*') {
+      out += '[^/]*';
+      i += 1;
+      continue;
+    }
+    if (ch === '?') {
+      out += '[^/]';
+      i += 1;
+      continue;
+    }
+    out += escapeRegex(ch);
+    i += 1;
   }
-  return rel === p || rel.startsWith(p.endsWith('/') ? p : `${p}/`) || rel.includes(`/${p}`);
+  out += '$';
+  return new RegExp(out);
 }
 
 function escapeRegex(value: string): string {

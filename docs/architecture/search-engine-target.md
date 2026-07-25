@@ -9,7 +9,7 @@ Companion to `search-engine-current-state.md`.
 | files | Rust `ignore` (`sks-rs search files`) + JS/`git ls-files` fallback | Optional Rust; npm install never requires cargo |
 | text | Rust grep crates (`sks-rs search text\|batch`) + JS regex scanner | Same |
 | structure | TypeScript compiler API | Always available for TS/JS; capability errors otherwise |
-| symbol | TS AST definitions/syntactic refs + text_candidate supplement | Never labels text as `exact_reference` |
+| symbol | TypeScript LanguageService for `exact_definition` / `exact_reference`; syntactic + `text_candidate` supplements | Text never promoted to `exact_*`; non-TS/JS → capability error |
 | context | TriWiki + Wiki Code Pack + local search metadata | No vector DB |
 
 Super Search remains web/source intelligence and is not merged into this provider.

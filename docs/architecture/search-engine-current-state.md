@@ -83,7 +83,7 @@ Caller (CLI / verification / TriWiki / Review / DFix / QA / release)
 
 | File / function | Purpose | Tool today | External process? | Confidence today | Recommended |
 |-----------------|---------|------------|-------------------|------------------|-------------|
-| `impact-scan.ts` `findReferences` | Cochange references | ast-grep → rg → builtin | Often yes | None (all treated as refs) | Map to `text_candidate` / `syntactic_reference`; never label text as `exact_reference` |
+| `impact-scan.ts` `findReferences` | Cochange references | SearchProvider symbol mode (TS LanguageService) | No rg/ast-grep | `exact_*` / syntactic / text | Preserve LS-backed exact confidence; never promote text |
 | `code-index-scanner.ts` export extraction | Module export summaries | Line regex | No | Implicit definition-ish | Feed `exact_definition` candidates via symbol mode |
 | TriWiki proof bank / module cards | Bounded recall | Index artifacts | No | Provenance hashes | context + symbol hydrate |
 

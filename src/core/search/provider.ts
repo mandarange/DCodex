@@ -126,9 +126,13 @@ export async function searchCapabilities(root = process.cwd()): Promise<SearchCa
       symbol: {
         available: true,
         provider: 'mixed',
-        engine: 'typescript-ast+text',
+        engine: 'typescript-language-service',
         externalBinaryRequired: false,
-        notes: ['exact_reference not claimed without LSP/tsserver project graph']
+        notes: [
+          'exact_definition/exact_reference via TypeScript LanguageService binding resolution',
+          'text_candidate never promoted to exact_*',
+          'non-TS/JS languages return symbol_unsupported_language'
+        ]
       },
       context: {
         available: true,

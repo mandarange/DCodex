@@ -91,10 +91,11 @@ export async function findReferences(
   for (const m of symbolResp.matches) {
     const file = normalizePath(m.path);
     if (!file || file === normalizedExclude || shouldIgnorePath(file)) continue;
-    // Never promote text_candidate to exact_reference.
-    const confidence = m.confidence === 'exact_reference' ? 'syntactic_reference' : m.confidence;
+    // Preserve LanguageService-backed exact_* confidence; never promote text to exact.
+    const confidence = m.confidence;
     if (
       confidence !== 'exact_definition' &&
+      confidence !== 'exact_reference' &&
       confidence !== 'syntactic_reference' &&
       confidence !== 'text_candidate' &&
       confidence !== 'structure_match'

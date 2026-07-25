@@ -9,7 +9,7 @@ import {
   persistOrReuseTrustworthySubagentParentSummary,
   writeSubagentEvidence
 } from '../core/subagents/subagent-evidence.js'
-import { resolveSubagentThreadBudget } from '../core/subagents/thread-budget.js'
+import { DEFAULT_NARUTO_REQUESTED_SUBAGENTS, resolveSubagentThreadBudget } from '../core/subagents/thread-budget.js'
 import { runOfficialSubagentWorkflow } from '../core/subagents/official-subagent-runner.js'
 
 const counts = [4, 8, 12, 20, 100].map((requested) => resolveSubagentThreadBudget({
@@ -17,7 +17,11 @@ const counts = [4, 8, 12, 20, 100].map((requested) => resolveSubagentThreadBudge
   configuredMaxThreads: requested === 20 ? 12 : undefined
 }))
 const implicitCount = resolveSubagentThreadBudget()
-assertGate(implicitCount.requestedSubagents === 2, 'implicit Naruto must default to two independent children', implicitCount)
+assertGate(
+  implicitCount.requestedSubagents === DEFAULT_NARUTO_REQUESTED_SUBAGENTS,
+  `implicit Naruto must default to ${DEFAULT_NARUTO_REQUESTED_SUBAGENTS} independent children (automatic bounded-work fan-out)`,
+  implicitCount
+)
 assertGate(counts[0]?.requestedSubagents === 4, 'requested 4 must remain 4', counts)
 assertGate(counts[1]?.requestedSubagents === 8, 'requested 8 must remain 8', counts)
 assertGate(counts[2]?.requestedSubagents === 12, 'requested 12 must remain 12', counts)
