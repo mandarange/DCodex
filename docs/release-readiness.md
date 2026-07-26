@@ -185,7 +185,7 @@ smoke report, and platform-gate reports under the 7.3.0 release evidence root.
 
 ## Version Cut
 
-Do not cut 7.3.0 while feature integration or a required gate is red.
+Do not cut a release while feature integration or a required gate is red.
 
 ```bash
 sks versioning bump patch --json
@@ -201,9 +201,9 @@ Sneakoscope does not install or rely on a Git pre-commit version hook.
 
 The publish workflow uses a GitHub-hosted runner, `id-token: write`, and npm
 Trusted Publishing with the allowed action restricted to `npm stage publish`.
-No long-lived npm write token is used. The workflow pins Node 24 and npm
-to an exact version at or above 11.15.0, runs the full release and platform
-dependencies, then stages the reviewed package.
+No long-lived npm write token is used. The workflow pins Node and npm to the exact
+versions declared by the maintainer stage verifier, runs the full release and
+platform dependencies, then stages the reviewed package.
 
 The macOS proof job downloads the exact Linux-built tarball and receipt, runs
 the isolated 6.2.0-to-current upgrade lifecycle against those bytes, and

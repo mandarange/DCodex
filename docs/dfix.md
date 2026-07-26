@@ -1,6 +1,6 @@
 # DFix Evidence Loop
 
-DFix is the bounded direct-fix route for tiny copy, config, docs, labels, spacing, translation, and simple mechanical edits. In 1.14.1 it remains the Extreme Speed Kernel: fast diagnosis, minimum root-cause scope, safe patch, minimum verification, proof/trust/wrongness, and rollback evidence stay in one direct-fix loop.
+DFix is the bounded direct-fix route for tiny copy, config, docs, labels, spacing, translation, and simple mechanical edits. It remains the Extreme Speed Kernel: fast diagnosis, minimum root-cause scope, safe patch, minimum verification, proof/trust/wrongness, and rollback evidence stay in one direct-fix loop.
 
 The command surface is:
 

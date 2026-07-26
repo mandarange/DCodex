@@ -6,6 +6,6 @@
 
 Gates declare resources, side-effect class, cache inputs, timeout, isolation, and preset. Hermetic gates run in temporary home and Codex home directories. Real checks use the `real-check` preset and require operator-controlled environment variables.
 
-The full-coverage gate verifies that important package scripts are represented in the release DAG and that required 2.0.12 hardening gates are release-preset members.
+The full-coverage gate verifies that important package scripts are represented in the release DAG and that the required hardening gates are release-preset members.
 
 Use `npm run gates:run -- --preset affected --changed-since auto --explain` to inspect the planned DAG, and use `npm run release:real-check` only on a host where the required real dependencies are installed and intentionally enabled.

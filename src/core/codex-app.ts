@@ -553,7 +553,7 @@ export function codexAppGuidance({ appInstalled, codex, mcpList, featureList, re
   }
   if (!gitActions?.ok) {
     lines.push(`Codex App git commit/push actions are blocked: ${gitActions?.blockers?.join(', ') || 'git action readiness'}. The app Commit, Push, Commit and Push, and PR flows need codex_git_commit, hooks, and Codex CLI remote-control support.`);
-    lines.push(`Run: sks doctor --fix; if remote-control is still blocked, update Codex CLI to ${CODEX_REMOTE_CONTROL_MIN_VERSION}+ and restart older app-server/TUI sessions.`);
+    lines.push('Run: sks doctor --fix; if remote-control is still blocked, update Codex CLI to the official latest stable release and restart older app-server/TUI sessions.');
   } else {
     lines.push('Codex App git actions are enabled for Commit, Push, Commit and Push, and PR flows; SKS hooks treat those app metadata actions as lightweight git UI actions.');
   }
@@ -561,7 +561,7 @@ export function codexAppGuidance({ appInstalled, codex, mcpList, featureList, re
     lines.push('Codex App does not expose a documented third-party API for inserting SKS between Window and Help, so SKS uses a right-side macOS menu bar companion instead. Run `sks doctor --fix` to install or refresh it.');
   }
   if (appInstalled && (!computerUseReady || !browserToolReady)) {
-    lines.push('Open Codex App settings and enable recommended MCP/plugin tools. Codex CLI 0.130.0+ remote-control/app-server sessions can pick up config changes live; restart older CLI/TUI sessions.');
+    lines.push('Open Codex App settings and enable recommended MCP/plugin tools. Codex CLI sessions that expose remote-control/app-server can pick up config changes live; restart older CLI/TUI sessions.');
     lines.push(`Required for SKS web QA/UX/browser evidence: Codex Chrome Extension first (${CODEX_CHROME_EXTENSION_SETUP_DOCS_URL}). Computer Use is reserved for native Mac/non-web surfaces.`);
     lines.push('Verify with: codex features list; codex mcp list');
   }
@@ -1208,10 +1208,14 @@ function hasTomlBoolean(text: any = '', key: any = '', value: boolean) {
   return re.test(String(text || ''));
 }
 
+// Guidance stays capability-first: the machine comparison against
+// CODEX_REMOTE_CONTROL_MIN_VERSION still gates the feature, but the operator is
+// told to install the official latest stable release rather than a number that
+// goes stale the next time Codex ships.
 function remoteControlGuidance(status: any = {}) {
-  if (!status.codex_cli?.ok) return 'Codex remote-control requires Codex CLI 0.130.0+. Install with: npm i -g @openai/codex@latest';
-  if (status.reason === 'codex_cli_version_unknown') return 'Codex remote-control requires Codex CLI 0.130.0+, but the installed CLI version could not be parsed. Check: codex --version';
-  return `Codex remote-control requires Codex CLI ${CODEX_REMOTE_CONTROL_MIN_VERSION}+. Update with: npm i -g @openai/codex@latest`;
+  if (!status.codex_cli?.ok) return 'Codex remote-control needs a Codex CLI that exposes the app-server entrypoint. Install the official latest stable release: npm i -g @openai/codex@latest';
+  if (status.reason === 'codex_cli_version_unknown') return 'Codex remote-control needs a Codex CLI that exposes the app-server entrypoint, but the installed CLI version could not be parsed. Check: codex --version';
+  return 'The installed Codex CLI does not expose remote-control. Update to the official latest stable release: npm i -g @openai/codex@latest';
 }
 
 function codexCliVersionNumber(versionText: any = '') {

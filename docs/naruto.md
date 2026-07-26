@@ -77,8 +77,8 @@ unavailable.
 Naruto requires Codex multi-agent V2 (`features.multi_agent_v2`) when available.
 Hosts that lack MA v2 fail closed with explicit “update Codex CLI” guidance
 (`sks codex update` / Menu Bar → Update Codex CLI Now); SKS does not revive a
-legacy process runtime. The package preferred channel is `0.145.0+`, but
-capability probes win over a hard version lock. Fresh SKS-owned project
+legacy process runtime. Use the official latest stable Codex CLI; capability
+probes, not a pinned channel number, decide what SKS enables. Fresh SKS-owned project
 configuration uses:
 
 ```toml

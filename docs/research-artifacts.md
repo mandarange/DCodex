@@ -1,6 +1,6 @@
 # Research Artifacts
 
-Required 2.0.15 research artifacts include:
+Required research artifacts include:
 
 - `research-quality-contract.json`: threshold contract for source count, source layers, counterevidence, claim support, blueprint depth, falsification, experiments, and report length.
 - `claim-evidence-matrix.json`: key claims, source ids, counterevidence ids, triangulation, unsupported claims, confidence, and test probes.

@@ -52,15 +52,39 @@ export interface SearchMatch {
   meta?: Record<string, unknown>;
 }
 
+/**
+ * Additive metadata for the graph-backed `context` mode. Every field is optional
+ * so the published `sks.search-provider.v1` response shape stays compatible.
+ */
+export interface SearchContextGraphMeta {
+  snapshotHash: string;
+  snapshotFreshness: 'fresh' | 'stale';
+  profile: string;
+  seedCount: number;
+  visitedNodes: number;
+  selectedNodes: number;
+  explanationPathCount: number;
+  provenanceCoverage: number;
+  staleExcluded: number;
+  invalidatedExcluded: number;
+  tokenCost: number;
+  tokenBudget: number;
+  omissionReasons: Record<string, number>;
+}
+
 export interface SearchContextMeta {
   whySearched?: string;
   method?: string;
+  /** True only when the selected nodes actually resolved to a source, never merely because a pack file exists. */
   hydrated?: boolean;
   indexFreshness?: string | null;
   fileHash?: string | null;
   truncation?: boolean;
   excludedCount?: number;
   tokenBudgetOmissions?: number;
+  graph?: SearchContextGraphMeta;
+  /** Command that repairs a missing or stale graph; set whenever context mode fails explicitly. */
+  repairCommand?: string;
 }
 
 export interface SearchResponse {

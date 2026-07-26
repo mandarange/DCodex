@@ -109,6 +109,6 @@ export function interruptedToolOutputRecoveryBlockReason(input: {
     `SKS blocked same-thread continuation because custom tool call ${callId} has no correlated output (active mission: ${missionId}).`,
     'The current Codex conversation state may be structurally invalid, so additional context cannot repair the pending Responses request.',
     'Treat the call result as unknown and do not replay a possibly mutating action.',
-    'Upgrade the selected codex-lb to 1.21.0-beta.3 or later, or explicitly switch with `sks codex-lb use-oauth`, then open a fresh Codex thread and continue the persisted mission after inspecting side effects.'
+    'Upgrade the selected codex-lb to the official latest stable release (`sks codex-lb status --json` reports whether the deployment satisfies tool-heavy continuation), or explicitly switch with `sks codex-lb use-oauth`, then open a fresh Codex thread and continue the persisted mission after inspecting side effects.'
   ].join(' ')
 }
