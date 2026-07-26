@@ -1,36 +1,45 @@
+/**
+ * The TriWiki code pack.
+ *
+ * The pack is no longer produced by a directory scanner that walks the repository
+ * on its own — it is a projection of the compiled Context Graph. `buildCodePack`
+ * therefore takes a snapshot (or a built index) instead of a `CodeIndex`, and the
+ * fields consumers already read keep their meaning:
+ *
+ *   - `entries[].citations` are the graph's provenance records, so every entry
+ *     points at real workspace-relative repository paths;
+ *   - `entries[].freshness` is a verdict about source bytes, not a placeholder;
+ *   - `index_digest` binds the pack to the snapshot hash *and* to the projected
+ *     content, so an export or dependency change moves it.
+ *
+ * This file owns the artifact: where it lives, how it is validated, and how it is
+ * written. The projection itself lives in `context-graph/projections/`.
+ */
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { ensureDir, exists, nowIso, readJson, sha256, writeJsonAtomic } from '../fsx.js';
-import type { CodeIndex, CodeIndexModuleCard } from './code-index-scanner.js';
+import { ensureDir, exists, readJson, writeJsonAtomic } from '../fsx.js';
+import type { ContextGraphSnapshot } from './context-graph/contracts.js';
+import type { ContextGraphIndex } from './context-graph/graph-index.js';
+import {
+  buildCodePackFromGraph,
+  type BuildCodePackFromGraphOptions
+} from './context-graph/projections/code-pack.js';
+import { CODE_PACK_SCHEMA, type CodePack } from './context-graph/projections/pack-contract.js';
 
-export const CODE_PACK_SCHEMA = 'sks.code-pack.v1';
-export const DEFAULT_CODE_PACK_TOKEN_BUDGET = 8000;
-
-export interface CodePackCitation {
-  path: string;
-  line?: number;
-}
-
-export interface CodePackEntry {
-  id: string;
-  text: string;
-  citations: CodePackCitation[];
-  trust_score: number;
-  freshness: 'fresh' | 'stale' | 'unknown';
-  token_cost: number;
-}
-
-export interface CodePack {
-  schema: typeof CODE_PACK_SCHEMA;
-  generated_at: string;
-  git_head_sha: string | null;
-  source_file_count: number;
-  index_digest: string;
-  entries: CodePackEntry[];
-  token_budget: number;
-  total_token_cost: number;
-}
+export { CODE_PACK_SCHEMA, DEFAULT_CODE_PACK_TOKEN_BUDGET } from './context-graph/projections/pack-contract.js';
+export type { CodePack, CodePackCitation, CodePackEntry } from './context-graph/projections/pack-contract.js';
+export {
+  buildCodePackFromGraph,
+  computeCodePackIndexDigest,
+  projectCodePackFromGraph,
+  type BuildCodePackFromGraphOptions,
+  type CodePackProjection
+} from './context-graph/projections/code-pack.js';
+export {
+  buildWorkspaceCodePack,
+  type WorkspaceCodePackOptions,
+  type WorkspaceCodePackResult
+} from './context-graph/projections/code-pack-workspace.js';
 
 export function codePackDir(root: string): string {
   return path.join(root, '.sneakoscope', 'wiki');
@@ -44,122 +53,27 @@ export function codePackPrevPath(root: string): string {
   return path.join(codePackDir(root), 'code-pack.prev.json');
 }
 
-export function buildCodePack(root: string, index: CodeIndex, tokenBudget: number = DEFAULT_CODE_PACK_TOKEN_BUDGET): CodePack {
-  const normalizedBudget = Number.isFinite(tokenBudget) && tokenBudget >= 0
-    ? Math.floor(tokenBudget)
-    : DEFAULT_CODE_PACK_TOKEN_BUDGET;
-  const entries: CodePackEntry[] = [];
-  let totalTokenCost = 0;
-  for (const card of index.modules) {
-    const entry = buildEntryForModule(card);
-    if (!entry) continue;
-    if (totalTokenCost + entry.token_cost > normalizedBudget) continue;
-    entries.push(entry);
-    totalTokenCost += entry.token_cost;
-  }
-  return {
-    schema: CODE_PACK_SCHEMA,
-    generated_at: nowIso(),
-    git_head_sha: readGitHeadSha(root),
-    source_file_count: index.scanned_file_count,
-    index_digest: computeIndexDigest(index),
-    entries,
-    token_budget: normalizedBudget,
-    total_token_cost: totalTokenCost
-  };
-}
-
-function buildEntryForModule(card: CodeIndexModuleCard): CodePackEntry | null {
-  const citations = collectCitations(card);
-  // openwiki principle: an entry with no real repository citation is worse than no entry at all
-  if (!citations.length) return null;
-  const text = summarizeModule(card);
-  return {
-    id: `code:${card.module_id}`,
-    text,
-    citations,
-    trust_score: computeTrustScore(card),
-    freshness: 'unknown',
-    token_cost: Math.ceil(text.length / 4)
-  };
-}
-
-function collectCitations(card: CodeIndexModuleCard): CodePackCitation[] {
-  const paths = [...card.paths, ...card.entry_points].filter(Boolean);
-  const seen = new Set<string>();
-  const citations: CodePackCitation[] = [];
-  for (const p of paths) {
-    if (seen.has(p)) continue;
-    seen.add(p);
-    citations.push({ path: p });
-  }
-  return citations;
-}
-
-function summarizeModule(card: CodeIndexModuleCard): string {
-  const role = inferRole(card);
-  const primaryPath = card.paths[0] || card.module_id;
-  const exportsPart = summarizeExports(card.exports_summary);
-  const depsPart = summarizeDependencies(card.dependency_edges);
-  const sizePart = `${card.file_count} file${card.file_count === 1 ? '' : 's'}, ${card.loc} loc, ${card.risk} risk`;
-  return `${card.module_id} is ${role} at ${primaryPath} (${sizePart}). ${exportsPart} ${depsPart}`.trim().replace(/\s+/g, ' ');
-}
-
-function inferRole(card: CodeIndexModuleCard): string {
-  const idLower = card.module_id.toLowerCase();
-  const pathLower = card.paths.join(' ').toLowerCase();
-  if (idLower.includes('test') || pathLower.includes('__tests__')) return 'a test module';
-  if (idLower.includes('cli') || pathLower.includes('cli')) return 'a CLI module';
-  if (idLower.includes('command')) return 'a command module';
-  if (idLower.includes('core')) return 'a core module';
-  return 'a module';
-}
-
-function summarizeExports(exportsSummary: string[]): string {
-  if (!exportsSummary.length) return 'It has no detected top-level exports.';
-  const preview = exportsSummary.slice(0, 5).map((line) => line.replace(/^export\s+/, '').replace(/\s*\{\s*$/, '').trim());
-  const suffix = exportsSummary.length > preview.length ? `, and ${exportsSummary.length - preview.length} more` : '';
-  return `Key exports: ${preview.join('; ')}${suffix}.`;
-}
-
-function summarizeDependencies(dependencyEdges: string[]): string {
-  if (!dependencyEdges.length) return 'It has no detected cross-module dependencies.';
-  const preview = dependencyEdges.slice(0, 5);
-  const suffix = dependencyEdges.length > preview.length ? `, and ${dependencyEdges.length - preview.length} more` : '';
-  return `Depends on: ${preview.join(', ')}${suffix}.`;
-}
-
-function computeTrustScore(card: CodeIndexModuleCard): number {
-  // more citable surface (entry points, real exports) correlates with a more reliably summarizable module
-  let score = 0.5;
-  if (card.entry_points.length > 0) score += 0.2;
-  if (card.exports_summary.length > 0) score += 0.2;
-  if (card.risk === 'high') score -= 0.15;
-  else if (card.risk === 'low') score += 0.1;
-  return Math.max(0, Math.min(1, Number(score.toFixed(2))));
-}
-
-function readGitHeadSha(root: string): string | null {
-  try {
-    const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
-    if (result.status !== 0 || result.error) return null;
-    const sha = String(result.stdout || '').trim();
-    return sha || null;
-  } catch {
-    return null;
-  }
-}
-
-function computeIndexDigest(index: CodeIndex): string {
-  const stable = index.modules
-    .map((card) => ({ module_id: card.module_id, paths: [...card.paths].sort() }))
-    .sort((a, b) => a.module_id.localeCompare(b.module_id));
-  return sha256(JSON.stringify(stable));
+/**
+ * Project a code pack from a compiled Context Graph.
+ *
+ * `source` is a snapshot or an already-built index; passing the index avoids
+ * rebuilding adjacency for a graph the caller already holds. Options carry the
+ * query, profile and risk that decide *which* nodes earn the token budget —
+ * relevance ranking replaces the old module inventory order.
+ */
+export function buildCodePack(
+  root: string,
+  source: ContextGraphSnapshot | ContextGraphIndex,
+  options: BuildCodePackFromGraphOptions = {}
+): CodePack {
+  return buildCodePackFromGraph(root, source, options);
 }
 
 export async function validateCodePack(pack: CodePack, root: string): Promise<{ ok: boolean; issues: string[] }> {
   const issues: string[] = [];
   const seenIds = new Set<string>();
+  if (pack.schema !== CODE_PACK_SCHEMA) issues.push(`unexpected pack schema: ${String(pack.schema)}`);
+  if (!pack.index_digest) issues.push('pack has no index_digest');
   for (const entry of pack.entries) {
     if (seenIds.has(entry.id)) {
       issues.push(`duplicate entry id: ${entry.id}`);

@@ -9,10 +9,34 @@
  */
 import { jsonFile, lines, type FixtureDefinition } from './kinds.js';
 
-const GATES_SCHEMA = 'sks.fixture-gates.v1';
+const GATES_SCHEMA = 'sks.release-gates.v2';
 
+/**
+ * Fixtures declare gates in the real `release-gates.v2.json` shape so the
+ * topology extractor reads them exactly as it reads this repository's own
+ * manifest. A fixture-only schema would have measured nothing: the extractor
+ * ignores unknown manifests, so every gate recall would be 0 for every adapter.
+ */
 function gates(entries: ReadonlyArray<Record<string, unknown>>): string {
-  return jsonFile({ schema: GATES_SCHEMA, gates: entries });
+  return jsonFile({
+    schema: GATES_SCHEMA,
+    gates: entries.map((entry) => {
+      const tests = Array.isArray(entry.tests) ? (entry.tests as string[]) : [];
+      const inputs = Array.isArray(entry.inputs) ? (entry.inputs as string[]) : [];
+      return {
+        id: entry.id,
+        command: tests.length ? `node ./${tests[0]}` : `node ./dist/scripts/${String(entry.id)}-check.js`,
+        deps: Array.isArray(entry.deps) ? entry.deps : [],
+        protected: entry.protected === true,
+        resource: ['cpu-light', 'fs-read'],
+        side_effect: 'hermetic',
+        timeout_ms: 120000,
+        cache: { enabled: true, inputs: [...inputs, ...tests] },
+        preset: ['release'],
+        output_contract: 'sks.gate-result.v1'
+      };
+    })
+  });
 }
 
 const TS_PATH_ALIAS: FixtureDefinition = {
@@ -51,7 +75,7 @@ const TS_PATH_ALIAS: FixtureDefinition = {
       content: lines('// mentions code pack and freshness in prose only; no mechanical relation', 'export function formatLine(value: string): string { return value.trim(); }')
     },
     {
-      path: 'config/gates.json',
+      path: 'release-gates.v2.json',
       content: gates([
         { id: 'wiki_freshness_preflight', protected: false, inputs: ['src/core/wiki/freshness-preflight.ts'], tests: ['src/core/triwiki/__tests__/code-pack.test.ts'] },
         { id: 'wiki_validate', protected: false, inputs: ['src/core/wiki/wiki-validate.ts'], tests: ['src/core/triwiki/__tests__/code-pack.test.ts'] }
@@ -93,7 +117,7 @@ const REEXPORT_CHAIN: FixtureDefinition = {
       content: lines('# Attention notes', '', 'Prose about attention, slices and validation. No import edge points here.')
     },
     {
-      path: 'config/gates.json',
+      path: 'release-gates.v2.json',
       content: gates([
         { id: 'naruto_fanout_sanity', protected: false, inputs: ['src/core/naruto/slice-planner.ts'], tests: ['src/core/naruto/__tests__/slice-planner.test.ts'] },
         { id: 'wiki_validation', protected: false, inputs: ['src/core/wiki/validation.ts'], tests: ['src/core/wiki/__tests__/validation.test.ts'] }
@@ -127,7 +151,7 @@ const DYNAMIC_IMPORT_LITERAL: FixtureDefinition = {
       content: lines('# CLI help', '', 'Describes wiki refresh usage text in prose. Not a code relation.')
     },
     {
-      path: 'config/gates.json',
+      path: 'release-gates.v2.json',
       content: gates([
         { id: 'cli_registry_consistency', protected: false, inputs: ['src/cli/registry.ts'], tests: ['src/cli/__tests__/registry.test.ts'] },
         { id: 'command_manifest_parity', protected: false, inputs: ['src/cli/manifest.ts'], tests: ['src/cli/__tests__/registry.test.ts'] },
@@ -162,7 +186,7 @@ const CYCLIC_MODULES: FixtureDefinition = {
       content: lines('// legacy prose about gate inputs and gate reports; unreferenced', 'export const LEGACY_NOTE = 1;')
     },
     {
-      path: 'config/gates.json',
+      path: 'release-gates.v2.json',
       content: gates([
         { id: 'release_gate_inputs', protected: true, inputs: ['src/core/release/gate-inputs.ts'], tests: ['src/core/release/__tests__/gate-runner.test.ts'] },
         { id: 'release_gate_runner', protected: false, inputs: ['src/core/release/gate-runner.ts'], tests: ['src/core/release/__tests__/gate-runner.test.ts'] },
@@ -202,7 +226,7 @@ const COMMAND_ROUTE_PIPELINE_GATE: FixtureDefinition = {
       content: lines('// retired search pipeline kept for reference; nothing imports it', 'export function searchPipelineOld(): string[] { return []; }')
     },
     {
-      path: 'config/gates.json',
+      path: 'release-gates.v2.json',
       content: gates([
         { id: 'search_command_contract', protected: false, inputs: ['src/cli/commands/search.ts', 'src/cli/command-registry.json'], tests: ['src/cli/__tests__/search-command.test.ts'] },
         { id: 'search_pipeline_budget', protected: false, inputs: ['src/core/pipeline/search-pipeline.ts'], tests: ['src/cli/__tests__/search-command.test.ts'] }
@@ -233,7 +257,7 @@ const TEST_PRODUCTION_BINDING: FixtureDefinition = {
     },
     { path: 'src/core/search/README.md', content: lines('# Search core', '', 'Prose describing the search context and provider budget.') },
     {
-      path: 'config/gates.json',
+      path: 'release-gates.v2.json',
       content: gates([
         { id: 'search_context_contract', protected: false, inputs: ['src/core/search/context.ts'], tests: ['src/core/search/__tests__/context.test.ts'] },
         { id: 'search_provider_budget', protected: false, inputs: ['src/core/search/provider.ts'], tests: ['src/core/search/__tests__/provider.test.ts'] }

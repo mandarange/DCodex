@@ -137,9 +137,9 @@ export async function searchCapabilities(root = process.cwd()): Promise<SearchCa
       context: {
         available: true,
         provider: 'triwiki',
-        engine: 'triwiki+codepack',
+        engine: 'triwiki+context-graph',
         externalBinaryRequired: false,
-        notes: [`root=${path.resolve(root)}`, 'No vector DB']
+        notes: [`root=${path.resolve(root)}`, 'No vector DB', 'A missing, stale, or corrupt graph returns context_graph_missing|context_graph_stale|context_graph_corrupt with a repair command; it never falls back to lexical search']
       }
     },
     rust: {

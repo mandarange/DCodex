@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { TriWikiProofCard } from './triwiki-proof-card.js';
 import { TRIWIKI_PROOF_CARD_SCHEMA, classifyTriWikiProofCardSchema, isReusableTriWikiProofCard } from './triwiki-proof-card.js';
+import { updateTriWikiProofIndexEntry } from './triwiki-proof-bank-index.js';
 
 export const TRIWIKI_PROOF_BANK_SCHEMA = 'sks.triwiki-proof-bank.v1';
 
@@ -30,10 +31,17 @@ export function writeTriWikiProofCard(root: string, card: TriWikiProofCard, subj
   const dir = path.join(triWikiProofBankDir(root), subjectType, safeId(card.subject_id));
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${safeId(card.proof_id)}.json`);
-  return withSubjectLock(root, subjectType, card.subject_id, () => {
+  const written = withSubjectLock(root, subjectType, card.subject_id, () => {
     atomicWriteJson(file, card);
     return file;
   });
+  // Keep the reverse index current so summary and graph extraction never have to
+  // walk the whole proof bank. `bootstrap: 'repair'` seeds the manifest the first
+  // time; after that an update is one read and one atomic write. A failure here
+  // must not lose the proof card that was already durably written, so it is
+  // reported through the index's own status rather than thrown.
+  updateTriWikiProofIndexEntry(root, card, written, { bootstrap: 'repair' });
+  return written;
 }
 
 export function readReusableTriWikiProofCard(input: TriWikiProofBankLookup): { hit: boolean; card: TriWikiProofCard | null; path: string | null; invalidation_reasons: string[] } {

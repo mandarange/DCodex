@@ -20,8 +20,11 @@ import { wrongnessContextForRoute } from '../triwiki-wrongness/wrongness-retriev
 import { readCombinedWrongnessRecords } from '../triwiki-wrongness/wrongness-ledger.js';
 import { recordImageWrongnessFromValidation } from '../triwiki-wrongness/image-wrongness.js';
 import { publishSharedMemory, rebuildSharedIndexes, sharedMemorySummary, validateSharedMemory } from '../git-hygiene/shared-memory-publish.js';
-import { scanCodebaseIndex } from '../triwiki/code-index-scanner.js';
-import { buildCodePack, validateCodePack, writeCodePackAtomic } from '../triwiki/code-pack.js';
+import { validateCodePack, writeCodePackAtomic } from '../triwiki/code-pack.js';
+import { compileContextGraph } from '../triwiki/context-graph/compiler/index.js';
+import { contextGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
+import { buildWorkspaceCodePack } from '../triwiki/context-graph/projections/code-pack-workspace.js';
+import { CONTEXT_GRAPH_REPAIR_COMMAND } from '../triwiki/context-graph/contracts.js';
 import { inspectCodePackHeadFreshness } from '../triwiki/code-pack-head-freshness.js';
 import { sealTriWikiContextPack, validateTriWikiContextPackProvenance } from '../triwiki-provenance.js';
 import { flag, positionalArgs, readFlagValue, readOption, resolveMissionId } from './command-utils.js';
@@ -196,34 +199,71 @@ export async function wikiCommand(sub: any, args: any = []) {
   process.exitCode = 1;
 }
 
+/**
+ * `sks wiki refresh --code` owns the full graph rebuild: compile the Context
+ * Graph incrementally, lint it, write the snapshot atomically, then project the
+ * code pack from that snapshot. There is no second scanner running alongside —
+ * the graph is the single compiled source and the pack is its projection.
+ */
 async function wikiRefreshCode(args: any = []): Promise<void> {
   const root = await sksRoot();
-  const index = await scanCodebaseIndex(root);
   const tokenBudgetRaw = readFlagValue(args, '--token-budget', null);
-  const tokenBudget = tokenBudgetRaw ? Number.parseInt(String(tokenBudgetRaw), 10) : undefined;
-  const pack = tokenBudget && Number.isFinite(tokenBudget) ? buildCodePack(root, index, tokenBudget) : buildCodePack(root, index);
-  const validation = await validateCodePack(pack, root);
-  const written = validation.ok ? await writeCodePackAtomic(root, pack) : null;
+  const parsedBudget = tokenBudgetRaw ? Number.parseInt(String(tokenBudgetRaw), 10) : Number.NaN;
+  const tokenBudget = Number.isFinite(parsedBudget) ? parsedBudget : undefined;
+
+  const compiled = await compileContextGraph({ root, extractors: contextGraphExtractors() });
+  const lintErrors = compiled.issues.filter((issue: any) => issue.severity === 'error');
+  if (!compiled.ok || !compiled.snapshot) {
+    const blocked = {
+      schema: 'sks.wiki-refresh-code.v1',
+      ok: false,
+      reason: compiled.reason ?? 'context_graph_compile_failed',
+      blockers: compiled.blockers ?? [],
+      issues: lintErrors.slice(0, 20).map((issue: any) => `${issue.code}: ${issue.message}`),
+      repair_command: CONTEXT_GRAPH_REPAIR_COMMAND,
+      written: null
+    };
+    process.exitCode = 2;
+    process.stderr.write(`wiki-refresh-code: root=${root} graph=blocked reason=${blocked.reason} blockers=${JSON.stringify(blocked.blockers)}\n`);
+    if (flag(args, '--json')) return console.log(JSON.stringify(blocked, null, 2));
+    console.log('Sneakoscope TriWiki Context Graph Refresh');
+    console.log(`Context graph: blocked (${blocked.reason})`);
+    for (const issue of blocked.issues) console.log(`- ${issue}`);
+    return;
+  }
+
+  const projected = await buildWorkspaceCodePack(root, {
+    ...(tokenBudget === undefined ? {} : { tokenBudget }),
+    status: { status: 'fresh', snapshotHash: compiled.snapshotHash }
+  });
+  const pack = projected.pack;
+  const validation = pack ? await validateCodePack(pack, root) : { ok: false, issues: projected.errors };
+  const written = pack && validation.ok ? await writeCodePackAtomic(root, pack) : null;
+
   const result = {
     schema: 'sks.wiki-refresh-code.v1',
     ok: validation.ok,
     issues: validation.issues,
-    modules: index.modules.length,
-    truncated: index.truncated,
-    scanned_file_count: index.scanned_file_count,
-    entries: pack.entries.length,
-    token_cost: pack.total_token_cost,
-    token_budget: pack.token_budget,
+    snapshot_hash: compiled.snapshotHash,
+    nodes: compiled.snapshot.nodeCount,
+    edges: compiled.snapshot.edgeCount,
+    graph_warnings: compiled.issues.filter((issue: any) => issue.severity === 'warning').length,
+    incremental: Boolean(compiled.incremental),
+    compile_ms: compiled.durationMs,
+    entries: pack ? pack.entries.length : 0,
+    token_cost: pack ? pack.total_token_cost : 0,
+    token_budget: pack ? pack.token_budget : 0,
     written: written ? written.path : null
   };
   process.exitCode = validation.ok ? 0 : 2;
   // Always note the counts/issues on stderr (even in --json mode, where stdout must
   // stay pure JSON) so a blocked run is diagnosable from stderr_tail alone without
   // needing to reproduce it separately in an isolated environment.
-  process.stderr.write(`wiki-refresh-code: root=${root} modules=${index.modules.length} entries=${pack.entries.length} token_cost=${pack.total_token_cost}/${pack.token_budget} issues=${JSON.stringify(validation.issues)}\n`);
+  process.stderr.write(`wiki-refresh-code: root=${root} nodes=${result.nodes} edges=${result.edges} entries=${result.entries} token_cost=${result.token_cost}/${result.token_budget} issues=${JSON.stringify(validation.issues)}\n`);
   if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
-  console.log('Sneakoscope TriWiki Code Pack Refresh');
-  console.log(`Code pack refresh: ${validation.ok ? 'ok' : 'blocked'} (${pack.entries.length} entries from ${index.modules.length} modules${index.truncated ? ', truncated' : ''})`);
+  console.log('Sneakoscope TriWiki Context Graph Refresh');
+  console.log(`Context graph: ok (${result.nodes} nodes, ${result.edges} edges, snapshot ${String(result.snapshot_hash).slice(0, 12)})`);
+  console.log(`Code pack projection: ${validation.ok ? 'ok' : 'blocked'} (${result.entries} entries, ${result.token_cost}/${result.token_budget} tokens)`);
   for (const issue of validation.issues) console.log(`- ${issue}`);
 }
 

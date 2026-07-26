@@ -37,6 +37,10 @@ export interface SearchRequest {
   limits?: SearchLimits;
   why?: string;
   batchId?: string;
+  /** `context` mode only: which Context Graph query profile answers the request. */
+  profile?: 'implementation' | 'review' | 'planning' | 'answer';
+  /** `context` mode only: token budget for the packed context. */
+  tokenBudget?: number;
 }
 
 export interface SearchMatch {

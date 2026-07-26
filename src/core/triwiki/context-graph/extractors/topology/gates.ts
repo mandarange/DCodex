@@ -58,6 +58,8 @@ export interface TopologyGate {
   readonly resource: readonly string[];
   readonly timeoutMs: number;
   readonly outputContract: string;
+  /** A manifest may declare protection outright instead of relying on inference. */
+  readonly declaredProtected: boolean;
 }
 
 const GATE_ID_LINE = /"id"\s*:\s*"([^"]+)"/;
@@ -146,7 +148,8 @@ export function collectTopologyGates(ctx: TopologyContext): TopologyGate[] {
         sideEffect: readStringField(entry, 'side_effect'),
         resource: readStringArrayField(entry, 'resource'),
         timeoutMs: readNumberField(entry, 'timeout_ms'),
-        outputContract: readStringField(entry, 'output_contract')
+        outputContract: readStringField(entry, 'output_contract'),
+        declaredProtected: entry.protected === true
       });
     }
   }
@@ -162,14 +165,18 @@ export function gateDependentIds(gates: readonly TopologyGate[]): Set<string> {
   return dependedOn;
 }
 
-export function isProtectedGate(id: string, dependedOn: ReadonlySet<string>): boolean {
+export function isProtectedGate(id: string, dependedOn: ReadonlySet<string>, declaredProtected = false): boolean {
+  // An explicit manifest declaration is authoritative: inference from the id
+  // namespace and the dependency graph is a fallback for manifests that predate
+  // the field, not a reason to overrule a gate that says it is protected.
+  if (declaredProtected) return true;
   if (REQUIRED_FOR_PUBLISH.has(id) || ALWAYS_ON_GATES.has(id) || FORBIDDEN_RECURSIVE_GATES.has(id)) return true;
   if (dependedOn.has(id)) return true;
   return TOPOLOGY_PROTECTED_NAMESPACES.has(id.split(':')[0] ?? '');
 }
 
 function gateRisk(gate: TopologyGate, dependedOn: ReadonlySet<string>): 'protected' | 'high' | 'medium' {
-  if (isProtectedGate(gate.id, dependedOn)) return 'protected';
+  if (isProtectedGate(gate.id, dependedOn, gate.declaredProtected)) return 'protected';
   return gate.sideEffect === 'hermetic' ? 'medium' : 'high';
 }
 
@@ -213,7 +220,8 @@ export function buildGateNodes(ctx: TopologyContext, gates: readonly TopologyGat
       requiredForPublish: REQUIRED_FOR_PUBLISH.has(gate.id),
       alwaysOnRelease: ALWAYS_ON_GATES.has(gate.id),
       nonRecursive: FORBIDDEN_RECURSIVE_GATES.has(gate.id),
-      hasDependents: dependedOn.has(gate.id)
+      hasDependents: dependedOn.has(gate.id),
+      declaredProtected: gate.declaredProtected
     };
     addNode(ctx, {
       id: gate.nodeId,

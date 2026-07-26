@@ -55,10 +55,15 @@ function weights(entries: ReadonlyArray<readonly [ContextGraphEdgeType, number]>
   return { edges, edgeWeights };
 }
 
+// `routes_to` appears in three profiles on purpose: it is the only edge that
+// leaves a `command`/`route` node, so a profile without it compiles those nodes
+// into the graph and can never return them. "Which handler, route, pipeline and
+// gate does this command reach?" is a first-class query in the locked corpus.
 const IMPLEMENTATION = weights([
   ['defines', 3.0],
   ['contains', 2.2],
   ['imports', 2.0],
+  ['routes_to', 2.0],
   ['reexports', 1.8],
   ['references', 1.6],
   ['calls', 1.6],
@@ -73,6 +78,7 @@ const REVIEW = weights([
   ['verified_by', 2.0],
   ['invalidates', 1.8],
   ['conflicts_with', 1.6],
+  ['routes_to', 1.4],
   ['contains', 1.2],
   ['defines', 1.0]
 ]);
@@ -82,6 +88,7 @@ const PLANNING = weights([
   ['owns', 2.2],
   ['affected_by', 2.0],
   ['conflicts_with', 1.8],
+  ['routes_to', 1.6],
   ['cochanged_with', 1.4],
   ['gated_by', 1.4],
   ['contains', 1.0],

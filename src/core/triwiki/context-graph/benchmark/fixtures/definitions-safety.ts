@@ -8,10 +8,28 @@
  */
 import { jsonFile, lines, type FixtureDefinition, type FixtureFile } from './kinds.js';
 
-const GATES_SCHEMA = 'sks.fixture-gates.v1';
+const GATES_SCHEMA = 'sks.release-gates.v2';
 
 function gates(entries: ReadonlyArray<Record<string, unknown>>): string {
-  return jsonFile({ schema: GATES_SCHEMA, gates: entries });
+  return jsonFile({
+    schema: GATES_SCHEMA,
+    gates: entries.map((entry) => {
+      const tests = Array.isArray(entry.tests) ? (entry.tests as string[]) : [];
+      const inputs = Array.isArray(entry.inputs) ? (entry.inputs as string[]) : [];
+      return {
+        id: entry.id,
+        command: tests.length ? `node ./${tests[0]}` : `node ./dist/scripts/${String(entry.id)}-check.js`,
+        deps: Array.isArray(entry.deps) ? entry.deps : [],
+        protected: entry.protected === true,
+        resource: ['cpu-light', 'fs-read'],
+        side_effect: 'hermetic',
+        timeout_ms: 120000,
+        cache: { enabled: true, inputs: [...inputs, ...tests] },
+        preset: ['release'],
+        output_contract: 'sks.gate-result.v1'
+      };
+    })
+  });
 }
 
 const PROOF_INVALIDATION: FixtureDefinition = {
@@ -49,7 +67,7 @@ const PROOF_INVALIDATION: FixtureDefinition = {
       })
     },
     {
-      path: 'config/gates.json',
+      path: 'release-gates.v2.json',
       content: gates([
         { id: 'proof_bank_integrity', protected: true, inputs: ['src/core/proof/proof-invalidation.ts'], tests: ['src/core/proof/__tests__/proof-invalidation.test.ts'] },
         { id: 'release_cache_parity', protected: false, inputs: ['src/core/release/release-cache.ts'], tests: ['src/core/proof/__tests__/proof-invalidation.test.ts'] }
@@ -85,7 +103,7 @@ const STALE_WIKI_CLAIM: FixtureDefinition = {
       })
     },
     {
-      path: 'config/gates.json',
+      path: 'release-gates.v2.json',
       content: gates([
         { id: 'wiki_claim_freshness', protected: false, inputs: ['src/core/config/limits.ts'], tests: ['src/core/config/__tests__/limits.test.ts'] }
       ])
@@ -120,7 +138,7 @@ const PARALLEL_WRITE_CONFLICT: FixtureDefinition = {
       })
     },
     {
-      path: 'config/gates.json',
+      path: 'release-gates.v2.json',
       content: gates([
         { id: 'naruto_write_scope', protected: true, inputs: ['.sneakoscope/naruto/slice-plan.json'], tests: [] }
       ])
@@ -153,7 +171,7 @@ const SECRET_AND_PATH_REDACTION: FixtureDefinition = {
       content: lines('# Operator notes', '', `token: ${FAKE_TOKEN}`, `path: ${FAKE_HOME_PATH}`, '', 'Nothing may copy these two values into a graph artifact or a report.')
     },
     {
-      path: 'config/gates.json',
+      path: 'release-gates.v2.json',
       content: gates([
         { id: 'security_protected_paths', protected: true, inputs: ['src/core/security/token-guard.ts'], tests: ['src/core/security/__tests__/token-guard.test.ts'] },
         { id: 'release_publish_guard', protected: true, inputs: ['src/core/release/publish-driver.ts'], tests: ['src/core/security/__tests__/token-guard.test.ts'] }
@@ -171,7 +189,7 @@ const DIRTY_AND_UNTRACKED: FixtureDefinition = {
   files: [
     { path: 'src/core/a.ts', content: lines("export const A = 'a';") },
     { path: 'src/core/b.ts', content: lines("import { A } from './a.js';", 'export const B = A;') },
-    { path: 'config/gates.json', content: gates([{ id: 'dirty_state_probe', protected: false, inputs: ['src/core/a.ts'], tests: [] }]) }
+    { path: 'release-gates.v2.json', content: gates([{ id: 'dirty_state_probe', protected: false, inputs: ['src/core/a.ts'], tests: [] }]) }
   ],
   git: {
     dirtyAppend: [{ path: 'src/core/a.ts', content: lines('', '// uncommitted local edit') }],
@@ -186,7 +204,7 @@ const LARGE_REPO_INCREMENTAL: FixtureDefinition = {
   description: 'a generated module chain large enough that an unbounded hot-path scan is observable',
   files: [
     { path: 'src/gen/entry.ts', content: lines("import { value0 } from './mod-0/index.js';", 'export const ENTRY = value0;') },
-    { path: 'config/gates.json', content: gates([{ id: 'large_repo_scan_budget', protected: false, inputs: ['src/gen/entry.ts'], tests: [] }]) }
+    { path: 'release-gates.v2.json', content: gates([{ id: 'large_repo_scan_budget', protected: false, inputs: ['src/gen/entry.ts'], tests: [] }]) }
   ],
   generatedCount: LARGE_REPO_MODULES,
   generated: (index: number): readonly FixtureFile[] => {
@@ -204,7 +222,7 @@ const MALFORMED_MANIFEST: FixtureDefinition = {
   files: [
     { path: 'src/core/x.ts', content: lines("export const X = 'x';") },
     { path: 'src/core/y.ts', content: lines("import { X } from './x.js';", 'export const Y = X;') },
-    { path: 'config/gates.json', content: '{ "schema": "sks.fixture-gates.v1", "gates": [ { "id": "broken",\n' },
+    { path: 'release-gates.v2.json', content: '{ "schema": "sks.release-gates.v2", "gates": [ { "id": "broken",\n' },
     { path: 'notes/manifest.txt', content: lines('The gate manifest above is deliberately truncated.') }
   ]
 };
@@ -214,7 +232,7 @@ const SYMLINK_ESCAPE: FixtureDefinition = {
   description: 'a symlink whose target resolves outside the workspace root; it must be skipped, never followed',
   files: [
     { path: 'src/core/real.ts', content: lines("export const REAL = 'real';") },
-    { path: 'config/gates.json', content: gates([{ id: 'symlink_escape_probe', protected: false, inputs: ['src/core/real.ts'], tests: [] }]) }
+    { path: 'release-gates.v2.json', content: gates([{ id: 'symlink_escape_probe', protected: false, inputs: ['src/core/real.ts'], tests: [] }]) }
   ],
   symlinks: [{ path: 'src/core/outside-link', target: '@outside', escapesWorkspace: true }]
 };

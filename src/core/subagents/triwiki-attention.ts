@@ -1,195 +1,281 @@
-import path from 'node:path'
-import { readJson } from '../fsx.js'
+/**
+ * Bounded TriWiki attention for official subagents.
+ *
+ * Anchors are now the answer to a Context Graph query: seeds resolved from the
+ * goal, a profile-bounded traversal, deterministic ranking, and a token-packed
+ * selection where every anchor carries a reason path and provenance back to a
+ * repository path. The token-overlap scorer this module used to run is gone —
+ * not renamed, not kept behind a flag, and not reachable from a catch handler.
+ *
+ * When the stored graph is missing, corrupt or stale the result is
+ * `available: false` with the matching `context_graph_*` reason and the repair
+ * command. A subagent preface that quietly degrades to text matching is worse
+ * than one that says it has no anchors, because the caller cannot tell the
+ * difference from the output.
+ */
+import { CONTEXT_GRAPH_REPAIR_COMMAND } from '../triwiki/context-graph/contracts.js'
+import type { ContextGraphFreshness } from '../triwiki/context-graph/contracts.js'
+import type { ContextGraphQueryProfileName } from '../triwiki/context-graph/profiles.js'
+import type { LoadContextGraphIndexOptions } from '../triwiki/context-graph/query/load.js'
+import {
+  readContextGraphAttention,
+  type ContextGraphAttentionReason
+} from '../triwiki/context-graph/projections/attention.js'
+import type { ProjectedAttentionAnchor } from '../triwiki/context-graph/projections/anchors.js'
 import { asRecordOrEmpty as asRecord } from '../json/records.js'
 
 export const BOUNDED_TRIWIKI_ATTENTION_SCHEMA = 'sks.subagent-triwiki-attention.v1'
 export const DEFAULT_TRIWIKI_ATTENTION_ANCHOR_LIMIT = 8
+export const MAX_TRIWIKI_ATTENTION_ANCHOR_LIMIT = 16
+/** Anchors are a preface, not a briefing. */
+export const DEFAULT_TRIWIKI_ATTENTION_TOKEN_BUDGET = 2000
+
+export const TRIWIKI_ATTENTION_GRAPH_SOURCE = '.sneakoscope/wiki/context-graph.json'
+export const TRIWIKI_ATTENTION_PACK_SOURCE = '.sneakoscope/wiki/context-pack.json'
+
+export type BoundedTriwikiAttentionSource =
+  | typeof TRIWIKI_ATTENTION_GRAPH_SOURCE
+  | typeof TRIWIKI_ATTENTION_PACK_SOURCE
+
+export interface BoundedTriwikiAttentionProvenance {
+  path: string
+  line?: number
+  hash: string
+}
 
 export interface BoundedTriwikiAttentionAnchor {
   id: string
   claim_hash: string | null
   source_hash: string | null
   hydrate_hint: string | null
+  /** Hop chain the query walked to reach this anchor; empty when it was declared, not traversed. */
+  reason_path: string[]
+  trust_score: number
+  freshness: ContextGraphFreshness
+  token_cost: number
+  provenance: BoundedTriwikiAttentionProvenance[]
 }
 
 export interface BoundedTriwikiAttention {
   schema: typeof BOUNDED_TRIWIKI_ATTENTION_SCHEMA
-  source: '.sneakoscope/wiki/context-pack.json'
+  source: BoundedTriwikiAttentionSource
   available: boolean
   attention_mode: string | null
   anchor_limit: number
   anchors: BoundedTriwikiAttentionAnchor[]
   hydration_policy: 'on_demand_only'
   full_pack_injected: false
+  /** Explicit unavailability reason; never a silent empty set. */
+  reason: ContextGraphAttentionReason | null
+  repair_command: typeof CONTEXT_GRAPH_REPAIR_COMMAND
+  snapshot_hash: string | null
+  snapshot_freshness: 'fresh' | 'stale' | null
+  profile: ContextGraphQueryProfileName | null
+  token_cost: number
+  token_budget: number
 }
 
+export interface ReadBoundedTriwikiAttentionOptions extends LoadContextGraphIndexOptions {
+  /** `implementation` (default) for build work, `answer` for knowledge retrieval. */
+  readonly profile?: ContextGraphQueryProfileName | undefined
+  readonly tokenBudget?: number | undefined
+  readonly risk?: 'normal' | 'high' | undefined
+}
+
+/**
+ * Resolve bounded attention anchors for `root` from the Context Graph.
+ *
+ * The signature is unchanged; the selection mechanism is not. `query` is the
+ * subagent goal and is used as the graph query, so relevance comes from the
+ * repository's own structure rather than from words shared with an anchor id.
+ */
 export async function readBoundedTriwikiAttention(
   root: string,
   limit: number = DEFAULT_TRIWIKI_ATTENTION_ANCHOR_LIMIT,
-  query: string = ''
+  query: string = '',
+  options: ReadBoundedTriwikiAttentionOptions = {}
 ): Promise<BoundedTriwikiAttention> {
-  const pack = await readJson<unknown>(path.join(root, '.sneakoscope', 'wiki', 'context-pack.json'), null)
-  return extractBoundedTriwikiAttention(pack, limit, query)
+  const anchorLimit = normalizeLimit(limit)
+  const tokenBudget = Math.max(0, options.tokenBudget ?? DEFAULT_TRIWIKI_ATTENTION_TOKEN_BUDGET)
+  const result = await readContextGraphAttention(
+    {
+      root,
+      query,
+      limit: anchorLimit,
+      profile: options.profile ?? 'implementation',
+      tokenBudget,
+      risk: options.risk
+    },
+    options
+  )
+
+  return {
+    schema: BOUNDED_TRIWIKI_ATTENTION_SCHEMA,
+    source: TRIWIKI_ATTENTION_GRAPH_SOURCE,
+    available: result.available,
+    attention_mode: result.available ? `context_graph:${result.profile}` : null,
+    anchor_limit: anchorLimit,
+    anchors: result.anchors.map(toAnchor),
+    hydration_policy: 'on_demand_only',
+    full_pack_injected: false,
+    reason: result.reason,
+    repair_command: CONTEXT_GRAPH_REPAIR_COMMAND,
+    snapshot_hash: result.snapshotHash,
+    snapshot_freshness: result.snapshotFreshness,
+    profile: result.available ? result.profile : null,
+    token_cost: result.tokenCost,
+    token_budget: result.tokenBudget
+  }
 }
 
+/**
+ * Structural projection of an already-written context pack.
+ *
+ * This is *not* the production selection path — `readBoundedTriwikiAttention`
+ * never calls it — and it does no ranking of its own: rows are taken in the order
+ * the pack declares them, because the pack was itself built from the graph. Rows
+ * may be legacy tuples or the enriched object form emitted by
+ * `projectContextPackAnchors`, in which case reason path, provenance and token
+ * cost are carried through.
+ */
 export function extractBoundedTriwikiAttention(
   value: unknown,
   limit: number = DEFAULT_TRIWIKI_ATTENTION_ANCHOR_LIMIT,
-  query: string = ''
+  _retiredQueryHint?: unknown
 ): BoundedTriwikiAttention {
   const pack = asRecord(value)
   const attention = asRecord(pack.attention)
   const anchorLimit = normalizeLimit(limit)
-  const hydrateHints = new Map<string, string>()
-  const hydrateOrder = new Map<string, number>()
+  const hints = new Map<string, string>()
 
-  for (const [index, row] of (Array.isArray(attention.hydrate_first) ? attention.hydrate_first : []).entries()) {
-    if (!Array.isArray(row)) continue
-    const id = text(row[0])
-    const hint = text(row[1])
-    if (id && hint) {
-      hydrateHints.set(id, hint.slice(0, 240))
-      hydrateOrder.set(id, index)
-    }
+  for (const row of rowsOf(attention.hydrate_first)) {
+    if (row.id && row.hydrate_hint) hints.set(row.id, row.hydrate_hint.slice(0, 240))
   }
 
-  const useFirst: Array<BoundedTriwikiAttentionAnchor & { order: number }> = []
-  for (const [index, row] of (Array.isArray(attention.use_first) ? attention.use_first : []).entries()) {
-    if (!Array.isArray(row)) continue
-    const id = text(row[0])
-    if (!id || useFirst.some((anchor) => anchor.id === id)) continue
-    useFirst.push({
-      id,
-      claim_hash: text(row[1]) || null,
-      source_hash: text(row[2]) || null,
-      hydrate_hint: hydrateHints.get(id) || null,
-      order: index
-    })
+  const anchors: BoundedTriwikiAttentionAnchor[] = []
+  const seen = new Set<string>()
+  for (const row of rowsOf(attention.use_first)) {
+    if (anchors.length >= anchorLimit) break
+    if (!row.id || seen.has(row.id)) continue
+    seen.add(row.id)
+    anchors.push({ ...row, hydrate_hint: row.hydrate_hint ?? hints.get(row.id) ?? null })
   }
-  const anchors = selectAnchors(useFirst, hydrateHints, hydrateOrder, anchorLimit, query)
 
+  const tokenCost = anchors.reduce((sum, anchor) => sum + anchor.token_cost, 0)
   return {
     schema: BOUNDED_TRIWIKI_ATTENTION_SCHEMA,
-    source: '.sneakoscope/wiki/context-pack.json',
+    source: TRIWIKI_ATTENTION_PACK_SOURCE,
     available: anchors.length > 0,
     attention_mode: text(attention.mode) || null,
     anchor_limit: anchorLimit,
     anchors,
     hydration_policy: 'on_demand_only',
-    full_pack_injected: false
+    full_pack_injected: false,
+    reason: anchors.length > 0 ? null : 'context_graph_no_match',
+    repair_command: CONTEXT_GRAPH_REPAIR_COMMAND,
+    snapshot_hash: text(pack.snapshot_hash) || null,
+    snapshot_freshness: null,
+    profile: null,
+    token_cost: tokenCost,
+    token_budget: DEFAULT_TRIWIKI_ATTENTION_TOKEN_BUDGET
   }
 }
 
-function selectAnchors(
-  useFirst: Array<BoundedTriwikiAttentionAnchor & { order: number }>,
-  hydrateHints: Map<string, string>,
-  hydrateOrder: Map<string, number>,
-  limit: number,
-  query: string
-): BoundedTriwikiAttentionAnchor[] {
-  const tokens = attentionQueryTokens(query)
-  if (!tokens.length) return useFirst.slice(0, limit).map(stripOrder)
-
-  const selected: BoundedTriwikiAttentionAnchor[] = []
-  const seen = new Set<string>()
-  // Keep the leading high-trust policy anchors, then spend the remaining
-  // budget on query-relevant use_first or hydrate-first candidates. Hydrate-
-  // only rows stay hints: workers must open the cited source before relying on
-  // them, so relevance improves without treating lower-trust summaries as fact.
-  for (const anchor of useFirst.slice(0, Math.min(3, limit))) {
-    selected.push(stripOrder(anchor))
-    seen.add(anchor.id)
-  }
-
-  const candidates: Array<BoundedTriwikiAttentionAnchor & { score: number; order: number; priority: number }> = []
-  for (const anchor of useFirst) {
-    if (seen.has(anchor.id)) continue
-    candidates.push({
-      ...stripOrder(anchor),
-      score: attentionRelevance(anchor.id, anchor.hydrate_hint, tokens),
-      order: anchor.order,
-      priority: 0
-    })
-  }
-  for (const [id, hint] of hydrateHints.entries()) {
-    if (seen.has(id) || useFirst.some((anchor) => anchor.id === id)) continue
-    const score = attentionRelevance(id, hint, tokens)
-    if (score <= 0) continue
-    candidates.push({
-      id,
-      claim_hash: null,
-      source_hash: null,
-      hydrate_hint: hint,
-      score,
-      order: hydrateOrder.get(id) ?? Number.MAX_SAFE_INTEGER,
-      priority: 1
-    })
-  }
-  candidates.sort((left, right) => right.score - left.score || left.priority - right.priority || left.order - right.order)
-  for (const candidate of candidates) {
-    if (selected.length >= limit) break
-    if (candidate.score <= 0 || seen.has(candidate.id)) continue
-    selected.push(stripRank(candidate))
-    seen.add(candidate.id)
-  }
-  for (const anchor of useFirst) {
-    if (selected.length >= limit) break
-    if (seen.has(anchor.id)) continue
-    selected.push(stripOrder(anchor))
-    seen.add(anchor.id)
-  }
-  return selected
-}
-
-function attentionQueryTokens(value: string): string[] {
-  const stop = new Set([
-    'and', 'the', 'for', 'with', 'from', 'into', 'this', 'that', 'sks', 'src', 'core',
-    '작업', '구현', '개선', '추가', '변경', '기능', '모든', '최대한'
-  ])
-  return [...new Set(String(value || '')
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2 && !stop.has(token)))]
-    .slice(0, 64)
-}
-
-function attentionRelevance(id: string, hint: string | null, tokens: string[]): number {
-  const haystack = `${id} ${hint || ''}`
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-  const compact = haystack.replace(/\s+/g, '')
-  return tokens.reduce((score, token) => {
-    if (haystack.includes(token)) return score + (token.length >= 5 ? 4 : 3)
-    return compact.includes(token) ? score + 2 : score
-  }, 0)
-}
-
-function stripOrder(anchor: BoundedTriwikiAttentionAnchor & { order: number }): BoundedTriwikiAttentionAnchor {
+function toAnchor(anchor: ProjectedAttentionAnchor): BoundedTriwikiAttentionAnchor {
   return {
     id: anchor.id,
     claim_hash: anchor.claim_hash,
     source_hash: anchor.source_hash,
-    hydrate_hint: anchor.hydrate_hint
+    hydrate_hint: anchor.hydrate_hint,
+    reason_path: anchor.reason_path,
+    trust_score: anchor.trust_score,
+    freshness: anchor.freshness,
+    token_cost: anchor.token_cost,
+    provenance: anchor.provenance.map((ref) => ({
+      path: ref.path,
+      ...(ref.line === undefined ? {} : { line: ref.line }),
+      hash: ref.hash
+    }))
   }
 }
 
-function stripRank(anchor: BoundedTriwikiAttentionAnchor & { score: number; order: number; priority: number }): BoundedTriwikiAttentionAnchor {
-  return {
-    id: anchor.id,
-    claim_hash: anchor.claim_hash,
-    source_hash: anchor.source_hash,
-    hydrate_hint: anchor.hydrate_hint
+function rowsOf(value: unknown): BoundedTriwikiAttentionAnchor[] {
+  if (!Array.isArray(value)) return []
+  const out: BoundedTriwikiAttentionAnchor[] = []
+  for (const raw of value) {
+    const row = Array.isArray(raw) ? tupleRow(raw) : objectRow(raw)
+    if (row) out.push(row)
   }
+  return out
+}
+
+/** Legacy `[id, claim_hash, source_hash]` / `[id, hydrate_reason]` shapes. */
+function tupleRow(row: readonly unknown[]): BoundedTriwikiAttentionAnchor | null {
+  const id = text(row[0])
+  if (!id) return null
+  const second = text(row[1])
+  const third = text(row[2])
+  // A two-element row is a hydrate reason, not a claim hash; keeping them apart is
+  // what stops a hydrate hint from being read as verified claim identity.
+  const isHydrateRow = row.length <= 2
+  return {
+    id,
+    claim_hash: isHydrateRow ? null : second || null,
+    source_hash: isHydrateRow ? null : third || null,
+    hydrate_hint: isHydrateRow ? second || null : null,
+    reason_path: [],
+    trust_score: 0,
+    freshness: 'unknown',
+    token_cost: 0,
+    provenance: []
+  }
+}
+
+/** Enriched object rows written by `projectContextPackAnchors`. */
+function objectRow(raw: unknown): BoundedTriwikiAttentionAnchor | null {
+  const row = asRecord(raw)
+  const id = text(row.id)
+  if (!id) return null
+  return {
+    id,
+    claim_hash: text(row.claim_hash) || null,
+    source_hash: text(row.source_hash) || null,
+    hydrate_hint: text(row.hydrate_hint) || null,
+    reason_path: Array.isArray(row.reason_path) ? row.reason_path.map(text).filter(Boolean) : [],
+    trust_score: number(row.trust_score),
+    freshness: freshnessOf(row.freshness),
+    token_cost: Math.max(0, Math.trunc(number(row.token_cost))),
+    provenance: provenanceOf(row.provenance)
+  }
+}
+
+function provenanceOf(value: unknown): BoundedTriwikiAttentionProvenance[] {
+  if (!Array.isArray(value)) return []
+  const out: BoundedTriwikiAttentionProvenance[] = []
+  for (const raw of value) {
+    const ref = asRecord(raw)
+    const refPath = text(ref.path)
+    const hash = text(ref.hash)
+    if (!refPath || !hash) continue
+    const line = number(ref.line)
+    out.push({ path: refPath, ...(line > 0 ? { line } : {}), hash })
+  }
+  return out
+}
+
+function freshnessOf(value: unknown): ContextGraphFreshness {
+  return value === 'fresh' || value === 'stale' ? value : 'unknown'
 }
 
 function normalizeLimit(value: unknown): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return DEFAULT_TRIWIKI_ATTENTION_ANCHOR_LIMIT
-  return Math.max(1, Math.min(16, Math.floor(parsed)))
+  return Math.max(1, Math.min(MAX_TRIWIKI_ATTENTION_ANCHOR_LIMIT, Math.floor(parsed)))
+}
+
+function number(value: unknown): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 function text(value: unknown): string {
