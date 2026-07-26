@@ -13,10 +13,12 @@ import {
 } from '../remote/index.js';
 import {
   loadTelegramConfig,
+  probeTelegramBotReadiness,
   resolveTelegramBotToken,
   TelegramActionBroker,
   TelegramAuditLedger,
   TelegramBotApiClient,
+  TelegramBotApiError,
   TelegramHubRouter,
   TelegramHubRuntime,
   TelegramIdempotencyLedger,
@@ -33,6 +35,8 @@ import {
   telegramTokenFingerprint,
   validateTelegramConfig,
   validateTelegramPrivatePairing,
+  type TelegramBotReadiness,
+  type TelegramHubConfigV1,
   type TelegramOwnerV1
 } from '../telegram/index.js';
 
@@ -41,6 +45,23 @@ export interface TelegramPairingReadiness {
   readonly pairing_issues: Array<'paired_chat_ids' | 'paired_user_ids'>;
   readonly blocker: string | null;
 }
+
+export interface TelegramLiveProbeStatus {
+  readonly bot_verified: boolean;
+  readonly bot: TelegramBotReadiness['bot'] | null;
+  readonly webhook_configured: boolean;
+  readonly pending_update_count: number;
+  readonly long_poll_ready: boolean;
+  readonly telegram_probe_error: 'telegram_bot_auth_failed' | 'telegram_bot_probe_failed' | null;
+  readonly blocker: 'telegram_bot_auth_failed' | 'telegram_bot_probe_failed' | 'telegram_webhook_conflict' | null;
+}
+
+export const TELEGRAM_STATUS_NATIVE_DEADLINE_MS = 8_000;
+export const TELEGRAM_STATUS_TOKEN_LOOKUP_TIMEOUT_MS = 1_000;
+export const TELEGRAM_STATUS_BOT_REQUEST_TIMEOUT_MS = 1_500;
+export const TELEGRAM_STATUS_BOT_MAX_RETRIES = 0;
+export const TELEGRAM_STATUS_LIVE_PROBE_BUDGET_MS = TELEGRAM_STATUS_TOKEN_LOOKUP_TIMEOUT_MS
+  + TELEGRAM_STATUS_BOT_REQUEST_TIMEOUT_MS * 2;
 
 export async function telegramCommand(args: string[] = []): Promise<unknown> {
   if (isHelpRequest(args)) {
@@ -126,6 +147,7 @@ async function telegramStatus(
     const owner = await readJson<TelegramOwnerV1 | null>(paths.owner, null);
     const topics = await new TelegramTopicRegistry(paths.topics).list();
     const controllingRoot = path.resolve(readOption(args, '--project-root') ?? await projectRoot());
+    const servicePromise = telegramHubServiceStatus({ projectRoot: controllingRoot, globalRoot: root });
     const machineRegistryRaw = await readJson<unknown>(readOption(args, '--machines') ?? remoteMachineRegistryPath(root), null);
     const machineValidation = validateRemoteMachineRegistry(machineRegistryRaw);
     const sessionIndexRaw = await readJson<unknown>(readOption(args, '--session-index') ?? remoteSessionIndexPath(controllingRoot), null);
@@ -139,17 +161,33 @@ async function telegramStatus(
       && binding.project_id === target.project_id
       && path.resolve(binding.project_root) === path.resolve(target.project_root)
     )));
-    const service = await telegramHubServiceStatus({ projectRoot: controllingRoot, globalRoot: root });
     let tokenConfigured = false;
-    if (validation.config) {
-      tokenConfigured = await resolveTelegramBotToken(validation.config.bot_token_ref).then(() => true).catch(() => false);
+    let liveProbe = telegramLiveProbeStatus(null);
+    const probeConfig = validation.config ?? telegramConfigForStatusProbe(rawConfig);
+    if (probeConfig) {
+      const token = await resolveTelegramBotToken(probeConfig.bot_token_ref, {
+        timeoutMs: TELEGRAM_STATUS_TOKEN_LOOKUP_TIMEOUT_MS
+      }).catch(() => null);
+      tokenConfigured = token !== null;
+      if (token) {
+        try {
+          liveProbe = telegramLiveProbeStatus(await probeTelegramBotReadiness(new TelegramBotApiClient(token, {
+            timeoutMs: TELEGRAM_STATUS_BOT_REQUEST_TIMEOUT_MS,
+            maxRetries: TELEGRAM_STATUS_BOT_MAX_RETRIES
+          })));
+        } catch (error: unknown) {
+          liveProbe = telegramLiveProbeStatus(null, error);
+        }
+      }
     }
+    const service = await servicePromise;
     const pairing = telegramPairingReadiness(rawConfig);
     const blockers = [
       ...validation.issues.map((issue) => `config:${issue}`),
       ...machineValidation.issues.map((issue) => `machine:${issue}`),
       ...sessionValidation.issues.map((issue) => `target:${issue}`),
       ...(tokenConfigured ? [] : ['telegram_token_not_available']),
+      ...(liveProbe.blocker ? [liveProbe.blocker] : []),
       ...(pairing.blocker ? [pairing.blocker] : []),
       ...(registered.length ? [] : ['no_registered_codex_session']),
       ...(service.running ? [] : ['telegram_hub_not_running'])
@@ -159,6 +197,12 @@ async function telegramStatus(
       ok: blockers.length === 0,
       configured: rawConfig !== null,
       token_configured: tokenConfigured,
+      bot_verified: liveProbe.bot_verified,
+      bot: liveProbe.bot,
+      webhook_configured: liveProbe.webhook_configured,
+      pending_update_count: liveProbe.pending_update_count,
+      long_poll_ready: liveProbe.long_poll_ready,
+      telegram_probe_error: liveProbe.telegram_probe_error,
       pairing_valid: pairing.pairing_valid,
       pairing_issues: pairing.pairing_issues,
       hub_running: service.running,
@@ -184,7 +228,8 @@ async function telegramStatus(
         updated_at: binding.updated_at
       })),
       remote_config_issues: [...machineValidation.issues, ...sessionValidation.issues],
-      blockers
+      blockers,
+      next_actions: telegramNextActions(blockers)
     };
 }
 
@@ -200,11 +245,18 @@ Usage:
   sks telegram hub run [--project-root <path>] [--json]
 
 Pairing (do these first):
-  1. Create a private bot with @BotFather in Telegram and copy its token.
+  1. Open @BotFather, send /newbot, choose a name and a unique username ending in "bot",
+     then copy the HTTP API token BotFather returns.
   2. Send /start to that bot from the Telegram account you want to pair.
   3. printf '%s' "<token>" | sks telegram setup --bot-token-stdin --project-root "$PWD" --json
      The token is read from stdin only and stored in the macOS Keychain.
   4. sks telegram hub start --project-root "$PWD" --json
+
+If status reports telegram_webhook_conflict, remove the webhook in the service
+that configured it, then retry. SKS does not delete external webhook state implicitly.
+If setup or the hub reports telegram_409_conflict, stop the other poller using
+this bot token before retrying.
+Stop the SKS Telegram hub before rerunning setup or rotating its BotFather token.
 
 The same flow is available in SKS Center → Remote & Telegram.
 See docs/telegram-and-center.md for the full guide and troubleshooting.
@@ -213,14 +265,34 @@ See docs/telegram-and-center.md for the full guide and troubleshooting.
 
 export function telegramPairingReadiness(value: unknown): TelegramPairingReadiness {
   const pairing = validateTelegramPrivatePairing(value);
+  const multipleIds = hasMultipleTelegramPairingIds(value);
   return {
     pairing_valid: pairing.ok,
     pairing_issues: pairing.issues,
     blocker: pairing.ok
       ? null
+      : multipleIds
+        ? 'telegram_pairing_multiple_ids_requires_setup'
       : pairing.missing
         ? 'telegram_pairing_missing'
         : `telegram_pairing_invalid:${pairing.issues.join(',')}`
+  };
+}
+
+export function telegramLiveProbeStatus(
+  readiness: TelegramBotReadiness | null,
+  error: unknown = null
+): TelegramLiveProbeStatus {
+  const probeError = error === null ? null : telegramProbeFailure(error);
+  const webhookConfigured = readiness?.webhook_configured === true;
+  return {
+    bot_verified: readiness !== null,
+    bot: readiness?.bot ?? null,
+    webhook_configured: webhookConfigured,
+    pending_update_count: readiness?.pending_update_count ?? 0,
+    long_poll_ready: readiness !== null && !webhookConfigured,
+    telegram_probe_error: probeError,
+    blocker: probeError ?? (webhookConfigured ? 'telegram_webhook_conflict' : null)
   };
 }
 
@@ -305,7 +377,17 @@ async function runHub(
 
 async function assertHubSetupReady(controllingRoot: string, globalRoot: string, configPath: string): Promise<void> {
   const config = await loadTelegramConfig(configPath);
-  await resolveTelegramBotToken(config.bot_token_ref);
+  const token = await resolveTelegramBotToken(config.bot_token_ref);
+  let readiness: TelegramBotReadiness;
+  try {
+    readiness = await probeTelegramBotReadiness(new TelegramBotApiClient(token, {
+      timeoutMs: 8_000,
+      maxRetries: 1
+    }));
+  } catch (error: unknown) {
+    throw new Error(telegramProbeFailure(error));
+  }
+  if (readiness.webhook_configured) throw new Error('telegram_webhook_conflict');
   const registry = await loadRemoteMachineRegistry(remoteMachineRegistryPath(globalRoot));
   const index = await loadRemoteSessionIndex(remoteSessionIndexPath(controllingRoot), registry);
   const bindings = await new RemoteCodexSessionBindingStore(remoteCodexSessionBindingsPath(controllingRoot)).list();
@@ -350,4 +432,53 @@ function publicError(err: unknown): string {
     .replace(/\b\d{5,}:[A-Za-z0-9_-]{20,}\b/g, '[redacted]')
     .replace(/(?:\/Users|\/home)\/[^\s]+/g, '[path-redacted]')
     .slice(0, 500);
+}
+
+function telegramProbeFailure(error: unknown): 'telegram_bot_auth_failed' | 'telegram_bot_probe_failed' {
+  return error instanceof TelegramBotApiError && (error.errorCode === 401 || error.errorCode === 404)
+    ? 'telegram_bot_auth_failed'
+    : 'telegram_bot_probe_failed';
+}
+
+function telegramNextActions(blockers: readonly string[]): string[] {
+  const actions: string[] = [];
+  if (blockers.includes('telegram_token_not_available') || blockers.includes('telegram_bot_auth_failed')) {
+    actions.push('Create or regenerate the bot token in @BotFather, then rerun setup with --bot-token-stdin.');
+  }
+  if (blockers.includes('telegram_webhook_conflict')) {
+    actions.push('Remove the existing webhook in the service that configured it, then rerun telegram status.');
+  }
+  if (blockers.includes('telegram_bot_probe_failed')) {
+    actions.push('Check network access to api.telegram.org, then rerun telegram status.');
+  }
+  if (blockers.includes('telegram_pairing_missing') || blockers.some((blocker) => blocker.startsWith('telegram_pairing_invalid:'))) {
+    actions.push('Send /start to the bot in a private chat, then rerun telegram setup.');
+  }
+  if (blockers.includes('telegram_pairing_multiple_ids_requires_setup')) {
+    actions.push('Stop the hub, then rerun telegram setup to replace the ambiguous multi-ID config with one verified private chat and user.');
+  }
+  if (blockers.includes('no_registered_codex_session')) {
+    actions.push('Rerun telegram setup for this project root.');
+  }
+  if (blockers.includes('telegram_hub_not_running')) {
+    actions.push('Run sks telegram hub start --project-root \"$PWD\" --json after other blockers are cleared.');
+  }
+  return actions;
+}
+
+function hasMultipleTelegramPairingIds(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return (Array.isArray(record.paired_chat_ids) && record.paired_chat_ids.length > 1)
+    || (Array.isArray(record.paired_user_ids) && record.paired_user_ids.length > 1);
+}
+
+function telegramConfigForStatusProbe(value: unknown): TelegramHubConfigV1 | null {
+  if (!value || typeof value !== 'object') return null;
+  const validation = validateTelegramConfig({
+    ...(value as Record<string, unknown>),
+    paired_chat_ids: ['1'],
+    paired_user_ids: ['1']
+  });
+  return validation.config;
 }

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveCodexLbImagegenTarget } from '../../dist/core/imagegen/codex-lb-imagegen-target.js';
@@ -46,6 +47,17 @@ test('an explicit override wins over the catalog', async () => {
   assert.equal(target.model_source, 'explicit');
 });
 
+test('a generic OPENAI_MODEL does not override the selected codex-lb catalog', async () => {
+  const { home, configText } = await codexHome('gpt-5.5');
+  const target = await resolveCodexLbImagegenTarget({
+    home,
+    configText,
+    env: { HOME: home, OPENAI_MODEL: 'disallowed/model' }
+  });
+  assert.equal(target.model, 'gpt-5.5');
+  assert.equal(target.model_source, 'configured_model_in_catalog');
+});
+
 test('a provider other than codex-lb is reported as not selected', async () => {
   const { home } = await codexHome('gpt-5.5');
   const target = await resolveCodexLbImagegenTarget({
@@ -55,4 +67,69 @@ test('a provider other than codex-lb is reported as not selected', async () => {
   });
   assert.equal(target.selected, false);
   assert.equal(target.blocker, 'codex_lb_not_selected');
+});
+
+test('target discovery reads config, credentials, and catalog from CODEX_HOME', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-codex-lb-home-'));
+  const codexHome = path.join(home, 'custom-codex-home');
+  const apiKey = 'test-key';
+  const baseUrl = 'https://codex.hyper-lab.xyz/backend-api/codex';
+  await fs.mkdir(codexHome, { recursive: true });
+  await fs.writeFile(path.join(codexHome, 'config.toml'), [
+    'model_provider = "codex-lb"',
+    'model = "gpt-5.6-terra"',
+    '',
+    '[model_providers.codex-lb]',
+    `base_url = "${baseUrl}"`,
+    'env_key = "CODEX_LB_API_KEY"',
+    'requires_openai_auth = true'
+  ].join('\n'));
+  await fs.writeFile(path.join(codexHome, 'sks-codex-lb-tool-catalog.json'), JSON.stringify({
+    models: [{ slug: 'gpt-5.6-terra' }]
+  }));
+  await fs.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
+    `export CODEX_LB_BASE_URL='${baseUrl}'`,
+    `export CODEX_LB_API_KEY='${apiKey}'`
+  ].join('\n'));
+  await fs.writeFile(path.join(codexHome, 'sks-codex-lb.json'), JSON.stringify({
+    schema: 'sks.codex-lb-metadata.v1',
+    base_url: baseUrl,
+    api_key: { sha256: createHash('sha256').update(apiKey).digest('hex') }
+  }));
+
+  const target = await resolveCodexLbImagegenTarget({
+    env: { HOME: home, CODEX_HOME: codexHome }
+  });
+  assert.equal(target.selected, true);
+  assert.equal(target.blocker, null);
+  assert.equal(target.base_url, baseUrl);
+  assert.equal(target.api_key, apiKey);
+  assert.equal(target.model, 'gpt-5.6-terra');
+});
+
+test('a relative catalog path is resolved from CODEX_HOME and ignores hidden or API-disabled models', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-codex-lb-relative-catalog-'));
+  const customCodexHome = path.join(home, 'custom-codex-home');
+  await fs.mkdir(customCodexHome, { recursive: true });
+  await fs.writeFile(path.join(customCodexHome, 'relative-models.json'), JSON.stringify({
+    models: [
+      { slug: 'hidden/model', visibility: 'hidden', supported_in_api: true },
+      { slug: 'hide/model', visibility: 'hide', supported_in_api: true },
+      { slug: 'disabled/model', visibility: 'public', supported_in_api: false },
+      { slug: 'gpt-5.6-sol', visibility: 'public', supported_in_api: true }
+    ]
+  }));
+  const target = await resolveCodexLbImagegenTarget({
+    home,
+    codexHome: customCodexHome,
+    configText: [
+      'model_provider = "codex-lb"',
+      'model = "hidden/model"',
+      'model_catalog_json = "relative-models.json"'
+    ].join('\n'),
+    env: { HOME: home, CODEX_HOME: customCodexHome }
+  });
+  assert.deepEqual(target.catalog_models, ['gpt-5.6-sol']);
+  assert.equal(target.model, 'gpt-5.6-sol');
+  assert.equal(target.model_source, 'catalog_default');
 });

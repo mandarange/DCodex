@@ -353,8 +353,7 @@ export const ROUTES = [
     route: 'image-generation UI/UX review loop',
     description: 'Review UI/UX through the imagegen/gpt-image-2 visual critique loop: source screenshots become generated annotated review images, those images become issue ledgers, then fixes are rechecked.',
     requiredSkills: ['image-ux-review', 'imagegen', 'cu', 'pipeline-runner', REFLECTION_SKILL_NAME, 'honest-mode'],
-    dollarAliases: ['$UX-Review'],
-    appSkillAliases: ['ux-review', 'visual-review', 'ui-ux-review'],
+    hiddenDollarAliases: ['$UX-Review', '$Visual-Review', '$UI-UX-Review'],
     lifecycle: ['target_and_capture_inventory', 'source_screenshots', 'gpt_image_2_annotated_review_image', 'generated_image_text_extraction', 'issue_ledger', 'optional_safe_fixes', 'changed_screen_recheck', 'post_route_reflection', 'honest_mode'],
     context7Policy: 'if_external_docs',
     reasoningPolicy: 'high',
@@ -795,9 +794,14 @@ export function explicitManagedSkillNames(prompt: any = ''): string[] {
     const rawName = normalizeDollarSkillName(match.name);
     const skillName = sksPrefixedSkillName(match.name);
     if (!skillName || skillName.length > 100) continue;
-    if (routeByDollarCommand(match.name)) {
-      if (!MANAGED_ROUTE_SKILL_NAME_SET.has(skillName) || selected.includes(skillName)) continue;
-      selected.push(skillName);
+    const matchedRoute = routeByDollarCommand(match.name);
+    if (matchedRoute) {
+      const canonicalRouteSkillName = sksPrefixedSkillName(dollarSkillName(matchedRoute.command));
+      const selectedSkillName = MANAGED_ROUTE_SKILL_NAME_SET.has(skillName)
+        ? skillName
+        : canonicalRouteSkillName;
+      if (!MANAGED_ROUTE_SKILL_NAME_SET.has(selectedSkillName) || selected.includes(selectedSkillName)) continue;
+      selected.push(selectedSkillName);
       continue;
     }
     if (!rawName.startsWith('sks-')) continue;

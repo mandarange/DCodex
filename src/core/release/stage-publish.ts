@@ -166,6 +166,16 @@ function runPreflight(opts: StagePublishOptions, version: string): { ok: boolean
   const originOk = origin.identity === RELEASE_ORIGIN_IDENTITY
   steps.push(step('origin', originOk, origin.identity || null, originOk ? null : 'stage_origin_identity_mismatch'))
 
+  const stampVerifier = path.join(opts.root, 'dist', 'scripts', 'release-check-stamp.js')
+  const stamp = opts.run(process.execPath, [stampVerifier, 'verify'])
+  const stampOk = stamp.status === 0
+  steps.push(step(
+    'release_stamp',
+    stampOk,
+    stampOk ? 'current source-bound full release stamp verified' : compactProcessOutput(stamp),
+    stampOk ? null : 'stage_release_stamp_invalid'
+  ))
+
   const gh = opts.run('gh', ['auth', 'status'])
   steps.push(step('gh_auth', gh.status === 0, gh.status === 0 ? 'authenticated' : null, gh.status === 0 ? null : 'stage_gh_not_authenticated'))
 
@@ -257,6 +267,13 @@ function safeJsonArray(value: string): any[] {
 
 function text(result: ProcessResult): string {
   return String(result.stdout || '').trim()
+}
+
+function compactProcessOutput(result: ProcessResult): string | null {
+  return String(result.stderr || result.stdout || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 240) || null
 }
 
 function step(id: string, ok: boolean, detail: string | null = null, blocker: string | null = null): StagePublishStep {

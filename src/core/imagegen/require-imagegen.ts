@@ -6,16 +6,27 @@ export async function requireCodexImagegen(root: string, opts: {
   applyRepair?: boolean;
   codexBin?: string | null;
   timeoutMs?: number;
+  home?: string;
+  codexHome?: string;
+  env?: NodeJS.ProcessEnv;
+  configText?: string;
+  codexLbEnvText?: string;
 } = {}) {
-  const capability = await detectImagegenCapability({
-    codexBin: opts.codexBin || undefined,
+  const capabilityOpts: any = {
     timeoutMs: opts.timeoutMs || 5000
-  }).catch((err: unknown) => ({
+  };
+  if (opts.codexBin !== undefined && opts.codexBin !== null) capabilityOpts.codexBin = opts.codexBin;
+  if (opts.home !== undefined) capabilityOpts.home = opts.home;
+  if (opts.codexHome !== undefined) capabilityOpts.codexHome = opts.codexHome;
+  if (opts.env !== undefined) capabilityOpts.env = opts.env;
+  if (opts.configText !== undefined) capabilityOpts.configText = opts.configText;
+  if (opts.codexLbEnvText !== undefined) capabilityOpts.codexLbEnvText = opts.codexLbEnvText;
+  const capability = await detectImagegenCapability(capabilityOpts).catch((err: unknown) => ({
     ok: false,
     core_ready: false,
     blockers: [err instanceof Error ? err.message : String(err)]
   }));
-  const capabilityReadyBeforeRepair = (capability as any).core_ready === true;
+  const capabilityReadyBeforeRepair = imagegenPreflightReady(capability);
   const repair = opts.autoRepair === true && !capabilityReadyBeforeRepair
     ? await repairCodexImagegen({
         root,
@@ -31,7 +42,10 @@ export async function requireCodexImagegen(root: string, opts: {
   const finalCapability = repair
     ? (repair as any).after || capability
     : capability;
-  const capabilityReady = (finalCapability as any).core_ready === true || (repair as any)?.capability_ready === true;
+  const capabilityReady = imagegenPreflightReady(finalCapability) || (repair as any)?.capability_ready === true;
+  const preflightProvider = (finalCapability as any).core_ready === true
+    ? 'codex_app_builtin'
+    : codexLbImagegenReady(finalCapability) ? 'codex_lb' : null;
   const currentTaskToolManifestVerified = (repair as any)?.current_task_tool_manifest_verified === true;
   const generatedOutputVerified = (finalCapability as any).real_output_verified_by_capability_check === true
     || (repair as any)?.real_generation_verified === true;
@@ -61,6 +75,7 @@ export async function requireCodexImagegen(root: string, opts: {
     preflight_ready: preflightReady,
     preflight_only: true,
     preflight_does_not_satisfy_generated_output_proof: true,
+    preflight_provider: preflightProvider,
     capability_ready: capabilityReady,
     route_ready: routeReady,
     current_task_tool_manifest_verified: currentTaskToolManifestVerified,
@@ -85,4 +100,14 @@ export async function requireCodexImagegen(root: string, opts: {
     },
     blockers
   };
+}
+
+function imagegenPreflightReady(capability: any): boolean {
+  return capability?.core_ready === true || codexLbImagegenReady(capability);
+}
+
+function codexLbImagegenReady(capability: any): boolean {
+  return capability?.codex_lb?.selected === true
+    && capability?.codex_lb?.available === true
+    && capability?.codex_lb?.blocker == null;
 }

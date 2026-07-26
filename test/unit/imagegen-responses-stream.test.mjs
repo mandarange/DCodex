@@ -20,18 +20,29 @@ test('an image on output_item.done survives a completed envelope with empty outp
   assert.equal(payload.id, 'resp_1');
   assert.equal(payload.usage.total_tokens, 7);
   assert.equal(payload.image_output_recovered_from_stream, true);
+  assert.equal(payload.image_output_provenance, 'response.output_item.done');
+  assert.equal(payload.image_output_partial_frame, false);
   assert.equal(payload.output.length, 1);
   assert.equal(payload.output[0].type, 'image_generation_call');
   assert.equal(payload.output[0].result, 'QUJD');
 });
 
-test('a partial frame is used only when no final image item arrived', () => {
+test('a partial frame is recorded as provenance but never promoted to completed output', () => {
   const partialOnly = parseResponsesSsePayload(sse([
-    { type: 'response.image_generation_call.partial_image', item_id: 'ig_2', partial_image_b64: 'UEFSVA==' },
+    {
+      type: 'response.image_generation_call.partial_image',
+      item_id: 'ig_2',
+      partial_image_b64: 'UEFSVA==',
+      b64_json: 'UEFSVA==',
+      result: 'UEFSVA==',
+      item: { id: 'ig_2', type: 'image_generation_call', b64_json: 'UEFSVA==' }
+    },
     { type: 'response.completed', response: { id: 'resp_2', status: 'completed', output: [] } }
   ]));
-  assert.equal(partialOnly.output[0].result, 'UEFSVA==');
+  assert.deepEqual(partialOnly.output, []);
   assert.equal(partialOnly.image_output_partial_frame, true);
+  assert.equal(partialOnly.partial_image_output_present, true);
+  assert.equal(partialOnly.image_output_recovered_from_stream, undefined);
 
   const finalWins = parseResponsesSsePayload(sse([
     { type: 'response.image_generation_call.partial_image', item_id: 'ig_2', partial_image_b64: 'UEFSVA==' },
@@ -40,6 +51,17 @@ test('a partial frame is used only when no final image item arrived', () => {
   ]));
   assert.equal(finalWins.output[0].result, 'RklOQUw=');
   assert.equal(finalWins.image_output_partial_frame, false);
+  assert.equal(finalWins.image_output_provenance, 'response.output_item.done');
+});
+
+test('a partial-only stream without a terminal event remains incomplete', () => {
+  const payload = parseResponsesSsePayload(sse([
+    { type: 'response.image_generation_call.partial_image', item_id: 'ig_partial', partial_image_b64: 'UEFSVA==' }
+  ]));
+  assert.equal(payload.status, 'unknown');
+  assert.equal(payload.output, undefined);
+  assert.equal(payload.image_output_partial_frame, true);
+  assert.equal(payload.partial_image_output_present, true);
 });
 
 test('a completed envelope that already carries the image is left alone', () => {
@@ -60,6 +82,34 @@ test('structured-output text on output_item.done survives an empty completed env
   ]));
   assert.equal(payload.output_recovered_from_stream, true);
   assert.equal(payload.output[0].content[0].text, '{"colors":["blue"]}');
+});
+
+test('structured-output text plus a partial image recovers only text from a completed stream', () => {
+  const payload = parseResponsesSsePayload(sse([
+    { type: 'response.output_item.done', item: { id: 'msg_partial_completed', type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '{"issues":[]}' }] } },
+    { type: 'response.image_generation_call.partial_image', item_id: 'ig_partial_completed', partial_image_b64: 'UEFSVA==' },
+    { type: 'response.completed', response: { id: 'resp_partial_completed', status: 'completed', output: [] } }
+  ]));
+  assert.equal(payload.output_recovered_from_stream, true);
+  assert.equal(payload.output[0].content[0].text, '{"issues":[]}');
+  assert.equal(payload.image_output_partial_frame, true);
+  assert.equal(payload.partial_image_output_present, true);
+  assert.equal(payload.image_output_recovered_from_stream, undefined);
+  assert.equal(payload.image_output_provenance, undefined);
+});
+
+test('structured-output text plus a partial image recovers only text without a terminal event', () => {
+  const payload = parseResponsesSsePayload(sse([
+    { type: 'response.output_item.done', item: { id: 'msg_partial_open', type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '{"issues":["contrast"]}' }] } },
+    { type: 'response.image_generation_call.partial_image', item_id: 'ig_partial_open', partial_image_b64: 'UEFSVA==' }
+  ]));
+  assert.equal(payload.status, 'completed');
+  assert.equal(payload.output_recovered_from_stream, true);
+  assert.equal(payload.output[0].content[0].text, '{"issues":["contrast"]}');
+  assert.equal(payload.image_output_partial_frame, true);
+  assert.equal(payload.partial_image_output_present, true);
+  assert.equal(payload.image_output_recovered_from_stream, undefined);
+  assert.equal(payload.image_output_provenance, undefined);
 });
 
 test('a failed stream reports the provider error instead of a recovered image', () => {

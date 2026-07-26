@@ -30,7 +30,14 @@ for (const form of [['--help'], ['-h'], ['help']]) {
     assert.ok(output.includes('sks telegram setup --bot-token-stdin'), output);
     assert.ok(output.includes('sks telegram hub start'), output);
     // The pairing prerequisite is the single most common setup failure.
+    assert.ok(output.includes('/newbot'), output);
     assert.ok(output.includes('/start'), output);
+    assert.ok(output.includes('macOS Keychain'), output);
+    assert.ok(output.includes('telegram_webhook_conflict'), output);
+    assert.ok(output.includes('does not delete external webhook state implicitly'), output);
+    assert.ok(output.includes('telegram_409_conflict'), output);
+    assert.ok(output.includes('stop the other poller'), output);
+    assert.ok(output.includes('before rerunning setup or rotating'), output);
     assert.ok(output.includes('docs/telegram-and-center.md'), output);
   });
 

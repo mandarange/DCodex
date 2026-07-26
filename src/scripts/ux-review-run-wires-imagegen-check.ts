@@ -3,8 +3,9 @@
 import { emitGate, requireContains } from './real-execution-check-lib.js';
 
 requireContains('ux-review:run-wires-imagegen', 'src/core/commands/image-ux-review-command.ts', [
-  'const shouldGenerateCallouts = flag(args, \'--generate-callouts\') || flag(args, \'--fix\')',
+  'const shouldGenerateCallouts = !generatedImage',
   'requireCodexImagegen',
+  'buildCalloutPrompt',
   'generateGptImage2CalloutReview',
   'evidence_class',
   'output_sha256',
@@ -13,6 +14,13 @@ requireContains('ux-review:run-wires-imagegen', 'src/core/commands/image-ux-revi
   'imagegenEvidenceClassBlockers',
   'isFullImagegenOutputSource',
   'extractRealCallouts',
+  'extractAndWriteGeneratedReview',
+  'imageUxReviewCommandOutcome',
+  "allowReviewOnlyCompletion: !flag(args, '--fix')",
+  'allowReviewOnlyCompletion: false',
+  'generated_review_image_id',
+  'callout_extraction_status',
+  'captured_screenshot_path_required',
   'buildImageUxCalloutExtractionReport'
 ]);
 

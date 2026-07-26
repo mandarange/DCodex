@@ -1,10 +1,15 @@
 # UX-Review Real Loop
 
-SKS 1.0.8 treats `$sks-ux-review this screenshot with gpt-image-2 callouts, then fix the issues` as an execution route, not a prose review. A valid run needs:
+SKS 7.4.0 exposes one picker skill, `$sks-image-ux-review`. The old `$sks-ux-review`, `$sks-visual-review`, and `$sks-ui-ux-review` names remain internal compatibility aliases that resolve to the same route.
 
-- A real source screenshot from Codex Chrome Extension for web/browser/webapp targets, Codex Computer Use for native Mac/non-web targets, or a user-provided local image.
-- A generated gpt-image-2 annotated callout image created through Codex App imagegen/$imagegen.
-- Schema-bound callout extraction into `image-ux-issue-ledger.json`.
+Every normal `run --image` executes the same three-stage review chain:
+
+1. Capture the actual page through Codex Chrome for web/browser/webapp targets, use Codex Computer Use for native Mac/non-web targets, or accept a user-provided local screenshot.
+2. Send that screenshot to gpt-image-2 with a senior Toss UI/UX designer I2I brief. The generated image must annotate P0–P3 issues, hierarchy, contrast, density, affordance, eye flow, and a mini-comp; prose alone is invalid.
+3. Read the generated image back through vision/OCR, write schema-bound issues to `image-ux-issue-ledger.json`, and produce `image-ux-iteration-report.json` with recommendations tied to generated-image regions and hashes.
+
+A valid run also needs:
+
 - P0/P1-first fix task planning and a bounded safe fix loop when fixes are requested.
 - Recapture/re-review evidence before any changed-screen visual fix is verified.
 - Image Voxel source/generated/fixed relations plus Completion Proof, Trust Report, and Wrongness evidence.

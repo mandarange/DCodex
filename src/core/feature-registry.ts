@@ -758,8 +758,8 @@ function imagegenWiringFeatures() {
         cli_command_names: ['image-ux-review'],
         handler_keys: ['image-ux-review', 'ux-review'],
         dollar_commands: ['$Image-UX-Review', '$UX-Review'],
-        app_skill_aliases: ['$image-ux-review', '$ux-review'],
-        skills: ['image-ux-review', 'ux-review', 'imagegen']
+        app_skill_aliases: ['$image-ux-review'],
+        skills: ['image-ux-review', 'imagegen']
       }
     }),
     baseFeature({
