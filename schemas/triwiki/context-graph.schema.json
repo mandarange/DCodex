@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sneakoscope.dev/schemas/triwiki/context-graph.schema.json",
+  "title": "sks.context-graph.v1",
+  "description": "Compiled TriWiki Context Graph snapshot. This is a generated cache: every edge carries provenance back to repository truth. The v1 suffix is a machine schema revision, not a product version recommendation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "schemaRevision", "snapshotHash", "nodes", "edges", "cycles", "extractors", "nodeCount", "edgeCount"],
+  "properties": {
+    "schema": { "const": "sks.context-graph.v1" },
+    "schemaRevision": { "type": "string", "minLength": 1 },
+    "snapshotHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "nodeCount": { "type": "integer", "minimum": 0 },
+    "edgeCount": { "type": "integer", "minimum": 0 },
+    "nodes": { "type": "array", "items": { "$ref": "#/definitions/node" } },
+    "edges": { "type": "array", "items": { "$ref": "#/definitions/edge" } },
+    "cycles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "nodes"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "nodes": { "type": "array", "minItems": 2, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "extractors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "revision", "nodeCount", "edgeCount", "issueCount", "skippedCount"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "revision": { "type": "string", "minLength": 1 },
+          "nodeCount": { "type": "integer", "minimum": 0 },
+          "edgeCount": { "type": "integer", "minimum": 0 },
+          "issueCount": { "type": "integer", "minimum": 0 },
+          "skippedCount": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "relativePosixPath": {
+      "type": "string",
+      "minLength": 1,
+      "not": { "pattern": "^(?:/|~|[A-Za-z]:/)|(?:^|/)\\.\\.(?:/|$)|\\\\" }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "label", "trust", "freshness", "risk", "tokenCost", "metadata"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": ["file", "symbol", "module", "command", "route", "pipeline", "test", "gate", "schema", "config", "wiki_claim", "source", "proof", "risk_domain"]
+        },
+        "label": { "type": "string", "minLength": 1 },
+        "path": { "$ref": "#/definitions/relativePosixPath" },
+        "locator": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "line": { "type": "integer", "minimum": 1 },
+            "column": { "type": "integer", "minimum": 1 },
+            "endLine": { "type": "integer", "minimum": 1 },
+            "endColumn": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "contentHash": { "type": "string", "pattern": "^[a-f0-9]{8,64}$" },
+        "trust": { "type": "number", "minimum": 0, "maximum": 1 },
+        "freshness": { "enum": ["fresh", "stale", "unknown"] },
+        "risk": { "enum": ["low", "medium", "high", "protected"] },
+        "tokenCost": { "type": "integer", "minimum": 0 },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          }
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "from", "to", "type", "confidence", "provenance", "observedAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "type": {
+          "enum": ["contains", "defines", "imports", "reexports", "references", "calls", "depends_on", "routes_to", "owns", "tests", "verified_by", "gated_by", "affected_by", "cites", "derived_from", "supports", "contradicts", "supersedes", "invalidates", "cochanged_with", "conflicts_with"]
+        },
+        "confidence": { "enum": ["exact", "syntactic", "manifest", "observed", "derived"] },
+        "observedAt": { "type": "string", "minLength": 1 },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "hash", "extractor"],
+          "properties": {
+            "path": { "$ref": "#/definitions/relativePosixPath" },
+            "line": { "type": "integer", "minimum": 1 },
+            "hash": { "type": "string", "pattern": "^[a-f0-9]{8,64}$" },
+            "extractor": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

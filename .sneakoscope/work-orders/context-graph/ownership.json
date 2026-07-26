@@ -1,0 +1,132 @@
+{
+  "schema": "sks.context-graph-ownership.v1",
+  "note": "Path ownership for the Context Graph work order. Shared manifests are integration-only; every other workstream writes only its own globs.",
+  "shared_integration_only": [
+    "package.json",
+    "package-lock.json",
+    "release-gates.v2.json",
+    "infra-harness-gates.json",
+    "runtime-required-scripts.json",
+    "src/cli/command-registry.ts",
+    "src/cli/command-manifest-lite.ts",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/architecture/search-engine-current-state.md",
+    "docs/architecture/search-engine-target.md"
+  ],
+  "workers": [
+    {
+      "id": "J00",
+      "objective": "Contracts, ownership, shared manifests, CLI wiring, docs, final integration",
+      "allowed": [
+        "src/core/triwiki/context-graph/contracts.ts",
+        "src/core/triwiki/context-graph/ids.ts",
+        "src/core/triwiki/context-graph/paths.ts",
+        "src/core/triwiki/context-graph/profiles.ts",
+        "src/core/triwiki/context-graph/query-types.ts",
+        "src/core/triwiki/context-graph/graph-index.ts",
+        "src/core/triwiki/context-graph/__tests__/contracts.test.ts",
+        "schemas/triwiki/context-graph.schema.json",
+        "src/scripts/context-graph-check.ts",
+        "docs/architecture/context-graph.md",
+        ".sneakoscope/work-orders/context-graph/**"
+      ]
+    },
+    {
+      "id": "J01",
+      "objective": "Binding-backed TypeScript/JavaScript code graph extractor",
+      "allowed": ["src/core/triwiki/context-graph/extractors/code/**"]
+    },
+    {
+      "id": "J02",
+      "objective": "Command, route, pipeline, and gate topology extractor",
+      "allowed": ["src/core/triwiki/context-graph/extractors/topology/**"]
+    },
+    {
+      "id": "J03",
+      "objective": "TriWiki claim, source, and proof evidence extractor",
+      "allowed": ["src/core/triwiki/context-graph/extractors/evidence/**"]
+    },
+    {
+      "id": "J04",
+      "objective": "Deterministic compiler, snapshot store, fragment cache, lint",
+      "allowed": [
+        "src/core/triwiki/context-graph/compiler/**",
+        "src/core/triwiki/context-graph/store/**",
+        "src/core/triwiki/context-graph/lint/**"
+      ]
+    },
+    {
+      "id": "J05",
+      "objective": "Locked benchmark corpus, fixtures, evaluator",
+      "allowed": [
+        "config/context-graph-benchmark.json",
+        "src/core/triwiki/context-graph/benchmark/**",
+        "docs/performance/context-graph-benchmark.md"
+      ]
+    },
+    {
+      "id": "J06",
+      "objective": "Query engine, ranker, token packer",
+      "allowed": ["src/core/triwiki/context-graph/query/**"]
+    },
+    {
+      "id": "J07",
+      "objective": "Graph-backed SearchProvider context mode",
+      "allowed": ["src/core/search/context.ts", "src/core/search/context-graph-seeds.ts", "src/core/search/__tests__/context-graph-*.test.ts"]
+    },
+    {
+      "id": "J08",
+      "objective": "Code pack and context pack projections, graph-backed attention",
+      "allowed": [
+        "src/core/triwiki/code-pack.ts",
+        "src/core/subagents/triwiki-attention.ts",
+        "src/core/triwiki/context-graph/projections/**"
+      ]
+    },
+    {
+      "id": "J09",
+      "objective": "Naruto scope advisory and affected verification from graph evidence",
+      "allowed": [
+        "src/core/naruto/context-graph-advisor.ts",
+        "src/core/verification/context-graph-affected.ts",
+        "src/core/naruto/__tests__/context-graph-advisor.test.ts",
+        "src/core/verification/__tests__/context-graph-affected.test.ts"
+      ]
+    },
+    {
+      "id": "J10",
+      "objective": "Proof bank index and graph freshness preflight",
+      "allowed": [
+        "src/core/triwiki/triwiki-proof-bank-index.ts",
+        "src/core/hooks-runtime/context-graph-freshness-preflight.ts"
+      ]
+    },
+    {
+      "id": "J11",
+      "objective": "Bounded benchmark-driven ranking optimizer",
+      "allowed": [
+        "src/core/triwiki/context-graph/optimizer/**",
+        "docs/architecture/context-graph-optimization-loop.md"
+      ]
+    },
+    {
+      "id": "J12",
+      "objective": "Latest stable version guidance policy and guard",
+      "allowed": [
+        "src/scripts/latest-version-guidance-check.ts",
+        "src/core/policy/latest-version-guidance.ts",
+        "docs/architecture/latest-version-guidance-policy.md"
+      ]
+    },
+    {
+      "id": "J13",
+      "objective": "Read-only production readiness audit",
+      "allowed": [".sneakoscope/work-orders/context-graph/final-audit.md"]
+    }
+  ],
+  "test_location_policy": {
+    "note": "The canonical test runner discovers dist/**/__tests__/**/*.test.js and test/unit/**/*.test.mjs. Workstream tests therefore live in src/**/__tests__/*.test.ts next to the code they cover, not under a top-level test/context-graph directory, so they actually execute.",
+    "runner": "dist/scripts/canonical-test-runner.js"
+  }
+}
