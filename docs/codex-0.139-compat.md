@@ -1,6 +1,6 @@
 # Codex 0.139 Compatibility Reference
 
-SKS 7.2.1 keeps the historical Codex 0.139 compatibility notes as a fallback baseline while the active release-authorizing Codex surface is `rust-v0.145.0`.
+SKS 7.4.0 keeps the historical Codex 0.139 compatibility notes as a fallback baseline while the active release-authorizing Codex surface is `rust-v0.145.0`.
 
 This file is a **legacy compatibility reference**, not the current Codex product manual. It documents the Codex 0.139 capability detection that still ships in SKS, the runtime adaptations that tolerate 0.138/0.139 differences, and the explicit non-goals. Current Codex behavior should be checked against the official Codex Manual and the installed Codex CLI/App runtime; nothing here claims that Codex 0.139 is the current, recommended, or bundled Codex runtime.
 

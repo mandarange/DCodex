@@ -71,7 +71,7 @@ export async function pptCommand(command: any, args: any = []) {
         };
         process.exitCode = 1;
         if (flag(args, '--json')) return printJson(result);
-        console.error('PPT build blocked: Codex App imagegen/gpt-image-2 is unavailable.');
+        console.error('PPT build blocked: no selected Codex imagegen/gpt-image-2 provider is ready.');
         for (const action of imagegenRequired.blocker?.next_actions || []) console.error(`- ${action}`);
         return result;
       }
@@ -176,7 +176,7 @@ async function pptImagegenReview(root: string, command: any, action: string, arg
       };
       process.exitCode = 1;
       if (flag(args, '--json')) return printJson(result);
-      console.error('PPT imagegen review blocked: Codex App imagegen/gpt-image-2 is unavailable.');
+      console.error('PPT imagegen review blocked: no selected Codex imagegen/gpt-image-2 provider is ready.');
       for (const action of imagegenRequired.blocker?.next_actions || []) console.error(`- ${action}`);
       return result;
     }

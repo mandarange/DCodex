@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TelegramBotApiClient, TelegramBotApiError } from '../bot-api.js';
+import { probeTelegramBotReadiness, TelegramBotApiClient, TelegramBotApiError } from '../bot-api.js';
 import { publicSafeText, REACTIONS, TelegramMessageProjector } from '../messages.js';
 import type { TelegramBotApiTransport, TelegramTopicRouteV1 } from '../types.js';
 
@@ -120,8 +120,15 @@ test('Bot API retries 429, exposes 409 as an immediate typed stop, and never lea
   assert.deepEqual(await client.getUpdates(), []);
   assert.deepEqual(sleeps, [1_000]);
 
+  let conflictCalls = 0;
+  const conflictSleeps: number[] = [];
   const conflict = new TelegramBotApiClient(token, {
-    fetch: async () => new Response(JSON.stringify({ ok: false, error_code: 409, description: `Conflict for ${token}` }), { status: 409, headers: { 'content-type': 'application/json' } })
+    fetch: async () => {
+      conflictCalls += 1;
+      return new Response(JSON.stringify({ ok: false, error_code: 409, description: `Conflict for ${token}` }), { status: 409, headers: { 'content-type': 'application/json' } });
+    },
+    maxRetries: 4,
+    sleep: async (ms) => { conflictSleeps.push(ms); }
   });
   await assert.rejects(conflict.getUpdates(), (error: unknown) => {
     assert.ok(error instanceof TelegramBotApiError);
@@ -129,6 +136,102 @@ test('Bot API retries 429, exposes 409 as an immediate typed stop, and never lea
     assert.ok(!error.message.includes(token));
     return true;
   });
+  assert.equal(conflictCalls, 1);
+  assert.deepEqual(conflictSleeps, []);
+});
+
+test('Bot API retries bounded idempotent reads after transient transport and 5xx failures', async () => {
+  const token = ['123456789', 'ABCDEFGHIJKLMNOPQRSTUVWX'].join(':');
+  let getMeCalls = 0;
+  let getUpdatesCalls = 0;
+  const sleeps: number[] = [];
+  const client = new TelegramBotApiClient(token, {
+    fetch: async (url) => {
+      const method = String(url).split('/').at(-1);
+      if (method === 'getMe') {
+        getMeCalls += 1;
+        if (getMeCalls === 1) throw new Error('socket reset');
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { id: 99, is_bot: true, username: 'sks_fixture_bot' }
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (method === 'getUpdates') {
+        getUpdatesCalls += 1;
+        if (getUpdatesCalls === 1) {
+          return new Response(JSON.stringify({
+            ok: false,
+            error_code: 502,
+            description: 'Bad Gateway'
+          }), { status: 502, headers: { 'content-type': 'application/json' } });
+        }
+        return new Response(JSON.stringify({ ok: true, result: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        });
+      }
+      throw new Error(`unexpected_method:${method}`);
+    },
+    maxRetries: 2,
+    sleep: async (ms) => { sleeps.push(ms); }
+  });
+
+  assert.equal((await client.call<{ id: number }>('getMe', {})).id, 99);
+  assert.deepEqual(await client.getUpdates({ timeout: 0 }), []);
+  assert.equal(getMeCalls, 2);
+  assert.equal(getUpdatesCalls, 2);
+  assert.equal(sleeps.length, 2);
+  assert.ok(sleeps.every((ms) => ms > 0 && ms <= 60_000));
+});
+
+test('Bot API never replays a mutating send call after an ambiguous 5xx response', async () => {
+  let calls = 0;
+  const sleeps: number[] = [];
+  const client = new TelegramBotApiClient('123456789:ABCDEFGHIJKLMNOPQRSTUVWX', {
+    fetch: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({
+        ok: false,
+        error_code: 502,
+        description: 'Bad Gateway'
+      }), { status: 502, headers: { 'content-type': 'application/json' } });
+    },
+    maxRetries: 4,
+    sleep: async (ms) => { sleeps.push(ms); }
+  });
+
+  await assert.rejects(client.call('sendMessage', { chat_id: '1', text: 'hello' }), (error: unknown) => {
+    assert.ok(error instanceof TelegramBotApiError);
+    assert.equal(error.errorCode, 502);
+    return true;
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(sleeps, []);
+});
+
+test('Bot API readiness rejects malformed successful identity and webhook responses', async () => {
+  await assert.rejects(probeTelegramBotReadiness({
+    call: async <T>(method: string): Promise<T> => {
+      if (method === 'getMe') return { id: 99, is_bot: false } as T;
+      return { url: '' } as T;
+    }
+  }), /telegram_bot_identity_invalid/);
+
+  await assert.rejects(probeTelegramBotReadiness({
+    call: async <T>(method: string): Promise<T> => {
+      if (method === 'getMe') return { id: 99, is_bot: true, username: 'sks_fixture_bot' } as T;
+      return { pending_update_count: 0 } as T;
+    }
+  }), /telegram_webhook_info_invalid/);
+
+  const client = new TelegramBotApiClient('123456789:ABCDEFGHIJKLMNOPQRSTUVWX', {
+    fetch: async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    }),
+    maxRetries: 0
+  });
+  await assert.rejects(client.call('getMe', {}), /telegram_api_invalid_response/);
 });
 
 test('Bot API uploads bounded documents as multipart FormData', async () => {

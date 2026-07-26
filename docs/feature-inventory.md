@@ -136,8 +136,7 @@ Generated from `sks commands --json`, `src/cli/command-registry.ts COMMANDS`, `s
 | `route-release-review` | route | labs | $sks-release-review | execute_and_validate_artifacts:pass | runtime_verified | none recorded |
 | `route-qa-loop` | route | beta | $sks-qa-loop | execute_and_validate_artifacts:blocked | runtime_verified | none recorded |
 | `route-ppt` | route | labs | $sks-ppt | mock:pass | wiring_only | live imagegen/CU evidence required |
-| `route-image-ux-review` | route | labs | $sks-image-ux-review<br>$sks-ux-review<br>$sks-visual-review<br>$sks-ui-ux-review | mock:pass | wiring_only | live imagegen/CU evidence required |
-| `route-ux-review` | route | labs | $sks-ux-review | mock:pass | wiring_only | live imagegen/CU evidence required |
+| `route-image-ux-review` | route | labs | $sks-image-ux-review | mock:pass | wiring_only | live imagegen/CU evidence required; old names are internal compatibility aliases |
 | `route-computer-use` | route | beta | $sks-computer-use<br>$sks-computer-use-fast<br>$sks-cu | execute_and_validate_artifacts:blocked | runtime_verified | none recorded |
 | `route-cu` | route | beta | $sks-cu | execute_and_validate_artifacts:blocked | runtime_verified | none recorded |
 | `route-goal` | route | beta | $sks-goal | static:pass | wiring_only | none recorded |
@@ -154,7 +153,7 @@ Generated from `sks commands --json`, `src/cli/command-registry.ts COMMANDS`, `s
 | `route-help` | route | stable | $sks-help | static:pass | wiring_only | none recorded |
 | `proof-official-subagent-evidence` | proof-route | stable | subagent-plan.json + subagent-parent-summary.json + subagent-evidence.json | execute_and_validate_artifacts:pass | runtime_verified | parallel speed claims still require measured runtime evidence |
 | `doctor:imagegen-repair` | safety | beta | sks doctor --json<br>sks doctor --fix --json<br>repair.imagegen<br>imagegen_repair | execute_and_validate_artifacts:pass | runtime_verified | live Codex App feature enablement remains environment-dependent and reports manual actions when unavailable |
-| `ux-review:run-wires-imagegen` | visual-memory | beta | npm run ux-review:run-wires-imagegen<br>sks ux-review run --image <screenshot> --generate-callouts --json<br>$sks-image-ux-review<br>$sks-ux-review | execute_and_validate_artifacts:pass | runtime_verified | live Codex App image generation remains environment-dependent |
+| `ux-review:run-wires-imagegen` | visual-memory | beta | npm run ux-review:run-wires-imagegen<br>sks ux-review run --image <screenshot> --json<br>$sks-image-ux-review | execute_and_validate_artifacts:pass | runtime_verified | live Codex App image generation remains environment-dependent |
 | `ppt:real-imagegen-wiring` | visual-memory | beta | npm run ppt:real-imagegen-wiring<br>sks ppt review --deck <pptx> --json<br>$sks-ppt | execute_and_validate_artifacts:pass | runtime_verified | live deck export and live Codex App image generation remain environment-dependent |
 | `cli-wiki-code` | triwiki | beta | sks wiki refresh --code --json<br>sks wiki validate --json<br>wiki.code_pack<br>code_pack_refresh | execute_and_validate_artifacts:pass | runtime_verified | ranking is by trust_score only, not live per-prompt keyword relevance, since contextCapsule's call site here refreshes a project-wide pack rather than a per-mission one |
 | `skill-quarantine` | skill | labs | $quarantine | static:pass | static_contract | runtime fixtures owned by route |

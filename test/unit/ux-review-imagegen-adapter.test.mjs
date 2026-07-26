@@ -1,8 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import { tempImageRoot } from '../helpers/ux-review-1-0-8-fixtures.mjs';
-import { buildCalloutPrompt, createCodexAppImagegenAdapter, generateGptImage2CalloutReview, imagegenCapabilityBlocker } from '../../dist/core/image-ux-review/imagegen-adapter.js';
+import { DEFAULT_IMAGEGEN_FETCH_TIMEOUT_MS, buildCalloutPrompt, createCodexAppImagegenAdapter, generateGptImage2CalloutReview, imagegenCapabilityBlocker } from '../../dist/core/image-ux-review/imagegen-adapter.js';
+
+test('image generation allows the documented two-minute complex prompt window by default', () => {
+  assert.equal(DEFAULT_IMAGEGEN_FETCH_TIMEOUT_MS, 180000);
+});
 
 test('Codex App imagegen adapter blocks honestly when host capability is unavailable', async () => {
   const adapter = createCodexAppImagegenAdapter();
@@ -177,6 +182,129 @@ test('selecting codex-lb as the provider is enough to reach image generation', a
   }
 });
 
+test('a selected codex-lb provider wins over an unrelated OPENAI_API_KEY', async () => {
+  const { root, imagePath } = await tempImageRoot('sks-codex-lb-selected-with-openai-key-');
+  const outputDir = path.join(root, 'out');
+  const calls = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({
+      url: String(url),
+      authorization: init?.headers?.authorization || init?.headers?.Authorization || '',
+      body: JSON.parse(String(init?.body || '{}'))
+    });
+    return new Response(JSON.stringify({
+      id: 'resp_lb_3',
+      output: [{
+        id: 'ig_lb_3',
+        type: 'image_generation_call',
+        status: 'completed',
+        result: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l/5gVQAAAABJRU5ErkJggg=='
+      }]
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const result = await withoutImagegenOutputEnv(async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      return generateGptImage2CalloutReview({
+        mission_id: null,
+        source_screen_id: 'screen-1',
+        source_image_path: imagePath,
+        output_dir: outputDir,
+        prompt: buildCalloutPrompt('screen-1'),
+        requested_fidelity: 'original',
+        privacy: 'local-only'
+      }, {
+        capability: {
+          codexBin: path.join(root, 'missing-codex'),
+          timeoutMs: 100,
+          env: { HOME: root, CODEX_LB_API_KEY: 'sk-clb-test' },
+          configText: codexLbConfig()
+        },
+        codexLbTarget: {
+          selected: true,
+          base_url: 'https://lb.example.test/backend-api/codex',
+          api_key: 'sk-clb-test',
+          api_key_source: 'env-file',
+          model: 'gpt-5.6-sol',
+          model_source: 'catalog_default',
+          blocker: null
+        }
+      });
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.provider, 'openai_responses_image_generation');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://lb.example.test/backend-api/codex/responses');
+    assert.equal(calls[0].authorization, 'Bearer sk-clb-test');
+    assert.equal(calls[0].body.model, 'gpt-5.6-sol');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('a final codex-lb SSE image is full evidence with stream provenance', async () => {
+  const { root, imagePath } = await tempImageRoot('sks-codex-lb-final-sse-');
+  const outputDir = path.join(root, 'out');
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(sseBody([
+    {
+      type: 'response.output_item.done',
+      item: {
+        id: 'ig_sse_final',
+        type: 'image_generation_call',
+        result: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l/5gVQAAAABJRU5ErkJggg=='
+      }
+    },
+    { type: 'response.completed', response: { id: 'resp_sse_final', status: 'completed', output: [] } }
+  ]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  try {
+    const result = await withoutImagegenOutputEnv(() => generateGptImage2CalloutReview(
+      imagegenRequest(imagePath, outputDir),
+      selectedCodexLbOptions(root)
+    ));
+    const response = JSON.parse(await fs.readFile(path.join(outputDir, 'image-ux-gpt-image-2-response.json'), 'utf8'));
+    assert.equal(result.ok, true);
+    assert.equal(response.evidence_class, 'codex_lb_provider_imagegen');
+    assert.equal(response.image_output_recovered_from_stream, true);
+    assert.equal(response.image_output_provenance, 'response.output_item.done');
+    assert.equal(response.image_output_partial_frame, false);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('a partial-only codex-lb SSE image is not generated or full evidence', async () => {
+  const { root, imagePath } = await tempImageRoot('sks-codex-lb-partial-sse-');
+  const outputDir = path.join(root, 'out');
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(sseBody([
+    {
+      type: 'response.image_generation_call.partial_image',
+      item_id: 'ig_sse_partial',
+      partial_image_b64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l/5gVQAAAABJRU5ErkJggg=='
+    },
+    { type: 'response.completed', response: { id: 'resp_sse_partial', status: 'completed', output: [] } }
+  ]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  try {
+    const result = await withoutImagegenOutputEnv(() => generateGptImage2CalloutReview(
+      imagegenRequest(imagePath, outputDir),
+      selectedCodexLbOptions(root)
+    ));
+    const response = JSON.parse(await fs.readFile(path.join(outputDir, 'image-ux-gpt-image-2-response.json'), 'utf8'));
+    assert.equal(result.ok, false);
+    assert.equal(result.generated_image_path, null);
+    assert.equal(result.blocker, 'missing_b64_image_output');
+    assert.notEqual(response.evidence_class, 'codex_lb_provider_imagegen');
+    assert.equal(response.payload_summary.image_output_partial_frame, true);
+    assert.equal(response.payload_summary.partial_image_output_present, true);
+    assert.equal(response.payload_summary.output_count, 0);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('gpt-image-2 retries a rate-limited OpenAI images call then succeeds', async () => {
   const { root, imagePath } = await tempImageRoot('sks-imagegen-retry-429-');
   const outputDir = path.join(root, 'out');
@@ -288,6 +416,42 @@ env_key = "CODEX_LB_API_KEY"
 supports_websockets = true
 requires_openai_auth = true
 `;
+}
+
+function imagegenRequest(imagePath, outputDir) {
+  return {
+    mission_id: null,
+    source_screen_id: 'screen-1',
+    source_image_path: imagePath,
+    output_dir: outputDir,
+    prompt: buildCalloutPrompt('screen-1'),
+    requested_fidelity: 'original',
+    privacy: 'local-only'
+  };
+}
+
+function selectedCodexLbOptions(root) {
+  return {
+    capability: {
+      codexBin: path.join(root, 'missing-codex'),
+      timeoutMs: 100,
+      env: { HOME: root, CODEX_LB_API_KEY: 'sk-clb-test' },
+      configText: codexLbConfig()
+    },
+    codexLbTarget: {
+      selected: true,
+      base_url: 'https://lb.example.test/backend-api/codex',
+      api_key: 'sk-clb-test',
+      api_key_source: 'env-file',
+      model: 'gpt-5.6-sol',
+      model_source: 'catalog_default',
+      blocker: null
+    }
+  };
+}
+
+function sseBody(events) {
+  return events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n`).join('\n');
 }
 
 async function withoutImagegenOutputEnv(fn) {

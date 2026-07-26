@@ -5,7 +5,7 @@ import { imageUxReviewProofEvidence } from '../../dist/core/image-ux-review.js';
 test('UX-Review Completion Proof evidence summarizes callout/fix status', () => {
   const evidence = imageUxReviewProofEvidence({ passed: true, blockers: [] }, {
     inventory: { source_screens: [{ id: 'screen-1' }] },
-    generated_review_ledger: { generated_count: 1, real_generated_count: 1, generated_review_images: [{ image_voxel_relation: 'generated_callout_review_of' }] },
+    generated_review_ledger: { generated_count: 1, real_generated_count: 1, generated_review_images: [{ real_generated: true, mock: false, image_voxel_relation: 'generated_callout_review_of' }] },
     issue_ledger: { validation: { ok: true }, blocking_issue_count: 0, issues: [{ severity: 'P1', status: 'fixed' }] },
     recapture_plan: { changed_screens_rechecked_or_not_applicable: true }
   });

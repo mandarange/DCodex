@@ -33,19 +33,27 @@ export interface CodexLbImagegenTarget {
 
 export async function resolveCodexLbImagegenTarget(opts: {
   home?: string;
+  codexHome?: string;
   env?: NodeJS.ProcessEnv;
   configText?: string;
   explicitModel?: string;
 } = {}): Promise<CodexLbImagegenTarget> {
   const env = opts.env || process.env;
   const home = opts.home || env.HOME || os.homedir();
+  const codexHome = opts.codexHome || env.CODEX_HOME || path.join(home, '.codex');
   const configText = typeof opts.configText === 'string'
     ? opts.configText
-    : await readText(path.join(home, '.codex', 'config.toml'), '').catch(() => '');
+    : await readText(path.join(codexHome, 'config.toml'), '').catch(() => '');
   const selected = topLevelTomlString(configText, 'model_provider') === 'codex-lb';
-  const loaded = await loadCodexLbEnv({ home, processEnv: env }).catch(() => null);
-  const catalogModels = await readCatalogModels(configText, home);
-  const explicit = String(opts.explicitModel || env.SKS_IMAGEGEN_RESPONSES_MODEL || env.OPENAI_MODEL || '').trim();
+  const loaded = await loadCodexLbEnv({
+    home,
+    processEnv: env,
+    envPath: path.join(codexHome, 'sks-codex-lb.env'),
+    legacyEnvPath: path.join(codexHome, 'sks.env'),
+    metadataPath: path.join(codexHome, 'sks-codex-lb.json')
+  }).catch(() => null);
+  const catalogModels = await readCatalogModels(configText, home, codexHome);
+  const explicit = String(opts.explicitModel || env.SKS_IMAGEGEN_RESPONSES_MODEL || '').trim();
   const configuredModel = topLevelTomlString(configText, 'model');
   const { model, model_source } = explicit
     ? { model: explicit, model_source: 'explicit' as const }
@@ -77,11 +85,11 @@ function codexLbImagegenBlocker(state: { selected: boolean; loaded: any; model: 
   return null;
 }
 
-async function readCatalogModels(configText: string, home: string): Promise<string[]> {
+async function readCatalogModels(configText: string, home: string, codexHome: string): Promise<string[]> {
   const configured = topLevelTomlString(configText, 'model_catalog_json');
   const candidates = [
     configured ? path.resolve(configured.replace(/^~(?=\/|$)/, home)) : '',
-    path.join(home, '.codex', 'sks-codex-lb-tool-catalog.json')
+    path.join(codexHome, 'sks-codex-lb-tool-catalog.json')
   ].filter(Boolean);
   for (const file of candidates) {
     const payload = await readJson<any>(file, null).catch(() => null);

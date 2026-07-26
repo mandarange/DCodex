@@ -1,7 +1,7 @@
-# SKS 7.3.0 Release Readiness
+# SKS 7.4.0 Release Readiness
 
 This document is the current fail-closed release contract for `sneakoscope`
-7.3.0. The current package version on this branch is 7.3.0. It is a readiness
+7.4.0. The current package version on this branch is 7.4.0. It is a readiness
 checklist, not evidence that the version has already been published.
 
 ## Completion Boundary
@@ -122,7 +122,13 @@ path.
 
 ## Local Verification Order
 
-Start from a clean dependency installation and one clean build:
+The order is strict: cut the intended version once, then run every
+version-bound check, write and verify the full release stamp, and only then run
+the package dry-run. For this branch, 7.3.0 to 7.4.0 is the one-time minor
+version cut; if the branch already reports 7.4.0, do not bump it again.
+
+After that version cut, start from a clean dependency installation and one
+clean build:
 
 ```bash
 npm ci --ignore-scripts
@@ -135,10 +141,12 @@ npm run release:check:affected --silent
 npm run release:check:confidence --silent
 ```
 
-Before version cut, the full release preset must also pass:
+Before any package dry-run, the full release preset must pass and its
+source-bound stamp must verify:
 
 ```bash
 npm run release:check:full --silent
+node ./dist/scripts/release-check-stamp.js verify
 npm publish --dry-run --json --registry https://registry.npmjs.org/ --tag latest --access public
 ```
 
@@ -172,7 +180,7 @@ Inspect the exact packed file list and tarball, not only the source checkout.
 - generated project guidance contains only current dollar routes;
 - an isolated prefix install can run version, help, doctor, Naruto status, MCP
   status, update status, and Menu Bar diagnostics;
-- the 6.2.0 to 7.3.0 upgrade smoke uses an isolated HOME and proves managed
+- the 6.2.0 to 7.4.0 upgrade smoke uses an isolated HOME and proves managed
   cleanup, user-file preservation, new-binary re-exec, rollback receipts,
   exact lifecycle command inventory, no timeout, no host HOME/prefix reuse,
   no unexpected `launchctl` call, and successful sandbox removal;
@@ -181,20 +189,25 @@ Inspect the exact packed file list and tarball, not only the source checkout.
 - Linux package smoke and macOS native/Menu Bar smoke both pass.
 
 Record the tarball path, size, SHA-256, integrity, file inventory, installed
-smoke report, and platform-gate reports under the 7.3.0 release evidence root.
+smoke report, and platform-gate reports under the 7.4.0 release evidence root.
 
-## Version Cut
+## Version Cut (Step 1, Before Local Verification)
 
-Do not cut 7.3.0 while feature integration or a required gate is red.
+Do not cut 7.4.0 while feature integration or a required gate is red. Once the
+cut is made, rerun every command in **Local Verification Order** because the
+release stamp and package proof are version- and source-bound.
 
 ```bash
-sks versioning bump patch --json
+sks versioning bump minor --json
 npm run build:clean --silent
 npm run release:version-truth --silent
 ```
 
+The `minor` increment is the explicit 7.3.0-to-7.4.0 cut. Do not rerun it once
+the branch already reports 7.4.0.
+
 Package metadata, lockfile, runtime constants, Rust metadata, managed assets,
-README, changelog, built output, and release evidence must agree on 7.3.0.
+README, changelog, built output, and release evidence must agree on 7.4.0.
 Sneakoscope does not install or rely on a Git pre-commit version hook.
 
 ## Trusted Staged Publishing
@@ -252,7 +265,7 @@ A maintainer then performs the separate human approval step with 2FA:
 npm stage approve <stage-id>
 ```
 
-Automation must stop before this approval. It must not claim that 7.3.0 is
+Automation must stop before this approval. It must not claim that 7.4.0 is
 published while only a stage exists.
 
 Because the trusted publisher is bound to the configured workflow on the
@@ -265,13 +278,13 @@ not restaged until the cause and version-uniqueness state are understood.
 After maintainer approval, verify the live registry independently:
 
 ```bash
-npm view sneakoscope@7.3.0 version dist.integrity dist.tarball --json
+npm view sneakoscope@7.4.0 version dist.integrity dist.tarball --json
 npm view sneakoscope dist-tags --json
 ```
 
-Then install `sneakoscope@7.3.0` into a fresh isolated prefix and rerun the
+Then install `sneakoscope@7.4.0` into a fresh isolated prefix and rerun the
 installed-package smoke. Completion requires the registry version to be
-7.3.0, `latest` to resolve to 7.3.0, integrity to match, and the fresh install
+7.4.0, `latest` to resolve to 7.4.0, integrity to match, and the fresh install
 to pass.
 
 ## Fail-Closed Rules
@@ -283,7 +296,7 @@ to pass.
 - Never publish from an unreviewed tarball or a dirty generated build.
 - Never automate the maintainer's 2FA approval.
 - A defect found after publication requires a higher version; never replace
-  7.0.4.
+  the bytes of an already published version.
 
 ## Release Director Handoff
 

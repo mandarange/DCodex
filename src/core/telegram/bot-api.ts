@@ -21,6 +21,15 @@ export interface TelegramBotApiClientOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
+export interface TelegramBotReadiness {
+  readonly bot: {
+    readonly id: string;
+    readonly username: string | null;
+  };
+  readonly webhook_configured: boolean;
+  readonly pending_update_count: number;
+}
+
 export class TelegramBotApiClient implements TelegramBotApiTransport {
   private readonly request: typeof fetch;
   private readonly apiOrigin: string;
@@ -77,11 +86,15 @@ export class TelegramBotApiClient implements TelegramBotApiTransport {
           ...init(),
           signal: controller.signal
         });
-        const body = await response.json() as TelegramBotApiResponse<T>;
+        const body = await readTelegramResponse<T>(response, method);
         if (response.ok && body.ok) return body.result as T;
         const retryAfter = body.parameters?.retry_after ?? null;
-        if ((response.status === 429 || body.error_code === 429) && retryAfter && attempt < this.maxRetries) {
-          await this.sleep(Math.min(60_000, Math.max(1_000, retryAfter * 1_000)));
+        if ((response.status === 429 || body.error_code === 429) && attempt < this.maxRetries) {
+          await this.sleep(retryAfter === null ? retryDelayMs(attempt) : Math.min(60_000, Math.max(1_000, retryAfter * 1_000)));
+          continue;
+        }
+        if (isRetrySafeMethod(method) && response.status >= 500 && attempt < this.maxRetries) {
+          await this.sleep(retryDelayMs(attempt));
           continue;
         }
         throw new TelegramBotApiError(
@@ -91,8 +104,18 @@ export class TelegramBotApiClient implements TelegramBotApiTransport {
           retryAfter
         );
       } catch (error: unknown) {
-        if (error instanceof TelegramBotApiError) throw error;
+        if (error instanceof TelegramBotApiError) {
+          if (isRetrySafeMethod(method) && error.errorCode >= 500 && attempt < this.maxRetries) {
+            await this.sleep(retryDelayMs(attempt));
+            continue;
+          }
+          throw error;
+        }
         const message = error instanceof Error && error.name === 'AbortError' ? 'telegram_api_timeout' : 'telegram_api_transport_failed';
+        if (isRetrySafeMethod(method) && attempt < this.maxRetries) {
+          await this.sleep(retryDelayMs(attempt));
+          continue;
+        }
         throw new TelegramBotApiError(method, 0, message);
       } finally {
         clearTimeout(timer);
@@ -108,6 +131,62 @@ export class TelegramBotApiClient implements TelegramBotApiTransport {
       allowed_updates: input.allowed_updates ?? ['message', 'callback_query']
     });
   }
+}
+
+export async function probeTelegramBotReadiness(
+  api: Pick<TelegramBotApiTransport, 'call'>
+): Promise<TelegramBotReadiness> {
+  const bot = await api.call<{
+    id?: string | number;
+    is_bot?: boolean;
+    username?: string;
+  }>('getMe', {});
+  const id = bot?.id === undefined ? '' : String(bot.id);
+  if (!/^[1-9]\d*$/.test(id) || bot?.is_bot !== true) {
+    throw new Error('telegram_bot_identity_invalid');
+  }
+  const webhook = await api.call<{
+    url?: string;
+    pending_update_count?: number;
+  }>('getWebhookInfo', {});
+  if (typeof webhook?.url !== 'string') {
+    throw new Error('telegram_webhook_info_invalid');
+  }
+  return {
+    bot: {
+      id,
+      username: typeof bot.username === 'string' && bot.username.trim() ? bot.username.trim() : null
+    },
+    webhook_configured: typeof webhook?.url === 'string' && webhook.url.trim().length > 0,
+    pending_update_count: Number.isInteger(webhook?.pending_update_count) && Number(webhook.pending_update_count) >= 0
+      ? Number(webhook.pending_update_count)
+      : 0
+  };
+}
+
+async function readTelegramResponse<T>(response: Response, method: string): Promise<TelegramBotApiResponse<T>> {
+  try {
+    const body = await response.json() as unknown;
+    if (
+      !body
+      || typeof body !== 'object'
+      || typeof (body as { ok?: unknown }).ok !== 'boolean'
+      || ((body as { ok: boolean }).ok && !('result' in body))
+    ) {
+      throw new Error('invalid_shape');
+    }
+    return body as TelegramBotApiResponse<T>;
+  } catch {
+    throw new TelegramBotApiError(method, response.status, 'telegram_api_invalid_response');
+  }
+}
+
+function isRetrySafeMethod(method: string): boolean {
+  return /^get[A-Z]/.test(method);
+}
+
+function retryDelayMs(attempt: number): number {
+  return Math.min(5_000, 500 * (2 ** attempt));
 }
 
 function safeTelegramError(message: string, token: string): string {

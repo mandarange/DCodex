@@ -22,8 +22,16 @@ tmp/
 temp/
 logs/
 .dcodex/
-.omc/
 .omx/
+
+# oh-my-claudecode (OMC) — removed 2026-07-26. Never commit or push OMC artifacts.
+.omc/
+.omc-workspace
+.omc-config.json
+.omc-version.json
+**/.omc/
+hud/omc-hud*
+
 .codex/
 .agents/
 AGENTS.md

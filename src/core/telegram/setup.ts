@@ -1,3 +1,4 @@
+import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -8,6 +9,7 @@ import {
   runProcess,
   sha256,
   which,
+  writeBinaryAtomic,
   writeJsonAtomic
 } from '../fsx.js';
 import {
@@ -25,9 +27,10 @@ import {
   type RemoteMachineV1,
   type RemoteSessionIndexV1
 } from '../remote/index.js';
-import { TelegramBotApiClient } from './bot-api.js';
-import { isPositiveTelegramId, validateTelegramBotToken } from './config.js';
+import { probeTelegramBotReadiness, TelegramBotApiClient, TelegramBotApiError } from './bot-api.js';
+import { isPositiveTelegramId, telegramTokenFingerprint, validateTelegramBotToken } from './config.js';
 import { telegramHubPaths } from './hub.js';
+import { TelegramOwnerConflictError, TelegramOwnerLock } from './owner-lock.js';
 import type { TelegramHubConfigV1, TelegramUpdate } from './types.js';
 
 const KEYCHAIN_SERVICE = 'com.sneakoscope.telegram.bot';
@@ -50,6 +53,8 @@ export interface TelegramSetupInput {
   readonly globalRoot?: string;
   readonly api?: TelegramBotApiClient;
   readonly keychainWriter?: (token: string, service: string, account: string) => Promise<void>;
+  readonly keychainReader?: (service: string, account: string) => Promise<string | null>;
+  readonly keychainDeleter?: (service: string, account: string) => Promise<void>;
   readonly hostname?: string;
   readonly account?: string;
 }
@@ -85,101 +90,187 @@ export async function setupTelegramLocalCoding(input: TelegramSetupInput): Promi
   const rootIssue = validateAllowedRoot(projectRoot);
   if (rootIssue) throw new Error(`telegram_project_root_invalid:${rootIssue}`);
   const globalRoot = path.resolve(input.globalRoot ?? globalSksRoot());
-  const api = input.api ?? new TelegramBotApiClient(token, { timeoutMs: 12_000, maxRetries: 0 });
-  const bot = await api.call<{ id?: string | number; username?: string }>('getMe', {});
-  const pairing = explicitPair ?? await detectPrivateStart(api);
-  const account = input.account?.trim() || process.env.USER || os.userInfo().username || 'sks';
-  await (input.keychainWriter ?? writeTelegramKeychain)(token, KEYCHAIN_SERVICE, account);
+  const setupOwner = new TelegramOwnerLock({
+    lockPath: telegramHubPaths(globalRoot).owner,
+    tokenFingerprint: telegramTokenFingerprint(token)
+  });
+  try {
+    await setupOwner.acquire();
+  } catch (error: unknown) {
+    if (error instanceof TelegramOwnerConflictError) {
+      throw new Error('telegram_hub_must_be_stopped_before_setup');
+    }
+    throw error;
+  }
+  try {
+    return await setupTelegramLocalCodingLocked(input, token, explicitPair, projectRoot, globalRoot);
+  } finally {
+    await setupOwner.release();
+  }
+}
 
+async function setupTelegramLocalCodingLocked(
+  input: TelegramSetupInput,
+  token: string,
+  explicitPair: { readonly chatId: string; readonly userId: string } | null,
+  projectRoot: string,
+  globalRoot: string
+): Promise<TelegramSetupResult> {
+  const api = input.api ?? new TelegramBotApiClient(token, { timeoutMs: 12_000, maxRetries: 0 });
+  const readiness = await probeTelegramBotReadiness(api).catch(throwTelegramSetupApiError);
+  if (readiness.webhook_configured) {
+    throw new Error('telegram_webhook_conflict:remove_webhook_before_long_polling');
+  }
+  const detectedPair = explicitPair === null
+    ? await detectPrivateStart(api, readiness.bot.username, false).catch(throwTelegramSetupApiError)
+    : null;
+  const pairing = explicitPair ?? detectedPair!;
+  const account = input.account?.trim() || process.env.USER || os.userInfo().username || 'sks';
   const hostname = input.hostname ?? os.hostname();
   const machineId = `local-${sha256(hostname).slice(0, 12)}`;
   const projectId = `project-${sha256(projectRoot).slice(0, 12)}`;
   const sessionId = `telegram-${sha256(`${machineId}:${projectId}`).slice(0, 12)}`;
-  const bindingStore = new RemoteCodexSessionBindingStore(remoteCodexSessionBindingsPath(projectRoot));
-  const existingBinding = await bindingStore.find(sessionId);
-  const binding: RemoteCodexSessionBindingV1 = existingBinding && input.resetSession !== true
-    ? existingBinding
-    : await bindingStore.upsert({
-        session_id: sessionId,
-        machine_id: machineId,
-        project_id: projectId,
-        project_root: projectRoot,
-        codex_thread_id: null,
-        last_turn_id: null,
-        last_turn_status: null
-      });
-
+  const bindingPath = remoteCodexSessionBindingsPath(projectRoot);
   const machinePath = remoteMachineRegistryPath(globalRoot);
-  const registry = await upsertLocalMachine(machinePath, {
-    id: machineId,
-    display_name: `This Mac (${hostname})`.slice(0, 120),
-    transport: 'local',
-    allowed_roots: [projectRoot],
-    enabled: true
-  });
   const indexPath = remoteSessionIndexPath(projectRoot);
-  await upsertLocalTarget(indexPath, registry, {
-    machine_id: machineId,
-    project_id: projectId,
-    project_root: projectRoot
-  });
-
-  const config: TelegramHubConfigV1 = {
-    schema: 'sks.telegram-config.v1',
-    bot_token_ref: { type: 'keychain', service: KEYCHAIN_SERVICE, account },
-    paired_chat_ids: [pairing.chatId],
-    paired_user_ids: [pairing.userId],
-    long_poll_timeout_sec: 25,
-    owner_stale_ms: 60_000,
-    protect_content: true,
-    silent_notifications: false
-  };
   const configPath = telegramHubPaths(globalRoot).config;
-  await writeJsonAtomic(configPath, config);
+  const stateSnapshots = await Promise.all([
+    snapshotSetupFile(bindingPath),
+    snapshotSetupFile(machinePath),
+    snapshotSetupFile(indexPath),
+    snapshotSetupFile(configPath)
+  ]);
+  const keychainWriter = input.keychainWriter ?? writeTelegramKeychain;
+  const keychainReader = input.keychainReader
+    ?? (input.keychainWriter ? async () => null : readTelegramKeychain);
+  const keychainDeleter = input.keychainDeleter
+    ?? (input.keychainWriter
+      ? async () => { throw new Error('telegram_keychain_rollback_unavailable'); }
+      : deleteTelegramKeychain);
+  const previousToken = await keychainReader(KEYCHAIN_SERVICE, account);
+  const bindingStore = new RemoteCodexSessionBindingStore(bindingPath);
+  const existingBinding = await bindingStore.find(sessionId);
+  let credentialWriteAttempted = false;
+  try {
+    credentialWriteAttempted = true;
+    await keychainWriter(token, KEYCHAIN_SERVICE, account);
+    const binding: RemoteCodexSessionBindingV1 = existingBinding && input.resetSession !== true
+      ? existingBinding
+      : await bindingStore.upsert({
+          session_id: sessionId,
+          machine_id: machineId,
+          project_id: projectId,
+          project_root: projectRoot,
+          codex_thread_id: null,
+          last_turn_id: null,
+          last_turn_status: null
+        });
 
-  return {
-    schema: 'sks.telegram-setup.v1',
-    ok: true,
-    bot: {
-      id: bot?.id === undefined ? null : String(bot.id),
-      username: bot?.username ? String(bot.username) : null
-    },
-    pairing: {
-      chat_id: pairing.chatId,
-      user_id: pairing.userId,
-      detected: explicitPair === null
-    },
-    machine_id: machineId,
-    project_id: projectId,
-    project_root: projectRoot,
-    session_id: sessionId,
-    codex_thread_id: binding.codex_thread_id,
-    codex_thread_state: binding.codex_thread_id ? 'ready' : 'pending_first_turn',
-    token_storage: 'macos-keychain',
-    config_path: configPath,
-    machine_registry_path: machinePath,
-    session_index_path: indexPath
-  };
+    const registry = await upsertLocalMachine(machinePath, {
+      id: machineId,
+      display_name: `This Mac (${hostname})`.slice(0, 120),
+      transport: 'local',
+      allowed_roots: [projectRoot],
+      enabled: true
+    });
+    await upsertLocalTarget(indexPath, registry, {
+      machine_id: machineId,
+      project_id: projectId,
+      project_root: projectRoot
+    });
+
+    const config: TelegramHubConfigV1 = {
+      schema: 'sks.telegram-config.v1',
+      bot_token_ref: { type: 'keychain', service: KEYCHAIN_SERVICE, account },
+      paired_chat_ids: [pairing.chatId],
+      paired_user_ids: [pairing.userId],
+      long_poll_timeout_sec: 25,
+      owner_stale_ms: 60_000,
+      protect_content: true,
+      silent_notifications: false
+    };
+    await writeJsonAtomic(configPath, config);
+    if (detectedPair) {
+      await acknowledgePrivateStart(api, detectedPair.updateId).catch(throwTelegramSetupApiError);
+    }
+
+    return {
+      schema: 'sks.telegram-setup.v1',
+      ok: true,
+      bot: readiness.bot,
+      pairing: {
+        chat_id: pairing.chatId,
+        user_id: pairing.userId,
+        detected: explicitPair === null
+      },
+      machine_id: machineId,
+      project_id: projectId,
+      project_root: projectRoot,
+      session_id: sessionId,
+      codex_thread_id: binding.codex_thread_id,
+      codex_thread_state: binding.codex_thread_id ? 'ready' : 'pending_first_turn',
+      token_storage: 'macos-keychain',
+      config_path: configPath,
+      machine_registry_path: machinePath,
+      session_index_path: indexPath
+    };
+  } catch (error: unknown) {
+    const rollbackErrors: string[] = [];
+    for (const snapshot of [...stateSnapshots].reverse()) {
+      await restoreSetupFile(snapshot).catch((rollbackError: unknown) => {
+        rollbackErrors.push(publicSetupError(rollbackError));
+      });
+    }
+    if (credentialWriteAttempted) {
+      const restoreCredential = previousToken === null
+        ? keychainDeleter(KEYCHAIN_SERVICE, account)
+        : keychainWriter(previousToken, KEYCHAIN_SERVICE, account);
+      await restoreCredential.catch((rollbackError: unknown) => {
+        rollbackErrors.push(publicSetupError(rollbackError));
+      });
+    }
+    if (rollbackErrors.length > 0) {
+      throw new Error(`telegram_setup_rollback_failed:${publicSetupError(error)}:${rollbackErrors.join(',')}`);
+    }
+    throw error;
+  }
 }
 
-export async function detectPrivateStart(api: Pick<TelegramBotApiClient, 'getUpdates'>): Promise<{
+export async function detectPrivateStart(
+  api: Pick<TelegramBotApiClient, 'getUpdates'>,
+  botUsername: string | null = null,
+  consume = true
+): Promise<{
   readonly chatId: string;
   readonly userId: string;
+  readonly updateId: number;
 }> {
   const updates = await api.getUpdates({ timeout: 0, allowed_updates: ['message'] });
-  const match = [...updates].reverse().find(isPrivateStart);
+  const candidates = updates.filter((update) => isPrivateStart(update, botUsername));
+  const identities = new Set(candidates.map((update) => (
+    `${String(update.message!.chat.id)}:${String(update.message!.from!.id)}`
+  )));
+  if (identities.size > 1) {
+    throw new Error('telegram_pairing_ambiguous:retry_with_explicit_private_chat_and_user_ids');
+  }
+  const match = candidates.at(-1);
   if (!match?.message?.from) {
     throw new Error('telegram_pairing_start_not_found:send_/start_to_the_bot_then_retry');
   }
+  if (consume) await acknowledgePrivateStart(api, match.update_id);
+  return {
+    chatId: String(match.message.chat.id),
+    userId: String(match.message.from.id),
+    updateId: match.update_id
+  };
+}
+
+async function acknowledgePrivateStart(api: Pick<TelegramBotApiClient, 'getUpdates'>, updateId: number): Promise<void> {
   await api.getUpdates({
-    offset: match.update_id + 1,
+    offset: updateId + 1,
     timeout: 0,
     allowed_updates: ['message']
   });
-  return {
-    chatId: String(match.message.chat.id),
-    userId: String(match.message.from.id)
-  };
 }
 
 export async function writeTelegramKeychain(token: string, service: string, account: string): Promise<void> {
@@ -191,6 +282,64 @@ export async function writeTelegramKeychain(token: string, service: string, acco
     maxOutputBytes: 8 * 1024
   });
   if (result.code !== 0 || result.timedOut) throw new Error('telegram_keychain_store_failed');
+}
+
+export async function readTelegramKeychain(service: string, account: string): Promise<string | null> {
+  if (process.platform !== 'darwin') throw new Error('telegram_keychain_requires_macos');
+  const result = await runProcess('/usr/bin/security', [
+    'find-generic-password', '-w', '-s', service, '-a', account
+  ], { timeoutMs: 5_000, maxOutputBytes: 8 * 1024 });
+  if (result.code === 44) return null;
+  if (result.code !== 0 || result.timedOut) throw new Error('telegram_keychain_snapshot_failed');
+  return validateTelegramBotToken(result.stdout.trim());
+}
+
+export async function deleteTelegramKeychain(service: string, account: string): Promise<void> {
+  if (process.platform !== 'darwin') throw new Error('telegram_keychain_requires_macos');
+  const result = await runProcess('/usr/bin/security', [
+    'delete-generic-password', '-s', service, '-a', account
+  ], { timeoutMs: 5_000, maxOutputBytes: 8 * 1024 });
+  if (result.code !== 0 && result.code !== 44) throw new Error('telegram_keychain_delete_failed');
+  if (result.timedOut) throw new Error('telegram_keychain_delete_failed');
+}
+
+interface TelegramSetupFileSnapshot {
+  readonly file: string;
+  readonly contents: Buffer | null;
+  readonly mode: number | null;
+}
+
+async function snapshotSetupFile(file: string): Promise<TelegramSetupFileSnapshot> {
+  const stat = await fsp.lstat(file).catch((error: unknown) => {
+    if (errorCode(error) === 'ENOENT') return null;
+    throw error;
+  });
+  if (stat === null) return { file, contents: null, mode: null };
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('telegram_setup_state_snapshot_invalid');
+  return {
+    file,
+    contents: await fsp.readFile(file),
+    mode: stat.mode & 0o777
+  };
+}
+
+async function restoreSetupFile(snapshot: TelegramSetupFileSnapshot): Promise<void> {
+  if (snapshot.contents === null) {
+    await fsp.unlink(snapshot.file).catch((error: unknown) => {
+      if (errorCode(error) !== 'ENOENT') throw error;
+    });
+    return;
+  }
+  await writeBinaryAtomic(snapshot.file, snapshot.contents);
+  if (snapshot.mode !== null) await fsp.chmod(snapshot.file, snapshot.mode);
+}
+
+function publicSetupError(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error))
+    .replace(/\b\d{5,}:[A-Za-z0-9_-]{20,}\b/g, '[redacted]')
+    .replace(/(?:\/Users|\/home)\/[^\s]+/g, '[path-redacted]')
+    .replace(/[:,]+/g, '_')
+    .slice(0, 160);
 }
 
 async function upsertLocalMachine(file: string, machine: RemoteMachineV1): Promise<RemoteMachineRegistryV1> {
@@ -275,10 +424,27 @@ function normalizeExplicitPair(chatId: string | null | undefined, userId: string
   return { chatId: chat, userId: user };
 }
 
-function isPrivateStart(update: TelegramUpdate): boolean {
+function isPrivateStart(update: TelegramUpdate, botUsername: string | null): boolean {
   const message = update.message;
   if (!message || message.chat.type !== 'private' || !message.from) return false;
-  return /^\/start(?:@\w+)?(?:\s|$)/i.test(String(message.text || '').trim());
+  const command = /^\/start(?:@([A-Za-z0-9_]+))?(?:\s|$)/i.exec(String(message.text || '').trim());
+  if (!command) return false;
+  const addressedBot = command[1];
+  return !addressedBot || (botUsername !== null && addressedBot.toLowerCase() === botUsername.toLowerCase());
+}
+
+function throwTelegramSetupApiError(error: unknown): never {
+  if (error instanceof TelegramBotApiError && (error.errorCode === 401 || error.errorCode === 404)) {
+    throw new Error('telegram_bot_auth_failed');
+  }
+  if (error instanceof TelegramBotApiError && error.errorCode === 409) {
+    throw new Error('telegram_409_conflict:stop_other_poller_and_retry');
+  }
+  throw error;
+}
+
+function errorCode(error: unknown): string {
+  return error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
 }
 
 export function telegramSetupKeychainReference(account = process.env.USER || os.userInfo().username || 'sks') {

@@ -49,15 +49,16 @@ export async function loadTelegramConfig(file: string): Promise<TelegramHubConfi
 
 export async function resolveTelegramBotToken(
   ref: TelegramSecretRef,
-  options: { run?: typeof runProcess } = {}
+  options: { run?: typeof runProcess; timeoutMs?: number } = {}
 ): Promise<string> {
   if (ref.type === 'keychain') {
     if (!ref.service || !ref.account) throw new Error('telegram_keychain_reference_incomplete');
     if (process.platform !== 'darwin') throw new Error('telegram_keychain_requires_macos');
     const run = options.run ?? runProcess;
+    const timeoutMs = Math.max(500, Math.min(5_000, options.timeoutMs ?? 5_000));
     const result = await run('/usr/bin/security', [
       'find-generic-password', '-w', '-s', ref.service, '-a', ref.account
-    ], { timeoutMs: 5_000, maxOutputBytes: 8 * 1024 });
+    ], { timeoutMs, maxOutputBytes: 8 * 1024 });
     if (result.code !== 0 || result.timedOut) throw new Error('telegram_keychain_lookup_failed');
     return validateTelegramBotToken(result.stdout.trim());
   }
@@ -102,7 +103,7 @@ function nonEmpty(value: unknown): boolean {
 }
 
 function positiveStringIdArray(value: unknown): boolean {
-  return Array.isArray(value) && value.length > 0 && value.every(isPositiveTelegramId);
+  return Array.isArray(value) && value.length === 1 && value.every(isPositiveTelegramId);
 }
 
 function pairingFieldMissing(value: Record<string, unknown>, field: 'paired_chat_ids' | 'paired_user_ids'): boolean {

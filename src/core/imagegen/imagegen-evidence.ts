@@ -13,7 +13,9 @@
  *   has *selected* in `config.toml`, through that provider's Responses endpoint
  *   with the same Codex `image_generation` tool. Not the Codex App surface, but
  *   not a detour either: it is the provider Codex itself is configured to use,
- *   and under codex-lb it is the only surface that answers.
+ *   and under codex-lb it is the only surface that answers. Only completed
+ *   response output or a final `response.output_item.done` result qualifies;
+ *   streamed partial preview frames never count as evidence.
  * - `non_codex_api_fallback` — an explicitly requested call to a different
  *   vendor's API (`OPENAI_API_KEY` against api.openai.com, or codex-lb enabled
  *   as a fallback while another provider is selected). Real bytes, wrong

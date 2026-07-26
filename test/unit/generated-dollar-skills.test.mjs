@@ -64,8 +64,11 @@ test('generated QA and Computer Use skills use Chrome Extension first for web ve
   assert.match(cu, /native macOS, desktop-app, OS-settings, and non-web visual tasks/);
   assert.match(cu, /Web\/browser\/webapp verification must use Codex Chrome Extension first/);
 
-  const ux = await fs.readFile(path.join(root, '.agents', 'skills', 'sks-ux-review', 'SKILL.md'), 'utf8');
+  const ux = await fs.readFile(path.join(root, '.agents', 'skills', 'sks-image-ux-review', 'SKILL.md'), 'utf8');
   assert.match(ux, /web\/browser\/webapp capture must pass the Codex Chrome Extension readiness gate first/);
+  for (const duplicate of ['sks-ux-review', 'sks-visual-review', 'sks-ui-ux-review']) {
+    await assert.rejects(fs.access(path.join(root, '.agents', 'skills', duplicate)));
+  }
 });
 
 test('generated DB skill uses route-owned safety artifacts and never revives sks db', async () => {

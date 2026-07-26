@@ -75,6 +75,36 @@ export function imageUxReviewGateAllowsReferenceCloseout(gate: any = {}) {
     && gate?.full_review_passed !== true;
 }
 
+export function imageUxReviewCommandOutcome(gate: any = {}, proofOk = false, opts: any = {}) {
+  const reviewReportCompleted = gate?.review_report_completed === true;
+  const reviewOnlyCompletionAllowed = opts.allowReviewOnlyCompletion === true;
+  const reviewOnlyCompleted = reviewOnlyCompletionAllowed && reviewReportCompleted;
+  const gateAndProofPassed = gate?.passed === true && proofOk === true;
+  const fullReviewPassed = gate?.full_review_passed === true && gateAndProofPassed;
+  return {
+    ok: gateAndProofPassed || reviewOnlyCompleted,
+    status: fullReviewPassed
+      ? 'passed'
+      : reviewOnlyCompleted
+        ? 'review_completed'
+        : gateAndProofPassed
+          ? gate?.status || 'passed'
+          : 'blocked',
+    completion_scope: fullReviewPassed
+      ? 'full_review_and_optional_fix_verification'
+      : reviewOnlyCompleted
+        ? 'capture_imagegen_ocr_and_ux_report'
+        : null,
+    review_report_completed: reviewReportCompleted,
+    review_only_completion_allowed: reviewOnlyCompletionAllowed,
+    full_review_passed: gate?.full_review_passed === true,
+    requires_human_review: gate?.requires_human_review === true,
+    unresolved_p0_p1_count: Number(gate?.unresolved_p0_p1_count || 0),
+    safety_blockers: Array.isArray(gate?.blockers) ? gate.blockers : [],
+    proof_ok: proofOk === true
+  };
+}
+
 function cleanText(value: any, fallback: any = '') {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   return text || fallback;
@@ -359,6 +389,17 @@ export function buildImageUxIterationReport(
   fixLoop: any = runImageUxFixLoop(issueLedger, fixTaskPlan),
   recapturePlan: any = buildRecapturePlan(fixLoop)
 ) {
+  const generatedImage = (generatedReviewLedger.generated_review_images || [])[0] || null;
+  const issues = Array.isArray(issueLedger.issues) ? issueLedger.issues : [];
+  const basedOnGeneratedImage = issueLedger.extracted_from_generated_callout === true
+    && issues.length > 0
+    && issues.every((issue: any) => issue.extracted_from_generated_image === true
+      && issue.generated_image_sha256 === generatedImage?.sha256);
+  const requiresHumanReview = (fixTaskPlan.tasks || []).some((task: any) => task.requires_human_review === true);
+  const severityCounts = Object.fromEntries(['P0', 'P1', 'P2', 'P3'].map((severity) => [
+    severity,
+    issues.filter((issue: any) => issue.severity === severity).length
+  ]));
   const passed = generatedReviewLedger.passed === true
     && issueLedger.passed === true
     && fixLoop.passed === true
@@ -370,6 +411,43 @@ export function buildImageUxIterationReport(
     schema_version: 2,
     created_at: nowIso(),
     contract_hash: contract.sealed_hash || null,
+    report_type: 'ux_ui_change_report',
+    review_report_completed: generatedReviewLedger.passed === true
+      && issueLedger.validation?.ok === true
+      && basedOnGeneratedImage,
+    full_review_passed: passed,
+    requires_human_review: requiresHumanReview,
+    unresolved_p0_p1_count: Number(issueLedger.blocking_issue_count || 0),
+    analysis_basis: {
+      primary_evidence: 'generated_annotated_review_image',
+      generated_image_path: generatedImage?.path || null,
+      generated_image_sha256: generatedImage?.sha256 || null,
+      generated_image_id: generatedImage?.id || null,
+      source_screen_id: generatedImage?.source_screen_id || 'screen-1',
+      issue_extraction_source: issueLedger.extraction_source || IMAGE_UX_REVIEW_GENERATED_REVIEW_LEDGER_ARTIFACT,
+      based_on_generated_image: basedOnGeneratedImage
+    },
+    executive_summary: {
+      issue_count: issues.length,
+      severity_counts: severityCounts,
+      highest_priority: issues.find((issue: any) => ['P0', 'P1'].includes(issue.severity))?.severity
+        || issues[0]?.severity
+        || null
+    },
+    recommendations: issues.map((issue: any) => ({
+      issue_id: issue.id,
+      callout_id: issue.callout_id,
+      severity: issue.severity,
+      title: issue.title,
+      observed_problem: issue.detail,
+      likely_cause: issue.likely_cause,
+      recommended_ux_ui_change: issue.fix_action,
+      target_surface: issue.target_surface,
+      generated_image_bbox: issue.bbox,
+      generated_image_sha256: issue.generated_image_sha256,
+      confidence: issue.confidence,
+      verification_status: issue.fix_verification_status
+    })),
     loop_policy: {
       max_full_surface_passes: policy.max_full_surface_passes,
       max_screen_retries: policy.max_screen_retries,
@@ -436,6 +514,15 @@ export function defaultImageUxReviewGate(contract: any = {}, parts: any = {}) {
   const wrongnessChecked = parts.wrongnessChecked === true || generatedReviewLedger.blockers?.length === 0;
   const honestModeEvidence = parts.honestModeEvidence || null;
   const honestModeComplete = parts.honestModeComplete === true && (honestModeEvidence?.ok === true || parts.honestModeEvidenceRequired !== true);
+  const requiresHumanReview = (fixTaskPlan.tasks || []).some((task: any) => task.requires_human_review === true);
+  const reviewReportCompleted = realSourceScreenshotPresent
+    && officialOrUserScreenshotSource
+    && generatedReviewLedger.passed === true
+    && realGeneratedCount > 0
+    && calloutExtractionSchemaValid
+    && issueLedger.extracted_from_generated_callout === true
+    && iterationReport.review_report_completed === true
+    && iterationReport.analysis_basis?.based_on_generated_image === true;
   const referenceCloseoutPassed = generatedImageUnavailable
     && realSourceScreenshotPresent
     && officialOrUserScreenshotSource
@@ -456,6 +543,10 @@ export function defaultImageUxReviewGate(contract: any = {}, parts: any = {}) {
     status: 'blocked',
     verified_level: 'blocked',
     full_review_passed: false,
+    review_report_completed: reviewReportCompleted,
+    completion_scope: reviewReportCompleted ? 'capture_imagegen_ocr_and_ux_report' : null,
+    requires_human_review: requiresHumanReview,
+    unresolved_p0_p1_count: Number(issueLedger.blocking_issue_count || 0),
     reference_only: false,
     real_source_screenshot_present: realSourceScreenshotPresent,
     computer_use_or_user_screenshot_source: officialOrUserScreenshotSource,
@@ -517,8 +608,18 @@ export function defaultImageUxReviewGate(contract: any = {}, parts: any = {}) {
   return {
     ...gate,
     passed: fullPassed || referenceCloseoutPassed,
-    status: fullPassed ? 'passed' : referenceCloseoutPassed ? 'verified_partial_reference' : 'blocked',
-    verified_level: fullPassed ? 'verified' : referenceCloseoutPassed ? 'verified_partial' : 'blocked',
+    status: fullPassed
+      ? 'passed'
+      : referenceCloseoutPassed
+        ? 'verified_partial_reference'
+        : reviewReportCompleted
+          ? 'review_completed'
+          : 'blocked',
+    verified_level: fullPassed
+      ? 'verified'
+      : referenceCloseoutPassed || reviewReportCompleted
+        ? 'verified_partial'
+        : 'blocked',
     full_review_passed: fullPassed,
     reference_only: referenceCloseoutPassed
   };
@@ -765,6 +866,10 @@ export async function buildImageUxCalloutExtractionReport(root: string, extracti
     schema: 'sks.image-ux-callout-extraction-report.v1',
     created_at: nowIso(),
     provider: extraction.provider || opts.provider || 'unknown',
+    analysis_input: 'generated_annotated_review_image',
+    generated_image_is_primary_evidence: true,
+    source_screenshot_used_for_extraction: false,
+    generated_image_id: opts.generatedImageId || ledger.generated_image_id || issues[0]?.generated_review_image_id || null,
     generated_image_path: generatedPath,
     generated_image_sha256: generatedSha,
     source_screenshot_sha256: sourceSha,

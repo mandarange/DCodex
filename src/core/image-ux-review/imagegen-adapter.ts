@@ -17,6 +17,7 @@ import { writeImageArtifactPathContract } from '../image/image-artifact-path-con
 import { registerImageArtifact } from '../image/image-artifact-registry.js';
 
 const DEFAULT_OPENAI_IMAGE_EDITS_ENDPOINT = 'https://api.openai.com/v1/images/edits';
+export const DEFAULT_IMAGEGEN_FETCH_TIMEOUT_MS = 180000;
 
 export interface ImageUxReviewImagegenAdapter {
   surface: 'codex_app_imagegen' | 'openai_images_api' | 'fake_imagegen_adapter';
@@ -51,7 +52,7 @@ export interface ImageUxReviewImagegenResult {
 
 export function buildCalloutPrompt(sourceScreenId: string, context: any = {}) {
   return [
-    'Review this UI screenshot as a senior product design lead.',
+    'Review this UI screenshot as a senior Toss UI/UX product designer.',
     `Screenshot source id: ${sourceScreenId}.`,
     'Output must be a new image artifact, not prose.',
     'Text-only response is invalid.',
@@ -420,7 +421,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
           status: 'blocked',
           blocker: auth.blocker,
           setup_guidance: auth.auth_source === 'CODEX_LB_API_KEY'
-            ? 'CODEX_LB_API_KEY is only a non-Codex API fallback when explicitly enabled; it does not satisfy Codex App $imagegen evidence. Attach a real Codex App $imagegen output image for full SKS verification.'
+            ? 'Repair the selected codex-lb credential binding. Completed output from a selected provider can satisfy full evidence; codex-lb used only as a fallback while another provider is selected cannot.'
             : 'Set OPENAI_API_KEY only for an explicit non-Codex Images API fallback, or attach a real Codex App $imagegen output image for full SKS verification.',
           local_only: true
         };
@@ -511,6 +512,8 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
             output_id: meta.output_id,
             output_source: responsesOutputSource,
             image_output_recovered_from_stream: payload?.image_output_recovered_from_stream === true,
+            image_output_provenance: payload?.image_output_provenance || 'response.output',
+            image_output_partial_frame: false,
             image_artifact_path_contract: imageContract?.artifact_path || null,
             dimensions: { width: meta.width, height: meta.height, format: meta.format },
             latency_ms: Date.now() - started,
@@ -662,8 +665,9 @@ export async function generateGptImage2CalloutReview(input: ImageUxReviewImagege
 }
 
 function codexLbTargetInputs(source: any = {}) {
-  const inputs: { home?: string; env?: NodeJS.ProcessEnv; configText?: string } = {};
+  const inputs: { home?: string; codexHome?: string; env?: NodeJS.ProcessEnv; configText?: string } = {};
   if (source?.home) inputs.home = source.home;
+  if (source?.codexHome) inputs.codexHome = source.codexHome;
   if (source?.env) inputs.env = source.env;
   if (typeof source?.configText === 'string') inputs.configText = source.configText;
   return inputs;
@@ -684,16 +688,26 @@ export function imagegenCapabilityBlocker(surface = 'Codex App $imagegen') {
     blocker: 'imagegen_capability_missing',
     surface,
     model: 'gpt-image-2',
-    guidance: 'Run the request in Codex App with $imagegen/gpt-image-2 and attach the generated annotated review image path. OPENAI_API_KEY or CODEX_LB_API_KEY may be used only for an explicitly requested non-Codex API fallback, and that fallback does not satisfy Codex App imagegen evidence. SKS must not fabricate or substitute a text-only review.'
+    guidance: 'Run the request with gpt-image-2 through Codex App $imagegen or a selected, ready codex-lb provider and bind the completed generated image path. OPENAI_API_KEY, or codex-lb used while another provider is selected, remains non-Codex fallback evidence. SKS must not fabricate or substitute a text-only review.'
   };
 }
 
 async function resolveImagesApiAuth(opts: any = {}) {
+  const codexLb = opts.codexLb?.available === true ? opts.codexLb : null;
+  const target = opts.codexLbTarget || (codexLb
+    ? await resolveCodexLbImagegenTarget(codexLbTargetInputs(opts)).catch(() => null)
+    : null);
+  // Provider selection is authoritative. A separately exported OPENAI_API_KEY
+  // must not reroute a codex-lb session to api.openai.com, change the evidence
+  // class, and leave the selected proxy unused.
+  if (target?.selected === true) return codexLbImagesApiAuth(opts, codexLb, target);
+
   const openAiKey = String(opts.apiKey || process.env.OPENAI_API_KEY || '').trim();
   if (openAiKey) {
     return {
       apiKey: openAiKey,
       auth_source: 'OPENAI_API_KEY',
+      api_key_source: null,
       responses_model: responsesImagegenModel(opts),
       responses_model_source: responsesImagegenModel(opts) ? 'explicit' : null,
       endpoint: imageEditsEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
@@ -701,11 +715,11 @@ async function resolveImagesApiAuth(opts: any = {}) {
       blocker: null
     };
   }
-  const codexLb = opts.codexLb?.available === true ? opts.codexLb : null;
   if (!codexLb) {
     return {
       apiKey: null,
       auth_source: null,
+      api_key_source: null,
       responses_model: responsesImagegenModel(opts),
       responses_model_source: null,
       endpoint: imageEditsEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
@@ -713,13 +727,16 @@ async function resolveImagesApiAuth(opts: any = {}) {
       blocker: 'openai_api_key_missing'
     };
   }
-  const envKey = codexLb.env_key || 'CODEX_LB_API_KEY';
   // The fingerprint-bound loader, not raw process.env: a stale exported
   // CODEX_LB_API_KEY otherwise shadows the SKS-managed env file and the proxy
   // answers 401 while every capability probe still reports "ready".
-  const target = opts.codexLbTarget || await resolveCodexLbImagegenTarget(codexLbTargetInputs(opts)).catch(() => null);
+  return codexLbImagesApiAuth(opts, codexLb, target);
+}
+
+function codexLbImagesApiAuth(opts: any, codexLb: any, target: any) {
+  const envKey = codexLb?.env_key || 'CODEX_LB_API_KEY';
   const codexLbKey = String(opts.codexLbApiKey || target?.api_key || '').trim();
-  const baseUrl = target?.base_url || codexLb.base_url || opts.baseUrl || '';
+  const baseUrl = target?.base_url || codexLb?.base_url || opts.baseUrl || '';
   return {
     apiKey: codexLbKey || null,
     auth_source: envKey,
@@ -745,12 +762,12 @@ function responsesEndpoint(baseUrl: any = '') {
 }
 
 function responsesImagegenModel(opts: any = {}) {
-  return String(opts.responsesModel || process.env.SKS_IMAGEGEN_RESPONSES_MODEL || process.env.OPENAI_MODEL || '').trim();
+  return String(opts.responsesModel || process.env.SKS_IMAGEGEN_RESPONSES_MODEL || '').trim();
 }
 
 function imagegenFetchTimeoutMs(opts: any = {}) {
-  const value = Number(opts.fetchTimeoutMs || process.env.SKS_IMAGEGEN_FETCH_TIMEOUT_MS || 90000);
-  return Number.isFinite(value) && value > 0 ? value : 90000;
+  const value = Number(opts.fetchTimeoutMs || process.env.SKS_IMAGEGEN_FETCH_TIMEOUT_MS || DEFAULT_IMAGEGEN_FETCH_TIMEOUT_MS);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_IMAGEGEN_FETCH_TIMEOUT_MS;
 }
 
 async function fetchWithTimeout(url: any, init: any, timeoutMs: number) {
@@ -763,7 +780,7 @@ async function fetchWithTimeout(url: any, init: any, timeoutMs: number) {
   }
 }
 
-async function readResponsePayload(response: Response, timeoutMs = 90000) {
+async function readResponsePayload(response: Response, timeoutMs = DEFAULT_IMAGEGEN_FETCH_TIMEOUT_MS) {
   const text = await textWithTimeout(response, timeoutMs);
   if (!text) return {};
   try {
@@ -791,8 +808,10 @@ async function textWithTimeout(response: Response, timeoutMs: number) {
 
 
 function findResponsesImageGenerationOutput(payload: any): { b64: string | null, id: string | null } | null {
+  if (payload?.image_output_partial_frame === true) return null;
   for (const output of Array.isArray(payload?.output) ? payload.output : []) {
     if (String(output?.type || '') === 'image_generation_call') {
+      if (String(output?.status || '') === 'partial') continue;
       const b64 = typeof output?.result === 'string' ? output.result : output?.result?.b64_json || output?.b64_json || null;
       if (b64) return { b64: String(b64), id: output?.id || payload?.id || null };
     }
@@ -908,6 +927,9 @@ function summarizeImagegenPayload(payload: any) {
     model: payload?.model || null,
     error_type: payload?.error?.type || null,
     error_code: payload?.error?.code || null,
+    image_output_partial_frame: payload?.image_output_partial_frame === true,
+    partial_image_output_present: payload?.partial_image_output_present === true,
+    image_output_provenance: payload?.image_output_provenance || null,
     output_count: outputs.length,
     output: outputs.slice(0, 8).map((output: any) => ({
       id: output?.id || null,

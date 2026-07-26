@@ -21,7 +21,7 @@ import {
 } from '../managed-path-safety.js';
 import { collectNestedProjectRoots } from '../doctor/current-project-guidance-nested.js';
 import { coreEngineeringDirectiveReferenceText, engineeringSanityPolicyText } from '../lean-engineering-policy.js';
-import { AWESOME_DESIGN_MD_REFERENCE, CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_ONLY_POLICY, CODEX_IMAGEGEN_EVIDENCE_SOURCE, CODEX_IMAGEGEN_REQUIRED_POLICY, CODEX_WEB_VERIFICATION_POLICY, DEFAULT_CODEX_APP_PLUGINS, DESIGN_SYSTEM_SSOT, DOLLAR_COMMANDS, DOLLAR_SKILL_NAMES, FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, GETDESIGN_REFERENCE, IMAGEGEN_SOCIAL_SOURCE_POLICY, LEGACY_DOLLAR_SKILL_NAMES, OPENAI_CHATGPT_IMAGES_2_DOC_URL, OPENAI_GPT_IMAGE_2_MODEL_DOC_URL, OPENAI_IMAGE_GENERATION_DOC_URL, PPT_CONDITIONAL_SKILL_ALLOWLIST, PPT_PIPELINE_MCP_ALLOWLIST, PPT_PIPELINE_SKILL_ALLOWLIST, RECOMMENDED_SKILLS, RESERVED_CODEX_PLUGIN_SKILL_NAMES, SOLUTION_SCOUT_SKILL_NAME, chatCaptureIntakeText, context7ConfigToml, getdesignReferencePolicyText, imageUxReviewPipelinePolicyText, outcomeRubricPolicyText, pptPipelineAllowlistPolicyText, productDesignPluginPolicyText, speedLanePolicyText, stackCurrentDocsPolicyText, triwikiContextTrackingText, triwikiStagePolicyText } from '../routes.js';
+import { AWESOME_DESIGN_MD_REFERENCE, CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_ONLY_POLICY, CODEX_IMAGEGEN_EVIDENCE_SOURCE, CODEX_IMAGEGEN_REQUIRED_POLICY, CODEX_WEB_VERIFICATION_POLICY, DEFAULT_CODEX_APP_PLUGINS, DESIGN_SYSTEM_SSOT, DOLLAR_COMMANDS, DOLLAR_SKILL_NAMES, FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, GETDESIGN_REFERENCE, IMAGEGEN_SOCIAL_SOURCE_POLICY, LEGACY_DOLLAR_SKILL_NAMES, OPENAI_CHATGPT_IMAGES_2_DOC_URL, OPENAI_GPT_IMAGE_2_MODEL_DOC_URL, OPENAI_IMAGE_GENERATION_DOC_URL, PPT_CONDITIONAL_SKILL_ALLOWLIST, PPT_PIPELINE_MCP_ALLOWLIST, PPT_PIPELINE_SKILL_ALLOWLIST, RECOMMENDED_SKILLS, RESERVED_CODEX_PLUGIN_SKILL_NAMES, SOLUTION_SCOUT_SKILL_NAME, chatCaptureIntakeText, context7ConfigToml, getdesignReferencePolicyText, outcomeRubricPolicyText, pptPipelineAllowlistPolicyText, productDesignPluginPolicyText, speedLanePolicyText, stackCurrentDocsPolicyText, triwikiContextTrackingText, triwikiStagePolicyText } from '../routes.js';
 import { prefixKnownSksDollarReferences, sksPrefixedSkillName } from '../routes/dollar-prefix.js';
 import { escapeRegExp } from '../text/regex.js';
 
@@ -31,6 +31,12 @@ const GENERATED_PRUNE_POLICY = 'remove_previous_sks_generated_paths_absent_from_
 const REFLECTION_MEMORY_PATH = '.sneakoscope/memory/q2_facts/post-route-reflection.md';
 const MANAGED_SKILL_MARKER_RE = /BEGIN SKS (?:IMMUTABLE CORE|MANAGED) SKILL/;
 const FORGE_SKILL_MARKER_RE = /BEGIN SKS FORGE SKILL/;
+const RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIASES = [
+  'sks-ux-review',
+  'sks-visual-review',
+  'sks-ui-ux-review'
+] as const;
+const RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIAS_SET = new Set<string>(RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIASES);
 export const REMOVED_SKS_SKILL_NAMES = [
   'old-workflow',
   'team-legacy',
@@ -97,7 +103,6 @@ function reflectionInstructionText(commandPrefix: any = 'sks') {
 async function installOfficialSkills(root: any) {
   const quarantinedUserCollisions: string[] = [];
   const quarantinedManifestCollisions = await prepareReservedSkillManifestsForWrite(root);
-  const imageUxReviewSkill = (name: any) => `---\nname: ${name}\ndescription: $Image-UX-Review/$UX-Review imagegen/gpt-image-2 annotated UI/UX review loop.\n---\n\nUse only for $Image-UX-Review, $UX-Review, $visual-review, or $ui-ux-review UI/UX review requests. ${imageUxReviewPipelinePolicyText()} Route start must check Codex App imagegen capability and run the SKS imagegen repair loop once; if $imagegen/gpt-image-2 is still unavailable, stop with codex_imagegen_unavailable instead of doing text-only review or direct API substitution. Core loop: capture or attach source UI screenshots, then invoke Codex App $imagegen with gpt-image-2 to create a new generated annotated review image from each source screenshot, then analyze the generated review image with vision/OCR into image-ux-issue-ledger.json, then apply only requested safe fixes and recheck changed screens. Text-only screenshot critique cannot satisfy full verification; missing generated annotated review images keep full image-ux-review-gate.json verification blocked, but may close verified_partial/reference-only when source screenshots plus hashes, docs evidence, source Image Voxel anchors, and Honest Mode evidence exist. For live web/browser/webapp capture use Codex Chrome Extension first and halt if it is not installed/enabled; use Codex Computer Use only for native Mac/non-web app screens. Required artifacts: image-ux-review-policy.json, image-ux-screen-inventory.json, image-ux-generated-review-ledger.json, image-ux-issue-ledger.json, image-ux-iteration-report.json, image-ux-review-gate.json. Finish with reflection and Honest Mode.\n`;
   const canonicalMadSksSqlPlanePolicy = madSksSqlPlanePolicyText()
     .replace(/^---[\s\S]*?---\s*/, '')
     .trim();
@@ -148,10 +153,6 @@ async function installOfficialSkills(root: any) {
     'gx-visual-validate': `---\nname: gx-visual-validate\ndescription: Validate render metadata against vgraph.json and beta.json.\n---\n\nRun sks gx validate and drift; fail stale or incomplete hashes, nodes, edges, invariants, or anchors.\n`,
     'turbo-context-pack': `---\nname: turbo-context-pack\ndescription: Build ultra-low-token context packet with Q4 bits, Q3 tags, top-K claims, and minimal evidence.\n---\n\nDefault to Q4/Q3 plus TriWiki RGBA anchors and attention.use_first. Add Q2/Q1 only when needed or when attention.hydrate_first says source hydration is required. Keep id, hash, path, and coordinate tuple for hydration.\n`,
     'performance-evaluator': `---\nname: performance-evaluator\ndescription: Evaluate SKS performance, evidence-backed token usage, serialized-size proxies, accuracy-proxy, context-compression, or workflow improvements.\n---\n\nUse sks eval run/compare before claims. Treat serialized_size_bytes as a deterministic non-token proxy. Claim token savings only when actual baseline and candidate token counts include an evidence source; otherwise report token savings as not measured. Report accuracy_delta/proxy, required_recall, support, and meaningful_improvement without substituting proxy size for token evidence.\n`,
-    'image-ux-review': imageUxReviewSkill('image-ux-review'),
-    'ux-review': imageUxReviewSkill('ux-review'),
-    'visual-review': imageUxReviewSkill('visual-review'),
-    'ui-ux-review': imageUxReviewSkill('ui-ux-review'),
     'imagegen': `---\nname: imagegen\ndescription: Required bridge to Codex App built-in image generation for logos, image assets, raster visuals, and image edits.\n---\n\nUse for generated or edited image assets: logo, product image, illustration, sprite, mockup, texture, cutout, or bitmap. Prefer the official Codex App built-in image generation feature documented at ${CODEX_APP_IMAGE_GENERATION_DOC_URL}: ask naturally or invoke \`$imagegen\`. SKS route code checks capability before image-dependent routes, attempts doctor imagegen repair once, and reports codex_imagegen_unavailable if Codex App $imagegen still is not ready. For newest-model requests, make the prompt explicit: "Use ChatGPT Images 2.0 / GPT Image 2.0 with gpt-image-2." Useful official references are ${OPENAI_CHATGPT_IMAGES_2_DOC_URL}, ${OPENAI_GPT_IMAGE_2_MODEL_DOC_URL}, and ${OPENAI_IMAGE_GENERATION_DOC_URL}. Codex App image generation counts against Codex usage limits. Capability detection is not output proof; full SKS evidence requires a real selected raster output path or generated review image artifact. Direct OpenAI API fallback is non-Codex evidence and does not satisfy SKS route evidence unless a separate non-Codex API task is explicitly requested. ${IMAGEGEN_SOCIAL_SOURCE_POLICY} ${CODEX_IMAGEGEN_REQUIRED_POLICY} Do not substitute placeholder SVG/HTML/CSS for requested raster assets; follow design.md when relevant.\n`,
     'imagegen-source-scout': `---\nname: imagegen-source-scout\ndescription: Source scout for current GPT Image 2.0/gpt-image-2 prompt guidance, official docs, and X/social workflow signals.\n---\n\nUse when the user asks for the latest imagegen docs, ChatGPT Images 2.0 / GPT Image 2.0 / gpt-image-2 behavior, X/social reactions, prompt examples, or community workflow hints before creating an image prompt or SKS imagegen policy. Source order: official OpenAI announcement (${OPENAI_CHATGPT_IMAGES_2_DOC_URL}), Codex App image generation docs (${CODEX_APP_IMAGE_GENERATION_DOC_URL}), gpt-image-2 model docs (${OPENAI_GPT_IMAGE_2_MODEL_DOC_URL}), OpenAI Image Generation API docs (${OPENAI_IMAGE_GENERATION_DOC_URL}), then public X/social/community search for prompt-quality heuristics only. ${IMAGEGEN_SOCIAL_SOURCE_POLICY} If social or web search is unavailable, record that social coverage is unverified and continue from official docs. Output a compact evidence split: official capability/evidence rules, prompt heuristics, social/workflow signals, and blockers. Do not generate images itself; pair this with the imagegen skill for actual raster output.\n`,
     'getdesign-reference': `---\nname: getdesign-reference\ndescription: Use getdesign.md official design reference as an input to the design.md SSOT for UI/UX, presentation, and HTML/PDF systems.\n---\n\nUse when creating or improving design.md, UI/UX design systems, deck-like HTML artifacts, presentation PDFs, or brand-inspired visual systems. design.md is the only design decision SSOT; reference ${GETDESIGN_REFERENCE.url}, ${GETDESIGN_REFERENCE.docs_url}, and ${AWESOME_DESIGN_MD_REFERENCE.url} only as source inputs to synthesize or update that SSOT or a route-local style-token artifact. Prefer the official Codex skill if available with \`${GETDESIGN_REFERENCE.codex_skill_install}\`. If the skill CLI is unavailable, use this generated skill plus official docs/API/CLI/SDK references and curated DESIGN.md examples as inputs. Do not claim getdesign MCP is configured unless a current official MCP surface is actually installed.\n`,
@@ -1023,7 +1024,9 @@ function buildFallbackSkillsManifest() {
     ...RECOMMENDED_SKILLS.map((name: any) => canonicalSkillNameFromValue(name)),
     ...DOLLAR_COMMANDS.map((command: any) => canonicalSkillNameFromValue(String(command.command || '').replace(/^\$/, ''))),
     ...buildSksCoreSkillManifest().skills.map((skill) => skill.canonical_name)
-  ].filter((name) => Boolean(name) && !REMOVED_SKS_SKILL_NAME_SET.has(String(name))));
+  ].filter((name) => Boolean(name)
+    && !REMOVED_SKS_SKILL_NAME_SET.has(String(name))
+    && !RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIAS_SET.has(String(name))));
   return {
     schema: PACKAGED_SKILLS_MANIFEST_SCHEMA,
     package_version: PACKAGE_VERSION,
@@ -1290,7 +1293,7 @@ function isGeneratedSksPluginCollisionSkill(text: any, name: any) {
 }
 
 function enrichSkillContent(name: any, content: any) {
-  if (!['sks', 'answer', 'wiki', 'qa-loop', 'ppt', 'image-ux-review', 'ux-review', 'visual-review', 'ui-ux-review', 'computer-use-fast', 'cu', 'goal', 'research', 'autoresearch', 'db', 'gx', 'reflection', 'prompt-pipeline', 'pipeline-runner', 'context7-docs', 'turbo-context-pack', 'hproof-evidence-bind'].includes(name)) return content;
+  if (!['sks', 'answer', 'wiki', 'qa-loop', 'ppt', 'image-ux-review', 'computer-use-fast', 'cu', 'goal', 'research', 'autoresearch', 'db', 'gx', 'reflection', 'prompt-pipeline', 'pipeline-runner', 'context7-docs', 'turbo-context-pack', 'hproof-evidence-bind'].includes(name)) return content;
   const text = String(content || '').trimEnd();
   const activation = pipelineActivationText(name);
   if (text.includes('TriWiki context-tracking SSOT')) {
@@ -1308,7 +1311,7 @@ Context tracking:
 }
 
 function pipelineActivationText(name: any) {
-  const stateful = new Set(['sks', 'qa-loop', 'ppt', 'image-ux-review', 'ux-review', 'visual-review', 'ui-ux-review', 'computer-use-fast', 'cu', 'goal', 'research', 'autoresearch', 'db', 'gx', 'prompt-pipeline', 'pipeline-runner']);
+  const stateful = new Set(['sks', 'qa-loop', 'ppt', 'image-ux-review', 'computer-use-fast', 'cu', 'goal', 'research', 'autoresearch', 'db', 'gx', 'prompt-pipeline', 'pipeline-runner']);
   if (!stateful.has(name)) return '';
   return `Codex App pipeline activation:
 - If the SKS UserPromptSubmit hook already injected route context, follow that context.
@@ -1363,6 +1366,7 @@ async function removeGeneratedAgentSkillAliases(root: string, skillNames: readon
   const current = new Set(skillNames);
   const obsolete = [
     ...SKS_SKILL_NAMES_TO_CLEAN_UP,
+    ...RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIASES,
     'qaloop',
     'wiki-refresh',
     'wikirefresh',
@@ -1379,7 +1383,7 @@ async function removeGeneratedAgentSkillAliases(root: string, skillNames: readon
       root,
       dir,
       name,
-      (text) => isGeneratedSksAgentSkill(text, name),
+      (text) => isGeneratedSksAgentSkill(text, name) || isRetiredGeneratedImageUxReviewAlias(text, name),
       'generated-agent-skill-user-content-collision'
     );
     if (action === 'removed') removed.push(path.relative(root, dir));
@@ -1420,6 +1424,14 @@ function isGeneratedSksAgentSkill(text: any, name: any) {
   if (!new RegExp(`name:\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(s)) return false;
   if (/\bnot generated by SKS\b/i.test(s)) return false;
   return /Sneakoscope generated|Fallback Codex App picker alias|Codex App picker alias for|Dollar-command route generated by SKS/i.test(s);
+}
+
+function isRetiredGeneratedImageUxReviewAlias(text: any, name: any) {
+  if (!RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIAS_SET.has(String(name))) return false;
+  const s = String(text || '');
+  return MANAGED_SKILL_MARKER_RE.test(s)
+    && new RegExp(`^name:\\s*${escapeRegExp(name)}\\s*$`, 'm').test(s)
+    && /imagegen\/gpt-image-2 annotated UI\/UX review loop/i.test(s);
 }
 
 function isGeneratedSksLegacySkill(text: any, name: any) {

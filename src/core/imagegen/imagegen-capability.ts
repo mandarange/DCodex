@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { codexLbEnvPath, loadCodexLbEnv, parseShellEnvValue } from '../codex-lb/codex-lb-env.js';
+import { loadCodexLbEnv, parseShellEnvValue } from '../codex-lb/codex-lb-env.js';
 import { nowIso, readText, runProcess, which } from '../fsx.js';
 import { redactSecrets, redactString } from '../secret-redaction.js';
 import { evaluateImagegenAuthReadiness } from './imagegen-auth-readiness.js';
@@ -101,7 +101,8 @@ export async function detectImagegenCapability(opts: any = {}) {
 
 async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env) {
   const home = opts.home || env.HOME || process.env.HOME || os.homedir();
-  const configPath = opts.configPath || path.join(home, '.codex', 'config.toml');
+  const codexHome = opts.codexHome || env.CODEX_HOME || path.join(home, '.codex');
+  const configPath = opts.configPath || path.join(codexHome, 'config.toml');
   const configText = typeof opts.configText === 'string'
     ? opts.configText
     : await readText(configPath, '').catch(() => '');
@@ -111,7 +112,7 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
   const requiresOpenAiAuth = tomlBoolean(block, 'requires_openai_auth');
   const envKey = tomlString(block, 'env_key');
   const baseUrl = tomlString(block, 'base_url') || String(env.CODEX_LB_BASE_URL || '').trim();
-  const envPath = opts.codexLbEnvPath || codexLbEnvPath(home);
+  const envPath = opts.codexLbEnvPath || path.join(codexHome, 'sks-codex-lb.env');
   // Resolve through the fingerprint-bound loader rather than re-reading
   // process.env here: a stale exported key otherwise reports as present and
   // usable while the proxy rejects it. Callers may still inject a key or an
@@ -119,7 +120,13 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
   const injectedEnvText = typeof opts.codexLbEnvText === 'string' ? opts.codexLbEnvText : null;
   const keyFromInjectedFile = injectedEnvText !== null && envKey ? parseShellEnvValue(injectedEnvText, envKey) : '';
   const loaded = injectedEnvText === null
-    ? await loadCodexLbEnv({ home, processEnv: env, envPath }).catch(() => null)
+    ? await loadCodexLbEnv({
+        home,
+        processEnv: env,
+        envPath,
+        legacyEnvPath: path.join(codexHome, 'sks.env'),
+        metadataPath: path.join(codexHome, 'sks-codex-lb.json')
+      }).catch(() => null)
     : null;
   const apiKeyPresent = Boolean(opts.codexLbApiKey || keyFromInjectedFile || loaded?.secret_api_key);
   const apiKeySource = opts.codexLbApiKey

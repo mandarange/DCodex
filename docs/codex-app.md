@@ -4,7 +4,7 @@ SKS uses Codex App as the app-facing control surface for dollar-command skills, 
 
 ## Current Compatibility Baseline
 
-SKS 7.0.4 prefers the OpenAI Codex CLI/App channel `rust-v0.145.0` as the package-tracked latest, with the 0.145.0 SDK/CLI dependency graph, active release manifest, and App Server v2 schemas kept in lockstep for release proof. Runtime policy remains version-agnostic: feature routes capability-gate, and Menu Bar / Center induce updates to preferred latest. Hook output validation uses the vendored OpenAI Codex `latest` generated schemas plus the SKS zero-warning strict subset documented in [codex-cli-compat.md](codex-cli-compat.md). Codex 0.134-0.139 notes remain inherited historical compatibility evidence; they are not an exclusive product lock.
+SKS 7.4.0 prefers the OpenAI Codex CLI/App channel `rust-v0.145.0` as the package-tracked latest, with the 0.145.0 SDK/CLI dependency graph, active release manifest, and App Server v2 schemas kept in lockstep for release proof. Runtime policy remains version-agnostic: feature routes capability-gate, and Menu Bar / Center induce updates to preferred latest. Hook output validation uses the vendored OpenAI Codex `latest` generated schemas plus the SKS zero-warning strict subset documented in [codex-cli-compat.md](codex-cli-compat.md). Codex 0.134-0.139 notes remain inherited historical compatibility evidence; they are not an exclusive product lock.
 
 ## Chat, Pro Models, And Fast UI Preservation
 
@@ -14,7 +14,7 @@ entry, Pro model access, or Fast picker. The repair is provenance-scoped: it
 does not delete unmarked user settings, provider definitions, provider URLs,
 credential references, `service_tier = "fast"`, or `[features].fast_mode`.
 
-SKS 7.2.1 also reports the active nonsecret auth class. When codex-lb API-key
+SKS 7.4.0 also reports the active nonsecret auth class. When codex-lb API-key
 auth is active and a ChatGPT OAuth backup is available, Center labels the
 Chat/Pro surface as inactive and exposes **Restore Chat / Pro (OAuth)**. The
 switch is explicit because the two modes share Codex's active auth slot;

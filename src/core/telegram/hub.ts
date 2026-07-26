@@ -207,7 +207,9 @@ export class TelegramPollingHub {
 
   async ensureLongPollingAllowed(): Promise<void> {
     const info = await this.client.call<{ url?: string }>('getWebhookInfo', {});
-    if (info?.url) throw new Error('telegram_webhook_conflict');
+    if (typeof info?.url === 'string' && info.url.trim()) {
+      throw new Error('telegram_webhook_conflict:remove_webhook_before_long_polling');
+    }
   }
 
   async pollOnce(): Promise<{ ok: boolean; processed: number; stopped_reason: string | null }> {

@@ -114,10 +114,13 @@ const CORE_SKILL_DEFINITIONS: Array<{
     canonical_name: 'image-ux-review',
     display_name: 'image-ux-review',
     route: '$Image-UX-Review',
-    purpose: 'produce generated annotated UI review images and extract issue ledgers.',
-    when: 'Use for screenshot/UI UX review requests that require generated raster evidence.',
-    evidence: 'source inventory, generated annotation image ledger, issue ledger, iteration report.',
-    fallback: 'Block full verification if generated annotated images cannot be produced.'
+    purpose: 'run one screenshot-to-generated-annotation-to-UX-report pipeline without duplicate picker skills.',
+    when: 'Use for $Image-UX-Review, $UX-Review, $Visual-Review, or $UI-UX-Review requests; all aliases resolve to this one canonical skill.',
+    workflow: 'Capture or attach the real source screenshot first; web/browser/webapp capture must pass the Codex Chrome Extension readiness gate first, while Computer Use is reserved for native Mac/non-web surfaces. Send the source image as the I2I reference to the selected Codex imagegen provider with gpt-image-2 and a senior Toss UI/UX designer prompt that visibly adds numbered P0/P1/P2/P3 callouts, hierarchy, contrast, alignment, density, affordance, eye-flow arrows, and a corrected mini-comp. Then analyze the generated annotated image pixels with vision/OCR, not the source screenshot, and write the issue ledger, extraction report, and UX/UI change report with the generated image path and sha256.',
+    safety: 'Do not substitute text-only critique, a source-screenshot-only report, placeholders, partial image frames, mock evidence, or an unrelated API provider for the selected real imagegen path. Apply fixes only when requested and recheck changed screens.',
+    cli: 'sks ux-review run --image <path> [--fix] --json; legacy $sks-ux-review, $sks-visual-review, and $sks-ui-ux-review inputs route here internally.',
+    evidence: 'image-ux-screen-inventory.json, image-ux-gpt-image-2-request.json, image-ux-gpt-image-2-response.json, image-ux-generated-review-ledger.json, image-ux-issue-ledger.json, image-ux-callout-extraction-report.json, image-ux-iteration-report.json, and image-ux-review-gate.json.',
+    fallback: 'Block full verification if the real source screenshot, completed generated annotated image, generated-image callout extraction, or generated-image-based UX/UI report is unavailable.'
   },
   {
     id: 'sks-core-computer-use',

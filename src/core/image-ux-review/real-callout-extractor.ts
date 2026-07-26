@@ -147,6 +147,7 @@ export function buildRealCalloutExtractionPrompt(input: RealCalloutExtractionInp
   const source = input.sourceScreenshot || {};
   return [
     'Analyze the generated UX review image pixels directly.',
+    'The source screenshot is context only; do not analyze it instead of the generated annotated image.',
     'Return only visible numbered callouts from the generated image.',
     'Do not invent issues, requirements, or invisible callouts.',
     'Return bbox coordinates in the generated image coordinate system as [x,y,width,height].',

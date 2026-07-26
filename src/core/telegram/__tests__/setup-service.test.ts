@@ -4,9 +4,14 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { readJson, type RunProcessResult } from '../../fsx.js';
+import { remoteMachineRegistryPath } from '../../remote/machine-registry.js';
+import { remoteSessionIndexPath } from '../../remote/session-index.js';
 import { remoteCodexSessionBindingsPath } from '../../remote/session-binding.js';
 import type { RemoteCodexSessionBindingsV1, RemoteMachineRegistryV1, RemoteSessionIndexV1 } from '../../remote/types.js';
 import { TelegramBotApiClient } from '../bot-api.js';
+import { telegramTokenFingerprint } from '../config.js';
+import { telegramHubPaths } from '../hub.js';
+import { TelegramOwnerLock } from '../owner-lock.js';
 import { setupTelegramLocalCoding } from '../setup.js';
 import {
   installAndStartTelegramHubService,
@@ -29,7 +34,13 @@ test('setup verifies /start, stores only a Keychain reference, and registers a l
       const method = String(url).split('/').at(-1);
       calls.push(String(method));
       if (method === 'getMe') {
-        return new Response(JSON.stringify({ ok: true, result: { id: 99, username: 'sks_fixture_bot' } }), {
+        return new Response(JSON.stringify({ ok: true, result: { id: 99, is_bot: true, username: 'sks_fixture_bot' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        });
+      }
+      if (method === 'getWebhookInfo') {
+        return new Response(JSON.stringify({ ok: true, result: { url: '' } }), {
           status: 200,
           headers: { 'content-type': 'application/json' }
         });
@@ -61,7 +72,7 @@ test('setup verifies /start, stores only a Keychain reference, and registers a l
       keychainInput = `${secret}:${service}:${account}`;
     }
   });
-  assert.deepEqual(calls, ['getMe', 'getUpdates', 'getUpdates']);
+  assert.deepEqual(calls, ['getMe', 'getWebhookInfo', 'getUpdates', 'getUpdates']);
   assert.match(keychainInput, /^123456789:ABCDEFGHIJKLMNOPQRSTUVWX:com\.sneakoscope\.telegram\.bot:fixture-user$/);
   assert.equal(result.pairing.chat_id, '123');
   assert.equal(result.pairing.user_id, '456');
@@ -117,8 +128,14 @@ test('explicit setup preserves a valid positive private pairing', async () => {
   const calls: string[] = [];
   const api = new TelegramBotApiClient('123456789:ABCDEFGHIJKLMNOPQRSTUVWX', {
     fetch: async (url) => {
-      calls.push(String(url).split('/').at(-1) ?? '');
-      return new Response(JSON.stringify({ ok: true, result: { id: 99, username: 'sks_fixture_bot' } }), {
+      const method = String(url).split('/').at(-1) ?? '';
+      calls.push(method);
+      return new Response(JSON.stringify({
+        ok: true,
+        result: method === 'getMe'
+          ? { id: 99, is_bot: true, username: 'sks_fixture_bot' }
+          : { url: '' }
+      }), {
         status: 200,
         headers: { 'content-type': 'application/json' }
       });
@@ -138,8 +155,256 @@ test('explicit setup preserves a valid positive private pairing', async () => {
     keychainWriter: async () => {}
   });
 
-  assert.deepEqual(calls, ['getMe']);
+  assert.deepEqual(calls, ['getMe', 'getWebhookInfo']);
   assert.deepEqual(result.pairing, { chat_id: '123', user_id: '456', detected: false });
+});
+
+test('setup fails closed on an invalid BotFather token without storing credentials or registration state', async () => {
+  const base = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-telegram-setup-auth-failed-'));
+  const globalRoot = path.join(base, 'global');
+  const projectRoot = path.join(base, 'project');
+  await fsp.mkdir(projectRoot, { recursive: true });
+  const calls: string[] = [];
+  let keychainCalls = 0;
+  const api = new TelegramBotApiClient('123456789:ABCDEFGHIJKLMNOPQRSTUVWX', {
+    fetch: async (url) => {
+      calls.push(String(url).split('/').at(-1) ?? '');
+      return new Response(JSON.stringify({
+        ok: false,
+        error_code: 401,
+        description: 'Unauthorized'
+      }), { status: 401, headers: { 'content-type': 'application/json' } });
+    },
+    maxRetries: 4
+  });
+
+  await assert.rejects(setupTelegramLocalCoding({
+    token: ['123456789', 'ABCDEFGHIJKLMNOPQRSTUVWX'].join(':'),
+    projectRoot,
+    globalRoot,
+    hostname: 'fixture-mac',
+    account: 'fixture-user',
+    api,
+    keychainWriter: async () => { keychainCalls += 1; }
+  }), /telegram_bot_auth_failed/);
+
+  assert.deepEqual(calls, ['getMe']);
+  assert.equal(keychainCalls, 0);
+  await assertNoSetupState(globalRoot, projectRoot);
+});
+
+test('setup reports an active webhook before /start discovery and leaves no partial state', async () => {
+  const base = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-telegram-setup-webhook-'));
+  const globalRoot = path.join(base, 'global');
+  const projectRoot = path.join(base, 'project');
+  await fsp.mkdir(projectRoot, { recursive: true });
+  const calls: string[] = [];
+  let keychainCalls = 0;
+  const api = new TelegramBotApiClient('123456789:ABCDEFGHIJKLMNOPQRSTUVWX', {
+    fetch: async (url) => {
+      const method = String(url).split('/').at(-1) ?? '';
+      calls.push(method);
+      if (method === 'getMe') {
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { id: 99, is_bot: true, username: 'sks_fixture_bot' }
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (method === 'getWebhookInfo') {
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { url: 'https://example.test/legacy-hook' }
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`unexpected_method:${method}`);
+    },
+    maxRetries: 0
+  });
+
+  await assert.rejects(setupTelegramLocalCoding({
+    token: ['123456789', 'ABCDEFGHIJKLMNOPQRSTUVWX'].join(':'),
+    projectRoot,
+    globalRoot,
+    hostname: 'fixture-mac',
+    account: 'fixture-user',
+    api,
+    keychainWriter: async () => { keychainCalls += 1; }
+  }), /telegram_webhook_conflict:remove_webhook_before_long_polling/);
+
+  assert.deepEqual(calls, ['getMe', 'getWebhookInfo']);
+  assert.equal(keychainCalls, 0);
+  await assertNoSetupState(globalRoot, projectRoot);
+});
+
+test('setup maps a competing getUpdates poller to the stable Telegram conflict blocker', async () => {
+  const base = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-telegram-setup-conflict-'));
+  const globalRoot = path.join(base, 'global');
+  const projectRoot = path.join(base, 'project');
+  await fsp.mkdir(projectRoot, { recursive: true });
+  let keychainCalls = 0;
+  const api = new TelegramBotApiClient('123456789:ABCDEFGHIJKLMNOPQRSTUVWX', {
+    fetch: async (url) => {
+      const method = String(url).split('/').at(-1);
+      if (method === 'getMe') {
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { id: 99, is_bot: true, username: 'sks_fixture_bot' }
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (method === 'getWebhookInfo') {
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { url: '', pending_update_count: 1 }
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({
+        ok: false,
+        error_code: 409,
+        description: 'Conflict: terminated by other getUpdates request'
+      }), { status: 409, headers: { 'content-type': 'application/json' } });
+    },
+    maxRetries: 4
+  });
+
+  await assert.rejects(setupTelegramLocalCoding({
+    token: ['123456789', 'ABCDEFGHIJKLMNOPQRSTUVWX'].join(':'),
+    projectRoot,
+    globalRoot,
+    hostname: 'fixture-mac',
+    account: 'fixture-user',
+    api,
+    keychainWriter: async () => { keychainCalls += 1; }
+  }), /telegram_409_conflict:stop_other_poller_and_retry/);
+
+  assert.equal(keychainCalls, 0);
+  await assertNoSetupState(globalRoot, projectRoot);
+});
+
+test('setup rolls back a newly stored credential and partial registration state after a post-Keychain write failure', async () => {
+  const base = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-telegram-setup-rollback-new-'));
+  const globalRoot = path.join(base, 'global');
+  const projectRoot = path.join(base, 'project');
+  await fsp.mkdir(projectRoot, { recursive: true });
+  const machinePath = remoteMachineRegistryPath(globalRoot);
+  await fsp.mkdir(path.dirname(machinePath), { recursive: true });
+  const originalMachineState = '{"schema":"invalid-existing-registry"}\n';
+  await fsp.writeFile(machinePath, originalMachineState, 'utf8');
+  const credentialWrites: string[] = [];
+  let credentialDeletes = 0;
+
+  await assert.rejects(setupTelegramLocalCoding({
+    token: ['123456789', 'ABCDEFGHIJKLMNOPQRSTUVWX'].join(':'),
+    projectRoot,
+    globalRoot,
+    hostname: 'fixture-mac',
+    account: 'fixture-user',
+    pairedChatId: '123',
+    pairedUserId: '456',
+    api: readyApi(),
+    keychainReader: async () => null,
+    keychainWriter: async (token) => { credentialWrites.push(token); },
+    keychainDeleter: async () => { credentialDeletes += 1; }
+  }), /remote_machine_registry_invalid/);
+
+  assert.deepEqual(credentialWrites, ['123456789:ABCDEFGHIJKLMNOPQRSTUVWX']);
+  assert.equal(credentialDeletes, 1);
+  assert.equal(await fsp.readFile(machinePath, 'utf8'), originalMachineState);
+  assert.equal(await fileExists(remoteCodexSessionBindingsPath(projectRoot)), false);
+  assert.equal(await fileExists(remoteSessionIndexPath(projectRoot)), false);
+  assert.equal(await fileExists(telegramHubPaths(globalRoot).config), false);
+  assert.equal(await fileExists(telegramHubPaths(globalRoot).owner), false);
+});
+
+test('failed token rotation restores the previous Keychain token and exact setup files', async () => {
+  const base = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-telegram-setup-rollback-rotation-'));
+  const globalRoot = path.join(base, 'global');
+  const projectRoot = path.join(base, 'project');
+  await fsp.mkdir(projectRoot, { recursive: true });
+  const oldToken = ['123456789', 'ABCDEFGHIJKLMNOPQRSTUVWX'].join(':');
+  const newToken = ['987654321', 'ZYXWVUTSRQPONMLKJIHGFEDC'].join(':');
+  let storedToken: string | null = oldToken;
+  const writes: string[] = [];
+  const configPath = telegramHubPaths(globalRoot).config;
+  const bindingPath = remoteCodexSessionBindingsPath(projectRoot);
+  const machinePath = remoteMachineRegistryPath(globalRoot);
+  const indexPath = remoteSessionIndexPath(projectRoot);
+
+  await setupTelegramLocalCoding({
+    token: oldToken,
+    projectRoot,
+    globalRoot,
+    hostname: 'fixture-mac',
+    account: 'fixture-user',
+    pairedChatId: '123',
+    pairedUserId: '456',
+    api: readyApi(),
+    keychainReader: async () => storedToken,
+    keychainWriter: async (token) => { storedToken = token; }
+  });
+  const originalFiles = await Promise.all([configPath, bindingPath, machinePath].map((file) => fsp.readFile(file)));
+  await fsp.writeFile(indexPath, '{"schema":"invalid-existing-index"}\n', 'utf8');
+  const originalIndex = await fsp.readFile(indexPath);
+
+  await assert.rejects(setupTelegramLocalCoding({
+    token: newToken,
+    projectRoot,
+    globalRoot,
+    hostname: 'fixture-mac',
+    account: 'fixture-user',
+    pairedChatId: '123',
+    pairedUserId: '456',
+    api: readyApi(),
+    keychainReader: async () => storedToken,
+    keychainWriter: async (token) => {
+      writes.push(token);
+      storedToken = token;
+    }
+  }), /remote_session_index_invalid/);
+
+  assert.deepEqual(writes, [newToken, oldToken]);
+  assert.equal(storedToken, oldToken);
+  const restoredFiles = await Promise.all([configPath, bindingPath, machinePath].map((file) => fsp.readFile(file)));
+  assert.deepEqual(restoredFiles, originalFiles);
+  assert.deepEqual(await fsp.readFile(indexPath), originalIndex);
+  assert.equal(await fileExists(telegramHubPaths(globalRoot).owner), false);
+});
+
+test('setup refuses token changes while a live hub owner holds the Telegram lock', async () => {
+  const base = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-telegram-setup-running-hub-'));
+  const globalRoot = path.join(base, 'global');
+  const projectRoot = path.join(base, 'project');
+  await fsp.mkdir(projectRoot, { recursive: true });
+  const owner = new TelegramOwnerLock({
+    lockPath: telegramHubPaths(globalRoot).owner,
+    tokenFingerprint: telegramTokenFingerprint('123456789:ABCDEFGHIJKLMNOPQRSTUVWX')
+  });
+  await owner.acquire();
+  let apiCalls = 0;
+  let keychainCalls = 0;
+  const api = new TelegramBotApiClient('987654321:ZYXWVUTSRQPONMLKJIHGFEDC', {
+    fetch: async () => {
+      apiCalls += 1;
+      throw new Error('unexpected_api_call');
+    },
+    maxRetries: 0
+  });
+  try {
+    await assert.rejects(setupTelegramLocalCoding({
+      token: ['123456789', 'ABCDEFGHIJKLMNOPQRSTUVWX'].join(':'),
+      projectRoot,
+      globalRoot,
+      hostname: 'fixture-mac',
+      account: 'fixture-user',
+      pairedChatId: '123',
+      pairedUserId: '456',
+      api,
+      keychainWriter: async () => { keychainCalls += 1; }
+    }), /telegram_hub_must_be_stopped_before_setup/);
+  } finally {
+    await owner.release();
+  }
+  assert.equal(apiCalls, 0);
+  assert.equal(keychainCalls, 0);
 });
 
 test('LaunchAgent contains a fixed local hub command and no credential material', () => {
@@ -244,4 +509,42 @@ function processResult(code: number, stdout = '', stderr = ''): RunProcessResult
     truncated: false,
     timedOut: false
   };
+}
+
+async function assertNoSetupState(globalRoot: string, projectRoot: string): Promise<void> {
+  const files = [
+    telegramHubPaths(globalRoot).config,
+    remoteMachineRegistryPath(globalRoot),
+    remoteSessionIndexPath(projectRoot),
+    remoteCodexSessionBindingsPath(projectRoot)
+  ];
+  for (const file of files) {
+    assert.equal(await fsp.stat(file).then(() => true).catch(() => false), false, file);
+  }
+}
+
+function readyApi(): TelegramBotApiClient {
+  return new TelegramBotApiClient('123456789:ABCDEFGHIJKLMNOPQRSTUVWX', {
+    fetch: async (url) => {
+      const method = String(url).split('/').at(-1);
+      if (method === 'getMe') {
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { id: 99, is_bot: true, username: 'sks_fixture_bot' }
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (method === 'getWebhookInfo') {
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { url: '', pending_update_count: 0 }
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`unexpected_method:${method}`);
+    },
+    maxRetries: 0
+  });
+}
+
+async function fileExists(file: string): Promise<boolean> {
+  return fsp.stat(file).then(() => true).catch(() => false);
 }

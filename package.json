@@ -1,7 +1,7 @@
 {
   "name": "sneakoscope",
   "displayName": "ㅅㅋㅅ",
-  "version": "7.3.0",
+  "version": "7.4.0",
   "description": "Proof-first Codex CLI and ChatGPT Desktop orchestration for AI coding agents, release verification, and macOS menu bar control.",
   "type": "module",
   "homepage": "https://github.com/mandarange/Sneakoscope-Codex#readme",

@@ -63,6 +63,19 @@ test('an unclean tree or a non-main branch blocks before any outward step', () =
   }
 });
 
+test('an invalid full release stamp blocks before main is pushed', () => {
+  const rec = recorder({
+    ...GREEN_PREFLIGHT,
+    'release-check-stamp.js verify': { status: 1, stderr: 'release stamp is stale' }
+  });
+  const { opts } = options({ recorder: rec, opts: { confirm: true } });
+  const report = stagePublish(opts);
+  assert.equal(report.ok, false);
+  assert.ok(report.blockers.includes('stage_release_stamp_invalid'), report.blockers.join(','));
+  assert.ok(!rec.calls.some((call) => call.startsWith('git push')), rec.calls.join('\n'));
+  assert.equal(report.steps.find((step) => step.id === 'release_stamp')?.detail, 'release stamp is stale');
+});
+
 test('a failed push stops before the workflow is dispatched', () => {
   const rec = recorder({ ...GREEN_PREFLIGHT, 'git push': { status: 1, stderr: 'rejected' } });
   const { opts } = options({ recorder: rec, opts: { confirm: true } });

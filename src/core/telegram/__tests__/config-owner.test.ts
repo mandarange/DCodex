@@ -57,6 +57,35 @@ test('persisted pairing accepts only positive private chat and user IDs', () => 
   assert.deepEqual(privatePairing, { ok: true, missing: false, issues: [] });
 });
 
+test('persisted pairing rejects multiple chat or user IDs to avoid Cartesian authorization', () => {
+  const validation = validateTelegramConfig({
+    schema: 'sks.telegram-config.v1',
+    bot_token_ref: { type: 'external_file', path: '/tmp/telegram-token' },
+    paired_chat_ids: ['123', '789'],
+    paired_user_ids: ['456', '101112']
+  });
+  assert.equal(validation.ok, false);
+  assert.ok(validation.issues.includes('paired_chat_ids'));
+  assert.ok(validation.issues.includes('paired_user_ids'));
+
+  assert.deepEqual(validateTelegramPrivatePairing({
+    paired_chat_ids: ['123', '789'],
+    paired_user_ids: ['456']
+  }), {
+    ok: false,
+    missing: false,
+    issues: ['paired_chat_ids']
+  });
+  assert.deepEqual(validateTelegramPrivatePairing({
+    paired_chat_ids: ['123'],
+    paired_user_ids: ['456', '101112']
+  }), {
+    ok: false,
+    missing: false,
+    issues: ['paired_user_ids']
+  });
+});
+
 test('owner-only external secret resolves without persisting the raw token', async () => {
   const root = await tempRoot();
   const file = path.join(root, 'token');
