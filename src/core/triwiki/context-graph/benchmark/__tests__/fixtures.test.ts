@@ -34,7 +34,7 @@ test('a fixture materializes into a temp dir and is fully cleaned up again', () 
     assert.ok(root.startsWith(os.tmpdir()), 'a fixture only ever lives under the system temp dir');
     assert.equal(handle.fileCount, fixtureDefinition('command-route-pipeline-gate').files.length);
     assert.ok(fs.existsSync(path.join(root, 'src', 'cli', 'commands', 'search.ts')));
-    assert.ok(fs.existsSync(path.join(root, 'config', 'gates.json')));
+    assert.ok(fs.existsSync(path.join(root, 'release-gates.v2.json')));
   } finally {
     handle.dispose();
   }
@@ -76,7 +76,7 @@ test('the symlink fixture creates a link that resolves outside the workspace', a
 
 test('the malformed manifest fixture really is unparseable', async () => {
   await withFixture('malformed-manifest', (handle) => {
-    const text = fs.readFileSync(path.join(handle.root, 'config', 'gates.json'), 'utf8');
+    const text = fs.readFileSync(path.join(handle.root, 'release-gates.v2.json'), 'utf8');
     assert.throws(() => JSON.parse(text));
   });
 });
