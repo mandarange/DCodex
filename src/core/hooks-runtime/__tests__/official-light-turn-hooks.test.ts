@@ -471,7 +471,11 @@ test('missing custom tool output quarantines every later prompt in the same thre
     assert.match(String(submitted.reason || ''), /call_interrupted_1/);
     assert.match(String(submitted.reason || ''), /M-interrupted-tool-output/);
     assert.match(String(submitted.reason || ''), /fresh Codex thread/i);
-    assert.match(String(submitted.reason || ''), /1\.21\.0-beta\.3/);
+    // The remedy is named without pinning a version: the operator is pointed at
+    // the official latest stable release and at the status command that reports
+    // whether the deployment actually satisfies tool-heavy continuation.
+    assert.match(String(submitted.reason || ''), /official latest stable release/i);
+    assert.match(String(submitted.reason || ''), /sks codex-lb status/);
     assert.doesNotMatch(String(submitted.reason || ''), /infer success/i);
     await assert.rejects(fsp.access(lightTurnReceiptPath(root, session)));
 
