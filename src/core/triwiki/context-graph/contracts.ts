@@ -6,6 +6,7 @@
  * back at repository truth through provenance, and nothing here may carry
  * secrets, absolute paths, raw prompts, or raw tool output.
  */
+import { compareContextGraphIds } from './ids.js';
 
 export const CONTEXT_GRAPH_SCHEMA = 'sks.context-graph.v1' as const;
 export const CONTEXT_GRAPH_FRAGMENT_SCHEMA = 'sks.context-graph-fragment.v1' as const;
@@ -446,7 +447,7 @@ export function validateContextGraphSnapshot(value: unknown): ContextGraphValida
     if (!id) continue;
     if (nodeIds.has(id)) issues.push(lintError('duplicate_node_conflict', `duplicate node id ${id}`, { nodeId: id }));
     nodeIds.add(id);
-    if (previousNodeId !== null && previousNodeId.localeCompare(id) > 0) {
+    if (previousNodeId !== null && compareContextGraphIds(previousNodeId, id) > 0) {
       issues.push(lintError('non_deterministic_serialization', `nodes are not sorted by id at ${id}`, { nodeId: id }));
     }
     previousNodeId = id;
@@ -456,7 +457,7 @@ export function validateContextGraphSnapshot(value: unknown): ContextGraphValida
     validateEdge(raw, index, nodeIds, issues);
     const edgeId = record(raw)?.id;
     if (typeof edgeId !== 'string') continue;
-    if (previousEdgeId !== null && previousEdgeId.localeCompare(edgeId) > 0) {
+    if (previousEdgeId !== null && compareContextGraphIds(previousEdgeId, edgeId) > 0) {
       issues.push(lintError('non_deterministic_serialization', `edges are not sorted by id at ${edgeId}`, { edgeId }));
     }
     previousEdgeId = edgeId;

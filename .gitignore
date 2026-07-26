@@ -185,3 +185,10 @@ zellij-lane-renderer-heartbeat.jsonl
 # .sneakoscope/wiki/avoidance-rules/
 # END SKS MANAGED GIT HYGIENE
 .claude/scheduled_tasks.lock
+
+# Compiled TriWiki Context Graph: a generated cache rebuilt by `sks wiki refresh --code`.
+# Tens of MB on a large repository and never source truth, so it is never committed.
+.sneakoscope/wiki/context-graph.json
+.sneakoscope/wiki/context-graph.meta.json
+.sneakoscope/wiki/context-graph.prev.json
+.sneakoscope/wiki/context-graph-events.jsonl

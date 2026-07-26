@@ -1,0 +1,388 @@
+{
+  "schema": "sks.context-graph-benchmark-corpus.v1",
+  "corpus_revision": "1",
+  "hash_algorithm": "sha256",
+  "corpus_hash": "66ae493fa0556b1e21fcf867570af707588981675e1ce44d0ed33bc83944c170",
+  "default_k": 8,
+  "improvement_threshold": 0.05,
+  "notes": [
+    "Locked measurement contract. Every gold set is a set of identifiers that can be checked mechanically; no case is scored by a model judgement.",
+    "corpus_hash is sha256 over the canonical (sorted-key, whitespace-free) serialization of this file with the corpus_hash field removed.",
+    "Editing a gold set, deleting a case, or re-weighting the score changes corpus_hash and is reported as an integrity failure instead of a silent score change."
+  ],
+  "score_weights": {
+    "task_context_success": 0.3,
+    "retrieval_recall": 0.2,
+    "precision": 0.15,
+    "evidence_per_kilo_token": 0.15,
+    "latency_improvement": 0.1,
+    "token_improvement": 0.1
+  },
+  "cases": [
+    {
+      "id": "command-handler-route-pipeline-gate",
+      "title": "Find a command's handler, route, pipeline and gates",
+      "query": "where is the search command handler, its route, its pipeline and the gates that cover it",
+      "profile": "implementation",
+      "fixture": "command-route-pipeline-gate",
+      "changed_paths": ["src/cli/commands/search.ts"],
+      "focus_paths": [],
+      "token_budget": 6000,
+      "risk": "normal",
+      "k": 8,
+      "gold": {
+        "paths": [
+          "src/cli/command-registry.json",
+          "src/cli/commands/search.ts",
+          "src/cli/routes/search-route.ts",
+          "src/core/pipeline/search-pipeline.ts"
+        ],
+        "node_ids": [
+          "file:src/cli/command-registry.json",
+          "file:src/cli/commands/search.ts",
+          "file:src/cli/routes/search-route.ts",
+          "file:src/core/pipeline/search-pipeline.ts"
+        ],
+        "gate_ids": ["search_command_contract", "search_pipeline_budget"],
+        "protected_gate_ids": [],
+        "test_paths": ["src/cli/__tests__/search-command.test.ts"],
+        "conflicts": [],
+        "must_exclude_paths": ["docs/search.md", "src/core/legacy/search-old.ts"],
+        "stale_paths": [],
+        "invalidated_paths": [],
+        "exact_seed_paths": ["src/cli/commands/search.ts"]
+      }
+    },
+    {
+      "id": "search-context-change-tests-and-gates",
+      "title": "Find the tests and gates affected by changing the search context module",
+      "query": "what tests and gates are affected if src/core/search/context.ts changes",
+      "profile": "review",
+      "fixture": "test-production-binding",
+      "changed_paths": ["src/core/search/context.ts"],
+      "focus_paths": [],
+      "token_budget": 6000,
+      "risk": "normal",
+      "k": 8,
+      "gold": {
+        "paths": ["src/core/search/context.ts", "src/core/search/provider.ts"],
+        "node_ids": ["file:src/core/search/context.ts", "file:src/core/search/provider.ts"],
+        "gate_ids": ["search_context_contract", "search_provider_budget"],
+        "protected_gate_ids": [],
+        "test_paths": ["src/core/search/__tests__/context.test.ts", "src/core/search/__tests__/provider.test.ts"],
+        "conflicts": [],
+        "must_exclude_paths": ["src/core/search/README.md"],
+        "stale_paths": [],
+        "invalidated_paths": [],
+        "exact_seed_paths": ["src/core/search/context.ts"]
+      }
+    },
+    {
+      "id": "triwiki-attention-naruto-and-wiki-validation",
+      "title": "Find the Naruto and wiki-validation impact of changing TriWiki attention",
+      "query": "what does changing TriWiki attention affect in slice planning and wiki validation",
+      "profile": "review",
+      "fixture": "reexport-chain",
+      "changed_paths": ["src/core/triwiki/attention.ts"],
+      "focus_paths": [],
+      "token_budget": 6000,
+      "risk": "normal",
+      "k": 8,
+      "gold": {
+        "paths": [
+          "src/core/naruto/slice-planner.ts",
+          "src/core/triwiki/attention.ts",
+          "src/core/triwiki/index.ts",
+          "src/core/wiki/validation.ts"
+        ],
+        "node_ids": [
+          "file:src/core/naruto/slice-planner.ts",
+          "file:src/core/triwiki/attention.ts",
+          "file:src/core/triwiki/index.ts",
+          "file:src/core/wiki/validation.ts"
+        ],
+        "gate_ids": ["naruto_fanout_sanity", "wiki_validation"],
+        "protected_gate_ids": [],
+        "test_paths": [
+          "src/core/naruto/__tests__/slice-planner.test.ts",
+          "src/core/wiki/__tests__/validation.test.ts"
+        ],
+        "conflicts": [],
+        "must_exclude_paths": ["docs/attention-notes.md"],
+        "stale_paths": [],
+        "invalidated_paths": [],
+        "exact_seed_paths": ["src/core/triwiki/attention.ts"]
+      }
+    },
+    {
+      "id": "proof-invalidation-affected-graph-and-release-cache",
+      "title": "Find the affected graph and release cache impact of a proof-invalidation change",
+      "query": "what graph and release cache surfaces depend on proof invalidation",
+      "profile": "review",
+      "fixture": "proof-invalidation",
+      "changed_paths": ["src/core/proof/proof-invalidation.ts"],
+      "focus_paths": [],
+      "token_budget": 6000,
+      "risk": "high",
+      "k": 8,
+      "gold": {
+        "paths": [
+          "src/core/proof/proof-invalidation.ts",
+          "src/core/release/release-cache.ts",
+          "src/core/triwiki/triwiki-affected-graph.ts"
+        ],
+        "node_ids": [
+          "file:src/core/proof/proof-invalidation.ts",
+          "file:src/core/release/release-cache.ts",
+          "file:src/core/triwiki/triwiki-affected-graph.ts"
+        ],
+        "gate_ids": ["proof_bank_integrity", "release_cache_parity"],
+        "protected_gate_ids": ["proof_bank_integrity"],
+        "test_paths": ["src/core/proof/__tests__/proof-invalidation.test.ts"],
+        "conflicts": [],
+        "must_exclude_paths": ["src/core/proof/retired-claim.ts"],
+        "stale_paths": [],
+        "invalidated_paths": ["src/core/proof/retired-claim.ts"],
+        "exact_seed_paths": ["src/core/proof/proof-invalidation.ts"]
+      }
+    },
+    {
+      "id": "command-help-change-registry-manifest-usage",
+      "title": "Find the registry, manifest, usage and CLI-consistency gates for a command help change",
+      "query": "which registry, manifest and usage surfaces must stay consistent when a command help string changes",
+      "profile": "implementation",
+      "fixture": "dynamic-import-literal",
+      "changed_paths": ["src/cli/commands/wiki-refresh.ts"],
+      "focus_paths": [],
+      "token_budget": 6000,
+      "risk": "normal",
+      "k": 8,
+      "gold": {
+        "paths": ["src/cli/commands/wiki-refresh.ts", "src/cli/manifest.ts", "src/cli/registry.ts"],
+        "node_ids": [
+          "file:src/cli/commands/wiki-refresh.ts",
+          "file:src/cli/manifest.ts",
+          "file:src/cli/registry.ts"
+        ],
+        "gate_ids": ["cli_registry_consistency", "command_manifest_parity", "usage_text_parity"],
+        "protected_gate_ids": [],
+        "test_paths": ["src/cli/__tests__/registry.test.ts"],
+        "conflicts": [],
+        "must_exclude_paths": ["docs/cli-help.md"],
+        "stale_paths": [],
+        "invalidated_paths": [],
+        "exact_seed_paths": ["src/cli/commands/wiki-refresh.ts"]
+      }
+    },
+    {
+      "id": "code-pack-change-freshness-preflight-and-wiki-validate",
+      "title": "Find the freshness preflight and wiki validate impact of a code pack change",
+      "query": "what freshness preflight and wiki validate surfaces depend on the code pack builder",
+      "profile": "review",
+      "fixture": "ts-path-alias",
+      "changed_paths": ["src/core/triwiki/code-pack.ts"],
+      "focus_paths": [],
+      "token_budget": 6000,
+      "risk": "normal",
+      "k": 8,
+      "gold": {
+        "paths": [
+          "src/core/triwiki/code-pack-head-freshness.ts",
+          "src/core/triwiki/code-pack.ts",
+          "src/core/wiki/freshness-preflight.ts",
+          "src/core/wiki/wiki-validate.ts"
+        ],
+        "node_ids": [
+          "file:src/core/triwiki/code-pack-head-freshness.ts",
+          "file:src/core/triwiki/code-pack.ts",
+          "file:src/core/wiki/freshness-preflight.ts",
+          "file:src/core/wiki/wiki-validate.ts"
+        ],
+        "gate_ids": ["wiki_freshness_preflight", "wiki_validate"],
+        "protected_gate_ids": [],
+        "test_paths": ["src/core/triwiki/__tests__/code-pack.test.ts"],
+        "conflicts": [],
+        "must_exclude_paths": ["src/core/unrelated/formatter.ts"],
+        "stale_paths": [],
+        "invalidated_paths": [],
+        "exact_seed_paths": ["src/core/triwiki/code-pack.ts"]
+      }
+    },
+    {
+      "id": "reverse-affected-gates-for-changed-gate-input",
+      "title": "Find the reverse set of affected gates for a changed release gate input",
+      "query": "which release gates are affected when a gate input module changes inside an import cycle",
+      "profile": "planning",
+      "fixture": "cyclic-modules",
+      "changed_paths": ["src/core/release/gate-inputs.ts"],
+      "focus_paths": [],
+      "token_budget": 6000,
+      "risk": "high",
+      "k": 8,
+      "gold": {
+        "paths": [
+          "src/core/release/gate-inputs.ts",
+          "src/core/release/gate-report.ts",
+          "src/core/release/gate-runner.ts"
+        ],
+        "node_ids": [
+          "file:src/core/release/gate-inputs.ts",
+          "file:src/core/release/gate-report.ts",
+          "file:src/core/release/gate-runner.ts"
+        ],
+        "gate_ids": ["release_gate_inputs", "release_gate_report", "release_gate_runner"],
+        "protected_gate_ids": ["release_gate_inputs"],
+        "test_paths": ["src/core/release/__tests__/gate-runner.test.ts"],
+        "conflicts": [],
+        "must_exclude_paths": ["src/core/release/legacy-notes.ts"],
+        "stale_paths": [],
+        "invalidated_paths": [],
+        "exact_seed_paths": ["src/core/release/gate-inputs.ts"]
+      }
+    },
+    {
+      "id": "parallel-naruto-slices-share-a-write-target",
+      "title": "Detect two Naruto slices that may write the same file",
+      "query": "do the planned parallel slices overlap on any file they both intend to write",
+      "profile": "planning",
+      "fixture": "parallel-write-conflict",
+      "changed_paths": ["src/core/naruto/slice-a.ts", "src/core/naruto/slice-b.ts"],
+      "focus_paths": [],
+      "token_budget": 6000,
+      "risk": "high",
+      "k": 8,
+      "gold": {
+        "paths": ["src/core/naruto/slice-a.ts", "src/core/naruto/slice-b.ts", "src/core/shared/registry.ts"],
+        "node_ids": [
+          "file:src/core/naruto/slice-a.ts",
+          "file:src/core/naruto/slice-b.ts",
+          "file:src/core/shared/registry.ts"
+        ],
+        "gate_ids": ["naruto_write_scope"],
+        "protected_gate_ids": ["naruto_write_scope"],
+        "test_paths": [],
+        "conflicts": [{ "path": "src/core/shared/registry.ts", "slices": ["slice-a", "slice-b"] }],
+        "must_exclude_paths": [],
+        "stale_paths": [],
+        "invalidated_paths": [],
+        "exact_seed_paths": []
+      }
+    },
+    {
+      "id": "stale-wiki-claim-versus-current-source",
+      "title": "Prefer the current source over a stale wiki claim",
+      "query": "what is the current maximum parallel limit",
+      "profile": "answer",
+      "fixture": "stale-wiki-claim",
+      "changed_paths": ["src/core/config/limits.ts"],
+      "focus_paths": [],
+      "token_budget": 4000,
+      "risk": "normal",
+      "k": 8,
+      "gold": {
+        "paths": ["src/core/config/limits.ts"],
+        "node_ids": ["file:src/core/config/limits.ts"],
+        "gate_ids": ["wiki_claim_freshness"],
+        "protected_gate_ids": [],
+        "test_paths": ["src/core/config/__tests__/limits.test.ts"],
+        "conflicts": [],
+        "must_exclude_paths": [".sneakoscope/wiki/claims/max-parallel.md"],
+        "stale_paths": [".sneakoscope/wiki/claims/max-parallel.md"],
+        "invalidated_paths": [],
+        "exact_seed_paths": ["src/core/config/limits.ts"]
+      }
+    },
+    {
+      "id": "protected-security-and-release-paths",
+      "title": "Return the protected security and release paths without leaking the notes file",
+      "query": "which protected security and release surfaces guard the publish path",
+      "profile": "review",
+      "fixture": "secret-and-path-redaction",
+      "changed_paths": ["src/core/security/token-guard.ts"],
+      "focus_paths": [],
+      "token_budget": 6000,
+      "risk": "high",
+      "k": 8,
+      "gold": {
+        "paths": ["src/core/release/publish-driver.ts", "src/core/security/token-guard.ts"],
+        "node_ids": ["file:src/core/release/publish-driver.ts", "file:src/core/security/token-guard.ts"],
+        "gate_ids": ["release_publish_guard", "security_protected_paths"],
+        "protected_gate_ids": ["release_publish_guard", "security_protected_paths"],
+        "test_paths": ["src/core/security/__tests__/token-guard.test.ts"],
+        "conflicts": [],
+        "must_exclude_paths": ["notes/leaky-notes.md"],
+        "stale_paths": [],
+        "invalidated_paths": [],
+        "exact_seed_paths": ["src/core/security/token-guard.ts"]
+      }
+    }
+  ],
+  "safety_probes": [
+    {
+      "id": "no-secret-reaches-an-artifact",
+      "fixture": "secret-and-path-redaction",
+      "floor": "secret_leak_zero",
+      "expectation": "the notes file carries a secret-shaped token; no node, edge, result or report may contain it"
+    },
+    {
+      "id": "protected-gates-are-never-dropped",
+      "fixture": "secret-and-path-redaction",
+      "floor": "protected_gate_recall_full",
+      "expectation": "both protected gates must be returned for the protected-paths case"
+    },
+    {
+      "id": "no-absolute-or-escaping-path-reaches-an-artifact",
+      "fixture": "symlink-escape",
+      "floor": "path_leak_zero",
+      "expectation": "the escaping symlink is skipped and no absolute or home path is emitted"
+    },
+    {
+      "id": "cycles-do-not-produce-dangling-edges",
+      "fixture": "cyclic-modules",
+      "floor": "dangling_edge_zero",
+      "expectation": "an import cycle must terminate with every edge endpoint present in the snapshot"
+    },
+    {
+      "id": "every-edge-carries-provenance",
+      "fixture": "proof-invalidation",
+      "floor": "edge_without_provenance_zero",
+      "expectation": "proof and cache relations must cite a real workspace-relative path, hash and extractor"
+    },
+    {
+      "id": "dirty-and-untracked-state-stays-deterministic",
+      "fixture": "dirty-and-untracked",
+      "floor": "deterministic_snapshot_zero_mismatch",
+      "expectation": "the same dirty working tree compiles to the same snapshot hash and the same answer every time"
+    },
+    {
+      "id": "stale-graph-never-falls-back-to-text",
+      "fixture": "stale-wiki-claim",
+      "floor": "stale_graph_silent_fallback_zero",
+      "expectation": "a stale claim must surface an explicit staleness signal, never a silent text-search answer"
+    },
+    {
+      "id": "unsupported-input-is-never-labelled-exact",
+      "fixture": "malformed-manifest",
+      "floor": "unsupported_language_exact_mislabel_zero",
+      "expectation": "a malformed manifest is skipped and nothing derived from it is labelled an exact relation"
+    },
+    {
+      "id": "extraction-never-executes-project-code",
+      "fixture": "ts-path-alias",
+      "floor": "project_code_execution_zero",
+      "expectation": "path aliases are resolved by reading configuration, never by importing or running workspace code"
+    },
+    {
+      "id": "hot-path-scan-stays-bounded",
+      "fixture": "large-repo-incremental",
+      "floor": "unbounded_hot_path_scan_zero",
+      "expectation": "a large generated repository must not push the hot path past its declared scan budget"
+    },
+    {
+      "id": "overlapping-write-scopes-are-always-detected",
+      "fixture": "parallel-write-conflict",
+      "floor": "write_scope_conflict_recall_full",
+      "expectation": "two slices declaring the same write target must always be reported as a conflict"
+    }
+  ]
+}
