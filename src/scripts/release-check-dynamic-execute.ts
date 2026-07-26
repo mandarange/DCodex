@@ -32,6 +32,41 @@ const manifest = loadManifest();
 const changedFiles = detectChangedFiles(baseArg);
 const plan = selectGates(manifest.gates, changedFiles, { publish });
 
+// Context Graph advisory: an ADDITIVE signal only. It may add a gate the exact
+// changed-file globs missed (an import edge the glob does not express), and it
+// can never remove one — the assertion below makes that structural rather than
+// a promise. A missing or stale graph leaves the plan exactly as the exact
+// selector produced it, because the graph is a cache and this is a release path.
+const { contextGraphAffectedVerification } = await importDist('core/verification/context-graph-affected.js');
+const baselineGateIds = plan.selected.map((gate) => gate.id);
+let graphAdvisory = { graph_used: false, added_gates: [], graph_status: 'missing' };
+try {
+  const advice = await contextGraphAffectedVerification({
+    root,
+    changedFiles,
+    gates: manifest.gates,
+    baselineGateIds,
+    ...(publish ? { publish: true } : {})
+  });
+  const dropped = baselineGateIds.filter((id) => !advice.gates.includes(id));
+  if (dropped.length) {
+    console.error(JSON.stringify({ ok: false, message: 'context_graph_advisory_dropped_baseline_gate', dropped }, null, 2));
+    process.exit(1);
+  }
+  graphAdvisory = advice;
+  if (advice.graph_used && advice.added_gates.length) {
+    const byId = new Map(manifest.gates.map((gate) => [gate.id, gate]));
+    for (const id of advice.added_gates) {
+      const gate = byId.get(id);
+      if (gate && !baselineGateIds.includes(id)) plan.selected.push(gate);
+    }
+  }
+} catch (error) {
+  // Advisory failure must never block a release plan the exact selector already
+  // produced; it is recorded and the plan stands.
+  graphAdvisory = { graph_used: false, added_gates: [], graph_status: 'unavailable', error: String(error).slice(0, 200) };
+}
+
 // Hermetic invariant proofs preserved from the planner (self-prove narrowing).
 const docsOnly = selectGates(manifest.gates, ['docs/zellij-ui-design.md'], { publish: false });
 const realOnDocs = docsOnly.selected.filter((g) => g.cost === 'real' || g.cost === 'heavy');
@@ -142,7 +177,12 @@ emitGate('release:check:dynamic:execute', {
   executed: executed.length,
   cache_hits: cacheHits.length,
   skipped: skipped.length,
-  failures: failures.length
+  failures: failures.length,
+  graph_advisory: {
+    used: graphAdvisory.graph_used === true,
+    status: graphAdvisory.graph_status,
+    added_gates: graphAdvisory.added_gates
+  }
 });
 
 // ---- helpers ----------------------------------------------------------------

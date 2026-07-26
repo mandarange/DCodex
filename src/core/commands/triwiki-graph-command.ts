@@ -11,6 +11,7 @@ import {
   CONTEXT_GRAPH_REPAIR_COMMAND,
   type ContextGraphLintIssue
 } from '../triwiki/context-graph/contracts.js';
+import { contextGraphFreshnessPreflight } from '../hooks-runtime/context-graph-freshness-preflight.js';
 import { contextGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
 import { runContextGraphLint } from '../triwiki/context-graph/lint/index.js';
 import { contextGraphQueryProfile } from '../triwiki/context-graph/profiles.js';
@@ -29,6 +30,28 @@ export function isTriWikiGraphSubcommand(value: unknown): value is TriWikiGraphS
 function issueLine(issue: ContextGraphLintIssue): string {
   const where = issue.nodeId ?? issue.edgeId ?? issue.path ?? '';
   return `${issue.severity}: ${issue.code}${where ? ` ${where}` : ''} — ${issue.message}`;
+}
+
+/**
+ * `--fast` answers from the artifacts alone. It is the probe an embedding host
+ * or a hot hook path should use: no git, no process spawn, and it says which
+ * staleness reasons it could not evaluate rather than reporting a `fresh` that
+ * means less than it looks.
+ */
+async function graphStatusFast(root: string): Promise<{ result: unknown; ok: boolean; lines: string[] }> {
+  const preflight = await contextGraphFreshnessPreflight(root);
+  return {
+    // The preflight carries its own schema id; keep it rather than restating a
+    // different one over the top of it.
+    result: { ...preflight, mode: 'fast', ok: preflight.usable },
+    ok: preflight.usable,
+    lines: [
+      `Context graph: ${preflight.status} (${preflight.node_count} nodes, ${preflight.edge_count} edges, ${preflight.coverage})`,
+      ...(preflight.reasons.length ? [`Stale reasons: ${preflight.reasons.join(', ')}`] : []),
+      ...(preflight.unverified_reasons.length ? [`Not evaluated: ${preflight.unverified_reasons.join(', ')}`] : []),
+      ...(preflight.usable ? [] : [`Repair: ${preflight.repair_command}`])
+    ]
+  };
 }
 
 async function graphStatus(root: string): Promise<{ result: unknown; ok: boolean; lines: string[] }> {
@@ -163,7 +186,7 @@ export async function triwikiGraphCommand(
   sub: TriWikiGraphSubcommand,
   args: string[]
 ): Promise<{ result: unknown; ok: boolean; lines: string[] }> {
-  if (sub === 'graph-status') return graphStatus(root);
+  if (sub === 'graph-status') return flag(args, '--fast') ? graphStatusFast(root) : graphStatus(root);
   if (sub === 'graph-lint') return graphLint(root);
   return graphQuery(root, args.filter((arg) => arg !== 'graph-query' && !flag([arg], '--json')));
 }

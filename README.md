@@ -173,10 +173,15 @@ export async function runSksMission(request: SksMissionRequest) {
 Then read the outcome through SKS's own surfaces instead of inferring it:
 
 ```sh
-sks naruto proof --json          # completion proof, blockers, evidence links
-sks triwiki graph-status --json  # is the compiled context graph usable right now
-sks search context "..." --json  # evidence-backed context with reason paths
+sks naruto proof --json                 # completion proof, blockers, evidence links
+sks triwiki graph-status --fast --json  # is the compiled graph usable right now (no git, no spawn)
+sks search context "..." --json         # evidence-backed context with reason paths
 ```
+
+`graph-status --fast` is the probe to poll from a host loop: it reads the stored
+artifacts only, so it costs no subprocess, and it reports which staleness reasons
+it could not evaluate rather than returning a `fresh` that means less than it
+looks. Drop `--fast` when you want the full git-aware verdict.
 
 Adapter rules that keep updates safe:
 
