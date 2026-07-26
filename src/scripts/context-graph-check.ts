@@ -211,12 +211,14 @@ function runLegacyClosure() {
   // Every pattern below named a production path the graph replaced. A surviving
   // reference means the old engine is still reachable — the exact "compatibility
   // fallback" the work order forbids.
-  const excluded = [':!CHANGELOG.md', ':!docs/work-orders', ':!.sneakoscope'];
+  // This file necessarily contains every pattern it searches for, so it excludes
+  // itself; a rule that matched its own definition would always fail.
+  const excluded = [':!CHANGELOG.md', ':!docs/work-orders', ':!.sneakoscope', ':!src/scripts/context-graph-check.ts'];
   const checks = [
     { id: 'triwiki_codepack_local', pattern: 'triwiki_codepack_local', pathspecs: ['.', ...excluded] },
     { id: 'simple_counts_comment', pattern: 'simple counts avoid needing a real dependency graph', pathspecs: ['.', ...excluded] },
     { id: 'scanCodebaseIndex', pattern: '\\bscanCodebaseIndex\\b', pathspecs: ['.', ...excluded] },
-    { id: 'code_index_scanner_module', pattern: 'code-index-scanner', pathspecs: ['src', 'package.json', 'release-gates.v2.json', 'infra-harness-gates.json', 'runtime-required-scripts.json'] },
+    { id: 'code_index_scanner_module', pattern: 'code-index-scanner', pathspecs: ['src', 'package.json', 'release-gates.v2.json', 'infra-harness-gates.json', 'runtime-required-scripts.json', ':!src/scripts/context-graph-check.ts'] },
     {
       id: 'attentionRelevance',
       pattern: '\\battentionRelevance\\b',
@@ -240,7 +242,7 @@ function runLegacyClosure() {
     assertGate(!fs.existsSync(path.join(root, retired)), 'context_graph_retired_file_present', { path: retired });
   }
   // ... and must not have been parked under a compatibility alias instead.
-  const parked = gitGrep('code-index-scanner', ['src', ':!src/core/triwiki/context-graph']);
+  const parked = gitGrep('code-index-scanner', ['src', ':!src/core/triwiki/context-graph', ':!src/scripts/context-graph-check.ts']);
   assertGate(parked.length === 0, 'context_graph_retired_file_parked', { hits: parked.slice(0, 6) });
 
   emitGate(GATE_ID, { mode, checks: checks.length, retired_modules: 1 });
