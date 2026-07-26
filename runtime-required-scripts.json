@@ -138,6 +138,16 @@
       "source": "dist/core/release/release-stamp-proof.js",
       "classification": "installed_runtime",
       "reason": "built installed release verification exposes the release check-stamp entrypoint"
+    },
+    {
+      "source": "src/core/release/stage-publish.ts",
+      "classification": "checkout_ci",
+      "reason": "staged publish drives the repository workflow and the maintainer-local tarball verifier from a source checkout, never from an installed package"
+    },
+    {
+      "source": "dist/core/release/stage-publish.js",
+      "classification": "checkout_ci",
+      "reason": "the built staged publish driver remains a checkout-only release helper gated on this repository origin"
     }
   ],
   "dynamic_reference_policies": [

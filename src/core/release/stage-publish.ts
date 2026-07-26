@@ -219,8 +219,12 @@ function readStageReceipt(dir: string, readJsonFile: (file: string) => unknown):
 }
 
 function runLocalVerify(opts: StagePublishOptions, input: { artifactDir: string; version: string; stageId: string }): StagePublishStep {
+  // The verifier is deliberately excluded from the published tarball; this
+  // whole subcommand only runs from a source checkout of this repository.
+  const verifier = path.join(opts.root, 'dist', 'scripts', 'npm-stage-tarball-verifier.js')
+  if (!fs.existsSync(verifier)) return step('verify', false, verifier, 'stage_verifier_unavailable_outside_checkout')
   const result = opts.run(process.execPath, [
-    path.join(opts.root, 'dist', 'scripts', 'npm-stage-tarball-verifier.js'),
+    verifier,
     '--stage-id', input.stageId,
     '--local-receipt', path.join(input.artifactDir, 'pack-receipt.json'),
     '--local-tarball', path.join(input.artifactDir, `sneakoscope-${input.version}.tgz`),
