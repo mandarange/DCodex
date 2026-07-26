@@ -35,6 +35,21 @@ test('isHelpRequest accepts the three help forms and ignores help as a value', (
   assert.equal(isHelpRequest([]), false);
 });
 
+test('a command that exports usage() gets its own text, not the manifest floor', () => {
+  // Regression: every registry wrapper rebuilt CommandModule from one named
+  // export and dropped `usage`, so the router's richer-help branch was
+  // unreachable for all 100 commands.
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-help-usage-'));
+  execFileSync('git', ['init', '-q', '.'], { cwd });
+  try {
+    const stdout = String(runHelp('release', '--help', cwd).stdout || '');
+    assert.match(stdout, /Usage: sks release affected\|full\|background\|stage/);
+    assert.match(stdout, /stage never runs `npm stage approve`/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('manifest help names the command, its summary, and the help flag', () => {
   const entry = COMMAND_MANIFEST_LITE.find((item) => item.name === 'doctor');
   assert.ok(entry);

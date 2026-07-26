@@ -94,6 +94,17 @@ function pickRunner(mod: Record<string, unknown>): CommandCallable | null {
   return null;
 }
 
+/**
+ * Every wrapper below builds a fresh CommandModule from one named export, which
+ * silently dropped any `usage()` the module also exported — so the router's
+ * "a command opts into richer help by exporting usage()" branch was unreachable
+ * for every registered command. Carry it through when it is there.
+ */
+function usageOf(mod: unknown): { usage?: (command: string) => string } {
+  const candidate = (mod as Record<string, unknown> | null)?.usage;
+  return typeof candidate === 'function' ? { usage: candidate as (command: string) => string } : {};
+}
+
 function normalizeCommandModule(moduleValue: unknown, _packageRequiredFile: string): CommandModule {
   if (!moduleValue || typeof moduleValue !== 'object')
     throw new Error('Invalid command module');
@@ -105,6 +116,7 @@ function normalizeCommandModule(moduleValue: unknown, _packageRequiredFile: stri
 
   return {
     run: async (command: string, args: string[]) => runner(command, args) as unknown,
+    ...usageOf(rec),
   } satisfies CommandModule;
 }
 
@@ -123,7 +135,7 @@ export function argsCommand<T extends object, K extends keyof T & string>(
   return async () => {
     const mod = await loader();
     const fn = functionExport<ArgsRun>(mod, exportName);
-    return { run: (_command: string, args: string[]) => fn(args) as unknown };
+    return { run: (_command: string, args: string[]) => fn(args) as unknown, ...usageOf(mod) };
   };
 }
 
@@ -135,7 +147,7 @@ function noArgsCommand<T extends object, K extends keyof T & string>(
   return async () => {
     const mod = await loader();
     const fn = functionExport<() => Promise<unknown> | unknown>(mod, exportName);
-    return { run: () => fn() as unknown };
+    return { run: () => fn() as unknown, ...usageOf(mod) };
   };
 }
 
@@ -147,7 +159,7 @@ function commandArgsCommand<T extends object, K extends keyof T & string>(
   return async () => {
     const mod = await loader();
     const fn = functionExport<CommandArgsRun>(mod, exportName);
-    return { run: (command: string, args: string[]) => fn(command, args) as unknown };
+    return { run: (command: string, args: string[]) => fn(command, args) as unknown, ...usageOf(mod) };
   };
 }
 
@@ -165,6 +177,7 @@ function subcommand<T extends object, K extends keyof T & string>(
         const [subcommandName = fallbackSubcommand, ...rest] = args;
         return fn(subcommandName ?? '', rest) as unknown;
       },
+      ...usageOf(mod),
     };
   };
 }
