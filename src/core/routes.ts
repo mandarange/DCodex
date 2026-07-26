@@ -667,7 +667,7 @@ export const COMMAND_CATALOG = [
   { name: 'commands', usage: 'sks commands [--json]', description: 'List every user-facing command with a short description.' },
   { name: 'check', usage: 'sks check --tier instant|affected|confidence|release|real-check [--sla 5m] [--changed-since auto] [--json]', description: 'Run build-once proof-bank checks: affected/confidence use incremental build and cached proof reuse; release keeps full clean proof for publish readiness.' },
   { name: 'task', usage: 'sks task run [--sla 5m] [--json]', description: 'Run the normal affected-scope, release-equivalent task verification path.' },
-  { name: 'release', usage: 'sks release affected|full|background [--json]', description: 'Run affected release proof, full release proof, or background release proof explicitly.' },
+  { name: 'release', usage: 'sks release affected|full|background|stage [--json]', description: 'Run affected release proof, full release proof, or background release proof explicitly, or drive the staged npm publish up to the human approval step.' },
   { name: 'triwiki', usage: 'sks triwiki index|affected|proof-bank [--json]', description: 'Inspect TriWiki module cards, gate impact maps, affected graphs, and proof bank status.' },
   { name: 'daemon', usage: 'sks daemon status|warm|stop [--json]', description: 'Inspect or warm the local SKS daemon cache state for build/proof reuse.' },
   { name: 'run', usage: 'sks run "task" [--visual|--research|--db] [--json]', description: 'Classify a plain-language task, materialize a mission, and route it through the SKS trust kernel.' },

@@ -5,14 +5,38 @@ import { flag } from '../../cli/args.js';
 import { printJson } from '../../cli/output.js';
 import { exists, projectRoot, readJson, writeJsonAtomic, writeTextAtomic } from '../fsx.js';
 import { createMission } from '../mission.js';
+import { type ProcessRunner, stagePublish } from '../release/stage-publish.js';
+
+export function usage(): string {
+  return [
+    'Usage: sks release affected|full|background|stage [--json]',
+    '',
+    'Run affected release proof, full release proof, or background release proof explicitly.',
+    '',
+    'Subcommands:',
+    '  affected     Changed-scope release proof (default)',
+    '  full         Full foreground release gate graph',
+    '  background   Full release gate graph, detached logs',
+    '  stage        Drive the staged npm publish up to the human approval step',
+    '',
+    'Options for stage:',
+    '  --confirm            Perform the outward steps: push main, dispatch the',
+    '                       stage workflow, wait, download and verify the tarball.',
+    '                       Without it, stage only reports what it would do.',
+    '  --version <semver>   Version to stage (defaults to package.json).',
+    '',
+    'stage never runs `npm stage approve`; that approval is a human 2FA step.'
+  ].join('\n');
+}
 
 export async function releaseCommand(args: string[] = []): Promise<unknown> {
   const root = await projectRoot();
   const sub = args[0] && !args[0].startsWith('-') ? args[0] : 'affected';
   const json = flag(args, '--json');
+  if (sub === 'stage') return runStageSubcommand(root, args, json);
   const command = commandForSubcommand(sub);
   if (!command) {
-    console.error('Usage: sks release affected|full|background [--json]');
+    console.error(usage());
     process.exitCode = 1;
     return null;
   }
@@ -58,6 +82,43 @@ export async function releaseCommand(args: string[] = []): Promise<unknown> {
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   return report;
+}
+
+async function runStageSubcommand(root: string, args: string[], json: boolean): Promise<unknown> {
+  const report = stagePublish({
+    root,
+    confirm: flag(args, '--confirm'),
+    run: spawnRunner(root),
+    ...(readOption(args, '--version') ? { version: readOption(args, '--version')! } : {})
+  });
+  await writeJsonAtomic(path.join(root, '.sneakoscope', 'reports', 'release-stage-publish.json'), report).catch(() => {});
+  if (!report.ok) process.exitCode = 1;
+  if (json) return printJson(report);
+  for (const step of report.steps) {
+    const mark = step.blocker ? '✖' : step.attempted ? '✔' : '·';
+    console.log(`${mark} ${step.id}${step.detail ? ` — ${step.detail}` : ''}${step.blocker ? ` (${step.blocker})` : ''}`);
+  }
+  if (report.stage_id) console.log(`\nStage id: ${report.stage_id}`);
+  for (const action of report.next_actions) console.log(`- ${action}`);
+  return report;
+}
+
+function spawnRunner(root: string): ProcessRunner {
+  return (command, commandArgs, opts = {}) => {
+    const result = spawnSync(command, [...commandArgs], {
+      cwd: root,
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024 * 20,
+      ...(opts.timeoutMs ? { timeout: opts.timeoutMs } : {})
+    });
+    return { status: result.status, stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
+  };
+}
+
+function readOption(args: string[], name: string): string | null {
+  const index = args.indexOf(name);
+  const value = index >= 0 ? args[index + 1] : null;
+  return value && !value.startsWith('-') ? value : null;
 }
 
 async function findReleaseReadinessReport(root: string) {

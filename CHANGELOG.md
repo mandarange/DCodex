@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+
+- Add `sks release stage`, which drives the documented staged npm publish as far as automation is allowed to go: push the verified commit to `main`, dispatch the OIDC stage workflow with `version` and `confirm_stage`, wait for the run, download the immutable handoff and stage receipt, and run the maintainer-local read-only tarball comparison. It stops at `npm stage approve` and prints the stage id, because that approval is a human 2FA decision the release contract reserves for a person. Every outward-facing step requires `--confirm`; without it the subcommand is a read-only preflight that reports branch, tree cleanliness, version, origin identity and `gh` auth. Nothing in this path holds an npm write token — publication authority stays with Trusted Publishing in the workflow.
 
 
 ## [7.3.0] - 2026-07-26
