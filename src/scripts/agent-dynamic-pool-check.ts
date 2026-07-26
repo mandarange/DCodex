@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate } from './gate-lib.js';
 import { runDynamicPoolFixture } from './agent-dynamic-pool-fixture.js';
 
 const fixture = await runDynamicPoolFixture({ target: 8, total: 16 });

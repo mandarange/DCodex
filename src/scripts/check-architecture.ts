@@ -29,7 +29,6 @@ interface ArchitectureWaiver {
   reason: string;
   policy: 'shrink-only';
   baseline_lines: number;
-  expires_version: string;
 }
 
 const CURRENT_ROUTE_DOMAIN_IMPORT_SEGMENTS = Object.freeze([
@@ -144,7 +143,7 @@ function waiverFailureFor(relPath: string, lines: number, baseLines: number | nu
   if (!waiver) return 'no shrink-only waiver';
   if (waiver.policy !== budgets.waiver_policy.mode) return `waiver policy ${String(waiver.policy || 'missing')} is not shrink-only`;
   if (!Number.isInteger(waiver.baseline_lines) || waiver.baseline_lines < 1) return 'waiver baseline_lines missing';
-  if (!waiver.reason || !waiver.expires_version) return 'waiver reason/expiry missing';
+  if (!waiver.reason) return 'waiver reason missing';
   if (baseLines === null) return 'new files cannot use architecture waivers';
   const ceiling = Math.min(baseLines, waiver.baseline_lines);
   return lines <= ceiling ? null : `shrink-only ceiling ${ceiling} exceeded`;

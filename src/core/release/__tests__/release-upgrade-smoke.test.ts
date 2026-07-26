@@ -40,7 +40,7 @@ test('pinned 6.2 baseline records expected legacy content without masking struct
   ])
   assert.deepEqual(classified.blockers, ['tarball_secret_scan_extract_failed'])
   assert.equal(classified.warnings.length, 4)
-  assert.ok(classified.warnings.every((warning) => warning.startsWith('published_6_2_expected_content:')))
+  assert.ok(classified.warnings.every((warning) => warning.startsWith('published_baseline_expected_content:')))
 })
 
 test('release upgrade smoke fails closed before commands when the target receipt is invalid', async () => {

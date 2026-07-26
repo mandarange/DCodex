@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { root, assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js';
+import { root, assertGate, emitGate, importDist } from './gate-lib.js';
 
 const policy = await importDist('core/codex/codex-project-config-policy.js');
 const install = await importDist('cli/install-helpers.js');

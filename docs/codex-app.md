@@ -8,7 +8,7 @@ SKS 7.0.4 prefers the OpenAI Codex CLI/App channel `rust-v0.145.0` as the packag
 
 ## Chat, Pro Models, And Fast UI Preservation
 
-SKS 6.5.0 repairs native Desktop selection when an SKS-owned global
+SKS repairs native Desktop selection when an SKS-owned global
 `model_provider`, `model`, or `model_reasoning_effort` lock suppresses the Chat
 entry, Pro model access, or Fast picker. The repair is provenance-scoped: it
 does not delete unmarked user settings, provider definitions, provider URLs,

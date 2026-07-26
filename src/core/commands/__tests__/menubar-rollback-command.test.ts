@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { menubarCommand } from '../menubar-command.js';
-import type { SksMenuBarRollbackResult } from '../../codex-app/sks-menubar.js';
+import type { SksMenuBarRollbackResult } from '../../codex-app/menubar/index.js';
 
 test('menubar rollback command exposes the guarded previous-artifact path and --no-launch', async (t) => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-menubar-command-rollback-'));

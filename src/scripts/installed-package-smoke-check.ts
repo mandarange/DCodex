@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 
 const { runInstalledPackageSmoke } = await importDist('core/install/installed-package-smoke.js')
 const report = await runInstalledPackageSmoke(root, {

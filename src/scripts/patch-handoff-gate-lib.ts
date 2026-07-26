@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from '../core/fsx.js';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 export function writeReport(name, report) {
   const out = path.join(root, '.sneakoscope', 'reports', `${name}.json`);

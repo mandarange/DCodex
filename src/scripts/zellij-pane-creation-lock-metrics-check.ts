@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText } from './gate-lib.js'
 
 const src = readText('src/core/zellij/zellij-worker-pane-manager.ts')
 assertGate(src.includes('sks.zellij-pane-creation-lock-metrics.v1'), 'pane lock metrics schema missing')

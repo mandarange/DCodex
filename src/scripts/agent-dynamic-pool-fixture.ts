@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { importDist } from './sks-1-18-gate-lib.js';
+import { importDist } from './gate-lib.js';
 
 export async function runDynamicPoolFixture(opts = {}) {
   const target = opts.target || 4;

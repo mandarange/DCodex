@@ -9,6 +9,7 @@ import { reconcileSkills } from '../init/skills.js';
 import { codexHookTrustDoctor } from '../codex-hooks/codex-hook-trust-doctor.js';
 import { writeCodexConfigGuarded } from '../codex/codex-config-guard.js';
 import { compareSemVer } from './semver.js';
+import { escapeRegExp } from '../text/regex.js';
 
 export const UPDATE_MIGRATION_SCHEMA = 'sks.project-migration-receipt.v2' as const;
 export const INSTALLATION_EPOCH_SCHEMA = 'sks.installation-epoch.v1' as const;
@@ -874,10 +875,6 @@ function tomlLineKey(line: string): string {
 
 function ensureTrailingNewline(text: string): string {
   return `${String(text || '').trim()}\n`;
-}
-
-function escapeRegExp(value: string): string {
-  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export async function ensureCurrentMigrationBeforeCommand(input: {

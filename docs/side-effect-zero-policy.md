@@ -11,7 +11,7 @@ unless the user explicitly opts in. This policy is enforced by two compiled modu
 The gate `dist/scripts/side-effect-zero-gate-check.js` (id `safety:side-effect-zero`)
 proves the invariants below and writes `.sneakoscope/reports/side-effect-zero.json`.
 
-For 6.1.0, `dist/scripts/mutation-callsite-coverage-check.js` performs one static
+`dist/scripts/mutation-callsite-coverage-check.js` performs one static
 scan across every production `src/**/*.ts` file, excluding test sources. Raw
 mutation tokens must either be an observed `guarded*` call or match an external
 `safety-mutation-allowlist.json` entry with exact `file`, `symbol`, `token`, and

@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { actionScriptSource, smokeSksMenuBarAction } from '../sks-menubar.js';
+import { actionScriptSource, smokeSksMenuBarAction } from '../menubar/index.js';
 
 test('smoke check fails with a distinct non-executable signal when the action script lost its +x bit', async (t) => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-menubar-smoke-noexec-'));

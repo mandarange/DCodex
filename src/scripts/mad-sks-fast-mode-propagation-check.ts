@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, root } from './gate-lib.js';
 
 const mod = await import(pathToFileURL(path.join(root, 'dist', 'core', 'agents', 'fast-mode-policy.js')).href);
 const policy = mod.resolveFastModePolicy({ fastMode: true });

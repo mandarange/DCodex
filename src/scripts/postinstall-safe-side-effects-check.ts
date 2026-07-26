@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs';
 import path from 'node:path';
-import { root, assertGate, emitGate, readText } from './sks-1-18-gate-lib.js';
+import { root, assertGate, emitGate, readText } from './gate-lib.js';
 
 // Locks the guarantee that `postinstall` performs no heavy / network / process-kill
 // side-effects by default. This is STATIC source analysis only — we never execute

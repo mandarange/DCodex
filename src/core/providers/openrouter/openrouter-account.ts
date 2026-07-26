@@ -3,6 +3,7 @@ import { normalizeOpenRouterModelId } from '../../codex-app/openrouter-provider.
 import { resolveOpenRouterApiKey } from './openrouter-secret-store.js';
 import { invalidOpenRouterResponseIssue, normalizeOpenRouterError } from './openrouter-error.js';
 import type { OpenRouterIssue } from './openrouter-types.js';
+import { isRecord } from '../../json/records.js';
 
 export const OPENROUTER_KEY_URL = 'https://openrouter.ai/api/v1/key' as const;
 export const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models' as const;
@@ -359,10 +360,6 @@ function boundedString(value: unknown, limit: number): string {
 function finiteInteger(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? Math.floor(number) : null;
-}
-
-function isRecord(value: unknown): value is Record<string, any> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function emptyModelsResult(blocker: string, warnings: readonly string[]): OpenRouterModelsResult {

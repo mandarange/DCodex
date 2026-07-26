@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root, readJson } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root, readJson } from './gate-lib.js';
 
 const inventoryMod = await importDist('core/agents/work-partition/repo-inventory.js');
 const depsMod = await importDist('core/agents/work-partition/dependency-graph.js');

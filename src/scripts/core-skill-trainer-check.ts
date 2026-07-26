@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const trainerMod = await importDist('core/skills/core-skill-trainer.js');
 const metaMod = await importDist('core/skills/core-skill-meta-update.js');

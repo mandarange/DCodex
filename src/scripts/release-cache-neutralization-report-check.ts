@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import { spawnSync } from 'node:child_process'
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 
 const result = spawnSync(process.execPath, ['dist/scripts/release-speed-summary.js'], { cwd: root, encoding: 'utf8', timeout: 30000 })
 assertGate(result.status === 0, 'release speed summary script failed', { stderr: result.stderr })

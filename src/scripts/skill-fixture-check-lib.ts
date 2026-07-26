@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate } from './gate-lib.js';
 import { renderCoreSkillTemplate } from '../core/codex-native/core-skill-manifest.js';
 
 export { assertGate, emitGate };

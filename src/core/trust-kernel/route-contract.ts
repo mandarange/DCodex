@@ -5,12 +5,9 @@ import { routeRequiresCompletionProof, routeRequiresImageVoxelAnchors } from '..
 import { rootCauseAnalysisRequired } from '../proof/root-cause-policy.js';
 import { ROUTE_COMPLETION_CONTRACT_SCHEMA, normalizeTrustStatus, trustKernelMetadata } from './trust-kernel-schema.js';
 import { validateCompletionContract } from './completion-contract.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 type JsonRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
-}
 
 function asList(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];

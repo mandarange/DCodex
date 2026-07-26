@@ -1,6 +1,6 @@
 # Goal Runtime Migration
 
-SKS 3.1.0 temporarily compiled `sks goal` requests into SKS-owned Loop Graphs and wrote `goal-compat.json`. That runtime is historical and is not a supported execution path in SKS 7.0.0.
+SKS 3.1.0 temporarily compiled `sks goal` requests into SKS-owned Loop Graphs and wrote `goal-compat.json`. That runtime is historical and is not a supported execution path in SKS.
 
 Codex native `/goal` is now the only persisted goal owner. `sks goal create|edit|pause|resume|clear|status` is a stateless helper that renders a detailed native Goal command; it creates no SKS mission, compatibility artifact, loop, or fallback state. Implementation work continues through the selected SKS execution route rather than through a Goal-owned runtime.
 

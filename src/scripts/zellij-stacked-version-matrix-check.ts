@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import { resolveZellijStackedPaneCapability, ZELLIJ_MIN_VERSION, ZELLIJ_STACKED_PANE_MIN_VERSION } from '../core/zellij/zellij-capability.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const fixtures = [
   ['zellij 0.43.0', true],

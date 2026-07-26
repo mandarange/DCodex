@@ -62,6 +62,7 @@ import {
   resolveHostCapabilityHookRuntimeBinding
 } from '../agent-bridge/host-capability-runtime.js'
 import { renderHostCapabilityBlockedLines } from '../agent-bridge/host-capability-policy.js'
+import { uniqueStrings } from '../text/strings.js'
 
 export { buildNarutoGateResult } from '../subagents/official-subagent-preparation.js'
 
@@ -877,8 +878,4 @@ export function renderNarutoBlockedLines(blockers: readonly unknown[]): string[]
     reason: 'Naruto 실행이 완료 조건을 충족하지 못했습니다.',
     action: '세부 코드를 확인해 가장 먼저 표시된 원인을 해결한 뒤 다시 실행하세요.'
   })
-}
-
-function uniqueStrings(values: unknown[]): string[] {
-  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
 }

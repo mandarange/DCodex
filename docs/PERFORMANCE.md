@@ -76,7 +76,7 @@ Each anchor stores id, RGBA key, `[domain, layer, phase, concentration]`, source
 
 ## Rust decision
 
-Rust is useful for CPU-heavy long-running kernels, but the 6.1.0 npm package does not ship a prebuilt native binary: binary packages increase package size and create OS/architecture install failure modes. The published runtime remains Node.js, and the package includes the minimal Rust helper source and lockfile at `crates/sks-core` for explicit local compilation and parity-checked acceleration. Absence of a local `sks-rs` binary must not be reported as native proof or silently bypass parity validation.
+Rust is useful for CPU-heavy long-running kernels, but the npm package does not ship a prebuilt native binary: binary packages increase package size and create OS/architecture install failure modes. The published runtime remains Node.js, and the package includes the minimal Rust helper source and lockfile at `crates/sks-core` for explicit local compilation and parity-checked acceleration. Absence of a local `sks-rs` binary must not be reported as native proof or silently bypass parity validation.
 
 ## Database safety resource policy
 

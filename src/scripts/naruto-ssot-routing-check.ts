@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, importDist, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, readText } from './gate-lib.js'
 
 const routes = await importDist('core/routes.js')
 const removedTeam = routes.routePrompt('$Team fix the release gate')

@@ -6,6 +6,7 @@ import { buildCodexPluginInventory } from '../codex-plugins/codex-plugin-json.js
 import { inspectConfinedPath, isLexicallyConfined } from '../managed-path-safety.js';
 import { currentCodexSkillRoots, type CodexSkillRootScope } from './sks-skill-paths.js';
 import { writeRootConfinedJsonReport } from './confined-report-writer.js';
+import { messageOf } from '../errors/message.js';
 
 interface CodexNativeInventory {
   plugins?: Array<{ id?: unknown; name?: unknown }>;
@@ -114,10 +115,6 @@ function normalizeInventory(value: unknown): CodexNativeInventory {
     plugins: Array.isArray(record.plugins) ? record.plugins.map((plugin) => plugin && typeof plugin === 'object' ? plugin as { id?: unknown; name?: unknown } : {}) : [],
     blockers: Array.isArray(record.blockers) ? record.blockers.map(String) : []
   };
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 async function discoverSkillNames(roots: ConfinedSkillRoot[]): Promise<{ names: string[]; blockers: string[] }> {

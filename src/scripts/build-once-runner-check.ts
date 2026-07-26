@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { assertGate, emitGate, importDist, readText } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, readText } from './gate-lib.js';
 
 const src = readText('src/core/build/build-once-runner.ts');
 assertGate(src.includes('.sks-build-proof.json') && src.includes('build:incremental'), 'build-once runner must write dist proof and use incremental build', src.slice(0, 500));

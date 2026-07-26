@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist } from './gate-lib.js';
 
 const mod = await importDist('core/proof/fake-real-proof-policy.js');
 const fake = mod.evaluateFakeRealProofPolicy({ backend: 'fake', real_parallel_claim: false });

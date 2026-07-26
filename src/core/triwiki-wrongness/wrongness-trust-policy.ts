@@ -1,4 +1,5 @@
 import type { TrustStatus } from '../trust-kernel/trust-kernel-schema.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -74,10 +75,6 @@ function claimLinksActiveWrongness(proof: JsonRecord, evidence: JsonRecord): boo
     const wrongness = asStringList(asRecord(claim).wrongness);
     return wrongness.some((id) => activeIds.has(id));
   });
-}
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
 function asStringList(value: unknown): string[] {

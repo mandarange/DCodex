@@ -8,6 +8,7 @@ import {
   type RemoteMachineRegistryValidation,
   type RemoteMachineV1
 } from './types.js';
+import { asRecordOrNull as asRecord } from '../json/records.js';
 
 const MACHINE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const SSH_ALIAS_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -149,10 +150,6 @@ export function validateAllowedRoot(root: string): string | null {
 function isWithinRoot(root: string, candidate: string): boolean {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function stringValue(value: unknown): string {

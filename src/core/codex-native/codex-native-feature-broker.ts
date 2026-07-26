@@ -20,6 +20,8 @@ import {
 import { buildMcpPluginServerCandidates } from '../mcp/mcp-plugin-inventory.js'
 import { codexNativeFeatureState, computeCodexNativeInvocationDefaults, type CodexNativeFeatureMatrix, type CodexNativeFeatureState } from './codex-native-feature-matrix.js'
 import { currentCodexSkillRoots, currentSksSkillName, resolveAuthoritativeSksSkillSources } from './sks-skill-paths.js'
+import { messageOf } from '../errors/message.js'
+import { isRecord } from '../json/records.js'
 
 const REPORT_PATH = '.sneakoscope/reports/codex-native-feature-matrix.json'
 const REQUIRED_SKILL_NAMES = MANAGED_SKILLS.map((skill) => currentSksSkillName(skill.id))
@@ -413,12 +415,4 @@ function codex0144State(capability: unknown, key: Codex0144FeatureKey): CodexNat
   }
   if (!supported) input.unavailableStatus = 'fallback'
   return codexNativeFeatureState(input)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }

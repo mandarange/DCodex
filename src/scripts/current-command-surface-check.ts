@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
-import { assertGate, emitGate, importDist, readText, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, readText, root } from './gate-lib.js';
 
 const removed = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui', 'glm'];
 const removedDollar = ['$Agent', '$Team', '$MAD-DB', '$Swarm', '$ShadowClone', '$Kagebunshin', '$Ralph'];

@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildRuntimeTruthMatrix, writeRuntimeTruthMatrix } from '../core/proof/runtime-truth-matrix.js';
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, root } from './gate-lib.js';
 
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const matrix = await buildRuntimeTruthMatrix({

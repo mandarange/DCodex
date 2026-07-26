@@ -8,6 +8,7 @@ import {
   type RemoteSessionIndexValidation,
   type RemoteSessionTargetV1
 } from './types.js';
+import { asRecordOrNull as asRecord } from '../json/records.js';
 
 const IDENTIFIER_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
 
@@ -69,10 +70,6 @@ export function findRemoteSessionTarget(index: RemoteSessionIndexV1, machineId: 
   const target = index.targets.find((candidate) => candidate.machine_id === machineId && candidate.project_id === projectId);
   if (!target) throw new Error(`remote_session_target_unknown:${machineId}:${projectId}`);
   return target;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function stringValue(value: unknown): string {

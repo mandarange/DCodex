@@ -7,6 +7,7 @@ import { decideNarutoConcurrency } from '../naruto/naruto-concurrency-governor.j
 import type { HardwareCapacityProbeInput } from '../naruto/hardware-capacity-probe.js'
 import type { SubagentModelPolicyId, SubagentModelReasoningEffort } from './model-policy.js'
 import { DEFAULT_NARUTO_MAX_THREADS } from './thread-budget.js'
+import { escapeRegExp } from '../text/regex.js'
 
 export const DEFAULT_AUTOMATIC_SUBAGENT_COUNT = 4
 export const PARALLEL_AUTOMATIC_SUBAGENT_COUNT = 6
@@ -363,10 +364,6 @@ function unique(values: string[]): string[] {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, Math.floor(Number(value) || minimum)))
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 const ROLE_LANGUAGE_HINTS: Record<string, string[]> = {

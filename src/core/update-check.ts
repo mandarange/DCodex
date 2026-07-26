@@ -19,7 +19,7 @@ import {
   sksMenuBarPaths,
   type SksMenuBarInstallResult,
   type SksMenuBarStatusResult
-} from './codex-app/sks-menubar.js';
+} from './codex-app/menubar/index.js';
 import { inspectCodexCliUpdate, type CodexCliUpdateStatus } from './codex/codex-cli-update.js';
 import { reconcileSkills } from './init/skills.js';
 import { codexHookTrustDoctor } from './codex-hooks/codex-hook-trust-doctor.js';

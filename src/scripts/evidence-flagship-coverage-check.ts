@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs';
 import path from 'node:path';
-import { emitGate, requireContains, root } from './sks-1-12-real-execution-check-lib.js';
+import { emitGate, requireContains, root } from './real-execution-check-lib.js';
 
 requireContains('evidence:flagship-coverage', 'src/core/commands/image-ux-review-command.ts', [
   'visualEvidence: { image_ux_review',

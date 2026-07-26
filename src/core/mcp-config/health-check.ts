@@ -7,6 +7,7 @@ import { redactMcpError } from './redaction.js';
 import { normalizeMcpServerName } from './secret-policy.js';
 import { resolveMcpScope } from './scope.js';
 import { MCP_HEALTH_SCHEMA, type McpHealthResultV1, type McpScope, type McpWritableScope } from './types.js';
+import { PACKAGE_VERSION } from '../version.js';
 
 const PROTOCOL_VERSION = '2024-11-05';
 const OUTPUT_CAP = 64 * 1024;
@@ -303,7 +304,7 @@ function parseHttpPayload(text: string): unknown {
 function initializeRequest(): Record<string, unknown> {
   return {
     jsonrpc: '2.0', id: 1, method: 'initialize',
-    params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'sks-mcp-health', version: '6.3.0' } }
+    params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'sks-mcp-health', version: PACKAGE_VERSION } }
   };
 }
 

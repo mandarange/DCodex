@@ -5,7 +5,7 @@ import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { ensureDir, exists, readJson, readText, runProcess, writeJsonAtomic } from '../fsx.js';
 import { ui as cliUi } from '../../cli/cli-theme.js';
-import { uninstallSksMenuBar } from '../codex-app/sks-menubar.js';
+import { uninstallSksMenuBar } from '../codex-app/menubar/index.js';
 import { writeCodexConfigGuarded } from '../codex/codex-config-guard.js';
 import { sweepSksTempDirs } from '../retention.js';
 import { reconcileSkills } from '../init/skills.js';

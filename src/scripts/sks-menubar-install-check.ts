@@ -9,7 +9,7 @@ import {
   NATIVE_SOURCE_FILES,
   rollbackSksMenuBar,
   type SksMenuBarBuildStamp
-} from '../core/codex-app/sks-menubar.js';
+} from '../core/codex-app/menubar/index.js';
 
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-menubar-check-'));
 const fakeRoot = path.join(temp, 'project-root');

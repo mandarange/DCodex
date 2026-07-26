@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { appendAgentMessage } from '../core/agents/agent-message-bus.js'
 import { buildRuntimeProofSummary, renderRuntimeProofSummary } from '../core/agents/runtime-proof-summary.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-runtime-summary-messages-'))
 const missionId = 'M-runtime-summary-messages'

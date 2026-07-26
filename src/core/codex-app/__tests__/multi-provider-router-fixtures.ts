@@ -5,6 +5,7 @@ import {
   MULTI_PROVIDER_ROUTER_DEFAULT_BASE_URL,
   MULTI_PROVIDER_ROUTER_ID
 } from '../multi-provider-router.js';
+export { escapeRegExp } from '../../text/regex.js';
 
 export async function makeMultiProviderRouterHarness() {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-multi-provider-router-'));
@@ -86,8 +87,4 @@ export function catalogModel(
     multi_agent_version: 'v1',
     ...extra
   };
-}
-
-export function escapeRegExp(value: unknown): string {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { runProcess } from '../core/fsx.js'
 import { resolveCodexNativeInvocationPlan } from '../core/codex-native/codex-native-invocation-router.js'
 import { createCodexNativeRuntimeFixture, withFixtureEnv } from './codex-native-runtime-e2e-fixture.js'
+import { messageOf } from '../core/errors/message.js'
 
 export async function runCodexNativeDoctorMadRoutingRealBlackbox(): Promise<void> {
   const fixture = await createCodexNativeRuntimeFixture({
@@ -72,8 +73,4 @@ function assertGate(condition: unknown, message: string, detail: unknown = {}): 
 
 function emitGate(gate: string): void {
   console.log(JSON.stringify({ schema: 'sks.release-gate.v1', ok: true, gate }, null, 2))
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }

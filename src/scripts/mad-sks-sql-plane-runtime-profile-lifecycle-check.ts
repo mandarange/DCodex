@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createMission } from '../core/mission.js'
 import { createMadSksSqlPlaneRuntimeProfile, closeMadSksSqlPlaneRuntimeProfile, verifyReadOnlyRestored } from '../core/mad-sks/sql-plane/runtime-profile.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-mad-sks-sql-plane-runtime-profile-'))
 await fs.mkdir(path.join(root, '.codex'), { recursive: true })

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { emitGate, requireContains } from './sks-1-12-real-execution-check-lib.js';
+import { emitGate, requireContains } from './real-execution-check-lib.js';
 
 requireContains('ux-review:patch-diff-recheck', 'src/core/image-ux-review/fix-loop.ts', [
   'changed_files',

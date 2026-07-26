@@ -26,6 +26,7 @@ import {
   readInheritedOfficialSubagentConfigText,
   resolveInheritedOfficialSubagentConfigPath
 } from './subagents/official-subagent-config.js';
+import { escapeRegExp } from './text/regex.js';
 export { installGlobalSkills, installProjectSkills, installSkills } from './init/skills.js';
 
 const REFLECTION_MEMORY_PATH = '.sneakoscope/memory/q2_facts/post-route-reflection.md';
@@ -1194,7 +1195,4 @@ export function codexAppQuickReference(scope: any, commandPrefix: any) {
     `Guard: generated harness files are immutable outside the engine source repo; conflicts require ${commandPrefix} conflicts prompt plus human approval.`,
     'Publishing, deployment, live database mutation, destructive actions, and other irreversible external effects require explicit scoped authorization.'
   ].join('\n') + '\n';
-}
-function escapeRegExp(value: any) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -6,7 +6,7 @@ import { createMission } from '../core/mission.js';
 import { classifyMadSksSqlPlaneError, madSksSqlPlaneRetryGuidance, summarizeMadSksSqlPlaneError } from '../core/mad-sks/sql-plane/mcp-executor.js';
 import { createMadSksSqlPlaneRuntimeProfile, madSksSqlPlaneMcpUrl } from '../core/mad-sks/sql-plane/runtime-profile.js';
 import { resolveMadSksSqlPlaneTarget } from '../core/mad-sks/sql-plane/target.js';
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate } from './gate-lib.js';
 
 const timeoutSummary = summarizeMadSksSqlPlaneError(new Error('failed to connect to postgres: dial tcp 1.2.3.4:6543: i/o timeout token=secret-token'));
 assertGate(classifyMadSksSqlPlaneError(timeoutSummary) === 'supabase_sql_plane_timeout', 'timeout errors must be classified as SQL-plane timeout', { timeoutSummary });

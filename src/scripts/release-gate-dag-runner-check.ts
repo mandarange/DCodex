@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate, importDist, readJson, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, readJson, readText } from './gate-lib.js'
 
 const pkg = readJson('package.json')
 const manifest = readJson('release-gates.v2.json')

@@ -6,6 +6,7 @@ import { syncCodexSksSkills } from '../codex-app/codex-skill-sync.js'
 import { nowIso, writeJsonAtomic } from '../fsx.js'
 import { createRequestedScopeContract } from '../safety/requested-scope-contract.js'
 import { evaluateMutation, mutationLedgerPath, recordMutation, type MutationLedgerKind } from '../safety/mutation-ledger.js'
+import { messageOf } from '../errors/message.js'
 
 export interface CodexNativeRepairTransaction {
   schema: 'sks.codex-native-repair-transaction.v1'
@@ -179,8 +180,4 @@ function listLength(value: unknown, key: string): number {
     current = (current as Record<string, unknown>)[part]
   }
   return Array.isArray(current) ? current.length : 0
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }

@@ -3,6 +3,7 @@ import { ensureDir, nowIso, readJson, writeJsonAtomic } from '../fsx.js';
 import { missionDir } from '../mission.js';
 import { addWrongnessRecord } from './wrongness-ledger.js';
 import { deterministicWrongnessId, type WrongnessKind } from './wrongness-schema.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -144,10 +145,6 @@ function imageIdFromIssue(issue: string): string | null {
 function anchorIdFromIssue(issue: string): string | null {
   const match = issue.match(/anchor(?:_id|_bbox|_image_ref)?:([^:\s]+)/i);
   return match?.[1] || null;
-}
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
 function stringOrNull(value: unknown): string | null {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, readText } from './gate-lib.js';
 import { runDynamicPoolFixture } from './agent-dynamic-pool-fixture.js';
 
 const proofSource = readText('src/core/agents/agent-proof-evidence.ts');

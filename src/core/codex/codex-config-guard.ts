@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { appendJsonl, ensureDir, nowIso, readText, sha256, writeTextAtomic } from '../fsx.js'
 import { diffCodexAppUiSnapshots, snapshotCodexAppUiState } from '../codex-app/codex-app-ui-state-snapshot.js'
 import { cleanupCodexConfigBackups, validateCodexConfigRoundTrip } from './codex-config-toml.js'
+import { escapeRegExp } from '../text/regex.js'
 
 export interface WriteCodexConfigGuardedInput {
   root?: string
@@ -589,8 +590,4 @@ async function recordCodexConfigGuard(root: string, reportPath: string | undefin
     ...record
   }).catch(() => undefined)
   return file
-}
-
-function escapeRegExp(value: string) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

@@ -2,6 +2,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { runProcess, sha256 } from '../fsx.js';
 import type { TelegramHubConfigV1, TelegramSecretRef } from './types.js';
+import { isRecord } from '../json/records.js';
 
 export interface TelegramConfigValidation {
   ok: boolean;
@@ -13,10 +14,6 @@ export interface TelegramPrivatePairingValidation {
   ok: boolean;
   missing: boolean;
   issues: Array<'paired_chat_ids' | 'paired_user_ids'>;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function validateTelegramConfig(value: unknown): TelegramConfigValidation {

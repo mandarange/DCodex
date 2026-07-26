@@ -4,6 +4,8 @@ import { CANONICAL_DIRECTIVES } from '../agent-guidance/directive-registry.js'
 import { ensureDir, nowIso, writeJsonAtomic, writeTextAtomic } from '../fsx.js'
 import { guardContextForRoute, guardedRm } from '../safety/mutation-guard.js'
 import { createRequestedScopeContract } from '../safety/requested-scope-contract.js'
+import { escapeRegExp } from '../text/regex.js'
+import { messageOf } from '../errors/message.js'
 
 interface DirectoryScore {
   dir: string
@@ -145,10 +147,6 @@ function initDeepBackupPath(root: string, agentsPath: string, beforeHash: string
 
 function backupBaseName(root: string, agentsPath: string): string {
   return path.relative(root, agentsPath).replace(/[\\/]+/g, '__')
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function hashText(text: string): string {
@@ -312,8 +310,4 @@ function extractManagedSection(text: string, markerName: string): string {
   const endIdx = text.indexOf(end)
   if (beginIdx < 0 || endIdx < beginIdx) return ''
   return text.slice(beginIdx + begin.length, endIdx).trim()
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }

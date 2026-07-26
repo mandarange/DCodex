@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 
 const bin = path.join(root, 'dist', 'bin', 'sks.js')
 assertGate(fs.existsSync(bin), 'dist bin missing for live smoke', { bin, hint: 'run npm run build first' })

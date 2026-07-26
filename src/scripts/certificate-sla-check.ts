@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const graphMod = await importDist('core/triwiki/triwiki-affected-graph.js');
 const certMod = await importDist('core/triwiki/triwiki-sla-certificate.js');

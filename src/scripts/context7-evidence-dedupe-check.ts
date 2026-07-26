@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist } from './gate-lib.js';
 
 const mod = await importDist('core/pipeline-internals/runtime-core.js');
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-context7-evidence-'));

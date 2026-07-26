@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, readText, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, readText, root } from './gate-lib.js';
 
 const triwiki = await importDist('core/triwiki-runtime.js');
 const coordinates = await importDist('core/wiki-coordinate.js');

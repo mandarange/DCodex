@@ -54,6 +54,7 @@ import {
   HOST_CAPABILITY_HOOK_PENDING_RUNTIME_FILENAME,
   HOST_CAPABILITY_HOOK_RUNTIME_FILENAME
 } from '../agent-bridge/host-capability-runtime.js'
+import { uniqueStrings } from '../text/strings.js'
 
 export const NARUTO_RESULT_SCHEMA = 'sks.naruto-subagent-workflow.v1'
 export const SUBAGENT_PLAN_FILENAME = 'subagent-plan.json'
@@ -1263,8 +1264,4 @@ function isNarutoRecord(value: unknown): value is Record<string, unknown> {
 
 function narutoErrorCode(error: unknown): string {
   return error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
-}
-
-function uniqueStrings(values: unknown[]): string[] {
-  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
 }

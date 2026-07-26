@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, makeTempRoot } from './sks-3-1-8-check-lib.js';
+import { assertGate, emitGate, makeTempRoot } from './skill-fixture-check-lib.js';
 import { buildNativeCapabilityRepairMatrix, NATIVE_CAPABILITY_IDS } from '../core/codex-native/native-capability-repair-matrix.js';
 
 const root = await makeTempRoot('sks-native-matrix-');

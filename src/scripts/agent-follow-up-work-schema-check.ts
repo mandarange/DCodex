@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist } from './gate-lib.js';
 
 const validator = await importDist('core/agents/agent-worker-pipeline.js');
 const queueMod = await importDist('core/agents/agent-work-queue.js');

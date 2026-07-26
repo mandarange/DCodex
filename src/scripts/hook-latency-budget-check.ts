@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist } from './gate-lib.js';
 
 const budgetMs = Number(process.env.SKS_HOOK_LATENCY_BUDGET_MS || 25);
 const readBudget = Number(process.env.SKS_HOOK_LATENCY_READ_BUDGET || 3);

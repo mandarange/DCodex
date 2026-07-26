@@ -1,3 +1,3 @@
 #!/usr/bin/env node
-import { runDirective315Gate } from './sks-3-1-5-directive-check-lib.js'
-await runDirective315Gate('zellij:self-heal-typed-blackbox')
+import { runTypedRoutingGate } from './typed-routing-gate-lib.js'
+await runTypedRoutingGate('zellij:self-heal-typed-blackbox')

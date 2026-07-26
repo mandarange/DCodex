@@ -1,3 +1,3 @@
 #!/usr/bin/env node
-import { runDirective315Gate } from './sks-3-1-5-directive-check-lib.js'
-await runDirective315Gate('research:execution-profile-routing')
+import { runTypedRoutingGate } from './typed-routing-gate-lib.js'
+await runTypedRoutingGate('research:execution-profile-routing')

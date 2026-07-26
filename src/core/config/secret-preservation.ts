@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { ensureDir, nowIso, readJson, readText, sha256, writeJsonAtomic } from '../fsx.js';
 import { PROTECTED_SECRET_KEYS, PROTECTED_SUPABASE_ENV_KEYS } from './supabase-secret-preservation.js';
+import { escapeRegExp } from '../text/regex.js';
 
 export interface SecretFingerprint {
   key: string;
@@ -470,8 +471,4 @@ function safeSourceForError(root: string, source: string): string {
 function sanitizeErrorMessage(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   return message.replace(/([A-Za-z0-9_]*(?:SECRET|TOKEN|KEY|PASSWORD)[A-Za-z0-9_]*=)[^\s,;]+/gi, '$1<redacted>');
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

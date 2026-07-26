@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist } from './gate-lib.js'
 const mod = await importDist('core/image/image-artifact-registry.js')
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-image-registry-'))
 const png = path.join(root, 'fixture.png')

@@ -6,7 +6,7 @@
 // fail the release gate.
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, root } from './gate-lib.js';
 
 const allowlistPath = path.join(root, 'safety-mutation-allowlist.json');
 const allowlist = readAllowlist();

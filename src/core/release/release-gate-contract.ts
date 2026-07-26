@@ -102,6 +102,7 @@ export const RELEASE_GATE_CONTRACT_IDS: readonly string[] = Object.freeze([
   'publish:runtime-script-closure',
   'python-sdk:all-pipelines',
   'qa-loop:comprehensive-verification',
+  'quality:helper-dedup',
   'release:aggressive-resource-governor',
   'release:batch-runner-comprehensive',
   'release:cache-key-comprehensive',

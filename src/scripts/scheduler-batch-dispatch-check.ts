@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { runAgentScheduler } from '../core/agents/agent-scheduler.js'
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText } from './gate-lib.js'
 
 assertGate(readText('src/core/agents/agent-scheduler.ts').includes('collectLaunchBatch') && readText('src/core/agents/agent-scheduler.ts').includes('batch_work_items_dispatched'), 'batch scheduler source wiring missing')
 const missionId = 'M-scheduler-batch'

@@ -2,6 +2,7 @@ import { sha256 } from '../fsx.js';
 import { testMcpConnection, type McpHealthOptions } from '../mcp-config/health-check.js';
 import { listMcpInventory, type McpInventoryOptions } from '../mcp-config/inventory.js';
 import { HOST_CAPABILITY_DESCRIPTORS, hostCapabilityDigest, type HostCapabilityDescriptor } from './agent-manifest.js';
+import { uniqueStringsSorted as uniqueStrings } from '../text/strings.js';
 
 export const HOST_CAPABILITY_RUNTIME_SCHEMA = 'sks.host-capability-runtime.v1' as const;
 export const HOST_CAPABILITY_MCP_SERVER = 'acas-tools';
@@ -317,7 +318,6 @@ function blockerGuidance(code: string, fallback: HostCapabilityBlockedFallback):
 
 function matches(text: string, patterns: readonly RegExp[]): boolean { return patterns.some((pattern) => pattern.test(text)); }
 function tomlArray(values: readonly string[]): string { return `[${values.map((value) => JSON.stringify(value)).join(', ')}]`; }
-function uniqueStrings(values: readonly unknown[]): string[] { return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))].sort(); }
 function uniqueWorkflows(values: readonly unknown[]): HostCapabilityWorkflow[] {
   const valid = new Set<HostCapabilityWorkflow>(['datasource_sql_generation', 'datasource_query', 'spreadsheet_create', 'spreadsheet_edit', 'document_render', 'web_capture', 'workspace_files', 'artifact_delivery']);
   return uniqueStrings(values).filter((value): value is HostCapabilityWorkflow => valid.has(value as HostCapabilityWorkflow));

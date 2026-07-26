@@ -6,7 +6,7 @@
 //   - strips legacy [user.fast_mode] and [profiles.sks-fast-high] tables,
 //   - never auto-enables marketplace plugins by default (opt-in SKS_MANAGE_CODEX_APP_PLUGINS=1),
 //   - still seeds defaults on a fresh/empty config (fresh-install enablement preserved).
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist } from './gate-lib.js';
 
 const helpers = await importDist('cli/install-helpers.js');
 const normalize = helpers.normalizeCodexFastModeUiConfig;

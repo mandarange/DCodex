@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-runtime-summary-cli-'))
 const missionId = 'M-runtime-summary-cli'

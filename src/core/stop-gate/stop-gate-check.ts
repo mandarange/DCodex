@@ -3,6 +3,7 @@ import { ensureDir, exists, nowIso, readJson, writeJsonAtomic } from '../fsx.js'
 import { missionDir } from '../mission.js';
 import { resolveStopGate, gateStatInfo } from './stop-gate-resolver.js';
 import type { SksStopGateV1, StopGateCheckResult, StopGateDiagnostics, StopGateAction } from './stop-gate-types.js';
+import { isRecord } from '../json/records.js';
 
 const HARD_BLOCKER_FILE = 'hard-blocker.json';
 
@@ -68,10 +69,6 @@ function normalizedStringArray(value: unknown, invalidMarker: string): string[] 
   const strings = value.filter((entry): entry is string => typeof entry === 'string').map((entry) => entry.trim()).filter(Boolean);
   if (strings.length !== value.length) strings.push(invalidMarker);
   return [...new Set(strings)];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 async function checkHardBlocker(root: string, missionId: string | null): Promise<{ hardBlocked: boolean; file: string | null; reason: string | null; evidence: unknown[] }> {

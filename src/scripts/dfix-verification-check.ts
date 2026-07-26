@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, readMissionJson, runDfixFixture } from './sks-1-11-gate-lib.js';
+import { assertGate, emitGate, readMissionJson, runDfixFixture } from './sks-cli-gate-lib.js';
 
 const result = runDfixFixture();
 const verification = readMissionJson(result.mission_id, 'dfix-verification.json');

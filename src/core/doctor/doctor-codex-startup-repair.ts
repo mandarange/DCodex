@@ -3,6 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { exists, nowIso, readText, writeJsonAtomic } from '../fsx.js'
 import { isUnmanagedProjectCodexConfig, writeCodexConfigGuarded } from '../codex/codex-config-guard.js'
+import { escapeRegExp } from '../text/regex.js'
 
 export const DOCTOR_CODEX_STARTUP_REPAIR_SCHEMA = 'sks.doctor-codex-startup-repair.v1'
 
@@ -430,8 +431,4 @@ function stringValues(text: string, key: string): string[] {
 
 function escapeToml(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

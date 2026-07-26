@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const runner = await importDist('core/agents/agent-runner-codex-exec.js');
 const compat = await importDist('core/codex/codex-0-134-compat.js');

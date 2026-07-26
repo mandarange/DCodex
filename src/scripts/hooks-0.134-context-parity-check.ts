@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertGate, emitGate, readText, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, readText, root } from './gate-lib.js';
 
 const hooksSchema = readText('src/core/codex-compat/codex-hook-events.ts');
 const cockpit = readText('src/core/agents/agent-orchestrator.ts');

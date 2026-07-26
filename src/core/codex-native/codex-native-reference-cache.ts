@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { exists, nowIso, runProcess, sha256, writeJsonAtomic } from '../fsx.js'
+import { messageOf } from '../errors/message.js'
 
 export interface CodexNativeReferenceCacheReport {
   schema: 'sks.codex-native-reference-cache.v1'
@@ -107,8 +108,4 @@ async function gitSha(sourceDir: string): Promise<string | null> {
   const run = await runProcess('git', ['rev-parse', 'HEAD'], { cwd: sourceDir, timeoutMs: 5000, maxOutputBytes: 4096 }).catch(() => null)
   const sha = run?.code === 0 ? `${run.stdout || ''}`.trim() : ''
   return /^[0-9a-f]{40}$/i.test(sha) ? sha : null
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }

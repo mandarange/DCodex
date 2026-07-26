@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist } from './gate-lib.js'
 
 const renderer = await importDist('core/zellij/zellij-slot-pane-renderer.js')
 const text = renderer.renderZellijSlotPane({

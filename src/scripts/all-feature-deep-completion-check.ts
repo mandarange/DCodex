@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertGate, emitGate, requireContains, root, runSksJson } from './sks-1-12-real-execution-check-lib.js';
+import { assertGate, emitGate, requireContains, root, runSksJson } from './real-execution-check-lib.js';
 
 const requiredGates = [
   'ux-review:run-wires-imagegen',

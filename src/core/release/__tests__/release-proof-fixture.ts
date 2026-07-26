@@ -106,7 +106,7 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
     upgradeCommand(upgradeIsolation, 'baseline_install', ['npm', 'install', '--global', '--prefix', upgradeIsolation.npm_prefix, '--no-audit', '--no-fund', '--loglevel=error', baselineSealedTarball]),
     upgradeCommand(upgradeIsolation, 'baseline_version', [sksBinary, '--version']),
     upgradeCommand(upgradeIsolation, 'baseline_bootstrap', [sksBinary, 'bootstrap', '--json']),
-    upgradeDoctorCommand(upgradeIsolation, 'baseline_doctor', sksBinary, '6.2.0', 'pinned_6_2_stdout_only'),
+    upgradeDoctorCommand(upgradeIsolation, 'baseline_doctor', sksBinary, '6.2.0', 'pinned_baseline_stdout_only'),
     upgradeCommand(upgradeIsolation, 'baseline_menubar_install', [sksBinary, 'menubar', 'install', '--no-launch', '--json', '--home', upgradeIsolation.home, '--root', packageRoot]),
     upgradeCommand(upgradeIsolation, 'baseline_menubar_status', [sksBinary, 'menubar', 'status', '--json', '--home', upgradeIsolation.home, '--root', packageRoot], 1),
     upgradeCommand(upgradeIsolation, 'target_install', ['npm', 'install', '--global', '--prefix', upgradeIsolation.npm_prefix, '--no-audit', '--no-fund', '--loglevel=error', targetSealedTarball]),
@@ -119,7 +119,7 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
     upgradeCommand(upgradeIsolation, 'target_menubar_reinstall_status', [sksBinary, 'menubar', 'status', '--json', '--home', upgradeIsolation.home, '--root', packageRoot], 1),
     upgradeCommand(upgradeIsolation, 'package_rollback_install', ['npm', 'install', '--global', '--prefix', upgradeIsolation.npm_prefix, '--no-audit', '--no-fund', '--loglevel=error', baselineSealedTarball]),
     upgradeCommand(upgradeIsolation, 'package_rollback_version', [sksBinary, '--version']),
-    upgradeDoctorCommand(upgradeIsolation, 'package_rollback_doctor', sksBinary, '6.2.0', 'pinned_6_2_stdout_only')
+    upgradeDoctorCommand(upgradeIsolation, 'package_rollback_doctor', sksBinary, '6.2.0', 'pinned_baseline_stdout_only')
   ]
   const upgradePath = path.join(proofDir, 'upgrade-6.2-to-6.3.0.json')
   fs.writeFileSync(upgradePath, JSON.stringify({
@@ -284,7 +284,7 @@ function upgradeDoctorCommand(
   stage: string,
   sksBinary: string,
   expectedVersion: string,
-  validationMode: 'strict_report_file' | 'pinned_6_2_stdout_only'
+  validationMode: 'strict_report_file' | 'pinned_baseline_stdout_only'
 ) {
   const reportFile = path.join(isolation.command_reports_dir, `${stage}.json`)
   const command = upgradeCommand(isolation, stage, [sksBinary, 'doctor', '--json', '--report-file', reportFile])

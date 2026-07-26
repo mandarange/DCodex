@@ -3,6 +3,7 @@ import { nowIso, writeJsonAtomic } from '../fsx.js';
 import { repairAgentRoleConfigs } from '../agents/agent-role-config.js';
 import { repairAgentConfigFileReferences } from '../codex/agent-config-file-repair.js';
 import { postcheckCodexStartupConfig } from '../codex/codex-startup-config-postcheck.js';
+import { messageOf } from '../errors/message.js';
 
 type CodexStartupConfigRepairReport = {
   schema: string
@@ -70,8 +71,4 @@ export async function repairCodexStartupConfig(input: {
     }
   }
   return report;
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

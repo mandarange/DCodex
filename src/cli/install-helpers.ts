@@ -13,7 +13,7 @@ import { context7ConfigToml, DOLLAR_SKILL_NAMES, GETDESIGN_REFERENCE, hasContext
 import { checkZellijCapability } from '../core/zellij/zellij-capability.js';
 import { reconcileCodexAppUpgradeProcesses } from '../core/codex-app.js';
 import { restartCodexApp } from '../core/codex-app/codex-app-restart.js';
-import { cleanupMacLaunchSecretEnvironment } from '../core/codex-app/sks-menubar.js';
+import { cleanupMacLaunchSecretEnvironment } from '../core/codex-app/menubar/index.js';
 import { recordCodexLbHealthEvent } from '../core/codex-lb-circuit.js';
 import { loadCodexLbEnv, writeCodexLbKeychain, codexLbMetadataPath } from '../core/codex-lb/codex-lb-env.js';
 import {
@@ -99,6 +99,7 @@ import {
   ensureGlobalGetdesignSkillDuringInstall,
   ensureSksCommandDuringInstall
 } from './install-helpers-install-support.js';
+import { escapeRegExp } from '../core/text/regex.js';
 
 function packagedSksEntrypoint() {
   return path.join(packageRoot(), 'dist', 'bin', 'sks.js');
@@ -2114,7 +2115,3 @@ export {
 } from './install-helpers-codex-lb-config.js';
 export { checkCodexLbResponseChain } from './install-helpers-codex-lb-chain.js';
 export { selftestCodexLb } from './install-helpers-codex-lb-selftest.js';
-
-function escapeRegExp(value: any) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}

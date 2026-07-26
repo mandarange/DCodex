@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { DEFAULT_MAX_PACK_BYTES, DEFAULT_MAX_UNPACKED_BYTES } from '../core/release/package-size-budget.js';
 import { npmPackAtomicTempPaths, writeNpmPackProof } from '../core/release/npm-pack-proof.js';
 import { analyzeRuntimeScriptPackClosure } from '../core/release/runtime-script-pack-closure.js';
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, root } from './gate-lib.js';
 
 const MAX_FILES = Number(process.env.SKS_MAX_PACK_FILES || 2100);
 const MAX_UNPACKED = Number(process.env.SKS_MAX_UNPACKED_BYTES || DEFAULT_MAX_UNPACKED_BYTES);

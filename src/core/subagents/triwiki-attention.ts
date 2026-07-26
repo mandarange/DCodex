@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { readJson } from '../fsx.js'
+import { asRecordOrEmpty as asRecord } from '../json/records.js'
 
 export const BOUNDED_TRIWIKI_ATTENTION_SCHEMA = 'sks.subagent-triwiki-attention.v1'
 export const DEFAULT_TRIWIKI_ATTENTION_ANCHOR_LIMIT = 8
@@ -189,12 +190,6 @@ function normalizeLimit(value: unknown): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return DEFAULT_TRIWIKI_ATTENTION_ANCHOR_LIMIT
   return Math.max(1, Math.min(16, Math.floor(parsed)))
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
 }
 
 function text(value: unknown): string {

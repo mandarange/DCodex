@@ -36,7 +36,6 @@ if (!releaseGateIds.has('architecture:guard')) issues.push('release-gates.v2.jso
 if (architectureBudgets.schema !== 'sks.architecture-budgets.v1') issues.push('architecture budget schema must be sks.architecture-budgets.v1');
 if (architectureBudgets.waiver_policy?.mode !== 'shrink-only') issues.push('architecture waivers must be shrink-only');
 for (const [id, maxLines] of [
-  ['menubar-facade', 80],
   ['menubar-typescript', 450],
   ['menubar-swift', 500],
   ['menubar-app-delegate', 250],
@@ -53,7 +52,7 @@ assertIncludes('src/scripts/check-architecture.ts', "args.includes('--strict-all
 assertIncludes('src/scripts/check-architecture.ts', "'config', 'architecture-budgets.v1.json'", 'architecture check must load the budget SSOT');
 assertIncludes('src/scripts/check-architecture.ts', 'shrink-only ceiling', 'architecture check must enforce shrink-only waivers');
 assertIncludes('docs/architecture.md', '`config/architecture-budgets.v1.json`', 'architecture docs must name the budget SSOT');
-for (const token of ['`80`', '`250`', '`450`', '`500`', '`900`', '`1200`', '`1800`', '`3000`', '`--strict-all`', 'shrink-only']) {
+for (const token of ['`250`', '`450`', '`500`', '`900`', '`1200`', '`1800`', '`3000`', '`--strict-all`', 'shrink-only']) {
   assertIncludes('docs/architecture.md', token, `architecture docs missing ${token}`);
 }
 assertIncludes('src/core/pipeline-internals/runtime-core.ts', "'ssot_guard'");

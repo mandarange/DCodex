@@ -3,6 +3,7 @@ import type { AgentRunnerResult } from './agent-schema.js'
 import { normalizeAgentPatchEnvelope, validateAgentPatchEnvelope } from './agent-patch-schema.js'
 import { scanAgentTextForRecursion } from './agent-recursion-guard.js'
 import { validateAgentResultSchema, validateAndNormalizeAgentFollowUps } from './agent-output-validator.js'
+import { isRecord } from '../json/records.js'
 
 export function agentWorkerEnv(agent: any, allowedCommandsFile: string) {
   return {
@@ -171,10 +172,6 @@ function normalizeLeaseCompliance(value: any) {
     ok: value?.ok !== false,
     violations: Array.isArray(value?.violations) ? value.violations : []
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function normalizeVerification(value: any) {

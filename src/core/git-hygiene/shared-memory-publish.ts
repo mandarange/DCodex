@@ -8,6 +8,7 @@ import { listSharedFiles } from './git-status.js';
 import { ensureGitPolicy, ensureSharedMemoryDirs, readGitPolicy, type SksGitPolicy } from './git-policy.js';
 import { isMockPositiveSharedClaim, redactSharedRecord, sharedRecordHasSecret } from './shared-memory-security.js';
 import { validateGitPolicy, validateSharedMemoryManifest, validateSharedRecordFile } from './validators.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -384,8 +385,4 @@ async function latestMissionId(root: string): Promise<string | null> {
     return null;
   }
   return entries.filter((name) => name.startsWith('M-')).sort().at(-1) || null;
-}
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 }

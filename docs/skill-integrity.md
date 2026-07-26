@@ -2,7 +2,7 @@
 
 SKS core skills are treated as product contracts, not editable setup output.
 
-SKS 3.1.10 keeps the built-in route skills content-addressed and immutable. The core skill template version is a content schema version (`sks-core-skill-template.v1`), not the package release version, so ordinary release bumps do not create false drift.
+SKS keeps the built-in route skills content-addressed and immutable. The core skill template version is a content schema version (`sks-core-skill-template.v1`), not the package release version, so ordinary release bumps do not create false drift.
 
 - `loop`
 - `naruto`

@@ -19,7 +19,7 @@ Removed runtime migration is explicit. Retired runtimes and command names are ab
 
 No silent legacy fallback is allowed. Users must call the canonical command names (`sks naruto`, `sks computer-use`, `sks image-ux-review`, `sks dollar-commands`, `sks gc`, and related first-class commands) rather than relying on compatibility aliases.
 
-The 4.0.x structured legacy exceptions expired before 6.1.0 and are removed;
+Structured legacy exceptions are removed;
 release selection no longer permits those compatibility gates through an expired
 allowlist.
 

@@ -1,4 +1,5 @@
 import { sha256 } from '../fsx.js'
+import { PACKAGE_VERSION } from '../version.js'
 import {
   subagentModelProfile,
   type SubagentModel,
@@ -7,7 +8,8 @@ import {
 } from '../subagents/model-policy.js'
 
 export const MANAGED_ASSET_SCHEMA_VERSION = 1
-export const MANAGED_ASSET_VERSION = '7.2.1'
+/** Managed assets are re-stamped whenever the package is, so this tracks it rather than being re-pinned by hand. */
+export const MANAGED_ASSET_VERSION = PACKAGE_VERSION
 export const MANAGED_ASSET_MARKER = 'SKS-MANAGED-ASSET'
 export const MANAGED_OFFICIAL_SUBAGENT_MARKER = 'SKS-MANAGED-OFFICIAL-SUBAGENT'
 

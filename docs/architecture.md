@@ -2,7 +2,7 @@
 
 The active architecture keeps user-facing commands lazy-loaded through `src/cli/command-registry.ts` and keeps `src/core/pipeline.ts` as the single compatibility facade.
 
-Core trust modules added in 0.9.20:
+Core trust modules:
 
 - `src/core/trust-kernel/`
 - `src/core/evidence/`
@@ -23,7 +23,6 @@ npm run pipeline-runtime:check
 
 Hard thresholds in the budget SSOT:
 
-- Menu Bar compatibility facade: `80` lines.
 - Menu Bar TypeScript modules: `450` lines.
 - Menu Bar AppDelegate: `250` lines.
 - Other Menu Bar Swift modules: `500` lines.
@@ -32,8 +31,8 @@ Hard thresholds in the budget SSOT:
 - Other handwritten source: `1800` lines.
 - Any handwritten file at `3000` lines enters the split-review gate.
 
-Every over-budget legacy waiver is `shrink-only`: it records the merge-base line ceiling and an expiry version, cannot be used for a new file, and fails as soon as the file grows. A waiver never raises the shared budget.
-# 1.0.0 Architecture Gates
+Every over-budget waiver is `shrink-only`: it records the merge-base line ceiling, cannot be used for a new file, and fails as soon as the file grows. A waiver never raises the shared budget. Waivers carry no expiry version — an expiry pinned to one release is either unenforced or a cliff, whereas shrink-only ratchets on every change.
+# Architecture Gates
 
 Architecture warnings are release failures.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { assertGate, emitGate, makeTempRoot, writeManagedCoreSkill } from './sks-3-1-8-check-lib.js';
+import { assertGate, emitGate, makeTempRoot, writeManagedCoreSkill } from './skill-fixture-check-lib.js';
 import { reconcileSkills } from '../core/init/skills.js';
 
 const root = await makeTempRoot('sks-skill-dedupe-');

@@ -10,6 +10,7 @@ import {
   leanPolicyReference,
   parseLeanSimplificationMarkerLine
 } from './lean-engineering-policy.js';
+import { escapeRegExp } from './text/regex.js';
 
 export const CODE_STRUCTURE_THRESHOLDS = {
   warning: 1000,
@@ -685,10 +686,6 @@ function nextSplitCandidate(rel: any) {
 function countMatches(text: string, pattern: RegExp) {
   const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
   return [...text.matchAll(new RegExp(pattern.source, flags))].length;
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function isSourceLike(file: string) {

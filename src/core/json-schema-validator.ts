@@ -1,3 +1,4 @@
+import { isRecord } from './json/records.js';
 export interface JsonSchemaValidationIssue {
   path: string;
   code: string;
@@ -193,10 +194,6 @@ function runtimeType(value: unknown) {
   if (value === null) return 'null';
   if (typeof value === 'number' && Number.isInteger(value)) return 'integer';
   return typeof value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function escapePath(value: string) {

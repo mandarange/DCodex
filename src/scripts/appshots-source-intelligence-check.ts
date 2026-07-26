@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const mod = await importDist('core/source-intelligence/source-intelligence-runner.js');
 const missionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-appshots-source-intelligence-'));

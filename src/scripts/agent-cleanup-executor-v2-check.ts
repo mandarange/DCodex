@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { assertGate, emitGate, importDist, root as repoRoot, readJson } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root as repoRoot, readJson } from './gate-lib.js';
 
 const cleanup = await importDist('core/agents/agent-cleanup-executor.js');
 const releaseVersion = readJson('package.json').version;

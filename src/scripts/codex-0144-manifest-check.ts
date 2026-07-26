@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, readJson, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, readJson, root } from './gate-lib.js';
 import { codexReleaseManifestParity } from '../core/codex-compat/codex-release-manifest.js';
 import { detectCodex0144Capability } from '../core/codex-control/codex-0144-capability.js';
 

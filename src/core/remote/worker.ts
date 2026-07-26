@@ -39,6 +39,7 @@ import {
   type WorkerRequestV1,
   type WorkerResponseV1
 } from './types.js';
+import { asRecordOrNull as asRecord } from '../json/records.js';
 
 type JsonObject = Record<string, unknown>;
 
@@ -601,10 +602,6 @@ function errorCode(err: unknown): string {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function asRecord(value: unknown): JsonObject | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : null;
 }
 
 function stringValue(value: unknown): string | null {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, packageScripts, readText } from './sks-1-18-gate-lib.js'
-import { importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, packageScripts, readText } from './gate-lib.js'
+import { importDist, root } from './gate-lib.js'
 
 const scripts = packageScripts()
 const dagMod = await importDist('core/release/release-gate-dag.js')

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { emitGate, requireContains } from './sks-1-12-real-execution-check-lib.js';
+import { emitGate, requireContains } from './real-execution-check-lib.js';
 
 requireContains('ux-review:extract-wires-real-extractor', 'src/core/commands/image-ux-review-command.ts', [
   'extractIssuesImageUxReview',

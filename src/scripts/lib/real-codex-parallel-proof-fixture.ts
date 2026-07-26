@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { importDist } from '../sks-1-18-gate-lib.js';
+import { importDist } from '../gate-lib.js';
 
 export async function buildFixtureProof({ workers, required }) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-real-codex-proof-'));

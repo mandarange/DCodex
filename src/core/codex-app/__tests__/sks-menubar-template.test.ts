@@ -16,7 +16,7 @@ import {
   NATIVE_SOURCE_FILES,
   resolvePackagedMenuBarSourceRoot,
   swiftMenuSource
-} from '../sks-menubar.js';
+} from '../menubar/index.js';
 import { sha256 } from '../../fsx.js';
 import { UPDATE_STAGE_ORDER } from '../../update-check.js';
 

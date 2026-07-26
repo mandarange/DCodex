@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import path from 'node:path'
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 import { writeJsonAtomic } from '../core/fsx.js'
 
 const { routePrompt } = await importDist('core/routes.js')

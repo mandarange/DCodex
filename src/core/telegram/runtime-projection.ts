@@ -3,6 +3,9 @@ import type { RemoteSessionTargetV1 } from '../remote/index.js';
 import { buildTelegramTopicName } from './ledgers.js';
 import { publicSafeText, type TelegramSessionCard } from './messages.js';
 import type { RemoteActionV1, TelegramTopicRouteV1 } from './types.js';
+import { asRecordOrNull as asRecord } from '../json/records.js';
+
+export { asRecord };
 
 export interface ProjectionSessionV1 {
   after_seq: number;
@@ -108,8 +111,4 @@ export function requestId(prefix: string): string {
 export function boundedIdentifier(value: unknown): string | null {
   const text = typeof value === 'string' ? value : '';
   return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(text) ? text : null;
-}
-
-export function asRecord(value: unknown): Record<string, any> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : null;
 }

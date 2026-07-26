@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText } from './gate-lib.js'
 
 const anchor = readText('src/core/zellij/zellij-slot-column-anchor.ts')
 

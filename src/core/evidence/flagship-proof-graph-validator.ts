@@ -305,7 +305,7 @@ function requiredArtifacts(route: string, missionPath: string | null) {
   }
   if (route === 'hooks') return ['.sneakoscope/reports/codex-hook-parity-1.14.1.json', '.sneakoscope/reports/evidence-flagship-coverage.json'];
   if (route === 'ppt_review') return ['.sneakoscope/reports/ppt-full-e2e-blackbox.json', '.sneakoscope/reports/evidence-flagship-coverage.json'];
-  if (route === 'ux_review') return ['.sneakoscope/reports/real-imagegen-smoke-1.14.1.json', '.sneakoscope/reports/evidence-flagship-coverage.json'];
+  if (route === 'ux_review') return ['.sneakoscope/reports/real-imagegen-smoke.json', '.sneakoscope/reports/evidence-flagship-coverage.json'];
   if (route === 'dfix') return ['.sneakoscope/reports/evidence-flagship-coverage.json'];
   return [];
 }

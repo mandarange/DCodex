@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist } from './gate-lib.js'
 
 process.env.SKS_RELEASE_MAX_CPU_LIGHT = '7'
 process.env.SKS_RELEASE_MAX_TOTAL = '2'

@@ -1,9 +1,14 @@
 import type { ReleasePackReceipt } from '../core/release/release-pack-receipt.js'
 
 export const RELEASE_UPGRADE_SMOKE_SCHEMA = 'sks.release-upgrade-smoke.v2' as const
-export const RELEASE_UPGRADE_BASELINE_VERSION = '6.2.0'
-export const RELEASE_UPGRADE_BASELINE_LABEL = '6.2'
-export const RELEASE_UPGRADE_BASELINE_SHA256 = 'dd0bfc022348c11dc737055845708f6272beaf2a8f9c16d068acf3c8c612f9bc'
+
+// The baseline lives in src/core/release so validators there can share it; re-exported
+// here so existing script importers keep one import site.
+export {
+  RELEASE_UPGRADE_BASELINE_LABEL,
+  RELEASE_UPGRADE_BASELINE_SHA256,
+  RELEASE_UPGRADE_BASELINE_VERSION
+} from '../core/release/release-upgrade-baseline.js'
 
 export const POSTINSTALL_SAFETY_ENV = {
   CI: 'true',
@@ -99,7 +104,7 @@ export interface ReleaseUpgradeCommandReceipt {
   json_schema: string | null
   json_ok: boolean | null
   report_file: {
-    validation_mode: 'strict_report_file' | 'pinned_6_2_stdout_only'
+    validation_mode: 'strict_report_file' | 'pinned_baseline_stdout_only'
     path: string
     real_path: string | null
     inside_sandbox: boolean

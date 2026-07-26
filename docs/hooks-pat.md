@@ -18,7 +18,7 @@ sks hooks official-parity --json
 sks codex-app pat status --json
 ```
 
-## SKS 1.14.1 Latest Codex Hook Shape
+## Latest Codex Hook Shape
 
 SKS 1.14.1 validates against the vendored OpenAI Codex `latest` hook snapshot from `openai/codex` HEAD. The snapshot has 10 events and 20 command schema files. `SubagentStart` and `SubagentStop` are release-blocking events, not compatibility warnings.
 

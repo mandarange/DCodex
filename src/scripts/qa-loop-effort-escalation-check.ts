@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist } from './gate-lib.js'
 const mod = await importDist('core/qa-loop/qa-loop-budget-policy.js')
 const one = mod.selectQaLoopEscalatedEffort({ failureCount: 1, currentEffort: 'medium' })
 const two = mod.selectQaLoopEscalatedEffort({ failureCount: 2, currentEffort: 'medium' })

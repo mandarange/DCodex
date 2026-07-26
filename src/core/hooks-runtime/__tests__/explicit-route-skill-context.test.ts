@@ -15,10 +15,7 @@ import {
   managedSkillNamesForPrompt,
   routePrompt
 } from '../../routes.js';
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+import { escapeRegExp } from '../../text/regex.js';
 
 test('explicit managed dollar/app skills are allowlisted, ordered, and never reflect unknown tokens', () => {
   const cases = [

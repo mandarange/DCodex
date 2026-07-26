@@ -149,7 +149,7 @@ test('pinned 6.2 doctors may use valid stdout-only evidence while target doctor 
     assert.equal(lifecycle.states.package_rollback.status, 'passed')
     const doctors = lifecycle.commands.filter((entry) => entry.stage.endsWith('_doctor'))
     assert.deepEqual(doctors.map((entry) => entry.report_file?.validation_mode), [
-      'pinned_6_2_stdout_only', 'strict_report_file', 'pinned_6_2_stdout_only'
+      'pinned_baseline_stdout_only', 'strict_report_file', 'pinned_baseline_stdout_only'
     ])
     assert.deepEqual(doctors.map((entry) => entry.report_file?.regular_file), [false, true, false])
     assert.deepEqual(doctors.map((entry) => entry.report_file?.matches_stdout), [false, true, false])

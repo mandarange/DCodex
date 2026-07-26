@@ -7,7 +7,7 @@ import {
   rollbackSksMenuBar,
   restartSksMenuBar,
   uninstallSksMenuBar
-} from '../codex-app/sks-menubar.js';
+} from '../codex-app/menubar/index.js';
 
 export async function menubarCommand(subcommand = 'status', args: string[] = []) {
   const action = normalizeAction(subcommand);

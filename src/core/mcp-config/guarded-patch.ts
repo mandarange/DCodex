@@ -1,4 +1,5 @@
 import type { McpServerMutationInput } from './types.js';
+import { escapeRegExp } from '../text/regex.js';
 
 interface TableSpan {
   readonly start: number;
@@ -219,4 +220,3 @@ function escapedAt(value: string, index: number): boolean {
 function tomlString(value: string): string { return JSON.stringify(String(value)); }
 function tomlKey(value: string): string { return tomlString(value); }
 function tomlArray(values: readonly string[]): string { return `[${values.map(tomlString).join(', ')}]`; }
-function escapeRegExp(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }

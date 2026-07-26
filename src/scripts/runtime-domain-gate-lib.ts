@@ -3,9 +3,9 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 
-export async function runDirective314Gate(id: string) {
+export async function runRuntimeDomainGate(id: string) {
   if (id.startsWith('zellij:')) return zellijGate(id)
   if (id.startsWith('doctor:zellij')) return doctorZellijGate(id)
   if (id.startsWith('mad:zellij')) return madZellijGate(id)

@@ -2,7 +2,7 @@
 // @ts-nocheck
 import { parseZellijVersionText } from '../core/zellij/zellij-command.js'
 import { zellijSupportsStackedPanes } from '../core/zellij/zellij-capability.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const fixtures = [
   ['zellij 0.43.1', '0.43.1', true],

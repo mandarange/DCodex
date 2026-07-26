@@ -3,6 +3,7 @@ import path from 'node:path';
 import { ensureDir, nowIso, writeJsonAtomic } from '../fsx.js';
 import { detectImagegenCapability } from '../imagegen/imagegen-capability.js';
 import { buildCodexNativeFeatureMatrix } from './codex-native-feature-broker.js';
+import { messageOf } from '../errors/message.js';
 
 export type NativeCapabilityId =
   | 'image_generation'
@@ -393,8 +394,4 @@ function fixtureNativeFeatureMatrix(mode: 'all-repairable' | 'manual-required'):
     },
     blockers: ok ? [] : ['fixture_manual_required']
   };
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

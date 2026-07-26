@@ -97,7 +97,7 @@ export async function doctorProbe(
   stage: string,
   bin: string,
   expectedVersion: string,
-  evidencePolicy: 'strict_report_file' | 'pinned_6_2_stdout_compatible' = 'strict_report_file'
+  evidencePolicy: 'strict_report_file' | 'pinned_baseline_stdout_compatible' = 'strict_report_file'
 ): Promise<{ ok: boolean; version: null; json: any; blockers: string[] }> {
   const reportPath = path.join(input.isolation.commandReportsDir, `${stage}.json`)
   const result = await runLifecycleCommand(
@@ -111,9 +111,8 @@ export async function doctorProbe(
     && typeof json?.root === 'string'
     && samePath(json.root, input.isolation.workspace)
   const inspected = inspectDoctorReport(reportPath, input.isolation, json, expectedVersion)
-  const stdoutOnlyCompatible = evidencePolicy === 'pinned_6_2_stdout_compatible'
+  const stdoutOnlyCompatible = evidencePolicy === 'pinned_baseline_stdout_compatible'
     && expectedVersion === RELEASE_UPGRADE_BASELINE_VERSION
-    && expectedVersion === '6.2.0'
     && stdoutOk
     && inspected.reportAbsentByEnoent
     && inspected.reportParentSafe
@@ -121,7 +120,7 @@ export async function doctorProbe(
     && inspected.blockers.every((blocker) => blocker === 'doctor_report_missing_or_unreadable'
       || blocker === 'doctor_report_stdout_mismatch')
   inspected.binding.validation_mode = stdoutOnlyCompatible
-    ? 'pinned_6_2_stdout_only'
+    ? 'pinned_baseline_stdout_only'
     : 'strict_report_file'
   const receipt = commands.at(-1)
   if (receipt?.stage === stage) receipt.report_file = inspected.binding

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { ensureDir, nowIso, readText, writeJsonAtomic } from '../fsx.js';
+import { messageOf } from '../errors/message.js';
 
 export const LEGACY_GLOBAL_HOOK_CLEANUP_SCHEMA = 'sks.legacy-global-hook-cleanup.v1';
 
@@ -171,8 +172,4 @@ async function pruneOldBackups(globalPath: string, keepPath: string) {
   const ranked = await Promise.all(entries.map(async (file) => ({ file, mtime: (await fs.stat(file)).mtimeMs })));
   ranked.sort((a, b) => b.mtime - a.mtime);
   for (const row of ranked.slice(3)) if (row.file !== keepPath) await fs.rm(row.file, { force: true }).catch(() => undefined);
-}
-
-function messageOf(err: unknown) {
-  return err instanceof Error ? err.message : String(err);
 }

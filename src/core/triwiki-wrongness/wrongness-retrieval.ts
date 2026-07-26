@@ -1,6 +1,7 @@
 import { nowIso } from '../fsx.js';
 import { readCombinedWrongnessRecords, summarizeWrongnessRecords } from './wrongness-ledger.js';
 import { WRONGNESS_CONTEXT_SCHEMA, type WrongnessRecord } from './wrongness-schema.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 export async function wrongnessContextForRoute(root: string, opts: {
   missionId?: string | null;
@@ -77,8 +78,4 @@ function severityRank(value: string): number {
   if (value === 'high') return 3;
   if (value === 'medium') return 2;
   return 1;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

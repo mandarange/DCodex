@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate } from './gate-lib.js';
 import { detectCodex0140Capability } from '../core/codex-control/codex-0140-capability.js';
 
 process.env.SKS_CODEX_0140_FAKE = '1';

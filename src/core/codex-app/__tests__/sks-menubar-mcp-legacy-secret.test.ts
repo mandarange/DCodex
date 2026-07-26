@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolvePackagedMenuBarSourceRoot } from '../sks-menubar.js';
+import { resolvePackagedMenuBarSourceRoot } from '../menubar/index.js';
 
 test('MCP native UI exposes a guarded value-free legacy secret migration choice', () => {
   const swift = fs.readFileSync(

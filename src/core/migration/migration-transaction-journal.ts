@@ -1,12 +1,12 @@
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { appendJsonl, ensureDir, nowIso } from '../fsx.js'
+import { PACKAGE_VERSION } from '../version.js'
 
 // Append-only journal of config/runtime migrations performed during an upgrade
 // or `sks doctor --fix`. Every config mutation is recorded with a before/after
 // content hash and the backup path so the change is auditable and reversible.
 export const MIGRATION_JOURNAL_SCHEMA = 'sks.migration-journal.v1'
-export const MIGRATION_JOURNAL_VERSION = '1.20.1'
 
 export interface MigrationEventInput {
   step: string
@@ -47,7 +47,7 @@ export function buildMigrationEvent(input: MigrationEventInput): MigrationEvent 
   const rollbackAvailable = input.rollbackAvailable ?? Boolean(input.backupPath)
   const event: MigrationEvent = {
     ts: nowIso(),
-    migration: MIGRATION_JOURNAL_VERSION,
+    migration: PACKAGE_VERSION,
     step: input.step,
     target: input.target,
     before_hash: beforeHash,
@@ -65,7 +65,9 @@ export function migrationJournalPath(root: string, opts: { missionId?: string } 
   const base = opts.missionId
     ? path.join(root, '.sneakoscope', 'missions', opts.missionId)
     : path.join(root, '.sneakoscope', 'reports')
-  return path.join(base, `migration-${MIGRATION_JOURNAL_VERSION}-journal.jsonl`)
+  // The journal is identified by MIGRATION_JOURNAL_SCHEMA, and each event carries the
+  // package version that wrote it, so the filename does not need a version in it.
+  return path.join(base, 'migration-journal.jsonl')
 }
 
 /**

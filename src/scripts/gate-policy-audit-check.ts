@@ -27,7 +27,14 @@ const policyCallsiteAllowlist = new Map([
   ['mkdtemp|src/core/perf/release-latency-slo.ts|runReleaseLatencySlo|mkdtemp', 'run-local latency fixture root'],
   ['mkdtemp|src/core/release/npm-stage-tarball-verifier.ts|verifyNpmStageTarball|mkdtempSync', 'private stage-review transaction root'],
   ['mkdtemp|src/core/release/release-pack-content-scanner.ts|scanTarballTextContents|mkdtempSync', 'finally-cleaned tar scan root'],
-  ['mkdtemp|src/core/release/release-pack-tarball.ts|tarUnpackedBytes|mkdtempSync', 'finally-cleaned tar inventory root']
+  ['mkdtemp|src/core/release/release-pack-tarball.ts|tarUnpackedBytes|mkdtempSync', 'finally-cleaned tar inventory root'],
+  // Gate libraries used to be named `*-check-lib.ts` and were skipped by the
+  // filename filter below; the rename to `*-gate-lib.ts` dropped that magic word
+  // and exposed their fixture roots. They are gate infrastructure, not product
+  // code: each creates an OS-temp root for one gate run and nothing outside it.
+  ['mkdtemp|src/scripts/codex-native-gate-lib.ts|tempRoot|mkdtemp', 'per-gate isolated OS-temp fixture root'],
+  ['mkdtemp|src/scripts/runtime-domain-gate-lib.ts|tempRoot|mkdtemp', 'per-gate isolated OS-temp fixture root'],
+  ['mkdtemp|src/scripts/typed-routing-gate-lib.ts|tempRoot|mkdtemp', 'per-gate isolated OS-temp fixture root']
 ])
 const policyCallsiteAllowlistHits = new Set<string>()
 const splitReviewLineCounts = splitReviewFiles.map((file) => ({

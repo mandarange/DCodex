@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs'
 import path from 'node:path'
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist } from './gate-lib.js'
 import { makeGitFixture } from './lib/git-worktree-fixture.js'
 
 const detectionMod = await importDist('core/git/git-repo-detection.js')

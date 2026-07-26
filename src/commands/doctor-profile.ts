@@ -1,5 +1,5 @@
 import { flag } from '../cli/args.js';
-import { sksMenuBarRestartDeferred } from '../core/codex-app/sks-menubar.js';
+import { sksMenuBarRestartDeferred } from '../core/codex-app/menubar/index.js';
 
 export type DoctorProfile = 'fast' | 'fix' | 'migration' | 'full' | 'capabilities';
 

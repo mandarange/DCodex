@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, readText } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readText } from './gate-lib.js'
 
 const proofPolicy = readText('src/core/proof/route-proof-policy.ts')
 const proofGate = readText('src/core/proof/route-proof-gate.ts')

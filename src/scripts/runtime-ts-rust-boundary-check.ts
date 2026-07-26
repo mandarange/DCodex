@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { root, assertGate, emitGate, importDist, readText, readJson } from './sks-1-18-gate-lib.js';
+import { root, assertGate, emitGate, importDist, readText, readJson } from './gate-lib.js';
 
 // Proves TypeScript is the runtime source-of-truth and Rust is an OPTIONAL accelerator:
 //  - publish/build never compiles Rust,

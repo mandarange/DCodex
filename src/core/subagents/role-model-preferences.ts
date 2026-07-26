@@ -13,6 +13,7 @@ import {
   readConfiguredCodexModelRoutingContext
 } from '../codex-app/codex-model-catalog.js';
 import { childInheritsActiveMainModel } from '../provider/model-router.js';
+import { isRecord } from '../json/records.js';
 
 export const ROLE_MODEL_PREFERENCES_SCHEMA = 'sks.role-model-preferences.v2' as const;
 const LEGACY_ROLE_MODEL_PREFERENCES_SCHEMA = 'sks.role-model-preferences.v1';
@@ -401,8 +402,4 @@ function dedupeProfiles<T extends {
     out.push(profile);
   }
   return out;
-}
-
-function isRecord(value: unknown): value is Record<string, any> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

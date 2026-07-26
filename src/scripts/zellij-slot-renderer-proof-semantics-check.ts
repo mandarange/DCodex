@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs'
 import path from 'node:path'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 import { buildWorkerPaneArtifact } from '../core/zellij/zellij-worker-pane-manager.js'
 
 const root = process.cwd()

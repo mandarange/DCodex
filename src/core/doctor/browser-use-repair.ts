@@ -4,6 +4,7 @@ import { ensureCodexPlugins } from '../codex-plugins/codex-plugin-repair.js';
 import { runDoctorCodexStartupRepair } from './doctor-codex-startup-repair.js';
 import { ensureDir, nowIso, runProcess, which, writeJsonAtomic } from '../fsx.js';
 import { redactString } from '../secret-redaction.js';
+import { messageOf } from '../errors/message.js';
 
 export const DOCTOR_BROWSER_USE_REPAIR_SCHEMA = 'sks.doctor-browser-use-repair.v1';
 
@@ -217,8 +218,4 @@ export async function repairBrowserUse(input: {
 function tail(value: unknown, max = 2000) {
   const text = redactString(String(value || ''));
   return text.length > max ? text.slice(-max) : text;
-}
-
-function messageOf(err: unknown) {
-  return err instanceof Error ? err.message : String(err);
 }

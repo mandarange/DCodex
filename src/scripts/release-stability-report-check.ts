@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs'
 import path from 'node:path'
-import { assertGate, emitGate, readJson, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, readJson, root } from './gate-lib.js'
 
 const manifest = readJson('release-gates.v2.json')
 const currentRunDir = process.env.SKS_REPORT_DIR ? path.dirname(process.env.SKS_REPORT_DIR) : null

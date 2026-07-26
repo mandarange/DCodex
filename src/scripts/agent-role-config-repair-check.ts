@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { parse } from 'smol-toml'
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist } from './gate-lib.js'
 
 const mod = await importDist('core/agents/agent-role-config.js')
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-role-repair-'))

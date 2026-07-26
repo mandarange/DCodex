@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { writeReleaseProofTruth } from '../core/release/release-proof-truth.js'
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, root } from './gate-lib.js'
 
 const truth = await writeReleaseProofTruth(root)
 assertGate(truth.schema === 'sks.release-proof-truth.v1', 'release proof truth schema mismatch', truth)

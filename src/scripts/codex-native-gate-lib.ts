@@ -63,7 +63,7 @@ const REQUIRED_SCRIPT_IDS = [
   'pipeline:codex-native-e2e-blackbox'
 ]
 
-export async function runDirective316Gate(id: string): Promise<void> {
+export async function runCodexNativeGate(id: string): Promise<void> {
   if (id === 'brand-neutrality:rename-map') return brandRenameMap(id)
   if (id === 'brand-neutrality:zero-leakage') return brandZeroLeakage(id)
   if (id === 'brand-neutrality:zero-leakage-blackbox') return brandZeroLeakageBlackbox(id)
@@ -342,12 +342,12 @@ async function initDeepMemoryScopeSafety(id: string): Promise<void> {
 }
 
 async function releaseScriptsTypeSafe(id: string): Promise<void> {
-  for (const rel of ['src/scripts/release-dag-full-coverage-check.ts', 'src/scripts/sks-3-1-5-directive-check-lib.ts', 'src/scripts/sks-3-1-6-directive-check-lib.ts', 'src/scripts/sks-3-1-7-directive-check-lib.ts']) {
+  for (const rel of ['src/scripts/release-dag-full-coverage-check.ts', 'src/scripts/typed-routing-gate-lib.ts', 'src/scripts/codex-native-gate-lib.ts', 'src/scripts/release-script-lint-gate-lib.ts']) {
     const text = readText(rel)
     assertGate(!/^\s*\/\/\s*@ts-nocheck\b/m.test(text), `release helper still has ts-nocheck:${rel}`)
   }
   assertGate(readText('src/scripts/release-dag-full-coverage-check.ts').includes('interface ReleaseGate'), 'release DAG helper missing typed interfaces')
-  assertGate(readText('src/scripts/sks-3-1-6-directive-check-lib.ts').includes('interface PackageJsonShape'), '3.1.6 helper missing typed package shape')
+  assertGate(readText('src/scripts/codex-native-gate-lib.ts').includes('interface PackageJsonShape'), '3.1.6 helper missing typed package shape')
   emitGate(id)
 }
 
@@ -356,7 +356,7 @@ async function noTsNoCheckReleaseScripts(id: string): Promise<void> {
   const checked = listFiles(path.join(root, 'src/scripts')).filter((file) => {
     const rel = path.relative(root, file).split(path.sep).join('/')
     return /^src\/scripts\/release-dag-full-coverage-check\.ts$/.test(rel)
-      || /^src\/scripts\/sks-3-1-[567]-directive-check-lib\.ts$/.test(rel)
+      || /^src\/scripts\/(?:typed-routing|codex-native|release-script-lint)-gate-lib\.ts$/.test(rel)
       || /^src\/scripts\/no-ts-nocheck-release-scripts-check\.ts$/.test(rel)
       || /^src\/scripts\/release-script-type-safety-check\.ts$/.test(rel)
   })
@@ -543,7 +543,7 @@ export function gateManifest(): GateManifest {
   return readJson<GateManifest>('release-gates.v2.json')
 }
 
-export function required316ScriptIds(): string[] {
+export function requiredReleaseScriptIds(): string[] {
   return [...REQUIRED_SCRIPT_IDS]
 }
 

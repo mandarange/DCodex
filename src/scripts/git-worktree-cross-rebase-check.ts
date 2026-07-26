@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 import { crossRebaseIdleWorktrees } from '../core/git/git-worktree-cross-rebase.js'
 import { runGitCommand, gitOutputLine } from '../core/git/git-worktree-runner.js'
 

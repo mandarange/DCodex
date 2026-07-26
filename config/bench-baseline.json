@@ -1,7 +1,0 @@
-{
-  "schema": "sks.coding-bench-baseline.v1",
-  "baseline_version": "5.0.0",
-  "pass_rate": 0.5,
-  "min_pass_rate": 0.5,
-  "notes": "Real model coding bench is skipped (status: not_run, ok: false) with no_backend unless SKS_RUN_CODING_BENCH_REAL=1 and a backend credential is present. A fully-skipped run can no longer report ok:true (20차 P0-5)."
-}

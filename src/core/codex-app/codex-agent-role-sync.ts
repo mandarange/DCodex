@@ -5,6 +5,7 @@ import { repairAgentRoleConfigs } from '../agents/agent-role-config.js'
 import { MANAGED_OFFICIAL_SUBAGENT_ROLES } from '../managed-assets/managed-assets-manifest.js'
 import { agentRolePayloadFor, probeCodexAgentTypeSupport } from './codex-agent-type-probe.js'
 import type { CodexAgentRolePayload, CodexAgentTypeProbe } from './codex-app-types.js'
+import { messageOf } from '../errors/message.js'
 
 const OFFICIAL_ROLES = MANAGED_OFFICIAL_SUBAGENT_ROLES.map((role) => role.codex_name)
 
@@ -113,8 +114,4 @@ function stringList(value: unknown, key: string): string[] {
   return Boolean(value) && typeof value === 'object' && Array.isArray((value as Record<string, unknown>)[key])
     ? ((value as Record<string, unknown>)[key] as unknown[]).map(String).filter(Boolean)
     : []
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }

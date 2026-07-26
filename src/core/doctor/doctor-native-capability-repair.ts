@@ -8,6 +8,7 @@ import { withSecretPreservationGuard } from '../config/config-migration-journal.
 import { ensureProductDesignPluginInstalled } from '../product-design-app-server.js';
 import { cleanupLegacyGlobalSksHooks } from './legacy-global-hook-cleanup.js';
 import { redactSecrets } from '../secret-redaction.js';
+import { messageOf } from '../errors/message.js';
 
 export interface DoctorNativeCapabilityRepairReport {
   schema: 'sks.doctor-native-capability-repair.v1';
@@ -161,10 +162,6 @@ export async function cleanupNativeCapabilityProbeArtifacts(root: string, opts: 
     planned,
     preserved_non_probe_files: preserved
   };
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 function skippedNativeCapabilityDiagnostics(root: string) {

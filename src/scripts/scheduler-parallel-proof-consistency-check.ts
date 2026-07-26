@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { runAgentScheduler } from '../core/agents/agent-scheduler.js'
 import { appendParallelRuntimeEvent, writeParallelRuntimeProof } from '../core/agents/parallel-runtime-proof.js'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-scheduler-proof-consistency-'))
 const missionId = 'M-scheduler-proof-consistency'

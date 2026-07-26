@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate } from './gate-lib.js';
 import { CURRENT_CODEX_RELEASE_MANIFEST } from '../core/codex-compat/codex-release-manifest.js';
 import { compareSemverLike } from '../core/codex-compat/codex-version-policy.js';
 import { resolveOfficialCodexPackageRuntime } from '../core/codex-runtime/resolve-codex-runtime.js';

@@ -1,5 +1,6 @@
 import { nowIso } from '../fsx.js';
 import { readCombinedWrongnessRecords, summarizeWrongnessRecords } from './wrongness-ledger.js';
+import { asRecordOrEmpty as asRecord } from '../json/records.js';
 
 export async function wrongnessProofEvidence(root: string, missionId: string | null = null, opts: { route?: string | null } = {}) {
   const records = await readCombinedWrongnessRecords(root, missionId);
@@ -43,10 +44,6 @@ export function claimReferencesActiveWrongness(claim: unknown, evidence: unknown
   const ids = new Set(asStringList(asRecord(evidence).active_ids));
   if (!ids.size) return false;
   return asStringList(wrongness).some((id) => ids.has(id));
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function asStringList(value: unknown): string[] {

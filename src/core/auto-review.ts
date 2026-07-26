@@ -8,6 +8,7 @@ import {
   RETIRED_SKS_CONFIG_PROFILE_NAMES
 } from './doctor/retired-auto-review-config.js';
 import { retiredGlmDesktopProfileBody } from './codex-app/openrouter-provider.js';
+import { escapeRegExp } from './text/regex.js';
 
 export { RETIRED_SKS_CONFIG_PROFILE_NAMES } from './doctor/retired-auto-review-config.js';
 
@@ -475,10 +476,6 @@ function removeTopLevelStringIfValue(text: any, key: any, value: any) {
     }
   }
   return `${lines.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '')}\n`;
-}
-
-function escapeRegExp(value: any) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function normalizeGeneratedProfileText(text: string): string {

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, makeTempRoot } from './sks-3-1-8-check-lib.js';
+import { assertGate, emitGate, makeTempRoot } from './skill-fixture-check-lib.js';
 import { buildNativeCapabilityRepairMatrix } from '../core/codex-native/native-capability-repair-matrix.js';
 import { postcheckNativeCapabilities } from '../core/codex-native/native-capability-postcheck.js';
 import { repairNativeCapabilities } from '../core/codex-native/native-capability-repair.js';

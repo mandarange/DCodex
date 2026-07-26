@@ -9,6 +9,7 @@ import {
   releaseCodexLbAuthHold,
   repairCodexLbAuth
 } from '../cli/install-helpers.js'
+import { escapeRegExp } from '../core/text/regex.js'
 
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-codex-lb-fast-ui-'))
 const home = path.join(tmp, 'home')
@@ -122,8 +123,4 @@ function tableKey(text: string, table: string, key: string) {
 function topLevelKey(text: string, key: string) {
   const top = text.split(/\n\s*\[/)[0] || ''
   return top.match(new RegExp(`(^|\\n)\\s*${escapeRegExp(key)}\\s*=\\s*([^\\n#]+)`))?.[2]?.trim().replace(/^"|"$/g, '') || ''
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

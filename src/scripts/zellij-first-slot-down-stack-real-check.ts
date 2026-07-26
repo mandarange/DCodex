@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { assertGate, emitGate } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate } from './gate-lib.js'
 import { ensureDir, packageRoot, writeTextAtomic } from '../core/fsx.js'
 import { checkZellijCapability } from '../core/zellij/zellij-capability.js'
 import { runZellij } from '../core/zellij/zellij-command.js'

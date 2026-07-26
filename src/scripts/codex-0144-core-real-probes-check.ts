@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { emitGate, importDist, root } from './gate-lib.js'
 
 const args = process.argv.slice(2)
 const requireReal = args.includes('--require-real')

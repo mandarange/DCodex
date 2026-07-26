@@ -1,4 +1,4 @@
-import { assertGate, emitGate, readJson, readText } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, readJson, readText } from './gate-lib.js';
 
 interface ReleaseGate {
   id: string;

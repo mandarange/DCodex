@@ -14,6 +14,7 @@ import type {
   SiteInventory,
   SiteRoute,
 } from './types.js';
+import { isRecord } from '../json/records.js';
 
 const MAX_DISCOVERY_FILES = 2500;
 const DEFAULT_CAPABILITIES: SearchVisibilityCapabilities = {
@@ -285,10 +286,6 @@ async function firstExisting(root: string, rels: string[]): Promise<string | nul
     if (await exists(path.join(root, rel))) return rel;
   }
   return null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function stringifyRecord(value: Record<string, unknown>): Record<string, string> {

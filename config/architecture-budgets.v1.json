@@ -26,12 +26,6 @@
       "new_file_max_lines": 500
     },
     {
-      "id": "menubar-facade",
-      "match": "^src/core/codex-app/sks-menubar\\.ts$",
-      "max_lines": 80,
-      "new_file_max_lines": 80
-    },
-    {
       "id": "menubar-typescript",
       "match": "^src/core/codex-app/menubar/.*\\.ts$",
       "max_lines": 450,
@@ -63,8 +57,7 @@
       "file",
       "reason",
       "policy",
-      "baseline_lines",
-      "expires_version"
+      "baseline_lines"
     ]
   }
 }

@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { exists, nowIso, readJson, readText, writeJsonAtomic } from '../fsx.js'
+import { escapeRegExp } from '../text/regex.js'
 
 export const PROVIDER_CONTEXT_SCHEMA = 'sks.provider-context.v1'
 
@@ -171,8 +172,4 @@ function codexLbProviderBody(text: string): string | null {
     if (inTable) out.push(line)
   }
   return inTable ? out.join('\n') : null
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

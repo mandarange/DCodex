@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate } from './sks-3-1-8-check-lib.js';
+import { assertGate, emitGate } from './skill-fixture-check-lib.js';
 import { canonicalSkillName } from '../core/codex-native/skill-name-canonicalizer.js';
 
 for (const value of ['$Loop', 'loop', 'Loop', 'LOOP', 'loop ', 'loop.md', 'loop/SKILL.md']) {

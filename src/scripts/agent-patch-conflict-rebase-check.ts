@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertGate, emitGate, importDist } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist } from './gate-lib.js';
 import { writeReport } from './patch-handoff-gate-lib.js';
 
 const queueMod = await importDist('core/agents/agent-patch-queue-store.js');

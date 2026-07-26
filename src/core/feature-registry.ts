@@ -8,6 +8,7 @@ import { COMMAND_CATALOG, DOLLAR_COMMAND_ALIASES, DOLLAR_COMMANDS, LEGACY_DOLLAR
 import { FEATURE_QUALITY_LEVELS, fixtureForFeature, fixtureSummary, validateFeatureFixtures } from './feature-fixtures.js';
 import { runFeatureFixture, writeFeatureFixtureReports } from './feature-fixture-runner.js';
 import { PACKAGE_VERSION, exists, nowIso, packageRoot, readJson, readText, runProcess, writeJsonAtomic, writeTextAtomic, type JsonData } from './fsx.js';
+import { uniqueStrings } from './text/strings.js';
 
 export const FEATURE_REGISTRY_SCHEMA = 'sks.feature-registry.v1';
 export const FEATURE_INVENTORY_SCHEMA = 'sks.feature-inventory.v1';
@@ -840,10 +841,6 @@ function dedupeFeatureCommandSurface(feature: any) {
     aliases,
     source_refs: sourceRefs
   };
-}
-
-function uniqueStrings(values: any[]) {
-  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
 }
 
 function namespaceFeatureDollarReferences(value: any): any {

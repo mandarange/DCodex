@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js'
+import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 
 const dag = await importDist('core/release/release-gate-dag.js')
 const selectorMod = await importDist('core/release/release-gate-affected-selector.js')

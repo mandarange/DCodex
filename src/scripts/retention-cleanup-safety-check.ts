@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { assertGate, emitGate, root } from './sks-1-11-gate-lib.js';
+import { assertGate, emitGate, root } from './sks-cli-gate-lib.js';
 
 const retentionPath = path.join(root, 'dist', 'core', 'retention.js');
 assertGate(fs.existsSync(retentionPath), 'dist retention module missing; run npm run build first', { retentionPath });

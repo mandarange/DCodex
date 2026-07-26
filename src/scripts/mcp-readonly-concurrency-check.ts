@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertGate, emitGate, importDist, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
 const mod = await importDist('core/mcp/mcp-0-134-policy.js');
 const readOnly = mod.classifyMcpToolForConcurrency({ name: 'search_docs', annotations: { readOnlyHint: true }, inputSchema: { type: 'object' } });

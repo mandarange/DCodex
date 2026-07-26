@@ -2,7 +2,7 @@
 // @ts-nocheck
 import fs from 'node:fs';
 import path from 'node:path';
-import { root, assertGate, emitGate, readText } from './sks-1-18-gate-lib.js';
+import { root, assertGate, emitGate, readText } from './gate-lib.js';
 
 // Locks the single documented Zellij launch command across code + changelog and
 // forbids the stale `zellij --session <s> --layout <l>` launch pattern.

@@ -18,6 +18,7 @@ import { validateCodexHookOutput } from '../../codex-compat/codex-hook-schema.js
 import {
   SUBAGENT_SKILL_AVAILABILITY_BLOCKER_FILENAME
 } from '../subagent-skill-availability.js';
+export { escapeRegExp } from '../../text/regex.js';
 
 export {
   assert,
@@ -146,8 +147,4 @@ export function admissionBindingState(missionId: string, workflowRunId: string) 
     mission_id: missionId,
     official_subagent_run_id: workflowRunId
   };
-}
-
-export function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

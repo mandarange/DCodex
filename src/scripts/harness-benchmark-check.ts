@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { assertGate, emitGate, root } from './sks-1-18-gate-lib.js';
+import { assertGate, emitGate, root } from './gate-lib.js';
 import { COMMAND_MANIFEST_LITE } from '../cli/command-manifest-lite.js';
 import { ensureDir, nowIso, runProcess, writeJsonAtomic } from '../core/fsx.js';
 import { reviewCommand } from '../core/commands/review-command.js';
