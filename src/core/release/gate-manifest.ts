@@ -154,6 +154,32 @@ export function affectedGlobsFor(id: string): string[] {
         'src/core/codex-lb-circuit.ts',
         `src/scripts/${prefix}-*.ts`
       ]
+    case 'context-graph':
+      // The default `src/scripts/<prefix>-*.ts` glob would only fire when the
+      // check script itself moved, so editing the graph engine would skip the
+      // gates that prove it. These are the graph's own sources plus the
+      // consumers whose behaviour the gates assert, not all of `src/**`.
+      return [
+        'src/core/triwiki/context-graph/**',
+        'src/core/search/context.ts',
+        'src/core/search/context-graph-seeds.ts',
+        'src/core/subagents/triwiki-attention.ts',
+        'src/core/triwiki/code-pack.ts',
+        'src/core/naruto/context-graph-advisor.ts',
+        'src/core/naruto/context-graph-advisor-scope.ts',
+        'src/core/verification/context-graph-affected.ts',
+        'src/core/commands/wiki-command.ts',
+        'src/core/commands/triwiki-graph-command.ts',
+        'config/context-graph-benchmark.json',
+        'schemas/triwiki/context-graph.schema.json',
+        'src/scripts/context-graph-check.ts',
+        'package.json'
+      ]
+    case 'latest-version':
+      // The guidance scan reads every user-facing surface, so its affected set
+      // is genuinely wide; narrowing it would let a pinned version slip in
+      // through a file the gate still reads.
+      return ['README.md', 'docs/**', 'src/**', 'native/**', 'src/scripts/latest-version-guidance-check.ts', 'package.json']
     case 'release':
       return ['src/core/release/**', 'src/scripts/release-parallel-check.ts', 'src/scripts/release-*.ts', 'package.json']
     default:
