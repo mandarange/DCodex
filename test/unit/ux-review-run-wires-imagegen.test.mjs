@@ -8,6 +8,8 @@ test('ux-review run wires generate-callouts and fix to imagegen/extraction', () 
     'generateGptImage2CalloutReview',
     'extractRealCallouts',
     'extractAndWriteGeneratedReview',
+    'continueExistingMissionWithGeneratedImage',
+    'sourceImageFromContract',
     'imageUxReviewCommandOutcome',
     "allowReviewOnlyCompletion: !flag(args, '--fix')",
     'allowReviewOnlyCompletion: false',

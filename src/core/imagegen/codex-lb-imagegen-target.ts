@@ -88,18 +88,28 @@ function codexLbImagegenBlocker(state: { selected: boolean; loaded: any; model: 
 async function readCatalogModels(configText: string, home: string, codexHome: string): Promise<string[]> {
   const configured = topLevelTomlString(configText, 'model_catalog_json');
   const candidates = [
-    configured ? path.resolve(configured.replace(/^~(?=\/|$)/, home)) : '',
+    configured ? resolveCatalogPath(configured, home, codexHome) : '',
     path.join(codexHome, 'sks-codex-lb-tool-catalog.json')
   ].filter(Boolean);
   for (const file of candidates) {
     const payload = await readJson<any>(file, null).catch(() => null);
     const rows = Array.isArray(payload?.models) ? payload.models : Array.isArray(payload?.data) ? payload.data : [];
     const slugs = rows
+      .filter((row: any) => row?.supported_in_api !== false && !hiddenCatalogRow(row))
       .map((row: any) => String(row?.slug || row?.id || row?.model || '').trim())
       .filter(Boolean);
     if (slugs.length) return [...new Set<string>(slugs)];
   }
   return [];
+}
+
+function resolveCatalogPath(configured: string, home: string, codexHome: string): string {
+  const expanded = configured.replace(/^~(?=\/|$)/, home);
+  return path.isAbsolute(expanded) ? expanded : path.resolve(codexHome, expanded);
+}
+
+function hiddenCatalogRow(row: any): boolean {
+  return ['hide', 'hidden', 'internal', 'none', 'unavailable'].includes(String(row?.visibility || '').trim().toLowerCase());
 }
 
 function topLevelTomlString(text: string, key: string): string {

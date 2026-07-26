@@ -405,6 +405,35 @@ test('gpt-image-2 gives up after exhausting retries on persistent 503', async ()
   }
 });
 
+test('gpt-image-2 retries a timed-out response body and aborts every attempt', async () => {
+  const { root, imagePath } = await tempImageRoot('sks-imagegen-response-timeout-');
+  const outputDir = path.join(root, 'out');
+  const signals = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    signals.push(init.signal);
+    return new Response(new ReadableStream({
+      start() {}
+    }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    const result = await withoutImagegenOutputEnv(() => generateGptImage2CalloutReview(
+      imagegenRequest(imagePath, outputDir),
+      {
+        ...selectedCodexLbOptions(root),
+        openai: { fetchTimeoutMs: 10, retrySleep: async () => {} }
+      }
+    ));
+
+    assert.equal(signals.length, 4);
+    assert.ok(signals.every((signal) => signal.aborted === true));
+    assert.equal(result.ok, false);
+    assert.equal(result.blocker, 'imagegen_remote_timeout');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 function codexLbConfig() {
   return `model_provider = "codex-lb"
 

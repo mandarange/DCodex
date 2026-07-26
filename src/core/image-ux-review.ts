@@ -12,7 +12,7 @@ import { buildIssueLedgerFromGeneratedCallouts } from './image-ux-review/callout
 import { planImageUxFixTasks } from './image-ux-review/fix-task-planner.js';
 import { runImageUxFixLoop } from './image-ux-review/fix-loop.js';
 import { buildRecapturePlan } from './image-ux-review/recapture.js';
-import { addVisualAnchor, ingestImage } from './wiki-image/image-voxel-ledger.js';
+import { addImageRelation, addVisualAnchor, ingestImage } from './wiki-image/image-voxel-ledger.js';
 import { validateFinalHonestModeReport } from './artifact-schemas.js';
 import { imagegenEvidenceClassBlockers, isFullImagegenOutputSource } from './imagegen/imagegen-evidence.js';
 
@@ -559,7 +559,8 @@ export function defaultImageUxReviewGate(contract: any = {}, parts: any = {}) {
     fix_loop_executed_or_not_needed: fixLoopExecutedOrNotNeeded,
     changed_screens_rechecked: changedScreensRechecked,
     image_voxel_reference_anchor_created: imageVoxelReferenceAnchorCreated,
-    image_voxel_relations_created: parts.imageVoxelRelationsCreated === true || realGeneratedImages.some((image: any) => image.image_voxel_relation === 'generated_callout_review_of') === true,
+    image_voxel_relations_created: parts.imageVoxelRelationsCreated === true,
+    image_voxel_relation_evidence: parts.imageVoxelRelationEvidence || null,
     wrongness_checked: wrongnessChecked,
     honest_mode_complete: honestModeComplete,
     required_artifacts: [
@@ -637,6 +638,13 @@ export async function writeImageUxReviewRouteArtifacts(dir: any, contract: any =
   const existingImagegenResponse = await readExistingJson(dir, IMAGE_UX_REVIEW_GPT_IMAGE_2_RESPONSE_ARTIFACT);
   const generatedReviewLedger = buildImageUxGeneratedReviewLedger(contract, inventory, existingGenerated, { root });
   const sourceReferenceEvidence = await ensureImageUxSourceReferenceEvidence(root, dir, inventory);
+  const imageVoxelRelationEvidence = await ensureImageUxGeneratedRelationEvidence(
+    root,
+    dir,
+    inventory,
+    generatedReviewLedger,
+    sourceReferenceEvidence
+  );
   const issueLedger = buildImageUxIssueLedger(contract, generatedReviewLedger, existingIssues);
   const fixTaskPlan = planImageUxFixTasks(issueLedger);
   const fixLoop = runImageUxFixLoop(issueLedger, fixTaskPlan, opts.fixLoop || {});
@@ -662,7 +670,8 @@ export async function writeImageUxReviewRouteArtifacts(dir: any, contract: any =
     recapturePlan,
     iterationReport,
     imageVoxelReferenceAnchorCreated: sourceReferenceEvidence.ok === true,
-    imageVoxelRelationsCreated: opts.imageVoxelRelationsCreated === true,
+    imageVoxelRelationsCreated: opts.imageVoxelRelationsCreated === true || imageVoxelRelationEvidence.ok === true,
+    imageVoxelRelationEvidence,
     wrongnessChecked: opts.wrongnessChecked === true,
     honestModeComplete: honestModeEvidence.ok === true,
     honestModeEvidenceRequired: true,
@@ -721,7 +730,9 @@ export function imageUxReviewProofEvidence(gate: any = {}, artifacts: any = {}) 
     open_p0_p1_count: issueLedger.blocking_issue_count || 0,
     fixed_p0_p1_count: (issueLedger.issues || []).filter((issue: any) => ['P0', 'P1'].includes(issue.severity) && issue.status === 'fixed').length,
     recapture_re_review_status: artifacts.recapture_plan?.changed_screens_rechecked_or_not_applicable ? 'complete_or_not_applicable' : 'blocked',
-    image_voxel_relation_count: referenceOnly ? 0 : realGeneratedImages.filter((image: any) => image.image_voxel_relation).length,
+    image_voxel_relation_count: referenceOnly
+      ? 0
+      : gate.image_voxel_relations_created === true ? realGeneratedImages.length : 0,
     computer_use_evidence_mode: artifacts.inventory?.source_screens?.some((screen: any) => screen.capture_source === 'codex_native_computer_use_screenshot' || screen.capture_source === 'codex_computer_use_screenshot') ? 'native_computer_use_source_screenshot' : artifacts.inventory?.source_screens?.some((screen: any) => screen.capture_source === 'codex_chrome_extension_screenshot') ? 'chrome_extension_source_screenshot' : 'user_or_static_screenshot',
     claims: {
       ux_review_source_screenshot_verified: artifacts.inventory?.passed === true,
@@ -731,7 +742,7 @@ export function imageUxReviewProofEvidence(gate: any = {}, artifacts: any = {}) 
       ux_review_changed_screens_rechecked: artifacts.recapture_plan?.changed_screens_rechecked_or_not_applicable === true,
       ux_review_image_voxel_relations_verified: referenceOnly
         ? gate.source_reference_evidence?.ok === true
-        : realGeneratedImages.some((image: any) => image.image_voxel_relation)
+        : gate.image_voxel_relations_created === true
     },
     full_verification_blockers: gate.full_verification_blockers || gate.blockers || [],
     blockers: gate.blockers || []
@@ -785,6 +796,76 @@ async function ensureImageUxSourceReferenceEvidence(root: string, dir: string, i
     mode: 'source_screenshot_reference_only',
     anchors: anchors.length,
     anchor_ids: anchors,
+    issues
+  };
+}
+
+async function ensureImageUxGeneratedRelationEvidence(
+  root: string,
+  dir: string,
+  inventory: any = {},
+  generatedReviewLedger: any = {},
+  sourceReferenceEvidence: any = {}
+) {
+  const missionId = path.basename(String(dir));
+  const sourceScreen = (inventory.source_screens || []).find((screen: any) => screen.status === 'captured' && screen.source);
+  const generatedImages = (generatedReviewLedger.generated_review_images || [])
+    .filter((image: any) => image.real_generated === true && image.mock !== true && image.path);
+  if (!missionId || !sourceScreen || !generatedImages.length || sourceReferenceEvidence.ok !== true) {
+    return {
+      schema: 'sks.image-ux-generated-relation-evidence.v1',
+      ok: false,
+      reason: !missionId
+        ? 'mission_id_missing'
+        : !sourceScreen
+          ? 'captured_source_screenshot_missing'
+          : !generatedImages.length
+            ? 'real_generated_image_missing'
+            : 'source_reference_anchor_missing',
+      relations: 0,
+      issues: []
+    };
+  }
+  const sourceImageId = `${missionId}-${sourceScreen.id}-source`;
+  const anchorIds = Array.isArray(sourceReferenceEvidence.anchor_ids) ? sourceReferenceEvidence.anchor_ids : [];
+  const relationIds: string[] = [];
+  const issues: string[] = [];
+  for (const image of generatedImages) {
+    const generatedImageId = `${missionId}-${image.id}`;
+    try {
+      const ingested = await ingestImage(root, image.path, {
+        missionId,
+        source: 'image-ux-review:gpt-image-2-generated-callout',
+        id: generatedImageId
+      });
+      if (!ingested.ok) {
+        issues.push(...(ingested.validation?.issues || [`generated_image_ingest_failed:${image.id}`]));
+        continue;
+      }
+      const relation = await addImageRelation(root, {
+        missionId,
+        route: '$Image-UX-Review',
+        type: 'generated_callout_review_of',
+        beforeImageId: sourceImageId,
+        afterImageId: generatedImageId,
+        sourceImageId,
+        generatedImageId,
+        anchors: anchorIds,
+        status: 'verified_partial',
+        verification: 'gpt-image-2-generated-callout-bound-to-source'
+      });
+      if (relation.ok) relationIds.push(`${sourceImageId}->${generatedImageId}`);
+      else issues.push(...(relation.validation?.issues || [`generated_image_relation_failed:${image.id}`]));
+    } catch (err) {
+      issues.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return {
+    schema: 'sks.image-ux-generated-relation-evidence.v1',
+    ok: relationIds.length === generatedImages.length && issues.length === 0,
+    relations: relationIds.length,
+    relation_ids: relationIds,
+    anchor_ids: anchorIds,
     issues
   };
 }

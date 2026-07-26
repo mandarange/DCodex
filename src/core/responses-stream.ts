@@ -58,19 +58,26 @@ export function findStreamedImageOutput(events: readonly any[]): StreamedImageOu
   for (const event of events) {
     const type = String(event?.type || '');
     const item = event?.item;
-    if (item && String(item.type || '') === 'image_generation_call') {
+    const partialEvent = type === 'response.image_generation_call.partial_image'
+      || type.endsWith('.image_generation_call.partial_image');
+    if (partialEvent) {
+      const partialB64 = b64Of(event?.partial_image_b64)
+        || b64Of(event?.b64_json)
+        || b64Of(event?.result)
+        || b64Of(item?.partial_image_b64)
+        || b64Of(item?.b64_json)
+        || b64Of(item?.result);
+      if (partialB64) partial = { id: event?.item_id || item?.id || null, b64: partialB64, partial: true };
+      continue;
+    }
+    if (type === 'response.output_item.done' && item && String(item.type || '') === 'image_generation_call') {
       const b64 = b64Of(item.result) || b64Of(item.b64_json);
       if (b64) final = { id: item.id || event?.item_id || null, b64, partial: false };
       continue;
     }
-    if (/image_generation_call/.test(type)) {
+    if (type === 'response.image_generation_call.completed' || type === 'response.image_generation_call.done') {
       const b64 = b64Of(event?.result) || b64Of(event?.b64_json);
-      if (b64) {
-        final = { id: event?.item_id || event?.id || null, b64, partial: false };
-        continue;
-      }
-      const partialB64 = b64Of(event?.partial_image_b64);
-      if (partialB64) partial = { id: event?.item_id || null, b64: partialB64, partial: true };
+      if (b64) final = { id: event?.item_id || event?.id || null, b64, partial: false };
     }
   }
   return final || partial;

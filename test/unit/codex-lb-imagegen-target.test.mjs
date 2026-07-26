@@ -106,3 +106,30 @@ test('target discovery reads config, credentials, and catalog from CODEX_HOME', 
   assert.equal(target.api_key, apiKey);
   assert.equal(target.model, 'gpt-5.6-terra');
 });
+
+test('a relative catalog path is resolved from CODEX_HOME and ignores hidden or API-disabled models', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-codex-lb-relative-catalog-'));
+  const customCodexHome = path.join(home, 'custom-codex-home');
+  await fs.mkdir(customCodexHome, { recursive: true });
+  await fs.writeFile(path.join(customCodexHome, 'relative-models.json'), JSON.stringify({
+    models: [
+      { slug: 'hidden/model', visibility: 'hidden', supported_in_api: true },
+      { slug: 'hide/model', visibility: 'hide', supported_in_api: true },
+      { slug: 'disabled/model', visibility: 'public', supported_in_api: false },
+      { slug: 'gpt-5.6-sol', visibility: 'public', supported_in_api: true }
+    ]
+  }));
+  const target = await resolveCodexLbImagegenTarget({
+    home,
+    codexHome: customCodexHome,
+    configText: [
+      'model_provider = "codex-lb"',
+      'model = "hidden/model"',
+      'model_catalog_json = "relative-models.json"'
+    ].join('\n'),
+    env: { HOME: home, CODEX_HOME: customCodexHome }
+  });
+  assert.deepEqual(target.catalog_models, ['gpt-5.6-sol']);
+  assert.equal(target.model, 'gpt-5.6-sol');
+  assert.equal(target.model_source, 'catalog_default');
+});

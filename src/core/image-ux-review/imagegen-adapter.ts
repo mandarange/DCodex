@@ -18,6 +18,12 @@ import { registerImageArtifact } from '../image/image-artifact-registry.js';
 
 const DEFAULT_OPENAI_IMAGE_EDITS_ENDPOINT = 'https://api.openai.com/v1/images/edits';
 export const DEFAULT_IMAGEGEN_FETCH_TIMEOUT_MS = 180000;
+const responseDeadlines = new WeakMap<Response, {
+  controller: AbortController;
+  startedAt: number;
+  timeoutMs: number;
+  timer: ReturnType<typeof setTimeout>;
+}>();
 
 export interface ImageUxReviewImagegenAdapter {
   surface: 'codex_app_imagegen' | 'openai_images_api' | 'fake_imagegen_adapter';
@@ -772,11 +778,15 @@ function imagegenFetchTimeoutMs(opts: any = {}) {
 
 async function fetchWithTimeout(url: any, init: any, timeoutMs: number) {
   const controller = new AbortController();
+  const startedAt = Date.now();
   const timeout = setTimeout(() => controller.abort(new Error(`imagegen_fetch_timeout_${timeoutMs}ms`)), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    responseDeadlines.set(response, { controller, startedAt, timeoutMs, timer: timeout });
+    return response;
+  } catch (err) {
     clearTimeout(timeout);
+    throw err;
   }
 }
 
@@ -793,16 +803,27 @@ async function readResponsePayload(response: Response, timeoutMs = DEFAULT_IMAGE
 }
 
 async function textWithTimeout(response: Response, timeoutMs: number) {
+  const deadline = responseDeadlines.get(response);
+  if (deadline) clearTimeout(deadline.timer);
+  const remainingMs = deadline
+    ? Math.max(1, deadline.timeoutMs - (Date.now() - deadline.startedAt))
+    : timeoutMs;
   let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
     return await Promise.race([
       response.text(),
       new Promise<string>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error(`imagegen_response_read_timeout_${timeoutMs}ms`)), timeoutMs);
+        timeout = setTimeout(() => {
+          const error = new Error(`imagegen_response_read_timeout_${timeoutMs}ms`);
+          deadline?.controller.abort(error);
+          void response.body?.cancel(error).catch(() => {});
+          reject(error);
+        }, remainingMs);
       })
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
+    responseDeadlines.delete(response);
   }
 }
 
@@ -907,10 +928,8 @@ function imagegenRetryOptions(opts: any = {}) {
   return {
     sleep: opts.retrySleep,
     classifyError: (err: unknown) => {
-      const code = String((err as { code?: string; name?: string; message?: string } | null)?.code
-        || (err as { name?: string } | null)?.name
-        || (err as { message?: string } | null)?.message
-        || '');
+      const row = err as { code?: string; name?: string; message?: string } | null;
+      const code = [row?.code, row?.name, row?.message].filter(Boolean).join(' ');
       if (/AbortError|timeout|abort/i.test(code)) return { code: 'ETIMEDOUT', status: null };
       if (/ECONNRESET|EAI_AGAIN|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|fetch failed/i.test(code)) return { code: 'ECONNRESET', status: null };
       return { code: 'request_failed', status: null };

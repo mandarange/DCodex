@@ -78,12 +78,17 @@ export async function imageUxReviewCommand(command: any, args: any = []) {
 async function runImageUxReview(root: string, command: string, args: any[] = []) {
   const missionRequested = readOption(args, '--mission', null);
   const missionId = missionRequested
-    ? missionRequested === 'latest' ? await findLatestMission(root, { mode: 'image-ux-review', route: '$Image-UX-Review', gateFile: IMAGE_UX_REVIEW_GATE_ARTIFACT }) : missionRequested
+    ? missionRequested === 'latest' ? await findLatestMission(root, { mode: 'image-ux-review' }) : missionRequested
     : null;
   const imagePath = readOption(args, '--image', null) || readOption(args, '--screenshot', null);
   const generatedImage = readOption(args, '--generated-image', null);
   const shouldGenerateCallouts = !generatedImage;
-  if (missionId) return rebuildExistingMission(root, command, [missionId, ...args], { fixRequested: flag(args, '--fix') });
+  if (missionId) {
+    if (generatedImage) {
+      return continueExistingMissionWithGeneratedImage(root, command, missionId, generatedImage, args, 'sks.image-ux-review-run.v1');
+    }
+    return rebuildExistingMission(root, command, [missionId, ...args], { fixRequested: flag(args, '--fix') });
+  }
   const sourcePreflight = await imageUxReviewSourcePreflight(args);
   const { fromChromeExtension, fromComputerUse, chromePreflight } = sourcePreflight;
   if (sourcePreflight.result) {
@@ -177,8 +182,8 @@ async function runImageUxReview(root: string, command: string, args: any[] = [])
     // Preserve provider diagnostics even when generation fails and no image can
     // be attached. Route artifact rebuilding must not replace the real request
     // or response with a generic missing-image placeholder.
-    if (result.request_artifact) await fsp.copyFile(result.request_artifact, path.join(dir, IMAGE_UX_REVIEW_GPT_IMAGE_2_REQUEST_ARTIFACT)).catch(() => {});
-    if (result.response_artifact) await fsp.copyFile(result.response_artifact, path.join(dir, IMAGE_UX_REVIEW_GPT_IMAGE_2_RESPONSE_ARTIFACT)).catch(() => {});
+    if (result.request_artifact) await fsp.copyFile(result.request_artifact, path.join(dir, IMAGE_UX_REVIEW_GPT_IMAGE_2_REQUEST_ARTIFACT));
+    if (result.response_artifact) await fsp.copyFile(result.response_artifact, path.join(dir, IMAGE_UX_REVIEW_GPT_IMAGE_2_RESPONSE_ARTIFACT));
     if (result.generated_image_path) {
       const response = await readImagegenResponse(dir);
       const evidenceClass = String(response?.evidence_class || '');
@@ -363,14 +368,28 @@ async function calloutsImageUxReview(root: string, command: string, args: any[] 
 }
 
 async function extractIssuesImageUxReview(root: string, command: string, args: any[] = []) {
+  const missionRequested = readOption(args, '--mission', null);
+  const missionId = missionRequested
+    ? missionRequested === 'latest' ? await findLatestMission(root, { mode: 'image-ux-review' }) : missionRequested
+    : null;
   const generatedImage = readOption(args, '--generated-image', null);
-  const sourceImage = readOption(args, '--image', null) || readOption(args, '--screenshot', null) || generatedImage;
+  const sourceImage = readOption(args, '--image', null) || readOption(args, '--screenshot', null);
   if (!generatedImage) {
     const result = { schema: 'sks.image-ux-review-extract-issues.v1', ok: false, status: 'blocked', blocker: 'generated_image_required' };
     process.exitCode = 1;
     if (flag(args, '--json')) return printJson(result);
     console.error('Usage: sks ux-review extract-issues --generated-image <path> --json');
     return result;
+  }
+  if (missionId) {
+    return continueExistingMissionWithGeneratedImage(
+      root,
+      command,
+      missionId,
+      generatedImage,
+      args,
+      'sks.image-ux-review-extract-issues.v1'
+    );
   }
   const { id, dir, mission } = await createMission(root, { mode: 'image-ux-review', prompt: `Extract UX issues from ${generatedImage}` });
   const sourceRel = sourceImage ? await stageSourceImage(root, dir, sourceImage) : null;
@@ -397,9 +416,62 @@ async function extractIssuesImageUxReview(root: string, command: string, args: a
   return result;
 }
 
+async function continueExistingMissionWithGeneratedImage(
+  root: string,
+  command: string,
+  missionId: string,
+  generatedImage: string,
+  args: any[],
+  schema: string
+) {
+  const { dir, mission } = await loadMission(root, missionId);
+  const contract = await readJson(path.join(dir, 'decision-contract.json'), { prompt: mission.prompt, answers: {}, sealed_hash: null });
+  const mock = flag(args, '--mock');
+  const ledger = await attachGeneratedReviewImage(root, dir, contract, generatedImage, {
+    realGenerated: !mock,
+    mock
+  });
+  if (!mock) {
+    await extractAndWriteGeneratedReview(root, dir, {
+      generatedImagePath: generatedImage,
+      sourceImagePath: sourceImageFromContract(contract),
+      sessionId: readOption(args, '--session', null) || readOption(args, '--session-id', null)
+    });
+  }
+  const artifacts = await writeImageUxReviewRouteArtifacts(dir, contract, {
+    root,
+    wrongnessChecked: true,
+    honestModeComplete: true
+  });
+  artifacts.gate = await enforceImageUxRuntimeGate(dir, artifacts.gate, { mock });
+  await writeJsonAtomic(path.join(dir, IMAGE_UX_REVIEW_GATE_ARTIFACT), artifacts.gate);
+  const proof = await finalizeImageUx(root, missionId, command, artifacts, {
+    mock,
+    cmd: `sks ${command} ${schema.endsWith('extract-issues.v1') ? 'extract-issues' : 'attach-generated'}`
+  });
+  const outcome = imageUxReviewCommandOutcome(artifacts.gate, proof.ok, {
+    allowReviewOnlyCompletion: !flag(args, '--fix')
+  });
+  const result = {
+    schema,
+    ...outcome,
+    mission_id: missionId,
+    generated_review_ledger: ledger,
+    issue_ledger: artifacts.issue_ledger,
+    gate: artifacts.gate,
+    proof: proof.validation
+  };
+  if (!result.ok) process.exitCode = 1;
+  if (flag(args, '--json')) return printJson(result);
+  console.log(`Image UX review continued: ${result.ok ? 'ok' : 'blocked'} ${missionId}`);
+  return result;
+}
+
 async function attachGeneratedImageCommand(root: string, command: string, args: any[] = []) {
-  const missionArg = args.find((arg: any) => !String(arg).startsWith('--')) || 'latest';
-  const missionId = missionArg === 'latest' ? await findLatestMission(root, { mode: 'image-ux-review', route: '$Image-UX-Review', gateFile: IMAGE_UX_REVIEW_GATE_ARTIFACT }) : missionArg;
+  const missionArg = readOption(args, '--mission', null)
+    || args.find((arg: any, index: number) => !String(arg).startsWith('--') && !String(args[index - 1] || '').startsWith('--'))
+    || 'latest';
+  const missionId = missionArg === 'latest' ? await findLatestMission(root, { mode: 'image-ux-review' }) : missionArg;
   const imagePath = readOption(args, '--image', null) || readOption(args, '--generated-image', null);
   if (!missionId || !imagePath) {
     const result = { schema: 'sks.image-ux-review-attach-generated.v1', ok: false, status: 'blocked', blocker: !missionId ? 'mission_required' : 'generated_image_required' };
@@ -407,14 +479,14 @@ async function attachGeneratedImageCommand(root: string, command: string, args: 
     if (flag(args, '--json')) return printJson(result);
     return result;
   }
-  const { dir, mission } = await loadMission(root, missionId);
-  const contract = await readJson(path.join(dir, 'decision-contract.json'), { prompt: mission.prompt, answers: {}, sealed_hash: null });
-  const ledger = await attachGeneratedReviewImage(root, dir, contract, imagePath, { realGenerated: !flag(args, '--mock'), mock: flag(args, '--mock') });
-  const artifacts = await writeImageUxReviewRouteArtifacts(dir, contract, { root, wrongnessChecked: true, honestModeComplete: true });
-  const result = { schema: 'sks.image-ux-review-attach-generated.v1', ok: artifacts.gate.generated_image_ingested === true, mission_id: missionId, generated_review_ledger: ledger, gate: artifacts.gate };
-  if (flag(args, '--json')) return printJson(result);
-  console.log(`Generated image attached: ${missionId}`);
-  return result;
+  return continueExistingMissionWithGeneratedImage(
+    root,
+    command,
+    missionId,
+    imagePath,
+    args,
+    'sks.image-ux-review-attach-generated.v1'
+  );
 }
 
 async function attachAfterImageCommand(root: string, command: string, args: any[] = []) {
@@ -877,6 +949,11 @@ async function stageImage(root: string, dir: string, imagePath: string, subdir: 
 function promptForRun(command: string, args: any[]) {
   const source = readOption(args, '--image', null) || readOption(args, '--screenshot', null) || readOption(args, '--mission', null) || 'latest Codex Chrome Extension or native Computer Use screenshot';
   return `$${routeForCommand(command).replace(/^\$/, '')} ${source} with gpt-image-2 callouts${flag(args, '--fix') ? ', then fix the issues' : ''}`;
+}
+
+function sourceImageFromContract(contract: any): string | null {
+  const sources = contract?.answers?.IMAGE_UX_REVIEW_SOURCE_IMAGES;
+  return Array.isArray(sources) && sources.length ? String(sources[0]) : null;
 }
 
 function missingMission(args: any[]) {

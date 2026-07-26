@@ -1,6 +1,6 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-07-24T06:38:42.662Z",
+  "generated_at": "2026-07-24T06:48:06.064Z",
   "git_head_sha": "8fdf01f8a10369e0c1657e251a27c665cff006bb",
   "source_file_count": 2901,
   "index_digest": "39ae760e40e8ed5f1c72384adfbaf9db1051b8ac0a8583156a2c137bd1cecf21",
@@ -55,7 +55,7 @@
     },
     {
       "id": "code:core-agent-bridge",
-      "text": "core-agent-bridge is a core module at src/core/agent-bridge (9 files, 3458 loc, low risk). Key exports: type LatencyClass = 'fast' | 'normal' | 'long';; interface AgentManifestEntry; interface AgentBridgeCompatibility; interface HostCapabilityDescriptor; interface HostCapabilitiesManifest, and 38 more. It has no detected cross-module dependencies.",
+      "text": "core-agent-bridge is a core module at src/core/agent-bridge (9 files, 3618 loc, low risk). Key exports: type LatencyClass = 'fast' | 'normal' | 'long';; interface AgentManifestEntry; interface AgentBridgeCompatibility; interface HostCapabilityDescriptor; interface HostCapabilitiesManifest, and 37 more. It has no detected cross-module dependencies.",
       "citations": [
         {
           "path": "src/core/agent-bridge"
@@ -67,7 +67,7 @@
     },
     {
       "id": "code:core-agents",
-      "text": "core-agents is a core module at src/core/agents (84 files, 18286 loc, high risk). Key exports: const AGENT_ORCHESTRATOR_ONLY_FILES = Object.freeze([; function agentLedgerRoot(missionDir: string); function validateAgentLedgerWriteScope(input: { actor_agent_id: string; target_path: string; mode?: 'append' | 'write' }); async function initializeAgentCentralLedger(missionDir: string, input: { missionId: string; roster: any; partition?: any; route?: string; prompt?: string; dynamicScheduler?: boolean }); async function appendAgentLedgerEvent(root: string, event: { agent_id: string; session_id: string; event_type: string; payload?: any }), and 315 more. It has no detected cross-module dependencies.",
+      "text": "core-agents is a core module at src/core/agents (84 files, 18331 loc, high risk). Key exports: const AGENT_ORCHESTRATOR_ONLY_FILES = Object.freeze([; function agentLedgerRoot(missionDir: string); function validateAgentLedgerWriteScope(input: { actor_agent_id: string; target_path: string; mode?: 'append' | 'write' }); async function initializeAgentCentralLedger(missionDir: string, input: { missionId: string; roster: any; partition?: any; route?: string; prompt?: string; dynamicScheduler?: boolean }); async function appendAgentLedgerEvent(root: string, event: { agent_id: string; session_id: string; event_type: string; payload?: any }), and 315 more. It has no detected cross-module dependencies.",
       "citations": [
         {
           "path": "src/core/agents"
@@ -190,7 +190,7 @@
     },
     {
       "id": "code:core-commands",
-      "text": "core-commands is a command module at src/core/commands (80 files, 14294 loc, high risk). Key exports: async function runAgentBridgeContractSmokes(; function buildAgentBridgeSetupMetadata(manifest: CurrentAgentManifest):; async function inspectAgentBridgeHostCapabilities(; async function autoresearchCommand(sub: any, args: any = []); async function helpCommand(args: string[] = []): Promise<void | unknown>, and 101 more. It has no detected cross-module dependencies.",
+      "text": "core-commands is a command module at src/core/commands (80 files, 14310 loc, high risk). Key exports: async function runAgentBridgeContractSmokes(; function buildAgentBridgeSetupMetadata(manifest: CurrentAgentManifest):; async function inspectAgentBridgeHostCapabilities(; async function autoresearchCommand(sub: any, args: any = []); async function helpCommand(args: string[] = []): Promise<void | unknown>, and 101 more. It has no detected cross-module dependencies.",
       "citations": [
         {
           "path": "src/core/commands"
@@ -310,7 +310,7 @@
     },
     {
       "id": "code:core-hooks-runtime",
-      "text": "core-hooks-runtime is a core module at src/core/hooks-runtime (32 files, 10301 loc, medium risk). Key exports: ; async function writeManagedSkill(root: string, name: string); async function installCurrentManagedSkill(home: string, name: string); async function writeTranscript(home: string, threadId: string, officialSubagent: boolean); function subagentPayload(agentId: string, transcriptPath: string | null = null), and 84 more. It has no detected cross-module dependencies.",
+      "text": "core-hooks-runtime is a core module at src/core/hooks-runtime (32 files, 10548 loc, medium risk). Key exports: ; async function writeManagedSkill(root: string, name: string); async function installCurrentManagedSkill(home: string, name: string); async function writeTranscript(home: string, threadId: string, officialSubagent: boolean); function subagentPayload(agentId: string, transcriptPath: string | null = null), and 84 more. It has no detected cross-module dependencies.",
       "citations": [
         {
           "path": "src/core/hooks-runtime"
@@ -358,7 +358,7 @@
     },
     {
       "id": "code:core-init",
-      "text": "core-init is a core module at src/core/init (2 files, 1594 loc, low risk). Key exports: type ManagedSkillInstallReport = SkillReconcileReport &; async function reconcileManagedSkillInstallation(root: string, home?: string): Promise<; const REMOVED_SKS_SKILL_NAMES = [; const LEGACY_UNPREFIXED_SKS_SKILL_NAMES = Array.from(new Set([. It has no detected cross-module dependencies.",
+      "text": "core-init is a core module at src/core/init (2 files, 1593 loc, low risk). Key exports: type ManagedSkillInstallReport = SkillReconcileReport &; async function reconcileManagedSkillInstallation(root: string, home?: string): Promise<; const REMOVED_SKS_SKILL_NAMES = [; const LEGACY_UNPREFIXED_SKS_SKILL_NAMES = Array.from(new Set([. It has no detected cross-module dependencies.",
       "citations": [
         {
           "path": "src/core/init"
@@ -619,7 +619,7 @@
     },
     {
       "id": "code:core-provider",
-      "text": "core-provider is a core module at src/core/provider (4 files, 577 loc, low risk). Key exports: type TaskCategory = 'quick' | 'standard' | 'agentic' | 'ultrabrain' | 'verify' | 'review' | 'e2e' | 'refactor' | 'strategy';; type ModelReasoning = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';; type ModelServiceTier = 'fast' | 'standard';; interface ModelChoice; interface LbHealth, and 24 more. It has no detected cross-module dependencies.",
+      "text": "core-provider is a core module at src/core/provider (4 files, 587 loc, low risk). Key exports: type TaskCategory = 'quick' | 'standard' | 'agentic' | 'ultrabrain' | 'verify' | 'review' | 'e2e' | 'refactor' | 'strategy';; type ModelReasoning = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';; type ModelServiceTier = 'fast' | 'standard';; interface ModelChoice; interface LbHealth, and 23 more. It has no detected cross-module dependencies.",
       "citations": [
         {
           "path": "src/core/provider"
@@ -892,7 +892,7 @@
     },
     {
       "id": "code:core-subagents",
-      "text": "core-subagents is a core module at src/core/subagents (29 files, 14940 loc, medium risk). Key exports: const STANDALONE_CHILD_LEASE_OWNER = 'lease-owner-fixture';; function standaloneParentHostEnv(root: string, inheritedAuthSecret: string): NodeJS.ProcessEnv; function assertStandaloneChildEnvironment(input:; const DEFAULT_AUTOMATIC_SUBAGENT_COUNT = 2; const PARALLEL_AUTOMATIC_SUBAGENT_COUNT = 4, and 132 more. It has no detected cross-module dependencies.",
+      "text": "core-subagents is a core module at src/core/subagents (29 files, 15225 loc, medium risk). Key exports: const STANDALONE_CHILD_LEASE_OWNER = 'lease-owner-fixture';; function standaloneParentHostEnv(root: string, inheritedAuthSecret: string): NodeJS.ProcessEnv; function assertStandaloneChildEnvironment(input:; const DEFAULT_AUTOMATIC_SUBAGENT_COUNT = 4; const PARALLEL_AUTOMATIC_SUBAGENT_COUNT = 6, and 132 more. It has no detected cross-module dependencies.",
       "citations": [
         {
           "path": "src/core/subagents"

@@ -29,7 +29,14 @@ test('an image on output_item.done survives a completed envelope with empty outp
 
 test('a partial frame is recorded as provenance but never promoted to completed output', () => {
   const partialOnly = parseResponsesSsePayload(sse([
-    { type: 'response.image_generation_call.partial_image', item_id: 'ig_2', partial_image_b64: 'UEFSVA==' },
+    {
+      type: 'response.image_generation_call.partial_image',
+      item_id: 'ig_2',
+      partial_image_b64: 'UEFSVA==',
+      b64_json: 'UEFSVA==',
+      result: 'UEFSVA==',
+      item: { id: 'ig_2', type: 'image_generation_call', b64_json: 'UEFSVA==' }
+    },
     { type: 'response.completed', response: { id: 'resp_2', status: 'completed', output: [] } }
   ]));
   assert.deepEqual(partialOnly.output, []);

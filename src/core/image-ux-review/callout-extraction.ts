@@ -31,12 +31,18 @@ export function buildIssueLedgerFromGeneratedCallouts(generatedReviewLedger: any
   if (!generated.length) blockers.push('generated_review_image_missing');
   if (generated.some((image: any) => image.text_only === true)) blockers.push('ux_review_text_only_fallback');
   if (generated.length && !issues.length) blockers.push(generated.some((image: any) => image.callout_extraction_status === 'pending') ? 'callout_extraction_pending' : 'callout_extraction_schema_failed');
+  const primaryGenerated = generated.find((image: any) => image.id === existing?.generated_image_id)
+    || generated.find((image: any) => image.id === issues[0]?.generated_review_image_id)
+    || generated[0]
+    || null;
   return {
     schema: 'sks.image-ux-issue-ledger.v3',
     schema_version: 3,
     extraction_source: 'image-ux-generated-review-ledger.json',
     extraction_method: 'codex_exec_resume_output_schema_preferred',
     extraction_schema: 'schemas/codex/image-ux-issue-ledger.schema.json',
+    generated_image_id: primaryGenerated?.id || existing?.generated_image_id || issues[0]?.generated_review_image_id || null,
+    generated_image_sha256: primaryGenerated?.sha256 || existing?.generated_image_sha256 || issues[0]?.generated_image_sha256 || null,
     extracted_from_generated_callout: issues.length > 0,
     issues,
     blocking_issue_count: issues.filter((issue: any) => ['P0', 'P1'].includes(issue.severity) && !['fixed', 'accepted_not_applicable'].includes(issue.status)).length,
