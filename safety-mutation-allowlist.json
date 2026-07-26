@@ -3414,6 +3414,36 @@
       "symbol": "module",
       "token": "writeFileSync",
       "reason": "Runtime script closure check writes only its configured JSON report artifact."
+    },
+    {
+      "file": "src/core/codex-app/desktop-routing-snapshot.ts",
+      "symbol": "restoreDesktopRoutingSnapshot",
+      "token": "unlink",
+      "reason": "Desktop routing restore deletes only the SKS-written routing snapshot it owns, and only after the sidebar restore succeeded; a failed reverse remap keeps the file for retry."
+    },
+    {
+      "file": "src/core/pipeline-internals/runtime-gates.ts",
+      "symbol": "resolveRecoveredComplianceBlocker",
+      "token": "unlink",
+      "reason": "Compliance recovery removes only the mission-local blocker and guard files, and only after re-reading them and confirming their contents still match the recorded originals."
+    },
+    {
+      "file": "src/core/search/benchmark.ts",
+      "symbol": "runSearchEngineBenchmark",
+      "token": "fsp.writeFile",
+      "reason": "Search benchmark writes only its generated docs/performance markdown report, and only when the caller requests artifact output."
+    },
+    {
+      "file": "src/scripts/canonical-test-runner.ts",
+      "symbol": "cleanup",
+      "token": "writeFileSync",
+      "reason": "Canonical test runner seeds the sentinel config and gitconfig only inside the isolated scratch HOME it created, which is the mechanism keeping tests off the operator real home."
+    },
+    {
+      "file": "src/scripts/canonical-test-runner.ts",
+      "symbol": "cleanup",
+      "token": "codex config write",
+      "reason": "Canonical test runner writes the sentinel Codex config only into its isolated scratch CODEX_HOME; any change to that tree is treated as an isolation breach and fails the run."
     }
   ]
 }

@@ -9,16 +9,19 @@ import { isHelpRequest, renderManifestHelp } from '../help.js';
 
 const CLI = path.join(process.cwd(), 'dist', 'bin', 'sks.js');
 
-// `sks version` answers before the router (src/bin/sks.ts), so it prints the
-// version for any argument — that is the command's contract, not a help gap.
-const ANSWERED_BEFORE_ROUTER = new Set(['version']);
+// `version` and `help` answer before the router (src/bin/sks.ts,
+// src/bin/sks-dispatch.ts) and own their presentation: `version` prints the
+// version for any argument, `help` prints the frontdoor. That is each command's
+// contract, not a help gap.
+const ANSWERED_BEFORE_ROUTER = new Set(['version', 'help']);
 
 function runHelp(command: string, form: string, cwd: string) {
   return spawnSync(process.execPath, [CLI, command, form], {
     cwd,
     encoding: 'utf8',
     timeout: 60_000,
-    env: { ...process.env, SKS_SKIP_CODEX_APP_RESTART: '1' }
+    // NO_COLOR so the banner assertion reads the text, not an ANSI dim wrapper.
+    env: { ...process.env, NO_COLOR: '1', SKS_SKIP_CODEX_APP_RESTART: '1' }
   });
 }
 
@@ -56,9 +59,14 @@ test('every manifest command answers --help with usage and never runs its work',
         continue;
       }
       if (ANSWERED_BEFORE_ROUTER.has(entry.name)) continue;
-      if (!/usage/i.test(String(result.stdout || ''))) {
+      const stdout = String(result.stdout || '');
+      if (!/usage/i.test(stdout)) {
         failures.push(`${entry.name}: no usage text`);
       }
+      // Help is CLI output and carries the same banner and status vocabulary as
+      // any other command, so the output-consistency contract holds for it too.
+      if (!/^SKS \d+\.\d+\.\d+ · /.test(stdout)) failures.push(`${entry.name}: help output has no version banner`);
+      if (!/[✔▲✖]/.test(stdout)) failures.push(`${entry.name}: help output has no status vocabulary`);
     }
     assert.deepEqual(failures, []);
   } finally {

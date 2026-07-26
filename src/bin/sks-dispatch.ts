@@ -31,9 +31,12 @@ export async function runSks(args: string[]): Promise<void> {
     const { narutoHelpJsonFastInline } = await import('./fast-inline.js');
     await narutoHelpJsonFastInline();
   } else if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
-    if (args.length > 1) {
+    // `sks help --help` asks for help about help; the flag is not a usage topic,
+    // so it must not be reported as an unknown one.
+    const topics = args.slice(1).filter((arg) => arg !== '--help' && arg !== '-h');
+    if (topics.length > 0) {
       const { helpCommand } = await import('../core/commands/basic-cli.js');
-      await (helpCommand as (args: string[]) => Promise<unknown> | unknown)(args.slice(1));
+      await (helpCommand as (args: string[]) => Promise<unknown> | unknown)(topics);
     } else {
       const { helpFast } = await import('../cli/help-fast.js');
       helpFast();

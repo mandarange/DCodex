@@ -4,6 +4,7 @@ import {
   COMMAND_NAME_SET,
   type CommandNameLite,
 } from './command-manifest-lite.js';
+import { ui as cliUi } from './cli-theme.js';
 import { helpResult, isHelpRequest, renderManifestHelp } from './help.js';
 import { findRetiredGlobalExecutionArgumentErrors } from './global-mode-router.js';
 
@@ -153,6 +154,11 @@ async function dispatchInner(argv: readonly string[]): Promise<unknown> {
   // A command opts into richer text by exporting `usage()`; everything else
   // gets the manifest-derived floor.
   if (helpRequest) {
+    // Help is CLI output like any other: same version banner, same status
+    // vocabulary. The status line is not decoration — it states the safety
+    // property this path exists for, that the command itself did not run.
+    cliUi.banner(`${rawCommand || command} help`);
+    cliUi.ok('usage only — the command was not run');
     console.log(typeof mod.usage === 'function'
       ? mod.usage(rawCommand || command)
       : renderManifestHelp(command, entry));
