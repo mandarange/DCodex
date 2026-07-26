@@ -36,11 +36,13 @@ export function writeTriWikiProofCard(root: string, card: TriWikiProofCard, subj
     return file;
   });
   // Keep the reverse index current so summary and graph extraction never have to
-  // walk the whole proof bank. `bootstrap: 'repair'` seeds the manifest the first
-  // time; after that an update is one read and one atomic write. A failure here
-  // must not lose the proof card that was already durably written, so it is
-  // reported through the index's own status rather than thrown.
-  updateTriWikiProofIndexEntry(root, card, written, { bootstrap: 'repair' });
+  // walk the whole proof bank. Deliberately without `bootstrap`: seeding here
+  // would let a missing or corrupted manifest turn every subsequent proof write
+  // into a full directory walk, which is the cost the index exists to remove.
+  // A missing index is reported through the update's own status and seeded by
+  // the explicit maintenance path (`sks wiki refresh --code`). Failing to index
+  // must never lose the proof card that is already durably written.
+  updateTriWikiProofIndexEntry(root, card, written);
   return written;
 }
 

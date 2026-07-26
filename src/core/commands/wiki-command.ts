@@ -21,6 +21,7 @@ import { readCombinedWrongnessRecords } from '../triwiki-wrongness/wrongness-led
 import { recordImageWrongnessFromValidation } from '../triwiki-wrongness/image-wrongness.js';
 import { publishSharedMemory, rebuildSharedIndexes, sharedMemorySummary, validateSharedMemory } from '../git-hygiene/shared-memory-publish.js';
 import { codePackPath, validateCodePack, writeCodePackAtomic } from '../triwiki/code-pack.js';
+import { repairTriWikiProofIndex } from '../triwiki/triwiki-proof-bank-index.js';
 import { runContextGraphLint } from '../triwiki/context-graph/lint/index.js';
 import { contextGraphStatus } from '../triwiki/context-graph/store/graph-status.js';
 import { readContextGraphMeta, readContextGraphSnapshot } from '../triwiki/context-graph/store/snapshot-store.js';
@@ -257,6 +258,11 @@ async function wikiRefreshCode(args: any = []): Promise<void> {
   const parsedBudget = tokenBudgetRaw ? Number.parseInt(String(tokenBudgetRaw), 10) : Number.NaN;
   const tokenBudget = Number.isFinite(parsedBudget) ? parsedBudget : undefined;
 
+  // This is the explicit maintenance path, so it is where the proof reverse
+  // index is seeded or healed. Proof writes deliberately never walk the bank to
+  // create it, and the evidence extractor needs it to avoid a directory read.
+  const proofIndex = repairTriWikiProofIndex(root);
+
   const compiled = await compileContextGraph({ root, extractors: contextGraphExtractors() });
   const lintErrors = compiled.issues.filter((issue: any) => issue.severity === 'error');
   if (!compiled.ok || !compiled.snapshot) {
@@ -295,6 +301,7 @@ async function wikiRefreshCode(args: any = []): Promise<void> {
     edges: compiled.snapshot.edgeCount,
     graph_warnings: compiled.issues.filter((issue: any) => issue.severity === 'warning').length,
     incremental: Boolean(compiled.incremental),
+    proof_index: { ok: proofIndex.ok, indexed: proofIndex.indexed_count, previous_status: proofIndex.previous_status },
     compile_ms: compiled.durationMs,
     entries: pack ? pack.entries.length : 0,
     token_cost: pack ? pack.total_token_cost : 0,
