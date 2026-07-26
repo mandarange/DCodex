@@ -24,6 +24,11 @@ import {
   type HostCapabilityRuntimeDependencies
 } from '../agent-bridge/host-capability-runtime.js'
 import { uniqueStringsSorted as uniqueStrings } from '../text/strings.js'
+import {
+  narutoCredentialConfigArgs,
+  resolveNarutoCredentialPolicy,
+  type NarutoCredentialPolicy
+} from './naruto-host-credentials.js'
 
 export const OFFICIAL_SUBAGENT_WORKFLOW_SCHEMA = 'sks.subagent-workflow.v1'
 
@@ -106,6 +111,8 @@ export interface OfficialSubagentWorkflowInput {
   runProcessImpl?: typeof runProcess
   onChildSpawn?: (pid: number) => void | Promise<void>
   hostCapabilityDependencies?: HostCapabilityRuntimeDependencies
+  /** Host credential/model delegation; omitted means SKS-managed ChatGPT auth. */
+  credentialPolicy?: NarutoCredentialPolicy
 }
 
 export function detectCodexAppSession(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -120,6 +127,25 @@ export function codexAppSessionKey(env: NodeJS.ProcessEnv = process.env): string
   return threadId || null
 }
 
+/**
+ * Default policy: SKS owns the credential and pins the ChatGPT login.
+ *
+ * A caller that already holds an OpenAI-compatible credential passes a resolved
+ * policy instead — see `naruto-host-credentials.ts`. In that case SKS injects
+ * neither `model_provider` nor `forced_login_method`, so Codex authenticates
+ * with the provider block the host configured.
+ */
+export function defaultNarutoCredentialPolicy(): NarutoCredentialPolicy {
+  return resolveNarutoCredentialPolicy({
+    args: [],
+    env: {},
+    defaultParentModel: NARUTO_PARENT_MODEL,
+    defaultParentEffort: NARUTO_PARENT_EFFORT,
+    defaultSubagentModel: DEFAULT_SUBAGENT_MODEL,
+    defaultSubagentEffort: DEFAULT_SUBAGENT_EFFORT
+  })
+}
+
 export function buildOfficialSubagentCodexArgs(input: {
   prompt: string
   maxThreads: number
@@ -127,24 +153,25 @@ export function buildOfficialSubagentCodexArgs(input: {
   workingDirectory?: string
   projectConfigArgs?: readonly string[]
   hostCapabilityConfigArgs?: readonly string[]
+  credentialPolicy?: NarutoCredentialPolicy
 }): string[] {
   const maxThreads = Math.max(1, Math.floor(input.maxThreads))
   const maV2Total = maxThreads + 1
+  const policy = input.credentialPolicy ?? defaultNarutoCredentialPolicy()
   return [
     'exec',
     '--json',
     ...(input.workingDirectory ? ['-C', input.workingDirectory] : []),
-    '-m', NARUTO_PARENT_MODEL,
-    '-c', `model_reasoning_effort="${NARUTO_PARENT_EFFORT}"`,
-    '-c', 'model_provider="openai"',
-    '-c', 'forced_login_method="chatgpt"',
+    '-m', policy.parentModel,
+    '-c', `model_reasoning_effort="${policy.parentEffort}"`,
+    ...narutoCredentialConfigArgs(policy),
     // Codex 0.145+ stable opt-in multi-agent V2 (authoritative over V1 collab).
     '-c', `features.multi_agent_v2={enabled=true,max_concurrent_threads_per_session=${maV2Total},expose_spawn_agent_model_overrides=true}`,
     '-c', 'agents.enabled=true',
     '-c', `agents.max_concurrent_threads_per_session=${maxThreads}`,
     '-c', 'agents.max_depth=1',
-    '-c', `agents.default_subagent_model="${DEFAULT_SUBAGENT_MODEL}"`,
-    '-c', `agents.default_subagent_reasoning_effort="${DEFAULT_SUBAGENT_EFFORT}"`,
+    '-c', `agents.default_subagent_model="${policy.subagentModel}"`,
+    '-c', `agents.default_subagent_reasoning_effort="${policy.subagentEffort}"`,
     '-c', 'agents.interrupt_message=true',
     ...(input.projectConfigArgs || []),
     ...(input.hostCapabilityConfigArgs || []),
@@ -158,11 +185,20 @@ export function buildOfficialSubagentChildEnv(input: {
   missionId?: string | null
   workflowRunId?: string | null
   hostCapabilityLaunchNonce?: string | null
+  credentialPolicy?: NarutoCredentialPolicy
 } = {}): NodeJS.ProcessEnv {
   const source = { ...process.env, ...(input.env || {}) }
   const childEnv: NodeJS.ProcessEnv = {}
   for (const key of OFFICIAL_SUBAGENT_CHILD_ENV_ALLOWLIST) {
     if (source[key] !== undefined) childEnv[key] = source[key]
+  }
+  // Host auth mode: Codex resolves the provider block's `env_key` from its own
+  // environment, so the named variable has to survive the allowlist. Only the
+  // one variable the policy names is forwarded, and its value is redacted from
+  // every log line by the same secret scrubber that covers the rest of the env.
+  const providerEnvKey = input.credentialPolicy?.providerEnvKey
+  if (providerEnvKey && source[providerEnvKey] !== undefined) {
+    childEnv[providerEnvKey] = source[providerEnvKey]
   }
   childEnv.SKS_NARUTO_STANDALONE_CLI = '0'
   childEnv.SKS_NARUTO_PARENT_LAUNCH = '1'
@@ -415,11 +451,13 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
     hostCapabilityLaunchNonce = randomId(32)
     hostCapabilityPendingDir = officialSubagentMissionDir(canonicalRoot, input.missionId)
   }
+  const credentialPolicy = input.credentialPolicy ?? defaultNarutoCredentialPolicy()
   const childEnv = buildOfficialSubagentChildEnv({
     ...(input.env ? { env: input.env } : {}),
     ...(input.missionId ? { missionId: input.missionId } : {}),
     ...(input.workflowRunId ? { workflowRunId: input.workflowRunId } : {}),
-    ...(hostCapabilityLaunchNonce ? { hostCapabilityLaunchNonce } : {})
+    ...(hostCapabilityLaunchNonce ? { hostCapabilityLaunchNonce } : {}),
+    credentialPolicy
   })
   const outputSecretValues = hostCapabilityLaunchNonce
     ? [...inheritedSecretValues, hostCapabilityLaunchNonce]
@@ -526,7 +564,8 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
       projectTrusted: input.projectTrusted === true,
       globalHostCapabilityConfigured
     }),
-    hostCapabilityConfigArgs: hostCapabilityCodexConfigArgs(hostCapabilityRuntime)
+    hostCapabilityConfigArgs: hostCapabilityCodexConfigArgs(hostCapabilityRuntime),
+    credentialPolicy
   })
   const toolOutputRecovery = await inspectCodexLbCliLaunchRecovery({
     root: input.root,

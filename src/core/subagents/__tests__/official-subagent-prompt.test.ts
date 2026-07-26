@@ -194,7 +194,11 @@ test('official prompt carries only bounded TriWiki attention anchors', () => {
   assert.match(prompt, /do not launch shell workers, a custom scheduler, a worker pool, or model fanout/)
 })
 
-test('TriWiki attention keeps core trust anchors and promotes query-relevant hydrate hints within the token budget', () => {
+test('TriWiki attention takes the pack trust order and attaches hydrate hints, without ranking by token overlap', () => {
+  // Query relevance is the Context Graph's job now. The pack-only path is a
+  // deterministic projection of `use_first`: it must not re-introduce the
+  // lexical scorer that used to promote hydrate-only rows whose text happened
+  // to share words with the goal.
   const triwikiAttention = extractBoundedTriwikiAttention({
     attention: {
       mode: 'aggressive_triwiki_active_recall',
@@ -206,24 +210,23 @@ test('TriWiki attention keeps core trust anchors and promotes query-relevant hyd
         ['unrelated-search', 'hash-search', 'source-search']
       ],
       hydrate_first: [
-        ['code:core-codex-hooks', 'code_citations:src/core/hooks-runtime.ts'],
-        ['code:core-mcp-manager', 'code_citations:src/core/codex-app/mcp-manager.ts'],
-        ['code:core-ppt-review', 'code_citations:src/core/ppt-review.ts']
+        ['wiki-policy', 'code_citations:src/core/hooks-runtime.ts'],
+        ['code:core-mcp-manager', 'code_citations:src/core/codex-app/mcp-manager.ts']
       ]
     }
   }, 5, 'Improve every hook gate and the MCP manager')
 
-  assert.deepEqual(triwikiAttention.anchors.slice(0, 3).map((anchor) => anchor.id), [
+  assert.deepEqual(triwikiAttention.anchors.map((anchor) => anchor.id), [
     'wiki-policy',
     'wrongness-policy',
-    'docs-policy'
+    'docs-policy',
+    'unrelated-ppt',
+    'unrelated-search'
   ])
-  assert.deepEqual(triwikiAttention.anchors.slice(3).map((anchor) => anchor.id).sort(), [
-    'code:core-codex-hooks',
-    'code:core-mcp-manager'
-  ].sort())
+  assert.equal(triwikiAttention.anchors[0]?.hydrate_hint, 'code_citations:src/core/hooks-runtime.ts')
   assert.equal(triwikiAttention.anchors.length, 5)
   assert.equal(triwikiAttention.full_pack_injected, false)
+  assert.equal(triwikiAttention.hydration_policy, 'on_demand_only')
 })
 
 test('official prompt injects only the bounded relevant role catalog instead of the full catalog', () => {

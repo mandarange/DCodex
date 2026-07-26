@@ -25,7 +25,7 @@ function gates(entries: ReadonlyArray<Record<string, unknown>>): string {
       const inputs = Array.isArray(entry.inputs) ? (entry.inputs as string[]) : [];
       return {
         id: entry.id,
-        command: tests.length ? `node ./${tests[0]}` : `node ./dist/scripts/${String(entry.id)}-check.js`,
+        command: tests.length ? `node ./${tests[0]}` : `node ./tools/${String(entry.id)}-check.js`,
         deps: Array.isArray(entry.deps) ? entry.deps : [],
         protected: entry.protected === true,
         resource: ['cpu-light', 'fs-read'],

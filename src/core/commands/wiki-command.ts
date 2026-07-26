@@ -20,7 +20,10 @@ import { wrongnessContextForRoute } from '../triwiki-wrongness/wrongness-retriev
 import { readCombinedWrongnessRecords } from '../triwiki-wrongness/wrongness-ledger.js';
 import { recordImageWrongnessFromValidation } from '../triwiki-wrongness/image-wrongness.js';
 import { publishSharedMemory, rebuildSharedIndexes, sharedMemorySummary, validateSharedMemory } from '../git-hygiene/shared-memory-publish.js';
-import { validateCodePack, writeCodePackAtomic } from '../triwiki/code-pack.js';
+import { codePackPath, validateCodePack, writeCodePackAtomic } from '../triwiki/code-pack.js';
+import { runContextGraphLint } from '../triwiki/context-graph/lint/index.js';
+import { contextGraphStatus } from '../triwiki/context-graph/store/graph-status.js';
+import { readContextGraphMeta, readContextGraphSnapshot } from '../triwiki/context-graph/store/snapshot-store.js';
 import { compileContextGraph } from '../triwiki/context-graph/compiler/index.js';
 import { contextGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
 import { buildWorkspaceCodePack } from '../triwiki/context-graph/projections/code-pack-workspace.js';
@@ -186,17 +189,60 @@ export async function wikiCommand(sub: any, args: any = []) {
     const pack = await readJson(path.resolve(target));
     const { result, trustAnchors } = wikiValidationResult(pack, root);
     const codePack = await codePackFreshness(root);
-    process.exitCode = result.ok ? 0 : 2;
-    if (flag(args, '--json')) return console.log(JSON.stringify({ ...result, code_pack: codePack }, null, 2));
+    const graph = await wikiValidateContextGraph(root);
+    const ok = result.ok && graph.ok;
+    process.exitCode = ok ? 0 : 2;
+    if (flag(args, '--json')) {
+      return console.log(JSON.stringify({ ...result, ok, code_pack: codePack, context_graph: graph }, null, 2));
+    }
     console.log(`Wiki coordinate index: ${result.ok ? 'ok' : 'failed'}`);
     console.log(`Anchors checked: ${result.checked}`);
     console.log(`Trust anchors: ${trustAnchors}/${result.checked}`);
     for (const issue of result.issues) console.log(`- ${issue.severity}: ${issue.id}${issue.anchor ? ` ${issue.anchor}` : ''}`);
-    console.log(`Code pack: ${codePack.status}${codePack.status === 'stale' ? ' — run `sks wiki refresh --code`' : ''}`);
+    console.log(`Code pack: ${codePack.status}${codePack.status === 'stale' ? ` — run \`${CONTEXT_GRAPH_REPAIR_COMMAND}\`` : ''}`);
+    console.log(`Context graph: ${graph.status}${graph.ok ? '' : ` — run \`${CONTEXT_GRAPH_REPAIR_COMMAND}\``}`);
+    for (const issue of graph.issues) console.log(`- ${issue}`);
     return;
   }
   console.error('Usage: sks wiki coords|pack|refresh|publish|rebuild-index|rebuild-summary|validate|validate-shared|wrongness|image-ingest|anchor-add|relation-add|image-validate|image-summary');
   process.exitCode = 1;
+}
+
+/**
+ * Graph half of `sks wiki validate`: schema and lint, snapshot/meta parity,
+ * source-hash freshness, and projection parity between the snapshot and the
+ * code pack that was projected from it. A stale or missing graph is reported,
+ * never repaired here — repair belongs to `sks wiki refresh --code`.
+ */
+async function wikiValidateContextGraph(root: string): Promise<{ ok: boolean; status: string; snapshot_hash: string | null; issues: string[] }> {
+  const status = await contextGraphStatus(root, { extractors: contextGraphExtractors() });
+  if (status.status !== 'fresh') {
+    return {
+      ok: false,
+      status: status.status,
+      snapshot_hash: status.snapshotHash,
+      issues: [status.errorCode ?? 'context_graph_not_fresh', ...status.reasons]
+    };
+  }
+  const snapshotLoad = await readContextGraphSnapshot(root);
+  const metaLoad = await readContextGraphMeta(root);
+  if (snapshotLoad.status !== 'ok' || !snapshotLoad.snapshot || metaLoad.status !== 'ok' || !metaLoad.meta) {
+    return { ok: false, status: 'corrupt', snapshot_hash: status.snapshotHash, issues: ['context_graph_snapshot_meta_unreadable'] };
+  }
+  const lint = runContextGraphLint({ root, snapshot: snapshotLoad.snapshot, meta: metaLoad.meta });
+  const issues = lint.errors.slice(0, 20).map((issue) => `${issue.code}: ${issue.message}`);
+  // Projection parity: a code pack that does not name the snapshot it came from
+  // is a pack from some other graph generation.
+  const packDigest = await readJson<{ index_digest?: string }>(codePackPath(root), { index_digest: '' });
+  const digest = String(packDigest?.index_digest ?? '');
+  const boundToSnapshot = digest.includes(snapshotLoad.snapshot.snapshotHash.slice(0, 16));
+  if (digest && !boundToSnapshot) issues.push('code_pack_not_bound_to_current_snapshot');
+  return {
+    ok: lint.ok && (!digest || boundToSnapshot),
+    status: 'fresh',
+    snapshot_hash: snapshotLoad.snapshot.snapshotHash,
+    issues
+  };
 }
 
 /**

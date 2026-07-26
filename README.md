@@ -22,7 +22,7 @@ Proof-first orchestration for Codex CLI, ChatGPT Desktop, AI coding agents, mult
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-This README documents package **SKS 7.3.0** — its own identity, read from `package.json` and verified by the release gate, not advice about what to install.
+This README documents package **SKS 7.4.0** — its own identity, read from `package.json` and verified by the release gate, not advice about what to install.
 
 Use the official latest stable SKS and Codex CLI releases. SKS stays version-agnostic: older hosts keep working where capabilities allow, while Menu Bar / Center induce updates to the latest stable build. Run `sks update-check` for what is installed and read the capability report for what is actually supported — feature availability is decided by capability probes, not by a version number printed in a document. It resolves managed SKS skills from the authoritative global install, preserves a runnable Naruto child slot when `max_threads=2`, and keeps Menu Bar repair transactional so stamped generations remain verifiable. Naruto uses stable opt-in multi-agent V2 when the host exposes it. Local code search is mode-separated (`sks search files|text|structure|symbol|context`); `context` is answered by the compiled TriWiki Context Graph with evidence paths rather than lexical guessing — see [docs/architecture/context-graph.md](docs/architecture/context-graph.md) and [docs/architecture/search-engine-target.md](docs/architecture/search-engine-target.md). See [CHANGELOG.md](CHANGELOG.md).
 
@@ -89,6 +89,104 @@ Every installed Codex hook runs one common Naruto decision gate. The gate record
 SKS installs twenty-five narrow project custom agents, including native AppKit, toolchain, protocol, runtime-reliability, TriWiki-evidence, long-context, Computer Use, Browser/Chrome, and image-generation specialists. Delegation prompts inject at most the three roles recommended for the current goal rather than serializing the full catalog, so expanding role coverage does not serialize the full inventory into every prompt. TriWiki context is also bounded and query-aware: ordinary work receives up to four trust/hydration anchors and complex, parallel, or high-risk work receives up to six, with source hydration required before relying on lower-trust hints. In CLI Zellij mode, the right side is a live observability surface rather than a static lane reservation: one monitor plus one viewport by default (maximum three) shows official thread role/model, redacted live phase/task/file updates from rollout-compatible Codex sessions on the official latest stable CLI, plus `running`, `verifying`, and trustworthy parent-verdict completion/failure states. Rollout activity is display-only and never completion proof.
 
 Official subagent requests use `--agents`; removed scheduler, pool, backend, and model flags fail closed.
+
+## Embedding SKS In Another Agent System
+
+By default SKS owns the credential: it pins `model_provider="openai"` and `forced_login_method="chatgpt"`, so an operator's interactive ChatGPT session authenticates the run and it cannot drift onto another provider unnoticed.
+
+That default is wrong for an unattended host. An orchestrator that already holds and rotates a customer's OpenAI-compatible credential — a local codex-lb endpoint, OpenRouter, any `env_key` provider block — cannot log in interactively on every node, and forcing `chatgpt` makes Codex treat an `auth_mode="apikey"` session as a hard logout and delete `auth.json`. **Host mode** hands that decision back.
+
+```sh
+sks naruto run "task" \
+  --auth-mode=host \
+  --model-provider=codex-lb \
+  --provider-env-key=CODEX_LB_API_KEY
+```
+
+| Surface | Flag | Environment | Effect |
+| --- | --- | --- | --- |
+| Who authenticates | `--auth-mode=host` | `SKS_NARUTO_AUTH_MODE=host` | SKS injects neither `model_provider` nor `forced_login_method`; Codex uses your `config.toml` provider block |
+| Which provider block | `--model-provider=<name>` | `SKS_NARUTO_MODEL_PROVIDER` | Names a `[model_providers.<name>]` block. Host mode only |
+| Which credential variable | `--provider-env-key=<NAME>` | `SKS_NARUTO_PROVIDER_ENV_KEY` | Forwards exactly that variable to the child so the block's `env_key` resolves. Host mode only |
+| Release the login only | `--no-forced-login-method` | `SKS_NARUTO_FORCED_LOGIN_METHOD=none` | Keeps the SKS provider, drops the forced ChatGPT login |
+| Parent model / effort | `--parent-model`, `--parent-effort` | `SKS_NARUTO_PARENT_MODEL`, `SKS_NARUTO_PARENT_EFFORT` | Overrides the built-in parent policy |
+| Subagent model / effort | `--subagent-model`, `--subagent-effort` | `SKS_NARUTO_SUBAGENT_MODEL`, `SKS_NARUTO_SUBAGENT_EFFORT` | Overrides the default subagent policy |
+
+Guarantees this contract makes:
+
+- **SKS never reads, stores, forwards to a third party, or logs your credential.** It forwards one named environment variable to the Codex child and records only that variable's *name* in receipts. Values of secret-shaped variables are redacted from captured output.
+- **A malformed value blocks the run.** An unknown auth mode, a provider name with a space, an effort tier that is not `minimal|low|medium|high|max`, or a `--provider-env-key` that is absent from the environment all fail before mission state is written. SKS never quietly falls back to its own credential — that surprise is the failure mode this contract exists to prevent.
+- **Mixed configurations are refused.** Naming a provider while SKS still forces a ChatGPT login would authenticate one way and bill another, so it is a blocker rather than a silent precedence rule.
+- **The default is unchanged.** Managed mode still pins the ChatGPT login, and the real-credential smoke gate still proves it.
+
+### Designing an adapter that wraps SKS without fighting it
+
+The rule that keeps an adapter conflict-free: **let SKS own the mission, the evidence, and the gates; let the host own the credential, the model policy, and the workspace.** Cross that line — by patching `dist/`, writing `.sneakoscope/` yourself, or re-implementing the gate DAG — and every SKS update breaks you.
+
+```ts
+// acas/adapters/sks.ts — one process boundary, no dist patching.
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+
+const run = promisify(execFile)
+
+export interface SksMissionRequest {
+  workspace: string          // host owns the checkout
+  task: string
+  agents?: number
+  tenant: {
+    providerBlock: string    // [model_providers.<name>] the host wrote into config.toml
+    credentialEnvKey: string // env var the block's env_key points at
+    credential: string       // held by the host; never persisted by SKS
+    parentModel?: string
+    subagentModel?: string
+  }
+}
+
+export async function runSksMission(request: SksMissionRequest) {
+  const { stdout } = await run('sks', [
+    'naruto', 'run', request.task,
+    '--json',
+    ...(request.agents ? ['--agents', String(request.agents)] : []),
+    // Host owns authentication and model policy.
+    '--auth-mode=host',
+    `--model-provider=${request.tenant.providerBlock}`,
+    `--provider-env-key=${request.tenant.credentialEnvKey}`,
+    ...(request.tenant.parentModel ? [`--parent-model=${request.tenant.parentModel}`] : []),
+    ...(request.tenant.subagentModel ? [`--subagent-model=${request.tenant.subagentModel}`] : [])
+  ], {
+    cwd: request.workspace,
+    env: {
+      ...process.env,
+      // The one variable the provider block resolves. Scope it to this call
+      // rather than exporting it process-wide.
+      [request.tenant.credentialEnvKey]: request.tenant.credential
+    },
+    maxBuffer: 64 * 1024 * 1024
+  })
+  // SKS answers with its own result schema; treat it as the source of truth for
+  // status and evidence rather than re-deriving success from stdout text.
+  return JSON.parse(stdout)
+}
+```
+
+Then read the outcome through SKS's own surfaces instead of inferring it:
+
+```sh
+sks naruto proof --json          # completion proof, blockers, evidence links
+sks triwiki graph-status --json  # is the compiled context graph usable right now
+sks search context "..." --json  # evidence-backed context with reason paths
+```
+
+Adapter rules that keep updates safe:
+
+1. **One process boundary.** Shell out to the `sks` CLI with `--json`. Do not import SKS internals; they are not a published API and they move.
+2. **Never patch `dist/`.** A local patch is overwritten by every install and is asserted against by release gates. If a behaviour you need is missing, it belongs behind a flag like the ones above.
+3. **Host owns the workspace, SKS owns `.sneakoscope/`.** Write your own state anywhere else; treat `.sneakoscope/` as SKS-owned and read-only from outside.
+4. **Pass credentials per invocation, not per machine.** A per-call `env` entry keeps one tenant's key out of another tenant's run.
+5. **Let the gates fail.** A blocked mission with blockers is a correct answer. Do not retry it with safety flags off, and do not treat `--trusted-project` as a default — it is an operator decision about a reviewed checkout.
+6. **Do not pin a version in your own docs or error strings.** Ask for the official latest stable release and read the capability report; SKS enforces this on itself with the `latest-version:guidance` gate.
+7. **Parallelism advice is advisory.** `sks naruto` decides its own wave shape; if you plan slices yourself, check them against the graph advisory rather than assuming disjointness.
 
 ## Why Not Just An LLM Reviewer?
 

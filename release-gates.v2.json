@@ -4662,6 +4662,180 @@
         "release"
       ],
       "output_contract": "sks.gate-result.v1"
+    },
+    {
+      "id": "context-graph:contract",
+      "command": "node ./dist/scripts/context-graph-check.js --mode contract",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 120000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "schemas/triwiki/context-graph.schema.json",
+          "src/core/triwiki/context-graph/contracts.ts",
+          "src/core/triwiki/context-graph/ids.ts",
+          "src/core/triwiki/context-graph/paths.ts",
+          "src/core/triwiki/context-graph/profiles.ts",
+          "src/core/triwiki/context-graph/query-types.ts",
+          "src/core/triwiki/context-graph/graph-index.ts",
+          "src/core/triwiki/context-graph/extractors/index.ts",
+          "src/core/triwiki/context-graph/query/ranking-config.ts",
+          "src/scripts/context-graph-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v1"
+    },
+    {
+      "id": "context-graph:quality",
+      "command": "node ./dist/scripts/context-graph-check.js --mode quality",
+      "deps": [
+        "context-graph:contract"
+      ],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 300000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/context-graph-benchmark.json",
+          "src/core/triwiki/context-graph/**",
+          "src/core/naruto/context-graph-advisor.ts",
+          "src/core/naruto/context-graph-advisor-scope.ts",
+          "src/core/search/files.ts",
+          "src/core/search/text.ts",
+          "src/scripts/context-graph-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v1"
+    },
+    {
+      "id": "context-graph:performance",
+      "command": "node ./dist/scripts/context-graph-check.js --mode performance",
+      "deps": [
+        "context-graph:contract"
+      ],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 300000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/context-graph-benchmark.json",
+          "src/core/triwiki/context-graph/**",
+          "src/core/naruto/context-graph-advisor.ts",
+          "src/core/naruto/context-graph-advisor-scope.ts",
+          "src/core/search/files.ts",
+          "src/core/search/text.ts",
+          "src/scripts/context-graph-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v1"
+    },
+    {
+      "id": "context-graph:legacy-closure",
+      "command": "node ./dist/scripts/context-graph-check.js --mode legacy-closure",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 120000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "src/core/search/context.ts",
+          "src/core/search/context-graph-seeds.ts",
+          "src/core/subagents/triwiki-attention.ts",
+          "src/core/triwiki/code-pack.ts",
+          "src/core/commands/wiki-command.ts",
+          "src/scripts/context-graph-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v1"
+    },
+    {
+      "id": "latest-version:guidance",
+      "command": "node ./dist/scripts/latest-version-guidance-check.js",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 120000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "README.md",
+          "docs/**",
+          "src/**",
+          "native/**",
+          "src/scripts/latest-version-guidance-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v1"
     }
   ]
 }

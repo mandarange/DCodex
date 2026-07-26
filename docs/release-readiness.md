@@ -1,4 +1,4 @@
-# SKS 7.3.0 Release Readiness
+# SKS 7.4.0 Release Readiness
 
 This document is the current fail-closed release contract for `sneakoscope`
 7.3.0. The current package version on this branch is 7.3.0. It is a readiness
@@ -172,7 +172,7 @@ Inspect the exact packed file list and tarball, not only the source checkout.
 - generated project guidance contains only current dollar routes;
 - an isolated prefix install can run version, help, doctor, Naruto status, MCP
   status, update status, and Menu Bar diagnostics;
-- the 6.2.0 to 7.3.0 upgrade smoke uses an isolated HOME and proves managed
+- the 6.2.0 to 7.4.0 upgrade smoke uses an isolated HOME and proves managed
   cleanup, user-file preservation, new-binary re-exec, rollback receipts,
   exact lifecycle command inventory, no timeout, no host HOME/prefix reuse,
   no unexpected `launchctl` call, and successful sandbox removal;

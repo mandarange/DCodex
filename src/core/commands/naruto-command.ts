@@ -32,6 +32,13 @@ import {
   writeSubagentEvidence
 } from '../subagents/subagent-evidence.js'
 import { buildNarutoHelpResult } from '../subagents/naruto-help-contract.js'
+import { resolveNarutoCredentialPolicy, type NarutoCredentialPolicy } from '../subagents/naruto-host-credentials.js'
+import {
+  DEFAULT_SUBAGENT_EFFORT,
+  DEFAULT_SUBAGENT_MODEL,
+  NARUTO_PARENT_EFFORT,
+  NARUTO_PARENT_MODEL
+} from '../subagents/model-policy.js'
 import { buildNarutoProofProjection } from '../subagents/naruto-proof-projection.js'
 import { withFileLock } from '../locks/file-lock.js'
 import {
@@ -78,6 +85,8 @@ export interface NarutoArgs {
   readOnly: boolean
   trustedProject: boolean
   argumentErrors: string[]
+  /** Host credential/model delegation resolved from flags and environment. */
+  credentialPolicy: NarutoCredentialPolicy
 }
 
 type NarutoPreparationFailureInjection =
@@ -97,6 +106,24 @@ export async function narutoCommand(commandOrArgs: string | string[] = 'naruto',
   if (args.some((arg) => arg === '--glm' || arg.startsWith('--glm='))) return blockGlmOverride(args.includes('--json'))
 
   const parsed = parseNarutoArgs(args)
+  // A malformed provider or effort tier blocks the run before any mission state
+  // is written, instead of silently falling back to the SKS-managed credential.
+  const credentialPolicy = parsed.credentialPolicy
+  if (credentialPolicy.blockers.length) {
+    const blocked = {
+      schema: 'sks.naruto-credential-policy.v1',
+      ok: false,
+      blockers: credentialPolicy.blockers,
+      hint: 'sks naruto run --auth-mode=host --model-provider=<config.toml provider block> --provider-env-key=<ENV NAME>'
+    }
+    if (args.includes('--json')) console.log(JSON.stringify(blocked, null, 2))
+    else {
+      console.error(`Naruto credential policy blocked: ${credentialPolicy.blockers.join(', ')}`)
+      console.error(blocked.hint)
+    }
+    process.exitCode = 2
+    return null
+  }
   if (parsed.argumentErrors.length) {
     const result = argumentBlock(parsed.argumentErrors)
     return emit(parsed, result, () => {
@@ -231,6 +258,7 @@ async function narutoRunTransaction(
     missionId: id,
     workflowRunId,
     sessionKey,
+    credentialPolicy: parsed.credentialPolicy,
     ...(missionLease ? { onChildSpawn: missionLease.protectChildPid } : {})
   })
   const result = await withOfficialSubagentLifecycleLock(dir, async () => {
@@ -694,16 +722,28 @@ export function parseNarutoArgs(args: string[]): NarutoArgs {
     json: normalized.includes('--json'),
     readOnly: normalized.includes('--readonly') || normalized.includes('--read-only'),
     trustedProject: optionArgs.includes('--trusted-project'),
-    argumentErrors: uniqueStrings(argumentErrors)
+    argumentErrors: uniqueStrings(argumentErrors),
+    credentialPolicy: resolveNarutoCredentialPolicy({
+      args: optionArgs,
+      env: process.env,
+      defaultParentModel: NARUTO_PARENT_MODEL,
+      defaultParentEffort: NARUTO_PARENT_EFFORT,
+      defaultSubagentModel: DEFAULT_SUBAGENT_MODEL,
+      defaultSubagentEffort: DEFAULT_SUBAGENT_EFFORT
+    })
   }
 }
 
 function positionalValues(args: string[]) {
   const valueFlags = new Set([
-    '--agents', '--max-threads', '--mission', '--mission-id'
+    '--agents', '--max-threads', '--mission', '--mission-id',
+    // Host credential/model delegation. These take a value, so their value must
+    // never be swept into the task prompt as a positional word.
+    '--auth-mode', '--model-provider', '--provider-env-key',
+    '--parent-model', '--parent-effort', '--subagent-model', '--subagent-effort'
   ])
   const booleanFlags = new Set([
-    '--json', '--readonly', '--read-only', '--trusted-project'
+    '--json', '--readonly', '--read-only', '--trusted-project', '--no-forced-login-method'
   ])
   const result: string[] = []
   for (let index = 0; index < args.length; index += 1) {
@@ -775,7 +815,7 @@ function unknownOptionErrors(args: string[]): string[] {
 }
 
 function booleanOptionErrors(args: string[]): string[] {
-  const booleanNames = new Set(['--json', '--readonly', '--read-only', '--trusted-project', '--help', '-h'])
+  const booleanNames = new Set(['--json', '--readonly', '--read-only', '--trusted-project', '--no-forced-login-method', '--help', '-h'])
   const optionArgs = args.includes('--') ? args.slice(0, args.indexOf('--')) : args
   const errors: string[] = []
   for (const arg of optionArgs) {

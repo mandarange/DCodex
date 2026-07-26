@@ -5,7 +5,6 @@
  * observed twice merges instead of duplicating, and every write goes through one
  * place that enforces the node/edge budgets and the provenance requirement.
  */
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import type {
   ContextGraphEdge,
@@ -20,6 +19,7 @@ import type {
   ContextGraphSkip,
   ContextGraphSkipReason
 } from '../../contracts.js';
+import { sha256 } from '../../../../fsx.js';
 import { lintError } from '../../contracts.js';
 import { contextGraphEdgeId, contextGraphNodeId } from '../../ids.js';
 import { ContextGraphPathError, isWorkspaceRelativePosixPath, resolveInsideWorkspace } from '../../paths.js';
@@ -81,10 +81,6 @@ export function createTopologyContext(params: {
 
 export function topologyExpired(ctx: TopologyContext): boolean {
   return Date.now() > ctx.deadline;
-}
-
-export function sha256(value: string | Buffer): string {
-  return crypto.createHash('sha256').update(value).digest('hex');
 }
 
 /** Rough context cost of a node; the code extractor replaces it for file nodes. */
