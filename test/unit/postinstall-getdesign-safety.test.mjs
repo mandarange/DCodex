@@ -27,5 +27,5 @@ test('getdesign postinstall never runs the third-party installer', async () => {
   assert.equal(GETDESIGN_REFERENCE.codex_skill_install_mode, 'manual_only');
   assert.equal(skipped.reviewed_ref, GETDESIGN_REFERENCE.codex_skill_ref);
   assert.equal(skipped.install, GETDESIGN_REFERENCE.codex_skill_install);
-  assert.equal(GETDESIGN_REFERENCE.codex_skill_install, 'skills add MohtashamMurshid/getdesign --global --agent codex --yes');
+  assert.equal(GETDESIGN_REFERENCE.codex_skill_install, 'skills add MohtashamMurshid/getdesign -g -a codex -y');
 });

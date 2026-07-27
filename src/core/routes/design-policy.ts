@@ -15,7 +15,7 @@ export const GETDESIGN_REFERENCE = {
   codex_skill_repository: GETDESIGN_CODEX_SKILL_REPOSITORY,
   codex_skill_ref: GETDESIGN_CODEX_SKILL_REF,
   codex_skill: GETDESIGN_CODEX_SKILL_REPOSITORY,
-  codex_skill_install: `skills add ${GETDESIGN_CODEX_SKILL_REPOSITORY} --global --agent codex --yes`,
+  codex_skill_install: `skills add ${GETDESIGN_CODEX_SKILL_REPOSITORY} -g -a codex -y`,
   codex_skill_install_mode: 'manual_only',
   npm_cli: '@getdesign/cli',
   npm_sdk: '@getdesign/sdk',

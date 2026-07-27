@@ -48,6 +48,10 @@ assertGate(
   'getdesign install metadata must identify the command as manual-only'
 );
 assertGate(
+  designPolicy.includes(' -g -a codex -y`') && !designPolicy.includes('--agent codex'),
+  'manual getdesign guidance must use current Skills CLI short flags without reviving the retired SKS --agent option'
+);
+assertGate(
   /GETDESIGN_CODEX_SKILL_REF = '[a-f0-9]{40}'/.test(designPolicy),
   'getdesign metadata must record the reviewed upstream commit'
 );
