@@ -10,6 +10,7 @@ import { codePackFreshnessNote } from '../hooks-runtime/code-pack-freshness-pref
 import { inspectCodePackHeadFreshness } from '../triwiki/code-pack-head-freshness.js';
 
 const SEMANTIC_TEST_BUDGET_MS = 5_000;
+const FAILURE_CLASSIFICATION_TIMEOUT_MS = 30_000;
 let repoTemplatePromise: Promise<{ root: string; head: string }> | null = null;
 
 async function tempRepo(): Promise<{ root: string; head: string }> {
@@ -40,15 +41,27 @@ async function writePack(root: string, sha: string | null): Promise<void> {
   await fsp.writeFile(path.join(dir, 'code-pack.json'), JSON.stringify({ schema: 'sks.code-pack.v1', git_head_sha: sha, entries: [] }));
 }
 
-async function withFakeGit<T>(source: string, work: () => Promise<T>): Promise<T> {
+type FakeGitBehavior =
+  | { kind: 'immediate_failure' }
+  | { kind: 'node'; source: string };
+
+async function withFakeGit<T>(behavior: FakeGitBehavior, work: () => Promise<T>): Promise<T> {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-code-pack-fake-git-'));
-  const script = path.join(dir, 'fake-git.cjs');
-  await fsp.writeFile(script, source);
   const launcher = path.join(dir, process.platform === 'win32' ? 'git.cmd' : 'git');
-  if (process.platform === 'win32') {
-    await fsp.writeFile(launcher, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+  if (behavior.kind === 'immediate_failure') {
+    if (process.platform === 'win32') {
+      await fsp.writeFile(launcher, '@echo simulated git failure 1>&2\r\n@exit /b 1\r\n');
+    } else {
+      await fsp.writeFile(launcher, "#!/bin/sh\nprintf '%s\\n' 'simulated git failure' >&2\nexit 1\n", { mode: 0o755 });
+    }
   } else {
-    await fsp.writeFile(launcher, `#!${process.execPath}\n${source}`, { mode: 0o755 });
+    const script = path.join(dir, 'fake-git.cjs');
+    await fsp.writeFile(script, behavior.source);
+    if (process.platform === 'win32') {
+      await fsp.writeFile(launcher, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+    } else {
+      await fsp.writeFile(launcher, `#!${process.execPath}\n${behavior.source}`, { mode: 0o755 });
+    }
   }
   const previousPath = process.env.PATH;
   process.env.PATH = `${dir}${path.delimiter}${previousPath || ''}`;
@@ -108,8 +121,10 @@ test('codePackFreshnessNote stays silent when Git inspection fails for metadata-
   git(['add', '.sneakoscope/wiki/code-pack.json']);
   git(['commit', '-q', '-m', 'refresh code pack']);
 
-  await withFakeGit("process.stderr.write('simulated git failure\\n'); process.exit(1);\n", async () => {
-    const inspection = await inspectCodePackHeadFreshness(root, head, { timeoutMs: SEMANTIC_TEST_BUDGET_MS });
+  await withFakeGit({ kind: 'immediate_failure' }, async () => {
+    // This assertion distinguishes a non-zero exit from the separately tested
+    // timeout branch; it is not a process-startup performance budget.
+    const inspection = await inspectCodePackHeadFreshness(root, head, { timeoutMs: FAILURE_CLASSIFICATION_TIMEOUT_MS });
     assert.equal(inspection.fresh, false);
     assert.equal(inspection.conclusive, false);
     assert.equal(inspection.reason, 'git_failed');
@@ -124,7 +139,7 @@ test('codePackFreshnessNote stays silent when Git inspection times out for metad
   git(['add', '.sneakoscope/wiki/code-pack.json']);
   git(['commit', '-q', '-m', 'refresh code pack']);
 
-  await withFakeGit('setTimeout(() => {}, 10_000);\n', async () => {
+  await withFakeGit({ kind: 'node', source: 'setTimeout(() => {}, 10_000);\n' }, async () => {
     const inspection = await inspectCodePackHeadFreshness(root, head, { timeoutMs: 75 });
     assert.equal(inspection.fresh, false);
     assert.equal(inspection.conclusive, false);
