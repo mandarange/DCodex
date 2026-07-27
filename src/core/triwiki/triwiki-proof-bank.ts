@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { TriWikiProofCard } from './triwiki-proof-card.js';
 import { TRIWIKI_PROOF_CARD_SCHEMA, classifyTriWikiProofCardSchema, isReusableTriWikiProofCard } from './triwiki-proof-card.js';
-import { updateTriWikiProofIndexEntry } from './triwiki-proof-bank-index.js';
+import { triWikiProofIndexPath, updateTriWikiProofIndexEntry } from './triwiki-proof-bank-index.js';
 
 export const TRIWIKI_PROOF_BANK_SCHEMA = 'sks.triwiki-proof-bank.v1';
 
@@ -88,12 +88,14 @@ export function markTriWikiProofInvalidated(root: string, subjectId: string, pro
 
 export function summarizeTriWikiProofBank(root: string): TriWikiProofBankStatus {
   const base = triWikiProofBankDir(root);
+  const indexFile = triWikiProofIndexPath(root);
   let proofCount = 0;
   let reusableCount = 0;
   let invalidatedCount = 0;
   let corruptBackups = 0;
   if (fs.existsSync(base)) {
     for (const file of walkJson(base)) {
+      if (file === indexFile) continue;
       if (file.includes('.corrupt-')) {
         corruptBackups += 1;
         continue;

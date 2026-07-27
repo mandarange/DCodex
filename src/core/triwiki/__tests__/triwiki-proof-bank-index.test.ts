@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createTriWikiProofCard } from '../triwiki-proof-card.js';
 import type { TriWikiProofCard, TriWikiProofCardInput } from '../triwiki-proof-card.js';
-import { writeTriWikiProofCard } from '../triwiki-proof-bank.js';
+import { summarizeTriWikiProofBank, writeTriWikiProofCard } from '../triwiki-proof-bank.js';
 import {
   PROOF_INDEX_REL,
   TRIWIKI_PROOF_INDEX_REPAIR_ENTRY_POINT,
@@ -221,6 +221,32 @@ test('repair rebuilds from disk, counts corrupt cards and skips bookkeeping file
       assert.match(entry.hash, /^[0-9a-f]{64}$/);
       assert.equal(entry.path.startsWith('.sneakoscope/triwiki/proof-bank/'), true);
     }
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('legacy proof-bank summary preserves the canonical index manifest', () => {
+  const root = workspace();
+  try {
+    writeTriWikiProofCard(root, proofCard());
+    repairTriWikiProofIndex(root);
+    const indexFile = triWikiProofIndexPath(root);
+    const indexBytes = fs.readFileSync(indexFile);
+
+    const summary = summarizeTriWikiProofBank(root);
+
+    assert.equal(summary.proof_count, 1);
+    assert.equal(summary.corrupt_backups, 0);
+    assert.equal(fs.existsSync(indexFile), true);
+    assert.deepEqual(fs.readFileSync(indexFile), indexBytes);
+    const read = readTriWikiProofIndex(root);
+    assert.equal(read.status, 'ok');
+    assert.equal(read.entry_count, 1);
+    assert.deepEqual(
+      fs.readdirSync(path.dirname(indexFile)).filter((name) => name.startsWith('index.json.corrupt-')),
+      []
+    );
   } finally {
     cleanup(root);
   }
