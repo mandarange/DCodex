@@ -286,16 +286,19 @@ export async function writeReceiptRotated<T>(p: string, data: T, opts: { keep?: 
   await Promise.all(removable.map((row) => fsp.rm(row.file, { force: true }).catch(() => undefined)));
 }
 
-export async function writeBinaryAtomic(p: string, data: Buffer): Promise<void> {
+export async function writeBinaryAtomic(p: string, data: Buffer, options: { mode?: number } = {}): Promise<void> {
   await ensureDir(path.dirname(p));
   try {
-    if ((await fsp.readFile(p)).equals(data)) return;
+    if (options.mode === undefined && (await fsp.readFile(p)).equals(data)) return;
   } catch {}
   const tmp = `${p}.${process.pid}.${randomId(6)}.tmp`;
   try {
-    const handle = await fsp.open(tmp, 'w');
+    const handle = options.mode === undefined
+      ? await fsp.open(tmp, 'w')
+      : await fsp.open(tmp, 'w', options.mode);
     try {
       await handle.writeFile(data);
+      if (options.mode !== undefined) await handle.chmod(options.mode);
       await handle.sync().catch(() => {});
     } finally {
       await handle.close().catch(() => {});

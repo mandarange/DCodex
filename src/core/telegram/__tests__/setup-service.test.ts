@@ -343,7 +343,9 @@ test('failed token rotation restores the previous Keychain token and exact setup
   });
   const originalFiles = await Promise.all([configPath, bindingPath, machinePath].map((file) => fsp.readFile(file)));
   await fsp.writeFile(indexPath, '{"schema":"invalid-existing-index"}\n', 'utf8');
+  await fsp.chmod(indexPath, 0o600);
   const originalIndex = await fsp.readFile(indexPath);
+  const originalIndexMode = (await fsp.stat(indexPath)).mode & 0o777;
 
   await assert.rejects(setupTelegramLocalCoding({
     token: newToken,
@@ -366,6 +368,7 @@ test('failed token rotation restores the previous Keychain token and exact setup
   const restoredFiles = await Promise.all([configPath, bindingPath, machinePath].map((file) => fsp.readFile(file)));
   assert.deepEqual(restoredFiles, originalFiles);
   assert.deepEqual(await fsp.readFile(indexPath), originalIndex);
+  assert.equal((await fsp.stat(indexPath)).mode & 0o777, originalIndexMode);
   assert.equal(await fileExists(telegramHubPaths(globalRoot).owner), false);
 });
 

@@ -19,6 +19,7 @@ import {
   updateTriWikiProofIndexEntry,
   type TriWikiProofIndexFs
 } from '../triwiki-proof-bank-index.js';
+import { withTriWikiProofIndexLock } from '../triwiki-proof-bank-index-store.js';
 
 function workspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sks-proof-index-'));
@@ -322,6 +323,22 @@ test('concurrent writers do not corrupt or lose manifest rows', async () => {
       .readdirSync(path.join(root, '.sneakoscope', 'triwiki', 'proof-bank'))
       .filter((name) => name.includes('.tmp'));
     assert.deepEqual(leftovers, [], 'atomic writes must not leave temp files behind');
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('proof index lock release leaves a successor identity untouched', () => {
+  const root = workspace();
+  try {
+    const lockFile = path.join(root, '.sneakoscope', 'triwiki', 'proof-bank', '.locks', 'index.lock');
+    withTriWikiProofIndexLock(root, () => {
+      const current = JSON.parse(fs.readFileSync(lockFile, 'utf8')) as Record<string, unknown>;
+      fs.writeFileSync(lockFile, `${JSON.stringify({ ...current, owner_nonce: 'successor-owner' }, null, 2)}\n`);
+    });
+    assert.equal(fs.existsSync(lockFile), true, 'release must not delete a lock identity it no longer owns');
+    const successor = JSON.parse(fs.readFileSync(lockFile, 'utf8')) as { owner_nonce?: string };
+    assert.equal(successor.owner_nonce, 'successor-owner');
   } finally {
     cleanup(root);
   }

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { errorCodeOf } from '../errors/message.js';
 import { nowIso, sha256, writeTextAtomic } from '../fsx.js';
 import type { ResolvedMcpScope } from './scope.js';
 import { MCP_BACKUP_SCHEMA, type McpBackupMetadataV1 } from './types.js';
@@ -94,7 +95,7 @@ async function assertSafeBackupDirectory(directory: string, codexHome: string): 
   const relative = path.relative(path.resolve(codexHome), path.resolve(directory));
   if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('mcp_backup_path_escape');
   for (const candidate of [path.join(codexHome, 'backups'), directory]) {
-    const stat = await fsp.lstat(candidate).catch((error: unknown) => errorCode(error) === 'ENOENT' ? null : Promise.reject(error));
+    const stat = await fsp.lstat(candidate).catch((error: unknown) => errorCodeOf(error) === 'ENOENT' ? null : Promise.reject(error));
     if (stat?.isSymbolicLink() || (stat && !stat.isDirectory())) throw new Error('mcp_backup_directory_invalid');
     if (stat) {
       const resolved = await fsp.realpath(candidate);
@@ -102,8 +103,4 @@ async function assertSafeBackupDirectory(directory: string, codexHome: string): 
       if (candidateRelative.startsWith('..') || path.isAbsolute(candidateRelative)) throw new Error('mcp_backup_path_escape');
     }
   }
-}
-
-function errorCode(error: unknown): string {
-  return error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
 }

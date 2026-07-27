@@ -130,6 +130,30 @@ test('the written report carries provenance for the machine and the scoring code
   }
 });
 
+test('a benchmark report path outside the workspace reports directory is refused', async () => {
+  const parsed = loadContextGraphBenchmarkCorpus(CORPUS_PATH);
+  const root = tempRoot();
+  try {
+    const outside = path.join(root, 'outside-report.json');
+    const report = await runContextGraphBenchmark(
+      [stubAdapter('candidate-graph', 'candidate', parsed.corpus.cases, STRONG_CANDIDATE)],
+      {
+        root,
+        caseIds: [CASE_IDS[0] ?? ''],
+        coldIterations: 1,
+        warmIterations: 1,
+        writeReport: true,
+        reportPath: outside
+      }
+    );
+    assert.equal(fs.existsSync(outside), false);
+    assert.deepEqual(report.integrity.reportLeakRules, ['benchmark_report_path_outside_workspace_reports']);
+    assert.ok(report.notes.includes('report_not_written:leak_rule_tripped'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('an expected scoring-code hash that no longer matches stops the run before scoring', async () => {
   const parsed = loadContextGraphBenchmarkCorpus(CORPUS_PATH);
   const root = tempRoot();

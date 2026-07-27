@@ -1,6 +1,7 @@
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { errorCodeOf } from '../errors/message.js';
 import type { McpScopeOptions, McpWritableScope } from './types.js';
 
 export class McpScopeError extends Error {
@@ -49,7 +50,7 @@ export function isPathInside(root: string, candidate: string): boolean {
 }
 
 async function assertSafeDirectory(directory: string, boundary: string, strictNoSymlink: boolean): Promise<void> {
-  const stat = await fsp.lstat(directory).catch((error: unknown) => errorCode(error) === 'ENOENT' ? null : Promise.reject(error));
+  const stat = await fsp.lstat(directory).catch((error: unknown) => errorCodeOf(error) === 'ENOENT' ? null : Promise.reject(error));
   if (!stat) return;
   if (strictNoSymlink && stat.isSymbolicLink()) throw new McpScopeError('mcp_project_codex_home_symlink_refused');
   if (!stat.isDirectory() && !stat.isSymbolicLink()) throw new McpScopeError('mcp_codex_home_not_directory');
@@ -58,14 +59,10 @@ async function assertSafeDirectory(directory: string, boundary: string, strictNo
 }
 
 async function assertSafeConfig(configPath: string, boundary: string): Promise<void> {
-  const stat = await fsp.lstat(configPath).catch((error: unknown) => errorCode(error) === 'ENOENT' ? null : Promise.reject(error));
+  const stat = await fsp.lstat(configPath).catch((error: unknown) => errorCodeOf(error) === 'ENOENT' ? null : Promise.reject(error));
   if (!stat) return;
   if (stat.isSymbolicLink()) throw new McpScopeError('mcp_config_symlink_refused');
   if (!stat.isFile()) throw new McpScopeError('mcp_config_not_regular_file');
   const resolved = await fsp.realpath(configPath).catch(() => null);
   if (!resolved || !isPathInside(boundary, resolved)) throw new McpScopeError('mcp_config_escape_refused');
-}
-
-function errorCode(error: unknown): string {
-  return error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
 }

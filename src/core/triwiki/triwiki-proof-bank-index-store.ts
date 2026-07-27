@@ -13,6 +13,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { sha256 } from '../fsx.js';
 import { tryNormalizeGraphPath } from './context-graph/paths.js';
 import { PROOF_BANK_REL, PROOF_INDEX_REL } from './context-graph/extractors/evidence/shared.js';
@@ -297,19 +298,29 @@ export function withTriWikiProofIndexLock<T>(root: string, fn: () => T): T {
   fs.mkdirSync(lockDir, { recursive: true });
   const lockFile = path.join(lockDir, 'index.lock');
   const started = Date.now();
+  let heldIdentity: string | null = null;
   while (true) {
     try {
       const fd = fs.openSync(lockFile, 'wx');
+      const identity = `${JSON.stringify({
+        schema: 'sks.triwiki-proof-index-lock.v1',
+        pid: process.pid,
+        owner_nonce: crypto.randomBytes(16).toString('hex'),
+        acquired_at: new Date().toISOString(),
+        stale_after_ms: LOCK_STALE_AFTER_MS
+      }, null, 2)}\n`;
       fs.writeFileSync(
         fd,
-        `${JSON.stringify({ schema: 'sks.triwiki-proof-index-lock.v1', pid: process.pid, acquired_at: new Date().toISOString(), stale_after_ms: LOCK_STALE_AFTER_MS }, null, 2)}\n`
+        identity
       );
       fs.closeSync(fd);
+      heldIdentity = identity;
       break;
     } catch (err) {
-      if (isLockStale(lockFile)) {
+      const staleIdentity = staleLockIdentity(lockFile);
+      if (staleIdentity !== null) {
         try {
-          fs.rmSync(lockFile, { force: true });
+          if (lockIdentityMatches(lockFile, staleIdentity)) fs.rmSync(lockFile, { force: true });
         } catch {
           // Another writer won the reclaim race; retry.
         }
@@ -323,25 +334,37 @@ export function withTriWikiProofIndexLock<T>(root: string, fn: () => T): T {
     return fn();
   } finally {
     try {
-      fs.rmSync(lockFile, { force: true });
+      if (heldIdentity !== null && lockIdentityMatches(lockFile, heldIdentity)) {
+        fs.rmSync(lockFile, { force: true });
+      }
     } catch {
       // Best effort: a leftover lock is reclaimed by the staleness check.
     }
   }
 }
 
-function isLockStale(file: string): boolean {
+function staleLockIdentity(file: string): string | null {
   try {
     const stat = fs.statSync(file);
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as { pid?: number };
-    const alive = typeof raw.pid === 'number' && pidAlive(raw.pid);
-    return !alive || Date.now() - stat.mtimeMs > LOCK_STALE_AFTER_MS;
+    const identity = fs.readFileSync(file, 'utf8');
+    const raw = JSON.parse(identity) as { pid?: number };
+    if (typeof raw.pid === 'number') return pidAlive(raw.pid) ? null : identity;
+    return Date.now() - stat.mtimeMs > LOCK_STALE_AFTER_MS ? identity : null;
   } catch {
     try {
-      return Date.now() - fs.statSync(file).mtimeMs > LOCK_STALE_AFTER_MS;
+      if (Date.now() - fs.statSync(file).mtimeMs <= LOCK_STALE_AFTER_MS) return null;
+      return fs.readFileSync(file, 'utf8');
     } catch {
-      return true;
+      return null;
     }
+  }
+}
+
+function lockIdentityMatches(file: string, expected: string): boolean {
+  try {
+    return fs.readFileSync(file, 'utf8') === expected;
+  } catch {
+    return false;
   }
 }
 

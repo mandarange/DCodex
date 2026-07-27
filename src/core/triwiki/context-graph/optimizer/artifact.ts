@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { appendJsonlBounded } from '../../../fsx.js';
+import { isLexicallyConfined } from '../../../managed-path-safety.js';
 import { contextGraphExperimentLogPath } from '../paths.js';
 import { scanForLeaks } from '../benchmark/floors.js';
 import { contextGraphTuningTargetFile } from './allowlist.js';
@@ -34,7 +35,12 @@ export function contextGraphOptimizerReportDir(root: string): string {
 }
 
 export function contextGraphPatchArtifactPath(root: string, candidateId: string): string {
-  return path.join(contextGraphOptimizerReportDir(root), `${candidateId}.patch.json`);
+  const reportDir = path.resolve(contextGraphOptimizerReportDir(root));
+  const absolute = path.resolve(reportDir, `${candidateId}.patch.json`);
+  if (!isLexicallyConfined(reportDir, absolute)) {
+    throw new Error('context_graph_optimizer_artifact_path_escape');
+  }
+  return absolute;
 }
 
 /** Workspace-relative POSIX form of an absolute artifact path. */

@@ -1,6 +1,7 @@
 import fsp from 'node:fs/promises';
 import type { Dirent, Stats } from 'node:fs';
 import path from 'node:path';
+import { errorCodeOf } from './errors/message.js';
 
 export class ManagedPathSafetyError extends Error {
   constructor(readonly code: string, readonly target: string) {
@@ -84,7 +85,7 @@ export async function ensureConfinedDirectory(boundary: string, directory: strin
       try {
         await fsp.mkdir(current);
       } catch (error: unknown) {
-        if (errorCode(error) !== 'EEXIST') throw error;
+        if (errorCodeOf(error) !== 'EEXIST') throw error;
       }
       stat = await lstatOrNull(current);
     }
@@ -117,7 +118,7 @@ export async function walkConfinedEntries(boundary: string, root: string): Promi
     try {
       children = await fsp.readdir(current, { withFileTypes: true, encoding: 'utf8' });
     } catch (error: unknown) {
-      errors.push(`${errorCode(error) || 'managed_path_readdir_failed'}:${current}`);
+      errors.push(`${errorCodeOf(error) || 'managed_path_readdir_failed'}:${current}`);
       return;
     }
     children.sort((left, right) => left.name.localeCompare(right.name));
@@ -218,7 +219,7 @@ export async function removeEmptyTreeVerified(boundary: string, root: string): P
     try {
       children = await fsp.readdir(current, { withFileTypes: true, encoding: 'utf8' });
     } catch (error: unknown) {
-      errors.push(`${errorCode(error) || 'managed_path_readdir_failed'}:${current}`);
+      errors.push(`${errorCodeOf(error) || 'managed_path_readdir_failed'}:${current}`);
       remainingPaths.push(current);
       return;
     }
@@ -233,7 +234,7 @@ export async function removeEmptyTreeVerified(boundary: string, root: string): P
     try {
       after = await fsp.readdir(current);
     } catch (error: unknown) {
-      errors.push(`${errorCode(error) || 'managed_path_readdir_failed'}:${current}`);
+      errors.push(`${errorCodeOf(error) || 'managed_path_readdir_failed'}:${current}`);
       remainingPaths.push(current);
       return;
     }
@@ -244,7 +245,7 @@ export async function removeEmptyTreeVerified(boundary: string, root: string): P
     try {
       await fsp.rmdir(current);
     } catch (error: unknown) {
-      errors.push(`${errorCode(error) || 'managed_path_rmdir_failed'}:${current}`);
+      errors.push(`${errorCodeOf(error) || 'managed_path_rmdir_failed'}:${current}`);
       remainingPaths.push(current);
       return;
     }
@@ -264,18 +265,14 @@ export async function lstatConfinedOrNull(boundary: string, target: string): Pro
 
 export function publicPathError(error: unknown, fallback: string): string {
   if (error instanceof ManagedPathSafetyError) return `${error.code}:${error.target}`;
-  return `${errorCode(error) || 'managed_path_operation_failed'}:${fallback}`;
+  return `${errorCodeOf(error) || 'managed_path_operation_failed'}:${fallback}`;
 }
 
 async function lstatOrNull(target: string): Promise<Stats | null> {
   try {
     return await fsp.lstat(target);
   } catch (error: unknown) {
-    if (errorCode(error) === 'ENOENT') return null;
+    if (errorCodeOf(error) === 'ENOENT') return null;
     throw error;
   }
-}
-
-function errorCode(error: unknown): string {
-  return error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
 }

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { projectRoot, readJson, writeJsonAtomic, appendJsonl, nowIso, runProcess, sha256, packageRoot, tmpdir, type JsonData } from './fsx.js';
+import { projectRoot, readJson, writeJsonAtomic, appendJsonl, nowIso, sha256, packageRoot, type JsonData } from './fsx.js';
 import { looksInteractiveCommand, interactiveCommandReason } from './no-question-guard.js';
 import {
   loadStateForSession,
@@ -123,6 +123,7 @@ import {
 } from './hooks-runtime/subagent-context.js';
 export { loadHookPayload, normalizeHookResult };
 export { refreshOfficialSubagentCompletionArtifacts };
+export { selftestCodexCommitHooks } from './hooks-runtime/codex-commit-hooks-selftest.js';
 async function loadState(root: any, payload: any = {}) {
   const sessionKey = conversationId(payload);
   if (!explicitConversationId(payload)) return loadStateForSession(root, sessionKey);
@@ -1168,60 +1169,4 @@ async function resolveHonestModeLoopback(root: any, state: any = {}, sessionKey:
 export async function emitHook(name: any) {
   const result = await hookMain(name);
   process.stdout.write(`${JSON.stringify(normalizeHookResult(name, result))}\n`);
-}
-
-export async function selftestCodexCommitHooks() {
-  const root = tmpdir();
-  const hookBin = path.join(packageRoot(), 'dist', 'bin', 'sks.js');
-  const env = { SKS_DISABLE_UPDATE_CHECK: '1' };
-  const setup = await runProcess(process.execPath, [hookBin, 'setup', '--install-scope', 'project'], { cwd: root, env, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
-  if (setup.code !== 0) throw new Error(`selftest failed: commit setup ${setup.code}: ${setup.stderr}`);
-  const runHook = (name: any, payload: any) => runProcess(process.execPath, [hookBin, 'hook', name], { cwd: root, input: JSON.stringify({ cwd: root, ...payload }), env, timeoutMs: 15000, maxOutputBytes: 128 * 1024 });
-  const id = 'commit-selftest';
-  const hook = await runHook('user-prompt-submit', { conversation_id: id, action: 'codex_git_commit', prompt: 'Generate a git commit message for the staged diff.' });
-  if (hook.code !== 0) throw new Error(`selftest failed: commit hook ${hook.code}: ${hook.stderr}`);
-  const hookJson = JSON.parse(hook.stdout);
-  if (hookJson.decision === 'block' || hookJson.hookSpecificOutput?.additionalContext || !String(hookJson.systemMessage || '').includes('git action')) throw new Error('selftest failed: commit route bypass');
-  const stop = await runHook('stop', { conversation_id: id, last_assistant_message: 'Fix Codex App commit message hook bypass' });
-  if (stop.code !== 0) throw new Error(`selftest failed: commit stop ${stop.code}: ${stop.stderr}`);
-  const stopJson = JSON.parse(stop.stdout);
-  if (stopJson.decision === 'block' || !String(stopJson.systemMessage || '').includes('accepted without route finalization')) throw new Error('selftest failed: commit stop bypass');
-  const commitPushId = 'commit-push-selftest';
-  const appCommitPushHook = await runHook('user-prompt-submit', { conversation_id: commitPushId, action: 'Codex App Git Actions Commit and Push', prompt: 'Commit and push changes.' });
-  if (appCommitPushHook.code !== 0) throw new Error(`selftest failed: app commit-push hook ${appCommitPushHook.code}: ${appCommitPushHook.stderr}`);
-  const appCommitPushJson = JSON.parse(appCommitPushHook.stdout);
-  if (appCommitPushJson.decision === 'block' || appCommitPushJson.hookSpecificOutput?.additionalContext || !String(appCommitPushJson.systemMessage || '').includes('git action')) throw new Error('selftest failed: app commit-push route bypass');
-  const appCommitPushStop = await runHook('stop', { conversation_id: commitPushId, last_assistant_message: 'Commit and push complete.' });
-  if (appCommitPushStop.code !== 0) throw new Error(`selftest failed: app commit-push stop ${appCommitPushStop.code}: ${appCommitPushStop.stderr}`);
-  if (JSON.parse(appCommitPushStop.stdout).decision === 'block') throw new Error('selftest failed: app commit-push stop bypass');
-  const appPushId = 'app-push-selftest';
-  const appPushHook = await runHook('user-prompt-submit', { conversation_id: appPushId, metadata: { source: 'codex_app', action: 'Git Actions Push' }, prompt: 'Push changes.' });
-  if (appPushHook.code !== 0) throw new Error(`selftest failed: app push hook ${appPushHook.code}: ${appPushHook.stderr}`);
-  const appPushJson = JSON.parse(appPushHook.stdout);
-  if (appPushJson.decision === 'block' || appPushJson.hookSpecificOutput?.additionalContext || !String(appPushJson.systemMessage || '').includes('git action')) throw new Error('selftest failed: app push metadata route bypass');
-  const appPushStop = await runHook('stop', { conversation_id: appPushId, metadata: { source: 'codex_app', action: 'Git Actions Push' }, last_assistant_message: 'Done.' });
-  if (appPushStop.code !== 0) throw new Error(`selftest failed: app push stop ${appPushStop.code}: ${appPushStop.stderr}`);
-  if (JSON.parse(appPushStop.stdout).decision === 'block') throw new Error('selftest failed: app push metadata stop bypass');
-  const metadataLightId = 'metadata-light-commit-push-selftest';
-  const metadataLightHook = await runHook('user-prompt-submit', { conversation_id: metadataLightId, prompt: 'Commit and push changes.' });
-  if (metadataLightHook.code !== 0) throw new Error(`selftest failed: metadata-light commit-push hook ${metadataLightHook.code}: ${metadataLightHook.stderr}`);
-  const metadataLightJson = JSON.parse(metadataLightHook.stdout);
-  if (metadataLightJson.decision === 'block' || metadataLightJson.hookSpecificOutput?.additionalContext || !String(metadataLightJson.systemMessage || '').includes('git action')) throw new Error('selftest failed: metadata-light app commit-push route bypass');
-  const metadataLightStop = await runHook('stop', { conversation_id: metadataLightId, last_assistant_message: 'Commit and push complete.' });
-  if (metadataLightStop.code !== 0) throw new Error(`selftest failed: metadata-light commit-push stop ${metadataLightStop.code}: ${metadataLightStop.stderr}`);
-  if (JSON.parse(metadataLightStop.stdout).decision === 'block') throw new Error('selftest failed: metadata-light commit-push stop bypass');
-  const settingsHook = await runHook('user-prompt-submit', { model: 'future-codex-catalog-model', metadata: { source: 'codex_app_settings', feature: 'speed profile' } });
-  if (settingsHook.code !== 0) throw new Error(`selftest failed: settings hook ${settingsHook.code}: ${settingsHook.stderr}`);
-  const settingsJson = JSON.parse(settingsHook.stdout);
-  if (settingsJson.decision === 'block' || settingsJson.hookSpecificOutput?.additionalContext || !String(settingsJson.systemMessage || '').includes('settings/profile event ignored')) throw new Error('selftest failed: settings/profile event should not route or block');
-  const userHook = await runHook('user-prompt-submit', { prompt: '[커밋 메시지를 생성하지 못했습니다.] 코덱스 앱에서 이 버그 수정해줘' });
-  if (userHook.code !== 0) throw new Error(`selftest failed: user commit hook ${userHook.code}: ${userHook.stderr}`);
-  if (!JSON.parse(userHook.stdout).hookSpecificOutput?.additionalContext?.includes('$Naruto route prepared')) throw new Error('selftest failed: user prompt route');
-  const userCommitPushHook = await runHook('user-prompt-submit', { prompt: '배포하게 커밋하고 푸쉬해줘' });
-  if (userCommitPushHook.code !== 0) throw new Error(`selftest failed: user commit-push hook ${userCommitPushHook.code}: ${userCommitPushHook.stderr}`);
-  const userCommitPushJson = JSON.parse(userCommitPushHook.stdout);
-  if (userCommitPushJson.decision === 'block' || userCommitPushJson.hookSpecificOutput?.additionalContext || !String(userCommitPushJson.systemMessage || '').includes('git action')) throw new Error('selftest failed: user commit-push prompt should bypass route');
-  const userCommitPushStop = await runHook('stop', { last_assistant_message: 'Commit and push complete.' });
-  if (userCommitPushStop.code !== 0) throw new Error(`selftest failed: user commit-push stop ${userCommitPushStop.code}: ${userCommitPushStop.stderr}`);
-  if (JSON.parse(userCommitPushStop.stdout).decision === 'block') throw new Error('selftest failed: user commit-push stop bypass');
 }

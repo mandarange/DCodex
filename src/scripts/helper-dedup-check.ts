@@ -20,7 +20,6 @@ const BASELINE: Record<string, number> = {
   delay: 8,
   unique: 7,
   readJson: 6,
-  errorCode: 5,
   restoreEnv: 5,
   asList: 4,
   escapeRegex: 4,

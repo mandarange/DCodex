@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { isLexicallyConfined } from '../../../managed-path-safety.js';
 import { contextGraphBenchmarkReportPath } from '../paths.js';
 import { scanForLeaks } from './floors.js';
 import type {
@@ -133,8 +134,15 @@ export function writeBenchmarkReport(
   report: ContextGraphBenchmarkReport,
   targetPath?: string
 ): WriteBenchmarkReportResult {
-  const absolute = targetPath ?? contextGraphBenchmarkReportPath(root);
-  const relativePath = path.relative(root, absolute).split(path.sep).join('/');
+  const workspaceRoot = path.resolve(root);
+  const reportDir = path.join(workspaceRoot, '.sneakoscope', 'reports');
+  const absolute = targetPath
+    ? path.resolve(workspaceRoot, targetPath)
+    : path.resolve(contextGraphBenchmarkReportPath(workspaceRoot));
+  const relativePath = path.relative(workspaceRoot, absolute).split(path.sep).join('/');
+  if (!isLexicallyConfined(reportDir, absolute)) {
+    return { written: false, relativePath, leakRules: ['benchmark_report_path_outside_workspace_reports'] };
+  }
   const leakRules = reportLeakRules(report);
   if (leakRules.length) return { written: false, relativePath, leakRules };
   fs.mkdirSync(path.dirname(absolute), { recursive: true });

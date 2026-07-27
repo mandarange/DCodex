@@ -3426,6 +3426,84 @@
       "symbol": "cleanup",
       "token": "codex config write",
       "reason": "Canonical test runner writes the sentinel Codex config only into its isolated scratch CODEX_HOME; any change to that tree is treated as an isolation breach and fails the run."
+    },
+    {
+      "file": "src/core/telegram/setup.ts",
+      "symbol": "restoreSetupFile",
+      "token": "unlink",
+      "reason": "Telegram setup rollback unlinks only an exact pre-snapshotted state path whose snapshot proved the file was absent before setup began."
+    },
+    {
+      "file": "src/core/fsx.ts",
+      "symbol": "writeBinaryAtomic",
+      "token": "chmod",
+      "reason": "Mode-aware atomic binary writes apply the requested mode only to the exclusive temporary file before it is atomically renamed onto the target."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/benchmark/fixtures/index.ts",
+      "symbol": "writeFixtureFile",
+      "token": "writeFileSync",
+      "reason": "Context Graph benchmark fixture materialization writes trusted static fixture content only beneath its newly created mkdtemp repository root."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/benchmark/fixtures/index.ts",
+      "symbol": "materializeFixture",
+      "token": "writeFileSync",
+      "reason": "Context Graph benchmark materialization writes the fixed escaped.ts sentinel only inside its separately owned mkdtemp outside-target directory."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/benchmark/fixtures/index.ts",
+      "symbol": "materializeFixture",
+      "token": "rmSync",
+      "reason": "Context Graph benchmark disposal removes only the exact fixture and outside-target mkdtemp roots created and retained by that fixture handle."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/benchmark/report.ts",
+      "symbol": "writeBenchmarkReport",
+      "token": "writeFileSync",
+      "reason": "Benchmark reporting writes only leak-scanned JSON to a path proven confined beneath the workspace .sneakoscope reports directory."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/optimizer/artifact.ts",
+      "symbol": "writeContextGraphPatchArtifact",
+      "token": "writeFileSync",
+      "reason": "The optimizer writes only a leak-scanned proposal whose resolved candidate path is proven confined beneath its fixed workspace report directory."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/fragment-cache.ts",
+      "symbol": "pruneFragmentCache",
+      "token": "fsp.rm",
+      "reason": "Fragment cache pruning removes only immediate .json entries enumerated from the fixed SKS-owned Context Graph fragment cache directory."
+    },
+    {
+      "file": "src/core/triwiki/triwiki-proof-bank-index-store.ts",
+      "symbol": "writeTriWikiProofIndexDocument",
+      "token": "writeFileSync",
+      "reason": "The TriWiki proof index writer persists only serialized index bytes through a unique same-directory temporary file descriptor."
+    },
+    {
+      "file": "src/core/triwiki/triwiki-proof-bank-index-store.ts",
+      "symbol": "writeTriWikiProofIndexDocument",
+      "token": "renameSync",
+      "reason": "The TriWiki proof index writer atomically promotes only its unique same-directory temporary file onto the fixed proof-bank index."
+    },
+    {
+      "file": "src/core/triwiki/triwiki-proof-bank-index-store.ts",
+      "symbol": "withTriWikiProofIndexLock",
+      "token": "writeFileSync",
+      "reason": "The proof index lock writes a unique owner identity only to the fixed index.lock file opened with exclusive creation."
+    },
+    {
+      "file": "src/core/triwiki/triwiki-proof-bank-index-store.ts",
+      "symbol": "withTriWikiProofIndexLock",
+      "token": "rmSync",
+      "reason": "The proof index lock removes only a stale or released fixed lock whose complete owner identity still matches the identity selected for removal."
+    },
+    {
+      "file": "src/scripts/latest-version-guidance-check.ts",
+      "symbol": "scan",
+      "token": "writeFileSync",
+      "reason": "The latest-version guidance gate writes only its fixed machine-readable report beneath the workspace .sneakoscope reports directory."
     }
   ]
 }

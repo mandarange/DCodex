@@ -1,5 +1,6 @@
 import fsp from 'node:fs/promises';
 import { parseCodexConfigToml } from '../codex/codex-config-toml.js';
+import { errorCodeOf } from '../errors/message.js';
 import { publicMcpCommand, redactMcpError, redactMcpUrl, sanitizeMcpArgs } from './redaction.js';
 import { normalizeApprovalMode } from './secret-policy.js';
 import {
@@ -40,7 +41,7 @@ export class McpConfigReadError extends Error {
 }
 
 export async function readMcpConfigDocument(ref: ResolvedMcpScope): Promise<McpConfigDocument> {
-  const stat = await fsp.lstat(ref.configPath).catch((error: unknown) => errorCode(error) === 'ENOENT' ? null : Promise.reject(error));
+  const stat = await fsp.lstat(ref.configPath).catch((error: unknown) => errorCodeOf(error) === 'ENOENT' ? null : Promise.reject(error));
   if (!stat) return { ref, exists: false, text: '', parsed: {}, rawServers: {} };
   if (stat.isSymbolicLink()) throw new McpConfigReadError('mcp_config_symlink_refused');
   if (!stat.isFile()) throw new McpConfigReadError('mcp_config_not_regular_file');
@@ -172,8 +173,4 @@ function isEnvName(value: unknown): value is string {
 function positiveNumber(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : null;
-}
-
-function errorCode(error: unknown): string {
-  return error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
 }

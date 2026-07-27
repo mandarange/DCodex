@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { contextGraphExperimentLogPath } from '../../paths.js';
+import { contextGraphPatchArtifactPath } from '../artifact.js';
 import { fingerprintContextGraphTuningSurface } from '../guard.js';
 import { runContextGraphOptimizerLoop, type ContextGraphOptimizerOptions } from '../loop.js';
 import type {
@@ -73,6 +74,18 @@ function readLog(root: string): ContextGraphExperimentRecord[] {
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line) as ContextGraphExperimentRecord);
 }
+
+test('proposal artifact paths cannot escape the optimizer report directory', () => {
+  const root = tempRoot();
+  try {
+    assert.throws(
+      () => contextGraphPatchArtifactPath(root, '../../outside'),
+      /context_graph_optimizer_artifact_path_escape/
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('an improving candidate is kept and emits a re-runnable proposal artifact', async () => {
   const root = tempRoot();

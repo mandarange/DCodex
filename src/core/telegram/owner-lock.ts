@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { errorCodeOf } from '../errors/message.js';
 import { ensureDir, nowIso } from '../fsx.js';
 import type { TelegramOwnerV1 } from './types.js';
 
@@ -56,7 +57,7 @@ export class TelegramOwnerLock {
         this.owner = owner;
         return owner;
       } catch (error: unknown) {
-        if (errorCode(error) !== 'EEXIST') throw error;
+        if (errorCodeOf(error) !== 'EEXIST') throw error;
         const existing = await this.readOwner();
         if (!this.isStale(existing)) throw new TelegramOwnerConflictError(existing);
         const quarantine = `${this.options.lockPath}.stale-${this.now()}-${crypto.randomBytes(4).toString('hex')}`;
@@ -64,7 +65,7 @@ export class TelegramOwnerLock {
           await fsp.rename(this.options.lockPath, quarantine);
           await fsp.unlink(quarantine).catch(() => undefined);
         } catch (renameError: unknown) {
-          if (!['ENOENT', 'EEXIST'].includes(errorCode(renameError))) throw renameError;
+          if (!['ENOENT', 'EEXIST'].includes(errorCodeOf(renameError))) throw renameError;
         }
       }
     }
@@ -131,10 +132,6 @@ function localPidAlive(pid: number, host: string): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error: unknown) {
-    return errorCode(error) !== 'ESRCH';
+    return errorCodeOf(error) !== 'ESRCH';
   }
-}
-
-function errorCode(error: unknown): string {
-  return error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
 }

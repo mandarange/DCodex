@@ -1,6 +1,7 @@
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { errorCodeOf } from '../errors/message.js';
 import {
   ensureDir,
   globalSksRoot,
@@ -311,7 +312,7 @@ interface TelegramSetupFileSnapshot {
 
 async function snapshotSetupFile(file: string): Promise<TelegramSetupFileSnapshot> {
   const stat = await fsp.lstat(file).catch((error: unknown) => {
-    if (errorCode(error) === 'ENOENT') return null;
+    if (errorCodeOf(error) === 'ENOENT') return null;
     throw error;
   });
   if (stat === null) return { file, contents: null, mode: null };
@@ -326,12 +327,13 @@ async function snapshotSetupFile(file: string): Promise<TelegramSetupFileSnapsho
 async function restoreSetupFile(snapshot: TelegramSetupFileSnapshot): Promise<void> {
   if (snapshot.contents === null) {
     await fsp.unlink(snapshot.file).catch((error: unknown) => {
-      if (errorCode(error) !== 'ENOENT') throw error;
+      if (errorCodeOf(error) !== 'ENOENT') throw error;
     });
     return;
   }
-  await writeBinaryAtomic(snapshot.file, snapshot.contents);
-  if (snapshot.mode !== null) await fsp.chmod(snapshot.file, snapshot.mode);
+  await writeBinaryAtomic(snapshot.file, snapshot.contents, {
+    ...(snapshot.mode === null ? {} : { mode: snapshot.mode })
+  });
 }
 
 function publicSetupError(error: unknown): string {
@@ -441,10 +443,6 @@ function throwTelegramSetupApiError(error: unknown): never {
     throw new Error('telegram_409_conflict:stop_other_poller_and_retry');
   }
   throw error;
-}
-
-function errorCode(error: unknown): string {
-  return error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
 }
 
 export function telegramSetupKeychainReference(account = process.env.USER || os.userInfo().username || 'sks') {
