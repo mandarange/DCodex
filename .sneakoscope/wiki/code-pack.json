@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-07-27T06:28:31.420Z",
-  "git_head_sha": "e65667cb860ec54d4338315a4f56a44e57ddbb6b",
-  "source_file_count": 2773,
-  "index_digest": "69c56b5ea03436880bc68014ad96481e16b08b7510fe0d65b759609346b4dc83",
+  "generated_at": "2026-07-27T07:09:46.673Z",
+  "git_head_sha": "c3a4a3b9a28dd357108d9f2a59a9b23c7420aa2a",
+  "source_file_count": 2774,
+  "index_digest": "a3e165af5718040613f9b0387483a82c16ceca71f89b679680f92875d0571528",
   "entries": [
     {
       "id": "code:core-triwiki",
-      "text": "core-triwiki is a module at src/core/triwiki (144 files, low risk). Key exports: ALWAYS_ON_GATES, ATTENTION_FACT_TRUST_FLOOR, ApplyFreshnessInput, BASELINE_LEXICAL_ADAPTER_ID, BaselineLexicalAdapterOptions, and 868 more. Depends on: cli, core, core-locks, core-naruto, core-release, and 1 more.",
+      "text": "core-triwiki is a module at src/core/triwiki (144 files, low risk). Key exports: ALWAYS_ON_GATES, ATTENTION_FACT_TRUST_FLOOR, ApplyFreshnessInput, BASELINE_LEXICAL_ADAPTER_ID, BaselineLexicalAdapterOptions, and 869 more. Depends on: cli, core, core-locks, core-naruto, core-release, and 1 more.",
       "citations": [
         {
           "path": "src/core/triwiki/context-graph/query-types.ts"
@@ -40,7 +40,7 @@
     },
     {
       "id": "code:core",
-      "text": "core is a module at src/core (80 files, low risk). Key exports: ALLOWED_REASONING_EFFORTS, ALL_FEATURES_SELFTEST_SCHEMA, ALL_FEATURE_COMPLETION_SCHEMA, ARTIFACT_FILES, ARTIFACT_SCHEMA_VERSION, and 1298 more. Depends on: cli, core-agent-bridge, core-agents, core-codex, core-codex-app, and 32 more.",
+      "text": "core is a module at src/core (80 files, low risk). Key exports: ALLOWED_REASONING_EFFORTS, ALL_FEATURES_SELFTEST_SCHEMA, ALL_FEATURE_COMPLETION_SCHEMA, ARTIFACT_FILES, ARTIFACT_SCHEMA_VERSION, and 1299 more. Depends on: cli, core-agent-bridge, core-agents, core-codex, core-codex-app, and 33 more.",
       "citations": [
         {
           "path": "src/core/computer-use-live-evidence.ts"
@@ -304,7 +304,7 @@
     },
     {
       "id": "code:core-hooks-runtime",
-      "text": "core-hooks-runtime is a module at src/core/hooks-runtime (34 files, low risk). Key exports: ADMISSION_SCHEMA, ArmLightTurnInput, BoundedJsonResult, CODEX_HOOK_EVENTS, CONTEXT_GRAPH_FRESHNESS_PREFLIGHT_SCHEMA, and 266 more. Depends on: core, core-__tests__, core-agent-bridge, core-codex-compat, core-codex-native, and 12 more.",
+      "text": "core-hooks-runtime is a module at src/core/hooks-runtime (35 files, low risk). Key exports: ADMISSION_SCHEMA, ArmLightTurnInput, BoundedJsonResult, CODEX_HOOK_EVENTS, CONTEXT_GRAPH_FRESHNESS_PREFLIGHT_SCHEMA, and 270 more. Depends on: core, core-__tests__, core-agent-bridge, core-codex-compat, core-codex-native, and 12 more.",
       "citations": [
         {
           "path": "src/core/hooks-runtime/context-graph-freshness-preflight.ts"
@@ -568,7 +568,7 @@
     },
     {
       "id": "code:core-telegram",
-      "text": "core-telegram is a module at src/core/telegram (21 files, low risk). Key exports: FileMiniAppReplayStore, InMemoryMiniAppReplayStore, MINI_APP_SCREENS, MiniAppChallenge, MiniAppDefaultOnEvidence, and 143 more. Depends on: core, core-commands, core-json, core-locks, core-remote.",
+      "text": "core-telegram is a module at src/core/telegram (21 files, low risk). Key exports: FileMiniAppReplayStore, InMemoryMiniAppReplayStore, MINI_APP_SCREENS, MiniAppChallenge, MiniAppDefaultOnEvidence, and 144 more. Depends on: core, core-commands, core-errors, core-json, core-locks, and 1 more.",
       "citations": [
         {
           "path": "src/core/telegram/__tests__/command-status.test.ts"
@@ -597,7 +597,7 @@
       ],
       "trust_score": 0.8,
       "freshness": "fresh",
-      "token_cost": 70
+      "token_cost": 73
     },
     {
       "id": "code:core-codex-native",
@@ -733,7 +733,7 @@
     },
     {
       "id": "code:core-mcp-config",
-      "text": "core-mcp-config is a module at src/core/mcp-config (19 files, low risk). Key exports: CodexCliAuthResult, CodexCliListResult, CodexCliMutationOperation, CodexCliTransformResult, CodexMcpCliAdapter, and 92 more. Depends on: core, core-codex, core-commands, core-errors, core-json, and 2 more.",
+      "text": "core-mcp-config is a module at src/core/mcp-config (19 files, low risk). Key exports: CodexCliAuthResult, CodexCliListResult, CodexCliMutationOperation, CodexCliTransformResult, CodexMcpCliAdapter, and 93 more. Depends on: core, core-codex, core-commands, core-errors, core-json, and 2 more.",
       "citations": [
         {
           "path": "src/core/mcp-config/index.ts"
@@ -2014,5 +2014,5 @@
     }
   ],
   "token_budget": 8000,
-  "total_token_cost": 4615
+  "total_token_cost": 4618
 }
