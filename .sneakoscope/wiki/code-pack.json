@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-07-27T06:02:20.020Z",
-  "git_head_sha": "23937261f88fa079aca33a9edb3391b81d9cb813",
+  "generated_at": "2026-07-27T06:07:07.179Z",
+  "git_head_sha": "e7aea08f6f0c0031af5fb920de7db0b894f59b79",
   "source_file_count": 2773,
-  "index_digest": "f777a97747bd981dd7db1aa5642884c6d0294f72d7d315bdb78ef0eb1793545f",
+  "index_digest": "206a477490f33b26e58aa315908a990c4d33614948ad2c5d306cd123b5a98543",
   "entries": [
     {
       "id": "code:core-triwiki",
-      "text": "core-triwiki is a module at src/core/triwiki (144 files, low risk). Key exports: ALWAYS_ON_GATES, ATTENTION_FACT_TRUST_FLOOR, ApplyFreshnessInput, BASELINE_LEXICAL_ADAPTER_ID, BaselineLexicalAdapterOptions, and 866 more. Depends on: cli, core, core-locks, core-naruto, core-release, and 1 more.",
+      "text": "core-triwiki is a module at src/core/triwiki (144 files, low risk). Key exports: ALWAYS_ON_GATES, ATTENTION_FACT_TRUST_FLOOR, ApplyFreshnessInput, BASELINE_LEXICAL_ADAPTER_ID, BaselineLexicalAdapterOptions, and 868 more. Depends on: cli, core, core-locks, core-naruto, core-release, and 1 more.",
       "citations": [
         {
           "path": "src/core/triwiki/context-graph/query-types.ts"
