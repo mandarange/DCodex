@@ -63,7 +63,10 @@ test('an explicit agents flag materializes the generic official overlay for a sp
     assert.equal(plan.workflow, 'official_codex_subagent');
     assert.equal(plan.requested_subagents, 2);
     assert.equal(plan.requested_subagents_explicit, true);
-    assert.equal(plan.triwiki_attention.anchors[0].id, 'db-anchor');
+    assert.equal(plan.triwiki_attention.source, '.sneakoscope/wiki/context-graph.json');
+    assert.equal(plan.triwiki_attention.available, false);
+    assert.deepEqual(plan.triwiki_attention.anchors, []);
+    assert.equal(plan.triwiki_attention.reason, 'context_graph_missing');
     await fsp.access(path.join(root, '.sneakoscope', 'missions', prepared.mission_id, 'subagent-events.jsonl'));
     await fsp.access(path.join(root, '.sneakoscope', 'missions', prepared.mission_id, 'subagent-evidence.json'));
     await fsp.access(path.join(root, '.sneakoscope', 'missions', prepared.mission_id, 'work-order-ledger.json'));
@@ -95,7 +98,10 @@ test('Naruto App preparation reuses the session mission, isolates each run, and 
     assert.equal(secondPlan.requested_subagents, 2);
     assert.equal(secondPlan.requested_subagents_explicit, false);
     assert.equal(secondPlan.session_scope, sessionKey);
-    assert.equal(secondPlan.triwiki_attention.anchors[0].id, 'naruto-anchor');
+    assert.equal(secondPlan.triwiki_attention.source, '.sneakoscope/wiki/context-graph.json');
+    assert.equal(secondPlan.triwiki_attention.available, false);
+    assert.deepEqual(secondPlan.triwiki_attention.anchors, []);
+    assert.equal(secondPlan.triwiki_attention.reason, 'context_graph_missing');
     await fsp.access(path.join(dir, 'work-order-ledger.json'));
     assert.equal(await fsp.readFile(path.join(dir, 'subagent-events.jsonl'), 'utf8'), '');
     await assert.rejects(fsp.access(path.join(dir, 'subagent-parent-summary.json')));
