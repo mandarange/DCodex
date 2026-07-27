@@ -27,9 +27,9 @@
     },
     {
       "file": "src/cli/install-helpers.ts",
-      "symbol": "postinstall",
+      "symbol": "restoreInstalledPackageBuildStamp",
       "token": "fsp.writeFile",
-      "reason": "Postinstall writes only the package dist stamp JSON under the installed package runtime directory."
+      "reason": "Default postinstall restores only the package-local dist stamp after proving the target remains inside the installed package root."
     },
     {
       "file": "src/cli/install-helpers-codex-lb-selftest.ts",
@@ -738,6 +738,18 @@
       "symbol": "removeGeneratedRelPath",
       "token": "fsp.rm",
       "reason": "Skill reconciliation removes only generated SKS-owned skill directories or manifests after marker checks."
+    },
+    {
+      "file": "src/core/install/installed-package-smoke.ts",
+      "symbol": "runInstalledPackageSmoke",
+      "token": "fs.writeFile",
+      "reason": "Installed-package smoke writes only launchctl and npm configuration fixtures inside its mkdtemp-owned isolated sandbox."
+    },
+    {
+      "file": "src/core/install/installed-package-smoke.ts",
+      "symbol": "runInstalledPackageSmoke",
+      "token": "chmod",
+      "reason": "Installed-package smoke marks only its mkdtemp-owned launchctl stub executable inside the isolated sandbox."
     },
     {
       "file": "src/core/install/installed-package-smoke.ts",
@@ -3219,13 +3231,19 @@
     },
     {
       "file": "src/core/release/npm-stage-tarball-verifier.ts",
-      "symbol": "verifyNpmStageTarball",
+      "symbol": "runNpm",
+      "token": "chmodSync",
+      "reason": "Stage verification applies owner-only modes only to the downloaded tarball and completed review directory inside its run-unique transaction root."
+    },
+    {
+      "file": "src/core/release/npm-stage-tarball-verifier.ts",
+      "symbol": "runNpm",
       "token": "renameSync",
       "reason": "Stage verification atomically promotes only its completed run-unique review directory to the requested output path."
     },
     {
       "file": "src/core/release/npm-stage-tarball-verifier.ts",
-      "symbol": "verifyNpmStageTarball",
+      "symbol": "runNpm",
       "token": "rmSync",
       "reason": "Failed stage verification removes only its run-unique temporary review directory."
     },

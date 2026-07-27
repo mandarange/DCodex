@@ -258,14 +258,13 @@ npm stage download <stage-id>
 
 The downloaded staged tarball must match the locally reviewed package receipt.
 A maintainer performs that authenticated, read-only comparison from a local
-terminal with exact npm `11.15.0`:
-
-The confirmed `sks release stage` flow resolves that exact CLI through
-`npx --yes npm@11.15.0`; a global npm downgrade is not required. Before it can
-push `main` or dispatch the staging workflow, preflight also confirms that the
-checkout-local verifier exists and that the review is running outside CI,
-GitHub Actions, and OIDC. A missing verifier, blocked environment, unavailable
-pinned CLI, or version mismatch stops the command before any release mutation.
+terminal. The confirmed `sks release stage` flow resolves its machine-pinned
+npm stage CLI through `npx`, leaving the operator's global npm installation
+unchanged. Before it can push `main` or dispatch the staging workflow, preflight
+also confirms that the checkout-local verifier exists and that the review is
+running outside CI, GitHub Actions, and OIDC. A missing verifier, blocked
+environment, unavailable pinned CLI, or version mismatch stops the command
+before any release mutation.
 
 ```bash
 node ./dist/scripts/npm-stage-tarball-verifier.js \
