@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-07-27T07:48:32.488Z",
-  "git_head_sha": "0d69593fe32857d2128d13ac739b24bddeece768",
-  "source_file_count": 2774,
-  "index_digest": "f0655fe15d26bca10ab127d7854fedc9d5c7223bef58923425f4ae11e2c450a8",
+  "generated_at": "2026-07-27T08:08:48.335Z",
+  "git_head_sha": "5556ece6d3a922541ce52abda92b38c49794d98b",
+  "source_file_count": 2775,
+  "index_digest": "353e05ab58c559925752a9af081c5f54025c147a7fb6caef19b5ccd777dc3646",
   "entries": [
     {
       "id": "code:core-triwiki",
@@ -865,7 +865,7 @@
     },
     {
       "id": "code:test-unit",
-      "text": "test-unit is a module at test/unit (299 files, low risk). Key exports: PNG_1X1_SHA256, capturedInventory, createReleaseStampProof, importDist, mockGeneratedReviewImage, and 4 more. Depends on: test-helpers.",
+      "text": "test-unit is a module at test/unit (300 files, low risk). Key exports: PNG_1X1_SHA256, capturedInventory, createReleaseStampProof, importDist, mockGeneratedReviewImage, and 4 more. Depends on: test-helpers.",
       "citations": [
         {
           "path": "test/unit/mad-sks-shell-argv-classifier.test.mjs"
