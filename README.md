@@ -47,8 +47,15 @@ That installs or repairs SKS, runs `sks doctor --fix`, and prepares the Codex Ap
 
 For package-managed installs:
 
+The npm lifecycle is non-mutating outside the installed package by default:
+it restores only the package-local build stamp and prints the explicit setup
+commands. To intentionally run the legacy bootstrap during installation, set
+`SKS_POSTINSTALL_BOOTSTRAP=1`; `SKS_POSTINSTALL_NO_BOOTSTRAP=1` remains the
+stronger safety override.
+
 ```sh
 npm i -g sneakoscope
+sks bootstrap --yes
 sks doctor --fix
 ```
 

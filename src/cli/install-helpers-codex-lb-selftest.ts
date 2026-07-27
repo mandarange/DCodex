@@ -36,7 +36,8 @@ async function codexLbLoginCallCount(home: any) {
 function codexLbPostinstallEnv(baseEnv: any, overrides: any = {}) {
   return {
     ...baseEnv,
-    SKS_POSTINSTALL_NO_BOOTSTRAP: '1',
+    SKS_POSTINSTALL_BOOTSTRAP: '1',
+    SKS_POSTINSTALL_NO_BOOTSTRAP: '',
     SKS_SKIP_POSTINSTALL_SHIM: '1',
     SKS_SKIP_POSTINSTALL_CONTEXT7: '1',
     SKS_SKIP_POSTINSTALL_GETDESIGN: '1',

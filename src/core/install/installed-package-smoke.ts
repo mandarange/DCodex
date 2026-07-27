@@ -40,6 +40,14 @@ export interface InstalledPackageSmokeReport {
     required_dollar_commands: string[]
     closure: InstalledSurfaceClosureSummary
   }
+  postinstall_default: {
+    scripts_enabled: true
+    external_snapshot_match: boolean
+    external_findings: string[]
+    launchctl_calls: string[]
+    package_local_stamp_present: boolean
+    opt_in_guidance_present: boolean
+  }
   forbidden_findings: string[]
   blockers: string[]
 }
@@ -106,8 +114,31 @@ export async function runInstalledPackageSmoke(
   const npmCache = path.join(tmp, 'npm-cache')
   const installPrefix = path.join(tmp, 'prefix')
   const packDestination = path.join(tmp, 'pack')
-  await Promise.all([home, codexHome, npmCache, installPrefix, packDestination, path.join(home, '.tmp')]
+  const globalRoot = path.join(tmp, 'global-sks')
+  const installCwd = path.join(tmp, 'install-cwd')
+  const runtimeTmp = path.join(tmp, 'runtime-tmp')
+  const stubBin = path.join(tmp, 'bin')
+  const launchctlLog = path.join(tmp, 'launchctl-calls.log')
+  const launchctlStub = path.join(stubBin, process.platform === 'win32' ? 'launchctl.cmd' : 'launchctl')
+  const npmUserConfig = path.join(tmp, 'npmrc')
+  const npmGlobalConfig = path.join(tmp, 'npm-globalrc')
+  await Promise.all([home, codexHome, npmCache, installPrefix, packDestination, globalRoot, installCwd, runtimeTmp, stubBin, path.join(home, '.tmp')]
     .map((dir) => fs.mkdir(dir, { recursive: true })))
+  await Promise.all([
+    fs.writeFile(launchctlLog, ''),
+    fs.writeFile(launchctlStub, launchctlStubSource()),
+    fs.writeFile(npmUserConfig, ''),
+    fs.writeFile(npmGlobalConfig, '')
+  ])
+  await fs.chmod(launchctlStub, 0o700).catch(() => {})
+  const externalRoots = [
+    { label: 'home', root: home },
+    { label: 'codex-home', root: codexHome },
+    { label: 'global-sks', root: globalRoot },
+    { label: 'install-cwd', root: installCwd },
+    { label: 'runtime-tmp', root: runtimeTmp }
+  ]
+  const externalBeforeInstall = await snapshotTrees(externalRoots)
   const blockers: string[] = []
   const commands: InstalledPackageSmokeReport['commands'] = []
   let tarball: string | null = null
@@ -116,6 +147,14 @@ export async function runInstalledPackageSmoke(
   let packedVersion: string | null = null
   let expectedSha256 = normalizeSha256(options.expectedSha256)
   let receiptPath: string | null = null
+  let postinstallDefault: InstalledPackageSmokeReport['postinstall_default'] = {
+    scripts_enabled: true,
+    external_snapshot_match: false,
+    external_findings: [],
+    launchctl_calls: [],
+    package_local_stamp_present: false,
+    opt_in_guidance_present: false
+  }
   if (options.expectedSha256 && !expectedSha256) blockers.push('expected_sha256_invalid')
   if (options.receipt && !options.tarball) blockers.push('receipt_requires_tarball')
 
@@ -154,11 +193,61 @@ export async function runInstalledPackageSmoke(
   }
 
   if (tarball && blockers.length === 0) {
-    const install = await runJsonCommand(tmp, [
-      'npm', 'install', '--global', '--prefix', installPrefix, '--ignore-scripts', '--no-audit', '--no-fund', tarball
-    ], { home, codexHome, npmCache })
+    const install = await runJsonCommand(installCwd, [
+      'npm', 'install', '--global', '--prefix', installPrefix, '--foreground-scripts', '--no-audit', '--no-fund', tarball
+    ], {
+      home,
+      codexHome,
+      npmCache,
+      env: {
+        HOME: home,
+        USERPROFILE: home,
+        CODEX_HOME: codexHome,
+        XDG_CONFIG_HOME: path.join(home, '.config'),
+        XDG_CACHE_HOME: path.join(home, '.cache'),
+        XDG_DATA_HOME: path.join(home, '.local', 'share'),
+        INIT_CWD: installCwd,
+        TMPDIR: runtimeTmp,
+        PATH: `${stubBin}${path.delimiter}${String(process.env.PATH || '')}`,
+        NODE_DISABLE_COMPILE_CACHE: '1',
+        NODE_COMPILE_CACHE: '',
+        SKS_GLOBAL_ROOT: globalRoot,
+        SKS_MENUBAR_LAUNCHCTL: launchctlStub,
+        SKS_INSTALLED_SMOKE_LAUNCHCTL_LOG: launchctlLog,
+        SKS_POSTINSTALL_BOOTSTRAP: '',
+        SKS_POSTINSTALL_NO_BOOTSTRAP: '',
+        SKS_POSTINSTALL_PROMPT: '',
+        npm_config_userconfig: npmUserConfig,
+        NPM_CONFIG_USERCONFIG: npmUserConfig,
+        npm_config_globalconfig: npmGlobalConfig,
+        NPM_CONFIG_GLOBALCONFIG: npmGlobalConfig,
+        npm_config_ignore_scripts: 'false',
+        NPM_CONFIG_IGNORE_SCRIPTS: 'false',
+        NO_UPDATE_NOTIFIER: '1'
+      }
+    })
     commands.push(summarizeInstalledSmokeCommand(install.command, 'install'))
     if (install.exit_code !== 0) blockers.push('npm_install_tarball_failed')
+    const externalAfterInstall = await snapshotTrees(externalRoots)
+    const externalFindings = diffTreeSnapshots(externalBeforeInstall, externalAfterInstall)
+    const launchctlCalls = await nonEmptyLines(launchctlLog)
+    const packageLocalStamp = path.join(installedPackageRoot(installPrefix), 'dist', '.sks-build-stamp.json')
+    const packageLocalStampPresent = await regularFileExists(packageLocalStamp)
+    const installOutput = `${install.stdout}\n${install.command.stderr_tail}`
+    const optInGuidancePresent = /Automatic bootstrap was not run/.test(installOutput)
+      && /SKS_POSTINSTALL_BOOTSTRAP=1/.test(installOutput)
+    postinstallDefault = {
+      scripts_enabled: true,
+      external_snapshot_match: externalFindings.length === 0,
+      external_findings: externalFindings,
+      launchctl_calls: launchctlCalls,
+      package_local_stamp_present: packageLocalStampPresent,
+      opt_in_guidance_present: optInGuidancePresent
+    }
+    if (externalFindings.length) blockers.push(...externalFindings.map((finding) => `postinstall_default_external_mutation:${finding}`))
+    if (launchctlCalls.length) blockers.push('postinstall_default_launchctl_called')
+    if (!packageLocalStampPresent) blockers.push('postinstall_package_local_stamp_missing')
+    if (!optInGuidancePresent) blockers.push('postinstall_default_opt_in_guidance_missing')
   }
 
   const bin = process.platform === 'win32'
@@ -250,6 +339,7 @@ export async function runInstalledPackageSmoke(
       required_dollar_commands: [...INSTALLED_REQUIRED_DOLLAR_COMMANDS],
       closure
     },
+    postinstall_default: postinstallDefault,
     forbidden_findings: forbiddenFindings,
     blockers: [...new Set(blockers)]
   }
@@ -301,6 +391,7 @@ async function runJsonCommand(cwd: string, argv: string[], opts: {
   home?: string
   codexHome?: string
   npmCache?: string
+  env?: NodeJS.ProcessEnv
 }): Promise<{ exit_code: number | null; stdout: string; json: unknown; command: InstalledPackageSmokeRawCommand }> {
   const started = Date.now()
   const [command, ...args] = argv
@@ -319,6 +410,7 @@ async function runJsonCommand(cwd: string, argv: string[], opts: {
     env.npm_config_cache = opts.npmCache
     env.NPM_CONFIG_CACHE = opts.npmCache
   }
+  Object.assign(env, opts.env || {})
   const res = await runProcess(command || 'node', args, {
     cwd,
     timeoutMs: 120_000,
@@ -340,6 +432,72 @@ async function runJsonCommand(cwd: string, argv: string[], opts: {
       stderr_tail: res.stderr.slice(-1200)
     }
   }
+}
+
+async function snapshotTrees(roots: Array<{ label: string; root: string }>): Promise<Map<string, string>> {
+  const snapshot = new Map<string, string>()
+  for (const entry of roots) await walkSnapshot(entry.root, entry.root, entry.label, snapshot)
+  return snapshot
+}
+
+async function walkSnapshot(root: string, current: string, label: string, snapshot: Map<string, string>): Promise<void> {
+  const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => [])
+  entries.sort((a, b) => a.name.localeCompare(b.name))
+  for (const entry of entries) {
+    const absolute = path.join(current, entry.name)
+    const relative = path.relative(root, absolute) || '.'
+    const key = `${label}:${relative}`
+    const stat = await fs.lstat(absolute)
+    const mode = (stat.mode & 0o777).toString(8).padStart(3, '0')
+    if (entry.isDirectory()) {
+      snapshot.set(key, `directory:${mode}`)
+      await walkSnapshot(root, absolute, label, snapshot)
+    } else if (entry.isFile()) {
+      const bytes = await fs.readFile(absolute)
+      snapshot.set(key, `file:${mode}:${bytes.length}:${crypto.createHash('sha256').update(bytes).digest('hex')}`)
+    } else if (entry.isSymbolicLink()) {
+      snapshot.set(key, `symlink:${mode}:${await fs.readlink(absolute)}`)
+    } else {
+      snapshot.set(key, `other:${mode}:${stat.size}`)
+    }
+  }
+}
+
+function diffTreeSnapshots(before: Map<string, string>, after: Map<string, string>): string[] {
+  const findings: string[] = []
+  const keys = [...new Set([...before.keys(), ...after.keys()])].sort()
+  for (const key of keys) {
+    if (!before.has(key)) findings.push(`added:${key}`)
+    else if (!after.has(key)) findings.push(`removed:${key}`)
+    else if (before.get(key) !== after.get(key)) findings.push(`changed:${key}`)
+  }
+  return findings
+}
+
+async function nonEmptyLines(file: string): Promise<string[]> {
+  const value = await fs.readFile(file, 'utf8').catch(() => '')
+  return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+}
+
+async function regularFileExists(file: string): Promise<boolean> {
+  const stat = await fs.lstat(file).catch(() => null)
+  return Boolean(stat?.isFile() && !stat.isSymbolicLink())
+}
+
+function installedPackageRoot(prefix: string): string {
+  return process.platform === 'win32'
+    ? path.join(prefix, 'node_modules', 'sneakoscope')
+    : path.join(prefix, 'lib', 'node_modules', 'sneakoscope')
+}
+
+function launchctlStubSource(): string {
+  if (process.platform === 'win32') {
+    return '@echo %*>>\"%SKS_INSTALLED_SMOKE_LAUNCHCTL_LOG%\"\r\n@exit /b 0\r\n'
+  }
+  return `#!/bin/sh
+printf '%s\n' "$*" >> "$SKS_INSTALLED_SMOKE_LAUNCHCTL_LOG"
+exit 0
+`
 }
 
 export function validateInstalledPublicSurface(commandManifest: unknown, dollarManifest: unknown): {

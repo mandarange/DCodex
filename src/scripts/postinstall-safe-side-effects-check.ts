@@ -4,19 +4,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { root, assertGate, emitGate, readText } from './gate-lib.js';
 
-// Locks the guarantee that `postinstall` performs no heavy / network / process-kill
-// side-effects by default. This is STATIC source analysis only — we never execute
-// `postinstall`, because doing so would mutate the global Codex App / shell environment.
+// Locks the source-level guarantee that default `postinstall` returns before
+// consumer/global mutation. The installed-package smoke separately executes the
+// packed lifecycle in disposable HOME/CODEX_HOME/global roots.
 
 const helpers = readText('src/cli/install-helpers.ts');
 const installSupport = readText('src/cli/install-helpers-install-support.ts');
+const installToolHelpers = readText('src/cli/install-tool-helpers.ts');
+const installedSmoke = readText('src/core/install/installed-package-smoke.ts');
 const desktopConfigPolicy = readText('src/core/codex-runtime/codex-desktop-config-policy.ts');
 const codexConfigGuard = readText('src/core/codex/codex-config-guard.ts');
 const designPolicy = readText('src/core/routes/design-policy.ts');
 
 // Heavy CLI tool installs (brew / npm globals) are opt-in only.
 assertGate(
-  helpers.includes('SKS_POSTINSTALL_AUTO_INSTALL_CLI_TOOLS'),
+  installToolHelpers.includes('SKS_POSTINSTALL_AUTO_INSTALL_CLI_TOOLS'),
   'postinstall cli tool install must be gated behind SKS_POSTINSTALL_AUTO_INSTALL_CLI_TOOLS'
 );
 
@@ -82,6 +84,28 @@ const postinstallBody = helpers.slice(postinstallStart, bodyEnd);
 assertGate(postinstallBody.includes('try'), 'postinstall body must use try (never fail npm install)');
 assertGate(postinstallBody.includes('catch'), 'postinstall body must use catch (never fail npm install)');
 assertGate(postinstallBody.includes('finally'), 'postinstall body must use finally (never fail npm install)');
+const defaultReturn = postinstallBody.indexOf('if (!postinstallExternalMutationsAllowed(process.env))');
+const conflictScan = postinstallBody.indexOf('scanHarnessConflicts');
+const configSnapshot = postinstallBody.indexOf('capturePostinstallCodexLbConfigSnapshot');
+assertGate(defaultReturn !== -1, 'postinstall must have a default no-bootstrap return');
+assertGate(defaultReturn < conflictScan && defaultReturn < configSnapshot, 'postinstall default return must precede project scanning and config snapshots');
+assertGate(
+  helpers.includes("process.env.SKS_POSTINSTALL_BOOTSTRAP !== '1'")
+    && helpers.includes("process.env.SKS_POSTINSTALL_NO_BOOTSTRAP === '1'"),
+  'postinstall external mutation must require explicit bootstrap opt-in with a stronger safety override'
+);
+assertGate(
+  helpers.includes('dist_stamp_outside_package_root')
+    && helpers.includes('restoreInstalledPackageBuildStamp'),
+  'default postinstall may restore only the package-local build stamp'
+);
+assertGate(
+  installedSmoke.includes("'--foreground-scripts'")
+    && !installedSmoke.includes("'--ignore-scripts', '--no-audit', '--no-fund', tarball")
+    && installedSmoke.includes('external_snapshot_match')
+    && installedSmoke.includes('postinstall_default_launchctl_called'),
+  'installed-package smoke must execute the packed default lifecycle and prove zero external mutation'
+);
 
 // Explicit repair / opt-in paths must be surfaced to the user.
 assertGate(helpers.includes('sks bootstrap'), 'postinstall must surface `sks bootstrap` repair path');
@@ -120,7 +144,9 @@ assertGate(
 const report = {
   schema: 'sks.postinstall-safe-side-effects.v1',
   ok: true,
-  gated: ['cli_install', 'third_party_skill_install', 'process_kill', 'config_write'],
+  gated: ['default_external_mutation', 'cli_install', 'third_party_skill_install', 'process_kill', 'config_write'],
+  default_opt_in_required: true,
+  packed_default_install_proof: true,
   try_catch_finally: true,
   managed_config_set_if_absent: true
 };
@@ -129,6 +155,8 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
 
 emitGate('postinstall:safe-side-effects', {
-  gated: ['cli_install', 'third_party_skill_install', 'process_kill', 'config_write'],
+  gated: ['default_external_mutation', 'cli_install', 'third_party_skill_install', 'process_kill', 'config_write'],
+  default_opt_in_required: true,
+  packed_default_install_proof: true,
   try_catch_finally: true
 });

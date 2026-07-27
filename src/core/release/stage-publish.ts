@@ -1,6 +1,11 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { RELEASE_ORIGIN_IDENTITY, releaseOriginIdentity } from './release-origin.js'
+import {
+  exactNpmStageCliInvocation,
+  localNpmStageReviewEnvironmentBlocker,
+  REQUIRED_NPM_STAGE_CLI_VERSION
+} from './npm-stage-contract.js'
 
 /**
  * Drives the documented staged-publish flow as far as automation is allowed to
@@ -47,6 +52,7 @@ export interface StagePublishOptions {
   readonly readJsonFile?: (file: string) => unknown
   readonly artifactDir?: string
   readonly watchTimeoutMs?: number
+  readonly env?: NodeJS.ProcessEnv
 }
 
 export interface StagePublishReport {
@@ -174,6 +180,40 @@ function runPreflight(opts: StagePublishOptions, version: string): { ok: boolean
     stampOk,
     stampOk ? 'current source-bound full release stamp verified' : compactProcessOutput(stamp),
     stampOk ? null : 'stage_release_stamp_invalid'
+  ))
+
+  const verifier = path.join(opts.root, 'dist', 'scripts', 'npm-stage-tarball-verifier.js')
+  const verifierReady = fs.existsSync(verifier)
+  steps.push(step(
+    'local_review_verifier',
+    verifierReady,
+    verifierReady ? verifier : null,
+    verifierReady ? null : 'stage_verifier_unavailable_outside_checkout'
+  ))
+
+  const reviewEnvironmentBlocker = localNpmStageReviewEnvironmentBlocker(opts.env || process.env)
+  steps.push(step(
+    'local_review_environment',
+    reviewEnvironmentBlocker === null,
+    reviewEnvironmentBlocker === null ? 'maintainer-local' : reviewEnvironmentBlocker,
+    reviewEnvironmentBlocker === null ? null : `stage_${reviewEnvironmentBlocker}`
+  ))
+
+  const npmInvocation = exactNpmStageCliInvocation()
+  const npmStageCli = opts.run(npmInvocation.command, [...npmInvocation.args, '--version'])
+  const npmStageCliVersion = text(npmStageCli)
+  const npmStageCliReady = npmStageCli.status === 0 && npmStageCliVersion === REQUIRED_NPM_STAGE_CLI_VERSION
+  steps.push(step(
+    'npm_stage_cli',
+    npmStageCliReady,
+    npmStageCliReady
+      ? `${npmStageCliVersion} via ${[npmInvocation.command, ...npmInvocation.args].join(' ')}`
+      : compactProcessOutput(npmStageCli) || npmStageCliVersion || null,
+    npmStageCliReady
+      ? null
+      : npmStageCli.status === 0
+        ? 'stage_npm_cli_version_mismatch'
+        : 'stage_npm_cli_unavailable'
   ))
 
   const gh = opts.run('gh', ['auth', 'status'])

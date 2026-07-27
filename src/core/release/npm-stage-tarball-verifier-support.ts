@@ -3,11 +3,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import type { ReleasePackReceipt } from './release-pack-receipt.js'
+import {
+  localNpmStageReviewEnvironmentBlocker,
+  REQUIRED_NPM_STAGE_CLI_VERSION
+} from './npm-stage-contract.js'
 
 export const NPM_STAGE_REVIEW_RECEIPT_SCHEMA = 'sks.npm-stage-review-receipt.v1'
-export const REQUIRED_NPM_STAGE_CLI_VERSION = '11.15.0'
 export const NPM_STAGE_REGISTRY = 'https://registry.npmjs.org/'
 export const STAGE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export { REQUIRED_NPM_STAGE_CLI_VERSION } from './npm-stage-contract.js'
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i
 const SHA512_PATTERN = /^[a-f0-9]{128}$/i
@@ -90,16 +95,8 @@ export function compareReceiptToInspectedTarball(local: ReleasePackReceipt, insp
 }
 
 export function assertMaintainerLocalEnvironment(env: NodeJS.ProcessEnv): void {
-  const oidcKeys = [
-    'ACTIONS_ID_TOKEN_REQUEST_TOKEN',
-    'ACTIONS_ID_TOKEN_REQUEST_URL',
-    'NPM_ID_TOKEN',
-    'SIGSTORE_ID_TOKEN'
-  ]
-  if (env.GITHUB_ACTIONS === 'true' || oidcKeys.some((key) => Boolean(String(env[key] || '').trim()))) {
-    throw new NpmStageReviewError('oidc_environment_not_allowed')
-  }
-  if (env.CI === 'true' || env.CI === '1') throw new NpmStageReviewError('ci_environment_not_allowed')
+  const blocker = localNpmStageReviewEnvironmentBlocker(env)
+  if (blocker) throw new NpmStageReviewError(blocker)
 }
 
 export function runReadOnlyNpm(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {

@@ -394,6 +394,14 @@ jobs:
           if (comparison.schema !== 'sks.release-pack-compare.v1' || comparison.ok !== true || comparison.local_sha256 !== receipt.sha256 || comparison.staged_sha256 !== receipt.sha256) throw new Error('pack comparison proof mismatch')
           const smoke = JSON.parse(fs.readFileSync('release-handoff/installed-package-smoke.json', 'utf8'))
           if (smoke.schema !== 'sks.installed-package-smoke.v1' || smoke.ok !== true || smoke.installed_version !== process.env.VERSION || smoke.tarball_sha256 !== receipt.sha256 || smoke.tarball_binding?.exact_match !== true) throw new Error('installed package smoke mismatch')
+          if (smoke.postinstall_default?.scripts_enabled !== true
+            || smoke.postinstall_default?.external_snapshot_match !== true
+            || smoke.postinstall_default?.package_local_stamp_present !== true
+            || smoke.postinstall_default?.opt_in_guidance_present !== true
+            || !Array.isArray(smoke.postinstall_default?.external_findings)
+            || smoke.postinstall_default.external_findings.length !== 0
+            || !Array.isArray(smoke.postinstall_default?.launchctl_calls)
+            || smoke.postinstall_default.launchctl_calls.length !== 0) throw new Error('default postinstall safety proof mismatch')
           const upgradeFile = `upgrade-6.2-to-${process.env.VERSION}.json`
           const upgradeBytes = fs.readFileSync(path.join('release-handoff', upgradeFile))
           const upgrade = JSON.parse(upgradeBytes.toString('utf8'))

@@ -25,6 +25,20 @@ path.
 - preserve user-authored name collisions in quarantine; and
 - remain idempotent on a second run.
 
+### Package Install Safety
+
+- default npm `postinstall` restores only the build stamp inside the installed
+  `sneakoscope` package and performs no project, HOME, Codex, global SKS, or
+  `launchctl` mutation;
+- every external setup action requires
+  `SKS_POSTINSTALL_BOOTSTRAP=1`, while
+  `SKS_POSTINSTALL_NO_BOOTSTRAP=1` overrides that authorization;
+- normal package-managed installation tells the operator to run
+  `sks bootstrap` explicitly;
+- the installed-package smoke runs the packed lifecycle with scripts enabled
+  in disposable roots and compares path, type, mode, size, and content hashes
+  before and after installation.
+
 ## Required Product Evidence
 
 ### Menu Bar Control Center
@@ -54,8 +68,9 @@ path.
   rollback instructions;
 - both the previous binary and newly installed package-local binary run
   migration-profile `doctor --fix`;
-- every nested Doctor, npm lifecycle, and postinstall process inherits Menu Bar
-  restart deferral while the update parent owns completion;
+- every nested Doctor, npm lifecycle, and explicitly opted-in postinstall
+  process inherits Menu Bar restart deferral while the update parent owns
+  completion;
 - migration-profile Doctor cannot apply or launch the Menu Bar phase;
 - the new binary is resolved and verified before success is reported;
 - an interrupted update leaves a precise receipt and recovery path;
@@ -244,6 +259,13 @@ npm stage download <stage-id>
 The downloaded staged tarball must match the locally reviewed package receipt.
 A maintainer performs that authenticated, read-only comparison from a local
 terminal with exact npm `11.15.0`:
+
+The confirmed `sks release stage` flow resolves that exact CLI through
+`npx --yes npm@11.15.0`; a global npm downgrade is not required. Before it can
+push `main` or dispatch the staging workflow, preflight also confirms that the
+checkout-local verifier exists and that the review is running outside CI,
+GitHub Actions, and OIDC. A missing verifier, blocked environment, unavailable
+pinned CLI, or version mismatch stops the command before any release mutation.
 
 ```bash
 node ./dist/scripts/npm-stage-tarball-verifier.js \

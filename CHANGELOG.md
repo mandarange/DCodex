@@ -23,6 +23,19 @@
 
 ### Fixed
 
+- Make npm `postinstall` externally inert by default. It now restores only the
+  build stamp inside the installed package, prints explicit `sks bootstrap`
+  guidance, and returns before project scanning, global Doctor, config/skill
+  repair, retention cleanup, subprocess reconciliation, or Codex-LB snapshot
+  handling. The full legacy bootstrap requires
+  `SKS_POSTINSTALL_BOOTSTRAP=1`, with
+  `SKS_POSTINSTALL_NO_BOOTSTRAP=1` as the stronger safety override. The
+  installed-package release smoke now runs lifecycle scripts and proves zero
+  external file drift and zero `launchctl` calls.
+- Resolve the maintainer stage verifier through pinned
+  `npx --yes npm@11.15.0` and require that exact CLI, a checkout-local
+  verifier, and a non-CI/non-OIDC environment before any confirmed stage run
+  can push or dispatch the release workflow.
 - Stop `postinstall` from running the third-party getdesign installer. The generated `getdesign-reference` fallback remains available, the official skill can still be installed manually with explicit global/Codex/non-interactive flags, and release metadata records reviewed upstream commit `83e9840d4a5744b5f10117ec00b855059e5abc25` without pretending the current Skills CLI can install an immutable commit ref directly.
 - Keep Codex App Naruto's final UX human-readable. The parent now submits the strict `sks.subagent-parent-summary.v1` object through the App-only `sks naruto parent-summary --mission <id> --stdin` lifecycle command and returns localized Markdown instead of exposing raw JSON. The command binds mission/session/run identity, accepts an in-progress correction before the terminal bundle is sealed, preserves idempotent terminal replay, and rejects only terminal conflicts.
 - Let `sks wiki refresh --code` validate immediately after its own write and after the required metadata-only follow-up commit. Generated `code-pack.json` / `code-pack.prev.json` files no longer feed the graph cache key through either the wiki directory hash or tracked-dirty fingerprint, while other tracked TriWiki memory still invalidates the cache. The explicit repair refresh bypasses fragment replay so it re-reads a newly packed `context-pack.json`; Context Graph freshness accepts only Git history limited to those two generated files; and `sks wiki validate` recomputes the canonical code-pack digest from the current snapshot and entries instead of searching the SHA-256 text for a snapshot prefix that cannot be present.

@@ -159,15 +159,23 @@ assertGate(currentDollarManifest.includes("{ command: '$Naruto'") && currentDoll
 const stageWorkflow = text('.github/workflows/publish-npm.yml');
 const stageJob = stageWorkflow.match(/^  stage-publish:\n[\s\S]*$/m)?.[0] || '';
 const workflowPermissions = stageWorkflow.match(/^permissions:\n(?:  [^\n]+\n)+/m)?.[0] || '';
+const stageContract = text('src/core/release/npm-stage-contract.ts');
+const stagePublishSource = text('src/core/release/stage-publish.ts');
 const stageVerifierSource = text('src/core/release/npm-stage-tarball-verifier.ts');
 const stageVerifierSupport = text('src/core/release/npm-stage-tarball-verifier-support.ts');
 const stageVerifierCli = text('src/scripts/npm-stage-tarball-verifier.ts');
 const releaseReadinessDoc = text('docs/release-readiness.md');
+const workflowNpmStageVersion = stageWorkflow.match(/NPM_STAGE_CLI_VERSION:\s*([0-9]+\.[0-9]+\.[0-9]+)/)?.[1] || '';
+const localNpmStageVersion = stageContract.match(/REQUIRED_NPM_STAGE_CLI_VERSION = '([0-9]+\.[0-9]+\.[0-9]+)'/)?.[1] || '';
 for (const job of ['linux-release-proof', 'macos-menubar-proof', 'pack-and-compare', 'stage-publish']) {
   assertGate(new RegExp(`^  ${job}:`, 'm').test(stageWorkflow), `stage workflow missing job: ${job}`);
 }
 assertGate(/npm install --global npm@\$\{NPM_STAGE_CLI_VERSION\}/.test(stageWorkflow), 'stage workflow must install the exact pinned npm CLI');
-assertGate(/NPM_STAGE_CLI_VERSION: 11\.15\.0/.test(stageWorkflow), 'stage workflow must pin npm 11.15.0');
+assertGate(workflowNpmStageVersion === '11.15.0', 'stage workflow must pin npm 11.15.0', { version: workflowNpmStageVersion || null });
+assertGate(localNpmStageVersion === workflowNpmStageVersion, 'local and workflow npm stage CLI versions must match', {
+  local_version: localNpmStageVersion || null,
+  workflow_version: workflowNpmStageVersion || null
+});
 assertGate(/npm stage publish "\$TARBALL"/.test(stageWorkflow), 'stage workflow must stage the exact tarball path');
 assertGate((stageWorkflow.match(/npm stage publish "\$TARBALL"/g) || []).length === 1, 'stage workflow must contain exactly one registry mutation');
 assertGate(!/\bnpm\s+publish\b/.test(stageWorkflow), 'stage workflow must not call direct npm publish');
@@ -187,15 +195,24 @@ assertGate(/tarball_integrity: sha512Integrity/.test(stageJob), 'stage receipt m
 assertGate(/stage-receipt\/stage-output\.json/.test(stageJob) && /path: stage-receipt/.test(stageJob), 'stage receipt artifact must preserve digest-bound raw stage output');
 assertGate(/review_verifier_schema: 'sks\.npm-stage-review-receipt\.v1'/.test(stageJob), 'stage receipt must declare the maintainer verifier schema');
 assertGate(/localPackReceiptSha256 = crypto\.createHash\('sha256'\)\.update\(localPackReceiptBytes\)/.test(stageJob), 'stage receipt must bind immutable local pack receipt bytes');
+assertGate(/smoke\.postinstall_default\?\.scripts_enabled !== true/.test(stageJob), 'stage job must require scripts-enabled default postinstall proof');
+assertGate(/smoke\.postinstall_default\?\.external_snapshot_match !== true/.test(stageJob), 'stage job must require zero external postinstall mutation');
+assertGate(/smoke\.postinstall_default\.launchctl_calls\.length !== 0/.test(stageJob), 'stage job must require zero default postinstall launchctl calls');
 assertGate(!/approve_command/.test(stageWorkflow), 'stage workflow must not serialize an approval command');
 assertGate(!/\bnpm[ \t]+(?:ci|pack|run|publish|login|logout|whoami)\b/.test(stageJob), 'stage job must not install dependencies, repack, run lifecycle scripts, or use session credentials');
 assertGate(!/NODE_AUTH_TOKEN|NPM_TOKEN|_authToken/.test(stageWorkflow), 'stage workflow must not inject npm tokens');
-assertGate(/REQUIRED_NPM_STAGE_CLI_VERSION = '11\.15\.0'/.test(stageVerifierSupport), 'maintainer stage verifier must require exact npm 11.15.0');
+assertGate(/from '\.\/npm-stage-contract\.js'/.test(stageVerifierSupport), 'maintainer stage verifier support must use the shared npm stage contract');
+assertGate(/exactNpmStageCliInvocation\(\)/.test(stageVerifierSource), 'maintainer stage verifier must resolve the exact pinned npm CLI');
 assertGate(/\['stage', 'view', stageId, '--json'/.test(stageVerifierSource), 'maintainer stage verifier must inspect the exact stage ID read-only');
 assertGate(/\['stage', 'download', stageId, '--json'/.test(stageVerifierSource), 'maintainer stage verifier must download the exact stage ID read-only');
 assertGate(/exact_bytes_match/.test(stageVerifierSource) && /sha256_match/.test(stageVerifierSource) && /sha512_match/.test(stageVerifierSource) && /integrity_match/.test(stageVerifierSource), 'maintainer stage verifier must compare bytes and digests');
-assertGate(/oidc_environment_not_allowed/.test(stageVerifierSupport), 'maintainer stage verifier must reject OIDC and GitHub Actions environments');
+assertGate(/oidc_environment_not_allowed/.test(stageContract), 'maintainer stage verifier must reject OIDC and GitHub Actions environments');
+assertGate(/local_review_verifier/.test(stagePublishSource), 'confirmed stage preflight must require the local review verifier');
+assertGate(/localNpmStageReviewEnvironmentBlocker/.test(stagePublishSource), 'confirmed stage preflight must reject CI and OIDC review environments');
+assertGate(/exactNpmStageCliInvocation\(\)/.test(stagePublishSource), 'confirmed stage preflight must resolve the pinned npm CLI before mutation');
+assertGate(/if \(!preflight\.ok\) return finish\(\)/.test(stagePublishSource), 'stage preflight failures must stop before push or dispatch');
 assertGate(!/\['stage',\s*'(?:publish|approve|reject)'/.test(`${stageVerifierSource}\n${stageVerifierSupport}\n${stageVerifierCli}`), 'maintainer stage verifier must not contain mutating stage argv');
+assertGate(/npx --yes npm@11\.15\.0/.test(releaseReadinessDoc), 'release readiness must document pinned local npm stage resolution');
 assertGate(/npm-stage-tarball-verifier\.js/.test(releaseReadinessDoc) && /--local-receipt/.test(releaseReadinessDoc) && /--local-tarball/.test(releaseReadinessDoc) && /--stage-receipt/.test(releaseReadinessDoc), 'release readiness must document the maintainer-local read-only verifier inputs');
 assertGate(pkg.scripts?.prepublishOnly === 'node ./dist/scripts/prepublish-release-check-or-fast.js', 'prepublishOnly must verify release proof during official npm publish');
 assertGate(pkg.scripts?.prepack === 'node ./dist/scripts/prepublish-release-check-or-fast.js --prepack-build', 'prepack must rebuild and reverify official npm publish output');

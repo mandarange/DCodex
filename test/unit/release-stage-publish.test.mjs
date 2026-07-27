@@ -21,6 +21,7 @@ const GREEN_PREFLIGHT = {
   'rev-parse --abbrev-ref HEAD': { stdout: 'main\n' },
   'status --porcelain': { stdout: '' },
   'rev-parse HEAD': { stdout: 'a'.repeat(40) + '\n' },
+  'npx --yes npm@11.15.0 --version': { stdout: '11.15.0\n' },
   'auth status': { status: 0 }
 };
 
@@ -33,6 +34,7 @@ function options(overrides = {}) {
       version: '7.3.0',
       run,
       readJsonFile: () => ({ version: '7.3.0' }),
+      env: {},
       ...overrides.opts
     }
   };
@@ -74,6 +76,39 @@ test('an invalid full release stamp blocks before main is pushed', () => {
   assert.ok(report.blockers.includes('stage_release_stamp_invalid'), report.blockers.join(','));
   assert.ok(!rec.calls.some((call) => call.startsWith('git push')), rec.calls.join('\n'));
   assert.equal(report.steps.find((step) => step.id === 'release_stamp')?.detail, 'release stamp is stale');
+});
+
+test('the exact npm stage CLI must resolve before push or workflow dispatch', () => {
+  for (const [value, blocker] of [
+    [{ stdout: '11.14.0\n' }, 'stage_npm_cli_version_mismatch'],
+    [{ status: 1, stderr: 'could not resolve npm@11.15.0' }, 'stage_npm_cli_unavailable']
+  ]) {
+    const rec = recorder({
+      ...GREEN_PREFLIGHT,
+      'npx --yes npm@11.15.0 --version': value
+    });
+    const { opts } = options({ recorder: rec, opts: { confirm: true } });
+    const report = stagePublish(opts);
+    assert.equal(report.ok, false);
+    assert.ok(report.blockers.includes(blocker), `${blocker}: ${report.blockers.join(',')}`);
+    assert.ok(!rec.calls.some((call) => call.startsWith('git push')), rec.calls.join('\n'));
+    assert.ok(!rec.calls.some((call) => call.includes('workflow run')), rec.calls.join('\n'));
+  }
+});
+
+test('CI or OIDC review environments block before push or workflow dispatch', () => {
+  for (const [env, blocker] of [
+    [{ CI: 'true' }, 'stage_ci_environment_not_allowed'],
+    [{ ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'token' }, 'stage_oidc_environment_not_allowed']
+  ]) {
+    const rec = recorder(GREEN_PREFLIGHT);
+    const { opts } = options({ recorder: rec, opts: { confirm: true, env } });
+    const report = stagePublish(opts);
+    assert.equal(report.ok, false);
+    assert.ok(report.blockers.includes(blocker), `${blocker}: ${report.blockers.join(',')}`);
+    assert.ok(!rec.calls.some((call) => call.startsWith('git push')), rec.calls.join('\n'));
+    assert.ok(!rec.calls.some((call) => call.includes('workflow run')), rec.calls.join('\n'));
+  }
 });
 
 test('a failed push stops before the workflow is dispatched', () => {

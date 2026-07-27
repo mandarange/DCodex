@@ -48,8 +48,8 @@ test('maintainer-local verifier compares actual stage download bytes and all req
     assert.equal(result.receipt.checks.stage_receipt_sha256_match, true)
     assert.equal(result.receipt.checks.stage_receipt_sha512_match, true)
     assert.equal(result.receipt.checks.stage_receipt_integrity_match, true)
-    assert.deepEqual(result.receipt.read_only_commands.view_argv.slice(0, 4), ['npm', 'stage', 'view', STAGE_ID])
-    assert.deepEqual(result.receipt.read_only_commands.download_argv.slice(0, 4), ['npm', 'stage', 'download', STAGE_ID])
+    assert.deepEqual(result.receipt.read_only_commands.view_argv.slice(0, 4), [fixture.fakeNpm, 'stage', 'view', STAGE_ID])
+    assert.deepEqual(result.receipt.read_only_commands.download_argv.slice(0, 4), [fixture.fakeNpm, 'stage', 'download', STAGE_ID])
     assert.equal(result.receipt.oidc_review_supported, false)
     assert.equal(result.receipt.maintainer_session_required, true)
     assert.equal(result.receipt.human_2fa_pending, true)
@@ -212,15 +212,24 @@ test('maintainer-local verifier rejects stage receipts that do not bind local re
   }
 })
 
-test('compiled maintainer CLI completes the same offline read-only fixture through PATH npm', () => {
+test('compiled maintainer CLI resolves the pinned npm package through PATH npx', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-stage-review-cli-'))
   try {
     const fixture = createFixture(root)
     const fakeBin = path.join(root, 'fake-bin')
     fs.mkdirSync(fakeBin, { recursive: true })
-    const fakeNpmOnPath = path.join(fakeBin, 'npm')
-    fs.copyFileSync(fixture.fakeNpm, fakeNpmOnPath)
-    fs.chmodSync(fakeNpmOnPath, 0o755)
+    const fakeNpxOnPath = path.join(fakeBin, 'npx')
+    fs.writeFileSync(fakeNpxOnPath, `#!/usr/bin/env node
+const { spawnSync } = require('node:child_process')
+const args = process.argv.slice(2)
+if (args[0] !== '--yes' || args[1] !== 'npm@${REQUIRED_NPM_STAGE_CLI_VERSION}') process.exit(64)
+const child = spawnSync(String(process.env.FAKE_NPM_EXEC || ''), args.slice(2), {
+  env: process.env,
+  stdio: 'inherit'
+})
+process.exit(child.status == null ? 1 : child.status)
+`)
+    fs.chmodSync(fakeNpxOnPath, 0o755)
     const outputDir = path.join(root, 'evidence', STAGE_ID)
     const cli = fileURLToPath(new URL('../../../scripts/npm-stage-tarball-verifier.js', import.meta.url))
     const result = spawnSync(process.execPath, [
@@ -235,6 +244,7 @@ test('compiled maintainer CLI completes the same offline read-only fixture throu
       encoding: 'utf8',
       env: {
         ...fixtureEnv(fixture.localTarball, fixture.downloadInfo, fixture.viewInfo),
+        FAKE_NPM_EXEC: fixture.fakeNpm,
         PATH: `${fakeBin}${path.delimiter}${String(process.env.PATH || '')}`
       }
     })
@@ -242,6 +252,10 @@ test('compiled maintainer CLI completes the same offline read-only fixture throu
     const receipt = JSON.parse(result.stdout) as Record<string, unknown>
     assert.equal(receipt.schema, NPM_STAGE_REVIEW_RECEIPT_SCHEMA)
     assert.equal(receipt.ok, true)
+    assert.deepEqual(
+      (receipt.read_only_commands as { view_argv: string[] }).view_argv.slice(0, 6),
+      ['npx', '--yes', `npm@${REQUIRED_NPM_STAGE_CLI_VERSION}`, 'stage', 'view', STAGE_ID]
+    )
     assert.equal(fs.existsSync(path.join(outputDir, 'stage-review-receipt.json')), true)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })

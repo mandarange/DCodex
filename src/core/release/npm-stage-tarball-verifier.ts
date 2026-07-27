@@ -34,6 +34,7 @@ import {
   writePrivateJson,
   type StagePublishReceipt
 } from './npm-stage-tarball-verifier-support.js'
+import { exactNpmStageCliInvocation } from './npm-stage-contract.js'
 
 export {
   NPM_STAGE_REGISTRY,
@@ -123,6 +124,7 @@ export interface VerifyNpmStageTarballInput {
   stageReceiptPath: string
   outputDir?: string
   npmCommand?: string
+  npmCommandArgs?: string[]
   env?: NodeJS.ProcessEnv
 }
 
@@ -198,8 +200,16 @@ export function verifyNpmStageTarball(input: VerifyNpmStageTarballInput): Verify
     writePrivate(path.join(inputDir, 'local-pack-receipt.json'), localReceiptBytes)
     writePrivate(path.join(inputDir, 'workflow-stage-receipt.json'), stageReceiptBytes)
 
-    const npmCommand = input.npmCommand || 'npm'
-    const versionResult = runReadOnlyNpm(npmCommand, ['--version'], temporaryOutput, env)
+    const npmInvocation = input.npmCommand
+      ? { command: input.npmCommand, args: [...(input.npmCommandArgs || [])] }
+      : exactNpmStageCliInvocation()
+    const runNpm = (args: string[], cwd: string) => runReadOnlyNpm(
+      npmInvocation.command,
+      [...npmInvocation.args, ...args],
+      cwd,
+      env
+    )
+    const versionResult = runNpm(['--version'], temporaryOutput)
     assertCommandSucceeded(versionResult, 'npm_version_check_failed')
     const npmVersion = versionResult.stdout.trim()
     if (npmVersion !== REQUIRED_NPM_STAGE_CLI_VERSION) {
@@ -207,14 +217,14 @@ export function verifyNpmStageTarball(input: VerifyNpmStageTarballInput): Verify
     }
 
     const viewArgv = ['stage', 'view', stageId, '--json', '--registry', NPM_STAGE_REGISTRY]
-    const viewResult = runReadOnlyNpm(npmCommand, viewArgv, temporaryOutput, env)
+    const viewResult = runNpm(viewArgv, temporaryOutput)
     assertCommandSucceeded(viewResult, 'npm_stage_view_failed')
     const viewOutputFile = path.join(temporaryOutput, 'stage-view.json')
     writePrivate(viewOutputFile, Buffer.from(viewResult.stdout))
     const view = parseJsonObject(viewResult.stdout, 'npm_stage_view_json_invalid')
 
     const downloadArgv = ['stage', 'download', stageId, '--json', '--registry', NPM_STAGE_REGISTRY]
-    const downloadResult = runReadOnlyNpm(npmCommand, downloadArgv, downloadDir, env)
+    const downloadResult = runNpm(downloadArgv, downloadDir)
     assertCommandSucceeded(downloadResult, 'npm_stage_download_failed')
     const downloadOutputFile = path.join(temporaryOutput, 'stage-download.json')
     writePrivate(downloadOutputFile, Buffer.from(downloadResult.stdout))
@@ -340,10 +350,10 @@ export function verifyNpmStageTarball(input: VerifyNpmStageTarballInput): Verify
         npm_reported: npmReported
       },
       read_only_commands: {
-        view_argv: ['npm', ...viewArgv],
-        download_argv: ['npm', ...downloadArgv],
-        view_argv_sha256: hash(Buffer.from(JSON.stringify(['npm', ...viewArgv])), 'sha256', 'hex'),
-        download_argv_sha256: hash(Buffer.from(JSON.stringify(['npm', ...downloadArgv])), 'sha256', 'hex')
+        view_argv: [npmInvocation.command, ...npmInvocation.args, ...viewArgv],
+        download_argv: [npmInvocation.command, ...npmInvocation.args, ...downloadArgv],
+        view_argv_sha256: hash(Buffer.from(JSON.stringify([npmInvocation.command, ...npmInvocation.args, ...viewArgv])), 'sha256', 'hex'),
+        download_argv_sha256: hash(Buffer.from(JSON.stringify([npmInvocation.command, ...npmInvocation.args, ...downloadArgv])), 'sha256', 'hex')
       },
       checks,
       oidc_review_supported: false,

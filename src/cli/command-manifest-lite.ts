@@ -73,7 +73,7 @@ const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'git', summary: 'Inspect and enforce SKS git collaboration hygiene', maturity: 'beta' },
   { name: 'paths', summary: 'Inspect SKS managed paths', maturity: 'beta', readonly: true, allowedDuringActiveRoute: true, diagnostic: true },
   { name: 'rollback', summary: 'List or apply managed-path rollback actions', maturity: 'beta', skipMigrationGate: true, allowedDuringActiveRoute: true, diagnostic: true },
-  { name: 'postinstall', summary: 'Run postinstall bootstrap', maturity: 'stable', skipMigrationGate: true },
+  { name: 'postinstall', summary: 'Restore package state; bootstrap only with explicit opt-in', maturity: 'stable', skipMigrationGate: true },
   { name: 'codex', summary: 'Check Codex CLI compatibility and vendored hook schemas', maturity: 'beta', skipMigrationGate: true },
   { name: 'codex-app', summary: 'Check Codex App readiness', maturity: 'beta', skipMigrationGate: true },
   { name: 'codex-native', summary: 'Inspect Codex Native broker and routing readiness', maturity: 'beta' },

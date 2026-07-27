@@ -14,6 +14,8 @@ const linuxJob = jobBlock('linux-release-proof');
 const macosJob = jobBlock('macos-menubar-proof');
 const packJob = jobBlock('pack-and-compare');
 const stageJob = jobBlock('stage-publish');
+const stageContract = fs.readFileSync('src/core/release/npm-stage-contract.ts', 'utf8');
+const stagePublish = fs.readFileSync('src/core/release/stage-publish.ts', 'utf8');
 const stageVerifier = fs.readFileSync('src/core/release/npm-stage-tarball-verifier.ts', 'utf8');
 const stageVerifierSupport = fs.readFileSync('src/core/release/npm-stage-tarball-verifier-support.ts', 'utf8');
 const stageVerifierCli = fs.readFileSync('src/scripts/npm-stage-tarball-verifier.ts', 'utf8');
@@ -165,12 +167,25 @@ test('stage receipt is content-bound and review-only', () => {
   assert.match(stageJob, /stageOutputDigest = crypto\.createHash\('sha256'\)\.update\(outputBytes\)/);
 });
 
+test('stage job requires scripts-enabled default postinstall safety proof', () => {
+  assert.match(stageJob, /smoke\.postinstall_default\?\.scripts_enabled !== true/);
+  assert.match(stageJob, /smoke\.postinstall_default\?\.external_snapshot_match !== true/);
+  assert.match(stageJob, /smoke\.postinstall_default\?\.package_local_stamp_present !== true/);
+  assert.match(stageJob, /smoke\.postinstall_default\?\.opt_in_guidance_present !== true/);
+  assert.match(stageJob, /smoke\.postinstall_default\.external_findings\.length !== 0/);
+  assert.match(stageJob, /smoke\.postinstall_default\.launchctl_calls\.length !== 0/);
+});
+
 test('maintainer verifier is read-only, exact-versioned, and OIDC-ineligible', () => {
-  assert.match(stageVerifierSupport, /export const REQUIRED_NPM_STAGE_CLI_VERSION = '11\.15\.0'/);
+  assert.match(stageContract, /export const REQUIRED_NPM_STAGE_CLI_VERSION = '11\.15\.0'/);
+  assert.match(stageContract, /command: platform === 'win32' \? 'npx\.cmd' : 'npx'/);
+  assert.match(stageContract, /args: \['--yes', `npm@\$\{REQUIRED_NPM_STAGE_CLI_VERSION\}`\]/);
+  assert.match(stageVerifierSupport, /from '\.\/npm-stage-contract\.js'/);
   assert.match(stageVerifier, /from '\.\/npm-stage-tarball-verifier-support\.js'/);
+  assert.match(stageVerifier, /exactNpmStageCliInvocation\(\)/);
   assert.match(stageVerifier, /\['stage', 'view', stageId, '--json'/);
   assert.match(stageVerifier, /\['stage', 'download', stageId, '--json'/);
-  assert.match(stageVerifierSupport, /oidc_environment_not_allowed/);
+  assert.match(stageContract, /oidc_environment_not_allowed/);
   assert.match(stageVerifier, /exact_bytes_match/);
   assert.match(stageVerifier, /sha256_match/);
   assert.match(stageVerifier, /sha512_match/);
@@ -180,6 +195,16 @@ test('maintainer verifier is read-only, exact-versioned, and OIDC-ineligible', (
   assert.match(stageVerifierCli, /--local-tarball/);
   assert.match(stageVerifierCli, /--stage-receipt/);
   assert.doesNotMatch(`${stageVerifier}\n${stageVerifierSupport}\n${stageVerifierCli}`, /\['stage',\s*'(?:publish|approve|reject)'/);
+});
+
+test('confirmed staging proves the local review path before any mutation', () => {
+  assert.match(stagePublish, /const preflight = runPreflight\(opts, version\)/);
+  assert.match(stagePublish, /if \(!preflight\.ok\) return finish\(\)/);
+  assert.match(stagePublish, /local_review_verifier/);
+  assert.match(stagePublish, /localNpmStageReviewEnvironmentBlocker/);
+  assert.match(stagePublish, /exactNpmStageCliInvocation\(\)/);
+  assert.match(stagePublish, /stage_npm_cli_version_mismatch/);
+  assert.match(stagePublish, /stage_npm_cli_unavailable/);
 });
 
 function sectionBetween(startLabel, endLabel) {

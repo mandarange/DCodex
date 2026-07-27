@@ -16,7 +16,10 @@ emitGate('runtime:installed-smoke', {
   tarball: report.tarball,
   tarball_sha256: report.tarball_sha256,
   exact_match: report.tarball_binding.exact_match,
-  install_prefix: report.install_prefix
+  install_prefix: report.install_prefix,
+  postinstall_external_snapshot_match: report.postinstall_default.external_snapshot_match,
+  postinstall_launchctl_calls: report.postinstall_default.launchctl_calls.length,
+  postinstall_package_local_stamp_present: report.postinstall_default.package_local_stamp_present
 })
 
 function option(name: string) {

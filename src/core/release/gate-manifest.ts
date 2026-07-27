@@ -126,7 +126,19 @@ export function affectedGlobsFor(id: string): string[] {
     case 'publish':
       return ['package.json', '.npmignore', 'src/scripts/packlist-performance-check.ts', 'src/scripts/npm-publish-performance-check.ts', 'dist/**']
     case 'postinstall':
-      return ['src/cli/install-helpers.ts', 'src/cli/install-helpers-install-support.ts', 'src/core/init.ts', 'src/core/routes/design-policy.ts', 'src/scripts/postinstall-safe-side-effects-check.ts']
+      return [
+        'src/cli/install-helpers.ts',
+        'src/cli/install-helpers-codex-lb-selftest.ts',
+        'src/cli/install-helpers-install-support.ts',
+        'src/core/init.ts',
+        'src/core/install/installed-package-smoke.ts',
+        'src/core/routes/design-policy.ts',
+        'src/scripts/installed-package-smoke-check.ts',
+        'src/scripts/postinstall-safe-side-effects-check.ts',
+        'test/blackbox/postinstall-safe-side-effects-packed.test.mjs',
+        'test/unit/postinstall-command.test.mjs',
+        'test/unit/publish-workflow-safety.test.mjs'
+      ]
     case 'runtime':
       return ['src/**', 'src/scripts/runtime-*.ts', 'src/scripts/build-dist.ts', 'src/scripts/clean-dist.ts', 'package.json']
     case 'agent':
