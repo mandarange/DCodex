@@ -23,9 +23,11 @@ import {
   type ExtractorIdentity
 } from '../compiler/cache-key.js';
 import { readSourceHashes } from '../compiler/freshness.js';
+import { inspectCodePackHeadFreshness } from '../../code-pack-head-freshness.js';
 import { readContextGraphMeta, readContextGraphSnapshot } from './snapshot-store.js';
 
 const STATUS_SCHEMA = 'sks.context-graph-status.v1' as const;
+const METADATA_ONLY_HEAD_CHECK_TIMEOUT_MS = 5_000;
 
 export interface ContextGraphStatusOptions {
   /** Extractor identities in play. Without them the schema-revision comparison is skipped rather than guessed. */
@@ -117,7 +119,16 @@ export async function contextGraphStatus(
     options.cacheKey
     ?? (await computeContextGraphCacheKey({ root, extractors: options.extractors ?? [] }));
   if (!current.reusable) reasons.push('git_state_unknown');
-  for (const reason of compareCacheKeyParts(meta.cacheKeyParts, current.parts)) {
+  const cacheReasons = compareCacheKeyParts(meta.cacheKeyParts, current.parts);
+  if (cacheReasons.includes('head_changed') && meta.cacheKeyParts.head) {
+    const headFreshness = await inspectCodePackHeadFreshness(root, meta.cacheKeyParts.head, {
+      timeoutMs: METADATA_ONLY_HEAD_CHECK_TIMEOUT_MS
+    });
+    if (headFreshness.fresh) {
+      cacheReasons.splice(cacheReasons.indexOf('head_changed'), 1);
+    }
+  }
+  for (const reason of cacheReasons) {
     // Without a caller-supplied extractor list the recomputed schema revision is
     // not comparable, so that single reason is dropped instead of faked.
     if (reason === 'schema_revision_changed' && !options.extractors && !options.cacheKey) continue;

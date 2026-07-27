@@ -25,6 +25,8 @@ import { appendContextGraphEvent } from '../event-log.js';
 import { fragmentCacheKey, pruneFragmentCache, readCachedFragment, writeCachedFragment } from '../fragment-cache.js';
 import {
   FIXED_OBSERVED_AT,
+  commitFixtureChanges,
+  commitFixturePaths,
   fileGraphExtractor,
   fileNode,
   fragmentOf,
@@ -222,6 +224,45 @@ test('a committed git tree yields a fresh status, and editing a tracked file mak
       stale.reasons.includes('dirty_fingerprint_changed') || stale.reasons.includes('source_hash_mismatch'),
       stale.reasons.join(',')
     );
+  } finally {
+    removeFixtureRoot(root);
+  }
+});
+
+test('a code-pack-only commit preserves graph freshness, but a later source commit does not', async (t) => {
+  if (!gitAvailable()) {
+    t.skip('git is required to prove metadata-only ancestry');
+    return;
+  }
+  const root = seedRepo('cgs-status-code-pack-metadata');
+  initGitRepo(root);
+  try {
+    const extractors = [fileGraphExtractor('code', '1.0.0', FILES)];
+    const compiled = await compileContextGraph({ root, extractors, observedAt: FIXED_OBSERVED_AT });
+    assert.equal(compiled.ok, true, compiled.blockers.join(','));
+
+    writeFixtureFile(root, '.sneakoscope/wiki/code-pack.json', '{"schema":"sks.code-pack.v1"}\n');
+    writeFixtureFile(root, '.sneakoscope/wiki/code-pack.prev.json', '{"schema":"sks.code-pack.v1"}\n');
+    commitFixturePaths(
+      root,
+      ['.sneakoscope/wiki/code-pack.json', '.sneakoscope/wiki/code-pack.prev.json'],
+      'refresh code pack'
+    );
+
+    const metadataOnly = await contextGraphStatus(root, { extractors });
+    assert.equal(
+      metadataOnly.status,
+      'fresh',
+      `metadata-only history must stay fresh: ${metadataOnly.reasons.join(',')}`
+    );
+
+    writeFixtureFile(root, 'src/a.ts', 'export const A = 2;\n');
+    commitFixtureChanges(root, 'change source');
+
+    const sourceChanged = await contextGraphStatus(root, { extractors });
+    assert.equal(sourceChanged.status, 'stale');
+    assert.ok(sourceChanged.reasons.includes('head_changed'), sourceChanged.reasons.join(','));
+    assert.ok(sourceChanged.reasons.includes('source_hash_mismatch'), sourceChanged.reasons.join(','));
   } finally {
     removeFixtureRoot(root);
   }

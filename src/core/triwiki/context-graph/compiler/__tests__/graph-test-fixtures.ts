@@ -68,7 +68,20 @@ export function gitAvailable(): boolean {
 /** Turn a fixture directory into a committed one-commit repository. */
 export function initGitRepo(root: string): void {
   git(root, ['-c', 'init.defaultBranch=main', 'init']);
+  commitFixtureChanges(root);
+}
+
+export function commitFixtureChanges(root: string, message = 'fixture'): void {
   git(root, ['add', '-A']);
+  commitStagedFixtureChanges(root, message);
+}
+
+export function commitFixturePaths(root: string, paths: readonly string[], message = 'fixture'): void {
+  git(root, ['add', '--', ...paths]);
+  commitStagedFixtureChanges(root, message);
+}
+
+function commitStagedFixtureChanges(root: string, message: string): void {
   git(root, [
     '-c',
     'user.email=fixture@example.invalid',
@@ -78,7 +91,7 @@ export function initGitRepo(root: string): void {
     'commit.gpgsign=false',
     'commit',
     '-m',
-    'fixture'
+    message
   ]);
 }
 
