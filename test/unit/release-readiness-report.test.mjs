@@ -37,6 +37,7 @@ test('release readiness report writes current readiness artifacts', () => {
     assert.equal(json.schema, 'sks.release-readiness.v1');
     assert.equal(json.package.version, pkg.version);
     assert.equal(json.scope.gate, `${pkg.version} current release DAG`);
+    assert.match(json.scope.ok_means, new RegExp(`current ${pkg.version.replaceAll('.', '\\.')} release contract`));
     assert.deepEqual(json.remaining_p0_gaps, []);
     assert.equal(json.ok, true);
     assert.equal(json.codex_0144.status, 'present');
