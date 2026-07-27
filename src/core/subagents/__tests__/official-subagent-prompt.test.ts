@@ -59,6 +59,40 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
   assert.match(prompt, /from AGENTS\.md exactly/)
 })
 
+test('Codex App Naruto prompt separates internal parent evidence from the visible Markdown final', () => {
+  const prompt = buildOfficialSubagentPrompt({
+    goal: 'Integrate the completed slices without exposing machine evidence',
+    maxThreads: 4,
+    requestedSubagents: 1,
+    decompositionStatus: 'ready',
+    parentOutputMode: 'app_naruto_stdin',
+    missionId: 'M-app-parent-summary',
+    workflowRunId: 'naruto-app-run-1',
+    slices: [
+      {
+        id: 'review',
+        title: 'Review final UX',
+        description: 'Verify the user-visible completion response',
+        kind: 'expert',
+        readOnly: true
+      }
+    ]
+  })
+
+  assert.match(prompt, /"schema": "sks\.subagent-parent-summary\.v1"/)
+  assert.match(prompt, /"run_id": "workflow_run_id from subagent-plan\.json"/)
+  assert.match(prompt, /"thread_outcomes": \[/)
+  assert.match(prompt, /"verification": \[/)
+  assert.match(prompt, /"blockers": \[\]/)
+  assert.match(prompt, /run_id="naruto-app-run-1"/)
+  assert.match(prompt, /sks naruto parent-summary --mission M-app-parent-summary --stdin --json/)
+  assert.match(prompt, /return concise Markdown in the user's language/)
+  assert.match(prompt, /do not expose, paste, quote, embed, or fence the JSON/)
+  assert.doesNotMatch(prompt, /return one JSON object as the final message/)
+  assert.doesNotMatch(prompt, /prose outside that object is not completion evidence/)
+  assert.doesNotMatch(prompt, /keep completion summary and Honest Mode wording inside the JSON fields/)
+})
+
 test('preparation prompt preserves requested count without inventing write slices', () => {
   const prompt = buildOfficialSubagentPrompt({
     goal: 'Parent must decompose this goal',

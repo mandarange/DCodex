@@ -14,6 +14,9 @@ sks naruto run "create an XLSX report" --trusted-project
 sks naruto status latest --json
 sks naruto subagents latest --json
 sks naruto proof latest --json
+# Codex App internal finalization only:
+printf '%s' '<sks.subagent-parent-summary.v1 JSON>' \
+  | sks naruto parent-summary --mission M-... --stdin --json
 ```
 
 Automatic fan-out starts at four Naruto children for bounded non-trivial work, six for
@@ -130,6 +133,15 @@ full context pack is not copied into every child.
 Codex App sessions reuse the current parent session instead of launching a
 nested Codex process. Standalone CLI use may launch one parent process; Codex
 itself owns the official subagent threads.
+
+In Codex App, the parent sends the strict `sks.subagent-parent-summary.v1`
+object only through `parent-summary --mission <id> --stdin`; that JSON is an
+internal lifecycle payload and must not be pasted into the user-visible answer.
+After the command accepts it, the parent returns localized Markdown with the
+completion summary, verification, remaining gaps, and Honest Mode. A
+non-terminal submission may be corrected by a later valid submission for the
+same active run. Once the complete terminal bundle is sealed, identical replay
+is idempotent and conflicting content is rejected.
 
 ## Same-Mission Admission
 

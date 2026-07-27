@@ -249,6 +249,7 @@ export function commandInputSchema(profile: CommandInputProfileLite): Record<str
       mission: boundedString(1, 160),
       agents: { type: 'integer', minimum: 1 },
       max_threads: { type: 'integer', minimum: 1 },
+      stdin: { type: 'boolean' },
       readonly: { type: 'boolean' },
       trusted_project: { type: 'boolean' },
       json: { type: 'boolean' }

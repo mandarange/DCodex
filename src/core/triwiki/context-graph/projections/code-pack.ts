@@ -159,6 +159,13 @@ export function computeCodePackIndexDigest(snapshotHash: string, entries: readon
   return sha256(JSON.stringify({ snapshotHash, entries: stable }));
 }
 
+export function isCodePackProjectionBoundToSnapshot(
+  snapshotHash: string,
+  pack: Pick<CodePack, 'index_digest' | 'entries'>
+): boolean {
+  return pack.index_digest === computeCodePackIndexDigest(snapshotHash, pack.entries);
+}
+
 function countFileNodes(snapshot: ContextGraphSnapshot): number {
   let count = 0;
   for (const node of snapshot.nodes) if (node.kind === 'file') count += 1;

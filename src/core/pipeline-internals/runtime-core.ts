@@ -951,6 +951,16 @@ export async function activeRouteContext(root: any, state: any) {
     return `Route contract sealed for ${state.route_command || state.route || state.mode}. Use decision-contract.json and ${PIPELINE_PLAN_ARTIFACT} before executing the route. Before the next route phase, read relevant TriWiki context, hydrate low-trust claims from source, and refresh/validate TriWiki again after new findings or artifact changes. Next atomic action: continue the original route lifecycle with the inferred goal, constraints, non-goals, risk boundary, and test scope.${planNote}`;
   }
   if (state.mode === 'NARUTO') {
+    if (state.session_scope) {
+      const parentEvidenceState = await appNarutoParentEvidenceState(root, state);
+      if (parentEvidenceState === 'completed') {
+        return `Active Codex App Naruto mission ${state.mission_id || 'latest'} has trustworthy current-run parent evidence and a passed Naruto gate. Do not resubmit or expose the sks.subagent-parent-summary.v1 JSON. Return concise Markdown in the user's language with an explicit completion summary, verification, remaining gaps, and Honest Mode.${reasoningNote}${planNote}`;
+      }
+      if (parentEvidenceState === 'blocked') {
+        return `Active Codex App Naruto mission ${state.mission_id || 'latest'} has trustworthy current-run blocked or failed parent evidence. Do not resubmit or expose the sks.subagent-parent-summary.v1 JSON. Return concise Markdown in the user's language that states the blocker or failure first, avoids completion or success wording, and includes verification, remaining gaps, and Honest Mode.${reasoningNote}${planNote}`;
+      }
+      return `Active Codex App Naruto mission ${state.mission_id || 'latest'} uses the official Codex subagent workflow. Read subagent-plan.json, keep ${SUBAGENT_EVENT_LOG_FILENAME} and ${SUBAGENT_EVIDENCE_FILENAME} current from SubagentStart/SubagentStop, and wait for all requested agent threads. Build the exact sks.subagent-parent-summary.v1 object with run_id matching subagent-plan.json.workflow_run_id, then send it only through stdin to "sks naruto parent-summary --mission ${state.mission_id} --stdin --json". Do not expose, paste, embed, quote, or fence that JSON in the user-visible response. Only after the command accepts it, return concise Markdown in the user's language with completion summary, verification, remaining gaps/blockers, and Honest Mode. A successful response must visibly include the completion summary and Honest Mode assessment. If any parent/thread status is blocked or failed, or blockers remain, state that first and do not use completion or success wording. Do not substitute process counts, PID evidence, retired process-pool artifacts, or a custom active pool.${reasoningNote}${planNote}`;
+    }
     return `Active Naruto mission ${state.mission_id || 'latest'} uses the official Codex subagent workflow. Read subagent-plan.json, keep ${SUBAGENT_EVENT_LOG_FILENAME} and ${SUBAGENT_EVIDENCE_FILENAME} current from SubagentStart/SubagentStop, wait for all requested agent threads, then return the exact sks.subagent-parent-summary.v1 JSON result so SKS can persist ${SUBAGENT_PARENT_SUMMARY_FILENAME} and derive naruto-summary.json/naruto-gate.json. Do not substitute process counts, PID evidence, retired process-pool artifacts, or a custom active pool.${reasoningNote}${planNote}`;
   }
   if (state.subagents_required && !(await hasSubagentEvidence(root, state))) {
@@ -961,6 +971,39 @@ export async function activeRouteContext(root: any, state: any) {
     return `Active SKS route ${id} still requires Context7 evidence. Use resolve-library-id, then query-docs for relevant docs/APIs before completing.${reasoningNote}${planNote}`;
   }
   return planNote.trim();
+}
+
+async function appNarutoParentEvidenceState(root: any, state: any): Promise<'completed' | 'blocked' | null> {
+  const missionId = String(state?.mission_id || '').trim();
+  const workflowRunId = String(state?.official_subagent_run_id || '').trim();
+  if (!missionId || !workflowRunId) return null;
+  const dir = missionDir(root, missionId);
+  const [evidence, summary, gate] = await Promise.all([
+    subagentEvidence(root, state).catch(() => null),
+    readJson(path.join(dir, NARUTO_SUMMARY_FILENAME), null).catch(() => null),
+    readJson(path.join(dir, NARUTO_GATE_FILENAME), null).catch(() => null)
+  ]);
+  const currentRun = evidence?.run_id === workflowRunId
+    && summary?.workflow_run_id === workflowRunId
+    && gate?.workflow_run_id === workflowRunId;
+  if (!currentRun || evidence?.parent_summary_trustworthy !== true) return null;
+  if (evidence.ok === true
+    && evidence.status === 'completed'
+    && summary?.status === 'completed'
+    && summary?.completion_evidence === true
+    && gate?.passed === true
+    && gate?.terminal === true
+    && gate?.terminal_state === 'completed') {
+    return 'completed';
+  }
+  if (evidence.parent_summary_status === 'failed'
+    && ['blocked', 'incomplete'].includes(String(summary?.status || ''))
+    && summary?.completion_evidence !== true
+    && gate?.passed !== true
+    && gate?.terminal_state === 'blocked') {
+    return 'blocked';
+  }
+  return null;
 }
 
 async function activePipelinePlanNote(root: any, state: any = {}) {

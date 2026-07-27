@@ -20,7 +20,13 @@ import { wrongnessContextForRoute } from '../triwiki-wrongness/wrongness-retriev
 import { readCombinedWrongnessRecords } from '../triwiki-wrongness/wrongness-ledger.js';
 import { recordImageWrongnessFromValidation } from '../triwiki-wrongness/image-wrongness.js';
 import { publishSharedMemory, rebuildSharedIndexes, sharedMemorySummary, validateSharedMemory } from '../git-hygiene/shared-memory-publish.js';
-import { codePackPath, validateCodePack, writeCodePackAtomic } from '../triwiki/code-pack.js';
+import {
+  codePackPath,
+  isCodePackProjectionBoundToSnapshot,
+  validateCodePack,
+  writeCodePackAtomic,
+  type CodePack
+} from '../triwiki/code-pack.js';
 import { repairTriWikiProofIndex } from '../triwiki/triwiki-proof-bank-index.js';
 import { runContextGraphLint } from '../triwiki/context-graph/lint/index.js';
 import { contextGraphStatus } from '../triwiki/context-graph/store/graph-status.js';
@@ -234,9 +240,13 @@ async function wikiValidateContextGraph(root: string): Promise<{ ok: boolean; st
   const issues = lint.errors.slice(0, 20).map((issue) => `${issue.code}: ${issue.message}`);
   // Projection parity: a code pack that does not name the snapshot it came from
   // is a pack from some other graph generation.
-  const packDigest = await readJson<{ index_digest?: string }>(codePackPath(root), { index_digest: '' });
-  const digest = String(packDigest?.index_digest ?? '');
-  const boundToSnapshot = digest.includes(snapshotLoad.snapshot.snapshotHash.slice(0, 16));
+  const pack = await readJson<CodePack | null>(codePackPath(root), null).catch(() => null);
+  const digest = typeof pack?.index_digest === 'string' ? pack.index_digest : '';
+  const boundToSnapshot = Boolean(
+    pack
+    && Array.isArray(pack.entries)
+    && isCodePackProjectionBoundToSnapshot(snapshotLoad.snapshot.snapshotHash, pack)
+  );
   if (digest && !boundToSnapshot) issues.push('code_pack_not_bound_to_current_snapshot');
   return {
     ok: lint.ok && (!digest || boundToSnapshot),

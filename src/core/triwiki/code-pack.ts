@@ -31,6 +31,7 @@ export type { CodePack, CodePackCitation, CodePackEntry } from './context-graph/
 export {
   buildCodePackFromGraph,
   computeCodePackIndexDigest,
+  isCodePackProjectionBoundToSnapshot,
   projectCodePackFromGraph,
   type BuildCodePackFromGraphOptions,
   type CodePackProjection

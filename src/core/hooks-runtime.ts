@@ -938,7 +938,9 @@ async function hookStop(root: any, state: any, payload: any, noQuestion: any, se
     await refreshOfficialSubagentCompletionArtifacts(root, state, last, sessionKey).catch(() => null);
   }
   const routeDecision = await evaluateStop(root, state, payload, { noQuestion });
-  if (routeDecision) return routeDecision;
+  if (routeDecision && !successfulAppNarutoStopNeedsVisibleSummary(state, routeDecision)) {
+    return routeDecision;
+  }
   if (!noQuestion) {
     const languageBasis = state?.prompt || state?.task || extractUserPrompt(payload) || last;
     if (!hasHonestMode(last)) {
@@ -965,12 +967,23 @@ async function hookStop(root: any, state: any, payload: any, noQuestion: any, se
       };
     }
     if (state?.honest_loop_required) await resolveHonestModeLoopback(root, state, sessionKey);
-    return { continue: true };
+    return routeDecision || { continue: true };
   }
   return {
     decision: 'block',
     reason: 'SKS no-question run is not done. Continue autonomously, fix failing checks, update the active gate file, and do not ask the user.'
   };
+}
+
+function successfulAppNarutoStopNeedsVisibleSummary(state: any = {}, routeDecision: any = {}) {
+  const route = String(state?.route || state?.route_command || state?.mode || '')
+    .replace(/^\$/, '')
+    .replace(/[-_]/g, '')
+    .toUpperCase();
+  return route === 'NARUTO'
+    && Boolean(state?.session_scope)
+    && routeDecision?.continue === true
+    && !['hard_blocked', 'route_closed'].includes(String(routeDecision?.action || ''));
 }
 
 async function consumeLightRouteStop(root: any, payload: any = {}) {
@@ -1053,11 +1066,25 @@ function hasHonestModeUnresolvedGap(text: any) {
 
 export function honestModeGapLines(text: any) {
   const issue = /(gap|remaining|unverified|not verified|not run|not complete|incomplete|failed|blocked|blocker|could not|couldn't|missing|미완료|미검증|미실행|실패|차단|누락|못했|못 했|안 했|안함|아직|남은)/i;
-  return String(text || '')
+  const lines = String(text || '')
     .split(/\n/)
-    .map((line: any) => line.trim())
-    .filter((line: any) => issue.test(line) && !honestGapLineResolved(line))
+    .map((line: any) => line.trim());
+  return lines
+    .filter((line: any, index: number) => issue.test(line)
+      && !honestGapLineResolved(line)
+      && !honestGapHeadingResolved(
+        line,
+        lines.slice(index + 1).find((candidate: string) => candidate.length > 0)
+      ))
     .slice(0, 12);
+}
+
+function honestGapHeadingResolved(line: any, nextLine: any) {
+  const heading = String(line || '').replace(/^#{1,6}\s*/, '').replace(/\s*[:：]\s*$/, '').trim();
+  if (!/^(?:remaining|unresolved)\s+(?:gaps?|issues?)$|^(?:남은|미해결)\s*(?:문제|항목|갭|gap)$/i.test(heading)) {
+    return false;
+  }
+  return /^(?:없음|없습니다|없다|none|no(?:ne)?|0|0개)[.!。]?$/i.test(String(nextLine || '').trim());
 }
 
 function honestGapLineResolved(line: any) {

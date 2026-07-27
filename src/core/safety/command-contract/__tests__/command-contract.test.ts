@@ -87,7 +87,7 @@ test('Naruto contract matches its local-only explicit-opt-in CLI surface', () =>
   assert.equal(contract.remote_allowed, false);
   assert.equal(contract.telegram_allowed, false);
   assert.equal(contract.input_schema.additionalProperties, false);
-  assert.deepEqual((contract.input_schema as any).properties.action.enum, ['run', 'status', 'subagents', 'proof', 'help']);
+  assert.deepEqual((contract.input_schema as any).properties.action.enum, ['run', 'status', 'subagents', 'proof', 'parent-summary', 'help']);
 
   const run = validateJsonSchema({ action: 'run', task: 'bounded task', mission: 'M-1', agents: 2, max_threads: 4, readonly: true, trusted_project: true, json: true }, contract.input_schema);
   assert.equal(run.ok, true);
@@ -104,6 +104,14 @@ test('Naruto contract matches its local-only explicit-opt-in CLI surface', () =>
   const proof = validateJsonSchema({ action: 'proof', mission: 'M-1', json: true }, contract.input_schema);
   assert.equal(proof.ok, true);
   if (proof.ok) assert.deepEqual(contract.argv_builder(proof.value), ['naruto', 'proof', '--mission', 'M-1', '--json']);
+
+  const parentSummary = validateJsonSchema({ action: 'parent-summary', mission: 'M-1', stdin: true, json: true }, contract.input_schema);
+  assert.equal(parentSummary.ok, true);
+  if (parentSummary.ok) {
+    assert.deepEqual(contract.argv_builder(parentSummary.value), [
+      'naruto', 'parent-summary', '--mission', 'M-1', '--stdin', '--json'
+    ]);
+  }
 
   const misplacedTask = validateJsonSchema({ action: 'status', task: 'must not be silently dropped', json: true }, contract.input_schema);
   assert.equal(misplacedTask.ok, true);

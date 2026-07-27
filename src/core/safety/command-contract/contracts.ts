@@ -36,6 +36,7 @@ const ARGUMENT_PROFILES: Record<CommandInputProfile, ArgumentProfile> = {
       mission: boundedString(1, 160),
       agents: { type: 'integer', minimum: 1 },
       max_threads: { type: 'integer', minimum: 1 },
+      stdin: { type: 'boolean' },
       readonly: { type: 'boolean' },
       trusted_project: { type: 'boolean' },
       json: { type: 'boolean' }
@@ -53,6 +54,7 @@ const ARGUMENT_PROFILES: Record<CommandInputProfile, ArgumentProfile> = {
         ...valueFlag(input, 'mission', '--mission'),
         ...numberFlag(input, 'agents', '--agents'),
         ...numberFlag(input, 'max_threads', '--max-threads'),
+        ...booleanFlag(input, 'stdin', '--stdin'),
         ...booleanFlag(input, 'readonly', '--readonly'),
         ...booleanFlag(input, 'trusted_project', '--trusted-project'),
         ...jsonFlag(input)

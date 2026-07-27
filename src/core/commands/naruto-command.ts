@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { ui as cliUi } from '../../cli/cli-theme.js'
 import {
   createMission,
@@ -25,8 +26,10 @@ import {
 } from '../fsx.js'
 import {
   SUBAGENT_EVENT_LOG_FILENAME,
+  SUBAGENT_EVIDENCE_FILENAME,
   SUBAGENT_PARENT_SUMMARY_FILENAME,
   bindTrustworthySubagentParentSummaryToRun,
+  normalizeSubagentParentSummary,
   persistOrReuseTrustworthySubagentParentSummary,
   readSubagentEvents,
   writeSubagentEvidence
@@ -70,10 +73,16 @@ import {
 } from '../agent-bridge/host-capability-runtime.js'
 import { renderHostCapabilityBlockedLines } from '../agent-bridge/host-capability-policy.js'
 import { uniqueStrings } from '../text/strings.js'
+import {
+  completeNarutoTerminalBundle,
+  refreshOfficialSubagentCompletionArtifacts
+} from '../hooks-runtime/official-subagent-lifecycle.js'
 
 export { buildNarutoGateResult } from '../subagents/official-subagent-preparation.js'
 
-type NarutoAction = 'run' | 'status' | 'subagents' | 'proof' | 'help'
+const MAX_PARENT_SUMMARY_STDIN_BYTES = 1024 * 1024
+
+type NarutoAction = 'run' | 'status' | 'subagents' | 'proof' | 'parent-summary' | 'help'
 
 export interface NarutoArgs {
   action: NarutoAction
@@ -82,6 +91,7 @@ export interface NarutoArgs {
   maxThreads: number | undefined
   missionId: string
   json: boolean
+  stdin: boolean
   readOnly: boolean
   trustedProject: boolean
   argumentErrors: string[]
@@ -135,7 +145,194 @@ export async function narutoCommand(commandOrArgs: string | string[] = 'naruto',
   if (parsed.action === 'status') return narutoStatus(parsed)
   if (parsed.action === 'subagents') return narutoSubagents(parsed)
   if (parsed.action === 'proof') return narutoProof(parsed)
+  if (parsed.action === 'parent-summary') return narutoParentSummary(parsed)
   return narutoRun(parsed)
+}
+
+async function narutoParentSummary(parsed: NarutoArgs) {
+  const root = await sksRoot()
+  const appSession = detectCodexAppSession()
+  const sessionKey = appSession ? codexAppSessionKey() : null
+  if (!appSession || !sessionKey) {
+    return blockedParentSummary(parsed, ['naruto_parent_summary_app_session_required'])
+  }
+  return withFileLock({
+    lockPath: path.join(root, '.sneakoscope', 'state', `naruto-session-${sessionStateKey(sessionKey)}.lock`),
+    timeoutMs: 20_000,
+    staleMs: 120_000
+  }, () => narutoParentSummaryTransaction(parsed, root, sessionKey))
+}
+
+async function narutoParentSummaryTransaction(parsed: NarutoArgs, root: string, sessionKey: string) {
+  const state = await loadStateForSession(root, sessionKey).catch(() => null)
+  const route = String(state?.route || state?.route_command || state?.mode || '')
+    .replace(/^\$/, '')
+    .replace(/[-_]/g, '')
+    .toUpperCase()
+  const stateBlockers = uniqueStrings([
+    ...(state?._session_key === sessionStateKey(sessionKey) ? [] : ['naruto_parent_summary_session_state_mismatch']),
+    ...(state?.session_scope === sessionKey ? [] : ['naruto_parent_summary_session_scope_mismatch']),
+    ...(state?.mission_id === parsed.missionId ? [] : ['naruto_parent_summary_active_mission_mismatch']),
+    ...(route === 'NARUTO' ? [] : ['naruto_parent_summary_active_route_mismatch']),
+    ...(state?.route_closed === true ? ['naruto_parent_summary_route_closed'] : [])
+  ])
+  if (stateBlockers.length > 0) return blockedParentSummary(parsed, stateBlockers)
+
+  const loaded = await loadMission(root, parsed.missionId).catch(() => null)
+  if (!loaded) return blockedParentSummary(parsed, [`naruto_parent_summary_mission_not_found:${parsed.missionId}`])
+  const plan = await readJson<any>(path.join(loaded.dir, SUBAGENT_PLAN_FILENAME), null).catch(() => null)
+  const workflowRunId = String(plan?.workflow_run_id || '').trim()
+  const planBlockers = uniqueStrings([
+    ...(plan?.schema === 'sks.subagent-plan.v1' ? [] : ['naruto_parent_summary_plan_schema_invalid']),
+    ...(plan?.workflow === 'official_codex_subagent' ? [] : ['naruto_parent_summary_plan_workflow_invalid']),
+    ...(plan?.mission_id === parsed.missionId ? [] : ['naruto_parent_summary_plan_mission_mismatch']),
+    ...(plan?.session_scope === sessionKey ? [] : ['naruto_parent_summary_plan_session_scope_mismatch']),
+    ...(workflowRunId ? [] : ['naruto_parent_summary_plan_run_id_missing']),
+    ...(workflowRunId && state?.official_subagent_run_id === workflowRunId
+      ? []
+      : ['naruto_parent_summary_active_run_mismatch'])
+  ])
+  if (planBlockers.length > 0) return blockedParentSummary(parsed, planBlockers)
+
+  const stdin = await readBoundedParentSummaryStdin()
+  if (!stdin.ok) return blockedParentSummary(parsed, [stdin.blocker])
+  const raw = stdin.value
+  let submitted: unknown
+  try {
+    submitted = JSON.parse(raw)
+  } catch {
+    return blockedParentSummary(parsed, ['naruto_parent_summary_stdin_json_invalid'])
+  }
+  if (!submitted || typeof submitted !== 'object' || Array.isArray(submitted)) {
+    return blockedParentSummary(parsed, ['naruto_parent_summary_stdin_object_required'])
+  }
+  const normalized = normalizeSubagentParentSummary(submitted)
+  const summaryBlockers = uniqueStrings([
+    ...(normalized.trustworthy && normalized.raw ? [] : normalized.blockers.length
+      ? normalized.blockers.map((blocker) => `naruto_parent_summary_schema:${blocker}`)
+      : ['naruto_parent_summary_schema_invalid']),
+    ...(!normalized.run_id
+      ? ['naruto_parent_summary_run_id_missing']
+      : normalized.run_id === workflowRunId
+        ? []
+        : ['naruto_parent_summary_run_id_mismatch'])
+  ])
+  if (summaryBlockers.length > 0) return blockedParentSummary(parsed, summaryBlockers)
+  const submittedSummary = normalized.raw
+  if (!submittedSummary) return blockedParentSummary(parsed, ['naruto_parent_summary_schema_invalid'])
+
+  const existing = await readJson<any>(
+    path.join(loaded.dir, SUBAGENT_PARENT_SUMMARY_FILENAME),
+    null
+  ).catch(() => null)
+  if (existing !== null) {
+    const normalizedExisting = normalizeSubagentParentSummary(existing)
+    const [existingGate, existingSummary, existingEvidence] = await Promise.all([
+      readJson<any>(path.join(loaded.dir, NARUTO_GATE_FILENAME), null).catch(() => null),
+      readJson<any>(path.join(loaded.dir, NARUTO_SUMMARY_FILENAME), null).catch(() => null),
+      readJson<any>(path.join(loaded.dir, SUBAGENT_EVIDENCE_FILENAME), null).catch(() => null)
+    ])
+    const terminal = completeNarutoTerminalBundle({
+      workflowRunId,
+      gate: existingGate,
+      summary: existingSummary,
+      evidence: existingEvidence,
+      parentSummary: existing
+    })
+    if (terminal) {
+      if (!normalizedExisting.trustworthy || !normalizedExisting.raw) {
+        return blockedParentSummary(parsed, ['naruto_parent_summary_existing_canonical_invalid'])
+      }
+      if (normalizedExisting.run_id !== workflowRunId) {
+        return blockedParentSummary(parsed, ['naruto_parent_summary_existing_run_id_mismatch'])
+      }
+      if (!sameParentAuthoredSummary(normalizedExisting.raw, submittedSummary)) {
+        return blockedParentSummary(parsed, ['naruto_parent_summary_conflicts_with_canonical'])
+      }
+    }
+  }
+
+  const evidence = await refreshOfficialSubagentCompletionArtifacts(
+    root,
+    state,
+    submittedSummary,
+    sessionKey
+  )
+  if (!evidence) return blockedParentSummary(parsed, ['naruto_parent_summary_lifecycle_commit_rejected'])
+
+  const [persisted, summary, gate] = await Promise.all([
+    readJson<any>(path.join(loaded.dir, SUBAGENT_PARENT_SUMMARY_FILENAME), null).catch(() => null),
+    readJson<any>(path.join(loaded.dir, NARUTO_SUMMARY_FILENAME), null).catch(() => null),
+    readJson<any>(path.join(loaded.dir, NARUTO_GATE_FILENAME), null).catch(() => null)
+  ])
+  const normalizedPersisted = normalizeSubagentParentSummary(persisted)
+  if (!normalizedPersisted.trustworthy
+    || normalizedPersisted.run_id !== workflowRunId
+    || !sameParentAuthoredSummary(normalizedPersisted.raw, submittedSummary)) {
+    return blockedParentSummary(parsed, ['naruto_parent_summary_canonical_commit_mismatch'])
+  }
+  const hardBlocked = normalizedPersisted.status === 'failed'
+  const accepted = gate?.passed === true || hardBlocked
+  const result = {
+    schema: NARUTO_RESULT_SCHEMA,
+    action: 'parent-summary',
+    ok: gate?.passed === true,
+    accepted,
+    status: summary?.status || evidence?.status || normalizedPersisted.status || 'incomplete',
+    mission_id: parsed.missionId,
+    workflow_run_id: workflowRunId,
+    parent_summary_status: normalizedPersisted.status,
+    completion_evidence: gate?.passed === true,
+    blockers: Array.isArray(gate?.blockers) ? gate.blockers : [],
+    artifacts: narutoArtifactLinks(evidence)
+  }
+  return emit(parsed, result, () => renderParentSummaryResult(result), result.ok !== true)
+}
+
+async function readBoundedParentSummaryStdin(): Promise<
+  { ok: true; value: string } | { ok: false; blocker: string }
+> {
+  let value = ''
+  let bytes = 0
+  process.stdin.setEncoding('utf8')
+  for await (const chunk of process.stdin) {
+    const text = String(chunk)
+    bytes += Buffer.byteLength(text, 'utf8')
+    if (bytes > MAX_PARENT_SUMMARY_STDIN_BYTES) {
+      return { ok: false, blocker: `naruto_parent_summary_stdin_too_large:${MAX_PARENT_SUMMARY_STDIN_BYTES}` }
+    }
+    value += text
+  }
+  if (!value.trim()) return { ok: false, blocker: 'naruto_parent_summary_stdin_empty' }
+  return { ok: true, value }
+}
+
+function sameParentAuthoredSummary(left: unknown, right: unknown): boolean {
+  if (!left || typeof left !== 'object' || Array.isArray(left)) return false
+  if (!right || typeof right !== 'object' || Array.isArray(right)) return false
+  const omitHostReceipts = (value: Record<string, unknown>) => {
+    const { artifacts: _artifacts, capabilities_used: _capabilitiesUsed, ...authored } = value
+    return authored
+  }
+  return isDeepStrictEqual(
+    omitHostReceipts(left as Record<string, unknown>),
+    omitHostReceipts(right as Record<string, unknown>)
+  )
+}
+
+function blockedParentSummary(parsed: NarutoArgs, blockers: string[]) {
+  const result = {
+    schema: NARUTO_RESULT_SCHEMA,
+    action: 'parent-summary',
+    ok: false,
+    accepted: false,
+    status: 'blocked',
+    mission_id: parsed.missionId || null,
+    blockers: uniqueStrings(blockers)
+  }
+  return emit(parsed, result, () => {
+    for (const line of renderNarutoBlockedLines(result.blockers)) console.error(line)
+  }, true)
 }
 
 async function narutoRun(parsed: NarutoArgs) {
@@ -596,6 +793,7 @@ function narutoHelp(parsed: NarutoArgs) {
     console.log(`Nesting: max_depth=${result.max_depth}; Naruto children must not spawn children`)
     console.log('Context: bounded TriWiki attention.use_first anchors with on-demand source hydration')
     console.log('Evidence: SubagentStop is lifecycle-only; completion requires subagent-parent-summary.json with one structured outcome per Naruto child thread.')
+    console.log('Codex App finalization: submit the structured object with parent-summary --mission <id> --stdin, then return localized Markdown without exposing JSON.')
   })
 }
 
@@ -659,7 +857,7 @@ export function parseNarutoArgs(args: string[]): NarutoArgs {
     : args
   const first = normalized[0] && !normalized[0].startsWith('-') ? normalized[0] : ''
   const actionName = first
-  const actions = new Set(['run', 'status', 'subagents', 'proof', 'help'])
+  const actions = new Set(['run', 'status', 'subagents', 'proof', 'parent-summary', 'help'])
   const action = (actions.has(actionName) ? actionName : 'run') as NarutoAction
   const explicitAction = actions.has(actionName)
   const rest = explicitAction ? normalized.slice(1) : normalized
@@ -688,7 +886,7 @@ export function parseNarutoArgs(args: string[]): NarutoArgs {
     ? positional.join(' ').trim()
     : ''
   const positionalHead = String(positional[0] || '').toLowerCase()
-  const subcommandNames = new Set(['run', 'status', 'subagents', 'proof', 'help'])
+  const subcommandNames = new Set(['run', 'status', 'subagents', 'proof', 'parent-summary', 'help'])
   if (!first && !explicitAction && positionalHead && !subcommandNames.has(positionalHead)) {
     argumentErrors.push(`unknown_subcommand:${positionalHead}`)
   }
@@ -713,6 +911,19 @@ export function parseNarutoArgs(args: string[]): NarutoArgs {
     }
   }
   if (action === 'run' && !prompt) argumentErrors.push('empty_task')
+  if (action === 'parent-summary') {
+    if (!missionOption.present || !missionOption.value || missionOption.value === 'latest') {
+      argumentErrors.push('parent_summary_requires_explicit_mission')
+    }
+    if (missionIdOption.present) argumentErrors.push('parent_summary_mission_id_alias_not_supported')
+    if (!normalized.includes('--stdin')) argumentErrors.push('parent_summary_requires_stdin')
+    if (agentsOption.present || maxThreadsOption.present || normalized.includes('--readonly')
+      || normalized.includes('--read-only') || normalized.includes('--trusted-project')) {
+      argumentErrors.push('parent_summary_unsupported_run_option')
+    }
+  } else if (normalized.includes('--stdin')) {
+    argumentErrors.push('stdin_only_supported_for_parent_summary')
+  }
   return {
     action,
     prompt,
@@ -720,6 +931,7 @@ export function parseNarutoArgs(args: string[]): NarutoArgs {
     maxThreads,
     missionId: String(missionFlag || positionalMission || 'latest'),
     json: normalized.includes('--json'),
+    stdin: normalized.includes('--stdin'),
     readOnly: normalized.includes('--readonly') || normalized.includes('--read-only'),
     trustedProject: optionArgs.includes('--trusted-project'),
     argumentErrors: uniqueStrings(argumentErrors),
@@ -743,7 +955,7 @@ function positionalValues(args: string[]) {
     '--parent-model', '--parent-effort', '--subagent-model', '--subagent-effort'
   ])
   const booleanFlags = new Set([
-    '--json', '--readonly', '--read-only', '--trusted-project', '--no-forced-login-method'
+    '--json', '--stdin', '--readonly', '--read-only', '--trusted-project', '--no-forced-login-method'
   ])
   const result: string[] = []
   for (let index = 0; index < args.length; index += 1) {
@@ -802,7 +1014,7 @@ function optionErrors(name: string, option: ReturnType<typeof optionValue>, nume
 function unknownOptionErrors(args: string[]): string[] {
   const canonical = new Set([
     '--agents', '--max-threads', '--mission', '--mission-id',
-    '--json', '--readonly', '--read-only', '--trusted-project', '--help', '-h', '--'
+    '--json', '--stdin', '--readonly', '--read-only', '--trusted-project', '--help', '-h', '--'
   ])
   const errors: string[] = []
   const optionArgs = args.includes('--') ? args.slice(0, args.indexOf('--')) : args
@@ -815,7 +1027,7 @@ function unknownOptionErrors(args: string[]): string[] {
 }
 
 function booleanOptionErrors(args: string[]): string[] {
-  const booleanNames = new Set(['--json', '--readonly', '--read-only', '--trusted-project', '--no-forced-login-method', '--help', '-h'])
+  const booleanNames = new Set(['--json', '--stdin', '--readonly', '--read-only', '--trusted-project', '--no-forced-login-method', '--help', '-h'])
   const optionArgs = args.includes('--') ? args.slice(0, args.indexOf('--')) : args
   const errors: string[] = []
   for (const arg of optionArgs) {
@@ -901,6 +1113,15 @@ function renderRunResult(result: any) {
   console.log(`Naruto children: requested ${result.requested_subagents}, target ${result.target_subagents ?? result.requested_subagents}, policy ${result.count_policy || 'exact'}, max threads ${result.max_threads}`)
   console.log(`Started/completed/failed: ${result.started_subagents}/${result.completed_subagents}/${result.failed_subagents}`)
   if (result.status === 'delegation_context_ready') console.log('Continue in the current Naruto parent and wait for every requested child before summarizing.')
+}
+
+function renderParentSummaryResult(result: any) {
+  if (result.ok !== true) {
+    for (const line of renderNarutoBlockedLines(result.blockers || [])) console.log(line)
+    return
+  }
+  console.log(`$sks-naruto parent summary committed: ${result.mission_id}`)
+  console.log(`Workflow run: ${result.workflow_run_id}`)
 }
 
 function renderStatusResult(result: any) {

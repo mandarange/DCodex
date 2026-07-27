@@ -48,8 +48,13 @@ const WIKI_CONTEXT_EXCLUDED = new Set([
   'context-graph.meta.json',
   'context-graph.prev.json',
   'context-graph-events.jsonl',
-  'context-pack.json'
+  'context-pack.json',
+  'code-pack.json',
+  'code-pack.prev.json'
 ]);
+const WIKI_CONTEXT_GIT_EXCLUDED = new Set(
+  [...WIKI_CONTEXT_EXCLUDED].map((name) => `${WIKI_CONTEXT_DIR}/${name}`)
+);
 
 const RELEVANT_EXTENSIONS = new Set([
   '.ts',
@@ -224,13 +229,14 @@ export async function readContextGraphGitState(root: string): Promise<ContextGra
   if (!status || status.code !== 0 || status.timedOut || status.truncated) return unknown;
 
   const { tracked, untracked } = parsePorcelain(status.stdout);
+  const relevantTracked = tracked.filter((relative) => !WIKI_CONTEXT_GIT_EXCLUDED.has(relative));
   const relevantUntracked = untracked.filter(isRelevant);
   return {
-    state: tracked.length === 0 && relevantUntracked.length === 0 ? 'clean' : 'dirty',
+    state: relevantTracked.length === 0 && relevantUntracked.length === 0 ? 'clean' : 'dirty',
     head: headSha,
-    trackedDirtyFingerprint: await fingerprintFiles(root, tracked),
+    trackedDirtyFingerprint: await fingerprintFiles(root, relevantTracked),
     untrackedFingerprint: await fingerprintFiles(root, relevantUntracked),
-    dirtyPaths: [...new Set([...tracked, ...relevantUntracked])].sort()
+    dirtyPaths: [...new Set([...relevantTracked, ...relevantUntracked])].sort()
   };
 }
 

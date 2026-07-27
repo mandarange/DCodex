@@ -11,6 +11,7 @@ import { readSourceHashes } from '../../compiler/freshness.js';
 import {
   buildCodePackFromGraph,
   computeCodePackIndexDigest,
+  isCodePackProjectionBoundToSnapshot,
   projectCodePackFromGraph
 } from '../code-pack.js';
 import { buildWorkspaceCodePack } from '../code-pack-workspace.js';
@@ -178,10 +179,12 @@ test('index_digest binds to the snapshot hash and moves when an export changes',
     const repeat = buildCodePackFromGraph(base.root, base.index, options);
     assert.equal(first.index_digest, repeat.index_digest, 'the same graph must project the same digest');
     assert.equal(first.index_digest, computeCodePackIndexDigest(base.snapshot.snapshotHash, first.entries));
+    assert.equal(isCodePackProjectionBoundToSnapshot(base.snapshot.snapshotHash, first), true);
 
     const withExtraExport = buildCodePackFromGraph(changed.root, changed.index, options);
     assert.notEqual(base.snapshot.snapshotHash, changed.snapshot.snapshotHash);
     assert.notEqual(first.index_digest, withExtraExport.index_digest);
+    assert.equal(isCodePackProjectionBoundToSnapshot(changed.snapshot.snapshotHash, first), false);
   } finally {
     removeProjectionFixture(base.root);
     removeProjectionFixture(changed.root);

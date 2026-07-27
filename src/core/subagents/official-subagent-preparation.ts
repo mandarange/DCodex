@@ -229,7 +229,10 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
     triwikiAttention,
     recommendedAgents: suggestedAgents,
     roleModelPreferences: roleModelPreferences.store.roles,
-    activeMainModel
+    activeMainModel,
+    parentOutputMode: mode === 'naruto' && input.sessionScope ? 'app_naruto_stdin' : 'raw_json',
+    missionId: input.missionId,
+    workflowRunId
   })
   const selectedAgentPlan = officialSubagentOnDemandRolePlan(suggestedAgents)
   const agentRouting = Object.fromEntries(Object.entries(selectedAgentPlan).map(([name, config]) => {

@@ -1,7 +1,7 @@
 export type CommandRisk = 'R0' | 'R1' | 'R2' | 'R3';
 export type CommandLatency = 'fast' | 'normal' | 'long';
 
-export const NARUTO_ACTIONS = ['run', 'status', 'subagents', 'proof', 'help'] as const;
+export const NARUTO_ACTIONS = ['run', 'status', 'subagents', 'proof', 'parent-summary', 'help'] as const;
 export type NarutoAction = typeof NARUTO_ACTIONS[number];
 
 export interface CommandContractV2 {

@@ -24,7 +24,8 @@ export function buildNarutoHelpResult() {
       'sks naruto run "<task>" [--agents N] [--max-threads N] [--trusted-project] [--json]',
       'sks naruto status [latest|M-...] [--json]',
       'sks naruto subagents [latest|M-...] [--json]',
-      'sks naruto proof [latest|M-...] [--json]'
+      'sks naruto proof [latest|M-...] [--json]',
+      'sks naruto parent-summary --mission M-... --stdin [--json] (active Codex App Naruto only)'
     ],
     commands: [...NARUTO_ACTIONS],
     default_requested_subagents: DEFAULT_AUTOMATIC_SUBAGENT_COUNT,

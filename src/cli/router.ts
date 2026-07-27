@@ -260,8 +260,15 @@ export function safeActiveRouteContinuation(command: CommandNameLite, args: read
   const subcommand = String(args[0] || '').toLowerCase();
   const activeRoute = String(state.route || state.route_command || state.mode || '').replace(/^\$/, '').replace(/[-_]/g, '').toUpperCase();
   if (command === 'naruto') {
-    if (activeRoute !== 'NARUTO' || subcommand !== 'run') return false;
+    if (activeRoute !== 'NARUTO') return false;
     const requestedMission = optionValue(args, ['--mission', '--mission-id']);
+    if (subcommand === 'parent-summary') {
+      const explicitParentSummaryMission = optionValue(args, ['--mission']);
+      return Boolean(state.mission_id)
+        && explicitParentSummaryMission === String(state.mission_id)
+        && args.includes('--stdin');
+    }
+    if (subcommand !== 'run') return false;
     return Boolean(state.mission_id)
       && (requestedMission === String(state.mission_id) || requestedMission === 'latest');
   }

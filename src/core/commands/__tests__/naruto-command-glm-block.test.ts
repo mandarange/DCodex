@@ -71,10 +71,33 @@ test('Naruto parser accepts equals syntax and rejects malformed or empty paid fa
 
   assert.equal(parseNarutoArgs(['run', 'task']).trustedProject, false)
 
-  for (const flag of ['--json=true', '--read-only=true', '--readonly=false', '--trusted-project=true', '--help=true']) {
+  for (const flag of ['--json=true', '--stdin=true', '--read-only=true', '--readonly=false', '--trusted-project=true', '--help=true']) {
     const booleanValue = parseNarutoArgs(['run', 'task', flag])
     assert.ok(booleanValue.argumentErrors.some((error) => error.startsWith('boolean_option_value_not_supported:')), flag)
   }
+})
+
+test('Naruto parent-summary parser requires the exact active-mission stdin surface', () => {
+  const valid = parseNarutoArgs([
+    'parent-summary', '--mission', 'M-parent-summary', '--stdin', '--json'
+  ])
+  assert.equal(valid.action, 'parent-summary')
+  assert.equal(valid.missionId, 'M-parent-summary')
+  assert.equal(valid.stdin, true)
+  assert.deepEqual(valid.argumentErrors, [])
+
+  assert.ok(parseNarutoArgs(['parent-summary', '--stdin'])
+    .argumentErrors.includes('parent_summary_requires_explicit_mission'))
+  assert.ok(parseNarutoArgs(['parent-summary', '--mission', 'M-parent-summary'])
+    .argumentErrors.includes('parent_summary_requires_stdin'))
+  assert.ok(parseNarutoArgs(['parent-summary', '--mission', 'latest', '--stdin'])
+    .argumentErrors.includes('parent_summary_requires_explicit_mission'))
+  assert.ok(parseNarutoArgs(['parent-summary', '--mission-id', 'M-parent-summary', '--stdin'])
+    .argumentErrors.includes('parent_summary_mission_id_alias_not_supported'))
+  assert.ok(parseNarutoArgs(['parent-summary', '--mission', 'M-parent-summary', '--stdin', '--agents', '2'])
+    .argumentErrors.includes('parent_summary_unsupported_run_option'))
+  assert.ok(parseNarutoArgs(['status', 'latest', '--stdin'])
+    .argumentErrors.includes('stdin_only_supported_for_parent_summary'))
 })
 
 test('Naruto parser treats non-current backend scheduler pool and model options as unknown', () => {

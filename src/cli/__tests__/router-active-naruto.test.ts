@@ -28,7 +28,7 @@ test('SKS Center nested read probes skip migration-blocking classification', () 
   assert.equal(safeReadOnlySubcommand('remote', ['run', '--fix']), false)
 })
 
-test('active Naruto admits only an explicit same-mission run continuation', () => {
+test('active Naruto admits only explicit same-mission run and parent-summary continuations', () => {
   const state = {
     mission_id: 'M-active',
     mode: 'NARUTO',
@@ -41,6 +41,12 @@ test('active Naruto admits only an explicit same-mission run continuation', () =
   assert.equal(safeActiveRouteContinuation('naruto', ['run', 'task', '--mission', 'M-other'], state), false)
   assert.equal(safeActiveRouteContinuation('naruto', ['run', 'task'], state), false)
   assert.equal(safeActiveRouteContinuation('naruto', ['proof', 'M-active'], state), false)
+  assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission', 'M-active', '--stdin'], state), true)
+  assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission=M-active', '--stdin', '--json'], state), true)
+  assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission', 'M-active'], state), false)
+  assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission', 'latest', '--stdin'], state), false)
+  assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission', 'M-other', '--stdin'], state), false)
+  assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission-id', 'M-active', '--stdin'], state), false)
 })
 
 test('Naruto observation dispatch skips migration repair and remains read-only', async () => {

@@ -419,7 +419,7 @@ async function rebuildHostCapabilityEvidenceForFinalization(input: {
   };
 }
 
-function completeNarutoTerminalBundle(input: any) {
+export function completeNarutoTerminalBundle(input: any) {
   const runId = String(input.workflowRunId || '').trim();
   const parent = normalizeSubagentParentSummary(input.parentSummary);
   return Boolean(

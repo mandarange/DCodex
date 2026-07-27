@@ -761,6 +761,9 @@ test('official events plus parent summary pass Naruto without legacy process art
       parentModel: 'gpt-5.6-sol'
     });
     assert.match(prepared.additionalContext, /requested subagents: 2/i);
+    assert.match(prepared.additionalContext, /sks naruto parent-summary --mission .* --stdin --json/i);
+    assert.match(prepared.additionalContext, /return concise Markdown in the user's language/i);
+    assert.doesNotMatch(prepared.additionalContext, /return one JSON object as the final message/i);
     let state: any = await loadStateForSession(root, session);
     assert.equal(state.native_sessions_required, false);
     assert.equal(state.subagents_required, true);
@@ -846,6 +849,78 @@ test('official events plus parent summary pass Naruto without legacy process art
     assert.equal(gate.evidence.ssot_guard, 'ssot-guard.json');
     assert.equal(proof.evidence.route_gate.workflow_run_id, plan.workflow_run_id);
     assert.equal(state.reflection_invalidation_required, true);
+
+    const resumed: any = await evaluateHookPayload('user-prompt-submit', {
+      conversation_id: session,
+      turn_id: 'turn-official-parent-visible-final',
+      prompt: '계속 진행해줘'
+    }, { root });
+    assert.match(String(resumed.additionalContext || ''), /trustworthy current-run parent evidence/i);
+    assert.match(String(resumed.additionalContext || ''), /Return concise Markdown in the user's language/i);
+    assert.doesNotMatch(String(resumed.additionalContext || ''), /Build the exact sks\.subagent-parent-summary\.v1 object/i);
+    assert.doesNotMatch(String(resumed.additionalContext || ''), /parent-summary --mission .* --stdin/i);
+
+    const reflectionCreatedAt = new Date(Date.parse(state.reflection_invalidated_at) + 1_000).toISOString();
+    await fsp.writeFile(path.join(dir, 'reflection.md'), '# Reflection\n\nNo issue found.\n');
+    await fsp.writeFile(path.join(dir, 'reflection-gate.json'), JSON.stringify({
+      passed: true,
+      created_at: reflectionCreatedAt,
+      reflection_artifact: true,
+      no_issue_acknowledged: true,
+      wiki_refreshed_or_packed: true,
+      wiki_validated: true
+    }));
+    const terminalFiles = [
+      'subagent-parent-summary.json',
+      'subagent-evidence.json',
+      'naruto-gate.json',
+      'completion-proof.json'
+    ];
+    const canonicalEvidenceFiles = terminalFiles.slice(0, 3);
+    const canonicalEvidenceBytes = await Promise.all(canonicalEvidenceFiles.map((name) => (
+      fsp.readFile(path.join(dir, name), 'utf8')
+    )));
+    const missingVisibleHonestMode: any = await evaluateHookPayload('stop', {
+      conversation_id: session,
+      turn_id: 'turn-official-parent-missing-visible-honest',
+      last_assistant_message: '## 완료 요약\n\n모든 변경과 검증을 마쳤습니다.'
+    }, { root, state });
+    assert.equal(missingVisibleHonestMode.decision, 'block');
+    assert.match(missingVisibleHonestMode.reason, /솔직모드|Honest Mode/i);
+    assert.deepEqual(await Promise.all(canonicalEvidenceFiles.map((name) => (
+      fsp.readFile(path.join(dir, name), 'utf8')
+    ))), canonicalEvidenceBytes);
+    const terminalBytes = await Promise.all(terminalFiles.map((name) => (
+      fsp.readFile(path.join(dir, name), 'utf8')
+    )));
+
+    const visibleFinal: any = await evaluateHookPayload('stop', {
+      conversation_id: session,
+      turn_id: 'turn-official-parent-markdown-final',
+      last_assistant_message: [
+        '## 완료 요약',
+        '',
+        '요청한 변경과 통합을 마쳤습니다.',
+        '',
+        '## 검증',
+        '',
+        '집중 회귀 검사를 통과했습니다.',
+        '',
+        '## 남은 문제',
+        '',
+        '없음.',
+        '',
+        '## SKS 솔직모드',
+        '',
+        '목표와 현재 실행 증거가 일치하며 확인하지 못한 항목은 없습니다.'
+      ].join('\n')
+    }, { root, state });
+    assert.equal(visibleFinal.continue, true, JSON.stringify(visibleFinal, null, 2));
+    assert.match(String(visibleFinal.systemMessage || ''), /canonical stop-gate/i);
+    assert.deepEqual(await Promise.all(terminalFiles.map((name) => (
+      fsp.readFile(path.join(dir, name), 'utf8')
+    ))), terminalBytes);
+
     const terminalEvents = await fsp.readFile(path.join(dir, 'subagent-events.jsonl'), 'utf8');
     await evaluateHookPayload('subagent-stop', officialSubagentHookPayload('SubagentStop', 'agent-late', 'Unrelated later result.'), { root, state });
     assert.equal(await fsp.readFile(path.join(dir, 'subagent-events.jsonl'), 'utf8'), terminalEvents);

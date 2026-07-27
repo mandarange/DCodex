@@ -17,6 +17,8 @@ export interface ActiveMainModelRouting {
   model: string
 }
 
+export type OfficialSubagentParentOutputMode = 'raw_json' | 'app_naruto_stdin'
+
 export interface OfficialSubagentSlice {
   id: string
   title: string
@@ -42,6 +44,9 @@ export function buildOfficialSubagentPrompt(input: {
   recommendedAgents?: readonly string[]
   roleModelPreferences?: Readonly<Record<string, RoleModelPreference>>
   activeMainModel?: ActiveMainModelRouting | null
+  parentOutputMode?: OfficialSubagentParentOutputMode
+  missionId?: string
+  workflowRunId?: string
 }): string {
   const maxThreads = clampThreads(input.maxThreads)
   const requestedSubagents = normalizeRequestedSubagents(input.requestedSubagents, input.slices.length)
@@ -85,6 +90,9 @@ export function buildOfficialSubagentPrompt(input: {
   const activeMainModel = normalizedActiveMainModel(input.activeMainModel)
   const inheritActiveMainOntoChildren = childInheritsActiveMainModel(activeMainModel?.model)
   const spawnModelRouting = renderSpawnModelRouting(activeMainModel)
+  const parentOutputMode = input.parentOutputMode === 'app_naruto_stdin'
+    ? 'app_naruto_stdin'
+    : 'raw_json'
   const rows = resolvedSlices.map(({ slice, agentName }, index) => {
     const mode = slice.readOnly ? 'read-only' : 'use the parent permission mode'
     const paths = (slice.paths || []).map((entry) => String(entry).trim()).filter(Boolean)
@@ -202,7 +210,14 @@ ${String(input.goal || '').trim()}
 Slices:
 ${rows || '(parent decomposition required before any subagent is spawned)'}
 
-Final parent output:
+${parentOutputMode === 'app_naruto_stdin'
+    ? renderAppNarutoParentOutput(input.missionId, input.workflowRunId)
+    : renderRawJsonParentOutput()}
+`.trim()
+}
+
+function renderRawJsonParentOutput(): string {
+  return `Final parent output:
 - return one JSON object as the final message; prose outside that object is not completion evidence
 - use this exact schema so SKS can correlate every stopped agent thread with a trustworthy parent outcome:
 {
@@ -242,7 +257,41 @@ Final parent output:
 - if changed_files is non-empty, include at least one passed named check or a specifically justified not_applicable verification row
 - use empty artifacts/capabilities_used arrays when no host capability was used; SKS overwrites these fields with observed Codex JSONL evidence before persistence
 - keep completion summary and Honest Mode wording inside the JSON fields; do not add prose outside the object
-`.trim()
+`
+}
+
+function renderAppNarutoParentOutput(missionId: unknown, workflowRunId: unknown): string {
+  const mission = String(missionId || '').trim()
+  const runId = String(workflowRunId || '').trim()
+  return `Final parent output for this active Codex App Naruto run:
+- build one exact JSON object using the strict sks.subagent-parent-summary.v1 schema below, with run_id=${JSON.stringify(runId || 'workflow_run_id from subagent-plan.json')}
+- send that object only through stdin to \`sks naruto parent-summary --mission ${mission || '<mission-id>'} --stdin --json\`; this command is the sole parent-summary commit path
+- do not expose, paste, quote, embed, or fence the JSON in the user-visible response
+- only after the command accepts the object, return concise Markdown in the user's language with completion summary, verification, remaining gaps/blockers, and Honest Mode
+- if the parent status, any thread outcome, or any blocker is blocked/failed, state the blocker or failure first and do not use completion or success wording
+- a successful visible response must contain an explicit completion summary and Honest Mode assessment; hard-blocked/failed responses state the blocker first instead
+- use this exact object schema for the stdin submission:
+{
+  "schema": "sks.subagent-parent-summary.v1",
+  "run_id": "workflow_run_id from subagent-plan.json",
+  "status": "completed|blocked|failed",
+  "summary": "Concise integrated result and Honest Mode assessment.",
+  "thread_outcomes": [
+    { "thread_id": "official agent/thread id", "status": "completed|blocked|failed", "summary": "slice result" }
+  ],
+  "changed_files": [],
+  "verification": [
+    { "name": "focused check", "status": "passed|not_applicable", "reason": "required when not_applicable" }
+  ],
+  "artifacts": [],
+  "capabilities_used": [],
+  "blockers": []
+}
+- include one thread_outcomes row for every requested subagent; a SubagentStop event alone never proves success
+- copy workflow_run_id from subagent-plan.json into run_id exactly so delayed or stale summaries cannot bind to another run
+- if changed_files is non-empty, include at least one passed named check or a specifically justified not_applicable verification row
+- use empty artifacts/capabilities_used arrays when no host capability was used; SKS replaces these fields with observed Codex JSONL evidence before canonical persistence
+`
 }
 
 function renderRoleModelPreferenceMetadata(

@@ -50,7 +50,7 @@ test('agent-bridge contract smokes validate status and Naruto help without start
           action: 'help',
           workflow: 'official_codex_subagent',
           max_depth: 1,
-          commands: ['run', 'status', 'subagents', 'proof', 'help']
+          commands: ['run', 'status', 'subagents', 'proof', 'parent-summary', 'help']
         });
     return { code: 0, stdout, stderr: '', stdoutBytes: stdout.length, stderrBytes: 0, truncated: false, timedOut: false };
   });

@@ -32,3 +32,20 @@ test('honest loopback ignores resolved empty-gap summary lines', () => {
   ].join('\n');
   assert.deepEqual(honestModeGapLines(text), []);
 });
+
+test('honest loopback accepts a Markdown remaining-gaps heading followed by none', () => {
+  const text = [
+    '## 완료 요약',
+    '',
+    '요청한 변경과 검증을 마쳤습니다.',
+    '',
+    '## 남은 문제',
+    '',
+    '없음.',
+    '',
+    '## SKS 솔직모드',
+    '',
+    '검증 근거와 결과가 일치합니다.'
+  ].join('\n');
+  assert.deepEqual(honestModeGapLines(text), []);
+});
