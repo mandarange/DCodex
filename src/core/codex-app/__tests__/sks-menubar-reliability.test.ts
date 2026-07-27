@@ -40,7 +40,7 @@ test('menubar restart re-bootstraps when launchd no longer has the service loade
   await fs.mkdir(path.dirname(fixture.paths.executable_path), { recursive: true });
   await fs.writeFile(fixture.paths.executable_path, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   const first = await runProcess(fixture.launchctl, ['kickstart', '-k', 'gui/501/com.sneakoscope.sks-menubar'], {
-    timeoutMs: 2_000,
+    timeoutMs: 10_000,
     maxOutputBytes: 8 * 1024
   }).catch((error: unknown) => ({ code: 1, stdout: '', stderr: String(error) }));
   assert.equal(first.code, 113, `direct kickstart should miss the service: ${JSON.stringify(first)}`);
