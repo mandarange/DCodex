@@ -3,14 +3,20 @@ import { CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_ONLY_POLICY, COD
 
 export { productDesignPluginPolicyText };
 
+const GETDESIGN_CODEX_SKILL_REPOSITORY = 'MohtashamMurshid/getdesign';
+const GETDESIGN_CODEX_SKILL_REF = '83e9840d4a5744b5f10117ec00b855059e5abc25';
+
 export const GETDESIGN_REFERENCE = {
   id: 'getdesign',
   url: 'https://getdesign.md/',
   docs_url: 'https://docs.getdesign.app/',
   official_urls_url: 'https://docs.getdesign.app/resources/official-urls/',
   codex_guide_url: 'https://docs.getdesign.app/guides/use-with-codex/',
-  codex_skill: 'MohtashamMurshid/getdesign',
-  codex_skill_install: 'skills add MohtashamMurshid/getdesign',
+  codex_skill_repository: GETDESIGN_CODEX_SKILL_REPOSITORY,
+  codex_skill_ref: GETDESIGN_CODEX_SKILL_REF,
+  codex_skill: GETDESIGN_CODEX_SKILL_REPOSITORY,
+  codex_skill_install: `skills add ${GETDESIGN_CODEX_SKILL_REPOSITORY} --global --agent codex --yes`,
+  codex_skill_install_mode: 'manual_only',
   npm_cli: '@getdesign/cli',
   npm_sdk: '@getdesign/sdk',
   official_mcp_available: false,

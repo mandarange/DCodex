@@ -194,11 +194,7 @@ export async function postinstall({ bootstrap, args = [] }: any) {
   else if (globalSkills.status === 'skipped') console.log(`Codex App global $ skills: skipped (${globalSkills.reason}).`);
   else if (globalSkills.status === 'failed') console.log(`Codex App global $ skills: auto setup failed. Run \`sks doctor --fix\`. ${globalSkills.error || ''}`.trim());
   const getdesignSkill = await ensureGlobalGetdesignSkillDuringInstall();
-  if (getdesignSkill.status === 'installed') console.log('getdesign Codex skill: installed.');
-  else if (getdesignSkill.status === 'present') console.log('getdesign Codex skill: already available.');
-  else if (getdesignSkill.status === 'skills_cli_missing') console.log(`getdesign Codex skill: skills CLI missing; generated getdesign-reference skill is installed. Later run \`${getdesignSkill.install}\` if the skills CLI is available.`);
-  else if (getdesignSkill.status === 'skipped') console.log(`getdesign Codex skill: skipped (${getdesignSkill.reason}).`);
-  else if (getdesignSkill.status === 'failed') console.log(`getdesign Codex skill: auto setup failed; generated getdesign-reference skill remains available. ${getdesignSkill.error || ''}`.trim());
+  console.log(`getdesign Codex skill: not installed automatically; generated getdesign-reference skill is available. To install the upstream skill manually, review commit ${getdesignSkill.reviewed_ref} and run \`${getdesignSkill.install}\`.`);
   const bootstrapDecision = await postinstallBootstrapDecision(installRoot);
   if (bootstrapDecision.run) {
     console.log(`SKS bootstrap: ${bootstrapDecision.reason}.`);

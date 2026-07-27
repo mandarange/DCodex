@@ -9,8 +9,10 @@ import { root, assertGate, emitGate, readText } from './gate-lib.js';
 // `postinstall`, because doing so would mutate the global Codex App / shell environment.
 
 const helpers = readText('src/cli/install-helpers.ts');
+const installSupport = readText('src/cli/install-helpers-install-support.ts');
 const desktopConfigPolicy = readText('src/core/codex-runtime/codex-desktop-config-policy.ts');
 const codexConfigGuard = readText('src/core/codex/codex-config-guard.ts');
+const designPolicy = readText('src/core/routes/design-policy.ts');
 
 // Heavy CLI tool installs (brew / npm globals) are opt-in only.
 assertGate(
@@ -27,6 +29,27 @@ assertGate(
 assertGate(
   helpers.includes('runPostinstallProjectRetentionCleanup') && helpers.includes('SKS_POSTINSTALL_RETENTION_CLEANUP'),
   'postinstall mission retention cleanup must be project-scoped and disableable'
+);
+
+const getdesignStart = installSupport.indexOf('export async function ensureGlobalGetdesignSkillDuringInstall');
+assertGate(getdesignStart !== -1, 'getdesign postinstall helper not found');
+const getdesignNextExport = installSupport.indexOf('\nexport ', getdesignStart + 1);
+const getdesignBody = installSupport.slice(getdesignStart, getdesignNextExport === -1 ? installSupport.length : getdesignNextExport);
+assertGate(
+  getdesignBody.includes("reason: 'manual_install_only'"),
+  'third-party getdesign install must remain manual-only'
+);
+assertGate(
+  !getdesignBody.includes('runProcess') && !getdesignBody.includes('findCommandOnPath'),
+  'postinstall must not execute a third-party getdesign installer'
+);
+assertGate(
+  designPolicy.includes("codex_skill_install_mode: 'manual_only'"),
+  'getdesign install metadata must identify the command as manual-only'
+);
+assertGate(
+  /GETDESIGN_CODEX_SKILL_REF = '[a-f0-9]{40}'/.test(designPolicy),
+  'getdesign metadata must record the reviewed upstream commit'
 );
 
 // Config writes are gated (unparseable preserved / unsafe rewrite skipped) and backed up.
@@ -64,6 +87,7 @@ assertGate(
   helpers.includes('SKS_POSTINSTALL_AUTO_INSTALL_CLI_TOOLS=1'),
   'postinstall hint must mention the SKS_POSTINSTALL_AUTO_INSTALL_CLI_TOOLS=1 opt-in'
 );
+assertGate(helpers.includes('not installed automatically'), 'postinstall hint must identify getdesign as manual-only');
 
 // init.ts hardening: managed Codex config merge is set-if-absent and never force-overwrites features.
 const init = readText('src/core/init.ts');
@@ -92,7 +116,7 @@ assertGate(
 const report = {
   schema: 'sks.postinstall-safe-side-effects.v1',
   ok: true,
-  gated: ['cli_install', 'process_kill', 'config_write'],
+  gated: ['cli_install', 'third_party_skill_install', 'process_kill', 'config_write'],
   try_catch_finally: true,
   managed_config_set_if_absent: true
 };
@@ -101,6 +125,6 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
 
 emitGate('postinstall:safe-side-effects', {
-  gated: ['cli_install', 'process_kill', 'config_write'],
+  gated: ['cli_install', 'third_party_skill_install', 'process_kill', 'config_write'],
   try_catch_finally: true
 });

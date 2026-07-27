@@ -276,18 +276,12 @@ export async function ensureGlobalCodexSkillsDuringInstall(opts: any = {}) {
 }
 
 export async function ensureGlobalGetdesignSkillDuringInstall() {
-  if (process.env.SKS_SKIP_POSTINSTALL_GETDESIGN === '1') return { status: 'skipped', reason: 'SKS_SKIP_POSTINSTALL_GETDESIGN=1' };
-  const pathEnv = process.env.PATH || '';
-  const skillsBin = await findCommandOnPath('skills', pathEnv);
-  if (!skillsBin) return { status: 'skills_cli_missing', install: GETDESIGN_REFERENCE.codex_skill_install };
-  const add = await runProcess(skillsBin, ['add', GETDESIGN_REFERENCE.codex_skill], {
-    timeoutMs: 30000,
-    maxOutputBytes: 64 * 1024
-  }).catch((err: any) => ({ code: 1, stdout: '', stderr: err.message }));
-  const out = `${add.stdout || ''}\n${add.stderr || ''}`;
-  if (add.code === 0) return { status: /already|exists|present/i.test(out) ? 'present' : 'installed', command: skillsBin };
-  if (/already|exists|present/i.test(out)) return { status: 'present', command: skillsBin };
-  return { status: 'failed', command: skillsBin, error: out.trim() || 'skills add failed' };
+  return {
+    status: 'skipped',
+    reason: 'manual_install_only',
+    install: GETDESIGN_REFERENCE.codex_skill_install,
+    reviewed_ref: GETDESIGN_REFERENCE.codex_skill_ref
+  };
 }
 
 export async function ensureCodexImagegenDuringInstall(opts: any = {}) {
