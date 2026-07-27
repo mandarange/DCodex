@@ -273,7 +273,15 @@ async function wikiRefreshCode(args: any = []): Promise<void> {
   // create it, and the evidence extractor needs it to avoid a directory read.
   const proofIndex = repairTriWikiProofIndex(root);
 
-  const compiled = await compileContextGraph({ root, extractors: contextGraphExtractors() });
+  const compiled = await compileContextGraph({
+    root,
+    extractors: contextGraphExtractors(),
+    // `context-pack.json` is a generated graph input but is intentionally
+    // excluded from the cache key. The explicit repair path must therefore
+    // re-read extractor inputs instead of replaying a fragment captured before
+    // the latest `wiki pack`.
+    useFragmentCache: false
+  });
   const lintErrors = compiled.issues.filter((issue: any) => issue.severity === 'error');
   if (!compiled.ok || !compiled.snapshot) {
     const blocked = {

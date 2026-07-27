@@ -6,7 +6,7 @@ import { sha256 } from '../../../../fsx.js';
 import { compileContextGraph } from '../index.js';
 import { contextGraphNodeId } from '../../ids.js';
 import { contextGraphFragmentCacheDir, contextGraphSnapshotPath } from '../../paths.js';
-import { readContextGraphSnapshot } from '../../store/snapshot-store.js';
+import { readContextGraphMeta, readContextGraphSnapshot } from '../../store/snapshot-store.js';
 import {
   FIXED_OBSERVED_AT,
   edgeBetween,
@@ -65,6 +65,54 @@ test('an unknown git state makes the cache non-reusable and disables the fragmen
     assert.equal(result.ok, true);
     assert.equal(result.cacheReusable, false, 'a fixture directory is not a git repo, so git state is unknown');
     assert.equal(fs.existsSync(contextGraphFragmentCacheDir(root)), false, 'no fragment may be cached under an unknown git state');
+  } finally {
+    removeFixtureRoot(root);
+  }
+});
+
+test('a repair compile can bypass a stale fragment for a generated input excluded from the cache key', async (t) => {
+  if (!gitAvailable()) {
+    t.skip('git is required to prove the generated input does not change the reusable cache key');
+    return;
+  }
+
+  const root = makeFixtureRoot('cg-generated-input-repair');
+  const generated = '.sneakoscope/wiki/context-pack.json';
+  try {
+    writeFixtureFile(root, 'src/a.ts', 'export const A = 1;\n');
+    const firstHash = writeFixtureFile(root, generated, '{"generation":1}\n');
+    initGitRepo(root);
+
+    const extractor = fileGraphExtractor('evidence', '1.0.0', [generated]);
+    const first = await compileContextGraph({
+      root,
+      extractors: [extractor],
+      observedAt: FIXED_OBSERVED_AT
+    });
+    assert.equal(first.ok, true);
+    assert.equal(extractor.calls.length, 1);
+    assert.equal(first.meta?.inputHashes[generated], firstHash);
+
+    const secondHash = writeFixtureFile(root, generated, '{"generation":2}\n');
+    const cached = await compileContextGraph({
+      root,
+      extractors: [extractor],
+      observedAt: FIXED_OBSERVED_AT
+    });
+    assert.equal(cached.ok, true);
+    assert.equal(extractor.calls.length, 1, 'the unchanged cache key replays the previous fragment by default');
+    assert.equal(cached.meta?.inputHashes[generated], firstHash);
+
+    const repaired = await compileContextGraph({
+      root,
+      extractors: [extractor],
+      observedAt: FIXED_OBSERVED_AT,
+      useFragmentCache: false
+    });
+    assert.equal(repaired.ok, true);
+    assert.equal(extractor.calls.length, 2, 'the explicit repair compile must re-run the extractor');
+    assert.equal(repaired.meta?.inputHashes[generated], secondHash);
+    assert.equal((await readContextGraphMeta(root)).meta?.inputHashes[generated], secondHash);
   } finally {
     removeFixtureRoot(root);
   }
