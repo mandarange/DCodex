@@ -15,6 +15,11 @@ import {
   renderAuthoritativeSksSkillContext,
   resolveAuthoritativeSksSkillSources
 } from '../codex-native/sks-skill-paths.js';
+import {
+  healStaleGlobalManagedSkillGeneration,
+  managedSkillResolutionIsHealable,
+  type StaleGlobalManagedSkillGeneration
+} from './managed-skill-generation-heal.js';
 import { looksLikeActiveContinuationPrompt } from './naruto-decision-gate.js';
 import {
   extractUserPrompt,
@@ -120,7 +125,7 @@ async function readStandaloneParentRouteContext(root: string, missionId: string)
 }
 
 export async function authoritativeSksSkillAdmission(root: string, skillNames: readonly unknown[]) {
-  const resolution = await resolveAuthoritativeSksSkillSources({ root, skillNames }).catch(() => null);
+  let resolution = await resolveAuthoritativeSksSkillSources({ root, skillNames }).catch(() => null);
   if (!resolution) {
     return {
       resolution: null,
@@ -131,16 +136,27 @@ export async function authoritativeSksSkillAdmission(root: string, skillNames: r
       }
     };
   }
+  let healedGeneration: StaleGlobalManagedSkillGeneration | null = null;
+  if (managedSkillResolutionIsHealable(resolution)) {
+    healedGeneration = await healStaleGlobalManagedSkillGeneration().catch(() => null);
+    if (healedGeneration) {
+      const rechecked = await resolveAuthoritativeSksSkillSources({ root, skillNames }).catch(() => null);
+      if (rechecked) resolution = rechecked;
+    }
+  }
   if (resolution.unresolved.length || resolution.blockers.length) {
     const details = [
       resolution.unresolved.length ? `unavailable=${resolution.unresolved.join(',')}` : '',
       resolution.blockers.length ? `rejected=${resolution.blockers.join(',')}` : ''
     ].filter(Boolean).join('; ');
+    const repair = healedGeneration
+      ? `Global managed skills were regenerated from sneakoscope ${healedGeneration.installed_version} to ${healedGeneration.runtime_version} and still do not match this runtime, so \`sks doctor --fix\` cannot clear it. Ask the user to install the sneakoscope build that matches this runtime (${healedGeneration.runtime_version}) and retry.`
+      : 'Ask the user to run `sks doctor --fix` (do not run it yourself), then retry.';
     return {
       resolution,
       blocked: {
         decision: 'block',
-        reason: `SKS managed skill availability check failed (${details}). Ask the user to run \`sks doctor --fix\` (do not run it yourself), then retry.`,
+        reason: `SKS managed skill availability check failed (${details}). ${repair}`,
         systemMessage: 'SKS: managed skill availability check blocked this turn.'
       }
     };
