@@ -11,7 +11,7 @@ import { writeCompleteReleaseProofs } from './release-proof-fixture.js'
 test('main push guard requires clean, source-bound release proofs', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-main-push-guard-'))
   try {
-    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '6.3.0' }))
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '8.0.0' }))
     fs.writeFileSync(path.join(root, '.gitignore'), '.sneakoscope/\ndist/\n')
     git(root, ['init', '-b', 'main'])
     git(root, ['config', 'user.email', 'fixture@example.test'])
@@ -31,7 +31,7 @@ test('main push guard requires clean, source-bound release proofs', () => {
 
     const guard = (overrides: Record<string, unknown> = {}) => inspectMainPushGuard({
       root,
-      expectedVersion: '6.3.0',
+      expectedVersion: '8.0.0',
       expectedOriginMain: baseline,
       expectedOriginIdentity,
       requireReleaseStamp: true,
@@ -45,7 +45,7 @@ test('main push guard requires clean, source-bound release proofs', () => {
     assert.equal(passing.ok, true, passing.blockers.join(','))
     assert.equal(passing.head, head)
 
-    const upgradeProof = path.join(root, '.sneakoscope', 'reports', 'release', '6.3.0', 'upgrade-6.2-to-6.3.0.json')
+    const upgradeProof = path.join(root, '.sneakoscope', 'reports', 'release', '8.0.0', 'upgrade-7.6-to-8.0.0.json')
     const upgrade = JSON.parse(fs.readFileSync(upgradeProof, 'utf8'))
     upgrade.target.tarball_sha256 = '0'.repeat(64)
     fs.writeFileSync(upgradeProof, JSON.stringify(upgrade))
@@ -53,7 +53,7 @@ test('main push guard requires clean, source-bound release proofs', () => {
     assert.equal(staleUpgrade.ok, false)
     assert.equal(staleUpgrade.blockers.includes('upgrade_proof:target_tarball_sha256_mismatch'), true)
     upgrade.target.tarball_sha256 = JSON.parse(fs.readFileSync(
-      path.join(root, '.sneakoscope', 'reports', 'release', '6.3.0', 'pack-receipt.json'),
+      path.join(root, '.sneakoscope', 'reports', 'release', '8.0.0', 'pack-receipt.json'),
       'utf8'
     )).sha256
     fs.writeFileSync(upgradeProof, JSON.stringify(upgrade))
@@ -76,7 +76,7 @@ test('main push guard requires clean, source-bound release proofs', () => {
 
     const missingRequirements = inspectMainPushGuard({
       root,
-      expectedVersion: '6.3.0',
+      expectedVersion: '8.0.0',
       expectedOriginMain: baseline,
       expectedOriginIdentity
     })
@@ -86,10 +86,10 @@ test('main push guard requires clean, source-bound release proofs', () => {
     assert.equal(missingRequirements.blockers.includes('macos_proof_requirement_missing'), true)
     assert.equal(missingRequirements.blockers.includes('clean_tree_requirement_missing'), true)
 
-    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '6.3.1' }))
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '8.0.1' }))
     const blocked = guard()
     assert.equal(blocked.ok, false)
-    assert.equal(blocked.blockers.includes('package_version_mismatch:6.3.1'), true)
+    assert.equal(blocked.blockers.includes('package_version_mismatch:8.0.1'), true)
     assert.equal(blocked.blockers.includes('worktree_not_clean'), true)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })

@@ -132,21 +132,21 @@ for await (const line of readLines(child.stdout)) {
 }
 ```
 
-## Compatibility and manifest schema (`sks.agent-manifest.v1`)
+## Compatibility and manifest schema (`sks.agent-manifest.v2`)
 
 Host compatibility is determined by these four schema contracts, not by an SKS
 package-version comparison:
 
 ```text
 bridge_contract = sks.agent-bridge.v1
-agent_manifest_schema = sks.agent-manifest.v1
+agent_manifest_schema = sks.agent-manifest.v2
 naruto_proof_schema = sks.naruto-subagent-workflow.v1
 host_capability_schema = sks.host-capabilities.v1
 ```
 
 Within a schema major, SKS preserves required keys, field types, and enum
 meanings; additive optional fields and new capabilities are allowed. A breaking
-change requires a new version of the affected schema. For `sks.agent-manifest.v1`,
+change requires a new version of the affected schema. For `sks.agent-manifest.v2`,
 `compatibility` and `host_capabilities` are required blocks; validators fail closed
 when either is missing. `compatibility.package_version`
 reports the running package version for diagnostics only: hosts must not use it
@@ -157,11 +157,11 @@ or binary fallback.
 
 ```json
 {
-  "schema": "sks.agent-manifest.v1",
+  "schema": "sks.agent-manifest.v2",
   "generated_at": "...",
   "compatibility": {
     "bridge_contract": "sks.agent-bridge.v1",
-    "manifest_schema": "sks.agent-manifest.v1",
+    "manifest_schema": "sks.agent-manifest.v2",
     "proof_schema": "sks.naruto-subagent-workflow.v1",
     "host_capability_schema": "sks.host-capabilities.v1",
     "package_version": "7.4.0"

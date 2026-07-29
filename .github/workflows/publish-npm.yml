@@ -159,7 +159,7 @@ jobs:
           path: downloaded/linux
       - name: Restore exact tarball and content-bound receipt
         run: tar -xzf downloaded/linux/linux-release-proof.tgz
-      - name: Prove isolated 6.2.0 upgrade to the exact candidate
+      - name: Prove isolated 7.6.0 upgrade to the exact candidate
         env:
           VERSION: ${{ inputs.version }}
         run: |
@@ -178,7 +178,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          UPGRADE_PROOF=".sneakoscope/reports/release/${VERSION}/upgrade-6.2-to-${VERSION}.json"
+          UPGRADE_PROOF=".sneakoscope/reports/release/${VERSION}/upgrade-7.6-to-${VERSION}.json"
           node ./dist/scripts/release-macos-menubar-proof.js \
             --install-report .sneakoscope/reports/menubar-install.json \
             --upgrade-report "$UPGRADE_PROOF"
@@ -186,7 +186,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          UPGRADE_PROOF=".sneakoscope/reports/release/${VERSION}/upgrade-6.2-to-${VERSION}.json"
+          UPGRADE_PROOF=".sneakoscope/reports/release/${VERSION}/upgrade-7.6-to-${VERSION}.json"
           test -f "$UPGRADE_PROOF"
           tar -czf macos-menubar-proof.tgz \
             .sneakoscope/reports/menubar-install.json \
@@ -266,7 +266,7 @@ jobs:
           import crypto from 'node:crypto'
           import fs from 'node:fs'
           const proof = JSON.parse(fs.readFileSync(`.sneakoscope/reports/release/${process.env.VERSION}/macos-menubar-proof.json`, 'utf8'))
-          const upgradePath = `.sneakoscope/reports/release/${process.env.VERSION}/upgrade-6.2-to-${process.env.VERSION}.json`
+          const upgradePath = `.sneakoscope/reports/release/${process.env.VERSION}/upgrade-7.6-to-${process.env.VERSION}.json`
           const upgradeSha256 = crypto.createHash('sha256').update(fs.readFileSync(upgradePath)).digest('hex')
           if (proof.ok !== true) throw new Error(`macOS proof blocked: ${(proof.blockers || []).join(',')}`)
           if (proof.schema !== 'sks.macos-menubar-proof.v2') throw new Error('macOS proof schema mismatch')
@@ -274,7 +274,7 @@ jobs:
           if (proof.source_commit !== process.env.EXPECTED_SHA) throw new Error('macOS proof source commit mismatch')
           if (proof.upgrade_report_path !== upgradePath || proof.upgrade_report_sha256 !== upgradeSha256) throw new Error('macOS upgrade proof binding mismatch')
           if (proof.upgrade_report?.schema !== 'sks.release-upgrade-smoke.v2'
-            || proof.upgrade_report?.baseline_version !== '6.2.0'
+            || proof.upgrade_report?.baseline_version !== '7.6.0'
             || proof.upgrade_report?.target_version !== process.env.VERSION
             || proof.upgrade_report?.source_commit !== process.env.EXPECTED_SHA) throw new Error('macOS embedded upgrade identity mismatch')
           NODE
@@ -300,7 +300,7 @@ jobs:
           cp ".sneakoscope/reports/release/${VERSION}/pack-receipt.json" release-handoff/
           cp ".sneakoscope/reports/release/${VERSION}/pack-compare.json" release-handoff/
           cp ".sneakoscope/reports/release/${VERSION}/macos-menubar-proof.json" release-handoff/
-          cp ".sneakoscope/reports/release/${VERSION}/upgrade-6.2-to-${VERSION}.json" release-handoff/
+          cp ".sneakoscope/reports/release/${VERSION}/upgrade-7.6-to-${VERSION}.json" release-handoff/
           cp ".sneakoscope/reports/release/${VERSION}/main-push-guard.json" release-handoff/
           cp .sneakoscope/reports/installed-package-smoke.json release-handoff/
           node --input-type=module <<'NODE'
@@ -373,7 +373,7 @@ jobs:
             'pack-compare.json',
             'pack-receipt.json',
             `sneakoscope-${process.env.VERSION}.tgz`,
-            `upgrade-6.2-to-${process.env.VERSION}.json`
+            `upgrade-7.6-to-${process.env.VERSION}.json`
           ].sort()
           const entryFiles = manifest.entries.map(entry => String(entry.file || '')).sort()
           if (JSON.stringify(entryFiles) !== JSON.stringify(expectedFiles)) throw new Error('handoff inventory mismatch')
@@ -402,7 +402,7 @@ jobs:
             || smoke.postinstall_default.external_findings.length !== 0
             || !Array.isArray(smoke.postinstall_default?.launchctl_calls)
             || smoke.postinstall_default.launchctl_calls.length !== 0) throw new Error('default postinstall safety proof mismatch')
-          const upgradeFile = `upgrade-6.2-to-${process.env.VERSION}.json`
+          const upgradeFile = `upgrade-7.6-to-${process.env.VERSION}.json`
           const upgradeBytes = fs.readFileSync(path.join('release-handoff', upgradeFile))
           const upgrade = JSON.parse(upgradeBytes.toString('utf8'))
           const upgradeSha256 = crypto.createHash('sha256').update(upgradeBytes).digest('hex')
@@ -420,7 +420,7 @@ jobs:
           if (macos.schema !== 'sks.macos-menubar-proof.v2' || macos.ok !== true || macos.version !== process.env.VERSION || macos.source_commit !== process.env.SOURCE_SHA) throw new Error('macOS proof identity mismatch')
           if (macos.upgrade_report_path !== expectedUpgradePath || macos.upgrade_report_sha256 !== upgradeSha256) throw new Error('macOS upgrade report hash mismatch')
           if (macos.upgrade_report?.schema !== 'sks.release-upgrade-smoke.v2'
-            || macos.upgrade_report?.baseline_version !== '6.2.0'
+            || macos.upgrade_report?.baseline_version !== '7.6.0'
             || macos.upgrade_report?.target_version !== process.env.VERSION
             || macos.upgrade_report?.source_commit !== process.env.SOURCE_SHA
             || macos.upgrade_report?.target_tarball_sha256 !== receipt.sha256
@@ -428,8 +428,8 @@ jobs:
             || macos.upgrade_report?.target_tarball_sha512_integrity !== receipt.sha512_integrity
             || macos.upgrade_report?.target_package_version !== process.env.VERSION) throw new Error('macOS embedded upgrade binding mismatch')
           if (upgrade.schema !== 'sks.release-upgrade-smoke.v2' || upgrade.ok !== true || !Array.isArray(upgrade.blockers) || upgrade.blockers.length !== 0) throw new Error('upgrade proof is not approved')
-          if (upgrade.platform !== 'darwin' || upgrade.baseline_version !== '6.2.0' || upgrade.target_version !== process.env.VERSION) throw new Error('upgrade proof version or platform mismatch')
-          if (upgrade.baseline?.pinned_sha256 !== 'dd0bfc022348c11dc737055845708f6272beaf2a8f9c16d068acf3c8c612f9bc' || upgrade.baseline?.tarball_sha256 !== upgrade.baseline.pinned_sha256) throw new Error('upgrade baseline binding mismatch')
+          if (upgrade.platform !== 'darwin' || upgrade.baseline_version !== '7.6.0' || upgrade.target_version !== process.env.VERSION) throw new Error('upgrade proof version or platform mismatch')
+          if (upgrade.baseline?.pinned_sha256 !== '40a9e89f3a234dfcd32507ab7deeb95044084cae95a9ce46b36be4113d5b2a7c' || upgrade.baseline?.tarball_sha256 !== upgrade.baseline.pinned_sha256) throw new Error('upgrade baseline binding mismatch')
           if (upgrade.source_tree?.ok !== true || upgrade.source_tree?.head !== process.env.SOURCE_SHA || !Array.isArray(upgrade.source_tree?.dirty_entries) || upgrade.source_tree.dirty_entries.length !== 0 || !Array.isArray(upgrade.source_tree?.blockers) || upgrade.source_tree.blockers.length !== 0) throw new Error('upgrade source binding mismatch')
           if (upgrade.target?.binding_ok !== true
             || upgrade.target?.source_commit !== process.env.SOURCE_SHA
@@ -490,7 +490,7 @@ jobs:
           }
           if (Object.keys(upgrade.states || {}).length !== upgradeStates.length || upgradeStates.some(name => {
             const state = upgrade.states?.[name]
-            const expected = name.startsWith('target_') ? process.env.VERSION : '6.2.0'
+            const expected = name.startsWith('target_') ? process.env.VERSION : '7.6.0'
             return state?.status !== 'passed' || state?.expected_version !== expected || state?.observed_version !== expected
               || JSON.stringify(state?.command_stages) !== JSON.stringify(upgradeStateStages[name])
               || !Array.isArray(state?.blockers) || state.blockers.length !== 0
@@ -502,8 +502,8 @@ jobs:
           if (guard.upgrade_proof?.ok !== true || guard.upgrade_proof?.path !== expectedUpgradePath || guard.upgrade_proof?.sha256 !== upgradeSha256 || !Array.isArray(guard.upgrade_proof?.blockers) || guard.upgrade_proof.blockers.length !== 0) throw new Error('main push guard upgrade binding mismatch')
           const closure = smoke.public_surface?.closure
           if (!closure || closure.all_rejected !== true || closure.receipt_safe !== true || closure.rejected_count !== closure.command_probe_count + closure.dollar_command_probe_count + closure.argument_probe_count + closure.subcommand_probe_count) throw new Error('installed public surface closure mismatch')
-          if (closure.command_probe_count !== 8 || closure.dollar_command_probe_count !== 64 || closure.argument_probe_count !== 5 || closure.subcommand_probe_count !== 2 || closure.rejected_count !== 79) throw new Error('installed public surface closure inventory mismatch')
-          if (closure.expected_reason_counts?.unknown_command !== 75 || closure.expected_reason_counts?.unknown_subcommand !== 2 || closure.expected_reason_counts?.unsupported_argument !== 2 || closure.observed_reason_counts?.unknown_command !== 75 || closure.observed_reason_counts?.unknown_subcommand !== 2 || closure.observed_reason_counts?.unsupported_argument !== 2 || closure.observed_reason_counts?.other !== 0) throw new Error('installed public surface closure reason mismatch')
+          if (closure.command_probe_count !== 9 || closure.dollar_command_probe_count !== 66 || closure.argument_probe_count !== 5 || closure.subcommand_probe_count !== 2 || closure.rejected_count !== 82) throw new Error('installed public surface closure inventory mismatch')
+          if (closure.expected_reason_counts?.unknown_command !== 78 || closure.expected_reason_counts?.unknown_subcommand !== 2 || closure.expected_reason_counts?.unsupported_argument !== 2 || closure.observed_reason_counts?.unknown_command !== 78 || closure.observed_reason_counts?.unknown_subcommand !== 2 || closure.observed_reason_counts?.unsupported_argument !== 2 || closure.observed_reason_counts?.other !== 0) throw new Error('installed public surface closure reason mismatch')
           if ('removed_commands' in smoke.public_surface || 'removed_dollar_commands' in smoke.public_surface || 'rejections' in smoke.public_surface) throw new Error('installed smoke exposes retired surface details')
           const serializedSmoke = JSON.stringify(smoke)
           const retiredTokens = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', '$Agent', '$Team', '$MAD-DB', '$Swarm', '$ShadowClone', '$Kagebunshin', '$Ralph', '--agent', '--naruto', '--clones', 'naruto workers', 'menubar mcp']

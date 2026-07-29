@@ -111,6 +111,14 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
   const providerConfigured = Boolean(block);
   const requiresOpenAiAuth = tomlBoolean(block, 'requires_openai_auth');
   const envKey = tomlString(block, 'env_key');
+  // cli-provider contract: codex CLI routes to the gateway with env_key bearer
+  // auth (requires_openai_auth=false); this is a first-class lb imagegen auth
+  // path, not the legacy desktop destructive shape.
+  const cliContract = providerConfigured
+    && tomlString(block, 'name') === 'codex-lb'
+    && tomlString(block, 'wire_api') === 'responses'
+    && envKey === 'CODEX_LB_API_KEY'
+    && requiresOpenAiAuth === false;
   const baseUrl = tomlString(block, 'base_url') || String(env.CODEX_LB_BASE_URL || '').trim();
   const envPath = opts.codexLbEnvPath || path.join(codexHome, 'sks-codex-lb.env');
   // Resolve through the fingerprint-bound loader rather than re-reading
@@ -122,9 +130,8 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
   const loaded = injectedEnvText === null
     ? await loadCodexLbEnv({
         home,
-        processEnv: env,
+        processEnv: {},
         envPath,
-        legacyEnvPath: path.join(codexHome, 'sks.env'),
         metadataPath: path.join(codexHome, 'sks-codex-lb.json')
       }).catch(() => null)
     : null;
@@ -138,11 +145,13 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
     requiresOpenAiAuth,
     envKey,
     baseUrl,
-    apiKeyPresent
+    apiKeyPresent,
+    cliContract
   });
   return {
     available: blocker === null,
     selected,
+    cli_contract: cliContract,
     provider_configured: providerConfigured,
     requires_openai_auth: requiresOpenAiAuth,
     openai_auth_disabled: requiresOpenAiAuth === false,
@@ -159,8 +168,13 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
 }
 
 function codexLbAuthBlocker(state: any) {
-  if (!state.selected) return 'codex_lb_not_selected';
+  if (!state.selected && !state.cliContract) return 'codex_lb_not_selected';
   if (!state.providerConfigured) return 'codex_lb_provider_missing';
+  if (state.cliContract) {
+    if (!state.apiKeyPresent) return 'codex_lb_api_key_missing';
+    if (!state.baseUrl) return 'codex_lb_base_url_missing';
+    return null;
+  }
   if (state.requiresOpenAiAuth !== true) {
     return state.requiresOpenAiAuth === false ? 'codex_lb_legacy_openai_auth_disabled' : 'codex_lb_requires_openai_auth_missing';
   }

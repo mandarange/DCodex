@@ -14,7 +14,7 @@ const codexHome = path.join(root, 'home', '.codex')
 await fs.mkdir(path.join(root, '.codex'), { recursive: true })
 await fs.mkdir(codexHome, { recursive: true })
 await fs.writeFile(path.join(root, '.codex', 'config.toml'), 'model = "future-codex-model"\nmodel_reasoning_effort = "medium"\nmodel_provider = "codex-lb"\n')
-await fs.writeFile(path.join(codexHome, 'config.toml'), '# SKS forced fast UI during legacy install\nmodel = "legacy-sks-model"\nmodel_reasoning_effort = "xhigh"\nmodel_provider = "codex-lb"\nservice_tier = "fast"\n[features]\nfast_mode = false # user disabled, must remain untouched\n\n[profiles.sks-fast-high]\nmodel = "legacy-profile-model"\nservice_tier = "fast"\n\n[model_providers.codex-lb]\nname = "openai"\nbase_url = "https://lb.example.test/backend-api/codex"\nwire_api = "responses"\nenv_key = "CODEX_LB_API_KEY"\nsupports_websockets = true\nrequires_openai_auth = true\n')
+await fs.writeFile(path.join(codexHome, 'config.toml'), '# SKS forced fast UI during legacy install\nmodel = "legacy-sks-model"\nmodel_reasoning_effort = "xhigh"\nmodel_provider = "codex-lb"\nservice_tier = "fast"\n[features]\nfast_mode = false # user disabled, must remain untouched\n\n[profiles.sks-fast-high]\nmodel = "legacy-profile-model"\nservice_tier = "fast"\n\n[model_providers.codex-lb]\nname = "codex-lb"\nbase_url = "https://lb.example.test/backend-api/codex"\nwire_api = "responses"\nenv_key = "CODEX_LB_API_KEY"\nsupports_websockets = true\nrequires_openai_auth = false\n')
 
 // Keep this hermetic: selected codex-lb readiness must not inherit the release
 // runner's machine credentials or perform a real model-catalog lookup.

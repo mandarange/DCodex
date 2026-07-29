@@ -99,11 +99,13 @@ test('imagegen capability records supported codex-lb auth without satisfying Cod
   const capability = await withoutCodexImagegenEnv(() => detectImagegenCapability({
     codexBin: path.join(home, 'missing-codex'),
     timeoutMs: 100,
-    env: { HOME: home, CODEX_LB_API_KEY: 'sk-clb-test' },
+    env: { HOME: home },
+    codexLbEnvText: 'CODEX_LB_API_KEY=sk-clb-test\n',
     configText: codexLbConfig('true')
   }));
   assert.equal(capability.codex_lb.available, true);
   assert.equal(capability.codex_lb.blocker, null);
+  assert.equal(capability.codex_lb.api_key.source, 'env-file');
   assert.equal(capability.openai_images_api.available, false);
   assert.equal(capability.core_ready, false);
   assert.deepEqual(capability.core_blockers, ['codex_app_builtin_imagegen_capability_missing']);

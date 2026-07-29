@@ -2,13 +2,12 @@ export const REMOTE_MACHINE_REGISTRY_SCHEMA = 'sks.remote-machines.v1' as const;
 export const REMOTE_READINESS_SCHEMA = 'sks.remote-readiness.v1' as const;
 export const REMOTE_WORKER_REQUEST_SCHEMA = 'sks.remote-worker.request.v1' as const;
 export const REMOTE_WORKER_RESPONSE_SCHEMA = 'sks.remote-worker.response.v1' as const;
-export const REMOTE_COMMAND_SCHEMA = 'sks.remote-command.v1' as const;
+export const REMOTE_COMMAND_SCHEMA = 'sks.remote-command.v2' as const;
 export const REMOTE_COMMAND_RECEIPT_SCHEMA = 'sks.remote-command-receipt.v1' as const;
 export const REMOTE_OWNER_PROOF_SCHEMA = 'sks.remote-owner-proof.v1' as const;
-export const REMOTE_R2_APPROVAL_SCHEMA = 'sks.remote-r2-approval.v1' as const;
+export const REMOTE_R2_APPROVAL_SCHEMA = 'sks.remote-r2-approval.v2' as const;
 export const REMOTE_EVENT_SCHEMA = 'sks.remote-event.v1' as const;
 export const REMOTE_SESSION_INDEX_SCHEMA = 'sks.remote-session-index.v1' as const;
-export const REMOTE_CODEX_SESSION_BINDINGS_SCHEMA = 'sks.remote-codex-session-bindings.v1' as const;
 
 export type RemoteRisk = 'R0' | 'R1' | 'R2';
 export type RemoteCommandKind = 'input' | 'verify' | 'cancel' | 'read';
@@ -51,23 +50,6 @@ export interface RemoteSessionIndexValidation {
   readonly index: RemoteSessionIndexV1 | null;
 }
 
-export interface RemoteCodexSessionBindingV1 {
-  readonly session_id: string;
-  readonly machine_id: string;
-  readonly project_id: string;
-  readonly project_root: string;
-  readonly codex_thread_id: string | null;
-  readonly created_at: string;
-  readonly updated_at: string;
-  readonly last_turn_id?: string | null;
-  readonly last_turn_status?: 'completed' | 'failed' | 'interrupted' | null;
-}
-
-export interface RemoteCodexSessionBindingsV1 {
-  readonly schema: typeof REMOTE_CODEX_SESSION_BINDINGS_SCHEMA;
-  readonly bindings: readonly RemoteCodexSessionBindingV1[];
-}
-
 export interface RemoteReadinessV1 {
   readonly schema: typeof REMOTE_READINESS_SCHEMA;
   readonly ok: boolean;
@@ -101,7 +83,7 @@ export interface RemoteReadinessV1 {
 export interface RemoteR2ApprovalV1 {
   readonly schema: typeof REMOTE_R2_APPROVAL_SCHEMA;
   readonly approval_id: string;
-  readonly approved_by: 'telegram-owner';
+  readonly approved_by: 'remote-owner';
   readonly approved_at: string;
   readonly expires_at: string;
   readonly machine_id: string;
@@ -116,7 +98,7 @@ export interface RemoteCommandEnvelopeV1 {
   readonly command_id: string;
   readonly issued_at: string;
   readonly expires_at: string;
-  readonly actor: 'telegram-owner';
+  readonly actor: 'remote-owner';
   readonly machine_id: string;
   readonly project_id: string;
   readonly session_id: string | null;

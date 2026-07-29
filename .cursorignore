@@ -1,0 +1,6 @@
+# Cursor is intentionally independent from the Codex-only SKS harness.
+AGENTS.md
+**/AGENTS.md
+.agents/
+.codex/
+.sneakoscope/

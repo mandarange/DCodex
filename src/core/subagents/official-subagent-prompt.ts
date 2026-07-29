@@ -100,13 +100,6 @@ export function buildOfficialSubagentPrompt(input: {
     const preference = input.roleModelPreferences?.[agentName]
     const sealedReasoning = role?.model_reasoning_effort || 'medium'
     const sealedModel = role?.model || null
-    const effectiveModel = preference
-      ? `${preference.provider}:${preference.model}/${preference.reasoning_effort} (user override)`
-      : inheritActiveMainOntoChildren && activeMainModel
-        ? `${activeMainModel.provider}:${activeMainModel.model}/${sealedReasoning} (active main model)`
-        : sealedModel
-          ? `${inferDisplayProvider(sealedModel)}:${sealedModel}/${sealedReasoning} (sealed role policy)`
-          : 'managed default/dynamic routing'
     const spawnContract = preference
       ? `pass the exact catalog slug model=${JSON.stringify(preference.model)} and reasoning_effort=${JSON.stringify(preference.reasoning_effort)} when spawning this role; logical provider=${JSON.stringify(preference.provider)} is encoded by the active router/catalog and is not a spawn_agent argument`
       : inheritActiveMainOntoChildren && activeMainModel
@@ -117,26 +110,25 @@ export function buildOfficialSubagentPrompt(input: {
 
     return [
       `${index + 1}. [${slice.id}] use custom agent \`${agentName}\``,
-      `   title: ${slice.title}`,
-      `   task: ${slice.description}`,
+      `   ${slice.title}: ${slice.description}`,
       `   model policy: ${role ? `${role.model_policy} (${role.model}/${role.model_reasoning_effort})` : 'resolve from installed custom agent'}`,
-      `   effective model preference: ${effectiveModel}`,
       `   spawn contract: ${spawnContract}`,
-      '   context contract: pass fork_turns="none" and carry this complete bounded slice contract in message because agent_type is selected',
-      `   mode: ${mode}`,
-      `   paths: ${paths.join(', ') || 'assigned by parent'}`
+      `   mode: ${mode}; paths: ${paths.join(', ') || 'assigned by parent'}`
     ].join('\n')
   }).join('\n')
 
   return `
-Use a Codex subagent workflow for the independent slices below.
+Outcome:
+- complete the goal through the bounded slices below; the parent owns decomposition, integration, verification, and the final answer
+- do not duplicate delegated work; finish and verify, or stop with blocked/failed evidence without claiming success
 
 ${coreEngineeringDirectiveReferenceText()}
 
-Parent agent:
-- model policy: ${activeMainModel ? `keep the current app-selected main model ${activeMainModel.provider}:${activeMainModel.model}` : 'gpt-5.6-sol with max reasoning'}
-- owns decomposition, integration, and final answer
-- do not do duplicate work already delegated
+Goal:
+${String(input.goal || '').trim()}
+
+Slices:
+${rows || '(parent decomposition required before any subagent is spawned)'}
 
 Host capability policy:
 - confirm requested tools in the project MCP inventory; if unavailable or unhealthy, return blocked proof and never fabricate a fallback
@@ -146,42 +138,40 @@ Host capability policy:
 - Slack delivery is ACAS-runtime-only, never a model tool
 
 Subagent rules:
+- parent model policy: ${activeMainModel ? `keep the current app-selected main model ${activeMainModel.provider}:${activeMainModel.model}` : 'gpt-5.6-sol with max reasoning'}
 - use only Codex official subagent threads; do not launch shell workers, a custom scheduler, a worker pool, or model fanout
 - select the narrowest matching project custom agent by its description; the custom agent name is the spawn type
-- custom \`agent_type\` selection and spawn-time \`model\`/\`reasoning_effort\` overrides must use \`fork_turns="none"\` or a positive bounded turn count, with the complete bounded slice contract in \`message\`
-- \`spawn_agent\` has no per-child provider argument; cross-provider preferences must use exact model slugs advertised by the active Codex backend/catalog (for example a single multi-provider router exposing \`provider/model\`)
+- custom \`agent_type\` selection and spawn-time \`model\`/\`reasoning_effort\` overrides must use \`fork_turns="none"\` or a positive bounded turn count, with the complete bounded slice contract in \`message\`; context contract: pass fork_turns="none" for listed slices
+- \`spawn_agent\` has no provider argument; cross-provider preferences use exact model slugs from the active backend/catalog
 - never combine \`fork_turns="all"\` or the omitted/default full-history mode with \`agent_type\`, \`model\`, or \`reasoning_effort\`; Codex rejects that start before SubagentStart
-- a full-history fork is allowed only when \`agent_type\`, \`model\`, and \`reasoning_effort\` are all omitted
+- full history is valid only when all three overrides are omitted
 ${spawnModelRouting}
 - use \`worker\` with gpt-5.6-luna and max reasoning for tiny short-context mechanical work such as simple search, typing, rename, copy, label, or one-line edits with no exploration or judgment
 - use gpt-5.6-sol with high reasoning for ordinary UI, logic, backend, and native implementation
 - use gpt-5.6-sol with max reasoning only for focused unresolved, high-risk, final-review, architecture, security, database, research, release, or other explicit judgment slices
 - use gpt-5.6-terra with medium reasoning for read-heavy documentation/exploration, long-context analysis, large or repository-wide search, and direct Computer Use, Browser/Chrome, or image-generation execution
 - explicit task class and phase win over incidental keywords: Terra gathers/explores/searches broadly, Luna handles tiny mechanical edits, Sol High implements, and Sol Max performs the focused judgment pass
-- never assign Luna to long-context, broad exploration, review, debugging, planning, or tool-heavy work
-- never collapse every child onto the parent Sol model when a sealed Luna or Terra role matches the slice
-- automatic fan-out starts at four for bounded non-trivial work, six for explicit parallel work, and eight for large-scale work; it may expand only up to ${MAX_AUTOMATIC_SUBAGENT_COUNT} when independent useful slices and healthy host capacity remain positive
-- prefer the largest useful first wave the host can sustain; shrink only under live resource pressure or unsafe overlapping ownership
+- never assign Luna to long-context, broad exploration, review, debugging, planning, or tool-heavy work; never collapse every child onto the parent Sol model when a sealed Luna or Terra role matches
+
+Plan and capacity:
+- automatic fan-out starts at 4 for bounded non-trivial work, 6 for explicit parallel work, and 8 for large-scale work; expand only up to ${MAX_AUTOMATIC_SUBAGENT_COUNT} while useful independent slices and healthy capacity remain
 - automatic reviewer-only fan-out is capped at ${MAX_AUTOMATIC_REVIEWER_COUNT} for ordinary work and ${MAX_CRITICAL_AUTOMATIC_REVIEWER_COUNT} for critical multi-domain review
 - requested subagents: ${requestedPolicy}
 - max open agent threads: ${maxThreads} (hard cap, never a utilization target)
 - selected first-wave concurrency: ${firstWave}
 - planned waves: ${waveCount}
-- wave lifecycle authority: root parent updates \`subagent-plan.json.wave_lifecycle\` under the same workflow_run_id after every SubagentStart/SubagentStop
-- before every wave compute C_t = min(ready DAG width, disjoint ownership, verifier capacity, tool concurrency, available thread slots after reservations, marginal-useful workers); launch n_t <= C_t only while marginal useful throughput stays positive
 - capacity snapshot: ${renderCapacity(input.capacity)}
-- max depth: 1 applies only to child nesting; the root parent may and should launch later direct-child waves after earlier children settle
-- subagents must not spawn subagents
-- parallel writes require disjoint paths
-- if paths overlap, run those slices serially
+- before every wave compute C_t = min(ready DAG width, disjoint ownership, verifier capacity, tool concurrency, available thread slots after reservations, marginal-useful workers); launch n_t <= C_t only while marginal useful throughput stays positive
+- use the largest safe useful wave within C_t; max depth: 1 applies only to child nesting, so the root parent may launch later direct-child waves; subagents must not spawn subagents
+- parallel writes require disjoint paths; serialize overlaps
 - reject duplicate slice fingerprints and homogeneous clone work; diversity may come from roles, disjoint shards, or different tool surfaces
 - security, database, release, authorization, and irreversible-effect checks are protected strata; aggregate speed or accuracy never offsets a failed protected gate
-- after each settled wave: collect results, close completed threads, refresh evidence and the wave lifecycle ledger, read \`wave_lifecycle.next_parent_actions\` / \`parent_guidance\`, rescan the ready DAG, then launch the next defensible direct-child wave when \`remaining_to_start > 0\`
-- recovered thread capacity is reusable by later root-owned waves; completed child threads do not permanently consume the mission fan-out budget
-- when PreTool/UserPrompt guidance says \`spawn_next_direct_child_wave_upto:N\`, spawn that next wave immediately with sealed custom-agent model/effort profiles; do not wait for another user message
+- after each SubagentStart/SubagentStop, update \`subagent-plan.json.wave_lifecycle\` under the same workflow_run_id
+- after each settled wave: collect results, close completed threads, refresh evidence/ledger, follow \`next_parent_actions\` / \`parent_guidance\`, rescan the ready DAG, then launch the next defensible direct-child wave when \`remaining_to_start > 0\`; capacity is reusable
+- when guidance says \`spawn_next_direct_child_wave_upto:N\`, immediately spawn that wave with sealed role profiles
 - automatic targets may resize between waves when the ready DAG changes, but update plan/evidence before spawning; explicit operator and route-owned counts remain exact
 - wait for every final planned subagent before integrating
-- close completed threads after collecting results so capacity returns to the root parent
+- keep user updates sparse: report phase transitions, blockers, or decisions
 ${parentDecompositionRequired ? `- decomposition status: parent_required
 - before spawning, decompose the goal into independent, non-overlapping slices
 - do not invent write scopes merely to reach the requested count
@@ -204,12 +194,6 @@ ${renderRoleModelPreferenceMetadata(input.roleModelPreferences, activeMainModel)
 Project custom agent catalog:
 ${catalog}
 
-Goal:
-${String(input.goal || '').trim()}
-
-Slices:
-${rows || '(parent decomposition required before any subagent is spawned)'}
-
 ${parentOutputMode === 'app_naruto_stdin'
     ? renderAppNarutoParentOutput(input.missionId, input.workflowRunId)
     : renderRawJsonParentOutput()}
@@ -218,45 +202,23 @@ ${parentOutputMode === 'app_naruto_stdin'
 
 function renderRawJsonParentOutput(): string {
   return `Final parent output:
-- return one JSON object as the final message; prose outside that object is not completion evidence
-- use this exact schema so SKS can correlate every stopped agent thread with a trustworthy parent outcome:
+- return one JSON object as the final message; prose outside that object is not completion evidence; keep Completion Summary and Honest Mode in its summary
 {
   "schema": "sks.subagent-parent-summary.v1",
   "run_id": "workflow_run_id from subagent-plan.json",
   "status": "completed|blocked|failed",
   "summary": "Completion Summary: concise integrated result. Honest Mode: goal/evidence/checks/gaps assessment.",
-  "thread_outcomes": [
-    { "thread_id": "official agent/thread id", "status": "completed|blocked|failed", "summary": "slice result" }
-  ],
+  "thread_outcomes": [{ "thread_id": "official agent/thread id", "status": "completed|blocked|failed", "summary": "slice result" }],
   "changed_files": [],
-  "verification": [
-    { "name": "focused check", "status": "passed|not_applicable", "reason": "required when not_applicable" }
-  ],
-  "artifacts": [
-    {
-      "path": "workspace-relative/verified-output.xlsx",
-      "kind": "spreadsheet",
-      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "sha256": "sha256:<64 lowercase hex>",
-      "bytes": 1,
-      "role": "deliverable|scratch|temp|log"
-    }
-  ],
-  "capabilities_used": [
-    {
-      "id": "declared host capability id",
-      "status": "passed|failed",
-      "tool_names": ["actually called host tool"],
-      "receipt_sha256": "sha256:<64 lowercase hex>"
-    }
-  ],
+  "verification": [{ "name": "focused check", "status": "passed|not_applicable", "reason": "required when not_applicable" }],
+  "artifacts": [{ "path": "relative/path", "kind": "kind", "media_type": "MIME", "sha256": "sha256:<64 hex>", "bytes": 1, "role": "deliverable|scratch|temp|log" }],
+  "capabilities_used": [{ "id": "capability id", "status": "passed|failed", "tool_names": ["called tool"], "receipt_sha256": "sha256:<64 hex>" }],
   "blockers": []
 }
 - include one thread_outcomes row for every requested subagent; a SubagentStop event alone never proves success
-- copy workflow_run_id from subagent-plan.json into run_id so delayed or stale summaries cannot bind to another run
+- copy workflow_run_id from subagent-plan.json into run_id to reject stale summaries
 - if changed_files is non-empty, include at least one passed named check or a specifically justified not_applicable verification row
 - use empty artifacts/capabilities_used arrays when no host capability was used; SKS overwrites these fields with observed Codex JSONL evidence before persistence
-- keep completion summary and Honest Mode wording inside the JSON fields; do not add prose outside the object
 `
 }
 
@@ -323,10 +285,6 @@ function normalizedActiveMainModel(value: ActiveMainModelRouting | null | undefi
   return provider && model ? { provider, model } : null
 }
 
-function inferDisplayProvider(model: string): string {
-  return model.includes('/') ? model.split('/', 1)[0] || 'openai' : 'openai'
-}
-
 function renderSpawnModelRouting(activeMainModel: ActiveMainModelRouting | null): string {
   const inheritActiveMain = childInheritsActiveMainModel(activeMainModel?.model)
   const precedence = inheritActiveMain
@@ -335,9 +293,8 @@ function renderSpawnModelRouting(activeMainModel: ActiveMainModelRouting | null)
   const roleOverride = '- when Role model preference metadata lists the selected role with source "user-scoped-owner-only", pass that row\'s exact model and reasoning_effort to spawn_agent'
   if (!activeMainModel) {
     return [
-      precedence,
       roleOverride,
-      '- when no user override exists, pass the sealed role model/effort from the selected custom agent; do not default every child to Sol'
+      '- otherwise pass the selected role\'s sealed model/effort; do not default every child to Sol'
     ].join('\n')
   }
   if (!inheritActiveMain) {

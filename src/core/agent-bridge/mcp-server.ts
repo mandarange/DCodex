@@ -7,7 +7,7 @@ import {
   outputCapFor,
   timeoutFor,
   validateJsonSchema,
-  type CommandContractV2
+  type CommandContractV3
 } from '../safety/command-contract/index.js';
 
 export interface RunMcpServerOptions {
@@ -72,7 +72,7 @@ async function resolveSksEntrypoint(): Promise<string> {
 }
 
 export async function invokeSksTool(
-  contract: CommandContractV2,
+  contract: CommandContractV3,
   input: unknown,
   run: typeof runProcess = runProcess
 ): Promise<{ ok: boolean; stdout: string; stderr: string; code: number | null; timed_out: boolean; truncated: boolean; argv: string[] }> {

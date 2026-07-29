@@ -22,7 +22,7 @@ Proof-first orchestration for Codex CLI, ChatGPT Desktop, AI coding agents, mult
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-This README documents package **SKS 7.5.0** — its own identity, read from `package.json` and verified by the release gate, not advice about what to install.
+This README documents package **SKS 8.0.0** — its own identity, read from `package.json` and verified by the release gate, not advice about what to install.
 
 Use the official latest stable SKS and Codex CLI releases. SKS stays version-agnostic: older hosts keep working where capabilities allow, while Menu Bar / Center induce updates to the latest stable build. Run `sks update-check` for what is installed and read the capability report for what is actually supported — feature availability is decided by capability probes, not by a version number printed in a document. It resolves managed SKS skills from the authoritative global install, preserves a runnable Naruto child slot when `max_threads=2`, and keeps Menu Bar repair transactional so stamped generations remain verifiable. Naruto uses stable opt-in multi-agent V2 when the host exposes it. Local code search is mode-separated (`sks search files|text|structure|symbol|context`); `context` is answered by the compiled TriWiki Context Graph with evidence paths rather than lexical guessing — see [docs/architecture/context-graph.md](docs/architecture/context-graph.md) and [docs/architecture/search-engine-target.md](docs/architecture/search-engine-target.md). See [CHANGELOG.md](CHANGELOG.md).
 
@@ -63,13 +63,11 @@ The SKS menu bar shows the installed Codex CLI version and latest known version.
 
 **Manage MCP Servers…** opens a native macOS manager for the global `~/.codex/config.toml`. It can add remote URL or local stdio servers, enable/disable existing entries, remove entries after confirmation, and refresh the current state. Mutations are lock-protected, backed up, TOML-validated, and written with mode `0600`; configured environment values and command arguments are never rendered in the list. Changes apply to new Codex sessions. The same plumbing is available through the canonical `sks mcp config list|get|add|edit|duplicate|enable|disable|remove|test|login|logout|backups|restore` surface for diagnostics and automation.
 
-### Telegram remote coding on this Mac
+### Remote coding: Orca (external option)
 
-Open **SKS Center → Remote & Telegram**, create a bot with BotFather, send `/start` to that bot from the Telegram account you want to pair, then choose **Connect Bot & Register Coding Session…** and paste the token. SKS verifies the bot, stores the token only in macOS Keychain, pairs only that private chat/user, and registers one dedicated session bound to the current project. Choose **Start Hub**, then send ordinary text to the bot. On the first real message, the Hub creates the Codex thread and starts its first turn in the same App Server connection so the thread is durably resumable; later messages resume that exact thread and return the final response to Telegram.
+SKS no longer provides a first-party Telegram coding bridge. If you want to monitor or steer coding work from another device, consider [Orca](https://github.com/stablyai/orca), an external MIT-licensed project that can launch Codex in a worktree. Orca is not bundled with SKS, supported by SKS, or required to use SKS; SKS adds no Orca dependency or configuration.
 
-The Hub runs as a user LaunchAgent and uses `caffeinate -i` while the logged-in Mac is available. The Mac still needs to remain powered on, logged in, awake, and network-connected; closing the lid or logging out can stop access. Telegram input has no arbitrary shell path, runs with approvals disabled and network access disabled inside the Codex workspace sandbox, and cannot target an unpaired chat or another project.
-
-SKS Center is the menu bar companion: install it with `sks menubar install`, then click the SKS icon in the macOS menu bar and choose **Open SKS Control Center…**. Every GUI step above has a CLI equivalent (`sks telegram setup --bot-token-stdin`, `sks telegram hub start`, `sks telegram status`). The hub uses long polling, so a bot with an existing webhook must have that webhook removed before the hub can start; SKS fails closed with `telegram_webhook_conflict` and never clears it automatically. See **[docs/telegram-and-center.md](docs/telegram-and-center.md)** for the complete BotFather setup, optional command menu and privacy-mode guidance, secure token rotation, verification, and troubleshooting.
+Orca's mobile companion and Remote Orca Servers are beta. Their desktop/server runtime remains the source of truth and must keep running; remote access may require a private LAN or Tailscale path. See [the Orca migration and remote-coding guide](docs/orca-remote-coding.md) for scope, setup links, and former Telegram-user migration notes.
 
 ## The Front Door
 
@@ -241,16 +239,19 @@ It shows the current quickstart flow: one-line install, `$sks-plan`, `sks review
 - macOS optional: menu bar integration and `/usr/bin/open`
   - The menubar icon shows and hides itself automatically as the Codex desktop app launches/quits; set `quit_with_codex: true` in `~/.codex/sks-menubar/config.json` to have the menubar fully quit with Codex instead of just hiding (default `false`).
   - Native input dialogs (API keys, codex-lb setup) pass secrets to `sks` via `--api-key-stdin` instead of a visible Terminal window or process arguments.
-  - Auth/provider changes require a successful app restart; skipped or failed restarts fail the action.
-  - `sks update` preserves the selected codex-lb or ChatGPT OAuth mode, model, reasoning, catalog, and routing state.
-  - Providers exposes **Restore Chat / Pro (OAuth)** as an explicit auth-mode switch while retaining saved codex-lb credentials.
+  - Codex Desktop always keeps its real ChatGPT OAuth identity. codex-lb setup stores a separate gateway endpoint/key and never replaces `~/.codex/auth.json`.
+  - Providers separates **Desktop Full Capability**, **CLI Provider**, and **Capability Matrix**. Desktop Full Capability keeps the built-in OpenAI provider and routes supported traffic through a loopback bridge; CLI Provider is selected only for the CLI process.
+  - Authentication and routing modes do not toggle Codex App's native model picker, Fast, image, Browser Use, Computer Use, voice, plugins/apps, or other built-in surfaces. Capability status describes evidence for the codex-lb data path, not permission to use the native feature.
+  - `sks update`, setup, repair, and routing changes preserve OAuth, user model/reasoning/Fast settings, unknown catalog fields, and unrelated provider configuration. Legacy shared-auth routing requires explicit `sks codex-lb migrate-legacy-desktop --restart-app`; without a real restart and post-restart identity check it cannot finalize a migration receipt.
+  - The remote codex-lb service remains independently hosted and operated. SKS uses only the configured URL and gateway key; it does not deploy, restart, or change credentials on that host.
+  - Full release proof blocks with `real_required_missing` until fresh trust-anchored evidence covers the real Desktop feature/lifecycle matrix and the separately hosted other-Mac runtime; fixtures and configuration cannot satisfy that boundary.
   - Update installs always rebuild the companion with the newly installed SKS package, preventing a previous-version updater from restoring a stale menu binary.
   - The menubar dropdown's `View Last Log` item opens the most recent background action's log file, so you don't need to keep a Terminal window open to see command output.
   - `Manage MCP Servers…` provides a resizable native table and add/remove/enable/disable controls for global Codex MCP configuration. Secret environment values and command arguments are accepted through native dialogs/stdin but omitted from list output and logs.
   - `sks menubar status --json` reports a `codex_sync` object with `bundle_id`, `codex_running`, and `icon_visible_expected` to show Codex-lifecycle detection state.
   - The menu displays the installed Codex CLI version, adds an `⬆` status icon when `sks codex update-status` sees a newer release, runs the official self-updater through `Update Codex CLI Now`, and exposes `Run sks doctor --fix` as a background repair action.
-  - Fast mode has a verified status row and direct On/Off actions. Status failures render as unavailable with neither choice falsely selected.
-- If Codex shows `[No tool output found for custom tool call ...]`, SKS blocks reuse of that structurally ambiguous thread. Upgrade codex-lb (or explicitly run `sks codex-lb use-oauth`), inspect possible side effects, then continue the persisted mission in a fresh Codex task. SKS never rewrites session JSONL or fabricates a successful tool output.
+  - **Codex Fast** is labeled as the official 1.5× Codex speed option, with a verified service-tier status row and direct On/Off actions. Center explains that ChatGPT-sign-in GPT-5.6/GPT-5.5 use 2.5× Standard credits and GPT-5.4 uses 2×, while API-key token pricing and API Priority processing are separate. Model selection, Codex-Spark, and reasoning effort remain independent; status failures render as unavailable with neither choice falsely selected.
+- If Codex shows `[No tool output found for custom tool call ...]`, SKS blocks reuse of that structurally ambiguous thread. Upgrade codex-lb or run `sks codex-lb disable`, inspect possible side effects, then continue the persisted mission in a fresh Codex task. SKS never rewrites session JSONL or fabricates a successful tool output.
 - Zellij optional but recommended for terminal worker panes
 
 ## License

@@ -15,6 +15,6 @@ test('codex-lb process-only setup emits required warnings', () => {
     allow_insecure_localhost: false
   }, { home: '/tmp/sks-home' });
   assert.equal(plan.persistence.warning, 'process_only_ephemeral');
-  assert.ok(plan.persistence.warnings.includes('next_shell_requires_setup_or_env'));
-  assert.ok(plan.persistence.warnings.includes('Codex App GUI launch may not see credentials'));
+  assert.ok(plan.persistence.warnings.includes('next_session_requires_center_or_setup'));
+  assert.ok(plan.persistence.warnings.some((row) => /SKS Center|write-env-file --keychain/.test(row)));
 });

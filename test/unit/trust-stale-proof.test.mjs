@@ -41,6 +41,28 @@ test('trust report blocks stale evidence index, contract, and report ordering', 
   assert.ok(report.issues.includes('stale_trust_report'));
 });
 
+test('trust report remains current after non-mutating stop-hook events', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-trust-stop-events-'));
+  const missionId = 'M-stop-events';
+  await writeTrustFixture(root, {
+    missionId,
+    proofAt: '2026-05-18T00:04:00.000Z',
+    eventAt: '2026-05-18T00:03:00.000Z',
+    evidenceAt: '2026-05-18T00:05:00.000Z',
+    contractAt: '2026-05-18T00:06:00.000Z',
+    reportAt: '2026-05-18T00:07:00.000Z'
+  });
+  await fs.appendFile(path.join(root, '.sneakoscope', 'missions', missionId, 'events.jsonl'), [
+    { ts: '2026-05-18T00:08:00.000Z', type: 'triwiki.agents_md_projected' },
+    { ts: '2026-05-18T00:09:00.000Z', type: 'pipeline.compliance_loop_guard' }
+  ].map((row) => JSON.stringify(row)).join('\n') + '\n');
+
+  const report = await latestTrustReport(root, missionId);
+  assert.equal(report.ok, true);
+  assert.equal(report.status, 'verified_partial');
+  assert.deepEqual(report.issues, []);
+});
+
 async function writeTrustFixture(root, { missionId, proofAt, eventAt, evidenceAt, contractAt, reportAt }) {
   const dir = path.join(root, '.sneakoscope', 'missions', missionId);
   await fs.mkdir(dir, { recursive: true });

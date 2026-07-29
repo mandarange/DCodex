@@ -14,11 +14,11 @@ test('fresh codex-lb HOME reports setup_needed through structured env loader out
     timeoutMs: 20_000,
     maxOutputBytes: 256 * 1024
   });
-  assert.equal(result.code, 0, result.stderr || result.stdout);
+  assert.equal(result.code, 1, result.stderr || result.stdout);
   const text = `${result.stdout}\n${result.stderr}`;
   assert.doesNotMatch(text, rawMissingEnvPattern);
   const json = JSON.parse(result.stdout);
-  assert.equal(json.schema, 'sks.codex-lb-status.v1');
+  assert.equal(json.schema, 'sks.codex-lb-status.v2');
   assert.equal(json.setup_needed, true);
 });
 
@@ -58,6 +58,8 @@ test('loadCodexLbEnv ignores reserved *.example.test process base URLs unless ex
       CODEX_LB_API_KEY: ''
     }
   });
-  assert.equal(allowed.credential_binding.status, 'base_url_mismatch');
-  assert.equal(allowed.configured, false);
+  // Official Center env-file wins over ambient process.env even when test hosts are allowed.
+  assert.equal(allowed.base_url, 'https://codex.hyper-lab.xyz/backend-api/codex');
+  assert.equal(allowed.configured, true);
+  assert.equal(allowed.credential_binding.status, 'matched');
 });

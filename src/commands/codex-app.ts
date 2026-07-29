@@ -26,6 +26,7 @@ import {
   roleModelPreferencesStatus,
   setRoleModelPreference
 } from '../core/subagents/role-model-preferences.js';
+import { codexLbDesktopStatusV2 } from '../core/codex-lb/desktop-controller.js';
 
 export async function run(_command: any, args: any = []) {
   const action = args[0] || 'check';
@@ -191,7 +192,7 @@ export async function run(_command: any, args: any = []) {
     return;
   }
   if (action === 'check' || action === 'status') {
-    const status = await codexAppIntegrationStatus({
+    const status = await codexAppStatusWithCodexLbCapabilities({
       autoInstallProductDesign: flag(args, '--install-product-design') || flag(args, '--auto-install-product-design')
     });
     if (flag(args, '--json')) {
@@ -206,6 +207,53 @@ export async function run(_command: any, args: any = []) {
   console.error('Usage: sks codex-app check|status|harness-matrix|skill-sync|agent-role-sync|init-deep|hook-lifecycle|execution-profile|set-openrouter-key [--api-key-stdin]|use-openrouter --model <id>|restore-desktop-routing|openrouter-status|openrouter-models [--ids-only]|openrouter-test [--model <id>]|router-status [--base-url <loopback-url>] [--catalog <path>]|router-test --model <provider/model> [--base-url <loopback-url>] [--catalog <path>]|use-router --model <provider/model> [--base-url <loopback-url>] [--catalog <path>] [--replace-catalog] [--force-routing-override]|role-models|set-role-model --role <name> [--provider <id>] --model <catalog-slug> --reasoning <effort>|reset-role-model --role <name>|product-design [--check-only]|ensure-product-design|chrome-extension|pat status|remote-control [--json]');
   console.error('Note: glm-profile is retired (strips leftover Desktop GLM profiles); use set-openrouter-key / use-openrouter.');
   process.exitCode = 1;
+}
+
+export async function codexAppStatusWithCodexLbCapabilities(opts: {
+  autoInstallProductDesign?: boolean;
+  codexAppStatusImpl?: (options: Record<string, unknown>) => Promise<any>;
+  codexLbStatusImpl?: (options: Parameters<typeof codexLbDesktopStatusV2>[0]) => Promise<Record<string, unknown>>;
+  codexLbStatusOptions?: Parameters<typeof codexLbDesktopStatusV2>[0];
+  [key: string]: unknown;
+} = {}) {
+  const {
+    codexAppStatusImpl = codexAppIntegrationStatus,
+    codexLbStatusImpl = codexLbDesktopStatusV2,
+    codexLbStatusOptions,
+    ...integrationOptions
+  } = opts;
+  let codexLbCapabilityReport: Record<string, unknown>;
+  try {
+    const status = await codexLbStatusImpl(codexLbStatusOptions || {});
+    const capabilities = status?.capabilities;
+    codexLbCapabilityReport = capabilities && typeof capabilities === 'object' && !Array.isArray(capabilities)
+      ? {
+          ...(capabilities as Record<string, unknown>),
+          availability: 'reported',
+          mode: status.mode || null,
+          overall: status.overall || (capabilities as Record<string, unknown>).state || 'available_unverified',
+          full_capability_verified: status.full_capability_verified === true,
+          deep_evidence_validation: status.deep_evidence_validation || null
+        }
+      : unavailableCodexLbCapabilityReport('codex_lb_capability_report_missing');
+  } catch {
+    codexLbCapabilityReport = unavailableCodexLbCapabilityReport('codex_lb_capability_report_unavailable');
+  }
+  return codexAppStatusImpl({
+    ...integrationOptions,
+    codexLbCapabilityReport
+  });
+}
+
+function unavailableCodexLbCapabilityReport(blocker: string): Record<string, unknown> {
+  return {
+    schema: 'sks.codex-lb-desktop-capability-status.v2',
+    availability: 'unavailable',
+    ready: false,
+    state: 'available_unverified',
+    full_capability_verified: false,
+    blockers: [blocker]
+  };
 }
 
 async function readOpenRouterKeyFromArgs(args: any[] = []): Promise<string> {

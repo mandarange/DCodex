@@ -5,14 +5,28 @@ import {
   buildReleaseRealLiveCoverage,
   dependencyReleaseRealResult,
   normalizeReleaseRealProcessResult,
+  RELEASE_REAL_CHECK_IDS,
+  RELEASE_REAL_OPTIONAL_CHECK_IDS,
+  RELEASE_REAL_REQUIRED_CHECK_IDS,
   releaseDagSummaryIdentityBlockers,
   summarizeReleaseRealPhases,
+  validateReleaseRealTaskIds,
   validateReleaseRealSkipProof,
   type ReleaseRealTaskLike,
   type ReleaseRealTaskPolicy
 } from '../release-real-contract.js'
 
 const terminal = ['failed', 'blocked', 'skipped', 'integration_optional', 'optional']
+
+test('release-real contract records trusted real Codex Desktop evidence as optional live coverage', () => {
+  assert.equal(RELEASE_REAL_REQUIRED_CHECK_IDS.includes('codex-lb:desktop-real-evidence'), false)
+  assert.ok(RELEASE_REAL_OPTIONAL_CHECK_IDS.includes('codex-lb:desktop-real-evidence'))
+  const missing = validateReleaseRealTaskIds(
+    RELEASE_REAL_CHECK_IDS.filter((id) => id !== 'codex-lb:desktop-real-evidence')
+  )
+  assert.equal(missing.ok, false)
+  assert.ok(missing.missing_ids.includes('codex-lb:desktop-real-evidence'))
+})
 
 test('release DAG summary identity binds run id, directory, and summary path', () => {
   const reportsRoot = path.resolve('/tmp/release-gates')

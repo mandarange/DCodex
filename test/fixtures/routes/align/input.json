@@ -1,0 +1,9 @@
+{
+  "schema": "sks.route-fixture-input.v1",
+  "route": "$sks-align",
+  "mission_id": "M-fixture-align",
+  "mode": "contract_fixture",
+  "contract_schema": "sks.align-gate.v2",
+  "expected_status": "blocked",
+  "visual_claim": false
+}

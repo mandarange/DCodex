@@ -189,6 +189,7 @@ async function resolveStaleOfficialSubagentComplianceBlocker(input: {
   await appendJsonl(path.join(input.dir, 'events.jsonl'), {
     ts: nowIso(),
     type: 'pipeline.compliance_loop_guard.resolved',
+    proof_invalidating: false,
     gate: 'official-subagent-evidence',
     workflow_run_id: input.workflowRunId,
     resolution_artifact: RESOLVED_HARD_BLOCKER_ARTIFACT

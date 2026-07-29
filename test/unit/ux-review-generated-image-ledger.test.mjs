@@ -13,6 +13,30 @@ test('generated callout image ledger validates real gpt-image-2 evidence', async
   assert.equal(ledger.generated_review_images[0].image_size_relation.coordinate_transform, 'identity');
 });
 
+test('one consolidated generated review can truthfully cover multiple captured screens', async () => {
+  const imageUx = await importDist('core/image-ux-review.js');
+  const { root, imagePath } = await tempImageRoot();
+  const contract = {
+    prompt: 'Consolidated multi-screen review',
+    answers: { IMAGE_UX_REVIEW_SOURCE_IMAGES: [imagePath, imagePath] }
+  };
+  const inventory = await imageUx.hydrateImageUxScreenInventory(
+    root,
+    imageUx.buildImageUxScreenInventory(contract)
+  );
+  const ledger = imageUx.buildImageUxGeneratedReviewLedger(contract, inventory, {
+    generated_review_images: [realGeneratedReviewImage({
+      source_screen_ids: ['screen-1', 'screen-2']
+    })]
+  }, { root });
+
+  assert.equal(ledger.generated_count, 1);
+  assert.equal(ledger.real_generated_count, 1);
+  assert.equal(ledger.covered_source_screen_count, 2);
+  assert.deepEqual(ledger.covered_source_screen_ids, ['screen-1', 'screen-2']);
+  assert.equal(ledger.passed, true);
+});
+
 test('generated callout image ledger blocks claimed real evidence when file evidence is unchecked', async () => {
   const imageUx = await importDist('core/image-ux-review.js');
   const { root, imagePath } = await tempImageRoot();

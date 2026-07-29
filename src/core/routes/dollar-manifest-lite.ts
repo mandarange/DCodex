@@ -44,6 +44,7 @@ const DOLLAR_COMMANDS_LITE_BASE = [
   { command: '$MAD-SKS', route: 'explicit scoped permission-widening modifier plus SQL-plane execution', description: 'Explicit high-risk authorization modifier that can be combined with other $ commands to temporarily open approved target-project scopes such as files, shell, package installs, services, network, Computer Use/browser workflows, generated assets, file permissions, migrations, Supabase MCP DB writes, direct execute SQL, schema cleanup, and normal targeted DB writes for the active invocation.' },
   { command: '$GX', route: 'visual context', description: 'Deterministic GX visual context cartridges.' },
   { command: '$Wiki', route: 'TriWiki refresh and maintenance', description: 'Refresh, pack, validate, or prune TriWiki context packs from Codex App.' },
+  { command: '$Align', route: 'evidence-gated GPT-5.6 / Plugins modernization', description: 'One-shot modernization of SKS prompts, settings, and generated skill/command surfaces against current GPT-5.6 prompting, programmatic tool calling, Agents, Codex skill-schema, and Plugins contracts. Records adoption decisions, audits complete surface coverage, removes superseded compatibility settings, and deduplicates policy without weakening invariants.' },
   { command: '$Help', route: 'command help', description: 'Explain installed SKS commands and workflows.' }
 ] as const satisfies readonly DollarCommandLiteEntry[];
 
@@ -78,6 +79,7 @@ const DOLLAR_COMMAND_ALIASES_LITE_BASE = [
   { canonical: '$MAD-SKS', app_skill: '$mad-sks' },
   { canonical: '$GX', app_skill: '$gx' },
   { canonical: '$Wiki', app_skill: '$wiki' },
+  { canonical: '$Align', app_skill: '$align' },
   { canonical: '$Help', app_skill: '$help' }
 ] as const satisfies readonly DollarCommandAliasLiteEntry[];
 

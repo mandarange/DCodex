@@ -32,10 +32,10 @@ export async function makeLifecycleInput(
   isolation: ReleaseUpgradeIsolation,
   platform: NodeJS.Platform
 ): Promise<ReleaseUpgradeLifecycleInput> {
-  const targetTarball = path.join(isolation.sealedInputsDir, 'target-6.3.0.tgz')
-  const baselineTarball = path.join(isolation.sealedInputsDir, 'baseline-6.2.0.tgz')
-  const targetBytes = Buffer.from('sealed-target-6.3.0')
-  const baselineBytes = Buffer.from('sealed-baseline-6.2.0')
+  const targetTarball = path.join(isolation.sealedInputsDir, 'target-8.0.0.tgz')
+  const baselineTarball = path.join(isolation.sealedInputsDir, 'baseline-7.6.0.tgz')
+  const targetBytes = Buffer.from('sealed-target-8.0.0')
+  const baselineBytes = Buffer.from('sealed-baseline-7.6.0')
   await Promise.all([
     fs.writeFile(targetTarball, targetBytes),
     fs.writeFile(baselineTarball, baselineBytes)
@@ -45,7 +45,7 @@ export async function makeLifecycleInput(
     fs.chmod(baselineTarball, 0o400)
   ])
   return {
-    targetVersion: '6.3.0',
+    targetVersion: '8.0.0',
     targetTarball,
     targetSha256: crypto.createHash('sha256').update(targetBytes).digest('hex'),
     baselineTarball,

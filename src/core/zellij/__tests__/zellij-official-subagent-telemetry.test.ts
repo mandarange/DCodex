@@ -479,6 +479,43 @@ test('official rollout reader rejects unsupported or non-subagent identities and
   }
 })
 
+test('official rollout activity resolves model and effort from the rollout head when turn_context leaves the tail window', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-zellij-official-head-'))
+  const codexHome = path.join(root, 'codex-home')
+  const threadId = '019f-live-head-model'
+  const spawnedAt = new Date(Date.now() - 10_000)
+  try {
+    const rows: any[] = [
+      rolloutRow(spawnedAt, 2_000, 'turn_context', { model: 'gpt-5.6-sol', effort: 'max' })
+    ]
+    // Push the only turn_context row out of the tail window with tool activity
+    // from a single long turn, then leave a visible tail activity row.
+    for (let index = 0; index < 900; index += 1) {
+      rows.push(rolloutRow(spawnedAt, 2_100 + index, 'response_item', {
+        type: 'function_call',
+        name: 'exec_command',
+        status: 'completed',
+        call_id: `call-${index}`
+      }))
+    }
+    rows.push(rolloutRow(spawnedAt, 4_500, 'event_msg', { type: 'agent_message', phase: 'commentary', message: 'tail activity visible' }))
+    await writeOfficialRollout(codexHome, threadId, spawnedAt, rows)
+
+    const activity = await readOfficialSubagentRolloutActivity({
+      threadId,
+      startedAt: spawnedAt.toISOString(),
+      env: { CODEX_HOME: codexHome },
+      tailBytes: 64 * 1024
+    })
+    assert.ok(activity)
+    assert.match(String(activity?.task_title), /tail activity visible/i)
+    assert.equal(activity?.model, 'gpt-5.6-sol')
+    assert.equal(activity?.reasoning_effort, 'max')
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true })
+  }
+})
+
 async function writeOfficialRollout(codexHome: string, threadId: string, spawnedAt: Date, rows: any[]): Promise<string> {
   const dir = path.join(
     codexHome,

@@ -376,7 +376,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
       const responsesOutputSource = codexLbProviderSelected ? CODEX_LB_PROVIDER_OUTPUT_SOURCE : null;
       const validation = await validateGptImage2Request({
         provider: 'openai_images_api',
-        endpoint: effectiveEndpoint,
+        endpoint: String(effectiveEndpoint || ''),
         model: 'gpt-image-2',
         prompt: input.prompt,
         source_image_path: sourcePath,
@@ -416,7 +416,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
         });
         return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker: 'gpt_image_2_request_validation_failed', provider: 'openai_images_api', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
       }
-      if (!auth.apiKey) {
+      if (auth.blocker || !auth.apiKey) {
         const blocked = {
           schema: 'sks.image-ux-gpt-image-2-response.v1',
           created_at: nowIso(),
@@ -743,6 +743,11 @@ function codexLbImagesApiAuth(opts: any, codexLb: any, target: any) {
   const envKey = codexLb?.env_key || 'CODEX_LB_API_KEY';
   const codexLbKey = String(opts.codexLbApiKey || target?.api_key || '').trim();
   const baseUrl = target?.base_url || codexLb?.base_url || opts.baseUrl || '';
+  const blocker = !baseUrl
+    ? 'codex_lb_base_url_missing'
+    : codexLbKey
+      ? null
+      : target?.blocker || 'codex_lb_api_key_missing';
   return {
     apiKey: codexLbKey || null,
     auth_source: envKey,
@@ -751,9 +756,9 @@ function codexLbImagesApiAuth(opts: any, codexLb: any, target: any) {
     // catalog is the only source that is safe to default to.
     responses_model: responsesImagegenModel(opts) || target?.model || '',
     responses_model_source: responsesImagegenModel(opts) ? 'explicit' : target?.model_source || null,
-    endpoint: imageEditsEndpoint(baseUrl),
-    responses_endpoint: responsesEndpoint(baseUrl),
-    blocker: codexLbKey ? null : target?.blocker || 'codex_lb_api_key_missing'
+    endpoint: baseUrl ? imageEditsEndpoint(baseUrl) : null,
+    responses_endpoint: baseUrl ? responsesEndpoint(baseUrl) : null,
+    blocker
   };
 }
 

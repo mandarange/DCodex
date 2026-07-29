@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { ensureDir, nowIso, projectRoot, readJson, writeJsonAtomic } from '../fsx.js';
-import { createMission, findLatestMission, loadMission } from '../mission.js';
+import { createMission, findLatestMission, loadMission, missionDir } from '../mission.js';
 import { flag, readOption } from './command-utils.js';
 import { printJson } from '../../cli/output.js';
 import {
@@ -34,29 +34,35 @@ import { codexChromeExtensionStatus } from '../codex-app.js';
 import { requireCodexImagegen } from '../imagegen/require-imagegen.js';
 import { imagegenEvidenceClassBlockers, isFullImagegenEvidenceClass, isFullImagegenOutputSource } from '../imagegen/imagegen-evidence.js';
 import { evaluateGate } from '../stop-gate/gate-evaluator.js';
+import { closeWorkOrderLedgerForRouteResult } from '../work-order-ledger.js';
 
 const ONE_BY_ONE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axX7V8AAAAASUVORK5CYII=';
+const stableImageUxArtifact = (artifactPath: string) => ({
+  path: artifactPath,
+  source: 'real',
+  ignoreStale: true
+});
 const IMAGE_UX_REVIEW_ARTIFACT_PATHS: Record<string, string | Record<string, any>> = {
-  policy: IMAGE_UX_REVIEW_POLICY_ARTIFACT,
-  inventory: IMAGE_UX_REVIEW_SCREEN_INVENTORY_ARTIFACT,
-  imagegen_request: IMAGE_UX_REVIEW_IMAGEGEN_REQUEST_ARTIFACT,
-  gpt_image_2_request: IMAGE_UX_REVIEW_GPT_IMAGE_2_REQUEST_ARTIFACT,
-  imagegen_response: IMAGE_UX_REVIEW_GPT_IMAGE_2_RESPONSE_ARTIFACT,
-  generated_review_ledger: IMAGE_UX_REVIEW_GENERATED_REVIEW_LEDGER_ARTIFACT,
-  issue_ledger: IMAGE_UX_REVIEW_ISSUE_LEDGER_ARTIFACT,
-  callout_extraction_report: IMAGE_UX_REVIEW_CALLOUT_EXTRACTION_REPORT_ARTIFACT,
-  fix_task_plan: IMAGE_UX_REVIEW_FIX_TASK_PLAN_ARTIFACT,
-  fix_loop: IMAGE_UX_REVIEW_FIX_LOOP_ARTIFACT,
-  recapture_plan: IMAGE_UX_REVIEW_RECAPTURE_ARTIFACT,
-  iteration_report: IMAGE_UX_REVIEW_ITERATION_REPORT_ARTIFACT,
+  policy: stableImageUxArtifact(IMAGE_UX_REVIEW_POLICY_ARTIFACT),
+  inventory: stableImageUxArtifact(IMAGE_UX_REVIEW_SCREEN_INVENTORY_ARTIFACT),
+  imagegen_request: stableImageUxArtifact(IMAGE_UX_REVIEW_IMAGEGEN_REQUEST_ARTIFACT),
+  gpt_image_2_request: stableImageUxArtifact(IMAGE_UX_REVIEW_GPT_IMAGE_2_REQUEST_ARTIFACT),
+  imagegen_response: stableImageUxArtifact(IMAGE_UX_REVIEW_GPT_IMAGE_2_RESPONSE_ARTIFACT),
+  generated_review_ledger: stableImageUxArtifact(IMAGE_UX_REVIEW_GENERATED_REVIEW_LEDGER_ARTIFACT),
+  issue_ledger: stableImageUxArtifact(IMAGE_UX_REVIEW_ISSUE_LEDGER_ARTIFACT),
+  callout_extraction_report: stableImageUxArtifact(IMAGE_UX_REVIEW_CALLOUT_EXTRACTION_REPORT_ARTIFACT),
+  fix_task_plan: stableImageUxArtifact(IMAGE_UX_REVIEW_FIX_TASK_PLAN_ARTIFACT),
+  fix_loop: stableImageUxArtifact(IMAGE_UX_REVIEW_FIX_LOOP_ARTIFACT),
+  recapture_plan: stableImageUxArtifact(IMAGE_UX_REVIEW_RECAPTURE_ARTIFACT),
+  iteration_report: stableImageUxArtifact(IMAGE_UX_REVIEW_ITERATION_REPORT_ARTIFACT),
   output_schema: {
     path: 'schemas/codex/image-ux-issue-ledger.schema.json',
     kind: 'schema',
     source: 'real',
     ignoreStale: true
   },
-  honest_mode_evidence: IMAGE_UX_REVIEW_HONEST_MODE_ARTIFACT,
-  gate: IMAGE_UX_REVIEW_GATE_ARTIFACT
+  honest_mode_evidence: stableImageUxArtifact(IMAGE_UX_REVIEW_HONEST_MODE_ARTIFACT),
+  gate: stableImageUxArtifact(IMAGE_UX_REVIEW_GATE_ARTIFACT)
 };
 
 export async function imageUxReviewCommand(command: any, args: any = []) {
@@ -527,12 +533,14 @@ async function rebuildExistingMission(root: string, command: string, args: any[]
     root,
     wrongnessChecked: true,
     fixLoop: { requirePatch: opts.fixRequested === true },
-    recapture: { computerUseAvailable: false },
+    recapture: opts.proofRequested === true ? undefined : { computerUseAvailable: false },
+    preserveExistingRecapture: opts.proofRequested === true,
     honestModeComplete: opts.proofRequested === true
   });
   artifacts.gate = await enforceImageUxRuntimeGate(dir, artifacts.gate, { mock: flag(args, '--mock') });
   await writeJsonAtomic(path.join(dir, IMAGE_UX_REVIEW_GATE_ARTIFACT), artifacts.gate);
-  const proof = await finalizeImageUx(root, missionId, command, artifacts, { mock: flag(args, '--mock'), cmd: `sks ${command} ${opts.fixRequested ? 'fix' : opts.recaptureRequested ? 'recapture' : 'build'}` });
+  const proofAction = opts.proofRequested ? 'proof' : opts.fixRequested ? 'fix' : opts.recaptureRequested ? 'recapture' : 'build';
+  const proof = await finalizeImageUx(root, missionId, command, artifacts, { mock: flag(args, '--mock'), cmd: `sks ${command} ${proofAction}` });
   const outcome = imageUxReviewCommandOutcome(artifacts.gate, proof.ok, {
     allowReviewOnlyCompletion: false
   });
@@ -897,7 +905,7 @@ async function finalizeImageUx(root: string, missionId: string, command: string,
   const artifactList = Object.entries(artifacts)
     .filter(([, value]) => value !== null && value !== undefined)
     .map(([key]) => IMAGE_UX_REVIEW_ARTIFACT_PATHS[key] || key);
-  return maybeFinalizeRoute(root, {
+  const finalized = await maybeFinalizeRoute(root, {
     missionId,
     route: routeForCommand(command),
     gateFile: 'image-ux-review-gate.json',
@@ -913,6 +921,17 @@ async function finalizeImageUx(root: string, missionId: string, command: string,
     allowActiveWrongnessPartial: artifacts.gate?.reference_only === true,
     command: { cmd: opts.cmd || `sks ${command}`, status: artifacts.gate?.blockers?.length ? 1 : 0 }
   });
+  const proofIssues = Array.isArray(finalized?.validation?.issues)
+    ? finalized.validation.issues.map(String)
+    : [];
+  await closeWorkOrderLedgerForRouteResult(missionDir(root, missionId), {
+    ok: artifacts.gate?.passed === true && finalized?.ok === true,
+    blockers: [...new Set([
+      ...(Array.isArray(artifacts.gate?.blockers) ? artifacts.gate.blockers.map(String) : []),
+      ...proofIssues
+    ])]
+  });
+  return finalized;
 }
 
 async function ensureFixtureImageVoxelRelation(root: string, missionId: string, imageRel: string) {

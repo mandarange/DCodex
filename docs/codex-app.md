@@ -14,13 +14,26 @@ entry, Pro model access, or Fast picker. The repair is provenance-scoped: it
 does not delete unmarked user settings, provider definitions, provider URLs,
 credential references, `service_tier = "fast"`, or `[features].fast_mode`.
 
-SKS 7.4.0 also reports the active nonsecret auth class. When codex-lb API-key
-auth is active and a ChatGPT OAuth backup is available, Center labels the
-Chat/Pro surface as inactive and exposes **Restore Chat / Pro (OAuth)**. The
-switch is explicit because the two modes share Codex's active auth slot;
-restoring OAuth keeps the saved codex-lb provider and credentials available for
-later reuse. `sks update` preserves whichever mode the user selected and never
-uses an OAuth backup as permission to change providers.
+SKS reports the active nonsecret auth class, but codex-lb routing is not an auth
+mode. Codex Desktop keeps the real ChatGPT OAuth identity and built-in OpenAI
+provider in **Desktop Full Capability** mode. The local loopback bridge adds the
+separate codex-lb gateway credential only on the outbound gateway hop. Setup,
+repair, update, enable, and disable operations do not write `auth.json`.
+The selected codex-lb authentication or routing mode is not a feature flag:
+the native model picker, Fast, image generation, Browser Use, Computer Use,
+voice, plugins/apps, and other Codex App surfaces remain App-owned and are not
+disabled by SKS. A blocked codex-lb capability row describes missing evidence
+for that data path, not removal of the native feature.
+
+The separately stored CLI provider uses `name = "codex-lb"`,
+`env_key = "CODEX_LB_API_KEY"`, and `requires_openai_auth = false`; it is not
+selected globally. The explicit compatibility mode uses exact provider name
+`OpenAI`, preserves OAuth, and sends the gateway key through
+`X-Codex-LB-API-Key`. Legacy installations that placed the gateway key in the
+shared Codex auth slot are blocked until
+`sks codex-lb migrate-legacy-desktop --restart-app` can restore a valid OAuth
+backup, restart Codex App, verify the stable OAuth account identity, and write a
+rollback receipt.
 
 Fast is treated as a service tier independent from reasoning effort. The SKS
 menu bar exposes authoritative Fast status plus direct On/Off actions and shows
@@ -35,8 +48,11 @@ sks codex-app check
 sks codex-app set-openrouter-key --api-key-stdin
 sks codex-app use-openrouter --model z-ai/glm-5.2
 sks codex-lb status
-sks codex-lb use-oauth --restart-app
-sks codex-lb use-codex-lb --restart-app
+sks codex-lb use-desktop-full
+sks codex-lb use-cli
+sks codex-lb disable
+sks codex-lb capabilities --level transport --json
+sks codex-lb migrate-legacy-desktop --restart-app
 sks codex-app chrome-extension --json
 sks codex compatibility --require rust-v0.145.0 --json
 sks codex 0.144 --json

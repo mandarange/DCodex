@@ -122,6 +122,7 @@ zellij-lane-renderer-heartbeat.jsonl
 .sneakoscope/logs/
 .sneakoscope/naruto/
 .sneakoscope/state/
+.sneakoscope/remote/
 .sneakoscope/db/
 .sneakoscope/evidence/
 .sneakoscope/guards/

@@ -9,6 +9,7 @@ import {
   writeJsonAtomic,
   writeTextAtomic
 } from '../fsx.js'
+import { uniqueValues as unique } from '../text/strings.js'
 import { buildOfficialSubagentPrompt, type OfficialSubagentSlice } from '../subagents/official-subagent-prompt.js'
 import {
   codexAppSessionKey,
@@ -1147,8 +1148,4 @@ function duplicates(values: string[]): string[] {
     seen.add(value)
   }
   return [...duplicates]
-}
-
-function unique<T>(values: T[]): T[] {
-  return [...new Set(values)]
 }

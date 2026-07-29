@@ -10,9 +10,9 @@ test('fresh codex-lb status is structured and never prints raw missing env text'
     timeoutMs: 15_000,
     maxOutputBytes: 128 * 1024
   });
-  assert.equal(result.code, 0, result.stderr || result.stdout);
+  assert.equal(result.code, 1, result.stderr || result.stdout);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /Missing environment variable/i);
   const json = JSON.parse(result.stdout);
-  assert.equal(json.schema, 'sks.codex-lb-status.v1');
+  assert.equal(json.schema, 'sks.codex-lb-status.v2');
   assert.equal(json.setup_needed, true);
 });

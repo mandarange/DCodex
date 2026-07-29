@@ -97,11 +97,11 @@ function clientWith(children: FakeChild[]): { client: RemoteSshWorkerClient; spa
 function inputEnvelope(): RemoteCommandEnvelopeV1 {
   const now = Date.now();
   return {
-    schema: 'sks.remote-command.v1',
+    schema: 'sks.remote-command.v2',
     command_id: 'command-1',
     issued_at: new Date(now - 1_000).toISOString(),
     expires_at: new Date(now + 60_000).toISOString(),
-    actor: 'telegram-owner',
+    actor: 'remote-owner',
     machine_id: 'mac',
     project_id: 'project-1',
     session_id: 'session-1',
@@ -255,5 +255,72 @@ test('a crashed worker reconnects with bounded backoff on the next safe request'
   assert.equal(spawned.length, 2);
   assert.equal(client.status().connection_state, 'connected');
   assert.equal(client.status().session_state, 'active');
+  await client.close();
+});
+
+test('command requests use a long-turn timeout independent from short control requests', async () => {
+  const child = new FakeChild();
+  let buffer = '';
+  child.stdin.on('data', (chunk) => {
+    buffer += chunk.toString('utf8');
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines.filter(Boolean)) {
+      const request = JSON.parse(line) as WorkerRequestV1;
+      if (request.type === 'hello') {
+        child.stdout.write(`${JSON.stringify({
+          schema: 'sks.remote-worker.response.v1',
+          id: request.id,
+          type: request.type,
+          ok: true,
+          data: { protocol: 'jsonl-stdio' }
+        })}\n`);
+        continue;
+      }
+      if (request.type === 'command') {
+        setTimeout(() => {
+          child.stdout.write(`${JSON.stringify({
+            schema: 'sks.remote-worker.response.v1',
+            id: request.id,
+            type: request.type,
+            ok: true,
+            data: { accepted: true },
+            receipt: {
+              schema: 'sks.remote-command-receipt.v1',
+              command_id: request.envelope.command_id,
+              idempotency_key: request.envelope.idempotency_key,
+              machine_id: request.envelope.machine_id,
+              project_id: request.envelope.project_id,
+              session_id: request.envelope.session_id,
+              kind: request.envelope.kind,
+              status: 'completed',
+              side_effect_applied: true,
+              completed_at: new Date().toISOString(),
+              result: { accepted: true }
+            }
+          })}\n`);
+        }, 1_100);
+      }
+    }
+  });
+  const client = new RemoteSshWorkerClient({
+    machine,
+    projectRoot: '/work/repos/project',
+    projectId: 'project-1',
+    requestTimeoutMs: 1_000,
+    commandRequestTimeoutMs: 2_000,
+    loadSshConfig: async () => validSshConfig,
+    spawnProcess: () => asChild(child)
+  });
+
+  const response = await client.request({
+    schema: 'sks.remote-worker.request.v1',
+    id: 'long-command',
+    type: 'command',
+    envelope: inputEnvelope()
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.receipt?.status, 'completed');
   await client.close();
 });

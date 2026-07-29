@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { readJson } from '../fsx.js'
+import { uniqueValues as unique } from '../text/strings.js'
 import { runCodexTask } from '../codex-control/codex-task-runner.js'
 import { THINKING_SUBAGENT_MODEL, SUBAGENT_EFFORT } from '../subagents/model-policy.js'
 import {
@@ -305,10 +306,6 @@ function semanticTokens(value: unknown): string[] {
   const stop = new Set(['about', 'after', 'before', 'been', 'being', 'could', 'evidence', 'finding', 'from', 'have', 'into', 'research', 'result', 'should', 'source', 'study', 'that', 'their', 'there', 'these', 'this', 'through', 'using', 'with'])
   return unique(String(value || '').toLowerCase().normalize('NFKC').match(/[\p{L}\p{N}]{4,}/gu) || [])
     .filter((token) => !stop.has(token))
-}
-
-function unique<T>(values: T[]): T[] {
-  return [...new Set(values)]
 }
 
 export const researchClaimEvidenceMatrixOutputSchema = {

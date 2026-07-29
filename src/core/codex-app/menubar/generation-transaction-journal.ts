@@ -8,6 +8,8 @@ import type {
   SksMenuBarGenerationTransactionOutcome
 } from './types.js';
 
+export { messageOf as errorMessage } from '../../errors/message.js';
+
 export const JOURNAL_SCHEMA = 'sks.menubar-generation-transaction.v1' as const;
 const OUTCOME_SCHEMA = 'sks.menubar-generation-transaction-outcome.v1' as const;
 
@@ -166,10 +168,6 @@ export async function outcomeFromUnknownJournal(
 
 export async function existsNoFollow(file: string): Promise<boolean> {
   return fs.lstat(file).then(() => true).catch(() => false);
-}
-
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 async function pairOutcome(pair: GenerationJournalPair): Promise<SksMenuBarGenerationPairOutcome> {

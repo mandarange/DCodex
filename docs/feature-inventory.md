@@ -59,7 +59,6 @@ Generated from `sks commands --json`, `src/cli/command-registry.ts COMMANDS`, `s
 | `cli-codex-lb` | integration | beta | sks codex-lb status\|health\|metrics\|doctor\|circuit\|repair\|setup ... | execute_and_validate_artifacts:pass | runtime_verified | none recorded |
 | `cli-menubar` | core-cli | beta | sks menubar | static:pass | static_contract | none recorded |
 | `cli-remote` | core-cli | beta | sks remote readiness\|machines\|worker ... [--json] | real_optional:pass | integration_optional | none recorded |
-| `cli-telegram` | core-cli | beta | sks telegram status\|setup\|validate-config\|hub run\|start\|stop\|restart\|status ... [--json] | real_optional:pass | integration_optional | none recorded |
 | `cli-hooks` | integration | beta | sks hooks explain\|status\|trust-report\|replay\|codex-validate\|warning-check ... [--json]<br>sks hook | execute:pass | runtime_verified | mobile/event payload details remain unknown |
 | `cli-zellij-lane` | core-cli | beta | sks zellij-lane | static:pass | static_contract | none recorded |
 | `cli-zellij-slot-pane` | core-cli | beta | sks zellij-slot-pane | static:pass | static_contract | none recorded |

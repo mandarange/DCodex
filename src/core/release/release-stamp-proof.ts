@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { uniqueValues as unique } from '../text/strings.js'
 
 export function validateFullReleaseStamp(input: {
   root: string
@@ -107,8 +108,4 @@ function hash(value: crypto.BinaryLike): string {
 
 function compact(value: string): string {
   return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 240) || 'unknown'
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)]
 }

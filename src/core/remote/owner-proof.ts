@@ -136,7 +136,7 @@ export function parseRemoteCancelPayload(value: unknown): RemoteCancelPayloadV1 
     approval: {
       schema: approval?.schema === REMOTE_R2_APPROVAL_SCHEMA ? REMOTE_R2_APPROVAL_SCHEMA : invalid('approval_schema_invalid'),
       approval_id: assertBoundedString(approval?.approval_id, 'approval_id', 160),
-      approved_by: approval?.approved_by === 'telegram-owner' ? 'telegram-owner' : invalid('approval_actor_invalid'),
+      approved_by: approval?.approved_by === 'remote-owner' ? 'remote-owner' : invalid('approval_actor_invalid'),
       approved_at: assertBoundedString(approval?.approved_at, 'approved_at', 64),
       expires_at: assertBoundedString(approval?.expires_at, 'approval_expires_at', 64),
       machine_id: assertBoundedString(approval?.machine_id, 'approval_machine_id', 160),
@@ -152,7 +152,7 @@ export function parseRemoteCancelPayload(value: unknown): RemoteCancelPayloadV1 
 function validateR2Approval(envelope: RemoteCommandEnvelopeV1, payload: RemoteCancelPayloadV1, now: number): void {
   const approval = payload.approval;
   assertEqual(approval.schema, REMOTE_R2_APPROVAL_SCHEMA, 'approval_schema_invalid');
-  assertEqual(approval.approved_by, 'telegram-owner', 'approval_actor_invalid');
+  assertEqual(approval.approved_by, 'remote-owner', 'approval_actor_invalid');
   assertEqual(approval.machine_id, envelope.machine_id, 'approval_machine_mismatch');
   assertEqual(approval.project_id, envelope.project_id, 'approval_project_mismatch');
   assertEqual(approval.session_id, envelope.session_id, 'approval_session_mismatch');

@@ -363,15 +363,6 @@ export async function useMultiProviderRouter(input: {
     };
   }
 
-  // Clear any managed codex-lb selection and its shared-OpenAI routing pin so a
-  // later `codex-lb use-oauth` cannot misread leftover managed state and clobber
-  // the router selection.
-  const unselect = await unselectCodexLbProvider({
-    home,
-    configPath,
-    allowActiveSharedAuthTransition: true
-  }).catch((err: any) => ({ ok: false, status: 'failed', provider_error: err?.message || String(err) }));
-
   const providerBody = tomlTableBody(current, `model_providers.${MULTI_PROVIDER_ROUTER_ID}`);
   const existingProviderName = tomlString(providerBody, 'name');
   if (providerBody && existingProviderName !== MULTI_PROVIDER_ROUTER_NAME) {
@@ -407,6 +398,32 @@ export async function useMultiProviderRouter(input: {
     };
   }
 
+  // Never remove the routing guard while the legacy codex-lb key is active in
+  // shared OpenAI auth. The explicit Desktop migration owns OAuth recovery.
+  const unselect = await unselectCodexLbProvider({
+    home,
+    configPath,
+    processEnv: env
+  }).catch((err: any) => ({ ok: false, status: 'failed', provider_error: err?.message || String(err) }));
+  if ((unselect as any)?.ok !== true) {
+    return {
+      ...routerBlocked(
+        'sks.codex-app-use-multi-provider-router.v1',
+        (unselect as any)?.reason === 'shared_codex_lb_auth_active'
+          ? 'legacy_codex_lb_desktop_config_requires_migration'
+          : String((unselect as any)?.status || 'codex_lb_unselect_failed')
+      ),
+      model,
+      base_url: baseUrlResult.value,
+      catalog_path: catalogPath,
+      unselect,
+      guidance: (unselect as any)?.reason === 'shared_codex_lb_auth_active'
+        ? ['Run: sks codex-lb migrate-legacy-desktop --restart-app']
+        : []
+    };
+  }
+  const currentAfterUnselect = await readText(configPath, '');
+
   const providerBlock = [
     `[model_providers.${MULTI_PROVIDER_ROUTER_ID}]`,
     `name = ${JSON.stringify(MULTI_PROVIDER_ROUTER_NAME)}`,
@@ -414,7 +431,11 @@ export async function useMultiProviderRouter(input: {
     'wire_api = "responses"',
     'requires_openai_auth = false'
   ].join('\n');
-  let next = upsertTomlTable(current, `model_providers.${MULTI_PROVIDER_ROUTER_ID}`, providerBlock);
+  let next = upsertTomlTable(
+    currentAfterUnselect,
+    `model_providers.${MULTI_PROVIDER_ROUTER_ID}`,
+    providerBlock
+  );
   next = upsertTopLevelTomlString(next, 'model_catalog_json', catalogPath);
   next = upsertTopLevelTomlString(next, 'model_provider', MULTI_PROVIDER_ROUTER_ID);
   next = upsertTopLevelTomlString(next, 'model', model);
@@ -422,10 +443,16 @@ export async function useMultiProviderRouter(input: {
   // every provider switch, not just install/codex-lb setup.
   next = normalizeCodexFastModeUiConfig(next);
   next = ensureTrailingNewline(next);
-  const write = await safeWriteCodexConfigToml(configPath, current, next, 'multi-provider-router-use', {
+  const write = await safeWriteCodexConfigToml(
+    configPath,
+    currentAfterUnselect,
+    next,
+    'multi-provider-router-use',
+    {
     verifyUnchangedBeforeWrite: true,
     expectedBeforeExists: configExistedBefore
-  });
+    }
+  );
   if (!write.ok) {
     return {
       ...routerBlocked(
@@ -493,9 +520,6 @@ export async function useMultiProviderRouter(input: {
       ...catalog.warnings,
       ...ownership.warnings,
       ...cache.warnings,
-      ...((unselect as any)?.ok === false
-        ? [`codex_lb_unselect:${(unselect as any).provider_error || (unselect as any).status}`]
-        : []),
       ...(catalog.models.find((entry) => entry.model === model)?.multi_agent_version === 'v2'
         ? []
         : ['multi_provider_router_model_multi_agent_v2_missing']),

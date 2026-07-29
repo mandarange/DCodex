@@ -2,6 +2,91 @@
 
 ## [Unreleased]
 
+## [8.0.0] - 2026-07-29
+
+### Removed
+
+- Remove the first-party Telegram coding bridge, including its SKS Center
+  surface and Telegram CLI/runtime guidance. Existing Telegram release notes
+  below remain historical records. For a separate remote-coding option, the
+  documentation now points to external Orca without bundling, requiring, or
+  supporting it.
+
+### Migration
+
+- Former Telegram users should use the new Orca remote-coding guide to assess
+  an external replacement. SKS does not migrate Telegram sessions, bots, or
+  credentials to Orca, and it does not remove a Telegram credential on the
+  user's behalf.
+
+### Changed
+
+- Separate codex-lb routing from Codex Desktop authentication. The guarded
+  Desktop Full Capability path preserves real ChatGPT OAuth and the built-in
+  OpenAI provider, routes supported traffic through an owner-only loopback
+  bridge, and sends the codex-lb gateway key only on the gateway hop. It is
+  reported ready only after the required transport and trusted Desktop evidence
+  pass; configuration, manifests, and fixtures remain unverified evidence.
+  CLI-only configuration uses an unselected `codex-lb` provider with
+  independent environment authentication.
+- Replace the old mutually exclusive OAuth/gateway-key switch with explicit
+  Desktop Full Capability, Desktop compatibility, CLI Provider, Disable,
+  Capability Matrix, legacy migration, and receipt-backed rollback surfaces.
+- Keep Codex App native features independent from codex-lb authentication and
+  routing mode, validate deep evidence against a fresh target-bound trust
+  anchor, and block full release with `real_required_missing` until real
+  Desktop plus separately hosted other-Mac runtime evidence exists.
+- Keep the package ceiling narrow but large enough for the six required
+  Desktop bridge/capability verification scripts: 2,725 KiB packed and
+  12.5 MB unpacked, measured from the exact publish allowlist.
+- Standardize all seven SKS Center sections on full-width, leading-aligned
+  cards with stable accessibility identifiers, explicit loading/empty/error
+  feedback, one safe Return-key default per page, and scrollable MCP editing at
+  the supported minimum window size.
+
+### Fixed
+
+- Stop setup, install, repair, update, and ordinary launch preparation from
+  writing shared Codex auth, selecting codex-lb globally, binding a local
+  Desktop catalog, changing Fast/UI state, or inferring a gateway credential
+  from an API key found in `auth.json`.
+- Require an actual Codex App restart before a legacy migration can finalize
+  its OAuth-preservation receipt, and fail closed when the post-restart OAuth
+  account identity has no stable claim that can be compared.
+- Mask provider API-key entry by default, preserve malformed or unreadable
+  native settings instead of overwriting them, give denied notifications a
+  direct System Settings recovery action, and ignore stale MCP inventory
+  responses after a scope change.
+- Register real hermetic Align CLI/route fixtures and make `sks align proof`
+  write the canonical Completion Proof even when the modernization gate remains
+  honestly blocked.
+- Modernize generated SKS skills and `agents/openai.yaml` metadata against the
+  current Codex Skills/Plugins contract, add a release-gated exhaustive surface
+  audit, and harden Align with route-scoped mission identity, sealed policy and
+  inventory receipts, evidence-safe verification, and work-order closure.
+- Clear stale blocker metadata when a previously blocked work order is later
+  verified, so terminal status and blocker state cannot contradict each other.
+
+## [7.6.0] - 2026-07-28
+### Added
+
+- Add read-only `sks telegram center-snapshot` and lightweight `sks telegram center-live` surfaces for the selected project/session. The full snapshot verifies the exact Telegram-bound Codex App Server thread, pages its complete stored turn history through experimental `thread/turns/list` with `itemsView: "full"`, and projects chronological user and Codex messages. The live snapshot reads only the bounded local lifecycle journal and returns stable conversation/activity revisions without starting App Server. Reasoning text, raw output, tool arguments/results, credentials, home paths, and out-of-project paths are excluded; byte/item caps and omitted counts are explicit.
+- Show the connected Codex thread directly in **SKS Center → Remote & Telegram** with a registered-session selector, **Older / Newer / Latest** full-history navigation, Latest-only 2.5-second lightweight journal polling, completed-turn/manual App Server conversation refresh, first-message empty state, current-page manual refresh, and an in-product guide for ordinary text plus `/status`, `/tail`, `/diff`, `/gates`, `/trust`, `/proof`, `/artifacts`, `/input`, `/verify`, `/cancel`, `/refresh`, and `/open`.
+
+### Changed
+
+- Rebuild the Telegram page around distinct setup and connected states. The disconnected state presents a compact BotFather → private `/start` → secure connect sequence; the connected state keeps Hub controls, token rotation, linked-thread visibility, and project readiness separated into scannable cards.
+- Rename the native menu and Providers controls to **Codex Fast** and describe the current official contract: 1.5× faster on supported models; ChatGPT-sign-in GPT-5.6/GPT-5.5 consume 2.5× Standard credits and GPT-5.4 consumes 2×; API-key token pricing and API Priority processing are separate; model choice, Codex-Spark, and reasoning effort remain independent.
+
+### Fixed
+
+- Keep Center transcript snapshots out of `last-action.log`, allow a larger private bounded output budget for them, and retain structured setup errors without exposing secure stdin.
+- Journal real App Server `turn/started`, `turn/completed`, `item/started`, and `item/completed` notifications during Telegram turns so Center can show work while it is happening rather than only after the final reply.
+- Add Telegram-specific guidance through App Server `developerInstructions` instead of replacing Codex's built-in base instructions, preserving the normal coding/tool behavior that the dedicated thread needs to do real work.
+- Consume every retained event-journal page before applying Center's newest-item bound; sessions with more than 128 activity events no longer get stuck showing the oldest page.
+- Make Telegram status and setup distinguish verified bot identity, long-poll readiness, Keychain readback, private pairing, registered sessions, Hub state, and the expected `awaiting_first_message` state without inventing a Codex thread.
+- Batch each turn's bounded public activity into one journal mutation and cap the optional flush wait, so live telemetry cannot serialize hundreds of full-file rewrites ahead of the final Telegram reply.
+
 ## [7.5.0] - 2026-07-27
 ### Added
 
@@ -884,7 +969,9 @@
 
 ### Changed
 
-- Update codex-lb provider generation to the current `Soju06/codex-lb` Codex App contract: `name = "openai"`, `wire_api = "responses"`, `supports_websockets = true`, and `requires_openai_auth = true`.
+- Historical behavior at this release used a lowercase OpenAI-compatible
+  provider identity and shared OpenAI auth for codex-lb. The Unreleased Desktop
+  Full Capability remediation supersedes that contract.
 - Make `sks codex-lb use-codex-lb` switch Codex App auth to the codex-lb API key, force Fast request intent, and restart Codex App on macOS unless `--no-restart-app` is passed. `--json` automation skips restart unless `--restart-app` is explicit.
 - Make bare `sks update` the official npm-latest update path; `sks update check` remains status-only and successful/current update runs refresh the macOS `SKS` menu bar companion.
 
@@ -2394,7 +2481,9 @@ Final hardening release: closes the remaining legacy-upgrade, publish, postinsta
 - Add `naruto:shadow-clone-swarm` release gate + blackbox test proving the ceiling lift (100), the unchanged default cap (20), a 100-unique-clone roster, and an end-to-end 24-clone run scheduling all clones to completion past the old 20 cap.
 - Add `codex-project-config-policy-merge-regression.mjs` covering moved-keys-before-tables ordering and the CODEX_HOME self-split no-op guard.
 - Add `doctor-fix-recovers-corrupted-config-check.mjs` proving `doctor --fix` recovers a corrupted project and global config (key hoisting), and is a no-op on a healthy config (profile keys preserved).
-- Add codex-lb auth commands: `sks codex-lb set-key` (swap the API key without re-typing the host — reuses the stored base URL), `sks codex-lb use-codex-lb` (switch auth to the codex-lb API key), and `sks codex-lb use-oauth` (switch back to ChatGPT OAuth, restoring a saved login or falling back to `codex login`).
+- Add the historical codex-lb key-update and auth-switch commands. Their
+  auth-slot switching semantics are now retired; current aliases route to
+  Desktop Full Capability or Disable without replacing ChatGPT OAuth.
 - Add release gates `install:update-preserves-config` (a customized `~/.codex/config.toml` survives `npm i -g`, with backup + idempotency + unparseable-not-clobbered), `codex-lb:config-toml-safety` (a codex-lb write never corrupts the TOML, incl. the multiline-string trap), and `codex-app:ui-preservation` (SKS never overrides a user-disabled feature/plugin; plugins opt-in; fresh config still seeded) — each with a blackbox test and wired into the release DAG.
 
 

@@ -14,15 +14,22 @@ await fs.writeFile(path.join(home, '.codex', 'config.toml'), [
   'service_tier = "fast"',
   '',
   '[model_providers.codex-lb]',
-  'name = "openai"',
+  'name = "codex-lb"',
   'base_url = "https://lb.example.test/backend-api/codex"',
   'wire_api = "responses"',
   'env_key = "CODEX_LB_API_KEY"',
   'supports_websockets = true',
-  'requires_openai_auth = true',
+  'requires_openai_auth = false',
   ''
 ].join('\n'));
-await fs.writeFile(path.join(home, '.codex', 'auth.json'), `${JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'sk-fixture' })}\n`);
+await fs.writeFile(path.join(home, '.codex', 'auth.json'), `${JSON.stringify({
+  auth_mode: 'chatgpt',
+  account_id: 'acct-fast-truth',
+  tokens: {
+    access_token: 'oauth-fast-truth',
+    refresh_token: 'refresh-fast-truth'
+  }
+})}\n`);
 await fs.writeFile(path.join(home, '.codex', 'sks-codex-lb.env'), "export CODEX_LB_BASE_URL='https://lb.example.test/backend-api/codex'\nexport CODEX_LB_API_KEY='sk-fixture'\n");
 
 const chain = await runFastCheck({

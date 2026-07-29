@@ -368,3 +368,52 @@ test('activating OpenRouter while already selected without a snapshot does not f
   assert.equal(status.previous_routing_restore_available, false);
   assert.equal(status.warnings.includes('desktop_routing_snapshot_restore_available'), false);
 });
+
+test('OpenRouter activation cannot expose a shared codex-lb key by removing its routing guard', async (t) => {
+  const { temp, root, home, configPath, env } = await makeTempOpenRouterHarness();
+  t.after(async () => fs.rm(temp, { recursive: true, force: true }));
+  const codexHome = path.dirname(configPath);
+  const gatewayKey = 'sk-clb-openrouter-shared-auth';
+  const remote = 'https://lb.example.test/backend-api/codex';
+  const managedCatalog = path.join(codexHome, 'sks-codex-lb-tool-catalog.json');
+  const authPath = path.join(codexHome, 'auth.json');
+  const auth = `{"auth_mode":"apikey","OPENAI_API_KEY":"${gatewayKey}"}\n`;
+  await fs.writeFile(configPath, [
+    'model_provider = "codex-lb"',
+    '# sks-codex-lb-managed-openai-base-url',
+    `openai_base_url = "${remote}"`,
+    `model_catalog_json = ${JSON.stringify(managedCatalog)}`,
+    '',
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = "${remote}"`,
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n'));
+  await fs.writeFile(managedCatalog, '{"models":[]}\n', { mode: 0o600 });
+  await fs.writeFile(
+    path.join(codexHome, 'sks-codex-lb.env'),
+    `export CODEX_LB_BASE_URL=${JSON.stringify(remote)}\nexport CODEX_LB_API_KEY=${JSON.stringify(gatewayKey)}\n`,
+    { mode: 0o600 }
+  );
+  await fs.writeFile(authPath, auth, { mode: 0o600 });
+
+  const result = await useOpenRouter({
+    root,
+    home,
+    configPath,
+    env,
+    model: OPENROUTER_DEFAULT_MODEL,
+    restartApp: false
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.blockers, ['legacy_codex_lb_desktop_config_requires_migration']);
+  const config = await fs.readFile(configPath, 'utf8');
+  assert.match(config, /^model_provider = "codex-lb"$/m);
+  assert.match(config, /^openai_base_url = "https:\/\/lb\.example\.test\/backend-api\/codex"$/m);
+  assert.equal(await fs.readFile(authPath, 'utf8'), auth);
+});

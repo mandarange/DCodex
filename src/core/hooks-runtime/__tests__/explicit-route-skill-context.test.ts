@@ -26,6 +26,7 @@ test('explicit managed dollar/app skills are allowlisted, ordered, and never ref
     ['$Computer-Use inspect native settings', ['sks-computer-use']],
     ['$sks-loop continue the bounded mission', ['sks-loop']],
     ['$sks-init-deep refresh managed context', ['sks-init-deep']],
+    ['$sks-align modernize prompts and skills', ['sks-align']],
     ['$Release-Review audit', ['sks-release-review']],
     ['$Naruto $sks-context7-docs inspect current docs', ['sks-naruto', 'sks-context7-docs']],
     ['$Naruto $sks-hproof-claim-ledger verify claims', ['sks-naruto', 'sks-hproof-claim-ledger']],
@@ -40,7 +41,7 @@ test('explicit managed dollar/app skills are allowlisted, ordered, and never ref
     assert.deepEqual(selected, expected, prompt);
     assert.doesNotMatch(JSON.stringify(selected), /unsafe|attacker-secret|escape|also-unknown/i, prompt);
   }
-  for (const coreSkill of ['sks-computer-use', 'sks-init-deep', 'sks-loop']) {
+  for (const coreSkill of ['sks-computer-use', 'sks-init-deep', 'sks-loop', 'sks-align']) {
     assert.ok(MANAGED_ROUTE_SKILL_NAMES.includes(coreSkill), coreSkill);
   }
 

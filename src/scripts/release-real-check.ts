@@ -120,6 +120,13 @@ const tasks = [
 
   task('naruto:worktree-coding:blackbox', 'direct', { command: nodeScript('naruto-worktree-coding-blackbox.js'), group: 'real_smoke', phase: 'parallel_processing', args: ['--require-real'], env: { SKS_REQUIRE_GIT_WORKTREE: '1' }, policy: requiredPolicy(['sks.release-gate.v1']) }),
   task('codex-sdk:real-smoke', 'direct', { command: nodeScript('codex-sdk-real-smoke-check.js'), group: 'real_smoke', phase: 'parallel_processing', args: ['--require-real'], policy: requiredPolicy(['sks.release-gate.v1'], { statusRequired: true, passStatuses: ['proven'] }) }),
+  task('codex-lb:desktop-real-evidence', 'direct', {
+    command: nodeScript('codex-lb-desktop-real-evidence-check.js'),
+    group: 'real_ui',
+    phase: 'parallel_verification',
+    deps: ['codex:actual-config-load-probe'],
+    policy: liveOptionalPolicy(['sks.codex-lb-desktop-real-evidence-check.v1'], ['passed'])
+  }),
   task('imagegen:real-smoke', 'direct', { command: nodeScript('imagegen-real-smoke-check.js'), group: 'real_smoke', phase: 'parallel_processing', policy: liveOptionalPolicy(['sks.imagegen-real-smoke.v1'], ['passed']) }),
   task('ux-review:real-imagegen-smoke', 'direct', { command: nodeScript('ux-review-real-imagegen-smoke-check.js'), group: 'real_smoke', phase: 'parallel_processing', deps: ['imagegen:real-smoke'], policy: liveOptionalPolicy(['sks.ux-real-imagegen-smoke.v1'], ['passed']) }),
   task('ppt:real-imagegen-smoke', 'direct', { command: nodeScript('ppt-real-imagegen-smoke-check.js'), group: 'real_smoke', phase: 'parallel_processing', deps: ['imagegen:real-smoke'], policy: liveOptionalPolicy(['sks.ppt-real-imagegen-smoke.v1'], ['passed']) })

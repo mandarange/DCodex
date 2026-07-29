@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import fsp from 'node:fs/promises'
 import { evaluateHookPayload } from '../../hooks-runtime.js'
-import { loadStateForSession, missionDir } from '../../mission.js'
+import { loadStateForSession, missionDir, setCurrent } from '../../mission.js'
 import { prepareRoute } from '../../pipeline.js'
 import { runProcess } from '../../fsx.js'
 import { installGlobalSkills } from '../../init/skills.js'
@@ -116,6 +116,55 @@ test('App Naruto parent-summary command fails closed, finalizes canonically, and
     assert.equal(conflict.code, 1)
     assert.ok(conflict.result.blockers.includes('naruto_parent_summary_conflicts_with_canonical'))
     assert.deepEqual(await readFiles(dir, terminalFiles), terminalBytes)
+  } finally {
+    restoreEnvironment()
+    await fsp.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('App parent-summary finalizes an official subagent run owned by another active route', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-cross-route-parent-summary-'))
+  const home = path.join(root, 'home')
+  const session = 'cross-route-parent-summary-session'
+  const restoreEnvironment = setEnvironment({
+    HOME: home,
+    USERPROFILE: home,
+    CODEX_HOME: path.join(home, '.codex'),
+    SKS_GLOBAL_ROOT: path.join(home, '.sneakoscope-global')
+  })
+  try {
+    await fsp.mkdir(home, { recursive: true })
+    const skillInstall = await installGlobalSkills(home)
+    assert.equal(skillInstall.ok, true, JSON.stringify(skillInstall, null, 2))
+    await prepareRoute(root, '$Naruto --agents 1 verify an Image UX route slice', {}, {
+      sessionKey: session,
+      parentModel: 'gpt-5.6-sol'
+    })
+    let state: any = await loadStateForSession(root, session)
+    const runId = String(state.official_subagent_run_id)
+    await recordThread(root, state, session, runId, 'cross-route-a1')
+    const dir = missionDir(root, state.mission_id)
+    assert.match(await fsp.readFile(path.join(dir, 'subagent-events.jsonl'), 'utf8'), /cross-route-a1/)
+    await setCurrent(root, {
+      mode: 'IMAGE_UX_REVIEW',
+      route: 'ImageUXReview',
+      route_command: '$Image-UX-Review',
+      subagents_required: true
+    }, { sessionKey: session })
+    state = await loadStateForSession(root, session)
+    assert.match(await fsp.readFile(path.join(dir, 'subagent-events.jsonl'), 'utf8'), /cross-route-a1/)
+
+    const completed = await invokeParentSummary(
+      root,
+      session,
+      state.mission_id,
+      JSON.stringify(parentSummary(runId, ['cross-route-a1']))
+    )
+    assert.equal(completed.code, 0, JSON.stringify(completed, null, 2))
+    assert.equal(completed.result.ok, true)
+    assert.equal(completed.result.status, 'completed')
+    assert.equal(completed.result.workflow_run_id, runId)
+    assert.equal(state.route, 'ImageUXReview')
   } finally {
     restoreEnvironment()
     await fsp.rm(root, { recursive: true, force: true })

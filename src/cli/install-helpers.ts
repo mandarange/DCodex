@@ -6,7 +6,6 @@ import { stdin as input, stdout as output } from 'node:process';
 import { ensureDir, exists, globalSksRoot, packageRoot, PACKAGE_VERSION, readText, runProcess, tmpdir, which, writeTextAtomic } from '../core/fsx.js';
 import { createRequestedScopeContract } from '../core/safety/requested-scope-contract.js';
 import { guardedPackageInstall, guardContextForRoute } from '../core/safety/mutation-guard.js';
-import { EMPTY_CODEX_INFO, getCodexInfo } from '../core/codex-adapter.js';
 import { formatHarnessConflictReport, llmHarnessCleanupPrompt, scanHarnessConflicts } from '../core/harness-conflicts.js';
 import { initProject, installGlobalSkills } from '../core/init.js';
 import { context7ConfigToml, DOLLAR_SKILL_NAMES, GETDESIGN_REFERENCE, hasContext7ConfigText, RECOMMENDED_SKILLS } from '../core/routes.js';
@@ -17,8 +16,7 @@ import { cleanupMacLaunchSecretEnvironment } from '../core/codex-app/menubar/ind
 import { recordCodexLbHealthEvent } from '../core/codex-lb-circuit.js';
 import { loadCodexLbEnv, writeCodexLbKeychain, codexLbMetadataPath } from '../core/codex-lb/codex-lb-env.js';
 import {
-  codexLbToolCatalogPath,
-  ensureCodexLbToolCatalog
+  codexLbToolCatalogPath
 } from '../core/codex-lb/codex-lb-tool-catalog.js';
 import {
   codexLbToolOutputRecoveryNotChecked,
@@ -41,6 +39,19 @@ import {
   type CodexLbPersistenceSummary,
   type CodexLbPersistenceMode
 } from '../core/codex-lb/codex-lb-setup.js';
+import {
+  DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT,
+  modeRequiresChatGptOAuth,
+  parseCodexLbDesktopMode,
+  parseCodexLbGatewayAuthTransport,
+  type CodexLbDesktopMode,
+  type CodexLbGatewayAuthTransport
+} from '../core/codex-lb/desktop-mode.js';
+import {
+  assertDesktopAuthUnchangedBySks,
+  captureCodexAuthSnapshot,
+  type CodexAuthSnapshot
+} from '../core/codex-lb/desktop-auth-invariant.js';
 import { extractTomlTable, writeCodexConfigGuarded } from '../core/codex/codex-config-guard.js';
 import {
   ensureGlobalCodexFastModeDuringInstall,
@@ -48,7 +59,6 @@ import {
   normalizeCodexFastModeUiConfig,
   removeTopLevelTomlKeyIfValue,
   safeWriteCodexConfigToml,
-  upsertTopLevelTomlString,
   upsertTomlTable
 } from '../core/codex-runtime/codex-desktop-config-policy.js';
 import { runPostinstallGlobalDoctorAndMarkPending } from '../core/update/update-migration-state.js';
@@ -58,14 +68,12 @@ import {
   compareVersions,
   hasCodexUnstableFeatureWarningSuppression,
   hasDeprecatedCodexHooksFeatureFlag,
-  hasTopLevelCodexModeLock,
   isProjectSetupCandidate
 } from './install-tool-helpers.js';
 import { checkCodexLbResponseChain } from './install-helpers-codex-lb-chain.js';
 import {
   CODEX_LB_CANONICAL_FAST_SERVICE_TIER,
   CODEX_LB_PROVIDER_ENV_KEY,
-  CODEX_LB_PROVIDER_NAME,
   askPostinstallQuestion,
   codexAuthChatgptBackupPath,
   codexAuthPath,
@@ -77,6 +85,8 @@ import {
   redactSecretText
 } from './install-helpers-codex-lb-shared.js';
 import {
+  CODEX_LB_DESKTOP_BRIDGE_MARKER,
+  CODEX_LB_DESKTOP_COMPAT_MARKER,
   appliedCodexLbPersistenceModes,
   captureCodexLbSetupWriteState,
   codexLbSharedOpenAiRoutingState,
@@ -84,14 +94,18 @@ import {
   ensureGlobalCodexAppGlmProfile,
   ensureStoredOpenRouterProviderDuringInstall,
   parseCodexLbEnvBaseUrl,
-  parseCodexSharedLoginApiKey,
   removeCodexLbSharedOpenAiRouting,
+  removeCodexLbManagedDesktopConfig,
   sha256Text,
   shellSingleQuote,
   upsertCodexAppGlmConfig,
   upsertCodexLbConfig,
+  upsertCodexLbCliProviderConfig,
+  upsertCodexLbCompatDesktopConfig,
+  upsertCodexLbNativeDesktopConfig,
   upsertCodexLbSharedOpenAiRouting
 } from './install-helpers-codex-lb-config.js';
+import { detectLegacyCodexLbDesktopState } from '../core/codex-lb/legacy-migration.js';
 import {
   ensureCodexImagegenDuringInstall,
   ensureGlobalCodexSkillsDuringInstall,
@@ -148,13 +162,7 @@ export async function postinstall({ bootstrap, args = [] }: any) {
     else if (context7Install.status === 'codex_missing') console.log('Context7 MCP: Codex CLI missing. Install @openai/codex or set SKS_CODEX_BIN, then run `sks context7 setup --scope global` or `sks setup` in a project.');
     else if (context7Install.status === 'skipped') console.log(`Context7 MCP: skipped (${context7Install.reason}).`);
     else if (context7Install.status === 'failed') console.log(`Context7 MCP: auto setup failed. Run \`sks context7 setup --scope global\` or \`sks setup\`. ${context7Install.error || ''}`.trim());
-    const fastModeRepair = await ensureGlobalCodexFastModeDuringInstall();
-    if (fastModeRepair.status === 'updated') console.log(`Codex App Fast mode: updated ${fastModeRepair.config_path}${fastModeRepair.backup_path ? ` (backup ${fastModeRepair.backup_path})` : ''}.`);
-    else if (fastModeRepair.status === 'present') console.log('Codex App Fast mode: config already compatible.');
-    else if (fastModeRepair.status === 'unparseable_config_preserved') console.log(`Codex App Fast mode: existing ${fastModeRepair.config_path} is not valid TOML — left untouched, backed up to ${fastModeRepair.backup_path}. Run \`sks doctor --fix\` to recover it.`);
-    else if (fastModeRepair.status === 'skipped_unsafe_rewrite') console.log(`Codex App Fast mode: skipped (managed rewrite would not parse; ${fastModeRepair.config_path} left untouched).`);
-    else if (fastModeRepair.status === 'skipped') console.log(`Codex App Fast mode: skipped (${fastModeRepair.reason}).`);
-    else if (fastModeRepair.status === 'failed') console.log(`Codex App Fast mode: auto repair failed. Run \`sks setup\`. ${fastModeRepair.error || ''}`.trim());
+    console.log('Codex App Fast mode: left unchanged during install; use the explicit Fast-mode command to change it.');
     const openRouterProviderRepair = await ensureStoredOpenRouterProviderDuringInstall();
     if (openRouterProviderRepair.status === 'updated') console.log('OpenRouter provider: repaired for the stored key (credentials and active model were preserved).');
     else if (openRouterProviderRepair.status === 'present') console.log('OpenRouter provider: stored-key configuration already compatible.');
@@ -165,14 +173,21 @@ export async function postinstall({ bootstrap, args = [] }: any) {
     else if (imagegenRepair.status === 'recovered') console.log('Codex App Image Gen: recovered and re-detected. Start a new Codex/Work task; restart the desktop app only if the new task still lacks $imagegen.');
     else if (imagegenRepair.status === 'blocked') console.log(`Codex App Image Gen: blocked; run \`sks doctor --fix\`. ${(imagegenRepair.blockers || []).join(', ')}`.trim());
     else if (imagegenRepair.status === 'skipped') console.log(`Codex App Image Gen: skipped (${imagegenRepair.reason}).`);
-    const postinstallDoctor = await runPostinstallGlobalDoctorAndMarkPending().catch((err: any) => ({
+    const postinstallDoctor = await runPostinstallGlobalDoctorAndMarkPending({
+      env: {
+        ...process.env,
+        // Postinstall records the pending migration only. Broad Doctor repair is
+        // explicit because it may change Codex UI/runtime configuration.
+        SKS_POSTINSTALL_GLOBAL_DOCTOR: '0'
+      }
+    }).catch((err: any) => ({
       ok: false,
       doctor: null,
       pending: null,
       blockers: [err?.message || String(err)],
       warnings: []
     }));
-    if (postinstallDoctor.ok) console.log('SKS update migration: global Doctor ran; project receipt will be finalized on first normal command.');
+    if (postinstallDoctor.ok) console.log('SKS update migration: pending receipt recorded; no global Doctor repair ran during install.');
     else console.log(`SKS update migration: global Doctor did not complete; first normal command will retry. ${(postinstallDoctor.blockers || []).join(', ')}`.trim());
     const postinstallRetention = await runPostinstallProjectRetentionCleanup(installRoot);
     if (postinstallRetention.status === 'completed' && postinstallRetention.action_count > 0) console.log(`SKS mission cleanup: removed ${postinstallRetention.action_count} disposable runtime artifact(s) from closed missions.`);
@@ -269,9 +284,7 @@ async function runPostinstallProjectRetentionCleanup(root: string) {
 }
 
 async function reportPostinstallCodexLbAuth(snapshot: any = null) {
-  const preserveActiveCodexLb = snapshot?.selected === true && snapshot?.codex_lb_key_in_shared_auth === true;
   const codexLbAuth = await ensureCodexLbAuthDuringInstall({
-    forceCodexLbApiKeyAuth: preserveActiveCodexLb,
     ...(snapshot?.secret_api_key ? { apiKey: snapshot.secret_api_key } : {}),
     ...(snapshot?.base_url ? { baseUrl: snapshot.base_url } : {})
   });
@@ -281,19 +294,14 @@ async function reportPostinstallCodexLbAuth(snapshot: any = null) {
   else if (codexLbAuth.status === 'skipped') console.log(`codex-lb auth: skipped (${codexLbAuth.reason}).`);
   else if (codexLbAuth.status === 'missing_env_key') console.log('codex-lb auth: stored key missing. Run `sks codex-lb setup --host <domain> --api-key-stdin` to repair.');
   else if (codexLbAuth.status === 'missing_base_url') console.log('codex-lb auth: stored key has no recoverable base URL. Run `sks codex-lb reconfigure --host <domain> --api-key-stdin` once.');
-  else if (codexLbAuth.status === 'not_configured') console.log('codex-lb (optional multi-account load balancer): not configured — opt in anytime with `sks codex-lb setup` (your choice; never applied automatically, never edits your Codex config without it). Swap key later: `sks codex-lb set-key`; switch auth: `sks codex-lb use-oauth` / `use-codex-lb`.');
+  else if (codexLbAuth.status === 'legacy_migration_required') console.log('codex-lb legacy Desktop auth routing was left unchanged. Migrate explicitly with `sks codex-lb migrate-legacy-desktop --restart-app`.');
+  else if (codexLbAuth.status === 'not_configured') console.log('codex-lb (optional multi-account load balancer): not configured — use `sks codex-lb setup`, then choose `use-desktop-full`, `use-cli`, or `disable` explicitly.');
   else if (codexLbAuth.status && codexLbAuth.status !== 'not_configured') console.log(`codex-lb auth: repair skipped (${codexLbAuth.status}${codexLbAuth.error ? `: ${codexLbAuth.error}` : ''}).`);
   const reconcile = codexLbAuth.auth_reconcile;
-  if (reconcile?.status === 'oauth_preserved') {
-    console.log(`codex-lb auth: ChatGPT OAuth preserved as backup; run \`sks codex-lb use-codex-lb\` to switch the App to codex-lb API-key auth (backup at ${reconcile.backup_path ?? 'unknown'}).`);
-  } else if (reconcile?.status === 'oauth_restored') {
-    console.log(`codex-lb auth: restored ChatGPT OAuth from ${reconcile.backup_path ?? 'unknown'} and cleared codex-lb provider selection.`);
-  } else if (reconcile?.status === 'apikey_forced') {
-    console.log(`codex-lb auth: forced API-key auth.json for CLI-only use (OAuth backup at ${reconcile.backup_path ?? 'unknown'}).`);
-  } else if (reconcile?.status === 'backup_only') {
-    console.log(`codex-lb auth: detected ChatGPT OAuth tokens in auth.json. OAuth backup written to ${reconcile.backup_path ?? 'unknown'}; auth.json left untouched because SKS_CODEX_LB_NO_AUTH_RECONCILE=1.`);
-  } else if (reconcile?.status === 'failed') {
-    console.log(`codex-lb auth: ChatGPT OAuth reconciliation could not complete (${reconcile.reason || 'unknown'}${reconcile.error ? `: ${reconcile.error}` : ''}). Run \`sks codex-lb repair\` to retry.`);
+  if (reconcile?.status === 'oauth_untouched') {
+    console.log('codex-lb auth: ChatGPT OAuth/shared Codex auth was left byte-for-byte unchanged.');
+  } else if (reconcile?.status === 'legacy_migration_required') {
+    console.log('codex-lb auth: legacy shared-auth routing requires `sks codex-lb migrate-legacy-desktop --restart-app`; background install will not migrate it.');
   }
   if (codexLbAuth.base_url && codexLbAuth.codex_lb?.env_key_configured && canAskYesNo() && process.env.SKS_SKIP_CODEX_LB_KEY_PROMPT !== '1') {
     const changeKey = (await askPostinstallQuestion('codex-lb key changed? Update now? [y/N] ')).trim();
@@ -410,15 +418,22 @@ export type CodexLbAuthInstallResult = {
 export type ConfigureCodexLbResult = {
   ok?: boolean;
   status: string;
+  mode?: CodexLbDesktopMode;
+  identity_plane?: 'unchanged';
+  routing_plane?: 'cli_provider' | 'desktop_native_bridge' | 'desktop_compat_provider';
+  gateway_auth_transport?: CodexLbGatewayAuthTransport;
+  oauth_preserved?: boolean;
+  auth_mutated?: false;
   plan?: Record<string, unknown>;
   applied_actions?: Array<Record<string, unknown>>;
   drift?: string[];
   persistence?: CodexLbPersistenceSummary;
+  center_credentials?: Record<string, unknown>;
   config_path?: string;
   env_path?: string;
   metadata_path?: string;
   backup_path?: string | null;
-  base_url?: string;
+  base_url?: string | null;
   env_key?: string;
   keychain?: Record<string, unknown>;
   warnings?: string[];
@@ -432,9 +447,318 @@ export type ConfigureCodexLbResult = {
   chain_health?: { status?: string } & Record<string, unknown>;
   bypass_codex_lb?: boolean;
   repair?: CodexLbAuthInstallResult;
+  reason?: string;
+  blockers?: string[];
 } & Partial<CodexLbStatusSnapshot>;
 
 export type CodexLbLaunchPromptResult = ConfigureCodexLbResult;
+
+export interface ConfigureCodexLbDesktopRoutingOptions {
+  mode: CodexLbDesktopMode;
+  home?: string;
+  configPath?: string;
+  authPath?: string;
+  bridgeBaseUrl?: string;
+  remoteBaseUrl?: string;
+  gatewayAuthTransport?: CodexLbGatewayAuthTransport;
+}
+
+export interface ConfigureCodexLbDesktopRoutingResult {
+  schema: 'sks.codex-lb-desktop-routing.v1';
+  ok: boolean;
+  status:
+    | 'desktop_routing_configured'
+    | 'desktop_routing_present'
+    | 'desktop_routing_disabled'
+    | 'desktop_oauth_required'
+    | 'desktop_gateway_auth_transport_unsupported'
+    | 'invalid_desktop_routing_input'
+    | 'failed';
+  mode: CodexLbDesktopMode;
+  identity_plane: 'chatgpt_oauth' | 'unavailable';
+  routing_plane: 'desktop_native_bridge' | 'desktop_compat_provider' | 'disabled' | 'unchanged';
+  gateway_auth_transport: CodexLbGatewayAuthTransport;
+  oauth_preserved: boolean;
+  auth_mutated: false;
+  config_path: string;
+  auth_path: string;
+  auth_before: CodexAuthSnapshot;
+  auth_after: CodexAuthSnapshot;
+  backup_path?: string | null;
+  rollback?: Record<string, unknown>;
+  blockers: string[];
+  error?: string;
+}
+
+export async function configureCodexLbDesktopRouting(
+  opts: ConfigureCodexLbDesktopRoutingOptions
+): Promise<ConfigureCodexLbDesktopRoutingResult> {
+  const home = opts.home || process.env.HOME || os.homedir();
+  const configPath = opts.configPath || codexLbConfigPath(home);
+  const authPath = opts.authPath || codexAuthPath(home);
+  const mode = parseCodexLbDesktopMode(opts.mode);
+  const gatewayAuthTransport = parseCodexLbGatewayAuthTransport(
+    opts.gatewayAuthTransport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT
+  );
+  const authBefore = await captureCodexAuthSnapshot({ home, authPath });
+  const identityPlane: ConfigureCodexLbDesktopRoutingResult['identity_plane'] = authBefore.mode === 'chatgpt_oauth' || authBefore.mode === 'mixed'
+    ? 'chatgpt_oauth'
+    : 'unavailable';
+  const base = {
+    schema: 'sks.codex-lb-desktop-routing.v1' as const,
+    mode,
+    gateway_auth_transport: gatewayAuthTransport,
+    identity_plane: identityPlane,
+    auth_mutated: false as const,
+    config_path: configPath,
+    auth_path: authPath,
+    auth_before: authBefore
+  };
+  if (mode === 'cli-provider') {
+    return {
+      ...base,
+      ok: false,
+      status: 'invalid_desktop_routing_input',
+      routing_plane: 'unchanged',
+      oauth_preserved: true,
+      auth_after: authBefore,
+      blockers: ['cli_provider_is_not_a_desktop_routing_mode']
+    };
+  }
+  if (modeRequiresChatGptOAuth(mode) && identityPlane !== 'chatgpt_oauth') {
+    return {
+      ...base,
+      ok: false,
+      status: 'desktop_oauth_required',
+      routing_plane: 'unchanged',
+      oauth_preserved: false,
+      auth_after: authBefore,
+      blockers: ['chatgpt_oauth_required_for_desktop']
+    };
+  }
+  if (mode === 'desktop-dual-auth-compat' && gatewayAuthTransport !== 'x-codex-lb-api-key') {
+    return {
+      ...base,
+      ok: false,
+      status: 'desktop_gateway_auth_transport_unsupported',
+      routing_plane: 'unchanged',
+      oauth_preserved: true,
+      auth_after: authBefore,
+      blockers: ['desktop_compat_cannot_use_authorization_bearer_without_replacing_oauth']
+    };
+  }
+  if (mode === 'desktop-native-bridge' && (!opts.bridgeBaseUrl || !opts.remoteBaseUrl)) {
+    return {
+      ...base,
+      ok: false,
+      status: 'invalid_desktop_routing_input',
+      routing_plane: 'unchanged',
+      oauth_preserved: true,
+      auth_after: authBefore,
+      blockers: [
+        ...(!opts.bridgeBaseUrl ? ['missing_bridge_base_url'] : []),
+        ...(!opts.remoteBaseUrl ? ['missing_remote_base_url'] : [])
+      ]
+    };
+  }
+  if (mode === 'desktop-dual-auth-compat' && !opts.remoteBaseUrl) {
+    return {
+      ...base,
+      ok: false,
+      status: 'invalid_desktop_routing_input',
+      routing_plane: 'unchanged',
+      oauth_preserved: true,
+      auth_after: authBefore,
+      blockers: ['missing_remote_base_url']
+    };
+  }
+
+  const current = await readText(configPath, '');
+  let next: string;
+  try {
+    next = mode === 'desktop-native-bridge'
+      ? upsertCodexLbNativeDesktopConfig(current, {
+          bridgeBaseUrl: String(opts.bridgeBaseUrl),
+          remoteBaseUrl: String(opts.remoteBaseUrl)
+        })
+      : mode === 'desktop-dual-auth-compat'
+        ? upsertCodexLbCompatDesktopConfig(current, { remoteBaseUrl: String(opts.remoteBaseUrl) })
+        : removeCodexLbManagedDesktopConfig(current);
+  } catch (error: unknown) {
+    return {
+      ...base,
+      ok: false,
+      status: 'failed',
+      routing_plane: 'unchanged',
+      oauth_preserved: true,
+      auth_after: authBefore,
+      blockers: ['desktop_config_conflict'],
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+  const write = await safeWriteCodexConfigToml(
+    configPath,
+    current,
+    next,
+    'codex-lb-desktop-routing',
+    { verifyUnchangedBeforeWrite: true }
+  );
+  if (!write.ok) {
+    return {
+      ...base,
+      ok: false,
+      status: 'failed',
+      routing_plane: 'unchanged',
+      oauth_preserved: true,
+      auth_after: authBefore,
+      backup_path: write.backup_path,
+      blockers: ['desktop_config_write_failed'],
+      error: write.status
+    };
+  }
+  const authAfter = await captureCodexAuthSnapshot({ home, authPath });
+  try {
+    await assertDesktopAuthUnchangedBySks(authBefore, authAfter);
+  } catch (error: unknown) {
+    const writtenText = await readText(configPath, '');
+    const rollbackWrite = await safeWriteCodexConfigToml(
+      configPath,
+      writtenText,
+      current,
+      'codex-lb-desktop-routing-auth-invariant-rollback',
+      { verifyUnchangedBeforeWrite: true }
+    );
+    return {
+      ...base,
+      ok: false,
+      status: 'failed',
+      routing_plane: 'unchanged',
+      oauth_preserved: false,
+      auth_after: authAfter,
+      backup_path: write.backup_path,
+      rollback: {
+        ok: rollbackWrite.ok,
+        status: rollbackWrite.status,
+        config_restored: rollbackWrite.ok
+      },
+      blockers: ['desktop_auth_byte_invariant_failed', ...(rollbackWrite.ok ? [] : ['desktop_config_rollback_failed'])],
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+  const routingPlane = mode === 'desktop-native-bridge'
+    ? 'desktop_native_bridge'
+    : mode === 'desktop-dual-auth-compat'
+      ? 'desktop_compat_provider'
+      : 'disabled';
+  return {
+    ...base,
+    ok: true,
+    status: mode === 'disabled'
+      ? 'desktop_routing_disabled'
+      : write.changed === true
+        ? 'desktop_routing_configured'
+        : 'desktop_routing_present',
+    routing_plane: routingPlane,
+    oauth_preserved: true,
+    auth_after: authAfter,
+    backup_path: write.backup_path,
+    blockers: []
+  };
+}
+
+export async function configureCodexLbCliProvider(opts: {
+  home?: string;
+  configPath?: string;
+  authPath?: string;
+  remoteBaseUrl: string;
+  selectGlobally?: boolean;
+}): Promise<{
+  schema: 'sks.codex-lb-cli-provider.v1';
+  ok: boolean;
+  status: string;
+  mode: 'cli-provider';
+  identity_plane: 'unchanged';
+  routing_plane: 'cli_provider';
+  oauth_preserved: boolean;
+  auth_mutated: false;
+  config_path: string;
+  auth_path: string;
+  auth_before: CodexAuthSnapshot;
+  auth_after: CodexAuthSnapshot;
+  blockers: string[];
+  backup_path?: string | null;
+}> {
+  const home = opts.home || process.env.HOME || os.homedir();
+  const configPath = opts.configPath || codexLbConfigPath(home);
+  const authPath = opts.authPath || codexAuthPath(home);
+  const authBefore = await captureCodexAuthSnapshot({ home, authPath });
+  const current = await readText(configPath, '');
+  const next = upsertCodexLbCliProviderConfig(current, {
+    remoteBaseUrl: opts.remoteBaseUrl,
+    ...(opts.selectGlobally === undefined ? {} : { selectGlobally: opts.selectGlobally })
+  });
+  const write = await safeWriteCodexConfigToml(
+    configPath,
+    current,
+    next,
+    'codex-lb-cli-provider',
+    { verifyUnchangedBeforeWrite: true }
+  );
+  const authAfter = await captureCodexAuthSnapshot({ home, authPath });
+  try {
+    await assertDesktopAuthUnchangedBySks(authBefore, authAfter);
+  } catch {
+    return {
+      schema: 'sks.codex-lb-cli-provider.v1',
+      ok: false,
+      status: 'auth_changed_during_cli_provider_write',
+      mode: 'cli-provider',
+      identity_plane: 'unchanged',
+      routing_plane: 'cli_provider',
+      oauth_preserved: false,
+      auth_mutated: false,
+      config_path: configPath,
+      auth_path: authPath,
+      auth_before: authBefore,
+      auth_after: authAfter,
+      blockers: ['shared_auth_byte_invariant_failed'],
+      backup_path: write.backup_path
+    };
+  }
+  return {
+    schema: 'sks.codex-lb-cli-provider.v1',
+    ok: write.ok,
+    status: write.ok ? (write.changed ? 'configured' : 'present') : write.status,
+    mode: 'cli-provider',
+    identity_plane: 'unchanged',
+    routing_plane: 'cli_provider',
+    oauth_preserved: true,
+    auth_mutated: false,
+    config_path: configPath,
+    auth_path: authPath,
+    auth_before: authBefore,
+    auth_after: authAfter,
+    blockers: write.ok ? [] : ['cli_provider_config_write_failed'],
+    backup_path: write.backup_path
+  };
+}
+
+function hasTopLevelMarker(text: string, marker: string): boolean {
+  const topLevel = String(text || '').split(/\n\s*\[/)[0] || '';
+  return topLevel.split(/\r?\n/).some((line) => line.trim() === marker);
+}
+
+function managedCodexLbDesktopMode(text: string): 'desktop-native-bridge' | 'desktop-dual-auth-compat' | null {
+  if (hasTopLevelMarker(text, CODEX_LB_DESKTOP_BRIDGE_MARKER)) return 'desktop-native-bridge';
+  if (hasTopLevelMarker(text, CODEX_LB_DESKTOP_COMPAT_MARKER)) return 'desktop-dual-auth-compat';
+  return null;
+}
+
+function codexLbRoutingPlane(mode: CodexLbDesktopMode): NonNullable<ConfigureCodexLbResult['routing_plane']> {
+  if (mode === 'desktop-native-bridge') return 'desktop_native_bridge';
+  if (mode === 'desktop-dual-auth-compat') return 'desktop_compat_provider';
+  return 'cli_provider';
+}
 
 async function capturePostinstallCodexLbConfigSnapshot(home: any = process.env.HOME || os.homedir()) {
   const configPath = codexLbConfigPath(home);
@@ -442,153 +766,92 @@ async function capturePostinstallCodexLbConfigSnapshot(home: any = process.env.H
   const authPath = codexAuthPath(home);
   const config = await readText(configPath, '');
   const envText = await readText(envPath, '');
-  const authExisted = await exists(authPath);
-  const authText = authExisted ? await readText(authPath, '') : '';
+  const auth = await captureCodexAuthSnapshot({ home, authPath });
   const envLoad = await loadCodexLbEnv({ home, envPath });
   const envKey = envLoad.secret_api_key || '';
   const providerConfigured = /\[model_providers\.codex-lb\]/.test(config);
   const baseUrl = envLoad.base_url || codexLbProviderBaseUrl(config) || parseCodexLbEnvBaseUrl(envText);
+  const desktopMode = managedCodexLbDesktopMode(config);
+  const bridgeBaseUrl = desktopMode === 'desktop-native-bridge'
+    ? topLevelTomlString(config, 'openai_base_url')
+    : '';
   // Snapshot any codex-lb-related state so the upgrade-time bootstrap can't silently undo it.
-  if (!envKey && !providerConfigured && !authExisted) return null;
+  if (!envKey && !providerConfigured && !baseUrl && !desktopMode) return null;
   return {
     config_path: configPath,
     env_path: envPath,
     auth_path: authPath,
     base_url: baseUrl ? normalizeCodexLbBaseUrl(baseUrl) : null,
+    bridge_base_url: bridgeBaseUrl || null,
+    desktop_mode: desktopMode,
     selected: hasTopLevelCodexLbSelected(config),
-    auth_mode: codexAuthModeSummary(authText).mode,
-    codex_lb_key_in_shared_auth: Boolean(envKey && parseCodexAuthApiKey(authText) === envKey),
+    auth_mode: auth.mode,
+    auth_sha256: auth.sha256,
     credential_source: envLoad.source,
     credential_fingerprint: envLoad.api_key.fingerprint,
     credential_binding: envLoad.credential_binding,
-    secret_api_key: envKey || null,
-    auth_existed: authExisted,
-    auth_text: authText
+    secret_api_key: envKey || null
   };
 }
 
 async function restorePostinstallCodexLbConfigSnapshot(snapshot: any) {
   if (!snapshot) return { status: 'skipped', reason: 'no_snapshot' };
   let configRestored = false;
+  let configStatus = 'present';
   if (snapshot.base_url) {
     const current = await readText(snapshot.config_path, '');
-    const next = normalizeCodexFastModeUiConfig(upsertCodexLbConfig(current, snapshot.base_url, snapshot.selected === true));
-    const alreadyOk = next === ensureTrailingNewline(current) && codexLbProviderBaseUrl(current);
-    if (!alreadyOk) {
-      const safeWrite = await safeWriteCodexConfigToml(snapshot.config_path, current, next, 'codex-lb-restore');
+    let next = current;
+    try {
+      if (snapshot.desktop_mode === 'desktop-native-bridge' && snapshot.bridge_base_url) {
+        next = upsertCodexLbNativeDesktopConfig(current, {
+          bridgeBaseUrl: snapshot.bridge_base_url,
+          remoteBaseUrl: snapshot.base_url
+        });
+      } else if (snapshot.desktop_mode === 'desktop-dual-auth-compat') {
+        next = upsertCodexLbCompatDesktopConfig(current, { remoteBaseUrl: snapshot.base_url });
+      } else if (snapshot.selected !== true) {
+        next = upsertCodexLbCliProviderConfig(current, {
+          remoteBaseUrl: snapshot.base_url,
+          selectGlobally: false
+        });
+      } else {
+        configStatus = 'legacy_migration_required';
+      }
+    } catch (error: unknown) {
+      return {
+        status: 'failed',
+        reason: 'managed_routing_restore_conflict',
+        config_path: snapshot.config_path,
+        auth_path: snapshot.auth_path,
+        config_restored: false,
+        auth_restored: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+    if (configStatus !== 'legacy_migration_required' && ensureTrailingNewline(next) !== ensureTrailingNewline(current)) {
+      const safeWrite = await safeWriteCodexConfigToml(
+        snapshot.config_path,
+        current,
+        next,
+        'codex-lb-safe-routing-restore',
+        { verifyUnchangedBeforeWrite: true }
+      );
       configRestored = safeWrite.ok && safeWrite.changed === true;
+      configStatus = safeWrite.ok ? (configRestored ? 'restored' : 'present') : safeWrite.status;
     }
   }
-  // Restore auth.json if bootstrap wiped it, or if an active codex-lb session was
-  // silently switched back to OAuth during the synchronous update transaction.
-  let authRestored = false;
-  if (snapshot.auth_existed && snapshot.auth_text && snapshot.auth_text.trim()) {
-    const currentAuthExists = await exists(snapshot.auth_path);
-    const currentAuthText = currentAuthExists ? await readText(snapshot.auth_path, '') : '';
-    const activeCodexLbAuthChanged = snapshot.selected === true
-      && snapshot.codex_lb_key_in_shared_auth === true
-      && snapshot.secret_api_key
-      && parseCodexAuthApiKey(currentAuthText) !== snapshot.secret_api_key;
-    if (!currentAuthExists || !currentAuthText.trim() || activeCodexLbAuthChanged) {
-      await ensureDir(path.dirname(snapshot.auth_path));
-      await writeTextAtomic(snapshot.auth_path, snapshot.auth_text, { mode: 0o600 });
-      await fsp.chmod(snapshot.auth_path, 0o600).catch(() => {});
-      authRestored = true;
-    }
-  }
+  const authAfter = await captureCodexAuthSnapshot({
+    home: path.dirname(path.dirname(snapshot.auth_path)),
+    authPath: snapshot.auth_path
+  });
+  const authUnchanged = snapshot.auth_sha256 === authAfter.sha256;
   return {
-    status: configRestored || authRestored ? 'restored' : 'present',
+    status: configStatus,
     config_path: snapshot.config_path,
     auth_path: snapshot.auth_path,
     config_restored: configRestored,
-    auth_restored: authRestored
-  };
-}
-
-
-async function ensureCodexLbToolCatalogSelection(input: {
-  home: string;
-  configPath: string;
-  baseUrl: string;
-  apiKey: string;
-}, opts: any = {}) {
-  const codexHome = opts.codexHome || path.join(input.home, '.codex');
-  const catalogPath = codexLbToolCatalogPath(codexHome);
-  const current = await readText(input.configPath, '');
-  const selected = hasTopLevelCodexLbSelected(current);
-  // Setup writes the catalog pointer before selecting the provider so Desktop can
-  // load GPT-5.6/tool metadata the moment model_provider becomes codex-lb.
-  const canBindCatalog = selected || opts.allowUnselectedCatalogWrite === true;
-  const existingCatalogPath = topLevelTomlString(current, 'model_catalog_json');
-  const { isSksManagedCatalogPath, resolveCatalogPath } = await import('../core/codex-app/multi-provider-router-support.js');
-  const existingCatalogResolved = existingCatalogPath
-    ? resolveCatalogPath(existingCatalogPath, { home: input.home, configPath: input.configPath })
-    : null;
-  // A foreign SKS-managed binding (e.g. the OpenRouter activation catalog) is
-  // only replaceable when this run actually selects codex-lb; otherwise a
-  // credentials-only setup/repair would strand the third-party activation
-  // without its per-model feature catalog.
-  const existingCatalogReplaceable = !existingCatalogResolved
-    || (isSksManagedCatalogPath(existingCatalogResolved, { home: input.home })
-      && (selected || opts.willSelectProvider === true));
-  if (canBindCatalog && existingCatalogResolved && existingCatalogResolved !== path.resolve(catalogPath) && !existingCatalogReplaceable) {
-    return {
-      schema: 'sks.codex-lb-tool-catalog-selection.v1',
-      ok: false,
-      required: true,
-      status: 'user_catalog_conflict',
-      path: catalogPath,
-      configured_path: existingCatalogPath,
-      config_changed: false,
-      selected,
-      blockers: ['codex_lb_user_model_catalog_conflict']
-    };
-  }
-  let hostname = '';
-  try { hostname = new URL(input.baseUrl).hostname.toLowerCase(); } catch {}
-  const reservedFixtureHost = /(?:^|\.)(?:test|invalid|example)$/.test(hostname);
-  if (reservedFixtureHost && typeof opts.toolCatalogFetch !== 'function') {
-    return {
-      schema: 'sks.codex-lb-tool-catalog-selection.v1',
-      ok: true,
-      required: false,
-      status: 'skipped_reserved_host',
-      path: catalogPath,
-      config_changed: false,
-      selected,
-      blockers: []
-    };
-  }
-  const catalog = await ensureCodexLbToolCatalog({
-    codexHome,
-    baseUrl: input.baseUrl,
-    apiKey: input.apiKey,
-    ...(typeof opts.toolCatalogFetch === 'function' ? { fetchImpl: opts.toolCatalogFetch } : {}),
-    timeoutMs: Number(opts.toolCatalogTimeoutMs || 5000),
-    force: opts.forceToolCatalog === true
-  });
-  if (!catalog.ok || !canBindCatalog) {
-    return {
-      ...catalog,
-      schema: 'sks.codex-lb-tool-catalog-selection.v1',
-      config_changed: false,
-      selected
-    };
-  }
-  const next = ensureTrailingNewline(upsertTopLevelTomlString(current, 'model_catalog_json', catalog.path));
-  if (next === ensureTrailingNewline(current)) {
-    return { ...catalog, schema: 'sks.codex-lb-tool-catalog-selection.v1', config_changed: false, selected };
-  }
-  const safeWrite = await safeWriteCodexConfigToml(input.configPath, current, next, 'codex-lb-tool-catalog');
-  return {
-    ...catalog,
-    schema: 'sks.codex-lb-tool-catalog-selection.v1',
-    ok: catalog.ok && safeWrite.ok,
-    status: safeWrite.ok ? catalog.status : safeWrite.status,
-    config_changed: safeWrite.ok && safeWrite.changed === true,
-    backup_path: safeWrite.backup_path,
-    selected,
-    blockers: safeWrite.ok ? catalog.blockers : [...new Set([...(catalog.blockers || []), 'codex_lb_tool_catalog_config_write_failed'])]
+    auth_restored: false,
+    auth_unchanged: authUnchanged
   };
 }
 
@@ -599,7 +862,14 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
   const rawHost = String(opts.host || opts.baseUrl || '');
   const baseUrl = normalizeCodexLbBaseUrl(rawHost);
   const apiKey = String(opts.apiKey || '').trim();
-  const useDefaultProvider = opts.useDefaultProvider !== false;
+  const initialConfig = await readText(configPath, '');
+  const preservedDesktopMode = managedCodexLbDesktopMode(initialConfig);
+  const preservedLegacySelection = hasTopLevelCodexLbSelected(initialConfig) && !preservedDesktopMode;
+  const requestedDesktopMode = parseCodexLbDesktopMode(opts.desktopMode || 'cli-provider');
+  const desktopMode: CodexLbDesktopMode = preservedDesktopMode || 'cli-provider';
+  // A stored CLI provider is invoked explicitly by CLI configuration/flags. It
+  // must never become the global Codex Desktop selection as a setup side effect.
+  const useDefaultProvider = desktopMode === 'desktop-dual-auth-compat' || preservedLegacySelection;
   const writeEnvFile = opts.writeEnvFile !== false;
   const storeKeychain = opts.storeKeychain === true || opts.keychain === true;
   const syncLaunchctl = opts.syncLaunchctl === true || opts.syncLaunchEnv === true;
@@ -607,7 +877,8 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
   const setupAnswers = {
     host_or_base_url: rawHost,
     api_key_source: opts.apiKeySource || 'stdin',
-    use_as_default_provider: useDefaultProvider,
+    desktop_mode: 'cli-provider' as const,
+    gateway_auth_transport: (opts.gatewayAuthTransport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT) as CodexLbGatewayAuthTransport,
     write_env_file: writeEnvFile,
     store_keychain: storeKeychain,
     sync_launchctl: syncLaunchctl,
@@ -650,18 +921,62 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
     ? ['codex-lb base URL uses http outside localhost; prefer https or pass an explicit allow flag in the calling surface.']
     : [];
   const beforeState = await captureCodexLbSetupWriteState({ home, configPath, envPath, shellProfile });
+  const authBefore = await captureCodexAuthSnapshot({ home, authPath: opts.authPath || codexAuthPath(home) });
   const appliedActions: Array<Record<string, unknown>> = [];
   await ensureDir(path.dirname(configPath));
-  // Write the provider table first without selecting it. Desktop model/tool UI
-  // exposure depends on a validated catalog; selecting before that leaves the App
-  // on codex-lb with no GPT-5.6 picker surface.
+  // Credential setup never activates a Desktop route. It may refresh the remote
+  // URL inside an already explicit SKS-managed native/compat route, but an
+  // unmarked legacy selection is preserved for explicit migration.
   const current = await readText(configPath, '');
-  const providerOnly = normalizeCodexFastModeUiConfig(upsertCodexLbConfig(current, baseUrl, false), {
-    forceFastMode: opts.forceFastMode !== false
-  });
+  let providerOnly = current;
+  try {
+    if (desktopMode === 'desktop-native-bridge') {
+      const bridgeBaseUrl = topLevelTomlString(current, 'openai_base_url');
+      if (!bridgeBaseUrl) {
+        return {
+          ok: false,
+          status: 'managed_desktop_bridge_missing_base_url',
+          mode: desktopMode,
+          config_path: configPath,
+          env_path: envPath
+        };
+      }
+      providerOnly = upsertCodexLbNativeDesktopConfig(current, {
+        bridgeBaseUrl,
+        remoteBaseUrl: baseUrl
+      });
+    } else if (desktopMode === 'desktop-dual-auth-compat') {
+      providerOnly = upsertCodexLbCompatDesktopConfig(current, { remoteBaseUrl: baseUrl });
+    } else if (!preservedLegacySelection) {
+      providerOnly = upsertCodexLbCliProviderConfig(current, {
+        remoteBaseUrl: baseUrl,
+        selectGlobally: false
+      });
+    }
+  } catch (error: unknown) {
+    return {
+      ok: false,
+      status: 'managed_desktop_routing_conflict',
+      mode: desktopMode,
+      config_path: configPath,
+      env_path: envPath,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
   const safeWrite = await safeWriteCodexConfigToml(configPath, current, providerOnly, 'codex-lb');
   if (!safeWrite.ok) return { ok: false, status: safeWrite.status, config_path: configPath, env_path: envPath, backup_path: safeWrite.backup_path };
-  appliedActions.push({ type: 'write_config_provider', target: configPath, ok: true, backup_path: safeWrite.backup_path });
+  appliedActions.push({
+    type: preservedLegacySelection
+      ? 'preserve_legacy_desktop_routing'
+      : desktopMode === 'desktop-native-bridge'
+        ? 'preserve_desktop_native_bridge'
+        : desktopMode === 'desktop-dual-auth-compat'
+          ? 'preserve_desktop_compat_provider'
+          : 'write_cli_provider',
+    target: configPath,
+    ok: true,
+    backup_path: safeWrite.backup_path
+  });
   if (writeEnvFile) {
     await writeTextAtomic(envPath, `export CODEX_LB_BASE_URL=${shellSingleQuote(baseUrl)}\nexport CODEX_LB_API_KEY=${shellSingleQuote(apiKey)}\n`, { mode: 0o600 });
     await fsp.chmod(envPath, 0o600).catch(() => {});
@@ -669,47 +984,20 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
   }
   process.env.CODEX_LB_BASE_URL = baseUrl;
   process.env.CODEX_LB_API_KEY = apiKey;
-  let toolCatalog = await ensureCodexLbToolCatalogSelection({ home, configPath, baseUrl, apiKey }, { ...opts, allowUnselectedCatalogWrite: true, willSelectProvider: useDefaultProvider === true });
-  if (toolCatalog.config_changed || toolCatalog.status === 'repaired' || toolCatalog.status === 'cached_compatible') {
-    appliedActions.push({ type: 'write_model_tool_catalog', target: toolCatalog.path, ok: toolCatalog.ok === true, status: toolCatalog.status });
-  }
-  const catalogReadyForSelection = toolCatalog.ok === true
-    && (toolCatalog.required === false || ['repaired', 'cached_compatible', 'cached_compatible_after_refresh_failed', 'cached_compatible_after_refresh_rejected', 'skipped_reserved_host', 'present'].includes(String(toolCatalog.status || '')));
-  let providerSelected = false;
-  if (useDefaultProvider && catalogReadyForSelection) {
-    const beforeSelect = await readText(configPath, '');
-    const selectedConfig = normalizeCodexFastModeUiConfig(upsertCodexLbConfig(beforeSelect, baseUrl, true), {
-      forceFastMode: opts.forceFastMode !== false
-    });
-    const selectWrite = await safeWriteCodexConfigToml(configPath, beforeSelect, selectedConfig, 'codex-lb-select');
-    if (!selectWrite.ok) {
-      return {
-        ok: false,
-        status: selectWrite.status || 'provider_selection_failed',
-        config_path: configPath,
-        env_path: envPath,
-        backup_path: selectWrite.backup_path,
-        tool_catalog: toolCatalog,
-        tool_output_recovery: toolOutputRecovery,
-        error: 'codex_lb_provider_selection_write_failed'
-      };
-    }
-    providerSelected = true;
-    appliedActions.push({ type: 'select_default_provider', target: configPath, ok: true, backup_path: selectWrite.backup_path });
-    // Re-bind after selection so model_catalog_json stays attached to the active provider.
-    toolCatalog = await ensureCodexLbToolCatalogSelection({ home, configPath, baseUrl, apiKey }, opts);
-    if (toolCatalog.config_changed) {
-      appliedActions.push({ type: 'write_model_tool_catalog', target: toolCatalog.path, ok: toolCatalog.ok === true, status: toolCatalog.status });
-    }
-  } else if (useDefaultProvider) {
-    appliedActions.push({
-      type: 'select_default_provider',
-      target: configPath,
-      ok: false,
-      status: 'deferred_until_tool_catalog_ready',
-      blockers: toolCatalog.blockers || ['codex_lb_gpt56_tool_catalog_not_ready']
-    });
-  }
+  const toolCatalog = {
+    schema: 'sks.codex-lb-tool-catalog-selection.v1',
+    ok: true,
+    required: false,
+    status: desktopMode === 'desktop-native-bridge'
+      ? 'not_bound_for_desktop_native'
+      : desktopMode === 'desktop-dual-auth-compat'
+        ? 'not_bound_for_desktop_compat'
+        : 'not_bound_for_cli_provider',
+    path: codexLbToolCatalogPath(path.join(home, '.codex')),
+    config_changed: false,
+    selected: desktopMode === 'desktop-dual-auth-compat',
+    blockers: [] as string[]
+  };
   const keyFingerprint = await sha256Text(apiKey);
   const metadataPath = opts.metadataPath || codexLbMetadataPath(home);
   await writeTextAtomic(metadataPath, `${JSON.stringify({
@@ -717,47 +1005,80 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
     base_url: baseUrl,
     updated_at: new Date().toISOString(),
     source: opts.source || 'setup',
+    desktop_mode: desktopMode,
+    requested_desktop_mode: requestedDesktopMode,
+    gateway_auth_transport: opts.gatewayAuthTransport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT,
     api_key: { redacted: true, sha256: keyFingerprint }
   }, null, 2)}\n`);
   await fsp.chmod(metadataPath, 0o600).catch(() => {});
   appliedActions.push({ type: 'write_metadata', target: metadataPath, ok: true });
   const keychain = storeKeychain ? await writeCodexLbKeychain(apiKey, opts).catch((err: any) => ({ ok: false, status: 'keychain_store_failed', error: err.message })) : { ok: false, status: 'skipped' };
   if (storeKeychain) appliedActions.push({ type: 'store_keychain', target: 'macOS Keychain service sks-codex-lb', ok: keychain.ok === true, status: keychain.status });
-  const codexEnvironment = await syncCodexLbProviderEnvironment({ env_path: envPath, base_url: baseUrl }, { ...opts, home, apiKey, baseUrl, syncLaunchEnv: syncLaunchctl });
-  if (syncLaunchctl) appliedActions.push({ type: 'sync_launchctl', target: 'macOS launchctl user environment (base URL only; API-key env removed)', ok: codexEnvironment.ok === true, status: codexEnvironment.status });
+  const { syncDesktopCenterLaunchCredentials } = await import('../core/codex-lb/desktop-center-credentials.js');
+  const centerCredentials = await syncDesktopCenterLaunchCredentials({
+    mode: desktopMode,
+    home,
+    // Use the just-written values; avoid ambient process.env shadowing.
+    loadedEnv: await loadCodexLbEnv({ home, processEnv: {}, envPath, metadataPath })
+  });
+  appliedActions.push({
+    type: 'sync_center_desktop_credentials',
+    target: 'launchctl from official sks-codex-lb store',
+    ok: centerCredentials.ok === true,
+    status: centerCredentials.status
+  });
+  const codexEnvironment = await syncCodexLbProviderEnvironment({ env_path: envPath, base_url: baseUrl }, {
+    ...opts,
+    home,
+    apiKey,
+    baseUrl,
+    // Center sync owns dual-auth secret injection; avoid the old unset-only path racing it.
+    syncLaunchEnv: syncLaunchctl && desktopMode !== 'desktop-dual-auth-compat'
+  });
+  if (syncLaunchctl && desktopMode !== 'desktop-dual-auth-compat') {
+    appliedActions.push({ type: 'sync_launchctl', target: 'macOS launchctl user environment (base URL only; API-key env removed)', ok: codexEnvironment.ok === true, status: codexEnvironment.status });
+  }
   const shellProfileResult = await installCodexLbShellProfileSnippet({ home, envPath, shellProfile }).catch((err: any) => ({ ok: false, status: 'failed', files: [], error: err.message }));
   if (shellProfile !== 'skip') appliedActions.push({ type: 'install_shell_profile_snippet', target: shellProfileResult.files?.join(', ') || shellProfile, ok: shellProfileResult.ok === true, status: shellProfileResult.status });
   const codexLb = await codexLbStatus({ ...opts, home, configPath, envPath });
-  // Never activate shared sk-clb auth while the Desktop picker is still missing a
-  // ready catalog/selection — that leaves App threads calling api.openai.com.
-  const wantForceCodexLbApiKeyAuth = opts.forceCodexLbApiKeyAuth === true || opts.authMode === 'codex-lb';
-  const forceCodexLbApiKeyAuth = wantForceCodexLbApiKeyAuth && providerSelected;
-  const authReconcile = providerSelected
-    ? await reconcileCodexLbAuthConflict({ ...opts, home, status: codexLb, forceCodexLbApiKeyAuth }).catch((err: any) => ({ status: 'failed', reason: 'exception', error: err.message }))
-    : { status: 'deferred_until_provider_selected', reason: 'tool_catalog_or_selection_incomplete' };
-  const codexLogin = !providerSelected
-    ? { ok: true, status: 'deferred_until_provider_selected', reason: 'tool_catalog_or_selection_incomplete', error: null }
-    : forceCodexLbApiKeyAuth
-      ? { ok: ['apikey_forced', 'apikey_auth_active'].includes(authReconcile.status), status: authReconcile.status, ...(authReconcile.reason ? { reason: authReconcile.reason } : {}), error: authReconcile.error || null }
-      : await maybeSyncCodexLbSharedLogin(apiKey, { ...opts, home, force: true });
+  const authAfter = await captureCodexAuthSnapshot({ home, authPath: opts.authPath || codexAuthPath(home) });
+  let authInvariantError: string | null = null;
+  try {
+    await assertDesktopAuthUnchangedBySks(authBefore, authAfter);
+  } catch (error: unknown) {
+    authInvariantError = error instanceof Error ? error.message : String(error);
+  }
+  const authReconcile = {
+    status: authInvariantError ? 'failed' : 'oauth_untouched',
+    reason: authInvariantError || 'credential_setup_does_not_mutate_desktop_auth',
+    auth_path: authBefore.path,
+    ...(authInvariantError ? { error: authInvariantError } : {})
+  };
+  const codexLogin = {
+    ok: !authInvariantError,
+    status: authInvariantError ? 'desktop_auth_byte_invariant_failed' : 'not_required',
+    reason: authInvariantError || 'cli_gateway_key_is_separate_from_chatgpt_oauth',
+    error: authInvariantError
+  };
   const finalCodexLb = await codexLbStatus({ ...opts, home, configPath, envPath });
-  const ok = Boolean(codexEnvironment.ok && codexLogin.ok);
+  const ok = Boolean(codexEnvironment.ok && codexLogin.ok && centerCredentials.ok !== false);
   const afterState = await captureCodexLbSetupWriteState({ home, configPath, envPath, shellProfile });
   const drift = [
     ...detectCodexLbSetupDrift({
-    useDefaultProvider,
-    writeEnvFile,
-    storeKeychain,
-    syncLaunchctl,
-    shellProfile,
-    selected: finalCodexLb.selected,
-    envFile: finalCodexLb.env_file,
-    keychain,
-    codexEnvironment,
-    shellProfileResult,
-    beforeState,
+      useDefaultProvider,
+      writeEnvFile,
+      storeKeychain,
+      syncLaunchctl,
+      shellProfile,
+      selected: finalCodexLb.selected,
+      envFile: finalCodexLb.env_file,
+      keychain,
+      codexEnvironment,
+      shellProfileResult,
+      beforeState,
       afterState
     }),
+    ...(authInvariantError ? ['desktop_auth_byte_invariant_failed'] : []),
     ...(toolCatalog.required !== false && toolCatalog.ok !== true ? ['codex_lb_gpt56_tool_catalog_not_ready'] : [])
   ];
   const appliedPersistenceModes = appliedCodexLbPersistenceModes({
@@ -779,9 +1100,12 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
   const warnings = [
     ...insecureLocalWarning,
     ...persistence.warnings,
+    ...(preservedLegacySelection ? ['legacy_desktop_auth_routing_requires_explicit_migrate_legacy_desktop'] : []),
     ...(toolCatalog.required !== false && toolCatalog.ok !== true ? ['codex_lb_gpt56_tool_catalog_not_ready'] : [])
   ];
-  const failureStatus = codexEnvironment.ok !== true
+  const failureStatus = centerCredentials.ok !== true
+    ? (centerCredentials.status || 'center_desktop_credentials_failed')
+    : codexEnvironment.ok !== true
     ? (codexEnvironment.status || 'environment_failed')
     : codexLogin.ok !== true
       ? (codexLogin.status || 'login_failed')
@@ -789,10 +1113,17 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
   return {
     ok: ok && drift.length === 0,
     status: ok && drift.length === 0 ? 'configured' : failureStatus || (drift.length ? 'setup_choice_drift' : 'configuration_failed'),
+    mode: desktopMode,
+    identity_plane: 'unchanged',
+    routing_plane: codexLbRoutingPlane(desktopMode),
+    gateway_auth_transport: opts.gatewayAuthTransport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT,
+    oauth_preserved: !authInvariantError,
+    auth_mutated: false,
     plan: plan as any,
     applied_actions: appliedActions,
     drift,
     persistence,
+    center_credentials: centerCredentials,
     config_path: configPath,
     env_path: envPath,
     metadata_path: metadataPath,
@@ -835,19 +1166,44 @@ export async function codexLbStatus(opts: any = {}) {
   const providerRequiresOpenAiAuth = codexLbProviderRequiresOpenAiAuth(config);
   const providerOpenAiAuthDisabled = codexLbProviderOpenAiAuthDisabled(config);
   const providerEnvKey = codexLbProviderEnvKey(config);
+  const providerHasSeparateGatewayAuth = codexLbProviderHasSeparateGatewayAuth(config);
+  const desktopMode = managedCodexLbDesktopMode(config);
+  const bridgeBaseUrl = desktopMode === 'desktop-native-bridge'
+    ? topLevelTomlString(config, 'openai_base_url')
+    : '';
   const sharedOpenAiRouting = codexLbSharedOpenAiRoutingState(config, baseUrl);
   const codexLbKeyInSharedAuth = Boolean(authApiKey && envLoad.secret_api_key && authApiKey === envLoad.secret_api_key);
   const sharedOpenAiRoutingSafe = !codexLbKeyInSharedAuth || sharedOpenAiRouting.status === 'matched';
-  const authRoutingCoherent = selected === codexLbKeyInSharedAuth && sharedOpenAiRoutingSafe;
-  const providerContractOk = providerConfigured
+  const cliProviderContractOk = providerConfigured
     && providerBaseUrlMatchesCredential
-    && providerName === CODEX_LB_PROVIDER_NAME
+    && providerName === 'codex-lb'
     && providerWireApi === 'responses'
     && providerEnvKey === CODEX_LB_PROVIDER_ENV_KEY
     && providerSupportsWebsockets === true
-    && providerRequiresOpenAiAuth === true;
+    && providerOpenAiAuthDisabled;
+  const compatProviderContractOk = providerConfigured
+    && providerBaseUrlMatchesCredential
+    && providerName === 'OpenAI'
+    && providerWireApi === 'responses'
+    && providerSupportsWebsockets === true
+    && providerRequiresOpenAiAuth === true
+    && !providerEnvKey
+    && providerHasSeparateGatewayAuth;
+  const providerContractOk = desktopMode === 'desktop-dual-auth-compat'
+    ? compatProviderContractOk
+    : cliProviderContractOk;
   const providerUsesCodexLbEnvAuth = providerConfigured && providerEnvKey === CODEX_LB_PROVIDER_ENV_KEY && providerOpenAiAuthDisabled;
-  const codexAppUsableWithCodexLb = providerContractOk && envLoad.configured && Boolean(baseUrl) && authMode.codex_app_usable;
+  const oauthAvailable = authMode.mode === 'chatgpt_oauth' || authMode.mode === 'browser_marker';
+  const authRoutingCoherent = desktopMode === 'desktop-native-bridge'
+    ? !selected && oauthAvailable && !codexLbKeyInSharedAuth
+    : desktopMode === 'desktop-dual-auth-compat'
+      ? selected && oauthAvailable && !codexLbKeyInSharedAuth
+      : !codexLbKeyInSharedAuth && (!selected || providerUsesCodexLbEnvAuth);
+  const codexAppUsableWithCodexLb = desktopMode === 'desktop-native-bridge'
+    ? Boolean(bridgeBaseUrl && oauthAvailable)
+    : desktopMode === 'desktop-dual-auth-compat'
+      ? compatProviderContractOk && oauthAvailable
+      : authMode.codex_app_usable;
   const fastMode = codexLbFastModeConfigStatus(config);
   const launchEnvironment = await inspectCodexLbMacLaunchEnvironment(baseUrl, opts).catch((err: any) => ({
     checked: true,
@@ -855,7 +1211,11 @@ export async function codexLbStatus(opts: any = {}) {
     status: 'inspect_failed',
     error: err.message
   }));
-  const providerReady = providerContractOk && envLoad.configured && Boolean(baseUrl) && authMode.codex_app_usable && authRoutingCoherent;
+  const providerReady = providerContractOk
+    && envLoad.configured
+    && Boolean(baseUrl)
+    && authRoutingCoherent
+    && (desktopMode === 'desktop-native-bridge' ? Boolean(bridgeBaseUrl) : true);
   const probeToolOutputRecovery = opts.probeToolOutputRecovery === true;
   const toolOutputRecovery = !selected
     ? codexLbToolOutputRecoveryNotSelected()
@@ -884,7 +1244,16 @@ export async function codexLbStatus(opts: any = {}) {
     provider_requires_openai_auth: providerRequiresOpenAiAuth,
     provider_openai_auth_disabled: providerOpenAiAuthDisabled,
     provider_env_key: providerEnvKey || null,
+    provider_has_separate_gateway_auth: providerHasSeparateGatewayAuth,
     provider_uses_codex_lb_env_auth: providerUsesCodexLbEnvAuth,
+    desktop_mode: desktopMode || (selected ? 'legacy-or-manual-selected-provider' : 'cli-provider'),
+    bridge_base_url: bridgeBaseUrl || null,
+    legacy_migration_required: Boolean(
+      !desktopMode
+      && selected
+      && authMode.mode === 'apikey'
+      && sharedOpenAiRouting.managed
+    ),
     selected,
     env_file: envExists,
     env_key_configured: envKeyConfigured,
@@ -910,7 +1279,7 @@ export async function codexLbStatus(opts: any = {}) {
       managed: sharedOpenAiRouting.managed,
       configured_base_url: sharedOpenAiRouting.configured_base_url
     },
-    auth_usable_for_codex_app: authMode.codex_app_usable && authRoutingCoherent,
+    auth_usable_for_codex_app: codexAppUsableWithCodexLb && authRoutingCoherent,
     auth_summary: !sharedOpenAiRoutingSafe
       ? 'codex-lb key is active in shared auth without a verified built-in OpenAI routing guard'
       : !authRoutingCoherent
@@ -952,27 +1321,26 @@ export function formatCodexLbStatusText(status: any = {}, opts: any = {}) {
   lines.push(`Env file:   ${status.env_file ? status.env_path : 'missing'}`);
   if (status.base_url) lines.push(`Base URL:   ${status.base_url}`);
   lines.push(`ChatGPT backup: ${backupPresent ? `yes (${backupPath})` : 'no'}`);
-  if (status.shared_openai_routing?.safe === false) lines.push('', 'Run: sks codex-lb use-codex-lb to pin built-in OpenAI routing to the codex-lb base URL before the shared key can hit api.openai.com.');
+  if (status.legacy_migration_required || status.shared_openai_routing?.safe === false) lines.push('', 'Run: sks codex-lb migrate-legacy-desktop --restart-app. Ordinary repair will not rewrite shared Codex auth.');
   else if (status.provider_configured && !status.provider_contract_ok) lines.push('', 'Run: sks codex-lb repair to rewrite the provider block to the current codex-lb App contract.');
-  else if (status.ok && !status.auth_usable_for_codex_app && backupPresent) lines.push('', 'Run: sks codex-lb use-oauth to restore ChatGPT OAuth, or sks codex-lb use-codex-lb to force codex-lb API-key auth.');
-  else if (status.ok && !status.auth_usable_for_codex_app) lines.push('', 'Run: sks codex-lb use-codex-lb, or sign in to Codex App/CLI again for ChatGPT OAuth.');
-  else if (status.ok && !status.selected) lines.push('', 'Run: sks codex-lb repair to activate codex-lb for Codex App.');
-  else if (status.ok) lines.push('', 'Status: codex-lb active; no repair needed.');
-  else if (!status.ok && status.base_url && status.env_key_configured) lines.push('', 'Run: sks codex-lb repair / use-codex-lb to restore a coherent provider + shared-auth routing state.');
+  else if (status.desktop_mode === 'desktop-native-bridge' && !status.auth_usable_for_codex_app) lines.push('', 'Sign in with ChatGPT OAuth, then run: sks codex-lb use-desktop-full.');
+  else if (status.ok && status.desktop_mode === 'cli-provider' && !status.selected) lines.push('', 'CLI provider is stored but unselected. Run `sks codex-lb use-cli` for CLI use or `sks codex-lb use-desktop-full` for managed Desktop routing.');
+  else if (status.ok && status.desktop_mode === 'desktop-dual-auth-compat') lines.push('', 'Compatibility routing is active. Prefer `sks codex-lb use-desktop-full`; use `sks codex-lb disable` to remove managed Desktop routing.');
+  else if (status.ok) lines.push('', 'Status: configured; no ordinary repair needed.');
+  else if (!status.ok && status.base_url && status.env_key_configured) lines.push('', 'Run: sks codex-lb repair. To change routing explicitly, use `use-desktop-full`, `use-cli`, or `disable`.');
   else if (!status.ok) lines.push('', 'Run: sks codex-lb setup --host <domain> --api-key-stdin');
-  if (backupPresent) lines.push('Switch fully away from codex-lb: sks codex-lb release');
+  if (backupPresent) lines.push('Legacy OAuth backup detected; use `sks codex-lb migrate-legacy-desktop --restart-app` instead of background auth switching.');
   return `${lines.join('\n')}\n`;
 }
 
 export function formatCodexLbRepairResultText(result: any = {}) {
   const lines = [
-    'codex-lb provider auth repaired for Codex CLI/App environment.',
+    'codex-lb credential/provider configuration repaired without changing Codex shared auth.',
     `Config: ${result.config_path}`,
     `Key env: ${result.env_path}`
   ];
-  if (result.auth_reconcile?.status === 'oauth_restored') lines.push(`Codex App auth: ChatGPT OAuth restored from ${result.auth_reconcile.backup_path}.`);
-  else if (result.auth_reconcile?.status === 'oauth_preserved') lines.push('Codex App auth: ChatGPT OAuth preserved as backup; run `sks codex-lb use-codex-lb` to force codex-lb API-key auth.');
-  else if (['apikey_auth_active', 'apikey_forced'].includes(result.auth_reconcile?.status)) lines.push('Codex App auth: codex-lb API-key auth.json is active.');
+  if (result.auth_reconcile?.status === 'oauth_untouched') lines.push('Codex App auth: unchanged.');
+  else if (result.auth_reconcile?.status === 'legacy_migration_required') lines.push('Legacy Desktop auth routing: run `sks codex-lb migrate-legacy-desktop --restart-app` explicitly.');
   return `${lines.join('\n')}\n`;
 }
 
@@ -1013,6 +1381,11 @@ function codexLbProviderEnvKey(text: any = '') {
   return block.match(/(^|\n)\s*env_key\s*=\s*"([^"]+)"/)?.[2] || '';
 }
 
+function codexLbProviderHasSeparateGatewayAuth(text: any = '') {
+  const block = String(text || '').match(/(^|\n)\[model_providers\.codex-lb\]([\s\S]*?)(?=\n\[[^\]]+\]|\s*$)/)?.[2] || '';
+  return /X-Codex-LB-API-Key/.test(block) && /CODEX_LB_API_KEY/.test(block);
+}
+
 function codexLbFastModeConfigStatus(text: any = '') {
   const globalServiceTier = topLevelTomlString(text, 'service_tier');
   const profileBlock = String(text || '').match(/(^|\n)\[profiles\.sks-fast-high\]([\s\S]*?)(?=\n\[[^\]]+\]|\s*$)/)?.[2] || '';
@@ -1042,15 +1415,169 @@ function tomlTableString(text: any = '', table: string, key: string) {
 }
 
 export async function repairCodexLbAuth(opts: any = {}): Promise<CodexLbAuthInstallResult> {
-  let status = await codexLbStatus({
-    ...opts,
-    probeToolOutputRecovery: true,
-    allowUnverifiedToolOutputRecovery: opts.allowUnverifiedToolOutputRecovery === true
+  const home = opts.home || process.env.HOME || os.homedir();
+  let status = await codexLbStatus({ ...opts, home });
+  const authPath = opts.authPath || status.auth_path || codexAuthPath(home);
+  const authBefore = await captureCodexAuthSnapshot({ home, authPath });
+  const currentConfig = await readText(status.config_path, '');
+  const legacyEnv = await loadCodexLbEnv({ ...opts, home });
+  const legacyDetection = await detectLegacyCodexLbDesktopState({
+    home,
+    configPath: status.config_path,
+    authPath,
+    ...(status.base_url ? { remoteBaseUrl: status.base_url } : {}),
+    ...(legacyEnv.secret_api_key
+      ? { expectedGatewayApiKey: legacyEnv.secret_api_key }
+      : {})
   });
-  let configRepaired = false;
-  let legacyAuthMigrated = false;
-  let legacyAuthPath = null;
-  const toolOutputRecovery = status.base_url
+  const legacySharedAuthSelected = status.selected === true
+    && status.auth_mode === 'apikey'
+    && status.shared_openai_routing?.managed === true;
+  if (legacyDetection.legacy_destructive_mode || legacySharedAuthSelected) {
+    return {
+      ok: false,
+      status: 'legacy_migration_required',
+      reason: 'legacy_desktop_auth_routing_requires_explicit_migration',
+      config_path: status.config_path,
+      env_path: status.env_path,
+      base_url: status.base_url,
+      codex_lb: status,
+      auth_reconcile: {
+        status: 'legacy_migration_required',
+        reason: 'run_sks_codex_lb_migrate_legacy_desktop',
+        auth_path: authPath
+      },
+      codex_login: {
+        ok: true,
+        status: 'not_required',
+        reason: 'ordinary_repair_never_changes_shared_codex_auth'
+      },
+      tool_catalog: {
+        ok: true,
+        required: false,
+        status: 'not_bound_during_repair',
+        config_changed: false
+      }
+    };
+  }
+
+  if (!status.env_key_configured && status.base_url && (status.provider_configured || status.selected || status.env_base_url_configured)) {
+    if (status.auth_mode === 'apikey') {
+      return {
+        ok: false,
+        status: 'legacy_migration_required',
+        reason: 'shared_codex_api_key_cannot_be_assumed_to_be_the_codex_lb_gateway_key',
+        config_path: status.config_path,
+        env_path: status.env_path,
+        base_url: status.base_url,
+        codex_lb: status,
+        auth_reconcile: {
+          status: 'legacy_migration_required',
+          reason: 'run_sks_codex_lb_setup_with_a_separate_gateway_key_or_migrate_legacy_desktop',
+          auth_path: authPath
+        },
+        codex_login: {
+          ok: true,
+          status: 'not_required',
+          reason: 'ordinary_repair_never_reads_gateway_credentials_from_shared_codex_auth'
+        },
+        tool_catalog: {
+          ok: true,
+          required: false,
+          status: 'not_bound_during_repair',
+          config_changed: false
+        }
+      };
+    }
+  }
+  if (!status.env_key_configured || !status.base_url) {
+    return {
+      ok: false,
+      status: !status.env_key_configured ? 'missing_env_key' : 'missing_base_url',
+      config_path: status.config_path,
+      env_path: status.env_path,
+      codex_lb: status,
+      auth_reconcile: {
+        status: 'oauth_untouched',
+        reason: 'ordinary_repair_never_changes_shared_codex_auth',
+        auth_path: authPath
+      }
+    };
+  }
+
+  const configBeforeRepair = await readText(status.config_path, '');
+  const desktopMode = managedCodexLbDesktopMode(configBeforeRepair);
+  let nextConfig = configBeforeRepair;
+  try {
+    if (desktopMode === 'desktop-native-bridge') {
+      const bridgeBaseUrl = topLevelTomlString(configBeforeRepair, 'openai_base_url');
+      if (!bridgeBaseUrl) throw new Error('managed_desktop_bridge_missing_base_url');
+      nextConfig = upsertCodexLbNativeDesktopConfig(configBeforeRepair, {
+        bridgeBaseUrl,
+        remoteBaseUrl: status.base_url
+      });
+    } else if (desktopMode === 'desktop-dual-auth-compat') {
+      nextConfig = upsertCodexLbCompatDesktopConfig(configBeforeRepair, {
+        remoteBaseUrl: status.base_url
+      });
+    } else {
+      nextConfig = upsertCodexLbCliProviderConfig(configBeforeRepair, {
+        remoteBaseUrl: status.base_url,
+        // Preserve an already explicit manual selection, but never create one.
+        selectGlobally: status.selected === true
+      });
+    }
+  } catch (error: unknown) {
+    return {
+      ok: false,
+      status: 'managed_desktop_routing_conflict',
+      config_path: status.config_path,
+      env_path: status.env_path,
+      base_url: status.base_url,
+      codex_lb: status,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+  await ensureDir(path.dirname(status.config_path));
+  const configWrite = await safeWriteCodexConfigToml(
+    status.config_path,
+    configBeforeRepair,
+    nextConfig,
+    'codex-lb-safe-repair',
+    { verifyUnchangedBeforeWrite: true }
+  );
+  if (!configWrite.ok) {
+    return {
+      ok: false,
+      status: configWrite.status,
+      config_path: status.config_path,
+      env_path: status.env_path,
+      base_url: status.base_url,
+      codex_lb: status,
+      error: 'codex_lb_config_repair_failed'
+    };
+  }
+
+  const codexEnvironment = await syncCodexLbProviderEnvironment(status, opts);
+  const authAfter = await captureCodexAuthSnapshot({ home, authPath });
+  let authInvariantError: string | null = null;
+  try {
+    await assertDesktopAuthUnchangedBySks(authBefore, authAfter);
+  } catch (error: unknown) {
+    authInvariantError = error instanceof Error ? error.message : String(error);
+  }
+  if (authInvariantError) {
+    const writtenConfig = await readText(status.config_path, '');
+    await safeWriteCodexConfigToml(
+      status.config_path,
+      writtenConfig,
+      configBeforeRepair,
+      'codex-lb-safe-repair-auth-invariant-rollback',
+      { verifyUnchangedBeforeWrite: true }
+    );
+  }
+  const finalStatus = await codexLbStatus({ ...opts, home });
+  const toolOutputRecovery = opts.probeToolOutputRecovery === true && status.selected
     ? await probeCodexLbToolOutputRecovery({
         baseUrl: status.base_url,
         ...(typeof opts.toolOutputRecoveryFetch === 'function' ? { fetchImpl: opts.toolOutputRecoveryFetch } : {}),
@@ -1058,98 +1585,55 @@ export async function repairCodexLbAuth(opts: any = {}): Promise<CodexLbAuthInst
         allowUnverified: opts.allowUnverifiedToolOutputRecovery === true
           || codexLbToolOutputRecoveryOverrideAcknowledged({ env: opts.env || process.env })
       })
-    : status.tool_output_recovery;
-  if (status.base_url && toolOutputRecovery?.ok !== true) {
-    return {
-      ok: false,
-      status: 'tool_output_recovery_blocked',
-      codex_lb: status,
-      tool_output_recovery: toolOutputRecovery,
-      error: toolOutputRecovery?.blockers?.join(', ') || 'codex-lb interrupted tool-output recovery is unverified'
-    };
-  }
-  const currentConfig = await readText(status.config_path, '');
-  if (!status.env_key_configured && status.base_url && (status.provider_configured || status.selected || status.env_base_url_configured)) {
-    const legacyAuth = await restoreCodexLbEnvFromSharedLogin(status, opts);
-    if (legacyAuth.ok) {
-      legacyAuthMigrated = true;
-      legacyAuthPath = legacyAuth.auth_path;
-      status = await codexLbStatus({ ...opts, probeToolOutputRecovery: true });
-    }
-  }
-  // An explicit third-party selection (openrouter, sks-router) is user-chosen
-  // state. Background repair may fix the codex-lb provider table but must not
-  // reselect codex-lb unless the user explicitly asked (use-codex-lb / forced).
-  const repairCurrentProvider = topLevelTomlString(currentConfig, 'model_provider');
-  const repairPreserveThirdParty = Boolean(repairCurrentProvider)
-    && repairCurrentProvider !== 'codex-lb'
-    && opts.forceCodexLbApiKeyAuth !== true
-    && opts.authMode !== 'codex-lb';
-  if (status.env_key_configured && status.base_url && (!status.provider_contract_ok || (!status.selected && !repairPreserveThirdParty) || legacyAuthMigrated || hasTopLevelCodexModeLock(currentConfig) || (opts.forceCodexLbApiKeyAuth === true && !status.ok))) {
-    await ensureDir(path.dirname(status.config_path));
-    let next = upsertCodexLbConfig(currentConfig, status.base_url, !repairPreserveThirdParty);
-    next = normalizeCodexFastModeUiConfig(next, {
-      forceFastMode: opts.forceFastMode === true || opts.forceCodexLbApiKeyAuth === true
-    });
-    const safeWrite = await safeWriteCodexConfigToml(status.config_path, currentConfig, next, 'codex-lb-repair');
-    configRepaired = safeWrite.ok && safeWrite.changed === true;
-    status = await codexLbStatus({ ...opts, probeToolOutputRecovery: true });
-  }
-  const canRepairAuthMode = (opts.forceCodexLbApiKeyAuth === true || status.codex_lb_key_in_shared_auth === true)
-    && status.provider_contract_ok
-    && status.env_key_configured
-    && Boolean(status.base_url);
-  if (!status.ok && !canRepairAuthMode) {
-    return {
-      ok: false,
-      status: !status.env_key_configured ? 'missing_env_key' : !status.base_url ? 'missing_base_url' : 'not_configured',
-      config_path: status.config_path,
-      env_path: status.env_path,
-      codex_lb: status
-    };
-  }
-  await migrateCodexAuthKeyFormat({ home: opts.home });
-  const codexEnvironment = await syncCodexLbProviderEnvironment(status, opts);
-  const loadedEnv = await loadCodexLbEnv({
-    ...opts,
-    home: opts.home || process.env.HOME || os.homedir(),
-    envPath: status.env_path
-  });
-  const apiKey = String(opts.apiKey || loadedEnv.secret_api_key || '').trim();
-  const toolCatalog = await ensureCodexLbToolCatalogSelection({
-    home: opts.home || process.env.HOME || os.homedir(),
-    configPath: status.config_path,
-    baseUrl: String(status.base_url || ''),
-    apiKey
-  }, opts);
-  const forceCodexLbApiKeyAuth = opts.forceCodexLbApiKeyAuth === true || opts.authMode === 'codex-lb';
-  const authReconcile = await reconcileCodexLbAuthConflict({ ...opts, status, forceCodexLbApiKeyAuth }).catch((err: any) => ({ status: 'failed', reason: 'exception', error: err.message }));
-  const codexLogin = forceCodexLbApiKeyAuth
-    ? { ok: ['apikey_forced', 'apikey_auth_active'].includes(authReconcile.status), status: authReconcile.status, ...(authReconcile.reason ? { reason: authReconcile.reason } : {}), error: authReconcile.error || null }
-    : await maybeSyncCodexLbSharedLogin(apiKey, { ...opts, home: opts.home || process.env.HOME || os.homedir(), force: true });
-  const finalStatus = await codexLbStatus({ ...opts, probeToolOutputRecovery: true });
-  const finalReady = finalStatus.selected === true
-    && finalStatus.provider_ready === true
-    && finalStatus.auth_routing_coherent === true
-    && finalStatus.shared_openai_routing?.safe === true;
-  const baseOk = Boolean(codexEnvironment.ok
-    && codexLogin.ok
-    && (toolCatalog.required === false || toolCatalog.ok === true));
-  const ok = baseOk && finalReady;
+    : codexLbToolOutputRecoveryNotChecked(status.selected === true);
+  const authReconcile: CodexLbAuthReconcileResult = {
+    status: authInvariantError ? 'failed' : 'oauth_untouched',
+    reason: authInvariantError || 'ordinary_repair_never_changes_shared_codex_auth',
+    auth_path: authPath,
+    ...(authInvariantError ? { error: authInvariantError } : {})
+  };
+  const codexLogin: CodexLbLoginSyncResult = {
+    ok: !authInvariantError,
+    status: authInvariantError ? 'desktop_auth_byte_invariant_failed' : 'not_required',
+    reason: authInvariantError || 'gateway_credentials_are_independent_from_codex_login',
+    error: authInvariantError
+  };
+  const toolCatalog = {
+    schema: 'sks.codex-lb-tool-catalog-selection.v1',
+    ok: true,
+    required: false,
+    status: desktopMode === 'desktop-native-bridge'
+      ? 'not_bound_for_desktop_native'
+      : 'not_bound_during_repair',
+    config_changed: false,
+    selected: finalStatus.selected,
+    blockers: [] as string[]
+  };
+  const ok = Boolean(configWrite.ok && codexEnvironment.ok && !authInvariantError);
   return {
     ok,
-    status: ok ? 'repaired' : baseOk ? 'final_readiness_failed' : (codexEnvironment.status || codexLogin.status),
+    status: ok
+      ? configWrite.changed
+        ? 'repaired'
+        : finalStatus.selected
+          ? 'present'
+          : 'present_unselected'
+      : authInvariantError
+        ? 'desktop_auth_byte_invariant_failed'
+        : codexEnvironment.status,
     config_path: status.config_path,
     env_path: status.env_path,
     base_url: status.base_url,
-    config_repaired: configRepaired,
-    legacy_auth_migrated: legacyAuthMigrated,
-    legacy_auth_path: legacyAuthPath,
+    config_repaired: configWrite.changed === true,
+    legacy_auth_migrated: false,
+    legacy_auth_path: null,
     auth_reconcile: authReconcile,
     codex_lb: finalStatus,
     codex_environment: codexEnvironment,
     codex_login: codexLogin,
-    tool_catalog: toolCatalog
+    tool_catalog: toolCatalog,
+    tool_output_recovery: toolOutputRecovery,
+    error: authInvariantError || codexEnvironment.error || null
   };
 }
 
@@ -1157,84 +1641,10 @@ export async function ensureCodexLbAuthDuringInstall(opts: any = {}): Promise<Co
   if (process.env.SKS_SKIP_POSTINSTALL_CODEX_LB_AUTH === '1' && !opts.force) return { status: 'skipped', reason: 'SKS_SKIP_POSTINSTALL_CODEX_LB_AUTH=1' };
   const status = await codexLbStatus(opts);
   if (!status.selected && !status.provider_configured && !status.env_key_configured) return { status: 'not_configured', codex_lb: status };
-  if (status.ok && !status.selected && status.auth_mode === 'chatgpt_oauth') {
-    return {
-      ok: true,
-      status: 'present_unselected',
-      reason: 'chatgpt_oauth_active_codex_lb_unselected',
-      config_path: status.config_path,
-      env_path: status.env_path,
-      base_url: status.base_url,
-      codex_lb: status
-    };
-  }
-  await migrateCodexAuthKeyFormat({ home: opts.home });
-  if (status.ok && (!status.selected || !status.provider_contract_ok)) return repairCodexLbAuth(opts);
-  if (!status.ok) {
-    if (status.base_url && (status.env_key_configured || status.provider_configured || status.selected || status.env_base_url_configured)) return repairCodexLbAuth(opts);
-    return { status: status.env_key_configured ? 'missing_base_url' : 'missing_env_key', codex_lb: status, config_path: status.config_path, env_path: status.env_path };
-  }
-  const codexEnvironment = await syncCodexLbProviderEnvironment(status, opts);
-  const loadedEnv = await loadCodexLbEnv({
+  return repairCodexLbAuth({
     ...opts,
-    home: opts.home || process.env.HOME || os.homedir(),
-    envPath: status.env_path
+    probeToolOutputRecovery: false
   });
-  const apiKey = String(opts.apiKey || loadedEnv.secret_api_key || '').trim();
-  const toolCatalog = await ensureCodexLbToolCatalogSelection({
-    home: opts.home || process.env.HOME || os.homedir(),
-    configPath: status.config_path,
-    baseUrl: String(status.base_url || ''),
-    apiKey
-  }, opts);
-  const codexLogin = await maybeSyncCodexLbSharedLogin(apiKey, { ...opts, home: opts.home || process.env.HOME || os.homedir(), force: true });
-  const authReconcile = await reconcileCodexLbAuthConflict({ ...opts, status }).catch((err: any) => ({ status: 'failed', reason: 'exception', error: err.message }));
-  const finalStatus = await codexLbStatus(opts);
-  const finalReady = finalStatus.selected === true
-    && finalStatus.provider_ready === true
-    && finalStatus.auth_routing_coherent === true
-    && finalStatus.shared_openai_routing?.safe === true;
-  const baseOk = Boolean(codexEnvironment.ok
-    && codexLogin.ok
-    && (toolCatalog.required === false || toolCatalog.ok === true));
-  const ok = baseOk && finalReady;
-  return {
-    ok,
-    status: ok ? 'present' : baseOk ? 'final_readiness_failed' : (codexEnvironment.status || codexLogin.status),
-    config_path: status.config_path,
-    env_path: status.env_path,
-    base_url: status.base_url,
-    codex_lb: finalStatus,
-    codex_environment: codexEnvironment,
-    codex_login: codexLogin,
-    tool_catalog: toolCatalog,
-    auth_reconcile: authReconcile,
-    error: codexEnvironment.error || codexLogin.error || null
-  };
-}
-
-async function restoreCodexLbEnvFromSharedLogin(status: any = {}, opts: any = {}) {
-  const home = opts.home || process.env.HOME || os.homedir();
-  const authPath = opts.authPath || codexAuthPath(home);
-  const envPath = opts.envPath || status.env_path || codexLbEnvPath(home);
-  const authText = await readText(authPath, '');
-  const apiKey = parseCodexSharedLoginApiKey(authText);
-  if (!apiKey) return { ok: false, status: 'missing_legacy_login_key', auth_path: authPath, env_path: envPath };
-  const baseUrl = status.base_url || parseCodexLbEnvBaseUrl(await readText(envPath, ''));
-  if (!baseUrl) return { ok: false, status: 'missing_base_url', auth_path: authPath, env_path: envPath };
-  await ensureDir(path.dirname(envPath));
-  await writeTextAtomic(envPath, `export CODEX_LB_BASE_URL=${shellSingleQuote(normalizeCodexLbBaseUrl(baseUrl))}\nexport CODEX_LB_API_KEY=${shellSingleQuote(apiKey)}\n`, { mode: 0o600 });
-  await fsp.chmod(envPath, 0o600).catch(() => {});
-  const metadataPath = opts.metadataPath || codexLbMetadataPath(home);
-  await writeTextAtomic(metadataPath, `${JSON.stringify({
-    schema: 'sks.codex-lb-metadata.v1',
-    base_url: normalizeCodexLbBaseUrl(baseUrl),
-    updated_at: new Date().toISOString(),
-    source: 'legacy-login-migration',
-    api_key: { redacted: true, sha256: await sha256Text(apiKey) }
-  }, null, 2)}\n`, { mode: 0o600 });
-  await fsp.chmod(metadataPath, 0o600).catch(() => {});
-  return { ok: true, status: 'migrated_login_cache', auth_path: authPath, env_path: envPath, base_url: normalizeCodexLbBaseUrl(baseUrl) };
 }
 
 // Detects a real ChatGPT OAuth token blob in auth.json.
@@ -1281,33 +1691,10 @@ function codexAuthModeSummary(text: any = '') {
   return { mode: 'unknown', codex_app_usable: false, summary: 'unrecognized auth.json shape' };
 }
 
-// Migrate auth.json from legacy {"auth_mode":"apikey","key":"..."} to the codex 0.130.0+
-// format {"auth_mode":"apikey","OPENAI_API_KEY":"..."}. Safe: preserves key value, only renames field.
-async function migrateCodexAuthKeyFormat(opts: any = {}) {
-  const home = opts.home || process.env.HOME || os.homedir();
-  const authPath = opts.authPath || codexAuthPath(home);
-  const text = await readText(authPath, '');
-  if (!text.trim()) return { status: 'skipped', reason: 'empty' };
-  try {
-    const parsed = JSON.parse(text);
-    if (parsed?.auth_mode !== 'apikey') return { status: 'skipped', reason: 'not_apikey' };
-    if (parsed.OPENAI_API_KEY) return { status: 'skipped', reason: 'already_migrated' };
-    const legacyKey = parsed.key || parsed.api_key || parsed.apiKey || parsed.openai_api_key;
-    if (!legacyKey) return { status: 'skipped', reason: 'no_key_found' };
-    const replacement = `${JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: legacyKey })}\n`;
-    await writeTextAtomic(authPath, replacement, { mode: 0o600 });
-    await fsp.chmod(authPath, 0o600).catch(() => {});
-    return { status: 'migrated', auth_path: authPath };
-  } catch {
-    return { status: 'skipped', reason: 'parse_error' };
-  }
-}
-
-// Codex App uses the shared OpenAI auth store for providers with
-// requires_openai_auth=true. Before putting the codex-lb key in that store, SKS
-// must also guard the built-in `openai` provider with the same LB base URL. This
-// covers stale App threads and explicit CLI overrides that retain `openai`; the
-// config guard is written and verified before auth.json changes.
+// Legacy compatibility helper for pre-remediation installations that already
+// coupled the codex-lb gateway key to shared Codex auth. No current setup,
+// repair, Desktop routing, update, or launch path calls this writer. New flows
+// keep ChatGPT OAuth and the gateway credential in separate trust planes.
 export async function reconcileCodexLbAuthConflict(opts: any = {}): Promise<CodexLbAuthReconcileResult> {
   const home = opts.home || process.env.HOME || os.homedir();
   const status = opts.status || await codexLbStatus({ ...opts, home });
@@ -1507,8 +1894,7 @@ export async function reconcileCodexLbAuthConflict(opts: any = {}): Promise<Code
         const unselected = await unselectCodexLbProvider({
           ...opts,
           home,
-          authPath,
-          allowActiveSharedAuthTransition: true
+          authPath
         });
         if (!unselected.ok) {
           await writeTextAtomic(authPath, authText, { mode: 0o600 });
@@ -1580,21 +1966,24 @@ export async function unselectCodexLbProvider(opts: any = {}) {
   const envLoad = await loadCodexLbEnv({ ...opts, home, envPath });
   const authPath = opts.authPath || codexAuthPath(home);
   const authApiKey = parseCodexAuthApiKey(await readText(authPath, ''));
-  const sharedCodexLbAuthActive = Boolean(authApiKey && envLoad.secret_api_key && authApiKey === envLoad.secret_api_key);
-  if (sharedCodexLbAuthActive && opts.allowActiveSharedAuthTransition !== true) {
-    return {
-      ok: false,
-      status: 'failed',
-      reason: 'shared_codex_lb_auth_active',
-      provider_error: 'refusing to unselect codex-lb while its key is active in shared OpenAI auth',
-      config_path: configPath
-    };
-  }
   const managedCatalogPath = codexLbToolCatalogPath(opts.codexHome || path.join(home, '.codex'));
   const managedCatalogSelected = topLevelTomlString(current, 'model_catalog_json') === managedCatalogPath;
   const providerBaseUrl = codexLbProviderBaseUrl(current) || envLoad.base_url || '';
   const sharedOpenAiRouting = codexLbSharedOpenAiRoutingState(current, providerBaseUrl);
   const managedSharedOpenAiRouting = sharedOpenAiRouting.status === 'matched' && sharedOpenAiRouting.managed;
+  const codexLbRoutingOwned = hasTopLevelCodexLbSelected(current)
+    || /\[model_providers\.codex-lb\]/.test(current)
+    || managedCatalogSelected
+    || managedSharedOpenAiRouting;
+  if (authApiKey && codexLbRoutingOwned) {
+    return {
+      ok: false,
+      status: 'failed',
+      reason: 'shared_codex_lb_auth_active',
+      provider_error: 'refusing to unselect codex-lb while API-key auth could fall through to built-in OpenAI',
+      config_path: configPath
+    };
+  }
   if (!hasTopLevelCodexLbSelected(current) && !managedCatalogSelected && !managedSharedOpenAiRouting) return { ok: true, status: 'not_selected', config_path: configPath };
   try {
     // Only remove a codex-lb selection. A third-party selection (openrouter,
@@ -1684,8 +2073,7 @@ export async function releaseCodexLbAuthHold(opts: any = {}) {
         ...opts,
         home,
         configPath,
-        authPath,
-        allowActiveSharedAuthTransition: true
+        authPath
       });
       provider = providerDeselectionOutcome(unselected);
     }
@@ -1730,8 +2118,7 @@ export async function releaseCodexLbAuthHold(opts: any = {}) {
         ...opts,
         home,
         configPath,
-        authPath,
-        allowActiveSharedAuthTransition: true
+        authPath
       });
       provider = providerDeselectionOutcome(unselected);
     }
@@ -1781,14 +2168,12 @@ export async function releaseCodexLbAuthHold(opts: any = {}) {
 
   let provider = { ok: true, provider_unselected: false, provider_status: 'kept', provider_error: null as string | null };
   if (!opts.keepProvider) {
-    // Auth was just restored to ChatGPT OAuth. Allow deselection even if a stale
-    // shared-key read would otherwise refuse, so release cannot leave OAuth + LB pin.
+    // Auth was just restored to ChatGPT OAuth, so provider deselection is safe.
     const unselected = await unselectCodexLbProvider({
       ...opts,
       home,
       configPath,
-      authPath,
-      allowActiveSharedAuthTransition: true
+      authPath
     });
     provider = providerDeselectionOutcome(unselected);
   }
@@ -1847,110 +2232,46 @@ async function rollbackCodexAuthRestore(input: { authPath: string; authExisted: 
   }
 }
 
-export async function maybePromptCodexLbSetupForLaunch(args: any = [], opts: any = {}) {
+export async function maybePromptCodexLbSetupForLaunch(args: any = [], opts: any = {}): Promise<ConfigureCodexLbResult> {
   if (args.includes('--json') || args.includes('--skip-codex-lb') || process.env.SKS_SKIP_CODEX_LB_PROMPT === '1') return { status: 'skipped' };
   const allowUnverifiedToolOutputRecovery = opts.allowUnverifiedToolOutputRecovery === true
     || codexLbToolOutputRecoveryOverrideAcknowledged({ args, env: opts.env || process.env });
-  let status = await codexLbStatus({
-    ...opts,
-    probeToolOutputRecovery: true,
-    allowUnverifiedToolOutputRecovery
-  });
-  if (status.selected && status.tool_output_recovery?.ok !== true) {
+  let status = await codexLbStatus({ ...opts, probeToolOutputRecovery: false });
+  if (status.legacy_migration_required) {
     return {
-      status: 'tool_output_recovery_blocked',
+      status: 'legacy_migration_required',
       ok: false,
       codex_lb: status,
-      tool_output_recovery: status.tool_output_recovery,
-      blockers: status.tool_output_recovery.blockers,
-      operator_actions: status.tool_output_recovery.operator_actions,
-      bypass_codex_lb: false
+      blockers: ['run_sks_codex_lb_migrate_legacy_desktop']
     };
   }
-  if (status.env_key_configured && status.base_url && !status.selected && status.auth_mode === 'chatgpt_oauth') {
-    return { status: 'continued_to_codex', ok: false, chain_health: null, codex_lb: status, reason: 'chatgpt_oauth_active_codex_lb_unselected' };
-  }
-  if (status.env_key_configured && status.base_url && (!status.provider_configured || !status.selected || !status.provider_contract_ok)) {
-    let promptedRestore = false;
-    if (!status.provider_configured && canAskYesNo()) {
-      promptedRestore = true;
-      const restore = (await askPostinstallQuestion('\ncodex-lb provider section is missing, but stored auth exists. Restore and route Codex through codex-lb? [Y/n] ')).trim();
-      if (/^(n|no|아니|아니요|ㄴ)$/i.test(restore)) return { status: 'continued_to_codex', codex_lb: status };
-    }
-    const repaired = await repairCodexLbAuth({ ...opts, allowUnverifiedToolOutputRecovery });
-    status = await codexLbStatus({ ...opts, probeToolOutputRecovery: true, allowUnverifiedToolOutputRecovery });
-    if (status.selected && status.tool_output_recovery?.ok !== true) {
-      return {
-        status: 'tool_output_recovery_blocked',
-        ok: false,
-        repair: repaired,
-        codex_lb: status,
-        tool_output_recovery: status.tool_output_recovery,
-        blockers: status.tool_output_recovery.blockers,
-        operator_actions: status.tool_output_recovery.operator_actions,
-        bypass_codex_lb: false
-      };
-    }
-    if (!status.ok) return { status: 'repair_failed', ok: false, repair: repaired, codex_lb: status };
-    if (!repaired.ok && repaired.error && promptedRestore) console.log(`codex-lb provider restored, but launch environment sync reported: ${repaired.error}`);
-    else if (!repaired.ok && promptedRestore) console.log(`codex-lb provider restored, but provider auth sync reported: ${repaired.status}`);
-    else if (repaired.config_repaired && promptedRestore) console.log(`codex-lb provider restored: ${status.base_url}`);
-  }
-  if (status.ok) {
-    const codexEnvironment = await syncCodexLbProviderEnvironment(status, opts);
-    if (codexEnvironment.status === 'synced') console.log('codex-lb provider auth synced for this user session.');
-    const apiKey = parseCodexLbEnvKey(await readText(status.env_path, ''));
-    const toolCatalog = await ensureCodexLbToolCatalogSelection({
-      home: opts.home || process.env.HOME || os.homedir(),
-      configPath: status.config_path,
-      baseUrl: String(status.base_url || ''),
-      apiKey
-    }, opts);
-    if (toolCatalog.required !== false && toolCatalog.ok !== true) {
-      return { status: 'repair_failed', ok: false, codex_lb: status, codex_environment: codexEnvironment, tool_catalog: toolCatalog };
-    }
-    const codexLogin = await maybeSyncCodexLbSharedLogin(apiKey, { ...opts, home: opts.home || process.env.HOME || os.homedir() });
-    if (codexLogin.status === 'synced') console.log('codex-lb auth synced with Codex CLI login cache.');
-    const chainHealth = await checkCodexLbResponseChain(status, opts);
-    if (!chainHealth.ok && chainHealth.chain_unhealthy) {
-      // `previous_response_not_found` is normal for stateless LB deployments that don't persist
-      // Responses across requests. The codex-lb provider still works fine — only the chained
-      // health probe fails. Keep codex-lb active and just warn.
-      if (chainHealth.status === 'previous_response_not_found') {
-        console.log('codex-lb response chain check: previous_response_id not persisted by the load balancer (this is normal for stateless deployments). Keeping codex-lb active.');
-        return { status: 'present', ...status, codex_environment: codexEnvironment, codex_login: codexLogin, tool_catalog: toolCatalog, chain_health: chainHealth };
-      }
-      // Hard chain failure (auth rejected, timeout, missing base URL, etc.). Don't silently
-      // demote a configured codex-lb to ChatGPT OAuth — surface the failure and let the user
-      // decide. Default keeps codex-lb (just press Enter).
-      console.log(`codex-lb response chain check failed (${chainHealth.status}${chainHealth.error ? `: ${chainHealth.error}` : ''}).`);
-      if (process.env.SKS_CODEX_LB_AUTOBYPASS === '1') {
-        console.log('SKS_CODEX_LB_AUTOBYPASS=1 set; bypassing codex-lb to ChatGPT OAuth for this launch.');
-        return { status: 'chain_unhealthy', ...status, ok: false, codex_environment: codexEnvironment, codex_login: codexLogin, tool_catalog: toolCatalog, chain_health: chainHealth, bypass_codex_lb: true };
-      }
-      if (canAskYesNo()) {
-        const answer = (await askPostinstallQuestion('Use codex-lb anyway, or fall back to ChatGPT OAuth? [LB/oauth] ')).trim().toLowerCase();
-        if (/^(oauth|o|chatgpt|fall ?back|n|no|아니|아니요|ㄴ)$/.test(answer)) {
-          console.log('Falling back to ChatGPT OAuth for this launch. Re-enable codex-lb anytime with `sks codex-lb repair`.');
-          return { status: 'chain_unhealthy', ...status, ok: false, codex_environment: codexEnvironment, codex_login: codexLogin, tool_catalog: toolCatalog, chain_health: chainHealth, bypass_codex_lb: true };
-        }
-        console.log('Keeping codex-lb active. To switch back to ChatGPT OAuth: `sks codex-lb release`.');
-        return { status: 'present', ...status, codex_environment: codexEnvironment, codex_login: codexLogin, tool_catalog: toolCatalog, chain_health: chainHealth };
-      }
-      // Non-interactive context with no opt-out env var. The user explicitly configured codex-lb,
-      // so default to keeping it active rather than silently swapping providers.
-      console.log('Non-interactive launch + chain check failure. Keeping codex-lb active. Set SKS_CODEX_LB_AUTOBYPASS=1 to auto-bypass to ChatGPT OAuth.');
-      return { status: 'present', ...status, codex_environment: codexEnvironment, codex_login: codexLogin, tool_catalog: toolCatalog, chain_health: chainHealth };
-    }
-    return { status: 'present', ...status, codex_environment: codexEnvironment, codex_login: codexLogin, tool_catalog: toolCatalog, chain_health: chainHealth };
+  if (status.env_key_configured && status.base_url) {
+    const repaired = await repairCodexLbAuth({
+      ...opts,
+      allowUnverifiedToolOutputRecovery,
+      probeToolOutputRecovery: false
+    });
+    status = await codexLbStatus({ ...opts, probeToolOutputRecovery: false });
+    if (!repaired.ok) return { status: repaired.status, ok: false, repair: repaired, codex_lb: status };
+    const codexEnvironment = repaired.codex_environment || await syncCodexLbProviderEnvironment(status, opts);
+    return {
+      status: status.desktop_mode === 'cli-provider' && !status.selected ? 'continued_to_codex' : 'present',
+      ...status,
+      codex_environment: codexEnvironment,
+      ...(repaired.codex_login ? { codex_login: repaired.codex_login } : {}),
+      ...(repaired.tool_catalog ? { tool_catalog: repaired.tool_catalog } : {}),
+      reason: status.desktop_mode === 'cli-provider' && !status.selected
+        ? 'unselected_cli_provider_available_for_explicit_use'
+        : 'explicit_managed_desktop_routing_preserved'
+    };
   }
   if (!canAskYesNo()) return { status: 'non_interactive', codex_lb: status };
-  const useCodexLb = (await askPostinstallQuestion('\ncodex-lb is not configured for this Codex App profile. Configure and route Codex through codex-lb now? [y/N] ')).trim();
+  const useCodexLb = (await askPostinstallQuestion('\ncodex-lb is not configured. Store credentials and an unselected CLI provider now? [y/N] ')).trim();
   if (!/^(y|yes|예|네|응)$/i.test(useCodexLb)) return { status: 'continued_to_codex' };
   const host = (await askPostinstallQuestion('codex-lb host domain [http://127.0.0.1:2455]: ')).trim() || 'http://127.0.0.1:2455';
   const apiKey = (await askPostinstallQuestion('codex-lb API key: ')).trim();
   const configured = await configureCodexLb({ ...opts, host, apiKey, allowUnverifiedToolOutputRecovery });
-  if (configured.ok) console.log(`codex-lb configured: ${configured.base_url}`);
+  if (configured.ok) console.log(`codex-lb credentials stored: ${configured.base_url}. Use \`sks codex-lb use-cli\`, \`use-desktop-full\`, or \`disable\` explicitly.`);
   else console.log('codex-lb setup skipped: API key was empty.');
   return configured;
 }
@@ -2055,35 +2376,6 @@ async function inspectCodexLbMacLaunchEnvironment(baseUrl: any = '', opts: any =
   };
 }
 
-async function maybeSyncCodexLbSharedLogin(apiKey: any, opts: any = {}): Promise<CodexLbLoginSyncResult> {
-  if (!apiKey) return { ok: false, status: 'missing_env_key' };
-  if (!shouldSyncCodexLbSharedLogin(opts)) {
-    return { ok: true, status: 'skipped', reason: 'codex-lb repair preserved the current Codex App auth; run `sks codex-lb use-codex-lb` to switch the app to codex-lb API-key auth.' };
-  }
-  return syncCodexApiKeyLogin(apiKey, opts);
-}
-
-function shouldSyncCodexLbSharedLogin(opts: any = {}) {
-  return opts.syncCodexLogin === true || process.env.SKS_CODEX_LB_SYNC_CODEX_LOGIN === '1';
-}
-
-async function syncCodexApiKeyLogin(apiKey: any, opts: any = {}) {
-  const home = opts.home || process.env.HOME || os.homedir();
-  const codexHome = opts.codexHome || path.join(home, '.codex');
-  const codexBin = opts.codexBin || (await getCodexInfo().catch(() => EMPTY_CODEX_INFO)).bin || await which('codex').catch(() => null);
-  if (!codexBin) return { ok: false, status: 'codex_missing' };
-  await ensureDir(codexHome);
-  const env = { HOME: home, CODEX_HOME: codexHome, CODEX_LB_API_KEY: apiKey };
-  if (!opts.force) {
-    const current = await runProcess(codexBin, ['login', 'status'], { env, timeoutMs: 10000, maxOutputBytes: 8192 });
-    if (current.code === 0 && !/not logged in/i.test(`${current.stdout}\n${current.stderr}`)) return { ok: true, status: 'present' };
-  }
-  const login = await runProcess(codexBin, ['login', '--with-api-key'], { input: `${apiKey}\n`, env, timeoutMs: 15000, maxOutputBytes: 8192 });
-  if (login.code === 0) return { ok: true, status: 'synced' };
-  return { ok: false, status: 'login_failed', error: redactSecretText(login.stderr || login.stdout || 'codex login failed', [apiKey]).trim() };
-}
-
-
 export {
   checkContext7,
   ensureCodexCliTool,
@@ -2127,4 +2419,3 @@ export {
   upsertCodexLbConfig
 } from './install-helpers-codex-lb-config.js';
 export { checkCodexLbResponseChain } from './install-helpers-codex-lb-chain.js';
-export { selftestCodexLb } from './install-helpers-codex-lb-selftest.js';

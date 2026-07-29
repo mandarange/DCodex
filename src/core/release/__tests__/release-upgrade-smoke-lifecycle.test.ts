@@ -33,7 +33,7 @@ test('release upgrade lifecycle keeps every command in one fresh prefix and uses
     const seen: ReleaseUpgradeCommandSpec[] = []
     const runner = async (spec: ReleaseUpgradeCommandSpec): Promise<ReleaseUpgradeCommandResult> => {
       seen.push(spec)
-      const version = spec.stage.startsWith('baseline_') || spec.stage.startsWith('package_rollback_') ? '6.2.0' : '6.3.0'
+      const version = spec.stage.startsWith('baseline_') || spec.stage.startsWith('package_rollback_') ? '7.6.0' : '8.0.0'
       if (spec.stage.endsWith('_version')) return result(`sneakoscope ${version}\n`)
       if (spec.stage.endsWith('_doctor')) {
         const body = { schema: 'sks.doctor-status.v3', ok: true, root: isolation.workspace }
@@ -64,7 +64,7 @@ test('release upgrade lifecycle keeps every command in one fresh prefix and uses
         return result(JSON.stringify({
           schema: 'sks.menubar-rollback.v1', ok: true,
           status: 'rolled_back_launch_skipped', blockers: [],
-          previous_version: '6.2.0', replaced_version: '6.3.0',
+          previous_version: '7.6.0', replaced_version: '8.0.0',
           verification_before: { ok: true }, verification_after: { ok: true },
           launch: { requested: false, method: 'skipped', ok: true }
         }))
@@ -119,7 +119,7 @@ test('release upgrade lifecycle keeps every command in one fresh prefix and uses
   }
 })
 
-test('pinned 6.2 doctors may use valid stdout-only evidence while target doctor stays strict', async () => {
+test('pinned 7.6 doctors may use valid stdout-only evidence while target doctor stays strict', async () => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-upgrade-620-doctor-compat-'))
   try {
     const isolation = await createReleaseUpgradeIsolation(temp, { PATH: '/usr/bin:/bin' })
@@ -127,7 +127,7 @@ test('pinned 6.2 doctors may use valid stdout-only evidence while target doctor 
       await makeLifecycleInput(isolation, 'linux'),
       async (spec) => {
         if (spec.stage.endsWith('_version')) {
-          return result(`sneakoscope ${spec.stage === 'target_version' ? '6.3.0' : '6.2.0'}\n`)
+          return result(`sneakoscope ${spec.stage === 'target_version' ? '8.0.0' : '7.6.0'}\n`)
         }
         if (spec.stage === 'baseline_bootstrap') {
           return result(JSON.stringify({
@@ -159,7 +159,7 @@ test('pinned 6.2 doctors may use valid stdout-only evidence while target doctor 
   }
 })
 
-test('pinned 6.2 stdout-only doctor compatibility rejects invalid stdout evidence', async () => {
+test('pinned 7.6 stdout-only doctor compatibility rejects invalid stdout evidence', async () => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-upgrade-620-doctor-invalid-'))
   const cases = [
     [(_root: string) => JSON.stringify({ schema: 'sks.doctor-status.v3', ok: true, root: '/wrong-root' }), 0],
@@ -173,7 +173,7 @@ test('pinned 6.2 stdout-only doctor compatibility rejects invalid stdout evidenc
       const lifecycle = await runValidatedReleaseUpgradeLifecycle(
         await makeLifecycleInput(isolation, 'linux'),
         async (spec) => {
-          if (spec.stage === 'baseline_version') return result('sneakoscope 6.2.0\n')
+          if (spec.stage === 'baseline_version') return result('sneakoscope 7.6.0\n')
           if (spec.stage === 'baseline_bootstrap') {
             return result(JSON.stringify({
               schema: 'sks.setup.v1', ok: true, status: 'completed', local_only: true, root: isolation.workspace
@@ -194,7 +194,7 @@ test('pinned 6.2 stdout-only doctor compatibility rejects invalid stdout evidenc
   }
 })
 
-test('pinned 6.2 stdout-only doctor compatibility rejects unsafe report directories', async () => {
+test('pinned 7.6 stdout-only doctor compatibility rejects unsafe report directories', async () => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-upgrade-620-doctor-parent-'))
   try {
     for (const mode of ['removed', 'symlink', 'outside'] as const) {
@@ -207,7 +207,7 @@ test('pinned 6.2 stdout-only doctor compatibility rejects unsafe report director
       const lifecycle = await runValidatedReleaseUpgradeLifecycle(
         await makeLifecycleInput(isolation, 'linux'),
         async (spec) => {
-          if (spec.stage === 'baseline_version') return result('sneakoscope 6.2.0\n')
+          if (spec.stage === 'baseline_version') return result('sneakoscope 7.6.0\n')
           if (spec.stage === 'baseline_bootstrap') {
             return result(JSON.stringify({
               schema: 'sks.setup.v1', ok: true, status: 'completed', local_only: true, root: isolation.workspace
@@ -238,7 +238,7 @@ test('pinned 6.2 stdout-only doctor compatibility rejects unsafe report director
   }
 })
 
-test('target 6.3 doctor still requires a matching report file', async () => {
+test('target 8.0 doctor still requires a matching report file', async () => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-upgrade-target-doctor-report-'))
   try {
     const isolation = await createReleaseUpgradeIsolation(temp, { PATH: '/usr/bin:/bin' })
@@ -246,7 +246,7 @@ test('target 6.3 doctor still requires a matching report file', async () => {
       await makeLifecycleInput(isolation, 'linux'),
       async (spec) => {
         if (spec.stage.endsWith('_version')) {
-          return result(`sneakoscope ${spec.stage === 'target_version' ? '6.3.0' : '6.2.0'}\n`)
+          return result(`sneakoscope ${spec.stage === 'target_version' ? '8.0.0' : '7.6.0'}\n`)
         }
         if (spec.stage === 'baseline_bootstrap') {
           return result(JSON.stringify({
@@ -276,21 +276,21 @@ test('Menu Bar rollback proof requires the exact no-launch success receipt', () 
     schema: 'sks.menubar-rollback.v1',
     ok: true,
     status: 'rolled_back_launch_skipped',
-    previous_version: '6.2.0',
-    replaced_version: '6.3.0',
+    previous_version: '7.6.0',
+    replaced_version: '8.0.0',
     verification_before: { ok: true },
     verification_after: { ok: true },
     launch: { requested: false, method: 'skipped', ok: true },
     blockers: []
   }
-  assert.equal(validateReleaseUpgradeMenuBarRollbackReceipt(valid, '6.3.0'), true)
+  assert.equal(validateReleaseUpgradeMenuBarRollbackReceipt(valid, '8.0.0'), true)
   for (const invalid of [
     { ...valid, status: 'rolled_back' },
     { ...valid, launch: { ...valid.launch, method: 'launchctl' } },
     { ...valid, launch: { ...valid.launch, ok: false } },
     { ...valid, blockers: ['launch_attempted'] }
   ]) {
-    assert.equal(validateReleaseUpgradeMenuBarRollbackReceipt(invalid, '6.3.0'), false)
+    assert.equal(validateReleaseUpgradeMenuBarRollbackReceipt(invalid, '8.0.0'), false)
   }
 })
 
@@ -304,7 +304,7 @@ test('sealed target input is revalidated immediately before target install', asy
       const outside = path.join(temp, `outside-${mode}-${path.basename(isolation.sandbox)}.tgz`)
       const lifecycle = await runValidatedReleaseUpgradeLifecycle(input, async (spec) => {
         seen.push(spec.stage)
-        if (spec.stage.endsWith('_version')) return result('sneakoscope 6.2.0\n')
+        if (spec.stage.endsWith('_version')) return result('sneakoscope 7.6.0\n')
         if (spec.stage === 'baseline_bootstrap') {
           return result(JSON.stringify({
             schema: 'sks.setup.v1', ok: true, status: 'completed', local_only: true, root: isolation.workspace
@@ -351,7 +351,7 @@ test('baseline bootstrap requires the exact setup receipt instead of accepting e
       const seen: string[] = []
       const lifecycle = await runValidatedReleaseUpgradeLifecycle(await makeLifecycleInput(isolation, 'linux'), async (spec) => {
         seen.push(spec.stage)
-        if (spec.stage === 'baseline_version') return result('sneakoscope 6.2.0\n')
+        if (spec.stage === 'baseline_version') return result('sneakoscope 7.6.0\n')
         if (spec.stage === 'baseline_bootstrap') return result(stdout)
         return result('')
       })
@@ -364,7 +364,7 @@ test('baseline bootstrap requires the exact setup receipt instead of accepting e
   }
 })
 
-test('pinned 6.2 doctor fallback rejects unsafe or mismatched report files when present', async () => {
+test('pinned 7.6 doctor fallback rejects unsafe or mismatched report files when present', async () => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-upgrade-doctor-contract-'))
   const cases = [
     ['invalid', 'doctor_report_schema_invalid'],
@@ -380,7 +380,7 @@ test('pinned 6.2 doctor fallback rejects unsafe or mismatched report files when 
         await fs.mkdir(isolation.commandReportsDir, { recursive: true })
       }
       const lifecycle = await runValidatedReleaseUpgradeLifecycle(await makeLifecycleInput(isolation, 'linux'), async (spec) => {
-        if (spec.stage === 'baseline_version') return result('sneakoscope 6.2.0\n')
+        if (spec.stage === 'baseline_version') return result('sneakoscope 7.6.0\n')
         if (spec.stage === 'baseline_bootstrap') {
           return result(JSON.stringify({
             schema: 'sks.setup.v1', ok: true, status: 'completed', local_only: true, root: isolation.workspace
@@ -405,7 +405,7 @@ test('pinned 6.2 doctor fallback rejects unsafe or mismatched report files when 
       assert.equal(lifecycle.states.baseline_package.status, 'failed')
       const receipt = lifecycle.commands.find((entry) => entry.stage === 'baseline_doctor')
       assert.ok(receipt?.report_file)
-      assert.equal(receipt.report_file.expected_package_version, '6.2.0')
+      assert.equal(receipt.report_file.expected_package_version, '7.6.0')
       if (mode === 'symlink') assert.equal(receipt.report_file.symlink_refused, true)
       if (mode === 'outside') assert.equal(receipt.report_file.inside_sandbox, false)
     }

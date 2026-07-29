@@ -7,10 +7,6 @@ import path from 'node:path';
 import { runProcess, exists, readText } from '../../dist/core/fsx.js';
 import { CODEX_LB_TOOL_OUTPUT_RECOVERY_MIN_VERSION } from '../../dist/core/codex-lb/codex-lb-tool-output-recovery.js';
 
-function catalogModel(slug) {
-  return { slug, display_name: slug, supported_reasoning_levels: [], shell_type: 'shell_command', visibility: 'list', supported_in_api: true, priority: 1, base_instructions: '', supports_reasoning_summaries: true, support_verbosity: true, truncation_policy: { mode: 'tokens', limit: 10_000 }, supports_parallel_tool_calls: true, experimental_supported_tools: [], tool_mode: 'code_mode_only' };
-}
-
 test('codex-lb setup applies selected actions and reports drift-free writes', async () => {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-lb-apply-'));
   const requests = [];
@@ -22,11 +18,6 @@ test('codex-lb setup applies selected actions and reports drift-free writes', as
         'x-app-version': CODEX_LB_TOOL_OUTPUT_RECOVERY_MIN_VERSION
       });
       response.end(JSON.stringify({ status: 'ok' }));
-      return;
-    }
-    if (request.url === '/backend-api/codex/models') {
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ models: [catalogModel('gpt-5.6-luna'), catalogModel('gpt-5.6-terra'), catalogModel('gpt-5.6-sol')] }));
       return;
     }
     response.writeHead(404, { 'content-type': 'application/json' });
@@ -51,15 +42,20 @@ test('codex-lb setup applies selected actions and reports drift-free writes', as
     assert.equal(result.code, 0, result.stderr || result.stdout);
     assert.equal(json.ok, true);
     assert.equal(json.status, 'configured');
+    assert.equal(json.mode, 'cli-provider');
+    assert.equal(json.identity_plane, 'unchanged');
+    assert.equal(json.routing_plane, 'cli_provider');
+    assert.equal(json.oauth_preserved, true);
+    assert.equal(json.auth_mutated, false);
     assert.equal(json.tool_output_recovery?.status, 'compatible');
     assert.ok(requests.includes('/health'));
-    assert.ok(requests.includes('/backend-api/codex/models'));
+    assert.equal(requests.includes('/backend-api/codex/models'), false);
     assert.equal(await exists(path.join(home, '.codex', 'sks-codex-lb.env')), true);
-    assert.match(config, /^\s*model_provider\s*=\s*"codex-lb"/m);
+    assert.doesNotMatch(config, /^\s*model_provider\s*=\s*"codex-lb"/m);
     assert.match(config, /^\s*env_key\s*=\s*"CODEX_LB_API_KEY"/m);
-    assert.match(config, /^\s*requires_openai_auth\s*=\s*true/m);
+    assert.match(config, /^\s*requires_openai_auth\s*=\s*false/m);
+    assert.equal(json.tool_catalog?.status, 'not_bound_for_cli_provider');
     assert.deepEqual(json.drift, []);
-    assert.deepEqual(json.codex_app_fast_ui.selected_provider_blockers, []);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await fsp.rm(home, { recursive: true, force: true });

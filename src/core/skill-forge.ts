@@ -3,6 +3,11 @@ import fsp from 'node:fs/promises';
 import { ensureDir, exists, nowIso, readJson, readText, sha256, writeJsonAtomic, writeTextAtomic } from './fsx.js';
 import { ARTIFACT_FILES, validateSkillCandidate, validateSkillInjectionDecision } from './artifact-schemas.js';
 import { createSkillCard } from './evaluation.js';
+import {
+  isSksGeneratedSkillAgentMetadata,
+  renderSkillAgentMetadata
+} from './skills/skill-agent-metadata.js';
+import { escapeRegExp } from './text/regex.js';
 
 export const SKILL_DREAM_POLICY = Object.freeze({
   schema_version: 1,
@@ -468,7 +473,7 @@ async function inventorySkillDream(root: any, opts: any = {}) {
     const metadataText = await readText(path.join(skillRoot, entry.name, 'agents', 'openai.yaml'), '');
     const ownership = known.has(name)
       ? 'known_generated'
-      : metadataLooksGenerated(metadataText, name)
+      : hasSksGeneratedSkillMarker(text, name) && metadataLooksGenerated(metadataText, name)
       ? 'metadata_generated'
       : 'unknown_or_user';
     const lines = text.split(/\r?\n/);
@@ -492,17 +497,36 @@ async function inventorySkillDream(root: any, opts: any = {}) {
 }
 
 function metadataLooksGenerated(text: any, name: any) {
-  const s = String(text || '');
-  return new RegExp(`^name:\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'm').test(s)
-    && /^routing:\s*temporary\s*$/m.test(s)
-    && /^return_to_default_after_route:\s*true\s*$/m.test(s);
+  return isSksGeneratedSkillAgentMetadata(String(text || ''), String(name || ''), {
+    allowLegacyOwnershipSignature: true
+  });
+}
+
+function hasSksGeneratedSkillMarker(text: unknown, name: unknown): boolean {
+  const source = String(text || '');
+  const expectedName = safeId(name);
+  if (!expectedName) return false;
+  const escapedName = escapeRegExp(expectedName);
+  const managed = new RegExp(
+    `^<!-- BEGIN SKS MANAGED SKILL v\\S+ name=${escapedName} -->\\s*$`,
+    'm'
+  ).test(source);
+  const immutableCore = source.includes('<!-- BEGIN SKS IMMUTABLE CORE SKILL -->')
+    && source.includes('<!-- END SKS IMMUTABLE CORE SKILL -->')
+    && new RegExp(`^canonical_name:\\s*${escapedName}\\s*$`, 'm').test(source);
+  const forge = /^<!-- BEGIN SKS FORGE SKILL project=[a-f0-9]{12} generator=sks@runtime created=[^>\r\n]+ -->\s*$/m.test(source)
+    && new RegExp(`^name:\\s*${escapedName}\\s*$`, 'm').test(source);
+  return managed || immutableCore || forge;
 }
 
 async function writeFixtureSkill(skillRoot: any, name: any, body: any) {
   const dir = path.join(skillRoot, name);
   await ensureDir(path.join(dir, 'agents'));
   await writeTextAtomic(path.join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: Fixture skill.\n---\n\n${forgeSkillMarker(skillRoot)}\n\n${body}`);
-  await writeTextAtomic(path.join(dir, 'agents', 'openai.yaml'), `name: ${name}\nmodel_reasoning_effort: high\nrouting: temporary\nreturn_to_default_after_route: true\n`);
+  await writeTextAtomic(
+    path.join(dir, 'agents', 'openai.yaml'),
+    renderSkillAgentMetadata({ skillName: name, shortDescription: 'Fixture skill.' })
+  );
 }
 
 function forgeSkillMarker(root: any) {

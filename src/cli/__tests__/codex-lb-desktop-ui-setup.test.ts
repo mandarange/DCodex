@@ -44,12 +44,27 @@ async function homeFixture(t: test.TestContext) {
   t.after(() => fsp.rm(home, { recursive: true, force: true }));
   const codexHome = path.join(home, '.codex');
   await fsp.mkdir(codexHome, { recursive: true });
+  const initialConfig = [
+    'model = "user-owned-model"',
+    'model_reasoning_effort = "low"',
+    'service_tier = "standard"',
+    '',
+    '[features]',
+    'fast_mode = false',
+    ''
+  ].join('\n');
+  await fsp.writeFile(path.join(codexHome, 'config.toml'), initialConfig, { mode: 0o600 });
   await fsp.writeFile(
     path.join(codexHome, 'auth.json'),
     `${JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: 'oauth-fixture' } }, null, 2)}\n`,
     { mode: 0o600 }
   );
-  return { home, codexHome, configPath: path.join(codexHome, 'config.toml'), authPath: path.join(codexHome, 'auth.json') };
+  return {
+    home,
+    codexHome,
+    configPath: path.join(codexHome, 'config.toml'),
+    authPath: path.join(codexHome, 'auth.json')
+  };
 }
 
 async function toolOutputRecoveryFetch() {
@@ -62,9 +77,11 @@ async function toolOutputRecoveryFetch() {
   });
 }
 
-test('configureCodexLb selects provider only after a ready GPT-5.6 catalog is bound', async (t) => {
-  const { home, codexHome, configPath } = await homeFixture(t);
+test('configureCodexLb stores an unselected CLI provider without mutating Desktop auth, catalog, or Fast settings', async (t) => {
+  const { home, codexHome, configPath, authPath } = await homeFixture(t);
   const catalogPath = codexLbToolCatalogPath(codexHome);
+  const beforeAuth = await fsp.readFile(authPath);
+  let catalogFetchCalls = 0;
   const previousSkip = process.env.SKS_SKIP_CODEX_LB_LAUNCH_ENV;
   process.env.SKS_SKIP_CODEX_LB_LAUNCH_ENV = '1';
   t.after(() => {
@@ -80,20 +97,41 @@ test('configureCodexLb selects provider only after a ready GPT-5.6 catalog is bo
     shellProfile: 'skip',
     syncLaunchctl: false,
     toolOutputRecoveryFetch,
-    toolCatalogFetch: async () => new Response(JSON.stringify(READY_CATALOG), { status: 200 })
+    toolCatalogFetch: async () => {
+      catalogFetchCalls += 1;
+      return new Response(JSON.stringify(READY_CATALOG), { status: 200 });
+    }
   });
 
   const config = await fsp.readFile(configPath, 'utf8');
   assert.equal(result.ok, true);
-  assert.equal(hasTopLevelCodexLbSelected(config), true);
-  assert.match(config, new RegExp(`model_catalog_json\\s*=\\s*"${catalogPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
-  assert.equal((await fsp.stat(catalogPath)).isFile(), true);
-  const auth = await fsp.readFile(path.join(codexHome, 'auth.json'), 'utf8');
-  assert.match(auth, /sk-clb-desktop-ui-ready/);
+  assert.equal(result.mode, 'cli-provider');
+  assert.equal(result.routing_plane, 'cli_provider');
+  assert.equal(result.identity_plane, 'unchanged');
+  assert.equal(result.oauth_preserved, true);
+  assert.equal(result.auth_mutated, false);
+  assert.equal(result.auth_reconcile?.status, 'oauth_untouched');
+  assert.equal(result.codex_login?.status, 'not_required');
+  assert.equal(result.tool_catalog?.status, 'not_bound_for_cli_provider');
+  assert.equal(result.tool_catalog?.required, false);
+  assert.equal(result.codex_lb?.selected, false);
+  assert.equal(hasTopLevelCodexLbSelected(config), false);
+  assert.doesNotMatch(config, /^\s*model_catalog_json\s*=/m);
+  assert.match(config, /\[model_providers\.codex-lb\]/);
+  assert.match(config, /^name\s*=\s*"codex-lb"$/m);
+  assert.match(config, /^requires_openai_auth\s*=\s*false$/m);
+  assert.match(config, /^model\s*=\s*"user-owned-model"$/m);
+  assert.match(config, /^model_reasoning_effort\s*=\s*"low"$/m);
+  assert.match(config, /^service_tier\s*=\s*"standard"$/m);
+  assert.match(config, /^fast_mode\s*=\s*false$/m);
+  assert.equal(catalogFetchCalls, 0);
+  assert.equal(await fsp.access(catalogPath).then(() => true, () => false), false);
+  assert.deepEqual(await fsp.readFile(authPath), beforeAuth);
 });
 
-test('configureCodexLb does not select or force shared auth when /models catalog is bad', async (t) => {
-  const { home, configPath, authPath } = await homeFixture(t);
+test('configureCodexLb ignores catalog quality and legacy activation flags during credential-only setup', async (t) => {
+  const { home, codexHome, configPath, authPath } = await homeFixture(t);
+  const catalogPath = codexLbToolCatalogPath(codexHome);
   const previousSkip = process.env.SKS_SKIP_CODEX_LB_LAUNCH_ENV;
   process.env.SKS_SKIP_CODEX_LB_LAUNCH_ENV = '1';
   t.after(() => {
@@ -101,6 +139,7 @@ test('configureCodexLb does not select or force shared auth when /models catalog
     else process.env.SKS_SKIP_CODEX_LB_LAUNCH_ENV = previousSkip;
   });
   const beforeAuth = await fsp.readFile(authPath, 'utf8');
+  let catalogFetchCalls = 0;
   const result = await configureCodexLb({
     home,
     host: BASE_URL,
@@ -110,16 +149,27 @@ test('configureCodexLb does not select or force shared auth when /models catalog
     shellProfile: 'skip',
     syncLaunchctl: false,
     toolOutputRecoveryFetch,
-    toolCatalogFetch: async () => new Response(JSON.stringify({ models: [{ id: 'gpt-4o' }] }), { status: 200 })
+    toolCatalogFetch: async () => {
+      catalogFetchCalls += 1;
+      return new Response(JSON.stringify({ models: [{ id: 'gpt-4o' }] }), { status: 200 });
+    }
   });
 
   const config = await fsp.readFile(configPath, 'utf8');
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'configured');
+  assert.equal(result.mode, 'cli-provider');
   assert.equal(hasTopLevelCodexLbSelected(config), false);
   assert.match(config, /\[model_providers\.codex-lb\]/);
   assert.doesNotMatch(config, /^\s*model_provider\s*=\s*"codex-lb"/m);
-  assert.equal(result.codex_login?.status, 'deferred_until_provider_selected');
-  assert.equal(result.ok, false);
-  assert.ok((result.drift || []).includes('codex_lb_gpt56_tool_catalog_not_ready'));
+  assert.doesNotMatch(config, /^\s*model_catalog_json\s*=/m);
+  assert.match(config, /^service_tier\s*=\s*"standard"$/m);
+  assert.match(config, /^fast_mode\s*=\s*false$/m);
+  assert.equal(result.codex_login?.status, 'not_required');
+  assert.equal(result.auth_reconcile?.status, 'oauth_untouched');
+  assert.equal(result.tool_catalog?.status, 'not_bound_for_cli_provider');
+  assert.equal(catalogFetchCalls, 0);
+  assert.equal(await fsp.access(catalogPath).then(() => true, () => false), false);
   assert.equal(await fsp.readFile(authPath, 'utf8'), beforeAuth);
   assert.match(beforeAuth, /chatgpt/);
 });

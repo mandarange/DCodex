@@ -231,7 +231,7 @@ export async function restoreDesktopRoutingSnapshot(input: {
       status: 'snapshot_missing',
       blockers: ['desktop_routing_snapshot_missing'],
       warnings: [],
-      hint: 'No previous Desktop routing snapshot. Use sks codex-lb use-codex-lb or Restore Chat / Pro.'
+      hint: 'No previous Desktop routing snapshot. Use `sks codex-lb use-desktop-full` to enable managed routing or `sks codex-lb disable` to remove only SKS-managed routing.'
     }
   }
 

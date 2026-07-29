@@ -2,6 +2,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { ensureDir, exists, readText, writeTextAtomic } from '../fsx.js';
 import { codexLbEnvPath, codexLbMetadataPath, normalizeCodexLbBaseUrl } from './codex-lb-env.js';
+import {
+  DEFAULT_CODEX_LB_DESKTOP_MODE,
+  DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT,
+  type CodexLbDesktopMode,
+  type CodexLbGatewayAuthTransport
+} from './desktop-mode.js';
 
 export type CodexLbApiKeySource = 'hidden_prompt' | 'stdin' | 'keychain_existing';
 export type CodexLbShellProfileChoice = 'zsh' | 'bash' | 'fish' | 'all' | 'skip';
@@ -12,19 +18,25 @@ export type CodexLbPersistenceMode =
   | 'process_only_ephemeral'
   | 'none';
 export type CodexLbSetupActionType =
-  | 'write_config_provider'
-  | 'select_default_provider'
+  | 'write_cli_provider'
+  | 'configure_desktop_native_bridge'
+  | 'configure_desktop_compat_provider'
+  | 'start_desktop_bridge'
+  | 'verify_oauth_preserved'
   | 'write_env_file'
   | 'store_keychain'
   | 'sync_launchctl'
   | 'install_shell_profile_snippet'
-  | 'run_health_check'
+  | 'run_capability_check'
   | 'write_metadata';
 
 export interface CodexLbSetupAnswers {
   host_or_base_url: string;
   api_key_source: CodexLbApiKeySource;
-  use_as_default_provider: boolean;
+  desktop_mode?: CodexLbDesktopMode;
+  gateway_auth_transport?: CodexLbGatewayAuthTransport;
+  /** @deprecated Accepted only so older callers can render a safe native plan. */
+  use_as_default_provider?: boolean;
   write_env_file: boolean;
   store_keychain: boolean;
   sync_launchctl: boolean;
@@ -72,14 +84,48 @@ export function buildCodexLbSetupPlan(answers: CodexLbSetupAnswers, opts: {
   const configPath = opts.configPath || path.join(home, '.codex', 'config.toml');
   const envPath = opts.envPath || codexLbEnvPath(home);
   const metadataPath = opts.metadataPath || codexLbMetadataPath(home);
+  const desktopMode = answers.desktop_mode || DEFAULT_CODEX_LB_DESKTOP_MODE;
+  const gatewayAuthTransport = answers.gateway_auth_transport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT;
   const blockers: string[] = [];
   if (!baseUrl) blockers.push('missing_host_or_base_url');
   if (answers.install_shell_profile !== 'skip' && !answers.write_env_file) blockers.push('shell_profile_snippet_requires_env_file');
-  const actions: CodexLbSetupAction[] = [
-    { type: 'write_config_provider', target: configPath, effect: 'write or update [model_providers.codex-lb] with name="openai", the normalized base URL, CODEX_LB_API_KEY env_key, WebSocket support, and requires_openai_auth=true for Codex App routing' }
-  ];
-  if (answers.use_as_default_provider) {
-    actions.push({ type: 'select_default_provider', target: configPath, effect: 'set top-level model_provider = "codex-lb"' });
+  const actions: CodexLbSetupAction[] = [];
+  if (desktopMode === 'desktop-native-bridge') {
+    actions.push({
+      type: 'configure_desktop_native_bridge',
+      target: configPath,
+      effect: `keep built-in OpenAI and ChatGPT OAuth, route model traffic through a loopback bridge, and use explicit gateway auth transport ${gatewayAuthTransport}`
+    });
+    actions.push({
+      type: 'start_desktop_bridge',
+      target: 'SKS Codex Desktop bridge',
+      effect: 'start the loopback-only bridge without changing Codex Desktop auth'
+    });
+    actions.push({
+      type: 'verify_oauth_preserved',
+      target: path.join(home, '.codex', 'auth.json'),
+      effect: 'verify byte identity before App restart and semantic OAuth identity afterward'
+    });
+  } else if (desktopMode === 'desktop-dual-auth-compat') {
+    if (gatewayAuthTransport !== 'x-codex-lb-api-key') {
+      blockers.push('desktop_compat_requires_x_codex_lb_api_key_transport');
+    }
+    actions.push({
+      type: 'configure_desktop_compat_provider',
+      target: configPath,
+      effect: 'configure exact provider name "OpenAI", retain ChatGPT OAuth, and send the separate LB key only with X-Codex-LB-API-Key'
+    });
+    actions.push({
+      type: 'verify_oauth_preserved',
+      target: path.join(home, '.codex', 'auth.json'),
+      effect: 'verify Desktop configuration did not change shared OAuth bytes'
+    });
+  } else if (desktopMode === 'cli-provider') {
+    actions.push({
+      type: 'write_cli_provider',
+      target: configPath,
+      effect: 'write an unselected CLI-only codex-lb provider using CODEX_LB_API_KEY without changing Desktop OAuth'
+    });
   }
   if (answers.write_env_file) {
     actions.push({ type: 'write_env_file', target: envPath, effect: 'write CODEX_LB_BASE_URL and redacted CODEX_LB_API_KEY env loader with chmod 0600' });
@@ -94,7 +140,7 @@ export function buildCodexLbSetupPlan(answers: CodexLbSetupAnswers, opts: {
     actions.push({ type: 'install_shell_profile_snippet', target: profileTargets(home, answers.install_shell_profile).join(', '), effect: `install managed shell snippet for ${answers.install_shell_profile}` });
   }
   if (answers.run_health_check) {
-    actions.push({ type: 'run_health_check', target: 'codex-lb response chain', effect: 'run codex-lb health check after apply' });
+    actions.push({ type: 'run_capability_check', target: 'codex-lb response chain', effect: 'run codex-lb capability check after apply' });
   }
   actions.push({ type: 'write_metadata', target: metadataPath, effect: 'write redacted setup metadata and key fingerprint with chmod 0600' });
   const selectedModes = selectedCodexLbPersistenceModes(answers);
@@ -177,8 +223,8 @@ export function codexLbPersistenceSummary({
   const warnings = effective === 'process_only_ephemeral'
     ? [
       'process_only_ephemeral',
-      'next_shell_requires_setup_or_env',
-      'Codex App GUI launch may not see credentials'
+      'next_session_requires_center_or_setup',
+      'Save credentials in SKS Center (or sks codex-lb setup --write-env-file --keychain) so Desktop can load them automatically'
     ]
     : [];
   return {

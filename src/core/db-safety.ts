@@ -503,6 +503,19 @@ export async function checkDbOperation(root: any, state: any, payload: any, { du
       ...(decision.reasons || []),
       'mad_sks_sql_plane_capability_v2_required'
     ])];
+    // The SQL-plane capability gate blocks first, but the catastrophic guard
+    // must still annotate its own reason so dbBlockReason keeps producing the
+    // tailored MAD-SKS catastrophic-safeguard message for drop/truncate/reset.
+    const madGate = evaluateMadSksPermissionGate({ classification, active: true });
+    if (!madGate.allowed) {
+      decision.reasons = [...new Set([...decision.reasons, ...madGate.reasons])];
+      decision.mad_sks = {
+        active: true,
+        catastrophic_safety_guard_active: true,
+        blocked_categories: madGate.blocked_categories,
+        permission_profile: madGate.profile
+      };
+    }
     decision.allowed = false;
     decision.action = 'block';
   }

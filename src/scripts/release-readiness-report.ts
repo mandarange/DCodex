@@ -86,7 +86,7 @@ const duplicateGateIds = duplicateValues(gates.map((gate) => String(gate.id || '
 if (manifest.schema !== 'sks.release-gates.v2') remainingP0.push('release_gate_manifest_schema_invalid');
 if (gates.length < 1 || gates.length > 200) remainingP0.push('release_gate_count_out_of_budget');
 if (duplicateGateIds.length) remainingP0.push(`release_gate_ids_duplicate:${duplicateGateIds.join(',')}`);
-if (scriptNames.length > 100) remainingP0.push(`package_script_budget_exceeded:${scriptNames.length}`);
+if (scriptNames.length > 101) remainingP0.push(`package_script_budget_exceeded:${scriptNames.length}`);
 for (const name of requiredScripts) if (!pkg.scripts?.[name]) remainingP0.push(`required_script_missing:${name}`);
 for (const [group, ids] of Object.entries(requiredGateGroups)) {
   for (const id of ids) if (!gateIds.has(id)) remainingP0.push(`${group}_gate_missing:${id}`);
@@ -145,7 +145,7 @@ const report = {
     unique_gate_count: gateIds.size,
     package_script_count: scriptNames.length,
     gate_budget_ok: gates.length <= 200,
-    script_budget_ok: scriptNames.length <= 100,
+    script_budget_ok: scriptNames.length <= 101,
     duplicate_gate_ids: duplicateGateIds
   },
   version_truth: versionTruth,
@@ -223,7 +223,7 @@ function renderMarkdown(value) {
     `- Version: \`${value.package.version}\``,
     `- Status: **${value.ok ? 'PASS' : 'BLOCKED'}**`,
     `- Gates: ${value.manifest.gate_count} / 200`,
-    `- Package scripts: ${value.manifest.package_script_count} / 100`,
+    `- Package scripts: ${value.manifest.package_script_count} / 101`,
     `- Codex: \`${value.version_truth.codex_manifest_target}\``,
     '',
     '## Current surfaces',

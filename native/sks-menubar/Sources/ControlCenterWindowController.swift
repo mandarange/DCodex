@@ -8,7 +8,11 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
     private var selected: SidebarItem = .overview
     private var hasPresented = false
 
-    init(processClient: ProcessClient, operations: OperationCoordinator, notifications: NotificationCoordinator) {
+    init(
+        processClient: ProcessClient,
+        operations: OperationCoordinator,
+        notifications: NotificationCoordinator
+    ) {
         let overview = OverviewViewController(processClient: processClient, operations: operations)
         overviewController = overview
         defer {
@@ -24,7 +28,7 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
             .updates: UpdatesViewController(processClient: processClient, operations: operations, notifications: notifications),
             .mcpServers: MCPServersViewController(processClient: processClient, operations: operations, notifications: notifications),
             .providers: ProvidersViewController(processClient: processClient, operations: operations),
-            .remoteTelegram: RemoteTelegramViewController(processClient: processClient, operations: operations),
+            .remoteCoding: RemoteCodingViewController(),
             .diagnostics: DiagnosticsViewController(processClient: processClient, operations: operations),
             .settings: SettingsViewController(notifications: notifications)
         ]
@@ -34,8 +38,9 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
             backing: .buffered, defer: false
         )
         window.title = "SKS Control Center"
-        window.minSize = NSSize(width: 700, height: 440)
+        window.minSize = NSSize(width: 760, height: 480)
         window.isReleasedWhenClosed = false
+        window.setAccessibilityLabel("SKS Control Center")
         super.init(window: window)
         build()
     }
@@ -86,6 +91,7 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
         split.addArrangedSubview(sidebarScroll)
         split.setHoldingPriority(.defaultHigh, forSubviewAt: 0)
         sidebarScroll.widthAnchor.constraint(equalToConstant: 190).isActive = true
+        contentHost.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         split.addArrangedSubview(contentHost)
         sidebar.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
         display(.overview)
@@ -108,6 +114,7 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
         cell.spacing = 7
         cell.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 0)
         cell.setAccessibilityLabel(item.rawValue)
+        cell.setAccessibilityIdentifier("sks-center-sidebar-\(item.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))")
         return cell
     }
 
@@ -119,8 +126,10 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
     }
 
     private func display(_ section: SidebarItem) {
+        let preservedFrame = window?.frame
         contentHost.subviews.forEach { $0.removeFromSuperview() }
         guard let controller = controllers[section] else { return }
+        controller.view.setAccessibilityIdentifier("sks-center-page-\(section.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))")
         let page = NativeView.scrollable(controller.view)
         contentHost.addSubview(page)
         NSLayoutConstraint.activate([
@@ -129,6 +138,14 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
             page.topAnchor.constraint(equalTo: contentHost.topAnchor),
             page.bottomAnchor.constraint(equalTo: contentHost.bottomAnchor)
         ])
+        // AppKit may temporarily widen an auto-layout-backed window when a
+        // newly selected page first needs a vertical scroller. Restore the
+        // user's exact pre-navigation frame after that layout pass.
+        if let preservedFrame {
+            DispatchQueue.main.async { [weak self] in
+                self?.window?.setFrame(preservedFrame, display: true)
+            }
+        }
         (controller as? ControlCenterPage)?.refreshOnAppear()
     }
 }

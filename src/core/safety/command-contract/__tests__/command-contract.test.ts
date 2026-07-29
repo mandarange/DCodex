@@ -20,7 +20,6 @@ test('command contract registry covers the command registry without regex or com
     assert.equal(typeof command.latency, 'string', name);
     assert.equal(typeof command.supportsJson, 'boolean', name);
     assert.equal(typeof command.remoteAllowed, 'boolean', name);
-    assert.equal(typeof command.telegramAllowed, 'boolean', name);
     assert.equal(typeof command.inputProfile, 'string', name);
     assert.ok(Array.isArray(command.requiredCapabilities), name);
     if (command.supportsJson) assert.notEqual(command.inputProfile, 'none', name);
@@ -33,11 +32,9 @@ test('risk and remote policy are explicit and fail closed for R3', () => {
   assert.equal(commandContract('update')?.risk, 'R2');
   assert.equal(commandContract('mad-sks')?.risk, 'R3');
   assert.equal(commandContract('mad-sks')?.remote_allowed, false);
-  assert.equal(commandContract('mad-sks')?.telegram_allowed, false);
-  for (const name of ['mcp', 'remote', 'telegram']) {
+  for (const name of ['mcp', 'remote']) {
     assert.equal(commandContract(name)?.risk, 'R2');
     assert.equal(commandContract(name)?.remote_allowed, false);
-    assert.equal(commandContract(name)?.telegram_allowed, false);
   }
 });
 
@@ -66,7 +63,7 @@ test('validated argv builders apply typed arguments and never accept arbitrary a
 });
 
 test('JSON-capable local R2 commands preserve the explicit JSON flag without exposing arbitrary argv', () => {
-  for (const name of ['mcp', 'remote', 'telegram']) {
+  for (const name of ['align', 'mcp', 'remote']) {
     const contract = commandContract(name);
     assert.ok(contract, name);
     const validation = validateJsonSchema({ json: true }, contract.input_schema);
@@ -85,7 +82,6 @@ test('Naruto contract matches its local-only explicit-opt-in CLI surface', () =>
   assert.equal(contract.latency, 'long');
   assert.equal(contract.supports_json, true);
   assert.equal(contract.remote_allowed, false);
-  assert.equal(contract.telegram_allowed, false);
   assert.equal(contract.input_schema.additionalProperties, false);
   assert.deepEqual((contract.input_schema as any).properties.action.enum, ['run', 'status', 'subagents', 'proof', 'parent-summary', 'help']);
 

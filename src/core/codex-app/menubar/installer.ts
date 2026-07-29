@@ -19,7 +19,11 @@ import {
   rollbackGenerationPairs
 } from './generation-transaction.js';
 import { launchAgentSource, launchMenuBar, seedMenuBarPreferredPosition } from './launch-agent.js';
-import { cleanupMacLaunchSecretEnvironment } from './migration.js';
+import {
+  cleanupMacLaunchSecretEnvironment,
+  cleanupRetiredRemoteBridgeLaunchAgent,
+  quarantineRetiredRemoteBridgeBindings
+} from './migration.js';
 import { sksMenuBarPaths } from './paths.js';
 import { infoPlistSource, inspectInstalledResources, loadNativeMenuBarSources, nativeResourceHashes } from './resources.js';
 import { inspectMenuBarArtifactSet, normalizeLegacyMenuBarBuildStamp, rollbackSksMenuBar } from './rollback.js';
@@ -82,8 +86,51 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
     if (recovery.status === 'rolled_back') actions.push(`recovered interrupted Menu Bar ${pending.purpose} transaction to its previous generation`);
     if (recovery.status === 'completed_commit') actions.push(`completed committed Menu Bar ${pending.purpose} transaction cleanup`);
   }
+  const retiredRemoteBridge = await cleanupRetiredRemoteBridgeLaunchAgent({
+    home: paths.home,
+    env
+  });
+  warnings.push(...retiredRemoteBridge.warnings);
+  if (!retiredRemoteBridge.ok) {
+    return blocked(
+      retiredRemoteBridge.blockers[0] || 'retired_remote_bridge_cleanup_failed',
+      'The retired SKS remote bridge LaunchAgent could not be stopped safely.'
+    );
+  }
+  if (retiredRemoteBridge.removed) {
+    actions.push('stopped and removed the retired SKS remote bridge LaunchAgent');
+  }
+  const retiredBindings = await quarantineRetiredRemoteBridgeBindings(paths.root);
+  warnings.push(...retiredBindings.warnings);
+  if (!retiredBindings.ok) {
+    return blocked(
+      retiredBindings.blockers[0] || 'retired_remote_bridge_binding_cleanup_failed',
+      'Retired remote bridge bindings could not be quarantined safely.'
+    );
+  }
+  if (retiredBindings.status === 'quarantined') {
+    actions.push(`quarantined ${retiredBindings.retired_binding_count} retired remote bridge binding(s)`);
+  }
   cleanup = await cleanupMacLaunchSecretEnvironment({ env });
   if (!cleanup.ok) warnings.push('launch_secret_env_cleanup_incomplete');
+  // dual-auth-compat Desktop reads CODEX_LB_* from the GUI launch environment.
+  // Re-inject from the official Center store after the generic secret cleanup.
+  try {
+    const { syncDesktopCenterLaunchCredentials } = await import('../../codex-lb/desktop-center-credentials.js');
+    const { CODEX_LB_DESKTOP_COMPAT_MARKER } = await import('../../../cli/install-helpers-codex-lb-config.js');
+    const { readText } = await import('../../fsx.js');
+    const configText = await readText(path.join(paths.home, '.codex', 'config.toml'), '');
+    if (configText.includes(CODEX_LB_DESKTOP_COMPAT_MARKER)) {
+      const restored = await syncDesktopCenterLaunchCredentials({
+        mode: 'desktop-dual-auth-compat',
+        home: paths.home
+      });
+      if (!restored.ok) warnings.push('desktop_compat_launch_env_restore_incomplete');
+      else actions.push('restored Center Codex LB credentials into Desktop launch environment');
+    }
+  } catch {
+    // Non-fatal: credential restore is best-effort during Menu Bar install.
+  }
 
   const swiftc = env.SKS_MENUBAR_SWIFTC || await which('swiftc').catch(() => null) || '/usr/bin/swiftc';
   const codesign = env.SKS_MENUBAR_CODESIGN || await which('codesign').catch(() => null) || '/usr/bin/codesign';

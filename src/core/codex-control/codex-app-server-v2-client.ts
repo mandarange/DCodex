@@ -5,6 +5,25 @@ import { resolveCodexRuntime, type CodexRuntimeIdentity } from '../codex-runtime
 type JsonRpcId = number | string;
 type JsonObject = Record<string, unknown>;
 
+export type CodexAppServerRequestErrorKind =
+  | 'rpc_rejection'
+  | 'timeout'
+  | 'transport'
+  | 'process_exit'
+  | 'protocol_overflow';
+
+export class CodexAppServerRequestError extends Error {
+  constructor(
+    readonly method: string,
+    readonly kind: CodexAppServerRequestErrorKind,
+    message: string,
+    readonly rpcCode: number | null = null
+  ) {
+    super(message);
+    this.name = 'CodexAppServerRequestError';
+  }
+}
+
 export interface CodexAppServerApprovalPolicy {
   readonly commandExecution?: (params: JsonObject) => JsonObject;
   readonly fileChange?: (params: JsonObject) => JsonObject;
@@ -36,6 +55,9 @@ export interface CodexAppServerV2ClientOptions {
   readonly cwd?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
+  readonly maxFrameBytes?: number;
+  readonly maxNotifications?: number;
+  readonly maxNotificationBytes?: number;
   readonly currentTimeProvider?: () => Date;
   readonly approvalPolicy?: CodexAppServerApprovalPolicy;
 }
@@ -53,6 +75,13 @@ export interface CodexAppServerThreadListParams {
   readonly useStateDbOnly?: boolean;
 }
 
+export interface CodexAppServerThreadTurnsListParams {
+  readonly cursor?: string | null;
+  readonly itemsView?: 'notLoaded' | 'summary' | 'full' | null;
+  readonly limit?: number | null;
+  readonly sortDirection?: 'asc' | 'desc' | null;
+}
+
 export interface CodexAppServerV2ClientFactoryOptions extends Omit<CodexAppServerV2ClientOptions, 'command'> {
   readonly codexBin?: string | null;
   readonly requestedBy?: string;
@@ -64,12 +93,16 @@ export class CodexAppServerV2Client {
   readonly env: NodeJS.ProcessEnv;
   readonly cwd: string;
   readonly timeoutMs: number;
+  readonly maxFrameBytes: number;
+  readonly maxNotifications: number;
+  readonly maxNotificationBytes: number;
   readonly currentTimeProvider: () => Date;
   readonly approvalPolicy: CodexAppServerApprovalPolicy;
   child: ChildProcessWithoutNullStreams | null = null;
   nextId = 1;
   pending = new Map<JsonRpcId, PendingRequest>();
   notifications: JsonObject[] = [];
+  notificationBytes = 0;
   listeners = new Set<(event: JsonObject) => void>();
   stdoutBuffer = '';
   stderr = '';
@@ -80,6 +113,12 @@ export class CodexAppServerV2Client {
     this.env = options.env || process.env;
     this.cwd = options.cwd || process.cwd();
     this.timeoutMs = Number(options.timeoutMs || 20_000);
+    this.maxFrameBytes = Math.max(1_024, Math.min(32 * 1024 * 1024, options.maxFrameBytes ?? 8 * 1024 * 1024));
+    this.maxNotifications = Math.max(16, Math.min(8_192, options.maxNotifications ?? 2_048));
+    this.maxNotificationBytes = Math.max(
+      1_024,
+      Math.min(64 * 1024 * 1024, options.maxNotificationBytes ?? 4 * 1024 * 1024)
+    );
     this.currentTimeProvider = options.currentTimeProvider || (() => new Date());
     this.approvalPolicy = options.approvalPolicy || {};
   }
@@ -120,6 +159,16 @@ export class CodexAppServerV2Client {
 
   async readThread(threadId: string, includeTurns = false): Promise<unknown> {
     return await this.request('thread/read', { threadId, includeTurns });
+  }
+
+  async listThreadTurns(
+    threadId: string,
+    params: CodexAppServerThreadTurnsListParams = {}
+  ): Promise<unknown> {
+    return await this.request('thread/turns/list', {
+      threadId,
+      ...normalizeThreadListParams(params)
+    });
   }
 
   async startTurn(params: JsonObject = {}): Promise<unknown> {
@@ -198,9 +247,12 @@ export class CodexAppServerV2Client {
       this.stderr += chunk.toString('utf8');
       if (this.stderr.length > 64 * 1024) this.stderr = this.stderr.slice(-64 * 1024);
     });
-    this.child.on('error', (err: Error) => this.rejectAll(err));
+    this.child.on('error', (err: Error) => this.rejectAll(err, 'transport'));
     this.child.on('close', (code, signal) => {
-      this.rejectAll(new Error(`Codex app-server exited before response (code ${code ?? signal ?? 'unknown'}). ${this.stderr.trim()}`.trim()));
+      this.rejectAll(
+        new Error(`Codex app-server exited before response (code ${code ?? signal ?? 'unknown'}). ${this.stderr.trim()}`.trim()),
+        'process_exit'
+      );
     });
   }
 
@@ -211,7 +263,11 @@ export class CodexAppServerV2Client {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`Codex app-server request timed out: ${method}. ${this.stderr.trim()}`.trim()));
+        reject(new CodexAppServerRequestError(
+          method,
+          'timeout',
+          `Codex app-server request timed out: ${method}. ${this.stderr.trim()}`.trim()
+        ));
       }, this.timeoutMs);
       timer.unref?.();
       this.pending.set(id, { method, resolve, reject, timer });
@@ -228,8 +284,16 @@ export class CodexAppServerV2Client {
     this.stdoutBuffer += chunk.toString('utf8');
     const lines = this.stdoutBuffer.split(/\r?\n/);
     this.stdoutBuffer = lines.pop() || '';
+    if (Buffer.byteLength(this.stdoutBuffer, 'utf8') > this.maxFrameBytes) {
+      this.abortProtocol('codex_app_server_frame_too_large');
+      return;
+    }
     for (const line of lines) {
       if (!line.trim()) continue;
+      if (Buffer.byteLength(line, 'utf8') > this.maxFrameBytes) {
+        this.abortProtocol('codex_app_server_frame_too_large');
+        return;
+      }
       let message: JsonObject;
       try {
         message = JSON.parse(line) as JsonObject;
@@ -242,7 +306,19 @@ export class CodexAppServerV2Client {
         void this.respondToServerRequest(message);
       } else {
         const event = { ...message, received_at: nowIso() };
-        this.notifications.push(event);
+        const eventBytes = notificationByteLength(event);
+        if (eventBytes <= this.maxNotificationBytes) {
+          this.notifications.push(event);
+          this.notificationBytes += eventBytes;
+          while (
+            this.notifications.length > this.maxNotifications
+            || this.notificationBytes > this.maxNotificationBytes
+          ) {
+            const removed = this.notifications.shift();
+            if (!removed) break;
+            this.notificationBytes = Math.max(0, this.notificationBytes - notificationByteLength(removed));
+          }
+        }
         for (const listener of this.listeners) {
           try { listener(event); } catch {}
         }
@@ -310,14 +386,28 @@ export class CodexAppServerV2Client {
     if (!pending) return;
     this.pending.delete(id);
     clearTimeout(pending.timer);
-    if (message.error) pending.reject(new Error(jsonRpcErrorMessage(pending.method, message.error)));
+    if (message.error) {
+      pending.reject(new CodexAppServerRequestError(
+        pending.method,
+        'rpc_rejection',
+        jsonRpcErrorMessage(pending.method, message.error),
+        jsonRpcErrorCode(message.error)
+      ));
+    }
     else pending.resolve(message.result);
   }
 
-  rejectAll(err: Error): void {
+  rejectAll(
+    err: Error,
+    kind: Extract<CodexAppServerRequestErrorKind, 'transport' | 'process_exit' | 'protocol_overflow'>
+  ): void {
     for (const [id, pending] of this.pending.entries()) {
       clearTimeout(pending.timer);
-      pending.reject(err);
+      pending.reject(new CodexAppServerRequestError(
+        pending.method,
+        kind,
+        err.message
+      ));
       this.pending.delete(id);
     }
   }
@@ -332,6 +422,16 @@ export class CodexAppServerV2Client {
 
   private write(message: JsonObject): void {
     this.child?.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  private abortProtocol(code: string): void {
+    const child = this.child;
+    this.child = null;
+    this.stdoutBuffer = '';
+    this.rejectAll(new Error(code), 'protocol_overflow');
+    if (!child) return;
+    child.stdin.end();
+    child.kill('SIGTERM');
   }
 }
 
@@ -349,6 +449,9 @@ export async function createCodexAppServerV2Client(
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     timeoutMs?: number;
+    maxFrameBytes?: number;
+    maxNotifications?: number;
+    maxNotificationBytes?: number;
     currentTimeProvider?: () => Date;
     approvalPolicy?: CodexAppServerApprovalPolicy;
   } = { command: runtime.identity.realpath };
@@ -356,6 +459,9 @@ export async function createCodexAppServerV2Client(
   if (options.cwd !== undefined) clientOptions.cwd = options.cwd;
   if (options.env !== undefined) clientOptions.env = options.env;
   if (options.timeoutMs !== undefined) clientOptions.timeoutMs = options.timeoutMs;
+  if (options.maxFrameBytes !== undefined) clientOptions.maxFrameBytes = options.maxFrameBytes;
+  if (options.maxNotifications !== undefined) clientOptions.maxNotifications = options.maxNotifications;
+  if (options.maxNotificationBytes !== undefined) clientOptions.maxNotificationBytes = options.maxNotificationBytes;
   if (options.currentTimeProvider !== undefined) clientOptions.currentTimeProvider = options.currentTimeProvider;
   if (options.approvalPolicy !== undefined) clientOptions.approvalPolicy = options.approvalPolicy;
   return {
@@ -373,7 +479,7 @@ export function currentTimeResponse(date: Date): CodexAppServerCurrentTime {
   };
 }
 
-function normalizeThreadListParams(params: CodexAppServerThreadListParams): JsonObject {
+function normalizeThreadListParams<T extends object>(params: T): JsonObject {
   const out: JsonObject = {};
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined) out[key] = value;
@@ -386,6 +492,12 @@ function jsonRpcErrorMessage(method: string, error: unknown): string {
   return `${method}: ${JSON.stringify(error)}`;
 }
 
+function jsonRpcErrorCode(error: unknown): number | null {
+  if (!error || typeof error !== 'object' || !('code' in error)) return null;
+  const code = Number(error.code);
+  return Number.isSafeInteger(code) ? code : null;
+}
+
 function isTurnCompletionEvent(event: JsonObject, threadId: string, turnId?: string | null): boolean {
   if (String(event.method || '') !== 'turn/completed') return false;
   const params = event.params && typeof event.params === 'object'
@@ -396,4 +508,8 @@ function isTurnCompletionEvent(event: JsonObject, threadId: string, turnId?: str
     : {};
   return String(params.threadId || '') === threadId
     && (!turnId || String(completedTurn.id || params.turnId || '') === turnId);
+}
+
+function notificationByteLength(event: JsonObject): number {
+  return Buffer.byteLength(JSON.stringify(event), 'utf8');
 }

@@ -4,12 +4,20 @@ import { assertGate, emitGate, importDist, readJson, root } from './gate-lib.js'
 
 const config = readJson('config/perf-budgets.v1.json')
 const budgets = Array.isArray(config.release_latency_slos) ? config.release_latency_slos : []
-assertGate(config.schema === 'sks.perf-budgets.v1' && budgets.length === 6, 'release_latency_slo_config_invalid', {
+const { RELEASE_LATENCY_LIMITS, runReleaseLatencySlo } = await importDist('core/perf/release-latency-slo.js')
+const expectedIds = Object.keys(RELEASE_LATENCY_LIMITS).sort()
+const configuredIds = budgets.map((row) => row?.id).sort()
+assertGate(
+  config.schema === 'sks.perf-budgets.v1'
+    && JSON.stringify(configuredIds) === JSON.stringify(expectedIds),
+  'release_latency_slo_config_invalid',
+  {
   schema: config.schema,
-  count: budgets.length
-})
+  count: budgets.length,
+  expected_count: expectedIds.length
+  }
+)
 
-const { runReleaseLatencySlo } = await importDist('core/perf/release-latency-slo.js')
 const report = await runReleaseLatencySlo(root, budgets)
 assertGate(report.ok, 'release_latency_slo_failed', report)
 emitGate('release:latency-slo', {

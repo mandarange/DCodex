@@ -12,14 +12,14 @@ test('release ownership check accepts an isolated worker and rejects shared-file
     git(root, ['init', '-b', 'main'])
     git(root, ['config', 'user.email', 'fixture@example.test'])
     git(root, ['config', 'user.name', 'Release Fixture'])
-    fs.mkdirSync(path.join(root, 'src/core/telegram'), { recursive: true })
+    fs.mkdirSync(path.join(root, 'src/core/example-feature'), { recursive: true })
     fs.writeFileSync(path.join(root, 'package.json'), '{}\n')
-    fs.writeFileSync(path.join(root, 'src/core/telegram/index.ts'), 'export {}\n')
+    fs.writeFileSync(path.join(root, 'src/core/example-feature/index.ts'), 'export {}\n')
     git(root, ['add', '.'])
     git(root, ['commit', '-m', 'baseline'])
     const base = gitText(root, ['rev-parse', 'HEAD'])
 
-    fs.writeFileSync(path.join(root, 'src/core/telegram/index.ts'), 'export const ready = true\n')
+    fs.writeFileSync(path.join(root, 'src/core/example-feature/index.ts'), 'export const ready = true\n')
     fs.mkdirSync(path.join(root, '.sneakoscope/release/7.1.3/shared-file-requests'), { recursive: true })
     fs.writeFileSync(path.join(root, '.sneakoscope/release/7.1.3/shared-file-requests/W05.json'), '{}\n')
     git(root, ['add', '.'])
@@ -90,21 +90,21 @@ test('release ownership check includes both sides of a rename so shared files ca
     git(root, ['init', '-b', 'main'])
     git(root, ['config', 'user.email', 'fixture@example.test'])
     git(root, ['config', 'user.name', 'Release Fixture'])
-    fs.mkdirSync(path.join(root, 'src/core/telegram'), { recursive: true })
+    fs.mkdirSync(path.join(root, 'src/core/example-feature'), { recursive: true })
     fs.writeFileSync(path.join(root, 'package.json'), '{}\n')
     git(root, ['add', '.'])
     git(root, ['commit', '-m', 'baseline'])
     const base = gitText(root, ['rev-parse', 'HEAD'])
-    git(root, ['mv', 'package.json', 'src/core/telegram/package.json'])
+    git(root, ['mv', 'package.json', 'src/core/example-feature/package.json'])
     git(root, ['commit', '-m', 'hide shared file'])
     const manifest: ReleaseFileOwnershipManifest = {
       schema: 'sks.release-file-ownership.v1', baseline: base,
-      workstreams: { W05: ['src/core/telegram/**'] }, shared_files: ['package.json'], overlap_policy: 'fail_closed'
+      workstreams: { W05: ['src/core/example-feature/**'] }, shared_files: ['package.json'], overlap_policy: 'fail_closed'
     }
     const report = inspectReleaseFileOwnership({ root, manifest, base, head: 'HEAD', workstream: 'W05' })
     assert.equal(report.ok, false)
     assert.equal(report.changed_files.includes('package.json'), true)
-    assert.equal(report.changed_files.includes('src/core/telegram/package.json'), true)
+    assert.equal(report.changed_files.includes('src/core/example-feature/package.json'), true)
     assert.equal(report.blockers.includes('shared_file_changed:package.json'), true)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
@@ -117,8 +117,8 @@ test('release ownership check fails closed when no release line is resolvable', 
     git(root, ['init', '-b', 'main'])
     git(root, ['config', 'user.email', 'fixture@example.test'])
     git(root, ['config', 'user.name', 'Release Fixture'])
-    fs.mkdirSync(path.join(root, 'src/core/telegram'), { recursive: true })
-    fs.writeFileSync(path.join(root, 'src/core/telegram/index.ts'), 'export {}\n')
+    fs.mkdirSync(path.join(root, 'src/core/example-feature'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'src/core/example-feature/index.ts'), 'export {}\n')
     git(root, ['add', '.'])
     git(root, ['commit', '-m', 'baseline'])
     const base = gitText(root, ['rev-parse', 'HEAD'])
@@ -129,7 +129,7 @@ test('release ownership check fails closed when no release line is resolvable', 
     const manifest: ReleaseFileOwnershipManifest = {
       schema: 'sks.release-file-ownership.v1',
       baseline: base,
-      workstreams: { W05: ['src/core/telegram/**'] },
+      workstreams: { W05: ['src/core/example-feature/**'] },
       shared_files: ['package.json'],
       overlap_policy: 'fail_closed'
     }
@@ -153,7 +153,7 @@ function fixtureManifest(base: string): ReleaseFileOwnershipManifest {
     baseline: base,
     release: '7.1.3',
     workstreams: {
-      W05: ['src/core/telegram/**'],
+      W05: ['src/core/example-feature/**'],
       W06: ['src/core/remote/**']
     },
     shared_files: ['package.json'],

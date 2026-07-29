@@ -2756,6 +2756,36 @@
       "output_contract": "sks.gate-result.v1"
     },
     {
+      "id": "skill:surface-modernization",
+      "command": "node ./dist/scripts/skill-surface-modernization-check.js",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read",
+        "fs-write"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 180000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "src/**",
+          "dist/config/skills-manifest.json"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v1"
+    },
+    {
       "id": "skill:name-canonicalizer",
       "command": "node ./dist/scripts/skill-name-canonicalizer-check.js",
       "deps": [],
@@ -3816,7 +3846,7 @@
     },
     {
       "id": "codex-lb:comprehensive",
-      "command": "node ./dist/scripts/codex-lb-fast-ui-preservation-check.js && node ./dist/scripts/codex-lb-fast-mode-truth-check.js && node --test --test-concurrency=1 dist/core/__tests__/codex-lb-tool-catalog.test.js dist/core/__tests__/codex-lb-transport-security.test.js && node ./dist/scripts/codex-lb-gpt56-fast-profile-check.js",
+      "command": "node ./dist/scripts/codex-lb-desktop-auth-invariant-check.js && node ./dist/scripts/codex-lb-desktop-bridge-check.js && node ./dist/scripts/codex-lb-desktop-bridge-latency-check.js && node ./dist/scripts/codex-lb-catalog-passthrough-check.js && node ./dist/scripts/codex-lb-desktop-capabilities-check.js && node ./dist/scripts/codex-lb-fast-ui-preservation-check.js && node ./dist/scripts/codex-lb-fast-mode-truth-check.js && node --test --test-concurrency=1 dist/core/__tests__/codex-lb-tool-catalog.test.js dist/core/__tests__/codex-lb-transport-security.test.js && node ./dist/scripts/codex-lb-gpt56-fast-profile-check.js",
       "deps": [
         "codex-app:fast-ui-preservation"
       ],
@@ -3831,6 +3861,7 @@
         "inputs": [
           "package.json",
           "release-gates.v2.json",
+          "runtime-required-scripts.json",
           "src/**",
           "schemas/**"
         ]

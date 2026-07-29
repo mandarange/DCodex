@@ -8,7 +8,10 @@ import {
 
 test('route proof policy normalizes serious and visual aliases', () => {
   assert.equal(normalizeProofRoute('qa-loop'), '$QA-LOOP');
-  assert.equal(normalizeProofRoute('visual-review'), '$Visual-Review');
+  assert.equal(normalizeProofRoute('visual-review'), '$Image-UX-Review');
+  assert.equal(normalizeProofRoute('$UX-Review'), '$Image-UX-Review');
+  assert.equal(normalizeProofRoute('$sks-ux-review'), '$Image-UX-Review');
+  assert.equal(normalizeProofRoute('$UI-UX-Review'), '$Image-UX-Review');
   assert.equal(normalizeProofRoute('$Work'), '$Naruto');
   assert.equal(normalizeProofRoute('$sks-work'), '$Naruto');
   assert.equal(normalizeProofRoute('$sks-naruto'), '$Naruto');

@@ -297,7 +297,12 @@ export async function closeWorkOrderLedgerForRouteResult(
           status: 'verified',
           implementation_tasks: item.implementation_tasks?.length ? item.implementation_tasks : ['route_completion'],
           implementation_evidence: item.implementation_evidence?.length ? item.implementation_evidence : routeEvidence,
-          verification_evidence: item.verification_evidence?.length ? item.verification_evidence : routeEvidence
+          verification_evidence: item.verification_evidence?.length ? item.verification_evidence : routeEvidence,
+          blocker: {
+            blocked: false,
+            reason: null,
+            needed_to_unblock: null
+          }
         }
       : {
           status: 'blocked',
@@ -327,6 +332,7 @@ function workOrderItemVerified(item: any) {
 async function existingRouteEvidence(dir: string): Promise<string[]> {
   const candidates = [
     'completion-proof.json',
+    'trust-report.json',
     'naruto-gate.json',
     'loop-graph-proof.json',
     'run-gate.json',

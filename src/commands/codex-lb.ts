@@ -5,15 +5,40 @@ import { projectRoot, readStdin, readText } from '../core/fsx.js';
 import { flag, readOption } from '../cli/args.js';
 import { printJson } from '../cli/output.js';
 import { codexLbMetrics, readCodexLbCircuit, recordCodexLbHealthEvent, resetCodexLbCircuit, codexLbProofEvidence } from '../core/codex-lb-circuit.js';
-import { checkCodexLbResponseChain, codexLbStatus, configureCodexLb, formatCodexLbStatusText, releaseCodexLbAuthHold, repairCodexLbAuth, unselectCodexLbProvider } from '../cli/install-helpers.js';
-import { buildCodexLbSetupPlan, codexLbPersistenceSummary, renderCodexLbSetupPlan } from '../core/codex-lb/codex-lb-setup.js';
+import {
+  checkCodexLbResponseChain,
+  codexLbStatus,
+  configureCodexLb,
+  repairCodexLbAuth
+} from '../cli/install-helpers.js';
+import { buildCodexLbSetupPlan, renderCodexLbSetupPlan } from '../core/codex-lb/codex-lb-setup.js';
 import {
   CODEX_LB_TOOL_OUTPUT_RECOVERY_OVERRIDE_FLAG,
   codexLbToolOutputRecoveryOverrideAcknowledged
 } from '../core/codex-lb/codex-lb-tool-output-recovery.js';
-import { restartCodexApp } from '../core/codex-app/codex-app-restart.js';
-import { repairCodexAppFastUi } from '../core/codex-app/codex-app-fast-ui-repair.js';
 import { loadCodexLbEnv } from '../core/codex-lb/codex-lb-env.js';
+import {
+  activateCodexLbDesktopMode,
+  buildCodexLbDesktopCapabilities,
+  codexLbDesktopStatusV2,
+  configureCodexLbCliMode,
+  disableCodexLbDesktopRouting,
+  migrateLegacyCodexLbDesktopMode,
+  readCodexLbDesktopDeepEvidence,
+  readCodexLbDesktopDeepEvidenceTrustAnchors,
+  rollbackCodexLbDesktopMode,
+  type CodexLbDesktopControllerOptions
+} from '../core/codex-lb/desktop-controller.js';
+import { serveDesktopBridge } from '../core/codex-lb/desktop-service.js';
+import {
+  parseCodexLbGatewayAuthTransport,
+  type CodexLbDesktopMode,
+  type CodexLbGatewayAuthTransport
+} from '../core/codex-lb/desktop-mode.js';
+import type {
+  CapabilityProbeLevel,
+  CodexLbDesktopCapabilityReport
+} from '../core/codex-lb/capability-types.js';
 
 export async function run(command: any, args: any = []) {
   const root = await projectRoot();
@@ -26,22 +51,19 @@ export async function run(command: any, args: any = []) {
     return;
   }
   if (action === 'status' || action === 'check') {
-    const allowUnverifiedToolOutputRecovery = codexLbToolOutputRecoveryOverrideAcknowledged({ args });
-    const result = await codexLbStatus({ probeToolOutputRecovery: true, allowUnverifiedToolOutputRecovery });
-    const shaped = shapeCodexLbStatus(result);
-    if (result.selected && result.tool_output_recovery?.ok !== true) process.exitCode = 1;
-    if (flag(args, '--json')) return printJson(shaped);
-    process.stdout.write(formatCodexLbStatusText(result));
+    const result = await codexLbDesktopStatusV2(controllerOptions(args));
+    if (result.ok !== true) process.exitCode = 1;
+    if (flag(args, '--json')) return printJson(result);
+    process.stdout.write(formatCodexLbDesktopStatusText(result));
     return;
   }
   if (action === 'doctor') {
-    const allowUnverifiedToolOutputRecovery = codexLbToolOutputRecoveryOverrideAcknowledged({ args });
-    const status = shapeCodexLbStatus(await codexLbStatus({ probeToolOutputRecovery: true, allowUnverifiedToolOutputRecovery }));
+    const status = await codexLbDesktopStatusV2(controllerOptions(args));
     const metrics = codexLbMetrics(await readCodexLbCircuit(root));
-    const result = { schema: 'sks.codex-lb-doctor.v1', ok: Boolean(status.ok && metrics.ok), deep: flag(args, '--deep'), status, metrics };
+    const result = buildCodexLbDoctorResult(status, metrics, flag(args, '--deep'));
     if (flag(args, '--json')) return printJson(result);
-    console.log(`codex-lb doctor: ${result.ok ? 'ok' : status.setup_needed ? 'setup_needed' : 'blocked'}`);
-    if (!result.ok) process.exitCode = status.setup_needed ? 0 : 1;
+    console.log(`codex-lb doctor: ${result.ok ? 'diagnostic_ok' : 'blocked'}; full capability: ${result.full_capability_verified ? 'verified' : 'unverified'}`);
+    if (!result.ok) process.exitCode = 1;
     return;
   }
   if (action === 'health' || action === 'verify-chain' || action === 'chain') {
@@ -136,33 +158,16 @@ export async function run(command: any, args: any = []) {
     return;
   }
   if (action === 'repair' || action === 'resync' || action === 'login') {
-    const result = await repairCodexLbAuth({
-      allowUnverifiedToolOutputRecovery: codexLbToolOutputRecoveryOverrideAcknowledged({ args })
-    });
-    const fastUi = await repairCodexAppFastUiAfterMutation(root, Boolean(result.ok));
-    const shaped = { ...result, ok: Boolean(result.ok && fastUi.ok), codex_app_fast_ui: fastUi };
-    if (!shaped.ok) process.exitCode = 1;
-    if (flag(args, '--json')) return printJson(shaped);
-    console.log(`codex-lb repair: ${shaped.ok ? 'ok' : result.ok ? 'fast_ui_repair_failed' : result.status}`);
-    return;
-  }
-  if (action === 'release') {
-    const result = await releaseCodexLbAuthHold({ keepProvider: flag(args, '--keep-provider'), deleteBackup: flag(args, '--delete-backup'), force: flag(args, '--force') });
+    const result = await repairCodexLbAuth(controllerOptions(args));
+    if (result.ok !== true) process.exitCode = 1;
     if (flag(args, '--json')) return printJson(result);
-    console.log(`codex-lb release: ${result.status}`);
-    if (['no_backup', 'auth_in_use', 'failed'].includes(result.status)) process.exitCode = 1;
-    return;
-  }
-  if (action === 'unselect') {
-    const result = await unselectCodexLbProvider();
-    if (flag(args, '--json')) return printJson(result);
-    console.log(`codex-lb unselect: ${result.status}`);
-    if (result.status === 'failed') process.exitCode = 1;
+    console.log(`codex-lb repair: ${result.ok === true ? 'ok' : String(result.status || 'failed')}`);
     return;
   }
   if (action === 'set-key' || action === 'update-key' || action === 'rotate-key') {
-    const status = await codexLbStatus();
-    const host = status.base_url;
+    const current = await codexLbDesktopStatusV2(controllerOptions(args));
+    const loaded = await loadCodexLbEnv();
+    const host = loaded.base_url;
     if (!host) {
       const result = { schema: 'sks.codex-lb-set-key.v1', ok: false, status: 'not_configured' };
       if (flag(args, '--json')) {
@@ -184,99 +189,200 @@ export async function run(command: any, args: any = []) {
       process.exitCode = 1;
       return;
     }
-    const keychainPresent = status.env_loader?.api_key?.source === 'keychain'
-      || ['found', 'present'].includes(status.env_loader?.keychain?.status)
-      || flag(args, '--keychain');
     const result = await configureCodexLb({
       host,
       apiKey: newKey,
-      keychain: keychainPresent,
-      storeKeychain: keychainPresent,
-      useDefaultProvider: flag(args, '--preserve-auth') ? status.selected === true : true,
-      authMode: flag(args, '--preserve-auth') ? 'preserve' : 'codex-lb',
-      forceCodexLbApiKeyAuth: !flag(args, '--preserve-auth'),
+      keychain: true,
+      storeKeychain: true,
+      writeEnvFile: true,
+      syncLaunchctl: true,
+      desktopMode: 'cli-provider',
       allowUnverifiedToolOutputRecovery: codexLbToolOutputRecoveryOverrideAcknowledged({ args })
     });
-    const fastUi = await repairCodexAppFastUiAfterMutation(root, Boolean(result.ok));
-    const restart = await maybeRestartCodexAppForAuthSwitch(args, Boolean(result.ok && fastUi.ok));
-    const ok = Boolean(result.ok && fastUi.ok && restart?.ok !== false);
-    const output = { ...result, ok, action: 'set-key', codex_app_fast_ui: fastUi, restart_app: restart };
+    let routing: Record<string, unknown> | null = null;
+    const restartRequested = flag(args, '--restart-app') || flag(args, '--restart')
+      || current.mode === 'desktop-dual-auth-compat'
+      || current.mode === 'desktop-native-bridge';
+    if (result.ok && current.mode === 'desktop-native-bridge') {
+      routing = await activateCodexLbDesktopMode({
+        ...controllerOptions(args),
+        mode: 'desktop-native-bridge',
+        restartApp: restartRequested
+      });
+    } else if (result.ok && current.mode === 'desktop-dual-auth-compat') {
+      routing = await activateCodexLbDesktopMode({
+        ...controllerOptions(args),
+        mode: 'desktop-dual-auth-compat',
+        restartApp: restartRequested
+      });
+    }
+    const ok = Boolean(result.ok && routing?.ok !== false);
+    const output = {
+      ...result,
+      schema: 'sks.codex-lb-set-key.v2',
+      ok,
+      action: 'set-key',
+      desktop_auth_mutated: false,
+      fast_mode_mutated: false,
+      desktop_routing: routing,
+      center_credentials: routing?.center_credentials || null
+    };
     if (!ok) process.exitCode = 1;
     if (flag(args, '--json')) return printJson(output);
     console.log(result.ok ? `codex-lb API key updated (${result.base_url || host}).` : `codex-lb key update failed: ${result.status}${result.error ? `: ${result.error}` : ''}`);
-    if (restart?.status === 'restarted') console.log('Codex App restarted for the new codex-lb auth mode.');
     if (!ok) process.exitCode = 1;
     return;
   }
-  if (action === 'use-codex-lb' || action === 'use-lb') {
-    const restartRequired = flag(args, '--restart-app') || flag(args, '--restart');
-    const repairOptions = {
-      forceCodexLbApiKeyAuth: true,
-      authMode: 'codex-lb',
-      forceFastMode: !flag(args, '--no-fast'),
-      allowUnverifiedToolOutputRecovery: codexLbToolOutputRecoveryOverrideAcknowledged({ args })
-    };
-    const result = await repairCodexLbAuth(repairOptions);
-    const fastUi = await repairCodexAppFastUiAfterMutation(root, Boolean(result.ok));
-    const restart = await maybeRestartCodexAppForAuthSwitch(args, Boolean(result.ok && fastUi.ok));
-    const postRestart = await reconcileCodexLbAfterRestart(restart, repairOptions, Boolean(result.ok && fastUi.ok), restartRequired);
-    const finalStatus = postRestart.attempted ? postRestart.stable_status : result.codex_lb;
-    const readiness = codexLbActivationReadiness(finalStatus);
-    const restartRequirement = codexLbRestartPostcondition(restart, restartRequired);
-    const restartPerformed = restartRequirement.performed;
-    const restartSatisfied = restartRequirement.satisfied;
-    const ok = Boolean(result.ok && fastUi.ok && restart?.ok !== false && restartSatisfied && postRestart.ok && readiness.ok);
-    const shaped = {
-      ...result,
-      ok,
-      mode: 'codex-lb',
-      codex_lb: finalStatus,
-      readiness,
-      restart_required: restartRequired,
-      restart_performed: restartPerformed,
-      codex_app_fast_ui: fastUi,
-      restart_app: restart,
-      post_restart: postRestart
-    };
-    if (!ok) process.exitCode = 1;
-    if (flag(args, '--json')) return printJson(shaped);
-    const failureStatus = !restartSatisfied ? 'restart_not_performed' : postRestart.status || result.status;
-    console.log(ok ? 'Auth mode: codex-lb selected (API key).' : `Switch to codex-lb failed: ${failureStatus}${result.error ? `: ${result.error}` : ''}`);
-    if (restart?.status === 'restarted') console.log('Codex App restarted for codex-lb auth.');
-    if (!ok) process.exitCode = 1;
+  if (
+    action === 'use-desktop-full'
+    || action === 'use-codex-lb'
+    || action === 'use-lb'
+  ) {
+    if (action !== 'use-desktop-full') {
+      printDeprecationWarning(action, 'sks codex-lb use-desktop-full');
+    }
+    const result = await activateCodexLbDesktopMode({
+      ...controllerOptions(args),
+      mode: 'desktop-native-bridge'
+    });
+    if (result.ok !== true) process.exitCode = 1;
+    if (flag(args, '--json')) return printJson(result);
+    console.log(result.ok === true
+      ? 'Codex Desktop Full Capability routing enabled; ChatGPT OAuth remains active.'
+      : `Desktop Full Capability activation failed: ${String(result.status || 'failed')}`);
     return;
   }
-  if (action === 'use-oauth' || action === 'use-chatgpt') {
-    const restartRequired = flag(args, '--restart-app') || flag(args, '--restart');
-    const result = await releaseCodexLbAuthHold({ force: flag(args, '--force') });
-    const authOk = !['no_backup', 'auth_in_use', 'failed'].includes(result.status);
-    const fastUi = await repairCodexAppFastUiAfterMutation(root, authOk);
-    const restart = await maybeRestartCodexAppForAuthSwitch(args, Boolean(authOk && fastUi.ok));
-    const restartRequirement = codexLbRestartPostcondition(restart, restartRequired);
-    const ok = Boolean(authOk && fastUi.ok && restart?.ok !== false && restartRequirement.satisfied);
-    const shaped = {
-      ...result,
-      ok,
-      mode: 'oauth',
-      restart_required: restartRequired,
-      restart_performed: restartRequirement.performed,
-      codex_app_fast_ui: fastUi,
-      restart_app: restart
-    };
-    if (!ok) process.exitCode = 1;
-    if (flag(args, '--json')) return printJson(shaped);
-    if (result.status === 'no_backup') {
-      console.log('No saved ChatGPT OAuth credentials to restore. Switch to OAuth by logging in:');
-      console.log('  codex login');
-      console.log('Then, if codex-lb is still the selected provider: sks codex-lb unselect');
+  if (action === 'use-desktop-compat') {
+    const result = await activateCodexLbDesktopMode({
+      ...controllerOptions(args),
+      mode: 'desktop-dual-auth-compat',
+      gatewayAuthTransport: 'x-codex-lb-api-key'
+    });
+    if (result.ok !== true) process.exitCode = 1;
+    if (flag(args, '--json')) return printJson(result);
+    console.log(result.ok === true
+      ? 'Codex Desktop compatibility routing enabled; ChatGPT OAuth remains active.'
+      : `Desktop compatibility activation failed: ${String(result.status || 'failed')}`);
+    return;
+  }
+  if (action === 'use-cli') {
+    const result = await configureCodexLbCliMode(controllerOptions(args));
+    if (result.ok !== true) process.exitCode = 1;
+    if (flag(args, '--json')) return printJson(result);
+    console.log(result.ok === true
+      ? `codex-lb CLI provider ready. Run: ${String(result.command)}`
+      : `codex-lb CLI provider setup failed: ${String(result.status || 'failed')}`);
+    return;
+  }
+  if (
+    action === 'disable'
+    || action === 'release'
+    || action === 'unselect'
+    || action === 'use-oauth'
+    || action === 'use-chatgpt'
+  ) {
+    if (action !== 'disable') {
+      printDeprecationWarning(action, 'sks codex-lb disable');
+    }
+    const result = await disableCodexLbDesktopRouting(controllerOptions(args));
+    if (result.ok !== true) process.exitCode = 1;
+    if (flag(args, '--json')) return printJson(result);
+    console.log(result.ok === true
+      ? 'codex-lb Desktop routing disabled; existing ChatGPT OAuth was left untouched.'
+      : `codex-lb Desktop routing disable failed: ${String(result.status || 'failed')}`);
+    return;
+  }
+  if (action === 'capabilities') {
+    const level = normalizeCapabilityLevel(readOption(args, '--level', 'shallow'));
+    if (!level) {
+      const result = {
+        schema: 'sks.codex-lb-capabilities-command.v2',
+        ok: false,
+        status: 'invalid_level',
+        blockers: ['capability_level_must_be_shallow_transport_or_deep']
+      };
       process.exitCode = 1;
+      if (flag(args, '--json')) return printJson(result);
+      console.error('Invalid capability level. Use shallow, transport, or deep.');
       return;
     }
-    console.log(ok
-      ? `Auth mode: ${['released', 'oauth_restored'].includes(result.status) ? 'ChatGPT OAuth restored' : result.status}.`
-      : `Switch to ChatGPT OAuth failed: ${restartRequirement.satisfied ? result.status : 'restart_not_performed'}.`);
-    if (restart?.status === 'restarted') console.log('Codex App restarted for ChatGPT OAuth.');
-    if (['auth_in_use', 'failed'].includes(result.status)) process.exitCode = 1;
+    const { deepEvidence, deepEvidenceTrustAnchors } = await readDeepEvidenceOptions(args);
+    const report = await buildCodexLbDesktopCapabilities({
+      ...controllerOptions(args),
+      level,
+      deepEvidence,
+      deepEvidenceTrustAnchors,
+      networkProbes: !flag(args, '--no-network')
+    });
+    const diagnosticOk = report.overall !== 'blocked' && report.overall !== 'unsupported';
+    const result = {
+      ...report,
+      ok: diagnosticOk,
+      diagnostic_ok: diagnosticOk,
+      level,
+      full_capability_verified: report.overall === 'verified'
+    };
+    if (!diagnosticOk) process.exitCode = 1;
+    if (flag(args, '--json')) return printJson(result);
+    console.log(`codex-lb capabilities (${level}): ${diagnosticOk ? 'diagnostic_ok' : 'blocked'}; overall=${report.overall}`);
+    printCapabilityRows(report);
+    return;
+  }
+  if (action === 'migrate-legacy-desktop') {
+    const { deepEvidence, deepEvidenceTrustAnchors } = await readDeepEvidenceOptions(args);
+    const toRaw = String(readOption(args, '--to', readOption(args, '--target', 'bridge')) || 'bridge')
+      .trim()
+      .toLowerCase();
+    const mode = toRaw === 'compat'
+      || toRaw === 'desktop-compat'
+      || toRaw === 'desktop-dual-auth-compat'
+      ? 'desktop-dual-auth-compat' as const
+      : toRaw === 'bridge'
+        || toRaw === 'desktop-full'
+        || toRaw === 'desktop-native-bridge'
+        || toRaw === ''
+        ? 'desktop-native-bridge' as const
+        : null;
+    if (!mode) {
+      const result = {
+        schema: 'sks.codex-lb-legacy-migration-command.v2',
+        ok: false,
+        status: 'invalid_migration_target',
+        blockers: ['migration_target_must_be_bridge_or_compat']
+      };
+      process.exitCode = 1;
+      if (flag(args, '--json')) return printJson(result);
+      console.error('Invalid --to value. Use bridge or compat.');
+      return;
+    }
+    const result = await migrateLegacyCodexLbDesktopMode({
+      ...controllerOptions(args),
+      mode,
+      deepEvidence,
+      deepEvidenceTrustAnchors
+    });
+    if (result.ok !== true) process.exitCode = 1;
+    if (flag(args, '--json')) return printJson(result);
+    console.log(result.ok === true
+      ? `Legacy codex-lb Desktop state migrated (${String(result.receipt_path || '')}).`
+      : `Legacy migration blocked: ${String(result.status || 'failed')}`);
+    return;
+  }
+  if (action === 'rollback') {
+    const receiptId = String(args[1] || readOption(args, '--receipt', '')).trim();
+    const result = await rollbackCodexLbDesktopMode(receiptId, controllerOptions(args));
+    if (result.ok !== true) process.exitCode = 1;
+    if (flag(args, '--json')) return printJson(result);
+    console.log(result.ok === true
+      ? `codex-lb Desktop rollback completed (${receiptId}).`
+      : `codex-lb Desktop rollback failed: ${String(result.status || 'failed')}`);
+    return;
+  }
+  if ((action === 'bridge' || action === 'desktop-bridge') && args[1] === 'serve') {
+    const result = await serveDesktopBridge(controllerOptions(args));
+    if (!result.ok) process.exitCode = 1;
+    if (flag(args, '--json')) return printJson(result);
+    console.log(`codex-lb Desktop bridge: ${result.status}`);
     return;
   }
   if (action === 'setup' || action === 'reconfigure') {
@@ -284,7 +390,8 @@ export async function run(command: any, args: any = []) {
     const plan = buildCodexLbSetupPlan({
       host_or_base_url: options.host || '',
       api_key_source: options.apiKeySource,
-      use_as_default_provider: options.useDefaultProvider,
+      desktop_mode: options.desktopMode,
+      gateway_auth_transport: options.gatewayAuthTransport,
       write_env_file: options.writeEnvFile,
       store_keychain: options.keychain,
       sync_launchctl: options.syncLaunchctl,
@@ -373,30 +480,73 @@ export async function run(command: any, args: any = []) {
     const result = await configureCodexLb({
       host: options.host,
       apiKey: options.apiKey,
-      authMode: flag(args, '--preserve-auth') ? 'preserve' : 'codex-lb',
-      forceCodexLbApiKeyAuth: !flag(args, '--preserve-auth'),
-      forceFastMode: !flag(args, '--no-fast'),
+      desktopMode: 'cli-provider',
+      gatewayAuthTransport: options.gatewayAuthTransport,
       keychain: options.keychain,
       storeKeychain: options.keychain,
-      useDefaultProvider: options.useDefaultProvider,
       writeEnvFile: options.writeEnvFile,
       syncLaunchctl: options.syncLaunchctl,
       shellProfile: options.shellProfile,
-      runHealth: options.health,
+      runHealth: false,
       apiKeySource: options.apiKeySource,
       allowInsecureHttp: options.allowInsecureLocalhost,
       allowUnverifiedToolOutputRecovery: codexLbToolOutputRecoveryOverrideAcknowledged({ args })
     });
-    const fastUi = await repairCodexAppFastUiAfterMutation(root, Boolean(result.ok));
-    const restart = await maybeRestartCodexAppForAuthSwitch(args, Boolean(result.ok && fastUi.ok) && !flag(args, '--preserve-auth'));
-    const shaped: any = { schema: 'sks.codex-lb-setup.v1', ...result, api_key: { present: Boolean(options.apiKey), redacted: true }, env_file_chmod: '0600', codex_app_fast_ui: fastUi };
-    shaped.restart_app = restart;
-    if (options.health) shaped.applied_actions = [...(shaped.applied_actions || []), { type: 'run_health_check', target: 'codex-lb response chain', ok: true }];
-    if (options.health) shaped.chain_health = result.ok ? await checkCodexLbResponseChain(result, { force: true, root }) : null;
-    shaped.ok = Boolean(result.ok && fastUi.ok && restart?.ok !== false);
+    let desktopActivation: Record<string, unknown> | null = null;
+    if (result.ok && options.desktopMode === 'desktop-native-bridge') {
+      desktopActivation = await activateCodexLbDesktopMode({
+        ...controllerOptions(args),
+        mode: 'desktop-native-bridge',
+        gatewayAuthTransport: options.gatewayAuthTransport
+      });
+    } else if (result.ok && options.desktopMode === 'desktop-dual-auth-compat') {
+      desktopActivation = await activateCodexLbDesktopMode({
+        ...controllerOptions(args),
+        mode: 'desktop-dual-auth-compat',
+        gatewayAuthTransport: 'x-codex-lb-api-key'
+      });
+    }
+    const capabilities = options.health && result.ok
+      ? await buildCodexLbDesktopCapabilities({
+          ...controllerOptions(args),
+          level: 'transport',
+          networkProbes: true
+        })
+      : null;
+    const capabilityDiagnosticOk = codexLbSetupCapabilityDiagnosticOk(capabilities);
+    const shaped: any = {
+      ...result,
+      schema: 'sks.codex-lb-setup.v2',
+      ok: Boolean(
+        result.ok
+        && desktopActivation?.ok !== false
+        && capabilityDiagnosticOk
+      ),
+      diagnostic_ok: capabilityDiagnosticOk,
+      requested_desktop_mode: options.desktopMode,
+      gateway_auth_transport: options.gatewayAuthTransport,
+      api_key: { present: Boolean(options.apiKey), redacted: true },
+      env_file_chmod: options.writeEnvFile ? '0600' : null,
+      desktop_auth_mutated: false,
+      fast_mode_mutated: false,
+      desktop_activation: desktopActivation,
+      capabilities
+    };
+    if (options.health) {
+      shaped.applied_actions = [
+        ...(shaped.applied_actions || []),
+        {
+          type: 'run_capability_check',
+          target: 'codex-lb Desktop capability matrix',
+          ok: capabilityDiagnosticOk,
+          overall: capabilities?.overall || null
+        }
+      ];
+    }
     if (!shaped.ok) process.exitCode = 1;
     if (flag(args, '--json')) return printJson(shaped);
     console.log(`codex-lb configured: ${result.base_url || result.status}`);
+    console.log(`Desktop mode: ${options.desktopMode}${desktopActivation ? ` (${String(desktopActivation.status || 'applied')})` : ' (routing unchanged)'}`);
     if (shaped.persistence?.warning) console.log(`warning: ${shaped.persistence.warning}`);
     if (!shaped.ok) process.exitCode = 1;
     return;
@@ -428,19 +578,14 @@ export async function run(command: any, args: any = []) {
     console.log(`codex-lb proof evidence: ${result.status}`);
     return;
   }
-  console.error('Usage: sks codex-lb status|metrics|doctor --deep|health|setup|set-key|use-codex-lb|use-oauth|repair|release|unselect|circuit reset|circuit record-fixture|proof-evidence [--json]');
+  console.error('Usage: sks codex-lb status|setup|set-key|use-desktop-full|use-desktop-compat|use-cli|disable|capabilities [--level shallow|transport|deep] [--evidence <file> --trust-anchors <file>]|migrate-legacy-desktop|rollback <receipt-id>|health|metrics|doctor|repair|circuit reset|circuit record-fixture|proof-evidence [--json]');
   console.error(`  ${CODEX_LB_TOOL_OUTPUT_RECOVERY_OVERRIDE_FLAG}  explicitly acknowledge an old/unverified proxy for this command (unsafe)`);
   console.error('  set-key       swap the codex-lb API key (reuses the stored host): sks codex-lb set-key --api-key-stdin');
-  console.error('  use-codex-lb  switch auth mode to codex-lb (API key)');
-  console.error('  use-oauth     switch auth mode to ChatGPT OAuth (restores saved login, else: codex login)');
+  console.error('  use-desktop-full   keep ChatGPT OAuth/built-in OpenAI and route data through the local bridge');
+  console.error('  use-desktop-compat keep ChatGPT OAuth and use the explicit dual-auth custom provider');
+  console.error('  use-cli            configure an unselected CLI-only provider');
+  console.error('  disable            remove only SKS-managed Desktop routing; auth.json is untouched');
   process.exitCode = 1;
-}
-
-async function maybeRestartCodexAppForAuthSwitch(args: any[] = [], enabled: boolean) {
-  if (!enabled) return { schema: 'sks.codex-app-restart.v1', ok: true, status: 'skipped', skipped: true, reason: 'previous_step_failed', app_name: 'ChatGPT', bundle_id: 'com.openai.codex', blockers: [] };
-  const requested = flag(args, '--restart-app') || flag(args, '--restart');
-  const shouldRestart = requested || (!flag(args, '--json') && !flag(args, '--no-restart-app') && !flag(args, '--no-restart'));
-  return restartCodexApp({ enabled: shouldRestart });
 }
 
 export function codexLbRestartPostcondition(restart: any = {}, required = false) {
@@ -452,113 +597,28 @@ export function codexLbRestartPostcondition(restart: any = {}, required = false)
   };
 }
 
-async function reconcileCodexLbAfterRestart(restart: any, repairOptions: any, enabled: boolean, restartRequired = false) {
-  if (!enabled || restart?.status !== 'restarted') {
-    const restartRequirement = codexLbRestartPostcondition(restart, restartRequired);
-    return {
-      schema: 'sks.codex-lb-post-restart.v1',
-      ok: Boolean(enabled && restart?.ok !== false && restartRequirement.satisfied),
-      attempted: false,
-      status: restartRequired && !restartRequirement.performed ? 'restart_not_performed' : 'skipped',
-      reason: !enabled ? 'previous_step_failed' : restart?.reason || restart?.status || 'restart_not_performed',
-      attempts: 0,
-      observations: [],
-      selected: null,
-      provider_ready: null,
-      auth_routing_coherent: null,
-      shared_openai_routing_safe: null,
-      reconcile: null,
-      codex_lb: null,
-      repair: null,
-      stable_status: null,
-      readiness: null
-    };
-  }
-  await codexLbRestartSettle(750);
-  const repair = await repairCodexLbAuth(repairOptions);
-  const observations: any[] = [];
-  let stableStatus: any = null;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    if (attempt > 1) await codexLbRestartSettle(750);
-    stableStatus = await codexLbStatus({
-      probeToolOutputRecovery: false
-    });
-    observations.push({ attempt, readiness: codexLbActivationReadiness(stableStatus) });
-  }
-  const readiness = codexLbActivationReadiness(stableStatus);
-  const finalTwoReady = observations.slice(-2).every((observation) => observation.readiness.ok === true);
-  const regressed = observations.some((observation, index) => index > 0
-    && observations[index - 1].readiness.ok === true
-    && observation.readiness.ok !== true);
-  const stable = finalTwoReady && !regressed;
+export function buildCodexLbDoctorResult(
+  status: Record<string, unknown>,
+  metrics: Record<string, unknown>,
+  deep = false
+) {
+  const diagnosticOk = status.ok === true;
   return {
-    schema: 'sks.codex-lb-post-restart.v1',
-    ok: Boolean(repair.ok && readiness.ok && stable),
-    attempted: true,
-    status: repair.ok && readiness.ok && stable ? 'reconciled_stable' : 'reconcile_failed',
-    attempts: observations.length,
-    stable,
-    observations,
-    selected: readiness.selected,
-    provider_ready: readiness.provider_ready,
-    auth_routing_coherent: readiness.auth_routing_coherent,
-    shared_openai_routing_safe: readiness.shared_openai_routing_safe,
-    reconcile: repair,
-    codex_lb: stableStatus,
-    repair,
-    stable_status: stableStatus,
-    readiness
+    schema: 'sks.codex-lb-doctor.v2',
+    ok: diagnosticOk && metrics.ok === true,
+    diagnostic_ok: diagnosticOk,
+    full_capability_verified: status.full_capability_verified === true,
+    deep,
+    status,
+    metrics
   };
 }
 
-function codexLbRestartSettle(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
-}
-
-function codexLbActivationReadiness(status: any = {}) {
-  const selected = status?.selected === true;
-  const providerReady = status?.provider_ready === true;
-  const authRoutingCoherent = status?.auth_routing_coherent === true;
-  const sharedOpenAiRoutingSafe = status?.shared_openai_routing?.safe === true;
-  return {
-    ok: selected && providerReady && authRoutingCoherent && sharedOpenAiRoutingSafe,
-    selected,
-    provider_ready: providerReady,
-    auth_routing_coherent: authRoutingCoherent,
-    shared_openai_routing_safe: sharedOpenAiRoutingSafe,
-    blockers: [
-      ...(selected ? [] : ['codex_lb_not_selected']),
-      ...(providerReady ? [] : ['codex_lb_provider_not_ready']),
-      ...(authRoutingCoherent ? [] : ['codex_lb_auth_routing_incoherent']),
-      ...(sharedOpenAiRoutingSafe ? [] : ['codex_lb_shared_openai_routing_unsafe'])
-    ]
-  };
-}
-
-async function repairCodexAppFastUiAfterMutation(root: string, enabled: boolean) {
-  if (!enabled) {
-    return {
-      schema: 'sks.codex-app-fast-ui-repair.v1',
-      ok: true,
-      status: 'skipped',
-      skipped: true,
-      reason: 'previous_step_failed',
-      actions: [],
-      blockers: []
-    };
-  }
-  try {
-    return await repairCodexAppFastUi(root, { apply: true });
-  } catch (err: any) {
-    return {
-      schema: 'sks.codex-app-fast-ui-repair.v1',
-      ok: false,
-      status: 'failed',
-      actions: [],
-      blockers: ['codex_app_fast_ui_repair_failed'],
-      error: String(err?.message || err)
-    };
-  }
+export function codexLbSetupCapabilityDiagnosticOk(
+  capabilities: CodexLbDesktopCapabilityReport | null
+): boolean {
+  return capabilities === null
+    || (capabilities.overall !== 'blocked' && capabilities.overall !== 'unsupported');
 }
 
 export function isCodexLbFastChainVerified(chain: any = {}) {
@@ -698,6 +758,210 @@ function normalizeTier(value: unknown) {
   return null;
 }
 
+async function readDeepEvidenceOptions(args: any[] = []): Promise<{
+  deepEvidence: unknown | null;
+  deepEvidenceTrustAnchors: Awaited<ReturnType<typeof readCodexLbDesktopDeepEvidenceTrustAnchors>>;
+}> {
+  const evidencePath = readOption(args, '--evidence', null);
+  const trustAnchorsPath = readOption(
+    args,
+    '--trust-anchors',
+    readOption(args, '--evidence-trust-anchors', null)
+  );
+  return {
+    deepEvidence: evidencePath
+      ? await readCodexLbDesktopDeepEvidence(String(evidencePath))
+      : null,
+    deepEvidenceTrustAnchors: trustAnchorsPath
+      ? await readCodexLbDesktopDeepEvidenceTrustAnchors(String(trustAnchorsPath))
+      : []
+  };
+}
+
+export function controllerOptions(args: any[] = []): CodexLbDesktopControllerOptions {
+  // Only an explicit flag may pin the transport. Defaulting here would shadow the
+  // stored Center choice (`sks-codex-lb.json` / bridge settings) for every command
+  // SKS Center runs without `--gateway-auth`, silently forcing the custom header
+  // onto gateways that only accept `Authorization: Bearer`.
+  const rawGatewayAuth = flag(args, '--compat-bearer')
+    ? 'authorization-bearer-compat'
+    : (() => {
+        const explicit = readOption(
+          args,
+          '--gateway-auth',
+          readOption(args, '--gateway-auth-transport', null)
+        );
+        return explicit === null ? null : normalizeGatewayAuthChoice(explicit);
+      })();
+  const gatewayAuthTransport = rawGatewayAuth === null
+    ? null
+    : parseCodexLbGatewayAuthTransport(rawGatewayAuth);
+  const home = readOption(args, '--home', null);
+  const configPath = readOption(args, '--config', readOption(args, '--config-path', null));
+  const authPath = readOption(args, '--auth', readOption(args, '--auth-path', null));
+  const envPath = readOption(args, '--env-file', readOption(args, '--env-path', null));
+  const metadataPath = readOption(args, '--metadata', readOption(args, '--metadata-path', null));
+  const receiptDir = readOption(args, '--receipt-dir', null);
+  const listenHost = readOption(args, '--listen-host', null);
+  const normalizedListenHost = listenHost === null
+    ? null
+    : listenHost === '127.0.0.1' || listenHost === '::1'
+      ? listenHost
+      : (() => { throw new Error(`unsupported_codex_lb_desktop_listen_host:${listenHost}`); })();
+  const listenPortText = readOption(args, '--listen-port', null);
+  const listenPort = listenPortText === null ? null : Number(listenPortText);
+  const capabilityTimeoutText = readOption(args, '--capability-timeout-ms', null);
+  const capabilityTimeoutMs = capabilityTimeoutText === null ? null : Number(capabilityTimeoutText);
+  return {
+    ...(gatewayAuthTransport ? { gatewayAuthTransport } : {}),
+    restartApp: flag(args, '--restart-app') || flag(args, '--restart'),
+    networkProbes: !flag(args, '--no-network'),
+    ...(home ? { home: String(home) } : {}),
+    ...(configPath ? { configPath: String(configPath) } : {}),
+    ...(authPath ? { authPath: String(authPath) } : {}),
+    ...(envPath ? { envPath: String(envPath) } : {}),
+    ...(metadataPath ? { metadataPath: String(metadataPath) } : {}),
+    ...(receiptDir ? { receiptDir: String(receiptDir) } : {}),
+    ...(capabilityTimeoutMs !== null && Number.isFinite(capabilityTimeoutMs) && capabilityTimeoutMs > 0
+      ? { capabilityTimeoutMs }
+      : {}),
+    ...(normalizedListenHost || (listenPort !== null && Number.isInteger(listenPort))
+      ? {
+          settings: {
+            ...(normalizedListenHost ? { listen_host: normalizedListenHost } : {}),
+            ...(listenPort !== null && Number.isInteger(listenPort) ? { listen_port: listenPort } : {}),
+            ...(gatewayAuthTransport ? { gateway_auth_transport: gatewayAuthTransport } : {})
+          }
+        }
+      : {})
+  };
+}
+
+function formatCodexLbDesktopStatusText(status: Record<string, unknown>): string {
+  const oauth = asRecord(status.oauth);
+  const provider = asRecord(status.provider);
+  const bridge = asRecord(status.bridge);
+  const capabilities = asRecord(status.capabilities);
+  const blockers = stringArray(status.blockers);
+  const guidance = stringArray(status.guidance);
+  const lines = [
+    'SKS codex-lb Desktop',
+    '',
+    `Configured: ${status.configured === true ? 'yes' : 'no'}`,
+    `Mode: ${String(status.mode || 'disabled')}`,
+    `ChatGPT OAuth: ${oauth.present === true ? 'present and preserved' : 'missing'}`,
+    `Provider: ${String(provider.contract || 'missing')} (${provider.contract_ok === true ? 'ok' : 'blocked'})`,
+    `Bridge: ${String(bridge.status || 'unknown')}${bridge.running === true ? ' (running)' : ''}`,
+    `Gateway auth: ${String(bridge.gateway_auth_transport || 'unknown')}`,
+    `Capabilities: ${String(status.overall || capabilities.state || 'unverified')}`,
+    `Full capability: ${status.full_capability_verified === true ? 'verified' : 'unverified'}`
+  ];
+  if (blockers.length) {
+    lines.push('', 'Blockers:');
+    for (const blocker of blockers) lines.push(`- ${blocker}`);
+  }
+  if (guidance.length) {
+    lines.push('', 'Next:');
+    for (const item of guidance) lines.push(`- ${item}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+function printDeprecationWarning(oldAction: string, replacement: string): void {
+  console.error(`warning: \`sks codex-lb ${oldAction}\` is deprecated; use \`${replacement}\`.`);
+}
+
+function normalizeCapabilityLevel(value: unknown): CapabilityProbeLevel | null {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'shallow' || normalized === 'transport' || normalized === 'deep') {
+    return normalized;
+  }
+  return null;
+}
+
+function printCapabilityRows(report: CodexLbDesktopCapabilityReport): void {
+  const keys = [
+    'gateway_auth_transport',
+    'provider_identity',
+    'bridge',
+    'catalog',
+    'model_picker',
+    'fast_mode',
+    'text_responses',
+    'image_generation',
+    'computer_use',
+    'browser_use',
+    'voice_mode',
+    'plugins',
+    'auxiliary_surfaces'
+  ] as const;
+  for (const key of keys) {
+    const capability = report[key];
+    const suffix = capability.blockers.length
+      ? ` (${capability.blockers.join(', ')})`
+      : '';
+    console.log(`- ${key}: ${capability.state}${suffix}`);
+  }
+}
+
+function normalizeDesktopSetupMode(value: unknown): CodexLbDesktopMode {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (
+    normalized === 'desktop-full'
+    || normalized === 'full'
+    || normalized === 'native'
+    || normalized === 'desktop-native-bridge'
+  ) {
+    return 'desktop-native-bridge';
+  }
+  if (
+    normalized === 'desktop-compat'
+    || normalized === 'compat'
+    || normalized === 'desktop-dual-auth-compat'
+  ) {
+    return 'desktop-dual-auth-compat';
+  }
+  if (
+    !normalized
+    || normalized === 'cli'
+    || normalized === 'cli-only'
+    || normalized === 'cli-provider'
+  ) {
+    return 'cli-provider';
+  }
+  throw new Error(`unsupported_codex_lb_desktop_mode:${normalized}`);
+}
+
+function normalizeGatewayAuthChoice(value: unknown): CodexLbGatewayAuthTransport {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (
+    !normalized
+    || normalized === 'custom-header'
+    || normalized === 'header'
+    || normalized === 'x-codex-lb-api-key'
+  ) {
+    return 'x-codex-lb-api-key';
+  }
+  if (
+    normalized === 'bearer'
+    || normalized === 'bearer-compat'
+    || normalized === 'authorization-bearer-compat'
+  ) {
+    return 'authorization-bearer-compat';
+  }
+  throw new Error(`unsupported_codex_lb_gateway_auth_transport:${normalized}`);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((entry) => String(entry)).filter(Boolean) : [];
+}
+
 async function resolveNewApiKey(args: any = []): Promise<string> {
   if (flag(args, '--api-key-stdin')) return String(await readStdin()).trim();
   if (input.isTTY && !flag(args, '--yes')) {
@@ -711,54 +975,23 @@ async function resolveNewApiKey(args: any = []): Promise<string> {
   return '';
 }
 
-function shapeCodexLbStatus(status: any = {}) {
-  const modes: any[] = [];
-  if (status.env_file && status.env_key_configured) modes.push('durable_env_file');
-  if (status.env_loader?.api_key?.source === 'keychain' || status.env_loader?.keychain?.status === 'present') modes.push('durable_keychain');
-  if (status.launch_environment?.status === 'secret_env_present') modes.push('process_only_ephemeral');
-  if (!modes.length && status.env_loader?.api_key?.source === 'process.env') modes.push('process_only_ephemeral');
-  const mode = modes[0] || 'none';
-  const persistence = codexLbPersistenceSummary({
-    selectedModes: modes.length ? modes : [],
-    appliedModes: modes.length ? modes : mode === 'none' ? ['none'] : [mode],
-    processOnly: mode === 'process_only_ephemeral'
-  });
-  return {
-    schema: 'sks.codex-lb-status.v1',
-    ...status,
-    configured: Boolean(status.provider_ready ?? status.ok),
-    setup_needed: !Boolean(status.provider_ready ?? status.ok),
-    upgrade_needed: Boolean(status.selected && status.tool_output_recovery?.ok !== true),
-    repair_available: !Boolean(status.provider_ready ?? status.ok),
-    api_key: {
-      present: Boolean(status.env_key_configured),
-      source: status.env_loader?.api_key?.source || null,
-      redacted: true
-    },
-    persistence,
-    env_loader: status.env_loader || null,
-    env_auto_load: Boolean(status.env_file && status.env_key_configured),
-    guidance: status.selected && status.tool_output_recovery?.ok !== true
-      ? status.tool_output_recovery.operator_actions || []
-      : status.ok ? [] : [
-          'codex-lb API key is not configured.',
-          'Run: sks codex-lb setup',
-          'Or: sks codex-lb setup --host <domain> --api-key-stdin --yes'
-        ]
-  };
-}
-
 async function codexLbSetupOptions(args: any = []) {
   const baseUrl = readOption(args, '--base-url', null);
   let host = baseUrl || readOption(args, '--host', readOption(args, '--domain', null));
   let apiKey: string | null = null;
   let apiKeySource: 'hidden_prompt' | 'stdin' | 'keychain_existing' = 'hidden_prompt';
+  let desktopMode = normalizeDesktopSetupMode(
+    readOption(args, '--desktop-mode', readOption(args, '--mode', 'cli-provider'))
+  );
+  let gatewayAuthTransport = parseCodexLbGatewayAuthTransport(
+    normalizeGatewayAuthChoice(flag(args, '--compat-bearer')
+      ? 'authorization-bearer-compat'
+      : readOption(args, '--gateway-auth', readOption(args, '--gateway-auth-transport', 'x-codex-lb-api-key')))
+  );
   let keychain = flag(args, '--keychain');
   if (flag(args, '--api-key-stdin')) apiKey = (await readStdin()).trim();
   if (flag(args, '--api-key-stdin')) apiKeySource = 'stdin';
   let health = (flag(args, '--health') || flag(args, '--check')) && !flag(args, '--no-health');
-  let useDefaultProvider = flag(args, '--no-default-provider') ? false : true;
-  if (flag(args, '--use-default-provider')) useDefaultProvider = true;
   let writeEnvFile = flag(args, '--no-env-file') ? false : true;
   if (flag(args, '--write-env-file')) writeEnvFile = true;
   if (flag(args, '--no-keychain')) keychain = false;
@@ -772,18 +1005,58 @@ async function codexLbSetupOptions(args: any = []) {
     host ||= (await ask('1. codex-lb domain or base URL?\n   Example: lb.example.com or https://lb.example.com/backend-api/codex\n> ')).trim();
     apiKey ||= (await askHidden('2. API key?\n   Input hidden. Value will be stored securely and never printed.\n> ')).trim();
     apiKeySource = 'hidden_prompt';
-    useDefaultProvider = parseYesNo(await ask('3. Use this codex-lb as default for Codex launches? [Y/n] '), true);
-    writeEnvFile = parseYesNo(await ask('4. Write shell env loader to ~/.codex/sks-codex-lb.env? [Y/n] '), true);
-    const storeKeychain = (await ask('5. Store the key in macOS Keychain when available? [Y/n] ')).trim();
+    desktopMode = normalizeDesktopSetupMode(
+      (await ask('3. Configure which mode? [desktop-full/desktop-compat/cli-only] (desktop-full)\n> ')).trim()
+      || 'desktop-full'
+    );
+    if (desktopMode === 'desktop-native-bridge') {
+      gatewayAuthTransport = parseCodexLbGatewayAuthTransport(
+        normalizeGatewayAuthChoice(
+          (await ask('4. Gateway key transport? [custom-header/bearer-compat] (custom-header)\n> ')).trim()
+        )
+      );
+    } else {
+      gatewayAuthTransport = 'x-codex-lb-api-key';
+    }
+    writeEnvFile = parseYesNo(await ask('5. Write shell env loader to ~/.codex/sks-codex-lb.env? [Y/n] '), true);
+    const storeKeychain = (await ask('6. Store the key in macOS Keychain when available? [Y/n] ')).trim();
     keychain = !/^(n|no|아니|아니요|ㄴ)$/i.test(storeKeychain || 'y');
-    syncLaunchctl = parseYesNo(await ask('6. Sync non-secret macOS launchctl base URL only? API keys are never stored in launchd. [y/N] '), false);
-    const profile = (await ask('7. Install shell profile snippet? [zsh/bash/fish/all/skip] ')).trim();
+    syncLaunchctl = parseYesNo(await ask('7. Sync non-secret macOS launchctl base URL only? API keys are never stored in launchd. [y/N] '), false);
+    const profile = (await ask('8. Install shell profile snippet? [zsh/bash/fish/all/skip] ')).trim();
     const interactiveShellProfile = normalizeShellProfile(profile || 'skip');
-    const runHealth = (await ask('8. Run health check now? [Y/n] ')).trim();
+    const runHealth = (await ask('9. Run capability diagnostics now? [Y/n] ')).trim();
     health = !/^(n|no|아니|아니요|ㄴ)$/i.test(runHealth || 'y');
-    return { host, apiKey, health, keychain, useDefaultProvider, writeEnvFile, syncLaunchctl, shellProfile: interactiveShellProfile, allowInsecureLocalhost, apiKeySource, interactive: true, yes: flag(args, '--yes') };
+    return {
+      host,
+      apiKey,
+      health,
+      keychain,
+      desktopMode,
+      gatewayAuthTransport,
+      writeEnvFile,
+      syncLaunchctl,
+      shellProfile: interactiveShellProfile,
+      allowInsecureLocalhost,
+      apiKeySource,
+      interactive: true,
+      yes: flag(args, '--yes')
+    };
   }
-  return { host, apiKey, health, keychain, useDefaultProvider, writeEnvFile, syncLaunchctl, shellProfile, allowInsecureLocalhost, apiKeySource, interactive, yes: flag(args, '--yes') };
+  return {
+    host,
+    apiKey,
+    health,
+    keychain,
+    desktopMode,
+    gatewayAuthTransport,
+    writeEnvFile,
+    syncLaunchctl,
+    shellProfile,
+    allowInsecureLocalhost,
+    apiKeySource,
+    interactive,
+    yes: flag(args, '--yes')
+  };
 }
 
 function normalizeShellProfile(value: any): 'zsh' | 'bash' | 'fish' | 'all' | 'skip' {

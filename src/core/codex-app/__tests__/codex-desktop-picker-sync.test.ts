@@ -16,6 +16,7 @@ import { stampRoleModelCatalogPriorities } from '../role-model-catalog-priority.
 test('invalidateCodexModelsCache merges catalog rows into existing cache by slug', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-models-cache-'))
   const codexHome = path.join(home, '.codex')
+  const env = { ...process.env, HOME: home, CODEX_HOME: codexHome }
   await fs.mkdir(codexHome, { recursive: true })
   const cachePath = path.join(codexHome, 'models_cache.json')
   await fs.writeFile(cachePath, JSON.stringify({
@@ -30,7 +31,7 @@ test('invalidateCodexModelsCache merges catalog rows into existing cache by slug
     ]
   }, null, 2))
 
-  const result = await invalidateCodexModelsCache({ home, catalogPath, seedMode: 'merge' })
+  const result = await invalidateCodexModelsCache({ home, env, catalogPath, seedMode: 'merge' })
   assert.equal(result.ok, true)
   assert.equal(result.models_cache_invalidated, true)
   assert.equal(result.status, 'seeded_from_catalog')
@@ -44,6 +45,7 @@ test('invalidateCodexModelsCache merges catalog rows into existing cache by slug
 test('invalidateCodexModelsCache replace mode still overwrites models when requested', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-models-cache-replace-'))
   const codexHome = path.join(home, '.codex')
+  const env = { ...process.env, HOME: home, CODEX_HOME: codexHome }
   await fs.mkdir(codexHome, { recursive: true })
   const cachePath = path.join(codexHome, 'models_cache.json')
   await fs.writeFile(cachePath, JSON.stringify({
@@ -58,7 +60,7 @@ test('invalidateCodexModelsCache replace mode still overwrites models when reque
     ]
   }, null, 2))
 
-  const result = await invalidateCodexModelsCache({ home, catalogPath, seedMode: 'replace' })
+  const result = await invalidateCodexModelsCache({ home, env, catalogPath, seedMode: 'replace' })
   assert.equal(result.ok, true)
   const rewritten = JSON.parse(await fs.readFile(cachePath, 'utf8'))
   assert.equal(rewritten.models.length, 1)

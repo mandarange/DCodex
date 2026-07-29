@@ -19,7 +19,7 @@ final class DiagnosticsViewController: NSViewController, ControlCenterPage {
             title: "Health checks",
             subtitle: "Doctor verifies and repairs the local SKS, Codex, and provider configuration.",
             views: [status, NativeView.row([
-                ControlKit.primaryButton("Run Doctor", target: self, action: #selector(doctor)),
+                ControlKit.primaryButton("Run Doctor", target: self, action: #selector(doctor), isDefault: true),
                 NativeView.button("Open Last Log", target: self, action: #selector(openLog))
             ])]
         )
@@ -39,7 +39,6 @@ final class DiagnosticsViewController: NSViewController, ControlCenterPage {
             ControlKit.header("Diagnostics", "Diagnostic output is bounded, redacted, and written with owner-only permissions. Use this page when another Center action reports a blocker. Feature routes that need newer Codex fail with an update CTA instead of locking all of SKS."),
             healthCard, codexCard, menuBarCard
         ])
-        refreshOnAppear()
     }
 
     func refreshOnAppear() {

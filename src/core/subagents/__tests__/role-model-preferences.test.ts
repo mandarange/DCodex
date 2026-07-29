@@ -306,10 +306,9 @@ test('official subagent preparation applies role overrides to routed plan and ex
   assert.equal(routed.routed_model_policy, 'user_role_model_preference');
   assert.equal(routed.routing_dynamic, false);
   assert.equal(prepared.plan.role_model_preferences.overrides.ui_implementer.reasoning_effort, 'max');
-  assert.match(prepared.delegationPrompt, /effective model preference: openai:gpt-5\.6-sol\/max \(user override\)/);
   assert.match(prepared.delegationPrompt, /pass the exact catalog slug model="gpt-5\.6-sol" and reasoning_effort="max" when spawning this role/);
   assert.match(prepared.delegationPrompt, /logical provider="openai" is encoded by the active router\/catalog/);
-  assert.match(prepared.delegationPrompt, /pass fork_turns="none" and carry this complete bounded slice contract in message/);
+  assert.match(prepared.delegationPrompt, /must use `fork_turns="none"` or a positive bounded turn count, with the complete bounded slice contract in `message`/);
 });
 
 test('app-session third-party main models inherit onto children unless a role override exists', async (t) => {
@@ -368,7 +367,6 @@ test('app-session third-party main models inherit onto children unless a role ov
   assert.equal(routed.role_model_preference_source, 'active-main-model');
   assert.equal(prepared.plan.role_model_preferences.routing.active_main_model_inherited, true);
   assert.match(prepared.delegationPrompt, /keep the current app-selected main model openrouter:moonshotai\/kimi-k3/);
-  assert.match(prepared.delegationPrompt, /effective model preference: openrouter:moonshotai\/kimi-k3\/high \(active main model\)/);
   assert.match(prepared.delegationPrompt, /pass the exact active main model="moonshotai\/kimi-k3" and reasoning_effort="high"/);
 
   const parentRequiredDir = path.join(root, '.sneakoscope', 'missions', 'M-main-model-parent-required');
@@ -479,7 +477,7 @@ test('unconfigured roles spawn with sealed role model policy instead of omitting
   return prompt.then((value) => {
     assert.match(value, /pass model="gpt-5\.6-sol" and reasoning_effort="high" from the sealed role policy/);
     assert.match(value, /do not replace Luna\/Terra\/Sol High\/Sol Max with the parent active main model/);
-    assert.match(value, /pass fork_turns="none" and carry this complete bounded slice contract in message/);
+    assert.match(value, /must use `fork_turns="none"` or a positive bounded turn count, with the complete bounded slice contract in `message`/);
   });
 });
 

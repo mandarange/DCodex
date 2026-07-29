@@ -9,6 +9,14 @@ sks codex-lb setup
 sks codex-lb setup --host lb.example.com --api-key-stdin --plan --json
 sks codex-lb setup --host lb.example.com --api-key-stdin --yes --json
 sks codex-lb status --json
+sks codex-lb use-desktop-full
+sks codex-lb use-desktop-compat
+sks codex-lb use-cli
+sks codex-lb disable
+sks codex-lb capabilities --level transport --json
+sks codex-lb capabilities --level deep --evidence <capture.json> --trust-anchors <anchors.json> --json
+sks codex-lb migrate-legacy-desktop --restart-app
+sks codex-lb rollback <receipt-id>
 sks codex-lb metrics --json
 sks codex-lb doctor --deep --json
 sks codex-lb circuit reset
@@ -18,20 +26,35 @@ sks codex-lb proof-evidence --json
 
 ## Setup Wizard
 
-SKS 1.0.8 keeps `sks codex-lb setup` as a two-phase plan/apply repair path for missing codex-lb keys and reports whether the chosen persistence is durable or `process_only_ephemeral`. Codex 0.133 remote executor standard-auth registration is recorded as a P1 policy review item; SKS does not invent credential fallback behavior. Interactive setup asks for:
+`sks codex-lb setup` stores a remote endpoint and gateway credential, then
+reports whether the chosen persistence is durable or
+`process_only_ephemeral`. The remote codex-lb instance remains independently
+hosted and operated; SKS does not deploy, restart, reconfigure, or rotate
+credentials on that machine. Interactive setup asks for:
 
 - codex-lb domain or base URL
 - API key with hidden input
-- whether to use the proxy as the default Codex launch target
+- Desktop Full Capability, Desktop compatibility, or CLI-only routing
+- custom gateway header or explicit bearer-compat transport where supported
 - whether to write the shell env loader
 - whether to store the key in macOS Keychain when available
-- whether to sync the macOS `launchctl` environment
+- whether to sync the non-secret base URL to the macOS `launchctl` environment
 - whether to install a shell profile snippet
-- whether to run a health check
+- whether to run capability diagnostics
 
-Non-interactive setup accepts `--host`, `--domain`, `--base-url`, `--api-key-stdin`, `--plan`, `--apply`, `--yes`, `--use-default-provider`, `--no-default-provider`, `--write-env-file`, `--no-env-file`, `--keychain`, `--no-keychain`, `--launchctl`, `--no-launchctl`, `--shell-profile zsh|bash|fish|all|skip`, `--health`, `--no-health`, and `--json`.
+Non-interactive setup accepts `--host`, `--domain`, `--base-url`,
+`--api-key-stdin`, `--plan`, `--yes`,
+`--desktop-mode desktop-full|desktop-compat|cli-only`,
+`--gateway-auth custom-header|bearer-compat`, `--write-env-file`,
+`--no-env-file`, `--keychain`, `--no-keychain`, `--launchctl`,
+`--shell-profile zsh|bash|fish|all|skip`, `--health`, `--no-health`, and
+`--json`.
 
-Plan mode prints the exact files and commands that would change and writes nothing. Apply mode records the plan, applied actions, and drift list in the result. `--yes` applies without an interactive confirmation.
+Plan mode prints the exact files and commands that would change and writes
+nothing. Apply records the plan, applied actions, and drift list in the result.
+`--yes` applies without an interactive confirmation. Credential-only setup
+defaults to an unselected CLI provider and never changes Codex Desktop auth,
+Fast state, model selection, or catalog binding.
 
 Persistence modes:
 
@@ -41,7 +64,12 @@ Persistence modes:
 - `process_only_ephemeral`: all durable persistence choices were disabled, so the supplied credentials live only in the current process.
 - `none`: no credential source is effective.
 
-`--launchctl` is no longer a credential persistence mode. It may sync the non-secret base URL only and removes `CODEX_LB_API_KEY` / `OPENROUTER_API_KEY` from the user launchd environment.
+`--launchctl` syncs the non-secret value (base URL only) outside Desktop
+compatibility mode. In `desktop-dual-auth-compat`, SKS injects the official
+Center store (`sks-codex-lb.env` / keychain `sks-codex-lb`) into the GUI launch
+environment automatically so Codex Desktop can send `X-Codex-LB-API-Key`
+without any `source ~/.codex/sks-codex-lb.env` step. Stale twin files such as
+`~/.codex/codex-lb.env` and `~/.codex/sks.env` are purged on credential sync.
 
 The combination `--no-env-file --no-keychain --no-launchctl --shell-profile skip` is process-only. Non-interactive process-only setup requires `--yes`; interactive setup asks for a separate `process-only` confirmation. JSON output includes:
 
@@ -87,7 +115,7 @@ The fallback env file is `~/.codex/sks-codex-lb.env` with mode `0600`. Metadata 
   },
   "env_loader": {
     "configured": true,
-    "source_priority": ["process.env", "keychain", "env-file", "legacy-env-file"]
+    "source_priority": ["env-file", "keychain", "process.env"]
   },
   "env_auto_load": true
 }
@@ -95,33 +123,109 @@ The fallback env file is `~/.codex/sks-codex-lb.env` with mode `0600`. Metadata 
 
 SKS must never print raw CODEX_LB_API_KEY missing-env text. It reports setup guidance instead and records wrongness if a fixture ever exposes the raw missing-env message or a secret.
 
-Provider auth invariant:
+Provider and auth invariants:
 
-- `[model_providers.codex-lb]` uses `name = "openai"`, `wire_api = "responses"`, `env_key = "CODEX_LB_API_KEY"`, `supports_websockets = true`, and `requires_openai_auth = true`.
-- `CODEX_LB_API_KEY` is SKS's persisted key source. When the user selects codex-lb auth, SKS also writes Codex's OpenAI-style `auth.json` API-key entry so Codex App actually authenticates through the codex-lb key. ChatGPT OAuth can be preserved as a backup and restored by `sks codex-lb use-oauth`.
-- Codex App Chat/Pro account features require the ChatGPT OAuth auth class. Center exposes **Restore Chat / Pro (OAuth)** for that explicit switch and keeps the codex-lb provider definition and stored credentials ready for later `sks codex-lb use-codex-lb --restart-app` reuse.
-- `sks update` is mode-preserving: active codex-lb remains selected with the same model/reasoning/catalog/routing state, while an existing OAuth/unselected state remains OAuth. Only explicit `use-oauth`, `release`, or `use-codex-lb` actions may change the provider/auth class.
-- A selected and ready codex-lb provider satisfies imagegen route preflight without attempting Codex App built-in feature repair. Completed image output from that selected provider may count as full generated-image evidence; codex-lb used only as a fallback while another provider is selected remains non-Codex fallback evidence.
+- Codex App native features are not authentication-mode switches. Model picker,
+  Fast, image generation, Browser Use, Computer Use, voice, plugins/apps, and
+  other built-in surfaces remain owned by Codex App in every codex-lb routing
+  mode. A codex-lb capability row may be unverified or blocked for that routing
+  path without disabling the corresponding native App feature.
+- Codex Desktop identity is always the real ChatGPT OAuth state in
+  `~/.codex/auth.json`. Setup, repair, enable, disable, update, and ordinary
+  launch preparation read it for validation but do not write it.
+- **Desktop Full Capability** keeps the built-in OpenAI provider selected and
+  writes only an SKS-owned loopback `openai_base_url`. It keeps the CLI
+  `[model_providers.codex-lb]` block stored but unselected and does not bind a
+  local `model_catalog_json`.
+- The loopback bridge strips OAuth/cookies from gateway-bound requests and adds
+  the separate codex-lb key as `X-Codex-LB-API-Key` by default. Explicit
+  `authorization-bearer-compat` is supported only where the operator and
+  gateway both require it.
+- The gateway auth transport is stored once by setup (`sks-codex-lb.json`, and
+  the bridge settings for a running bridge). `status`, `capabilities`, and
+  `use-desktop-full` honour that stored choice; `--gateway-auth` /
+  `--compat-bearer` pin a different transport for a single invocation only. No
+  command silently substitutes a default transport, so a gateway that only
+  accepts `Authorization: Bearer` stays reachable from SKS Center without a CLI
+  step. SKS Center asks for the transport in `Configure / Update…`.
+- A gateway that answers `401`/`403` to the configured transport is reported as
+  `codex_lb_gateway_auth_rejected_for_transport:<transport>` with guidance to
+  re-run setup with the other transport. It is never reported as an
+  unreachable gateway or as a generic bridge failure.
+- Desktop Full Capability activation requires a real loopback HTTP round trip —
+  that is the path every Codex Desktop request takes, and it also proves the
+  gateway accepted the configured transport. A gateway that does not proxy
+  `/realtime` WebSocket upgrades leaves voice/realtime unverified and is
+  reported in `transport_warnings` with
+  `transport_capabilities_verified: false`; it does not roll back working HTTP
+  routing.
+- **Desktop compatibility** uses exact `name = "OpenAI"`,
+  `requires_openai_auth = true`, no `env_key`, and
+  `env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }`.
+- **CLI Provider** uses `name = "codex-lb"`,
+  `env_key = "CODEX_LB_API_KEY"`, and `requires_openai_auth = false`. It is
+  selected explicitly per CLI launch, not as the global Desktop provider.
+- An API key found only in shared Codex auth is never assumed to be a codex-lb
+  gateway credential. Supply the gateway key with setup. Legacy destructive
+  routing is left unchanged until
+  `sks codex-lb migrate-legacy-desktop --restart-app`. Migration cannot write
+  a successful receipt without the required restart and post-restart identity
+  verification.
 
-Imagegen under a selected codex-lb provider:
+Capability and evidence invariants:
 
-- Selecting `model_provider = "codex-lb"` is by itself enough to reach image generation. The Codex App `$imagegen` surface answers through this same proxy, so requiring `SKS_IMAGEGEN_ALLOW_CODEX_LB_API_FALLBACK=1` there left the only reachable path switched off. `SKS_IMAGEGEN_ALLOW_CODEX_LB_API_FALLBACK=0` (or `allowCodexLbApiFallback: false`) still disables it and keeps every request local.
-- The request goes to `<base_url>/responses` with `tools: [{ type: "image_generation" }]`. When the provider closes `response.completed` with an empty `output`, SKS may recover a final image from `response.output_item.done` (`item.result`) and records `image_output_provenance = "response.output_item.done"`. `response.image_generation_call.partial_image` frames are recorded only as partial provenance and are never promoted to generated output or full evidence.
-- The request model comes from the served catalog (`model_catalog_json`), not from `config.toml`'s `model`: a slug the codex-lb key cannot use is rejected with `403 model_not_allowed`. Precedence is `SKS_IMAGEGEN_RESPONSES_MODEL` → configured `model` when the catalog lists it → first catalog slug.
-- The API key is resolved through `loadCodexLbEnv`, which selects the candidate whose fingerprint matches `$CODEX_HOME/sks-codex-lb.json` (default `~/.codex/sks-codex-lb.json`). Config, env, metadata, and tool-catalog discovery all honor `CODEX_HOME`. A stale exported `CODEX_LB_API_KEY` therefore no longer shadows the SKS-managed env file and produces a `401` while every capability probe still reports ready.
-- Evidence class is `codex_lb_provider_imagegen` with `output_source = codex_lb_provider_responses`, and it counts as full generated-image evidence. The taxonomy lives in `src/core/imagegen/imagegen-evidence.ts`; every gate (route gate, stop gate, PPT slide review, generated-image ledger) asks it rather than restating the accepted classes. codex-lb enabled as a *fallback* while another provider is selected stays `non_codex_api_fallback` and still blocks — only a selected provider earns the class.
-- Callout extraction (reading the generated image back into an issue ledger) runs over the same provider when no Codex session id is passed, so `$sks-image-ux-review` completes without `OPENAI_API_KEY`. The provider answers SSE even for `stream: false` and again closes `response.completed` with an empty `output`, so `src/core/responses-stream.ts` recovers streamed items for both the image and the json_schema text.
-- The Responses API rejects a few JSON Schema constructs that `schemas/codex/*.json` uses. `strictJsonSchemaFormat` now normalizes them: a `const`/`enum`-only property gets its inferred `type`, `$defs`/`definitions` are made strict like inline schemas, and a 2020-12 `prefixItems` tuple becomes a homogeneous `items` schema with `minItems`/`maxItems` keeping the arity. A mixed-type tuple is left alone rather than silently widened.
+- HTTP, SSE, multipart, WebSocket, redirects, image events, computer
+  call/output, realtime events, browser surfaces, plugins/apps, model picker,
+  and Fast metadata are evaluated separately.
+- Config, manifests, mocks, and fixtures may establish
+  `available_unverified`; they do not establish `verified`.
+- Full image verification requires an actual image artifact. Full Computer Use
+  verification requires the call/output feedback loop. Full voice verification
+  requires create, rewritten Location, WebSocket upgrade, server event, and
+  clean close evidence.
+- Native mode consumes the gateway's catalog through the bridge and preserves
+  unknown fields. It does not synthesize or bind a Desktop-local codex-lb
+  catalog.
+- `sks codex-lb capabilities --level shallow|transport|deep --json` reports
+  `verified`, `available_unverified`, `blocked`, `unsupported`, or `skipped`
+  without upgrading fixture evidence into real Desktop proof.
+- Deep evidence is accepted only as
+  `sks.codex-lb-trusted-deep-evidence.v1` together with an out-of-band
+  `sks.codex-lb-deep-evidence-trust-anchor-set.v1`. Mode, loopback endpoint,
+  producer, run id, freshness, payload hash, and anchor identity must match.
+  Raw JSON, a self-hash without an anchor, stale captures, and fixtures cannot
+  promote a capability.
+- Full release proof additionally runs
+  `npm run codex-lb:desktop-real-evidence`. It returns
+  `real_required_missing` until a current real Codex Desktop capture covers
+  native feature preservation, Fast effectiveness, image artifact creation,
+  the Computer Use feedback loop, voice WebSocket lifecycle, plugins/browser,
+  existing and new threads, disable/byte-exact rollback, App restart, Mac
+  reboot recovery, the separately hosted other-Mac runtime, and
+  authentication-mode independence. The standalone command remains
+  fail-closed, while the cross-platform release runner records a missing
+  capture as optional live coverage instead of making Linux CI or a CLI-only
+  workstation claim native Desktop execution.
 
 Exact setup-choice effects:
 
-- `--use-default-provider` writes `[model_providers.codex-lb]` with the current App contract above, then selects top-level `model_provider = "codex-lb"`.
-- `--no-default-provider` writes the provider block but does not select top-level `model_provider`.
+- Credential-only setup writes an unselected CLI provider and leaves Desktop
+  routing unchanged.
+- `--desktop-mode desktop-full` activates the managed loopback bridge only
+  after ChatGPT OAuth and bridge startup checks pass.
+- `--desktop-mode desktop-compat` activates the explicit dual-auth
+  compatibility provider.
+- `--desktop-mode cli-only` keeps the provider unselected; `sks codex-lb
+  use-cli` returns the explicit CLI launch command.
 - `--write-env-file` writes `~/.codex/sks-codex-lb.env` with mode `0600`.
 - `--no-env-file` does not write the env file; the current process can still verify the supplied key.
 - `--keychain` attempts macOS Keychain storage; `--no-keychain` never runs the `security` command.
-- `--launchctl` syncs the GUI launch environment when available; `--no-launchctl` never runs `launchctl setenv`.
-- `--shell-profile skip` modifies no shell profile.
+- `--launchctl` syncs the non-secret base URL for non-compat modes. Desktop
+  compatibility mode injects the Center store key into the GUI launch
+  environment automatically and removes stale twin credential files.
+- `--shell-profile skip` modifies no shell profile. Shell sourcing is not part
+  of the Desktop happy path; use SKS Center or `sks codex-lb setup` /
+  `set-key` so Desktop reads the official store.
 - Action reports list only actions actually performed, and drift checks fail setup when requested choices do not match actual filesystem, Keychain, launchctl, or shell-profile effects.
 
 Release gates:
@@ -141,7 +245,9 @@ node --test test/blackbox/codex-lb-setup-stdin-no-secret-leak.test.mjs
 - Repeated `5xx` or timeout failures open the circuit.
 - `previous_response_not_found` is a stateless-LB warning, not an automatic failure.
 - Hard failures are surfaced and recorded in circuit health.
-- SKS only bypasses codex-lb when the user chooses fallback or `SKS_CODEX_LB_AUTOBYPASS=1` is set.
+- Ordinary launch preparation does not run an implicit chain/network probe and
+  never changes Desktop auth or routing because a probe failed. Health and
+  capability commands are explicit diagnostics.
 
 Health summaries are written to `~/.codex/sks-codex-lb-health.json` and `<active-project>/.sneakoscope/reports/codex-lb-health.json` when launch health checks or metrics commands update the circuit. Completion Proof evidence includes a `codex_lb` summary from the active project root.
 

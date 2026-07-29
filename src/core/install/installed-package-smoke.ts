@@ -54,7 +54,7 @@ export interface InstalledPackageSmokeReport {
 
 export const INSTALLED_REQUIRED_COMMANDS = ['naruto', 'mcp', 'update', 'menubar'] as const
 export const INSTALLED_REQUIRED_DOLLAR_COMMANDS = ['$sks-naruto', '$sks-work'] as const
-export const INSTALLED_REMOVED_COMMANDS = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui'] as const
+export const INSTALLED_REMOVED_COMMANDS = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui', 'telegram'] as const
 export const INSTALLED_REMOVED_DOLLAR_COMMANDS = Array.from(new Set([
   '$Agent', '$Team', '$MAD-DB', '$Swarm', '$ShadowClone', '$Kagebunshin', '$Ralph',
   ...LEGACY_DOLLAR_COMMAND_NAMES.filter((command) => command.toLowerCase() !== '$sks'),

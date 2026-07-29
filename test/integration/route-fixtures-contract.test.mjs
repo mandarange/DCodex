@@ -15,6 +15,7 @@ const ROUTES = [
   ['db', false],
   ['wiki', false],
   ['gx', true],
+  ['align', false],
   ['goal', false],
   ['mad-sks', false]
 ];

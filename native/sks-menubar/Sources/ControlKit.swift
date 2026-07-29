@@ -28,6 +28,8 @@ enum ControlKit {
         dot.setAccessibilityHidden(true)
         let label = NSTextField(labelWithString: text)
         label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         label.setAccessibilityLabel(text)
         let row = NSStackView(views: [dot, label])
         row.orientation = .horizontal
@@ -60,26 +62,27 @@ enum ControlKit {
         return row
     }
 
-    /// The page's single recommended action: default-button prominence (Return key).
-    static func primaryButton(_ title: String, target: AnyObject, action: Selector) -> NSButton {
+    /// A visually prominent recommended action. Return-key activation is
+    /// opt-in so a page can never acquire several competing default buttons.
+    static func primaryButton(_ title: String, target: AnyObject, action: Selector, isDefault: Bool = false) -> NSButton {
         let button = NSButton(title: title, target: target, action: action)
         button.bezelStyle = .rounded
-        button.keyEquivalent = "\r"
+        button.bezelColor = .controlAccentColor
+        if isDefault { button.keyEquivalent = "\r" }
         button.setAccessibilityLabel(title)
+        button.setAccessibilityIdentifier("sks-center-primary-\(identifier(title))")
         return button
     }
 
     /// Page header: large title + one-line subtitle, replacing per-page ad hoc stacks.
     static func header(_ title: String, _ subtitle: String) -> NSStackView {
-        let heading = NSTextField(labelWithString: title)
-        heading.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
-        let detail = NSTextField(wrappingLabelWithString: subtitle)
-        detail.font = NSFont.systemFont(ofSize: 12)
-        detail.textColor = .secondaryLabelColor
+        let heading = NativeView.title(title)
+        let detail = NativeView.detail(subtitle)
         let stack = NSStackView(views: [heading, detail])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 4
+        stack.setAccessibilityIdentifier("sks-center-header-\(identifier(title))")
         return stack
     }
 
@@ -90,6 +93,7 @@ enum ControlKit {
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 8
+        row.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         if !trailing.isEmpty {
             let spacer = NSView()
             spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -98,5 +102,12 @@ enum ControlKit {
             for view in trailing { row.addArrangedSubview(view) }
         }
         return row
+    }
+
+    private static func identifier(_ value: String) -> String {
+        value.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
     }
 }

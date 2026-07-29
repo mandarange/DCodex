@@ -12,11 +12,11 @@ const codexLbConfig = [
   'model_provider = "codex-lb"',
   '',
   '[model_providers.codex-lb]',
-  'name = "openai"',
+  'name = "codex-lb"',
   'base_url = "https://lb.example.test"',
   'wire_api = "responses"',
   'env_key = "CODEX_LB_API_KEY"',
-  'requires_openai_auth = true',
+  'requires_openai_auth = false',
   ''
 ].join('\n')
 await fs.writeFile(path.join(codexHome, 'config.toml'), codexLbConfig)

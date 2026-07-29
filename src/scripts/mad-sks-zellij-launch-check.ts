@@ -21,7 +21,8 @@ const installHelpers = await fs.readFile(path.join(root, 'src', 'cli', 'install-
 const madCommand = await fs.readFile(path.join(root, 'src', 'core', 'commands', 'mad-sks-command.ts'), 'utf8');
 const installSafetyOk = !installHelpers.includes("--from-postinstall', '--install-scope', 'global', '--force', '--yes")
   && installHelpers.includes('SKS_POSTINSTALL_AUTO_INSTALL_CLI_TOOLS')
-  && installHelpers.includes('Postinstall reports missing CLI tools but does not mutate Homebrew/npm globals')
+  && installHelpers.includes('postinstallExternalMutationsAllowed(process.env)')
+  && installHelpers.includes('Optional Homebrew/npm-global tool repair remains off unless SKS_POSTINSTALL_AUTO_INSTALL_CLI_TOOLS=1')
   && installHelpers.includes('Codex CLI missing. Install @openai/codex');
 const consoleDetailOk = madCommand.includes("['stderr_tail'")
   && madCommand.includes("['stdout_tail'")

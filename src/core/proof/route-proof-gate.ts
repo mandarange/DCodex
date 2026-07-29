@@ -56,8 +56,11 @@ export async function validateRouteCompletionProof(root: any, { missionId = null
         if (Number(routeGate.target_subagents || 0) !== target.targetSubagents) issues.push('official_subagent_target_subagents_mismatch');
       }
       if (missionId && modernRunContract) {
+        const currentGateFile = officialSubagentCurrentGateFile(normalizedRoute, state);
         const diskGate: any = normalizeLegacySubagentCountFields(
-          await readJson(path.join(root, '.sneakoscope', 'missions', missionId, 'naruto-gate.json'), null).catch(() => null),
+          currentGateFile
+            ? await readJson(path.join(root, '.sneakoscope', 'missions', missionId, currentGateFile), null).catch(() => null)
+            : null,
           plan
         );
         if (!diskGate) issues.push('official_subagent_current_gate_missing');
@@ -95,4 +98,11 @@ function stableJson(value: unknown): string {
     return `{${Object.keys(row).sort().map((key) => `${JSON.stringify(key)}:${stableJson(row[key])}`).join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function officialSubagentCurrentGateFile(route: any, state: any = {}): string | null {
+  if (normalizeProofRoute(route) === '$Naruto') return 'naruto-gate.json';
+  const candidate = String(state.stop_gate || '').trim();
+  if (!candidate || path.basename(candidate) !== candidate || !/^[A-Za-z0-9._-]+\.json$/.test(candidate)) return null;
+  return candidate;
 }

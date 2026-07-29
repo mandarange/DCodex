@@ -9,8 +9,8 @@ import { compareReleasePacks, inspectReleaseTarball } from '../release-pack-rece
 test('release pack receipts bind exact local and staged tarball bytes', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-receipt-'))
   try {
-    const first = createTarball(root, 'first', '6.3.0')
-    const second = createTarball(root, 'second', '6.3.1')
+    const first = createTarball(root, 'first', '8.0.0')
+    const second = createTarball(root, 'second', '8.0.1')
     const local = inspectReleaseTarball({
       tarball: first,
       kind: 'local',
@@ -22,7 +22,7 @@ test('release pack receipts bind exact local and staged tarball bytes', () => {
     const different = inspectReleaseTarball({ tarball: second, kind: 'staged', root })
     assert.equal(local.ok, true, local.blockers.join(','))
     assert.equal(local.package_name, 'sneakoscope')
-    assert.equal(local.package_version, '6.3.0')
+    assert.equal(local.package_version, '8.0.0')
     assert.match(local.sha256, /^[a-f0-9]{64}$/)
     assert.match(local.sha512_integrity, /^sha512-/)
     assert.equal(local.secret_scan.ok, true)
@@ -43,7 +43,7 @@ test('release pack inspection fails closed on retired runtime identity outside t
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-retired-surface-'))
   const leakedIdentity = 'team_trigger_matrix'
   try {
-    const tarball = createTarball(root, 'retired-surface', '6.3.0', '', {
+    const tarball = createTarball(root, 'retired-surface', '8.0.0', '', {
       'dist/core/runtime/leak.js': `export const leaked = ${JSON.stringify(leakedIdentity)};\n`
     })
     const receipt = inspectReleaseTarball({ tarball, kind: 'staged', root })
@@ -59,7 +59,7 @@ test('release pack inspection fails closed on retired runtime identity outside t
 test('release pack inspection rejects Team workdirs, current wording, and mixed-case commands outside migration modules', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-team-current-surface-'))
   try {
-    const tarball = createTarball(root, 'team-current-surface', '6.3.0', '', {
+    const tarball = createTarball(root, 'team-current-surface', '8.0.0', '', {
       'dist/core/runtime/leak.js': [
         'export const workdir = "team-inbox";',
         'export const wording = "Team architecture";',
@@ -80,7 +80,7 @@ test('release pack inspection rejects Team workdirs, current wording, and mixed-
 test('release pack inspection allows retired tokens only in explicit cleanup and migration modules', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-retired-allowlist-'))
   try {
-    const tarball = createTarball(root, 'retired-allowlist', '6.3.0', '', {
+    const tarball = createTarball(root, 'retired-allowlist', '8.0.0', '', {
       'dist/core/doctor/retired-managed-residue-private.js': 'const tombstone = "sks team --json";\n',
       'dist/core/doctor/retired-managed-projection-residue.js': 'const oldMode = "strict-team";\n',
       'dist/core/doctor/retired-managed-residue-missions.js': 'const oldRoute = "$Team"; const oldGoalField = "ralph_removed";\n',
@@ -99,7 +99,7 @@ test('release pack inspection allows retired tokens only in explicit cleanup and
 test('release pack inspection does not exempt retired commands in the global mode router', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-global-router-'))
   try {
-    const tarball = createTarball(root, 'global-router-leak', '6.3.0', '', {
+    const tarball = createTarball(root, 'global-router-leak', '8.0.0', '', {
       'dist/cli/global-mode-router.js': 'export const leaked = "sks team --json";\n'
     })
     const receipt = inspectReleaseTarball({ tarball, kind: 'staged', root })
@@ -113,7 +113,7 @@ test('release pack inspection does not exempt retired commands in the global mod
 test('release pack inspection rejects retired Ralph identity in generated customer artifacts', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-retired-ralph-'))
   try {
-    const tarball = createTarball(root, 'retired-ralph', '6.3.0', '', {
+    const tarball = createTarball(root, 'retired-ralph', '8.0.0', '', {
       'dist/core/init.js': 'export const guidance = "Ralph route is removed";\n',
       'dist/core/goal-workflow.js': 'export const contract = { ralph_removed: true };\n'
     })
@@ -128,7 +128,7 @@ test('release pack inspection rejects retired Ralph identity in generated custom
 test('release pack inspection rejects removed dashboard prose and command surfaces', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-dashboard-surface-'))
   try {
-    const tarball = createTarball(root, 'dashboard-surface', '6.3.0', '', {
+    const tarball = createTarball(root, 'dashboard-surface', '8.0.0', '', {
       'dist/cli/command-manifest-lite.js': 'export const summary = "Open Dashboard with sks ui";\n',
       'dist/core/runtime/leak.js': 'export const option = "--zellij-dashboard"; export const artifact = "agent-codex-dashboard.json";\n'
     })
@@ -146,7 +146,7 @@ test('release pack inspection rejects removed dashboard prose and command surfac
 test('release pack inspection rejects removed dashboard files even when their contents are empty', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-dashboard-file-'))
   try {
-    const tarball = createTarball(root, 'dashboard-file', '6.3.0', '', {
+    const tarball = createTarball(root, 'dashboard-file', '8.0.0', '', {
       'dist/core/commands/ui-command.js': '',
       'dist/core/ui/dashboard-html.js': '',
       'dist/core/zellij/zellij-dashboard-pane.js': ''
@@ -162,7 +162,7 @@ test('release pack inspection rejects removed dashboard files even when their co
 test('release pack inspection does not allow Team injection into current generated guidance', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-current-guidance-team-'))
   try {
-    const tarball = createTarball(root, 'current-guidance-team', '6.3.0', '', {
+    const tarball = createTarball(root, 'current-guidance-team', '8.0.0', '', {
       'dist/core/init/skills.js': 'export const currentSkill = "$Team";\n',
       'dist/core/doctor/current-project-guidance.js': 'export const currentGuidance = "Team architecture";\n'
     })
@@ -179,7 +179,7 @@ test('release pack inspection does not allow Team injection into current generat
 test('release pack inspection still rejects an actual lowercase retired CLI command', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-retired-command-'))
   try {
-    const tarball = createTarball(root, 'retired-command', '6.3.0', '', {
+    const tarball = createTarball(root, 'retired-command', '8.0.0', '', {
       'dist/core/runtime/leak.js': 'export const command = "sks agent run";\n'
     })
     const receipt = inspectReleaseTarball({ tarball, kind: 'staged', root })
@@ -194,7 +194,7 @@ test('release pack inspection rejects retired Naruto options and workers command
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-retired-naruto-surface-'))
   const leaked = ['--naruto', '--clones', 'naruto workers']
   try {
-    const tarball = createTarball(root, 'retired-naruto-surface', '6.3.0', '', {
+    const tarball = createTarball(root, 'retired-naruto-surface', '8.0.0', '', {
       'dist/core/runtime/leak.js': `export const leaked = ${JSON.stringify(leaked)};\n`
     })
     const receipt = inspectReleaseTarball({ tarball, kind: 'staged', root })
@@ -213,7 +213,7 @@ test('release pack inspection rejects retired Naruto options and workers command
 test('release pack inspection rejects every packaged menu bar MCP identity spelling', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-retired-mcp-identity-'))
   try {
-    const tarball = createTarball(root, 'retired-mcp-identity', '6.3.0', '', {
+    const tarball = createTarball(root, 'retired-mcp-identity', '8.0.0', '', {
       'dist/core/runtime/leak.js': [
         'export const dash = "sks.menubar-mcp-list.v1";',
         'export const underscore = "sks.menubar_mcp_mutation.v1";',
@@ -234,7 +234,7 @@ test('release pack inspection fails closed on secret-like content without echoin
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-secret-'))
   const secret = `ghp_${'a'.repeat(40)}`
   try {
-    const tarball = createTarball(root, 'secret', '6.3.0', secret)
+    const tarball = createTarball(root, 'secret', '8.0.0', secret)
     const receipt = inspectReleaseTarball({ tarball, kind: 'staged', root })
     assert.equal(receipt.ok, false)
     assert.equal(receipt.secret_scan.ok, false)
@@ -251,7 +251,7 @@ test('release pack comparison rejects matching but malformed receipts', () => {
     ok: true,
     kind: 'local',
     package_name: 'sneakoscope',
-    package_version: '6.3.0',
+    package_version: '8.0.0',
     source_commit: null,
     tarball_name: '',
     tarball_path: '',
@@ -274,8 +274,8 @@ test('release pack comparison rejects matching but malformed receipts', () => {
 
 test('release pack comparison recomputes frozen package budgets instead of trusting receipt claims', () => {
   const forged = {
-    schema: 'sks.release-pack-receipt.v1', ok: true, kind: 'local', package_name: 'sneakoscope', package_version: '6.3.0',
-    source_commit: 'a'.repeat(40), tarball_name: 'sneakoscope-6.3.0.tgz', tarball_path: '.sneakoscope/reports/release/6.3.0/artifacts/sneakoscope-6.3.0.tgz', bytes: 999_999_999, unpacked_bytes: 999_999_999,
+    schema: 'sks.release-pack-receipt.v1', ok: true, kind: 'local', package_name: 'sneakoscope', package_version: '8.0.0',
+    source_commit: 'a'.repeat(40), tarball_name: 'sneakoscope-8.0.0.tgz', tarball_path: '.sneakoscope/reports/release/8.0.0/artifacts/sneakoscope-8.0.0.tgz', bytes: 999_999_999, unpacked_bytes: 999_999_999,
     sha256: 'a'.repeat(64), sha512_integrity: 'sha512-YQ==', file_count: 1, file_list_sha256: 'b'.repeat(64),
     budget: { ok: true, max_packed_bytes: 999_999_999, max_unpacked_bytes: 999_999_999, max_file_count: 999_999, blockers: [] },
     npm_pack_proof: { proof_id: 'c'.repeat(64), info_sha256: 'd'.repeat(64), file_list_sha256: 'e'.repeat(64) },

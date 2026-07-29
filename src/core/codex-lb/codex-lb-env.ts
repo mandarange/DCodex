@@ -13,7 +13,7 @@ var r=SecItemUpdate(q as CFDictionary,v as CFDictionary)
 if r==errSecItemNotFound{var n=q;n[kSecValueData as String]=Data(k.utf8);r=SecItemAdd(n as CFDictionary,nil)}
 if r != errSecSuccess{FileHandle.standardError.write(Data("keychain_status=\\(r)\\n".utf8));exit(1)}`;
 
-export type CodexLbEnvSource = 'process.env' | 'keychain' | 'env-file' | 'legacy-env-file' | 'project-local' | 'missing';
+export type CodexLbEnvSource = 'process.env' | 'keychain' | 'env-file' | 'project-local' | 'missing';
 
 export type CodexLbEnvLoadResult = {
   schema: 'sks.codex-lb-env.v1';
@@ -62,10 +62,6 @@ export function codexLbEnvPath(home: unknown = process.env.HOME || os.homedir())
   return path.join(String(home || os.homedir()), '.codex', 'sks-codex-lb.env');
 }
 
-export function legacyCodexLbEnvPath(home: unknown = process.env.HOME || os.homedir()): string {
-  return path.join(String(home || os.homedir()), '.codex', 'sks.env');
-}
-
 export function codexLbMetadataPath(home: unknown = process.env.HOME || os.homedir()): string {
   return path.join(String(home || os.homedir()), '.codex', 'sks-codex-lb.json');
 }
@@ -94,6 +90,7 @@ export async function readCodexLbModelCatalog(opts: {
   loadedEnv?: CodexLbEnvLoadResult;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  gatewayAuthTransport?: 'x-codex-lb-api-key' | 'authorization-bearer-compat';
 } = {}): Promise<CodexLbModelCatalogResult> {
   const loaded = opts.loadedEnv || await loadCodexLbEnv();
   if (!loaded.configured || !loaded.base_url || !loaded.secret_api_key) {
@@ -120,9 +117,13 @@ export async function readCodexLbModelCatalog(opts: {
     };
   }
   const fetchImpl = opts.fetchImpl || fetch;
+  const gatewayAuthTransport = opts.gatewayAuthTransport || 'x-codex-lb-api-key';
+  const gatewayHeaders = gatewayAuthTransport === 'authorization-bearer-compat'
+    ? { Authorization: `Bearer ${loaded.secret_api_key}` }
+    : { 'X-Codex-LB-API-Key': loaded.secret_api_key };
   try {
     const response = await fetchImpl(`${loaded.base_url}/models`, {
-      headers: { Authorization: `Bearer ${loaded.secret_api_key}` },
+      headers: gatewayHeaders,
       redirect: 'error',
       signal: AbortSignal.timeout(Math.max(250, Number(opts.timeoutMs || 5000)))
     });
@@ -211,25 +212,22 @@ export function codexLbBaseUrlSecurityBlocker(input: unknown): string | null {
 export async function loadCodexLbEnv(opts: any = {}): Promise<CodexLbEnvLoadResult> {
   const home = opts.home || process.env.HOME || os.homedir();
   const metadataPath = opts.metadataPath || codexLbMetadataPath(home);
-  const envPaths = [
-    opts.envPath || codexLbEnvPath(home),
-    opts.legacyEnvPath || legacyCodexLbEnvPath(home)
-  ];
-  const sourcePriority: CodexLbEnvSource[] = ['process.env', 'env-file', 'keychain', 'legacy-env-file'];
+  const envPaths = [opts.envPath || codexLbEnvPath(home)];
+  // Center / official store first. Ambient process.env is last-resort only so a
+  // stale shell export cannot override SKS Center credentials.
+  const sourcePriority: CodexLbEnvSource[] = ['env-file', 'keychain', 'process.env'];
   if (opts.allowProjectSecrets) sourcePriority.push('project-local');
 
   const processEnv = pickEnv(opts.processEnv || process.env);
   const envFile = await readEnvFile(envPaths[0]);
-  const legacyEnv = await readEnvFile(envPaths[1]);
   const keychain = await readMacKeychain(opts);
   const projectLocal: { apiKey?: string; baseUrl?: string } = opts.allowProjectSecrets ? await readEnvFile(path.join(opts.root || process.cwd(), '.env')) : {};
   const metadata = await readCodexLbCredentialMetadata(metadataPath);
 
   const apiKeyCandidates = [
-    { source: 'process.env' as const, apiKey: processEnv.apiKey },
     { source: 'env-file' as const, apiKey: envFile.apiKey },
     { source: 'keychain' as const, apiKey: keychain.apiKey },
-    { source: 'legacy-env-file' as const, apiKey: legacyEnv.apiKey },
+    { source: 'process.env' as const, apiKey: processEnv.apiKey },
     ...(opts.allowProjectSecrets ? [{ source: 'project-local' as const, apiKey: String(projectLocal.apiKey || '') }] : [])
   ].filter((candidate) => Boolean(candidate.apiKey));
   const candidateFingerprints = await Promise.all(apiKeyCandidates.map(async (candidate) => ({
@@ -241,7 +239,7 @@ export async function loadCodexLbEnv(opts: any = {}): Promise<CodexLbEnvLoadResu
     : candidateFingerprints[0];
   const keySource = selectedApiKey?.source || 'missing';
   const apiKey = selectedApiKey?.apiKey || '';
-  const configuredBaseUrl = normalizeCodexLbBaseUrl(processEnv.baseUrl || envFile.baseUrl || legacyEnv.baseUrl || projectLocal.baseUrl || '');
+  const configuredBaseUrl = normalizeCodexLbBaseUrl(envFile.baseUrl || processEnv.baseUrl || projectLocal.baseUrl || '');
   const apiKeySha256 = selectedApiKey?.sha256 || '';
   const binding = evaluateCodexLbCredentialBinding({
     metadata,

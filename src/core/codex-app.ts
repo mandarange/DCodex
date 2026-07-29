@@ -9,11 +9,22 @@ import { PRODUCT_DESIGN_AUTO_INSTALL_ENV, ensureProductDesignPluginInstalled, pr
 import { GLM_CODEX_CONFIG_PROVIDER_ID, GLM_52_OPENROUTER_MODEL, RETIRED_GLM_DESKTOP_CONFIG_PROFILE_IDS } from './codex-app/openrouter-provider.js';
 import { sksOpenRouterCatalogPath } from './codex-app/codex-model-catalog.js';
 import { resolveOpenRouterApiKey } from './providers/openrouter/openrouter-secret-store.js';
-import { codexLbEnvPath, loadCodexLbEnv, parseShellEnvValue, readCodexLbModelCatalog } from './codex-lb/codex-lb-env.js';
+import {
+  codexLbEnvPath,
+  codexLbMetadataPath,
+  loadCodexLbEnv,
+  parseShellEnvValue,
+  readCodexLbModelCatalog
+} from './codex-lb/codex-lb-env.js';
 import {
   codexLbToolCatalogPath,
-  inspectCodexLbToolCatalog
+  inspectCodexLbToolCatalog,
+  shouldBindLocalModelCatalog
 } from './codex-lb/codex-lb-tool-catalog.js';
+import type {
+  CodexLbDesktopMode,
+  CodexLbGatewayAuthTransport
+} from './codex-lb/desktop-mode.js';
 import { isSksOwnedGlobalUiLock } from './codex-app/codex-app-ui-state-snapshot.js';
 import { redactString } from './secret-redaction.js';
 import { escapeRegExp } from './text/regex.js';
@@ -167,7 +178,7 @@ export async function codexAppIntegrationStatus(opts: any = {}) {
   });
   const pluginPickerReady = requiredFeatureFlags.tool_suggest && requiredFeatureFlags.plugins && requiredFeatureFlags.apps && defaultPlugins.ok && pluginSkillShadows.ok && fastModeConfig.ok;
   const gitActions = codexGitActionReadiness({ requiredFeatureFlags, remoteControl });
-  const selectedProviderReady = providerModelUi.selected_provider_ok !== false;
+  const selectedProviderReady = providerModelUi.effective_ready === true;
   const ready = appInstalled && Boolean(codex.bin) && mcpList.ok && featureList.ok && requiredFeatureFlagsOk && pluginPickerReady && fastModeConfig.ok && selectedProviderReady && imageGenerationReady && gitActions.ok && computerUseReady && browserToolReady && chromeExtension.ok;
   return {
     ok: ready,
@@ -202,6 +213,7 @@ export async function codexAppIntegrationStatus(opts: any = {}) {
       fast_mode_config: fastModeConfig,
       provider_model_ui: providerModelUi,
       selected_provider_ready: selectedProviderReady,
+      codex_lb_capabilities: opts.codexLbCapabilityReport || null,
       git_actions: gitActions,
       image_generation: imageGenerationReady,
       image_generation_source: imageGenerationReady ? 'codex_features_list' : 'missing',
@@ -465,8 +477,8 @@ function codexNativeSksMenuStatus() {
     companion_install_command: 'sks doctor --fix',
     alternatives: [
       'sks doctor --fix',
-      'sks codex-lb use-codex-lb',
-      'sks codex-lb use-oauth',
+      'sks codex-lb use-desktop-full',
+      'sks codex-lb disable',
       'sks codex-app set-openrouter-key --api-key-stdin',
       'codex://settings'
     ],
@@ -919,13 +931,32 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
   }
   const codexLbProvider = tomlTableAny(configText, ['model_providers.codex-lb', 'model_providers."codex-lb"']);
   const codexLbProviderPresent = Boolean(codexLbProvider);
-  const codexLbProviderContractOk = codexLbProviderPresent
-    && hasTomlString(codexLbProvider, 'name', 'openai')
+  const codexLbCliProviderContractOk = codexLbProviderPresent
+    && hasTomlString(codexLbProvider, 'name', 'codex-lb')
     && hasTomlString(codexLbProvider, 'wire_api', 'responses')
     && hasTomlString(codexLbProvider, 'env_key', 'CODEX_LB_API_KEY')
     && hasTomlBoolean(codexLbProvider, 'supports_websockets', true)
-    && hasTomlBoolean(codexLbProvider, 'requires_openai_auth', true);
+    && hasTomlBoolean(codexLbProvider, 'requires_openai_auth', false);
+  const codexLbCompatProviderContractOk = codexLbProviderPresent
+    && hasTomlString(codexLbProvider, 'name', 'OpenAI')
+    && hasTomlString(codexLbProvider, 'wire_api', 'responses')
+    && hasTomlBoolean(codexLbProvider, 'supports_websockets', true)
+    && hasTomlBoolean(codexLbProvider, 'requires_openai_auth', true)
+    && !hasTomlKey(codexLbProvider, 'env_key')
+    && hasCodexLbGatewayEnvHeader(codexLbProvider);
   const codexLbSelectedDefault = /(?:^|\n)\s*model_provider\s*=\s*"codex-lb"\s*(?:#.*)?(?=\n|$)/.test(topLevelToml(globalConfig));
+  const codexLbDesktopMode: CodexLbDesktopMode = opts.codexLbDesktopMode
+    || inferCodexLbDesktopModeForUi(globalConfig);
+  const codexLbProviderContractOk = codexLbDesktopMode === 'desktop-dual-auth-compat'
+    ? codexLbCompatProviderContractOk
+    : codexLbCliProviderContractOk;
+  const metadata = await readJsonIfExists(
+    opts.codexLbMetadataPath || codexLbMetadataPath(home)
+  );
+  const gatewayAuthTransport = normalizeCodexLbGatewayAuthTransportForUi(
+    opts.codexLbGatewayAuthTransport || metadata?.gateway_auth_transport
+  );
+  const localCatalogBindingAllowed = shouldBindLocalModelCatalog(codexLbDesktopMode);
   const selectedProviderValue = topLevelToml(globalConfig)
     .match(/(?:^|\n)\s*model_provider\s*=\s*"([^"]+)"\s*(?:#.*)?(?=\n|$)/)?.[1] || null;
   const managedCatalogPath = codexLbToolCatalogPath(path.join(home || '', '.codex'));
@@ -933,13 +964,18 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
   const managedCatalogConfigured = Boolean(configuredCatalogPath)
     && path.resolve(configuredCatalogPath) === path.resolve(managedCatalogPath);
   let persistedCatalog: any = null;
-  if (!opts.codexLbModelCatalog && managedCatalogConfigured) {
+  if (!opts.codexLbModelCatalog && managedCatalogConfigured && localCatalogBindingAllowed) {
     persistedCatalog = await inspectCodexLbToolCatalog(managedCatalogPath).catch(() => null);
   }
   let liveCatalog = opts.codexLbModelCatalog || null;
   if (!liveCatalog && !persistedCatalog?.ok && codexLbProviderContractOk && codexLbApiKeySource !== 'missing' && codexLbBaseUrlSource !== 'missing') {
     const loadedEnv = await loadCodexLbEnv({ home, envPath: codexLbEnvFilePath }).catch(() => null);
-    liveCatalog = loadedEnv ? await readCodexLbModelCatalog({ loadedEnv }).catch(() => null) : null;
+    liveCatalog = loadedEnv
+      ? await readCodexLbModelCatalog({
+          loadedEnv,
+          gatewayAuthTransport
+        }).catch(() => null)
+      : null;
   }
   // Prefer the persisted Codex-owned catalog that Desktop actually loads. Live
   // /models remains freshness telemetry and a fallback when no managed file exists.
@@ -961,9 +997,8 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
             source: 'persisted_model_catalog_json'
           }
         : null);
-  const expectedCodexLbModels = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'];
   const catalogModels = Array.isArray(codexLbModelCatalog?.models) ? codexLbModelCatalog.models.map(String) : [];
-  const expectedCodexLbModelsPresent = expectedCodexLbModels.every((model) => catalogModels.includes(model));
+  const advertisedCodexLbModelsPresent = codexLbModelCatalog?.ok === true && catalogModels.length > 0;
   const glmBlockers = [
     ...(glmProviderPresent ? [] : ['glm_openrouter_provider_missing']),
     ...glmProfileBlockers,
@@ -974,11 +1009,14 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
     ...(codexLbProviderPresent && !codexLbProviderContractOk ? ['codex_lb_provider_contract_drift'] : []),
     ...(codexLbApiKeySource !== 'missing' ? [] : ['codex_lb_api_key_missing']),
     ...(codexLbBaseUrlSource !== 'missing' ? [] : ['codex_lb_base_url_missing']),
-    ...(codexLbSelectedDefault && !managedCatalogConfigured && !expectedCodexLbModelsPresent
+    ...(codexLbDesktopMode === 'desktop-native-bridge' && managedCatalogConfigured
+      ? ['native_bridge_local_catalog_replacement_forbidden']
+      : []),
+    ...(codexLbSelectedDefault && localCatalogBindingAllowed && !managedCatalogConfigured && !advertisedCodexLbModelsPresent
       ? ['codex_lb_model_catalog_json_unselected']
       : []),
-    ...(codexLbProviderContractOk && codexLbApiKeySource !== 'missing' && codexLbBaseUrlSource !== 'missing' && !expectedCodexLbModelsPresent
-      ? ['codex_lb_gpt_5_6_catalog_unverified']
+    ...(codexLbProviderContractOk && codexLbApiKeySource !== 'missing' && codexLbBaseUrlSource !== 'missing' && !advertisedCodexLbModelsPresent
+      ? ['codex_lb_model_catalog_unverified']
       : [])
   ];
   const openRouterSelectedDefault = selectedProviderValue === GLM_CODEX_CONFIG_PROVIDER_ID;
@@ -1011,20 +1049,41 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
   const installCommand = 'sks codex-app use-openrouter --model z-ai/glm-5.2';
   const setupCommand = 'sks codex-lb setup --host <domain> --api-key-stdin --yes';
   const setKeyCommand = 'sks codex-lb set-key --api-key-stdin';
+  const desktopPickerEvidence = opts.desktopPickerEvidence || opts.codexLbCapabilityReport?.model_picker || null;
+  const desktopPickerVerified = desktopPickerEvidence?.state === 'verified'
+    || desktopPickerEvidence?.verified === true;
+  const selectedProviderConfigured = selectedProviderBlockers.length === 0;
+  const selectedProviderAdvertised = codexLbSelectedDefault
+    ? advertisedCodexLbModelsPresent
+    : true;
+  const effectiveReady = selectedProviderConfigured && selectedProviderAdvertised && desktopPickerVerified;
   return {
     schema: 'sks.codex-app-provider-model-ui.v1',
     // The top-level readiness contract is intentionally scoped to the active
     // provider. Optional GLM/OpenRouter and codex-lb setup diagnostics remain
     // visible below without making an unrelated provider selection fail.
-    ok: selectedProviderBlockers.length === 0,
-    selected_provider_ok: selectedProviderBlockers.length === 0,
+    ok: effectiveReady,
+    selected_provider_ok: effectiveReady,
+    configured: selectedProviderConfigured,
+    advertised: selectedProviderAdvertised,
+    effective_ready: effectiveReady,
     selected_provider: codexLbSelectedDefault ? 'codex-lb' : (selectedProviderValue || 'oauth'),
     selected_provider_blockers: selectedProviderBlockers,
     optional_provider_blockers: optionalProviderBlockers,
     checked: true,
     verification_scope: 'config_and_provider_catalog',
-    desktop_picker_verified: false,
-    status: selectedProviderBlockers.length === 0 ? 'ready' : 'setup_required',
+    desktop_picker_verified: desktopPickerVerified,
+    desktop_picker_evidence: desktopPickerEvidence,
+    readiness_state: selectedProviderBlockers.length > 0
+      ? 'blocked'
+      : effectiveReady
+        ? 'verified'
+        : 'available_unverified',
+    status: selectedProviderBlockers.length > 0
+      ? 'setup_required'
+      : effectiveReady
+        ? 'ready'
+        : 'available_unverified',
     optional_provider_status: optionalProviderBlockers.length === 0 ? 'ready' : 'setup_available',
     config_paths: {
       codex_config: globalConfigPath,
@@ -1053,6 +1112,9 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
       key_entry_visible: true,
       provider_present: codexLbProviderPresent,
       provider_contract_ok: codexLbProviderContractOk,
+      provider_contract: codexLbDesktopMode === 'desktop-dual-auth-compat'
+        ? 'desktop-dual-auth-compat'
+        : 'cli-provider',
       selected_default: codexLbSelectedDefault,
       key_present: codexLbApiKeySource !== 'missing',
       api_key_source: codexLbApiKeySource,
@@ -1061,11 +1123,15 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
       model_catalog_checked: Boolean(codexLbModelCatalog),
       model_catalog_ok: codexLbModelCatalog?.ok === true,
       model_catalog_source: codexLbModelCatalog?.source || null,
+      desktop_mode: codexLbDesktopMode,
+      gateway_auth_transport: gatewayAuthTransport,
+      local_catalog_binding_allowed: localCatalogBindingAllowed,
       model_catalog_json_configured: managedCatalogConfigured,
       model_catalog_json_path: managedCatalogConfigured ? managedCatalogPath : configuredCatalogPath || null,
       model_catalog_models: catalogModels,
-      expected_models: expectedCodexLbModels,
-      expected_models_present: expectedCodexLbModelsPresent,
+      expected_models: [],
+      expected_models_present: advertisedCodexLbModelsPresent,
+      advertised_models_present: advertisedCodexLbModelsPresent,
       tools_transport: codexLbModelCatalog?.tools_transport || null,
       model_catalog_blockers: codexLbModelCatalog?.blockers || [],
       setup_command: setupCommand,
@@ -1090,6 +1156,60 @@ async function readTextIfExists(file: any) {
   } catch {
     return '';
   }
+}
+
+async function readJsonIfExists(file: string): Promise<Record<string, unknown> | null> {
+  try {
+    const parsed = JSON.parse(await fsp.readFile(file, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function inferCodexLbDesktopModeForUi(config: string): CodexLbDesktopMode {
+  const topLevel = topLevelToml(config);
+  const selected = topLevel.match(
+    /(?:^|\n)\s*model_provider\s*=\s*"([^"]+)"\s*(?:#.*)?(?=\n|$)/
+  )?.[1] || '';
+  const openAiBaseUrl = topLevel.match(
+    /(?:^|\n)\s*openai_base_url\s*=\s*"([^"]+)"\s*(?:#.*)?(?=\n|$)/
+  )?.[1] || '';
+  if (
+    config.includes('# sks-codex-lb-managed-desktop-bridge')
+    && /^http:\/\/(?:127\.0\.0\.1|\[::1\]):\d+\/backend-api\/codex\/?$/i.test(openAiBaseUrl)
+  ) {
+    return 'desktop-native-bridge';
+  }
+  if (
+    config.includes('# sks-codex-lb-managed-desktop-compat')
+    && selected === 'codex-lb'
+  ) {
+    return 'desktop-dual-auth-compat';
+  }
+  return tomlTableAny(config, ['model_providers.codex-lb', 'model_providers."codex-lb"'])
+    ? 'cli-provider'
+    : 'disabled';
+}
+
+function normalizeCodexLbGatewayAuthTransportForUi(
+  value: unknown
+): CodexLbGatewayAuthTransport {
+  return value === 'authorization-bearer-compat'
+    ? 'authorization-bearer-compat'
+    : 'x-codex-lb-api-key';
+}
+
+function hasTomlKey(text: string, key: string): boolean {
+  return new RegExp(
+    `(?:^|\\n)\\s*${escapeRegExp(key)}\\s*=`
+  ).test(text);
+}
+
+function hasCodexLbGatewayEnvHeader(text: string): boolean {
+  return /(?:^|\n)\s*env_http_headers\s*=\s*\{[^}\n]*"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"[^}\n]*\}\s*(?:#.*)?(?=\n|$)/.test(text);
 }
 
 async function findDefaultPluginSource(plugin: any, { home, configText }: any) {
@@ -1145,6 +1265,9 @@ function providerModelUiSummary(status: any = {}) {
       ? ', optional providers can be configured'
       : '';
     return ` ${selected} ready${optionalSetup} (live picker reload required)`;
+  }
+  if (status.configured && status.readiness_state === 'available_unverified') {
+    return ` ${selected} configured, Desktop picker unverified`;
   }
   return ` ${selected} setup ${(status.selected_provider_blockers || status.blockers || []).join(', ') || 'required'}`;
 }

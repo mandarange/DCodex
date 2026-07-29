@@ -107,7 +107,8 @@ function imagegenPreflightReady(capability: any): boolean {
 }
 
 function codexLbImagegenReady(capability: any): boolean {
-  return capability?.codex_lb?.selected === true
+  return (capability?.codex_lb?.selected === true
+      || capability?.codex_lb?.cli_contract === true)
     && capability?.codex_lb?.available === true
     && capability?.codex_lb?.blocker == null;
 }

@@ -16,7 +16,7 @@ import {
 export async function remoteCommand(args: string[] = []): Promise<unknown> {
   if (isHelpRequest(args)) {
     printRemoteUsage();
-    return { schema: 'sks.remote-command.v1', ok: true, action: 'help' };
+    return { schema: 'sks.remote-command.v2', ok: true, action: 'help' };
   }
   const action = args[0] ?? 'readiness';
   const rest = args.slice(1);
@@ -113,14 +113,15 @@ Usage:
   sks remote machines validate [--json]
   sks remote worker --stdio
 
-The machine registry and session targets are written by \`sks telegram setup\`;
-see docs/telegram-and-center.md for the end-to-end pairing flow.
+This command manages SKS remote readiness, registered machines, and the JSONL worker transport.
+It does not install a messaging bridge or create remote sessions. For mobile-first remote coding,
+see docs/orca-remote-coding.md.
 `);
 }
 
 function fail(error: string, supported: readonly string[], json: boolean): unknown {
   process.exitCode = 2;
-  return print({ schema: 'sks.remote-command.v1', ok: false, error, supported }, json);
+  return print({ schema: 'sks.remote-command.v2', ok: false, error, supported }, json);
 }
 
 function print(value: unknown, _json: boolean): unknown {

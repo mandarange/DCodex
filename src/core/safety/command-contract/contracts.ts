@@ -6,7 +6,7 @@ import {
 } from '../../../cli/command-registry.js';
 import type {
   CommandContractRegistryValidation,
-  CommandContractV2,
+  CommandContractV3,
   CommandLatency
 } from './types.js';
 import { NARUTO_ACTIONS } from './types.js';
@@ -178,16 +178,16 @@ function numberFlag(input: JsonObject, key: string, flag: string): string[] {
   return typeof input[key] === 'number' ? [flag, String(input[key])] : [];
 }
 
-function maturityFor(command: CommandEntry): CommandContractV2['maturity'] {
+function maturityFor(command: CommandEntry): CommandContractV3['maturity'] {
   return command.maturity === 'beta' ? 'preview' : command.maturity;
 }
 
-function buildContract(name: CommandName, command: CommandEntry): CommandContractV2 {
+function buildContract(name: CommandName, command: CommandEntry): CommandContractV3 {
   const profile = ARGUMENT_PROFILES[command.inputProfile];
   const r3Denied = command.risk === 'R3';
   const remoteAllowed = !r3Denied && command.remoteAllowed;
   return {
-    schema: 'sks.command-contract.v2',
+    schema: 'sks.command-contract.v3',
     name,
     description: command.summary,
     maturity: maturityFor(command),
@@ -196,16 +196,15 @@ function buildContract(name: CommandName, command: CommandEntry): CommandContrac
     latency: command.latency,
     supports_json: command.supportsJson,
     remote_allowed: remoteAllowed,
-    telegram_allowed: remoteAllowed && command.telegramAllowed,
     input_schema: profile.schema,
     argv_builder: (input: unknown) => [name, ...profile.build((input ?? {}) as JsonObject)],
     required_capabilities: [...command.requiredCapabilities]
   };
 }
 
-let cachedContracts: Map<CommandName, CommandContractV2> | null = null;
+let cachedContracts: Map<CommandName, CommandContractV3> | null = null;
 
-export function commandContracts(): Map<CommandName, CommandContractV2> {
+export function commandContracts(): Map<CommandName, CommandContractV3> {
   if (cachedContracts) return cachedContracts;
   cachedContracts = new Map(
     (Object.keys(COMMANDS) as CommandName[])
@@ -215,7 +214,7 @@ export function commandContracts(): Map<CommandName, CommandContractV2> {
   return cachedContracts;
 }
 
-export function commandContract(name: string): CommandContractV2 | null {
+export function commandContract(name: string): CommandContractV3 | null {
   return commandContracts().get(name as CommandName) ?? null;
 }
 
@@ -231,15 +230,13 @@ export function validateCommandContractRegistry(): CommandContractRegistryValida
       issues.push(`missing_contract:${name}`);
       continue;
     }
-    if (contract.schema !== 'sks.command-contract.v2') issues.push(`invalid_schema:${name}`);
+    if (contract.schema !== 'sks.command-contract.v3') issues.push(`invalid_schema:${name}`);
     if (contract.name !== name) issues.push(`name_mismatch:${name}`);
     if (contract.risk !== command.risk) issues.push(`risk_mismatch:${name}`);
     if (contract.latency !== command.latency) issues.push(`latency_mismatch:${name}`);
     if (contract.supports_json !== command.supportsJson) issues.push(`json_support_mismatch:${name}`);
-    if (command.risk === 'R3' && (command.remoteAllowed || command.telegramAllowed)) issues.push(`r3_metadata_exposed:${name}`);
-    if (contract.risk === 'R3' && (contract.remote_allowed || contract.telegram_allowed)) issues.push(`r3_exposed:${name}`);
-    if (command.telegramAllowed && !command.remoteAllowed) issues.push(`telegram_metadata_without_remote:${name}`);
-    if (contract.telegram_allowed && !contract.remote_allowed) issues.push(`telegram_without_remote:${name}`);
+    if (command.risk === 'R3' && command.remoteAllowed) issues.push(`r3_metadata_exposed:${name}`);
+    if (contract.risk === 'R3' && contract.remote_allowed) issues.push(`r3_exposed:${name}`);
     if (contract.input_schema.type !== 'object' || contract.input_schema.additionalProperties !== false) issues.push(`unsafe_schema:${name}`);
     if (command.supportsJson && command.inputProfile === 'none') issues.push(`json_support_without_input_profile:${name}`);
     if (command.inputProfile !== 'none' && !command.supportsJson) issues.push(`profile_without_json_support:${name}`);

@@ -7,10 +7,6 @@ import fs from 'node:fs/promises';
 import { runProcess } from '../../dist/core/fsx.js';
 import { CODEX_LB_TOOL_OUTPUT_RECOVERY_MIN_VERSION } from '../../dist/core/codex-lb/codex-lb-tool-output-recovery.js';
 
-function catalogModel(slug) {
-  return { slug, display_name: slug, supported_reasoning_levels: [], shell_type: 'shell_command', visibility: 'list', supported_in_api: true, priority: 1, base_instructions: '', supports_reasoning_summaries: true, support_verbosity: true, truncation_policy: { mode: 'tokens', limit: 10_000 }, supports_parallel_tool_calls: true, experimental_supported_tools: [], tool_mode: 'code_mode_only' };
-}
-
 test('codex-lb setup output redacts API key and writes only metadata fingerprint', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-unit-codex-lb-redaction-'));
   const secret = 'sk-redaction-secret';
@@ -23,11 +19,6 @@ test('codex-lb setup output redacts API key and writes only metadata fingerprint
         'x-app-version': CODEX_LB_TOOL_OUTPUT_RECOVERY_MIN_VERSION
       });
       response.end(JSON.stringify({ status: 'ok' }));
-      return;
-    }
-    if (request.url === '/backend-api/codex/models') {
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ models: [catalogModel('gpt-5.6-luna'), catalogModel('gpt-5.6-terra'), catalogModel('gpt-5.6-sol')] }));
       return;
     }
     response.writeHead(404, { 'content-type': 'application/json' });
@@ -61,8 +52,7 @@ test('codex-lb setup output redacts API key and writes only metadata fingerprint
     assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(secret));
     assert.ok(requests.some((request) => request.url === '/health' && request.authorization === undefined));
     const modelRequests = requests.filter((request) => request.url === '/backend-api/codex/models');
-    assert.ok(modelRequests.length > 0);
-    assert.ok(modelRequests.every((request) => request.authorization === `Bearer ${secret}`));
+    assert.equal(modelRequests.length, 0);
     const metadata = JSON.parse(await fs.readFile(path.join(home, '.codex', 'sks-codex-lb.json'), 'utf8'));
     assert.equal(metadata.api_key.redacted, true);
     assert.ok(metadata.api_key.sha256);

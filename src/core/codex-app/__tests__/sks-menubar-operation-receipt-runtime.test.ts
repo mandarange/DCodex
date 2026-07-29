@@ -152,7 +152,10 @@ struct Harness {
 test('native reliability source binds menu-open expiry, status keys, and receipt-driven update UI', async () => {
   const sourceRoot = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources');
   const statusItem = await fs.readFile(path.join(sourceRoot, 'StatusItemController.swift'), 'utf8');
-  const overview = await fs.readFile(path.join(sourceRoot, 'OverviewViewController.swift'), 'utf8');
+  const overview = [
+    await fs.readFile(path.join(sourceRoot, 'OverviewViewController.swift'), 'utf8'),
+    await fs.readFile(path.join(sourceRoot, 'OverviewSummary.swift'), 'utf8')
+  ].join('\n');
   const updates = await fs.readFile(path.join(sourceRoot, 'UpdatesViewController.swift'), 'utf8');
   const processClient = await fs.readFile(path.join(sourceRoot, 'ProcessClient.swift'), 'utf8');
   assert.match(statusItem, /func menuWillOpen\(_ menu: NSMenu\)[\s\S]*refreshExpiredUpdateStatusIfNeeded\(\)/);

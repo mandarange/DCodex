@@ -4,6 +4,7 @@ import {
   sameReleaseAuthorizationSnapshot,
   type ReleaseAuthorizationSnapshot
 } from './release-authorization-snapshot.js'
+import { uniqueValues as unique } from '../text/strings.js'
 
 export const RELEASE_REAL_RESULT_CONTRACT_SCHEMA = 'sks.release-real-result-contract.v1'
 export const RELEASE_REAL_LIVE_COVERAGE_SCHEMA = 'sks.release-real-live-coverage.v1'
@@ -25,6 +26,7 @@ export const RELEASE_REAL_REQUIRED_CHECK_IDS = Object.freeze([
   'codex-sdk:real-smoke'
 ])
 export const RELEASE_REAL_OPTIONAL_CHECK_IDS = Object.freeze([
+  'codex-lb:desktop-real-evidence',
   'imagegen:real-smoke',
   'ux-review:real-imagegen-smoke',
   'ppt:real-imagegen-smoke'
@@ -291,7 +293,11 @@ export function validateReleaseRealSkipProof(input: ReleaseRealSkipProofInput) {
   if (!Number.isInteger(summary?.selected_gates) || summary.selected_gates <= 0) blockers.push('release_real_skip_full_summary_empty')
   if (!Array.isArray(summary?.selected_gate_ids) || summary.selected_gate_ids.length !== summary?.selected_gates) blockers.push('release_real_skip_full_summary_gate_ids_incomplete')
   const expectedReleaseGateIds = unique((input.expectedReleaseGateIds || []).map(String).filter(Boolean)).sort()
-  const selectedReleaseGateIds = unique((Array.isArray(summary?.selected_gate_ids) ? summary.selected_gate_ids : []).map(String).filter(Boolean)).sort()
+  const selectedReleaseGateIds = unique<string>(
+    (Array.isArray(summary?.selected_gate_ids) ? summary.selected_gate_ids : [])
+      .map((value: unknown) => String(value))
+      .filter(Boolean)
+  ).sort()
   if (!expectedReleaseGateIds.length) blockers.push('release_real_skip_expected_release_gate_ids_missing')
   if (expectedReleaseGateIds.length && !sameStringList(expectedReleaseGateIds, selectedReleaseGateIds)) blockers.push('release_real_skip_full_summary_gate_ids_mismatch')
   if (summary?.failed !== 0 || summary?.completed !== summary?.selected_gates) blockers.push('release_real_skip_full_summary_incomplete')
@@ -542,9 +548,6 @@ function countOutcomes(rows: any[]) {
   }
 }
 
-function unique(values: string[]): string[] {
-  return [...new Set(values)]
-}
 
 function sameStringList(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])

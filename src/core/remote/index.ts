@@ -6,7 +6,6 @@ export * from './audit-idempotency.js';
 export * from './owner-proof.js';
 export * from './protocol.js';
 export * from './session-snapshot.js';
-export * from './session-binding.js';
 export * from './worker.js';
 export * from './ssh-worker-client.js';
 export * from './local-worker-client.js';

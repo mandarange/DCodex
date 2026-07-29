@@ -34,7 +34,7 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
         checkButton = NativeView.button("Check Now", target: self, action: #selector(checkNow))
         codexUpdateButton = NativeView.button("Update Codex CLI", target: self, action: #selector(updateCodexCLI))
         codexUpdateButton.setAccessibilityHelp("Update the operator Codex CLI using its verified installation method.")
-        reviewButton = ControlKit.primaryButton("Review and Update", target: self, action: #selector(reviewAndUpdate))
+        reviewButton = ControlKit.primaryButton("Review and Update", target: self, action: #selector(reviewAndUpdate), isDefault: true)
         reviewButton.setAccessibilityHelp("Review the staged update first, then confirm before anything is installed.")
         codexUpdateStatus.setAccessibilityLabel("Codex CLI update result")
         let buttons = NSStackView(views: [checkButton, codexUpdateButton, reviewButton, progress])
@@ -46,16 +46,11 @@ final class UpdatesViewController: NSViewController, ControlCenterPage {
             NativeView.card(title: "Progress", subtitle: "Authoritative stage checklist from the update receipt.", views: [stageStatus]),
             NativeView.card(title: "Recovery", subtitle: "Rollback guidance and the previous Menu Bar app remain available if final verification fails. The update receipt records the exact recovery command and stage state.", views: [remediation])
         ])
-        loadCached()
     }
 
     deinit { receiptTimer?.invalidate() }
 
     func refreshOnAppear() { reloadSnapshot() }
-
-    private func loadCached() {
-        reloadSnapshot()
-    }
 
     private func setBusy(_ value: Bool) {
         busy = value

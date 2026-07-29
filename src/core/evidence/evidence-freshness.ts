@@ -26,9 +26,19 @@ export async function lastJsonlEventTime(file: any) {
   for (const line of text.split(/\n/).filter(Boolean)) {
     try {
       const parsed = JSON.parse(line);
+      if (!eventInvalidatesProof(parsed)) continue;
       const ts = Date.parse(parsed.ts || parsed.time || parsed.created_at || '');
       if (Number.isFinite(ts) && (latest == null || ts > latest)) latest = ts;
     } catch {}
   }
   return latest;
+}
+
+export function eventInvalidatesProof(event: any = {}) {
+  if (event?.proof_invalidating === false) return false;
+  const type = String(event?.type || '').trim();
+  if (/^triwiki\.agents_md_project(?:ed|_failed)$/.test(type)) return false;
+  if (/^pipeline\.compliance_loop_guard(?:\..+)?$/.test(type)) return false;
+  if (/^pipeline\.honest_mode\.loopback(?:_resolved)?$/.test(type)) return false;
+  return true;
 }

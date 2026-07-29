@@ -408,7 +408,10 @@ test('every prose statement of the automatic fanout contract matches the catalog
     { file: 'src/core/routes.ts', anchor: 'Automatic fan-out starts at', style: 'words' },
     { file: 'docs/naruto.md', anchor: 'Automatic fan-out starts at', style: 'words' },
     { file: 'src/core/codex-native/core-skill-manifest.ts', anchor: 'Automatic targets begin at', style: 'digits' },
-    { file: 'src/core/subagents/official-subagent-prompt.ts', anchor: 'automatic fan-out starts at', style: 'words' }
+    // The runtime prompt deliberately renders the targets as digits: the
+    // delegation prompt has a hard byte budget, and digits are the compact
+    // form that still states the targets positionally.
+    { file: 'src/core/subagents/official-subagent-prompt.ts', anchor: 'automatic fan-out starts at', style: 'digits' }
   ] as const
   for (const site of sites) {
     const text = await fs.readFile(path.join(root, site.file), 'utf8')

@@ -49,6 +49,39 @@ test('active Naruto admits only explicit same-mission run and parent-summary con
   assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission-id', 'M-active', '--stdin'], state), false)
 })
 
+test('active Image UX Review admits only explicit same-mission continuation actions', () => {
+  const state = {
+    mission_id: 'M-active',
+    route: 'ImageUXReview',
+    phase: 'IMAGE_UX_REVIEW_READY',
+    route_closed: false
+  }
+  for (const action of ['attach-generated', 'attach-after', 'fix', 'recapture', 'recheck', 'proof']) {
+    assert.equal(safeActiveRouteContinuation('image-ux-review', [action, 'M-active', '--json'], state), true, action)
+    assert.equal(safeActiveRouteContinuation('image-ux-review', [action, 'M-other', '--json'], state), false, action)
+  }
+  assert.equal(safeActiveRouteContinuation('image-ux-review', ['run', '--mission', 'M-active', '--json'], state), true)
+  assert.equal(safeActiveRouteContinuation('image-ux-review', ['extract-issues', '--mission=M-active', '--json'], state), true)
+  assert.equal(safeActiveRouteContinuation('image-ux-review', ['proof', 'latest', '--json'], state), true)
+  assert.equal(safeActiveRouteContinuation('image-ux-review', ['proof', '--json'], state), false)
+  assert.equal(safeActiveRouteContinuation('image-ux-review', ['fixture', 'M-active', '--json'], state), false)
+  assert.equal(safeActiveRouteContinuation('image-ux-review', ['proof', 'M-active'], { ...state, route: 'Naruto' }), false)
+})
+
+test('active non-Naruto route admits only an exact same-mission parent summary', () => {
+  const state = {
+    mission_id: 'M-active',
+    route: 'ImageUXReview',
+    phase: 'IMAGE_UX_REVIEW_READY',
+    route_closed: false
+  }
+  assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission', 'M-active', '--stdin', '--json'], state), true)
+  assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission=M-active', '--stdin'], state), true)
+  assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission', 'M-active'], state), false)
+  assert.equal(safeActiveRouteContinuation('naruto', ['parent-summary', '--mission', 'M-other', '--stdin'], state), false)
+  assert.equal(safeActiveRouteContinuation('naruto', ['run', 'task', '--mission', 'M-active'], state), false)
+})
+
 test('Naruto observation dispatch skips migration repair and remains read-only', async () => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-router-naruto-readonly-'))
   const oldCwd = process.cwd()

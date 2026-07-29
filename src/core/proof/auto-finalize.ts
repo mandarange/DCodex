@@ -1,7 +1,8 @@
 import path from 'node:path';
-import { exists, readJson, type JsonData } from '../fsx.js';
+import { exists, readJson, writeJsonAtomic, type JsonData } from '../fsx.js';
 import { finalizeRouteWithProof } from './route-finalizer.js';
 import { evaluateGate } from '../stop-gate/gate-evaluator.js';
+import { effectiveSubagentTarget } from '../subagents/wave-lifecycle.js';
 
 export async function maybeFinalizeRoute(root: any, {
   missionId,
@@ -31,12 +32,19 @@ export async function maybeFinalizeRoute(root: any, {
     return { ok: false, skipped: true, reason: 'mission_id_or_route_missing' };
   }
   const missionDir = path.join(root, '.sneakoscope', 'missions', missionId);
-  const diskGateObject = gateFile && await exists(path.join(missionDir, gateFile))
+  const rawDiskGateObject = gateFile && await exists(path.join(missionDir, gateFile))
     ? await readJson(path.join(missionDir, gateFile), null)
     : null;
-  const gateObject = diskGateObject || gate || null;
+  const callerGateMismatch = Boolean(gate && rawDiskGateObject && stableJson(gate) !== stableJson(rawDiskGateObject));
+  const officialSubagentBinding = await bindOfficialSubagentEvidence(
+    missionDir,
+    rawDiskGateObject || gate || null
+  );
+  const gateObject = officialSubagentBinding.gate;
+  if (gateFile && rawDiskGateObject && officialSubagentBinding.applied) {
+    await writeJsonAtomic(path.join(missionDir, gateFile), gateObject);
+  }
   const gateVerdict = gateFile ? await evaluateGate(root, missionId, gateFile) : null;
-  const callerGateMismatch = Boolean(gate && diskGateObject && stableJson(gate) !== stableJson(diskGateObject));
   const passed = gateVerdict ? gateVerdict.pass && !callerGateMismatch : gateObject?.passed === true || gateObject?.ok === true || gateObject?.status === 'pass';
   const gateBlockers = gateVerdict && !gateVerdict.pass
     ? [`route_gate_${gateVerdict.verdict}`, ...gateVerdict.reasons.map((item) => `route_gate_${item}`)]
@@ -45,16 +53,19 @@ export async function maybeFinalizeRoute(root: any, {
   const computedStatus = computeAutoFinalizeStatus({
     mock,
     passed,
-    blockers: [...blockers, ...gateBlockers]
+    blockers: [...blockers, ...gateBlockers, ...officialSubagentBinding.blockers]
   });
   const statusResolution = applyStatusHint(computedStatus, statusHint);
   const finalStatus = statusResolution.status;
+  const proofArtifacts = officialSubagentBinding.applied
+    ? appendOfficialSubagentArtifacts(artifacts)
+    : artifacts;
   const proof = await finalizeRouteWithProof(root, {
     missionId,
     route,
     gateFile,
     gate: gateObject,
-    artifacts,
+    artifacts: proofArtifacts,
     claims: claims.length ? claims : [{ id: String(route).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() + '-auto-finalize', status: mock ? 'verified_partial' : 'supported', evidence: gateFile || 'route-command' }],
     visualEvidence,
     dbEvidence,
@@ -70,6 +81,7 @@ export async function maybeFinalizeRoute(root: any, {
     blockers: [
       ...blockers,
       ...gateBlockers,
+      ...officialSubagentBinding.blockers,
       ...(!passed && !mock && !gateBlockers.length ? ['route_gate_not_passed'] : [])
     ],
     statusHint: finalStatus,
@@ -124,4 +136,87 @@ function stableJson(value: unknown): string {
     return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+async function bindOfficialSubagentEvidence(missionDir: string, gate: any) {
+  const plan: any = await readJson(path.join(missionDir, 'subagent-plan.json'), null).catch(() => null);
+  if (plan?.workflow !== 'official_codex_subagent') {
+    return { applied: false, gate, blockers: [] as string[] };
+  }
+  const [evidence, parentSummary]: any[] = await Promise.all([
+    readJson(path.join(missionDir, 'subagent-evidence.json'), null).catch(() => null),
+    readJson(path.join(missionDir, 'subagent-parent-summary.json'), null).catch(() => null)
+  ]);
+  const workflowRunId = String(plan.workflow_run_id || '').trim();
+  const started = Number(evidence?.started_threads || 0);
+  const completed = Number(evidence?.completed_threads || 0);
+  const failed = Number(evidence?.failed_threads || 0);
+  const target = effectiveSubagentTarget(plan, started);
+  const blockers: string[] = [];
+  const evidenceShapeValid = evidence?.schema === 'sks.subagent-evidence.v1'
+    && evidence?.workflow === 'official_codex_subagent';
+  if (!evidenceShapeValid || evidence?.ok !== true || evidence?.status !== 'completed') {
+    blockers.push('official_subagent_evidence_missing');
+  }
+  if (!workflowRunId || String(evidence?.run_id || '').trim() !== workflowRunId) {
+    blockers.push('official_subagent_workflow_run_id_mismatch');
+  }
+  const parentSummaryPresent = evidence?.parent_summary_present === true
+    && evidence?.parent_summary_trustworthy === true
+    && evidence?.parent_summary_status === 'completed'
+    && parentSummary?.schema === 'sks.subagent-parent-summary.v1'
+    && parentSummary?.status === 'completed'
+    && String(parentSummary?.run_id || '').trim() === workflowRunId;
+  if (!parentSummaryPresent) blockers.push('official_subagent_parent_summary_missing');
+  if (evidence?.count_policy !== target.countPolicy) blockers.push('official_subagent_count_policy_mismatch');
+  if (Number(evidence?.target_subagents || 0) !== target.targetSubagents) blockers.push('official_subagent_target_subagents_mismatch');
+  if (started !== target.targetSubagents || completed !== target.targetSubagents) {
+    blockers.push('official_subagent_evidence_incomplete');
+  }
+  if (failed !== 0) blockers.push('official_subagent_failed_threads_present');
+  if (Array.isArray(evidence?.open_thread_ids) && evidence.open_thread_ids.length > 0) {
+    blockers.push('official_subagent_open_threads_present');
+  }
+  const uniqueBlockers = [...new Set(blockers)];
+  const evidenceReady = uniqueBlockers.length === 0;
+  return {
+    applied: true,
+    gate: {
+      ...(gate || {}),
+      workflow: 'official_codex_subagent',
+      workflow_run_id: workflowRunId || null,
+      official_subagent_evidence: evidenceReady,
+      subagent_evidence_ready: evidenceReady,
+      parent_summary_present: parentSummaryPresent,
+      requested_subagents: target.requestedSubagents,
+      count_policy: target.countPolicy,
+      target_subagents: target.targetSubagents,
+      started_subagents: started,
+      completed_subagents: completed,
+      failed_subagents: failed,
+      event_sources: Array.isArray(evidence?.event_sources) ? evidence.event_sources : []
+    },
+    blockers: uniqueBlockers
+  };
+}
+
+function appendOfficialSubagentArtifacts(artifacts: any[] = []) {
+  const required = [
+    'subagent-plan.json',
+    'subagent-events.jsonl',
+    'subagent-parent-summary.json',
+    'subagent-evidence.json'
+  ].map((artifactPath) => ({
+    path: artifactPath,
+    kind: 'agent',
+    source: 'real',
+    ignoreStale: true
+  }));
+  const existing = new Set(artifacts.map((artifact: any) => (
+    typeof artifact === 'string' ? artifact : artifact?.path
+  )).filter(Boolean));
+  return [
+    ...artifacts,
+    ...required.filter((artifact) => !existing.has(artifact.path))
+  ];
 }

@@ -54,7 +54,7 @@ async function runSetup(name, args, input = 'sk-clb-test\n') {
     ok: row.result.code === 0
       && row.json.persistence?.effective_mode === 'process_only_ephemeral'
       && row.json.persistence?.durable === false
-      && row.json.persistence?.warnings?.includes('next_shell_requires_setup_or_env')
+      && row.json.persistence?.warnings?.includes('next_session_requires_center_or_setup')
       && !(await exists(row.envPath))
   });
 }

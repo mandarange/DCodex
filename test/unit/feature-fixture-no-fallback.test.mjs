@@ -15,3 +15,11 @@ test('unknown feature fixtures are missing instead of implicit static pass', () 
   assert.equal(fixtureForFeature('route-with-local-llm-on').status, 'pass');
   assert.equal(fixtureForFeature('route-with-local-llm-off').status, 'pass');
 });
+
+test('wrongness release fixture validates without mutating project memory', () => {
+  const fixture = fixtureForFeature('cli-wrongness');
+  assert.equal(fixture.kind, 'execute');
+  assert.equal(fixture.command, 'sks wrongness validate project --json');
+  assert.deepEqual(fixture.expected_artifacts, []);
+  assert.doesNotMatch(fixture.command, /\bwrongness\s+add\b/);
+});

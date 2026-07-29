@@ -34,9 +34,6 @@ const FIXTURES = Object.freeze({
   'cli-remote': fixture('real_optional', 'sks remote readiness --json', [], 'pass', {
     reason: 'Remote readiness is environment-dependent on the official Codex host and local project capabilities; SSH worker behavior is covered by dedicated hermetic protocol and policy tests.'
   }),
-  'cli-telegram': fixture('real_optional', 'sks telegram status --json', [], 'pass', {
-    reason: 'Telegram status depends on owner-local bot configuration and must not create a poller during release fixtures; Hub routing, ownership, replay, redaction, and risk policy are covered by dedicated hermetic tests.'
-  }),
   'cli-hooks': fixture('execute', 'sks hooks trust-report --json', [], 'pass'),
   'cli-features': fixture('execute', 'sks features check --json', [], 'pass'),
   'cli-commands': fixture('execute', 'sks commands --json', [], 'pass'),
@@ -60,12 +57,15 @@ const FIXTURES = Object.freeze({
   // realistic budget; the 8000 default is sized for smaller/typical repos, not
   // this one, so pass an explicit larger budget rather than lowering the gate.
   'cli-wiki-code': fixture('execute_and_validate_artifacts', 'sks wiki refresh --code --token-budget 20000 --json', [{ path: '.sneakoscope/wiki/code-pack.json', schema: 'sks.code-pack.v1', optional: true }], 'pass'),
-  'cli-agent-bridge': fixture('execute_and_validate_artifacts', 'sks agent-bridge setup --json', [{ path: '.sneakoscope/agent-bridge/manifest.json', schema: 'sks.agent-manifest.v1', optional: true }], 'pass'),
+  'cli-agent-bridge': fixture('execute_and_validate_artifacts', 'sks agent-bridge setup --json', [{ path: '.sneakoscope/agent-bridge/manifest.json', schema: 'sks.agent-manifest.v2', optional: true }], 'pass'),
   'cli-mcp-server': fixture('execute', 'sks mcp-server --probe', [], 'pass'),
   'cli-selftest': fixture('execute', 'sks selftest --mock', [], 'pass'),
   'cli-git': fixture('execute', 'sks git policy --json', [], 'pass'),
   'cli-uninstall': fixture('execute', 'sks uninstall --dry-run --json', [], 'pass'),
   'cli-goal': fixture('execute', 'sks goal create "Fixture smoke: create a minimal Node.js CLI health-check script" --json', [], 'pass', { reason: 'The compatibility command is stateless: it prints a detailed Codex native /goal request and writes no SKS mission, artifact, loop, or fallback state.' }),
+  'cli-align': fixture('execute_and_validate_artifacts', 'sks align prepare "fixture modernization contract" --json', ['work-order-ledger.json', 'align-plan.json', 'align-ledger.json', 'align-gate.json'], 'pass', {
+    reason: 'The CLI fixture exercises the real hermetic preparation path, including literal-request work-order registration. It intentionally leaves align-gate.json blocked because no external modernization work is fabricated.'
+  }),
   'cli-seo-geo-optimizer': fixture('execute_and_validate_artifacts', 'sks seo-geo-optimizer fixture --mode seo --json', ['search-visibility/site-inventory.json', 'search-visibility/seo-findings.json', 'search-visibility/verification-report.json', 'seo-gate.json', 'completion-proof.json'], 'pass'),
   'cli-research': fixture('execute_and_validate_artifacts', 'sks research run latest --mock --json', ['research-gate.json', 'completion-proof.json'], 'blocked', { timeout_ms: 180000, reason: '"run" (not "status") is the command that actually writes research-gate.json/completion-proof.json, but research is a two-step prepare-then-run workflow gated by an active-route-not-closed check between steps that a single fixture command cannot express; on a hermetic run "latest" will not be a properly prepared+closed research mission.' }),
   'cli-qa-loop': fixture('execute_and_validate_artifacts', 'sks qa-loop run latest --mock --json', ['qa-gate.json', 'completion-proof.json'], 'pass', { timeout_ms: 180000 }),
@@ -134,7 +134,9 @@ const FIXTURES = Object.freeze({
   'skill-seo-geo-optimizer': fixture('execute_and_validate_artifacts', 'sks seo-geo-optimizer fixture --mode geo --json', ['search-visibility/site-inventory.json', 'search-visibility/geo-findings.json', 'geo-gate.json', 'completion-proof.json'], 'pass'),
   'cli-proof': fixture('execute_and_validate_artifacts', 'sks proof smoke --json', ['.sneakoscope/proof/latest.json'], 'pass'),
   'cli-trust': fixture('execute_and_validate_artifacts', 'sks trust report latest --json', ['trust-report.json'], 'pass'),
-  'cli-wrongness': fixture('execute_and_validate_artifacts', 'sks wrongness add --kind missing_evidence --claim "fixture wrongness" --json', ['.sneakoscope/wiki/wrongness-ledger.json'], 'pass'),
+  'cli-wrongness': fixture('execute', 'sks wrongness validate project --json', [], 'pass', {
+    reason: 'Release fixtures must not add synthetic project-wide wrongness records. The read-only validator exercises the CLI and ledger schema without contaminating trust state for later route proofs.'
+  }),
   'route-naruto': fixture('execute_and_validate_artifacts', 'sks naruto run "fixture" --agents 4 --max-threads 4 --json', ['subagent-plan.json', 'subagent-events.jsonl', 'subagent-evidence.json', 'naruto-summary.json', 'naruto-gate.json', 'work-order-ledger.json'], 'pass', preparationFixtureContract({ timeout_ms: 90000 })),
   'route-work': fixture('static', '$Work compatibility alias for the Naruto Codex official subagent workflow', [], 'pass', { quality: 'wiring_only', reason: 'Pure alias of $Naruto; official workflow execution is covered by route-naruto.' }),
   'route-plan': fixture('execute', 'sks plan "fixture" --json', [], 'pass'),
@@ -155,6 +157,9 @@ const FIXTURES = Object.freeze({
   'route-goal': fixture('static', '$Goal Codex-native control route', [], 'pass', {
     quality: 'wiring_only',
     reason: 'Goal lifecycle is owned entirely by Codex native /goal. The SKS surface only builds a detailed native objective and command; it creates no mission, proof artifact, compatibility loop, or fallback goal state.'
+  }),
+  'route-align': fixture('execute_and_validate_artifacts', 'sks align fixture --json', ['work-order-ledger.json', 'align-plan.json', 'align-ledger.json', 'align-gate.json', 'completion-proof.json'], 'blocked', {
+    reason: 'The Align route fixture creates a real hermetic mission, work-order ledger, and canonical Completion Proof, then honestly closes the work item as blocked because the six modernization workstreams were not executed. This verifies route wiring and proof closure without inventing official-doc work.'
   }),
   'route-super-search': fixture('execute', 'sks run "$Super-Search doctor" --execute --json', [], 'pass'),
   'route-seo-geo-optimizer': fixture('execute_and_validate_artifacts', 'sks seo-geo-optimizer fixture --mode geo --json', ['search-visibility/site-inventory.json', 'search-visibility/geo-findings.json', 'search-visibility/verification-report.json', 'geo-gate.json', 'completion-proof.json'], 'pass'),

@@ -1,0 +1,12 @@
+{
+  "schema": "sks.route-fixture-expected-artifacts.v1",
+  "route": "$sks-align",
+  "required": [
+    ".sneakoscope/missions/M-fixture-align/align-plan.json",
+    ".sneakoscope/missions/M-fixture-align/align-ledger.json",
+    ".sneakoscope/missions/M-fixture-align/align-gate.json",
+    ".sneakoscope/missions/M-fixture-align/work-order-ledger.json",
+    ".sneakoscope/missions/M-fixture-align/completion-proof.json",
+    ".sneakoscope/missions/M-fixture-align/completion-proof.md"
+  ]
+}

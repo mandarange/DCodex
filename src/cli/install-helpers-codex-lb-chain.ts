@@ -4,6 +4,8 @@ import fsp from 'node:fs/promises';
 import { ensureDir, packageRoot, readText, writeTextAtomic } from '../core/fsx.js';
 import { recordCodexLbHealthEvent } from '../core/codex-lb-circuit.js';
 import { codexLbBaseUrlSecurityBlocker } from '../core/codex-lb/codex-lb-env.js';
+import type { CapabilityEvidence } from '../core/codex-lb/capability-types.js';
+import { probeEvidence } from '../core/codex-lb/probes/probe-evidence.js';
 import {
   CODEX_LB_CANONICAL_FAST_SERVICE_TIER,
   codexLbEnvPath,
@@ -270,6 +272,55 @@ export async function checkCodexLbResponseChain(status: any = {}, opts: any = {}
     service_tier_evidence: codexLbServiceTierEvidence(first, second),
     error: redactSecretText(second.error_payload?.error?.message || second.error_payload?.response?.error?.message || second.text || 'codex-lb chained Responses request failed', [apiKey])
   }, { endpoint, home, opts, env }), opts);
+}
+
+export async function runCodexLbTextResponsesProbe(
+  status: any = {},
+  opts: any = {}
+): Promise<CapabilityEvidence> {
+  const result = await checkCodexLbResponseChain(status, opts);
+  return codexLbResponseChainCapabilityEvidence(result, {
+    checkedAt: typeof opts.nowIso === 'function' ? opts.nowIso() : new Date().toISOString()
+  });
+}
+
+export function codexLbResponseChainCapabilityEvidence(
+  result: any = {},
+  opts: { checkedAt?: string } = {}
+): CapabilityEvidence {
+  const checkedAt = opts.checkedAt || new Date().toISOString();
+  if (result?.skipped === true || result?.status === 'skipped') {
+    return probeEvidence({
+      skipped: true,
+      source: 'config',
+      evidence: {
+        probe: 'text_responses',
+        status: result?.status || 'skipped',
+        reason: result?.reason || null
+      }
+    }, checkedAt);
+  }
+  const verified = result?.ok === true && result?.status === 'chain_ok';
+  const blockers = verified
+    ? []
+    : [
+        ...(Array.isArray(result?.blockers) ? result.blockers : []),
+        `text_responses_${String(result?.status || 'probe_failed')}`
+      ];
+  return probeEvidence({
+    attempted: true,
+    verified,
+    source: 'transport',
+    blockers,
+    evidence: {
+      probe: 'text_responses',
+      status: result?.status || null,
+      cached: result?.cached === true,
+      http_status: result?.http_status || null,
+      response_chain_completed: verified,
+      service_tier: result?.service_tier_evidence || null
+    }
+  }, checkedAt);
 }
 
 async function recordCodexLbChainHealth(result: any, opts: any = {}) {

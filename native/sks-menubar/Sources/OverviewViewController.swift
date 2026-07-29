@@ -16,6 +16,9 @@ enum NativeView {
     static func title(_ value: String) -> NSTextField {
         let field = NSTextField(labelWithString: value)
         field.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
+        field.alignment = .left
+        field.setAccessibilityLabel(value)
+        field.setAccessibilityIdentifier("sks-center-heading-\(identifier(value))")
         return field
     }
 
@@ -23,12 +26,18 @@ enum NativeView {
         let field = NSTextField(wrappingLabelWithString: value)
         field.font = NSFont.systemFont(ofSize: 12)
         field.textColor = .secondaryLabelColor
+        field.alignment = .left
+        // Long status and help copy must wrap inside the current window instead
+        // of contributing an intrinsic minimum width while users change pages.
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return field
     }
 
     static func sectionTitle(_ value: String) -> NSTextField {
         let field = NSTextField(labelWithString: value)
         field.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        field.alignment = .left
+        field.setAccessibilityLabel(value)
         return field
     }
 
@@ -36,6 +45,7 @@ enum NativeView {
         let button = NSButton(title: title, target: target, action: action)
         button.bezelStyle = .rounded
         button.setAccessibilityLabel(title)
+        button.setAccessibilityIdentifier("sks-center-button-\(identifier(title))")
         return button
     }
 
@@ -51,27 +61,34 @@ enum NativeView {
     static func page(_ views: [NSView]) -> NSStackView {
         let stack = stack(views)
         stack.alignment = .width
+        for view in stack.arrangedSubviews {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48).isActive = true
+        }
         return stack
     }
 
     static func row(_ views: [NSView], spacing: CGFloat = 8) -> NSStackView {
         let row = NSStackView(views: views)
         row.orientation = .horizontal; row.alignment = .centerY; row.spacing = spacing
+        row.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return row
     }
 
-    static func card(title: String, subtitle: String, views: [NSView]) -> NSBox {
+    static func card(title: String, subtitle: String, views: [NSView], fullWidthLeadingContent: Bool = false) -> NSBox {
         let box = NSBox()
         box.boxType = .custom; box.titlePosition = .noTitle
         box.cornerRadius = 10; box.borderWidth = 1
         box.borderColor = .separatorColor; box.fillColor = .controlBackgroundColor
-        let heading = sectionTitle(title)
-        let help = detail(subtitle)
+        box.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let heading = sectionTitle(title); let help = detail(subtitle)
         let content = NSStackView(views: [heading, help] + views)
-        content.orientation = .vertical
-        content.alignment = .width
-        content.spacing = 10
-        content.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        content.orientation = .vertical; content.alignment = .width
+        content.spacing = 10; content.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        content.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        for view in content.arrangedSubviews {
+            view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            view.widthAnchor.constraint(equalTo: content.widthAnchor, constant: -32).isActive = true
+        }
         content.translatesAutoresizingMaskIntoConstraints = false
         box.contentView?.addSubview(content)
         if let host = box.contentView {
@@ -83,7 +100,37 @@ enum NativeView {
             ])
         }
         box.setAccessibilityLabel(title)
+        box.setAccessibilityHelp(subtitle)
+        box.setAccessibilityRole(.group)
+        box.setAccessibilityIdentifier("sks-center-card-\(identifier(title))")
         return box
+    }
+
+    static func badge(_ text: String, color: NSColor) -> NSView {
+        let dot = NSTextField(labelWithString: "●")
+        dot.font = NSFont.systemFont(ofSize: 10)
+        dot.textColor = color
+        dot.setAccessibilityHidden(true)
+        let label = NSTextField(labelWithString: text)
+        label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        label.alignment = .left
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setAccessibilityLabel(text)
+        let row = NSStackView(views: [dot, label])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 5
+        return row
+    }
+
+    static func setBadge(_ view: NSView, text: String, color: NSColor) {
+        guard let row = view as? NSStackView, row.arrangedSubviews.count >= 2,
+              let dot = row.arrangedSubviews[0] as? NSTextField,
+              let label = row.arrangedSubviews[1] as? NSTextField else { return }
+        dot.textColor = color
+        label.stringValue = text
+        label.setAccessibilityLabel(text)
     }
 
     static func spinner(label: String) -> NSProgressIndicator {
@@ -100,10 +147,13 @@ enum NativeView {
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
+        scroll.scrollerStyle = .overlay
         scroll.borderType = .noBorder
         scroll.autohidesScrollers = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         document.translatesAutoresizingMaskIntoConstraints = false
+        document.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         scroll.documentView = document
         if let content = scroll.contentView.documentView {
             NSLayoutConstraint.activate([
@@ -121,166 +171,12 @@ enum NativeView {
         if compact.count <= limit { return compact }
         return String(compact.prefix(limit)) + "…"
     }
-}
 
-enum OverviewSummary {
-    static func render(
-        update: [String: Any]?,
-        mcp: [String: Any]?,
-        telegram: [String: Any]?,
-        menuBarBuild: String,
-        codexRunning: Bool?,
-        operationSummary: String
-    ) -> String {
-        let codexAppState = codexRunning.map { $0 ? "Running" : "Not running" } ?? "Not configured"
-        var lines: [String] = []
-        let update = validatedUpdate(update)
-        let mcp = validatedMCP(mcp)
-        let telegram = validatedTelegram(telegram)
-
-        if let update = update {
-            let sks = update["sks"] as? [String: Any]
-            let codex = update["codex_cli"] as? [String: Any]
-            let menu = update["menubar"] as? [String: Any]
-            lines.append("SKS install: \(versionSummary(sks))")
-            lines.append("Codex CLI: \(versionSummary(codex)) · Codex app: \(codexAppState)")
-            if let inducement = codexUpdateInducement(codex) {
-                lines.append(inducement)
-            }
-
-            var menuParts = ["running build \(menuBarBuild)"]
-            if let expected = menu?["expected_version"] as? String { menuParts.append("expected \(expected)") }
-            if let installed = menu?["installed_version"] as? String, installed != menuBarBuild {
-                menuParts.append("snapshot installed \(installed)")
-            }
-            if let rebuildRequired = menu?["rebuild_required"] as? Bool {
-                menuParts.append(rebuildRequired ? "rebuild required" : "current")
-            } else {
-                menuParts.append("rebuild state unknown")
-            }
-            menuParts.append("signature \(verificationState(menu?["signature_ok"]))")
-            menuParts.append("resources \(verificationState(menu?["resources_ok"]))")
-            lines.append("Menu Bar: \(menuParts.joined(separator: " · "))")
-
-            let source = snapshotSource(update["source"] as? String)
-            var updateParts = [integer(update["update_count"]).map { "\($0) pending" } ?? "pending count unknown", "\(source) snapshot"]
-            if let error = diagnosticNotice(update["public_error"] as? String, update: update) {
-                updateParts.append("notice: \(error)")
-            } else if let warnings = update["warnings"] as? [String], !warnings.isEmpty {
-                updateParts.append("\(warnings.count) warning\(warnings.count == 1 ? "" : "s")")
-            }
-            lines.append("Updates: \(updateParts.joined(separator: " · "))")
-        } else {
-            lines.append("SKS install: unavailable")
-            lines.append("Codex CLI: unavailable · Codex app: \(codexAppState)")
-            lines.append("Menu Bar: running build \(menuBarBuild) · update status unavailable")
-            lines.append("Updates: unavailable")
-        }
-
-        if let mcp = mcp,
-           let enabled = integer(mcp["enabled_count"]),
-           let failed = integer(mcp["failed_count"]) {
-            lines.append("MCP: \(enabled) enabled · \(failed) failed")
-        } else {
-            lines.append("MCP: unavailable")
-        }
-
-        if let telegram = telegram {
-            let owner = telegram["owner"] as? [String: Any]
-            let configured = telegram["configured"] as? Bool
-            let hubState = owner != nil ? "Running" : configured == true ? "Stopped" : configured == false ? "Not configured" : "Unknown"
-            let machines = integer(telegram["machine_count"]).map { "\($0) registered Macs" } ?? "registered Macs unknown"
-            let targets = integer(telegram["target_count"]).map { "\($0) configured targets" } ?? "configured targets unknown"
-            let issues = ((telegram["config_issues"] as? [String]) ?? []).count
-                + ((telegram["remote_config_issues"] as? [String]) ?? []).count
-            var fleet = "Remote fleet: \(machines) · \(targets)"
-            if issues > 0 { fleet += " · \(issues) issue\(issues == 1 ? "" : "s")" }
-            lines.append("Telegram Hub: \(hubState) · \(fleet)")
-        } else {
-            lines.append("Telegram Hub: unavailable · Remote fleet: unavailable")
-        }
-
-        lines.append("Last operation: \(operationSummary) · Logs and snapshots use mode 0600")
-        return lines.joined(separator: "\n")
-    }
-
-    private static func validatedUpdate(_ value: [String: Any]?) -> [String: Any]? {
-        guard value?["schema"] as? String == "sks.update-status.v3",
-              value?["source"] is String,
-              integer(value?["update_count"]) != nil,
-              let sks = value?["sks"] as? [String: Any],
-              let codex = value?["codex_cli"] as? [String: Any],
-              let menu = value?["menubar"] as? [String: Any],
-              sks["update_available"] is Bool,
-              codex["update_available"] is Bool,
-              menu["expected_version"] is String,
-              menu["rebuild_required"] is Bool else { return nil }
-        return value
-    }
-
-    private static func validatedMCP(_ value: [String: Any]?) -> [String: Any]? {
-        guard value?["schema"] as? String == "sks.mcp-inventory.v2",
-              integer(value?["enabled_count"]) != nil,
-              integer(value?["failed_count"]) != nil else { return nil }
-        return value
-    }
-
-    private static func validatedTelegram(_ value: [String: Any]?) -> [String: Any]? {
-        guard value?["schema"] as? String == "sks.telegram-status.v1",
-              value?["configured"] is Bool,
-              integer(value?["machine_count"]) != nil,
-              integer(value?["target_count"]) != nil,
-              value?["config_issues"] is [String],
-              value?["remote_config_issues"] is [String] else { return nil }
-        return value
-    }
-
-    private static func versionSummary(_ value: [String: Any]?) -> String {
-        guard let current = nonEmpty(value?["current"] as? String) else { return "not detected" }
-        guard let latest = nonEmpty(value?["latest"] as? String) else { return current }
-        if value?["update_available"] as? Bool == true, latest != current { return "\(current) → \(latest) available" }
-        if latest == current { return "\(current) (current)" }
-        return "\(current) · registry last seen \(latest)"
-    }
-
-    private static func codexUpdateInducement(_ value: [String: Any]?) -> String? {
-        guard value?["update_available"] as? Bool == true else { return nil }
-        let current = nonEmpty(value?["current"] as? String) ?? "installed"
-        let latest = nonEmpty(value?["latest"] as? String) ?? "preferred latest"
-        return "Action: update Codex CLI (\(current) → \(latest)) from Updates, or choose Update Codex CLI Now in the menu bar."
-    }
-
-    private static func verificationState(_ value: Any?) -> String {
-        guard let value = value as? Bool else { return "unknown" }
-        return value ? "verified" : "needs attention"
-    }
-
-    private static func snapshotSource(_ value: String?) -> String {
-        guard let value = nonEmpty(value) else { return "unknown" }
-        return value.replacingOccurrences(of: "_", with: " ")
-    }
-
-    private static func diagnosticNotice(_ value: String?, update: [String: Any]) -> String? {
-        guard let value = nonEmpty(value) else { return nil }
-        let versions = [
-            (update["sks"] as? [String: Any])?["current"] as? String,
-            (update["sks"] as? [String: Any])?["latest"] as? String,
-            (update["codex_cli"] as? [String: Any])?["current"] as? String,
-            (update["codex_cli"] as? [String: Any])?["latest"] as? String
-        ].compactMap { $0 }
-        if versions.contains(value) { return nil }
-        if value.range(of: #"^v?\d+(?:\.\d+){1,3}(?:[-+][A-Za-z0-9.-]+)?$"#, options: .regularExpression) != nil { return nil }
-        return value
-    }
-
-    private static func integer(_ value: Any?) -> Int? {
-        if let value = value as? Int { return value }
-        return (value as? NSNumber)?.intValue
-    }
-
-    private static func nonEmpty(_ value: String?) -> String? {
-        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
-        return value
+    private static func identifier(_ value: String) -> String {
+        value.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
     }
 }
 
@@ -289,7 +185,10 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
     private let operations: OperationCoordinator
     private let status = NativeView.detail("Loading local SKS status…")
     private let notificationInbox = NativeView.detail("Notifications: checking authorization…")
+    private let healthBadge = NativeView.badge("Checking local status", color: .systemBlue)
+    private let statusSpinner = NativeView.spinner(label: "Checking SKS Center status")
     private var generation = 0
+    private var completedGeneration = 0
     private var doctorButton: NSButton!
     private var refreshButton: NSButton!
     private var updateCodexButton: NSButton!
@@ -308,28 +207,32 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
         refreshButton = NativeView.button("Refresh", target: self, action: #selector(refreshStatus))
         updateCodexButton = NativeView.button("Update Codex CLI", target: self, action: #selector(updateCodexCLI))
         updateCodexButton.setAccessibilityHelp("Update the operator Codex CLI to the preferred latest channel.")
-        let buttons = NSStackView(views: [doctorButton, refreshButton, updateCodexButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 8
-        let shortcuts = NSStackView(views: [
+        let buttons = NativeView.row([refreshButton, doctorButton, updateCodexButton])
+        let shortcuts = NativeView.row([
+            NativeView.button("Remote Coding…", target: self, action: #selector(openRemoteCoding)),
             NativeView.button("Providers…", target: self, action: #selector(openProviders)),
             NativeView.button("Updates…", target: self, action: #selector(openUpdates)),
             NativeView.button("Diagnostics…", target: self, action: #selector(openDiagnostics))
         ])
-        shortcuts.orientation = .horizontal
-        shortcuts.spacing = 8
         shortcuts.setAccessibilityLabel("Open Control Center sections")
-        view = NativeView.stack([
+        let healthCard = NativeView.card(
+            title: "System health",
+            subtitle: "A bounded local snapshot of versions, services, and the latest operation.",
+            views: [NativeView.row([healthBadge, statusSpinner]), status, buttons]
+        )
+        let nextStepsCard = NativeView.card(
+            title: "Notifications & next steps",
+            subtitle: "Results remain available here even when macOS notifications are disabled.",
+            views: [notificationInbox, shortcuts]
+        )
+        view = NativeView.page([
             NativeView.title("Overview"),
-            NativeView.detail("Menu Bar build \(AppRuntime.packageVersion) · Local health for SKS, Codex CLI, MCP, Remote, and operations. Prefer the latest Codex CLI; SKS stays version-agnostic and capability-gates features."),
-            status,
-            notificationInbox,
-            buttons,
-            shortcuts
+            NativeView.detail("Menu Bar build \(AppRuntime.packageVersion) · Local health for SKS, Codex CLI, MCP, and operations. Prefer the latest Codex CLI; SKS stays version-agnostic and capability-gates features."),
+            healthCard,
+            nextStepsCard
         ])
-        loadStatus(forceUpdateRefresh: false)
     }
-
+    @objc private func openRemoteCoding() { openSection?("Remote Coding") }
     @objc private func openProviders() { openSection?("Providers") }
     @objc private func openUpdates() { openSection?("Updates") }
     @objc private func openDiagnostics() { openSection?("Diagnostics") }
@@ -353,9 +256,10 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
             status.stringValue = "Another update or MCP mutation is already running. Open Updates to review it."
             return
         }
-        updateCodexButton?.isEnabled = false
-        doctorButton?.isEnabled = false
-        refreshButton?.isEnabled = false
+        generation += 1
+        setActionBusy(true)
+        NativeView.setBadge(healthBadge, text: "Updating Codex CLI", color: .systemBlue)
+        statusSpinner.startAnimation(nil)
         status.stringValue = "Updating Codex CLI to the preferred latest…"
         _ = operations.update(operation, state: .running, stage: "running", progress: nil, summary: status.stringValue)
         processClient.run(["codex", "update", "--json"], timeout: nil) { [weak self] result in
@@ -371,9 +275,8 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
                 progress: 1,
                 summary: ok ? "Codex CLI update completed" : "Codex CLI update failed"
             )
-            self.updateCodexButton?.isEnabled = true
-            self.doctorButton?.isEnabled = true
-            self.refreshButton?.isEnabled = true
+            self.setActionBusy(false)
+            self.statusSpinner.stopAnimation(nil)
             self.status.stringValue = ok
                 ? "Codex CLI update completed. Refreshing shared update status…"
                 : "Codex CLI update needs attention. Open Updates or Diagnostics for structured guidance."
@@ -385,10 +288,11 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
         generation += 1
         let requestGeneration = generation
         refreshButton?.isEnabled = false
-        status.stringValue = "Checking versions, MCP servers, Telegram Hub, remote fleet, and operations…"
+        NativeView.setBadge(healthBadge, text: "Checking local status", color: .systemBlue)
+        statusSpinner.startAnimation(nil)
+        status.stringValue = "Checking versions, MCP servers, and operations…"
         var update: [String: Any]?
         var mcp: [String: Any]?
-        var telegram: [String: Any]?
         let group = DispatchGroup()
         group.enter()
         var updateArguments = ["update", "status"]
@@ -415,38 +319,74 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
             mcp = self?.json(result.output)
             group.leave()
         }
-        group.enter()
-        processClient.run(["telegram", "status", "--project-root", AppRuntime.projectRoot, "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
-            telegram = result.code == 0 ? self?.json(result.output) : nil
-            group.leave()
-        }
         group.notify(queue: .main) { [weak self] in
             guard let self = self, self.generation == requestGeneration else { return }
+            self.completedGeneration = requestGeneration
             self.refreshButton?.isEnabled = true
-            self.status.stringValue = self.summary(update: update, mcp: mcp, telegram: telegram)
+            self.statusSpinner.stopAnimation(nil)
+            self.renderStatus(update: update, mcp: mcp, partial: false)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self = self, self.generation == requestGeneration else { return }
+            guard let self = self,
+                  self.generation == requestGeneration,
+                  self.completedGeneration != requestGeneration else { return }
             self.refreshButton?.isEnabled = true
-            self.status.stringValue = self.summary(update: update, mcp: mcp, telegram: telegram)
+            self.renderStatus(update: update, mcp: mcp, partial: true)
         }
     }
 
     @objc private func doctor() {
-        doctorButton?.isEnabled = false
+        guard let operation = operations.begin(kind: "doctor", mutationGroup: nil, summary: "Run Doctor") else {
+            status.stringValue = "Another guarded operation is already running. Open Diagnostics to review it."
+            return
+        }
+        generation += 1
+        setActionBusy(true)
+        NativeView.setBadge(healthBadge, text: "Doctor is running", color: .systemBlue)
+        statusSpinner.startAnimation(nil)
         status.stringValue = "Doctor is running…"
+        _ = operations.update(operation, state: .running, stage: "running", progress: nil, summary: status.stringValue)
         processClient.run(["doctor", "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
             guard let self = self else { return }
-            self.doctorButton?.isEnabled = true
+            self.setActionBusy(false)
+            self.statusSpinner.stopAnimation(nil)
+            _ = self.operations.update(
+                operation,
+                state: result.code == 0 ? .succeeded : .failed,
+                stage: "complete",
+                progress: 1,
+                summary: result.code == 0 ? "Doctor completed" : "Doctor found an issue"
+            )
             if result.code == 0 {
+                NativeView.setBadge(self.healthBadge, text: "Doctor completed", color: .systemGreen)
                 self.status.stringValue = "Doctor completed. No blocking issue was reported."
             } else {
+                NativeView.setBadge(self.healthBadge, text: "Doctor needs attention", color: .systemOrange)
                 self.status.stringValue = "Doctor found an issue. Open Diagnostics · \(NativeView.redactPreview(result.output))"
             }
         }
     }
 
-    private func summary(update: [String: Any]?, mcp: [String: Any]?, telegram: [String: Any]?) -> String {
+    private func setActionBusy(_ busy: Bool) {
+        updateCodexButton?.isEnabled = !busy
+        doctorButton?.isEnabled = !busy
+        refreshButton?.isEnabled = !busy
+    }
+
+    private func renderStatus(update: [String: Any]?, mcp: [String: Any]?, partial: Bool) {
+        let rendered = summary(update: update, mcp: mcp)
+        status.stringValue = rendered
+        if partial {
+            NativeView.setBadge(healthBadge, text: "Partial status · still checking", color: .systemBlue)
+        } else if rendered.localizedCaseInsensitiveContains("unavailable")
+                    || rendered.localizedCaseInsensitiveContains("needs attention") {
+            NativeView.setBadge(healthBadge, text: "Status refreshed · attention needed", color: .systemOrange)
+        } else {
+            NativeView.setBadge(healthBadge, text: "Status refreshed", color: .systemGreen)
+        }
+    }
+
+    private func summary(update: [String: Any]?, mcp: [String: Any]?) -> String {
         let codexRunning = AppRuntime.codexBundleId.map { bundle in
             NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == bundle }
         }
@@ -455,7 +395,6 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
         return OverviewSummary.render(
             update: update,
             mcp: mcp,
-            telegram: telegram,
             menuBarBuild: AppRuntime.packageVersion,
             codexRunning: codexRunning,
             operationSummary: operationSummary

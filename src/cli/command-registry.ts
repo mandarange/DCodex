@@ -50,21 +50,19 @@ export interface CommandEntry {
   latency: CommandLatency;
   supportsJson: boolean;
   remoteAllowed: boolean;
-  telegramAllowed: boolean;
   inputProfile: CommandInputProfile;
   requiredCapabilities: readonly string[];
 }
 
 type CommandContractMetadata = Pick<CommandEntry,
-  'risk' | 'latency' | 'supportsJson' | 'remoteAllowed' | 'telegramAllowed' | 'inputProfile' | 'requiredCapabilities'>;
+  'risk' | 'latency' | 'supportsJson' | 'remoteAllowed' | 'inputProfile' | 'requiredCapabilities'>;
 
 const SAFE_COMMAND_CONTRACT: CommandContractMetadata = {
   risk: 'R2',
   latency: 'normal',
   supportsJson: false,
   remoteAllowed: false,
-  telegramAllowed: false,
-  inputProfile: 'none',
+    inputProfile: 'none',
   requiredCapabilities: []
 };
 
@@ -251,7 +249,6 @@ function applyCommandManifestContract<const T extends Record<string, CommandEntr
       latency: manifest.latency,
       supportsJson: manifest.supportsJson,
       remoteAllowed: manifest.remoteAllowed,
-      telegramAllowed: manifest.telegramAllowed,
       inputProfile: manifest.inputProfile,
       requiredCapabilities: [...manifest.requiredCapabilities]
     });
@@ -305,7 +302,6 @@ const COMMAND_DEFINITIONS = {
   'codex-lb': skipMigrationGate(entry('beta', 'Inspect codex-lb status and circuit health', 'dist/commands/codex-lb.js', directCommand(() => import('../commands/codex-lb.js'), 'dist/commands/codex-lb.js'))),
   menubar: activeRouteDiagnostic(entry('beta', 'Inspect/install/restart/uninstall SKS menu bar', 'dist/core/commands/menubar-command.js', subcommand(() => import('../core/commands/menubar-command.js'), 'menubarCommand', 'dist/core/commands/menubar-command.js', 'status'))),
   remote: entry('beta', 'Inspect official Remote readiness and run the proof-aware SSH stdio worker', 'dist/core/commands/remote-command.js', argsCommand(() => import('../core/commands/remote-command.js'), 'remoteCommand', 'dist/core/commands/remote-command.js')),
-  telegram: entry('beta', 'Pair and run the private local Codex Telegram Hub', 'dist/core/commands/telegram-command.js', argsCommand(() => import('../core/commands/telegram-command.js'), 'telegramCommand', 'dist/core/commands/telegram-command.js')),
   hooks: skipMigrationGate(entry('beta', 'Explain and inspect Codex hooks', 'dist/commands/hooks.js', directCommand(() => import('../commands/hooks.js'), 'dist/commands/hooks.js'))),
   'zellij-lane': entry('beta', 'Render a Zellij lane frame for SKS sessions', 'dist/commands/zellij-lane.js', directCommand(() => import('../commands/zellij-lane.js'), 'dist/commands/zellij-lane.js')),
   'zellij-slot-pane': entry('beta', 'Render a compact Zellij worker slot pane', 'dist/commands/zellij-slot-pane.js', directCommand(() => import('../commands/zellij-slot-pane.js'), 'dist/commands/zellij-slot-pane.js')),
@@ -351,6 +347,7 @@ const COMMAND_DEFINITIONS = {
   versioning: entry('stable', 'Manage release version metadata', 'dist/commands/versioning.js', directCommand(() => import('../commands/versioning.js'), 'dist/commands/versioning.js')),
   reasoning: entry('labs', 'Show reasoning route', 'dist/core/commands/basic-cli.js', basicArgs('reasoningCommand')),
   aliases: entry('stable', 'Show command aliases', 'dist/core/commands/basic-cli.js', basicNoArgs('aliasesCommand')),
+  align: routeStateMutator(entry('beta', 'Prepare or inspect the evidence-gated $sks-align GPT-5.6 / Plugins modernization mission', 'dist/core/commands/align-command.js', subcommand(() => import('../core/commands/align-command.js'), 'alignCommand', 'dist/core/commands/align-command.js', 'prepare')), ['align-gate.json']),
   selftest: entry('stable', 'Run local mock selftest', 'dist/core/commands/basic-cli.js', basicArgs('selftestCommand')),
   goal: entry('beta', 'Print stateless Codex native Goal controls', 'dist/core/commands/goal-command.js', subcommand(() => import('../core/commands/goal-command.js'), 'goalCommand', 'dist/core/commands/goal-command.js')),
   'seo-geo-optimizer': entry('beta', 'Run unified SEO/GEO optimizer audit/plan/apply/verify plus research/strategy (--include-marketing) on the search-visibility kernel', 'dist/core/commands/seo-command.js', argsCommand(() => import('../core/commands/seo-command.js'), 'seoGeoOptimizerCommand', 'dist/core/commands/seo-command.js')),
@@ -385,6 +382,7 @@ const COMMAND_DEFINITIONS = {
 } satisfies Record<string, CommandEntry>;
 
 const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(COMMAND_DEFINITIONS, {
+  align: { latency: 'long', supportsJson: true, inputProfile: 'json-only' },
   autoresearch: { latency: 'long' },
   bench: { latency: 'long' },
   check: { risk: 'R1', latency: 'long' },
@@ -393,8 +391,7 @@ const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(CO
   dfix: { latency: 'long' },
   eval: { latency: 'long' },
   gates: {
-    risk: 'R1', latency: 'long', supportsJson: true, remoteAllowed: true, telegramAllowed: true,
-    inputProfile: 'gates', requiredCapabilities: ['project.git', 'proof.gates']
+    risk: 'R1', latency: 'long', supportsJson: true, remoteAllowed: true,     inputProfile: 'gates', requiredCapabilities: ['project.git', 'proof.gates']
   },
   harness: { latency: 'long' },
   'image-ux-review': { latency: 'long' },
@@ -402,8 +399,7 @@ const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(CO
   'mad-sks': { risk: 'R3', latency: 'long' },
   mcp: { risk: 'R2', latency: 'long', supportsJson: true, inputProfile: 'json-only' },
   naruto: {
-    risk: 'R2', latency: 'long', supportsJson: true, remoteAllowed: false, telegramAllowed: false,
-    inputProfile: 'naruto'
+    risk: 'R2', latency: 'long', supportsJson: true, remoteAllowed: false,     inputProfile: 'naruto'
   },
   paths: {
     supportsJson: true, remoteAllowed: true, inputProfile: 'paths',
@@ -417,13 +413,12 @@ const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(CO
   postinstall: { latency: 'long' },
   ppt: { latency: 'long' },
   proof: {
-    risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true, telegramAllowed: true,
-    inputProfile: 'proof', requiredCapabilities: ['proof.read']
+    risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true,     inputProfile: 'proof', requiredCapabilities: ['proof.read']
   },
   'qa-loop': { latency: 'long' },
   recallpulse: { latency: 'long' },
   release: { risk: 'R1', latency: 'long' },
-  remote: { risk: 'R2', latency: 'long', supportsJson: true, remoteAllowed: false, telegramAllowed: false, inputProfile: 'json-only' },
+  remote: { risk: 'R2', latency: 'long', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   research: { latency: 'long' },
   review: { risk: 'R1' },
   run: { latency: 'long' },
@@ -432,18 +427,16 @@ const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(CO
     requiredCapabilities: ['project.fs.read']
   },
   status: {
-    supportsJson: true, remoteAllowed: true, telegramAllowed: true, inputProfile: 'json-only',
+    supportsJson: true, remoteAllowed: true, inputProfile: 'json-only',
     requiredCapabilities: ['proof.read']
   },
   'stop-gate': {
-    supportsJson: true, remoteAllowed: true, telegramAllowed: true, inputProfile: 'stop-gate',
+    supportsJson: true, remoteAllowed: true, inputProfile: 'stop-gate',
     requiredCapabilities: ['proof.stop-gate']
   },
   task: { risk: 'R1', latency: 'long' },
-  telegram: { risk: 'R2', latency: 'long', supportsJson: true, remoteAllowed: false, telegramAllowed: false, inputProfile: 'json-only' },
   trust: {
-    risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true, telegramAllowed: true,
-    inputProfile: 'trust', requiredCapabilities: ['proof.trust']
+    risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true,     inputProfile: 'trust', requiredCapabilities: ['proof.trust']
   },
   uninstall: { risk: 'R3', latency: 'long' },
   update: { latency: 'long' },

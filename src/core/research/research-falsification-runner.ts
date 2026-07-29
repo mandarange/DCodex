@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { nowIso, readJson } from '../fsx.js'
+import { uniqueValues as unique } from '../text/strings.js'
 import { runCodexTask } from '../codex-control/codex-task-runner.js'
 import { THINKING_SUBAGENT_MODEL, SUBAGENT_EFFORT } from '../subagents/model-policy.js'
 
@@ -145,10 +146,6 @@ function buildResearchFalsificationPrompt(input: { plan: any; claimMatrix: any; 
 
 function normalizeStrings(value: any): string[] {
   return unique((Array.isArray(value) ? value : value == null ? [] : [value]).map((entry) => String(entry || '').trim()).filter(Boolean))
-}
-
-function unique<T>(values: T[]): T[] {
-  return [...new Set(values)]
 }
 
 export const researchFalsificationOutputSchema = {

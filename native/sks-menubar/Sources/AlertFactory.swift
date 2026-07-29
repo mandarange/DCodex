@@ -15,12 +15,19 @@ enum AlertFactory {
         }
     }
 
-    static func confirmSheet(window: NSWindow, title: String, message: String, destructive: Bool, completion: @escaping (Bool) -> Void) {
+    static func confirmSheet(
+        window: NSWindow,
+        title: String,
+        message: String,
+        destructive: Bool,
+        actionTitle: String? = nil,
+        completion: @escaping (Bool) -> Void
+    ) {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = destructive ? .warning : .informational
-        alert.addButton(withTitle: destructive ? "Remove" : "Continue")
+        alert.addButton(withTitle: actionTitle ?? (destructive ? "Remove" : "Continue"))
         alert.addButton(withTitle: "Cancel")
         AppIdentity.applyIcon(to: alert)
         alert.beginSheetModal(for: window) { completion($0 == .alertFirstButtonReturn) }
@@ -32,12 +39,13 @@ enum AlertFactory {
         message: String,
         secure: Bool = false,
         placeholder: String? = nil,
+        actionTitle: String = "Apply",
         completion: @escaping (String?) -> Void
     ) {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: actionTitle)
         alert.addButton(withTitle: "Cancel")
         let field: NSTextField = secure
             ? NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 420, height: 24))

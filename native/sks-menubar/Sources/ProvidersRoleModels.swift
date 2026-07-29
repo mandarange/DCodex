@@ -32,12 +32,15 @@ extension ProvidersViewController {
             let controls = RoleModelControls(role: role, target: self)
             controls.model.addItem(withTitle: "Loading profiles…")
             controls.model.setAccessibilityLabel("\(title) model")
-            controls.model.widthAnchor.constraint(greaterThanOrEqualToConstant: 210).isActive = true
+            controls.model.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            controls.model.widthAnchor.constraint(equalToConstant: 210).isActive = true
             controls.model.identifier = NSUserInterfaceItemIdentifier(role)
             controls.model.target = self
             controls.model.action = #selector(roleModelSelectionChanged(_:))
             controls.reasoning.addItem(withTitle: "Loading…")
             controls.reasoning.setAccessibilityLabel("\(title) reasoning effort")
+            controls.reasoning.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            controls.reasoning.widthAnchor.constraint(equalToConstant: 110).isActive = true
             controls.current.setAccessibilityLabel("\(title) current and effective model")
             controls.save.setAccessibilityLabel("Save \(title) model override")
             controls.reset.setAccessibilityLabel("Reset \(title) model override")

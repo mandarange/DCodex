@@ -43,11 +43,11 @@ async function fixture(): Promise<{
     registered_at: new Date(now - 1_000).toISOString()
   };
   const envelope: RemoteCommandEnvelopeV1 = {
-    schema: 'sks.remote-command.v1',
+    schema: 'sks.remote-command.v2',
     command_id: 'command-1',
     issued_at: new Date(now - 1_000).toISOString(),
     expires_at: new Date(now + 60_000).toISOString(),
-    actor: 'telegram-owner',
+    actor: 'remote-owner',
     machine_id: 'mac',
     project_id: 'project-1',
     session_id: 'session-1',
@@ -64,9 +64,9 @@ async function fixture(): Promise<{
     expected_project_root: project,
     expected_generation: owner.active_generation,
     approval: {
-      schema: 'sks.remote-r2-approval.v1',
+      schema: 'sks.remote-r2-approval.v2',
       approval_id: 'approval-1',
-      approved_by: 'telegram-owner',
+      approved_by: 'remote-owner',
       approved_at: new Date(now - 1_000).toISOString(),
       expires_at: new Date(now + 60_000).toISOString(),
       machine_id: 'mac',

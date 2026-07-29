@@ -31,16 +31,15 @@ export interface CommandManifestLiteEntry {
   latency: CommandLatencyLite;
   supportsJson: boolean;
   remoteAllowed: boolean;
-  telegramAllowed: boolean;
   inputProfile: CommandInputProfileLite;
   requiredCapabilities: readonly string[];
 }
 
 type CommandManifestLiteSourceEntry = Omit<CommandManifestLiteEntry,
-  'risk' | 'latency' | 'supportsJson' | 'remoteAllowed' | 'telegramAllowed' | 'inputProfile' | 'requiredCapabilities'>;
+  'risk' | 'latency' | 'supportsJson' | 'remoteAllowed' | 'inputProfile' | 'requiredCapabilities'>;
 
 export type CommandContractMetadataLite = Pick<CommandManifestLiteEntry,
-  'risk' | 'latency' | 'supportsJson' | 'remoteAllowed' | 'telegramAllowed' | 'inputProfile' | 'requiredCapabilities'>;
+  'risk' | 'latency' | 'supportsJson' | 'remoteAllowed' | 'inputProfile' | 'requiredCapabilities'>;
 
 const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'help', summary: 'Show SKS help', maturity: 'stable', readonly: true, skipMigrationGate: true, allowedDuringActiveRoute: true, diagnostic: true },
@@ -80,7 +79,6 @@ const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'codex-lb', summary: 'Inspect codex-lb status and circuit health', maturity: 'beta', skipMigrationGate: true },
   { name: 'menubar', summary: 'Inspect/install/restart/uninstall SKS menu bar', maturity: 'beta', skipMigrationGate: true, allowedDuringActiveRoute: true, diagnostic: true },
   { name: 'remote', summary: 'Inspect official Remote readiness and run the proof-aware SSH stdio worker', maturity: 'beta' },
-  { name: 'telegram', summary: 'Pair and run the private local Codex Telegram Hub', maturity: 'beta' },
   { name: 'hooks', summary: 'Explain and inspect Codex hooks', maturity: 'beta', skipMigrationGate: true },
   { name: 'zellij-lane', summary: 'Render a Zellij lane frame for SKS sessions', maturity: 'beta' },
   { name: 'zellij-slot-pane', summary: 'Render a compact Zellij worker slot pane', maturity: 'beta' },
@@ -116,6 +114,7 @@ const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'versioning', summary: 'Manage release version metadata', maturity: 'stable' },
   { name: 'reasoning', summary: 'Show reasoning route', maturity: 'labs' },
   { name: 'aliases', summary: 'Show command aliases', maturity: 'stable' },
+  { name: 'align', summary: 'Prepare or inspect the evidence-gated $sks-align GPT-5.6 / Plugins modernization mission', maturity: 'beta', mutatesRouteState: true },
   { name: 'selftest', summary: 'Run local mock selftest', maturity: 'stable' },
   { name: 'goal', summary: 'Print stateless Codex native Goal controls', maturity: 'beta' },
   { name: 'seo-geo-optimizer', summary: 'Run unified SEO/GEO optimizer audit/plan/apply/verify plus research/strategy (--include-marketing) on the search-visibility kernel', maturity: 'beta' },
@@ -152,12 +151,12 @@ const SAFE_COMMAND_CONTRACT_LITE: CommandContractMetadataLite = {
   latency: 'normal',
   supportsJson: false,
   remoteAllowed: false,
-  telegramAllowed: false,
-  inputProfile: 'none',
+    inputProfile: 'none',
   requiredCapabilities: []
 };
 
 const COMMAND_CONTRACT_OVERRIDES_LITE = {
+  align: { latency: 'long', supportsJson: true, inputProfile: 'json-only' },
   autoresearch: { latency: 'long' },
   bench: { latency: 'long' },
   check: { risk: 'R1', latency: 'long' },
@@ -167,8 +166,7 @@ const COMMAND_CONTRACT_OVERRIDES_LITE = {
   'dollar-commands': { risk: 'R2', latency: 'normal' },
   eval: { latency: 'long' },
   gates: {
-    risk: 'R1', latency: 'long', supportsJson: true, remoteAllowed: true, telegramAllowed: true,
-    inputProfile: 'gates', requiredCapabilities: ['project.git', 'proof.gates']
+    risk: 'R1', latency: 'long', supportsJson: true, remoteAllowed: true,     inputProfile: 'gates', requiredCapabilities: ['project.git', 'proof.gates']
   },
   harness: { latency: 'long' },
   'image-ux-review': { latency: 'long' },
@@ -176,8 +174,7 @@ const COMMAND_CONTRACT_OVERRIDES_LITE = {
   'mad-sks': { risk: 'R3', latency: 'long' },
   mcp: { risk: 'R2', latency: 'long', supportsJson: true, inputProfile: 'json-only' },
   naruto: {
-    risk: 'R2', latency: 'long', supportsJson: true, remoteAllowed: false, telegramAllowed: false,
-    inputProfile: 'naruto'
+    risk: 'R2', latency: 'long', supportsJson: true, remoteAllowed: false,     inputProfile: 'naruto'
   },
   paths: {
     supportsJson: true, remoteAllowed: true, inputProfile: 'paths',
@@ -191,13 +188,12 @@ const COMMAND_CONTRACT_OVERRIDES_LITE = {
   postinstall: { latency: 'long' },
   ppt: { latency: 'long' },
   proof: {
-    risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true, telegramAllowed: true,
-    inputProfile: 'proof', requiredCapabilities: ['proof.read']
+    risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true,     inputProfile: 'proof', requiredCapabilities: ['proof.read']
   },
   'qa-loop': { latency: 'long' },
   recallpulse: { latency: 'long' },
   release: { risk: 'R1', latency: 'long' },
-  remote: { risk: 'R2', latency: 'long', supportsJson: true, remoteAllowed: false, telegramAllowed: false, inputProfile: 'json-only' },
+  remote: { risk: 'R2', latency: 'long', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   research: { latency: 'long' },
   review: { risk: 'R1' },
   run: { latency: 'long' },
@@ -207,18 +203,16 @@ const COMMAND_CONTRACT_OVERRIDES_LITE = {
     requiredCapabilities: ['project.fs.read']
   },
   status: {
-    supportsJson: true, remoteAllowed: true, telegramAllowed: true, inputProfile: 'json-only',
+    supportsJson: true, remoteAllowed: true, inputProfile: 'json-only',
     requiredCapabilities: ['proof.read']
   },
   'stop-gate': {
-    supportsJson: true, remoteAllowed: true, telegramAllowed: true, inputProfile: 'stop-gate',
+    supportsJson: true, remoteAllowed: true, inputProfile: 'stop-gate',
     requiredCapabilities: ['proof.stop-gate']
   },
   task: { risk: 'R1', latency: 'long' },
-  telegram: { risk: 'R2', latency: 'long', supportsJson: true, remoteAllowed: false, telegramAllowed: false, inputProfile: 'json-only' },
   trust: {
-    risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true, telegramAllowed: true,
-    inputProfile: 'trust', requiredCapabilities: ['proof.trust']
+    risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true,     inputProfile: 'trust', requiredCapabilities: ['proof.trust']
   },
   uninstall: { risk: 'R3', latency: 'long' },
   update: { latency: 'long' },

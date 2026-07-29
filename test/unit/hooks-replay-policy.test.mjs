@@ -49,3 +49,30 @@ test('honest loopback accepts a Markdown remaining-gaps heading followed by none
   ].join('\n');
   assert.deepEqual(honestModeGapLines(text), []);
 });
+
+test('honest loopback ignores Korean non-blocking boundaries and zero blocker summaries', () => {
+  const text = [
+    '## 완료 요약',
+    '',
+    '요청한 UI 변경과 검증을 마쳤습니다.',
+    '',
+    '## 검증 결과',
+    '',
+    '- 프로젝트 게이트 `ok=true`, blocker 0건',
+    '',
+    '## 남은 문제',
+    '',
+    '없음.',
+    '',
+    '## 미검증 범위 — 비차단',
+    '',
+    '- 비차단: 실제 자격증명 입력은 요청 범위 밖의 운영 변경이므로 실행하지 않았습니다.',
+    '- 비차단: 전역 설치 앱은 교체하지 않고 격리된 네이티브 앱으로 검증했습니다.',
+    '- 비차단: 기존 작업트리를 보존했으며 커밋·푸시·배포하지 않았습니다.',
+    '',
+    '## SKS 솔직모드',
+    '',
+    '현재 Proof와 Trust에 blocker 0건이며 증빙 범위만 완료로 주장합니다.'
+  ].join('\n');
+  assert.deepEqual(honestModeGapLines(text), []);
+});

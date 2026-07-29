@@ -16,6 +16,8 @@ import {
 import {
   inspectSksMenuBarStatus,
   installSksMenuBar,
+  cleanupRetiredRemoteBridgeLaunchAgent,
+  quarantineRetiredRemoteBridgeBindings,
   sksMenuBarPaths,
   type SksMenuBarInstallResult,
   type SksMenuBarStatusResult
@@ -1435,7 +1437,22 @@ export async function installUpdateSksMenuBar(input: {
   entrypoint?: string | null;
 }): Promise<SksMenuBarInstallResult | null> {
   if (input.env.SKS_UPDATE_SKIP_SKS_MENUBAR === '1') {
-    input.stage('menubar_rebuild', true, 'skipped', { reason: 'SKS_UPDATE_SKIP_SKS_MENUBAR=1' });
+    const [retiredLaunchAgent, retiredBindings] = await Promise.all([
+      cleanupRetiredRemoteBridgeLaunchAgent({
+        ...(input.env.HOME ? { home: input.env.HOME } : {}),
+        env: input.env
+      }),
+      quarantineRetiredRemoteBridgeBindings(input.root)
+    ]);
+    const retiredCleanupOk = retiredLaunchAgent.ok && retiredBindings.ok;
+    input.stage('menubar_rebuild', retiredCleanupOk, retiredCleanupOk ? 'skipped' : 'blocked', {
+      reason: 'SKS_UPDATE_SKIP_SKS_MENUBAR=1',
+      launch_agent_status: retiredLaunchAgent.status,
+      binding_status: retiredBindings.status,
+      quarantined_binding_count: retiredBindings.retired_binding_count,
+      blockers: [...retiredLaunchAgent.blockers, ...retiredBindings.blockers],
+      warnings: [...retiredLaunchAgent.warnings, ...retiredBindings.warnings]
+    });
     return null;
   }
   const restartDeferred = input.env.SKS_UPDATE_DEFER_MENUBAR_RESTART === '1';

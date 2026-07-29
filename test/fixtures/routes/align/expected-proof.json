@@ -1,0 +1,28 @@
+{
+  "schema": "sks.completion-proof.v1",
+  "route": "$sks-align",
+  "mission_id": "M-fixture-align",
+  "route_gate_schema": "sks.align-gate.v2",
+  "allowed_status": [
+    "blocked",
+    "verified_partial",
+    "verified"
+  ],
+  "required_evidence": [
+    "route_gate",
+    "commands",
+    "official_source_receipts",
+    "command_skill_surface_coverage",
+    "programmatic_tool_calling_decision",
+    "agents_sdk_decision",
+    "prompt_evaluation",
+    "immutable_core_integrity",
+    "verification_receipts",
+    "changed_paths",
+    "change_review",
+    "latest_only_cleanup_review",
+    "deduplication_review",
+    "work_order_ledger",
+    "mission_id_consistency"
+  ]
+}

@@ -432,6 +432,7 @@ function fireAndForgetProjectMemory(root: any, state: any = {}) {
     return appendJsonl(path.join(missionDir(root, id), 'events.jsonl'), {
       ts: nowIso(),
       type: 'triwiki.agents_md_projected',
+      proof_invalidating: false,
       ok: report.ok,
       reason: report.reason,
       written: report.written
@@ -442,6 +443,7 @@ function fireAndForgetProjectMemory(root: any, state: any = {}) {
     return appendJsonl(path.join(missionDir(root, id), 'events.jsonl'), {
       ts: nowIso(),
       type: 'triwiki.agents_md_project_failed',
+      proof_invalidating: false,
       error: err?.message || String(err)
     }).catch(() => undefined);
   });
@@ -494,7 +496,7 @@ async function complianceBlock(root: any, state: any = {}, reason: any = '', det
     missing: Array.isArray(detail.missing) ? detail.missing : []
   };
   await writeJsonAtomic(guardPath, record);
-  await appendJsonl(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'pipeline.compliance_loop_guard', gate: record.gate, repeat_count: count, limit, tripped: record.tripped, missing: record.missing });
+  await appendJsonl(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'pipeline.compliance_loop_guard', proof_invalidating: false, gate: record.gate, repeat_count: count, limit, tripped: record.tripped, missing: record.missing });
   if (!record.tripped) return { decision: 'block', reason, gate: detail.gate || state.stop_gate || null, missing: Array.isArray(detail.missing) ? detail.missing : [] };
   await writeJsonAtomic(path.join(dir, HARD_BLOCKER_ARTIFACT), {
     schema: 'sks.hard-blocker.v1',
@@ -512,7 +514,7 @@ async function complianceBlock(root: any, state: any = {}, reason: any = '', det
       'Pipeline stopped as a hard blocker instead of looping indefinitely; no completion success is claimed.'
     ]
   });
-  await appendJsonl(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'pipeline.compliance_loop_guard.tripped', gate: record.gate, repeat_count: count, limit });
+  await appendJsonl(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'pipeline.compliance_loop_guard.tripped', proof_invalidating: false, gate: record.gate, repeat_count: count, limit });
   return { decision: 'escalate', reason, gate: detail.gate || state.stop_gate || null, repeat_count: count, message: '동일 사유가 반복됩니다. 사용자 개입이 필요합니다.', systemMessage: '동일 사유가 반복됩니다. 사용자 개입이 필요합니다.' };
 }
 
@@ -629,6 +631,7 @@ async function resolveRecoveredComplianceBlocker(root: any, state: any = {}, rec
   await appendJsonl(path.join(dir, 'events.jsonl'), {
     ts: nowIso(),
     type: 'pipeline.compliance_loop_guard.resolved',
+    proof_invalidating: false,
     gate,
     recovery_artifact: artifactName,
     hard_blocker_sha256: blockerSha256,

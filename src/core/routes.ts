@@ -541,6 +541,21 @@ export const ROUTES = [
     examples: ['$Wiki refresh', '$Wiki prune and validate']
   },
   {
+    id: 'Align',
+    command: '$Align',
+    mode: 'ALIGN',
+    route: 'evidence-gated GPT-5.6 / Plugins modernization',
+    description: 'One-shot modernization of SKS prompts, settings, and generated skill/command surfaces against current GPT-5.6 prompting, programmatic tool calling, Agents, Codex skill-schema, and Plugins contracts. It records adoption decisions, audits complete surface coverage, removes superseded compatibility settings, and deduplicates policy without weakening invariants.',
+    requiredSkills: ['align', 'pipeline-runner', 'prompt-pipeline', REFLECTION_SKILL_NAME, 'honest-mode'],
+    lifecycle: ['align_plan', 'latest_model_prompt_grammar', 'programmatic_tool_calling', 'agents_guidance', 'codex_skills_and_plugins', 'latest_only_cleanup', 'deduplicate_prompt_config', 'align_ledger', 'align_gate', 'post_route_reflection', 'honest_mode'],
+    context7Policy: 'if_external_docs',
+    reasoningPolicy: 'high',
+    stopGate: 'align-gate.json',
+    coverage_required: true,
+    cliEntrypoint: 'sks align prepare|run|status|proof',
+    examples: ['$Align modernize SKS skills to latest GPT-5.6', 'sks align prepare --json', 'sks align run "prompts and skills"']
+  },
+  {
     id: 'Help',
     command: '$Help',
     mode: 'HELP',
@@ -686,12 +701,11 @@ export const COMMAND_CATALOG = [
   { name: 'hooks', usage: 'sks hooks explain|status|trust-report|replay|codex-validate|warning-check ... [--json]', description: 'Explain Codex hook events, validate vendored latest 10-event output schemas, replay fixtures, and enforce warning-zero SKS hook policies under the 0.134 compatibility matrix.' },
   { name: 'codex-lb', usage: 'sks codex-lb status|health|metrics|doctor|circuit|repair|setup ...', description: 'Configure, health-check, repair, and record circuit evidence for codex-lb provider auth without confusing ChatGPT OAuth and proxy keys.' },
   { name: 'remote', usage: 'sks remote readiness|machines|worker ... [--json]', description: 'Inspect official Codex Remote readiness and the allowlisted proof-aware SSH stdio worker surface.' },
-  { name: 'telegram', usage: 'sks telegram status|setup|validate-config|hub [run|start|stop|restart|status] ... [--json]', description: 'Securely pair a private Telegram bot, register a dedicated local Codex session, and manage its single-owner LaunchAgent Hub.' },
   { name: 'zellij', usage: 'sks zellij status|repair [--json] | sks --mad', description: 'Inspect Zellij runtime status, explain repair (no auto-install), and open the SKS Zellij runtime used by MAD. Zellij panes are not official Naruto subagent evidence.' },
   { name: 'mad-sks', usage: 'sks mad-sks plan|run|apply|sql|apply-migration|status|close|rollback-apply ... | sks --mad [--high]', description: 'Open or inspect MAD-SKS scoped permission workflows, merged SQL-plane execution, and the Zellij permission launcher.' },
   { name: 'auto-review', usage: 'sks auto-review status|enable|start [--high] | sks --Auto-review --high', description: 'Enable Codex automatic approval review and launch SKS Zellij with the auto-review profile.' },
   { name: 'dollar-commands', usage: 'sks dollar-commands [--json]', description: 'List Codex App $ commands such as $sks-dfix and $sks-naruto.' },
-  { name: 'fast-mode', usage: 'sks fast-mode on|off|status|clear [--project] [--json]', description: 'Toggle the global Codex Desktop GPT 5.5 Fast default used by $sks-fast-on/$sks-fast-off and keep project worker preference in sync; pass --project for project-local only.' },
+  { name: 'fast-mode', usage: 'sks fast-mode on|off|status|clear [--project] [--json]', description: 'Toggle the global Codex Desktop GPT-5.6 Fast default used by $sks-fast-on/$sks-fast-off and keep project worker preference in sync; pass --project for project-local only.' },
   { name: 'with-local-llm', usage: 'sks with-local-llm on|off|status|set-model [--json]', description: 'Toggle the optional local Ollama worker backend used by $sks-with-local-llm-on/$sks-with-local-llm-off and eligible simple worker slices.' },
   { name: 'commit', usage: 'sks commit [--message "msg"] [--json]', description: 'Stage current changes, summarize them, and create a simple git commit without the full SKS pipeline.' },
   { name: 'commit-and-push', usage: 'sks commit-and-push [--message "msg"] [--json]', description: 'Stage current changes, create a simple git commit, and push without the full SKS pipeline.' },
@@ -711,6 +725,7 @@ export const COMMAND_CATALOG = [
   { name: 'features', usage: 'sks features list|check|inventory [--json] [--write-docs]', description: 'Build and validate the feature registry that maps CLI commands, hidden handlers, dollar routes, app skill aliases, and skills.' },
   { name: 'all-features', usage: 'sks all-features selftest --mock [--json]', description: 'Run the mock all-features contract selftest for feature registry, proof, Voxel TriWiki, and failure-contract coverage.' },
   { name: 'aliases', usage: 'sks aliases', description: 'Show command aliases and npm binary names.' },
+  { name: 'align', usage: 'sks align prepare|run|status|proof ["scope"] [--json]', description: 'Prepare or inspect the $sks-align modernization mission that aligns SKS prompts, settings, and skills to latest GPT-5.6 / openai/skills guidance.' },
   { name: 'setup', usage: 'sks setup [--bootstrap] [--install-scope global|project] [--local-only] [--force] [--json]', description: 'Initialize SKS state, Codex App files, hooks, skills, and rules.' },
   { name: 'fix-path', usage: 'sks fix-path [--install-scope global|project] [--json]', description: 'Refresh hook commands with the resolved SKS binary path.' },
   { name: 'doctor', usage: 'sks doctor [--fix] [--local-only] [--json] [--install-scope global|project]', description: 'Check and repair SKS generated files, while blocking setup if another Codex harness is detected.' },
@@ -1264,7 +1279,7 @@ export function simpleGitOnlyRouteId(prompt: any = '') {
 
 export function reflectionRequiredForRoute(route: any) {
   const id = String(route?.id || route?.mode || route?.route || route || '').replace(/^\$/, '');
-  return /^(naruto|qaloop|qa-loop|ppt|imageuxreview|image-ux-review|research|autoresearch|seo|geo|db|database|madsks|mad-sks|gx)$/i.test(id);
+  return /^(naruto|qaloop|qa-loop|ppt|imageuxreview|image-ux-review|research|autoresearch|seo|geo|db|database|madsks|mad-sks|gx|align)$/i.test(id);
 }
 
 export function looksLikeCodeChangingWork(prompt: any = '') {

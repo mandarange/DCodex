@@ -515,7 +515,8 @@ export const MANAGED_SKILLS: readonly ManagedSkillAsset[] = Object.freeze([
   'dfix',
   'image-ux-review',
   'computer-use',
-  'init-deep'
+  'init-deep',
+  'align'
 ].map((id) => ({ id, required_for: ['codex-native-runtime'] })))
 
 export const MANAGED_HOOKS: readonly ManagedHookAsset[] = Object.freeze([

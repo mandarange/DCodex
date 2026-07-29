@@ -6,6 +6,7 @@ import type { StopGateResolution } from './stop-gate-types.js';
 
 const GATE_FILE_CANDIDATES = ['stop-gate.json', 'naruto-gate.json'];
 const GLM_NARUTO_DIR = '.sneakoscope/glm-naruto';
+const ROUTE_CONTEXT_FILE = 'route-context.json';
 
 async function statOrNull(filePath: string): Promise<{ mtime: string; sha: string; size: number } | null> {
   try {
@@ -71,6 +72,17 @@ export async function resolveStopGate(input: {
         return makeResolution(root, route, missionId, p, raw, checkedPaths, statePath, stateMissionId, 'mission_dir');
       }
     }
+    for (const p of await declaredMissionGatePaths(dir, {
+      route,
+      state: stateMissionId === missionId ? state : null
+    })) {
+      if (checkedPaths.includes(p)) continue;
+      checkedPaths.push(p);
+      if (await exists(p)) {
+        const raw = await readJson(p, null) as Record<string, unknown> | null;
+        return makeResolution(root, route, missionId, p, raw, checkedPaths, statePath, stateMissionId, 'mission_declared_gate');
+      }
+    }
 
     // GLM Naruto termination / mission-result
     const glmDir = path.join(root, GLM_NARUTO_DIR, missionId);
@@ -89,8 +101,14 @@ export async function resolveStopGate(input: {
   const latest = input.allowLatestFallback === false ? null : await findLatestMission(root);
   if (latest) {
     const dir = missionDir(root, latest);
-    for (const file of GATE_FILE_CANDIDATES) {
-      const p = path.join(dir, file);
+    const latestCandidates = [
+      ...GATE_FILE_CANDIDATES.map((file) => path.join(dir, file)),
+      ...await declaredMissionGatePaths(dir, {
+        route,
+        state: stateMissionId === latest ? state : null
+      })
+    ];
+    for (const p of [...new Set(latestCandidates)]) {
       checkedPaths.push(p);
       if (await exists(p)) {
         const raw = await readJson(p, null) as Record<string, unknown> | null;
@@ -104,6 +122,43 @@ export async function resolveStopGate(input: {
   }
 
   return makeResolution(root, route, missionId, null, null, checkedPaths, statePath, stateMissionId, 'no_gate_found');
+}
+
+async function declaredMissionGatePaths(
+  dir: string,
+  opts: {
+    route: string | null;
+    state: Record<string, unknown> | null;
+  }
+): Promise<string[]> {
+  const routeContext = await readJson(
+    path.join(dir, ROUTE_CONTEXT_FILE),
+    null
+  ) as Record<string, unknown> | null;
+  const declarations: unknown[] = [];
+  if (declarationMatchesRoute(routeContext, opts.route)) declarations.push(routeContext?.stop_gate);
+  if (declarationMatchesRoute(opts.state, opts.route)) declarations.push(opts.state?.stop_gate);
+  return [...new Set(declarations.flatMap((value) => safeMissionGatePaths(dir, value)))];
+}
+
+function declarationMatchesRoute(
+  declaration: Record<string, unknown> | null,
+  route: string | null
+): boolean {
+  if (!declaration || !route) return Boolean(declaration);
+  const declaredRoute = String(declaration.route || declaration.route_command || '').trim();
+  return !declaredRoute || normalizeRoute(declaredRoute) === normalizeRoute(route);
+}
+
+function safeMissionGatePaths(dir: string, value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  const root = path.resolve(dir);
+  return value
+    .split('|')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.endsWith('.json'))
+    .map((entry) => path.resolve(root, entry))
+    .filter((candidate) => candidate.startsWith(`${root}${path.sep}`));
 }
 
 function gateMatchesRoute(raw: Record<string, unknown> | null, route: string | null): boolean {

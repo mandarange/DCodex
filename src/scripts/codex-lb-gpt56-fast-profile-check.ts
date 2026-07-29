@@ -6,8 +6,8 @@ import {
   codexFastModeDesktopStatus,
   codexLbConfigPath,
   configureCodexLb,
+  configureCodexLbDesktopRouting,
   ensureGlobalCodexFastModeDuringInstall,
-  releaseCodexLbAuthHold,
   repairCodexLbAuth
 } from '../cli/install-helpers.js'
 import { repairCodexConfigStructure, splitCodexProjectConfigPolicy } from '../core/codex/codex-project-config-policy.js'
@@ -22,33 +22,76 @@ const codexHome = path.join(home, '.codex')
 const configPath = codexLbConfigPath(home)
 const envPath = path.join(codexHome, 'sks-codex-lb.env')
 const authPath = path.join(codexHome, 'auth.json')
-const oauthBackupPath = path.join(codexHome, 'auth.chatgpt-backup.json')
 const projectConfig = path.join(root, '.codex', 'config.toml')
+const remoteBaseUrl = 'https://lb.example.test/backend-api/codex'
+const bridgeBaseUrl = 'http://127.0.0.1:54321/backend-api/codex'
 await fs.mkdir(path.dirname(projectConfig), { recursive: true })
 await fs.mkdir(codexHome, { recursive: true })
-await fs.writeFile(authPath, `${JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: 'oauth-access' } }, null, 2)}\n`)
+const oauth = `${JSON.stringify({
+  auth_mode: 'chatgpt',
+  account_id: 'acct-fast-profile',
+  tokens: {
+    access_token: 'oauth-access',
+    refresh_token: 'oauth-refresh'
+  }
+}, null, 2)}\n`
+await fs.writeFile(authPath, oauth)
 
 const setup = await configureCodexLb({
   home,
   configPath,
   envPath,
-  host: 'https://lb.example.test/backend-api/codex',
+  host: remoteBaseUrl,
   apiKey: 'fixture-codex-lb-fast-key',
   writeEnvFile: true,
-  useDefaultProvider: true,
-  forceFastMode: true,
-  forceCodexLbApiKeyAuth: true,
-  authMode: 'codex-lb',
   shellProfile: 'skip',
+  gatewayAuthTransport: 'x-codex-lb-api-key',
   toolOutputRecoveryFetch
 })
-const fastOn = await ensureGlobalCodexFastModeDuringInstall({ home, configPath, forceFastMode: true })
-const first = assertFastProfile(await fs.readFile(configPath, 'utf8'), 'setup_fast_on')
+const native = await configureCodexLbDesktopRouting({
+  mode: 'desktop-native-bridge',
+  home,
+  configPath,
+  authPath,
+  bridgeBaseUrl,
+  remoteBaseUrl,
+  gatewayAuthTransport: 'x-codex-lb-api-key'
+})
+const fastOn = await ensureGlobalCodexFastModeDuringInstall({
+  home,
+  configPath,
+  forceFastMode: true
+})
+const first = assertFastProfile(await fs.readFile(configPath, 'utf8'), 'native_fast_on')
 
-const release = await releaseCodexLbAuthHold({ home, configPath, authPath, backupPath: oauthBackupPath })
-const afterOauth = assertFastProfile(await fs.readFile(configPath, 'utf8'), 'use_oauth_roundtrip')
-
-const repair = await repairCodexLbAuth({ home, configPath, envPath, forceCodexLbApiKeyAuth: true, forceFastMode: true, authMode: 'codex-lb', toolOutputRecoveryFetch })
+const disabled = await configureCodexLbDesktopRouting({
+  mode: 'disabled',
+  home,
+  configPath,
+  authPath
+})
+const afterDisable = assertFastProfile(
+  await fs.readFile(configPath, 'utf8'),
+  'routing_disabled',
+  false
+)
+const reenabled = await configureCodexLbDesktopRouting({
+  mode: 'desktop-native-bridge',
+  home,
+  configPath,
+  authPath,
+  bridgeBaseUrl,
+  remoteBaseUrl,
+  gatewayAuthTransport: 'x-codex-lb-api-key'
+})
+const repair = await repairCodexLbAuth({
+  home,
+  configPath,
+  envPath,
+  forceCodexLbApiKeyAuth: true,
+  forceFastMode: true,
+  authMode: 'codex-lb'
+})
 await fs.writeFile(projectConfig, [
   '# SKS managed fixture',
   'default_profile = "sks-fast-high"',
@@ -63,40 +106,60 @@ await fs.writeFile(projectConfig, [
   'service_tier = "fast"',
   ''
 ].join('\n'))
-const split = await splitCodexProjectConfigPolicy(root, { apply: true, codexHome, configPath: projectConfig, writeReport: false })
+const split = await splitCodexProjectConfigPolicy(root, {
+  apply: true,
+  codexHome,
+  configPath: projectConfig,
+  writeReport: false
+})
 const structure = await repairCodexConfigStructure(configPath, { apply: true })
 const final = assertFastProfile(await fs.readFile(configPath, 'utf8'), 'after_rewriters')
 const toolCatalog = assertGpt56ToolCatalogContract()
+const authPreserved = await fs.readFile(authPath, 'utf8') === oauth
 
-const ok = setup.ok !== false
+const ok = setup.ok === true
+  && native.ok === true
+  && disabled.ok === true
+  && reenabled.ok === true
   && !['failed', 'skipped_unsafe_rewrite', 'unparseable_config_preserved'].includes(String(fastOn.status))
-  && release.status !== 'failed'
-  && repair.ok !== false
+  && repair.ok === true
   && split.ok === true
   && structure.ok === true
+  && authPreserved
   && first.ok
-  && afterOauth.ok
+  && afterDisable.ok
   && final.ok
   && toolCatalog.ok
 
 const report = {
-  schema: 'sks.codex-lb-gpt56-fast-profile-check.v1',
+  schema: 'sks.codex-lb-gpt56-fast-profile-check.v2',
   ok,
   setup_status: setup.status,
+  native_status: native.status,
   fast_on_status: fastOn.status,
-  release_status: release.status,
+  disable_status: disabled.status,
+  reenable_status: reenabled.status,
   repair_status: repair.status,
   split_status: (split as any).status || null,
   structure_status: structure.status,
-  assertions: [first, afterOauth, final],
+  oauth_preserved: authPreserved,
+  assertions: [first, afterDisable, final],
   tool_catalog: toolCatalog,
-  blockers: [...[first, afterOauth, final].flatMap((item) => item.blockers), ...toolCatalog.blockers]
+  blockers: [
+    ...(authPreserved ? [] : ['chatgpt_oauth_changed']),
+    ...[first, afterDisable, final].flatMap((item) => item.blockers),
+    ...toolCatalog.blockers
+  ]
 }
 
 console.log(JSON.stringify(report, null, 2))
 if (!report.ok) process.exitCode = 1
 
-function assertFastProfile(text: string, label: string) {
+function assertFastProfile(
+  text: string,
+  label: string,
+  expectBridge = true
+) {
   const validation = validateCodexConfigRoundTrip(text)
   const parsed = validation.ok ? parseCodexConfigToml(text) : {}
   const provider = parsed.model_providers?.['codex-lb'] || {}
@@ -107,8 +170,14 @@ function assertFastProfile(text: string, label: string) {
     ...(parsed.user?.fast_mode === undefined ? [] : ['user_fast_mode_legacy_table_present']),
     ...(parsed.profiles?.['sks-fast-high'] === undefined ? [] : ['sks_fast_high_legacy_profile_present']),
     ...(parsed.model === undefined ? [] : ['codex_app_model_was_injected']),
-    ...(provider.requires_openai_auth === true ? [] : ['codex_lb_requires_openai_auth_not_true']),
+    ...(parsed.model_provider === undefined ? [] : ['desktop_model_provider_was_selected']),
+    ...(provider.name === 'codex-lb' ? [] : ['codex_lb_cli_provider_name_mismatch']),
+    ...(provider.requires_openai_auth === false ? [] : ['codex_lb_cli_requires_openai_auth_not_false']),
+    ...(provider.env_key === 'CODEX_LB_API_KEY' ? [] : ['codex_lb_cli_env_key_missing']),
     ...(provider.wire_api === 'responses' ? [] : ['codex_lb_wire_api_not_responses']),
+    ...(expectBridge && parsed.openai_base_url === bridgeBaseUrl ? [] : expectBridge ? ['native_bridge_base_url_missing'] : []),
+    ...(!expectBridge && parsed.openai_base_url !== undefined ? ['disabled_routing_still_has_openai_base_url'] : []),
+    ...(parsed.model_catalog_json === undefined ? [] : ['native_local_catalog_must_not_be_bound']),
     ...(desktop.on ? [] : ['desktop_fast_status_off'])
   ]
   return {
@@ -116,8 +185,11 @@ function assertFastProfile(text: string, label: string) {
     ok: blockers.length === 0,
     default_profile: parsed.default_profile || null,
     model: parsed.model || null,
+    model_provider: parsed.model_provider || null,
+    openai_base_url: parsed.openai_base_url || null,
     legacy_keys: validation.legacy_keys,
     service_tier: parsed.service_tier || null,
+    provider_name: provider.name || null,
     provider_wire_api: provider.wire_api || null,
     provider_requires_openai_auth: provider.requires_openai_auth ?? null,
     blockers
@@ -126,37 +198,33 @@ function assertFastProfile(text: string, label: string) {
 
 function assertGpt56ToolCatalogContract() {
   const normalized = normalizeCodexLbToolCatalog({
-    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'].map(codex0144Model)
+    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'].map(codexModel)
   })
   const models = normalized.catalog.models.filter((model: any) => String(model.slug).startsWith('gpt-5.6-'))
   const blockers = [
     ...normalized.blockers,
     ...(normalized.schema === 'sks.codex-lb-tool-catalog.v1' ? [] : ['codex_lb_gpt56_catalog_schema_mismatch']),
+    ...(normalized.contract === 'codex-model-catalog-pass-through.v2' ? [] : ['codex_lb_catalog_contract_not_v2']),
     ...(normalized.tools_transport === 'full_responses' ? [] : ['codex_lb_gpt56_native_tool_transport_not_full_responses']),
     ...(normalized.patched_models.join(',') === 'gpt-5.6-luna,gpt-5.6-sol,gpt-5.6-terra' ? [] : ['codex_lb_gpt56_catalog_patch_set_incomplete']),
     ...(models.length === 3 ? [] : ['codex_lb_gpt56_catalog_model_set_incomplete']),
     ...(models.every((model: any) => model.use_responses_lite === false) ? [] : ['codex_lb_gpt56_responses_lite_not_disabled']),
-    ...(models.every((model: any) => model.tool_mode === 'code_mode_only') ? [] : ['codex_lb_gpt56_native_tool_mode_not_preserved']),
-    ...(models.every((model: any) => model.supports_parallel_tool_calls === true) ? [] : ['codex_lb_gpt56_parallel_tool_calls_not_preserved']),
-    ...(models.every((model: any) => model.minimal_client_version === '0.144.5') ? [] : ['codex_lb_gpt56_codex_0144_contract_missing'])
+    ...(models.every((model: any) => model.future_unknown_field === 'preserved') ? [] : ['codex_lb_unknown_catalog_field_lost'])
   ]
   return {
-    schema: normalized.schema,
     ok: blockers.length === 0,
-    codex_cli_contract: '0.144.5',
-    models: normalized.gpt56_models,
-    patched_models: normalized.patched_models,
+    contract: normalized.contract,
     tools_transport: normalized.tools_transport,
-    native_tool_mode: 'code_mode_only',
+    patched_models: normalized.patched_models,
     blockers
   }
 }
 
-function codex0144Model(slug: string) {
+function codexModel(slug: string) {
   return {
     slug,
-    display_name: slug.replace('gpt-', 'GPT-').replaceAll('-', ' '),
-    supported_reasoning_levels: [{ effort: 'max', description: 'Maximum' }],
+    display_name: slug,
+    supported_reasoning_levels: [{ effort: 'medium', description: 'Balanced' }],
     shell_type: 'shell_command',
     visibility: 'list',
     supported_in_api: true,
@@ -169,7 +237,8 @@ function codex0144Model(slug: string) {
     experimental_supported_tools: [],
     tool_mode: 'code_mode_only',
     use_responses_lite: true,
-    minimal_client_version: '0.144.5'
+    minimal_client_version: 'runtime',
+    future_unknown_field: 'preserved'
   }
 }
 

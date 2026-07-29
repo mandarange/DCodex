@@ -57,6 +57,10 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
   assert.match(prompt, /metadata mode: on-demand \(2\/25 roles included; full catalog is not injected\)/)
   assert.equal(prompt.match(/Core Engineering Directive/g)?.length, 1)
   assert.match(prompt, /from AGENTS\.md exactly/)
+  assert.ok(
+    Buffer.byteLength(prompt, 'utf8') <= 9_000,
+    `two-slice official prompt exceeded 9,000 bytes: ${Buffer.byteLength(prompt, 'utf8')}`
+  )
 })
 
 test('Codex App Naruto prompt separates internal parent evidence from the visible Markdown final', () => {

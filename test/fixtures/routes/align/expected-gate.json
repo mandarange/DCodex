@@ -1,0 +1,23 @@
+{
+  "schema": "sks.route-fixture-gate.v1",
+  "route": "$sks-align",
+  "gate_schema": "sks.align-gate.v2",
+  "completion_proof_required": true,
+  "image_voxel_required": false,
+  "expected": "blocked",
+  "required_blockers": [
+    "align_workstream_evidence_incomplete",
+    "align_official_source_receipts_incomplete",
+    "deprecated_openai_skills_migration_evidence_missing",
+    "align_command_surface_coverage_incomplete",
+    "align_skill_surface_coverage_incomplete",
+    "align_programmatic_tool_calling_decision_missing",
+    "align_agents_sdk_decision_missing",
+    "align_prompt_evaluation_not_passed",
+    "align_immutable_core_integrity_not_passed",
+    "align_verification_receipts_not_passed",
+    "align_changed_paths_missing",
+    "align_latest_only_cleanup_review_incomplete",
+    "dedupe_evidence_missing"
+  ]
+}

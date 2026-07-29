@@ -6,6 +6,7 @@ import { legacyCoreSkillNames } from '../codex-native/core-skill-manifest.js';
 import { prefixKnownSksDollarReferences } from '../routes/dollar-prefix.js';
 import { inspectConfinedPath, moveConfinedPath, uniqueConfinedPath } from '../managed-path-safety.js';
 import { writeTextAtomic } from '../fsx.js';
+import { messageOf as errorMessage } from '../errors/message.js';
 import { collectNestedProjectRoots } from './current-project-guidance-nested.js';
 import { containsRetiredPublicSurface } from './current-project-guidance.js';
 
@@ -392,8 +393,4 @@ async function pathExists(ownerRoot: string, target: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

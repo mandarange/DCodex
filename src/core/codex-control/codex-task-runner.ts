@@ -588,12 +588,12 @@ async function ensurePythonCodexLbConfig(env: Record<string, string>, config: Re
     'approval_policy = "never"',
     '',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "codex-lb"',
     `base_url = ${tomlQuote(lbBaseUrl)}`,
     'wire_api = "responses"',
     'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
-    'requires_openai_auth = true',
+    'requires_openai_auth = false',
     ''
   ].join('\n')
   const configPath = path.join(codexHome, 'config.toml')

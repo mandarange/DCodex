@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { ensureDir, exists, nowIso, sha256, writeTextAtomic } from '../fsx.js'
 import { codexLbBaseUrlSecurityBlocker, normalizeCodexLbBaseUrl } from './codex-lb-env.js'
+import type { CodexLbDesktopMode } from './desktop-mode.js'
 
 export const CODEX_LB_TOOL_CATALOG_FILENAME = 'sks-codex-lb-tool-catalog.json'
 export const CODEX_LB_TOOL_CATALOG_SCHEMA = 'sks.codex-lb-tool-catalog.v1'
@@ -13,72 +14,26 @@ const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000
 const GPT56_MODEL_RE = /^gpt-5\.6-(?:sol|terra|luna)$/
 const ensureInflight = new Map<string, Promise<any>>()
 
-const REQUIRED_CODEX_0144_MODEL_FIELDS: Record<string, readonly string[]> = {
+const REQUIRED_MODEL_FIELDS: Record<string, readonly string[]> = {
   slug: ['string'],
   display_name: ['string'],
   supported_reasoning_levels: ['array'],
-  shell_type: ['string'],
-  visibility: ['string'],
-  supported_in_api: ['boolean'],
-  priority: ['number'],
-  base_instructions: ['string'],
-  support_verbosity: ['boolean'],
-  truncation_policy: ['object'],
-  supports_parallel_tool_calls: ['boolean'],
-  experimental_supported_tools: ['array']
-}
-
-// Codex CLI 0.145 renamed supports_reasoning_summaries to
-// supports_reasoning_summary_parameter (serde default true). A served row may
-// carry either name; at least one must be present with a boolean value.
-const REASONING_SUMMARY_FIELD_NAMES = ['supports_reasoning_summaries', 'supports_reasoning_summary_parameter'] as const
-
-// Exact union observed in Codex CLI 0.144.5's native cache and codex-lb catalog.
-// Unknown response fields are deliberately not persisted into a Codex-owned file.
-const CODEX_0144_MODEL_FIELD_TYPES: Record<string, readonly string[]> = {
-  ...REQUIRED_CODEX_0144_MODEL_FIELDS,
-  supports_reasoning_summaries: ['boolean'],
-  supports_reasoning_summary_parameter: ['boolean'],
-  description: ['string'],
-  default_reasoning_level: ['string'],
-  additional_speed_tiers: ['array'],
-  service_tiers: ['array'],
-  availability_nux: ['object', 'null'],
-  upgrade: ['object', 'null'],
-  model_messages: ['object'],
-  include_skills_usage_instructions: ['boolean'],
-  default_reasoning_summary: ['string'],
-  default_verbosity: ['string'],
-  apply_patch_tool_type: ['string'],
-  web_search_tool_type: ['string'],
-  supports_image_detail_original: ['boolean'],
-  context_window: ['number'],
-  max_context_window: ['number'],
-  comp_hash: ['string'],
-  effective_context_window_percent: ['number'],
-  input_modalities: ['array'],
-  supports_search_tool: ['boolean'],
-  use_responses_lite: ['boolean'],
-  tool_mode: ['string', 'null'],
-  multi_agent_version: ['string', 'null'],
-  minimal_client_version: ['string'],
-  available_in_plans: ['array'],
-  prefer_websockets: ['boolean'],
-  auto_review_model_override: ['string', 'null'],
-  auto_compact_token_limit: ['number', 'null'],
-  reasoning_summary_format: ['string'],
-  default_service_tier: ['string', 'null']
+  truncation_policy: ['object']
 }
 
 type CatalogIdentity = {
   origin: string
   base_url_sha256: string
   api_key_sha256: string
-  contract: 'codex-cli-0.144.5-model-catalog'
+  contract: 'codex-model-catalog-pass-through.v2'
 }
 
 export function isCodexLbGpt56Model(model: unknown): boolean {
   return GPT56_MODEL_RE.test(String(model || '').trim())
+}
+
+export function shouldBindLocalModelCatalog(mode: CodexLbDesktopMode): boolean {
+  return mode === 'desktop-dual-auth-compat' || mode === 'cli-provider'
 }
 
 export function codexLbToolCatalogPath(codexHome: string): string {
@@ -105,29 +60,31 @@ export function normalizeCodexLbToolCatalog(payload: any, opts: { maxModels?: nu
       validationIssues.push(`codex_lb_model_catalog_row_invalid:${index}:object`)
       return {}
     }
-    const model = String(row.slug || row.id || row.model || row.name || '').trim()
+    let normalized: Record<string, unknown>
+    try {
+      normalized = normalizeCodexLbModelRow(row, index)
+    } catch (error) {
+      validationIssues.push(error instanceof Error ? error.message : `codex_lb_model_catalog_row_invalid:${index}`)
+      return {}
+    }
+    const model = String(normalized.slug || '').trim()
     if (isCodexLbGpt56Model(model)) gpt56Models.push(model)
-    const sanitized = sanitizeCodex0144Model(row)
-    validationIssues.push(...validateCodex0144Model(sanitized, index))
-    if (!isCodexLbGpt56Model(model)) return sanitized
     if (row.use_responses_lite !== false) patchedModels.push(model)
-    // Codex 0.144.5 omits the request's `tools` field for Responses Lite.
-    // Preserve the provider's tool_mode contract, but force full Responses.
-    return { ...sanitized, use_responses_lite: false }
+    validationIssues.push(...validateKnownModelFields(normalized, index))
+    return normalized
   })
-  const compatibleRows = models.filter((row: any) => isCodexLbGpt56Model(row.slug))
-  const compatible = gpt56Models.length > 0
-    && compatibleRows.length === gpt56Models.length
-    && compatibleRows.every((row: any) => row.use_responses_lite === false)
+  const compatible = models.length > 0
+    && validationIssues.length === 0
+    && models.every((row: any) => row.use_responses_lite === false)
   const blockers = uniqueBounded([
     ...(rows.length ? [] : ['codex_lb_model_catalog_empty']),
     ...(rows.length > maxModels ? [`codex_lb_model_catalog_model_limit_exceeded:${rows.length}:${maxModels}`] : []),
     ...validationIssues,
-    ...(gpt56Models.length ? [] : ['codex_lb_gpt56_models_missing']),
-    ...(compatible ? [] : ['codex_lb_gpt56_tools_transport_incompatible'])
+    ...(compatible ? [] : ['codex_lb_model_catalog_tools_transport_incompatible'])
   ])
   return {
     schema: CODEX_LB_TOOL_CATALOG_SCHEMA,
+    contract: 'codex-model-catalog-pass-through.v2',
     ok: blockers.length === 0,
     catalog: { models },
     model_count: models.length,
@@ -207,6 +164,7 @@ export async function ensureCodexLbToolCatalog(input: {
   maxModels?: number
   force?: boolean
   now?: () => number
+  clientVersion?: string
 }) {
   const outputPath = path.resolve(input.outputPath || codexLbToolCatalogPath(input.codexHome))
   const baseUrl = normalizeCodexLbBaseUrl(input.baseUrl)
@@ -269,7 +227,11 @@ async function ensureValidatedCodexLbToolCatalog(
       return { ...status, generated_at: nowIso(), status: 'blocked', path: outputPath, exists: await exists(outputPath), fetched: true, required: true }
     }
 
-    await writeSecureCatalog(outputPath, normalized.catalog, identity)
+    await writeSecureCatalog(outputPath, normalized.catalog, identity, {
+      upstream_etag: response.headers.get('etag'),
+      upstream_last_modified: response.headers.get('last-modified'),
+      client_version: String(input.clientVersion || 'runtime-discovered')
+    })
     const verified = await inspectCodexLbToolCatalog(outputPath, inspectOpts)
     return {
       ...verified,
@@ -340,7 +302,11 @@ function parseCatalogJson(text: string) {
   }
 }
 
-async function writeSecureCatalog(file: string, catalog: any, identity: CatalogIdentity) {
+async function writeSecureCatalog(file: string, catalog: any, identity: CatalogIdentity, upstream: {
+  upstream_etag: string | null
+  upstream_last_modified: string | null
+  client_version: string
+}) {
   const text = `${JSON.stringify(catalog, null, 2)}\n`
   const metadataPath = codexLbToolCatalogMetadataPath(file)
   const metadata = {
@@ -349,7 +315,12 @@ async function writeSecureCatalog(file: string, catalog: any, identity: CatalogI
     catalog_schema: CODEX_LB_TOOL_CATALOG_SCHEMA,
     catalog_sha256: sha256(text),
     identity,
-    model_count: Array.isArray(catalog?.models) ? catalog.models.length : 0
+    model_count: Array.isArray(catalog?.models) ? catalog.models.length : 0,
+    upstream_etag: upstream.upstream_etag,
+    upstream_last_modified: upstream.upstream_last_modified,
+    client_version: upstream.client_version,
+    unknown_fields_preserved: true,
+    normalizations: ['desktop_full_responses_required']
   }
   await ensureDir(path.dirname(file))
   await writeTextAtomic(file, text, { mode: 0o600 })
@@ -374,26 +345,30 @@ async function inspectSecureRegularFile(file: string, maxBytes: number, prefix: 
   return { ok: blockers.length === 0, exists: true, updated_at_ms: stat.mtimeMs, size_bytes: stat.size, mode: mode.toString(8).padStart(3, '0'), owner_uid: ownerUid, blockers }
 }
 
-function sanitizeCodex0144Model(row: Record<string, unknown>) {
-  return Object.fromEntries(Object.keys(CODEX_0144_MODEL_FIELD_TYPES)
-    .filter((field) => Object.prototype.hasOwnProperty.call(row, field))
-    .map((field) => [field, row[field]]))
+export function normalizeCodexLbModelRow(row: Record<string, unknown>, index = 0): Record<string, unknown> {
+  const cloned = structuredClone(row)
+  for (const key of Object.keys(cloned)) {
+    if (isSensitiveCatalogField(key)) delete cloned[key]
+  }
+  const slug = String(cloned.slug ?? cloned.id ?? cloned.model ?? cloned.name ?? '').trim()
+  if (!slug) throw new Error(`codex_lb_model_catalog_slug_missing:${index}`)
+  if (!Object.prototype.hasOwnProperty.call(cloned, 'slug')) cloned.slug = slug
+  cloned.use_responses_lite = false
+  return cloned
 }
 
-function validateCodex0144Model(row: Record<string, unknown>, index: number) {
+function isSensitiveCatalogField(field: string): boolean {
+  return /(?:^|[_-])(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|set[_-]?cookie)(?:$|[_-])/i.test(field)
+}
+
+function validateKnownModelFields(row: Record<string, unknown>, index: number) {
   const issues: string[] = []
-  for (const [field, allowedTypes] of Object.entries(REQUIRED_CODEX_0144_MODEL_FIELDS)) {
+  for (const [field, allowedTypes] of Object.entries(REQUIRED_MODEL_FIELDS)) {
     if (!Object.prototype.hasOwnProperty.call(row, field)) {
       issues.push(`codex_lb_model_catalog_required_field_missing:${index}:${field}`)
       continue
     }
     if (!allowedTypes.includes(valueType(row[field]))) issues.push(`codex_lb_model_catalog_field_type_invalid:${index}:${field}`)
-  }
-  if (!REASONING_SUMMARY_FIELD_NAMES.some((field) => Object.prototype.hasOwnProperty.call(row, field))) {
-    issues.push(`codex_lb_model_catalog_required_field_missing:${index}:supports_reasoning_summaries`)
-  }
-  for (const [field, value] of Object.entries(row)) {
-    if (!(CODEX_0144_MODEL_FIELD_TYPES[field] || []).includes(valueType(value))) issues.push(`codex_lb_model_catalog_field_type_invalid:${index}:${field}`)
   }
   if (typeof row.slug === 'string' && !row.slug.trim()) issues.push(`codex_lb_model_catalog_field_empty:${index}:slug`)
   if (typeof row.display_name === 'string' && !row.display_name.trim()) issues.push(`codex_lb_model_catalog_field_empty:${index}:display_name`)
@@ -420,7 +395,7 @@ function catalogIdentity(baseUrl: string, apiKey: string): CatalogIdentity {
     origin: new URL(baseUrl).origin,
     base_url_sha256: sha256(baseUrl),
     api_key_sha256: sha256(apiKey),
-    contract: 'codex-cli-0.144.5-model-catalog'
+    contract: 'codex-model-catalog-pass-through.v2'
   }
 }
 

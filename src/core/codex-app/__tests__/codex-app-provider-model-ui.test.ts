@@ -70,12 +70,12 @@ test('selected codex-lb readiness is not blocked by optional GLM/OpenRouter setu
   await fs.writeFile(path.join(codexHome, 'config.toml'), [
     'model_provider = "codex-lb"',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
     'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
-    'requires_openai_auth = true',
+    'requires_openai_auth = false',
     ''
   ].join('\n'))
   await fs.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
@@ -92,6 +92,11 @@ test('selected codex-lb readiness is not blocked by optional GLM/OpenRouter setu
       ok: true,
       models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
       blockers: []
+    },
+    desktopPickerEvidence: {
+      state: 'verified',
+      verified: true,
+      selected_model: 'gpt-5.6-sol'
     }
   })
 
@@ -99,6 +104,9 @@ test('selected codex-lb readiness is not blocked by optional GLM/OpenRouter setu
   assert.equal(status.selected_provider_ok, true)
   assert.deepEqual(status.selected_provider_blockers, [])
   assert.equal(status.ok, true)
+  assert.equal(status.configured, true)
+  assert.equal(status.advertised, true)
+  assert.equal(status.effective_ready, true)
   assert.equal(status.status, 'ready')
   assert.deepEqual(status.blockers, [])
   assert.equal(status.optional_provider_status, 'setup_available')
@@ -142,12 +150,12 @@ test('selected codex-lb readiness prefers persisted model_catalog_json over a fa
     'model_provider = "codex-lb"',
     `model_catalog_json = "${catalogPath}"`,
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
     'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
-    'requires_openai_auth = true',
+    'requires_openai_auth = false',
     ''
   ].join('\n'))
   await fs.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
@@ -163,7 +171,12 @@ test('selected codex-lb readiness prefers persisted model_catalog_json over a fa
     // Intentionally omit live catalog injection so readiness must use the Desktop file.
   })
 
-  assert.equal(status.ok, true)
+  assert.equal(status.ok, false)
+  assert.equal(status.configured, true)
+  assert.equal(status.advertised, true)
+  assert.equal(status.effective_ready, false)
+  assert.equal(status.desktop_picker_verified, false)
+  assert.equal(status.status, 'available_unverified')
   assert.equal(status.codex_lb.model_catalog_source, 'persisted_model_catalog_json')
   assert.equal(status.codex_lb.model_catalog_json_configured, true)
   assert.equal(status.codex_lb.expected_models_present, true)
@@ -188,12 +201,12 @@ test('unmarked user model_reasoning_effort does not fail Fast UI readiness under
     '[features]',
     'fast_mode = true',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
     'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
-    'requires_openai_auth = true',
+    'requires_openai_auth = false',
     ''
   ].join('\n'))
   await fs.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
@@ -225,9 +238,107 @@ test('unmarked user model_reasoning_effort does not fail Fast UI readiness under
     }
   })
 
-  assert.equal(status.ok, true)
+  assert.equal(status.ok, false)
+  assert.equal(status.configured, true)
+  assert.equal(status.readiness_state, 'available_unverified')
   assert.equal(appStatus.features?.fast_mode_config?.ok, true)
   assert.deepEqual(appStatus.features?.fast_mode_config?.blockers || [], [])
+})
+
+test('native bridge mode does not require or bind the local replacement catalog', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-provider-ui-native-'))
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-provider-ui-native-home-'))
+  const codexHome = path.join(home, '.codex')
+  await fs.mkdir(codexHome, { recursive: true })
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true })
+    await fs.rm(home, { recursive: true, force: true })
+  })
+
+  await fs.writeFile(path.join(codexHome, 'config.toml'), [
+    '# sks-codex-lb-managed-desktop-bridge',
+    'openai_base_url = "http://127.0.0.1:18765/backend-api/codex"',
+    '',
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    'base_url = "https://lb.example.test/backend-api/codex"',
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n'))
+  await fs.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
+    "export CODEX_LB_BASE_URL='http://127.0.0.1:18765/backend-api/codex'",
+    "export CODEX_LB_API_KEY='fixture-secret'",
+    ''
+  ].join('\n'))
+
+  const status = await codexProviderModelUiStatus({
+    home,
+    cwd: root,
+    env: { HOME: home },
+    codexLbDesktopMode: 'desktop-native-bridge',
+    codexLbModelCatalog: {
+      ok: true,
+      models: ['future-codex-model'],
+      blockers: []
+    }
+  })
+
+  assert.equal(status.codex_lb.local_catalog_binding_allowed, false)
+  assert.equal(status.codex_lb.model_catalog_json_configured, false)
+  assert.equal(status.codex_lb.advertised_models_present, true)
+  assert.equal(status.codex_lb.provider_contract_ok, true)
+  assert.equal(status.codex_lb.provider_contract, 'cli-provider')
+  assert.ok(!status.codex_lb.blockers.includes('codex_lb_model_catalog_json_unselected'))
+})
+
+test('compat provider status requires exact OpenAI identity and separate gateway header', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-provider-ui-compat-'))
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-provider-ui-compat-home-'))
+  const codexHome = path.join(home, '.codex')
+  await fs.mkdir(codexHome, { recursive: true })
+  t.after(async () => {
+    await fs.rm(root, { recursive: true, force: true })
+    await fs.rm(home, { recursive: true, force: true })
+  })
+
+  await fs.writeFile(path.join(codexHome, 'config.toml'), [
+    '# sks-codex-lb-managed-desktop-compat',
+    'model_provider = "codex-lb"',
+    '',
+    '[model_providers.codex-lb]',
+    'name = "OpenAI"',
+    'base_url = "https://lb.example.test/backend-api/codex"',
+    'wire_api = "responses"',
+    'requires_openai_auth = true',
+    'supports_websockets = true',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    ''
+  ].join('\n'))
+  await fs.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
+    "export CODEX_LB_BASE_URL='https://lb.example.test/backend-api/codex'",
+    "export CODEX_LB_API_KEY='fixture-secret'",
+    ''
+  ].join('\n'))
+
+  const status = await codexProviderModelUiStatus({
+    home,
+    cwd: root,
+    env: { HOME: home },
+    codexLbModelCatalog: {
+      ok: true,
+      models: ['future-codex-model'],
+      blockers: []
+    }
+  })
+
+  assert.equal(status.codex_lb.desktop_mode, 'desktop-dual-auth-compat')
+  assert.equal(status.codex_lb.provider_contract, 'desktop-dual-auth-compat')
+  assert.equal(status.codex_lb.provider_contract_ok, true)
+  assert.equal(status.codex_lb.gateway_auth_transport, 'x-codex-lb-api-key')
+  assert.deepEqual(status.codex_lb.blockers, [])
 })
 
 function run(command: string, args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {

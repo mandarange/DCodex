@@ -10,6 +10,7 @@ const SECRET_ENV_NAMES = [
 ];
 
 const SECRET_PATTERNS = [
+  /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/g,
   /\bsk-proj-[A-Za-z0-9_-]{12,}\b/g,
   /\bsk-or-v1-[A-Za-z0-9_-]{12,}\b/g,
   /\bsk-or-[A-Za-z0-9_-]{12,}\b/g,
@@ -17,6 +18,11 @@ const SECRET_PATTERNS = [
   /\bsk-clb-[A-Za-z0-9_-]{8,}\b/g,
   /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
   /\bghp_[A-Za-z0-9_]{20,}\b/g,
+  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
+  /\bAIza[0-9A-Za-z_-]{30,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g,
+  /\bnpm_[A-Za-z0-9]{30,}\b/g,
+  /\b(?:glpat|pypi|hf)_[A-Za-z0-9_-]{20,}\b/g,
   /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b/gi,
   /\bAuthorization\s*:\s*[^\r\n,}]+/gi,
   /\b(?:Cookie|Set-Cookie)\s*:\s*[^\r\n,}]+/gi,

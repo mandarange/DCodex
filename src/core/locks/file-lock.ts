@@ -1,7 +1,7 @@
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ensureDir, nowIso, randomId, readJson, writeJsonAtomic } from '../fsx.js';
+import { ensureDir, nowIso, randomId, readJson } from '../fsx.js';
 import { guardedRm, guardContextForRoute } from '../safety/mutation-guard.js';
 import { CONFIRMATION_REQUIRED, REQUESTED_SCOPE_CONTRACT_SCHEMA, type RequestedScopeContract } from '../safety/requested-scope-contract.js';
 
@@ -37,6 +37,7 @@ interface HeldFileLock {
   owner: string;
   protectedPids: Set<number>;
   recovered: boolean;
+  acquiredAt: string;
 }
 
 const HEARTBEAT_MARGIN = 3;
@@ -88,8 +89,9 @@ async function tryAcquireFileLock(lockPath: string, staleMs: number): Promise<He
     const protectedPids = new Set<number>();
     try {
       await fsp.mkdir(lockPath);
-      await writeOwnerFile(lockPath, owner, staleMs, protectedPids);
-      return { owner, protectedPids, recovered };
+      const acquiredAt = nowIso();
+      await writeOwnerFile(lockPath, owner, staleMs, protectedPids, acquiredAt);
+      return { owner, protectedPids, recovered, acquiredAt };
     } catch (err: unknown) {
       if (errorCode(err) !== 'EEXIST') throw err;
       if (attempt > 0) return null;
@@ -115,7 +117,7 @@ async function holdFileLock<T>(
         throw new Error(`file_lock_invalid_protected_pid:${String(pid)}`);
       }
       held.protectedPids.add(pid);
-      await writeOwnerFile(lockPath, held.owner, staleMs, held.protectedPids);
+      await writeOwnerFile(lockPath, held.owner, staleMs, held.protectedPids, held.acquiredAt);
     }
   };
 
@@ -125,7 +127,7 @@ async function holdFileLock<T>(
   // heartbeat is old AND the owning pid is actually dead.
   const heartbeat = setInterval(() => {
     /* intentional: a missed heartbeat tick just gets retried next interval; only matters if it stays stale for the full staleMs window */
-    writeOwnerFile(lockPath, held.owner, staleMs, held.protectedPids).catch(() => undefined);
+    writeOwnerFile(lockPath, held.owner, staleMs, held.protectedPids, held.acquiredAt).catch(() => undefined);
   }, Math.max(250, Math.floor(staleMs / HEARTBEAT_MARGIN)));
   if (typeof heartbeat.unref === 'function') heartbeat.unref();
 
@@ -142,20 +144,43 @@ async function writeOwnerFile(
   lockPath: string,
   owner: string,
   staleMs: number,
-  protectedPids: ReadonlySet<number>
+  protectedPids: ReadonlySet<number>,
+  acquiredAt: string
 ): Promise<void> {
-  const now = nowIso();
-  const existing = await readJson<FileLockOwnerSnapshot | null>(path.join(lockPath, 'owner.json'), null);
-  await writeJsonAtomic(path.join(lockPath, 'owner.json'), {
+  await writeOwnerAtomic(path.join(lockPath, 'owner.json'), {
     schema: 'sks.file-lock-owner.v1',
     owner,
     pid: process.pid,
     hostname: os.hostname(),
-    acquired_at: existing?.owner === owner ? existing.acquired_at : now,
-    heartbeat_at: now,
+    acquired_at: acquiredAt,
+    heartbeat_at: nowIso(),
     stale_ms: staleMs,
     ...(protectedPids.size > 0 ? { protected_pids: [...protectedPids].sort((a, b) => a - b) } : {})
   } satisfies FileLockOwnerSnapshot);
+}
+
+// Owner records are rewritten on every heartbeat, so they must stay cheap:
+// tmp+rename keeps reads atomic, but we skip fsync and the content-compare
+// read that writeJsonAtomic performs. Crash durability is already covered by
+// recoverStaleLock — a missing/corrupt owner file falls back to directory
+// mtime staleness, and the lock dir itself is created via bare mkdir (no
+// parent fsync), so fsyncing owner.json would add cost with no extra
+// guarantee. acquired_at is held in memory by the holder, which is the only
+// writer of its own owner file, so no disk read is needed to preserve it.
+async function writeOwnerAtomic(file: string, data: FileLockOwnerSnapshot): Promise<void> {
+  const tmp = `${file}.${process.pid}.${randomId(6)}.tmp`;
+  try {
+    const handle = await fsp.open(tmp, 'w');
+    try {
+      await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8');
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+    await fsp.rename(tmp, file);
+  } catch (err) {
+    await fsp.rm(tmp, { force: true }).catch(() => undefined);
+    throw err;
+  }
 }
 
 // Reclaims an abandoned lock without ever directly deleting a lock another

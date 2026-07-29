@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { restartCodexApp } from '../codex-app-restart.js';
+import { quitCodexApp, restartCodexApp } from '../codex-app-restart.js';
 import { codexAppCandidatePaths } from '../../codex-app.js';
 
 test('Codex restart targets the ChatGPT bundle id and waits for exit before open', async () => {
@@ -35,4 +35,24 @@ test('Codex app discovery includes the installed ChatGPT.app bundle path', () =>
     assert.ok(paths.includes('/Applications/ChatGPT.app'));
     assert.ok(paths.includes('/Users/test/Applications/ChatGPT.app'));
   }
+});
+
+test('Codex quit verifies process exit without reopening the app', async () => {
+  const calls: Array<{ bin: string; args: string[] }> = [];
+  const result = await quitCodexApp({
+    platform: 'darwin',
+    pollMs: 1,
+    osascriptPath: '/test/osascript',
+    runProcessImpl: (async (bin: string, args: string[]) => {
+      calls.push({ bin, args });
+      if (args[1]?.includes('is running')) return { code: 0, stdout: 'false\n', stderr: '' };
+      return { code: 0, stdout: '', stderr: '' };
+    }) as any
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'quit');
+  assert.equal(result.exit_wait?.ok, true);
+  assert.ok(calls.some((call) => call.args[1]?.includes('to quit')));
+  assert.equal(calls.some((call) => call.args[0] === '-b'), false);
 });

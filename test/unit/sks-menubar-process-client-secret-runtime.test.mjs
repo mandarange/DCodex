@@ -17,6 +17,12 @@ test('Menu Bar ProcessClient suppresses arbitrary secure stdin echoes in UI outp
   await fs.writeFile(action, `#!/bin/sh
 printf 'args:%s\\n' "$*"
 IFS= read -r value || true
+case "$*" in
+  *--fail*)
+    printf '{"schema":"sks.secure-input-error.v1","ok":false,"error":"secure_input_rejected","reflected":"%s"}\\n' "$value"
+    exit 1
+    ;;
+esac
 printf 'reflected:%s\\n' "$value"
 `, { mode: 0o755 });
   await fs.writeFile(harness, `
@@ -42,6 +48,17 @@ struct Harness {
         let reflected = "reflected:" + sentinel
         precondition(client.redact(reflected).contains(sentinel))
         precondition(!client.redact(reflected, sensitiveValues: [sentinel]).contains(sentinel))
+        let homeJSONData = try JSONSerialization.data(withJSONObject: [
+            "root": FileManager.default.homeDirectoryForCurrentUser.path,
+            "ok": true
+        ])
+        let homeJSON = String(data: homeJSONData, encoding: .utf8)!
+        let redactedHomeJSON = client.redact(homeJSON)
+        let redactedHomePayload = try JSONSerialization.jsonObject(
+            with: Data(redactedHomeJSON.utf8)
+        ) as! [String: Any]
+        precondition(redactedHomePayload["root"] as? String == "[redacted]")
+        precondition(redactedHomePayload["ok"] as? Bool == true)
 
         let secure = waitForResult(
             client,
@@ -50,13 +67,29 @@ struct Harness {
         )
         precondition(secure.code == 0)
         precondition(!secure.output.contains(sentinel))
-        precondition(secure.output == "Secure input operation completed. Child output was suppressed.")
+        let securePayload = try JSONSerialization.jsonObject(with: Data(secure.output.utf8)) as! [String: Any]
+        precondition(securePayload["ok"] as? Bool == true)
+        precondition(securePayload["output_suppressed"] as? Bool == true)
         let secureLog = try String(contentsOfFile: log, encoding: .utf8)
         precondition(!secureLog.contains(sentinel))
         precondition(secureLog.contains("--api-key-stdin"))
-        precondition(secureLog.contains("Child output was suppressed."))
+        precondition(secureLog.contains(#""output_suppressed":true"#))
         let permissions = try FileManager.default.attributesOfItem(atPath: log)[.posixPermissions] as? NSNumber
         precondition(permissions?.intValue == 0o600)
+
+        let failed = waitForResult(
+            client,
+            arguments: ["codex-lb", "set-key", "--api-key-stdin", "--json", "--fail"],
+            stdin: sentinel + "\\n"
+        )
+        precondition(failed.code == 1)
+        precondition(!failed.output.contains(sentinel))
+        precondition(failed.output.contains("secure_input_rejected"))
+        let failedPayload = try JSONSerialization.jsonObject(with: Data(failed.output.utf8)) as! [String: Any]
+        precondition(failedPayload["ok"] as? Bool == false)
+        let failedLog = try String(contentsOfFile: log, encoding: .utf8)
+        precondition(!failedLog.contains(sentinel))
+        precondition(failedLog.contains("secure_input_rejected"))
 
         let ordinary = "ordinary-input"
         let normal = waitForResult(client, arguments: ["echo"], stdin: ordinary + "\\n")

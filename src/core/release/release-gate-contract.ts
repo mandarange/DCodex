@@ -136,6 +136,7 @@ export const RELEASE_GATE_CONTRACT_IDS: readonly string[] = Object.freeze([
   'shared-memory:check',
   'side-effect:runtime-report',
   'skill:name-canonicalizer',
+  'skill:surface-modernization',
   'sksd:daemon',
   'super-search:provider-interface',
   'triwiki:cache-key',

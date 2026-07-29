@@ -29,6 +29,7 @@ import {
   CODEX_LB_TOOL_OUTPUT_RECOVERY_OVERRIDE_FLAG,
   codexLbToolOutputRecoveryOverrideAcknowledged
 } from '../codex-lb/codex-lb-tool-output-recovery.js';
+import { isOptionalZellijUnavailableLaunch, resolveMadCliDegraded, writeMadHeadlessZellijFallback } from './mad-sks-headless.js';
 
 const MAD_SKS_DEFAULT_TTL_MS = 10 * 60 * 1000;
 // Compose unsupported flag names at runtime to keep retired option tokens out of packed dist.
@@ -65,6 +66,9 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
       `Subcommands: ${MAD_SKS_COMMAND_SURFACE.join(', ')}`,
       '',
       'With no subcommand, launches the MAD-SKS session (zellij UI, dependency checks, scoped permission model).',
+      'Bare `sks mad-sks --json` prints the launch profile and exits without launching (legacy contract).',
+      'CLI (non-interactive) launches never block on zellij repair: they degrade to the headless fallback (live_panes=false) automatically.',
+      'Use --headless (or SKS_MAD_ALLOW_HEADLESS=1) to skip the zellij UI explicitly; SKS_MAD_CLI_HEADLESS=0 restores legacy blocking.',
       '`sks mad-sks <subcommand> --help` shows this same summary — per-subcommand help is not yet implemented; see docs/mad-sks.md and docs/mad-sks-rollback.md for flag reference.'
     ].join('\n');
     if (rawArgsForHelp.includes('--json')) {
@@ -121,6 +125,13 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
   }
   const update = { status: 'notice_only', non_blocking: true };
   const headlessZellij = rawArgs.includes('--headless') || process.env.SKS_MAD_ALLOW_HEADLESS === '1';
+  const cliDegraded = resolveMadCliDegraded({
+    args: rawArgs,
+    explicitHeadless: headlessZellij,
+    stdoutIsTTY: process.stdout.isTTY === true,
+    stdinIsTTY: process.stdin.isTTY === true
+  });
+  const allowZellijHeadlessFallback = headlessZellij || cliDegraded;
   const skipZellijRepair = rawArgs.includes('--skip-zellij-repair') || rawArgs.includes('--no-auto-install-zellij');
   const launchRoot = process.cwd();
   if (!(await exists(path.join(launchRoot, '.sneakoscope')))) await initProject(launchRoot, {});
@@ -135,7 +146,7 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
           autoApprove: rawArgs.includes('--yes') || rawArgs.includes('-y'),
           interactive: false,
           installHomebrew: rawArgs.includes('--install-homebrew'),
-          allowHeadlessFallback: headlessZellij,
+          allowHeadlessFallback: allowZellijHeadlessFallback,
           dryRun: true,
           quiet: rawArgs.includes('--json')
         });
@@ -172,7 +183,7 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
           selfHealOnMissing: true,
           autoApprove: rawArgs.includes('--yes') || rawArgs.includes('-y'),
           installHomebrew: rawArgs.includes('--install-homebrew'),
-          allowHeadlessFallback: headlessZellij,
+          allowHeadlessFallback: allowZellijHeadlessFallback,
           deferUpdateCheck: true
         }).catch(() => ({ status: 'error', command: 'sks doctor --fix --yes' }))
       : await repairZellijForSks({
@@ -182,10 +193,10 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
           autoApprove: rawArgs.includes('--yes') || rawArgs.includes('-y'),
           interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY && process.env.SKS_NO_QUESTION !== '1'),
           installHomebrew: rawArgs.includes('--install-homebrew'),
-          allowHeadlessFallback: headlessZellij,
+          allowHeadlessFallback: allowZellijHeadlessFallback,
           quiet: rawArgs.includes('--json')
         });
-  const zellijRepairBlocked = !headlessZellij && (
+  const zellijRepairBlocked = !allowZellijHeadlessFallback && (
     (zellijUpdate as any).status === 'manual_required'
     || (zellijUpdate as any).strategy === 'manual-required'
     || (zellijUpdate as any).ok === false
@@ -196,6 +207,13 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
     process.exitCode = 1;
     return { ok: false, status: 'repair_required', command: (zellijUpdate as any).command || 'sks doctor --fix --yes', zellij_repair: zellijUpdate };
   }
+  // The repair already proved zellij cannot run here; skip the doomed launch
+  // attempt and finish headless immediately instead of failing the CLI launch.
+  const zellijRepairHeadless = cliDegraded && (
+    (zellijUpdate as any).status === 'manual_required'
+    || (zellijUpdate as any).strategy === 'manual-required'
+    || (zellijUpdate as any).strategy === 'headless-fallback'
+  );
   const depStatus = skipZellijRepair && deps.ensureMadLaunchDependencies
     ? await deps.ensureMadLaunchDependencies(args)
     : { ready: true, actions: [] };
@@ -315,7 +333,7 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
   // fresh unique session) respect it and skip the reset.
   const autoDerivedMadSession = !explicitWorkspace && !launchOpts.session;
   const workspace = explicitWorkspace || launchOpts.session || madZellijSessionNameForCwd(process.cwd());
-  const launch: any = headlessZellij
+  const launch: any = headlessZellij || zellijRepairHeadless
     ? await writeMadHeadlessZellijFallback(madLaunch, workspace)
     : await launchMadZellijUi([...cleanArgs, '--workspace', workspace], {
         ...launchOpts,
@@ -339,6 +357,14 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
       return launchUiDiff;
     }
   }
+  if (!launch.ok
+    && cliDegraded
+    && process.env.SKS_REQUIRE_ZELLIJ !== '1'
+    && isOptionalZellijUnavailableLaunch(launch)) {
+    const fallback = await writeMadHeadlessZellijFallback(madLaunch, workspace, (launch.warnings || []).map(String));
+    console.log('MAD launch continuing headless: zellij unavailable in CLI mode (live_panes=false).');
+    return fallback;
+  }
   if (!launch.ok) {
     console.log(`MAD Zellij action: ${formatMadZellijAction(launch)}`);
     return launch;
@@ -348,7 +374,7 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
     ok: true,
     mission_id: madLaunch.mission_id,
     session_name: launch.session_name || null,
-    live_panes: !headlessZellij,
+    live_panes: !headlessZellij && !zellijRepairHeadless,
     initial_panes: 'orchestrator-monitor-viewports',
     worker_panes_created: 0,
     viewport_panes_created: Number(madSksEnv.SKS_ZELLIJ_VIEWPORTS),
@@ -388,7 +414,7 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
     return launch;
   }
   if (launch.attach_command_with_env) console.log(`Attach with: ${launch.attach_command_with_env}`);
-  if (headlessZellij) console.log('MAD launch running headless: live_panes=false.');
+  if (headlessZellij || zellijRepairHeadless) console.log('MAD launch running headless: live_panes=false.');
   return launch;
   } finally {
     await settleMadLaunchLifecycle(launchLifecycleTasks, madLaunch.dir);
@@ -428,6 +454,8 @@ function shouldAutoAttachZellij(args: any[]): boolean {
   return Boolean(process.stdout.isTTY && process.stdin.isTTY);
 }
 
+export { isOptionalZellijUnavailableLaunch, resolveMadCliDegraded } from './mad-sks-headless.js';
+
 function formatMadZellijAction(launch: any) {
   const blockers = launch.blockers?.join(', ') || launch.warnings?.join(', ') || 'check Zellij installation';
   const details = [
@@ -443,28 +471,6 @@ function formatMadZellijAction(launch: any) {
   const detail = details.length ? ` | ${details.join(' | ')}` : '';
   const report = launch.report_path ? ` | report: ${launch.report_path}` : '';
   return `${blockers}${detail}${report}`;
-}
-
-async function writeMadHeadlessZellijFallback(madLaunch: any, workspace: string) {
-  const report = {
-    schema: 'sks.zellij-session.v1',
-    generated_at: nowIso(),
-    ok: true,
-    kind: 'mad',
-    status: 'headless-fallback',
-    live_panes: false,
-    mission_id: madLaunch.mission_id,
-    session_name: null,
-    workspace,
-    root: madLaunch.root,
-    cwd: path.resolve(process.cwd()),
-    attach_command_with_env: null,
-    blockers: [],
-    warnings: ['zellij_headless_fallback_live_panes_false']
-  };
-  await writeJsonAtomic(path.join(madLaunch.dir, 'zellij-session.json'), report);
-  await appendJsonlBounded(path.join(madLaunch.dir, 'events.jsonl'), { ts: nowIso(), type: 'mad_sks.zellij_headless_fallback', live_panes: false });
-  return report;
 }
 
 async function activateMadZellijPermissionState(cwd: any = process.cwd(), args: any[] = []) {

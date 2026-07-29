@@ -144,7 +144,7 @@ export async function inspectCodexLbToolOutputRecoveryForLaunch(opts: any = {}) 
     tool_output_recovery: recovery || null,
     blockers: ok ? [] : recovery?.blockers || ['codex_lb_tool_output_recovery_version_unverified'],
     operator_actions: ok ? [] : recovery?.operator_actions || [
-      'Upgrade codex-lb, or run `sks codex-lb use-oauth`; SKS will not switch providers silently.'
+      'Upgrade codex-lb, or run `sks codex-lb disable`; SKS will not change routing or authentication silently.'
     ]
   }
 }

@@ -148,7 +148,7 @@ export async function fetchReleaseUpgradeBaseline(
 }
 
 /**
- * The published 6.2.0 tarball is immutable and verified against
+ * The published 7.6.0 tarball is immutable and verified against
  * RELEASE_UPGRADE_BASELINE_SHA256 before this classifier is used. Legacy
  * surface strings, retired packaged files, and scanner-only token fixtures are
  * expected in that exact baseline, but malformed archives and structural

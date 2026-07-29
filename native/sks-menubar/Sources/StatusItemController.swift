@@ -12,7 +12,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let statusLine = NSMenuItem(title: "Status: Starting", action: nil, keyEquivalent: "")
     private let pendingLine = NSMenuItem(title: "Pending approvals (0)", action: nil, keyEquivalent: "")
-    private let fastLine = NSMenuItem(title: "Fast: Checking…", action: nil, keyEquivalent: "")
+    private let fastLine = NSMenuItem(title: "Codex Fast: Checking…", action: nil, keyEquivalent: "")
     private var fastOnItem: NSMenuItem?
     private var fastOffItem: NSMenuItem?
     private var timer: Timer?
@@ -47,7 +47,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         statusLine.isEnabled = false
         pendingLine.isEnabled = false
         fastLine.isEnabled = false
-        fastLine.setAccessibilityLabel("Current Fast mode state")
+        fastLine.setAccessibilityLabel("Current Codex Fast state")
         menu.addItem(version)
         menu.addItem(statusLine)
         menu.addItem(NSMenuItem.separator())
@@ -55,12 +55,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(pendingLine)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(fastLine)
-        let fastOn = item("Fast Mode On", #selector(fastOn))
-        fastOn.setAccessibilityLabel("Turn Fast mode on")
+        let fastOn = item("Codex Fast On", #selector(fastOn))
+        fastOn.setAccessibilityLabel("Turn Codex Fast on")
         fastOnItem = fastOn
         menu.addItem(fastOn)
-        let fastOff = item("Fast Mode Off", #selector(fastOff))
-        fastOff.setAccessibilityLabel("Turn Fast mode off")
+        let fastOff = item("Codex Fast Off", #selector(fastOff))
+        fastOff.setAccessibilityLabel("Turn Codex Fast off")
         fastOffItem = fastOff
         menu.addItem(fastOff)
         menu.addItem(NSMenuItem.separator())
@@ -182,13 +182,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func refreshFastState() {
         guard !fastRefreshInFlight else { fastRefreshPending = true; return }
         fastRefreshInFlight = true
-        fastLine.title = "Fast: Checking…"
+        fastLine.title = "Codex Fast: Checking…"
         processClient.run(["fast-mode", "status", "--json"]) { [weak self] result in
             guard let self = self else { return }
             self.fastRefreshInFlight = false
             guard result.code == 0, let json = self.readJson(text: result.output),
                   let global = json["global"] as? [String: Any], let on = global["on"] as? Bool else {
-                self.fastLine.title = "Fast: Unavailable"
+                self.fastLine.title = "Codex Fast: Unavailable"
                 self.fastOnItem?.state = .off
                 self.fastOffItem?.state = .off
                 self.fastOnItem?.isEnabled = true
@@ -197,7 +197,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 return
             }
             let tier = global["service_tier"] as? String ?? (on ? "fast" : "default")
-            self.fastLine.title = "Fast: \(on ? "On" : "Off") · \(tier)"
+            self.fastLine.title = "Codex Fast: \(on ? "On" : "Off") · service tier \(tier)"
             self.fastOnItem?.state = on ? .on : .off
             self.fastOffItem?.state = on ? .off : .on
             self.fastOnItem?.isEnabled = !on
@@ -332,16 +332,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
     }
     @objc private func fastOn() {
-        fastLine.title = "Fast: Turning On…"
+        fastLine.title = "Codex Fast: Turning On…"
         fastOnItem?.isEnabled = false
         fastOffItem?.isEnabled = false
-        run(["fast-mode", "on", "--json"], kind: "fast-mode-on", mutationGroup: "codex-config", summary: "Turn Fast Mode on") { [weak self] in self?.refreshFastState() }
+        run(["fast-mode", "on", "--json"], kind: "fast-mode-on", mutationGroup: "codex-config", summary: "Turn Codex Fast on") { [weak self] in self?.refreshFastState() }
     }
     @objc private func fastOff() {
-        fastLine.title = "Fast: Turning Off…"
+        fastLine.title = "Codex Fast: Turning Off…"
         fastOnItem?.isEnabled = false
         fastOffItem?.isEnabled = false
-        run(["fast-mode", "off", "--json"], kind: "fast-mode-off", mutationGroup: "codex-config", summary: "Turn Fast Mode off") { [weak self] in self?.refreshFastState() }
+        run(["fast-mode", "off", "--json"], kind: "fast-mode-off", mutationGroup: "codex-config", summary: "Turn Codex Fast off") { [weak self] in self?.refreshFastState() }
     }
     @objc private func viewLastOperation() {
         if FileManager.default.fileExists(atPath: AppRuntime.lastActionLogPath) { NSWorkspace.shared.open(URL(fileURLWithPath: AppRuntime.lastActionLogPath)) }

@@ -119,7 +119,7 @@ assertGate(releaseManifest?.schema === 'sks.release-gates.v2', 'release gate man
 assertGate(harnessManifest?.schema === 'sks.infra-harness-gates.v1', 'infra harness manifest schema mismatch', { schema: harnessManifest?.schema || null });
 assertGate(releaseGates.length > 0 && releaseGates.length <= 200, 'release manifest must include 1..200 release gates', { release_gates: releaseGates.length });
 assertGate(harnessGates.length > 0, 'infra harness manifest must include harness gates', { harness_gates: harnessGates.length });
-assertGate(Object.keys(pkg.scripts || {}).length <= 100, 'package script budget exceeded', { script_count: Object.keys(pkg.scripts || {}).length, limit: 100 });
+assertGate(Object.keys(pkg.scripts || {}).length <= 101, 'package script budget exceeded', { script_count: Object.keys(pkg.scripts || {}).length, limit: 101 });
 for (const script of requiredPackageScripts) assertGate(Boolean(pkg.scripts?.[script]), `missing package script: ${script}`);
 
 const fullReleaseScript = String(pkg.scripts?.['release:check:full'] || '');

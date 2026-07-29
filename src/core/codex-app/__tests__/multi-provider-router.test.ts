@@ -483,3 +483,103 @@ test('router activation fails closed on OpenCodex Design B unless force-routing-
   assert.equal(forced.ok, true, JSON.stringify(forced));
   assert.equal(forced.desktop_picker?.models_cache_invalidated, true);
 });
+
+test('router activation refuses to remove codex-lb routing while its shared gateway key is active', async (t) => {
+  const harness = await makeMultiProviderRouterHarness();
+  t.after(async () => fs.rm(harness.temp, { recursive: true, force: true }));
+  const gatewayKey = 'sk-clb-router-shared-auth';
+  const remote = 'https://lb.example.test/backend-api/codex';
+  const managedCatalog = path.join(harness.codexHome, 'sks-codex-lb-tool-catalog.json');
+  const envPath = path.join(harness.codexHome, 'sks-codex-lb.env');
+  const authPath = path.join(harness.codexHome, 'auth.json');
+  const original = [
+    'model_provider = "codex-lb"',
+    '# sks-codex-lb-managed-openai-base-url',
+    `openai_base_url = "${remote}"`,
+    `model_catalog_json = ${JSON.stringify(managedCatalog)}`,
+    '',
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = "${remote}"`,
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n');
+  const auth = `{"auth_mode":"apikey","OPENAI_API_KEY":"${gatewayKey}"}\n`;
+  await fs.writeFile(harness.configPath, original);
+  await fs.writeFile(managedCatalog, '{"models":[]}\n', { mode: 0o600 });
+  await fs.writeFile(
+    envPath,
+    `export CODEX_LB_BASE_URL=${JSON.stringify(remote)}\nexport CODEX_LB_API_KEY=${JSON.stringify(gatewayKey)}\n`,
+    { mode: 0o600 }
+  );
+  await fs.writeFile(authPath, auth, { mode: 0o600 });
+
+  const result = await useMultiProviderRouter({
+    home: harness.home,
+    env: harness.env,
+    configPath: harness.configPath,
+    catalogPath: harness.catalogPath,
+    baseUrl: MULTI_PROVIDER_ROUTER_DEFAULT_BASE_URL,
+    model: 'anthropic/claude-sonnet',
+    restartApp: false,
+    fetchImpl: routerModelsFetch()
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.blockers.includes('legacy_codex_lb_desktop_config_requires_migration'));
+  assert.equal(await fs.readFile(harness.configPath, 'utf8'), original);
+  assert.equal(await fs.readFile(authPath, 'utf8'), auth);
+});
+
+test('router activation rereads config after safe codex-lb deselection instead of using a stale CAS snapshot', async (t) => {
+  const harness = await makeMultiProviderRouterHarness();
+  t.after(async () => fs.rm(harness.temp, { recursive: true, force: true }));
+  const remote = 'https://lb.example.test/backend-api/codex';
+  const managedCatalog = path.join(harness.codexHome, 'sks-codex-lb-tool-catalog.json');
+  await fs.writeFile(harness.configPath, [
+    'model_provider = "codex-lb"',
+    '# sks-codex-lb-managed-openai-base-url',
+    `openai_base_url = "${remote}"`,
+    `model_catalog_json = ${JSON.stringify(managedCatalog)}`,
+    '',
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = "${remote}"`,
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n'));
+  await fs.writeFile(managedCatalog, '{"models":[]}\n', { mode: 0o600 });
+  await fs.writeFile(path.join(harness.codexHome, 'auth.json'), JSON.stringify({
+    auth_mode: 'chatgpt',
+    account_id: 'acct-router-oauth',
+    tokens: {
+      access_token: 'access-router',
+      refresh_token: 'refresh-router'
+    }
+  }), { mode: 0o600 });
+
+  const result: any = await useMultiProviderRouter({
+    home: harness.home,
+    env: harness.env,
+    configPath: harness.configPath,
+    catalogPath: harness.catalogPath,
+    baseUrl: MULTI_PROVIDER_ROUTER_DEFAULT_BASE_URL,
+    model: 'anthropic/claude-sonnet',
+    restartApp: false,
+    fetchImpl: routerModelsFetch(),
+    restartImpl: skippedRouterRestart
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.notEqual(result.write?.status, 'concurrent_change_detected');
+  const config = await fs.readFile(harness.configPath, 'utf8');
+  assert.match(config, /^model_provider = "sks-router"$/m);
+  assert.doesNotMatch(config, /^openai_base_url\s*=/m);
+  assert.doesNotMatch(config, /sks-codex-lb-managed-openai-base-url/);
+});

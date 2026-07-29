@@ -19,6 +19,7 @@ export const SERIOUS_ROUTE_ALIASES = Object.freeze([
   '$Wiki',
   '$SEO-GEO-OPTIMIZER',
   '$GX',
+  '$Align',
   '$Goal',
   '$MAD-SKS',
   'hproof',
@@ -52,12 +53,12 @@ const ROUTE_NORMALIZATION = Object.freeze({
   ppt: '$PPT',
   imageuxreview: '$Image-UX-Review',
   'image-ux-review': '$Image-UX-Review',
-  uxreview: '$UX-Review',
-  'ux-review': '$UX-Review',
-  visualreview: '$Visual-Review',
-  'visual-review': '$Visual-Review',
-  uiuxreview: '$UI-UX-Review',
-  'ui-ux-review': '$UI-UX-Review',
+  uxreview: '$Image-UX-Review',
+  'ux-review': '$Image-UX-Review',
+  visualreview: '$Image-UX-Review',
+  'visual-review': '$Image-UX-Review',
+  uiuxreview: '$Image-UX-Review',
+  'ui-ux-review': '$Image-UX-Review',
   fromchatimg: '$From-Chat-IMG',
   'from-chat-img': '$From-Chat-IMG',
   computeruse: '$Computer-Use',
@@ -68,6 +69,7 @@ const ROUTE_NORMALIZATION = Object.freeze({
   seogeooptimizer: '$SEO-GEO-OPTIMIZER',
   'seo-geo-optimizer': '$SEO-GEO-OPTIMIZER',
   gx: '$GX',
+  align: '$Align',
   goal: '$Goal',
   madsks: '$MAD-SKS',
   'mad-sks': '$MAD-SKS',
@@ -80,7 +82,6 @@ const ROUTE_NORMALIZATION = Object.freeze({
 export function normalizeProofRoute(route: any) {
   const raw = String(route || '').trim();
   if (!raw) return null;
-  if (SERIOUS_ROUTE_ALIASES.includes(raw) || VISUAL_ROUTE_ALIASES.includes(raw)) return raw;
   const stripped = unprefixedSksSkillName(raw).replace(/[^A-Za-z0-9-]+/g, '').toLowerCase();
   if (/^(?:agent|team|mad-?db|swarm|shadow-?clone|kage-?bunshin|tmux|xai)$/.test(stripped)) return null;
   return (ROUTE_NORMALIZATION as Record<string, string>)[stripped] || raw;

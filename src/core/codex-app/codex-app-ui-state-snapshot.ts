@@ -370,13 +370,21 @@ function hostOwnedFingerprint(snapshot: CodexAppUiStateSnapshot) {
 function hasActiveCodexLbProviderSelectionSignals(signals: CodexAppConfigSignal[]) {
   const selected = signals.some((signal) => signal.key_path === 'model_provider' && signal.value_preview === 'codex-lb')
   if (!selected) return false
-  const has = (key: string, value: string) => signals.some((signal) => signal.key_path === key && signal.value_preview === value)
+  const has = (key: string, value: string) => signals.some((signal) => (
+    signal.key_path === key && signal.value_preview.toLowerCase() === value
+  ))
   const present = (key: string) => signals.some((signal) => signal.key_path === key)
-  // env_key / requires_openai_auth previews are redacted by SECRET_KEY_RE ("key"/"auth").
-  return has('model_providers.codex-lb.name', 'openai')
-    && has('model_providers.codex-lb.wire_api', 'responses')
-    && present('model_providers.codex-lb.env_key')
+  // env_key, env_http_headers, and requires_openai_auth previews are redacted
+  // by SECRET_KEY_RE, so the snapshot can validate their shape only by key
+  // presence. The repair path performs the stricter value-level validation.
+  const cliProviderAuth = present('model_providers.codex-lb.env_key')
     && present('model_providers.codex-lb.requires_openai_auth')
+  const desktopCompatAuth = present('model_providers.codex-lb.env_http_headers')
+    && present('model_providers.codex-lb.requires_openai_auth')
+  return (has('model_providers.codex-lb.name', 'openai') || has('model_providers.codex-lb.name', 'codex-lb'))
+    && present('model_providers.codex-lb.base_url')
+    && has('model_providers.codex-lb.wire_api', 'responses')
+    && (cliProviderAuth || desktopCompatAuth)
 }
 
 function redactValuePreview(keyPath: string, value: string) {

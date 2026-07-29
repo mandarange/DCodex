@@ -39,6 +39,7 @@ export interface RemoteSshWorkerClientOptions {
   readonly projectId: string;
   readonly sshCommand?: string;
   readonly requestTimeoutMs?: number;
+  readonly commandRequestTimeoutMs?: number;
   readonly maxResponseLineBytes?: number;
   readonly maxConnectionOutputBytes?: number;
   readonly reconnectAttempts?: number;
@@ -55,6 +56,7 @@ export class RemoteSshWorkerClient {
   private readonly projectId: string;
   private readonly sshCommand: string;
   private readonly requestTimeoutMs: number;
+  private readonly commandRequestTimeoutMs: number;
   private readonly maxResponseLineBytes: number;
   private readonly maxConnectionOutputBytes: number;
   private readonly reconnectAttempts: number;
@@ -80,6 +82,11 @@ export class RemoteSshWorkerClient {
     this.projectId = options.projectId;
     this.sshCommand = options.sshCommand ?? 'ssh';
     this.requestTimeoutMs = Math.max(1_000, options.requestTimeoutMs ?? 30_000);
+    this.commandRequestTimeoutMs = Math.max(
+      1_000,
+      options.commandRequestTimeoutMs
+        ?? (options.requestTimeoutMs === undefined ? 31 * 60_000 : options.requestTimeoutMs)
+    );
     this.maxResponseLineBytes = Math.max(4_096, options.maxResponseLineBytes ?? 512 * 1024);
     this.maxConnectionOutputBytes = Math.max(this.maxResponseLineBytes, options.maxConnectionOutputBytes ?? 8 * 1024 * 1024);
     this.reconnectAttempts = Math.max(1, Math.min(10, options.reconnectAttempts ?? 4));
@@ -206,7 +213,7 @@ export class RemoteSshWorkerClient {
           delivery === 'not_dispatched' || request.type !== 'command'
         ));
         this.abortConnection('ssh_request_timeout');
-      }, this.requestTimeoutMs);
+      }, request.type === 'command' ? this.commandRequestTimeoutMs : this.requestTimeoutMs);
       timer.unref?.();
       const pending: PendingResponse = { request, resolve, reject, timer, dispatched: false };
       this.pending.set(request.id, pending);

@@ -8,6 +8,6 @@
  * optimizer are development instruments and are excluded from the packlist
  * instead of being paid for here.
  */
-export const DEFAULT_MAX_PACK_BYTES = 2650 * 1024
-/** ~11.39 MiB; narrow headroom above the measured Context Graph runtime surface. */
-export const DEFAULT_MAX_UNPACKED_BYTES = 11_950_000
+export const DEFAULT_MAX_PACK_BYTES = 2725 * 1024
+/** ~11.92 MiB; narrow headroom above the measured Desktop bridge and capability runtime surface. */
+export const DEFAULT_MAX_UNPACKED_BYTES = 12_500_000

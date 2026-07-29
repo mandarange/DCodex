@@ -9,7 +9,7 @@ import { inspectReleaseTarball, releaseProofDir } from '../release-pack-receipt.
 
 export function writeCompleteReleaseProofs(root: string, head: string, baseline = head, originIdentity = '') {
   const reports = path.join(root, '.sneakoscope', 'reports')
-  const proofDir = releaseProofDir(root, '6.3.0')
+  const proofDir = releaseProofDir(root, '8.0.0')
   const summaryPath = path.join(reports, 'release-gates', 'fixture', 'summary.json')
   const realPath = path.join(reports, 'release-real-check.json')
   fs.mkdirSync(path.dirname(summaryPath), { recursive: true })
@@ -20,7 +20,7 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
   fs.writeFileSync(path.join(reports, 'release-check-stamp.json'), JSON.stringify({
     schema: 'sks.release-check-stamp.v2',
     package_name: 'sneakoscope',
-    package_version: '6.3.0',
+    package_version: '8.0.0',
     package_json_sha256: sha(fs.readFileSync(packageJson)),
     git_commit: head,
     source_digest: 'a'.repeat(64), source_file_count: 1,
@@ -50,13 +50,13 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
   fs.mkdirSync(artifacts, { recursive: true })
   fs.mkdirSync(packageDir, { recursive: true })
   fs.copyFileSync(packageJson, path.join(packageDir, 'package.json'))
-  const tarball = path.join(artifacts, 'sneakoscope-6.3.0.tgz')
+  const tarball = path.join(artifacts, 'sneakoscope-8.0.0.tgz')
   const packed = spawnSync('tar', ['-czf', tarball, '-C', path.dirname(packageDir), 'package'], { encoding: 'utf8' })
   if (packed.status !== 0) throw new Error(String(packed.stderr || packed.stdout || 'fixture tar failed'))
   const inspected = inspectReleaseTarball({ tarball, kind: 'local', sourceCommit: head, root })
   if (!inspected.ok) throw new Error(inspected.blockers.join(','))
   const info = {
-    id: 'sneakoscope@6.3.0', name: 'sneakoscope', version: '6.3.0', filename: 'sneakoscope-6.3.0.tgz',
+    id: 'sneakoscope@8.0.0', name: 'sneakoscope', version: '8.0.0', filename: 'sneakoscope-8.0.0.tgz',
     size: inspected.bytes, unpackedSize: inspected.unpacked_bytes, shasum: 'a'.repeat(40), integrity: inspected.sha512_integrity, entryCount: inspected.file_count,
     files: [{ path: 'package.json', size: fs.statSync(packageJson).size, mode: 0o644 }]
   }
@@ -97,21 +97,21 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
     cleanup_status: 'removed',
     cleanup_error: null
   }
-  const baselineSealedTarball = path.join(upgradeIsolation.sealed_inputs_dir, 'baseline-6.2.0-fixture.tgz')
-  const targetSealedTarball = path.join(upgradeIsolation.sealed_inputs_dir, 'target-6.3.0-fixture.tgz')
+  const baselineSealedTarball = path.join(upgradeIsolation.sealed_inputs_dir, 'baseline-7.6.0-fixture.tgz')
+  const targetSealedTarball = path.join(upgradeIsolation.sealed_inputs_dir, 'target-8.0.0-fixture.tgz')
   const sksBinary = path.join(upgradeIsolation.npm_prefix, 'bin', 'sks')
   const packageRoot = path.join(upgradeIsolation.npm_prefix, 'lib', 'node_modules', 'sneakoscope')
   const upgradeCommands = [
-    upgradeCommand(upgradeIsolation, 'baseline_fetch', ['npm', 'pack', 'sneakoscope@6.2.0', '--ignore-scripts', '--json', '--pack-destination', upgradeIsolation.baseline_pack_dir]),
+    upgradeCommand(upgradeIsolation, 'baseline_fetch', ['npm', 'pack', 'sneakoscope@7.6.0', '--ignore-scripts', '--json', '--pack-destination', upgradeIsolation.baseline_pack_dir]),
     upgradeCommand(upgradeIsolation, 'baseline_install', ['npm', 'install', '--global', '--prefix', upgradeIsolation.npm_prefix, '--no-audit', '--no-fund', '--loglevel=error', baselineSealedTarball]),
     upgradeCommand(upgradeIsolation, 'baseline_version', [sksBinary, '--version']),
     upgradeCommand(upgradeIsolation, 'baseline_bootstrap', [sksBinary, 'bootstrap', '--json']),
-    upgradeDoctorCommand(upgradeIsolation, 'baseline_doctor', sksBinary, '6.2.0', 'pinned_baseline_stdout_only'),
+    upgradeDoctorCommand(upgradeIsolation, 'baseline_doctor', sksBinary, '7.6.0', 'pinned_baseline_stdout_only'),
     upgradeCommand(upgradeIsolation, 'baseline_menubar_install', [sksBinary, 'menubar', 'install', '--no-launch', '--json', '--home', upgradeIsolation.home, '--root', packageRoot]),
     upgradeCommand(upgradeIsolation, 'baseline_menubar_status', [sksBinary, 'menubar', 'status', '--json', '--home', upgradeIsolation.home, '--root', packageRoot], 1),
     upgradeCommand(upgradeIsolation, 'target_install', ['npm', 'install', '--global', '--prefix', upgradeIsolation.npm_prefix, '--no-audit', '--no-fund', '--loglevel=error', targetSealedTarball]),
     upgradeCommand(upgradeIsolation, 'target_version', [sksBinary, '--version']),
-    upgradeDoctorCommand(upgradeIsolation, 'target_doctor', sksBinary, '6.3.0', 'strict_report_file'),
+    upgradeDoctorCommand(upgradeIsolation, 'target_doctor', sksBinary, '8.0.0', 'strict_report_file'),
     upgradeCommand(upgradeIsolation, 'target_menubar_install', [sksBinary, 'menubar', 'install', '--no-launch', '--json', '--home', upgradeIsolation.home, '--root', packageRoot]),
     upgradeCommand(upgradeIsolation, 'target_menubar_status', [sksBinary, 'menubar', 'status', '--json', '--home', upgradeIsolation.home, '--root', packageRoot], 1),
     upgradeCommand(upgradeIsolation, 'target_menubar_rollback', [sksBinary, 'menubar', 'rollback', '--no-launch', '--json', '--home', upgradeIsolation.home, '--root', packageRoot]),
@@ -119,19 +119,19 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
     upgradeCommand(upgradeIsolation, 'target_menubar_reinstall_status', [sksBinary, 'menubar', 'status', '--json', '--home', upgradeIsolation.home, '--root', packageRoot], 1),
     upgradeCommand(upgradeIsolation, 'package_rollback_install', ['npm', 'install', '--global', '--prefix', upgradeIsolation.npm_prefix, '--no-audit', '--no-fund', '--loglevel=error', baselineSealedTarball]),
     upgradeCommand(upgradeIsolation, 'package_rollback_version', [sksBinary, '--version']),
-    upgradeDoctorCommand(upgradeIsolation, 'package_rollback_doctor', sksBinary, '6.2.0', 'pinned_baseline_stdout_only')
+    upgradeDoctorCommand(upgradeIsolation, 'package_rollback_doctor', sksBinary, '7.6.0', 'pinned_baseline_stdout_only')
   ]
-  const upgradePath = path.join(proofDir, 'upgrade-6.2-to-6.3.0.json')
+  const upgradePath = path.join(proofDir, 'upgrade-7.6-to-8.0.0.json')
   fs.writeFileSync(upgradePath, JSON.stringify({
     schema: 'sks.release-upgrade-smoke.v2', ok: true,
     started_at: new Date().toISOString(), generated_at: new Date().toISOString(),
-    platform: 'darwin', baseline_version: '6.2.0', target_version: '6.3.0', root, blockers: [],
+    platform: 'darwin', baseline_version: '7.6.0', target_version: '8.0.0', root, blockers: [],
     baseline: {
       source: 'registry',
-      spec: 'sneakoscope@6.2.0',
-      pinned_sha256: 'dd0bfc022348c11dc737055845708f6272beaf2a8f9c16d068acf3c8c612f9bc',
-      tarball_path: path.join(upgradeIsolation.baseline_pack_dir, 'sneakoscope-6.2.0.tgz'),
-      tarball_sha256: 'dd0bfc022348c11dc737055845708f6272beaf2a8f9c16d068acf3c8c612f9bc',
+      spec: 'sneakoscope@7.6.0',
+      pinned_sha256: '40a9e89f3a234dfcd32507ab7deeb95044084cae95a9ce46b36be4113d5b2a7c',
+      tarball_path: path.join(upgradeIsolation.baseline_pack_dir, 'sneakoscope-7.6.0.tgz'),
+      tarball_sha256: '40a9e89f3a234dfcd32507ab7deeb95044084cae95a9ce46b36be4113d5b2a7c',
       sealed_tarball_path: baselineSealedTarball,
       sha512_integrity: 'sha512-Zml4dHVyZS1iYXNlbGluZQ==',
       registry_shasum: 'a'.repeat(40),
@@ -142,7 +142,7 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
       binding_ok: true,
       receipt_source_commit: head,
       source_commit: head,
-      package_version: '6.3.0',
+      package_version: '8.0.0',
       receipt_sha256: sha(fs.readFileSync(packReceiptPath)),
       tarball_sha256: inspected.sha256,
       tarball_sha512_integrity: inspected.sha512_integrity,
@@ -179,7 +179,7 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
       'baseline_package', 'baseline_menubar', 'target_package', 'target_menubar', 'menubar_rollback',
       'target_menubar_reinstall', 'package_rollback'
     ].map((key) => {
-      const expected = key.startsWith('target_') ? '6.3.0' : '6.2.0'
+      const expected = key.startsWith('target_') ? '8.0.0' : '7.6.0'
       const stages = ({
         baseline_package: ['baseline_install', 'baseline_version', 'baseline_bootstrap', 'baseline_doctor'],
         baseline_menubar: ['baseline_menubar_install', 'baseline_menubar_status'],
@@ -195,7 +195,7 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
 
   const installChecks = Object.fromEntries(MACOS_INSTALL_REQUIRED_CHECKS.map((key) => [key, true]))
   const buildStamp = {
-    schema: 'sks.sks-menubar-build-stamp.v2', package_version: '6.3.0',
+    schema: 'sks.sks-menubar-build-stamp.v2', package_version: '8.0.0',
     resources_sha256: 'c'.repeat(64), source_sha256: 'd'.repeat(64)
   }
   const installReport = {
@@ -205,19 +205,19 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
   const installReportPath = path.join(reports, 'menubar-install.json')
   fs.writeFileSync(installReportPath, `${JSON.stringify(installReport)}\n`)
   fs.writeFileSync(path.join(proofDir, 'macos-menubar-proof.json'), JSON.stringify({
-    schema: MACOS_MENUBAR_PROOF_SCHEMA, ok: true, version: '6.3.0', source_commit: head, runner_os: 'macOS',
+    schema: MACOS_MENUBAR_PROOF_SCHEMA, ok: true, version: '8.0.0', source_commit: head, runner_os: 'macOS',
     swift_version: 'Swift 6', xcode_version: 'Xcode 17', app_path: '/tmp/SKS.app',
     install_report_path: path.relative(root, installReportPath), install_report_sha256: sha(fs.readFileSync(installReportPath)),
     upgrade_report_path: path.relative(root, upgradePath), upgrade_report_sha256: sha(fs.readFileSync(upgradePath)),
     upgrade_report: {
       schema: 'sks.release-upgrade-smoke.v2',
-      baseline_version: '6.2.0',
-      target_version: '6.3.0',
+      baseline_version: '7.6.0',
+      target_version: '8.0.0',
       source_commit: head,
       target_tarball_sha256: inspected.sha256,
       target_receipt_sha256: sha(fs.readFileSync(packReceiptPath)),
       target_tarball_sha512_integrity: inspected.sha512_integrity,
-      target_package_version: '6.3.0'
+      target_package_version: '8.0.0'
     },
     install_report: {
       schema: installReport.schema, checks: installChecks, failed_checks: [],

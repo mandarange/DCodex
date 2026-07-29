@@ -9,6 +9,7 @@ import { sksMenuBarPaths } from './paths.js';
 import { inspectInstalledResources } from './resources.js';
 import { inspectMenuBarArtifactSet } from './rollback.js';
 import { inspectSignature } from './signature.js';
+import { cleanupRetiredRemoteBridgeLaunchAgent, quarantineRetiredRemoteBridgeBindings } from './migration.js';
 import type { SksMenuBarBuildStamp, SksMenuBarStatusResult, SksMenuBarUninstallResult } from './types.js';
 
 export async function inspectSksMenuBarStatus(opts: {
@@ -110,7 +111,24 @@ export async function uninstallSksMenuBar(opts: { home?: string; root?: string; 
   const paths = sksMenuBarPaths(opts.home || env.HOME, opts.root);
   if (process.platform !== 'darwin') return { schema: 'sks.menubar-uninstall.v1', ok: true, platform: process.platform, paths, actions: [], warnings: ['not_macos'], blockers: [] };
   const removed = await removeLaunchAgent(paths, env);
-  return { schema: 'sks.menubar-uninstall.v1', ok: removed.blockers.length === 0, platform: process.platform, paths, ...removed };
+  const retiredLaunchAgent = await cleanupRetiredRemoteBridgeLaunchAgent({ home: paths.home, env });
+  const retiredBindings = await quarantineRetiredRemoteBridgeBindings(paths.root);
+  const actions = [
+    ...removed.actions,
+    ...(retiredLaunchAgent.status === 'removed' ? ['removed retired remote bridge LaunchAgent'] : []),
+    ...(retiredBindings.status === 'quarantined' ? ['quarantined retired remote bridge bindings'] : [])
+  ];
+  const warnings = [...removed.warnings, ...retiredLaunchAgent.warnings, ...retiredBindings.warnings];
+  const blockers = [...removed.blockers, ...retiredLaunchAgent.blockers, ...retiredBindings.blockers];
+  return {
+    schema: 'sks.menubar-uninstall.v1',
+    ok: blockers.length === 0,
+    platform: process.platform,
+    paths,
+    actions,
+    warnings,
+    blockers
+  };
 }
 
 export function isMenuBarInstallPathUnderTempDir(target: string, env: NodeJS.ProcessEnv = process.env): boolean {

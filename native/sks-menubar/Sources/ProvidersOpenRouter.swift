@@ -4,7 +4,7 @@ extension ProvidersViewController {
     func makeActiveProviderCard() -> NSBox {
         NativeView.card(
             title: "Active Provider",
-            subtitle: "The provider Codex Desktop is using right now. Activation buttons below switch it explicitly.",
+            subtitle: "Shows the live Desktop mode: Codex LB, ChatGPT OAuth, OpenRouter, or Multi-Provider Router. Switch with Use Codex LB or Use ChatGPT OAuth Only below.",
             views: [activeProviderBadge]
         )
     }
@@ -18,10 +18,20 @@ extension ProvidersViewController {
         } else if routerSelectedNow {
             let model = routerActiveModel.isEmpty ? "model unset" : routerActiveModel
             ControlKit.setBadge(activeProviderBadge, text: "Multi-Provider Router · \(model)", tone: .ok)
+        } else if desktopFullRoutingNow {
+            ControlKit.setBadge(
+                activeProviderBadge,
+                text: chatgptOauthPresentNow
+                    ? "Codex LB mode · ChatGPT OAuth + built-in OpenAI via bridge"
+                    : "Codex LB mode enabled · ChatGPT OAuth missing — run codex login",
+                tone: chatgptOauthPresentNow ? .ok : .warning
+            )
         } else if codexLbSelectedNow {
-            ControlKit.setBadge(activeProviderBadge, text: "codex-lb (GPT-5.6 via load balancer)", tone: .ok)
+            ControlKit.setBadge(activeProviderBadge, text: "Legacy Codex LB provider selection · migration required", tone: .warning)
+        } else if chatgptOauthPresentNow {
+            ControlKit.setBadge(activeProviderBadge, text: "ChatGPT OAuth mode · built-in OpenAI models", tone: .neutral)
         } else {
-            ControlKit.setBadge(activeProviderBadge, text: "ChatGPT OAuth · built-in OpenAI models", tone: .neutral)
+            ControlKit.setBadge(activeProviderBadge, text: "ChatGPT OAuth mode unavailable · run codex login", tone: .warning)
         }
     }
 
@@ -31,8 +41,10 @@ extension ProvidersViewController {
         openRouterModelPopup.target = self
         openRouterModelPopup.action = #selector(selectOpenRouterModel(_:))
         openRouterModelPopup.setAccessibilityLabel("OpenRouter model catalog")
-        openRouterModelPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 250).isActive = true
+        openRouterModelPopup.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        openRouterModelPopup.widthAnchor.constraint(equalToConstant: 230).isActive = true
         openRouterModelPopup.isEnabled = false
+        openRouterModelField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let refreshModels = NativeView.button("Refresh Models", target: self, action: #selector(refreshOpenRouterModelsAction(_:)))
         openRouterRefreshButton = refreshModels

@@ -3,9 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-export function unique(values: string[]) {
-  return [...new Set(values)]
-}
+export { uniqueValues as unique } from '../text/strings.js'
 
 export function relative(root: string, file: string) {
   return path.relative(root, file).split(path.sep).join('/')

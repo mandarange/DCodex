@@ -8,6 +8,7 @@ final class MultiProviderRouterControls {
         field.setAccessibilityLabel("Multi-provider router base URL")
         field.setAccessibilityHelp("Only loopback HTTP or HTTPS endpoints ending in /v1 are accepted.")
         field.toolTip = "Loopback only: localhost, 127.0.0.1, or ::1, ending in /v1."
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return field
     }()
     let catalogPath: NSTextField = {
@@ -17,6 +18,7 @@ final class MultiProviderRouterControls {
         field.setAccessibilityLabel("Codex multi-provider model catalog path")
         field.setAccessibilityHelp("OpenCodex writes this owner-only Codex catalog. Other routers must export a complete Codex ModelInfo catalog.")
         field.toolTip = "OpenCodex default: $CODEX_HOME/opencodex-catalog.json"
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return field
     }()
     let model: NSTextField = {
@@ -25,6 +27,7 @@ final class MultiProviderRouterControls {
         field.setAccessibilityLabel("Multi-provider router model slug")
         field.setAccessibilityPlaceholderValue("provider/model")
         field.setAccessibilityHelp("Enter an exact model slug from the configured Codex catalog.")
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return field
     }()
     let modelPopup = NSPopUpButton()
@@ -47,7 +50,8 @@ extension ProvidersViewController {
         multiProvider.modelPopup.action = #selector(selectMultiProviderModel(_:))
         multiProvider.modelPopup.setAccessibilityLabel("Multi-provider routed model catalog")
         multiProvider.modelPopup.setAccessibilityHelp("Choose an exact provider/model slug from the active Codex catalog.")
-        multiProvider.modelPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 280).isActive = true
+        multiProvider.modelPopup.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        multiProvider.modelPopup.widthAnchor.constraint(equalToConstant: 230).isActive = true
         multiProvider.modelPopup.isEnabled = false
 
         let refresh = NativeView.button("Refresh Router", target: self, action: #selector(refreshMultiProviderRouterAction(_:)))

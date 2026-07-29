@@ -15,6 +15,7 @@ import { openRouterSecretPaths, resolveOpenRouterApiKey } from '../core/provider
 import { reconcileRetiredSksConfigText } from '../core/auto-review.js';
 import type { CodexLbPersistenceMode } from '../core/codex-lb/codex-lb-setup.js';
 import {
+  ensureTrailingNewline,
   removeTopLevelTomlKeyIfValue,
   safeWriteCodexConfigToml,
   upsertTopLevelTomlString,
@@ -26,21 +27,172 @@ import {
 } from './install-helpers-codex-lb-shared.js';
 import { escapeRegExp } from '../core/text/regex.js';
 
-export function upsertCodexLbConfig(text: any = '', baseUrl: any, selectDefault = true) {
-  let next = selectDefault
-    ? upsertTopLevelTomlString(text, 'model_provider', 'codex-lb')
-    : removeTopLevelTomlKeyIfValue(text, 'model_provider', 'codex-lb');
+export interface NativeDesktopConfigInput {
+  bridgeBaseUrl: string;
+  remoteBaseUrl: string;
+}
+
+export interface CompatDesktopConfigInput {
+  remoteBaseUrl: string;
+}
+
+export interface CliProviderConfigInput {
+  remoteBaseUrl: string;
+  selectGlobally?: boolean;
+}
+
+export const CODEX_LB_DESKTOP_BRIDGE_MARKER = '# sks-codex-lb-managed-desktop-bridge';
+export const CODEX_LB_DESKTOP_COMPAT_MARKER = '# sks-codex-lb-managed-desktop-compat';
+export const CODEX_LB_MODEL_CATALOG_MARKER = '# sks-codex-lb-managed-model-catalog';
+const LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER = '# sks-codex-lb-managed-openai-base-url';
+
+export function upsertCodexLbNativeDesktopConfig(
+  text: string,
+  input: NativeDesktopConfigInput
+): string {
+  let next = String(text || '');
+  const selectedProvider = topLevelTomlString(next, 'model_provider');
+  if (selectedProvider && selectedProvider !== 'openai' && selectedProvider !== 'codex-lb') {
+    throw new Error('codex_lb_user_owned_model_provider_conflict');
+  }
+  if (selectedProvider === 'codex-lb' && !topLevelHasLine(next, CODEX_LB_DESKTOP_COMPAT_MARKER)) {
+    throw new Error('codex_lb_legacy_desktop_config_requires_migration');
+  }
+  if (
+    topLevelHasLine(next, LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER)
+    && !topLevelHasLine(next, CODEX_LB_DESKTOP_BRIDGE_MARKER)
+  ) {
+    throw new Error('codex_lb_legacy_desktop_config_requires_migration');
+  }
+  const modelCatalog = topLevelTomlString(next, 'model_catalog_json');
+  if (modelCatalog && !topLevelHasLine(next, CODEX_LB_MODEL_CATALOG_MARKER)) {
+    throw new Error('codex_lb_user_owned_model_catalog_json_conflict');
+  }
+  next = removeTopLevelTomlKeyIfValue(next, 'model_provider', 'codex-lb');
+  next = removeTopLevelLine(next, CODEX_LB_DESKTOP_COMPAT_MARKER);
+  next = removeManagedModelCatalogJson(next);
+  next = upsertManagedTopLevelTomlString(
+    next,
+    'openai_base_url',
+    input.bridgeBaseUrl,
+    CODEX_LB_DESKTOP_BRIDGE_MARKER
+  );
+  next = upsertTomlTable(next, 'model_providers.codex-lb', cliProviderBlock(input.remoteBaseUrl));
+  return ensureTrailingNewline(next);
+}
+
+export function upsertCodexLbCompatDesktopConfig(
+  text: string,
+  input: CompatDesktopConfigInput
+): string {
+  let next = removeManagedDesktopBridgeRouting(String(text || ''));
+  next = removeManagedModelCatalogJson(next);
+  next = upsertManagedTopLevelTomlString(
+    next,
+    'model_provider',
+    'codex-lb',
+    CODEX_LB_DESKTOP_COMPAT_MARKER
+  );
   const block = [
     '[model_providers.codex-lb]',
-    'name = "openai"',
-    `base_url = "${baseUrl}"`,
+    'name = "OpenAI"',
+    `base_url = ${JSON.stringify(input.remoteBaseUrl)}`,
+    'wire_api = "responses"',
+    'requires_openai_auth = true',
+    'supports_websockets = true',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }'
+  ].join('\n');
+  next = upsertTomlTable(next, 'model_providers.codex-lb', block);
+  return ensureTrailingNewline(next);
+}
+
+export function upsertCodexLbCliProviderConfig(
+  text: string,
+  input: CliProviderConfigInput
+): string {
+  let next = input.selectGlobally === true
+    ? upsertTopLevelTomlString(text, 'model_provider', 'codex-lb')
+    : removeTopLevelTomlKeyIfValue(text, 'model_provider', 'codex-lb');
+  next = upsertTomlTable(next, 'model_providers.codex-lb', cliProviderBlock(input.remoteBaseUrl));
+  return ensureTrailingNewline(next);
+}
+
+export function removeCodexLbManagedDesktopConfig(text: string): string {
+  let next = removeManagedDesktopBridgeRouting(String(text || ''));
+  if (topLevelHasLine(next, CODEX_LB_DESKTOP_COMPAT_MARKER)) {
+    next = removeTopLevelTomlKeyIfValue(next, 'model_provider', 'codex-lb');
+    next = removeTopLevelLine(next, CODEX_LB_DESKTOP_COMPAT_MARKER);
+  }
+  next = removeManagedModelCatalogJson(next);
+  return ensureTrailingNewline(next);
+}
+
+export function removeManagedModelCatalogJson(text: string): string {
+  if (!topLevelHasLine(text, CODEX_LB_MODEL_CATALOG_MARKER)) return text;
+  const withoutKey = removeTopLevelTomlKey(text, 'model_catalog_json');
+  return removeTopLevelLine(withoutKey, CODEX_LB_MODEL_CATALOG_MARKER);
+}
+
+export function removeManagedDesktopBridgeRouting(text: string): string {
+  const markers = [
+    CODEX_LB_DESKTOP_BRIDGE_MARKER,
+    LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER
+  ].filter((marker) => topLevelHasLine(text, marker));
+  if (markers.length === 0) return text;
+  let next = removeTopLevelTomlKey(text, 'openai_base_url');
+  for (const marker of markers) next = removeTopLevelLine(next, marker);
+  return next;
+}
+
+export function upsertCodexLbConfig(text: any = '', baseUrl: any, selectDefault = true) {
+  return upsertCodexLbCliProviderConfig(text, {
+    remoteBaseUrl: String(baseUrl || ''),
+    selectGlobally: selectDefault === true
+  });
+}
+
+function cliProviderBlock(remoteBaseUrl: string): string {
+  return [
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = ${JSON.stringify(remoteBaseUrl)}`,
     'wire_api = "responses"',
     'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
-    'requires_openai_auth = true'
+    'requires_openai_auth = false'
   ].join('\n');
-  next = upsertTomlTable(next, 'model_providers.codex-lb', block);
-  return `${next.trim()}\n`;
+}
+
+function upsertManagedTopLevelTomlString(
+  text: string,
+  key: string,
+  value: string,
+  marker: string,
+  legacyMarkers: string[] = []
+): string {
+  const acceptedMarkers = [marker, ...legacyMarkers];
+  const existing = topLevelTomlString(text, key);
+  const ownedMarker = acceptedMarkers.find((candidate) => topLevelHasLine(text, candidate));
+  if (existing && !ownedMarker) {
+    if (existing === value) return text;
+    throw new Error(`codex_lb_user_owned_${key}_conflict`);
+  }
+  let next = text;
+  for (const candidate of acceptedMarkers) next = removeTopLevelLine(next, candidate);
+  next = upsertTopLevelTomlString(next, key, value);
+  return addTopLevelMarkerBeforeKey(next, key, marker);
+}
+
+function removeTopLevelTomlKey(text: string, key: string): string {
+  const lines = String(text || '').split('\n');
+  const firstTable = lines.findIndex((line) => /^\s*\[.+\]\s*$/.test(line));
+  const end = firstTable === -1 ? lines.length : firstTable;
+  const keyPattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=`);
+  return lines
+    .filter((line, index) => index >= end || !keyPattern.test(line))
+    .join('\n')
+    .replace(/^\n+/, '')
+    .replace(/\n{3,}/g, '\n\n');
 }
 
 export type CodexLbSharedOpenAiRoutingState = {

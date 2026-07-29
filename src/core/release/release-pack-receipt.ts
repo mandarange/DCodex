@@ -296,6 +296,8 @@ const RETIRED_SURFACE_PATTERNS: ReleasePackContentPattern[] = [
 ]
 
 const RETIRED_PACKAGED_FILE_PATTERNS = [
+  /^package\/dist\/core\/commands\/telegram-command\.js$/,
+  /^package\/dist\/core\/telegram(?:\/|\.js$)/,
   /^package\/dist\/core\/commands\/ui-command\.js$/,
   /^package\/dist\/core\/ui\/dashboard-html\.js$/,
   /^package\/dist\/core\/zellij\/zellij-dashboard-(?:pane|renderer)\.js$/,

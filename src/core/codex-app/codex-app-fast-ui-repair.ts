@@ -131,7 +131,7 @@ export async function repairCodexAppFastUi(root: string = process.cwd(), input: 
     auth_mode: after.indicators.auth_mode,
     chat_surface: after.indicators.chat_surface,
     chatgpt_oauth_backup_available: after.indicators.chatgpt_oauth_backup_available,
-    next_action: requiresConfirmation ? 'Run `sks doctor --fix --repair-codex-app-ui` after reviewing the repair plan.' : manual && safeAutoApply ? 'Run `sks doctor --fix` to apply the safe Codex App UI repair.' : manual ? 'Run `sks doctor --fix --repair-codex-app-ui` after reviewing the repair plan.' : chatgptOauthInactive ? 'Run `sks codex-lb use-oauth --restart-app` to restore the Codex App Chat/Pro surface. This explicit switch leaves saved codex-lb credentials available for later reuse.' : changed ? 'Restart Codex App if the selector was already hidden.' : 'No Codex App UI repair needed.',
+    next_action: requiresConfirmation ? 'Run `sks doctor --fix --repair-codex-app-ui` after reviewing the repair plan.' : manual && safeAutoApply ? 'Run `sks doctor --fix` to apply the safe Codex App UI repair.' : manual ? 'Run `sks doctor --fix --repair-codex-app-ui` after reviewing the repair plan.' : chatgptOauthInactive ? 'Run `sks codex-lb migrate-legacy-desktop --restart-app`; if no valid OAuth backup exists, run `codex login` first. Ordinary codex-lb routing commands never replace ChatGPT OAuth.' : changed ? 'Restart Codex App if the selector was already hidden.' : 'No Codex App UI repair needed.',
     blockers
   }
   if (input.reportPath) await writeJsonAtomic(input.reportPath, report)
@@ -211,10 +211,14 @@ function hasActiveCodexLbProviderSelection(text: string) {
   const source = String(text || '')
   if (!/(?:^|\n)\s*model_provider\s*=\s*"codex-lb"\s*(?:#.*)?(?=\n|$)/.test(source)) return false
   const body = source.match(/(?:^|\n)\[model_providers\.codex-lb\]([^\n]*(?:\n(?!\s*\[)[^\n]*)*)/)?.[1] || ''
-  return /(?:^|\n)\s*name\s*=\s*"openai"\s*(?:#.*)?(?=\n|$)/.test(body)
-    && /(?:^|\n)\s*wire_api\s*=\s*"responses"\s*(?:#.*)?(?=\n|$)/.test(body)
-    && /(?:^|\n)\s*env_key\s*=\s*"CODEX_LB_API_KEY"\s*(?:#.*)?(?=\n|$)/.test(body)
+  const providerIdentity = /(?:^|\n)\s*name\s*=\s*"(?:openai|codex-lb)"\s*(?:#.*)?(?=\n|$)/i.test(body)
+  const baseUrl = /(?:^|\n)\s*base_url\s*=\s*"https?:\/\/[^"]+"\s*(?:#.*)?(?=\n|$)/.test(body)
+  const responsesWire = /(?:^|\n)\s*wire_api\s*=\s*"responses"\s*(?:#.*)?(?=\n|$)/.test(body)
+  const cliProviderAuth = /(?:^|\n)\s*env_key\s*=\s*"CODEX_LB_API_KEY"\s*(?:#.*)?(?=\n|$)/.test(body)
+    && /(?:^|\n)\s*requires_openai_auth\s*=\s*false\s*(?:#.*)?(?=\n|$)/.test(body)
+  const desktopCompatAuth = /(?:^|\n)\s*env_http_headers\s*=\s*\{[^}\n]*"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"[^}\n]*\}\s*(?:#.*)?(?=\n|$)/.test(body)
     && /(?:^|\n)\s*requires_openai_auth\s*=\s*true\s*(?:#.*)?(?=\n|$)/.test(body)
+  return providerIdentity && baseUrl && responsesWire && (cliProviderAuth || desktopCompatAuth)
 }
 
 function stripMatchingLines(text: string, shouldRemove: (line: string, table: string | null, previous: string, next: string, index: number) => boolean) {

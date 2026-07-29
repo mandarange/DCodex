@@ -47,9 +47,8 @@ export async function resolveCodexLbImagegenTarget(opts: {
   const selected = topLevelTomlString(configText, 'model_provider') === 'codex-lb';
   const loaded = await loadCodexLbEnv({
     home,
-    processEnv: env,
+    processEnv: {},
     envPath: path.join(codexHome, 'sks-codex-lb.env'),
-    legacyEnvPath: path.join(codexHome, 'sks.env'),
     metadataPath: path.join(codexHome, 'sks-codex-lb.json')
   }).catch(() => null);
   const catalogModels = await readCatalogModels(configText, home, codexHome);

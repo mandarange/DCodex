@@ -277,7 +277,9 @@ async function reconcileAgentBridgeManifest(
 }
 
 function isSksOwnedAgentBridgeManifest(value: any, currentNames: Set<string>): boolean {
-  if (value?.schema !== 'sks.agent-manifest.v1' || !Array.isArray(value?.tools) || typeof value?.generated_at !== 'string') return false;
+  if (!['sks.agent-manifest.v1', 'sks.agent-manifest.v2'].includes(value?.schema)
+    || !Array.isArray(value?.tools)
+    || typeof value?.generated_at !== 'string') return false;
   if (Object.keys(value).some((key) => !['schema', 'generated_at', 'tools'].includes(key))) return false;
   return value.tools.every((tool: any) => {
     const name = String(tool?.name || '');

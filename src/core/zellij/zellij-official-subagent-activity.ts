@@ -10,6 +10,7 @@ import {
 } from './zellij-slot-telemetry.js'
 
 const DEFAULT_TAIL_BYTES = 256 * 1024
+const DEFAULT_HEAD_BYTES = 1024 * 1024
 const DEFAULT_REFRESH_MIN_MS = 2_000
 const DEFAULT_HEARTBEAT_MS = 5_000
 const MAX_DISCOVERY_DAY_DIRS = 45
@@ -82,6 +83,17 @@ export async function readOfficialSubagentRolloutActivity(input: {
     }
     const summary = summarizeRolloutRow(row, input.projectRoot || null)
     if (summary) summaries.push(summary)
+  }
+  // turn_context is emitted per turn; a long single turn can push every
+  // turn_context row out of the tail window. Model and effort are stable for
+  // the session, so fall back to the first child-emitted turn_context near the
+  // rollout head. Rows copied from the parent history share the child
+  // session_meta timestamp and are excluded by the same cutoff as activity.
+  if (!model || !reasoningEffort) {
+    const headBytes = boundedInt(env.SKS_ZELLIJ_OFFICIAL_ACTIVITY_HEAD_BYTES, DEFAULT_HEAD_BYTES, 64 * 1024, 8 * 1024 * 1024)
+    const head = await readRolloutHeadTurnContext(rolloutPath, headBytes, activityCutoffMs)
+    model = model || firstKnown(head?.model)
+    reasoningEffort = reasoningEffort || firstKnown(head?.effort, head?.reasoning_effort)
   }
   const latest = summaries.at(-1)
   if (!latest) {
@@ -341,6 +353,47 @@ interface ActivitySummary {
   title: string
   line: string
   currentFile: string | null
+}
+
+async function readRolloutHeadTurnContext(
+  file: string,
+  maxBytes: number,
+  activityCutoffMs: number
+): Promise<{ model: string | null; effort: string | null; reasoning_effort: string | null } | null> {
+  const handle = await fsp.open(file, 'r').catch(() => null)
+  if (!handle) return null
+  try {
+    const stat = await handle.stat()
+    const length = Math.min(stat.size, Math.max(64 * 1024, maxBytes))
+    const buffer = Buffer.alloc(length)
+    const read = await handle.read(buffer, 0, length, 0)
+    let text = buffer.subarray(0, read.bytesRead).toString('utf8')
+    // Drop the trailing partial line so JSON.parse never sees a truncated row.
+    if (read.bytesRead === length && stat.size > length) {
+      const lastNewline = text.lastIndexOf('\n')
+      text = lastNewline >= 0 ? text.slice(0, lastNewline) : ''
+    }
+    for (const line of text.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed || !trimmed.includes('"turn_context"')) continue
+      let row: any = null
+      try { row = JSON.parse(trimmed) } catch { continue }
+      if (row?.type !== 'turn_context') continue
+      const ts = Date.parse(String(row?.timestamp || ''))
+      if (!Number.isFinite(ts) || ts <= activityCutoffMs) continue
+      const payload = objectValue(row.payload)
+      return {
+        model: firstKnown(payload.model),
+        effort: firstKnown(payload.effort),
+        reasoning_effort: firstKnown(payload.reasoning_effort)
+      }
+    }
+    return null
+  } catch {
+    return null
+  } finally {
+    await handle.close().catch(() => undefined)
+  }
 }
 
 function summarizeRolloutRow(row: any, projectRoot: string | null): ActivitySummary | null {

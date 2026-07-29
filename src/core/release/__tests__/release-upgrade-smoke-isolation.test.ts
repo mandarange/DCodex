@@ -76,7 +76,7 @@ test('tarball sealing copies, hashes, and makes the sandbox input read-only', as
     await fs.writeFile(source, bytes)
     const expected = crypto.createHash('sha256').update(bytes).digest('hex')
 
-    const sealed = sealReleaseUpgradeTarball(source, expected, isolation, 'target-6.3.0.tgz')
+    const sealed = sealReleaseUpgradeTarball(source, expected, isolation, 'target-8.0.0.tgz')
     assert.deepEqual(sealed.blockers, [])
     assert.ok(sealed.path)
     assert.equal(path.dirname(sealed.path), isolation.sealedInputsDir)

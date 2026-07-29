@@ -14,7 +14,7 @@ write, status, proof, and cleanup step.
    after a command has already created a mission.
 4. Session-scoped state lives under `.sneakoscope/state/sessions/`; the shared
    current snapshot is a projection, not the sole identity source.
-5. Background work, menu actions, remote workers, and Telegram actions carry
+5. Background work, menu actions, and remote workers carry
    the mission ID explicitly across process boundaries.
 
 ## Route-Local Artifacts

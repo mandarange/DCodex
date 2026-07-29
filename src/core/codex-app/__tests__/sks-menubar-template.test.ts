@@ -37,10 +37,12 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
   assert.deepEqual([...NATIVE_SOURCE_FILES], [
     'main.swift', 'AppDelegate.swift', 'StatusItemController.swift',
     'ControlCenterWindowController.swift', 'SidebarItem.swift', 'ControlKit.swift',
-    'OverviewViewController.swift', 'UpdatesViewController.swift',
-    'MCPServersViewController.swift', 'ProvidersViewController.swift', 'ProvidersOpenRouter.swift',
+    'OverviewViewController.swift', 'OverviewSummary.swift', 'UpdatesViewController.swift',
+    'MCPServersViewController.swift', 'ProvidersViewController.swift', 'ProvidersRoutingTruth.swift',
+    'ProvidersOpenRouter.swift',
     'ProvidersRoleModels.swift', 'ProvidersMultiProvider.swift',
-    'RemoteTelegramViewController.swift', 'DiagnosticsViewController.swift',
+    'RemoteCodingViewController.swift',
+    'DiagnosticsViewController.swift',
     'SettingsViewController.swift', 'OperationCoordinator.swift',
     'ProcessClient.swift', 'NotificationCoordinator.swift', 'AlertFactory.swift',
     'AppIdentity.swift'
@@ -111,7 +113,7 @@ test('runtime materialization injects paths, version, and optional Codex bundle 
 
 test('Control Center is a non-modal seven-section AppKit sidebar with native accessibility', () => {
   const swift = source();
-  for (const section of ['Overview', 'Updates', 'MCP Servers', 'Providers', 'Remote & Telegram', 'Diagnostics', 'Settings']) {
+  for (const section of ['Overview', 'Updates', 'MCP Servers', 'Providers', 'Remote Coding', 'Diagnostics', 'Settings']) {
     assert.match(swift, new RegExp(`= "${section.replace(/[&]/g, '\\&')}"`));
   }
   assert.match(swift, /styleMask: \[\.titled, \.closable, \.miniaturizable, \.resizable\]/);
@@ -121,9 +123,17 @@ test('Control Center is a non-modal seven-section AppKit sidebar with native acc
   assert.match(swift, /setAccessibilityLabel\("Control Center sections"\)/);
   assert.match(swift, /setAccessibilityLabel\("Effective MCP servers"\)/);
   assert.match(swift, /button\.setAccessibilityLabel\(title\)/);
+  assert.match(swift, /setAccessibilityIdentifier\("sks-center-page-/);
+  assert.match(swift, /view\.widthAnchor\.constraint\(equalTo: stack\.widthAnchor, constant: -48\)/);
+  assert.match(swift, /box\.setAccessibilityRole\(\.group\)/);
+  assert.match(swift, /setContentCompressionResistancePriority\(\.defaultLow, for: \.horizontal\)/);
+  assert.match(swift, /setAccessibilityIdentifier\("sks-center-heading-/);
   assert.match(swift, /protocol ControlCenterPage: AnyObject/);
   assert.match(swift, /func refreshOnAppear\(\)/);
   assert.match(swift, /NativeView\.scrollable\(controller\.view\)/);
+  assert.match(swift, /scroll\.scrollerStyle = \.overlay/);
+  assert.match(swift, /let preservedFrame = window\?\.frame/);
+  assert.match(swift, /window\?\.setFrame\(preservedFrame, display: true\)/);
   assert.match(swift, /if !hasPresented/);
   assert.doesNotMatch(swift, /runModal\s*\(/);
   assert.doesNotMatch(swift, /NSAnimationContext|animator\(\)/);
@@ -132,8 +142,14 @@ test('Control Center is a non-modal seven-section AppKit sidebar with native acc
 
 test('Overview renders every release work-order health field from bounded local commands', () => {
   const swift = source();
-  const overview = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'OverviewViewController.swift'), 'utf8');
-  for (const field of ['SKS install:', 'Codex CLI:', 'Codex app:', 'Menu Bar:', 'Updates:', 'MCP:', 'Telegram Hub:', 'Remote fleet:', 'Last operation:']) {
+  const overview = [
+    'OverviewViewController.swift',
+    'OverviewSummary.swift'
+  ].map((name) => fs.readFileSync(
+    path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', name),
+    'utf8'
+  )).join('\n');
+  for (const field of ['SKS install:', 'Codex CLI:', 'Codex app:', 'Menu Bar:', 'Updates:', 'MCP:', 'Last operation:']) {
     assert.match(overview, new RegExp(field));
   }
   assert.ok(overview.includes('Menu Bar build \\(AppRuntime.packageVersion)'));
@@ -142,12 +158,10 @@ test('Overview renders every release work-order health field from bounded local 
   assert.ok(overview.includes('notice: \\(error)'));
   assert.match(overview, /diagnosticNotice\(update\["public_error"\] as\? String, update: update\)/);
   assert.match(overview, /MCP: unavailable/);
-  assert.match(overview, /Telegram Hub: unavailable · Remote fleet: unavailable/);
   assert.match(overview, /validatedUpdate\(update\)/);
   assert.match(overview, /validatedMCP\(mcp\)/);
-  assert.match(overview, /validatedTelegram\(telegram\)/);
   assert.ok(!overview.includes('installed \\(menu?["installed_version"] as? String ?? "unknown")'));
-  assert.match(overview, /\["telegram", "status", "--project-root", AppRuntime\.projectRoot, "--json"\]/);
+  assert.doesNotMatch(overview, /Telegram|telegram/);
   assert.match(overview, /"mcp", "config", "list", "--scope", "effective",[\s\S]*"--project-root", AppRuntime\.projectRoot, "--trusted-project", "--json"/);
   assert.match(overview, /\], timeout: 3\)/);
   assert.match(overview, /loadStatus\(forceUpdateRefresh: false\)/);
@@ -219,7 +233,6 @@ struct OverviewHarness {
         ]
         let rendered = OverviewSummary.render(
             update: update, mcp: nil,
-            telegram: ["schema": "sks.telegram-status.v1", "configured": false, "machine_count": 0, "target_count": 0, "config_issues": [], "remote_config_issues": []],
             menuBarBuild: "6.2.0", codexRunning: true, operationSummary: "None recorded"
         )
         precondition(rendered.contains("SKS install: 1.10.0 → 99.99.99 available"))
@@ -229,25 +242,22 @@ struct OverviewHarness {
         precondition(!rendered.contains("installed unknown"))
         precondition(rendered.contains("Updates: 2 pending · cache snapshot · notice: fixture cache"))
         precondition(rendered.contains("MCP: unavailable"))
-        precondition(rendered.contains("Telegram Hub: Not configured · Remote fleet: 0 registered Macs · 0 configured targets"))
 
         let unavailable = OverviewSummary.render(
-            update: nil, mcp: nil, telegram: nil,
+            update: nil, mcp: nil,
             menuBarBuild: "6.2.0", codexRunning: nil, operationSummary: "None recorded"
         )
         precondition(unavailable.contains("SKS install: unavailable"))
         precondition(unavailable.contains("Updates: unavailable"))
-        precondition(unavailable.contains("Telegram Hub: unavailable · Remote fleet: unavailable"))
 
         let partial = OverviewSummary.render(
             update: ["source": "cache", "sks": [:], "codex_cli": [:], "menubar": [:]],
-            mcp: [:], telegram: [:],
+            mcp: [:],
             menuBarBuild: "6.2.0", codexRunning: nil, operationSummary: "None recorded"
         )
         precondition(partial.contains("Menu Bar: running build 6.2.0 · update status unavailable"))
         precondition(partial.contains("Updates: unavailable"))
         precondition(partial.contains("MCP: unavailable"))
-        precondition(partial.contains("Telegram Hub: unavailable · Remote fleet: unavailable"))
 
         let aheadOfRegistry: [String: Any] = [
             "schema": "sks.update-status.v3",
@@ -260,15 +270,17 @@ struct OverviewHarness {
             "public_error": NSNull()
         ]
         let aheadRendered = OverviewSummary.render(
-            update: aheadOfRegistry, mcp: nil, telegram: nil,
+            update: aheadOfRegistry, mcp: nil,
             menuBarBuild: "7.1.0", codexRunning: true, operationSummary: "None recorded"
         )
         precondition(aheadRendered.contains("SKS install: 7.1.0 · registry last seen 7.0.5"))
     }
 }
 `);
-    const overview = path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'OverviewViewController.swift');
-    const compiled = spawnSync('swiftc', [overview, harness, '-o', binary], { encoding: 'utf8' });
+    const sourceRoot = path.join(resolvePackagedMenuBarSourceRoot(), 'Sources');
+    const overview = path.join(sourceRoot, 'OverviewViewController.swift');
+    const summary = path.join(sourceRoot, 'OverviewSummary.swift');
+    const compiled = spawnSync('swiftc', [summary, overview, harness, '-o', binary], { encoding: 'utf8' });
     assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
     const executed = spawnSync(binary, [], { encoding: 'utf8' });
     assert.equal(executed.status, 0, executed.stderr || executed.stdout);
@@ -339,26 +351,33 @@ test('confirmation and input flows use sheets and never nest modal loops', () =>
   assert.doesNotMatch(swift, /tell application "Terminal"|runInTerminal|runSksInTerminal/);
 });
 
-test('Providers saves Codex LB keys through visible paste fields and stdin', () => {
+test('Providers configures the CLI provider through masked paste fields and stdin', () => {
   const providers = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersViewController.swift'), 'utf8');
   const processClient = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProcessClient.swift'), 'utf8');
   const alertFactory = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AlertFactory.swift'), 'utf8');
   const appIdentity = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppIdentity.swift'), 'utf8');
   const appDelegate = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppDelegate.swift'), 'utf8');
-  assert.match(providers, /Set Domain and Key…/);
-  assert.match(providers, /Replace Key…/);
-  assert.match(providers, /Test Connection/);
-  assert.match(providers, /secure: false/);
+  assert.match(providers, /Configure \/ Update…/);
+  assert.match(providers, /Use Saved CLI Provider/);
+  assert.match(providers, /NativeView\.button\("Test"/);
+  assert.match(providers, /secure: true/);
+  assert.match(providers, /The field stays masked/);
   assert.match(providers, /placeholder: "https:\/\/lb\.example\.com"/);
   assert.match(providers, /placeholder: "sk-clb-…"/);
   assert.match(providers, /https:\/\/ is optional/);
   assert.match(providers, /\["codex-lb", "health", "--json"\]/);
+  assert.match(providers, /\["codex-lb", "setup", "--host", host, "--gateway-auth", transport, "--api-key-stdin", "--yes", "--write-env-file", "--keychain", "--json"\]/);
+  // The gateway key transport is an explicit Center choice: a bearer-only gateway
+  // rejects the custom header, which Desktop reports as unrecognised codex-lb auth.
+  assert.match(providers, /AlertFactory\.choiceSheet\(/);
+  assert.match(providers, /\("custom-header", "X-Codex-LB-API-Key custom header \(default\)"\)/);
+  assert.match(providers, /\("bearer-compat", "Authorization: Bearer compatibility"\)/);
   assert.match(providers, /"--api-key-stdin"/);
   assert.match(providers, /stdin: key \+ "\\n"/);
   assert.doesNotMatch(providers, /"--api-key",\s*key/);
-  assert.match(providers, /describeProviderStatus/);
-  assert.match(providers, /routing unsafe/);
-  assert.match(providers, /shared OpenAI routing guard/);
+  assert.match(providers, /describeCliStatus/);
+  assert.match(providers, /ChatGPT OAuth mode: active/);
+  assert.match(providers, /result\.code == 0 && parsed\?\["ok"\] as\? Bool == true/);
   assert.match(providers, /operations\.begin\(kind: kind, mutationGroup: group/);
   assert.match(providers, /ControlCenterPage/);
   assert.match(alertFactory, /placeholderString = placeholder/);
@@ -370,41 +389,84 @@ test('Providers saves Codex LB keys through visible paste fields and stdin', () 
   assert.match(appDelegate, /installStandardEditMenu\(\)/);
   assert.match(processClient, /arguments\.contains\("--api-key-stdin"\)/);
   assert.match(processClient, /redact\(value, sensitiveValues: sensitiveValues\)/);
-  assert.match(processClient, /Child output was suppressed\./);
+  assert.match(processClient, /sks\.secure-input-operation\.v1/);
+  assert.match(processClient, /"output_suppressed": true/);
+  assert.match(processClient, /"ok": code == 0/);
 });
 
-test('Providers keeps codex-lb activation and connection health feedback coherent', () => {
-  const providers = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersViewController.swift'), 'utf8');
-  const slice = (start: string, end: string) => {
-    const startIndex = providers.indexOf(start);
-    const endIndex = providers.indexOf(end, startIndex + start.length);
-    assert.ok(startIndex >= 0, `missing ${start}`);
-    assert.ok(endIndex > startIndex, `missing ${end} after ${start}`);
-    return providers.slice(startIndex, endIndex);
-  };
-  const connectionFlow = slice('@objc private func testConnection()', '@objc private func useOAuth()');
-  const oauthFlow = slice('@objc private func useOAuth()', '@objc private func useCodexLb()');
-  const activationFlow = slice('@objc private func useCodexLb()', '@objc private func fastOn()');
+test('Control Center avoids competing Return defaults and protects recovery-sensitive settings', () => {
+  const root = resolvePackagedMenuBarSourceRoot();
+  const controlKit = fs.readFileSync(path.join(root, 'Sources', 'ControlKit.swift'), 'utf8');
+  const updates = fs.readFileSync(path.join(root, 'Sources', 'UpdatesViewController.swift'), 'utf8');
+  const diagnostics = fs.readFileSync(path.join(root, 'Sources', 'DiagnosticsViewController.swift'), 'utf8');
+  const settings = fs.readFileSync(path.join(root, 'Sources', 'SettingsViewController.swift'), 'utf8');
+  const mcp = fs.readFileSync(path.join(root, 'Sources', 'MCPServersViewController.swift'), 'utf8');
 
-  assert.match(activationFlow, /\["codex-lb", "use-codex-lb",[\s\S]{0,120}"--json"\]/);
-  assert.match(connectionFlow, /processClient\.run\(\["codex-lb", "health", "--json"\]/);
-  assert.match(providers, /\["codex_lb"\]\s+as\?\s+\[String: Any\]/);
-  for (const field of ['selected', 'provider_ready', 'auth_routing_coherent']) {
-    assert.match(providers, new RegExp(`\\["${field}"\\]`));
+  assert.match(controlKit, /isDefault: Bool = false/);
+  assert.match(controlKit, /if isDefault \{ button\.keyEquivalent = "\\r" \}/);
+  assert.match(updates, /Review and Update"[\s\S]*isDefault: true/);
+  assert.match(diagnostics, /Run Doctor"[\s\S]*isDefault: true/);
+  assert.doesNotMatch(controlKit, /button\.keyEquivalent = "\\r"\s*\n\s*button\.setAccessibilityLabel/);
+
+  assert.match(settings, /case unreadable/);
+  assert.match(settings, /case malformed/);
+  assert.match(settings, /No file was overwritten/);
+  assert.match(settings, /Open Notification Settings…/);
+  assert.match(settings, /urlForApplication\(withBundleIdentifier: "com\.apple\.systempreferences"\)/);
+
+  assert.match(mcp, /private var refreshGeneration = 0/);
+  assert.match(mcp, /self\.refreshGeneration == requestGeneration/);
+  assert.match(mcp, /No MCP servers are configured in the/);
+  assert.match(mcp, /NativeView\.scrollable\(stack\)/);
+});
+
+test('Providers exposes full-capability Desktop routing, explicit CLI use, and evidence states without the old auth switch UX', () => {
+  const root = resolvePackagedMenuBarSourceRoot();
+  const providers = fs.readFileSync(path.join(root, 'Sources', 'ProvidersViewController.swift'), 'utf8');
+  const routingTruth = fs.readFileSync(path.join(root, 'Sources', 'ProvidersRoutingTruth.swift'), 'utf8');
+  const openRouter = fs.readFileSync(path.join(root, 'Sources', 'ProvidersOpenRouter.swift'), 'utf8');
+  const providersSurface = `${providers}\n${routingTruth}`;
+
+  for (const label of [
+    'Codex LB · Desktop Full Capability (Recommended)', 'Use Codex LB', 'Verify Capabilities', 'Use ChatGPT OAuth Only',
+    'Codex LB · Credentials & CLI Provider', 'Use Saved CLI Provider', 'Copy CLI Command', 'Capability Matrix'
+  ]) assert.match(providers, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(providers, /ControlKit\.primaryButton\("Use Codex LB"/);
+  assert.match(providers, /NativeView\.button\("Use ChatGPT OAuth Only"/);
+  assert.doesNotMatch(providers, /Enable \/ Repair|Enable Codex LB|Disable Routing/);
+  assert.match(providers, /\["codex-lb", "use-desktop-full", "--restart-app", "--json"\]/);
+  assert.match(providers, /\["codex-lb", "capabilities", "--level", "transport", "--json"\]/);
+  assert.match(providers, /\["codex-lb", "disable", "--restart-app", "--json"\]/);
+  assert.match(providers, /\["codex-lb", "use-cli", "--json"\]/);
+  assert.match(providers, /\["codex-lb", "health", "--json"\]/);
+  assert.doesNotMatch(providers, /\["codex-lb", "use-codex-lb"/);
+  assert.doesNotMatch(providers, /\["codex-lb", "use-oauth"/);
+  assert.doesNotMatch(providers, /Use codex-lb|Restore Chat \/ Pro/);
+  assert.match(providers, /ProviderRoutingTruth\.snapshot\(from:/);
+  assert.match(routingTruth, /legacyCodexLbSelected/);
+  assert.match(routingTruth, /chatgptOauthPresent/);
+  assert.match(providers, /Codex LB and ChatGPT OAuth are explicit Desktop modes/);
+  assert.match(providers, /never hide Use Codex LB \/ Use ChatGPT OAuth Only based on status parsing/);
+
+  for (const label of ['OAuth Identity', 'Built-in Provider', 'Bridge', 'Models', 'Fast', 'Image', 'Computer', 'Browser', 'Voice', 'Plugins']) {
+    assert.match(providers, new RegExp(`"${label}"`));
   }
-  assert.match(providers, /\["shared_openai_routing"\]\s+as\?\s+\[String: Any\][\s\S]{0,400}\["safe"\]/);
-  const statusProbeCount = providers.match(/\["codex-lb", "status", "--json"\]/g)?.length ?? 0;
-  const activationCount = providers.match(/\["codex-lb", "use-codex-lb",[\s\S]{0,120}"--json"\]/g)?.length ?? 0;
-  assert.ok(statusProbeCount >= 2 || activationCount >= 2, 'activation must establish or recheck readiness after the desktop restart');
-  assert.match(providers, /(?:status\s*==\s*"not_configured"|case\s+"not_configured")[\s\S]{0,1200}Use codex-lb/);
-  assert.match(providers, /if chainOk \{[\s\S]{0,700}return \(true,[\s\S]{0,300}Activation required: click Use codex-lb/);
-  assert.doesNotMatch(connectionFlow, /NativeView\.redactPreview\(result\.output\)/);
-  assert.match(oauthFlow, /processClient\.run\(\["codex-lb", "use-oauth", "--restart-app", "--json"\]/);
-  assert.doesNotMatch(oauthFlow, /^\s*run\(/m);
-  assert.doesNotMatch(oauthFlow, /self\.refresh\(\)/);
-  assert.match(providers, /\["restart_performed"\]\s+as\?\s+Bool\s*==\s*true/);
-  assert.match(providers, /restart_not_performed/);
-  assert.match(providers, /No OAuth switch was assumed/);
+  for (const state of ['verified', 'available_unverified', 'blocked', 'unsupported', 'skipped']) {
+    assert.match(providers, new RegExp(`"${state}"`));
+  }
+  assert.match(providers, /state == "verified", source == "config" \|\| source == "manifest"/);
+  assert.match(providers, /return "available_unverified"/);
+  assert.match(providers, /No capability was assumed/);
+  assert.match(providersSurface, /CapabilityVerificationTruth\.deepEvidenceTrusted/);
+  assert.match(providersSurface, /deep_evidence_validation/);
+  assert.match(providers, /overall == "verified"/);
+  assert.match(providers, /Capability verification blocked/);
+  assert.match(providers, /mode == expectedMode && oauthPreserved != false/);
+  assert.match(providers, /mode == "cli-provider" && oauthPreserved != false && authMutated != true/);
+  assert.match(openRouter, /Codex LB mode · ChatGPT OAuth \+ built-in OpenAI via bridge/);
+  assert.match(openRouter, /ChatGPT OAuth mode · built-in OpenAI models/);
+  assert.match(providers, /codex --config model_provider='\\"codex-lb\\"'/);
+  assert.match(providers, /NSPasteboard\.general\.setString\(cliLaunchCommand, forType: \.string\)/);
 });
 
 test('Providers exposes OpenRouter save key, freeform model id, and Use OpenRouter', () => {
@@ -455,19 +517,24 @@ test('Providers exposes OpenRouter save key, freeform model id, and Use OpenRout
 test('Menu Bar exposes truthful accessible Fast state with direct on and off actions', () => {
   const swift = source();
   const providers = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersViewController.swift'), 'utf8');
-  for (const label of ['Fast: Checking…', 'Fast Mode On', 'Fast Mode Off']) assert.match(swift, new RegExp(label));
+  for (const label of ['Codex Fast: Checking…', 'Codex Fast On', 'Codex Fast Off']) assert.match(swift, new RegExp(label));
   assert.match(swift, /\["fast-mode", "status", "--json"\]/);
   assert.match(swift, /\["fast-mode", "on", "--json"\]/);
   assert.match(swift, /\["fast-mode", "off", "--json"\]/);
   assert.match(swift, /let global = json\["global"\] as\? \[String: Any\], let on = global\["on"\] as\? Bool/);
-  assert.match(swift, /fastLine\.title = "Fast: Unavailable"/);
+  assert.match(swift, /fastLine\.title = "Codex Fast: Unavailable"/);
   assert.match(swift, /guard !fastRefreshInFlight else \{ fastRefreshPending = true; return \}/);
   assert.match(swift, /private func completeFastRefresh\(\)/);
-  assert.match(swift, /setAccessibilityLabel\("Current Fast mode state"\)/);
-  assert.match(swift, /setAccessibilityLabel\("Turn Fast mode on"\)/);
-  assert.match(swift, /setAccessibilityLabel\("Turn Fast mode off"\)/);
+  assert.match(swift, /setAccessibilityLabel\("Current Codex Fast state"\)/);
+  assert.match(swift, /setAccessibilityLabel\("Turn Codex Fast on"\)/);
+  assert.match(swift, /setAccessibilityLabel\("Turn Codex Fast off"\)/);
   assert.match(providers, /\["fast-mode", "status", "--json"\]/);
-  assert.match(providers, /Fast Mode: unavailable — no state was assumed\./);
+  assert.match(providers, /Official Codex speed option: 1\.5× faster on supported models\./);
+  assert.match(providers, /not the selected model, Codex-Spark, or reasoning effort/);
+  assert.match(providers, /GPT-5\.6 and GPT-5\.5 use credits at 2\.5× Standard; GPT-5\.4 uses 2× Standard/);
+  assert.match(providers, /API-key Codex uses API token pricing instead/);
+  assert.match(providers, /API Priority processing is a separate billing path/);
+  assert.match(providers, /Codex Fast: unavailable — no state was assumed\./);
 });
 
 test('operation coordinator persists redacted bounded-tail receipts and excludes concurrent mutations', () => {
@@ -477,7 +544,8 @@ test('operation coordinator persists redacted bounded-tail receipts and excludes
   }
   assert.match(swift, /schema: "sks\.operation\.v1"/);
   assert.match(swift, /\.posixPermissions: 0o600/);
-  assert.match(swift, /Data\(data\.suffix\(self\.outputLimit\)\)/);
+  assert.match(swift, /Data\(data\.suffix\(effectiveOutputLimit\)\)/);
+  assert.match(swift, /max\(1024, min\(1024 \* 1024, maxOutputBytes \?\? outputLimit\)\)/);
   assert.match(swift, /private var activeMutation: \(id: String, group: String\)\?/);
   assert.match(swift, /if mutationGroup != nil, activeMutation != nil \{ return nil \}/);
   assert.match(swift, /if activeMutation\?\.id == snapshot\.id \{ activeMutation = nil \}/);
@@ -502,30 +570,39 @@ test('UserNotifications declares all categories/actions, redacts public bodies, 
   assert.doesNotMatch(swift, /display notification|osascript/);
 });
 
-test('Remote and Telegram page configures a dedicated local Codex session and LaunchAgent without exposing the bot token', () => {
+test('Remote Coding page recommends external Orca without runtime integration or a dependency', () => {
   const swift = source();
-  const remote = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'RemoteTelegramViewController.swift'), 'utf8');
+  const overview = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'OverviewViewController.swift'), 'utf8');
+  const sidebar = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'SidebarItem.swift'), 'utf8');
+  const remote = fs.readFileSync(
+    path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'RemoteCodingViewController.swift'),
+    'utf8'
+  );
   const processClient = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProcessClient.swift'), 'utf8');
-  assert.match(swift, /\["remote", "readiness", "--project-root", AppRuntime\.projectRoot, "--json"\]/);
-  assert.match(swift, /\["telegram", "status", "--project-root", AppRuntime\.projectRoot, "--json"\]/);
-  assert.match(remote, /Connect Bot & Register Coding Session/);
-  assert.match(remote, /\["telegram", "setup", "--bot-token-stdin", "--project-root", AppRuntime\.projectRoot, "--json"\]/);
-  assert.doesNotMatch(remote, /"--new-session"/);
-  assert.match(remote, /\["telegram", "hub", "start", "--project-root", AppRuntime\.projectRoot, "--json"\]/);
-  assert.match(remote, /\["telegram", "hub", "stop", "--project-root", AppRuntime\.projectRoot, "--json"\]/);
-  assert.match(remote, /\["telegram", "hub", "restart", "--project-root", AppRuntime\.projectRoot, "--json"\]/);
-  assert.match(remote, /secure: true/);
-  assert.match(remote, /operations\.begin\(kind: kind, mutationGroup: "telegram"/);
-  assert.match(remote, /registered_session_count/);
-  assert.match(remote, /ordinary text in the paired private chat/);
-  assert.match(remote, /first message creates and persists the Codex thread/);
-  assert.match(processClient, /arguments\.contains\("--bot-token-stdin"\)/);
-  assert.match(processClient, /extractJsonPayload/);
-  assert.match(swift, /RemoteTelegramViewController\(processClient: processClient, operations: operations\)/);
-  assert.match(remote, /ControlCenterPage/);
-  assert.doesNotMatch(remote, /ssh_alias|arbitrary remote shell.*enabled/i);
-  assert.doesNotMatch(swift, /Mini App:|mini_app/);
-  assert.doesNotMatch(swift, /\["codex-app", "status", "--json"\]/);
+  assert.match(sidebar, /case remoteCoding = "Remote Coding"/);
+  assert.match(overview, /NativeView\.button\("Remote Coding…"/);
+  assert.match(overview, /openSection\?\("Remote Coding"\)/);
+  assert.match(remote, /final class RemoteCodingViewController: NSViewController/);
+  assert.match(remote, /https:\/\/www\.onorca\.dev/);
+  assert.match(remote, /https:\/\/github\.com\/stablyai\/orca/);
+  assert.match(remote, /external beta project from Stably AI/);
+  assert.match(remote, /not part of Sneakoscope/);
+  assert.match(remote, /does not install, configure, authenticate, monitor, or depend on it/);
+  assert.match(remote, /setAccessibilityHelp\("Open the external Orca website/);
+  assert.match(remote, /setAccessibilityHelp\("Open the external Orca source repository/);
+  assert.match(remote, /NSWorkspace\.shared\.open\(Self\.websiteURL\)/);
+  assert.match(remote, /NSWorkspace\.shared\.open\(Self\.sourceURL\)/);
+  assert.doesNotMatch(remote, /ProcessClient|OperationCoordinator|URLSession|Process\(/);
+  assert.doesNotMatch(processClient, /bot-token|Telegram|telegram/);
+  assert.doesNotMatch(swift, /Telegram|telegram|RemoteTelegram|TelegramHub/);
+  for (const removed of [
+    'TelegramHubSupervisor.swift',
+    'RemoteTelegramViewController.swift',
+    'RemoteTelegramCenterState.swift',
+    'RemoteTelegramRendering.swift'
+  ]) {
+    assert.equal(fs.existsSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', removed)), false);
+  }
 });
 
 test('MCP Control Center exposes scoped CRUD, health, OAuth, backups, policy editing, and redacted review without raw secret entry', () => {
@@ -556,6 +633,9 @@ test('MCP Control Center exposes scoped CRUD, health, OAuth, backups, policy edi
   assert.match(swift, /guard selectedScope\(\) != "effective"/);
   assert.match(swift, /writableScopeForBackup\(\).*global.*project/s);
   assert.match(swift, /selection\.row\.managedBy != "plugin"/);
+  assert.match(swift, /columnAutoresizingStyle = \.lastColumnOnlyAutoresizingStyle/);
+  assert.match(swift, /let stateActions = ControlKit\.actionRow/);
+  assert.match(swift, /let maintenance = ControlKit\.actionRow/);
   assert.match(swift, /orderedLines\(args\.string\)/);
   assert.match(swift, /NSEvent\.addLocalMonitorForEvents\(matching: \.keyDown\)/);
   assert.match(swift, /event\.keyCode == 53/);

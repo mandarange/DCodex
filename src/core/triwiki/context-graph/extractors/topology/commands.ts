@@ -175,7 +175,6 @@ export function buildCommandGraph(
       inputProfile: entry.inputProfile,
       supportsJson: entry.supportsJson,
       remoteAllowed: entry.remoteAllowed,
-      telegramAllowed: entry.telegramAllowed,
       readonlyCommand: entry.readonly === true,
       diagnostic: entry.diagnostic === true,
       deprecated: entry.deprecated === true,

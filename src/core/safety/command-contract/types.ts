@@ -4,8 +4,8 @@ export type CommandLatency = 'fast' | 'normal' | 'long';
 export const NARUTO_ACTIONS = ['run', 'status', 'subagents', 'proof', 'parent-summary', 'help'] as const;
 export type NarutoAction = typeof NARUTO_ACTIONS[number];
 
-export interface CommandContractV2 {
-  schema: 'sks.command-contract.v2';
+export interface CommandContractV3 {
+  schema: 'sks.command-contract.v3';
   name: string;
   description: string;
   maturity: 'stable' | 'preview' | 'labs';
@@ -14,7 +14,6 @@ export interface CommandContractV2 {
   latency: CommandLatency;
   supports_json: boolean;
   remote_allowed: boolean;
-  telegram_allowed: boolean;
   input_schema: Record<string, unknown>;
   argv_builder: (input: unknown) => string[];
   required_capabilities: string[];

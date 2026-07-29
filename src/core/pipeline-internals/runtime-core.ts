@@ -26,6 +26,13 @@ import { writeMistakeMemoryReport } from '../mistake-memory.js';
 import { MISTAKE_RECALL_ARTIFACT, mistakeRecallGateStatus } from '../mistake-recall.js';
 import { recordSkillDreamEvent, SKILL_DREAM_POLICY, writeSkillForgeReport } from '../skill-forge.js';
 import { evaluateResearchGate, researchPaperArtifactForPlan, writeResearchPlan } from '../research.js';
+import {
+  ALIGN_GATE_ARTIFACT,
+  ALIGN_LEDGER_ARTIFACT,
+  ALIGN_PLAN_ARTIFACT,
+  alignNextActionText,
+  writeAlignRouteArtifacts
+} from '../align/align-route.js';
 import { PPT_REQUIRED_GATE_FIELDS, writePptRouteArtifacts } from '../ppt.js';
 import { writeQaLoopArtifacts } from '../qa-loop.js';
 import { IMAGE_UX_REVIEW_GATE_ARTIFACT, IMAGE_UX_REVIEW_POLICY_ARTIFACT, IMAGE_UX_REVIEW_SCREEN_INVENTORY_ARTIFACT, IMAGE_UX_REVIEW_GENERATED_REVIEW_LEDGER_ARTIFACT, IMAGE_UX_REVIEW_ISSUE_LEDGER_ARTIFACT, IMAGE_UX_REVIEW_ITERATION_REPORT_ARTIFACT, IMAGE_UX_REVIEW_REQUIRED_GATE_FIELDS, writeImageUxReviewRouteArtifacts } from '../image-ux-review.js';
@@ -681,6 +688,7 @@ export function promptPipelineContext(prompt: any, route: any = null) {
   if (route?.id === 'DB') lines.push('DB route: scan/check database risk first; destructive DB operations remain forbidden.');
   if (route?.id === 'MadSKS') lines.push('MAD-SKS SQL-plane: explicit invocation is the approval boundary. Use the mission-local write-capable Supabase MCP profile only for the bound cycle, verify execute_sql/apply_migration inventory before claiming ready, execute requested SQL-plane mutations, read back postconditions, then close the capability/profile and prove normal read-only restoration. Supabase project/account/billing/credential control-plane actions remain denied.');
   if (route?.id === 'GX') lines.push('GX route: use deterministic vgraph/beta render, validate, drift, and snapshot artifacts.');
+  if (route?.id === 'Align') lines.push('Align route: modernize SKS prompts, settings, and generated skill/command surfaces against current GPT-5.6 prompting, programmatic tool calling, Agents, Codex skill-schema, and Plugins contracts. Record official source receipts plus explicit PTC and Agents adoption decisions; audit every generated surface; remove superseded compatibility settings; deduplicate policy without weakening success criteria, permissions, safety, tool routing, or validation; protect immutable core skills; keep align-ledger.json current; and pass align-gate.json.');
   return lines.join('\n');
 }
 
@@ -784,6 +792,7 @@ export async function prepareRoute(root: any, prompt: any, state: any = {}, opts
   if (route.id === 'Naruto') return finish(await prepareLightRoute(root, parentOwnedProfileRoute(route, explicitlyInvokedSkills), task, required, { sessionKey }));
   if (route.id === 'Research') return finish(await prepareResearch(root, route, task, required, { sessionKey }));
   if (route.id === 'AutoResearch') return finish(await prepareAutoResearch(root, route, task, required, { sessionKey }));
+  if (route.id === 'Align') return finish(await prepareAlign(root, route, task, required, { sessionKey }));
   if (route.id === 'DB') return finish(await prepareDb(root, route, task, required, { sessionKey }));
   if (route.id === 'GX') return finish(await prepareGx(root, route, task, required, { sessionKey }));
   if (explicit || required) return finish(await prepareLightRoute(root, route, task, required, { sessionKey }));
@@ -1301,6 +1310,45 @@ async function prepareGx(root: any, route: any, task: any, required: any, opts: 
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
   await setCurrent(root, routeState(id, route, 'GX_VALIDATE_REQUIRED', required, { prompt: task, ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
   return routeContext(route, id, task, required, 'Run sks gx init/render/validate/drift/snapshot, then pass gx-gate.json.');
+}
+
+async function prepareAlign(root: any, route: any, task: any, required: any, opts: any = {}) {
+  const { id, dir } = await createMission(root, { mode: 'align', prompt: task, sessionKey: opts.sessionKey });
+  await createAndWriteWorkOrderLedgerForPrompt(dir, {
+    missionId: id,
+    route: route.command,
+    prompt: task
+  });
+  const artifacts = await writeAlignRouteArtifacts(dir, id, task);
+  await writeJsonAtomic(path.join(dir, 'route-context.json'), {
+    route: route.id,
+    command: route.command,
+    mode: route.mode,
+    task,
+    mission_id: id,
+    required_skills: route.requiredSkills,
+    context7_required: required,
+    context_tracking: triwikiContextTracking(),
+    stop_gate: route.stopGate,
+    official_sources: artifacts.plan.official_sources,
+    deprecated_migration_sources: artifacts.plan.deprecated_migration_sources,
+    workstreams: artifacts.plan.workstreams,
+    required_verifications: artifacts.plan.required_verifications,
+    prompt_evaluation_min_cases: artifacts.plan.prompt_evaluation_min_cases,
+    artifacts: {
+      plan: ALIGN_PLAN_ARTIFACT,
+      ledger: ALIGN_LEDGER_ARTIFACT,
+      gate: ALIGN_GATE_ARTIFACT,
+      work_order_ledger: 'work-order-ledger.json'
+    }
+  });
+  const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
+  await setCurrent(root, routeState(id, route, 'ALIGN_PREPARED', required, {
+    prompt: task,
+    stop_gate: route.stopGate,
+    ...pipelinePlanState(pipelinePlan)
+  }), { sessionKey: opts.sessionKey });
+  return routeContext(route, id, task, required, alignNextActionText(id));
 }
 
 async function prepareLightRoute(root: any, route: any, task: any, required: any, opts: any = {}) {

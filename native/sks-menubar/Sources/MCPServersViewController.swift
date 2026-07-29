@@ -74,6 +74,7 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
     private let scopePopup = NSPopUpButton()
     private var rows: [McpRow] = []
     private var mutating = false
+    private var refreshGeneration = 0
     private var editor: McpEditorSheet?
     private lazy var addButton = actionButton("Add…", #selector(addServer))
     private lazy var editButton = actionButton("Edit…", #selector(editServer))
@@ -93,10 +94,17 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
     required init?(coder: NSCoder) { nil }
 
     override func loadView() {
-        for (id, title, width) in [("state", "State", 105.0), ("name", "Name", 170.0), ("transport", "Transport", 120.0), ("configuration", "Configuration", 260.0)] {
-            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id)); column.title = title; column.width = width
+        for (id, title, width, minimum) in [
+            ("state", "State", 90.0, 72.0),
+            ("name", "Name", 150.0, 110.0),
+            ("transport", "Transport", 110.0, 86.0),
+            ("configuration", "Configuration", 230.0, 150.0)
+        ] {
+            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
+            column.title = title; column.width = width; column.minWidth = minimum
             table.addTableColumn(column)
         }
+        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         table.dataSource = self; table.delegate = self; table.usesAlternatingRowBackgroundColors = true
         table.allowsMultipleSelection = false; table.setAccessibilityLabel("Effective MCP servers")
         let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true
@@ -107,18 +115,24 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
         scopeRow.orientation = .horizontal; scopeRow.spacing = 8
         // Destructive Remove sits apart from routine edit actions; connection
         // and maintenance actions live on their own labeled row.
-        let primary = ControlKit.actionRow([addButton, editButton, duplicateButton, toggleButton], trailing: [removeButton])
+        let primary = ControlKit.actionRow([addButton, editButton, duplicateButton])
+        let stateActions = ControlKit.actionRow([toggleButton], trailing: [removeButton])
         let manageLabel = NSTextField(labelWithString: "Manage"); manageLabel.textColor = .secondaryLabelColor
         let connectLabel = NSTextField(labelWithString: "Connection"); connectLabel.textColor = .secondaryLabelColor
         for label in [manageLabel, connectLabel] { label.font = NSFont.systemFont(ofSize: 11, weight: .medium) }
-        let secondary = NSStackView(views: [testButton, oauthButton, legacySecretButton, backupsButton, refreshButton])
-        secondary.orientation = .horizontal; secondary.spacing = 8
-        view = NativeView.stack([
-            NativeView.title("MCP Servers"),
-            NativeView.detail("Inspect global, trusted-project, or effective configuration. Effective and plugin entries are read-only until an exact writable scope is selected. New authentication uses OAuth or environment-variable names only."),
-            scopeRow, scroll, status, manageLabel, primary, connectLabel, secondary
+        let secondary = ControlKit.actionRow([testButton, oauthButton, legacySecretButton])
+        let maintenance = ControlKit.actionRow([backupsButton, refreshButton])
+        let inventoryCard = NativeView.card(
+            title: "Server inventory",
+            subtitle: "Select one row before using edit, connection, authentication, or removal actions.",
+            views: [scroll, status, manageLabel, primary, stateActions, connectLabel, secondary, maintenance]
+        )
+        view = NativeView.page([
+            ControlKit.header("MCP Servers", "Inspect global, trusted-project, or effective configuration. Effective and plugin entries are read-only until an exact writable scope is selected. New authentication uses OAuth or environment-variable names only."),
+            scopeRow,
+            inventoryCard
         ])
-        updateButtons(); refresh()
+        updateButtons()
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
@@ -143,9 +157,14 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
     @objc private func scopeChanged() { refresh() }
 
     @objc private func refresh() {
-        let scope = selectedScope(); status.stringValue = "Loading \(scope) MCP configuration…"
+        guard !mutating else { return }
+        refreshGeneration += 1
+        let requestGeneration = refreshGeneration
+        let scope = selectedScope()
+        status.stringValue = "Loading \(scope) MCP configuration…"
+        refreshButton.isEnabled = false
         processClient.run(["mcp", "config", "list", "--scope", scope] + scopeContext(scope, mutation: false) + ["--json"], timeout: NativeView.statusTimeout) { [weak self] result in
-            guard let self = self else { return }
+            guard let self = self, self.refreshGeneration == requestGeneration else { return }
             guard let json = self.json(result.output), let servers = json["servers"] as? [[String: Any]] else {
                 self.rows = []; self.table.reloadData(); self.status.stringValue = "MCP inventory unavailable. No configuration was changed."
                 self.updateButtons(); return
@@ -155,7 +174,9 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
             let enabled = json["enabled_count"] as? Int ?? self.rows.filter(\.enabled).count
             let failed = json["failed_count"] as? Int ?? 0
             let warnings = (json["warnings"] as? [String] ?? []).filter { !$0.hasPrefix("public_error:") }
-            self.status.stringValue = "\(self.rows.count) servers · \(enabled) enabled · \(failed) need attention" + (warnings.isEmpty ? "" : " · \(warnings.count) advisory")
+            self.status.stringValue = self.rows.isEmpty
+                ? "No MCP servers are configured in the \(scope) scope."
+                : "\(self.rows.count) servers · \(enabled) enabled · \(failed) need attention" + (warnings.isEmpty ? "" : " · \(warnings.count) advisory")
             self.updateButtons()
         }
     }
@@ -296,6 +317,7 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
 
     private func mutate(_ args: [String], stdin: String? = nil) {
         guard !mutating, let operation = operations.begin(kind: "mcp-config", mutationGroup: "mcp", summary: "MCP configuration change") else { status.stringValue = "An update or MCP mutation is already running."; return }
+        refreshGeneration += 1
         mutating = true; updateButtons(); _ = operations.update(operation, state: .running, stage: "apply", progress: nil, summary: "Applying scoped MCP change")
         processClient.run(args, stdin: stdin, timeout: NativeView.mutationTimeout) { [weak self] result in
             guard let self = self else { return }
@@ -326,6 +348,11 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
     private func actionButton(_ title: String, _ action: Selector) -> NSButton { NativeView.button(title, target: self, action: action) }
     private func updateButtons() {
         let row = selected()?.row; let writable = selectedWritableRow() != nil
+        toggleButton.title = row?.enabled == true ? "Disable Selected" : "Enable Selected"
+        removeButton.title = "Remove Selected"
+        testButton.title = "Test Selected"
+        oauthButton.title = row?.authenticated == true ? "Sign Out OAuth" : "Sign In with OAuth"
+        legacySecretButton.title = "Review Legacy Secret…"
         addButton.isEnabled = !mutating; refreshButton.isEnabled = !mutating; scopePopup.isEnabled = !mutating
         for button in [editButton, duplicateButton, toggleButton, removeButton] { button.isEnabled = !mutating && writable }
         testButton.isEnabled = !mutating && row != nil && row?.managedBy != "plugin"
@@ -391,12 +418,13 @@ private final class McpEditorSheet: NSObject {
             pair("Default approval mode", approval), pair("Environment", remote), pair("Requirement", required)
         ])
         grid.rowSpacing = 6; grid.columnSpacing = 12; grid.column(at: 0).xPlacement = .trailing; grid.column(at: 1).xPlacement = .fill
-        grid.column(at: 1).width = 420
+        grid.column(at: 1).width = 300
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelSheet)); let buttons = NSStackView(views: [cancel, apply])
         buttons.orientation = .horizontal; buttons.spacing = 8
-        let stack = NativeView.stack([NativeView.detail("Connection values are used only for the selected transport. Edit fields may be left blank to preserve existing connection data."), grid, review, buttons])
-        stack.translatesAutoresizingMaskIntoConstraints = false; panel.contentView = NSView(); panel.contentView?.addSubview(stack)
-        NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: panel.contentView!.leadingAnchor), stack.trailingAnchor.constraint(equalTo: panel.contentView!.trailingAnchor), stack.topAnchor.constraint(equalTo: panel.contentView!.topAnchor), stack.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor)])
+        let stack = NativeView.page([NativeView.detail("Connection values are used only for the selected transport. Edit fields may be left blank to preserve existing connection data."), grid, review, buttons])
+        let scroll = NativeView.scrollable(stack)
+        panel.contentView = NSView(); panel.contentView?.addSubview(scroll)
+        NSLayoutConstraint.activate([scroll.leadingAnchor.constraint(equalTo: panel.contentView!.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: panel.contentView!.trailingAnchor), scroll.topAnchor.constraint(equalTo: panel.contentView!.topAnchor), scroll.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor)])
     }
 
     @objc private func transportChanged() { let local = transport.indexOfSelectedItem == 0; command.isEnabled = local; args.isEditable = local; cwd.isEnabled = local; env.isEditable = local; remote.isEnabled = local; url.isEnabled = !local; bearer.isEnabled = !local; reviewed = nil; apply.title = "Review" }

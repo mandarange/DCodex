@@ -4,9 +4,53 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { syncCoreSkillsIntegrity } from '../core-skill-integrity.js';
-import { renderCoreSkillTemplate } from '../core-skill-manifest.js';
+import {
+  CORE_SKILL_TEMPLATE_VERSION,
+  buildSksCoreSkillManifest,
+  renderCoreSkillTemplate
+} from '../core-skill-manifest.js';
+import { SKILL_DISCOVERY_DESCRIPTION_MAX_CHARS } from '../../skills/skill-agent-metadata.js';
 
 const SECRET_MARKER = 'SKS_CORE_PATH_SECRET';
+
+test('core skills use the focused v2 progressive-disclosure template', () => {
+  assert.equal(CORE_SKILL_TEMPLATE_VERSION, 'sks-core-skill-template.v2');
+  const manifest = buildSksCoreSkillManifest('1970-01-01T00:00:00.000Z');
+  assert.ok(manifest.skills.length > 0);
+
+  for (const skill of manifest.skills) {
+    const body = renderCoreSkillTemplate(skill.canonical_name);
+    const headings = [
+      '## Outcome',
+      '## Activation',
+      '## Workflow',
+      '## Runtime contract',
+      '## Safety',
+      '## Evidence',
+      '## Failure recovery'
+    ];
+    let previous = -1;
+    for (const heading of headings) {
+      const index = body.indexOf(heading);
+      assert.ok(index > previous, `${skill.canonical_name} must contain ordered heading ${heading}`);
+      previous = index;
+    }
+
+    const descriptionLine = body.split('\n').find((line) => line.startsWith('description: '));
+    assert.ok(descriptionLine, `${skill.canonical_name} must have a frontmatter description`);
+    const description = JSON.parse(String(descriptionLine).slice('description: '.length));
+    assert.ok(
+      description.length > 20 && Array.from(description).length <= SKILL_DISCOVERY_DESCRIPTION_MAX_CHARS
+    );
+    assert.doesNotMatch(description, /Immutable SKS core Codex App route bridge/);
+    assert.match(body, /\nPurpose: /);
+    assert.match(body, /\nUse when: /);
+    assert.doesNotMatch(body, /\nUse when: Use\b/i);
+    assert.match(body, /\nSafety: /);
+    assert.match(body, /\nEvidence\/artifacts: /);
+    assert.match(body, /\nFailure\/recovery: /);
+  }
+});
 
 test('core skill integrity blockers do not expose an adversarial ancestor symlink path', async () => {
   const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), `sks-core-integrity-${SECRET_MARKER}\n\\-`));

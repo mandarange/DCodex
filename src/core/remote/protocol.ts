@@ -90,7 +90,7 @@ export function validateRemoteCommandEnvelope(value: unknown, now: number = Date
   if (expiresAt <= now) throw new RemoteProtocolError('command_expired');
   if (expiresAt <= issuedAt) throw new RemoteProtocolError('command_expiry_precedes_issue');
   if (expiresAt - issuedAt > 15 * 60_000) throw new RemoteProtocolError('command_ttl_exceeds_15m');
-  if (record.actor !== 'telegram-owner') throw new RemoteProtocolError('command_actor_invalid');
+  if (record.actor !== 'remote-owner') throw new RemoteProtocolError('command_actor_invalid');
   const machineId = identifier(record.machine_id, 'machine_id');
   const projectId = identifier(record.project_id, 'project_id');
   const sessionId = record.session_id === null ? null : identifier(record.session_id, 'session_id');
@@ -115,7 +115,7 @@ export function validateRemoteCommandEnvelope(value: unknown, now: number = Date
     command_id: commandId,
     issued_at: String(record.issued_at),
     expires_at: String(record.expires_at),
-    actor: 'telegram-owner',
+    actor: 'remote-owner',
     machine_id: machineId,
     project_id: projectId,
     session_id: sessionId,

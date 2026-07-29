@@ -17,7 +17,7 @@ test('main push receipt independently revalidates remote main and the exact pre-
   try {
     fs.mkdirSync(root, { recursive: true })
     git(container, ['init', '--bare', remote])
-    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '6.3.0' }))
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '8.0.0' }))
     fs.writeFileSync(path.join(root, '.gitignore'), '.sneakoscope/reports/\ndist/\n')
     git(root, ['init', '-b', 'main'])
     git(root, ['config', 'user.email', 'fixture@example.test'])
@@ -36,7 +36,7 @@ test('main push receipt independently revalidates remote main and the exact pre-
     writeCompleteReleaseProofs(root, head, baseline, expectedOriginIdentity)
     const guard = inspectMainPushGuard({
       root,
-      expectedVersion: '6.3.0',
+      expectedVersion: '8.0.0',
       expectedOriginMain: baseline,
       expectedOriginIdentity,
       requireReleaseStamp: true,
@@ -45,13 +45,13 @@ test('main push receipt independently revalidates remote main and the exact pre-
       requireCleanTree: true
     })
     assert.equal(guard.ok, true, guard.blockers.join(','))
-    const guardFile = path.join(releaseProofDir(root, '6.3.0'), 'main-push-guard.json')
+    const guardFile = path.join(releaseProofDir(root, '8.0.0'), 'main-push-guard.json')
     writeJson(guardFile, guard)
     git(root, ['push', 'origin', 'HEAD:refs/heads/main'])
 
     const inspect = () => inspectMainPushReceipt({
       root,
-      version: '6.3.0',
+      version: '8.0.0',
       baseline,
       method: 'fast-forward',
       expectedOriginIdentity
@@ -70,7 +70,7 @@ test('main push receipt independently revalidates remote main and the exact pre-
     assert.equal(mismatchedGuard.blockers.includes('pre_push_guard_head_mismatch'), true)
     writeJson(guardFile, originalGuard)
 
-    const upgradeFile = path.join(releaseProofDir(root, '6.3.0'), 'upgrade-6.2-to-6.3.0.json')
+    const upgradeFile = path.join(releaseProofDir(root, '8.0.0'), 'upgrade-7.6-to-8.0.0.json')
     const originalUpgrade = JSON.parse(fs.readFileSync(upgradeFile, 'utf8'))
     const driftedUpgrade = structuredClone(originalUpgrade)
     driftedUpgrade.target.receipt_source_commit = '0'.repeat(40)

@@ -45,6 +45,44 @@ test('resolveStopGate finds naruto-gate.json in mission dir via current.json', a
   assert.equal(res.reason, 'mission_dir');
 });
 
+test('resolveStopGate finds a route-declared non-Naruto gate without an explicit path', async () => {
+  const root = await makeTempRoot();
+  const missionId = 'M-test-align-001';
+  const dir = await setupMission(root, missionId);
+  await fsp.writeFile(path.join(dir, 'route-context.json'), JSON.stringify({
+    mission_id: missionId,
+    route: 'Align',
+    command: '$Align',
+    stop_gate: 'align-gate.json'
+  }));
+  await fsp.writeFile(path.join(dir, 'align-gate.json'), JSON.stringify({
+    schema: 'sks.align-gate.v2',
+    mission_id: missionId,
+    status: 'pass',
+    passed: true,
+    blockers: []
+  }));
+
+  const resolved = await resolveStopGate({
+    root,
+    route: 'Align',
+    missionId,
+    allowLatestFallback: false
+  });
+  assert.equal(resolved.reason, 'mission_declared_gate');
+  assert.equal(resolved.gate_path, path.join(dir, 'align-gate.json'));
+
+  const checked = await checkStopGate({
+    root,
+    route: 'Align',
+    missionId,
+    allowLatestFallback: false
+  });
+  assert.equal(checked.action, 'allow_stop');
+  assert.equal(checked.ok, true);
+  assert.equal(checked.gate_path, path.join(dir, 'align-gate.json'));
+});
+
 test('checkStopGate returns allow_stop for passed naruto gate', async () => {
   const root = await makeTempRoot();
   const missionId = 'M-test-002';

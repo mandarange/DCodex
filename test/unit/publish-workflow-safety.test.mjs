@@ -90,7 +90,7 @@ test('workflow proves Node 20, 22, and 24 and runs exact-tarball smoke plus secr
   assert.match(workflow, /release-pack-receipt\.js inspect --tarball "\$TARBALL"/);
   assert.match(workflow, /installed-package-smoke-check\.js --tarball "\$TARBALL" --receipt "\$LOCAL_RECEIPT"/);
   assert.match(macosJob, /release-upgrade-smoke\.js --target-tarball "\$TARBALL" --target-receipt "\$LOCAL_RECEIPT"/);
-  assert.match(macosJob, /upgrade-6\.2-to-\$\{VERSION\}\.json/);
+  assert.match(macosJob, /upgrade-7\.6-to-\$\{VERSION\}\.json/);
   assert.match(macosJob, /macos-menubar-proof\.js[\s\S]*--install-report[\s\S]*--upgrade-report "\$UPGRADE_PROOF"/);
   assert.match(packJob, /release-main-push-guard\.js/);
   for (const flag of ['--require-release-stamp', '--require-pack-proof', '--require-macos-proof', '--require-clean-tree']) {
@@ -122,7 +122,7 @@ test('workflow proves Node 20, 22, and 24 and runs exact-tarball smoke plus secr
   assert.match(stageJob, /guard\.schema !== 'sks\.release-main-push-guard\.v1'/);
   assert.match(stageJob, /guard\.upgrade_proof\?\.sha256 !== upgradeSha256/);
   assert.match(stageJob, /main-push-guard\.json/);
-  assert.match(stageJob, /upgrade-6\.2-to-\$\{process\.env\.VERSION\}\.json/);
+  assert.match(stageJob, /upgrade-7\.6-to-\$\{process\.env\.VERSION\}\.json/);
   assert.match(stageJob, /closure\.rejected_count !== closure\.command_probe_count \+ closure\.dollar_command_probe_count \+ closure\.argument_probe_count \+ closure\.subcommand_probe_count/);
   for (const [field, count] of Object.entries(closureProbeCounts)) {
     assert.match(stageJob, new RegExp(`closure\\.${field} !== ${count}`));

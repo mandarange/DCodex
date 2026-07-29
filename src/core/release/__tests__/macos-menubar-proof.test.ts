@@ -15,7 +15,7 @@ import {
 const completeProof = {
   schema: MACOS_MENUBAR_PROOF_SCHEMA,
   ok: true,
-  version: '6.3.0',
+  version: '8.0.0',
   source_commit: 'a'.repeat(40),
   runner_os: 'macOS',
   swift_version: 'Swift 6',
@@ -23,17 +23,17 @@ const completeProof = {
   app_path: '/tmp/SKS.app',
   install_report_path: '.sneakoscope/reports/menubar-install.json',
   install_report_sha256: 'b'.repeat(64),
-  upgrade_report_path: '.sneakoscope/reports/release/6.3.0/upgrade-6.2-to-6.3.0.json',
+  upgrade_report_path: '.sneakoscope/reports/release/8.0.0/upgrade-7.6-to-8.0.0.json',
   upgrade_report_sha256: 'e'.repeat(64),
   upgrade_report: {
     schema: 'sks.release-upgrade-smoke.v2',
-    baseline_version: '6.2.0',
-    target_version: '6.3.0',
+    baseline_version: '7.6.0',
+    target_version: '8.0.0',
     source_commit: 'a'.repeat(40),
     target_tarball_sha256: 'f'.repeat(64),
     target_receipt_sha256: '1'.repeat(64),
     target_tarball_sha512_integrity: 'sha512-Zml4dHVyZS10YXJiYWxs',
-    target_package_version: '6.3.0'
+    target_package_version: '8.0.0'
   },
   install_report: {
     schema: 'sks.sks-menubar-install-check.v2',
@@ -42,7 +42,7 @@ const completeProof = {
     resources_sha256: 'c'.repeat(64),
     source_sha256: 'd'.repeat(64),
     build_stamp_schema: 'sks.sks-menubar-build-stamp.v2',
-    build_stamp_package_version: '6.3.0',
+    build_stamp_package_version: '8.0.0',
     build_stamp_resources_sha256: 'c'.repeat(64),
     build_stamp_source_sha256: 'd'.repeat(64)
   },
@@ -72,10 +72,10 @@ const completeProof = {
 }
 
 test('macOS Menu Bar proof is source- and version-bound', () => {
-  assert.equal(validateMacosMenubarProof(completeProof, { version: '6.3.0', sourceCommit: 'a'.repeat(40) }).ok, true)
+  assert.equal(validateMacosMenubarProof(completeProof, { version: '8.0.0', sourceCommit: 'a'.repeat(40) }).ok, true)
   const missingRollback = structuredClone(completeProof)
   missingRollback.checks.previous_app_rollback = false
-  const invalid = validateMacosMenubarProof(missingRollback, { version: '6.3.0', sourceCommit: 'a'.repeat(40) })
+  const invalid = validateMacosMenubarProof(missingRollback, { version: '8.0.0', sourceCommit: 'a'.repeat(40) })
   assert.equal(invalid.ok, false)
   assert.equal(invalid.blockers.includes('macos_check_failed:previous_app_rollback'), true)
 
@@ -83,14 +83,14 @@ test('macOS Menu Bar proof is source- and version-bound', () => {
   tampered.generated_at = 'not-a-date'
   tampered.blockers = ['tampered']
   tampered.install_report.checks = { install_ok: true }
-  const rejected = validateMacosMenubarProof(tampered, { version: '6.3.0', sourceCommit: 'a'.repeat(40) })
+  const rejected = validateMacosMenubarProof(tampered, { version: '8.0.0', sourceCommit: 'a'.repeat(40) })
   assert.equal(rejected.ok, false)
   assert.equal(rejected.blockers.includes('macos_proof_generated_at_invalid'), true)
   assert.equal(rejected.blockers.includes('macos_proof_blockers_present'), true)
   assert.equal(rejected.blockers.includes('install_report_check_failed:swift_compile'), true)
 
   const wrongUpgradeVersion: any = structuredClone(completeProof)
-  wrongUpgradeVersion.upgrade_report.target_version = '6.3.1'
+  wrongUpgradeVersion.upgrade_report.target_version = '8.0.1'
   assert.equal(validateMacosMenubarProof(wrongUpgradeVersion).blockers.includes('upgrade_report_target_version_mismatch'), true)
 
   const wrongUpgradeSource: any = structuredClone(completeProof)
@@ -126,7 +126,7 @@ test('macOS proof rejects a raw install artifact that reports failure', () => {
     fs.writeFileSync(file, bytes)
     proof.install_report_sha256 = crypto.createHash('sha256').update(bytes).digest('hex')
     writeUpgradeArtifact(root, proof)
-    const result = validateMacosMenubarProofArtifacts(root, proof, { version: '6.3.0', sourceCommit: 'a'.repeat(40) })
+    const result = validateMacosMenubarProofArtifacts(root, proof, { version: '8.0.0', sourceCommit: 'a'.repeat(40) })
     assert.equal(result.ok, false)
     assert.equal(result.blockers.includes('install_report_artifact_not_ok'), true)
     assert.equal(result.blockers.includes('install_report_artifact_failed_checks_present'), true)
@@ -143,7 +143,7 @@ test('macOS proof rehashes and binds the exact upgrade report', () => {
     writeInstallArtifact(root, proof)
     const upgradeFile = writeUpgradeArtifact(root, proof)
     const expected = {
-      version: '6.3.0',
+      version: '8.0.0',
       sourceCommit: 'a'.repeat(40),
       upgradeReportPath: proof.upgrade_report_path,
       upgradeReportSha256: proof.upgrade_report_sha256,

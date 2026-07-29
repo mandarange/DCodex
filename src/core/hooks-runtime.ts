@@ -1096,7 +1096,8 @@ function honestGapLineResolved(line: any) {
   if (/no\s+unresolved\s+gaps?\s+remain/i.test(line)) return true;
   if (/(남은\s*(?:gap|갭|문제)\s*:\s*없음|남은\s*(?:gap|갭|문제)\s*없음|remaining\s+gaps?\s*:\s*(none|no|0)|no\s+remaining\s+gaps?)/i.test(line)) return true;
   if (/no\s+active\s+blocking\s+route\s+gate\s+detected/i.test(line)) return true;
-  if (/(non[-\s]?blocker|non[-\s]?blocking|not\s+(?:a\s+)?blocker|no\s+blocker|does\s+not\s+block|not\s+blocking|blocker\s*(?:는|가)?\s*(?:아님|아닙니다|없음)|차단(?:하지|하진|하지는)\s*않|막(?:지|지는)\s*않)/i.test(line)) return true;
+  if (/(?:blockers?|차단(?:\s*(?:항목|요소|건))?)\s*(?:[:=]\s*)?0(?:건|개)?\b/i.test(line)) return true;
+  if (/(non[-\s]?blocker|non[-\s]?blocking|not\s+(?:a\s+)?blocker|no\s+blocker|does\s+not\s+block|not\s+blocking|비\s*차단|blocker\s*(?:는|가)?\s*(?:아님|아닙니다|없음)|차단(?:하지|하진|하지는)\s*않|막(?:지|지는)\s*않)/i.test(line)) return true;
   if (/(요약\s*(?:없으면|없는\s*경우).*(?:차단|block).*(?:요약\s*(?:있으면|있는\s*경우)|통과|pass)|(?:missing|without)\s+summary.*(?:block|blocked).*(?:with\s+summary|pass|accepted))/i.test(line)) return true;
   if (/(차단(?:되는지)?\s*검증|차단\s*(?:확인|검증)|blocked\s+(?:as\s+expected|verified))/i.test(line) && !/(미확인|미검증|못|안\s*됨|실패|failed|not\s+verified|not\s+blocked)/i.test(line)) return true;
   if (/(CHANGELOG|README|\.md|missing|누락|미완료|미검증|미실행|안 했|못했|못 했)/i.test(line)) return false;
@@ -1139,7 +1140,7 @@ async function recordHonestModeLoopback(root: any, state: any = {}, lastMessage:
   };
   const file = path.join(dir, 'honest-loopback.json');
   await writeJsonAtomic(file, artifact);
-  await appendJsonl(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'pipeline.honest_mode.loopback', previous_phase: previousPhase, phase, attempt, issues: artifact.issue_lines });
+  await appendJsonl(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'pipeline.honest_mode.loopback', proof_invalidating: false, previous_phase: previousPhase, phase, attempt, issues: artifact.issue_lines });
   await setCurrent(root, {
     phase,
     honest_loop_required: true,
@@ -1157,7 +1158,7 @@ async function recordHonestModeLoopback(root: any, state: any = {}, lastMessage:
 async function resolveHonestModeLoopback(root: any, state: any = {}, sessionKey: any = null) {
   const id = state.mission_id;
   const mode = String(state.mode || state.route || 'SKS').toUpperCase();
-  if (id) await appendJsonl(path.join(missionDir(root, id), 'events.jsonl'), { ts: nowIso(), type: 'pipeline.honest_mode.loopback_resolved', previous_phase: state.phase || null });
+  if (id) await appendJsonl(path.join(missionDir(root, id), 'events.jsonl'), { ts: nowIso(), type: 'pipeline.honest_mode.loopback_resolved', proof_invalidating: false, previous_phase: state.phase || null });
   await setCurrent(root, {
     phase: `${mode}_HONEST_COMPLETE`,
     honest_loop_required: false,

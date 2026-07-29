@@ -1,6 +1,7 @@
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { sha256 } from '../fsx.js'
+import { uniqueValues as unique } from '../text/strings.js'
 
 export type ResearchEvidenceExecutionClass = 'real' | 'mock_fixture'
 
@@ -145,8 +146,4 @@ function sourceId(source: any): string {
 
 function normalizedStrings(value: any): string[] {
   return (Array.isArray(value) ? value : value == null ? [] : [value]).map(String).map((item) => item.trim()).filter(Boolean)
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)]
 }

@@ -1,17 +1,24 @@
 import Cocoa
 
 final class SettingsViewController: NSViewController, ControlCenterPage {
+    private enum ConfigReadResult {
+        case loaded([String: Any])
+        case missing
+        case unreadable
+        case malformed
+    }
+
     private let notifications: NotificationCoordinator
     private let quitWithCodex = NSButton(checkboxWithTitle: "Quit SKS Menu when Codex quits", target: nil, action: nil)
     private let status = NativeView.detail("Settings use the native app configuration file.")
+    private var notificationButton: NSButton!
     init(notifications: NotificationCoordinator) { self.notifications = notifications; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { nil }
 
     override func loadView() {
         quitWithCodex.target = self; quitWithCodex.action = #selector(save)
-        quitWithCodex.state = readConfig()["quit_with_codex"] as? Bool == true ? .on : .off
         quitWithCodex.setAccessibilityLabel("Quit SKS Menu when Codex quits")
-        let authorize = NativeView.button("Enable Notifications", target: self, action: #selector(enableNotifications))
+        notificationButton = NativeView.button("Enable Notifications", target: self, action: #selector(enableNotifications))
         let lifecycleCard = NativeView.card(
             title: "Codex lifecycle",
             subtitle: "Off keeps the menu icon available on cold start and hides it only after a Codex session ends.",
@@ -20,33 +27,76 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
         let notificationsCard = NativeView.card(
             title: "Notifications",
             subtitle: "Operation results always stay available in Control Center, even when notifications are denied.",
-            views: [NativeView.row([authorize]), status]
+            views: [NativeView.row([notificationButton]), status]
         )
         view = NativeView.page([
             ControlKit.header("Settings", "These options stay on this Mac. Notification permission and Codex lifecycle behavior never leave the machine."),
             lifecycleCard, notificationsCard
         ])
-        refreshOnAppear()
     }
 
     func refreshOnAppear() {
-        quitWithCodex.state = readConfig()["quit_with_codex"] as? Bool == true ? .on : .off
+        let configResult = readConfig()
+        switch configResult {
+        case .loaded(let config):
+            quitWithCodex.isEnabled = true
+            quitWithCodex.state = config["quit_with_codex"] as? Bool == true ? .on : .off
+        case .missing:
+            quitWithCodex.isEnabled = true
+            quitWithCodex.state = .off
+        case .unreadable, .malformed:
+            quitWithCodex.isEnabled = false
+        }
         if notifications.authorizationDenied {
-            status.stringValue = "Notifications are denied in macOS Settings. Operation results still appear in Control Center."
-        } else if FileManager.default.fileExists(atPath: AppRuntime.configPath) {
-            status.stringValue = "Settings loaded from the native app configuration file."
+            notificationButton.title = "Open Notification Settings…"
+            notificationButton.setAccessibilityLabel("Open macOS Notification Settings")
+            status.stringValue = "Notifications are blocked by macOS. Open System Settings, select SKS, and allow notifications. Operation results still appear in Control Center."
         } else {
+            notificationButton.title = "Enable Notifications"
+            notificationButton.setAccessibilityLabel("Enable Notifications")
+            switch configResult {
+            case .loaded:
+            status.stringValue = "Settings loaded from the native app configuration file."
+            case .missing:
             status.stringValue = "No settings file yet. Changing an option creates one with owner-only permissions."
+            case .unreadable:
+                status.stringValue = "The settings file exists but cannot be read. No option can be changed until file access is restored."
+            case .malformed:
+                status.stringValue = "The settings file is malformed. No option can be changed or overwritten; repair it, then reopen Settings."
+            }
         }
     }
 
     @objc private func enableNotifications() {
+        if notifications.authorizationDenied {
+            guard openSystemSettings() else {
+                status.stringValue = "System Settings could not be opened. Open it manually, then choose Notifications → SKS."
+                return
+            }
+            status.stringValue = "System Settings opened. Choose Notifications → SKS and allow notifications."
+            return
+        }
         notifications.requestAuthorizationFromSettings()
         status.stringValue = "Notification authorization was requested from macOS."
     }
 
     @objc private func save() {
-        var config = readConfig()
+        let previous = readConfig()
+        var config: [String: Any]
+        switch previous {
+        case .loaded(let value):
+            config = value
+        case .missing:
+            config = [:]
+        case .unreadable:
+            quitWithCodex.isEnabled = false
+            status.stringValue = "Settings were not saved because the existing file cannot be read. No file was overwritten."
+            return
+        case .malformed:
+            quitWithCodex.isEnabled = false
+            status.stringValue = "Settings were not saved because the existing file is malformed. No file was overwritten."
+            return
+        }
         config["schema"] = "sks.sks-menubar-config.v1"
         config["codex_bundle_id"] = AppRuntime.codexBundleId as Any
         config["quit_with_codex"] = quitWithCodex.state == .on
@@ -75,8 +125,19 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
         }
     }
 
-    private func readConfig() -> [String: Any] {
-        guard let data = FileManager.default.contents(atPath: AppRuntime.configPath) else { return [:] }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    private func readConfig() -> ConfigReadResult {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: AppRuntime.configPath) else { return .missing }
+        guard let data = manager.contents(atPath: AppRuntime.configPath) else { return .unreadable }
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              let config = object as? [String: Any] else { return .malformed }
+        return .loaded(config)
+    }
+
+    private func openSystemSettings() -> Bool {
+        guard let settings = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.systempreferences") else {
+            return false
+        }
+        return NSWorkspace.shared.open(settings)
     }
 }

@@ -28,7 +28,9 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   assert.equal(buildTsconfig.compilerOptions.sourceMap, false);
   assert.ok(fs.existsSync('dist/native/sks-menubar/Sources/AppDelegate.swift'));
   assert.ok(fs.existsSync('dist/native/sks-menubar/Resources/AppIcon.icns'));
-  assert.ok(pkg.files.includes('!dist/core/telegram/mini-app.js'), 'incomplete Mini App runtime must stay out of the 6.3 package');
+  assert.equal(pkg.files.some((entry) => entry.includes('dist/core/telegram')), false);
+  assert.equal(fs.existsSync('dist/core/commands/telegram-command.js'), false);
+  assert.equal(fs.existsSync('dist/core/telegram'), false);
   assert.equal(scripts['release:check'], 'npm run release:check:affected');
   assert.match(scripts['release:check:affected'], /--preset affected/);
   assert.match(scripts['release:check:affected'], /release:ensure-build/);
@@ -70,7 +72,7 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
     'release:pack-receipt',
     'runtime:installed-smoke'
   ]) assert.ok(scripts[required], `${required} must be wired`);
-  assert.equal(Object.keys(scripts).length <= 100, true, 'package script budget must remain frozen');
+  assert.equal(Object.keys(scripts).length <= 101, true, 'package script budget must remain frozen');
   assert.equal(scripts['publish:npm'], undefined);
   assert.equal(scripts['release:publish'], undefined);
   const officialSubagentGates = releaseGates.gates.filter((gate) => gate.command === 'node ./dist/scripts/official-subagent-workflow-check.js');

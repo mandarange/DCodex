@@ -57,16 +57,26 @@ test('normalizes the Codex 0.144.5 catalog and preserves native GPT-5.6 tool tra
   assert.equal('debug_echoed_authorization' in result.catalog.models[0], false)
 })
 
-test('rejects generic API model rows that Codex 0.144.5 cannot parse', () => {
+test('catalog v2 derives slug from id while preserving the remaining Codex model contract', () => {
   const result = normalizeCodexLbToolCatalog({ data: [
-    { id: 'gpt-5.6-sol' },
-    { id: 'gpt-5.6-terra' },
-    { id: 'gpt-5.6-luna' }
+    codex0144IdModel('gpt-5.6-sol'),
+    codex0144IdModel('gpt-5.6-terra'),
+    codex0144IdModel('gpt-5.6-luna')
   ] })
-  assert.equal(result.ok, false)
-  assert.ok(result.blockers.includes('codex_lb_model_catalog_required_field_missing:0:slug'))
-  assert.ok(result.blockers.includes('codex_lb_model_catalog_required_field_missing:0:display_name'))
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.catalog.models.map((row: any) => row.slug), [
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna'
+  ])
+  assert.ok(result.catalog.models.every((row: any) => row.id === row.slug))
+  assert.ok(result.catalog.models.every((row: any) => row.use_responses_lite === false))
 })
+
+function codex0144IdModel(id: string) {
+  const { slug: _slug, ...row } = codex0144Model(id)
+  return { id, ...row }
+}
 
 test('writes and reuses an identity-bound owner-only Codex model catalog', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-codex-lb-tool-catalog-'))

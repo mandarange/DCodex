@@ -1,6 +1,7 @@
 import { PACKAGE_VERSION, nowIso, sha256 } from '../fsx.js';
 import { coreEngineeringDirectiveReference } from '../lean-engineering-policy.js';
 import { normalizeDollarSkillName, prefixKnownSksDollarReferences, sksPrefixedDollarCommand, sksPrefixedSkillName } from '../routes/dollar-prefix.js';
+import { compactSkillDiscoveryDescription } from '../skills/skill-agent-metadata.js';
 import { canonicalSkillName } from './skill-name-canonicalizer.js';
 
 type LegacySksCoreSkillRoute =
@@ -12,7 +13,8 @@ type LegacySksCoreSkillRoute =
   | '$Image-UX-Review'
   | '$Computer-Use'
   | '$Init-Deep'
-  | '$SEO-GEO-OPTIMIZER';
+  | '$SEO-GEO-OPTIMIZER'
+  | '$Align';
 
 export type SksCoreSkillRoute = '$sks' | `$sks-${string}`;
 
@@ -36,7 +38,7 @@ export interface SksCoreSkillManifest {
   skills: SksCoreSkillTemplate[];
 }
 
-export const CORE_SKILL_TEMPLATE_VERSION = 'sks-core-skill-template.v1';
+export const CORE_SKILL_TEMPLATE_VERSION = 'sks-core-skill-template.v2';
 export const CORE_SKILL_MANAGED_BEGIN = '<!-- BEGIN SKS IMMUTABLE CORE SKILL -->';
 export const CORE_SKILL_MANAGED_END = '<!-- END SKS IMMUTABLE CORE SKILL -->';
 
@@ -167,6 +169,19 @@ const CORE_SKILL_DEFINITIONS: Array<{
     cli: 'sks seo-geo-optimizer doctor|audit|plan|apply|verify|status|rollback|fixture --mode seo|geo',
     evidence: 'SEO intent map, canonical URL map, metadata summary, JSON-LD summary, sitemap coverage summary, internal link plan, unsupported claims ledger, Search Console/analytics follow-up plan, site inventory, route graph, seo-findings.json or geo-findings.json, claim-evidence-ledger.json, ai-crawler-policy.json, llms-txt-plan.json, verification report, route gate, and Completion Proof.',
     fallback: 'Do not auto-allow training crawlers or fabricate AI answer visibility; mark missing live outcomes unverified and keep recovery on the unified optimizer route.'
+  },
+  {
+    id: 'sks-core-align',
+    canonical_name: 'align',
+    display_name: 'align',
+    route: '$Align',
+    purpose: 'run a one-shot, evidence-gated modernization of SKS prompts, settings, and generated skill/command surfaces for GPT-5.6.',
+    when: 'Use when the user invokes $Align or requests a current OpenAI prompting, tool-calling, agent-orchestration, skill, or plugin contract audit.',
+    workflow: 'Run sks align prepare|run to create the skill-first mission and register the literal request in work-order-ledger.json. Then execute the sealed workstreams: (1) align outcome-first prompt grammar to https://developers.openai.com/api/docs/guides/latest-model, retaining success criteria, stop conditions, permissions, safety, tool routing, and validation; (2) make and evidence a programmatic-tool-calling adoption decision from https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling instead of forcing PTC onto adaptive, approval-bound, or write-capable work; (3) make and evidence an Agents SDK adoption decision from https://developers.openai.com/api/docs/guides/agents while preserving the current Sol/Terra/Luna role and lifecycle contracts; (4) audit the official Codex skill schema at https://developers.openai.com/codex/skills, current Plugins guidance at https://developers.openai.com/codex/plugins, and https://github.com/openai/plugins, using the deprecated openai/skills repository only as migration evidence rather than as the active baseline; (5) inventory and test every generated SKS command and skill surface; (6) remove superseded version-specific settings and deduplicate common policy text without weakening invariants. Use Naruto for genuinely independent slices. Keep source receipts, decisions, coverage, changed paths, deletions, deduplication, and verification current in align-ledger.json, pass align-gate.json, then close the work order only after the canonical Completion Proof and trust report both verify.',
+    safety: 'Protect immutable core skills (mutable_by_doctor/update/setup=false). Do not invent official guidance or modernization evidence. Do not keep superseded model-prompt compatibility knobs, force PTC or Agents SDK where their preconditions are absent, or rewrite this align skill body through doctor/update/setup.',
+    cli: 'sks align prepare|run|status|proof ["scope"] [--json]',
+    evidence: 'work-order-ledger.json, align-plan.json, align-ledger.json, source receipts, PTC and Agents decisions, complete command/skill coverage, focused eval results, align-gate.json, completion-proof.json, trust-report.json, changed-path inventory, deleted-legacy-settings list, deduplicated-surfaces list, and Honest Mode.',
+    fallback: 'If required official GPT-5.6, tool-calling, Agents, skill, or Plugins guidance cannot be verified, record the missing source and blocker in align-ledger.json and keep align-gate.json unpassed.'
   }
 ];
 
@@ -217,10 +232,14 @@ export function renderCoreSkillTemplate(name: string): string {
   if (!legacy) throw new Error(`Unknown SKS core skill: ${name}`);
   const skill = currentCoreSkillDefinition(legacy);
   const directive = coreEngineeringDirectiveReference();
+  const description = compactSkillDiscoveryDescription(
+    `${skill.purpose.charAt(0).toUpperCase()}${skill.purpose.slice(1)}`
+  );
+  const activation = skill.when.replace(/^Use\s+(?:only\s+)?(?:(?:when|for)\s+)?/i, '');
   return [
     '---',
     `name: ${skill.display_name}`,
-    `description: Immutable SKS core Codex App route bridge for ${skill.route}.`,
+    `description: ${JSON.stringify(description)}`,
     '---',
     '',
     CORE_SKILL_MANAGED_BEGIN,
@@ -233,15 +252,37 @@ export function renderCoreSkillTemplate(name: string): string {
     'mutable_by_setup: false',
     CORE_SKILL_MANAGED_END,
     '',
+    `# ${skill.route}`,
+    '',
+    '## Outcome',
+    '',
+    `Purpose: ${skill.purpose}`,
+    '',
+    '## Activation',
+    '',
     `Route: ${skill.route}`,
     `Command: ${skill.route}`,
-    `Purpose: ${skill.purpose}`,
-    `Use when: ${skill.when}`,
+    `Use when: ${activation}`,
+    '',
+    '## Workflow',
+    '',
     `Workflow: ${skill.workflow || 'Run the selected route lifecycle, read source evidence before mutation planning, keep changes scoped, verify with the cheapest sufficient check, and record blockers honestly.'}`,
+    '',
+    '## Runtime contract',
+    '',
     `CLI entrypoint: ${skill.cli || skill.route}`,
     `Core directive: ${directive.directive_id}/${directive.directive_hash}`,
+    '',
+    '## Safety',
+    '',
     `Safety: ${skill.safety || 'Preserve user-authored content, keep route state bounded, avoid unsupported guarantees, and stop on hard blockers instead of fabricating fallback behavior.'}`,
+    '',
+    '## Evidence',
+    '',
     `Evidence/artifacts: ${skill.evidence}`,
+    '',
+    '## Failure recovery',
+    '',
     `Failure/recovery: ${skill.fallback}`,
     ''
   ].join('\n');

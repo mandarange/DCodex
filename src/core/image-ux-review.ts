@@ -298,9 +298,22 @@ export async function hydrateImageUxScreenInventory(root: string, inventory: any
 export function buildImageUxGeneratedReviewLedger(contract: any = {}, inventory: any = buildImageUxScreenInventory(contract), existing: any = null, opts: any = {}) {
   const existingImages = Array.isArray(existing?.generated_review_images) ? existing.generated_review_images : [];
   const sourceScreens = inventory.source_screens || [];
-  const normalizedImages = existingImages.map((image: any, index: number) => normalizeGeneratedReviewImage(image, sourceScreens[index] || {}, opts));
+  const normalizedImages = existingImages.map((image: any, index: number) => {
+    const declaredSourceId = image.source_screen_id
+      || (Array.isArray(image.source_screen_ids) ? image.source_screen_ids[0] : null);
+    const sourceScreen = sourceScreens.find((screen: any) => screen.id === declaredSourceId)
+      || sourceScreens[index]
+      || {};
+    return normalizeGeneratedReviewImage(image, sourceScreen, opts);
+  });
   const realGeneratedCount = normalizedImages.filter((image: any) => image.real_generated === true && image.mock !== true).length;
-  const missingRealGeneratedScreens = sourceScreens.filter((screen: any) => !normalizedImages.some((image: any) => image.source_screen_id === screen.id && image.real_generated === true && image.mock !== true));
+  const coveredSourceScreenIds = sourceScreens
+    .filter((screen: any) => normalizedImages.some((image: any) =>
+      generatedImageCoversScreen(image, screen.id)
+      && image.real_generated === true
+      && image.mock !== true))
+    .map((screen: any) => screen.id);
+  const missingRealGeneratedScreens = sourceScreens.filter((screen: any) => !coveredSourceScreenIds.includes(screen.id));
   const nonRealGeneratedCount = normalizedImages.filter((image: any) => image.real_generated !== true || image.mock === true).length;
   const textOnlyCount = normalizedImages.filter((image: any) => image.text_only === true).length;
   const evidenceBlockers: string[] = Array.from(new Set<string>(
@@ -334,7 +347,7 @@ export function buildImageUxGeneratedReviewLedger(contract: any = {}, inventory:
       source_screen_id: screen.id,
       source_sha256: screen.sha256 || null,
       prompt: buildCalloutPrompt(screen.id, { target: inventory.target }),
-      status: normalizedImages.some((image: any) => image.source_screen_id === screen.id) ? 'generated_or_attached' : 'pending_imagegen',
+      status: normalizedImages.some((image: any) => generatedImageCoversScreen(image, screen.id)) ? 'generated_or_attached' : 'pending_imagegen',
       required_output: 'annotated_review_image_with_numbered_callouts_severity_labels_markers_arrows_and_mini_comp',
       requested_fidelity: 'high_fidelity_automatic',
       image_input_fidelity_note: 'gpt-image-2 processes image inputs at high fidelity automatically; SKS omits unsupported input_fidelity.',
@@ -342,6 +355,8 @@ export function buildImageUxGeneratedReviewLedger(contract: any = {}, inventory:
     })),
     generated_count: normalizedImages.length,
     real_generated_count: realGeneratedCount,
+    covered_source_screen_count: coveredSourceScreenIds.length,
+    covered_source_screen_ids: coveredSourceScreenIds,
     non_real_generated_count: nonRealGeneratedCount,
     required_count: sourceScreens.length,
     text_only_count: textOnlyCount,
@@ -352,7 +367,9 @@ export function buildImageUxGeneratedReviewLedger(contract: any = {}, inventory:
       && textOnlyCount === 0
       && missingRealGeneratedScreens.length > 0,
     blockers: uniqueBlockers,
-    passed: sourceScreens.length > 0 && blockers.length === 0 && realGeneratedCount === sourceScreens.length,
+    passed: sourceScreens.length > 0
+      && blockers.length === 0
+      && coveredSourceScreenIds.length === sourceScreens.length,
     imagegen_blocker: uniqueBlockers.includes('imagegen_capability_missing')
       ? imagegenCapabilityBlocker()
       : uniqueBlockers.includes('generated_review_image_missing')
@@ -636,6 +653,7 @@ export async function writeImageUxReviewRouteArtifacts(dir: any, contract: any =
   const extractionReport = await readExistingJson(dir, IMAGE_UX_REVIEW_CALLOUT_EXTRACTION_REPORT_ARTIFACT);
   const existingImagegenRequest = await readExistingJson(dir, IMAGE_UX_REVIEW_GPT_IMAGE_2_REQUEST_ARTIFACT);
   const existingImagegenResponse = await readExistingJson(dir, IMAGE_UX_REVIEW_GPT_IMAGE_2_RESPONSE_ARTIFACT);
+  const existingRecapture = await readExistingJson(dir, IMAGE_UX_REVIEW_RECAPTURE_ARTIFACT);
   const generatedReviewLedger = buildImageUxGeneratedReviewLedger(contract, inventory, existingGenerated, { root });
   const sourceReferenceEvidence = await ensureImageUxSourceReferenceEvidence(root, dir, inventory);
   const imageVoxelRelationEvidence = await ensureImageUxGeneratedRelationEvidence(
@@ -648,7 +666,7 @@ export async function writeImageUxReviewRouteArtifacts(dir: any, contract: any =
   const issueLedger = buildImageUxIssueLedger(contract, generatedReviewLedger, existingIssues);
   const fixTaskPlan = planImageUxFixTasks(issueLedger);
   const fixLoop = runImageUxFixLoop(issueLedger, fixTaskPlan, opts.fixLoop || {});
-  const recapturePlan = buildRecapturePlan(fixLoop, opts.recapture || {});
+  const recapturePlan = selectImageUxRecapturePlan(fixLoop, opts, existingRecapture);
   const iterationReport = buildImageUxIterationReport(contract, policy, generatedReviewLedger, issueLedger, fixTaskPlan, fixLoop, recapturePlan);
   const outputSchema = await detectCodexExecResumeOutputSchema().catch((err: any) => ({ ok: true, status: 'integration_optional', warnings: [err.message] }));
   const honestModeEvidence = await ensureImageUxHonestModeEvidence(dir, {
@@ -697,6 +715,7 @@ export async function writeImageUxReviewRouteArtifacts(dir: any, contract: any =
     policy,
     inventory,
     imagegen_request: imagegenRequest,
+    gpt_image_2_request: imagegenRequest,
     imagegen_response: imagegenResponse,
     generated_review_ledger: generatedReviewLedger,
     issue_ledger: issueLedger,
@@ -709,6 +728,13 @@ export async function writeImageUxReviewRouteArtifacts(dir: any, contract: any =
     honest_mode_evidence: honestModeEvidence,
     gate
   };
+}
+
+export function selectImageUxRecapturePlan(fixLoop: any = {}, opts: any = {}, existing: any = null) {
+  if (opts.preserveExistingRecapture === true && existing?.schema === 'sks.image-ux-recapture-plan.v2') {
+    return existing;
+  }
+  return buildRecapturePlan(fixLoop, opts.recapture || {});
 }
 
 export function imageUxReviewProofEvidence(gate: any = {}, artifacts: any = {}) {
@@ -732,7 +758,9 @@ export function imageUxReviewProofEvidence(gate: any = {}, artifacts: any = {}) 
     recapture_re_review_status: artifacts.recapture_plan?.changed_screens_rechecked_or_not_applicable ? 'complete_or_not_applicable' : 'blocked',
     image_voxel_relation_count: referenceOnly
       ? 0
-      : gate.image_voxel_relations_created === true ? realGeneratedImages.length : 0,
+      : gate.image_voxel_relations_created === true
+        ? Number(gate.image_voxel_relation_evidence?.relations || generated.covered_source_screen_count || realGeneratedImages.length)
+        : 0,
     computer_use_evidence_mode: artifacts.inventory?.source_screens?.some((screen: any) => screen.capture_source === 'codex_native_computer_use_screenshot' || screen.capture_source === 'codex_computer_use_screenshot') ? 'native_computer_use_source_screenshot' : artifacts.inventory?.source_screens?.some((screen: any) => screen.capture_source === 'codex_chrome_extension_screenshot') ? 'chrome_extension_source_screenshot' : 'user_or_static_screenshot',
     claims: {
       ux_review_source_screenshot_verified: artifacts.inventory?.passed === true,
@@ -808,16 +836,16 @@ async function ensureImageUxGeneratedRelationEvidence(
   sourceReferenceEvidence: any = {}
 ) {
   const missionId = path.basename(String(dir));
-  const sourceScreen = (inventory.source_screens || []).find((screen: any) => screen.status === 'captured' && screen.source);
+  const sourceScreens = (inventory.source_screens || []).filter((screen: any) => screen.status === 'captured' && screen.source);
   const generatedImages = (generatedReviewLedger.generated_review_images || [])
     .filter((image: any) => image.real_generated === true && image.mock !== true && image.path);
-  if (!missionId || !sourceScreen || !generatedImages.length || sourceReferenceEvidence.ok !== true) {
+  if (!missionId || !sourceScreens.length || !generatedImages.length || sourceReferenceEvidence.ok !== true) {
     return {
       schema: 'sks.image-ux-generated-relation-evidence.v1',
       ok: false,
       reason: !missionId
         ? 'mission_id_missing'
-        : !sourceScreen
+        : !sourceScreens.length
           ? 'captured_source_screenshot_missing'
           : !generatedImages.length
             ? 'real_generated_image_missing'
@@ -826,10 +854,10 @@ async function ensureImageUxGeneratedRelationEvidence(
       issues: []
     };
   }
-  const sourceImageId = `${missionId}-${sourceScreen.id}-source`;
   const anchorIds = Array.isArray(sourceReferenceEvidence.anchor_ids) ? sourceReferenceEvidence.anchor_ids : [];
   const relationIds: string[] = [];
   const issues: string[] = [];
+  let expectedRelations = 0;
   for (const image of generatedImages) {
     const generatedImageId = `${missionId}-${image.id}`;
     try {
@@ -842,27 +870,32 @@ async function ensureImageUxGeneratedRelationEvidence(
         issues.push(...(ingested.validation?.issues || [`generated_image_ingest_failed:${image.id}`]));
         continue;
       }
-      const relation = await addImageRelation(root, {
-        missionId,
-        route: '$Image-UX-Review',
-        type: 'generated_callout_review_of',
-        beforeImageId: sourceImageId,
-        afterImageId: generatedImageId,
-        sourceImageId,
-        generatedImageId,
-        anchors: anchorIds,
-        status: 'verified_partial',
-        verification: 'gpt-image-2-generated-callout-bound-to-source'
-      });
-      if (relation.ok) relationIds.push(`${sourceImageId}->${generatedImageId}`);
-      else issues.push(...(relation.validation?.issues || [`generated_image_relation_failed:${image.id}`]));
+      const coveredScreens = sourceScreens.filter((screen: any) => generatedImageCoversScreen(image, screen.id));
+      expectedRelations += coveredScreens.length;
+      for (const sourceScreen of coveredScreens) {
+        const sourceImageId = `${missionId}-${sourceScreen.id}-source`;
+        const relation = await addImageRelation(root, {
+          missionId,
+          route: '$Image-UX-Review',
+          type: 'generated_callout_review_of',
+          beforeImageId: sourceImageId,
+          afterImageId: generatedImageId,
+          sourceImageId,
+          generatedImageId,
+          anchors: anchorIds.filter((anchorId: any) => String(anchorId).startsWith(`${sourceImageId}-`)),
+          status: 'verified_partial',
+          verification: 'gpt-image-2-generated-callout-bound-to-source'
+        });
+        if (relation.ok) relationIds.push(`${sourceImageId}->${generatedImageId}`);
+        else issues.push(...(relation.validation?.issues || [`generated_image_relation_failed:${image.id}:${sourceScreen.id}`]));
+      }
     } catch (err) {
       issues.push(err instanceof Error ? err.message : String(err));
     }
   }
   return {
     schema: 'sks.image-ux-generated-relation-evidence.v1',
-    ok: relationIds.length === generatedImages.length && issues.length === 0,
+    ok: expectedRelations > 0 && relationIds.length === expectedRelations && issues.length === 0,
     relations: relationIds.length,
     relation_ids: relationIds,
     anchor_ids: anchorIds,
@@ -1030,6 +1063,10 @@ function generatedReviewImageMissingBlocker() {
 
 function normalizeGeneratedReviewImage(image: any = {}, screen: any = {}, opts: any = {}) {
   const sourceScreenId = image.source_screen_id || screen.id || 'screen-1';
+  const sourceScreenIds = [...new Set([
+    ...(Array.isArray(image.source_screen_ids) ? image.source_screen_ids : []),
+    sourceScreenId
+  ].map((id: any) => String(id || '').trim()).filter(Boolean))];
   const fileEvidence = generatedImageFileEvidence(opts.root, image);
   const sha256 = fileEvidence.sha256 || image.sha256 || null;
   const width = Number(image.width || 0) > 0 ? Number(image.width) : null;
@@ -1043,6 +1080,7 @@ function normalizeGeneratedReviewImage(image: any = {}, screen: any = {}, opts: 
     ...image,
     id: image.id || compactId('generated-review', `${sourceScreenId}:${image.path || nowIso()}`),
     source_screen_id: sourceScreenId,
+    source_screen_ids: sourceScreenIds,
     path: image.path || null,
     sha256,
     width,
@@ -1073,6 +1111,13 @@ function normalizeGeneratedReviewImage(image: any = {}, screen: any = {}, opts: 
     },
     image_voxel_relation: image.image_voxel_relation || (image.id && sourceScreenId ? 'generated_callout_review_of' : null)
   };
+}
+
+function generatedImageCoversScreen(image: any = {}, screenId: any) {
+  const id = String(screenId || '');
+  if (!id) return false;
+  return image.source_screen_id === id
+    || (Array.isArray(image.source_screen_ids) && image.source_screen_ids.includes(id));
 }
 
 function generatedImageEvidenceBlockers(image: any = {}, evidence: any = {}) {

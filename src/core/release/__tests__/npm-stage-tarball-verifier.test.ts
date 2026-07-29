@@ -263,7 +263,7 @@ process.exit(child.status == null ? 1 : child.status)
 })
 
 function createFixture(root: string) {
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '6.3.0' }))
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '8.0.0' }))
   const localTarball = createTarball(root, 'local', 'reviewed bytes')
   const localReceipt = inspectReleaseTarball({
     tarball: localTarball,
@@ -322,7 +322,7 @@ function createFixture(root: string) {
 function createTarball(root: string, name: string, marker: string): string {
   const packageDir = path.join(root, name, 'package')
   fs.mkdirSync(path.join(packageDir, 'dist'), { recursive: true })
-  fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '6.3.0' }))
+  fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '8.0.0' }))
   fs.writeFileSync(path.join(packageDir, 'dist', 'marker.txt'), `${marker}\n`)
   const tarball = path.join(root, `${name}.tgz`)
   const result = spawnSync('tar', ['-czf', tarball, '-C', path.dirname(packageDir), 'package'], { encoding: 'utf8' })

@@ -199,16 +199,16 @@ async function writeSelectedCodexLbFixture(home: string) {
   const codexHome = path.join(home, '.codex');
   await fsp.mkdir(codexHome, { recursive: true });
   await fsp.writeFile(path.join(codexHome, 'config.toml'), [
+    '# sks-codex-lb-managed-desktop-compat',
     'model_provider = "codex-lb"',
-    'openai_base_url = "https://lb.fixture.internal/backend-api/codex"',
     '',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "OpenAI"',
     'base_url = "https://lb.fixture.internal/backend-api/codex"',
-    'env_key = "CODEX_LB_API_KEY"',
     'wire_api = "responses"',
     'supports_websockets = true',
     'requires_openai_auth = true',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     ''
   ].join('\n'));
   await fsp.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
@@ -217,7 +217,11 @@ async function writeSelectedCodexLbFixture(home: string) {
     ''
   ].join('\n'), { mode: 0o600 });
   await fsp.writeFile(path.join(codexHome, 'auth.json'), `${JSON.stringify({
-    auth_mode: 'apikey',
-    OPENAI_API_KEY: 'sk-clb-fixture'
+    auth_mode: 'chatgpt',
+    account_id: 'acct-fixture',
+    tokens: {
+      access_token: 'oauth-access',
+      refresh_token: 'oauth-refresh'
+    }
   })}\n`, { mode: 0o600 });
 }

@@ -48,7 +48,7 @@ export interface CodexLbToolOutputRecoveryProbeOptions {
 }
 
 const UPGRADE_ACTION = `Upgrade codex-lb to ${CODEX_LB_TOOL_OUTPUT_RECOVERY_MIN_VERSION} or later, then rerun \`sks codex-lb status\`.`;
-const OAUTH_ACTION = 'To avoid the proxy, run `sks codex-lb use-oauth`; SKS will not switch providers silently.';
+const OAUTH_ACTION = 'To bypass codex-lb routing while preserving ChatGPT OAuth, run `sks codex-lb disable`; SKS will not change routing silently.';
 const FRESH_THREAD_ACTION = 'After upgrading or switching providers, open a fresh Codex thread and continue the persisted mission; do not replay the corrupted turn.';
 
 export async function probeCodexLbToolOutputRecovery(

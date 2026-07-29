@@ -17,3 +17,17 @@ test('evidence freshness marks files older than the last route event as stale', 
   assert.equal(result.freshness, 'stale');
   assert.ok(result.issues.includes('stale'));
 });
+
+test('proof freshness ignores stop-hook diagnostics and project-memory projection events', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-evidence-stop-events-'));
+  const events = path.join(root, 'events.jsonl');
+  await fs.writeFile(events, [
+    { ts: '2026-01-02T00:00:00Z', type: 'route.event' },
+    { ts: '2026-01-02T00:01:00Z', type: 'triwiki.agents_md_projected' },
+    { ts: '2026-01-02T00:02:00Z', type: 'pipeline.compliance_loop_guard' },
+    { ts: '2026-01-02T00:03:00Z', type: 'pipeline.honest_mode.loopback' },
+    { ts: '2026-01-02T00:04:00Z', type: 'diagnostic.custom', proof_invalidating: false }
+  ].map((row) => JSON.stringify(row)).join('\n') + '\n');
+
+  assert.equal(await lastJsonlEventTime(events), Date.parse('2026-01-02T00:00:00Z'));
+});

@@ -40,7 +40,7 @@ function providerConfig(selected = true, topLevel = '') {
     selected ? 'model_provider = "codex-lb"' : '',
     '',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "OpenAI"',
     `base_url = "${BASE_URL}"`,
     'wire_api = "responses"',
     'env_key = "CODEX_LB_API_KEY"',
@@ -78,7 +78,7 @@ test('prepared unselected codex-lb credentials preserve OAuth and do not pin bui
   assert.doesNotMatch(await fsp.readFile(setup.configPath, 'utf8'), /openai_base_url|sks-codex-lb-managed-openai-base-url/);
 });
 
-test('activation pins built-in OpenAI to codex-lb before the shared key becomes active', async (t) => {
+test('legacy compatibility helper pins built-in OpenAI before placing a gateway key in shared auth', async (t) => {
   const setup = await fixture(t, { authText: OAUTH });
   const result = await reconcileCodexLbAuthConflict({ ...isolatedRuntime(setup.home), status: setup.status, forceCodexLbApiKeyAuth: true });
   assert.equal(result.status, 'apikey_forced');
@@ -104,7 +104,7 @@ test('activation pins built-in OpenAI to codex-lb before the shared key becomes 
   });
 });
 
-test('install reconciliation preserves an already active codex-lb routing selection', async (t) => {
+test('install reconciliation refuses an already active legacy shared-auth routing selection', async (t) => {
   const userSettings = [
     'model = "gpt-5.6-sol"',
     'model_reasoning_effort = "max"',
@@ -129,10 +129,12 @@ test('install reconciliation preserves an already active codex-lb routing select
     forceCodexLbApiKeyAuth: true
   });
 
-  assert.equal(result.ok, true);
-  assert.equal(result.auth_reconcile?.status, 'apikey_auth_active');
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'legacy_migration_required');
+  assert.equal(result.auth_reconcile?.status, 'legacy_migration_required');
+  assert.equal(result.codex_login?.status, 'not_required');
   assert.equal(result.codex_lb?.selected, true);
-  assert.equal(result.codex_lb?.auth_routing_coherent, true);
+  assert.equal(result.codex_lb?.auth_routing_coherent, false);
   assert.equal(result.codex_lb?.shared_openai_routing?.safe, true);
   assert.equal(await fsp.readFile(setup.configPath, 'utf8'), beforeConfig);
   assert.equal(await fsp.readFile(setup.authPath, 'utf8'), beforeAuth);
@@ -141,7 +143,7 @@ test('install reconciliation preserves an already active codex-lb routing select
   assert.match(beforeConfig, /model_reasoning_effort = "max"/);
 });
 
-test('install reconciliation preserves an existing official OAuth selection', async (t) => {
+test('install reconciliation repairs an unselected legacy provider contract without changing OAuth', async (t) => {
   const userSettings = [
     'model = "gpt-5.6-pro"',
     'model_reasoning_effort = "high"',
@@ -160,12 +162,15 @@ test('install reconciliation preserves an existing official OAuth selection', as
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.status, 'present_unselected');
-  assert.equal(await fsp.readFile(setup.configPath, 'utf8'), beforeConfig);
+  assert.equal(result.status, 'repaired');
   assert.equal(await fsp.readFile(setup.authPath, 'utf8'), beforeAuth);
-  assert.doesNotMatch(beforeConfig, /model_provider = "codex-lb"/);
-  assert.match(beforeConfig, /model = "gpt-5\.6-pro"/);
-  assert.match(beforeConfig, /model_reasoning_effort = "high"/);
+  const afterConfig = await fsp.readFile(setup.configPath, 'utf8');
+  assert.notEqual(afterConfig, beforeConfig);
+  assert.doesNotMatch(afterConfig, /model_provider = "codex-lb"/);
+  assert.match(afterConfig, /model = "gpt-5\.6-pro"/);
+  assert.match(afterConfig, /model_reasoning_effort = "high"/);
+  assert.match(afterConfig, /name = "codex-lb"/);
+  assert.match(afterConfig, /requires_openai_auth = false/);
 });
 
 test('activation fails closed on a different user-owned openai_base_url', async (t) => {
@@ -207,6 +212,58 @@ test('unselect refuses to expose an active shared codex-lb key to built-in OpenA
   assert.equal(result.status, 'failed');
   assert.equal(result.reason, 'shared_codex_lb_auth_active');
   assert.match(await fsp.readFile(setup.configPath, 'utf8'), /model_provider = "codex-lb"/);
+});
+
+test('unselect still refuses API-key fallthrough when the codex-lb env key is missing or rotated', async (t) => {
+  const setup = await fixture(t, { authText: OAUTH });
+  const activated = await reconcileCodexLbAuthConflict({
+    ...isolatedRuntime(setup.home),
+    status: setup.status,
+    forceCodexLbApiKeyAuth: true
+  });
+  assert.equal(activated.status, 'apikey_forced');
+  const beforeConfig = await fsp.readFile(setup.configPath, 'utf8');
+  await fsp.rm(setup.envPath, { force: true });
+
+  const result = await unselectCodexLbProvider({
+    home: setup.home,
+    envPath: setup.envPath,
+    processEnv: {},
+    securityBin: '/usr/bin/false'
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'shared_codex_lb_auth_active');
+  assert.equal(await fsp.readFile(setup.configPath, 'utf8'), beforeConfig);
+  assert.equal(JSON.parse(await fsp.readFile(setup.authPath, 'utf8')).OPENAI_API_KEY, API_KEY);
+});
+
+test('unselect refuses a fully stripped router orphan while the codex-lb provider contract remains', async (t) => {
+  const setup = await fixture(t, { authText: OAUTH });
+  const activated = await reconcileCodexLbAuthConflict({
+    ...isolatedRuntime(setup.home),
+    status: setup.status,
+    forceCodexLbApiKeyAuth: true
+  });
+  assert.equal(activated.status, 'apikey_forced');
+  const activeConfig = await fsp.readFile(setup.configPath, 'utf8');
+  const orphanedConfig = activeConfig
+    .replace(/^model_provider\s*=.*\n/m, '')
+    .replace(/^model_catalog_json\s*=.*\n/m, '')
+    .replace(/^openai_base_url\s*=.*\n/m, '')
+    .replace(/^# sks-codex-lb-managed-openai-base-url\s*\n/m, '');
+  await fsp.writeFile(setup.configPath, orphanedConfig);
+
+  const result = await unselectCodexLbProvider({
+    home: setup.home,
+    processEnv: {},
+    securityBin: '/usr/bin/false'
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'shared_codex_lb_auth_active');
+  assert.equal(await fsp.readFile(setup.configPath, 'utf8'), orphanedConfig);
+  assert.equal(JSON.parse(await fsp.readFile(setup.authPath, 'utf8')).OPENAI_API_KEY, API_KEY);
 });
 
 test('release rejects keep-provider under shared auth and leaves the coherent LB state intact', async (t) => {
@@ -306,7 +363,7 @@ test('codex-lb response-chain makes zero requests when provider URL differs from
   assert.equal(fetchCalls, 0);
 });
 
-test('keychain-only codex-lb credentials remain usable for auth reconciliation', async (t) => {
+test('legacy compatibility helper can read keychain-only gateway credentials without treating it as a normal install path', async (t) => {
   const setup = await fixture(t, { authText: OAUTH });
   await fsp.rm(setup.envPath, { force: true });
   const securityStub = path.join(setup.home, 'security-stub');
@@ -355,7 +412,7 @@ test('explicit Codex App restart cannot be satisfied by a skipped restart', () =
   });
 });
 
-test('codex-lb health tests stored credentials even when provider activation is not ready', async (t) => {
+test('codex-lb health tests stored credentials without globally selecting the CLI provider', async (t) => {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-lb-health-readiness-'));
   const requests: Array<{
     url: string | undefined;
@@ -400,12 +457,12 @@ test('codex-lb health tests stored credentials even when provider activation is 
     'model = "gpt-5.6-luna"',
     '',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "codex-lb"',
     `base_url = "${baseUrl}"`,
     'env_key = "CODEX_LB_API_KEY"',
     'wire_api = "responses"',
     'supports_websockets = true',
-    'requires_openai_auth = true',
+    'requires_openai_auth = false',
     ''
   ].join('\n'));
   const envPath = path.join(codexDir, 'sks-codex-lb.env');
@@ -436,7 +493,8 @@ test('codex-lb health tests stored credentials even when provider activation is 
   const json = JSON.parse(result.stdout) as Record<string, any>;
   assert.equal(json.ok, true);
   assert.equal(json.status, 'chain_ok');
-  assert.equal(json.codex_lb.provider_ready, false);
+  assert.equal(json.codex_lb.provider_ready, true);
+  assert.equal(json.codex_lb.selected, false);
   assert.equal(json.model_selection.source, 'global_config');
   assert.deepEqual(requests.map((request) => request.previous_response_id), [null, 'resp_health_1']);
   assert.ok(requests.every((request) => request.authorization === 'Bearer sk-clb-health-fixture'));

@@ -169,11 +169,15 @@ async function narutoParentSummaryTransaction(parsed: NarutoArgs, root: string, 
     .replace(/^\$/, '')
     .replace(/[-_]/g, '')
     .toUpperCase()
+  const officialSubagentRoute = route === 'NARUTO'
+    || (state?.subagents_required === true
+      && typeof state?.official_subagent_run_id === 'string'
+      && state.official_subagent_run_id.trim().length > 0)
   const stateBlockers = uniqueStrings([
     ...(state?._session_key === sessionStateKey(sessionKey) ? [] : ['naruto_parent_summary_session_state_mismatch']),
     ...(state?.session_scope === sessionKey ? [] : ['naruto_parent_summary_session_scope_mismatch']),
     ...(state?.mission_id === parsed.missionId ? [] : ['naruto_parent_summary_active_mission_mismatch']),
-    ...(route === 'NARUTO' ? [] : ['naruto_parent_summary_active_route_mismatch']),
+    ...(officialSubagentRoute ? [] : ['naruto_parent_summary_active_route_mismatch']),
     ...(state?.route_closed === true ? ['naruto_parent_summary_route_closed'] : [])
   ])
   if (stateBlockers.length > 0) return blockedParentSummary(parsed, stateBlockers)
@@ -272,18 +276,26 @@ async function narutoParentSummaryTransaction(parsed: NarutoArgs, root: string, 
     return blockedParentSummary(parsed, ['naruto_parent_summary_canonical_commit_mismatch'])
   }
   const hardBlocked = normalizedPersisted.status === 'failed'
-  const accepted = gate?.passed === true || hardBlocked
+  const completionEvidence = route === 'NARUTO'
+    ? gate?.passed === true
+    : evidence?.ok === true
+  const completionBlockers = route === 'NARUTO'
+    ? (Array.isArray(gate?.blockers) ? gate.blockers : [])
+    : (Array.isArray(evidence?.blockers) ? evidence.blockers : [])
+  const accepted = completionEvidence || hardBlocked
   const result = {
     schema: NARUTO_RESULT_SCHEMA,
     action: 'parent-summary',
-    ok: gate?.passed === true,
+    ok: completionEvidence,
     accepted,
-    status: summary?.status || evidence?.status || normalizedPersisted.status || 'incomplete',
+    status: route === 'NARUTO'
+      ? summary?.status || evidence?.status || normalizedPersisted.status || 'incomplete'
+      : evidence?.status || normalizedPersisted.status || 'incomplete',
     mission_id: parsed.missionId,
     workflow_run_id: workflowRunId,
     parent_summary_status: normalizedPersisted.status,
-    completion_evidence: gate?.passed === true,
-    blockers: Array.isArray(gate?.blockers) ? gate.blockers : [],
+    completion_evidence: completionEvidence,
+    blockers: completionBlockers,
     artifacts: narutoArtifactLinks(evidence)
   }
   return emit(parsed, result, () => renderParentSummaryResult(result), result.ok !== true)

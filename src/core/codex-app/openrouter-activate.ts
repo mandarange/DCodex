@@ -277,8 +277,33 @@ export async function useOpenRouter(input: {
   const unselect = await unselectCodexLbProvider({
     home,
     configPath,
-    allowActiveSharedAuthTransition: true
+    processEnv: env
   }).catch((err: any) => ({ ok: false, status: 'failed', provider_error: err?.message || String(err) }));
+  if ((unselect as any)?.ok !== true) {
+    const sharedAuthActive = (unselect as any)?.reason === 'shared_codex_lb_auth_active';
+    return {
+      schema: 'sks.codex-app-use-openrouter.v1',
+      generated_at: nowIso(),
+      ok: false,
+      status: 'blocked',
+      mode: 'openrouter',
+      model,
+      profile: activationProfile,
+      unselect,
+      routing_snapshot: routingSnapshot,
+      routing_snapshot_write: snapshotWrite,
+      thread_visibility: threadVisibility,
+      blockers: [
+        sharedAuthActive
+          ? 'legacy_codex_lb_desktop_config_requires_migration'
+          : String((unselect as any)?.status || 'codex_lb_unselect_failed')
+      ],
+      warnings: [],
+      ...(sharedAuthActive
+        ? { guidance: ['Run: sks codex-lb migrate-legacy-desktop --restart-app'] }
+        : {})
+    };
+  }
 
   // The Desktop app gates per-model feature UI (reasoning picker, list
   // visibility, multi-agent v2 eligibility) on ModelInfo catalog rows, and

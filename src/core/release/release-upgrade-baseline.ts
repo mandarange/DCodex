@@ -10,13 +10,13 @@
 // imports from here — do not re-inline the value.
 
 /** The published version the upgrade smoke installs first, before upgrading to the target. */
-export const RELEASE_UPGRADE_BASELINE_VERSION = '6.2.0'
+export const RELEASE_UPGRADE_BASELINE_VERSION = '7.6.0'
 
-/** Short form used in the upgrade proof filename, e.g. `upgrade-6.2-to-7.2.1.json`. */
-export const RELEASE_UPGRADE_BASELINE_LABEL = '6.2'
+/** Short form used in the upgrade proof filename, e.g. `upgrade-7.6-to-8.0.0.json`. */
+export const RELEASE_UPGRADE_BASELINE_LABEL = '7.6'
 
 /** sha256 of the immutable published baseline tarball on the registry. */
-export const RELEASE_UPGRADE_BASELINE_SHA256 = 'dd0bfc022348c11dc737055845708f6272beaf2a8f9c16d068acf3c8c612f9bc'
+export const RELEASE_UPGRADE_BASELINE_SHA256 = '40a9e89f3a234dfcd32507ab7deeb95044084cae95a9ce46b36be4113d5b2a7c'
 
 /** Filename of the upgrade proof for a given target version. */
 export function releaseUpgradeProofFilename(targetVersion: string): string {

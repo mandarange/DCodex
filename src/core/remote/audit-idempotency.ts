@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { appendJsonlBounded, nowIso, readJson, sha256, writeJsonAtomic } from '../fsx.js';
+import { appendJsonlBounded, nowIso, readJson, sha256, writeJsonAtomic, writeTextAtomic } from '../fsx.js';
 import { withFileLock } from '../locks/file-lock.js';
 import {
   REMOTE_EVENT_SCHEMA,
@@ -30,6 +30,17 @@ interface EventJournalFile {
   readonly events: readonly RemoteEventV1[];
 }
 
+export interface RemoteEventJournalHealthV1 {
+  readonly schema: 'sks.remote-event-journal-health.v1';
+  readonly state: 'ready' | 'degraded';
+  readonly updated_at: string;
+  readonly error_code: string | null;
+}
+
+export type RemoteEventJournalAppendInput =
+  Omit<RemoteEventV1, 'schema' | 'seq' | 'ts'>
+  & { readonly ts?: string };
+
 export type CommandClaimResult =
   | { readonly status: 'claimed'; readonly request_hash: string }
   | { readonly status: 'duplicate_completed'; readonly receipt: RemoteCommandReceiptV1 }
@@ -43,6 +54,7 @@ export function remoteRuntimePaths(root: string): {
   readonly audit: string;
   readonly events: string;
   readonly eventLock: string;
+  readonly eventHealth: string;
   readonly owners: string;
 } {
   const runtimeRoot = path.join(path.resolve(root), '.sneakoscope', 'remote');
@@ -53,6 +65,7 @@ export function remoteRuntimePaths(root: string): {
     audit: path.join(runtimeRoot, 'audit.jsonl'),
     events: path.join(runtimeRoot, 'events.json'),
     eventLock: path.join(runtimeRoot, 'events.lock'),
+    eventHealth: path.join(runtimeRoot, 'events-health.json'),
     owners: path.join(runtimeRoot, 'owners')
   };
 }
@@ -131,33 +144,49 @@ export class RemoteCommandLedger {
 export class RemoteEventJournal {
   private readonly file: string;
   private readonly lockPath: string;
+  private readonly healthPath: string;
   private readonly maxEvents: number;
 
-  constructor(file: string, options: { lockPath?: string; maxEvents?: number } = {}) {
+  constructor(file: string, options: { lockPath?: string; healthPath?: string; maxEvents?: number } = {}) {
     this.file = path.resolve(file);
     this.lockPath = path.resolve(options.lockPath ?? `${file}.lock`);
+    this.healthPath = path.resolve(options.healthPath ?? `${file}.health.json`);
     this.maxEvents = Math.max(8, Math.min(4096, options.maxEvents ?? 512));
   }
 
-  async append(input: Omit<RemoteEventV1, 'schema' | 'seq' | 'ts'> & { readonly ts?: string }): Promise<RemoteEventV1> {
-    return withFileLock({ lockPath: this.lockPath, timeoutMs: 5_000, staleMs: 30_000 }, async () => {
-      const journal = await this.read();
-      const event: RemoteEventV1 = {
-        schema: REMOTE_EVENT_SCHEMA,
-        seq: journal.next_seq,
-        ts: input.ts ?? nowIso(),
-        type: input.type,
-        session_id: input.session_id,
-        command_id: input.command_id,
-        summary: redactRemoteValue(input.summary) as Record<string, unknown>
-      };
-      await this.write({
-        schema: 'sks.remote-event-journal.v1',
-        next_seq: journal.next_seq + 1,
-        events: [...journal.events, event].slice(-this.maxEvents)
+  async append(input: RemoteEventJournalAppendInput): Promise<RemoteEventV1> {
+    return (await this.appendMany([input]))[0]!;
+  }
+
+  async appendMany(
+    inputs: readonly RemoteEventJournalAppendInput[]
+  ): Promise<readonly RemoteEventV1[]> {
+    if (inputs.length === 0) return [];
+    try {
+      const events = await withFileLock({ lockPath: this.lockPath, timeoutMs: 5_000, staleMs: 30_000 }, async () => {
+        const journal = await this.read();
+        const created = inputs.map((input, index): RemoteEventV1 => ({
+          schema: REMOTE_EVENT_SCHEMA,
+          seq: journal.next_seq + index,
+          ts: input.ts ?? nowIso(),
+          type: input.type,
+          session_id: input.session_id,
+          command_id: input.command_id,
+          summary: redactRemoteValue(input.summary) as Record<string, unknown>
+        }));
+        await this.write({
+          schema: 'sks.remote-event-journal.v1',
+          next_seq: journal.next_seq + created.length,
+          events: [...journal.events, ...created].slice(-this.maxEvents)
+        });
+        return created;
       });
-      return event;
-    });
+      await this.writeHealth('ready', null);
+      return events;
+    } catch (error: unknown) {
+      await this.writeHealth('degraded', 'remote_event_journal_write_failed').catch(() => undefined);
+      throw error;
+    }
   }
 
   async watch(afterSeq: number, sessionId?: string): Promise<{ readonly cursor: RemoteEventCursorV1; readonly events: readonly RemoteEventV1[] }> {
@@ -181,6 +210,14 @@ export class RemoteEventJournal {
     };
   }
 
+  async recent(sessionId?: string, limit: number = this.maxEvents): Promise<readonly RemoteEventV1[]> {
+    const boundedLimit = Math.max(1, Math.min(this.maxEvents, Math.trunc(limit)));
+    const journal = await this.read();
+    return journal.events
+      .filter((event) => !sessionId || event.session_id === sessionId)
+      .slice(-boundedLimit);
+  }
+
   private async read(): Promise<EventJournalFile> {
     const value = await readJson<EventJournalFile>(this.file, { schema: 'sks.remote-event-journal.v1', next_seq: 1, events: [] });
     if (value.schema !== 'sks.remote-event-journal.v1' || !Number.isSafeInteger(value.next_seq) || value.next_seq < 1 || !Array.isArray(value.events)) {
@@ -191,6 +228,23 @@ export class RemoteEventJournal {
 
   private async write(value: EventJournalFile): Promise<void> {
     await writeJsonAtomic(this.file, value);
+  }
+
+  private async writeHealth(
+    state: RemoteEventJournalHealthV1['state'],
+    errorCode: string | null
+  ): Promise<void> {
+    const health: RemoteEventJournalHealthV1 = {
+      schema: 'sks.remote-event-journal-health.v1',
+      state,
+      updated_at: nowIso(),
+      error_code: errorCode
+    };
+    await writeTextAtomic(
+      this.healthPath,
+      `${JSON.stringify(health, null, 2)}\n`,
+      { mode: 0o600 }
+    );
   }
 }
 

@@ -256,7 +256,8 @@ export async function safeWriteCodexConfigToml(
 
 export function codexFastModeDesktopStatus(text: any = '') {
   const validation = validateCodexConfigRoundTrip(String(text || ''));
-  const globalOn = validation.ok && validation.service_tier === 'fast';
+  const normalizedServiceTier = String(validation.service_tier || '').toLowerCase();
+  const globalOn = validation.ok && (normalizedServiceTier === 'fast' || normalizedServiceTier === 'priority');
   return {
     schema: 'sks.codex-fast-mode-desktop-status.v2',
     ok: validation.ok,

@@ -8,11 +8,6 @@ import { runProcess, writeJsonAtomic } from '../fsx.js'
 import { listMcpInventory, type CodexMcpCliPort } from '../mcp-config/index.js'
 import { RemoteSshWorkerClient } from '../remote/ssh-worker-client.js'
 import type { RemoteMachineV1 } from '../remote/types.js'
-import { TelegramHubRouter } from '../telegram/hub.js'
-import { TelegramActionBroker, TelegramAuditLedger, TelegramIdempotencyLedger, TelegramTopicRegistry } from '../telegram/ledgers.js'
-import { TelegramMessageProjector } from '../telegram/messages.js'
-import { TelegramHubRuntime } from '../telegram/runtime.js'
-import type { TelegramBotApiTransport, TelegramHubConfigV1, TelegramUpdate } from '../telegram/types.js'
 import { emptyUpdateStatus, readUpdateStatusCache } from '../update/update-status.js'
 
 export const RELEASE_LATENCY_LIMITS = {
@@ -20,7 +15,6 @@ export const RELEASE_LATENCY_LIMITS = {
   control_center_open: 400,
   mcp_static_list: 250,
   update_cache_read: 50,
-  telegram_callback_ack: 1000,
   ssh_worker_hello: 3000
 } as const
 
@@ -66,7 +60,6 @@ export async function runReleaseLatencySlo(
     const portable = [
       await capture('mcp_static_list', budgetMap, () => measureMcpStaticList(tmp, runs(budgetMap, 'mcp_static_list', 9))),
       await capture('update_cache_read', budgetMap, () => measureUpdateCacheRead(tmp, runs(budgetMap, 'update_cache_read', 15))),
-      await capture('telegram_callback_ack', budgetMap, () => measureTelegramAck(tmp, runs(budgetMap, 'telegram_callback_ack', 7))),
       await capture('ssh_worker_hello', budgetMap, () => measureSshHello(tmp, runs(budgetMap, 'ssh_worker_hello', 5)))
     ]
     const native = platform === 'darwin'
@@ -164,52 +157,6 @@ async function measureUpdateCacheRead(tmp: string, count: number) {
   const read = async () => { if (!(await readUpdateStatusCache(env))) throw new Error('update_cache_unreadable') }
   await read()
   return { producer: 'readUpdateStatusCache:v3', samples: await samples(count, read), evidence: { cache_bytes: Buffer.byteLength(JSON.stringify(snapshot)), network_included: false } }
-}
-
-async function measureTelegramAck(tmp: string, count: number) {
-  const base = path.join(tmp, 'telegram')
-  const config: TelegramHubConfigV1 = {
-    schema: 'sks.telegram-config.v1', bot_token_ref: { type: 'external_file', path: '/dev/null' },
-    paired_chat_ids: ['1'], paired_user_ids: ['1']
-  }
-  let ackAt = 0
-  const api: TelegramBotApiTransport = {
-    call: async <T = unknown>(method: string): Promise<T> => {
-      if (method === 'answerCallbackQuery') ackAt = performance.now()
-      return {} as T
-    }
-  }
-  const topics = new TelegramTopicRegistry(path.join(base, 'topics.json'))
-  const actions = new TelegramActionBroker(path.join(base, 'actions.json'))
-  const audit = new TelegramAuditLedger(path.join(base, 'audit.jsonl'), 'latency-fixture')
-  const router = new TelegramHubRouter({
-    config, topics, actions, audit,
-    idempotency: new TelegramIdempotencyLedger(path.join(base, 'idempotency.jsonl'))
-  })
-  const runtime = new TelegramHubRuntime({
-    config, router, topics, actions, audit,
-    projector: new TelegramMessageProjector(api, { rich_message: false, rich_draft: false, plain_draft: false, reactions: false }),
-    machineRegistry: { schema: 'sks.remote-machines.v1', machines: [] },
-    sessionIndex: { schema: 'sks.remote-session-index.v1', targets: [] },
-    projectionStatePath: path.join(base, 'projection.json')
-  })
-  const values: number[] = []
-  for (let index = 0; index < count; index += 1) {
-    ackAt = 0
-    const update: TelegramUpdate = {
-      update_id: index + 1,
-      callback_query: {
-        id: `callback-${index}`, from: { id: '1' }, data: `cb:missing-${index}`,
-        message: { message_id: index + 1, chat: { id: '1', type: 'private' }, from: { id: '1' }, message_thread_id: 7 }
-      }
-    }
-    const started = performance.now()
-    await runtime.processUpdate(update)
-    if (!ackAt) throw new Error('telegram_callback_ack_missing')
-    values.push(ackAt - started)
-  }
-  await runtime.close()
-  return { producer: 'TelegramHubRuntime.processUpdate:answerCallbackQuery', samples: values, evidence: { callback_path: 'paired_unknown_alias_rejection', network_included: false } }
 }
 
 async function measureSshHello(tmp: string, count: number) {
@@ -314,7 +261,7 @@ let control = ControlCenterWindowController(processClient: processClient, operat
 let controlStart = DispatchTime.now().uptimeNanoseconds
 control.show(section: .overview)
 let controlMs = Double(DispatchTime.now().uptimeNanoseconds - controlStart) / 1_000_000
-control.window?.orderOut(nil)
+control.window?.orderOut(nil as Any?)
 let data = try! JSONSerialization.data(withJSONObject: ["menu_bar_first_state_render_ms": firstMs, "control_center_open_ms": controlMs])
 print(String(data: data, encoding: .utf8)!)`
 }

@@ -14,6 +14,7 @@ import {
 test('remapThreadCatalogProvider retags sidebar rows and restore flips them back with routing snapshot', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-desktop-routing-'))
   const codexHome = path.join(home, '.codex')
+  const env = { ...process.env, HOME: home, CODEX_HOME: codexHome }
   const sqliteDir = path.join(codexHome, 'sqlite')
   await fs.mkdir(sqliteDir, { recursive: true })
   const dbPath = path.join(sqliteDir, 'codex-dev.db')
@@ -42,6 +43,7 @@ test('remapThreadCatalogProvider retags sidebar rows and restore flips them back
 
   const remapped = remapThreadCatalogProvider({
     home,
+    env,
     fromProvider: 'codex-lb',
     toProvider: 'openrouter'
   })
@@ -77,11 +79,12 @@ test('remapThreadCatalogProvider retags sidebar rows and restore flips them back
       }
     }
   )
-  const written = await writeDesktopRoutingSnapshot(snapshot, { home })
+  const written = await writeDesktopRoutingSnapshot(snapshot, { home, env })
   assert.equal(written.ok, true)
 
   const restored = await restoreDesktopRoutingSnapshot({
     home,
+    env,
     configPath,
     restartApp: false,
     restartImpl: async () => ({ ok: true, blockers: [] })
@@ -99,6 +102,7 @@ test('a failed sidebar reverse remap keeps the snapshot and reports the restore 
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-desktop-routing-blocked-'))
   t.after(() => fs.rm(home, { recursive: true, force: true }))
   const codexHome = path.join(home, '.codex')
+  const env = { ...process.env, HOME: home, CODEX_HOME: codexHome }
   await fs.mkdir(codexHome, { recursive: true })
   const configPath = path.join(codexHome, 'config.toml')
   await fs.writeFile(configPath, [
@@ -121,11 +125,12 @@ test('a failed sidebar reverse remap keeps the snapshot and reports the restore 
       }
     }
   )
-  const written = await writeDesktopRoutingSnapshot(snapshot, { home })
+  const written = await writeDesktopRoutingSnapshot(snapshot, { home, env })
   assert.equal(written.ok, true)
 
   const restored = await restoreDesktopRoutingSnapshot({
     home,
+    env,
     configPath,
     restartApp: false,
     restartImpl: async () => ({ ok: true, blockers: [] })

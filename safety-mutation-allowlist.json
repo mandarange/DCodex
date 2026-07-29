@@ -21,12 +21,6 @@
     },
     {
       "file": "src/cli/install-helpers.ts",
-      "symbol": "migrateCodexAuthKeyFormat",
-      "token": "chmod",
-      "reason": "Permission normalization for created auth, shim, socket, or release artifacts; exact callsite is audited."
-    },
-    {
-      "file": "src/cli/install-helpers.ts",
       "symbol": "restoreInstalledPackageBuildStamp",
       "token": "fsp.writeFile",
       "reason": "Default postinstall restores only the package-local dist stamp after proving the target remains inside the installed package root."
@@ -48,18 +42,6 @@
       "symbol": "releaseCodexLbAuthHold",
       "token": "fsp.rm",
       "reason": "Cleanup/removal path is route-owned, generated, or temporary artifact; exact callsite is audited."
-    },
-    {
-      "file": "src/cli/install-helpers.ts",
-      "symbol": "restoreCodexLbEnvFromSharedLogin",
-      "token": "chmod",
-      "reason": "Permission normalization for created auth, shim, socket, or release artifacts; exact callsite is audited."
-    },
-    {
-      "file": "src/cli/install-helpers.ts",
-      "symbol": "restorePostinstallCodexLbConfigSnapshot",
-      "token": "chmod",
-      "reason": "Permission normalization for created auth, shim, socket, or release artifacts; exact callsite is audited."
     },
     {
       "file": "src/cli/install-helpers.ts",
@@ -3266,36 +3248,6 @@
       "reason": "Unpacked-byte measurement removes only its mkdtemp tar extraction root in finally."
     },
     {
-      "file": "src/core/remote/session-binding.ts",
-      "symbol": "RemoteCodexSessionBindingStore",
-      "token": "chmod",
-      "reason": "The binding store reapplies mode 0600 only to the exact project-scoped Codex session binding file it atomically wrote."
-    },
-    {
-      "file": "src/core/telegram/owner-lock.ts",
-      "symbol": "TelegramOwnerLock",
-      "token": "rename",
-      "reason": "Telegram owner recovery renames only the configured lock after proving its owner stale."
-    },
-    {
-      "file": "src/core/telegram/owner-lock.ts",
-      "symbol": "TelegramOwnerLock",
-      "token": "unlink",
-      "reason": "Telegram owner locking unlinks only a stale quarantine or the same-owner configured lock."
-    },
-    {
-      "file": "src/core/telegram/owner-lock.ts",
-      "symbol": "TelegramOwnerLock",
-      "token": "fsp.writeFile",
-      "reason": "Telegram heartbeat overwrites only the configured owner lock after verifying the same owner nonce."
-    },
-    {
-      "file": "src/core/telegram/service.ts",
-      "symbol": "removeTelegramHubService",
-      "token": "unlink",
-      "reason": "Telegram service removal unlinks only the exact com.sneakoscope.telegram-hub LaunchAgent plist resolved for the selected user HOME."
-    },
-    {
       "file": "src/core/update/temporary-install-smoke.ts",
       "symbol": "runTemporaryInstallSmoke",
       "token": "fs.rm",
@@ -3446,12 +3398,6 @@
       "reason": "Canonical test runner writes the sentinel Codex config only into its isolated scratch CODEX_HOME; any change to that tree is treated as an isolation breach and fails the run."
     },
     {
-      "file": "src/core/telegram/setup.ts",
-      "symbol": "restoreSetupFile",
-      "token": "unlink",
-      "reason": "Telegram setup rollback unlinks only an exact pre-snapshotted state path whose snapshot proved the file was absent before setup began."
-    },
-    {
       "file": "src/core/fsx.ts",
       "symbol": "writeBinaryAtomic",
       "token": "chmod",
@@ -3516,6 +3462,168 @@
       "symbol": "withTriWikiProofIndexLock",
       "token": "rmSync",
       "reason": "The proof index lock removes only a stale or released fixed lock whose complete owner identity still matches the identity selected for removal."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/launchd.ts",
+      "symbol": "writeDesktopBridgeLaunchdPlist",
+      "token": "fsp.writeFile",
+      "reason": "The launchd writer exclusively creates one randomized sibling temporary file beside the caller-selected SKS bridge plist."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/launchd.ts",
+      "symbol": "writeDesktopBridgeLaunchdPlist",
+      "token": "rename",
+      "reason": "The launchd writer atomically promotes only its randomized sibling temporary file onto the caller-selected SKS bridge plist."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/launchd.ts",
+      "symbol": "writeDesktopBridgeLaunchdPlist",
+      "token": "chmod",
+      "reason": "The launchd writer applies 0600 only to the caller-selected SKS bridge plist immediately after atomic promotion."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/launchd.ts",
+      "symbol": "writeDesktopBridgeLaunchdPlist",
+      "token": "fsp.rm",
+      "reason": "The launchd writer cleanup removes only the randomized sibling temporary path derived inside this atomic write."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/state.ts",
+      "symbol": "writeDesktopBridgeState",
+      "token": "fsp.writeFile",
+      "reason": "The state writer exclusively creates one randomized sibling temporary file after validating the public bridge-state schema."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/state.ts",
+      "symbol": "writeDesktopBridgeState",
+      "token": "chmod",
+      "reason": "The state writer applies 0600 only to its randomized temporary file and the caller-selected bridge-state target."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/state.ts",
+      "symbol": "writeDesktopBridgeState",
+      "token": "rename",
+      "reason": "The state writer atomically promotes only its randomized sibling temporary file onto the validated bridge-state target."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/state.ts",
+      "symbol": "writeDesktopBridgeState",
+      "token": "fsp.rm",
+      "reason": "The state writer cleanup removes only the randomized sibling temporary path derived inside this atomic write."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/state.ts",
+      "symbol": "removeDesktopBridgeStateIfOwned",
+      "token": "unlink",
+      "reason": "Bridge state is unlinked only after its stored PID and configuration generation both match the expected owner."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-center-credentials.ts",
+      "symbol": "purgeStaleCodexLbCredentialTwins",
+      "token": "fsp.rm",
+      "reason": "Credential cleanup removes only fixed legacy twin filenames enumerated beneath the selected HOME .codex directory."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-service.ts",
+      "symbol": "writeDesktopBridgeServiceSettings",
+      "token": "chmod",
+      "reason": "The service settings writer applies 0600 only to the validated settings document it just wrote atomically."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-service.ts",
+      "symbol": "installAndStartDesktopBridgeService",
+      "token": "chmod",
+      "reason": "Service installation applies 0600 only to the resolved SKS desktop bridge launch-agent plist it just wrote."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-service.ts",
+      "symbol": "stopDesktopBridgeService",
+      "token": "unlink",
+      "reason": "Service stop removes only resolved SKS bridge plist or settings paths, and only when the corresponding explicit removal option is true."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-service.ts",
+      "symbol": "removeStaleBridgeState",
+      "token": "unlink",
+      "reason": "Stale-state cleanup removes only the resolved bridge-state file after the recorded process is absent or no longer alive."
+    },
+    {
+      "file": "src/core/codex-lb/legacy-migration.ts",
+      "symbol": "writeBufferAtomic",
+      "token": "fsp.writeFile",
+      "reason": "Legacy migration exclusively writes bytes to a process-scoped sibling temporary path for the migration-owned target."
+    },
+    {
+      "file": "src/core/codex-lb/legacy-migration.ts",
+      "symbol": "writeBufferAtomic",
+      "token": "rename",
+      "reason": "Legacy migration atomically promotes only its process-scoped sibling temporary file onto the migration-owned target."
+    },
+    {
+      "file": "src/core/codex-lb/legacy-migration.ts",
+      "symbol": "writeBufferAtomic",
+      "token": "chmod",
+      "reason": "Legacy migration applies 0600 only to the migration-owned target immediately after atomic promotion."
+    },
+    {
+      "file": "src/core/codex-lb/legacy-migration.ts",
+      "symbol": "writeBufferAtomic",
+      "token": "fsp.rm",
+      "reason": "Legacy migration failure cleanup removes only its process-scoped sibling temporary path."
+    },
+    {
+      "file": "src/core/codex-lb/migration-receipt.ts",
+      "symbol": "writeCodexLbMigrationReceipt",
+      "token": "chmod",
+      "reason": "Receipt persistence applies 0600 only to the validated migration receipt path immediately after its atomic write."
+    },
+    {
+      "file": "src/core/codex-lb/migration-receipt.ts",
+      "symbol": "rollbackCodexLbMigrationReceipt",
+      "token": "fsp.rm",
+      "reason": "Rollback removes only receipt-listed files after current hashes match the recorded post-migration state, or restores their pre-operation absence during recovery."
+    },
+    {
+      "file": "src/core/codex-lb/migration-receipt.ts",
+      "symbol": "writeBufferAtomic",
+      "token": "chmod",
+      "reason": "Receipt rollback applies the requested private mode only to its exclusive sibling temporary file and receipt-listed target."
+    },
+    {
+      "file": "src/core/codex-lb/migration-receipt.ts",
+      "symbol": "writeBufferAtomic",
+      "token": "rename",
+      "reason": "Receipt rollback atomically promotes only its exclusive randomized sibling temporary file onto the receipt-listed target."
+    },
+    {
+      "file": "src/core/codex-lb/migration-receipt.ts",
+      "symbol": "writeBufferAtomic",
+      "token": "fsp.rm",
+      "reason": "Receipt rollback failure cleanup removes only its exclusive randomized sibling temporary path."
+    },
+    {
+      "file": "src/scripts/codex-lb-catalog-passthrough-check.ts",
+      "symbol": "module",
+      "token": "fs.rm",
+      "reason": "The catalog passthrough gate removes only the exact mkdtemp root it created for the isolated fixture."
+    },
+    {
+      "file": "src/scripts/codex-lb-desktop-auth-invariant-check.ts",
+      "symbol": "module",
+      "token": "fs.rm",
+      "reason": "The desktop auth invariant gate removes only the exact mkdtemp root it created for the isolated fixture."
+    },
+    {
+      "file": "src/scripts/codex-lb-desktop-auth-invariant-check.ts",
+      "symbol": "runCheck",
+      "token": "fs.writeFile",
+      "reason": "The desktop auth invariant gate writes only config and auth fixtures resolved beneath its caller-provided mkdtemp root."
+    },
+    {
+      "file": "src/scripts/codex-lb-desktop-bridge-check.ts",
+      "symbol": "consume",
+      "token": "fs.rm",
+      "reason": "The desktop bridge gate removes only the exact mkdtemp root captured by its isolated consume closure."
     },
     {
       "file": "src/scripts/latest-version-guidance-check.ts",

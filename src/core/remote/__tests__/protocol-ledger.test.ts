@@ -25,11 +25,11 @@ async function tempRoot(): Promise<string> {
 function envelope(overrides: Partial<RemoteCommandEnvelopeV1> = {}): RemoteCommandEnvelopeV1 {
   const now = Date.now();
   return {
-    schema: 'sks.remote-command.v1',
+    schema: 'sks.remote-command.v2',
     command_id: 'command-1',
     issued_at: new Date(now - 1_000).toISOString(),
     expires_at: new Date(now + 60_000).toISOString(),
-    actor: 'telegram-owner',
+    actor: 'remote-owner',
     machine_id: 'mac',
     project_id: 'project',
     session_id: 'session-1',
@@ -82,6 +82,38 @@ test('bounded event cursor reports a retention gap instead of silently skipping 
   assert.equal(current.events.length, 8);
 });
 
+test('recent event reads filter and bound retained events in one journal snapshot', async () => {
+  const root = await tempRoot();
+  const events = new RemoteEventJournal(path.join(root, 'events.json'), { maxEvents: 8 });
+  for (let index = 0; index < 10; index += 1) {
+    await events.append({
+      type: 'fixture',
+      session_id: index % 2 === 0 ? 'session-1' : 'session-2',
+      command_id: null,
+      summary: { index }
+    });
+  }
+
+  const recent = await events.recent('session-1', 2);
+  assert.deepEqual(recent.map((event) => event.summary.index), [6, 8]);
+});
+
+test('event journal appends a bounded batch with contiguous sequence ownership', async () => {
+  const root = await tempRoot();
+  const events = new RemoteEventJournal(path.join(root, 'events.json'), { maxEvents: 8 });
+  const created = await events.appendMany(Array.from({ length: 10 }, (_, index) => ({
+    type: 'fixture',
+    session_id: 'session-1',
+    command_id: null,
+    summary: { index, secret: `token-${index}` }
+  })));
+
+  assert.deepEqual(created.map((event) => event.seq), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const recent = await events.recent('session-1', 8);
+  assert.deepEqual(recent.map((event) => event.seq), [3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(recent.map((event) => event.summary.index), [2, 3, 4, 5, 6, 7, 8, 9]);
+});
+
 test('protocol enforces exact typed requests, risk-kind mapping, expiry, and R3 denial', () => {
   const now = Date.now();
   assert.throws(() => validateWorkerRequest({ schema: 'sks.remote-worker.request.v1', id: '1', type: 'hello', extra: true }), RemoteProtocolError);
@@ -92,6 +124,7 @@ test('protocol enforces exact typed requests, risk-kind mapping, expiry, and R3 
   });
   assert.throws(() => validateRemoteCommandEnvelope(envelope({ kind: 'cancel', risk: 'R1' }), now), /command_risk_kind_mismatch/);
   assert.throws(() => validateRemoteCommandEnvelope({ ...envelope(), risk: 'R3' }, now), /command_risk_invalid_or_r3_denied/);
+  assert.throws(() => validateRemoteCommandEnvelope({ ...envelope(), actor: 'legacy-owner' }, now), /command_actor_invalid/);
   assert.throws(() => validateRemoteCommandEnvelope(envelope({ payload: { view: 'arbitrary-shell' } }), now), /command_read_view_unsupported/);
   assert.equal(validateRemoteCommandEnvelope(envelope({ payload: { view: 'proof' } }), now).payload.view, 'proof');
   assert.throws(() => validateRemoteCommandEnvelope(envelope({ expires_at: new Date(now - 1).toISOString() }), now), /command_expired/);

@@ -65,7 +65,8 @@ test('gpt-image-2 does not call codex-lb when the fallback is explicitly disable
       capability: {
         codexBin: path.join(root, 'missing-codex'),
         timeoutMs: 100,
-        env: { HOME: root, CODEX_LB_API_KEY: 'sk-clb-test' },
+        env: { HOME: root },
+        codexLbEnvText: 'CODEX_LB_API_KEY=sk-clb-test\n',
         configText: codexLbConfig()
       },
       openai: { codexLbApiKey: 'sk-clb-test' }
@@ -108,7 +109,8 @@ test('gpt-image-2 fallback uses codex-lb key only when explicitly enabled', asyn
       capability: {
         codexBin: path.join(root, 'missing-codex'),
         timeoutMs: 100,
-        env: { HOME: root, CODEX_LB_API_KEY: 'sk-clb-test' },
+        env: { HOME: root },
+        codexLbEnvText: 'CODEX_LB_API_KEY=sk-clb-test\n',
         configText: codexLbConfig()
       },
       openai: { codexLbApiKey: 'sk-clb-test', responsesModel: 'gpt-5.6-terra' },
@@ -121,6 +123,45 @@ test('gpt-image-2 fallback uses codex-lb key only when explicitly enabled', asyn
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, 'https://lb.example.test/backend-api/codex/responses');
     assert.equal(calls[0].authorization, 'Bearer sk-clb-test');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('selected codex-lb without a bound base URL fails closed before fetch', async () => {
+  const { root, imagePath } = await tempImageRoot('sks-codex-lb-missing-base-url-');
+  const outputDir = path.join(root, 'out');
+  let calls = 0;
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    calls += 1;
+    throw new Error('codex-lb key must not be sent to a public fallback endpoint');
+  };
+  try {
+    const result = await withoutImagegenOutputEnv(() => generateGptImage2CalloutReview({
+      mission_id: null,
+      source_screen_id: 'screen-1',
+      source_image_path: imagePath,
+      output_dir: outputDir,
+      prompt: buildCalloutPrompt('screen-1'),
+      requested_fidelity: 'original',
+      privacy: 'local-only'
+    }, {
+      capability: {
+        codexBin: path.join(root, 'missing-codex'),
+        timeoutMs: 100,
+        env: { HOME: root },
+        configText: codexLbConfig(),
+        codexLbEnvText: ''
+      },
+      openai: { codexLbApiKey: 'sk-clb-test', responsesModel: 'gpt-5.6-terra' },
+      allowApiFallback: true,
+      allowCodexLbApiFallback: true
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.blocker, 'codex_lb_base_url_missing');
+    assert.equal(calls, 0);
   } finally {
     globalThis.fetch = previousFetch;
   }

@@ -64,7 +64,10 @@ await fs.writeFile(path.join(project, '.sneakoscope', 'state', 'fast-mode.json')
   source: 'zellij-lane-renderer-check'
 }, null, 2)}\n`);
 const offFrame = await mod.renderZellijLaneFrame({ missionId: 'M-fast-off', slot: 'slot-001', ledgerRoot: projectLedger, once: true, color: false });
-const required = ['SKS Lane', 'Mission', 'Mode', 'Fast', 'off · service_tier=standard', 'Workers', 'slot-001 gen-1 running', 'Codex child', 'live running · result done', 'Current', 'Queue', 'Safety', 'Blockers', 'Reports', 'Keys:', 'src/core/example.ts', 'fixture_blocker_visible', 'live worker:', 'native worker says hello', 'worker stderr tail visible'];
+// No preference file in this bare fixture: the fast-by-default policy
+// (default_fast_mode: true) resolves to `on · service_tier=fast`; an explicit
+// preference file is what flips a project to standard.
+const required = ['SKS Lane', 'Mission', 'Mode', 'Fast', 'on · service_tier=fast', 'Workers', 'slot-001 gen-1 running', 'Codex child', 'live running · result done', 'Current', 'Queue', 'Safety', 'Blockers', 'Reports', 'Keys:', 'src/core/example.ts', 'fixture_blocker_visible', 'live worker:', 'native worker says hello', 'worker stderr tail visible'];
 const fastRequired = ['Fast', 'on · service_tier=fast'];
 const offRequired = ['Fast', 'off · service_tier=standard'];
 const commandBusOk = frame.report.command_bus?.mode === 'jsonl_nonblocking' && frame.report.command_bus?.newly_acked_count === 1 && ackText.includes('cmd-fixture');

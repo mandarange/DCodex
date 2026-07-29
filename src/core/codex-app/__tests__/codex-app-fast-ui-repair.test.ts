@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { repairCodexAppFastUi } from '../codex-app-fast-ui-repair.js'
 import { scanTomlSignals, snapshotCodexAppUiState } from '../codex-app-ui-state-snapshot.js'
+import { codexFastModeDesktopStatus } from '../../codex-runtime/codex-desktop-config-policy.js'
 
 async function fixture(t: TestContext, config: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-fast-ui-root-'))
@@ -25,6 +26,7 @@ test('Codex App Fast UI repair removes blank-separated SKS model locks but prese
     'suppress_unstable_features_warning = true',
     '# SKS moved machine-local Codex config from .codex/config.toml',
     '',
+    '# sks-codex-lb-managed-desktop-compat',
     'model_provider = "codex-lb"',
     'service_tier = "fast"',
     'model = "gpt-5.6-sol"',
@@ -33,12 +35,12 @@ test('Codex App Fast UI repair removes blank-separated SKS model locks but prese
     'fast_mode = true',
     '',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "OpenAI"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = true',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     ''
   ].join('\n')
   const { root, codexHome, configPath } = await fixture(t, input)
@@ -97,6 +99,7 @@ test('Codex App Fast UI repair follows SKS provenance past unrelated managed com
   const input = [
     '# SKS moved machine-local Codex config from .codex/config.toml',
     '',
+    '# sks-codex-lb-managed-desktop-compat',
     'model_provider = "codex-lb"',
     '# sks-codex-lb-managed-openai-base-url',
     'notify = ["/tmp/turn-ended"]',
@@ -107,12 +110,12 @@ test('Codex App Fast UI repair follows SKS provenance past unrelated managed com
     'fast_mode = true',
     '',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "OpenAI"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = true',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     ''
   ].join('\n')
   const { root, codexHome, configPath } = await fixture(t, input)
@@ -206,9 +209,10 @@ test('Codex App Fast UI repair preserves unmarked codex-lb selection and provide
     '[features]',
     'fast_mode = true # SKS Fast capability',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'env_key = "CODEX_LB_API_KEY"',
+    'requires_openai_auth = false',
     ''
   ].join('\n')
   const { root, codexHome, configPath } = await fixture(t, input)
@@ -227,6 +231,13 @@ test('documented SKS Fast service tier is an available selector signal, not a lo
 
   assert.equal(snapshot.indicators.fast_selector, 'available')
   assert.equal(repaired.actions.some((action) => action.changed), false)
+})
+
+test('Codex Fast status maps priority on while default and absent remain off', () => {
+  assert.equal(codexFastModeDesktopStatus('service_tier = "priority"\n').on, true)
+  assert.equal(codexFastModeDesktopStatus('service_tier = "fast"\n').on, true)
+  assert.equal(codexFastModeDesktopStatus('service_tier = "default"\n').on, false)
+  assert.equal(codexFastModeDesktopStatus('').on, false)
 })
 
 test('automatic Fast UI repair never rewrites an unparseable Codex config', async (t) => {
@@ -270,12 +281,12 @@ test('Fast UI repair fails closed when codex-lb is selected but its runtime cred
     '[features]',
     'fast_mode = true',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
     'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
-    'requires_openai_auth = true',
+    'requires_openai_auth = false',
     ''
   ].join('\n')
   const { root, codexHome } = await fixture(t, input)

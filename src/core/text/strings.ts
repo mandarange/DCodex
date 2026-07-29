@@ -2,6 +2,11 @@
 //
 // Dependency-free on purpose: imported from core runtime, CLI, and scripts.
 
+/** De-duplicate values by identity, preserving their original order. */
+export function uniqueValues<T>(values: readonly T[]): T[] {
+  return [...new Set(values)];
+}
+
 /**
  * Stringify, trim, drop empties, and de-duplicate — input order preserved.
  *

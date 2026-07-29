@@ -354,6 +354,8 @@ test('closeWorkOrderLedgerForRouteResult resolves every item to verified on succ
   await closeWorkOrderLedgerForRouteResult(dir, { ok: true, blockers: [] });
   closed = await readWorkOrderLedger(dir);
   assert.ok(closed.items.every((item: any) => item.status === 'verified'));
+  assert.ok(closed.items.every((item: any) => item.blocker.blocked === false));
+  assert.ok(closed.items.every((item: any) => item.blocker.reason === null));
   assert.ok(closed.items.every((item: any) => item.implementation_evidence.includes('completion-proof.json')));
   assert.ok(closed.items.every((item: any) => item.verification_evidence.includes('completion-proof.json')));
   assert.equal(evaluateWorkOrderCoverage(closed).ok, true);

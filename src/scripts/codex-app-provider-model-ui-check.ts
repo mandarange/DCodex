@@ -71,8 +71,9 @@ const nativeSourceContract = !/field\.stringValue = "z-ai\/glm-5\.2"/.test(provi
   && /!self\.multiProvider\.modelSelectionPending,[\s\S]{0,420}self\.synchronizeMultiProviderPopupSelection\(\)/.test(multiProviderSource)
   && !/models\.firstIndex\(of: activeModel\)/.test(multiProviderSource);
 
-const ok = missing.ok === true
-  && missing.status === 'ready'
+const ok = missing.ok === false
+  && missing.status === 'available_unverified'
+  && missing.readiness_state === 'available_unverified'
   && missing.selected_provider === 'oauth'
   && missing.blockers.length === 0
   && missing.optional_provider_status === 'setup_available'
@@ -82,10 +83,12 @@ const ok = missing.ok === true
   && missing.codex_lb.key_entry_visible === true
   && missing.ui_actions.includes('sks codex-app set-openrouter-key --api-key-stdin')
   && missing.ui_actions.includes('sks codex-lb setup --host <domain> --api-key-stdin --yes')
-  && /Provider UI:\s*oauth ready, optional providers can be configured/.test(missingText)
+  && /Provider UI:\s*oauth configured, Desktop picker unverified/.test(missingText)
   && /GLM Model:\s*setup/.test(missingText)
   && /codex-lb Key:\s*missing \(input: sks codex-lb setup/.test(missingText)
-  && ready.ok === true
+  && ready.ok === false
+  && ready.status === 'available_unverified'
+  && ready.readiness_state === 'available_unverified'
   && ready.glm.exposed === true
   && ready.glm.model === GLM_52_OPENROUTER_MODEL
   && ready.glm.profiles_present.length === 0
@@ -94,12 +97,13 @@ const ok = missing.ok === true
   && ready.codex_lb.key_present === true
   && ready.codex_lb.model_catalog_ok === true
   && ready.codex_lb.expected_models_present === true
-  && /Provider UI:\s*oauth ready/.test(readyText)
+  && /Provider UI:\s*oauth configured, Desktop picker unverified/.test(readyText)
   && ready.desktop_picker_verified === false
   && readyText.includes(`GLM Model:  ok ${GLM_52_OPENROUTER_MODEL}`)
   && /codex-lb Key:\s*configured/.test(readyText)
-  && selectedCodexLb.ok === true
-  && selectedCodexLb.status === 'ready'
+  && selectedCodexLb.ok === false
+  && selectedCodexLb.status === 'available_unverified'
+  && selectedCodexLb.readiness_state === 'available_unverified'
   && selectedCodexLb.selected_provider === 'codex-lb'
   && selectedCodexLb.selected_provider_blockers.length === 0
   && selectedCodexLb.blockers.length === 0
@@ -128,12 +132,12 @@ function readyConfig() {
     'requires_openai_auth = false',
     '',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
     'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
-    'requires_openai_auth = true',
+    'requires_openai_auth = false',
     ''
   ].join('\n');
 }
@@ -142,12 +146,12 @@ function codexLbOnlyConfig() {
   return [
     'model_provider = "codex-lb"',
     '[model_providers.codex-lb]',
-    'name = "openai"',
+    'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
     'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
-    'requires_openai_auth = true',
+    'requires_openai_auth = false',
     ''
   ].join('\n');
 }

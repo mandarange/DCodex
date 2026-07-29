@@ -13,7 +13,7 @@ import {
 
 test('agent manifest is non-empty and schema-tagged', () => {
   const manifest = buildAgentManifest();
-  assert.equal(manifest.schema, 'sks.agent-manifest.v1');
+  assert.equal(manifest.schema, 'sks.agent-manifest.v2');
   assert.equal(typeof manifest.generated_at, 'string');
   assert.ok(manifest.tools.length > 0);
 });
@@ -29,7 +29,7 @@ test('agent manifest declares additive contract compatibility and the ACAS host 
     },
     {
       bridge_contract: 'sks.agent-bridge.v1',
-      manifest_schema: 'sks.agent-manifest.v1',
+      manifest_schema: 'sks.agent-manifest.v2',
       proof_schema: 'sks.naruto-subagent-workflow.v1',
       host_capability_schema: 'sks.host-capabilities.v1'
     }
@@ -200,10 +200,9 @@ test('every manifest entry has a well-formed shape', () => {
     assert.equal(typeof tool.json_output_supported, 'boolean');
     assert.ok(['fast', 'normal', 'long'].includes(tool.latency_class));
     assert.ok(tool.example_invocation.startsWith(`sks ${tool.name}`));
-    assert.equal(tool.contract_schema, 'sks.command-contract.v2');
+    assert.equal(tool.contract_schema, 'sks.command-contract.v3');
     assert.ok(['R0', 'R1', 'R2', 'R3'].includes(tool.risk));
     assert.equal(typeof tool.remote_allowed, 'boolean');
-    assert.equal(typeof tool.telegram_allowed, 'boolean');
     assert.equal(tool.input_schema.type, 'object');
     assert.equal(tool.input_schema.additionalProperties, false);
   }
@@ -236,7 +235,6 @@ test('lightweight command metadata stays contract-compatible with the runtime re
     assert.equal(runtime.latency, lite.latency, `latency drift for ${name}`);
     assert.equal(runtime.supportsJson, lite.supportsJson, `JSON support drift for ${name}`);
     assert.equal(runtime.remoteAllowed, lite.remoteAllowed, `Remote policy drift for ${name}`);
-    assert.equal(runtime.telegramAllowed, lite.telegramAllowed, `Telegram policy drift for ${name}`);
     assert.equal(runtime.inputProfile, lite.inputProfile, `input profile drift for ${name}`);
     assert.deepEqual(runtime.requiredCapabilities, lite.requiredCapabilities, `capability drift for ${name}`);
     assert.equal(tool?.description, contract?.description, `manifest description drift for ${name}`);
@@ -244,7 +242,6 @@ test('lightweight command metadata stays contract-compatible with the runtime re
     assert.equal(tool?.latency_class, contract?.latency, `manifest latency drift for ${name}`);
     assert.equal(tool?.json_output_supported, contract?.supports_json, `manifest JSON drift for ${name}`);
     assert.equal(tool?.remote_allowed, contract?.remote_allowed, `manifest Remote drift for ${name}`);
-    assert.equal(tool?.telegram_allowed, contract?.telegram_allowed, `manifest Telegram drift for ${name}`);
     assert.deepEqual(tool?.input_schema, contract?.input_schema, `manifest input schema drift for ${name}`);
     assert.deepEqual(tool?.required_capabilities, contract?.required_capabilities, `manifest capability drift for ${name}`);
   }
@@ -258,7 +255,6 @@ test('Naruto manifest metadata and actions match the parser help contract', () =
   assert.equal(naruto.latency_class, 'long');
   assert.equal(naruto.json_output_supported, true);
   assert.equal(naruto.remote_allowed, false);
-  assert.equal(naruto.telegram_allowed, false);
   assert.equal(naruto.requires_explicit_opt_in, true);
   assert.equal(naruto.example_invocation, 'sks naruto help --json');
   assert.deepEqual((naruto.input_schema as any).properties.action.enum, ['run', 'status', 'subagents', 'proof', 'parent-summary', 'help']);

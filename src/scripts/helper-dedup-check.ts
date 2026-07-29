@@ -18,7 +18,6 @@ const BASELINE: Record<string, number> = {
   emitGate: 10,
   sleep: 9,
   delay: 8,
-  unique: 7,
   readJson: 6,
   restoreEnv: 5,
   asList: 4,
