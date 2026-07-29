@@ -3630,6 +3630,24 @@
       "symbol": "scan",
       "token": "writeFileSync",
       "reason": "The latest-version guidance gate writes only its fixed machine-readable report beneath the workspace .sneakoscope reports directory."
+    },
+    {
+      "file": "src/core/locks/file-lock.ts",
+      "symbol": "writeOwnerAtomic",
+      "token": "rename",
+      "reason": "Lock owner publish renames a self-created tmp file onto owner.json inside the caller-owned lock directory; atomic replace is the durability contract and the tmp name is pid+random unique."
+    },
+    {
+      "file": "src/core/locks/file-lock.ts",
+      "symbol": "writeOwnerAtomic",
+      "token": "fsp.rm",
+      "reason": "Best-effort cleanup of writeOwnerAtomic's own tmp file after a failed publish; the target is the exact tmp path just created in the same lock directory."
+    },
+    {
+      "file": "src/scripts/skill-surface-modernization-check.ts",
+      "symbol": "main",
+      "token": "fsp.rm",
+      "reason": "The gate removes only its own mkdtemp fixture root captured at creation in the same function."
     }
   ]
 }
