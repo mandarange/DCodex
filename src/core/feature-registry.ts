@@ -9,6 +9,7 @@ import { FEATURE_QUALITY_LEVELS, fixtureForFeature, fixtureSummary, validateFeat
 import { runFeatureFixture, writeFeatureFixtureReports } from './feature-fixture-runner.js';
 import { PACKAGE_VERSION, exists, nowIso, packageRoot, readJson, readText, runProcess, writeJsonAtomic, writeTextAtomic, type JsonData } from './fsx.js';
 import { uniqueStrings } from './text/strings.js';
+import { assessFeatureFixtureDeclaration } from './proof/runtime-evidence-policy.js';
 
 export const FEATURE_REGISTRY_SCHEMA = 'sks.feature-registry.v1';
 export const FEATURE_INVENTORY_SCHEMA = 'sks.feature-inventory.v1';
@@ -222,15 +223,17 @@ export function buildAllFeaturesSelftest(registry: any, opts: any = {}): JsonDat
     schema: ALL_FEATURES_SELFTEST_SCHEMA,
     generated_at: registry.generated_at || nowIso(),
     ok,
-    status: ok ? 'verified_partial' : 'blocked',
+    contract_coverage_ok: ok,
+    working_claim_allowed: false,
+    status: ok ? 'contract_covered_unverified' : 'blocked',
     checks,
     fixtures: fixturesSummary,
     feature_quality_summary: featureQualitySummary(registry.features || []),
     coverage,
     executable_fixtures: executable,
     note: opts.executeFixtures
-      ? 'Mock executable fixture mode validates release-gated fixture contracts and expected artifact declarations.'
-      : 'Mock selftest verifies the shared contract spine; feature fixtures remain progressive.'
+      ? 'Mock executable fixture mode validates release-gated fixture contracts and expected artifact declarations; it does not prove live runtime behavior.'
+      : 'Mock selftest verifies the shared contract spine only; feature runtime behavior remains unverified without runtime receipts.'
   };
 }
 
@@ -264,12 +267,22 @@ export function buildAllFeatureCompletionReport(registry: any, opts: any = {}): 
     ...(packageJson.version === PACKAGE_VERSION ? [] : [`package_version:${packageJson.version || 'missing'}`]),
     ...features.flatMap((feature: any) => feature.blockers.map((blocker: string) => `${feature.id}:${blocker}`))
   ];
+  const registryFeatureRows = features.slice(0, registry.features?.length || 0);
+  const runtimeVerified = registryFeatureRows.filter((feature: any) => feature.runtime_truth?.working_claim_allowed === true).length;
+  const workingClaimAllowed = blockers.length === 0
+    && registryFeatureRows.length > 0
+    && runtimeVerified === registryFeatureRows.length;
+  const unverified = registryFeatureRows
+    .filter((feature: any) => feature.runtime_truth?.working_claim_allowed !== true)
+    .map((feature: any) => `${feature.id}:runtime_not_proven`);
   return {
     schema: ALL_FEATURE_COMPLETION_SCHEMA,
     version: PACKAGE_VERSION,
     generated_at: registry.generated_at || nowIso(),
-    ok: blockers.length === 0,
-    status: blockers.length ? 'blocked' : 'verified_partial',
+    ok: workingClaimAllowed,
+    contract_coverage_ok: blockers.length === 0,
+    working_claim_allowed: workingClaimAllowed,
+    status: blockers.length ? 'blocked' : workingClaimAllowed ? 'runtime_verified' : 'contract_covered_unverified',
     counts: {
       features: features.length,
       registry_features: registry.features?.length || 0,
@@ -277,18 +290,24 @@ export function buildAllFeatureCompletionReport(registry: any, opts: any = {}): 
       release_gates_required: FLAGSHIP_RELEASE_GATES.length,
       release_gates_missing: missingGates.length
     },
+    runtime_verification: {
+      verified_features: runtimeVerified,
+      unverified_features: Math.max(0, registryFeatureRows.length - runtimeVerified),
+      working_claim_allowed: workingClaimAllowed
+    },
     blockers,
+    unverified,
     required_gates: FLAGSHIP_RELEASE_GATES,
     missing_gates: missingGates,
     release_gates: {
       version_metadata: packageJson.version === PACKAGE_VERSION ? 'present' : 'blocked',
       feature_registry: registry.coverage?.ok ? 'present' : 'blocked',
       runtime_routes_not_static_contract: runtimeStatic.ok ? 'present' : 'blocked',
-      evidence_router: 'covered',
-      completion_proof: 'covered',
-      trust_report: 'covered',
-      wrongness: 'covered',
-      blackbox: 'covered_by_matrix_contract'
+      evidence_router: 'contract_covered',
+      completion_proof: 'contract_covered',
+      trust_report: 'contract_covered',
+      wrongness: 'contract_covered',
+      blackbox: 'contract_covered_by_matrix'
     },
     features,
     registry_coverage: registry.coverage
@@ -300,16 +319,17 @@ export function renderAllFeatureCompletionMarkdown(report: any) {
     `# All Feature Completion ${report.version}`,
     '',
     `- Status: ${report.status}`,
+    `- Working claim allowed: ${report.working_claim_allowed === true ? 'yes' : 'no'}`,
     `- Features: ${report.counts?.features || 0}`,
     `- Missing release gates: ${(report.missing_gates || []).length ? report.missing_gates.join(', ') : 'none'}`,
     `- Blockers: ${(report.blockers || []).length ? report.blockers.join(', ') : 'none'}`,
     '',
-    '| Feature | Fixture | Evidence | Proof | Trust | Wrongness | Blackbox | Status |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |'
+    '| Feature | Fixture | Runtime truth | Evidence | Proof | Trust | Wrongness | Blackbox | Status |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |'
   ];
   for (const feature of report.features || []) {
     const c = feature.coverage || {};
-    lines.push(`| \`${feature.id}\` | ${c.fixture?.status || 'missing'} | ${c.evidence_router?.status || 'missing'} | ${c.completion_proof?.status || 'missing'} | ${c.trust_report?.status || 'missing'} | ${c.wrongness?.status || 'missing'} | ${c.blackbox?.status || 'missing'} | ${feature.status} |`);
+    lines.push(`| \`${feature.id}\` | ${c.fixture?.status || 'missing'} | ${feature.runtime_truth?.runtime_status || 'not_assessed'} | ${c.evidence_router?.status || 'missing'} | ${c.completion_proof?.status || 'missing'} | ${c.trust_report?.status || 'missing'} | ${c.wrongness?.status || 'missing'} | ${c.blackbox?.status || 'missing'} | ${feature.status} |`);
   }
   lines.push('', '## Required Release Gates', '');
   for (const gate of report.required_gates || []) lines.push(`- ${gate}: ${(report.missing_gates || []).includes(gate) ? 'missing' : 'present'}`);
@@ -335,6 +355,7 @@ const FLAGSHIP_RELEASE_GATES = Object.freeze([
 ]);
 
 function featureCompletionRow(feature: any) {
+  const runtimeTruth = feature.runtime_truth || assessFeatureFixtureDeclaration(feature.fixture);
   const coverage = {
     command_registry: coverageStatus(Boolean(feature.source_refs || feature.commands?.length || feature.aliases?.length)),
     packed_import: coverageStatus(true, 'command-import-smoke'),
@@ -350,10 +371,15 @@ function featureCompletionRow(feature: any) {
     unavailable_blocker: coverageStatus(true, 'external-unavailable-blocker-contract'),
     redaction: coverageStatus(true, 'secret-redaction-contract'),
     perf_budget: coverageStatus(true, feature.performance_budget || 'not_required'),
-    json_recovery: coverageStatus(true, 'json-recovery-action')
+    json_recovery: coverageStatus(true, 'json-recovery-action'),
+    runtime_truth: {
+      ok: runtimeTruth.working_claim_allowed === true,
+      status: runtimeTruth.working_claim_allowed ? 'runtime_proven' : runtimeTruth.runtime_status,
+      working_claim_allowed: runtimeTruth.working_claim_allowed
+    }
   };
   const blockers = Object.entries(coverage)
-    .filter(([, value]: any) => !value.ok)
+    .filter(([key, value]: any) => key !== 'runtime_truth' && !value.ok)
     .map(([key]: any) => `${key}_missing`);
   if ((feature.category === 'route' || String(feature.id || '').startsWith('route-')) && feature.fixture?.quality === 'static_contract') blockers.push('static_contract_runtime_feature');
   return {
@@ -361,7 +387,8 @@ function featureCompletionRow(feature: any) {
     title: feature.title || feature.name || feature.id,
     category: feature.category,
     maturity: feature.maturity,
-    status: blockers.length ? 'blocked' : 'covered',
+    status: blockers.length ? 'blocked' : runtimeTruth.working_claim_allowed ? 'runtime_verified' : 'contract_covered_unverified',
+    runtime_truth: runtimeTruth,
     coverage,
     blockers
   };
@@ -404,7 +431,7 @@ function derivedFeatureCompletionRow(feature: any) {
     title: feature.title,
     category: 'release-derived',
     maturity: 'stable',
-    status: blockers.length ? 'blocked' : 'covered',
+    status: blockers.length ? 'blocked' : 'contract_covered_unverified',
     coverage,
     blockers
   };
@@ -582,15 +609,16 @@ export function renderFeatureInventoryMarkdown(registry: any) {
     '',
     '## Stable / Beta / Labs Map',
     '',
-    '| Feature | Category | Maturity | Commands / Routes | Fixture | Quality | Known Gaps |',
-    '| --- | --- | --- | --- | --- | --- | --- |'
+    '| Feature | Category | Maturity | Commands / Routes | Fixture | Declared quality | Runtime truth | Known Gaps |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |'
   ];
   for (const feature of registry.features) {
     const commands = [...(feature.commands || []), ...(feature.aliases || [])].map(markdownTableCell).join('<br>');
     const gaps = (feature.known_gaps || []).map(markdownTableCell).join('<br>') || 'none recorded';
     const fixture = feature.fixture ? `${feature.fixture.kind}:${feature.fixture.status}` : 'missing';
     const quality = feature.fixture?.quality || 'missing';
-    lines.push(`| \`${feature.id}\` | ${feature.category} | ${feature.maturity} | ${commands || '-'} | ${fixture} | ${quality} | ${gaps} |`);
+    const runtimeTruth = feature.runtime_truth?.runtime_status || 'not_assessed';
+    lines.push(`| \`${feature.id}\` | ${feature.category} | ${feature.maturity} | ${commands || '-'} | ${fixture} | ${quality} | ${runtimeTruth} | ${gaps} |`);
   }
   lines.push('', '## Unmapped Coverage', '');
   for (const [kind, values] of Object.entries(coverage.unmapped || {}) as Array<[string, any[]]>) {
@@ -821,9 +849,11 @@ function baseFeature(feature: any) {
     acceptance: FEATURE_ACCEPTANCE_DEFAULTS,
     ...feature
   };
+  const fixture = fixtureForFeature(merged.id);
   return dedupeFeatureCommandSurface(namespaceFeatureDollarReferences({
     ...merged,
-    fixture: fixtureForFeature(merged.id)
+    fixture,
+    runtime_truth: assessFeatureFixtureDeclaration(fixture)
   }));
 }
 

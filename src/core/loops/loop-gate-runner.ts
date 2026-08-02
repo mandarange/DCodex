@@ -1,6 +1,6 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { readJson, runProcess, writeJsonAtomic } from '../fsx.js';
+import { readJson, runProcess, sha256, writeJsonAtomic } from '../fsx.js';
 import { allGateIds, type SksLoopGatePlan, type SksLoopNode } from './loop-schema.js';
 import { loopBudgetPath, loopGatePath, loopStatePath } from './loop-artifacts.js';
 import { resolveLoopGate, type LoopGateDefinition } from './loop-gate-registry.js';
@@ -23,6 +23,7 @@ export async function runLoopGates(input: {
   gates: SksLoopGatePlan;
   timeoutMs?: number;
   checkerArtifacts?: string[];
+  cacheKey?: string;
 }): Promise<SksLoopGateRunResult> {
   const selected = allGateIds(input.gates);
   const failed: string[] = [];
@@ -52,6 +53,7 @@ async function runOneGate(input: {
   node: SksLoopNode;
   timeoutMs?: number;
   checkerArtifacts?: string[];
+  cacheKey?: string;
 }, gateId: string): Promise<{ ok: boolean; skipped: boolean; blockers: string[]; handled_by?: 'loop-finalizer'; deferred_contract_path?: string; deferred_reason?: string }> {
   const started = Date.now();
   const definition = await resolveLoopGate(input.root, gateId);
@@ -59,6 +61,9 @@ async function runOneGate(input: {
   const unknown = !definition;
   const packageJson = unknown ? await readJson<any>(path.join(input.root, 'package.json'), null) : null;
   const fixtureMode = process.env.SKS_LOOP_GATE_FIXTURE === '1';
+  const cacheKey = definition
+    ? await loopGateCacheKey(input.root, input.node, definition, fixtureMode, input.cacheKey)
+    : null;
   const fixtureDecision = decideLoopFixturePolicy({
     root: input.root,
     missionId: input.missionId,
@@ -81,6 +86,27 @@ async function runOneGate(input: {
   let handledBy: 'loop-finalizer' | undefined;
   let deferredContractPath: string | undefined;
   let deferredReason: string | undefined;
+
+  if (definition?.cache_allowed === true && definition.source !== 'builtin-pseudo' && cacheKey) {
+    const artifactPath = loopGatePath(input.root, input.missionId, input.node.loop_id, gateId);
+    const cached = await readJson<any>(artifactPath, null);
+    if (cached?.schema === 'sks.loop-gate-result.v1'
+      && cached.cache_key === cacheKey
+      && cached.ok === true
+      && cached.timed_out !== true
+      && cached.fixture_mode === fixtureMode
+      && Array.isArray(cached.blockers)
+      && cached.blockers.length === 0) {
+      await writeJsonAtomic(artifactPath, {
+        ...cached,
+        cache_hit: true,
+        cache_hits: Math.max(0, Number(cached.cache_hits || 0)) + 1,
+        duration_ms: Math.max(1, Date.now() - started),
+        generated_at: new Date().toISOString()
+      });
+      return { ok: true, skipped: cached.skipped === true, blockers: [] };
+    }
+  }
 
   if (definition && ok) {
     if (fixtureMode && !fixtureDecision.allowed) {
@@ -128,6 +154,9 @@ async function runOneGate(input: {
     stdout_tail: stdoutTail,
     stderr_tail: stderrTail,
     cached_allowed: definition?.cache_allowed ?? false,
+    cache_key: cacheKey,
+    cache_hit: false,
+    cache_hits: 0,
     fixture_mode: fixtureMode,
     fixture_policy: fixtureDecision,
     fixture_allowed_reason: fixtureDecision.allowed ? fixtureDecision.reason : null,
@@ -150,6 +179,51 @@ async function runOneGate(input: {
     ...(deferredContractPath ? { deferred_contract_path: deferredContractPath } : {}),
     ...(deferredReason ? { deferred_reason: deferredReason } : {})
   };
+}
+
+async function loopGateCacheKey(
+  root: string,
+  node: SksLoopNode,
+  definition: LoopGateDefinition,
+  fixtureMode: boolean,
+  callerKey?: string
+) {
+  // A command definition alone is not a safe cache identity: the same test
+  // command can observe different code after a maker iteration. Central loop
+  // runtime supplies a revision+diff fingerprint; callers without an input
+  // fingerprint execute the gate normally instead of reusing stale success.
+  if (!callerKey) return null;
+  let sourceContract: unknown = definition.command;
+  if (definition.source === 'package-json') {
+    const pkg = await readJson<any>(path.join(root, 'package.json'), {});
+    sourceContract = pkg?.scripts?.[definition.id] ?? null;
+  } else if (definition.source === 'release-gates-v2') {
+    const release = await readJson<any>(path.join(root, 'release-gates.v2.json'), {});
+    sourceContract = Array.isArray(release?.gates)
+      ? release.gates.find((gate: any) => gate?.id === definition.id) || null
+      : null;
+  }
+  return `sha256:${sha256(stableJson({
+    gate_id: definition.id,
+    command: definition.command,
+    source: definition.source,
+    source_contract: sourceContract,
+    side_effect: definition.side_effect,
+    fixture_mode: fixtureMode,
+    route: node.route,
+    caller_key: callerKey || null
+  }))}`;
+}
+
+function stableJson(value: unknown): string {
+  if (value === undefined) return '"__undefined__"';
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const row = value as Record<string, unknown>;
+    return `{${Object.keys(row).sort().map((key) => `${JSON.stringify(key)}:${stableJson(row[key])}`).join(',')}}`;
+  }
+  const encoded = JSON.stringify(value);
+  return encoded === undefined ? '"__unserializable__"' : encoded;
 }
 
 async function runBuiltinGate(root: string, missionId: string, loopId: string, definition: LoopGateDefinition, checkerArtifacts: string[]): Promise<{ ok: boolean; skipped: boolean; blockers: string[]; handled_by?: 'loop-finalizer'; deferred_contract_path?: string; deferred_reason?: string }> {

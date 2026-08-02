@@ -191,7 +191,7 @@ test('official subagent requirement is task-profile aware and canonical-route bo
   assert.equal(routeRequiresOfficialSubagents('$DFix', { task: 'fix a typo' }), false)
   assert.equal(routeRequiresOfficialSubagents('$Release-Review', { task: 'fix the release metadata' }), true)
   assert.equal(routeRequiresOfficialSubagents('$Release-Review', { task: 'fix release metadata in parallel across independent files' }), true)
-  assert.equal(routeRequiresOfficialSubagents(routePrompt('work on the parser'), { task: 'work on the parser' }), true)
+  assert.equal(routeRequiresOfficialSubagents(routePrompt('work on the parser'), { task: 'work on the parser' }), false)
   assert.equal(routeRequiresOfficialSubagents(routePrompt('What is a parser?'), { task: 'What is a parser?' }), false)
   assert.equal(routeRequiresOfficialSubagents(routePrompt('$Work'), { task: '$Work' }), true)
   assert.equal(routeRequiresOfficialSubagents(routePrompt('parallel implementation'), { task: 'parallel implementation' }), true)

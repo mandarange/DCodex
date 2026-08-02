@@ -182,6 +182,7 @@ class NativeCliWorkerRuntimeRecorder {
       },
       stdio: ['ignore', 'pipe', 'pipe']
     })
+    const removeAbortListener = terminateChildOnAbort(child, ctx.opts?.signal)
     const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
       child.once('close', (code, signal) => resolve({ code, signal }))
       child.once('error', () => resolve({ code: 1, signal: null }))
@@ -218,6 +219,7 @@ class NativeCliWorkerRuntimeRecorder {
     child.stdout?.pipe(stdout)
     child.stderr?.pipe(stderr)
     const exit = await exitPromise
+    removeAbortListener()
     stdout.end()
     stderr.end()
     if (child.pid) this.active.delete(child.pid)
@@ -380,7 +382,8 @@ class NativeCliWorkerRuntimeRecorder {
         cwd: workerCwd,
         env: workerEnv,
         stdoutRel: input.stdoutRel,
-        stderrRel: input.stderrRel
+        stderrRel: input.stderrRel,
+        signal: input.ctx.opts?.signal
       })
     let loopHandle = await registerLoopWorkerHandle({
       root: input.ctx.opts.projectRoot || this.input.projectRoot || input.ctx.opts.cwd || packageRoot(),
@@ -685,6 +688,7 @@ class NativeCliWorkerRuntimeRecorder {
     let lastActivityMs = start
     let lastHeartbeatEmit = 0
     for (;;) {
+      if (input.ctx.opts?.signal?.aborted) return null
       const result = await readJson<any>(input.resultPath, null).catch(() => null)
       if (result) return result
       const now = Date.now()
@@ -839,6 +843,7 @@ class NativeCliWorkerRuntimeRecorder {
     env: Record<string, unknown>
     stdoutRel: string
     stderrRel: string
+    signal?: AbortSignal
   }) {
     const stdout = fs.createWriteStream(path.join(this.root, input.stdoutRel), { flags: 'a' })
     const stderr = fs.createWriteStream(path.join(this.root, input.stderrRel), { flags: 'a' })
@@ -850,15 +855,18 @@ class NativeCliWorkerRuntimeRecorder {
       },
       stdio: ['ignore', 'pipe', 'pipe']
     })
+    const removeAbortListener = terminateChildOnAbort(child, input.signal)
     child.stdout?.pipe(stdout)
     child.stderr?.pipe(stderr)
     const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
       child.on('close', (code, signal) => {
+        removeAbortListener()
         stdout.end()
         stderr.end()
         resolve({ code, signal })
       })
       child.on('error', () => {
+        removeAbortListener()
         stdout.end()
         stderr.end()
         resolve({ code: 1, signal: null })
@@ -868,6 +876,25 @@ class NativeCliWorkerRuntimeRecorder {
       pid: child.pid || null,
       wait: async (timeoutMs: number) => waitForChildExit(child, exitPromise, timeoutMs)
     }
+  }
+}
+
+function terminateChildOnAbort(child: ReturnType<typeof spawn>, signal?: AbortSignal) {
+  if (!signal) return () => undefined
+  let hardKillTimer: NodeJS.Timeout | null = null
+  const terminate = () => {
+    if (child.exitCode !== null || child.signalCode !== null) return
+    child.kill('SIGTERM')
+    hardKillTimer = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }, 1500)
+    hardKillTimer.unref?.()
+  }
+  if (signal.aborted) terminate()
+  else signal.addEventListener('abort', terminate, { once: true })
+  return () => {
+    signal.removeEventListener('abort', terminate)
+    if (hardKillTimer) clearTimeout(hardKillTimer)
   }
 }
 

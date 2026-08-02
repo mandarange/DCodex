@@ -104,5 +104,5 @@ export function routeFromState(state: any = {}) {
 }
 
 export function proofStatusBlocks(status: any) {
-  return status === 'failed' || status === 'blocked' || status === 'not_verified';
+  return status === 'failed' || status === 'blocked' || status === 'not_verified' || status === 'mock_only';
 }

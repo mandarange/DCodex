@@ -1183,21 +1183,18 @@ test('known non-Sol App parent is recorded as advisory mismatch without hard-blo
   }
 });
 
-test('automatic bounded work materializes the bounded Naruto workflow', async () => {
+test('automatic bounded work stays parent-owned without a duplicate Naruto workflow', async () => {
   const root = await tempRoot('sks-bounded-naruto-');
   const session = 'bounded-naruto';
   try {
     await prepareRoute(root, '로그인 버그 수정해줘', {}, { sessionKey: session });
     const state: any = await loadStateForSession(root, session);
-    assert.equal(state.route, 'Naruto');
-    assert.equal(state.subagents_required, true);
+    assert.equal(state.route, 'SKS');
+    assert.equal(state.subagents_required, false);
     const dir = missionDir(root, state.mission_id);
     await fsp.access(path.join(dir, 'pipeline-plan.json'));
-    const plan = JSON.parse(await fsp.readFile(path.join(dir, 'subagent-plan.json'), 'utf8'));
-    assert.equal(plan.requested_subagents, 4);
-    assert.equal(plan.fanout_policy.automatic_ceiling, 256);
-    assert.equal(plan.requested_subagents_explicit, false);
-    await fsp.access(path.join(dir, 'naruto-gate.json'));
+    await assert.rejects(fsp.access(path.join(dir, 'subagent-plan.json')));
+    await assert.rejects(fsp.access(path.join(dir, 'naruto-gate.json')));
   } finally {
     await fsp.rm(root, { recursive: true, force: true });
   }

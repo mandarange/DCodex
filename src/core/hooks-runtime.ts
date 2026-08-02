@@ -1104,6 +1104,16 @@ async function hookStop(root: any, state: any, payload: any, noQuestion: any, se
           reason: `SKS Loop continuation required. Resume with: ${continuation.resume_instruction}`
         };
       }
+      if (continuation?.terminal_blocked) {
+        return {
+          continue: true,
+          action: 'loop_terminal_unverified',
+          status: 'unverified',
+          stop_reason: continuation.stop_reason,
+          completion_claim_allowed: false,
+          systemMessage: `SKS Loop stopped without a success claim (${continuation.stop_reason}). See .sneakoscope/missions/${missionId}/loop-continuation-enforcer.json.`
+        };
+      }
     }
   }
   if (await consumeCodexGitActionStopBypass(root, payload)) {
@@ -1149,12 +1159,25 @@ async function hookStop(root: any, state: any, payload: any, noQuestion: any, se
         reason
       };
     }
-    if (shouldLoopBackAfterHonestMode(state) && hasHonestModeUnresolvedGap(last)) {
-      const loopback = await recordHonestModeLoopback(root, state, last, sessionKey);
-      return {
-        decision: 'block',
-        reason: `${localizedFinalizationReason('honest_loopback', languageBasis)} Loopback: ${loopback.relative_file}`
-      };
+    if (hasHonestModeUnresolvedGap(last)) {
+      if (shouldLoopBackAfterHonestMode(state)) {
+        const loopback = await recordHonestModeLoopback(root, state, last, sessionKey);
+        return {
+          decision: 'block',
+          reason: `${localizedFinalizationReason('honest_loopback', languageBasis)} Loopback: ${loopback.relative_file}`
+        };
+      }
+      if (honestModeLoopbackBudgetExhausted(state)) {
+        const terminal = await recordHonestModeTerminalUnverified(root, state, last, sessionKey);
+        return {
+          continue: true,
+          action: 'honest_mode_terminal_unverified',
+          status: 'unverified',
+          stop_reason: 'honest_mode_retry_budget_exhausted',
+          completion_claim_allowed: false,
+          systemMessage: `SKS Honest Mode stopped after ${terminal.attempts} bounded attempt(s). Completion remains unverified; unresolved evidence is recorded in ${terminal.relative_file}.`
+        };
+      }
     }
     if (state?.honest_loop_required) await resolveHonestModeLoopback(root, state, sessionKey);
     return routeDecision || { continue: true };
@@ -1304,6 +1327,12 @@ function shouldLoopBackAfterHonestMode(state: any = {}) {
   return Boolean(state.ambiguity_gate_passed || state.clarification_passed || /CONTRACT_SEALED|HONEST_LOOPBACK/i.test(String(state.phase || '')));
 }
 
+export function honestModeLoopbackBudgetExhausted(state: any = {}) {
+  if (!state?.mission_id || state.implementation_allowed === false) return false;
+  const attempts = Number(state.honest_loop_attempt_count || 0);
+  return Number.isFinite(attempts) && attempts >= MAX_HONEST_LOOPBACK_ATTEMPTS;
+}
+
 const MAX_HONEST_LOOPBACK_ATTEMPTS = 2;
 
 async function recordHonestModeLoopback(root: any, state: any = {}, lastMessage: any = '', sessionKey: any = null) {
@@ -1354,6 +1383,43 @@ async function resolveHonestModeLoopback(root: any, state: any = {}, sessionKey:
     honest_loop_resolved_at: nowIso(),
     questions_allowed: true
   }, { sessionKey: sessionKey || state._session_key });
+}
+
+async function recordHonestModeTerminalUnverified(root: any, state: any = {}, lastMessage: any = '', sessionKey: any = null) {
+  const id = state.mission_id;
+  const dir = missionDir(root, id);
+  const mode = String(state.mode || state.route || 'SKS').toUpperCase();
+  const createdAt = nowIso();
+  const attempts = Math.max(MAX_HONEST_LOOPBACK_ATTEMPTS, Number(state.honest_loop_attempt_count || 0));
+  const artifact = {
+    schema_version: 1,
+    mission_id: id,
+    status: 'unverified',
+    terminal: true,
+    stop_reason: 'honest_mode_retry_budget_exhausted',
+    created_at: createdAt,
+    attempts,
+    max_attempts: MAX_HONEST_LOOPBACK_ATTEMPTS,
+    issue_lines: honestModeGapLines(lastMessage),
+    completion_claim_allowed: false
+  };
+  const file = path.join(dir, 'honest-loopback-terminal.json');
+  await writeJsonAtomic(file, artifact);
+  await appendJsonl(path.join(dir, 'events.jsonl'), {
+    ts: createdAt,
+    type: 'pipeline.honest_mode.terminal_unverified',
+    proof_invalidating: true,
+    attempts,
+    issues: artifact.issue_lines
+  });
+  await setCurrent(root, {
+    phase: `${mode}_HONEST_UNVERIFIED`,
+    honest_loop_required: false,
+    honest_loop_terminal_unverified: true,
+    honest_loop_stop_reason: artifact.stop_reason,
+    questions_allowed: true
+  }, { sessionKey: sessionKey || state._session_key });
+  return { ...artifact, file, relative_file: path.relative(root, file).split(path.sep).join('/') };
 }
 
 export async function emitHook(name: any) {

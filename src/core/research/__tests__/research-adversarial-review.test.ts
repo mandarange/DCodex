@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import fsp from 'node:fs/promises'
 import {
+  RESEARCH_EXECUTION_CONTROL_ARTIFACT,
   buildResearchHonestMode,
   evaluateReviewCycle,
   parseOfficialReviewParentSummary,
@@ -49,6 +50,74 @@ test('mock adversarial loop records three composite structured outcomes without 
   const debate = JSON.parse(await fsp.readFile(path.join(dir, 'debate-ledger.json'), 'utf8'))
   assert.equal(debate.unanimous_consensus, true)
   assert.equal(debate.exchanges.length, reviewerIds.length)
+})
+
+test('adversarial review stops when the same objection set survives a revision', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-research-adversarial-no-progress-'))
+  const plan = { mission_id: 'M-RESEARCH-NO-PROGRESS', prompt: 'bounded evidence research', artifacts: { research_paper: 'research-paper.md' } }
+  await fsp.writeFile(path.join(dir, 'source-ledger.json'), JSON.stringify({ sources: [mockSource('source-1')], counterevidence_sources: [] }))
+  await fsp.writeFile(path.join(dir, 'claim-evidence-matrix.json'), JSON.stringify({ schema: 'sks.claim-evidence-matrix.v1', claims: [] }))
+  await fsp.writeFile(path.join(dir, 'research-report.md'), '# Report\n\nEvidence-bound fixture.')
+  await fsp.writeFile(path.join(dir, 'research-paper.md'), '# Paper\n\nEvidence-bound fixture.')
+
+  const result = await runResearchAdversarialReviewLoop({
+    root: dir,
+    dir,
+    plan,
+    timeoutMs: 2000,
+    maxCycles: 3,
+    mock: true,
+    reviewCycleImpl: async (_input, cycle, _maxThreads, reviewArtifacts) => ({
+      schema: 'sks.research-adversarial-review-cycle.v1',
+      cycle,
+      execution_class: 'mock_fixture',
+      reviewed_at: new Date().toISOString(),
+      review_artifacts: reviewArtifacts,
+      blockers: [],
+      reviewers: reviewerIds.map((personaId, index) => ({
+        schema: 'sks.research-adversarial-reviewer-outcome.v1',
+        persona_id: personaId,
+        verdict: index === 0 ? 'revise' : 'approve',
+        strongest_challenge: 'The same material objection remains unresolved.',
+        evidence_source_ids: ['source-1'],
+        critical_objections: [],
+        major_objections: index === 0 ? [{
+          id: 'stable-objection',
+          severity: 'major',
+          claim_ids: ['claim-1'],
+          source_ids: ['source-1'],
+          reason: 'The control is still missing.',
+          required_revision: 'Add or downgrade the control claim.'
+        }] : [],
+        minor_objections: [],
+        required_revisions: [],
+        eureka: { exclamation: 'Eureka!', idea: 'The objection is stable.', source_ids: ['source-1'] },
+        falsifiers: ['Provide the missing control.'],
+        cheap_probes: ['Inspect the control artifact.'],
+        confidence: 'high',
+        review_artifact_bundle_sha256: reviewArtifacts.bundle_sha256,
+        thread_id: `mock-stable-${cycle}-${personaId}`,
+        thread_status: 'completed'
+      }))
+    }),
+    revisionCycleImpl: async (_input, cycle, _maxThreads, objectionIds) => ({
+      schema: 'sks.research-revision-cycle.v1',
+      cycle,
+      ok: true,
+      objection_ids: objectionIds,
+      addressed_objection_ids: objectionIds,
+      changed_artifacts: ['research-report.md'],
+      blockers: []
+    })
+  })
+
+  const control = JSON.parse(await fsp.readFile(path.join(dir, RESEARCH_EXECUTION_CONTROL_ARTIFACT), 'utf8'))
+  assert.equal(result.ok, false)
+  assert.equal(result.review_cycles.length, 2)
+  assert.equal(result.revisions.length, 1)
+  assert.ok(result.gate.blockers.includes('research_review_no_progress'))
+  assert.equal(control.status, 'stopped')
+  assert.equal(control.stop_reason, 'no_progress')
 })
 
 test('structured reviewer convergence fails closed on a critical objection', () => {
@@ -307,19 +376,20 @@ test('adversarial review uses one absolute cycle deadline and fails closed after
     root: dir,
     dir,
     plan,
-    timeoutMs: 15,
+    timeoutMs: 500,
     maxCycles: 1,
     appSession: false,
     runWorkflowImpl: async (workflow) => {
       observedTimeouts.push(Number(workflow.timeoutMs))
-      await new Promise((resolve) => setTimeout(resolve, 25))
-      return { status: 'failed', prepared: false, codex_exit_code: 1, parent_summary: null }
+      return new Promise(() => {})
     }
   })
   assert.equal(observedTimeouts.length, 1)
-  assert.ok(observedTimeouts[0]! <= 15 && observedTimeouts[0]! > 0)
+  assert.ok(observedTimeouts[0]! <= 500 && observedTimeouts[0]! > 0)
   assert.equal(result.gate.passed, false)
   assert.ok(result.gate.blockers.includes('research_cycle_timeout_exceeded'), JSON.stringify(result.gate))
+  const control = JSON.parse(await fsp.readFile(path.join(dir, 'research-execution-control.json'), 'utf8'))
+  assert.equal(control.stop_reason, 'time_budget_exhausted')
 })
 
 test('Research Honest Mode distinguishes disclaimers from English and Korean overclaims', async () => {

@@ -12,9 +12,16 @@ export function chooseVerificationBudget(input: {
   changedFiles: readonly string[]
   failedChecks?: readonly string[]
 }): VerificationBudget {
+  const changedFiles = input.changedFiles.map((file) => String(file || '').replace(/\\/g, '/'))
+  const failedChecks = (input.failedChecks || []).filter(Boolean)
+  const releaseSurface = changedFiles.some((file) => /(?:^|\/)(?:package(?:-lock)?\.json|CHANGELOG\.md|\.github\/workflows\/|src\/core\/release\/|src\/scripts\/(?:prepublish|publish|release))/.test(file))
+
   if (input.taskProfile === 'passthrough') return 'none'
   if (input.taskProfile === 'answer') return 'none'
-  if (input.taskProfile === 'tiny-change') return 'single-check'
+  if (releaseSurface) return 'release'
+  if (failedChecks.length > 0) return input.taskProfile === 'high-risk' ? 'release' : 'confidence'
+  if (input.taskProfile === 'tiny-change') return changedFiles.length > 1 ? 'affected' : 'single-check'
   if (input.taskProfile === 'high-risk') return 'confidence'
+  if (changedFiles.length >= 8) return 'confidence'
   return 'affected'
 }

@@ -128,7 +128,19 @@ export async function runLoopNode(input: {
     await updateLoopState(input.root, node.mission_id, node.loop_id, { current_phase: 'gates', last_checker_result: 'fresh_checker_passed' });
     if (await shouldCancel(input.root, node, iteration, 'gates')) return cancelledProof(input.root, node, started, lease, worktree, 'gates');
     await appendLoopRunLog(input.root, node.mission_id, node.loop_id, { event_type: 'loop_gate_started', status: 'running' });
-    const gate = await runLoopGates({ root: input.root, missionId: node.mission_id, node, gates: node.gates, checkerArtifacts: checker.checker_findings });
+    const gate = await runLoopGates({
+      root: input.root,
+      missionId: node.mission_id,
+      node,
+      gates: node.gates,
+      checkerArtifacts: checker.checker_findings,
+      cacheKey: JSON.stringify({
+        base_revision: diff.base_revision,
+        diff_sha256: diff.diff_sha256,
+        changed_files: [...changedFiles].sort(),
+        checker_artifacts: [...checker.checker_findings].sort()
+      })
+    });
     await appendLoopRunLog(input.root, node.mission_id, node.loop_id, { event_type: 'loop_gate_completed', status: gate.ok ? 'completed' : 'blocked' });
     return completedOrBlockedProof({ root: input.root, node, maker, checker, gate, lease, worktree, diff, changedFiles, patchBytes, started, extraBlockers: [] });
   } catch (err: unknown) {
@@ -356,5 +368,5 @@ function emptyGate(): SksLoopProof['gate_result'] & { blockers: string[] } {
 }
 
 function emptyDiff(): LoopDiffSummary {
-  return { changed_files: [], patch_bytes: 0, diff_stat: '', blockers: [] };
+  return { changed_files: [], patch_bytes: 0, diff_stat: '', base_revision: null, diff_sha256: 'sha256:empty', blockers: [] };
 }

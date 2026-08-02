@@ -5,7 +5,7 @@ import { CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_ONLY_POLICY, COD
 import { getdesignReferencePolicyText, imageUxReviewPipelinePolicyText } from './routes/design-policy.js';
 import { PPT_PIPELINE_SKILL_ALLOWLIST, pptPipelineAllowlistPolicyText } from './routes/ppt-policy.js';
 import { normalizeDollarSkillName, prefixKnownSksDollarReferences, sksPrefixedDollarCommand, sksPrefixedSkillName, unprefixedSksSkillName } from './routes/dollar-prefix.js';
-import { classifyTaskProfile, looksLikeDatabaseWorkRequest, type TaskProfile } from './runtime/task-profile.js';
+import { classifyTaskProfile, isTaskProfile, looksLikeDatabaseWorkRequest, type TaskProfile } from './runtime/task-profile.js';
 import { legacyCoreSkillNames } from './codex-native/core-skill-manifest.js';
 
 export * from './routes/constants.js';
@@ -1232,7 +1232,10 @@ export function narutoDecisionForRoute(
   if (profile === 'passthrough' || profile === 'answer' || profile === 'tiny-change') {
     return narutoRouteDecision('none', routeId, profile, `task_profile_${profile}_bypass`, true);
   }
-  if (profile === 'bounded-work' || profile === 'parallel-read' || profile === 'parallel-write' || profile === 'high-risk') {
+  if (profile === 'bounded-work') {
+    return narutoRouteDecision('none', routeId, profile, 'task_profile_bounded_work_parent_owned', false);
+  }
+  if (profile === 'parallel-read' || profile === 'parallel-write' || profile === 'high-risk') {
     return narutoRouteDecision('generic_naruto', routeId, profile, `task_profile_${profile}_default_parallel`, false);
   }
   return narutoRouteDecision('none', routeId, profile, `task_profile_${profile}_bypass`, true);
@@ -1321,7 +1324,7 @@ export function routeReasoning(route: any, prompt: any = '') {
   const base = ALLOWED_REASONING_EFFORTS.has(route?.reasoningPolicy) ? route.reasoningPolicy : 'medium';
   if (hasFromChatImgSignal(text)) return reasoning('xhigh', 'from_chat_img_image_work_order_analysis');
   if (/(?:^|\s)sks\s+--mad\b|(?:^|\s)--mad\b|\$MAD-SKS\b|\bmad-sks\b|\bmadsks\b/i.test(text)) return reasoning('xhigh', 'mad_sks_or_mad_launch_default');
-  if (route?.id === 'Naruto') return narutoRouteReasoning(text);
+  if (route?.id === 'Naruto') return narutoRouteReasoning(route, text);
   if (route?.id === 'Research' || route?.id === 'AutoResearch') return reasoning('xhigh', 'research_or_experiment_route');
   if (route?.id === 'SuperSearch') return reasoning('high', 'source_intelligence_route');
   if (route?.id === 'SEOGEOOptimizer') return reasoning('high', 'search_visibility_route');
@@ -1333,8 +1336,18 @@ export function routeReasoning(route: any, prompt: any = '') {
   return reasoning('medium', 'simple_fulfillment');
 }
 
-function narutoRouteReasoning(_text: any = '') {
-  return reasoning('max', 'naruto_parent_sol_max');
+function narutoRouteReasoning(route: any, text: any = '') {
+  if (route?.explicit_invocation !== false) return reasoning('max', 'explicit_naruto_parent_sol_max');
+  const profile: TaskProfile = isTaskProfile(route?.task_profile)
+    ? route.task_profile
+    : classifyTaskProfile(text);
+  if (profile === 'parallel-read' || profile === 'parallel-write' || profile === 'high-risk') {
+    return reasoning('max', `implicit_naruto_${profile}_sol_max`);
+  }
+  if (profile === 'tiny-change' || profile === 'passthrough' || profile === 'answer') {
+    return reasoning('low', `implicit_naruto_${profile}_lightweight`);
+  }
+  return reasoning('medium', 'implicit_naruto_bounded_parent_medium');
 }
 
 export function reasoningProfileName(effort: any) {

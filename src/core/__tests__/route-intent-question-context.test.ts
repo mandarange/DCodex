@@ -24,19 +24,22 @@ test('question-shaped prompts route by intent instead of question mark shape', (
   }
 });
 
-test('greetings stay lightweight while bounded and explicit parallel work require subagents', () => {
+test('greetings and bounded work stay parent-owned while explicit parallel work requires subagents', () => {
   assert.equal(routePrompt('hi'), null);
   assert.equal(routePrompt('이 함수 설명해줘')?.id, 'Answer');
   const bounded = routePrompt('로그인 버그 수정해줘');
-  assert.equal(routeRequiresSubagents(bounded, '로그인 버그 수정해줘'), true);
+  assert.equal(routeRequiresSubagents(bounded, '로그인 버그 수정해줘'), false);
   const parallel = routePrompt('여러 패키지를 병렬 검토해줘');
   assert.equal(parallel?.id, 'Naruto');
   assert.equal(routeRequiresSubagents(parallel, '여러 패키지를 병렬 검토해줘'), true);
-  for (const prompt of ['audit all packages', 'Review all files', 'one agent per package audit']) {
+  for (const prompt of ['audit all packages', 'Review all files']) {
     const route = routePrompt(prompt);
-    assert.equal(route?.id, 'Naruto', prompt);
-    assert.equal(routeRequiresSubagents(route, prompt), true, prompt);
+    assert.ok(route, prompt);
+    assert.equal(route?.task_profile, 'bounded-work', prompt);
+    assert.equal(routeRequiresSubagents(route, prompt), false, prompt);
   }
+  const explicitlyParallelAudit = 'one agent per package audit';
+  assert.equal(routeRequiresSubagents(routePrompt(explicitlyParallelAudit), explicitlyParallelAudit), true);
   assert.equal(routeRequiresSubagents(routePrompt('$Naruto implement one fix'), '$Naruto implement one fix'), true);
   assert.equal(routePrompt('$Work')?.id, 'Naruto');
   assert.equal(routePrompt('$Work')?.explicit_invocation, true);
@@ -44,7 +47,7 @@ test('greetings stay lightweight while bounded and explicit parallel work requir
   assert.equal(ordinaryWork?.id, 'Naruto');
   assert.equal(ordinaryWork?.task_profile, 'bounded-work');
   assert.equal(ordinaryWork?.explicit_invocation, false);
-  assert.equal(routeRequiresSubagents(ordinaryWork, 'work on the parser'), true);
+  assert.equal(routeRequiresSubagents(ordinaryWork, 'work on the parser'), false);
 });
 
 test('removed dollar-command aliases do not redirect into current execution routes', () => {

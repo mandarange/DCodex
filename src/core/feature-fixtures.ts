@@ -52,6 +52,10 @@ const FIXTURES = Object.freeze({
   'cli-status': fixture('execute', 'sks status --json', [], 'pass'),
   'cli-usage': fixture('execute', 'sks usage overview', [], 'pass'),
   'cli-quickstart': fixture('execute', 'sks quickstart', [], 'pass'),
+  'cli-install': fixture('static', 'npm exec --yes --package=sneakoscope@latest -- sneakoscope install --yes', [], 'pass', {
+    quality: 'wiring_only',
+    reason: 'The installer performs a real npm-global mutation and Doctor repair, so the feature registry records its explicit public surface without executing it. Cached-installer rejection, exact-package identity, PATH shadow detection, and rollback guidance are covered by focused hermetic tests.'
+  }),
   'cli-update': fixture('execute', 'sks update now --dry-run --json', [], 'pass'),
   'cli-update-check': fixture('static', 'sks update-check --json', [], 'pass'),
   'cli-guard': fixture('execute', 'sks guard check --json', [], 'pass'),

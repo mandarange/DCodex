@@ -7,6 +7,7 @@ import {
   type ProofEvidenceRole,
   type ProofLevel
 } from './fake-real-proof-policy.js'
+import { assessRuntimeEvidence, type RuntimeEvidenceSource, type RuntimeEvidenceStatus } from './runtime-evidence-policy.js'
 
 export const RUNTIME_TRUTH_MATRIX_SCHEMA = 'sks.runtime-truth-matrix.v2'
 export const RUNTIME_TRUTH_SUBSYSTEMS = [
@@ -43,6 +44,11 @@ export interface RuntimeTruthRow {
   next_action: string
   required_mode: boolean
   evidence_role: ProofEvidenceRole
+  contract_status: 'valid' | 'invalid' | 'not_assessed'
+  runtime_status: RuntimeEvidenceStatus
+  evidence_source: RuntimeEvidenceSource
+  working_claim_allowed: boolean
+  receipts: unknown[]
 }
 
 export interface RuntimeTruthMatrix {
@@ -121,6 +127,7 @@ export async function buildRuntimeTruthMatrix(input: {
   }, {
     required: required.official_codex_subagent === true
   })
+  const schedulerRuntime = schedulerRuntimeTruthReport(scheduler)
   const rows: RuntimeTruthRow[] = [
     row('official_codex_subagent', official.proof_level, official.evidence_artifacts, official.required_mode, { blockers: official.blockers }, official.next_action, 'execution_authority'),
     row('zellij_pane', levelFromOk(zellijPane, required.zellij_pane === true ? 'real_required_missing' : 'integration_optional'), ['zellij-pane-proof.json'], required.zellij_pane === true, zellijPane, 'capture current Zellij pane evidence'),
@@ -129,7 +136,7 @@ export async function buildRuntimeTruthMatrix(input: {
     row('source_intelligence', sourceIntel?.ok === true ? 'proven' : 'integration_optional', ['source-intelligence-evidence.json'], false, sourceIntel, 'refresh source intelligence evidence'),
     row('goal_mode', goalMode?.ok === true ? 'proven' : 'integration_optional', ['goal-mode-applied.json'], false, goalMode, 'record official goal mode evidence'),
     row('route_blackbox', fakeReal?.subsystem_levels?.route_blackbox || (official.proof_level === 'proven' ? 'proven' : 'integration_optional'), ['subagent-evidence.json', 'naruto-gate.json', 'fake-real-proof-policy.json'], false, fakeReal, official.next_action),
-    row('dynamic_scheduler', scheduler?.pending_queue_drained === true || scheduler?.ok === true ? 'proven' : 'integration_optional', ['agent-scheduler-state.json'], false, scheduler, 'record scheduler drain evidence'),
+    row('dynamic_scheduler', schedulerRuntime.proof_level, ['agent-scheduler-state.json'], false, schedulerRuntime.report, 'record scheduler drain evidence'),
     row('warp_mad_lanes', levelFromWarp(warpMad || madWarpRightLaneAttach || zellijRightLanePhysical, required.warp_mad_lanes === true), ['zellij-session.json', 'zellij-pane-proof.json'], required.warp_mad_lanes === true, warpMad || madWarpRightLaneAttach || zellijRightLanePhysical, 'capture visible MAD Zellij lane evidence'),
     row('codex_0_136', levelFromOk(codex0136, 'integration_optional'), ['codex-0.136-compat.json'], false, codex0136, 'run `npm run codex:0.136-compat`'),
     row('codex_0_134', levelFromOk(codex0134, 'integration_optional'), ['codex-0-134-official-compat.json'], false, codex0134, 'run `npm run codex:0.134-official-compat`'),
@@ -174,6 +181,32 @@ export async function buildRuntimeTruthMatrix(input: {
   }
 }
 
+function schedulerRuntimeTruthReport(report: any): { proof_level: ProofLevel; report: any } {
+  if (!report) return { proof_level: 'integration_optional', report: null }
+  const declaredBlockers = Array.isArray(report.blockers) ? report.blockers.map(String).filter(Boolean) : []
+  const stateBlockers = [
+    ...(report.status === 'drained' ? [] : [`scheduler_status_${String(report.status || 'missing')}`]),
+    ...(report.completion_claim_allowed === true ? [] : ['scheduler_completion_claim_disallowed']),
+    ...(report.pending_queue_drained === true ? [] : ['scheduler_pending_queue_not_drained']),
+    ...(report.all_slots_closed_after_drain === true ? [] : ['scheduler_slots_not_closed']),
+    ...(report.all_generations_closed === true ? [] : ['scheduler_generations_not_closed']),
+    ...declaredBlockers
+  ]
+  if (stateBlockers.length > 0) {
+    return {
+      proof_level: 'blocked',
+      report: { ...report, proof_level: 'blocked', blockers: [...new Set(stateBlockers)] }
+    }
+  }
+  if (report.runtime_evidence?.schema !== 'sks.runtime-evidence.v1') {
+    return {
+      proof_level: 'blocked',
+      report: { ...report, proof_level: 'blocked', blockers: ['scheduler_runtime_receipt_missing'] }
+    }
+  }
+  return { proof_level: 'proven', report: report.runtime_evidence }
+}
+
 export async function writeRuntimeTruthMatrix(root: string, matrix: RuntimeTruthMatrix, opts: { agentRoot?: string } = {}) {
   const reportName = `runtime-truth-matrix-${matrix.release_version}.json`
   await writeJsonAtomic(path.join(root, '.sneakoscope', 'reports', reportName), matrix)
@@ -190,24 +223,38 @@ function row(
   nextAction: string,
   evidenceRole: ProofEvidenceRole = 'supporting'
 ): RuntimeTruthRow {
-  const blockers = Array.isArray(report?.blockers) ? report.blockers.map(String) : []
+  const evidenceAssessment = assessRuntimeEvidence(report, {
+    candidateProofLevel: proofLevel,
+    missingProofLevel: requiredMode ? 'real_required_missing' : 'integration_optional',
+    required: requiredMode,
+    trustedRuntimeValidator: evidenceRole === 'execution_authority' && proofLevel === 'proven',
+    trustedArtifacts: evidenceArtifacts
+  })
+  const blockers = evidenceAssessment.blockers
   return {
     subsystem,
-    proof_level: proofLevel,
+    proof_level: evidenceAssessment.proof_level,
     evidence_artifacts: evidenceArtifacts,
     blockers,
-    next_action: blockers.length ? nextAction : proofLevel === 'integration_optional' || proofLevel === 'real_required_missing' ? nextAction : 'no action required',
+    next_action: blockers.length ? nextAction : evidenceAssessment.proof_level === 'integration_optional' || evidenceAssessment.proof_level === 'real_required_missing' ? nextAction : 'no action required',
     required_mode: requiredMode,
-    evidence_role: evidenceRole
+    evidence_role: evidenceRole,
+    contract_status: evidenceAssessment.contract_status,
+    runtime_status: evidenceAssessment.runtime_status,
+    evidence_source: evidenceAssessment.evidence_source,
+    working_claim_allowed: evidenceAssessment.working_claim_allowed,
+    receipts: evidenceAssessment.receipts
   }
 }
 
 function levelFromOk(report: any, missing: ProofLevel): ProofLevel {
   if (!report) return missing
-  if (report.proof_level) return report.proof_level
-  if (report.ok === true || report.status === 'passed') return 'proven'
-  if (report.status === 'integration_optional') return 'integration_optional'
-  return 'blocked'
+  const declared = String(report.proof_level || '') as ProofLevel
+  if (['fixture_only', 'fixture_instrumented_real', 'proven', 'integration_optional', 'real_required_missing', 'partial', 'blocked'].includes(declared)) return declared
+  const status = String(report.runtime_status || report.status || '').toLowerCase()
+  if (report.ok === true || report.passed === true || ['passed', 'completed', 'verified', 'proven', 'working'].includes(status)) return 'proven'
+  if (report.ok === false || report.passed === false || ['failed', 'blocked', 'error'].includes(status)) return 'blocked'
+  return missing
 }
 
 function levelFromAppshots(report: any): ProofLevel {
