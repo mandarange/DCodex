@@ -65,7 +65,13 @@ try {
   const result = output.value;
   assertGate(result.status === 'updated', 'simulated update must finish updated', { status: result.status, error: result.error, stages: result.stages });
   assertGate(result.temporary_install_smoke?.status === 'verified', 'simulated update must verify the package-local temporary install fixture', { temporary_install_smoke: result.temporary_install_smoke });
-  assertGate(result.verification.length === 4 && result.verification.every((row) => row.ok), 'all final self-verification checks must pass', { verification: result.verification });
+  const fakeInstallVerificationIds = result.verification.map((row) => row.id).sort();
+  assertGate(
+    JSON.stringify(fakeInstallVerificationIds) === JSON.stringify(['hooks_trusted', 'skills_manifest', 'version_match'])
+      && result.verification.every((row) => row.ok),
+    'all fake-install final self-verification checks must pass',
+    { verification: result.verification }
+  );
   assertGate(result.stages.some((stage) => stage.id === 'preflight' && stage.status === 'failed_continuing'), 'old-version doctor failure must continue', { stages: result.stages });
   assertGate(result.stages.some((stage) => stage.id === 'global_install' && stage.status === 'fake_installed'), 'fake install stage missing', { stages: result.stages });
   assertGate(/[▸>].*global_install|global_install/.test(output.text) && /final_self_verification/.test(output.text), 'progress output must include stage start/end lines', { output: output.text.slice(-2000) });

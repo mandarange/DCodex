@@ -227,7 +227,7 @@ export function createResearchPlan(prompt: any, opts: any = {}) {
         required_model: 'gpt-5.6-sol',
         required_effort: 'max',
         applies_to: 'every_official_adversarial_reviewer',
-        rule: 'Every adversarial reviewer uses the verified research_reviewer custom agent configuration with GPT-5.6 Sol Max. Long-context and source-tool acquisition uses Terra Medium; synthesis, falsification, and review use Sol Max.'
+        rule: 'Every adversarial reviewer uses the verified research_reviewer custom agent configuration with GPT-5.6 Sol Max. Long-context and source-tool acquisition uses Terra Max; synthesis, falsification, and review use Sol Max.'
       },
       eureka_policy: {
         exclamation: 'Eureka!',

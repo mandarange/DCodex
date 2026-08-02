@@ -38,7 +38,7 @@
     { "canonical_name": "sks-init-deep", "trusted_sha256": ["a679fa4ba36e070de5753994f58595c4352302cc98d868ba70ff98305d15f451"] },
     { "canonical_name": "sks-loop", "trusted_sha256": ["e56f9c4d0f7227961779daf6806943f1926bb588ce21a965a813e8ad91cfd5c8"] },
     { "canonical_name": "sks-mad-sks", "trusted_sha256": ["03fb5063d19c3d48d004cd8e6e39bfe244016d7edacfe99e5dab087cbbfa6db9", "a3d0110ca97576130893311b3267621acb02c16ca9aea4b2da3e5300eea58158"] },
-    { "canonical_name": "sks-naruto", "trusted_sha256": ["34222c72e4e1ead3584907f4d905444b7de820283ee7348018f110d5e6b04461", "f8e808622e222b4ad7dcb2907e5f06a890db83139ae443ec6c8c33781dfa3e37", "49b5e3dcc1b537b49c2cf09e5b875cb16acb05c622b22798e265e64dacd8ac90"] },
+    { "canonical_name": "sks-naruto", "trusted_sha256": ["d0d5968e78ac25e1d3e588735de1ddbcf149cfb3165edebca5dec1ed7c7a5c46", "34222c72e4e1ead3584907f4d905444b7de820283ee7348018f110d5e6b04461", "f8e808622e222b4ad7dcb2907e5f06a890db83139ae443ec6c8c33781dfa3e37", "49b5e3dcc1b537b49c2cf09e5b875cb16acb05c622b22798e265e64dacd8ac90"] },
     { "canonical_name": "sks-performance-evaluator", "trusted_sha256": ["5b8c6cea19ffda8e434700297ed060fde3cfcfc9c98635402599e84756466db4", "c0bfd5a2e6c74813cb5dac9dadd4c7543ee768a48cf3e36b86b3d9306c2712c6"] },
     { "canonical_name": "sks-pipeline-runner", "trusted_sha256": ["020ba4da2f96bcda23cee4596b1e790816780178f1917dee748ff4b289cba0e5", "ffcbe0ea4b585e3d2886f1d9fa7a3b88706aaf42182fb177b2371b76beb0ddcd"] },
     { "canonical_name": "sks-plan", "trusted_sha256": ["7795867b38a5f169924125850f137c31995cf28000f74284839530a68ace156a", "b6f3b09230e9809acf4e13df2de6af3c75a8534e8890d6560664ebfc2e4072f8"] },

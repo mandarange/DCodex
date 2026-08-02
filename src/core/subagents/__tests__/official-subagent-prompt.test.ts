@@ -34,7 +34,7 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
   assert.match(prompt, /worker.*gpt-5\.6-luna.*max reasoning.*tiny short-context mechanical/)
   assert.match(prompt, /gpt-5\.6-sol with high reasoning for ordinary UI, logic, backend, and native implementation/)
   assert.match(prompt, /gpt-5\.6-sol with max reasoning only for focused unresolved, high-risk, final-review, architecture, security/)
-  assert.match(prompt, /gpt-5\.6-terra with medium reasoning for read-heavy documentation\/exploration, long-context analysis, large or repository-wide search/)
+  assert.match(prompt, /gpt-5\.6-terra with max reasoning for long context\/memory, large docs\/repository reads or exploration, large-scale first-draft code processing/)
   assert.match(prompt, /never collapse every child onto the parent Sol model/)
   assert.match(prompt, /explicit task class and phase win over incidental keywords/)
   assert.match(prompt, /requested subagents: 2/)
@@ -74,7 +74,7 @@ test('official prompt teaches capacity-derived automatic fan-out and the hard ce
 
   assert.match(prompt, /automatic fan-out is capacity-derived up to 256/)
   assert.match(prompt, /historical 4\/6\/8\/16 task-class values are fallback hints, not clamps/)
-  assert.match(prompt, /for mass fan-out waves, default each shard to worker\/Luna Max \(tiny mechanical\) or explorer\/Terra Medium \(broad search\/exploration\) and reserve Sol for implementation and judgment — cheap lanes are what make high concurrency safe/)
+  assert.match(prompt, /in mass fan-out, use worker\/Luna Max for tiny mechanical shards and explorer\/Terra Max for broad exploration; reserve Sol for implementation\/judgment/)
   assert.match(prompt, /bounded only by the 256 hard safety ceiling; C_t bounds each wave, not the reusable multi-wave total/)
 })
 
@@ -178,7 +178,7 @@ test('GPT-5.6 Sol active main keeps sealed Luna and Terra child profiles', () =>
 
   assert.match(prompt, /children must keep sealed Luna\/Terra\/Sol High\/Sol Max role profiles/)
   assert.match(prompt, /never replace Luna or Terra with the parent Sol model/)
-  assert.match(prompt, /pass model="gpt-5\.6-terra" and reasoning_effort="medium" from the sealed role policy/)
+  assert.match(prompt, /pass model="gpt-5\.6-terra" and reasoning_effort="max" from the sealed role policy/)
   assert.match(prompt, /pass model="gpt-5\.6-luna" and reasoning_effort="max" from the sealed role policy/)
   assert.doesNotMatch(prompt, /pass the exact active main model="gpt-5\.6-sol"/)
 })

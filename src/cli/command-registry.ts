@@ -274,6 +274,7 @@ const COMMAND_DEFINITIONS = {
     activeRoutePolicy: 'always'
   }),
   root: readOnly(entry('stable', 'Show active SKS root', 'dist/commands/root.js', directCommand(() => import('../commands/root.js'), 'dist/commands/root.js'))),
+  install: skipMigrationGate(entry('stable', 'Install the exact packaged SKS version globally and verify the resolved CLI', 'dist/core/commands/install-package-command.js', argsCommand(() => import('../core/commands/install-package-command.js'), 'installPackageCommand', 'dist/core/commands/install-package-command.js'))),
   update: skipMigrationGate(entry('stable', 'Inspect, review, apply, or roll back the global SKS update', 'dist/core/commands/basic-cli.js', subcommand(() => import(basicModule), 'updateCommand', 'dist/core/commands/basic-cli.js', 'now'))),
   uninstall: entry('stable', 'Uninstall SKS global skills, hooks, config, menu bar, and optional project residue', 'dist/core/commands/uninstall-command.js', argsCommand(() => import('../core/commands/uninstall-command.js'), 'uninstallCommand', 'dist/core/commands/uninstall-command.js'), {
     skipMigrationGate: true,
@@ -398,6 +399,7 @@ const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(CO
   },
   harness: { latency: 'long' },
   'image-ux-review': { latency: 'long' },
+  install: { risk: 'R2', latency: 'long' },
   loop: { latency: 'long' },
   'mad-sks': { risk: 'R3', latency: 'long' },
   mcp: { risk: 'R2', latency: 'long', supportsJson: true, inputProfile: 'json-only' },

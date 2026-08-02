@@ -17,6 +17,12 @@
  * names the provider block; the key stays wherever the host put it.
  */
 
+import {
+  LUNA_SUBAGENT_MODEL,
+  SOL_SUBAGENT_MODEL,
+  TERRA_SUBAGENT_MODEL
+} from './model-policy.js';
+
 export const NARUTO_AUTH_MODES = ['managed', 'host'] as const;
 
 export type NarutoAuthMode = (typeof NARUTO_AUTH_MODES)[number];
@@ -170,6 +176,8 @@ export function resolveNarutoCredentialPolicy(input: NarutoCredentialPolicyInput
     resolvedModels[entry.key] = raw.value;
     sources[entry.key] = raw.source;
   }
+  validateGpt56EffortPair('parent', String(resolvedModels.parentModel), String(resolvedModels.parentEffort), blockers);
+  validateGpt56EffortPair('subagent', String(resolvedModels.subagentModel), String(resolvedModels.subagentEffort), blockers);
 
   const envKeyRaw = resolve(args, env, '--provider-env-key', 'SKS_NARUTO_PROVIDER_ENV_KEY');
   let providerEnvKey: string | null = null;
@@ -210,6 +218,22 @@ export function resolveNarutoCredentialPolicy(input: NarutoCredentialPolicyInput
     warnings,
     blockers
   };
+}
+
+function validateGpt56EffortPair(
+  scope: 'parent' | 'subagent',
+  model: string,
+  effort: string,
+  blockers: string[]
+): void {
+  const allowed = model === LUNA_SUBAGENT_MODEL || model === TERRA_SUBAGENT_MODEL
+    ? ['max']
+    : model === SOL_SUBAGENT_MODEL
+      ? scope === 'parent' ? ['max'] : ['high', 'max']
+      : null;
+  if (allowed && !allowed.includes(effort)) {
+    blockers.push(`naruto_${scope}_gpt56_effort_policy_mismatch:${model}:${effort}:allowed_${allowed.join('_or_')}`);
+  }
 }
 
 /** The `-c` overrides this policy contributes. Empty in host mode by design. */

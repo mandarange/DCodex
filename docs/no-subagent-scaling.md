@@ -11,8 +11,9 @@ The canonical policy is:
 - ordinary implementation: GPT-5.6 Sol with `model_reasoning_effort="high"`
 - review, debugging, planning, architecture, security, database, research,
   release, ambiguity, and judgment: GPT-5.6 Sol with `model_reasoning_effort="max"`
-- long-context, Computer Use, Browser/Chrome, and image-generation execution:
-  GPT-5.6 Terra with `model_reasoning_effort="medium"`
+- long-context, long-term memory, large documents/repository reads, rapid
+  large-scale first-draft code processing, Computer Use, Browser/Chrome, and
+  image-generation execution: GPT-5.6 Terra with `model_reasoning_effort="max"`
 - mixed work is split by execution versus judgment when possible; an
   unsplittable mixed slice uses Sol Max
 - automatic requested children start at 4 for bounded non-trivial work, 6 for explicit parallel work, 8 for large-scale work, and 16 for mass Luna/Terra work; after decomposition either lane may expand to 256 only when ready DAG width, disjoint ownership, verifier/tool capacity, real host slots, and positive marginal usefulness all permit it

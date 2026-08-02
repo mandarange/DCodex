@@ -6,7 +6,7 @@ export const TERRA_SUBAGENT_MODEL = 'gpt-5.6-terra'
 export const SOL_SUBAGENT_MODEL = 'gpt-5.6-sol'
 
 export const LUNA_SUBAGENT_EFFORT = 'max'
-export const TERRA_SUBAGENT_EFFORT = 'medium'
+export const TERRA_SUBAGENT_EFFORT = 'max'
 export const DEFAULT_SUBAGENT_EFFORT = 'high'
 export const SOL_MAX_SUBAGENT_EFFORT = 'max'
 
@@ -20,7 +20,7 @@ export type SubagentModelPolicyId =
   | 'luna_max_mechanical'
   | 'sol_high_implementation'
   | 'sol_max_judgment'
-  | 'terra_medium_context_tools'
+  | 'terra_max_context_tools'
 
 export type SubagentTaskClass = 'mechanical' | 'implementation' | 'judgment' | 'context_tools'
 export type SubagentContextMode = 'short' | 'long'
@@ -28,7 +28,7 @@ export type SubagentToolSurface = 'none' | 'computer_use' | 'browser' | 'image_g
 export type SubagentScopeSize = 'tiny' | 'bounded' | 'large'
 export type SubagentKind = 'worker' | 'expert'
 export type SubagentModel = typeof LUNA_SUBAGENT_MODEL | typeof TERRA_SUBAGENT_MODEL | typeof SOL_SUBAGENT_MODEL
-export type SubagentModelReasoningEffort = 'medium' | 'high' | 'max'
+export type SubagentModelReasoningEffort = 'high' | 'max'
 
 export interface SubagentModelProfile {
   policy: SubagentModelPolicyId
@@ -60,8 +60,8 @@ export const SUBAGENT_MODEL_POLICIES: Readonly<Record<SubagentModelPolicyId, Sub
     model: SOL_SUBAGENT_MODEL,
     modelReasoningEffort: SOL_MAX_SUBAGENT_EFFORT
   }),
-  terra_medium_context_tools: Object.freeze({
-    policy: 'terra_medium_context_tools',
+  terra_max_context_tools: Object.freeze({
+    policy: 'terra_max_context_tools',
     kind: 'worker',
     model: TERRA_SUBAGENT_MODEL,
     modelReasoningEffort: TERRA_SUBAGENT_EFFORT
@@ -156,6 +156,9 @@ const CONTEXT_TOOL_TASK_RE = new RegExp([
   'gpt[- ]?image',
   '\\bscreenshot(?:ting)?\\b',
   'long[- ]?context',
+  'long[- ]?term[- ]?memory',
+  'persistent[- ]?memory',
+  'memory[- ]?(?:maintenance|curation|consolidation)',
   'large[- ]?(?:file|document|codebase|repository|context|search)',
   '(?:repository|repo|codebase)[- ]?wide',
   'read[- ]?heavy',
@@ -171,6 +174,8 @@ const CONTEXT_TOOL_TASK_RE = new RegExp([
   '\\bextract(?:ion)?\\b',
   '\\binventory\\b',
   'extensive[- ]?logs?',
+  '\\b(?:large[- ]?scale|high[- ]?volume|bulk|mass)\\b[^\\n]{0,48}\\b(?:first[- ]?draft|draft|scaffold|code processing)\\b',
+  '\\b(?:first[- ]?draft|draft|scaffold)\\b[^\\n]{0,48}\\b(?:large[- ]?scale|high[- ]?volume|bulk|mass|many files?)\\b',
   '\\b(?:broad|wide|deep|mass|bulk|repo(?:sitory)?[- ]?wide|codebase)\\b[^\\n]{0,32}\\b(?:search|lookup|find|grep|scan)\\b',
   '\\b(?:search|lookup|find|grep|scan)\\b[^\\n]{0,40}\\b(?:large|long|across|whole|entire|repository|codebase|many files?)\\b',
   '\\b(?:whole|entire)[- ]?(?:repo(?:sitory)?|codebase)\\b[^\\n]{0,40}\\b(?:search|lookup|find|grep|scan)\\b',
@@ -181,6 +186,9 @@ const CONTEXT_TOOL_TASK_RE = new RegExp([
   '스크린샷',
   '롱\\s*컨텍스트',
   '긴\\s*컨텍스트',
+  '장기\\s*(?:기억|메모리)',
+  '지속\\s*(?:기억|메모리)',
+  '(?:기억|메모리)\\s*(?:관리|정리|통합)',
   '장문',
   '대규모',
   '저장소\\s*전체',
@@ -195,7 +203,9 @@ const CONTEXT_TOOL_TASK_RE = new RegExp([
   '대량\\s*(?:검색|탐색|스캔|추출)',
   '전체\\s*검색',
   '광범위\\s*(?:검색|탐색|스캔)',
-  '코드베이스\\s*(?:검색|탐색|스캔)'
+  '코드베이스\\s*(?:검색|탐색|스캔)',
+  '(?:대규모|대량)[^\\n]{0,24}(?:코드\\s*)?(?:초안|초벌|스캐폴드)',
+  '(?:코드\\s*)?(?:초안|초벌|스캐폴드)[^\\n]{0,24}(?:대규모|대량)'
 ].join('|'), 'i')
 
 const SIMPLE_MECHANICAL_TASK_RE = new RegExp([
@@ -209,6 +219,9 @@ const SIMPLE_MECHANICAL_TASK_RE = new RegExp([
   '\\b(?:typo|spacing|label|copy|format|string)[-_ ]?(?:only|fix|change|replace)?\\b',
   '\\brename\\b[^\\n]{0,24}\\b(?:symbol|file|label|key|field)\\b',
   '\\b(?:simple|quick|bounded)\\b[^\\n]{0,24}\\b(?:search|lookup|find|grep|replace|rename|type|typing)\\b',
+  '\\b(?:simple|trivial|tiny|one[- ]?line|single[- ]?file)\\b[^\\n]{0,36}\\b(?:code|coding|configuration|config|setup)\\b',
+  '\\b(?:simple|trivial|tiny|one[- ]?line|single[- ]?file)\\b[^\\n]{0,36}\\b(?:change|edit|fix|update|adjust)\\b',
+  '\\b(?:code|coding|configuration|config|setup)\\b[^\\n]{0,24}\\bonly\\b',
   '\\b(?:search|lookup|find|grep)\\b[^\\n]{0,32}\\b(?:symbol|string|path|file|key)\\b',
   '\\bsingle[- ]?symbol[- ]?(?:lookup|search|find)\\b',
   'typing[- ]?level',
@@ -225,7 +238,32 @@ const SIMPLE_MECHANICAL_TASK_RE = new RegExp([
   '간격',
   '이름\\s*변경',
   '단순\\s*(?:검색|조회|찾기|타이핑|입력|치환)',
+  '(?:간단한?|단순한?|아주\\s*작은)[^\\n]{0,20}(?:코드\\s*수정|코딩|설정|구성|셋업|초기\\s*설정)',
+  '(?:코드\\s*수정|코딩|설정|구성|셋업|초기\\s*설정)[^\\n]{0,16}만',
   '짧은\\s*(?:검색|조회|찾기)'
+].join('|'), 'i')
+
+const NON_MECHANICAL_COMPLEXITY_RE = new RegExp([
+  '\\bmulti[- ]?file\\b',
+  '\\bmultiple\\s+files?\\b',
+  '\\b(?:across|throughout)\\b[^\\n]{0,32}\\b(?:files?|repository|repo|codebase)\\b',
+  '(?:repository|repo|codebase)[- ]?wide',
+  '\\b(?:new\\s+)?feature\\b',
+  '\\b(?:endpoint|component|parser|algorithm|state machine|business logic|schema)\\b',
+  '\\b(?:architecture|design|plan|review|audit|debug|diagnos|investigat|refactor|integrat|security|auth|database|migration|release|risk|ambiguous)\\w*\\b',
+  '여러\\s*(?:파일|모듈)',
+  '다중\\s*(?:파일|모듈)',
+  '(?:저장소|코드베이스)\\s*전체',
+  '(?:새\\s*)?기능',
+  '엔드포인트|컴포넌트|파서|알고리즘|상태\\s*머신|비즈니스\\s*로직|스키마',
+  '아키텍처|설계|계획|리뷰|검토|감사|디버깅|진단|조사|리팩터|통합|보안|인증|데이터베이스|마이그레이션|릴리즈|출시|위험|모호'
+].join('|'), 'i')
+
+const LARGE_FIRST_DRAFT_TASK_RE = new RegExp([
+  '\\b(?:large[- ]?scale|high[- ]?volume|bulk|mass)\\b[^\\n]{0,56}\\b(?:first[- ]?draft|draft|scaffold|code processing|code generation)\\b',
+  '\\b(?:first[- ]?draft|draft|scaffold)\\b[^\\n]{0,56}\\b(?:large[- ]?scale|high[- ]?volume|bulk|mass|many files?)\\b',
+  '(?:대규모|대량)[^\\n]{0,28}(?:코드\\s*)?(?:초안|초벌|스캐폴드|생성)',
+  '(?:코드\\s*)?(?:초안|초벌|스캐폴드)[^\\n]{0,28}(?:대규모|대량)'
 ].join('|'), 'i')
 
 const IMPLEMENTATION_TASK_RE = new RegExp([
@@ -293,39 +331,50 @@ export function decideSubagentModel(input: {
     input.expectedOutput
   ].filter(Boolean).join(' ')
 
-  // Explicit phase/task classification is authoritative. Free-form prompts
-  // often mention review, risk, architecture, or debugging as incidental
-  // context for an otherwise clear implementation or exploration slice.
-  if (input.taskClass === 'judgment') return decision('sol_max_judgment')
-  if (input.taskClass === 'context_tools') return decision('terra_medium_context_tools')
-  if (input.taskClass === 'mechanical') return decision('luna_max_mechanical')
-  if (input.taskClass === 'implementation') return decision('sol_high_implementation')
-
-  if (input.requiresJudgment === true) return decision('sol_max_judgment')
-
   const documentExploration = DOCUMENT_EXPLORATION_RE.test(text)
   const implementation = IMPLEMENTATION_TASK_RE.test(text)
-  if (implementation && CLEAR_IMPLEMENTATION_ACTION_RE.test(text)) return decision('sol_high_implementation')
-
-  const focusedJudgment = !documentExploration && FOCUSED_JUDGMENT_TASK_RE.test(text)
-  if (focusedJudgment) return decision('sol_max_judgment')
-
   const explicitContextOrTools = input.longContext === true
     || input.toolHeavy === true
     || input.contextMode === 'long'
     || (input.toolSurface !== undefined && input.toolSurface !== 'none')
     || input.scopeSize === 'large'
-  if (explicitContextOrTools) return decision('terra_medium_context_tools')
+
+  // Explicit phase/task classification is authoritative unless it conflicts
+  // with an even stronger explicit requirement or a clear complexity guard.
+  // A caller cannot force multi-file, feature, logic, long-context, or
+  // judgment work into Luna merely by labeling it mechanical.
+  if (input.taskClass === 'judgment' || input.requiresJudgment === true) return decision('sol_max_judgment')
+  if (input.taskClass === 'context_tools' || explicitContextOrTools) return decision('terra_max_context_tools')
+  if (input.taskClass === 'implementation') return decision('sol_high_implementation')
+  if (input.taskClass === 'mechanical') {
+    if (NON_MECHANICAL_COMPLEXITY_RE.test(text)) {
+      return decision(implementation ? 'sol_high_implementation' : 'sol_max_judgment')
+    }
+    return decision('luna_max_mechanical')
+  }
+
+  const focusedJudgment = !documentExploration && FOCUSED_JUDGMENT_TASK_RE.test(text)
+  const resolvedIncidentalJudgment = implementation
+    && CLEAR_IMPLEMENTATION_ACTION_RE.test(text)
+    && /\b(?:already|previously|fully)\s+resolved\b|(?:review|debug|architecture)[^\n]{0,32}\bcontext\b[^\n]{0,16}\bresolved\b|(?:리뷰|검토|디버깅|아키텍처)[^\n]{0,24}(?:이미\s*)?해결/i.test(text)
+  if (focusedJudgment && !resolvedIncidentalJudgment) return decision('sol_max_judgment')
+
+  // Large first-draft processing is a Terra responsibility even when the
+  // prompt contains implementation verbs. Keep this narrow so normal feature
+  // implementation remains on Sol High.
+  if (LARGE_FIRST_DRAFT_TASK_RE.test(text)) return decision('terra_max_context_tools')
 
   const simpleMechanical = input.simpleMechanical === true
     || input.scopeSize === 'tiny'
     || SIMPLE_MECHANICAL_TASK_RE.test(text)
-  if (simpleMechanical) return decision('luna_max_mechanical')
+  if (simpleMechanical && !NON_MECHANICAL_COMPLEXITY_RE.test(text)) return decision('luna_max_mechanical')
 
-  if (documentExploration) return decision('terra_medium_context_tools')
+  if (implementation && CLEAR_IMPLEMENTATION_ACTION_RE.test(text)) return decision('sol_high_implementation')
+
+  if (documentExploration) return decision('terra_max_context_tools')
 
   const contextOrTools = CONTEXT_TOOL_TASK_RE.test(text)
-  if (contextOrTools) return decision('terra_medium_context_tools')
+  if (contextOrTools) return decision('terra_max_context_tools')
 
   if (implementation) return decision('sol_high_implementation')
 

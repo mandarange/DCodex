@@ -1,16 +1,20 @@
 # Release Proof Truth
 
-SKS 8.0.3 release proof truth requires package metadata, the root lockfile
+SKS 8.0.4 release proof truth requires package metadata, the root lockfile
 entries, the runtime constant, Rust crate metadata, README identity, and the
-latest dated changelog section to agree on 8.0.3; 8.0.3 proof must additionally
-show four environment-bound receipts that fixtures and prose cannot replace:
+latest dated changelog section to agree on 8.0.4. It also requires an isolated
+8.0.3-to-8.0.4 update regression in which the exact npm-global package
+manifest, package-local entrypoint, first `sks` on `PATH`, and subsequent
+effective-version probe all resolve 8.0.4, plus a shadow-prefix regression that
+fails closed while preserving rollback availability. Four environment-bound
+receipts remain required and cannot be replaced by fixtures or prose:
 
 1. `sks update` completes in a large-repository fixture whose guidance scan
    encounters 5,001 directories. Any bounded cutoff is the explicit
    non-blocking `guidance_scan_truncated` warning with cutoff path/count and is
    never counted as legacy residue.
 2. A prior-version Menu Bar is replaced and process readback proves exactly one
-   companion whose running version is 8.0.3. A build stamp, installed bundle,
+   companion whose running version is 8.0.4. A build stamp, installed bundle,
    or successful launch command without process/version readback is not enough.
 3. With **Use codex-lb** selected, one real request reaches the configured
    remote base URL using the issued gateway key rather than ChatGPT OAuth.
@@ -21,7 +25,7 @@ show four environment-bound receipts that fixtures and prose cannot replace:
    credentials, fixtures, same-LAN traffic, and mock Bot API responses cannot
    authorize this gate.
 
-Naruto proof for 8.0.3 must preserve explicit `--agents` and `--max-threads`
+Naruto proof for 8.0.4 must preserve explicit `--agents` and `--max-threads`
 values from 1 through 256 rather than reducing them to automatic tiers.
 `--max-threads 256` is a child-slot ceiling and must not subtract the root twice,
 but it is not evidence that the current host ran 256 children. The plan and
@@ -34,11 +38,11 @@ cap may limit that lane's infrastructure concurrency.
 `SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET` cannot override a lower external-host
 limit.
 
-SKS 8.0.3 must not claim that a required live gate passed when credentials or
+SKS 8.0.4 must not claim that a required live gate passed when credentials or
 the environment were unavailable, and must not claim tagging, staging,
 publication, deployment, or a 256-child load test from this documentation
 change. Configuration, manifests, mocks, hermetic tests, and historical
-receipts cannot serve as 8.0.3 evidence.
+receipts cannot serve as 8.0.4 evidence.
 
 SKS 8.0.2 release proof truth requires codex-lb Desktop integration to preserve
 shared ChatGPT OAuth and the built-in OpenAI provider while keeping the gateway

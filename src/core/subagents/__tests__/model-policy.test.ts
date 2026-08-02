@@ -27,7 +27,7 @@ test('official parent and four child profiles expose the sealed model/effort mat
   assert.equal(LUNA_SUBAGENT_MODEL, 'gpt-5.6-luna')
   assert.equal(LUNA_SUBAGENT_EFFORT, 'max')
   assert.equal(TERRA_SUBAGENT_MODEL, 'gpt-5.6-terra')
-  assert.equal(TERRA_SUBAGENT_EFFORT, 'medium')
+  assert.equal(TERRA_SUBAGENT_EFFORT, 'max')
   assert.equal(SOL_MAX_SUBAGENT_EFFORT, 'max')
 })
 
@@ -61,19 +61,29 @@ test('model decision routes mechanical, implementation, context/tool, and judgme
     'Use Computer Use to inspect the native app',
     'Generate an image with gpt-image-2',
     'Extract a repository-wide long-context inventory',
+    'Maintain and consolidate the long-term memory for this repository',
+    'Rapid large-scale first-draft code processing across many files',
     'Large repository-wide search for every caller',
-    '코드베이스 전체 검색으로 진입점을 찾아줘'
+    '코드베이스 전체 검색으로 진입점을 찾아줘',
+    '장기 메모리를 정리하고 통합해줘',
+    '대규모 코드 초안을 빠르게 생성해줘'
   ]) {
     const decision = decideSubagentModel({ description })
-    assert.equal(decision.policy, 'terra_medium_context_tools', description)
+    assert.equal(decision.policy, 'terra_max_context_tools', description)
     assert.equal(decision.model, 'gpt-5.6-terra', description)
-    assert.equal(decision.modelReasoningEffort, 'medium', description)
+    assert.equal(decision.modelReasoningEffort, 'max', description)
   }
 
   for (const description of [
     'Apply this exact one-line single-file rename',
     'Simple search for the symbol name and type the replacement',
-    '단순 검색으로 키를 찾고 한 줄만 타이핑해줘'
+    'Simple coding change: update this constant',
+    'Simple configuration change: set this flag to true',
+    'Simple setup: add the one-line local setting',
+    '단순 검색으로 키를 찾고 한 줄만 타이핑해줘',
+    '간단한 코드 수정으로 상수만 바꿔줘',
+    '간단한 설정 변경으로 플래그만 켜줘',
+    '간단한 셋업으로 한 줄만 추가해줘'
   ]) {
     const decision = decideSubagentModel({ description })
     assert.equal(decision.policy, 'luna_max_mechanical', description)
@@ -95,9 +105,9 @@ test('mass/broad search and exploration route to Terra while tiny typing shards 
     '단순 탐색으로 폴더 구조만 파악해줘'
   ]) {
     const decision = decideSubagentModel({ description })
-    assert.equal(decision.policy, 'terra_medium_context_tools', description)
+    assert.equal(decision.policy, 'terra_max_context_tools', description)
     assert.equal(decision.model, 'gpt-5.6-terra', description)
-    assert.equal(decision.modelReasoningEffort, 'medium', description)
+    assert.equal(decision.modelReasoningEffort, 'max', description)
   }
 
   // Tiny typing-level shards stay on Luna even when the surrounding sentence
@@ -161,16 +171,16 @@ test('judgment wins mixed or ambiguous work and Luna is excluded from long conte
     simpleMechanical: true,
     longContext: true
   })
-  assert.equal(longMechanical.policy, 'terra_medium_context_tools')
+  assert.equal(longMechanical.policy, 'terra_max_context_tools')
 })
 
 test('clear docs exploration and implementation intent outrank incidental judgment vocabulary', () => {
   const docsExploration = decideSubagentModel({
     description: 'Read the latest Codex CLI and Desktop app documentation, explore the repository, and compare the architecture notes'
   })
-  assert.equal(docsExploration.policy, 'terra_medium_context_tools')
+  assert.equal(docsExploration.policy, 'terra_max_context_tools')
   assert.equal(docsExploration.model, 'gpt-5.6-terra')
-  assert.equal(docsExploration.modelReasoningEffort, 'medium')
+  assert.equal(docsExploration.modelReasoningEffort, 'max')
 
   const boundedImplementation = decideSubagentModel({
     description: 'Implement the bounded scheduler fix; the architecture review and debug context are already resolved'
@@ -200,7 +210,52 @@ test('explicit judgment and implementation outrank incidental tiny or tool-heavy
   }).policy, 'sol_max_judgment')
   assert.equal(decideSubagentModel({
     description: 'Review the current CLI documentation'
-  }).policy, 'terra_medium_context_tools')
+  }).policy, 'terra_max_context_tools')
+})
+
+test('simple wording never under-classifies multi-file, feature, logic, or ambiguous work', () => {
+  for (const description of [
+    'Simple coding task: implement a new parser feature',
+    'Simple configuration change across multiple files',
+    'Single-file business logic fix',
+    '간단한 코드 수정으로 새 기능과 로직을 구현해줘',
+    '간단한 설정 변경이지만 여러 파일을 수정해줘'
+  ]) {
+    const decision = decideSubagentModel({ description })
+    assert.notEqual(decision.policy, 'luna_max_mechanical', description)
+  }
+  assert.equal(decideSubagentModel({
+    description: 'Review an ambiguous simple setup for security risk'
+  }).policy, 'sol_max_judgment')
+  for (const description of [
+    'Change the configuration',
+    'Update the setup',
+    '설정을 변경해줘',
+    '셋업을 업데이트해줘'
+  ]) {
+    assert.equal(decideSubagentModel({ description }).policy, 'sol_max_judgment', description)
+  }
+})
+
+test('explicit mechanical labels cannot override judgment, context, or complexity guards', () => {
+  assert.equal(decideSubagentModel({
+    taskClass: 'mechanical',
+    description: 'Simple multi-file new feature implementation'
+  }).policy, 'sol_high_implementation')
+  assert.equal(decideSubagentModel({
+    taskClass: 'mechanical',
+    description: 'Simple but ambiguous ownership change'
+  }).policy, 'sol_max_judgment')
+  assert.equal(decideSubagentModel({
+    taskClass: 'mechanical',
+    description: 'Copy labels',
+    longContext: true
+  }).policy, 'terra_max_context_tools')
+  assert.equal(decideSubagentModel({
+    taskClass: 'implementation',
+    description: 'Implement the requested change',
+    requiresJudgment: true
+  }).policy, 'sol_max_judgment')
 })
 
 test('official effort policy applies the sealed four-profile routing matrix', () => {
@@ -223,7 +278,7 @@ test('official effort policy applies the sealed four-profile routing matrix', ()
 
   assert.deepEqual([mechanical.model, mechanical.model_reasoning_effort], ['gpt-5.6-luna', 'max'])
   assert.deepEqual([implementation.model, implementation.model_reasoning_effort], ['gpt-5.6-sol', 'high'])
-  assert.deepEqual([context.model, context.model_reasoning_effort], ['gpt-5.6-terra', 'medium'])
+  assert.deepEqual([context.model, context.model_reasoning_effort], ['gpt-5.6-terra', 'max'])
   assert.deepEqual([review.model, review.model_reasoning_effort], ['gpt-5.6-sol', 'max'])
 })
 
@@ -232,7 +287,7 @@ test('Naruto automatic routing uses the exact selected profile and fails closed'
     availableModels: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'],
     availableModelEfforts: {
       'gpt-5.6-luna': ['max'],
-      'gpt-5.6-terra': ['medium'],
+      'gpt-5.6-terra': ['max'],
       'gpt-5.6-sol': ['high', 'max']
     }
   }
@@ -243,7 +298,7 @@ test('Naruto automatic routing uses the exact selected profile and fails closed'
     model: 'gpt-5.6-sol', reasoning: 'high', serviceTier: 'fast'
   })
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'browser QA in Chrome' }), {
-    model: 'gpt-5.6-terra', reasoning: 'medium', serviceTier: 'fast'
+    model: 'gpt-5.6-terra', reasoning: 'max', serviceTier: 'fast'
   })
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'UI debugging review' }), {
     model: 'gpt-5.6-sol', reasoning: 'max', serviceTier: 'fast'
@@ -251,7 +306,7 @@ test('Naruto automatic routing uses the exact selected profile and fails closed'
   assert.equal(routeNarutoGpt56Model({
     taskText: 'browser QA in Chrome',
     availableModels: ['gpt-5.6-terra'],
-    availableModelEfforts: { 'gpt-5.6-terra': ['max'] }
+    availableModelEfforts: { 'gpt-5.6-terra': ['medium'] }
   }).model, '')
 })
 
@@ -260,12 +315,12 @@ test('explicit family models keep their allowed effort profile', () => {
     availableModels: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'],
     availableModelEfforts: {
       'gpt-5.6-luna': ['max'],
-      'gpt-5.6-terra': ['medium'],
+      'gpt-5.6-terra': ['max'],
       'gpt-5.6-sol': ['high', 'max']
     }
   }
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'implement parser', explicitModel: 'gpt-5.6-terra' }), {
-    model: 'gpt-5.6-terra', reasoning: 'medium', serviceTier: 'fast'
+    model: 'gpt-5.6-terra', reasoning: 'max', serviceTier: 'fast'
   })
   assert.deepEqual(routeNarutoGpt56Model({ ...catalog, taskText: 'implement parser', explicitModel: 'gpt-5.6-sol' }), {
     model: 'gpt-5.6-sol', reasoning: 'high', serviceTier: 'fast'

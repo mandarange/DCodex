@@ -138,12 +138,14 @@ async function writeCommonJsBinScope() {
     next = stripGeneratedCommonJsExports(next, names);
     return `${next}\n\n${names.map((name) => `exports.${name} = ${name};`).join('\n')}\n`;
   });
-  await rewriteIfPresent(path.join(binDir, 'install.js'), (text) =>
-    stripSourceMap(text).replace(
-      /^import \{ spawnSync \} from 'node:child_process';/m,
-      "const { spawnSync } = require('node:child_process');"
-    )
-  );
+  await rewriteIfPresent(path.join(binDir, 'install.js'), () => `#!/usr/bin/env node
+import('../core/commands/install-package-command.js')
+  .then(({ installPackageCommand }) => installPackageCommand())
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+`);
 }
 
 async function rewriteIfPresent(file, rewrite) {

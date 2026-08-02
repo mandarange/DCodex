@@ -285,7 +285,7 @@ npm run codex-lb:fast-mode-truth
 node --test test/blackbox/codex-lb-setup-stdin-no-secret-leak.test.mjs
 ```
 
-Those hermetic checks do not satisfy the SKS 8.0.3 live routing gate. The
+Those hermetic checks do not satisfy the SKS 8.0.4 live routing gate. The
 release evidence must include one current real request captured with codex-lb
 selected, the destination matching the configured remote base URL, the
 authentication class proving the issued gateway key rather than OAuth, and the

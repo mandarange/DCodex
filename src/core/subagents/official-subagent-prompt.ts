@@ -149,9 +149,9 @@ ${spawnModelRouting}
 - use \`worker\` with gpt-5.6-luna and max reasoning for tiny short-context mechanical work such as simple search, typing, rename, copy, label, or one-line edits with no exploration or judgment
 - use gpt-5.6-sol with high reasoning for ordinary UI, logic, backend, and native implementation
 - use gpt-5.6-sol with max reasoning only for focused unresolved, high-risk, final-review, architecture, security, database, research, release, or other explicit judgment slices
-- use gpt-5.6-terra with medium reasoning for read-heavy documentation/exploration, long-context analysis, large or repository-wide search, and direct Computer Use, Browser/Chrome, or image-generation execution
+- use gpt-5.6-terra with max reasoning for long context/memory, large docs/repository reads or exploration, large-scale first-draft code processing, and direct Computer Use, Browser/Chrome, or image generation
 - explicit task class and phase win over incidental keywords: Terra gathers/explores/searches broadly, Luna handles tiny mechanical edits, Sol High implements, and Sol Max performs the focused judgment pass
-- for mass fan-out waves, default each shard to worker/Luna Max (tiny mechanical) or explorer/Terra Medium (broad search/exploration) and reserve Sol for implementation and judgment — cheap lanes are what make high concurrency safe
+- in mass fan-out, use worker/Luna Max for tiny mechanical shards and explorer/Terra Max for broad exploration; reserve Sol for implementation/judgment
 - never assign Luna to long-context, broad exploration, review, debugging, planning, or tool-heavy work; never collapse every child onto the parent Sol model when a sealed Luna or Terra role matches
 
 Plan and capacity:
@@ -290,7 +290,7 @@ function renderSpawnModelRouting(activeMainModel: ActiveMainModelRouting | null)
   const inheritActiveMain = childInheritsActiveMainModel(activeMainModel?.model)
   const precedence = inheritActiveMain
     ? '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> active main model -> installed custom-agent default'
-    : '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> sealed role policy (Luna Max / Terra Medium / Sol High / Sol Max) -> installed custom-agent default'
+    : '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> sealed role policy (Luna Max / Terra Max / Sol High / Sol Max) -> installed custom-agent default'
   const roleOverride = '- when Role model preference metadata lists the selected role with source "user-scoped-owner-only", pass that row\'s exact model and reasoning_effort to spawn_agent'
   if (!activeMainModel) {
     return [

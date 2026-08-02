@@ -47,6 +47,11 @@ import {
 } from './update/update-operation.js';
 import { runTemporaryInstallSmoke, type TemporaryInstallSmokeResult } from './update/temporary-install-smoke.js';
 import { updateStageFailureDiagnostics } from './update/update-stage-diagnostics.js';
+import {
+  executableOnInjectedPath,
+  inspectInstalledCliResolution,
+  type InstalledCliResolution
+} from './update/installed-cli-resolution.js';
 import { ui as cliUi, withHeartbeat } from '../cli/cli-theme.js';
 
 export interface SksUpdateCheckOptions {
@@ -154,7 +159,7 @@ export interface SksUpdateNowStage {
 }
 
 export interface SksUpdateVerification {
-  id: 'version_match' | 'hooks_trusted' | 'dist_stamp' | 'skills_manifest' | 'sks_menubar_version';
+  id: 'version_match' | 'package_manifest' | 'path_version_match' | 'hooks_trusted' | 'skills_manifest' | 'sks_menubar_version';
   ok: boolean;
   detail?: string;
   remediation?: string;
@@ -180,6 +185,7 @@ export interface SksUpdateNowResult {
   old_version_doctor: PackageLocalDoctorRun | null;
   new_binary: string | null;
   new_version: string | null;
+  installed_cli_resolution: InstalledCliResolution | null;
   new_version_doctor: PackageLocalDoctorRun | null;
   project_receipt: UpdateMigrationReceipt | null;
   migration_current: boolean;
@@ -1244,6 +1250,8 @@ async function runSksUpdateNowInternal(
   stage('global_install', installOk, installOk ? env.SKS_UPDATE_FAKE_INSTALL === '1' ? 'fake_installed' : 'installed' : 'failed', { command, code: install.code, timed_out: install.timedOut === true });
   let newBinary: string | null = null;
   let newVersion: string | null = null;
+  let installedCliResolution: InstalledCliResolution | null = null;
+  let installedPackageIdentityOk = false;
   let newVersionDoctor: PackageLocalDoctorRun | null = null;
   let preDoctorReceipt: UpdateMigrationReceipt | null = null;
   let projectReceipt: UpdateMigrationReceipt | null = null;
@@ -1251,36 +1259,84 @@ async function runSksUpdateNowInternal(
   let sksMenuBar: SksMenuBarInstallResult | null = null;
   let menubarVerified = process.platform !== 'darwin' || env.SKS_UPDATE_SKIP_SKS_MENUBAR === '1';
   if (installOk) {
+    installedCliResolution = env.SKS_UPDATE_FAKE_INSTALL === '1'
+      ? null
+      : await inspectInstalledCliResolution({
+        packageName,
+        expectedVersion: installVersion,
+        globalRoot,
+        env,
+        cwd,
+        timeoutMs: 5_000,
+        maxOutputBytes: 4_096
+      });
     newBinary = env.SKS_UPDATE_FAKE_INSTALL === '1'
       ? path.resolve(env.SKS_UPDATE_FAKE_NEW_ENTRYPOINT || path.join(packageRoot(), 'dist', 'bin', 'sks.js'))
-      : await resolveInstalledSksEntrypoint({ packageName, globalRoot, env });
-    stage('resolve_new_binary', Boolean(newBinary), newBinary ? 'resolved' : 'missing', { new_binary: newBinary });
+      : installedCliResolution?.entrypoint
+        || await resolveInstalledSksEntrypoint({ packageName, globalRoot, env });
+    installedPackageIdentityOk = env.SKS_UPDATE_FAKE_INSTALL === '1'
+      ? Boolean(newBinary)
+      : Boolean(
+        newBinary
+        && installedCliResolution?.manifest_name === packageName
+        && installedCliResolution.manifest_version === installVersion
+      );
+    stage('resolve_new_binary', installedPackageIdentityOk, installedPackageIdentityOk ? 'resolved_exact_global_package' : 'missing_or_mismatched', {
+      new_binary: newBinary,
+      package_root: installedCliResolution?.package_root || null,
+      manifest_name: installedCliResolution?.manifest_name || null,
+      manifest_version: installedCliResolution?.manifest_version || null,
+      path_binary: installedCliResolution?.path_binary || null,
+      path_version_before_doctor: installedCliResolution?.path_version || null,
+      blockers: installedCliResolution?.blockers || []
+    });
     if (newBinary) {
-      const versionProbe = await runProcess(process.execPath, [newBinary, '--version'], {
-        cwd,
-        env: { ...env, SKS_UPDATE_MIGRATION_GATE_DISABLED: '1', SKS_DISABLE_UPDATE_CHECK: '1' },
-        timeoutMs: 5000,
-        maxOutputBytes: 4096
-      }).catch((err: any) => ({ code: 1, stdout: '', stderr: err?.message || String(err) }));
-      newVersion = parseVersionText(versionProbe.stdout || versionProbe.stderr || '') || null;
-      stage('version_probe', Boolean(newVersion), newVersion ? 'version_detected' : 'failed', { new_version: newVersion, code: versionProbe.code });
-      preDoctorReceipt = await readProjectUpdateMigrationReceipt(projectReceiptRoot);
-      stageStart('new_version_doctor', 'running migration doctor on updated install');
-      newVersionDoctor = await updateHeartbeat(machineOutput, 'new-version doctor', runPackageLocalDoctor({
-        root: projectReceiptRoot,
-        entrypoint: newBinary,
-        args: ['doctor', '--fix', '--yes', '--profile', 'migration', '--machine-only', '--report-file', path.join(projectReceiptRoot, '.sneakoscope', 'update', 'new-version-doctor.json')],
-        env: nestedProcessEnv,
-        timeoutMs: updateDoctorTimeoutMs(env),
-        maxOutputBytes: 32 * 1024
-      }), 60_000);
-      stage('new_version_doctor', newVersionDoctor.ok, newVersionDoctor.status, {
-        entrypoint: newBinary,
-        exit_code: newVersionDoctor.exit_code,
-        timeout_ms: updateDoctorTimeoutMs(env),
-        timed_out: newVersionDoctor.timedOut,
-        required_blockers: newVersionDoctor.required_blockers
+      let versionProbeCode: number | null = installedCliResolution?.entrypoint_version ? 0 : 1;
+      newVersion = installedCliResolution?.entrypoint_version || null;
+      if (!newVersion) {
+        const versionProbe = await runProcess(process.execPath, [newBinary, '--version'], {
+          cwd,
+          env: { ...env, SKS_UPDATE_MIGRATION_GATE_DISABLED: '1', SKS_DISABLE_UPDATE_CHECK: '1' },
+          timeoutMs: 5000,
+          maxOutputBytes: 4096
+        }).catch((err: any) => ({ code: 1, stdout: '', stderr: err?.message || String(err) }));
+        versionProbeCode = versionProbe.code;
+        newVersion = parseVersionText(versionProbe.stdout || versionProbe.stderr || '') || null;
+      }
+      const exactVersion = compareSemVer(newVersion, installVersion) === 0;
+      stage('version_probe', exactVersion, exactVersion ? 'exact_version_detected' : 'version_mismatch', {
+        expected_version: installVersion,
+        new_version: newVersion,
+        code: versionProbeCode
       });
+      if (installedPackageIdentityOk && exactVersion) {
+        preDoctorReceipt = await readProjectUpdateMigrationReceipt(projectReceiptRoot);
+        stageStart('new_version_doctor', 'running migration doctor on updated install');
+        newVersionDoctor = await updateHeartbeat(machineOutput, 'new-version doctor', runPackageLocalDoctor({
+          root: projectReceiptRoot,
+          entrypoint: newBinary,
+          args: ['doctor', '--fix', '--yes', '--profile', 'migration', '--machine-only', '--report-file', path.join(projectReceiptRoot, '.sneakoscope', 'update', 'new-version-doctor.json')],
+          env: nestedProcessEnv,
+          timeoutMs: updateDoctorTimeoutMs(env),
+          maxOutputBytes: 32 * 1024
+        }), 60_000);
+        stage('new_version_doctor', newVersionDoctor.ok, newVersionDoctor.status, {
+          entrypoint: newBinary,
+          exit_code: newVersionDoctor.exit_code,
+          timeout_ms: updateDoctorTimeoutMs(env),
+          timed_out: newVersionDoctor.timedOut,
+          required_blockers: newVersionDoctor.required_blockers
+        });
+      } else {
+        stage('new_version_doctor', false, 'skipped_unverified_install_identity', {
+          expected_version: installVersion,
+          manifest_version: installedCliResolution?.manifest_version || null,
+          entrypoint_version: newVersion
+        });
+      }
+    } else {
+      stage('version_probe', false, 'entrypoint_missing', { expected_version: installVersion });
+      stage('new_version_doctor', false, 'skipped_entrypoint_missing', { expected_version: installVersion });
     }
     if (newBinary && newVersionDoctor?.ok) {
       const doctorReceipt = await readProjectUpdateMigrationReceipt(projectReceiptRoot);
@@ -1355,7 +1411,7 @@ async function runSksUpdateNowInternal(
   // The new-version migration Doctor is the one post-install mutator. The
   // final Doctor is deliberately read-only so verification cannot mask a
   // failed or incomplete migration by changing the state it is checking.
-  const finalizeDoctor = installOk && newBinary
+  const finalizeDoctor = installOk && newBinary && installedPackageIdentityOk
     ? await runUpdateFinalizeDoctor({
       entrypoint: newBinary,
       root: projectReceiptRoot,
@@ -1378,7 +1434,26 @@ async function runSksUpdateNowInternal(
     if (finalDoctorReceipt) projectReceipt = finalDoctorReceipt;
     migrationCurrent = isUpdateMigrationReceiptCurrent(projectReceipt, installVersion);
   }
-  const verification = await runFinalUpdateVerification({ installOk, newBinary, installVersion, env, projectReceiptRoot });
+  if (installOk && installVersion && env.SKS_UPDATE_FAKE_INSTALL !== '1') {
+    installedCliResolution = await inspectInstalledCliResolution({
+      packageName,
+      expectedVersion: installVersion,
+      globalRoot,
+      env,
+      cwd,
+      timeoutMs: 5_000,
+      maxOutputBytes: 4_096
+    });
+  }
+  const verification = await runFinalUpdateVerification({
+    installOk,
+    packageName,
+    newBinary,
+    installVersion,
+    env,
+    projectReceiptRoot,
+    installedCliResolution
+  });
   const verifyOk = verification.length > 0 && verification.every((item) => item.ok) && finalizeDoctor?.ok === true;
   if (verification.length) {
     stage('final_self_verification', verifyOk, verifyOk ? 'verified' : 'issues', {
@@ -1393,12 +1468,19 @@ async function runSksUpdateNowInternal(
     newVersion || check.current,
     {
       ...env,
+      ...(env.SKS_UPDATE_FAKE_INSTALL === '1' && installVersion
+        ? { SKS_INSTALLED_SKS_VERSION: installVersion }
+        : {}),
       ...(installVersion ? { [versionOverrideEnvName(packageName)]: check.latest || installVersion } : {})
     }
   )).catch(() => null);
-  const snapshotOk = snapshot?.schema === 'sks.update-status.v3' && snapshot.source !== 'error';
-  stage('snapshot_refresh', snapshotOk, snapshotOk ? snapshot!.source : 'failed', {
+  const snapshotVersionOk = compareSemVer(snapshot?.sks.current || null, installVersion) === 0;
+  const snapshotOk = snapshot?.schema === 'sks.update-status.v3'
+    && snapshot.source !== 'error'
+    && snapshotVersionOk;
+  stage('snapshot_refresh', snapshotOk, snapshotOk ? snapshot!.source : snapshot?.source === 'error' ? 'failed' : 'resolved_version_mismatch', {
     current: snapshot?.sks.current || null,
+    expected: installVersion,
     update_count: snapshot?.update_count ?? null,
     public_error: snapshot?.public_error || null
   });
@@ -1407,8 +1489,10 @@ async function runSksUpdateNowInternal(
   );
   const executionStageFailures = requiredUpdateStageFailures(stages, executionStageIds);
   const allStageFailures = requiredUpdateStageFailures(stages, UPDATE_STAGE_ORDER);
+  const installedCliOk = env.SKS_UPDATE_FAKE_INSTALL === '1'
+    || installedCliResolution?.ok === true;
   const baseOk = installOk && Boolean(newBinary) && newVersionDoctor?.ok === true
-    && migrationCurrent && menubarVerified && executionStageFailures.length === 0;
+    && installedCliOk && migrationCurrent && menubarVerified && executionStageFailures.length === 0;
   const ok = baseOk && verifyOk && snapshotOk;
   const menuBarTerminalUncertain = menuBarInstallIsTerminalUncertain(sksMenuBar);
   const terminalUncertain = install.timedOut === true || menuBarTerminalUncertain;
@@ -1431,8 +1515,10 @@ async function runSksUpdateNowInternal(
       : stageFailureError
         ? stageFailureError.message
         : status === 'updated_with_issues'
-          ? verificationError(verification, finalizeDoctor)
-          : updateNowError(install, newBinary, newVersionDoctor, migrationCurrent);
+          ? !snapshotOk
+            ? `update status still resolves SKS ${snapshot?.sks.current || 'unknown'} instead of ${installVersion}`
+            : verificationError(verification, finalizeDoctor)
+          : updateNowError(install, newBinary, newVersionDoctor, migrationCurrent, installedCliResolution);
   const resultOperationError = stageFailureError
     || (resultError && allStageFailures.length
       ? requiredUpdateStageFailureError(
@@ -1461,6 +1547,7 @@ async function runSksUpdateNowInternal(
     oldVersionDoctor,
     newBinary,
     newVersion,
+    installedCliResolution,
     newVersionDoctor,
     projectReceipt,
     migrationCurrent,
@@ -1669,7 +1756,7 @@ export async function detectEffectiveSksVersion(options: SksUpdateCheckOptions =
   add(options.currentVersion || PACKAGE_VERSION, 'runtime');
   add(env.SKS_INSTALLED_SKS_VERSION, 'env:SKS_INSTALLED_SKS_VERSION');
   const packageRootPromise = readJson<any>(path.join(packageRoot(), 'package.json'), {}).catch(() => ({}));
-  const pathSksPromise = which('sks')
+  const pathSksPromise = executableOnInjectedPath('sks', env)
     .then(async (sks) => {
       if (!sks) return null;
       const result = await runProcess(sks, ['--version'], {
@@ -1810,26 +1897,6 @@ function normalizeLockedInstalledVersionObservation(
   };
 }
 
-async function executableOnInjectedPath(command: string, env: NodeJS.ProcessEnv): Promise<string | null> {
-  const rawPath = String(env.PATH ?? process.env.PATH ?? '').slice(0, 64 * 1024);
-  const extensions = process.platform === 'win32'
-    ? uniqueStrings(String(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').map((extension) => extension.toLowerCase()))
-    : [''];
-  const names = process.platform === 'win32' && path.extname(command)
-    ? [command]
-    : extensions.map((extension) => `${command}${extension}`);
-  for (const directory of rawPath.split(path.delimiter).filter(Boolean).slice(0, 256)) {
-    for (const name of names) {
-      const candidate = path.resolve(directory, name);
-      try {
-        await fs.access(candidate);
-        return candidate;
-      } catch {}
-    }
-  }
-  return null;
-}
-
 function boundedLockedProbeTimeout(value: number | undefined): number {
   if (!Number.isFinite(value)) return 2500;
   // The mutation timeout may intentionally be tiny in failure probes, but the
@@ -1964,6 +2031,7 @@ function buildUpdateNowResult(input: {
   oldVersionDoctor: PackageLocalDoctorRun | null;
   newBinary: string | null;
   newVersion: string | null;
+  installedCliResolution?: InstalledCliResolution | null;
   newVersionDoctor: PackageLocalDoctorRun | null;
   projectReceipt: UpdateMigrationReceipt | null;
   migrationCurrent: boolean;
@@ -1992,6 +2060,7 @@ function buildUpdateNowResult(input: {
     old_version_doctor: input.oldVersionDoctor,
     new_binary: input.newBinary,
     new_version: input.newVersion,
+    installed_cli_resolution: input.installedCliResolution || null,
     new_version_doctor: input.newVersionDoctor,
     project_receipt: input.projectReceipt,
     migration_current: input.migrationCurrent,
@@ -2272,10 +2341,12 @@ async function updateHeartbeat<T>(quiet: boolean, label: string, work: Promise<T
 
 async function runFinalUpdateVerification(input: {
   installOk: boolean;
+  packageName: string;
   newBinary: string | null;
   installVersion: string | null;
   env: NodeJS.ProcessEnv;
   projectReceiptRoot: string;
+  installedCliResolution: InstalledCliResolution | null;
 }): Promise<SksUpdateVerification[]> {
   if (!input.installOk || !input.newBinary || !input.installVersion) return [];
   const verification: SksUpdateVerification[] = [];
@@ -2292,6 +2363,24 @@ async function runFinalUpdateVerification(input: {
     remediation: 'Run: sks update now --version <expected>'
   });
 
+  if (input.installedCliResolution) {
+    const resolution = input.installedCliResolution;
+    verification.push({
+      id: 'package_manifest',
+      ok: resolution.manifest_name === input.packageName
+        && resolution.manifest_version === input.installVersion
+        && resolution.entrypoint === input.newBinary,
+      detail: `expected ${input.packageName}@${input.installVersion}, got ${resolution.manifest_name || 'missing'}@${resolution.manifest_version || 'missing'} from ${resolution.package_root || 'missing'}`,
+      remediation: `Run: npm install --global ${input.packageName}@${input.installVersion}`
+    });
+    verification.push({
+      id: 'path_version_match',
+      ok: resolution.path_version === input.installVersion && resolution.path_targets_entrypoint,
+      detail: `expected PATH sks ${input.installVersion} at the verified entrypoint; got ${resolution.path_version || 'missing'} from ${resolution.path_binary || 'missing'} (exact target: ${resolution.path_targets_entrypoint ? 'yes' : 'no'})`,
+      remediation: 'Remove or reorder the older SKS npm prefix on PATH, then rerun: sks update now'
+    });
+  }
+
   const hookState = await readCodexHookActualState(input.projectReceiptRoot).catch(() => null);
   const managedEntries = (hookState?.entries || []).filter((entry: any) => entry.managed === true);
   const untrusted = managedEntries.filter((entry: any) => entry.trust_status !== 'Trusted' && entry.trust_status !== 'Managed');
@@ -2300,16 +2389,6 @@ async function runFinalUpdateVerification(input: {
     ok: Boolean(hookState && hookState.ok !== false && managedEntries.length > 0 && untrusted.length === 0),
     detail: untrusted.length ? untrusted.map((entry: any) => entry.key).slice(0, 3).join(', ') : `managed ${managedEntries.length}`,
     remediation: 'Run: sks codex trust-doctor --fix --managed --actual'
-  });
-
-  const stampPath = path.join(path.dirname(input.newBinary), '..', '.sks-build-stamp.json');
-  const stamp = await readJson<any>(stampPath, null).catch(() => null);
-  const stampVersion = stamp?.package_version || stamp?.version || null;
-  verification.push({
-    id: 'dist_stamp',
-    ok: stampVersion === input.installVersion,
-    detail: `expected ${input.installVersion}, got ${stampVersion || 'missing'}`,
-    remediation: 'Run: npm run build:incremental'
   });
 
   const home = input.env.HOME || os.homedir();
@@ -2350,10 +2429,14 @@ function updateNowError(
   install: { code: number | null; stdout: string; stderr: string },
   newBinary: string | null,
   newVersionDoctor: PackageLocalDoctorRun | null,
-  migrationCurrent: boolean
+  migrationCurrent: boolean,
+  installedCliResolution: InstalledCliResolution | null
 ): string {
   if (install.code !== 0) return `${install.stderr || install.stdout || 'npm global install failed'}`.trim();
   if (!newBinary) return 'new package-local sks binary could not be resolved after install';
+  if (installedCliResolution && !installedCliResolution.ok) {
+    return `installed SKS CLI resolution failed: ${installedCliResolution.blockers.join(', ') || 'unknown resolution blocker'}; PATH sks=${installedCliResolution.path_binary || 'missing'} version=${installedCliResolution.path_version || 'missing'}`;
+  }
   if (!newVersionDoctor?.ok) return newVersionDoctor?.error || 'new-version global Doctor failed';
   if (!migrationCurrent) return 'project update migration receipt was not current';
   return 'update failed';
@@ -2363,8 +2446,8 @@ function effectiveInstalledVersion(candidates: SksVersionCandidate[]): string {
   const firstBySource = (source: string) => candidates.find((candidate) => candidate.source === source)?.version || null;
   const firstByPrefix = (prefix: string) => candidates.find((candidate) => candidate.source.startsWith(prefix))?.version || null;
   return firstBySource('env:SKS_INSTALLED_SKS_VERSION')
-    || firstByPrefix('npm-global:')
     || firstByPrefix('PATH:')
+    || firstByPrefix('npm-global:')
     || firstBySource('runtime')
     || firstBySource('packageRoot:package.json')
     || highestPackageVersion(candidates.map((candidate) => candidate.version));

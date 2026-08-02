@@ -108,7 +108,7 @@ export function recommendOfficialSubagentRoles(input: {
 
   if (ranked.length) return unique(ranked).slice(0, limit)
   const lane = decideSubagentModel({ description: text }).policy
-  if (lane === 'terra_medium_context_tools') return ['explorer']
+  if (lane === 'terra_max_context_tools') return ['explorer']
   if (lane === 'luna_max_mechanical' && input.readOnly !== true) return ['worker']
   if (input.readOnly === true) return ['expert']
   return [input.requiresWrite === true ? 'implementation_specialist' : 'expert']
@@ -200,7 +200,7 @@ function automaticSubagentFanout(input: {
   const massLane = decideSubagentModel({ description: text }).policy
   const massParallel = MASS_PARALLEL_WORK_RE.test(text)
     && !NON_CHEAP_MASS_ACTION_RE.test(text)
-    && (massLane === 'luna_max_mechanical' || massLane === 'terra_medium_context_tools')
+    && (massLane === 'luna_max_mechanical' || massLane === 'terra_max_context_tools')
     && !reviewerOnly
     && !criticalMultiDomain
   const automaticCeiling = massParallel ? MAX_MASS_AUTOMATIC_SUBAGENT_COUNT : MAX_AUTOMATIC_SUBAGENT_COUNT

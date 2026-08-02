@@ -286,7 +286,7 @@ const AGENTS_BLOCK = [
   '- Codex native `/goal` is the only persisted goal owner. Goal objectives must state the outcome, scope, constraints, verification, done-when conditions, stop conditions, and non-goals.',
   '- General code-changing work uses the `$Naruto` Codex official subagent workflow; Answer and genuinely tiny DFix work stay lightweight.',
   '- The parent owns decomposition, integration, verification, and the final answer. Delegate only independent slices with disjoint write scopes, reuse capacity across root-owned waves, and never nest subagents.',
-  '- Route model by the slice: Luna Max for tiny mechanical work, Sol High for implementation, Terra Medium for read-heavy context or direct tool operation, and Sol Max only for focused judgment, risk, or final review.',
+  '- Route model by the slice: Luna Max for tiny mechanical work, Sol High for implementation, Terra Max for read-heavy context or direct tool operation, and Sol Max only for focused judgment, risk, or final review.',
   '- Codex 0.145 spawn compatibility: a full-history fork (`fork_turns="all"`, including the omitted/default mode) inherits the parent agent type, model, and reasoning effort. When selecting a custom `agent_type` or overriding `model`/`reasoning_effort`, use `fork_turns="none"` or a positive bounded turn count and carry the complete bounded slice contract in `message`; use full history only with those overrides omitted.',
   '- Route-specific skills own route-specific details. Do not inject unrelated Design, PPT, image, browser, research, DB, or release policy into ordinary work.',
   '- Do not stop at a plan when implementation was requested. Finish and verify, or report a concrete hard blocker.',

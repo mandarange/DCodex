@@ -1589,14 +1589,9 @@ export async function resolveInstalledSksEntrypoint(input: {
   env?: NodeJS.ProcessEnv;
 } = {}): Promise<string | null> {
   const packageName = input.packageName || 'sneakoscope';
-  const candidates = [
-    input.globalRoot ? path.join(input.globalRoot, packageName, 'dist', 'bin', 'sks.js') : null,
-    path.join(packageRoot(), 'dist', 'bin', 'sks.js')
-  ].filter(Boolean) as string[];
-  for (const candidate of candidates) {
-    if (await exists(candidate)) return candidate;
-  }
-  return which('sks');
+  if (!input.globalRoot) return null;
+  const candidate = path.join(input.globalRoot, packageName, 'dist', 'bin', 'sks.js');
+  return await exists(candidate) ? candidate : null;
 }
 
 // 20차 P2-2: was 20s — --help now bypasses this gate entirely (cli/router.ts),

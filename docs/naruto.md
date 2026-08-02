@@ -33,7 +33,7 @@ time. A Codex multi-agent V2 host may count the root separately and therefore re
 active limiter and must be reported instead of being presented as SKS-selected 256
 concurrency. Remaining requested work reuses returned capacity in later waves.
 
-Luna Max handles tiny mechanical shards, Terra Medium handles broad search and
+Luna Max handles tiny mechanical shards, Terra Max handles broad search and
 exploration shards, and Sol handles implementation and judgment. The GPT-5.6
 four-profile matrix (Luna / Terra / Sol High / Sol Max) is a **routing LOD**, not an
 agent-count cap.
@@ -88,7 +88,7 @@ correlation and never grants project trust, so App host-capability requests requ
 | Root orchestrator | Sol Max | DAG decomposition, contract finalization, integration, and final judgment |
 | Judgment lane | Sol Max | Architecture, debugging, security, database, release, and ambiguous work |
 | Implementation lane | Sol High | Ordinary UI, backend, logic, core, and native implementation |
-| Context/tool lane | Terra Medium | Large documents, logs, and repository exploration plus Browser, Computer Use, and image execution |
+| Context/tool lane | Terra Max | Large documents, logs, long-term memory, repository exploration, rapid large-scale first-draft code processing, plus Browser, Computer Use, and image execution |
 | Mechanical lane | Luna Max | Tiny, short-context work with clear completion conditions and strong automatic verification |
 
 Mixed work is split when practical. If a slice cannot safely separate execution

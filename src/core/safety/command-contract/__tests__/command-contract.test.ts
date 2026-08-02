@@ -127,7 +127,7 @@ test('Naruto contract matches its local-only explicit-opt-in CLI surface', () =>
     parent_model: 'gpt-5.6-sol',
     parent_effort: 'max',
     subagent_model: 'gpt-5.6-terra',
-    subagent_effort: 'medium',
+    subagent_effort: 'max',
     no_forced_login_method: true
   }, contract.input_schema);
   assert.equal(hostRun.ok, true);
@@ -140,7 +140,7 @@ test('Naruto contract matches its local-only explicit-opt-in CLI surface', () =>
       '--parent-model', 'gpt-5.6-sol',
       '--parent-effort', 'max',
       '--subagent-model', 'gpt-5.6-terra',
-      '--subagent-effort', 'medium',
+      '--subagent-effort', 'max',
       '--no-forced-login-method'
     ]);
   }

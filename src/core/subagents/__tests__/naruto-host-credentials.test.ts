@@ -74,12 +74,12 @@ test('--no-forced-login-method releases the login without switching provider', (
 test('model and effort overrides reach the codex arguments', () => {
   const resolved = policy([
     '--parent-model', 'gpt-5.6-terra',
-    '--parent-effort', 'medium',
+    '--parent-effort', 'max',
     '--subagent-model', 'gpt-5.6-luna',
-    '--subagent-effort', 'low'
+    '--subagent-effort', 'max'
   ])
   assert.equal(resolved.parentModel, 'gpt-5.6-terra')
-  assert.equal(resolved.parentEffort, 'medium')
+  assert.equal(resolved.parentEffort, 'max')
   const args = buildOfficialSubagentCodexArgs({
     prompt: 'task',
     maxThreads: 2,
@@ -87,9 +87,28 @@ test('model and effort overrides reach the codex arguments', () => {
     credentialPolicy: resolved
   })
   assert.ok(args.includes('gpt-5.6-terra'))
-  assert.ok(args.includes('model_reasoning_effort="medium"'))
+  assert.ok(args.includes('model_reasoning_effort="max"'))
   assert.ok(args.includes('agents.default_subagent_model="gpt-5.6-luna"'))
-  assert.ok(args.includes('agents.default_subagent_reasoning_effort="low"'))
+  assert.ok(args.includes('agents.default_subagent_reasoning_effort="max"'))
+})
+
+test('GPT-5.6 family overrides enforce the sealed effort profiles', () => {
+  assert.ok(policy([
+    '--parent-model', 'gpt-5.6-terra',
+    '--parent-effort', 'medium'
+  ]).blockers.includes('naruto_parent_gpt56_effort_policy_mismatch:gpt-5.6-terra:medium:allowed_max'))
+  assert.ok(policy([
+    '--subagent-model', 'gpt-5.6-luna',
+    '--subagent-effort', 'low'
+  ]).blockers.includes('naruto_subagent_gpt56_effort_policy_mismatch:gpt-5.6-luna:low:allowed_max'))
+  assert.ok(policy([
+    '--parent-model', 'gpt-5.6-sol',
+    '--parent-effort', 'high'
+  ]).blockers.includes('naruto_parent_gpt56_effort_policy_mismatch:gpt-5.6-sol:high:allowed_max'))
+  assert.equal(policy([
+    '--subagent-model', 'gpt-5.6-sol',
+    '--subagent-effort', 'high'
+  ]).blockers.length, 0)
 })
 
 test('a host-mode run carries no chatgpt login into the codex arguments', () => {

@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+## [8.0.4] - 2026-08-02
+
+### Changed
+
+- Seal official child routing to Luna Max for tiny, short-context mechanical
+  work (including clear simple code, configuration, and setup edits), Terra
+  Max for long-context, long-term-memory, large-read, high-volume exploration,
+  and rapid large-scale first-draft processing, Sol High for ordinary
+  implementation, and Sol Max for planning, review, debugging, design,
+  security, release, and other judgment-heavy work. English and Korean routing
+  signals follow the same guarded priority, and complex or ambiguous work
+  cannot enter the Luna lane merely because it also says “simple.”
+- Make the explicit `npm exec --package=sneakoscope@latest -- sneakoscope
+  install` route a real registered command. It forces an online registry-tag
+  staleness check, rejects an older cached installer when the registry tag is
+  newer, installs the exact version carried by the verified package, runs
+  Doctor through that exact global entrypoint, and verifies the resulting
+  package manifest, runtime, and first `sks` executable on `PATH`.
+
+### Fixed
+
+- Stop a newer npm-global package record from masking an older executable that
+  still wins on `PATH`. Update status now treats the resolved command as the
+  effective installed CLI, post-update verification binds the npm global root,
+  package manifest, package-local entrypoint, and resolved `sks --version` to
+  one target, and stale, missing, or same-version shadow paths fail closed with
+  rollback guidance.
+- Remove the updater's fallback to the currently running source/package root or
+  an arbitrary `which sks` result when the newly installed global entrypoint is
+  missing. Extend legacy shim inspection to recognize the shipped
+  `dist/bin/sks.js` layout.
+
+### Release Gates
+
+- Add an isolated 8.0.3-to-8.0.4 upgrade regression that proves the subsequent
+  PATH-resolved CLI/runtime is 8.0.4, plus a shadow-prefix regression that
+  proves an older 8.0.3 command is reported as a failure while rollback remains
+  available. The packed-package smoke also executes the `sneakoscope` alias and
+  the CommonJS-scoped installer launcher. Publication and clean-host npm
+  validation remain manual release steps; this entry does not claim they
+  occurred.
+
 ## [8.0.3] - 2026-08-01
 
 ### Changed

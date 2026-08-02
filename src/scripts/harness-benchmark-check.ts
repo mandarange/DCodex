@@ -17,7 +17,7 @@ const metrics = [];
 metrics.push(await measure('install_entrypoint_readiness', 300000, async () => {
   await assertFile('dist/bin/install.js');
   await assertFile('plugins/sks/.codex-plugin/plugin.json');
-  return { mode: 'hermetic_readiness', command: 'npx sneakoscope install --yes' };
+  return { mode: 'hermetic_readiness', command: 'npm exec --yes --package=sneakoscope@latest -- sneakoscope install --yes' };
 }));
 
 metrics.push(await measure('stop_hook_light_budget', 25, async () => {

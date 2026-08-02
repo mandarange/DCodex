@@ -22,7 +22,7 @@ Proof-first orchestration for Codex CLI, ChatGPT Desktop, AI coding agents, mult
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-This README documents package **SKS 8.0.3** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
+This README documents package **SKS 8.0.4** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
 
 Use the official latest stable SKS and Codex CLI releases. SKS stays version-agnostic: older hosts keep working where capabilities allow, while Menu Bar / Center induce updates to the latest stable build. Run `sks update-check` for what is installed and read the capability report for what is actually supported — feature availability is decided by capability probes, not by a version number printed in a document. It resolves managed SKS skills from the authoritative global install, preserves a runnable Naruto child slot when `max_threads=2`, and keeps Menu Bar repair transactional so stamped generations remain verifiable. Naruto uses stable opt-in multi-agent V2 when the host exposes it. Local code search is mode-separated (`sks search files|text|structure|symbol|context`); `context` is answered by the compiled TriWiki Context Graph with evidence paths rather than lexical guessing — see [docs/architecture/context-graph.md](docs/architecture/context-graph.md) and [docs/architecture/search-engine-target.md](docs/architecture/search-engine-target.md). See [CHANGELOG.md](CHANGELOG.md).
 
@@ -32,7 +32,7 @@ Use the official latest stable SKS and Codex CLI releases. SKS stays version-agn
 | --- | --- |
 | Overview mixed Menu Bar, installed SKS, and cached registry versions | Each value is labeled by authority, stale or unavailable probes remain explicit, and Refresh forces a bounded update-status refresh. |
 | Naruto stopped creating children after its first wave | The root parent records settled waves, recovers open-thread capacity, rescans the ready DAG, and can launch later direct-child waves under the same workflow run. |
-| Most delegated work drifted to Sol Max | Read-heavy discovery uses Terra Medium, ordinary implementation uses Sol High, and Sol Max is reserved for focused high-risk or final judgment slices. |
+| Most delegated work drifted to Sol Max | Read-heavy discovery uses Terra Max, ordinary implementation uses Sol High, and Sol Max is reserved for focused high-risk or final judgment slices. |
 | Goal creation started a second SKS-owned mission and loop | Codex native Goal is the only persisted owner; create/edit objectives are detailed and bounded, while SKS writes no Goal state or fallback loop. |
 | Global instructions accumulated duplicated route rules and forced synthetic tests | One Core Engineering Directive anchors all work, route-specific details stay with their route, and verification targets normal behavior, meaningful boundaries, and plausible failures. |
 | GUI-launched status commands could hang or contaminate real update state during tests | Menu Bar commands use a safe HOME cwd, closed stdin, and timeouts; update fixtures use isolated HOME and cache paths. |
@@ -40,10 +40,10 @@ Use the official latest stable SKS and Codex CLI releases. SKS stays version-agn
 ## Install In One Command
 
 ```sh
-npx sneakoscope install --yes
+npm exec --yes --package=sneakoscope@latest -- sneakoscope install --yes
 ```
 
-That installs or repairs SKS, runs `sks doctor --fix`, and prepares the Codex App integration. The plugin marketplace path is also prepared through `plugins/sks/.codex-plugin/plugin.json`.
+The explicit `@latest` tag prevents a local package or stale npx cache from silently choosing an older installer. The installer verifies the registry tag, installs the exact version carried by that package, runs the exact installed entrypoint's `doctor --fix`, and succeeds only when the first `sks` on `PATH` targets that entrypoint and reports the same version. An older or same-version shadow prefix that still wins is reported as a blocker with a recoverable prior-version command. The plugin marketplace path is also prepared through `plugins/sks/.codex-plugin/plugin.json`.
 
 For package-managed installs:
 
@@ -54,10 +54,15 @@ commands. To intentionally run the legacy bootstrap during installation, set
 stronger safety override.
 
 ```sh
-npm i -g sneakoscope
-sks bootstrap --yes
-sks doctor --fix
+npm install --global sneakoscope@latest
+node "$(npm root --global)/sneakoscope/dist/bin/sks.js" bootstrap --yes
+node "$(npm root --global)/sneakoscope/dist/bin/sks.js" doctor --fix
+sks --version
 ```
+
+The two setup calls intentionally use the entrypoint under the npm global root.
+The final `sks --version` must report that same package version; if it does not,
+an older prefix still precedes the new npm bin directory on `PATH`.
 
 The SKS menu bar shows the installed Codex CLI version and latest known version. An `⬆` marker appears when an update is available; **Update Codex CLI Now** uses native `codex update` when the selected CLI advertises it, otherwise it verifies the installation provenance and invokes the matching official standalone-installer, npm-global, or Homebrew-cask update method. If the method cannot be verified, it fails closed instead of guessing. Control Center updates keep the active UI alive until the operation receipt is durable, then relaunch the companion out of process. This is an explicit global tool mutation. **Run sks doctor --fix** performs the global-only menu repair flow without treating the user's home directory as a project.
 
@@ -65,7 +70,7 @@ The SKS menu bar shows the installed Codex CLI version and latest known version.
 
 ### Remote coding: Telegram transport and Orca option
 
-SKS 8.0.3 restores a first-party Telegram Bot API transport for the existing
+SKS 8.0.4 includes the first-party Telegram Bot API transport for the existing
 typed remote-control contract. One bounded outbound `getUpdates` loop runs in
 the existing Menu Bar process, so it adds no daemon, inbound port, or tunnel.
 `sks telegram pair` enrolls an allowed chat through the existing secret store;
@@ -97,7 +102,7 @@ or Tailscale path. See [the Orca remote-coding guide](docs/orca-remote-coding.md
 
 ## Naruto Workflow
 
-`$sks-naruto` and `sks naruto run "task" --agents 8 --max-threads 12` use Codex official subagents. Standalone and Codex App tasks that request project-host database, spreadsheet, or render tools require the non-persistent `--trusted-project` flag after the operator reviews the checkout; an App session ID scopes evidence but does not grant trust. The parent is GPT-5.6 Sol Max. Tiny mechanical `worker` slices use Luna Max; ordinary UI, logic, backend, and native coding uses Sol High; review, testing, debugging, architecture, integration, security, database, research, release, and other judgment-sensitive work uses Sol Max; long-context scans and direct Computer Use, Browser/Chrome, or image-generation execution uses Terra Medium. Mixed execution/judgment work is split when possible, and unsplittable judgment defaults to Sol Max.
+`$sks-naruto` and `sks naruto run "task" --agents 8 --max-threads 12` use Codex official subagents. Standalone and Codex App tasks that request project-host database, spreadsheet, or render tools require the non-persistent `--trusted-project` flag after the operator reviews the checkout; an App session ID scopes evidence but does not grant trust. The parent is GPT-5.6 Sol Max. Tiny mechanical `worker` slices—including clear simple code, configuration, and setup changes—use Luna Max; ordinary UI, logic, backend, and native coding uses Sol High; review, testing, debugging, architecture, integration, security, database, research, release, and other judgment-sensitive work uses Sol Max; long-context scans, long-term memory, large-scale first-draft code processing, and direct Computer Use, Browser/Chrome, or image-generation execution use Terra Max. Mixed execution/judgment work is split when possible, and unsplittable judgment defaults to Sol Max.
 
 Fresh SKS-owned project config enables Codex 0.145+ multi-agent V2 with `agents.max_concurrent_threads_per_session = 256`, `features.multi_agent_v2.max_concurrent_threads_per_session = 257`, `max_depth = 1`, and `interrupt_message = true`. Nested delegation remains forbidden. Explicit user-owned limits are preserved, while legacy SKS-owned 12/13 defaults migrate to 256/257.
 
@@ -146,13 +151,13 @@ sks naruto run "task" \
 | Which provider block | `--model-provider=<name>` | `SKS_NARUTO_MODEL_PROVIDER` | Names a `[model_providers.<name>]` block. Host mode only |
 | Which credential variable | `--provider-env-key=<NAME>` | `SKS_NARUTO_PROVIDER_ENV_KEY` | Forwards exactly that variable to the child so the block's `env_key` resolves. Host mode only |
 | Release the login only | `--no-forced-login-method` | `SKS_NARUTO_FORCED_LOGIN_METHOD=none` | Keeps the SKS provider, drops the forced ChatGPT login |
-| Parent model / effort | `--parent-model`, `--parent-effort` | `SKS_NARUTO_PARENT_MODEL`, `SKS_NARUTO_PARENT_EFFORT` | Overrides the built-in parent policy |
-| Subagent model / effort | `--subagent-model`, `--subagent-effort` | `SKS_NARUTO_SUBAGENT_MODEL`, `SKS_NARUTO_SUBAGENT_EFFORT` | Overrides the default subagent policy |
+| Parent model / effort | `--parent-model`, `--parent-effort` | `SKS_NARUTO_PARENT_MODEL`, `SKS_NARUTO_PARENT_EFFORT` | Overrides the built-in parent policy; GPT-5.6 parents remain Sol/Terra/Luna Max-only as applicable |
+| Subagent model / effort | `--subagent-model`, `--subagent-effort` | `SKS_NARUTO_SUBAGENT_MODEL`, `SKS_NARUTO_SUBAGENT_EFFORT` | Overrides the default subagent policy; GPT-5.6 Luna/Terra require Max and Sol requires High or Max |
 
 Guarantees this contract makes:
 
 - **SKS never reads, stores, forwards to a third party, or logs your credential.** It forwards one named environment variable to the Codex child and records only that variable's *name* in receipts. Values of secret-shaped variables are redacted from captured output.
-- **A malformed value blocks the run.** An unknown auth mode, a provider name with a space, an effort tier that is not `minimal|low|medium|high|max`, or a `--provider-env-key` that is absent from the environment all fail before mission state is written. SKS never quietly falls back to its own credential — that surprise is the failure mode this contract exists to prevent.
+- **A malformed or policy-invalid value blocks the run.** An unknown auth mode, a provider name with a space, an effort tier that is not `minimal|low|medium|high|max`, a GPT-5.6 Luna/Terra effort other than Max, or a `--provider-env-key` that is absent from the environment all fail before mission state is written. SKS never quietly falls back to its own credential — that surprise is the failure mode this contract exists to prevent.
 - **Mixed configurations are refused.** Naming a provider while SKS still forces a ChatGPT login would authenticate one way and bill another, so it is a blocker rather than a silent precedence rule.
 - **The default is unchanged.** Managed mode still pins the ChatGPT login, and the real-credential smoke gate still proves it.
 
@@ -259,7 +264,7 @@ It shows the current quickstart flow: one-line install, `$sks-plan`, `sks review
 - Native capability repair: `sks doctor --fix` (imagegen/Computer Use/Browser Use), `.sneakoscope/reports/native-capability-readiness.json`
 - codex-lb continuity: `sks codex-lb status --json` verifies the selected proxy's unauthenticated `/health` `X-App-Version`. Tool-heavy continuation requires a codex-lb deployment that reports the capability; use the official latest stable release. Older or unverified deployments block setup, doctor, and launch instead of silently falling back. A selected route is green only after one measured request records the destination host, gateway-key authentication class, measurement time, and latency; config presence alone is not routing proof.
 - Agent bridge for any agent system: `sks mcp-server`, `sks agent-bridge setup`, `SKS_AGENT_MODE=1` — see [docs/AGENT-BRIDGE.md](docs/AGENT-BRIDGE.md)
-- Release gates: `npm run release:check:affected` for ordinary change-aware verification and `npm run release:check:confidence` for the final local confidence pass. Evidence for the 8.0.3 physical checklist includes a successful 5,001-directory update scan, exactly one running Menu Bar process at the current package version, one measured real codex-lb request to the selected remote host, and one Telegram command/reply E2E over cellular.
+- Release gates: `npm run release:check:affected` for ordinary change-aware verification and `npm run release:check:confidence` for the final local confidence pass. Evidence for the 8.0.4 physical checklist includes a successful old-install-to-8.0.4 resolved-CLI upgrade, a 5,001-directory update scan, exactly one running Menu Bar process at the current package version, one measured real codex-lb request to the selected remote host, and one Telegram command/reply E2E over cellular.
 - Release preparation: typecheck, one clean build, focused tests, affected/confidence gates, then `npm publish --dry-run --json --registry https://registry.npmjs.org/ --tag latest --access public`. The dry-run does not publish; authorization remains a separate maintainer workflow.
 - Release readiness notes: [docs/release-readiness.md](docs/release-readiness.md) and [CHANGELOG.md](CHANGELOG.md)
 - Image generation review routes require Codex App `$imagegen`/`gpt-image-2` evidence with recorded output hashes; direct API fallback and mock fixtures do not satisfy full route gates.

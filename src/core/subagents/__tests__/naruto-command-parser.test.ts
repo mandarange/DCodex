@@ -60,13 +60,14 @@ test('Naruto parser admits documented host/model flags only on run actions', () 
       '--parent-effort=max',
       '--subagent-model',
       'gpt-5.6-terra',
-      '--subagent-effort=medium',
+      '--subagent-effort=max',
       '--no-forced-login-method'
     ])
     assert.deepEqual(run.argumentErrors, [])
     assert.equal(run.prompt, 'bounded task')
     assert.equal(run.credentialPolicy.authMode, 'host')
     assert.equal(run.credentialPolicy.modelProvider, 'gateway')
+    assert.deepEqual(run.credentialPolicy.blockers, [])
   } finally {
     if (previousProviderKey === undefined) delete process.env.GATEWAY_API_KEY
     else process.env.GATEWAY_API_KEY = previousProviderKey

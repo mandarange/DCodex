@@ -250,11 +250,13 @@ export async function runInstalledPackageSmoke(
     if (!optInGuidancePresent) blockers.push('postinstall_default_opt_in_guidance_missing')
   }
 
-  const bin = process.platform === 'win32'
-    ? path.join(installPrefix, 'sks.cmd')
-    : path.join(installPrefix, 'bin', 'sks')
+  const installedBin = (name: string): string => process.platform === 'win32'
+    ? path.join(installPrefix, `${name}.cmd`)
+    : path.join(installPrefix, 'bin', name)
+  const bin = installedBin('sks')
   const smokeCommands: Array<{ name: string; argv: string[]; diagnostic?: boolean }> = [
     { name: 'version', argv: [bin, '--version'] },
+    { name: 'version-alias', argv: [installedBin('sneakoscope'), '--version'] },
     { name: 'commands', argv: [bin, 'commands', '--json'] },
     { name: 'dollar-commands', argv: [bin, 'dollar-commands', '--json'] },
     { name: 'bootstrap', argv: [bin, 'bootstrap', '--json'] },
@@ -287,6 +289,18 @@ export async function runInstalledPackageSmoke(
       const match = String(result.stdout || '').match(/([0-9]+\.[0-9]+\.[0-9]+)/)
       if (match) installedVersion = match[1] || null
     }
+  }
+  const installHelper = await runJsonCommand(tmp, [installedBin('sneakoscope-install'), 'invalid-command'], {
+    home,
+    codexHome,
+    npmCache
+  })
+  commands.push(summarizeInstalledSmokeCommand(installHelper.command, 'install-helper-invalid-command'))
+  if (
+    installHelper.exit_code !== 2
+    || !/Usage: npm exec --yes --package=sneakoscope@latest/.test(`${installHelper.stdout}\n${installHelper.command.stderr_tail}`)
+  ) {
+    blockers.push('installed_install_helper_launcher_failed')
   }
 
   const surface = validateInstalledPublicSurface(commandManifest, dollarManifest)

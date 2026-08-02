@@ -33,9 +33,9 @@ export function renderNarutoUsage(): string {
     '  --model-provider NAME    Host config.toml provider block (host mode only).',
     '  --provider-env-key NAME  Environment-variable name used by that provider.',
     '  --parent-model NAME      Override the parent model identifier.',
-    '  --parent-effort TIER     minimal|low|medium|high|max.',
+    '  --parent-effort TIER     GPT-5.6 parent: max (other host models may advertise other tiers).',
     '  --subagent-model NAME    Override the child model identifier.',
-    '  --subagent-effort TIER   minimal|low|medium|high|max.',
+    '  --subagent-effort TIER   GPT-5.6: Luna/Terra max; Sol high|max.',
     '  --no-forced-login-method Do not inject a forced login method.',
     '  --json                   Emit machine-readable output.',
     '',
@@ -76,7 +76,7 @@ export function buildNarutoHelpResult() {
       luna_max: 'tiny_short_context_mechanical_and_mass_shards',
       sol_high: 'ordinary_ui_logic_backend_and_native_implementation',
       sol_max: 'review_debug_planning_architecture_security_database_research_release_and_judgment',
-      terra_medium: 'broad_search_exploration_long_context_computer_use_browser_chrome_and_image_generation_execution',
+      terra_max: 'broad_search_exploration_long_context_long_term_memory_large_first_draft_computer_use_browser_chrome_and_image_generation_execution',
       mixed_slice_rule: 'split_execution_from_judgment_when_possible_otherwise_sol_max_wins'
     },
     completion_evidence: {
