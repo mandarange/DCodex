@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-02T06:48:33.591Z",
-  "git_head_sha": "b9a9aa7945581b54c4e118d2067fd3195fda3909",
-  "source_file_count": 2850,
-  "index_digest": "a94eab42e4668b9ab532fd65eba2c834ba3d6f7c1d970c3db6dc8554a36f6de6",
+  "generated_at": "2026-08-02T10:02:53.420Z",
+  "git_head_sha": "6f9789195ab628e9768e6211c983b46aea6eefb6",
+  "source_file_count": 2862,
+  "index_digest": "a41bb7c695245fef46d80059c37b8829675b2707cae926752431403db8d24ea8",
   "entries": [
     {
       "id": "code:core-triwiki",
@@ -40,7 +40,7 @@
     },
     {
       "id": "code:core",
-      "text": "core is a module at src/core (77 files, low risk). Key exports: ALLOWED_REASONING_EFFORTS, ALL_FEATURES_SELFTEST_SCHEMA, ALL_FEATURE_COMPLETION_SCHEMA, ARTIFACT_FILES, ARTIFACT_SCHEMA_VERSION, and 1312 more. Depends on: cli, core-agent-bridge, core-agents, core-codex, core-codex-app, and 34 more.",
+      "text": "core is a module at src/core (77 files, low risk). Key exports: ALLOWED_REASONING_EFFORTS, ALL_FEATURES_SELFTEST_SCHEMA, ALL_FEATURE_COMPLETION_SCHEMA, ARTIFACT_FILES, ARTIFACT_SCHEMA_VERSION, and 1315 more. Depends on: cli, core-agent-bridge, core-agents, core-codex, core-codex-app, and 34 more.",
       "citations": [
         {
           "path": "src/core/computer-use-live-evidence.ts"
@@ -73,7 +73,7 @@
     },
     {
       "id": "code:scripts",
-      "text": "scripts is a module at src/scripts (553 files, low risk). Key exports: AGENT_RUNTIME_FILES, CODEX_0144_FEATURE_KEYS, CODEX_0_133_RELEASE_EVIDENCE, CODEX_LB_DESKTOP_REAL_EVIDENCE_CHECK_SCHEMA, CODEX_LB_TOOL_OUTPUT_RECOVERY_MIN_VERSION, and 526 more. Depends on: cli, commands, core, core-agent-guidance, core-agents, and 41 more.",
+      "text": "scripts is a module at src/scripts (554 files, low risk). Key exports: AGENT_RUNTIME_FILES, CODEX_0144_FEATURE_KEYS, CODEX_0_133_RELEASE_EVIDENCE, CODEX_LB_DESKTOP_REAL_EVIDENCE_CHECK_SCHEMA, CODEX_LB_TOOL_OUTPUT_RECOVERY_MIN_VERSION, and 527 more. Depends on: cli, commands, core, core-agent-guidance, core-agents, and 41 more.",
       "citations": [
         {
           "path": "src/scripts/zellij-right-column-headless-overflow-check.ts"
@@ -106,7 +106,7 @@
     },
     {
       "id": "code:core-commands",
-      "text": "core-commands is a module at src/core/commands (88 files, low risk). Key exports: ALIGN_DEPRECATED_MIGRATION_SOURCES, ALIGN_GATE_ARTIFACT, ALIGN_LEDGER_ARTIFACT, ALIGN_OFFICIAL_SOURCES, ALIGN_PLAN_ARTIFACT, and 710 more. Depends on: cli, commands, core, core-agent-bridge, core-agents, and 46 more.",
+      "text": "core-commands is a module at src/core/commands (90 files, low risk). Key exports: ALIGN_DEPRECATED_MIGRATION_SOURCES, ALIGN_GATE_ARTIFACT, ALIGN_LEDGER_ARTIFACT, ALIGN_OFFICIAL_SOURCES, ALIGN_PLAN_ARTIFACT, and 715 more. Depends on: cli, commands, core, core-agent-bridge, core-agents, and 46 more.",
       "citations": [
         {
           "path": "src/core/commands/run-command.ts"
@@ -238,7 +238,7 @@
     },
     {
       "id": "code:core-release",
-      "text": "core-release is a module at src/core/release (68 files, low risk). Key exports: ALWAYS_ON_GATES, CANONICAL_TEST_PROOF_SCHEMA, CanonicalTestCorpus, CanonicalTestProof, CanonicalTestProofInput, and 314 more. Depends on: core, core-__tests__, core-safety, core-text, core-triwiki, and 1 more.",
+      "text": "core-release is a module at src/core/release (70 files, low risk). Key exports: ALWAYS_ON_GATES, CANONICAL_TEST_PROOF_SCHEMA, CanonicalTestCorpus, CanonicalTestProof, CanonicalTestProofInput, and 317 more. Depends on: core, core-__tests__, core-safety, core-text, core-triwiki, and 1 more.",
       "citations": [
         {
           "path": "src/core/release/__tests__/release-upgrade-smoke.test.ts"
@@ -253,6 +253,9 @@
           "path": "src/core/release/gate-pack-assertion.ts"
         },
         {
+          "path": "src/core/release/publish-preflight.ts"
+        },
+        {
           "path": "src/core/release/resource-class-budget.ts"
         },
         {
@@ -260,9 +263,6 @@
         },
         {
           "path": "src/core/release/__tests__/release-gate-affected-selector.test.ts"
-        },
-        {
-          "path": "src/core/release/release-authorization-snapshot.ts"
         }
       ],
       "trust_score": 0.8,
@@ -633,8 +633,41 @@
       "token_cost": 88
     },
     {
+      "id": "code:core-search-visibility",
+      "text": "core-search-visibility is a module at src/core/search-visibility (16 files, low risk). Key exports: ANTHROPIC_CRAWLERS_URL, ClaimEvidence, CrawlerPolicySource, DetectionResult, EntityFact, and 121 more. Depends on: core, core-json, core-proof, core-super-search.",
+      "citations": [
+        {
+          "path": "src/core/search-visibility/index.ts"
+        },
+        {
+          "path": "src/core/search-visibility/mutation.ts"
+        },
+        {
+          "path": "src/core/search-visibility/discovery.ts"
+        },
+        {
+          "path": "src/core/search-visibility/adapters/next-app.ts"
+        },
+        {
+          "path": "src/core/search-visibility/types.ts"
+        },
+        {
+          "path": "src/core/search-visibility/marketing.ts"
+        },
+        {
+          "path": "src/core/search-visibility/__tests__/verifier-http-proof.test.ts"
+        },
+        {
+          "path": "src/core/search-visibility/analyzers.ts"
+        }
+      ],
+      "trust_score": 0.8,
+      "freshness": "fresh",
+      "token_cost": 66
+    },
+    {
       "id": "code:core-__tests__",
-      "text": "core-__tests__ is a module at src/core/__tests__ (56 files, low risk). Key exports: COMMAND_CATALOG, CURRENT_CODEX_RELEASE_MANIFEST, CodexLbEnvLoadResult, CompetitorScorecardBaseline, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, and 190 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 23 more.",
+      "text": "core-__tests__ is a module at src/core/__tests__ (56 files, low risk). Key exports: COMMAND_CATALOG, CURRENT_CODEX_RELEASE_MANIFEST, CodexLbEnvLoadResult, CompetitorScorecardBaseline, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, and 191 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 23 more.",
       "citations": [
         {
           "path": "src/core/__tests__/codex-release-manifest-current.test.ts"
@@ -664,39 +697,6 @@
       "trust_score": 0.8,
       "freshness": "fresh",
       "token_cost": 78
-    },
-    {
-      "id": "code:core-search-visibility",
-      "text": "core-search-visibility is a module at src/core/search-visibility (15 files, low risk). Key exports: ANTHROPIC_CRAWLERS_URL, ClaimEvidence, CrawlerPolicySource, DetectionResult, EntityFact, and 120 more. Depends on: core, core-json, core-proof, core-super-search.",
-      "citations": [
-        {
-          "path": "src/core/search-visibility/index.ts"
-        },
-        {
-          "path": "src/core/search-visibility/mutation.ts"
-        },
-        {
-          "path": "src/core/search-visibility/discovery.ts"
-        },
-        {
-          "path": "src/core/search-visibility/adapters/next-app.ts"
-        },
-        {
-          "path": "src/core/search-visibility/types.ts"
-        },
-        {
-          "path": "src/core/search-visibility/marketing.ts"
-        },
-        {
-          "path": "src/core/search-visibility/analyzers.ts"
-        },
-        {
-          "path": "src/core/search-visibility/verifier.ts"
-        }
-      ],
-      "trust_score": 0.8,
-      "freshness": "fresh",
-      "token_cost": 66
     },
     {
       "id": "code:core-codex",
@@ -1111,7 +1111,7 @@
     },
     {
       "id": "code:core-update",
-      "text": "core-update is a module at src/core/update (8 files, low risk). Key exports: COMMANDS, DEFAULT_UPDATE_STATUS_TTL_MS, INSTALLATION_EPOCH_SCHEMA, InstallationEpoch, MANAGED_ASSET_VERSION, and 101 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 6 more.",
+      "text": "core-update is a module at src/core/update (10 files, low risk). Key exports: COMMANDS, DEFAULT_UPDATE_STATUS_TTL_MS, INSTALLATION_EPOCH_SCHEMA, INSTALLED_CLI_RESOLUTION_SCHEMA, InstallationEpoch, and 104 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 6 more.",
       "citations": [
         {
           "path": "src/core/update/semver.ts"
@@ -1123,24 +1123,24 @@
           "path": "src/core/update/temporary-install-smoke.ts"
         },
         {
+          "path": "src/core/update/__tests__/installed-cli-resolution.test.ts"
+        },
+        {
           "path": "src/core/update/update-operation.ts"
         },
         {
           "path": "src/core/update/update-notice.ts"
         },
         {
+          "path": "src/core/update/installed-cli-resolution.ts"
+        },
+        {
           "path": "src/core/update/update-stage-diagnostics.ts"
-        },
-        {
-          "path": "src/core/update/update-status.ts"
-        },
-        {
-          "path": "src/core/update/update-migration-state.ts"
         }
       ],
       "trust_score": 0.8,
       "freshness": "fresh",
-      "token_cost": 69
+      "token_cost": 72
     },
     {
       "id": "code:core-telegram",
@@ -1861,7 +1861,7 @@
     },
     {
       "id": "code:cli-__tests__",
-      "text": "cli-__tests__ is a module at src/cli/__tests__ (12 files, low risk). Key exports: CODEX_LB_DESKTOP_BRIDGE_MARKER, CODEX_LB_DESKTOP_COMPAT_MARKER, CODEX_LB_MODEL_CATALOG_MARKER, CODEX_LB_OAUTH_SELECTION_MARKER, CODEX_LB_PROVIDER_SELECTION_MARKER, and 40 more. Depends on: cli, commands, core, core-__tests__, core-codex-lb, and 1 more.",
+      "text": "cli-__tests__ is a module at src/cli/__tests__ (13 files, low risk). Key exports: CODEX_LB_DESKTOP_BRIDGE_MARKER, CODEX_LB_DESKTOP_COMPAT_MARKER, CODEX_LB_MODEL_CATALOG_MARKER, CODEX_LB_OAUTH_SELECTION_MARKER, CODEX_LB_PROVIDER_SELECTION_MARKER, and 41 more. Depends on: cli, commands, core, core-__tests__, core-codex-lb, and 1 more.",
       "citations": [
         {
           "path": "src/cli/__tests__/super-search-command.test.ts"
@@ -1871,6 +1871,9 @@
         },
         {
           "path": "src/cli/__tests__/codex-lb-connect-test.test.ts"
+        },
+        {
+          "path": "src/cli/__tests__/output-json-exit.test.ts"
         },
         {
           "path": "src/cli/__tests__/super-search-status-gate.test.ts"
@@ -1883,9 +1886,6 @@
         },
         {
           "path": "src/cli/__tests__/codex-lb-shared-auth-routing.test.ts"
-        },
-        {
-          "path": "src/cli/__tests__/cwd-independence.test.ts"
         }
       ],
       "trust_score": 0.8,
@@ -2040,6 +2040,6 @@
       "token_cost": 54
     }
   ],
-  "token_budget": 8000,
-  "total_token_cost": 4650
+  "token_budget": 20000,
+  "total_token_cost": 4653
 }

@@ -37,6 +37,7 @@ export const NATIVE_SOURCE_FILES = [
   'ProcessExecutionState.swift',
   'ProcessIdentityGuard.swift',
   'SecureProcessEnvelope.swift',
+  'TelegramStateLock.swift',
   'TelegramPrivateFileSupport.swift',
   'TelegramPrivateFileStore.swift',
   'TelegramSupport.swift',

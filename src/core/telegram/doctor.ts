@@ -3,12 +3,14 @@ import type { TelegramAccessStore } from './access.js';
 import type { TelegramPoller } from './poller.js';
 import { redactTelegramError } from './redaction.js';
 import { readTelegramLivenessReceipt, telegramLivenessPath } from './liveness.js';
+import type { TelegramTokenSource } from './types.js';
 
 export interface TelegramDoctorProbe {
   schema: 'sks.telegram-doctor-probe.v1';
   ok: boolean;
   status: 'ready' | 'degraded' | 'not_configured';
   token_configured: boolean;
+  token_source?: TelegramTokenSource;
   bot_identity_valid: boolean;
   getme_checked_at: string | null;
   getme_latency_ms: number | null;
@@ -87,6 +89,7 @@ export async function probeTelegram(input: {
     ok: blockers.length === 0,
     status: !tokenConfigured ? 'not_configured' : blockers.length ? 'degraded' : 'ready',
     token_configured: tokenConfigured,
+    token_source: tokenConfigured ? (receiptProbe?.token_source ?? 'unknown') : 'none',
     bot_identity_valid: identityValid,
     getme_checked_at: getMeCheckedAt,
     getme_latency_ms: getMeLatencyMs,
@@ -106,6 +109,7 @@ async function probeTelegramReceipt(receiptPath: string | undefined, now: number
     return {
       schema: 'sks.telegram-doctor-probe.v1', ok: false, status: 'not_configured',
       token_configured: false, bot_identity_valid: false, paired_chat_count: 0,
+      token_source: 'none',
       audit_healthy: false, audit_last_error: null,
       getme_checked_at: null, getme_latency_ms: null,
       getme_check_kind: 'receipt',
@@ -128,6 +132,7 @@ async function probeTelegramReceipt(receiptPath: string | undefined, now: number
     ok: blockers.length === 0,
     status: !receipt.token_configured ? 'not_configured' : blockers.length ? 'degraded' : 'ready',
     token_configured: receipt.token_configured,
+    token_source: receipt.token_source ?? (receipt.token_configured ? 'unknown' : 'none'),
     bot_identity_valid: receipt.bot_identity_valid,
     getme_checked_at: receipt.getme_checked_at,
     getme_latency_ms: receipt.getme_latency_ms,

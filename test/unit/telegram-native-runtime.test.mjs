@@ -18,6 +18,7 @@ test('Telegram native standalone runtime smoke covers audit fail-closed and boun
     source('ProcessExecutionState.swift'),
     source('ProcessIdentityGuard.swift'),
     source('SecureProcessEnvelope.swift'),
+    source('TelegramStateLock.swift'),
     source('TelegramPrivateFileSupport.swift'),
     source('TelegramPrivateFileStore.swift'),
     source('TelegramSupport.swift'),

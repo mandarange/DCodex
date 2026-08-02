@@ -6,6 +6,11 @@
 
 ### Changed
 
+- Replace SKS Center's retired external remote-coding guidance with a first-party
+  Telegram BotFather flow. The native Remote Coding page now opens BotFather,
+  accepts the bot token through a secure sheet, issues private-chat pairing
+  codes, renders Doctor/liveness state, and controls the one resident Menu Bar
+  poller. The retired documentation, links, and product guidance are removed.
 - Seal official child routing to Luna Max for tiny, short-context mechanical
   work (including clear simple code, configuration, and setup edits), Terra
   Max for long-context, long-term-memory, large-read, high-volume exploration,
@@ -23,6 +28,24 @@
 
 ### Fixed
 
+- Harden Telegram setup and rotation: validate tokens with `getMe`, inspect an
+  existing webhook before storage, require explicit consent to remove it with
+  `drop_pending_updates=false`, bind durable offsets and authorization state to
+  the verified bot identity, replace rather than accumulate paired chats, and
+  clear pending confirmations on rotation or re-pairing. Center and Doctor now
+  report only the effective non-secret token source and refuse a file-token
+  setup while an operator environment token would override it.
+- Bind Telegram typed-command execution to the canonical selected project root,
+  keep bot tokens out of argv/logs/child command environments, and preserve
+  secret-free partial-recovery evidence when webhook removal succeeds but a
+  later local setup step fails.
+- Make Telegram private-state locking crash-safe across concurrent TypeScript
+  and native Swift recovery. Reclaimers register unique owner-bound
+  participants behind a directory barrier before removing a dead lock, bind
+  owners to process start identity to detect PID reuse, and keep staged pairings
+  inactive until their success audit commits. Invalid-command audit noise now
+  shares the bounded global/per-actor pressure limit instead of rotating away
+  older evidence.
 - Stop a newer npm-global package record from masking an older executable that
   still wins on `PATH`. Update status now treats the resolved command as the
   effective installed CLI, post-update verification binds the npm global root,
@@ -36,6 +59,10 @@
 
 ### Release Gates
 
+- Add Telegram Bot API, private-state rotation, native Menu Bar materialization,
+  command-help, documentation, and packed-package regressions. A real
+  BotFather account plus cellular command/reply round trip remains a required
+  physical release receipt and is not replaced by fixtures or local tests.
 - Add an isolated 8.0.3-to-8.0.4 upgrade regression that proves the subsequent
   PATH-resolved CLI/runtime is 8.0.4, plus a shadow-prefix regression that
   proves an older 8.0.3 command is reported as a failure while rollback remains
@@ -92,8 +119,9 @@
   environment, no node path spawns the `security` CLI for reads, install and
   update never rewrite Keychain items, and a stamped one-time migration
   transfers a Keychain-only legacy key before deleting the entry. Telegram bot
-  tokens follow the same 0600 secrets-file contract, and Doctor reports each
-  secret's resolution source and prompt risk.
+  tokens follow the same 0600 secrets-file contract. Doctor reports each
+  credential's effective source and applies prompt-risk checks where an
+  interactive credential store is involved.
 - Keep managed-skill admission blocked unless the whole-generation recovery
   receipt exactly proves every requested repair, and quarantine a differing
   `agents/openai.yaml` before regeneration unless its bytes match metadata
@@ -257,16 +285,7 @@
 
 - Remove the first-party Telegram coding bridge, including its SKS Center
   surface and Telegram CLI/runtime guidance. Existing Telegram release notes
-  below remain historical records. For a separate remote-coding option, the
-  documentation now points to external Orca without bundling, requiring, or
-  supporting it.
-
-### Migration
-
-- Former Telegram users should use the new Orca remote-coding guide to assess
-  an external replacement. SKS does not migrate Telegram sessions, bots, or
-  credentials to Orca, and it does not remove a Telegram credential on the
-  user's behalf.
+  below remain historical records.
 
 ### Changed
 

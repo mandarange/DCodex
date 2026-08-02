@@ -114,8 +114,8 @@ Usage:
   sks remote worker --stdio
 
 This command manages SKS remote readiness, registered machines, and the JSONL worker transport.
-It does not install a messaging bridge or create remote sessions. For mobile-first remote coding,
-see docs/orca-remote-coding.md.
+It does not install a messaging bridge or create remote sessions. For the supported mobile-first
+integration, create a bot with BotFather and run sks telegram --help.
 `);
 }
 

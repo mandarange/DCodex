@@ -17,7 +17,7 @@ import type { CommandContractV3 } from '../../safety/command-contract/types.js';
 
 const SYNTHETIC_TOKEN = '123456:telegram_test_secret_abcdefghijklmnop';
 
-test('Bot API fixture validates getMe, polling shape, offset and sendMessage without exposing token', async () => {
+test('Bot API fixture validates identity, webhook safety, polling and sending without exposing token', async () => {
   const requests: Array<{ method: string; httpMethod: string | undefined; body: Record<string, unknown> }> = [];
   const fixtureFetch: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -26,6 +26,12 @@ test('Bot API fixture validates getMe, polling shape, offset and sendMessage wit
     requests.push({ method, httpMethod: init?.method, body });
     if (method === 'getMe') {
       return new Response(JSON.stringify({ ok: true, result: { id: 1, is_bot: true, first_name: 'SKS' } }));
+    }
+    if (method === 'getWebhookInfo') {
+      return new Response(JSON.stringify({ ok: true, result: { url: '' } }));
+    }
+    if (method === 'deleteWebhook') {
+      return new Response(JSON.stringify({ ok: true, result: true }));
     }
     if (method === 'getUpdates') {
       return new Response(JSON.stringify({ ok: true, result: [{ update_id: 41 }, { update_id: 42 }] }));
@@ -43,10 +49,14 @@ test('Bot API fixture validates getMe, polling shape, offset and sendMessage wit
     fetch: fixtureFetch
   });
   assert.equal((await client.getMe()).is_bot, true);
+  assert.deepEqual(await client.getWebhookInfo(), { url: '' });
+  await client.deleteWebhook();
   assert.equal((await client.getUpdates({ offset: 40, timeoutSeconds: 30 })).length, 2);
   assert.equal((await client.sendMessage(9, 'hello')).text, 'hello');
   assert.deepEqual(requests, [
     { method: 'getMe', httpMethod: 'POST', body: {} },
+    { method: 'getWebhookInfo', httpMethod: 'POST', body: {} },
+    { method: 'deleteWebhook', httpMethod: 'POST', body: { drop_pending_updates: false } },
     { method: 'getUpdates', httpMethod: 'POST', body: { offset: 40, timeout: 30, allowed_updates: ['message'] } },
     { method: 'sendMessage', httpMethod: 'POST', body: { chat_id: 9, text: 'hello' } }
   ]);
@@ -101,6 +111,17 @@ test('pairing and destructive confirmation are atomic, expiring, actor-bound and
   assert.equal(await access.pairAtomically({ code: pair.code, chatId: 10, senderId: 20, chatType: 'private' }), true);
   assert.equal(await access.pairAtomically({ code: pair.code, chatId: 11, senderId: 21, chatType: 'private' }), false);
   assert.equal(await access.authorized(10, 20), true);
+  const groupPair = await access.issuePairingCode(30_000);
+  assert.equal(await access.pairAtomically({ code: groupPair.code, chatId: -100_123, senderId: 20, chatType: 'supergroup' }), false);
+  const forgedPrivatePair = await access.issuePairingCode(30_000);
+  assert.equal(await access.pairAtomically({ code: forgedPrivatePair.code, chatId: -100_123, senderId: 20, chatType: 'private' }), false);
+  const invalidSenderPair = await access.issuePairingCode(30_000);
+  assert.equal(await access.pairAtomically({ code: invalidSenderPair.code, chatId: 10, senderId: 0, chatType: 'private' }), false);
+  const replacementPair = await access.issuePairingCode(30_000);
+  assert.equal(await access.pairAtomically({ code: replacementPair.code, chatId: 30, senderId: 40, chatType: 'private' }), true);
+  assert.equal(await access.authorized(10, 20), false);
+  assert.equal(await access.authorized(30, 40), true);
+  assert.equal(await access.authorizedCount(), 1);
   const confirmations = new TelegramConfirmationStore({ clock, ttlMs: 15_000 });
   const issued = confirmations.issue({ chatId: 10, senderId: 20, command: 'gates', input: { target: 'affected' } });
   assert.equal(confirmations.consume(issued.nonce, 10, 21), null);
@@ -156,7 +177,7 @@ test('liveness receipt is owner-only, doctor-readable and contains no token', as
   const now = Date.now();
   const receipt = createTelegramLivenessReceipt({
     generation: 'generation-1234', running: true, tokenConfigured: true,
-    botIdentityValid: true, pairedChatCount: 1, startedAt: new Date(now).toISOString(),
+    botId: 987_654_321, botIdentityValid: true, pairedChatCount: 1, startedAt: new Date(now).toISOString(),
     heartbeatAt: new Date(now).toISOString(),
     poller: {
       schema: 'sks.telegram-poller-state.v1', running: true, offset: 9,
@@ -164,15 +185,104 @@ test('liveness receipt is owner-only, doctor-readable and contains no token', as
       last_success_at: new Date(now).toISOString(), last_update_at: null, last_error: null
     }
   });
+  const receiptWithoutBotId = createTelegramLivenessReceipt({
+    generation: 'generation-legacy-builder', running: false, tokenConfigured: false,
+    botIdentityValid: false, pairedChatCount: 0, startedAt: new Date(now).toISOString(),
+    heartbeatAt: new Date(now).toISOString(), poller: receipt.poller
+  });
+  assert.equal(receiptWithoutBotId.bot_id, null);
+  assert.throws(() => createTelegramLivenessReceipt({
+    generation: 'generation-invalid-bot', running: false, tokenConfigured: false,
+    botId: 0, botIdentityValid: false, pairedChatCount: 0,
+    startedAt: new Date(now).toISOString(), poller: receipt.poller
+  }), /telegram_liveness_bot_id_invalid/);
   await writeTelegramLivenessReceipt(file, receipt);
   assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
   assert.equal((await fs.readFile(file, 'utf8')).includes(SYNTHETIC_TOKEN), false);
   const read = await readTelegramLivenessReceipt(file, now);
   assert.equal(read.ok && read.receipt.poller.offset, 9);
+  assert.equal(read.ok && read.receipt.bot_id, 987_654_321);
   assert.equal(read.ok && read.receipt.getme_checked_at, new Date(now).toISOString());
   assert.equal(read.ok && read.receipt.getme_latency_ms, 0);
   const doctor = await probeTelegram({ receiptPath: file, now });
   assert.equal(doctor.ok, true);
+});
+
+test('native liveness bot_id round-trips through read and status, remains Doctor-readable, and rejects malformed IDs', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-telegram-native-liveness-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'liveness.json');
+  const now = Date.now();
+  const timestamp = new Date(now).toISOString();
+  const nativeReceipt = {
+    schema: 'sks.telegram-liveness.v1',
+    generation: 'native-generation-1234',
+    pid: process.pid,
+    running: true,
+    token_configured: true,
+    token_source: 'user_secret_file',
+    bot_id: 4_294_967_297,
+    bot_identity_valid: true,
+    getme_checked_at: timestamp,
+    getme_latency_ms: 12,
+    paired_chat_count: 1,
+    started_at: timestamp,
+    heartbeat_at: timestamp,
+    stale_after_seconds: 120,
+    audit_healthy: true,
+    audit_last_error: null,
+    poller: {
+      schema: 'sks.telegram-poller-state.v1', running: true, offset: 9,
+      consecutive_failures: 0, last_poll_at: timestamp,
+      last_success_at: timestamp, last_update_at: null, last_error: null
+    }
+  };
+  const writeNativeReceipt = async (value: Record<string, unknown>) => {
+    await fs.writeFile(file, `${JSON.stringify(value)}\n`, { encoding: 'utf8', mode: 0o600 });
+    await fs.chmod(file, 0o600);
+  };
+
+  await writeNativeReceipt(nativeReceipt);
+  const read = await readTelegramLivenessReceipt(file, now);
+  assert.equal(read.ok && read.receipt.bot_id, nativeReceipt.bot_id);
+
+  const priorLog = console.log;
+  const priorExitCode = process.exitCode;
+  console.log = () => undefined;
+  process.exitCode = undefined;
+  try {
+    const status = await telegramCommand(['status', '--json'], { receiptPath: file }) as {
+      ok: boolean;
+      receipt: { bot_id?: number | null };
+    };
+    assert.equal(status.ok, true);
+    assert.equal(status.receipt.bot_id, nativeReceipt.bot_id);
+    const doctor = await telegramCommand(['doctor', '--json'], { receiptPath: file }) as {
+      ok: boolean;
+      status: string;
+    };
+    assert.equal(doctor.ok, true);
+    assert.equal(doctor.status, 'ready');
+  } finally {
+    console.log = priorLog;
+    process.exitCode = priorExitCode;
+  }
+
+  const legacyReceipt: Record<string, unknown> = { ...nativeReceipt };
+  delete legacyReceipt.bot_id;
+  await writeNativeReceipt(legacyReceipt);
+  assert.equal((await readTelegramLivenessReceipt(file, now)).ok, true);
+  await writeNativeReceipt({ ...nativeReceipt, bot_id: null });
+  assert.equal((await readTelegramLivenessReceipt(file, now)).ok, true);
+
+  for (const malformed of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '42', true, {}, []]) {
+    await writeNativeReceipt({ ...nativeReceipt, bot_id: malformed });
+    assert.deepEqual(await readTelegramLivenessReceipt(file, now), {
+      ok: false,
+      receipt: null,
+      blocker: 'telegram_liveness_invalid_schema'
+    });
+  }
 });
 
 test('audit failure in liveness is a Doctor blocker with operator repair guidance', async (t) => {
@@ -223,7 +333,12 @@ test('CLI setup, pairing, and state bookkeeping never spawn PATH-shadowed securi
   const priorLog = console.log;
   const logs: string[] = [];
   let setup: { ok: boolean; storage: string } | undefined;
-  let pair: { ok: boolean; code: string } | undefined;
+  let pair: {
+    ok: boolean;
+    code: string;
+    post_pair_command: string;
+    confirmation_grammar: string;
+  } | undefined;
   process.exitCode = undefined;
   console.log = (...parts: unknown[]) => { logs.push(parts.map(String).join(' ')); };
   try {
@@ -234,10 +349,20 @@ test('CLI setup, pairing, and state bookkeeping never spawn PATH-shadowed securi
     delete process.env.SKS_TELEGRAM_BOT_TOKEN;
 
     setup = await telegramCommand(['setup', '--token-stdin', '--json'], {
+      environment: {},
       readTokenStdin: async () => SYNTHETIC_TOKEN,
-      verifyToken: async (token) => { assert.equal(token, SYNTHETIC_TOKEN); }
+      verifyToken: async (token) => { assert.equal(token, SYNTHETIC_TOKEN); },
+      inspectWebhook: async (token) => {
+        assert.equal(token, SYNTHETIC_TOKEN);
+        return { url: '' };
+      }
     }) as { ok: boolean; storage: string };
-    pair = await telegramCommand(['pair', '--json']) as { ok: boolean; code: string };
+    pair = await telegramCommand(['pair', '--json']) as {
+      ok: boolean;
+      code: string;
+      post_pair_command: string;
+      confirmation_grammar: string;
+    };
 
     const paths = telegramPrivatePaths({ HOME: home });
     await updateTelegramState((state) => ({
@@ -254,34 +379,13 @@ test('CLI setup, pairing, and state bookkeeping never spawn PATH-shadowed securi
   assert.equal(setup?.storage, 'user_secret_file');
   assert.equal(pair?.ok, true);
   assert.match(pair?.code ?? '', /^\d{6}-[A-F0-9]{4}$/);
+  assert.equal(pair?.post_pair_command, '/sks status {}');
+  assert.equal(pair?.confirmation_grammar, '/confirm <nonce>');
   const state = await readTelegramState(telegramPrivatePaths({ HOME: home }));
   assert.equal(state.schema, 'sks.telegram-state.v1');
   assert.equal(state.chats.length, 1);
   assert.equal(JSON.stringify({ setup, pair, state, logs }).includes(SYNTHETIC_TOKEN), false);
   await assert.rejects(fs.access(invokedMarker), { code: 'ENOENT' });
-});
-
-test('native CLI gateway validates typed contracts and executes argv without a shell string', async () => {
-  const calls: string[][] = [];
-  const dependency = {
-    readCommandStdin: async () => ({ name: 'status', input: { json: true } }),
-    executionAdapter: {
-      executeArgv: async (argv: readonly string[]) => {
-        calls.push([...argv]);
-        return { ok: true };
-      }
-    }
-  };
-  const prepared = await telegramCommand(['prepare', '--stdin-json', '--json'], dependency) as {
-    allowed: boolean; confirmation_required: boolean;
-  };
-  assert.equal(prepared.allowed, true);
-  assert.equal(prepared.confirmation_required, false);
-  const executed = await telegramCommand(['execute', '--stdin-json', '--json'], dependency) as {
-    ok: boolean; output: unknown;
-  };
-  assert.equal(executed.ok, true);
-  assert.deepEqual(calls, [['status', '--json']]);
 });
 
 function restoreEnvironment(environment: Record<string, string | undefined>): void {

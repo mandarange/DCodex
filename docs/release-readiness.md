@@ -206,8 +206,6 @@ path.
   while release authorization additionally requires a real command/reply E2E
   from a cellular network. A token, fixture, local-network run, or Doctor
   readiness result cannot substitute for that live gate;
-- Orca remains external and SKS has no Orca dependency or automatic migration;
-  and
 - Zellij is observability only and cannot satisfy completion proof.
 
 ### Database Safety
@@ -255,8 +253,9 @@ version-bound check, write and verify the full release stamp, and only then run
 the package dry-run. For this branch, 8.0.3 to 8.0.4 adds exact installed-CLI
 resolution after install, PATH-shadow fail-closed behavior, a working
 explicit `npm exec --package=sneakoscope@latest -- sneakoscope install` command,
-and Luna/Terra max-only model-policy
-corrections. Earlier remediation and the one-time 7.6.0-to-8.0.0 major version
+Luna/Terra max-only model-policy corrections, removal of retired product guidance,
+and the hardened BotFather/Telegram Center flow with bot-bound polling state.
+Earlier remediation and the one-time 7.6.0-to-8.0.0 major version
 cut already shipped and must not be rerun.
 
 After that version cut, start from a clean dependency installation and one
@@ -312,7 +311,7 @@ Inspect the exact packed file list and tarball, not only the source checkout.
 - generated project guidance contains only current dollar routes;
 - an isolated prefix install can run version, help, doctor, Naruto status, MCP
   status, update status, and Menu Bar diagnostics;
-- the 7.6.0-to-current upgrade smoke and focused 8.0.3-to-8.0.4 resolved-CLI
+- the 7.6.0 to 8.0.4 upgrade smoke and focused 8.0.3-to-8.0.4 resolved-CLI
   regression use isolated HOME/prefix state and prove managed
   cleanup, user-file preservation, new-binary re-exec, rollback receipts,
   exact lifecycle command inventory, no timeout, no host HOME/prefix reuse,

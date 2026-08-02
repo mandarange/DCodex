@@ -23,8 +23,13 @@ final class TelegramProcessCommandGateway: TelegramTypedCommandGateway, @uncheck
     }
 
     private let processRunner: ProcessRunner
+    private let canonicalProjectRoot: String
 
-    init(processClient: ProcessClient) {
+    init(
+        processClient: ProcessClient,
+        canonicalProjectRoot: String
+    ) {
+        self.canonicalProjectRoot = canonicalProjectRoot
         self.processRunner = { arguments, stdin, timeout, completion in
             processClient.run(
                 arguments,
@@ -41,14 +46,21 @@ final class TelegramProcessCommandGateway: TelegramTypedCommandGateway, @uncheck
         }
     }
 
-    init(processRunner: @escaping ProcessRunner) {
+    init(
+        canonicalProjectRoot: String,
+        processRunner: @escaping ProcessRunner
+    ) {
+        self.canonicalProjectRoot = canonicalProjectRoot
         self.processRunner = processRunner
     }
 
     func prepare(_ request: TelegramTypedCommandRequest) async -> TelegramTypedCommandDecision {
         do {
             let output = try await run(
-                arguments: ["telegram", "prepare", "--stdin-json", "--json"],
+                arguments: [
+                    "telegram", "prepare", "--stdin-json", "--json",
+                    "--project-root", canonicalProjectRoot
+                ],
                 request: request,
                 timeout: 20
             )
@@ -69,7 +81,10 @@ final class TelegramProcessCommandGateway: TelegramTypedCommandGateway, @uncheck
 
     func execute(_ request: TelegramTypedCommandRequest) async throws -> String {
         let output = try await run(
-            arguments: ["telegram", "execute", "--stdin-json", "--confirmed", "--json"],
+            arguments: [
+                "telegram", "execute", "--stdin-json", "--confirmed", "--json",
+                "--project-root", canonicalProjectRoot
+            ],
             request: request,
             timeout: 190
         )
@@ -127,11 +142,24 @@ final class TelegramAuditLedger: @unchecked Sendable {
 
     private let url: URL
     private let maximumBytes: Int64
+    private let now: @Sendable () -> Date
     private let lock = NSLock()
+    private var recentUnauthorized: [Date] = []
+    private var recentUnauthorizedByActor: [String: [Date]] = [:]
 
-    init(url: URL, maximumBytes: Int64 = 4 * 1024 * 1024) {
+    private static let unauthorizedWindow: TimeInterval = 60
+    private static let unauthorizedGlobalLimit = 64
+    private static let unauthorizedPerActorLimit = 4
+    private static let maximumRetainedSegments = 4
+
+    init(
+        url: URL,
+        maximumBytes: Int64 = 4 * 1024 * 1024,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.url = url
         self.maximumBytes = max(64 * 1024, min(maximumBytes, 16 * 1024 * 1024))
+        self.now = now
     }
 
     func record(_ event: TelegramNativeAuditEvent) throws {
@@ -142,21 +170,26 @@ final class TelegramAuditLedger: @unchecked Sendable {
                 withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700]
             )
-            let descriptor = open(url.path, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+            let directoryDescriptor = try openValidatedDirectory(directory)
+            defer { close(directoryDescriptor) }
+            let lockURL = directory.appendingPathComponent(".\(url.lastPathComponent).lock")
+            let lockDescriptor = open(lockURL.path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+            guard lockDescriptor >= 0 else { throw TelegramProcessGatewayError.auditLedgerUnsafe }
+            defer { close(lockDescriptor) }
+            _ = try validatedFile(lockDescriptor, at: lockURL)
+            guard flock(lockDescriptor, LOCK_EX) == 0 else {
+                throw TelegramProcessGatewayError.auditLedgerWriteFailed
+            }
+            defer { flock(lockDescriptor, LOCK_UN) }
+
+            var descriptor = open(url.path, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
             guard descriptor >= 0 else { throw TelegramProcessGatewayError.auditLedgerUnsafe }
-            defer { close(descriptor) }
-            var metadata = stat()
-            guard fstat(descriptor, &metadata) == 0,
-                  (metadata.st_mode & S_IFMT) == S_IFREG,
-                  metadata.st_uid == getuid(),
-                  (metadata.st_mode & 0o077) == 0 else {
-                throw TelegramProcessGatewayError.auditLedgerUnsafe
-            }
-            guard flock(descriptor, LOCK_EX) == 0 else { throw TelegramProcessGatewayError.auditLedgerWriteFailed }
-            defer { flock(descriptor, LOCK_UN) }
-            if metadata.st_size >= maximumBytes {
-                guard ftruncate(descriptor, 0) == 0 else { throw TelegramProcessGatewayError.auditLedgerWriteFailed }
-            }
+            defer { if descriptor >= 0 { close(descriptor) } }
+            var metadata = try validatedFile(descriptor, at: url)
+
+            // Rejected-input noise is evidence, but it must not be able to evict
+            // meaningful history or force rapid segment rotation.
+            guard shouldPersist(event, at: now()) else { return }
             let row = Row(
                 at: telegramGatewayISODate(), actor: event.actor, action: event.action,
                 command: event.command, outcome: event.outcome,
@@ -164,12 +197,188 @@ final class TelegramAuditLedger: @unchecked Sendable {
             )
             var data = try JSONEncoder().encode(row)
             data.append(0x0a)
-            let wrote = data.withUnsafeBytes { buffer -> Int in
-                guard let base = buffer.baseAddress else { return -1 }
-                return Darwin.write(descriptor, base, buffer.count)
+
+            if metadata.st_size > 0 && metadata.st_size + Int64(data.count) > maximumBytes {
+                try rotateRetainingSegment(
+                    metadata: metadata,
+                    directory: directory,
+                    directoryDescriptor: directoryDescriptor
+                )
+                close(descriptor)
+                descriptor = open(
+                    url.path,
+                    O_WRONLY | O_APPEND | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+                    0o600
+                )
+                guard descriptor >= 0 else { throw TelegramProcessGatewayError.auditLedgerWriteFailed }
+                metadata = try validatedFile(descriptor, at: url)
+                guard metadata.st_size == 0 else { throw TelegramProcessGatewayError.auditLedgerUnsafe }
             }
-            guard wrote == data.count, fsync(descriptor) == 0 else {
+
+            try writeAll(data, descriptor: descriptor)
+            guard fsync(descriptor) == 0 else {
                 throw TelegramProcessGatewayError.auditLedgerWriteFailed
+            }
+        }
+    }
+
+    private func shouldPersist(_ event: TelegramNativeAuditEvent, at current: Date) -> Bool {
+        guard event.action == "unauthorized_chat" || event.action == "pair_attempt"
+            || event.action == "invalid_command" else { return true }
+        let cutoff = current.addingTimeInterval(-Self.unauthorizedWindow)
+        recentUnauthorized.removeAll { $0 <= cutoff }
+        recentUnauthorizedByActor = recentUnauthorizedByActor.compactMapValues { dates in
+            let retained = dates.filter { $0 > cutoff }
+            return retained.isEmpty ? nil : retained
+        }
+        let actorDates = recentUnauthorizedByActor[event.actor] ?? []
+        guard recentUnauthorized.count < Self.unauthorizedGlobalLimit,
+              actorDates.count < Self.unauthorizedPerActorLimit else { return false }
+        recentUnauthorized.append(current)
+        recentUnauthorizedByActor[event.actor] = actorDates + [current]
+        return true
+    }
+
+    private func openValidatedDirectory(_ directory: URL) throws -> Int32 {
+        var pathMetadata = stat()
+        guard lstat(directory.path, &pathMetadata) == 0,
+              (pathMetadata.st_mode & S_IFMT) == S_IFDIR,
+              pathMetadata.st_uid == geteuid(),
+              (pathMetadata.st_mode & 0o022) == 0 else {
+            throw TelegramProcessGatewayError.auditLedgerUnsafe
+        }
+        let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { throw TelegramProcessGatewayError.auditLedgerUnsafe }
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0,
+              metadata.st_dev == pathMetadata.st_dev,
+              metadata.st_ino == pathMetadata.st_ino,
+              (metadata.st_mode & S_IFMT) == S_IFDIR,
+              metadata.st_uid == geteuid(),
+              (metadata.st_mode & 0o022) == 0 else {
+            close(descriptor)
+            throw TelegramProcessGatewayError.auditLedgerUnsafe
+        }
+        return descriptor
+    }
+
+    private func validatedFile(_ descriptor: Int32, at fileURL: URL) throws -> stat {
+        var pathMetadata = stat()
+        var metadata = stat()
+        guard lstat(fileURL.path, &pathMetadata) == 0,
+              fstat(descriptor, &metadata) == 0,
+              metadata.st_dev == pathMetadata.st_dev,
+              metadata.st_ino == pathMetadata.st_ino,
+              (metadata.st_mode & S_IFMT) == S_IFREG,
+              metadata.st_uid == geteuid(),
+              (metadata.st_mode & 0o077) == 0 else {
+            throw TelegramProcessGatewayError.auditLedgerUnsafe
+        }
+        return metadata
+    }
+
+    private func rotateRetainingSegment(
+        metadata: stat,
+        directory: URL,
+        directoryDescriptor: Int32
+    ) throws {
+        let segmentURL = directory.appendingPathComponent(
+            "\(url.lastPathComponent).\(UUID().uuidString).segment"
+        )
+        guard link(url.path, segmentURL.path) == 0 else {
+            throw TelegramProcessGatewayError.auditLedgerWriteFailed
+        }
+        var segmentMetadata = stat()
+        guard lstat(segmentURL.path, &segmentMetadata) == 0,
+              segmentMetadata.st_dev == metadata.st_dev,
+              segmentMetadata.st_ino == metadata.st_ino,
+              (segmentMetadata.st_mode & S_IFMT) == S_IFREG,
+              segmentMetadata.st_uid == geteuid(),
+              (segmentMetadata.st_mode & 0o077) == 0 else {
+            _ = unlink(segmentURL.path)
+            throw TelegramProcessGatewayError.auditLedgerUnsafe
+        }
+        // The newest retained link must be durable before any older segment
+        // is evicted or the active name is removed.
+        guard fsync(directoryDescriptor) == 0 else {
+            throw TelegramProcessGatewayError.auditLedgerWriteFailed
+        }
+        try pruneRetainedSegments(in: directory, directoryDescriptor: directoryDescriptor)
+        guard unlink(url.path) == 0, fsync(directoryDescriptor) == 0 else {
+            throw TelegramProcessGatewayError.auditLedgerWriteFailed
+        }
+    }
+
+    private func pruneRetainedSegments(
+        in directory: URL,
+        directoryDescriptor: Int32
+    ) throws {
+        struct Segment {
+            let url: URL
+            let metadata: stat
+        }
+        let prefix = "\(url.lastPathComponent)."
+        let candidates = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ).filter {
+            $0.lastPathComponent.hasPrefix(prefix) && $0.lastPathComponent.hasSuffix(".segment")
+        }
+        var segments: [Segment] = []
+        for candidate in candidates {
+            var metadata = stat()
+            guard lstat(candidate.path, &metadata) == 0,
+                  (metadata.st_mode & S_IFMT) == S_IFREG,
+                  metadata.st_uid == geteuid(),
+                  (metadata.st_mode & 0o077) == 0,
+                  metadata.st_size >= 0,
+                  metadata.st_size <= maximumBytes else {
+                throw TelegramProcessGatewayError.auditLedgerUnsafe
+            }
+            segments.append(Segment(url: candidate, metadata: metadata))
+        }
+        segments.sort {
+            if $0.metadata.st_mtimespec.tv_sec != $1.metadata.st_mtimespec.tv_sec {
+                return $0.metadata.st_mtimespec.tv_sec < $1.metadata.st_mtimespec.tv_sec
+            }
+            if $0.metadata.st_mtimespec.tv_nsec != $1.metadata.st_mtimespec.tv_nsec {
+                return $0.metadata.st_mtimespec.tv_nsec < $1.metadata.st_mtimespec.tv_nsec
+            }
+            return $0.url.lastPathComponent < $1.url.lastPathComponent
+        }
+        let maximumRetainedBytes = maximumBytes * Int64(Self.maximumRetainedSegments)
+        var retainedBytes = segments.reduce(Int64(0)) { $0 + Int64($1.metadata.st_size) }
+        while segments.count > Self.maximumRetainedSegments || retainedBytes > maximumRetainedBytes {
+            let oldest = segments.removeFirst()
+            var current = stat()
+            guard lstat(oldest.url.path, &current) == 0,
+                  current.st_dev == oldest.metadata.st_dev,
+                  current.st_ino == oldest.metadata.st_ino,
+                  (current.st_mode & S_IFMT) == S_IFREG,
+                  current.st_uid == geteuid(),
+                  (current.st_mode & 0o077) == 0 else {
+                throw TelegramProcessGatewayError.auditLedgerUnsafe
+            }
+            guard unlink(oldest.url.path) == 0 else {
+                throw TelegramProcessGatewayError.auditLedgerWriteFailed
+            }
+            retainedBytes -= Int64(oldest.metadata.st_size)
+        }
+        guard fsync(directoryDescriptor) == 0 else {
+            throw TelegramProcessGatewayError.auditLedgerWriteFailed
+        }
+    }
+
+    private func writeAll(_ data: Data, descriptor: Int32) throws {
+        try data.withUnsafeBytes { buffer in
+            guard let base = buffer.baseAddress else { return }
+            var offset = 0
+            while offset < buffer.count {
+                let wrote = Darwin.write(descriptor, base.advanced(by: offset), buffer.count - offset)
+                if wrote < 0 && errno == EINTR { continue }
+                guard wrote > 0 else { throw TelegramProcessGatewayError.auditLedgerWriteFailed }
+                offset += wrote
             }
         }
     }
@@ -211,12 +420,19 @@ final class TelegramMenuBarService {
 }
 
 enum TelegramRuntimeFactory {
-    static func make(processClient: ProcessClient, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> TelegramMenuBarService {
+    static func make(
+        processClient: ProcessClient,
+        canonicalProjectRoot: String,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> TelegramMenuBarService {
         let install = home.appendingPathComponent(".codex/sks-menubar", isDirectory: true)
         let ledger = TelegramAuditLedger(url: install.appendingPathComponent("logs/telegram-audit.jsonl"))
         let runtime = TelegramMenuBarRuntime(
             access: TelegramPrivateFileStore(homeDirectory: home),
-            gateway: TelegramProcessCommandGateway(processClient: processClient),
+            gateway: TelegramProcessCommandGateway(
+                processClient: processClient,
+                canonicalProjectRoot: canonicalProjectRoot
+            ),
             receiptURL: install.appendingPathComponent("telegram-liveness.json")
         ) { event in try ledger.record(event) }
         return TelegramMenuBarService(runtime: runtime)

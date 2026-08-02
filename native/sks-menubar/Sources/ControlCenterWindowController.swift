@@ -11,7 +11,8 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
     init(
         processClient: ProcessClient,
         operations: OperationCoordinator,
-        notifications: NotificationCoordinator
+        notifications: NotificationCoordinator,
+        telegramService: TelegramMenuBarService
     ) {
         let overview = OverviewViewController(processClient: processClient, operations: operations)
         overviewController = overview
@@ -28,7 +29,10 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
             .updates: UpdatesViewController(processClient: processClient, operations: operations, notifications: notifications),
             .mcpServers: MCPServersViewController(processClient: processClient, operations: operations, notifications: notifications),
             .providers: ProvidersViewController(processClient: processClient, operations: operations),
-            .remoteCoding: RemoteCodingViewController(),
+            .remoteCoding: RemoteCodingViewController(
+                processClient: processClient,
+                telegramService: telegramService
+            ),
             .diagnostics: DiagnosticsViewController(processClient: processClient, operations: operations),
             .settings: SettingsViewController(notifications: notifications)
         ]

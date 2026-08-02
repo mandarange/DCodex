@@ -5,6 +5,10 @@ export interface TelegramUser {
   username?: string;
 }
 
+export interface TelegramWebhookInfo {
+  url: string;
+}
+
 export interface TelegramChat {
   id: number;
   type: 'private' | 'group' | 'supergroup' | 'channel' | string;
@@ -48,6 +52,8 @@ export interface TelegramPollSnapshot {
   last_error: string | null;
 }
 
+export type TelegramTokenSource = 'env' | 'user_secret_file' | 'none' | 'unknown';
+
 /** Secret-free state written by the single resident menu-bar poller. */
 export interface TelegramLivenessReceipt {
   schema: 'sks.telegram-liveness.v1';
@@ -55,6 +61,9 @@ export interface TelegramLivenessReceipt {
   pid: number;
   running: boolean;
   token_configured: boolean;
+  token_source?: TelegramTokenSource;
+  /** Optional for backward compatibility with receipts from older menu-bar builds. */
+  bot_id?: number | null;
   bot_identity_valid: boolean;
   getme_checked_at: string | null;
   getme_latency_ms: number | null;

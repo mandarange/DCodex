@@ -1,10 +1,33 @@
 #if TELEGRAM_STANDALONE_TEST
+import Darwin
 import Foundation
 
 private enum TelegramSmokeError: Error { case auditUnavailable }
 
 private final class TelegramSmokeAccess: TelegramAccessStoring, @unchecked Sendable {
-    func loadToken() throws -> String? { "123456:abcdefghijklmnopqrstuvwxyzABCDE" }
+    private var botID: Int64? = 1
+    private var pollOffset: Int64 = 0
+    var resolvedToken = "123456:abcdefghijklmnopqrstuvwxyzABCDE"
+    func resolveToken() throws -> TelegramResolvedAccessToken {
+        TelegramResolvedAccessToken(
+            token: resolvedToken,
+            source: .userSecretFile
+        )
+    }
+    func bindBotIdentity(_ botID: Int64) throws -> TelegramBotBinding {
+        let previous = self.botID
+        let reset = previous != botID
+        if reset { pollOffset = 0 }
+        self.botID = botID
+        return TelegramBotBinding(
+            botID: botID, previousBotID: previous,
+            pollOffset: pollOffset, stateReset: reset
+        )
+    }
+    func persistPollOffset(_ offset: Int64, botID: Int64) throws {
+        guard self.botID == botID else { throw TelegramPrivateFileError.invalidStoredValue }
+        pollOffset = offset
+    }
     func consumePairing(code: String, chatID: Int64, senderID: Int64, chatType: String) throws -> Bool { false }
     func isAuthorized(chatID: Int64, senderID: Int64) throws -> Bool { chatID == 10 && senderID == 20 }
     func authorizedCount() throws -> Int { 1 }
@@ -21,14 +44,48 @@ private final class TelegramSmokeAccess: TelegramAccessStoring, @unchecked Senda
     ) throws -> TelegramStoredConfirmation? { nil }
 }
 
+private actor TelegramDelayedSmokeAPI: TelegramBotAPI {
+    private var pending: [CheckedContinuation<TelegramNativeUser, Error>] = []
+    private var identityTokens: [String] = []
+    private var updateTokens: [String] = []
+
+    func getMe(token: String) async throws -> TelegramNativeUser {
+        identityTokens.append(token)
+        return try await withCheckedThrowingContinuation { pending.append($0) }
+    }
+
+    func getUpdates(token: String, offset: Int64, timeoutSeconds: Int) async throws -> [TelegramNativeUpdate] {
+        updateTokens.append(token)
+        try await Task.sleep(nanoseconds: 10_000_000)
+        return []
+    }
+
+    func sendMessage(token: String, chatID: Int64, text: String) async throws { }
+    func waitForIdentityCalls(_ count: Int) async {
+        while pending.count < count { await Task.yield() }
+    }
+    func resolveIdentity(at index: Int, botID: Int64) {
+        pending.remove(at: index).resume(returning: TelegramNativeUser(id: botID, is_bot: true, first_name: "SKS"))
+    }
+    func observedIdentityTokens() -> [String] { identityTokens }
+    func observedUpdateTokens() -> [String] { updateTokens }
+}
+
 private actor TelegramSmokeAPI: TelegramBotAPI {
     var first = true
     var offsets: [Int64] = []
     var replies: [String] = []
+    var identityResults: [Bool] = []
+    var events: [String] = []
     func getMe(token: String) async throws -> TelegramNativeUser {
-        TelegramNativeUser(id: 1, is_bot: true, first_name: "SKS")
+        events.append("getMe")
+        if !identityResults.isEmpty, !identityResults.removeFirst() {
+            throw TelegramTransportError.apiFailure(503, "identity_unavailable")
+        }
+        return TelegramNativeUser(id: 1, is_bot: true, first_name: "SKS")
     }
     func getUpdates(token: String, offset: Int64, timeoutSeconds: Int) async throws -> [TelegramNativeUpdate] {
+        events.append("getUpdates")
         offsets.append(offset)
         guard first else {
             try await Task.sleep(nanoseconds: 10_000_000)
@@ -47,6 +104,8 @@ private actor TelegramSmokeAPI: TelegramBotAPI {
         ]
     }
     func sendMessage(token: String, chatID: Int64, text: String) async throws { replies.append("\(chatID):\(text)") }
+    func enqueueIdentityResults(_ results: [Bool]) { identityResults.append(contentsOf: results) }
+    func eventLog() -> [String] { events }
     func state() -> ([Int64], [String]) { (offsets, replies) }
 }
 
@@ -126,6 +185,64 @@ private enum TelegramRuntimeSmokeTests {
         precondition(failedAuditReceipt?.audit_healthy == false)
         precondition(failedAuditReceipt?.audit_last_error == "telegram_audit_unavailable")
         precondition(telegramSelfHealAction(failedAuditReceipt!) == .operatorRepairAudit)
+
+        let refreshAPI = TelegramSmokeAPI()
+        await refreshAPI.enqueueIdentityResults([true, false, true])
+        let refreshRuntime = TelegramMenuBarRuntime(
+            api: refreshAPI, access: TelegramSmokeAccess(), gateway: TelegramSmokeGateway(),
+            receiptURL: directory.appendingPathComponent("identity-refresh-liveness.json"),
+            identityRefreshIntervalSeconds: 0, audit: { _ in }
+        )
+        _ = try await refreshRuntime.start()
+        for _ in 0..<40 {
+            if await refreshAPI.eventLog().contains("getUpdates") { break }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        await refreshRuntime.stop()
+        let refreshEvents = await refreshAPI.eventLog()
+        guard let firstPoll = refreshEvents.firstIndex(of: "getUpdates") else {
+            fatalError("polling did not resume after identity recovery")
+        }
+        precondition(
+            Array(refreshEvents[..<firstPoll]) == ["getMe", "getMe", "getMe"],
+            "polling resumed before failed identity refresh was revalidated"
+        )
+
+        let raceAPI = TelegramDelayedSmokeAPI()
+        let raceAccess = TelegramSmokeAccess()
+        let raceRuntime = TelegramMenuBarRuntime(
+            api: raceAPI, access: raceAccess, gateway: TelegramSmokeGateway(),
+            receiptURL: directory.appendingPathComponent("start-race-liveness.json"), audit: { _ in }
+        )
+        let firstStart = Task { try await raceRuntime.start() }
+        await raceAPI.waitForIdentityCalls(1)
+        await raceRuntime.stop()
+        let stoppedRaceReceipt = await raceRuntime.liveness()
+        precondition(!stoppedRaceReceipt.running, "Stop lost to pending startup")
+        raceAccess.resolvedToken = "222222:abcdefghijklmnopqrstuvwxyzABCDE"
+        let restarted = Task { try await raceRuntime.restart() }
+        await raceAPI.waitForIdentityCalls(2)
+        await raceAPI.resolveIdentity(at: 1, botID: 2)
+        let restartedReceipt = try await restarted.value
+        precondition(restartedReceipt.running && restartedReceipt.bot_id == 2)
+        await raceAPI.resolveIdentity(at: 0, botID: 1)
+        do {
+            _ = try await firstStart.value
+            fatalError("superseded startup committed after Stop/Restart")
+        } catch TelegramTransportError.apiFailure(nil, "telegram_poller_start_cancelled") { }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        let raceReceipt = await raceRuntime.liveness()
+        let identityTokens = await raceAPI.observedIdentityTokens()
+        let updateTokens = await raceAPI.observedUpdateTokens()
+        precondition(raceReceipt.running && raceReceipt.bot_id == 2)
+        precondition(identityTokens == [
+            "123456:abcdefghijklmnopqrstuvwxyzABCDE",
+            "222222:abcdefghijklmnopqrstuvwxyzABCDE"
+        ])
+        precondition(!updateTokens.isEmpty && updateTokens.allSatisfy {
+            $0 == "222222:abcdefghijklmnopqrstuvwxyzABCDE"
+        })
+        await raceRuntime.stop()
         print("telegram swift runtime smoke: ok")
     }
 
@@ -160,6 +277,8 @@ private enum TelegramRuntimeSmokeTests {
         )
         let resolvedPrimaryToken = try primary.loadToken()
         precondition(resolvedPrimaryToken == primaryToken, "primary token environment precedence failed")
+        let primarySource = try primary.resolveToken().source
+        precondition(primarySource == .environment, "environment token source was not reported")
         let secondary = TelegramPrivateFileStore(
             homeDirectory: home,
             environment: [
@@ -177,6 +296,8 @@ private enum TelegramRuntimeSmokeTests {
         )
         let resolvedFileToken = try store.loadToken()
         precondition(resolvedFileToken == fileToken, "private token file fallback failed")
+        let fileSource = try store.resolveToken().source
+        precondition(fileSource == .userSecretFile, "file token source was not reported")
 
         let configuredRoot = directory.appendingPathComponent("configured-sks-home", isDirectory: true)
         let configuredSecrets = configuredRoot.appendingPathComponent("secrets", isDirectory: true)
@@ -211,6 +332,10 @@ private enum TelegramRuntimeSmokeTests {
         let stateFixture = #"{"schema":"sks.telegram-state.v1","pairing":{"schema":"sks.telegram-pairing.v1","code":"123456-ABCD","expires_at":"2030-01-01T00:00:00.000Z","used":false,"future_pairing":"kept"},"chats":[],"confirmations":[],"future_root":{"kept":true}}"#
         try Data("\(stateFixture)\n".utf8).write(to: stateURL)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateURL.path)
+        let invalidChat = try store.consumePairing(code: "123456-ABCD", chatID: 0, senderID: 20, chatType: "private")
+        precondition(!invalidChat, "non-positive private chat ID was accepted")
+        let invalidSender = try store.consumePairing(code: "123456-ABCD", chatID: 10, senderID: -1, chatType: "private")
+        precondition(!invalidSender, "non-positive private sender ID was accepted")
         let paired = try store.consumePairing(code: "123456-ABCD", chatID: 10, senderID: 20, chatType: "private")
         precondition(paired, "pairing consume failed")
         let authorized = try store.isAuthorized(chatID: 10, senderID: 20)
@@ -244,6 +369,8 @@ private enum TelegramRuntimeSmokeTests {
         precondition(pairing?["future_pairing"] as? String == "kept")
         precondition((root?["future_root"] as? [String: Any])?["kept"] as? Bool == true)
         precondition(chats?.count == 1 && confirmations?.isEmpty == true)
+        precondition(root?["bot_id"] is NSNull)
+        precondition((root?["poll_offset"] as? NSNumber)?.int64Value == 0)
         let stateMode = try FileManager.default.attributesOfItem(atPath: stateURL.path)[.posixPermissions] as? NSNumber
         precondition(stateMode?.intValue == 0o600, "state mode was not 0600")
         let sksMode = try FileManager.default.attributesOfItem(atPath: sks.path)[.posixPermissions] as? NSNumber
@@ -252,6 +379,89 @@ private enum TelegramRuntimeSmokeTests {
             let mode = try FileManager.default.attributesOfItem(atPath: privateDirectory.path)[.posixPermissions] as? NSNumber
             precondition(mode?.intValue == 0o700, "private directory mode was not 0700")
         }
+
+        let multiChatFixture = #"{"schema":"sks.telegram-state.v1","bot_id":101,"poll_offset":44,"pairing":{"schema":"sks.telegram-pairing.v1","code":"654321-DCBA","expires_at":"2030-01-01T00:00:00.000Z","used":false},"chats":[{"chat_id":10,"sender_id":20,"paired_at":"2026-01-01T00:00:00.000Z"},{"chat_id":11,"sender_id":21,"paired_at":"2026-01-01T00:00:00.000Z"}],"confirmations":[{"nonce":"old","chat_id":10,"sender_id":20,"command":"status","input_json":"{}","expires_at":"2030-01-01T00:00:00.000Z"}]}"#
+        try Data("\(multiChatFixture)\n".utf8).write(to: stateURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateURL.path)
+        let recovered = try store.bindBotIdentity(101)
+        precondition(recovered.stateReset && recovered.pollOffset == 0, "multi-chat state was not reset before polling")
+        try store.persistPollOffset(9, botID: 101)
+        let resumed = try store.bindBotIdentity(101)
+        precondition(!resumed.stateReset && resumed.pollOffset == 9, "bot-bound poll offset did not resume")
+        let rotated = try store.bindBotIdentity(202)
+        precondition(rotated.stateReset && rotated.pollOffset == 0, "rotated bot reused prior poll state")
+
+        let replacementFixture = #"{"schema":"sks.telegram-state.v1","bot_id":202,"poll_offset":0,"pairing":{"schema":"sks.telegram-pairing.v1","code":"999999-AAAA","expires_at":"2030-01-01T00:00:00.000Z","used":false},"chats":[{"chat_id":50,"sender_id":60,"paired_at":"2026-01-01T00:00:00.000Z"}],"confirmations":[{"nonce":"stale","chat_id":50,"sender_id":60,"command":"status","input_json":"{}","expires_at":"2030-01-01T00:00:00.000Z"}]}"#
+        try Data("\(replacementFixture)\n".utf8).write(to: stateURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateURL.path)
+        let replacementPaired = try store.consumePairing(
+            code: "999999-AAAA", chatID: 70, senderID: 80, chatType: "private"
+        )
+        precondition(replacementPaired)
+        let replacementData = try Data(contentsOf: stateURL)
+        let replacement = try JSONSerialization.jsonObject(with: replacementData) as? [String: Any]
+        let replacementChats = replacement?["chats"] as? [[String: Any]]
+        precondition(replacementChats?.count == 1)
+        precondition((replacementChats?.first?["chat_id"] as? NSNumber)?.int64Value == 70)
+        precondition((replacement?["confirmations"] as? [[String: Any]])?.isEmpty == true)
+
+        let stateLockURL = stateDirectory.appendingPathComponent(".telegram.lock")
+        try writeStateLockFixture(
+            at: stateLockURL,
+            pid: Int32.max,
+            token: "22222222-2222-4222-8222-222222222222"
+        )
+        _ = try store.bindBotIdentity(202)
+        precondition(!FileManager.default.fileExists(atPath: stateLockURL.path), "dead state lock was not recovered")
+
+        try writeStateLockFixture(
+            at: stateLockURL,
+            pid: getpid(),
+            token: "11111111-1111-4111-8111-111111111111"
+        )
+        do {
+            _ = try store.bindBotIdentity(202)
+            preconditionFailure("live same-process state lock was reaped")
+        } catch TelegramPrivateFileError.systemCall(let operation, let code) {
+            precondition(operation == "lock_timeout" && code == EBUSY, "live lock did not fail closed")
+        }
+        precondition(FileManager.default.fileExists(atPath: stateLockURL.path), "live lock was removed")
+        try FileManager.default.removeItem(at: stateLockURL)
+
+        try writeStateLockFixture(
+            at: stateLockURL,
+            pid: Int32.max,
+            token: "33333333-3333-4333-8333-333333333333",
+            mode: 0o644
+        )
+        do {
+            _ = try store.bindBotIdentity(202)
+            preconditionFailure("insecure-mode state lock was accepted")
+        } catch TelegramPrivateFileError.insecurePath { }
+        let unsafeMode = try FileManager.default.attributesOfItem(atPath: stateLockURL.path)[.posixPermissions] as? NSNumber
+        precondition(unsafeMode?.intValue == 0o644, "unsafe lock was replaced")
+        try FileManager.default.removeItem(at: stateLockURL)
+
+        try Data("{}\n".utf8).write(to: stateLockURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateLockURL.path)
+        do {
+            _ = try store.bindBotIdentity(202)
+            preconditionFailure("malformed state lock owner was accepted")
+        } catch TelegramPrivateFileError.invalidStoredValue { }
+        precondition(FileManager.default.fileExists(atPath: stateLockURL.path), "malformed lock was replaced")
+        try FileManager.default.removeItem(at: stateLockURL)
+
+        let lockDecoy = home.appendingPathComponent("state-lock-decoy")
+        try Data("{}\n".utf8).write(to: lockDecoy)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: lockDecoy.path)
+        try FileManager.default.createSymbolicLink(at: stateLockURL, withDestinationURL: lockDecoy)
+        do {
+            _ = try store.bindBotIdentity(202)
+            preconditionFailure("state lock symlink was accepted")
+        } catch TelegramPrivateFileError.insecurePath { }
+        let lockValues = try stateLockURL.resourceValues(forKeys: [.isSymbolicLinkKey])
+        precondition(lockValues.isSymbolicLink == true, "state lock symlink was replaced")
+        try FileManager.default.removeItem(at: stateLockURL)
 
         let decoy = home.appendingPathComponent("decoy-token")
         try Data("\(fileToken)\n".utf8).write(to: decoy)
@@ -262,6 +472,21 @@ private enum TelegramRuntimeSmokeTests {
             _ = try store.loadToken()
             preconditionFailure("token symlink was accepted")
         } catch TelegramPrivateFileError.insecurePath { }
+    }
+
+    private static func writeStateLockFixture(
+        at url: URL,
+        pid: pid_t,
+        token: String,
+        mode: NSNumber = 0o600
+    ) throws {
+        var data = try JSONSerialization.data(
+            withJSONObject: ["schema": "sks.telegram-lock.v1", "pid": pid, "token": token],
+            options: [.sortedKeys]
+        )
+        data.append(0x0A)
+        try data.write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: url.path)
     }
 }
 #endif

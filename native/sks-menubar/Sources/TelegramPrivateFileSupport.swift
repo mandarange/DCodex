@@ -15,15 +15,10 @@ final class TelegramPrivateFileSupport: @unchecked Sendable {
     let tokenURL: URL
     let stateURL: URL
 
-    private struct Identity {
-        let device: dev_t
-        let inode: ino_t
-    }
-
     private let sksDirectory: URL
     private let secretDirectory: URL
     private let stateDirectory: URL
-    private let lockDirectoryURL: URL
+    private let stateLock: TelegramStateLock
     private let lock = NSLock()
 
     init(homeDirectory: URL?, environment: [String: String]) {
@@ -39,7 +34,7 @@ final class TelegramPrivateFileSupport: @unchecked Sendable {
         self.stateDirectory = sksDirectory.appendingPathComponent("state", isDirectory: true)
         self.tokenURL = secretDirectory.appendingPathComponent("telegram-bot-token")
         self.stateURL = stateDirectory.appendingPathComponent("telegram.json")
-        self.lockDirectoryURL = stateDirectory.appendingPathComponent(".telegram.lock", isDirectory: true)
+        self.stateLock = TelegramStateLock(stateDirectory: stateDirectory)
     }
 
     func readTokenData() throws -> Data? {
@@ -54,9 +49,7 @@ final class TelegramPrivateFileSupport: @unchecked Sendable {
         try lock.withTelegramFileLock {
             _ = try prepareDirectory(sksDirectory, create: true, exactPrivateMode: false)
             _ = try prepareDirectory(stateDirectory, create: true, exactPrivateMode: true)
-            let identity = try acquireStateLock()
-            defer { releaseDirectory(lockDirectoryURL, identity: identity) }
-            return try operation()
+            return try stateLock.withLock(operation)
         }
     }
 
@@ -67,66 +60,6 @@ final class TelegramPrivateFileSupport: @unchecked Sendable {
             throw TelegramPrivateFileError.fileTooLarge(stateURL.path)
         }
         try writePrivateFileAtomically(data, to: stateURL)
-    }
-
-    private func acquireStateLock() throws -> Identity {
-        for attempt in 0..<200 {
-            if mkdir(lockDirectoryURL.path, 0o700) == 0 {
-                do { return try validatePrivateDirectory(lockDirectoryURL) }
-                catch {
-                    _ = rmdir(lockDirectoryURL.path)
-                    throw error
-                }
-            }
-            let code = errno
-            guard code == EEXIST else {
-                throw TelegramPrivateFileError.systemCall("mkdir_lock", code)
-            }
-            _ = try inspectPrivateDirectory(lockDirectoryURL)
-            guard attempt < 199 else {
-                throw TelegramPrivateFileError.systemCall("lock_timeout", EBUSY)
-            }
-            usleep(25_000)
-        }
-        throw TelegramPrivateFileError.systemCall("lock_timeout", EBUSY)
-    }
-
-    private func inspectPrivateDirectory(_ url: URL) throws -> Identity {
-        var metadata = stat()
-        guard lstat(url.path, &metadata) == 0,
-              (metadata.st_mode & S_IFMT) == S_IFDIR,
-              (metadata.st_mode & 0o777) == 0o700,
-              metadata.st_uid == geteuid() else {
-            throw TelegramPrivateFileError.insecurePath(url.path)
-        }
-        return Identity(device: metadata.st_dev, inode: metadata.st_ino)
-    }
-
-    private func validatePrivateDirectory(_ url: URL) throws -> Identity {
-        let pathIdentity = try inspectPrivateDirectory(url)
-        let descriptor = open(url.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard descriptor >= 0 else { throw systemCall("open_directory") }
-        defer { close(descriptor) }
-        var metadata = stat()
-        guard fstat(descriptor, &metadata) == 0,
-              (metadata.st_mode & S_IFMT) == S_IFDIR,
-              (metadata.st_mode & 0o777) == 0o700,
-              metadata.st_uid == geteuid(),
-              metadata.st_dev == pathIdentity.device,
-              metadata.st_ino == pathIdentity.inode else {
-            throw TelegramPrivateFileError.insecurePath(url.path)
-        }
-        return pathIdentity
-    }
-
-    private func releaseDirectory(_ url: URL, identity: Identity) {
-        var current = stat()
-        guard lstat(url.path, &current) == 0,
-              (current.st_mode & S_IFMT) == S_IFDIR,
-              current.st_uid == geteuid(),
-              current.st_dev == identity.device,
-              current.st_ino == identity.inode else { return }
-        _ = rmdir(url.path)
     }
 
     @discardableResult

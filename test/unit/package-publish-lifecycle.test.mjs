@@ -29,6 +29,7 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   assert.ok(fs.existsSync('dist/native/sks-menubar/Sources/AppDelegate.swift'));
   assert.ok(fs.existsSync('dist/native/sks-menubar/Resources/AppIcon.icns'));
   for (const file of [
+    'TelegramStateLock.swift',
     'TelegramPrivateFileSupport.swift',
     'TelegramPrivateFileStore.swift',
     'TelegramProcessGateway.swift',
@@ -41,6 +42,14 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
       `published package must include native Telegram source ${file}`
     );
   }
+  const packagedTelegramPage = path.join('dist/native/sks-menubar/Sources', 'RemoteCodingViewController.swift');
+  assert.ok(fs.existsSync(packagedTelegramPage), 'published package must include the Telegram Control Center page');
+  const telegramPageSource = fs.readFileSync(packagedTelegramPage, 'utf8');
+  assert.match(telegramPageSource, /Connect with BotFather/);
+  assert.match(telegramPageSource, /\["telegram", "setup", "--token-stdin", "--json"\]/);
+  assert.match(telegramPageSource, /\["telegram", "pair", "--json"\]/);
+  assert.match(telegramPageSource, /\["telegram", "doctor", "--json"\]/);
+  assert.doesNotMatch(telegramPageSource, /\borca\b|onorca|stablyai/i);
   assert.ok(pkg.files.includes('dist'), 'published package must include the built Telegram runtime through dist');
   assert.ok(fs.existsSync('dist/core/config-adopt/index.js'));
   assert.ok(fs.existsSync('dist/core/commands/telegram-command.js'));
@@ -117,6 +126,44 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   const commonJsBin = fs.readFileSync('dist/bin/sks.js', 'utf8');
   assert.match(commonJsBin, /const \{ version: PACKAGE_VERSION \} = require\('\.\.\/\.\.\/package\.json'\);/);
   assert.doesNotMatch(commonJsBin, /require\('\.\.\/core\/version\.js'\)/);
+});
+
+test('npm pack excludes native tests while retaining required native sources', () => {
+  assert.ok(pkg.files.includes('!dist/native/**/Tests'));
+
+  const result = spawnSync('npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    timeout: 60_000,
+    maxBuffer: 20 * 1024 * 1024
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+
+  const [pack] = JSON.parse(result.stdout);
+  assert.ok(pack && Array.isArray(pack.files), 'npm pack must return a JSON file list');
+  const packedPaths = pack.files.map((file) => file.path);
+  assert.equal(
+    packedPaths.some((packedPath) => /^dist\/native\/.*\/Tests\//.test(packedPath)),
+    false,
+    'published package must exclude native test sources'
+  );
+  for (const excludedPath of [
+    'scripts/build-clean-atomic.mjs',
+    'dist/core/agents/parallel-write-fixture.js',
+    'dist/core/ops/upgrade-migration-fixtures.js',
+    'dist/core/proof/route-finalizer-fixtures.js'
+  ]) {
+    assert.equal(packedPaths.includes(excludedPath), false, `published package must exclude ${excludedPath}`);
+  }
+  for (const requiredPath of [
+    'dist/native/sks-menubar/Sources/AppDelegate.swift',
+    'dist/native/sks-menubar/Sources/TelegramStateLock.swift',
+    'dist/native/sks-menubar/Sources/TelegramTransport.swift',
+    'dist/native/sks-menubar/Sources/RemoteCodingViewController.swift',
+    'dist/scripts/check-publish-tag.js'
+  ]) {
+    assert.ok(packedPaths.includes(requiredPath), `published package must include ${requiredPath}`);
+  }
 });
 
 test('plain lifecycle publish requires release proof instead of being categorically blocked', () => {

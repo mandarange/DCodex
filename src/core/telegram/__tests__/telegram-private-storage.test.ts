@@ -5,6 +5,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import {
   TELEGRAM_STATE_SCHEMA,
+  bindTelegramBotIdentity,
   emptyTelegramState,
   issueTelegramPairingCode,
   readStoredTelegramToken,
@@ -137,7 +138,7 @@ test('pairing state round-trips through the shared private root schema and canon
   const { home, paths } = await privateFixture(t, 'telegram-state-');
   const fixture = {
     ...emptyTelegramState(),
-    chats: [{ chat_id: 7, sender_id: 8, paired_at: '2026-08-01T00:00:00.000Z' }]
+    chats: [{ chat_id: 7, sender_id: 8, paired_at: '2026-08-01T00:00:00.000Z', active: true }]
   };
   await writeTelegramState(fixture, paths);
   assert.deepEqual(await readTelegramState(paths), fixture);
@@ -167,6 +168,175 @@ test('pairing state round-trips through the shared private root schema and canon
   assert.equal(roundTripped.pairing?.used, false);
   assert.equal(rawText.includes(FILE_TOKEN), false);
   await assert.rejects(fs.access(paths.stateLockPath), { code: 'ENOENT' });
+});
+
+test('rotating bot identity clears bot-scoped access, confirmations, pairing, and poll offset', async (t) => {
+  const { paths } = await privateFixture(t, 'telegram-bot-rotation-');
+  const retainedPairing = {
+    schema: 'sks.telegram-pairing.v1' as const,
+    code: '123456-ABCD',
+    expires_at: '2030-01-01T00:00:00.000Z',
+    used: false
+  };
+  await writeTelegramState({
+    ...emptyTelegramState(),
+    bot_id: 101,
+    poll_offset: 44,
+    pairing: retainedPairing,
+    chats: [{ chat_id: 7, sender_id: 8, paired_at: '2026-08-01T00:00:00.000Z', active: true }],
+    confirmations: [{
+      nonce: 'stale-confirmation',
+      chat_id: 7,
+      sender_id: 8,
+      command: 'gates',
+      input_json: '{}',
+      expires_at: '2030-01-01T00:01:00.000Z'
+    }]
+  }, paths);
+
+  assert.deepEqual(await bindTelegramBotIdentity(101, { paths }), {
+    bot_id: 101,
+    previous_bot_id: 101,
+    rotated: false,
+    state_reset: false
+  });
+  assert.deepEqual(await readTelegramState(paths), {
+    schema: 'sks.telegram-state.v1',
+    bot_id: 101,
+    poll_offset: 44,
+    pairing: retainedPairing,
+    chats: [{ chat_id: 7, sender_id: 8, paired_at: '2026-08-01T00:00:00.000Z', active: true }],
+    confirmations: [{
+      nonce: 'stale-confirmation',
+      chat_id: 7,
+      sender_id: 8,
+      command: 'gates',
+      input_json: '{}',
+      expires_at: '2030-01-01T00:01:00.000Z'
+    }]
+  });
+
+  assert.deepEqual(await bindTelegramBotIdentity(202, { paths }), {
+    bot_id: 202,
+    previous_bot_id: 101,
+    rotated: true,
+    state_reset: true
+  });
+  assert.deepEqual(await readTelegramState(paths), {
+    schema: 'sks.telegram-state.v1',
+    bot_id: 202,
+    poll_offset: 0,
+    pairing: null,
+    chats: [],
+    confirmations: []
+  });
+});
+
+test('binding the same bot fail-closed resets bounded legacy multi-chat state', async (t) => {
+  const { paths } = await privateFixture(t, 'telegram-legacy-multi-chat-binding-');
+  await writeTelegramState({
+    ...emptyTelegramState(),
+    bot_id: 101,
+    poll_offset: 44,
+    pairing: {
+      schema: 'sks.telegram-pairing.v1',
+      code: '123456-ABCD',
+      expires_at: '2030-01-01T00:00:00.000Z',
+      used: false
+    },
+    chats: [
+      { chat_id: 7, sender_id: 8, paired_at: '2026-08-01T00:00:00.000Z' },
+      { chat_id: 9, sender_id: 10, paired_at: '2026-08-01T00:00:01.000Z' }
+    ],
+    confirmations: [{
+      nonce: 'legacy-confirmation',
+      chat_id: 7,
+      sender_id: 8,
+      command: 'gates',
+      input_json: '{}',
+      expires_at: '2030-01-01T00:01:00.000Z'
+    }]
+  }, paths);
+
+  assert.equal((await readTelegramState(paths)).chats.length, 2);
+  assert.deepEqual(await bindTelegramBotIdentity(101, { paths }), {
+    bot_id: 101,
+    previous_bot_id: 101,
+    rotated: false,
+    state_reset: true
+  });
+  assert.deepEqual(await readTelegramState(paths), {
+    schema: 'sks.telegram-state.v1',
+    bot_id: 101,
+    poll_offset: 0,
+    pairing: null,
+    chats: [],
+    confirmations: []
+  });
+});
+
+test('same-bot setup clears native-staged inactive pairing and rejects malformed active state', async (t) => {
+  const { paths } = await privateFixture(t, 'telegram-staged-pairing-binding-');
+  await writeTelegramState({
+    ...emptyTelegramState(),
+    bot_id: 101,
+    poll_offset: 44,
+    chats: [{
+      chat_id: 7,
+      sender_id: 8,
+      paired_at: '2026-08-01T00:00:00.000Z',
+      active: false
+    }]
+  }, paths);
+  assert.equal((await readTelegramState(paths)).chats[0]?.active, false);
+  assert.deepEqual(await bindTelegramBotIdentity(101, { paths }), {
+    bot_id: 101,
+    previous_bot_id: 101,
+    rotated: false,
+    state_reset: true
+  });
+  assert.deepEqual((await readTelegramState(paths)).chats, []);
+
+  await fs.writeFile(paths.statePath, `${JSON.stringify({
+    ...emptyTelegramState(),
+    chats: [{ chat_id: 7, sender_id: 8, paired_at: '2026-08-01T00:00:00.000Z', active: 'yes' }]
+  })}\n`, { mode: 0o600 });
+  await assert.rejects(readTelegramState(paths), /telegram_state_invalid/);
+});
+
+test('pairing issuance does not preserve legacy multi-chat authorization', async (t) => {
+  const { paths } = await privateFixture(t, 'telegram-legacy-multi-chat-pairing-');
+  await writeTelegramState({
+    ...emptyTelegramState(),
+    bot_id: 101,
+    poll_offset: 44,
+    chats: [
+      { chat_id: 7, sender_id: 8, paired_at: '2026-08-01T00:00:00.000Z' },
+      { chat_id: 9, sender_id: 10, paired_at: '2026-08-01T00:00:01.000Z' }
+    ],
+    confirmations: [{
+      nonce: 'legacy-confirmation',
+      chat_id: 7,
+      sender_id: 8,
+      command: 'gates',
+      input_json: '{}',
+      expires_at: '2030-01-01T00:01:00.000Z'
+    }]
+  }, paths);
+
+  const pairing = await issueTelegramPairingCode({ paths, now: 1_000_000, ttlMs: 30_000 });
+  assert.deepEqual(await readTelegramState(paths), {
+    schema: 'sks.telegram-state.v1',
+    bot_id: 101,
+    poll_offset: 0,
+    pairing: {
+      schema: 'sks.telegram-pairing.v1',
+      ...pairing,
+      used: false
+    },
+    chats: [],
+    confirmations: []
+  });
 });
 
 async function privateFixture(

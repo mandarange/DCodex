@@ -4,9 +4,36 @@ struct TelegramStoredConfirmation: Sendable, Equatable {
     let request: TelegramTypedCommandRequest
 }
 
+enum TelegramTokenSource: String, Codable, Sendable {
+    case environment = "env"
+    case userSecretFile = "user_secret_file"
+    case none
+}
+
+struct TelegramResolvedAccessToken: Sendable, Equatable {
+    let token: String?
+    let source: TelegramTokenSource
+}
+
+struct TelegramBotBinding: Sendable, Equatable {
+    let botID: Int64
+    let previousBotID: Int64?
+    let pollOffset: Int64
+    let stateReset: Bool
+}
+
+enum TelegramTokenResolutionError: Error {
+    case invalid(source: TelegramTokenSource)
+}
+
 protocol TelegramAccessStoring: Sendable {
-    func loadToken() throws -> String?
+    func resolveToken() throws -> TelegramResolvedAccessToken
+    func bindBotIdentity(_ botID: Int64) throws -> TelegramBotBinding
+    func persistPollOffset(_ offset: Int64, botID: Int64) throws
     func consumePairing(code: String, chatID: Int64, senderID: Int64, chatType: String) throws -> Bool
+    func stagePairing(code: String, chatID: Int64, senderID: Int64, chatType: String) throws -> Bool
+    func activatePairing(chatID: Int64, senderID: Int64) throws -> Bool
+    func abandonPendingPairing(chatID: Int64, senderID: Int64) throws
     func isAuthorized(chatID: Int64, senderID: Int64) throws -> Bool
     func authorizedCount() throws -> Int
     func issueConfirmation(
@@ -16,6 +43,16 @@ protocol TelegramAccessStoring: Sendable {
         expiresAt: Date
     ) throws -> String
     func consumeConfirmation(nonce: String, chatID: Int64, senderID: Int64) throws -> TelegramStoredConfirmation?
+}
+
+extension TelegramAccessStoring {
+    // Compatibility for deterministic/injected stores. The production private
+    // store overrides these with a durable inactive-to-active transition.
+    func stagePairing(code: String, chatID: Int64, senderID: Int64, chatType: String) throws -> Bool {
+        try consumePairing(code: code, chatID: chatID, senderID: senderID, chatType: chatType)
+    }
+    func activatePairing(chatID: Int64, senderID: Int64) throws -> Bool { true }
+    func abandonPendingPairing(chatID: Int64, senderID: Int64) throws { }
 }
 
 final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable {
@@ -35,6 +72,7 @@ final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable
         let chatID: Int64
         let senderID: Int64
         let pairedAt: String
+        var active: Bool
         var raw: [String: Any]
     }
 
@@ -50,6 +88,8 @@ final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable
 
     private struct State {
         let schema: String
+        var botID: Int64?
+        var pollOffset: Int64
         var pairing: PairingState?
         var chats: [AuthorizedChat]
         var confirmations: [ConfirmationState]
@@ -57,12 +97,16 @@ final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable
 
         init(
             schema: String = TelegramPrivateFileStore.stateSchema,
+            botID: Int64? = nil,
+            pollOffset: Int64 = 0,
             pairing: PairingState? = nil,
             chats: [AuthorizedChat] = [],
             confirmations: [ConfirmationState] = [],
             raw: [String: Any] = [:]
         ) {
             self.schema = schema
+            self.botID = botID
+            self.pollOffset = pollOffset
             self.pairing = pairing
             self.chats = chats
             self.confirmations = confirmations
@@ -84,20 +128,122 @@ final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable
         self.now = now
     }
 
-    func loadToken() throws -> String? {
+    static func operatorEnvironmentOverrideActive(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        tokenEnvironmentNames.contains {
+            !(environment[$0] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    func resolveToken() throws -> TelegramResolvedAccessToken {
         for name in Self.tokenEnvironmentNames {
             let value = (environment[name] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !value.isEmpty { return try validatedToken(value) }
+            if !value.isEmpty {
+                guard let token = try? validatedToken(value) else {
+                    throw TelegramTokenResolutionError.invalid(source: .environment)
+                }
+                return TelegramResolvedAccessToken(token: token, source: .environment)
+            }
         }
-        guard let data = try files.readTokenData() else { return nil }
+        guard let data = try files.readTokenData() else {
+            return TelegramResolvedAccessToken(token: nil, source: .none)
+        }
         guard let value = String(data: data, encoding: .utf8) else {
-            throw TelegramPrivateFileError.invalidStoredValue
+            throw TelegramTokenResolutionError.invalid(source: .userSecretFile)
         }
-        return try validatedToken(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let token = try? validatedToken(normalized) else {
+            throw TelegramTokenResolutionError.invalid(source: .userSecretFile)
+        }
+        return TelegramResolvedAccessToken(token: token, source: .userSecretFile)
+    }
+
+    func loadToken() throws -> String? {
+        do { return try resolveToken().token }
+        catch is TelegramTokenResolutionError { throw TelegramPrivateFileError.invalidStoredValue }
+    }
+
+    func bindBotIdentity(_ botID: Int64) throws -> TelegramBotBinding {
+        guard botID > 0 else { throw TelegramPrivateFileError.invalidStoredValue }
+        return try files.withStateTransaction {
+            var state = try loadStateUnlocked()
+            let previousBotID = state.botID
+            let reset = previousBotID != botID || state.chats.count > 1 || state.chats.contains { !$0.active }
+            state.botID = botID
+            if reset {
+                state.pollOffset = 0
+                state.pairing = nil
+                state.chats = []
+                state.confirmations = []
+            }
+            try writeStateUnlocked(state)
+            return TelegramBotBinding(
+                botID: botID,
+                previousBotID: previousBotID,
+                pollOffset: state.pollOffset,
+                stateReset: reset
+            )
+        }
+    }
+
+    func persistPollOffset(_ offset: Int64, botID: Int64) throws {
+        guard offset >= 0, botID > 0 else { throw TelegramPrivateFileError.invalidStoredValue }
+        try files.withStateTransaction {
+            var state = try loadStateUnlocked()
+            guard state.botID == botID else { throw TelegramPrivateFileError.invalidStoredValue }
+            state.pollOffset = offset
+            try writeStateUnlocked(state)
+        }
     }
 
     func consumePairing(code: String, chatID: Int64, senderID: Int64, chatType: String) throws -> Bool {
-        guard chatType == "private" else { return false }
+        try replacePairing(
+            code: code, chatID: chatID, senderID: senderID,
+            chatType: chatType, active: true
+        )
+    }
+
+    func stagePairing(code: String, chatID: Int64, senderID: Int64, chatType: String) throws -> Bool {
+        try replacePairing(
+            code: code, chatID: chatID, senderID: senderID,
+            chatType: chatType, active: false
+        )
+    }
+
+    func activatePairing(chatID: Int64, senderID: Int64) throws -> Bool {
+        guard chatID > 0, senderID > 0 else { return false }
+        return try files.withStateTransaction {
+            var state = try loadStateUnlocked()
+            guard state.chats.count == 1,
+                  state.chats[0].chatID == chatID,
+                  state.chats[0].senderID == senderID,
+                  !state.chats[0].active else { return false }
+            state.chats[0].active = true
+            try writeStateUnlocked(state)
+            return true
+        }
+    }
+
+    func abandonPendingPairing(chatID: Int64, senderID: Int64) throws {
+        try files.withStateTransaction {
+            var state = try loadStateUnlocked()
+            let originalCount = state.chats.count
+            state.chats.removeAll {
+                $0.chatID == chatID && $0.senderID == senderID && !$0.active
+            }
+            if state.chats.count != originalCount { try writeStateUnlocked(state) }
+        }
+    }
+
+    private func replacePairing(
+        code: String,
+        chatID: Int64,
+        senderID: Int64,
+        chatType: String,
+        active: Bool
+    ) throws -> Bool {
+        guard chatType == "private", chatID > 0, senderID > 0 else { return false }
         return try files.withStateTransaction {
             var state = try loadStateUnlocked()
             guard var pairing = state.pairing,
@@ -107,13 +253,14 @@ final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable
                   expiration > now() else { return false }
             pairing.used = true
             state.pairing = pairing
-            state.chats.removeAll { $0.chatID == chatID }
-            state.chats.append(AuthorizedChat(
+            state.chats = [AuthorizedChat(
                 chatID: chatID,
                 senderID: senderID,
                 pairedAt: telegramPrivateStoreDate(now()),
+                active: active,
                 raw: [:]
-            ))
+            )]
+            state.confirmations = []
             try writeStateUnlocked(state)
             return true
         }
@@ -121,12 +268,14 @@ final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable
 
     func isAuthorized(chatID: Int64, senderID: Int64) throws -> Bool {
         try files.withStateTransaction {
-            try loadStateUnlocked().chats.contains { $0.chatID == chatID && $0.senderID == senderID }
+            try loadStateUnlocked().chats.contains {
+                $0.chatID == chatID && $0.senderID == senderID && $0.active
+            }
         }
     }
 
     func authorizedCount() throws -> Int {
-        try files.withStateTransaction { try loadStateUnlocked().chats.count }
+        try files.withStateTransaction { try loadStateUnlocked().chats.filter(\.active).count }
     }
 
     func issueConfirmation(
@@ -211,7 +360,25 @@ final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable
         }
         let chats = try chatRows.map(decodeChat)
         let confirmations = try confirmationRows.map(decodeConfirmation)
+        let botID: Int64?
+        if root["bot_id"] == nil || root["bot_id"] is NSNull {
+            botID = nil
+        } else if let value = telegramInt64(root["bot_id"]), value > 0 {
+            botID = value
+        } else {
+            throw TelegramPrivateFileError.invalidStoredValue
+        }
+        let pollOffset: Int64
+        if root["poll_offset"] == nil {
+            pollOffset = 0
+        } else if let value = telegramInt64(root["poll_offset"]), value >= 0 {
+            pollOffset = value
+        } else {
+            throw TelegramPrivateFileError.invalidStoredValue
+        }
         return State(
+            botID: botID,
+            pollOffset: pollOffset,
             pairing: pairing,
             chats: chats,
             confirmations: confirmations,
@@ -222,6 +389,8 @@ final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable
     private func writeStateUnlocked(_ state: State) throws {
         var root = state.raw
         root["schema"] = Self.stateSchema
+        root["bot_id"] = state.botID ?? NSNull()
+        root["poll_offset"] = state.pollOffset
         root["pairing"] = state.pairing.map(encodePairing) ?? NSNull()
         root["chats"] = state.chats.map(encodeChat)
         root["confirmations"] = state.confirmations.map(encodeConfirmation)
@@ -246,16 +415,24 @@ final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable
     private func decodeChat(_ row: [String: Any]) throws -> AuthorizedChat {
         guard let chatID = telegramInt64(row["chat_id"]),
               let senderID = telegramInt64(row["sender_id"]),
-              let pairedAt = row["paired_at"] as? String else {
+              chatID > 0,
+              senderID > 0,
+              let pairedAt = row["paired_at"] as? String,
+              row["active"] == nil || row["active"] is Bool else {
             throw TelegramPrivateFileError.invalidStoredValue
         }
-        return AuthorizedChat(chatID: chatID, senderID: senderID, pairedAt: pairedAt, raw: row)
+        return AuthorizedChat(
+            chatID: chatID, senderID: senderID, pairedAt: pairedAt,
+            active: row["active"] as? Bool ?? true, raw: row
+        )
     }
 
     private func decodeConfirmation(_ row: [String: Any]) throws -> ConfirmationState {
         guard let nonce = row["nonce"] as? String,
               let chatID = telegramInt64(row["chat_id"]),
               let senderID = telegramInt64(row["sender_id"]),
+              chatID > 0,
+              senderID > 0,
               let command = row["command"] as? String,
               let inputJSON = row["input_json"] as? String,
               let expiresAt = row["expires_at"] as? String else {
@@ -286,6 +463,7 @@ final class TelegramPrivateFileStore: TelegramAccessStoring, @unchecked Sendable
         row["chat_id"] = chat.chatID
         row["sender_id"] = chat.senderID
         row["paired_at"] = chat.pairedAt
+        row["active"] = chat.active
         return row
     }
 

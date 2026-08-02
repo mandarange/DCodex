@@ -1172,7 +1172,10 @@ function runningNarutoResponse(
 ): Record<string, unknown> {
   return {
     schema: NARUTO_RESULT_SCHEMA,
-    ok: false,
+    // Observing the mission-wide owner is a successful idempotent admission
+    // outcome. Completion is still false, but callers must not treat an
+    // already-running workflow as a command failure.
+    ok: true,
     completion_evidence: false,
     status: 'running',
     mission_id: missionId,

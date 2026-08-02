@@ -21,14 +21,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // never reaches NSTextField/NSTextView responders without an explicit menu.
         AppIdentity.installStandardEditMenu()
         processClient = ProcessClient(actionScript: AppRuntime.actionScript, logPath: AppRuntime.lastActionLogPath, projectRoot: AppRuntime.projectRoot)
-        telegramService = TelegramRuntimeFactory.make(processClient: processClient)
-        _ = telegramService?.start()
+        let residentTelegramService = TelegramRuntimeFactory.make(
+            processClient: processClient,
+            canonicalProjectRoot: AppRuntime.canonicalProjectRoot
+        )
+        telegramService = residentTelegramService
+        _ = residentTelegramService.start()
         operations = OperationCoordinator(directory: AppRuntime.operationDirectory)
         notifications = NotificationCoordinator()
         controlCenter = ControlCenterWindowController(
             processClient: processClient,
             operations: operations,
-            notifications: notifications
+            notifications: notifications,
+            telegramService: residentTelegramService
         )
         statusItemController = StatusItemController(
             processClient: processClient,

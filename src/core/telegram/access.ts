@@ -45,8 +45,12 @@ export class InMemoryTelegramAccessStore implements TelegramAccessStore {
   async pairAtomically(input: { code: string; chatId: number; senderId: number; chatType: string }): Promise<boolean> {
     return this.transaction(async () => {
       const record = this.pairings.get(input.code);
-      if (input.chatType !== 'private' || !record || record.used || record.expiresAt <= this.clock.now()) return false;
+      if (input.chatType !== 'private'
+        || !Number.isSafeInteger(input.chatId) || input.chatId <= 0
+        || !Number.isSafeInteger(input.senderId) || input.senderId <= 0
+        || !record || record.used || record.expiresAt <= this.clock.now()) return false;
       record.used = true;
+      this.chats.clear();
       this.chats.set(input.chatId, {
         chatId: input.chatId,
         senderId: input.senderId,

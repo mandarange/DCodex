@@ -1,29 +1,4 @@
 import Foundation
-
-struct TelegramNativeUser: Codable, Sendable {
-    let id: Int64
-    let is_bot: Bool
-    let first_name: String
-}
-
-struct TelegramNativeChat: Codable, Sendable {
-    let id: Int64
-    let type: String
-}
-
-struct TelegramNativeMessage: Codable, Sendable {
-    let message_id: Int64
-    let date: Int64
-    let chat: TelegramNativeChat
-    let from: TelegramNativeUser?
-    let text: String?
-}
-
-struct TelegramNativeUpdate: Codable, Sendable {
-    let update_id: Int64
-    let message: TelegramNativeMessage?
-}
-
 protocol TelegramBotAPI: Sendable {
     func getMe(token: String) async throws -> TelegramNativeUser
     func getUpdates(token: String, offset: Int64, timeoutSeconds: Int) async throws -> [TelegramNativeUpdate]
@@ -129,71 +104,22 @@ private final class TelegramNoRedirectDelegate: NSObject, URLSessionTaskDelegate
     }
 }
 
-struct TelegramTypedCommandRequest: Sendable, Equatable {
-    let name: String
-    let inputJSON: String
-}
-
-struct TelegramTypedCommandDecision: Sendable, Equatable {
-    let allowed: Bool
-    let confirmationRequired: Bool
-    let publicError: String?
-}
-
-/// The AppDelegate adapter must delegate these calls to the TypeScript
-/// createTelegramCommandDispatcher boundary. It must execute argv directly;
-/// no shell command string is accepted by this protocol.
-protocol TelegramTypedCommandGateway: Sendable {
-    func prepare(_ request: TelegramTypedCommandRequest) async -> TelegramTypedCommandDecision
-    func execute(_ request: TelegramTypedCommandRequest) async throws -> String
-}
-
-struct TelegramNativeAuditEvent: Sendable, Equatable {
-    let actor: String
-    let action: String
-    let command: String?
-    let outcome: String
-    let detail: String?
-}
-
-struct TelegramPollerReceipt: Codable, Sendable, Equatable {
-    let schema: String
-    let running: Bool
-    let offset: Int64
-    let consecutive_failures: Int
-    let last_poll_at: String?
-    let last_success_at: String?
-    let last_update_at: String?
-    let last_error: String?
-}
-
-struct TelegramLivenessReceipt: Codable, Sendable, Equatable {
-    let schema: String
-    let generation: String
-    let pid: Int32
-    let running: Bool
-    let token_configured: Bool
-    let bot_identity_valid: Bool
-    let getme_checked_at: String?
-    let getme_latency_ms: Int?
-    let paired_chat_count: Int
-    let started_at: String
-    let heartbeat_at: String
-    let stale_after_seconds: Int
-    let audit_healthy: Bool?
-    let audit_last_error: String?
-    let poller: TelegramPollerReceipt
-}
-
 actor TelegramMenuBarRuntime {
+    private struct IdentityProbe {
+        let identity: TelegramNativeUser; let checkedAt: String; let latencyMilliseconds: Int
+    }
     private let api: TelegramBotAPI
     private let access: TelegramAccessStoring
     private let gateway: TelegramTypedCommandGateway
     private let writer: TelegramLivenessWriter
     private let auditSink: @Sendable (TelegramNativeAuditEvent) throws -> Void
+    private let identityRefreshIntervalSeconds: TimeInterval
     private var pollTask: Task<Void, Never>?
-    private var starting = false
+    private var activeStartID: String?
+    private var desiredRunning = false
     private var token: String?
+    private var tokenSource: TelegramTokenSource = .none
+    private var botID: Int64?
     private var botIdentityValid = false
     private var getMeCheckedAt: String?
     private var getMeLatencyMilliseconds: Int?
@@ -207,40 +133,62 @@ actor TelegramMenuBarRuntime {
     private var lastError: String?
     private var auditHealthy = true
     private var auditLastError: String?
-
     init(
         api: TelegramBotAPI = TelegramHTTPSBotAPI(),
         access: TelegramAccessStoring = TelegramPrivateFileStore(),
         gateway: TelegramTypedCommandGateway,
         receiptURL: URL,
+        identityRefreshIntervalSeconds: TimeInterval = 5 * 60,
         audit: @escaping @Sendable (TelegramNativeAuditEvent) throws -> Void
     ) {
         self.api = api
         self.access = access
         self.gateway = gateway
         self.writer = TelegramLivenessWriter(url: receiptURL)
+        self.identityRefreshIntervalSeconds = identityRefreshIntervalSeconds
         self.auditSink = audit
     }
-
     @discardableResult
     func start() async throws -> TelegramLivenessReceipt {
-        if pollTask != nil || starting { throw TelegramTransportError.apiFailure(nil, "telegram_poller_already_running") }
-        starting = true
-        defer { starting = false }
-        let loadedToken = try access.loadToken()
-        guard let loadedToken, !loadedToken.isEmpty else {
+        if pollTask != nil || activeStartID != nil { throw TelegramTransportError.apiFailure(nil, "telegram_poller_already_running") }
+        let startID = UUID().uuidString
+        activeStartID = startID
+        desiredRunning = true
+        defer { if activeStartID == startID { activeStartID = nil } }
+        token = nil
+        tokenSource = .none
+        botID = nil
+        botIdentityValid = false
+        let resolvedToken: TelegramResolvedAccessToken
+        do {
+            resolvedToken = try access.resolveToken()
+            tokenSource = resolvedToken.source
+        } catch let error as TelegramTokenResolutionError {
+            if case .invalid(let source) = error { tokenSource = source }
+            try? writer.write(snapshot(running: false))
+            throw error
+        } catch {
+            try? writer.write(snapshot(running: false))
+            throw error
+        }
+        guard let loadedToken = resolvedToken.token, !loadedToken.isEmpty else {
             token = nil
-            botIdentityValid = false
             let receipt = snapshot(running: false)
             try? writer.write(receipt)
             throw TelegramTransportError.invalidToken
         }
         token = loadedToken
-        do { try await validateIdentity(token: loadedToken) }
+        let identityProbe: IdentityProbe
+        do { identityProbe = try await probeIdentity(token: loadedToken) }
         catch {
+            guard desiredRunning, activeStartID == startID else { throw TelegramTransportError.apiFailure(nil, "telegram_poller_start_cancelled") }
+            getMeCheckedAt = telegramISODate()
+            botIdentityValid = false
             try? writer.write(snapshot(running: false))
             throw error
         }
+        guard desiredRunning, activeStartID == startID else { throw TelegramTransportError.apiFailure(nil, "telegram_poller_start_cancelled") }
+        try applyIdentityProbe(identityProbe)
         auditHealthy = true
         auditLastError = nil
         guard recordAudit(TelegramNativeAuditEvent(
@@ -252,17 +200,31 @@ actor TelegramMenuBarRuntime {
         }
         generation = UUID().uuidString
         startedAt = telegramISODate()
-        offset = max(0, writer.read()?.poller.offset ?? 0)
         failures = 0
         lastError = nil
         let pollGeneration = generation
-        pollTask = Task { [weak self] in await self?.pollLoop(token: loadedToken, generation: pollGeneration) }
         let receipt = snapshot(running: true)
-        try writer.write(receipt)
+        do {
+            try writer.write(receipt)
+        } catch {
+            lastError = "telegram_liveness_unavailable"
+            _ = recordAudit(TelegramNativeAuditEvent(
+                actor: "system", action: "poller_start", command: nil,
+                outcome: "failed", detail: "telegram_liveness_unavailable"
+            ))
+            throw error
+        }
+        guard desiredRunning, activeStartID == startID else {
+            try? writer.write(snapshot(running: false)); throw TelegramTransportError.apiFailure(nil, "telegram_poller_start_cancelled")
+        }
+        pollTask = Task { [weak self] in await self?.pollLoop(token: loadedToken, generation: pollGeneration) }
         return receipt
     }
 
     func stop() {
+        desiredRunning = false
+        activeStartID = nil
+        generation = UUID().uuidString
         pollTask?.cancel()
         pollTask = nil
         _ = recordAudit(TelegramNativeAuditEvent(
@@ -296,7 +258,12 @@ actor TelegramMenuBarRuntime {
                     guard !Task.isCancelled else { return }
                     // Persist the claim before any typed command can cause an
                     // external effect. This makes restart behavior at-most-once.
-                    offset = update.update_id + 1
+                    guard let botID, update.update_id < Int64.max else {
+                        throw TelegramTransportError.invalidResponse
+                    }
+                    let nextOffset = update.update_id + 1
+                    try access.persistPollOffset(nextOffset, botID: botID)
+                    offset = nextOffset
                     lastUpdateAt = telegramISODate()
                     try writer.write(snapshot(running: true))
                     await handle(update: update, token: token)
@@ -337,12 +304,57 @@ actor TelegramMenuBarRuntime {
                 actor: actor, action: "pair_attempt", command: nil,
                 outcome: "allowed", detail: nil
             )) else { return }
-            let paired = code.flatMap { try? access.consumePairing(code: $0, chatID: message.chat.id, senderID: sender.id, chatType: message.chat.type) } == true
+            let paired: Bool
+            do {
+                paired = try code.map {
+                    try access.stagePairing(
+                        code: $0, chatID: message.chat.id,
+                        senderID: sender.id, chatType: message.chat.type
+                    )
+                } ?? false
+            } catch {
+                guard recordAudit(TelegramNativeAuditEvent(
+                    actor: actor, action: "pair", command: nil,
+                    outcome: "failed", detail: "pairing_state_unavailable"
+                )) else { return }
+                return
+            }
             guard recordAudit(TelegramNativeAuditEvent(
                 actor: actor, action: paired ? "pair" : "unauthorized_chat", command: nil,
                 outcome: paired ? "allowed" : "denied", detail: nil
-            )) else { return }
-            if paired { await send(token: token, chatID: message.chat.id, text: "SKS Telegram control paired.", actor: actor) }
+            )) else {
+                if paired {
+                    try? access.abandonPendingPairing(chatID: message.chat.id, senderID: sender.id)
+                }
+                return
+            }
+            if paired {
+                let activated: Bool
+                do {
+                    activated = try access.activatePairing(
+                        chatID: message.chat.id, senderID: sender.id
+                    )
+                } catch {
+                    guard recordAudit(TelegramNativeAuditEvent(
+                        actor: actor, action: "pair_activation", command: nil,
+                        outcome: "failed", detail: "pairing_state_unavailable"
+                    )) else { return }
+                    return
+                }
+                guard activated else {
+                    guard recordAudit(TelegramNativeAuditEvent(
+                        actor: actor, action: "pair_activation", command: nil,
+                        outcome: "failed", detail: "pending_pairing_missing"
+                    )) else { return }
+                    return
+                }
+                await send(
+                    token: token,
+                    chatID: message.chat.id,
+                    text: "SKS Telegram control paired. Try /sks status {}. Confirm prompted actions with /confirm <nonce>.",
+                    actor: actor
+                )
+            }
             return
         }
         if let nonce = telegramConfirmationNonce(text) {
@@ -427,24 +439,35 @@ actor TelegramMenuBarRuntime {
     }
 
     private func shouldRefreshIdentity() -> Bool {
+        guard botIdentityValid else { return true }
         guard let checked = getMeCheckedAt.flatMap({ ISO8601DateFormatter().date(from: $0) }) else { return true }
-        return Date().timeIntervalSince(checked) >= 5 * 60
+        return Date().timeIntervalSince(checked) >= identityRefreshIntervalSeconds
     }
 
     private func validateIdentity(token: String) async throws {
-        let started = Date()
         do {
-            let identity = try await api.getMe(token: token)
-            getMeCheckedAt = telegramISODate()
-            getMeLatencyMilliseconds = max(0, Int(Date().timeIntervalSince(started) * 1_000))
-            botIdentityValid = identity.is_bot
-            guard identity.is_bot else { throw TelegramTransportError.invalidResponse }
+            try applyIdentityProbe(await probeIdentity(token: token))
         } catch {
             getMeCheckedAt = telegramISODate()
-            getMeLatencyMilliseconds = max(0, Int(Date().timeIntervalSince(started) * 1_000))
             botIdentityValid = false
             throw error
         }
+    }
+
+    private func probeIdentity(token: String) async throws -> IdentityProbe {
+        let started = Date()
+        let identity = try await api.getMe(token: token)
+        guard identity.is_bot, identity.id > 0 else { throw TelegramTransportError.invalidResponse }
+        return IdentityProbe(identity: identity, checkedAt: telegramISODate(), latencyMilliseconds: max(0, Int(Date().timeIntervalSince(started) * 1_000)))
+    }
+
+    private func applyIdentityProbe(_ probe: IdentityProbe) throws {
+        let binding = try access.bindBotIdentity(probe.identity.id)
+        getMeCheckedAt = probe.checkedAt
+        getMeLatencyMilliseconds = probe.latencyMilliseconds
+        botID = binding.botID
+        offset = binding.pollOffset
+        botIdentityValid = true
     }
 
     private func snapshot(running: Bool) -> TelegramLivenessReceipt {
@@ -454,6 +477,8 @@ actor TelegramMenuBarRuntime {
             pid: ProcessInfo.processInfo.processIdentifier,
             running: running,
             token_configured: token != nil,
+            token_source: tokenSource,
+            bot_id: botID,
             bot_identity_valid: botIdentityValid,
             getme_checked_at: getMeCheckedAt,
             getme_latency_ms: getMeLatencyMilliseconds,

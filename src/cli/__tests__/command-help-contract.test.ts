@@ -84,6 +84,27 @@ test('config and Telegram CLI surfaces are local-only control commands', () => {
   }
 });
 
+test('Telegram help routes BotFather setup through stdin and documents private pairing', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-telegram-help-'));
+  execFileSync('git', ['init', '-q', '.'], { cwd });
+  try {
+    const result = runHelp('telegram', '--help', cwd);
+    const stdout = String(result.stdout || '');
+    assert.equal(result.status, 0, String(result.stderr || ''));
+    assert.match(stdout, /@BotFather/);
+    assert.match(stdout, /setup --token-stdin/);
+    assert.match(stdout, /--remove-webhook/);
+    assert.match(stdout, /private (?:Telegram )?(?:chat|account)/i);
+    assert.match(stdout, /sks telegram pair|\bpair\b/);
+    assert.match(stdout, /\/sks status \{\}/);
+    assert.match(stdout, /\/confirm <nonce>/);
+    assert.doesNotMatch(stdout, /\borca\b|onorca|stablyai/i);
+    assert.doesNotMatch(stdout, /--drop-pending-updates/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('every manifest command answers --help with usage and never runs its work', () => {
   // Regression: help was delegated to each command module, so a module that
   // never learned to recognise --help ran its real work instead —

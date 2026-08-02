@@ -47,6 +47,7 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
     'SettingsViewController.swift', 'OperationCoordinator.swift',
     'ProcessClient.swift', 'ProcessExecutionState.swift', 'ProcessIdentityGuard.swift',
     'SecureProcessEnvelope.swift',
+    'TelegramStateLock.swift',
     'TelegramPrivateFileSupport.swift',
     'TelegramPrivateFileStore.swift', 'TelegramSupport.swift', 'TelegramRuntimeSupport.swift', 'TelegramTransport.swift',
     'TelegramProcessGateway.swift',
@@ -615,7 +616,7 @@ test('UserNotifications declares all categories/actions, redacts public bodies, 
   assert.doesNotMatch(swift, /display notification|osascript/);
 });
 
-test('Remote Coding page keeps Orca external while Telegram runs only in the existing menu-bar process', () => {
+test('Remote Coding page is a secret-safe Telegram control surface with no retired-brand residue', () => {
   const swift = source();
   const overview = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'OverviewViewController.swift'), 'utf8');
   const sidebar = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'SidebarItem.swift'), 'utf8');
@@ -623,23 +624,63 @@ test('Remote Coding page keeps Orca external while Telegram runs only in the exi
     path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'RemoteCodingViewController.swift'),
     'utf8'
   );
+  const gateway = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'TelegramProcessGateway.swift'), 'utf8');
   const processClient = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProcessClient.swift'), 'utf8');
+  const secureEnvelope = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'SecureProcessEnvelope.swift'), 'utf8');
+  const privateStore = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'TelegramPrivateFileStore.swift'), 'utf8');
+  const telegramSupport = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'TelegramSupport.swift'), 'utf8');
+  const transport = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'TelegramTransport.swift'), 'utf8');
+  const controlCenter = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ControlCenterWindowController.swift'), 'utf8');
   assert.match(sidebar, /case remoteCoding = "Remote Coding"/);
   assert.match(overview, /NativeView\.button\("Remote Coding…"/);
   assert.match(overview, /openSection\?\("Remote Coding"\)/);
-  assert.match(remote, /final class RemoteCodingViewController: NSViewController/);
-  assert.match(remote, /https:\/\/www\.onorca\.dev/);
-  assert.match(remote, /https:\/\/github\.com\/stablyai\/orca/);
-  assert.match(remote, /external beta project from Stably AI/);
-  assert.match(remote, /not part of Sneakoscope/);
-  assert.match(remote, /does not install, configure, authenticate, monitor, or depend on it/);
-  assert.match(remote, /setAccessibilityHelp\("Open the external Orca website/);
-  assert.match(remote, /setAccessibilityHelp\("Open the external Orca source repository/);
-  assert.match(remote, /NSWorkspace\.shared\.open\(Self\.websiteURL\)/);
-  assert.match(remote, /NSWorkspace\.shared\.open\(Self\.sourceURL\)/);
-  assert.doesNotMatch(remote, /ProcessClient|OperationCoordinator|URLSession|Process\(/);
-  assert.doesNotMatch(remote, /bot-token|Telegram|telegram/);
-  assert.match(swift, /TelegramRuntimeFactory\.make\(processClient: processClient\)/);
+  assert.match(remote, /final class RemoteCodingViewController: NSViewController, ControlCenterPage/);
+  assert.match(remote, /Telegram Remote Control/);
+  assert.match(remote, /Connect with BotFather/);
+  assert.match(remote, /Open @BotFather/);
+  assert.match(remote, /(?:https:\/\/t\.me\/BotFather|tg:\/\/resolve\?domain=BotFather)/);
+  assert.match(remote, /Enter Bot Token…/);
+  assert.match(remote, /secure: true/);
+  assert.match(remote, /let normalizedToken = token\.trimmingCharacters\(in: \.whitespacesAndNewlines\)[\s\S]*validTokenShape\(normalizedToken\)[\s\S]*saveToken\(normalizedToken,/);
+  assert.match(remote, /\["telegram", "setup", "--token-stdin", "--json"\]/);
+  assert.match(remote, /stdin: normalizedToken \+ "\\n"/);
+  assert.match(remote, /logOutput: false/);
+  assert.match(remote, /Pair a Private Chat/);
+  assert.match(remote, /Generate Pairing Code/);
+  assert.match(remote, /\["telegram", "pair", "--json"\]/);
+  assert.match(remote, /pairButton\.isEnabled = !operationInFlight && tokenConfigured && pollerRunning/);
+  assert.match(remote, /Service Status/);
+  assert.match(remote, /\["telegram", "doctor", "--json"\]/);
+  assert.match(remote, /telegram_webhook_configured_remove_consent_required/);
+  assert.match(remote, /arguments\.append\("--remove-webhook"\)/);
+  assert.match(remote, /TelegramPrivateFileStore\.operatorEnvironmentOverrideActive\(\)[\s\S]*arguments\.append\("--operator-env-override-active"\)/);
+  assert.match(remote, /telegram_operator_env_override_active/);
+  assert.match(remote, /response\?\.partial_success == true[\s\S]*partialSetupRecovery\(response\)/);
+  assert.match(telegramSupport, /struct TelegramCenterSetupResponse[\s\S]*let token_source: String\?/);
+  assert.match(telegramSupport, /struct TelegramCenterPairResponse[\s\S]*let instruction: String\?[\s\S]*let post_pair_command: String\?[\s\S]*let confirmation_grammar: String\?/);
+  assert.match(remote, /let statusGuidance = instruction\.contains\(postPair\)/);
+  assert.match(remote, /After pairing, try \/sks status \{\}/);
+  assert.match(remote, /without dropping pending updates/);
+  assert.match(remote, /AlertFactory\.confirmSheet/);
+  assert.doesNotMatch(remote, /\borca\b|onorca|stablyai/i);
+  assert.doesNotMatch(swift, /\borca\b|onorca|stablyai/i);
+  assert.equal((remote.match(/\["telegram", "setup"/g) ?? []).length, 1);
+  assert.doesNotMatch(remote, /stringValue\s*=\s*token|NativeView\.(?:detail|title)\(\s*token/);
+  assert.match(controlCenter, /RemoteCodingViewController\([\s\S]*processClient: processClient,[\s\S]*telegramService: telegramService/);
+  assert.match(gateway, /init\([\s\S]*processClient: ProcessClient,[\s\S]*canonicalProjectRoot: String/);
+  assert.equal((gateway.match(/"--project-root", canonicalProjectRoot/g) ?? []).length, 2);
+  assert.match(gateway, /\["name": request\.name, "input": object\]/);
+  assert.doesNotMatch(gateway, /object\["project_root"\]|request\.projectRoot/);
+  assert.match(gateway, /gateway: TelegramProcessCommandGateway\([\s\S]*processClient: processClient,[\s\S]*canonicalProjectRoot: canonicalProjectRoot/);
+  assert.match(processClient, /arguments\.contains\("--token-stdin"\)/);
+  assert.match(secureEnvelope, /case \("telegram", "setup"\):\s*return \["sks\.telegram-setup-command\.v1"\]/);
+  assert.match(secureEnvelope, /sourceSchema == "sks\.telegram-setup-command\.v1"[\s\S]*"getme_verified"[\s\S]*"token_stored"[\s\S]*"partial_success"[\s\S]*"webhook_removed"/);
+  assert.match(secureEnvelope, /\["env", "user_secret_file", "none", "unchanged"\]\.contains\(source\)/);
+  assert.match(secureEnvelope, /for key in \["action", "command", "note"\]/);
+  assert.doesNotMatch(secureEnvelope, /(?:envelope|object)\["(?:storage|token|raw|payload)"\]/);
+  assert.match(privateStore, /func consumePairing[\s\S]*state\.chats = \[AuthorizedChat\([\s\S]*state\.confirmations = \[\][\s\S]*writeStateUnlocked\(state\)/);
+  assert.match(transport, /SKS Telegram control paired\. Try \/sks status \{\}\. Confirm prompted actions with \/confirm <nonce>\./);
+  assert.match(swift, /TelegramRuntimeFactory\.make\([\s\S]*processClient: processClient,[\s\S]*canonicalProjectRoot: AppRuntime\.canonicalProjectRoot/);
   assert.match(swift, /telegramService\?\.stopAndWait\(timeout: 2\)/);
   assert.doesNotMatch(swift, /RemoteTelegram|TelegramHub/);
   for (const removed of [

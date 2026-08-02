@@ -20,6 +20,12 @@ const trackedFileSizeAllowlist = new Set([
   'schemas/codex/app-server-0.145/codex_app_server_protocol.schemas.json',
   'schemas/codex/app-server-0.145/codex_app_server_protocol.v2.schemas.json'
 ]);
+const trackedFileSizeBudgets = new Map([
+  // Append-only release history and the generated mutation policy are large
+  // by design, but remain independently bounded instead of bypassing checks.
+  ['CHANGELOG.md', 512 * 1024],
+  ['safety-mutation-allowlist.json', 512 * 1024]
+]);
 
 const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
@@ -57,10 +63,11 @@ function checkTrackedFiles() {
       if (err?.code === 'ENOENT') continue;
       throw err;
     }
-    if (stat.size > limits.trackedFileBytes) oversized.push(`${file} (${fmt(stat.size)})`);
+    const fileLimit = trackedFileSizeBudgets.get(file) || limits.trackedFileBytes;
+    if (stat.size > fileLimit) oversized.push(`${file} (${fmt(stat.size)} > ${fmt(fileLimit)})`);
   }
   if (oversized.length) {
-    fail(`tracked file exceeds ${fmt(limits.trackedFileBytes)}`, oversized.join('\n'));
+    fail('tracked file exceeds configured limit', oversized.join('\n'));
   }
 }
 

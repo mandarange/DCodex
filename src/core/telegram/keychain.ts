@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomInt, randomUUID } from 'node:crypto';
@@ -8,6 +9,7 @@ import {
   readPrivateCredentialFile,
   writePrivateTextAtomic
 } from '../security/private-credential-file.js';
+import { withTelegramStateLock } from './state-lock.js';
 
 export const TELEGRAM_TOKEN_ENV_NAMES = ['TELEGRAM_BOT_TOKEN', 'SKS_TELEGRAM_BOT_TOKEN'] as const;
 export const TELEGRAM_STATE_SCHEMA = 'sks.telegram-state.v1' as const;
@@ -16,8 +18,6 @@ export const TELEGRAM_STATE_MAX_BYTES = 1024 * 1024;
 
 const TELEGRAM_TOKEN_PATTERN = /^\d{5,20}:[A-Za-z0-9_-]{20,128}$/;
 const TELEGRAM_TOKEN_MAX_BYTES = 1024;
-const TELEGRAM_STATE_LOCK_ATTEMPTS = 200;
-const TELEGRAM_STATE_LOCK_RETRY_MS = 25;
 
 export interface TelegramPrivatePaths {
   readonly sksHome: string;
@@ -40,6 +40,7 @@ export interface TelegramAuthorizedChatState {
   readonly chat_id: number;
   readonly sender_id: number;
   readonly paired_at: string;
+  readonly active?: boolean;
   readonly [key: string]: unknown;
 }
 
@@ -55,6 +56,8 @@ export interface TelegramConfirmationState {
 
 export interface TelegramStateV1 {
   readonly schema: typeof TELEGRAM_STATE_SCHEMA;
+  readonly bot_id: number | null;
+  readonly poll_offset: number;
   readonly pairing: TelegramPairingState | null;
   readonly chats: TelegramAuthorizedChatState[];
   readonly confirmations: TelegramConfirmationState[];
@@ -65,6 +68,13 @@ export interface TelegramBotTokenResolution {
   readonly token: string | null;
   readonly source: 'env' | 'user_secret_file' | null;
   readonly env_var?: string;
+}
+
+export interface TelegramBotBindingResult {
+  readonly bot_id: number;
+  readonly previous_bot_id: number | null;
+  readonly rotated: boolean;
+  readonly state_reset: boolean;
 }
 
 export function telegramPrivatePaths(env: NodeJS.ProcessEnv = process.env): TelegramPrivatePaths {
@@ -132,9 +142,85 @@ export async function storeTelegramToken(
   await writePrivateTextAtomic(paths.sksHome, paths.tokenPath, `${token}\n`, 'telegram_bot_token');
 }
 
+export async function preflightTelegramTokenStorage(
+  tokenInput: unknown,
+  options: { env?: NodeJS.ProcessEnv; paths?: TelegramPrivatePaths; home?: string } = {}
+): Promise<void> {
+  const token = String(tokenInput ?? '').trim();
+  if (!isValidTelegramBotToken(token)) throw new Error('telegram_token_invalid');
+  const paths = resolvePrivatePaths(options);
+  await ensureTelegramPrivateDirectories(paths, 'token');
+  try {
+    await readPrivateCredentialFile(
+      paths.sksHome,
+      paths.tokenPath,
+      'telegram_bot_token',
+      { maxBytes: TELEGRAM_TOKEN_MAX_BYTES }
+    );
+  } catch (error: unknown) {
+    if (!(error instanceof PrivateCredentialFileError && error.code === 'missing')) throw error;
+  }
+
+  const probePath = path.join(paths.secretDir, `.telegram-token-preflight.${randomUUID()}`);
+  assertTestHomeWriteAllowed(probePath);
+  let handle: fs.FileHandle | null = null;
+  let identity: { dev: number; ino: number } | null = null;
+  try {
+    handle = await fs.open(probePath, 'wx', 0o600);
+    const stat = await handle.stat();
+    if (!stat.isFile() || (stat.mode & 0o777) !== 0o600) throw new Error('telegram_token_preflight_unsafe_file');
+    const expectedUid = typeof process.getuid === 'function' ? process.getuid() : null;
+    if (expectedUid !== null && stat.uid !== expectedUid) throw new Error('telegram_token_preflight_owner_mismatch');
+    identity = { dev: stat.dev, ino: stat.ino };
+    await handle.writeFile(`${'x'.repeat(Buffer.byteLength(token, 'utf8'))}\n`, 'utf8');
+    await handle.sync();
+  } finally {
+    await handle?.close().catch(() => undefined);
+    const current = await fs.lstat(probePath).catch(() => null);
+    if (identity && current?.isFile() && !current.isSymbolicLink()
+      && current.dev === identity.dev && current.ino === identity.ino) {
+      await fs.unlink(probePath);
+    }
+  }
+}
+
+export async function bindTelegramBotIdentity(
+  botId: number,
+  options: { env?: NodeJS.ProcessEnv; paths?: TelegramPrivatePaths; home?: string } = {}
+): Promise<TelegramBotBindingResult> {
+  if (!Number.isSafeInteger(botId) || botId <= 0) throw new Error('telegram_bot_id_invalid');
+  let result: TelegramBotBindingResult | null = null;
+  await updateTelegramState((state) => {
+    const previousBotId = state.bot_id;
+    const rotated = previousBotId !== botId;
+    const legacyOrPendingChat = state.chats.length > 1 || state.chats.some((chat) => chat.active === false);
+    const stateReset = rotated || legacyOrPendingChat;
+    result = {
+      bot_id: botId,
+      previous_bot_id: previousBotId,
+      rotated,
+      state_reset: stateReset
+    };
+    return {
+      ...state,
+      bot_id: botId,
+      ...(stateReset ? {
+        poll_offset: 0,
+        pairing: null,
+        chats: [],
+        confirmations: []
+      } : {})
+    };
+  }, resolvePrivatePaths(options));
+  if (!result) throw new Error('telegram_bot_binding_failed');
+  return result;
+}
+
 export function emptyTelegramState(): TelegramStateV1 {
   return {
     schema: TELEGRAM_STATE_SCHEMA,
+    bot_id: null,
+    poll_offset: 0,
     pairing: null,
     chats: [],
     confirmations: []
@@ -165,7 +251,7 @@ export async function readTelegramState(
     throw new Error('telegram_state_invalid');
   }
   if (!isTelegramState(parsed)) throw new Error('telegram_state_invalid');
-  return parsed;
+  return normalizeTelegramState(parsed);
 }
 
 export async function writeTelegramState(
@@ -173,8 +259,9 @@ export async function writeTelegramState(
   paths: TelegramPrivatePaths = telegramPrivatePaths()
 ): Promise<void> {
   if (!isTelegramState(state)) throw new Error('telegram_state_invalid');
+  const normalized = normalizeTelegramState(state);
   await ensureTelegramPrivateDirectories(paths, 'state');
-  const serialized = `${JSON.stringify(state, null, 2)}\n`;
+  const serialized = `${JSON.stringify(normalized, null, 2)}\n`;
   if (Buffer.byteLength(serialized, 'utf8') > TELEGRAM_STATE_MAX_BYTES) {
     throw new Error('telegram_state_too_large');
   }
@@ -215,6 +302,11 @@ export async function issueTelegramPairingCode(
   };
   await updateTelegramState((state) => ({
     ...state,
+    ...(state.chats.length > 1 ? {
+      poll_offset: 0,
+      chats: [],
+      confirmations: []
+    } : {}),
     pairing: {
       schema: TELEGRAM_PAIRING_SCHEMA,
       ...result,
@@ -222,46 +314,6 @@ export async function issueTelegramPairingCode(
     }
   }), resolvePrivatePaths(options));
   return result;
-}
-
-async function withTelegramStateLock<T>(paths: TelegramPrivatePaths, operation: () => Promise<T>): Promise<T> {
-  const identity = await acquireTelegramStateLock(paths);
-  try {
-    return await operation();
-  } finally {
-    const current = await fs.lstat(paths.stateLockPath).catch(() => null);
-    if (current?.isDirectory() && !current.isSymbolicLink()
-      && current.dev === identity.dev && current.ino === identity.ino) {
-      await fs.rmdir(paths.stateLockPath).catch(() => undefined);
-    }
-  }
-}
-
-async function acquireTelegramStateLock(paths: TelegramPrivatePaths): Promise<{ dev: number; ino: number }> {
-  assertTestHomeWriteAllowed(paths.stateLockPath);
-  for (let attempt = 0; attempt < TELEGRAM_STATE_LOCK_ATTEMPTS; attempt += 1) {
-    try {
-      await fs.mkdir(paths.stateLockPath, { mode: 0o700 });
-      const created = await inspectPrivateDirectory(paths.stateLockPath, 'telegram_state_lock');
-      return { dev: created.dev, ino: created.ino };
-    } catch (error: unknown) {
-      if ((error as NodeJS.ErrnoException | null)?.code !== 'EEXIST') throw error;
-      const current = await fs.lstat(paths.stateLockPath).catch(() => null);
-      if (!current) continue;
-      if (current.isSymbolicLink() || !current.isDirectory()) {
-        throw new Error('telegram_state_lock_unsafe_type');
-      }
-      const expectedUid = typeof process.getuid === 'function' ? process.getuid() : null;
-      if (expectedUid !== null && current.uid !== expectedUid) {
-        throw new Error('telegram_state_lock_owner_mismatch');
-      }
-      if ((current.mode & 0o777) !== 0o700) throw new Error('telegram_state_lock_mode_not_0700');
-    }
-    if (attempt + 1 < TELEGRAM_STATE_LOCK_ATTEMPTS) {
-      await new Promise((resolve) => setTimeout(resolve, TELEGRAM_STATE_LOCK_RETRY_MS));
-    }
-  }
-  throw new Error('telegram_state_lock_timeout');
 }
 
 async function ensureTelegramPrivateDirectories(
@@ -329,18 +381,36 @@ function isTelegramState(value: unknown): value is TelegramStateV1 {
     || value.schema !== TELEGRAM_STATE_SCHEMA
     || !Array.isArray(value.chats)
     || !Array.isArray(value.confirmations)) return false;
+  if (value.bot_id !== undefined && value.bot_id !== null
+    && (!Number.isSafeInteger(value.bot_id) || Number(value.bot_id) <= 0)) return false;
+  if (value.poll_offset !== undefined
+    && (!Number.isSafeInteger(value.poll_offset) || Number(value.poll_offset) < 0)) return false;
   if (value.pairing !== null && !isPairing(value.pairing)) return false;
   return value.chats.every((chat) => isRecord(chat)
       && Number.isSafeInteger(chat.chat_id)
+      && Number(chat.chat_id) > 0
       && Number.isSafeInteger(chat.sender_id)
-      && typeof chat.paired_at === 'string')
+      && Number(chat.sender_id) > 0
+      && typeof chat.paired_at === 'string'
+      && (chat.active === undefined || typeof chat.active === 'boolean'))
     && value.confirmations.every((confirmation) => isRecord(confirmation)
       && typeof confirmation.nonce === 'string'
       && Number.isSafeInteger(confirmation.chat_id)
+      && Number(confirmation.chat_id) > 0
       && Number.isSafeInteger(confirmation.sender_id)
+      && Number(confirmation.sender_id) > 0
       && typeof confirmation.command === 'string'
       && typeof confirmation.input_json === 'string'
       && typeof confirmation.expires_at === 'string');
+}
+
+function normalizeTelegramState(value: TelegramStateV1): TelegramStateV1 {
+  return {
+    ...value,
+    bot_id: value.bot_id ?? null,
+    poll_offset: value.poll_offset ?? 0,
+    chats: value.chats.map((chat) => ({ ...chat, active: chat.active ?? true }))
+  };
 }
 
 function isPairing(value: unknown): value is TelegramPairingState {

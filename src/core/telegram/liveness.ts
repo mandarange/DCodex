@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { TelegramLivenessReceipt, TelegramPollSnapshot } from './types.js';
+import type { TelegramLivenessReceipt, TelegramPollSnapshot, TelegramTokenSource } from './types.js';
 
 const MAX_RECEIPT_BYTES = 64 * 1024;
 
@@ -15,6 +15,8 @@ export function createTelegramLivenessReceipt(input: {
   pid?: number;
   running: boolean;
   tokenConfigured: boolean;
+  tokenSource?: TelegramTokenSource;
+  botId?: number | null;
   botIdentityValid: boolean;
   getMeCheckedAt?: string | null;
   getMeLatencyMs?: number | null;
@@ -26,12 +28,15 @@ export function createTelegramLivenessReceipt(input: {
   auditLastError?: string | null;
   poller: TelegramPollSnapshot;
 }): TelegramLivenessReceipt {
+  if (!optionalPositiveSafeInteger(input.botId)) throw new Error('telegram_liveness_bot_id_invalid');
   return {
     schema: 'sks.telegram-liveness.v1',
     generation: input.generation,
     pid: input.pid ?? process.pid,
     running: input.running,
     token_configured: input.tokenConfigured,
+    token_source: input.tokenSource ?? (input.tokenConfigured ? 'unknown' : 'none'),
+    bot_id: input.botId ?? null,
     bot_identity_valid: input.botIdentityValid,
     getme_checked_at: input.getMeCheckedAt ?? (input.botIdentityValid ? (input.heartbeatAt ?? new Date().toISOString()) : null),
     getme_latency_ms: input.getMeLatencyMs ?? (input.botIdentityValid ? 0 : null),
@@ -105,6 +110,8 @@ function isTelegramLivenessReceipt(value: unknown): value is TelegramLivenessRec
     && Number.isSafeInteger(row.pid) && Number(row.pid) > 0
     && typeof row.running === 'boolean'
     && typeof row.token_configured === 'boolean'
+    && (row.token_source === undefined || ['env', 'user_secret_file', 'none', 'unknown'].includes(String(row.token_source)))
+    && optionalPositiveSafeInteger(row.bot_id)
     && typeof row.bot_identity_valid === 'boolean'
     && nullableIso(row.getme_checked_at)
     && (row.getme_latency_ms === null || (Number.isFinite(row.getme_latency_ms) && Number(row.getme_latency_ms) >= 0))
@@ -115,6 +122,10 @@ function isTelegramLivenessReceipt(value: unknown): value is TelegramLivenessRec
     && (row.audit_healthy === undefined || typeof row.audit_healthy === 'boolean')
     && (row.audit_last_error === undefined || row.audit_last_error === null || typeof row.audit_last_error === 'string')
     && isPollSnapshot(row.poller);
+}
+
+function optionalPositiveSafeInteger(value: unknown): value is number | null | undefined {
+  return value === undefined || value === null || (Number.isSafeInteger(value) && Number(value) > 0);
 }
 
 function isPollSnapshot(value: unknown): value is TelegramPollSnapshot {

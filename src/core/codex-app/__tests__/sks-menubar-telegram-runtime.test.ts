@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
-test('compiled Telegram runtime keeps unauthorized chats silent and routes paired chats', async (t) => {
+test('compiled Telegram runtime binds persisted offsets to bot identity and routes only paired chats', async (t) => {
   if (process.platform !== 'darwin') return t.skip('Swift Telegram runtime harness is macOS-only');
 
   const temp = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'sks-telegram-runtime-'));
@@ -31,7 +31,36 @@ private enum HarnessError: Error {
 }
 
 private final class HarnessAccess: TelegramAccessStoring, @unchecked Sendable {
-    func loadToken() throws -> String? { "123456:abcdefghijklmnopqrstuvwxyzABCDE" }
+    private var botID: Int64?
+    private var pollOffset: Int64
+
+    init(botID: Int64? = 1, pollOffset: Int64 = 0) {
+        self.botID = botID
+        self.pollOffset = pollOffset
+    }
+
+    func resolveToken() throws -> TelegramResolvedAccessToken {
+        TelegramResolvedAccessToken(
+            token: "123456:abcdefghijklmnopqrstuvwxyzABCDE",
+            source: .userSecretFile
+        )
+    }
+
+    func bindBotIdentity(_ botID: Int64) throws -> TelegramBotBinding {
+        let previous = self.botID
+        let reset = previous != botID
+        if reset { pollOffset = 0 }
+        self.botID = botID
+        return TelegramBotBinding(
+            botID: botID, previousBotID: previous,
+            pollOffset: pollOffset, stateReset: reset
+        )
+    }
+
+    func persistPollOffset(_ offset: Int64, botID: Int64) throws {
+        precondition(self.botID == botID)
+        pollOffset = offset
+    }
 
     func consumePairing(
         code: String,
@@ -61,11 +90,17 @@ private final class HarnessAccess: TelegramAccessStoring, @unchecked Sendable {
 }
 
 private actor HarnessAPI: TelegramBotAPI {
+    private let identityBotID: Int64
     private var pending: [TelegramNativeUpdate] = []
     private var sent: [(chatID: Int64, text: String)] = []
+    private var offsets: [Int64] = []
+
+    init(identityBotID: Int64 = 1) {
+        self.identityBotID = identityBotID
+    }
 
     func getMe(token: String) async throws -> TelegramNativeUser {
-        TelegramNativeUser(id: 1, is_bot: true, first_name: "SKS")
+        TelegramNativeUser(id: identityBotID, is_bot: true, first_name: "SKS")
     }
 
     func getUpdates(
@@ -73,6 +108,7 @@ private actor HarnessAPI: TelegramBotAPI {
         offset: Int64,
         timeoutSeconds: Int
     ) async throws -> [TelegramNativeUpdate] {
+        offsets.append(offset)
         guard !pending.isEmpty else {
             try await Task.sleep(nanoseconds: 5_000_000)
             return []
@@ -95,6 +131,7 @@ private actor HarnessAPI: TelegramBotAPI {
     }
 
     func messageCount() -> Int { sent.count }
+    func observedOffsets() -> [Int64] { offsets }
 }
 
 private actor HarnessProcessGateway: TelegramTypedCommandGateway {
@@ -147,6 +184,22 @@ private enum Harness {
             .appendingPathComponent("telegram-runtime-\\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
 
+        try await verifyFirstPollOffset(
+            directory: directory,
+            persistedBotID: 41,
+            persistedOffset: 73,
+            liveBotID: 41,
+            expectedOffset: 73
+        )
+        try await verifyFirstPollOffset(
+            directory: directory,
+            persistedBotID: 41,
+            persistedOffset: 73,
+            liveBotID: 42,
+            expectedOffset: 0
+        )
+        print("telegram-offset-binding-ok")
+
         let api = HarnessAPI()
         let gateway = HarnessProcessGateway()
         let audit = HarnessAuditRows()
@@ -176,6 +229,31 @@ private enum Harness {
 
         await runtime.stop()
         print("telegram-runtime-harness-ok")
+    }
+
+    private static func verifyFirstPollOffset(
+        directory: URL,
+        persistedBotID: Int64,
+        persistedOffset: Int64,
+        liveBotID: Int64,
+        expectedOffset: Int64
+    ) async throws {
+        let api = HarnessAPI(identityBotID: liveBotID)
+        let runtime = TelegramMenuBarRuntime(
+            api: api,
+            access: HarnessAccess(botID: persistedBotID, pollOffset: persistedOffset),
+            gateway: HarnessProcessGateway(),
+            receiptURL: directory.appendingPathComponent("offset-\\(liveBotID).json"),
+            audit: { _ in }
+        )
+        _ = try await runtime.start()
+        try await eventually { !(await api.observedOffsets()).isEmpty }
+        await runtime.stop()
+        let offsets = await api.observedOffsets()
+        precondition(
+            offsets.first == expectedOffset,
+            "first poll offset \\(String(describing: offsets.first)) did not equal \\(expectedOffset)"
+        )
     }
 
     private static func update(id: Int64, chatID: Int64, senderID: Int64) -> TelegramNativeUpdate {
@@ -215,6 +293,7 @@ private enum Harness {
     name
   );
   const sources = [
+    source('TelegramStateLock.swift'),
     source('TelegramPrivateFileSupport.swift'),
     source('TelegramPrivateFileStore.swift'),
     source('TelegramSupport.swift'),
@@ -231,7 +310,119 @@ private enum Harness {
 
   const executed = await run(binary, [], isolatedEnvironment, 20_000);
   assert.equal(executed.code, 0, `${executed.stdout}\n${executed.stderr}`);
+  assert.match(executed.stdout, /telegram-offset-binding-ok/);
   assert.match(executed.stdout, /telegram-runtime-harness-ok/);
+});
+
+test('compiled SecureProcessEnvelope preserves Telegram partial recovery without secret fields', async (t) => {
+  if (process.platform !== 'darwin') return t.skip('Swift secure-envelope harness is macOS-only');
+
+  const temp = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'sks-telegram-envelope-'));
+  t.after(() => fs.rm(temp, { recursive: true, force: true }));
+  const harness = path.join(temp, 'Harness.swift');
+  const binary = path.join(temp, 'telegram-envelope-harness');
+  const isolatedEnvironment: NodeJS.ProcessEnv = {
+    ...process.env,
+    HOME: temp,
+    CFFIXED_USER_HOME: temp,
+    TMPDIR: temp,
+    CLANG_MODULE_CACHE_PATH: path.join(temp, 'clang-module-cache'),
+    SWIFT_MODULECACHE_PATH: path.join(temp, 'swift-module-cache')
+  };
+
+  await fs.writeFile(harness, `
+import Foundation
+
+@main
+private enum Harness {
+    static func main() throws {
+        let tokenSentinel = "987654:sentinel_secret_abcdefghijklmnop"
+        let rawSentinel = "RAW_SENTINEL_MUST_NOT_ESCAPE"
+        let payloadSentinel = "PAYLOAD_SENTINEL_MUST_NOT_ESCAPE"
+        let detailSentinel = "DETAIL_SENTINEL_MUST_NOT_ESCAPE"
+        let partial: [String: Any] = [
+            "schema": "sks.telegram-setup-command.v1",
+            "ok": false,
+            "error": "telegram_token_store_failed_after_webhook_removed",
+            "partial_success": true,
+            "webhook_removed": true,
+            "bot_state_reset": true,
+            "token_source": "unchanged",
+            "operator_action": "Remove the environment override before retrying secure setup.",
+            "recovery": [
+                "action": "rerun_secure_setup",
+                "command": "sks telegram setup --token-stdin",
+                "note": "Supply the token again through non-TTY standard input."
+            ],
+            "token": tokenSentinel,
+            "raw": rawSentinel,
+            "payload": payloadSentinel,
+            "detail": detailSentinel + " token=" + tokenSentinel
+        ]
+        let bytes = try JSONSerialization.data(withJSONObject: partial, options: [.sortedKeys])
+        let payload = String(decoding: bytes, as: UTF8.self)
+        let rendered = SecureProcessEnvelope.render(
+            payload: payload,
+            code: 1,
+            arguments: ["telegram", "setup", "--token-stdin", "--json"]
+        )
+        let outputBytes = rendered.data(using: .utf8)!
+        let output = try JSONSerialization.jsonObject(with: outputBytes) as! [String: Any]
+        precondition(output["schema"] as? String == "sks.secure-input-operation.v1")
+        precondition(output["ok"] as? Bool == false)
+        precondition(output["source_schema"] as? String == "sks.telegram-setup-command.v1")
+        precondition(output["partial_success"] as? Bool == true)
+        precondition(output["webhook_removed"] as? Bool == true)
+        precondition(output["bot_state_reset"] as? Bool == true)
+        precondition(output["token_source"] as? String == "unchanged")
+        precondition(
+            output["operator_action"] as? String
+                == "Remove the environment override before retrying secure setup."
+        )
+        let recovery = output["recovery"] as? [String: Any]
+        precondition(recovery?["action"] as? String == "rerun_secure_setup")
+        precondition(recovery?["command"] as? String == "sks telegram setup --token-stdin")
+        precondition(
+            recovery?["note"] as? String
+                == "Supply the token again through non-TTY standard input."
+        )
+        precondition(output["token"] == nil)
+        precondition(output["raw"] == nil)
+        precondition(output["payload"] == nil)
+        precondition(output["detail"] == nil)
+        for sentinel in [tokenSentinel, rawSentinel, payloadSentinel, detailSentinel] {
+            precondition(!rendered.contains(sentinel), "secret sentinel escaped secure envelope")
+        }
+        print("secure-envelope-partial-ok")
+    }
+}
+`);
+
+  const compiled = await run(
+    'swiftc',
+    [
+      path.join(process.cwd(), 'native', 'sks-menubar', 'Sources', 'SecureProcessEnvelope.swift'),
+      harness,
+      '-o',
+      binary
+    ],
+    isolatedEnvironment,
+    30_000
+  );
+  assert.equal(compiled.code, 0, `${compiled.stdout}\n${compiled.stderr}`);
+
+  const executed = await run(binary, [], isolatedEnvironment, 20_000);
+  assert.equal(executed.code, 0, `${executed.stdout}\n${executed.stderr}`);
+  assert.match(executed.stdout, /secure-envelope-partial-ok/);
+  for (const sentinel of [
+    '987654:sentinel_secret_abcdefghijklmnop',
+    'RAW_SENTINEL_MUST_NOT_ESCAPE',
+    'PAYLOAD_SENTINEL_MUST_NOT_ESCAPE',
+    'DETAIL_SENTINEL_MUST_NOT_ESCAPE'
+  ]) {
+    assert.equal(executed.stdout.includes(sentinel), false);
+    assert.equal(executed.stderr.includes(sentinel), false);
+  }
 });
 
 async function run(

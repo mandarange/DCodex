@@ -68,25 +68,110 @@ The SKS menu bar shows the installed Codex CLI version and latest known version.
 
 **Manage MCP Servers…** opens a native macOS manager for the global `~/.codex/config.toml`. It can add remote URL or local stdio servers, enable/disable existing entries, remove entries after confirmation, and refresh the current state. Mutations are lock-protected, backed up, TOML-validated, and written with mode `0600`; configured environment values and command arguments are never rendered in the list. Changes apply to new Codex sessions. The same plumbing is available through the canonical `sks mcp config list|get|add|edit|duplicate|enable|disable|remove|test|login|logout|backups|restore` surface for diagnostics and automation.
 
-### Remote coding: Telegram transport and Orca option
+### Remote control: Telegram BotFather integration
 
-SKS 8.0.4 includes the first-party Telegram Bot API transport for the existing
-typed remote-control contract. One bounded outbound `getUpdates` loop runs in
-the existing Menu Bar process, so it adds no daemon, inbound port, or tunnel.
-`sks telegram pair` enrolls an allowed chat through the existing secret store;
-unpaired chats receive no response, free-form shell input is never accepted,
-and destructive commands require actor-bound two-step confirmation and an audit
-receipt. Doctor readiness requires a real `getMe` round trip plus live-poller
-evidence. Release readiness additionally requires a real command/reply E2E from
-a cellular network; configuration, fixtures, and local-network tests do not
-satisfy that gate.
+SKS 8.0.4 provides a first-party Telegram Bot API transport for the existing
+typed remote-control contract. A bounded outbound `getUpdates` loop runs only
+inside the resident Menu Bar process: it opens no inbound port, tunnel, daemon,
+or public webhook.
 
-[Orca](https://github.com/stablyai/orca) remains an external MIT-licensed
-option that can launch Codex in a worktree. It is not bundled with, supported
-by, or required by SKS, and SKS adds no Orca dependency or automatic migration.
-Orca's mobile companion and Remote Orca Servers are beta; the desktop/server
-runtime remains the source of truth and remote access may require a private LAN
-or Tailscale path. See [the Orca remote-coding guide](docs/orca-remote-coding.md).
+#### BotFather setup
+
+1. In Telegram, open **@BotFather**, send `/newbot`, and complete its name and
+   username prompts. BotFather returns the bot token. The token authorizes the
+   bot against the Bot API; treat it like a password. Do not place it in a
+   shell command, config file, commit, issue, or screenshot.
+2. On the Mac that runs SKS, open **SKS Center → Remote Coding**, choose
+   **Enter Bot Token…**, and paste the token into the native secure-input
+   sheet. SKS verifies `getMe` and the bot's webhook state before it stores
+   anything. If a webhook is active, the token is not retained and Center asks
+   for explicit consent before removing that webhook without dropping pending
+   updates.
+
+   For a terminal-only setup, use a no-echo `zsh` prompt and pipe the token on
+   standard input; direct interactive TTY input is intentionally rejected:
+
+   ```sh
+   IFS= read -r -s "sks_telegram_token?BotFather token: "
+   printf '\n'
+   printf '%s\n' "$sks_telegram_token" | sks telegram setup --token-stdin
+   unset sks_telegram_token
+   ```
+
+   If that command reports an existing webhook, review the delivery change and
+   repeat the same no-echo flow with `--remove-webhook`. This is explicit
+   consent to stop the old webhook endpoint; SKS always requests
+   `drop_pending_updates=false`. The token travels only on standard input, is
+   verified with Telegram before storage, is never printed, and is stored in
+   the owner-only user secret file. A token supplied by `TELEGRAM_BOT_TOKEN` or
+   `SKS_TELEGRAM_BOT_TOKEN` is also supported for an operator-managed runtime,
+   but environment values can be exposed to other local processes and are not
+   the recommended setup path. SKS Center restarts its resident poller after a
+   successful save; if that restart reports a blocker, resolve it before
+   generating or sending a pairing code.
+3. For terminal-only setup, restart the resident Menu Bar process immediately
+   after setup (and after any webhook removal or token rotation). The poller
+   must be running before it can consume and confirm `/start`:
+
+   ```sh
+   sks menubar restart
+   ```
+
+   There is deliberately no `sks telegram start` or `sks telegram stop`:
+   Telegram is not a separate daemon. SKS Center exposes **Start**, **Stop**,
+   and **Restart** for the poller owned by the current resident Menu Bar
+   process. **Stop** preserves the token and pairings and lasts only until that
+   companion is relaunched. To keep Telegram stopped across relaunches, stop or
+   uninstall the entire Menu Bar companion; that also disables its other
+   resident features.
+4. Issue a short-lived pairing code with `sks telegram pair`:
+
+   ```sh
+   sks telegram pair --json
+   ```
+
+   From the one intended **private** chat, send the returned
+   `/start <pairing-code>` message to the bot before it expires. Only that
+   private chat/user pair is enrolled. Unpaired chats receive no reply.
+5. After the bot confirms pairing, send a typed command such as:
+
+   ```text
+   /sks status {}
+   ```
+
+   The command grammar is `/sks <command> <JSON object>`; the JSON object may
+   be omitted when the command needs no options. The allowlist is `gates`,
+   `paths`, `pipeline`, `proof`, `search`, `stats`, `status`, `stop-gate`,
+   `trust`, `update-check`, and `validate-artifacts`. If SKS replies with a
+   short-lived confirmation nonce, send the exact `/confirm <nonce>` message
+   once before it expires. Arbitrary prose and free-form shell commands are not
+   executed.
+6. Confirm runtime evidence:
+
+   ```sh
+   sks telegram status --json
+   sks telegram doctor --json
+   sks doctor
+   ```
+
+   `status` reads the secret-free liveness receipt. `telegram doctor` evaluates
+   token presence, the bot identity, pairing, audit health, poller state, and
+   liveness. A ready result requires a real `getMe` check, a paired private
+   chat, and a running poller; a configured token alone is not readiness.
+
+The transport accepts only allowlisted typed commands. It never accepts
+free-form shell input; higher-risk commands require actor-bound two-step
+confirmation and an audit receipt. Telegram long polling and a webhook cannot
+be active together. If Doctor reports a webhook/409 conflict, enter the token
+again in SKS Center and approve webhook removal, or repeat the no-echo CLI
+setup with `--remove-webhook`, then restart the poller. SKS never drops pending
+updates during that transition.
+
+If a token may have leaked, revoke/regenerate it in BotFather, enter the
+replacement through SKS Center (or the no-echo CLI flow), and restart the
+poller. Token rotation and BotFather credential changes are external actions;
+SKS does not publish packages, revoke tokens, or make any other irreversible
+remote change on the operator's behalf.
 
 ## The Front Door
 

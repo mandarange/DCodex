@@ -256,6 +256,8 @@ test('live owner wins before identity conflict and is never reclaimed by elapsed
     assert.equal(executed, false)
     assert.equal(result.kind, 'running')
     if (result.kind === 'running') {
+      assert.equal(result.response.ok, true)
+      assert.equal(result.response.completion_evidence, false)
       assert.equal(result.response.status, 'running')
       assert.equal(result.response.already_running, true)
       assert.equal(result.response.workflow_run_id, 'run-live')

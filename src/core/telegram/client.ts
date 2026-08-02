@@ -3,7 +3,8 @@ import type {
   TelegramApiResponse,
   TelegramMessage,
   TelegramUpdate,
-  TelegramUser
+  TelegramUser,
+  TelegramWebhookInfo
 } from './types.js';
 
 export interface TelegramTokenProvider {
@@ -45,6 +46,21 @@ export class TelegramClient {
 
   getMe(signal?: AbortSignal): Promise<TelegramUser> {
     return this.call<TelegramUser>('getMe', {}, signal);
+  }
+
+  async getWebhookInfo(signal?: AbortSignal): Promise<TelegramWebhookInfo> {
+    const info = await this.call<TelegramWebhookInfo>('getWebhookInfo', {}, signal);
+    if (!info || typeof info.url !== 'string') throw new TelegramApiError('telegram_webhook_info_invalid');
+    return info;
+  }
+
+  async deleteWebhook(signal?: AbortSignal): Promise<void> {
+    const removed = await this.call<boolean>('deleteWebhook', {
+      // Preserve queued updates when switching from webhook delivery to the
+      // resident long poller. Dropping them is intentionally not exposed.
+      drop_pending_updates: false
+    }, signal);
+    if (removed !== true) throw new TelegramApiError('telegram_delete_webhook_failed');
   }
 
   getUpdates(input: {

@@ -20,22 +20,11 @@ const files = [
   'docs/hooks-pat.md',
   'docs/goal-to-loop-migration.md',
   'docs/known-gaps.md',
-  'docs/release-readiness.md',
-  'docs/orca-remote-coding.md'
+  'docs/release-readiness.md'
 ];
 
 const required = {
-  'README.md': ['CHANGELOG.md', 'docs/release-readiness.md', 'gpt-image-2', 'docs/orca-remote-coding.md'],
-  'docs/orca-remote-coding.md': [
-    'external, MIT-licensed project',
-    'not bundled',
-    'mobile companion',
-    'beta',
-    'source of truth',
-    'Tailscale',
-    'no automatic migration',
-    'BotFather'
-  ],
+  'README.md': ['CHANGELOG.md', 'docs/release-readiness.md', 'gpt-image-2', 'Telegram Bot API', '`sks telegram pair`'],
   'CHANGELOG.md': ['1.14.0', 'DFix Extreme Speed Kernel', 'hook trust doctor', 'warning-zero'],
   'docs/computer-use-evidence.md': ['sks.computer-use-live-evidence.v1', 'probe_only', 'live_capture_blocked', 'local-only', 'Codex Chrome Extension'],
   'docs/codex-lb.md': ['durable_env_file', 'durable_keychain', 'shell_profile', 'process_only_ephemeral', 'base URL only'],
@@ -112,6 +101,24 @@ for (const file of files) {
     forbidden: forbiddenMatches
   });
 }
+
+const readmeText = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+const telegramOnboardingSteps = [
+  'sks telegram setup --token-stdin',
+  'sks menubar restart',
+  'sks telegram pair --json',
+  '/sks status {}'
+];
+const telegramOnboardingIndexes = telegramOnboardingSteps.map((step) => readmeText.indexOf(step));
+const telegramOnboardingOrdered = telegramOnboardingIndexes.every((index, position) =>
+  index >= 0 && (position === 0 || index > telegramOnboardingIndexes[position - 1])
+);
+results.push({
+  file: 'README.md#telegram-onboarding-order',
+  ok: telegramOnboardingOrdered,
+  missing: telegramOnboardingOrdered ? [] : telegramOnboardingSteps,
+  forbidden: []
+});
 
 for (const file of currentDollarSurfaceFiles) {
   const full = path.join(root, file);

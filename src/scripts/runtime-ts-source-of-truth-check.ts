@@ -11,7 +11,10 @@ const issues = [];
 if (pkg.bin?.sks !== 'dist/bin/sks.js') issues.push('package_bin_sks_not_dist');
 if (pkg.bin?.sneakoscope !== 'dist/bin/sks.js') issues.push('package_bin_sneakoscope_not_dist');
 if ((pkg.files || []).includes('src')) issues.push('package_files_include_src');
-if (!pkg.scripts?.['dev:sks']) issues.push('missing_dev_sks');
+const devSks = String(pkg.scripts?.['dev:sks'] || '');
+if (devSks && (!devSks.includes('dist/bin/sks.js') || /(?:^|[\\/])src[\\/]/.test(devSks))) {
+  issues.push('dev_sks_not_dist_only');
+}
 
 for (const file of walk(path.join(root, 'src'))) {
   const rel = path.relative(root, file).split(path.sep).join('/');

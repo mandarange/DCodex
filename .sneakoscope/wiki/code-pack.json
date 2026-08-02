@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-02T10:02:53.420Z",
-  "git_head_sha": "6f9789195ab628e9768e6211c983b46aea6eefb6",
+  "generated_at": "2026-08-02T10:17:29.110Z",
+  "git_head_sha": "7dcf320834118af9a81620718bc69a9ec47ce25f",
   "source_file_count": 2862,
-  "index_digest": "a41bb7c695245fef46d80059c37b8829675b2707cae926752431403db8d24ea8",
+  "index_digest": "435f9270208db524655d1a0139eabc0d86661d7322b45274bb8387813c4e250f",
   "entries": [
     {
       "id": "code:core-triwiki",
@@ -2040,6 +2040,6 @@
       "token_cost": 54
     }
   ],
-  "token_budget": 20000,
+  "token_budget": 8000,
   "total_token_cost": 4653
 }

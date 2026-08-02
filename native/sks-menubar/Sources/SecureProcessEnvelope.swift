@@ -30,6 +30,31 @@ enum SecureProcessEnvelope {
                 for (key, recoveryValue) in recoveryFields(from: object) {
                     envelope[key] = recoveryValue
                 }
+                if sourceSchema == "sks.telegram-setup-command.v1" {
+                    for key in [
+                        "getme_verified", "token_stored", "partial_success",
+                        "storage_attempted", "webhook_removed", "pending_updates_dropped",
+                        "bot_rotated", "bot_state_reset", "restart_required"
+                    ] {
+                        if let value = object[key] as? Bool { envelope[key] = value }
+                    }
+                    if let source = object["token_source"] as? String,
+                       ["env", "user_secret_file", "none", "unchanged"].contains(source) {
+                        envelope["token_source"] = source
+                    }
+                    if let action = boundedString(object["operator_action"], limit: 480) {
+                        envelope["operator_action"] = action
+                    }
+                    if let recovery = object["recovery"] as? [String: Any] {
+                        var publicRecovery: [String: String] = [:]
+                        for key in ["action", "command", "note"] {
+                            if let value = boundedString(recovery[key], limit: 480) {
+                                publicRecovery[key] = value
+                            }
+                        }
+                        if !publicRecovery.isEmpty { envelope["recovery"] = publicRecovery }
+                    }
+                }
             }
         }
         if !secureOk, envelope["error"] == nil {
@@ -64,6 +89,8 @@ enum SecureProcessEnvelope {
         case ("codex-app", "set-openrouter-key"),
              ("codex-app", "openrouter-key"):
             return ["sks.codex-app-openrouter-key.v1"]
+        case ("telegram", "setup"):
+            return ["sks.telegram-setup-command.v1"]
         default:
             return []
         }

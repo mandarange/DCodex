@@ -1,5 +1,136 @@
 import Foundation
 
+struct TelegramNativeUser: Codable, Sendable {
+    let id: Int64
+    let is_bot: Bool
+    let first_name: String
+}
+
+struct TelegramNativeChat: Codable, Sendable {
+    let id: Int64
+    let type: String
+}
+
+struct TelegramNativeMessage: Codable, Sendable {
+    let message_id: Int64
+    let date: Int64
+    let chat: TelegramNativeChat
+    let from: TelegramNativeUser?
+    let text: String?
+}
+
+struct TelegramNativeUpdate: Codable, Sendable {
+    let update_id: Int64
+    let message: TelegramNativeMessage?
+}
+
+struct TelegramTypedCommandRequest: Sendable, Equatable {
+    let name: String
+    let inputJSON: String
+}
+
+struct TelegramTypedCommandDecision: Sendable, Equatable {
+    let allowed: Bool
+    let confirmationRequired: Bool
+    let publicError: String?
+}
+
+/// The AppDelegate adapter must delegate these calls to the TypeScript
+/// createTelegramCommandDispatcher boundary. It must execute argv directly;
+/// no shell command string is accepted by this protocol.
+protocol TelegramTypedCommandGateway: Sendable {
+    func prepare(_ request: TelegramTypedCommandRequest) async -> TelegramTypedCommandDecision
+    func execute(_ request: TelegramTypedCommandRequest) async throws -> String
+}
+
+struct TelegramNativeAuditEvent: Sendable, Equatable {
+    let actor: String
+    let action: String
+    let command: String?
+    let outcome: String
+    let detail: String?
+}
+
+struct TelegramPollerReceipt: Codable, Sendable, Equatable {
+    let schema: String
+    let running: Bool
+    let offset: Int64
+    let consecutive_failures: Int
+    let last_poll_at: String?
+    let last_success_at: String?
+    let last_update_at: String?
+    let last_error: String?
+}
+
+struct TelegramLivenessReceipt: Codable, Sendable, Equatable {
+    let schema: String
+    let generation: String
+    let pid: Int32
+    let running: Bool
+    let token_configured: Bool
+    let token_source: TelegramTokenSource
+    let bot_id: Int64?
+    let bot_identity_valid: Bool
+    let getme_checked_at: String?
+    let getme_latency_ms: Int?
+    let paired_chat_count: Int
+    let started_at: String
+    let heartbeat_at: String
+    let stale_after_seconds: Int
+    let audit_healthy: Bool?
+    let audit_last_error: String?
+    let poller: TelegramPollerReceipt
+}
+
+struct TelegramCenterSetupResponse: Decodable {
+    struct Recovery: Decodable {
+        let action: String?
+        let note: String?
+    }
+
+    let ok: Bool
+    let getme_verified: Bool?
+    let token_stored: Bool?
+    let error: String?
+    let partial_success: Bool?
+    let token_source: String?
+    let storage_attempted: Bool?
+    let webhook_removed: Bool?
+    let pending_updates_dropped: Bool?
+    let bot_state_reset: Bool?
+    let operator_action: String?
+    let recovery: Recovery?
+}
+
+struct TelegramCenterPairResponse: Decodable {
+    let ok: Bool
+    let code: String?
+    let expires_at: String?
+    let instruction: String?
+    let post_pair_command: String?
+    let confirmation_grammar: String?
+    let error: String?
+}
+
+struct TelegramCenterDoctorResponse: Decodable {
+    struct Poller: Decodable {
+        let running: Bool
+        let consecutive_failures: Int
+        let last_error: String?
+    }
+
+    let ok: Bool
+    let status: String
+    let token_configured: Bool
+    let token_source: String
+    let bot_identity_valid: Bool
+    let paired_chat_count: Int
+    let audit_healthy: Bool
+    let poller: Poller
+    let blockers: [String]
+    let self_heal_action: String?
+}
+
 func telegramCommandRequest(_ text: String) -> TelegramTypedCommandRequest? {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let pattern = #"^/sks\s+([a-z][a-z0-9-]{0,63})(?:\s+([\s\S]+))?$"#
