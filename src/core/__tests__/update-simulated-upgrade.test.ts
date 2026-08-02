@@ -13,6 +13,7 @@ test('simulated 6.2 to 6.3 update and rollback bind receipts to the newly instal
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-620-630-'));
   const home = path.join(root, 'home');
   const projectRoot = path.join(root, 'project');
+  const projectRootAlias = path.join(root, 'project-link');
   const npmGlobalRoot = path.join(root, 'npm-global', 'node_modules');
   const installedPackageRoot = path.join(npmGlobalRoot, 'sneakoscope');
   const installedEntrypoint = path.join(installedPackageRoot, 'dist', 'bin', 'sks.js');
@@ -21,6 +22,8 @@ test('simulated 6.2 to 6.3 update and rollback bind receipts to the newly instal
   const fakeNpm = path.join(root, 'npm-fixture.mjs');
   try {
     await fs.mkdir(projectRoot, { recursive: true });
+    await fs.symlink(projectRoot, projectRootAlias, process.platform === 'win32' ? 'junction' : 'dir');
+    const canonicalProjectRoot = await fs.realpath(projectRoot);
     await fs.mkdir(home, { recursive: true });
     await createInstalledPackageFixture(installedPackageRoot, '6.3.0');
     await fs.writeFile(stateFile, '6.2.0\n');
@@ -58,6 +61,7 @@ test('simulated 6.2 to 6.3 update and rollback bind receipts to the newly instal
     });
     assert.equal(updated.ok, true, updated.error || 'update failed');
     assert.equal(updated.status, 'updated');
+    assert.equal(updated.project_root, canonicalProjectRoot);
     assert.equal(updated.from, '6.2.0');
     assert.equal(updated.new_version, '6.3.0');
     assert.equal(updated.temporary_install_smoke?.status, 'verified');
@@ -77,7 +81,7 @@ test('simulated 6.2 to 6.3 update and rollback bind receipts to the newly instal
       npmBin: fakeNpm,
       currentVersion: '6.3.0',
       version: '6.2.0',
-      projectRoot,
+      projectRoot: projectRootAlias,
       env: { ...baseEnv, SKS_TEST_TEMP_TARGET: '6.2.0' },
       timeoutMs: 15_000,
       json: true
@@ -85,6 +89,7 @@ test('simulated 6.2 to 6.3 update and rollback bind receipts to the newly instal
     assert.equal(rolledBack.ok, true, rolledBack.error || 'rollback failed');
     assert.equal(rolledBack.requested_version, '6.2.0');
     assert.equal(rolledBack.update?.new_version, '6.2.0');
+    assert.equal(rolledBack.update?.project_root, canonicalProjectRoot);
     assert.equal(rolledBack.update?.project_receipt?.sks_version, '6.2.0');
     assertStageOrder(rolledBack.update?.stages.map((stage) => stage.id) || []);
     const rollbackOperation = JSON.parse(await fs.readFile(rolledBack.receipt_path!, 'utf8'));
@@ -92,6 +97,109 @@ test('simulated 6.2 to 6.3 update and rollback bind receipts to the newly instal
     assert.equal(rollbackOperation.state, 'rolled_back');
     assert.equal(rollbackOperation.previous_version, '6.3.0');
     assert.equal(JSON.parse(await fs.readFile(path.join(installedPackageRoot, 'package.json'), 'utf8')).version, '6.2.0');
+
+    const reconcileFailure = await runSksUpdateNow({
+      npmBin: fakeNpm,
+      currentVersion: '6.2.0',
+      version: '6.3.0',
+      projectRoot,
+      env: {
+        ...baseEnv,
+        SKS_TEST_TEMP_TARGET: '6.3.0',
+        SKS_TEST_UPDATE_GLOBAL_SKILLS_FAIL: '1'
+      },
+      timeoutMs: 15_000,
+      json: true
+    });
+    assert.equal(reconcileFailure.ok, false);
+    assert.equal(reconcileFailure.status, 'failed');
+    assert.match(reconcileFailure.error || '', /^required update stages failed: /);
+    assert.match(reconcileFailure.error || '', /global_skills_reconcile/);
+    assert.ok(reconcileFailure.stages.some(
+      (stage) => stage.id === 'global_skills_reconcile' && stage.ok === false
+    ));
+    const reconcileReceiptStage = reconcileFailure.stages.find((stage) => stage.id === 'project_receipt');
+    assert.deepEqual(reconcileReceiptStage?.detail?.required_blockers, [
+      'skills-reconcile:global:forced_update_global_skills_reconcile_failure'
+    ]);
+    const reconcileOperation = JSON.parse(await fs.readFile(reconcileFailure.operation_receipt_path!, 'utf8'));
+    assert.match(
+      reconcileOperation.public_error || '',
+      /skills-reconcile:global:forced_update_global_skills_reconcile_failure/
+    );
+    assert.doesNotMatch(reconcileOperation.public_error || '', /required update stages failed/);
+
+    await fs.writeFile(stateFile, '6.2.0\n');
+    const configPath = path.join(projectRoot, '.codex', 'config.toml');
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, 'model = "gpt-5.4"\n');
+    const configAdoptFailure = await runSksUpdateNow({
+      npmBin: fakeNpm,
+      currentVersion: '6.2.0',
+      version: '6.3.0',
+      projectRoot,
+      env: {
+        ...baseEnv,
+        SKS_TEST_TEMP_TARGET: '6.3.0',
+        SKS_TEST_UPDATE_CONFIG_ADOPT_BLOCKER: '1'
+      },
+      timeoutMs: 15_000,
+      json: true
+    });
+    assert.equal(configAdoptFailure.ok, false);
+    const configAdoptOperation = JSON.parse(await fs.readFile(configAdoptFailure.operation_receipt_path!, 'utf8'));
+    assert.ok(configAdoptOperation.public_error.includes(configPath), configAdoptOperation.public_error);
+    assert.ok(configAdoptOperation.public_error.includes('user_owned_file_without_sks_marker'));
+    assert.ok(configAdoptOperation.public_error.includes('# SKS-MANAGED-CODEX-CONFIG'));
+    assert.ok(configAdoptOperation.public_error.includes('sks config adopt'));
+    assert.doesNotMatch(configAdoptOperation.public_error, /required update stages failed/);
+
+    const finalizeDoctorFailure = await runSksUpdateNow({
+      npmBin: fakeNpm,
+      currentVersion: '6.2.0',
+      version: '6.3.0',
+      projectRoot,
+      env: {
+        ...baseEnv,
+        SKS_TEST_TEMP_TARGET: '6.3.0',
+        SKS_TEST_FINALIZE_DOCTOR_USER_CONFIG_PRESERVED: '1'
+      },
+      timeoutMs: 15_000,
+      json: true
+    });
+    assert.equal(finalizeDoctorFailure.ok, false);
+    assert.equal(finalizeDoctorFailure.status, 'updated_with_issues');
+    assert.match(finalizeDoctorFailure.error || '', /update_finalize_doctor/);
+    const finalizeDoctorStage = finalizeDoctorFailure.stages.find((stage) => stage.id === 'update_finalize_doctor');
+    assert.equal(finalizeDoctorStage?.ok, false);
+    assert.equal(finalizeDoctorStage?.status, 'failed');
+    assert.equal(finalizeDoctorStage?.detail?.exit_code, 1);
+    assert.equal(finalizeDoctorStage?.detail?.timed_out, false);
+    assert.deepEqual(finalizeDoctorStage?.detail?.required_blockers, [
+      'project:user_owned_file_without_sks_marker',
+      'user_owned_file_without_sks_marker'
+    ]);
+    assert.deepEqual(finalizeDoctorStage?.detail?.args, [
+      'doctor',
+      '--profile',
+      'migration',
+      '--machine-only',
+      '--report-file',
+      path.join(canonicalProjectRoot, '.sneakoscope', 'update', 'update-finalize-doctor.json')
+    ]);
+    const finalizeDoctorVerification = finalizeDoctorFailure.stages.find((stage) => stage.id === 'final_self_verification');
+    assert.equal(finalizeDoctorVerification?.ok, false);
+    assert.ok(Array.isArray(finalizeDoctorVerification?.detail?.failed));
+    assert.ok((finalizeDoctorVerification?.detail?.failed as string[]).includes('update_finalize_doctor'));
+    const finalizeDoctorOperation = JSON.parse(await fs.readFile(finalizeDoctorFailure.operation_receipt_path!, 'utf8'));
+    assert.equal(finalizeDoctorOperation.state, 'failed');
+    assert.ok(finalizeDoctorOperation.stages.some((stage: any) => stage.id === 'update_finalize_doctor' && stage.ok === false));
+    assert.ok(finalizeDoctorOperation.public_error.includes(configPath), finalizeDoctorOperation.public_error);
+    assert.ok(finalizeDoctorOperation.public_error.includes('user_owned_file_without_sks_marker'));
+    assert.ok(finalizeDoctorOperation.public_error.includes('# SKS-MANAGED-CODEX-CONFIG'));
+    assert.ok(finalizeDoctorOperation.public_error.includes('sks config adopt'));
+    assert.doesNotMatch(finalizeDoctorOperation.public_error, /update self-verification failed/);
+    assert.doesNotMatch(finalizeDoctorOperation.public_error, /required update stages failed/);
 
     const verificationFailure = await runSksUpdateNow({
       npmBin: fakeNpm,
@@ -106,6 +214,30 @@ test('simulated 6.2 to 6.3 update and rollback bind receipts to the newly instal
     assert.equal(verificationFailure.status, 'updated_with_issues');
     assert.ok(verificationFailure.verification.some((item) => item.id === 'dist_stamp' && item.ok === false));
     assert.ok(verificationFailure.stages.some((stage) => stage.id === 'final_self_verification' && stage.ok === false));
+
+    const missingDoctorOwnedReceipt = await runSksUpdateNow({
+      npmBin: fakeNpm,
+      currentVersion: '6.3.0',
+      version: '8.0.2',
+      projectRoot,
+      env: {
+        ...baseEnv,
+        SKS_NPM_VIEW_SNEAKOSCOPE_VERSION: '8.0.2',
+        SKS_TEST_TEMP_TARGET: '8.0.2'
+      },
+      timeoutMs: 15_000,
+      json: true
+    });
+    assert.equal(missingDoctorOwnedReceipt.ok, false);
+    assert.equal(missingDoctorOwnedReceipt.status, 'failed');
+    const strictReceiptStage = missingDoctorOwnedReceipt.stages.find((stage) => stage.id === 'project_receipt');
+    assert.equal(strictReceiptStage?.detail?.via, 'new_version_doctor_receipt_required');
+    assert.equal(strictReceiptStage?.detail?.error, 'new_version_doctor_receipt_missing_or_stale');
+    const preservedReceipt = JSON.parse(await fs.readFile(
+      path.join(projectRoot, '.sneakoscope', 'update', 'migration-receipt.json'),
+      'utf8'
+    ));
+    assert.notEqual(preservedReceipt.sks_version, '8.0.2');
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
@@ -136,7 +268,41 @@ async function createInstalledPackageFixture(packageRoot: string, version: strin
     "const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');",
     "export async function writeProjectUpdateMigrationReceipt(input) {",
     "  const version = JSON.parse(await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8')).version;",
-    "  const receipt = { schema: 'sks.project-migration-receipt.v2', status: 'current', sks_version: version, root: input.root, source: input.source, generated_at: new Date().toISOString(), from_version: input.fromVersion || null, installation_epoch_path: path.join(input.root, '.sneakoscope-global', 'installation-epoch.json'), installation_epoch_sha256: 'fixture-' + version, required_blockers: [], optional_warnings: [], blockers: [], warnings: [] };",
+    "  const configAdoptBlocked = process.env.SKS_TEST_UPDATE_CONFIG_ADOPT_BLOCKER === '1';",
+    "  const skillsOk = process.env.SKS_TEST_UPDATE_GLOBAL_SKILLS_FAIL !== '1' && !configAdoptBlocked;",
+    "  const blockers = configAdoptBlocked ? ['user_owned_file_without_sks_marker'] : skillsOk ? [] : ['skills-reconcile:global:forced_update_global_skills_reconcile_failure'];",
+    "  if (skillsOk) {",
+    "    const skillsDir = path.join(process.env.HOME, '.agents', 'skills');",
+    "    await fs.mkdir(skillsDir, { recursive: true });",
+    "    await fs.writeFile(path.join(skillsDir, '.sks-generated.json'), JSON.stringify({ version }) + '\\n');",
+    "    const codexDir = path.join(input.root, '.codex');",
+    "    const managedDir = path.join(codexDir, 'managed-hooks');",
+    "    const managedScript = path.join(managedDir, 'sks-managed-hook.sh');",
+    "    await fs.mkdir(managedDir, { recursive: true });",
+    "    await fs.writeFile(managedScript, '#!/usr/bin/env sh\\nexit 0\\n');",
+    "    await fs.chmod(managedScript, 0o755);",
+    "    await fs.writeFile(path.join(managedDir, 'sks-managed-hooks.toml'), [",
+    "      '[[hooks.SessionStart]]',",
+    "      '[[hooks.SessionStart.hooks]]',",
+    "      'type = \"command\"',",
+    "      'command = ' + JSON.stringify(managedScript + ' session-start'),",
+    "      'timeout = 30',",
+    "      'async = false',",
+    "      ''",
+    "    ].join('\\n'));",
+    "    await fs.writeFile(path.join(codexDir, 'requirements.toml'), [",
+    "      'allow_managed_hooks_only = true',",
+    "      '',",
+    "      '[hooks]',",
+    "      'managed_dir = ' + JSON.stringify(managedDir),",
+    "      ''",
+    "    ].join('\\n'));",
+    "  }",
+    "  const migrationStages = [",
+    "    { id: 'skills-reconcile', ok: skillsOk, status: skillsOk ? 'ok' : 'failed', action_count: skillsOk ? 1 : 0, blocker_count: blockers.length, warning_count: 0 },",
+    "    { id: 'hook-trust-refresh', ok: true, status: 'ok', action_count: 1, blocker_count: 0, warning_count: 0 }",
+    "  ];",
+    "  const receipt = { schema: 'sks.project-migration-receipt.v2', status: skillsOk ? 'current' : 'blocked', sks_version: version, root: input.root, source: input.source, generated_at: new Date().toISOString(), from_version: input.fromVersion || null, installation_epoch_path: path.join(input.root, '.sneakoscope-global', 'installation-epoch.json'), installation_epoch_sha256: 'fixture-' + version, migration_stages: migrationStages, required_blockers: blockers, optional_warnings: [], blockers, warnings: [] };",
     "  const file = path.join(input.root, '.sneakoscope', 'update', 'migration-receipt.json');",
     "  await fs.mkdir(path.dirname(file), { recursive: true });",
     "  await fs.writeFile(file, JSON.stringify(receipt, null, 2) + '\\n');",

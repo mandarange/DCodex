@@ -5,7 +5,7 @@ import { CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_ONLY_POLICY, COD
 import { getdesignReferencePolicyText, imageUxReviewPipelinePolicyText } from './routes/design-policy.js';
 import { PPT_PIPELINE_SKILL_ALLOWLIST, pptPipelineAllowlistPolicyText } from './routes/ppt-policy.js';
 import { normalizeDollarSkillName, prefixKnownSksDollarReferences, sksPrefixedDollarCommand, sksPrefixedSkillName, unprefixedSksSkillName } from './routes/dollar-prefix.js';
-import { classifyTaskProfile, looksLikeDatabaseWorkRequest, type TaskProfile } from './runtime/task-profile.js';
+import { classifyTaskProfile, isTaskProfile, looksLikeDatabaseWorkRequest, type TaskProfile } from './runtime/task-profile.js';
 import { legacyCoreSkillNames } from './codex-native/core-skill-manifest.js';
 
 export * from './routes/constants.js';
@@ -292,7 +292,7 @@ export const ROUTES = [
     command: '$Naruto',
     mode: 'NARUTO',
     route: 'Codex official subagent workflow',
-    description: '$Naruto prepares a lightweight Codex official subagent workflow. The Sol Max parent owns decomposition, delegates only defensible direct-child slices, reuses bounded query-aware TriWiki attention anchors, waits for every requested thread, integrates the results, and reports scoped verification. Automatic fan-out starts at four for bounded work, six for explicit parallel work, and eight for large-scale work, may expand up to twelve while independent useful slices and healthy host capacity remain, then is capped dynamically by ready DAG width, disjoint ownership, verifier/tool capacity, reserved thread slots, and positive marginal usefulness; explicit --agents remains authoritative.',
+    description: '$Naruto prepares a lightweight Codex official subagent workflow. The Sol Max parent owns decomposition, delegates only defensible direct-child slices, reuses bounded query-aware TriWiki attention anchors, waits for every requested thread, integrates the results, and reports scoped verification. Automatic fan-out starts at four for bounded work, six for explicit parallel work, eight for large-scale work, and sixteen for mass cheap-model fan-out on the Luna/Terra lanes; normal expansion is capped at twelve, while the mass lane may expand to sixty-four. The default max_threads of twelve remains a frame budget (cap), never a target; the absolute hard frame cap is two hundred fifty-six, and multi-wave scheduling reuses capacity for requested counts beyond the first wave. Luna Max handles tiny mechanical shards, Terra Medium handles broad search and exploration shards, and Sol handles implementation and judgment; explicit --agents remains authoritative.',
     requiredSkills: ['naruto', 'pipeline-runner', 'prompt-pipeline', 'honest-mode'],
     dollarAliases: ['$Work'],
     appSkillAliases: ['work', 'from-chat-img'],
@@ -699,7 +699,7 @@ export const COMMAND_CATALOG = [
   { name: 'codex-app', usage: 'sks codex-app [check|set-openrouter-key --api-key-stdin|use-openrouter --model <id>|openrouter-status|product-design|chrome-extension|pat status|remote-control]', description: 'Check Codex App install, OpenRouter provider activation, codex-lb key-entry guidance, Product Design plugin readiness, Codex Chrome Extension web verification readiness, PAT-safe status, first-party MCP/plugin readiness, and Codex CLI remote-control availability.' },
   { name: 'codex-native', usage: 'sks codex-native status|feature-broker|invocation-plan|init-deep [--json]', description: 'Inspect Codex Native feature broker readiness, invocation routing, pattern evidence, and managed memory setup.' },
   { name: 'hooks', usage: 'sks hooks explain|status|trust-report|replay|codex-validate|warning-check ... [--json]', description: 'Explain Codex hook events, validate vendored latest 10-event output schemas, replay fixtures, and enforce warning-zero SKS hook policies under the 0.134 compatibility matrix.' },
-  { name: 'codex-lb', usage: 'sks codex-lb status|health|metrics|doctor|circuit|repair|setup ...', description: 'Configure, health-check, repair, and record circuit evidence for codex-lb provider auth without confusing ChatGPT OAuth and proxy keys.' },
+  { name: 'codex-lb', usage: 'sks codex-lb status|connect-test|health|metrics|doctor|circuit|repair|setup ...', description: 'Configure, run a one-request connection proof, health-check, repair, and record circuit evidence for codex-lb provider auth without confusing ChatGPT OAuth and proxy keys.' },
   { name: 'remote', usage: 'sks remote readiness|machines|worker ... [--json]', description: 'Inspect official Codex Remote readiness and the allowlisted proof-aware SSH stdio worker surface.' },
   { name: 'zellij', usage: 'sks zellij status|repair [--json] | sks --mad', description: 'Inspect Zellij runtime status, explain repair (no auto-install), and open the SKS Zellij runtime used by MAD. Zellij panes are not official Naruto subagent evidence.' },
   { name: 'mad-sks', usage: 'sks mad-sks plan|run|apply|sql|apply-migration|status|close|rollback-apply ... | sks --mad [--high]', description: 'Open or inspect MAD-SKS scoped permission workflows, merged SQL-plane execution, and the Zellij permission launcher.' },
@@ -1232,7 +1232,10 @@ export function narutoDecisionForRoute(
   if (profile === 'passthrough' || profile === 'answer' || profile === 'tiny-change') {
     return narutoRouteDecision('none', routeId, profile, `task_profile_${profile}_bypass`, true);
   }
-  if (profile === 'bounded-work' || profile === 'parallel-read' || profile === 'parallel-write' || profile === 'high-risk') {
+  if (profile === 'bounded-work') {
+    return narutoRouteDecision('none', routeId, profile, 'task_profile_bounded_work_parent_owned', false);
+  }
+  if (profile === 'parallel-read' || profile === 'parallel-write' || profile === 'high-risk') {
     return narutoRouteDecision('generic_naruto', routeId, profile, `task_profile_${profile}_default_parallel`, false);
   }
   return narutoRouteDecision('none', routeId, profile, `task_profile_${profile}_bypass`, true);
@@ -1321,7 +1324,7 @@ export function routeReasoning(route: any, prompt: any = '') {
   const base = ALLOWED_REASONING_EFFORTS.has(route?.reasoningPolicy) ? route.reasoningPolicy : 'medium';
   if (hasFromChatImgSignal(text)) return reasoning('xhigh', 'from_chat_img_image_work_order_analysis');
   if (/(?:^|\s)sks\s+--mad\b|(?:^|\s)--mad\b|\$MAD-SKS\b|\bmad-sks\b|\bmadsks\b/i.test(text)) return reasoning('xhigh', 'mad_sks_or_mad_launch_default');
-  if (route?.id === 'Naruto') return narutoRouteReasoning(text);
+  if (route?.id === 'Naruto') return narutoRouteReasoning(route, text);
   if (route?.id === 'Research' || route?.id === 'AutoResearch') return reasoning('xhigh', 'research_or_experiment_route');
   if (route?.id === 'SuperSearch') return reasoning('high', 'source_intelligence_route');
   if (route?.id === 'SEOGEOOptimizer') return reasoning('high', 'search_visibility_route');
@@ -1333,8 +1336,18 @@ export function routeReasoning(route: any, prompt: any = '') {
   return reasoning('medium', 'simple_fulfillment');
 }
 
-function narutoRouteReasoning(_text: any = '') {
-  return reasoning('max', 'naruto_parent_sol_max');
+function narutoRouteReasoning(route: any, text: any = '') {
+  if (route?.explicit_invocation !== false) return reasoning('max', 'explicit_naruto_parent_sol_max');
+  const profile: TaskProfile = isTaskProfile(route?.task_profile)
+    ? route.task_profile
+    : classifyTaskProfile(text);
+  if (profile === 'parallel-read' || profile === 'parallel-write' || profile === 'high-risk') {
+    return reasoning('max', `implicit_naruto_${profile}_sol_max`);
+  }
+  if (profile === 'tiny-change' || profile === 'passthrough' || profile === 'answer') {
+    return reasoning('low', `implicit_naruto_${profile}_lightweight`);
+  }
+  return reasoning('medium', 'implicit_naruto_bounded_parent_medium');
 }
 
 export function reasoningProfileName(effort: any) {

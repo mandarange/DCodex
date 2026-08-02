@@ -1085,6 +1085,18 @@ test('trustworthy structured failure replaces and remains as canonical parent ev
       await persistOrReuseTrustworthySubagentParentSummary(dir, 'Completion Summary: ambiguous retry'),
       failed
     )
+    assert.deepEqual(
+      await persistOrReuseTrustworthySubagentParentSummary(
+        dir,
+        'Integration remains blocked because the automatic fanout cap was exceeded.',
+        { workflowStatus: 'parent_completed' }
+      ),
+      failed
+    )
+    assert.deepEqual(
+      JSON.parse(await fsp.readFile(path.join(dir, SUBAGENT_PARENT_SUMMARY_FILENAME), 'utf8')),
+      failed
+    )
 
     const evidence = buildSubagentEvidence({
       requestedSubagents: 1,

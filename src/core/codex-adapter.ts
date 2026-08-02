@@ -7,6 +7,7 @@ import {
   codexLbRecoveryBlockedProcessResult,
   withCodexLbCliLaunchRecovery
 } from './codex-control/codex-lb-launch-recovery.js';
+import { prepareCodexAppServerRuntimeEnv } from './codex-control/codex-app-server-runtime-env.js';
 
 export async function findCodexBinary(): Promise<string | null> {
   const resolved = await resolveCodexRuntime({
@@ -52,13 +53,14 @@ export function buildCodexExecArgs({ root, prompt, outputFile, json = true, prof
   return args;
 }
 
-export async function runCodexExec({ root, recoveryRoot = root, prompt, outputFile, json = true, profile = null, extraArgs = [], onStdout, onStderr, logDir = null, stdoutFile = null, stderrFile = null, maxBufferBytes = 256 * 1024, timeoutMs = null, env = process.env, codexBin = null, findCodexBinaryImpl = findCodexBinary, runProcessImpl = runProcess, recoveryFetch = undefined, recoveryTimeoutMs = undefined }: any): Promise<RunProcessResult> {
+export async function runCodexExec({ root, recoveryRoot = root, prompt, outputFile, json = true, profile = null, extraArgs = [], onStdout, onStderr, logDir = null, stdoutFile = null, stderrFile = null, maxBufferBytes = 256 * 1024, timeoutMs = null, env = process.env, codexBin = null, findCodexBinaryImpl = findCodexBinary, runProcessImpl = runProcess, prepareCodexRuntimeEnvImpl = prepareCodexAppServerRuntimeEnv, recoveryFetch = undefined, recoveryTimeoutMs = undefined }: any): Promise<RunProcessResult> {
   const args = buildCodexExecArgs({ root, prompt, outputFile, json, profile, extraArgs });
   const effectiveTimeoutMs = Number(timeoutMs || process.env.SKS_CODEX_TIMEOUT_MS || process.env.DCODEX_CODEX_TIMEOUT_MS || 30 * 60 * 1000);
   const recoveryArgs = args.slice(1, -1);
+  const runtimeEnv = await prepareCodexRuntimeEnvImpl({ env });
   const guarded = await withCodexLbCliLaunchRecovery({
     root: recoveryRoot,
-    env,
+    env: runtimeEnv,
     cliArgs: recoveryArgs,
     ...(typeof recoveryFetch === 'function' ? { fetchImpl: recoveryFetch } : {}),
     ...(recoveryTimeoutMs === undefined ? {} : { timeoutMs: recoveryTimeoutMs })
@@ -77,7 +79,7 @@ export async function runCodexExec({ root, recoveryRoot = root, prompt, outputFi
     }
     return runProcessImpl(bin, args, {
       cwd: root,
-      env: { ...env, ...managedProxyEnvForChild(env) },
+      env: { ...runtimeEnv, ...managedProxyEnvForChild(runtimeEnv) },
       onStdout,
       onStderr,
       timeoutMs: effectiveTimeoutMs,

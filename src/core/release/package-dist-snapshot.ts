@@ -115,15 +115,52 @@ function matchesPackagePattern(file: string, pattern: string) {
   const normalized = normalizeRel(pattern)
   if (!rel || !normalized) return false
   if (!hasGlob(normalized)) return rel === normalized || rel.startsWith(`${normalized}/`)
-  const re = globPatternToRegExp(normalized)
-  if (re.test(rel)) return true
-  const parts = rel.split('/')
-  parts.pop()
-  while (parts.length) {
-    if (re.test(parts.join('/'))) return true
+  for (const expanded of expandBracePatterns(normalized)) {
+    const re = globPatternToRegExp(expanded)
+    if (re.test(rel)) return true
+    const parts = rel.split('/')
     parts.pop()
+    while (parts.length) {
+      if (re.test(parts.join('/'))) return true
+      parts.pop()
+    }
   }
   return false
+}
+
+function expandBracePatterns(pattern: string): string[] {
+  const open = pattern.indexOf('{')
+  if (open < 0) return [pattern]
+  let depth = 0
+  let close = -1
+  for (let i = open; i < pattern.length; i += 1) {
+    if (pattern[i] === '{') depth += 1
+    else if (pattern[i] === '}') {
+      depth -= 1
+      if (depth === 0) {
+        close = i
+        break
+      }
+    }
+  }
+  if (close < 0) return [pattern]
+  const body = pattern.slice(open + 1, close)
+  const options: string[] = []
+  let optionStart = 0
+  depth = 0
+  for (let i = 0; i <= body.length; i += 1) {
+    const char = body[i]
+    if (char === '{') depth += 1
+    else if (char === '}') depth -= 1
+    if ((char === ',' && depth === 0) || i === body.length) {
+      options.push(body.slice(optionStart, i))
+      optionStart = i + 1
+    }
+  }
+  if (options.length < 2) return [pattern]
+  const prefix = pattern.slice(0, open)
+  const suffix = pattern.slice(close + 1)
+  return options.flatMap((option) => expandBracePatterns(`${prefix}${option}${suffix}`))
 }
 
 function globPatternToRegExp(pattern: string) {
@@ -154,7 +191,7 @@ function globPatternToRegExp(pattern: string) {
 }
 
 function hasGlob(value: string) {
-  return /[*?]/.test(value)
+  return /[*?{]/.test(value)
 }
 
 function normalizeRel(value: unknown) {

@@ -603,6 +603,18 @@ export async function persistOrReuseTrustworthySubagentParentSummary(
     return incoming.raw
   }
   if (workflowFailed || incoming.status === 'failed' || parentResultExplicitlyFailed(value)) {
+    const persisted = normalizeSubagentParentSummary(
+      await reuseMatchingPersistedParentSummary(file, activeRunId, null)
+    )
+    const incomingContradictsFailure = incoming.trustworthy
+      && incoming.status === 'completed'
+      && incomingMatchesActiveRun
+    if (!incomingContradictsFailure
+      && persisted.trustworthy
+      && persisted.status === 'failed'
+      && persisted.raw) {
+      return persisted.raw
+    }
     await fsp.rm(file, { force: true }).catch(() => undefined)
     if (workflowFailed && incoming.trustworthy && incoming.status === 'completed') return null
     return value

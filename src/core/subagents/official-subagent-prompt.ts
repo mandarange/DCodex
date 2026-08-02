@@ -151,13 +151,14 @@ ${spawnModelRouting}
 - use gpt-5.6-sol with max reasoning only for focused unresolved, high-risk, final-review, architecture, security, database, research, release, or other explicit judgment slices
 - use gpt-5.6-terra with medium reasoning for read-heavy documentation/exploration, long-context analysis, large or repository-wide search, and direct Computer Use, Browser/Chrome, or image-generation execution
 - explicit task class and phase win over incidental keywords: Terra gathers/explores/searches broadly, Luna handles tiny mechanical edits, Sol High implements, and Sol Max performs the focused judgment pass
+- for mass fan-out waves, default each shard to worker/Luna Max (tiny mechanical) or explorer/Terra Medium (broad search/exploration) and reserve Sol for implementation and judgment — cheap lanes are what make high concurrency safe
 - never assign Luna to long-context, broad exploration, review, debugging, planning, or tool-heavy work; never collapse every child onto the parent Sol model when a sealed Luna or Terra role matches
 
 Plan and capacity:
-- automatic fan-out starts at 4 for bounded non-trivial work, 6 for explicit parallel work, and 8 for large-scale work; expand only up to ${MAX_AUTOMATIC_SUBAGENT_COUNT} while useful independent slices and healthy capacity remain
+- automatic fan-out is capacity-derived up to ${MAX_AUTOMATIC_SUBAGENT_COUNT}: after decomposition, use every safe useful child slot supported by the ready DAG, disjoint ownership, verifier/tool capacity, and actual host limits; the historical 4/6/8/16 task-class values are fallback hints, not clamps
 - automatic reviewer-only fan-out is capped at ${MAX_AUTOMATIC_REVIEWER_COUNT} for ordinary work and ${MAX_CRITICAL_AUTOMATIC_REVIEWER_COUNT} for critical multi-domain review
 - requested subagents: ${requestedPolicy}
-- max open agent threads: ${maxThreads} (hard cap, never a utilization target)
+- max concurrently open child agent threads: ${maxThreads} (hard child-slot cap, never a utilization target; the root is outside this count)
 - selected first-wave concurrency: ${firstWave}
 - planned waves: ${waveCount}
 - capacity snapshot: ${renderCapacity(input.capacity)}
@@ -179,7 +180,7 @@ ${requestedSource === 'operator'
     ? '- the explicit operator count is authoritative; if it cannot be defended safely, block and report instead of silently changing it'
     : requestedSource === 'route_contract'
       ? '- the route-owned exact count is authoritative; preserve it and follow the route-specific orchestration contract'
-      : `- after decomposition, resize the automatic plan to the useful independent slice count, bounded by C_t and ${MAX_AUTOMATIC_SUBAGENT_COUNT}; update plan/evidence before the first spawn
+      : `- after decomposition, resize the total automatic plan to the useful independent slice count, bounded only by the ${MAX_AUTOMATIC_SUBAGENT_COUNT} hard safety ceiling; C_t bounds each wave, not the reusable multi-wave total; update plan/evidence before the first spawn
 - if fewer defensible slices exist, reduce the count; if more defensible slices and positive capacity exist, increase only within the automatic ceiling`}` : '- decomposition status: ready'}
 
 Slice safety:

@@ -7,7 +7,9 @@ import { classifyTaskProfile } from '../../runtime/task-profile.js'
 import {
   DEFAULT_AUTOMATIC_SUBAGENT_COUNT,
   LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT,
+  MASS_PARALLEL_AUTOMATIC_SUBAGENT_COUNT,
   MAX_AUTOMATIC_SUBAGENT_COUNT,
+  MAX_MASS_AUTOMATIC_SUBAGENT_COUNT,
   MAX_ON_DEMAND_SUBAGENT_ROLE_COUNT,
   PARALLEL_AUTOMATIC_SUBAGENT_COUNT,
   officialSubagentFanoutPolicy,
@@ -19,7 +21,7 @@ import {
 } from '../agent-catalog.js'
 import { prepareOfficialSubagentMission } from '../official-subagent-preparation.js'
 
-test('automatic fanout scales bounded, parallel, large-scale, and reviewer-only work differently', () => {
+test('automatic fanout keeps undecomposed task hints but exposes the 256 useful-slice ceiling', () => {
   const pinned = {
     cores: 4,
     freeMemoryBytes: 3 * 1024 * 1024 * 1024,
@@ -67,7 +69,7 @@ test('automatic fanout scales bounded, parallel, large-scale, and reviewer-only 
     maxThreads: 12
   })
   assert.equal(largeScale.requested_subagents, 8)
-  assert.equal(largeScale.automatic_ceiling, 12)
+  assert.equal(largeScale.automatic_ceiling, 256)
   assert.match(largeScale.selection_reason, /large_scale_dynamic_parallel/)
 
   const abundant = officialSubagentFanoutPolicy({
@@ -87,7 +89,7 @@ test('automatic fanout scales bounded, parallel, large-scale, and reviewer-only 
   })
   assert.ok(abundant.requested_subagents >= 6)
   assert.ok(abundant.requested_subagents <= 12)
-  assert.match(abundant.selection_reason, /hardware_capacity_boost/)
+  assert.match(abundant.selection_reason, /explicit_parallel_or_independent_slices/)
 
   const independentRisk = officialSubagentFanoutPolicy({
     taskProfile: classifyTaskProfile('audit database migration security and permissions'),
@@ -230,7 +232,7 @@ test('parent decomposition may expand useful implementation shards but not revie
     independentSliceCount: 8
   })
   assert.equal(implementation.requested_subagents, 8)
-  assert.equal(implementation.automatic_ceiling, 12)
+  assert.equal(implementation.automatic_ceiling, 256)
   assert.equal(implementation.selection_reason, 'parent_decomposed_independent_slices')
 
   const reviewers = officialSubagentFanoutPolicy({
@@ -241,6 +243,144 @@ test('parent decomposition may expand useful implementation shards but not revie
   })
   assert.equal(reviewers.requested_subagents, 2)
   assert.equal(reviewers.automatic_ceiling, 2)
+})
+
+test('mass bulk search and exploration goals retain cheap-lane routing without a 64 ceiling', () => {
+  const pinned = {
+    cores: 4,
+    freeMemoryBytes: 3 * 1024 * 1024 * 1024,
+    totalMemoryBytes: 16 * 1024 * 1024 * 1024,
+    processCount: 40,
+    fileDescriptorLimit: 64,
+    remoteApiRateLimitBudget: 4,
+    localLlmMaxParallelRequests: 4
+  }
+  const mass = officialSubagentFanoutPolicy({
+    taskProfile: 'parallel-read',
+    goal: 'mass search across the whole repository with hundreds of independent shards',
+    suggestedRoles: ['explorer'],
+    hardware: pinned,
+    maxThreads: 64
+  })
+  assert.equal(mass.requested_subagents, MASS_PARALLEL_AUTOMATIC_SUBAGENT_COUNT)
+  assert.equal(mass.automatic_ceiling, MAX_MASS_AUTOMATIC_SUBAGENT_COUNT)
+  assert.equal(mass.mass_parallel, true)
+  assert.match(mass.selection_reason, /mass_parallel_cheap_lane/)
+
+  const defaultFrameMass = officialSubagentFanoutPolicy({
+    taskProfile: 'parallel-read',
+    goal: 'mass search across the whole repository with hundreds of independent shards',
+    suggestedRoles: ['explorer'],
+    hardware: pinned,
+    maxThreads: 12
+  })
+  assert.equal(defaultFrameMass.requested_subagents, MASS_PARALLEL_AUTOMATIC_SUBAGENT_COUNT)
+  assert.equal(defaultFrameMass.automatic_ceiling, MAX_MASS_AUTOMATIC_SUBAGENT_COUNT)
+
+  const korean = officialSubagentFanoutPolicy({
+    taskProfile: 'parallel-read',
+    goal: '대량 탐색으로 수백 개 파일을 전체 검색',
+    suggestedRoles: ['explorer'],
+    hardware: pinned,
+    maxThreads: 64
+  })
+  assert.equal(korean.requested_subagents, MASS_PARALLEL_AUTOMATIC_SUBAGENT_COUNT)
+  assert.equal(korean.automatic_ceiling, MAX_MASS_AUTOMATIC_SUBAGENT_COUNT)
+  assert.equal(korean.mass_parallel, true)
+
+  const nonMass = officialSubagentFanoutPolicy({
+    taskProfile: 'parallel-read',
+    goal: 'fix independent files in parallel',
+    suggestedRoles: ['implementation_specialist', 'test_engineer'],
+    hardware: pinned,
+    maxThreads: 64
+  })
+  assert.equal(nonMass.mass_parallel, false)
+  assert.equal(nonMass.automatic_ceiling, MAX_AUTOMATIC_SUBAGENT_COUNT)
+})
+
+test('numeric scale and mixed implementation language do not enter the mass cheap lane', () => {
+  for (const goal of [
+    'Implement pagination for hundreds of customer records',
+    'Implement hundreds of independent parser modules',
+    'Mass search the repository and fix every broken parser',
+    '수백 개 고객 레코드용 페이지네이션을 구현',
+    '대량 검색 후 발견한 API 오류를 수정'
+  ]) {
+    const policy = officialSubagentFanoutPolicy({
+      taskProfile: 'parallel-write',
+      goal,
+      suggestedRoles: ['implementation_specialist'],
+      independentSliceCount: 48,
+      maxThreads: 64
+    })
+    assert.equal(policy.mass_parallel, false, goal)
+    assert.equal(policy.automatic_ceiling, MAX_AUTOMATIC_SUBAGENT_COUNT, goal)
+    assert.ok(policy.requested_subagents <= MAX_AUTOMATIC_SUBAGENT_COUNT, goal)
+  }
+})
+
+test('parent-decomposed useful slices are preserved up to the common 256 hard ceiling', () => {
+  const mass = officialSubagentFanoutPolicy({
+    taskProfile: 'parallel-read',
+    goal: 'bulk scan of hundreds of files with independent typing shards',
+    suggestedRoles: ['explorer', 'worker'],
+    independentSliceCount: 48
+  })
+  assert.equal(mass.requested_subagents, 48)
+  assert.equal(mass.automatic_ceiling, MAX_MASS_AUTOMATIC_SUBAGENT_COUNT)
+  assert.equal(mass.mass_parallel, true)
+  assert.equal(mass.selection_reason, 'parent_decomposed_independent_slices')
+
+  const overflowing = officialSubagentFanoutPolicy({
+    taskProfile: 'parallel-read',
+    goal: 'bulk scan of hundreds of files with independent typing shards',
+    suggestedRoles: ['explorer', 'worker'],
+    independentSliceCount: 96
+  })
+  assert.equal(overflowing.requested_subagents, 96)
+
+  const ordinary = officialSubagentFanoutPolicy({
+    taskProfile: 'parallel-read',
+    goal: 'scan independent modules',
+    suggestedRoles: ['explorer', 'worker'],
+    independentSliceCount: 48
+  })
+  assert.equal(ordinary.requested_subagents, 48)
+  assert.equal(ordinary.automatic_ceiling, MAX_AUTOMATIC_SUBAGENT_COUNT)
+  assert.equal(ordinary.mass_parallel, false)
+})
+
+test('mass wording never lifts reviewer-only or critical multi-domain caps', () => {
+  const reviewers = officialSubagentFanoutPolicy({
+    taskProfile: 'parallel-read',
+    goal: 'mass search across hundreds of files for review findings',
+    suggestedRoles: ['architecture_reviewer', 'security_reviewer'],
+    independentSliceCount: 8
+  })
+  assert.equal(reviewers.requested_subagents, 2)
+  assert.equal(reviewers.automatic_ceiling, 2)
+  assert.equal(reviewers.mass_parallel, false)
+
+  const critical = officialSubagentFanoutPolicy({
+    taskProfile: 'high-risk',
+    goal: 'critical production database security release audit with mass search across hundreds of files',
+    suggestedRoles: ['database_reviewer', 'security_reviewer', 'release_reviewer'],
+    hardware: {
+      cores: 4,
+      freeMemoryBytes: 3 * 1024 * 1024 * 1024,
+      totalMemoryBytes: 16 * 1024 * 1024 * 1024,
+      processCount: 40,
+      fileDescriptorLimit: 64,
+      remoteApiRateLimitBudget: 4,
+      localLlmMaxParallelRequests: 4
+    },
+    maxThreads: 64
+  })
+  assert.equal(critical.requested_subagents, 3)
+  assert.equal(critical.automatic_ceiling, 3)
+  assert.equal(critical.critical_multi_domain, true)
+  assert.equal(critical.mass_parallel, false)
 })
 
 test('route-owned orchestration count remains authoritative without masquerading as an operator request', () => {
@@ -270,8 +410,7 @@ test('mission preparation writes the selected automatic count into plan, budget,
     route: '$Naruto',
     mode: 'naruto'
   })
-  assert.ok(automatic.plan.requested_subagents >= 6)
-  assert.ok(automatic.plan.requested_subagents <= 12)
+  assert.equal(automatic.plan.requested_subagents, PARALLEL_AUTOMATIC_SUBAGENT_COUNT)
   assert.equal(automatic.budget.requestedSubagents, automatic.plan.requested_subagents)
   assert.equal(automatic.evidence.requested_subagents, automatic.plan.requested_subagents)
   assert.equal(automatic.fanoutPolicy.requested_subagents, automatic.plan.requested_subagents)
@@ -302,6 +441,10 @@ test('mission preparation writes the selected automatic count into plan, budget,
   assert.equal(explicit.plan.requested_subagents, 7)
   assert.equal(explicit.evidence.requested_subagents, 7)
   assert.equal(explicit.fanoutPolicy.requested_subagents, 7)
+  assert.equal(explicit.plan.decomposition_status, 'parent_required')
+  assert.equal(explicit.plan.config_blockers.includes('exact_subagent_decomposition_incomplete:requested=7:ready_slices=0'), false)
+  assert.equal(explicit.plan.external_codex_host_cap_verification, 'unverified_external_host_cap')
+  assert.ok(explicit.plan.concurrency_governor.reasons.includes('unverified_external_host_cap'))
 
   const researchDir = path.join(root, '.sneakoscope', 'missions', 'M-research')
   await fs.mkdir(researchDir, { recursive: true })
@@ -336,6 +479,129 @@ test('mission preparation writes the selected automatic count into plan, budget,
   assert.equal(autoresearch.plan.requested_subagents, 3)
   assert.equal(autoresearch.plan.requested_subagents_source, 'route_contract')
   assert.equal(autoresearch.plan.route_owned_count_contract?.reason, 'autoresearch_exact_three_independent_reviewers')
+})
+
+test('mission preparation keeps mass totals reusable across waves and serializes the cheap lane roles', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-agent-prepared-cheap-lanes-'))
+  try {
+    const pinned = {
+      cores: 2,
+      freeMemoryBytes: 1024 * 1024 * 1024,
+      totalMemoryBytes: 8 * 1024 * 1024 * 1024,
+      processCount: 1,
+      fileDescriptorLimit: 16,
+      remoteApiRateLimitBudget: 2,
+      localLlmMaxParallelRequests: 2
+    }
+    const searchDir = path.join(root, '.sneakoscope', 'missions', 'M-search-lane')
+    await fs.mkdir(searchDir, { recursive: true })
+    const search = await prepareOfficialSubagentMission({
+      root,
+      dir: searchDir,
+      missionId: 'M-search-lane',
+      goal: '전체 검색으로 모든 설정 키를 수집',
+      route: '$Naruto',
+      mode: 'naruto',
+      maxThreads: 12,
+      hardware: pinned
+    })
+    assert.equal(search.plan.requested_subagents, MASS_PARALLEL_AUTOMATIC_SUBAGENT_COUNT)
+    assert.equal(search.plan.fanout_policy.mass_parallel, true)
+    assert.equal(search.plan.first_wave, 2)
+    assert.equal(search.plan.concurrency_governor.safe_active_workers, 2)
+    assert.equal(search.plan.agents.explorer.routed_model, 'gpt-5.6-terra')
+    assert.equal(search.plan.agents.explorer.routed_model_reasoning_effort, 'medium')
+
+    const typingDir = path.join(root, '.sneakoscope', 'missions', 'M-typing-lane')
+    await fs.mkdir(typingDir, { recursive: true })
+    const typing = await prepareOfficialSubagentMission({
+      root,
+      dir: typingDir,
+      missionId: 'M-typing-lane',
+      goal: 'Replace one exact label',
+      route: '$Naruto',
+      mode: 'naruto'
+    })
+    assert.equal(typing.plan.suggested_agents[0], 'worker')
+    assert.equal(typing.plan.agents.worker.routed_model, 'gpt-5.6-luna')
+    assert.equal(typing.plan.agents.worker.routed_model_reasoning_effort, 'max')
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('high explicit fanout feeds the hardware governor into per-wave capacity', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-agent-governed-wave-'))
+  const dir = path.join(root, '.sneakoscope', 'missions', 'M-governed-wave')
+  try {
+    await fs.mkdir(dir, { recursive: true })
+    const prepared = await prepareOfficialSubagentMission({
+      root,
+      dir,
+      missionId: 'M-governed-wave',
+      goal: 'inspect 200 independent bounded shards',
+      route: '$Naruto',
+      mode: 'naruto',
+      requestedSubagents: 200,
+      requestedSubagentsExplicit: true,
+      maxThreads: 64,
+      hardware: {
+        cores: 2,
+        freeMemoryBytes: 1024 * 1024 * 1024,
+        totalMemoryBytes: 8 * 1024 * 1024 * 1024,
+        processCount: 1,
+        fileDescriptorLimit: 16,
+        remoteApiRateLimitBudget: 2,
+        localLlmMaxParallelRequests: 2
+      }
+    })
+    assert.equal(prepared.plan.requested_subagents, 200)
+    assert.equal(prepared.plan.concurrency_governor.safe_active_workers, 2)
+    assert.equal(prepared.plan.capacity_controller.bounds.marginal_useful_workers, 2)
+    assert.equal(prepared.plan.first_wave, 2)
+    assert.equal(prepared.plan.wave_count, 100)
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('256 independent ready slices can occupy a 256-child first wave on a 256-cap host', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-agent-full-host-wave-'))
+  const dir = path.join(root, '.sneakoscope', 'missions', 'M-full-host-wave')
+  try {
+    await fs.mkdir(dir, { recursive: true })
+    const prepared = await prepareOfficialSubagentMission({
+      root,
+      dir,
+      missionId: 'M-full-host-wave',
+      goal: 'inspect 256 independent bounded files',
+      route: '$Naruto',
+      mode: 'naruto',
+      maxThreads: 256,
+      slices: Array.from({ length: 256 }, (_, index) => ({
+        id: `S${index + 1}`,
+        title: `File ${index + 1}`,
+        description: `Inspect independent file ${index + 1}`,
+        kind: 'worker' as const,
+        agent: 'explorer',
+        paths: [`src/shard-${index + 1}.ts`],
+        readOnly: true
+      })),
+      capacity: {
+        verifierCapacity: 256,
+        toolConcurrency: 256,
+        marginalUsefulWorkers: 256,
+        externalCodexHostCap: 256
+      }
+    })
+    assert.equal(prepared.plan.requested_subagents, 256)
+    assert.equal(prepared.plan.first_wave, 256)
+    assert.equal(prepared.plan.wave_count, 1)
+    assert.equal(prepared.plan.capacity_controller.bounds.external_codex_host_cap, 256)
+    assert.equal(prepared.plan.concurrency_governor.safe_active_workers, 256)
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
 })
 
 test('prepared decomposition applies capacity bounds and fails closed on overlapping writes', async () => {
@@ -386,65 +652,72 @@ test('prepared decomposition applies capacity bounds and fails closed on overlap
   assert.equal(blocked.evidence.ok, false)
 })
 
-test('every prose statement of the automatic fanout contract matches the catalog constants', async () => {
-  // The 4/6/8 targets and the ceiling are restated in the route description,
-  // the Codex skill manifest, the runtime subagent prompt, and the docs. When
-  // the constants move and a prose site does not, the model is told a fanout
-  // contract the runtime will not honour.
-  const root = process.cwd()
-  const numberWords: Record<number, string> = {
-    1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six',
-    7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten', 11: 'eleven', 12: 'twelve'
+test('exact decomposition blocks a partial slice list while preserving parent-only decomposition', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-agent-exact-decomposition-'))
+  try {
+    for (const sessionScope of [null, 'codex-app-thread']) {
+      const suffix = sessionScope ? 'app' : 'standalone'
+      const missionId = `M-partial-exact-${suffix}`
+      const partialDir = path.join(root, '.sneakoscope', 'missions', missionId)
+      await fs.mkdir(partialDir, { recursive: true })
+      const partial = await prepareOfficialSubagentMission({
+        root,
+        dir: partialDir,
+        missionId,
+        goal: 'inspect four exact independent modules',
+        route: '$Naruto',
+        mode: 'naruto',
+        sessionScope,
+        requestedSubagents: 4,
+        requestedSubagentsExplicit: true,
+        slices: [{
+          id: 'S1',
+          title: 'Module one',
+          description: 'Inspect module one',
+          kind: 'worker',
+          agent: 'explorer',
+          paths: ['src/module-one.ts'],
+          readOnly: true
+        }]
+      })
+      assert.equal(partial.plan.decomposition_status, 'parent_required', suffix)
+      assert.ok(partial.configBlockers.includes(
+        'exact_subagent_decomposition_incomplete:requested=4:ready_slices=1'
+      ), suffix)
+      assert.equal(partial.plan.config_blockers, partial.configBlockers, suffix)
+      assert.equal(partial.evidence.ok, false, suffix)
+    }
+
+    const parentOnlyDir = path.join(root, '.sneakoscope', 'missions', 'M-parent-only-exact')
+    await fs.mkdir(parentOnlyDir, { recursive: true })
+    const parentOnly = await prepareOfficialSubagentMission({
+      root,
+      dir: parentOnlyDir,
+      missionId: 'M-parent-only-exact',
+      goal: 'parent must decompose four exact modules',
+      route: '$Naruto',
+      mode: 'naruto',
+      sessionScope: 'codex-app-thread',
+      requestedSubagents: 4,
+      requestedSubagentsExplicit: true,
+      slices: []
+    })
+    assert.equal(parentOnly.plan.decomposition_status, 'parent_required')
+    assert.equal(parentOnly.configBlockers.some((value: string) => (
+      value.startsWith('exact_subagent_decomposition_incomplete:')
+    )), false)
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
   }
-  const wordValues: Record<string, number> = Object.fromEntries(
-    Object.entries(numberWords).map(([value, word]) => [word, Number(value)])
-  )
-  const targets = [
+})
+
+test('automatic ceilings are the shared 256 hard cap while undecomposed counts remain hints', () => {
+  assert.equal(MAX_AUTOMATIC_SUBAGENT_COUNT, 256)
+  assert.equal(MAX_MASS_AUTOMATIC_SUBAGENT_COUNT, 256)
+  assert.deepEqual([
     DEFAULT_AUTOMATIC_SUBAGENT_COUNT,
     PARALLEL_AUTOMATIC_SUBAGENT_COUNT,
-    LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT
-  ]
-  const sites = [
-    { file: 'src/core/routes.ts', anchor: 'Automatic fan-out starts at', style: 'words' },
-    { file: 'docs/naruto.md', anchor: 'Automatic fan-out starts at', style: 'words' },
-    { file: 'src/core/codex-native/core-skill-manifest.ts', anchor: 'Automatic targets begin at', style: 'digits' },
-    // The runtime prompt deliberately renders the targets as digits: the
-    // delegation prompt has a hard byte budget, and digits are the compact
-    // form that still states the targets positionally.
-    { file: 'src/core/subagents/official-subagent-prompt.ts', anchor: 'automatic fan-out starts at', style: 'digits' }
-  ] as const
-  for (const site of sites) {
-    const text = await fs.readFile(path.join(root, site.file), 'utf8')
-    const start = text.indexOf(site.anchor)
-    assert.notEqual(start, -1, `${site.file}: fanout prose anchor "${site.anchor}" not found`)
-    assert.equal(
-      text.indexOf(site.anchor, start + 1),
-      -1,
-      `${site.file}: fanout prose anchor "${site.anchor}" is ambiguous — the guard would only check the first one`
-    )
-    const sentence = text.slice(start, start + 400)
-    // Compare the first three numbers POSITIONALLY, not as a set: every site
-    // states them in bounded → parallel → large-scale order, so unordered
-    // membership would pass when two targets are swapped, or when a changed
-    // value happens to reuse a word already present elsewhere in the sentence.
-    // Only the ceiling may be expressed by interpolating the constant.
-    const found = site.style === 'digits'
-      ? [...sentence.matchAll(/\b(\d+)\b/g)].map((entry) => Number(entry[1]))
-      : [...sentence.matchAll(/\b([a-z]+)\b/gi)]
-        .map((entry) => wordValues[String(entry[1]).toLowerCase()])
-        .filter((value): value is number => typeof value === 'number')
-    assert.deepEqual(
-      found.slice(0, targets.length),
-      targets,
-      `${site.file}: fanout prose is stale or reordered — expected ${targets.join('/')} in bounded/parallel/large-scale order, read ${found.slice(0, targets.length).join('/')} from: ${sentence.slice(0, 220)}`
-    )
-    const ceilingToken = site.style === 'digits'
-      ? String(MAX_AUTOMATIC_SUBAGENT_COUNT)
-      : numberWords[MAX_AUTOMATIC_SUBAGENT_COUNT]
-    assert.ok(ceilingToken, `no prose rendering is defined for ceiling ${MAX_AUTOMATIC_SUBAGENT_COUNT} — extend numberWords`)
-    assert.ok(
-      sentence.includes(ceilingToken) || sentence.includes('MAX_AUTOMATIC_SUBAGENT_COUNT'),
-      `${site.file}: fanout ceiling prose is stale — expected ${ceilingToken} or the interpolated constant in: ${sentence.slice(0, 220)}`
-    )
-  }
+    LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT,
+    MASS_PARALLEL_AUTOMATIC_SUBAGENT_COUNT
+  ], [4, 6, 8, 16])
 })

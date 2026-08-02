@@ -11,6 +11,10 @@ final class ProcessClientTests: XCTestCase {
             ProcessClient.nativeFailureOutput("native_process_empty_output"),
             #"{"schema":"sks.native-process-error.v1","ok":false,"error":"native_process_empty_output"}"#
         )
+        XCTAssertEqual(
+            ProcessClient.nativeFailureOutput("native_process_output_limit"),
+            #"{"schema":"sks.native-process-error.v1","ok":false,"error":"native_process_output_limit"}"#
+        )
     }
 }
 #endif

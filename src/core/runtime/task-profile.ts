@@ -42,13 +42,19 @@ const DATABASE_CONTROL_SURFACE_META_RE =
   /\bsks\s+db\b|\b(?:db|database|migrate|migrations?)\b[\s\S]{0,48}\b(?:command|cli|route|routing|parser|classifier|regex|help|usage|topic|docs?|documentation|constant|keyword|alias)\b|\b(?:command|cli|route|routing|parser|classifier|regex|help|usage|topic|docs?|documentation|constant|keyword|alias)\b[\s\S]{0,48}\b(?:db|database|migrate|migrations?)\b|(?:db|디비|데이터베이스|migration|migrate|마이그레이션)\s*(?:커맨드|명령|명령어|CLI|라우트|라우팅|파서|분류기|정규식|도움말|헬프|사용법|토픽|문서|상수|키워드|별칭)|(?:커맨드|명령|명령어|CLI|라우트|라우팅|파서|분류기|정규식|도움말|헬프|사용법|토픽|문서|상수|키워드|별칭)[\s\S]{0,32}(?:db|디비|데이터베이스|migration|migrate|마이그레이션)/i
 
 const PARALLEL_CUE_RE =
-  /\b(parallel|subagents?|one agent per|fan out|multiple files|audit all|all files|independent slices?|naruto|runtime)\b|병렬|하위\s*에이전트|서브\s*에이전트|여러\s*파일|모든\s*파일|전체\s*검토|나루토|분담/i
+  /\b(parallel|subagents?|one agent per|fan out|independent slices?|naruto)\b|병렬|하위\s*에이전트|서브\s*에이전트|나루토|분담/i
 
 const CHANGE_RE =
   /\b(fix|implement|implementation|change|edit|add|remove|delete|drop|modify|refactor|build|create|write|update|rename|rewrite|patch|apply|execute|repair|resolve|solve|publish|release|deploy|migrate)\b|\bwork\s+on\b|고쳐|고치|수정|변경|추가|삭제|구현|리팩터|작성|생성|만들어|업데이트|적용|실행|해결|이름\s*변경|배포|출시|마이그레이션/i
 
+const BOUNDED_READ_WORK_RE =
+  /\b(audit|review|inspect|analy[sz]e|diagnose|trace|map|verify|test|check|investigate|evaluate)\b|감사|검토|점검|분석|진단|추적|매핑|검증|테스트|조사|평가/i
+
 const TINY_CHANGE_RE =
   /\b(typo|copy|wording|label|spacing|whitespace|punctuation|spelling|one[-\s]?line|single[-\s]?(?:line|word)|rename only)\b|오타|문구|라벨|띄어쓰기|공백|맞춤법|구두점|한\s*줄|단어\s*하나|이름만\s*변경/i
+
+const NON_RUNTIME_TINY_SURFACE_RE =
+  /\b(copy|wording|label|spacing|whitespace|punctuation|spelling|readme|docs?|documentation|comment)\b|문구|라벨|띄어쓰기|공백|맞춤법|구두점|문서|주석/i
 
 const EXPLANATION_QUESTION_RE =
   /^(how\s+(?:do|can|should|would)\s+(?:i|we|you)\b|what\b|why\b|when\b|where\b|which\b|explain\b|tell me how\b)|(?:어떻게|무엇|뭐가|왜|언제|어디|방법|설명)(?:.*(?:인가요|일까요|하나요|해요|할까|\?))?$/i
@@ -63,12 +69,18 @@ export function classifyTaskProfile(prompt: unknown): TaskProfile {
 
   if (!text || GREETING_RE.test(text)) return 'passthrough'
   if (looksLikeExplanationQuestion(text)) return 'answer'
-  if (looksLikeDatabaseWorkRequest(text) || (CHANGE_RE.test(text) && NON_DATABASE_HIGH_RISK_RE.test(text))) return 'high-risk'
+  const databaseWork = looksLikeDatabaseWorkRequest(text)
+  const highRiskMutation = databaseWork || (CHANGE_RE.test(text) && NON_DATABASE_HIGH_RISK_RE.test(text))
+  // Keep explicitly small edits small even when their subject happens to be a
+  // high-risk noun (for example an auth label in README), but never let a
+  // generic "one-line" cue downgrade a real database/security mutation.
+  if (looksLikeTinyChange(text) && (!highRiskMutation || NON_RUNTIME_TINY_SURFACE_RE.test(text))) return 'tiny-change'
+  if (highRiskMutation) return 'high-risk'
   if (PARALLEL_CUE_RE.test(text) && CHANGE_RE.test(text)) return 'parallel-write'
   if (PARALLEL_CUE_RE.test(text)) return 'parallel-read'
   if (DATABASE_CONTROL_SURFACE_META_RE.test(text) && DATABASE_WORK_RE.test(text)) return 'bounded-work'
-  if (looksLikeTinyChange(text)) return 'tiny-change'
   if (CHANGE_RE.test(text)) return 'bounded-work'
+  if (BOUNDED_READ_WORK_RE.test(text)) return 'bounded-work'
   return 'answer'
 }
 

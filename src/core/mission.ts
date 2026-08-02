@@ -422,6 +422,40 @@ export async function loadStateForSession(root: any, sessionKey: any): Promise<J
   return loadStateForSessionUnlocked(root, sessionKey);
 }
 
+/**
+ * Resolve route-gate state for one invocation without borrowing another
+ * session's global compatibility mirror.
+ *
+ * `state/current.json` is updated after session-scoped writes so legacy
+ * diagnostics can still discover the most recently touched route. It is not
+ * an ownership record. A named session therefore reads its own state file
+ * (with a same-owner mirror fallback for older installations), while an
+ * unnamed standalone CLI invocation may read only an unowned legacy state.
+ */
+export async function loadOwnedRouteState(root: any, sessionKey?: any): Promise<JsonData> {
+  const requestedSession = String(sessionKey || '').trim();
+  if (requestedSession) {
+    const hashed = sessionStateKey(requestedSession);
+    const sessionState = await readJson(stateFileForSession(root, requestedSession), null).catch(() => null);
+    if (sessionState) return { ...sessionState, _session_key: sessionState._session_key || hashed };
+
+    const mirror = await readJson(stateFile(root), {}).catch(() => ({}));
+    const mirrorSessionKey = String(mirror?._session_key || '').trim();
+    const mirrorSessionScope = String(mirror?.session_scope || '').trim();
+    const sameOwner = mirrorSessionKey === hashed
+      || mirrorSessionKey === requestedSession
+      || mirrorSessionScope === requestedSession;
+    return sameOwner ? { ...mirror, _session_key: mirrorSessionKey || hashed } : {};
+  }
+
+  const legacy = await readJson(stateFile(root), {}).catch(() => ({}));
+  const hasNamedOwner = Boolean(
+    String(legacy?._session_key || '').trim()
+    || String(legacy?.session_scope || '').trim()
+  );
+  return hasNamedOwner ? {} : legacy;
+}
+
 async function loadStateForSessionUnlocked(root: any, sessionKey: any): Promise<JsonData> {
   const hashed = sessionStateKey(sessionKey || 'default');
   const file = path.join(stateSessionsDir(root), `${hashed}.json`);

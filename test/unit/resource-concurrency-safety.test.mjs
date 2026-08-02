@@ -15,7 +15,7 @@ import { computeLoopConcurrencyBudget } from '../../dist/core/loops/loop-concurr
 
 test('Naruto official-subagent fanout stays bounded and preserves max_depth=1', () => {
   assert.equal(DEFAULT_NARUTO_REQUESTED_SUBAGENTS, 4);
-  assert.equal(MAX_AUTOMATIC_SUBAGENT_COUNT, 12);
+  assert.equal(MAX_AUTOMATIC_SUBAGENT_COUNT, 256);
 
   const automatic = officialSubagentFanoutPolicy({
     taskProfile: 'high-risk',
@@ -25,12 +25,16 @@ test('Naruto official-subagent fanout stays bounded and preserves max_depth=1', 
   assert.equal(automatic.requested_subagents, 3);
   assert.equal(automatic.critical_multi_domain, true);
 
-  const budget = resolveSubagentThreadBudget({ requested: 100, configuredMaxThreads: 4 });
+  assert.throws(
+    () => resolveSubagentThreadBudget({ requested: 257, configuredMaxThreads: 4 }),
+    /requested_subagents_must_be_integer_1_to_256/
+  );
+  const budget = resolveSubagentThreadBudget({ requested: 256, configuredMaxThreads: 4 });
   assert.equal(budget.requestedSubagents, HARD_NARUTO_MAX_THREADS);
   assert.equal(budget.maxThreads, 4);
-  assert.equal(budget.firstWave, 3);
-  assert.equal(budget.waveCount, 11);
-  assert.equal(budget.capacity.available_thread_slots, 3);
+  assert.equal(budget.firstWave, 4);
+  assert.equal(budget.waveCount, 64);
+  assert.equal(budget.capacity.available_thread_slots, 4);
   assert.equal(budget.maxDepth, 1);
 });
 

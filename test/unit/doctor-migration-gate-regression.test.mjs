@@ -7,7 +7,12 @@ import path from 'node:path';
 import { COMMANDS } from '../../dist/cli/command-registry.js';
 import { COMMAND_MANIFEST_BY_NAME } from '../../dist/cli/command-manifest-lite.js';
 import { ensureCurrentMigrationBeforeCommand } from '../../dist/core/update/update-migration-state.js';
-import { doctorArgWarnings, doctorMenuBarInstallPolicy, doctorProfileFromArgs } from '../../dist/commands/doctor.js';
+import {
+  deferCommandAliasCleanupToMigrationReceipt,
+  doctorArgWarnings,
+  doctorMenuBarInstallPolicy,
+  doctorProfileFromArgs
+} from '../../dist/commands/doctor.js';
 
 test('doctor remains executable when migration gate would otherwise block normal commands', async () => {
   assert.equal(COMMANDS.doctor.skipMigrationGate, true);
@@ -92,13 +97,41 @@ test('migration Doctor never applies or launches the Menu Bar before the update 
   );
 });
 
+test('migration Doctor defers pre-migration public-surface findings to the receipt owner without claiming a repair', () => {
+  const result = deferCommandAliasCleanupToMigrationReceipt({
+    schema: 'sks.command-alias-cleanup.v1',
+    ok: false,
+    status: 'blocked',
+    fix: false,
+    actions: [{ action: 'current_public_surface_reconciliation_required', ok: false }],
+    blockers: ['skill_legacy_surface_remaining:5']
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'deferred_to_project_migration_receipt');
+  assert.equal(result.repair_owner, 'project_migration_receipt');
+  assert.equal(result.fix, false);
+  assert.deepEqual(result.actions, []);
+  assert.deepEqual(result.blockers, []);
+  assert.deepEqual(result.pre_migration_blockers, ['skill_legacy_surface_remaining:5']);
+  assert.deepEqual(result.warnings, ['pre_migration_public_surface_findings_deferred:1']);
+});
+
 test('doctor --fix reports a real migration receipt result instead of hard-coded current state', () => {
   const source = fs.readFileSync('dist/commands/doctor.js', 'utf8');
   assert.doesNotMatch(source, /manual_update_commands_only/);
   assert.doesNotMatch(source, /migration_current:\s*true/);
   assert.match(source, /writeProjectUpdateMigrationReceipt/);
+  assert.match(source, /inspectCommandAliasCleanup\(doctorFix\s*&&\s*!migrationReceiptOwnsReconcile\)/);
+  assert.match(source, /deferCommandAliasCleanupToMigrationReceipt\(commandAliasCleanup\)/);
+  assert.match(source, /commandAliasCleanup\s*=\s*await inspectCommandAliasCleanup\(false\)/);
   assert.match(source, /doctor_fix_wrote_current_project_migration_receipt/);
   assert.match(source, /doctor_fix_migration_receipt_failed/);
+  assert.ok(
+    source.indexOf('commandAliasCleanup = await inspectCommandAliasCleanup(false)') <
+      source.indexOf('const receipt = await writeProjectUpdateMigrationReceipt(receiptInput)'),
+    'the final public-surface postcheck must run before the migration receipt is published'
+  );
 });
 
 test('non-SKS repositories skip project migration for the official DFix lifecycle', async () => {
@@ -171,9 +204,16 @@ test('Naruto migration gate continues when doctor only preserved a user-owned pr
     assert.deepEqual(result.blockers, []);
     assert.equal(result.doctor?.ok, false);
     assert.equal(result.receipt?.status, 'current');
+    assert.equal(result.receipt?.source, 'doctor-migration');
     assert.deepEqual(result.receipt?.required_blockers, []);
     assert.ok(result.warnings.includes('migration_doctor_preserved_user_owned_project_config'));
     assert.ok(result.warnings.includes('migration_optional_blocker:user_owned_file_without_sks_marker'));
+    const receiptFiles = await fsp.readdir(path.join(root, '.sneakoscope', 'update'));
+    assert.deepEqual(
+      receiptFiles.filter((name) => name.startsWith('migration-receipt.json.')),
+      [],
+      'the first-command gate must consume the Doctor-owned receipt without rotating a second receipt'
+    );
   } finally {
     restoreEnv('HOME', previous.home);
     restoreEnv('CODEX_HOME', previous.codexHome);

@@ -16,6 +16,11 @@ process.env.USERPROFILE = isolatedHome;
 // explicitly passed home, which would hijack tests that isolate via arguments.
 // Deleting an inherited value keeps the HOME redirect authoritative.
 delete process.env.CODEX_HOME;
+// Deep/fix Telegram doctor paths intentionally resolve a live client when a
+// token is configured. Never let an operator or CI token leak into hermetic
+// tests that did not explicitly provide one.
+delete process.env.TELEGRAM_BOT_TOKEN;
+delete process.env.SKS_TELEGRAM_BOT_TOKEN;
 
 process.once('exit', () => {
   try {

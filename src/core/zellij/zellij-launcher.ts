@@ -8,6 +8,7 @@ import {
   codexLbToolOutputRecoveryNotChecked,
   type CodexLbToolOutputRecoveryProbe
 } from '../codex-lb/codex-lb-tool-output-recovery.js'
+import { prepareCodexAppServerRuntimeEnv } from '../codex-control/codex-app-server-runtime-env.js'
 import { checkZellijCapability, type ZellijCapabilityReport } from './zellij-capability.js'
 import {
   estimateZellijSocketPathLength,
@@ -44,6 +45,7 @@ export interface ZellijLaunchOptions {
   recoveryAllowUnverified?: boolean
   zellijCapability?: ZellijCapabilityReport
   verifiedCodexLbToolOutputRecovery?: CodexLbToolOutputRecoveryProbe
+  prepareCodexRuntimeEnvImpl?: typeof prepareCodexAppServerRuntimeEnv
   // When true, kill any pre-existing session with this name before (re)creating
   // it so the launch starts from a clean main-only layout. Without this, a stable
   // per-cwd session name (e.g. `sks-mad-<cwd>`) is reused across runs and each new
@@ -58,16 +60,20 @@ export async function launchZellijLayout(opts: ZellijLaunchOptions = {}) {
   const missionId = String(opts.missionId || `M-${Date.now().toString(36)}`)
   const ledgerRoot = path.resolve(opts.ledgerRoot || path.join(root, '.sneakoscope', 'missions', missionId, 'agents'))
   const sessionName = sanitizeZellijSessionName(opts.session || `sks-${missionId}`)
+  const kind = opts.kind || 'naruto'
+  const requestedCodexArgs = opts.codexArgs || []
+  const shouldLaunchCodex = kind === 'mad' || requestedCodexArgs.length > 0
+  const layoutLaunchEnv = await prepareZellijCodexLaunchEnv(opts, shouldLaunchCodex)
   const layoutInput: ZellijLayoutInput = {
     missionId,
     sessionName,
     ledgerRoot,
     cwd: opts.cwd || root,
-    kind: opts.kind || 'naruto',
+    kind,
     slotCount: opts.slotCount ?? 1,
     title: `SKS ${opts.kind || 'naruto'} ${missionId}`,
-    codexArgs: opts.codexArgs || [],
-    launchEnv: opts.launchEnv || {}
+    codexArgs: requestedCodexArgs,
+    launchEnv: layoutLaunchEnv
   }
   if (opts.codexBin) layoutInput.codexBin = opts.codexBin
   const layout = await writeZellijLayout(root, layoutInput)
@@ -81,7 +87,7 @@ export async function launchZellijLayout(opts: ZellijLaunchOptions = {}) {
   const clipboard = await writeZellijClipboardConfig(root, missionId)
   const createCommand = ['attach', '--create-background', sessionName, 'options', '--default-layout', layout.layout_path, ...clipboard.optionFlags]
   const attachCommand = ['attach', sessionName]
-  const launchProcessEnv = launchRecoveryEnv(opts.launchEnv)
+  const launchProcessEnv = launchRecoveryEnv(layoutLaunchEnv)
   const zellijEnv = resolveZellijProcessEnvMeta(launchProcessEnv)
   const willCreateSession = opts.dryRun !== true && capability.status === 'ok'
   const codexLaunchRecovery = layout.main_pane_kind === 'codex_interactive' && willCreateSession
@@ -240,6 +246,21 @@ function launchRecoveryEnv(launchEnv: Record<string, unknown> | undefined): Node
     if (value !== undefined && value !== null) env[key] = String(value)
   }
   return env
+}
+
+async function prepareZellijCodexLaunchEnv(
+  opts: ZellijLaunchOptions,
+  shouldLaunchCodex: boolean
+): Promise<Record<string, unknown>> {
+  if (!shouldLaunchCodex) return { ...(opts.launchEnv || {}) }
+  const launchEnv: Record<string, unknown> = { ...(opts.launchEnv || {}) }
+  delete launchEnv.CODEX_LB_API_KEY
+  delete launchEnv.CODEX_LB_BASE_URL
+  const prepare = opts.prepareCodexRuntimeEnvImpl || prepareCodexAppServerRuntimeEnv
+  const runtimeEnv = await prepare({ env: launchRecoveryEnv(opts.launchEnv) })
+  if (runtimeEnv.CODEX_LB_API_KEY) launchEnv.CODEX_LB_API_KEY = runtimeEnv.CODEX_LB_API_KEY
+  if (runtimeEnv.CODEX_LB_BASE_URL) launchEnv.CODEX_LB_BASE_URL = runtimeEnv.CODEX_LB_BASE_URL
+  return launchEnv
 }
 
 export async function launchMadZellijUi(args: readonly unknown[] = [], opts: ZellijLaunchOptions = {}) {

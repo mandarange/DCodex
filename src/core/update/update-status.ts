@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from '../fsx.js';
 import { compareSemVer, isSemVerUpdateAvailable } from './semver.js';
+import { publicUpdateError } from './update-diagnostics.js';
 
 export const SKS_UPDATE_STATUS_SCHEMA = 'sks.update-status.v3' as const;
 export const DEFAULT_UPDATE_STATUS_TTL_MS = 6 * 60 * 60 * 1000;
@@ -371,14 +372,7 @@ function updateChecksDisabled(env: NodeJS.ProcessEnv): boolean {
 }
 
 function publicError(error: unknown, env: NodeJS.ProcessEnv): string {
-  let value = error instanceof Error ? error.message : String(error || 'update status refresh failed');
-  value = value.replace(/[\r\n]+/g, ' ');
-  const home = env.HOME || os.homedir();
-  if (home) value = value.replaceAll(home, '~');
-  value = value
-    .replace(/sk-(?:proj|or-v1|clb)?-?[A-Za-z0-9_-]{12,}/g, '[redacted]')
-    .replace(/(api[_-]?key|secret|token|authorization)\s*[:=]\s*[^\s"',}]+/gi, '$1=[redacted]');
-  return value.slice(0, 400);
+  return publicUpdateError(error, env);
 }
 
 function parsedTime(value: unknown): number {

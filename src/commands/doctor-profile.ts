@@ -41,6 +41,7 @@ export function doctorPhaseIdsForProfile(profile: DoctorProfile): string[] {
   const required = [
     'codex_startup_repair',
     'startup_config_repair',
+    'codex_config_syntax_repair',
     'context7_repair',
     'context7_mcp_repair',
     'hook_trust_repair',

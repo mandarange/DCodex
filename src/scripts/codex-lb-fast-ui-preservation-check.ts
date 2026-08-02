@@ -57,7 +57,8 @@ await fs.writeFile(configPath, [
 ].join('\n'))
 await fs.writeFile(
   envPath,
-  `export CODEX_LB_BASE_URL="${remoteBaseUrl}"\nexport CODEX_LB_API_KEY="sk-test-fast-ui"\n`
+  `export CODEX_LB_BASE_URL="${remoteBaseUrl}"\nexport CODEX_LB_API_KEY="sk-test-fast-ui"\n`,
+  { mode: 0o600 }
 )
 await fs.writeFile(authPath, oauthAuth)
 

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { PACKAGE_VERSION } from './version.js';
 import { EMPTY_CODEX_INFO, getCodexInfo } from './codex-adapter.js';
+import { prepareCodexAppServerRuntimeEnv } from './codex-control/codex-app-server-runtime-env.js';
 import { PRODUCT_DESIGN_PLUGIN, normalizeProductDesignPluginEvidence } from './product-design-plugin.js';
 
 export const PRODUCT_DESIGN_AUTO_INSTALL_ENV = 'SKS_PRODUCT_DESIGN_AUTO_INSTALL';
@@ -32,10 +33,21 @@ export async function ensureProductDesignPluginInstalled(opts: any = {}) {
     });
   }
 
+  let runtimeEnv: NodeJS.ProcessEnv;
+  try {
+    runtimeEnv = await (opts.prepareCodexRuntimeEnvImpl || prepareCodexAppServerRuntimeEnv)({
+      env: opts.env || process.env
+    });
+  } catch (err: any) {
+    return productDesignAppServerUnavailable('product_design_app_server_credentials_unavailable', err?.message || String(err), {
+      autoInstallProductDesign
+    });
+  }
+
   const client = new CodexAppServerJsonRpcClient({
     command: codex.bin,
     args: opts.appServerArgs || ['app-server', '--stdio'],
-    env: opts.env || process.env,
+    env: runtimeEnv,
     timeoutMs: opts.timeoutMs || 20000,
     cwd: opts.cwd || process.cwd()
   });

@@ -4,6 +4,7 @@ import { ensureDir, exists, packageRoot, readJson, runProcess, which } from './f
 import { codexVersionPolicy, compareSemverLike, parseCodexVersionText } from './codex-compat/codex-version-policy.js';
 import { validateJsonSchemaRecursive } from './json-schema-validator.js';
 import { inspectCodexLbCliLaunchRecovery } from './codex-control/codex-lb-launch-recovery.js';
+import { prepareCodexAppServerRuntimeEnv } from './codex-control/codex-app-server-runtime-env.js';
 import type { CodexLbToolOutputRecoveryProbe } from './codex-lb/codex-lb-tool-output-recovery.js';
 
 export interface CodexExecResumeOutputSchemaAvailability {
@@ -232,10 +233,12 @@ export async function buildCodexExecResumeOutputSchemaArgs(input: CodexResumeOut
 
 export async function runCodexExecResumeWithOutputSchema(
   input: CodexResumeOutputSchemaCommandInput,
-  opts: { codexBin?: string | null; timeoutMs?: number; maxOutputBytes?: number; cwd?: string; env?: NodeJS.ProcessEnv; recoveryFetch?: typeof fetch; recoveryTimeoutMs?: number; runProcessImpl?: typeof runProcess } = {}
+  opts: { codexBin?: string | null; timeoutMs?: number; maxOutputBytes?: number; cwd?: string; env?: NodeJS.ProcessEnv; recoveryFetch?: typeof fetch; recoveryTimeoutMs?: number; runProcessImpl?: typeof runProcess; prepareCodexRuntimeEnvImpl?: typeof prepareCodexAppServerRuntimeEnv } = {}
 ): Promise<CodexExecResumeOutputSchemaRunResult> {
   const root = opts.cwd || packageRoot();
-  const env = opts.env || process.env;
+  const env = await (opts.prepareCodexRuntimeEnvImpl || prepareCodexAppServerRuntimeEnv)({
+    env: opts.env || process.env
+  });
   const toolOutputRecovery = await inspectCodexLbCliLaunchRecovery({
     root,
     env,

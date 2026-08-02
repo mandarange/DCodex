@@ -24,10 +24,18 @@ const FIXTURES = Object.freeze({
   }),
   'cli-paths': fixture('execute_and_validate_artifacts', 'sks paths managed --json', ['.sneakoscope/managed-paths.json'], 'pass'),
   'cli-rollback': fixture('execute', 'sks rollback list --json', [], 'pass'),
+  'cli-config': fixture('execute', 'sks config --help', [], 'pass', {
+    quality: 'wiring_only',
+    reason: 'The non-mutating help path proves the installed config command is wired; config-adopt mutation and dry-run behavior are covered by focused config-adopt tests.'
+  }),
   'cli-setup': fixture('real_optional', 'sks setup --json --local-only', [], 'pass'),
   'cli-codex': fixture('execute', 'sks codex compatibility --json', [], 'pass'),
   'cli-codex-app': fixture('real_optional', 'sks codex-app check --json', [], 'pass'),
   'cli-codex-lb': fixture('execute_and_validate_artifacts', 'sks codex-lb metrics --json', [], 'pass'),
+  'cli-telegram': fixture('execute', 'sks telegram --help', [], 'pass', {
+    quality: 'wiring_only',
+    reason: 'The non-mutating help path proves the installed Telegram command is wired without requiring a bot token, private-file state, resident poller, or network access; transport behavior is covered by focused Telegram tests.'
+  }),
   'cli-mcp': fixture('execute', 'sks mcp config list --scope project --trusted-project --json', [], 'pass', {
     reason: 'Project-scoped MCP inventory is a read-only, hermetic runtime probe when the trusted-project boundary is explicit; mutation, health, auth, and merge behavior remain covered by dedicated tests.'
   }),

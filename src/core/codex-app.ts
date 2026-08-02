@@ -937,19 +937,12 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
     && hasTomlString(codexLbProvider, 'env_key', 'CODEX_LB_API_KEY')
     && hasTomlBoolean(codexLbProvider, 'supports_websockets', true)
     && hasTomlBoolean(codexLbProvider, 'requires_openai_auth', false);
-  const codexLbCompatProviderContractOk = codexLbProviderPresent
-    && hasTomlString(codexLbProvider, 'name', 'OpenAI')
-    && hasTomlString(codexLbProvider, 'wire_api', 'responses')
-    && hasTomlBoolean(codexLbProvider, 'supports_websockets', true)
-    && hasTomlBoolean(codexLbProvider, 'requires_openai_auth', true)
-    && !hasTomlKey(codexLbProvider, 'env_key')
-    && hasCodexLbGatewayEnvHeader(codexLbProvider);
   const codexLbSelectedDefault = /(?:^|\n)\s*model_provider\s*=\s*"codex-lb"\s*(?:#.*)?(?=\n|$)/.test(topLevelToml(globalConfig));
   const codexLbDesktopMode: CodexLbDesktopMode = opts.codexLbDesktopMode
     || inferCodexLbDesktopModeForUi(globalConfig);
-  const codexLbProviderContractOk = codexLbDesktopMode === 'desktop-dual-auth-compat'
-    ? codexLbCompatProviderContractOk
-    : codexLbCliProviderContractOk;
+  const retiredCodexLbCompatConfigured = codexLbDesktopMode === 'desktop-dual-auth-compat';
+  const codexLbProviderContractOk = !retiredCodexLbCompatConfigured
+    && codexLbCliProviderContractOk;
   const metadata = await readJsonIfExists(
     opts.codexLbMetadataPath || codexLbMetadataPath(home)
   );
@@ -1006,7 +999,11 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
   ];
   const codexLbBlockers = [
     ...(codexLbProviderPresent ? [] : ['codex_lb_provider_missing']),
-    ...(codexLbProviderPresent && !codexLbProviderContractOk ? ['codex_lb_provider_contract_drift'] : []),
+    ...(retiredCodexLbCompatConfigured
+      ? ['desktop_dual_auth_compat_unavailable']
+      : codexLbProviderPresent && !codexLbProviderContractOk
+        ? ['codex_lb_provider_contract_drift']
+        : []),
     ...(codexLbApiKeySource !== 'missing' ? [] : ['codex_lb_api_key_missing']),
     ...(codexLbBaseUrlSource !== 'missing' ? [] : ['codex_lb_base_url_missing']),
     ...(codexLbDesktopMode === 'desktop-native-bridge' && managedCatalogConfigured
@@ -1049,7 +1046,11 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
   const installCommand = 'sks codex-app use-openrouter --model z-ai/glm-5.2';
   const setupCommand = 'sks codex-lb setup --host <domain> --api-key-stdin --yes';
   const setKeyCommand = 'sks codex-lb set-key --api-key-stdin';
-  const desktopPickerEvidence = opts.desktopPickerEvidence || opts.codexLbCapabilityReport?.model_picker || null;
+  const desktopPickerEvidence = opts.desktopPickerEvidence
+    || opts.codexLbCapabilityReport?.model_picker
+    || opts.codexLbCapabilityReport?.capabilities?.model_picker
+    || opts.codexLbStatus?.capabilities?.model_picker
+    || null;
   const desktopPickerVerified = desktopPickerEvidence?.state === 'verified'
     || desktopPickerEvidence?.verified === true;
   const selectedProviderConfigured = selectedProviderBlockers.length === 0;
@@ -1112,8 +1113,8 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
       key_entry_visible: true,
       provider_present: codexLbProviderPresent,
       provider_contract_ok: codexLbProviderContractOk,
-      provider_contract: codexLbDesktopMode === 'desktop-dual-auth-compat'
-        ? 'desktop-dual-auth-compat'
+      provider_contract: retiredCodexLbCompatConfigured
+        ? 'retired-desktop-dual-auth-compat'
         : 'cli-provider',
       selected_default: codexLbSelectedDefault,
       key_present: codexLbApiKeySource !== 'missing',
@@ -1200,16 +1201,6 @@ function normalizeCodexLbGatewayAuthTransportForUi(
   return value === 'authorization-bearer-compat'
     ? 'authorization-bearer-compat'
     : 'x-codex-lb-api-key';
-}
-
-function hasTomlKey(text: string, key: string): boolean {
-  return new RegExp(
-    `(?:^|\\n)\\s*${escapeRegExp(key)}\\s*=`
-  ).test(text);
-}
-
-function hasCodexLbGatewayEnvHeader(text: string): boolean {
-  return /(?:^|\n)\s*env_http_headers\s*=\s*\{[^}\n]*"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"[^}\n]*\}\s*(?:#.*)?(?=\n|$)/.test(text);
 }
 
 async function findDefaultPluginSource(plugin: any, { home, configText }: any) {

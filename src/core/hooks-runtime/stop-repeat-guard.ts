@@ -35,11 +35,25 @@ export async function finalizationRepeatDecision(root: any, state: any = {}, pay
         last_seen: now,
         repeat_count: repeatCount,
         tripped: repeatCount >= limit,
+        terminal_status: repeatCount >= limit ? 'unverified' : null,
+        stop_reason: repeatCount >= limit ? 'finalization_repeat_budget_exhausted' : null,
+        completion_claim_allowed: false,
         reason
       }
     }
   }
-  await writeJsonAtomic(guardPath, record).catch(() => null)
+  try {
+    await writeJsonAtomic(guardPath, record)
+  } catch {
+    return {
+      continue: true,
+      action: 'finalization_terminal_unverified',
+      status: 'unverified',
+      stop_reason: 'finalization_repeat_guard_persistence_failed',
+      completion_claim_allowed: false,
+      systemMessage: `SKS could not persist the ${kind} repeat budget. Finalization stopped fail-closed and completion remains unverified.`
+    }
+  }
   if (state.mission_id) {
     await appendMissionStatus(root, state.mission_id, {
       category: repeatCount >= limit ? 'warning' : 'blocker',
@@ -55,7 +69,11 @@ export async function finalizationRepeatDecision(root: any, state: any = {}, pay
   if (repeatCount < limit) return null
   return {
     continue: true,
-    systemMessage: `SKS stop hook repeat guard suppressed repeated ${kind} prompt after ${repeatCount} identical block(s). No completion success is claimed by the hook.`
+    action: 'finalization_terminal_unverified',
+    status: 'unverified',
+    stop_reason: 'finalization_repeat_budget_exhausted',
+    completion_claim_allowed: false,
+    systemMessage: `SKS stopped repeated ${kind} finalization after ${repeatCount} identical block(s). The terminal state is unverified; no completion success is claimed.`
   }
 }
 

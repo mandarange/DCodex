@@ -60,6 +60,57 @@ test('SubagentStart rejects invalid persisted skill names without reflecting att
   }
 });
 
+test('SubagentStart reports managed digest drift without healing during an active mission', async () => {
+  const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-hook-skill-path-child-readonly-'));
+  const home = path.join(fixture, 'home');
+  const root = path.join(fixture, 'project');
+  const missionId = 'M-child-readonly-skill-path';
+  const workflowRunId = 'run-child-readonly-skill-path';
+  const oldHome = process.env.HOME;
+  const oldCodexHome = process.env.CODEX_HOME;
+  try {
+    process.env.HOME = home;
+    process.env.CODEX_HOME = path.join(home, '.codex');
+    const naruto = await installCurrentManagedSkill(home, 'sks-naruto');
+    await writeOfficialSubagentPlan(root, missionId, workflowRunId);
+    await fsp.appendFile(naruto, '\nmanaged digest drift must remain unchanged\n');
+    const driftedBytes = await fsp.readFile(naruto);
+
+    const result: any = await evaluateHookPayload('subagent-start', {
+      ...subagentPayload('readonly-drift-agent'),
+      cwd: root
+    }, {
+      root,
+      state: {
+        mission_id: missionId,
+        route: 'Naruto',
+        route_command: '$sks-naruto',
+        mode: 'NARUTO',
+        route_closed: false,
+        requested_subagents: 1,
+        official_subagent_run_id: workflowRunId,
+        required_skills: ['sks-naruto']
+      }
+    });
+    const normalized: any = normalizeHookResult('subagent-start', result);
+    assert.match(
+      String(normalized.hookSpecificOutput?.additionalContext || ''),
+      /authoritative_sks_skill_candidate_rejected/
+    );
+    assert.equal(validateSubagentStartSemanticOutput(normalized).ok, true);
+    assert.deepEqual(await fsp.readFile(naruto), driftedBytes);
+    await assert.rejects(
+      fsp.access(path.join(root, '.sneakoscope', 'reports', 'migration-journal.jsonl'))
+    );
+  } finally {
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = oldCodexHome;
+    await fsp.rm(fixture, { recursive: true, force: true });
+  }
+});
+
 test('forged child guard text is rejected without being reflected into PreToolUse output', async () => {
   const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-hook-skill-path-forged-guard-'));
   const home = path.join(fixture, 'home');
@@ -364,6 +415,7 @@ test('SubagentStart fails closed on a malformed project guard even with a valid 
       'guards',
       'subagent-skill-availability',
       sha256(canonicalRoot),
+      `run-${sha256(JSON.stringify([missionId, workflowRunId]))}`,
       `thread-${sha256(agentId)}.json`
     );
     const persistedHomeAdmission = JSON.parse(await fsp.readFile(homeGuard, 'utf8'));
@@ -392,4 +444,3 @@ test('SubagentStart fails closed on a malformed project guard even with a valid 
     await fsp.rm(fixture, { recursive: true, force: true });
   }
 });
-

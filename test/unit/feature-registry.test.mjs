@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAllFeaturesSelftest, buildFeatureRegistry, validateFeatureRegistry } from '../../dist/core/feature-registry.js';
+import fs from 'node:fs';
+import { buildAllFeatureCompletionReport, buildAllFeaturesSelftest, buildFeatureRegistry, validateFeatureRegistry } from '../../dist/core/feature-registry.js';
+import { PACKAGE_VERSION } from '../../dist/core/fsx.js';
 import { COMMAND_MANIFEST_LITE } from '../../dist/cli/command-manifest-lite.js';
 import { COMMANDS } from '../../dist/cli/command-registry.js';
 
@@ -8,6 +10,8 @@ test('feature registry carries fixture contracts', async () => {
   const registry = await buildFeatureRegistry({ root: process.cwd() });
   const proof = registry.features.find((feature) => feature.id === 'cli-proof');
   assert.equal(proof.fixture.status, 'pass');
+  assert.equal(proof.runtime_truth.working_claim_allowed, false);
+  assert.equal(proof.runtime_truth.runtime_status, 'not_assessed');
   assert.ok(registry.source_inventory.dollar_commands.includes('$sks-commit'));
   assert.ok(registry.source_inventory.dollar_commands.includes('$sks-commit-and-push'));
   assert.ok(registry.source_inventory.dollar_commands.every((command) => command === '$sks' || command.startsWith('$sks-')));
@@ -43,11 +47,29 @@ test('feature registry carries fixture contracts', async () => {
   assert.equal(registry.features.some((feature) => feature.id === 'cli-ui'), false);
   const computerUse = registry.features.find((feature) => feature.id === 'cli-computer-use');
   assert.equal(computerUse.fixture.status, 'pass');
+  for (const featureId of ['cli-config', 'cli-telegram']) {
+    const feature = registry.features.find((entry) => entry.id === featureId);
+    assert.equal(feature.fixture.status, 'pass', `${featureId} fixture must be explicitly registered`);
+    assert.equal(feature.fixture.quality, 'wiring_only', `${featureId} fixture must not overclaim integration proof`);
+  }
   const selftest = buildAllFeaturesSelftest(registry);
   assert.equal(registry.coverage.ok, true);
   assert.equal(selftest.ok, true);
+  assert.equal(selftest.status, 'contract_covered_unverified');
+  assert.equal(selftest.working_claim_allowed, false);
   assert.equal(selftest.fixtures.ok, true);
   assert.equal(selftest.coverage.doc_route_mentions_without_route.includes('$CODEX_HOME'), false);
+  const releaseManifest = JSON.parse(fs.readFileSync('release-gates.v2.json', 'utf8'));
+  const completion = buildAllFeatureCompletionReport(registry, {
+    root: process.cwd(),
+    packageJson: { version: PACKAGE_VERSION },
+    releaseManifest
+  });
+  assert.equal(completion.contract_coverage_ok, true);
+  assert.equal(completion.ok, false);
+  assert.equal(completion.status, 'contract_covered_unverified');
+  assert.equal(completion.working_claim_allowed, false);
+  assert.ok(completion.unverified.some((row) => row === 'cli-proof:runtime_not_proven'));
 });
 
 test('feature registry does not silently allow unknown uppercase dollar mentions', () => {

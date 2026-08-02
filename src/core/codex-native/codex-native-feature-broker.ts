@@ -238,7 +238,11 @@ export async function buildCodexNativeFeatureMatrix(input: {
 async function inspectManagedSkillState(root: string): Promise<{ ok: boolean; apply: false; artifact_path: string; existing_count: number; managed_count: number; missing_required: string[]; blockers: string[]; warnings: string[] }> {
   const home = path.resolve(process.env.HOME || os.homedir())
   const authoritativeRoot = currentCodexSkillRoots({ root, home }).find((entry) => entry.scope === 'global')?.root
-  const resolution = await resolveAuthoritativeSksSkillSources({ root, home, skillNames: REQUIRED_SKILL_NAMES })
+  const resolution = await resolveAuthoritativeSksSkillSources({
+    root,
+    home,
+    skillNames: REQUIRED_SKILL_NAMES
+  })
   const managed = new Set(resolution.sources.map((source) => source.canonical_name))
   const missing = REQUIRED_SKILL_NAMES.filter((name) => !managed.has(name))
   const existingCount = authoritativeRoot ? await countConfinedSkillDirectories(home, authoritativeRoot) : 0

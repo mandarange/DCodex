@@ -355,6 +355,7 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     projectRoot: root
   })
   const schedulerHardTimeoutMs = normalizeMissionHardTimeoutMs(opts, route)
+  const schedulerAbortController = new AbortController()
   let lastTimeoutReapMs = 0
   async function reapTimedOutAgentSessions(force = false) {
     const now = Date.now()
@@ -373,6 +374,7 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     prompt,
     targetActiveSlots,
     maxActiveSlots: maxAgentCount,
+    maxWallMs: schedulerHardTimeoutMs,
     ...(opts.maxQueueExpansion === undefined ? {} : { maxQueueExpansion: opts.maxQueueExpansion }),
     ...(opts.refillDelayMs === undefined ? {} : { refillDelayMs: opts.refillDelayMs }),
     sourceIntelligenceRefs: sourceIntelligenceRef,
@@ -415,7 +417,7 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
         generationIndex: agent.generation_index,
         requireGeneration: true
       })
-      const backendOpts = { ...opts, missionId, agentRoot: ledgerRoot, cwd: workerWorktree?.context.path || root, projectRoot: root, projectHash: namespace.root_hash, route, prompt, fastMode: fastModePolicy.fast_mode, serviceTier: fastModePolicy.service_tier, ...(workerWorktree ? { worktree: workerWorktree.context } : {}) }
+      const backendOpts = { ...opts, missionId, agentRoot: ledgerRoot, cwd: workerWorktree?.context.path || root, projectRoot: root, projectHash: namespace.root_hash, route, prompt, fastMode: fastModePolicy.fast_mode, serviceTier: fastModePolicy.service_tier, signal: schedulerAbortController.signal, ...(workerWorktree ? { worktree: workerWorktree.context } : {}) }
       const result = await workerSessionRuntime.launchWorker({ agent: runtimeAgent, slice: runtimeSlice, opts: backendOpts })
       await reapTimedOutAgentSessions()
       if (route === '$Naruto') attachNarutoRuntimeProof(result, runtimeAgent, runtimeSlice)
@@ -465,6 +467,10 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
       })
       await writeAgentCodexCockpitArtifacts(dir, { missionId, projectHash: namespace.root_hash })
       return result
+    },
+    onStop: async (reason) => {
+      if (!schedulerAbortController.signal.aborted) schedulerAbortController.abort(reason)
+      await reapTimedOutAgentSessions(true)
     },
     onSchedulerEvent: async ({ event, slots, state }) => {
       await reapTimedOutAgentSessions()

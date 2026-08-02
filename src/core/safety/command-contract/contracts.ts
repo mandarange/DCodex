@@ -9,7 +9,7 @@ import type {
   CommandContractV3,
   CommandLatency
 } from './types.js';
-import { NARUTO_ACTIONS } from './types.js';
+import { narutoCommandInputSchema } from '../../subagents/naruto-command-input-contract.js';
 
 type JsonObject = Record<string, unknown>;
 type ArgvBuilder = (input: JsonObject) => string[];
@@ -29,18 +29,7 @@ const ARGUMENT_PROFILES: Record<CommandInputProfile, ArgumentProfile> = {
     build: jsonFlag
   },
   naruto: {
-    schema: objectSchema({
-      action: { type: 'string', enum: [...NARUTO_ACTIONS] },
-      task: boundedString(1, 32_768),
-      prompt: boundedString(1, 32_768),
-      mission: boundedString(1, 160),
-      agents: { type: 'integer', minimum: 1 },
-      max_threads: { type: 'integer', minimum: 1 },
-      stdin: { type: 'boolean' },
-      readonly: { type: 'boolean' },
-      trusted_project: { type: 'boolean' },
-      json: { type: 'boolean' }
-    }),
+    schema: narutoCommandInputSchema(),
     build: (input) => {
       const task = typeof input.prompt === 'string'
         ? input.prompt
@@ -57,6 +46,14 @@ const ARGUMENT_PROFILES: Record<CommandInputProfile, ArgumentProfile> = {
         ...booleanFlag(input, 'stdin', '--stdin'),
         ...booleanFlag(input, 'readonly', '--readonly'),
         ...booleanFlag(input, 'trusted_project', '--trusted-project'),
+        ...valueFlag(input, 'auth_mode', '--auth-mode'),
+        ...valueFlag(input, 'model_provider', '--model-provider'),
+        ...valueFlag(input, 'provider_env_key', '--provider-env-key'),
+        ...valueFlag(input, 'parent_model', '--parent-model'),
+        ...valueFlag(input, 'parent_effort', '--parent-effort'),
+        ...valueFlag(input, 'subagent_model', '--subagent-model'),
+        ...valueFlag(input, 'subagent_effort', '--subagent-effort'),
+        ...booleanFlag(input, 'no_forced_login_method', '--no-forced-login-method'),
         ...jsonFlag(input)
       ];
     }

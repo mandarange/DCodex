@@ -160,6 +160,9 @@ export function commandAliasCleanupReport(
     ...(projectGuidance.error_count ? [`current_project_guidance_reconcile_failed:${projectGuidance.error_count}`] : [])
   ];
   const ok = blockers.length === 0;
+  const warnings = projectGuidance.warnings.map((warning) =>
+    `${warning.code}:${warning.cutoff_path}:${warning.exceeded_directory_count}`
+  );
   return {
     schema: COMMAND_ALIAS_CLEANUP_SCHEMA,
     ok,
@@ -203,6 +206,7 @@ export function commandAliasCleanupReport(
           ok: false,
           detail: 'Rewrite legacy commands inside skills, remove OMX/DCodex from the live surface, and reconcile retired SKS-managed residue.'
         }],
+    warnings,
     blockers
   };
 }
@@ -216,7 +220,8 @@ function emptyProjectGuidance(fix: boolean): CurrentProjectGuidanceReport {
     reconciled_count: 0,
     remaining_count: 0,
     preserved_user_file_count: 0,
-    error_count: 0
+    error_count: 0,
+    warnings: []
   };
 }
 

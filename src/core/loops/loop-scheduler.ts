@@ -1,6 +1,7 @@
 import os from 'node:os';
 import type { LoopConcurrencyBudget } from './loop-concurrency-budget.js';
 import type { SksLoopGraphProof, SksLoopNode, SksLoopProof } from './loop-schema.js';
+import { loopProofCompletionIssues, loopProofIsVerifiedComplete } from './loop-proof-validation.js';
 
 export interface SksLoopSchedule {
   ok: boolean;
@@ -58,14 +59,20 @@ export function graphProofFromLoopProofs(input: {
   const passed = [...new Set(input.proofs.flatMap((proof) => proof.gate_result.passed_gates))];
   const failed = [...new Set(input.proofs.flatMap((proof) => proof.gate_result.failed_gates))];
   const skipped = [...new Set(input.proofs.flatMap((proof) => proof.gate_result.skipped_gates))];
-  const blockers = [...new Set(input.proofs.flatMap((proof) => proof.blockers))];
+  const proofValidationBlockers = input.proofs.flatMap((proof) => (
+    loopProofCompletionIssues(proof).map((issue) => `${proof.loop_id}:${issue}`)
+  ));
+  const blockers = [...new Set([
+    ...input.proofs.flatMap((proof) => proof.blockers),
+    ...proofValidationBlockers
+  ])];
   const sequential = Math.max(input.wallMs, input.proofs.length * Math.max(1, Math.floor(input.wallMs / Math.max(1, input.maxActiveLoops))));
   return {
     schema: 'sks.loop-graph-proof.v1',
     mission_id: input.missionId,
     ok: blockers.length === 0 && failed.length === 0,
     total_loops: input.proofs.length,
-    completed_loops: input.proofs.filter((proof) => proof.status === 'completed').length,
+    completed_loops: input.proofs.filter(loopProofIsVerifiedComplete).length,
     blocked_loops: input.proofs.filter((proof) => proof.status === 'blocked').length,
     failed_loops: input.proofs.filter((proof) => proof.status === 'failed').length,
     handoff_loops: input.proofs.filter((proof) => proof.status === 'handoff').length,

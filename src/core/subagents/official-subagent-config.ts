@@ -14,10 +14,11 @@ import {
   DEFAULT_SUBAGENT_EFFORT,
   DEFAULT_SUBAGENT_MODEL
 } from './model-policy.js'
+import { HARD_NARUTO_MAX_THREADS } from './thread-budget.js'
 import { escapeRegExp } from '../text/regex.js'
 
 /** Spawned child-thread hard cap (excludes the root/parent thread). */
-export const DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS = 12
+export const DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS = 256
 /** V1-only nesting limit. Ignored by multi-agent V2; kept at 1 for fail-closed depth. */
 export const DEFAULT_OFFICIAL_SUBAGENT_MAX_DEPTH = 1
 /** @deprecated Removed from Codex 0.145 AgentsToml. Retained only for SKS-internal callers. */
@@ -29,7 +30,7 @@ export const DEFAULT_OFFICIAL_SUBAGENT_REASONING_EFFORT = DEFAULT_SUBAGENT_EFFOR
 /** MA v2 total concurrency = spawned children + root thread. */
 export const DEFAULT_MULTI_AGENT_V2_MAX_CONCURRENT_THREADS_PER_SESSION =
   DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS + 1
-export const LEGACY_SKS_MAX_THREAD_VALUES = Object.freeze([4, 5, 6])
+export const LEGACY_SKS_MAX_THREAD_VALUES = Object.freeze([4, 5, 6, 12])
 export const AGENTS_MAX_CONCURRENT_THREADS_KEY = 'max_concurrent_threads_per_session'
 export const LEGACY_AGENTS_MAX_THREADS_KEY = 'max_threads'
 export const LEGACY_AGENTS_JOB_MAX_RUNTIME_KEY = 'job_max_runtime_seconds'
@@ -113,7 +114,10 @@ export function mergeOfficialSubagentConfig(
     next = stripLegacyUnsupportedAgentKeys(next)
   }
 
-  const targetMaxThreads = positiveInteger(opts.defaultMaxThreads) || DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS
+  const targetMaxThreads = boundedManagedMaxThreads(
+    opts.defaultMaxThreads,
+    DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS
+  )
   next = migrateLegacyMaxThreads(next, {
     sksOwned: opts.sksOwned === true,
     targetMaxThreads,
@@ -182,7 +186,10 @@ export function mergeOfficialMultiAgentV2FeatureConfig(
     next = removeTomlTableKey(next, 'features', 'multi_agent_v2')
   }
 
-  const maxThreads = positiveInteger(opts.maxThreads) || DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS
+  const maxThreads = boundedManagedMaxThreads(
+    opts.maxThreads,
+    DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS
+  )
   const targetTotal = Math.max(1, maxThreads + 1)
 
   if (!hasTomlTable(next, 'features.multi_agent_v2')) {
@@ -202,7 +209,8 @@ export function mergeOfficialMultiAgentV2FeatureConfig(
 
   if (opts.sksOwned === true) {
     next = upsertTomlTableKey(next, 'features.multi_agent_v2', 'enabled = true')
-    if (!hasTomlTableKey(next, 'features.multi_agent_v2', 'max_concurrent_threads_per_session')) {
+    const currentTotal = readTomlTableInteger(next, 'features.multi_agent_v2', 'max_concurrent_threads_per_session')
+    if (currentTotal === DEFAULT_NARUTO_LEGACY_TOTAL_THREADS || currentTotal === null) {
       next = upsertTomlTableKey(
         next,
         'features.multi_agent_v2',
@@ -246,6 +254,8 @@ export function mergeOfficialMultiAgentV2FeatureConfig(
   return ensureTrailingNewline(next)
 }
 
+const DEFAULT_NARUTO_LEGACY_TOTAL_THREADS = 13
+
 export async function readOfficialSubagentConfig(
   root: string,
   opts: { home?: string; codexHome?: string; projectConfigPath?: string } = {}
@@ -273,6 +283,10 @@ export async function readOfficialSubagentConfig(
     DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS,
     positiveInteger
   )
+  // Keep downstream arithmetic bounded even for an invalid file, but the
+  // config-layer blocker below makes the explicit over-cap intent a hard
+  // admission failure instead of accepting a silently rewritten value.
+  const effectiveMaxThreads = Math.min(maxThreads.value, HARD_NARUTO_MAX_THREADS)
   const maxDepth = resolveLayeredValue(
     projectLayer.agents.max_depth,
     globalLayer.agents.max_depth,
@@ -300,7 +314,7 @@ export async function readOfficialSubagentConfig(
   const multiAgentV2 = resolveMultiAgentV2Layer(
     projectLayer.features.multi_agent_v2,
     globalLayer.features.multi_agent_v2,
-    maxThreads.value
+    effectiveMaxThreads
   )
 
   const depthCoerced = maxDepth.value > 1
@@ -312,7 +326,7 @@ export async function readOfficialSubagentConfig(
 
   return {
     enabled: enabled.value,
-    maxThreads: maxThreads.value,
+    maxThreads: effectiveMaxThreads,
     maxDepth: depthCoerced ? DEFAULT_OFFICIAL_SUBAGENT_MAX_DEPTH : maxDepth.value,
     jobMaxRuntimeSeconds: null,
     interruptMessage: interruptMessage.value,
@@ -550,6 +564,15 @@ function configLayer(text: string, label: 'project' | 'global') {
   }
   const agents = objectValue(parsedToml(text)?.agents)
   const features = objectValue(parsedToml(text)?.features)
+  const configuredMaxThreads = hasOwn(agents, AGENTS_MAX_CONCURRENT_THREADS_KEY)
+    ? agents[AGENTS_MAX_CONCURRENT_THREADS_KEY]
+    : hasOwn(agents, LEGACY_AGENTS_MAX_THREADS_KEY)
+      ? agents[LEGACY_AGENTS_MAX_THREADS_KEY]
+      : undefined
+  const multiAgentV2 = featureTomlObject(features.multi_agent_v2)
+  const configuredV2Threads = multiAgentV2 !== null && hasOwn(multiAgentV2, 'max_concurrent_threads_per_session')
+    ? multiAgentV2.max_concurrent_threads_per_session
+    : undefined
   const legacyWarnings: string[] = []
   if (hasOwn(agents, LEGACY_AGENTS_MAX_THREADS_KEY) && !hasOwn(agents, AGENTS_MAX_CONCURRENT_THREADS_KEY)) {
     legacyWarnings.push(`${label}_legacy_agents_max_threads_present`)
@@ -560,7 +583,22 @@ function configLayer(text: string, label: 'project' | 'global') {
   return {
     agents,
     features,
-    blockers: [] as string[],
+    blockers: [
+      ...(configuredMaxThreads !== undefined && positiveInteger(configuredMaxThreads) === null
+        ? [`${label}_official_subagent_max_threads_invalid`]
+        : []),
+      ...(positiveInteger(configuredMaxThreads) !== null
+        && Number(configuredMaxThreads) > HARD_NARUTO_MAX_THREADS
+        ? [`${label}_official_subagent_max_threads_exceeds_hard_cap:${configuredMaxThreads}:${HARD_NARUTO_MAX_THREADS}`]
+        : []),
+      ...(configuredV2Threads !== undefined && positiveInteger(configuredV2Threads) === null
+        ? [`${label}_official_subagent_multi_agent_v2_max_threads_invalid`]
+        : []),
+      ...(positiveInteger(configuredV2Threads) !== null
+        && Number(configuredV2Threads) > HARD_NARUTO_MAX_THREADS + 1
+        ? [`${label}_official_subagent_multi_agent_v2_max_threads_exceeds_hard_cap:${configuredV2Threads}:${HARD_NARUTO_MAX_THREADS + 1}`]
+        : [])
+    ],
     legacyWarnings
   }
 }
@@ -621,6 +659,15 @@ function resolveLayeredValue<T>(
 
 function positiveInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+function boundedManagedMaxThreads(value: unknown, fallback: number): number {
+  if (value === undefined || value === null) return fallback
+  const parsed = positiveInteger(value)
+  if (parsed === null || parsed > HARD_NARUTO_MAX_THREADS) {
+    throw new RangeError(`max_threads_must_be_integer_1_to_${HARD_NARUTO_MAX_THREADS}:${String(value)}`)
+  }
+  return parsed
 }
 
 function booleanValue(value: unknown): boolean | null {

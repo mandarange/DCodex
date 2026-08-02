@@ -1,17 +1,15 @@
 import path from 'node:path';
 import os from 'node:os';
-import { exists, readJson, readText, runProcess, which } from '../fsx.js';
+import fsp from 'node:fs/promises';
+import { exists, readJson, readText } from '../fsx.js';
 import { escapeRegExp } from '../text/regex.js';
+import {
+  PrivateCredentialFileError,
+  readPrivateCredentialFile
+} from '../security/private-credential-file.js';
 
-const KEYCHAIN_WRITER_SWIFT = `import Foundation
-import Security
-let a=CommandLine.arguments[1],s=CommandLine.arguments[2]
-guard let k=String(data:FileHandle.standardInput.readDataToEndOfFile(),encoding:.utf8)?.trimmingCharacters(in:.whitespacesAndNewlines),!k.isEmpty else{exit(64)}
-let q:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrAccount as String:a,kSecAttrService as String:s]
-let v:[String:Any]=[kSecValueData as String:Data(k.utf8)]
-var r=SecItemUpdate(q as CFDictionary,v as CFDictionary)
-if r==errSecItemNotFound{var n=q;n[kSecValueData as String]=Data(k.utf8);r=SecItemAdd(n as CFDictionary,nil)}
-if r != errSecSuccess{FileHandle.standardError.write(Data("keychain_status=\\(r)\\n".utf8));exit(1)}`;
+export const CODEX_LB_SECURE_KEYCHAIN_SERVICE = 'com.sneakoscope.codex-lb.api-key.v2' as const;
+export const CODEX_LB_LEGACY_KEYCHAIN_SERVICE = 'sks-codex-lb' as const;
 
 export type CodexLbEnvSource = 'process.env' | 'keychain' | 'env-file' | 'project-local' | 'missing';
 
@@ -30,6 +28,8 @@ export type CodexLbEnvLoadResult = {
     fingerprint: string | null;
   };
   secret_api_key: string | null;
+  blockers?: string[];
+  guidance?: string[];
   credential_binding: {
     checked: boolean;
     present: boolean;
@@ -215,18 +215,18 @@ export async function loadCodexLbEnv(opts: any = {}): Promise<CodexLbEnvLoadResu
   const envPaths = [opts.envPath || codexLbEnvPath(home)];
   // Center / official store first. Ambient process.env is last-resort only so a
   // stale shell export cannot override SKS Center credentials.
-  const sourcePriority: CodexLbEnvSource[] = ['env-file', 'keychain', 'process.env'];
+  const sourcePriority: CodexLbEnvSource[] = ['env-file', 'process.env'];
   if (opts.allowProjectSecrets) sourcePriority.push('project-local');
 
   const processEnv = pickEnv(opts.processEnv || process.env);
-  const envFile = await readEnvFile(envPaths[0]);
-  const keychain = await readMacKeychain(opts);
-  const projectLocal: { apiKey?: string; baseUrl?: string } = opts.allowProjectSecrets ? await readEnvFile(path.join(opts.root || process.cwd(), '.env')) : {};
+  const envFile = await readEnvFile(envPaths[0], { privateFile: true });
+  const projectLocal: { apiKey?: string; baseUrl?: string } = opts.allowProjectSecrets
+    ? await readEnvFile(path.join(opts.root || process.cwd(), '.env'))
+    : {};
   const metadata = await readCodexLbCredentialMetadata(metadataPath);
 
   const apiKeyCandidates = [
     { source: 'env-file' as const, apiKey: envFile.apiKey },
-    { source: 'keychain' as const, apiKey: keychain.apiKey },
     { source: 'process.env' as const, apiKey: processEnv.apiKey },
     ...(opts.allowProjectSecrets ? [{ source: 'project-local' as const, apiKey: String(projectLocal.apiKey || '') }] : [])
   ].filter((candidate) => Boolean(candidate.apiKey));
@@ -234,9 +234,7 @@ export async function loadCodexLbEnv(opts: any = {}): Promise<CodexLbEnvLoadResu
     ...candidate,
     sha256: await sha256Full(candidate.apiKey)
   })));
-  const selectedApiKey = metadata.valid
-    ? candidateFingerprints.find((candidate) => candidate.sha256 === metadata.apiKeySha256) || candidateFingerprints[0]
-    : candidateFingerprints[0];
+  const selectedApiKey = candidateFingerprints[0];
   const keySource = selectedApiKey?.source || 'missing';
   const apiKey = selectedApiKey?.apiKey || '';
   const configuredBaseUrl = normalizeCodexLbBaseUrl(envFile.baseUrl || processEnv.baseUrl || projectLocal.baseUrl || '');
@@ -247,12 +245,23 @@ export async function loadCodexLbEnv(opts: any = {}): Promise<CodexLbEnvLoadResu
     apiKeySha256,
     configuredBaseUrl
   });
+  const resolutionBlockers = [
+    ...envFile.blockers,
+    ...(apiKey ? [] : ['codex_lb_api_key_missing'])
+  ];
   const baseUrl = binding.present && metadata.baseUrl ? metadata.baseUrl : configuredBaseUrl;
-  const apiKeyUsable = Boolean(apiKey) && binding.blockers.length === 0;
+  const apiKeyUsable = Boolean(apiKey) && binding.blockers.length === 0 && resolutionBlockers.length === 0;
   const missing = [
     ...(apiKey ? [] : ['CODEX_LB_API_KEY']),
     ...(baseUrl ? [] : ['CODEX_LB_BASE_URL']),
-    ...(binding.blockers.length ? ['CODEX_LB_CREDENTIAL_BINDING'] : [])
+    ...(binding.blockers.length ? ['CODEX_LB_CREDENTIAL_BINDING'] : []),
+    ...(envFile.blockers.length ? ['CODEX_LB_CREDENTIAL_FILE'] : [])
+  ];
+  const guidance = [
+    ...envFile.guidance,
+    ...(!apiKey
+      ? [`Configure CODEX_LB_API_KEY with \`sks codex-lb setup --host <domain> --api-key-stdin --yes\`, put it in ${envPaths[0]} (mode 0600), or export CODEX_LB_API_KEY.`]
+      : [])
   ];
   return {
     schema: 'sks.codex-lb-env.v1',
@@ -269,12 +278,17 @@ export async function loadCodexLbEnv(opts: any = {}): Promise<CodexLbEnvLoadResu
       fingerprint: apiKeySha256 ? apiKeySha256.slice(0, 16) : null
     },
     secret_api_key: apiKeyUsable ? apiKey : null,
-    credential_binding: binding,
+    blockers: [...new Set([...binding.blockers, ...resolutionBlockers])],
+    guidance: [...new Set(guidance)],
+    credential_binding: {
+      ...binding,
+      blockers: [...new Set([...binding.blockers, ...resolutionBlockers])]
+    },
     env_paths: envPaths,
     keychain: {
-      checked: keychain.checked,
-      available: keychain.available,
-      status: keychain.status
+      checked: false,
+      available: false,
+      status: 'not_used'
     }
   };
 }
@@ -369,47 +383,43 @@ function evaluateCodexLbCredentialBinding(input: {
   };
 }
 
-export async function writeCodexLbKeychain(apiKey: unknown, opts: any = {}) {
-  const key = String(apiKey || '').trim();
-  if (!key) return { ok: false, status: 'missing_api_key' };
-  if (process.platform !== 'darwin' && !opts.forceMacos) return { ok: false, status: 'not_macos' };
-  const swift = opts.swiftBin || await which('swift').catch(() => null) || (await exists('/usr/bin/swift') ? '/usr/bin/swift' : null);
-  if (!swift) return { ok: false, status: 'keychain_writer_unavailable' };
-  const account = opts.account || process.env.USER || 'sks';
-  const service = opts.service || 'sks-codex-lb';
-  const result = await runProcess(swift, ['-e', KEYCHAIN_WRITER_SWIFT, account, service], {
-    input: `${key}\n`,
-    timeoutMs: 30000,
-    maxOutputBytes: 8192
-  });
-  return {
-    ok: result.code === 0,
-    status: result.code === 0 ? 'stored' : 'keychain_store_failed',
-    account,
-    service,
-    error: result.code === 0 ? null : redactSecret(result.stderr || result.stdout || 'Security.framework keychain write failed', key)
-  };
-}
-
-async function readMacKeychain(opts: any = {}) {
-  if (process.platform !== 'darwin' && !opts.forceMacos) return { checked: false, available: false, status: 'not_macos', apiKey: '' };
-  const security = opts.securityBin || await which('security').catch(() => null) || (await exists('/usr/bin/security') ? '/usr/bin/security' : null);
-  if (!security) return { checked: true, available: false, status: 'keychain_unavailable', apiKey: '' };
-  const account = opts.account || process.env.USER || 'sks';
-  const service = opts.service || 'sks-codex-lb';
-  const result = await runProcess(security, ['find-generic-password', '-a', account, '-s', service, '-w'], {
-    timeoutMs: 5000,
-    maxOutputBytes: 8192
-  });
-  const apiKey = result.code === 0 ? String(result.stdout || '').trim() : '';
-  return { checked: true, available: true, status: apiKey ? 'found' : 'missing', apiKey };
-}
-
-async function readEnvFile(file: string) {
-  const text = await readText(file, '');
+async function readEnvFile(file: string, opts: { privateFile?: boolean } = {}) {
+  let text = '';
+  const blockers: string[] = [];
+  const guidance: string[] = [];
+  if (opts.privateFile) {
+    let pathExists = false;
+    try {
+      await fsp.lstat(file);
+      pathExists = true;
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException | null)?.code !== 'ENOENT') {
+        blockers.push('codex_lb_env_file_read_failed');
+        guidance.push(`Replace the unreadable credential file at ${file} with \`sks codex-lb setup --host <domain> --api-key-stdin --yes\`.`);
+      }
+    }
+    if (!pathExists) {
+      return { apiKey: '', baseUrl: '', blockers, guidance };
+    }
+    try {
+      text = (await readPrivateCredentialFile(path.dirname(file), file, 'codex_lb_env_file')).bytes.toString('utf8');
+    } catch (error: unknown) {
+      if (!(error instanceof PrivateCredentialFileError) || error.code !== 'missing') {
+        const code = error instanceof PrivateCredentialFileError ? error.code : 'read_failed';
+        blockers.push(`codex_lb_env_file_${code}`);
+        guidance.push(code === 'mode_not_0600'
+          ? `Run \`chmod 600 ${file}\` or \`sks doctor --fix\`, then retry.`
+          : `Replace the unsafe credential file at ${file} with \`sks codex-lb setup --host <domain> --api-key-stdin --yes\`.`);
+      }
+    }
+  } else {
+    text = await readText(file, '');
+  }
   return {
     apiKey: parseShellEnvValue(text, 'CODEX_LB_API_KEY'),
-    baseUrl: parseShellEnvValue(text, 'CODEX_LB_BASE_URL')
+    baseUrl: parseShellEnvValue(text, 'CODEX_LB_BASE_URL'),
+    blockers,
+    guidance
   };
 }
 
@@ -447,8 +457,4 @@ export function parseShellEnvValue(text: unknown = '', key: unknown = ''): strin
 async function sha256Full(value: string): Promise<string> {
   const { createHash } = await import('node:crypto');
   return createHash('sha256').update(value).digest('hex');
-}
-
-function redactSecret(text: unknown, secret: unknown): string {
-  return String(text || '').split(String(secret || '')).join('[redacted]');
 }

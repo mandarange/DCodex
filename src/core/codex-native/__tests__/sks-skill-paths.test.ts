@@ -64,7 +64,7 @@ test('authoritative resolver remaps unprefixed names to current global sks-* fil
   }
 });
 
-test('authoritative resolver rejects managed-looking stale or tampered content by packaged digest', async () => {
+test('read-only authoritative resolver rejects managed-looking stale or tampered content by packaged digest', async () => {
   const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-skill-path-digest-'));
   const home = path.join(fixture, 'home');
   const root = path.join(fixture, 'project');
@@ -73,12 +73,20 @@ test('authoritative resolver rejects managed-looking stale or tampered content b
     const install = await installGlobalSkills(home);
     assert.equal(install.ok, true);
     const answer = path.join(home, '.agents', 'skills', 'sks-answer', 'SKILL.md');
-    const valid = await resolveAuthoritativeSksSkillSources({ root, home, skillNames: ['answer'] });
+    const valid = await resolveAuthoritativeSksSkillSources({
+      root,
+      home,
+      skillNames: ['answer']
+    });
     assert.deepEqual(valid.blockers, []);
     assert.deepEqual(valid.sources.map((source) => source.path), [answer]);
 
     await fsp.appendFile(answer, '\nTampered after install.\n');
-    const tampered = await resolveAuthoritativeSksSkillSources({ root, home, skillNames: ['answer'] });
+    const tampered = await resolveAuthoritativeSksSkillSources({
+      root,
+      home,
+      skillNames: ['answer']
+    });
     assert.deepEqual(tampered.sources, []);
     assert.deepEqual(tampered.unresolved, ['sks-answer']);
     assert.deepEqual(tampered.blockers, ['content_digest_mismatch:sks-answer:global']);
@@ -87,7 +95,116 @@ test('authoritative resolver rejects managed-looking stale or tampered content b
   }
 });
 
-test('packaged install under a path with spaces preserves non-core managed skill digests', async () => {
+test('direct authoritative resolution remains read-only for arbitrary managed digest drift', async () => {
+  const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-skill-path-direct-heal-'));
+  const home = path.join(fixture, 'home');
+  const root = path.join(fixture, 'project');
+  try {
+    await Promise.all([
+      fsp.mkdir(home, { recursive: true }),
+      fsp.mkdir(root, { recursive: true })
+    ]);
+    const install = await installGlobalSkills(home);
+    assert.equal(install.ok, true);
+    const skill = path.join(home, '.agents', 'skills', 'sks-honest-mode', 'SKILL.md');
+    const drifted = [
+      '---',
+      'name: sks-honest-mode',
+      'description: arbitrary future managed fixture',
+      '---',
+      '',
+      'arbitrary digest that is not packaged',
+      '',
+      '<!-- BEGIN SKS MANAGED SKILL v99 name=sks-honest-mode -->',
+      ''
+    ].join('\n');
+    await fsp.writeFile(skill, drifted);
+
+    const resolution = await resolveAuthoritativeSksSkillSources({
+      root,
+      home,
+      skillNames: ['honest-mode']
+    });
+    assert.deepEqual(resolution.sources, []);
+    assert.deepEqual(resolution.unresolved, ['sks-honest-mode']);
+    assert.deepEqual(
+      resolution.blockers,
+      ['content_digest_mismatch:sks-honest-mode:global']
+    );
+    assert.equal(resolution.recovery, undefined);
+    assert.equal(await fsp.readFile(skill, 'utf8'), drifted);
+    await assert.rejects(
+      fsp.access(path.join(root, '.sneakoscope', 'reports', 'migration-journal.jsonl'))
+    );
+  } finally {
+    await fsp.rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test('mixed read-only resolution preserves managed drift and markerless user content', async () => {
+  const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-skill-path-mixed-heal-'));
+  const home = path.join(fixture, 'home');
+  const root = path.join(fixture, 'project');
+  try {
+    await Promise.all([
+      fsp.mkdir(home, { recursive: true }),
+      fsp.mkdir(root, { recursive: true })
+    ]);
+    const install = await installGlobalSkills(home);
+    assert.equal(install.ok, true);
+    const honest = path.join(home, '.agents', 'skills', 'sks-honest-mode', 'SKILL.md');
+    const answer = path.join(home, '.agents', 'skills', 'sks-answer', 'SKILL.md');
+    const driftedHonest = [
+      '---',
+      'name: sks-honest-mode',
+      'description: managed drift',
+      '---',
+      '',
+      '<!-- BEGIN SKS MANAGED SKILL v99 name=sks-honest-mode -->',
+      'old managed bytes',
+      ''
+    ].join('\n');
+    const markerlessAnswer = Buffer.from([
+      '---',
+      'name: sks-answer',
+      'description: user content',
+      '---',
+      '',
+      'preserve exact markerless bytes',
+      ''
+    ].join('\n'));
+    await Promise.all([
+      fsp.writeFile(honest, driftedHonest),
+      fsp.writeFile(answer, markerlessAnswer)
+    ]);
+
+    const resolution = await resolveAuthoritativeSksSkillSources({
+      root,
+      home,
+      skillNames: ['honest-mode', 'answer']
+    });
+
+    assert.deepEqual(resolution.sources, []);
+    assert.deepEqual(resolution.unresolved, ['sks-answer', 'sks-honest-mode']);
+    assert.deepEqual(resolution.blockers, [
+      'content_digest_mismatch:sks-honest-mode:global',
+      'not_sks_managed:sks-answer:global'
+    ]);
+    assert.equal(resolution.recovery, undefined);
+    assert.equal(await fsp.readFile(honest, 'utf8'), driftedHonest);
+    assert.deepEqual(await fsp.readFile(answer), markerlessAnswer);
+    const context = await authoritativeSksSkillContext({
+      root,
+      home,
+      skillNames: ['honest-mode', 'answer']
+    });
+    assert.match(context, /reason=not_sks_managed; recovery=none/);
+  } finally {
+    await fsp.rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test('source ledger preserves managed digests when the dist manifest is absent under a path with spaces', async () => {
   const currentPackageRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     '..',
@@ -101,6 +218,15 @@ test('packaged install under a path with spaces preserves non-core managed skill
   const root = path.join(fixture, 'project');
   try {
     await fsp.cp(path.join(currentPackageRoot, 'dist'), path.join(installedPackageRoot, 'dist'), { recursive: true });
+    await fsp.mkdir(path.join(installedPackageRoot, 'config'), { recursive: true });
+    await fsp.copyFile(
+      path.join(currentPackageRoot, 'config', 'skills-hash-ledger.v1.json'),
+      path.join(installedPackageRoot, 'config', 'skills-hash-ledger.v1.json')
+    );
+    await fsp.rm(
+      path.join(installedPackageRoot, 'dist', 'config', 'skills-manifest.json'),
+      { force: true }
+    );
     const installedSkillsModule: any = await import(pathToFileURL(
       path.join(installedPackageRoot, 'dist', 'core', 'init', 'skills.js')
     ).href);

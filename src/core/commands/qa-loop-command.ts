@@ -21,11 +21,24 @@ import { buildQaLoopBudgetPolicy, selectQaLoopEscalatedEffort } from '../qa-loop
 import { initializeQaRuntimeArtifacts } from '../qa-loop/qa-runtime-artifacts.js';
 import { DEFAULT_QA_MAX_CYCLES, QA_SURFACE_SELECTION_ARTIFACT } from '../qa-loop/qa-types.js';
 import { writeCodexModelEffortCapabilityArtifact } from '../codex-control/codex-model-capabilities.js';
+import { prepareCodexAppServerRuntimeEnv } from '../codex-control/codex-app-server-runtime-env.js';
 import { discoverImageArtifactsInDir, writeImageArtifactPathContract } from '../image/image-artifact-path-contract.js';
 import { pluginAppTemplatePolicy } from '../codex-plugins/codex-plugin-json.js';
 import { confirmQaLoopAppHandoff } from '../qa-loop/qa-loop-app-handoff-confirmation.js';
 import { emitStreamEvent } from '../agent-bridge/agent-mode.js';
 import fsp from 'node:fs/promises';
+import {
+  completeExecutionControl,
+  preflightExecutionControl,
+  recordExecutionObservation,
+  resumeExecutionControl
+} from '../runtime/execution-control.js';
+import {
+  qaExecutionBudget,
+  qaExecutionProgressFingerprint,
+  readQaExecutionControl,
+  writeQaExecutionControl
+} from '../qa-loop/qa-execution-control.js';
 
 export async function qaLoopCommand(sub: any, args: any = []) {
   const known = new Set(['prepare', 'answer', 'run', 'status', 'app-confirm', 'help', '--help', '-h']);
@@ -41,7 +54,7 @@ export async function qaLoopCommand(sub: any, args: any = []) {
 Usage:
   sks qa-loop prepare "target"
   sks qa-loop answer <mission-id|latest> <answers.json>
-  sks qa-loop run <mission-id|latest> [--mock] [--max-cycles N] [--surface auto|codex_in_app_browser|codex_chrome_extension|codex_computer_use] [--report-only] [--app-handoff] [--app-handoff-required] [--app-handoff-launch] [--app-handoff-artifact-only] [--stream]
+  sks qa-loop run <mission-id|latest> [--mock] [--max-cycles N] [--time-budget-minutes N] [--surface auto|codex_in_app_browser|codex_chrome_extension|codex_computer_use] [--report-only] [--app-handoff] [--app-handoff-required] [--app-handoff-launch] [--app-handoff-artifact-only] [--stream]
   sks qa-loop app-confirm <mission-id|latest> --verdict pass|fail --notes "..."
   sks qa-loop status <mission-id|latest> [--desktop]
 `);
@@ -129,15 +142,34 @@ async function qaLoopRun(args: any) {
   else await ensureQaLoopVisualEvidenceContract(dir, mission, contract);
   const requestedSurface = readFlagValue(args, '--surface', 'auto');
   const reportOnly = flag(args, '--report-only');
-  await initializeQaRuntimeArtifacts(dir, {
-    ...contract,
-    prompt: mission.prompt || contract.prompt,
-    mission_id: id
-  }, {
-    missionId: id,
-    requestedSurface,
-    reportOnly
-  }).catch(() => null);
+  try {
+    await initializeQaRuntimeArtifacts(dir, {
+      ...contract,
+      prompt: mission.prompt || contract.prompt,
+      mission_id: id
+    }, {
+      missionId: id,
+      requestedSurface,
+      reportOnly
+    });
+  } catch (error: any) {
+    const blocker = `qa_runtime_artifact_initialization_failed:${error?.message || String(error)}`;
+    await writeJsonAtomic(path.join(dir, 'qa-loop', 'runtime-initialization-blocker.json'), {
+      schema: 'sks.qa-loop-runtime-initialization-blocker.v1',
+      generated_at: nowIso(),
+      mission_id: id,
+      status: 'blocked',
+      completion_claim_allowed: false,
+      blockers: [blocker]
+    });
+    await setCurrent(root, { mission_id: id, mode: 'QALOOP', phase: 'QALOOP_BLOCKED_RUNTIME_INITIALIZATION', questions_allowed: true });
+    const blockedResult = { schema: 'sks.qa-loop-run.v1', ok: false, status: 'blocked', mission_id: id, blocker };
+    process.exitCode = 2;
+    if (stream) emitStreamEvent('result', blockedResult);
+    if (flag(args, '--json')) return console.log(JSON.stringify(blockedResult, null, 2));
+    console.error(`QA-LOOP blocked: ${blocker}`);
+    return;
+  }
   const safetyScan = await scanDbSafety(root);
   if (!safetyScan.ok) {
     console.error('QA-LOOP cannot run: SKS safety scan found unsafe project data-tool configuration.');
@@ -399,43 +431,103 @@ async function qaLoopRun(args: any) {
     if (stream) emitStreamEvent('result', { schema: 'sks.qa-loop-run.v1', ok: false, mission_id: id, status: 'blocked', blocker: 'codex_cli_missing' });
     return;
   }
+  const codexRuntimeEnv = await prepareCodexAppServerRuntimeEnv({ env: process.env });
+  const timeBudgetMinutes = readBoundedIntegerFlag(args, '--time-budget-minutes', 45, 1, 180);
+  const executionBudget = qaExecutionBudget({
+    maxCycles,
+    maxElapsedMs: timeBudgetMinutes * 60 * 1000,
+    maxNoProgress: contract.runtime?.no_progress_stop === false ? maxCycles : 2
+  });
+  let executionState = await readQaExecutionControl(dir);
+  executionState = resumeExecutionControl(
+    executionState,
+    executionBudget,
+    qaExecutionProgressFingerprint({ gate: qaGate })
+  );
+  await writeQaExecutionControl(dir, executionState);
   let last = '';
-  for (let cycle = 1; cycle <= maxCycles; cycle += 1) {
+  for (;;) {
+    const preflight = preflightExecutionControl(executionState, executionBudget);
+    executionState = preflight.state;
+    await writeQaExecutionControl(dir, executionState);
+    if (!preflight.allowed) break;
+    const cycle = executionState.attempts + 1;
     const cycleDir = path.join(dir, 'qa-loop', `cycle-${cycle}`);
     const outputFile = path.join(cycleDir, 'final.md');
     const prompt = buildQaLoopPrompt({ id, mission, contract, cycle, previous: last, reportFile, imagePathContract: imagePathContract?.contract || null, appHandoff, executionProfile });
     await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.cycle.start', cycle });
     if (stream) emitStreamEvent('progress', { mission_id: id, type: 'qaloop.cycle.start', cycle, max_cycles: maxCycles });
-    const result = await runCodexExec({ root, prompt, outputFile, json: true, profile, logDir: cycleDir });
+    const cycleStartedAt = Date.now();
+    const result = await runCodexExec({
+      root,
+      prompt,
+      outputFile,
+      json: true,
+      profile,
+      logDir: cycleDir,
+      env: codexRuntimeEnv,
+      timeoutMs: Math.max(1000, Math.min(30 * 60 * 1000, preflight.remaining_time_ms))
+    });
     await writeJsonAtomic(path.join(cycleDir, 'process.json'), { code: result.code, stdout_tail: result.stdout, stderr_tail: result.stderr, stdout_bytes: result.stdoutBytes, stderr_bytes: result.stderrBytes, truncated: result.truncated, timed_out: result.timedOut });
     last = await safeReadTextFile(fsp, outputFile, result.stdout || result.stderr || '');
-    if (containsUserQuestion(last)) {
+    const questionBlocked = containsUserQuestion(last);
+    const gate = await evaluateQaGate(dir);
+    executionState = recordExecutionObservation(executionState, executionBudget, {
+      fingerprint: qaExecutionProgressFingerprint({ gate, process: result, questionBlocked }),
+      ...(questionBlocked ? { madeProgress: false } : {}),
+      elapsedMs: Math.max(0, Date.now() - cycleStartedAt),
+      toolCalls: 1
+    });
+    await writeQaExecutionControl(dir, executionState);
+    if (questionBlocked) {
       await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.guard.question_blocked', cycle });
       if (stream) emitStreamEvent('progress', { mission_id: id, type: 'qaloop.guard.question_blocked', cycle });
       last = `${last}\n\n${noQuestionContinuationReason()}`;
+      if (executionState.status !== 'running') break;
       continue;
     }
-    const gate = await evaluateQaGate(dir);
     if (gate.passed) {
       const proof = await maybeFinalizeRoute(root, { missionId: id, route: '$QA-LOOP', gateFile: 'qa-gate.json', gate: gate.gate || gate, artifacts: ['agents/agent-proof-evidence.json', 'qa-native-agent-run.json', 'qa-gate.json', 'qa-ledger.json', reportFile, 'completion-proof.json'], visual: uiRequired, command: { cmd: `sks qa-loop run ${id}`, status: 0 } });
-      await setCurrent(root, { mission_id: id, mode: 'QALOOP', phase: 'QALOOP_DONE', questions_allowed: true });
-      await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.done', cycle });
-      const doneResult = { schema: 'sks.qa-loop-run.v1', ok: proof.ok, mission_id: id, gate, proof: proof.validation };
+      const completionVerified = proof.ok === true && proof.validation?.completion_ok === true;
+      executionState = completeExecutionControl(
+        executionState,
+        completionVerified,
+        completionVerified ? 'QA gate and completion proof verified' : 'QA gate passed but applicable completion proof did not'
+      );
+      await writeQaExecutionControl(dir, executionState);
+      await setCurrent(root, { mission_id: id, mode: 'QALOOP', phase: completionVerified ? 'QALOOP_DONE' : 'QALOOP_UNVERIFIED', questions_allowed: true });
+      await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: completionVerified ? 'qaloop.done' : 'qaloop.unverified', cycle, stop_reason: executionState.stop_reason });
+      const doneResult = { schema: 'sks.qa-loop-run.v1', ok: completionVerified, status: completionVerified ? 'passed' : 'unverified', mission_id: id, gate, proof: proof.validation, execution_control: executionState };
+      if (!completionVerified) process.exitCode = 2;
       if (stream) emitStreamEvent('result', doneResult);
       if (flag(args, '--json')) return console.log(JSON.stringify(doneResult, null, 2));
-      console.log(`QA-LOOP done: ${id}`);
+      if (completionVerified) console.log(`QA-LOOP done: ${id}`);
+      else {
+        console.error(`QA-LOOP unverified: ${id}`);
+      }
       return;
     }
     await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.cycle.continue', cycle, reasons: gate.reasons });
     if (stream) emitStreamEvent('progress', { mission_id: id, type: 'qaloop.cycle.continue', cycle, reasons: gate.reasons });
+    if (executionState.status !== 'running') break;
   }
   const gate = await evaluateQaGate(dir);
-  const proof = await maybeFinalizeRoute(root, { missionId: id, route: '$QA-LOOP', gateFile: 'qa-gate.json', gate: gate.gate || gate, artifacts: ['agents/agent-proof-evidence.json', 'qa-native-agent-run.json', 'qa-gate.json', 'qa-ledger.json', reportFile, 'completion-proof.json'], mock: false, statusHint: 'blocked', reason: 'max_cycles', command: { cmd: `sks qa-loop run ${id}`, status: 2 } });
-  await setCurrent(root, { mission_id: id, mode: 'QALOOP', phase: 'QALOOP_PAUSED_MAX_CYCLES', questions_allowed: true });
-  const pausedResult = { schema: 'sks.qa-loop-run.v1', ok: false, mission_id: id, gate, proof: proof.validation };
+  const stopReason = executionState.stop_reason || 'attempt_budget_exhausted';
+  const proof = await maybeFinalizeRoute(root, { missionId: id, route: '$QA-LOOP', gateFile: 'qa-gate.json', gate: gate.gate || gate, artifacts: ['agents/agent-proof-evidence.json', 'qa-native-agent-run.json', 'qa-gate.json', 'qa-ledger.json', reportFile, 'completion-proof.json'], mock: false, statusHint: 'blocked', reason: stopReason, blockers: [`qa_execution_stopped:${stopReason}`], command: { cmd: `sks qa-loop run ${id}`, status: 2 } });
+  const pausedPhase = stopReason === 'no_progress'
+    ? 'QALOOP_PAUSED_NO_PROGRESS'
+    : stopReason === 'time_budget_exhausted'
+      ? 'QALOOP_PAUSED_TIME_BUDGET'
+      : stopReason === 'tool_budget_exhausted'
+        ? 'QALOOP_PAUSED_TOOL_BUDGET'
+        : 'QALOOP_PAUSED_MAX_CYCLES';
+  await setCurrent(root, { mission_id: id, mode: 'QALOOP', phase: pausedPhase, questions_allowed: true });
+  await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.stopped', status: 'unverified', stop_reason: stopReason, attempts: executionState.attempts });
+  const pausedResult = { schema: 'sks.qa-loop-run.v1', ok: false, status: 'unverified', stop_reason: stopReason, mission_id: id, gate, proof: proof.validation, execution_control: executionState };
+  process.exitCode = 2;
   if (stream) emitStreamEvent('result', pausedResult);
   if (flag(args, '--json')) return console.log(JSON.stringify(pausedResult, null, 2));
-  console.log(`QA-LOOP paused after max cycles: ${id}`);
+  console.log(`QA-LOOP stopped without a completion claim (${stopReason}): ${id}`);
 }
 
 async function qaLoopStatus(args: any) {

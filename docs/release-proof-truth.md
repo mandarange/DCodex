@@ -1,6 +1,46 @@
 # Release Proof Truth
 
-SKS 8.0.0 release proof truth requires codex-lb Desktop integration to preserve
+SKS 8.0.3 release proof truth requires package metadata, the root lockfile
+entries, the runtime constant, Rust crate metadata, README identity, and the
+latest dated changelog section to agree on 8.0.3; 8.0.3 proof must additionally
+show four environment-bound receipts that fixtures and prose cannot replace:
+
+1. `sks update` completes in a large-repository fixture whose guidance scan
+   encounters 5,001 directories. Any bounded cutoff is the explicit
+   non-blocking `guidance_scan_truncated` warning with cutoff path/count and is
+   never counted as legacy residue.
+2. A prior-version Menu Bar is replaced and process readback proves exactly one
+   companion whose running version is 8.0.3. A build stamp, installed bundle,
+   or successful launch command without process/version readback is not enough.
+3. With **Use codex-lb** selected, one real request reaches the configured
+   remote base URL using the issued gateway key rather than ChatGPT OAuth.
+   Doctor and Menu Bar must bind to one measured result containing target host,
+   authentication class, time, and latency.
+4. A paired command sent from a cellular network is executed by the Mac and
+   its result returns through Telegram. `getMe`, poller liveness, configured
+   credentials, fixtures, same-LAN traffic, and mock Bot API responses cannot
+   authorize this gate.
+
+Naruto proof for 8.0.3 must preserve explicit `--agents` and `--max-threads`
+values from 1 through 256 rather than reducing them to automatic tiers.
+`--max-threads 256` is a child-slot ceiling and must not subtract the root twice,
+but it is not evidence that the current host ran 256 children. The plan and
+runtime evidence must state the actual lower limiter whenever the ready DAG,
+ownership, tools, or verifier capacity prevents that wave. For the official
+Codex lane, local CPU, RAM, file-descriptor capacity, and an unmeasured default
+API budget are not authoritative limiters. Only an explicitly configured
+provider/API quota and a measured or host-provided external Codex child-slot
+cap may limit that lane's infrastructure concurrency.
+`SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET` cannot override a lower external-host
+limit.
+
+SKS 8.0.3 must not claim that a required live gate passed when credentials or
+the environment were unavailable, and must not claim tagging, staging,
+publication, deployment, or a 256-child load test from this documentation
+change. Configuration, manifests, mocks, hermetic tests, and historical
+receipts cannot serve as 8.0.3 evidence.
+
+SKS 8.0.2 release proof truth requires codex-lb Desktop integration to preserve
 shared ChatGPT OAuth and the built-in OpenAI provider while keeping the gateway
 credential on the owner-only loopback hop. Setup, install, repair, update, and
 ordinary launch preparation must not write shared Codex auth, select codex-lb
@@ -9,7 +49,31 @@ credential from `auth.json`. The installed release closure must directly
 execute the Desktop auth invariant, loopback bridge and redaction, catalog v2
 pass-through, and capability-evidence boundary checks through
 `codex-lb:comprehensive`, package those checks as required runtime scripts, and
-remain within the 100-script package budget without aliases masking coverage.
+remain within the 101-script package budget without aliases masking coverage.
+The 8.0.2 closure must also prove that CLI and Control Center updates share the
+same 16-stage order, that both installed and already-current `sks update now`
+paths run a read-only migration-profile `update_finalize_doctor`, and that a
+final-Doctor failure is preserved in the stage, operation receipt, status, and
+public error. The newly installed package-local migration Doctor and its
+migration receipt must remain the single owners of repair and legacy-surface
+mutation; final verification cannot repair its own evidence. The migration
+result must replace—not accumulate beside—the pre-repair observation through
+a fresh read-only public-surface inspection. Config repair proof must cover
+guarded backups,
+unparseable TOML, unmanaged project-file preservation, valid TOML basic and
+literal strings, and retired syntax cleanup. codex-lb proof must show that the
+public CLI uses the owner-only `0600` env file, never delegates secret access
+to a reusable interpreter or generic security process, and fails closed on
+Keychain requests until a dedicated signed helper can prove identity and
+post-write state.
+The same closure must prove a single bounded OAuth listener probe, different-PID
+conflict classification, exact conditional callback recovery guidance, and
+zero listener/process/config mutation. Managed-skill recovery proof must bind
+the before bytes to a timestamped backup and migration-journal rollback path,
+restore current authoritative bytes for newer or unparseable managed markers,
+and leave markerless, name-mismatched, symlinked, nonregular, and path-unsafe
+files untouched and blocked under the existing
+`sks.skills-manifest.v1` contract.
 The environment-dependent `release-real-check` must also execute
 `codex-lb:desktop-real-evidence` as explicit optional live coverage. The
 standalone evidence check fails with `real_required_missing` unless a fresh,

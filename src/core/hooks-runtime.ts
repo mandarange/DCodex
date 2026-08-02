@@ -1,5 +1,6 @@
+import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { projectRoot, readJson, writeJsonAtomic, appendJsonl, nowIso, sha256, packageRoot, type JsonData } from './fsx.js';
+import { projectRoot, readJson, writeJsonAtomic, writeTextAtomic, appendJsonl, nowIso, sha256, packageRoot, type JsonData } from './fsx.js';
 import { looksInteractiveCommand, interactiveCommandReason } from './no-question-guard.js';
 import {
   loadStateForSession,
@@ -28,6 +29,8 @@ import { armLightTurnStopBypass, clearLightTurnStopBypass, consumeLightTurnStopB
 import { evaluateHookNarutoDecisionGate, looksLikeActiveContinuationPrompt } from './hooks-runtime/naruto-decision-gate.js';
 import {
   ensureOfficialSubagentArtifactDirConfined,
+  inspectActiveOfficialSubagentWorkflow,
+  recordOfficialSubagentLifecycleCaptureFailure,
   officialSubagentArtifactDir,
   recordAndRefreshSubagentEvidence,
   refreshOfficialSubagentCompletionArtifacts
@@ -41,11 +44,17 @@ import { classifyTaskProfile } from './runtime/task-profile.js';
 import { resolveSubagentThreadBudget } from './subagents/thread-budget.js';
 import { readOfficialSubagentConfig } from './subagents/official-subagent-config.js';
 import { withFileLock } from './locks/file-lock.js';
+import {
+  ensureConfinedDirectory,
+  inspectConfinedPath,
+  removeManagedPathVerified
+} from './managed-path-safety.js';
 import { buildBoundWaveParentGuidance, renderWaveParentGuidance } from './subagents/wave-parent-guidance.js';
 import {
-  renderAuthoritativeSksSkillContext,
-  resolveAuthoritativeSksSkillSources
+  renderAuthoritativeSksSkillContext
 } from './codex-native/sks-skill-paths.js';
+import { resolveManagedSkillSourcesForAdmission } from './hooks-runtime/managed-skill-admission.js';
+import { handleSubagentStop } from './hooks-runtime/subagent-stop-hook.js';
 import {
   authoritativeSksSkillResolutionBlockers,
   clearSubagentSkillAvailabilityGuards,
@@ -74,6 +83,10 @@ const LIGHT_ROUTE_STOP_ARTIFACT = 'light-route-stop.json';
 const CODEX_GIT_ACTION_STOP_ARTIFACT = 'codex-git-action-stop-bypass.json';
 const CODEX_GIT_ACTION_STOP_TTL_MS = 15 * 60 * 1000;
 const UPDATE_CHECK_HOOK_INVOCATION_POLICY = 'function-only:no-runSksUpdateCheck-call-in-hooks';
+const MAX_ACTIVE_WORKFLOW_QUEUE_ENTRIES = 256;
+const MAX_ACTIVE_WORKFLOW_PROMPT_BYTES = 32 * 1024;
+const MAX_ACTIVE_WORKFLOW_QUEUE_BYTES = MAX_ACTIVE_WORKFLOW_QUEUE_ENTRIES
+  * (MAX_ACTIVE_WORKFLOW_PROMPT_BYTES + 1024);
 // Update checks stay function-only in hooks: the policy marker above is checked
 // by release readiness so ordinary Codex hook flow cannot grow a hidden update
 // prompt path.
@@ -110,6 +123,7 @@ import {
   authoritativeSksSkillAdmission,
   hookActiveSkillContextRefresh,
   isBlockingClarificationAwaiting,
+  looksLikeExplicitActiveWorkflowReplacementPrompt,
   looksLikeClarificationCancel,
   routeBypassesActiveContext,
   routeIsGitOnly,
@@ -203,7 +217,7 @@ export async function evaluateHookPayload(name: any, payload: any = {}, opts: an
   if (name === 'permission-request') return withNarutoDecision(await hookPermission(root, state, payload, noQuestion, sessionKey));
   if (name === 'stop') return withNarutoDecision(await hookStop(root, state, payload, noQuestion, sessionKey));
   if (name === 'subagent-start') return withNarutoDecision(await hookSubagentStart(root, state, payload, sessionKey));
-  if (name === 'subagent-stop') return withNarutoDecision(await hookSubagentStop(root, state, payload, sessionKey));
+  if (name === 'subagent-stop') return withNarutoDecision(await handleSubagentStop(root, state, payload, sessionKey));
   return withNarutoDecision({ continue: true });
 }
 async function hookSubagentStart(root: any, state: any, payload: any = {}, sessionKey: any = null) {
@@ -217,7 +231,10 @@ async function hookSubagentStart(root: any, state: any, payload: any = {}, sessi
   // Codex can reuse an official child thread id for a later generation even
   // when the prior child never emitted SubagentStop. Clear any prior
   // generation's guard before evaluating and persisting this start's result.
-  await clearSubagentSkillAvailabilityGuards(root, payload, artifactDir).catch(() => null);
+  await clearSubagentSkillAvailabilityGuards(root, payload, artifactDir, {
+    missionId: state?.mission_id,
+    workflowRunId: state?.official_subagent_run_id
+  }).catch(() => null);
   const config = await readOfficialSubagentConfig(root);
   const budget = resolveSubagentThreadBudget({ configuredMaxThreads: config.maxThreads });
   const active = subagentRouteContext(state);
@@ -232,7 +249,11 @@ async function hookSubagentStart(root: any, state: any, payload: any = {}, sessi
   ].join(' ');
   const skillNames = selectedSksSkillNamesForActiveState(state);
   const resolution = skillNames.length
-    ? await resolveAuthoritativeSksSkillSources({ root, skillNames }).catch(() => null)
+    ? await resolveManagedSkillSourcesForAdmission({
+        root,
+        skillNames,
+        repairMode: 'stale-generation'
+      }).catch(() => null)
     : null;
   const skillBlockers = [
     ...artifactDirBlockers,
@@ -255,7 +276,27 @@ async function hookSubagentStart(root: any, state: any, payload: any = {}, sessi
     skillBlockers.push(blocker);
   }
   if (artifactDirSafe) {
-    await recordAndRefreshSubagentEvidence(root, state, payload, 'SubagentStart', sessionKey).catch(() => null);
+    try {
+      await recordAndRefreshSubagentEvidence(root, state, payload, 'SubagentStart', sessionKey);
+    } catch {
+      const lifecycleBlocker = await recordOfficialSubagentLifecycleCaptureFailure(
+        artifactDir,
+        state,
+        payload,
+        'SubagentStart'
+      ).catch(() => 'official_subagent_lifecycle_capture_failure_unpersisted');
+      skillBlockers.push(lifecycleBlocker);
+      await persistSubagentSkillAvailabilityBlocker({
+        root,
+        artifactDir,
+        sessionArtifactDir,
+        state,
+        payload,
+        blockers: skillBlockers
+      }).catch(() => {
+        skillBlockers.push('subagent_skill_availability_guard_persistence_failed');
+      });
+    }
   }
   const skillContext = skillBlockers.length
     ? renderSubagentSkillAvailabilityHandoff(skillBlockers)
@@ -264,17 +305,6 @@ async function hookSubagentStart(root: any, state: any, payload: any = {}, sessi
       : '';
   const additionalContext = [coreEngineeringDirectiveReferenceText(), resourceGuard, routingContext, active, skillContext].filter(Boolean).join('\n\n');
   return { continue: true, additionalContext, ...(skillBlockers.length ? { silent: true } : {}) };
-}
-async function hookSubagentStop(root: any, state: any, payload: any = {}, sessionKey: any = null) {
-  await recordAndRefreshSubagentEvidence(root, state, payload, 'SubagentStop', sessionKey).catch(() => null);
-  await clearSubagentSkillAvailabilityGuards(
-    root,
-    payload,
-    officialSubagentArtifactDir(root, state, sessionKey)
-  ).catch(() => null);
-  // SubagentStop is evidence collection only. It must never reuse the parent
-  // Stop hook's route gate or block a child thread from returning its result.
-  return { continue: true, silent: true };
 }
 async function hookUserPrompt(root: any, state: any, payload: any, noQuestion: any, sessionKey: any = null) {
   // A receipt is scoped to exactly one submitted turn. Every later prompt,
@@ -338,10 +368,14 @@ async function hookUserPrompt(root: any, state: any, payload: any, noQuestion: a
     };
     await setCurrent(root, attachedState, { sessionKey, replace: true });
     const activeContext = await activeRouteContext(root, attachedState);
+    const skillContext = skillAdmission.resolution
+      ? renderAuthoritativeSksSkillContext(skillAdmission.resolution)
+      : '';
+    const additionalContext = [activeContext, skillContext].filter(Boolean).join('\n\n');
     return {
       continue: true,
-      additionalContext: activeContext,
-      systemMessage: visibleHookMessage('user-prompt-submit', activeContext),
+      additionalContext,
+      systemMessage: visibleHookMessage('user-prompt-submit', additionalContext),
       attached_parent_mission_id: parentLaunchMissionId
     };
   }
@@ -392,7 +426,10 @@ async function hookUserPrompt(root: any, state: any, payload: any, noQuestion: a
           ttlMs: 5 * 60_000
         });
       }
-      const additionalContext = compactAnswerContext(prompt);
+      const skillContext = skillAdmission.resolution
+        ? renderAuthoritativeSksSkillContext(skillAdmission.resolution)
+        : '';
+      const additionalContext = [compactAnswerContext(prompt), skillContext].filter(Boolean).join('\n\n');
       return { continue: true, additionalContext, sksTaskProfile: 'answer' };
     }
     const madSksConfirmation = madConfirmationPrompt
@@ -420,8 +457,77 @@ async function hookUserPrompt(root: any, state: any, payload: any, noQuestion: a
         systemMessage: `SKS: ${route.command} git action bypassed pipeline route gates.`
       };
     }
+    const explicitActiveWorkflowReplacement = looksLikeExplicitActiveWorkflowReplacementPrompt(prompt);
+    const activeOfficialWorkflow = state?.mission_id
+      && state?.route_closed !== true
+      && state?.official_subagent_run_id
+      && !activeGoalOverlayContext(state, route)
+      ? await inspectActiveOfficialSubagentWorkflow(root, state, sessionKey)
+      : { status: 'inactive' as const };
+    if (activeOfficialWorkflow.status === 'invalid') {
+      return {
+        decision: 'block',
+        reason: `SKS refused to replace the active official-subagent workflow because its parent binding could not be verified (${activeOfficialWorkflow.reason}). Active mission=${activeOfficialWorkflow.missionId}, workflow_run_id=${activeOfficialWorkflow.workflowRunId}. The root parent must inspect and explicitly settle or cancel that exact run before preparing another workflow.`
+      };
+    }
+    if (activeOfficialWorkflow.status === 'active') {
+      if (explicitActiveWorkflowReplacement && activeOfficialWorkflow.openThreads > 0) {
+        return {
+          decision: 'block',
+          reason: `SKS refused to replace active official-subagent workflow ${activeOfficialWorkflow.workflowRunId}: ${activeOfficialWorkflow.openThreads} child thread(s) remain open in mission ${activeOfficialWorkflow.missionId}. The root parent must settle or explicitly cancel the old run before submitting the replacement.`
+        };
+      }
+      if (explicitActiveWorkflowReplacement) {
+        const consumed = await consumeActiveOfficialWorkflowQueue(
+          root,
+          activeOfficialWorkflow.missionId,
+          activeOfficialWorkflow.workflowRunId
+        );
+        if (!consumed) {
+          return {
+            decision: 'block',
+            reason: `SKS refused to replace settled workflow_run_id=${activeOfficialWorkflow.workflowRunId} because its bounded additive queue could not be consumed safely.`
+          };
+        }
+      }
+      if (!explicitActiveWorkflowReplacement) {
+        const activeSkillAdmission = await authoritativeSksSkillAdmission(
+          root,
+          selectedSksSkillNamesForActiveState(state)
+        );
+        if (activeSkillAdmission.blocked) return activeSkillAdmission.blocked;
+        const queued = await queueActiveOfficialWorkflowPrompt({
+          root,
+          missionId: activeOfficialWorkflow.missionId,
+          workflowRunId: activeOfficialWorkflow.workflowRunId,
+          sessionKey,
+          prompt
+        });
+        if (!queued.ok) {
+          return {
+            decision: 'block',
+            reason: `SKS preserved active workflow_run_id=${activeOfficialWorkflow.workflowRunId} but could not queue this addition (${queued.reason}). Wait for the root parent to drain the bounded active-run queue, then retry.`
+          };
+        }
+        const activeContext = await activeRouteContext(root, state);
+        const skillContext = activeSkillAdmission.resolution
+          ? renderAuthoritativeSksSkillContext(activeSkillAdmission.resolution)
+          : '';
+        const queueContext = `The latest user request was queued as an addition to active workflow_run_id=${activeOfficialWorkflow.workflowRunId}; preserve that run binding and let the root parent decompose the added scope. Open child threads: ${activeOfficialWorkflow.openThreads}. Do not prepare a replacement workflow from this prompt.`;
+        const additionalContext = [activeContext, skillContext, queueContext].filter(Boolean).join('\n\n');
+        return {
+          continue: true,
+          additionalContext,
+          systemMessage: visibleHookMessage('user-prompt-submit', additionalContext),
+          queued_active_workflow_run_id: activeOfficialWorkflow.workflowRunId
+        };
+      }
+    }
     const skillAdmission = await authoritativeSksSkillAdmission(root, managedSkillNamesForPrompt(route, prompt));
     if (skillAdmission.blocked) return skillAdmission.blocked;
+    const skillContext = skillAdmission.resolution
+      ? renderAuthoritativeSksSkillContext(skillAdmission.resolution)
+      : '';
     await maybeReconcileProjectSkillsPreflight(root).catch(() => null);
     const bypassActiveRoute = routeBypassesActiveContext(route);
     const goalOverlay = activeGoalOverlayContext(state, route);
@@ -437,7 +543,7 @@ async function hookUserPrompt(root: any, state: any, payload: any, noQuestion: a
     }
     const shouldLoadActiveContext = !command && !bypassActiveRoute && !goalOverlay && !prepareFreshRoute;
     const activeContext = shouldLoadActiveContext ? await activeRouteContext(root, state) : '';
-    const contexts = [updateContext];
+    const contexts = [updateContext, skillContext];
     if (activeContext && shouldLoadActiveContext) contexts.push(routePipelineContext(prompt), activeContext);
     else contexts.push((await prepareRoute(root, prompt, state, {
       sessionKey,
@@ -462,6 +568,89 @@ async function hookUserPrompt(root: any, state: any, payload: any, noQuestion: a
     decision: 'block',
     reason: 'SKS no-question/no-interruption mode is active. User prompt has been queued until the run completes.'
   };
+}
+
+async function queueActiveOfficialWorkflowPrompt(input: {
+  root: string;
+  missionId: string;
+  workflowRunId: string;
+  sessionKey: unknown;
+  prompt: string;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (Buffer.byteLength(input.prompt, 'utf8') > MAX_ACTIVE_WORKFLOW_PROMPT_BYTES) {
+    return { ok: false, reason: 'active_workflow_prompt_too_large' };
+  }
+  const dir = missionDir(input.root, input.missionId);
+  const queueFile = activeOfficialWorkflowQueueFile(dir, input.missionId, input.workflowRunId);
+  try {
+    return await withFileLock({
+      lockPath: path.join(dir, '.active-workflow-user-queue.lock'),
+      timeoutMs: 5_000,
+      staleMs: 60_000
+    }, async () => {
+      await ensureConfinedDirectory(path.resolve(input.root), path.dirname(queueFile));
+      const stat = await fsp.stat(queueFile).catch((error: any) => {
+        if (error?.code === 'ENOENT') return null;
+        throw error;
+      });
+      if (stat && (!stat.isFile() || stat.size > MAX_ACTIVE_WORKFLOW_QUEUE_BYTES)) {
+        return { ok: false as const, reason: 'active_workflow_queue_invalid_or_oversized' };
+      }
+      const current = stat ? await fsp.readFile(queueFile, 'utf8') : '';
+      const lines = current.split(/\r?\n/).filter(Boolean);
+      if (lines.length >= MAX_ACTIVE_WORKFLOW_QUEUE_ENTRIES) {
+        return { ok: false as const, reason: 'active_workflow_queue_full' };
+      }
+      for (const line of lines) JSON.parse(line);
+      const row = {
+          schema: 'sks.active-official-subagent-request.v1',
+          ts: nowIso(),
+          disposition: 'queued_for_root_decomposition',
+          mission_id: input.missionId,
+          workflow_run_id: input.workflowRunId,
+          session_scope_hash: sha256(String(input.sessionKey || 'default')),
+          prompt: input.prompt
+        };
+      const next = `${current.replace(/\s*$/, current ? '\n' : '')}${JSON.stringify(row)}\n`;
+      if (Buffer.byteLength(next, 'utf8') > MAX_ACTIVE_WORKFLOW_QUEUE_BYTES) {
+        return { ok: false as const, reason: 'active_workflow_queue_full' };
+      }
+      await writeTextAtomic(queueFile, next);
+      return { ok: true as const };
+    });
+  } catch {
+    return { ok: false, reason: 'active_workflow_queue_persistence_failed' };
+  }
+}
+
+function activeOfficialWorkflowQueueFile(dir: string, missionId: string, workflowRunId: string): string {
+  const runKey = sha256(JSON.stringify([missionId, workflowRunId]));
+  return path.join(dir, 'active-workflow-user-queue', `run-${runKey}.jsonl`);
+}
+
+async function consumeActiveOfficialWorkflowQueue(
+  root: string,
+  missionId: string,
+  workflowRunId: string
+): Promise<boolean> {
+  const dir = missionDir(root, missionId);
+  const queueFile = activeOfficialWorkflowQueueFile(dir, missionId, workflowRunId);
+  try {
+    return await withFileLock({
+      lockPath: path.join(dir, '.active-workflow-user-queue.lock'),
+      timeoutMs: 5_000,
+      staleMs: 60_000
+    }, async () => {
+      const inspected = await inspectConfinedPath(path.resolve(root), queueFile);
+      if (inspected.exists) {
+        if (inspected.leafSymlink || !inspected.stat?.isFile()) return false;
+        await removeManagedPathVerified(path.resolve(root), queueFile);
+      }
+      return true;
+    });
+  } catch {
+    return false;
+  }
 }
 async function hookPreTool(root: any, state: any, payload: any, noQuestion: any, sessionKey: any = null) {
   const artifactDir = officialSubagentArtifactDir(root, state, sessionKey);
@@ -915,6 +1104,16 @@ async function hookStop(root: any, state: any, payload: any, noQuestion: any, se
           reason: `SKS Loop continuation required. Resume with: ${continuation.resume_instruction}`
         };
       }
+      if (continuation?.terminal_blocked) {
+        return {
+          continue: true,
+          action: 'loop_terminal_unverified',
+          status: 'unverified',
+          stop_reason: continuation.stop_reason,
+          completion_claim_allowed: false,
+          systemMessage: `SKS Loop stopped without a success claim (${continuation.stop_reason}). See .sneakoscope/missions/${missionId}/loop-continuation-enforcer.json.`
+        };
+      }
     }
   }
   if (await consumeCodexGitActionStopBypass(root, payload)) {
@@ -960,12 +1159,25 @@ async function hookStop(root: any, state: any, payload: any, noQuestion: any, se
         reason
       };
     }
-    if (shouldLoopBackAfterHonestMode(state) && hasHonestModeUnresolvedGap(last)) {
-      const loopback = await recordHonestModeLoopback(root, state, last, sessionKey);
-      return {
-        decision: 'block',
-        reason: `${localizedFinalizationReason('honest_loopback', languageBasis)} Loopback: ${loopback.relative_file}`
-      };
+    if (hasHonestModeUnresolvedGap(last)) {
+      if (shouldLoopBackAfterHonestMode(state)) {
+        const loopback = await recordHonestModeLoopback(root, state, last, sessionKey);
+        return {
+          decision: 'block',
+          reason: `${localizedFinalizationReason('honest_loopback', languageBasis)} Loopback: ${loopback.relative_file}`
+        };
+      }
+      if (honestModeLoopbackBudgetExhausted(state)) {
+        const terminal = await recordHonestModeTerminalUnverified(root, state, last, sessionKey);
+        return {
+          continue: true,
+          action: 'honest_mode_terminal_unverified',
+          status: 'unverified',
+          stop_reason: 'honest_mode_retry_budget_exhausted',
+          completion_claim_allowed: false,
+          systemMessage: `SKS Honest Mode stopped after ${terminal.attempts} bounded attempt(s). Completion remains unverified; unresolved evidence is recorded in ${terminal.relative_file}.`
+        };
+      }
     }
     if (state?.honest_loop_required) await resolveHonestModeLoopback(root, state, sessionKey);
     return routeDecision || { continue: true };
@@ -1115,6 +1327,12 @@ function shouldLoopBackAfterHonestMode(state: any = {}) {
   return Boolean(state.ambiguity_gate_passed || state.clarification_passed || /CONTRACT_SEALED|HONEST_LOOPBACK/i.test(String(state.phase || '')));
 }
 
+export function honestModeLoopbackBudgetExhausted(state: any = {}) {
+  if (!state?.mission_id || state.implementation_allowed === false) return false;
+  const attempts = Number(state.honest_loop_attempt_count || 0);
+  return Number.isFinite(attempts) && attempts >= MAX_HONEST_LOOPBACK_ATTEMPTS;
+}
+
 const MAX_HONEST_LOOPBACK_ATTEMPTS = 2;
 
 async function recordHonestModeLoopback(root: any, state: any = {}, lastMessage: any = '', sessionKey: any = null) {
@@ -1165,6 +1383,43 @@ async function resolveHonestModeLoopback(root: any, state: any = {}, sessionKey:
     honest_loop_resolved_at: nowIso(),
     questions_allowed: true
   }, { sessionKey: sessionKey || state._session_key });
+}
+
+async function recordHonestModeTerminalUnverified(root: any, state: any = {}, lastMessage: any = '', sessionKey: any = null) {
+  const id = state.mission_id;
+  const dir = missionDir(root, id);
+  const mode = String(state.mode || state.route || 'SKS').toUpperCase();
+  const createdAt = nowIso();
+  const attempts = Math.max(MAX_HONEST_LOOPBACK_ATTEMPTS, Number(state.honest_loop_attempt_count || 0));
+  const artifact = {
+    schema_version: 1,
+    mission_id: id,
+    status: 'unverified',
+    terminal: true,
+    stop_reason: 'honest_mode_retry_budget_exhausted',
+    created_at: createdAt,
+    attempts,
+    max_attempts: MAX_HONEST_LOOPBACK_ATTEMPTS,
+    issue_lines: honestModeGapLines(lastMessage),
+    completion_claim_allowed: false
+  };
+  const file = path.join(dir, 'honest-loopback-terminal.json');
+  await writeJsonAtomic(file, artifact);
+  await appendJsonl(path.join(dir, 'events.jsonl'), {
+    ts: createdAt,
+    type: 'pipeline.honest_mode.terminal_unverified',
+    proof_invalidating: true,
+    attempts,
+    issues: artifact.issue_lines
+  });
+  await setCurrent(root, {
+    phase: `${mode}_HONEST_UNVERIFIED`,
+    honest_loop_required: false,
+    honest_loop_terminal_unverified: true,
+    honest_loop_stop_reason: artifact.stop_reason,
+    questions_allowed: true
+  }, { sessionKey: sessionKey || state._session_key });
+  return { ...artifact, file, relative_file: path.relative(root, file).split(path.sep).join('/') };
 }
 
 export async function emitHook(name: any) {

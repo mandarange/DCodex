@@ -18,12 +18,25 @@ function npmFixtureEnv(overrides = {}) {
   return env;
 }
 
+async function writeFakePathSks(root, version) {
+  const binary = path.join(root, 'sks');
+  await fs.writeFile(binary, `#!/usr/bin/env node
+process.stdout.write(${JSON.stringify(`${version}\n`)});
+`);
+  await fs.chmod(binary, 0o755);
+  return `${root}${path.delimiter}${process.env.PATH || ''}`;
+}
+
 test('SKS update check is a function-only npm freshness check', async () => {
   const { runSksUpdateCheck, comparePackageVersions } = await import('../../dist/core/update-check.js');
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-check-'));
   const log = path.join(tmp, 'npm-log.jsonl');
   const cacheRoot = path.join(tmp, 'update-cache');
   const fakeNpm = path.join(tmp, 'npm-fake.mjs');
+  const projectRoot = path.join(tmp, 'selected project');
+  const registry = 'https://registry.example.test/custom';
+  await fs.mkdir(projectRoot, { recursive: true });
+  const canonicalProjectRoot = await fs.realpath(projectRoot);
   await fs.writeFile(fakeNpm, `#!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,6 +62,8 @@ process.exit(1);
   const result = await runSksUpdateCheck({
     npmBin: fakeNpm,
     currentVersion: '1.10.0',
+    projectRoot,
+    registry,
     timeoutMs: fakeNpmTimeoutMs,
     env: npmFixtureEnv({
       SKS_FAKE_NPM_LOG: log,
@@ -64,9 +79,9 @@ process.exit(1);
   assert.equal(result.pipeline_required, false);
   assert.equal(result.update_available, true);
   assert.equal(result.npm_global_current, '1.10.0');
-  assert.equal(result.command, 'sks update now --version 99.99.99');
+  assert.equal(result.command, `sks update now --version 99.99.99 --project-root '${canonicalProjectRoot}' --registry ${registry}`);
   const calls = (await fs.readFile(log, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
-  assert.ok(calls.some((args) => JSON.stringify(args) === JSON.stringify(['view', 'sneakoscope', 'version', '--silent', '--registry', 'https://registry.npmjs.org/'])));
+  assert.ok(calls.some((args) => JSON.stringify(args) === JSON.stringify(['view', 'sneakoscope', 'version', '--silent', '--registry', registry])));
   assert.ok(calls.some((args) => args[0] === 'list' && args[1] === '-g' && args[2] === 'sneakoscope'));
   const cacheFiles = await fs.readdir(cacheRoot);
   assert.equal(cacheFiles.length, 1);
@@ -109,17 +124,24 @@ console.error('unexpected args: ' + args.join(' '));
 process.exit(1);
 `);
   await fs.chmod(fakeNpm, 0o755);
+  const isolatedPath = await writeFakePathSks(tmp, '1.10.0');
+  const doctorHome = process.env.HOME || tmp;
 
   const result = await runSksUpdateNow({
     npmBin: fakeNpm,
     currentVersion: '1.10.0',
     timeoutMs: fakeNpmTimeoutMs,
     env: npmFixtureEnv({
-      HOME: tmp,
-      SKS_GLOBAL_ROOT: path.join(tmp, 'global'),
+      // The package-local Doctor seam runs in this test process. Bind its
+      // global skill surface and final verifier to the same isolated HOME,
+      // matching the single child-process HOME used by a real update.
+      HOME: doctorHome,
+      PATH: isolatedPath,
+      SKS_GLOBAL_ROOT: process.env.SKS_GLOBAL_ROOT || path.join(doctorHome, '.sneakoscope-global'),
       SKS_FAKE_NPM_LOG: log,
       SKS_MUTATION_LEDGER_ROOT: tmp,
       SKS_TEST_DOCTOR_OK: '1',
+      SKS_TEST_DOCTOR_EMIT_MIGRATION_RECEIPT: '1',
       SKS_UPDATE_CHECK_CACHE_ROOT: path.join(tmp, 'update-cache'),
       SKS_UPDATE_SKIP_TEMP_INSTALL_SMOKE: '1',
       SKS_UPDATE_SKIP_SKS_MENUBAR: '1'
@@ -169,6 +191,7 @@ console.error('unexpected args: ' + args.join(' '));
 process.exit(1);
 `);
   await fs.chmod(fakeNpm, 0o755);
+  const isolatedPath = await writeFakePathSks(tmp, '1.10.0');
 
   const result = await runSksUpdateNow({
     npmBin: fakeNpm,
@@ -177,6 +200,7 @@ process.exit(1);
     timeoutMs: fakeNpmTimeoutMs,
     env: npmFixtureEnv({
       HOME: tmp,
+      PATH: isolatedPath,
       SKS_GLOBAL_ROOT: path.join(tmp, 'global'),
       SKS_FAKE_NPM_LOG: log,
       SKS_MUTATION_LEDGER_ROOT: tmp,
@@ -196,7 +220,16 @@ process.exit(1);
   assert.ok(result.stages.some((stage) => stage.id === 'global_install' && stage.status === 'dry_run'));
   const calls = (await fs.readFile(log, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
   assert.ok(!calls.some((call) => call.args[0] === 'install'));
-  const receipt = JSON.parse(await fs.readFile(path.join(tmp, 'global', 'operations', 'update-latest.json'), 'utf8'));
+  await assert.rejects(
+    fs.readFile(path.join(tmp, 'global', 'operations', 'update-latest.json'), 'utf8'),
+    { code: 'ENOENT' }
+  );
+  assert.ok(result.operation_receipt_path);
+  const receipt = JSON.parse(await fs.readFile(result.operation_receipt_path, 'utf8'));
+  assert.equal(receipt.kind, 'update_dry_run');
+  assert.equal(receipt.state, 'succeeded');
+  assert.equal(receipt.result_status, 'dry_run');
+  assert.equal(receipt.side_effects_started, false);
   assert.equal(receipt.target_version, '99.99.99');
   assert.ok(receipt.receipt_path.startsWith(path.join(tmp, 'global', 'operations') + path.sep));
 });

@@ -44,12 +44,20 @@ import {
   type ResearchReviewArtifactDigest
 } from './research-review-artifact-digest.js'
 import { eligibleResearchSourceIdSet, type ResearchEvidenceExecutionClass } from './research-source-evidence.js'
+import {
+  completeExecutionControl,
+  normalizeExecutionControlState,
+  preflightExecutionControl,
+  recordExecutionObservation,
+  stopExecutionControl
+} from '../runtime/execution-control.js'
 
 export const RESEARCH_ADVERSARIAL_PLAN_ARTIFACT = 'research-adversarial-plan.json'
 export const RESEARCH_ADVERSARIAL_REVIEW_ARTIFACT = 'research-adversarial-review.json'
 export const RESEARCH_REVISION_LEDGER_ARTIFACT = 'research-revision-ledger.json'
 export const RESEARCH_CONVERGENCE_GATE_ARTIFACT = 'research-adversarial-convergence.json'
 export const RESEARCH_HONEST_MODE_ARTIFACT = 'research-honest-mode.json'
+export const RESEARCH_EXECUTION_CONTROL_ARTIFACT = 'research-execution-control.json'
 
 export type ResearchReviewerVerdict = 'approve' | 'revise' | 'reject'
 
@@ -94,6 +102,8 @@ export interface ResearchAdversarialReviewLoopInput {
   sessionKey?: string | null
   preliminaryBlockers?: string[]
   runWorkflowImpl?: (input: OfficialSubagentWorkflowInput) => Promise<any>
+  reviewCycleImpl?: (input: ResearchAdversarialReviewLoopInput, cycle: number, maxThreads: number, reviewArtifacts: ResearchReviewArtifactDigest) => Promise<any>
+  revisionCycleImpl?: (input: ResearchAdversarialReviewLoopInput, cycle: number, maxThreads: number, objectionIds: string[]) => Promise<any>
 }
 
 export async function runResearchAdversarialReviewLoop(input: ResearchAdversarialReviewLoopInput) {
@@ -112,6 +122,16 @@ export async function runResearchAdversarialReviewLoop(input: ResearchAdversaria
     ? Number(input.deadlineMs)
     : Date.now() + Math.max(1, Number(input.timeoutMs || 1))
   const runtimeBlockers: string[] = []
+  const executionBudget = {
+    max_attempts: maxCycles,
+    max_elapsed_ms: Math.max(1, deadlineMs - Date.now()),
+    max_tool_calls: maxCycles,
+    max_tokens: null,
+    max_no_progress: 1
+  }
+  let executionControl = normalizeExecutionControlState(null)
+  let lastExecutionObservationAt = Date.now()
+  await writeJsonAtomic(path.join(input.dir, RESEARCH_EXECUTION_CONTROL_ARTIFACT), executionControl)
   const configBlockers = (config?.blockers || []).map((blocker) => `official_subagent_config:${blocker}`)
   const preliminaryBlockers = unique([...configBlockers, ...modelPolicyEvidence.blockers, ...normalizeStrings(input.preliminaryBlockers)])
   if (preliminaryBlockers.length) {
@@ -120,33 +140,99 @@ export async function runResearchAdversarialReviewLoop(input: ResearchAdversaria
   }
 
   for (let cycle = 1; cycle <= maxCycles; cycle += 1) {
+    const preflight = preflightExecutionControl(executionControl, executionBudget)
+    executionControl = preflight.state
+    if (!preflight.allowed) {
+      await writeJsonAtomic(path.join(input.dir, RESEARCH_EXECUTION_CONTROL_ARTIFACT), executionControl)
+      runtimeBlockers.push(researchExecutionStopBlocker(executionControl.stop_reason))
+      break
+    }
     if (remainingTimeoutMs(deadlineMs) <= 0) {
       runtimeBlockers.push('research_cycle_timeout_exceeded')
       break
     }
     const reviewArtifacts = await buildResearchReviewArtifactDigest(input.dir, input.plan)
-    const review = input.mock
-      ? await mockReviewCycle(input, cycle, reviewArtifacts)
-      : await runOfficialReviewCycle({ ...input, timeoutMs: remainingTimeoutMs(deadlineMs), deadlineMs }, cycle, maxThreads, reviewArtifacts)
+    const reviewResult = await runResearchOperationBeforeDeadline(deadlineMs, () => input.reviewCycleImpl
+      ? input.reviewCycleImpl(input, cycle, maxThreads, reviewArtifacts)
+      : input.mock
+        ? mockReviewCycle(input, cycle, reviewArtifacts)
+        : runOfficialReviewCycle({ ...input, timeoutMs: remainingTimeoutMs(deadlineMs), deadlineMs }, cycle, maxThreads, reviewArtifacts))
+    if (reviewResult.timed_out) {
+      executionControl = stopExecutionControl(executionControl, 'time_budget_exhausted', 'research review cycle exceeded its absolute deadline')
+      await writeJsonAtomic(path.join(input.dir, RESEARCH_EXECUTION_CONTROL_ARTIFACT), executionControl)
+      runtimeBlockers.push('research_cycle_timeout_exceeded')
+      break
+    }
+    const review = reviewResult.value
     reviewCycles.push(review)
     await writeJsonAtomic(path.join(input.dir, 'research', 'adversarial', `cycle-${cycle}`, 'review.json'), review)
     const currentReviewArtifacts = await buildResearchReviewArtifactDigest(input.dir, input.plan)
     const convergence = evaluateReviewCycle(review, await sourceIdSet(input.dir, executionClass), currentReviewArtifacts)
-    if (remainingTimeoutMs(deadlineMs) <= 0) runtimeBlockers.push('research_cycle_timeout_exceeded')
+    const observationAt = Date.now()
+    executionControl = recordExecutionObservation(executionControl, executionBudget, {
+      fingerprint: {
+        open_objection_ids: [...convergence.open_objection_ids].sort(),
+        blockers: [...convergence.blockers].sort(),
+        reviewers: convergence.reviewers,
+        all_approved: convergence.all_approved
+      },
+      elapsedMs: Math.max(0, observationAt - lastExecutionObservationAt),
+      toolCalls: 1
+    })
+    lastExecutionObservationAt = observationAt
+    if (remainingTimeoutMs(deadlineMs) <= 0) {
+      executionControl = stopExecutionControl(executionControl, 'time_budget_exhausted', 'research review cycle completed after its absolute deadline')
+      await writeJsonAtomic(path.join(input.dir, RESEARCH_EXECUTION_CONTROL_ARTIFACT), executionControl)
+      runtimeBlockers.push('research_cycle_timeout_exceeded')
+      break
+    }
+    if (convergence.ok) executionControl = completeExecutionControl(executionControl, true, 'adversarial reviewers converged with applicable evidence')
+    await writeJsonAtomic(path.join(input.dir, RESEARCH_EXECUTION_CONTROL_ARTIFACT), executionControl)
     if (convergence.ok) break
-    if (cycle >= maxCycles || !convergence.revisable) break
+    if (executionControl.status !== 'running') {
+      runtimeBlockers.push(researchExecutionStopBlocker(executionControl.stop_reason))
+      break
+    }
+    if (cycle >= maxCycles || !convergence.revisable) {
+      executionControl = stopExecutionControl(executionControl, 'explicit_stop', cycle >= maxCycles
+        ? 'research review cycle budget exhausted without convergence'
+        : 'research objections were not safely revisable')
+      await writeJsonAtomic(path.join(input.dir, RESEARCH_EXECUTION_CONTROL_ARTIFACT), executionControl)
+      runtimeBlockers.push(cycle >= maxCycles ? 'research_review_cycle_budget_exhausted' : 'research_review_not_revisable')
+      break
+    }
     if (remainingTimeoutMs(deadlineMs) <= 0) break
-    const revision = input.mock
-      ? mockRevisionCycle(cycle, convergence.open_objection_ids)
-      : await runOfficialRevisionCycle({ ...input, timeoutMs: remainingTimeoutMs(deadlineMs), deadlineMs }, cycle, maxThreads, convergence.open_objection_ids)
+    const revisionResult = await runResearchOperationBeforeDeadline(deadlineMs, () => input.revisionCycleImpl
+      ? input.revisionCycleImpl(input, cycle, maxThreads, convergence.open_objection_ids)
+      : input.mock
+        ? Promise.resolve(mockRevisionCycle(cycle, convergence.open_objection_ids))
+        : runOfficialRevisionCycle({ ...input, timeoutMs: remainingTimeoutMs(deadlineMs), deadlineMs }, cycle, maxThreads, convergence.open_objection_ids))
+    if (revisionResult.timed_out) {
+      executionControl = stopExecutionControl(executionControl, 'time_budget_exhausted', 'research revision cycle exceeded its absolute deadline')
+      await writeJsonAtomic(path.join(input.dir, RESEARCH_EXECUTION_CONTROL_ARTIFACT), executionControl)
+      runtimeBlockers.push('research_cycle_timeout_exceeded')
+      break
+    }
+    const revision = revisionResult.value
     revisions.push(revision)
     await writeJsonAtomic(path.join(input.dir, 'research', 'adversarial', `cycle-${cycle}`, 'revision.json'), revision)
-    if (revision.ok !== true) break
+    if (revision.ok !== true) {
+      executionControl = stopExecutionControl(executionControl, 'explicit_stop', 'research revision failed')
+      await writeJsonAtomic(path.join(input.dir, RESEARCH_EXECUTION_CONTROL_ARTIFACT), executionControl)
+      runtimeBlockers.push('research_revision_failed')
+      break
+    }
     await syncSynthesisAfterRevision(input.dir, input.plan)
   }
 
   const gate = await finalizeResearchAdversarialArtifacts(input, plan, reviewCycles, revisions, executionClass, runtimeBlockers)
   return { ok: gate.passed === true, gate, plan, review_cycles: reviewCycles, revisions }
+}
+
+function researchExecutionStopBlocker(reason: unknown) {
+  return reason === 'no_progress'
+    ? 'research_review_no_progress'
+    : `research_review_${String(reason || 'execution_stopped')}`
 }
 
 export function parseOfficialReviewParentSummary(raw: unknown) {
@@ -1134,6 +1220,27 @@ async function syncSynthesisAfterRevision(dir: string, plan: any) {
 
 function remainingTimeoutMs(deadlineMs: number): number {
   return Math.max(0, Math.floor(deadlineMs - Date.now()))
+}
+
+async function runResearchOperationBeforeDeadline<T>(
+  deadlineMs: number,
+  operation: () => Promise<T>
+): Promise<{ timed_out: false; value: T } | { timed_out: true }> {
+  const remainingMs = remainingTimeoutMs(deadlineMs)
+  if (remainingMs <= 0) return { timed_out: true }
+
+  let timeout: ReturnType<typeof setTimeout> | null = null
+  const deadline = new Promise<{ timed_out: true }>((resolve) => {
+    timeout = setTimeout(() => resolve({ timed_out: true }), remainingMs)
+  })
+  const result = Promise.resolve()
+    .then(operation)
+    .then((value) => ({ timed_out: false as const, value }))
+  try {
+    return await Promise.race([result, deadline])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
 }
 
 function normalizeStrings(value: any): string[] {

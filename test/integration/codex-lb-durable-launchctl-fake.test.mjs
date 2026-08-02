@@ -21,6 +21,7 @@ test('codex-lb fake launchctl syncs only the non-secret base URL', async () => {
     syncLaunchctl: true,
     forceLaunchEnv: true,
     launchctlBin: bin,
+    platform: 'linux',
     shellProfile: 'skip',
     toolOutputRecoveryFetch: compatibleRecoveryFetch
   });

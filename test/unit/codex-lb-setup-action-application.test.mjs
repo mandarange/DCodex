@@ -20,6 +20,11 @@ test('codex-lb setup applies selected actions and reports drift-free writes', as
       response.end(JSON.stringify({ status: 'ok' }));
       return;
     }
+    if (request.url === '/backend-api/codex/models') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end('{"models":[]}');
+      return;
+    }
     response.writeHead(404, { 'content-type': 'application/json' });
     response.end(JSON.stringify({ error: 'not_found' }));
   });
@@ -49,9 +54,11 @@ test('codex-lb setup applies selected actions and reports drift-free writes', as
     assert.equal(json.auth_mutated, false);
     assert.equal(json.tool_output_recovery?.status, 'compatible');
     assert.ok(requests.includes('/health'));
-    assert.equal(requests.includes('/backend-api/codex/models'), false);
+    assert.equal(requests.includes('/backend-api/codex/models'), true);
+    assert.equal(json.routing_active, true);
+    assert.equal(json.routing_truth?.status, 'verified');
     assert.equal(await exists(path.join(home, '.codex', 'sks-codex-lb.env')), true);
-    assert.doesNotMatch(config, /^\s*model_provider\s*=\s*"codex-lb"/m);
+    assert.match(config, /# sks-codex-lb-managed-provider-selection\nmodel_provider = "codex-lb"/);
     assert.match(config, /^\s*env_key\s*=\s*"CODEX_LB_API_KEY"/m);
     assert.match(config, /^\s*requires_openai_auth\s*=\s*false/m);
     assert.equal(json.tool_catalog?.status, 'not_bound_for_cli_provider');

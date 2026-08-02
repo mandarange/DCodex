@@ -43,6 +43,66 @@ test('Naruto parser keeps explicit scaling and read-only status surfaces', () =>
   assert.equal(parseNarutoArgs(['proof', 'latest']).action, 'proof')
 })
 
+test('Naruto parser admits documented host/model flags only on run actions', () => {
+  const previousProviderKey = process.env.GATEWAY_API_KEY
+  process.env.GATEWAY_API_KEY = 'test-only-present'
+  try {
+    const run = parseNarutoArgs([
+      'run',
+      'bounded task',
+      '--auth-mode=host',
+      '--model-provider',
+      'gateway',
+      '--provider-env-key',
+      'GATEWAY_API_KEY',
+      '--parent-model',
+      'gpt-5.6-sol',
+      '--parent-effort=max',
+      '--subagent-model',
+      'gpt-5.6-terra',
+      '--subagent-effort=medium',
+      '--no-forced-login-method'
+    ])
+    assert.deepEqual(run.argumentErrors, [])
+    assert.equal(run.prompt, 'bounded task')
+    assert.equal(run.credentialPolicy.authMode, 'host')
+    assert.equal(run.credentialPolicy.modelProvider, 'gateway')
+  } finally {
+    if (previousProviderKey === undefined) delete process.env.GATEWAY_API_KEY
+    else process.env.GATEWAY_API_KEY = previousProviderKey
+  }
+
+  for (const args of [
+    ['status', 'latest', '--agents', '8'],
+    ['proof', 'latest', '--max-threads=8'],
+    ['subagents', 'latest', '--auth-mode=host']
+  ]) {
+    const parsed = parseNarutoArgs(args)
+    assert.ok(parsed.argumentErrors.some((entry) => entry.startsWith('option_not_supported_for_action:')), args.join(' '))
+  }
+
+  assert.ok(parseNarutoArgs(['run', 'task', '--auth-mode'])
+    .argumentErrors.includes('missing_option_value:--auth-mode'))
+  assert.ok(parseNarutoArgs(['run', 'task', '--parent-model=a', '--parent-model=b'])
+    .argumentErrors.includes('duplicate_option:--parent-model'))
+})
+
+test('Naruto read-only and help actions ignore malformed credential environment defaults', () => {
+  const previous = process.env.SKS_NARUTO_AUTH_MODE
+  process.env.SKS_NARUTO_AUTH_MODE = 'definitely-invalid'
+  try {
+    assert.deepEqual(parseNarutoArgs(['status', 'latest']).credentialPolicy.blockers, [])
+    assert.deepEqual(parseNarutoArgs(['proof', 'latest']).credentialPolicy.blockers, [])
+    assert.deepEqual(parseNarutoArgs(['help']).credentialPolicy.blockers, [])
+    assert.ok(parseNarutoArgs(['run', 'task']).credentialPolicy.blockers.includes(
+      'naruto_auth_mode_invalid:definitely-invalid'
+    ))
+  } finally {
+    if (previous === undefined) delete process.env.SKS_NARUTO_AUTH_MODE
+    else process.env.SKS_NARUTO_AUTH_MODE = previous
+  }
+})
+
 test('Naruto parser accepts top-level and subcommand-local help without positional errors', () => {
   for (const args of [
     ['--help'],

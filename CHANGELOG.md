@@ -2,6 +2,213 @@
 
 ## [Unreleased]
 
+## [8.0.3] - 2026-08-01
+
+### Changed
+
+- Make explicit Naruto `--agents` and `--max-threads` values from 1 through
+  256 authoritative instead of shrinking them to automatic fan-out tiers. A
+  256-child wave is permitted only when the ready DAG, disjoint ownership,
+  and verifier/tool capacity allow it. For the official Codex lane, SKS applies
+  no local CPU, RAM, file-descriptor, or unmeasured API-default clamp; its only
+  authoritative infrastructure limiters are an explicitly configured
+  provider/API quota and a measured or host-provided external Codex child-slot
+  cap. Otherwise Naruto records the exact limiter and reuses capacity in later
+  waves. The four GPT-5.6 routing profiles are not an agent-count cap, and
+  `SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET` cannot override a lower external-host
+  limit.
+- Restore Telegram as an outbound Bot API long-polling transport inside the
+  existing Menu Bar process. It reuses the typed remote-control contract,
+  allowlist, secret store, actor-bound confirmation, audit, and Doctor
+  liveness surfaces instead of adding a daemon, inbound port, tunnel, free-form
+  shell, or second command language.
+
+### Fixed
+
+- Make update failures expose their deepest actionable blocker, add explicit
+  marker-only config adoption with backup and receipt, accept an already-equal
+  unmanaged config as verify-only, skip regenerable cache trees, and report a
+  bounded guidance scan as `guidance_scan_truncated` warning instead of
+  inventing legacy residue.
+- Enforce one global SKS Menu Bar process across direct, launchd, Doctor, and
+  update starts. Replacement stops and verifies the old process before install,
+  then probes the running companion against the current package version.
+- Make **Use codex-lb** commit provider definition and active selection
+  atomically, preserve that selection through update/repair, and fail closed
+  instead of silently using ChatGPT OAuth when the selected remote host or key
+  is unavailable. Routing truth is based on one measured request and records
+  target host, authentication class, time, and latency for Doctor and Center.
+- After **Use Codex LB** succeeds, have SKS Center run the real
+  `sks codex-lb connect-test --json` path with one non-stored, bounded
+  low-token Responses request. The Center now shows configuration, request,
+  response ID, model, latency, token usage, and bounded reply evidence, keeps a
+  manual retry action, and never treats a merely successful exit or `ok: true`
+  payload as connectivity proof. The command now refuses pre-selection requests
+  and uses the installed Codex model cache when no top-level model is pinned.
+- End repeated macOS Keychain prompts for SKS operations. codex-lb credentials
+  resolve from the 0600 `~/.codex/sks-codex-lb.env` file before the ambient
+  environment, no node path spawns the `security` CLI for reads, install and
+  update never rewrite Keychain items, and a stamped one-time migration
+  transfers a Keychain-only legacy key before deleting the entry. Telegram bot
+  tokens follow the same 0600 secrets-file contract, and Doctor reports each
+  secret's resolution source and prompt risk.
+- Keep managed-skill admission blocked unless the whole-generation recovery
+  receipt exactly proves every requested repair, and quarantine a differing
+  `agents/openai.yaml` before regeneration unless its bytes match metadata
+  derived from the trusted `SKILL.md`.
+
+### Release Gates
+
+- Tagging or publication remains blocked until current receipts prove all four
+  physical checks: an update in a fixture containing 5,001 scanned
+  directories; exactly one running Menu Bar process at 8.0.3; one measured
+  codex-lb request reaching the selected remote base URL with gateway-key auth;
+  and one real Telegram command/reply round trip from a cellular network.
+  Configuration, fixtures, mocks, and prose do not substitute for those live
+  checks. This entry does not claim that any live gate or publication occurred.
+
+## [8.0.2] - 2026-07-30
+
+### Changed
+
+- Raise Naruto's absolute hard frame cap from 32 to 256, add the 16-child mass
+  cheap-model fan-out tier with a 64-child ceiling on the Luna/Terra lanes, and
+  reuse capacity across multi-wave scheduling. The 4/6/8 automatic defaults and
+  12-thread frame-budget default remain unchanged.
+- Bind Center and CLI updates to the reviewed package version, registry, and
+  canonical selected project root. The 16-stage migration now reconciles
+  project/global managed skills, native capabilities, hooks, legacy state, and
+  the Menu Bar against the newly installed package, then returns the final
+  Doctor-owned project receipt instead of an earlier intermediate copy.
+- Make update ownership and recovery fail closed. A global cross-process lock
+  prevents overlapping npm installs, the `global_install` intent is flushed
+  before package mutation, rollback authorization uses a project- and
+  registry-bound last-confirmed-install receipt, and direct `update now`
+  downgrades are rejected in favor of the authorized rollback route.
+- Keep planning and uncertain outcomes separate from confirmed installation
+  state. Dry runs and later failed attempts no longer shadow the rollback
+  source, live migration locks are never reaped merely for being old, and
+  filesystem-root aliases are refused after realpath canonicalization.
+- Require update registries to use HTTPS and bind migration/build ownership to
+  process-start identity, owner tokens, heartbeats, and registered child
+  process groups. PID reuse, an interrupted build promotion, or a killed update
+  parent can no longer authorize a competing writer while live owned work
+  remains.
+
+### Fixed
+
+- Reconcile managed skills as one locked generation instead of independently
+  patching requested files. A checked-in immutable digest ledger recognizes
+  trusted prior releases, stable managed markers avoid version-only churn,
+  downgrade and same-version build guards prevent competing writers, and
+  Doctor quarantines unknown managed bytes before reinstalling trusted content.
+  Clean builds now assemble and validate a staged `dist` before swapping it
+  into place, while read-only hook admission can use the source digest ledger
+  if the packaged manifest is temporarily unavailable.
+- Keep official-subagent lifecycle evidence fail-closed under contention.
+  Start/Stop capture failures are persisted as run-scoped completion blockers,
+  Stop surfaces the failure to the parent, and each callback reuses one bounded
+  event snapshot for wave projection and evidence instead of rereading the full
+  log multiple times.
+- Scope active-route command gating to the invocation that owns the route.
+  Codex tasks read only their exact session state (with a same-owner legacy
+  fallback), and standalone terminal commands ignore session-owned
+  `state/current.json` compatibility mirrors. Conflicting mutations inside the
+  same session and truly unscoped legacy CLI routes remain blocked.
+- Include brace-reincluded runtime scripts in package authorization snapshots,
+  and include `native/**` plus `config/**` build inputs in dist freshness
+  stamps, so packaged or generated runtime drift invalidates release evidence.
+- Replace the 8.0.1 final self-repairing update Doctor with a read-only
+  `update_finalize_doctor`. The new-version migration Doctor remains the sole
+  post-install repair owner; final verification can no longer hide an
+  incomplete migration by mutating the state it is proving.
+- Diagnose the known Codex OAuth callback collision without mutating the host.
+  Doctor now checks for a legitimate IPv4 Codex callback listener on
+  `127.0.0.1:1455` coexisting with a separate wildcard or IPv6 listener, and
+  both Doctor and Codex mission authentication failures conditionally explain
+  how to retry the short-lived callback through `127.0.0.1`. SKS does not
+  change the registered redirect URI, Docker/codex-lb, processes, or ports.
+- Self-heal authoritative managed SKS skill content whose digest no longer
+  matches the running package after an upgrade or downgrade. Healing remains
+  limited to confined regular non-symlink files with an SKS ownership marker
+  and the expected canonical `name:`; it creates a timestamped rollback backup
+  and migration-journal entry before replacement. Markerless, name-mismatched,
+  and otherwise unsafe user files stay untouched and blocked. The skills
+  manifest remains `sks.skills-manifest.v1`. Final promotion now uses a
+  no-overwrite claim/link protocol so an edit made after the last identity
+  check is preserved instead of being replaced.
+- Make `doctor --fix` and Menu Bar repair report the post-repair state
+  truthfully. The exact launchctl 113 `Bad request` response is treated as an
+  absent service only on the matching operation, a successful `open` fallback
+  requires process readback, action-script blockers retain their real exit
+  code, and a requested Center repair can no longer end with `ready: yes` when
+  its postcheck is unavailable or unhealthy. Migration Doctor also defers
+  pre-repair legacy-surface findings to its single receipt-owned mutation
+  stage and replaces that observation with a fresh read-only post-receipt
+  inspection, so successfully removed legacy skills no longer leave a stale
+  `skill_legacy_surface_remaining` failure behind.
+- Make codex-lb setup and provider switching transactional. Readiness now
+  requires the selected provider and live target evidence, activation verifies
+  its postcondition and rolls back on mismatch, and config, metadata, env, and
+  profile writes use snapshot-bound content/mode checks so a concurrent user
+  edit is preserved and surfaced through owner-only recovery paths instead of
+  being overwritten.
+- Stop repeated macOS Keychain consent dialogs without widening credential
+  access. The public codex-lb path now uses the owner-only `0600` env file and
+  never grants a reusable Swift interpreter or generic security process access
+  to the gateway secret. `--keychain` fails closed until a dedicated signed
+  helper can prove its identity and post-write state; the injectable verified
+  helper contract retains rollback and indeterminate-state coverage. Explicit
+  setup and reconfiguration also migrate the retired generic
+  `sks-codex-lb` Keychain item only after the replacement env file and metadata
+  are owner-, mode-, path-, and digest-verified. Migration deletes only the
+  exact legacy service/account, reads Keychain back to prove absence, preserves
+  the verified replacement store if cleanup cannot be proved, and warns the
+  operator to rotate the provider key after removal or an indeterminate legacy
+  cleanup. Setup and set-key render that warning in both JSON and ordinary
+  terminal output.
+- Retire the dual-auth Desktop compatibility route that required a global GUI
+  secret. Existing markers remain detectable for migration, but CLI, setup,
+  Center, repair, status, and internal routing refuse activation and never
+  report that route ready.
+- Bound SKS Center child operations by deadline and output size, keep UI
+  completion on the main queue, and register the process termination handler
+  before launch. Center now owns the verified process group as well as sampled
+  descendants by PID plus process-start identity, so it hard-stops orphaned
+  children even when their root exits first without signaling a recycled PID,
+  accepts completion only from the exact process-bound receipt, and avoids
+  rewriting unchanged receipt state on every polling tick.
+- Enforce Naruto wave capacity from the actual unique lifecycle thread IDs,
+  move the migration Doctor public-surface postcheck before its success
+  receipt, reject project `.codex` parent symlink/identity swaps during repair,
+  and serialize removed-skill cleanup under the same deterministic generation
+  locks as managed-skill promotion.
+
+## [8.0.1] - 2026-07-30
+
+### Changed
+
+- Every `sks update now` execution now ends with a final `doctor --fix` pass. The update
+  pipeline (identical whether started from the SKS Center Updates page or the
+  CLI, both of which drive the same staged `sks update now` flow) gains an
+  `update_finalize_doctor` stage after the Menu Bar rebuild. Later mutation
+  stages can still touch `config.toml`, hooks, and skill surfaces after the
+  mid-pipeline doctor, so the receipt only closes as verified after the final
+  on-disk state is validated and repaired. The already-current path runs the
+  same finalization instead of skipping it, and the Menu Bar stage checklist
+  renders the new stage.
+- Doctor gains a `codex_config_syntax_repair` phase (enabled in every
+  repairing profile, including the migration profile used by update
+  finalization). It validates both the project `.codex/config.toml` and the
+  global `~/.codex/config.toml` against the current Codex config syntax:
+  retired keys and tables (`default_profile`, `[user.fast_mode]`, `[profiles]`,
+  `notice.fast_default_opt_out`, retired `features.*` flags) are stripped,
+  invalid `service_tier` / `model_reasoning_effort` values are removed so
+  Codex falls back to supported defaults, and parse failures or
+  `model_providers` auth conflicts are reported with manual remediation. All
+  writes go through the guarded config writer with backups; user-owned project
+  configs without the SKS marker are preserved untouched.
+
 ## [8.0.0] - 2026-07-29
 
 ### Removed

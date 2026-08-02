@@ -63,7 +63,7 @@ test('native and disabled Desktop routing preserve auth.json byte for byte', asy
   assert.equal(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
 });
 
-test('compat mode preserves OAuth and rejects bearer gateway auth without changing files', async (t) => {
+test('compat mode is unavailable for every transport without changing routing or OAuth files', async (t) => {
   const setup = await fixture(t);
   const blocked = await configureCodexLbDesktopRouting({
     mode: 'desktop-dual-auth-compat',
@@ -72,7 +72,7 @@ test('compat mode preserves OAuth and rejects bearer gateway auth without changi
     gatewayAuthTransport: 'authorization-bearer-compat'
   });
   assert.equal(blocked.ok, false);
-  assert.equal(blocked.status, 'desktop_gateway_auth_transport_unsupported');
+  assert.equal(blocked.status, 'desktop_dual_auth_compat_unavailable');
   assert.equal(await fsp.readFile(setup.configPath, 'utf8'), 'service_tier = "fast"\n');
   assert.equal(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
 
@@ -82,9 +82,11 @@ test('compat mode preserves OAuth and rejects bearer gateway auth without changi
     remoteBaseUrl: REMOTE,
     gatewayAuthTransport: 'x-codex-lb-api-key'
   });
-  assert.equal(configured.ok, true);
-  assert.equal(configured.routing_plane, 'desktop_compat_provider');
+  assert.equal(configured.ok, false);
+  assert.equal(configured.status, 'desktop_dual_auth_compat_unavailable');
+  assert.equal(configured.routing_plane, 'unchanged');
   assert.equal(configured.oauth_preserved, true);
+  assert.equal(await fsp.readFile(setup.configPath, 'utf8'), 'service_tier = "fast"\n');
   assert.equal(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
 });
 
@@ -117,7 +119,7 @@ test('CLI provider stays separate and does not alter Desktop OAuth', async (t) =
   assert.match(config, /^requires_openai_auth\s*=\s*false$/m);
 });
 
-test('ordinary credential setup ignores legacy auth-switch flags and does not bind a Desktop catalog', async (t) => {
+test('explicit CLI ON selects codex-lb without mutating OAuth or binding a Desktop catalog', async (t) => {
   const setup = await fixture(t);
   const result = await configureCodexLb({
     home: setup.home,
@@ -128,6 +130,7 @@ test('ordinary credential setup ignores legacy auth-switch flags and does not bi
     authMode: 'codex-lb',
     shellProfile: 'skip',
     syncLaunchctl: false,
+    platform: 'linux',
     toolOutputRecoveryFetch: async () => new Response('{}', {
       status: 200,
       headers: {
@@ -140,10 +143,30 @@ test('ordinary credential setup ignores legacy auth-switch flags and does not bi
   assert.equal(result.auth_reconcile?.status, 'oauth_untouched');
   assert.equal(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
   const config = await fsp.readFile(setup.configPath, 'utf8');
-  assert.doesNotMatch(config, /^model_provider\s*=/m);
+  assert.match(config, /# sks-codex-lb-managed-provider-selection\nmodel_provider = "codex-lb"/);
   assert.doesNotMatch(config, /^model_catalog_json\s*=/m);
   assert.match(config, /^name\s*=\s*"codex-lb"$/m);
   assert.match(config, /^requires_openai_auth\s*=\s*false$/m);
+
+  const updatedRemote = 'https://next.example.test/backend-api/codex';
+  const updated = await configureCodexLb({
+    home: setup.home,
+    host: updatedRemote,
+    apiKey: 'sk-clb-updated-credential',
+    useDefaultProvider: false,
+    shellProfile: 'skip',
+    syncLaunchctl: false,
+    platform: 'linux',
+    toolOutputRecoveryFetch: async () => new Response('{}', {
+      status: 200,
+      headers: { 'x-app-version': CODEX_LB_TOOL_OUTPUT_RECOVERY_MIN_VERSION }
+    })
+  });
+  assert.equal(updated.ok, true);
+  const updatedConfig = await fsp.readFile(setup.configPath, 'utf8');
+  assert.match(updatedConfig, /# sks-codex-lb-managed-provider-selection\nmodel_provider = "codex-lb"/);
+  assert.match(updatedConfig, /base_url = "https:\/\/next\.example\.test\/backend-api\/codex"/);
+  assert.equal(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
 });
 
 test('semantic OAuth identity allows token rotation but rejects account rotation', async (t) => {

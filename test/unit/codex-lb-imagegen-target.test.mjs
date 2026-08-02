@@ -90,7 +90,7 @@ test('target discovery reads config, credentials, and catalog from CODEX_HOME', 
   await fs.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
     `export CODEX_LB_BASE_URL='${baseUrl}'`,
     `export CODEX_LB_API_KEY='${apiKey}'`
-  ].join('\n'));
+  ].join('\n'), { mode: 0o600 });
   await fs.writeFile(path.join(codexHome, 'sks-codex-lb.json'), JSON.stringify({
     schema: 'sks.codex-lb-metadata.v1',
     base_url: baseUrl,

@@ -7,6 +7,8 @@ import fsp from 'node:fs/promises'
 import {
   runOfficialSubagentWorkflow
 } from '../official-subagent-runner.js'
+import { readOfficialSubagentConfig } from '../official-subagent-config.js'
+import { HARD_NARUTO_MAX_THREADS } from '../thread-budget.js'
 import { writeNarutoGate } from '../official-subagent-preparation.js'
 import { trustedHostCapabilityReceiptBindingBlockers } from '../subagent-evidence.js'
 import { addMcpServer, editMcpServer } from '../../mcp-config/mutation.js'
@@ -31,6 +33,7 @@ import {
   assertStandaloneChildEnvironment,
   standaloneParentHostEnv
 } from './official-subagent-env-fixture.js'
+import { OAUTH_CALLBACK_RECOVERY_GUIDANCE } from '../../codex/oauth-callback-port-diagnostic.js'
 
 class UnavailableMcpCli implements CodexMcpCliPort {
   async list() {
@@ -1830,6 +1833,70 @@ test('standalone parent launch exports the owning mission id to child hooks', as
   }
 })
 
+test('standalone parent passes a large fan-out frame budget through to the Codex exec args', async () => {
+  const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-official-subagent-large-fanout-'))
+  let launchedArgs: readonly string[] = []
+  try {
+    const result = await runOfficialSubagentWorkflow({
+      root: process.cwd(),
+      goal: 'delegate and wait',
+      prompt: 'delegate and wait',
+      requestedSubagents: 100,
+      maxThreads: 128,
+      appSession: false,
+      env: {
+        HOME: home,
+        CODEX_HOME: path.join(home, '.codex'),
+        SKS_PROVIDER: '',
+        SKS_USE_CODEX_LB: '',
+        SKS_MODEL_PROVIDER: '',
+        CODEX_MODEL_PROVIDER: '',
+        OPENAI_MODEL_PROVIDER: ''
+      },
+      runProcessImpl: async (_command, args) => {
+        launchedArgs = args
+        return { code: 1, stdout: '', stderr: 'fixture stop', stdoutBytes: 0, stderrBytes: 12, truncated: false, timedOut: false }
+      }
+    })
+    assert.ok(launchedArgs.includes(
+      'features.multi_agent_v2={enabled=true,max_concurrent_threads_per_session=129,expose_spawn_agent_model_overrides=true}'
+    ))
+    assert.ok(launchedArgs.includes('agents.max_concurrent_threads_per_session=128'))
+    assert.ok(launchedArgs.includes('agents.max_depth=1'))
+    assert.equal(result.max_threads, 128)
+    assert.equal(result.requested_subagents, 100)
+  } finally {
+    await fsp.rm(home, { recursive: true, force: true })
+  }
+})
+
+test('official subagent config accepts frame budgets up to the hard cap and blocks explicit over-cap values', async (t) => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-official-config-hard-cap-'))
+  t.after(async () => fsp.rm(root, { recursive: true, force: true }))
+  const codexHome = path.join(root, 'home', '.codex')
+  await fsp.mkdir(path.join(root, '.codex'), { recursive: true })
+  await fsp.mkdir(codexHome, { recursive: true })
+  const projectConfigPath = path.join(root, '.codex', 'config.toml')
+
+  const beyondHardCap = HARD_NARUTO_MAX_THREADS + 100
+  await fsp.writeFile(projectConfigPath, `[agents]\nmax_concurrent_threads_per_session = ${beyondHardCap}\n`)
+  const coerced = await readOfficialSubagentConfig(root, { codexHome })
+  assert.equal(coerced.maxThreads, HARD_NARUTO_MAX_THREADS)
+  assert.equal(coerced.sources.maxThreads, 'project')
+  assert.ok(coerced.blockers.includes(
+    `project_official_subagent_max_threads_exceeds_hard_cap:${beyondHardCap}:${HARD_NARUTO_MAX_THREADS}`
+  ))
+  assert.deepEqual(coerced.warnings, [])
+  assert.equal(coerced.multiAgentV2.maxConcurrentThreadsPerSession, HARD_NARUTO_MAX_THREADS + 1)
+
+  await fsp.writeFile(projectConfigPath, `[agents]\nmax_concurrent_threads_per_session = ${HARD_NARUTO_MAX_THREADS}\n`)
+  const atCap = await readOfficialSubagentConfig(root, { codexHome })
+  assert.equal(atCap.maxThreads, HARD_NARUTO_MAX_THREADS)
+  assert.equal(atCap.sources.maxThreads, 'project')
+  assert.deepEqual(atCap.warnings, [])
+  assert.equal(atCap.multiAgentV2.maxConcurrentThreadsPerSession, HARD_NARUTO_MAX_THREADS + 1)
+})
+
 test('standalone parent registers the child PID before waiting and exposes a bounded registration blocker', async () => {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-official-subagent-spawn-registration-'))
   let registeredPid: number | null = null
@@ -1932,6 +1999,58 @@ test('standalone parent converts timeout and non-zero exits into bounded blocker
   }
 })
 
+test('standalone parent appends the bounded OAuth callback recovery hint only for an auth failure with a port conflict', async () => {
+  const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-official-subagent-oauth-conflict-'))
+  let diagnosticCalls = 0
+  try {
+    const result = await runOfficialSubagentWorkflow({
+      root: process.cwd(),
+      goal: 'delegate and wait',
+      prompt: 'delegate and wait',
+      requestedSubagents: 1,
+      maxThreads: 1,
+      appSession: false,
+      env: {
+        HOME: home,
+        CODEX_HOME: path.join(home, '.codex')
+      },
+      runProcessImpl: async () => ({
+        code: 1,
+        stdout: '',
+        stderr: 'Not logged in. Run codex login.',
+        stdoutBytes: 0,
+        stderrBytes: 31,
+        truncated: false,
+        timedOut: false
+      }),
+      oauthCallbackDiagnosticRunner: async () => {
+        diagnosticCalls += 1
+        const stdout = [
+          'COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME',
+          'codex 410 user 17u IPv4 0x1 0t0 TCP 127.0.0.1:1455 (LISTEN)',
+          'com.docker 922 user 18u IPv6 0x2 0t0 TCP :::1455 (LISTEN)'
+        ].join('\n')
+        return {
+          code: 0,
+          stdout,
+          stderr: 'internal command line --api-key=sk-sensitive-fixture',
+          stdoutBytes: Buffer.byteLength(stdout),
+          stderrBytes: 53,
+          truncated: false,
+          timedOut: false
+        }
+      }
+    })
+
+    assert.equal(diagnosticCalls, 1)
+    assert.deepEqual(result.operator_actions, [OAUTH_CALLBACK_RECOVERY_GUIDANCE])
+    assert.equal(result.oauth_callback_port_diagnostic.conflict, true)
+    assert.doesNotMatch(JSON.stringify(result.oauth_callback_port_diagnostic), /api-key|sk-sensitive-fixture/)
+  } finally {
+    await fsp.rm(home, { recursive: true, force: true })
+  }
+})
+
 test('trusted host pending runtime is removed after child failure or launch exception', async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-official-subagent-pending-cleanup-'))
   t.after(async () => fsp.rm(root, { recursive: true, force: true }))
@@ -1986,23 +2105,8 @@ test('trusted host pending runtime is removed after child failure or launch exce
   }
 })
 
-test('standalone official subagent launch overrides selected codex-lb with the native provider', async () => {
-  let authorization: string | undefined
-  const server = http.createServer((request, response) => {
-    authorization = request.headers.authorization
-    response.writeHead(200, {
-      'content-type': 'application/json',
-      'x-app-version': '1.20.0'
-    })
-    response.end(JSON.stringify({ status: 'ok' }))
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => resolve())
-  })
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('fixture server address missing')
-  const baseUrl = `http://127.0.0.1:${address.port}/backend-api/codex`
+test('standalone official subagent launch honors selected codex-lb and injects the canonical key', async () => {
+  const baseUrl = 'https://lb.official-subagent.example.test/backend-api/codex'
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-official-subagent-codex-lb-'))
   const home = path.join(root, 'home')
   const codexHome = path.join(home, '.codex')
@@ -2017,12 +2121,16 @@ test('standalone official subagent launch overrides selected codex-lb with the n
   const env = {
     HOME: home,
     CODEX_HOME: codexHome,
-    CODEX_LB_BASE_URL: baseUrl,
-    CODEX_LB_API_KEY: 'sk-official-subagent-secret'
+    CODEX_LB_BASE_URL: 'https://stale.example.test/backend-api/codex',
+    CODEX_LB_API_KEY: 'stale-synthetic-key'
   }
   let launches = 0
-  const runProcessImpl = async () => {
+  let launchedArgs: string[] = []
+  let launchedKey = ''
+  const runProcessImpl = async (_command: string, args: readonly string[], options: any) => {
     launches += 1
+    launchedArgs = [...args]
+    launchedKey = String(options.env?.CODEX_LB_API_KEY || '')
     return { code: 1, stdout: '', stderr: 'fixture stop', stdoutBytes: 0, stderrBytes: 12, truncated: false, timedOut: false }
   }
   try {
@@ -2034,16 +2142,26 @@ test('standalone official subagent launch overrides selected codex-lb with the n
       maxThreads: 2,
       appSession: false,
       env,
+      prepareCodexRuntimeEnvImpl: async (input = {}) => ({
+        ...(input.env || {}),
+        CODEX_LB_BASE_URL: baseUrl,
+        CODEX_LB_API_KEY: 'validated-synthetic-key'
+      }),
+      recoveryFetch: async () => new Response('{}', {
+        status: 200,
+        headers: { 'x-app-version': '1.21.0-beta.3' }
+      }),
       runProcessImpl
     })
     assert.equal(result.ok, false)
     assert.equal(result.status, 'parent_failed')
-    assert.equal(result.tool_output_recovery.status, 'not_selected')
+    assert.equal(result.tool_output_recovery.status, 'compatible')
     assert.equal(launches, 1)
-    assert.equal(authorization, undefined)
-    assert.doesNotMatch(JSON.stringify(result), /sk-official-subagent-secret/)
+    assert.ok(launchedArgs.includes('model_provider="codex-lb"'))
+    assert.equal(launchedArgs.includes('forced_login_method="chatgpt"'), false)
+    assert.equal(launchedKey, 'validated-synthetic-key')
+    assert.doesNotMatch(JSON.stringify(result), /validated-synthetic-key|stale-synthetic-key/)
   } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()))
     await fsp.rm(root, { recursive: true, force: true })
   }
 })

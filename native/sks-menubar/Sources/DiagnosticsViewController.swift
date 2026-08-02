@@ -106,7 +106,7 @@ final class DiagnosticsViewController: NSViewController, ControlCenterPage {
         busy = true
         status.stringValue = "Updating Codex CLI…"
         _ = operations.update(operation, state: .running, stage: "running", progress: nil, summary: status.stringValue)
-        processClient.run(["codex", "update", "--json"], timeout: nil) { [weak self] result in
+        processClient.run(["codex", "update", "--json"], timeout: NativeView.longMutationTimeout) { [weak self] result in
             guard let self = self else { return }
             self.busy = false
             let payload = self.json(result.output)

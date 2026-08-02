@@ -4,6 +4,7 @@ import { buildCodexExecArgs, findCodexBinary, runCodexExec } from '../codex-adap
 import { ensureDir, runProcess, writeBinaryAtomic } from '../fsx.js'
 import { buildImageArtifactPathContract } from '../image/image-artifact-path-contract.js'
 import { codex0139ProbeTail, skippedCodex0139Probe, type Codex0139SingleProbe } from './codex-0139-real-probes.js'
+import { prepareCodexAppServerRuntimeEnv } from './codex-app-server-runtime-env.js'
 
 const ONE_BY_ONE_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC',
@@ -68,6 +69,7 @@ export async function runCodex0139ImageReferencedPathRealProbe(input: {
   ].join(' ')
   const extraArgs = ['-c', 'mcp_servers={}', '--image', inputB, '--skip-git-repo-check', '--ephemeral']
   const args = buildCodexExecArgs({ root: tempDir, prompt, outputFile, json: true, extraArgs })
+  const runtimeEnv = await prepareCodexAppServerRuntimeEnv({ env: input.env || process.env })
   const result = await runCodexExec({
     root: tempDir,
     recoveryRoot: input.root,
@@ -78,7 +80,7 @@ export async function runCodex0139ImageReferencedPathRealProbe(input: {
     timeoutMs: input.timeoutMs || 60000,
     maxBufferBytes: 512 * 1024,
     codexBin,
-    env: input.env || process.env,
+    env: runtimeEnv,
     ...(typeof input.recoveryFetch === 'function' ? { recoveryFetch: input.recoveryFetch } : {}),
     ...(typeof input.runProcessImpl === 'function' ? { runProcessImpl: input.runProcessImpl } : {})
   }).catch((err: any) => ({ code: 1, stdout: '', stderr: err?.message || String(err) }))

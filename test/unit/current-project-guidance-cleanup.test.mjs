@@ -153,7 +153,15 @@ test('doctor reconciles nested project AGENTS.md without entering excluded or sy
       path.join(project, 'node_modules', 'dependency', 'AGENTS.md'),
       path.join(project, 'build', 'generated', 'AGENTS.md'),
       path.join(project, 'dist', 'bundle', 'AGENTS.md'),
-      path.join(project, '.sneakoscope', 'quarantine', 'old', 'AGENTS.md')
+      path.join(project, '.sneakoscope', 'quarantine', 'old', 'AGENTS.md'),
+      path.join(project, '.venv', 'site-packages', 'AGENTS.md'),
+      path.join(project, 'venv', 'site-packages', 'AGENTS.md'),
+      path.join(project, 'target', 'debug', 'AGENTS.md'),
+      path.join(project, '.cache', 'generated', 'AGENTS.md'),
+      path.join(project, '.tox', 'py', 'AGENTS.md'),
+      path.join(project, '__pycache__', 'generated', 'AGENTS.md'),
+      path.join(project, 'Pods', 'Dependency', 'AGENTS.md'),
+      path.join(project, 'DerivedData', 'Build', 'AGENTS.md')
     ];
     const excludedBytes = Buffer.from(legacyManagedAgents());
     for (const file of excludedFiles) await writeBytes(file, excludedBytes);
@@ -205,6 +213,43 @@ test('doctor reconciles nested project AGENTS.md without entering excluded or sy
     assert.equal(second.detected_count, 0);
     assert.equal(second.reconciled_count, 0);
     assert.equal((await findFiles(path.join(project, '.sneakoscope', 'quarantine'), 'AGENTS.md')).length, 2);
+  } finally {
+    await fs.rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test('5000+ directory guidance scan reports non-blocking truncation with cutoff evidence', async () => {
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-guidance-truncation-warning-'));
+  const project = path.join(fixture, 'project');
+  const home = path.join(fixture, 'home');
+  const globalRuntimeRoot = path.join(fixture, 'global-runtime');
+  try {
+    await Promise.all([project, home, globalRuntimeRoot].map((directory) => fs.mkdir(directory, { recursive: true })));
+    const directories = Array.from({ length: 5_001 }, (_, index) =>
+      path.join(project, `workspace-${String(index).padStart(5, '0')}`));
+    for (let offset = 0; offset < directories.length; offset += 128) {
+      await Promise.all(directories.slice(offset, offset + 128).map((directory) => fs.mkdir(directory)));
+    }
+
+    const report = await reconcileCurrentProjectGuidance({
+      root: project,
+      home,
+      globalRuntimeRoot,
+      fix: false
+    });
+
+    assert.equal(report.ok, true, JSON.stringify(report));
+    assert.equal(report.remaining_count, 0, JSON.stringify(report));
+    assert.equal(report.error_count, 0, JSON.stringify(report));
+    assert.equal(report.warnings.length, 1, JSON.stringify(report));
+    const warning = report.warnings[0];
+    assert.equal(warning.code, 'guidance_scan_truncated');
+    assert.equal(warning.cutoff_reason, 'directory_limit');
+    assert.equal(warning.directory_limit, 4_096);
+    assert.equal(warning.depth_limit, 12);
+    assert.equal(warning.visited_directory_count, 4_096);
+    assert.ok(warning.exceeded_directory_count > 0, JSON.stringify(warning));
+    assert.ok(warning.cutoff_path.startsWith(project + path.sep), JSON.stringify(warning));
   } finally {
     await fs.rm(fixture, { recursive: true, force: true });
   }

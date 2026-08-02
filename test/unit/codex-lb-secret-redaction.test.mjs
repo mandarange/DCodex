@@ -21,6 +21,11 @@ test('codex-lb setup redacts API keys from stdout and stderr', async () => {
       response.end(JSON.stringify({ status: 'ok' }));
       return;
     }
+    if (request.url === '/backend-api/codex/models') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end('{"models":[]}');
+      return;
+    }
     response.writeHead(404, { 'content-type': 'application/json' });
     response.end(JSON.stringify({ error: 'not_found' }));
   });
@@ -53,7 +58,8 @@ test('codex-lb setup redacts API keys from stdout and stderr', async () => {
     assert.doesNotMatch(text, new RegExp(secret));
     assert.ok(requests.some((request) => request.url === '/health' && request.authorization === undefined));
     const modelRequests = requests.filter((request) => request.url === '/backend-api/codex/models');
-    assert.equal(modelRequests.length, 0);
+    assert.equal(modelRequests.length, 1);
+    assert.equal(modelRequests[0].authorization, `Bearer ${secret}`);
     const json = JSON.parse(result.stdout);
     assert.equal(json.api_key?.redacted, true);
     assert.doesNotMatch(JSON.stringify(json), new RegExp(secret));

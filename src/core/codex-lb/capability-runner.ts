@@ -84,6 +84,7 @@ export interface CodexLbDesktopCapabilityStatus {
   configured: boolean
   oauth_preserved: boolean
   gateway_auth_transport: GatewayAuthTransport
+  model_picker: CapabilityEvidence
   verified: string[]
   available_unverified: string[]
   blocked: Record<string, string[]>
@@ -233,6 +234,7 @@ export function shapeCodexLbDesktopCapabilityStatus(
     gateway_auth_transport: String(
       report.gateway_auth_transport.evidence.configured_gateway_auth_transport || 'unknown'
     ) as GatewayAuthTransport,
+    model_picker: report.model_picker,
     verified: entries.filter(([, value]) => value.state === 'verified').map(([key]) => key),
     available_unverified: entries.filter(([, value]) => value.state === 'available_unverified').map(([key]) => key),
     blocked: Object.fromEntries(entries

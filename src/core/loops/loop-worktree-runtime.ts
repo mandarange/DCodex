@@ -1,5 +1,6 @@
+import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { exists, nowIso, writeJsonAtomic } from '../fsx.js';
+import { exists, nowIso, sha256, writeJsonAtomic } from '../fsx.js';
 import { allocateWorkerWorktree } from '../git/git-worktree-manager.js';
 import { gitOutputLine, runGitCommand } from '../git/git-worktree-runner.js';
 import type { SksLoopNode, SksLoopOwnerScope, SksLoopPlan } from './loop-schema.js';
@@ -21,6 +22,8 @@ export interface LoopDiffSummary {
   changed_files: string[];
   patch_bytes: number;
   diff_stat: string;
+  base_revision: string | null;
+  diff_sha256: string;
   blockers: string[];
 }
 
@@ -80,19 +83,67 @@ export async function computeLoopDiff(input: {
 }): Promise<LoopDiffSummary> {
   const cwd = input.worktreePath || input.root;
   const blockers: string[] = [];
-  const names = await runGitCommand(cwd, ['diff', '--name-only', 'HEAD'], { timeoutMs: 30000 }).catch(() => null);
+  const names = await runGitCommand(cwd, ['diff', '--name-only', '-z', 'HEAD'], { timeoutMs: 30000 }).catch(() => null);
+  const untracked = await runGitCommand(cwd, ['ls-files', '--others', '--exclude-standard', '-z'], { timeoutMs: 30000 }).catch(() => null);
   const stat = await runGitCommand(cwd, ['diff', '--stat', 'HEAD'], { timeoutMs: 30000 }).catch(() => null);
   const diff = await runGitCommand(cwd, ['diff', '--binary', '--full-index', 'HEAD'], { timeoutMs: 60000 }).catch(() => null);
+  const revision = await runGitCommand(cwd, ['rev-parse', 'HEAD'], { timeoutMs: 30000 }).catch(() => null);
   if (!names?.ok) blockers.push('loop_git_diff_name_only_failed');
+  if (!untracked?.ok) blockers.push('loop_git_untracked_scan_failed');
   if (!diff?.ok) blockers.push('loop_git_diff_failed');
-  const changedFiles = [...new Set((names?.stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean))];
+  const trackedFiles = nulPaths(names?.stdout || '');
+  const untrackedFiles = nulPaths(untracked?.stdout || '');
+  const untrackedSnapshot = await snapshotUntrackedFiles(cwd, untrackedFiles);
+  blockers.push(...untrackedSnapshot.blockers);
+  const changedFiles = [...new Set([...trackedFiles, ...untrackedFiles])].sort();
   blockers.push(...enforceLoopOwnerScope(changedFiles, input.ownerScope));
+  const trackedDiff = diff?.stdout || '';
   return {
     changed_files: changedFiles,
-    patch_bytes: Buffer.byteLength(diff?.stdout || ''),
+    patch_bytes: Buffer.byteLength(trackedDiff) + untrackedSnapshot.bytes,
     diff_stat: stat ? gitOutputLine(stat) || stat.stdout.slice(-4000) : '',
+    base_revision: revision?.ok ? revision.stdout.trim() || null : null,
+    diff_sha256: `sha256:${sha256(`${trackedDiff}\0${JSON.stringify(untrackedSnapshot.files)}`)}`,
     blockers: [...new Set(blockers)]
   };
+}
+
+const MAX_UNTRACKED_SNAPSHOT_BYTES_PER_FILE = 16 * 1024 * 1024;
+
+async function snapshotUntrackedFiles(cwd: string, files: string[]) {
+  const snapshots: Array<{ path: string; bytes: number; sha256: string }> = [];
+  const blockers: string[] = [];
+  let bytes = 0;
+  for (const file of files) {
+    const absolute = path.resolve(cwd, file);
+    if (!absolute.startsWith(`${path.resolve(cwd)}${path.sep}`)) {
+      blockers.push(`loop_untracked_path_escape:${file}`);
+      continue;
+    }
+    try {
+      const stat = await fsp.lstat(absolute);
+      if (!stat.isFile() && !stat.isSymbolicLink()) {
+        blockers.push(`loop_untracked_unsupported_type:${file}`);
+        continue;
+      }
+      if (stat.size > MAX_UNTRACKED_SNAPSHOT_BYTES_PER_FILE) {
+        blockers.push(`loop_untracked_file_too_large:${file}`);
+        continue;
+      }
+      const content = stat.isSymbolicLink()
+        ? Buffer.from(await fsp.readlink(absolute))
+        : await fsp.readFile(absolute);
+      bytes += content.byteLength;
+      snapshots.push({ path: file, bytes: content.byteLength, sha256: sha256(content) });
+    } catch {
+      blockers.push(`loop_untracked_snapshot_failed:${file}`);
+    }
+  }
+  return { files: snapshots, bytes, blockers };
+}
+
+function nulPaths(value: string) {
+  return value.split('\0').filter((file) => file.length > 0);
 }
 
 export function enforceLoopOwnerScope(changedFiles: string[], ownerScope: SksLoopOwnerScope): string[] {

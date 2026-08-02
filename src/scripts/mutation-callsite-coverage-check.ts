@@ -7,56 +7,104 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { assertGate, emitGate, root } from './gate-lib.js';
+import {
+  buildMutationAstIndex,
+  mutationCallsiteSha256
+} from './mutation-callsite-analysis.js';
 
 const allowlistPath = path.join(root, 'safety-mutation-allowlist.json');
 const allowlist = readAllowlist();
 const allowlistHits = new Set();
+const callsiteOccurrences = new Map();
 
 const scanFiles = listScanFiles();
 const covered = [];
 const allowlisted = [];
 const uncovered = [];
 
-const GUARD_CALL = /\bguarded(WriteFile|Rm|Rename|Chmod|Xattr|Chflags|GlobalCodexConfigWrite|ProcessKill|PackageInstall|SkillSnapshotPromotion|Apply)\(/;
-const RISKY = [
-  { kind: 'write_file', token: 'fs.writeFile', re: /\bfs\.writeFile\(/ },
-  { kind: 'write_file', token: 'fs.promises.writeFile', re: /\bfs\.promises\.writeFile\(/ },
-  { kind: 'write_file', token: 'fsp.writeFile', re: /\bfsp\.writeFile\(/ },
-  { kind: 'write_file', token: 'writeFileSync', re: /\b(?:fs\.)?writeFileSync\(/ },
-  { kind: 'rm', token: 'fs.rm', re: /\bfs\.rm\(/ },
-  { kind: 'rm', token: 'fsp.rm', re: /\bfsp\.rm\(/ },
-  { kind: 'rm', token: 'rmSync', re: /\b(?:fs\.)?rmSync\(/ },
-  { kind: 'unlink', token: 'unlink', re: /\b(?:fs\.|fsp\.)?unlink\(/ },
-  { kind: 'unlink', token: 'unlinkSync', re: /\b(?:fs\.)?unlinkSync\(/ },
-  { kind: 'rename', token: 'rename', re: /\b(?:fs\.|fsp\.)?rename\(/ },
-  { kind: 'rename', token: 'renameSync', re: /\b(?:fs\.)?renameSync\(/ },
-  { kind: 'chmod', token: 'chmod', re: /\b(?:fs\.|fsp\.)?chmod\(/ },
-  { kind: 'chmod', token: 'chmodSync', re: /\b(?:fs\.)?chmodSync\(/ },
-  { kind: 'process_kill', token: 'process.kill', re: /\bprocess\.kill\(/ },
-  { kind: 'package_install', token: 'runProcess(npm/brew)', re: /runProcess\(\s*(?:npmBin|['"](?:npm|brew)['"])/ },
-  { kind: 'package_install', token: 'spawn(npm install)', re: /\bspawn(?:Sync)?\(\s*['"]npm['"][\s\S]{0,80}(?:install|i)\b/ },
-  { kind: 'xattr', token: 'xattr', re: /runProcess\(\s*['"]xattr['"]/ },
-  { kind: 'chflags', token: 'chflags', re: /runProcess\(\s*['"]chflags['"]/ },
-  { kind: 'codex_home_write', token: 'codex config write', re: /(?:~\/\.codex|CODEX_HOME|auth\.json|config\.toml)/ }
-];
+const GUARDED_CALLEES = new Set([
+  'guardedWriteFile',
+  'guardedRm',
+  'guardedRename',
+  'guardedChmod',
+  'guardedXattr',
+  'guardedChflags',
+  'guardedGlobalCodexConfigWrite',
+  'guardedProcessKill',
+  'guardedPackageInstall',
+  'guardedSkillSnapshotPromotion',
+  'guardedApply'
+]);
+
+const DIRECT_RISKY = new Map([
+  ['fs.writeFile', { kind: 'write_file', token: 'fs.writeFile' }],
+  ['fs.promises.writeFile', { kind: 'write_file', token: 'fs.promises.writeFile' }],
+  ['fsp.writeFile', { kind: 'write_file', token: 'fsp.writeFile' }],
+  ['fs.writeFileSync', { kind: 'write_file', token: 'writeFileSync' }],
+  ['writeFileSync', { kind: 'write_file', token: 'writeFileSync' }],
+  ['fs.rm', { kind: 'rm', token: 'fs.rm' }],
+  ['fs.promises.rm', { kind: 'rm', token: 'fs.promises.rm' }],
+  ['fsp.rm', { kind: 'rm', token: 'fsp.rm' }],
+  ['fs.rmSync', { kind: 'rm', token: 'rmSync' }],
+  ['rmSync', { kind: 'rm', token: 'rmSync' }],
+  ['fs.unlink', { kind: 'unlink', token: 'unlink' }],
+  ['fs.promises.unlink', { kind: 'unlink', token: 'unlink' }],
+  ['fsp.unlink', { kind: 'unlink', token: 'unlink' }],
+  ['unlink', { kind: 'unlink', token: 'unlink' }],
+  ['fs.unlinkSync', { kind: 'unlink', token: 'unlinkSync' }],
+  ['unlinkSync', { kind: 'unlink', token: 'unlinkSync' }],
+  ['fs.rename', { kind: 'rename', token: 'rename' }],
+  ['fs.promises.rename', { kind: 'rename', token: 'rename' }],
+  ['fsp.rename', { kind: 'rename', token: 'rename' }],
+  ['rename', { kind: 'rename', token: 'rename' }],
+  ['fs.renameSync', { kind: 'rename', token: 'renameSync' }],
+  ['renameSync', { kind: 'rename', token: 'renameSync' }],
+  ['fs.chmod', { kind: 'chmod', token: 'chmod' }],
+  ['fs.promises.chmod', { kind: 'chmod', token: 'chmod' }],
+  ['fsp.chmod', { kind: 'chmod', token: 'chmod' }],
+  ['chmod', { kind: 'chmod', token: 'chmod' }],
+  ['fs.chmodSync', { kind: 'chmod', token: 'chmodSync' }],
+  ['chmodSync', { kind: 'chmod', token: 'chmodSync' }],
+  ['process.kill', { kind: 'process_kill', token: 'process.kill' }]
+]);
 
 for (const rel of scanFiles) {
   const text = fs.readFileSync(path.join(root, rel), 'utf8');
-  const lines = text.split('\n');
-  let currentSymbol = 'module';
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    currentSymbol = symbolFromLine(line) || currentSymbol;
-    if (isIgnoredLine(line)) continue;
-    if (GUARD_CALL.test(line)) {
-      covered.push({ file: rel, line: i + 1, symbol: currentSymbol, kind: 'guarded_call', snippet: snippet(line) });
+  const ast = buildMutationAstIndex(rel, text);
+  for (const call of ast.calls) {
+    const callee = call.canonical_callee;
+    if (callee && GUARDED_CALLEES.has(lastPathSegment(callee))) {
+      covered.push({
+        file: rel,
+        line: call.line,
+        symbol: call.symbol,
+        kind: 'guarded_call',
+        snippet: snippet(call.normalized_call)
+      });
     }
-    for (const risky of RISKY) {
-      if (!risky.re.test(line)) continue;
-      if (risky.kind === 'package_install' && !packageMutationOnLine(line)) continue;
-      if (risky.kind === 'codex_home_write' && !codexHomeMutationOnLine(line)) continue;
-      if (risky.kind === 'process_kill' && processKillIsLivenessProbe(line)) continue;
-      const entry = { file: rel, line: i + 1, symbol: currentSymbol, kind: risky.kind, token: risky.token, snippet: snippet(line) };
+    for (const risky of risksForCall(call)) {
+      if (risky.kind === 'process_kill' && processKillIsLivenessProbe(call.normalized_call)) continue;
+      const callsiteSha256 = mutationCallsiteSha256({
+        file: rel,
+        symbol: call.symbol,
+        token: risky.token,
+        normalizedCall: call.normalized_call,
+        scopeContractSha256: call.scope_contract_sha256
+      });
+      const occurrence = (callsiteOccurrences.get(callsiteSha256) || 0) + 1;
+      callsiteOccurrences.set(callsiteSha256, occurrence);
+      const entry = {
+        file: rel,
+        line: call.line,
+        symbol: call.symbol,
+        kind: risky.kind,
+        token: risky.token,
+        snippet: snippet(call.normalized_call),
+        normalized_call: call.normalized_call,
+        scope_contract_sha256: call.scope_contract_sha256,
+        callsite_sha256: callsiteSha256,
+        occurrence
+      };
       const allow = findAllow(entry);
       if (allow) {
         allowlistHits.add(allow.id);
@@ -68,11 +116,20 @@ for (const rel of scanFiles) {
   }
 }
 
-const unused_allowlist = allowlist.filter((entry) => !allowlistHits.has(entry.id)).map(({ id, file, symbol, token, reason }) => ({ id, file, symbol, token, reason }));
+const unused_allowlist = allowlist.filter((entry) => !allowlistHits.has(entry.id)).map(({
+  id,
+  file,
+  symbol,
+  token,
+  scope_contract_sha256,
+  callsite_sha256,
+  occurrence,
+  reason
+}) => ({ id, file, symbol, token, scope_contract_sha256, callsite_sha256, occurrence, reason }));
 const blanket_allowlist = allowlist.filter((entry) => !entry.symbol || entry.symbol === '*' || !entry.token || entry.token === '*');
 const ok = uncovered.length === 0 && unused_allowlist.length === 0 && blanket_allowlist.length === 0;
 const report = {
-  schema: 'sks.mutation-callsite-coverage.v2',
+  schema: 'sks.mutation-callsite-coverage.v4',
   ok,
   repo_wide: true,
   allowlist_path: 'safety-mutation-allowlist.json',
@@ -102,12 +159,15 @@ emitGate('safety:mutation-callsite-coverage', {
 
 function readAllowlist() {
   const raw = JSON.parse(fs.readFileSync(allowlistPath, 'utf8'));
-  assertGate(raw.schema === 'sks.safety-mutation-allowlist.v1', 'mutation allowlist schema mismatch', raw);
+  assertGate(raw.schema === 'sks.safety-mutation-allowlist.v3', 'mutation allowlist schema mismatch', raw);
   assertGate(Array.isArray(raw.entries), 'mutation allowlist entries must be an array', raw);
   return raw.entries.map((entry, index) => {
-    for (const key of ['file', 'symbol', 'token', 'reason']) {
+    for (const key of ['file', 'symbol', 'token', 'scope_contract_sha256', 'callsite_sha256', 'reason']) {
       assertGate(typeof entry[key] === 'string' && entry[key].trim().length > 0, `allowlist entry missing ${key}`, { index, entry });
     }
+    assertGate(/^[a-f0-9]{64}$/.test(entry.scope_contract_sha256), 'allowlist scope_contract_sha256 must be lowercase sha256', { index, entry });
+    assertGate(/^[a-f0-9]{64}$/.test(entry.callsite_sha256), 'allowlist callsite_sha256 must be lowercase sha256', { index, entry });
+    assertGate(Number.isInteger(entry.occurrence) && entry.occurrence > 0, 'allowlist occurrence must be a positive integer', { index, entry });
     assertGate(entry.reason.length >= 12, 'allowlist reason must be concrete', { index, entry });
     return { ...entry, id: `${entry.file}:${entry.symbol}:${entry.token}:${index}` };
   });
@@ -145,32 +205,53 @@ function walk(dir, visit) {
 }
 
 function findAllow(entry) {
-  return allowlist.find((allow) => entry.file === allow.file && entry.symbol === allow.symbol && entry.token === allow.token);
+  return allowlist.find((allow) =>
+    !allowlistHits.has(allow.id)
+    && entry.file === allow.file
+    && entry.symbol === allow.symbol
+    && entry.token === allow.token
+    && entry.scope_contract_sha256 === allow.scope_contract_sha256
+    && entry.callsite_sha256 === allow.callsite_sha256
+    && entry.occurrence === allow.occurrence
+  );
 }
 
-function symbolFromLine(line) {
-  const match = line.match(/(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/)
-    || line.match(/(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?\(/)
-    || line.match(/class\s+([A-Za-z0-9_$]+)/);
-  return match?.[1] || null;
+function processKillIsLivenessProbe(call) {
+  return /^process\.kill\([^,\n]+,\s*0\s*\)$/.test(call);
 }
 
-function isIgnoredLine(line) {
-  const trimmed = line.trim();
-  return !trimmed || trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*');
+function risksForCall(call) {
+  const risks = [];
+  const callee = call.canonical_callee;
+  const direct = (call.written_callee && DIRECT_RISKY.get(call.written_callee))
+    || (call.written_callee && DIRECT_RISKY.get(lastPathSegment(call.written_callee)))
+    || (callee ? DIRECT_RISKY.get(callee) : null);
+  if (direct) risks.push(direct);
+
+  const firstArgument = call.node.arguments[0]?.getText(call.node.getSourceFile()) || '';
+  if (callee === 'runProcess') {
+    if (/^(?:npmBin|['"](?:npm|brew)['"])$/.test(firstArgument.trim())
+      && /\b(?:install|i|add|uninstall|remove|publish)\b/.test(call.normalized_call)) {
+      risks.push({ kind: 'package_install', token: 'runProcess(npm/brew)' });
+    }
+    if (/^['"]xattr['"]$/.test(firstArgument.trim())) risks.push({ kind: 'xattr', token: 'xattr' });
+    if (/^['"]chflags['"]$/.test(firstArgument.trim())) risks.push({ kind: 'chflags', token: 'chflags' });
+  }
+  if (callee && ['spawn', 'spawnSync', 'child_process.spawn', 'child_process.spawnSync'].includes(callee)
+    && /^['"]npm['"]$/.test(firstArgument.trim())
+    && /\b(?:install|i)\b/.test(call.normalized_call)) {
+    risks.push({ kind: 'package_install', token: 'spawn(npm install)' });
+  }
+
+  if (direct && direct.kind !== 'process_kill'
+    && /(?:~\/\.codex|CODEX_HOME|codexHome|codexLbHome|auth\.json|config\.toml)/.test(call.normalized_call)) {
+    risks.push({ kind: 'codex_home_write', token: 'codex config write' });
+  }
+  return risks;
 }
 
-function packageMutationOnLine(line) {
-  return /\b(?:install|i|add|uninstall|remove|publish)\b/.test(line);
-}
-
-function processKillIsLivenessProbe(line) {
-  return /\bprocess\.kill\([^,\n]+,\s*0\s*\)/.test(line);
-}
-
-function codexHomeMutationOnLine(line) {
-  return /\b(?:writeTextAtomic|writeJsonAtomic|writeFileSync|fs\.writeFile|fs\.promises\.writeFile|fsp\.writeFile|fs\.rm|fsp\.rm|fs\.rename|fsp\.rename|fs\.chmod|fsp\.chmod|copyFile|open)\b/.test(line)
-    && /(?:~\/\.codex|CODEX_HOME|codexHome|codexLbHome|auth\.json|config\.toml)/.test(line);
+function lastPathSegment(value) {
+  return value.slice(value.lastIndexOf('.') + 1);
 }
 
 function snippet(line) {

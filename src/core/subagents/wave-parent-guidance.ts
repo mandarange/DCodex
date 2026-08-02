@@ -16,6 +16,7 @@ export interface WaveParentGuidance {
   actions: string[]
   remaining_to_start: number
   open_threads: number
+  wave_capacity: number
   recovered_capacity: number
   post_wave_rescan_required: boolean
   current_wave: number
@@ -28,6 +29,7 @@ export function buildWaveParentGuidance(
   const remaining = boundedLifecycleCount(lifecycle?.remaining_to_start)
   const openThreads = boundedLifecycleCount(lifecycle?.open_threads)
   const recovered = boundedLifecycleCount(lifecycle?.recovered_capacity)
+  const waveCapacity = boundedLifecycleCount(lifecycle?.wave_capacity) || recovered
   const rescan = lifecycle?.post_wave_rescan_required === true
   const actions: string[] = []
 
@@ -36,8 +38,10 @@ export function buildWaveParentGuidance(
   }
   if (rescan || remaining > 0) {
     actions.push(REFRESH_LIFECYCLE_ACTION)
-    const nextWaveLimit = Math.max(1, Math.min(remaining || recovered, recovered || remaining || 1))
-    actions.push(`${SPAWN_NEXT_WAVE_ACTION}:${nextWaveLimit}`)
+    const nextWaveLimit = Math.min(remaining, waveCapacity)
+    if (nextWaveLimit > 0) {
+      actions.push(`${SPAWN_NEXT_WAVE_ACTION}:${nextWaveLimit}`)
+    }
   }
   if (remaining === 0 && openThreads === 0 && !rescan) {
     actions.push(EMIT_PARENT_SUMMARY_ACTION)
@@ -49,6 +53,7 @@ export function buildWaveParentGuidance(
     actions: [...new Set(actions)],
     remaining_to_start: remaining,
     open_threads: openThreads,
+    wave_capacity: waveCapacity,
     recovered_capacity: recovered,
     post_wave_rescan_required: rescan,
     current_wave: boundedLifecycleCount(lifecycle?.current_wave),
@@ -76,6 +81,11 @@ export function buildBoundWaveParentGuidance(
   return buildWaveParentGuidance({
     remaining_to_start: boundedLifecycleCount(lifecycleRow.remaining_to_start),
     open_threads: boundedLifecycleCount(lifecycleRow.open_threads),
+    wave_capacity: boundedLifecycleCount(
+      lifecycleRow.wave_capacity
+        ?? row.first_wave
+        ?? (row.capacity_controller as Record<string, unknown> | undefined)?.selected_capacity
+    ),
     recovered_capacity: boundedLifecycleCount(lifecycleRow.recovered_capacity),
     post_wave_rescan_required: lifecycleRow.post_wave_rescan_required === true,
     current_wave: boundedLifecycleCount(lifecycleRow.current_wave),
@@ -88,7 +98,7 @@ export function renderWaveParentGuidance(guidance: WaveParentGuidance): string {
   return [
     'SKS Naruto wave lifecycle (root parent only):',
     `- current_wave=${guidance.current_wave}; completed_waves=${guidance.completed_waves}`,
-    `- open_threads=${guidance.open_threads}; remaining_to_start=${guidance.remaining_to_start}; recovered_capacity=${guidance.recovered_capacity}`,
+    `- open_threads=${guidance.open_threads}; remaining_to_start=${guidance.remaining_to_start}; wave_capacity=${guidance.wave_capacity}; recovered_capacity=${guidance.recovered_capacity}`,
     `- post_wave_rescan_required=${guidance.post_wave_rescan_required}`,
     ...guidance.actions.map((action) => `- action: ${action}`),
     '- max_depth=1: children must not spawn children; only this root may launch later direct-child waves',

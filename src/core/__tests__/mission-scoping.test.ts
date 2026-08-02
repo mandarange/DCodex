@@ -3,7 +3,17 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import fsp from 'node:fs/promises';
-import { closeRouteState, createMission, findLatestMission, missionDir, setCurrent, stateFile, stateFileForSession } from '../mission.js';
+import {
+  closeRouteState,
+  createMission,
+  findLatestMission,
+  loadOwnedRouteState,
+  missionDir,
+  sessionStateKey,
+  setCurrent,
+  stateFile,
+  stateFileForSession
+} from '../mission.js';
 
 async function makeRoot(prefix: string): Promise<string> {
   return fsp.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -116,4 +126,46 @@ test('closeRouteState closes the matching session mirror when closing by mission
   assert.equal(session.route_closed, true);
   assert.equal(current.phase, 'NARUTO_READY_CLOSED');
   assert.equal(session.phase, 'NARUTO_READY_CLOSED');
+});
+
+test('loadOwnedRouteState never borrows a foreign session global mirror', async () => {
+  const root = await makeRoot('sks-route-state-foreign-session-');
+  const ownerSession = 'chat-owner';
+  await fsp.mkdir(path.dirname(stateFile(root)), { recursive: true });
+  await fsp.writeFile(stateFile(root), JSON.stringify({
+    mission_id: 'M-owner',
+    mode: 'NARUTO',
+    phase: 'NARUTO_READY',
+    session_scope: ownerSession,
+    _session_key: sessionStateKey(ownerSession)
+  }));
+
+  assert.deepEqual(await loadOwnedRouteState(root, 'chat-other'), {});
+  assert.deepEqual(await loadOwnedRouteState(root), {});
+});
+
+test('loadOwnedRouteState preserves same-session and unowned legacy gates', async () => {
+  const root = await makeRoot('sks-route-state-owned-session-');
+  const sessionKey = 'chat-owner';
+  await fsp.mkdir(path.dirname(stateFile(root)), { recursive: true });
+  await fsp.writeFile(stateFile(root), JSON.stringify({
+    mission_id: 'M-owner',
+    mode: 'NARUTO',
+    phase: 'NARUTO_READY',
+    session_scope: sessionKey,
+    _session_key: sessionStateKey(sessionKey)
+  }));
+
+  const sameSession = await loadOwnedRouteState(root, sessionKey);
+  assert.equal(sameSession.mission_id, 'M-owner');
+  assert.equal(sameSession._session_key, sessionStateKey(sessionKey));
+
+  await fsp.writeFile(stateFile(root), JSON.stringify({
+    mission_id: 'M-standalone',
+    mode: 'MADSKS',
+    phase: 'MADSKS_ZELLIJ_PERMISSION_ACTIVE'
+  }));
+  const standalone = await loadOwnedRouteState(root);
+  assert.equal(standalone.mission_id, 'M-standalone');
+  assert.deepEqual(await loadOwnedRouteState(root, 'chat-new'), {});
 });

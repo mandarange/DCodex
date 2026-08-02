@@ -1,12 +1,14 @@
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { PACKAGE_VERSION, packageRoot, readJson, runProcess, throttleLines, which } from './fsx.js';
+import fs from 'node:fs/promises';
+import { canonicalFilesystemPath, PACKAGE_VERSION, packageRoot, readJson, runProcess, throttleLines, which } from './fsx.js';
 import { createRequestedScopeContract } from './safety/requested-scope-contract.js';
 import { guardedPackageInstall, guardContextForRoute } from './safety/mutation-guard.js';
 import {
   isUpdateMigrationReceiptCurrent,
   projectUpdateMigrationReceiptPath,
+  readProjectUpdateMigrationReceipt,
   resolveInstalledSksEntrypoint,
   runPackageLocalDoctor,
   type PackageLocalDoctorRun,
@@ -23,8 +25,6 @@ import {
   type SksMenuBarStatusResult
 } from './codex-app/menubar/index.js';
 import { inspectCodexCliUpdate, type CodexCliUpdateStatus } from './codex/codex-cli-update.js';
-import { reconcileSkills } from './init/skills.js';
-import { codexHookTrustDoctor } from './codex-hooks/codex-hook-trust-doctor.js';
 import { readCodexHookActualState } from './codex-hooks/codex-hook-actual-discovery.js';
 import { compareSemVer, extractSemVer, parseSemVer } from './update/semver.js';
 import {
@@ -34,8 +34,19 @@ import {
   UpdateStatusRefreshError,
   type SksUpdateStatusV3
 } from './update/update-status.js';
-import { authorizeUpdateRollback, UpdateOperationRecorder } from './update/update-operation.js';
+import {
+  acquireUpdateOperationLock,
+  authorizeUpdateRollback,
+  buildUpdateNowCommand,
+  buildUpdateRollbackCommand,
+  canonicalUpdateRegistry,
+  UpdateOperationRecorder,
+  updateOperationLastInstallPath,
+  updateReceiptHasConfirmedGlobalInstall,
+  type UpdateRollbackAuthorization
+} from './update/update-operation.js';
 import { runTemporaryInstallSmoke, type TemporaryInstallSmokeResult } from './update/temporary-install-smoke.js';
+import { updateStageFailureDiagnostics } from './update/update-stage-diagnostics.js';
 import { ui as cliUi, withHeartbeat } from '../cli/cli-theme.js';
 
 export interface SksUpdateCheckOptions {
@@ -47,6 +58,7 @@ export interface SksUpdateCheckOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
   refresh?: boolean;
+  projectRoot?: string | null;
 }
 
 export interface SksUpdateStatusDependencies {
@@ -56,7 +68,6 @@ export interface SksUpdateStatusDependencies {
 
 export interface SksUpdateStatusOptions extends SksUpdateCheckOptions {
   home?: string;
-  projectRoot?: string;
   supersede?: boolean;
   now?: () => Date;
   ttlMs?: number;
@@ -101,6 +112,25 @@ export interface SksUpdateCheckResult {
 }
 
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org/';
+const DOCTOR_OWNED_UPDATE_MIGRATION_SINCE = '8.0.2';
+
+export interface SksLockedInstalledVersionProbeInput {
+  packageName: string;
+  npmBin: string | null;
+  env: NodeJS.ProcessEnv;
+  timeoutMs: number;
+  maxOutputBytes: number;
+}
+
+export interface SksLockedInstalledVersionObservation {
+  ok: boolean;
+  version: string | null;
+  source: 'npm-global' | 'PATH' | null;
+  npm_global_version: string | null;
+  path_version: string | null;
+  path_binary: string | null;
+  errors: string[];
+}
 
 export interface SksUpdateNowOptions extends SksUpdateCheckOptions {
   version?: string | null;
@@ -108,7 +138,12 @@ export interface SksUpdateNowOptions extends SksUpdateCheckOptions {
   projectRoot?: string | null;
   json?: boolean;
   quiet?: boolean;
-  operationKind?: 'update' | 'rollback';
+  /** @internal deterministic concurrency seam for the lock-boundary regression. */
+  beforeOperationLock?: () => Promise<void>;
+  /** @internal test-only seam; production observes npm-global/PATH after acquiring the update lock. */
+  lockedInstalledVersionProbe?: (
+    input: SksLockedInstalledVersionProbeInput
+  ) => Promise<SksLockedInstalledVersionObservation>;
 }
 
 export interface SksUpdateNowStage {
@@ -138,6 +173,7 @@ export interface SksUpdateNowResult {
   npm_args: string[];
   command: string | null;
   cwd: string;
+  project_root: string;
   registry: string;
   global_root: string | null;
   install_code: number | null;
@@ -172,6 +208,7 @@ export interface SksUpdateReviewResult {
   node_path: string;
   expected_menubar_rebuild: boolean;
   expected_migrations: string[];
+  project_root: string;
   rollback_command: string;
   stages: string[];
   project_mutation: boolean;
@@ -189,20 +226,21 @@ export interface SksUpdateRollbackResult {
 }
 
 export async function runSksUpdateStatus(options: SksUpdateStatusOptions = {}): Promise<SksUpdateStatusV3> {
-  return runSksUpdateStatusInternal(options);
+  return runSksUpdateStatusInternal(await canonicalizeUpdateProjectRootOption(options));
 }
 
 export async function runSksUpdateCheck(options: SksUpdateCheckOptions = {}): Promise<SksUpdateCheckResult> {
+  const resolvedOptions = await canonicalizeUpdateProjectRootOption(options);
   let liveCheck: SksUpdateCheckResult | null = null;
-  const status = await runSksUpdateStatusInternal({ ...options, refresh: options.refresh !== false }, (check) => { liveCheck = check; });
-  const packageName = options.packageName || 'sneakoscope';
-  const registry = options.registry || DEFAULT_REGISTRY;
-  const env = options.env || process.env;
-  const npmBin = options.npmBin === undefined ? await which('npm') : options.npmBin;
+  const status = await runSksUpdateStatusInternal({ ...resolvedOptions, refresh: resolvedOptions.refresh !== false }, (check) => { liveCheck = check; });
+  const packageName = resolvedOptions.packageName || 'sneakoscope';
+  const registry = canonicalUpdateRegistry(resolvedOptions.registry || DEFAULT_REGISTRY);
+  const env = resolvedOptions.env || process.env;
+  const npmBin = resolvedOptions.npmBin === undefined ? await which('npm') : resolvedOptions.npmBin;
   const capturedCheck = liveCheck as SksUpdateCheckResult | null;
   const effective = capturedCheck
     ? effectiveFromCheck(capturedCheck)
-    : await detectEffectiveSksVersion({ ...options, packageName, registry, env, npmBin });
+    : await detectEffectiveSksVersion({ ...resolvedOptions, packageName, registry, env, npmBin });
   return buildResult({
     packageName,
     current: status.sks.current || effective.current,
@@ -210,8 +248,26 @@ export async function runSksUpdateCheck(options: SksUpdateCheckOptions = {}): Pr
     latest: status.sks.latest,
     registry,
     npmBin,
+    projectRoot: resolvedOptions.projectRoot,
+    commandRegistry: resolvedOptions.registry,
     error: capturedCheck?.error || (status.source === 'error' ? status.public_error || 'update status unavailable' : null)
   });
+}
+
+async function canonicalizeUpdateProjectRootOption<T extends SksUpdateCheckOptions>(options: T): Promise<T> {
+  const registry = options.registry ? canonicalUpdateRegistry(options.registry) : null;
+  if (!options.projectRoot && !registry) return options;
+  return {
+    ...options,
+    ...(options.projectRoot ? { projectRoot: await canonicalUpdateProjectRoot(options.projectRoot) } : {}),
+    ...(registry ? { registry } : {})
+  };
+}
+
+async function canonicalUpdateProjectRoot(value: string): Promise<string> {
+  const root = await canonicalFilesystemPath(value);
+  if (root === path.parse(root).root) throw new Error('update_project_root_filesystem_root_refused');
+  return root;
 }
 
 async function runSksUpdateStatusInternal(
@@ -239,7 +295,7 @@ async function runSksUpdateStatusInternal(
       }).catch(() => null);
       const menubarPromise = (options.deps?.inspectSksMenuBarStatusImpl || inspectSksMenuBarStatus)({
         ...(statusHome ? { home: statusHome } : {}),
-        ...(options.projectRoot === undefined ? {} : { root: options.projectRoot }),
+        ...(options.projectRoot == null ? {} : { root: options.projectRoot }),
         env
       }).catch(() => null);
       const [check, codex, menubar] = await Promise.all([checkPromise, codexPromise, menubarPromise]);
@@ -253,7 +309,7 @@ async function runSksUpdateStatusInternal(
 
 async function runSksUpdateCheckLive(options: SksUpdateCheckOptions = {}): Promise<SksUpdateCheckResult> {
   const packageName = options.packageName || 'sneakoscope';
-  const registry = options.registry || DEFAULT_REGISTRY;
+  const registry = canonicalUpdateRegistry(options.registry || DEFAULT_REGISTRY);
   const env = options.env || process.env;
   const npmBin = options.npmBin === undefined ? await which('npm') : options.npmBin;
   const effectiveOptions: SksUpdateCheckOptions = {
@@ -279,7 +335,16 @@ async function runSksUpdateCheckLive(options: SksUpdateCheckOptions = {}): Promi
     : Promise.resolve(null);
   const effective = await effectivePromise;
   const current = effective.current;
-  if (override) return buildResult({ packageName, current, effective, latest: override, registry, npmBin });
+  if (override) return buildResult({
+    packageName,
+    current,
+    effective,
+    latest: override,
+    registry,
+    npmBin,
+    projectRoot: options.projectRoot,
+    commandRegistry: options.registry
+  });
 
   if (!npmBin) {
     return buildResult({
@@ -289,6 +354,8 @@ async function runSksUpdateCheckLive(options: SksUpdateCheckOptions = {}): Promi
       latest: null,
       registry,
       npmBin: null,
+      projectRoot: options.projectRoot,
+      commandRegistry: options.registry,
       error: 'npm not found on PATH'
     });
   }
@@ -302,6 +369,8 @@ async function runSksUpdateCheckLive(options: SksUpdateCheckOptions = {}): Promi
       latest: null,
       registry,
       npmBin,
+      projectRoot: options.projectRoot,
+      commandRegistry: options.registry,
       error: 'npm view failed'
     });
   }
@@ -313,6 +382,8 @@ async function runSksUpdateCheckLive(options: SksUpdateCheckOptions = {}): Promi
       latest: null,
       registry,
       npmBin,
+      projectRoot: options.projectRoot,
+      commandRegistry: options.registry,
       error: `${result.stderr || result.stdout || 'npm view failed'}`.trim()
     });
   }
@@ -323,7 +394,9 @@ async function runSksUpdateCheckLive(options: SksUpdateCheckOptions = {}): Promi
     effective,
     latest,
     registry,
-    npmBin
+    npmBin,
+    projectRoot: options.projectRoot,
+    commandRegistry: options.registry
   });
 }
 
@@ -426,6 +499,8 @@ export const UPDATE_STAGE_ORDER = [
   'native_capability_setup',
   'menubar_rebuild',
   'menubar_signature_verify',
+  'menubar_version_probe',
+  'update_finalize_doctor',
   'final_self_verification',
   'snapshot_refresh'
 ] as const;
@@ -440,12 +515,13 @@ export function updateNestedProcessEnvironment(env: NodeJS.ProcessEnv): NodeJS.P
 
 export async function runSksUpdateReview(options: SksUpdateNowOptions = {}): Promise<SksUpdateReviewResult> {
   const packageName = options.packageName || 'sneakoscope';
-  const registry = options.registry || DEFAULT_REGISTRY;
+  const registry = canonicalUpdateRegistry(options.registry || DEFAULT_REGISTRY);
   const env = options.env || process.env;
   const npmBin = options.npmBin === undefined ? await which('npm') : options.npmBin;
   const check = await runSksUpdateCheck({ ...options, packageName, registry, env, npmBin, refresh: true });
   const target = parseVersionText(options.version || '') || check.latest;
   const globalRoot = npmBin ? await detectNpmGlobalRoot(npmBin, env, options).catch(() => null) : null;
+  const projectReceiptRoot = await canonicalUpdateProjectRoot(options.projectRoot || env.SKS_MUTATION_LEDGER_ROOT || process.cwd());
   const ok = Boolean(npmBin && target && parseSemVer(target));
   return {
     schema: 'sks.update-review.v1',
@@ -457,8 +533,9 @@ export async function runSksUpdateReview(options: SksUpdateNowOptions = {}): Pro
     global_root: globalRoot,
     node_path: process.execPath,
     expected_menubar_rebuild: process.platform === 'darwin' && env.SKS_UPDATE_SKIP_SKS_MENUBAR !== '1',
-    expected_migrations: ['hook_trust_repair', 'global_skills_reconcile', 'native_capability_setup'],
-    rollback_command: `sks update rollback --version ${check.current} --json`,
+    expected_migrations: ['hook_trust_repair', 'global_skills_reconcile', 'native_capability_setup', 'update_finalize_doctor'],
+    project_root: projectReceiptRoot,
+    rollback_command: buildUpdateRollbackCommand(check.current, projectReceiptRoot, registry),
     stages: [...UPDATE_STAGE_ORDER],
     project_mutation: Boolean(options.projectRoot || env.SKS_MUTATION_LEDGER_ROOT || process.cwd()),
     error: ok ? null : check.error || (!npmBin ? 'npm not found on PATH' : 'target version unavailable')
@@ -490,9 +567,14 @@ export async function runSksUpdateRollback(options: SksUpdateNowOptions & { vers
       error: 'rollback current version is unavailable'
     };
   }
+  const env = options.env || process.env;
+  const projectReceiptRoot = await canonicalUpdateProjectRoot(options.projectRoot || env.SKS_MUTATION_LEDGER_ROOT || process.cwd());
+  const registry = canonicalUpdateRegistry(options.registry || DEFAULT_REGISTRY);
   const authorization = await authorizeUpdateRollback({
     targetVersion: version,
     currentVersion,
+    projectRoot: projectReceiptRoot,
+    registry,
     ...(options.env ? { env: options.env } : {})
   });
   if (!authorization.ok) {
@@ -506,7 +588,10 @@ export async function runSksUpdateRollback(options: SksUpdateNowOptions & { vers
       error: authorization.blocker
     };
   }
-  const update = await runSksUpdateNow({ ...options, version, operationKind: 'rollback' });
+  const update = await runSksUpdateNowInternal(
+    { ...options, version, registry: authorization.receipt.registry },
+    authorization
+  );
   return {
     schema: 'sks.update-rollback.v1',
     ok: update.ok,
@@ -519,13 +604,22 @@ export async function runSksUpdateRollback(options: SksUpdateNowOptions & { vers
 }
 
 export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promise<SksUpdateNowResult> {
+  return runSksUpdateNowInternal(options, null);
+}
+
+type AuthorizedRollback = Extract<UpdateRollbackAuthorization, { ok: true }>;
+
+async function runSksUpdateNowInternal(
+  options: SksUpdateNowOptions,
+  rollbackAuthorization: AuthorizedRollback | null
+): Promise<SksUpdateNowResult> {
   const packageName = options.packageName || 'sneakoscope';
-  const registry = options.registry || DEFAULT_REGISTRY;
+  const registry = canonicalUpdateRegistry(options.registry || DEFAULT_REGISTRY);
   const env = options.env || process.env;
   const nestedProcessEnv = updateNestedProcessEnvironment(env);
   const npmBin = options.npmBin === undefined ? await which('npm') : options.npmBin;
   const cwd = env.HOME || os.homedir();
-  const check = await runSksUpdateCheck({
+  let check = await runSksUpdateCheck({
     ...options,
     packageName,
     registry,
@@ -533,19 +627,165 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
     env
   });
   const requestedVersion = parseVersionText(options.version || '') || null;
-  const installVersion = requestedVersion || check.latest;
-  const npmArgs = installVersion ? sksGlobalInstallArgs(packageName, installVersion, registry) : [];
-  const command = npmBin && npmArgs.length ? [npmBin, ...npmArgs].join(' ') : null;
-  const globalRoot = npmBin ? await detectNpmGlobalRoot(npmBin, env, options).catch(() => null) : null;
-  const projectReceiptRoot = path.resolve(options.projectRoot || env.SKS_MUTATION_LEDGER_ROOT || process.cwd());
+  let installVersion = requestedVersion || check.latest;
+  let npmArgs = installVersion ? sksGlobalInstallArgs(packageName, installVersion, registry) : [];
+  let command = npmBin && npmArgs.length ? [npmBin, ...npmArgs].join(' ') : null;
+  let globalRoot = npmBin ? await detectNpmGlobalRoot(npmBin, env, options).catch(() => null) : null;
+  const projectReceiptRoot = await canonicalUpdateProjectRoot(options.projectRoot || env.SKS_MUTATION_LEDGER_ROOT || process.cwd());
   const stages: SksUpdateNowStage[] = [];
   let temporaryInstallSmoke: TemporaryInstallSmokeResult | null = null;
-  const operation = await UpdateOperationRecorder.create({
-    env,
-    kind: options.operationKind || 'update',
-    fromVersion: check.current,
-    targetVersion: installVersion
-  });
+  await options.beforeOperationLock?.();
+  const operationLock = await acquireUpdateOperationLock(env);
+  if (!operationLock.ok) {
+    stages.push({
+      id: 'preflight',
+      ok: false,
+      status: 'blocked',
+      detail: { reason: operationLock.blocker }
+    });
+    return buildUpdateNowResult({
+      packageName,
+      from: check.current,
+      latest: check.latest,
+      requestedVersion,
+      installVersion,
+      npmBin,
+      npmArgs,
+      command,
+      cwd,
+      projectRoot: projectReceiptRoot,
+      registry,
+      globalRoot,
+      status: 'failed',
+      ok: false,
+      installCode: null,
+      oldVersionDoctor: null,
+      newBinary: null,
+      newVersion: null,
+      newVersionDoctor: null,
+      projectReceipt: null,
+      migrationCurrent: false,
+      stages,
+      error: operationLock.blocker
+    });
+  }
+  let operation: UpdateOperationRecorder | null = null;
+  let operationFinished = false;
+  try {
+  let activeRollbackAuthorization = rollbackAuthorization;
+  let rollbackReauthorizationBlocker: string | null = null;
+  try {
+    const lockedProbeInput: SksLockedInstalledVersionProbeInput = {
+      packageName,
+      npmBin,
+      env,
+      timeoutMs: boundedLockedProbeTimeout(options.timeoutMs),
+      maxOutputBytes: boundedLockedProbeOutput(options.maxOutputBytes)
+    };
+    const lockedObservation = normalizeLockedInstalledVersionObservation(
+      await (options.lockedInstalledVersionProbe
+        ? options.lockedInstalledVersionProbe(lockedProbeInput)
+        : probeLockedInstalledSksVersion(lockedProbeInput))
+    );
+    if (!lockedObservation.ok || !lockedObservation.version) {
+      stages.push({
+        id: 'preflight',
+        ok: false,
+        status: 'blocked',
+        detail: {
+          reason: 'locked_installed_version_probe_failed',
+          npm_global_version: lockedObservation.npm_global_version,
+          path_version: lockedObservation.path_version,
+          path_binary: lockedObservation.path_binary,
+          errors: lockedObservation.errors
+        }
+      });
+      return buildUpdateNowResult({
+        packageName,
+        from: check.current,
+        latest: check.latest,
+        requestedVersion,
+        installVersion,
+        npmBin,
+        npmArgs,
+        command,
+        cwd,
+        projectRoot: projectReceiptRoot,
+        registry,
+        globalRoot,
+        status: 'failed',
+        ok: false,
+        installCode: null,
+        oldVersionDoctor: null,
+        newBinary: null,
+        newVersion: null,
+        newVersionDoctor: null,
+        projectReceipt: null,
+        migrationCurrent: false,
+        stages,
+        error: 'locked_installed_version_probe_failed'
+      });
+    }
+    const lockedCandidates: SksVersionCandidate[] = [
+      ...(lockedObservation.npm_global_version
+        ? [{ version: lockedObservation.npm_global_version, source: `npm-global:${packageName}` }]
+        : []),
+      ...(lockedObservation.path_version && lockedObservation.path_binary
+        ? [{ version: lockedObservation.path_version, source: `PATH:${lockedObservation.path_binary}` }]
+        : [])
+    ];
+    check = buildResult({
+      packageName,
+      current: lockedObservation.version,
+      effective: {
+        current: lockedObservation.version,
+        runtime_current: check.runtime_current,
+        package_root_current: check.package_root_current,
+        path_current: lockedObservation.path_version,
+        npm_global_current: lockedObservation.npm_global_version,
+        candidates: lockedCandidates,
+        errors: lockedObservation.errors
+      },
+      latest: check.latest,
+      registry,
+      npmBin,
+      projectRoot: options.projectRoot,
+      commandRegistry: options.registry,
+      error: check.error
+    });
+    installVersion = requestedVersion || check.latest;
+    npmArgs = installVersion ? sksGlobalInstallArgs(packageName, installVersion, registry) : [];
+    command = npmBin && npmArgs.length ? [npmBin, ...npmArgs].join(' ') : null;
+    globalRoot = npmBin ? await detectNpmGlobalRoot(npmBin, env, options).catch(() => null) : null;
+    if (rollbackAuthorization && installVersion) {
+      const refreshed = await authorizeUpdateRollback({
+        targetVersion: installVersion,
+        currentVersion: check.current,
+        projectRoot: projectReceiptRoot,
+        registry,
+        env,
+        repairMissingPointer: true
+      });
+      if (refreshed.ok) activeRollbackAuthorization = refreshed;
+      else rollbackReauthorizationBlocker = refreshed.blocker;
+    }
+  } catch (error) {
+    throw error;
+  }
+  try {
+    operation = await UpdateOperationRecorder.create({
+      env,
+      kind: options.dryRun ? 'update_dry_run' : rollbackAuthorization ? 'rollback' : 'update',
+      fromVersion: check.current,
+      targetVersion: installVersion,
+      projectRoot: projectReceiptRoot,
+      registry,
+      publishLatest: !options.dryRun
+    });
+  } catch (error) {
+    throw error;
+  }
+  const operationRecorder = operation;
   const quiet = options.quiet === true || /^(1|true)$/i.test(String(env.SKS_UPDATE_QUIET || ''));
   const machineOutput = quiet || options.json === true;
   const stageStart = (id: string, status: string) => {
@@ -553,25 +793,43 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
   };
   const stage = (id: string, ok: boolean, status: string, detail: Record<string, unknown> = {}) => {
     stages.push({ id, ok, status, detail });
-    operation.recordStage(id, ok, status, detail);
+    operationRecorder.recordStage(id, ok, status, detail);
     if (!machineOutput) cliUi.step(`${ok ? '✔' : '✖'} ${id} - ${status}`);
   };
-  const finalize = async (result: SksUpdateNowResult): Promise<SksUpdateNowResult> => {
+  const durableStageIntent = async (id: string, status: string, detail: Record<string, unknown> = {}) => {
+    operationRecorder.recordStage(id, false, status, detail);
+    await operationRecorder.flush();
+  };
+  const finalize = async (
+    result: SksUpdateNowResult,
+    operationError: unknown = result.error
+  ): Promise<SksUpdateNowResult> => {
     result.temporary_install_smoke = temporaryInstallSmoke;
-    result.operation_receipt_path = operation.receiptPath;
-    result.rollback = {
-      available: Boolean(parseSemVer(check.current)),
-      previous_version: check.current,
-      command: `sks update rollback --version ${check.current} --json`,
-      receipt_path: operation.receiptPath
-    };
-    await operation.finish({
+    result.operation_receipt_path = operationRecorder.receiptPath;
+    const finished = await operationRecorder.finish({
       state: result.status === 'terminal_uncertain'
         ? 'terminal_uncertain'
-        : result.ok ? (options.operationKind === 'rollback' ? 'rolled_back' : 'succeeded') : 'failed',
+        : result.ok ? (activeRollbackAuthorization ? 'rolled_back' : 'succeeded') : 'failed',
       resultStatus: result.status,
-      error: result.error
+      error: operationError
     });
+    operationFinished = true;
+    if (finished.state === 'terminal_uncertain' && result.status !== 'terminal_uncertain') {
+      result.ok = false;
+      result.status = 'terminal_uncertain';
+      result.error = finished.public_error || 'rollback authorization commit failed';
+    }
+    const rollbackCommitted = finished.kind === 'update'
+      && finished.state !== 'terminal_uncertain'
+      && updateReceiptHasConfirmedGlobalInstall(finished);
+    result.rollback = {
+      available: rollbackCommitted,
+      previous_version: check.current,
+      command: buildUpdateRollbackCommand(check.current, projectReceiptRoot, registry),
+      receipt_path: rollbackCommitted
+        ? updateOperationLastInstallPath(projectReceiptRoot, env)
+        : null
+    };
     return result;
   };
   const recordRegistryStage = () => stage('download_or_registry_check', !check.error, check.error ? 'unavailable' : 'resolved', {
@@ -593,6 +851,7 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       npmArgs,
       command,
       cwd,
+      projectRoot: projectReceiptRoot,
       registry,
       globalRoot,
       status: 'unavailable',
@@ -621,6 +880,7 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       npmArgs,
       command,
       cwd,
+      projectRoot: projectReceiptRoot,
       registry,
       globalRoot,
       status: 'unavailable',
@@ -651,6 +911,7 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       npmArgs,
       command,
       cwd,
+      projectRoot: projectReceiptRoot,
       registry,
       globalRoot,
       status: 'dry_run',
@@ -666,6 +927,90 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       error: null
     }));
   }
+  if (compareSemVer(installVersion, check.current) === -1 && !activeRollbackAuthorization) {
+    stage('preflight', false, 'blocked', {
+      reason: 'downgrade_requires_authorized_rollback',
+      current_version: check.current,
+      requested_version: installVersion
+    });
+    recordRegistryStage();
+    return finalize(buildUpdateNowResult({
+      packageName,
+      from: check.current,
+      latest: check.latest,
+      requestedVersion,
+      installVersion,
+      npmBin,
+      npmArgs,
+      command,
+      cwd,
+      projectRoot: projectReceiptRoot,
+      registry,
+      globalRoot,
+      status: 'failed',
+      ok: false,
+      installCode: null,
+      oldVersionDoctor: null,
+      newBinary: null,
+      newVersion: null,
+      newVersionDoctor: null,
+      projectReceipt: null,
+      migrationCurrent: false,
+      stages,
+      error: 'downgrade_requires_authorized_rollback'
+    }));
+  }
+  if (rollbackAuthorization) {
+    const authorizedReceipt = activeRollbackAuthorization?.receipt || rollbackAuthorization.receipt;
+    const authorizationCurrent = parseVersionText(authorizedReceipt.target_version || '');
+    const authorizationPrevious = parseVersionText(authorizedReceipt.previous_version || '');
+    const authorizationProjectRoot = await canonicalUpdateProjectRoot(authorizedReceipt.project_root)
+      .catch(() => null);
+    const authorizationValid = rollbackReauthorizationBlocker === null
+      && authorizationCurrent === check.current
+      && authorizationPrevious === installVersion
+      && authorizationProjectRoot === projectReceiptRoot
+      && canonicalUpdateRegistry(authorizedReceipt.registry) === registry;
+    if (!authorizationValid) {
+      stage('preflight', false, 'blocked', {
+        reason: rollbackReauthorizationBlocker || 'rollback_authorization_stale',
+        authorized_current_version: authorizationCurrent,
+        observed_current_version: check.current,
+        authorized_previous_version: authorizationPrevious,
+        requested_version: installVersion,
+        authorized_project_root: authorizationProjectRoot,
+        observed_project_root: projectReceiptRoot,
+        authorized_registry: canonicalUpdateRegistry(authorizedReceipt.registry),
+        observed_registry: registry
+      });
+      recordRegistryStage();
+      return finalize(buildUpdateNowResult({
+        packageName,
+        from: check.current,
+        latest: check.latest,
+        requestedVersion,
+        installVersion,
+        npmBin,
+        npmArgs,
+        command,
+        cwd,
+        projectRoot: projectReceiptRoot,
+        registry,
+        globalRoot,
+        status: 'failed',
+        ok: false,
+        installCode: null,
+        oldVersionDoctor: null,
+        newBinary: null,
+        newVersion: null,
+        newVersionDoctor: null,
+        projectReceipt: null,
+        migrationCurrent: false,
+        stages,
+        error: rollbackReauthorizationBlocker || 'rollback_authorization_stale'
+      }));
+    }
+  }
   if (!requestedVersion && check.latest && !check.update_available) {
     stage('preflight', true, 'already_current', { current: check.current });
     recordRegistryStage();
@@ -676,17 +1021,24 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
     stage('resolve_new_binary', true, 'skipped_current', { current: check.current });
     stage('version_probe', true, 'skipped_current', { current: check.current });
     stage('new_version_doctor', true, 'skipped_current', { current: check.current });
-    stage('hook_trust_repair', true, 'skipped_current', { current: check.current });
-    const receipt = await writeProjectUpdateMigrationReceipt({
+    let receipt = await writeProjectUpdateMigrationReceipt({
       root: projectReceiptRoot,
       source: 'update-now-current',
       fromVersion: check.current,
       blockers: [],
       warnings: ['package_already_current']
     }).catch(() => null);
-    const migrationCurrent = isUpdateMigrationReceiptCurrent(receipt);
-    stage('project_receipt', migrationCurrent, migrationCurrent ? 'current' : 'failed', { root: projectReceiptRoot });
-    await runUpdateGlobalSkillsReconcile(stage, { quiet: machineOutput, env });
+    let migrationCurrent = isUpdateMigrationReceiptCurrent(receipt);
+    recordMigrationReceiptStage(stage, 'hook_trust_repair', receipt, 'hook-trust-refresh');
+    stage('project_receipt', migrationCurrent, migrationCurrent ? 'current' : 'failed', {
+      root: projectReceiptRoot,
+      receipt_status: receipt?.status || null,
+      receipt_version: receipt?.sks_version || null,
+      required_blockers: receipt?.required_blockers || [],
+      optional_warnings: receipt?.optional_warnings || [],
+      installation_epoch_sha256: receipt?.installation_epoch_sha256 || null
+    });
+    recordMigrationReceiptStage(stage, 'global_skills_reconcile', receipt, 'skills-reconcile');
     stage('native_capability_setup', true, 'skipped_current', { reason: 'package_already_current' });
     const sksMenuBar = migrationCurrent
       ? await installUpdateSksMenuBar({ root: projectReceiptRoot, env, stage, quiet: machineOutput })
@@ -699,7 +1051,26 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       env
     });
     stage('menubar_signature_verify', menuVerification.ok, menuVerification.status, menuVerification.detail);
-    stage('final_self_verification', migrationCurrent && menuVerification.ok, migrationCurrent && menuVerification.ok ? 'verified_current' : 'issues', {});
+    stage('menubar_version_probe', menuVerification.versionProbe.ok, menuVerification.versionProbe.status, menuVerification.versionProbe.detail);
+    // The migration receipt above is the only mutator. Close with a read-only
+    // Doctor so verification cannot silently repair its own evidence.
+    const currentFinalizeDoctor = await runUpdateFinalizeDoctor({
+      root: projectReceiptRoot,
+      env: nestedProcessEnv,
+      machineOutput
+    });
+    stage('update_finalize_doctor', currentFinalizeDoctor.ok, currentFinalizeDoctor.status, {
+      entrypoint: currentFinalizeDoctor.entrypoint,
+      args: currentFinalizeDoctor.args,
+      exit_code: currentFinalizeDoctor.exit_code,
+      timed_out: currentFinalizeDoctor.timed_out,
+      required_blockers: currentFinalizeDoctor.required_blockers,
+      optional_warnings: currentFinalizeDoctor.optional_warnings
+    });
+    const finalCurrentReceipt = await readProjectUpdateMigrationReceipt(projectReceiptRoot);
+    if (finalCurrentReceipt) receipt = finalCurrentReceipt;
+    migrationCurrent = isUpdateMigrationReceiptCurrent(receipt);
+    stage('final_self_verification', migrationCurrent && menuVerification.ok && currentFinalizeDoctor.ok, migrationCurrent && menuVerification.ok && currentFinalizeDoctor.ok ? 'verified_current' : 'issues', {});
     const currentSnapshot = await runSksUpdateStatus(updateStatusOptionsFromNow(
       options,
       check.current,
@@ -710,7 +1081,28 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       update_count: currentSnapshot?.update_count ?? null
     });
     const currentMenuBarTerminalUncertain = menuBarInstallIsTerminalUncertain(sksMenuBar);
-    const currentOk = migrationCurrent && menuVerification.ok && snapshotOk && !currentMenuBarTerminalUncertain;
+    const currentStageFailures = requiredUpdateStageFailures(stages, UPDATE_STAGE_ORDER);
+    const currentOk = migrationCurrent
+      && menuVerification.ok
+      && currentFinalizeDoctor.ok
+      && snapshotOk
+      && currentStageFailures.length === 0
+      && !currentMenuBarTerminalUncertain;
+    const currentError = currentOk ? null : currentMenuBarTerminalUncertain
+      ? 'Menu Bar launch or rollback completion could not be confirmed'
+      : currentFinalizeDoctor.ok
+        ? currentStageFailures.length
+          ? `current-version repair verification failed: ${currentStageFailures.join(',')}`
+          : 'current-version repair verification failed'
+        : 'current-version repair verification failed: update_finalize_doctor';
+    const currentOperationError = currentError && currentStageFailures.length
+      ? requiredUpdateStageFailureError(
+          currentError,
+          stages,
+          currentStageFailures,
+          projectReceiptRoot
+        )
+      : currentError;
     return finalize(buildUpdateNowResult({
       packageName,
       from: check.current,
@@ -721,6 +1113,7 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       npmArgs,
       command,
       cwd,
+      projectRoot: projectReceiptRoot,
       registry,
       globalRoot,
       status: currentMenuBarTerminalUncertain ? 'terminal_uncertain' : 'current',
@@ -734,10 +1127,8 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       migrationCurrent,
       sksMenuBar,
       stages,
-      error: currentOk ? null : currentMenuBarTerminalUncertain
-        ? 'Menu Bar launch or rollback completion could not be confirmed'
-        : 'current-version repair verification failed'
-    }));
+      error: currentError
+    }), currentOperationError);
   }
 
   const oldDoctorTimeoutOverride = Number.parseInt(env.SKS_UPDATE_OLD_DOCTOR_TIMEOUT_MS || '', 10);
@@ -748,10 +1139,10 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
   if (env.SKS_UPDATE_SKIP_OLD_DOCTOR_PREFLIGHT === '1') {
     stage('preflight', true, 'skipped', { reason: 'SKS_UPDATE_SKIP_OLD_DOCTOR_PREFLIGHT=1' });
   } else {
-    stageStart('preflight', 'running migration doctor on current install');
+    stageStart('preflight', 'running read-only migration preflight on current install');
     oldVersionDoctor = await updateHeartbeat(machineOutput, 'old-version doctor', runPackageLocalDoctor({
       root: projectReceiptRoot,
-      args: ['doctor', '--fix', '--yes', '--profile', 'migration', '--machine-only', '--report-file', path.join(projectReceiptRoot, '.sneakoscope', 'update', 'old-version-doctor.json')],
+      args: ['doctor', '--profile', 'migration', '--machine-only', '--report-file', path.join(projectReceiptRoot, '.sneakoscope', 'update', 'old-version-doctor.json')],
       env: {
         ...nestedProcessEnv,
         ...(env.SKS_TEST_OLD_DOCTOR_FAIL === '1' ? { SKS_TEST_DOCTOR_FAIL: '1' } : {})
@@ -759,7 +1150,8 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       timeoutMs: oldDoctorTimeoutMs,
       maxOutputBytes: 32 * 1024
     }), 60_000);
-    stage('preflight', oldVersionDoctor.ok, oldVersionDoctor.ok ? oldVersionDoctor.status : 'failed_continuing', {
+    stage('preflight', true, oldVersionDoctor.ok ? oldVersionDoctor.status : 'failed_continuing', {
+      doctor_ok: oldVersionDoctor.ok,
       entrypoint: oldVersionDoctor.entrypoint,
       exit_code: oldVersionDoctor.exit_code,
       timeout_ms: oldDoctorTimeoutMs,
@@ -795,6 +1187,7 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       npmArgs,
       command,
       cwd,
+      projectRoot: projectReceiptRoot,
       registry,
       globalRoot,
       status: 'failed',
@@ -831,6 +1224,10 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
   };
   if (npmStdout) installOptions.onStdout = npmStdout;
   if (npmStderr) installOptions.onStderr = npmStderr;
+  await durableStageIntent('global_install', 'started', {
+    command,
+    target_version: installVersion
+  });
   const install = env.SKS_UPDATE_FAKE_INSTALL === '1'
     ? { code: 0, stdout: 'fake install ok', stderr: '', timedOut: false }
     : await updateHeartbeat(machineOutput, `npm install -g ${packageName}`, guardedPackageInstall(
@@ -848,11 +1245,11 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
   let newBinary: string | null = null;
   let newVersion: string | null = null;
   let newVersionDoctor: PackageLocalDoctorRun | null = null;
+  let preDoctorReceipt: UpdateMigrationReceipt | null = null;
   let projectReceipt: UpdateMigrationReceipt | null = null;
   let migrationCurrent = false;
   let sksMenuBar: SksMenuBarInstallResult | null = null;
   let menubarVerified = process.platform !== 'darwin' || env.SKS_UPDATE_SKIP_SKS_MENUBAR === '1';
-  let hookTrust: any = null;
   if (installOk) {
     newBinary = env.SKS_UPDATE_FAKE_INSTALL === '1'
       ? path.resolve(env.SKS_UPDATE_FAKE_NEW_ENTRYPOINT || path.join(packageRoot(), 'dist', 'bin', 'sks.js'))
@@ -867,6 +1264,7 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
       }).catch((err: any) => ({ code: 1, stdout: '', stderr: err?.message || String(err) }));
       newVersion = parseVersionText(versionProbe.stdout || versionProbe.stderr || '') || null;
       stage('version_probe', Boolean(newVersion), newVersion ? 'version_detected' : 'failed', { new_version: newVersion, code: versionProbe.code });
+      preDoctorReceipt = await readProjectUpdateMigrationReceipt(projectReceiptRoot);
       stageStart('new_version_doctor', 'running migration doctor on updated install');
       newVersionDoctor = await updateHeartbeat(machineOutput, 'new-version doctor', runPackageLocalDoctor({
         root: projectReceiptRoot,
@@ -876,46 +1274,68 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
         timeoutMs: updateDoctorTimeoutMs(env),
         maxOutputBytes: 32 * 1024
       }), 60_000);
-      stage('new_version_doctor', newVersionDoctor.ok, newVersionDoctor.status, { entrypoint: newBinary, exit_code: newVersionDoctor.exit_code, timeout_ms: updateDoctorTimeoutMs(env), timed_out: newVersionDoctor.timedOut });
-    }
-    if (newVersionDoctor?.ok) {
-      hookTrust = await codexHookTrustDoctor(projectReceiptRoot, { fix: true, managed: true, actual: true })
-        .catch((err: any) => ({ ok: false, blockers: [`hook_trust_repair_failed:${err?.message || err}`] }));
-      stage('hook_trust_repair', hookTrust?.ok !== false, hookTrust?.ok !== false ? 'repaired' : 'failed', {
-        entries: hookTrust?.current_hash_count ?? null,
-        blockers: hookTrust?.blockers || []
+      stage('new_version_doctor', newVersionDoctor.ok, newVersionDoctor.status, {
+        entrypoint: newBinary,
+        exit_code: newVersionDoctor.exit_code,
+        timeout_ms: updateDoctorTimeoutMs(env),
+        timed_out: newVersionDoctor.timedOut,
+        required_blockers: newVersionDoctor.required_blockers
       });
     }
-    if (newBinary && newVersionDoctor?.ok && hookTrust?.ok !== false) {
-      const receiptResult = await writeUpdatedPackageMigrationReceipt({
-        newBinary,
+    if (newBinary && newVersionDoctor?.ok) {
+      const doctorReceipt = await readProjectUpdateMigrationReceipt(projectReceiptRoot);
+      const doctorReceiptCurrent = isFreshDoctorMigrationReceipt({
+        receipt: doctorReceipt,
+        priorReceipt: preDoctorReceipt,
         expectedVersion: installVersion,
-        root: projectReceiptRoot,
-        source: 'update-now',
-        doctor: newVersionDoctor,
-        updateStages: stages,
-        fromVersion: check.current,
-        env: nestedProcessEnv
+        root: projectReceiptRoot
       });
+      const legacyCompatibilityReceiptAllowed =
+        compareSemVer(installVersion, DOCTOR_OWNED_UPDATE_MIGRATION_SINCE) === -1;
+      const receiptResult = doctorReceiptCurrent
+        ? { receipt: doctorReceipt, error: null, via: 'new_version_doctor' }
+        : legacyCompatibilityReceiptAllowed
+          ? {
+            ...(await writeUpdatedPackageMigrationReceipt({
+              newBinary,
+              expectedVersion: installVersion,
+              root: projectReceiptRoot,
+              source: 'update-now-compatibility-fallback',
+              doctor: newVersionDoctor,
+              updateStages: stages,
+              fromVersion: check.current,
+              env: nestedProcessEnv
+            })),
+            via: 'new_package_compatibility_fallback'
+          }
+          : {
+              receipt: doctorReceipt,
+              error: 'new_version_doctor_receipt_missing_or_stale',
+              via: 'new_version_doctor_receipt_required'
+            };
       projectReceipt = receiptResult.receipt;
       migrationCurrent = isUpdateMigrationReceiptCurrent(projectReceipt, installVersion);
+      recordMigrationReceiptStage(stage, 'hook_trust_repair', projectReceipt, 'hook-trust-refresh');
       stage('project_receipt', migrationCurrent, migrationCurrent ? 'current' : 'failed', {
         root: projectReceiptRoot,
-        via: 'new_package_binary',
+        via: receiptResult.via,
         expected_version: installVersion,
         receipt_version: projectReceipt?.sks_version || null,
+        required_blockers: projectReceipt?.required_blockers || [],
+        optional_warnings: projectReceipt?.optional_warnings || [],
         error: receiptResult.error
       });
-      await runUpdateGlobalSkillsReconcile(stage, {
-        quiet: machineOutput,
-        env,
-        newPackageRoot: newBinary ? path.resolve(path.dirname(newBinary), '..', '..') : null
-      });
-      await runUpdateNativeCapabilitySetup(stage, {
-        quiet: machineOutput,
-        env,
-        newPackageRoot: newBinary ? path.resolve(path.dirname(newBinary), '..', '..') : null,
-        root: projectReceiptRoot
+      recordMigrationReceiptStage(stage, 'global_skills_reconcile', projectReceipt, 'skills-reconcile');
+      const nativeSetupOwnedByDoctor = receiptResult.via === 'new_version_doctor';
+      stage('native_capability_setup', migrationCurrent, migrationCurrent
+        ? nativeSetupOwnedByDoctor
+          ? 'owned_by_new_version_doctor'
+          : 'skipped_legacy_target_compatibility'
+        : 'doctor_migration_not_current', {
+        owner: nativeSetupOwnedByDoctor ? 'new_version_doctor' : 'legacy_compatibility_receipt',
+        doctor_status: newVersionDoctor.status,
+        receipt_source: projectReceipt?.source || null,
+        receipt_version: projectReceipt?.sks_version || null
       });
       if (migrationCurrent) {
         sksMenuBar = await installUpdateSksMenuBar({ root: projectReceiptRoot, env, stage, quiet: machineOutput, entrypoint: newBinary });
@@ -928,14 +1348,44 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
         });
         menubarVerified = menuVerification.ok;
         stage('menubar_signature_verify', menuVerification.ok, menuVerification.status, menuVerification.detail);
+        stage('menubar_version_probe', menuVerification.versionProbe.ok, menuVerification.versionProbe.status, menuVerification.versionProbe.detail);
       }
     }
   }
+  // The new-version migration Doctor is the one post-install mutator. The
+  // final Doctor is deliberately read-only so verification cannot mask a
+  // failed or incomplete migration by changing the state it is checking.
+  const finalizeDoctor = installOk && newBinary
+    ? await runUpdateFinalizeDoctor({
+      entrypoint: newBinary,
+      root: projectReceiptRoot,
+      env: nestedProcessEnv,
+      machineOutput
+    })
+    : null;
+  stage('update_finalize_doctor', finalizeDoctor?.ok === true, finalizeDoctor ? finalizeDoctor.status : 'skipped_install_failed', {
+    ...(finalizeDoctor ? {
+      entrypoint: finalizeDoctor.entrypoint,
+      args: finalizeDoctor.args,
+      exit_code: finalizeDoctor.exit_code,
+      timed_out: finalizeDoctor.timed_out,
+      required_blockers: finalizeDoctor.required_blockers,
+      optional_warnings: finalizeDoctor.optional_warnings
+    } : {})
+  });
+  if (finalizeDoctor) {
+    const finalDoctorReceipt = await readProjectUpdateMigrationReceipt(projectReceiptRoot);
+    if (finalDoctorReceipt) projectReceipt = finalDoctorReceipt;
+    migrationCurrent = isUpdateMigrationReceiptCurrent(projectReceipt, installVersion);
+  }
   const verification = await runFinalUpdateVerification({ installOk, newBinary, installVersion, env, projectReceiptRoot });
-  const verifyOk = verification.length > 0 && verification.every((item) => item.ok);
+  const verifyOk = verification.length > 0 && verification.every((item) => item.ok) && finalizeDoctor?.ok === true;
   if (verification.length) {
     stage('final_self_verification', verifyOk, verifyOk ? 'verified' : 'issues', {
-      failed: verification.filter((item) => !item.ok).map((item) => item.id)
+      failed: [
+        ...verification.filter((item) => !item.ok).map((item) => item.id),
+        ...(finalizeDoctor?.ok === true ? [] : ['update_finalize_doctor'])
+      ]
     });
   } else stage('final_self_verification', false, 'not_run', {});
   const snapshot = await runSksUpdateStatus(updateStatusOptionsFromNow(
@@ -952,14 +1402,46 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
     update_count: snapshot?.update_count ?? null,
     public_error: snapshot?.public_error || null
   });
+  const executionStageIds = UPDATE_STAGE_ORDER.filter(
+    (id) => !['update_finalize_doctor', 'final_self_verification', 'snapshot_refresh'].includes(id)
+  );
+  const executionStageFailures = requiredUpdateStageFailures(stages, executionStageIds);
+  const allStageFailures = requiredUpdateStageFailures(stages, UPDATE_STAGE_ORDER);
   const baseOk = installOk && Boolean(newBinary) && newVersionDoctor?.ok === true
-    && hookTrust?.ok !== false && migrationCurrent && menubarVerified;
+    && migrationCurrent && menubarVerified && executionStageFailures.length === 0;
   const ok = baseOk && verifyOk && snapshotOk;
   const menuBarTerminalUncertain = menuBarInstallIsTerminalUncertain(sksMenuBar);
   const terminalUncertain = install.timedOut === true || menuBarTerminalUncertain;
   const status: SksUpdateNowResult['status'] = terminalUncertain
     ? 'terminal_uncertain'
     : ok ? 'updated' : baseOk ? 'updated_with_issues' : 'failed';
+  const stageFailureError = executionStageFailures.length
+    ? requiredUpdateStageFailureError(
+        `required update stages failed: ${executionStageFailures.join(',')}`,
+        stages,
+        executionStageFailures,
+        projectReceiptRoot
+      )
+    : null;
+  const resultError = terminalUncertain
+    ? menuBarTerminalUncertain
+      ? 'Menu Bar launch or rollback completion could not be confirmed'
+      : 'global install timed out; package side-effect completion is uncertain'
+    : ok ? null
+      : stageFailureError
+        ? stageFailureError.message
+        : status === 'updated_with_issues'
+          ? verificationError(verification, finalizeDoctor)
+          : updateNowError(install, newBinary, newVersionDoctor, migrationCurrent);
+  const resultOperationError = stageFailureError
+    || (resultError && allStageFailures.length
+      ? requiredUpdateStageFailureError(
+          resultError,
+          stages,
+          allStageFailures,
+          projectReceiptRoot
+        )
+      : resultError);
   return finalize(buildUpdateNowResult({
     packageName,
     from: check.current,
@@ -970,6 +1452,7 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
     npmArgs,
     command,
     cwd,
+    projectRoot: projectReceiptRoot,
     registry,
     globalRoot,
     status,
@@ -984,12 +1467,50 @@ export async function runSksUpdateNow(options: SksUpdateNowOptions = {}): Promis
     sksMenuBar,
     stages,
     verification,
-    error: terminalUncertain
-      ? menuBarTerminalUncertain
-        ? 'Menu Bar launch or rollback completion could not be confirmed'
-        : 'global install timed out; package side-effect completion is uncertain'
-      : ok ? null : status === 'updated_with_issues' ? verificationError(verification) : updateNowError(install, newBinary, newVersionDoctor, migrationCurrent)
-  }));
+    error: resultError
+  }), resultOperationError);
+  } catch (error) {
+    if (operation && !operationFinished) {
+      try {
+        await operation.finish({
+          state: 'failed',
+          resultStatus: 'failed',
+          error
+        });
+        operationFinished = true;
+      } catch {
+        await operation.flush().catch(() => undefined);
+      }
+    }
+    throw error;
+  } finally {
+    await operationLock.release();
+  }
+}
+
+function requiredUpdateStageFailures(
+  stages: SksUpdateNowStage[],
+  requiredIds: readonly string[]
+): string[] {
+  return requiredIds.filter((id) => {
+    const matches = stages.filter((stage) => stage.id === id);
+    return matches.length !== 1 || matches[0]?.ok !== true;
+  });
+}
+
+function requiredUpdateStageFailureError(
+  message: string,
+  stages: SksUpdateNowStage[],
+  failedIds: readonly string[],
+  projectRoot: string
+): Error {
+  for (const id of failedIds) {
+    for (const stage of stages.filter((entry) => entry.id === id && entry.ok !== true)) {
+      const rootCause = updateStageFailureDiagnostics(stage, projectRoot)[0];
+      if (rootCause) return new Error(message, { cause: new Error(rootCause) });
+    }
+  }
+  return new Error(message);
 }
 
 export function menuBarInstallIsTerminalUncertain(result: SksMenuBarInstallResult | null | undefined): boolean {
@@ -998,102 +1519,65 @@ export function menuBarInstallIsTerminalUncertain(result: SksMenuBarInstallResul
     || result?.rollback?.status === 'terminal_uncertain';
 }
 
-async function runUpdateGlobalSkillsReconcile(stage: (id: string, ok: boolean, status: string, detail?: Record<string, unknown>) => void, opts: { quiet?: boolean; newPackageRoot?: string | null; env?: NodeJS.ProcessEnv } = {}) {
-  const targetDir = path.join(opts.env?.HOME || os.homedir(), '.agents', 'skills');
-  // reconcileSkills stamps ~/.agents/skills/.sks-generated.json with the
-  // PACKAGE_VERSION compiled into whichever module runs it. This function
-  // executes inside the OLD (driver) binary, so after a real version install
-  // an in-process reconcile would overwrite the manifest the new binary's
-  // migration doctor just wrote and make final self-verification report
-  // skills_manifest stale forever. Delegate to the freshly installed package.
-  if (opts.newPackageRoot) {
-    const moduleHref = pathToFileURL(path.join(opts.newPackageRoot, 'dist', 'core', 'init', 'skills.js')).href;
-    const script = [
-      `const m = await import(${JSON.stringify(moduleHref)});`,
-      `const r = await m.reconcileSkills({ targetDir: ${JSON.stringify(targetDir)}, scope: 'global', fix: true });`,
-      'console.log(JSON.stringify(r));',
-      'if (r && (r.ok === false || r.error)) process.exit(1);'
-    ].join('\n');
-    const work = runProcess(process.execPath, ['--input-type=module', '-e', script], {
-      env: opts.env || process.env,
-      timeoutMs: 120_000,
-      maxOutputBytes: 1024 * 1024
-    }).catch((err: any) => ({ code: 1, stdout: '', stderr: err?.message || String(err) }));
-    const run = opts.quiet ? await work : await withHeartbeat('skills reconcile', work, { warnAfterMs: 30_000 });
-    let parsed: any = null;
-    for (const line of String(run.stdout || '').trim().split('\n').reverse()) {
-      try { parsed = JSON.parse(line); break; } catch { /* not the JSON result line */ }
-    }
-    const ok = run.code === 0 && parsed?.ok !== false && !parsed?.error;
-    stage('global_skills_reconcile', ok, ok ? 'reconciled' : 'failed', {
-      via: 'new_package_binary',
-      installed: Array.isArray(parsed?.installed) ? parsed.installed.length : null,
-      updated: Array.isArray(parsed?.updated) ? parsed.updated.length : null,
-      removed: Array.isArray(parsed?.removed) ? parsed.removed.length : null,
-      error: ok ? null : parsed?.error || String(run.stderr || '').trim().slice(-400) || `exit_${run.code}`
-    });
-    return parsed || { schema: 'sks.skill-reconcile.v1', ok };
-  }
-  const work = reconcileSkills({
-    targetDir,
-    scope: 'global',
-    fix: true
-  }).catch((err: any) => ({ schema: 'sks.skill-reconcile.v1', ok: false, error: err?.message || String(err) }));
-  const result = opts.quiet ? await work : await withHeartbeat('skills reconcile', work, { warnAfterMs: 30_000 });
-  const ok = (result as any).ok !== false && !(result as any).error;
-  stage('global_skills_reconcile', ok, ok ? 'reconciled' : 'failed', {
-    installed: Array.isArray((result as any).installed) ? (result as any).installed.length : null,
-    updated: Array.isArray((result as any).updated) ? (result as any).updated.length : null,
-    removed: Array.isArray((result as any).removed) ? (result as any).removed.length : null,
-    error: (result as any).error || null
-  });
-  return result;
+async function runUpdateFinalizeDoctor(opts: {
+  entrypoint?: string | null;
+  root: string;
+  env: NodeJS.ProcessEnv;
+  machineOutput: boolean;
+}): Promise<PackageLocalDoctorRun> {
+  const env = opts.env.SKS_TEST_FINALIZE_DOCTOR_USER_CONFIG_PRESERVED === '1'
+    ? {
+        ...opts.env,
+        SKS_TEST_DOCTOR_FAIL: undefined,
+        SKS_TEST_DOCTOR_USER_CONFIG_PRESERVED: '1'
+      }
+    : opts.env.SKS_TEST_FINALIZE_DOCTOR_FAIL === '1'
+      ? { ...opts.env, SKS_TEST_DOCTOR_FAIL: '1' }
+      : opts.env;
+  return updateHeartbeat(opts.machineOutput, 'update finalize doctor', runPackageLocalDoctor({
+    root: opts.root,
+    ...(opts.entrypoint ? { entrypoint: opts.entrypoint } : {}),
+    args: ['doctor', '--profile', 'migration', '--machine-only', '--report-file', path.join(opts.root, '.sneakoscope', 'update', 'update-finalize-doctor.json')],
+    env,
+    timeoutMs: updateDoctorTimeoutMs(env),
+    maxOutputBytes: 32 * 1024
+  }), 60_000);
 }
 
-async function runUpdateNativeCapabilitySetup(
+function recordMigrationReceiptStage(
   stage: (id: string, ok: boolean, status: string, detail?: Record<string, unknown>) => void,
-  opts: { quiet?: boolean; newPackageRoot?: string | null; root: string; env?: NodeJS.ProcessEnv }
-) {
-  if (!opts.newPackageRoot) {
-    stage('native_capability_setup', true, 'skipped', { reason: 'new_package_root_unresolved' });
-    return null;
-  }
-  const root = opts.root;
-  const moduleHref = (rel: string) => pathToFileURL(path.join(opts.newPackageRoot as string, 'dist', 'core', 'doctor', rel)).href;
-  // Same as global_skills_reconcile above: run the newly installed package's own
-  // modules in a subprocess rather than in-process, so an old (pre-update) driver
-  // binary never runs post-update repair logic with stale compiled-in behavior.
-  const script = [
-    `const [{ repairCodexImagegen }, { repairComputerUse }, { repairBrowserUse }] = await Promise.all([import(${JSON.stringify(moduleHref('imagegen-repair.js'))}), import(${JSON.stringify(moduleHref('computer-use-repair.js'))}), import(${JSON.stringify(moduleHref('browser-use-repair.js'))})]);`,
-    `const root = ${JSON.stringify(root)};`,
-    'const imagegen = await repairCodexImagegen({ root, apply: true, reportPath: null }).catch((err) => ({ ok: false, recovered: false, attempted: true, error: String((err && err.message) || err) }));',
-    'const computerUse = await repairComputerUse({ root, apply: true, reportPath: null }).catch((err) => ({ ok: false, recovered: false, attempted: true, error: String((err && err.message) || err) }));',
-    'const browserUse = await repairBrowserUse({ root, apply: true, reportPath: null }).catch((err) => ({ ok: false, recovered: false, attempted: true, error: String((err && err.message) || err) }));',
-    'console.log(JSON.stringify({ imagegen, computer_use: computerUse, browser_use: browserUse }));'
-  ].join('\n');
-  const work = runProcess(process.execPath, ['--input-type=module', '-e', script], {
-    env: opts.env || process.env,
-    timeoutMs: 180_000,
-    maxOutputBytes: 1024 * 1024
-  }).catch((err: any) => ({ code: 1, stdout: '', stderr: err?.message || String(err) }));
-  const run = opts.quiet ? await work : await withHeartbeat('native capability setup', work, { warnAfterMs: 30_000 });
-  let parsed: any = null;
-  for (const line of String(run.stdout || '').trim().split('\n').reverse()) {
-    try { parsed = JSON.parse(line); break; } catch { /* not the JSON result line */ }
-  }
-  const summarize = (r: any) => (r?.recovered === true || r?.ok === true ? 'ok' : r?.attempted ? 'blocked' : 'not-needed');
-  const ok = run.code === 0 && Boolean(parsed);
-  // A repair reporting 'blocked' (e.g. no verified CLI subcommand for a plugin
-  // install) is a valid, honest terminal state for this stage, not a stage
-  // failure — the update itself must not be blocked on a manual-only step.
-  stage('native_capability_setup', ok, ok ? 'completed' : 'failed', {
-    via: 'new_package_binary',
-    summary: ok
-      ? { imagegen: summarize(parsed.imagegen), computer_use: summarize(parsed.computer_use), browser_use: summarize(parsed.browser_use) }
-      : null,
-    error: ok ? null : String(run.stderr || '').trim().slice(-400) || `exit_${run.code}`
+  updateStageId: 'hook_trust_repair' | 'global_skills_reconcile',
+  receipt: UpdateMigrationReceipt | null,
+  migrationStageId: 'hook-trust-refresh' | 'skills-reconcile'
+): void {
+  const matches = (receipt?.migration_stages || []).filter((entry) => entry.id === migrationStageId);
+  const evidence = matches.length === 1 ? matches[0] : null;
+  const ok = evidence?.ok === true;
+  stage(updateStageId, ok, ok ? evidence.status : evidence?.status || 'migration_stage_missing', {
+    via: 'project_migration_receipt',
+    migration_stage_id: migrationStageId,
+    receipt_source: receipt?.source || null,
+    action_count: evidence?.action_count ?? null,
+    blocker_count: evidence?.blocker_count ?? null,
+    warning_count: evidence?.warning_count ?? null,
+    match_count: matches.length
   });
-  return parsed;
+}
+
+function isFreshDoctorMigrationReceipt(input: {
+  receipt: UpdateMigrationReceipt | null;
+  priorReceipt: UpdateMigrationReceipt | null;
+  expectedVersion: string;
+  root: string;
+}): boolean {
+  const { receipt, priorReceipt } = input;
+  if (!isUpdateMigrationReceiptCurrent(receipt, input.expectedVersion)) return false;
+  if (!receipt || path.resolve(receipt.root) !== path.resolve(input.root)) return false;
+  if (!String(receipt.source || '').startsWith('doctor-')) return false;
+  if (!priorReceipt) return true;
+  return receipt.generated_at !== priorReceipt.generated_at
+    || receipt.source !== priorReceipt.source
+    || receipt.installation_epoch_sha256 !== priorReceipt.installation_epoch_sha256;
 }
 
 async function writeUpdatedPackageMigrationReceipt(input: {
@@ -1228,6 +1712,137 @@ export async function detectEffectiveSksVersion(options: SksUpdateCheckOptions =
   };
 }
 
+async function probeLockedInstalledSksVersion(
+  input: SksLockedInstalledVersionProbeInput
+): Promise<SksLockedInstalledVersionObservation> {
+  const probeEnv: NodeJS.ProcessEnv = {
+    ...input.env,
+    SKS_DISABLE_UPDATE_CHECK: '1'
+  };
+  delete probeEnv.SKS_INSTALLED_SKS_VERSION;
+  const npmGlobalPromise = input.npmBin
+    ? detectNpmGlobalPackageVersion(input.npmBin, input.packageName, probeEnv, {
+      timeoutMs: input.timeoutMs,
+      maxOutputBytes: input.maxOutputBytes
+    }).catch((error: unknown) => ({
+      version: null,
+      error: error instanceof Error ? error.message : String(error)
+    }))
+    : Promise.resolve({ version: null, error: 'npm_not_found' });
+  const pathProbePromise = executableOnInjectedPath('sks', probeEnv)
+    .then(async (binary) => {
+      if (!binary) return { binary: null, version: null, error: 'path_sks_not_found' };
+      const result = await runProcess(binary, ['--version'], {
+        env: probeEnv,
+        timeoutMs: input.timeoutMs,
+        maxOutputBytes: input.maxOutputBytes
+      }).catch((error: unknown) => ({
+        code: 1,
+        stdout: '',
+        stderr: error instanceof Error ? error.message : String(error)
+      }));
+      const version = result.code === 0 ? parseVersionText(result.stdout || '') : null;
+      return {
+        binary,
+        version,
+        error: version
+          ? null
+          : `path_sks_version:${String(result.stderr || result.stdout || 'failed').trim().slice(-500)}`
+      };
+    })
+    .catch((error: unknown) => ({
+      binary: null,
+      version: null,
+      error: `path_sks_probe:${error instanceof Error ? error.message : String(error)}`
+    }));
+  const [npmGlobal, pathProbe] = await Promise.all([npmGlobalPromise, pathProbePromise]);
+  const npmGlobalVersion = parseVersionText(npmGlobal.version || '');
+  const pathVersion = parseVersionText(pathProbe.version || '');
+  const authoritiesAgree = !npmGlobalVersion || !pathVersion || npmGlobalVersion === pathVersion;
+  const version = authoritiesAgree ? npmGlobalVersion || pathVersion : null;
+  return {
+    ok: Boolean(version),
+    version,
+    source: npmGlobalVersion ? 'npm-global' : pathVersion ? 'PATH' : null,
+    npm_global_version: npmGlobalVersion,
+    path_version: pathVersion,
+    path_binary: pathProbe.binary,
+    errors: uniqueStrings([
+      ...(npmGlobal.error ? [`npm_global_version:${String(npmGlobal.error).slice(-500)}`] : []),
+      ...(pathProbe.error ? [pathProbe.error] : []),
+      ...(authoritiesAgree
+        ? []
+        : [`locked_installed_version_authorities_disagree:${npmGlobalVersion}:${pathVersion}`])
+    ])
+  };
+}
+
+function normalizeLockedInstalledVersionObservation(
+  value: SksLockedInstalledVersionObservation
+): SksLockedInstalledVersionObservation {
+  const npmGlobalVersion = parseVersionText(value?.npm_global_version || '');
+  const pathVersion = parseVersionText(value?.path_version || '');
+  const declaredVersion = parseVersionText(value?.version || '');
+  const authoritiesAgree = !npmGlobalVersion || !pathVersion || npmGlobalVersion === pathVersion;
+  const selectedVersion = value?.source === 'npm-global'
+    ? npmGlobalVersion
+    : value?.source === 'PATH'
+      ? pathVersion
+      : null;
+  const valid = value?.ok === true
+    && authoritiesAgree
+    && Boolean(declaredVersion)
+    && declaredVersion === selectedVersion;
+  return {
+    ok: valid,
+    version: valid ? declaredVersion : null,
+    source: valid ? value.source : null,
+    npm_global_version: npmGlobalVersion,
+    path_version: pathVersion,
+    path_binary: typeof value?.path_binary === 'string' && value.path_binary ? value.path_binary : null,
+    errors: uniqueStrings([
+      ...(Array.isArray(value?.errors) ? value.errors.map((error) => String(error).slice(-500)) : []),
+      ...(authoritiesAgree
+        ? []
+        : [`locked_installed_version_authorities_disagree:${npmGlobalVersion}:${pathVersion}`]),
+      ...(valid ? [] : ['locked_probe_result_invalid'])
+    ])
+  };
+}
+
+async function executableOnInjectedPath(command: string, env: NodeJS.ProcessEnv): Promise<string | null> {
+  const rawPath = String(env.PATH ?? process.env.PATH ?? '').slice(0, 64 * 1024);
+  const extensions = process.platform === 'win32'
+    ? uniqueStrings(String(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').map((extension) => extension.toLowerCase()))
+    : [''];
+  const names = process.platform === 'win32' && path.extname(command)
+    ? [command]
+    : extensions.map((extension) => `${command}${extension}`);
+  for (const directory of rawPath.split(path.delimiter).filter(Boolean).slice(0, 256)) {
+    for (const name of names) {
+      const candidate = path.resolve(directory, name);
+      try {
+        await fs.access(candidate);
+        return candidate;
+      } catch {}
+    }
+  }
+  return null;
+}
+
+function boundedLockedProbeTimeout(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 2500;
+  // The mutation timeout may intentionally be tiny in failure probes, but the
+  // lock-held authority check must still allow a real npm/CLI process to start
+  // under load. Keep it independently reliable while remaining bounded.
+  return Math.max(2500, Math.min(10_000, Math.floor(value!)));
+}
+
+function boundedLockedProbeOutput(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 8192;
+  return Math.max(1024, Math.min(64 * 1024, Math.floor(value!)));
+}
+
 async function detectNpmGlobalPackageVersion(
   npmBin: string,
   packageName: string,
@@ -1300,6 +1915,8 @@ function buildResult(input: {
   latest: string | null;
   registry: string;
   npmBin: string | null;
+  projectRoot?: string | null | undefined;
+  commandRegistry?: string | null | undefined;
   error?: string | null;
 }): SksUpdateCheckResult {
   const latest = parseSemVer(input.latest)?.raw || null;
@@ -1321,7 +1938,7 @@ function buildResult(input: {
     mode: 'function',
     route_required: false,
     pipeline_required: false,
-    command: updateAvailable ? `sks update now --version ${latest}` : null,
+    command: updateAvailable ? buildUpdateNowCommand(latest!, input.projectRoot, input.commandRegistry) : null,
     npm_bin: input.npmBin,
     registry: input.registry,
     error
@@ -1338,6 +1955,7 @@ function buildUpdateNowResult(input: {
   npmArgs: string[];
   command: string | null;
   cwd: string;
+  projectRoot: string;
   registry: string;
   globalRoot: string | null;
   status: SksUpdateNowResult['status'];
@@ -1367,6 +1985,7 @@ function buildUpdateNowResult(input: {
     npm_args: input.npmArgs,
     command: input.command,
     cwd: input.cwd,
+    project_root: input.projectRoot,
     registry: input.registry,
     global_root: input.globalRoot,
     install_code: input.installCode,
@@ -1382,9 +2001,9 @@ function buildUpdateNowResult(input: {
     temporary_install_smoke: null,
     operation_receipt_path: null,
     rollback: {
-      available: Boolean(parseSemVer(input.from)),
+      available: false,
       previous_version: input.from,
-      command: `sks update rollback --version ${input.from} --json`,
+      command: buildUpdateRollbackCommand(input.from, input.projectRoot, input.registry),
       receipt_path: null
     },
     error: input.error
@@ -1397,12 +2016,49 @@ async function verifyUpdateMenuBar(input: {
   home?: string;
   root: string;
   env: NodeJS.ProcessEnv;
-}): Promise<{ ok: boolean; status: string; detail: Record<string, unknown> }> {
+}): Promise<{
+  ok: boolean;
+  status: string;
+  detail: Record<string, unknown>;
+  versionProbe: { ok: boolean; status: string; detail: Record<string, unknown> };
+}> {
   if (process.platform !== 'darwin' || input.env.SKS_UPDATE_SKIP_SKS_MENUBAR === '1') {
-    return { ok: true, status: 'skipped', detail: { reason: process.platform !== 'darwin' ? 'not_macos' : 'SKS_UPDATE_SKIP_SKS_MENUBAR=1' } };
+    const reason = process.platform !== 'darwin' ? 'not_macos' : 'SKS_UPDATE_SKIP_SKS_MENUBAR=1';
+    return {
+      ok: true,
+      status: 'skipped',
+      detail: { reason },
+      versionProbe: {
+        ok: true,
+        status: 'skipped',
+        detail: {
+          running_version: null,
+          running_pid: null,
+          expected_version: input.expectedVersion,
+          probe_ok: true,
+          reason
+        }
+      }
+    };
   }
   if (!input.install || input.install.ok === false) {
-    return { ok: false, status: 'install_failed', detail: { blockers: input.install?.blockers || ['menubar_install_missing'] } };
+    const blockers = input.install?.blockers || ['menubar_install_missing'];
+    return {
+      ok: false,
+      status: 'install_failed',
+      detail: { blockers },
+      versionProbe: {
+        ok: false,
+        status: 'install_failed',
+        detail: {
+          running_version: null,
+          running_pid: null,
+          expected_version: input.expectedVersion,
+          probe_ok: false,
+          blockers
+        }
+      }
+    };
   }
   const status = await inspectSksMenuBarStatus({
     ...(input.home === undefined ? {} : { home: input.home }),
@@ -1414,6 +2070,25 @@ async function verifyUpdateMenuBar(input: {
   const signatureOk = status?.signature.checked === true && status.signature.ok === true;
   const resourcesOk = resources?.checked === true && resources.ok === true;
   const ok = status?.installed === true && versionOk && signatureOk && resourcesOk;
+  const runningProcess = status?.running_process || input.install.running_process;
+  const probe = status?.menubar_version_probe || input.install.menubar_version_probe;
+  const launchExpected = input.install.launch?.requested === true;
+  const restartDeferred = input.env.SKS_UPDATE_DEFER_MENUBAR_RESTART === '1';
+  const runningVersion = runningProcess?.package_version || probe?.running_version || null;
+  const runningPid = runningProcess?.pid || probe?.pid || null;
+  const runningProcessOk = runningProcess?.ok === true && runningPid !== null;
+  const runningVersionOk = runningVersion === input.expectedVersion;
+  const probeOk = probe?.ok === true && runningProcessOk && runningVersionOk;
+  const versionProbeOk = !launchExpected || probeOk;
+  const versionProbeStatus = !launchExpected
+    ? restartDeferred ? 'restart_deferred' : 'launch_not_requested'
+    : !runningProcessOk
+      ? 'running_process_missing'
+      : !runningVersionOk
+        ? 'running_version_mismatch'
+        : probe?.ok !== true
+          ? 'probe_failed'
+          : 'verified';
   return {
     ok,
     status: ok ? 'verified' : 'failed',
@@ -1425,6 +2100,19 @@ async function verifyUpdateMenuBar(input: {
       resources_ok: resourcesOk,
       missing_resources: resources?.missing || [],
       mismatched_resources: resources?.mismatched || []
+    },
+    versionProbe: {
+      ok: versionProbeOk,
+      status: versionProbeStatus,
+      detail: {
+        running_version: runningVersion,
+        running_pid: runningPid,
+        expected_version: input.expectedVersion,
+        probe_ok: probeOk,
+        launch_expected: launchExpected,
+        restart_deferred: restartDeferred,
+        probe_error: probe?.error || runningProcess?.error || null
+      }
     }
   };
 }
@@ -1645,10 +2333,16 @@ async function runFinalUpdateVerification(input: {
   return verification;
 }
 
-function verificationError(verification: SksUpdateVerification[]): string {
-  const failed = verification.filter((item) => !item.ok);
+function verificationError(
+  verification: SksUpdateVerification[],
+  finalizeDoctor: PackageLocalDoctorRun | null
+): string {
+  const failed = [
+    ...verification.filter((item) => !item.ok).map((item) => item.id),
+    ...(finalizeDoctor?.ok === true ? [] : ['update_finalize_doctor'])
+  ];
   return failed.length
-    ? `update self-verification failed: ${failed.map((item) => item.id).join(', ')}`
+    ? `update self-verification failed: ${failed.join(', ')}`
     : 'update self-verification did not run';
 }
 

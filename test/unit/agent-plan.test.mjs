@@ -8,7 +8,7 @@ test('official subagent policy is explicit and task-profile aware', () => {
   assert.equal(routeRequiresOfficialSubagents('$Naruto', { task: 'implement feature' }), true);
   assert.equal(routeRequiresOfficialSubagents('$Research', { task: 'investigate mechanism' }), false);
   assert.equal(routeRequiresOfficialSubagents('$DFix', { task: 'tiny copy edit' }), false);
-  assert.equal(routeRequiresOfficialSubagents(routePrompt('work on the parser'), { task: 'work on the parser' }), true);
+  assert.equal(routeRequiresOfficialSubagents(routePrompt('work on the parser'), { task: 'work on the parser' }), false);
   assert.equal(routeRequiresOfficialSubagents(routePrompt('$Work'), { task: '$Work' }), true);
   const policy = normalizeOfficialSubagentPolicy('$Naruto', 'implement feature', {});
   assert.equal(policy.stage_id, OFFICIAL_SUBAGENT_EXECUTION_STAGE_ID);
@@ -22,7 +22,7 @@ test('official subagent execution stage declares thread budget and event evidenc
   const stage = officialSubagentPipelineStage(normalizeOfficialSubagentPolicy('$Naruto', 'fixture', {}));
   assert.equal(stage.id, 'official_subagent_execution');
   assert.equal(stage.backend, 'official-codex-subagent');
-  assert.equal(stage.max_threads, 12);
+  assert.equal(stage.max_threads, 256);
   assert.equal(stage.max_depth, 1);
   assert.equal(stage.read_only, false);
   assert.match(stage.write_policy, /bounded workspace-write/);

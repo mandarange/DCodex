@@ -52,9 +52,9 @@ export interface InstalledPackageSmokeReport {
   blockers: string[]
 }
 
-export const INSTALLED_REQUIRED_COMMANDS = ['naruto', 'mcp', 'update', 'menubar'] as const
+export const INSTALLED_REQUIRED_COMMANDS = ['naruto', 'mcp', 'update', 'menubar', 'config', 'telegram'] as const
 export const INSTALLED_REQUIRED_DOLLAR_COMMANDS = ['$sks-naruto', '$sks-work'] as const
-export const INSTALLED_REMOVED_COMMANDS = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui', 'telegram'] as const
+export const INSTALLED_REMOVED_COMMANDS = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui'] as const
 export const INSTALLED_REMOVED_DOLLAR_COMMANDS = Array.from(new Set([
   '$Agent', '$Team', '$MAD-DB', '$Swarm', '$ShadowClone', '$Kagebunshin', '$Ralph',
   ...LEGACY_DOLLAR_COMMAND_NAMES.filter((command) => command.toLowerCase() !== '$sks'),
@@ -262,6 +262,8 @@ export async function runInstalledPackageSmoke(
     { name: 'naruto', argv: [bin, 'naruto', '--help'], diagnostic: true },
     { name: 'mcp', argv: [bin, 'mcp', 'config', 'list', '--scope', 'effective', '--trusted-project', '--json'], diagnostic: true },
     { name: 'update', argv: [bin, 'update', 'status', '--json'], diagnostic: true },
+    { name: 'config', argv: [bin, 'config', '--help'], diagnostic: true },
+    { name: 'telegram', argv: [bin, 'telegram', '--help'], diagnostic: true },
     ...(process.platform === 'darwin'
       ? [{ name: 'menubar-install', argv: [bin, 'menubar', 'install', '--no-launch', '--json'] }]
       : []),
@@ -611,6 +613,10 @@ function installedDiagnosticBlockers(
 ): string[] {
   if (name === 'naruto') return result.exit_code === 0 && /\$sks-naruto/.test(result.stdout)
     ? [] : ['installed_diagnostic_failed:naruto']
+  if (name === 'config' || name === 'telegram') {
+    return result.exit_code === 0 && new RegExp(`Usage: sks ${name}`).test(result.stdout)
+      ? [] : [`installed_diagnostic_failed:${name}`]
+  }
   const expectedSchema: Record<string, string> = {
     mcp: 'sks.mcp-inventory.v2',
     update: 'sks.update-status.v3',

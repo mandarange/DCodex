@@ -6,31 +6,67 @@ import { inspectConfinedPath } from '../managed-path-safety.js';
 const NESTED_AGENTS_MAX_DEPTH = 12;
 const NESTED_AGENTS_MAX_DIRECTORIES = 4096;
 const NESTED_AGENTS_SKIPPED_DIRECTORIES = new Set([
+  '.cache',
   '.git',
   '.next',
   '.sneakoscope',
+  '.tox',
   '.turbo',
+  '.venv',
+  '__pycache__',
   'build',
   'coverage',
+  'deriveddata',
   'dist',
   'node_modules',
-  'out'
+  'out',
+  'pods',
+  'target',
+  'venv'
 ]);
+
+export interface NestedProjectGuidanceScanWarning {
+  code: 'guidance_scan_truncated';
+  cutoff_path: string;
+  cutoff_reason: 'directory_limit' | 'depth_limit';
+  visited_directory_count: number;
+  exceeded_directory_count: number;
+  directory_limit: typeof NESTED_AGENTS_MAX_DIRECTORIES;
+  depth_limit: typeof NESTED_AGENTS_MAX_DEPTH;
+}
+
+export interface NestedProjectGuidanceScanResult {
+  roots: string[];
+  errorCount: number;
+  truncated: boolean;
+  warnings: NestedProjectGuidanceScanWarning[];
+}
 
 export async function collectNestedProjectRoots(
   projectRoot: string,
   excludedRoots: Set<string>
-): Promise<{ roots: string[]; errorCount: number; truncated: boolean }> {
+): Promise<NestedProjectGuidanceScanResult> {
   const roots = new Set<string>();
   const queue: Array<{ directory: string; depth: number }> = [{ directory: projectRoot, depth: 0 }];
   const excluded = new Set([...excludedRoots].map((root) => path.resolve(root)));
   let cursor = 0;
   let errorCount = 0;
-  let truncated = false;
+  let cutoffPath: string | null = null;
+  let cutoffReason: NestedProjectGuidanceScanWarning['cutoff_reason'] | null = null;
+  let exceededDirectoryCount = 0;
+
+  const recordCutoff = (
+    target: string,
+    reason: NestedProjectGuidanceScanWarning['cutoff_reason']
+  ) => {
+    cutoffPath ||= path.resolve(target);
+    cutoffReason ||= reason;
+    exceededDirectoryCount += 1;
+  };
 
   while (cursor < queue.length) {
     if (cursor >= NESTED_AGENTS_MAX_DIRECTORIES) {
-      truncated = true;
+      recordCutoff(queue[cursor]?.directory || projectRoot, 'directory_limit');
       break;
     }
     const current = queue[cursor++]!;
@@ -63,16 +99,32 @@ export async function collectNestedProjectRoots(
         continue;
       }
       if (current.depth >= NESTED_AGENTS_MAX_DEPTH) {
-        truncated = true;
+        recordCutoff(target, 'depth_limit');
         continue;
       }
       if (queue.length >= NESTED_AGENTS_MAX_DIRECTORIES) {
-        truncated = true;
+        recordCutoff(target, 'directory_limit');
         continue;
       }
       queue.push({ directory: target, depth: current.depth + 1 });
     }
   }
 
-  return { roots: [...roots].sort(), errorCount, truncated };
+  const warnings: NestedProjectGuidanceScanWarning[] = cutoffPath && cutoffReason
+    ? [{
+        code: 'guidance_scan_truncated',
+        cutoff_path: cutoffPath,
+        cutoff_reason: cutoffReason,
+        visited_directory_count: cursor,
+        exceeded_directory_count: exceededDirectoryCount,
+        directory_limit: NESTED_AGENTS_MAX_DIRECTORIES,
+        depth_limit: NESTED_AGENTS_MAX_DEPTH
+      }]
+    : [];
+  return {
+    roots: [...roots].sort(),
+    errorCount,
+    truncated: warnings.length > 0,
+    warnings
+  };
 }

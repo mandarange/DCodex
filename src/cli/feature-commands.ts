@@ -49,12 +49,12 @@ export async function featuresCommand(sub: any = 'list', args: any = []) {
   }
   if (action === 'complete') {
     const report = await writeAllFeatureCompletionReport({ root });
+    if (!report.ok) process.exitCode = report.status === 'contract_covered_unverified' ? 2 : 1;
     if (flag(args, '--json')) console.log(JSON.stringify(report, null, 2));
     else {
       console.log(`All feature completion: ${report.status}`);
       console.log(`Report: ${path.relative(root, report.files.json)}`);
     }
-    if (!report.ok) process.exitCode = 1;
     return;
   }
   console.error('Usage: sks features list|check|inventory|complete [--json] [--write-docs]');
@@ -66,10 +66,12 @@ export async function allFeaturesCommand(sub: any = 'selftest', args: any = []) 
   if (action === 'complete' || action === 'completion') {
     const root = await projectRoot();
     const report = await writeAllFeatureCompletionReport({ root });
-    if (flag(args, '--json')) return console.log(JSON.stringify(report, null, 2));
-    console.log(`All feature completion: ${report.status}`);
-    console.log(`Report: ${path.relative(root, report.files.json)}`);
-    if (!report.ok) process.exitCode = 1;
+    if (!report.ok) process.exitCode = report.status === 'contract_covered_unverified' ? 2 : 1;
+    if (flag(args, '--json')) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(`All feature completion: ${report.status}`);
+      console.log(`Report: ${path.relative(root, report.files.json)}`);
+    }
     return;
   }
   if (action !== 'selftest') {

@@ -65,17 +65,17 @@ test('route-owned QA execution and official Release Review never activate two fa
   assert.doesNotMatch(release.next_actions.join('\n'), /sks agent run/i);
 });
 
-test('implicit bounded Naruto routing uses the bounded official subagent workflow without legacy intake', () => {
+test('implicit bounded Naruto routing remains parent-owned without orchestration overhead', () => {
   for (const task of ['work on the parser', '로그인 버그 수정해줘', 'Implement the route parser']) {
     const routed: any = routePrompt(task);
     assert.equal(routed.explicit_invocation, false, task);
     const plan: any = buildPipelinePlan({ route: routed, task });
-    assert.equal(plan.route.subagents_required, true, task);
-    assert.equal(plan.official_subagents.required, true, task);
-    assert.ok(plan.official_subagents.requested_subagents > 0, task);
+    assert.equal(plan.route.subagents_required, false, task);
+    assert.equal(plan.official_subagents.required, false, task);
+    assert.equal(plan.official_subagents.requested_subagents, 0, task);
     assert.equal('agent_intake' in plan, false, task);
     assert.equal(plan.stages.some((stage: any) => stage.id === 'native_agent_intake'), false, task);
-    assert.equal(plan.stages.some((stage: any) => stage.id === 'official_subagent_execution'), true, task);
+    assert.equal(plan.stages.some((stage: any) => stage.id === 'official_subagent_execution'), false, task);
   }
 
   const explicitWorkRoute: any = routePrompt('$Work');

@@ -1,4 +1,7 @@
 import fsp from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { ensureDir, exists, globalSksRoot, nowIso, packageRoot, PACKAGE_VERSION, projectRoot, readJson, readText, runProcess, sameFilesystemPath, sha256, which, writeJsonAtomic, writeReceiptRotated, writeTextAtomic } from '../fsx.js';
@@ -10,9 +13,17 @@ import { codexHookTrustDoctor } from '../codex-hooks/codex-hook-trust-doctor.js'
 import { writeCodexConfigGuarded } from '../codex/codex-config-guard.js';
 import { compareSemVer } from './semver.js';
 import { escapeRegExp } from '../text/regex.js';
+import { sessionStateKey } from '../mission.js';
+import {
+  ensureConfinedDirectory,
+  inspectConfinedPath,
+  moveConfinedPath,
+  uniqueConfinedPath
+} from '../managed-path-safety.js';
 
 export const UPDATE_MIGRATION_SCHEMA = 'sks.project-migration-receipt.v2' as const;
 export const INSTALLATION_EPOCH_SCHEMA = 'sks.installation-epoch.v1' as const;
+const LEGACY_CURRENT_STATE_MAX_BYTES = 1024 * 1024;
 
 export interface InstallationEpoch {
   schema: typeof INSTALLATION_EPOCH_SCHEMA;
@@ -456,7 +467,11 @@ async function runCurrentPublicSurfaceReconcileStage(root: string): Promise<Omit
       ...(retiredBindings.status === 'quarantined' ? ['retired_remote_bridge_bindings_quarantined'] : [])
     ],
     blockers,
-    warnings: [...retiredLaunchAgent.warnings, ...retiredBindings.warnings],
+    warnings: [
+      ...(publicSurface.warnings || []),
+      ...retiredLaunchAgent.warnings,
+      ...retiredBindings.warnings
+    ],
     detail: {
       removed_skill_count: Number(publicSurface.cleanup?.removed_count || 0),
       quarantined_skill_collision_count: Number(publicSurface.cleanup?.preserved_user_collision_count || 0),
@@ -525,28 +540,272 @@ async function runSessionStateSplitStage(root: string): Promise<Omit<UpdateMigra
   const legacyCurrent = path.join(root, '.sneakoscope', 'current.json');
   const stateCurrent = path.join(root, '.sneakoscope', 'state', 'current.json');
   const sessionsDir = path.join(root, '.sneakoscope', 'state', 'sessions');
-  await ensureDir(sessionsDir);
+  await ensureConfinedDirectory(root, sessionsDir);
   const actions: string[] = [];
-  let current = await readJson<any>(stateCurrent, null).catch(() => null);
-  const legacy = await readJson<any>(legacyCurrent, null).catch(() => null);
-  if (!current && legacy) {
-    current = legacy;
+  const legacyRead = await readBoundedUpdateState(root, legacyCurrent, { requireLegacyShape: true });
+  if (legacyRead.blocker) {
+    return {
+      ok: false,
+      status: 'failed',
+      actions: ['legacy_current_state_preserved'],
+      blockers: [legacyRead.blocker],
+      warnings: [],
+      detail: { legacy_present: legacyRead.present }
+    };
+  }
+  const currentRead = await readBoundedUpdateState(root, stateCurrent);
+  if (currentRead.blocker) {
+    return {
+      ok: false,
+      status: 'failed',
+      actions: ['current_state_preserved'],
+      blockers: [currentRead.blocker],
+      warnings: [],
+      detail: { legacy_present: legacyRead.present }
+    };
+  }
+  let current = currentRead.value;
+  if (!current && legacyRead.value) {
+    current = legacyRead.value;
     await writeJsonAtomic(stateCurrent, current);
+    const verified = await readBoundedUpdateState(root, stateCurrent);
+    if (verified.blocker || !verified.value || updateStateDigest(verified.value) !== legacyRead.sha256) {
+      return {
+        ok: false,
+        status: 'failed',
+        actions: ['copy_legacy_current_json_failed_verification'],
+        blockers: [verified.blocker || 'legacy_current_state_copy_verification_failed'],
+        warnings: [],
+        detail: { legacy_present: true }
+      };
+    }
     actions.push('copied_legacy_current_json_to_state_current');
   }
   const missionId = typeof current?.mission_id === 'string' ? current.mission_id : typeof current?.mission === 'string' ? current.mission : null;
-  if (missionId) {
-    const sessionPath = path.join(sessionsDir, `${safeFileName(missionId)}.json`);
-    if (!(await exists(sessionPath))) {
-      await writeJsonAtomic(sessionPath, { ...current, migrated_from: path.relative(root, stateCurrent), migrated_at: nowIso() });
+  const rawSessionKey = typeof current?._session_key === 'string' && current._session_key.trim()
+    ? current._session_key
+    : null;
+  const canonicalSessionKey = rawSessionKey ? sessionStateKey(rawSessionKey) : null;
+  if (canonicalSessionKey) {
+    const sessionPath = path.join(sessionsDir, `${canonicalSessionKey}.json`);
+    const sessionRead = await readBoundedUpdateState(root, sessionPath);
+    if (sessionRead.blocker) {
+      return {
+        ok: false,
+        status: 'failed',
+        actions,
+        blockers: [sessionRead.blocker],
+        warnings: [],
+        detail: { legacy_present: legacyRead.present, mission_id: missionId, session_key: canonicalSessionKey }
+      };
+    }
+    if (!sessionRead.present) {
+      await writeJsonAtomic(sessionPath, {
+        ...current,
+        _session_key: canonicalSessionKey,
+        migrated_from: path.relative(root, stateCurrent),
+        migrated_at: nowIso()
+      });
+      const verifiedSession = await readBoundedUpdateState(root, sessionPath);
+      if (
+        verifiedSession.blocker
+        || verifiedSession.value?._session_key !== canonicalSessionKey
+        || verifiedSession.value?.mission_id !== current?.mission_id
+      ) {
+        return {
+          ok: false,
+          status: 'failed',
+          actions,
+          blockers: [verifiedSession.blocker || 'legacy_session_state_copy_verification_failed'],
+          warnings: [],
+          detail: { legacy_present: legacyRead.present, mission_id: missionId, session_key: canonicalSessionKey }
+        };
+      }
       actions.push('wrote_state_session_alias');
     }
   }
+  let quarantinePath: string | null = null;
+  if (legacyRead.present) {
+    const quarantineBase = path.join(
+      root,
+      '.sneakoscope',
+      'quarantine',
+      'update-legacy-state',
+      `current-${legacyRead.sha256?.slice(0, 12) || 'unknown'}.json`
+    );
+    quarantinePath = await uniqueConfinedPath(root, quarantineBase);
+    await moveConfinedPath(root, legacyCurrent, quarantinePath);
+    const quarantined = await readBoundedUpdateState(root, quarantinePath, { requireLegacyShape: true });
+    const legacyAfter = await inspectConfinedPath(root, legacyCurrent);
+    if (
+      legacyAfter.exists
+      || quarantined.blocker
+      || !quarantined.value
+      || quarantined.sha256 !== legacyRead.sha256
+    ) {
+      const sourceAfter = await inspectConfinedPath(root, legacyCurrent);
+      if (!sourceAfter.exists && (await inspectConfinedPath(root, quarantinePath)).exists) {
+        await moveConfinedPath(root, quarantinePath, legacyCurrent).catch(() => undefined);
+      }
+      return {
+        ok: false,
+        status: 'failed',
+        actions: [...actions, 'legacy_current_state_quarantine_rolled_back'],
+        blockers: [quarantined.blocker || 'legacy_current_state_quarantine_verification_failed'],
+        warnings: [],
+        detail: { legacy_present: true, mission_id: missionId }
+      };
+    }
+    actions.push('quarantined_legacy_current_json');
+  }
   if (!actions.length) actions.push('session_state_current');
-  return { ok: true, status: 'ok', actions, blockers: [], warnings: [], detail: { legacy_present: Boolean(legacy), mission_id: missionId } };
+  return {
+    ok: true,
+    status: 'ok',
+    actions,
+    blockers: [],
+    warnings: [],
+    detail: {
+      legacy_present: legacyRead.present,
+      mission_id: missionId,
+      session_key: canonicalSessionKey,
+      legacy_quarantine_path: quarantinePath ? path.relative(root, quarantinePath) : null
+    }
+  };
+}
+
+async function readBoundedUpdateState(
+  root: string,
+  file: string,
+  opts: { requireLegacyShape?: boolean } = {}
+): Promise<{
+  present: boolean;
+  value: Record<string, unknown> | null;
+  sha256: string | null;
+  blocker: string | null;
+}> {
+  let inspected;
+  try {
+    inspected = await inspectConfinedPath(root, file);
+  } catch (error: any) {
+    return {
+      present: true,
+      value: null,
+      sha256: null,
+      blocker: `update_state_path_unsafe:${error?.code || error?.message || String(error)}`
+    };
+  }
+  if (!inspected.exists) return { present: false, value: null, sha256: null, blocker: null };
+  if (inspected.leafSymlink) {
+    return { present: true, value: null, sha256: null, blocker: 'update_state_symlink_refused' };
+  }
+  if (!inspected.stat?.isFile()) {
+    return { present: true, value: null, sha256: null, blocker: 'update_state_non_regular_refused' };
+  }
+  if (inspected.stat.size > LEGACY_CURRENT_STATE_MAX_BYTES) {
+    return { present: true, value: null, sha256: null, blocker: 'update_state_size_limit_exceeded' };
+  }
+  let text: string;
+  let handle: Awaited<ReturnType<typeof fsp.open>> | null = null;
+  try {
+    const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+    handle = await fsp.open(file, fsConstants.O_RDONLY | noFollow);
+    const before = await handle.stat();
+    if (!before.isFile()) {
+      return { present: true, value: null, sha256: null, blocker: 'update_state_non_regular_refused' };
+    }
+    if (before.size > LEGACY_CURRENT_STATE_MAX_BYTES) {
+      return { present: true, value: null, sha256: null, blocker: 'update_state_size_limit_exceeded' };
+    }
+    const buffer = Buffer.alloc(LEGACY_CURRENT_STATE_MAX_BYTES + 1);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    const after = await handle.stat();
+    const pathAfter = await inspectConfinedPath(root, file);
+    if (
+      bytesRead > LEGACY_CURRENT_STATE_MAX_BYTES
+      || bytesRead !== before.size
+      || after.size !== before.size
+      || after.dev !== before.dev
+      || after.ino !== before.ino
+      || !pathAfter.exists
+      || pathAfter.leafSymlink
+      || pathAfter.stat?.dev !== after.dev
+      || pathAfter.stat?.ino !== after.ino
+    ) {
+      return { present: true, value: null, sha256: null, blocker: 'update_state_changed_during_safe_read' };
+    }
+    text = buffer.subarray(0, bytesRead).toString('utf8');
+  } catch (error: any) {
+    return {
+      present: true,
+      value: null,
+      sha256: null,
+      blocker: `update_state_read_failed:${error?.code || error?.message || String(error)}`
+    };
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { present: true, value: null, sha256: null, blocker: 'update_state_json_invalid' };
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { present: true, value: null, sha256: null, blocker: 'update_state_object_required' };
+  }
+  const record = value as Record<string, unknown>;
+  if (opts.requireLegacyShape && !isRecognizedLegacyCurrentState(record)) {
+    return { present: true, value: null, sha256: null, blocker: 'legacy_current_state_ownership_unproven' };
+  }
+  return {
+    present: true,
+    value: record,
+    sha256: updateStateDigest(record),
+    blocker: null
+  };
+}
+
+function isRecognizedLegacyCurrentState(value: Record<string, unknown>): boolean {
+  const mission = typeof value.mission_id === 'string'
+    ? value.mission_id.trim()
+    : typeof value.mission === 'string'
+      ? value.mission.trim()
+      : '';
+  if (/^M-[A-Za-z0-9][A-Za-z0-9._-]{2,127}$/.test(mission)) return true;
+
+  const mode = typeof value.mode === 'string' ? value.mode.trim() : '';
+  const phase = typeof value.phase === 'string' ? value.phase.trim() : '';
+  if (mode === 'IDLE' && phase === 'IDLE') return true;
+  if (!mode || !phase) return false;
+
+  const sessionKey = typeof value._session_key === 'string' && value._session_key.trim().length > 0;
+  const routeCommand = typeof value.route_command === 'string' && value.route_command.trim().startsWith('$');
+  const managedStopGate = ['stop_gate', 'stop_gate_abs_path']
+    .some((key) => typeof value[key] === 'string' && String(value[key]).trim().length > 0);
+  return sessionKey || routeCommand || managedStopGate;
+}
+
+function updateStateDigest(value: Record<string, unknown>): string {
+  return sha256(JSON.stringify(value));
 }
 
 async function runSkillsReconcileStage(root: string): Promise<Omit<UpdateMigrationStageRun, 'schema' | 'id' | 'min_from_version' | 'from_version'>> {
+  if (process.env.SKS_TEST_UPDATE_GLOBAL_SKILLS_FAIL === '1') {
+    return {
+      ok: false,
+      status: 'failed',
+      actions: [],
+      blockers: ['global:forced_update_global_skills_reconcile_failure'],
+      warnings: [],
+      detail: {
+        global_installed: null,
+        global_removed_count: 0,
+        project_removed_count: 0,
+        residue_remaining_count: 0
+      }
+    };
+  }
   const home = path.resolve(process.env.HOME || os.homedir());
   const globalTarget = path.resolve(home, '.agents', 'skills');
   const projectTarget = path.resolve(root, '.agents', 'skills');
@@ -752,10 +1011,6 @@ function compareVersionLike(a: string | null | undefined, b: string | null | und
   return compareSemVer(a, b) ?? 0;
 }
 
-function safeFileName(value: string): string {
-  return String(value || 'session').replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '') || 'session';
-}
-
 function insertTopLevelTomlKey(text: string, line: string): string {
   const raw = String(text || '').trimEnd();
   const firstTable = raw.search(/^\s*\[/m);
@@ -956,9 +1211,10 @@ export async function ensureCurrentMigrationBeforeCommand(input: {
         return null;
       };
 
-  return withUpdateMigrationLock(root, empty, async () => {
+  return withUpdateMigrationLock(root, empty, async (lockOwner, lockPath) => {
     const reportFile = path.join(root, '.sneakoscope', 'update', 'doctor-migration.json');
     await pruneLegacyDoctorMigrationReports(root).catch(() => undefined);
+    const preDoctorReceipt = await readProjectUpdateMigrationReceipt(root);
     const baseTimeoutMs = migrationDoctorTimeoutMs(env);
     let doctor = await runPackageLocalDoctor({
       root,
@@ -966,10 +1222,12 @@ export async function ensureCurrentMigrationBeforeCommand(input: {
       env: {
         ...env,
         SKS_UPDATE_MIGRATION_GATE_DISABLED: '1',
-        SKS_DISABLE_UPDATE_CHECK: '1'
+        SKS_DISABLE_UPDATE_CHECK: '1',
+        SKS_TEST_DOCTOR_EMIT_MIGRATION_RECEIPT: '1'
       },
       timeoutMs: baseTimeoutMs,
-      maxOutputBytes: 32 * 1024
+      maxOutputBytes: 32 * 1024,
+      onSpawn: (pid) => registerUpdateMigrationLockChild(lockPath, lockOwner, pid)
     });
     const timeoutWarnings: string[] = [];
     if (!doctor.ok && doctor.timedOut) {
@@ -981,30 +1239,52 @@ export async function ensureCurrentMigrationBeforeCommand(input: {
           ...env,
           SKS_UPDATE_MIGRATION_GATE_DISABLED: '1',
           SKS_DISABLE_UPDATE_CHECK: '1',
-          SKS_MIGRATION_DOCTOR_RETRY: '1'
+          SKS_MIGRATION_DOCTOR_RETRY: '1',
+          SKS_TEST_DOCTOR_EMIT_MIGRATION_RECEIPT: '1'
         },
         timeoutMs: baseTimeoutMs * 2,
-        maxOutputBytes: 32 * 1024
+        maxOutputBytes: 32 * 1024,
+        onSpawn: (pid) => registerUpdateMigrationLockChild(lockPath, lockOwner, pid)
       });
+    }
+    const doctorReceipt = await readProjectUpdateMigrationReceipt(root);
+    const freshDoctorReceipt = isFreshDoctorOwnedMigrationReceipt({
+      receipt: doctorReceipt,
+      priorReceipt: preDoctorReceipt,
+      epoch,
+      root
+    });
+    if (!freshDoctorReceipt) {
+      const blockers = ['doctor_migration_receipt_missing_or_stale'];
+      const warnings = [...new Set([
+        ...timeoutWarnings,
+        ...doctor.optional_warnings
+      ])];
+      return {
+        ...empty,
+        ok: false,
+        status: 'blocked',
+        receipt: null,
+        doctor,
+        failed_stage_id: 'doctor:migration-receipt',
+        blockers,
+        warnings
+      };
     }
     const preservedUserOwnedConfig = migrationDoctorOnlyPreservedUserOwnedConfig(doctor);
     if (!doctor.ok && !preservedUserOwnedConfig) {
       const blocker = doctor.timedOut ? 'doctor_migration_timeout' : 'doctor_migration_failed';
-      const requiredBlockers = [blocker, ...(doctor.required_blockers.length ? doctor.required_blockers : [])];
+      const requiredBlockers = [...new Set([
+        blocker,
+        ...(doctor.required_blockers.length ? doctor.required_blockers : []),
+        ...(doctorReceipt?.blockers || [])
+      ])];
       const warnings = [
         ...timeoutWarnings,
         ...doctor.optional_warnings,
         ...(doctor.timedOut ? ['doctor_migration_timeout_may_be_network_or_first_compile_slow_run_sks_doctor_fix_yes_for_live_progress'] : [])
       ];
-      const blocked = await writeProjectUpdateMigrationReceipt({
-        root,
-        source: 'first-command-gate',
-        status: 'blocked',
-        doctor,
-        blockers: requiredBlockers,
-        warnings
-      });
-      return { ...empty, ok: false, status: 'blocked', receipt: blocked, doctor, failed_stage_id: 'doctor:migration-profile', blockers: requiredBlockers, warnings };
+      return { ...empty, ok: false, status: 'blocked', receipt: doctorReceipt, doctor, failed_stage_id: 'doctor:migration-profile', blockers: requiredBlockers, warnings };
     }
     const preservationWarnings = preservedUserOwnedConfig
       ? [
@@ -1015,16 +1295,27 @@ export async function ensureCurrentMigrationBeforeCommand(input: {
     const warnings = [...new Set([
       ...timeoutWarnings,
       ...doctor.optional_warnings,
+      ...(doctorReceipt?.warnings || []),
       ...preservationWarnings
     ])];
-    const current = await writeProjectUpdateMigrationReceipt({
-      root,
-      source: 'first-command-gate',
-      doctor,
-      blockers: [],
-      warnings
-    });
-    return { ...empty, ok: true, status: 'repaired', receipt: current, doctor, failed_stage_id: null, blockers: [], warnings };
+    if (!isProjectReceiptCurrentForEpoch(doctorReceipt, epoch)) {
+      const blockers = [...new Set([
+        ...(doctorReceipt?.blockers || []),
+        'doctor_migration_receipt_blocked'
+      ])];
+      const failedStage = doctorReceipt?.migration_stages?.find((stage) => stage.ok !== true)?.id || 'doctor:migration-receipt';
+      return {
+        ...empty,
+        ok: false,
+        status: 'blocked',
+        receipt: doctorReceipt,
+        doctor,
+        failed_stage_id: failedStage,
+        blockers,
+        warnings
+      };
+    }
+    return { ...empty, ok: true, status: 'repaired', receipt: doctorReceipt, doctor, failed_stage_id: null, blockers: [], warnings };
   }, recheck ? { recheck } : {});
 }
 
@@ -1111,13 +1402,41 @@ export async function runPackageLocalDoctor(input: {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  onSpawn?: (pid: number) => void | Promise<void>;
 } = {}): Promise<PackageLocalDoctorRun> {
   const entrypoint = input.entrypoint || path.join(packageRoot(), 'dist', 'bin', 'sks.js');
   const cwd = input.root || globalSksRoot();
   const args = input.args || ['doctor', '--json'];
   const env = input.env || process.env;
   const testRun = testPackageLocalDoctorRun({ entrypoint, cwd, args, env });
-  if (testRun) return testRun;
+  if (testRun) {
+    if (
+      env.SKS_TEST_DOCTOR_EMIT_MIGRATION_RECEIPT === '1'
+      && isMigrationFixDoctorInvocation(args)
+      && !testRun.timedOut
+    ) {
+      const preservedUserOwnedConfig = migrationDoctorOnlyPreservedUserOwnedConfig(testRun);
+      const blockers = testRun.ok || preservedUserOwnedConfig ? [] : testRun.required_blockers;
+      const warnings = [
+        ...testRun.optional_warnings,
+        ...(preservedUserOwnedConfig
+          ? [
+              'migration_doctor_preserved_user_owned_project_config',
+              ...testRun.required_blockers.map((blocker) => `migration_optional_blocker:${blocker}`)
+            ]
+          : [])
+      ];
+      await writeProjectUpdateMigrationReceipt({
+        root: cwd,
+        source: 'doctor-migration',
+        doctor: testRun,
+        blockers,
+        warnings,
+        ...(blockers.length ? { status: 'blocked' as const } : {})
+      });
+    }
+    return testRun;
+  }
   if (!(await exists(entrypoint))) {
     return {
       schema: 'sks.package-local-doctor-run.v1',
@@ -1146,7 +1465,8 @@ export async function runPackageLocalDoctor(input: {
       SKS_DISABLE_UPDATE_CHECK: '1'
     },
     timeoutMs: input.timeoutMs ?? 5 * 60 * 1000,
-    maxOutputBytes: input.maxOutputBytes ?? 64 * 1024
+    maxOutputBytes: input.maxOutputBytes ?? 64 * 1024,
+    ...(input.onSpawn ? { onSpawn: input.onSpawn } : {})
   }).catch((err: any) => ({
     code: 1,
     stdout: '',
@@ -1158,8 +1478,15 @@ export async function runPackageLocalDoctor(input: {
     ? await readJson(reportFile, null).catch(() => null)
     : parseDoctorJson((result as any).stdout);
   const parsedOk = typeof parsed?.ok === 'boolean' ? parsed.ok : null;
-  const ok = (result as any).code === 0 && (reportFile ? parsedOk === true : parsedOk !== false);
-  const requiredBlockers = extractRequiredBlockers(parsed, ok);
+  const ok = (result as any).code === 0
+    && (result as any).spawnRegistrationFailed !== true
+    && (reportFile ? parsedOk === true : parsedOk !== false);
+  const requiredBlockers = [...new Set([
+    ...extractRequiredBlockers(parsed, ok),
+    ...((result as any).spawnRegistrationFailed === true
+      ? ['doctor_spawn_registration_failed']
+      : [])
+  ])];
   const optionalWarnings = extractOptionalWarnings(parsed);
   return {
     schema: 'sks.package-local-doctor-run.v1',
@@ -1279,6 +1606,40 @@ export async function resolveInstalledSksEntrypoint(input: {
 const MIGRATION_LOCK_WAIT_MS = 5_000;
 const MIGRATION_LOCK_POLL_MS = 150;
 const MIGRATION_LOCK_PROGRESS_INTERVAL_MS = 1_000;
+const MIGRATION_LOCK_MALFORMED_GRACE_MS = 120_000;
+const MIGRATION_LOCK_MAX_BYTES = 4 * 1024;
+const MIGRATION_LOCK_SCHEMA = 'sks.update-migration-lock.v1' as const;
+
+interface UpdateMigrationLockRecord {
+  schema: typeof MIGRATION_LOCK_SCHEMA;
+  pid: number;
+  process_start?: string | null;
+  token: string;
+  created_at: string;
+  version: string;
+}
+
+interface UpdateMigrationLockChildRecord {
+  schema: 'sks.update-migration-lock-child.v1';
+  token: string;
+  pid: number;
+  process_start: string | null;
+  process_group_id: number | null;
+  registered_at: string;
+}
+
+export interface UpdateMigrationLockOwner {
+  token: string;
+  dev: number;
+  ino: number;
+}
+
+interface UpdateMigrationLockSnapshot extends UpdateMigrationLockOwner {
+  pid: number;
+  processStart: string | null;
+  createdAt: string | undefined;
+  mtimeMs: number;
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1287,7 +1648,7 @@ function delay(ms: number): Promise<void> {
 async function withUpdateMigrationLock(
   root: string,
   base: Omit<UpdateMigrationGateResult, 'ok' | 'status' | 'receipt' | 'doctor' | 'blockers' | 'warnings' | 'failed_stage_id'>,
-  fn: () => Promise<UpdateMigrationGateResult>,
+  fn: (owner: UpdateMigrationLockOwner, lockPath: string) => Promise<UpdateMigrationGateResult>,
   options: { recheck?: () => Promise<UpdateMigrationGateResult | null>; maxWaitMs?: number } = {}
 ): Promise<UpdateMigrationGateResult> {
   const lockPath = path.join(root, '.sneakoscope', 'update', 'migration.lock');
@@ -1301,23 +1662,27 @@ async function withUpdateMigrationLock(
   const recheck = options.recheck ?? null;
   const waitStartedAt = Date.now();
   const deadline = waitStartedAt + (options.maxWaitMs ?? MIGRATION_LOCK_WAIT_MS);
+  const maxAttempts = Math.max(
+    1,
+    Math.ceil((options.maxWaitMs ?? MIGRATION_LOCK_WAIT_MS) / MIGRATION_LOCK_POLL_MS) + 2
+  );
   let reapedStale = false;
   let lastProgressAt = 0;
-  for (;;) {
-    let handle: fsp.FileHandle | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let owner: UpdateMigrationLockOwner | null = null;
     try {
-      handle = await fsp.open(lockPath, 'wx');
+      owner = await acquireUpdateMigrationLock(lockPath);
     } catch (err: any) {
-      if (err?.code !== 'EEXIST') {
-        return { ...base, ok: false, status: 'blocked', receipt: null, doctor: null, failed_stage_id: 'migration-lock', blockers: [`update_migration_lock_error:${err?.message || String(err)}`], warnings: [] };
-      }
+      return { ...base, ok: false, status: 'blocked', receipt: null, doctor: null, failed_stage_id: 'migration-lock', blockers: [`update_migration_lock_error:${err?.message || String(err)}`], warnings: [] };
+    }
+    if (!owner) {
       // The lock is held by a concurrent process. Cooperate instead of failing fast:
       // 1) a sibling may have already completed the migration we need.
       if (recheck) {
         const done = await recheck();
         if (done) return done;
       }
-      // 2) reap a genuinely stale lock (dead holder or older than the stale threshold).
+      // 2) reap a genuinely stale lock (dead holder, or malformed past its grace period).
       if (!reapedStale && await removeStaleMigrationLock(lockPath)) {
         reapedStale = true;
         continue;
@@ -1336,15 +1701,14 @@ async function withUpdateMigrationLock(
       return { ...base, ok: false, status: 'blocked', receipt: null, doctor: null, failed_stage_id: 'migration-lock', blockers: ['update_migration_lock_held'], warnings: [] };
     }
     try {
-      await handle.writeFile(JSON.stringify({ pid: process.pid, created_at: nowIso(), version: PACKAGE_VERSION }) + '\n', 'utf8');
-      return await fn();
+      return await fn(owner, lockPath);
     } catch (err: any) {
       return { ...base, ok: false, status: 'blocked', receipt: null, doctor: null, failed_stage_id: 'migration-lock', blockers: [`update_migration_lock_error:${err?.message || String(err)}`], warnings: [] };
     } finally {
-      await handle.close().catch(() => undefined);
-      await fsp.rm(lockPath, { force: true }).catch(() => undefined);
+      await releaseUpdateMigrationLock(lockPath, owner).catch(() => false);
     }
   }
+  return { ...base, ok: false, status: 'blocked', receipt: null, doctor: null, failed_stage_id: 'migration-lock', blockers: ['update_migration_lock_held'], warnings: [] };
 }
 
 const DOCTOR_MIGRATION_REPORT_KEEP_COUNT = 10;
@@ -1374,25 +1738,368 @@ async function pruneLegacyDoctorMigrationReports(root: string): Promise<void> {
   await Promise.all(removable.map((row) => fsp.rm(row.filePath, { force: true }).catch(() => undefined)));
 }
 
-async function removeStaleMigrationLock(lockPath: string): Promise<boolean> {
-  const raw = await fsp.readFile(lockPath, 'utf8').catch(() => '');
-  let parsed: { pid?: number; created_at?: string } | null = null;
+export async function acquireUpdateMigrationLock(lockPath: string): Promise<UpdateMigrationLockOwner | null> {
+  await ensureDir(path.dirname(lockPath));
+  const token = randomBytes(24).toString('hex');
+  const candidatePath = `${lockPath}.${process.pid}.${token}.candidate`;
+  const record: UpdateMigrationLockRecord = {
+    schema: MIGRATION_LOCK_SCHEMA,
+    pid: process.pid,
+    process_start: processStartIdentity(process.pid),
+    token,
+    created_at: nowIso(),
+    version: PACKAGE_VERSION
+  };
+  let handle: fsp.FileHandle | null = null;
   try {
-    parsed = raw.trim() ? JSON.parse(raw) : null;
-  } catch {
-    parsed = null;
+    handle = await fsp.open(
+      candidatePath,
+      fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY,
+      0o600
+    );
+    await handle.writeFile(`${JSON.stringify(record)}\n`, 'utf8');
+    await handle.sync();
+    const candidateStat = await handle.stat();
+    await handle.close();
+    handle = null;
+    try {
+      await fsp.link(candidatePath, lockPath);
+    } catch (error: any) {
+      if (error?.code === 'EEXIST') return null;
+      throw error;
+    }
+    const published = await readUpdateMigrationLockSnapshot(lockPath);
+    if (
+      !published
+      || published.token !== token
+      || published.dev !== candidateStat.dev
+      || published.ino !== candidateStat.ino
+    ) {
+      throw new Error('update_migration_lock_publication_verification_failed');
+    }
+    return { token, dev: candidateStat.dev, ino: candidateStat.ino };
+  } finally {
+    await handle?.close().catch(() => undefined);
+    await fsp.rm(candidatePath, { force: true }).catch(() => undefined);
   }
-  const pid = Number(parsed?.pid || 0);
-  const createdMs = parsed?.created_at ? Date.parse(parsed.created_at) : 0;
-  const ageMs = Number.isFinite(createdMs) && createdMs > 0 ? Date.now() - createdMs : Number.POSITIVE_INFINITY;
-  const stale = !pidAlive(pid) || ageMs > 120_000;
-  if (!stale) return false;
-  await fsp.rm(lockPath, { force: true }).catch(() => undefined);
+}
+
+export async function releaseUpdateMigrationLock(
+  lockPath: string,
+  owner: UpdateMigrationLockOwner
+): Promise<boolean> {
+  const snapshot = await readUpdateMigrationLockSnapshot(lockPath);
+  if (!migrationLockIdentityMatches(snapshot, owner)) return false;
+  const released = await unlinkClaimedMigrationLock(lockPath, owner, 'release');
+  if (released) await removeUpdateMigrationLockChild(lockPath, owner.token);
+  return released;
+}
+
+export async function removeStaleMigrationLock(
+  lockPath: string,
+  nowMs = Date.now()
+): Promise<boolean> {
+  const snapshot = await readUpdateMigrationLockSnapshot(lockPath);
+  if (!snapshot) return false;
+  const createdAt = snapshot.createdAt || new Date(snapshot.mtimeMs).toISOString();
+  if (!updateMigrationLockIsStale(
+    snapshot.pid,
+    createdAt,
+    nowMs,
+    snapshot.processStart
+  )) return false;
+  const child = await readUpdateMigrationLockChild(lockPath);
+  if (child?.token === snapshot.token && registeredMigrationChildAlive(child)) return false;
+  const removed = await unlinkClaimedMigrationLock(lockPath, snapshot, 'stale');
+  if (removed) await removeUpdateMigrationLockChild(lockPath, snapshot.token);
+  return removed;
+}
+
+export async function registerUpdateMigrationLockChild(
+  lockPath: string,
+  owner: UpdateMigrationLockOwner,
+  pid: number
+): Promise<void> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) {
+    throw new Error(`update_migration_lock_child_pid_invalid:${String(pid)}`);
+  }
+  const before = await readUpdateMigrationLockSnapshot(lockPath);
+  if (!migrationLockIdentityMatches(before, owner)) {
+    throw new Error('update_migration_lock_child_owner_lost');
+  }
+  const record: UpdateMigrationLockChildRecord = {
+    schema: 'sks.update-migration-lock-child.v1',
+    token: owner.token,
+    pid,
+    process_start: processStartIdentity(pid),
+    process_group_id: process.platform === 'win32' ? null : pid,
+    registered_at: nowIso()
+  };
+  await writeJsonAtomic(updateMigrationLockChildPath(lockPath), record, { mode: 0o600 });
+  const after = await readUpdateMigrationLockSnapshot(lockPath);
+  if (!migrationLockIdentityMatches(after, owner)) {
+    await removeUpdateMigrationLockChild(lockPath, owner.token);
+    throw new Error('update_migration_lock_child_owner_lost');
+  }
+}
+
+async function unlinkClaimedMigrationLock(
+  lockPath: string,
+  identity: UpdateMigrationLockOwner,
+  purpose: 'release' | 'stale'
+): Promise<boolean> {
+  if (!migrationLockTokenIsPathSafe(identity.token)) return false;
+  const claimPath = `${lockPath}.${process.pid}.${identity.token}.${randomBytes(24).toString('hex')}.${purpose}.claim`;
+  try {
+    // Rename is the ownership claim: only one releaser can remove the fixed
+    // path, and a successor published after that point is never unlinked.
+    await fsp.rename(lockPath, claimPath);
+  } catch (error: any) {
+    if (error?.code === 'ENOENT' || error?.code === 'EEXIST') return false;
+    throw error;
+  }
+  try {
+    const claim = await readUpdateMigrationLockSnapshot(claimPath);
+    if (!migrationLockIdentityMatches(claim, identity)) {
+      await restoreMigrationLockClaimNoReplace(claimPath, lockPath);
+      return false;
+    }
+    await fsp.rm(claimPath, { force: true });
+    return true;
+  } catch (error: any) {
+    await restoreMigrationLockClaimNoReplace(claimPath, lockPath).catch(() => undefined);
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+async function restoreMigrationLockClaimNoReplace(claimPath: string, lockPath: string): Promise<void> {
+  const claim = await fsp.lstat(claimPath).catch(() => null);
+  if (!claim?.isFile() || claim.isSymbolicLink()) return;
+  try {
+    await fsp.link(claimPath, lockPath);
+    await fsp.rm(claimPath, { force: true });
+  } catch (error: any) {
+    // A successor may already own the fixed path. Preserve the randomized
+    // claim rather than overwrite or remove either independently owned inode.
+    if (error?.code !== 'EEXIST') throw error;
+  }
+}
+
+async function readUpdateMigrationLockSnapshot(lockPath: string): Promise<UpdateMigrationLockSnapshot | null> {
+  let handle: fsp.FileHandle | null = null;
+  try {
+    const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+    handle = await fsp.open(lockPath, fsConstants.O_RDONLY | noFollow);
+    const before = await handle.stat();
+    if (!before.isFile() || before.size > MIGRATION_LOCK_MAX_BYTES) {
+      return {
+        pid: 0,
+        processStart: null,
+        token: malformedMigrationLockToken(before.dev, before.ino),
+        createdAt: undefined,
+        dev: before.dev,
+        ino: before.ino,
+        mtimeMs: before.mtimeMs
+      };
+    }
+    const raw = await handle.readFile({ encoding: 'utf8' });
+    const after = await handle.stat();
+    const pathAfter = await fsp.lstat(lockPath).catch(() => null);
+    if (
+      before.dev !== after.dev
+      || before.ino !== after.ino
+      || before.size !== after.size
+      || !pathAfter
+      || pathAfter.isSymbolicLink()
+      || pathAfter.dev !== after.dev
+      || pathAfter.ino !== after.ino
+    ) return null;
+    let parsed: Partial<UpdateMigrationLockRecord> | null = null;
+    try {
+      const value = raw.trim() ? JSON.parse(raw) : null;
+      parsed = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+    } catch {
+      parsed = null;
+    }
+    const token = typeof parsed?.token === 'string' && /^[a-f0-9]{48}$/.test(parsed.token)
+      ? parsed.token
+      : malformedMigrationLockToken(after.dev, after.ino);
+    return {
+      pid: Number(parsed?.pid || 0),
+      processStart: typeof parsed?.process_start === 'string'
+        ? parsed.process_start
+        : null,
+      token,
+      createdAt: typeof parsed?.created_at === 'string' ? parsed.created_at : undefined,
+      dev: after.dev,
+      ino: after.ino,
+      mtimeMs: after.mtimeMs
+    };
+  } catch (error: any) {
+    if (error?.code === 'ENOENT' || error?.code === 'ELOOP') return null;
+    throw error;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+function malformedMigrationLockToken(dev: number, ino: number): string {
+  return `malformed-${dev}-${ino}`;
+}
+
+function migrationLockTokenIsPathSafe(token: string): boolean {
+  return /^[a-f0-9]{48}$/.test(token) || /^malformed-\d+-\d+$/.test(token);
+}
+
+function migrationLockIdentityMatches(
+  snapshot: UpdateMigrationLockSnapshot | null,
+  identity: UpdateMigrationLockOwner
+): boolean {
+  return snapshot?.token === identity.token
+    && snapshot.dev === identity.dev
+    && snapshot.ino === identity.ino;
+}
+
+function updateMigrationLockChildPath(lockPath: string): string {
+  return `${lockPath}.child`;
+}
+
+async function readUpdateMigrationLockChild(
+  lockPath: string
+): Promise<UpdateMigrationLockChildRecord | null> {
+  const childPath = updateMigrationLockChildPath(lockPath);
+  let handle: fsp.FileHandle | null = null;
+  try {
+    const noFollow = process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW;
+    handle = await fsp.open(childPath, fsConstants.O_RDONLY | noFollow);
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > MIGRATION_LOCK_MAX_BYTES) return null;
+    const value = JSON.parse(await handle.readFile({ encoding: 'utf8' }));
+    if (
+      value?.schema !== 'sks.update-migration-lock-child.v1'
+      || typeof value.token !== 'string'
+      || !Number.isSafeInteger(value.pid)
+      || value.pid <= 0
+    ) return null;
+    return {
+      schema: 'sks.update-migration-lock-child.v1',
+      token: value.token,
+      pid: value.pid,
+      process_start: typeof value.process_start === 'string'
+        ? value.process_start
+        : null,
+      process_group_id: Number.isSafeInteger(value.process_group_id)
+        && value.process_group_id > 0
+        ? value.process_group_id
+        : null,
+      registered_at: typeof value.registered_at === 'string'
+        ? value.registered_at
+        : ''
+    };
+  } catch (error: any) {
+    if (error?.code === 'ENOENT' || error?.code === 'ELOOP') return null;
+    return null;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+async function removeUpdateMigrationLockChild(
+  lockPath: string,
+  token: string
+): Promise<boolean> {
+  if (!migrationLockTokenIsPathSafe(token)) return false;
+  const childPath = updateMigrationLockChildPath(lockPath);
+  const child = await readUpdateMigrationLockChild(lockPath);
+  if (child?.token !== token) return false;
+  const claimPath = `${childPath}.${process.pid}.${randomBytes(16).toString('hex')}.claim`;
+  try {
+    await fsp.rename(childPath, claimPath);
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+  const claimed = await readUpdateMigrationLockChildClaim(claimPath);
+  if (claimed?.token !== token) {
+    const restored = await fsp.link(claimPath, childPath).then(() => true).catch(() => false);
+    if (restored) await fsp.rm(claimPath, { force: true });
+    return false;
+  }
+  await fsp.rm(claimPath, { force: true });
   return true;
 }
 
+async function readUpdateMigrationLockChildClaim(
+  claimPath: string
+): Promise<UpdateMigrationLockChildRecord | null> {
+  try {
+    const stat = await fsp.lstat(claimPath);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MIGRATION_LOCK_MAX_BYTES) return null;
+    const value = JSON.parse(await fsp.readFile(claimPath, 'utf8'));
+    return value?.schema === 'sks.update-migration-lock-child.v1'
+      && typeof value.token === 'string'
+      ? value as UpdateMigrationLockChildRecord
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function updateMigrationLockIsStale(
+  pid: number,
+  createdAt?: string,
+  nowMs = Date.now(),
+  expectedProcessStart?: string | null
+): boolean {
+  // A migration Doctor is allowed to run longer than the historical
+  // 120-second stale threshold. Reaping a lock solely because it is old can
+  // therefore start a second writer while the first process is still alive.
+  if (Number.isInteger(pid) && pid > 0) {
+    return !processIdentityAlive(pid, expectedProcessStart);
+  }
+  const createdMs = createdAt ? Date.parse(createdAt) : 0;
+  if (!Number.isFinite(createdMs) || createdMs <= 0) return false;
+  return nowMs - createdMs > MIGRATION_LOCK_MALFORMED_GRACE_MS;
+}
+
+function registeredMigrationChildAlive(child: UpdateMigrationLockChildRecord): boolean {
+  const observedStart = processStartIdentity(child.pid);
+  if (observedStart) {
+    return child.process_start
+      ? observedStart === child.process_start
+      : pidAlive(child.pid);
+  }
+  if (child.process_group_id && process.platform !== 'win32') {
+    try {
+      process.kill(-child.process_group_id, 0);
+      return true;
+    } catch (error: any) {
+      return error?.code === 'EPERM';
+    }
+  }
+  return false;
+}
+
+function processIdentityAlive(pid: number, expectedProcessStart?: string | null): boolean {
+  if (!pidAlive(pid)) return false;
+  if (!expectedProcessStart) return true;
+  const observed = processStartIdentity(pid);
+  return observed === null || observed === expectedProcessStart;
+}
+
+function processStartIdentity(pid: number): string | null {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  const result = spawnSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore']
+  });
+  if (result.status !== 0) return null;
+  return String(result.stdout || '').trim() || null;
+}
+
 function pidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
@@ -1448,6 +2155,32 @@ function installationEpochSha256(epoch: InstallationEpoch): string {
 function isProjectReceiptCurrentForEpoch(receipt: UpdateMigrationReceipt | null, epoch: InstallationEpoch): boolean {
   return isUpdateMigrationReceiptCurrent(receipt)
     && receipt?.installation_epoch_sha256 === installationEpochSha256(epoch);
+}
+
+function isFreshDoctorOwnedMigrationReceipt(input: {
+  receipt: UpdateMigrationReceipt | null;
+  priorReceipt: UpdateMigrationReceipt | null;
+  epoch: InstallationEpoch;
+  root: string;
+}): boolean {
+  const { receipt, priorReceipt } = input;
+  if (
+    receipt?.schema !== UPDATE_MIGRATION_SCHEMA
+    || !['current', 'blocked'].includes(receipt.status)
+    || receipt.sks_version !== PACKAGE_VERSION
+    || receipt.source !== 'doctor-migration'
+    || path.resolve(receipt.root) !== path.resolve(input.root)
+    || receipt.installation_epoch_sha256 !== installationEpochSha256(input.epoch)
+  ) return false;
+  return !priorReceipt || sha256(JSON.stringify(receipt)) !== sha256(JSON.stringify(priorReceipt));
+}
+
+function isMigrationFixDoctorInvocation(args: readonly string[]): boolean {
+  const profileIndex = args.indexOf('--profile');
+  return args[0] === 'doctor'
+    && args.includes('--fix')
+    && profileIndex >= 0
+    && args[profileIndex + 1] === 'migration';
 }
 
 function projectRootHash(root: string): string {

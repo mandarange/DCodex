@@ -49,6 +49,7 @@ try {
       SKS_UPDATE_TEMP_INSTALL_FIXTURE_ENTRYPOINT: path.join(packageRoot(), 'dist', 'bin', 'sks.js'),
       SKS_UPDATE_FAKE_INSTALL: '1',
       SKS_TEST_DOCTOR_OK: '1',
+      SKS_TEST_DOCTOR_EMIT_MIGRATION_RECEIPT: '1',
       SKS_TEST_OLD_DOCTOR_FAIL: '1',
       SKS_UPDATE_SKIP_SKS_MENUBAR: '1',
       SKS_REQUIRE_ZELLIJ: '0',
@@ -77,6 +78,19 @@ try {
   assertGate(badStages.length === 0, 'migration stages must all be ok', { badStages, receipt });
   assertGate(!Object.hasOwn(receipt || {}, 'legacy_migration_stages'), 'receipt must expose only the current migration summary contract', { receipt });
   assertGate(!/\$(?:Agent|Team|MAD-DB|Swarm|ShadowClone|Kagebunshin|Ralph)\b|\bsks\s+(?:team|mad-db|tmux|xai|swarm|agent|ralph|ui)\b/i.test(JSON.stringify(receipt)), 'customer migration receipt must not publish retired surface names', { receipt });
+  assertGate(!fs.existsSync(path.join(project, '.sneakoscope', 'current.json')), 'simulated update must remove legacy current.json from the active state surface', {});
+  const migratedCurrent = await readJson<any>(path.join(project, '.sneakoscope', 'state', 'current.json'), null);
+  assertGate(migratedCurrent?.mission_id === 'M-legacy', 'simulated update must preserve legacy state in state/current.json', { migratedCurrent });
+  const migratedSessions = await fsp.readdir(path.join(project, '.sneakoscope', 'state', 'sessions'));
+  assertGate(migratedSessions.length === 0, 'legacy state without _session_key must not create an unreadable mission-id session alias', { migratedSessions });
+  const legacyStateBackups = (await fsp.readdir(path.join(project, '.sneakoscope', 'quarantine', 'update-legacy-state')))
+    .filter((name) => name.startsWith('current-') && name.endsWith('.json'));
+  assertGate(legacyStateBackups.length === 1, 'simulated update must keep exactly one recoverable legacy current.json backup', { legacyStateBackups });
+  const legacyStateBackup = await readJson<any>(
+    path.join(project, '.sneakoscope', 'quarantine', 'update-legacy-state', legacyStateBackups[0]!),
+    null
+  );
+  assertGate(legacyStateBackup?.mission_id === 'M-legacy', 'legacy current.json backup must preserve the original state', { legacyStateBackup });
 
   const retiredResidue = [
     path.join(project, '.sneakoscope', 'team'),
@@ -164,7 +178,7 @@ try {
 
   const retryProject = path.join(tempRoot, 'retry-project');
   await fsp.mkdir(path.join(retryProject, '.sneakoscope'), { recursive: true });
-  await fsp.writeFile(path.join(retryProject, '.sneakoscope', 'manifest.json'), '{}\n');
+  await writeIsolatedFixture(path.join(retryProject, '.sneakoscope', 'manifest.json'), '{}\n');
   const retry = await ensureCurrentMigrationBeforeCommand({
     command: 'update-e2e',
     cwd: retryProject,
@@ -181,7 +195,7 @@ try {
 
   const failProject = path.join(tempRoot, 'fail-project');
   await fsp.mkdir(path.join(failProject, '.sneakoscope'), { recursive: true });
-  await fsp.writeFile(path.join(failProject, '.sneakoscope', 'manifest.json'), '{}\n');
+  await writeIsolatedFixture(path.join(failProject, '.sneakoscope', 'manifest.json'), '{}\n');
   const failed = await ensureCurrentMigrationBeforeCommand({
     command: 'update-e2e',
     cwd: failProject,
@@ -219,7 +233,7 @@ try {
   assertGate(!fs.existsSync(projectUpdateMigrationReceiptPath(currentDryRunProject)), 'already-current dry-run must not write a project receipt', { receipt: projectUpdateMigrationReceiptPath(currentDryRunProject) });
 
   const timeoutEntrypoint = path.join(tempRoot, 'timeout-doctor.js');
-  await fsp.writeFile(timeoutEntrypoint, 'setInterval(() => {}, 1000)\n');
+  await writeIsolatedFixture(timeoutEntrypoint, 'setInterval(() => {}, 1000)\n');
   const actualTimeout = await runPackageLocalDoctor({
     root: project,
     entrypoint: timeoutEntrypoint,
@@ -241,10 +255,10 @@ try {
   const dir = path.dirname(rotationReceipt);
   for (let index = 0; index < 5; index += 1) {
     const rotated = path.join(dir, `${base}.2026-07-03T00-00-0${index}-000Z.json`);
-    await fsp.writeFile(rotated, JSON.stringify({ index }) + '\n');
+    await writeIsolatedFixture(rotated, JSON.stringify({ index }) + '\n');
     await fsp.utimes(rotated, new Date(2026, 6, 3, 0, 0, index), new Date(2026, 6, 3, 0, 0, index));
   }
-  await fsp.writeFile(rotationReceipt, JSON.stringify({ current: true }) + '\n');
+  await writeIsolatedFixture(rotationReceipt, JSON.stringify({ current: true }) + '\n');
   await writeReceiptRotated(rotationReceipt, { next: true }, { keep: 5 });
   const rotatedAfterWrite = (await fsp.readdir(dir)).filter((name) => name.startsWith(`${base}.`) && name.endsWith('.json'));
   assertGate(rotatedAfterWrite.length <= 5, 'receipt rotation must include the just-rotated current receipt in keep=5 pruning', { rotatedAfterWrite });
@@ -272,6 +286,15 @@ try {
   if (savedGlobalRoot === undefined) delete process.env.SKS_GLOBAL_ROOT;
   else process.env.SKS_GLOBAL_ROOT = savedGlobalRoot;
   await fsp.rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
+}
+
+async function writeIsolatedFixture(file: string, content: string): Promise<void> {
+  const target = path.resolve(file);
+  const relative = path.relative(tempRoot, target);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`isolated_fixture_path_refused:${target}`);
+  }
+  await fsp.writeFile(target, content);
 }
 
 async function seedUpgradeFixture(home: string, project: string): Promise<void> {

@@ -1,3 +1,4 @@
+import '../../core/__tests__/helpers/isolated-test-home.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -10,6 +11,7 @@ import { runProcess } from '../../core/fsx.js';
 import {
   codexLbStatus,
   ensureCodexLbAuthDuringInstall,
+  formatCodexLbStatusText,
   reconcileCodexLbAuthConflict,
   releaseCodexLbAuthHold,
   unselectCodexLbProvider
@@ -102,6 +104,29 @@ test('legacy compatibility helper pins built-in OpenAI before placing a gateway 
     managed: true,
     configured_base_url: BASE_URL
   });
+  assert.deepEqual(status.secret_resolution, {
+    source: 'env-file',
+    path: setup.envPath,
+    prompt_risk: 'none'
+  });
+  const statusText = formatCodexLbStatusText(status, { home: setup.home });
+  const keySourceLine = statusText.split('\n').find((line) => line.startsWith('Key source:'));
+  assert.equal(
+    keySourceLine,
+    'Key source: env-file (~/.codex/sks-codex-lb.env) · keychain: not used · prompt risk: none'
+  );
+  t.diagnostic(keySourceLine);
+});
+
+test('status text surfaces an explicit one-time migration prompt risk', () => {
+  const text = formatCodexLbStatusText({
+    secret_resolution: {
+      source: 'missing',
+      path: null,
+      prompt_risk: 'one_time_on_repair'
+    }
+  });
+  assert.match(text, /Key source: missing · keychain: not used · prompt risk: one_time_on_repair/);
 });
 
 test('install reconciliation refuses an already active legacy shared-auth routing selection', async (t) => {
@@ -363,11 +388,16 @@ test('codex-lb response-chain makes zero requests when provider URL differs from
   assert.equal(fetchCalls, 0);
 });
 
-test('legacy compatibility helper can read keychain-only gateway credentials without treating it as a normal install path', async (t) => {
+test('legacy compatibility never invokes a generic Keychain reader or mutates shared auth', async (t) => {
   const setup = await fixture(t, { authText: OAUTH });
   await fsp.rm(setup.envPath, { force: true });
   const securityStub = path.join(setup.home, 'security-stub');
-  await fsp.writeFile(securityStub, `#!/bin/sh\nprintf '%s\\n' '${API_KEY}'\n`, { mode: 0o700 });
+  const invokedMarker = path.join(setup.home, 'security-stub-invoked');
+  await fsp.writeFile(
+    securityStub,
+    `#!/bin/sh\nprintf invoked > ${JSON.stringify(invokedMarker)}\nexit 99\n`,
+    { mode: 0o700 }
+  );
   await fsp.chmod(securityStub, 0o700);
   await fsp.writeFile(path.join(setup.home, '.codex', 'sks-codex-lb.json'), `${JSON.stringify({
     schema: 'sks.codex-lb-metadata.v1',
@@ -383,8 +413,13 @@ test('legacy compatibility helper can read keychain-only gateway credentials wit
     syncLaunchEnv: false
   });
   assert.equal(status.env_file, false);
-  assert.equal(status.env_loader.api_key.source, 'keychain');
-  assert.equal(status.env_loader.credential_binding.status, 'matched');
+  assert.equal(status.env_loader.api_key.source, null);
+  assert.equal(status.env_loader.keychain.checked, false);
+  assert.equal(status.env_loader.keychain.status, 'not_used');
+  assert.ok((status.env_loader.blockers || []).includes('codex_lb_api_key_missing'));
+  assert.ok(status.env_loader.credential_binding.blockers.includes('codex_lb_api_key_missing'));
+  assert.match(status.env_loader.guidance?.[0] || '', /sks codex-lb setup/);
+  assert.match(status.env_loader.guidance?.[0] || '', /export CODEX_LB_API_KEY/);
 
   const result = await reconcileCodexLbAuthConflict({
     home: setup.home,
@@ -394,9 +429,13 @@ test('legacy compatibility helper can read keychain-only gateway credentials wit
     securityBin: securityStub,
     forceCodexLbApiKeyAuth: true
   });
-  assert.equal(result.status, 'apikey_forced');
-  const auth = JSON.parse(await fsp.readFile(setup.authPath, 'utf8'));
-  assert.equal(auth.OPENAI_API_KEY, API_KEY);
+  assert.deepEqual(result, {
+    status: 'skipped',
+    reason: 'codex_lb_not_ready',
+    auth_path: setup.authPath
+  });
+  assert.equal(await fsp.readFile(setup.authPath, 'utf8'), OAUTH);
+  await assert.rejects(fsp.access(invokedMarker), { code: 'ENOENT' });
 });
 
 test('explicit Codex App restart cannot be satisfied by a skipped restart', () => {

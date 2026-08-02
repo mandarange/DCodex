@@ -5,10 +5,15 @@ import {
   type NormalizedSubagentEvent,
   type SubagentEvidence
 } from './subagent-evidence.js'
-import { MAX_AUTOMATIC_SUBAGENT_COUNT } from './agent-catalog.js'
+import {
+  MAX_AUTOMATIC_SUBAGENT_COUNT,
+  MAX_MASS_AUTOMATIC_SUBAGENT_COUNT
+} from './agent-catalog.js'
 import { buildWaveParentGuidance, type WaveParentGuidance } from './wave-parent-guidance.js'
 
 export const SUBAGENT_WAVE_LIFECYCLE_SCHEMA = 'sks.subagent-wave-lifecycle.v1'
+
+const LEGACY_SKS_AUTOMATIC_SUBAGENT_CEILINGS = new Set([12, 64])
 
 export type SubagentCountPolicy = 'exact' | 'dynamic_automatic'
 
@@ -52,16 +57,36 @@ export function subagentCountContractBlockers(plan: Record<string, unknown> | nu
   )
   const dynamicCapExceeded = lifecycle?.count_policy === 'dynamic_automatic'
     && dynamicObservedOrDeclared > cap
+  const waveCapacity = positiveCount(lifecycle?.wave_capacity)
+    || positiveCount(plan?.first_wave)
+    || positiveCount((plan?.capacity_controller as Record<string, unknown> | undefined)?.selected_capacity)
+  const observedWavePeak = Array.isArray(lifecycle?.waves)
+    ? lifecycle.waves.reduce((peak, wave) => {
+        if (!wave || typeof wave !== 'object' || !Array.isArray(wave.thread_ids)) return peak
+        return Math.max(peak, new Set(wave.thread_ids.map(String).filter(Boolean)).size)
+      }, 0)
+    : 0
+  const waveCapacityExceeded = waveCapacity > 0 && observedWavePeak > waveCapacity
   return [
     ...(exactTargetRejected ? ['subagent_target_change_rejected'] : []),
-    ...(dynamicCapExceeded ? [`subagent_automatic_fanout_cap_exceeded:${dynamicObservedOrDeclared}/${cap}`] : [])
+    ...(dynamicCapExceeded ? [`subagent_automatic_fanout_cap_exceeded:${dynamicObservedOrDeclared}/${cap}`] : []),
+    ...(waveCapacityExceeded ? [`subagent_wave_capacity_exceeded:${observedWavePeak}/${waveCapacity}`] : [])
   ]
 }
 
 export function automaticSubagentTargetCap(plan: Record<string, unknown> | null | undefined): number {
   const fanout = plan?.fanout_policy as Record<string, unknown> | undefined
-  const configuredCeiling = positiveCount(fanout?.automatic_ceiling) || MAX_AUTOMATIC_SUBAGENT_COUNT
-  return Math.min(configuredCeiling, MAX_AUTOMATIC_SUBAGENT_COUNT)
+  const hardAutomaticCeiling = fanout?.mass_parallel === true
+    ? MAX_MASS_AUTOMATIC_SUBAGENT_COUNT
+    : MAX_AUTOMATIC_SUBAGENT_COUNT
+  const configuredCeiling = positiveCount(fanout?.automatic_ceiling)
+  const legacySksOwnedCeiling = fanout?.mode === 'parent_owned_risk_based'
+    && fanout?.count_source === 'automatic'
+    && LEGACY_SKS_AUTOMATIC_SUBAGENT_CEILINGS.has(configuredCeiling)
+  const effectiveConfiguredCeiling = legacySksOwnedCeiling
+    ? hardAutomaticCeiling
+    : configuredCeiling || hardAutomaticCeiling
+  return Math.min(effectiveConfiguredCeiling, hardAutomaticCeiling)
 }
 
 export function effectiveSubagentTarget(
@@ -113,6 +138,7 @@ export interface SubagentWaveLifecycle {
   open_threads: number
   remaining_to_start: number
   post_wave_rescan_required: boolean
+  wave_capacity: number
   recovered_capacity: number
   next_parent_actions: string[]
   parent_guidance: WaveParentGuidance
@@ -125,14 +151,19 @@ export function createSubagentWaveLifecycle(input: {
   workflowRunId: string
   targetSubagents: number
   countPolicy: SubagentCountPolicy
+  waveCapacity?: number
 }): SubagentWaveLifecycle {
+  const targetSubagents = normalizeCount(input.targetSubagents)
+  const waveCapacity = input.waveCapacity === undefined
+    ? targetSubagents
+    : normalizeCount(input.waveCapacity)
   return {
     schema: SUBAGENT_WAVE_LIFECYCLE_SCHEMA,
     owner: 'root_parent',
     workflow_run_id: String(input.workflowRunId || '').trim(),
     count_policy: input.countPolicy,
-    requested_target_subagents: normalizeCount(input.targetSubagents),
-    target_subagents: normalizeCount(input.targetSubagents),
+    requested_target_subagents: targetSubagents,
+    target_subagents: targetSubagents,
     target_change_rejected: false,
     max_depth: 1,
     max_depth_semantics: 'child_nesting_only_root_may_launch_later_direct_child_waves',
@@ -143,13 +174,15 @@ export function createSubagentWaveLifecycle(input: {
     cumulative_failed: 0,
     cumulative_settled: 0,
     open_threads: 0,
-    remaining_to_start: normalizeCount(input.targetSubagents),
+    remaining_to_start: targetSubagents,
     post_wave_rescan_required: false,
+    wave_capacity: waveCapacity,
     recovered_capacity: 0,
     next_parent_actions: [],
     parent_guidance: buildWaveParentGuidance({
-      remaining_to_start: normalizeCount(input.targetSubagents),
+      remaining_to_start: targetSubagents,
       open_threads: 0,
+      wave_capacity: waveCapacity,
       recovered_capacity: 0,
       post_wave_rescan_required: false,
       current_wave: 0,
@@ -167,6 +200,7 @@ export async function refreshSubagentWaveLifecycle(
     plan?: Record<string, unknown> | null
     evidence?: SubagentEvidence | Record<string, unknown> | null
     event?: NormalizedSubagentEvent | null
+    events?: readonly NormalizedSubagentEvent[]
   } = {}
 ): Promise<SubagentWaveLifecycle | null> {
   const planFile = path.join(artifactDir, 'subagent-plan.json')
@@ -181,7 +215,7 @@ export async function refreshSubagentWaveLifecycle(
   const requestedTargetSubagents = countPolicy === 'exact' && existing
     ? normalizeCount(existing.requested_target_subagents) || planRequestedSubagents
     : planRequestedSubagents
-  const events = (await readSubagentEvents(artifactDir))
+  const events = (input.events || await readSubagentEvents(artifactDir))
     .filter((event) => event.run_id === workflowRunId)
   const startedCount = uniqueThreadIds(events.filter((event) => event.event_name === 'SubagentStart')).length
   const targetSubagents = countPolicy === 'exact' && existing
@@ -193,7 +227,9 @@ export async function refreshSubagentWaveLifecycle(
   const next = projectLifecycle(existing || createSubagentWaveLifecycle({
     workflowRunId,
     targetSubagents,
-    countPolicy
+    countPolicy,
+    waveCapacity: positiveCount(plan.first_wave)
+      || positiveCount((plan.capacity_controller as Record<string, unknown> | undefined)?.selected_capacity)
   }), {
     workflowRunId,
     requestedTargetSubagents,
@@ -201,6 +237,8 @@ export async function refreshSubagentWaveLifecycle(
     countPolicy,
     events,
     evidence: input.evidence || null,
+    waveCapacity: positiveCount(plan.first_wave)
+      || positiveCount((plan.capacity_controller as Record<string, unknown> | undefined)?.selected_capacity),
     lastEvent: input.event?.event_name || null,
     targetChangeRejected: existing?.target_change_rejected === true || (
       countPolicy === 'exact'
@@ -222,6 +260,7 @@ function projectLifecycle(
     countPolicy: SubagentCountPolicy
     events: NormalizedSubagentEvent[]
     evidence: SubagentEvidence | Record<string, unknown> | null
+    waveCapacity: number
     lastEvent: 'SubagentStart' | 'SubagentStop' | null
     targetChangeRejected: boolean
   }
@@ -268,10 +307,15 @@ function projectLifecycle(
       : null
   }
 
-  const failed = new Set(input.events
-    .filter((event) => event.event_name === 'SubagentStop' && event.outcome === 'failed')
-    .map((event) => event.thread_id || '')
-    .filter(Boolean))
+  const latestStopOutcomes = new Map<string, NormalizedSubagentEvent['outcome']>()
+  for (const event of input.events) {
+    if (event.event_name === 'SubagentStop' && event.thread_id) {
+      latestStopOutcomes.set(event.thread_id, event.outcome)
+    }
+  }
+  const failed = new Set([...latestStopOutcomes]
+    .filter(([, outcome]) => outcome === 'failed')
+    .map(([threadId]) => threadId))
   const cumulativeSettled = [...stops].filter((threadId) => starts.includes(threadId)).length
   const completed = Math.max(0, cumulativeSettled - failed.size)
   const openThreads = Math.max(0, starts.length - cumulativeSettled)
@@ -282,10 +326,14 @@ function projectLifecycle(
       && openThreads === 0
       && remainingToStart > 0
   )
+  const recoveredCapacity = lastWave?.status === 'settled'
+    ? lastWave.thread_ids.length
+    : 0
   const parentGuidance = buildWaveParentGuidance({
     remaining_to_start: remainingToStart,
     open_threads: openThreads,
-    recovered_capacity: cumulativeSettled,
+    wave_capacity: input.waveCapacity,
+    recovered_capacity: recoveredCapacity,
     post_wave_rescan_required: postWaveRescanRequired,
     current_wave: lastWave?.wave || 0,
     completed_waves: waves.filter((wave) => wave.status === 'settled').length
@@ -307,7 +355,8 @@ function projectLifecycle(
     open_threads: openThreads,
     remaining_to_start: remainingToStart,
     post_wave_rescan_required: postWaveRescanRequired,
-    recovered_capacity: cumulativeSettled,
+    wave_capacity: input.waveCapacity,
+    recovered_capacity: recoveredCapacity,
     next_parent_actions: parentGuidance.actions,
     parent_guidance: parentGuidance,
     waves,

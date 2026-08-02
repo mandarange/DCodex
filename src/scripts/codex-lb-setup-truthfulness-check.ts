@@ -91,7 +91,7 @@ async function runSetup(name, args, input = 'sk-clb-test\n') {
   results.push({
     name: 'action_report_matches_choices',
     ok: row.code === 0
-      && actions.includes('write_config_provider')
+      && actions.includes('write_cli_provider')
       && actions.includes('write_env_file')
       && !actions.includes('store_keychain')
       && !actions.includes('sync_launchctl')

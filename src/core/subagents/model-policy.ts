@@ -173,6 +173,7 @@ const CONTEXT_TOOL_TASK_RE = new RegExp([
   'extensive[- ]?logs?',
   '\\b(?:broad|wide|deep|mass|bulk|repo(?:sitory)?[- ]?wide|codebase)\\b[^\\n]{0,32}\\b(?:search|lookup|find|grep|scan)\\b',
   '\\b(?:search|lookup|find|grep|scan)\\b[^\\n]{0,40}\\b(?:large|long|across|whole|entire|repository|codebase|many files?)\\b',
+  '\\b(?:whole|entire)[- ]?(?:repo(?:sitory)?|codebase)\\b[^\\n]{0,40}\\b(?:search|lookup|find|grep|scan)\\b',
   '컴퓨터\\s*유즈',
   '브라우저',
   '크롬',
@@ -191,6 +192,7 @@ const CONTEXT_TOOL_TASK_RE = new RegExp([
   '추출',
   '인벤토리',
   '대규모\\s*검색',
+  '대량\\s*(?:검색|탐색|스캔|추출)',
   '전체\\s*검색',
   '광범위\\s*(?:검색|탐색|스캔)',
   '코드베이스\\s*(?:검색|탐색|스캔)'
@@ -208,6 +210,8 @@ const SIMPLE_MECHANICAL_TASK_RE = new RegExp([
   '\\brename\\b[^\\n]{0,24}\\b(?:symbol|file|label|key|field)\\b',
   '\\b(?:simple|quick|bounded)\\b[^\\n]{0,24}\\b(?:search|lookup|find|grep|replace|rename|type|typing)\\b',
   '\\b(?:search|lookup|find|grep)\\b[^\\n]{0,32}\\b(?:symbol|string|path|file|key)\\b',
+  '\\bsingle[- ]?symbol[- ]?(?:lookup|search|find)\\b',
+  'typing[- ]?level',
   '한\\s*줄',
   '단일\\s*파일',
   '아주\\s*(?:작은|단순한?)',
@@ -297,6 +301,15 @@ export function decideSubagentModel(input: {
   if (input.taskClass === 'mechanical') return decision('luna_max_mechanical')
   if (input.taskClass === 'implementation') return decision('sol_high_implementation')
 
+  if (input.requiresJudgment === true) return decision('sol_max_judgment')
+
+  const documentExploration = DOCUMENT_EXPLORATION_RE.test(text)
+  const implementation = IMPLEMENTATION_TASK_RE.test(text)
+  if (implementation && CLEAR_IMPLEMENTATION_ACTION_RE.test(text)) return decision('sol_high_implementation')
+
+  const focusedJudgment = !documentExploration && FOCUSED_JUDGMENT_TASK_RE.test(text)
+  if (focusedJudgment) return decision('sol_max_judgment')
+
   const explicitContextOrTools = input.longContext === true
     || input.toolHeavy === true
     || input.contextMode === 'long'
@@ -304,20 +317,12 @@ export function decideSubagentModel(input: {
     || input.scopeSize === 'large'
   if (explicitContextOrTools) return decision('terra_medium_context_tools')
 
-  if (input.requiresJudgment === true) return decision('sol_max_judgment')
-
   const simpleMechanical = input.simpleMechanical === true
     || input.scopeSize === 'tiny'
     || SIMPLE_MECHANICAL_TASK_RE.test(text)
   if (simpleMechanical) return decision('luna_max_mechanical')
 
-  const implementation = IMPLEMENTATION_TASK_RE.test(text)
-  if (implementation && CLEAR_IMPLEMENTATION_ACTION_RE.test(text)) return decision('sol_high_implementation')
-
-  if (DOCUMENT_EXPLORATION_RE.test(text)) return decision('terra_medium_context_tools')
-
-  const focusedJudgment = FOCUSED_JUDGMENT_TASK_RE.test(text)
-  if (focusedJudgment) return decision('sol_max_judgment')
+  if (documentExploration) return decision('terra_medium_context_tools')
 
   const contextOrTools = CONTEXT_TOOL_TASK_RE.test(text)
   if (contextOrTools) return decision('terra_medium_context_tools')

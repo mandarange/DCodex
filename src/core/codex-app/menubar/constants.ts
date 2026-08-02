@@ -23,7 +23,9 @@ export const NATIVE_SOURCE_FILES = [
   'UpdatesViewController.swift',
   'MCPServersViewController.swift',
   'ProvidersViewController.swift',
+  'ProvidersConnectTest.swift',
   'ProvidersRoutingTruth.swift',
+  'ProvidersFastMode.swift',
   'ProvidersOpenRouter.swift',
   'ProvidersRoleModels.swift',
   'ProvidersMultiProvider.swift',
@@ -32,9 +34,19 @@ export const NATIVE_SOURCE_FILES = [
   'SettingsViewController.swift',
   'OperationCoordinator.swift',
   'ProcessClient.swift',
+  'ProcessExecutionState.swift',
+  'ProcessIdentityGuard.swift',
+  'SecureProcessEnvelope.swift',
+  'TelegramPrivateFileSupport.swift',
+  'TelegramPrivateFileStore.swift',
+  'TelegramSupport.swift',
+  'TelegramRuntimeSupport.swift',
+  'TelegramTransport.swift',
+  'TelegramProcessGateway.swift',
   'NotificationCoordinator.swift',
   'AlertFactory.swift',
-  'AppIdentity.swift'
+  'AppIdentity.swift',
+  'SingletonInstanceGuard.swift'
 ] as const;
 
 export const NATIVE_RESOURCE_FILES = [

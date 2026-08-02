@@ -9,6 +9,7 @@ import {
   NARUTO_PARENT_MODEL
 } from './model-policy.js'
 import { inspectCodexLbCliLaunchRecovery } from '../codex-control/codex-lb-launch-recovery.js'
+import { prepareCodexAppServerRuntimeEnv } from '../codex-control/codex-app-server-runtime-env.js'
 import { probeNarutoCodexCapability } from '../codex-compat/codex-capability-matrix.js'
 import { resolveOfficialCodexPackageRuntime } from '../codex-runtime/resolve-codex-runtime.js'
 import { withFileLock } from '../locks/file-lock.js'
@@ -29,6 +30,12 @@ import {
   resolveNarutoCredentialPolicy,
   type NarutoCredentialPolicy
 } from './naruto-host-credentials.js'
+import {
+  inspectOAuthCallbackPortConflict,
+  isCodexAuthenticationFailure,
+  oauthCallbackRecoveryGuidance,
+  type OAuthCallbackDiagnosticRunner
+} from '../codex/oauth-callback-port-diagnostic.js'
 
 export const OFFICIAL_SUBAGENT_WORKFLOW_SCHEMA = 'sks.subagent-workflow.v1'
 
@@ -109,6 +116,10 @@ export interface OfficialSubagentWorkflowInput {
   timeoutMs?: number | null
   env?: NodeJS.ProcessEnv
   runProcessImpl?: typeof runProcess
+  prepareCodexRuntimeEnvImpl?: typeof prepareCodexAppServerRuntimeEnv
+  recoveryFetch?: typeof fetch
+  recoveryTimeoutMs?: number
+  oauthCallbackDiagnosticRunner?: OAuthCallbackDiagnosticRunner
   onChildSpawn?: (pid: number) => void | Promise<void>
   hostCapabilityDependencies?: HostCapabilityRuntimeDependencies
   /** Host credential/model delegation; omitted means SKS-managed ChatGPT auth. */
@@ -395,7 +406,6 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
     }
   }
 
-  const inheritedSecretValues = knownInheritedSecretValues(input.env)
   const parentSummaryFile = path.join(os.tmpdir(), `sks-naruto-parent-summary-${process.pid}-${Date.now()}.txt`)
   const hostCapabilityCollector = createHostCapabilityEventCollector(hostCapabilityRuntime)
   if (!hostCapabilityRuntime.ok) {
@@ -451,9 +461,30 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
     hostCapabilityLaunchNonce = randomId(32)
     hostCapabilityPendingDir = officialSubagentMissionDir(canonicalRoot, input.missionId)
   }
-  const credentialPolicy = input.credentialPolicy ?? defaultNarutoCredentialPolicy()
+  const sourceEnv = { ...process.env, ...(input.env || {}) }
+  const runtimeEnv = input.credentialPolicy?.authMode === 'managed'
+    ? sourceEnv
+    : await (input.prepareCodexRuntimeEnvImpl || prepareCodexAppServerRuntimeEnv)({ env: sourceEnv })
+  const codexLbCliSelected = Boolean(runtimeEnv.CODEX_LB_API_KEY && runtimeEnv.CODEX_LB_BASE_URL)
+  const resolvedCredentialPolicy = input.credentialPolicy ?? (codexLbCliSelected
+    ? resolveNarutoCredentialPolicy({
+        args: ['--auth-mode=host', '--model-provider=codex-lb', '--provider-env-key=CODEX_LB_API_KEY'],
+        env: runtimeEnv,
+        defaultParentModel: NARUTO_PARENT_MODEL,
+        defaultParentEffort: NARUTO_PARENT_EFFORT,
+        defaultSubagentModel: DEFAULT_SUBAGENT_MODEL,
+        defaultSubagentEffort: DEFAULT_SUBAGENT_EFFORT
+      })
+    : defaultNarutoCredentialPolicy())
+  const credentialPolicy: NarutoCredentialPolicy = codexLbCliSelected
+    && resolvedCredentialPolicy.authMode === 'host'
+    && resolvedCredentialPolicy.modelProvider === null
+    && resolvedCredentialPolicy.providerEnvKey === null
+    ? { ...resolvedCredentialPolicy, providerEnvKey: 'CODEX_LB_API_KEY' }
+    : resolvedCredentialPolicy
+  const inheritedSecretValues = knownInheritedSecretValues(runtimeEnv)
   const childEnv = buildOfficialSubagentChildEnv({
-    ...(input.env ? { env: input.env } : {}),
+    env: runtimeEnv,
     ...(input.missionId ? { missionId: input.missionId } : {}),
     ...(input.workflowRunId ? { workflowRunId: input.workflowRunId } : {}),
     ...(hostCapabilityLaunchNonce ? { hostCapabilityLaunchNonce } : {}),
@@ -570,7 +601,9 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
   const toolOutputRecovery = await inspectCodexLbCliLaunchRecovery({
     root: input.root,
     env: childEnv,
-    cliArgs: args.slice(0, -1)
+    cliArgs: args.slice(0, -1),
+    ...(input.recoveryFetch ? { fetchImpl: input.recoveryFetch } : {}),
+    ...(input.recoveryTimeoutMs === undefined ? {} : { timeoutMs: input.recoveryTimeoutMs })
   })
   if (!toolOutputRecovery.ok) {
     return {
@@ -640,6 +673,15 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
   } finally {
     await removeHostCapabilityPendingRuntime(hostCapabilityPendingDir)
   }
+  const failureOutput = `${processResult.stdout || ''}\n${processResult.stderr || ''}`
+  const oauthCallbackPortDiagnostic = processResult.code !== 0 && isCodexAuthenticationFailure(failureOutput)
+    ? await inspectOAuthCallbackPortConflict({
+        ...(input.oauthCallbackDiagnosticRunner ? { run: input.oauthCallbackDiagnosticRunner } : {})
+      })
+    : null
+  const operatorActions = oauthCallbackPortDiagnostic
+    ? oauthCallbackRecoveryGuidance(failureOutput, oauthCallbackPortDiagnostic)
+    : []
   const parentSummary = redactKnownValues(
     await fsp.readFile(parentSummaryFile, 'utf8').catch(() => ''),
     outputSecretValues
@@ -676,6 +718,8 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
     parent_summary: parentSummary.trim() || null,
     parent_summary_file: null,
     blockers,
+    operator_actions: operatorActions,
+    oauth_callback_port_diagnostic: oauthCallbackPortDiagnostic,
     host_capability_runtime: hostCapabilityRuntime,
     host_capability_evidence: hostCapabilityEvidence,
     tool_output_recovery: toolOutputRecovery,

@@ -1,11 +1,18 @@
 import Cocoa
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let singletonGuard: SingletonInstanceGuard
     private var processClient: ProcessClient!
     private var operations: OperationCoordinator!
     private var notifications: NotificationCoordinator!
     private var controlCenter: ControlCenterWindowController!
     private var statusItemController: StatusItemController!
+    private var telegramService: TelegramMenuBarService?
+
+    init(singletonGuard: SingletonInstanceGuard) {
+        self.singletonGuard = singletonGuard
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -14,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // never reaches NSTextField/NSTextView responders without an explicit menu.
         AppIdentity.installStandardEditMenu()
         processClient = ProcessClient(actionScript: AppRuntime.actionScript, logPath: AppRuntime.lastActionLogPath, projectRoot: AppRuntime.projectRoot)
+        telegramService = TelegramRuntimeFactory.make(processClient: processClient)
+        _ = telegramService?.start()
         operations = OperationCoordinator(directory: AppRuntime.operationDirectory)
         notifications = NotificationCoordinator()
         controlCenter = ControlCenterWindowController(
@@ -39,7 +48,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if telegramService?.stopAndWait(timeout: 2) == false {
+            fputs("SKS Telegram bounded stop timed out; liveness will become stale.\n", stderr)
+        }
         statusItemController?.stop()
+        processClient?.terminateAll()
+        singletonGuard.releaseRuntimeStateIfOwned()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

@@ -88,8 +88,10 @@ test('generated Naruto skill keeps official threads lightweight and TriWiki-boun
   await installSkills(root);
 
   const naruto = await fs.readFile(path.join(root, '.agents', 'skills', 'sks-naruto', 'SKILL.md'), 'utf8');
-  assert.match(naruto, /Automatic targets begin at 4\/6\/8 by task size and may expand to 12/i);
-  assert.match(naruto, /max_threads is a cap, never a target/i);
+  assert.match(naruto, /Automatic targets begin at 4\/6\/8\/16 by task size: bounded, explicit parallel, large-scale, then mass cheap-model fan-out on the Luna\/Terra lanes/i);
+  assert.match(naruto, /both lanes may expand to the SKS-owned 256-child ceiling/i);
+  assert.match(naruto, /max_threads defaults to a 256-child frame budget cap, never a target/i);
+  assert.match(naruto, /measured lower Codex host cap or explicit provider\/API budget remains authoritative/i);
   assert.match(naruto, /later root-owned waves/i);
   assert.match(naruto, /historical Naruto process runtime is removed/i);
   assert.match(naruto, /custom scheduler, or worker pool/i);
