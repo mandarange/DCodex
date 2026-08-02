@@ -118,6 +118,12 @@ export async function inspectCodexLbCliLaunchRecovery(
   if (selectedProvider !== 'codex-lb') {
     return codexLbToolOutputRecoveryNotSelected()
   }
+  const codexProcessSelectsCodexLb = overrides.modelProvider === 'codex-lb'
+    || profileConfig.modelProvider === 'codex-lb'
+    || userConfig.modelProvider === 'codex-lb'
+  if (environmentSelectsCodexLb && !codexProcessSelectsCodexLb) {
+    return environmentSelectionNotForwardedBlocked()
+  }
 
   const baseUrl = overrides.baseUrl
     ?? profileConfig.baseUrl
@@ -182,6 +188,13 @@ export function codexLbRecoveryBlockedProcessResult(
 }
 
 export function codexLbRecoveryBlockedMessage(probe: CodexLbToolOutputRecoveryProbe): string {
+  if (probe.blockers.includes('codex_lb_launch_selection_not_forwarded')) {
+    return [
+      'Codex launch blocked: codex-lb was requested by the SKS environment but was not selected in the Codex process.',
+      ...probe.blockers.map((blocker) => `blocker: ${blocker}`),
+      ...probe.operator_actions
+    ].join('\n')
+  }
   return [
     'Codex launch blocked: selected codex-lb interrupted tool-output recovery is not verified.',
     ...probe.blockers.map((blocker) => `blocker: ${blocker}`),
@@ -356,6 +369,20 @@ function projectProviderConfigBlocked(): CodexLbToolOutputRecoveryProbe {
       'Run `sks doctor --fix` to move or remove machine-local provider settings from the project `.codex/config.toml`.',
       'Rerun `sks codex-lb status` before launching Codex.',
       ...base.operator_actions
+    ]
+  }
+}
+
+function environmentSelectionNotForwardedBlocked(): CodexLbToolOutputRecoveryProbe {
+  const base = codexLbToolOutputRecoveryNotChecked(true)
+  return {
+    ...base,
+    status: 'version_unverified',
+    blockers: ['codex_lb_launch_selection_not_forwarded'],
+    warnings: ['sks_provider_environment_does_not_select_the_codex_process_provider'],
+    operator_actions: [
+      `Launch Codex with \`--config model_provider='"codex-lb"'\`, or select codex-lb in the active Codex profile.`,
+      'Rerun `sks codex-lb status` before launching Codex.'
     ]
   }
 }

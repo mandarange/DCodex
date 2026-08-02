@@ -1,6 +1,11 @@
 import os from 'node:os';
 import path from 'node:path';
 import { loadCodexLbEnv, parseShellEnvValue } from '../codex-lb/codex-lb-env.js';
+import {
+  CODEX_LB_ROUTING_TRUTH_RECEIPT,
+  codexLbRoutingTruthIsActive,
+  readCodexLbRoutingTruthReceipt
+} from '../codex-lb/routing-truth.js';
 import { nowIso, readText, runProcess, which } from '../fsx.js';
 import { redactSecrets, redactString } from '../secret-redaction.js';
 import { evaluateImagegenAuthReadiness } from './imagegen-auth-readiness.js';
@@ -148,6 +153,17 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
     apiKeyPresent,
     cliContract
   });
+  const routingTruthReceiptPath = opts.codexLbRoutingTruthReceiptPath
+    || path.join(codexHome, CODEX_LB_ROUTING_TRUTH_RECEIPT);
+  const routingTruth = await readCodexLbRoutingTruthReceipt({
+    receiptPath: routingTruthReceiptPath
+  }).catch(() => null);
+  const configuredHost = publicUrlHost(baseUrl);
+  const routingTruthContextMatches = routingTruth?.selected === selected
+    && routingTruth?.configured_host === configuredHost
+    && routingTruth?.auth_transport === 'authorization-bearer';
+  const routingActive = routingTruthContextMatches
+    && codexLbRoutingTruthIsActive(routingTruth);
   return {
     available: blocker === null,
     selected,
@@ -163,8 +179,36 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
       source: apiKeySource,
       redacted: true
     },
+    routing_active: routingActive,
+    routing_truth: routingTruth,
+    routing_truth_receipt_path: routingTruthReceiptPath,
+    routing_blocker: codexLbRoutingBlocker({
+      selected,
+      configuredHost,
+      routingTruth,
+      routingTruthContextMatches,
+      routingActive
+    }),
     blocker
   };
+}
+
+function codexLbRoutingBlocker(state: {
+  selected: boolean;
+  configuredHost: string | null;
+  routingTruth: any;
+  routingTruthContextMatches: boolean;
+  routingActive: boolean;
+}): string | null {
+  if (!state.selected) return 'codex_lb_not_selected';
+  if (!state.routingTruth) return 'codex_lb_routing_truth_receipt_missing';
+  if (state.routingTruth.selected !== true) return 'codex_lb_routing_truth_selection_mismatch';
+  if (state.routingTruth.configured_host !== state.configuredHost) return 'codex_lb_routing_truth_host_mismatch';
+  if (state.routingTruth.auth_transport !== 'authorization-bearer') return 'codex_lb_routing_truth_auth_transport_mismatch';
+  if (!state.routingTruthContextMatches || !state.routingActive) {
+    return state.routingTruth.blockers?.[0] || 'codex_lb_routing_truth_unverified';
+  }
+  return null;
 }
 
 function codexLbAuthBlocker(state: any) {
@@ -275,6 +319,14 @@ function boolish(value: unknown): boolean | null {
   if (/^(true|enabled|available|on|yes)$/i.test(value.trim())) return true;
   if (/^(false|disabled|missing|off|no)$/i.test(value.trim())) return false;
   return null;
+}
+
+function publicUrlHost(value: unknown): string | null {
+  try {
+    return typeof value === 'string' && value ? new URL(value).host : null;
+  } catch {
+    return null;
+  }
 }
 
 function topLevelTomlString(text: any = '', key: any = '') {

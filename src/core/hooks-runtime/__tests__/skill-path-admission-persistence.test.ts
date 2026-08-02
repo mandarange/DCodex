@@ -63,7 +63,10 @@ test('HOME admission survives transient project and artifact guard write failure
     assert.doesNotMatch(String(started.additionalContext || ''), /MANDATORY SKS PARENT-BLOCK HANDOFF/);
     assert.doesNotMatch(String(started.additionalContext || ''), /guard_persistence_failed/);
 
-    const homeGuardRoot = await homeAdmissionGuardRoot(home, root);
+    const homeGuardRoot = path.join(
+      await homeAdmissionGuardRoot(home, root),
+      `run-${sha256(JSON.stringify([missionId, workflowRunId]))}`
+    );
     const sessionHash = sha256('shared-parent-session');
     const turnHash = sha256(`turn-${agentId}`);
     const threadAdmission = JSON.parse(await fsp.readFile(
@@ -139,7 +142,12 @@ test('SubagentStart rejects mission-local-only admission when stable guard roots
     ));
     assert.deepEqual(marker.blockers, ['subagent_skill_availability_guard_persistence_failed']);
     const missionLocalAdmission = JSON.parse(await fsp.readFile(
-      path.join(dir, 'subagent-skill-availability', `thread-${sha256(agentId)}.json`),
+      path.join(
+        dir,
+        'subagent-skill-availability',
+        `run-${sha256(JSON.stringify([missionId, workflowRunId]))}`,
+        `thread-${sha256(agentId)}.json`
+      ),
       'utf8'
     ));
     assert.equal(missionLocalAdmission.status, 'blocked');
@@ -349,4 +357,3 @@ test('unsafe or oversized emergency denial files keep a healthy restart fail-clo
     await fsp.rm(fixture, { recursive: true, force: true });
   }
 });
-

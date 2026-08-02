@@ -31,11 +31,35 @@ test('Naruto GPT-5.6 policy maps all four sealed profiles', () => {
     model: 'gpt-5.6-sol', reasoning: 'max', serviceTier: 'fast'
   });
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'test_execution browser' }), {
-    model: 'gpt-5.6-terra', reasoning: 'medium', serviceTier: 'fast'
+    model: 'gpt-5.6-terra', reasoning: 'max', serviceTier: 'fast'
   });
   assert.deepEqual(routeNarutoGpt56Model({ ...available, taskText: 'test_execution GUI', riskText: 'forensic cross-app failure' }), {
     model: 'gpt-5.6-sol', reasoning: 'max', serviceTier: 'fast'
   });
+});
+
+test('native worker routing propagates simple EN/KO Luna, Terra Max, Sol High, and Sol Max choices', async () => {
+  const catalog = { ok: true, models, model_efforts: modelEfforts, blockers: [] };
+  const cases = [
+    ['Simple coding change: update one constant', 'gpt-5.6-luna', 'max'],
+    ['간단한 설정 변경으로 플래그만 켜줘', 'gpt-5.6-luna', 'max'],
+    ['간단한 셋업으로 한 줄만 추가해줘', 'gpt-5.6-luna', 'max'],
+    ['Rapid large-scale first-draft code processing across many files', 'gpt-5.6-terra', 'max'],
+    ['장기 메모리를 정리하고 통합해줘', 'gpt-5.6-terra', 'max'],
+    ['Implement the ordinary parser logic', 'gpt-5.6-sol', 'high'],
+    ['Debug the release security failure', 'gpt-5.6-sol', 'max']
+  ] as const;
+  for (const [description, model, effort] of cases) {
+    const routing = await resolveWorkerModelRouting({
+      agent: { id: 'naruto_dynamic', role: 'executor' },
+      slice: { id: 'W-dynamic', kind: 'task', title: description, description },
+      intake: { route: '$Naruto' },
+      fastModePolicy: { fast_mode: true, service_tier: 'fast' }
+    }, { lbCatalog: catalog, lbHealth: { ok: true, degraded_models: [] }, env: {} });
+    assert.equal(routing.blockers.length, 0, description);
+    assert.equal(routing.choice.model, model, description);
+    assert.equal(routing.choice.reasoning, effort, description);
+  }
 });
 
 test('Naruto GPT-5.6 policy fails closed for missing model or unadvertised effort', () => {

@@ -37,7 +37,7 @@ try { setupJson = JSON.parse(setup.stdout); } catch {}
 const envPath = path.join(home, '.codex', 'sks-codex-lb.env');
 const envStat = await fs.stat(envPath).catch(() => null);
 const mode = envStat ? (envStat.mode & 0o777).toString(8) : null;
-const ok = status.code === 0
+const ok = status.code === 1
   && setup.code === 0
   && statusJson.setup_needed === true
   && setupJson.ok === true

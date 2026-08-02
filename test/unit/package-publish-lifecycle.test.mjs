@@ -28,9 +28,27 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   assert.equal(buildTsconfig.compilerOptions.sourceMap, false);
   assert.ok(fs.existsSync('dist/native/sks-menubar/Sources/AppDelegate.swift'));
   assert.ok(fs.existsSync('dist/native/sks-menubar/Resources/AppIcon.icns'));
-  assert.equal(pkg.files.some((entry) => entry.includes('dist/core/telegram')), false);
-  assert.equal(fs.existsSync('dist/core/commands/telegram-command.js'), false);
-  assert.equal(fs.existsSync('dist/core/telegram'), false);
+  for (const file of [
+    'TelegramPrivateFileSupport.swift',
+    'TelegramPrivateFileStore.swift',
+    'TelegramProcessGateway.swift',
+    'TelegramRuntimeSupport.swift',
+    'TelegramSupport.swift',
+    'TelegramTransport.swift'
+  ]) {
+    assert.ok(
+      fs.existsSync(path.join('dist/native/sks-menubar/Sources', file)),
+      `published package must include native Telegram source ${file}`
+    );
+  }
+  assert.ok(pkg.files.includes('dist'), 'published package must include the built Telegram runtime through dist');
+  assert.ok(fs.existsSync('dist/core/config-adopt/index.js'));
+  assert.ok(fs.existsSync('dist/core/commands/telegram-command.js'));
+  assert.ok(fs.existsSync('dist/core/telegram'));
+  for (const file of ['access.js', 'client.js', 'confirmation.js', 'doctor.js', 'index.js', 'keychain.js', 'liveness.js', 'poller.js', 'redaction.js', 'types.js']) {
+    assert.ok(fs.existsSync(path.join('dist/core/telegram', file)), `built Telegram runtime must include ${file}`);
+  }
+  assert.equal(fs.existsSync('dist/core/telegram/controller.js'), false, 'published package must not include the retired Telegram controller');
   assert.equal(scripts['release:check'], 'npm run release:check:affected');
   assert.match(scripts['release:check:affected'], /--preset affected/);
   assert.match(scripts['release:check:affected'], /release:ensure-build/);

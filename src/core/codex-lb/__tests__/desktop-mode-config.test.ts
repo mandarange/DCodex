@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   CODEX_LB_DESKTOP_BRIDGE_MARKER,
   CODEX_LB_MODEL_CATALOG_MARKER,
+  CODEX_LB_OAUTH_SELECTION_MARKER,
+  CODEX_LB_PROVIDER_SELECTION_MARKER,
   removeCodexLbManagedDesktopConfig,
   upsertCodexLbCliProviderConfig,
   upsertCodexLbCompatDesktopConfig,
@@ -110,6 +112,28 @@ test('compat mode uses exact OpenAI identity and a separate gateway header', () 
   const disabled = removeCodexLbManagedDesktopConfig(result);
   assert.doesNotMatch(disabled, /^model_provider\s*=\s*"codex-lb"$/m);
   assert.match(disabled, /\[model_providers\.codex-lb\]/);
+});
+
+test('CLI ON atomically selects the provider and OFF restores built-in OAuth selection', () => {
+  const enabled = upsertCodexLbCliProviderConfig(
+    'model_provider = "openai"\nservice_tier = "fast"\n',
+    { remoteBaseUrl: REMOTE, selectGlobally: true }
+  );
+  assert.match(enabled, new RegExp(`${CODEX_LB_PROVIDER_SELECTION_MARKER}\\nmodel_provider = "codex-lb"`));
+  assert.match(enabled, /\[model_providers\.codex-lb\]/);
+  assert.match(enabled, new RegExp(`base_url = "${REMOTE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
+
+  const repaired = upsertCodexLbCliProviderConfig(enabled, {
+    remoteBaseUrl: 'https://new.example.test/backend-api/codex',
+    selectGlobally: true
+  });
+  assert.match(repaired, /^model_provider\s*=\s*"codex-lb"$/m);
+  assert.match(repaired, /base_url = "https:\/\/new\.example\.test\/backend-api\/codex"/);
+
+  const disabled = removeCodexLbManagedDesktopConfig(repaired);
+  assert.match(disabled, new RegExp(`${CODEX_LB_OAUTH_SELECTION_MARKER}\\nmodel_provider = "openai"`));
+  assert.doesNotMatch(disabled, /^model_provider\s*=\s*"codex-lb"$/m);
+  assert.match(disabled, /^service_tier\s*=\s*"fast"$/m);
 });
 
 test('routing and gateway-auth modes preserve native Codex feature configuration', () => {

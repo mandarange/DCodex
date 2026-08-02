@@ -27,6 +27,52 @@ import {
   writeOfficialSubagentPlan,
   writeTranscript
 } from './skill-path-context-fixtures.js';
+import { resumedOfficialThreadBelongsToActiveRun } from '../subagent-skill-availability.js';
+
+test('resumed admission recognizes the 256th settled child in a multi-wave lifecycle', () => {
+  const threadIds = Array.from({ length: 256 }, (_, index) => `thread-${index + 1}`);
+  const waves = Array.from({ length: 4 }, (_, wave) => {
+    const ids = threadIds.slice(wave * 64, (wave + 1) * 64);
+    return {
+      wave: wave + 1,
+      status: 'settled',
+      thread_ids: ids,
+      settled_thread_ids: ids,
+      started_at: '2026-07-31T00:00:00.000Z',
+      settled_at: '2026-07-31T00:01:00.000Z'
+    };
+  });
+  assert.equal(resumedOfficialThreadBelongsToActiveRun({
+    schema: 'sks.subagent-plan.v1',
+    workflow: 'official_codex_subagent',
+    mission_id: 'M-256-resume',
+    workflow_run_id: 'run-256-resume',
+    wave_lifecycle: {
+      schema: 'sks.subagent-wave-lifecycle.v1',
+      owner: 'root_parent',
+      workflow_run_id: 'run-256-resume',
+      waves
+    }
+  }, 'M-256-resume', 'run-256-resume', threadIds[255]!), true);
+  const overflowThreadIds = [...threadIds, 'thread-257'];
+  assert.equal(resumedOfficialThreadBelongsToActiveRun({
+    schema: 'sks.subagent-plan.v1',
+    workflow: 'official_codex_subagent',
+    mission_id: 'M-256-resume',
+    workflow_run_id: 'run-256-resume',
+    wave_lifecycle: {
+      schema: 'sks.subagent-wave-lifecycle.v1',
+      owner: 'root_parent',
+      workflow_run_id: 'run-256-resume',
+      waves: [{
+        wave: 1,
+        status: 'settled',
+        thread_ids: overflowThreadIds,
+        settled_thread_ids: overflowThreadIds
+      }]
+    }
+  }, 'M-256-resume', 'run-256-resume', 'thread-257'), false);
+})
 
 test('a healthy reused SubagentStart clears a stale same-thread guard even when the prior child emitted no stop', async () => {
   const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-hook-skill-path-reused-child-'));
@@ -69,6 +115,7 @@ test('a healthy reused SubagentStart clears a stale same-thread guard even when 
       '.sneakoscope',
       'guards',
       'subagent-skill-availability',
+      `run-${sha256(JSON.stringify([missionId, workflowRunId]))}`,
       `thread-${sha256(agentId)}.json`
     );
     await fsp.access(guard);
@@ -129,13 +176,23 @@ test('a stopped official child reissues admission on its first resumed PreToolUs
     }, { root, state });
     const transcript = await writeTranscript(home, agentId, true);
     await fsp.appendFile(transcript, `${'x'.repeat((1024 * 1024) + 1)}\n`);
-    await evaluateHookPayload('subagent-stop', {
+    const stopWithoutTurnId: any = {
       ...subagentPayload(agentId, transcript),
       cwd: root,
       hook_event_name: 'SubagentStop',
+      workflow_run_id: workflowRunId,
       last_assistant_message: 'Initial review turn completed.',
       stop_hook_active: false
-    }, { root, state });
+    };
+    delete stopWithoutTurnId.turn_id;
+    await evaluateHookPayload('subagent-stop', stopWithoutTurnId, { root, state });
+    const scopedThreadGuard = path.join(
+      dir,
+      'subagent-skill-availability',
+      `run-${sha256(JSON.stringify([missionId, workflowRunId]))}`,
+      `thread-${sha256(agentId)}.json`
+    );
+    await assert.rejects(fsp.access(scopedThreadGuard));
 
     const resumedTurnId = 'turn-resumed-child-generation';
     const resumed: any = await evaluateHookPayload('pre-tool', {
@@ -149,6 +206,7 @@ test('a stopped official child reissues admission on its first resumed PreToolUs
     const admission = JSON.parse(await fsp.readFile(path.join(
       dir,
       'subagent-skill-availability',
+      `run-${sha256(JSON.stringify([missionId, workflowRunId]))}`,
       `thread-${sha256(agentId)}.json`
     ), 'utf8'));
     assert.equal(admission.status, 'allowed');
@@ -236,7 +294,39 @@ test('PreToolUse rejects an admitted child replay after the active mission and r
     const replayed: any = await evaluateHookPayload('pre-tool', identicalPreToolPayload, { root });
     assert.equal(replayed.decision, 'block');
     assert.equal(replayed.permissionDecision, 'deny');
-    assert.match(String(replayed.reason || ''), /subagent_skill_availability_guard_invalid/);
+    assert.match(String(replayed.reason || ''), /subagent_skill_availability_admission_missing/);
+
+    await evaluateHookPayload('subagent-start', {
+      ...subagentPayload(agentId),
+      cwd: root,
+      workflow_run_id: workflowRunB
+    }, { root });
+    const currentRunTool: any = await evaluateHookPayload('pre-tool', identicalPreToolPayload, { root });
+    assert.equal(currentRunTool.decision, undefined);
+
+    const delayedOldStopWithoutTurnId: any = {
+      ...subagentPayload(agentId),
+      cwd: root,
+      hook_event_name: 'SubagentStop',
+      last_assistant_message: 'Delayed unbound result from the old run.',
+      stop_hook_active: false
+    };
+    delete delayedOldStopWithoutTurnId.turn_id;
+    await evaluateHookPayload('subagent-stop', delayedOldStopWithoutTurnId, { root });
+    const currentRunGuard = path.join(
+      missionDir(root, missionB),
+      'subagent-skill-availability',
+      `run-${sha256(JSON.stringify([missionB, workflowRunB]))}`,
+      `thread-${sha256(agentId)}.json`
+    );
+    await fsp.access(currentRunGuard);
+    const currentPlan = JSON.parse(await fsp.readFile(
+      path.join(missionDir(root, missionB), 'subagent-plan.json'),
+      'utf8'
+    ));
+    assert.equal(currentPlan.wave_lifecycle.open_threads, 1);
+    const afterDelayedOldStop: any = await evaluateHookPayload('pre-tool', identicalPreToolPayload, { root });
+    assert.equal(afterDelayedOldStop.decision, undefined);
   } finally {
     if (oldHome === undefined) delete process.env.HOME;
     else process.env.HOME = oldHome;

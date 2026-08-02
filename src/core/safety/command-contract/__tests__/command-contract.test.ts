@@ -110,9 +110,39 @@ test('Naruto contract matches its local-only explicit-opt-in CLI surface', () =>
   }
 
   const misplacedTask = validateJsonSchema({ action: 'status', task: 'must not be silently dropped', json: true }, contract.input_schema);
-  assert.equal(misplacedTask.ok, true);
-  if (misplacedTask.ok) {
-    assert.deepEqual(contract.argv_builder(misplacedTask.value), ['naruto', 'status', 'must not be silently dropped', '--json']);
+  assert.equal(misplacedTask.ok, false);
+  const misplacedFanout = validateJsonSchema({ action: 'proof', agents: 2, json: true }, contract.input_schema);
+  assert.equal(misplacedFanout.ok, false);
+  const missingTask = validateJsonSchema({ action: 'run', json: true }, contract.input_schema);
+  assert.equal(missingTask.ok, false);
+  const parentWithoutStdin = validateJsonSchema({ action: 'parent-summary', mission: 'M-1', json: true }, contract.input_schema);
+  assert.equal(parentWithoutStdin.ok, false);
+
+  const hostRun = validateJsonSchema({
+    action: 'run',
+    task: 'host task',
+    auth_mode: 'host',
+    model_provider: 'gateway',
+    provider_env_key: 'GATEWAY_API_KEY',
+    parent_model: 'gpt-5.6-sol',
+    parent_effort: 'max',
+    subagent_model: 'gpt-5.6-terra',
+    subagent_effort: 'max',
+    no_forced_login_method: true
+  }, contract.input_schema);
+  assert.equal(hostRun.ok, true);
+  if (hostRun.ok) {
+    assert.deepEqual(contract.argv_builder(hostRun.value), [
+      'naruto', 'run', 'host task',
+      '--auth-mode', 'host',
+      '--model-provider', 'gateway',
+      '--provider-env-key', 'GATEWAY_API_KEY',
+      '--parent-model', 'gpt-5.6-sol',
+      '--parent-effort', 'max',
+      '--subagent-model', 'gpt-5.6-terra',
+      '--subagent-effort', 'max',
+      '--no-forced-login-method'
+    ]);
   }
 
   const unknownAction = validateJsonSchema({ action: 'dashboard', json: true }, contract.input_schema);

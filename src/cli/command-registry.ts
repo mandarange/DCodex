@@ -274,6 +274,7 @@ const COMMAND_DEFINITIONS = {
     activeRoutePolicy: 'always'
   }),
   root: readOnly(entry('stable', 'Show active SKS root', 'dist/commands/root.js', directCommand(() => import('../commands/root.js'), 'dist/commands/root.js'))),
+  install: skipMigrationGate(entry('stable', 'Install the exact packaged SKS version globally and verify the resolved CLI', 'dist/core/commands/install-package-command.js', argsCommand(() => import('../core/commands/install-package-command.js'), 'installPackageCommand', 'dist/core/commands/install-package-command.js'))),
   update: skipMigrationGate(entry('stable', 'Inspect, review, apply, or roll back the global SKS update', 'dist/core/commands/basic-cli.js', subcommand(() => import(basicModule), 'updateCommand', 'dist/core/commands/basic-cli.js', 'now'))),
   uninstall: entry('stable', 'Uninstall SKS global skills, hooks, config, menu bar, and optional project residue', 'dist/core/commands/uninstall-command.js', argsCommand(() => import('../core/commands/uninstall-command.js'), 'uninstallCommand', 'dist/core/commands/uninstall-command.js'), {
     skipMigrationGate: true,
@@ -282,6 +283,7 @@ const COMMAND_DEFINITIONS = {
     activeRoutePolicy: 'always'
   }),
   'update-check': readOnly(entry('stable', 'Show the shared SKS, Codex CLI, and Menu Bar update status', 'dist/core/commands/basic-cli.js', basicArgs('updateCheckCommand'))),
+  config: skipMigrationGate(entry('stable', 'Adopt project Codex config into SKS management', 'dist/core/config-adopt/index.js', subcommand(() => import('../core/config-adopt/index.js'), 'configCommand', 'dist/core/config-adopt/index.js', 'adopt'))),
   mcp: skipMigrationGate(entry('beta', 'Manage scoped Codex MCP configuration', 'dist/core/commands/mcp-config-command.js', argsCommand(() => import('../core/commands/mcp-config-command.js'), 'mcpConfigCommand', 'dist/core/commands/mcp-config-command.js'))),
   wizard: entry('stable', 'Open setup wizard help', 'dist/core/commands/basic-cli.js', basicNoArgs('quickstartCommand')),
   usage: readOnly(entry('stable', 'Show focused usage topic', 'dist/core/commands/basic-cli.js', basicArgs('usageCommand'))),
@@ -302,6 +304,7 @@ const COMMAND_DEFINITIONS = {
   'codex-lb': skipMigrationGate(entry('beta', 'Inspect codex-lb status and circuit health', 'dist/commands/codex-lb.js', directCommand(() => import('../commands/codex-lb.js'), 'dist/commands/codex-lb.js'))),
   menubar: activeRouteDiagnostic(entry('beta', 'Inspect/install/restart/uninstall SKS menu bar', 'dist/core/commands/menubar-command.js', subcommand(() => import('../core/commands/menubar-command.js'), 'menubarCommand', 'dist/core/commands/menubar-command.js', 'status'))),
   remote: entry('beta', 'Inspect official Remote readiness and run the proof-aware SSH stdio worker', 'dist/core/commands/remote-command.js', argsCommand(() => import('../core/commands/remote-command.js'), 'remoteCommand', 'dist/core/commands/remote-command.js')),
+  telegram: skipMigrationGate(entry('beta', 'Pair and inspect the Telegram remote-control transport', 'dist/core/commands/telegram-command.js', argsCommand(() => import('../core/commands/telegram-command.js'), 'telegramCommand', 'dist/core/commands/telegram-command.js'))),
   hooks: skipMigrationGate(entry('beta', 'Explain and inspect Codex hooks', 'dist/commands/hooks.js', directCommand(() => import('../commands/hooks.js'), 'dist/commands/hooks.js'))),
   'zellij-lane': entry('beta', 'Render a Zellij lane frame for SKS sessions', 'dist/commands/zellij-lane.js', directCommand(() => import('../commands/zellij-lane.js'), 'dist/commands/zellij-lane.js')),
   'zellij-slot-pane': entry('beta', 'Render a compact Zellij worker slot pane', 'dist/commands/zellij-slot-pane.js', directCommand(() => import('../commands/zellij-slot-pane.js'), 'dist/commands/zellij-slot-pane.js')),
@@ -388,6 +391,7 @@ const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(CO
   check: { risk: 'R1', latency: 'long' },
   'commit-and-push': { risk: 'R3' },
   'computer-use': { latency: 'long' },
+  config: { risk: 'R2', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   dfix: { latency: 'long' },
   eval: { latency: 'long' },
   gates: {
@@ -395,6 +399,7 @@ const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(CO
   },
   harness: { latency: 'long' },
   'image-ux-review': { latency: 'long' },
+  install: { risk: 'R2', latency: 'long' },
   loop: { latency: 'long' },
   'mad-sks': { risk: 'R3', latency: 'long' },
   mcp: { risk: 'R2', latency: 'long', supportsJson: true, inputProfile: 'json-only' },
@@ -435,6 +440,7 @@ const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(CO
     requiredCapabilities: ['proof.stop-gate']
   },
   task: { risk: 'R1', latency: 'long' },
+  telegram: { risk: 'R2', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   trust: {
     risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true,     inputProfile: 'trust', requiredCapabilities: ['proof.trust']
   },

@@ -298,7 +298,7 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
 
     @objc private func showBackups() {
         guard let scope = writableScopeForBackup(), let window = view.window else { status.stringValue = "Choose Global or Project, or select a writable server, before restoring backups."; return }
-        processClient.run(["mcp", "config", "backups", "--scope", scope] + scopeContext(scope, mutation: false) + ["--json"]) { [weak self] result in
+        processClient.run(["mcp", "config", "backups", "--scope", scope] + scopeContext(scope, mutation: false) + ["--json"], timeout: NativeView.statusTimeout) { [weak self] result in
             guard let self = self, let backups = self.json(result.output)?["backups"] as? [[String: Any]], !backups.isEmpty else { self?.status.stringValue = "No protected MCP backups are available for this scope."; return }
             let choices = backups.compactMap { item -> (String, String)? in
                 guard let id = item["id"] as? String else { return nil }

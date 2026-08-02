@@ -313,6 +313,7 @@ test('SubagentStart missing-skill handoff blocks only that child tools and binds
     const resumedAdmission = JSON.parse(await fsp.readFile(path.join(
       dir,
       'subagent-skill-availability',
+      `run-${sha256(JSON.stringify([missionId, workflowRunId]))}`,
       `thread-${sha256(blockedAgent)}.json`
     ), 'utf8'));
     assert.equal(resumedAdmission.status, 'allowed');

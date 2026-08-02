@@ -15,7 +15,7 @@ import { reconcileCodexAppUpgradeProcesses } from '../core/codex-app.js';
 import { restartCodexApp } from '../core/codex-app/codex-app-restart.js';
 import { cleanupMacLaunchSecretEnvironment } from '../core/codex-app/menubar/index.js';
 import { recordCodexLbHealthEvent } from '../core/codex-lb-circuit.js';
-import { loadCodexLbEnv, writeCodexLbKeychain, codexLbMetadataPath } from '../core/codex-lb/codex-lb-env.js';
+import { loadCodexLbEnv, codexLbMetadataPath } from '../core/codex-lb/codex-lb-env.js';
 import {
   codexLbToolCatalogPath,
   ensureCodexLbToolCatalog
@@ -112,12 +112,13 @@ export async function selftestSksShimRepair() {
   const staleShimTmp = tmpdir();
   const staleBin = path.join(staleShimTmp, 'old-prefix', 'bin');
   const stalePkg = path.join(staleShimTmp, 'old-prefix', 'lib', 'node_modules', 'sneakoscope');
-  await ensureDir(path.join(stalePkg, 'bin'));
+  const staleEntrypoint = path.join(stalePkg, 'dist', 'bin', 'sks.js');
+  await ensureDir(path.dirname(staleEntrypoint));
   await ensureDir(staleBin);
   await writeTextAtomic(path.join(stalePkg, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '0.0.1' }, null, 2));
-  await writeTextAtomic(path.join(stalePkg, 'bin', 'sks.js'), '#!/usr/bin/env node\nconsole.log("sneakoscope 0.0.1");\n');
-  await fsp.chmod(path.join(stalePkg, 'bin', 'sks.js'), 0o755).catch(() => {});
-  await fsp.symlink(path.join(stalePkg, 'bin', 'sks.js'), path.join(staleBin, 'sks'));
+  await writeTextAtomic(staleEntrypoint, '#!/usr/bin/env node\nconsole.log("sneakoscope 0.0.1");\n');
+  await fsp.chmod(staleEntrypoint, 0o755).catch(() => {});
+  await fsp.symlink(staleEntrypoint, path.join(staleBin, 'sks'));
   const repair = await ensureSksCommandDuringInstall({ force: true, pathEnv: staleBin, home: path.join(staleShimTmp, 'home') });
   if (repair.status !== 'repaired') throw new Error(`selftest: stale global sks shim was not repaired (${repair.status})`);
   const run = await runProcess(path.join(staleBin, 'sks'), ['--version'], { timeoutMs: 10000, maxOutputBytes: 16 * 1024 });
@@ -167,9 +168,11 @@ async function inspectSksPathShim(candidate: any, opts: any = {}) {
 
 function sksPackageRootForBin(file: any) {
   const normalized = String(file || '').split(path.sep).join('/');
-  const marker = '/node_modules/sneakoscope/bin/';
+  const marker = '/node_modules/sneakoscope/';
   const idx = normalized.lastIndexOf(marker);
   if (idx < 0) return null;
+  const relative = normalized.slice(idx + marker.length);
+  if (!/^(?:dist\/)?bin\//.test(relative)) return null;
   return normalized.slice(0, idx + '/node_modules/sneakoscope'.length).split('/').join(path.sep);
 }
 

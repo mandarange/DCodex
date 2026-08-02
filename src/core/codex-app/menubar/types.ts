@@ -152,6 +152,10 @@ export interface SksMenuBarInstallResult {
   launch_agent_path: string | null;
   action_script_path: string | null;
   build_stamp_path: string | null;
+  installed_version?: string | null;
+  running_process?: SksMenuBarRuntimeProcess;
+  menubar_version_probe?: SksMenuBarVersionProbe;
+  duplicate_install_candidates?: string[];
   config_path?: string | null;
   report_path: string | null;
   codex_bundle_id?: string | null;
@@ -169,6 +173,8 @@ export interface SksMenuBarInstallResult {
     verified_running_after_timeout?: boolean;
     terminal_uncertain?: boolean;
     open_code?: number | null;
+    open_verified_running?: boolean;
+    version_probe?: SksMenuBarVersionProbe;
     error?: string | null;
   };
   target_check?: SksMenuBarTargetCheck;
@@ -189,6 +195,10 @@ export interface SksMenuBarStatusResult {
   platform: NodeJS.Platform;
   installed: boolean;
   running: boolean;
+  installed_version: string | null;
+  running_process: SksMenuBarRuntimeProcess;
+  menubar_version_probe: SksMenuBarVersionProbe;
+  duplicate_install_candidates: string[];
   paths: ReturnType<typeof sksMenuBarPaths>;
   launchd: { checked: boolean; ok: boolean; service: string | null; state: string | null; pid: number | null; error: string | null };
   action_target: {
@@ -216,6 +226,41 @@ export interface SksMenuBarStatusResult {
   blockers: string[];
   warnings: string[];
   next_actions: string[];
+}
+
+export interface SksMenuBarRuntimeProcess {
+  checked: boolean;
+  ok: boolean;
+  pid: number | null;
+  package_version: string | null;
+  build_version: string | null;
+  executable_path: string | null;
+  started_at: string | null;
+  source: 'runtime-state' | 'none';
+  error: string | null;
+}
+
+export interface SksMenuBarVersionProbe {
+  schema: 'sks.menubar-version-probe.v1';
+  checked: boolean;
+  ok: boolean;
+  expected_version: string;
+  running_version: string | null;
+  pid: number | null;
+  generated_at: string;
+  persisted_path: string;
+  error: string | null;
+}
+
+export interface SksMenuBarStopResult {
+  ok: boolean;
+  service: string;
+  executable_paths: string[];
+  bootout_codes: Array<number | null>;
+  terminated_pids: number[];
+  remaining_pids: number[];
+  timed_out: boolean;
+  error: string | null;
 }
 
 export interface SksMenuBarUninstallResult {

@@ -1,6 +1,24 @@
 # codex-lb Evidence
 
-SKS keeps codex-lb separate from ChatGPT OAuth. The codex-lb proxy key is stored and redacted as `CODEX_LB_API_KEY`; ChatGPT OAuth remains the official Codex login path.
+SKS keeps the codex-lb gateway key separate from ChatGPT OAuth. The key is
+stored and redacted as `CODEX_LB_API_KEY`; `~/.codex/auth.json` remains
+byte-preserved. With codex-lb off, ChatGPT OAuth is the official path. With
+**Use codex-lb** on, the codex-lb provider is the active top-level selection and
+the selected request must use the gateway key rather than silently consuming
+the stored OAuth identity.
+
+## Key storage & keychain
+
+The canonical store is `~/.codex/sks-codex-lb.env` with mode `0600`. Key
+resolution is env-file first and then `CODEX_LB_API_KEY`; this deliberate
+inversion prevents a stale ambient shell export from overriding SKS Center
+credentials. Keychain is retired from normal codex-lb reads and writes.
+
+Legacy handling is one-time only: transfer a legacy Keychain key only when the
+env file lacks a valid key, or, when the env file is valid, verify then delete
+the legacy item without reading it. SKS stamps a migration attempt, so a
+failure or cancellation is not automatically re-prompted. Menu Bar signing
+stability is no longer keychain-load-bearing.
 
 ## Commands
 
@@ -10,7 +28,6 @@ sks codex-lb setup --host lb.example.com --api-key-stdin --plan --json
 sks codex-lb setup --host lb.example.com --api-key-stdin --yes --json
 sks codex-lb status --json
 sks codex-lb use-desktop-full
-sks codex-lb use-desktop-compat
 sks codex-lb use-cli
 sks codex-lb disable
 sks codex-lb capabilities --level transport --json
@@ -34,17 +51,16 @@ credentials on that machine. Interactive setup asks for:
 
 - codex-lb domain or base URL
 - API key with hidden input
-- Desktop Full Capability, Desktop compatibility, or CLI-only routing
+- Desktop Full Capability or CLI-only routing
 - custom gateway header or explicit bearer-compat transport where supported
 - whether to write the shell env loader
-- whether to store the key in macOS Keychain when available
 - whether to sync the non-secret base URL to the macOS `launchctl` environment
 - whether to install a shell profile snippet
 - whether to run capability diagnostics
 
 Non-interactive setup accepts `--host`, `--domain`, `--base-url`,
 `--api-key-stdin`, `--plan`, `--yes`,
-`--desktop-mode desktop-full|desktop-compat|cli-only`,
+`--desktop-mode desktop-full|cli-only`,
 `--gateway-auth custom-header|bearer-compat`, `--write-env-file`,
 `--no-env-file`, `--keychain`, `--no-keychain`, `--launchctl`,
 `--shell-profile zsh|bash|fish|all|skip`, `--health`, `--no-health`, and
@@ -59,17 +75,18 @@ Fast state, model selection, or catalog binding.
 Persistence modes:
 
 - `durable_env_file`: `~/.codex/sks-codex-lb.env` was written with `0600`.
-- `durable_keychain`: macOS Keychain storage succeeded.
+- `durable_keychain`: reserved for an identity-verified, dedicated signed SKS
+  helper. The public CLI currently fails closed instead of granting a reusable
+  interpreter or `/usr/bin/security` generic access to the gateway secret.
 - `shell_profile`: a managed shell profile snippet was installed.
 - `process_only_ephemeral`: all durable persistence choices were disabled, so the supplied credentials live only in the current process.
 - `none`: no credential source is effective.
 
-`--launchctl` syncs the non-secret value (base URL only) outside Desktop
-compatibility mode. In `desktop-dual-auth-compat`, SKS injects the official
-Center store (`sks-codex-lb.env` / keychain `sks-codex-lb`) into the GUI launch
-environment automatically so Codex Desktop can send `X-Codex-LB-API-Key`
-without any `source ~/.codex/sks-codex-lb.env` step. Stale twin files such as
-`~/.codex/codex-lb.env` and `~/.codex/sks.env` are purged on credential sync.
+`--launchctl` syncs the non-secret base URL only and removes API-key variables
+from the GUI launch environment. The retired `desktop-dual-auth-compat` mode is
+detected for migration but cannot be activated because it requires a global GUI
+secret. Stale twin files such as `~/.codex/codex-lb.env` and
+`~/.codex/sks.env` are quarantined or reported according to provenance.
 
 The combination `--no-env-file --no-keychain --no-launchctl --shell-profile skip` is process-only. Non-interactive process-only setup requires `--yes`; interactive setup asks for a separate `process-only` confirmation. JSON output includes:
 
@@ -91,7 +108,7 @@ The combination `--no-env-file --no-keychain --no-launchctl --shell-profile skip
 Recovery command for durable persistence:
 
 ```bash
-sks codex-lb setup --host lb.example.com --api-key-stdin --yes --write-env-file --keychain --launchctl --shell-profile zsh
+sks codex-lb setup --host lb.example.com --api-key-stdin --yes --write-env-file --launchctl --shell-profile zsh
 ```
 
 Base URL normalization:
@@ -102,7 +119,18 @@ https://lb.example.com -> https://lb.example.com/backend-api/codex
 https://lb.example.com/backend-api/codex -> unchanged
 ```
 
-The fallback env file is `~/.codex/sks-codex-lb.env` with mode `0600`. Metadata lives at `~/.codex/sks-codex-lb.json` and stores only `base_url`, `updated_at`, `source`, and a SHA-256 key fingerprint. Status and doctor report only redacted key presence:
+The fallback env file is `~/.codex/sks-codex-lb.env` with mode `0600`. Metadata lives at `~/.codex/sks-codex-lb.json` and stores `base_url`, `updated_at`, `source`, and a SHA-256 key fingerprint; one-time legacy migration also records a short redacted preview. Status and doctor report only redacted key presence:
+
+On explicit setup or reconfiguration, SKS checks for the retired generic
+Keychain service `sks-codex-lb`. It removes only the exact legacy
+service/account after the new env file and metadata have been committed and
+revalidated as owner-only regular files with matching URL and key digests.
+SKS then reads Keychain back and requires an item-not-found result. If deletion
+or readback is indeterminate, the verified replacement store is retained,
+setup reports the cleanup failure, and the provider key should be rotated.
+Both `setup` and `set-key` print the rotation warning in ordinary terminal
+output as well as returning it in JSON.
+Background status and credential synchronization do not perform this migration.
 
 ```json
 {
@@ -115,7 +143,7 @@ The fallback env file is `~/.codex/sks-codex-lb.env` with mode `0600`. Metadata 
   },
   "env_loader": {
     "configured": true,
-    "source_priority": ["env-file", "keychain", "process.env"]
+    "source_priority": ["env-file", "process.env"]
   },
   "env_auto_load": true
 }
@@ -130,17 +158,18 @@ Provider and auth invariants:
   other built-in surfaces remain owned by Codex App in every codex-lb routing
   mode. A codex-lb capability row may be unverified or blocked for that routing
   path without disabling the corresponding native App feature.
-- Codex Desktop identity is always the real ChatGPT OAuth state in
-  `~/.codex/auth.json`. Setup, repair, enable, disable, update, and ordinary
-  launch preparation read it for validation but do not write it.
-- **Desktop Full Capability** keeps the built-in OpenAI provider selected and
-  writes only an SKS-owned loopback `openai_base_url`. It keeps the CLI
-  `[model_providers.codex-lb]` block stored but unselected and does not bind a
-  local `model_catalog_json`.
-- The loopback bridge strips OAuth/cookies from gateway-bound requests and adds
-  the separate codex-lb key as `X-Codex-LB-API-Key` by default. Explicit
-  `authorization-bearer-compat` is supported only where the operator and
-  gateway both require it.
+- Shared ChatGPT OAuth in `~/.codex/auth.json` is preserved across setup,
+  repair, enable, disable, update, and ordinary launch preparation. It is used
+  only when the official provider is selected; a selected codex-lb route must
+  not read it as fallback authentication.
+- **Use codex-lb** commits `[model_providers.codex-lb]` and top-level
+  `model_provider = "codex-lb"` as one guarded transaction. The provider uses
+  the configured remote `base_url`, `env_key = "CODEX_LB_API_KEY"`, and
+  `requires_openai_auth = false`. A provider definition without its requested
+  active selection is drift, not an enabled state.
+- Remote base URLs, including a codex-lb Docker deployment on another machine,
+  are first-class. No localhost-only assumption, implicit OAuth substitution,
+  or unrelated `auth.json` API key can satisfy gateway authentication.
 - The gateway auth transport is stored once by setup (`sks-codex-lb.json`, and
   the bridge settings for a running bridge). `status`, `capabilities`, and
   `use-desktop-full` honour that stored choice; `--gateway-auth` /
@@ -152,19 +181,33 @@ Provider and auth invariants:
   `codex_lb_gateway_auth_rejected_for_transport:<transport>` with guidance to
   re-run setup with the other transport. It is never reported as an
   unreachable gateway or as a generic bridge failure.
-- Desktop Full Capability activation requires a real loopback HTTP round trip —
-  that is the path every Codex Desktop request takes, and it also proves the
-  gateway accepted the configured transport. A gateway that does not proxy
-  `/realtime` WebSocket upgrades leaves voice/realtime unverified and is
-  reported in `transport_warnings` with
-  `transport_capabilities_verified: false`; it does not roll back working HTTP
-  routing.
-- **Desktop compatibility** uses exact `name = "OpenAI"`,
-  `requires_openai_auth = true`, no `env_key`, and
-  `env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }`.
-- **CLI Provider** uses `name = "codex-lb"`,
-  `env_key = "CODEX_LB_API_KEY"`, and `requires_openai_auth = false`. It is
-  selected explicitly per CLI launch, not as the global Desktop provider.
+- Activation requires one measured request to the selected remote base URL.
+  The durable RoutingTruth result records measurement time, target host,
+  authentication class, and latency, and the same result is rendered by Doctor
+  and the Menu Bar. Configuration, `/health`, and a provider block alone never
+  turn the UI green. A gateway that does not proxy `/realtime` WebSocket
+  upgrades leaves voice/realtime unverified and is reported in
+  `transport_warnings` with `transport_capabilities_verified: false`; it does
+  not rewrite the measured HTTP result.
+- After SKS Center selects the CLI provider, it invokes
+  `sks codex-lb connect-test --json`. This path sends exactly one Responses
+  request with `store: false`, no tools or continuation ID, low reasoning, and
+  a 32-token output cap. Center accepts success only when the structured result
+  contains a completed non-error response, response ID, non-empty bounded text,
+  HTTP success, model, latency, consistent token usage, and no blockers. A
+  failed test leaves the selected mode intact and exposes a manual retry. The
+  command refuses to send before provider selection and resolves its model from
+  an explicit environment choice, the top-level Codex config, or the installed
+  Codex model cache in that order.
+- The retired **Desktop compatibility** marker remains recognizable only so
+  status, Doctor, and migration can fail closed with
+  `desktop_dual_auth_compat_unavailable`. It is never reported ready and cannot
+  be activated through CLI, setup, Center, repair, or internal routing APIs.
+- The codex-lb provider uses `name = "codex-lb"`,
+  `env_key = "CODEX_LB_API_KEY"`, and `requires_openai_auth = false`.
+  Credential-only setup may leave it stored and unselected; the explicit
+  Center/CLI **Use codex-lb** action promotes that same definition to the active
+  top-level selection atomically.
 - An API key found only in shared Codex auth is never assumed to be a codex-lb
   gateway credential. Supply the gateway key with setup. Legacy destructive
   routing is left unchanged until
@@ -201,8 +244,9 @@ Capability and evidence invariants:
   native feature preservation, Fast effectiveness, image artifact creation,
   the Computer Use feedback loop, voice WebSocket lifecycle, plugins/browser,
   existing and new threads, disable/byte-exact rollback, App restart, Mac
-  reboot recovery, the separately hosted other-Mac runtime, and
-  authentication-mode independence. The standalone command remains
+  reboot recovery, the separately hosted other-Mac runtime, authentication-mode
+  independence, and one measured gateway-key request whose target equals the
+  selected remote base URL. The standalone command remains
   fail-closed, while the cross-platform release runner records a missing
   capture as optional live coverage instead of making Linux CI or a CLI-only
   workstation claim native Desktop execution.
@@ -211,18 +255,20 @@ Exact setup-choice effects:
 
 - Credential-only setup writes an unselected CLI provider and leaves Desktop
   routing unchanged.
-- `--desktop-mode desktop-full` activates the managed loopback bridge only
-  after ChatGPT OAuth and bridge startup checks pass.
-- `--desktop-mode desktop-compat` activates the explicit dual-auth
-  compatibility provider.
+- **Use codex-lb** writes the provider definition and top-level selection in one
+  transaction, verifies key resolution and remote reachability, and becomes
+  ready only after the measured request succeeds.
+- **Use ChatGPT OAuth** removes the active SKS-owned codex-lb selection without
+  consuming, replacing, or rewriting the preserved OAuth identity.
 - `--desktop-mode cli-only` keeps the provider unselected; `sks codex-lb
   use-cli` returns the explicit CLI launch command.
 - `--write-env-file` writes `~/.codex/sks-codex-lb.env` with mode `0600`.
 - `--no-env-file` does not write the env file; the current process can still verify the supplied key.
-- `--keychain` attempts macOS Keychain storage; `--no-keychain` never runs the `security` command.
-- `--launchctl` syncs the non-secret base URL for non-compat modes. Desktop
-  compatibility mode injects the Center store key into the GUI launch
-  environment automatically and removes stale twin credential files.
+- `--keychain` fails closed with `keychain_acl_helper_unavailable` until a
+  dedicated signed helper is available; `--no-keychain` remains the normal
+  public path.
+- `--launchctl` syncs the non-secret base URL and removes API-key variables
+  from the GUI launch environment.
 - `--shell-profile skip` modifies no shell profile. Shell sourcing is not part
   of the Desktop happy path; use SKS Center or `sks codex-lb setup` /
   `set-key` so Desktop reads the official store.
@@ -238,6 +284,14 @@ npm run codex-lb:missing-env-regression
 npm run codex-lb:fast-mode-truth
 node --test test/blackbox/codex-lb-setup-stdin-no-secret-leak.test.mjs
 ```
+
+Those hermetic checks do not satisfy the SKS 8.0.4 live routing gate. The
+release evidence must include one current real request captured with codex-lb
+selected, the destination matching the configured remote base URL, the
+authentication class proving the issued gateway key rather than OAuth, and the
+same measured host/time/latency record visible through Doctor and the Menu Bar.
+Missing credentials or an unreachable host is a blocker; it is never converted
+to an OAuth success or a fixture pass.
 
 ## Circuit Policy
 

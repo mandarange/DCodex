@@ -4,6 +4,8 @@ import { stdin as input, stdout as output } from 'node:process';
 import { projectRoot, readStdin, readText } from '../core/fsx.js';
 import { flag, readOption } from '../cli/args.js';
 import { printJson } from '../cli/output.js';
+import { printCodexLbSetupWarnings } from '../cli/codex-lb-setup-warning-output.js';
+import { testCodexLbConnection } from '../cli/install-helpers-codex-lb-chain.js';
 import { codexLbMetrics, readCodexLbCircuit, recordCodexLbHealthEvent, resetCodexLbCircuit, codexLbProofEvidence } from '../core/codex-lb-circuit.js';
 import {
   checkCodexLbResponseChain,
@@ -39,6 +41,10 @@ import type {
   CapabilityProbeLevel,
   CodexLbDesktopCapabilityReport
 } from '../core/codex-lb/capability-types.js';
+import {
+  codexLbRoutingTruthIsActive,
+  measureAndWriteCodexLbRoutingTruth
+} from '../core/codex-lb/routing-truth.js';
 
 export async function run(command: any, args: any = []) {
   const root = await projectRoot();
@@ -51,7 +57,12 @@ export async function run(command: any, args: any = []) {
     return;
   }
   if (action === 'status' || action === 'check') {
-    const result = await codexLbDesktopStatusV2(controllerOptions(args));
+    const options = controllerOptions(args);
+    options.networkProbes = action === 'check'
+      || flag(args, '--deep')
+      || flag(args, '--fix')
+      || flag(args, '--remeasure');
+    const result = await codexLbDesktopStatusV2(options);
     if (result.ok !== true) process.exitCode = 1;
     if (flag(args, '--json')) return printJson(result);
     process.stdout.write(formatCodexLbDesktopStatusText(result));
@@ -64,6 +75,27 @@ export async function run(command: any, args: any = []) {
     if (flag(args, '--json')) return printJson(result);
     console.log(`codex-lb doctor: ${result.ok ? 'diagnostic_ok' : 'blocked'}; full capability: ${result.full_capability_verified ? 'verified' : 'unverified'}`);
     if (!result.ok) process.exitCode = 1;
+    return;
+  }
+  if (action === 'connect-test') {
+    const status = await codexLbStatus();
+    const modelSelection = await resolveCodexLbHealthModel(status);
+    const loadedEnv = await loadCodexLbEnv({
+      home: path.dirname(path.dirname(status.env_path)),
+      envPath: status.env_path
+    });
+    const result = await testCodexLbConnection(status, {
+      requireSelected: true,
+      model: modelSelection.model,
+      baseUrl: loadedEnv.base_url,
+      apiKey: loadedEnv.secret_api_key,
+      credentialBindingBlockers: loadedEnv.credential_binding.blockers
+    });
+    if (!result.ok) process.exitCode = 1;
+    if (flag(args, '--json')) return printJson(result);
+    console.log(result.ok
+      ? `codex-lb connect test: ok (${result.model}, ${result.latency_ms}ms): ${result.result || ''}`
+      : `codex-lb connect test: failed (${result.status})`);
     return;
   }
   if (action === 'health' || action === 'verify-chain' || action === 'chain') {
@@ -94,7 +126,20 @@ export async function run(command: any, args: any = []) {
             apiKey: loadedEnv.secret_api_key
           })
         : { ok: false, status: blocker, codex_lb: status };
-    const result = { ...chain, codex_lb: status, model_selection: modelSelection };
+    const routingTruth = await measureAndWriteCodexLbRoutingTruth({
+      selected: status.selected === true,
+      baseUrl: loadedEnv.base_url,
+      apiKey: loadedEnv.secret_api_key
+    }, {
+      home: path.dirname(path.dirname(status.env_path))
+    });
+    const result = {
+      ...chain,
+      ok: chain.ok === true && routingTruth.ok,
+      codex_lb: status,
+      model_selection: modelSelection,
+      routing_truth: routingTruth
+    };
     if (!result.ok) process.exitCode = 1;
     if (flag(args, '--json')) return printJson(result);
     console.log(`codex-lb response chain: ${result.ok ? 'ok' : `failed (${result.status})`}`);
@@ -117,9 +162,16 @@ export async function run(command: any, args: any = []) {
     const evidence = await fastEvidenceFromChain(chain, readOption(args, '--request-log', readOption(args, '--request-log-json', null)));
     const providerReady = status.provider_contract_ok === true;
     const chainVerified = isCodexLbFastChainVerified(chain);
+    const routingTruth = await measureAndWriteCodexLbRoutingTruth({
+      selected: status.selected === true,
+      baseUrl: loadedEnv.base_url,
+      apiKey: loadedEnv.secret_api_key
+    }, {
+      home: path.dirname(path.dirname(status.env_path))
+    });
     const result = {
       schema: 'sks.codex-lb-fast-check.v1',
-      ok: Boolean(providerReady && chainVerified && evidence.fast_requested && evidence.fast_actual),
+      ok: Boolean(providerReady && chainVerified && routingTruth.ok && evidence.fast_requested && evidence.fast_actual),
       status: !providerReady
         ? 'provider_contract_drift'
         : chain.skipped === true
@@ -134,11 +186,13 @@ export async function run(command: any, args: any = []) {
       codex_lb: status,
       model_selection: modelSelection,
       chain,
+      routing_truth: routingTruth,
       evidence,
       degraded_models: Array.isArray((chain as any).degraded_models) ? (chain as any).degraded_models : [],
       quota_low: Boolean((chain as any).quota_low),
       blockers: [
         ...(providerReady ? [] : ['codex_lb_provider_contract_drift']),
+        ...routingTruth.blockers,
         ...modelSelection.blockers,
         ...(chain.skipped === true
           ? ['codex_lb_fast_check_chain_skipped']
@@ -192,27 +246,21 @@ export async function run(command: any, args: any = []) {
     const result = await configureCodexLb({
       host,
       apiKey: newKey,
-      keychain: true,
-      storeKeychain: true,
+      keychain: false,
+      storeKeychain: false,
       writeEnvFile: true,
       syncLaunchctl: true,
       desktopMode: 'cli-provider',
+      useDefaultProvider: current.mode === 'cli-provider' && current.routing_active === true,
       allowUnverifiedToolOutputRecovery: codexLbToolOutputRecoveryOverrideAcknowledged({ args })
     });
     let routing: Record<string, unknown> | null = null;
     const restartRequested = flag(args, '--restart-app') || flag(args, '--restart')
-      || current.mode === 'desktop-dual-auth-compat'
       || current.mode === 'desktop-native-bridge';
     if (result.ok && current.mode === 'desktop-native-bridge') {
       routing = await activateCodexLbDesktopMode({
         ...controllerOptions(args),
         mode: 'desktop-native-bridge',
-        restartApp: restartRequested
-      });
-    } else if (result.ok && current.mode === 'desktop-dual-auth-compat') {
-      routing = await activateCodexLbDesktopMode({
-        ...controllerOptions(args),
-        mode: 'desktop-dual-auth-compat',
         restartApp: restartRequested
       });
     }
@@ -222,6 +270,19 @@ export async function run(command: any, args: any = []) {
       schema: 'sks.codex-lb-set-key.v2',
       ok,
       action: 'set-key',
+      provider_ready: result.ok === true,
+      routing_active: Boolean(
+        result.ok
+        && (
+          (current.mode === 'desktop-native-bridge' && routing?.ok !== false)
+          || (current.mode === 'cli-provider' && (result as any).codex_lb?.selected === true)
+        )
+      ),
+      activation_required: Boolean(
+        result.ok
+        && current.mode !== 'desktop-native-bridge'
+        && current.mode !== 'desktop-dual-auth-compat'
+      ),
       desktop_auth_mutated: false,
       fast_mode_mutated: false,
       desktop_routing: routing,
@@ -230,6 +291,7 @@ export async function run(command: any, args: any = []) {
     if (!ok) process.exitCode = 1;
     if (flag(args, '--json')) return printJson(output);
     console.log(result.ok ? `codex-lb API key updated (${result.base_url || host}).` : `codex-lb key update failed: ${result.status}${result.error ? `: ${result.error}` : ''}`);
+    printCodexLbSetupWarnings(result);
     if (!ok) process.exitCode = 1;
     return;
   }
@@ -252,25 +314,12 @@ export async function run(command: any, args: any = []) {
       : `Desktop Full Capability activation failed: ${String(result.status || 'failed')}`);
     return;
   }
-  if (action === 'use-desktop-compat') {
-    const result = await activateCodexLbDesktopMode({
-      ...controllerOptions(args),
-      mode: 'desktop-dual-auth-compat',
-      gatewayAuthTransport: 'x-codex-lb-api-key'
-    });
-    if (result.ok !== true) process.exitCode = 1;
-    if (flag(args, '--json')) return printJson(result);
-    console.log(result.ok === true
-      ? 'Codex Desktop compatibility routing enabled; ChatGPT OAuth remains active.'
-      : `Desktop compatibility activation failed: ${String(result.status || 'failed')}`);
-    return;
-  }
   if (action === 'use-cli') {
     const result = await configureCodexLbCliMode(controllerOptions(args));
     if (result.ok !== true) process.exitCode = 1;
     if (flag(args, '--json')) return printJson(result);
     console.log(result.ok === true
-      ? `codex-lb CLI provider ready. Run: ${String(result.command)}`
+      ? `codex-lb CLI provider active (${String((result.routing_truth as any)?.actual_host || 'verified route')}).`
       : `codex-lb CLI provider setup failed: ${String(result.status || 'failed')}`);
     return;
   }
@@ -333,11 +382,7 @@ export async function run(command: any, args: any = []) {
     const toRaw = String(readOption(args, '--to', readOption(args, '--target', 'bridge')) || 'bridge')
       .trim()
       .toLowerCase();
-    const mode = toRaw === 'compat'
-      || toRaw === 'desktop-compat'
-      || toRaw === 'desktop-dual-auth-compat'
-      ? 'desktop-dual-auth-compat' as const
-      : toRaw === 'bridge'
+    const mode = toRaw === 'bridge'
         || toRaw === 'desktop-full'
         || toRaw === 'desktop-native-bridge'
         || toRaw === ''
@@ -348,11 +393,11 @@ export async function run(command: any, args: any = []) {
         schema: 'sks.codex-lb-legacy-migration-command.v2',
         ok: false,
         status: 'invalid_migration_target',
-        blockers: ['migration_target_must_be_bridge_or_compat']
+        blockers: ['migration_target_must_be_bridge']
       };
       process.exitCode = 1;
       if (flag(args, '--json')) return printJson(result);
-      console.error('Invalid --to value. Use bridge or compat.');
+      console.error('Invalid --to value. Use bridge.');
       return;
     }
     const result = await migrateLegacyCodexLbDesktopMode({
@@ -466,7 +511,7 @@ export async function run(command: any, args: any = []) {
         plan,
         applied_actions: [],
         persistence: plan.persistence,
-        guidance: ['Pass --yes to acknowledge process_only_ephemeral setup, or enable --write-env-file, --keychain, --launchctl, or --shell-profile.']
+        guidance: ['Pass --yes to acknowledge process_only_ephemeral setup, or enable --write-env-file, --launchctl, or --shell-profile.']
       };
       if (flag(args, '--json')) {
         printJson(result);
@@ -481,6 +526,7 @@ export async function run(command: any, args: any = []) {
       host: options.host,
       apiKey: options.apiKey,
       desktopMode: 'cli-provider',
+      useDefaultProvider: options.useDefaultProvider,
       gatewayAuthTransport: options.gatewayAuthTransport,
       keychain: options.keychain,
       storeKeychain: options.keychain,
@@ -514,6 +560,17 @@ export async function run(command: any, args: any = []) {
         })
       : null;
     const capabilityDiagnosticOk = codexLbSetupCapabilityDiagnosticOk(capabilities);
+    const setupRoutingTruth = result.ok && options.desktopMode === 'cli-provider'
+      ? await measureAndWriteCodexLbRoutingTruth({
+          selected: result.codex_lb?.selected === true,
+          baseUrl: result.base_url || null,
+          apiKey: options.apiKey,
+          authTransport: 'authorization-bearer'
+        }, {
+          home: path.dirname(path.dirname(result.env_path))
+        })
+      : (desktopActivation?.post_activation_status as any)?.routing_truth || null;
+    const cliRoutingActive = codexLbRoutingTruthIsActive(setupRoutingTruth);
     const shaped: any = {
       ...result,
       schema: 'sks.codex-lb-setup.v2',
@@ -529,6 +586,15 @@ export async function run(command: any, args: any = []) {
       env_file_chmod: options.writeEnvFile ? '0600' : null,
       desktop_auth_mutated: false,
       fast_mode_mutated: false,
+      provider_ready: result.ok === true,
+      routing_active: Boolean(result.ok && (desktopActivation?.ok === true || cliRoutingActive)),
+      routing_truth: setupRoutingTruth,
+      activation_required: Boolean(
+        result.ok
+        && options.desktopMode === 'cli-provider'
+        && !cliRoutingActive
+        && desktopActivation === null
+      ),
       desktop_activation: desktopActivation,
       capabilities
     };
@@ -545,9 +611,47 @@ export async function run(command: any, args: any = []) {
     }
     if (!shaped.ok) process.exitCode = 1;
     if (flag(args, '--json')) return printJson(shaped);
+    if (!shaped.ok) {
+      console.error(`codex-lb setup failed: ${String(result.status || 'configuration_failed')}`);
+      const recoveryPaths = Array.isArray(result.rollback?.recovery_paths)
+        ? result.rollback.recovery_paths.map((value: unknown) => String(value || '')).filter(Boolean)
+        : [];
+      if (recoveryPaths.length > 0) {
+        console.error('Recovery files retained:');
+        for (const recoveryPath of recoveryPaths) console.error(`  ${recoveryPath}`);
+      }
+      const secretRecoveryPaths = Array.isArray(result.rollback?.secret_recovery_paths)
+        ? result.rollback.secret_recovery_paths.map((value: unknown) => String(value || '')).filter(Boolean)
+        : [];
+      if (secretRecoveryPaths.length > 0) {
+        console.error('Warning: the following owner-only recovery files may contain the submitted API key:');
+        for (const recoveryPath of secretRecoveryPaths) console.error(`  ${recoveryPath}`);
+      }
+      if (result.keychain?.keychain_state_verified === false) {
+        console.error('Keychain state is indeterminate; do not assume the previous credential was restored.');
+      }
+      printCodexLbSetupWarnings(result);
+      return;
+    }
     console.log(`codex-lb configured: ${result.base_url || result.status}`);
     console.log(`Desktop mode: ${options.desktopMode}${desktopActivation ? ` (${String(desktopActivation.status || 'applied')})` : ' (routing unchanged)'}`);
-    if (shaped.persistence?.warning) console.log(`warning: ${shaped.persistence.warning}`);
+    const retainedRecoveryPaths = Array.isArray(result.recovery_paths)
+      ? result.recovery_paths.map((value: unknown) => String(value || '')).filter(Boolean)
+      : [];
+    const retainedSecretRecoveryPaths = Array.isArray(result.secret_recovery_paths)
+      ? result.secret_recovery_paths.map((value: unknown) => String(value || '')).filter(Boolean)
+      : [];
+    const secretRecoverySet = new Set(retainedSecretRecoveryPaths);
+    const nonSecretRecoveryPaths = retainedRecoveryPaths.filter((value: string) => !secretRecoverySet.has(value));
+    if (nonSecretRecoveryPaths.length > 0) {
+      console.log('Recovery backups retained:');
+      for (const recoveryPath of nonSecretRecoveryPaths) console.log(`  ${recoveryPath}`);
+    }
+    if (retainedSecretRecoveryPaths.length > 0) {
+      console.error('Warning: owner-only recovery files may contain a previous API key and require secure review:');
+      for (const recoveryPath of retainedSecretRecoveryPaths) console.error(`  ${recoveryPath}`);
+    }
+    printCodexLbSetupWarnings(shaped);
     if (!shaped.ok) process.exitCode = 1;
     return;
   }
@@ -578,12 +682,12 @@ export async function run(command: any, args: any = []) {
     console.log(`codex-lb proof evidence: ${result.status}`);
     return;
   }
-  console.error('Usage: sks codex-lb status|setup|set-key|use-desktop-full|use-desktop-compat|use-cli|disable|capabilities [--level shallow|transport|deep] [--evidence <file> --trust-anchors <file>]|migrate-legacy-desktop|rollback <receipt-id>|health|metrics|doctor|repair|circuit reset|circuit record-fixture|proof-evidence [--json]');
+  console.error('Usage: sks codex-lb status|setup|set-key|connect-test|use-desktop-full|use-cli|disable|capabilities [--level shallow|transport|deep] [--evidence <file> --trust-anchors <file>]|migrate-legacy-desktop|rollback <receipt-id>|health|metrics|doctor|repair|circuit reset|circuit record-fixture|proof-evidence [--json]');
   console.error(`  ${CODEX_LB_TOOL_OUTPUT_RECOVERY_OVERRIDE_FLAG}  explicitly acknowledge an old/unverified proxy for this command (unsafe)`);
   console.error('  set-key       swap the codex-lb API key (reuses the stored host): sks codex-lb set-key --api-key-stdin');
+  console.error('  --keychain    fail-closed until a dedicated signed SKS Keychain helper is available; the default 0600 env file is used');
   console.error('  use-desktop-full   keep ChatGPT OAuth/built-in OpenAI and route data through the local bridge');
-  console.error('  use-desktop-compat keep ChatGPT OAuth and use the explicit dual-auth custom provider');
-  console.error('  use-cli            configure an unselected CLI-only provider');
+  console.error('  use-cli            verify, write, and atomically select the CLI codex-lb provider');
   console.error('  disable            remove only SKS-managed Desktop routing; auth.json is untouched');
   process.exitCode = 1;
 }
@@ -642,23 +746,33 @@ async function resolveCodexLbModel(status: any = {}, env: NodeJS.ProcessEnv = pr
   const configured = topLevelTomlString(config, 'model');
   if (configured) return { model: configured, source: 'global_config', blockers: [] };
 
-  const configuredCatalogPath = topLevelTomlString(config, 'model_catalog_json');
-  if (!configuredCatalogPath) return { model: null, source: null, blockers: [`${opts.blockerPrefix}_model_unselected`] };
   const home = String(env.HOME || '').trim();
-  const expandedCatalogPath = configuredCatalogPath.startsWith('~/') && home
-    ? path.join(home, configuredCatalogPath.slice(2))
-    : configuredCatalogPath;
+  const configuredCatalogPath = topLevelTomlString(config, 'model_catalog_json');
+  const defaultCatalogPath = configPath
+    ? path.join(path.dirname(configPath), 'models_cache.json')
+    : home
+      ? path.join(home, '.codex', 'models_cache.json')
+      : '';
+  const requestedCatalogPath = configuredCatalogPath || defaultCatalogPath;
+  if (!requestedCatalogPath) return { model: null, source: null, blockers: [`${opts.blockerPrefix}_model_unselected`] };
+  const expandedCatalogPath = requestedCatalogPath.startsWith('~/') && home
+    ? path.join(home, requestedCatalogPath.slice(2))
+    : requestedCatalogPath;
   const catalogPath = path.isAbsolute(expandedCatalogPath)
     ? expandedCatalogPath
     : path.resolve(path.dirname(configPath), expandedCatalogPath);
   try {
-    const payload = JSON.parse(await readText(catalogPath, ''));
+    const catalogText = await readText(catalogPath, '');
+    if (!catalogText.trim()) {
+      return { model: null, source: null, blockers: [`${opts.blockerPrefix}_model_unselected`] };
+    }
+    const payload = JSON.parse(catalogText);
     const model = selectCatalogModel(payload, opts.requirePriority === true);
     return model
-      ? { model, source: 'model_catalog_json', blockers: [] }
-      : { model: null, source: 'model_catalog_json', blockers: [`${opts.blockerPrefix}_${opts.requirePriority === true ? 'priority_' : ''}model_unavailable`] };
+      ? { model, source: configuredCatalogPath ? 'model_catalog_json' : 'codex_models_cache', blockers: [] }
+      : { model: null, source: configuredCatalogPath ? 'model_catalog_json' : 'codex_models_cache', blockers: [`${opts.blockerPrefix}_${opts.requirePriority === true ? 'priority_' : ''}model_unavailable`] };
   } catch {
-    return { model: null, source: 'model_catalog_json', blockers: [`${opts.blockerPrefix}_catalog_invalid`] };
+    return { model: null, source: configuredCatalogPath ? 'model_catalog_json' : 'codex_models_cache', blockers: [`${opts.blockerPrefix}_catalog_invalid`] };
   }
 }
 
@@ -802,6 +916,7 @@ export function controllerOptions(args: any[] = []): CodexLbDesktopControllerOpt
   const envPath = readOption(args, '--env-file', readOption(args, '--env-path', null));
   const metadataPath = readOption(args, '--metadata', readOption(args, '--metadata-path', null));
   const receiptDir = readOption(args, '--receipt-dir', null);
+  const routingTruthReceiptPath = readOption(args, '--routing-truth-receipt', null);
   const listenHost = readOption(args, '--listen-host', null);
   const normalizedListenHost = listenHost === null
     ? null
@@ -822,6 +937,7 @@ export function controllerOptions(args: any[] = []): CodexLbDesktopControllerOpt
     ...(envPath ? { envPath: String(envPath) } : {}),
     ...(metadataPath ? { metadataPath: String(metadataPath) } : {}),
     ...(receiptDir ? { receiptDir: String(receiptDir) } : {}),
+    ...(routingTruthReceiptPath ? { routingTruthReceiptPath: String(routingTruthReceiptPath) } : {}),
     ...(capabilityTimeoutMs !== null && Number.isFinite(capabilityTimeoutMs) && capabilityTimeoutMs > 0
       ? { capabilityTimeoutMs }
       : {}),
@@ -837,22 +953,36 @@ export function controllerOptions(args: any[] = []): CodexLbDesktopControllerOpt
   };
 }
 
-function formatCodexLbDesktopStatusText(status: Record<string, unknown>): string {
+export function formatCodexLbDesktopStatusText(
+  status: Record<string, unknown>,
+  opts: { home?: string } = {}
+): string {
   const oauth = asRecord(status.oauth);
   const provider = asRecord(status.provider);
   const bridge = asRecord(status.bridge);
   const capabilities = asRecord(status.capabilities);
+  const resolution = asRecord(status.secret_resolution);
+  const resolutionSource = String(resolution.source || 'missing');
+  const resolutionPath = resolution.path
+    ? displayHomePath(String(resolution.path), opts.home || process.env.HOME || '')
+    : '';
+  const resolutionLabel = resolutionPath
+    ? `${resolutionSource} (${resolutionPath})`
+    : resolutionSource;
   const blockers = stringArray(status.blockers);
   const guidance = stringArray(status.guidance);
   const lines = [
     'SKS codex-lb Desktop',
     '',
     `Configured: ${status.configured === true ? 'yes' : 'no'}`,
+    `Credentials ready: ${status.credentials_ready === true ? 'yes' : 'no'}`,
+    `Routing active: ${status.routing_active === true ? 'yes' : 'no'}`,
     `Mode: ${String(status.mode || 'disabled')}`,
     `ChatGPT OAuth: ${oauth.present === true ? 'present and preserved' : 'missing'}`,
     `Provider: ${String(provider.contract || 'missing')} (${provider.contract_ok === true ? 'ok' : 'blocked'})`,
     `Bridge: ${String(bridge.status || 'unknown')}${bridge.running === true ? ' (running)' : ''}`,
-    `Gateway auth: ${String(bridge.gateway_auth_transport || 'unknown')}`,
+    `Gateway auth: ${String(status.gateway_auth_transport || 'inactive')}`,
+    `Key source: ${resolutionLabel} · keychain: not used · prompt risk: ${String(resolution.prompt_risk || 'none')}`,
     `Capabilities: ${String(status.overall || capabilities.state || 'unverified')}`,
     `Full capability: ${status.full_capability_verified === true ? 'verified' : 'unverified'}`
   ];
@@ -865,6 +995,14 @@ function formatCodexLbDesktopStatusText(status: Record<string, unknown>): string
     for (const item of guidance) lines.push(`- ${item}`);
   }
   return `${lines.join('\n')}\n`;
+}
+
+function displayHomePath(file: string, home: string): string {
+  const resolvedFile = path.resolve(file);
+  const resolvedHome = home ? path.resolve(home) : '';
+  return resolvedHome && (resolvedFile === resolvedHome || resolvedFile.startsWith(`${resolvedHome}${path.sep}`))
+    ? `~${resolvedFile.slice(resolvedHome.length)}`
+    : resolvedFile;
 }
 
 function printDeprecationWarning(oldAction: string, replacement: string): void {
@@ -919,7 +1057,7 @@ function normalizeDesktopSetupMode(value: unknown): CodexLbDesktopMode {
     || normalized === 'compat'
     || normalized === 'desktop-dual-auth-compat'
   ) {
-    return 'desktop-dual-auth-compat';
+    throw new Error('desktop_dual_auth_compat_unavailable');
   }
   if (
     !normalized
@@ -999,6 +1137,7 @@ async function codexLbSetupOptions(args: any = []) {
   if (flag(args, '--launchctl')) syncLaunchctl = true;
   const shellProfile = normalizeShellProfile(readOption(args, '--shell-profile', 'skip'));
   const allowInsecureLocalhost = flag(args, '--allow-insecure-localhost') || flag(args, '--allow-insecure-http');
+  const useDefaultProvider = !flag(args, '--no-default-provider');
   const interactive = (!host || !apiKey || canAskInteractive(args)) && canAskInteractive(args);
   if ((!host || !apiKey) && canAskInteractive(args)) {
     console.log('SKS codex-lb setup\n');
@@ -1006,7 +1145,7 @@ async function codexLbSetupOptions(args: any = []) {
     apiKey ||= (await askHidden('2. API key?\n   Input hidden. Value will be stored securely and never printed.\n> ')).trim();
     apiKeySource = 'hidden_prompt';
     desktopMode = normalizeDesktopSetupMode(
-      (await ask('3. Configure which mode? [desktop-full/desktop-compat/cli-only] (desktop-full)\n> ')).trim()
+      (await ask('3. Configure which mode? [desktop-full/cli-only] (desktop-full)\n> ')).trim()
       || 'desktop-full'
     );
     if (desktopMode === 'desktop-native-bridge') {
@@ -1019,8 +1158,8 @@ async function codexLbSetupOptions(args: any = []) {
       gatewayAuthTransport = 'x-codex-lb-api-key';
     }
     writeEnvFile = parseYesNo(await ask('5. Write shell env loader to ~/.codex/sks-codex-lb.env? [Y/n] '), true);
-    const storeKeychain = (await ask('6. Store the key in macOS Keychain when available? [Y/n] ')).trim();
-    keychain = !/^(n|no|아니|아니요|ㄴ)$/i.test(storeKeychain || 'y');
+    keychain = false;
+    console.log('6. Key storage: ~/.codex/sks-codex-lb.env (owner-only mode 0600).');
     syncLaunchctl = parseYesNo(await ask('7. Sync non-secret macOS launchctl base URL only? API keys are never stored in launchd. [y/N] '), false);
     const profile = (await ask('8. Install shell profile snippet? [zsh/bash/fish/all/skip] ')).trim();
     const interactiveShellProfile = normalizeShellProfile(profile || 'skip');
@@ -1038,6 +1177,7 @@ async function codexLbSetupOptions(args: any = []) {
       shellProfile: interactiveShellProfile,
       allowInsecureLocalhost,
       apiKeySource,
+      useDefaultProvider,
       interactive: true,
       yes: flag(args, '--yes')
     };
@@ -1054,6 +1194,7 @@ async function codexLbSetupOptions(args: any = []) {
     shellProfile,
     allowInsecureLocalhost,
     apiKeySource,
+    useDefaultProvider,
     interactive,
     yes: flag(args, '--yes')
   };

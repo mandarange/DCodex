@@ -50,6 +50,21 @@ test('a command that exports usage() gets its own text, not the manifest floor',
   }
 });
 
+test('Naruto public help exposes its 256-child ceiling and host-auth contract', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-naruto-help-'));
+  execFileSync('git', ['init', '-q', '.'], { cwd });
+  try {
+    const stdout = String(runHelp('naruto', '--help', cwd).stdout || '');
+    assert.match(stdout, /--agents N[\s\S]*1-256/);
+    assert.match(stdout, /either lane may expand to 256/);
+    assert.match(stdout, /measured lower Codex host or explicit provider\/API limit remains authoritative/);
+    assert.match(stdout, /--auth-mode MODE/);
+    assert.match(stdout, /--provider-env-key NAME/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('manifest help names the command, its summary, and the help flag', () => {
   const entry = COMMAND_MANIFEST_LITE.find((item) => item.name === 'doctor');
   assert.ok(entry);
@@ -57,6 +72,16 @@ test('manifest help names the command, its summary, and the help flag', () => {
   assert.match(text, /^Usage: sks doctor/);
   assert.ok(text.includes(entry!.summary), text);
   assert.match(text, /--help, -h/);
+});
+
+test('config and Telegram CLI surfaces are local-only control commands', () => {
+  for (const name of ['config', 'telegram']) {
+    const entry = COMMAND_MANIFEST_LITE.find((item) => item.name === name);
+    assert.ok(entry, name);
+    assert.equal(entry.remoteAllowed, false, name);
+    assert.equal(entry.supportsJson, true, name);
+    assert.equal(entry.inputProfile, 'json-only', name);
+  }
 });
 
 test('every manifest command answers --help with usage and never runs its work', () => {

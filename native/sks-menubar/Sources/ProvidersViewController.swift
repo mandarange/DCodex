@@ -12,6 +12,21 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     let operations: OperationCoordinator
     let providerStatus = NativeView.detail("Desktop routing status unchecked.")
     let cliProviderStatus = NativeView.detail("CLI provider status unchecked.")
+    let cliConnectConfigurationStage = NativeView.detail("1. Configuration · waiting")
+    let cliConnectRequestStage = NativeView.detail("2. One-request low-token test · waiting")
+    let cliConnectResponseStage = NativeView.detail("3. Response · not received")
+    let cliConnectResult = NativeView.detail("Connection proof has not run.")
+    let cliConnectProgress: NSProgressIndicator = {
+        let progress = NSProgressIndicator()
+        progress.style = .bar
+        progress.isIndeterminate = false
+        progress.minValue = 0
+        progress.maxValue = 3
+        progress.doubleValue = 0
+        progress.setAccessibilityLabel("Codex LB connection proof progress")
+        progress.setAccessibilityIdentifier("sks-center-codex-lb-connect-progress")
+        return progress
+    }()
     let capabilityStatus = NativeView.detail("Capabilities have not been verified.")
     let openRouterCredentialStatus = NativeView.detail("Credential: checking…")
     let openRouterActiveStatus = NativeView.detail("Active provider: checking…")
@@ -51,6 +66,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     var roleRefreshInFlight = false
     var openRouterModelSelectionPending = false
     var openRouterActionRan = false
+    var connectTestInFlight = false
     var busy = false
     init(processClient: ProcessClient, operations: OperationCoordinator) {
         self.processClient = processClient
@@ -59,32 +75,35 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     }
     required init?(coder: NSCoder) { nil }
     override func loadView() {
-        let enableDesktop = ControlKit.primaryButton("Use Codex LB", target: self, action: #selector(enableDesktopFull))
+        let enableDesktop = NativeView.button("Desktop Bridge Mode (keeps ChatGPT sign-in)", target: self, action: #selector(enableDesktopFull))
         let verifyDesktop = NativeView.button("Verify Capabilities", target: self, action: #selector(verifyDesktopCapabilities))
         let disableDesktop = NativeView.button("Use ChatGPT OAuth Only", target: self, action: #selector(disableDesktopRouting))
-        enableDesktop.setAccessibilityLabel("Use Codex LB Desktop Full Capability routing while keeping ChatGPT OAuth, then restart Codex App")
+        enableDesktop.setAccessibilityLabel("Advanced Desktop Bridge Mode that keeps ChatGPT sign-in, then restarts Codex App")
         verifyDesktop.setAccessibilityLabel("Verify Desktop transport capabilities")
         disableDesktop.setAccessibilityLabel("Disable Codex LB Desktop routing and keep ordinary ChatGPT OAuth, then restart Codex App")
-        // Keep the mode CTAs discoverable: never hide Use Codex LB / Use ChatGPT OAuth Only based on status parsing.
+        // Keep the mode CTAs discoverable: never hide the advanced bridge or ChatGPT OAuth actions based on status parsing.
         let configureCli = NativeView.button("Configure / Update…", target: self, action: #selector(setDomainAndKey))
-        let useCli = NativeView.button("Use Saved CLI Provider", target: self, action: #selector(useCliProvider))
-        let testCli = NativeView.button("Test", target: self, action: #selector(testConnection))
+        let useCli = ControlKit.primaryButton("Use Codex LB", target: self, action: #selector(useCliProvider))
+        useCli.setAccessibilityLabel("Use Codex LB through the atomic CLI provider path")
+        let testCli = NativeView.button("Run Connect Test", target: self, action: #selector(testConnection))
+        testCli.setAccessibilityHelp("Send one bounded low-token request through the selected Codex LB provider and show the returned proof.")
         let copyCli = NativeView.button("Copy CLI Command", target: self, action: #selector(copyCliCommand))
         let fastOn = NativeView.button("Codex Fast On", target: self, action: #selector(fastOn))
         let fastOff = NativeView.button("Codex Fast Off", target: self, action: #selector(fastOff))
         actionButtons = [enableDesktop, verifyDesktop, disableDesktop, configureCli, useCli, testCli, copyCli, fastOn, fastOff]
         let desktop = NativeView.card(
-            title: "Codex LB · Desktop Full Capability (Recommended)",
-            subtitle: "Selectable Codex LB mode: keeps ChatGPT OAuth identity and the built-in OpenAI provider while routing model traffic through the local codex-lb bridge. Use ChatGPT OAuth Only removes LB routing without touching login.",
+            title: "Advanced · Desktop Bridge / ChatGPT Identity Mode",
+            subtitle: "Optional bridge mode: keeps ChatGPT OAuth identity and the built-in OpenAI provider while routing model traffic through the local codex-lb bridge. Use ChatGPT OAuth Only removes bridge routing without touching login.",
             views: [providerStatus, ControlKit.actionRow([enableDesktop, verifyDesktop], trailing: [disableDesktop])]
         )
         let cli = NativeView.card(
-            title: "Codex LB · Credentials & CLI Provider",
-            subtitle: "Saves the official Center Codex LB host and API key (sks-codex-lb store). Desktop routing buttons above consume that same store automatically — no shell source or twin env files.",
+            title: "Codex LB · Credentials & Primary Provider",
+            subtitle: "Saves the official Center Codex LB host and API key (sks-codex-lb store). Use Codex LB applies the atomic CLI provider path — no shell source or twin env files.",
             views: [
                 cliProviderStatus,
                 NativeView.detail("One-off command: \(cliLaunchCommand)"),
                 ControlKit.actionRow([configureCli, useCli]),
+                makeCliConnectProgressView(),
                 ControlKit.actionRow([testCli, copyCli])
             ]
         )
@@ -99,8 +118,8 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         )
         view = NativeView.page([
             NativeView.row([NativeView.title("Providers & Models"), globalSpinner]),
-            NativeView.detail("Codex LB and ChatGPT OAuth are explicit Desktop modes below. CLI automation and Fast stay independent. Secrets are sent through stdin and redacted from logs."),
-            makeActiveProviderCard(), desktop, cli, makeCapabilityMatrixCard(), makeOpenRouterCard(),
+            NativeView.detail("Use Codex LB selects the atomic CLI provider path. Advanced Desktop Bridge keeps ChatGPT identity; Fast stays independent. Secrets are sent through stdin and redacted from logs."),
+            makeActiveProviderCard(), cli, desktop, makeCapabilityMatrixCard(), makeOpenRouterCard(),
             makeMultiProviderRouterCard(), makeRoleModelsCard(), fast
         ])
     }
@@ -145,13 +164,18 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
                 return
             }
             let snapshot = ProviderRoutingTruth.snapshot(from: json)
-            self.desktopFullRoutingNow = snapshot.desktopFullRouting
-            self.codexLbSelectedNow = snapshot.legacyCodexLbSelected
+            let measuredRoute = ProviderRoutingTruth.measuredRoute(from: json)
+            let measuredRoutingOk = measuredRoute?.selected == true
+                && measuredRoute?.measured == true
+                && measuredRoute?.ok == true
+            self.desktopFullRoutingNow = snapshot.desktopFullRouting && measuredRoutingOk
+            self.codexLbSelectedNow = snapshot.legacyCodexLbSelected || measuredRoute?.selected == true
             self.chatgptOauthPresentNow = snapshot.chatgptOauthPresent
             self.renderActiveProviderSummary()
+            self.renderMeasuredRoutingBadge(measuredRoute, routeExpected: snapshot.desktopFullRouting || snapshot.legacyCodexLbSelected)
             if !self.busy {
                 self.providerStatus.stringValue = self.describeDesktopStatus(snapshot)
-                self.cliProviderStatus.stringValue = self.describeCliStatus(snapshot)
+                self.cliProviderStatus.stringValue = self.describeCliStatus(snapshot, measuredRoute: measuredRoute)
             }
         }
         refreshOpenRouterStatus()
@@ -189,7 +213,19 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             ? "ChatGPT OAuth mode: active · Codex LB Desktop routing not enabled. Choose Use Codex LB to switch."
             : "ChatGPT OAuth mode available · ChatGPT sign-in is missing · run codex login, then Use Codex LB if needed."
     }
-    private func describeCliStatus(_ snapshot: ProviderRoutingTruth.Snapshot) -> String {
+    private func describeCliStatus(_ snapshot: ProviderRoutingTruth.Snapshot, measuredRoute: ProviderRoutingTruth.MeasuredRoute?) -> String {
+        if let route = measuredRoute, route.selected {
+            switch route.state {
+            case .active:
+                return "CLI provider: active · \(describeRoutingTruth(route))"
+            case .degraded:
+                return "CLI provider: degraded · \(describeRoutingTruth(route))"
+            case .unverified:
+                return "CLI provider: selected but unverified · \(describeRoutingTruth(route))"
+            case .inactive:
+                break
+            }
+        }
         if snapshot.cliCredentialsConfigured && snapshot.cliProviderStored {
             return "CLI provider: configured · availability remains unverified until Test succeeds."
         }
@@ -319,7 +355,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         }
     }
     @objc private func enableDesktopFull() {
-        performDesktopRouting(["codex-lb", "use-desktop-full", "--restart-app", "--json"], title: "Use Codex LB", kind: "codex-lb-use-desktop-full", expectedMode: "desktop-native-bridge")
+        performDesktopRouting(["codex-lb", "use-desktop-full", "--restart-app", "--json"], title: "Desktop Bridge Mode (keeps ChatGPT sign-in)", kind: "codex-lb-use-desktop-full", expectedMode: "desktop-native-bridge")
     }
     @objc private func disableDesktopRouting() {
         performDesktopRouting(["codex-lb", "disable", "--restart-app", "--json"], title: "Use ChatGPT OAuth Only", kind: "codex-lb-disable-desktop", expectedMode: "disabled")
@@ -346,12 +382,14 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
                 self.providerStatus.stringValue = "\(title) was not confirmed · \(self.structuredPublicDetail(parsed, fallback: result.output)) No routing or OAuth change was assumed."
                 return
             }
-            self.desktopFullRoutingNow = expectedMode == "desktop-native-bridge"
+            let bridgeSelected = expectedMode == "desktop-native-bridge"
+            self.desktopFullRoutingNow = false
             self.codexLbSelectedNow = false
             self.chatgptOauthPresentNow = routing?.chatgptOauthPresent ?? self.chatgptOauthPresentNow
             self.renderActiveProviderSummary()
-            self.providerStatus.stringValue = self.desktopFullRoutingNow
-                ? "Codex LB mode enabled · OAuth preserved · capability verification still required."
+            if bridgeSelected { self.renderMeasuredRoutingBadge(nil, routeExpected: true) }
+            self.providerStatus.stringValue = bridgeSelected
+                ? "Desktop Bridge Mode enabled · ChatGPT sign-in preserved · measured routing verification still required."
                 : "ChatGPT OAuth mode active · Codex LB Desktop routing disabled."
             self.refresh()
         }
@@ -385,7 +423,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         }
     }
     @objc private func useCliProvider() {
-        performCliCommand(["codex-lb", "use-cli", "--json"], title: "Configure saved CLI provider", kind: "codex-lb-use-cli")
+        performCliCommand(["codex-lb", "use-cli", "--json"], title: "Use Codex LB", kind: "codex-lb-use-cli")
     }
     private func performCliCommand(_ args: [String], title: String, kind: String) {
         guard !busy else { cliProviderStatus.stringValue = "Another provider action is already running."; return }
@@ -395,42 +433,58 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         }
         setBusy(true)
         cliProviderStatus.stringValue = "\(title)…"
+        renderCliConnectStages(
+            progress: 0,
+            configuration: "applying CLI provider…",
+            request: "waiting for configuration",
+            response: "not received",
+            result: "Selecting Codex LB mode. Connectivity has not been claimed.",
+            tone: .secondaryLabelColor
+        )
         _ = operations.update(snapshot, state: .running, stage: "configuring", progress: nil, summary: title)
         processClient.run(args, timeout: NativeView.mutationTimeout) { [weak self] result in
             guard let self = self else { return }
-            self.setBusy(false)
             let parsed = self.json(result.output)
             let routing = parsed.map(ProviderRoutingTruth.snapshot(from:))
             let mode = routing?.mode
             let oauthPreserved = routing.flatMap { $0.oauthPreservedFlag }
             let authMutated = routing.flatMap { $0.authMutated }
-            let ok = result.code == 0 && parsed?["ok"] as? Bool == true && mode == "cli-provider" && oauthPreserved != false && authMutated != true
+            let ok = result.code == 0
+                && parsed?["ok"] as? Bool == true
+                && mode == "cli-provider"
+                && oauthPreserved != false
+                && authMutated != true
             _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? "CLI provider configured" : "CLI provider configuration needs action")
-            self.cliProviderStatus.stringValue = ok
-                ? "CLI provider configured · Desktop OAuth and global provider selection unchanged · Test still required."
-                : "CLI provider was not confirmed · \(self.structuredPublicDetail(parsed, fallback: result.output))"
-            if ok { self.refresh() }
-        }
-    }
-    @objc private func testConnection() {
-        guard !busy else { cliProviderStatus.stringValue = "Another provider action is already running."; return }
-        guard let snapshot = operations.begin(kind: "codex-lb-health", mutationGroup: nil, summary: "Test CLI provider") else {
-            cliProviderStatus.stringValue = "Another guarded operation is already running. Wait or open Diagnostics."
-            return
-        }
-        setBusy(true)
-        cliProviderStatus.stringValue = "Testing CLI provider transport…"
-        _ = operations.update(snapshot, state: .running, stage: "testing", progress: nil, summary: "Test CLI provider")
-        processClient.run(["codex-lb", "health", "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
-            guard let self = self else { return }
+            guard ok else {
+                self.setBusy(false)
+                let detail = self.structuredPublicDetail(parsed, fallback: result.output)
+                self.cliProviderStatus.stringValue = "CLI provider was not confirmed · \(detail)"
+                self.renderCliConnectStages(
+                    progress: 1,
+                    configuration: "failed",
+                    request: "not run",
+                    response: "not received",
+                    result: "Codex LB mode was not confirmed. Connection proof did not run.",
+                    tone: .systemRed
+                )
+                return
+            }
             self.setBusy(false)
-            let parsed = self.json(result.output)
-            let ok = result.code == 0 && parsed?["ok"] as? Bool == true
-            let status = parsed?["status"] as? String ?? (ok ? "verified" : "failed")
-            _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? "CLI provider transport verified" : "CLI provider test needs action")
-            self.cliProviderStatus.stringValue = ok
-                ? "CLI provider transport verified (\(status)). Desktop routing and OAuth were not changed."
-                : "CLI provider test failed (\(status)) · \(self.structuredPublicDetail(parsed, fallback: result.output))"
+            self.codexLbSelectedNow = true
+            self.desktopFullRoutingNow = false
+            self.openRouterSelectedNow = false
+            self.routerSelectedNow = false
+            ControlKit.setBadge(self.activeProviderBadge, text: "Codex LB · selected · connection proof running", tone: .busy)
+            self.cliProviderStatus.stringValue = "Codex LB mode selected · running the required one-request connection proof…"
+            self.renderCliConnectStages(
+                progress: 1,
+                configuration: "CLI provider selected",
+                request: "starting…",
+                response: "not received",
+                result: "Mode is selected. Connectivity remains unproved until a structured response is received.",
+                tone: .secondaryLabelColor
+            )
+            self.runConnectTest()
         }
     }
     @objc private func copyCliCommand() {
@@ -439,19 +493,6 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         cliProviderStatus.stringValue = copied
             ? "Copied CLI command: \(cliLaunchCommand)"
             : "Could not copy the CLI command. Select it above and copy manually."
-    }
-    private func refreshFastStatus() {
-        if !busy { fastStatus.stringValue = "Codex Fast: checking the official service-tier setting…" }
-        processClient.run(["fast-mode", "status", "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
-            guard let self = self else { return }
-            guard result.code == 0, let json = self.json(result.output),
-                  let global = json["global"] as? [String: Any], let on = global["on"] as? Bool else {
-                self.fastStatus.stringValue = "Codex Fast: unavailable — no state was assumed."
-                return
-            }
-            let tier = global["service_tier"] as? String ?? (on ? "fast" : "default")
-            self.fastStatus.stringValue = "Codex Fast: \(on ? "On" : "Off") · official service_tier=\(tier) · model and reasoning remain separate."
-        }
     }
     @objc private func fastOn() { run(["fast-mode", "on", "--json"], title: "Codex Fast On", kind: "fast-mode-on", group: "codex-config", timeout: NativeView.statusTimeout) { [weak self] in self?.refreshFastStatus() } }
     @objc private func fastOff() { run(["fast-mode", "off", "--json"], title: "Codex Fast Off", kind: "fast-mode-off", group: "codex-config", timeout: NativeView.statusTimeout) { [weak self] in self?.refreshFastStatus() } }

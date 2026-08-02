@@ -80,6 +80,8 @@ async function toolOutputRecoveryFetch() {
 test('configureCodexLb stores an unselected CLI provider without mutating Desktop auth, catalog, or Fast settings', async (t) => {
   const { home, codexHome, configPath, authPath } = await homeFixture(t);
   const catalogPath = codexLbToolCatalogPath(codexHome);
+  const envPath = path.join(codexHome, 'sks-codex-lb.env');
+  await fsp.writeFile(envPath, "export CODEX_LB_BASE_URL='https://old.example.test/backend-api/codex'\nexport CODEX_LB_API_KEY='still-valid-old-key'\n", { mode: 0o600 });
   const beforeAuth = await fsp.readFile(authPath);
   let catalogFetchCalls = 0;
   const previousSkip = process.env.SKS_SKIP_CODEX_LB_LAUNCH_ENV;
@@ -127,6 +129,10 @@ test('configureCodexLb stores an unselected CLI provider without mutating Deskto
   assert.equal(catalogFetchCalls, 0);
   assert.equal(await fsp.access(catalogPath).then(() => true, () => false), false);
   assert.deepEqual(await fsp.readFile(authPath), beforeAuth);
+  assert.deepEqual(result.secret_recovery_paths, []);
+  assert.ok(!result.recovery_paths?.some((entry) => entry.startsWith(`${envPath}.sks-setup-claimed-`)));
+  assert.ok(!(await fsp.readdir(codexHome)).some((entry) => entry.includes('sks-codex-lb.env.sks-setup-claimed-')));
+  assert.doesNotMatch(await fsp.readFile(envPath, 'utf8'), /still-valid-old-key/);
 });
 
 test('configureCodexLb ignores catalog quality and legacy activation flags during credential-only setup', async (t) => {

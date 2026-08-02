@@ -36,10 +36,10 @@ test('official custom agent catalog has unique identities and broad specialist c
     ['protocol_reviewer', { policy: 'sol_max_judgment', model: 'gpt-5.6-sol', effort: 'max', sandbox: 'read-only' }],
     ['runtime_reliability_reviewer', { policy: 'sol_max_judgment', model: 'gpt-5.6-sol', effort: 'max', sandbox: 'read-only' }],
     ['triwiki_evidence_reviewer', { policy: 'sol_max_judgment', model: 'gpt-5.6-sol', effort: 'max', sandbox: 'read-only' }],
-    ['long_context_analyst', { policy: 'terra_medium_context_tools', model: 'gpt-5.6-terra', effort: 'medium', sandbox: 'read-only' }],
-    ['computer_use_operator', { policy: 'terra_medium_context_tools', model: 'gpt-5.6-terra', effort: 'medium', sandbox: 'read-only' }],
-    ['browser_use_operator', { policy: 'terra_medium_context_tools', model: 'gpt-5.6-terra', effort: 'medium', sandbox: 'read-only' }],
-    ['image_generation_operator', { policy: 'terra_medium_context_tools', model: 'gpt-5.6-terra', effort: 'medium', sandbox: undefined }]
+    ['long_context_analyst', { policy: 'terra_max_context_tools', model: 'gpt-5.6-terra', effort: 'max', sandbox: 'read-only' }],
+    ['computer_use_operator', { policy: 'terra_max_context_tools', model: 'gpt-5.6-terra', effort: 'max', sandbox: 'read-only' }],
+    ['browser_use_operator', { policy: 'terra_max_context_tools', model: 'gpt-5.6-terra', effort: 'max', sandbox: 'read-only' }],
+    ['image_generation_operator', { policy: 'terra_max_context_tools', model: 'gpt-5.6-terra', effort: 'max', sandbox: undefined }]
   ]);
 
   assert.equal(roles.length, 25);
@@ -58,13 +58,13 @@ test('official custom agent catalog has unique identities and broad specialist c
     assert.ok(role.selection_keywords.length >= 5);
   }
 
-  const distribution = Object.fromEntries(['luna_max_mechanical', 'sol_high_implementation', 'sol_max_judgment', 'terra_medium_context_tools']
+  const distribution = Object.fromEntries(['luna_max_mechanical', 'sol_high_implementation', 'sol_max_judgment', 'terra_max_context_tools']
     .map((policy) => [policy, roles.filter((role) => role.model_policy === policy).length]));
   assert.deepEqual(distribution, {
     luna_max_mechanical: 1,
     sol_high_implementation: 3,
     sol_max_judgment: 15,
-    terra_medium_context_tools: 6
+    terra_max_context_tools: 6
   });
 });
 

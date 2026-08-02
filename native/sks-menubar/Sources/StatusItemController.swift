@@ -163,7 +163,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             .appendingPathComponent(".sneakoscope-global/cache/update-status.json").path)
         guard !updateRefreshInFlight, StatusItemController.updateStatusNeedsRefresh(update) else { return }
         updateRefreshInFlight = true
-        processClient.run(["update", "status", "--json"]) { [weak self] result in
+        processClient.run(
+            ["update", "status", "--project-root", AppRuntime.canonicalProjectRoot, "--json"],
+            timeout: NativeView.statusTimeout
+        ) { [weak self] result in
             guard let self = self else { return }
             self.updateRefreshInFlight = false
             let fingerprint = self.updateNotificationFingerprint(result.output)
@@ -183,7 +186,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard !fastRefreshInFlight else { fastRefreshPending = true; return }
         fastRefreshInFlight = true
         fastLine.title = "Codex Fast: Checking…"
-        processClient.run(["fast-mode", "status", "--json"]) { [weak self] result in
+        processClient.run(["fast-mode", "status", "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
             guard let self = self else { return }
             self.fastRefreshInFlight = false
             guard result.code == 0, let json = self.readJson(text: result.output),
@@ -267,7 +270,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         operationRunning = true
         operationFailed = false
         _ = operations.update(snapshot, state: .running, stage: "running", progress: nil, summary: summary)
-        processClient.run(arguments) { [weak self] result in
+        let timeout = arguments.starts(with: ["codex", "update"])
+            ? NativeView.longMutationTimeout
+            : NativeView.mutationTimeout
+        processClient.run(arguments, timeout: timeout) { [weak self] result in
             guard let self = self else { return }
             self.operationRunning = false
             self.operationFailed = result.code != 0
@@ -325,10 +331,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func openCenter() { openControlCenter(.overview) }
     @objc private func openUpdates() { openControlCenter(.updates) }
-    @objc private func checkUpdates() { run(["update", "status", "--refresh", "--json"], kind: "update-status", mutationGroup: nil, summary: "Check for updates") }
+    @objc private func checkUpdates() {
+        run(
+            ["update", "status", "--refresh", "--project-root", AppRuntime.canonicalProjectRoot, "--json"],
+            kind: "update-status",
+            mutationGroup: nil,
+            summary: "Check for updates"
+        )
+    }
     @objc private func updateCodexCLI() {
         run(["codex", "update", "--json"], kind: "codex-cli-update", mutationGroup: "update", summary: "Update Codex CLI") { [weak self] in
-            self?.run(["update", "status", "--refresh", "--json"], kind: "update-status", mutationGroup: nil, summary: "Refresh update status after Codex CLI update")
+            self?.run(
+                ["update", "status", "--refresh", "--project-root", AppRuntime.canonicalProjectRoot, "--json"],
+                kind: "update-status",
+                mutationGroup: nil,
+                summary: "Refresh update status after Codex CLI update"
+            )
         }
     }
     @objc private func fastOn() {

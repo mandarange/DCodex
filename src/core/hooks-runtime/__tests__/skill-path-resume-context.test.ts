@@ -27,6 +27,7 @@ import {
   writeOfficialSubagentPlan,
   writeTranscript
 } from './skill-path-context-fixtures.js';
+import { loadStateForSession } from '../../mission.js';
 
 test('a project .sneakoscope symlink cannot inject routing context or receive external writes', async () => {
   const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-hook-skill-path-project-symlink-'));
@@ -156,36 +157,43 @@ test('compact-resume SessionStart and the next PreToolUse refresh authoritative 
     process.env.HOME = home;
     await fsp.mkdir(root, { recursive: true });
     const naruto = await installCurrentManagedSkill(home, 'sks-naruto');
+    const workflowRunId = 'run-active-resume';
+    const sessionId = 'active-resume-session';
     const state = {
       mission_id: 'M-active-resume',
       route: 'Naruto',
       route_command: '$sks-naruto',
       mode: 'NARUTO',
       route_closed: false,
+      official_subagent_run_id: workflowRunId,
+      session_scope: sessionId,
       required_skills: ['sks-naruto']
     };
+    await writeOfficialSubagentPlan(root, state.mission_id, workflowRunId);
+    await setCurrent(root, state, { replace: true, sessionKey: sessionId });
 
     const sessionResult: any = await evaluateHookPayload('session-start', {
       cwd: root,
       hook_event_name: 'SessionStart',
-      session_id: 'active-resume-session',
+      session_id: sessionId,
       source: 'compact',
       transcript_path: null
-    }, { root, state });
+    }, { root });
     const sessionOutput: any = normalizeHookResult('session-start', sessionResult);
     assert.match(String(sessionOutput.hookSpecificOutput?.additionalContext || ''), new RegExp(escapeRegExp(naruto)));
     assert.equal(sessionOutput.systemMessage, undefined);
     assert.equal((await validateCodexHookOutput('SessionStart', sessionOutput)).ok, true);
     assert.equal(validateSessionStartSemanticOutput(sessionOutput).ok, true);
+    assert.equal((await loadStateForSession(root, sessionId)).official_subagent_run_id, workflowRunId);
 
     for (const hook of ['pre-compact', 'post-compact'] as const) {
       const event = hook === 'pre-compact' ? 'PreCompact' : 'PostCompact';
       const result: any = await evaluateHookPayload(hook, {
         cwd: root,
         hook_event_name: event,
-        session_id: 'active-resume-session',
+        session_id: sessionId,
         transcript_path: null
-      }, { root, state });
+      }, { root });
       const output: any = normalizeHookResult(hook, result);
       assert.match(String(output.systemMessage || ''), /refresh active managed-skill paths.*compact resume.*reverify/i);
       assert.doesNotMatch(String(output.systemMessage || ''), new RegExp(escapeRegExp(naruto)));
@@ -193,14 +201,15 @@ test('compact-resume SessionStart and the next PreToolUse refresh authoritative 
       assert.equal(output.hookSpecificOutput, undefined);
       assert.equal((await validateCodexHookOutput(event, output)).ok, true);
       assert.equal(validateCompactSemanticOutput(event, output).ok, true);
+      assert.equal((await loadStateForSession(root, sessionId)).official_subagent_run_id, workflowRunId);
     }
 
     const preToolResult: any = await evaluateHookPayload('pre-tool', {
       ...preToolPayload(null),
       cwd: root,
-      session_id: 'active-resume-session',
+      session_id: sessionId,
       turn_id: 'active-resume-tool-turn'
-    }, { root, state });
+    }, { root });
     const preToolOutput: any = normalizeHookResult('pre-tool', preToolResult);
     assert.match(String(preToolOutput.hookSpecificOutput?.additionalContext || ''), new RegExp(escapeRegExp(naruto)));
     assert.equal(preToolOutput.hookSpecificOutput?.hookEventName, 'PreToolUse');
@@ -208,6 +217,7 @@ test('compact-resume SessionStart and the next PreToolUse refresh authoritative 
     assert.equal((await validateCodexHookOutput('PreToolUse', preToolOutput)).ok, true);
     assert.equal(validatePreToolUseSemanticOutput(preToolOutput).ok, true);
     assert.equal((String(preToolOutput.hookSpecificOutput.additionalContext).match(/Authoritative SKS skill sources/g) || []).length, 1);
+    assert.equal((await loadStateForSession(root, sessionId)).official_subagent_run_id, workflowRunId);
     assert.doesNotMatch(JSON.stringify(preToolOutput), /지정된 SKS 스킬 경로가 현재 설치 위치와 달라/);
   } finally {
     if (oldHome === undefined) delete process.env.HOME;
@@ -247,6 +257,7 @@ test('active PreToolUse fails closed for missing or tampered managed skills with
 
     const naruto = await installCurrentManagedSkill(home, 'sks-naruto');
     await fsp.appendFile(naruto, '\nHOSTILE_SKILL_CONTENT_DO_NOT_REFLECT=/private/secret\n');
+    const tamperedBytes = await fsp.readFile(naruto);
     const tampered: any = await evaluateHookPayload('pre-tool', {
       ...preToolPayload(null),
       cwd: root,
@@ -259,6 +270,10 @@ test('active PreToolUse fails closed for missing or tampered managed skills with
     assert.doesNotMatch(JSON.stringify(tamperedOutput), /HOSTILE_SKILL_CONTENT_DO_NOT_REFLECT|private\/secret/);
     assert.equal((await validateCodexHookOutput('PreToolUse', tamperedOutput)).ok, true);
     assert.equal(validatePreToolUseSemanticOutput(tamperedOutput).ok, true);
+    assert.deepEqual(await fsp.readFile(naruto), tamperedBytes);
+    await assert.rejects(
+      fsp.access(path.join(root, '.sneakoscope', 'reports', 'migration-journal.jsonl'))
+    );
   } finally {
     if (oldHome === undefined) delete process.env.HOME;
     else process.env.HOME = oldHome;
@@ -292,4 +307,3 @@ test('lifecycle and PreToolUse parent calls without active state do not invent s
     await fsp.rm(fixture, { recursive: true, force: true });
   }
 });
-

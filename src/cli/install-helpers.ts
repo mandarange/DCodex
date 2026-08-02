@@ -14,7 +14,11 @@ import { reconcileCodexAppUpgradeProcesses } from '../core/codex-app.js';
 import { restartCodexApp } from '../core/codex-app/codex-app-restart.js';
 import { cleanupMacLaunchSecretEnvironment } from '../core/codex-app/menubar/index.js';
 import { recordCodexLbHealthEvent } from '../core/codex-lb-circuit.js';
-import { loadCodexLbEnv, writeCodexLbKeychain, codexLbMetadataPath } from '../core/codex-lb/codex-lb-env.js';
+import {
+  CODEX_LB_SECURE_KEYCHAIN_SERVICE,
+  loadCodexLbEnv,
+  codexLbMetadataPath
+} from '../core/codex-lb/codex-lb-env.js';
 import {
   codexLbToolCatalogPath
 } from '../core/codex-lb/codex-lb-tool-catalog.js';
@@ -70,6 +74,7 @@ import {
   hasDeprecatedCodexHooksFeatureFlag,
   isProjectSetupCandidate
 } from './install-tool-helpers.js';
+import { printCodexLbSetupWarnings } from './codex-lb-setup-warning-output.js';
 import { checkCodexLbResponseChain } from './install-helpers-codex-lb-chain.js';
 import {
   CODEX_LB_CANONICAL_FAST_SERVICE_TIER,
@@ -87,15 +92,19 @@ import {
 import {
   CODEX_LB_DESKTOP_BRIDGE_MARKER,
   CODEX_LB_DESKTOP_COMPAT_MARKER,
+  CODEX_LB_PROVIDER_SELECTION_MARKER,
   appliedCodexLbPersistenceModes,
   captureCodexLbSetupWriteState,
   codexLbSharedOpenAiRoutingState,
   detectCodexLbSetupDrift,
   ensureGlobalCodexAppGlmProfile,
   ensureStoredOpenRouterProviderDuringInstall,
-  parseCodexLbEnvBaseUrl,
+  hardenCodexLbSetupRecoveryPath,
+  removeCodexLbSetupRecoveryPath,
+  removeCodexLbOrphanManagedMarkers,
   removeCodexLbSharedOpenAiRouting,
   removeCodexLbManagedDesktopConfig,
+  restoreCodexLbSetupWriteState,
   sha256Text,
   shellSingleQuote,
   upsertCodexAppGlmConfig,
@@ -103,7 +112,8 @@ import {
   upsertCodexLbCliProviderConfig,
   upsertCodexLbCompatDesktopConfig,
   upsertCodexLbNativeDesktopConfig,
-  upsertCodexLbSharedOpenAiRouting
+  upsertCodexLbSharedOpenAiRouting,
+  writeCodexLbSetupFileIfUnchanged
 } from './install-helpers-codex-lb-config.js';
 import { detectLegacyCodexLbDesktopState } from '../core/codex-lb/legacy-migration.js';
 import {
@@ -292,7 +302,7 @@ async function reportPostinstallCodexLbAuth(snapshot: any = null) {
   else if (codexLbAuth.status === 'synced' || codexLbAuth.status === 'present' || codexLbAuth.status === 'repaired') console.log(`codex-lb auth: preserved from ${codexLbAuth.env_path}.`);
   else if (codexLbAuth.status === 'present_unselected') console.log('codex-lb auth: preserved but not selected; ChatGPT OAuth remains active.');
   else if (codexLbAuth.status === 'skipped') console.log(`codex-lb auth: skipped (${codexLbAuth.reason}).`);
-  else if (codexLbAuth.status === 'missing_env_key') console.log('codex-lb auth: stored key missing. Run `sks codex-lb setup --host <domain> --api-key-stdin` to repair.');
+  else if (codexLbAuth.status === 'missing_env_key') console.log('codex-lb auth: stored key missing. Store it in ~/.codex/sks-codex-lb.env, run `sks codex-lb setup --host <domain> --api-key-stdin --yes`, or provide CODEX_LB_API_KEY in the environment.');
   else if (codexLbAuth.status === 'missing_base_url') console.log('codex-lb auth: stored key has no recoverable base URL. Run `sks codex-lb reconfigure --host <domain> --api-key-stdin` once.');
   else if (codexLbAuth.status === 'legacy_migration_required') console.log('codex-lb legacy Desktop auth routing was left unchanged. Migrate explicitly with `sks codex-lb migrate-legacy-desktop --restart-app`.');
   else if (codexLbAuth.status === 'not_configured') console.log('codex-lb (optional multi-account load balancer): not configured — use `sks codex-lb setup`, then choose `use-desktop-full`, `use-cli`, or `disable` explicitly.');
@@ -311,6 +321,7 @@ async function reportPostinstallCodexLbAuth(snapshot: any = null) {
         const result = await configureCodexLb({ host: codexLbAuth.base_url, apiKey: newKey });
         if (result.ok) console.log(`codex-lb key updated: ${result.base_url}`);
         else console.log(`codex-lb key update failed: ${result.status}${result.error ? `: ${result.error}` : ''}`);
+        printCodexLbSetupWarnings(result);
       }
     }
   }
@@ -436,6 +447,10 @@ export type ConfigureCodexLbResult = {
   base_url?: string | null;
   env_key?: string;
   keychain?: Record<string, unknown>;
+  legacy_keychain_cleanup?: Record<string, unknown>;
+  rollback?: Record<string, any>;
+  recovery_paths?: string[];
+  secret_recovery_paths?: string[];
   warnings?: string[];
   auth_reconcile?: CodexLbAuthReconcileResult;
   codex_lb?: CodexLbStatusSnapshot;
@@ -472,6 +487,7 @@ export interface ConfigureCodexLbDesktopRoutingResult {
     | 'desktop_routing_disabled'
     | 'desktop_oauth_required'
     | 'desktop_gateway_auth_transport_unsupported'
+    | 'desktop_dual_auth_compat_unavailable'
     | 'invalid_desktop_routing_input'
     | 'failed';
   mode: CodexLbDesktopMode;
@@ -514,6 +530,17 @@ export async function configureCodexLbDesktopRouting(
     auth_path: authPath,
     auth_before: authBefore
   };
+  if (desktopModeRequiresGlobalSecretEnvironment(mode)) {
+    return {
+      ...base,
+      ok: false,
+      status: 'desktop_dual_auth_compat_unavailable',
+      routing_plane: 'unchanged',
+      oauth_preserved: true,
+      auth_after: authBefore,
+      blockers: ['desktop_dual_auth_compat_requires_global_secret_environment']
+    };
+  }
   if (mode === 'cli-provider') {
     return {
       ...base,
@@ -760,17 +787,16 @@ function codexLbRoutingPlane(mode: CodexLbDesktopMode): NonNullable<ConfigureCod
   return 'cli_provider';
 }
 
-async function capturePostinstallCodexLbConfigSnapshot(home: any = process.env.HOME || os.homedir()) {
+export async function capturePostinstallCodexLbConfigSnapshot(home: any = process.env.HOME || os.homedir()) {
   const configPath = codexLbConfigPath(home);
   const envPath = codexLbEnvPath(home);
   const authPath = codexAuthPath(home);
   const config = await readText(configPath, '');
-  const envText = await readText(envPath, '');
   const auth = await captureCodexAuthSnapshot({ home, authPath });
   const envLoad = await loadCodexLbEnv({ home, envPath });
   const envKey = envLoad.secret_api_key || '';
   const providerConfigured = /\[model_providers\.codex-lb\]/.test(config);
-  const baseUrl = envLoad.base_url || codexLbProviderBaseUrl(config) || parseCodexLbEnvBaseUrl(envText);
+  const baseUrl = envLoad.base_url || codexLbProviderBaseUrl(config);
   const desktopMode = managedCodexLbDesktopMode(config);
   const bridgeBaseUrl = desktopMode === 'desktop-native-bridge'
     ? topLevelTomlString(config, 'openai_base_url')
@@ -794,7 +820,7 @@ async function capturePostinstallCodexLbConfigSnapshot(home: any = process.env.H
   };
 }
 
-async function restorePostinstallCodexLbConfigSnapshot(snapshot: any) {
+export async function restorePostinstallCodexLbConfigSnapshot(snapshot: any) {
   if (!snapshot) return { status: 'skipped', reason: 'no_snapshot' };
   let configRestored = false;
   let configStatus = 'present';
@@ -809,13 +835,11 @@ async function restorePostinstallCodexLbConfigSnapshot(snapshot: any) {
         });
       } else if (snapshot.desktop_mode === 'desktop-dual-auth-compat') {
         next = upsertCodexLbCompatDesktopConfig(current, { remoteBaseUrl: snapshot.base_url });
-      } else if (snapshot.selected !== true) {
+      } else {
         next = upsertCodexLbCliProviderConfig(current, {
           remoteBaseUrl: snapshot.base_url,
-          selectGlobally: false
+          selectGlobally: snapshot.selected === true
         });
-      } else {
-        configStatus = 'legacy_migration_required';
       }
     } catch (error: unknown) {
       return {
@@ -828,7 +852,7 @@ async function restorePostinstallCodexLbConfigSnapshot(snapshot: any) {
         error: error instanceof Error ? error.message : String(error)
       };
     }
-    if (configStatus !== 'legacy_migration_required' && ensureTrailingNewline(next) !== ensureTrailingNewline(current)) {
+    if (ensureTrailingNewline(next) !== ensureTrailingNewline(current)) {
       const safeWrite = await safeWriteCodexConfigToml(
         snapshot.config_path,
         current,
@@ -859,28 +883,111 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
   const home = opts.home || process.env.HOME || os.homedir();
   const configPath = opts.configPath || codexLbConfigPath(home);
   const envPath = opts.envPath || codexLbEnvPath(home);
+  const metadataPath = opts.metadataPath || codexLbMetadataPath(home);
   const rawHost = String(opts.host || opts.baseUrl || '');
   const baseUrl = normalizeCodexLbBaseUrl(rawHost);
   const apiKey = String(opts.apiKey || '').trim();
-  const initialConfig = await readText(configPath, '');
-  const preservedDesktopMode = managedCodexLbDesktopMode(initialConfig);
-  const preservedLegacySelection = hasTopLevelCodexLbSelected(initialConfig) && !preservedDesktopMode;
   const requestedDesktopMode = parseCodexLbDesktopMode(opts.desktopMode || 'cli-provider');
-  const desktopMode: CodexLbDesktopMode = preservedDesktopMode || 'cli-provider';
-  // A stored CLI provider is invoked explicitly by CLI configuration/flags. It
-  // must never become the global Codex Desktop selection as a setup side effect.
-  const useDefaultProvider = desktopMode === 'desktop-dual-auth-compat' || preservedLegacySelection;
   const writeEnvFile = opts.writeEnvFile !== false;
   const storeKeychain = opts.storeKeychain === true || opts.keychain === true;
+  const keychainStoreImpl = typeof opts.keychainStoreImpl === 'function'
+    ? opts.keychainStoreImpl
+    : null;
   const syncLaunchctl = opts.syncLaunchctl === true || opts.syncLaunchEnv === true;
   const shellProfile = opts.shellProfile || 'skip';
+  if (storeKeychain && !keychainStoreImpl) {
+    return {
+      ok: false,
+      status: 'keychain_acl_helper_unavailable',
+      config_path: configPath,
+      env_path: envPath,
+      metadata_path: metadataPath,
+      keychain: {
+        ok: false,
+        status: 'keychain_acl_helper_unavailable',
+        keychain_state_verified: true,
+        keychain_state_status: 'unchanged'
+      },
+      error: 'Dedicated signed Keychain helper unavailable; use the owner-only env file.'
+    };
+  }
+  const beforeState = await captureCodexLbSetupWriteState({
+    home,
+    configPath,
+    envPath,
+    metadataPath,
+    shellProfile
+  });
+  await opts.testHooks?.afterBeforeStateCapture?.({ configPath });
+  const configBeforeEntry = beforeState.files.find((entry: any) => entry?.path === configPath);
+  if (!configBeforeEntry) {
+    return {
+      ok: false,
+      status: 'setup_snapshot_failed',
+      config_path: configPath,
+      env_path: envPath,
+      metadata_path: metadataPath
+    };
+  }
+  const setupMutationPaths = new Set([
+    configPath,
+    metadataPath,
+    ...(writeEnvFile ? [envPath] : []),
+    ...(shellProfile === 'skip'
+      ? []
+      : beforeState.files
+        .map((entry: any) => String(entry?.path || ''))
+        .filter((file: string) => file && file !== configPath && file !== envPath && file !== metadataPath))
+  ]);
+  const unsafeSetupTargets = beforeState.files
+    .filter((entry: any) => setupMutationPaths.has(String(entry?.path || ''))
+      && entry?.existed === true
+      && entry?.kind !== 'regular')
+    .map((entry: any) => `unsafe_setup_write_target:${entry.path}:${entry.kind}`);
+  if (unsafeSetupTargets.length > 0) {
+    return {
+      ok: false,
+      status: 'unsafe_setup_write_target',
+      config_path: configPath,
+      env_path: envPath,
+      metadata_path: metadataPath,
+      drift: unsafeSetupTargets
+    };
+  }
+  const initialConfig = configBeforeEntry.existed === true
+    ? Buffer.from(String(configBeforeEntry.bytes_base64 || ''), 'base64').toString('utf8')
+    : '';
+  const preservedDesktopMode = managedCodexLbDesktopMode(initialConfig);
+  const managedCliSelection = hasTopLevelMarker(initialConfig, CODEX_LB_PROVIDER_SELECTION_MARKER)
+    && hasTopLevelCodexLbSelected(initialConfig);
+  const preservedLegacySelection = hasTopLevelCodexLbSelected(initialConfig)
+    && !preservedDesktopMode
+    && !managedCliSelection;
+  const desktopMode: CodexLbDesktopMode = preservedDesktopMode || 'cli-provider';
+  if (desktopModeRequiresGlobalSecretEnvironment(desktopMode)) {
+    return {
+      ok: false,
+      status: 'desktop_dual_auth_compat_unavailable',
+      config_path: configPath,
+      env_path: envPath,
+      error: 'desktop_dual_auth_compat_requires_global_secret_environment'
+    };
+  }
+  // A stored CLI provider is invoked explicitly by CLI configuration/flags. It
+  // must never become the global Codex Desktop selection as a setup side effect.
+  const useDefaultProvider = desktopMode === 'desktop-dual-auth-compat'
+    || preservedLegacySelection
+    || managedCliSelection
+    || (desktopMode === 'cli-provider' && opts.useDefaultProvider === true);
   const setupAnswers = {
     host_or_base_url: rawHost,
     api_key_source: opts.apiKeySource || 'stdin',
     desktop_mode: 'cli-provider' as const,
+    use_as_default_provider: useDefaultProvider,
     gateway_auth_transport: (opts.gatewayAuthTransport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT) as CodexLbGatewayAuthTransport,
     write_env_file: writeEnvFile,
     store_keychain: storeKeychain,
+    keychain_helper_verified: Boolean(keychainStoreImpl),
     sync_launchctl: syncLaunchctl,
     install_shell_profile: shellProfile,
     run_health_check: opts.runHealth === true,
@@ -920,14 +1027,17 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
   const insecureLocalWarning = /^http:\/\//i.test(baseUrl) && !/^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(baseUrl) && !opts.allowInsecureHttp
     ? ['codex-lb base URL uses http outside localhost; prefer https or pass an explicit allow flag in the calling surface.']
     : [];
-  const beforeState = await captureCodexLbSetupWriteState({ home, configPath, envPath, shellProfile });
+  const processEnvBefore = {
+    baseUrl: process.env.CODEX_LB_BASE_URL,
+    apiKey: process.env.CODEX_LB_API_KEY
+  };
   const authBefore = await captureCodexAuthSnapshot({ home, authPath: opts.authPath || codexAuthPath(home) });
   const appliedActions: Array<Record<string, unknown>> = [];
   await ensureDir(path.dirname(configPath));
   // Credential setup never activates a Desktop route. It may refresh the remote
   // URL inside an already explicit SKS-managed native/compat route, but an
   // unmarked legacy selection is preserved for explicit migration.
-  const current = await readText(configPath, '');
+  const current = initialConfig;
   let providerOnly = current;
   try {
     if (desktopMode === 'desktop-native-bridge') {
@@ -950,7 +1060,7 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
     } else if (!preservedLegacySelection) {
       providerOnly = upsertCodexLbCliProviderConfig(current, {
         remoteBaseUrl: baseUrl,
-        selectGlobally: false
+        selectGlobally: useDefaultProvider
       });
     }
   } catch (error: unknown) {
@@ -963,7 +1073,20 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
       error: error instanceof Error ? error.message : String(error)
     };
   }
-  const safeWrite = await safeWriteCodexConfigToml(configPath, current, providerOnly, 'codex-lb');
+  await opts.testHooks?.beforeInitialConfigWrite?.({ configPath });
+  const safeWrite = await safeWriteCodexConfigToml(
+    configPath,
+    current,
+    providerOnly,
+    'codex-lb',
+    {
+      verifyUnchangedBeforeWrite: true,
+      expectedBeforeExists: configBeforeEntry.existed === true,
+      ...(configBeforeEntry.existed === true
+        ? { expectedBeforeMode: Number(configBeforeEntry.mode) }
+        : {})
+    }
+  );
   if (!safeWrite.ok) return { ok: false, status: safeWrite.status, config_path: configPath, env_path: envPath, backup_path: safeWrite.backup_path };
   appliedActions.push({
     type: preservedLegacySelection
@@ -977,13 +1100,218 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
     ok: true,
     backup_path: safeWrite.backup_path
   });
-  if (writeEnvFile) {
-    await writeTextAtomic(envPath, `export CODEX_LB_BASE_URL=${shellSingleQuote(baseUrl)}\nexport CODEX_LB_API_KEY=${shellSingleQuote(apiKey)}\n`, { mode: 0o600 });
-    await fsp.chmod(envPath, 0o600).catch(() => {});
-    appliedActions.push({ type: 'write_env_file', target: envPath, ok: true });
+  const configExpectedAfter = (safeWrite as any).expected_after;
+  if (!configExpectedAfter || typeof configExpectedAfter.exists !== 'boolean') {
+    return {
+      ok: false,
+      status: 'partial_configuration_phase_snapshot_failed',
+      mode: desktopMode,
+      identity_plane: 'unchanged',
+      routing_plane: codexLbRoutingPlane(desktopMode),
+      oauth_preserved: true,
+      auth_mutated: false,
+      plan: plan as any,
+      applied_actions: appliedActions,
+      drift: ['setup_phase_snapshot_failed:after_config_write'],
+      config_path: configPath,
+      env_path: envPath,
+      metadata_path: metadataPath,
+      backup_path: safeWrite.backup_path,
+      error: 'guarded config writer did not return an owned post-write snapshot'
+    };
   }
-  process.env.CODEX_LB_BASE_URL = baseUrl;
-  process.env.CODEX_LB_API_KEY = apiKey;
+  let setupExpectedState: any = {
+    ...beforeState,
+    files: beforeState.files.map((entry: any) => entry.path === configPath
+      ? configExpectedAfter.exists
+        ? {
+            path: configPath,
+            existed: true,
+            kind: 'regular',
+            bytes_base64: Buffer.from(String(configExpectedAfter.text || '')).toString('base64'),
+            mode: Number(configExpectedAfter.mode)
+          }
+        : { path: configPath, existed: false, kind: 'missing', bytes_base64: '', mode: null }
+      : entry)
+  };
+  const recordExpectedRegularFile = (file: string, text: string, mode: number) => {
+    setupExpectedState = {
+      ...setupExpectedState,
+      files: setupExpectedState.files.map((entry: any) => entry.path === file
+        ? {
+            path: file,
+            existed: true,
+            kind: 'regular',
+            bytes_base64: Buffer.from(text).toString('base64'),
+            mode: mode & 0o777
+          }
+        : entry)
+    };
+  };
+  const setupWriteRecoveryPaths: string[] = [];
+  const writeSetupFile = async (input: {
+    file: string;
+    text: string;
+    mode: number;
+    beforeReplacement?: (input: { path: string }) => void | Promise<void>;
+  }) => {
+    const expected = beforeState.files.find(
+      (entry: any) => path.resolve(String(entry?.path || '')) === path.resolve(input.file)
+    );
+    if (!expected) {
+      throw new Error(`setup_snapshot_missing:${input.file}`);
+    }
+    const result = await writeCodexLbSetupFileIfUnchanged({
+      file: input.file,
+      expected,
+      text: input.text,
+      mode: input.mode,
+      ...(input.beforeReplacement ? { beforeReplacement: input.beforeReplacement } : {})
+    });
+    if (result.recovery_path) setupWriteRecoveryPaths.push(result.recovery_path);
+    if (result.ok || result.installed) {
+      recordExpectedRegularFile(input.file, input.text, input.mode);
+    }
+    if (!result.ok) {
+      throw new Error(`${result.status}:${input.file}${result.error ? `:${result.error}` : ''}`);
+    }
+    return result;
+  };
+  const rollbackSetupAfterFailure = async (input: {
+    stage: string;
+    error: unknown;
+    keychain?: any;
+    keychainRetained: boolean;
+    restoreProcessEnvironment: boolean;
+    externalStateMayBeMutated?: boolean;
+    expectedCurrentState: any;
+    centerCredentials?: Record<string, unknown>;
+    codexEnvironment?: CodexLbEnvSyncResult;
+  }): Promise<ConfigureCodexLbResult> => {
+    const rollback = await restoreCodexLbSetupWriteState(beforeState, input.expectedCurrentState, {
+      ...(typeof opts.testHooks?.beforeRollbackFileReplacement === 'function'
+        ? { beforeReplacement: opts.testHooks.beforeRollbackFileReplacement }
+        : {})
+    });
+    const rollbackBlockers = [...rollback.blockers];
+    const processRollbackBlockers: string[] = [];
+    if (input.restoreProcessEnvironment) {
+      if (process.env.CODEX_LB_BASE_URL === processEnvBefore.baseUrl) {
+        // Already restored by this process or another cooperating actor.
+      } else if (process.env.CODEX_LB_BASE_URL === baseUrl) {
+        if (processEnvBefore.baseUrl === undefined) delete process.env.CODEX_LB_BASE_URL;
+        else process.env.CODEX_LB_BASE_URL = processEnvBefore.baseUrl;
+      } else {
+        processRollbackBlockers.push('setup_rollback_conflict:process.env.CODEX_LB_BASE_URL');
+      }
+      if (process.env.CODEX_LB_API_KEY === processEnvBefore.apiKey) {
+        // Already restored by this process or another cooperating actor.
+      } else if (process.env.CODEX_LB_API_KEY === apiKey) {
+        if (processEnvBefore.apiKey === undefined) delete process.env.CODEX_LB_API_KEY;
+        else process.env.CODEX_LB_API_KEY = processEnvBefore.apiKey;
+      } else {
+        processRollbackBlockers.push('setup_rollback_conflict:process.env.CODEX_LB_API_KEY');
+      }
+    }
+    rollbackBlockers.push(...processRollbackBlockers);
+    const afterRollback = await captureCodexLbSetupWriteState({
+      home,
+      configPath,
+      envPath,
+      metadataPath,
+      shellProfile
+    });
+    if (beforeState.stateHash !== afterRollback.stateHash) {
+      rollbackBlockers.push('setup_rollback_state_verification_failed');
+    }
+    const recoveryPaths = [
+      ...(safeWrite.backup_path ? [safeWrite.backup_path] : []),
+      ...setupWriteRecoveryPaths,
+      ...rollback.recovery
+    ];
+    const secretRecoveryPaths = [...new Set(recoveryPaths)]
+      .filter((recoveryPath) => isRecoveryPathForFile(recoveryPath, envPath));
+    for (const recoveryPath of secretRecoveryPaths) {
+      if (!await hardenCodexLbSetupRecoveryPath(recoveryPath)) {
+        rollbackBlockers.push(`setup_secret_recovery_mode_unverified:${recoveryPath}`);
+      }
+    }
+    if (secretRecoveryPaths.length > 0) {
+      rollbackBlockers.push('setup_secret_recovery_retained');
+    }
+    const filesystemRollbackOk = rollbackBlockers.length === 0;
+    const keychain = input.keychain || { ok: false, status: 'not_written' };
+    return {
+      ok: false,
+      status: input.keychainRetained
+        ? 'partial_configuration_keychain_retained'
+        : input.externalStateMayBeMutated
+          ? 'partial_configuration_external_state_unknown'
+        : filesystemRollbackOk
+          ? 'setup_failed_rolled_back'
+          : 'setup_failed_rollback_incomplete',
+      mode: desktopMode,
+      identity_plane: 'unchanged',
+      routing_plane: codexLbRoutingPlane(desktopMode),
+      oauth_preserved: true,
+      auth_mutated: false,
+      plan: plan as any,
+      applied_actions: appliedActions,
+      drift: [
+        `setup_stage_failed:${input.stage}`,
+        ...(input.keychainRetained ? ['codex_lb_keychain_replacement_retained'] : []),
+        ...(input.externalStateMayBeMutated ? ['codex_lb_external_environment_requires_inspection'] : []),
+        ...rollbackBlockers
+      ],
+      rollback: {
+        ...rollback,
+        ok: filesystemRollbackOk,
+        blockers: rollbackBlockers,
+        byte_and_mode_verified: filesystemRollbackOk,
+        keychain_retained: input.keychainRetained,
+        secret_recovery_paths: secretRecoveryPaths,
+        config_backup_path: safeWrite.backup_path || null,
+        config_backup_status: safeWrite.backup_path ? 'retained_for_recovery' : 'not_created',
+        recovery_paths: recoveryPaths
+      },
+      partial_configuration: {
+        schema: 'sks.codex-lb-partial-configuration.v1',
+        failure_stage: input.stage,
+        filesystem_state: filesystemRollbackOk ? 'restored' : 'indeterminate',
+        process_environment_state: input.restoreProcessEnvironment
+          ? (processRollbackBlockers.length === 0 ? 'restored' : 'indeterminate')
+          : 'unchanged',
+        keychain_state: input.keychainRetained ? 'replacement_retained' : 'unchanged',
+        external_environment_state: input.externalStateMayBeMutated ? 'inspect_with_status' : 'unchanged',
+        durable_applied_state: [
+          ...(input.keychainRetained
+            ? [`macOS Keychain service ${CODEX_LB_SECURE_KEYCHAIN_SERVICE}`]
+            : []),
+          ...(input.externalStateMayBeMutated ? ['Center/launch environment may retain a partial update'] : [])
+        ],
+        recovery_actions: [
+          'Run: sks codex-lb status --json',
+          'Rerun setup with --api-key-stdin after resolving the failed stage.',
+          `Inspect ${CODEX_LB_SECURE_KEYCHAIN_SERVICE} before removing any retained Keychain credential.`,
+          ...(secretRecoveryPaths.length > 0
+            ? ['Review and securely remove secret_recovery_paths after preserving any concurrent user edits.']
+            : [])
+        ],
+        recovery_paths: recoveryPaths,
+        secret_recovery_paths: secretRecoveryPaths
+      } as any,
+      config_path: configPath,
+      env_path: envPath,
+      metadata_path: metadataPath,
+      keychain,
+      ...(input.centerCredentials ? { center_credentials: input.centerCredentials } : {}),
+      ...(input.codexEnvironment ? { codex_environment: input.codexEnvironment } : {}),
+      error: redactSecretText(
+        input.error instanceof Error ? input.error.message : String(input.error || input.stage),
+        [apiKey]
+      )
+    } as ConfigureCodexLbResult;
+  };
   const toolCatalog = {
     schema: 'sks.codex-lb-tool-catalog-selection.v1',
     ok: true,
@@ -999,8 +1327,7 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
     blockers: [] as string[]
   };
   const keyFingerprint = await sha256Text(apiKey);
-  const metadataPath = opts.metadataPath || codexLbMetadataPath(home);
-  await writeTextAtomic(metadataPath, `${JSON.stringify({
+  const metadataText = `${JSON.stringify({
     schema: 'sks.codex-lb-metadata.v1',
     base_url: baseUrl,
     updated_at: new Date().toISOString(),
@@ -1009,24 +1336,206 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
     requested_desktop_mode: requestedDesktopMode,
     gateway_auth_transport: opts.gatewayAuthTransport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT,
     api_key: { redacted: true, sha256: keyFingerprint }
-  }, null, 2)}\n`);
-  await fsp.chmod(metadataPath, 0o600).catch(() => {});
-  appliedActions.push({ type: 'write_metadata', target: metadataPath, ok: true });
-  const keychain = storeKeychain ? await writeCodexLbKeychain(apiKey, opts).catch((err: any) => ({ ok: false, status: 'keychain_store_failed', error: err.message })) : { ok: false, status: 'skipped' };
-  if (storeKeychain) appliedActions.push({ type: 'store_keychain', target: 'macOS Keychain service sks-codex-lb', ok: keychain.ok === true, status: keychain.status });
-  const { syncDesktopCenterLaunchCredentials } = await import('../core/codex-lb/desktop-center-credentials.js');
-  const centerCredentials = await syncDesktopCenterLaunchCredentials({
-    mode: desktopMode,
-    home,
-    // Use the just-written values; avoid ambient process.env shadowing.
-    loadedEnv: await loadCodexLbEnv({ home, processEnv: {}, envPath, metadataPath })
-  });
+  }, null, 2)}\n`;
+  try {
+    await opts.testHooks?.beforeMetadataWrite?.({ metadataPath });
+    const metadataWrite = await writeSetupFile({
+      file: metadataPath,
+      text: metadataText,
+      mode: 0o600,
+      ...(typeof opts.testHooks?.beforeSetupFileReplacement === 'function'
+        ? { beforeReplacement: opts.testHooks.beforeSetupFileReplacement }
+        : {})
+    });
+    appliedActions.push({
+      type: 'write_metadata',
+      target: metadataPath,
+      ok: true,
+      status: metadataWrite.status,
+      recovery_path: metadataWrite.recovery_path || null
+    });
+  } catch (error: unknown) {
+    return rollbackSetupAfterFailure({
+      stage: 'write_metadata',
+      error,
+      keychainRetained: false,
+      restoreProcessEnvironment: false,
+      expectedCurrentState: setupExpectedState
+    });
+  }
+  const keychainWriteState = setupExpectedState;
+  const keychain: any = storeKeychain
+    ? await keychainStoreImpl(apiKey, opts).catch((err: any) => ({
+        ok: false,
+        status: 'keychain_store_failed',
+        error: err.message
+      }))
+    : { ok: false, status: 'skipped' };
+  if (storeKeychain) appliedActions.push({ type: 'store_keychain', target: `macOS Keychain service ${CODEX_LB_SECURE_KEYCHAIN_SERVICE}`, ok: keychain.ok === true, status: keychain.status });
+  if (storeKeychain && keychain.ok !== true) {
+    await opts.testHooks?.beforeRollbackStart?.({ configPath });
+    const rollback = await restoreCodexLbSetupWriteState(beforeState, keychainWriteState, {
+      ...(typeof opts.testHooks?.beforeRollbackFileReplacement === 'function'
+        ? { beforeReplacement: opts.testHooks.beforeRollbackFileReplacement }
+        : {})
+    });
+    const rollbackBlockers = [...rollback.blockers];
+    if (keychain.keychain_state_verified !== true) {
+      rollbackBlockers.push('setup_rollback_keychain_state_indeterminate');
+    }
+    const backupStatus = safeWrite.backup_path ? 'retained_for_recovery' : 'not_created';
+    const afterRollback = await captureCodexLbSetupWriteState({ home, configPath, envPath, metadataPath, shellProfile });
+    if (beforeState.stateHash !== afterRollback.stateHash) {
+      rollbackBlockers.push('setup_rollback_state_verification_failed');
+    }
+    const recoveryPaths = [
+      ...(safeWrite.backup_path ? [safeWrite.backup_path] : []),
+      ...setupWriteRecoveryPaths,
+      ...rollback.recovery
+    ];
+    const secretRecoveryPaths = [...new Set(recoveryPaths)]
+      .filter((recoveryPath) => isRecoveryPathForFile(recoveryPath, envPath));
+    for (const recoveryPath of secretRecoveryPaths) {
+      if (!await hardenCodexLbSetupRecoveryPath(recoveryPath)) {
+        rollbackBlockers.push(`setup_secret_recovery_mode_unverified:${recoveryPath}`);
+      }
+    }
+    if (secretRecoveryPaths.length > 0) {
+      rollbackBlockers.push('setup_secret_recovery_retained');
+    }
+    const finalRollbackOk = rollbackBlockers.length === 0;
+    return {
+      ok: false,
+      status: finalRollbackOk
+        ? 'keychain_store_failed_rolled_back'
+        : keychain.keychain_state_verified !== true
+          ? 'keychain_state_indeterminate'
+          : 'keychain_store_failed_rollback_incomplete',
+      mode: desktopMode,
+      identity_plane: 'unchanged',
+      routing_plane: codexLbRoutingPlane(desktopMode),
+      oauth_preserved: true,
+      auth_mutated: false,
+      plan: plan as any,
+      applied_actions: appliedActions,
+      drift: ['codex_lb_keychain_store_failed', ...rollbackBlockers],
+      rollback: {
+        ...rollback,
+        ok: finalRollbackOk,
+        blockers: rollbackBlockers,
+        byte_and_mode_verified: finalRollbackOk,
+        config_backup_path: safeWrite.backup_path || null,
+        config_backup_status: backupStatus,
+        recovery_paths: recoveryPaths,
+        secret_recovery_paths: secretRecoveryPaths
+      },
+      config_path: configPath,
+      env_path: envPath,
+      metadata_path: metadataPath,
+      keychain,
+      error: keychain.error || keychain.status
+    };
+  }
+  const writeSetupEnvFile = async () => {
+    await opts.testHooks?.beforeEnvWrite?.({ envPath });
+    const envText = `export CODEX_LB_BASE_URL=${shellSingleQuote(baseUrl)}\nexport CODEX_LB_API_KEY=${shellSingleQuote(apiKey)}\n`;
+    const envWrite = await writeSetupFile({
+      file: envPath,
+      text: envText,
+      mode: 0o600,
+      ...(typeof opts.testHooks?.beforeSetupFileReplacement === 'function'
+        ? { beforeReplacement: opts.testHooks.beforeSetupFileReplacement }
+        : {})
+    });
+    appliedActions.push({
+      type: 'write_env_file',
+      target: envPath,
+      ok: true,
+      status: envWrite.status,
+      recovery_path: envWrite.recovery_path || null
+    });
+    await opts.testHooks?.afterEnvWrite?.({ envPath });
+  };
+  if (writeEnvFile && !storeKeychain) {
+    try {
+      await writeSetupEnvFile();
+    } catch (error: unknown) {
+      return rollbackSetupAfterFailure({
+        stage: 'write_env_file',
+        error,
+        keychain,
+        keychainRetained: false,
+        restoreProcessEnvironment: false,
+        expectedCurrentState: setupExpectedState
+      });
+    }
+  }
+  let shellProfileResult: any = { ok: true, status: 'skipped', files: [] };
+  try {
+    await opts.testHooks?.beforeCenterSync?.();
+  } catch (error: unknown) {
+    return rollbackSetupAfterFailure({
+      stage: 'sync_center_desktop_credentials',
+      error,
+      keychain,
+      keychainRetained: storeKeychain && keychain.ok === true,
+      restoreProcessEnvironment: false,
+      expectedCurrentState: setupExpectedState
+    });
+  }
+  const skipLaunchEnvironment = opts.syncLaunchEnv === false
+    || process.env.SKS_SKIP_CODEX_LB_LAUNCH_ENV === '1';
+  const {
+    repairCodexLbLegacyKeychainMigration,
+    syncDesktopCenterLaunchCredentials
+  } = await import('../core/codex-lb/desktop-center-credentials.js');
+  const centerCredentials: any = skipLaunchEnvironment
+    ? {
+        schema: 'sks.codex-lb-desktop-center-credentials.v1',
+        ok: true,
+        status: 'skipped',
+        mode: desktopMode,
+        api_key_fingerprint: keyFingerprint,
+        base_url_present: true,
+        launch_env: { api_key: 'skipped', base_url: 'skipped' },
+        stale_twins_removed: [],
+        stale_twins_quarantined: [],
+        stale_keychain_cleared: [],
+        blockers: []
+      }
+    : await syncDesktopCenterLaunchCredentials({
+        mode: desktopMode,
+        home,
+        ...(opts.platform ? { platform: opts.platform } : {}),
+        ...(opts.launchctlBin ? { launchctlBin: opts.launchctlBin } : {}),
+        ...(opts.securityBin ? { securityBin: opts.securityBin } : {}),
+        ...(opts.runProcessImpl ? { runProcessImpl: opts.runProcessImpl } : {}),
+        deferLegacyKeychainCleanup: writeEnvFile && !storeKeychain,
+        // Use the just-written values; avoid ambient process.env shadowing.
+        loadedEnv: await loadCodexLbEnv({ ...opts, home, processEnv: {}, envPath, metadataPath })
+      }).catch((error: unknown) => ({
+        ok: false,
+        status: 'center_desktop_credentials_failed',
+        error: error instanceof Error ? error.message : String(error)
+      }));
   appliedActions.push({
     type: 'sync_center_desktop_credentials',
     target: 'launchctl from official sks-codex-lb store',
     ok: centerCredentials.ok === true,
     status: centerCredentials.status
   });
+  if (centerCredentials.ok !== true) {
+    return rollbackSetupAfterFailure({
+      stage: 'sync_center_desktop_credentials',
+      error: centerCredentials.error || centerCredentials.status,
+      keychain,
+      keychainRetained: storeKeychain && keychain.ok === true,
+      restoreProcessEnvironment: false,
+      externalStateMayBeMutated: true,
+      expectedCurrentState: setupExpectedState,
+      centerCredentials
+    });
+  }
   const codexEnvironment = await syncCodexLbProviderEnvironment({ env_path: envPath, base_url: baseUrl }, {
     ...opts,
     home,
@@ -1034,13 +1543,94 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
     baseUrl,
     // Center sync owns dual-auth secret injection; avoid the old unset-only path racing it.
     syncLaunchEnv: syncLaunchctl && desktopMode !== 'desktop-dual-auth-compat'
-  });
+  }).catch((error: unknown) => ({
+    ok: false,
+    status: 'environment_failed',
+    error: error instanceof Error ? error.message : String(error)
+  }));
   if (syncLaunchctl && desktopMode !== 'desktop-dual-auth-compat') {
     appliedActions.push({ type: 'sync_launchctl', target: 'macOS launchctl user environment (base URL only; API-key env removed)', ok: codexEnvironment.ok === true, status: codexEnvironment.status });
   }
-  const shellProfileResult = await installCodexLbShellProfileSnippet({ home, envPath, shellProfile }).catch((err: any) => ({ ok: false, status: 'failed', files: [], error: err.message }));
-  if (shellProfile !== 'skip') appliedActions.push({ type: 'install_shell_profile_snippet', target: shellProfileResult.files?.join(', ') || shellProfile, ok: shellProfileResult.ok === true, status: shellProfileResult.status });
-  const codexLb = await codexLbStatus({ ...opts, home, configPath, envPath });
+  if (codexEnvironment.ok !== true) {
+    return rollbackSetupAfterFailure({
+      stage: 'sync_codex_environment',
+      error: codexEnvironment.error || codexEnvironment.status,
+      keychain,
+      keychainRetained: storeKeychain && keychain.ok === true,
+      restoreProcessEnvironment: true,
+      externalStateMayBeMutated: true,
+      expectedCurrentState: setupExpectedState,
+      centerCredentials,
+      codexEnvironment
+    });
+  }
+  if (writeEnvFile && storeKeychain) {
+    try {
+      await writeSetupEnvFile();
+    } catch (error: unknown) {
+      return rollbackSetupAfterFailure({
+        stage: 'write_env_file',
+        error,
+        keychain,
+        keychainRetained: true,
+        restoreProcessEnvironment: true,
+        externalStateMayBeMutated: true,
+        expectedCurrentState: setupExpectedState,
+        centerCredentials,
+        codexEnvironment
+      });
+    }
+  }
+  process.env.CODEX_LB_BASE_URL = baseUrl;
+  process.env.CODEX_LB_API_KEY = apiKey;
+  shellProfileResult = await installCodexLbShellProfileSnippet({
+    home,
+    envPath,
+    shellProfile,
+    expectedFiles: beforeState.files,
+    writeFileIfUnchanged: async ({ file, text, mode }) => {
+      try {
+        await opts.testHooks?.beforeShellProfileWrite?.({ file });
+        return await writeSetupFile({
+          file,
+          text,
+          mode,
+          ...(typeof opts.testHooks?.beforeSetupFileReplacement === 'function'
+            ? { beforeReplacement: opts.testHooks.beforeSetupFileReplacement }
+            : {})
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          ok: false,
+          status: message.split(':', 1)[0] || 'write_failed',
+          error: message
+        };
+      }
+    }
+  })
+    .catch((err: any) => ({ ok: false, status: 'failed', files: [], error: err.message }));
+  if (shellProfile !== 'skip') {
+    appliedActions.push({
+      type: 'install_shell_profile_snippet',
+      target: shellProfileResult.files?.join(', ') || shellProfile,
+      ok: shellProfileResult.ok === true,
+      status: shellProfileResult.status
+    });
+  }
+  if (shellProfileResult.ok !== true) {
+    return rollbackSetupAfterFailure({
+      stage: 'install_shell_profile_snippet',
+      error: shellProfileResult.error || shellProfileResult.status,
+      keychain,
+      keychainRetained: storeKeychain && keychain.ok === true,
+      restoreProcessEnvironment: true,
+      externalStateMayBeMutated: true,
+      expectedCurrentState: setupExpectedState,
+      centerCredentials,
+      codexEnvironment
+    });
+  }
   const authAfter = await captureCodexAuthSnapshot({ home, authPath: opts.authPath || codexAuthPath(home) });
   let authInvariantError: string | null = null;
   try {
@@ -1060,9 +1650,23 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
     reason: authInvariantError || 'cli_gateway_key_is_separate_from_chatgpt_oauth',
     error: authInvariantError
   };
+  if (authInvariantError) {
+    return rollbackSetupAfterFailure({
+      stage: 'verify_desktop_auth_invariant',
+      error: authInvariantError,
+      keychain,
+      keychainRetained: storeKeychain && keychain.ok === true,
+      restoreProcessEnvironment: true,
+      externalStateMayBeMutated: true,
+      expectedCurrentState: setupExpectedState,
+      centerCredentials,
+      codexEnvironment
+    });
+  }
   const finalCodexLb = await codexLbStatus({ ...opts, home, configPath, envPath });
-  const ok = Boolean(codexEnvironment.ok && codexLogin.ok && centerCredentials.ok !== false);
-  const afterState = await captureCodexLbSetupWriteState({ home, configPath, envPath, shellProfile });
+  const keychainOk = !storeKeychain || keychain.ok === true;
+  const ok = Boolean(codexEnvironment.ok && codexLogin.ok && keychainOk);
+  const afterState = await captureCodexLbSetupWriteState({ home, configPath, envPath, metadataPath, shellProfile });
   const drift = [
     ...detectCodexLbSetupDrift({
       useDefaultProvider,
@@ -1079,6 +1683,7 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
       afterState
     }),
     ...(authInvariantError ? ['desktop_auth_byte_invariant_failed'] : []),
+    ...(!keychainOk ? ['codex_lb_keychain_store_failed'] : []),
     ...(toolCatalog.required !== false && toolCatalog.ok !== true ? ['codex_lb_gpt56_tool_catalog_not_ready'] : [])
   ];
   const appliedPersistenceModes = appliedCodexLbPersistenceModes({
@@ -1103,16 +1708,96 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
     ...(preservedLegacySelection ? ['legacy_desktop_auth_routing_requires_explicit_migrate_legacy_desktop'] : []),
     ...(toolCatalog.required !== false && toolCatalog.ok !== true ? ['codex_lb_gpt56_tool_catalog_not_ready'] : [])
   ];
-  const failureStatus = centerCredentials.ok !== true
-    ? (centerCredentials.status || 'center_desktop_credentials_failed')
-    : codexEnvironment.ok !== true
-    ? (codexEnvironment.status || 'environment_failed')
-    : codexLogin.ok !== true
-      ? (codexLogin.status || 'login_failed')
-      : null;
+  if (!ok || drift.length > 0) {
+    return rollbackSetupAfterFailure({
+      stage: 'verify_final_setup_state',
+      error: drift.join(',') || 'configuration_failed',
+      keychain,
+      keychainRetained: storeKeychain && keychain.ok === true,
+      restoreProcessEnvironment: true,
+      externalStateMayBeMutated: true,
+      expectedCurrentState: setupExpectedState,
+      centerCredentials,
+      codexEnvironment
+    });
+  }
+  const retainedSetupRecoveryPaths: string[] = [];
+  for (const recoveryPath of [...new Set(setupWriteRecoveryPaths)]) {
+    if (await removeCodexLbSetupRecoveryPath(recoveryPath)) {
+      for (const action of appliedActions) {
+        if (action.recovery_path === recoveryPath) {
+          action.recovery_path = null;
+          action.recovery_claim_cleanup = 'removed_after_final_verification';
+        }
+      }
+      continue;
+    }
+    retainedSetupRecoveryPaths.push(recoveryPath);
+    await hardenCodexLbSetupRecoveryPath(recoveryPath);
+  }
+  const retainedSecretRecoveryPaths = retainedSetupRecoveryPaths
+    .filter((recoveryPath) => isRecoveryPathForFile(recoveryPath, envPath));
+  let legacyKeychainCleanup: any = {
+    ok: true,
+    status: 'not_applicable',
+    keychain_cleared: [],
+    blockers: []
+  };
+  if ((opts.platform || process.platform) === 'darwin' && writeEnvFile && !storeKeychain) {
+    await opts.testHooks?.beforeLegacyKeychainCleanup?.({ envPath, metadataPath });
+    const migration = await repairCodexLbLegacyKeychainMigration({
+      home,
+      baseUrl,
+      envPath,
+      metadataPath,
+      account: opts.account || process.env.USER || 'sks',
+      platform: opts.platform || process.platform,
+      ...(opts.securityBin ? { securityBin: opts.securityBin } : {}),
+      ...(opts.runProcessImpl ? { runProcessImpl: opts.runProcessImpl } : {}),
+      expectedApiKeySha256: keyFingerprint
+    });
+    const cleanupBlockers = [...new Set(migration.blockers)];
+    const replacementStoreVerified = migration.env_key_valid
+      && migration.status !== 'replacement_store_unverified'
+      && migration.status !== 'env_file_unsafe';
+    const cleanupOk = replacementStoreVerified
+      && migration.ok
+      && cleanupBlockers.length === 0;
+    legacyKeychainCleanup = {
+      ok: cleanupOk,
+      status: !replacementStoreVerified
+        ? 'legacy_keychain_cleanup_blocked_replacement_store_unverified'
+        : cleanupOk
+        ? migration.keychain_cleared.length > 0
+          ? 'legacy_keychain_removed'
+          : 'legacy_keychain_absent'
+        : 'legacy_keychain_cleanup_failed_secure_store_retained',
+      replacement_store_verified: replacementStoreVerified,
+      keychain_cleared: migration.keychain_cleared,
+      blockers: cleanupBlockers
+    };
+    appliedActions.push({
+      type: 'migrate_legacy_keychain',
+      target: 'macOS Keychain service sks-codex-lb',
+      ok: legacyKeychainCleanup.ok,
+      status: legacyKeychainCleanup.status
+    });
+  }
+  const finalWarnings = [
+    ...warnings,
+    ...(retainedSetupRecoveryPaths.length > 0 ? ['setup_recovery_claim_cleanup_required'] : []),
+    ...(retainedSecretRecoveryPaths.length > 0 ? ['setup_secret_recovery_retained'] : []),
+    ...(!legacyKeychainCleanup.ok
+      ? ['legacy_keychain_cleanup_indeterminate_rotate_provider_key']
+      : legacyKeychainCleanup.keychain_cleared.length > 0
+        ? ['legacy_keychain_removed_rotate_provider_key_if_not_already_rotated']
+        : [])
+  ];
   return {
-    ok: ok && drift.length === 0,
-    status: ok && drift.length === 0 ? 'configured' : failureStatus || (drift.length ? 'setup_choice_drift' : 'configuration_failed'),
+    ok: legacyKeychainCleanup.ok,
+    status: legacyKeychainCleanup.ok
+      ? 'configured'
+      : 'legacy_keychain_cleanup_failed_secure_store_retained',
     mode: desktopMode,
     identity_plane: 'unchanged',
     routing_plane: codexLbRoutingPlane(desktopMode),
@@ -1121,16 +1806,25 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
     auth_mutated: false,
     plan: plan as any,
     applied_actions: appliedActions,
-    drift,
+    drift: [...drift, ...legacyKeychainCleanup.blockers],
     persistence,
     center_credentials: centerCredentials,
     config_path: configPath,
     env_path: envPath,
     metadata_path: metadataPath,
+    backup_path: safeWrite.backup_path || null,
+    recovery_paths: [
+      ...new Set([
+        ...(safeWrite.backup_path ? [safeWrite.backup_path] : []),
+        ...retainedSetupRecoveryPaths
+      ])
+    ],
+    secret_recovery_paths: retainedSecretRecoveryPaths,
     base_url: baseUrl,
     env_key: 'CODEX_LB_API_KEY',
     keychain,
-    warnings,
+    legacy_keychain_cleanup: legacyKeychainCleanup,
+    warnings: finalWarnings,
     auth_reconcile: authReconcile,
     codex_lb: finalCodexLb,
     codex_environment: codexEnvironment,
@@ -1141,13 +1835,24 @@ export async function configureCodexLb(opts: any = {}): Promise<ConfigureCodexLb
   };
 }
 
+function isRecoveryPathForFile(recoveryPath: string, file: string): boolean {
+  const target = path.resolve(file);
+  const candidate = path.resolve(String(recoveryPath || ''));
+  return candidate.startsWith(`${target}.sks-`);
+}
+
+function desktopModeRequiresGlobalSecretEnvironment(mode: CodexLbDesktopMode): boolean {
+  return mode === 'desktop-dual-auth-compat';
+}
+
 export async function codexLbStatus(opts: any = {}) {
   const home = opts.home || process.env.HOME || os.homedir();
   const configPath = opts.configPath || codexLbConfigPath(home);
   const envPath = opts.envPath || codexLbEnvPath(home);
-  const config = await readText(configPath, '');
+  const rawConfig = await readText(configPath, '');
+  const orphanManagedMarkerCleanup = removeCodexLbOrphanManagedMarkers(rawConfig);
+  const config = orphanManagedMarkerCleanup.text;
   const envExists = await exists(envPath);
-  const envText = envExists ? await readText(envPath, '') : '';
   const envLoad = await loadCodexLbEnv({ ...opts, home, envPath });
   const authPath = opts.authPath || codexAuthPath(home);
   const authText = await readText(authPath, '');
@@ -1181,17 +1886,9 @@ export async function codexLbStatus(opts: any = {}) {
     && providerEnvKey === CODEX_LB_PROVIDER_ENV_KEY
     && providerSupportsWebsockets === true
     && providerOpenAiAuthDisabled;
-  const compatProviderContractOk = providerConfigured
-    && providerBaseUrlMatchesCredential
-    && providerName === 'OpenAI'
-    && providerWireApi === 'responses'
-    && providerSupportsWebsockets === true
-    && providerRequiresOpenAiAuth === true
-    && !providerEnvKey
-    && providerHasSeparateGatewayAuth;
-  const providerContractOk = desktopMode === 'desktop-dual-auth-compat'
-    ? compatProviderContractOk
-    : cliProviderContractOk;
+  const retiredCompatConfigured = desktopMode === 'desktop-dual-auth-compat';
+  const definedButNotSelected = providerConfigured && !selected && desktopMode === null;
+  const providerContractOk = !retiredCompatConfigured && cliProviderContractOk;
   const providerUsesCodexLbEnvAuth = providerConfigured && providerEnvKey === CODEX_LB_PROVIDER_ENV_KEY && providerOpenAiAuthDisabled;
   const oauthAvailable = authMode.mode === 'chatgpt_oauth' || authMode.mode === 'browser_marker';
   const authRoutingCoherent = desktopMode === 'desktop-native-bridge'
@@ -1201,8 +1898,8 @@ export async function codexLbStatus(opts: any = {}) {
       : !codexLbKeyInSharedAuth && (!selected || providerUsesCodexLbEnvAuth);
   const codexAppUsableWithCodexLb = desktopMode === 'desktop-native-bridge'
     ? Boolean(bridgeBaseUrl && oauthAvailable)
-    : desktopMode === 'desktop-dual-auth-compat'
-      ? compatProviderContractOk && oauthAvailable
+    : retiredCompatConfigured
+      ? false
       : authMode.codex_app_usable;
   const fastMode = codexLbFastModeConfigStatus(config);
   const launchEnvironment = await inspectCodexLbMacLaunchEnvironment(baseUrl, opts).catch((err: any) => ({
@@ -1215,7 +1912,14 @@ export async function codexLbStatus(opts: any = {}) {
     && envLoad.configured
     && Boolean(baseUrl)
     && authRoutingCoherent
+    && !retiredCompatConfigured
     && (desktopMode === 'desktop-native-bridge' ? Boolean(bridgeBaseUrl) : true);
+  const blockers = [
+    ...(retiredCompatConfigured ? ['desktop_dual_auth_compat_unavailable'] : []),
+    ...(!retiredCompatConfigured && providerConfigured && !providerContractOk
+      ? ['codex_lb_provider_contract_drift']
+      : [])
+  ];
   const probeToolOutputRecovery = opts.probeToolOutputRecovery === true;
   const toolOutputRecovery = !selected
     ? codexLbToolOutputRecoveryNotSelected()
@@ -1228,8 +1932,23 @@ export async function codexLbStatus(opts: any = {}) {
           allowUnverified: opts.allowUnverifiedToolOutputRecovery === true
             || codexLbToolOutputRecoveryOverrideAcknowledged({ env: opts.env || process.env })
         });
+  const secretResolution = {
+    source: envLoad.source,
+    path: envLoad.source === 'env-file' ? envLoad.env_paths[0] || envPath : null,
+    prompt_risk: 'none' as const
+  };
   return {
     ok: providerReady && (!selected || !probeToolOutputRecovery || toolOutputRecovery.ok),
+    blockers,
+    warnings: definedButNotSelected ? ['codex_lb_defined_but_not_selected'] : [],
+    orphan_managed_markers: orphanManagedMarkerCleanup.orphan_markers,
+    managed_marker_cleanup_required: orphanManagedMarkerCleanup.changed,
+    activation_guidance: definedButNotSelected
+      ? [
+          'Run `sks codex-lb use-cli` to select the CLI provider.',
+          'Run `sks codex-lb use-desktop-full` to activate managed Desktop bridge mode.'
+        ]
+      : [],
     provider_ready: providerReady,
     config_path: configPath,
     env_path: envPath,
@@ -1264,10 +1983,13 @@ export async function codexLbStatus(opts: any = {}) {
       source: envLoad.source,
       source_priority: envLoad.source_priority,
       api_key: envLoad.api_key,
+      blockers: envLoad.blockers,
+      guidance: envLoad.guidance,
       credential_binding: envLoad.credential_binding,
       keychain: envLoad.keychain,
       env_paths: envLoad.env_paths
     },
+    secret_resolution: secretResolution,
     base_url: baseUrl,
     auth_path: authPath,
     auth_mode: authMode.mode,
@@ -1294,6 +2016,21 @@ export async function codexLbStatus(opts: any = {}) {
 export function formatCodexLbStatusText(status: any = {}, opts: any = {}) {
   const backupPresent = Boolean(opts.backupPresent);
   const backupPath = opts.backupPath || '';
+  const resolution = status.secret_resolution || {};
+  const resolutionSource = String(resolution.source || status.env_loader?.source || 'missing');
+  const resolutionPath = resolution.path
+    || (resolutionSource === 'env-file' ? status.env_loader?.env_paths?.[0] || status.env_path : null);
+  const displayResolutionPath = resolutionPath
+    ? formatCodexLbStatusPath(String(resolutionPath), opts.home || os.homedir())
+    : '';
+  const resolutionLabel = displayResolutionPath
+    ? `${resolutionSource} (${displayResolutionPath})`
+    : resolutionSource;
+  const keychainUsage = resolutionSource === 'keychain' ? 'used' : 'not used';
+  const promptRisk = String(
+    resolution.prompt_risk
+      || (resolutionSource === 'keychain' ? 'possible' : 'none')
+  );
   const lines = [
     'SKS codex-lb',
     '',
@@ -1303,7 +2040,8 @@ export function formatCodexLbStatusText(status: any = {}, opts: any = {}) {
     `Provider OpenAI Auth: ${status.provider_requires_openai_auth ? 'required' : 'not required/drifted'} (${status.provider_name || 'missing'})`,
     `Codex App auth: ${status.auth_usable_for_codex_app ? 'ok' : 'needs sign-in/repair'} (${status.auth_mode || 'unknown'})`,
     `Shared OpenAI routing: ${status.shared_openai_routing?.safe === false ? 'unsafe' : status.shared_openai_routing?.status || 'unknown'}${status.shared_openai_routing?.managed ? ' (sks-managed)' : ''}`,
-    `Auth/routing coherent: ${status.auth_routing_coherent ? 'yes' : 'no'}`
+    `Auth/routing coherent: ${status.auth_routing_coherent ? 'yes' : 'no'}`,
+    `Key source: ${resolutionLabel} · keychain: ${keychainUsage} · prompt risk: ${promptRisk}`
   ];
   if (status.tool_output_recovery?.status && status.tool_output_recovery.status !== 'not_selected') {
     const recovery = status.tool_output_recovery;
@@ -1321,16 +2059,30 @@ export function formatCodexLbStatusText(status: any = {}, opts: any = {}) {
   lines.push(`Env file:   ${status.env_file ? status.env_path : 'missing'}`);
   if (status.base_url) lines.push(`Base URL:   ${status.base_url}`);
   lines.push(`ChatGPT backup: ${backupPresent ? `yes (${backupPath})` : 'no'}`);
+  if ((status.warnings || []).includes('codex_lb_defined_but_not_selected')) {
+    lines.push('', 'Warning [codex_lb_defined_but_not_selected]: the codex-lb provider is defined but not selected.');
+    for (const action of status.activation_guidance || []) lines.push(`  ${action}`);
+  }
   if (status.legacy_migration_required || status.shared_openai_routing?.safe === false) lines.push('', 'Run: sks codex-lb migrate-legacy-desktop --restart-app. Ordinary repair will not rewrite shared Codex auth.');
   else if (status.provider_configured && !status.provider_contract_ok) lines.push('', 'Run: sks codex-lb repair to rewrite the provider block to the current codex-lb App contract.');
   else if (status.desktop_mode === 'desktop-native-bridge' && !status.auth_usable_for_codex_app) lines.push('', 'Sign in with ChatGPT OAuth, then run: sks codex-lb use-desktop-full.');
-  else if (status.ok && status.desktop_mode === 'cli-provider' && !status.selected) lines.push('', 'CLI provider is stored but unselected. Run `sks codex-lb use-cli` for CLI use or `sks codex-lb use-desktop-full` for managed Desktop routing.');
-  else if (status.ok && status.desktop_mode === 'desktop-dual-auth-compat') lines.push('', 'Compatibility routing is active. Prefer `sks codex-lb use-desktop-full`; use `sks codex-lb disable` to remove managed Desktop routing.');
+  else if (status.ok && status.desktop_mode === 'cli-provider' && !status.selected && !(status.warnings || []).includes('codex_lb_defined_but_not_selected')) lines.push('', 'CLI provider is stored but unselected. Run `sks codex-lb use-cli` for CLI use or `sks codex-lb use-desktop-full` for managed Desktop routing.');
+  else if (status.desktop_mode === 'desktop-dual-auth-compat') lines.push('', 'The retired compatibility route is blocked. Run `sks codex-lb use-desktop-full` or `sks codex-lb disable`.');
   else if (status.ok) lines.push('', 'Status: configured; no ordinary repair needed.');
   else if (!status.ok && status.base_url && status.env_key_configured) lines.push('', 'Run: sks codex-lb repair. To change routing explicitly, use `use-desktop-full`, `use-cli`, or `disable`.');
+  else if (!status.ok && !status.env_key_configured) lines.push('', 'Gateway key missing. Store CODEX_LB_API_KEY in ~/.codex/sks-codex-lb.env, run `sks codex-lb setup --host <domain> --api-key-stdin --yes`, or provide CODEX_LB_API_KEY in the environment.');
   else if (!status.ok) lines.push('', 'Run: sks codex-lb setup --host <domain> --api-key-stdin');
   if (backupPresent) lines.push('Legacy OAuth backup detected; use `sks codex-lb migrate-legacy-desktop --restart-app` instead of background auth switching.');
   return `${lines.join('\n')}\n`;
+}
+
+function formatCodexLbStatusPath(file: string, home: string): string {
+  const resolvedFile = path.resolve(file);
+  const resolvedHome = path.resolve(String(home || ''));
+  const relative = path.relative(resolvedHome, resolvedFile);
+  return relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+    ? `~/${relative.split(path.sep).join('/')}`
+    : file;
 }
 
 export function formatCodexLbRepairResultText(result: any = {}) {
@@ -2273,7 +3025,15 @@ export async function maybePromptCodexLbSetupForLaunch(args: any = [], opts: any
   const configured = await configureCodexLb({ ...opts, host, apiKey, allowUnverifiedToolOutputRecovery });
   if (configured.ok) console.log(`codex-lb credentials stored: ${configured.base_url}. Use \`sks codex-lb use-cli\`, \`use-desktop-full\`, or \`disable\` explicitly.`);
   else console.log('codex-lb setup skipped: API key was empty.');
+  printCodexLbSetupWarnings(configured);
   return configured;
+}
+
+function scrubCodexLbToolEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const sanitized = { ...env };
+  delete sanitized.CODEX_LB_API_KEY;
+  delete sanitized.OPENROUTER_API_KEY;
+  return sanitized;
 }
 
 async function syncCodexLbProviderEnvironment(status: any = {}, opts: any = {}): Promise<CodexLbEnvSyncResult> {
@@ -2300,9 +3060,15 @@ async function syncCodexLbProviderEnvironment(status: any = {}, opts: any = {}):
 async function syncCodexLbMacLaunchEnvironment(values: any = {}, opts: any = {}) {
   if (opts.syncLaunchEnv === false || process.env.SKS_SKIP_CODEX_LB_LAUNCH_ENV === '1') return { ok: true, status: 'skipped', skipped: true, reason: 'SKS_SKIP_CODEX_LB_LAUNCH_ENV=1' };
   if (process.platform !== 'darwin' && !opts.forceLaunchEnv) return { ok: true, status: 'not_macos', skipped: true };
-  const launchctl = opts.launchctlBin || await which('launchctl').catch(() => null) || await exists('/bin/launchctl').then((ok: any) => ok ? '/bin/launchctl' : null).catch(() => null);
-  if (!launchctl) return { ok: false, status: 'launchctl_missing', error: 'launchctl not found on PATH' };
-  const secretCleanup = await cleanupMacLaunchSecretEnvironment({ force: opts.forceLaunchEnv === true }).catch((err: any) => ({
+  const launchctl = opts.launchctlBin
+    || await exists('/bin/launchctl').then((ok: any) => ok ? '/bin/launchctl' : null).catch(() => null);
+  if (!launchctl) return { ok: false, status: 'launchctl_missing', error: '/bin/launchctl not found' };
+  const childEnv = scrubCodexLbToolEnvironment();
+  const secretCleanup = await cleanupMacLaunchSecretEnvironment({
+    force: opts.forceLaunchEnv === true,
+    launchctlBin: launchctl,
+    env: childEnv
+  }).catch((err: any) => ({
     ok: false,
     status: 'partial',
     variables: ['CODEX_LB_API_KEY', 'OPENROUTER_API_KEY'],
@@ -2313,7 +3079,12 @@ async function syncCodexLbMacLaunchEnvironment(values: any = {}, opts: any = {})
   const variables = Object.entries(values).filter(([key, value]: any) => value && !['CODEX_LB_API_KEY', 'OPENROUTER_API_KEY'].includes(String(key)));
   const results: any[] = [];
   for (const [key, value] of variables) {
-    const result = await runProcess(launchctl, ['setenv', key, String(value)], { timeoutMs: 5000, maxOutputBytes: 8192 });
+    const result = await runProcess(launchctl, ['setenv', key, String(value)], {
+      timeoutMs: 5000,
+      maxOutputBytes: 8192,
+      env: childEnv,
+      envMode: 'replace'
+    });
     results.push({
       key,
       ok: result.code === 0,
@@ -2333,10 +3104,17 @@ async function syncCodexLbMacLaunchEnvironment(values: any = {}, opts: any = {})
 
 async function inspectCodexLbMacLaunchEnvironment(baseUrl: any = '', opts: any = {}) {
   if (process.platform !== 'darwin' && !opts.forceLaunchEnv) return { checked: false, status: 'not_macos', skipped: true };
-  const launchctl = opts.launchctlBin || await which('launchctl').catch(() => null) || await exists('/bin/launchctl').then((ok: any) => ok ? '/bin/launchctl' : null).catch(() => null);
+  const launchctl = opts.launchctlBin
+    || await exists('/bin/launchctl').then((ok: any) => ok ? '/bin/launchctl' : null).catch(() => null);
   if (!launchctl) return { checked: true, available: false, status: 'launchctl_missing' };
+  const childEnv = scrubCodexLbToolEnvironment();
   const readVar = async (key: string) => {
-    const result = await runProcess(launchctl, ['getenv', key], { timeoutMs: 3000, maxOutputBytes: 8192 });
+    const result = await runProcess(launchctl, ['getenv', key], {
+      timeoutMs: 3000,
+      maxOutputBytes: 8192,
+      env: childEnv,
+      envMode: 'replace'
+    });
     return result.code === 0 ? String(result.stdout || '').trim() : '';
   };
   // launchctl can stall behind the same launchd/TCC boundary for every key.

@@ -629,6 +629,140 @@ test('SubagentStart uses configured official max_threads and SubagentStop is evi
   }
 });
 
+test('same-session follow-up prompts remain bound to the open official workflow run', async () => {
+  const root = await tempRoot('sks-official-active-run-followups-');
+  const session = 'official-active-run-parent';
+  try {
+    await fsp.mkdir(path.join(root, '.codex'), { recursive: true });
+    await fsp.writeFile(path.join(root, '.codex', 'config.toml'), '[agents]\nmax_threads = 4\nmax_depth = 1\n');
+    await prepareRoute(root, '$Naruto --agents 1 implement the active workflow', {}, {
+      sessionKey: session,
+      parentModel: 'gpt-5.6-sol'
+    });
+    const initialState: any = await loadStateForSession(root, session);
+    const missionId = initialState.mission_id;
+    const workflowRunId = initialState.official_subagent_run_id;
+    const dir = missionDir(root, missionId);
+    await evaluateHookPayload('subagent-start', {
+      ...officialSubagentHookPayload('SubagentStart', 'active-run-child'),
+      session_id: session,
+      turn_id: 'active-run-child-turn'
+    }, { root, state: initialState });
+
+    for (const [turnId, prompt] of [
+      ['followup-1', 'Also add a regression check for exact stop cleanup.'],
+      ['followup-2', '$sks-dfix also include the compact and resume binding in this same task.']
+    ]) {
+      const result: any = await evaluateHookPayload('user-prompt-submit', {
+        conversation_id: session,
+        turn_id: turnId,
+        prompt
+      }, { root });
+      assert.equal(result.queued_active_workflow_run_id, workflowRunId);
+      assert.match(String(result.additionalContext || ''), new RegExp(workflowRunId));
+      const current: any = await loadStateForSession(root, session);
+      const plan = JSON.parse(await fsp.readFile(path.join(dir, 'subagent-plan.json'), 'utf8'));
+      assert.equal(current.mission_id, missionId);
+      assert.equal(current.official_subagent_run_id, workflowRunId);
+      assert.equal(plan.workflow_run_id, workflowRunId);
+      assert.equal(plan.wave_lifecycle.open_threads, 1);
+    }
+
+    const replacement: any = await evaluateHookPayload('user-prompt-submit', {
+      conversation_id: session,
+      turn_id: 'replacement-while-open',
+      prompt: 'Cancel the current workflow and answer a different question instead.'
+    }, { root });
+    assert.equal(replacement.decision, 'block');
+    assert.match(String(replacement.reason || ''), /1 child thread\(s\) remain open/);
+
+    const activeQueueFile = path.join(
+      dir,
+      'active-workflow-user-queue',
+      `run-${sha256(JSON.stringify([missionId, workflowRunId]))}.jsonl`
+    );
+    const queued = (await fsp.readFile(activeQueueFile, 'utf8'))
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    assert.equal(queued.length, 2);
+    assert.ok(queued.every((row) => row.mission_id === missionId));
+    assert.ok(queued.every((row) => row.workflow_run_id === workflowRunId));
+
+    await evaluateHookPayload('subagent-stop', {
+      ...officialSubagentHookPayload('SubagentStop', 'active-run-child', 'Active child settled.'),
+      session_id: session,
+      turn_id: 'active-run-child-turn'
+    }, { root });
+    const settledReplacement: any = await evaluateHookPayload('user-prompt-submit', {
+      conversation_id: session,
+      turn_id: 'replacement-after-settle',
+      prompt: '$Naruto replace the current workflow with a new settled replacement task.'
+    }, { root });
+    assert.equal(settledReplacement.decision, undefined);
+    const replacedState: any = await loadStateForSession(root, session);
+    assert.notEqual(replacedState.official_subagent_run_id, workflowRunId);
+    await assert.rejects(fsp.access(activeQueueFile));
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('active workflow additions fail closed at bounded prompt and queue limits', async () => {
+  const root = await tempRoot('sks-official-active-run-queue-bounds-');
+  const session = 'official-active-run-bounds-parent';
+  try {
+    await fsp.mkdir(path.join(root, '.codex'), { recursive: true });
+    await fsp.writeFile(path.join(root, '.codex', 'config.toml'), '[agents]\nmax_threads = 4\nmax_depth = 1\n');
+    await prepareRoute(root, '$Naruto --agents 1 keep bounded follow-up state', {}, {
+      sessionKey: session,
+      parentModel: 'gpt-5.6-sol'
+    });
+    const state: any = await loadStateForSession(root, session);
+    const dir = missionDir(root, state.mission_id);
+    await evaluateHookPayload('subagent-start', {
+      ...officialSubagentHookPayload('SubagentStart', 'bounded-queue-child'),
+      session_id: session,
+      turn_id: 'bounded-queue-child-turn'
+    }, { root, state });
+
+    const oversized: any = await evaluateHookPayload('user-prompt-submit', {
+      conversation_id: session,
+      turn_id: 'oversized-active-addition',
+      prompt: `$sks-dfix also preserve ${'x'.repeat((32 * 1024) + 1)}`
+    }, { root });
+    assert.equal(oversized.decision, 'block');
+    assert.match(String(oversized.reason || ''), /active_workflow_prompt_too_large/);
+
+    const queueFile = path.join(
+      dir,
+      'active-workflow-user-queue',
+      `run-${sha256(JSON.stringify([state.mission_id, state.official_subagent_run_id]))}.jsonl`
+    );
+    await fsp.mkdir(path.dirname(queueFile), { recursive: true });
+    const rows = Array.from({ length: 256 }, (_, index) => JSON.stringify({
+      schema: 'sks.active-official-subagent-request.v1',
+      workflow_run_id: state.official_subagent_run_id,
+      prompt: `queued-${index}`
+    }));
+    await fsp.writeFile(queueFile, `${rows.join('\n')}\n`);
+    const before = await fsp.readFile(queueFile, 'utf8');
+    const full: any = await evaluateHookPayload('user-prompt-submit', {
+      conversation_id: session,
+      turn_id: 'full-active-addition',
+      prompt: '$sks-dfix also preserve this bounded addition.'
+    }, { root });
+    assert.equal(full.decision, 'block');
+    assert.match(String(full.reason || ''), /active_workflow_queue_full/);
+    assert.equal(await fsp.readFile(queueFile, 'utf8'), before);
+    const current: any = await loadStateForSession(root, session);
+    assert.equal(current.official_subagent_run_id, state.official_subagent_run_id);
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
 test('an explicit foreign hook session never inherits the active legacy global mission', async () => {
   const root = await tempRoot('sks-official-hook-session-isolation-');
   const parentSession = 'official-parent-session';
@@ -670,8 +804,10 @@ test('Naruto hooks accumulate later root waves under one workflow run and clear 
     const state: any = await loadStateForSession(root, session);
     const dir = missionDir(root, state.mission_id);
     const initialPlan = JSON.parse(await fsp.readFile(path.join(dir, 'subagent-plan.json'), 'utf8'));
-    assert.equal(initialPlan.first_wave, 3);
-    assert.equal(initialPlan.wave_count, 2);
+    // agents.max_threads is already a spawned-child cap. The root is carried
+    // separately by multi-agent V2 and must not consume one of these four slots.
+    assert.equal(initialPlan.first_wave, 4);
+    assert.equal(initialPlan.wave_count, 1);
 
     for (const threadId of ['wave-1-a', 'wave-1-b']) {
       await evaluateHookPayload('subagent-start', officialSubagentHookPayload('SubagentStart', threadId), { root, state });
@@ -1058,8 +1194,8 @@ test('automatic bounded work materializes the bounded Naruto workflow', async ()
     const dir = missionDir(root, state.mission_id);
     await fsp.access(path.join(dir, 'pipeline-plan.json'));
     const plan = JSON.parse(await fsp.readFile(path.join(dir, 'subagent-plan.json'), 'utf8'));
-    assert.ok(plan.requested_subagents >= 4);
-    assert.ok(plan.requested_subagents <= 12);
+    assert.equal(plan.requested_subagents, 4);
+    assert.equal(plan.fanout_policy.automatic_ceiling, 256);
     assert.equal(plan.requested_subagents_explicit, false);
     await fsp.access(path.join(dir, 'naruto-gate.json'));
   } finally {

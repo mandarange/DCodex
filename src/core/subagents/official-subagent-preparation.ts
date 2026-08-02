@@ -25,6 +25,8 @@ import {
   resolveSubagentThreadBudget,
   type SubagentThreadBudgetInput
 } from './thread-budget.js'
+import { decideNarutoConcurrency } from '../naruto/naruto-concurrency-governor.js'
+import type { HardwareCapacityProbeInput } from '../naruto/hardware-capacity-probe.js'
 import { createSubagentWaveLifecycle } from './wave-lifecycle.js'
 import { decideOfficialSubagentModel } from '../agents/agent-effort-policy.js'
 import { readBoundedTriwikiAttention } from './triwiki-attention.js'
@@ -62,6 +64,7 @@ export const NARUTO_SUMMARY_FILENAME = 'naruto-summary.json'
 export const NARUTO_GATE_FILENAME = 'naruto-gate.json'
 export const OFFICIAL_SUBAGENT_LIFECYCLE_LOCK = '.subagent-evidence.lock'
 export const OFFICIAL_SUBAGENT_PREPARATION_TRANSACTION = '.official-subagent-preparation-transaction.json'
+export const SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_DIR = 'subagent-lifecycle-capture-failures'
 const OFFICIAL_SUBAGENT_PREPARATION_STAGE_PREFIX = '.official-subagent-preparation-stage-'
 
 export function withOfficialSubagentLifecycleLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
@@ -87,6 +90,7 @@ export interface OfficialSubagentPreparationInput {
   readOnly?: boolean
   observedParentModel?: string | null
   env?: NodeJS.ProcessEnv
+  hardware?: HardwareCapacityProbeInput
   preparationOnly?: boolean
   statePatch?: (prepared: {
     plan: Record<string, any>
@@ -121,7 +125,6 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
   const mode = input.mode === 'naruto' ? 'naruto' : 'generic'
   const taskProfile = classifyTaskProfile(goal)
   const slices = Array.isArray(input.slices) ? input.slices : []
-  const decompositionStatus = slices.length > 0 ? 'ready' : 'parent_required'
   const sliceSafety = validateOfficialSubagentSlices(slices)
   const suggestedAgents = uniqueStrings([
     ...recommendOfficialSubagentRoles({
@@ -182,12 +185,40 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
     suggestedRoles: suggestedAgents,
     goal,
     maxThreads: input.maxThreads ?? officialConfig.maxThreads,
+    ...(input.hardware ? { hardware: input.hardware } : {}),
     ...(slices.length > 0 ? { independentSliceCount: slices.length } : {})
+  })
+  const decompositionStatus = slices.length > 0 && (
+    requestedSource === 'automatic'
+    || slices.length === selectedFanoutPolicy.requested_subagents
+  )
+    ? 'ready'
+    : 'parent_required'
+  const configuredMaxThreads = input.maxThreads ?? officialConfig.maxThreads
+  // Configured frame limits express SKS/operator intent; they do not prove what
+  // the already-running Codex host actually exposes. Only runtime-observed
+  // capacity supplied by the host is authoritative as an external limiter.
+  const externalCodexHostCap = input.capacity?.externalCodexHostCap
+  const externalCodexHostCapVerification = externalCodexHostCap === undefined
+    ? 'unverified_external_host_cap'
+    : 'verified'
+  const waveGovernor = decideNarutoConcurrency({
+    requestedWorkers: Math.min(selectedFanoutPolicy.requested_subagents, configuredMaxThreads),
+    totalWorkItems: selectedFanoutPolicy.requested_subagents,
+    backend: 'official-subagent',
+    parallelismMode: 'extreme',
+    maxThreads: configuredMaxThreads,
+    ...(externalCodexHostCap === undefined ? {} : { externalCodexHostCap }),
+    ...(input.hardware ? { hardware: input.hardware } : {})
   })
   const budget = resolveSubagentThreadBudget({
     requested: selectedFanoutPolicy.requested_subagents,
-    configuredMaxThreads: input.maxThreads ?? officialConfig.maxThreads,
+    configuredMaxThreads,
     ...(input.capacity || {}),
+    ...(externalCodexHostCap === undefined ? {} : { externalCodexHostCap }),
+    ...(input.capacity?.marginalUsefulWorkers === undefined
+      ? { marginalUsefulWorkers: waveGovernor.safe_active_workers }
+      : {}),
     // Demand-driven: reserve reviewer frame slots only for reviewer-only /
     // critical multi-domain fanout — not because a role catalog mentions expert.
     reviewerReservedThreads: selectedFanoutPolicy.selection_reason.includes('reviewer')
@@ -208,7 +239,11 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
   const fanoutPolicy = {
     ...selectedFanoutPolicy,
     requested_subagents: budget.requestedSubagents,
-    capacity_controller: budget.capacity
+    capacity_controller: budget.capacity,
+    mass_parallel: selectedFanoutPolicy.mass_parallel === true,
+    mass_automatic_ceiling: selectedFanoutPolicy.mass_parallel === true
+      ? selectedFanoutPolicy.automatic_ceiling
+      : null
   }
   const observedParentModel = String(input.observedParentModel || '').trim() || null
   const parentModelMatch = observedParentModel ? observedParentModelMatchesPolicy(observedParentModel) : null
@@ -288,6 +323,11 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
     ...roleModelCatalogBlockers,
     ...ssotGuardValidation.issues.map((issue) => `ssot_guard:${issue}`),
     ...sliceSafety.blockers.map((blocker) => `subagent_slice:${blocker}`),
+    ...(requestedSource !== 'automatic'
+      && slices.length > 0
+      && slices.length < budget.requestedSubagents
+      ? [`exact_subagent_decomposition_incomplete:requested=${budget.requestedSubagents}:ready_slices=${slices.length}`]
+      : []),
     ...(budget.capacity.exhausted ? ['subagent_capacity_exhausted'] : [])
   ]
   const plan = {
@@ -313,7 +353,8 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
     wave_lifecycle: createSubagentWaveLifecycle({
       workflowRunId,
       targetSubagents: budget.requestedSubagents,
-      countPolicy: requestedSource === 'automatic' ? 'dynamic_automatic' : 'exact'
+      countPolicy: requestedSource === 'automatic' ? 'dynamic_automatic' : 'exact',
+      waveCapacity: budget.firstWave
     }),
     config_source: input.maxThreads === undefined ? officialConfig.sources.maxThreads : 'cli',
     config_sources: officialConfig.sources,
@@ -322,6 +363,15 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
     suggested_agents: suggestedAgents,
     fanout_policy: fanoutPolicy,
     capacity_controller: budget.capacity,
+    external_codex_host_cap_verification: externalCodexHostCapVerification,
+    concurrency_governor: {
+      ...waveGovernor,
+      external_codex_host_cap_verification: externalCodexHostCapVerification,
+      reasons: uniqueStrings([
+        ...waveGovernor.reasons,
+        ...(externalCodexHostCap === undefined ? ['unverified_external_host_cap'] : [])
+      ])
+    },
     slice_safety: sliceSafety,
     slices,
     parent_model_policy: NARUTO_PARENT_MODEL,
@@ -573,6 +623,7 @@ function officialSubagentPreparationArtifactInventory(mode: 'generic' | 'naruto'
 function officialSubagentPreparationTombstoneInventory(mode: 'generic' | 'naruto') {
   return [
     SUBAGENT_PARENT_SUMMARY_FILENAME,
+    SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_DIR,
     ...(mode === 'naruto'
       ? [
           'completion-proof.json',
@@ -700,7 +751,9 @@ async function promoteOfficialSubagentPreparationBundle(
   await validateOfficialSubagentPreparationBundle(stageDir, marker)
   const inventory = officialSubagentPreparationArtifactInventory(marker.mode === 'naruto' ? 'naruto' : 'generic')
   const tombstones = officialSubagentPreparationTombstoneInventory(marker.mode === 'naruto' ? 'naruto' : 'generic')
-  await Promise.all(tombstones.map((name) => fsp.rm(path.join(dir, name), { force: true })))
+  await Promise.all(tombstones.map((name) => (
+    fsp.rm(path.join(dir, name), { recursive: true, force: true })
+  )))
   for (const name of inventory.filter((item) => item !== SUBAGENT_PLAN_FILENAME)) {
     await writeTextAtomic(path.join(dir, name), await fsp.readFile(path.join(stageDir, name), 'utf8'))
   }

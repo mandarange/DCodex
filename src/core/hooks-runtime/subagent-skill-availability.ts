@@ -1,13 +1,13 @@
 import path from 'node:path';
 import { nowIso, sha256 } from '../fsx.js';
 import {
-  resolveAuthoritativeSksSkillSources,
   type SksSkillSourceResolution
 } from '../codex-native/sks-skill-paths.js';
+import { resolveManagedSkillSourcesForAdmission } from './managed-skill-admission.js';
 import {
   ADMISSION_SCHEMA,
-  MAX_LIFECYCLE_GUARD_ENTRIES,
   MAX_LIFECYCLE_GUARD_BYTES,
+  MAX_LIFECYCLE_THREADS,
   SUBAGENT_SKILL_AVAILABILITY_BLOCKER_FILENAME,
   SUBAGENT_SKILL_AVAILABILITY_BLOCKER_SCHEMA,
   SubagentSkillAvailabilityGuardError,
@@ -19,12 +19,14 @@ import {
 import {
   admissionFingerprint,
   admissionGuardRoots,
+  admissionGuardRootsWithLegacyMirrors,
   blockedRunAdmissions,
   boundedAgentThreadId,
   invalidGuard,
   officialSubagentThreadIdFromSessions,
   officialSubagentThreadIdFromTranscript,
   preToolBlockReason,
+  readAdmissionForThread,
   readAdmissionPair,
   readBoundedConfinedJson,
   readConfinedJson,
@@ -98,7 +100,15 @@ export async function persistSubagentSkillAvailabilityBlocker(input: {
     blockers,
     recorded_at: nowIso()
   };
-  const roots = await admissionGuardRoots(input.root, input.artifactDir);
+  const binding = {
+    missionId: admission.mission_id,
+    workflowRunId: admission.workflow_run_id
+  };
+  const { scoped: roots } = await admissionGuardRootsWithLegacyMirrors(
+    input.root,
+    input.artifactDir,
+    binding
+  );
   // Publish a bounded denial before clearing stale evidence so an earlier
   // allowed pair cannot survive a partial healthy restart.
   const guardedAdmission: SubagentSkillAvailabilityAdmission = blockers.length
@@ -201,14 +211,23 @@ export async function subagentSkillAvailabilityPreToolBlockReason(
     : null;
   const admissions: SubagentSkillAvailabilityAdmission[] = [];
   const errors: unknown[] = [];
-  for (const guardRoot of await admissionGuardRoots(root, artifactDir)) {
-    try {
-      const admission = await readAdmissionPair(guardRoot, threadHash, sessionHash, turnHash);
-      if (admission) admissions.push(admission);
-    } catch (error: unknown) {
-      errors.push(error);
+  const binding = { missionId: activeMissionId, workflowRunId: activeWorkflowRunId };
+  const { scoped, legacy } = await admissionGuardRootsWithLegacyMirrors(root, artifactDir, binding);
+  const readRoots = async (roots: typeof scoped) => {
+    for (const guardRoot of roots) {
+      try {
+        const admission = await readAdmissionPair(guardRoot, threadHash, sessionHash, turnHash);
+        if (admission) admissions.push(admission);
+      } catch (error: unknown) {
+        errors.push(error);
+      }
     }
-  }
+  };
+  await readRoots(scoped);
+  // Legacy exact-path guards are compatibility-only. They are consulted only
+  // when the run-partition source of truth has no evidence, so stale mirrors
+  // cannot conflict with or grow alongside current admissions.
+  if (!admissions.length && !errors.length) await readRoots(legacy);
   const invalidChildEvidence = errors.some((error) => (
     error instanceof SubagentSkillAvailabilityGuardError && error.childEvidence
   ));
@@ -286,9 +305,10 @@ export async function recoverResumedOfficialSubagentSkillAvailabilityAdmission(i
     .map((name) => String(name || '').trim())
     .filter(Boolean))];
   if (!skillNames.length) return false;
-  const resolution = await resolveAuthoritativeSksSkillSources({
+  const resolution = await resolveManagedSkillSourcesForAdmission({
     root: input.root,
-    skillNames
+    skillNames,
+    repairMode: 'stale-generation'
   }).catch(() => null);
   if (authoritativeSksSkillResolutionBlockers(resolution).length) return false;
   await persistSubagentSkillAvailabilityBlocker({
@@ -310,26 +330,58 @@ export async function recoverResumedOfficialSubagentSkillAvailabilityAdmission(i
 export async function clearSubagentSkillAvailabilityGuards(
   root: string,
   payload: any,
-  artifactDir?: string | null
+  artifactDir?: string | null,
+  activeBinding?: SubagentSkillAvailabilityActiveBinding | null
 ): Promise<void> {
-  const threadId = String(payload?.agent_id || '').trim();
+  const threadId = boundedAgentThreadId(payload?.agent_id);
   const sessionScope = String(payload?.session_id || '').trim();
   const turnId = String(payload?.turn_id || '').trim();
-  const roots = await admissionGuardRoots(root, artifactDir);
-  const files: Array<{ file: string; boundary: string }> = [];
-  if (threadId) files.push(...roots.map((guardRoot) => ({
-    file: threadGuardPath(guardRoot.root, sha256(threadId)),
-    boundary: guardRoot.boundary
-  })));
-  if (sessionScope && turnId) {
-    const sessionHash = sha256(sessionScope);
-    const turnHash = sha256(turnId);
-    files.push(...roots.map((guardRoot) => ({
-      file: turnGuardPath(guardRoot.root, sessionHash, turnHash),
-      boundary: guardRoot.boundary
-    })));
-  }
-  await Promise.all(files.map(({ file, boundary }) => safeRemoveGuard(file, boundary)));
+  const missionId = String(activeBinding?.missionId || '').trim();
+  const workflowRunId = String(activeBinding?.workflowRunId || '').trim();
+  const payloadWorkflowRunId = String(
+    payload?.workflow_run_id || payload?.run_id || ''
+  ).trim();
+  if (!threadId || !missionId || !workflowRunId) return;
+  if (payloadWorkflowRunId && payloadWorkflowRunId !== workflowRunId) return;
+  const threadHash = sha256(threadId);
+  const sessionHash = sessionScope ? sha256(sessionScope) : null;
+  const turnHash = turnId ? sha256(turnId) : null;
+  const { scoped, legacy } = await admissionGuardRootsWithLegacyMirrors(root, artifactDir, {
+    missionId,
+    workflowRunId
+  });
+  await Promise.all([...scoped, ...legacy].map(async (guardRoot) => {
+    let admission: SubagentSkillAvailabilityAdmission | null;
+    try {
+      admission = await readAdmissionForThread(guardRoot, threadHash);
+      if (admission) {
+        admission = await readAdmissionPair(
+          guardRoot,
+          threadHash,
+          admission.session_scope_hash,
+          admission.turn_id_hash
+        );
+      }
+    } catch {
+      return;
+    }
+    if (!admission
+      || admission.mission_id !== missionId
+      || admission.workflow_run_id !== workflowRunId
+      || (sessionHash && admission.session_scope_hash !== sessionHash)
+      || (turnHash && admission.turn_id_hash !== turnHash)) return;
+    await Promise.all([
+      safeRemoveGuard(threadGuardPath(guardRoot.root, threadHash), guardRoot.boundary),
+      safeRemoveGuard(
+        turnGuardPath(
+          guardRoot.root,
+          admission.session_scope_hash,
+          admission.turn_id_hash
+        ),
+        guardRoot.boundary
+      )
+    ]);
+  }));
 }
 
 export async function subagentSkillAvailabilityRunBlockers(
@@ -339,7 +391,10 @@ export async function subagentSkillAvailabilityRunBlockers(
   workflowRunId: string
 ): Promise<string[]> {
   const blockers: string[] = [];
-  for (const guardRoot of await admissionGuardRoots(root, artifactDir)) {
+  for (const guardRoot of await admissionGuardRoots(root, artifactDir, {
+    missionId,
+    workflowRunId
+  })) {
     blockers.push(...await blockedRunAdmissions(guardRoot, missionId, workflowRunId));
   }
   blockers.push(...await emergencyRunBlockers(root, artifactDir, missionId, workflowRunId));
@@ -361,7 +416,7 @@ export async function subagentSkillAvailabilityRunBlockers(
   return [...new Set([...blockers, ...blocker.blockers])];
 }
 
-function resumedOfficialThreadBelongsToActiveRun(
+export function resumedOfficialThreadBelongsToActiveRun(
   plan: any,
   missionId: string,
   workflowRunId: string,
@@ -377,7 +432,7 @@ function resumedOfficialThreadBelongsToActiveRun(
     || String(lifecycle?.workflow_run_id || '').trim() !== workflowRunId
     || !Array.isArray(lifecycle?.waves)
     || lifecycle.waves.length < 1
-    || lifecycle.waves.length > MAX_LIFECYCLE_GUARD_ENTRIES) return false;
+    || lifecycle.waves.length > MAX_LIFECYCLE_THREADS) return false;
   const assigned = new Set<string>();
   const settled = new Set<string>();
   for (const wave of lifecycle.waves) {
@@ -390,7 +445,7 @@ function resumedOfficialThreadBelongsToActiveRun(
       if (!boundedThreadId || boundedThreadId !== rawThreadId || assigned.has(boundedThreadId)) return false;
       waveAssigned.add(boundedThreadId);
       assigned.add(boundedThreadId);
-      if (assigned.size > MAX_LIFECYCLE_GUARD_ENTRIES) return false;
+      if (assigned.size > MAX_LIFECYCLE_THREADS) return false;
     }
     for (const rawThreadId of wave.settled_thread_ids) {
       const boundedThreadId = boundedAgentThreadId(rawThreadId);

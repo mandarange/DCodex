@@ -1,7 +1,7 @@
-# SKS 8.0.0 Release Readiness
+# SKS 8.0.4 Release Readiness
 
 This document is the current fail-closed release contract for `sneakoscope`
-8.0.0. The current package version on this branch is 8.0.0. It is a readiness
+8.0.4. The current package version on this branch is 8.0.4. It is a readiness
 checklist, not evidence that the version has already been published.
 
 ## Completion Boundary
@@ -49,6 +49,10 @@ path.
 - Control Center updates do not terminate the active UI before the final
   operation receipt is synchronized;
 - failed generation or installation restores the prior known-good app;
+- direct launch, launchd, Doctor, and update converge on exactly one global
+  Menu Bar process under `~/.codex/sks-menubar`;
+- update stops and verifies every prior companion before replacement, then the
+  running-process version probe must equal the current package version;
 - icons, notifications, action logs, and Codex lifecycle visibility are real;
 - secrets never appear in menu rows, command arguments, logs, or receipts.
 
@@ -66,20 +70,70 @@ path.
 - TTL, refresh, single-flight, offline, and malformed-version cases are tested;
 - update review records package, active Node/npm path, previous version, and
   rollback instructions;
-- both the previous binary and newly installed package-local binary run
-  migration-profile `doctor --fix`;
+- the previous binary runs a read-only migration preflight, while the newly
+  installed package-local binary owns the migration-profile repair pass;
 - every nested Doctor, npm lifecycle, and explicitly opted-in postinstall
   process inherits Menu Bar restart deferral while the update parent owns
   completion;
 - migration-profile Doctor cannot apply or launch the Menu Bar phase;
+- migration-profile Doctor treats the project migration receipt as the sole
+  owner of legacy-surface mutation, then performs a fresh read-only
+  public-surface inspection; pre-repair findings cannot remain as stale final
+  blockers, and a failed post-receipt inspection still fails the update;
 - the new binary is resolved and verified before success is reported;
+- the exact npm-global package manifest and package-local entrypoint both
+  report the target version, the first `sks` on the injected `PATH` reports
+  that same version, and an older shadowing prefix fails closed instead of
+  being masked by newer npm metadata;
 - an interrupted update leaves a precise receipt and recovery path;
-- the menu companion is rebuilt from the newly installed package.
+- the menu companion is rebuilt from the newly installed package;
+- a fixture with 5,001 scanned directories completes `sks update`; bounded
+  guidance truncation is reported as the non-blocking
+  `guidance_scan_truncated` warning with its cutoff path/count and is never
+  relabeled as legacy residue;
+- regenerable `.venv`, `venv`, `target`, `.cache`, `.tox`, `__pycache__`,
+  `Pods`, and `DerivedData` trees are excluded from nested guidance scanning;
+- an unmanaged config already equal to the expected bytes passes verify-only,
+  while a needed ownership change remains blocked with the exact file, marker,
+  and `sks config adopt` remedy; adoption inserts only the marker after a
+  backup and receipt;
+- `sks update now`, including the already-current path used by the Control
+  Center, runs a final read-only migration-profile Doctor after Menu Bar
+  signature verification, records the exact `update_finalize_doctor` stage,
+  and cannot pass final self-verification when that stage fails or times out;
+- the new-version migration Doctor validates managed project and global
+  `config.toml` syntax, writes guarded backups before repair, preserves
+  user-owned project files, and treats TOML basic and literal strings
+  equivalently; the final Doctor verifies that result without mutation; and
+- codex-lb never asks a reusable interpreter or generic security process to
+  read or write the gateway secret. The public CLI uses the owner-only `0600`
+  env file; Keychain requests fail closed until a dedicated signed helper can
+  prove its identity and post-write state.
 - a Control Center update relaunches the companion only after install,
   verification, and receipt synchronization complete.
 - Codex identity, model, reasoning effort, Fast state, user-owned catalog, and
   codex-lb routing mode are preserved across update; the gateway credential is
   never substituted into the shared Codex auth slot.
+
+### OAuth Callback And Managed Skill Recovery
+
+- Doctor performs one bounded, read-only TCP 1455 listener probe and reports a
+  conflict only when a legitimate `127.0.0.1:1455` Codex listener coexists
+  with a wildcard or IPv6 listener owned by a different process;
+- only a detected conflict adds the `localhost` to `127.0.0.1` immediate-retry
+  guidance to Doctor and Codex authentication failures; the probe never
+  changes redirect URIs, Docker/codex-lb, processes, credentials, or ports;
+- an unavailable or timed-out listener probe degrades to diagnostic
+  unavailability without blocking unrelated Doctor work or leaking command
+  lines;
+- authoritative managed-skill digest repair is limited to confined regular
+  non-symlink files with an SKS managed marker and matching canonical name;
+- every managed-skill replacement creates a recoverable timestamped backup
+  and durable migration-journal entry before the authoritative bytes are
+  committed, including newer and unparseable legacy marker versions; and
+- markerless, name-mismatched, symlinked, nonregular, or path-unsafe files
+  remain byte-preserved and blocked. No digest allowlist or
+  `sks.skills-manifest.v2` migration is permitted by this release.
 
 ### Codex Desktop Chat, Pro, And Fast
 
@@ -97,20 +151,29 @@ path.
 - live Desktop picker visibility remains a post-restart observation boundary,
   not something fixture or TOML evidence can prove by itself.
 
-### codex-lb Desktop Full Capability
+### codex-lb Routing Truth
 
-- real ChatGPT OAuth and the built-in OpenAI provider remain selected in every
-  codex-lb routing mode;
-- activation and migration require active loopback HTTP plus WebSocket
-  transport and roll back config/service state on failure;
+- shared `~/.codex/auth.json` remains byte-preserved. The official provider
+  uses it only when codex-lb is off; a selected codex-lb route authenticates
+  with the separate gateway key and cannot silently fall back to OAuth;
+- **Use codex-lb** commits the provider definition and top-level active
+  selection in one guarded transaction, and update/repair preserve that choice;
+- retired dual-auth compatibility configuration is detectable for migration
+  but cannot be activated or reported ready because it requires a global GUI
+  secret;
+- activation requires one measured request to the configured remote base URL;
+  Doctor and the Menu Bar must render the same target host, authentication
+  class, measurement time, and latency, and roll back or remain blocked on
+  failure;
 - deep capability input is accepted only with a matching fresh producer,
   target, content hash, and out-of-band trust-anchor set;
 - the full release real-check records current real Desktop evidence as optional
   live coverage for
   picker/Fast, image artifact, Computer Use feedback, browser, voice,
   plugins/apps, auxiliary routes, existing/new threads, disable/rollback,
-  restart/reboot recovery, authentication-mode independence, and the
-  separately hosted other-Mac codex-lb runtime;
+  restart/reboot recovery, authentication-mode independence, the separately
+  hosted other-Mac codex-lb runtime, and a measured gateway-key request whose
+  target equals the selected remote base URL;
 - absence of that evidence is `real_required_missing` for the standalone
   capability proof and remains explicit unproven live coverage in the release
   report; it does not make Linux CI or a CLI-only workstation impersonate a
@@ -121,6 +184,12 @@ path.
 - Naruto evidence includes plan, lifecycle events, parent summary, evidence,
   work-order ledger, summary, and gate;
 - every requested official thread has one trustworthy parent outcome;
+- explicit `--agents` and `--max-threads` values from 1 through 256 remain
+  authoritative rather than being reduced to automatic fan-out tiers;
+- `--max-threads 256` is a child-slot ceiling and does not subtract the root a
+  second time, but a lower external Codex host/session or provider/API limit is
+  binding and must be named in the plan/evidence; 256 is not itself live-load
+  proof;
 - the official Remote transport remains host-owned. SKS does not implement,
   proxy, or reverse engineer that transport; readiness checks never present an
   SKS SSH session id as an official Remote session id;
@@ -128,8 +197,17 @@ path.
   an allowlisted, typed channel for bounded input, verify, read, and
   owner-proof cancel. It is
   not a replacement for official high-fidelity Remote coding;
-- SKS ships no first-party Telegram bridge and has no Orca dependency. Any
-  Orca setup remains external to this release contract; and
+- SKS Telegram support is an outbound Bot API long-polling transport inside the
+  existing Menu Bar process. It reuses the typed allowlisted control contract,
+  stays silent for unauthorized chats while auditing rejection, keeps tokens
+  in the existing secret store, and requires actor-bound two-step confirmation
+  for destructive commands;
+- Telegram readiness requires a real `getMe` round trip plus poller liveness,
+  while release authorization additionally requires a real command/reply E2E
+  from a cellular network. A token, fixture, local-network run, or Doctor
+  readiness result cannot substitute for that live gate;
+- Orca remains external and SKS has no Orca dependency or automatic migration;
+  and
 - Zellij is observability only and cannot satisfy completion proof.
 
 ### Database Safety
@@ -141,12 +219,45 @@ path.
 - no live data mutation is performed by a release test unless the sealed test
   contract explicitly permits it.
 
+## Physical 8.0.4 Release Gates
+
+All four receipts below are required before tagging, staging, publishing, or a
+release-complete claim. Hermetic tests remain necessary but cannot replace
+these environment-bound checks.
+
+1. **5,001-directory update scan:** run `sks update` in a large-repository
+   fixture whose guidance traversal encounters 5,001 directories. The update
+   must finish successfully; any bounded scan cutoff remains the explicit
+   `guidance_scan_truncated` warning with cutoff path/count and contributes no
+   false residue blocker.
+2. **One current Menu Bar process:** begin with a prior-version companion,
+   complete update, and prove the process inventory contains exactly one SKS
+   Menu Bar. Its running-process version probe must equal 8.0.4. A build stamp
+   without process readback is insufficient.
+3. **Measured codex-lb request:** turn **Use codex-lb** on and capture one real
+   request whose destination matches the configured remote base URL and whose
+   authentication class is the issued gateway key, not ChatGPT OAuth. Doctor
+   and Menu Bar must show the same measured host, time, and latency.
+4. **Telegram cellular E2E:** from a cellular network, send one paired,
+   allowlisted command; the Mac must execute the typed command and return its
+   result through Telegram. Record the outbound/inbound receipt without the bot
+   token. `getMe`, poller liveness, fixtures, and same-LAN traffic do not meet
+   this gate.
+
+This repository change records the gate contract only. It does not claim that
+credentials were available, any live gate ran, or 8.0.4 was tagged, staged,
+published, or deployed.
+
 ## Local Verification Order
 
 The order is strict: cut the intended version once, then run every
 version-bound check, write and verify the full release stamp, and only then run
-the package dry-run. For this branch, 7.6.0 to 8.0.0 is the one-time major
-version cut; if the branch already reports 8.0.0, do not bump it again.
+the package dry-run. For this branch, 8.0.3 to 8.0.4 adds exact installed-CLI
+resolution after install, PATH-shadow fail-closed behavior, a working
+explicit `npm exec --package=sneakoscope@latest -- sneakoscope install` command,
+and Luna/Terra max-only model-policy
+corrections. Earlier remediation and the one-time 7.6.0-to-8.0.0 major version
+cut already shipped and must not be rerun.
 
 After that version cut, start from a clean dependency installation and one
 clean build:
@@ -201,7 +312,8 @@ Inspect the exact packed file list and tarball, not only the source checkout.
 - generated project guidance contains only current dollar routes;
 - an isolated prefix install can run version, help, doctor, Naruto status, MCP
   status, update status, and Menu Bar diagnostics;
-- the 7.6.0 to 8.0.0 upgrade smoke uses an isolated HOME and proves managed
+- the 7.6.0-to-current upgrade smoke and focused 8.0.3-to-8.0.4 resolved-CLI
+  regression use isolated HOME/prefix state and prove managed
   cleanup, user-file preservation, new-binary re-exec, rollback receipts,
   exact lifecycle command inventory, no timeout, no host HOME/prefix reuse,
   no unexpected `launchctl` call, and successful sandbox removal;
@@ -210,7 +322,7 @@ Inspect the exact packed file list and tarball, not only the source checkout.
 - Linux package smoke and macOS native/Menu Bar smoke both pass.
 
 Record the tarball path, size, SHA-256, integrity, file inventory, installed
-smoke report, and platform-gate reports under the 8.0.0 release evidence root.
+smoke report, and platform-gate reports under the 8.0.4 release evidence root.
 
 ## Version Cut (Step 1, Before Local Verification)
 
@@ -219,16 +331,18 @@ the cut is made, rerun every command in **Local Verification Order** because the
 release stamp and package proof are version- and source-bound.
 
 ```bash
-sks versioning bump major --json
+sks versioning bump patch --json
 npm run build:clean --silent
 npm run release:version-truth --silent
 ```
 
-The `major` increment is the explicit 7.6.0-to-8.0.0 cut. Do not rerun it once
-the branch already reports 8.0.0.
+The `patch` increment is the explicit 8.0.3-to-8.0.4 routing and installed-CLI
+resolution correction. Earlier patches and the one-time 7.6.0-to-8.0.0 `major`
+cut already shipped; do not rerun a version command after `package.json`
+reports 8.0.4.
 
 Package metadata, lockfile, runtime constants, Rust metadata, managed assets,
-README, changelog, built output, and release evidence must agree on 8.0.0.
+README, changelog, built output, and release evidence must agree on 8.0.4.
 Sneakoscope does not install or rely on a Git pre-commit version hook.
 
 ## Trusted Staged Publishing
@@ -293,7 +407,7 @@ A maintainer then performs the separate human approval step with 2FA:
 npm stage approve <stage-id>
 ```
 
-Automation must stop before this approval. It must not claim that 8.0.0 is
+Automation must stop before this approval. It must not claim that 8.0.4 is
 published while only a stage exists.
 
 Because the trusted publisher is bound to the configured workflow on the
@@ -306,13 +420,13 @@ not restaged until the cause and version-uniqueness state are understood.
 After maintainer approval, verify the live registry independently:
 
 ```bash
-npm view sneakoscope@8.0.0 version dist.integrity dist.tarball --json
+npm view sneakoscope@8.0.4 version dist.integrity dist.tarball --json
 npm view sneakoscope dist-tags --json
 ```
 
-Then install `sneakoscope@8.0.0` into a fresh isolated prefix and rerun the
+Then install `sneakoscope@8.0.4` into a fresh isolated prefix and rerun the
 installed-package smoke. Completion requires the registry version to be
-8.0.0, `latest` to resolve to 8.0.0, integrity to match, and the fresh install
+8.0.4, `latest` to resolve to 8.0.4, integrity to match, and the fresh install
 to pass.
 
 ## Fail-Closed Rules

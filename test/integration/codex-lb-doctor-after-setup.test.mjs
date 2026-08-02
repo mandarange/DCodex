@@ -37,7 +37,10 @@ test('codex-lb doctor sees redacted key after setup', async () => {
   assert.doesNotMatch(text, new RegExp(secret));
   assert.doesNotMatch(text, rawMissingEnvPattern);
   const json = JSON.parse(doctor.stdout);
-  assert.equal(json.schema, 'sks.codex-lb-doctor.v1');
-  assert.equal(json.status.api_key.redacted, true);
+  assert.equal(json.schema, 'sks.codex-lb-doctor.v2');
+  assert.equal(json.status.configured, true);
+  assert.match(json.status.bridge.key_fingerprint, /^sha256:[a-f0-9]{16}$/);
+  assert.equal(json.status.routing_truth.schema, 'sks.codex-lb-routing-truth.v1');
+  assert.equal(json.status.routing_truth.auth_outcome, 'accepted');
   assert.equal(json.status.setup_needed, false);
 });

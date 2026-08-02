@@ -413,7 +413,7 @@ test('GPT-5.6 Sol app-session main keeps sealed Luna and Terra child role models
   const worker = status.roles.find((row) => row.role === 'worker');
   assert.equal(status.routing.active_main_model_inherited, false);
   assert.equal(explorer?.effective_model, 'gpt-5.6-terra');
-  assert.equal(explorer?.effective_reasoning_effort, 'medium');
+  assert.equal(explorer?.effective_reasoning_effort, 'max');
   assert.equal(explorer?.effective_source, 'managed-default');
   assert.equal(worker?.effective_model, 'gpt-5.6-luna');
   assert.equal(worker?.effective_reasoning_effort, 'max');
@@ -448,8 +448,8 @@ test('GPT-5.6 Sol app-session main keeps sealed Luna and Terra child role models
     ]
   });
   assert.equal(prepared.plan.agents.explorer.routed_model, 'gpt-5.6-terra');
-  assert.equal(prepared.plan.agents.explorer.routed_model_reasoning_effort, 'medium');
-  assert.equal(prepared.plan.agents.explorer.routed_model_policy, 'terra_medium_context_tools');
+  assert.equal(prepared.plan.agents.explorer.routed_model_reasoning_effort, 'max');
+  assert.equal(prepared.plan.agents.explorer.routed_model_policy, 'terra_max_context_tools');
   assert.equal(prepared.plan.agents.worker.routed_model, 'gpt-5.6-luna');
   assert.equal(prepared.plan.agents.worker.routed_model_reasoning_effort, 'max');
   assert.equal(prepared.plan.agents.worker.routed_model_policy, 'luna_max_mechanical');

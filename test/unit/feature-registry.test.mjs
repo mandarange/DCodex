@@ -43,6 +43,11 @@ test('feature registry carries fixture contracts', async () => {
   assert.equal(registry.features.some((feature) => feature.id === 'cli-ui'), false);
   const computerUse = registry.features.find((feature) => feature.id === 'cli-computer-use');
   assert.equal(computerUse.fixture.status, 'pass');
+  for (const featureId of ['cli-config', 'cli-telegram']) {
+    const feature = registry.features.find((entry) => entry.id === featureId);
+    assert.equal(feature.fixture.status, 'pass', `${featureId} fixture must be explicitly registered`);
+    assert.equal(feature.fixture.quality, 'wiring_only', `${featureId} fixture must not overclaim integration proof`);
+  }
   const selftest = buildAllFeaturesSelftest(registry);
   assert.equal(registry.coverage.ok, true);
   assert.equal(selftest.ok, true);

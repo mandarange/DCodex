@@ -166,7 +166,7 @@ test('fresh project config receives the official Codex subagent defaults', () =>
   const text = mergeOfficialSubagentConfig('')
   const parsed = parse(text) as Record<string, any>
 
-  assert.equal(parsed.agents.max_concurrent_threads_per_session, 12)
+  assert.equal(parsed.agents.max_concurrent_threads_per_session, 256)
   assert.equal(parsed.agents.max_depth, 1)
   assert.equal(parsed.agents.enabled, true)
   assert.equal(parsed.agents.interrupt_message, true)
@@ -176,7 +176,7 @@ test('fresh project config receives the official Codex subagent defaults', () =>
   assert.equal(Object.hasOwn(parsed.agents, 'max_threads'), false)
   assert.equal(Object.hasOwn(parsed.agents, 'warn_on_max_threads'), false)
   assert.equal(parsed.features.multi_agent_v2.enabled, true)
-  assert.equal(parsed.features.multi_agent_v2.max_concurrent_threads_per_session, 13)
+  assert.equal(parsed.features.multi_agent_v2.max_concurrent_threads_per_session, 257)
   assert.equal(parsed.features.multi_agent_v2.expose_spawn_agent_model_overrides, true)
 })
 
@@ -194,8 +194,39 @@ test('project and inherited user concurrency values are preserved', () => {
   }
 })
 
-test('legacy 4/5/historical 6 migrate only with proven SKS ownership', () => {
-  for (const value of [4, 5, 6]) {
+test('official config accepts 256 child slots and blocks 257 without silently clamping intent', async () => {
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-official-config-hard-cap-'))
+  const root = path.join(fixture, 'project')
+  const codexHome = path.join(fixture, 'codex-home')
+  const configPath = path.join(root, '.codex', 'config.toml')
+  await fs.mkdir(path.dirname(configPath), { recursive: true })
+
+  await fs.writeFile(configPath, [
+    '[agents]',
+    'max_concurrent_threads_per_session = 256',
+    '',
+    '[features.multi_agent_v2]',
+    'enabled = true',
+    'max_concurrent_threads_per_session = 257'
+  ].join('\n'))
+  const accepted = await readOfficialSubagentConfig(root, { codexHome })
+  assert.equal(accepted.maxThreads, 256)
+  assert.equal(accepted.multiAgentV2.maxConcurrentThreadsPerSession, 257)
+  assert.deepEqual(accepted.blockers, [])
+
+  await fs.writeFile(configPath, '[agents]\nmax_concurrent_threads_per_session = 257\n')
+  const rejected = await readOfficialSubagentConfig(root, { codexHome })
+  assert.equal(rejected.maxThreads, 256)
+  assert.ok(rejected.blockers.includes('project_official_subagent_max_threads_exceeds_hard_cap:257:256'))
+
+  assert.throws(
+    () => mergeOfficialSubagentConfig('', { defaultMaxThreads: 257 }),
+    /max_threads_must_be_integer_1_to_256:257/
+  )
+})
+
+test('legacy SKS-owned 4/5/6/12 defaults migrate only with proven ownership', () => {
+  for (const value of [4, 5, 6, 12]) {
     const userOwned = mergeOfficialSubagentConfig(`[agents]\nmax_threads = ${value}\n`)
     const userParsed = parse(userOwned) as Record<string, any>
     assert.equal(userParsed.agents.max_concurrent_threads_per_session, value)
@@ -203,9 +234,29 @@ test('legacy 4/5/historical 6 migrate only with proven SKS ownership', () => {
 
     const sksOwned = mergeOfficialSubagentConfig(`[agents]\nmax_threads = ${value}\n`, { sksOwned: true })
     const ownedParsed = parse(sksOwned) as Record<string, any>
-    assert.equal(ownedParsed.agents.max_concurrent_threads_per_session, 12)
+    assert.equal(ownedParsed.agents.max_concurrent_threads_per_session, 256)
+    assert.equal(ownedParsed.features.multi_agent_v2.max_concurrent_threads_per_session, 257)
     assert.equal(Object.hasOwn(ownedParsed.agents, 'max_threads'), false)
   }
+})
+
+test('SKS-owned 12-child and 13-total defaults migrate together to 256 and 257', () => {
+  const source = [
+    '# SKS-MANAGED-CODEX-CONFIG',
+    '[agents]',
+    'max_concurrent_threads_per_session = 12',
+    '',
+    '[features.multi_agent_v2]',
+    'enabled = true',
+    'max_concurrent_threads_per_session = 13'
+  ].join('\n')
+  const owned = parse(mergeOfficialSubagentConfig(source, { sksOwned: true })) as Record<string, any>
+  assert.equal(owned.agents.max_concurrent_threads_per_session, 256)
+  assert.equal(owned.features.multi_agent_v2.max_concurrent_threads_per_session, 257)
+
+  const unowned = parse(mergeOfficialSubagentConfig(source)) as Record<string, any>
+  assert.equal(unowned.agents.max_concurrent_threads_per_session, 12)
+  assert.equal(unowned.features.multi_agent_v2.max_concurrent_threads_per_session, 13)
 })
 
 test('owned config migration removes only exact legacy agent child tables', () => {
@@ -248,7 +299,7 @@ test('owned config migration removes only exact legacy agent child tables', () =
 
   const merged = mergeOfficialSubagentConfig(source, { sksOwned: true })
   const agents = (parse(merged) as Record<string, any>).agents
-  assert.equal(agents.max_concurrent_threads_per_session, 12)
+  assert.equal(agents.max_concurrent_threads_per_session, 256)
   assert.equal(agents.analysis_scout.description, 'operator modified scout')
   for (const name of ['native_agent', 'team_consensus', 'implementation_worker', 'db_safety_reviewer', 'qa_reviewer']) {
     assert.equal(Object.hasOwn(agents, name), false, name)
@@ -335,7 +386,7 @@ test('agents parent table is inserted safely before an existing custom child tab
   const merged = mergeOfficialSubagentConfig('[agents.custom]\ndescription = "user role"\n')
   const parsed = parse(merged) as Record<string, any>
 
-  assert.equal(parsed.agents.max_concurrent_threads_per_session, 12)
+  assert.equal(parsed.agents.max_concurrent_threads_per_session, 256)
   assert.equal(parsed.agents.custom.description, 'user role')
   assert.ok(merged.indexOf('[agents]') < merged.indexOf('[agents.custom]'))
 })
@@ -345,7 +396,7 @@ test('official config merge supports an agents header with an inline comment', (
   const merged = mergeOfficialSubagentConfig(source, { sksOwned: true })
   const parsed = parse(merged) as Record<string, any>
 
-  assert.equal(parsed.agents.max_concurrent_threads_per_session, 12)
+  assert.equal(parsed.agents.max_concurrent_threads_per_session, 256)
   assert.equal(parsed.agents.max_depth, 1)
   assert.equal(Object.hasOwn(parsed.agents, 'job_max_runtime_seconds'), false)
   assert.equal(parsed.agents.interrupt_message, true)
@@ -628,7 +679,7 @@ test('project setup migrates marker-proven legacy max_threads without requiring 
     codexHome: path.join(home, '.codex')
   })
   const parsed = parse(await fs.readFile(configPath, 'utf8')) as Record<string, any>
-  assert.equal(parsed.agents.max_concurrent_threads_per_session, 12)
+  assert.equal(parsed.agents.max_concurrent_threads_per_session, 256)
   assert.equal(result.codex_config_install.ownership_proof.owned, true)
   assert.ok(result.codex_config_install.ownership_proof.reasons.includes('managed_marker_or_hash'))
 })
@@ -644,7 +695,7 @@ test('doctor repair migrates an SKS-owned legacy thread value and preserves max_
   const result = await repairCodexStartupConfig({ root, apply: true, home, codexHome })
   const parsed = parse(await fs.readFile(configPath, 'utf8')) as Record<string, any>
   assert.equal(result.ok, true)
-  assert.equal(parsed.agents.max_concurrent_threads_per_session, 12)
+  assert.equal(parsed.agents.max_concurrent_threads_per_session, 256)
   assert.equal(parsed.agents.max_depth, 4)
   assert.equal(Object.hasOwn(parsed.agents, 'job_max_runtime_seconds'), false)
   assert.equal(parsed.agents.interrupt_message, true)
@@ -723,9 +774,9 @@ test('generated Naruto skill describes the official workflow and retired aliases
   assert.match(naruto, /Codex official subagent workflow/)
   assert.match(naruto, /--agents N/)
   assert.match(naruto, /later root-owned waves/)
-  assert.match(naruto, /max_threads is a cap, never a target/)
+  assert.match(naruto, /max_threads defaults to a 256-child frame budget cap, never a target/)
   assert.match(naruto, /max_depth=1 blocks nested delegation/)
-  assert.match(naruto, /narrowest matching Codex role/)
+  assert.match(naruto, /Route tiny mechanical and mass shards to Luna Max, broad search and exploration shards to Terra Max, and implementation or judgment to Sol/)
   assert.match(naruto, /sks\.core-engineering-directive\.v1/)
   assert.match(naruto, /subagent-plan\.json/)
   assert.match(naruto, /subagent-parent-summary\.json/)
@@ -736,7 +787,7 @@ test('generated Naruto skill describes the official workflow and retired aliases
   assert.match(agentsRules, /reuse capacity across root-owned waves/)
   assert.match(agentsRules, /Luna Max for tiny mechanical work/)
   assert.match(agentsRules, /Sol High for implementation/)
-  assert.match(agentsRules, /Terra Medium for read-heavy context/)
+  assert.match(agentsRules, /Terra Max for read-heavy context/)
   assert.match(agentsRules, /Sol Max only for focused judgment/)
   assert.doesNotMatch(agentsRules, /native agent intake agents|fresh executor team/)
   assert.doesNotMatch(agentsRules, /\$Team|sks team|\$MAD-DB|sks mad-db/)

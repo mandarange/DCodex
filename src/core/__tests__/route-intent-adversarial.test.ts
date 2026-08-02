@@ -17,7 +17,7 @@ const cases = [
   { prompt: 'Supabase RLS 수정해줘', expected: ['DB', 'MadSKS'] },
   { prompt: 'DB 스키마 수정해줘', expected: ['DB'] },
   {
-    prompt: '[Root orchestrator Sol Max DAG 분해, 계약 확정, 통합, 최종 판정 Judgment lane Sol Max 아키텍처, 디버깅, 보안, DB, 릴리스, 모호한 작업 Implementation lane Sol High 일반 UI·backend·logic·native 구현 Context/tool lane Terra Medium 대형 문서·로그·저장소 탐색, Browser, Computer Use, Image 실행 Mechanical lane Luna Max tiny·short-context·명확한 완료 조건·강한 자동 검증이 있는 작업] 이거대로 반영해줘',
+    prompt: '[Root orchestrator Sol Max DAG 분해, 계약 확정, 통합, 최종 판정 Judgment lane Sol Max 아키텍처, 디버깅, 보안, DB, 릴리스, 모호한 작업 Implementation lane Sol High 일반 UI·backend·logic·native 구현 Context/tool lane Terra Max 대형 문서·로그·저장소 탐색, Browser, Computer Use, Image 실행 Mechanical lane Luna Max tiny·short-context·명확한 완료 조건·강한 자동 검증이 있는 작업] 이거대로 반영해줘',
     expected: ['Naruto']
   },
   {

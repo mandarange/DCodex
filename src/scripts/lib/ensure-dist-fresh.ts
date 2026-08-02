@@ -5,8 +5,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-export const distStampPath = path.join(root, 'dist', '.sks-build-stamp.json');
+export const root = path.resolve(
+  process.env.SKS_BUILD_SOURCE_ROOT
+  || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+);
+const distRoot = path.resolve(process.env.SKS_BUILD_OUTPUT_DIR || path.join(root, 'dist'));
+export const distStampPath = path.join(distRoot, '.sks-build-stamp.json');
 export const reportStampPath = path.join(root, '.sneakoscope', 'reports', 'dist-build-stamp.json');
 
 export function sourceSnapshot() {
@@ -29,19 +33,19 @@ export function sourceSnapshot() {
 export function currentDistFreshness() {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const snapshot = sourceSnapshot();
-  const stamp = readJson(distStampPath) || readJson(path.join(root, 'dist', 'build-manifest.json'));
+  const stamp = readJson(distStampPath) || readJson(path.join(distRoot, 'build-manifest.json'));
   const issues = [];
   if (!stamp) issues.push('dist_build_stamp_missing');
   if (stamp && stamp.package_version !== pkg.version && stamp.version !== pkg.version) issues.push(`dist_version:${stamp.package_version || stamp.version || 'missing'}!=${pkg.version}`);
   if (stamp && stamp.source_digest !== snapshot.digest) issues.push('dist_source_digest_stale');
-  if (!fs.existsSync(path.join(root, 'dist', 'bin', 'sks.js'))) issues.push('dist_bin_missing');
+  if (!fs.existsSync(path.join(distRoot, 'bin', 'sks.js'))) issues.push('dist_bin_missing');
   return {
     schema: 'sks.dist-freshness.v1',
     ok: issues.length === 0,
     package_version: pkg.version,
     source_digest: snapshot.digest,
     source_file_count: snapshot.file_count,
-    stamp_path: fs.existsSync(distStampPath) ? distStampPath : path.join(root, 'dist', 'build-manifest.json'),
+    stamp_path: fs.existsSync(distStampPath) ? distStampPath : path.join(distRoot, 'build-manifest.json'),
     stamp,
     issues
   };
@@ -87,9 +91,11 @@ export function buildStampPayload() {
 export function writeDistFreshStamp() {
   const payload = buildStampPayload();
   fs.mkdirSync(path.dirname(distStampPath), { recursive: true });
-  fs.mkdirSync(path.dirname(reportStampPath), { recursive: true });
   fs.writeFileSync(distStampPath, `${JSON.stringify(payload, null, 2)}\n`);
-  fs.writeFileSync(reportStampPath, `${JSON.stringify(payload, null, 2)}\n`);
+  if (!process.env.SKS_BUILD_OUTPUT_DIR) {
+    fs.mkdirSync(path.dirname(reportStampPath), { recursive: true });
+    fs.writeFileSync(reportStampPath, `${JSON.stringify(payload, null, 2)}\n`);
+  }
   return payload;
 }
 
@@ -100,7 +106,7 @@ function releaseRelevantFiles() {
   });
   const raw = result.status === 0 ? result.stdout.split('\0').filter(Boolean) : walk(root).map((file) => path.relative(root, file).split(path.sep).join('/'));
   return raw
-    .filter((file) => /^(src|scripts|schemas|docs|test|crates\/sks-core)\//.test(file) || /^(package|package-lock)\.json$|^README\.md$|^CHANGELOG\.md$|^tsconfig\.json$/.test(file))
+    .filter((file) => /^(src|scripts|schemas|docs|test|native|config|crates\/sks-core)\//.test(file) || /^(package|package-lock)\.json$|^README\.md$|^CHANGELOG\.md$|^tsconfig\.json$/.test(file))
     .filter((file) => !file.startsWith('dist/') && !file.startsWith('node_modules/') && !file.startsWith('.sneakoscope/'))
     .sort();
 }

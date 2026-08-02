@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { nowIso, PACKAGE_VERSION } from '../fsx.js';
 import { resolveCodexRuntime, type CodexRuntimeIdentity } from '../codex-runtime/resolve-codex-runtime.js';
+import { prepareCodexAppServerRuntimeEnv } from './codex-app-server-runtime-env.js';
 
 type JsonRpcId = number | string;
 type JsonObject = Record<string, unknown>;
@@ -443,6 +444,7 @@ export async function createCodexAppServerV2Client(
     requestedBy: options.requestedBy || 'codex-app-server-v2-client'
   });
   if (!runtime.identity) throw new Error(`Codex runtime not found: ${runtime.blockers.join(',')}`);
+  const runtimeEnv = await prepareCodexAppServerRuntimeEnv({ env: options.env || process.env });
   const clientOptions: {
     command: string;
     args?: readonly string[];
@@ -454,10 +456,9 @@ export async function createCodexAppServerV2Client(
     maxNotificationBytes?: number;
     currentTimeProvider?: () => Date;
     approvalPolicy?: CodexAppServerApprovalPolicy;
-  } = { command: runtime.identity.realpath };
+  } = { command: runtime.identity.realpath, env: runtimeEnv };
   if (options.args !== undefined) clientOptions.args = options.args;
   if (options.cwd !== undefined) clientOptions.cwd = options.cwd;
-  if (options.env !== undefined) clientOptions.env = options.env;
   if (options.timeoutMs !== undefined) clientOptions.timeoutMs = options.timeoutMs;
   if (options.maxFrameBytes !== undefined) clientOptions.maxFrameBytes = options.maxFrameBytes;
   if (options.maxNotifications !== undefined) clientOptions.maxNotifications = options.maxNotifications;

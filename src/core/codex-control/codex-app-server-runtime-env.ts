@@ -13,10 +13,18 @@ export const CODEX_APP_SERVER_CONFIG_READ_FAILED =
   'codex_app_server_config_read_failed';
 
 export class CodexAppServerRuntimeEnvError extends Error {
-  constructor(readonly code: string) {
-    super(code);
+  constructor(readonly code: string, readonly operatorActions: readonly string[] = []) {
+    super(operatorActions.length > 0 ? `${code}: ${operatorActions.join(' ')}` : code);
     this.name = 'CodexAppServerRuntimeEnvError';
   }
+}
+
+export function codexAppServerProviderCredentialGuidance(home: string): string[] {
+  return [
+    `Store the key in ${path.join(home, '.codex', 'sks-codex-lb.env')} (owner-only mode 0600).`,
+    'Run: sks codex-lb setup --host <domain> --api-key-stdin --yes',
+    'Alternatively, provide CODEX_LB_API_KEY in the launching environment.'
+  ];
 }
 
 export function codexAppServerExecutablePath(input: {
@@ -93,12 +101,14 @@ export async function prepareCodexAppServerRuntimeEnv(input: {
     });
   } catch {
     throw new CodexAppServerRuntimeEnvError(
-      CODEX_APP_SERVER_PROVIDER_CREDENTIALS_UNAVAILABLE
+      CODEX_APP_SERVER_PROVIDER_CREDENTIALS_UNAVAILABLE,
+      codexAppServerProviderCredentialGuidance(home)
     );
   }
   if (!loaded?.configured || !loaded.secret_api_key || !loaded.base_url) {
     throw new CodexAppServerRuntimeEnvError(
-      CODEX_APP_SERVER_PROVIDER_CREDENTIALS_UNAVAILABLE
+      CODEX_APP_SERVER_PROVIDER_CREDENTIALS_UNAVAILABLE,
+      codexAppServerProviderCredentialGuidance(home)
     );
   }
   env.CODEX_LB_API_KEY = loaded.secret_api_key;

@@ -94,7 +94,7 @@ test('stampRoleModelCatalogPriorities elevates preferred models into spawn picke
     updated_at: 'now',
     roles: {
       worker: { provider: 'openai', model: 'gpt-5.6-luna', reasoning_effort: 'max', updated_at: 'now' },
-      long_context_analyst: { provider: 'openai', model: 'gpt-5.6-terra', reasoning_effort: 'medium', updated_at: 'now' }
+      long_context_analyst: { provider: 'openai', model: 'gpt-5.6-terra', reasoning_effort: 'max', updated_at: 'now' }
     }
   })
   assert.equal(stamped.stamped, true)

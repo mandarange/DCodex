@@ -52,9 +52,9 @@ export interface InstalledPackageSmokeReport {
   blockers: string[]
 }
 
-export const INSTALLED_REQUIRED_COMMANDS = ['naruto', 'mcp', 'update', 'menubar'] as const
+export const INSTALLED_REQUIRED_COMMANDS = ['naruto', 'mcp', 'update', 'menubar', 'config', 'telegram'] as const
 export const INSTALLED_REQUIRED_DOLLAR_COMMANDS = ['$sks-naruto', '$sks-work'] as const
-export const INSTALLED_REMOVED_COMMANDS = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui', 'telegram'] as const
+export const INSTALLED_REMOVED_COMMANDS = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui'] as const
 export const INSTALLED_REMOVED_DOLLAR_COMMANDS = Array.from(new Set([
   '$Agent', '$Team', '$MAD-DB', '$Swarm', '$ShadowClone', '$Kagebunshin', '$Ralph',
   ...LEGACY_DOLLAR_COMMAND_NAMES.filter((command) => command.toLowerCase() !== '$sks'),
@@ -250,11 +250,13 @@ export async function runInstalledPackageSmoke(
     if (!optInGuidancePresent) blockers.push('postinstall_default_opt_in_guidance_missing')
   }
 
-  const bin = process.platform === 'win32'
-    ? path.join(installPrefix, 'sks.cmd')
-    : path.join(installPrefix, 'bin', 'sks')
+  const installedBin = (name: string): string => process.platform === 'win32'
+    ? path.join(installPrefix, `${name}.cmd`)
+    : path.join(installPrefix, 'bin', name)
+  const bin = installedBin('sks')
   const smokeCommands: Array<{ name: string; argv: string[]; diagnostic?: boolean }> = [
     { name: 'version', argv: [bin, '--version'] },
+    { name: 'version-alias', argv: [installedBin('sneakoscope'), '--version'] },
     { name: 'commands', argv: [bin, 'commands', '--json'] },
     { name: 'dollar-commands', argv: [bin, 'dollar-commands', '--json'] },
     { name: 'bootstrap', argv: [bin, 'bootstrap', '--json'] },
@@ -262,6 +264,8 @@ export async function runInstalledPackageSmoke(
     { name: 'naruto', argv: [bin, 'naruto', '--help'], diagnostic: true },
     { name: 'mcp', argv: [bin, 'mcp', 'config', 'list', '--scope', 'effective', '--trusted-project', '--json'], diagnostic: true },
     { name: 'update', argv: [bin, 'update', 'status', '--json'], diagnostic: true },
+    { name: 'config', argv: [bin, 'config', '--help'], diagnostic: true },
+    { name: 'telegram', argv: [bin, 'telegram', '--help'], diagnostic: true },
     ...(process.platform === 'darwin'
       ? [{ name: 'menubar-install', argv: [bin, 'menubar', 'install', '--no-launch', '--json'] }]
       : []),
@@ -285,6 +289,18 @@ export async function runInstalledPackageSmoke(
       const match = String(result.stdout || '').match(/([0-9]+\.[0-9]+\.[0-9]+)/)
       if (match) installedVersion = match[1] || null
     }
+  }
+  const installHelper = await runJsonCommand(tmp, [installedBin('sneakoscope-install'), 'invalid-command'], {
+    home,
+    codexHome,
+    npmCache
+  })
+  commands.push(summarizeInstalledSmokeCommand(installHelper.command, 'install-helper-invalid-command'))
+  if (
+    installHelper.exit_code !== 2
+    || !/Usage: npm exec --yes --package=sneakoscope@latest/.test(`${installHelper.stdout}\n${installHelper.command.stderr_tail}`)
+  ) {
+    blockers.push('installed_install_helper_launcher_failed')
   }
 
   const surface = validateInstalledPublicSurface(commandManifest, dollarManifest)
@@ -611,6 +627,10 @@ function installedDiagnosticBlockers(
 ): string[] {
   if (name === 'naruto') return result.exit_code === 0 && /\$sks-naruto/.test(result.stdout)
     ? [] : ['installed_diagnostic_failed:naruto']
+  if (name === 'config' || name === 'telegram') {
+    return result.exit_code === 0 && new RegExp(`Usage: sks ${name}`).test(result.stdout)
+      ? [] : [`installed_diagnostic_failed:${name}`]
+  }
   const expectedSchema: Record<string, string> = {
     mcp: 'sks.mcp-inventory.v2',
     update: 'sks.update-status.v3',

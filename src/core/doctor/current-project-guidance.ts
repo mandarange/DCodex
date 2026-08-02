@@ -16,7 +16,10 @@ import {
   removeManagedPathVerified,
   uniqueConfinedPath
 } from '../managed-path-safety.js';
-import { collectNestedProjectRoots } from './current-project-guidance-nested.js';
+import {
+  collectNestedProjectRoots,
+  type NestedProjectGuidanceScanWarning
+} from './current-project-guidance-nested.js';
 import { escapeRegExp } from '../text/regex.js';
 
 export const CURRENT_PROJECT_GUIDANCE_SCHEMA = 'sks.current-project-guidance.v1' as const;
@@ -55,6 +58,7 @@ export interface CurrentProjectGuidanceReport {
   remaining_count: number;
   preserved_user_file_count: number;
   error_count: number;
+  warnings: NestedProjectGuidanceScanWarning[];
 }
 
 type GuidanceScope = {
@@ -68,6 +72,7 @@ type GuidanceCounters = {
   remaining: number;
   preserved: number;
   errors: number;
+  warnings: NestedProjectGuidanceScanWarning[];
 };
 
 export function containsRetiredPublicSurface(text: unknown): boolean {
@@ -96,7 +101,14 @@ export async function reconcileCurrentProjectGuidance(opts: {
     { root: home, installScope: 'global' },
     { root: globalRuntimeRoot, installScope: 'global' }
   ]);
-  const counters: GuidanceCounters = { detected: 0, reconciled: 0, remaining: 0, preserved: 0, errors: 0 };
+  const counters: GuidanceCounters = {
+    detected: 0,
+    reconciled: 0,
+    remaining: 0,
+    preserved: 0,
+    errors: 0,
+    warnings: []
+  };
   const runId = `${Date.now()}-${process.pid}`;
 
   for (const scope of scopes) {
@@ -120,7 +132,8 @@ export async function reconcileCurrentProjectGuidance(opts: {
     reconciled_count: counters.reconciled,
     remaining_count: counters.remaining,
     preserved_user_file_count: counters.preserved,
-    error_count: counters.errors
+    error_count: counters.errors,
+    warnings: counters.warnings
   };
 }
 
@@ -214,10 +227,7 @@ async function reconcileNestedProjectGuidance(
     counters.errors += scan.errorCount;
     counters.remaining += scan.errorCount;
   }
-  if (scan.truncated) {
-    counters.errors += 1;
-    counters.remaining += 1;
-  }
+  counters.warnings.push(...scan.warnings);
   const scope: GuidanceScope = { root: projectRoot, installScope: 'project' };
   const quarantineRoot = path.join(projectRoot, '.sneakoscope', 'quarantine', 'current-project-guidance', runId);
   for (const root of scan.roots) {

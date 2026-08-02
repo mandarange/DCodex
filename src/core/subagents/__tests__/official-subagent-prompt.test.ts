@@ -34,12 +34,12 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
   assert.match(prompt, /worker.*gpt-5\.6-luna.*max reasoning.*tiny short-context mechanical/)
   assert.match(prompt, /gpt-5\.6-sol with high reasoning for ordinary UI, logic, backend, and native implementation/)
   assert.match(prompt, /gpt-5\.6-sol with max reasoning only for focused unresolved, high-risk, final-review, architecture, security/)
-  assert.match(prompt, /gpt-5\.6-terra with medium reasoning for read-heavy documentation\/exploration, long-context analysis, large or repository-wide search/)
+  assert.match(prompt, /gpt-5\.6-terra with max reasoning for long context\/memory, large docs\/repository reads or exploration, large-scale first-draft code processing/)
   assert.match(prompt, /never collapse every child onto the parent Sol model/)
   assert.match(prompt, /explicit task class and phase win over incidental keywords/)
   assert.match(prompt, /requested subagents: 2/)
-  assert.match(prompt, /max open agent threads: 12/)
-  assert.match(prompt, /hard cap, never a utilization target/)
+  assert.match(prompt, /max concurrently open child agent threads: 12/)
+  assert.match(prompt, /hard child-slot cap, never a utilization target; the root is outside this count/)
   assert.match(prompt, /C_t = min\(ready DAG width, disjoint ownership, verifier capacity/)
   assert.match(prompt, /max depth: 1/)
   assert.match(prompt, /custom `agent_type` selection.*must use `fork_turns="none"`/)
@@ -58,9 +58,24 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
   assert.equal(prompt.match(/Core Engineering Directive/g)?.length, 1)
   assert.match(prompt, /from AGENTS\.md exactly/)
   assert.ok(
-    Buffer.byteLength(prompt, 'utf8') <= 9_000,
-    `two-slice official prompt exceeded 9,000 bytes: ${Buffer.byteLength(prompt, 'utf8')}`
+    Buffer.byteLength(prompt, 'utf8') <= 9_300,
+    `two-slice official prompt exceeded 9,300 bytes: ${Buffer.byteLength(prompt, 'utf8')}`
   )
+})
+
+test('official prompt teaches capacity-derived automatic fan-out and the hard ceiling', () => {
+  const prompt = buildOfficialSubagentPrompt({
+    goal: 'Parent must decompose a repository-wide bulk search',
+    maxThreads: 16,
+    requestedSubagents: 16,
+    decompositionStatus: 'parent_required',
+    slices: []
+  })
+
+  assert.match(prompt, /automatic fan-out is capacity-derived up to 256/)
+  assert.match(prompt, /historical 4\/6\/8\/16 task-class values are fallback hints, not clamps/)
+  assert.match(prompt, /in mass fan-out, use worker\/Luna Max for tiny mechanical shards and explorer\/Terra Max for broad exploration; reserve Sol for implementation\/judgment/)
+  assert.match(prompt, /bounded only by the 256 hard safety ceiling; C_t bounds each wave, not the reusable multi-wave total/)
 })
 
 test('Codex App Naruto prompt separates internal parent evidence from the visible Markdown final', () => {
@@ -163,7 +178,7 @@ test('GPT-5.6 Sol active main keeps sealed Luna and Terra child profiles', () =>
 
   assert.match(prompt, /children must keep sealed Luna\/Terra\/Sol High\/Sol Max role profiles/)
   assert.match(prompt, /never replace Luna or Terra with the parent Sol model/)
-  assert.match(prompt, /pass model="gpt-5\.6-terra" and reasoning_effort="medium" from the sealed role policy/)
+  assert.match(prompt, /pass model="gpt-5\.6-terra" and reasoning_effort="max" from the sealed role policy/)
   assert.match(prompt, /pass model="gpt-5\.6-luna" and reasoning_effort="max" from the sealed role policy/)
   assert.doesNotMatch(prompt, /pass the exact active main model="gpt-5\.6-sol"/)
 })
@@ -333,6 +348,8 @@ test('prompt makes later root waves and between-wave count authority explicit', 
   assert.match(automatic, /close completed threads.*refresh evidence.*rescan the ready DAG.*next defensible direct-child wave when `remaining_to_start > 0`/is)
   assert.match(automatic, /spawn_next_direct_child_wave_upto:N/)
   assert.match(automatic, /automatic targets may resize between waves/i)
+  assert.match(automatic, /C_t bounds each wave, not the reusable multi-wave total/)
+  assert.doesNotMatch(automatic, /bounded by C_t and 12/)
 
   for (const requestedSubagentsSource of ['operator', 'route_contract'] as const) {
     const exact = buildOfficialSubagentPrompt({

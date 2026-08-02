@@ -5,7 +5,7 @@ import { modelRouteReason, routeNarutoGpt56Model } from '../provider/model-route
 const models = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol']
 const modelEfforts = {
   'gpt-5.6-luna': ['xhigh', 'max'],
-  'gpt-5.6-terra': ['medium', 'high'],
+  'gpt-5.6-terra': ['max'],
   'gpt-5.6-sol': ['high', 'xhigh', 'max', 'ultra']
 }
 
@@ -33,7 +33,7 @@ test('Naruto GPT-5.6 routing preserves a supported explicit family model', () =>
   assert.equal(modelRouteReason('agentic', choice, { explicit: true }), 'agentic->gpt-5.6-luna (explicit model preserved)')
 })
 
-test('Naruto GPT-5.6 routing preserves Terra Medium and auto-selects it for tool work', () => {
+test('Naruto GPT-5.6 routing preserves Terra Max and auto-selects it for tool work', () => {
   const choice = routeNarutoGpt56Model({
     taskText: 'implementation',
     explicitModel: 'gpt-5.6-terra',
@@ -41,9 +41,9 @@ test('Naruto GPT-5.6 routing preserves Terra Medium and auto-selects it for tool
     availableModelEfforts: modelEfforts
   })
 
-  assert.deepEqual(choice, { model: 'gpt-5.6-terra', reasoning: 'medium', serviceTier: 'fast' })
+  assert.deepEqual(choice, { model: 'gpt-5.6-terra', reasoning: 'max', serviceTier: 'fast' })
   assert.deepEqual(routeNarutoGpt56Model({ taskText: 'browser QA' }), {
-    model: 'gpt-5.6-terra', reasoning: 'medium', serviceTier: 'fast'
+    model: 'gpt-5.6-terra', reasoning: 'max', serviceTier: 'fast'
   })
   assert.deepEqual(routeNarutoGpt56Model({ taskText: 'implementation' }), {
     model: 'gpt-5.6-sol', reasoning: 'high', serviceTier: 'fast'
@@ -54,8 +54,8 @@ test('Naruto GPT-5.6 routing rejects an unavailable model/effort pair without fa
   const choice = routeNarutoGpt56Model({
     taskText: 'browser QA',
     availableModels: models,
-    availableModelEfforts: { ...modelEfforts, 'gpt-5.6-terra': ['max'] }
+    availableModelEfforts: { ...modelEfforts, 'gpt-5.6-terra': ['medium'] }
   })
   assert.equal(choice.model, '')
-  assert.equal(choice.reasoning, 'medium')
+  assert.equal(choice.reasoning, 'max')
 })

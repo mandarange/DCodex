@@ -1,9 +1,14 @@
+import { HARD_NARUTO_MAX_THREADS } from '../subagents/thread-budget.js';
+
 export const SUBAGENT_SKILL_AVAILABILITY_BLOCKER_FILENAME = 'subagent-skill-availability-blocker.json';
 export const SUBAGENT_SKILL_AVAILABILITY_BLOCKER_SCHEMA = 'sks.subagent-skill-availability-blocker.v1';
 export const GUARD_DIR = 'subagent-skill-availability';
 export const EMERGENCY_DENIAL_DIR = 'subagent-skill-availability-emergency-denials';
-export const MAX_EMERGENCY_DENIALS = 64;
-export const MAX_LIFECYCLE_GUARD_ENTRIES = 64;
+export const MAX_LIFECYCLE_THREADS = HARD_NARUTO_MAX_THREADS;
+export const MAX_EMERGENCY_DENIALS = MAX_LIFECYCLE_THREADS;
+// Each live child owns one thread admission and one turn admission. Keep the
+// directory scan bounded while leaving a small margin for in-flight rotation.
+export const MAX_GUARD_DIRECTORY_ENTRIES = (HARD_NARUTO_MAX_THREADS * 2) + 16;
 export const MAX_LIFECYCLE_GUARD_BYTES = 64 * 1024;
 export const MAX_SUBAGENT_PLAN_BYTES = 256 * 1024;
 export const ADMISSION_SCHEMA = 'sks.subagent-skill-availability-admission.v1';
@@ -37,6 +42,11 @@ export interface GuardRoot {
   root: string;
   boundary: string;
   missionIndependent: boolean;
+}
+
+export interface GuardRunBinding {
+  missionId: unknown;
+  workflowRunId: unknown;
 }
 
 export interface SubagentSkillAvailabilityActiveBinding {

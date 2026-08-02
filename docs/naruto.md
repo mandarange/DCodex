@@ -20,12 +20,32 @@ printf '%s' '<sks.subagent-parent-summary.v1 JSON>' \
 ```
 
 Automatic fan-out starts at four Naruto children for bounded non-trivial work, six for
-explicitly parallel work, and eight for large-scale work. After decomposition the
-parent may resize the automatic plan up to twelve children, but only when every
-additional slice is independent, useful, and verifiable, and only while the
-hardware capacity probe reports healthy host headroom. `max_threads = 12` is a
-hard **frame budget** (cap), never a spawn target. The GPT-5.6 four-profile matrix
-(Luna / Terra / Sol High / Sol Max) is a **routing LOD**, not an agent-count cap.
+explicitly parallel work, eight for large-scale work, and sixteen for mass cheap-model
+fan-out on the Luna/Terra lanes. After decomposition the parent may resize either lane
+up to 256 children, but only when every additional slice is independent, useful, and
+verifiable. Explicit `--agents N` and
+`--max-threads N` values from 1 through 256 are authoritative and are not reduced to
+the automatic starting tiers. `max_threads = 256` is the default hard **child-slot
+frame budget** (cap), never a spawn target. At the structural maximum,
+`--max-threads 256` means up to 256 children; SKS does not subtract the root a second
+time. A Codex multi-agent V2 host may count the root separately and therefore require
+257 total session slots. If that external host exposes fewer slots, its limit is the
+active limiter and must be reported instead of being presented as SKS-selected 256
+concurrency. Remaining requested work reuses returned capacity in later waves.
+
+Luna Max handles tiny mechanical shards, Terra Max handles broad search and
+exploration shards, and Sol handles implementation and judgment. The GPT-5.6
+four-profile matrix (Luna / Terra / Sol High / Sol Max) is a **routing LOD**, not an
+agent-count cap.
+
+`SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET` declares the provider/API
+parallel-request budget used by the governor. It can lower or align SKS with a measured
+provider allowance; it cannot raise a lower external Codex host/session limit. The
+official Codex lane does not add a local CPU/RAM or unmeasured API-default clamp. The
+256 value is a structural scheduling ceiling, not a recommended target or evidence
+that 256 live agents were load-tested on the current host. Actual active concurrency
+remains bounded by the operator frame budget, external host/session slots, an explicit
+remote API budget, ready DAG width, disjoint ownership, and verifier/tool capacity.
 Before each wave Naruto computes:
 
 ```text
@@ -34,6 +54,7 @@ C_t = min(
   disjoint ownership,
   verifier capacity,
   tool concurrency,
+  external host/session child slots,
   available thread slots after parent/(demand-driven) reviewer reservations,
   workers with positive marginal usefulness
 )
@@ -49,7 +70,7 @@ values, and removed options fail before an agent workflow starts.
 Children produce candidates; the Naruto parent owns integration (command-buffer /
 deferred-apply). Overlapping write scopes are never scheduled concurrently
 (false-sharing analog). Waves settle before merge when files conflict; later
-root-owned waves may start only after capacity returns.
+root-owned waves reuse returned capacity before starting.
 
 Database, spreadsheet, document-render, and other project-host capability requests
 remain fail-closed unless the operator supplies `--trusted-project` after reviewing the checkout.
@@ -67,7 +88,7 @@ correlation and never grants project trust, so App host-capability requests requ
 | Root orchestrator | Sol Max | DAG decomposition, contract finalization, integration, and final judgment |
 | Judgment lane | Sol Max | Architecture, debugging, security, database, release, and ambiguous work |
 | Implementation lane | Sol High | Ordinary UI, backend, logic, core, and native implementation |
-| Context/tool lane | Terra Medium | Large documents, logs, and repository exploration plus Browser, Computer Use, and image execution |
+| Context/tool lane | Terra Max | Large documents, logs, long-term memory, repository exploration, rapid large-scale first-draft code processing, plus Browser, Computer Use, and image execution |
 | Mechanical lane | Luna Max | Tiny, short-context work with clear completion conditions and strong automatic verification |
 
 Mixed work is split when practical. If a slice cannot safely separate execution
@@ -87,20 +108,24 @@ configuration uses:
 ```toml
 [features.multi_agent_v2]
 enabled = true
-max_concurrent_threads_per_session = 13
+max_concurrent_threads_per_session = 257
 expose_spawn_agent_model_overrides = true
 
 [agents]
 enabled = true
-max_concurrent_threads_per_session = 12
+max_concurrent_threads_per_session = 256
 max_depth = 1
 interrupt_message = true
 default_subagent_model = "gpt-5.6-sol"
 default_subagent_reasoning_effort = "high"
 ```
 
-`max_concurrent_threads_per_session` under `[agents]` is the spawned-child hard
-cap. The MA v2 feature total includes the root thread (`12 + 1 = 13`).
+`max_concurrent_threads_per_session` under `[agents]` is the configured spawned-child
+frame budget (the SKS-owned default is 256), which is also the absolute hard frame
+cap. The MA v2 feature total includes the root thread (`256 + 1 = 257`). An
+external-host rejection or lower advertised total is a real concurrency limiter and
+must remain visible in the plan/evidence instead of being relabeled as a 256-child
+wave.
 `max_depth = 1` remains fail-closed for any V1 fallback; V2 ignores nesting depth
 and SKS still forbids nested delegation. Legacy `agents.max_threads` and
 `job_max_runtime_seconds` are migrated or stripped on SKS-owned configs.

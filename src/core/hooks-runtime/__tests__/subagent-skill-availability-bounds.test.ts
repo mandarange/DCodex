@@ -9,6 +9,15 @@ import {
   SUBAGENT_SKILL_AVAILABILITY_BLOCKER_FILENAME,
   subagentSkillAvailabilityRunBlockers
 } from '../subagent-skill-availability.js';
+import {
+  MAX_EMERGENCY_DENIALS,
+  MAX_GUARD_DIRECTORY_ENTRIES
+} from '../subagent-skill-availability-contract.js';
+import {
+  readAdmissionPair,
+  threadGuardPath,
+  writeAdmissionPair
+} from '../subagent-skill-availability-guards.js';
 
 const missionId = 'M-bounded-lifecycle-guards';
 const workflowRunId = 'run-bounded-lifecycle-guards';
@@ -16,8 +25,8 @@ const blockerCode = 'authoritative_sks_skill_resolution_failed';
 
 function admission(index: number) {
   return {
-    schema: 'sks.subagent-skill-availability-admission.v1',
-    status: 'blocked',
+    schema: 'sks.subagent-skill-availability-admission.v1' as const,
+    status: 'blocked' as const,
     mission_id: missionId,
     workflow_run_id: workflowRunId,
     thread_id_hash: sha256(`thread-${index}`),
@@ -50,6 +59,11 @@ async function fixture(prefix: string) {
   return { base, root, artifactDir };
 }
 
+function activeRunGuardDir(artifactDir: string) {
+  const runPartition = `run-${sha256(JSON.stringify([missionId, workflowRunId]))}`;
+  return path.join(artifactDir, 'subagent-skill-availability', runPartition);
+}
+
 async function run(root: string, artifactDir: string) {
   return subagentSkillAvailabilityRunBlockers(
     root,
@@ -72,20 +86,75 @@ async function writeRetentionStub(file: string, expanded: unknown) {
   }));
 }
 
-test('lifecycle guard enumeration fails closed at entry 65 before opening records', async (t) => {
+test('a valid prior-turn thread guard is recoverable while a partial current pair fails closed', async () => {
+  const { base, root } = await fixture('sks-guard-followup-turn-');
+  try {
+    const guardRoot = {
+      root: path.join(root, '.sneakoscope', 'guards', 'subagent-skill-availability'),
+      boundary: root,
+      missionIndependent: true
+    };
+    const prior = admission(0);
+    assert.equal(await writeAdmissionPair(guardRoot, prior), true);
+
+    const followupTurnHash = sha256('followup-turn');
+    assert.equal(await readAdmissionPair(
+      guardRoot,
+      prior.thread_id_hash,
+      prior.session_scope_hash,
+      followupTurnHash
+    ), null);
+
+    await fsp.writeFile(threadGuardPath(guardRoot.root, prior.thread_id_hash), JSON.stringify({
+      ...prior,
+      turn_id_hash: followupTurnHash,
+      recorded_at: new Date().toISOString()
+    }));
+    await assert.rejects(
+      readAdmissionPair(
+        guardRoot,
+        prior.thread_id_hash,
+        prior.session_scope_hash,
+        followupTurnHash
+      ),
+      /subagent_skill_availability_guard_invalid/
+    );
+  } finally {
+    await fsp.rm(base, { recursive: true, force: true });
+  }
+});
+
+test('lifecycle guard enumeration permits 256 child pairs and fails closed above bounded directories', async (t) => {
   await t.test('admissions', async () => {
     const { base, root, artifactDir } = await fixture('sks-guard-admission-entry-limit-');
     try {
-      const guardDir = path.join(artifactDir, 'subagent-skill-availability');
+      const guardDir = activeRunGuardDir(artifactDir);
       await fsp.mkdir(guardDir, { recursive: true });
-      for (let index = 0; index < 65; index += 1) {
+      for (let index = 0; index < 256; index += 1) {
         const record = admission(index);
-        await fsp.writeFile(
-          path.join(guardDir, `thread-${record.thread_id_hash}.json`),
-          JSON.stringify(record)
-        );
+        await Promise.all([
+          fsp.writeFile(
+            path.join(guardDir, `thread-${record.thread_id_hash}.json`),
+            JSON.stringify(record)
+          ),
+          fsp.writeFile(
+            path.join(guardDir, `turn-${sha256(`${record.session_scope_hash}:${record.turn_id_hash}`)}.json`),
+            JSON.stringify(record)
+          )
+        ]);
       }
-
+      assert.deepEqual(await run(root, artifactDir), [blockerCode]);
+      const rejected = admission(256);
+      await Promise.all([
+        fsp.writeFile(
+          path.join(guardDir, `thread-${rejected.thread_id_hash}.json`),
+          JSON.stringify(rejected)
+        ),
+        fsp.writeFile(
+          path.join(guardDir, `turn-${sha256(`${rejected.session_scope_hash}:${rejected.turn_id_hash}`)}.json`),
+          JSON.stringify(rejected)
+        )
+      ]);
       assert.deepEqual(await run(root, artifactDir), ['subagent_skill_availability_guard_invalid']);
     } finally {
       await fsp.rm(base, { recursive: true, force: true });
@@ -97,7 +166,7 @@ test('lifecycle guard enumeration fails closed at entry 65 before opening record
     try {
       const denialDir = path.join(artifactDir, 'subagent-skill-availability-emergency-denials');
       await fsp.mkdir(denialDir, { recursive: true });
-      for (let index = 0; index < 65; index += 1) {
+      for (let index = 0; index <= MAX_EMERGENCY_DENIALS; index += 1) {
         await fsp.writeFile(
           path.join(denialDir, `deny-${sha256(`denial-${index}`)}.json`),
           JSON.stringify(denial(index))
@@ -114,7 +183,7 @@ test('lifecycle guard enumeration fails closed at entry 65 before opening record
 test('bounded lifecycle scans preserve mission and workflow filtering', async () => {
   const { base, root, artifactDir } = await fixture('sks-guard-run-filter-');
   try {
-    const guardDir = path.join(artifactDir, 'subagent-skill-availability');
+    const guardDir = activeRunGuardDir(artifactDir);
     const denialDir = path.join(artifactDir, 'subagent-skill-availability-emergency-denials');
     await Promise.all([
       fsp.mkdir(guardDir, { recursive: true }),
@@ -139,12 +208,34 @@ test('bounded lifecycle scans preserve mission and workflow filtering', async ()
   }
 });
 
+test('stale run guard partitions never consume the active run directory bound', async () => {
+  const { base, root, artifactDir } = await fixture('sks-guard-stale-run-partition-');
+  try {
+    const stalePartition = path.join(
+      artifactDir,
+      'subagent-skill-availability',
+      `run-${sha256(JSON.stringify([missionId, 'stale-run']))}`
+    );
+    await fsp.mkdir(stalePartition, { recursive: true });
+    for (let index = 0; index <= MAX_GUARD_DIRECTORY_ENTRIES; index += 1) {
+      await fsp.writeFile(
+        path.join(stalePartition, `stale-${index}.json`),
+        JSON.stringify({ stale: true })
+      );
+    }
+
+    assert.deepEqual(await run(root, artifactDir), []);
+  } finally {
+    await fsp.rm(base, { recursive: true, force: true });
+  }
+});
+
 test('admission, emergency denial, and shared blocker reads never hydrate retention gzip sidecars', async (t) => {
   await t.test('admission', async () => {
     const { base, root, artifactDir } = await fixture('sks-guard-gzip-admission-');
     try {
       const record = admission(1);
-      const guardDir = path.join(artifactDir, 'subagent-skill-availability');
+      const guardDir = activeRunGuardDir(artifactDir);
       await fsp.mkdir(guardDir, { recursive: true });
       await writeRetentionStub(path.join(guardDir, `thread-${record.thread_id_hash}.json`), record);
       const blockers = await run(root, artifactDir);
@@ -197,7 +288,7 @@ test('oversized, non-regular, and symlink lifecycle records fail closed', async 
           const outsideText = JSON.stringify(recordType === 'admission' ? admission(4) : denial(4));
           await fsp.writeFile(outside, outsideText);
           const file = recordType === 'admission'
-            ? path.join(artifactDir, 'subagent-skill-availability', `thread-${sha256('unsafe')}.json`)
+            ? path.join(activeRunGuardDir(artifactDir), `thread-${sha256('unsafe')}.json`)
             : recordType === 'denial'
               ? path.join(artifactDir, 'subagent-skill-availability-emergency-denials', `deny-${sha256('unsafe')}.json`)
               : path.join(artifactDir, SUBAGENT_SKILL_AVAILABILITY_BLOCKER_FILENAME);

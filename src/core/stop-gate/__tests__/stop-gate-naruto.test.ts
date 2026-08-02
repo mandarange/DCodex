@@ -410,6 +410,63 @@ test('generic route stop hook accepts recorded hard blocker before completion pr
   assert.match(decision?.systemMessage, /managed_config_requires_human_remedy/);
 });
 
+test('Naruto stop accepts a hard blocker that exactly covers impossible official subagent evidence', async () => {
+  const root = await makeTempRoot();
+  const missionId = 'M-test-subagent-hard-blocked';
+  const dir = await setupMission(root, missionId);
+  await fsp.writeFile(path.join(dir, 'hard-blocker.json'), JSON.stringify({
+    schema: 'sks.hard-blocker.v1',
+    passed: false,
+    status: 'hard_blocked',
+    reason: 'official_subagent_count_contract_irreversibly_exceeded',
+    gate: 'official-subagent-evidence',
+    evidence: ['subagent-plan.json records cumulative_started above the immutable ceiling']
+  }));
+  const state = {
+    mission_id: missionId,
+    stop_gate: 'naruto-gate.json',
+    mode: 'NARUTO',
+    route: 'Naruto',
+    route_command: '$Naruto',
+    subagents_required: true,
+    reflection_required: false
+  };
+
+  const decision: any = await evaluateStop(root, state, { message: 'done' });
+  assert.equal(decision?.continue, true);
+  assert.equal(decision?.action, 'hard_blocked');
+  assert.equal(decision?.gate, path.join(dir, 'hard-blocker.json'));
+  assert.match(decision?.systemMessage, /official_subagent_count_contract_irreversibly_exceeded/);
+});
+
+test('an unrelated hard blocker does not bypass missing official subagent evidence', async () => {
+  const root = await makeTempRoot();
+  const missionId = 'M-test-unrelated-hard-blocker';
+  const dir = await setupMission(root, missionId);
+  await fsp.writeFile(path.join(dir, 'hard-blocker.json'), JSON.stringify({
+    schema: 'sks.hard-blocker.v1',
+    passed: false,
+    status: 'hard_blocked',
+    reason: 'managed_config_requires_human_remedy',
+    gate: 'managed-config',
+    evidence: ['managed config requires an operator decision']
+  }));
+  const state = {
+    mission_id: missionId,
+    stop_gate: 'naruto-gate.json',
+    mode: 'NARUTO',
+    route: 'Naruto',
+    route_command: '$Naruto',
+    subagents_required: true,
+    reflection_required: false
+  };
+
+  const decision: any = await evaluateStop(root, state, { message: 'done' });
+  assert.equal(decision?.decision, 'block');
+  assert.equal(decision?.gate, 'official-subagent-evidence');
+  assert.match(decision?.reason, /official Codex subagent evidence/);
+});
+
 test('a not_applicable active gate is satisfied without bypassing independent gates', async () => {
   const root = await makeTempRoot();
   const missionId = 'M-test-not-applicable';

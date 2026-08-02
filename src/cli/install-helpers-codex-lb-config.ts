@@ -1,6 +1,9 @@
 import path from 'node:path';
 import os from 'node:os';
-import { ensureDir, readText } from '../core/fsx.js';
+import { constants as fsConstants } from 'node:fs';
+import fsp from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { assertTestHomeWriteAllowed, ensureDir, readText, writeBinaryAtomic } from '../core/fsx.js';
 import {
   GLM_CODEX_CONFIG_PROVIDER_ID,
   GLM_52_OPENROUTER_MODEL,
@@ -44,18 +47,59 @@ export interface CliProviderConfigInput {
 export const CODEX_LB_DESKTOP_BRIDGE_MARKER = '# sks-codex-lb-managed-desktop-bridge';
 export const CODEX_LB_DESKTOP_COMPAT_MARKER = '# sks-codex-lb-managed-desktop-compat';
 export const CODEX_LB_MODEL_CATALOG_MARKER = '# sks-codex-lb-managed-model-catalog';
-const LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER = '# sks-codex-lb-managed-openai-base-url';
+export const CODEX_LB_PROVIDER_SELECTION_MARKER = '# sks-codex-lb-managed-provider-selection';
+export const CODEX_LB_OAUTH_SELECTION_MARKER = '# sks-codex-lb-managed-oauth-selection';
+export const LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER = '# sks-codex-lb-managed-openai-base-url';
+
+export type CodexLbOrphanManagedMarkerCleanup = {
+  schema: 'sks.codex-lb-orphan-managed-marker-cleanup.v1';
+  changed: boolean;
+  orphan_markers: string[];
+  text: string;
+};
+
+/**
+ * Remove only marker-only residue. A marker whose corresponding value still
+ * exists remains intact so callers can fail closed on ambiguous legacy state.
+ */
+export function removeCodexLbOrphanManagedMarkers(text: string): CodexLbOrphanManagedMarkerCleanup {
+  const source = String(text || '');
+  const selectedProvider = topLevelTomlString(source, 'model_provider');
+  const markerTargets = [
+    [CODEX_LB_DESKTOP_BRIDGE_MARKER, Boolean(topLevelTomlString(source, 'openai_base_url'))],
+    [LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER, Boolean(topLevelTomlString(source, 'openai_base_url'))],
+    [CODEX_LB_DESKTOP_COMPAT_MARKER, selectedProvider === 'codex-lb'],
+    [CODEX_LB_MODEL_CATALOG_MARKER, Boolean(topLevelTomlString(source, 'model_catalog_json'))],
+    [CODEX_LB_PROVIDER_SELECTION_MARKER, selectedProvider === 'codex-lb'],
+    [CODEX_LB_OAUTH_SELECTION_MARKER, selectedProvider === 'openai']
+  ] as const;
+  const orphanMarkers = markerTargets
+    .filter(([marker, hasManagedContent]) => topLevelHasLine(source, marker) && !hasManagedContent)
+    .map(([marker]) => marker);
+  let next = source;
+  for (const marker of orphanMarkers) next = removeTopLevelLine(next, marker);
+  return {
+    schema: 'sks.codex-lb-orphan-managed-marker-cleanup.v1',
+    changed: orphanMarkers.length > 0,
+    orphan_markers: orphanMarkers,
+    text: next
+  };
+}
 
 export function upsertCodexLbNativeDesktopConfig(
   text: string,
   input: NativeDesktopConfigInput
 ): string {
-  let next = String(text || '');
+  let next = removeCodexLbOrphanManagedMarkers(String(text || '')).text;
   const selectedProvider = topLevelTomlString(next, 'model_provider');
   if (selectedProvider && selectedProvider !== 'openai' && selectedProvider !== 'codex-lb') {
     throw new Error('codex_lb_user_owned_model_provider_conflict');
   }
-  if (selectedProvider === 'codex-lb' && !topLevelHasLine(next, CODEX_LB_DESKTOP_COMPAT_MARKER)) {
+  if (
+    selectedProvider === 'codex-lb'
+    && !topLevelHasLine(next, CODEX_LB_DESKTOP_COMPAT_MARKER)
+    && !topLevelHasLine(next, CODEX_LB_PROVIDER_SELECTION_MARKER)
+  ) {
     throw new Error('codex_lb_legacy_desktop_config_requires_migration');
   }
   if (
@@ -68,14 +112,15 @@ export function upsertCodexLbNativeDesktopConfig(
   if (modelCatalog && !topLevelHasLine(next, CODEX_LB_MODEL_CATALOG_MARKER)) {
     throw new Error('codex_lb_user_owned_model_catalog_json_conflict');
   }
-  next = removeTopLevelTomlKeyIfValue(next, 'model_provider', 'codex-lb');
+  next = removeManagedCodexLbSelection(next);
   next = removeTopLevelLine(next, CODEX_LB_DESKTOP_COMPAT_MARKER);
   next = removeManagedModelCatalogJson(next);
   next = upsertManagedTopLevelTomlString(
     next,
     'openai_base_url',
     input.bridgeBaseUrl,
-    CODEX_LB_DESKTOP_BRIDGE_MARKER
+    CODEX_LB_DESKTOP_BRIDGE_MARKER,
+    [LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER]
   );
   next = upsertTomlTable(next, 'model_providers.codex-lb', cliProviderBlock(input.remoteBaseUrl));
   return ensureTrailingNewline(next);
@@ -110,20 +155,74 @@ export function upsertCodexLbCliProviderConfig(
   text: string,
   input: CliProviderConfigInput
 ): string {
+  const cleaned = removeCodexLbOrphanManagedMarkers(String(text || '')).text;
+  if (topLevelHasLine(cleaned, LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER)) {
+    throw new Error('codex_lb_legacy_desktop_config_requires_migration');
+  }
+  const cliBase = removeCodexLbManagedDesktopConfig(cleaned);
+  const claimedSelection = input.selectGlobally === true
+    && topLevelTomlString(cliBase, 'model_provider') === 'codex-lb'
+    && !topLevelHasLine(cliBase, CODEX_LB_PROVIDER_SELECTION_MARKER)
+      ? addTopLevelMarkerBeforeKey(cliBase, 'model_provider', CODEX_LB_PROVIDER_SELECTION_MARKER)
+      : cliBase;
   let next = input.selectGlobally === true
-    ? upsertTopLevelTomlString(text, 'model_provider', 'codex-lb')
-    : removeTopLevelTomlKeyIfValue(text, 'model_provider', 'codex-lb');
+    ? upsertManagedTopLevelTomlString(
+        removeTopLevelTomlKeyIfValue(
+          removeManagedOAuthSelection(claimedSelection),
+          'model_provider',
+          'openai'
+        ),
+        'model_provider',
+        'codex-lb',
+        CODEX_LB_PROVIDER_SELECTION_MARKER
+      )
+    : removeManagedCodexLbSelection(cliBase);
   next = upsertTomlTable(next, 'model_providers.codex-lb', cliProviderBlock(input.remoteBaseUrl));
   return ensureTrailingNewline(next);
 }
 
+/** Explicit Center OFF state: select built-in OpenAI and remove the LB marker+value as one unit. */
+export function restoreCodexLbOAuthSelectionConfig(text: string): string {
+  let next = removeManagedCodexLbSelection(String(text || ''));
+  next = upsertManagedTopLevelTomlString(
+    next,
+    'model_provider',
+    'openai',
+    CODEX_LB_OAUTH_SELECTION_MARKER
+  );
+  return ensureTrailingNewline(next);
+}
+
+export function removeManagedCodexLbSelection(text: string): string {
+  let next = removeTopLevelTomlKeyIfValue(String(text || ''), 'model_provider', 'codex-lb');
+  next = removeTopLevelLine(next, CODEX_LB_PROVIDER_SELECTION_MARKER);
+  return next;
+}
+
+function removeManagedOAuthSelection(text: string): string {
+  let next = String(text || '');
+  if (topLevelHasLine(next, CODEX_LB_OAUTH_SELECTION_MARKER)) {
+    next = removeTopLevelTomlKeyIfValue(next, 'model_provider', 'openai');
+    next = removeTopLevelLine(next, CODEX_LB_OAUTH_SELECTION_MARKER);
+  }
+  return next;
+}
+
 export function removeCodexLbManagedDesktopConfig(text: string): string {
-  let next = removeManagedDesktopBridgeRouting(String(text || ''));
+  let next = removeManagedDesktopBridgeRouting(
+    removeCodexLbOrphanManagedMarkers(String(text || '')).text
+  );
   if (topLevelHasLine(next, CODEX_LB_DESKTOP_COMPAT_MARKER)) {
     next = removeTopLevelTomlKeyIfValue(next, 'model_provider', 'codex-lb');
     next = removeTopLevelLine(next, CODEX_LB_DESKTOP_COMPAT_MARKER);
   }
   next = removeManagedModelCatalogJson(next);
+  // OFF is an explicit provider transition. When codex-lb owns (or is still
+  // left as) the active provider, restore the built-in OpenAI selection in the
+  // same config write. Shared auth.json remains byte-for-byte untouched.
+  if (topLevelTomlString(next, 'model_provider') === 'codex-lb') {
+    next = restoreCodexLbOAuthSelectionConfig(next);
+  }
   return ensureTrailingNewline(next);
 }
 
@@ -238,6 +337,13 @@ export function upsertCodexLbSharedOpenAiRouting(text: any = '', baseUrl: any = 
 
 export function removeCodexLbSharedOpenAiRouting(text: any = '', baseUrl: any = '') {
   const state = codexLbSharedOpenAiRoutingState(text, baseUrl);
+  if (state.status === 'missing' && state.managed) {
+    return {
+      ...state,
+      changed: true,
+      text: removeTopLevelLine(String(text || ''), CODEX_LB_SHARED_OPENAI_ROUTING_MARKER)
+    };
+  }
   if (state.status !== 'matched' || !state.managed) return { ...state, changed: false, text: String(text || '') };
   const withoutValue = removeTopLevelTomlKeyIfValue(text, 'openai_base_url', state.expected_base_url);
   return {
@@ -372,18 +478,523 @@ export function detectCodexLbSetupDrift(state: any = {}): string[] {
   return drift;
 }
 
-export async function captureCodexLbSetupWriteState({ home, configPath, envPath, shellProfile }: any = {}) {
+export async function captureCodexLbSetupWriteState({ home, configPath, envPath, metadataPath, shellProfile }: any = {}) {
   const profileFiles = profileFilesForDrift(home, shellProfile);
+  const paths = [configPath, envPath, metadataPath, ...profileFiles].filter(Boolean);
+  const files = await Promise.all(paths.map(captureSetupFile));
+  const hashesByPath = new Map(
+    await Promise.all(files.map(async (file) => [file.path, await capturedSetupFileHash(file)] as const))
+  );
+  const hashForPath = (file: string) => file ? hashesByPath.get(file) || 'missing' : 'missing';
   return {
-    configHash: await fileHashOrMissing(configPath),
-    envHash: await fileHashOrMissing(envPath),
-    profileHash: (await Promise.all(profileFiles.map((file: string) => fileHashOrMissing(file)))).join('|')
+    configHash: hashForPath(configPath),
+    envHash: hashForPath(envPath),
+    metadataHash: hashForPath(metadataPath),
+    profileHash: profileFiles.map(hashForPath).join('|'),
+    files,
+    stateHash: await sha256Text(JSON.stringify(files))
   };
 }
 
-async function fileHashOrMissing(file: string) {
-  const text = await readText(file, null).catch(() => null);
-  return text === null ? 'missing' : await sha256Text(String(text));
+export type CodexLbSetupFileState = {
+  path: string;
+  existed: boolean;
+  kind: 'missing' | 'regular' | 'symlink' | 'non_regular';
+  bytes_base64: string;
+  mode: number | null;
+};
+
+export type CodexLbSetupFileWriteResult = {
+  ok: boolean;
+  status: 'written' | 'present' | 'concurrent_change_detected' | 'unsafe_setup_write_target' | 'write_failed';
+  installed: boolean;
+  expected_after: CodexLbSetupFileState;
+  recovery_path?: string;
+  error?: string;
+};
+
+/**
+ * Replace one setup-owned file only while its exact bytes, kind, and mode still
+ * match the authoritative setup snapshot. The rename/verify/link sequence makes
+ * the final install no-replace and retains the claimed inode for recovery so an
+ * edit made through a descriptor opened before the rename cannot be lost.
+ */
+export async function writeCodexLbSetupFileIfUnchanged(input: {
+  file: string;
+  expected: CodexLbSetupFileState;
+  text: string;
+  mode: number;
+  beforeReplacement?: (input: { path: string }) => void | Promise<void>;
+}): Promise<CodexLbSetupFileWriteResult> {
+  const file = path.resolve(input.file);
+  if (path.resolve(String(input.expected.path || '')) !== file) {
+    return {
+      ok: false,
+      status: 'write_failed',
+      installed: false,
+      expected_after: {
+        path: file,
+        existed: true,
+        kind: 'regular',
+        bytes_base64: Buffer.from(input.text).toString('base64'),
+        mode: Number(input.mode) & 0o777
+      },
+      error: 'setup_snapshot_path_mismatch'
+    };
+  }
+  const expected = { ...input.expected, path: file };
+  const mode = Number(input.mode) & 0o777;
+  const expectedAfter: CodexLbSetupFileState = {
+    path: file,
+    existed: true,
+    kind: 'regular',
+    bytes_base64: Buffer.from(input.text).toString('base64'),
+    mode
+  };
+  if (expected.existed === true && expected.kind !== 'regular') {
+    return {
+      ok: false,
+      status: 'unsafe_setup_write_target',
+      installed: false,
+      expected_after: expectedAfter
+    };
+  }
+
+  assertTestHomeWriteAllowed(file);
+  await ensureDir(path.dirname(file));
+  const token = `${Date.now().toString(36)}-${process.pid}-${randomBytes(6).toString('hex')}`;
+  const claimedPath = `${file}.sks-setup-claimed-${token}`;
+  const candidatePath = `${file}.sks-setup-candidate-${token}`;
+  let claimed = false;
+  let installed = false;
+  try {
+    await writeBinaryAtomic(candidatePath, Buffer.from(input.text), { mode });
+    const observed = await captureSetupFile(file);
+    if (!setupFileStatesEqual(observed, expected)) {
+      return {
+        ok: false,
+        status: 'concurrent_change_detected',
+        installed: false,
+        expected_after: expectedAfter
+      };
+    }
+    if (setupFileStatesEqual(expected, expectedAfter)) {
+      return {
+        ok: true,
+        status: 'present',
+        installed: false,
+        expected_after: expectedAfter
+      };
+    }
+
+    if (expected.existed === true) {
+      try {
+        await fsp.rename(file, claimedPath);
+        claimed = true;
+      } catch {
+        return {
+          ok: false,
+          status: 'concurrent_change_detected',
+          installed: false,
+          expected_after: expectedAfter
+        };
+      }
+      const claimedState = await captureSetupFile(claimedPath);
+      if (!setupFileStatesEqual(claimedState, { ...expected, path: claimedPath })) {
+        const recovered = await restoreClaimedSetupPathIfAbsent(claimedPath, file, claimedState);
+        claimed = !recovered;
+        const hardened = !claimed || await hardenCodexLbSetupRecoveryPath(claimedPath);
+        return {
+          ok: false,
+          status: hardened ? 'concurrent_change_detected' : 'write_failed',
+          installed: false,
+          expected_after: expectedAfter,
+          ...(claimed ? { recovery_path: claimedPath } : {}),
+          ...(hardened ? {} : { error: 'setup_recovery_mode_hardening_failed' })
+        };
+      }
+    }
+
+    await input.beforeReplacement?.({ path: file });
+    try {
+      await fsp.link(candidatePath, file);
+      installed = true;
+    } catch {
+      if (claimed) {
+        const claimedState = await captureSetupFile(claimedPath).catch(() => null);
+        const recovered = claimedState
+          ? await restoreClaimedSetupPathIfAbsent(claimedPath, file, claimedState)
+          : false;
+        claimed = !recovered;
+      }
+      const hardened = !claimed || await hardenCodexLbSetupRecoveryPath(claimedPath);
+      return {
+        ok: false,
+        status: hardened ? 'concurrent_change_detected' : 'write_failed',
+        installed: false,
+        expected_after: expectedAfter,
+        ...(claimed ? { recovery_path: claimedPath } : {}),
+        ...(hardened ? {} : { error: 'setup_recovery_mode_hardening_failed' })
+      };
+    }
+
+    const committed = await captureSetupFile(file);
+    if (!setupFileStatesEqual(committed, expectedAfter)) {
+      const hardened = !claimed || await hardenCodexLbSetupRecoveryPath(claimedPath);
+      return {
+        ok: false,
+        status: hardened ? 'concurrent_change_detected' : 'write_failed',
+        installed: true,
+        expected_after: expectedAfter,
+        ...(claimed ? { recovery_path: claimedPath } : {}),
+        ...(hardened ? {} : { error: 'setup_recovery_mode_hardening_failed' })
+      };
+    }
+    if (claimed && !await hardenCodexLbSetupRecoveryPath(claimedPath)) {
+      return {
+        ok: false,
+        status: 'write_failed',
+        installed: true,
+        expected_after: expectedAfter,
+        recovery_path: claimedPath,
+        error: 'setup_recovery_mode_hardening_failed'
+      };
+    }
+    return {
+      ok: true,
+      status: 'written',
+      installed: true,
+      expected_after: expectedAfter,
+      ...(claimed ? { recovery_path: claimedPath } : {})
+    };
+  } catch (error: unknown) {
+    if (claimed && !installed) {
+      const claimedState = await captureSetupFile(claimedPath).catch(() => null);
+      const recovered = claimedState
+        ? await restoreClaimedSetupPathIfAbsent(claimedPath, file, claimedState)
+        : false;
+      claimed = !recovered;
+    }
+    const hardened = !claimed || await hardenCodexLbSetupRecoveryPath(claimedPath);
+    return {
+      ok: false,
+      status: 'write_failed',
+      installed,
+      expected_after: expectedAfter,
+      ...(claimed ? { recovery_path: claimedPath } : {}),
+      error: [
+        error instanceof Error ? error.message : String(error),
+        ...(hardened ? [] : ['setup_recovery_mode_hardening_failed'])
+      ].join(':')
+    };
+  } finally {
+    await fsp.rm(candidatePath, { force: true }).catch(() => undefined);
+  }
+}
+
+export async function hardenCodexLbSetupRecoveryPath(file: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof fsp.open>> | null = null;
+  try {
+    handle = await fsp.open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    const before = await handle.stat();
+    if (!before.isFile()) return false;
+    await handle.chmod(0o600);
+    const hardened = await handle.stat();
+    const pathStat = await fsp.lstat(file);
+    return hardened.isFile()
+      && (hardened.mode & 0o777) === 0o600
+      && pathStat.isFile()
+      && !pathStat.isSymbolicLink()
+      && pathStat.dev === hardened.dev
+      && pathStat.ino === hardened.ino;
+  } catch {
+    return false;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+export async function removeCodexLbSetupRecoveryPath(file: string): Promise<boolean> {
+  if (!path.basename(file).includes('.sks-setup-claimed-')) return false;
+  let handle: Awaited<ReturnType<typeof fsp.open>> | null = null;
+  try {
+    handle = await fsp.open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    const opened = await handle.stat();
+    const pathStat = await fsp.lstat(file);
+    if (!opened.isFile()
+      || !pathStat.isFile()
+      || pathStat.isSymbolicLink()
+      || pathStat.dev !== opened.dev
+      || pathStat.ino !== opened.ino) return false;
+    await fsp.unlink(file);
+    return await fsp.lstat(file).then(() => false, (error: NodeJS.ErrnoException) => error.code === 'ENOENT');
+  } catch {
+    return false;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+export async function restoreCodexLbSetupWriteState(
+  state: any,
+  expectedCurrentState?: any,
+  opts: {
+    beforeReplacement?: (input: { path: string }) => void | Promise<void>;
+  } = {}
+): Promise<{
+  ok: boolean;
+  restored: string[];
+  removed: string[];
+  blockers: string[];
+  recovery: string[];
+}> {
+  const restored: string[] = [];
+  const removed: string[] = [];
+  const blockers: string[] = [];
+  const recovery: string[] = [];
+  const expectedByPath = new Map(
+    (Array.isArray(expectedCurrentState?.files) ? expectedCurrentState.files : [])
+      .map((entry: any) => [String(entry?.path || ''), entry])
+  );
+  for (const entry of Array.isArray(state?.files) ? [...state.files].reverse() : []) {
+    const file = String(entry?.path || '');
+    if (!file) continue;
+    try {
+      const expected = expectedByPath.get(file);
+      if (!expected) {
+        blockers.push(`setup_rollback_missing_expected_state:${file}`);
+        continue;
+      }
+      if (expected && setupFileStatesEqual(entry, expected)) continue;
+      const commit = await commitSetupRollbackIfUnchanged({
+        file,
+        before: entry,
+        expected,
+        ...(opts.beforeReplacement ? { beforeReplacement: opts.beforeReplacement } : {})
+      });
+      if (commit.recoveryPath) recovery.push(commit.recoveryPath);
+      if (!commit.ok) {
+        blockers.push(`${commit.failed ? 'setup_rollback_failed' : 'setup_rollback_conflict'}:${file}`);
+        continue;
+      }
+      if (commit.restored) restored.push(file);
+      if (commit.removed) removed.push(file);
+    } catch {
+      blockers.push(`setup_rollback_failed:${file}`);
+    }
+  }
+  return { ok: blockers.length === 0, restored, removed, blockers, recovery };
+}
+
+function setupFileStatesEqual(left: any, right: any): boolean {
+  return left?.existed === right?.existed
+    && String(left?.kind || (left?.existed ? 'regular' : 'missing')) === String(right?.kind || (right?.existed ? 'regular' : 'missing'))
+    && String(left?.bytes_base64 || '') === String(right?.bytes_base64 || '')
+    && (left?.existed !== true || Number(left?.mode) === Number(right?.mode));
+}
+
+async function captureSetupFile(file: string): Promise<CodexLbSetupFileState> {
+  let pathStat;
+  try {
+    pathStat = await fsp.lstat(file);
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') {
+      return { path: file, existed: false, kind: 'missing', bytes_base64: '', mode: null };
+    }
+    throw error;
+  }
+  if (pathStat.isSymbolicLink()) {
+    return { path: file, existed: true, kind: 'symlink', bytes_base64: '', mode: pathStat.mode & 0o777 };
+  }
+  if (!pathStat.isFile()) {
+    return { path: file, existed: true, kind: 'non_regular', bytes_base64: '', mode: pathStat.mode & 0o777 };
+  }
+  let handle: Awaited<ReturnType<typeof fsp.open>> | null = null;
+  try {
+    handle = await fsp.open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      return { path: file, existed: true, kind: 'non_regular', bytes_base64: '', mode: stat.mode & 0o777 };
+    }
+    const bytes = await handle.readFile();
+    return {
+      path: file,
+      existed: true,
+      kind: 'regular',
+      bytes_base64: bytes.toString('base64'),
+      mode: stat.mode & 0o777
+    };
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') {
+      return { path: file, existed: false, kind: 'missing', bytes_base64: '', mode: null };
+    }
+    if ((error as NodeJS.ErrnoException | null)?.code === 'ELOOP') {
+      const stat = await fsp.lstat(file).catch(() => null);
+      return {
+        path: file,
+        existed: true,
+        kind: 'symlink',
+        bytes_base64: '',
+        mode: stat ? stat.mode & 0o777 : null
+      };
+    }
+    throw error;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+async function commitSetupRollbackIfUnchanged(input: {
+  file: string;
+  before: any;
+  expected: any;
+  beforeReplacement?: (input: { path: string }) => void | Promise<void>;
+}): Promise<{
+  ok: boolean;
+  restored: boolean;
+  removed: boolean;
+  failed?: boolean;
+  recoveryPath?: string;
+}> {
+  const { file, before, expected } = input;
+  await ensureDir(path.dirname(file));
+  const token = `${Date.now().toString(36)}-${process.pid}-${randomBytes(6).toString('hex')}`;
+  const claimedPath = `${file}.sks-rollback-claimed-${token}`;
+  const candidatePath = `${file}.sks-rollback-candidate-${token}`;
+  let claimed = false;
+  try {
+    if (expected.existed === true) {
+      const currentStat = await fsp.lstat(file).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      });
+      if (!currentStat || currentStat.isSymbolicLink() || !currentStat.isFile()) {
+        return { ok: false, restored: false, removed: false };
+      }
+      try {
+        await fsp.rename(file, claimedPath);
+        claimed = true;
+      } catch {
+        return { ok: false, restored: false, removed: false };
+      }
+      const claimedState = await captureSetupFile(claimedPath);
+      if (!setupFileStatesEqual(claimedState, { ...expected, path: claimedPath })) {
+        const recovered = await restoreClaimedSetupPathIfAbsent(claimedPath, file, claimedState);
+        claimed = !recovered;
+        return {
+          ok: false,
+          restored: false,
+          removed: false,
+          ...(claimed ? { recoveryPath: claimedPath } : {})
+        };
+      }
+    } else {
+      const current = await captureSetupFile(file);
+      if (!setupFileStatesEqual(current, expected)) {
+        return { ok: false, restored: false, removed: false };
+      }
+    }
+
+    await input.beforeReplacement?.({ path: file });
+
+    if (before.existed === true) {
+      if (String(before.kind || 'regular') !== 'regular') {
+        if (claimed) {
+          const claimedState = await captureSetupFile(claimedPath);
+          const recovered = await restoreClaimedSetupPathIfAbsent(claimedPath, file, claimedState);
+          claimed = !recovered;
+        }
+        return {
+          ok: false,
+          restored: false,
+          removed: false,
+          failed: true,
+          ...(claimed ? { recoveryPath: claimedPath } : {})
+        };
+      }
+      const bytes = Buffer.from(String(before.bytes_base64 || ''), 'base64');
+      await writeBinaryAtomic(candidatePath, bytes, { mode: Number(before.mode || 0o600) });
+      try {
+        await fsp.link(candidatePath, file);
+      } catch {
+        return {
+          ok: false,
+          restored: false,
+          removed: false,
+          ...(claimed ? { recoveryPath: claimedPath } : {})
+        };
+      }
+      const committed = await captureSetupFile(file);
+      if (!setupFileStatesEqual(committed, before)) {
+        return {
+          ok: false,
+          restored: false,
+          removed: false,
+          ...(claimed ? { recoveryPath: claimedPath } : {})
+        };
+      }
+      return {
+        ok: true,
+        restored: true,
+        removed: false,
+        ...(claimed ? { recoveryPath: claimedPath } : {})
+      };
+    }
+
+    const committed = await captureSetupFile(file);
+    if (!setupFileStatesEqual(committed, before)) {
+      return {
+        ok: false,
+        restored: false,
+        removed: false,
+        ...(claimed ? { recoveryPath: claimedPath } : {})
+      };
+    }
+    return {
+      ok: true,
+      restored: false,
+      removed: true,
+      ...(claimed ? { recoveryPath: claimedPath } : {})
+    };
+  } catch {
+    if (claimed) {
+      const claimedState = await captureSetupFile(claimedPath).catch(() => null);
+      const recovered = claimedState
+        ? await restoreClaimedSetupPathIfAbsent(claimedPath, file, claimedState)
+        : false;
+      claimed = !recovered;
+    }
+    return {
+      ok: false,
+      restored: false,
+      removed: false,
+      failed: true,
+      ...(claimed ? { recoveryPath: claimedPath } : {})
+    };
+  } finally {
+    await fsp.rm(candidatePath, { force: true }).catch(() => undefined);
+  }
+}
+
+async function restoreClaimedSetupPathIfAbsent(claimedPath: string, file: string, claimedState: any): Promise<boolean> {
+  try {
+    if (claimedState?.kind === 'regular') {
+      await fsp.link(claimedPath, file);
+    } else if (claimedState?.kind === 'symlink') {
+      await fsp.symlink(await fsp.readlink(claimedPath), file);
+    } else {
+      return false;
+    }
+    await fsp.unlink(claimedPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function capturedSetupFileHash(file: CodexLbSetupFileState) {
+  if (file.kind !== 'regular') return 'missing';
+  return await sha256Text(Buffer.from(file.bytes_base64, 'base64').toString('utf8'));
 }
 
 function profileFilesForDrift(home: string, shellProfile: string) {

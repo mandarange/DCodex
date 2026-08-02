@@ -8,6 +8,7 @@ import {
   codexLbRecoveryBlockedProcessResult,
   withCodexLbCliLaunchRecovery
 } from '../codex-control/codex-lb-launch-recovery.js'
+import { prepareCodexAppServerRuntimeEnv } from '../codex-control/codex-app-server-runtime-env.js'
 
 export function buildCodexExecAgentArgs(agent: any, prompt: string, opts: any = {}) {
   const resultFile = opts.resultFile || defaultCodexResultFile(agent, opts)
@@ -81,15 +82,16 @@ export async function runCodexExecAgent(agent: any, slice: any, opts: any = {}) 
   const allowedCommandsFile = path.join(opts.agentRoot || opts.cwd || process.cwd(), 'agent-allowed-commands.json')
   const workerEnv = agentWorkerEnv(agent, allowedCommandsFile)
   const effectiveEnv = { ...process.env, ...(opts.env || {}) }
-  const proxyEnv = managedProxyEnvForChild(effectiveEnv)
+  const runtimeEnv = await prepareCodexAppServerRuntimeEnv({ env: effectiveEnv })
+  const proxyEnv = managedProxyEnvForChild(runtimeEnv)
   const execute: typeof runProcess = opts.runProcessImpl || runProcess
   const guarded = await withCodexLbCliLaunchRecovery({
     root: opts.cwd || process.cwd(),
-    env: effectiveEnv,
+    env: runtimeEnv,
     cliArgs: command.args.slice(0, -1),
     ...(typeof opts.recoveryFetch === 'function' ? { fetchImpl: opts.recoveryFetch } : {}),
     ...(opts.recoveryTimeoutMs === undefined ? {} : { timeoutMs: opts.recoveryTimeoutMs })
-  }, () => execute(opts.codexBin || 'codex', command.args, { cwd: opts.cwd || process.cwd(), env: { ...(opts.env || {}), ...proxyEnv, ...fastModeEnv(fastPolicy), ...workerEnv }, timeoutMs: opts.timeoutMs || 30 * 60 * 1000, maxOutputBytes: 256 * 1024, stdoutFile, stderrFile }))
+  }, () => execute(opts.codexBin || 'codex', command.args, { cwd: opts.cwd || process.cwd(), env: { ...runtimeEnv, ...proxyEnv, ...fastModeEnv(fastPolicy), ...workerEnv }, timeoutMs: opts.timeoutMs || 30 * 60 * 1000, maxOutputBytes: 256 * 1024, stdoutFile, stderrFile }))
   const result = guarded.launched
     ? guarded.value
     : codexLbRecoveryBlockedProcessResult(guarded.toolOutputRecovery)

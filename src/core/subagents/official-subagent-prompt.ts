@@ -149,15 +149,16 @@ ${spawnModelRouting}
 - use \`worker\` with gpt-5.6-luna and max reasoning for tiny short-context mechanical work such as simple search, typing, rename, copy, label, or one-line edits with no exploration or judgment
 - use gpt-5.6-sol with high reasoning for ordinary UI, logic, backend, and native implementation
 - use gpt-5.6-sol with max reasoning only for focused unresolved, high-risk, final-review, architecture, security, database, research, release, or other explicit judgment slices
-- use gpt-5.6-terra with medium reasoning for read-heavy documentation/exploration, long-context analysis, large or repository-wide search, and direct Computer Use, Browser/Chrome, or image-generation execution
+- use gpt-5.6-terra with max reasoning for long context/memory, large docs/repository reads or exploration, large-scale first-draft code processing, and direct Computer Use, Browser/Chrome, or image generation
 - explicit task class and phase win over incidental keywords: Terra gathers/explores/searches broadly, Luna handles tiny mechanical edits, Sol High implements, and Sol Max performs the focused judgment pass
+- in mass fan-out, use worker/Luna Max for tiny mechanical shards and explorer/Terra Max for broad exploration; reserve Sol for implementation/judgment
 - never assign Luna to long-context, broad exploration, review, debugging, planning, or tool-heavy work; never collapse every child onto the parent Sol model when a sealed Luna or Terra role matches
 
 Plan and capacity:
-- automatic fan-out starts at 4 for bounded non-trivial work, 6 for explicit parallel work, and 8 for large-scale work; expand only up to ${MAX_AUTOMATIC_SUBAGENT_COUNT} while useful independent slices and healthy capacity remain
+- automatic fan-out is capacity-derived up to ${MAX_AUTOMATIC_SUBAGENT_COUNT}: after decomposition, use every safe useful child slot supported by the ready DAG, disjoint ownership, verifier/tool capacity, and actual host limits; the historical 4/6/8/16 task-class values are fallback hints, not clamps
 - automatic reviewer-only fan-out is capped at ${MAX_AUTOMATIC_REVIEWER_COUNT} for ordinary work and ${MAX_CRITICAL_AUTOMATIC_REVIEWER_COUNT} for critical multi-domain review
 - requested subagents: ${requestedPolicy}
-- max open agent threads: ${maxThreads} (hard cap, never a utilization target)
+- max concurrently open child agent threads: ${maxThreads} (hard child-slot cap, never a utilization target; the root is outside this count)
 - selected first-wave concurrency: ${firstWave}
 - planned waves: ${waveCount}
 - capacity snapshot: ${renderCapacity(input.capacity)}
@@ -179,7 +180,7 @@ ${requestedSource === 'operator'
     ? '- the explicit operator count is authoritative; if it cannot be defended safely, block and report instead of silently changing it'
     : requestedSource === 'route_contract'
       ? '- the route-owned exact count is authoritative; preserve it and follow the route-specific orchestration contract'
-      : `- after decomposition, resize the automatic plan to the useful independent slice count, bounded by C_t and ${MAX_AUTOMATIC_SUBAGENT_COUNT}; update plan/evidence before the first spawn
+      : `- after decomposition, resize the total automatic plan to the useful independent slice count, bounded only by the ${MAX_AUTOMATIC_SUBAGENT_COUNT} hard safety ceiling; C_t bounds each wave, not the reusable multi-wave total; update plan/evidence before the first spawn
 - if fewer defensible slices exist, reduce the count; if more defensible slices and positive capacity exist, increase only within the automatic ceiling`}` : '- decomposition status: ready'}
 
 Slice safety:
@@ -289,7 +290,7 @@ function renderSpawnModelRouting(activeMainModel: ActiveMainModelRouting | null)
   const inheritActiveMain = childInheritsActiveMainModel(activeMainModel?.model)
   const precedence = inheritActiveMain
     ? '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> active main model -> installed custom-agent default'
-    : '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> sealed role policy (Luna Max / Terra Medium / Sol High / Sol Max) -> installed custom-agent default'
+    : '- model routing precedence applies to every child, including slices created after parent decomposition: exact user role override -> sealed role policy (Luna Max / Terra Max / Sol High / Sol Max) -> installed custom-agent default'
   const roleOverride = '- when Role model preference metadata lists the selected role with source "user-scoped-owner-only", pass that row\'s exact model and reasoning_effort to spawn_agent'
   if (!activeMainModel) {
     return [

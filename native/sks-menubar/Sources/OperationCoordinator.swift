@@ -32,6 +32,9 @@ struct OperationSnapshot: Codable {
     let publicSummary: String
     let logPath: String?
     let retryable: Bool
+    let targetVersion: String?
+    let projectRoot: String?
+    let registry: String?
 }
 
 struct UpdateOperationStageSnapshot: Codable {
@@ -57,6 +60,8 @@ struct UpdateOperationReceiptSnapshot: Codable {
     let fromVersion: String
     let targetVersion: String?
     let previousVersion: String
+    let projectRoot: String?
+    let registry: String?
     let rollbackCommand: String
     let sideEffectsStarted: Bool
     let stages: [UpdateOperationStageSnapshot]
@@ -72,6 +77,8 @@ struct UpdateOperationReceiptSnapshot: Codable {
         case fromVersion = "from_version"
         case targetVersion = "target_version"
         case previousVersion = "previous_version"
+        case projectRoot = "project_root"
+        case registry
         case rollbackCommand = "rollback_command"
         case sideEffectsStarted = "side_effects_started"
         case resultStatus = "result_status"
@@ -85,7 +92,13 @@ final class OperationCoordinator {
         "preflight", "download_or_registry_check", "temporary_install_smoke", "global_install",
         "resolve_new_binary", "version_probe", "new_version_doctor", "hook_trust_repair",
         "project_receipt", "global_skills_reconcile", "native_capability_setup", "menubar_rebuild",
-        "menubar_signature_verify", "final_self_verification", "snapshot_refresh"
+        "menubar_signature_verify", "menubar_version_probe", "update_finalize_doctor",
+        "final_self_verification", "snapshot_refresh"
+    ]
+    static let postUpdateReconciliationStages = [
+        "hook_trust_repair", "project_receipt", "global_skills_reconcile",
+        "native_capability_setup", "menubar_version_probe", "update_finalize_doctor", "final_self_verification",
+        "snapshot_refresh"
     ]
     private let directory: URL
     private let queue = DispatchQueue(label: "com.sneakoscope.sks-menubar.operations")
@@ -97,7 +110,14 @@ final class OperationCoordinator {
         try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
     }
 
-    func begin(kind: String, mutationGroup: String?, summary: String) -> OperationSnapshot? {
+    func begin(
+        kind: String,
+        mutationGroup: String?,
+        summary: String,
+        targetVersion: String? = nil,
+        projectRoot: String? = nil,
+        registry: String? = nil
+    ) -> OperationSnapshot? {
         queue.sync {
             if mutationGroup != nil, activeMutation != nil { return nil }
             let now = ISO8601DateFormatter().string(from: Date())
@@ -105,7 +125,8 @@ final class OperationCoordinator {
                 schema: "sks.operation.v1", id: UUID().uuidString, kind: kind,
                 state: .queued, stage: "queued", progress: 0, startedAt: now,
                 updatedAt: now, publicSummary: summary, logPath: AppRuntime.lastActionLogPath,
-                retryable: true
+                retryable: true, targetVersion: targetVersion, projectRoot: projectRoot,
+                registry: registry
             )
             if let group = mutationGroup { activeMutation = (snapshot.id, group) }
             write(snapshot)
@@ -113,16 +134,26 @@ final class OperationCoordinator {
         }
     }
 
-    func update(_ snapshot: OperationSnapshot, state: OperationState, stage: String?, progress: Double?, summary: String, retryable: Bool = true) -> OperationSnapshot {
+    func update(
+        _ snapshot: OperationSnapshot,
+        state: OperationState,
+        stage: String?,
+        progress: Double?,
+        summary: String,
+        retryable: Bool = true,
+        releaseMutationGuard: Bool = true
+    ) -> OperationSnapshot {
         queue.sync {
             let next = OperationSnapshot(
                 schema: snapshot.schema, id: snapshot.id, kind: snapshot.kind, state: state,
                 stage: stage, progress: progress, startedAt: snapshot.startedAt,
                 updatedAt: ISO8601DateFormatter().string(from: Date()),
-                publicSummary: summary, logPath: snapshot.logPath, retryable: retryable
+                publicSummary: summary, logPath: snapshot.logPath, retryable: retryable,
+                targetVersion: snapshot.targetVersion, projectRoot: snapshot.projectRoot,
+                registry: snapshot.registry
             )
             write(next)
-            if [.succeeded, .failed, .cancelled, .terminalUncertain].contains(state) {
+            if releaseMutationGuard, [.succeeded, .failed, .cancelled, .terminalUncertain].contains(state) {
                 if activeMutation?.id == snapshot.id { activeMutation = nil }
                 cancelled.remove(snapshot.id)
             }
@@ -165,7 +196,11 @@ final class OperationCoordinator {
         }
     }
 
-    static func authoritativeState(for receipt: UpdateOperationReceiptSnapshot, processCompleted: Bool = false) -> OperationState {
+    static func authoritativeState(
+        for receipt: UpdateOperationReceiptSnapshot,
+        processCompleted: Bool = false,
+        expectedProjectRoot: String? = nil
+    ) -> OperationState {
         let state: OperationState
         switch receipt.state {
         case "queued": state = processCompleted ? .terminalUncertain : .queued
@@ -174,9 +209,19 @@ final class OperationCoordinator {
             switch receipt.resultStatus {
             case "terminal_uncertain": state = .terminalUncertain
             case "failed", "updated_with_issues": state = .failed
-            default: state = .succeeded
+            default:
+                let failed = receipt.stages.contains { !$0.ok }
+                state = failed
+                    ? .failed
+                    : completionContractIssues(for: receipt, expectedProjectRoot: expectedProjectRoot).isEmpty
+                        ? .succeeded
+                        : .terminalUncertain
             }
-        case "rolled_back": state = receipt.kind == "rollback" ? .succeeded : .failed
+        case "rolled_back":
+            state = receipt.kind == "rollback"
+                && completionContractIssues(for: receipt, expectedProjectRoot: expectedProjectRoot).isEmpty
+                ? .succeeded
+                : receipt.kind == "rollback" ? .terminalUncertain : .failed
         case "terminal_uncertain": state = .terminalUncertain
         case "failed": state = .failed
         case "cancelled": state = .cancelled
@@ -185,13 +230,82 @@ final class OperationCoordinator {
         return state
     }
 
+    static func completionContractIssues(
+        for receipt: UpdateOperationReceiptSnapshot,
+        expectedProjectRoot: String? = nil
+    ) -> [String] {
+        let ids = receipt.stages.map(\.id)
+        let known = Set(updateStageOrder)
+        let present = Set(ids)
+        let missing = updateStageOrder.filter { !present.contains($0) }
+        let unexpected = ids.filter { !known.contains($0) }
+        let duplicates = Dictionary(grouping: ids, by: { $0 })
+            .filter { $0.value.count > 1 }
+            .map(\.key)
+            .sorted()
+        let failedReconciliation = receipt.stages
+            .filter { postUpdateReconciliationStages.contains($0.id) && !$0.ok }
+            .map(\.id)
+        var issues: [String] = []
+        if !missing.isEmpty { issues.append("missing stages: \(missing.joined(separator: ", "))") }
+        if !unexpected.isEmpty { issues.append("unexpected stages: \(unexpected.joined(separator: ", "))") }
+        if !duplicates.isEmpty { issues.append("duplicate stages: \(duplicates.joined(separator: ", "))") }
+        if ids != updateStageOrder { issues.append("stage order mismatch") }
+        if !failedReconciliation.isEmpty {
+            issues.append("failed reconciliation: \(failedReconciliation.joined(separator: ", "))")
+        }
+        if let root = expectedProjectRoot {
+            if receipt.projectRoot != root { issues.append("receipt project root mismatch") }
+        }
+        return issues
+    }
+
+    static func canonicalRegistry(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmed),
+              ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+              components.host != nil,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil else { return nil }
+        components.fragment = nil
+        if components.path.isEmpty { components.path = "/" }
+        return components.url?.absoluteString
+    }
+
+    static func receiptMatchesLaunchedUpdate(
+        _ receipt: UpdateOperationReceiptSnapshot,
+        operation: OperationSnapshot
+    ) -> Bool {
+        guard operation.kind == "update",
+              receipt.kind == "update",
+              receipt.id == operation.id,
+              receipt.targetVersion == operation.targetVersion,
+              receipt.projectRoot == operation.projectRoot,
+              let expectedRegistry = operation.registry,
+              expectedRegistry == canonicalRegistry(expectedRegistry),
+              let receiptRegistry = receipt.registry,
+              receiptRegistry == expectedRegistry,
+              receiptRegistry == canonicalRegistry(receiptRegistry) else { return false }
+        return true
+    }
+
     static func receiptRequiresAction(_ receipt: UpdateOperationReceiptSnapshot, processCompleted: Bool = false) -> Bool {
         let state = authoritativeState(for: receipt, processCompleted: processCompleted)
         return state == .failed || state == .terminalUncertain || state == .cancelled
     }
 
-    func synchronize(_ snapshot: OperationSnapshot, with receipt: UpdateOperationReceiptSnapshot, processCompleted: Bool = false) -> OperationSnapshot {
-        let state = OperationCoordinator.authoritativeState(for: receipt, processCompleted: processCompleted)
+    func synchronize(
+        _ snapshot: OperationSnapshot,
+        with receipt: UpdateOperationReceiptSnapshot,
+        processCompleted: Bool = false,
+        expectedProjectRoot: String? = nil
+    ) -> OperationSnapshot {
+        let state = OperationCoordinator.authoritativeState(
+            for: receipt,
+            processCompleted: processCompleted,
+            expectedProjectRoot: expectedProjectRoot
+        )
         let completed = Set(receipt.stages.map(\.id)).intersection(Set(OperationCoordinator.updateStageOrder)).count
         let progress = min(1, Double(completed) / Double(OperationCoordinator.updateStageOrder.count))
         let result = receipt.resultStatus ?? receipt.state
@@ -231,7 +345,9 @@ final class OperationCoordinator {
               let receipt = try? JSONDecoder().decode(UpdateOperationReceiptSnapshot.self, from: data),
               receipt.schema == "sks.update-operation.v1",
               receiptPathIsAllowed(receipt.receiptPath, for: url),
-              receipt.stages.count <= OperationCoordinator.updateStageOrder.count else { return nil }
+              receipt.stages.count <= OperationCoordinator.updateStageOrder.count,
+              Set(receipt.stages.map(\.id)).count == receipt.stages.count,
+              receipt.stages.allSatisfy({ OperationCoordinator.updateStageOrder.contains($0.id) }) else { return nil }
         return receipt
     }
 

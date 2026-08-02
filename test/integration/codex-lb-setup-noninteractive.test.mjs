@@ -51,7 +51,9 @@ test('codex-lb noninteractive setup configures env loader and metadata', async (
     assert.equal(json.ok, true);
     assert.equal(json.base_url, `${host}/backend-api/codex`);
     assert.equal(json.tool_output_recovery.status, 'compatible');
-    assert.equal(json.codex_app_fast_ui.provider_model_ui.codex_lb.expected_models_present, true);
+    assert.equal(json.provider_ready, true);
+    assert.equal(json.routing_active, true);
+    assert.equal(json.codex_lb.selected, true);
     assert.ok(requests.some((request) => request.url === '/health'));
     assert.ok(requests.some((request) => request.url === '/backend-api/codex/models' && request.authorization === `Bearer ${apiKey}`));
     const metadata = JSON.parse(await fs.readFile(path.join(home, '.codex', 'sks-codex-lb.json'), 'utf8'));

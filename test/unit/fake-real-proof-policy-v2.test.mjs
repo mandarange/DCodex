@@ -31,7 +31,7 @@ test('fake-real proof policy v3 recognizes only official Codex subagent executio
   assert.ok(supporting.supporting_claims.includes('codex_structured_output_evidence'));
 });
 
-test('dynamic proof uses run-scoped cumulative starts and rejects a raw target above the automatic ceiling', async () => {
+test('dynamic proof uses run-scoped cumulative starts and rejects a raw target above the 256-child automatic ceiling', async () => {
   const mod = await import('../../dist/core/proof/fake-real-proof-policy.js');
   const withinCeiling = dynamicOfficialEvidence();
   const proven = mod.evaluateOfficialSubagentExecutionProof(withinCeiling, { required: true });
@@ -44,17 +44,17 @@ test('dynamic proof uses run-scoped cumulative starts and rejects a raw target a
   assert.ok(blocked.blockers.includes('subagent_automatic_fanout_cap_exceeded:11/10'));
 
   const tamperedCeiling = structuredClone(withinCeiling);
-  tamperedCeiling.subagent_plan.fanout_policy.automatic_ceiling = 100;
-  tamperedCeiling.subagent_plan.wave_lifecycle.target_subagents = 100;
-  tamperedCeiling.subagent_plan.wave_lifecycle.cumulative_started = 100;
+  tamperedCeiling.subagent_plan.fanout_policy.automatic_ceiling = 257;
+  tamperedCeiling.subagent_plan.wave_lifecycle.target_subagents = 257;
+  tamperedCeiling.subagent_plan.wave_lifecycle.cumulative_started = 257;
   for (const artifact of ['subagent_evidence', 'naruto_summary', 'naruto_gate']) {
-    tamperedCeiling[artifact].target_subagents = 100;
+    tamperedCeiling[artifact].target_subagents = 257;
   }
-  tamperedCeiling.subagent_evidence.started_threads = 100;
-  tamperedCeiling.subagent_evidence.completed_threads = 100;
+  tamperedCeiling.subagent_evidence.started_threads = 257;
+  tamperedCeiling.subagent_evidence.completed_threads = 257;
   const tamperedBlocked = mod.evaluateOfficialSubagentExecutionProof(tamperedCeiling, { required: true });
   assert.equal(tamperedBlocked.proof_level, 'blocked');
-  assert.ok(tamperedBlocked.blockers.includes('subagent_automatic_fanout_cap_exceeded:100/12'));
+  assert.ok(tamperedBlocked.blockers.includes('subagent_automatic_fanout_cap_exceeded:257/256'));
 });
 
 function passingOfficialEvidence() {

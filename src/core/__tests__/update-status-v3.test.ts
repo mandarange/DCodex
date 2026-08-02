@@ -91,6 +91,36 @@ test('offline refresh preserves last-known versions and emits a redacted stale s
   }
 });
 
+test('update status public_error reports the deepest redacted root cause', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-status-root-cause-'));
+  const env = isolatedEnv(root);
+  const at = new Date('2026-07-14T01:15:00.000Z');
+  try {
+    resetUpdateStatusCoordinatorForTests();
+    const status = await resolveSksUpdateStatus({
+      env,
+      refresh: true,
+      now: () => at,
+      jitterMs: 0,
+      fallbackSnapshot: () => emptyUpdateStatus('6.2.0', at),
+      fetchLive: async () => {
+        const rootCause = new Error(`${root}/config.toml token=deeply-secret-value is unreadable`);
+        const middle = new Error('registry probe wrapper', { cause: rootCause });
+        throw new Error('update refresh failed', { cause: middle });
+      }
+    });
+
+    assert.equal(status.source, 'error');
+    assert.match(status.public_error || '', /^~\/config\.toml/);
+    assert.doesNotMatch(status.public_error || '', /update refresh failed|registry probe wrapper/);
+    assert.doesNotMatch(status.public_error || '', /deeply-secret-value/);
+    assert.match(status.public_error || '', /token=\[redacted\]/);
+  } finally {
+    resetUpdateStatusCoordinatorForTests();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test('offline refresh keeps fresh local observations while reusing only last-known remote versions', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-status-local-refresh-'));
   const env = isolatedEnv(root);

@@ -52,6 +52,11 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
   if (input.codex_app_ui?.requires_confirmation === true) blockers.add('codex_app_fast_ui_repair_requires_confirmation')
   if (input.codex_app_ui?.fast_selector === 'repaired') warnings.add('codex_app_fast_selector_repaired_restart_app_if_needed')
   if (input.sks_menubar?.ok === false) warnings.add(`sks_menubar_${input.sks_menubar?.status || 'blocked'}`)
+  const telegramRemote = input.telegram_remote || null
+  if (telegramRemote?.status === 'degraded') {
+    for (const blocker of normalizeList(telegramRemote.blockers)) warnings.add(`telegram_remote:${blocker}`)
+    if (!normalizeList(telegramRemote.blockers).length) warnings.add('telegram_remote_degraded')
+  }
   const codex0138Doctor = input.codex_0138_doctor || null
   if (codex0138Doctor?.ok === false) for (const blocker of normalizeList(codex0138Doctor.blockers)) warnings.add(blocker)
   for (const warning of normalizeList(codex0138Doctor?.warnings)) warnings.add(warning)
@@ -63,6 +68,11 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
   for (const warning of normalizeList(codexAppHarness?.warnings)) warnings.add(warning)
   if (codexAppHarness?.ok === false) for (const blocker of normalizeList(codexAppHarness.blockers)) warnings.add(`codex_app_harness:${blocker}`)
   if (input.codex_lb?.ok === false) warnings.add(`codex_lb_${input.codex_lb?.circuit?.state || 'blocked'}`)
+  if (input.codex_lb?.provider_status?.selected === true && input.codex_lb?.routing_ok !== true) {
+    const routingBlockers = normalizeList(input.codex_lb?.routing_truth?.blockers)
+    for (const blocker of routingBlockers) blockers.add(blocker)
+    if (!routingBlockers.length) blockers.add('codex_lb_routing_truth_unverified')
+  }
   const localModel = input.local_model || {}
   const localStatus = String(localModel.status || (localModel.enabled ? 'enabled_unverified' : 'disabled'))
   if (localModel.enabled === true && localStatus === 'enabled_unverified') warnings.add('local_llm_enabled_unverified')
@@ -111,6 +121,26 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
 
   const managedStateCurrent = repairReadiness.ok && agentRoleConfig.ok !== false
   const coreReady = blockers.size === 0 && cliReady && managedStateCurrent
+  const centerAttempted = input.sks_menubar?.apply === true
+  const centerPhase = Array.isArray(input.doctor_fix_transaction?.phases)
+    ? input.doctor_fix_transaction.phases.find((phase: any) => phase?.id === 'sks_menubar')
+    : null
+  const centerReady = input.sks_menubar?.ok === true
+    && (!centerAttempted || !centerPhase || centerPhase.ok === true)
+  const coreBlockers = [...blockers]
+  const installCenterBlockers = normalizeList(input.sks_menubar?.blockers)
+  const phaseCenterBlockers = normalizeList(centerPhase?.blockers)
+  const centerBlockers = centerReady
+    ? []
+    : [
+        ...installCenterBlockers,
+        ...phaseCenterBlockers,
+        ...(centerAttempted && !installCenterBlockers.length && !phaseCenterBlockers.length
+          ? ['sks_center_repair_failed']
+          : [])
+      ]
+  const commandBlockers = centerAttempted ? [...new Set([...coreBlockers, ...centerBlockers])] : coreBlockers
+  const commandReady = coreReady && (!centerAttempted || centerReady)
   return {
     schema: DOCTOR_READINESS_MATRIX_SCHEMA,
     generated_at: nowIso(),
@@ -142,6 +172,10 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
     codex_app_required_for_cli: false,
     managed_state_current: managedStateCurrent,
     core_ready: coreReady,
+    center_attempted: centerAttempted,
+    center_ready: centerReady,
+    core_blockers: coreBlockers,
+    center_blockers: [...new Set(centerBlockers)],
     optional_capabilities: buildOptionalCapabilities(input),
     repair_readiness: repairReadiness,
     local_collaboration: {
@@ -165,9 +199,9 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
     },
     agent_role_config: agentRoleConfig,
     skills,
-    ready: coreReady,
-    primary_blocker: [...blockers][0] || null,
-    blockers: [...blockers],
+    ready: commandReady,
+    primary_blocker: commandBlockers[0] || null,
+    blockers: commandBlockers,
     warnings: [...warnings],
     next_actions: nextActions
   }
@@ -205,7 +239,30 @@ function buildRepairReadiness(input: any = {}) {
   add('supabase_mcp_repair', input.supabase_mcp_repair, input.supabase_mcp_repair?.ready_blocking === true)
   add('sks_menubar', input.sks_menubar, false)
   add('command_alias_cleanup', input.command_aliases, true)
-  add('native_capability_repair', input.doctor_native_capability, false)
+  const doctorNativeCapability = input.doctor_native_capability
+  const nativeCoreBlockers = doctorNativeCapability && Array.isArray(doctorNativeCapability.core_blockers)
+    ? normalizeList(doctorNativeCapability.core_blockers)
+    : normalizeList(doctorNativeCapability?.blockers)
+  add('native_capability_repair', doctorNativeCapability ? {
+    ok: nativeCoreBlockers.length === 0,
+    blockers: nativeCoreBlockers,
+    warnings: doctorNativeCapability.optional_warnings
+  } : null, false)
+  const requireLegacyGlobalHookCleanup = input.require_legacy_global_hook_cleanup === true
+  const legacyGlobalHooks = doctorNativeCapability?.legacy_global_hooks
+  if (legacyGlobalHooks || requireLegacyGlobalHookCleanup) {
+    const legacyGlobalHookBlockers = legacyGlobalHooks
+      ? normalizeList(legacyGlobalHooks.blockers).map((blocker) => `legacy_global_hooks:${blocker}`)
+      : ['legacy_global_hooks:cleanup_result_missing']
+    phases.push({
+      id: 'legacy_global_hook_cleanup',
+      ok: legacyGlobalHooks?.ok === true && legacyGlobalHookBlockers.length === 0,
+      required_for_core_ready: requireLegacyGlobalHookCleanup,
+      manual_required: false,
+      blockers: legacyGlobalHookBlockers,
+      warnings: normalizeList(legacyGlobalHooks?.warnings)
+    })
+  }
   if (input.doctor_fix_transaction) {
     for (const phase of input.doctor_fix_transaction.phases || []) {
       phases.push({

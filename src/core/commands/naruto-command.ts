@@ -34,15 +34,13 @@ import {
   readSubagentEvents,
   writeSubagentEvidence
 } from '../subagents/subagent-evidence.js'
-import { buildNarutoHelpResult } from '../subagents/naruto-help-contract.js'
-import { resolveNarutoCredentialPolicy, type NarutoCredentialPolicy } from '../subagents/naruto-host-credentials.js'
-import {
-  DEFAULT_SUBAGENT_EFFORT,
-  DEFAULT_SUBAGENT_MODEL,
-  NARUTO_PARENT_EFFORT,
-  NARUTO_PARENT_MODEL
-} from '../subagents/model-policy.js'
+import { buildNarutoHelpResult, renderNarutoUsage } from '../subagents/naruto-help-contract.js'
+import { parseNarutoArgs, type NarutoArgs } from '../subagents/naruto-command-args.js'
 import { buildNarutoProofProjection } from '../subagents/naruto-proof-projection.js'
+import {
+  attachNarutoLaunchDiagnostics,
+  normalizedNarutoOperatorActions
+} from '../subagents/naruto-launch-diagnostics.js'
 import { withFileLock } from '../locks/file-lock.js'
 import {
   codexAppSessionKey,
@@ -79,25 +77,11 @@ import {
 } from '../hooks-runtime/official-subagent-lifecycle.js'
 
 export { buildNarutoGateResult } from '../subagents/official-subagent-preparation.js'
+export { attachNarutoLaunchDiagnostics } from '../subagents/naruto-launch-diagnostics.js'
+export { parseNarutoArgs } from '../subagents/naruto-command-args.js'
+export { renderNarutoUsage as usage } from '../subagents/naruto-help-contract.js'
 
 const MAX_PARENT_SUMMARY_STDIN_BYTES = 1024 * 1024
-
-type NarutoAction = 'run' | 'status' | 'subagents' | 'proof' | 'parent-summary' | 'help'
-
-export interface NarutoArgs {
-  action: NarutoAction
-  prompt: string
-  requestedSubagents: number | undefined
-  maxThreads: number | undefined
-  missionId: string
-  json: boolean
-  stdin: boolean
-  readOnly: boolean
-  trustedProject: boolean
-  argumentErrors: string[]
-  /** Host credential/model delegation resolved from flags and environment. */
-  credentialPolicy: NarutoCredentialPolicy
-}
 
 type NarutoPreparationFailureInjection =
   | 'after_marker_before_artifact'
@@ -116,10 +100,16 @@ export async function narutoCommand(commandOrArgs: string | string[] = 'naruto',
   if (args.some((arg) => arg === '--glm' || arg.startsWith('--glm='))) return blockGlmOverride(args.includes('--json'))
 
   const parsed = parseNarutoArgs(args)
+  if (parsed.argumentErrors.length) {
+    const result = argumentBlock(parsed.argumentErrors)
+    return emit(parsed, result, () => {
+      for (const line of renderNarutoBlockedLines(result.blockers)) console.error(line)
+    }, true)
+  }
   // A malformed provider or effort tier blocks the run before any mission state
   // is written, instead of silently falling back to the SKS-managed credential.
   const credentialPolicy = parsed.credentialPolicy
-  if (credentialPolicy.blockers.length) {
+  if (parsed.action === 'run' && credentialPolicy.blockers.length) {
     const blocked = {
       schema: 'sks.naruto-credential-policy.v1',
       ok: false,
@@ -133,12 +123,6 @@ export async function narutoCommand(commandOrArgs: string | string[] = 'naruto',
     }
     process.exitCode = 2
     return null
-  }
-  if (parsed.argumentErrors.length) {
-    const result = argumentBlock(parsed.argumentErrors)
-    return emit(parsed, result, () => {
-      for (const line of renderNarutoBlockedLines(result.blockers)) console.error(line)
-    }, true)
   }
   if (!parsed.json) cliUi.banner(parsed.action === 'run' ? 'naruto subagents' : `naruto ${parsed.action}`)
   if (parsed.action === 'help') return narutoHelp(parsed)
@@ -456,6 +440,19 @@ async function narutoRunTransaction(
     workflowRunId,
     configBlockers
   } = preparation
+  if (configBlockers.length > 0) {
+    return emit(parsed, {
+      schema: NARUTO_RESULT_SCHEMA,
+      ok: false,
+      action: 'run',
+      status: 'blocked',
+      mission_id: id,
+      workflow_run_id: workflowRunId,
+      blockers: configBlockers
+    }, () => {
+      for (const line of renderNarutoBlockedLines(configBlockers)) console.error(line)
+    }, true)
+  }
   const run = await runOfficialSubagentWorkflow({
     root,
     goal: parsed.prompt,
@@ -568,21 +565,24 @@ async function narutoRunTransaction(
       : run.ok === true
         ? 'incomplete'
         : 'blocked'
-  const summary = buildNarutoSummary({
-    missionId: id,
-    workflowRunId,
-    budget: finalBudget,
-    evidence,
-    verification,
-    status,
-    ok: passed,
-    parentSummary: effectiveParentSummary,
-    blockers: gate.blockers,
-    appSession,
-    sessionKey,
-    suggestedAgents: Array.isArray(completedPlan?.suggested_agents) ? completedPlan.suggested_agents : [],
-    waveLifecycle
-  })
+  const summary = attachNarutoLaunchDiagnostics(
+    buildNarutoSummary({
+      missionId: id,
+      workflowRunId,
+      budget: finalBudget,
+      evidence,
+      verification,
+      status,
+      ok: passed,
+      parentSummary: effectiveParentSummary,
+      blockers: gate.blockers,
+      appSession,
+      sessionKey,
+      suggestedAgents: Array.isArray(completedPlan?.suggested_agents) ? completedPlan.suggested_agents : [],
+      waveLifecycle
+    }),
+    run
+  )
   await writeJsonAtomic(path.join(dir, NARUTO_SUMMARY_FILENAME), summary)
   await updateCurrentIfMissionAndRun(root, id, workflowRunId, {
     mission_id: id,
@@ -793,15 +793,13 @@ function narutoHelp(parsed: NarutoArgs) {
   const result = buildNarutoHelpResult()
   return emit(parsed, result, () => {
     cliUi.ok('Naruto parallel workflow help available')
-    console.log('$sks-naruto — Naruto parallel system (Codex official subagent transport)')
-    for (const line of result.usage) console.log(`  ${line}`)
+    console.log(renderNarutoUsage())
     console.log(`Parent: ${result.parent.model} / ${result.parent.model_reasoning_effort}`)
     const worker = result.agents.worker
     const expert = result.agents.expert
     if (worker) console.log(`Worker: ${worker.model} / ${worker.model_reasoning_effort}`)
     if (expert) console.log(`Expert: ${expert.model} / ${expert.model_reasoning_effort}`)
-    console.log(`Starting Naruto children: ${result.default_requested_subagents}; automatic capacity may scale useful independent work up to ${result.automatic_subagent_ceiling}`)
-    console.log('Concurrency: max_threads is a frame budget (cap), not a target; GPT-5.6 four profiles are routing lanes, not an agent-count cap')
+    console.log(`Starting Naruto children: ${result.default_requested_subagents}; normal ceiling ${result.automatic_subagent_ceiling}, mass ceiling ${result.mass_automatic_subagent_ceiling}, hard frame cap ${result.absolute_hard_frame_cap}`)
     console.log(`Nesting: max_depth=${result.max_depth}; Naruto children must not spawn children`)
     console.log('Context: bounded TriWiki attention.use_first anchors with on-demand source hydration')
     console.log('Evidence: SubagentStop is lifecycle-only; completion requires subagent-parent-summary.json with one structured outcome per Naruto child thread.')
@@ -859,195 +857,6 @@ async function resolveReadMission(parsed: NarutoArgs) {
   if (!id) return null
   const loaded = await loadMission(root, id).catch(() => null)
   return loaded ? { root, id, dir: loaded.dir } : null
-}
-
-export function parseNarutoArgs(args: string[]): NarutoArgs {
-  const helpRequested = args.includes('--help') || args.includes('-h')
-  const validationArgs = [...args]
-  const normalized = helpRequested
-    ? ['help', ...(args.includes('--json') ? ['--json'] : [])]
-    : args
-  const first = normalized[0] && !normalized[0].startsWith('-') ? normalized[0] : ''
-  const actionName = first
-  const actions = new Set(['run', 'status', 'subagents', 'proof', 'parent-summary', 'help'])
-  const action = (actions.has(actionName) ? actionName : 'run') as NarutoAction
-  const explicitAction = actions.has(actionName)
-  const rest = explicitAction ? normalized.slice(1) : normalized
-  const optionArgs = validationArgs.includes('--') ? validationArgs.slice(0, validationArgs.indexOf('--')) : validationArgs
-  const agentsOption = optionValue(optionArgs, '--agents')
-  const maxThreadsOption = optionValue(optionArgs, '--max-threads')
-  const missionOption = optionValue(optionArgs, '--mission')
-  const missionIdOption = optionValue(optionArgs, '--mission-id')
-  const argumentErrors = uniqueStrings([
-    ...optionErrors('--agents', agentsOption, true),
-    ...optionErrors('--max-threads', maxThreadsOption, true),
-    ...optionErrors('--mission', missionOption, false),
-    ...optionErrors('--mission-id', missionIdOption, false),
-    ...booleanOptionErrors(validationArgs),
-    ...unknownOptionErrors(validationArgs)
-  ])
-  if (first && !explicitAction) argumentErrors.push(`unknown_subcommand:${String(first).toLowerCase()}`)
-  const requestedSubagents = strictPositiveInteger(agentsOption.value)
-  const maxThreads = strictPositiveInteger(maxThreadsOption.value)
-  const missionFlag = missionOption.value ?? missionIdOption.value
-  const positional = positionalValues(rest)
-  const positionalMission = action === 'status' || action === 'subagents' || action === 'proof'
-    ? positional.find((value) => value === 'latest' || /^M-/.test(value))
-    : undefined
-  const prompt = action === 'run'
-    ? positional.join(' ').trim()
-    : ''
-  const positionalHead = String(positional[0] || '').toLowerCase()
-  const subcommandNames = new Set(['run', 'status', 'subagents', 'proof', 'parent-summary', 'help'])
-  if (!first && !explicitAction && positionalHead && !subcommandNames.has(positionalHead)) {
-    argumentErrors.push(`unknown_subcommand:${positionalHead}`)
-  }
-  if (explicitAction && action === 'run' && subcommandNames.has(positionalHead)) {
-    argumentErrors.push(`misplaced_subcommand:${positionalHead}`)
-  } else if (!explicitAction && subcommandNames.has(positionalHead)) {
-    argumentErrors.push(`misplaced_subcommand:${positionalHead}`)
-  }
-  if (action !== 'run') {
-    let missionConsumed = false
-    for (const value of positional) {
-      if (!missionConsumed && positionalMission !== undefined && value === positionalMission) {
-        missionConsumed = true
-        continue
-      }
-      const normalizedValue = String(value || '').toLowerCase()
-      if (subcommandNames.has(normalizedValue)) {
-        argumentErrors.push(`misplaced_subcommand:${normalizedValue}`)
-      } else {
-        argumentErrors.push(`unexpected_positional:${value}`)
-      }
-    }
-  }
-  if (action === 'run' && !prompt) argumentErrors.push('empty_task')
-  if (action === 'parent-summary') {
-    if (!missionOption.present || !missionOption.value || missionOption.value === 'latest') {
-      argumentErrors.push('parent_summary_requires_explicit_mission')
-    }
-    if (missionIdOption.present) argumentErrors.push('parent_summary_mission_id_alias_not_supported')
-    if (!normalized.includes('--stdin')) argumentErrors.push('parent_summary_requires_stdin')
-    if (agentsOption.present || maxThreadsOption.present || normalized.includes('--readonly')
-      || normalized.includes('--read-only') || normalized.includes('--trusted-project')) {
-      argumentErrors.push('parent_summary_unsupported_run_option')
-    }
-  } else if (normalized.includes('--stdin')) {
-    argumentErrors.push('stdin_only_supported_for_parent_summary')
-  }
-  return {
-    action,
-    prompt,
-    requestedSubagents,
-    maxThreads,
-    missionId: String(missionFlag || positionalMission || 'latest'),
-    json: normalized.includes('--json'),
-    stdin: normalized.includes('--stdin'),
-    readOnly: normalized.includes('--readonly') || normalized.includes('--read-only'),
-    trustedProject: optionArgs.includes('--trusted-project'),
-    argumentErrors: uniqueStrings(argumentErrors),
-    credentialPolicy: resolveNarutoCredentialPolicy({
-      args: optionArgs,
-      env: process.env,
-      defaultParentModel: NARUTO_PARENT_MODEL,
-      defaultParentEffort: NARUTO_PARENT_EFFORT,
-      defaultSubagentModel: DEFAULT_SUBAGENT_MODEL,
-      defaultSubagentEffort: DEFAULT_SUBAGENT_EFFORT
-    })
-  }
-}
-
-function positionalValues(args: string[]) {
-  const valueFlags = new Set([
-    '--agents', '--max-threads', '--mission', '--mission-id',
-    // Host credential/model delegation. These take a value, so their value must
-    // never be swept into the task prompt as a positional word.
-    '--auth-mode', '--model-provider', '--provider-env-key',
-    '--parent-model', '--parent-effort', '--subagent-model', '--subagent-effort'
-  ])
-  const booleanFlags = new Set([
-    '--json', '--stdin', '--readonly', '--read-only', '--trusted-project', '--no-forced-login-method'
-  ])
-  const result: string[] = []
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index] || ''
-    if (arg === '--') {
-      result.push(...args.slice(index + 1))
-      break
-    }
-    if (valueFlags.has(arg)) {
-      index += 1
-      continue
-    }
-    if ([...valueFlags].some((flag) => arg.startsWith(`${flag}=`))) continue
-    if (booleanFlags.has(arg)) continue
-    if (!arg.startsWith('--')) result.push(arg)
-  }
-  return result
-}
-
-function optionValue(args: string[], name: string): { present: boolean; value: string | undefined; missing: boolean; duplicate: boolean } {
-  const values: Array<string | undefined> = []
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index] || ''
-    if (arg === name) {
-      const next = args[index + 1]
-      values.push(next && !next.startsWith('--') ? next : undefined)
-      continue
-    }
-    if (arg.startsWith(`${name}=`)) values.push(arg.slice(name.length + 1) || undefined)
-  }
-  return {
-    present: values.length > 0,
-    value: values.at(-1),
-    missing: values.some((value) => value === undefined),
-    duplicate: values.length > 1
-  }
-}
-
-function strictPositiveInteger(value: unknown): number | undefined {
-  if (value === undefined || value === null || value === '') return undefined
-  if (!/^\d+$/.test(String(value))) return undefined
-  const parsed = Number(value)
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined
-}
-
-function optionErrors(name: string, option: ReturnType<typeof optionValue>, numeric: boolean): string[] {
-  const errors: string[] = []
-  if (option.missing) errors.push(`missing_option_value:${name}`)
-  if (option.duplicate) errors.push(`duplicate_option:${name}`)
-  if (numeric && option.present && option.value !== undefined && strictPositiveInteger(option.value) === undefined) {
-    errors.push(`invalid_positive_integer:${name}=${option.value}`)
-  }
-  return errors
-}
-
-function unknownOptionErrors(args: string[]): string[] {
-  const canonical = new Set([
-    '--agents', '--max-threads', '--mission', '--mission-id',
-    '--json', '--stdin', '--readonly', '--read-only', '--trusted-project', '--help', '-h', '--'
-  ])
-  const errors: string[] = []
-  const optionArgs = args.includes('--') ? args.slice(0, args.indexOf('--')) : args
-  for (const arg of optionArgs) {
-    if (!arg.startsWith('-') || arg === '-') continue
-    const name = arg.includes('=') ? arg.slice(0, arg.indexOf('=')) : arg
-    if (!canonical.has(name)) errors.push(`unsupported_argument:${name}`)
-  }
-  return errors
-}
-
-function booleanOptionErrors(args: string[]): string[] {
-  const booleanNames = new Set(['--json', '--stdin', '--readonly', '--read-only', '--trusted-project', '--no-forced-login-method', '--help', '-h'])
-  const optionArgs = args.includes('--') ? args.slice(0, args.indexOf('--')) : args
-  const errors: string[] = []
-  for (const arg of optionArgs) {
-    if (!arg.includes('=')) continue
-    const name = arg.slice(0, arg.indexOf('='))
-    if (booleanNames.has(name)) errors.push(`boolean_option_value_not_supported:${name}`)
-  }
-  return errors
 }
 
 function blockGlmOverride(json: boolean) {
@@ -1117,14 +926,23 @@ function emit(parsed: Pick<NarutoArgs, 'json'>, result: any, human: () => void, 
 }
 
 function renderRunResult(result: any) {
+  const operatorActionLines = renderNarutoOperatorActionLines(result)
   if (['blocked', 'incomplete'].includes(result.status) && Array.isArray(result.blockers) && result.blockers.length) {
     for (const line of renderNarutoBlockedLines(result.blockers)) console.log(line)
+    for (const line of operatorActionLines) console.log(line)
     return
   }
   console.log(`$sks-naruto ${result.status}: ${result.mission_id}`)
   console.log(`Naruto children: requested ${result.requested_subagents}, target ${result.target_subagents ?? result.requested_subagents}, policy ${result.count_policy || 'exact'}, max threads ${result.max_threads}`)
   console.log(`Started/completed/failed: ${result.started_subagents}/${result.completed_subagents}/${result.failed_subagents}`)
   if (result.status === 'delegation_context_ready') console.log('Continue in the current Naruto parent and wait for every requested child before summarizing.')
+  for (const line of operatorActionLines) console.log(line)
+}
+
+export function renderNarutoOperatorActionLines(result: any): string[] {
+  return ['blocked', 'incomplete'].includes(result?.status)
+    ? normalizedNarutoOperatorActions(result?.operator_actions).map((action) => `Action: ${action}`)
+    : []
 }
 
 function renderParentSummaryResult(result: any) {

@@ -38,7 +38,7 @@ export interface RoleModelPreferenceStore {
 
 export const SUPPORTED_ROLE_MODEL_PROFILES = Object.freeze([
   Object.freeze({ provider: 'openai', model: 'gpt-5.6-luna', reasoning_effort: 'max', source: 'managed-default' }),
-  Object.freeze({ provider: 'openai', model: 'gpt-5.6-terra', reasoning_effort: 'medium', source: 'managed-default' }),
+  Object.freeze({ provider: 'openai', model: 'gpt-5.6-terra', reasoning_effort: 'max', source: 'managed-default' }),
   Object.freeze({ provider: 'openai', model: 'gpt-5.6-sol', reasoning_effort: 'high', source: 'managed-default' }),
   Object.freeze({ provider: 'openai', model: 'gpt-5.6-sol', reasoning_effort: 'max', source: 'managed-default' })
 ] as const);

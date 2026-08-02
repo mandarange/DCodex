@@ -30,7 +30,11 @@ await fs.writeFile(path.join(home, '.codex', 'auth.json'), `${JSON.stringify({
     refresh_token: 'refresh-fast-truth'
   }
 })}\n`);
-await fs.writeFile(path.join(home, '.codex', 'sks-codex-lb.env'), "export CODEX_LB_BASE_URL='https://lb.example.test/backend-api/codex'\nexport CODEX_LB_API_KEY='sk-fixture'\n");
+await fs.writeFile(
+  path.join(home, '.codex', 'sks-codex-lb.env'),
+  "export CODEX_LB_BASE_URL='https://lb.example.test/backend-api/codex'\nexport CODEX_LB_API_KEY='sk-fixture'\n",
+  { mode: 0o600 }
+);
 
 const chain = await runFastCheck({
   HOME: home,

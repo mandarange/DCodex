@@ -6,9 +6,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeTextAtomic } from '../core/fsx.js';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const root = path.resolve(
+  process.env.SKS_BUILD_SOURCE_ROOT
+  || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+);
 const srcRoot = path.join(root, 'src');
-const distRoot = path.join(root, 'dist');
+const distRoot = path.resolve(process.env.SKS_BUILD_OUTPUT_DIR || path.join(root, 'dist'));
 
 await fsp.mkdir(distRoot, { recursive: true });
 await removeDistMjs(distRoot);
@@ -56,17 +59,53 @@ async function copyRuntimeConfigFiles() {
 
 async function copyNativeMenuBarSources() {
   await copyDirIfPresent(
-    new URL('../../native/sks-menubar', import.meta.url),
+    path.join(root, 'native', 'sks-menubar'),
     path.join(distRoot, 'native', 'sks-menubar')
   );
 }
 
 async function writeSkillsManifest() {
-  const { generatePackagedSkillsManifest } = await import('../core/init/skills.js');
-  const manifest = await generatePackagedSkillsManifest();
   const out = path.join(distRoot, 'config', 'skills-manifest.json');
+  const ledgerPath = path.join(root, 'config', 'skills-hash-ledger.v1.json');
+  const ledger = JSON.parse(await fsp.readFile(ledgerPath, 'utf8'));
+  const {
+    generatePackagedSkillsManifest,
+    mergePackagedSkillsManifestHashHistory
+  } = await import('../core/init/skills.js');
+  const generated = await generatePackagedSkillsManifest();
+  assertSkillsHashLedgerCoversGeneratedManifest(ledger, generated);
+  const ledgerManifest = {
+    skills: ledger.skills.map((row) => ({
+      canonical_name: row.canonical_name,
+      content_sha256: row.trusted_sha256[0],
+      hash_history: row.trusted_sha256.slice(1)
+    }))
+  };
+  const manifest = mergePackagedSkillsManifestHashHistory(generated, ledgerManifest);
   await fsp.mkdir(path.dirname(out), { recursive: true });
   await writeTextAtomic(out, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+function assertSkillsHashLedgerCoversGeneratedManifest(ledger, generated) {
+  if (ledger?.schema !== 'sks.skills-hash-ledger.v1' || !Array.isArray(ledger.skills)) {
+    throw new Error('skills_hash_ledger_invalid');
+  }
+  const rows = new Map();
+  for (const row of ledger.skills) {
+    if (!/^[a-z0-9-]+$/.test(String(row?.canonical_name || ''))
+      || rows.has(row.canonical_name)
+      || !Array.isArray(row?.trusted_sha256)
+      || !row.trusted_sha256.length
+      || row.trusted_sha256.some((digest) => !/^[a-f0-9]{64}$/.test(String(digest)))) {
+      throw new Error(`skills_hash_ledger_row_invalid:${String(row?.canonical_name || 'unknown')}`);
+    }
+    rows.set(row.canonical_name, new Set(row.trusted_sha256));
+  }
+  for (const skill of generated.skills || []) {
+    if (!rows.get(skill.canonical_name)?.has(skill.content_sha256)) {
+      throw new Error(`skills_hash_ledger_missing_current_digest:${skill.canonical_name}`);
+    }
+  }
 }
 
 async function writeCommonJsBinScope() {
@@ -99,12 +138,14 @@ async function writeCommonJsBinScope() {
     next = stripGeneratedCommonJsExports(next, names);
     return `${next}\n\n${names.map((name) => `exports.${name} = ${name};`).join('\n')}\n`;
   });
-  await rewriteIfPresent(path.join(binDir, 'install.js'), (text) =>
-    stripSourceMap(text).replace(
-      /^import \{ spawnSync \} from 'node:child_process';/m,
-      "const { spawnSync } = require('node:child_process');"
-    )
-  );
+  await rewriteIfPresent(path.join(binDir, 'install.js'), () => `#!/usr/bin/env node
+import('../core/commands/install-package-command.js')
+  .then(({ installPackageCommand }) => installPackageCommand())
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+`);
 }
 
 async function rewriteIfPresent(file, rewrite) {

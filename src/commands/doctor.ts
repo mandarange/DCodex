@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
-import { projectRoot, exists, formatBytes, nowIso, writeJsonAtomic } from '../core/fsx.js';
+import { createHash } from 'node:crypto';
+import { projectRoot, exists, formatBytes, nowIso, readText, writeJsonAtomic } from '../core/fsx.js';
 import { flag } from '../cli/args.js';
 import { printJson } from '../cli/output.js';
 import { ui as cliUi } from '../cli/cli-theme.js';
@@ -10,8 +11,31 @@ import { codexAppIntegrationStatus } from '../core/codex-app.js';
 import { codexLbMetrics, readCodexLbCircuit } from '../core/codex-lb-circuit.js';
 import { codexLbStatus } from '../cli/install-helpers.js';
 import { codexLbToolOutputRecoveryOverrideAcknowledged } from '../core/codex-lb/codex-lb-tool-output-recovery.js';
+import { codexLbEnvPath, loadCodexLbEnv } from '../core/codex-lb/codex-lb-env.js';
+import {
+  codexLbLegacyKeychainMigrationStampPath,
+  inspectDesktopCenterLaunchCredentials,
+  inspectCodexLbLegacyKeychainMigration,
+  repairCodexLbLegacyKeychainMigration,
+  syncDesktopCenterLaunchCredentials
+} from '../core/codex-lb/desktop-center-credentials.js';
+import {
+  codexLbRoutingTruthIsActive,
+  measureAndWriteCodexLbRoutingTruth,
+  readCodexLbRoutingTruthReceipt
+} from '../core/codex-lb/routing-truth.js';
+import { removeCodexLbOrphanManagedMarkers } from '../cli/install-helpers-codex-lb-config.js';
+import { safeWriteCodexConfigToml } from '../core/codex-runtime/codex-desktop-config-policy.js';
+import { probeTelegram, telegramSelfHealAction } from '../core/telegram/doctor.js';
+import { TelegramClient, type TelegramTokenProvider } from '../core/telegram/client.js';
+import { resolveTelegramBotToken } from '../core/telegram/keychain.js';
+import { telegramLivenessPath } from '../core/telegram/liveness.js';
 import { normalizeInstallScope } from '../core/init.js';
 import { inspectCodexConfigReadability } from '../core/codex/codex-config-readability.js';
+import {
+  inspectOAuthCallbackPortConflict,
+  oauthCallbackDoctorGuidance
+} from '../core/codex/oauth-callback-port-diagnostic.js';
 import { checkZellijCapability } from '../core/zellij/zellij-capability.js';
 import { inventoryCodexPermissionProfiles } from '../core/codex/codex-permission-profiles.js';
 import { appendMigrationEvents, hashConfigText } from '../core/migration/migration-transaction-journal.js';
@@ -24,20 +48,242 @@ import { buildCodexAppHarnessMatrix } from '../core/codex-app/codex-app-harness-
 import { buildCodexNativeFeatureMatrix } from '../core/codex-native/codex-native-feature-broker.js';
 import { withSecretPreservationGuard } from '../core/config/config-migration-journal.js';
 import { reconcileDoctorSkills } from '../core/doctor/doctor-skill-reconcile.js';
+import { buildSksMenuBarDoctorPostcheck } from '../core/doctor/sks-menubar-doctor.js';
 import { isUpdateMigrationReceiptCurrent, projectUpdateMigrationReceiptPath, writeProjectUpdateMigrationReceipt } from '../core/update/update-migration-state.js';
-import { inspectSksMenuBarStatus, installSksMenuBar, sksMenuBarRestartDeferred } from '../core/codex-app/menubar/index.js';
+import { inspectSksMenuBarStatus, installSksMenuBar, sksMenuBarPaths, sksMenuBarRestartDeferred } from '../core/codex-app/menubar/index.js';
+import { restartLaunchAgent } from '../core/codex-app/menubar/launch-agent.js';
 import { sweepSksTempDirs } from '../core/retention.js';
 import { detectImagegenCapability } from '../core/imagegen/imagegen-capability.js';
 import { CURRENT_CODEX_RELEASE_MANIFEST } from '../core/codex-compat/codex-release-manifest.js';
 import { formatHarnessConflictReport, scanHarnessConflicts } from '../core/harness-conflicts.js';
 import {
-  doctorArgWarnings,
+  doctorArgWarnings as baseDoctorArgWarnings,
   doctorMenuBarInstallPolicy,
   doctorPhaseIdsForProfile,
   doctorProfileFromArgs
 } from './doctor-profile.js';
 
-export { doctorArgWarnings, doctorMenuBarInstallPolicy, doctorProfileFromArgs } from './doctor-profile.js';
+export { doctorMenuBarInstallPolicy, doctorProfileFromArgs } from './doctor-profile.js';
+
+const CODEX_LB_KEYCHAIN_MIGRATION_RETRY_FLAG = '--retry-codex-lb-keychain-migration';
+
+export function doctorArgWarnings(args: any[] = []): string[] {
+  return baseDoctorArgWarnings(args.filter((arg) => arg !== CODEX_LB_KEYCHAIN_MIGRATION_RETRY_FLAG));
+}
+
+export function deferCommandAliasCleanupToMigrationReceipt(result: any) {
+  const observedBlockers = Array.isArray(result?.blockers)
+    ? result.blockers.map(String).filter(Boolean)
+    : [];
+  return {
+    ...result,
+    ok: true,
+    status: 'deferred_to_project_migration_receipt',
+    fix: false,
+    repair_owner: 'project_migration_receipt',
+    pre_migration_blockers: observedBlockers,
+    actions: [],
+    blockers: [],
+    warnings: [
+      ...(Array.isArray(result?.warnings) ? result.warnings.map(String).filter(Boolean) : []),
+      ...(observedBlockers.length ? [`pre_migration_public_surface_findings_deferred:${observedBlockers.length}`] : [])
+    ]
+  };
+}
+
+export async function inspectDoctorCodexLbSecretResolution(input: any = {}, deps: any = {}) {
+  const processEnv: NodeJS.ProcessEnv = input.processEnv || process.env;
+  const home = path.resolve(input.home || processEnv.HOME || os.homedir());
+  const suppliedMigrationOptions = input.migrationOptions || {};
+  const migrationOptions: any = {
+    ...suppliedMigrationOptions,
+    home,
+    env: suppliedMigrationOptions.env || processEnv,
+    processEnv: suppliedMigrationOptions.processEnv || processEnv,
+    ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+    ...(input.forceRetry === true ? { forceRetry: true } : {})
+  };
+  // Canonical tests redirect HOME but cannot isolate the user's login
+  // Keychain. Tests that exercise the real macOS path opt back in with an
+  // explicit fixture platform + security runner.
+  if (processEnv.SKS_TEST_FORBID_REAL_HOME === '1' && suppliedMigrationOptions.platform === undefined) {
+    migrationOptions.platform = 'linux';
+  }
+  const mode = input.fix === true ? 'repair' : 'inspect';
+  const reconcile = mode === 'repair'
+    ? deps.repairImpl || repairCodexLbLegacyKeychainMigration
+    : deps.inspectImpl || inspectCodexLbLegacyKeychainMigration;
+  let migration: any;
+  try {
+    migration = await reconcile(migrationOptions);
+  } catch (error: unknown) {
+    migration = {
+      schema: 'sks.codex-lb-legacy-keychain-reconciliation.v1',
+      ok: false,
+      status: `${mode}_failed`,
+      mode,
+      env_key_valid: false,
+      keychain_item_present: null,
+      prompt_risk: 'none',
+      attempted: false,
+      stamp_path: codexLbLegacyKeychainMigrationStampPath(home),
+      stamp_outcome: null,
+      keychain_deleted: false,
+      keychain_cleared: [],
+      blockers: [`codex_lb_legacy_keychain_${mode}_failed:${error instanceof Error ? error.message : String(error)}`]
+    };
+  }
+  const envPath = String(suppliedMigrationOptions.envPath || codexLbEnvPath(home));
+  let loaded: any = null;
+  let resolutionError: string | null = null;
+  try {
+    loaded = await (deps.loadEnvImpl || loadCodexLbEnv)({
+      home,
+      processEnv,
+      envPath,
+      ...(suppliedMigrationOptions.metadataPath ? { metadataPath: suppliedMigrationOptions.metadataPath } : {})
+    });
+  } catch (error: unknown) {
+    resolutionError = error instanceof Error ? error.message : String(error);
+  }
+  const source = String(loaded?.source || 'missing');
+  const unsafeEnvFile = Array.isArray(loaded?.blockers)
+    && loaded.blockers.some((blocker: unknown) => String(blocker).startsWith('codex_lb_env_file_'));
+  const resolutionPath = source === 'env-file' || unsafeEnvFile
+    ? String(loaded?.env_paths?.[0] || envPath)
+    : null;
+  const operatorActions: string[] = [];
+  if (mode === 'inspect' && migration.prompt_risk === 'one_time_on_repair') {
+    operatorActions.push('Run `sks doctor --fix` to perform the one-time legacy Keychain transfer.');
+  }
+  if (mode === 'repair'
+    && migration.ok === false
+    && (migration.attempted === true || migration.status === 'already_attempted')) {
+    operatorActions.push(`Run \`sks doctor --fix ${CODEX_LB_KEYCHAIN_MIGRATION_RETRY_FLAG}\` to explicitly retry the one-time Keychain transfer.`);
+  }
+  return {
+    ok: migration.ok !== false && resolutionError === null,
+    secret_resolution: {
+      source,
+      path: resolutionPath,
+      prompt_risk: migration.prompt_risk || 'none'
+    },
+    legacy_keychain_migration: {
+      ...migration,
+      operator_actions: operatorActions,
+      ...(resolutionError ? { resolution_error: resolutionError } : {})
+    }
+  };
+}
+
+export async function inspectDoctorCodexLbDivergence(input: any = {}, deps: any = {}) {
+  const processEnv: NodeJS.ProcessEnv = input.processEnv || process.env;
+  const home = path.resolve(input.home || processEnv.HOME || os.homedir());
+  const status = input.providerStatus || {};
+  const configPath = String(status.config_path || path.join(home, '.codex', 'config.toml'));
+  const configText = await (deps.readTextImpl || readText)(configPath, '');
+  const orphan = removeCodexLbOrphanManagedMarkers(configText);
+  let orphanRepair: any = {
+    schema: 'sks.codex-lb-orphan-managed-marker-repair.v1',
+    attempted: false,
+    changed: false,
+    markers: orphan.orphan_markers,
+    receipt: null
+  };
+  if (input.fix === true && orphan.changed) {
+    const write = deps.writeConfigImpl || safeWriteCodexConfigToml;
+    const receipt = await write(configPath, configText, orphan.text, 'doctor-codex-lb-orphan-marker');
+    orphanRepair = {
+      ...orphanRepair,
+      attempted: true,
+      changed: receipt?.ok !== false,
+      receipt
+    };
+  }
+
+  const load = deps.loadEnvImpl || loadCodexLbEnv;
+  const canonical = await load({
+    home,
+    processEnv: {},
+    envPath: String(status.env_path || codexLbEnvPath(home))
+  }).catch(() => null);
+  const ambientKey = String(processEnv.CODEX_LB_API_KEY || '').trim();
+  const canonicalKey = String(canonical?.secret_api_key || '').trim();
+  const sha256 = (value: string) => value
+    ? createHash('sha256').update(value).digest('hex')
+    : null;
+  const ambientHash = sha256(ambientKey);
+  const canonicalHash = sha256(canonicalKey);
+  const staleAmbient = Boolean(ambientHash && canonicalHash && ambientHash !== canonicalHash);
+  const bridgeActive = status.desktop_mode === 'desktop-native-bridge';
+  const definedButNotSelected = status.provider_configured === true
+    && status.selected !== true
+    && !bridgeActive
+    && status.desktop_mode !== 'desktop-dual-auth-compat';
+  const mode = status.selected === true
+    ? 'cli-provider'
+    : bridgeActive
+      ? 'desktop-native-bridge'
+      : 'disabled';
+  const inspectLaunch = deps.inspectLaunchImpl || inspectDesktopCenterLaunchCredentials;
+  const syncLaunch = deps.syncLaunchImpl || syncDesktopCenterLaunchCredentials;
+  const launchOptions = {
+    mode,
+    home,
+    ...(input.launchctlBin ? { launchctlBin: input.launchctlBin } : {}),
+    ...(input.platform ? { platform: input.platform } : {}),
+    ...(input.forceLaunchctl ? { force: true } : {}),
+    ...(input.runProcessImpl ? { runProcessImpl: input.runProcessImpl } : {})
+  };
+  const launchBefore = await inspectLaunch(launchOptions);
+  const launchRepair = input.fix === true && launchBefore.ok === false
+    ? await syncLaunch({ ...launchOptions, skipPurge: true })
+    : null;
+  const launchAfter = launchRepair ? await inspectLaunch(launchOptions) : launchBefore;
+  const warnings = [
+    ...(definedButNotSelected
+      ? ['codex_lb_defined_but_not_selected']
+      : []),
+    ...(staleAmbient ? ['codex_lb_stale_ambient_key'] : []),
+    ...(orphan.orphan_markers.length > 0
+      ? [`codex_lb_orphan_managed_markers:${orphan.orphan_markers.join(',')}`]
+      : [])
+  ];
+  const blockers = [
+    ...(launchAfter.ok === false ? launchAfter.blockers || ['codex_lb_launchd_selection_state_mismatch'] : []),
+    ...(input.fix === true && orphan.changed && orphanRepair.changed !== true
+      ? ['codex_lb_orphan_marker_repair_failed']
+      : [])
+  ];
+  return {
+    schema: 'sks.doctor-codex-lb-divergence.v1',
+    ok: blockers.length === 0,
+    warnings,
+    blockers,
+    operator_actions: [
+      ...(definedButNotSelected
+        ? ['Run `sks codex-lb use-cli` to select the stored provider.']
+        : []),
+      ...(staleAmbient
+        ? ['Remove or update the stale shell export: `unset CODEX_LB_API_KEY`; the canonical key remains in ~/.codex/sks-codex-lb.env.']
+        : []),
+      ...(launchAfter.operator_actions || [])
+    ],
+    ambient_key: {
+      present: Boolean(ambientKey),
+      sha256: ambientHash,
+      matches_canonical: ambientHash && canonicalHash ? ambientHash === canonicalHash : null
+    },
+    canonical_key: {
+      present: Boolean(canonicalKey),
+      sha256: canonicalHash,
+      path: String(status.env_path || codexLbEnvPath(home))
+    },
+    orphan_markers: orphan.orphan_markers,
+    orphan_marker_repair: orphanRepair,
+    launchd: { before: launchBefore, repair: launchRepair, after: launchAfter }
+  };
+}
 
 export async function run(_command: any, args: any = [], deps: any = {}) {
   const root = await projectRoot();
@@ -87,10 +333,10 @@ export async function run(_command: any, args: any = [], deps: any = {}) {
     return withSecretPreservationGuard(guardRoot, 'doctor-fix', async () => (
       globalOnly
         ? runDoctorGlobalOnlyFix(args, root, deps)
-        : runDoctor(args, root, doctorFix)
+        : runDoctor(args, root, doctorFix, deps)
     ));
   }
-  return runDoctor(args, root, doctorFix);
+  return runDoctor(args, root, doctorFix, deps);
 }
 
 export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string, deps: any = {}) {
@@ -110,7 +356,29 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     ? { ...process.env, HOME: home }
     : process.env);
 
+  const statusOptions = {
+    home,
+    env: doctorEnv,
+    processEnv: doctorEnv
+  };
+  const preRepairProviderStatus = await codexLbStatusImpl({
+    ...statusOptions,
+    probeToolOutputRecovery: false
+  }).catch(() => null);
+  const codexLbSecretProbeImpl = deps.codexLbSecretProbeImpl || inspectDoctorCodexLbSecretResolution;
+  const codexLbSecretProbe = await codexLbSecretProbeImpl({
+    home,
+    processEnv: doctorEnv,
+    fix: true,
+    forceRetry: flag(args, CODEX_LB_KEYCHAIN_MIGRATION_RETRY_FLAG),
+    baseUrl: preRepairProviderStatus?.base_url || preRepairProviderStatus?.provider_base_url || null,
+    migrationOptions: {
+      ...(deps.codexLbMigrationOptions || {}),
+      ...(!deps.codexLbMigrationOptions && deps.codexLbStatusImpl ? { platform: 'linux' } : {})
+    }
+  });
   const providerStatus = await codexLbStatusImpl({
+    ...statusOptions,
     probeToolOutputRecovery: true,
     allowUnverifiedToolOutputRecovery: codexLbToolOutputRecoveryOverrideAcknowledged({ args })
   }).catch((err: any) => ({
@@ -176,6 +444,25 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     blockers: [err?.message || String(err)],
     warnings: []
   }));
+  const codexLbRoutingTruth = await codexLbRoutingTruthForStatus(providerStatus, { home, remeasure: true });
+  const codexLbRoutingReady = !doctorCodexLbRouteExpected(providerStatus)
+    || codexLbRoutingTruthIsActive(codexLbRoutingTruth);
+  const codexLbDivergence = await inspectDoctorCodexLbDivergence({
+    home,
+    processEnv: doctorEnv,
+    providerStatus,
+    fix: true,
+    ...(deps.codexLbLaunchctlBin ? { launchctlBin: deps.codexLbLaunchctlBin } : {}),
+    ...(deps.codexLbLaunchPlatform ? { platform: deps.codexLbLaunchPlatform } : {}),
+    ...(deps.codexLbLaunchRunProcessImpl ? { runProcessImpl: deps.codexLbLaunchRunProcessImpl } : {})
+  }, deps.codexLbDivergenceDeps || {});
+  const telegramRemote = await inspectTelegramRemote({
+    live: true,
+    fix: true,
+    root,
+    home,
+    env: doctorEnv
+  }, deps);
 
   const recoveryReady = codexLbRecoveryStatusReady(providerStatus, true);
   const globalSkillsReady = !(globalSkills as any)?.error
@@ -191,7 +478,12 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     ...(!globalFastModeReady ? [`global_fast_mode_repair_failed:${(globalFastMode as any)?.error || (globalFastMode as any)?.status || 'unknown'}`] : []),
     ...(!openRouterProviderReady ? ((openRouterProvider as any)?.blockers || ['openrouter_provider_repair_failed']) : []),
     ...(!menuBarReady ? ((menuBar as any)?.blockers || ['sks_menubar_repair_failed']) : []),
-    ...(!recoveryReady ? ((providerStatus as any)?.tool_output_recovery?.blockers || ['codex_lb_tool_output_recovery_unverified']) : [])
+    ...((codexLbSecretProbe as any).ok === false
+      ? ((codexLbSecretProbe as any).legacy_keychain_migration?.blockers || ['codex_lb_secret_resolution_failed'])
+      : []),
+    ...(!recoveryReady ? ((providerStatus as any)?.tool_output_recovery?.blockers || ['codex_lb_tool_output_recovery_unverified']) : []),
+    ...(!codexLbRoutingReady ? ((codexLbRoutingTruth as any)?.blockers || ['codex_lb_routing_truth_unverified']) : []),
+    ...(codexLbDivergence.blockers || [])
   ].map(String).filter(Boolean))];
   const ok = blockers.length === 0;
   return {
@@ -220,14 +512,23 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     codex_app_fast_mode: globalFastMode,
     openrouter_provider: openRouterProvider,
     sks_menubar: menuBar,
+    telegram_remote: telegramRemote,
     codex_lb: {
       provider_status: providerStatus,
       tool_output_recovery: providerStatus?.tool_output_recovery || null,
-      recovery_ok: recoveryReady
+      recovery_ok: recoveryReady,
+      routing_truth: codexLbRoutingTruth,
+      routing_ok: codexLbRoutingReady,
+      secret_resolution: codexLbSecretProbe.secret_resolution,
+      legacy_keychain_migration: codexLbSecretProbe.legacy_keychain_migration,
+      divergence: codexLbDivergence
     },
     blockers,
     next_actions: [
       ...(recoveryReady ? [] : ((providerStatus as any)?.tool_output_recovery?.operator_actions || [])),
+      ...((codexLbSecretProbe as any).legacy_keychain_migration?.operator_actions || []),
+      ...(codexLbDivergence.operator_actions || []),
+      ...telegramDoctorOperatorActions(telegramRemote),
       ...(!openRouterProviderReady ? ['Run `sks codex-app set-openrouter-key` to repair the stored-key provider configuration without switching models.'] : []),
       'Run `sks doctor --fix --json` from a specific project directory when project-scoped repair is required.'
     ]
@@ -248,6 +549,14 @@ async function runDoctorGlobalOnlyFix(args: any[] = [], root: string, deps: any 
     console.log(`SKS Doctor global repair: ${result.ok ? 'ok' : 'blocked'}`);
     console.log(`Global skills: ${(result.skills.global as any)?.error ? 'blocked' : 'reconciled'}`);
     console.log(`SKS menu bar: ${(result.sks_menubar as any)?.status || ((result.sks_menubar as any)?.ok ? 'ok' : 'blocked')}`);
+    const telegramOutcome = (result.telegram_remote as any)?.self_heal_outcome;
+    const telegramAction = telegramOutcome?.attempted
+      ? telegramOutcome.action
+      : (result.telegram_remote as any)?.self_heal_action || 'none';
+    console.log(`Telegram Remote: ${(result.telegram_remote as any)?.status || 'unknown'} (self-heal ${telegramAction}${telegramOutcome?.attempted ? `, ${telegramOutcome.recovered ? 'recovered' : 'still degraded'}` : ''})`);
+    const telegramCheckedLine = telegramDoctorCheckedLine(result.telegram_remote);
+    if (telegramCheckedLine) console.log(telegramCheckedLine);
+    console.log(`codex-lb key: ${result.codex_lb.secret_resolution.source} (prompt risk ${result.codex_lb.secret_resolution.prompt_risk})`);
     for (const blocker of result.blockers) console.log(`- blocker: ${blocker}`);
     for (const action of result.next_actions) console.log(`- ${action}`);
   }
@@ -259,7 +568,221 @@ function codexLbRecoveryStatusReady(status: any, probeRequired = false): boolean
   if (status == null) return !probeRequired;
   if (status.recovery_probe_failed === true || status.error) return false;
   if (status.selected === false) return true;
+  if (!probeRequired) return true;
   return status.selected === true && status.tool_output_recovery?.ok === true;
+}
+
+export async function codexLbRoutingTruthForStatus(
+  status: any,
+  deps: { fetchImpl?: typeof fetch; receiptPath?: string; home?: string; remeasure?: boolean } = {}
+) {
+  if (!status) return null;
+  const statusEnvPath = typeof status.env_path === 'string' && status.env_path
+    ? status.env_path
+    : null;
+  const resolvedHome = deps.home
+    ? path.resolve(deps.home)
+    : statusEnvPath
+      ? path.dirname(path.dirname(statusEnvPath))
+      : undefined;
+  const envOptions = {
+    ...(resolvedHome ? { home: resolvedHome } : {}),
+    ...(statusEnvPath ? { envPath: statusEnvPath } : {})
+  };
+  const routeSelected = doctorCodexLbRouteExpected(status);
+  const mode = status.desktop_mode === 'desktop-native-bridge' ? 'bridge' : 'cli-provider';
+  const receiptOptions = {
+    ...(resolvedHome ? { home: resolvedHome } : {}),
+    ...(deps.receiptPath ? { receiptPath: deps.receiptPath } : {}),
+    expectedMode: mode as 'bridge' | 'cli-provider',
+    expectedSelected: routeSelected
+  };
+  const receipt = await readCodexLbRoutingTruthReceipt(receiptOptions).catch(() => null);
+  if (deps.remeasure !== true && receipt?.fresh === true) return receipt;
+  try {
+    const loaded = await loadCodexLbEnv({ ...envOptions, processEnv: {} });
+    const baseUrl = loaded.base_url || status.base_url || null;
+    const configuredHost = publicUrlHost(baseUrl);
+    const authTransport = mode === 'cli-provider'
+      ? 'authorization-bearer'
+      : doctorBridgeRoutingTransport(status, receipt);
+    const contextReceipt = await readCodexLbRoutingTruthReceipt({
+      ...receiptOptions,
+      expectedConfiguredHost: configuredHost,
+      expectedAuthTransport: authTransport
+    }).catch(() => null);
+    if (deps.remeasure !== true && contextReceipt?.fresh === true) return contextReceipt;
+    return measureAndWriteCodexLbRoutingTruth({
+      mode,
+      selected: routeSelected,
+      baseUrl,
+      apiKey: loaded.secret_api_key,
+      authTransport,
+      measure: routeSelected,
+      ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {})
+    }, {
+      ...envOptions,
+      ...(deps.receiptPath ? { receiptPath: deps.receiptPath } : {})
+    });
+  } catch {
+    return measureAndWriteCodexLbRoutingTruth({
+      mode,
+      selected: routeSelected,
+      baseUrl: status.base_url || null,
+      apiKey: null,
+      authTransport: mode === 'cli-provider'
+        ? 'authorization-bearer'
+        : doctorBridgeRoutingTransport(status, receipt),
+      measure: false
+    }, {
+      ...envOptions,
+      ...(deps.receiptPath ? { receiptPath: deps.receiptPath } : {})
+    });
+  }
+}
+
+function doctorCodexLbRouteExpected(status: any): boolean {
+  return status?.selected === true || status?.desktop_mode === 'desktop-native-bridge';
+}
+
+function doctorBridgeRoutingTransport(
+  status: any,
+  receipt: any
+): 'authorization-bearer' | 'x-codex-lb-api-key' {
+  if (receipt?.mode === 'bridge'
+    && (receipt.auth_transport === 'authorization-bearer'
+      || receipt.auth_transport === 'x-codex-lb-api-key')) {
+    return receipt.auth_transport;
+  }
+  return status?.gateway_auth_transport === 'authorization-bearer-compat'
+    ? 'authorization-bearer'
+    : 'x-codex-lb-api-key';
+}
+
+function publicUrlHost(value: unknown): string | null {
+  try {
+    return value ? new URL(String(value)).host : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function inspectTelegramRemote(input: {
+  live?: boolean;
+  fix?: boolean;
+  root?: string;
+  home?: string;
+  env?: NodeJS.ProcessEnv;
+  receiptPath?: string;
+} = {}, deps: {
+  telegramClient?: TelegramClient;
+  telegramTokenProvider?: TelegramTokenProvider;
+  resolveTelegramBotTokenImpl?: typeof resolveTelegramBotToken;
+  probeTelegramImpl?: typeof probeTelegram;
+  restartLaunchAgentImpl?: typeof restartLaunchAgent;
+  telegramReprobeAttempts?: number;
+  telegramReprobeDelayMs?: number;
+  telegramSleepImpl?: (ms: number) => Promise<void>;
+} = {}) {
+  const env = input.env || process.env;
+  const home = path.resolve(input.home || env.HOME || os.homedir());
+  const receiptPath = input.receiptPath || telegramLivenessPath(home);
+  const probeImpl = deps.probeTelegramImpl || probeTelegram;
+  let tokenProvider = deps.telegramTokenProvider;
+  let client = deps.telegramClient;
+  if (input.live && (!tokenProvider || !client)) {
+    const resolveImpl = deps.resolveTelegramBotTokenImpl || resolveTelegramBotToken;
+    let resolvedToken: Promise<string | null> | null = null;
+    tokenProvider ||= {
+      loadToken: () => {
+        resolvedToken ||= Promise.resolve(resolveImpl({ env })).then((result) => result.token);
+        return resolvedToken;
+      }
+    };
+    client ||= new TelegramClient({ tokenProvider });
+  }
+  const runProbe = () => {
+    if (!input.live) return probeImpl({ receiptPath });
+    if (!client || !tokenProvider) throw new Error('telegram_live_probe_dependencies_missing');
+    return probeImpl({ client, tokenProvider, receiptPath });
+  };
+  const before = await runProbe();
+  const action = telegramSelfHealAction(before);
+  if (!input.fix || action !== 'restart_poll' || !before.token_configured || before.paired_chat_count < 1) {
+    return {
+      ...before,
+      self_heal_action: action,
+      self_heal_outcome: {
+        requested: input.fix === true,
+        attempted: false,
+        action,
+        reason: input.fix !== true
+          ? 'report_only'
+          : action !== 'restart_poll'
+            ? 'action_not_restart_poll'
+            : 'telegram_not_configured_or_paired'
+      }
+    };
+  }
+
+  const restartImpl = deps.restartLaunchAgentImpl || restartLaunchAgent;
+  const restart = await restartImpl(sksMenuBarPaths(home, input.root), env).catch((error: unknown) => ({
+    ok: false,
+    error: error instanceof Error ? error.message : String(error)
+  }));
+  const maximumReprobes = Math.max(1, Math.min(deps.telegramReprobeAttempts ?? 3, 5));
+  const reprobeDelayMs = Math.max(0, Math.min(deps.telegramReprobeDelayMs ?? 500, 5_000));
+  const sleepImpl = deps.telegramSleepImpl || ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let reprobeAttempts = 1;
+  let after = await runProbe();
+  let afterAction = telegramSelfHealAction(after);
+  while (restart?.ok === true && afterAction === 'restart_poll' && reprobeAttempts < maximumReprobes) {
+    await sleepImpl(reprobeDelayMs);
+    after = await runProbe();
+    afterAction = telegramSelfHealAction(after);
+    reprobeAttempts += 1;
+  }
+  return {
+    ...after,
+    self_heal_action: afterAction,
+    self_heal_attempted_action: action,
+    self_heal_before: before,
+    self_heal_outcome: {
+      requested: true,
+      attempted: true,
+      action,
+      after_action: afterAction,
+      restart_ok: restart?.ok === true,
+      reprobe_ok: after.ok,
+      reprobe_attempts: reprobeAttempts,
+      recovered: restart?.ok === true && after.ok && afterAction === 'none',
+      error: restart?.error || null,
+      restart
+    }
+  };
+}
+
+export function telegramDoctorCheckedLine(probe: any, indent = ''): string | null {
+  if (!probe?.getme_checked_at) return null;
+  return `${indent}checked: ${probe.getme_checked_at} (${probe.getme_latency_ms ?? 'unknown'} ms, ${probe.getme_check_kind || 'receipt'})`;
+}
+
+function telegramDoctorOperatorActions(probe: any): string[] {
+  if (!probe || probe.status === 'not_configured') return [];
+  if (probe.self_heal_action === 'restart_poll') {
+    if (probe.self_heal_outcome?.recovered === true) return [];
+    return ['Run `sks menubar restart` to restart the resident Telegram long poller.'];
+  }
+  if (probe.self_heal_action === 'revalidate_token') {
+    return ['Run `sks telegram setup --token-stdin`, then `sks menubar restart`, to revalidate the bot identity.'];
+  }
+  if (probe.self_heal_action === 'operator_remove_webhook') {
+    return ['Remove the Telegram bot webhook through the Bot API, then run `sks menubar restart`; getUpdates and webhooks cannot be active together.'];
+  }
+  if (probe.self_heal_action === 'operator_repair_audit') {
+    return ['Restore owner-only write access to `~/.codex/sks-menubar/logs/telegram-audit.jsonl`, then run `sks menubar restart`.'];
+  }
+  return [];
 }
 
 async function runDoctorJsonFastPath(args: any = [], root: string) {
@@ -272,7 +795,7 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     requireActualCodex: false,
     codexBin: codexBin || undefined
   };
-  const [codex, rust, codexConfig, sneakoscopeExists] = await Promise.all([
+  const [codex, rust, codexConfig, sneakoscopeExists, oauthCallbackPortDiagnostic, codexLbSecretProbe] = await Promise.all([
     codexBin
       ? Promise.resolve({ bin: codexBin, version: 'fixture-or-explicit', available: true })
       : getCodexInfo().catch(() => ({ bin: null, version: null, available: false })),
@@ -283,8 +806,12 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
       operator_actions: [],
       blockers: [err?.message || String(err)]
     })),
-    exists(`${root}/.sneakoscope`)
+    exists(`${root}/.sneakoscope`),
+    inspectOAuthCallbackPortConflict(),
+    inspectDoctorCodexLbSecretResolution({ processEnv: process.env, fix: false })
   ]);
+  const oauthCallbackOperatorActions = oauthCallbackDoctorGuidance(oauthCallbackPortDiagnostic);
+  const telegramRemote = await inspectTelegramRemote();
   const ready = {
     schema: 'sks.doctor-readiness-matrix.v2',
     generated_at: nowIso(),
@@ -321,13 +848,23 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     deep_diagnostics_skipped: true,
     deep_ok: null,
     not_counted_as_full_doctor: true,
-    next_actions: ['Run sks doctor --full --json for deep diagnostics.'],
+    next_actions: [
+      'Run sks doctor --full --json for deep diagnostics.',
+      ...((codexLbSecretProbe as any).legacy_keychain_migration?.operator_actions || []),
+      ...telegramDoctorOperatorActions(telegramRemote)
+    ],
     root,
     fast_path: true,
     no_fix_write_policy: reportFile ? 'report_file_only' : 'no_writes_performed',
     arg_warnings: doctorArgWarnings(args),
+    warnings: [...oauthCallbackPortDiagnostic.warnings],
+    operator_actions: [
+      ...oauthCallbackOperatorActions,
+      ...((codexLbSecretProbe as any).legacy_keychain_migration?.operator_actions || [])
+    ],
     node: { ok: Number(process.versions.node.split('.')[0]) >= 20, version: process.version },
     codex,
+    oauth_callback_port_diagnostic: oauthCallbackPortDiagnostic,
     codex_config: codexConfig,
     rust,
     codex_app: { ok: false, skipped: true, warnings: ['codex_app_optional_diagnostic_skipped'] },
@@ -349,6 +886,7 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
       blockers: [],
       warnings: ['menubar_install_deferred_to_fix_or_full_doctor']
     },
+    telegram_remote: telegramRemote,
     provider_context: {
       schema: 'sks.provider-context.v1',
       generated_at: nowIso(),
@@ -362,7 +900,13 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
       warnings: ['provider_context_optional_diagnostic_skipped'],
       signals: {}
     },
-    codex_lb: codexLbMetrics(await readCodexLbCircuit(root).catch(() => ({}))),
+    codex_lb: {
+      ...codexLbMetrics(await readCodexLbCircuit(root).catch(() => ({}))),
+      routing_truth: null,
+      routing_measurement_deferred: true,
+      secret_resolution: codexLbSecretProbe.secret_resolution,
+      legacy_keychain_migration: codexLbSecretProbe.legacy_keychain_migration
+    },
     codex_doctor: null,
     pre_repair_codex_doctor: null,
     post_repair_codex_doctor: null,
@@ -429,8 +973,10 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
   return result;
 }
 
-async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
+async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps: any = {}) {
   const startedAtMs = Date.now();
+  const oauthCallbackPortDiagnostic = await inspectOAuthCallbackPortConflict();
+  const oauthCallbackOperatorActions = oauthCallbackDoctorGuidance(oauthCallbackPortDiagnostic);
   const sksTempSweep = doctorFix ? await sweepSksTempDirs(root, { maxAgeHours: 24 }).catch((err: any) => ({
     ok: false,
     error: err?.message || String(err),
@@ -448,6 +994,10 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
   const shouldEvaluateCodexAppUiRepair = doctorFix || deepDiagnostics || flag(args, '--repair-codex-app-ui');
   const shouldRunZellijRepair = deepDiagnostics || flag(args, '--repair-zellij') || flag(args, '--install-homebrew') || process.env.SKS_REQUIRE_ZELLIJ === '1';
   const nativeCapabilityDiagnosticsRequested = deepDiagnostics || flag(args, '--repair-native-capabilities');
+  const requireLegacyGlobalHookCleanup = doctorFix && doctorProfile === 'migration';
+  // Migration Doctor has one mutation owner: the project migration receipt.
+  // Its structured stages reconcile skills and hook trust exactly once.
+  const migrationReceiptOwnsReconcile = doctorFix && doctorProfile === 'migration';
   const doctorPhaseIds = doctorPhaseIdsForProfile(doctorProfile);
   const { runDoctorCommandAliasCleanup } = await import('../core/doctor/command-alias-cleanup.js');
   const { runDoctorNativeCapabilityRepair } = await import('../core/doctor/doctor-native-capability-repair.js');
@@ -493,16 +1043,16 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
       openrouter_provider: openRouterProviderRepair
     };
   }
-  const skillsReconcile = await reconcileDoctorSkills(root, doctorFix);
-  const commandAliasCleanup = await runDoctorCommandAliasCleanup({
+  const skillsReconcile = await reconcileDoctorSkills(root, doctorFix && !migrationReceiptOwnsReconcile);
+  const inspectCommandAliasCleanup = (fix: boolean) => runDoctorCommandAliasCleanup({
     root,
-    fix: doctorFix
+    fix
   }).catch((err: any) => ({
     schema: 'sks.command-alias-cleanup.v1',
     ok: false,
     status: 'blocked',
     root,
-    fix: doctorFix,
+    fix,
     report_path: `${root}/.sneakoscope/reports/command-alias-cleanup.json`,
     canonical_command_count: 0,
     current_alias_count: 0,
@@ -510,12 +1060,17 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
     actions: [],
     blockers: [err?.message || String(err)]
   }));
+  let commandAliasCleanup = await inspectCommandAliasCleanup(doctorFix && !migrationReceiptOwnsReconcile);
+  const commandAliasCleanupBeforeReceipt = migrationReceiptOwnsReconcile
+    ? deferCommandAliasCleanupToMigrationReceipt(commandAliasCleanup)
+    : commandAliasCleanup;
   const doctorNativeCapabilityRepair = await runDoctorNativeCapabilityRepair({
     root,
     fix: nativeCapabilityDiagnosticsRequested && doctorFix,
     yes: flag(args, '--yes') || flag(args, '-y'),
     flags: args.map((arg: any) => String(arg)),
-    skipNativeCapabilities: !nativeCapabilityDiagnosticsRequested
+    skipNativeCapabilities: !nativeCapabilityDiagnosticsRequested,
+    requireLegacyGlobalHookCleanup
   }).catch((err: any) => ({
     schema: 'sks.doctor-native-capability-repair.v1',
     ok: false,
@@ -525,11 +1080,19 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
     core_skills: null,
     skill_dedupe: null,
     native_capabilities: null,
+    legacy_global_hooks: {
+      ok: false,
+      blockers: [`cleanup_failed_before_report:${err?.message || String(err)}`],
+      warnings: []
+    },
     secret_preservation_guard: '.sneakoscope/reports/secret-preservation-guard.json',
     core_blockers: [err?.message || String(err)],
     route_blockers: {},
     optional_manual_required: [],
     optional_warnings: [],
+    required_blockers: requireLegacyGlobalHookCleanup
+      ? [`legacy_global_hooks:cleanup_failed_before_report:${err?.message || String(err)}`]
+      : [],
     blockers: [err?.message || String(err)]
   }));
   const configProbeOpts = {
@@ -562,6 +1125,20 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
     : null;
   const codexDoctorDiff = compareCodexDoctorBridge(codexDoctorBefore, preRepairCodexDoctor);
   codexStartupRepair = mergeObservedCodexStartupWarnings(codexStartupRepair, preRepairCodexDoctor);
+  const codexConfigSyntaxRepair = doctorPhaseIds.includes('codex_config_syntax_repair')
+    ? await (await import('../core/doctor/codex-config-syntax-repair.js')).runCodexConfigSyntaxRepair({ root, fix: doctorFix }).catch((err: any) => ({
+      schema: 'sks.codex-config-syntax-repair.v1',
+      ok: false,
+      generated_at: new Date().toISOString(),
+      fix: doctorFix,
+      configs: [],
+      actions: [],
+      manual_actions: [],
+      blockers: [err?.message || String(err)],
+      warnings: [],
+      report_path: `${root}/.sneakoscope/reports/codex-config-syntax-repair.json`
+    }))
+    : null;
   const codex = codexBin
     ? { bin: codexBin, version: 'fixture-or-explicit', available: true }
     : await getCodexInfo().catch(() => ({ bin: null, version: null, available: false }));
@@ -576,29 +1153,58 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
     ? await codexAppIntegrationStatus({ codex }).catch((err: any) => ({ ok: false, error: err.message }))
     : { ok: false, skipped: true, warnings: ['codex_app_optional_diagnostic_skipped'] };
   const codexLbCircuit = codexLbMetrics(await readCodexLbCircuit(root).catch(() => ({})));
-  const codexLbProviderStatus = deepDiagnostics || doctorFix
-    ? await codexLbStatus({
-        probeToolOutputRecovery: true,
-        allowUnverifiedToolOutputRecovery: codexLbToolOutputRecoveryOverrideAcknowledged({ args })
-      }).catch((err: any) => ({
-        selected: null,
-        provider_ready: false,
-        recovery_probe_failed: true,
-        tool_output_recovery: {
-          ok: false,
-          status: 'probe_failed',
-          blockers: ['codex_lb_tool_output_recovery_status_probe_failed'],
-          operator_actions: []
-        },
-        error: err?.message || String(err)
-      }))
+  // Routing truth is required even for the default Doctor profile. Keep the
+  // heavier tool-output recovery check deep/fix-only, while always resolving
+  // the selected provider so a selected Codex LB route receives one measured,
+  // fail-closed request instead of being reported as uninspected.
+  const codexLbPreRepairStatus = doctorFix
+    ? await codexLbStatus({ probeToolOutputRecovery: false }).catch(() => null)
     : null;
+  const codexLbSecretProbe = await inspectDoctorCodexLbSecretResolution({
+    processEnv: process.env,
+    fix: doctorFix,
+    forceRetry: flag(args, CODEX_LB_KEYCHAIN_MIGRATION_RETRY_FLAG),
+    baseUrl: codexLbPreRepairStatus?.base_url || codexLbPreRepairStatus?.provider_base_url || null
+  });
+  const codexLbProviderStatus = await codexLbStatus({
+    probeToolOutputRecovery: deepDiagnostics || doctorFix,
+    allowUnverifiedToolOutputRecovery: codexLbToolOutputRecoveryOverrideAcknowledged({ args })
+  }).catch((err: any) => ({
+    selected: null,
+    provider_ready: false,
+    recovery_probe_failed: deepDiagnostics || doctorFix,
+    tool_output_recovery: {
+      ok: false,
+      status: deepDiagnostics || doctorFix ? 'probe_failed' : 'not_checked',
+      blockers: deepDiagnostics || doctorFix ? ['codex_lb_tool_output_recovery_status_probe_failed'] : [],
+      operator_actions: []
+    },
+    error: err?.message || String(err)
+  }));
   const codexLbRecoveryReady = codexLbRecoveryStatusReady(codexLbProviderStatus, deepDiagnostics || doctorFix);
+  const codexLbRoutingTruth = await codexLbRoutingTruthForStatus(codexLbProviderStatus, {
+    remeasure: deepDiagnostics || doctorFix
+  });
+  const codexLbRoutingReady = !doctorCodexLbRouteExpected(codexLbProviderStatus)
+    || codexLbRoutingTruthIsActive(codexLbRoutingTruth);
+  const codexLbDivergence = await inspectDoctorCodexLbDivergence({
+    processEnv: process.env,
+    providerStatus: codexLbProviderStatus,
+    fix: doctorFix,
+    ...(deps.codexLbLaunchctlBin ? { launchctlBin: deps.codexLbLaunchctlBin } : {}),
+    ...(deps.codexLbLaunchPlatform ? { platform: deps.codexLbLaunchPlatform } : {}),
+    ...(deps.codexLbLaunchRunProcessImpl ? { runProcessImpl: deps.codexLbLaunchRunProcessImpl } : {})
+  }, deps.codexLbDivergenceDeps || {});
   const codexLb = {
     ...codexLbCircuit,
     provider_status: codexLbProviderStatus,
     tool_output_recovery: codexLbProviderStatus?.tool_output_recovery || null,
-    recovery_ok: codexLbRecoveryReady
+    recovery_ok: codexLbRecoveryReady,
+    routing_truth: codexLbRoutingTruth,
+    routing_ok: codexLbRoutingReady,
+    secret_resolution: codexLbSecretProbe.secret_resolution,
+    legacy_keychain_migration: codexLbSecretProbe.legacy_keychain_migration,
+    divergence: codexLbDivergence
   };
   const providerContext = deepDiagnostics
     ? await resolveProviderContext({ root, route: '$Doctor', serviceTier: process.env.SKS_SERVICE_TIER || 'fast' }).catch((err: any) => ({
@@ -644,19 +1250,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
     ? await repairCodexAppFastUi(root, {
         apply: false,
         reportPath: `${root}/.sneakoscope/reports/codex-app-fast-ui-repair-plan.json`
-      }).catch((err: any) => ({
-        schema: 'sks.codex-app-fast-ui-repair.v1',
-        ok: false,
-        apply: false,
-        safe_auto_apply: false,
-        requires_confirmation: true,
-        fast_selector: 'manual_action_required',
-        provider_selector: 'ok',
-        host_owned_config: 'diagnostic_failed',
-        next_action: 'Review Codex App UI config manually.',
-        actions: [],
-        blockers: [err?.message || String(err)]
-      }))
+      }).catch((err: unknown) => buildCodexAppUiDiagnosticFailure(false, err))
     : {
         schema: 'sks.codex-app-fast-ui-repair.v1',
         ok: true,
@@ -681,19 +1275,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
         apply: true,
         force: explicitCodexAppUiRepair,
         reportPath: `${root}/.sneakoscope/reports/codex-app-fast-ui-repair.json`
-      }).catch((err: any) => ({
-        schema: 'sks.codex-app-fast-ui-repair.v1',
-        ok: false,
-        apply: true,
-        safe_auto_apply: false,
-        requires_confirmation: true,
-        fast_selector: 'manual_action_required',
-        provider_selector: 'ok',
-        host_owned_config: 'diagnostic_failed',
-        next_action: 'Review Codex App UI config manually.',
-        actions: [],
-        blockers: [err?.message || String(err)]
-      }))
+      }).catch((err: unknown) => buildCodexAppUiDiagnosticFailure(true, err))
     : codexAppUiPlan;
   const menuBarPolicy = doctorMenuBarInstallPolicy(args, doctorFix, process.env);
   const menuBarLaunchRequested = menuBarPolicy.launch;
@@ -728,6 +1310,12 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
     blockers: [err?.message || String(err)],
     warnings: []
   }));
+  const telegramRemote = await inspectTelegramRemote({
+    live: deepDiagnostics || doctorFix,
+    fix: doctorFix,
+    root,
+    env: process.env
+  }, deps);
   const zellijRepair = shouldRunZellijRepair
     ? await runDoctorZellijRepair({ root, args, doctorFix }).catch((err: any) => ({
         schema: 'sks.zellij-self-heal.v1',
@@ -815,7 +1403,9 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
         raw_secret_values_recorded: false
       }))
     : null;
-  const hookTrustRepair = doctorFix && doctorPhaseIds.includes('hook_trust_repair')
+  const hookTrustRepair = doctorFix
+    && !migrationReceiptOwnsReconcile
+    && doctorPhaseIds.includes('hook_trust_repair')
     ? await (await import('../core/codex-hooks/codex-hook-trust-doctor.js')).codexHookTrustDoctor(root, { fix: true, managed: true, actual: true }).catch((err: any) => ({
         schema: 'sks.codex-hook-trust-doctor.v2',
         ok: false,
@@ -864,6 +1454,17 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
             })
           },
           {
+            id: 'codex_config_syntax_repair',
+            run: async () => ({
+              id: 'codex_config_syntax_repair',
+              ok: (codexConfigSyntaxRepair as any)?.ok !== false,
+              repaired: doctorFix && (codexConfigSyntaxRepair?.configs || []).some((entry) => entry.changed),
+              blockers: (codexConfigSyntaxRepair as any)?.blockers || [],
+              warnings: (codexConfigSyntaxRepair as any)?.warnings || [],
+              rollback_evidence: (codexConfigSyntaxRepair as any)?.report_path || 'codex_config_syntax_repair_report'
+            })
+          },
+          {
             id: 'context7_repair',
             run: async () => ({
               id: 'context7_repair',
@@ -905,10 +1506,12 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
             run: async () => ({
               id: 'hook_trust_repair',
               ok: (hookTrustRepair as any)?.ok !== false,
-              repaired: doctorFix,
+              repaired: doctorFix && !migrationReceiptOwnsReconcile,
               blockers: (hookTrustRepair as any)?.blockers || [],
               warnings: (hookTrustRepair as any)?.warnings || [],
-              rollback_evidence: (hookTrustRepair as any)?.fixed?.managed_hook_file || 'codex_hook_trust_repair_idempotent'
+              rollback_evidence: migrationReceiptOwnsReconcile
+                ? 'project_migration_receipt_owns_hook_trust_refresh'
+                : (hookTrustRepair as any)?.fixed?.managed_hook_file || 'codex_hook_trust_repair_idempotent'
             })
           },
           {
@@ -925,36 +1528,45 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
               rollback_evidence: (sksMenuBar as any)?.launch_agent_path || (sksMenuBar as any)?.report_path || 'sks_menubar_optional_no_core_mutation'
             }),
             postcheck: async () => {
-              const status = await inspectSksMenuBarStatus({ root }).catch((err: any) => ({
+              const inspectMenuBarStatusImpl = deps.inspectSksMenuBarStatusImpl || inspectSksMenuBarStatus;
+              const status = await inspectMenuBarStatusImpl({ root }).catch((err: any) => ({
                 ok: false,
                 launchd: { ok: false, state: null, pid: null, error: err?.message || String(err) },
                 action_target: { ok: false, smoke_code: null, smoke_output: null },
                 blockers: [err?.message || String(err)],
                 warnings: []
               } as any));
-              const blockers = [
-                ...((status as any).launchd?.ok === true ? [] : [`launchd_not_running:${(status as any).launchd?.error || (status as any).launchd?.state || 'unknown'}`]),
-                ...((status as any).action_target?.ok === true ? [] : [`action_script_smoke_failed:${(status as any).action_target?.smoke_code ?? 'no_code'}`]),
-                ...((status as any).ok === true ? [] : ((status as any).blockers || ['menubar_status_not_ok']))
-              ];
-              return {
-                ok: blockers.length === 0,
-                blockers,
-                warnings: [
-                  ...((status as any).warnings || []),
-                  blockers.length === 0 ? 'menubar_postcheck_passed' : 'menubar_postcheck_failed'
-                ]
-              };
+              const launchdRepair = await rebootstrapSksMenuBarLaunchdForDoctorFix({
+                fix: doctorFix,
+                root,
+                env: process.env,
+                status
+              }, {
+                inspectSksMenuBarStatusImpl: inspectMenuBarStatusImpl,
+                restartLaunchAgentImpl: deps.restartLaunchAgentImpl
+              });
+              const postcheck = buildSksMenuBarDoctorPostcheck(launchdRepair.status);
+              return launchdRepair.attempted
+                ? {
+                    ...postcheck,
+                    repaired: launchdRepair.ok,
+                    warnings: [
+                      ...(postcheck.warnings || []),
+                      launchdRepair.ok ? 'launchd_rebootstrap_recovered' : 'launchd_rebootstrap_failed'
+                    ]
+                  }
+                : postcheck;
             }
           },
           {
             id: 'command_alias_cleanup',
             run: async () => ({
               id: 'command_alias_cleanup',
-              ok: (commandAliasCleanup as any)?.ok !== false,
-              repaired: Array.isArray((commandAliasCleanup as any)?.actions) && (commandAliasCleanup as any).actions.length > 0,
-              blockers: (commandAliasCleanup as any)?.blockers || [],
-              rollback_evidence: (commandAliasCleanup as any)?.report_path || 'command_alias_cleanup_report'
+              ok: (commandAliasCleanupBeforeReceipt as any)?.ok !== false,
+              repaired: Array.isArray((commandAliasCleanupBeforeReceipt as any)?.actions) && (commandAliasCleanupBeforeReceipt as any).actions.length > 0,
+              blockers: (commandAliasCleanupBeforeReceipt as any)?.blockers || [],
+              warnings: (commandAliasCleanupBeforeReceipt as any)?.warnings || [],
+              rollback_evidence: (commandAliasCleanupBeforeReceipt as any)?.report_path || 'command_alias_cleanup_report'
             })
           },
           {
@@ -1223,7 +1835,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
   const authoritativeCodexDoctor = postRepairCodexDoctor;
   const codexDoctorAuthoritativeDiff = compareCodexDoctorBridge(codexDoctorBefore, authoritativeCodexDoctor as any);
   const pkgBytes = 0;
-  const ready = await writeDoctorReadinessMatrix(root, {
+  const doctorReadinessInput: any = {
     codex,
     codex_config: codexConfig,
     codex_app: codexApp,
@@ -1236,18 +1848,22 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
     context7_repair: context7Repair,
     codex_startup_repair: codexStartupRepair,
     startup_config_repair: startupConfigRepair,
+    codex_config_syntax_repair: codexConfigSyntaxRepair,
     context7_mcp_repair: context7McpRepair,
     supabase_mcp_repair: supabaseMcpRepair,
     doctor_fix_transaction: doctorFixTransaction,
     doctor_dirty_plan: doctorDirtyPlan,
     doctor_fix_postcheck: doctorFixPostcheck,
+    command_aliases: migrationReceiptOwnsReconcile ? commandAliasCleanupBeforeReceipt : undefined,
     doctor_native_capability: doctorNativeCapabilityRepair,
+    require_legacy_global_hook_cleanup: requireLegacyGlobalHookCleanup,
     skills: skillsReconcile,
     local_model: localModel,
     agent_role_config: agentRoleConfigRepair,
     repair: configRepair,
     codex_app_ui: codexAppUi,
     sks_menubar: sksMenuBar,
+    telegram_remote: telegramRemote,
     codex_0138_doctor: codex0138Doctor,
     codex_plugin_inventory: (pluginInventory as any)?.report || null,
     codex_plugin_app_template_policy: pluginPolicy,
@@ -1258,28 +1874,51 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
       ...(configRepair?.operator_actions || []),
       ...(zellijRepair && !(zellijRepair as any).ok && (zellijRepair as any).command ? [`Run: ${(zellijRepair as any).command}`] : []),
       ...((codexStartupRepair as any).manual_actions || []),
-      ...(pluginPolicy?.doctor_warnings || [])
+      ...((codexConfigSyntaxRepair as any)?.manual_actions || []),
+      ...(pluginPolicy?.doctor_warnings || []),
+      ...((codexLbSecretProbe as any).legacy_keychain_migration?.operator_actions || []),
+      ...telegramDoctorOperatorActions(telegramRemote)
     ]
-  });
+  };
+  let ready = await writeDoctorReadinessMatrix(root, doctorReadinessInput);
   if (doctorFix) {
+    if (migrationReceiptOwnsReconcile) {
+      // The migration receipt is a completion claim. Verify the resulting
+      // public command/skill surface first so a failed postcheck can never
+      // leave behind a "current" receipt.
+      commandAliasCleanup = await inspectCommandAliasCleanup(false);
+      doctorReadinessInput.command_aliases = commandAliasCleanup;
+      ready = await writeDoctorReadinessMatrix(root, doctorReadinessInput);
+    }
     const readinessBlockers = [
       ...(Array.isArray((ready as any).blockers) ? (ready as any).blockers.map(String).filter(Boolean) : []),
       ...((openRouterProviderRepair as any)?.ok === false
         ? (((openRouterProviderRepair as any)?.blockers || ['openrouter_provider_repair_failed']).map(String))
         : [])
     ];
+    const preservedUserOwnedConfig = doctorProfile === 'migration'
+      && readinessBlockers.length > 0
+      && readinessBlockers.every(isMigrationUserOwnedProjectConfigBlocker);
+    const receiptBlockers = preservedUserOwnedConfig ? [] : readinessBlockers;
     const migrationWarnings = [
+      ...((commandAliasCleanup as any)?.warnings || []),
       ...((doctorNativeCapabilityRepair as any)?.optional_warnings || []),
-      ...((doctorFixPostcheck as any)?.optional_warnings || [])
+      ...((doctorFixPostcheck as any)?.optional_warnings || []),
+      ...(preservedUserOwnedConfig
+        ? [
+            'migration_doctor_preserved_user_owned_project_config',
+            ...readinessBlockers.map((blocker) => `migration_optional_blocker:${blocker}`)
+          ]
+        : [])
     ];
     try {
       const receiptInput: Parameters<typeof writeProjectUpdateMigrationReceipt>[0] = {
         root,
         source: `doctor-${doctorProfile}`,
-        blockers: readinessBlockers,
+        blockers: receiptBlockers,
         warnings: migrationWarnings
       };
-      if (readinessBlockers.length) receiptInput.status = 'blocked';
+      if (receiptBlockers.length) receiptInput.status = 'blocked';
       const receipt = await writeProjectUpdateMigrationReceipt(receiptInput);
       sksUpdate = {
         schema: 'sks.update-now.v2',
@@ -1312,29 +1951,44 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
     && (!sksUpdate || (sksUpdate as any).ok !== false)
     && (commandAliasCleanup as any).ok !== false
     && (codexStartupRepair as any).ok !== false
+    && (codexConfigSyntaxRepair as any)?.ok !== false
     && (agentRoleConfigRepair as any).ok !== false
     && (openRouterProviderRepair as any).ok !== false
     && ((officialSubagentConfig as any).blockers || []).length === 0
-    && codexLbRecoveryReady;
+    && codexLbSecretProbe.ok !== false
+    && codexLbDivergence.ok !== false
+    && codexLbRecoveryReady
+    && codexLbRoutingReady;
   const result = {
     schema: 'sks.doctor-status.v3',
     elapsed_ms: Date.now() - startedAtMs,
     ok: resultOk,
     status: resultOk ? (doctorFix ? 'fix_ok' : deepDiagnostics ? 'full_ok' : 'fast_ok') : 'blocked',
+    core_ready: ready.core_ready === true,
+    center_ready: ready.center_ready === true,
+    center_attempted: ready.center_attempted === true,
     diagnostic_depth: deepDiagnostics ? 'full' : doctorFix ? 'fix' : 'fast',
     deep_diagnostics_skipped: !deepDiagnostics,
     deep_ok: deepDiagnostics ? resultOk : null,
     not_counted_as_full_doctor: !deepDiagnostics,
     root,
     arg_warnings: argWarnings,
+    warnings: [...oauthCallbackPortDiagnostic.warnings, ...(codexLbDivergence.warnings || [])],
+    operator_actions: [
+      ...oauthCallbackOperatorActions,
+      ...((codexLbSecretProbe as any).legacy_keychain_migration?.operator_actions || []),
+      ...(codexLbDivergence.operator_actions || [])
+    ],
     node: { ok: Number(process.versions.node.split('.')[0]) >= 20, version: process.version },
     codex,
+    oauth_callback_port_diagnostic: oauthCallbackPortDiagnostic,
     codex_config: codexConfig,
     rust,
     codex_app: codexApp,
     codex_app_ui: codexAppUi,
     openrouter_provider: openRouterProviderRepair,
     sks_menubar: sksMenuBar,
+    telegram_remote: telegramRemote,
     provider_context: providerContext,
     codex_lb: codexLb,
     codex_doctor: authoritativeCodexDoctor,
@@ -1347,6 +2001,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
     context7_repair: context7Repair,
     codex_startup_repair: codexStartupRepair,
     startup_config_repair: startupConfigRepair,
+    codex_config_syntax_repair: codexConfigSyntaxRepair,
     context7_mcp_repair: context7McpRepair,
     supabase_mcp_repair: supabaseMcpRepair,
     doctor_fix_transaction: doctorFixTransaction,
@@ -1412,6 +2067,13 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
   console.log(`Root:      ${root}`);
   console.log(`Node:      ${result.node.ok ? 'ok' : 'fail'} ${result.node.version}`);
   console.log(`Codex:     ${codex.bin ? 'ok' : 'missing'} ${codex.version || ''}`);
+  if (oauthCallbackPortDiagnostic.conflict) {
+    const listeners = oauthCallbackPortDiagnostic.listeners
+      .map((listener) => `${listener.command} pid ${listener.pid} ${listener.address}`)
+      .join(', ');
+    console.log(`OAuth callback port 1455: warning (${listeners})`);
+    for (const action of oauthCallbackOperatorActions) console.log(`  action: ${action}`);
+  }
   const actual = (codexConfig.checks || []).find((check: any) => check.name === 'actual_codex_cli_config_load');
   console.log('Project config:');
   console.log(`  node read:       ${ready.codex_config_readable_by_node ? 'ok' : 'failed'}`);
@@ -1434,6 +2096,13 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
   for (const action of (codexStartupRepair as any).actions || []) console.log(`  - ${action}`);
   for (const action of (codexStartupRepair as any).manual_actions || []) console.log(`  manual: ${action}`);
   for (const warning of (codexStartupRepair as any).warnings || []) console.log(`  warning: ${warning}`);
+  if (codexConfigSyntaxRepair) {
+    console.log('Codex config syntax:');
+    console.log(`  repair: ${codexConfigSyntaxRepair.ok ? 'ok' : 'blocked'}`);
+    for (const action of codexConfigSyntaxRepair.actions || []) console.log(`  - ${action}`);
+    for (const action of codexConfigSyntaxRepair.manual_actions || []) console.log(`  manual: ${action}`);
+    for (const warning of codexConfigSyntaxRepair.warnings || []) console.log(`  warning: ${warning}`);
+  }
   console.log(`  codex doctor:    ${formatCodexDoctorConsoleStatus(authoritativeCodexDoctor)}`);
   console.log(`Rust acc.: ${rust.mode || (rust.available ? 'rust_accelerated' : 'js_fallback')} ${rust.version || rust.status || ''}`);
   console.log(`Codex App: ${ready.codex_app_ready ? 'ok' : 'optional_missing'}`);
@@ -1508,6 +2177,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
   if (codexAppUi.next_action) console.log(`  next action: ${codexAppUi.next_action}`);
   console.log('SKS Menu Bar:');
   console.log(`  status: ${(sksMenuBar as any).status || ((sksMenuBar as any).ok ? 'ok' : 'blocked')}`);
+  for (const line of sksMenuBarRunningVersionConsoleLines(sksMenuBar)) console.log(line);
   const menubarPhase = (doctorFixTransaction as any)?.phases?.find((phase: any) => phase?.id === 'sks_menubar');
   if (menubarPhase) {
     const menubarSummary = menubarPhase.ok
@@ -1519,6 +2189,20 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
   if ((sksMenuBar as any).launch_agent_path) console.log(`  launch agent: ${(sksMenuBar as any).launch_agent_path}`);
   if (Array.isArray((sksMenuBar as any).blockers) && (sksMenuBar as any).blockers.length) console.log(`  blockers: ${(sksMenuBar as any).blockers.join(', ')}`);
   if (Array.isArray((sksMenuBar as any).warnings) && (sksMenuBar as any).warnings.length) console.log(`  warnings: ${(sksMenuBar as any).warnings.join(', ')}`);
+  console.log('Telegram Remote:');
+  console.log(`  status: ${(telegramRemote as any).status || 'unknown'}`);
+  console.log(`  getMe: ${(telegramRemote as any).bot_identity_valid ? 'verified' : (telegramRemote as any).token_configured ? 'invalid' : 'not configured'}`);
+  console.log(`  audit: ${(telegramRemote as any).audit_healthy ? 'healthy' : 'unavailable'}`);
+  const telegramCheckedLine = telegramDoctorCheckedLine(telegramRemote, '  ');
+  if (telegramCheckedLine) console.log(telegramCheckedLine);
+  console.log(`  long poll: ${(telegramRemote as any).poller?.running ? 'running' : 'stopped'}`);
+  const telegramSelfHealOutcome = (telegramRemote as any).self_heal_outcome;
+  const telegramDisplayedAction = telegramSelfHealOutcome?.attempted
+    ? telegramSelfHealOutcome.action
+    : (telegramRemote as any).self_heal_action;
+  if (telegramDisplayedAction && telegramDisplayedAction !== 'none') {
+    console.log(`  self-heal: ${telegramDisplayedAction}${telegramSelfHealOutcome?.attempted ? ` (${telegramSelfHealOutcome.recovered ? 'recovered' : 'attempted, still degraded'})` : ''}`);
+  }
   console.log(`Provider: ${providerContext.provider || 'unknown'} ${providerContext.service_tier || ''} (${providerContext.source || 'unknown'}, ${providerContext.confidence || 'low'})`);
   const imagegenReady = (imagegen as any).auth_readiness;
   if (imagegenReady) {
@@ -1565,6 +2249,14 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
   for (const warning of pluginPolicy?.doctor_warnings || []) console.log(`  warning: ${warning}`);
   if ((codex0138Doctor as any)?.fixed?.length) console.log(`  doctor --fix repaired: ${(codex0138Doctor as any).fixed.join(', ')}`);
   console.log(`codex-lb:  ${codexLb.ok ? 'ok' : `warning ${codexLb.circuit?.state || 'unknown'}`}`);
+  console.log(`  key source: ${codexLb.secret_resolution.source}${codexLb.secret_resolution.path ? ` (${codexLb.secret_resolution.path})` : ''}; prompt risk: ${codexLb.secret_resolution.prompt_risk}`);
+  for (const action of codexLb.legacy_keychain_migration?.operator_actions || []) console.log(`  action: ${action}`);
+  for (const warning of codexLb.divergence?.warnings || []) console.log(`  warning: ${warning}`);
+  for (const action of codexLb.divergence?.operator_actions || []) console.log(`  action: ${action}`);
+  if (codexLb.routing_truth) {
+    const routingTruth: any = codexLb.routing_truth;
+    console.log(`  routing truth: ${codexLb.routing_ok ? 'verified' : 'blocked'} (${routingTruth.actual_host || routingTruth.configured_host || 'host unavailable'}, ${routingTruth.auth_outcome}, ${routingTruth.latency_ms ?? 'unmeasured'} ms at ${routingTruth.checked_at})`);
+  }
   if (codexLb.tool_output_recovery) {
     const recovery: any = codexLb.tool_output_recovery;
     console.log(`  interrupted tool-output recovery: ${recovery.ok ? 'ready' : 'blocked'} (${recovery.observed_version || recovery.status}; minimum ${recovery.minimum_version})`);
@@ -1585,6 +2277,8 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean) {
   console.log(`  cli_ready: ${ready.cli_ready ? 'yes' : 'no'}`);
   console.log(`  mad_ready: ${ready.mad_ready ? 'yes' : 'no'}`);
   console.log(`  managed_state_current: ${ready.managed_state_current ? 'yes' : 'no'}`);
+  console.log(`  core_ready: ${ready.core_ready ? 'yes' : 'no'}`);
+  console.log(`  center_ready: ${ready.center_ready ? 'yes' : 'no'}${ready.center_attempted ? ' (repair attempted)' : ' (not attempted)'}`);
   console.log(`  ready:     ${ready.ready ? 'yes' : 'no'}`);
   if (!ready.ready) {
     console.log('Primary blocker:');
@@ -1848,14 +2542,140 @@ function installScopeFromArgs(args: any = []) {
   return normalizeInstallScope(index >= 0 && args[index + 1] ? args[index + 1] : 'global');
 }
 
+function isMigrationUserOwnedProjectConfigBlocker(blocker: string): boolean {
+  const value = String(blocker || '').trim();
+  return value === 'user_owned_file_without_sks_marker'
+    || value.endsWith(':user_owned_file_without_sks_marker')
+    || value === 'config_write_guard:blocked_unmanaged_project_config'
+    || value.endsWith(':config_write_guard:blocked_unmanaged_project_config');
+}
+
 function readOption(args: any = [], name: string, fallback: any = null) {
   const index = args.indexOf(name);
   return index >= 0 && args[index + 1] ? args[index + 1] : fallback;
 }
 
+export function buildCodexAppUiDiagnosticFailure(apply: boolean, error: unknown) {
+  return {
+    schema: 'sks.codex-app-fast-ui-repair.v1' as const,
+    ok: false,
+    apply,
+    safe_auto_apply: false,
+    requires_confirmation: true,
+    fast_selector: 'manual_action_required' as const,
+    provider_selector: 'manual_action_required' as const,
+    host_owned_config: 'diagnostic_failed' as const,
+    next_action: 'Review Codex App UI config manually.',
+    actions: [],
+    blockers: [error instanceof Error ? error.message : String(error)]
+  };
+}
+
 export function formatCodexDoctorConsoleStatus(report: any) {
   if (!report || report.available !== true) return 'unavailable';
   return report.disposition || (report.exit_code === 0 ? 'pass' : 'warn');
+}
+
+export function sksMenuBarRunningVersionConsoleLines(status: any): string[] {
+  const runningVersion = status?.running_process?.package_version
+    || status?.menubar_version_probe?.running_version
+    || null;
+  const runningPid = status?.running_process?.pid ?? status?.menubar_version_probe?.pid ?? null;
+  if (typeof runningVersion !== 'string' || !runningVersion || !Number.isInteger(runningPid) || runningPid <= 0) {
+    return [];
+  }
+  const expectedVersion = status?.menubar_version_probe?.expected_version
+    || status?.action_target?.expected_version
+    || status?.package_version
+    || null;
+  const installedVersion = status?.installed_version || status?.build_stamp?.package_version || null;
+  return [
+    `  RUNNING: version ${runningVersion} (PID ${runningPid})`,
+    ...(typeof expectedVersion === 'string' && expectedVersion && expectedVersion !== runningVersion
+      ? [`  expected: version ${expectedVersion}`]
+      : []),
+    ...(typeof installedVersion === 'string' && installedVersion && installedVersion !== runningVersion
+      ? [`  installed: version ${installedVersion}`]
+      : [])
+  ];
+}
+
+export async function rebootstrapSksMenuBarLaunchdForDoctorFix(input: {
+  fix: boolean;
+  root: string;
+  home?: string;
+  env?: NodeJS.ProcessEnv;
+  status: any;
+}, deps: {
+  inspectSksMenuBarStatusImpl?: typeof inspectSksMenuBarStatus;
+  restartLaunchAgentImpl?: typeof restartLaunchAgent;
+} = {}) {
+  const env = input.env || process.env;
+  const status = input.status;
+  const expectedVersion = status?.menubar_version_probe?.expected_version
+    || status?.action_target?.expected_version
+    || status?.installed_version
+    || null;
+  const warningOnlyVerifiedProcess = input.fix
+    && !sksMenuBarRestartDeferred(env)
+    && status?.launchd?.checked === true
+    && status?.launchd?.ok === false
+    && Array.isArray(status?.warnings)
+    && status.warnings.includes('launchd_not_running_process_active')
+    && !(Array.isArray(status?.blockers) && status.blockers.includes('launchd_not_running'))
+    && status?.running_process?.ok === true
+    && typeof expectedVersion === 'string'
+    && status.running_process.package_version === expectedVersion;
+  if (!warningOnlyVerifiedProcess) {
+    return { attempted: false, ok: true, status, restart: null };
+  }
+
+  const paths = sksMenuBarPaths(input.home || env.HOME, input.root);
+  const restartImpl = deps.restartLaunchAgentImpl || restartLaunchAgent;
+  const inspectImpl = deps.inspectSksMenuBarStatusImpl || inspectSksMenuBarStatus;
+  const restart = await restartImpl(paths, env).catch((error: unknown) => ({
+    ok: false,
+    error: error instanceof Error ? error.message : String(error)
+  }));
+  if (restart?.ok !== true) {
+    const detail = restart?.error ? `:${restart.error}` : '';
+    return {
+      attempted: true,
+      ok: false,
+      restart,
+      status: {
+        ...status,
+        ok: false,
+        blockers: [...new Set([...(status?.blockers || []), `launchd_rebootstrap_failed${detail}`])]
+      }
+    };
+  }
+
+  const refreshed = await inspectImpl({
+    root: input.root,
+    ...(input.home ? { home: input.home } : {}),
+    ...(input.env ? { env: input.env } : {})
+  }).catch((error: unknown) => ({
+    ...status,
+    ok: false,
+    blockers: [...new Set([
+      ...(status?.blockers || []),
+      `launchd_rebootstrap_status_failed:${error instanceof Error ? error.message : String(error)}`
+    ])]
+  }));
+  if (refreshed?.launchd?.checked !== true || refreshed?.launchd?.ok !== true) {
+    return {
+      attempted: true,
+      ok: false,
+      restart,
+      status: {
+        ...refreshed,
+        ok: false,
+        blockers: [...new Set([...(refreshed?.blockers || []), 'launchd_rebootstrap_not_confirmed'])]
+      }
+    };
+  }
+  return { attempted: true, ok: true, status: refreshed, restart };
 }
 
 function mergeObservedCodexStartupWarnings(startupRepair: any, codexDoctor: any) {

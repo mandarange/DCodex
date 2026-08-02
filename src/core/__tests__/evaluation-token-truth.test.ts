@@ -41,7 +41,7 @@ test('serialized size is deterministic UTF-8 byte size and is not labeled as tok
 test('harness growth report uses the official Codex subagent defaults', () => {
   const multiagent = harnessGrowthReport().codex_native.multiagent_v2;
 
-  assert.equal(multiagent.max_threads, 12);
+  assert.equal(multiagent.max_threads, 256);
   assert.equal(multiagent.max_depth, 1);
   assert.equal(multiagent.job_max_runtime_seconds, 1200);
 });

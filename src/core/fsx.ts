@@ -151,18 +151,11 @@ export function assertTestHomeWriteAllowed(p: string): void {
 export async function writeTextAtomic(p: string, text: string, opts: { mode?: number } = {}): Promise<void> {
   assertTestHomeWriteAllowed(p);
   await ensureDir(path.dirname(p));
-  try {
-    if ((await fsp.readFile(p, 'utf8')) === text) {
-      if (opts.mode === undefined) return;
-      const existing = await fsp.lstat(p).catch(() => null);
-      if (existing?.isFile() && !existing.isSymbolicLink()) {
-        await fsp.chmod(p, opts.mode & 0o777);
-        return;
-      }
-      // Replace symlink or non-regular targets atomically below. Never chmod
-      // through a link merely because its current contents happen to match.
-    }
-  } catch {}
+  if (opts.mode === undefined) {
+    try {
+      if ((await fsp.readFile(p, 'utf8')) === text) return;
+    } catch {}
+  }
   const tmp = `${p}.${process.pid}.${randomId(6)}.tmp`;
   const existingMode = await fsp.lstat(p).then((stat) => stat.isFile() && !stat.isSymbolicLink() ? stat.mode & 0o777 : null).catch(() => null);
   const requestedMode = opts.mode === undefined ? existingMode : opts.mode & 0o777;
@@ -176,10 +169,12 @@ export async function writeTextAtomic(p: string, text: string, opts: { mode?: nu
     }
     if (requestedMode !== null) await fsp.chmod(tmp, requestedMode);
     await fsp.rename(tmp, p);
-    if (requestedMode !== null) await fsp.chmod(p, requestedMode);
   } catch (err: unknown) {
     await fsp.rm(tmp, { force: true }).catch(() => {});
-    if (!canFallbackToDirectWrite(err)) throw err;
+    // A caller that requests a mode is relying on the temporary inode being
+    // private before it becomes visible. Never downgrade that contract to a
+    // direct write of an existing, potentially broader-mode path.
+    if (opts.mode !== undefined || !canFallbackToDirectWrite(err)) throw err;
     try {
       await ensureDir(path.dirname(p));
       await fsp.writeFile(p, text, { encoding: 'utf8', ...(requestedMode === null ? {} : { mode: requestedMode }) });
@@ -257,8 +252,8 @@ async function hydrateRetentionArchivedJson(p: string, stub: any): Promise<unkno
   return JSON.parse(original.toString('utf8'));
 }
 
-export async function writeJsonAtomic<T>(p: string, data: T): Promise<void> {
-  await writeTextAtomic(p, `${JSON.stringify(data, null, 2)}\n`);
+export async function writeJsonAtomic<T>(p: string, data: T, opts: { mode?: number } = {}): Promise<void> {
+  await writeTextAtomic(p, `${JSON.stringify(data, null, 2)}\n`, opts);
 }
 
 export async function writeReceiptRotated<T>(p: string, data: T, opts: { keep?: number } = {}): Promise<void> {

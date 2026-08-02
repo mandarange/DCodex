@@ -1,3 +1,4 @@
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { appendJsonl, nowIso, readJson, sha256, writeJsonAtomic } from '../fsx.js';
 import { missionDir, updateCurrentIfMissionAndRun } from '../mission.js';
@@ -21,6 +22,7 @@ import {
 } from '../subagents/subagent-evidence.js';
 import {
   officialSubagentPreparationInProgress,
+  SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_DIR,
   withOfficialSubagentLifecycleLock,
   writeNarutoGate
 } from '../subagents/official-subagent-preparation.js';
@@ -44,6 +46,76 @@ import {
 import { observedParentModelMismatch } from './payload-signals.js';
 import { finalizeNarutoTerminalProof } from './naruto-terminal-finalization.js';
 import { subagentSkillAvailabilityRunBlockers } from './subagent-skill-availability.js';
+import { MAX_LIFECYCLE_THREADS } from './subagent-skill-availability-contract.js';
+
+const SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_SCHEMA = 'sks.subagent-lifecycle-capture-failure.v1';
+const MAX_SUBAGENT_LIFECYCLE_CAPTURE_FAILURES = 528;
+
+export type ActiveOfficialSubagentWorkflow =
+  | { status: 'inactive' }
+  | { status: 'invalid'; missionId: string; workflowRunId: string; reason: string }
+  | { status: 'active'; missionId: string; workflowRunId: string; openThreads: number };
+
+export async function inspectActiveOfficialSubagentWorkflow(
+  root: string,
+  state: any,
+  sessionKey: any = null
+): Promise<ActiveOfficialSubagentWorkflow> {
+  const missionId = String(state?.mission_id || '').trim();
+  const workflowRunId = String(state?.official_subagent_run_id || '').trim();
+  if (!missionId || !workflowRunId || state?.route_closed === true) return { status: 'inactive' };
+  const ownedSession = String(state?.session_scope || '').trim();
+  const currentSession = String(sessionKey || '').trim();
+  if (ownedSession && currentSession && ownedSession !== currentSession) {
+    return { status: 'invalid', missionId, workflowRunId, reason: 'session_scope_mismatch' };
+  }
+  const artifactDir = officialSubagentArtifactDir(root, state, sessionKey);
+  try {
+    await ensureOfficialSubagentArtifactDirConfined(root, artifactDir);
+    const plan: any = await readJson(path.join(artifactDir, 'subagent-plan.json'), null);
+    if (plan?.schema !== 'sks.subagent-plan.v1'
+      || plan?.workflow !== 'official_codex_subagent'
+      || String(plan?.mission_id || '').trim() !== missionId
+      || String(plan?.workflow_run_id || '').trim() !== workflowRunId) {
+      return { status: 'invalid', missionId, workflowRunId, reason: 'active_plan_binding_invalid' };
+    }
+    const gate: any = await readJson(path.join(artifactDir, 'naruto-gate.json'), null).catch(() => null);
+    if (gate?.terminal === true
+      && gate?.passed === true
+      && String(gate?.workflow_run_id || '').trim() === workflowRunId) {
+      return { status: 'inactive' };
+    }
+    const events = (await readSubagentEvents(artifactDir)).filter((event) => event.run_id === workflowRunId);
+    const liveThreads = new Set<string>();
+    for (const event of events) {
+      if (!event.thread_id) continue;
+      if (event.event_name === 'SubagentStart') liveThreads.add(event.thread_id);
+      else if (event.event_name === 'SubagentStop') liveThreads.delete(event.thread_id);
+    }
+    if (liveThreads.size > MAX_LIFECYCLE_THREADS) {
+      return { status: 'invalid', missionId, workflowRunId, reason: 'active_event_bound_exceeded' };
+    }
+    const lifecycle = plan?.wave_lifecycle;
+    if (lifecycle != null) {
+      const openThreads = Number(lifecycle?.open_threads);
+      if (lifecycle?.schema !== 'sks.subagent-wave-lifecycle.v1'
+        || lifecycle?.owner !== 'root_parent'
+        || String(lifecycle?.workflow_run_id || '').trim() !== workflowRunId
+        || !Number.isSafeInteger(openThreads)
+        || openThreads < 0
+        || openThreads > MAX_LIFECYCLE_THREADS) {
+        return { status: 'invalid', missionId, workflowRunId, reason: 'active_lifecycle_invalid' };
+      }
+      if (events.length > 0 && openThreads !== liveThreads.size) {
+        return { status: 'invalid', missionId, workflowRunId, reason: 'active_lifecycle_event_mismatch' };
+      }
+      return { status: 'active', missionId, workflowRunId, openThreads };
+    }
+    return { status: 'active', missionId, workflowRunId, openThreads: liveThreads.size };
+  } catch {
+    return { status: 'invalid', missionId, workflowRunId, reason: 'active_workflow_inspection_failed' };
+  }
+}
 
 export async function recordAndRefreshSubagentEvidence(
   root: string,
@@ -73,9 +145,12 @@ export async function recordAndRefreshSubagentEvidence(
     const normalizedInputEvent = normalizeSubagentEvent(payload, eventName);
     const explicitRunId = normalizedInputEvent?.run_id || null;
     if (explicitRunId && explicitRunId !== workflowRunId) return null;
+    const priorEvents = await readSubagentEvents(artifactDir);
     let boundRunId = explicitRunId;
-    if (!boundRunId && eventName === 'SubagentStop' && normalizedInputEvent?.thread_id) {
-      const priorEvents = await readSubagentEvents(artifactDir);
+    if (!boundRunId
+      && eventName === 'SubagentStop'
+      && normalizedInputEvent?.thread_id
+      && String(payload?.turn_id || '').trim()) {
       const matchingStartRuns = [...new Set(priorEvents
         .filter((row) => row.event_name === 'SubagentStart'
           && row.thread_id === normalizedInputEvent.thread_id
@@ -85,6 +160,11 @@ export async function recordAndRefreshSubagentEvidence(
         ? matchingStartRuns[0] || null
         : null;
       if (!boundRunId) return null;
+    } else if (!boundRunId && eventName === 'SubagentStop') {
+      // A delayed Stop without an explicit run or generation-bound turn is
+      // indistinguishable from a reused thread in the active run. Preserve the
+      // current lifecycle and guard state instead of guessing.
+      return null;
     } else if (!boundRunId) {
       boundRunId = workflowRunId || null;
     }
@@ -93,6 +173,13 @@ export async function recordAndRefreshSubagentEvidence(
       : payload;
     const event = await recordSubagentEvent(artifactDir, eventPayload, eventName);
     if (!event) return null;
+    const events = [...priorEvents, event];
+    await clearOfficialSubagentLifecycleCaptureFailure(
+      artifactDir,
+      state,
+      eventPayload,
+      eventName
+    );
     const zellijTelemetry = await recordOfficialSubagentZellijTelemetry({
       root,
       routeMissionId: plan?.mission_id || state?.mission_id || null,
@@ -119,7 +206,7 @@ export async function recordAndRefreshSubagentEvidence(
         failed_mission_ids: 'failed_mission_ids' in zellijTelemetry ? zellijTelemetry.failed_mission_ids : []
       }).catch(() => null);
     }
-    const lifecycle = await refreshSubagentWaveLifecycle(artifactDir, { plan, event }).catch(() => null);
+    const lifecycle = await refreshSubagentWaveLifecycle(artifactDir, { plan, event, events });
     const refreshedPlan = lifecycle ? { ...plan, wave_lifecycle: lifecycle } : plan;
     const existing: any = await readJson(path.join(artifactDir, SUBAGENT_EVIDENCE_FILENAME), {});
     const parentSummary: any = await readJson(path.join(artifactDir, SUBAGENT_PARENT_SUMMARY_FILENAME), null);
@@ -133,6 +220,10 @@ export async function recordAndRefreshSubagentEvidence(
       String(plan?.mission_id || state?.mission_id || '').trim(),
       workflowRunId
     );
+    const lifecycleCaptureBlockers = await officialSubagentLifecycleCaptureBlockers(
+      artifactDir,
+      workflowRunId
+    );
     const evidence = await writeSubagentEvidence(artifactDir, {
       requestedSubagents,
       countPolicy: countTarget.countPolicy,
@@ -142,12 +233,14 @@ export async function recordAndRefreshSubagentEvidence(
       workflowStatus: 'running',
       preparationOnly: false,
       runId: workflowRunId || null,
+      events,
       additionalBlockers: [
         ...(Array.isArray(plan?.config_blockers)
           ? plan.config_blockers.map((item: any) => `official_subagent_config:${String(item)}`)
           : []),
         ...subagentCountContractBlockers(refreshedPlan, lifecycle?.cumulative_started || 0),
-        ...skillAvailabilityBlockers
+        ...skillAvailabilityBlockers,
+        ...lifecycleCaptureBlockers
       ]
     });
     return event;
@@ -210,7 +303,7 @@ async function refreshOfficialSubagentCompletionArtifactsLocked(root: any, state
     };
   }
   const events = await readSubagentEvents(dir);
-  const lifecycle = await refreshSubagentWaveLifecycle(dir, { plan }).catch(() => plan.wave_lifecycle || null);
+  const lifecycle = await refreshSubagentWaveLifecycle(dir, { plan, events });
   const refreshedPlan = lifecycle ? { ...plan, wave_lifecycle: lifecycle } : plan;
   const countTarget = effectiveSubagentTarget(refreshedPlan, lifecycle?.cumulative_started || 0);
   const requestedSubagents = countTarget.requestedSubagents || Number(state.requested_subagents || 0);
@@ -218,6 +311,10 @@ async function refreshOfficialSubagentCompletionArtifactsLocked(root: any, state
     root,
     dir,
     String(id || '').trim(),
+    workflowRunId
+  );
+  const lifecycleCaptureBlockers = await officialSubagentLifecycleCaptureBlockers(
+    dir,
     workflowRunId
   );
   const hostCapabilityCompletion = await rebuildHostCapabilityEvidenceForFinalization({
@@ -252,7 +349,8 @@ async function refreshOfficialSubagentCompletionArtifactsLocked(root: any, state
         : []),
       ...subagentCountContractBlockers(refreshedPlan, lifecycle?.cumulative_started || 0),
       ...hostCapabilityCompletion.blockers,
-      ...skillAvailabilityBlockers
+      ...skillAvailabilityBlockers,
+      ...lifecycleCaptureBlockers
     ],
     ...(hostCapabilityCompletion.evidence
       ? { hostCapabilityEvidence: hostCapabilityCompletion.evidence }
@@ -374,6 +472,131 @@ async function refreshOfficialSubagentCompletionArtifactsLocked(root: any, state
     evidence,
     terminal: passed ? { passed: true, missionId: id, workflowRunId, gate } : null
   };
+}
+
+export async function recordOfficialSubagentLifecycleCaptureFailure(
+  artifactDir: string,
+  state: any,
+  payload: any,
+  eventName: 'SubagentStart' | 'SubagentStop'
+): Promise<string> {
+  const identity = subagentLifecycleCaptureIdentity(state, payload, eventName);
+  const directory = path.join(artifactDir, SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_DIR);
+  await ensureConfinedDirectory(path.resolve(artifactDir), directory);
+  const runDirectory = path.join(directory, identity.runKey);
+  await ensureConfinedDirectory(directory, runDirectory);
+  await writeJsonAtomic(
+    path.join(runDirectory, `${identity.key}.json`),
+    {
+      schema: SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_SCHEMA,
+      recorded_at: nowIso(),
+      event_name: eventName,
+      thread_id: identity.threadId,
+      run_id: identity.runId,
+      blocker: identity.blocker
+    }
+  );
+  return identity.blocker;
+}
+
+export async function officialSubagentLifecycleCaptureBlockers(
+  artifactDir: string,
+  workflowRunId: string
+): Promise<string[]> {
+  const directory = path.join(artifactDir, SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_DIR);
+  const runKey = subagentLifecycleCaptureRunKey(workflowRunId);
+  const runDirectory = path.join(directory, runKey);
+  const rows = await readDirectoryOrEmptyWhenMissing(runDirectory, true);
+  const files = rows
+    .filter((row) => row.isFile() && row.name.endsWith('.json'))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const blockers = files.length > MAX_SUBAGENT_LIFECYCLE_CAPTURE_FAILURES
+    ? ['official_subagent_lifecycle_capture_failure_overflow']
+    : [];
+  for (const row of files.slice(0, MAX_SUBAGENT_LIFECYCLE_CAPTURE_FAILURES)) {
+    const failure: any = await readJson(path.join(runDirectory, row.name), null);
+    if (failure?.schema !== SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_SCHEMA
+      || String(failure?.run_id || '') !== workflowRunId) {
+      continue;
+    }
+    const blocker = String(failure?.blocker || '').trim();
+    if (/^official_subagent_lifecycle_capture_failed:(?:SubagentStart|SubagentStop):[a-f0-9]{16}$/.test(blocker)) {
+      blockers.push(blocker);
+    }
+  }
+  return [...new Set(blockers)].sort();
+}
+
+async function clearOfficialSubagentLifecycleCaptureFailure(
+  artifactDir: string,
+  state: any,
+  payload: any,
+  eventName: 'SubagentStart' | 'SubagentStop'
+): Promise<void> {
+  const identity = subagentLifecycleCaptureIdentity(state, payload, eventName);
+  const runDirectory = path.join(
+    artifactDir,
+    SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_DIR,
+    identity.runKey
+  );
+  await fsp.rm(path.join(runDirectory, `${identity.key}.json`), { force: true });
+  const remaining = await readDirectoryOrEmptyWhenMissing(runDirectory, false);
+  if (remaining.length === 0) {
+    await fsp.rmdir(runDirectory).catch((error: any) => {
+      if (error?.code !== 'ENOENT' && error?.code !== 'ENOTEMPTY') throw error;
+    });
+  }
+}
+
+function subagentLifecycleCaptureIdentity(
+  state: any,
+  payload: any,
+  eventName: 'SubagentStart' | 'SubagentStop'
+) {
+  const normalized = normalizeSubagentEvent(payload, eventName);
+  const runId = String(
+    normalized?.run_id
+    || state?.official_subagent_run_id
+    || 'unbound'
+  ).trim();
+  const threadId = String(normalized?.thread_id || 'unknown').trim();
+  const key = sha256(`${runId}\0${threadId}\0${eventName}`).slice(0, 32);
+  const blocker = `official_subagent_lifecycle_capture_failed:${eventName}:${
+    sha256(threadId).slice(0, 16)
+  }`;
+  return {
+    key,
+    runKey: subagentLifecycleCaptureRunKey(runId),
+    runId,
+    threadId,
+    blocker
+  };
+}
+
+function subagentLifecycleCaptureRunKey(runId: string): string {
+  return sha256(String(runId || 'unbound')).slice(0, 32);
+}
+
+async function readDirectoryOrEmptyWhenMissing(
+  directory: string,
+  withFileTypes: true
+): Promise<any[]>;
+async function readDirectoryOrEmptyWhenMissing(
+  directory: string,
+  withFileTypes: false
+): Promise<string[]>;
+async function readDirectoryOrEmptyWhenMissing(
+  directory: string,
+  withFileTypes: boolean
+): Promise<any[]> {
+  try {
+    return withFileTypes
+      ? await fsp.readdir(directory, { withFileTypes: true })
+      : await fsp.readdir(directory);
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  }
 }
 
 async function rebuildHostCapabilityEvidenceForFinalization(input: {

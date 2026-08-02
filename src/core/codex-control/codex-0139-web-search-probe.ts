@@ -3,6 +3,7 @@ import path from 'node:path'
 import { buildCodexExecArgs, findCodexBinary, runCodexExec } from '../codex-adapter.js'
 import { ensureDir, runProcess, writeJsonAtomic, writeTextAtomic } from '../fsx.js'
 import { codex0139ProbeTail, skippedCodex0139Probe, type Codex0139SingleProbe } from './codex-0139-real-probes.js'
+import { prepareCodexAppServerRuntimeEnv } from './codex-app-server-runtime-env.js'
 
 export async function runCodex0139WebSearchRealProbe(input: {
   root: string
@@ -27,6 +28,7 @@ export async function runCodex0139WebSearchRealProbe(input: {
   const outputFile = path.join(tempDir, 'last-message.txt')
   const prompt = 'In code mode, use standalone web search to find the title of https://example.com. Return JSON {"used_web_search":true,"answer":"...","sources":[...]}.'
   const args = buildCodexExecArgs({ root: tempDir, prompt, outputFile, json: true, extraArgs: ['-c', 'mcp_servers={}'] })
+  const runtimeEnv = await prepareCodexAppServerRuntimeEnv({ env: input.env || process.env })
   const result = await runCodexExec({
     root: tempDir,
     recoveryRoot: input.root,
@@ -39,7 +41,7 @@ export async function runCodex0139WebSearchRealProbe(input: {
     stdoutFile: path.join(tempDir, 'codex.stdout.log'),
     stderrFile: path.join(tempDir, 'codex.stderr.log'),
     codexBin,
-    env: input.env || process.env,
+    env: runtimeEnv,
     ...(typeof input.recoveryFetch === 'function' ? { recoveryFetch: input.recoveryFetch } : {}),
     ...(typeof input.runProcessImpl === 'function' ? { runProcessImpl: input.runProcessImpl } : {})
   }).catch((err: any) => ({

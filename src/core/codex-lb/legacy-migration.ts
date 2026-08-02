@@ -244,7 +244,7 @@ export async function migrateLegacyCodexLbDesktop(
   const targetMode: MigrateLegacyCodexLbDesktopTargetMode = input.targetMode === 'desktop-dual-auth-compat'
     ? 'desktop-dual-auth-compat'
     : 'desktop-native-bridge';
-  if (targetMode === 'desktop-dual-auth-compat' && gatewayAuthTransport !== 'x-codex-lb-api-key') {
+  if (desktopCompatMigrationUnavailable(targetMode)) {
     return {
       schema: 'sks.codex-lb-legacy-migration.v1',
       ok: false,
@@ -266,8 +266,8 @@ export async function migrateLegacyCodexLbDesktop(
         ...(input.remoteBaseUrl ? { remoteBaseUrl: input.remoteBaseUrl } : {}),
         ...(input.gatewayApiKey ? { expectedGatewayApiKey: input.gatewayApiKey } : {})
       }),
-      blockers: ['desktop_compat_requires_x_codex_lb_api_key_transport'],
-      error: 'desktop_compat_requires_x_codex_lb_api_key_transport'
+      blockers: ['desktop_dual_auth_compat_requires_global_secret_environment'],
+      error: 'desktop_dual_auth_compat_requires_global_secret_environment'
     };
   }
   const detection = await detectLegacyCodexLbDesktopState({
@@ -726,4 +726,8 @@ async function writeBufferAtomic(filePath: string, bytes: Buffer): Promise<void>
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function desktopCompatMigrationUnavailable(mode: unknown): boolean {
+  return mode === 'desktop-dual-auth-compat';
 }

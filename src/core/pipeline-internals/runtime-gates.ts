@@ -290,6 +290,8 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
     ? await passedActiveGate(root, state, jsonCache)
     : null;
   const activeGateNotApplicable = activeGatePreview?.not_applicable === true;
+  const subagentEvidenceHardBlocked = activeGatePreview?.hard_blocked === true
+    && activeGatePreview?.covered_gate === 'official-subagent-evidence';
   const dbAccessPromise = dbAccessReviewGateStatus(root, state, jsonCache);
   const engineeringSanityPromise = engineeringSanityGateStatus(root, state, jsonCache);
   const context7Promise = state?.context7_required ? hasContext7DocsEvidence(root, state) : Promise.resolve(true);
@@ -317,7 +319,7 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
   if (state?.context7_required && !context7Ok) {
     return complianceBlock(root, state, `SKS ${state.route_command || state.mode || 'route'} requires Context7 evidence before completion. Use Context7 resolve-library-id, then query-docs, so SKS can record context7-evidence.jsonl.`, { gate: 'context7-evidence' });
   }
-  if (state?.subagents_required && !activeGateNotApplicable && !subagentOk) {
+  if (state?.subagents_required && !activeGateNotApplicable && !subagentOk && !subagentEvidenceHardBlocked) {
     const evidence = await subagentEvidence(root, state);
     return complianceBlock(root, state, `SKS ${state.route_command || state.mode || 'route'} requires official Codex subagent evidence before completion. Record matched SubagentStart/SubagentStop events for every requested agent thread, wait for all threads, and provide the parent integration summary. Missing: ${(evidence.blockers || ['official_subagent_events_and_parent_summary']).join(', ')}.`, { gate: 'official-subagent-evidence', missing: evidence.blockers });
   }
@@ -695,7 +697,13 @@ async function passedHardBlocker(root: any, state: any, jsonCache?: Map<string, 
     if (!hasEvidence) missing.push('evidence');
     return missing.length
       ? { ok: false, file, missing }
-      : { ok: true, file, hard_blocked: true, reason: String(blocker.reason || '').trim() };
+      : {
+          ok: true,
+          file,
+          hard_blocked: true,
+          covered_gate: String(blocker.gate || '').trim(),
+          reason: String(blocker.reason || '').trim()
+        };
   }
   return { ok: blocker.passed === true && hasReason && hasEvidence, file };
 }

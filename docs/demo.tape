@@ -5,7 +5,7 @@ Set Width 1280
 Set Height 720
 Set TypingSpeed 20ms
 
-Type "npx sneakoscope install --yes"
+Type "npm exec --yes --package=sneakoscope@latest -- sneakoscope install --yes"
 Sleep 500ms
 Enter
 Sleep 1s

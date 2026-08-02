@@ -6,6 +6,10 @@ import type { Dirent } from 'node:fs';
 import { ensureDir, exists, nowIso, PACKAGE_VERSION, readJson, readText, sha256, withScratchDir, writeJsonAtomic, writeTextAtomic } from '../fsx.js';
 import { buildSksCoreSkillManifest, isCoreSkillName, legacyCoreSkillNames } from '../codex-native/core-skill-manifest.js';
 import { syncCoreSkillsIntegrity } from '../codex-native/core-skill-integrity.js';
+import {
+  managedSkillGenerationLockPath,
+  withManagedSkillGenerationLock
+} from '../codex-native/managed-skill-generation-lock.js';
 import { dbSafetyGuardSkillText, madSksSqlPlanePolicyText } from '../mad-sks/sql-plane/policy.js';
 import { SKILL_DREAM_POLICY, skillDreamPolicyText } from '../skill-forge.js';
 import { installOfficialSubagentAgentConfigs } from '../subagents/official-subagent-config.js';
@@ -21,6 +25,7 @@ import {
 } from '../managed-path-safety.js';
 import { collectNestedProjectRoots } from '../doctor/current-project-guidance-nested.js';
 import { coreEngineeringDirectiveReferenceText, engineeringSanityPolicyText } from '../lean-engineering-policy.js';
+import { compareSemVer } from '../update/semver.js';
 import { AWESOME_DESIGN_MD_REFERENCE, CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_ONLY_POLICY, CODEX_IMAGEGEN_EVIDENCE_SOURCE, CODEX_IMAGEGEN_REQUIRED_POLICY, CODEX_WEB_VERIFICATION_POLICY, DEFAULT_CODEX_APP_PLUGINS, DESIGN_SYSTEM_SSOT, DOLLAR_COMMANDS, DOLLAR_SKILL_NAMES, FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, GETDESIGN_REFERENCE, IMAGEGEN_SOCIAL_SOURCE_POLICY, LEGACY_DOLLAR_SKILL_NAMES, OPENAI_CHATGPT_IMAGES_2_DOC_URL, OPENAI_GPT_IMAGE_2_MODEL_DOC_URL, OPENAI_IMAGE_GENERATION_DOC_URL, PPT_CONDITIONAL_SKILL_ALLOWLIST, PPT_PIPELINE_MCP_ALLOWLIST, PPT_PIPELINE_SKILL_ALLOWLIST, RECOMMENDED_SKILLS, RESERVED_CODEX_PLUGIN_SKILL_NAMES, SOLUTION_SCOUT_SKILL_NAME, chatCaptureIntakeText, context7ConfigToml, getdesignReferencePolicyText, outcomeRubricPolicyText, pptPipelineAllowlistPolicyText, productDesignPluginPolicyText, speedLanePolicyText, stackCurrentDocsPolicyText, triwikiContextTrackingText, triwikiStagePolicyText } from '../routes.js';
 import { prefixKnownSksDollarReferences, sksPrefixedSkillName } from '../routes/dollar-prefix.js';
 import { escapeRegExp } from '../text/regex.js';
@@ -32,6 +37,9 @@ import {
 
 const SKS_SKILL_MANIFEST_FILE = '.sks-generated.json';
 const PACKAGED_SKILLS_MANIFEST_SCHEMA = 'sks.skills-manifest.v1';
+const SKILLS_HASH_LEDGER_SCHEMA = 'sks.skills-hash-ledger.v1';
+const MANAGED_SKILL_MARKER_VERSION = '1';
+const MAX_SKILL_HASH_HISTORY = 8;
 const GENERATED_PRUNE_POLICY = 'remove_previous_sks_generated_paths_absent_from_current_manifest';
 const REFLECTION_MEMORY_PATH = '.sneakoscope/memory/q2_facts/post-route-reflection.md';
 const MANAGED_SKILL_MARKER_RE = /BEGIN SKS (?:IMMUTABLE CORE|MANAGED) SKILL/;
@@ -392,7 +400,37 @@ export async function cleanupRemovedSksSkillResidue(opts: {
       { scope: 'project-codex', ownerRoot: projectRoot, targetDir: path.join(root, '.codex', 'skills') }
     );
   }
+  if (opts.fix) {
+    const lockOwners = new Map<string, { ownerRoot: string; scope: 'global' | 'project' }>();
+    for (const target of targets) {
+      const scope = target.scope.startsWith('project') ? 'project' as const : 'global' as const;
+      const key = managedSkillGenerationLockPath(target.ownerRoot, scope);
+      lockOwners.set(key, { ownerRoot: target.ownerRoot, scope });
+    }
+    const orderedLocks = [...lockOwners.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([, value]) => value);
+    return withManagedSkillCleanupLocks(
+      orderedLocks,
+      0,
+      () => reconcileRemovedSkillTargets(targets, true)
+    );
+  }
   return reconcileRemovedSkillTargets(targets, opts.fix);
+}
+
+async function withManagedSkillCleanupLocks<T>(
+  locks: Array<{ ownerRoot: string; scope: 'global' | 'project' }>,
+  index: number,
+  run: () => Promise<T>
+): Promise<T> {
+  const lock = locks[index];
+  if (!lock) return run();
+  return withManagedSkillGenerationLock(
+    lock.ownerRoot,
+    lock.scope,
+    () => withManagedSkillCleanupLocks(locks, index + 1, run)
+  );
 }
 
 async function reconcileRemovedSkillTargets(
@@ -747,11 +785,40 @@ function nodeErrorCode(error: unknown): string {
   return error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
 }
 
-export async function reconcileSkills(opts: {
+export interface ReconcileSkillsOptions {
   targetDir: string;
   scope: 'global' | 'project';
   fix: boolean;
-}): Promise<SkillReconcileReport> {
+  globalRuntimeRoot?: string;
+}
+
+export async function reconcileSkills(opts: ReconcileSkillsOptions): Promise<SkillReconcileReport> {
+  const result = await reconcileSkillsAfterLockedPrecondition(opts, async () => true);
+  if (!result.report) throw new Error('managed_skill_reconcile_precondition_unexpectedly_failed');
+  return result.report;
+}
+
+export async function reconcileSkillsAfterLockedPrecondition(
+  opts: ReconcileSkillsOptions,
+  precondition: () => Promise<boolean>
+): Promise<{ precondition_met: boolean; report: SkillReconcileReport | null }> {
+  const targetDir = path.resolve(opts.targetDir);
+  const root = rootFromSkillsDir(targetDir);
+  return withManagedSkillGenerationLock(root, opts.scope, async () => {
+    if (!await precondition()) {
+      return { precondition_met: false, report: null };
+    }
+    return {
+      precondition_met: true,
+      report: await reconcileSkillsUnlocked({
+        ...opts,
+        targetDir
+      })
+    };
+  });
+}
+
+async function reconcileSkillsUnlocked(opts: ReconcileSkillsOptions): Promise<SkillReconcileReport> {
   const targetDir = path.resolve(opts.targetDir);
   const root = rootFromSkillsDir(targetDir);
   const manifest = await loadSkillsManifest();
@@ -773,6 +840,59 @@ export async function reconcileSkills(opts: {
     warnings: [],
     core_skill_integrity: { ok: true, installed_count: 0, restored_count: 0, user_collision_count: 0 }
   };
+  let generatedManifest: any = null;
+  if (opts.scope === 'global' && opts.fix) {
+    generatedManifest = await generatePackagedSkillsManifest();
+    const bundledManifest = await loadBundledSkillsManifest();
+    const generatedFingerprint = skillManifestGenerationSha256(generatedManifest);
+    const bundledFingerprint = skillManifestGenerationSha256(bundledManifest);
+    if (bundledManifest && (
+      !generatedFingerprint
+      || !bundledFingerprint
+      || generatedFingerprint !== bundledFingerprint
+    )) {
+      report.ok = false;
+      report.warnings.push('packaged_authoritative_content_inconsistent');
+      return report;
+    }
+    generatedManifest = mergePackagedSkillsManifestHashHistory(
+      generatedManifest,
+      bundledManifest
+    );
+
+    const installedMarker: any = await readJson(
+      path.join(targetDir, SKS_SKILL_MANIFEST_FILE),
+      null
+    );
+    if (installedMarker?.generated_by === 'sneakoscope') {
+      const installedVersion = String(installedMarker?.version || '').trim();
+      const versionOrder = compareSemVer(installedVersion, PACKAGE_VERSION);
+      if (versionOrder === 1) {
+        report.ok = false;
+        report.warnings.push(
+          `managed_skill_generation_downgrade_refused:${installedVersion}:runtime_${PACKAGE_VERSION}`
+        );
+        return report;
+      }
+      const installedBuildTime = Number(installedMarker?.runtime_build_source_time);
+      const currentBuildTime = await runtimeBuildSourceTime();
+      const installedGeneration = String(installedMarker?.skill_generation_sha256 || '');
+      if (versionOrder === 0
+        && generatedFingerprint
+        && installedGeneration
+        && installedGeneration !== generatedFingerprint
+        && Number.isFinite(installedBuildTime)
+        && installedBuildTime > 0
+        && currentBuildTime !== null
+        && installedBuildTime > currentBuildTime) {
+        report.ok = false;
+        report.warnings.push(
+          `managed_skill_same_version_older_build_refused:${currentBuildTime}:installed_${installedBuildTime}`
+        );
+        return report;
+      }
+    }
+  }
   const removedResidueTargets: RemovedSkillCleanupTarget[] = [
     {
       scope: opts.scope === 'global' ? 'global' : 'project',
@@ -785,8 +905,30 @@ export async function reconcileSkills(opts: {
       targetDir: path.join(root, '.codex', 'skills')
     }
   ];
+  if (opts.scope === 'global' && opts.fix) {
+    let quarantined: string[];
+    try {
+      quarantined = await quarantineUntrustedGlobalManagedSkills(
+        root,
+        targetDir,
+        manifest
+      );
+    } catch (error: unknown) {
+      report.ok = false;
+      report.warnings.push(`skill_target_prepare_failed:${publicPathError(error, targetDir)}`);
+      return report;
+    }
+    report.quarantined_user_collisions.push(...quarantined);
+    report.warnings.push(...quarantined.map(
+      (name) => `untrusted_managed_skill_quarantined:${name}`
+    ));
+  }
   if (opts.scope === 'global') {
-    const globalRuntimeRoot = path.resolve(process.env.SKS_GLOBAL_ROOT || path.join(root, '.sneakoscope-global'));
+    const globalRuntimeRoot = path.resolve(
+      opts.globalRuntimeRoot
+      || process.env.SKS_GLOBAL_ROOT
+      || path.join(root, '.sneakoscope-global')
+    );
     removedResidueTargets.push(
       {
         scope: 'global-runtime',
@@ -863,7 +1005,12 @@ export async function reconcileSkills(opts: {
     const oldHash = before.get(entry.canonical);
     if (oldHash && oldHash !== entry.hash) report.updated.push(entry.name);
   }
-  if (opts.fix) await writePackagedSkillManifest(targetDir, await generatePackagedSkillsManifest());
+  if (opts.fix) {
+    await writePackagedSkillManifest(
+      targetDir,
+      generatedManifest || await generatePackagedSkillsManifest()
+    );
+  }
   report.installed_skills = install?.installed_skills || [...report.installed];
   report.generated_files = install?.generated_files || generatedSkillFiles(report.installed_skills);
   report.core_skill_integrity = install?.core_skill_integrity || { ok: true, installed_count: 0, restored_count: 0, user_collision_count: 0 };
@@ -965,28 +1112,164 @@ async function quarantineSkillDir(root: string, sourceDir: string, name: string,
 }
 
 export async function loadSkillsManifest(): Promise<any> {
+  const bundled = await loadBundledSkillsManifest();
+  if (bundled) return bundled;
   const candidates = [
-    path.join(packageRootDir(), 'dist', 'config', 'skills-manifest.json'),
-    path.join(packageRootDir(), 'config', 'skills-manifest.json'),
-    // When the package tree is a partial workspace build (tsc without build-dist),
-    // doctor/reconcile still writes the same packaged digests next to installed skills.
+    // When the package tree is a partial workspace build (tsc without
+    // build-dist), accept only a same-version, complete installed manifest.
     path.join(path.resolve(process.env.HOME || os.homedir()), '.agents', 'skills', 'skills-manifest.json')
   ];
+  return (await loadFirstCompleteSkillsManifest(candidates)) || buildFallbackSkillsManifest();
+}
+
+export async function loadBundledSkillsManifest(): Promise<any | null> {
+  const packaged = await loadFirstCompleteSkillsManifest([
+    path.join(packageRootDir(), 'dist', 'config', 'skills-manifest.json'),
+    path.join(packageRootDir(), 'config', 'skills-manifest.json')
+  ]);
+  if (packaged) return packaged;
+  const ledger = await readJson(
+    path.join(packageRootDir(), 'config', 'skills-hash-ledger.v1.json'),
+    null
+  );
+  return skillsManifestFromHashLedger(ledger);
+}
+
+async function loadFirstCompleteSkillsManifest(candidates: readonly string[]): Promise<any | null> {
   for (const file of candidates) {
     const data = await readJson(file, null);
-    if (data?.schema !== PACKAGED_SKILLS_MANIFEST_SCHEMA || !Array.isArray(data.skills)) continue;
+    if (data?.schema !== PACKAGED_SKILLS_MANIFEST_SCHEMA
+      || data?.package_version !== PACKAGE_VERSION
+      || !Array.isArray(data.skills)) continue;
     const normalized = normalizeSkillsManifest(data);
     if (!skillsManifestHasContentDigests(normalized)) continue;
     return normalized;
   }
-  return buildFallbackSkillsManifest();
+  return null;
 }
 
 function skillsManifestHasContentDigests(manifest: any): boolean {
-  return (manifest?.skills || []).some((skill: any) => (
-    typeof skill?.content_sha256 === 'string'
-    && /^[a-f0-9]{64}$/i.test(skill.content_sha256)
+  const skills = Array.isArray(manifest?.skills) ? manifest.skills : [];
+  if (!skills.length) return false;
+  const names = new Set<string>();
+  for (const skill of skills) {
+    const name = canonicalSkillNameFromValue(skill?.canonical_name);
+    if (!name
+      || names.has(name)
+      || typeof skill?.content_sha256 !== 'string'
+      || !/^[a-f0-9]{64}$/i.test(skill.content_sha256)) {
+      return false;
+    }
+    names.add(name);
+  }
+  return buildFallbackSkillsManifest().skills.every((skill: any) => (
+    names.has(canonicalSkillNameFromValue(skill.canonical_name))
   ));
+}
+
+export function skillsManifestFromHashLedger(ledger: any): any | null {
+  if (ledger?.schema !== SKILLS_HASH_LEDGER_SCHEMA || !Array.isArray(ledger?.skills)) {
+    return null;
+  }
+  const expected = new Set(
+    buildFallbackSkillsManifest().skills.map(
+      (skill: any) => canonicalSkillNameFromValue(skill.canonical_name)
+    )
+  );
+  const names = new Set<string>();
+  const skills: any[] = [];
+  for (const row of ledger.skills) {
+    const canonicalName = canonicalSkillNameFromValue(row?.canonical_name);
+    const trusted = Array.isArray(row?.trusted_sha256)
+      ? row.trusted_sha256.map((value: unknown) => String(value || '').trim().toLowerCase())
+      : [];
+    if (!canonicalName
+      || canonicalName !== row?.canonical_name
+      || names.has(canonicalName)
+      || trusted.length < 1
+      || trusted.length > MAX_SKILL_HASH_HISTORY + 1
+      || trusted.some((digest: string) => !/^[a-f0-9]{64}$/.test(digest))
+      || new Set(trusted).size !== trusted.length) {
+      return null;
+    }
+    names.add(canonicalName);
+    skills.push({
+      canonical_name: canonicalName,
+      type: isCoreSkillName(canonicalName) ? 'core' : 'official',
+      content_sha256: trusted[0],
+      hash_history: trusted.slice(1),
+      deprecated_aliases: SKILL_ALIASES[canonicalName] || []
+    });
+  }
+  if ([...expected].some((name) => !names.has(name))) {
+    return null;
+  }
+  const manifest = {
+    schema: PACKAGED_SKILLS_MANIFEST_SCHEMA,
+    package_version: PACKAGE_VERSION,
+    skills: skills.sort((left, right) => (
+      left.canonical_name.localeCompare(right.canonical_name)
+    ))
+  };
+  return skillsManifestHasContentDigests(manifest) ? manifest : null;
+}
+
+async function quarantineUntrustedGlobalManagedSkills(
+  root: string,
+  targetDir: string,
+  manifest: any
+): Promise<string[]> {
+  const trusted = new Map<string, Set<string>>();
+  for (const row of Array.isArray(manifest?.skills) ? manifest.skills : []) {
+    const canonicalName = canonicalSkillNameFromValue(row?.canonical_name);
+    if (!canonicalName) continue;
+    const digests = new Set<string>();
+    for (const value of [row?.content_sha256, ...(Array.isArray(row?.hash_history) ? row.hash_history : [])]) {
+      const digest = String(value || '').trim().toLowerCase();
+      if (/^[a-f0-9]{64}$/.test(digest)) digests.add(digest);
+    }
+    trusted.set(canonicalName, digests);
+  }
+  const quarantined: string[] = [];
+  for (const entry of await listSkillDirs(targetDir, { includeUnsafeEntries: true })) {
+    if (!entry.text || !MANAGED_SKILL_MARKER_RE.test(entry.text)) continue;
+    const canonicalName = canonicalSkillNameFromValue(entry.directoryCanonical || entry.name);
+    // Current official names are the generation writer's replacement surface.
+    // Retired or otherwise stale generated names remain owned by the existing
+    // residue/manifest cleanup, which distinguishes removable generated bytes
+    // from directories containing user-authored additions.
+    if (!trusted.has(canonicalName)) continue;
+    const contentTrusted = trusted.get(canonicalName)?.has(sha256(entry.text)) === true;
+    const directoryOwned = contentTrusted
+      && await managedSkillDirectoryContainsOnlyOwnedFiles(root, entry.dir);
+    if (contentTrusted && directoryOwned) continue;
+    await quarantineSkillDir(
+      root,
+      entry.dir,
+      canonicalName || entry.name,
+      contentTrusted
+        ? 'global-managed-skill-user-content-collision'
+        : 'global-managed-skill-untrusted-content'
+    );
+    quarantined.push(canonicalName || entry.name);
+  }
+  return [...new Set(quarantined)].sort();
+}
+
+function skillManifestGenerationSha256(manifest: any): string | null {
+  if (manifest?.schema !== PACKAGED_SKILLS_MANIFEST_SCHEMA || !Array.isArray(manifest?.skills)) {
+    return null;
+  }
+  const rows = manifest.skills
+    .map((skill: any) => ({
+      canonical_name: canonicalSkillNameFromValue(skill?.canonical_name),
+      content_sha256: String(skill?.content_sha256 || '').trim().toLowerCase()
+    }))
+    .filter((skill: any) => (
+      skill.canonical_name && /^[a-f0-9]{64}$/.test(skill.content_sha256)
+    ))
+    .sort((left: any, right: any) => left.canonical_name.localeCompare(right.canonical_name));
+  return rows.length ? sha256(JSON.stringify(rows)) : null;
 }
 
 function normalizeSkillsManifest(manifest: any) {
@@ -999,6 +1282,39 @@ function normalizeSkillsManifest(manifest: any) {
     .filter((skill: any) => !REMOVED_SKS_SKILL_NAME_SET.has(canonicalSkillNameFromValue(skill.canonical_name)));
   const { removed_skills: _retiredInventory, ...current } = manifest || {};
   return { ...current, skills };
+}
+
+export function mergePackagedSkillsManifestHashHistory(
+  currentManifest: any,
+  previousManifest: any
+): any {
+  const previousByName = new Map<string, any>(
+    (Array.isArray(previousManifest?.skills) ? previousManifest.skills : [])
+      .map((row: any) => [canonicalSkillNameFromValue(row?.canonical_name), row])
+      .filter(([name]: [string, any]) => Boolean(name))
+  );
+  return {
+    ...currentManifest,
+    skills: (Array.isArray(currentManifest?.skills) ? currentManifest.skills : [])
+      .map((row: any) => {
+        const canonicalName = canonicalSkillNameFromValue(row?.canonical_name);
+        const currentDigest = String(row?.content_sha256 || '').trim().toLowerCase();
+        const previous = previousByName.get(canonicalName);
+        const history = [
+          previous?.content_sha256,
+          ...(Array.isArray(previous?.hash_history) ? previous.hash_history : []),
+          ...(Array.isArray(row?.hash_history) ? row.hash_history : [])
+        ]
+          .map((value) => String(value || '').trim().toLowerCase())
+          .filter((value, index, values) => (
+            /^[a-f0-9]{64}$/.test(value)
+            && value !== currentDigest
+            && values.indexOf(value) === index
+          ))
+          .slice(0, MAX_SKILL_HASH_HISTORY);
+        return { ...row, hash_history: history };
+      })
+  };
 }
 
 export async function generatePackagedSkillsManifest(): Promise<any> {
@@ -1135,7 +1451,10 @@ function canonicalSkillNameFromValue(value: any) {
 }
 
 function packageRootDir() {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  return path.resolve(
+    process.env.SKS_BUILD_SOURCE_ROOT
+    || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+  );
 }
 
 async function pruneProjectGeneratedManifest(targetDir: string) {
@@ -1152,7 +1471,7 @@ function generatedSkillFiles(skillNames: any) {
 function markManagedSkill(name: any, content: any) {
   const text = String(content || '').trim();
   if (MANAGED_SKILL_MARKER_RE.test(text)) return `${text}\n`;
-  return `${text}\n\n<!-- BEGIN SKS MANAGED SKILL v${PACKAGE_VERSION} name=${name} -->\n`;
+  return `${text}\n\n<!-- BEGIN SKS MANAGED SKILL v${MANAGED_SKILL_MARKER_VERSION} name=${name} -->\n`;
 }
 
 function generatedSkillManifestPath(root: any) {
@@ -1162,14 +1481,37 @@ function generatedSkillManifestPath(root: any) {
 async function writeGeneratedSkillManifest(root: any, skillNames: any) {
   const manifestPath = generatedSkillManifestPath(root);
   await prepareReservedSkillManifestForWrite(root, manifestPath, SKS_SKILL_MANIFEST_FILE);
+  const installedRows = await listSkillDirs(path.join(root, '.agents', 'skills'));
+  const currentNames = new Set((skillNames || []).map((name: unknown) => canonicalSkillNameFromValue(name)));
+  const skillGenerationSha256 = sha256(JSON.stringify(
+    installedRows
+      .filter((row) => currentNames.has(canonicalSkillNameFromValue(row.canonical)))
+      .map((row) => ({
+        canonical_name: canonicalSkillNameFromValue(row.canonical),
+        content_sha256: row.hash
+      }))
+      .sort((left, right) => left.canonical_name.localeCompare(right.canonical_name))
+  ));
   await writeJsonAtomic(manifestPath, {
     schema_version: 1,
     generated_by: 'sneakoscope',
     version: PACKAGE_VERSION,
+    skill_generation_sha256: skillGenerationSha256,
+    runtime_build_source_time: await runtimeBuildSourceTime(),
     prune_policy: GENERATED_PRUNE_POLICY,
     skills: [...skillNames].sort(),
     files: generatedSkillFiles(skillNames)
   });
+}
+
+async function runtimeBuildSourceTime(): Promise<number | null> {
+  const stamp: any = await readJson(
+    path.join(packageRootDir(), 'dist', '.sks-build-stamp.json'),
+    null
+  );
+  return Number.isFinite(stamp?.built_at_source_time) && stamp.built_at_source_time > 0
+    ? stamp.built_at_source_time
+    : null;
 }
 
 async function removeStaleGeneratedSkillsFromManifest(
@@ -1215,11 +1557,20 @@ async function managedSkillDirectoryContainsOnlyOwnedFiles(root: string, dir: st
   const agentsInspection = await inspectConfinedPath(root, agentsDir);
   if (!agentsInspection.exists || agentsInspection.leafSymlink || !agentsInspection.stat?.isDirectory()) return false;
   const agentEntries = await fsp.readdir(agentsDir, { withFileTypes: true });
-  return agentEntries.length === 0 || (
-    agentEntries.length === 1
-    && agentEntries[0]?.name === 'openai.yaml'
-    && agentEntries[0].isFile()
-  );
+  if (agentEntries.length === 0) return true;
+  if (agentEntries.length !== 1
+    || agentEntries[0]?.name !== 'openai.yaml'
+    || !agentEntries[0].isFile()) return false;
+  const skillContent = await fsp.readFile(path.join(dir, 'SKILL.md'), 'utf8');
+  const name = canonicalSkillNameFromValue(/^name:\s*(.+)\s*$/m.exec(skillContent)?.[1]);
+  const description = skillFrontmatterDescription(skillContent);
+  if (!name || !description) return false;
+  const expectedMetadata = renderSkillAgentMetadata({
+    skillName: name,
+    shortDescription: description
+  });
+  const actualMetadata = await fsp.readFile(path.join(agentsDir, 'openai.yaml'), 'utf8');
+  return actualMetadata === expectedMetadata;
 }
 
 async function prepareReservedSkillManifestsForWrite(root: string): Promise<string[]> {
