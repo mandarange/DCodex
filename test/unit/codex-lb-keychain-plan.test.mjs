@@ -18,5 +18,6 @@ test('codex-lb setup keychain action follows the keychain answer', () => {
   assert.ok(action);
   assert.equal(action.command, undefined);
   assert.doesNotMatch(JSON.stringify(action), /security add-generic-password|-w\b|--api-key\b|--key\b/i);
-  assert.match(action.effect, /Security\.framework.*stdin-only/i);
+  assert.match(action.effect, /dedicated signed Keychain helper/i);
+  assert.ok(plan.blockers.includes('keychain_acl_helper_unavailable'));
 });

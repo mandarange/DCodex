@@ -3,19 +3,25 @@ import {
   managedOfficialSubagentRoleByName,
   type ManagedOfficialSubagentRole
 } from '../managed-assets/managed-assets-manifest.js'
-import { decideNarutoConcurrency } from '../naruto/naruto-concurrency-governor.js'
 import type { HardwareCapacityProbeInput } from '../naruto/hardware-capacity-probe.js'
-import type { SubagentModelPolicyId, SubagentModelReasoningEffort } from './model-policy.js'
-import { DEFAULT_NARUTO_MAX_THREADS } from './thread-budget.js'
+import {
+  decideSubagentModel,
+  type SubagentModelPolicyId,
+  type SubagentModelReasoningEffort
+} from './model-policy.js'
+import { HARD_NARUTO_MAX_THREADS } from './thread-budget.js'
 import { escapeRegExp } from '../text/regex.js'
 
 export const DEFAULT_AUTOMATIC_SUBAGENT_COUNT = 4
 export const PARALLEL_AUTOMATIC_SUBAGENT_COUNT = 6
 export const LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT = 8
-export const MAX_AUTOMATIC_SUBAGENT_COUNT = 12
+export const MAX_AUTOMATIC_SUBAGENT_COUNT = HARD_NARUTO_MAX_THREADS
 export const MAX_AUTOMATIC_REVIEWER_COUNT = 2
 export const MAX_CRITICAL_AUTOMATIC_REVIEWER_COUNT = 3
-export const MAX_ON_DEMAND_SUBAGENT_ROLE_COUNT = MAX_AUTOMATIC_SUBAGENT_COUNT
+export const MASS_PARALLEL_AUTOMATIC_SUBAGENT_COUNT = 16
+export const MAX_MASS_AUTOMATIC_SUBAGENT_COUNT = HARD_NARUTO_MAX_THREADS
+/** Catalog injection is bounded by the real installed role catalog, not fan-out width. */
+export const MAX_ON_DEMAND_SUBAGENT_ROLE_COUNT = 25
 
 export interface OfficialSubagentRoleSummary {
   name: string
@@ -101,8 +107,10 @@ export function recommendOfficialSubagentRoles(input: {
   }
 
   if (ranked.length) return unique(ranked).slice(0, limit)
+  const lane = decideSubagentModel({ description: text }).policy
+  if (lane === 'terra_medium_context_tools') return ['explorer']
+  if (lane === 'luna_max_mechanical' && input.readOnly !== true) return ['worker']
   if (input.readOnly === true) return ['expert']
-  if (looksClearBounded(text)) return ['worker']
   return [input.requiresWrite === true ? 'implementation_specialist' : 'expert']
 }
 
@@ -127,9 +135,9 @@ export function officialSubagentFanoutPolicy(input: {
       ? 'operator'
       : 'automatic'
   const explicit = countSource !== 'automatic'
-  const explicitRequested = Number.isFinite(Number(input.requestedSubagents))
-    ? Math.max(1, Math.floor(Number(input.requestedSubagents)))
-    : DEFAULT_AUTOMATIC_SUBAGENT_COUNT
+  const explicitRequested = input.requestedSubagents === undefined || input.requestedSubagents === null
+    ? DEFAULT_AUTOMATIC_SUBAGENT_COUNT
+    : boundedThreadCount(input.requestedSubagents, 'requested_subagents')
   const automatic = automaticSubagentFanout({
     ...(input.taskProfile === undefined ? {} : { taskProfile: input.taskProfile }),
     ...(input.goal === undefined ? {} : { goal: input.goal }),
@@ -153,6 +161,7 @@ export function officialSubagentFanoutPolicy(input: {
     default_subagents: DEFAULT_AUTOMATIC_SUBAGENT_COUNT,
     automatic_selected: explicit ? null : automatic.count,
     automatic_ceiling: automatic.ceiling,
+    mass_parallel: automatic.massParallel === true,
     automatic_reviewer_ceiling: automaticReviewerCeiling,
     selection_reason: countSource === 'operator'
       ? 'explicit_operator_count_preserved'
@@ -185,25 +194,34 @@ function automaticSubagentFanout(input: {
   const largeScale = LARGE_SCALE_WORK_RE.test(text)
   const criticalMultiDomain = highRisk && critical && riskDomains.length >= 3
   const reviewerOnly = isReviewerOnlyFanout(input.suggestedRoles || [])
+  // Mass/bulk cheap-lane work (broad search, exploration sweeps, typing shards)
+  // scales far above the protected strata, but never when reviewer-only or
+  // critical multi-domain caps apply.
+  const massLane = decideSubagentModel({ description: text }).policy
+  const massParallel = MASS_PARALLEL_WORK_RE.test(text)
+    && !NON_CHEAP_MASS_ACTION_RE.test(text)
+    && (massLane === 'luna_max_mechanical' || massLane === 'terra_medium_context_tools')
+    && !reviewerOnly
+    && !criticalMultiDomain
+  const automaticCeiling = massParallel ? MAX_MASS_AUTOMATIC_SUBAGENT_COUNT : MAX_AUTOMATIC_SUBAGENT_COUNT
   const decomposedSliceCount = Number(input.independentSliceCount)
   const roleWidth = unique((input.suggestedRoles || []).map((role) => String(role || '').trim()).filter(Boolean)).length
-  const frameBudget = clamp(
-    Number(input.maxThreads) || DEFAULT_NARUTO_MAX_THREADS,
-    1,
-    MAX_AUTOMATIC_SUBAGENT_COUNT
-  )
+  if (input.maxThreads !== undefined && input.maxThreads !== null) {
+    boundedThreadCount(input.maxThreads, 'max_threads')
+  }
 
   if (Number.isFinite(decomposedSliceCount) && decomposedSliceCount > 0) {
     const reviewerCeiling = criticalMultiDomain
       ? MAX_CRITICAL_AUTOMATIC_REVIEWER_COUNT
       : MAX_AUTOMATIC_REVIEWER_COUNT
-    const ceiling = reviewerOnly ? reviewerCeiling : MAX_AUTOMATIC_SUBAGENT_COUNT
+    const ceiling = reviewerOnly ? reviewerCeiling : automaticCeiling
     return {
       count: clamp(decomposedSliceCount, 1, ceiling),
       ceiling,
       reason: 'parent_decomposed_independent_slices',
       riskDomains,
-      criticalMultiDomain
+      criticalMultiDomain,
+      massParallel
     }
   }
 
@@ -218,13 +236,17 @@ function automaticSubagentFanout(input: {
         ? 'critical_multi_domain_reviewer_cap'
         : 'independent_reviewer_cap',
       riskDomains,
-      criticalMultiDomain
+      criticalMultiDomain,
+      massParallel: false
     }
   }
 
   let baseCount = DEFAULT_AUTOMATIC_SUBAGENT_COUNT
   let reason = 'non_trivial_default_parallel'
-  if (largeScale) {
+  if (massParallel) {
+    baseCount = MASS_PARALLEL_AUTOMATIC_SUBAGENT_COUNT
+    reason = 'mass_parallel_cheap_lane'
+  } else if (largeScale) {
     baseCount = LARGE_SCALE_AUTOMATIC_SUBAGENT_COUNT
     reason = 'large_scale_dynamic_parallel'
   } else if (criticalMultiDomain) {
@@ -244,51 +266,25 @@ function automaticSubagentFanout(input: {
     reason = 'role_width_parallel'
   }
 
-  const count = hardwareAwareAutomaticCount(
-    baseCount,
-    MAX_AUTOMATIC_SUBAGENT_COUNT,
-    frameBudget,
-    input.hardware
-  )
+  // Until decomposition provides real independent slices, these values are
+  // planning hints only. Raising them to the host cap would invent work.
+  const count = Math.min(baseCount, automaticCeiling)
   return {
     count,
-    ceiling: MAX_AUTOMATIC_SUBAGENT_COUNT,
-    reason: count > baseCount ? `${reason}+hardware_capacity_boost` : reason,
+    ceiling: automaticCeiling,
+    reason,
     riskDomains,
-    criticalMultiDomain: Boolean(criticalMultiDomain)
+    criticalMultiDomain: Boolean(criticalMultiDomain),
+    massParallel
   }
 }
 
-/**
- * Prefer the largest useful fan-out the machine can sustain. Policy sets a floor;
- * healthy CPU/memory budget may raise the count up to the sealed ceiling.
- * Live wave capacity still clamps actual spawns through the thread-budget ledger.
- */
-function hardwareAwareAutomaticCount(
-  baseCount: number,
-  ceiling: number,
-  frameBudget: number,
-  hardware?: HardwareCapacityProbeInput | null
-): number {
-  const targetCeiling = clamp(Math.min(ceiling, frameBudget), 1, MAX_AUTOMATIC_SUBAGENT_COUNT)
-  const floor = clamp(baseCount, 1, targetCeiling)
-  try {
-    const probe = decideNarutoConcurrency({
-      requestedWorkers: targetCeiling,
-      totalWorkItems: targetCeiling,
-      parallelismMode: 'extreme',
-      maxThreads: frameBudget,
-      ...(hardware ? { hardware } : {})
-    }).hardware
-    const cpuCap = Math.max(1, Math.floor(probe.cpu_core_count * 0.75))
-    const freeGb = probe.free_memory_bytes / (1024 * 1024 * 1024)
-    const memCap = Math.max(1, Math.floor(Math.max(0.5, freeGb - 2) / 1.5))
-    const apiCap = Math.max(1, probe.remote_api_rate_limit_budget)
-    const safe = clamp(Math.min(cpuCap, memCap, apiCap, targetCeiling), 1, targetCeiling)
-    return Math.max(floor, safe)
-  } catch {
-    return floor
+function boundedThreadCount(value: unknown, label: string): number {
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > HARD_NARUTO_MAX_THREADS) {
+    throw new RangeError(`${label}_must_be_integer_1_to_${HARD_NARUTO_MAX_THREADS}:${String(value)}`)
   }
+  return parsed
 }
 
 function isReviewerOnlyFanout(roles: readonly string[]): boolean {
@@ -429,6 +425,13 @@ const FOCUSED_ROLE_REVIEW_PATTERNS: Readonly<Record<string, RegExp>> = {
 const CRITICAL_RISK_RE = /\b(?:critical|catastrophic|production|data loss|security incident|breaking release)\b|치명|중대|운영|데이터\s*손실|보안\s*사고/i
 
 const LARGE_SCALE_WORK_RE = /\b(?:large[- ]scale|repo(?:sitory)?[- ]wide|many (?:files|tasks|modules)|bulk change|mass migration|wide fan[- ]?out|maximum parallel)\b|대규모|저장소\s*전체|많은\s*(?:파일|작업|모듈)|대량\s*(?:변경|마이그레이션)|최대한\s*병렬|한번에\s*(?:많은|대규모)/i
+
+// Mass cheap-lane fan-out intent: bulk search/scan/exploration sweeps or
+// hundreds of explicitly cheap, independent shards. Numeric scale alone must
+// not promote ordinary implementation or judgment work into the mass lane.
+const MASS_PARALLEL_WORK_RE = /\b(?:mass|bulk|wide|broad)[- ](?:search|scan|sweep|exploration|collection|gathering|enumeration|inventory)\b|\b(?:mass|bulk)[- ](?:parallel|fan[- ]?out)\b|\bhundreds?\s+of\s+(?:(?:independent|mechanical|simple)\s+)?(?:files?|items?|documents?|logs?|records?|entries|shards?|replacements?|renames?|copies|lookups?|searches|scans)\b|대량\s*(?:탐색|검색|수집|스캔|병렬)|수백(?:\s*(?:개의?|개))?\s*(?:파일|항목|문서|로그|레코드|엔트리|샤드|치환|이름\s*변경|복사|조회|검색|스캔)|전체\s*(?:검색|탐색|스캔)|대규모\s*병렬/i
+
+const NON_CHEAP_MASS_ACTION_RE = /\b(?:implement|build|create|add|modify|fix|refactor|review|audit|debug|diagnose|plan|assess)\b|(?:구현|개발|추가|수정|고쳐|리팩터|리뷰|검토|감사|디버깅|진단|계획|평가)/i
 
 const RISK_DOMAIN_PATTERNS: readonly (readonly [string, RegExp])[] = [
   ['database', /\b(?:database|db|sql|postgres|supabase|migration|rls)\b|데이터베이스|디비|마이그레이션/i],

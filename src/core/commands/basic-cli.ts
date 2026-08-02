@@ -1,3 +1,4 @@
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { COMMANDS } from '../../cli/command-registry.js';
@@ -22,6 +23,7 @@ import {
   runSksUpdateStatus
 } from '../update-check.js';
 import { persistSksUpdateNoticeFromVersions } from '../update/update-notice.js';
+import { updateStageFailureDiagnostics } from '../update/update-stage-diagnostics.js';
 import { withSecretPreservationGuard } from '../config/config-migration-journal.js';
 
 interface CommandRow {
@@ -138,10 +140,12 @@ For implementation work, use Codex App prompt routes such as $sks-naruto, $sks-g
 }
 
 export async function updateStatusCommand(args: any = []) {
-  const root = await projectRoot();
+  const root = await resolveUpdateProjectRoot(args);
+  const registry = resolveUpdateRegistry(args);
   const result = await runSksUpdateStatus({
     refresh: flag(args, '--refresh'),
-    projectRoot: root
+    projectRoot: root,
+    ...(registry ? { registry } : {})
   });
   applyUpdateCommandExitCode(result);
   if (flag(args, '--json')) return printJson(result);
@@ -165,16 +169,18 @@ export async function updateCommand(sub: any = 'now', args: any = []) {
   if (action === 'status') return updateStatusCommand(effectiveArgs);
   if (action === 'check') return updateCheckCommand(effectiveArgs);
   if (!['review', 'now', 'rollback'].includes(action)) {
-    console.error('Usage: sks update [status|check|review|now|rollback] [--refresh] [--version <version>] [--json] [--dry-run]');
+    console.error('Usage: sks update [status|check|review|now|rollback] [--refresh] [--version <version>] [--project-root <path>] [--registry <url>] [--json] [--dry-run]');
     process.exitCode = 1;
     return;
   }
-  const root = await projectRoot();
+  const root = await resolveUpdateProjectRoot(effectiveArgs);
+  const registry = resolveUpdateRegistry(effectiveArgs);
   const version = valueAfter(effectiveArgs, '--version') || valueAfter(effectiveArgs, '-v');
   if (action === 'review') {
     const result = await runSksUpdateReview({
       version,
       projectRoot: root,
+      ...(registry ? { registry } : {}),
       json: flag(effectiveArgs, '--json'),
       quiet: flag(effectiveArgs, '--quiet'),
       timeoutMs: 10 * 60 * 1000,
@@ -186,6 +192,7 @@ export async function updateCommand(sub: any = 'now', args: any = []) {
     result.ok ? cliUi.ok('update plan ready') : cliUi.fail('update plan unavailable');
     console.log(`Current: ${result.current}`);
     console.log(`Target: ${result.target || 'unavailable'}`);
+    console.log(`Project root: ${result.project_root}`);
     console.log(`Global root: ${result.global_root || 'unavailable'}`);
     console.log(`Stages: ${result.stages.join(' -> ')}`);
     console.log(`Rollback: ${result.rollback_command}`);
@@ -197,6 +204,7 @@ export async function updateCommand(sub: any = 'now', args: any = []) {
       version: version || '',
       dryRun: flag(effectiveArgs, '--dry-run'),
       projectRoot: root,
+      ...(registry ? { registry } : {}),
       json: flag(effectiveArgs, '--json'),
       quiet: flag(effectiveArgs, '--quiet'),
       timeoutMs: 10 * 60 * 1000,
@@ -225,6 +233,7 @@ export async function updateCommand(sub: any = 'now', args: any = []) {
     version,
     dryRun: flag(effectiveArgs, '--dry-run'),
     projectRoot: root,
+    ...(registry ? { registry } : {}),
     json: flag(effectiveArgs, '--json'),
     quiet: flag(effectiveArgs, '--quiet'),
     timeoutMs: 10 * 60 * 1000,
@@ -246,13 +255,14 @@ export async function updateCommand(sub: any = 'now', args: any = []) {
   console.log(`SKS update ${result.status}`);
   if (result.command) console.log(`Command: ${result.command}`);
   if (result.global_root) console.log(`Global root: ${result.global_root}`);
+  console.log(`Project root: ${result.project_root}`);
   if (result.new_binary) console.log(`New binary: ${result.new_binary}`);
   if (result.new_version) console.log(`New version: ${result.new_version}`);
   if (result.project_receipt) console.log(`Migration receipt: ${result.project_receipt.root} (${result.migration_current ? 'current' : 'not current'})`);
   if (result.sks_menubar) console.log(`SKS menu bar: ${result.sks_menubar.status}${result.sks_menubar.app_path ? ` (${result.sks_menubar.app_path})` : ''}`);
   if (result.operation_receipt_path) console.log(`Operation receipt: ${result.operation_receipt_path}`);
   if (result.rollback?.command) console.log(`Rollback: ${result.rollback.command}`);
-  for (const stage of result.stages || []) console.log(`Stage ${stage.id}: ${stage.ok ? 'ok' : 'failed'} ${stage.status}`);
+  for (const stage of result.stages || []) console.log(formatSksUpdateStageText(stage, result.project_root));
   if (result.verification?.length) {
     console.log('Self verification:');
     cliUi.table([
@@ -263,6 +273,15 @@ export async function updateCommand(sub: any = 'now', args: any = []) {
     for (const action of remediation) console.log(`Remediation: ${action}`);
   }
   if (result.error) console.log(`Error: ${result.error}`);
+}
+
+export function formatSksUpdateStageText(
+  stage: { id: string; ok: boolean; status: string; detail?: Record<string, unknown> },
+  projectRoot: string
+): string {
+  const line = `Stage ${stage.id}: ${stage.ok ? 'ok' : 'failed'} ${stage.status}`;
+  const diagnostics = updateStageFailureDiagnostics(stage, projectRoot);
+  return diagnostics.length ? `${line} — ${diagnostics.join('; ')}` : line;
 }
 
 export function updateCommandResultRequiresFailureExit(result: any): boolean {
@@ -634,4 +653,42 @@ function valueAfter(args: any[] = [], name: string): string | null {
   if (index < 0) return null;
   const value = args[index + 1];
   return value === undefined ? null : String(value);
+}
+
+async function resolveUpdateProjectRoot(args: any[] = []): Promise<string> {
+  const option = explicitOptionValue(args, '--project-root');
+  if (!option.specified) return projectRoot();
+  if (!option.value) throw new Error('update_project_root_value_required');
+  const root = path.resolve(option.value);
+  if (root === path.parse(root).root) throw new Error('update_project_root_filesystem_root_refused');
+  const stat = await fsp.stat(root).catch(() => null);
+  if (!stat?.isDirectory()) throw new Error(`update_project_root_not_directory:${root}`);
+  const canonicalRoot = await fsp.realpath(root);
+  if (canonicalRoot === path.parse(canonicalRoot).root) {
+    throw new Error('update_project_root_filesystem_root_refused');
+  }
+  return canonicalRoot;
+}
+
+function explicitOptionValue(args: any[], name: string): { specified: boolean; value: string | null } {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = String(args[index]);
+    if (arg === name) {
+      const next = args[index + 1];
+      const value = next === undefined || String(next).startsWith('-') ? null : String(next).trim();
+      return { specified: true, value: value || null };
+    }
+    if (arg.startsWith(`${name}=`)) {
+      const value = arg.slice(name.length + 1).trim();
+      return { specified: true, value: value || null };
+    }
+  }
+  return { specified: false, value: null };
+}
+
+function resolveUpdateRegistry(args: any[]): string | null {
+  const option = explicitOptionValue(args, '--registry');
+  if (!option.specified) return null;
+  if (!option.value) throw new Error('update_registry_value_required');
+  return option.value;
 }

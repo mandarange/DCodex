@@ -18,6 +18,7 @@ export interface WriteCodexConfigGuardedInput {
   ownershipVerified?: boolean
   verifyUnchangedBeforeWrite?: boolean
   expectedBeforeExists?: boolean
+  expectedBeforeMode?: number
   preserveTextFormatting?: boolean
   reportPath?: string
 }
@@ -31,7 +32,14 @@ export interface WriteCodexConfigGuardedResult {
   repaired_keys?: string[]
   forbidden_top_level?: string[]
   report_path?: string
+  expected_after?: {
+    exists: boolean
+    text: string
+    mode: number | null
+  }
 }
+
+export const SKS_MANAGED_CODEX_CONFIG_MARKER = '# SKS-MANAGED-CODEX-CONFIG'
 
 // fast_mode_ui was removed from the [features] schema in the 2026-07 renewal.
 // Every SKS-managed Desktop feature flag is preserved across guarded mutations
@@ -57,18 +65,6 @@ export async function writeCodexConfigGuarded(input: WriteCodexConfigGuardedInpu
   const root = path.resolve(input.root || process.cwd())
   const cause = input.cause || 'codex-config'
   const before = input.before === undefined ? String(await readText(configPath, '')) : String(input.before || '')
-  if (isUnmanagedProjectCodexConfig(root, configPath, before) && input.ownershipVerified !== true) {
-    const result = { ok: false, status: 'blocked_unmanaged_project_config', config_path: configPath, backup_path: null, changed: false }
-    await recordCodexConfigGuard(root, input.reportPath, {
-      cause,
-      config_path: configPath,
-      ok: false,
-      status: result.status,
-      blocker: 'user_owned_file_without_sks_marker',
-      changed: false
-    })
-    return result
-  }
   const beforeSmoke = codexConfigParseSmoke(before)
   const beforeValidation = validateCodexConfigRoundTrip(before)
   if (before.trim() && (!beforeSmoke.ok || beforeValidation.parse_error)) {
@@ -96,6 +92,22 @@ export async function writeCodexConfigGuarded(input: WriteCodexConfigGuardedInpu
   next = preserved.text
   if (input.removeTopLevelModeLocks === true) next = removeLegacyTopLevelCodexModeLocks(next)
 
+  const expectedBefore = normalizeText(before)
+  const unmanagedProjectConfig = isUnmanagedProjectCodexConfig(root, configPath, before)
+    && input.ownershipVerified !== true
+  if (unmanagedProjectConfig && next !== expectedBefore) {
+    const result = { ok: false, status: 'blocked_unmanaged_project_config', config_path: configPath, backup_path: null, changed: false }
+    await recordCodexConfigGuard(root, input.reportPath, {
+      cause,
+      config_path: configPath,
+      ok: false,
+      status: result.status,
+      blocker: 'user_owned_file_without_sks_marker',
+      changed: false
+    })
+    return result
+  }
+
   const forbiddenTopLevel = topLevelModeLocks(next)
   const nextSmoke = codexConfigParseSmoke(next)
   const nextValidation = validateCodexConfigRoundTrip(next)
@@ -115,19 +127,27 @@ export async function writeCodexConfigGuarded(input: WriteCodexConfigGuardedInpu
     return result
   }
 
-  const expectedBefore = normalizeText(before)
   if (next === expectedBefore) {
-    if (input.verifyUnchangedBeforeWrite === true) {
+    // A no-op against an unmanaged project config is verification, not
+    // ownership. Re-read it at the commit boundary and never rewrite, chmod,
+    // back up, or otherwise touch the user's file merely to report success.
+    const verifyWithoutWrite = input.verifyUnchangedBeforeWrite === true || unmanagedProjectConfig
+    if (verifyWithoutWrite) {
       const observed = await readConfigCommitSnapshot(configPath)
-      const expectedExists = input.expectedBeforeExists ?? true
-      if (!configCommitSnapshotMatches(observed, expectedExists, before)) {
-        return recordConcurrentConfigChange({
+      const expectedExists = unmanagedProjectConfig ? true : (input.expectedBeforeExists ?? true)
+      if (!configCommitSnapshotMatches(observed, expectedExists, before, input.expectedBeforeMode)) {
+        return recordConfigCommitFailure({
           root,
           reportPath: input.reportPath,
           cause,
           configPath,
+          status: 'concurrent_change_detected',
+          changed: false,
           before,
           expectedExists,
+          ...(input.expectedBeforeMode === undefined
+            ? {}
+            : { expectedBeforeMode: input.expectedBeforeMode }),
           observed,
           backupPath: null,
           repairedKeys: preserved.keys,
@@ -137,7 +157,30 @@ export async function writeCodexConfigGuarded(input: WriteCodexConfigGuardedInpu
     } else {
       await writeTextAtomic(configPath, next, { mode: 0o600 })
     }
-    const result = { ok: true, status: 'present', config_path: configPath, backup_path: null, changed: false, repaired_keys: preserved.keys, forbidden_top_level: forbiddenTopLevel }
+    const expectedAfterExists = verifyWithoutWrite
+      ? (unmanagedProjectConfig ? true : (input.expectedBeforeExists ?? true))
+      : true
+    const expectedAfterMode = expectedAfterExists
+      ? verifyWithoutWrite
+        ? (input.expectedBeforeMode === undefined ? null : Number(input.expectedBeforeMode) & 0o777)
+        : 0o600
+      : null
+    const result = {
+      ok: true,
+      status: 'present',
+      config_path: configPath,
+      backup_path: null,
+      changed: false,
+      repaired_keys: preserved.keys,
+      forbidden_top_level: forbiddenTopLevel,
+      expected_after: {
+        exists: expectedAfterExists,
+        text: expectedAfterExists
+          ? (verifyWithoutWrite ? before : next)
+          : '',
+        mode: expectedAfterMode
+      }
+    }
     if (preserved.keys.length || forbiddenTopLevel.length) {
       await recordCodexConfigGuard(root, input.reportPath, {
         cause,
@@ -160,16 +203,24 @@ export async function writeCodexConfigGuarded(input: WriteCodexConfigGuardedInpu
       before,
       next,
       expectedExists,
+      ...(input.expectedBeforeMode === undefined
+        ? {}
+        : { expectedBeforeMode: input.expectedBeforeMode }),
       backupTag: input.backupTag || cause
     })
     if (!commit.ok) {
-      return recordConcurrentConfigChange({
+      return recordConfigCommitFailure({
         root,
         reportPath: input.reportPath,
         cause,
         configPath,
+        status: commit.failure,
+        changed: commit.changed,
         before,
         expectedExists,
+        ...(input.expectedBeforeMode === undefined
+          ? {}
+          : { expectedBeforeMode: input.expectedBeforeMode }),
         observed: commit.observed,
         backupPath: commit.backupPath,
         repairedKeys: preserved.keys,
@@ -191,7 +242,12 @@ export async function writeCodexConfigGuarded(input: WriteCodexConfigGuardedInpu
     backup_path: backupPath,
     changed: true,
     repaired_keys: preserved.keys,
-    forbidden_top_level: forbiddenTopLevel
+    forbidden_top_level: forbiddenTopLevel,
+    expected_after: {
+      exists: true,
+      text: next,
+      mode: 0o600
+    }
   }
   const reportPath = await recordCodexConfigGuard(root, input.reportPath, {
     cause,
@@ -218,19 +274,30 @@ export async function writeCodexConfigGuarded(input: WriteCodexConfigGuardedInpu
 
 type ConfigCommitSnapshot = Awaited<ReturnType<typeof readConfigCommitSnapshot>>
 
-function configCommitSnapshotMatches(observed: ConfigCommitSnapshot, expectedExists: boolean, expectedText: string): boolean {
+function configCommitSnapshotMatches(
+  observed: ConfigCommitSnapshot,
+  expectedExists: boolean,
+  expectedText: string,
+  expectedMode?: number
+): boolean {
   return observed.ok
     && observed.exists === expectedExists
     && sha256(observed.text) === sha256(expectedText)
+    && (!expectedExists
+      || expectedMode === undefined
+      || observed.mode === (Number(expectedMode) & 0o777))
 }
 
-async function recordConcurrentConfigChange(input: {
+async function recordConfigCommitFailure(input: {
   root: string
   reportPath: string | undefined
   cause: string
   configPath: string
+  status: 'concurrent_change_detected' | 'postwrite_verification_failed'
+  changed: boolean
   before: string
   expectedExists: boolean
+  expectedBeforeMode?: number
   observed: ConfigCommitSnapshot
   backupPath: string | null
   repairedKeys: string[]
@@ -238,10 +305,10 @@ async function recordConcurrentConfigChange(input: {
 }): Promise<WriteCodexConfigGuardedResult> {
   const result = {
     ok: false,
-    status: 'concurrent_change_detected',
+    status: input.status,
     config_path: input.configPath,
     backup_path: input.backupPath,
-    changed: false,
+    changed: input.changed,
     repaired_keys: input.repairedKeys,
     forbidden_top_level: input.forbiddenTopLevel
   }
@@ -252,11 +319,15 @@ async function recordConcurrentConfigChange(input: {
     status: result.status,
     expected_exists: input.expectedExists,
     observed_exists: input.observed.exists,
+    expected_mode: input.expectedBeforeMode === undefined
+      ? null
+      : Number(input.expectedBeforeMode) & 0o777,
+    observed_mode: input.observed.mode,
     expected_sha256: sha256(input.before),
     observed_sha256: input.observed.ok ? sha256(input.observed.text) : null,
     observed_status: input.observed.status,
     backup_path: input.backupPath,
-    changed: false
+    changed: input.changed
   })
   return result
 }
@@ -266,10 +337,17 @@ async function commitCodexConfigIfUnchanged(input: {
   before: string
   next: string
   expectedExists: boolean
+  expectedBeforeMode?: number
   backupTag: string
 }): Promise<
   | { ok: true; backupPath: string | null }
-  | { ok: false; backupPath: string | null; observed: ConfigCommitSnapshot }
+  | {
+      ok: false
+      failure: 'concurrent_change_detected' | 'postwrite_verification_failed'
+      changed: boolean
+      backupPath: string | null
+      observed: ConfigCommitSnapshot
+    }
 > {
   await ensureDir(path.dirname(input.configPath))
   const token = `${Date.now().toString(36)}-${process.pid}-${randomBytes(6).toString('hex')}`
@@ -278,49 +356,177 @@ async function commitCodexConfigIfUnchanged(input: {
   try {
     await writeTextAtomic(candidatePath, input.next, { mode: 0o600 })
     const observed = await readConfigCommitSnapshot(input.configPath)
-    if (!configCommitSnapshotMatches(observed, input.expectedExists, input.before)) {
-      return { ok: false, backupPath, observed }
+    if (!configCommitSnapshotMatches(
+      observed,
+      input.expectedExists,
+      input.before,
+      input.expectedBeforeMode
+    )) {
+      return {
+        ok: false,
+        failure: 'concurrent_change_detected',
+        changed: false,
+        backupPath,
+        observed
+      }
     }
+    const claimedBeforeMode = input.expectedBeforeMode === undefined
+      ? (observed.ok && observed.exists ? observed.mode : undefined)
+      : Number(input.expectedBeforeMode) & 0o777
 
     if (input.expectedExists) {
       backupPath = `${input.configPath}.sks-${safeBackupTag(input.backupTag)}-${token}.bak`
       try {
         await fsp.rename(input.configPath, backupPath)
       } catch {
-        return { ok: false, backupPath: null, observed: await readConfigCommitSnapshot(input.configPath) }
+        return {
+          ok: false,
+          failure: 'concurrent_change_detected',
+          changed: false,
+          backupPath: null,
+          observed: await readConfigCommitSnapshot(input.configPath)
+        }
       }
 
       const claimed = await readConfigCommitSnapshot(backupPath)
-      if (!configCommitSnapshotMatches(claimed, true, input.before)) {
-        await restoreClaimedConfigIfAbsent(backupPath, input.configPath, claimed)
-        return { ok: false, backupPath, observed: claimed }
-      }
-      try {
-        await fsp.chmod(backupPath, 0o600)
-        const now = new Date()
-        await fsp.utimes(backupPath, now, now)
-      } catch {
-        await restoreClaimedConfigIfAbsent(backupPath, input.configPath, claimed)
-        return { ok: false, backupPath, observed: await readConfigCommitSnapshot(input.configPath) }
+      if (!configCommitSnapshotMatches(claimed, true, input.before, claimedBeforeMode)) {
+        const rollback = await rollbackCodexConfigCommit({
+          candidatePath,
+          configPath: input.configPath,
+          backupPath,
+          before: input.before,
+          expectedExists: input.expectedExists,
+          expectedBeforeMode: claimedBeforeMode
+        })
+        return {
+          ok: false,
+          failure: rollback.restored ? 'concurrent_change_detected' : 'postwrite_verification_failed',
+          changed: !rollback.restored,
+          backupPath: rollback.backupPath,
+          observed: rollback.observed
+        }
       }
 
       const afterClaim = await readConfigCommitSnapshot(input.configPath)
       if (!afterClaim.ok || afterClaim.exists) {
-        if (!afterClaim.exists) await restoreClaimedConfigIfAbsent(backupPath, input.configPath, claimed)
-        return { ok: false, backupPath, observed: await readConfigCommitSnapshot(input.configPath) }
+        const rollback = await rollbackCodexConfigCommit({
+          candidatePath,
+          configPath: input.configPath,
+          backupPath,
+          before: input.before,
+          expectedExists: input.expectedExists,
+          expectedBeforeMode: claimedBeforeMode
+        })
+        return {
+          ok: false,
+          failure: 'concurrent_change_detected',
+          changed: !rollback.restored,
+          backupPath: rollback.backupPath,
+          observed: rollback.observed
+        }
       }
     }
 
     try {
       await fsp.link(candidatePath, input.configPath)
     } catch {
-      if (backupPath) {
-        const claimed = await readConfigCommitSnapshot(backupPath)
-        await restoreClaimedConfigIfAbsent(backupPath, input.configPath, claimed)
+      const rollback = await rollbackCodexConfigCommit({
+        candidatePath,
+        configPath: input.configPath,
+        backupPath,
+        before: input.before,
+        expectedExists: input.expectedExists,
+        expectedBeforeMode: claimedBeforeMode
+      })
+      return {
+        ok: false,
+        failure: 'concurrent_change_detected',
+        changed: !rollback.restored,
+        backupPath: rollback.backupPath,
+        observed: rollback.observed
       }
-      return { ok: false, backupPath, observed: await readConfigCommitSnapshot(input.configPath) }
     }
-    await fsp.chmod(input.configPath, 0o600).catch(() => undefined)
+
+    try {
+      await fsp.chmod(input.configPath, 0o600)
+    } catch {
+      const rollback = await rollbackCodexConfigCommit({
+        candidatePath,
+        configPath: input.configPath,
+        backupPath,
+        before: input.before,
+        expectedExists: input.expectedExists,
+        expectedBeforeMode: claimedBeforeMode
+      })
+      return {
+        ok: false,
+        failure: 'postwrite_verification_failed',
+        changed: !rollback.restored,
+        backupPath: rollback.backupPath,
+        observed: rollback.observed
+      }
+    }
+
+    const committed = await readConfigCommitSnapshot(input.configPath)
+    if (!configCommitSnapshotMatches(committed, true, input.next, 0o600)) {
+      const rollback = await rollbackCodexConfigCommit({
+        candidatePath,
+        configPath: input.configPath,
+        backupPath,
+        before: input.before,
+        expectedExists: input.expectedExists,
+        expectedBeforeMode: claimedBeforeMode
+      })
+      return {
+        ok: false,
+        failure: 'postwrite_verification_failed',
+        changed: !rollback.restored,
+        backupPath: rollback.backupPath,
+        observed: rollback.observed
+      }
+    }
+
+    if (backupPath) {
+      try {
+        await fsp.chmod(backupPath, 0o600)
+        const now = new Date()
+        await fsp.utimes(backupPath, now, now)
+      } catch {
+        const rollback = await rollbackCodexConfigCommit({
+          candidatePath,
+          configPath: input.configPath,
+          backupPath,
+          before: input.before,
+          expectedExists: input.expectedExists,
+          expectedBeforeMode: claimedBeforeMode
+        })
+        return {
+          ok: false,
+          failure: 'postwrite_verification_failed',
+          changed: !rollback.restored,
+          backupPath: rollback.backupPath,
+          observed: rollback.observed
+        }
+      }
+      const hardenedBackup = await readConfigCommitSnapshot(backupPath)
+      if (!configCommitSnapshotMatches(hardenedBackup, true, input.before, 0o600)) {
+        const rollback = await rollbackCodexConfigCommit({
+          candidatePath,
+          configPath: input.configPath,
+          backupPath,
+          before: input.before,
+          expectedExists: input.expectedExists,
+          expectedBeforeMode: claimedBeforeMode
+        })
+        return {
+          ok: false,
+          failure: 'postwrite_verification_failed',
+          changed: !rollback.restored,
+          backupPath: rollback.backupPath,
+          observed: rollback.observed
+        }
+      }
+    }
     await cleanupCodexConfigBackups(input.configPath, { keepPerTag: 3, maxAgeMs: 30 * 24 * 60 * 60 * 1000 }).catch(() => undefined)
     return { ok: true, backupPath }
   } finally {
@@ -328,9 +534,74 @@ async function commitCodexConfigIfUnchanged(input: {
   }
 }
 
-async function restoreClaimedConfigIfAbsent(backupPath: string, configPath: string, claimed: ConfigCommitSnapshot) {
-  if (!claimed.ok || !claimed.exists || claimed.status !== 'regular') return
-  await fsp.link(backupPath, configPath).catch(() => undefined)
+async function rollbackCodexConfigCommit(input: {
+  candidatePath: string
+  configPath: string
+  backupPath: string | null
+  before: string
+  expectedExists: boolean
+  expectedBeforeMode: number | undefined
+}): Promise<{
+  restored: boolean
+  backupPath: string | null
+  observed: ConfigCommitSnapshot
+}> {
+  let config = await readConfigCommitSnapshot(input.configPath)
+  if (config.exists) {
+    try {
+      const [candidateStat, configStat] = await Promise.all([
+        fsp.lstat(input.candidatePath),
+        fsp.lstat(input.configPath)
+      ])
+      if (candidateStat.dev !== configStat.dev || candidateStat.ino !== configStat.ino) {
+        return { restored: false, backupPath: input.backupPath, observed: config }
+      }
+    } catch {
+      return { restored: false, backupPath: input.backupPath, observed: config }
+    }
+    try {
+      await fsp.unlink(input.configPath)
+    } catch {
+      return {
+        restored: false,
+        backupPath: input.backupPath,
+        observed: await readConfigCommitSnapshot(input.configPath)
+      }
+    }
+    config = await readConfigCommitSnapshot(input.configPath)
+  }
+
+  let remainingBackupPath = input.backupPath
+  const restoreMode = input.expectedBeforeMode === undefined
+    ? undefined
+    : Number(input.expectedBeforeMode) & 0o777
+  if (input.expectedExists) {
+    if (!input.backupPath || !config.ok || config.exists) {
+      return { restored: false, backupPath: remainingBackupPath, observed: config }
+    }
+    const backup = await readConfigCommitSnapshot(input.backupPath)
+    if (!backup.ok || !backup.exists || sha256(backup.text) !== sha256(input.before)) {
+      return { restored: false, backupPath: remainingBackupPath, observed: backup }
+    }
+    try {
+      await fsp.rename(input.backupPath, input.configPath)
+      remainingBackupPath = null
+      if (restoreMode !== undefined) await fsp.chmod(input.configPath, restoreMode)
+    } catch {
+      return {
+        restored: false,
+        backupPath: remainingBackupPath,
+        observed: await readConfigCommitSnapshot(input.configPath)
+      }
+    }
+  }
+
+  const observed = await readConfigCommitSnapshot(input.configPath)
+  return {
+    restored: configCommitSnapshotMatches(observed, input.expectedExists, input.before, restoreMode),
+    backupPath: remainingBackupPath,
+    observed
+  }
 }
 
 function safeBackupTag(value: string) {
@@ -338,22 +609,36 @@ function safeBackupTag(value: string) {
 }
 
 async function readConfigCommitSnapshot(configPath: string): Promise<
-  | { ok: true; exists: boolean; text: string; status: 'missing' | 'regular' }
-  | { ok: false; exists: boolean; text: ''; status: 'symlink' | 'non_regular' | 'read_failed' }
+  | { ok: true; exists: false; text: ''; status: 'missing'; mode: null }
+  | { ok: true; exists: true; text: string; status: 'regular'; mode: number }
+  | { ok: false; exists: boolean; text: ''; status: 'symlink' | 'non_regular' | 'read_failed'; mode: number | null }
 > {
   let stat
   try {
     stat = await fsp.lstat(configPath)
   } catch (error: any) {
-    if (error?.code === 'ENOENT') return { ok: true, exists: false, text: '', status: 'missing' }
-    return { ok: false, exists: false, text: '', status: 'read_failed' }
+    if (error?.code === 'ENOENT') {
+      return { ok: true, exists: false, text: '', status: 'missing', mode: null }
+    }
+    return { ok: false, exists: false, text: '', status: 'read_failed', mode: null }
   }
-  if (stat.isSymbolicLink()) return { ok: false, exists: true, text: '', status: 'symlink' }
-  if (!stat.isFile()) return { ok: false, exists: true, text: '', status: 'non_regular' }
+  const mode = stat.mode & 0o777
+  if (stat.isSymbolicLink()) {
+    return { ok: false, exists: true, text: '', status: 'symlink', mode }
+  }
+  if (!stat.isFile()) {
+    return { ok: false, exists: true, text: '', status: 'non_regular', mode }
+  }
   try {
-    return { ok: true, exists: true, text: await fsp.readFile(configPath, 'utf8'), status: 'regular' }
+    return {
+      ok: true,
+      exists: true,
+      text: await fsp.readFile(configPath, 'utf8'),
+      status: 'regular',
+      mode
+    }
   } catch {
-    return { ok: false, exists: true, text: '', status: 'read_failed' }
+    return { ok: false, exists: true, text: '', status: 'read_failed', mode }
   }
 }
 
@@ -392,11 +677,15 @@ export function isProjectCodexConfig(root: string, configPath: string): boolean 
 
 export function hasSksManagedCodexConfigMarker(text: string): boolean {
   const source = String(text || '')
-  return /^\s*#\s*SKS-MANAGED-CODEX-CONFIG\b/im.test(source)
+  return hasExplicitSksManagedCodexConfigMarker(source)
     || /(?:SKS managed|Sneakoscope|sneakoscope|sks_|agents\.native_agent|agents\.implementation_worker|multi_agent)/i.test(source)
     || /^\s*model_provider\s*=\s*["']codex-lb["']\s*(?:#.*)?$/mi.test(source)
     || /^\s*default_profile\s*=\s*["']sks-fast-high["']\s*(?:#.*)?$/mi.test(source)
     || /^\s*\[(?:user\.fast_mode|model_providers\.(?:"codex-lb"|codex-lb)|profiles\.(?:"sks-fast-high"|sks-fast-high))\]\s*(?:#.*)?$/mi.test(source)
+}
+
+export function hasExplicitSksManagedCodexConfigMarker(text: string): boolean {
+  return /^\s*#\s*SKS-MANAGED-CODEX-CONFIG\b/im.test(String(text || ''))
 }
 
 export function isUnmanagedProjectCodexConfig(root: string, configPath: string, text: string): boolean {

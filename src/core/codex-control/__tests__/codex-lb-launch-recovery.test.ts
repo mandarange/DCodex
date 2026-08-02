@@ -3,6 +3,7 @@
 import '../../__tests__/helpers/isolated-test-home.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
@@ -203,6 +204,12 @@ test('CLI recovery rejects project-local provider state and follows user/profile
     assert.equal(cliOverrideToCodexLb.status, 'version_too_old')
     assert.equal(cliOverrideToCodexLb.base_url, 'https://lb.cli-override.internal/backend-api/codex')
 
+    await fsp.writeFile(path.join(codexHome, 'config.toml'), [
+      '[model_providers.codex-lb]',
+      'base_url = "https://lb.unselected.internal/backend-api/codex"',
+      ''
+    ].join('\n'))
+    let envOnlyFetchCalls = 0
     const explicit = await inspectCodexLbCliLaunchRecovery({
       root,
       env: {
@@ -211,9 +218,14 @@ test('CLI recovery rejects project-local provider state and follows user/profile
         SKS_PROVIDER: 'codex-lb',
         CODEX_LB_BASE_URL: 'https://lb.explicit.internal/backend-api/codex'
       },
-      fetchImpl: oldFetch
+      fetchImpl: async (...args) => {
+        envOnlyFetchCalls += 1
+        return oldFetch(...args)
+      }
     })
-    assert.equal(explicit.status, 'version_too_old')
+    assert.equal(explicit.status, 'version_unverified')
+    assert.ok(explicit.blockers.includes('codex_lb_launch_selection_not_forwarded'))
+    assert.equal(envOnlyFetchCalls, 0)
 
     const acknowledged = await inspectCodexLbCliLaunchRecovery({
       root,
@@ -223,6 +235,7 @@ test('CLI recovery rejects project-local provider state and follows user/profile
         SKS_PROVIDER: 'codex-lb',
         CODEX_LB_BASE_URL: 'https://lb.explicit.internal/backend-api/codex'
       },
+      cliArgs: ["--config=model_provider='codex-lb'"],
       allowUnverified: true,
       fetchImpl: oldFetch
     })
@@ -331,6 +344,19 @@ test('every real Codex launch wrapper blocks before spawning when selected codex
     `base_url = "${baseUrl}"`,
     ''
   ].join('\n'))
+  await fsp.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
+    `export CODEX_LB_BASE_URL='${baseUrl}'`,
+    "export CODEX_LB_API_KEY='validated-synthetic-launch-key'",
+    ''
+  ].join('\n'), { mode: 0o600 })
+  await fsp.writeFile(path.join(codexHome, 'sks-codex-lb.json'), `${JSON.stringify({
+    schema: 'sks.codex-lb-metadata.v1',
+    base_url: baseUrl,
+    api_key: {
+      redacted: true,
+      sha256: createHash('sha256').update('validated-synthetic-launch-key').digest('hex')
+    }
+  })}\n`, { mode: 0o600 })
   const env = {
     HOME: home,
     CODEX_HOME: codexHome,
@@ -427,7 +453,7 @@ test('every real Codex launch wrapper blocks before spawning when selected codex
         runProcessImpl: fakeProcess
       }
     )
-    assert.ok(agent.blockers.includes('codex_lb_tool_output_recovery_version_too_old'), JSON.stringify(agent))
+    assert.ok(agent.blockers.includes('codex_lb_launch_selection_not_forwarded'), JSON.stringify(agent))
 
     const previousFakeAdapter = process.env.SKS_ZELLIJ_FAKE_ADAPTER
     const previousFakeRoot = process.env.SKS_ZELLIJ_FAKE_ROOT

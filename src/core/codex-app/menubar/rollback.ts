@@ -9,7 +9,7 @@ import {
   recoverMenuBarGenerationTransaction,
   rollbackGenerationPairs
 } from './generation-transaction.js';
-import { launchMenuBar } from './launch-agent.js';
+import { launchMenuBar, stopMenuBarForReplacement } from './launch-agent.js';
 import { sksMenuBarPaths } from './paths.js';
 import { aggregateFileHashes } from './build-stamp.js';
 import { inspectInstalledResources } from './resources.js';
@@ -170,6 +170,14 @@ export async function rollbackSksMenuBar(opts: SksMenuBarRollbackOptions = {}): 
   if (process.platform !== 'darwin') {
     return result('unsupported_platform', true, null, null, null, null, { requested: false, method: 'none', ok: true }, [], ['not_macos']);
   }
+  const launchctl = env.SKS_MENUBAR_LAUNCHCTL || await which('launchctl').catch(() => null) || '/bin/launchctl';
+  const open = env.SKS_MENUBAR_OPEN || await which('open').catch(() => null) || '/usr/bin/open';
+  let replacementStopped = false;
+
+  if (await existsWithoutFollowingSymlink(paths.install_transaction_path)) {
+    const stopFailure = await stopBeforeReplacement();
+    if (stopFailure) return stopFailure;
+  }
 
   const installRecovery = await recoverMenuBarGenerationTransaction({
     purpose: 'install',
@@ -206,9 +214,14 @@ export async function rollbackSksMenuBar(opts: SksMenuBarRollbackOptions = {}): 
     if (opts.launch === false || env.SKS_SKIP_SKS_MENUBAR_LAUNCH === '1') {
       return result('rolled_back_launch_skipped', true, restored.package_version, null, null, restored, { requested: false, method: 'skipped', ok: true }, [], warnings);
     }
-    const launchctl = env.SKS_MENUBAR_LAUNCHCTL || await which('launchctl').catch(() => null) || '/bin/launchctl';
-    const open = env.SKS_MENUBAR_OPEN || await which('open').catch(() => null) || '/usr/bin/open';
-    const launch = await launchMenuBar({ launchctl, open, paths, env });
+    const launch = await launchMenuBar({
+      launchctl,
+      open,
+      paths,
+      env,
+      alreadyStopped: replacementStopped,
+      ...(restored.package_version ? { expectedVersion: restored.package_version } : {})
+    });
     return result(
       launch.ok ? 'rolled_back' : launch.terminal_uncertain ? 'terminal_uncertain' : 'failed',
       launch.ok,
@@ -224,6 +237,10 @@ export async function rollbackSksMenuBar(opts: SksMenuBarRollbackOptions = {}): 
   if (installRecovery.status === 'completed_commit') actions.push('completed interrupted committed Menu Bar install cleanup');
 
   const rollbackPairs = rollbackGenerationPairs(paths);
+  if (await existsWithoutFollowingSymlink(paths.rollback_transaction_path)) {
+    const stopFailure = await stopBeforeReplacement();
+    if (stopFailure) return stopFailure;
+  }
   const rollbackRecovery = await recoverMenuBarGenerationTransaction({
     purpose: 'rollback', journalPath: paths.rollback_transaction_path, pairs: rollbackPairs, env
   });
@@ -249,6 +266,9 @@ export async function rollbackSksMenuBar(opts: SksMenuBarRollbackOptions = {}): 
   if (!verificationBefore.ok) {
     return result('failed', false, verificationBefore.package_version, replacedStamp?.package_version || null, verificationBefore, null, { requested: false, method: 'none', ok: false, error: 'rollback_candidate_invalid' }, verificationBefore.blockers, warnings);
   }
+
+  const stopFailure = await stopBeforeReplacement();
+  if (stopFailure) return stopFailure;
 
   try {
     transaction = await applyMenuBarGenerationTransaction({
@@ -324,9 +344,14 @@ export async function rollbackSksMenuBar(opts: SksMenuBarRollbackOptions = {}): 
   if (opts.launch === false || env.SKS_SKIP_SKS_MENUBAR_LAUNCH === '1') {
     return result('rolled_back_launch_skipped', true, verificationBefore.package_version, replacedStamp?.package_version || null, verificationBefore, verificationAfter, { requested: false, method: 'skipped', ok: true }, [], warnings);
   }
-  const launchctl = env.SKS_MENUBAR_LAUNCHCTL || await which('launchctl').catch(() => null) || '/bin/launchctl';
-  const open = env.SKS_MENUBAR_OPEN || await which('open').catch(() => null) || '/usr/bin/open';
-  const launch = await launchMenuBar({ launchctl, open, paths, env });
+  const launch = await launchMenuBar({
+    launchctl,
+    open,
+    paths,
+    env,
+    alreadyStopped: replacementStopped,
+    ...(verificationBefore.package_version ? { expectedVersion: verificationBefore.package_version } : {})
+  });
   if (!launch.ok) {
     return result(
       launch.terminal_uncertain ? 'terminal_uncertain' : 'failed',
@@ -344,6 +369,38 @@ export async function rollbackSksMenuBar(opts: SksMenuBarRollbackOptions = {}): 
     ? 'launchctl kickstart timed out; launchctl print verified the restored service is running'
     : 'launchctl restarted the restored Menu Bar service');
   return result('rolled_back', true, verificationBefore.package_version, replacedStamp?.package_version || null, verificationBefore, verificationAfter, launch, [], warnings);
+
+  async function stopBeforeReplacement(): Promise<SksMenuBarRollbackResult | null> {
+    if (replacementStopped) return null;
+    const stopped = await stopMenuBarForReplacement({
+      launchctl,
+      paths,
+      executablePaths: [paths.executable_path],
+      env
+    });
+    if (!stopped.ok) {
+      return result(
+        stopped.timed_out ? 'terminal_uncertain' : 'failed',
+        false,
+        null,
+        null,
+        null,
+        null,
+        {
+          requested: false,
+          method: 'none',
+          ok: false,
+          terminal_uncertain: stopped.timed_out,
+          error: stopped.error || 'menubar_rollback_stop_failed'
+        },
+        [stopped.error || 'menubar_rollback_stop_failed'],
+        warnings
+      );
+    }
+    replacementStopped = true;
+    actions.push('booted out Menu Bar and verified process termination before journaled rollback replacement');
+    return null;
+  }
 
   function result(
     status: SksMenuBarRollbackResult['status'],

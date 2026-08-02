@@ -90,7 +90,9 @@ export async function discoverSiteInventory(ctx: ProjectContext, detected: Detec
     locale_candidates: discoverLocales(files, htmlFiles),
     metadata_helpers: files.filter((file) => /(seo|metadata|schema|json-ld|structured-data|canonical|sitemap|robots)/i.test(file)).slice(0, 100),
     structured_data_sources: files.filter((file) => /(schema|json-ld|structured-data|ld-json)/i.test(file)).slice(0, 100),
-    live_url_checked: Boolean(ctx.origin && !ctx.offline),
+    // Discovery is source-only. A configured origin is not evidence that an
+    // HTTP request occurred; verifier.ts records the authoritative live probe.
+    live_url_checked: false,
     browser_checked: false,
     generated_at: new Date().toISOString(),
   };

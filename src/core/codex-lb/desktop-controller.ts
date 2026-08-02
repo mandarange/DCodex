@@ -10,7 +10,8 @@ import {
 import {
   CODEX_LB_DESKTOP_BRIDGE_MARKER,
   CODEX_LB_DESKTOP_COMPAT_MARKER,
-  CODEX_LB_MODEL_CATALOG_MARKER
+  CODEX_LB_MODEL_CATALOG_MARKER,
+  CODEX_LB_PROVIDER_SELECTION_MARKER
 } from '../../cli/install-helpers-codex-lb-config.js';
 import {
   codexAuthPath,
@@ -88,6 +89,13 @@ import {
   type CodexLbDeepEvidenceTrustAnchor,
   type CodexLbDeepEvidenceValidation
 } from './trusted-deep-evidence.js';
+import {
+  codexLbRoutingTruthIsActive,
+  measureAndWriteCodexLbRoutingTruth,
+  measureCodexLbRoutingTruth,
+  readCodexLbRoutingTruthReceipt,
+  type CodexLbRoutingTruthAuthTransport
+} from './routing-truth.js';
 
 export const CODEX_LB_STATUS_SCHEMA_V2 = 'sks.codex-lb-status.v2' as const;
 export const CODEX_LB_ACTIVATION_SCHEMA_V2 = 'sks.codex-lb-desktop-activation.v2' as const;
@@ -139,6 +147,9 @@ export interface CodexLbDesktopControllerOptions extends DesktopBridgeServiceOpt
   configPath?: string;
   authPath?: string;
   receiptDir?: string;
+  routingTruthReceiptPath?: string;
+  /** Internal activation proof route; accepted only when it matches the running bridge. */
+  routingTruthProbeBaseUrl?: string;
   gatewayAuthTransport?: CodexLbGatewayAuthTransport;
   /** Optional Desktop routing target for migrate-legacy-desktop / activation helpers. */
   mode?: Extract<CodexLbDesktopMode, 'desktop-native-bridge' | 'desktop-dual-auth-compat'>;
@@ -154,6 +165,7 @@ export interface CodexLbDesktopControllerOptions extends DesktopBridgeServiceOpt
   stopBridgeImpl?: typeof stopDesktopBridgeService;
   bridgeStatusImpl?: typeof desktopBridgeServiceStatus;
   bootstrapBridgeImpl?: typeof bootstrapExistingDesktopBridgeService;
+  syncCenterCredentialsImpl?: typeof syncDesktopCenterLaunchCredentials;
   webSocketProbeImpl?: (
     baseUrl: string,
     timeoutMs: number
@@ -196,6 +208,47 @@ export async function codexLbDesktopStatusV2(
   });
   const capabilityStatus = shapeCodexLbDesktopCapabilityStatus(capabilityReport);
   const provider = providerStatus(context.config, context.mode);
+  const selectedProvider = topLevelTomlString(context.config, 'model_provider');
+  const routingSelected = selectedProvider === 'codex-lb'
+    || context.mode === 'desktop-native-bridge';
+  const routingMode: 'bridge' | 'cli-provider' = context.mode === 'desktop-native-bridge'
+    ? 'bridge'
+    : 'cli-provider';
+  const routingAuthTransport = routingTruthAuthTransport(
+    context.mode,
+    context.gatewayAuthTransport
+  );
+  // Bridge truth is the route the bridge uses upstream, not an unauthenticated
+  // loopback health check. This keeps the stamp comparable with real traffic.
+  const routingBaseUrl = context.loadedEnv.base_url;
+  const configuredHost = publicHost(routingBaseUrl);
+  const receiptOptions = {
+    home: context.home,
+    ...(options.routingTruthReceiptPath ? { receiptPath: options.routingTruthReceiptPath } : {}),
+    expectedMode: routingMode,
+    expectedSelected: routingSelected,
+    expectedConfiguredHost: configuredHost,
+    expectedAuthTransport: routingAuthTransport
+  };
+  const routingTruth = options.networkProbes === true
+      ? await measureAndWriteCodexLbRoutingTruth({
+        mode: routingMode,
+        selected: routingSelected,
+        baseUrl: routingBaseUrl,
+        apiKey: context.loadedEnv.secret_api_key,
+        authTransport: routingAuthTransport,
+        ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+        ...(options.capabilityTimeoutMs ? { timeoutMs: options.capabilityTimeoutMs } : {})
+      }, receiptOptions)
+    : await readCodexLbRoutingTruthReceipt(receiptOptions)
+      || await measureCodexLbRoutingTruth({
+        mode: routingMode,
+        selected: routingSelected,
+        baseUrl: routingBaseUrl,
+        apiKey: context.loadedEnv.secret_api_key,
+        authTransport: routingAuthTransport,
+        measure: false
+      });
   const blockers = [
     ...context.modeBlockers,
     ...(modeRequiresChatGptOAuth(context.mode) && !context.oauthPresent
@@ -205,19 +258,54 @@ export async function codexLbDesktopStatusV2(
     ...(context.mode === 'desktop-native-bridge' && !context.bridge.ok
       ? context.bridge.blockers
       : []),
+    ...(routingSelected && !codexLbRoutingTruthIsActive(routingTruth)
+      ? routingTruth.blockers
+      : []),
     ...Object.values(capabilityStatus.blocked).flat()
   ];
   const uniqueBlockers = uniqueStrings(blockers);
   const overallBlocked = capabilityReport.overall === 'blocked'
     || capabilityReport.overall === 'unsupported';
-  const selectedProvider = topLevelTomlString(context.config, 'model_provider');
-  const legacyCodexLbSelected = selectedProvider === 'codex-lb';
+  const legacyCodexLbSelected = selectedProvider === 'codex-lb'
+    && !hasTopLevelLine(context.config, CODEX_LB_PROVIDER_SELECTION_MARKER);
+  const credentialsReady = context.loadedEnv.configured && provider.contract_ok;
+  const configuredRoutingActive = codexLbRoutingActive({
+    mode: context.mode,
+    configured: context.loadedEnv.configured,
+    oauthPresent: context.oauthPresent,
+    provider,
+    bridgeRunning: context.bridge.running
+  });
+  const routingActive = configuredRoutingActive
+    && codexLbRoutingTruthIsActive(routingTruth);
+  const diagnosticOk = uniqueBlockers.length === 0 && !overallBlocked;
+  const effectiveGatewayAuthTransport = context.mode === 'cli-provider'
+    ? 'authorization-bearer'
+    : context.mode === 'desktop-native-bridge' || context.mode === 'desktop-dual-auth-compat'
+      ? context.gatewayAuthTransport
+      : null;
   return {
     schema: CODEX_LB_STATUS_SCHEMA_V2,
-    ok: uniqueBlockers.length === 0 && !overallBlocked,
+    ok: diagnosticOk && routingActive,
+    diagnostic_ok: diagnosticOk,
+    status: !diagnosticOk
+      ? 'blocked'
+      : routingActive
+        ? 'active'
+        : credentialsReady
+          ? 'ready_unselected'
+          : 'not_configured',
     configured: context.loadedEnv.configured,
+    credentials_ready: credentialsReady,
+    routing_active: routingActive,
+    activation_required: credentialsReady && !routingActive,
     setup_needed: !context.loadedEnv.configured,
     mode: context.mode,
+    secret_resolution: {
+      source: context.loadedEnv.source,
+      path: context.loadedEnv.source === 'env-file' ? context.loadedEnv.env_paths[0] || null : null,
+      prompt_risk: 'none'
+    },
     // Explicit Center aliases: never confuse provider.selected (builtin OpenAI
     // selected for the active mode) with legacy global model_provider=codex-lb.
     desktop_mode: context.mode,
@@ -243,13 +331,18 @@ export async function codexLbDesktopStatusV2(
       key_fingerprint: context.loadedEnv.api_key.fingerprint
         ? `sha256:${context.loadedEnv.api_key.fingerprint}`
         : null,
-      gateway_auth_transport: context.gatewayAuthTransport,
+      gateway_auth_transport: context.mode === 'desktop-native-bridge'
+        ? context.gatewayAuthTransport
+        : null,
       blockers: context.bridge.blockers
     },
+    gateway_auth_transport: effectiveGatewayAuthTransport,
+    stored_gateway_auth_transport: context.gatewayAuthTransport,
     capabilities: capabilityStatus,
     deep_evidence_validation: capabilityReport.deep_evidence_validation,
     overall: capabilityReport.overall,
     full_capability_verified: capabilityReport.overall === 'verified',
+    routing_truth: routingTruth,
     blockers: uniqueBlockers,
     guidance: statusGuidance(context.mode, context.loadedEnv.configured, uniqueBlockers)
   };
@@ -260,6 +353,27 @@ export async function activateCodexLbDesktopMode(
     mode: 'desktop-native-bridge' | 'desktop-dual-auth-compat';
   }
 ): Promise<Record<string, unknown>> {
+  if (desktopCompatModeUnavailable(input.mode)) {
+    return {
+      schema: CODEX_LB_ACTIVATION_SCHEMA_V2,
+      ok: false,
+      status: 'desktop_dual_auth_compat_unavailable',
+      mode: input.mode,
+      identity_plane: 'unchanged',
+      routing_plane: 'unchanged',
+      gateway_auth_transport: 'x-codex-lb-api-key',
+      oauth_preserved: true,
+      bridge_started: false,
+      config_committed: false,
+      restart_requested: input.restartApp === true,
+      restart_performed: false,
+      routing: null,
+      bridge: null,
+      restart_app: null,
+      blockers: ['desktop_dual_auth_compat_requires_global_secret_environment'],
+      guidance: ['Use: sks codex-lb use-desktop-full']
+    };
+  }
   const context = await loadDesktopContext(input);
   const gatewayAuthTransport = input.mode === 'desktop-dual-auth-compat'
     ? 'x-codex-lb-api-key'
@@ -346,7 +460,9 @@ export async function activateCodexLbDesktopMode(
       if (bridge.running) throw new Error('desktop_bridge_stop_failed_during_compat_switch');
     }
 
-    const centerCredentialsSynced = await syncDesktopCenterLaunchCredentials({
+    const centerCredentialsSynced = await (
+      input.syncCenterCredentialsImpl || syncDesktopCenterLaunchCredentials
+    )({
       mode: input.mode,
       home: context.home,
       loadedEnv: context.loadedEnv,
@@ -395,6 +511,19 @@ export async function activateCodexLbDesktopMode(
     }, context.auth);
     if (restart.ok === false) throw new Error(restart.blockers[0] || restart.status);
 
+    const postActivationStatus = await codexLbDesktopStatusV2({
+      ...input,
+      home: context.home,
+      configPath: context.configPath,
+      authPath: context.authPath,
+      networkProbes: true,
+      deepEvidence: null
+    });
+    const postcondition = codexLbActivationPostcondition(postActivationStatus, input.mode);
+    if (!postcondition.ok) {
+      throw new Error(postcondition.blockers[0] || 'codex_lb_activation_postcondition_failed');
+    }
+
     const finalizedReceipt = await finishDesktopTransaction(receipt, {
       fromMode: context.mode,
       toMode: input.mode,
@@ -430,6 +559,7 @@ export async function activateCodexLbDesktopMode(
       bridge,
       restart_app: restart,
       center_credentials: centerCredentials,
+      post_activation_status: postActivationStatus,
       blockers: []
     };
   } catch (error: unknown) {
@@ -506,7 +636,9 @@ export async function disableCodexLbDesktopRouting(
     if (bridge.running || !bridge.ok) {
       throw new Error(bridge.blockers[0] || 'desktop_bridge_cleanup_failed');
     }
-    const centerCredentials = await syncDesktopCenterLaunchCredentials({
+    const centerCredentials = await (
+      input.syncCenterCredentialsImpl || syncDesktopCenterLaunchCredentials
+    )({
       mode: 'disabled',
       home: context.home,
       loadedEnv: context.loadedEnv,
@@ -593,29 +725,117 @@ export async function configureCodexLbCliMode(
   input: CodexLbDesktopControllerOptions = {}
 ): Promise<Record<string, unknown>> {
   const context = await loadDesktopContext(input);
-  if (!context.loadedEnv.base_url) {
+  const selectedBefore = topLevelTomlString(context.config, 'model_provider') === 'codex-lb';
+  const routingTruth = await measureAndWriteCodexLbRoutingTruth({
+    mode: 'cli-provider',
+    selected: true,
+    baseUrl: context.loadedEnv.base_url,
+    apiKey: context.loadedEnv.secret_api_key,
+    authTransport: 'authorization-bearer',
+    ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
+    ...(input.capabilityTimeoutMs ? { timeoutMs: input.capabilityTimeoutMs } : {})
+  }, {
+    home: context.home,
+    ...(input.routingTruthReceiptPath ? { receiptPath: input.routingTruthReceiptPath } : {})
+  });
+  if (!codexLbRoutingTruthIsActive(routingTruth)) {
     return {
       schema: 'sks.codex-lb-cli-mode.v2',
       ok: false,
-      status: 'missing_remote_base_url',
+      status: routingTruth.status,
       mode: 'cli-provider',
       oauth_preserved: true,
-      blockers: ['codex_lb_missing:CODEX_LB_BASE_URL']
+      routing_active: false,
+      fail_closed: selectedBefore,
+      fallback_provider_selected: false,
+      routing_truth: routingTruth,
+      blockers: routingTruth.blockers
     };
   }
   const result = await configureCodexLbCliProvider({
     home: context.home,
     configPath: context.configPath,
     authPath: context.authPath,
-    remoteBaseUrl: context.loadedEnv.base_url,
-    selectGlobally: false
+    remoteBaseUrl: String(context.loadedEnv.base_url),
+    selectGlobally: true
   });
+  if (!result.ok) {
+    return {
+      ...result,
+      schema: 'sks.codex-lb-cli-mode.v2',
+      provider_ready: false,
+      routing_active: false,
+      activation_required: true,
+      command: 'codex',
+      global_desktop_selection_changed: false,
+      fail_closed: selectedBefore,
+      fallback_provider_selected: false,
+      center_credentials: null,
+      routing_truth: routingTruth
+    };
+  }
+  const centerCredentials = await (
+    input.syncCenterCredentialsImpl || syncDesktopCenterLaunchCredentials
+  )({
+    mode: 'cli-provider',
+    home: context.home,
+    loadedEnv: context.loadedEnv,
+    ...(input.platform ? { platform: input.platform } : {})
+  });
+  if (!centerCredentials.ok) {
+    return {
+      ...result,
+      schema: 'sks.codex-lb-cli-mode.v2',
+      ok: false,
+      status: centerCredentials.status,
+      provider_ready: true,
+      routing_active: true,
+      activation_required: true,
+      command: 'codex',
+      global_desktop_selection_changed: !selectedBefore,
+      fail_closed: true,
+      fallback_provider_selected: false,
+      center_credentials: centerCredentials,
+      routing_truth: routingTruth,
+      blockers: uniqueStrings(centerCredentials.blockers)
+    };
+  }
   return {
     ...result,
     schema: 'sks.codex-lb-cli-mode.v2',
-    command: `codex --config model_provider='"codex-lb"'`,
-    global_desktop_selection_changed: false
+    status: result.ok ? 'active' : result.status,
+    provider_ready: result.ok,
+    routing_active: result.ok,
+    activation_required: false,
+    command: 'codex',
+    global_desktop_selection_changed: result.ok && !selectedBefore,
+    fail_closed: result.ok,
+    fallback_provider_selected: false,
+    center_credentials: centerCredentials,
+    routing_truth: routingTruth
   };
+}
+
+export function codexLbActivationPostcondition(
+  status: Record<string, unknown>,
+  expectedMode: 'desktop-native-bridge' | 'desktop-dual-auth-compat'
+): { ok: boolean; blockers: string[] } {
+  const provider = isRecord(status.provider) ? status.provider : {};
+  const bridge = isRecord(status.bridge) ? status.bridge : {};
+  const blockers = uniqueStrings([
+    ...(status.mode === expectedMode ? [] : ['codex_lb_activation_mode_not_applied']),
+    ...(status.configured === true ? [] : ['codex_lb_activation_credentials_not_loaded']),
+    ...(status.chatgpt_oauth_present === true ? [] : ['codex_lb_activation_oauth_not_preserved']),
+    ...(provider.contract_ok === true ? [] : ['codex_lb_activation_provider_contract_not_applied']),
+    ...(expectedMode !== 'desktop-dual-auth-compat' || provider.selected === true
+      ? []
+      : ['codex_lb_activation_compat_provider_not_selected']),
+    ...(expectedMode !== 'desktop-native-bridge' || bridge.running === true
+      ? []
+      : ['codex_lb_activation_bridge_not_running']),
+    ...(status.routing_active === true ? [] : ['codex_lb_activation_route_not_active'])
+  ]);
+  return { ok: blockers.length === 0, blockers };
 }
 
 export async function buildCodexLbDesktopCapabilities(
@@ -914,6 +1134,18 @@ export async function buildCodexLbDesktopCapabilities(
 export async function migrateLegacyCodexLbDesktopMode(
   input: CodexLbDesktopControllerOptions = {}
 ): Promise<Record<string, unknown>> {
+  if (desktopCompatModeUnavailable(input.mode)) {
+    return {
+      schema: 'sks.codex-lb-legacy-migration-command.v2',
+      ok: false,
+      status: 'desktop_dual_auth_compat_unavailable',
+      mode: input.mode,
+      identity_plane: 'unchanged',
+      routing_plane: 'unchanged',
+      oauth_preserved: true,
+      blockers: ['desktop_dual_auth_compat_requires_global_secret_environment']
+    };
+  }
   const context = await loadDesktopContext(input);
   if (!context.loadedEnv.base_url) {
     return {
@@ -1186,11 +1418,15 @@ async function loadDesktopContext(
   if (
     topLevelTomlString(config, 'model_provider') === 'codex-lb'
     && !hasTopLevelLine(config, CODEX_LB_DESKTOP_COMPAT_MARKER)
+    && !hasTopLevelLine(config, CODEX_LB_PROVIDER_SELECTION_MARKER)
   ) {
     modeBlockers.push('legacy_codex_lb_desktop_config_requires_migration');
   }
   if (legacy.legacy_destructive_mode) {
     modeBlockers.push('legacy_codex_lb_desktop_config_requires_migration');
+  }
+  if (mode === 'desktop-dual-auth-compat') {
+    modeBlockers.push('desktop_dual_auth_compat_unavailable');
   }
   return {
     home,
@@ -1240,11 +1476,11 @@ function providerStatus(config: string, mode: CodexLbDesktopMode): {
     && hasTomlBoolean(provider, 'supports_websockets', true);
   if (mode === 'cli-provider') {
     return {
-      id: 'openai',
-      built_in: true,
+      id: selected === 'codex-lb' ? 'codex-lb' : 'openai',
+      built_in: selected !== 'codex-lb',
       contract: provider ? 'codex-lb-cli' : 'missing',
       contract_ok: cliContractOk,
-      selected: selected !== 'codex-lb'
+      selected: selected === 'codex-lb'
     };
   }
   return {
@@ -1756,8 +1992,10 @@ function statusGuidance(
 ): string[] {
   if (!configured) {
     return [
-      'Run: sks codex-lb setup --host <domain> --api-key-stdin --yes --desktop-mode cli-provider',
-      'Then choose Desktop routing explicitly with: sks codex-lb use-desktop-full'
+      'Store the key in ~/.codex/sks-codex-lb.env (owner-only mode 0600).',
+      'Run: sks codex-lb setup --host <domain> --api-key-stdin --yes',
+      'Alternatively, provide CODEX_LB_API_KEY in the launching environment.',
+      'Then activate the atomic CLI provider with: sks codex-lb use-cli'
     ];
   }
   if (blockers.includes('legacy_codex_lb_desktop_config_requires_migration')) {
@@ -1779,14 +2017,35 @@ function statusGuidance(
   }
   if (mode === 'desktop-dual-auth-compat') {
     return [
-      'Compatibility mode is explicit and does not prove full Desktop capability.',
-      'Run: sks codex-lb capabilities --level transport'
+      'The retired compatibility provider cannot be activated safely.',
+      'Run: sks codex-lb use-desktop-full, or sks codex-lb disable'
     ];
   }
   return [
     'Desktop remains on built-in OpenAI/ChatGPT OAuth.',
-    'Enable routing explicitly with: sks codex-lb use-desktop-full'
+    'Activate the atomic CLI provider with: sks codex-lb use-cli',
+    'Advanced bridge mode (keeps ChatGPT sign-in): sks codex-lb use-desktop-full'
   ];
+}
+
+function codexLbRoutingActive(input: {
+  mode: CodexLbDesktopMode;
+  configured: boolean;
+  oauthPresent: boolean;
+  provider: ReturnType<typeof providerStatus>;
+  bridgeRunning: boolean;
+}): boolean {
+  if (!input.configured) return false;
+  if (input.mode === 'cli-provider') {
+    return input.provider.contract_ok && input.provider.selected;
+  }
+  if (input.mode === 'desktop-native-bridge') {
+    return input.oauthPresent
+      && input.provider.contract_ok
+      && input.provider.selected
+      && input.bridgeRunning;
+  }
+  return false;
 }
 
 function safeControllerError(error: unknown): string {
@@ -1804,4 +2063,26 @@ function escapeRegExp(value: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function desktopCompatModeUnavailable(mode: unknown): boolean {
+  return mode === 'desktop-dual-auth-compat';
+}
+
+function routingTruthAuthTransport(
+  mode: CodexLbDesktopMode,
+  gatewayAuthTransport: CodexLbGatewayAuthTransport
+): CodexLbRoutingTruthAuthTransport {
+  if (mode === 'desktop-native-bridge' && gatewayAuthTransport === 'x-codex-lb-api-key') {
+    return 'x-codex-lb-api-key';
+  }
+  return 'authorization-bearer';
+}
+
+function publicHost(baseUrl: string | null): string | null {
+  try {
+    return baseUrl ? new URL(baseUrl).host : null;
+  } catch {
+    return null;
+  }
 }

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import http from 'node:http';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -11,17 +10,24 @@ import type {
   CodexAppQuitResult,
   CodexAppRestartResult
 } from '../../codex-app/codex-app-restart.js';
-import { configureCodexLbDesktopRouting } from '../../../cli/install-helpers.js';
+import {
+  configureCodexLb,
+  configureCodexLbDesktopRouting,
+  repairCodexLbAuth
+} from '../../../cli/install-helpers.js';
 import { codexAuthChatgptBackupPath } from '../../../cli/install-helpers-codex-lb-shared.js';
 import {
   buildCodexLbDoctorResult,
   codexLbSetupCapabilityDiagnosticOk,
-  controllerOptions
+  controllerOptions,
+  formatCodexLbDesktopStatusText
 } from '../../../commands/codex-lb.js';
 import {
   activateCodexLbDesktopMode,
   buildCodexLbDesktopCapabilities,
+  codexLbActivationPostcondition,
   codexLbDesktopStatusV2,
+  configureCodexLbCliMode,
   disableCodexLbDesktopRouting,
   inferCodexLbDesktopModeFromConfig,
   migrateLegacyCodexLbDesktopMode,
@@ -90,19 +96,6 @@ function bridgeStatus(home: string, port: number, running: boolean) {
   };
 }
 
-async function unusedLoopbackPort(): Promise<number> {
-  const server = net.createServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const port = (server.address() as AddressInfo).port;
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
-  });
-  return port;
-}
-
 test('native activation fails closed before config commit when the bridge cannot start', async (t) => {
   const setup = await fixture(t);
   const result = await activateCodexLbDesktopMode({
@@ -123,9 +116,221 @@ test('native activation fails closed before config commit when the bridge cannot
   assert.deepEqual(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
 });
 
+test('CLI ON verifies the remote route then atomically selects codex-lb', async (t) => {
+  const setup = await fixture(t);
+  let authorization = '';
+  let syncedMode = '';
+  const result = await configureCodexLbCliMode({
+    home: setup.home,
+    configPath: setup.configPath,
+    authPath: setup.authPath,
+    envPath: setup.envPath,
+    platform: 'linux',
+    fetchImpl: async (_url, init) => {
+      authorization = String((init?.headers as Record<string, string>)?.Authorization || '');
+      return new Response('{"data":[]}', { status: 200 });
+    },
+    syncCenterCredentialsImpl: async (options = { mode: 'disabled' }) => {
+      syncedMode = String(options.mode);
+      return {
+        schema: 'sks.codex-lb-desktop-center-credentials.v1',
+        ok: true,
+        status: 'launch_env_synced',
+        mode: options.mode,
+        api_key_fingerprint: null,
+        base_url_present: true,
+        launch_env: { api_key: 'set', base_url: 'set' },
+        stale_twins_removed: [],
+        stale_twins_quarantined: [],
+        stale_keychain_cleared: [],
+        blockers: [],
+        operator_actions: []
+      };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.routing_active, true);
+  assert.equal((result.routing_truth as Record<string, unknown>).auth_outcome, 'accepted');
+  assert.equal((result.routing_truth as Record<string, unknown>).mode, 'cli-provider');
+  assert.equal(syncedMode, 'cli-provider');
+  assert.equal((result.center_credentials as Record<string, unknown>).ok, true);
+  assert.match(authorization, /^Bearer /);
+  const config = await fsp.readFile(setup.configPath, 'utf8');
+  assert.match(config, /# sks-codex-lb-managed-provider-selection\nmodel_provider = "codex-lb"/);
+  assert.match(config, new RegExp(`base_url = "${REMOTE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
+  assert.equal(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
+});
+
+test('CLI ON leaves an existing selected route fail-closed when the endpoint is unreachable', async (t) => {
+  const setup = await fixture(t);
+  const selected = [
+    '# sks-codex-lb-managed-provider-selection',
+    'model_provider = "codex-lb"',
+    '',
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = "${REMOTE}"`,
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n');
+  await fsp.writeFile(setup.configPath, selected);
+  const result = await configureCodexLbCliMode({
+    home: setup.home,
+    configPath: setup.configPath,
+    authPath: setup.authPath,
+    envPath: setup.envPath,
+    platform: 'linux',
+    fetchImpl: async () => { throw new Error('offline'); }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'endpoint_unreachable');
+  assert.equal(result.fail_closed, true);
+  assert.equal(result.fallback_provider_selected, false);
+  assert.equal(await fsp.readFile(setup.configPath, 'utf8'), selected);
+  assert.equal(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
+});
+
+test('repair preserves selected provider and failed measured truth for the native UI', async (t) => {
+  const setup = await fixture(t);
+  const selected = [
+    '# sks-codex-lb-managed-provider-selection',
+    'model_provider = "codex-lb"',
+    '',
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = "${REMOTE}"`,
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n');
+  await fsp.writeFile(setup.configPath, selected);
+  const repaired = await repairCodexLbAuth({
+    home: setup.home,
+    configPath: setup.configPath,
+    authPath: setup.authPath,
+    envPath: setup.envPath,
+    platform: 'linux',
+    processEnv: {},
+    syncLaunchEnv: false,
+    syncLaunchctl: false
+  });
+  assert.equal(repaired.ok, true);
+  assert.equal(repaired.codex_lb?.selected, true);
+  assert.match(await fsp.readFile(setup.configPath, 'utf8'), /^model_provider = "codex-lb"$/m);
+
+  const status = await codexLbDesktopStatusV2({
+    home: setup.home,
+    configPath: setup.configPath,
+    authPath: setup.authPath,
+    envPath: setup.envPath,
+    routingTruthReceiptPath: path.join(setup.codexHome, 'routing-truth.json'),
+    platform: 'linux',
+    networkProbes: true,
+    fetchImpl: async () => { throw new Error('fixture offline'); },
+    bridgeStatusImpl: async () => bridgeStatus(setup.home, 49152, false)
+  });
+  const routingTruth = status.routing_truth as Record<string, unknown>;
+  assert.deepEqual(status.secret_resolution, {
+    source: 'env-file',
+    path: setup.envPath,
+    prompt_risk: 'none'
+  });
+  assert.match(
+    formatCodexLbDesktopStatusText(status, { home: setup.home }),
+    /Key source: env-file \(~\/.codex\/sks-codex-lb\.env\) · keychain: not used · prompt risk: none/
+  );
+  assert.equal(status.routing_active, false);
+  assert.equal(routingTruth.selected, true);
+  assert.equal(routingTruth.measured, true);
+  assert.equal(routingTruth.ok, false);
+  assert.equal(routingTruth.status, 'endpoint_unreachable');
+  assert.deepEqual(routingTruth.blockers, ['codex_lb_endpoint_unreachable']);
+});
+
+test('selected CLI status with a missing key stays on codex-lb and reports no OAuth fallback', async (t) => {
+  const setup = await fixture(t);
+  await fsp.writeFile(setup.configPath, [
+    '# sks-codex-lb-managed-provider-selection',
+    'model_provider = "codex-lb"',
+    '',
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = "${REMOTE}"`,
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n'));
+  await fsp.writeFile(
+    setup.envPath,
+    `export CODEX_LB_BASE_URL='${REMOTE}'\n`,
+    { mode: 0o600 }
+  );
+  const status = await codexLbDesktopStatusV2({
+    home: setup.home,
+    configPath: setup.configPath,
+    authPath: setup.authPath,
+    envPath: setup.envPath,
+    env: { HOME: setup.home },
+    platform: 'linux'
+  });
+
+  assert.equal(status.ok, false);
+  assert.equal(status.routing_active, false);
+  assert.equal(status.chatgpt_oauth_present, true);
+  assert.deepEqual(status.provider, {
+    id: 'codex-lb',
+    built_in: false,
+    contract: 'codex-lb-cli',
+    contract_ok: true,
+    selected: true
+  });
+  assert.equal((status.routing_truth as Record<string, unknown>).status, 'missing_api_key');
+  assert.equal((status.routing_truth as Record<string, unknown>).selected, true);
+  assert.deepEqual(status.guidance, [
+    'Store the key in ~/.codex/sks-codex-lb.env (owner-only mode 0600).',
+    'Run: sks codex-lb setup --host <domain> --api-key-stdin --yes',
+    'Alternatively, provide CODEX_LB_API_KEY in the launching environment.',
+    'Then activate the atomic CLI provider with: sks codex-lb use-cli'
+  ]);
+});
+
+test('Keychain setup fails closed before mutation without a dedicated signed helper', async (t) => {
+  const setup = await fixture(t);
+  const configured = await configureCodexLb({
+    home: setup.home,
+    configPath: setup.configPath,
+    authPath: setup.authPath,
+    envPath: setup.envPath,
+    host: REMOTE,
+    apiKey: API_KEY,
+    storeKeychain: true,
+    forceMacos: true,
+    platform: 'linux',
+    toolOutputRecoveryFetch: async () => new Response('{}', {
+      status: 200,
+      headers: { 'x-app-version': '1.21.0-beta.3' }
+    })
+  });
+  assert.equal(configured.ok, false);
+  assert.equal(configured.status, 'keychain_acl_helper_unavailable');
+  assert.equal(configured.keychain?.keychain_state_status, 'unchanged');
+  assert.equal(await fsp.readFile(setup.configPath, 'utf8'), setup.config);
+  assert.match(await fsp.readFile(setup.envPath, 'utf8'), new RegExp(API_KEY));
+  assert.equal(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
+});
+
 test('native activation rolls back when real loopback HTTP and WebSocket transport are unreachable', async (t) => {
   const setup = await fixture(t);
-  const port = await unusedLoopbackPort();
+  const port = 49153;
   let running = false;
   let stops = 0;
   const result = await activateCodexLbDesktopMode({
@@ -210,6 +415,7 @@ test('native activation requires and records real loopback HTTP plus WebSocket h
     platform: 'linux',
     restartApp: false,
     networkProbes: false,
+    fetchImpl: async () => new Response('{"models":[]}', { status: 200 }),
     bridgeStatusImpl: async () => bridgeStatus(setup.home, port, running),
     installBridgeImpl: async () => {
       running = true;
@@ -227,6 +433,12 @@ test('native activation requires and records real loopback HTTP plus WebSocket h
     ((result.capabilities as Record<string, any>).bridge as Record<string, unknown>).state,
     'verified'
   );
+  const routingTruth = (
+    result.post_activation_status as Record<string, any>
+  ).routing_truth as Record<string, unknown>;
+  assert.equal(routingTruth.measurement_path, 'direct');
+  assert.equal(routingTruth.configured_host, 'lb.example.test');
+  assert.equal(routingTruth.actual_host, 'lb.example.test');
 });
 
 test('native activation keeps working HTTP routing when the gateway does not proxy realtime WebSockets', async (t) => {
@@ -261,6 +473,7 @@ test('native activation keeps working HTTP routing when the gateway does not pro
     platform: 'linux',
     restartApp: false,
     capabilityTimeoutMs: 1_000,
+    fetchImpl: async () => new Response('{"models":[]}', { status: 200 }),
     bridgeStatusImpl: async () => bridgeStatus(setup.home, port, running),
     installBridgeImpl: async () => {
       running = true;
@@ -284,16 +497,7 @@ test('native activation keeps working HTTP routing when the gateway does not pro
 
 test('native activation aborts with an explicit transport blocker when the gateway rejects the configured auth', async (t) => {
   const setup = await fixture(t);
-  const server = http.createServer((_request, response) => {
-    response.writeHead(401, { 'content-type': 'application/json' });
-    response.end('{"error":{"message":"Missing API key in Authorization header"}}');
-  });
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
-  const port = (server.address() as AddressInfo).port;
+  const port = 49155;
   let running = false;
   const result = await activateCodexLbDesktopMode({
     mode: 'desktop-native-bridge',
@@ -304,6 +508,10 @@ test('native activation aborts with an explicit transport blocker when the gatew
     platform: 'linux',
     restartApp: false,
     capabilityTimeoutMs: 1_000,
+    fetchImpl: async () => new Response(
+      '{"error":{"message":"Missing API key in Authorization header"}}',
+      { status: 401 }
+    ),
     bridgeStatusImpl: async () => bridgeStatus(setup.home, port, running),
     installBridgeImpl: async () => {
       running = true;
@@ -341,8 +549,18 @@ test('codex-lb controller options only pin the gateway auth transport when a fla
   );
 });
 
-test('status honours the stored gateway auth transport instead of the custom-header default', async (t) => {
+test('status separates the stored Desktop transport from the effective CLI transport', async (t) => {
   const setup = await fixture(t);
+  await fsp.writeFile(setup.configPath, [
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = "${REMOTE}"`,
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n'));
   const metadataPath = path.join(setup.codexHome, 'sks-codex-lb.json');
   await fsp.writeFile(metadataPath, `${JSON.stringify({
     schema: 'sks.codex-lb-metadata.v1',
@@ -353,7 +571,7 @@ test('status honours the stored gateway auth transport instead of the custom-hea
     gateway_auth_transport: 'authorization-bearer-compat',
     api_key: { redacted: true, sha256: createHash('sha256').update(API_KEY).digest('hex') }
   }, null, 2)}\n`, { mode: 0o600 });
-  const port = await unusedLoopbackPort();
+  const port = 49154;
 
   const status = await codexLbDesktopStatusV2({
     home: setup.home,
@@ -368,21 +586,35 @@ test('status honours the stored gateway auth transport instead of the custom-hea
 
   assert.equal(
     (status.bridge as Record<string, unknown>).gateway_auth_transport,
-    'authorization-bearer-compat'
+    null
   );
+  assert.equal(status.stored_gateway_auth_transport, 'authorization-bearer-compat');
+  assert.equal(status.gateway_auth_transport, 'authorization-bearer');
 });
 
-test('compat activation keeps OAuth bytes, uses exact OpenAI contract, and never restarts implicitly', async (t) => {
+test('compat activation rejects before transaction, bridge, routing, restart, or auth mutation', async (t) => {
   const setup = await fixture(t);
+  const receiptDir = path.join(setup.home, 'receipts');
   let restarts = 0;
+  let bridgeStarts = 0;
+  let bridgeStops = 0;
   const result = await activateCodexLbDesktopMode({
     mode: 'desktop-dual-auth-compat',
     home: setup.home,
     configPath: setup.configPath,
     authPath: setup.authPath,
     envPath: setup.envPath,
+    receiptDir,
     platform: 'linux',
     restartApp: false,
+    installBridgeImpl: async () => {
+      bridgeStarts += 1;
+      return bridgeStatus(setup.home, 49152, true);
+    },
+    stopBridgeImpl: async () => {
+      bridgeStops += 1;
+      return bridgeStatus(setup.home, 49152, false);
+    },
     restartAppImpl: async (): Promise<CodexAppRestartResult> => {
       restarts += 1;
       return {
@@ -396,17 +628,17 @@ test('compat activation keeps OAuth bytes, uses exact OpenAI contract, and never
     }
   });
 
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'desktop_dual_auth_compat_unavailable');
+  assert.equal(result.config_committed, false);
   assert.equal(result.restart_requested, false);
   assert.equal(result.restart_performed, false);
+  assert.equal(bridgeStarts, 0);
+  assert.equal(bridgeStops, 0);
   assert.equal(restarts, 0);
   assert.equal(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
-  const config = await fsp.readFile(setup.configPath, 'utf8');
-  assert.match(config, /^model_provider\s*=\s*"codex-lb"$/m);
-  assert.match(config, /^name\s*=\s*"OpenAI"$/m);
-  assert.match(config, /env_http_headers\s*=\s*\{\s*"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"\s*\}/);
-  assert.doesNotMatch(config, /^env_key\s*=/m);
-  assert.match(config, /^requires_openai_auth\s*=\s*true$/m);
+  assert.equal(await fsp.readFile(setup.configPath, 'utf8'), setup.config);
+  await assert.rejects(fsp.access(receiptDir));
 });
 
 test('status v2 infers managed modes without conflating identity and routing', async (t) => {
@@ -452,6 +684,114 @@ test('status v2 infers managed modes without conflating identity and routing', a
   assert.equal(codexLbSetupCapabilityDiagnosticOk({
     overall: 'blocked'
   } as any), false);
+});
+
+test('bridge status measures the remote upstream with its gateway transport and reuses the shared stamp', async (t) => {
+  const setup = await fixture(t);
+  const port = 54321;
+  await fsp.writeFile(setup.configPath, [
+    '# sks-codex-lb-managed-desktop-bridge',
+    `openai_base_url = "http://127.0.0.1:${port}/backend-api/codex"`,
+    '',
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = "${REMOTE}"`,
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n'));
+  let fetchCalls = 0;
+  let measuredUrl = '';
+  let customHeader = '';
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+    fetchCalls += 1;
+    measuredUrl = String(url);
+    customHeader = String(
+      (init?.headers as Record<string, string> | undefined)?.['X-Codex-LB-API-Key'] || ''
+    );
+    return new Response('{"data":[]}', { status: 200 });
+  }) as typeof fetch;
+  const common = {
+    home: setup.home,
+    configPath: setup.configPath,
+    authPath: setup.authPath,
+    envPath: setup.envPath,
+    platform: 'linux' as const,
+    bridgeStatusImpl: async () => bridgeStatus(setup.home, port, true)
+  };
+
+  const measured = await codexLbDesktopStatusV2({
+    ...common,
+    networkProbes: true,
+    fetchImpl
+  });
+  const reused = await codexLbDesktopStatusV2({
+    ...common,
+    networkProbes: false,
+    fetchImpl
+  });
+  const firstTruth = measured.routing_truth as Record<string, unknown>;
+  const secondTruth = reused.routing_truth as Record<string, unknown>;
+
+  assert.equal(fetchCalls, 1);
+  assert.equal(measuredUrl, `${REMOTE}/models`);
+  assert.equal(customHeader, API_KEY);
+  assert.equal(firstTruth.mode, 'bridge');
+  assert.equal(firstTruth.auth_transport, 'x-codex-lb-api-key');
+  assert.equal(firstTruth.configured_host, 'lb.example.test');
+  assert.equal(secondTruth.checked_at, firstTruth.checked_at);
+  assert.equal(secondTruth.actual_host, firstTruth.actual_host);
+  assert.equal(secondTruth.auth_transport, firstTruth.auth_transport);
+});
+
+test('status v2 reports stored CLI credentials as ready but inactive with the effective CLI auth transport', async (t) => {
+  const setup = await fixture(t);
+  await fsp.writeFile(setup.configPath, [
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = "${REMOTE}"`,
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n'));
+
+  const status = await codexLbDesktopStatusV2({
+    home: setup.home,
+    configPath: setup.configPath,
+    authPath: setup.authPath,
+    envPath: setup.envPath,
+    platform: 'linux'
+  });
+
+  assert.equal(status.status, 'ready_unselected');
+  assert.equal(status.diagnostic_ok, true);
+  assert.equal(status.ok, false);
+  assert.equal(status.credentials_ready, true);
+  assert.equal(status.routing_active, false);
+  assert.equal(status.activation_required, true);
+  assert.equal(status.gateway_auth_transport, 'authorization-bearer');
+  assert.equal((status.bridge as Record<string, unknown>).gateway_auth_transport, null);
+});
+
+test('activation postcondition rejects success when the selected route is not observable', () => {
+  const result = codexLbActivationPostcondition({
+    mode: 'desktop-native-bridge',
+    configured: true,
+    chatgpt_oauth_present: true,
+    routing_active: false,
+    provider: { contract_ok: true, selected: true },
+    bridge: { running: false }
+  }, 'desktop-native-bridge');
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.blockers, [
+    'codex_lb_activation_bridge_not_running',
+    'codex_lb_activation_route_not_active'
+  ]);
 });
 
 test('orphaned legacy API-key state blocks status and Desktop activation before bridge mutation', async (t) => {
@@ -519,10 +859,11 @@ test('orphaned legacy API-key state blocks status and Desktop activation before 
 test('disable restores the previous routing when restart fails', async (t) => {
   const setup = await fixture(t);
   const enabled = await configureCodexLbDesktopRouting({
-    mode: 'desktop-dual-auth-compat',
+    mode: 'desktop-native-bridge',
     home: setup.home,
     configPath: setup.configPath,
     authPath: setup.authPath,
+    bridgeBaseUrl: 'http://127.0.0.1:49152/backend-api/codex',
     remoteBaseUrl: REMOTE,
     gatewayAuthTransport: 'x-codex-lb-api-key'
   });
@@ -821,4 +1162,39 @@ test('rollback validates receipt conflicts before stopping a valid bridge', asyn
   assert.equal(result.status, 'rollback_conflict');
   assert.equal(stops, 0);
   assert.equal(await fsp.readFile(setup.configPath, 'utf8'), setup.config);
+});
+
+test('retired compat config is reported blocked and never active', async (t) => {
+  const setup = await fixture(t);
+  await fsp.writeFile(setup.configPath, [
+    '# sks-codex-lb-managed-desktop-compat',
+    'model_provider = "codex-lb"',
+    '',
+    '[model_providers.codex-lb]',
+    'name = "OpenAI"',
+    `base_url = "${REMOTE}"`,
+    'wire_api = "responses"',
+    'requires_openai_auth = true',
+    'supports_websockets = true',
+    '',
+    '[model_providers.codex-lb.env_http_headers]',
+    '"X-Codex-LB-API-Key" = "CODEX_LB_API_KEY"',
+    ''
+  ].join('\n'));
+
+  const status = await codexLbDesktopStatusV2({
+    home: setup.home,
+    configPath: setup.configPath,
+    authPath: setup.authPath,
+    envPath: setup.envPath,
+    platform: 'linux',
+    networkProbes: false,
+    bridgeStatusImpl: async () => bridgeStatus(setup.home, 49152, false)
+  });
+
+  assert.equal(status.mode, 'desktop-dual-auth-compat');
+  assert.equal(status.ok, false);
+  assert.equal(status.status, 'blocked');
+  assert.equal(status.routing_active, false);
+  assert.ok((status.blockers as string[]).includes('desktop_dual_auth_compat_unavailable'));
 });

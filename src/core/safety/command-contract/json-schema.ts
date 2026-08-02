@@ -20,6 +20,9 @@ function matchesType(value: unknown, type: string): boolean {
 }
 
 function validateNode(value: unknown, schema: JsonObject, path: string, issues: JsonSchemaIssue[]): unknown {
+  if ('const' in schema && !Object.is(schema.const, value)) {
+    issues.push(issue(path, 'const', 'Value does not match the required constant'));
+  }
   const expectedType = typeof schema.type === 'string' ? schema.type : null;
   if (expectedType && !matchesType(value, expectedType)) {
     issues.push(issue(path, 'type', `Expected ${expectedType}`));
@@ -64,7 +67,10 @@ function validateNode(value: unknown, schema: JsonObject, path: string, issues: 
       : [...value];
   }
 
-  if (!isObject(value)) return value;
+  if (!isObject(value)) {
+    validateCompositions(value, schema, path, issues);
+    return value;
+  }
 
   const properties = isObject(schema.properties) ? schema.properties : {};
   const required = Array.isArray(schema.required) ? schema.required.map(String) : [];
@@ -84,7 +90,37 @@ function validateNode(value: unknown, schema: JsonObject, path: string, issues: 
     }
     normalized[name] = validateNode(childValue, childSchema, `${path}/${name}`, issues);
   }
+  validateCompositions(value, schema, path, issues);
   return normalized;
+}
+
+function validateCompositions(value: unknown, schema: JsonObject, path: string, issues: JsonSchemaIssue[]) {
+  if (Array.isArray(schema.allOf)) {
+    for (const branch of schema.allOf) {
+      if (isObject(branch)) validateNode(value, branch, path, issues);
+    }
+  }
+  if (Array.isArray(schema.anyOf)) {
+    const matches = schema.anyOf.filter((branch) => isObject(branch) && branchMatches(value, branch, path)).length;
+    if (matches === 0) issues.push(issue(path, 'anyOf', 'Value must match at least one allowed schema'));
+  }
+  if (Array.isArray(schema.oneOf)) {
+    const matches = schema.oneOf.filter((branch) => isObject(branch) && branchMatches(value, branch, path)).length;
+    if (matches !== 1) issues.push(issue(path, 'oneOf', 'Value must match exactly one allowed schema'));
+  }
+  if (isObject(schema.not) && branchMatches(value, schema.not, path)) {
+    issues.push(issue(path, 'not', 'Value matches a forbidden schema'));
+  }
+  if (isObject(schema.if)) {
+    const selected = branchMatches(value, schema.if, path) ? schema.then : schema.else;
+    if (isObject(selected)) validateNode(value, selected, path, issues);
+  }
+}
+
+function branchMatches(value: unknown, schema: JsonObject, path: string): boolean {
+  const branchIssues: JsonSchemaIssue[] = [];
+  validateNode(value, schema, path, branchIssues);
+  return branchIssues.length === 0;
 }
 
 export function validateJsonSchema(input: unknown, schema: Record<string, unknown>): JsonSchemaValidation {

@@ -33,6 +33,28 @@ function runStampVerify() {
   return result;
 }
 
+function runPublishPreflight() {
+  const result = spawnSync(process.execPath, ['./dist/scripts/publish-preflight.js'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: process.env
+  });
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  return result;
+}
+
+function runPublishTagCheck() {
+  const result = spawnSync(process.execPath, ['./dist/scripts/check-publish-tag.js'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: process.env
+  });
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  return result;
+}
+
 function runBuild() {
   return spawnSync(npmCmd, ['run', 'build'], {
     cwd: process.cwd(),
@@ -48,6 +70,14 @@ function failClosed(status = 1) {
 }
 
 function verifyReleaseStamp() {
+  if (String(process.env.npm_command || '').toLowerCase() === 'publish') {
+    const preflight = runPublishPreflight();
+    if (preflight.status !== 0) failClosed(preflight.status);
+
+    const tag = runPublishTagCheck();
+    if (tag.status !== 0) failClosed(tag.status);
+  }
+
   const fast = runFastCheck();
   if (fast.status !== 0) failClosed(fast.status);
 

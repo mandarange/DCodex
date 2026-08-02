@@ -133,16 +133,30 @@ export async function inspectCodexLbToolOutputRecoveryForLaunch(opts: any = {}) 
   })
   const recovery = status.tool_output_recovery
   const required = status.selected === true
-  const ok = !required || recovery?.ok === true
+  const providerReady = status.provider_ready === true
+  const providerBlockers = Array.isArray(status.blockers)
+    ? status.blockers.map(String).filter(Boolean)
+    : []
+  const ok = !required || (providerReady && recovery?.ok === true)
   return {
     schema: 'sks.codex-lb-launch-recovery-preflight.v1',
     ok,
-    status: !required ? 'not_selected' : recovery?.status || 'version_unverified',
+    status: !required
+      ? 'not_selected'
+      : !providerReady
+        ? providerBlockers[0] || 'provider_not_ready'
+        : recovery?.status || 'version_unverified',
     selected: required,
-    provider_ready: status.provider_ready === true,
+    provider_ready: providerReady,
     base_url: status.base_url || null,
     tool_output_recovery: recovery || null,
-    blockers: ok ? [] : recovery?.blockers || ['codex_lb_tool_output_recovery_version_unverified'],
+    blockers: ok
+      ? []
+      : !providerReady
+        ? providerBlockers.length > 0
+          ? providerBlockers
+          : ['codex_lb_provider_not_ready']
+        : recovery?.blockers || ['codex_lb_tool_output_recovery_version_unverified'],
     operator_actions: ok ? [] : recovery?.operator_actions || [
       'Upgrade codex-lb, or run `sks codex-lb disable`; SKS will not change routing or authentication silently.'
     ]

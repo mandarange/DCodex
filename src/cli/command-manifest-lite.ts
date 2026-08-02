@@ -1,4 +1,4 @@
-import { NARUTO_ACTIONS } from '../core/safety/command-contract/types.js';
+import { narutoCommandInputSchema } from '../core/subagents/naruto-command-input-contract.js';
 
 export type CommandMaturity = 'stable' | 'beta' | 'labs';
 export type CommandRiskLite = 'R0' | 'R1' | 'R2' | 'R3';
@@ -59,6 +59,7 @@ const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'update', summary: 'Inspect, review, apply, or roll back the global SKS update', maturity: 'stable' },
   { name: 'uninstall', summary: 'Uninstall SKS global skills, hooks, config, menu bar, and optional project residue', maturity: 'stable', allowedDuringActiveRoute: true },
   { name: 'update-check', summary: 'Show the shared SKS, Codex CLI, and Menu Bar update status', maturity: 'stable', readonly: true, skipMigrationGate: true, allowedDuringActiveRoute: true, diagnostic: true },
+  { name: 'config', summary: 'Adopt project Codex config into SKS management', maturity: 'stable', skipMigrationGate: true },
   { name: 'mcp', summary: 'Manage scoped Codex MCP configuration', maturity: 'beta', skipMigrationGate: true },
   { name: 'wizard', summary: 'Open setup wizard help', maturity: 'stable' },
   { name: 'usage', summary: 'Show focused usage topic', maturity: 'stable', readonly: true, allowedDuringActiveRoute: true, diagnostic: true },
@@ -79,6 +80,7 @@ const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'codex-lb', summary: 'Inspect codex-lb status and circuit health', maturity: 'beta', skipMigrationGate: true },
   { name: 'menubar', summary: 'Inspect/install/restart/uninstall SKS menu bar', maturity: 'beta', skipMigrationGate: true, allowedDuringActiveRoute: true, diagnostic: true },
   { name: 'remote', summary: 'Inspect official Remote readiness and run the proof-aware SSH stdio worker', maturity: 'beta' },
+  { name: 'telegram', summary: 'Pair and inspect the Telegram remote-control transport', maturity: 'beta', skipMigrationGate: true },
   { name: 'hooks', summary: 'Explain and inspect Codex hooks', maturity: 'beta', skipMigrationGate: true },
   { name: 'zellij-lane', summary: 'Render a Zellij lane frame for SKS sessions', maturity: 'beta' },
   { name: 'zellij-slot-pane', summary: 'Render a compact Zellij worker slot pane', maturity: 'beta' },
@@ -162,6 +164,7 @@ const COMMAND_CONTRACT_OVERRIDES_LITE = {
   check: { risk: 'R1', latency: 'long' },
   'commit-and-push': { risk: 'R3' },
   'computer-use': { latency: 'long' },
+  config: { risk: 'R2', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   dfix: { latency: 'long' },
   'dollar-commands': { risk: 'R2', latency: 'normal' },
   eval: { latency: 'long' },
@@ -211,6 +214,7 @@ const COMMAND_CONTRACT_OVERRIDES_LITE = {
     requiredCapabilities: ['proof.stop-gate']
   },
   task: { risk: 'R1', latency: 'long' },
+  telegram: { risk: 'R2', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   trust: {
     risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true,     inputProfile: 'trust', requiredCapabilities: ['proof.trust']
   },
@@ -236,18 +240,7 @@ export const COMMAND_MANIFEST_LITE = COMMAND_MANIFEST_LITE_BASE.map((entry) => (
 export function commandInputSchema(profile: CommandInputProfileLite): Record<string, unknown> {
   if (profile === 'json-only') return objectSchema({ json: { type: 'boolean' } });
   if (profile === 'naruto') {
-    return objectSchema({
-      action: { type: 'string', enum: [...NARUTO_ACTIONS] },
-      task: boundedString(1, 32_768),
-      prompt: boundedString(1, 32_768),
-      mission: boundedString(1, 160),
-      agents: { type: 'integer', minimum: 1 },
-      max_threads: { type: 'integer', minimum: 1 },
-      stdin: { type: 'boolean' },
-      readonly: { type: 'boolean' },
-      trusted_project: { type: 'boolean' },
-      json: { type: 'boolean' }
-    });
+    return narutoCommandInputSchema();
   }
   if (profile === 'paths') {
     return objectSchema({

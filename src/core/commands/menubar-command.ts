@@ -20,7 +20,11 @@ export async function menubarCommand(subcommand = 'status', args: string[] = [])
   const home = stringOption(args, '--home');
   if (action === 'status') {
     const result = await inspectSksMenuBarStatus({ root, ...(home ? { home } : {}) });
-    if (flag(args, '--json')) return printJson(result);
+    if (flag(args, '--json')) {
+      printJson(result);
+      if (!result.ok) process.exitCode = 1;
+      return result;
+    }
     cliUi.banner('menubar status');
     if (result.ok) cliUi.ok(result.running ? 'running' : 'installed status checked');
     else cliUi.warn('needs attention');
@@ -30,7 +34,11 @@ export async function menubarCommand(subcommand = 'status', args: string[] = [])
   }
   if (action === 'install') {
     const result = await installSksMenuBar({ root, ...(home ? { home } : {}), apply: true, launch: !flag(args, '--no-launch'), quiet: flag(args, '--json') });
-    if (flag(args, '--json')) return printJson(result);
+    if (flag(args, '--json')) {
+      printJson(result);
+      if (!result.ok) process.exitCode = 1;
+      return result;
+    }
     cliUi.banner('menubar install');
     if (result.ok) cliUi.ok(result.status);
     else cliUi.fail(result.status);
@@ -43,7 +51,11 @@ export async function menubarCommand(subcommand = 'status', args: string[] = [])
   }
   if (action === 'restart') {
     const result = await restartSksMenuBar({ root, ...(home ? { home } : {}) });
-    if (flag(args, '--json')) return printJson(result);
+    if (flag(args, '--json')) {
+      printJson(result);
+      if (!result.ok) process.exitCode = 1;
+      return result;
+    }
     cliUi.banner('menubar restart');
     if (result.ok) cliUi.ok('restart requested');
     else cliUi.fail('restart failed');
@@ -76,7 +88,11 @@ export async function menubarCommand(subcommand = 'status', args: string[] = [])
   }
   if (action === 'uninstall') {
     const result = await uninstallSksMenuBar({ root, ...(home ? { home } : {}) });
-    if (flag(args, '--json')) return printJson(result);
+    if (flag(args, '--json')) {
+      printJson(result);
+      if (!result.ok) process.exitCode = 1;
+      return result;
+    }
     cliUi.banner('menubar uninstall');
     if (result.ok) cliUi.ok('uninstall complete');
     else cliUi.fail('uninstall failed');

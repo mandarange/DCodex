@@ -81,6 +81,67 @@ test('model decision routes mechanical, implementation, context/tool, and judgme
   }
 })
 
+test('mass/broad search and exploration route to Terra while tiny typing shards stay on Luna', () => {
+  for (const description of [
+    'Mass search across the whole repository for every call site',
+    'Bulk scan of many files to build an export inventory',
+    'Broad exploration of the codebase structure',
+    'Simple exploration of the repo layout',
+    'Whole-repo search for configuration keys',
+    '대량 검색으로 모든 참조를 찾아줘',
+    '대량 탐색으로 구조를 파악해줘',
+    '전체 검색으로 진입점을 찾아줘',
+    '광범위 탐색으로 의존성을 정리해줘',
+    '단순 탐색으로 폴더 구조만 파악해줘'
+  ]) {
+    const decision = decideSubagentModel({ description })
+    assert.equal(decision.policy, 'terra_medium_context_tools', description)
+    assert.equal(decision.model, 'gpt-5.6-terra', description)
+    assert.equal(decision.modelReasoningEffort, 'medium', description)
+  }
+
+  // Tiny typing-level shards stay on Luna even when the surrounding sentence
+  // mentions a large fan-out; the shard itself is the classification unit.
+  for (const description of [
+    'Shard 9 of 16 in the mass fan-out: simple search for the symbol name and type the replacement',
+    'Mass fan-out shard: apply the exact rename of one label',
+    'Single-symbol lookup shard in a bulk fan-out wave',
+    'Simple typing-level coding shard in a 64-wide wave',
+    '대량 팬아웃 샤드: 단순 치환으로 문자열을 바꿔줘',
+    '단순 입력으로 값을 채워줘',
+    '단순 타이핑으로 한 줄만 바꿔줘'
+  ]) {
+    const decision = decideSubagentModel({ description })
+    assert.equal(decision.policy, 'luna_max_mechanical', description)
+    assert.equal(decision.model, 'gpt-5.6-luna', description)
+    assert.equal(decision.modelReasoningEffort, 'max', description)
+  }
+})
+
+test('mass-lane keywords never pull judgment or clear implementation off the Sol lanes', () => {
+  for (const description of [
+    'Security review of the database release plan',
+    'Debug the failing migration before release',
+    'Audit the repository-wide security scan results'
+  ]) {
+    const decision = decideSubagentModel({ description })
+    assert.equal(decision.policy, 'sol_max_judgment', description)
+    assert.equal(decision.model, 'gpt-5.6-sol', description)
+    assert.equal(decision.modelReasoningEffort, 'max', description)
+  }
+
+  for (const description of [
+    'Implement the export inventory command',
+    'Build the bulk import feature',
+    'Fix the whole-repo search indexer'
+  ]) {
+    const decision = decideSubagentModel({ description })
+    assert.equal(decision.policy, 'sol_high_implementation', description)
+    assert.equal(decision.model, 'gpt-5.6-sol', description)
+    assert.equal(decision.modelReasoningEffort, 'high', description)
+  }
+})
+
 test('judgment wins mixed or ambiguous work and Luna is excluded from long context', () => {
   for (const description of [
     'Security review using browser evidence',
@@ -123,6 +184,23 @@ test('clear docs exploration and implementation intent outrank incidental judgme
   })
   assert.equal(finalHighRiskJudgment.policy, 'sol_max_judgment')
   assert.equal(finalHighRiskJudgment.modelReasoningEffort, 'max')
+})
+
+test('explicit judgment and implementation outrank incidental tiny or tool-heavy signals', () => {
+  assert.equal(decideSubagentModel({
+    description: 'Review the single-file security change'
+  }).policy, 'sol_max_judgment')
+  assert.equal(decideSubagentModel({
+    description: 'Implement a single-file parser fix'
+  }).policy, 'sol_high_implementation')
+  assert.equal(decideSubagentModel({
+    description: 'Inspect browser evidence for the release decision',
+    requiresJudgment: true,
+    toolHeavy: true
+  }).policy, 'sol_max_judgment')
+  assert.equal(decideSubagentModel({
+    description: 'Review the current CLI documentation'
+  }).policy, 'terra_medium_context_tools')
 })
 
 test('official effort policy applies the sealed four-profile routing matrix', () => {

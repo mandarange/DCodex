@@ -12,6 +12,7 @@ final class TopAlignedStackView: NSStackView {
 enum NativeView {
     static let statusTimeout: TimeInterval = 8
     static let mutationTimeout: TimeInterval = 90
+    static let longMutationTimeout: TimeInterval = 60 * 60
 
     static func title(_ value: String) -> NSTextField {
         let field = NSTextField(labelWithString: value)
@@ -262,7 +263,7 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
         statusSpinner.startAnimation(nil)
         status.stringValue = "Updating Codex CLI to the preferred latest…"
         _ = operations.update(operation, state: .running, stage: "running", progress: nil, summary: status.stringValue)
-        processClient.run(["codex", "update", "--json"], timeout: nil) { [weak self] result in
+        processClient.run(["codex", "update", "--json"], timeout: NativeView.longMutationTimeout) { [weak self] result in
             guard let self = self else { return }
             let ok = result.code == 0
                 && !result.truncated
@@ -297,6 +298,7 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
         group.enter()
         var updateArguments = ["update", "status"]
         if forceUpdateRefresh { updateArguments.append("--refresh") }
+        updateArguments.append(contentsOf: ["--project-root", AppRuntime.canonicalProjectRoot])
         updateArguments.append("--json")
         processClient.run(updateArguments, timeout: NativeView.statusTimeout) { [weak self] result in
             guard let self = self else { group.leave(); return }
@@ -306,7 +308,10 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
                 group.leave()
                 return
             }
-            self.processClient.run(["update", "status", "--refresh", "--json"], timeout: NativeView.statusTimeout) { [weak self] refreshed in
+            self.processClient.run(
+                ["update", "status", "--refresh", "--project-root", AppRuntime.canonicalProjectRoot, "--json"],
+                timeout: NativeView.statusTimeout
+            ) { [weak self] refreshed in
                 update = self?.json(refreshed.output) ?? initial
                 group.leave()
             }

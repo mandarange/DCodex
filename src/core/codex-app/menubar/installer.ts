@@ -18,7 +18,18 @@ import {
   recoverMenuBarGenerationTransaction,
   rollbackGenerationPairs
 } from './generation-transaction.js';
-import { launchAgentSource, launchMenuBar, seedMenuBarPreferredPosition } from './launch-agent.js';
+import {
+  launchAgentSource,
+  launchMenuBar,
+  inspectRunningMenuBarProcess,
+  seedMenuBarPreferredPosition,
+  stopMenuBarForReplacement,
+  terminateMenuBarProcesses
+} from './launch-agent.js';
+import {
+  cleanupProjectMenuBarDuplicates,
+  verifiedProjectMenuBarDuplicateExecutablePaths
+} from './global-install.js';
 import {
   cleanupMacLaunchSecretEnvironment,
   cleanupRetiredRemoteBridgeLaunchAgent,
@@ -34,6 +45,18 @@ import type { NativeSourceInput, SecretLaunchEnvCleanupResult, SksMenuBarBuildSt
 export function sksMenuBarRestartDeferred(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.SKS_UPDATE_DEFER_MENUBAR_RESTART === '1'
     || env.SKS_SKIP_SKS_MENUBAR_LAUNCH === '1';
+}
+
+export function menuBarCredentialEnvironmentBlocker(input: {
+  cleanupOk: boolean;
+  compatibilityConfigured?: boolean;
+  compatibilityRestored?: boolean;
+}): string | null {
+  if (!input.cleanupOk) return 'launch_secret_env_cleanup_incomplete';
+  if (input.compatibilityConfigured && input.compatibilityRestored !== true) {
+    return 'desktop_compat_launch_env_restore_incomplete';
+  }
+  return null;
 }
 
 export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Promise<SksMenuBarInstallResult> {
@@ -66,6 +89,12 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
     const result = baseResult(paths, false, 'planned', status?.ok !== false, status?.installed ? ['menubar_app_present'] : ['menubar_app_install_available'], status?.warnings || []);
     result.codex_bundle_id = status?.codex_sync.bundle_id || null;
     result.build_stamp = status?.build_stamp || null;
+    if (status) {
+      result.installed_version = status.installed_version;
+      result.running_process = status.running_process;
+      result.menubar_version_probe = status.menubar_version_probe;
+    }
+    result.duplicate_install_candidates = status?.duplicate_install_candidates || [];
     result.blockers = status?.blockers || [];
     result.launch = { requested: false, method: 'skipped', ok: true };
     return result;
@@ -111,10 +140,25 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
   if (retiredBindings.status === 'quarantined') {
     actions.push(`quarantined ${retiredBindings.retired_binding_count} retired remote bridge binding(s)`);
   }
-  cleanup = await cleanupMacLaunchSecretEnvironment({ env });
-  if (!cleanup.ok) warnings.push('launch_secret_env_cleanup_incomplete');
-  // dual-auth-compat Desktop reads CODEX_LB_* from the GUI launch environment.
-  // Re-inject from the official Center store after the generic secret cleanup.
+  const injectedTestLaunchctl = (
+    env.SKS_TEST_FORBID_REAL_HOME === '1'
+    || env.SKS_TEST_ISOLATION === '1'
+  )
+    ? env.SKS_MENUBAR_LAUNCHCTL
+    : undefined;
+  cleanup = await cleanupMacLaunchSecretEnvironment({
+    env,
+    ...(injectedTestLaunchctl ? { launchctlBin: injectedTestLaunchctl } : {})
+  });
+  const cleanupBlocker = menuBarCredentialEnvironmentBlocker({ cleanupOk: cleanup.ok });
+  if (cleanupBlocker) {
+    return blocked(
+      cleanupBlocker,
+      'Global GUI secret environment cleanup could not be verified.'
+    );
+  }
+  // Legacy dual-auth compatibility required a global GUI secret. Never restore
+  // that secret after cleanup; fail closed until the local bridge is selected.
   try {
     const { syncDesktopCenterLaunchCredentials } = await import('../../codex-lb/desktop-center-credentials.js');
     const { CODEX_LB_DESKTOP_COMPAT_MARKER } = await import('../../../cli/install-helpers-codex-lb-config.js');
@@ -123,13 +167,26 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
     if (configText.includes(CODEX_LB_DESKTOP_COMPAT_MARKER)) {
       const restored = await syncDesktopCenterLaunchCredentials({
         mode: 'desktop-dual-auth-compat',
-        home: paths.home
+        home: paths.home,
+        ...(injectedTestLaunchctl ? { launchctlBin: injectedTestLaunchctl } : {})
       });
-      if (!restored.ok) warnings.push('desktop_compat_launch_env_restore_incomplete');
-      else actions.push('restored Center Codex LB credentials into Desktop launch environment');
+      const restoreBlocker = menuBarCredentialEnvironmentBlocker({
+        cleanupOk: true,
+        compatibilityConfigured: true,
+        compatibilityRestored: restored.ok
+      });
+      if (restoreBlocker) {
+        return blocked(
+          restored.blockers[0] || restoreBlocker,
+          'Desktop compatibility cannot be restored without exposing a global GUI secret; use the local bridge.'
+        );
+      }
     }
-  } catch {
-    // Non-fatal: credential restore is best-effort during Menu Bar install.
+  } catch (error: unknown) {
+    return blocked(
+      'desktop_compat_launch_env_restore_failed',
+      error instanceof Error ? error.message : String(error)
+    );
   }
 
   const swiftc = env.SKS_MENUBAR_SWIFTC || await which('swiftc').catch(() => null) || '/usr/bin/swiftc';
@@ -192,6 +249,17 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
     ? await inspectSignature(paths.app_path, { ...env, SKS_MENUBAR_CODESIGN: codesign })
     : { checked: false, identifier: null, ok: false, error: 'app_missing' };
   const installedInfoPlist = await readText(paths.info_plist_path, '');
+  const restartDeferred = sksMenuBarRestartDeferred(env);
+  const launchWanted = opts.launch !== false
+    && env.SKS_SKIP_SKS_MENUBAR_LAUNCH !== '1'
+    && !restartDeferred;
+  if (restartDeferred && opts.launch !== false && env.SKS_SKIP_SKS_MENUBAR_LAUNCH !== '1') {
+    warnings.push('launch_deferred_until_parent_operation_completes');
+  }
+  const launchAllowed = path.resolve(paths.home) === realUserHome()
+    && !isMenuBarInstallPathUnderTempDir(paths.executable_path, env);
+  if (launchWanted && path.resolve(paths.home) !== realUserHome()) warnings.push('launch_skipped_non_user_home');
+  if (launchWanted && isMenuBarInstallPathUnderTempDir(paths.executable_path, env)) warnings.push('launch_skipped_temp_install');
   const upToDate = bundleExists
     && currentAction === actionScript
     && menuBarBuildStampsEqual(previous, stamp)
@@ -263,6 +331,54 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
       if (error instanceof MenuBarBuildError) return blocked(error.blocker, error.message);
       return blocked('menubar_build_failed', error instanceof Error ? error.message : String(error));
     }
+  }
+
+  const duplicateExecutablePaths = await verifiedProjectMenuBarDuplicateExecutablePaths({
+    paths,
+    root: paths.root,
+    env
+  });
+  const mustStopCanonical = !upToDate || (launchWanted && launchAllowed);
+  let canonicalStopped = false;
+  if (mustStopCanonical) {
+    const stopped = await stopMenuBarForReplacement({
+      launchctl,
+      paths,
+      executablePaths: [paths.executable_path, ...duplicateExecutablePaths],
+      env
+    });
+    if (!stopped.ok) {
+      return blocked(stopped.error || 'menubar_stop_before_replace_failed', 'Menu Bar process shutdown could not be verified before replacement.');
+    }
+    canonicalStopped = true;
+    actions.push('booted out Menu Bar and verified all canonical/project duplicate processes stopped');
+  } else {
+    const duplicateStop = await terminateMenuBarProcesses(duplicateExecutablePaths, env);
+    if (!duplicateStop.ok) {
+      return blocked('menubar_project_duplicate_stop_failed', `Remaining PIDs: ${duplicateStop.remaining_pids.join(',')}`);
+    }
+  }
+
+  const duplicateCleanup = await cleanupProjectMenuBarDuplicates({
+    paths,
+    root: paths.root,
+    env,
+    candidateExecutablePaths: duplicateExecutablePaths
+  });
+  warnings.push(...duplicateCleanup.warnings);
+  if (!duplicateCleanup.ok) {
+    return blocked(
+      duplicateCleanup.blockers[0] || 'menubar_project_duplicate_cleanup_failed',
+      'Project-local Menu Bar duplicate cleanup could not be completed safely.'
+    );
+  }
+  if (duplicateCleanup.removed.length > 0) {
+    actions.push(`removed ${duplicateCleanup.removed.length} verified project-local Menu Bar duplicate(s)`);
+  }
+  if (duplicateCleanup.receipt_path) actions.push(`wrote duplicate cleanup receipt ${duplicateCleanup.receipt_path}`);
+
+  if (!upToDate) {
+    const preservingPrevious = await exists(paths.app_path);
     try {
       transaction = await applyMenuBarGenerationTransaction({
         purpose: 'install', journalPath: paths.install_transaction_path, pairs: installPairs, env
@@ -321,20 +437,18 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
       transaction = committed;
     }
   }
-  const restartDeferred = sksMenuBarRestartDeferred(env);
-  const launchWanted = opts.launch !== false
-    && env.SKS_SKIP_SKS_MENUBAR_LAUNCH !== '1'
-    && !restartDeferred;
-  if (restartDeferred && opts.launch !== false && env.SKS_SKIP_SKS_MENUBAR_LAUNCH !== '1') {
-    warnings.push('launch_deferred_until_parent_operation_completes');
-  }
-  const launchAllowed = path.resolve(paths.home) === realUserHome() && !isMenuBarInstallPathUnderTempDir(paths.executable_path, env);
-  if (launchWanted && path.resolve(paths.home) !== realUserHome()) warnings.push('launch_skipped_non_user_home');
-  if (launchWanted && isMenuBarInstallPathUnderTempDir(paths.executable_path, env)) warnings.push('launch_skipped_temp_install');
   let launch: NonNullable<SksMenuBarInstallResult['launch']> = { requested: false, method: 'skipped', ok: true };
   if (launchWanted && launchAllowed) {
     if (await seedMenuBarPreferredPosition(env)) actions.push('seeded SKS menu bar preferred position');
-    launch = await launchMenuBar({ launchctl, open, paths, env });
+    launch = await launchMenuBar({
+      launchctl,
+      open,
+      paths,
+      env,
+      alreadyStopped: canonicalStopped,
+      expectedVersion: stamp.package_version,
+      executablePaths: [paths.executable_path, ...duplicateExecutablePaths]
+    });
   }
   const rollbackCandidateExists = !upToDate && await exists(paths.backup_app_path);
   const rollback = shouldAutoRollbackMenuBarLaunch({ launch, upToDate, rollbackCandidateExists })
@@ -354,6 +468,11 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
     : stamp;
   result.secret_env_cleanup = cleanup;
   result.launch = launch;
+  result.installed_version = result.build_stamp?.package_version || null;
+  if (launch.version_probe) {
+    result.menubar_version_probe = launch.version_probe;
+    result.running_process = await inspectRunningMenuBarProcess(paths, launch.version_probe.pid, env);
+  }
   result.rollback = rollback;
   result.transaction = transaction;
   result.blockers = ok ? [] : [

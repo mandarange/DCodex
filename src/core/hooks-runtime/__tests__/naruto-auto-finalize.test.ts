@@ -959,6 +959,47 @@ test('Naruto Stop blocks host capability claims when no observed runtime evidenc
   }
 })
 
+test('Naruto Stop prose cannot erase a persisted structured failed parent summary', async () => {
+  const fixture = await createNarutoFixture()
+  try {
+    const failedParentSummary = {
+      ...fixture.parentSummary,
+      status: 'failed',
+      summary: 'The parent integrated every slice but the route exceeded its automatic fanout cap.',
+      thread_outcomes: fixture.parentSummary.thread_outcomes.map((outcome) => ({
+        ...outcome,
+        status: 'failed'
+      })),
+      blockers: ['subagent_automatic_fanout_cap_exceeded']
+    }
+    await refreshOfficialSubagentCompletionArtifacts(
+      fixture.root,
+      fixture.state,
+      failedParentSummary,
+      fixture.sessionKey
+    )
+    await refreshOfficialSubagentCompletionArtifacts(
+      fixture.root,
+      fixture.state,
+      'Completion Summary: the route remains blocked because its automatic fanout cap was exceeded.',
+      fixture.sessionKey
+    )
+
+    const [persisted, evidence] = await Promise.all([
+      readJson(path.join(fixture.dir, 'subagent-parent-summary.json')),
+      readJson(path.join(fixture.dir, 'subagent-evidence.json'))
+    ])
+    assert.deepEqual(persisted, failedParentSummary)
+    assert.equal(evidence.parent_summary_trustworthy, true)
+    assert.equal(evidence.parent_summary_status, 'failed')
+    assert.equal(evidence.run_id, fixture.runId)
+    assert.ok(evidence.blockers.includes('parent_summary_failed'))
+    assert.ok(!evidence.blockers.includes('parent_summary_untrusted'))
+  } finally {
+    await fixture.cleanup()
+  }
+})
+
 interface NarutoFixtureOptions {
   countPolicy?: SubagentCountPolicy
   requestedSubagents?: number

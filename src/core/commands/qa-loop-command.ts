@@ -21,6 +21,7 @@ import { buildQaLoopBudgetPolicy, selectQaLoopEscalatedEffort } from '../qa-loop
 import { initializeQaRuntimeArtifacts } from '../qa-loop/qa-runtime-artifacts.js';
 import { DEFAULT_QA_MAX_CYCLES, QA_SURFACE_SELECTION_ARTIFACT } from '../qa-loop/qa-types.js';
 import { writeCodexModelEffortCapabilityArtifact } from '../codex-control/codex-model-capabilities.js';
+import { prepareCodexAppServerRuntimeEnv } from '../codex-control/codex-app-server-runtime-env.js';
 import { discoverImageArtifactsInDir, writeImageArtifactPathContract } from '../image/image-artifact-path-contract.js';
 import { pluginAppTemplatePolicy } from '../codex-plugins/codex-plugin-json.js';
 import { confirmQaLoopAppHandoff } from '../qa-loop/qa-loop-app-handoff-confirmation.js';
@@ -399,6 +400,7 @@ async function qaLoopRun(args: any) {
     if (stream) emitStreamEvent('result', { schema: 'sks.qa-loop-run.v1', ok: false, mission_id: id, status: 'blocked', blocker: 'codex_cli_missing' });
     return;
   }
+  const codexRuntimeEnv = await prepareCodexAppServerRuntimeEnv({ env: process.env });
   let last = '';
   for (let cycle = 1; cycle <= maxCycles; cycle += 1) {
     const cycleDir = path.join(dir, 'qa-loop', `cycle-${cycle}`);
@@ -406,7 +408,7 @@ async function qaLoopRun(args: any) {
     const prompt = buildQaLoopPrompt({ id, mission, contract, cycle, previous: last, reportFile, imagePathContract: imagePathContract?.contract || null, appHandoff, executionProfile });
     await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: 'qaloop.cycle.start', cycle });
     if (stream) emitStreamEvent('progress', { mission_id: id, type: 'qaloop.cycle.start', cycle, max_cycles: maxCycles });
-    const result = await runCodexExec({ root, prompt, outputFile, json: true, profile, logDir: cycleDir });
+    const result = await runCodexExec({ root, prompt, outputFile, json: true, profile, logDir: cycleDir, env: codexRuntimeEnv });
     await writeJsonAtomic(path.join(cycleDir, 'process.json'), { code: result.code, stdout_tail: result.stdout, stderr_tail: result.stderr, stdout_bytes: result.stdoutBytes, stderr_bytes: result.stderrBytes, truncated: result.truncated, timed_out: result.timedOut });
     last = await safeReadTextFile(fsp, outputFile, result.stdout || result.stderr || '');
     if (containsUserQuestion(last)) {

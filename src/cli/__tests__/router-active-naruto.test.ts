@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { sessionStateKey } from '../../core/mission.js'
 import { dispatch, safeActiveRouteContinuation, safeReadOnlySubcommand } from '../router.js'
 
 test('active Naruto permits only its read-only observation subcommands', () => {
@@ -117,6 +118,217 @@ test('Naruto observation dispatch skips migration repair and remains read-only',
     restoreEnv('SKS_REQUIRE_UPDATE_MIGRATION_RECEIPT', oldRequireReceipt)
     restoreEnv('SKS_TEST_DOCTOR_FAIL', oldDoctorFail)
     restoreEnv('CODEX_THREAD_ID', oldThreadId)
+    console.log = oldLog
+    console.error = oldError
+    process.exitCode = oldExitCode
+    await fsp.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Codex App command gate uses the current thread state instead of another task global mirror', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-router-session-state-'))
+  const threadId = 'thread-current-parent-summary'
+  const oldCwd = process.cwd()
+  const oldThreadId = process.env.CODEX_THREAD_ID
+  const oldStandalone = process.env.SKS_NARUTO_STANDALONE_CLI
+  const oldMigrationGate = process.env.SKS_UPDATE_MIGRATION_GATE_DISABLED
+  const oldLog = console.log
+  const oldError = console.error
+  const oldExitCode = process.exitCode
+  try {
+    const stateDir = path.join(root, '.sneakoscope', 'state')
+    const sessionsDir = path.join(stateDir, 'sessions')
+    await fsp.mkdir(sessionsDir, { recursive: true })
+    await fsp.writeFile(path.join(stateDir, 'current.json'), JSON.stringify({
+      mission_id: 'M-other-task',
+      mode: 'NARUTO',
+      phase: 'NARUTO_DELEGATION_CONTEXT_READY',
+      route_closed: false
+    }))
+    await fsp.writeFile(path.join(sessionsDir, `${sessionStateKey(threadId)}.json`), JSON.stringify({
+      mission_id: 'M-current-task',
+      mode: 'NARUTO',
+      route: 'Naruto',
+      phase: 'NARUTO_DELEGATION_CONTEXT_READY',
+      route_closed: false,
+      session_scope: threadId,
+      _session_key: sessionStateKey(threadId)
+    }))
+    process.chdir(root)
+    process.env.CODEX_THREAD_ID = threadId
+    delete process.env.SKS_NARUTO_STANDALONE_CLI
+    process.env.SKS_UPDATE_MIGRATION_GATE_DISABLED = '1'
+    console.log = () => undefined
+    console.error = () => undefined
+    process.exitCode = undefined
+
+    const result: any = await dispatch([
+      'naruto',
+      'parent-summary',
+      '--mission',
+      'M-current-task',
+      '--stdin',
+      '--json'
+    ])
+
+    assert.ok(result.blockers.includes('naruto_parent_summary_mission_not_found:M-current-task'))
+    assert.notEqual(result.schema, 'sks.command-gate-active-route.v1')
+  } finally {
+    process.chdir(oldCwd)
+    restoreEnv('CODEX_THREAD_ID', oldThreadId)
+    restoreEnv('SKS_NARUTO_STANDALONE_CLI', oldStandalone)
+    restoreEnv('SKS_UPDATE_MIGRATION_GATE_DISABLED', oldMigrationGate)
+    console.log = oldLog
+    console.error = oldError
+    process.exitCode = oldExitCode
+    await fsp.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('new Codex App task does not inherit another task active route from the global mirror', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-router-new-session-state-'))
+  const ownerThreadId = 'thread-owner'
+  const newThreadId = 'thread-new'
+  const oldCwd = process.cwd()
+  const oldThreadId = process.env.CODEX_THREAD_ID
+  const oldStandalone = process.env.SKS_NARUTO_STANDALONE_CLI
+  const oldMigrationGate = process.env.SKS_UPDATE_MIGRATION_GATE_DISABLED
+  const oldLog = console.log
+  const oldError = console.error
+  const oldExitCode = process.exitCode
+  try {
+    const stateDir = path.join(root, '.sneakoscope', 'state')
+    await fsp.mkdir(stateDir, { recursive: true })
+    await fsp.writeFile(path.join(stateDir, 'current.json'), JSON.stringify({
+      mission_id: 'M-owner-task',
+      mode: 'NARUTO',
+      route: 'Naruto',
+      phase: 'NARUTO_DELEGATION_CONTEXT_READY',
+      route_closed: false,
+      session_scope: ownerThreadId,
+      _session_key: sessionStateKey(ownerThreadId)
+    }))
+    process.chdir(root)
+    process.env.CODEX_THREAD_ID = newThreadId
+    delete process.env.SKS_NARUTO_STANDALONE_CLI
+    process.env.SKS_UPDATE_MIGRATION_GATE_DISABLED = '1'
+    console.log = () => undefined
+    console.error = () => undefined
+    process.exitCode = undefined
+
+    const result: any = await dispatch([
+      'naruto',
+      'parent-summary',
+      '--mission',
+      'M-new-task',
+      '--stdin',
+      '--json'
+    ])
+
+    assert.notEqual(result.schema, 'sks.command-gate-active-route.v1')
+    assert.equal(result.active_mission_id, undefined)
+    assert.equal(Array.isArray(result.blockers), true)
+  } finally {
+    process.chdir(oldCwd)
+    restoreEnv('CODEX_THREAD_ID', oldThreadId)
+    restoreEnv('SKS_NARUTO_STANDALONE_CLI', oldStandalone)
+    restoreEnv('SKS_UPDATE_MIGRATION_GATE_DISABLED', oldMigrationGate)
+    console.log = oldLog
+    console.error = oldError
+    process.exitCode = oldExitCode
+    await fsp.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('standalone terminal MAD launch ignores a session-owned global route mirror', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-router-standalone-state-'))
+  const ownerThreadId = 'thread-owner'
+  const oldCwd = process.cwd()
+  const oldThreadId = process.env.CODEX_THREAD_ID
+  const oldStandalone = process.env.SKS_NARUTO_STANDALONE_CLI
+  const oldMigrationGate = process.env.SKS_UPDATE_MIGRATION_GATE_DISABLED
+  const oldLog = console.log
+  const oldError = console.error
+  const oldExitCode = process.exitCode
+  try {
+    const stateDir = path.join(root, '.sneakoscope', 'state')
+    await fsp.mkdir(stateDir, { recursive: true })
+    await fsp.writeFile(path.join(stateDir, 'current.json'), JSON.stringify({
+      mission_id: 'M-app-task',
+      mode: 'NARUTO',
+      route: 'Naruto',
+      phase: 'NARUTO_DELEGATION_CONTEXT_READY',
+      route_closed: false,
+      session_scope: ownerThreadId,
+      _session_key: sessionStateKey(ownerThreadId)
+    }))
+    process.chdir(root)
+    delete process.env.CODEX_THREAD_ID
+    delete process.env.SKS_NARUTO_STANDALONE_CLI
+    process.env.SKS_UPDATE_MIGRATION_GATE_DISABLED = '1'
+    console.log = () => undefined
+    console.error = () => undefined
+    process.exitCode = undefined
+
+    const result: any = await dispatch(['--mad', '--json'])
+
+    assert.equal(result, undefined)
+    assert.notEqual(process.exitCode, 1)
+  } finally {
+    process.chdir(oldCwd)
+    restoreEnv('CODEX_THREAD_ID', oldThreadId)
+    restoreEnv('SKS_NARUTO_STANDALONE_CLI', oldStandalone)
+    restoreEnv('SKS_UPDATE_MIGRATION_GATE_DISABLED', oldMigrationGate)
+    console.log = oldLog
+    console.error = oldError
+    process.exitCode = oldExitCode
+    await fsp.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('same Codex App task still blocks a conflicting mutating route', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-router-same-session-state-'))
+  const threadId = 'thread-active'
+  const oldCwd = process.cwd()
+  const oldThreadId = process.env.CODEX_THREAD_ID
+  const oldStandalone = process.env.SKS_NARUTO_STANDALONE_CLI
+  const oldMigrationGate = process.env.SKS_UPDATE_MIGRATION_GATE_DISABLED
+  const oldLog = console.log
+  const oldError = console.error
+  const oldExitCode = process.exitCode
+  try {
+    const stateDir = path.join(root, '.sneakoscope', 'state')
+    const sessionsDir = path.join(stateDir, 'sessions')
+    await fsp.mkdir(sessionsDir, { recursive: true })
+    const activeState = {
+      mission_id: 'M-active-task',
+      mode: 'NARUTO',
+      route: 'Naruto',
+      phase: 'NARUTO_DELEGATION_CONTEXT_READY',
+      route_closed: false,
+      session_scope: threadId,
+      _session_key: sessionStateKey(threadId)
+    }
+    await fsp.writeFile(path.join(stateDir, 'current.json'), JSON.stringify(activeState))
+    await fsp.writeFile(path.join(sessionsDir, `${sessionStateKey(threadId)}.json`), JSON.stringify(activeState))
+    process.chdir(root)
+    process.env.CODEX_THREAD_ID = threadId
+    delete process.env.SKS_NARUTO_STANDALONE_CLI
+    process.env.SKS_UPDATE_MIGRATION_GATE_DISABLED = '1'
+    console.log = () => undefined
+    console.error = () => undefined
+    process.exitCode = undefined
+
+    const result: any = await dispatch(['--mad', '--json'])
+
+    assert.equal(result.schema, 'sks.command-gate-active-route.v1')
+    assert.equal(result.active_mission_id, 'M-active-task')
+    assert.equal(process.exitCode, 1)
+  } finally {
+    process.chdir(oldCwd)
+    restoreEnv('CODEX_THREAD_ID', oldThreadId)
+    restoreEnv('SKS_NARUTO_STANDALONE_CLI', oldStandalone)
+    restoreEnv('SKS_UPDATE_MIGRATION_GATE_DISABLED', oldMigrationGate)
     console.log = oldLog
     console.error = oldError
     process.exitCode = oldExitCode

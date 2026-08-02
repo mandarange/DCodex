@@ -5,6 +5,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { codexProviderModelUiStatus } from '../../codex-app.js'
+import {
+  runCodexLbDesktopCapabilityReport,
+  shapeCodexLbDesktopCapabilityStatus
+} from '../../codex-lb/capability-runner.js'
 
 test('native provider model controls preserve pending selections and persisted per-role overrides', async () => {
   const sourceRoot = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources')
@@ -84,6 +88,24 @@ test('selected codex-lb readiness is not blocked by optional GLM/OpenRouter setu
     ''
   ].join('\n'))
 
+  const capabilityStatus = shapeCodexLbDesktopCapabilityStatus(
+    runCodexLbDesktopCapabilityReport({
+      mode: 'cli-provider',
+      level: 'transport',
+      configured: true,
+      catalog: {
+        catalog: {
+          models: [{
+            slug: 'gpt-5.6-sol',
+            display_name: 'GPT-5.6 Sol',
+            supported_reasoning_levels: [{ effort: 'high' }],
+            truncation_policy: { mode: 'tokens' },
+            use_responses_lite: false
+          }]
+        }
+      }
+    })
+  )
   const status = await codexProviderModelUiStatus({
     home,
     cwd: root,
@@ -93,10 +115,9 @@ test('selected codex-lb readiness is not blocked by optional GLM/OpenRouter setu
       models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
       blockers: []
     },
-    desktopPickerEvidence: {
-      state: 'verified',
-      verified: true,
-      selected_model: 'gpt-5.6-sol'
+    codexLbCapabilityReport: {
+      schema: 'sks.codex-lb-status.v2',
+      capabilities: capabilityStatus
     }
   })
 
@@ -107,6 +128,7 @@ test('selected codex-lb readiness is not blocked by optional GLM/OpenRouter setu
   assert.equal(status.configured, true)
   assert.equal(status.advertised, true)
   assert.equal(status.effective_ready, true)
+  assert.equal(status.desktop_picker_evidence, capabilityStatus.model_picker)
   assert.equal(status.status, 'ready')
   assert.deepEqual(status.blockers, [])
   assert.equal(status.optional_provider_status, 'setup_available')
@@ -294,7 +316,7 @@ test('native bridge mode does not require or bind the local replacement catalog'
   assert.ok(!status.codex_lb.blockers.includes('codex_lb_model_catalog_json_unselected'))
 })
 
-test('compat provider status requires exact OpenAI identity and separate gateway header', async (t) => {
+test('retired compat provider is detected but never reported ready', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-provider-ui-compat-'))
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-provider-ui-compat-home-'))
   const codexHome = path.join(home, '.codex')
@@ -335,10 +357,10 @@ test('compat provider status requires exact OpenAI identity and separate gateway
   })
 
   assert.equal(status.codex_lb.desktop_mode, 'desktop-dual-auth-compat')
-  assert.equal(status.codex_lb.provider_contract, 'desktop-dual-auth-compat')
-  assert.equal(status.codex_lb.provider_contract_ok, true)
+  assert.equal(status.codex_lb.provider_contract, 'retired-desktop-dual-auth-compat')
+  assert.equal(status.codex_lb.provider_contract_ok, false)
   assert.equal(status.codex_lb.gateway_auth_transport, 'x-codex-lb-api-key')
-  assert.deepEqual(status.codex_lb.blockers, [])
+  assert.ok(status.codex_lb.blockers.includes('desktop_dual_auth_compat_unavailable'))
 })
 
 function run(command: string, args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {

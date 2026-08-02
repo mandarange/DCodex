@@ -12,14 +12,9 @@ import {
 } from '../routes.js';
 import { inspectConfinedPath } from '../managed-path-safety.js';
 import {
-  renderAuthoritativeSksSkillContext,
-  resolveAuthoritativeSksSkillSources
+  renderAuthoritativeSksSkillContext
 } from '../codex-native/sks-skill-paths.js';
-import {
-  healStaleGlobalManagedSkillGeneration,
-  managedSkillResolutionIsHealable,
-  type StaleGlobalManagedSkillGeneration
-} from './managed-skill-generation-heal.js';
+import { resolveManagedSkillSourcesForAdmission } from './managed-skill-admission.js';
 import { looksLikeActiveContinuationPrompt } from './naruto-decision-gate.js';
 import {
   extractUserPrompt,
@@ -70,6 +65,9 @@ export async function attachAuthoritativeSksSkillContext(
   result: any
 ) {
   if (result?.decision === 'block' || result?.sksTaskProfile === 'passthrough') return result;
+  if (String(result?.additionalContext || '').includes('Authoritative SKS skill sources for this turn:')) {
+    return result;
+  }
   if (looksLikeCodexGitAction(payload) || looksLikeCodexUiSettingsEvent(payload)) return result;
   const prompt = stripVisibleDecisionAnswerBlocks(extractUserPrompt(payload));
   if (!dollarCommand(prompt) && routeIsGitOnly(routePrompt(prompt))) return result;
@@ -124,8 +122,15 @@ async function readStandaloneParentRouteContext(root: string, missionId: string)
   }
 }
 
-export async function authoritativeSksSkillAdmission(root: string, skillNames: readonly unknown[]) {
-  let resolution = await resolveAuthoritativeSksSkillSources({ root, skillNames }).catch(() => null);
+export async function authoritativeSksSkillAdmission(
+  root: string,
+  skillNames: readonly unknown[]
+) {
+  const resolution = await resolveManagedSkillSourcesForAdmission({
+    root,
+    skillNames,
+    repairMode: 'stale-generation'
+  }).catch(() => null);
   if (!resolution) {
     return {
       resolution: null,
@@ -136,27 +141,41 @@ export async function authoritativeSksSkillAdmission(root: string, skillNames: r
       }
     };
   }
-  let healedGeneration: StaleGlobalManagedSkillGeneration | null = null;
-  if (managedSkillResolutionIsHealable(resolution)) {
-    healedGeneration = await healStaleGlobalManagedSkillGeneration().catch(() => null);
-    if (healedGeneration) {
-      const rechecked = await resolveAuthoritativeSksSkillSources({ root, skillNames }).catch(() => null);
-      if (rechecked) resolution = rechecked;
-    }
-  }
   if (resolution.unresolved.length || resolution.blockers.length) {
+    const recoveryAttempts = resolution.recovery?.attempts || [];
     const details = [
       resolution.unresolved.length ? `unavailable=${resolution.unresolved.join(',')}` : '',
-      resolution.blockers.length ? `rejected=${resolution.blockers.join(',')}` : ''
+      resolution.blockers.length ? `rejected=${resolution.blockers.join(',')}` : '',
+      ...resolution.issues.map((issue) => {
+        const attempt = resolution.recovery?.attempts.find((candidate) => (
+          candidate.canonical_skill === issue.canonical_name
+          && candidate.original_path === issue.path
+        ));
+        return `file=${JSON.stringify(issue.path)},reason=${issue.reason},`
+          + `recovery=${attempt?.backup_path ? JSON.stringify(attempt.backup_path) : 'none'}`;
+      }),
+      ...recoveryAttempts.map((attempt) => (
+        `heal=${attempt.status}:${attempt.reason},file=${JSON.stringify(attempt.original_path)},`
+        + `recovery=${attempt.backup_path ? JSON.stringify(attempt.backup_path) : 'none'}`
+      ))
     ].filter(Boolean).join('; ');
-    const repair = healedGeneration
-      ? `Global managed skills were regenerated from sneakoscope ${healedGeneration.installed_version} to ${healedGeneration.runtime_version} and still do not match this runtime, so \`sks doctor --fix\` cannot clear it. Ask the user to install the sneakoscope build that matches this runtime (${healedGeneration.runtime_version}) and retry.`
+    const containsUnknownManagedContent = recoveryAttempts.some((attempt) => (
+      attempt.reason === 'stale_generation_contains_unknown_managed_content'
+    ));
+    const recoveryPaths = recoveryAttempts
+      .map((attempt) => attempt.backup_path)
+      .filter((value): value is string => Boolean(value));
+    const guidance = containsUnknownManagedContent
+      ? 'Automatic repair was refused because the installed generation contains bytes not authorized by the packaged hash ledger. Inspect the reported files, then ask the user to run `sks doctor --fix` (do not run it yourself); Doctor preserves unknown managed bytes in quarantine before reinstalling the trusted generation.'
       : 'Ask the user to run `sks doctor --fix` (do not run it yourself), then retry.';
+    const recoveryNote = recoveryPaths.length
+      ? ' The reported recovery path preserves the pre-repair file.'
+      : '';
     return {
       resolution,
       blocked: {
         decision: 'block',
-        reason: `SKS managed skill availability check failed (${details}). ${repair}`,
+        reason: `SKS managed skill availability check failed (${details}). ${guidance}${recoveryNote}`,
         systemMessage: 'SKS: managed skill availability check blocked this turn.'
       }
     };
@@ -241,6 +260,15 @@ export function shouldPrepareFreshRouteOnActivePrompt(prompt: any, route: any = 
   if (!route || opts.command || opts.bypassActiveRoute || opts.goalOverlay) return false;
   if (looksLikeActiveContinuationPrompt(prompt)) return false;
   return routeRequiresSubagents(route, prompt);
+}
+
+export function looksLikeExplicitActiveWorkflowReplacementPrompt(prompt: unknown): boolean {
+  const normalized = String(prompt || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return /\b(?:cancel|replace|supersede|discard|abandon|restart)\b[\s\S]{0,48}\b(?:current|active|old|previous|workflow|run|task|mission)\b/.test(normalized)
+    || /\b(?:start over|switch to a new task)\b/.test(normalized)
+    || /(?:현재|기존|이전)[^\n]{0,32}(?:작업|워크플로|실행|미션)[^\n]{0,24}(?:취소|교체|대체|폐기|중단)/.test(normalized)
+    || /(?:취소|교체|대체|폐기|중단)[^\n]{0,24}(?:새 작업|새로운 작업|다른 작업)/.test(normalized);
 }
 
 function isClarificationAwaiting(state: any = {}) {

@@ -38,14 +38,20 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
     'main.swift', 'AppDelegate.swift', 'StatusItemController.swift',
     'ControlCenterWindowController.swift', 'SidebarItem.swift', 'ControlKit.swift',
     'OverviewViewController.swift', 'OverviewSummary.swift', 'UpdatesViewController.swift',
-    'MCPServersViewController.swift', 'ProvidersViewController.swift', 'ProvidersRoutingTruth.swift',
+    'MCPServersViewController.swift', 'ProvidersViewController.swift', 'ProvidersConnectTest.swift',
+    'ProvidersRoutingTruth.swift', 'ProvidersFastMode.swift',
     'ProvidersOpenRouter.swift',
     'ProvidersRoleModels.swift', 'ProvidersMultiProvider.swift',
     'RemoteCodingViewController.swift',
     'DiagnosticsViewController.swift',
     'SettingsViewController.swift', 'OperationCoordinator.swift',
-    'ProcessClient.swift', 'NotificationCoordinator.swift', 'AlertFactory.swift',
-    'AppIdentity.swift'
+    'ProcessClient.swift', 'ProcessExecutionState.swift', 'ProcessIdentityGuard.swift',
+    'SecureProcessEnvelope.swift',
+    'TelegramPrivateFileSupport.swift',
+    'TelegramPrivateFileStore.swift', 'TelegramSupport.swift', 'TelegramRuntimeSupport.swift', 'TelegramTransport.swift',
+    'TelegramProcessGateway.swift',
+    'NotificationCoordinator.swift', 'AlertFactory.swift',
+    'AppIdentity.swift', 'SingletonInstanceGuard.swift'
   ]);
   assert.deepEqual([...NATIVE_RESOURCE_FILES], [
     'AppIcon.icns', 'SKSStatusTemplate.pdf', 'SKSStatusUpdateTemplate.pdf',
@@ -109,6 +115,9 @@ test('runtime materialization injects paths, version, and optional Codex bundle 
   assert.match(withCodex, /else \{ self\?\.statusItem\.isVisible = false \}/);
   assert.match(withCodex, /applicationShouldHandleReopen\(_ sender: NSApplication, hasVisibleWindows flag: Bool\)/);
   assert.match(withCodex, /controlCenter\?\.show\(section: \.overview\)/);
+  assert.match(withCodex, /switch singletonGuard\.acquire\(\)/);
+  assert.match(withCodex, /case \.lostArbitration:\s*exit\(EXIT_SUCCESS\)/);
+  assert.match(withCodex, /case \.degraded:\s*break/);
 });
 
 test('Control Center is a non-modal seven-section AppKit sidebar with native accessibility', () => {
@@ -195,11 +204,23 @@ test('Overview summary distinguishes Menu Bar build, installed SKS, cached statu
   try {
     fs.writeFileSync(harness, `
 import Cocoa
+import Darwin
+
+private func sksCanonicalFilesystemPath(_ value: String) -> String {
+    let standardized = URL(fileURLWithPath: value, isDirectory: true)
+        .resolvingSymlinksInPath().standardizedFileURL.path
+    return standardized.withCString { pointer in
+        guard let resolved = Darwin.realpath(pointer, nil) else { return standardized }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+}
 
 enum AppRuntime {
     static let packageVersion = "6.2.0"
     static let codexBundleId: String? = nil
     static let projectRoot = "/tmp"
+    static let canonicalProjectRoot = sksCanonicalFilesystemPath(projectRoot)
 }
 
 struct ProcessResult { let code: Int32; let output: String; let truncated: Bool }
@@ -327,7 +348,7 @@ test('Control Center scroll documents start at the top and stale local versions 
   assert.match(overview, /override var isFlipped: Bool \{ true \}/);
   assert.match(overview, /let stack = TopAlignedStackView\(views: views\)/);
   assert.match(overview, /updateSnapshotNeedsRefresh\(initial\)/);
-  assert.match(overview, /\["update", "status", "--refresh", "--json"\]/);
+  assert.match(overview, /\["update", "status", "--refresh", "--project-root", AppRuntime\.canonicalProjectRoot, "--json"\]/);
 });
 
 test('app identity, alert identity, and Info.plist icon contract are explicit', () => {
@@ -353,19 +374,22 @@ test('confirmation and input flows use sheets and never nest modal loops', () =>
 
 test('Providers configures the CLI provider through masked paste fields and stdin', () => {
   const providers = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersViewController.swift'), 'utf8');
+  const connectTest = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersConnectTest.swift'), 'utf8');
+  const providersSurface = `${providers}\n${connectTest}`;
   const processClient = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProcessClient.swift'), 'utf8');
+  const secureEnvelope = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'SecureProcessEnvelope.swift'), 'utf8');
   const alertFactory = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AlertFactory.swift'), 'utf8');
   const appIdentity = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppIdentity.swift'), 'utf8');
   const appDelegate = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppDelegate.swift'), 'utf8');
   assert.match(providers, /Configure \/ Update…/);
-  assert.match(providers, /Use Saved CLI Provider/);
-  assert.match(providers, /NativeView\.button\("Test"/);
+  assert.match(providers, /ControlKit\.primaryButton\("Use Codex LB", target: self, action: #selector\(useCliProvider\)\)/);
+  assert.match(providersSurface, /NativeView\.button\("Run Connect Test"/);
   assert.match(providers, /secure: true/);
   assert.match(providers, /The field stays masked/);
   assert.match(providers, /placeholder: "https:\/\/lb\.example\.com"/);
   assert.match(providers, /placeholder: "sk-clb-…"/);
   assert.match(providers, /https:\/\/ is optional/);
-  assert.match(providers, /\["codex-lb", "health", "--json"\]/);
+  assert.match(providersSurface, /\["codex-lb", "connect-test", "--json"\]/);
   assert.match(providers, /\["codex-lb", "setup", "--host", host, "--gateway-auth", transport, "--api-key-stdin", "--yes", "--write-env-file", "--keychain", "--json"\]/);
   // The gateway key transport is an explicit Center choice: a bearer-only gateway
   // rejects the custom header, which Desktop reports as unrecognised codex-lb auth.
@@ -387,11 +411,16 @@ test('Providers configures the CLI provider through masked paste fields and stdi
   assert.match(appIdentity, /installStandardEditMenu/);
   assert.match(appIdentity, /#selector\(NSText\.paste\(_:\)\)/);
   assert.match(appDelegate, /installStandardEditMenu\(\)/);
+  assert.match(appDelegate, /applicationWillTerminate[\s\S]*processClient\?\.terminateAll\(\)/);
   assert.match(processClient, /arguments\.contains\("--api-key-stdin"\)/);
   assert.match(processClient, /redact\(value, sensitiveValues: sensitiveValues\)/);
-  assert.match(processClient, /sks\.secure-input-operation\.v1/);
-  assert.match(processClient, /"output_suppressed": true/);
-  assert.match(processClient, /"ok": code == 0/);
+  assert.match(processClient, /SecureProcessEnvelope\.render\(payload: payload, code: code, arguments: arguments\)/);
+  assert.match(secureEnvelope, /sks\.secure-input-operation\.v1/);
+  assert.match(secureEnvelope, /code == 0 && object != nil && schemaOk && sourceOk/);
+  assert.match(secureEnvelope, /sks\.codex-lb-setup\.v2/);
+  assert.match(secureEnvelope, /partial_configuration/);
+  assert.match(secureEnvelope, /secret_recovery_paths/);
+  assert.doesNotMatch(secureEnvelope, /"ok": code == 0/);
 });
 
 test('Control Center avoids competing Return defaults and protects recovery-sensitive settings', () => {
@@ -420,33 +449,38 @@ test('Control Center avoids competing Return defaults and protects recovery-sens
   assert.match(mcp, /NativeView\.scrollable\(stack\)/);
 });
 
-test('Providers exposes full-capability Desktop routing, explicit CLI use, and evidence states without the old auth switch UX', () => {
+test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, and requires measured evidence', () => {
   const root = resolvePackagedMenuBarSourceRoot();
   const providers = fs.readFileSync(path.join(root, 'Sources', 'ProvidersViewController.swift'), 'utf8');
+  const connectTest = fs.readFileSync(path.join(root, 'Sources', 'ProvidersConnectTest.swift'), 'utf8');
   const routingTruth = fs.readFileSync(path.join(root, 'Sources', 'ProvidersRoutingTruth.swift'), 'utf8');
   const openRouter = fs.readFileSync(path.join(root, 'Sources', 'ProvidersOpenRouter.swift'), 'utf8');
-  const providersSurface = `${providers}\n${routingTruth}`;
+  const providersSurface = `${providers}\n${connectTest}\n${routingTruth}`;
 
   for (const label of [
-    'Codex LB · Desktop Full Capability (Recommended)', 'Use Codex LB', 'Verify Capabilities', 'Use ChatGPT OAuth Only',
-    'Codex LB · Credentials & CLI Provider', 'Use Saved CLI Provider', 'Copy CLI Command', 'Capability Matrix'
+    'Advanced · Desktop Bridge / ChatGPT Identity Mode', 'Desktop Bridge Mode (keeps ChatGPT sign-in)',
+    'Use Codex LB', 'Verify Capabilities', 'Use ChatGPT OAuth Only',
+    'Codex LB · Credentials & Primary Provider', 'Copy CLI Command', 'Capability Matrix'
   ]) assert.match(providers, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(providers, /ControlKit\.primaryButton\("Use Codex LB"/);
+  assert.match(providers, /ControlKit\.primaryButton\("Use Codex LB", target: self, action: #selector\(useCliProvider\)\)/);
+  assert.match(providers, /NativeView\.button\("Desktop Bridge Mode \(keeps ChatGPT sign-in\)", target: self, action: #selector\(enableDesktopFull\)\)/);
+  assert.doesNotMatch(providers, /primaryButton\("Use Codex LB"[^\n]*enableDesktopFull/);
   assert.match(providers, /NativeView\.button\("Use ChatGPT OAuth Only"/);
   assert.doesNotMatch(providers, /Enable \/ Repair|Enable Codex LB|Disable Routing/);
   assert.match(providers, /\["codex-lb", "use-desktop-full", "--restart-app", "--json"\]/);
   assert.match(providers, /\["codex-lb", "capabilities", "--level", "transport", "--json"\]/);
   assert.match(providers, /\["codex-lb", "disable", "--restart-app", "--json"\]/);
   assert.match(providers, /\["codex-lb", "use-cli", "--json"\]/);
-  assert.match(providers, /\["codex-lb", "health", "--json"\]/);
+  assert.match(providersSurface, /\["codex-lb", "connect-test", "--json"\]/);
   assert.doesNotMatch(providers, /\["codex-lb", "use-codex-lb"/);
   assert.doesNotMatch(providers, /\["codex-lb", "use-oauth"/);
   assert.doesNotMatch(providers, /Use codex-lb|Restore Chat \/ Pro/);
   assert.match(providers, /ProviderRoutingTruth\.snapshot\(from:/);
   assert.match(routingTruth, /legacyCodexLbSelected/);
   assert.match(routingTruth, /chatgptOauthPresent/);
-  assert.match(providers, /Codex LB and ChatGPT OAuth are explicit Desktop modes/);
-  assert.match(providers, /never hide Use Codex LB \/ Use ChatGPT OAuth Only based on status parsing/);
+  assert.match(providers, /Use Codex LB selects the atomic CLI provider path/);
+  assert.match(providers, /never hide the advanced bridge or ChatGPT OAuth actions based on status parsing/);
+  assert.ok(providers.indexOf('makeActiveProviderCard(), cli, desktop') >= 0);
 
   for (const label of ['OAuth Identity', 'Built-in Provider', 'Bridge', 'Models', 'Fast', 'Image', 'Computer', 'Browser', 'Voice', 'Plugins']) {
     assert.match(providers, new RegExp(`"${label}"`));
@@ -462,7 +496,14 @@ test('Providers exposes full-capability Desktop routing, explicit CLI use, and e
   assert.match(providers, /overall == "verified"/);
   assert.match(providers, /Capability verification blocked/);
   assert.match(providers, /mode == expectedMode && oauthPreserved != false/);
-  assert.match(providers, /mode == "cli-provider" && oauthPreserved != false && authMutated != true/);
+  assert.match(providers, /measuredRoute\?\.measured == true/);
+  assert.match(providers, /measuredRoute\?\.ok == true/);
+  assert.match(providers, /desktopFullRoutingNow = snapshot\.desktopFullRouting && measuredRoutingOk/);
+  assert.match(providers, /measuredRoute\?\.selected == true/);
+  assert.match(providers, /measuredRoute\?\.ok == true/);
+  assert.match(routingTruth, /selected && measured && fresh && ok && status == "verified"/);
+  assert.match(providersSurface, /Codex LB · degraded/);
+  assert.match(providersSurface, /Codex LB · unverified/);
   assert.match(openRouter, /Codex LB mode · ChatGPT OAuth \+ built-in OpenAI via bridge/);
   assert.match(openRouter, /ChatGPT OAuth mode · built-in OpenAI models/);
   assert.match(providers, /codex --config model_provider='\\"codex-lb\\"'/);
@@ -517,6 +558,8 @@ test('Providers exposes OpenRouter save key, freeform model id, and Use OpenRout
 test('Menu Bar exposes truthful accessible Fast state with direct on and off actions', () => {
   const swift = source();
   const providers = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersViewController.swift'), 'utf8');
+  const providersFast = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersFastMode.swift'), 'utf8');
+  const providersSurface = `${providers}\n${providersFast}`;
   for (const label of ['Codex Fast: Checking…', 'Codex Fast On', 'Codex Fast Off']) assert.match(swift, new RegExp(label));
   assert.match(swift, /\["fast-mode", "status", "--json"\]/);
   assert.match(swift, /\["fast-mode", "on", "--json"\]/);
@@ -528,13 +571,13 @@ test('Menu Bar exposes truthful accessible Fast state with direct on and off act
   assert.match(swift, /setAccessibilityLabel\("Current Codex Fast state"\)/);
   assert.match(swift, /setAccessibilityLabel\("Turn Codex Fast on"\)/);
   assert.match(swift, /setAccessibilityLabel\("Turn Codex Fast off"\)/);
-  assert.match(providers, /\["fast-mode", "status", "--json"\]/);
+  assert.match(providersSurface, /\["fast-mode", "status", "--json"\]/);
   assert.match(providers, /Official Codex speed option: 1\.5× faster on supported models\./);
   assert.match(providers, /not the selected model, Codex-Spark, or reasoning effort/);
   assert.match(providers, /GPT-5\.6 and GPT-5\.5 use credits at 2\.5× Standard; GPT-5\.4 uses 2× Standard/);
   assert.match(providers, /API-key Codex uses API token pricing instead/);
   assert.match(providers, /API Priority processing is a separate billing path/);
-  assert.match(providers, /Codex Fast: unavailable — no state was assumed\./);
+  assert.match(providersSurface, /Codex Fast: unavailable — no state was assumed\./);
 });
 
 test('operation coordinator persists redacted bounded-tail receipts and excludes concurrent mutations', () => {
@@ -544,7 +587,9 @@ test('operation coordinator persists redacted bounded-tail receipts and excludes
   }
   assert.match(swift, /schema: "sks\.operation\.v1"/);
   assert.match(swift, /\.posixPermissions: 0o600/);
-  assert.match(swift, /Data\(data\.suffix\(effectiveOutputLimit\)\)/);
+  assert.match(swift, /let data = self\.readBoundedOutput\(/);
+  assert.match(swift, /tail = Data\(tail\.suffix\(limit\)\)/);
+  assert.doesNotMatch(swift, /readDataToEndOfFile\(\)/);
   assert.match(swift, /max\(1024, min\(1024 \* 1024, maxOutputBytes \?\? outputLimit\)\)/);
   assert.match(swift, /private var activeMutation: \(id: String, group: String\)\?/);
   assert.match(swift, /if mutationGroup != nil, activeMutation != nil \{ return nil \}/);
@@ -570,7 +615,7 @@ test('UserNotifications declares all categories/actions, redacts public bodies, 
   assert.doesNotMatch(swift, /display notification|osascript/);
 });
 
-test('Remote Coding page recommends external Orca without runtime integration or a dependency', () => {
+test('Remote Coding page keeps Orca external while Telegram runs only in the existing menu-bar process', () => {
   const swift = source();
   const overview = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'OverviewViewController.swift'), 'utf8');
   const sidebar = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'SidebarItem.swift'), 'utf8');
@@ -593,8 +638,10 @@ test('Remote Coding page recommends external Orca without runtime integration or
   assert.match(remote, /NSWorkspace\.shared\.open\(Self\.websiteURL\)/);
   assert.match(remote, /NSWorkspace\.shared\.open\(Self\.sourceURL\)/);
   assert.doesNotMatch(remote, /ProcessClient|OperationCoordinator|URLSession|Process\(/);
-  assert.doesNotMatch(processClient, /bot-token|Telegram|telegram/);
-  assert.doesNotMatch(swift, /Telegram|telegram|RemoteTelegram|TelegramHub/);
+  assert.doesNotMatch(remote, /bot-token|Telegram|telegram/);
+  assert.match(swift, /TelegramRuntimeFactory\.make\(processClient: processClient\)/);
+  assert.match(swift, /telegramService\?\.stopAndWait\(timeout: 2\)/);
+  assert.doesNotMatch(swift, /RemoteTelegram|TelegramHub/);
   for (const removed of [
     'TelegramHubSupervisor.swift',
     'RemoteTelegramViewController.swift',
@@ -645,10 +692,15 @@ test('MCP Control Center exposes scoped CRUD, health, OAuth, backups, policy edi
 test('update UI reads the v3 snapshot and refreshes only through explicit refresh commands', () => {
   const swift = source();
   assert.match(swift, /\.sneakoscope-global\/cache\/update-status\.json/);
-  assert.match(swift, /\["update", "status", "--json"\]/);
-  assert.match(swift, /\["update", "status", "--refresh", "--json"\]/);
-  assert.match(swift, /\["update", "review", "--json"\]/);
-  assert.match(swift, /\["update", "now", "--json"\]/);
+  assert.match(swift, /\["update", "status", "--project-root", AppRuntime\.canonicalProjectRoot, "--json"\]/);
+  assert.match(swift, /\["update", "status", "--refresh", "--project-root", AppRuntime\.canonicalProjectRoot, "--json"\]/);
+  assert.match(swift, /\["update", "review"\] \+ Self\.projectContext \+ \["--json"\]/);
+  assert.match(swift, /\["update", "now", "--version", reviewed\.target, "--registry", reviewed\.registry\]/);
+  assert.match(swift, /let projectRoot = json\["project_root"\] as\? String,[\s\S]*projectRoot == AppRuntime\.canonicalProjectRoot/);
+  assert.match(swift, /canonicalRegistry\(registry\)[\s\S]*canonicalRegistry == registry/);
+  assert.match(swift, /expectedProjectRoot: AppRuntime\.canonicalProjectRoot/);
+  assert.match(swift, /static let canonicalProjectRoot = sksCanonicalFilesystemPath\(projectRoot\)/);
+  assert.match(swift, /resolvingSymlinksInPath\(\)\.standardizedFileURL\.path[\s\S]*Darwin\.realpath/);
   assert.match(swift, /Update review cancelled\. No staged update was applied\./);
   assert.match(swift, /state: \.cancelled/);
   assert.match(swift, /Timer\.scheduledTimer\(withTimeInterval: 30, repeats: true\).*refreshLocalState\(\)/s);
@@ -672,7 +724,7 @@ test('Updates exposes a guarded Codex CLI update action and refreshes its snapsh
   const actionFlow = updates.slice(actionStart, nextMethodOffset >= 0 ? actionStart + actionName.length + nextMethodOffset : updates.length);
   assert.match(actionFlow, /run\(\["codex", "update", "--json"\], kind: "[^"]+", group: "[^"]+"/);
   assert.match(actionFlow, /reloadSnapshot\(\)/);
-  assert.match(updates, /operations\.begin\(kind: kind, mutationGroup: group/);
+  assert.match(updates, /operations\.begin\([\s\S]*kind: kind,[\s\S]*mutationGroup: group,[\s\S]*targetVersion: reviewedUpdate\?\.target,[\s\S]*projectRoot: reviewedUpdate\?\.projectRoot,[\s\S]*registry: reviewedUpdate\?\.registry/);
   assert.match(updates, /codexUpdateButton\?\.isEnabled\s*=\s*!value/);
   assert.match(updates, /codexUpdateResultIsSuccessful[\s\S]{0,900}!result\.truncated[\s\S]{0,900}sks\.codex-cli-update-result\.v1[\s\S]{0,500}\["ok"\]\s+as\?\s+Bool\s*==\s*true/);
   assert.match(updates, /args\.contains\("--refresh"\)\s*\?\s*NativeView\.mutationTimeout\s*:\s*NativeView\.statusTimeout/);

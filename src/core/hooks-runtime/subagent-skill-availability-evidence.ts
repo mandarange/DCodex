@@ -206,7 +206,14 @@ async function clearMatchingEmergencyDenials(
 
 async function pruneEmergencyDenials(root: string, artifactDir: string): Promise<boolean> {
   const dir = emergencyDenialDir(artifactDir);
-  const records = await readEmergencyDenialsWithFiles(root, artifactDir);
+  // One writer may temporarily create the entry immediately above the retained
+  // bound. Admit exactly that transition so it can be pruned back to the hard
+  // live-thread limit instead of leaving the directory permanently overflowed.
+  const records = await readEmergencyDenialsWithFiles(
+    root,
+    artifactDir,
+    MAX_EMERGENCY_DENIALS + 1
+  );
   if (records === null) return false;
   const ordered = records
     .filter((entry): entry is { file: string; blocker: SubagentSkillAvailabilityBlocker } => (
@@ -236,7 +243,8 @@ async function readEmergencyDenials(
 
 async function readEmergencyDenialsWithFiles(
   root: string,
-  artifactDir: string
+  artifactDir: string,
+  maxEntries = MAX_EMERGENCY_DENIALS
 ): Promise<Array<{ file: string; blocker: SubagentSkillAvailabilityBlocker | null }> | null> {
   const dir = emergencyDenialDir(artifactDir);
   let inspected;
@@ -247,7 +255,7 @@ async function readEmergencyDenialsWithFiles(
   }
   if (!inspected.exists) return [];
   if (inspected.leafSymlink || !inspected.stat?.isDirectory()) return null;
-  const names = await boundedDirectoryNames(dir);
+  const names = await boundedDirectoryNames(dir, maxEntries);
   if (names === null) return null;
   const records: Array<{ file: string; blocker: SubagentSkillAvailabilityBlocker | null }> = [];
   for (const name of names.filter((item) => /^deny-[a-f0-9]{64}\.json$/.test(item)).sort()) {

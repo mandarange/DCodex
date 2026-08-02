@@ -150,3 +150,39 @@ test('mad-sks status prints the gate verdict word as the first line in human-rea
   }
   assert.equal(logs[0], 'fail');
 });
+
+test('mad-sks proof reads the current state path after legacy current.json cleanup', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-mad-sks-proof-current-state-'));
+  const missionId = 'M-mad-sks-proof-current-state';
+  const mission = path.join(root, '.sneakoscope', 'missions', missionId);
+  const currentState = path.join(root, '.sneakoscope', 'state', 'current.json');
+  const proof = {
+    schema: 'sks.mad-sks-proof-evidence.v1',
+    ok: true,
+    mission_id: missionId
+  };
+  await fsp.mkdir(path.dirname(currentState), { recursive: true });
+  await fsp.mkdir(mission, { recursive: true });
+  await fsp.writeFile(currentState, JSON.stringify({ mission_id: missionId }, null, 2));
+  await fsp.writeFile(path.join(mission, 'mad-sks-proof-evidence.json'), JSON.stringify(proof, null, 2));
+
+  const originalCwd = process.cwd();
+  const originalExitCode = process.exitCode;
+  const originalLog = console.log;
+  const logs: string[] = [];
+  console.log = (...args: any[]) => { logs.push(args.map(String).join(' ')); };
+  try {
+    process.chdir(root);
+    process.exitCode = 0;
+    await madHighCommand(['proof', '--json']);
+  } finally {
+    console.log = originalLog;
+    process.chdir(originalCwd);
+    process.exitCode = originalExitCode;
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+
+  const printed = JSON.parse(logs.find((line) => line.trim().startsWith('{')) || '{}');
+  assert.equal(printed.schema, proof.schema);
+  assert.equal(printed.mission_id, missionId);
+});

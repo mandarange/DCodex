@@ -195,6 +195,197 @@ async function fetchCodexLbResponse(fetchImpl: any, endpoint: any, apiKey: any, 
   }
 }
 
+const CODEX_LB_CONNECT_TEST_MAX_OUTPUT_TOKENS = 32;
+const CODEX_LB_CONNECT_TEST_MAX_RESULT_CHARS = 256;
+const CODEX_LB_CONNECT_TEST_MAX_ERROR_CHARS = 512;
+const CODEX_LB_CONNECT_TEST_TIMEOUT_MS = 15_000;
+
+function boundedText(value: any, maxChars: number) {
+  const text = String(value || '').trim();
+  return text.length <= maxChars ? text : text.slice(0, maxChars);
+}
+
+function codexLbCompletedResponse(json: any, events: any[] = []) {
+  if (json?.response && typeof json.response === 'object') return json.response;
+  if (json?.data?.response && typeof json.data.response === 'object') return json.data.response;
+  if (json?.data && typeof json.data === 'object') return json.data;
+  if (json && typeof json === 'object') return json;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === 'response.completed' && event?.response && typeof event.response === 'object') {
+      return event.response;
+    }
+  }
+  return null;
+}
+
+function codexLbOutputText(response: any, events: any[] = []) {
+  const parts: string[] = [];
+  for (const output of Array.isArray(response?.output) ? response.output : []) {
+    for (const content of Array.isArray(output?.content) ? output.content : []) {
+      if (content?.type === 'output_text' && typeof content.text === 'string' && content.text.trim()) {
+        parts.push(content.text.trim());
+      }
+    }
+  }
+  if (parts.length === 0) {
+    for (const event of events) {
+      if (event?.type === 'response.output_text.done' && typeof event.text === 'string' && event.text.trim()) {
+        parts.push(event.text.trim());
+      }
+    }
+  }
+  return parts.join('\n').trim();
+}
+
+function boundedCodexLbUsage(usage: any) {
+  const tokenCount = (value: any) => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  return {
+    input_tokens: tokenCount(usage?.input_tokens),
+    output_tokens: tokenCount(usage?.output_tokens),
+    total_tokens: tokenCount(usage?.total_tokens),
+    reasoning_tokens: tokenCount(usage?.output_tokens_details?.reasoning_tokens)
+  };
+}
+
+function codexLbConnectTestFailure(status: string, extra: any = {}) {
+  return {
+    schema: 'sks.codex-lb-connect-test.v1',
+    ok: false,
+    status,
+    response_id: null,
+    model: extra.model || null,
+    latency_ms: extra.latency_ms ?? null,
+    usage: extra.usage || null,
+    result: null,
+    result_truncated: false,
+    http_status: extra.http_status ?? null,
+    blockers: Array.isArray(extra.blockers) ? extra.blockers : [status],
+    ...(extra.error ? { error: extra.error } : {})
+  };
+}
+
+export async function testCodexLbConnection(status: any = {}, opts: any = {}) {
+  const providerSelected = status?.selected === true || status?.provider?.selected === true;
+  if (opts.requireSelected === true && !providerSelected) {
+    return codexLbConnectTestFailure('provider_unselected', {
+      blockers: ['codex_lb_provider_not_selected']
+    });
+  }
+  const credentialBindingBlockers = Array.isArray(opts.credentialBindingBlockers)
+    ? opts.credentialBindingBlockers.map((value: any) => boundedText(value, 128)).filter(Boolean)
+    : [];
+  if (credentialBindingBlockers.length > 0) {
+    return codexLbConnectTestFailure('credential_binding_drift', { blockers: credentialBindingBlockers });
+  }
+  if (status.provider_base_url_matches_credential !== true) {
+    return codexLbConnectTestFailure('provider_base_url_mismatch', {
+      blockers: ['codex_lb_provider_base_url_mismatch']
+    });
+  }
+  if (status.provider_contract_ok !== true) {
+    return codexLbConnectTestFailure('provider_contract_drift', {
+      blockers: ['codex_lb_provider_contract_drift']
+    });
+  }
+
+  const baseUrl = opts.baseUrl || status.base_url;
+  const endpoint = codexLbResponsesEndpoint(baseUrl);
+  if (!endpoint) return codexLbConnectTestFailure('missing_base_url');
+  const transportBlocker = codexLbBaseUrlSecurityBlocker(baseUrl);
+  if (transportBlocker) return codexLbConnectTestFailure('transport_blocked', { blockers: [transportBlocker] });
+
+  const env = opts.env || process.env;
+  const home = opts.home || env.HOME || os.homedir();
+  const apiKey = opts.apiKey || parseCodexLbEnvKey(await readText(opts.envPath || status.env_path || codexLbEnvPath(home), ''));
+  if (!apiKey) return codexLbConnectTestFailure('missing_env_key');
+  const model = String(opts.model || env.SKS_CODEX_MODEL || env.CODEX_MODEL || '').trim();
+  if (!model) return codexLbConnectTestFailure('model_unselected');
+  if (model.length > 128) return codexLbConnectTestFailure('model_invalid');
+  const fetchImpl = opts.fetch || globalThis.fetch;
+  if (typeof fetchImpl !== 'function') return codexLbConnectTestFailure('fetch_unavailable', { model });
+
+  const timeoutMs = Number(opts.timeoutMs || env.SKS_CODEX_LB_CONNECT_TEST_TIMEOUT_MS || CODEX_LB_CONNECT_TEST_TIMEOUT_MS);
+  const body = {
+    model,
+    input: 'Reply OK.',
+    store: false,
+    reasoning: { effort: 'low' },
+    max_output_tokens: CODEX_LB_CONNECT_TEST_MAX_OUTPUT_TOKENS
+  };
+  const nowMs = typeof opts.nowMs === 'function' ? opts.nowMs : Date.now;
+  const startedAt = nowMs();
+  const fetched = await fetchCodexLbResponse(fetchImpl, endpoint, apiKey, body, timeoutMs);
+  const latencyMs = Math.max(0, Math.round(nowMs() - startedAt));
+  if (!fetched.ok) {
+    const error = redactSecretText(
+      fetched.error_payload?.error?.message
+        || fetched.error_payload?.response?.error?.message
+        || fetched.text
+        || 'codex-lb Responses request failed',
+      [apiKey]
+    );
+    return codexLbConnectTestFailure('request_failed', {
+      model,
+      latency_ms: latencyMs,
+      http_status: fetched.status,
+      error: boundedText(error, CODEX_LB_CONNECT_TEST_MAX_ERROR_CHARS)
+    });
+  }
+
+  const response = codexLbCompletedResponse(fetched.json, fetched.events);
+  const responseId = boundedText(codexLbResponseId(response), 128);
+  const responseModel = boundedText(response?.model || model, 128);
+  const usage = boundedCodexLbUsage(response?.usage);
+  if (!responseId) {
+    return codexLbConnectTestFailure('missing_response_id', {
+      model: responseModel,
+      latency_ms: latencyMs,
+      http_status: fetched.status,
+      usage
+    });
+  }
+  if (response?.error) {
+    return codexLbConnectTestFailure('response_error', {
+      model: responseModel,
+      latency_ms: latencyMs,
+      http_status: fetched.status,
+      usage,
+      error: boundedText(redactSecretText(response.error?.message || response.error, [apiKey]), CODEX_LB_CONNECT_TEST_MAX_ERROR_CHARS)
+    });
+  }
+  if (response?.status !== 'completed') {
+    return codexLbConnectTestFailure('response_not_completed', {
+      model: responseModel,
+      latency_ms: latencyMs,
+      http_status: fetched.status,
+      usage
+    });
+  }
+  const outputText = codexLbOutputText(response, fetched.events);
+  if (!outputText) {
+    return codexLbConnectTestFailure('empty_result', {
+      model: responseModel,
+      latency_ms: latencyMs,
+      http_status: fetched.status,
+      usage
+    });
+  }
+  return {
+    schema: 'sks.codex-lb-connect-test.v1',
+    ok: true,
+    status: 'connected',
+    response_id: responseId,
+    model: responseModel,
+    latency_ms: latencyMs,
+    usage,
+    result: boundedText(outputText, CODEX_LB_CONNECT_TEST_MAX_RESULT_CHARS),
+    result_truncated: outputText.length > CODEX_LB_CONNECT_TEST_MAX_RESULT_CHARS,
+    http_status: fetched.status,
+    blockers: []
+  };
+}
+
 export async function checkCodexLbResponseChain(status: any = {}, opts: any = {}) {
   const env = opts.env || process.env;
   if (!codexLbChainCheckEnabled(env) && !opts.force) return { ok: true, status: 'skipped', skipped: true, reason: 'SKS_CODEX_LB_CHAIN_CHECK=0' };

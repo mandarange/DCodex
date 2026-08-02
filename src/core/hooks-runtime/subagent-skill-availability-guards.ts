@@ -11,13 +11,15 @@ import {
 import {
   ADMISSION_SCHEMA,
   GUARD_DIR,
+  MAX_GUARD_DIRECTORY_ENTRIES,
   MAX_LIFECYCLE_GUARD_BYTES,
-  MAX_LIFECYCLE_GUARD_ENTRIES,
+  MAX_LIFECYCLE_THREADS,
   MAX_SUBAGENT_PLAN_BYTES,
   SUBAGENT_ADMISSION_BLOCKER_RE,
   SubagentSkillAvailabilityGuardError,
   type BoundedJsonResult,
   type GuardRoot,
+  type GuardRunBinding,
   type SubagentSkillAvailabilityAdmission
 } from './subagent-skill-availability-contract.js';
 
@@ -73,7 +75,8 @@ export async function readConfinedJson(boundary: string, file: string): Promise<
 
 export async function admissionGuardRoots(
   root: string,
-  artifactDir?: string | null
+  artifactDir?: string | null,
+  binding?: GuardRunBinding | null
 ): Promise<GuardRoot[]> {
   const projectRoot = path.resolve(root);
   const canonicalRoot = await fsp.realpath(projectRoot);
@@ -87,14 +90,34 @@ export async function admissionGuardRoots(
     }] : []),
     { root: homeGuardDir(home, canonicalRoot), boundary: home, missionIndependent: true }
   ];
+  const missionId = String(binding?.missionId || '').trim();
+  const workflowRunId = String(binding?.workflowRunId || '').trim();
+  const runPartition = missionId && workflowRunId
+    ? `run-${sha256(JSON.stringify([missionId, workflowRunId]))}`
+    : null;
   const unique = new Map<string, GuardRoot>();
   for (const entry of roots) {
     const previous = unique.get(entry.root);
     if (!previous || (!previous.missionIndependent && entry.missionIndependent)) {
-      unique.set(entry.root, entry);
+      unique.set(entry.root, {
+        ...entry,
+        root: runPartition ? path.join(entry.root, runPartition) : entry.root
+      });
     }
   }
   return [...unique.values()];
+}
+
+export async function admissionGuardRootsWithLegacyMirrors(
+  root: string,
+  artifactDir: string | null | undefined,
+  binding: GuardRunBinding
+): Promise<{ scoped: GuardRoot[]; legacy: GuardRoot[] }> {
+  const [scoped, legacy] = await Promise.all([
+    admissionGuardRoots(root, artifactDir, binding),
+    admissionGuardRoots(root, artifactDir)
+  ]);
+  return { scoped, legacy };
 }
 
 export async function writeAdmissionPair(
@@ -124,7 +147,20 @@ export async function readAdmissionPair(
     const threadFile = threadGuardPath(root.root, expectedThreadHash);
     const threadAdmission = await readAdmission(threadFile, root.boundary);
     if (!turnAdmission && !threadAdmission) return null;
-    if (!turnAdmission || !threadAdmission) throw invalidGuard(true);
+    if (!turnAdmission && threadAdmission) {
+      if (threadAdmission.thread_id_hash !== expectedThreadHash) throw invalidGuard(true);
+      const currentTurnPartiallyPersisted = threadAdmission.session_scope_hash === expectedSessionHash
+        && threadAdmission.turn_id_hash === expectedTurnHash;
+      if (currentTurnPartiallyPersisted) throw invalidGuard(true);
+      // A reused official thread can begin a later turn without another
+      // SubagentStart. Its stable thread guard may therefore still identify
+      // the prior turn while the new turn has no pair yet. Treat that exact
+      // shape as missing admission so the bounded active-run recovery path can
+      // re-resolve the managed skills and publish a fresh pair.
+      return null;
+    }
+    if (turnAdmission && !threadAdmission) throw invalidGuard(true);
+    if (!turnAdmission || !threadAdmission) return null;
     validateAdmissionBinding(turnAdmission, expectedThreadHash, expectedSessionHash, expectedTurnHash);
     validateAdmissionBinding(threadAdmission, expectedThreadHash, expectedSessionHash, expectedTurnHash);
     if (admissionFingerprint(turnAdmission) !== admissionFingerprint(threadAdmission)) {
@@ -147,6 +183,19 @@ export async function readAdmissionPair(
     throw invalidGuard(true);
   }
   return turnAdmission;
+}
+
+export async function readAdmissionForThread(
+  root: GuardRoot,
+  expectedThreadHash: string
+): Promise<SubagentSkillAvailabilityAdmission | null> {
+  const admission = await readAdmission(
+    threadGuardPath(root.root, expectedThreadHash),
+    root.boundary
+  );
+  if (!admission) return null;
+  if (admission.thread_id_hash !== expectedThreadHash) throw invalidGuard(true);
+  return admission;
 }
 
 async function readAdmission(
@@ -175,10 +224,14 @@ export async function blockedRunAdmissions(
   if (inspected.leafSymlink || !inspected.stat?.isDirectory()) {
     return ['subagent_skill_availability_guard_invalid'];
   }
-  const names = await boundedDirectoryNames(guardRoot.root);
+  const names = await boundedDirectoryNames(guardRoot.root, MAX_GUARD_DIRECTORY_ENTRIES);
   if (names === null) return ['subagent_skill_availability_guard_invalid'];
   const blockers: string[] = [];
-  for (const name of names.filter((item) => /^thread-[a-f0-9]{64}\.json$/.test(item)).sort()) {
+  const threadNames = names.filter((item) => /^thread-[a-f0-9]{64}\.json$/.test(item)).sort();
+  if (threadNames.length > MAX_LIFECYCLE_THREADS) {
+    return ['subagent_skill_availability_guard_invalid'];
+  }
+  for (const name of threadNames) {
     let admission: SubagentSkillAvailabilityAdmission | null;
     try {
       admission = await readAdmission(path.join(guardRoot.root, name), guardRoot.boundary);
@@ -253,14 +306,17 @@ export async function safeRemoveGuard(file: string, boundary: string): Promise<v
   }
 }
 
-export async function boundedDirectoryNames(directory: string): Promise<string[] | null> {
+export async function boundedDirectoryNames(
+  directory: string,
+  maxEntries = MAX_GUARD_DIRECTORY_ENTRIES
+): Promise<string[] | null> {
   let handle;
   try {
     handle = await fsp.opendir(directory);
     const names: string[] = [];
     for await (const entry of handle) {
       names.push(entry.name);
-      if (names.length > MAX_LIFECYCLE_GUARD_ENTRIES) return null;
+      if (names.length > maxEntries) return null;
     }
     return names.sort((left, right) => left.localeCompare(right));
   } catch {

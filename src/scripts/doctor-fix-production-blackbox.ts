@@ -18,7 +18,7 @@ const startupConfig = parse(startupText);
 const startupAgents = (startupConfig as any).agents || {};
 const startupAgentFiles = (await fs.readdir(path.join(root, '.codex', 'agents'))).sort();
 assertGate(startup.ok === true, 'doctor production startup repair must pass', startup);
-assertGate((startupAgents.max_concurrent_threads_per_session === 12 || startupAgents.max_threads === 12) && startupAgents.max_depth === 1 && startupAgents.interrupt_message === true && startupAgents.enabled === true, 'doctor production startup repair must write official config defaults', startupAgents);
+assertGate(startupAgents.max_concurrent_threads_per_session === 256 && startupAgents.max_threads === undefined && startupAgents.max_depth === 1 && startupAgents.interrupt_message === true && startupAgents.enabled === true, 'doctor production startup repair must write official config defaults', startupAgents);
 const expectedRoleFiles = MANAGED_OFFICIAL_SUBAGENT_ROLES.map((role) => role.filename).sort();
 assertGate(startupAgentFiles.join(',') === expectedRoleFiles.join(','), 'doctor production startup repair must create exactly the official managed role TOMLs', startupAgentFiles);
 assertGate(startupText.includes('[agents.analysis_scout]') && startupText.includes('config_file = ".codex/agents/stale.toml"'), 'doctor production startup repair must preserve legacy config tables', startupText);

@@ -1,5 +1,10 @@
-export const DEFAULT_NARUTO_MAX_THREADS = 12
-export const HARD_NARUTO_MAX_THREADS = 32
+export const DEFAULT_NARUTO_MAX_THREADS = 256
+/**
+ * Absolute structural frame ceiling (hard safety cap, never a spawn target).
+ * Raised from 32 to 256 so mass fan-out can schedule multi-wave under one
+ * frame budget; real per-lane floors (memory/fd/cpu/rate-limit) still apply downstream.
+ */
+export const HARD_NARUTO_MAX_THREADS = 256
 export const DEFAULT_NARUTO_REQUESTED_SUBAGENTS = 4
 /** Parent always keeps one frame-budget slot for integration — never treat this as spawn target. */
 export const DEFAULT_NARUTO_PARENT_THREAD_RESERVATION = 1
@@ -15,6 +20,7 @@ export type SubagentCapacityFactor =
   | 'disjoint_ownership'
   | 'verifier_capacity'
   | 'tool_concurrency'
+  | 'external_codex_host_cap'
   | 'available_thread_slots'
   | 'marginal_useful_workers'
   | 'requested_subagents'
@@ -26,6 +32,7 @@ export interface SubagentCapacityController {
   available_thread_slots: number
   limiting_factors: SubagentCapacityFactor[]
   bounds: Record<SubagentCapacityFactor, number>
+  external_codex_host_cap_verification: 'verified' | 'unverified_external_host_cap'
   reservations: {
     parent_threads: number
     reviewer_threads: number
@@ -52,6 +59,8 @@ export interface SubagentThreadBudgetInput {
   disjointOwnershipCount?: number | undefined
   verifierCapacity?: number | undefined
   toolConcurrency?: number | undefined
+  /** Measured host-owned child-thread limit. Omit when the host has not exposed one. */
+  externalCodexHostCap?: number | undefined
   activeThreadCount?: number | undefined
   parentReservedThreads?: number | undefined
   reviewerReservedThreads?: number | undefined
@@ -61,20 +70,19 @@ export interface SubagentThreadBudgetInput {
 
 /**
  * Naruto capacity ledger (one spawn path).
- * - `configuredMaxThreads` / max_threads = hard frame budget (cap), never a spawn target
+ * - `configuredMaxThreads` / max_threads = spawned-child slot cap, never a spawn target
  * - `requested` / agents = work-width target derived from ready DAG / operator intent
- * - Reservations shrink elastically so at least one child slot remains runnable
+ * - The root is outside this child-slot cap; subtracting it here would count it twice
+ * - Child reviewer reservations shrink elastically so at least one child slot remains runnable
  */
 export function resolveSubagentThreadBudget(input: SubagentThreadBudgetInput = {}): SubagentThreadBudget {
-  const requested = clamp(
+  const requested = boundedPositiveInteger(
     input.requested ?? input.independentSliceCount ?? DEFAULT_NARUTO_REQUESTED_SUBAGENTS,
-    1,
-    HARD_NARUTO_MAX_THREADS
+    'requested_subagents'
   )
-  const configured = clamp(
+  const configured = boundedPositiveInteger(
     input.configuredMaxThreads ?? DEFAULT_NARUTO_MAX_THREADS,
-    1,
-    HARD_NARUTO_MAX_THREADS
+    'max_threads'
   )
   const requestedParentThreads = clampNonNegative(
     input.parentReservedThreads ?? DEFAULT_NARUTO_PARENT_THREAD_RESERVATION,
@@ -85,17 +93,20 @@ export function resolveSubagentThreadBudget(input: SubagentThreadBudgetInput = {
     HARD_NARUTO_MAX_THREADS
   )
   const activeThreads = clampNonNegative(input.activeThreadCount ?? 0, HARD_NARUTO_MAX_THREADS)
-  // Keep ≥1 executable child slot under small caps (elastic reservation).
-  const reservationCapacity = Math.max(0, configured - activeThreads - 1)
-  const parentThreads = Math.min(requestedParentThreads, reservationCapacity)
-  const reviewerThreads = Math.min(requestedReviewerThreads, reservationCapacity - parentThreads)
-  const availableThreadSlots = Math.max(0, configured - parentThreads - reviewerThreads - activeThreads)
+  // `configured` already counts only children. The root reservation is reported
+  // for frame accounting but deliberately does not consume a child slot.
+  const parentThreads = requestedParentThreads
+  const reviewerReservationCapacity = Math.max(0, configured - activeThreads - 1)
+  const reviewerThreads = Math.min(requestedReviewerThreads, reviewerReservationCapacity)
+  const availableThreadSlots = Math.max(0, configured - reviewerThreads - activeThreads)
   const marginalUsefulThroughputPositive = input.marginalUsefulThroughputPositive !== false
+  const externalCodexHostCapVerified = input.externalCodexHostCap !== undefined
   const bounds: Record<SubagentCapacityFactor, number> = {
     ready_dag_width: optionalCapacity(input.readyDagWidth, requested),
     disjoint_ownership: optionalCapacity(input.disjointOwnershipCount, requested),
     verifier_capacity: optionalCapacity(input.verifierCapacity, requested),
     tool_concurrency: optionalCapacity(input.toolConcurrency, requested),
+    external_codex_host_cap: optionalCapacity(input.externalCodexHostCap, requested),
     available_thread_slots: availableThreadSlots,
     marginal_useful_workers: marginalUsefulThroughputPositive
       ? optionalCapacity(input.marginalUsefulWorkers, requested)
@@ -104,7 +115,10 @@ export function resolveSubagentThreadBudget(input: SubagentThreadBudgetInput = {
   }
   const selectedCapacity = Math.min(...Object.values(bounds))
   const limitingFactors = (Object.entries(bounds) as Array<[SubagentCapacityFactor, number]>)
-    .filter(([, value]) => value === selectedCapacity)
+    .filter(([factor, value]) => (
+      value === selectedCapacity
+      && (factor !== 'external_codex_host_cap' || externalCodexHostCapVerified)
+    ))
     .map(([factor]) => factor)
 
   return {
@@ -120,6 +134,9 @@ export function resolveSubagentThreadBudget(input: SubagentThreadBudgetInput = {
       available_thread_slots: availableThreadSlots,
       limiting_factors: limitingFactors,
       bounds,
+      external_codex_host_cap_verification: externalCodexHostCapVerified
+        ? 'verified'
+        : 'unverified_external_host_cap',
       reservations: {
         parent_threads: parentThreads,
         reviewer_threads: reviewerThreads,
@@ -131,10 +148,12 @@ export function resolveSubagentThreadBudget(input: SubagentThreadBudgetInput = {
   }
 }
 
-function clamp(value: unknown, minimum: number, maximum: number): number {
+function boundedPositiveInteger(value: unknown, label: string): number {
   const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return minimum
-  return Math.max(minimum, Math.min(maximum, Math.floor(parsed)))
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > HARD_NARUTO_MAX_THREADS) {
+    throw new RangeError(`${label}_must_be_integer_1_to_${HARD_NARUTO_MAX_THREADS}:${String(value)}`)
+  }
+  return parsed
 }
 
 function clampNonNegative(value: unknown, maximum: number): number {

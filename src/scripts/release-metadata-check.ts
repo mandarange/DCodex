@@ -216,6 +216,8 @@ assertGate(/npx --yes npm@11\.15\.0/.test(releaseReadinessDoc), 'release readine
 assertGate(/npm-stage-tarball-verifier\.js/.test(releaseReadinessDoc) && /--local-receipt/.test(releaseReadinessDoc) && /--local-tarball/.test(releaseReadinessDoc) && /--stage-receipt/.test(releaseReadinessDoc), 'release readiness must document the maintainer-local read-only verifier inputs');
 assertGate(pkg.scripts?.prepublishOnly === 'node ./dist/scripts/prepublish-release-check-or-fast.js', 'prepublishOnly must verify release proof during official npm publish');
 assertGate(pkg.scripts?.prepack === 'node ./dist/scripts/prepublish-release-check-or-fast.js --prepack-build', 'prepack must rebuild and reverify official npm publish output');
+assertGate(/publish-preflight\.js/.test(text('src/scripts/prepublish-release-check-or-fast.ts')), 'official npm publish must run the reproducibility preflight');
+assertGate(/check-publish-tag\.js/.test(text('src/scripts/prepublish-release-check-or-fast.ts')), 'official npm publish must verify the exact dist-tag');
 
 for (const file of requiredDocs) {
   const absolute = path.join(root, file);

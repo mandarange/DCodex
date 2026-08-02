@@ -21,7 +21,7 @@ async function fixture(t: TestContext, config: string) {
   return { root, codexHome, configPath }
 }
 
-test('Codex App Fast UI repair removes blank-separated SKS model locks but preserves active codex-lb selection', async (t) => {
+test('Codex App Fast UI repair removes blank-separated SKS model locks but reports retired codex-lb compatibility as blocked', async (t) => {
   const input = [
     'suppress_unstable_features_warning = true',
     '# SKS moved machine-local Codex config from .codex/config.toml',
@@ -60,15 +60,17 @@ test('Codex App Fast UI repair removes blank-separated SKS model locks but prese
       ok: true,
       models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
       blockers: []
-    }
+    },
+    desktopPickerEvidence: { state: 'verified' }
   } as any)
   const after = await fs.readFile(configPath, 'utf8')
   const globalAction = repaired.actions.find((action) => action.scope === 'codex_home')
 
-  assert.equal(repaired.ok, true)
+  assert.equal(repaired.ok, false)
   assert.equal(repaired.fast_selector, 'repaired')
   assert.equal(repaired.before_fast_selector, 'maybe_hidden_or_locked')
   assert.equal(repaired.after_fast_selector, 'available')
+  assert.ok(repaired.selected_provider_blockers.includes('desktop_dual_auth_compat_unavailable'))
   assert.deepEqual(globalAction?.removed_keys, ['model', 'model_reasoning_effort'])
   assert.match(after, /^model_provider = "codex-lb"$/m)
   assert.match(after, /^service_tier = "fast"$/m)
@@ -95,7 +97,7 @@ test('Codex App Fast UI repair removes blank-separated SKS model locks but prese
   assert.equal(second.actions.some((action) => action.changed), false)
 })
 
-test('Codex App Fast UI repair follows SKS provenance past unrelated managed comments and notify', async (t) => {
+test('Codex App Fast UI repair follows SKS provenance past unrelated managed comments while reporting retired compatibility', async (t) => {
   const input = [
     '# SKS moved machine-local Codex config from .codex/config.toml',
     '',
@@ -129,11 +131,13 @@ test('Codex App Fast UI repair follows SKS provenance past unrelated managed com
     codexHome,
     apply: true,
     env: { HOME: path.dirname(codexHome) },
-    codexLbModelCatalog: { ok: true, models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'], blockers: [] }
+    codexLbModelCatalog: { ok: true, models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'], blockers: [] },
+    desktopPickerEvidence: { state: 'verified' }
   } as any)
   const after = await fs.readFile(configPath, 'utf8')
 
-  assert.equal(repaired.ok, true)
+  assert.equal(repaired.ok, false)
+  assert.ok(repaired.selected_provider_blockers.includes('desktop_dual_auth_compat_unavailable'))
   assert.deepEqual(repaired.actions.find((action) => action.scope === 'codex_home')?.removed_keys, ['model', 'model_reasoning_effort'])
   assert.match(after, /^model_provider = "codex-lb"$/m)
   assert.match(after, /^notify = /m)
@@ -298,6 +302,42 @@ test('Fast UI repair fails closed when codex-lb is selected but its runtime cred
   assert.ok(repaired.selected_provider_blockers.includes('codex_lb_api_key_missing'))
   assert.ok(repaired.selected_provider_blockers.includes('codex_lb_base_url_missing'))
   assert.ok(repaired.blockers.includes('selected_provider:codex_lb_api_key_missing'))
+})
+
+test('Fast UI repair does not infer provider readiness from an empty blocker list without picker evidence', async (t) => {
+  const input = [
+    'model_provider = "codex-lb"',
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    'base_url = "https://lb.example.test/backend-api/codex"',
+    'wire_api = "responses"',
+    'env_key = "CODEX_LB_API_KEY"',
+    'supports_websockets = true',
+    'requires_openai_auth = false',
+    ''
+  ].join('\n')
+  const { root, codexHome } = await fixture(t, input)
+  await fs.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
+    "export CODEX_LB_BASE_URL='https://lb.example.test/backend-api/codex'",
+    "export CODEX_LB_API_KEY='fixture-secret'",
+    ''
+  ].join('\n'), { mode: 0o600 })
+
+  const repaired = await repairCodexAppFastUi(root, {
+    codexHome,
+    apply: true,
+    env: { HOME: path.dirname(codexHome) },
+    codexLbModelCatalog: {
+      ok: true,
+      models: ['gpt-5.6-sol'],
+      blockers: []
+    }
+  })
+
+  assert.deepEqual(repaired.selected_provider_blockers, [])
+  assert.equal(repaired.provider_model_ui.effective_ready, false)
+  assert.equal(repaired.provider_selector, 'manual_action_required')
+  assert.ok(repaired.blockers.includes('selected_provider:routing_or_picker_unverified'))
 })
 
 test('Codex App Fast UI repair preserves an active OpenRouter selection under migration markers', async (t) => {

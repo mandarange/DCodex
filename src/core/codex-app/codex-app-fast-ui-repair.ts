@@ -26,6 +26,7 @@ export async function repairCodexAppFastUi(root: string = process.cwd(), input: 
   reportPath?: string | null
   env?: NodeJS.ProcessEnv
   codexLbModelCatalog?: any
+  desktopPickerEvidence?: any
 } = {}) {
   const resolvedRoot = path.resolve(root)
   const home = codexHome(input.codexHome === undefined ? {} : { codexHome: input.codexHome })
@@ -88,7 +89,8 @@ export async function repairCodexAppFastUi(root: string = process.cwd(), input: 
     home: path.dirname(home),
     configPath: path.join(home, 'config.toml'),
     codexLbEnvPath: path.join(home, 'sks-codex-lb.env'),
-    ...(input.codexLbModelCatalog ? { codexLbModelCatalog: input.codexLbModelCatalog } : {})
+    ...(input.codexLbModelCatalog ? { codexLbModelCatalog: input.codexLbModelCatalog } : {}),
+    ...(input.desktopPickerEvidence ? { desktopPickerEvidence: input.desktopPickerEvidence } : {})
   })
   const changed = actions.some((action) => action.changed)
   const applied = actions.some((action) => action.status === 'repaired')
@@ -98,12 +100,16 @@ export async function repairCodexAppFastUi(root: string = process.cwd(), input: 
   const selectedProviderBlockers = Array.isArray(providerModelUi.selected_provider_blockers)
     ? providerModelUi.selected_provider_blockers
     : []
+  const selectedProviderReady = providerModelUi.effective_ready === true
   const safeAutoApply = changed && !requiresConfirmation
   const manual = changed && !input.apply
   const blockers = [
     ...(requiresConfirmation ? ['codex_app_fast_ui_repair_requires_confirmation'] : []),
     ...(manual && !safeAutoApply ? ['codex_app_fast_ui_repair_requires_explicit_apply'] : []),
     ...selectedProviderBlockers.map((blocker: string) => `selected_provider:${blocker}`),
+    ...(!selectedProviderReady && selectedProviderBlockers.length === 0
+      ? ['selected_provider:routing_or_picker_unverified']
+      : []),
     ...(after.indicators.secret_leak_suspected ? ['codex_app_ui_repair_secret_leak_suspected'] : [])
   ]
   const report = {
@@ -118,7 +124,7 @@ export async function repairCodexAppFastUi(root: string = process.cwd(), input: 
     unsafe_repair_reasons: [...new Set(unsafeReasons)],
     permissions_hardened: permissionsHardened,
     fast_selector: pending ? 'manual_action_required' : applied ? 'repaired' : before.indicators.fast_selector === 'maybe_hidden_or_locked' ? 'manual_action_required' : 'ok',
-    provider_selector: selectedProviderBlockers.length ? 'manual_action_required' : 'selected_provider_ready',
+    provider_selector: selectedProviderReady ? 'selected_provider_ready' : 'manual_action_required',
     provider_model_ui: providerModelUi,
     provider_actions: providerModelUi.ui_actions || [],
     provider_blockers: providerModelUi.blockers || [],

@@ -5,7 +5,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createMission, loadStateForSession, setCurrent } from '../../mission.js'
 import { evaluateHookPayload } from '../../hooks-runtime.js'
-import { OFFICIAL_SUBAGENT_PREPARATION_TRANSACTION } from '../../subagents/official-subagent-preparation.js'
+import {
+  OFFICIAL_SUBAGENT_PREPARATION_TRANSACTION,
+  SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_DIR
+} from '../../subagents/official-subagent-preparation.js'
 import { injectNextNarutoPreparationFailureForTest, narutoCommand } from '../naruto-command.js'
 
 test('App Naruto reuses the active mission bound to the current Codex thread state', async () => {
@@ -17,6 +20,7 @@ test('App Naruto reuses the active mission bound to the current Codex thread sta
   const oldStandalone = process.env.SKS_NARUTO_STANDALONE_CLI
   const oldHome = process.env.HOME
   const oldCodexHome = process.env.CODEX_HOME
+  const oldExitCode = process.exitCode
   const oldLog = console.log
   const oldWarn = console.warn
   try {
@@ -61,6 +65,51 @@ test('App Naruto reuses the active mission bound to the current Codex thread sta
     restoreEnv('SKS_NARUTO_STANDALONE_CLI', oldStandalone)
     restoreEnv('HOME', oldHome)
     restoreEnv('CODEX_HOME', oldCodexHome)
+    process.exitCode = oldExitCode
+    console.log = oldLog
+    console.warn = oldWarn
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('App Naruto blocks invalid explicit config before entering the delegation runner', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-naruto-app-config-blocker-'))
+  const threadId = 'thread-app-config-blocker'
+  const oldCwd = process.cwd()
+  const oldThreadId = process.env.CODEX_THREAD_ID
+  const oldGlobalRoot = process.env.SKS_GLOBAL_ROOT
+  const oldHome = process.env.HOME
+  const oldCodexHome = process.env.CODEX_HOME
+  const oldExitCode = process.exitCode
+  const oldLog = console.log
+  const oldWarn = console.warn
+  try {
+    process.chdir(root)
+    process.env.CODEX_THREAD_ID = threadId
+    process.env.SKS_GLOBAL_ROOT = root
+    process.env.HOME = path.join(root, 'home')
+    process.env.CODEX_HOME = path.join(root, 'home', '.codex')
+    await fs.mkdir(path.join(root, '.codex'), { recursive: true })
+    await fs.writeFile(
+      path.join(root, '.codex', 'config.toml'),
+      '[agents]\nmax_concurrent_threads_per_session = 257\n'
+    )
+    console.log = () => undefined
+    console.warn = () => undefined
+
+    const result: any = await narutoCommand(['run', 'must not delegate', '--json'])
+    assert.equal(result.status, 'blocked')
+    assert.ok(result.blockers.includes(
+      'project_official_subagent_max_threads_exceeds_hard_cap:257:256'
+    ))
+    assert.equal(result.started_subagents, undefined)
+  } finally {
+    process.chdir(oldCwd)
+    restoreEnv('CODEX_THREAD_ID', oldThreadId)
+    restoreEnv('SKS_GLOBAL_ROOT', oldGlobalRoot)
+    restoreEnv('HOME', oldHome)
+    restoreEnv('CODEX_HOME', oldCodexHome)
+    process.exitCode = oldExitCode
     console.log = oldLog
     console.warn = oldWarn
     await fs.rm(root, { recursive: true, force: true })
@@ -108,6 +157,9 @@ test('a reused App Naruto mission resets stale completion artifacts and binds a 
     await fs.writeFile(path.join(dir, 'naruto-gate.json'), JSON.stringify({ schema: 'sks.naruto-gate.v1', passed: true, workflow_run_id: firstPlan.workflow_run_id }))
     await fs.writeFile(path.join(dir, 'completion-proof.json'), JSON.stringify({ mission_id: first.mission_id, evidence: { route_gate: { workflow_run_id: firstPlan.workflow_run_id } } }))
     await fs.writeFile(path.join(dir, 'completion-proof.md'), `# stale proof ${firstPlan.workflow_run_id}\n`)
+    const staleCaptureDir = path.join(dir, SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_DIR, 'old-run')
+    await fs.mkdir(staleCaptureDir, { recursive: true })
+    await fs.writeFile(path.join(staleCaptureDir, 'old-failure.json'), '{}\n')
     await setCurrent(root, {
       reflection_invalidation_required: true,
       reflection_invalidated_at: 'stale-r1-reflection',
@@ -135,6 +187,7 @@ test('a reused App Naruto mission resets stale completion artifacts and binds a 
     await assert.rejects(fs.access(path.join(dir, 'subagent-parent-summary.json')))
     await assert.rejects(fs.access(path.join(dir, 'completion-proof.json')))
     await assert.rejects(fs.access(path.join(dir, 'completion-proof.md')))
+    await assert.rejects(fs.access(path.join(dir, SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_DIR)))
     assert.equal(state.official_subagent_run_id, secondPlan.workflow_run_id)
     assert.equal(state.reflection_invalidation_required, false)
     assert.equal(state.reflection_invalidated_at, null)

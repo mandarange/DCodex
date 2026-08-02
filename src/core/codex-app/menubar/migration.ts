@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { nowIso, readText, runProcess, sha256, which, writeTextAtomic } from '../../fsx.js';
+import { exists, nowIso, readText, runProcess, sha256, which, writeTextAtomic } from '../../fsx.js';
 import {
   ensureConfinedDirectory,
   inspectConfinedPath,
@@ -118,7 +118,12 @@ export async function cleanupRetiredRemoteBridgeLaunchAgent(opts: {
         maxOutputBytes: 16 * 1024
       }).catch((error: unknown) => processFailure(error))]
     : [];
-  if (inspected.exists) {
+  // `launchctl print` is the authoritative loaded-state probe for this exact
+  // label. On macOS, booting out an existing plist by path after that probe
+  // has already proved the service absent can fail with error 5/113. Treating
+  // that redundant failure as a stop failure prevents removal of the verified
+  // retired plist and blocks every later Menu Bar repair.
+  if (serviceLoaded && inspected.exists) {
     attempts.push(await run(launchctl, ['bootout', domain, launchAgentPath], {
       timeoutMs: 5_000,
       maxOutputBytes: 16 * 1024
@@ -280,12 +285,15 @@ export function isManagedRetiredRemoteBridgeLaunchAgent(source: string): boolean
 export async function cleanupMacLaunchSecretEnvironment(opts: {
   env?: NodeJS.ProcessEnv;
   force?: boolean;
+  launchctlBin?: string;
+  runProcessImpl?: typeof runProcess;
 } = {}): Promise<SecretLaunchEnvCleanupResult> {
   if (process.platform !== 'darwin' && !opts.force) {
     return { ok: true, status: 'not_macos', variables: [...SECRET_LAUNCH_ENV_KEYS], cleaned: [], failed: [], next_actions: [] };
   }
   const env = opts.env || process.env;
-  const launchctl = env.SKS_MENUBAR_LAUNCHCTL || await which('launchctl').catch(() => null) || '/bin/launchctl';
+  const launchctl = opts.launchctlBin
+    || (await exists('/bin/launchctl') ? '/bin/launchctl' : null);
   if (!launchctl) {
     return {
       ok: false, status: 'launchctl_missing', variables: [...SECRET_LAUNCH_ENV_KEYS], cleaned: [],
@@ -295,8 +303,16 @@ export async function cleanupMacLaunchSecretEnvironment(opts: {
   }
   const cleaned: string[] = [];
   const failed: Array<{ key: string; error: string }> = [];
+  const childEnv = { ...env };
+  for (const key of SECRET_LAUNCH_ENV_KEYS) delete childEnv[key];
+  const run = opts.runProcessImpl || runProcess;
   for (const key of SECRET_LAUNCH_ENV_KEYS) {
-    const result = await runProcess(launchctl, ['unsetenv', key], { timeoutMs: 3_000, maxOutputBytes: 8 * 1024 })
+    const result = await run(launchctl, ['unsetenv', key], {
+      timeoutMs: 3_000,
+      maxOutputBytes: 8 * 1024,
+      env: childEnv,
+      envMode: 'replace'
+    })
       .catch((error: unknown) => ({ code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) }));
     if (result.code === 0) cleaned.push(key);
     else failed.push({ key, error: String(result.stderr || result.stdout || 'launchctl unsetenv failed').trim() });
@@ -325,6 +341,7 @@ function launchdServiceAbsent(result: {
   timedOut?: boolean;
 }): boolean {
   if (result.timedOut) return false;
-  return /could not find service|no such (?:process|file)|not found|not loaded|does not exist/i
-    .test(`${result.stdout || ''}\n${result.stderr || ''}`);
+  const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+  return /could not find service|no such (?:process|file)|not found|not loaded|does not exist/i.test(output)
+    || (result.code === 113 && /\bbad request\b/i.test(output));
 }

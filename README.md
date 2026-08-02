@@ -22,7 +22,7 @@ Proof-first orchestration for Codex CLI, ChatGPT Desktop, AI coding agents, mult
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-This README documents package **SKS 8.0.0** — its own identity, read from `package.json` and verified by the release gate, not advice about what to install.
+This README documents package **SKS 8.0.3** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
 
 Use the official latest stable SKS and Codex CLI releases. SKS stays version-agnostic: older hosts keep working where capabilities allow, while Menu Bar / Center induce updates to the latest stable build. Run `sks update-check` for what is installed and read the capability report for what is actually supported — feature availability is decided by capability probes, not by a version number printed in a document. It resolves managed SKS skills from the authoritative global install, preserves a runnable Naruto child slot when `max_threads=2`, and keeps Menu Bar repair transactional so stamped generations remain verifiable. Naruto uses stable opt-in multi-agent V2 when the host exposes it. Local code search is mode-separated (`sks search files|text|structure|symbol|context`); `context` is answered by the compiled TriWiki Context Graph with evidence paths rather than lexical guessing — see [docs/architecture/context-graph.md](docs/architecture/context-graph.md) and [docs/architecture/search-engine-target.md](docs/architecture/search-engine-target.md). See [CHANGELOG.md](CHANGELOG.md).
 
@@ -63,11 +63,25 @@ The SKS menu bar shows the installed Codex CLI version and latest known version.
 
 **Manage MCP Servers…** opens a native macOS manager for the global `~/.codex/config.toml`. It can add remote URL or local stdio servers, enable/disable existing entries, remove entries after confirmation, and refresh the current state. Mutations are lock-protected, backed up, TOML-validated, and written with mode `0600`; configured environment values and command arguments are never rendered in the list. Changes apply to new Codex sessions. The same plumbing is available through the canonical `sks mcp config list|get|add|edit|duplicate|enable|disable|remove|test|login|logout|backups|restore` surface for diagnostics and automation.
 
-### Remote coding: Orca (external option)
+### Remote coding: Telegram transport and Orca option
 
-SKS no longer provides a first-party Telegram coding bridge. If you want to monitor or steer coding work from another device, consider [Orca](https://github.com/stablyai/orca), an external MIT-licensed project that can launch Codex in a worktree. Orca is not bundled with SKS, supported by SKS, or required to use SKS; SKS adds no Orca dependency or configuration.
+SKS 8.0.3 restores a first-party Telegram Bot API transport for the existing
+typed remote-control contract. One bounded outbound `getUpdates` loop runs in
+the existing Menu Bar process, so it adds no daemon, inbound port, or tunnel.
+`sks telegram pair` enrolls an allowed chat through the existing secret store;
+unpaired chats receive no response, free-form shell input is never accepted,
+and destructive commands require actor-bound two-step confirmation and an audit
+receipt. Doctor readiness requires a real `getMe` round trip plus live-poller
+evidence. Release readiness additionally requires a real command/reply E2E from
+a cellular network; configuration, fixtures, and local-network tests do not
+satisfy that gate.
 
-Orca's mobile companion and Remote Orca Servers are beta. Their desktop/server runtime remains the source of truth and must keep running; remote access may require a private LAN or Tailscale path. See [the Orca migration and remote-coding guide](docs/orca-remote-coding.md) for scope, setup links, and former Telegram-user migration notes.
+[Orca](https://github.com/stablyai/orca) remains an external MIT-licensed
+option that can launch Codex in a worktree. It is not bundled with, supported
+by, or required by SKS, and SKS adds no Orca dependency or automatic migration.
+Orca's mobile companion and Remote Orca Servers are beta; the desktop/server
+runtime remains the source of truth and remote access may require a private LAN
+or Tailscale path. See [the Orca remote-coding guide](docs/orca-remote-coding.md).
 
 ## The Front Door
 
@@ -85,7 +99,25 @@ Orca's mobile companion and Remote Orca Servers are beta. Their desktop/server r
 
 `$sks-naruto` and `sks naruto run "task" --agents 8 --max-threads 12` use Codex official subagents. Standalone and Codex App tasks that request project-host database, spreadsheet, or render tools require the non-persistent `--trusted-project` flag after the operator reviews the checkout; an App session ID scopes evidence but does not grant trust. The parent is GPT-5.6 Sol Max. Tiny mechanical `worker` slices use Luna Max; ordinary UI, logic, backend, and native coding uses Sol High; review, testing, debugging, architecture, integration, security, database, research, release, and other judgment-sensitive work uses Sol Max; long-context scans and direct Computer Use, Browser/Chrome, or image-generation execution uses Terra Medium. Mixed execution/judgment work is split when possible, and unsplittable judgment defaults to Sol Max.
 
-Fresh SKS-owned project config enables Codex 0.145+ multi-agent V2 with `agents.max_concurrent_threads_per_session = 12`, `features.multi_agent_v2.max_concurrent_threads_per_session = 13`, `max_depth = 1`, and `interrupt_message = true`. Nested delegation remains forbidden. Explicit user limits are preserved, and larger requests run in waves.
+Fresh SKS-owned project config enables Codex 0.145+ multi-agent V2 with `agents.max_concurrent_threads_per_session = 256`, `features.multi_agent_v2.max_concurrent_threads_per_session = 257`, `max_depth = 1`, and `interrupt_message = true`. Nested delegation remains forbidden. Explicit user-owned limits are preserved, while legacy SKS-owned 12/13 defaults migrate to 256/257.
+
+Naruto's automatic starting tiers are 4/6/8 children for ordinary work and 16
+for mass cheap-model work. After decomposition, either lane may expand to the
+SKS-owned ceiling of 256 independent useful children. Explicit
+`--agents N` and `--max-threads N` values from 1 through 256 remain
+authoritative instead of being reduced to those automatic tiers. A first wave
+may reach 256 child slots only when independent ready work, disjoint ownership,
+verifier/tool capacity, and the external Codex/session host all permit it;
+otherwise Naruto records the exact active limiter and reuses returned capacity
+in later waves.
+
+`SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET` declares a lower remote provider/API
+parallel-request budget for the governor. It cannot raise a lower external-host
+or session limit. The official Codex lane does not impose a local CPU/RAM or
+unmeasured API-default clamp; it follows an explicit provider budget and a
+measured host cap. The 256 ceiling is structural, not a recommendation or proof
+that 256 live agents were load-tested on the current host. The four GPT-5.6
+model profiles are routing lanes, not an agent-count limit.
 
 Gates are task-profile aware: greetings and answer-only turns create no mission gate; tiny work gets minimal verification; parallel work gets scoped ownership and verification; high-risk work keeps the full safety gates. `SubagentStart`/`SubagentStop` prove lifecycle only. Completion also requires `subagent-parent-summary.json` with one trustworthy structured outcome per thread, correlated with `subagent-events.jsonl` and `subagent-evidence.json`.
 
@@ -225,9 +257,9 @@ It shows the current quickstart flow: one-line install, `$sks-plan`, `sks review
 - Project memory: `sks memory build`
 - Codebase index/pack for LLM context: `sks wiki refresh --code`, `sks wiki validate --json` (code-pack freshness)
 - Native capability repair: `sks doctor --fix` (imagegen/Computer Use/Browser Use), `.sneakoscope/reports/native-capability-readiness.json`
-- codex-lb continuity: `sks codex-lb status --json` verifies the selected proxy's unauthenticated `/health` `X-App-Version`. Tool-heavy continuation requires a codex-lb deployment that reports the capability; use the official latest stable release. Older or unverified deployments block setup, doctor, and launch instead of silently falling back.
+- codex-lb continuity: `sks codex-lb status --json` verifies the selected proxy's unauthenticated `/health` `X-App-Version`. Tool-heavy continuation requires a codex-lb deployment that reports the capability; use the official latest stable release. Older or unverified deployments block setup, doctor, and launch instead of silently falling back. A selected route is green only after one measured request records the destination host, gateway-key authentication class, measurement time, and latency; config presence alone is not routing proof.
 - Agent bridge for any agent system: `sks mcp-server`, `sks agent-bridge setup`, `SKS_AGENT_MODE=1` — see [docs/AGENT-BRIDGE.md](docs/AGENT-BRIDGE.md)
-- Release gates: `npm run release:check:affected` for ordinary change-aware verification and `npm run release:check:confidence` for the final local confidence pass.
+- Release gates: `npm run release:check:affected` for ordinary change-aware verification and `npm run release:check:confidence` for the final local confidence pass. Evidence for the 8.0.3 physical checklist includes a successful 5,001-directory update scan, exactly one running Menu Bar process at the current package version, one measured real codex-lb request to the selected remote host, and one Telegram command/reply E2E over cellular.
 - Release preparation: typecheck, one clean build, focused tests, affected/confidence gates, then `npm publish --dry-run --json --registry https://registry.npmjs.org/ --tag latest --access public`. The dry-run does not publish; authorization remains a separate maintainer workflow.
 - Release readiness notes: [docs/release-readiness.md](docs/release-readiness.md) and [CHANGELOG.md](CHANGELOG.md)
 - Image generation review routes require Codex App `$imagegen`/`gpt-image-2` evidence with recorded output hashes; direct API fallback and mock fixtures do not satisfy full route gates.
@@ -239,13 +271,16 @@ It shows the current quickstart flow: one-line install, `$sks-plan`, `sks review
 - macOS optional: menu bar integration and `/usr/bin/open`
   - The menubar icon shows and hides itself automatically as the Codex desktop app launches/quits; set `quit_with_codex: true` in `~/.codex/sks-menubar/config.json` to have the menubar fully quit with Codex instead of just hiding (default `false`).
   - Native input dialogs (API keys, codex-lb setup) pass secrets to `sks` via `--api-key-stdin` instead of a visible Terminal window or process arguments.
-  - Codex Desktop always keeps its real ChatGPT OAuth identity. codex-lb setup stores a separate gateway endpoint/key and never replaces `~/.codex/auth.json`.
-  - Providers separates **Desktop Full Capability**, **CLI Provider**, and **Capability Matrix**. Desktop Full Capability keeps the built-in OpenAI provider and routes supported traffic through a loopback bridge; CLI Provider is selected only for the CLI process.
-  - Authentication and routing modes do not toggle Codex App's native model picker, Fast, image, Browser Use, Computer Use, voice, plugins/apps, or other built-in surfaces. Capability status describes evidence for the codex-lb data path, not permission to use the native feature.
+  - Codex Desktop keeps `~/.codex/auth.json` byte-preserved. **Use codex-lb** atomically stores the provider definition and active top-level selection and resolves its separate gateway key from the owner-only `0600` env file; while selected, requests must not consume the stored ChatGPT OAuth identity. Turning codex-lb off returns to the official OAuth path. Keychain requests fail closed until a dedicated signed helper is available.
+  - Explicit codex-lb setup/reconfiguration migrates the retired generic `sks-codex-lb` Keychain item only after the replacement owner-only store is verified, deletes only the exact legacy account, and proves absence by readback. If cleanup cannot be proved, the replacement store is retained and the provider key should be rotated.
+  - Providers exposes atomic **Use codex-lb** / **Use ChatGPT OAuth** selection plus shared RoutingTruth. A green codex-lb state requires one measured request to the configured remote base URL; the Menu Bar and Doctor render the same host, authentication class, measurement time, and latency.
+  - The retired dual-auth compatibility mode is detected only for safe migration. It cannot be activated or reported ready because it would require a global GUI secret.
+  - Authentication and routing modes do not toggle Codex App's native model picker, Fast, image, Browser Use, Computer Use, voice, plugins/apps, or other built-in surfaces. Capability status describes measured evidence for the codex-lb data path, not permission to use a native feature.
   - `sks update`, setup, repair, and routing changes preserve OAuth, user model/reasoning/Fast settings, unknown catalog fields, and unrelated provider configuration. Legacy shared-auth routing requires explicit `sks codex-lb migrate-legacy-desktop --restart-app`; without a real restart and post-restart identity check it cannot finalize a migration receipt.
   - The remote codex-lb service remains independently hosted and operated. SKS uses only the configured URL and gateway key; it does not deploy, restart, or change credentials on that host.
-  - Full release proof blocks with `real_required_missing` until fresh trust-anchored evidence covers the real Desktop feature/lifecycle matrix and the separately hosted other-Mac runtime; fixtures and configuration cannot satisfy that boundary.
-  - Update installs always rebuild the companion with the newly installed SKS package, preventing a previous-version updater from restoring a stale menu binary.
+  - Full release proof blocks with `real_required_missing` until fresh trust-anchored evidence covers the real Desktop feature/lifecycle matrix, one measured gateway-key request to the selected separately hosted codex-lb instance, and the other-Mac runtime; fixtures and configuration cannot satisfy that boundary.
+  - Update installs stop and verify every prior Menu Bar process before replacement, rebuild the companion from the newly installed SKS package, bootstrap it, and require exactly one running process whose version probe equals the current package version.
+  - Telegram remote control uses one bounded long-poller inside that same Menu Bar process. Release evidence must include a real cellular command/reply round trip; `getMe`, a local fixture, or a configured token alone cannot satisfy the E2E gate.
   - The menubar dropdown's `View Last Log` item opens the most recent background action's log file, so you don't need to keep a Terminal window open to see command output.
   - `Manage MCP Servers…` provides a resizable native table and add/remove/enable/disable controls for global Codex MCP configuration. Secret environment values and command arguments are accepted through native dialogs/stdin but omitted from list output and logs.
   - `sks menubar status --json` reports a `codex_sync` object with `bundle_id`, `codex_running`, and `icon_visible_expected` to show Codex-lifecycle detection state.

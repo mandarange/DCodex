@@ -4,6 +4,12 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { executeDoctorGlobalOnlyFix, run as doctorRun } from '../../../commands/doctor.js';
+import {
+  cleanupProjectMenuBarDuplicates,
+  inspectProjectMenuBarCanonicalState,
+  verifiedProjectMenuBarDuplicateExecutablePaths
+} from '../menubar/global-install.js';
+import { sksMenuBarPaths } from '../menubar/paths.js';
 
 test('menu global-only doctor preserves global skills and never runs project reconciliation', async () => {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-menubar-global-doctor-'));
@@ -219,3 +225,71 @@ test('global-only doctor wrapper writes guard evidence under HOME and not the pr
     await fsp.rm(home, { recursive: true, force: true });
   }
 });
+
+test('menubar duplicate discovery reports and safely removes verified running and launchd candidates outside fixed roots', async (t) => {
+  const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-menubar-global-discovery-'));
+  const home = path.join(fixture, 'home');
+  const root = path.join(fixture, 'project');
+  const paths = sksMenuBarPaths(home, root);
+  const runningDuplicate = path.join(home, 'Archived Menu Bars', 'running-copy');
+  const launchdDuplicate = path.join(root, 'legacy-launch', 'launchd-copy');
+  const runningExecutable = await writeVerifiedMenuBarDuplicate(runningDuplicate);
+  const launchdExecutable = await writeVerifiedMenuBarDuplicate(launchdDuplicate);
+  const pgrep = path.join(fixture, 'fake-pgrep');
+  const ps = path.join(fixture, 'fake-ps');
+  t.after(() => fsp.rm(fixture, { recursive: true, force: true }));
+
+  await fsp.mkdir(paths.install_dir, { recursive: true });
+  await fsp.mkdir(path.dirname(paths.launch_agent_path), { recursive: true });
+  await fsp.writeFile(paths.launch_agent_path, `<?xml version="1.0"?>
+<plist><dict><key>ProgramArguments</key><array><string>${launchdExecutable}</string></array></dict></plist>\n`);
+  await fsp.writeFile(pgrep, `#!${process.execPath}
+process.stdout.write('701\\n702\\n');
+`, { mode: 0o755 });
+  await fsp.writeFile(ps, `#!${process.execPath}
+process.stdout.write(${JSON.stringify(`701 ${paths.executable_path}\n702 ${runningExecutable}\n`)});
+`, { mode: 0o755 });
+  const env = {
+    ...process.env,
+    SKS_MENUBAR_TEST_PROCESS_TOOLS: '1',
+    SKS_MENUBAR_PGREP: pgrep,
+    SKS_MENUBAR_PS: ps
+  };
+
+  const state = await inspectProjectMenuBarCanonicalState({ paths, root, env });
+  assert.deepEqual(state.candidate_paths, [runningDuplicate, launchdDuplicate].sort());
+  assert.deepEqual(state.verified_duplicates, [runningDuplicate, launchdDuplicate].sort());
+  assert.deepEqual(state.warnings, state.candidate_paths.map((candidate) => `menubar_duplicate_candidate_detected:${candidate}`));
+  await fsp.access(runningExecutable);
+  await fsp.access(launchdExecutable);
+
+  const executablePaths = await verifiedProjectMenuBarDuplicateExecutablePaths({ paths, root, env });
+  assert.deepEqual(executablePaths.sort(), [runningExecutable, launchdExecutable].sort());
+
+  await fsp.writeFile(pgrep, `#!${process.execPath}
+process.exit(1);
+`, { mode: 0o755 });
+  const cleanup = await cleanupProjectMenuBarDuplicates({
+    paths,
+    root,
+    env,
+    candidateExecutablePaths: executablePaths
+  });
+  assert.equal(cleanup.ok, true, JSON.stringify(cleanup));
+  assert.deepEqual(cleanup.removed.sort(), [runningDuplicate, launchdDuplicate].sort());
+  assert.ok(cleanup.receipt_path);
+  await fsp.access(cleanup.receipt_path!);
+  await assert.rejects(fsp.access(runningDuplicate));
+  await assert.rejects(fsp.access(launchdDuplicate));
+});
+
+async function writeVerifiedMenuBarDuplicate(installDir: string): Promise<string> {
+  const executable = path.join(installDir, 'SKSMenuBar.app', 'Contents', 'MacOS', 'SKSMenuBar');
+  await fsp.mkdir(path.dirname(executable), { recursive: true });
+  await fsp.writeFile(executable, 'verified duplicate fixture\n', { mode: 0o755 });
+  await fsp.writeFile(path.join(installDir, 'build-stamp.json'), `${JSON.stringify({
+    schema: 'sks.sks-menubar-build-stamp.v2',
+    codesign_identifier: 'com.sneakoscope.sks-menubar'
+  })}\n`);
+  return executable;
+}

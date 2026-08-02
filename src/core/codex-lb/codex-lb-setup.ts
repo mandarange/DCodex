@@ -1,7 +1,14 @@
 import os from 'node:os';
 import path from 'node:path';
+import fsp from 'node:fs/promises';
 import { ensureDir, exists, readText, writeTextAtomic } from '../fsx.js';
-import { codexLbEnvPath, codexLbMetadataPath, normalizeCodexLbBaseUrl } from './codex-lb-env.js';
+import {
+  CODEX_LB_SECURE_KEYCHAIN_SERVICE,
+  codexLbBaseUrlSecurityBlocker,
+  codexLbEnvPath,
+  codexLbMetadataPath,
+  normalizeCodexLbBaseUrl
+} from './codex-lb-env.js';
 import {
   DEFAULT_CODEX_LB_DESKTOP_MODE,
   DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT,
@@ -39,6 +46,8 @@ export interface CodexLbSetupAnswers {
   use_as_default_provider?: boolean;
   write_env_file: boolean;
   store_keychain: boolean;
+  /** Internal dependency contract for a dedicated, identity-verified helper. */
+  keychain_helper_verified?: boolean;
   sync_launchctl: boolean;
   install_shell_profile: CodexLbShellProfileChoice;
   run_health_check: boolean;
@@ -88,7 +97,14 @@ export function buildCodexLbSetupPlan(answers: CodexLbSetupAnswers, opts: {
   const gatewayAuthTransport = answers.gateway_auth_transport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT;
   const blockers: string[] = [];
   if (!baseUrl) blockers.push('missing_host_or_base_url');
+  else {
+    const transportBlocker = codexLbBaseUrlSecurityBlocker(baseUrl);
+    if (transportBlocker) blockers.push(transportBlocker);
+  }
   if (answers.install_shell_profile !== 'skip' && !answers.write_env_file) blockers.push('shell_profile_snippet_requires_env_file');
+  if (answers.store_keychain && answers.keychain_helper_verified !== true) {
+    blockers.push('keychain_acl_helper_unavailable');
+  }
   const actions: CodexLbSetupAction[] = [];
   if (desktopMode === 'desktop-native-bridge') {
     actions.push({
@@ -107,6 +123,7 @@ export function buildCodexLbSetupPlan(answers: CodexLbSetupAnswers, opts: {
       effect: 'verify byte identity before App restart and semantic OAuth identity afterward'
     });
   } else if (desktopMode === 'desktop-dual-auth-compat') {
+    blockers.push('desktop_dual_auth_compat_requires_global_secret_environment');
     if (gatewayAuthTransport !== 'x-codex-lb-api-key') {
       blockers.push('desktop_compat_requires_x_codex_lb_api_key_transport');
     }
@@ -124,17 +141,34 @@ export function buildCodexLbSetupPlan(answers: CodexLbSetupAnswers, opts: {
     actions.push({
       type: 'write_cli_provider',
       target: configPath,
-      effect: 'write an unselected CLI-only codex-lb provider using CODEX_LB_API_KEY without changing Desktop OAuth'
+      effect: answers.use_as_default_provider === true
+        ? 'atomically write and select the codex-lb provider using CODEX_LB_API_KEY without changing auth.json'
+        : 'write an unselected CLI-only codex-lb provider using CODEX_LB_API_KEY without changing Desktop OAuth'
     });
   }
   if (answers.write_env_file) {
     actions.push({ type: 'write_env_file', target: envPath, effect: 'write CODEX_LB_BASE_URL and redacted CODEX_LB_API_KEY env loader with chmod 0600' });
   }
   if (answers.store_keychain) {
-    actions.push({ type: 'store_keychain', target: 'macOS Keychain service sks-codex-lb', effect: 'store the redacted codex-lb API key through Security.framework with stdin-only secret input' });
+    actions.push({
+      type: 'store_keychain',
+      target: `macOS Keychain service ${CODEX_LB_SECURE_KEYCHAIN_SERVICE}`,
+      effect: 'blocked until SKS ships a dedicated signed Keychain helper; reusable interpreters are never trusted for secret access'
+    });
   }
   if (answers.sync_launchctl) {
-    actions.push({ type: 'sync_launchctl', target: 'macOS launchctl user environment', effect: 'sync non-secret CODEX_LB_BASE_URL only and remove API-key launchd env', command: 'launchctl setenv CODEX_LB_BASE_URL ...; launchctl unsetenv CODEX_LB_API_KEY OPENROUTER_API_KEY' });
+    const cliProviderSelected = desktopMode === 'cli-provider'
+      && answers.use_as_default_provider === true;
+    actions.push({
+      type: 'sync_launchctl',
+      target: 'macOS launchctl user environment',
+      effect: cliProviderSelected
+        ? 'set CODEX_LB_API_KEY and CODEX_LB_BASE_URL from the canonical owner-only env file for selected CLI-provider mode'
+        : 'remove CODEX_LB_API_KEY outside selected CLI-provider mode and reconcile the non-secret base URL for the chosen mode',
+      command: cliProviderSelected
+        ? 'launchctl setenv CODEX_LB_API_KEY <canonical-env-file-value>; launchctl setenv CODEX_LB_BASE_URL ...; launchctl unsetenv OPENROUTER_API_KEY'
+        : 'launchctl unsetenv CODEX_LB_API_KEY OPENROUTER_API_KEY; reconcile CODEX_LB_BASE_URL for the chosen mode'
+    });
   }
   if (answers.install_shell_profile !== 'skip') {
     actions.push({ type: 'install_shell_profile_snippet', target: profileTargets(home, answers.install_shell_profile).join(', '), effect: `install managed shell snippet for ${answers.install_shell_profile}` });
@@ -181,20 +215,115 @@ export async function installCodexLbShellProfileSnippet(opts: {
   home?: string;
   envPath: string;
   shellProfile: CodexLbShellProfileChoice;
-}): Promise<{ ok: boolean; status: string; files: string[]; skipped?: boolean; reason?: string }> {
+  expectedFiles?: Array<{
+    path: string;
+    existed: boolean;
+    kind: string;
+    bytes_base64: string;
+    mode: number | null;
+  }>;
+  writeFileIfUnchanged?: (input: {
+    file: string;
+    expected: {
+      path: string;
+      existed: boolean;
+      kind: string;
+      bytes_base64: string;
+      mode: number | null;
+    };
+    text: string;
+    mode: number;
+  }) => Promise<{
+    ok: boolean;
+    status: string;
+    installed?: boolean;
+    recovery_path?: string;
+    error?: string;
+  }>;
+  onFileWritten?: (input: { file: string; text: string; mode: number }) => void | Promise<void>;
+}): Promise<{
+  ok: boolean;
+  status: string;
+  files: string[];
+  recovery_paths?: string[];
+  skipped?: boolean;
+  reason?: string;
+  error?: string;
+}> {
   if (opts.shellProfile === 'skip') return { ok: true, status: 'skipped', skipped: true, files: [] };
   if (!(await exists(opts.envPath))) {
     return { ok: true, status: 'skipped', skipped: true, reason: 'env_file_not_written', files: [] };
   }
-  const home = opts.home || process.env.HOME || os.homedir();
-  const files = profileTargets(home, opts.shellProfile);
-  for (const file of files) {
-    const current = await readText(file, '');
-    const block = shellProfileBlock(file, opts.envPath);
-    await ensureDir(path.dirname(file));
-    await writeTextAtomic(file, upsertManagedBlock(current, block));
+  if (Boolean(opts.expectedFiles) !== Boolean(opts.writeFileIfUnchanged)) {
+    return {
+      ok: false,
+      status: 'setup_cas_contract_incomplete',
+      files: [],
+      error: 'expectedFiles and writeFileIfUnchanged must be provided together'
+    };
   }
-  return { ok: true, status: 'installed', files };
+  const home = opts.home || process.env.HOME || os.homedir();
+  const targets = profileTargets(home, opts.shellProfile);
+  const files: string[] = [];
+  const recoveryPaths: string[] = [];
+  for (const file of targets) {
+    const expected = opts.expectedFiles?.find((entry) => path.resolve(entry.path) === path.resolve(file));
+    if (opts.expectedFiles && !expected) {
+      return {
+        ok: false,
+        status: 'setup_snapshot_missing',
+        files,
+        recovery_paths: recoveryPaths,
+        error: `setup_snapshot_missing:${file}`
+      };
+    }
+    if (expected?.existed === true && expected.kind !== 'regular') {
+      return {
+        ok: false,
+        status: 'unsafe_setup_write_target',
+        files,
+        recovery_paths: recoveryPaths,
+        error: `unsafe_setup_write_target:${file}:${expected.kind}`
+      };
+    }
+    const current = expected
+      ? (expected.existed === true
+          ? Buffer.from(String(expected.bytes_base64 || ''), 'base64').toString('utf8')
+          : '')
+      : await readText(file, '');
+    const block = shellProfileBlock(file, opts.envPath);
+    const text = upsertManagedBlock(current, block);
+    const existingMode = expected
+      ? (expected.existed === true ? Number(expected.mode) & 0o777 : null)
+      : await fsp.lstat(file)
+        .then((stat) => stat.isFile() && !stat.isSymbolicLink() ? stat.mode & 0o777 : null)
+        .catch(() => null);
+    const mode = existingMode ?? (0o666 & ~process.umask());
+    if (expected && opts.writeFileIfUnchanged) {
+      const result = await opts.writeFileIfUnchanged({ file, expected, text, mode });
+      if (result.recovery_path) recoveryPaths.push(result.recovery_path);
+      if (!result.ok) {
+        return {
+          ok: false,
+          status: result.status,
+          files,
+          recovery_paths: recoveryPaths,
+          error: result.error || `${result.status}:${file}`
+        };
+      }
+    } else {
+      await ensureDir(path.dirname(file));
+      await writeTextAtomic(file, text);
+    }
+    await opts.onFileWritten?.({ file, text, mode });
+    files.push(file);
+  }
+  return {
+    ok: true,
+    status: 'installed',
+    files,
+    ...(recoveryPaths.length ? { recovery_paths: recoveryPaths } : {})
+  };
 }
 
 export function selectedCodexLbPersistenceModes(answers: Pick<CodexLbSetupAnswers, 'write_env_file' | 'store_keychain' | 'sync_launchctl' | 'install_shell_profile'>): CodexLbPersistenceMode[] {

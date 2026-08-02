@@ -31,7 +31,8 @@ test('loadCodexLbEnv ignores reserved *.example.test process base URLs unless ex
   await fs.mkdir(path.join(home, '.codex'), { recursive: true });
   await fs.writeFile(
     path.join(home, '.codex', 'sks-codex-lb.env'),
-    `export CODEX_LB_BASE_URL='https://codex.hyper-lab.xyz/backend-api/codex'\nexport CODEX_LB_API_KEY='${apiKey}'\n`
+    `export CODEX_LB_BASE_URL='https://codex.hyper-lab.xyz/backend-api/codex'\nexport CODEX_LB_API_KEY='${apiKey}'\n`,
+    { mode: 0o600 }
   );
   await fs.writeFile(path.join(home, '.codex', 'sks-codex-lb.json'), JSON.stringify({
     schema: 'sks.codex-lb-metadata.v1',

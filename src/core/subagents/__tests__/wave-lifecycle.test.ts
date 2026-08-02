@@ -259,6 +259,93 @@ test('automatic lifecycle rejects declared or observed work above its policy cei
   }
 })
 
+test('mass and ordinary automatic lifecycle both use the 256-child SKS ceiling', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-wave-mass-capacity-'))
+  try {
+    for (const [name, massParallel] of [
+      ['mass', true],
+      ['ordinary', false]
+    ] as const) {
+      const dir = path.join(root, name)
+      const runId = `run-${name}`
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, 'subagent-plan.json'), JSON.stringify({
+        schema: 'sks.subagent-plan.v1',
+        workflow_run_id: runId,
+        requested_subagents: 16,
+        requested_subagents_source: 'automatic',
+        first_wave: 4,
+        fanout_policy: {
+          automatic_ceiling: 256,
+          mass_parallel: massParallel
+        },
+        wave_lifecycle: createSubagentWaveLifecycle({
+          workflowRunId: runId,
+          targetSubagents: 16,
+          countPolicy: 'dynamic_automatic'
+        })
+      }))
+      const lifecycle = await refreshSubagentWaveLifecycle(dir)
+      const plan = JSON.parse(await fs.readFile(path.join(dir, 'subagent-plan.json'), 'utf8'))
+      assert.equal(lifecycle?.target_subagents, 16)
+      assert.deepEqual(subagentCountContractBlockers(plan, 16), [])
+    }
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('legacy SKS-owned automatic ceilings migrate while a later successful stop clears retry failure', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-wave-legacy-ceiling-'))
+  const runId = 'run-legacy-ceiling'
+  try {
+    await fs.writeFile(path.join(dir, 'subagent-plan.json'), JSON.stringify({
+      schema: 'sks.subagent-plan.v1',
+      workflow_run_id: runId,
+      requested_subagents: 8,
+      requested_subagents_source: 'automatic',
+      max_threads: 12,
+      first_wave: 8,
+      fanout_policy: {
+        mode: 'parent_owned_risk_based',
+        count_source: 'automatic',
+        automatic_ceiling: 12,
+        mass_parallel: false
+      },
+      wave_lifecycle: createSubagentWaveLifecycle({
+        workflowRunId: runId,
+        targetSubagents: 12,
+        countPolicy: 'dynamic_automatic',
+        waveCapacity: 8
+      })
+    }))
+
+    for (let index = 1; index <= 16; index += 1) {
+      const threadId = `thread-${index}`
+      await recordSubagentEvent(dir, { agent_id: threadId, workflow_run_id: runId }, 'SubagentStart')
+      if (index === 1) {
+        await recordSubagentEvent(dir, { agent_id: threadId, workflow_run_id: runId, failed: true }, 'SubagentStop')
+      }
+      await recordSubagentEvent(dir, {
+        agent_id: threadId,
+        workflow_run_id: runId,
+        last_assistant_message: 'Retry completed the assigned slice.'
+      }, 'SubagentStop')
+    }
+
+    const lifecycle = await refreshSubagentWaveLifecycle(dir)
+    const plan = JSON.parse(await fs.readFile(path.join(dir, 'subagent-plan.json'), 'utf8'))
+    assert.equal(lifecycle?.target_subagents, 16)
+    assert.equal(lifecycle?.cumulative_started, 16)
+    assert.equal(lifecycle?.cumulative_completed, 16)
+    assert.equal(lifecycle?.cumulative_failed, 0)
+    assert.equal(effectiveSubagentTarget(plan, 16).targetSubagents, 16)
+    assert.deepEqual(subagentCountContractBlockers(plan, 16), [])
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('exact lifecycle target tampering cannot change the sealed target', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-wave-exact-tamper-'))
   const runId = 'run-exact-tamper'
@@ -288,4 +375,29 @@ test('exact lifecycle target tampering cannot change the sealed target', async (
   } finally {
     await fs.rm(dir, { recursive: true, force: true })
   }
+})
+
+test('wave capacity is enforced from real lifecycle thread membership', () => {
+  const lifecycle = createSubagentWaveLifecycle({
+    workflowRunId: 'run-wave-capacity',
+    targetSubagents: 6,
+    countPolicy: 'exact',
+    waveCapacity: 2
+  })
+  lifecycle.waves = [{
+    wave: 1,
+    status: 'running',
+    thread_ids: ['thread-1', 'thread-2', 'thread-3'],
+    settled_thread_ids: [],
+    started_at: '2026-07-31T00:00:00.000Z',
+    settled_at: null
+  }]
+  assert.deepEqual(
+    subagentCountContractBlockers({
+      schema: 'sks.subagent-plan.v1',
+      requested_subagents: 6,
+      wave_lifecycle: lifecycle
+    }),
+    ['subagent_wave_capacity_exceeded:3/2']
+  )
 })

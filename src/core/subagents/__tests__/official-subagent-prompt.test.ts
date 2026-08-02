@@ -38,8 +38,8 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
   assert.match(prompt, /never collapse every child onto the parent Sol model/)
   assert.match(prompt, /explicit task class and phase win over incidental keywords/)
   assert.match(prompt, /requested subagents: 2/)
-  assert.match(prompt, /max open agent threads: 12/)
-  assert.match(prompt, /hard cap, never a utilization target/)
+  assert.match(prompt, /max concurrently open child agent threads: 12/)
+  assert.match(prompt, /hard child-slot cap, never a utilization target; the root is outside this count/)
   assert.match(prompt, /C_t = min\(ready DAG width, disjoint ownership, verifier capacity/)
   assert.match(prompt, /max depth: 1/)
   assert.match(prompt, /custom `agent_type` selection.*must use `fork_turns="none"`/)
@@ -58,9 +58,24 @@ test('official prompt seals model, ownership, wait, and no-nesting rules', () =>
   assert.equal(prompt.match(/Core Engineering Directive/g)?.length, 1)
   assert.match(prompt, /from AGENTS\.md exactly/)
   assert.ok(
-    Buffer.byteLength(prompt, 'utf8') <= 9_000,
-    `two-slice official prompt exceeded 9,000 bytes: ${Buffer.byteLength(prompt, 'utf8')}`
+    Buffer.byteLength(prompt, 'utf8') <= 9_300,
+    `two-slice official prompt exceeded 9,300 bytes: ${Buffer.byteLength(prompt, 'utf8')}`
   )
+})
+
+test('official prompt teaches capacity-derived automatic fan-out and the hard ceiling', () => {
+  const prompt = buildOfficialSubagentPrompt({
+    goal: 'Parent must decompose a repository-wide bulk search',
+    maxThreads: 16,
+    requestedSubagents: 16,
+    decompositionStatus: 'parent_required',
+    slices: []
+  })
+
+  assert.match(prompt, /automatic fan-out is capacity-derived up to 256/)
+  assert.match(prompt, /historical 4\/6\/8\/16 task-class values are fallback hints, not clamps/)
+  assert.match(prompt, /for mass fan-out waves, default each shard to worker\/Luna Max \(tiny mechanical\) or explorer\/Terra Medium \(broad search\/exploration\) and reserve Sol for implementation and judgment — cheap lanes are what make high concurrency safe/)
+  assert.match(prompt, /bounded only by the 256 hard safety ceiling; C_t bounds each wave, not the reusable multi-wave total/)
 })
 
 test('Codex App Naruto prompt separates internal parent evidence from the visible Markdown final', () => {
@@ -333,6 +348,8 @@ test('prompt makes later root waves and between-wave count authority explicit', 
   assert.match(automatic, /close completed threads.*refresh evidence.*rescan the ready DAG.*next defensible direct-child wave when `remaining_to_start > 0`/is)
   assert.match(automatic, /spawn_next_direct_child_wave_upto:N/)
   assert.match(automatic, /automatic targets may resize between waves/i)
+  assert.match(automatic, /C_t bounds each wave, not the reusable multi-wave total/)
+  assert.doesNotMatch(automatic, /bounded by C_t and 12/)
 
   for (const requestedSubagentsSource of ['operator', 'route_contract'] as const) {
     const exact = buildOfficialSubagentPrompt({

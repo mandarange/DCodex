@@ -1,6 +1,13 @@
 import Cocoa
 
 enum AppIdentity {
+    static let bundleIdentifier = "com.sneakoscope.sks-menubar"
+
+    static var buildVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+            ?? AppRuntime.packageVersion
+    }
+
     static func configure() {
         if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
            let image = NSImage(contentsOf: url) {

@@ -28,6 +28,7 @@ export interface DoctorNativeCapabilityRepairReport {
   route_blockers: Record<string, string[]>;
   optional_manual_required: string[];
   optional_warnings: string[];
+  required_blockers: string[];
   blockers: string[];
   report_write_failed?: boolean;
 }
@@ -38,6 +39,7 @@ export async function runDoctorNativeCapabilityRepair(input: {
   yes: boolean;
   flags?: string[];
   skipNativeCapabilities?: boolean;
+  requireLegacyGlobalHookCleanup?: boolean;
   home?: string;
 }): Promise<DoctorNativeCapabilityRepairReport> {
   const root = path.resolve(input.root);
@@ -62,7 +64,9 @@ export async function runDoctorNativeCapabilityRepair(input: {
     const legacyGlobalHooks = await cleanupLegacyGlobalSksHooks({
       root,
       ...(input.home ? { home: input.home } : {}),
-      apply: fixRequested
+      // Global hook removal is a migration-owned mutation. Ordinary Doctor
+      // profiles may inspect and warn, but cannot mutate cross-project state.
+      apply: input.requireLegacyGlobalHookCleanup === true
     });
     const productDesignRaw: any = input.fix
       ? await ensureProductDesignPluginInstalled({
@@ -82,17 +86,23 @@ export async function runDoctorNativeCapabilityRepair(input: {
       ]
     } : productDesignRaw;
     const productDesign = redactSecrets(productDesignWithActions);
-    const blockers = [
+    const coreBlockers = [
       ...((coreSkills as { blockers?: string[] }).blockers || []),
       ...((skillDedupe as { blockers?: string[] }).blockers || []),
       ...((nativeCapabilities as { core_blockers?: string[]; blockers?: string[] }).core_blockers || (nativeCapabilities as { blockers?: string[] }).blockers || [])
     ];
+    const legacyGlobalHookBlockers: string[] = ((legacyGlobalHooks as any).blockers || [])
+      .map((blocker: unknown) => `legacy_global_hooks:${String(blocker)}`);
+    const requiredBlockers: string[] = input.requireLegacyGlobalHookCleanup === true
+      ? legacyGlobalHookBlockers
+      : [];
+    const blockers = [...coreBlockers, ...requiredBlockers];
     const routeBlockers = (nativeCapabilities as { route_blockers?: Record<string, string[]> }).route_blockers || {};
     const optionalManualRequired = (nativeCapabilities as { optional_manual_required?: string[] }).optional_manual_required || [];
     const optionalWarnings = [
       ...((nativeCapabilities as { warnings?: string[] }).warnings || []),
       ...optionalManualRequired.map((id) => `${id}_manual_required`),
-      ...((legacyGlobalHooks as any).blockers || []).map((blocker: string) => `legacy_global_hooks:${blocker}`),
+      ...(input.requireLegacyGlobalHookCleanup === true ? [] : legacyGlobalHookBlockers),
       ...((legacyGlobalHooks as any).warnings || []),
       ...((productDesign as any).ok === false ? ((productDesign as any).blockers || ['product_design_not_ready']).map((blocker: string) => `product_design:${blocker}`) : [])
     ];
@@ -110,11 +120,12 @@ export async function runDoctorNativeCapabilityRepair(input: {
       legacy_global_hooks: legacyGlobalHooks,
       probe_artifact_cleanup: probeArtifactCleanup,
       secret_preservation_guard: '.sneakoscope/reports/secret-preservation-guard.json',
-      core_blockers: blockers,
+      core_blockers: coreBlockers,
       route_blockers: routeBlockers,
       optional_manual_required: optionalManualRequired,
       optional_warnings: [...new Set(optionalWarnings)],
-      blockers
+      required_blockers: [...new Set(requiredBlockers)],
+      blockers: [...new Set(blockers)]
     };
     const reportPath = path.join(root, '.sneakoscope', 'reports', 'doctor-native-capability-repair.json');
     try {

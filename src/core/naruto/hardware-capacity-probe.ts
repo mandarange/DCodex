@@ -34,6 +34,7 @@ export interface HardwareCapacityProbe {
   terminal_rows: number
   local_llm_max_parallel_requests: number
   remote_api_rate_limit_budget: number
+  remote_api_rate_limit_budget_source: 'input' | 'environment' | 'default_unmeasured'
   gpu_available: boolean
   gpu_vram_mb: number
   disk_io_pressure: number
@@ -41,6 +42,13 @@ export interface HardwareCapacityProbe {
 
 export function probeHardwareCapacity(input: HardwareCapacityProbeInput = {}): HardwareCapacityProbe {
   const memory = process.memoryUsage()
+  const configuredRemoteBudget = Number(process.env.SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET)
+    || Number(process.env.SKS_REMOTE_API_PARALLEL_BUDGET)
+  const remoteBudgetSource = input.remoteApiRateLimitBudget !== undefined
+    ? 'input'
+    : configuredRemoteBudget
+      ? 'environment'
+      : 'default_unmeasured'
   return {
     schema: 'sks.naruto-hardware-capacity-probe.v1',
     cpu_core_count: normalizePositiveInt(input.cores, os.cpus()?.length || 1),
@@ -55,7 +63,15 @@ export function probeHardwareCapacity(input: HardwareCapacityProbeInput = {}): H
     terminal_columns: normalizePositiveInt(input.terminalColumns, process.stdout.columns || 120),
     terminal_rows: normalizePositiveInt(input.terminalRows, process.stdout.rows || 40),
     local_llm_max_parallel_requests: normalizePositiveInt(input.localLlmMaxParallelRequests, Number(process.env.SKS_LOCAL_LLM_MAX_PARALLEL_REQUESTS) || 4),
-    remote_api_rate_limit_budget: normalizePositiveInt(input.remoteApiRateLimitBudget, Number(process.env.SKS_REMOTE_API_PARALLEL_BUDGET) || 12),
+    // Default 12 is a conservative unmeasured budget, not a discovered provider
+    // limit; operators with real rate-limit headroom raise it via
+    // SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET
+    // (legacy SKS_REMOTE_API_PARALLEL_BUDGET still honored).
+    remote_api_rate_limit_budget: normalizePositiveInt(
+      input.remoteApiRateLimitBudget,
+      configuredRemoteBudget || 12
+    ),
+    remote_api_rate_limit_budget_source: remoteBudgetSource,
     gpu_available: input.gpuAvailable === true,
     gpu_vram_mb: normalizeNonNegativeInt(input.gpuVramMb, 0),
     disk_io_pressure: Math.max(0, Math.min(1, Number(input.diskIoPressure ?? 0)))
@@ -73,4 +89,3 @@ function normalizeNonNegativeInt(value: unknown, fallback: number): number {
   if (!Number.isFinite(parsed) || parsed < 0) return Math.max(0, Math.floor(fallback))
   return Math.floor(parsed)
 }
-

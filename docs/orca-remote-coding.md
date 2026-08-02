@@ -1,8 +1,13 @@
 # Orca remote coding (external option)
 
-SKS no longer provides a first-party Telegram coding bridge. This page is a
-lightweight pointer for teams that want remote access to coding work; it is not
-an Orca setup guide or an SKS feature contract.
+SKS provides Telegram as a first-party transport for its existing typed remote
+control contract. Telegram does not create a second control plane or accept
+free-form shell commands: it can invoke only commands already marked
+`remoteAllowed` by that shared contract. Local setup and pairing commands remain
+remote-disallowed.
+
+This page is also a lightweight pointer for teams that prefer Orca. It is not an
+Orca setup guide or an SKS feature contract.
 
 [Orca](https://github.com/stablyai/orca) is an external, MIT-licensed project
 that can run Codex and other CLI agents in worktrees. It is not bundled with
@@ -27,14 +32,19 @@ service publicly. See [Remote Orca
 Servers](https://www.onorca.dev/docs/remote-servers) for its current pairing
 and security guidance.
 
-## Former SKS Telegram users
+## Telegram and Orca
 
-The retired Telegram bot, Hub, private-pairing flow, and related SKS commands
-are not an Orca migration path. There is no automatic migration of Telegram
-threads, bots, tokens, or history into Orca.
+Telegram and Orca are independent transports. Telegram reuses the same SKS
+typed command contracts, risk classification, remote allowlist, validation, and
+confirmation rules as other SKS remote clients. Orca remains an external way to
+operate Codex sessions and is not a migration target for Telegram threads, bot
+tokens, pairing state, or history.
 
-When an existing installation upgrades, SKS performs only two narrowly scoped
-retirement actions:
+There is no automatic migration between Telegram and Orca.
+
+Legacy pre-contract Telegram bridge state is not trusted automatically. When an
+existing installation upgrades, SKS performs only two narrowly scoped cleanup
+actions for that old bridge:
 
 - It stops the exact old SKS LaunchAgent service and removes its plist only
   after verifying the managed label and program shape. A different file at the
@@ -55,9 +65,9 @@ user-controlled data automatically.
    agent; a login on a client device does not transfer to a remote server.
 3. If you use remote access, keep the server on a private LAN or Tailscale path
    and treat Orca access links as secrets.
-4. Continue using SKS independently for its proof and orchestration workflows.
+4. Continue using SKS independently for its proof and orchestration workflows,
+   including the Telegram transport when remote command access is desired.
 
-Optional security cleanup: after confirming an old Telegram bot is no longer
-needed, you may review its BotFather token and revoke it there. This is an
-external, irreversible credential action; SKS neither performs it nor requires
-it for the migration.
+Optional security cleanup: after confirming an old bot token is no longer
+needed, you may review it with BotFather and revoke it there. This is an
+external, irreversible credential action; SKS does not perform it automatically.

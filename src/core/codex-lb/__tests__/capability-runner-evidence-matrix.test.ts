@@ -258,6 +258,7 @@ test('cli-provider overall follows the CLI request plane instead of freezing at 
   assert.equal(report.provider_identity.state, 'verified')
   assert.equal(report.catalog.state, 'verified')
   assert.equal(report.model_picker.state, 'verified')
+  assert.equal(status.model_picker, report.model_picker)
   assert.equal(report.fast_mode.state, 'verified')
   assert.equal(report.text_responses.state, 'verified')
   assert.equal(report.image_generation.state, 'verified')

@@ -240,6 +240,7 @@ export async function safeWriteCodexConfigToml(
     preserveFastUiKeys?: boolean
     verifyUnchangedBeforeWrite?: boolean
     expectedBeforeExists?: boolean
+    expectedBeforeMode?: number
   } = {}
 ) {
   return writeCodexConfigGuarded({
@@ -250,6 +251,7 @@ export async function safeWriteCodexConfigToml(
     ...(opts.preserveFastUiKeys === undefined ? {} : { preserveFastUiKeys: opts.preserveFastUiKeys }),
     ...(opts.verifyUnchangedBeforeWrite === undefined ? {} : { verifyUnchangedBeforeWrite: opts.verifyUnchangedBeforeWrite }),
     ...(opts.expectedBeforeExists === undefined ? {} : { expectedBeforeExists: opts.expectedBeforeExists }),
+    ...(opts.expectedBeforeMode === undefined ? {} : { expectedBeforeMode: opts.expectedBeforeMode }),
     mutate: () => String(next || '')
   });
 }

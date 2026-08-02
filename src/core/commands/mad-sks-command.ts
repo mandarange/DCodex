@@ -1266,7 +1266,7 @@ function readRepeatedOption(args: any[] = [], name: string) {
 }
 
 async function latestMadSksArtifact(root: string, kind: string) {
-  const current = await readJson(path.join(root, '.sneakoscope', 'current.json'), null);
+  const current = await readJson(stateFile(root), null);
   const missionId = current?.mission_id;
   if (!missionId) return null;
   const fileMap: Record<string, string> = {

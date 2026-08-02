@@ -23,6 +23,7 @@ test('codex-lb launchctl failure is structured and redacted', async () => {
     forceLaunchEnv: true,
     syncLaunchctl: true,
     launchctlBin: fakeLaunchctl,
+    platform: 'linux',
     syncCodexLogin: false,
     processEnv: {},
     toolOutputRecoveryFetch: compatibleRecoveryFetch
@@ -30,5 +31,5 @@ test('codex-lb launchctl failure is structured and redacted', async () => {
   const text = JSON.stringify(result);
   assert.doesNotMatch(text, /sk-launchctl-secret/);
   assert.equal(result.codex_environment.launch_environment.status, 'launch_env_failed');
-  assert.equal(result.status, 'launch_env_failed');
+  assert.equal(result.status, 'partial_configuration_external_state_unknown');
 });

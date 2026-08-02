@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildNarutoGateResult, narutoCommand, parseNarutoArgs } from '../naruto-command.js'
 import { buildNarutoHelpResult } from '../../subagents/naruto-help-contract.js'
+import { HARD_NARUTO_MAX_THREADS } from '../../subagents/thread-budget.js'
 
 test('normal Naruto blocks command-local GLM before any provider delegation', async () => {
   const previousExitCode = process.exitCode
@@ -75,6 +76,31 @@ test('Naruto parser accepts equals syntax and rejects malformed or empty paid fa
     const booleanValue = parseNarutoArgs(['run', 'task', flag])
     assert.ok(booleanValue.argumentErrors.some((error) => error.startsWith('boolean_option_value_not_supported:')), flag)
   }
+})
+
+test('Naruto parser accepts large fan-out up to the hard thread cap and rejects beyond it', () => {
+  const large = parseNarutoArgs(['run', 'review packages', '--agents', '100', '--max-threads', '128'])
+  assert.equal(large.requestedSubagents, 100)
+  assert.equal(large.maxThreads, 128)
+  assert.deepEqual(large.argumentErrors, [])
+
+  const atCap = parseNarutoArgs([
+    'run', 'review packages',
+    `--agents=${HARD_NARUTO_MAX_THREADS}`,
+    `--max-threads=${HARD_NARUTO_MAX_THREADS}`
+  ])
+  assert.equal(atCap.requestedSubagents, HARD_NARUTO_MAX_THREADS)
+  assert.equal(atCap.maxThreads, HARD_NARUTO_MAX_THREADS)
+  assert.deepEqual(atCap.argumentErrors, [])
+
+  const beyondCap = HARD_NARUTO_MAX_THREADS + 1
+  const agentsBeyond = parseNarutoArgs(['run', 'review packages', `--agents=${beyondCap}`])
+  assert.equal(agentsBeyond.requestedSubagents, beyondCap)
+  assert.ok(agentsBeyond.argumentErrors.includes(`exceeds_hard_thread_cap:--agents=${beyondCap}:${HARD_NARUTO_MAX_THREADS}`))
+
+  const threadsBeyond = parseNarutoArgs(['run', 'review packages', `--max-threads=${beyondCap}`])
+  assert.equal(threadsBeyond.maxThreads, beyondCap)
+  assert.ok(threadsBeyond.argumentErrors.includes(`exceeds_hard_thread_cap:--max-threads=${beyondCap}:${HARD_NARUTO_MAX_THREADS}`))
 })
 
 test('Naruto parent-summary parser requires the exact active-mission stdin surface', () => {

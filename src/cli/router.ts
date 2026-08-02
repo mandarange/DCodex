@@ -165,7 +165,12 @@ async function dispatchInner(argv: readonly string[]): Promise<unknown> {
     return helpResult(command);
   }
   if (typeof mod.run !== 'function') throw new Error(`Command ${command} must export run(command, args)`);
-  return mod.run(rawCommand || command, rest);
+  const result = await mod.run(rawCommand || command, rest);
+  if (argv.includes('--json') && result && typeof result === 'object' && (result as { ok?: unknown }).ok === false) {
+    const current = Number(process.exitCode || 0);
+    if (!Number.isFinite(current) || current === 0) process.exitCode = 1;
+  }
+  return result;
 }
 
 async function ensureActiveRouteCommandGate(command: CommandNameLite, args: readonly string[]) {
@@ -176,12 +181,15 @@ async function ensureActiveRouteCommandGate(command: CommandNameLite, args: read
   if (entry.mutatesRouteState !== true) return { ok: true, status: 'allowed' };
   if (safeReadOnlySubcommand(command, args)) return { ok: true, status: 'allowed_status_subcommand' };
   if (safeActiveRouteVisualQuery(command, args)) return { ok: true, status: 'allowed_visual_query' };
-  const [{ projectRoot, readJson }, { stateFile }] = await Promise.all([
+  const [{ projectRoot }, { loadOwnedRouteState }] = await Promise.all([
     import('../core/fsx.js'),
     import('../core/mission.js')
   ]);
   const root = await projectRoot(process.cwd()).catch(() => process.cwd());
-  const state = await readJson(stateFile(root), {}).catch(() => ({}));
+  const appSessionKey = process.env.SKS_NARUTO_STANDALONE_CLI === '1'
+    ? ''
+    : String(process.env.CODEX_THREAD_ID || '').trim();
+  const state = await loadOwnedRouteState(root, appSessionKey);
   if (safeActiveRouteContinuation(command, args, state)) return { ok: true, status: 'allowed_active_route_continuation' };
   if (!activeRouteStateBlocksCommand(state)) return { ok: true, status: 'allowed' };
   const visualPreflight = await blockedVisualSourcePreflight(command, args);

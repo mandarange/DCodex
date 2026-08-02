@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { printJson } from '../../cli/output.js';
 import { appendJsonlBounded, exists, nowIso, readJson, readText, runProcess, sksRoot, writeJsonAtomic } from '../fsx.js';
 import { initProject } from '../init.js';
 import { createMission, findLatestMission, loadMission, setCurrent, stateFile } from '../mission.js';
@@ -202,7 +203,7 @@ async function researchPrepare(args: any) {
     pipeline_plan_path: PIPELINE_PLAN_ARTIFACT,
     prompt
   });
-  if (flag(args, '--json')) return console.log(JSON.stringify({
+  if (flag(args, '--json')) return printJson({
     schema: autoresearch ? 'sks.autoresearch-prepare.v1' : 'sks.research-prepare.v1',
     ok: true,
     mission_id: id,
@@ -211,7 +212,7 @@ async function researchPrepare(args: any) {
     pipeline_plan: PIPELINE_PLAN_ARTIFACT,
     official_subagent_plan: officialSubagentPlan,
     honest_guarantees: officialSubagentPlan.guarantees
-  }, null, 2));
+  });
   console.log(`Research mission created: ${id}`);
   console.log('Methodology: Super Search evidence + official subagent adversarial convergence');
   console.log(`Plan: ${path.relative(root, path.join(dir, 'research-plan.md'))}`);
@@ -330,18 +331,22 @@ async function researchRun(args: any) {
   });
   await appendJsonlBounded(path.join(dir, 'events.jsonl'), { ts: nowIso(), type: passed ? 'research.done' : 'research.stage_cycle.blocked', cycle: 1, cycle_status: cycleResult.status, official_subagent_review_passed: adversarial?.passed === true });
   await enforceRetention(root).catch(() => {});
-  if (flag(args, '--json')) return console.log(JSON.stringify({
-    schema: flag(args, '--autoresearch') ? 'sks.autoresearch-run.v1' : 'sks.research-run.v1',
-    ok: proof.ok && passed,
-    mission_id: id,
-    gate,
-    quality_metrics: gate.metrics || null,
-    proof: proof.validation,
-    official_subagent_review: adversarial,
-    research_work_graph: researchWorkGraph,
-    research_cycle: cycleResult,
-    honest_mode: honestMode
-  }, null, 2));
+  if (flag(args, '--json')) {
+    const output = {
+      schema: flag(args, '--autoresearch') ? 'sks.autoresearch-run.v1' : 'sks.research-run.v1',
+      ok: proof.ok && passed,
+      mission_id: id,
+      gate,
+      quality_metrics: gate.metrics || null,
+      proof: proof.validation,
+      official_subagent_review: adversarial,
+      research_work_graph: researchWorkGraph,
+      research_cycle: cycleResult,
+      honest_mode: honestMode
+    };
+    if (!output.ok) process.exitCode = 2;
+    return printJson(output);
+  }
   printResearchCompletion(id, root, dir, plan, gate);
   if (!passed) process.exitCode = 2;
 }

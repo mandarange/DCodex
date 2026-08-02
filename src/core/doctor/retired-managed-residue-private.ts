@@ -11,7 +11,7 @@ import {
 import { escapeRegExp } from '../text/regex.js';
 
 /** Cleanup-only inventory. These names are never registered, listed, or redirected. */
-export const REMOVED_PUBLIC_COMMANDS = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui', 'glm', 'telegram'] as const;
+export const REMOVED_PUBLIC_COMMANDS = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui', 'glm'] as const;
 
 const RETIRED_COMMAND_TOMBSTONES = new Set<string>(REMOVED_PUBLIC_COMMANDS);
 const RETIRED_MISSION_MODES = new Set<string>([

@@ -10,9 +10,9 @@ export async function runSks(args: string[]): Promise<void> {
     const fs = typeof getBuiltinModule === 'function' ? getBuiltinModule('node:fs') : await import('node:fs');
     const { rootJsonFastInline } = await import('./fast-inline.js');
     rootJsonFastInline(fs);
-  } else if (args[0] === 'doctor' && args.includes('--json') && !args.includes('--report-file') && !args.includes('--fix') && !args.includes('--full') && !args.includes('--capabilities') && !args.includes('--search')) {
+  } else if (args[0] === 'doctor' && args.includes('--json') && !args.includes('--report-file') && !args.includes('--fix') && !args.includes('--full') && !args.includes('--capabilities') && !args.includes('--profile') && !args.includes('--search')) {
     const { doctorJsonFastInline } = await import('./fast-inline.js');
-    doctorJsonFastInline();
+    await doctorJsonFastInline();
   } else if (args[0] === 'super-search' && args[1] === 'doctor') {
     const superSearchDoctorModule = '../core/super-search/doctor.js';
     const { buildSuperSearchDoctorReport, printSuperSearchDoctorReport } = await import(superSearchDoctorModule);

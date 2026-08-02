@@ -4,13 +4,25 @@ import path from 'node:path';
 import { exists, PACKAGE_VERSION, readJson, readText, sha256 } from '../../fsx.js';
 import { smokeSksMenuBarAction } from './action-runner.js';
 import { isCodexAppRunningByBundleId, readMenuBarConfig } from './config.js';
-import { inspectLaunchdService, isMenuBarProcessRunning, removeLaunchAgent, restartLaunchAgent } from './launch-agent.js';
+import {
+  inspectLaunchdService,
+  inspectRunningMenuBarProcess,
+  removeLaunchAgent,
+  restartLaunchAgent,
+  waitForRunningMenuBarVersion
+} from './launch-agent.js';
 import { sksMenuBarPaths } from './paths.js';
 import { inspectInstalledResources } from './resources.js';
 import { inspectMenuBarArtifactSet } from './rollback.js';
 import { inspectSignature } from './signature.js';
 import { cleanupRetiredRemoteBridgeLaunchAgent, quarantineRetiredRemoteBridgeBindings } from './migration.js';
-import type { SksMenuBarBuildStamp, SksMenuBarStatusResult, SksMenuBarUninstallResult } from './types.js';
+import { inspectProjectMenuBarCanonicalState } from './global-install.js';
+import type {
+  SksMenuBarBuildStamp,
+  SksMenuBarStatusResult,
+  SksMenuBarUninstallResult,
+  SksMenuBarVersionProbe
+} from './types.js';
 
 export async function inspectSksMenuBarStatus(opts: {
   home?: string;
@@ -19,7 +31,6 @@ export async function inspectSksMenuBarStatus(opts: {
 } = {}): Promise<SksMenuBarStatusResult> {
   const paths = sksMenuBarPaths(opts.home || opts.env?.HOME, opts.root);
   const installed = await exists(paths.executable_path);
-  const running = installed ? await isMenuBarProcessRunning(paths.executable_path) : false;
   const actionText = await readText(paths.action_script_path, '');
   const nodeBin = shellAssignment(actionText, 'NODE_BIN');
   const sksEntry = shellAssignment(actionText, 'SKS_ENTRY');
@@ -31,6 +42,23 @@ export async function inspectSksMenuBarStatus(opts: {
   const config = await readMenuBarConfig(paths.config_path);
   const codexRunning = config.codex_bundle_id ? await isCodexAppRunningByBundleId(config.codex_bundle_id, opts.env) : null;
   const launchd = await inspectLaunchdService(opts.env);
+  const runningProcess = await inspectRunningMenuBarProcess(paths, launchd.pid, opts.env);
+  const running = runningProcess.ok;
+  const installedVersion = buildStamp?.package_version || null;
+  const persistedVersionProbe = await readJson<SksMenuBarVersionProbe | null>(paths.version_probe_path, null);
+  let versionProbe = evaluatePersistedMenuBarVersionProbe({
+    probe: persistedVersionProbe,
+    expectedVersion,
+    runningProcess,
+    persistedPath: paths.version_probe_path
+  });
+  if (!versionProbe.ok
+      && runningProcess.ok
+      && runningProcess.package_version === expectedVersion
+      && (versionProbe.error === 'menubar_version_probe_missing'
+        || versionProbe.error === 'menubar_version_probe_stale')) {
+    versionProbe = await waitForRunningMenuBarVersion(paths, expectedVersion, launchd.pid, opts.env);
+  }
   const legacyVerification = buildStamp?.legacy_v1
     ? await inspectMenuBarArtifactSet({
         appPath: paths.app_path,
@@ -42,10 +70,25 @@ export async function inspectSksMenuBarStatus(opts: {
     : null;
   const signature = legacyVerification?.signature || await inspectSignature(paths.app_path, opts.env);
   const resources = legacyVerification?.resources || await inspectInstalledResources({ resourcesDir: paths.resources_path, buildStamp });
+  const canonicalState = await inspectProjectMenuBarCanonicalState({
+    paths,
+    root: paths.root,
+    ...(opts.env ? { env: opts.env } : {})
+  });
   const blockers: string[] = [];
   const warnings: string[] = [];
+  const runtime = evaluateMenuBarRuntimeReadiness({
+    installed,
+    running,
+    verifiedProcessMatchesExpectedVersion: runningProcess.ok
+      && runningProcess.package_version === expectedVersion,
+    launchd
+  });
   if (!installed) blockers.push('menubar_app_missing');
-  if (installed && launchd.checked && !launchd.ok) blockers.push('launchd_not_running');
+  if (runtime.blocker) blockers.push(runtime.blocker);
+  if (runtime.warning) warnings.push(runtime.warning);
+  if (installed && launchd.checked && launchd.ok && !runningProcess.ok) blockers.push('menubar_runtime_identity_unverified');
+  if (installed && launchd.checked && launchd.ok && !versionProbe.ok) blockers.push(versionProbe.error || 'menubar_version_probe_failed');
   if (installed && !actionSmoke.executable) blockers.push('action_script_not_executable');
   if (installed && !actionSmoke.ok) blockers.push('action_script_smoke_failed');
   if (installed && actionSmoke.ok && !versionMatches) blockers.push('action_target_version_mismatch');
@@ -55,10 +98,18 @@ export async function inspectSksMenuBarStatus(opts: {
   if (installed && signature.checked && !signature.ok) blockers.push('menubar_signature_invalid');
   if (await exists(paths.install_transaction_path)) blockers.push('menubar_install_transaction_pending');
   if (await exists(paths.rollback_transaction_path)) blockers.push('menubar_rollback_transaction_pending');
+  blockers.push(...canonicalState.blockers);
+  if (canonicalState.verified_duplicates.length > 0) blockers.push('menubar_canonical_only_verified_duplicate_present');
+  if (canonicalState.unverified_collisions.length > 0) blockers.push('menubar_canonical_only_unverified_duplicate_present');
+  warnings.push(...canonicalState.warnings);
   if (!config.codex_bundle_id) warnings.push('codex_sync_disabled');
   return {
     schema: 'sks.menubar-status.v1', ok: blockers.length === 0, platform: process.platform,
-    installed, running, paths, launchd,
+    installed, running, installed_version: installedVersion, running_process: runningProcess,
+    menubar_version_probe: versionProbe,
+    duplicate_install_candidates: canonicalState.candidate_paths,
+    paths,
+    launchd,
     action_target: {
       node_bin: nodeBin,
       node_exists: nodeBin ? await isExecutable(nodeBin) : false,
@@ -83,6 +134,56 @@ export async function inspectSksMenuBarStatus(opts: {
     build_stamp: buildStamp, package_version: PACKAGE_VERSION, signature, resources,
     blockers, warnings,
     next_actions: blockers.length ? defaultNextActions() : ['sks menubar status --json']
+  };
+}
+
+export function evaluatePersistedMenuBarVersionProbe(input: {
+  probe: SksMenuBarVersionProbe | null;
+  expectedVersion: string;
+  runningProcess: SksMenuBarStatusResult['running_process'];
+  persistedPath: string;
+}): SksMenuBarVersionProbe {
+  const base = {
+    schema: 'sks.menubar-version-probe.v1' as const,
+    checked: true,
+    expected_version: input.expectedVersion,
+    running_version: input.runningProcess.package_version,
+    pid: input.runningProcess.pid,
+    generated_at: input.probe?.generated_at || new Date(0).toISOString(),
+    persisted_path: input.persistedPath
+  };
+  if (!input.probe || input.probe.schema !== 'sks.menubar-version-probe.v1') {
+    return { ...base, ok: false, error: 'menubar_version_probe_missing' };
+  }
+  if (!input.runningProcess.ok) {
+    return { ...base, ok: false, error: input.runningProcess.error || 'menubar_runtime_identity_unverified' };
+  }
+  if (input.probe.expected_version !== input.expectedVersion
+      || input.probe.running_version !== input.runningProcess.package_version
+      || input.probe.pid !== input.runningProcess.pid) {
+    return { ...base, ok: false, error: 'menubar_version_probe_stale' };
+  }
+  if (input.runningProcess.package_version !== input.expectedVersion) {
+    return { ...base, ok: false, error: 'menubar_running_version_mismatch' };
+  }
+  return { ...base, generated_at: input.probe.generated_at, ok: true, error: null };
+}
+
+export function evaluateMenuBarRuntimeReadiness(input: {
+  installed: boolean;
+  running: boolean;
+  verifiedProcessMatchesExpectedVersion?: boolean;
+  launchd: Pick<SksMenuBarStatusResult['launchd'], 'checked' | 'ok'>;
+}): { blocker: 'launchd_not_running' | null; warning: 'launchd_not_running_process_active' | null } {
+  if (!input.installed || !input.launchd.checked || input.launchd.ok) {
+    return { blocker: null, warning: null };
+  }
+  if (input.running && input.verifiedProcessMatchesExpectedVersion === true) {
+    return { blocker: null, warning: 'launchd_not_running_process_active' };
+  }
+  return {
+    blocker: 'launchd_not_running',
+    warning: input.running ? 'launchd_not_running_process_active' : null
   };
 }
 

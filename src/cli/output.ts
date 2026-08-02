@@ -4,6 +4,10 @@ export function sksTextLogo() {
   return `SKS\nSNEAKOSCOPE CODEX v${PACKAGE_VERSION}`;
 }
 
-export function printJson(value: any) {
+export function printJson(value: unknown): void {
+  if (value && typeof value === 'object' && (value as { ok?: unknown }).ok === false) {
+    const current = Number(process.exitCode || 0);
+    if (!Number.isFinite(current) || current === 0) process.exitCode = 1;
+  }
   console.log(JSON.stringify(value, null, 2));
 }

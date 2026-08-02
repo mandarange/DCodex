@@ -22,7 +22,7 @@ test('official subagent execution stage declares thread budget and event evidenc
   const stage = officialSubagentPipelineStage(normalizeOfficialSubagentPolicy('$Naruto', 'fixture', {}));
   assert.equal(stage.id, 'official_subagent_execution');
   assert.equal(stage.backend, 'official-codex-subagent');
-  assert.equal(stage.max_threads, 12);
+  assert.equal(stage.max_threads, 256);
   assert.equal(stage.max_depth, 1);
   assert.equal(stage.read_only, false);
   assert.match(stage.write_policy, /bounded workspace-write/);

@@ -70,6 +70,11 @@
       "reason": "GitHub Actions runs against the release checkout and staged tarball, not from an installed customer package"
     },
     {
+      "source": "scripts/build-clean-atomic.mjs",
+      "classification": "checkout_ci",
+      "reason": "the atomic clean-build driver runs only from a source checkout and invokes staged build helpers before package creation"
+    },
+    {
       "source": "src/core/build/build-once-runner.ts",
       "classification": "checkout_ci",
       "reason": "the build-once runner validates source-checkout build scripts"

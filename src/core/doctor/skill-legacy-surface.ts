@@ -115,7 +115,6 @@ const PREFIX_LEGACY_NAMES = Array.from(new Set([
   'context7-docs',
   'db-safety-guard',
   'honest-mode',
-  'imagegen',
   'reflection',
   'prompt-pipeline',
   'pipeline-runner'

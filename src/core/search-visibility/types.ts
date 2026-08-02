@@ -330,10 +330,24 @@ export interface VerificationResult {
   http_verified: boolean;
   browser_verified: boolean;
   production_verified: boolean;
+  http_evidence: HttpVerificationEvidence;
   measured_outcome: 'pending' | 'recorded' | 'not_applicable';
   checked_artifacts: Array<{ path: string; ok: boolean; message: string }>;
   blockers: string[];
   unverified: string[];
+}
+
+export interface HttpVerificationEvidence {
+  attempted: boolean;
+  verified: boolean;
+  requested_url: string | null;
+  final_url: string | null;
+  status_code: number | null;
+  content_type: string | null;
+  content_bytes: number | null;
+  content_sha256: string | null;
+  observed_at: string | null;
+  error: string | null;
 }
 
 export interface SearchVisibilityGate {

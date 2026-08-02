@@ -14,7 +14,7 @@ const parsed = parse(text);
 const agents = (parsed as any).agents || {};
 const files = (await fs.readdir(path.join(root, '.codex', 'agents'))).sort();
 assertGate(report.ok === true, 'startup config blackbox must pass postcheck', report);
-assertGate(agents.max_concurrent_threads_per_session === 12 && agents.max_threads === undefined && agents.max_depth === 1 && agents.interrupt_message === true && agents.enabled === true, 'startup config blackbox must persist official settings', agents);
+assertGate(agents.max_concurrent_threads_per_session === 256 && agents.max_threads === undefined && agents.max_depth === 1 && agents.interrupt_message === true && agents.enabled === true, 'startup config blackbox must persist official settings', agents);
 const expectedRoleFiles = MANAGED_OFFICIAL_SUBAGENT_ROLES.map((role) => role.filename).sort();
 assertGate(files.join(',') === expectedRoleFiles.join(','), 'startup config blackbox must create exactly the official managed role TOMLs', files);
 assertGate(text.includes('config_file = ".codex/agents/stale.toml"') && text.includes('message_role_prefix = "legacy"'), 'startup config blackbox must preserve legacy compatibility tables', { text });

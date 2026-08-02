@@ -102,6 +102,11 @@ test('workflow proves Node 20, 22, and 24 and runs exact-tarball smoke plus secr
     assert.match(block, /EXPECTED_SHA: \$\{\{ github\.sha \}\}/);
     assert.match(block, /pkg\.version !== process\.env\.REQUESTED_VERSION/);
     assert.match(block, /head !== process\.env\.EXPECTED_SHA/);
+    assert.match(block, /status', '--porcelain=v1', '--untracked-files=all'/);
+    assert.match(block, /ls-remote', '--exit-code', 'origin', 'refs\/heads\/main'/);
+    assert.match(block, /remoteMain !== head/);
+    assert.match(block, /publishConfig\?\.tag !== expectedTag/);
+    assert.match(block, /npmrcTag !== expectedTag/);
   }
   assert.match(stageJob, /pkg\.version !== process\.env\.VERSION/);
   assert.match(stageJob, /comparison\.local_sha256 !== receipt\.sha256/);

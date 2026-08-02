@@ -75,7 +75,7 @@ test('prepublish wrapper fails closed when authoritative verification finds drif
 test('prepublish wrapper accepts an equivalent rebuild and still rejects dist digest drift', async (t) => {
   const proof = createReleaseStampProof();
   t.after(() => proof.cleanup());
-  const env = { ...process.env, ...proof.env, npm_command: 'publish' };
+  const env = { ...process.env, ...proof.env };
   const write = spawnSync(process.execPath, ['./dist/scripts/release-check-stamp.js', ...proof.writeArgs], {
     cwd: root,
     encoding: 'utf8',
@@ -89,7 +89,13 @@ test('prepublish wrapper accepts an equivalent rebuild and still rejects dist di
     env
   });
   assert.equal(rebuilt.status, 0, rebuilt.stderr || rebuilt.stdout);
-  assert.match(rebuilt.stdout, /Release check stamp verified/);
+  const verifiedAfterRebuild = spawnSync(process.execPath, ['./dist/scripts/prepublish-release-check-or-fast.js'], {
+    cwd: root,
+    encoding: 'utf8',
+    env
+  });
+  assert.equal(verifiedAfterRebuild.status, 0, verifiedAfterRebuild.stderr || verifiedAfterRebuild.stdout);
+  assert.match(verifiedAfterRebuild.stdout, /Release check stamp verified/);
   const summaryStat = await fs.stat(proof.summaryPath);
   const buildStampStat = await fs.stat(currentDistFreshness().stamp_path);
   assert.ok(summaryStat.mtimeMs < buildStampStat.mtimeMs);

@@ -51,6 +51,7 @@ import { coreEngineeringDirectiveReferenceText, engineeringSanityPolicyText } fr
 import { classifyTaskProfile, gateProfileForTask, type GateProfile, type TaskProfile } from '../runtime/task-profile.js';
 import { chooseVerificationBudget, type VerificationBudget } from '../runtime/verification-budget.js';
 import { NARUTO_PARENT_MODEL } from '../subagents/model-policy.js';
+import { HARD_NARUTO_MAX_THREADS } from '../subagents/thread-budget.js';
 import {
   NARUTO_GATE_FILENAME,
   NARUTO_SUMMARY_FILENAME,
@@ -1369,7 +1370,8 @@ async function materializeOfficialSubagentOverlay(root: any, prepared: any, rout
     route: route?.command || route?.id || 'official-subagent-overlay',
     prompt: cleanTask
   });
-  const requestedSubagents = requestedSubagentsFromTask(cleanTask);
+  const subagentOptions = officialSubagentOptionsFromTask(cleanTask);
+  const requestedSubagents = subagentOptions.requestedSubagents;
   const observedParentModel = typeof opts.parentModel === 'string' && opts.parentModel.trim()
     ? opts.parentModel.trim()
     : null;
@@ -1382,9 +1384,24 @@ async function materializeOfficialSubagentOverlay(root: any, prepared: any, rout
     sessionScope: opts.sessionKey || null,
     ...(requestedSubagents === undefined ? {} : { requestedSubagents }),
     requestedSubagentsExplicit: requestedSubagents !== undefined,
+    ...(subagentOptions.maxThreads === undefined ? {} : { maxThreads: subagentOptions.maxThreads }),
     mode: 'generic',
     observedParentModel,
-    preparationOnly: true
+    preparationOnly: true,
+    statePatch: ({ budget: preparedBudget, workflowRunId }) => ({
+      mission_id: id,
+      subagents_required: true,
+      subagents_verified: false,
+      native_sessions_required: false,
+      native_sessions_verified: false,
+      requested_subagents: preparedBudget.requestedSubagents,
+      subagent_max_threads: preparedBudget.maxThreads,
+      subagent_max_depth: preparedBudget.maxDepth,
+      official_subagent_run_id: workflowRunId,
+      session_scope: opts.sessionKey || null,
+      subagent_plan_file: SUBAGENT_PLAN_FILENAME,
+      subagent_evidence_file: SUBAGENT_EVIDENCE_FILENAME
+    })
   });
   const { budget, delegationPrompt, plan } = preparation;
   await setCurrent(root, {
@@ -1415,7 +1432,8 @@ async function materializeOfficialSubagentOverlay(root: any, prepared: any, rout
 async function prepareNaruto(root: any, route: any, task: any, required: any, opts: any = {}) {
   const cleanTask = stripDollarCommand(task) || String(task || '').trim();
   const fromChatImgRequired = hasFromChatImgSignal(cleanTask);
-  const requestedSubagents = requestedSubagentsFromTask(cleanTask);
+  const subagentOptions = officialSubagentOptionsFromTask(cleanTask);
+  const requestedSubagents = subagentOptions.requestedSubagents;
   const observedParentModel = typeof opts.parentModel === 'string' && opts.parentModel.trim()
     ? opts.parentModel.trim()
     : null;
@@ -1448,9 +1466,32 @@ async function prepareNaruto(root: any, route: any, task: any, required: any, op
     sessionScope: opts.sessionKey || null,
     ...(requestedSubagents === undefined ? {} : { requestedSubagents }),
     requestedSubagentsExplicit: requestedSubagents !== undefined,
+    ...(subagentOptions.maxThreads === undefined ? {} : { maxThreads: subagentOptions.maxThreads }),
     mode: 'naruto',
     observedParentModel,
-    preparationOnly: true
+    preparationOnly: true,
+    statePatch: ({ budget: preparedBudget, workflowRunId: preparedRunId }) => ({
+      mission_id: id,
+      route: 'Naruto',
+      route_command: '$Naruto',
+      mode: 'NARUTO',
+      phase: 'NARUTO_PREPARING',
+      implementation_allowed: true,
+      subagents_required: true,
+      subagents_verified: false,
+      native_sessions_required: false,
+      native_sessions_verified: false,
+      requested_subagents: preparedBudget.requestedSubagents,
+      subagent_max_threads: preparedBudget.maxThreads,
+      subagent_max_depth: preparedBudget.maxDepth,
+      official_subagent_run_id: preparedRunId,
+      session_scope: opts.sessionKey || null,
+      subagent_plan_file: SUBAGENT_PLAN_FILENAME,
+      subagent_evidence_file: SUBAGENT_EVIDENCE_FILENAME,
+      stop_gate: NARUTO_GATE_FILENAME,
+      naruto_gate_file: NARUTO_GATE_FILENAME,
+      prompt: cleanTask
+    })
   });
   const {
     budget,
@@ -1532,12 +1573,34 @@ async function prepareNaruto(root: any, route: any, task: any, required: any, op
   return routeContext(route, id, cleanTask, required, `Use the delegation context below in the current Codex parent session. First replace parent_required with a defensible independent/disjoint decomposition, then spawn and wait for every requested agent thread. Record official events and integrate the parent summary before passing ${NARUTO_GATE_FILENAME}.\n\n${delegationPrompt}`);
 }
 
-function requestedSubagentsFromTask(task: any) {
+function officialSubagentOptionsFromTask(task: any): {
+  requestedSubagents?: number;
+  maxThreads?: number;
+} {
   const text = String(task || '');
-  const value = text.match(/(?:^|\s)--agents(?:=|\s+)(\d+)\b/i)?.[1];
-  if (!value) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  const requestedSubagents = strictNarutoIntegerOption(text, '--agents');
+  const maxThreads = strictNarutoIntegerOption(text, '--max-threads');
+  return {
+    ...(requestedSubagents === undefined ? {} : { requestedSubagents }),
+    ...(maxThreads === undefined ? {} : { maxThreads })
+  };
+}
+
+function strictNarutoIntegerOption(text: string, option: '--agents' | '--max-threads'): number | undefined {
+  const escaped = option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const flag = new RegExp(`(?:^|\\s)${escaped}(?:(?:=|\\s+)([^\\s]+))?`, 'gi');
+  const matches = [...text.matchAll(flag)];
+  if (!matches.length) return undefined;
+  if (matches.length > 1) throw new Error(`duplicate_naruto_option:${option}`);
+  const raw = String(matches[0]?.[1] || '').trim();
+  if (!/^\d+$/.test(raw)) throw new Error(`invalid_naruto_option:${option}`);
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > HARD_NARUTO_MAX_THREADS) {
+    throw new Error(
+      `naruto_option_out_of_range:${option}:${raw}:1-${HARD_NARUTO_MAX_THREADS}`
+    );
+  }
+  return parsed;
 }
 
 function routeState(id: any, route: any, phase: any, context7Required: any, extra: any = {}) {

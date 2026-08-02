@@ -36,6 +36,16 @@ test('rewriteSkillLegacySurface maps retired dollar and CLI surfaces to current 
   assert.equal(skillLegacySurfaceNeedsRewrite(result.text), false);
 });
 
+test('official Codex App $imagegen references are current and never rewritten', () => {
+  const input = 'Use $imagegen for the official Codex App image generation tool.';
+  assert.equal(skillLegacySurfaceNeedsRewrite(input), false);
+  assert.deepEqual(rewriteSkillLegacySurface(input), {
+    text: input,
+    changed: false,
+    hits: []
+  });
+});
+
 test('doctor --fix rewrites customer skills and removes OMX skill directories from the live picker', async () => {
   const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-skill-legacy-'));
   const project = path.join(fixture, 'project');

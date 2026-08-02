@@ -112,6 +112,46 @@ test('Naruto App preparation reuses the session mission, isolates each run, and 
   }
 });
 
+test('Naruto App preparation rejects malformed, duplicate, and out-of-frame fanout options', async () => {
+  const cases = [
+    ['$Naruto --agents 0 inspect the repository', /naruto_option_out_of_range:--agents:0:1-256/],
+    ['$Naruto --agents 257 inspect the repository', /naruto_option_out_of_range:--agents:257:1-256/],
+    ['$Naruto --max-threads nope inspect the repository', /invalid_naruto_option:--max-threads/],
+    ['$Naruto --agents 2 --agents=3 inspect the repository', /duplicate_naruto_option:--agents/]
+  ] as const;
+  for (const [prompt, expected] of cases) {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-naruto-invalid-fanout-'));
+    try {
+      await assert.rejects(() => prepareRoute(root, prompt, {}), expected);
+      await assert.rejects(
+        fsp.access(path.join(root, '.sneakoscope', 'state', 'current.json'))
+      );
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('Naruto App preparation passes the 256 frame cap through without truncating it', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-naruto-max-frame-'));
+  try {
+    const prepared: any = await prepareRoute(
+      root,
+      '$Naruto --agents 256 --max-threads 256 inspect independent files',
+      {}
+    );
+    const plan = JSON.parse(await fsp.readFile(
+      path.join(root, '.sneakoscope', 'missions', prepared.mission_id, 'subagent-plan.json'),
+      'utf8'
+    ));
+    assert.equal(plan.requested_subagents, 256);
+    assert.equal(plan.max_threads, 256);
+    assert.equal(plan.first_wave, 256);
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
 test('$DB materializes internal safety artifacts without a public sks db command', async () => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-db-route-only-'));
   try {

@@ -28,9 +28,27 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   assert.equal(buildTsconfig.compilerOptions.sourceMap, false);
   assert.ok(fs.existsSync('dist/native/sks-menubar/Sources/AppDelegate.swift'));
   assert.ok(fs.existsSync('dist/native/sks-menubar/Resources/AppIcon.icns'));
-  assert.equal(pkg.files.some((entry) => entry.includes('dist/core/telegram')), false);
-  assert.equal(fs.existsSync('dist/core/commands/telegram-command.js'), false);
-  assert.equal(fs.existsSync('dist/core/telegram'), false);
+  for (const file of [
+    'TelegramPrivateFileSupport.swift',
+    'TelegramPrivateFileStore.swift',
+    'TelegramProcessGateway.swift',
+    'TelegramRuntimeSupport.swift',
+    'TelegramSupport.swift',
+    'TelegramTransport.swift'
+  ]) {
+    assert.ok(
+      fs.existsSync(path.join('dist/native/sks-menubar/Sources', file)),
+      `published package must include native Telegram source ${file}`
+    );
+  }
+  assert.ok(pkg.files.includes('dist'), 'published package must include the built Telegram runtime through dist');
+  assert.ok(fs.existsSync('dist/core/config-adopt/index.js'));
+  assert.ok(fs.existsSync('dist/core/commands/telegram-command.js'));
+  assert.ok(fs.existsSync('dist/core/telegram'));
+  for (const file of ['access.js', 'client.js', 'confirmation.js', 'doctor.js', 'index.js', 'keychain.js', 'liveness.js', 'poller.js', 'redaction.js', 'types.js']) {
+    assert.ok(fs.existsSync(path.join('dist/core/telegram', file)), `built Telegram runtime must include ${file}`);
+  }
+  assert.equal(fs.existsSync('dist/core/telegram/controller.js'), false, 'published package must not include the retired Telegram controller');
   assert.equal(scripts['release:check'], 'npm run release:check:affected');
   assert.match(scripts['release:check:affected'], /--preset affected/);
   assert.match(scripts['release:check:affected'], /release:ensure-build/);
@@ -59,11 +77,14 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   assert.match(prepublishVerifier, /current authoritative full-release stamp/);
   assert.match(prepublishVerifier, /--prepack-build/);
   assert.match(prepublishVerifier, /npm_command/);
+  assert.match(prepublishVerifier, /publish-preflight\.js/);
+  assert.match(prepublishVerifier, /check-publish-tag\.js/);
   assert.match(prepublishVerifier, /\['run', 'build'\]/);
   for (const removed of ['publish:dry', 'publish:verify-ignore-scripts', 'publish:prep-ignore-scripts', 'publish:ignore-scripts']) {
     assert.equal(scripts[removed], undefined, `${removed} must not expose a direct-publish path`);
   }
   assert.doesNotMatch(Object.values(scripts).join('\n'), /\bnpm\s+publish\b/);
+  assert.ok(pkg.files.some((entry) => entry.includes('publish-preflight.js')), 'publish preflight must ship with the lifecycle verifier');
   for (const required of [
     'release:file-ownership',
     'release:macos-menubar-proof',
@@ -116,6 +137,23 @@ test('plain lifecycle publish requires release proof instead of being categorica
   assert.doesNotMatch(result.stderr, /Direct npm publish is disabled/);
   assert.doesNotMatch(buildManifestWriter, /generated_at/);
   assert.match(distRuntimeCheck, /build_manifest_generated_at_non_deterministic/);
+});
+
+test('actual npm publish lifecycle fails closed in a dirty or detached worktree', () => {
+  const result = spawnSync(process.execPath, ['./dist/scripts/prepublish-release-check-or-fast.js'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      npm_lifecycle_event: 'prepublishOnly',
+      npm_command: 'publish'
+    }
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /"schema": "sks\.publish-preflight\.v1"/);
+  assert.match(result.stdout, /"ok": false/);
+  assert.match(result.stderr, /npm publish blocked by reproducibility preflight/);
+  assert.match(`${result.stdout}\n${result.stderr}`, /publish_requires_main_branch:detached|worktree_not_clean/);
 });
 
 test('build-dist CommonJS conversion is byte-idempotent across incremental rebuilds', () => {

@@ -8,9 +8,12 @@ import { fileURLToPath } from 'node:url';
 import { writeTextAtomic } from '../core/fsx.js';
 import { writeDistFreshStamp, sourceSnapshot } from './lib/ensure-dist-fresh.js';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const root = path.resolve(
+  process.env.SKS_BUILD_SOURCE_ROOT
+  || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+);
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-const distRoot = path.join(root, 'dist');
+const distRoot = path.resolve(process.env.SKS_BUILD_OUTPUT_DIR || path.join(root, 'dist'));
 const srcRoot = path.join(root, 'src');
 
 if (!fs.existsSync(distRoot)) {
