@@ -24,6 +24,8 @@ export function createReleaseStampProof(root = process.cwd()) {
   const realSummaryPath = path.join(fixtureRoot, 'release-real-check.json');
   const stampPath = path.join(fixtureRoot, 'release-check-stamp.json');
   const canonicalProofPath = path.join(fixtureRoot, 'canonical-test-proof.json');
+  const readinessReportDir = path.join(fixtureRoot, 'readiness');
+  const publishAuthReportPath = path.join(fixtureRoot, 'release-publish-auth.json');
   fs.mkdirSync(dir, { recursive: true });
   const releaseManifest = JSON.parse(fs.readFileSync(path.join(root, 'release-gates.v2.json'), 'utf8'));
   const releaseGateIds = [...releaseGateContractSnapshot().ids];
@@ -129,7 +131,13 @@ export function createReleaseStampProof(root = process.cwd()) {
     realSummaryPath,
     stampPath,
     canonicalProofPath,
-    env: { SKS_RELEASE_STAMP_PATH: stampPath },
+    readinessReportDir,
+    publishAuthReportPath,
+    env: {
+      SKS_RELEASE_STAMP_PATH: stampPath,
+      SKS_RELEASE_READINESS_REPORT_DIR: readinessReportDir,
+      SKS_RELEASE_PUBLISH_AUTH_REPORT_PATH: publishAuthReportPath
+    },
     writeArgs,
     writeCommand: [JSON.stringify(process.execPath), './dist/scripts/release-check-stamp.js', ...writeArgs.map((value) => JSON.stringify(value))].join(' '),
     cleanup() {

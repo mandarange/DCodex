@@ -14,6 +14,9 @@ const requirePackProof = process.argv.includes('--require-pack-proof');
 const publishAuthMode = String(process.env.SKS_PUBLISH_AUTH_MODE || 'token').trim().toLowerCase();
 const skipNetwork = process.env.SKS_SKIP_REGISTRY_NETWORK_CHECK === '1';
 const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const publishAuthReportPath = process.env.SKS_RELEASE_PUBLISH_AUTH_REPORT_PATH
+  ? path.resolve(process.env.SKS_RELEASE_PUBLISH_AUTH_REPORT_PATH)
+  : path.join(root, '.sneakoscope', 'reports', 'release-publish-auth.json');
 
 type AnyRecord = Record<string, any>;
 
@@ -263,7 +266,7 @@ function checkPublishAuth(pkg: AnyRecord) {
     maintainer_match: maintainers.length === 0 ? null : maintainers.includes(user),
     generated_at: new Date().toISOString()
   };
-  const out = path.join(root, '.sneakoscope', 'reports', 'release-publish-auth.json');
+  const out = publishAuthReportPath;
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`Publish auth check passed: ${pkg.name}@${pkg.version} as ${user}.`);
@@ -303,7 +306,7 @@ function checkTrustedPublisherAuth(pkg: AnyRecord) {
     identity_verified_by_registry_at_publish: false,
     generated_at: new Date().toISOString()
   };
-  const out = path.join(root, '.sneakoscope', 'reports', 'release-publish-auth.json');
+  const out = publishAuthReportPath;
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`Trusted-publisher environment check passed: ${pkg.name}@${pkg.version} from ${expectedRepository}.`);

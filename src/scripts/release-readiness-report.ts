@@ -10,8 +10,16 @@ const pkg = readJson('package.json', {});
 const lock = readJson('package-lock.json', {});
 const manifest = readJson('release-gates.v2.json', { gates: [] });
 const version = String(pkg.version || 'unknown');
-const reportDir = path.join(root, '.sneakoscope', 'reports');
-const releaseStampPath = process.env.SKS_RELEASE_STAMP_PATH || path.join(reportDir, 'release-check-stamp.json');
+const canonicalReportDir = path.join(root, '.sneakoscope', 'reports');
+const reportDir = process.env.SKS_RELEASE_READINESS_REPORT_DIR
+  ? path.resolve(process.env.SKS_RELEASE_READINESS_REPORT_DIR)
+  : canonicalReportDir;
+const canonicalReleaseStampPath = path.join(canonicalReportDir, 'release-check-stamp.json');
+const releaseStampPath = process.env.SKS_RELEASE_STAMP_PATH || canonicalReleaseStampPath;
+const evidenceScope = path.resolve(reportDir) === path.resolve(canonicalReportDir)
+  && path.resolve(releaseStampPath) === path.resolve(canonicalReleaseStampPath)
+  ? 'production'
+  : 'fixture';
 const jsonPath = path.join(reportDir, `release-readiness-${version}.json`);
 const mdPath = path.join(reportDir, `release-readiness-${version}.md`);
 const gates = Array.isArray(manifest.gates) ? manifest.gates : [];
@@ -122,15 +130,28 @@ const checks = {
   release_metadata: runScript('dist/scripts/release-metadata-check.js', 60_000),
   release_provenance: runScript('dist/scripts/release-provenance-check.js'),
   imagegen_capability: runScript('dist/scripts/imagegen-capability-check.js'),
+  physical_release_gates: runScript('dist/scripts/release-physical-gates-check.js'),
   stamp_verification: runScript('dist/scripts/release-check-stamp.js', 30_000, ['verify'])
 };
-for (const [id, check] of Object.entries(checks)) if (!check.ok) remainingP0.push(`${id}_failed`);
+for (const [id, check] of Object.entries(checks)) {
+  if (id !== 'physical_release_gates' && !check.ok) remainingP0.push(`${id}_failed`);
+}
 
 const stamp = readJson(releaseStampPath, null);
+const physicalGateReport = parseJsonOutput(checks.physical_release_gates.stdout);
+const publishBlockers = [];
+if (evidenceScope !== 'production') publishBlockers.push('release_evidence_scope_is_fixture');
+if (!checks.physical_release_gates.ok) {
+  const physicalBlockers = Array.isArray(physicalGateReport?.blockers) ? physicalGateReport.blockers : ['physical_release_gates_invalid'];
+  publishBlockers.push(...physicalBlockers.map((blocker) => `physical:${blocker}`));
+}
+if (!checks.stamp_verification.ok) publishBlockers.push('production_release_stamp_invalid');
+const stageDispatchReady = remainingP0.length === 0 && publishBlockers.length === 0;
 const statusFor = (group) => requiredGateGroups[group].every((id) => gateIds.has(id)) ? 'present' : 'missing';
 const report = {
   schema: 'sks.release-readiness.v1',
   generated_at: new Date().toISOString(),
+  evidence_scope: evidenceScope,
   scope: {
     release_version: version,
     gate: `${version} current release DAG`,
@@ -161,13 +182,16 @@ const report = {
   release_gate_last_pass_stamp: stamp ? {
     package_version: stamp.package_version || null,
     generated_at: stamp.generated_at || null,
+    git_commit: stamp.git_commit || stamp.source_commit || null,
     source_digest: stamp.source_digest || null,
     full_release_proof: stamp.full_release_proof || stamp.proof_scope || null
   } : null,
   non_publish_gaps: [],
   legacy_report_only_gaps: [],
   remaining_p0_gaps: [...new Set(remainingP0)],
-  publish_ready: remainingP0.length === 0,
+  publish_blockers: [...new Set(publishBlockers)],
+  stage_dispatch_ready: stageDispatchReady,
+  publish_ready: stageDispatchReady,
   ok: remainingP0.length === 0
 };
 
@@ -216,12 +240,18 @@ function readText(rel) {
   try { return fs.readFileSync(path.join(root, rel), 'utf8'); } catch { return ''; }
 }
 
+function parseJsonOutput(value) {
+  try { return JSON.parse(String(value || '')); } catch { return null; }
+}
+
 function renderMarkdown(value) {
   const lines = [
     '# Release Readiness',
     '',
     `- Version: \`${value.package.version}\``,
     `- Status: **${value.ok ? 'PASS' : 'BLOCKED'}**`,
+    `- Evidence scope: \`${value.evidence_scope}\``,
+    `- Stage dispatch ready: **${value.stage_dispatch_ready ? 'YES' : 'NO'}**`,
     `- Gates: ${value.manifest.gate_count} / 200`,
     `- Package scripts: ${value.manifest.package_script_count} / 101`,
     `- Codex: \`${value.version_truth.codex_manifest_target}\``,
@@ -235,7 +265,8 @@ function renderMarkdown(value) {
     `- PPT Imagegen Review: ${value.ppt_imagegen_review.status}`,
     `- DFix: ${value.dfix.status}`,
     '',
-    `Remaining P0 gaps: ${value.remaining_p0_gaps.length ? value.remaining_p0_gaps.join(', ') : 'None'}`
+    `Remaining P0 gaps: ${value.remaining_p0_gaps.length ? value.remaining_p0_gaps.join(', ') : 'None'}`,
+    `Publish blockers: ${value.publish_blockers.length ? value.publish_blockers.join(', ') : 'None'}`
   ];
   return `${lines.join('\n')}\n`;
 }

@@ -119,7 +119,8 @@ if (args[0] === 'view' && args[1] === 'sneakoscope' && args[2] === 'maintainers'
 
   const baseEnv = {
     ...process.env,
-    PATH: `${bin}${path.delimiter}${process.env.PATH || ''}`
+    PATH: `${bin}${path.delimiter}${process.env.PATH || ''}`,
+    SKS_RELEASE_PUBLISH_AUTH_REPORT_PATH: path.join(tmp, 'release-publish-auth.json')
   };
   const ok = spawnSync(process.execPath, ['dist/scripts/release-registry-check.js', '--require-unpublished', '--require-publish-auth'], {
     cwd: process.cwd(),
@@ -173,7 +174,8 @@ if (args[0] === 'whoami') {
       GITHUB_REPOSITORY: 'mandarange/Sneakoscope-Codex',
       GITHUB_WORKFLOW_REF: 'mandarange/Sneakoscope-Codex/.github/workflows/publish-npm.yml@refs/heads/main',
       ACTIONS_ID_TOKEN_REQUEST_URL: 'https://example.invalid/oidc',
-      ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'redacted-test-token'
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'redacted-test-token',
+      SKS_RELEASE_PUBLISH_AUTH_REPORT_PATH: path.join(tmp, 'release-publish-auth.json')
     }
   });
 

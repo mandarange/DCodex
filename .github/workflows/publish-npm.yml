@@ -79,6 +79,9 @@ jobs:
       - name: Install release dependencies
         run: npm ci --ignore-scripts
 
+      - name: Verify source-bound physical release receipts
+        run: node ./dist/scripts/release-physical-gates-check.js
+
       - name: Verify requested version and main SHA
         env:
           REQUESTED_VERSION: ${{ inputs.version }}

@@ -21,9 +21,11 @@ test('black-box release readiness writes no P0 gaps', async () => {
     });
     assert.equal(result.code, 0);
     const pkg = JSON.parse(await fs.readFile('package.json', 'utf8'));
-    const json = JSON.parse(await fs.readFile(`.sneakoscope/reports/release-readiness-${pkg.version}.json`, 'utf8'));
+    const json = JSON.parse(await fs.readFile(`${proof.readinessReportDir}/release-readiness-${pkg.version}.json`, 'utf8'));
     assert.equal(json.ok, true);
     assert.deepEqual(json.remaining_p0_gaps, []);
+    assert.equal(json.evidence_scope, 'fixture');
+    assert.equal(json.publish_ready, false);
   } finally {
     proof.cleanup();
   }

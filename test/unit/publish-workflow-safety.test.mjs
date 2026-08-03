@@ -47,6 +47,7 @@ test('npm workflow stages one immutable tarball after Linux and macOS proof', ()
   assert.match(macosJob, /needs: \[linux-release-proof\]/);
   assert.match(workflow, /needs: \[linux-release-proof, macos-menubar-proof\]/);
   assert.match(workflow, /needs: \[pack-and-compare\]/);
+  assert.match(linuxJob, /release-physical-gates-check\.js/);
   for (const artifact of [
     'linux-release-proof',
     'macos-menubar-proof',
@@ -203,13 +204,19 @@ test('maintainer verifier is read-only, exact-versioned, and OIDC-ineligible', (
 });
 
 test('confirmed staging proves the local review path before any mutation', () => {
-  assert.match(stagePublish, /const preflight = runPreflight\(opts, version\)/);
+  assert.match(stagePublish, /const preflight = runPreflight\(opts, packageIdentity\.name, version\)/);
   assert.match(stagePublish, /if \(!preflight\.ok\) return finish\(\)/);
   assert.match(stagePublish, /local_review_verifier/);
+  assert.match(stagePublish, /physical_release_gates/);
   assert.match(stagePublish, /localNpmStageReviewEnvironmentBlocker/);
   assert.match(stagePublish, /exactNpmStageCliInvocation\(\)/);
   assert.match(stagePublish, /stage_npm_cli_version_mismatch/);
   assert.match(stagePublish, /stage_npm_cli_unavailable/);
+  assert.match(stagePublish, /stage_npm_not_authenticated/);
+  assert.match(stagePublish, /stage_npm_user_not_maintainer/);
+  assert.match(stagePublish, /stage_version_already_staged/);
+  assert.match(stagePublish, /snapshotWorkflowRunIds/);
+  assert.match(stagePublish, /!priorRunIds\.has\(id\)/);
 });
 
 function sectionBetween(startLabel, endLabel) {

@@ -223,6 +223,21 @@ All four receipts below are required before tagging, staging, publishing, or a
 release-complete claim. Hermetic tests remain necessary but cannot replace
 these environment-bound checks.
 
+The tracked summary lives at
+`release-evidence/<version>/physical-gates.json` with schema
+`sks.release-physical-gates.v1`. It is bound to the exact package version and
+40-character release-source commit. The tracked receipt may be added by a
+later evidence-only commit; the validator accepts that only when the bound
+source is an ancestor and every intervening changed path stays under the same
+`release-evidence/<version>/` directory. Each of the four gate entries must declare
+`evidence_kind: "real"`, reject fixture/mock/synthetic evidence, state that
+secrets are absent and the summary is redacted, and bind a regular artifact
+under the same version directory by SHA-256. Each artifact must be non-empty
+and no larger than 8 MiB, keeping verification I/O bounded. Run
+`node ./dist/scripts/release-physical-gates-check.js` before staging. Both the
+local `sks release stage` preflight and the OIDC workflow enforce this check;
+missing or stale evidence blocks before registry mutation.
+
 1. **5,001-directory update scan:** run `sks update` in a large-repository
    fixture whose guidance traversal encounters 5,001 directories. The update
    must finish successfully; any bounded scan cutoff remains the explicit
@@ -280,6 +295,11 @@ npm run release:check:full --silent
 node ./dist/scripts/release-check-stamp.js verify
 npm publish --dry-run --json --registry https://registry.npmjs.org/ --tag latest --access public
 ```
+
+The dry-run is registry-nonmutating, so its reproducibility preflight requires
+clean `main`, live `origin/main`, the current release stamp, and unpublished
+version state but does not require a local or remote `v<version>` tag. A real
+direct `npm publish` still requires both tags to resolve to the exact HEAD.
 
 Focused checks must cover the changed Menu Bar, MCP, update, Remote,
 official-subagent, managed-residue, command-surface, and release-pack paths.

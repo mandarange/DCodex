@@ -11,7 +11,10 @@ function recorder(responses = {}) {
     const key = `${command} ${args.join(' ')}`;
     calls.push(key);
     for (const [pattern, value] of Object.entries(responses)) {
-      if (key.includes(pattern)) return { status: 0, stdout: '', stderr: '', ...value };
+      if (key.includes(pattern)) {
+        const resolved = typeof value === 'function' ? value(key, calls) : value;
+        return { status: 0, stdout: '', stderr: '', ...resolved };
+      }
     }
     return { status: 0, stdout: '', stderr: '' };
   };
@@ -23,6 +26,10 @@ const GREEN_PREFLIGHT = {
   'status --porcelain': { stdout: '' },
   'rev-parse HEAD': { stdout: 'a'.repeat(40) + '\n' },
   'npx --yes npm@11.15.0 --version': { stdout: '11.15.0\n' },
+  'npx --yes npm@11.15.0 whoami': { stdout: 'cdw0424\n' },
+  'npx --yes npm@11.15.0 view sneakoscope maintainers': { stdout: '[{"name":"cdw0424","email":"cdw0424@gmail.com"}]\n' },
+  'npx --yes npm@11.15.0 stage list sneakoscope': { stdout: '[]\n' },
+  'release-physical-gates-check.js': { stdout: '{"ok":true,"blockers":[]}\n' },
   'auth status': { status: 0 }
 };
 
@@ -34,15 +41,16 @@ function options(overrides = {}) {
       root: process.cwd(),
       version: '7.3.0',
       run,
-      readJsonFile: () => ({ version: '7.3.0' }),
+      readJsonFile: () => ({ name: 'sneakoscope', version: '7.3.0' }),
       env: {},
       ...overrides.opts
     }
   };
 }
 
-// The property that matters: a bare `sks release stage` must never push, never
-// dispatch the workflow, and never reach the registry.
+// The property that matters: a bare `sks release stage` may perform read-only
+// authentication and visibility checks, but must never push, dispatch, stage,
+// approve, or publish anything.
 test('without --confirm nothing outward-facing runs', () => {
   const { calls, opts } = options();
   const report = stagePublish(opts);
@@ -79,6 +87,22 @@ test('an invalid full release stamp blocks before main is pushed', () => {
   assert.equal(report.steps.find((step) => step.id === 'release_stamp')?.detail, 'release stamp is stale');
 });
 
+test('missing physical release receipts block before main is pushed', () => {
+  const rec = recorder({
+    ...GREEN_PREFLIGHT,
+    'release-physical-gates-check.js': {
+      status: 1,
+      stdout: JSON.stringify({ ok: false, blockers: ['physical_receipt_gate_missing:telegram_cellular_e2e'] })
+    }
+  });
+  const { opts } = options({ recorder: rec, opts: { confirm: true } });
+  const report = stagePublish(opts);
+  assert.equal(report.ok, false);
+  assert.ok(report.blockers.includes('stage_physical_release_gates_invalid'));
+  assert.match(report.steps.find((step) => step.id === 'physical_release_gates')?.detail || '', /telegram_cellular_e2e/);
+  assert.ok(!rec.calls.some((call) => call.startsWith('git push')), rec.calls.join('\n'));
+});
+
 test('the exact npm stage CLI must resolve before push or workflow dispatch', () => {
   for (const [value, blocker] of [
     [{ stdout: '11.14.0\n' }, 'stage_npm_cli_version_mismatch'],
@@ -88,6 +112,23 @@ test('the exact npm stage CLI must resolve before push or workflow dispatch', ()
       ...GREEN_PREFLIGHT,
       'npx --yes npm@11.15.0 --version': value
     });
+    const { opts } = options({ recorder: rec, opts: { confirm: true } });
+    const report = stagePublish(opts);
+    assert.equal(report.ok, false);
+    assert.ok(report.blockers.includes(blocker), `${blocker}: ${report.blockers.join(',')}`);
+    assert.ok(!rec.calls.some((call) => call.startsWith('git push')), rec.calls.join('\n'));
+    assert.ok(!rec.calls.some((call) => call.includes('workflow run')), rec.calls.join('\n'));
+  }
+});
+
+test('npm authentication and staged-version visibility must pass before push or dispatch', () => {
+  for (const [pattern, value, blocker] of [
+    ['npx --yes npm@11.15.0 whoami', { status: 1, stderr: 'E401' }, 'stage_npm_not_authenticated'],
+    ['npx --yes npm@11.15.0 view sneakoscope maintainers', { stdout: '[{"name":"another-owner"}]' }, 'stage_npm_user_not_maintainer'],
+    ['npx --yes npm@11.15.0 stage list sneakoscope', { status: 1, stderr: 'forbidden' }, 'stage_npm_stage_list_unavailable'],
+    ['npx --yes npm@11.15.0 stage list sneakoscope', { stdout: JSON.stringify([{ id: '11111111-2222-3333-4444-555555555555', version: '7.3.0' }]) }, 'stage_version_already_staged']
+  ]) {
+    const rec = recorder({ ...GREEN_PREFLIGHT, [pattern]: value });
     const { opts } = options({ recorder: rec, opts: { confirm: true } });
     const report = stagePublish(opts);
     assert.equal(report.ok, false);
@@ -126,7 +167,7 @@ test('the approval command is reported but never run', () => {
   const artifactDir = '/tmp/sks-stage-fixture';
   const rec = recorder({
     ...GREEN_PREFLIGHT,
-    'run list': { stdout: JSON.stringify([{ databaseId: 4242, headSha: commit, status: 'completed' }]) }
+    'run list': runListSequence(commit, 4242)
   });
   const { opts } = options({
     recorder: rec,
@@ -135,7 +176,7 @@ test('the approval command is reported but never run', () => {
       artifactDir,
       readJsonFile: (file) => (file === path.join(artifactDir, 'stage-receipt.json')
         ? { stage_id: '11111111-2222-3333-4444-555555555555' }
-        : { version: '7.3.0' })
+        : { name: 'sneakoscope', version: '7.3.0' })
     }
   });
   const report = stagePublish(opts);
@@ -153,7 +194,7 @@ test('multi-artifact downloads discover the nested receipt and verify the named 
   const handoffDir = path.join(artifactDir, `stage-input-${commit}`);
   const rec = recorder({
     ...GREEN_PREFLIGHT,
-    'run list': { stdout: JSON.stringify([{ databaseId: 4242, headSha: commit, status: 'completed' }]) }
+    'run list': runListSequence(commit, 4242)
   });
   const { opts } = options({
     recorder: rec,
@@ -162,7 +203,7 @@ test('multi-artifact downloads discover the nested receipt and verify the named 
       artifactDir,
       readJsonFile: (file) => (file === receiptPath
         ? { stage_id: '11111111-2222-3333-4444-555555555555' }
-        : null)
+        : { name: 'sneakoscope', version: '7.3.0' })
     }
   });
 
@@ -184,7 +225,7 @@ test('a stage id that is not a uuid is rejected rather than approved', () => {
   const artifactDir = '/tmp/sks-stage-fixture';
   const rec = recorder({
     ...GREEN_PREFLIGHT,
-    'run list': { stdout: JSON.stringify([{ databaseId: 7, headSha: commit, status: 'completed' }]) }
+    'run list': runListSequence(commit, 7)
   });
   const { opts } = options({
     recorder: rec,
@@ -193,7 +234,7 @@ test('a stage id that is not a uuid is rejected rather than approved', () => {
       artifactDir,
       readJsonFile: (file) => (file === path.join(artifactDir, 'stage-receipt.json')
         ? { stage_id: 'not-a-uuid' }
-        : { version: '7.3.0' })
+        : { name: 'sneakoscope', version: '7.3.0' })
     }
   });
   const report = stagePublish(opts);
@@ -201,6 +242,31 @@ test('a stage id that is not a uuid is rejected rather than approved', () => {
   assert.equal(report.approval_command, null);
   assert.ok(report.blockers.includes('stage_id_uuid_invalid'));
 });
+
+test('a prior workflow run for the same commit is never selected after dispatch', () => {
+  const commit = 'a'.repeat(40);
+  const prior = { databaseId: 101, headSha: commit, status: 'completed', event: 'workflow_dispatch' };
+  const current = { databaseId: 202, headSha: commit, status: 'queued', event: 'workflow_dispatch' };
+  let calls = 0;
+  const rec = recorder({
+    ...GREEN_PREFLIGHT,
+    'run list': () => ({ stdout: JSON.stringify(calls++ === 0 ? [prior] : [current, prior]) })
+  });
+  const { opts } = options({ recorder: rec, opts: { confirm: true } });
+  const report = stagePublish(opts);
+  assert.equal(report.run_id, '202');
+  assert.ok(rec.calls.some((call) => call === 'gh run watch 202 --exit-status'), rec.calls.join('\n'));
+  assert.ok(!rec.calls.some((call) => call === 'gh run watch 101 --exit-status'), rec.calls.join('\n'));
+});
+
+function runListSequence(commit, databaseId) {
+  let calls = 0;
+  return () => ({
+    stdout: JSON.stringify(calls++ === 0
+      ? []
+      : [{ databaseId, headSha: commit, status: 'completed', event: 'workflow_dispatch' }])
+  });
+}
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -2,15 +2,12 @@
 
 ## [Unreleased]
 
-### Changed
-
-- Migration: SKS now uses the native Codex CLI for interactive and release
-  execution; no separate terminal runtime is required.
-
 ## [8.0.4] - 2026-08-02
 
 ### Changed
 
+- Migration: SKS now uses the native Codex CLI for interactive and release
+  execution; no separate terminal runtime is required.
 - Replace SKS Center's retired external remote-coding guidance with a first-party
   Telegram BotFather flow. The native Remote Coding page now opens BotFather,
   accepts the bot token through a secure sheet, issues private-chat pairing
@@ -33,6 +30,17 @@
 
 ### Fixed
 
+- Fail closed before npm staging unless the maintainer's pinned npm session can
+  authenticate, inspect existing stages, and prove that the candidate version
+  is not already staged. Correlate a dispatched GitHub Actions run against a
+  pre-dispatch run-id snapshot so an older run for the same commit cannot be
+  mistaken for the new stage operation.
+- Keep non-mutating `npm publish --dry-run` bound to clean `main` and live
+  `origin/main` without requiring release tags that have not been created yet;
+  real publication continues to require the exact local and remote version tag.
+- Isolate fixture readiness and trusted-publisher reports from canonical release
+  evidence. `publish_ready` now stays false for fixture evidence and until all
+  four version-, commit-, and artifact-hash-bound physical receipts validate.
 - Harden Telegram setup and rotation: validate tokens with `getMe`, inspect an
   existing webhook before storage, require explicit consent to remove it with
   `drop_pending_updates=false`, bind durable offsets and authorization state to

@@ -33,9 +33,29 @@ test('publish preflight binds a clean main checkout to live origin/main and the 
   assert.equal(report.ok, true, report.blockers.join(', '));
   assert.equal(report.package_version, '8.0.3');
   assert.equal(report.release_tag, 'v8.0.3');
+  assert.equal(report.release_tag_required, true);
   assert.equal(report.head, SHA);
   assert.equal(report.origin_main, SHA);
   assert.equal(report.clean_tree, true);
+});
+
+test('publish dry-run keeps main and origin binding but does not require release tags', async () => {
+  const root = await fixture();
+  const report = inspectPublishPreflight({
+    root,
+    run: runner(root, {
+      'git rev-parse refs/tags/v8.0.3^{commit}': fail(),
+      'git ls-remote --exit-code origin refs/tags/v8.0.3 refs/tags/v8.0.3^{}': fail(),
+    }),
+    requireReleaseTag: false,
+  });
+  assert.equal(report.ok, true, report.blockers.join(', '));
+  assert.equal(report.release_tag, 'v8.0.3');
+  assert.equal(report.release_tag_required, false);
+  assert.equal(report.head, SHA);
+  assert.equal(report.origin_main, SHA);
+  assert.equal(report.local_release_tag_commit, null);
+  assert.equal(report.remote_release_tag_commit, null);
 });
 
 test('dirty, detached, stale-remote, and mistagged publish states fail closed', async () => {

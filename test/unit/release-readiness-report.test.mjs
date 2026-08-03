@@ -10,6 +10,8 @@ test('release readiness report writes current readiness artifacts', () => {
   const proof = createReleaseStampProof();
   const workspaceStampPath = '.sneakoscope/reports/release-check-stamp.json';
   const workspaceStampBefore = fs.existsSync(workspaceStampPath) ? fs.readFileSync(workspaceStampPath, 'utf8') : null;
+  const workspaceReportPath = `.sneakoscope/reports/release-readiness-${pkg.version}.json`;
+  const workspaceReportBefore = fs.existsSync(workspaceReportPath) ? fs.readFileSync(workspaceReportPath, 'utf8') : null;
   // Readiness must probe the operator's REAL codex environment (imagegen
   // capability, desktop state), so under the canonical runner's home isolation
   // restore the real home for these read-only probes. SKS_TEST_FORBID_REAL_HOME
@@ -47,10 +49,16 @@ test('release readiness report writes current readiness artifacts', () => {
     assert.equal(json.ppt_imagegen_review.status, 'present');
     assert.equal(json.dfix.status, 'present');
     assert.equal(json.scope.legacy_report_surfaces_removed, true);
+    assert.equal(json.evidence_scope, 'fixture');
+    assert.equal(json.stage_dispatch_ready, false);
+    assert.equal(json.publish_ready, false);
+    assert.ok(json.publish_blockers.includes('release_evidence_scope_is_fixture'));
     assert.equal(json.release_gate_last_pass_stamp.source_digest, JSON.parse(fs.readFileSync(proof.stampPath, 'utf8')).source_digest);
   } finally {
     proof.cleanup();
   }
   const workspaceStampAfter = fs.existsSync(workspaceStampPath) ? fs.readFileSync(workspaceStampPath, 'utf8') : null;
   assert.equal(workspaceStampAfter, workspaceStampBefore, 'release readiness test must preserve the workspace release stamp');
+  const workspaceReportAfter = fs.existsSync(workspaceReportPath) ? fs.readFileSync(workspaceReportPath, 'utf8') : null;
+  assert.equal(workspaceReportAfter, workspaceReportBefore, 'fixture readiness must preserve the canonical workspace report');
 });

@@ -151,6 +151,7 @@ const stageJob = stageWorkflow.match(/^  stage-publish:\n[\s\S]*$/m)?.[0] || '';
 const workflowPermissions = stageWorkflow.match(/^permissions:\n(?:  [^\n]+\n)+/m)?.[0] || '';
 const stageContract = text('src/core/release/npm-stage-contract.ts');
 const stagePublishSource = text('src/core/release/stage-publish.ts');
+const physicalReleaseGateSource = text('src/core/release/physical-release-gates.ts');
 const stageVerifierSource = text('src/core/release/npm-stage-tarball-verifier.ts');
 const stageVerifierSupport = text('src/core/release/npm-stage-tarball-verifier-support.ts');
 const stageVerifierCli = text('src/scripts/npm-stage-tarball-verifier.ts');
@@ -204,6 +205,9 @@ assertGate(/if \(!preflight\.ok\) return finish\(\)/.test(stagePublishSource), '
 assertGate(!/\['stage',\s*'(?:publish|approve|reject)'/.test(`${stageVerifierSource}\n${stageVerifierSupport}\n${stageVerifierCli}`), 'maintainer stage verifier must not contain mutating stage argv');
 assertGate(/npx --yes npm@11\.15\.0/.test(releaseReadinessDoc), 'release readiness must document pinned local npm stage resolution');
 assertGate(/npm-stage-tarball-verifier\.js/.test(releaseReadinessDoc) && /--local-receipt/.test(releaseReadinessDoc) && /--local-tarball/.test(releaseReadinessDoc) && /--stage-receipt/.test(releaseReadinessDoc), 'release readiness must document the maintainer-local read-only verifier inputs');
+assertGate(/release-physical-gates-check\.js/.test(stageWorkflow), 'stage workflow must verify tracked source-bound physical release receipts before staging');
+assertGate(/release-physical-gates-check\.js/.test(stagePublishSource), 'local stage preflight must verify physical release receipts before mutation');
+assertGate(/PHYSICAL_RELEASE_GATE_IDS/.test(physicalReleaseGateSource) && /artifact_sha256/.test(physicalReleaseGateSource), 'physical release gate contract must bind all required gates to evidence artifact hashes');
 assertGate(pkg.scripts?.prepublishOnly === 'node ./dist/scripts/prepublish-release-check-or-fast.js', 'prepublishOnly must verify release proof during official npm publish');
 assertGate(pkg.scripts?.prepack === 'node ./dist/scripts/prepublish-release-check-or-fast.js --prepack-build', 'prepack must rebuild and reverify official npm publish output');
 assertGate(/publish-preflight\.js/.test(text('src/scripts/prepublish-release-check-or-fast.ts')), 'official npm publish must run the reproducibility preflight');

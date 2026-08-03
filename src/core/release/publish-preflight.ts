@@ -12,11 +12,14 @@ export interface PublishPreflightCommandResult {
 export interface PublishPreflightOptions {
   root: string;
   run?: (command: string, args: string[], cwd: string) => PublishPreflightCommandResult;
+  /** Real publication requires the exact local and remote tag; a dry-run does not mutate the registry. */
+  requireReleaseTag?: boolean;
 }
 
 export function inspectPublishPreflight(options: PublishPreflightOptions) {
   const root = path.resolve(options.root);
   const run = options.run || runCommand;
+  const requireReleaseTag = options.requireReleaseTag !== false;
   const blockers: string[] = [];
   const pkg = readPackageJson(root, blockers);
   const version = typeof pkg?.version === 'string' ? pkg.version : '';
@@ -47,7 +50,7 @@ export function inspectPublishPreflight(options: PublishPreflightOptions) {
   const releaseTag = validExactVersion(version) ? `v${version}` : null;
   let localTag = '';
   let remoteTag = '';
-  if (releaseTag) {
+  if (releaseTag && requireReleaseTag) {
     localTag = commandText(run, 'git', ['rev-parse', `refs/tags/${releaseTag}^{commit}`], root);
     if (!validSha(localTag)) blockers.push(`release_tag_missing:${releaseTag}`);
     else if (head && localTag !== head) blockers.push(`release_tag_not_head:${releaseTag}`);
@@ -64,6 +67,7 @@ export function inspectPublishPreflight(options: PublishPreflightOptions) {
     package_name: typeof pkg?.name === 'string' ? pkg.name : null,
     package_version: version || null,
     release_tag: releaseTag,
+    release_tag_required: requireReleaseTag,
     branch: branch || null,
     head: validSha(head) ? head : null,
     origin_identity: originIdentity || null,

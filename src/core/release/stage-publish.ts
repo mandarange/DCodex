@@ -26,6 +26,7 @@ import {
 export const STAGE_PUBLISH_SCHEMA = 'sks.release-stage-publish.v1'
 export const STAGE_WORKFLOW_FILE = 'publish-npm.yml'
 export const RELEASE_BRANCH = 'main'
+const NPM_REGISTRY = 'https://registry.npmjs.org/'
 const STAGE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export interface ProcessResult {
@@ -74,19 +75,20 @@ export interface StagePublishReport {
 export function stagePublish(opts: StagePublishOptions): StagePublishReport {
   const readJsonFile = opts.readJsonFile || defaultReadJson
   const steps: StagePublishStep[] = []
-  const version = String(opts.version || readPackageVersion(opts.root, readJsonFile) || '').trim()
+  const packageIdentity = readPackageIdentity(opts.root, readJsonFile)
+  const version = String(opts.version || packageIdentity.version || '').trim()
   const confirmed = opts.confirm === true
   let commit: string | null = null
   let runId: string | null = null
   let stageId: string | null = null
 
-  const preflight = runPreflight(opts, version)
+  const preflight = runPreflight(opts, packageIdentity.name, version)
   steps.push(...preflight.steps)
   commit = preflight.commit
   if (!preflight.ok) return finish()
 
   if (!confirmed) {
-    steps.push(skipped('push', 'confirm_required'), skipped('dispatch', 'confirm_required'))
+    steps.push(skipped('push', 'confirm_required'), skipped('run_snapshot', 'confirm_required'), skipped('dispatch', 'confirm_required'))
     steps.push(skipped('watch', 'confirm_required'), skipped('download', 'confirm_required'), skipped('verify', 'confirm_required'))
     return finish()
   }
@@ -94,6 +96,15 @@ export function stagePublish(opts: StagePublishOptions): StagePublishReport {
   const push = opts.run('git', ['push', 'origin', RELEASE_BRANCH])
   steps.push(step('push', push.status === 0, `git push origin ${RELEASE_BRANCH}`, push.status === 0 ? null : 'stage_push_failed'))
   if (push.status !== 0) return finish()
+
+  const priorRuns = snapshotWorkflowRunIds(opts, commit)
+  steps.push(step(
+    'run_snapshot',
+    priorRuns.ok,
+    priorRuns.ok ? `${priorRuns.ids.size} existing run(s) for release commit` : priorRuns.detail,
+    priorRuns.ok ? null : 'stage_run_snapshot_failed'
+  ))
+  if (!priorRuns.ok) return finish()
 
   const dispatch = opts.run('gh', [
     'workflow', 'run', STAGE_WORKFLOW_FILE,
@@ -104,7 +115,7 @@ export function stagePublish(opts: StagePublishOptions): StagePublishReport {
   steps.push(step('dispatch', dispatch.status === 0, `gh workflow run ${STAGE_WORKFLOW_FILE} version=${version} confirm_stage=true`, dispatch.status === 0 ? null : 'stage_dispatch_failed'))
   if (dispatch.status !== 0) return finish()
 
-  runId = resolveRunId(opts, commit)
+  runId = resolveRunId(opts, commit, priorRuns.ids)
   steps.push(step('resolve_run', Boolean(runId), runId ? `run ${runId}` : null, runId ? null : 'stage_run_not_found'))
   if (!runId) return finish()
 
@@ -161,7 +172,7 @@ function nextActions(state: { confirmed: boolean; stageId: string | null; blocke
   ]
 }
 
-function runPreflight(opts: StagePublishOptions, version: string): { ok: boolean; commit: string | null; steps: StagePublishStep[] } {
+function runPreflight(opts: StagePublishOptions, packageName: string, version: string): { ok: boolean; commit: string | null; steps: StagePublishStep[] } {
   const steps: StagePublishStep[] = []
   const branch = text(opts.run('git', ['rev-parse', '--abbrev-ref', 'HEAD']))
   steps.push(step('branch', branch === RELEASE_BRANCH, branch, branch === RELEASE_BRANCH ? null : 'stage_requires_main_branch'))
@@ -172,6 +183,9 @@ function runPreflight(opts: StagePublishOptions, version: string): { ok: boolean
 
   const versionOk = /^\d+\.\d+\.\d+$/.test(version)
   steps.push(step('version', versionOk, version || null, versionOk ? null : 'stage_version_invalid'))
+
+  const packageNameOk = packageName.length > 0
+  steps.push(step('package_name', packageNameOk, packageName || null, packageNameOk ? null : 'stage_package_name_invalid'))
 
   const origin = releaseOriginIdentity(opts.root)
   const originOk = origin.identity === RELEASE_ORIGIN_IDENTITY
@@ -194,6 +208,19 @@ function runPreflight(opts: StagePublishOptions, version: string): { ok: boolean
     verifierReady,
     verifierReady ? verifier : null,
     verifierReady ? null : 'stage_verifier_unavailable_outside_checkout'
+  ))
+
+  const physicalVerifier = path.join(opts.root, 'dist', 'scripts', 'release-physical-gates-check.js')
+  const physical = opts.run(process.execPath, [physicalVerifier])
+  const physicalReport = safeJsonObject(physical.stdout)
+  const physicalReady = physical.status === 0 && physicalReport?.ok === true
+  steps.push(step(
+    'physical_release_gates',
+    physicalReady,
+    physicalReady
+      ? 'all four source-bound physical release receipts verified'
+      : compactPhysicalGateFailure(physical, physicalReport),
+    physicalReady ? null : 'stage_physical_release_gates_invalid'
   ))
 
   const reviewEnvironmentBlocker = localNpmStageReviewEnvironmentBlocker(opts.env || process.env)
@@ -221,6 +248,70 @@ function runPreflight(opts: StagePublishOptions, version: string): { ok: boolean
         : 'stage_npm_cli_unavailable'
   ))
 
+  if (npmStageCliReady) {
+    const npmAuth = opts.run(npmInvocation.command, [
+      ...npmInvocation.args,
+      'whoami',
+      '--registry', NPM_REGISTRY
+    ])
+    const npmUser = text(npmAuth)
+    const npmAuthReady = npmAuth.status === 0 && npmUser.length > 0
+    steps.push(step(
+      'npm_auth',
+      npmAuthReady,
+      npmAuthReady ? npmUser : compactProcessOutput(npmAuth),
+      npmAuthReady ? null : 'stage_npm_not_authenticated'
+    ))
+
+    if (npmAuthReady && packageNameOk) {
+      const maintainersResult = opts.run(npmInvocation.command, [
+        ...npmInvocation.args,
+        'view', packageName, 'maintainers',
+        '--json',
+        '--registry', NPM_REGISTRY
+      ])
+      const maintainers = maintainersResult.status === 0 ? npmMaintainerNames(maintainersResult.stdout) : []
+      const maintainerListReady = maintainersResult.status === 0 && maintainers.length > 0
+      const maintainerMatch = maintainerListReady && maintainers.includes(npmUser)
+      steps.push(step(
+        'npm_maintainer',
+        maintainerListReady && maintainerMatch,
+        maintainerListReady
+          ? maintainerMatch ? `${npmUser} is a ${packageName} maintainer` : `${npmUser} not in ${maintainers.join(', ')}`
+          : compactProcessOutput(maintainersResult),
+        maintainerListReady
+          ? maintainerMatch ? null : 'stage_npm_user_not_maintainer'
+          : 'stage_npm_maintainers_unavailable'
+      ))
+
+      if (maintainerListReady && maintainerMatch) {
+        const staged = opts.run(npmInvocation.command, [
+          ...npmInvocation.args,
+          'stage', 'list', packageName,
+          '--json',
+          '--registry', NPM_REGISTRY
+        ])
+        const stagedItems = staged.status === 0 ? safeJsonArray(staged.stdout) : []
+        const stagedVersion = stagedItems.find((item: any) => String(item?.version || '') === version)
+        const stageListReady = staged.status === 0
+        steps.push(step(
+          'npm_stage_access',
+          stageListReady,
+          stageListReady ? `${stagedItems.length} staged version(s) visible` : compactProcessOutput(staged),
+          stageListReady ? null : 'stage_npm_stage_list_unavailable'
+        ))
+        if (stageListReady) {
+          steps.push(step(
+            'npm_stage_version',
+            !stagedVersion,
+            stagedVersion ? stageItemDetail(stagedVersion) : `${packageName}@${version} is not staged`,
+            stagedVersion ? 'stage_version_already_staged' : null
+          ))
+        }
+      }
+    }
+  }
+
   const gh = opts.run('gh', ['auth', 'status'])
   steps.push(step('gh_auth', gh.status === 0, gh.status === 0 ? 'authenticated' : null, gh.status === 0 ? null : 'stage_gh_not_authenticated'))
 
@@ -229,27 +320,52 @@ function runPreflight(opts: StagePublishOptions, version: string): { ok: boolean
 }
 
 /**
- * The dispatch returns before the run is queryable, so the run is matched by
- * the exact pushed commit rather than by "most recent".
+ * The dispatch returns before the run is queryable. Snapshotting the existing
+ * run ids before dispatch prevents an older run for the same commit from being
+ * mistaken for the newly requested stage workflow.
  */
-function resolveRunId(opts: StagePublishOptions, commit: string | null): string | null {
+function resolveRunId(opts: StagePublishOptions, commit: string | null, priorRunIds: ReadonlySet<string>): string | null {
   if (!commit) return null
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const listed = opts.run('gh', [
-      'run', 'list',
-      '--workflow', STAGE_WORKFLOW_FILE,
-      '--branch', RELEASE_BRANCH,
-      '--limit', '20',
-      '--json', 'databaseId,headSha,status'
-    ])
+    const listed = listWorkflowRuns(opts)
     if (listed.status === 0) {
       const rows = safeJsonArray(listed.stdout)
-      const match = rows.find((row: any) => String(row?.headSha || '') === commit)
+      const match = rows.find((row: any) => {
+        const id = String(row?.databaseId ?? '')
+        const event = String(row?.event || '')
+        return String(row?.headSha || '') === commit
+          && id.length > 0
+          && !priorRunIds.has(id)
+          && (!event || event === 'workflow_dispatch')
+      })
       if (match?.databaseId != null) return String(match.databaseId)
     }
     opts.run('sleep', ['2'])
   }
   return null
+}
+
+function snapshotWorkflowRunIds(opts: StagePublishOptions, commit: string | null): { ok: boolean; ids: Set<string>; detail: string | null } {
+  if (!commit) return { ok: false, ids: new Set(), detail: 'release commit unavailable' }
+  const listed = listWorkflowRuns(opts)
+  if (listed.status !== 0) return { ok: false, ids: new Set(), detail: compactProcessOutput(listed) }
+  const ids = new Set(
+    safeJsonArray(listed.stdout)
+      .filter((row: any) => String(row?.headSha || '') === commit)
+      .map((row: any) => String(row?.databaseId ?? ''))
+      .filter(Boolean)
+  )
+  return { ok: true, ids, detail: null }
+}
+
+function listWorkflowRuns(opts: StagePublishOptions): ProcessResult {
+  return opts.run('gh', [
+    'run', 'list',
+    '--workflow', STAGE_WORKFLOW_FILE,
+    '--branch', RELEASE_BRANCH,
+    '--limit', '20',
+    '--json', 'databaseId,headSha,status,event'
+  ])
 }
 
 function downloadArtifacts(opts: StagePublishOptions, runId: string, commit: string | null, dir: string): { step: StagePublishStep } {
@@ -332,9 +448,15 @@ function runLocalVerify(opts: StagePublishOptions, input: {
   return step('verify', result.status === 0, 'npm-stage-tarball-verifier', result.status === 0 ? null : 'stage_tarball_comparison_failed')
 }
 
-function readPackageVersion(root: string, readJsonFile: (file: string) => unknown): string {
-  const pkg = readJsonFile(path.join(root, 'package.json')) as { version?: unknown } | null
-  return String(pkg?.version || '')
+function readPackageIdentity(root: string, readJsonFile: (file: string) => unknown): { name: string; version: string } {
+  const pkg = readJsonFile(path.join(root, 'package.json')) as { name?: unknown; version?: unknown } | null
+  return { name: String(pkg?.name || ''), version: String(pkg?.version || '') }
+}
+
+function stageItemDetail(item: any): string {
+  const id = String(item?.id || item?.stageId || item?.stage_id || '').trim()
+  const version = String(item?.version || '').trim()
+  return id ? `${version} already staged as ${id}` : `${version} is already staged`
 }
 
 function defaultReadJson(file: string): unknown {
@@ -352,6 +474,40 @@ function safeJsonArray(value: string): any[] {
   } catch {
     return []
   }
+}
+
+function safeJsonObject(value: string): any | null {
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function npmMaintainerNames(value: string): string[] {
+  let parsed: any
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    parsed = value
+  }
+  const values = Array.isArray(parsed) ? parsed : [parsed]
+  return [...new Set(values.flatMap((entry: any) => {
+    if (typeof entry === 'string') {
+      const name = entry.trim().match(/^([^\s<]+)/)?.[1]
+      return name ? [name] : []
+    }
+    const name = String(entry?.name || '').trim()
+    return name ? [name] : []
+  }))]
+}
+
+function compactPhysicalGateFailure(result: ProcessResult, report: any | null): string | null {
+  if (Array.isArray(report?.blockers) && report.blockers.length > 0) {
+    return report.blockers.map(String).slice(0, 8).join(', ')
+  }
+  return compactProcessOutput(result)
 }
 
 function text(result: ProcessResult): string {
