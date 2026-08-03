@@ -14,7 +14,7 @@ test('parent_model_match false is not a hard naruto stop field', async () => {
 })
 
 test('honest loopback attempts are bounded in hooks-runtime', async () => {
-  const source = await fs.readFile(path.join(repoRoot, 'src/core/hooks-runtime.ts'), 'utf8')
+  const source = await fs.readFile(path.join(repoRoot, 'src/core/hooks-runtime/stop-finalization.ts'), 'utf8')
   assert.match(source, /MAX_HONEST_LOOPBACK_ATTEMPTS = 2/)
   assert.match(source, /honest_loop_attempt_count/)
   assert.match(source, /stop_with_terminal_blocker_or_record_hard_blocker/)

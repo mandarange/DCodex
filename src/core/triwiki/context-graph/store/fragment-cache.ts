@@ -75,6 +75,35 @@ export async function readCachedFragment(
   }
 }
 
+export type FragmentCacheReadResult =
+  | { status: 'HIT'; reason: 'content_hash_match'; fragment: ContextGraphFragment }
+  | { status: 'MISS'; reason: 'entry_absent' | 'invalid_json' | 'schema_invalid' | 'extractor_mismatch'; fragment: null };
+
+export async function readCachedFragmentWithReason(
+  root: string,
+  key: string,
+  extractorId: string
+): Promise<FragmentCacheReadResult> {
+  let raw: string;
+  try {
+    raw = await fsp.readFile(entryPath(root, key), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'MISS', reason: 'entry_absent', fragment: null };
+    return { status: 'MISS', reason: 'schema_invalid', fragment: null };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { status: 'MISS', reason: 'invalid_json', fragment: null };
+  }
+  if (parsed && typeof parsed === 'object' && (parsed as { extractor?: unknown }).extractor !== extractorId) {
+    return { status: 'MISS', reason: 'extractor_mismatch', fragment: null };
+  }
+  if (!isFragment(parsed, extractorId)) return { status: 'MISS', reason: 'schema_invalid', fragment: null };
+  return { status: 'HIT', reason: 'content_hash_match', fragment: parsed };
+}
+
 export async function writeCachedFragment(
   root: string,
   key: string,

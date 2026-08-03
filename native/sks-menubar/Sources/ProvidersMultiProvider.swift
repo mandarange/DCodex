@@ -63,6 +63,9 @@ extension ProvidersViewController {
         test.setAccessibilityHelp("Checks that the selected model exists in both the local catalog and the live loopback router. No configuration is changed.")
         activate.setAccessibilityHelp("Validates the loopback router, writes its provider and catalog settings to Codex config, and restarts Codex App. Runtime adoption still requires a live Codex check.")
         multiProvider.refreshButton = refresh
+        registerProviderAction(refresh, id: "sks-provider-refresh-router")
+        registerProviderAction(test, id: "sks-provider-test-router")
+        registerProviderAction(activate, id: "sks-provider-configure-router")
         actionButtons += [refresh, test, activate]
 
         let routerLabel = NSTextField(labelWithString: "Router URL")

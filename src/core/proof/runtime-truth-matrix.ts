@@ -151,9 +151,12 @@ export async function buildRuntimeTruthMatrix(input: {
     row('ast_type_work_graph', levelFromWorkGraph(workGraph || fakeReal), ['agent-intelligent-work-graph-v2.json', 'agent-symbol-ownership-map.json'], false, workGraph, 'run AST-aware work-graph verification'),
     row('warp_mad_right_lanes', levelFromWarp(warpMad || madWarpRightLaneAttach || zellijRightLanePhysical || zellijRightLaneCoordinate || zellijRightLaneContent, required.warp_mad_lanes === true), ['zellij-session.json', 'zellij-pane-proof.json'], required.warp_mad_lanes === true, warpMad || madWarpRightLaneAttach || zellijRightLanePhysical || zellijRightLaneCoordinate || zellijRightLaneContent, 'capture visible MAD Zellij right-lane evidence')
   ]
-  const blockers = rows.flatMap((item) => item.required_mode && ['blocked', 'real_required_missing', 'integration_optional'].includes(item.proof_level)
-    ? [`required_runtime_truth_missing:${item.subsystem}`, ...item.blockers]
-    : item.blockers)
+  const blockers = rows.flatMap((item) => {
+    if (!item.required_mode) return []
+    return ['blocked', 'real_required_missing', 'integration_optional'].includes(item.proof_level)
+      ? [`required_runtime_truth_missing:${item.subsystem}`, ...item.blockers]
+      : item.blockers
+  })
   const priorities = Object.fromEntries(['P0', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map((priority) => {
     const priorityBlockers = priority === 'P0' || priority === 'P1' ? blockers : []
     return [priority, {

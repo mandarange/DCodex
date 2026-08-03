@@ -31,7 +31,8 @@ const listedSkillAliases = routes.DOLLAR_COMMAND_ALIASES.map((entry: any) => ent
 const liteManifest = readText('src/core/routes/dollar-manifest-lite.ts');
 const commandManifestLite = readText('src/cli/command-manifest-lite.ts');
 const argsSource = readText('src/cli/args.ts');
-const installerSource = readText('src/bin/install.ts');
+const installerEntrypointSource = readText('src/bin/install.ts');
+const installerCommandSource = readText('src/core/commands/install-package-command.ts');
 
 assertGate(
   JSON.stringify([...REMOVED_PUBLIC_COMMANDS].sort()) === JSON.stringify([...removed].sort()),
@@ -83,8 +84,12 @@ assertGate(routes.routePrompt('$sks-work fixture')?.id === 'Naruto', 'the namesp
 assertGate(routes.routePrompt('$sks-from-chat-img fixture')?.id === 'Naruto', 'the namespaced chat-image add-on must resolve to Naruto');
 assertGate(routes.hasFromChatImgSignal('$sks-from-chat-img fixture') === true, 'the namespaced chat-image add-on must activate forensic intake');
 assertGate(routes.routePrompt('$sks-mad-sks $sks-naruto fixture')?.id === 'Naruto', 'the namespaced MAD-SKS modifier must preserve nested route selection');
-assertGate(!/\$(?:Plan|Work)\b/.test(installerSource), 'installer guidance must not advertise legacy unprefixed dollar commands');
-assertGate(installerSource.includes('$sks-plan') && installerSource.includes('$sks-work'), 'installer guidance must advertise namespaced planning and execution commands');
+assertGate(
+  installerEntrypointSource.includes("../core/commands/install-package-command.js"),
+  'installer entrypoint must delegate to the current install command implementation'
+);
+assertGate(!/\$(?:Plan|Work)\b/.test(installerCommandSource), 'installer guidance must not advertise legacy unprefixed dollar commands');
+assertGate(installerCommandSource.includes('$sks-plan') && installerCommandSource.includes('$sks-work'), 'installer guidance must advertise namespaced planning and execution commands');
 
 emitGate('commands:current-surface-only', {
   removed_command_count: removed.length,

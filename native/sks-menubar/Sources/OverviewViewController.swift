@@ -186,6 +186,7 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
     private let operations: OperationCoordinator
     private let status = NativeView.detail("Loading local SKS status…")
     private let notificationInbox = NativeView.detail("Notifications: checking authorization…")
+    private let recoveryStatus = NativeView.detail("Progress recovery: no operation state loaded yet.")
     private let healthBadge = NativeView.badge("Checking local status", color: .systemBlue)
     private let statusSpinner = NativeView.spinner(label: "Checking SKS Center status")
     private var generation = 0
@@ -193,6 +194,7 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
     private var doctorButton: NSButton!
     private var refreshButton: NSButton!
     private var updateCodexButton: NSButton!
+    private var reviewAndResumeButton: NSButton!
     /// Section navigation by sidebar title, wired by ControlCenterWindowController.
     var openSection: ((String) -> Void)?
 
@@ -207,6 +209,8 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
         doctorButton = NativeView.button("Run Doctor", target: self, action: #selector(doctor))
         refreshButton = NativeView.button("Refresh", target: self, action: #selector(refreshStatus))
         updateCodexButton = NativeView.button("Update Codex CLI", target: self, action: #selector(updateCodexCLI))
+        reviewAndResumeButton = NativeView.button("Review & Resume…", target: self, action: #selector(reviewAndResume))
+        reviewAndResumeButton.isEnabled = false
         updateCodexButton.setAccessibilityHelp("Update the operator Codex CLI to the preferred latest channel.")
         let buttons = NativeView.row([refreshButton, doctorButton, updateCodexButton])
         let shortcuts = NativeView.row([
@@ -226,10 +230,16 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
             subtitle: "Results remain available here even when macOS notifications are disabled.",
             views: [notificationInbox, shortcuts]
         )
+        let recoveryCard = NativeView.card(
+            title: "Progress, pause & recovery",
+            subtitle: "Time budgets are warnings, never automatic termination. Only transient network failures can auto-resume, at most twice. Authentication, mode, account binding, and external configuration always wait for explicit review.",
+            views: [recoveryStatus, NativeView.row([reviewAndResumeButton])]
+        )
         view = NativeView.page([
             NativeView.title("Overview"),
             NativeView.detail("Menu Bar build \(AppRuntime.packageVersion) · Local health for SKS, Codex CLI, MCP, and operations. Prefer the latest Codex CLI; SKS stays version-agnostic and capability-gates features."),
             healthCard,
+            recoveryCard,
             nextStepsCard
         ])
     }
@@ -237,6 +247,28 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
     @objc private func openProviders() { openSection?("Providers") }
     @objc private func openUpdates() { openSection?("Updates") }
     @objc private func openDiagnostics() { openSection?("Diagnostics") }
+
+    @objc private func reviewAndResume() {
+        guard let operation = operations.latestSnapshot(),
+              let recovery = operation.recovery,
+              recovery.state == .pausedResumable || recovery.state == .warning else {
+            recoveryStatus.stringValue = "No resumable pause is available. Refresh status to inspect the latest progress signal."
+            reviewAndResumeButton.isEnabled = false
+            return
+        }
+        let section: String
+        if operation.kind.localizedCaseInsensitiveContains("provider")
+            || operation.kind.localizedCaseInsensitiveContains("openrouter")
+            || operation.kind.localizedCaseInsensitiveContains("codex-lb") {
+            section = "Providers"
+        } else if operation.kind.localizedCaseInsensitiveContains("update") {
+            section = "Updates"
+        } else {
+            section = "Diagnostics"
+        }
+        recoveryStatus.stringValue = "Review opened for \(operation.kind). Confirm the unchanged mode/model/account binding, then retry from \(section). Nothing resumed automatically."
+        openSection?(section)
+    }
 
     func refreshOnAppear() {
         loadStatus(forceUpdateRefresh: false)
@@ -381,6 +413,7 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
     private func renderStatus(update: [String: Any]?, mcp: [String: Any]?, partial: Bool) {
         let rendered = summary(update: update, mcp: mcp)
         status.stringValue = rendered
+        renderRecoveryStatus(operations.latestSnapshot())
         if partial {
             NativeView.setBadge(healthBadge, text: "Partial status · still checking", color: .systemBlue)
         } else if rendered.localizedCaseInsensitiveContains("unavailable")
@@ -389,6 +422,30 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
         } else {
             NativeView.setBadge(healthBadge, text: "Status refreshed", color: .systemGreen)
         }
+    }
+
+    private func renderRecoveryStatus(_ operation: OperationSnapshot?) {
+        guard let operation = operation else {
+            recoveryStatus.stringValue = "Progress recovery: no operation recorded · automatic resume inactive."
+            reviewAndResumeButton.isEnabled = false
+            return
+        }
+        guard let recovery = operation.recovery else {
+            recoveryStatus.stringValue = "Progress recovery: no pause/retry decision recorded for \(operation.kind) · critical path \(operation.stage ?? "unknown") · cache evidence not reported."
+            reviewAndResumeButton.isEnabled = false
+            return
+        }
+        let cause = recovery.cause?.rawValue ?? "none"
+        let automatic = recovery.automaticResume ? "yes" : "no"
+        let mode = recovery.pinnedMode ?? "not reported"
+        let model = recovery.pinnedModel ?? "not reported"
+        let stall = recovery.stallReason.map { " · stop reason: \($0)" } ?? ""
+        let attempt = recovery.recoveryAttempt.map { " · recovery: \($0)" } ?? ""
+        recoveryStatus.stringValue = "State \(recovery.state.rawValue) · progress \(recovery.lastProgressSignal.rawValue) at \(recovery.lastProgressAt) · cause \(cause) · auto resume \(automatic) · retry \(recovery.retryCount)/\(recovery.maxAutomaticRetries) · critical path \(operation.stage ?? "unknown") · mode \(mode) · model \(model) · account \(recovery.accountBinding) · evidence \(recovery.evidenceIntegrity)\(stall)\(attempt) · next: \(recovery.nextAction)"
+        reviewAndResumeButton.isEnabled = recovery.state == .pausedResumable || recovery.state == .warning
+        reviewAndResumeButton.toolTip = reviewAndResumeButton.isEnabled
+            ? "Open the owning section for explicit review; this button never changes authentication, mode, account, or evidence."
+            : "No manual resume action is required for the current state."
     }
 
     private func summary(update: [String: Any]?, mcp: [String: Any]?) -> String {

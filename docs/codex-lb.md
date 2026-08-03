@@ -1,18 +1,31 @@
 # codex-lb Evidence
 
+> The native Desktop target is now the built-in `openai` identity plus the
+> loopback bridge described in
+> [native OpenAI transport with exclusive modes](architecture/native-openai-exclusive-provider-modes.md).
+> Custom top-level `codex-lb` provider selection described below is retained for
+> CLI and legacy migration compatibility and is superseded for new Desktop
+> architecture work.
+
 SKS keeps the codex-lb gateway key separate from ChatGPT OAuth. The key is
 stored and redacted as `CODEX_LB_API_KEY`; `~/.codex/auth.json` remains
-byte-preserved. With codex-lb off, ChatGPT OAuth is the official path. With
-**Use codex-lb** on, the codex-lb provider is the active top-level selection and
-the selected request must use the gateway key rather than silently consuming
-the stored OAuth identity.
+byte-preserved. With codex-lb off, ChatGPT OAuth is the official path. In the
+hardened Desktop path, Codex keeps `openai` while the loopback bridge chooses
+the exclusive upstream and replaces the outbound credential. Legacy/CLI
+**Use codex-lb** may still select the custom provider and is migrated
+explicitly; neither path may consume OAuth as a gateway fallback.
 
 ## Key storage & keychain
 
 The canonical store is `~/.codex/sks-codex-lb.env` with mode `0600`. Key
 resolution is env-file first and then `CODEX_LB_API_KEY`; this deliberate
 inversion prevents a stale ambient shell export from overriding SKS Center
-credentials. Keychain is retired from normal codex-lb reads and writes.
+credentials. The CLI store remains the canonical non-App store. SKS Center
+additionally uses its native stable Keychain namespace for non-interactive
+readiness and explicit reconnect, and considers the reconnect complete only
+when both the CLI configuration and Keychain write succeed. The public CLI
+`--keychain` option remains fail-closed because an interpreter is not granted
+general Keychain access.
 
 Legacy handling is one-time only: transfer a legacy Keychain key only when the
 env file lacks a valid key, or, when the env file is valid, verify then delete
@@ -321,3 +334,26 @@ codex-lb normalizes Codex `service_tier = "fast"` to upstream `priority`. SKS th
 - Actual proof: codex-lb records `actualServiceTier = "priority"` or billable `serviceTier = "priority"`.
 
 `sks codex-lb status` may report configured Fast intent, but it does not claim actual Fast mode. `sks codex-lb fast-check --json` sends a priority-tier probe and fails unless the response or supplied request log proves priority was actually requested and granted. Use `--request-log <json-or-jsonl>` to bind a codex-lb request-log export.
+
+## Architecture-hardening verification
+
+The bridge request choke point enforces provider mode, credential readiness,
+model allowlist, optional session pin, child snapshot, parent snapshot, and
+no-fallback policy for HTTP and WebSocket paths. Internal `x-sks-*` headers and
+Desktop bearer credentials are stripped before the configured gateway
+credential is attached. A 401, quota error, or 5xx is returned as a failure for
+the selected upstream and never triggers cross-account/provider fallback.
+
+The hermetic runner is:
+
+```bash
+npm run build:incremental --silent
+node --test test/e2e/architecture-hardening/hermetic-sandbox.test.mjs
+```
+
+It uses mock services and proves contracts only. A real Responses request is
+attempted only when `CODEX_LB_API_KEY`, `CODEX_LB_BASE_URL`, and
+`SKS_ARCHITECTURE_LIVE_APPROVED=1` are all present in the runner process. The
+credential is passed only through the child environment and is not written or
+printed. Without those inputs the report is exactly `not_verified`, not a mock
+success promoted to live evidence.

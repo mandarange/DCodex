@@ -171,5 +171,75 @@ final class OperationCoordinatorTests: XCTestCase {
         XCTAssertNil(OperationCoordinator.canonicalRegistry("https://token@registry.npmjs.org/"))
         XCTAssertNil(OperationCoordinator.canonicalRegistry("https://registry.npmjs.org/?token=secret"))
     }
+
+    func testProviderApplyStagesAreOrderedAndKeepExistingSessionSeparateFromNewDefault() throws {
+        let existing = ProviderSessionCopy(mode: "codex-lb", model: "gpt-existing", catalogVersion: "catalog-v1")
+        let nextDefault = ProviderSessionCopy(mode: "openrouter", model: "vendor/new", catalogVersion: "catalog-v2")
+        var projection = ProviderApplyProjection.initial(
+            existingSession: existing,
+            newSessionDefault: nextDefault,
+            now: Date(timeIntervalSince1970: 0)
+        )
+        for stage in ProviderApplyStageName.allCases {
+            projection = try projection.transitioning(stage: stage, to: .running)
+            projection = try projection.transitioning(stage: stage, to: .succeeded)
+        }
+        XCTAssertTrue(projection.allSucceeded)
+        XCTAssertEqual(projection.existingSession, existing)
+        XCTAssertEqual(projection.newSessionDefault, nextDefault)
+    }
+
+    func testProviderApplyPartialFailureCannotSkipAheadOrSilentlySucceed() throws {
+        let nextDefault = ProviderSessionCopy(mode: "codex-lb", model: "gpt-new", catalogVersion: "catalog-v2")
+        var projection = ProviderApplyProjection.initial(existingSession: nil, newSessionDefault: nextDefault)
+        projection = try projection.transitioning(stage: .configSaved, to: .running)
+        projection = try projection.transitioning(stage: .configSaved, to: .succeeded)
+        projection = try projection.transitioning(stage: .proxyApplied, to: .running)
+        projection = try projection.transitioning(stage: .proxyApplied, to: .failed, reasonCode: "provider_proxy_offline")
+        XCTAssertEqual(projection.failedStage?.stage, .proxyApplied)
+        XCTAssertFalse(projection.allSucceeded)
+        XCTAssertThrowsError(try projection.transitioning(stage: .catalogRefreshed, to: .running))
+    }
+
+    func testProgressRecoveryOnlyAutoRetriesTransientNetworkTwice() {
+        let first = OperationRecoveryPolicy.evaluate(
+            cause: .transientNetwork,
+            sameCauseRetryCount: 0,
+            progressSignal: .none,
+            progressObserved: false,
+            secondsWithoutProgress: 5,
+            warningAfter: 1
+        )
+        let second = OperationRecoveryPolicy.evaluate(
+            cause: .transientNetwork,
+            sameCauseRetryCount: first.retryCount,
+            progressSignal: .none,
+            progressObserved: false,
+            secondsWithoutProgress: 5,
+            warningAfter: 1
+        )
+        let exhausted = OperationRecoveryPolicy.evaluate(
+            cause: .transientNetwork,
+            sameCauseRetryCount: second.retryCount,
+            progressSignal: .none,
+            progressObserved: false,
+            secondsWithoutProgress: 5,
+            warningAfter: 1
+        )
+        let auth = OperationRecoveryPolicy.evaluate(
+            cause: .authentication,
+            sameCauseRetryCount: 0,
+            progressSignal: .none,
+            progressObserved: false,
+            secondsWithoutProgress: 1,
+            warningAfter: 1
+        )
+        XCTAssertEqual(first.state, .autoResumePending)
+        XCTAssertEqual(second.retryCount, 2)
+        XCTAssertEqual(exhausted.state, .pausedResumable)
+        XCTAssertEqual(auth.state, .pausedResumable)
+        XCTAssertFalse(auth.automaticResume)
+        XCTAssertEqual(auth.evidenceIntegrity, "preserved")
+    }
 }
 #endif

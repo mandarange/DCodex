@@ -117,12 +117,17 @@ export function stagePublish(opts: StagePublishOptions): StagePublishReport {
   steps.push(download.step)
   if (!download.step.ok) return finish()
 
-  const receipt = readStageReceipt(artifactDir, readJsonFile)
+  const receipt = readStageReceipt(artifactDir, commit, readJsonFile)
   stageId = receipt.stageId
   steps.push(step('stage_receipt', Boolean(stageId), receipt.path, stageId ? null : receipt.blocker))
-  if (!stageId) return finish()
+  if (!stageId || !receipt.path) return finish()
 
-  const verify = runLocalVerify(opts, { artifactDir, version, stageId })
+  const verify = runLocalVerify(opts, {
+    handoffDir: receipt.handoffDir,
+    stageReceiptPath: receipt.path,
+    version,
+    stageId
+  })
   steps.push(verify)
   return finish()
 
@@ -248,27 +253,71 @@ function resolveRunId(opts: StagePublishOptions, commit: string | null): string 
 }
 
 function downloadArtifacts(opts: StagePublishOptions, runId: string, commit: string | null, dir: string): { step: StagePublishStep } {
-  const names = commit ? [`stage-input-${commit}`, `npm-stage-receipt-${commit}`] : []
-  if (!names.length) return { step: step('download', false, null, 'stage_commit_unknown') }
+  const names = stageArtifactNames(commit)
+  if (!names) return { step: step('download', false, null, 'stage_commit_unknown') }
   const args = ['run', 'download', runId, '--dir', dir]
-  for (const name of names) args.push('--name', name)
+  for (const name of [names.handoff, names.receipt]) args.push('--name', name)
   const result = opts.run('gh', args)
   return { step: step('download', result.status === 0, dir, result.status === 0 ? null : 'stage_artifact_download_failed') }
 }
 
-function readStageReceipt(dir: string, readJsonFile: (file: string) => unknown): { stageId: string | null; path: string | null; blocker: string | null } {
-  for (const candidate of ['stage-receipt.json', 'stage-output.json', 'npm-stage-receipt.json']) {
-    const file = path.join(dir, candidate)
-    const payload = readJsonFile(file) as { stage_id?: unknown } | null
-    const stageId = String(payload?.stage_id || '').trim()
-    if (!stageId) continue
-    if (!STAGE_ID_RE.test(stageId)) return { stageId: null, path: file, blocker: 'stage_id_uuid_invalid' }
-    return { stageId, path: file, blocker: null }
-  }
-  return { stageId: null, path: null, blocker: 'stage_receipt_missing' }
+interface StageArtifactNames {
+  readonly handoff: string
+  readonly receipt: string
 }
 
-function runLocalVerify(opts: StagePublishOptions, input: { artifactDir: string; version: string; stageId: string }): StagePublishStep {
+function stageArtifactNames(commit: string | null): StageArtifactNames | null {
+  if (!commit) return null
+  return {
+    handoff: `stage-input-${commit}`,
+    receipt: `npm-stage-receipt-${commit}`
+  }
+}
+
+interface StageReceiptLocation {
+  readonly stageId: string | null
+  readonly path: string | null
+  readonly handoffDir: string
+  readonly blocker: string | null
+}
+
+function readStageReceipt(
+  dir: string,
+  commit: string | null,
+  readJsonFile: (file: string) => unknown
+): StageReceiptLocation {
+  const names = stageArtifactNames(commit)
+  const layouts = names
+    ? [
+        {
+          receiptDir: path.join(dir, names.receipt),
+          handoffDir: path.join(dir, names.handoff)
+        },
+        { receiptDir: dir, handoffDir: dir }
+      ]
+    : [{ receiptDir: dir, handoffDir: dir }]
+
+  for (const layout of layouts) {
+    for (const candidate of ['stage-receipt.json', 'stage-output.json', 'npm-stage-receipt.json']) {
+      const file = path.join(layout.receiptDir, candidate)
+      const payload = readJsonFile(file) as { stage_id?: unknown } | null
+      const stageId = String(payload?.stage_id || '').trim()
+      if (!stageId) continue
+      if (!STAGE_ID_RE.test(stageId)) {
+        return { stageId: null, path: file, handoffDir: layout.handoffDir, blocker: 'stage_id_uuid_invalid' }
+      }
+      return { stageId, path: file, handoffDir: layout.handoffDir, blocker: null }
+    }
+  }
+  return { stageId: null, path: null, handoffDir: dir, blocker: 'stage_receipt_missing' }
+}
+
+function runLocalVerify(opts: StagePublishOptions, input: {
+  handoffDir: string
+  stageReceiptPath: string
+  version: string
+  stageId: string
+}): StagePublishStep {
   // The verifier is deliberately excluded from the published tarball; this
   // whole subcommand only runs from a source checkout of this repository.
   const verifier = path.join(opts.root, 'dist', 'scripts', 'npm-stage-tarball-verifier.js')
@@ -276,9 +325,9 @@ function runLocalVerify(opts: StagePublishOptions, input: { artifactDir: string;
   const result = opts.run(process.execPath, [
     verifier,
     '--stage-id', input.stageId,
-    '--local-receipt', path.join(input.artifactDir, 'pack-receipt.json'),
-    '--local-tarball', path.join(input.artifactDir, `sneakoscope-${input.version}.tgz`),
-    '--stage-receipt', path.join(input.artifactDir, 'stage-receipt.json')
+    '--local-receipt', path.join(input.handoffDir, 'pack-receipt.json'),
+    '--local-tarball', path.join(input.handoffDir, `sneakoscope-${input.version}.tgz`),
+    '--stage-receipt', input.stageReceiptPath
   ])
   return step('verify', result.status === 0, 'npm-stage-tarball-verifier', result.status === 0 ? null : 'stage_tarball_comparison_failed')
 }

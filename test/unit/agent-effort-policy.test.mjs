@@ -128,7 +128,7 @@ test('official subagents use the fixed four-profile matrix', () => {
   assert.equal(implementation.model, 'gpt-5.6-sol');
   assert.equal(implementation.model_reasoning_effort, 'high');
   assert.equal(context.model, 'gpt-5.6-terra');
-  assert.equal(context.model_reasoning_effort, 'medium');
+  assert.equal(context.model_reasoning_effort, 'max');
   assert.equal(review.model, 'gpt-5.6-sol');
   assert.equal(review.model_reasoning_effort, 'max');
 });

@@ -1,4 +1,5 @@
 import Cocoa
+
 final class ProvidersViewController: NSViewController, ControlCenterPage, NSTextFieldDelegate {
     private let capabilityDefinitions: [(label: String, keys: [String])] = [
         ("OAuth Identity", ["oauth_identity", "provider_identity"]), ("Built-in Provider", ["built_in_provider", "provider_identity"]),
@@ -7,7 +8,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         ("Voice", ["voice", "voice_mode"]), ("Plugins", ["plugins"])
     ]
     private let capabilityStates = Set(["verified", "available_unverified", "blocked", "unsupported", "skipped"])
-    private let cliLaunchCommand = "codex --config model_provider='\"codex-lb\"'"
+    private let cliLaunchCommand = "codex"
     let processClient: ProcessClient
     let operations: OperationCoordinator
     let providerStatus = NativeView.detail("Desktop routing status unchecked.")
@@ -28,6 +29,12 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         return progress
     }()
     let capabilityStatus = NativeView.detail("Capabilities have not been verified.")
+    let capabilityLastCheckedStatus = NativeView.detail("Last feature check: never · choose Verify Capabilities.")
+    let catalogSyncStatus = NativeView.detail("Native Codex catalog sync: not reported yet.")
+    let providerApplyStatus = NativeView.detail("Provider apply stages: no operation receipt yet.")
+    let codexLbKeychainStatus = NativeView.detail("Codex LB credential: checking Keychain without UI…")
+    let openRouterKeychainStatus = NativeView.detail("OpenRouter credential: checking Keychain without UI…")
+    let oauthCredentialStatus = NativeView.detail("ChatGPT OAuth credential: checking Codex-owned auth state…")
     let openRouterCredentialStatus = NativeView.detail("Credential: checking…")
     let openRouterActiveStatus = NativeView.detail("Active provider: checking…")
     let openRouterCatalogStatus = NativeView.detail("Model catalog has not loaded yet.")
@@ -50,6 +57,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     var codexLbSelectedNow = false
     var chatgptOauthPresentNow = false
     var openRouterSelectedNow = false
+    var openRouterCredentialValidatedNow = false
     var openRouterActiveModel = ""
     var routerSelectedNow = false
     var routerActiveModel = ""
@@ -68,6 +76,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     var openRouterActionRan = false
     var connectTestInFlight = false
     var busy = false
+    let keychainStore = SKSKeychainStore()
     init(processClient: ProcessClient, operations: OperationCoordinator) {
         self.processClient = processClient
         self.operations = operations
@@ -82,7 +91,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         verifyDesktop.setAccessibilityLabel("Verify Desktop transport capabilities")
         disableDesktop.setAccessibilityLabel("Disable Codex LB Desktop routing and keep ordinary ChatGPT OAuth, then restart Codex App")
         // Keep the mode CTAs discoverable: never hide the advanced bridge or ChatGPT OAuth actions based on status parsing.
-        let configureCli = NativeView.button("Configure / Update…", target: self, action: #selector(setDomainAndKey))
+        let configureCli = NativeView.button("Reconnect Codex LB credential…", target: self, action: #selector(setDomainAndKey))
         let useCli = ControlKit.primaryButton("Use Codex LB", target: self, action: #selector(useCliProvider))
         useCli.setAccessibilityLabel("Use Codex LB through the atomic CLI provider path")
         let testCli = NativeView.button("Run Connect Test", target: self, action: #selector(testConnection))
@@ -90,7 +99,22 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         let copyCli = NativeView.button("Copy CLI Command", target: self, action: #selector(copyCliCommand))
         let fastOn = NativeView.button("Codex Fast On", target: self, action: #selector(fastOn))
         let fastOff = NativeView.button("Codex Fast Off", target: self, action: #selector(fastOff))
-        actionButtons = [enableDesktop, verifyDesktop, disableDesktop, configureCli, useCli, testCli, copyCli, fastOn, fastOff]
+        let reconnectOpenRouter = NativeView.button("Reconnect OpenRouter credential…", target: self, action: #selector(saveOpenRouterKey))
+        let openCodexSignIn = NativeView.button("Open Codex sign-in…", target: self, action: #selector(openCodexSignInAction))
+        registerProviderAction(enableDesktop, id: "sks-provider-use-codex-lb")
+        registerProviderAction(verifyDesktop, id: "sks-provider-verify-capabilities")
+        registerProviderAction(disableDesktop, id: "sks-provider-use-chatgpt-oauth")
+        registerProviderAction(configureCli, id: "sks-provider-reconnect-codex-lb")
+        registerProviderAction(testCli, id: "sks-provider-run-connect-test")
+        registerProviderAction(copyCli, id: "sks-provider-copy-cli-command")
+        registerProviderAction(useCli, id: "sks-provider-activate-codex-lb")
+        registerProviderAction(reconnectOpenRouter, id: "sks-provider-reconnect-openrouter")
+        registerProviderAction(openCodexSignIn, id: "sks-provider-open-codex-signin")
+        registerProviderAction(fastOn, id: "sks-provider-fast-on")
+        registerProviderAction(fastOff, id: "sks-provider-fast-off")
+        providerApplyStatus.setAccessibilityIdentifier("sks-center-provider-apply-status")
+        providerApplyStatus.setAccessibilityLabel("Provider apply stage receipts")
+        actionButtons = [enableDesktop, verifyDesktop, disableDesktop, configureCli, reconnectOpenRouter, openCodexSignIn, useCli, testCli, copyCli, fastOn, fastOff]
         let desktop = NativeView.card(
             title: "Advanced · Desktop Bridge / ChatGPT Identity Mode",
             subtitle: "Optional bridge mode: keeps ChatGPT OAuth identity and the built-in OpenAI provider while routing model traffic through the local codex-lb bridge. Use ChatGPT OAuth Only removes bridge routing without touching login.",
@@ -100,7 +124,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             title: "Codex LB · Credentials & Primary Provider",
             subtitle: "Saves the official Center Codex LB host and API key (sks-codex-lb store). Use Codex LB applies the atomic CLI provider path — no shell source or twin env files.",
             views: [
-                cliProviderStatus,
+                cliProviderStatus, codexLbKeychainStatus,
                 NativeView.detail("One-off command: \(cliLaunchCommand)"),
                 ControlKit.actionRow([configureCli, useCli]),
                 makeCliConnectProgressView(),
@@ -118,21 +142,30 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         )
         view = NativeView.page([
             NativeView.row([NativeView.title("Providers & Models"), globalSpinner]),
-            NativeView.detail("Use Codex LB selects the atomic CLI provider path. Advanced Desktop Bridge keeps ChatGPT identity; Fast stays independent. Secrets are sent through stdin and redacted from logs."),
+            NativeView.detail("Codex always sees its native OpenAI identity through a local loopback proxy. SKS selects exactly one internal mode: Codex LB, OpenRouter, or ChatGPT OAuth. Secrets are sent through stdin and never written to operation logs."),
+            NativeView.card(
+                title: "Authentication Recovery",
+                subtitle: "Background refresh and menu restarts never open authentication UI. Missing, locked, damaged, or inaccessible credentials stay in an Authentication Required state until you choose a reconnect action.",
+                views: [codexLbKeychainStatus, openRouterKeychainStatus, oauthCredentialStatus, NativeView.row([configureCli, reconnectOpenRouter, openCodexSignIn])]
+            ),
+            NativeView.card(
+                title: "Provider Apply Stages",
+                subtitle: "Configuration, proxy, catalog, and new-session readiness are independent. Existing sessions keep their pinned copy; a partial failure never appears as silent success.",
+                views: [providerApplyStatus]
+            ),
             makeActiveProviderCard(), cli, desktop, makeCapabilityMatrixCard(), makeOpenRouterCard(),
-            makeMultiProviderRouterCard(), makeRoleModelsCard(), fast
+            makeRoleModelsCard(), fast
         ])
     }
     func refreshOnAppear() { refresh() }
     func setBusy(_ value: Bool) {
         busy = value
         for button in actionButtons { button.isEnabled = !value }
-        openRouterModelField.isEnabled = !value
-        openRouterModelPopup.isEnabled = !value && !openRouterModels.isEmpty
+        openRouterModelField.isEnabled = !value && openRouterCredentialValidatedNow
+        openRouterModelPopup.isEnabled = !value && openRouterCredentialValidatedNow && !openRouterModels.isEmpty
         openRouterRefreshButton?.isEnabled = !value && !catalogRefreshInFlight
         openRouterRestoreButton?.isEnabled = !value && openRouterRestoreAvailable
         roleRefreshButton?.isEnabled = !value && !roleRefreshInFlight
-        setMultiProviderRouterBusy(value)
         updateRoleControlAvailability()
         if value { globalSpinner.startAnimation(nil) }
         else { globalSpinner.stopAnimation(nil) }
@@ -154,6 +187,8 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         }
     }
     func refresh() {
+        refreshCredentialHealth()
+        renderLatestProviderApply()
         processClient.run(["codex-lb", "status", "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
             guard let self = self else { return }
             guard let json = self.json(result.output) else {
@@ -171,6 +206,11 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             self.desktopFullRoutingNow = snapshot.desktopFullRouting && measuredRoutingOk
             self.codexLbSelectedNow = snapshot.legacyCodexLbSelected || measuredRoute?.selected == true
             self.chatgptOauthPresentNow = snapshot.chatgptOauthPresent
+            self.oauthCredentialStatus.stringValue = snapshot.chatgptOauthPresent
+                ? "ChatGPT OAuth: connected · refresh token remains Codex-owned and is never copied by SKS."
+                : "Authentication Required: ChatGPT OAuth is not connected. Choose Open Codex sign-in; no login window was opened automatically."
+            self.oauthCredentialStatus.textColor = snapshot.chatgptOauthPresent ? .secondaryLabelColor : .systemOrange
+            self.renderCatalogSyncStatus(json)
             self.renderActiveProviderSummary()
             self.renderMeasuredRoutingBadge(measuredRoute, routeExpected: snapshot.desktopFullRouting || snapshot.legacyCodexLbSelected)
             if !self.busy {
@@ -179,20 +219,20 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             }
         }
         refreshOpenRouterStatus()
-        refreshMultiProviderRouterStatus()
         if openRouterModels.isEmpty { refreshOpenRouterModels() }
         refreshRoleModels()
         refreshFastStatus()
     }
+
     private func makeCapabilityMatrixCard() -> NSBox {
-        var views: [NSView] = [capabilityStatus]
+        var views: [NSView] = [capabilityStatus, capabilityLastCheckedStatus, catalogSyncStatus]
         for definition in capabilityDefinitions {
             let value = NativeView.detail("skipped")
             value.setAccessibilityLabel("\(definition.label) capability state")
             capabilityRows[definition.label] = value
             views.append(ControlKit.keyValueRow(definition.label, value))
         }
-        return NativeView.card(title: "Capability Matrix", subtitle: "States come from capability evidence, not configuration alone: verified, available_unverified, blocked, unsupported, or skipped.", views: views)
+        return NativeView.card(title: "Latest Codex Feature Compatibility", subtitle: "Every feature reports availability, direct proxy or OAuth auxiliary path, OAuth requirement, last check, failure reason, and recovery. Missing metadata is shown as unverified; SKS never hides the feature or silently falls back.", views: views)
     }
     private func describeDesktopStatus(_ snapshot: ProviderRoutingTruth.Snapshot) -> String {
         if snapshot.legacyDestructive {
@@ -250,7 +290,12 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             let state = states.max { capabilityStateRank($0) < capabilityStateRank($1) } ?? "skipped"
             rendered.append(state)
             let label = capabilityRows[definition.label]
-            label?.stringValue = state
+            label?.stringValue = capabilityCompatibilityDetail(
+                definition: definition,
+                payload: payload,
+                state: state,
+                trustVerified: trustVerified
+            )
             label?.textColor = capabilityColor(state)
         }
         guard recognized else { capabilityStatus.stringValue = "Capability response did not contain recognized evidence. No state was assumed."; return nil }
@@ -262,6 +307,10 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         let blockerText = blockers.isEmpty ? "" : " · blockers: \(blockers.prefix(3).joined(separator: ", "))"
         let trustText = reportedOverall == "verified" && !trustVerified ? " · trusted deep evidence missing" : ""
         capabilityStatus.stringValue = "Capabilities: \(overall) · \(verifiedCount)/\(rendered.count) verified\(trustText)\(blockerText)."
+        let checkedAt = (payload["checked_at"] as? String)
+            ?? (payload["updated_at"] as? String)
+            ?? ISO8601DateFormatter().string(from: Date())
+        capabilityLastCheckedStatus.stringValue = "Last feature check: \(checkedAt) · result \(overall)."
         return overall
     }
     private func capabilityState(_ key: String, payload: [String: Any], allowVerified: Bool) -> String? {
@@ -323,76 +372,18 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
                 ]
             ) { [weak self] transport in
                 guard let self = self, let transport = transport else { return }
-                self.promptForKey(window: window, args: ["codex-lb", "setup", "--host", host, "--gateway-auth", transport, "--api-key-stdin", "--yes", "--write-env-file", "--keychain", "--json"], kind: "codex-lb-center-setup", title: "Save Codex LB credentials")
+                self.promptForKey(window: window, args: ["codex-lb", "setup", "--host", host, "--gateway-auth", transport, "--api-key-stdin", "--yes", "--write-env-file", "--json"], kind: "codex-lb-center-setup", title: "Save Codex LB credentials")
             }
         }
     }
     private func promptForKey(window: NSWindow, args: [String], kind: String, title: String) {
-        promptForSecretKey(window: window, sheetTitle: "Codex LB API Key", sheetMessage: "Paste your Codex LB API key (usually starts with sk-clb-). The field stays masked; the key is sent through stdin and stored as the official SKS Center credential Desktop uses automatically.", placeholder: "sk-clb-…", args: args, kind: kind, title: title, statusLabel: cliProviderStatus, successSummary: "Codex LB credentials saved for Center/Desktop", failSummary: "Codex LB credential save failed")
-    }
-    func promptForSecretKey(window: NSWindow, sheetTitle: String, sheetMessage: String, placeholder: String, args: [String], kind: String, title: String, statusLabel: NSTextField, successSummary: String, failSummary: String) {
-        AlertFactory.textSheet(window: window, title: sheetTitle, message: sheetMessage, secure: true, placeholder: placeholder) { [weak self] key in
-            guard let self = self, let key = key else { return }
-            guard !self.busy else { statusLabel.stringValue = "Another provider action is already running."; return }
-            guard let snapshot = self.operations.begin(kind: kind, mutationGroup: "codex-config", summary: title) else {
-                statusLabel.stringValue = "Another guarded mutation is already running. Wait or open Diagnostics."
-                return
-            }
-            self.setBusy(true)
-            statusLabel.stringValue = "\(title)…"
-            _ = self.operations.update(snapshot, state: .running, stage: "running", progress: nil, summary: title)
-            self.processClient.run(args, stdin: key + "\n", timeout: NativeView.mutationTimeout) { [weak self] result in
-                guard let self = self else { return }
-                self.setBusy(false)
-                let parsed = self.json(result.output)
-                let ok = result.code == 0 && parsed?["ok"] as? Bool == true
-                _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? successSummary : failSummary)
-                statusLabel.stringValue = ok
-                    ? "\(successSummary). Next: test the saved configuration."
-                    : "\(failSummary) · \(self.structuredPublicDetail(parsed, fallback: result.output))"
-                self.refresh()
-            }
-        }
+        promptForSecretKey(window: window, sheetTitle: "Codex LB API Key", sheetMessage: "Paste your Codex LB API key (usually starts with sk-clb-). This explicit reconnect is the only action allowed to update Keychain. The field stays masked and the key is never written to operation logs.", placeholder: "sk-clb-…", args: args, kind: kind, title: title, credential: .codexLbApiKey, statusLabel: cliProviderStatus, successSummary: "Codex LB credentials saved for Center/Desktop", failSummary: "Codex LB credential save failed")
     }
     @objc private func enableDesktopFull() {
         performDesktopRouting(["codex-lb", "use-desktop-full", "--restart-app", "--json"], title: "Desktop Bridge Mode (keeps ChatGPT sign-in)", kind: "codex-lb-use-desktop-full", expectedMode: "desktop-native-bridge")
     }
     @objc private func disableDesktopRouting() {
         performDesktopRouting(["codex-lb", "disable", "--restart-app", "--json"], title: "Use ChatGPT OAuth Only", kind: "codex-lb-disable-desktop", expectedMode: "disabled")
-    }
-    private func performDesktopRouting(_ args: [String], title: String, kind: String, expectedMode: String) {
-        guard !busy else { providerStatus.stringValue = "Another provider action is already running."; return }
-        guard let snapshot = operations.begin(kind: kind, mutationGroup: "codex-config", summary: title) else {
-            providerStatus.stringValue = "Another guarded mutation is already running. Wait or open Diagnostics."
-            return
-        }
-        setBusy(true)
-        providerStatus.stringValue = "\(title)…"
-        _ = operations.update(snapshot, state: .running, stage: "routing", progress: nil, summary: title)
-        processClient.run(args, timeout: NativeView.mutationTimeout) { [weak self] result in
-            guard let self = self else { return }
-            self.setBusy(false)
-            let parsed = self.json(result.output)
-            let routing = parsed.map(ProviderRoutingTruth.snapshot(from:))
-            let mode = routing?.mode
-            let oauthPreserved = routing.flatMap { $0.oauthPreservedFlag }
-            let ok = result.code == 0 && parsed?["ok"] as? Bool == true && mode == expectedMode && oauthPreserved != false
-            _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? "\(title) completed" : "\(title) needs action")
-            guard ok else {
-                self.providerStatus.stringValue = "\(title) was not confirmed · \(self.structuredPublicDetail(parsed, fallback: result.output)) No routing or OAuth change was assumed."
-                return
-            }
-            let bridgeSelected = expectedMode == "desktop-native-bridge"
-            self.desktopFullRoutingNow = false
-            self.codexLbSelectedNow = false
-            self.chatgptOauthPresentNow = routing?.chatgptOauthPresent ?? self.chatgptOauthPresentNow
-            self.renderActiveProviderSummary()
-            if bridgeSelected { self.renderMeasuredRoutingBadge(nil, routeExpected: true) }
-            self.providerStatus.stringValue = bridgeSelected
-                ? "Desktop Bridge Mode enabled · ChatGPT sign-in preserved · measured routing verification still required."
-                : "ChatGPT OAuth mode active · Codex LB Desktop routing disabled."
-            self.refresh()
-        }
     }
     @objc private func verifyDesktopCapabilities() {
         guard !busy else { capabilityStatus.stringValue = "Another provider action is already running."; return }
@@ -423,7 +414,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         }
     }
     @objc private func useCliProvider() {
-        performCliCommand(["codex-lb", "use-cli", "--json"], title: "Use Codex LB", kind: "codex-lb-use-cli")
+        performDesktopRouting(["codex-lb", "use-desktop-full", "--restart-app", "--json"], title: "Use Codex LB", kind: "codex-lb-use-desktop-full", expectedMode: "desktop-native-bridge")
     }
     private func performCliCommand(_ args: [String], title: String, kind: String) {
         guard !busy else { cliProviderStatus.stringValue = "Another provider action is already running."; return }

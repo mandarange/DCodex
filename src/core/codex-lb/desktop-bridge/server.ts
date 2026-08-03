@@ -3,10 +3,11 @@ import http, { type Server, type ServerResponse } from 'node:http';
 import net, { type Server as NetServer, type Socket } from 'node:net';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { forwardHttp } from './http-forward.js';
+import { forwardHttp, prepareDesktopBridgeRequestBody } from './http-forward.js';
 import {
   assertAllowedOrigin,
   assertAllowedPath,
+  assertDesktopBridgeRequestPolicy,
   assertLoopbackPeer,
   assertLoopbackListenHost,
   assertWebSocketUpgrade,
@@ -134,7 +135,9 @@ export async function startPreparedDesktopBridge(
         assertLoopbackPeer(req.socket.remoteAddress);
         assertAllowedOrigin(req.headers, input.allowedOrigins);
         assertAllowedPath(pathnameFromRequest(req), input.allowedPathPrefixes);
-        await forwardHttp(req, res, input);
+        assertDesktopBridgeRequestPolicy({ headers: req.headers, config: input });
+        const body = await prepareDesktopBridgeRequestBody(req, input);
+        await forwardHttp(req, res, input, body);
       } catch (error) {
         req.resume();
         writeBridgeRejection(res, error);
@@ -156,7 +159,11 @@ export async function startPreparedDesktopBridge(
       assertLoopbackPeer(req.socket.remoteAddress);
       assertAllowedOrigin(req.headers, input.allowedOrigins);
       assertAllowedPath(pathnameFromRequest(req), input.allowedPathPrefixes);
+      assertDesktopBridgeRequestPolicy({ headers: req.headers, config: input });
       assertWebSocketUpgrade(req.headers, req.method);
+      if (input.providerMode === 'openrouter') {
+        throw new DesktopBridgeError('bridge_openrouter_websocket_unsupported');
+      }
       forwardWebSocket(req, socket, head, input);
     } catch (error) {
       writeUpgradeRejection(socket, error);

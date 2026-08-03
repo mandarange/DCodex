@@ -37,7 +37,7 @@ export function runSksJson(args, options = {}) {
   } catch (err) {
     assertGate(false, 'sks command did not emit parseable JSON', { args, stdout: result.stdout, error: err.message });
   }
-  if (result.status !== 0 && !parsed?.mission_id) {
+  if (result.status !== 0 && !parsed?.mission_id && options.allowFailure !== true) {
     assertGate(false, 'sks command failed', { args, status: result.status, stdout: result.stdout, stderr: result.stderr });
   }
   return { ...parsed, _process_status: result.status, _stderr_tail: String(result.stderr || '').slice(-600) };

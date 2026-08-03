@@ -79,6 +79,8 @@ test('desktop bridge service is explicitly unsupported away from macOS', async (
     schema: CODEX_LB_DESKTOP_BRIDGE_SETTINGS_SCHEMA,
     listen_host: '127.0.0.1',
     listen_port: 54_321,
+    provider_mode: 'codex-lb',
+    allowed_models: ['gpt-5.6-codex'],
     gateway_auth_transport: 'x-codex-lb-api-key',
     allowed_origins: ['app://codex'],
     connect_timeout_ms: 10_000,

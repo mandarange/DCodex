@@ -11,9 +11,10 @@
  *   3. Nothing written here carries an absolute path: artifact identity is always
  *      expressed workspace-relative.
  */
+import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { writeJsonAtomic, writeTextAtomic } from '../../../fsx.js';
+import { ensureDir, sha256, writeJsonAtomic, writeTextAtomic } from '../../../fsx.js';
 import {
   CONTEXT_GRAPH_CORRUPT_ERROR,
   CONTEXT_GRAPH_META_SCHEMA,
@@ -29,6 +30,7 @@ import {
   contextGraphPrevSnapshotPath,
   contextGraphSnapshotPath
 } from '../paths.js';
+import { withEvidenceWriterLock, type EvidenceWriterLockReceipt } from './evidence-write-lock.js';
 
 export type ContextGraphArtifactStatus = 'ok' | 'missing' | 'corrupt';
 
@@ -205,6 +207,30 @@ export interface WriteContextGraphSnapshotResult {
   artifact: string;
 }
 
+export interface StagedContextGraphCommitInput extends WriteContextGraphSnapshotInput {
+  projectId: string;
+  expectedCurrentFileHash: string | null;
+  waitMs?: number;
+  beforeReplace?: () => Promise<void> | void;
+}
+
+export type StagedContextGraphCommitResult =
+  | {
+      status: 'committed';
+      wrote: true;
+      previousSnapshotHash: string | null;
+      rotatedPrevious: boolean;
+      artifact: string;
+      currentFileHash: string;
+      lock: EvidenceWriterLockReceipt;
+    }
+  | {
+      status: 'conflict' | 'invalid_staging';
+      wrote: false;
+      blocker: 'context_graph_user_provenance_conflict' | 'context_graph_staging_invalid';
+      artifact: string;
+    };
+
 /**
  * Commit a snapshot + meta pair. The current generation is rotated to
  * `context-graph.prev.json` first (only when it is itself readable, so a corrupt
@@ -215,32 +241,78 @@ export interface WriteContextGraphSnapshotResult {
 export async function writeContextGraphSnapshot(
   input: WriteContextGraphSnapshotInput
 ): Promise<WriteContextGraphSnapshotResult> {
+  const expectedCurrentFileHash = await contextGraphCurrentFileHash(input.root);
+  const committed = await stageAndCommitContextGraphSnapshot({
+    ...input,
+    projectId: input.meta.cacheKeyParts.workspaceIdentity,
+    expectedCurrentFileHash
+  });
+  if (committed.status !== 'committed') throw new Error(committed.blocker);
+  return committed;
+}
+
+export async function contextGraphCurrentFileHash(root: string): Promise<string | null> {
+  const raw = await readTextOrNull(contextGraphSnapshotPath(root));
+  return raw === null ? null : sha256(raw);
+}
+
+export async function stageAndCommitContextGraphSnapshot(
+  input: StagedContextGraphCommitInput
+): Promise<StagedContextGraphCommitResult> {
   const { root, snapshot, meta } = input;
   const snapshotFile = contextGraphSnapshotPath(root);
   const artifact = relative(root, snapshotFile);
-  const currentRaw = await readTextOrNull(snapshotFile);
-  let previousSnapshotHash: string | null = null;
-  let rotatedPrevious = false;
+  const stagingDir = path.join(path.dirname(snapshotFile), `.context-graph.staging-${process.pid}-${randomUUID()}`);
+  const stagedSnapshot = path.join(stagingDir, 'context-graph.json');
+  const stagedMeta = path.join(stagingDir, 'context-graph.meta.json');
+  await ensureDir(stagingDir);
+  try {
+    await writeJsonAtomic(stagedSnapshot, snapshot);
+    await writeJsonAtomic(stagedMeta, meta);
+    const validation = validateContextGraphSnapshot(JSON.parse(await fsp.readFile(stagedSnapshot, 'utf8')) as unknown);
+    const stagedMetaValue = JSON.parse(await fsp.readFile(stagedMeta, 'utf8')) as ContextGraphMeta;
+    const referenceValid = stagedMetaValue.schema === CONTEXT_GRAPH_META_SCHEMA
+      && stagedMetaValue.snapshotHash === snapshot.snapshotHash
+      && stagedMetaValue.nodeCount === snapshot.nodeCount
+      && stagedMetaValue.edgeCount === snapshot.edgeCount;
+    if (!validation.ok || !referenceValid) {
+      return { status: 'invalid_staging', wrote: false, blocker: 'context_graph_staging_invalid', artifact };
+    }
 
-  if (currentRaw !== null) {
-    let currentHash: string | null = null;
-    try {
-      const parsed: unknown = JSON.parse(currentRaw);
-      const hash = (parsed as { snapshotHash?: unknown } | null)?.snapshotHash;
-      currentHash = typeof hash === 'string' && hash ? hash : null;
-    } catch {
-      currentHash = null;
-    }
-    // A corrupt current file is left where it is rather than promoted to prev:
-    // overwriting a good previous generation with garbage helps nobody.
-    if (currentHash) {
-      previousSnapshotHash = currentHash;
-      await writeTextAtomic(contextGraphPrevSnapshotPath(root), currentRaw);
-      rotatedPrevious = true;
-    }
+    return await withEvidenceWriterLock({
+      root,
+      projectId: input.projectId,
+      ...(input.waitMs === undefined ? {} : { waitMs: input.waitMs }),
+      run: async (lock): Promise<StagedContextGraphCommitResult> => {
+        const currentRaw = await readTextOrNull(snapshotFile);
+        const currentFileHash = currentRaw === null ? null : sha256(currentRaw);
+        if (currentFileHash !== input.expectedCurrentFileHash) {
+          return { status: 'conflict', wrote: false, blocker: 'context_graph_user_provenance_conflict', artifact };
+        }
+        let previousSnapshotHash: string | null = null;
+        let rotatedPrevious = false;
+        if (currentRaw !== null) {
+          try {
+            const parsed = JSON.parse(currentRaw) as { snapshotHash?: unknown };
+            if (typeof parsed.snapshotHash === 'string' && parsed.snapshotHash) {
+              previousSnapshotHash = parsed.snapshotHash;
+              await writeTextAtomic(contextGraphPrevSnapshotPath(root), currentRaw);
+              rotatedPrevious = true;
+            }
+          } catch {
+            // A corrupt current generation is never promoted to previous.
+          }
+        }
+        await input.beforeReplace?.();
+        await fsp.rename(stagedSnapshot, snapshotFile);
+        await fsp.rename(stagedMeta, contextGraphMetaPath(root));
+        return {
+          status: 'committed', wrote: true, previousSnapshotHash, rotatedPrevious, artifact,
+          currentFileHash: sha256(await fsp.readFile(snapshotFile, 'utf8')), lock
+        };
+      }
+    });
+  } finally {
+    await fsp.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
   }
-
-  await writeJsonAtomic(snapshotFile, snapshot);
-  await writeJsonAtomic(contextGraphMetaPath(root), meta);
-  return { wrote: true, previousSnapshotHash, rotatedPrevious, artifact };
 }

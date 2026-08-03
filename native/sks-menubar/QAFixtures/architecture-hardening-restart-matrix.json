@@ -1,0 +1,58 @@
+{
+  "schema": "sks.menubar-signed-restart-qa.v1",
+  "launch_cycles": 5,
+  "signing_domains": [
+    {
+      "environment": "development",
+      "identity_kind": "apple-development-or-ad-hoc",
+      "credential_namespace": "development",
+      "live_claim_allowed": false
+    },
+    {
+      "environment": "production",
+      "identity_kind": "developer-id-application",
+      "credential_namespace": "production",
+      "live_claim_allowed": true
+    }
+  ],
+  "selectors": {
+    "status_item_label_prefix": "SKS status",
+    "provider_settings_menu": "Open Provider Settings",
+    "retry_menu": "Retry Last Operation",
+    "provider_reconnect": "sks-provider-reconnect-codex-lb",
+    "provider_verify": "sks-provider-verify-capabilities",
+    "provider_apply_status": "sks-center-provider-apply-status"
+  },
+  "scenarios": [
+    {
+      "id": "explicit-connect-then-relaunch",
+      "expected": "no-automatic-auth-ui"
+    },
+    {
+      "id": "credential-deleted",
+      "expected": "not-found-and-manual-reconnect"
+    },
+    {
+      "id": "credential-damaged",
+      "expected": "damaged-and-manual-reconnect"
+    },
+    {
+      "id": "keychain-locked",
+      "expected": "locked-and-manual-reconnect"
+    },
+    {
+      "id": "signing-mismatch",
+      "expected": "signing-mismatch-and-manual-reconnect"
+    },
+    {
+      "id": "offline-proxy-catalog-save-failure",
+      "expected": "status-and-recovery-actions-remain-accessible"
+    }
+  ],
+  "prohibited_record_fields": [
+    "signing_identity_identifier",
+    "account_identifier",
+    "credential",
+    "credential_fingerprint"
+  ]
+}

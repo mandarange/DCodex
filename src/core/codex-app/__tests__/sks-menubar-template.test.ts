@@ -38,15 +38,15 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
     'main.swift', 'AppDelegate.swift', 'StatusItemController.swift',
     'ControlCenterWindowController.swift', 'SidebarItem.swift', 'ControlKit.swift',
     'OverviewViewController.swift', 'OverviewSummary.swift', 'UpdatesViewController.swift',
-    'MCPServersViewController.swift', 'ProvidersViewController.swift', 'ProvidersConnectTest.swift',
+    'MCPServersViewController.swift', 'ProvidersViewController.swift', 'ProvidersReliability.swift', 'ProvidersConnectTest.swift',
     'ProvidersRoutingTruth.swift', 'ProvidersFastMode.swift',
     'ProvidersOpenRouter.swift',
     'ProvidersRoleModels.swift', 'ProvidersMultiProvider.swift',
     'RemoteCodingViewController.swift',
     'DiagnosticsViewController.swift',
-    'SettingsViewController.swift', 'OperationCoordinator.swift',
+    'SettingsViewController.swift', 'OperationModels.swift', 'OperationCoordinator.swift',
     'ProcessClient.swift', 'ProcessExecutionState.swift', 'ProcessIdentityGuard.swift',
-    'SecureProcessEnvelope.swift',
+    'SecureProcessEnvelope.swift', 'SKSKeychainStore.swift',
     'TelegramStateLock.swift',
     'TelegramPrivateFileSupport.swift',
     'TelegramPrivateFileStore.swift', 'TelegramSupport.swift', 'TelegramRuntimeSupport.swift', 'TelegramTransport.swift',
@@ -99,7 +99,8 @@ test('status template keeps Control Center reachable on cold start before Codex 
   assert.match(status, /Keep the status item visible on cold start/);
   assert.match(status, /statusItem\.isVisible = true/);
   assert.doesNotMatch(status, /statusItem\.isVisible = NSWorkspace\.shared\.runningApplications\.contains/);
-  assert.match(status, /else \{ self\?\.statusItem\.isVisible = false \}/);
+  assert.match(status, /else \{[\s\S]{0,400}self\?\.statusItem\.isVisible = true/);
+  assert.doesNotMatch(status, /else \{ self\?\.statusItem\.isVisible = false \}/);
 });
 
 test('runtime materialization injects paths, version, and optional Codex bundle id without unresolved tokens', () => {
@@ -113,7 +114,8 @@ test('runtime materialization injects paths, version, and optional Codex bundle 
   assert.match(withCodex, /NSWorkspace\.didLaunchApplicationNotification/);
   assert.match(withCodex, /NSWorkspace\.didTerminateApplicationNotification/);
   assert.match(withCodex, /if config\?\["quit_with_codex"\] as\? Bool == true/);
-  assert.match(withCodex, /else \{ self\?\.statusItem\.isVisible = false \}/);
+  assert.match(withCodex, /else \{[\s\S]{0,400}self\?\.statusItem\.isVisible = true/);
+  assert.doesNotMatch(withCodex, /else \{ self\?\.statusItem\.isVisible = false \}/);
   assert.match(withCodex, /applicationShouldHandleReopen\(_ sender: NSApplication, hasVisibleWindows flag: Bool\)/);
   assert.match(withCodex, /controlCenter\?\.show\(section: \.overview\)/);
   assert.match(withCodex, /switch singletonGuard\.acquire\(\)/);
@@ -229,7 +231,33 @@ final class ProcessClient {
     func run(_ arguments: [String], stdin: String? = nil, environment: [String: String] = [:], timeout: TimeInterval? = nil, completion: @escaping (ProcessResult) -> Void) {}
 }
 enum OperationState: String { case succeeded, failed, running }
-struct OperationSnapshot { let kind: String; let state: OperationState; let publicSummary: String; let updatedAt: String }
+enum OperationProgressSignal: String { case evidence, fileChange, testResult, modelResponse, toolResponse, none }
+enum OperationRecoveryCause: String { case transientNetwork, authentication, providerMode, accountBinding, externalConfiguration, unknown }
+enum OperationRecoveryState: String { case active, warning, autoResumePending, pausedResumable }
+struct OperationRecoveryStatus {
+    let state: OperationRecoveryState
+    let cause: OperationRecoveryCause?
+    let automaticResume: Bool
+    let retryCount: Int
+    let maxAutomaticRetries: Int
+    let lastProgressSignal: OperationProgressSignal
+    let lastProgressAt: String
+    let stallReason: String?
+    let recoveryAttempt: String?
+    let nextAction: String
+    let pinnedMode: String?
+    let pinnedModel: String?
+    let accountBinding: String
+    let evidenceIntegrity: String
+}
+struct OperationSnapshot {
+    let kind: String
+    let state: OperationState
+    let publicSummary: String
+    let updatedAt: String
+    let stage: String?
+    let recovery: OperationRecoveryStatus?
+}
 final class OperationCoordinator {
     func latestSnapshot() -> OperationSnapshot? { nil }
     func begin(kind: String, mutationGroup: String?, summary: String) -> OperationSnapshot? { nil }
@@ -374,15 +402,19 @@ test('confirmation and input flows use sheets and never nest modal loops', () =>
 });
 
 test('Providers configures the CLI provider through masked paste fields and stdin', () => {
-  const providers = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersViewController.swift'), 'utf8');
-  const connectTest = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersConnectTest.swift'), 'utf8');
+  const root = resolvePackagedMenuBarSourceRoot();
+  const providers = [
+    fs.readFileSync(path.join(root, 'Sources', 'ProvidersViewController.swift'), 'utf8'),
+    fs.readFileSync(path.join(root, 'Sources', 'ProvidersReliability.swift'), 'utf8')
+  ].join('\n');
+  const connectTest = fs.readFileSync(path.join(root, 'Sources', 'ProvidersConnectTest.swift'), 'utf8');
   const providersSurface = `${providers}\n${connectTest}`;
   const processClient = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProcessClient.swift'), 'utf8');
   const secureEnvelope = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'SecureProcessEnvelope.swift'), 'utf8');
   const alertFactory = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AlertFactory.swift'), 'utf8');
   const appIdentity = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppIdentity.swift'), 'utf8');
   const appDelegate = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppDelegate.swift'), 'utf8');
-  assert.match(providers, /Configure \/ Update…/);
+  assert.match(providers, /Reconnect Codex LB credential…/);
   assert.match(providers, /ControlKit\.primaryButton\("Use Codex LB", target: self, action: #selector\(useCliProvider\)\)/);
   assert.match(providersSurface, /NativeView\.button\("Run Connect Test"/);
   assert.match(providers, /secure: true/);
@@ -391,7 +423,9 @@ test('Providers configures the CLI provider through masked paste fields and stdi
   assert.match(providers, /placeholder: "sk-clb-…"/);
   assert.match(providers, /https:\/\/ is optional/);
   assert.match(providersSurface, /\["codex-lb", "connect-test", "--json"\]/);
-  assert.match(providers, /\["codex-lb", "setup", "--host", host, "--gateway-auth", transport, "--api-key-stdin", "--yes", "--write-env-file", "--keychain", "--json"\]/);
+  assert.match(providers, /\["codex-lb", "setup", "--host", host, "--gateway-auth", transport, "--api-key-stdin", "--yes", "--write-env-file", "--json"\]/);
+  assert.doesNotMatch(providers, /"--keychain"/);
+  assert.match(providers, /keychainStore\.store\(key, credential: credential, explicitUserAction: true\)/);
   // The gateway key transport is an explicit Center choice: a bearer-only gateway
   // rejects the custom header, which Desktop reports as unrecognised codex-lb auth.
   assert.match(providers, /AlertFactory\.choiceSheet\(/);
@@ -452,7 +486,10 @@ test('Control Center avoids competing Return defaults and protects recovery-sens
 
 test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, and requires measured evidence', () => {
   const root = resolvePackagedMenuBarSourceRoot();
-  const providers = fs.readFileSync(path.join(root, 'Sources', 'ProvidersViewController.swift'), 'utf8');
+  const providers = [
+    fs.readFileSync(path.join(root, 'Sources', 'ProvidersViewController.swift'), 'utf8'),
+    fs.readFileSync(path.join(root, 'Sources', 'ProvidersReliability.swift'), 'utf8')
+  ].join('\n');
   const connectTest = fs.readFileSync(path.join(root, 'Sources', 'ProvidersConnectTest.swift'), 'utf8');
   const routingTruth = fs.readFileSync(path.join(root, 'Sources', 'ProvidersRoutingTruth.swift'), 'utf8');
   const openRouter = fs.readFileSync(path.join(root, 'Sources', 'ProvidersOpenRouter.swift'), 'utf8');
@@ -461,7 +498,7 @@ test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, a
   for (const label of [
     'Advanced · Desktop Bridge / ChatGPT Identity Mode', 'Desktop Bridge Mode (keeps ChatGPT sign-in)',
     'Use Codex LB', 'Verify Capabilities', 'Use ChatGPT OAuth Only',
-    'Codex LB · Credentials & Primary Provider', 'Copy CLI Command', 'Capability Matrix'
+    'Codex LB · Credentials & Primary Provider', 'Copy CLI Command', 'Latest Codex Feature Compatibility'
   ]) assert.match(providers, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(providers, /ControlKit\.primaryButton\("Use Codex LB", target: self, action: #selector\(useCliProvider\)\)/);
   assert.match(providers, /NativeView\.button\("Desktop Bridge Mode \(keeps ChatGPT sign-in\)", target: self, action: #selector\(enableDesktopFull\)\)/);
@@ -471,7 +508,7 @@ test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, a
   assert.match(providers, /\["codex-lb", "use-desktop-full", "--restart-app", "--json"\]/);
   assert.match(providers, /\["codex-lb", "capabilities", "--level", "transport", "--json"\]/);
   assert.match(providers, /\["codex-lb", "disable", "--restart-app", "--json"\]/);
-  assert.match(providers, /\["codex-lb", "use-cli", "--json"\]/);
+  assert.doesNotMatch(providers, /\["codex-lb", "use-cli"/);
   assert.match(providersSurface, /\["codex-lb", "connect-test", "--json"\]/);
   assert.doesNotMatch(providers, /\["codex-lb", "use-codex-lb"/);
   assert.doesNotMatch(providers, /\["codex-lb", "use-oauth"/);
@@ -479,7 +516,7 @@ test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, a
   assert.match(providers, /ProviderRoutingTruth\.snapshot\(from:/);
   assert.match(routingTruth, /legacyCodexLbSelected/);
   assert.match(routingTruth, /chatgptOauthPresent/);
-  assert.match(providers, /Use Codex LB selects the atomic CLI provider path/);
+  assert.match(providers, /Use Codex LB through the atomic CLI provider path/);
   assert.match(providers, /never hide the advanced bridge or ChatGPT OAuth actions based on status parsing/);
   assert.ok(providers.indexOf('makeActiveProviderCard(), cli, desktop') >= 0);
 
@@ -507,7 +544,7 @@ test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, a
   assert.match(providersSurface, /Codex LB · unverified/);
   assert.match(openRouter, /Codex LB mode · ChatGPT OAuth \+ built-in OpenAI via bridge/);
   assert.match(openRouter, /ChatGPT OAuth mode · built-in OpenAI models/);
-  assert.match(providers, /codex --config model_provider='\\"codex-lb\\"'/);
+  assert.match(providers, /private let cliLaunchCommand = "codex"/);
   assert.match(providers, /NSPasteboard\.general\.setString\(cliLaunchCommand, forType: \.string\)/);
 });
 
@@ -515,6 +552,7 @@ test('Providers exposes OpenRouter save key, freeform model id, and Use OpenRout
   const root = resolvePackagedMenuBarSourceRoot();
   const providers = [
     fs.readFileSync(path.join(root, 'Sources', 'ProvidersViewController.swift'), 'utf8'),
+    fs.readFileSync(path.join(root, 'Sources', 'ProvidersReliability.swift'), 'utf8'),
     fs.readFileSync(path.join(root, 'Sources', 'ProvidersOpenRouter.swift'), 'utf8')
   ].join('\n');
   assert.match(providers, /Save OpenRouter key…/);
@@ -544,7 +582,7 @@ test('Providers exposes OpenRouter save key, freeform model id, and Use OpenRout
   assert.match(providers, /activationJson\?\["config_applied"\]/);
   assert.match(providers, /activationJson\?\["restart_ok"\]/);
   assert.match(providers, /Configuration saved · main model/);
-  assert.match(providers, /operations\.begin\(kind: "openrouter-use"/);
+  assert.match(providers, /beginProviderApply\(kind: "openrouter-use"/);
   assert.match(providers, /kind: "openrouter-set-key"/);
   const statusRefresh = providers.slice(
     providers.indexOf('func refreshOpenRouterStatus()'),

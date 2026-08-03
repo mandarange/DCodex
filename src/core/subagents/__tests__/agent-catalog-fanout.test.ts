@@ -510,7 +510,7 @@ test('mission preparation keeps mass totals reusable across waves and serializes
     assert.equal(search.plan.first_wave, 2)
     assert.equal(search.plan.concurrency_governor.safe_active_workers, 2)
     assert.equal(search.plan.agents.explorer.routed_model, 'gpt-5.6-terra')
-    assert.equal(search.plan.agents.explorer.routed_model_reasoning_effort, 'medium')
+    assert.equal(search.plan.agents.explorer.routed_model_reasoning_effort, 'max')
 
     const typingDir = path.join(root, '.sneakoscope', 'missions', 'M-typing-lane')
     await fs.mkdir(typingDir, { recursive: true })

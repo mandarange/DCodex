@@ -257,9 +257,10 @@ let firstStart = DispatchTime.now().uptimeNanoseconds
 status.start()
 let firstMs = Double(DispatchTime.now().uptimeNanoseconds - firstStart) / 1_000_000
 status.stop()
-let control = ControlCenterWindowController(processClient: processClient, operations: operations, notifications: notifications)
+let telegramService = TelegramRuntimeFactory.make(processClient: processClient, canonicalProjectRoot: AppRuntime.canonicalProjectRoot)
+let control = ControlCenterWindowController(processClient: processClient, operations: operations, notifications: notifications, telegramService: telegramService)
 let controlStart = DispatchTime.now().uptimeNanoseconds
-control.show(section: .overview)
+control.show(section: SidebarItem.overview)
 let controlMs = Double(DispatchTime.now().uptimeNanoseconds - controlStart) / 1_000_000
 control.window?.orderOut(nil as Any?)
 let data = try! JSONSerialization.data(withJSONObject: ["menu_bar_first_state_render_ms": firstMs, "control_center_open_ms": controlMs])

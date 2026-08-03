@@ -28,6 +28,13 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   assert.equal(buildTsconfig.compilerOptions.sourceMap, false);
   assert.ok(fs.existsSync('dist/native/sks-menubar/Sources/AppDelegate.swift'));
   assert.ok(fs.existsSync('dist/native/sks-menubar/Resources/AppIcon.icns'));
+  for (const checkoutOnlySurface of ['Tests', 'UITests', 'QAFixtures']) {
+    assert.equal(
+      fs.existsSync(path.join('dist/native/sks-menubar', checkoutOnlySurface)),
+      false,
+      `built package payload must omit native ${checkoutOnlySurface}`
+    );
+  }
   for (const file of [
     'TelegramStateLock.swift',
     'TelegramPrivateFileSupport.swift',
@@ -128,8 +135,10 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   assert.doesNotMatch(commonJsBin, /require\('\.\.\/core\/version\.js'\)/);
 });
 
-test('npm pack excludes native tests while retaining required native sources', () => {
-  assert.ok(pkg.files.includes('!dist/native/**/Tests'));
+test('npm pack excludes native checkout-only QA surfaces while retaining required native sources', () => {
+  for (const surface of ['Tests', 'UITests', 'QAFixtures']) {
+    assert.ok(pkg.files.includes(`!dist/native/**/${surface}`), `package files must exclude native ${surface}`);
+  }
 
   const result = spawnSync('npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], {
     cwd: process.cwd(),
@@ -143,9 +152,9 @@ test('npm pack excludes native tests while retaining required native sources', (
   assert.ok(pack && Array.isArray(pack.files), 'npm pack must return a JSON file list');
   const packedPaths = pack.files.map((file) => file.path);
   assert.equal(
-    packedPaths.some((packedPath) => /^dist\/native\/.*\/Tests\//.test(packedPath)),
+    packedPaths.some((packedPath) => /^dist\/native\/.*\/(?:Tests|UITests|QAFixtures)\//.test(packedPath)),
     false,
-    'published package must exclude native test sources'
+    'published package must exclude native test and QA fixture sources'
   );
   for (const excludedPath of [
     'scripts/build-clean-atomic.mjs',

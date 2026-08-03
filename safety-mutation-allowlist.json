@@ -167,8 +167,8 @@
       "file": "src/cli/install-helpers-install-support.ts",
       "symbol": "selftestSksShimRepair",
       "token": "chmod",
-      "scope_contract_sha256": "ce7799062ff4ebabe13995e2ae490bd7727b9a58d4181fd1435812de2ca1e3f0",
-      "callsite_sha256": "38a5da45f76db9c646f0506a233e5002cad0a6b162e7e76d6f93e9662ed7928d",
+      "scope_contract_sha256": "d59747646d0ec89f46c62e8f25f49093d6ce4d49f746680a0754296fc77f831b",
+      "callsite_sha256": "e9f1d46cc265f028083daa0eeb8c1dd980cba42b15bc0d6b59dac8ec5a931453",
       "occurrence": 1,
       "reason": "Shim repair selftest chmods only its fake npm binary inside the isolated selftest root."
     },
@@ -563,8 +563,8 @@
       "file": "src/core/codex-app/menubar/app-bundle.ts",
       "symbol": "buildMenuBarAppStaging",
       "token": "fs.rm",
-      "scope_contract_sha256": "2ba802151562f8b4f042a404df1e14d30373eaf558730fe00d946d615bfa12a9",
-      "callsite_sha256": "de89a25d7a54ffff9e8c5d668d414dfdb8fdd60b89289094321f1a3ecd8dfdbd",
+      "scope_contract_sha256": "5c8d9d0e10241a29ca6a022beb75f2750818a9b35e262373d4ca0f4c8a918ba5",
+      "callsite_sha256": "3e39d3e5ca2e2c87cee4f8479f158a4af3b60436dfc9ff31e6046193fc270a03",
       "occurrence": 1,
       "reason": "Menu Bar build removes only the prior SKS staging app path before rebuilding it."
     },
@@ -572,8 +572,8 @@
       "file": "src/core/codex-app/menubar/app-bundle.ts",
       "symbol": "buildMenuBarAppStaging",
       "token": "chmod",
-      "scope_contract_sha256": "2ba802151562f8b4f042a404df1e14d30373eaf558730fe00d946d615bfa12a9",
-      "callsite_sha256": "0f199169b7c979dccae26c66f44336929b4f4c661016c7c0dc4d281eb2c17ea9",
+      "scope_contract_sha256": "5c8d9d0e10241a29ca6a022beb75f2750818a9b35e262373d4ca0f4c8a918ba5",
+      "callsite_sha256": "d1f82a2a92a6e8d9452c3bcf8afd13ee010f107c7853ed6bf270318ea4a4af3a",
       "occurrence": 1,
       "reason": "Menu Bar build marks only the newly compiled executable inside the SKS staging app bundle."
     },
@@ -999,15 +999,6 @@
       "callsite_sha256": "b0c752dc0709549d0541fb8c17aaad9434894ec0cc776db162029c3e12a1bb9f",
       "occurrence": 1,
       "reason": "The service settings writer applies 0600 only to the validated settings document it just wrote atomically."
-    },
-    {
-      "file": "src/core/codex-lb/desktop-service.ts",
-      "symbol": "installAndStartDesktopBridgeService",
-      "token": "chmod",
-      "scope_contract_sha256": "331a4e3b8e03cd781f4a044bb449b820f162f50e1c8e2ea3ac6daa04d658ca34",
-      "callsite_sha256": "395ce8f76dddf45545020b129be85a406c21e77086e3a5bab99e5fd4da553a36",
-      "occurrence": 1,
-      "reason": "Service installation applies 0600 only to the resolved SKS desktop bridge launch-agent plist it just wrote."
     },
     {
       "file": "src/core/codex-lb/desktop-service.ts",
@@ -1895,8 +1886,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "078269b5aa1a2ab4768f4b349edc4034c4a24ca5a84fd43dddab5b6e2c7586c8",
-      "callsite_sha256": "5db219dfa37ec6150e8afd37965f9bb0068601da8bfadcb73e7aee24f1257ef7",
+      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
+      "callsite_sha256": "da71c4070a1ee981827d31add70ccf54dd6a9a39684e8eb316cc6d862a760eb8",
       "occurrence": 1,
       "reason": "Installed-package smoke writes only launchctl and npm configuration fixtures inside its mkdtemp-owned isolated sandbox."
     },
@@ -1904,8 +1895,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "078269b5aa1a2ab4768f4b349edc4034c4a24ca5a84fd43dddab5b6e2c7586c8",
-      "callsite_sha256": "1beedb965d22d9082bb0ab51a8b2937a87ce6e92a00f363dbe83b47f4bdc160d",
+      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
+      "callsite_sha256": "2894b1f5b1dd7b2413cbbcc79904ceec2abd975c1db8891e4d70c3edf5ced9b9",
       "occurrence": 1,
       "reason": "Installed-package smoke writes only launchctl and npm configuration fixtures inside its mkdtemp-owned isolated sandbox."
     },
@@ -1913,8 +1904,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "078269b5aa1a2ab4768f4b349edc4034c4a24ca5a84fd43dddab5b6e2c7586c8",
-      "callsite_sha256": "2d1ab84886bfbf93b73766366fe6d870955846dcc40038d0098d290ba4df253c",
+      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
+      "callsite_sha256": "238e4f77e8d3d5bcb9d330708fa5e23c71b272e9a8c48808a9c279ab7a7c9892",
       "occurrence": 1,
       "reason": "Installed-package smoke writes only launchctl and npm configuration fixtures inside its mkdtemp-owned isolated sandbox."
     },
@@ -1922,8 +1913,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "078269b5aa1a2ab4768f4b349edc4034c4a24ca5a84fd43dddab5b6e2c7586c8",
-      "callsite_sha256": "94c0c2a0ea6b48abfe29cdf8ed8994af96bf9d62582d32011789627d00f29c17",
+      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
+      "callsite_sha256": "0f857ff549e4e7d0a3aaadf4eb98f5ae99a132e7500206de9fd624c4fdf5d515",
       "occurrence": 1,
       "reason": "Installed-package smoke writes only launchctl and npm configuration fixtures inside its mkdtemp-owned isolated sandbox."
     },
@@ -1931,8 +1922,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "chmod",
-      "scope_contract_sha256": "078269b5aa1a2ab4768f4b349edc4034c4a24ca5a84fd43dddab5b6e2c7586c8",
-      "callsite_sha256": "0298b2f0514328a72d2a8f7db26ac3bb0a023e6d79abd64f796d362506e84280",
+      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
+      "callsite_sha256": "cebb552d00ac71172c4a55ff74fca0c961ef05ff188628dfda8f11e690a6b9cf",
       "occurrence": 1,
       "reason": "Installed-package smoke marks only its mkdtemp-owned launchctl stub executable inside the isolated sandbox."
     },
@@ -1940,8 +1931,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "fs.rm",
-      "scope_contract_sha256": "078269b5aa1a2ab4768f4b349edc4034c4a24ca5a84fd43dddab5b6e2c7586c8",
-      "callsite_sha256": "95da927ad29603873d4f27b22823174186c713d7dcb73d9be2d243f78c87448e",
+      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
+      "callsite_sha256": "d8a13e42f9e3c89ace7925083b51cd5d5ecbe6bd1a147f47ee67cddf8895a1f7",
       "occurrence": 1,
       "reason": "Installed-package smoke removes only its mkdtemp-owned npm install fixture in finally."
     },
@@ -3000,10 +2991,10 @@
     },
     {
       "file": "src/core/update/update-migration-state.ts",
-      "symbol": "pruneLegacyDoctorMigrationReports.callback@1738",
+      "symbol": "pruneLegacyDoctorMigrationReports.callback@1733",
       "token": "fsp.rm",
       "scope_contract_sha256": "729f2353f697a60d21e86be4dfa3a6cf04676bd74f0e8c92b4fe1b49aceda6a5",
-      "callsite_sha256": "32d7312a3659dc8feecacd3b71559be391a671fa1ed6378dd7c76917bb0e8d64",
+      "callsite_sha256": "eaeffb208c3cb612e18af23fc4c54481bcd5d46cf3a2d0ec1d0c355bb3215051",
       "occurrence": 1,
       "reason": "Update migration pruning removes only aged or excess regular reports matching doctor-migration-<epoch>.json in the scoped update directory."
     },
@@ -3830,8 +3821,8 @@
       "file": "src/scripts/build-dist.ts",
       "symbol": "copyDirIfPresent",
       "token": "fsp.rm",
-      "scope_contract_sha256": "b462b5c4cce1bbf955d07abf7d7626d0b10bb20a1c3c0fd421d9f2278bda748b",
-      "callsite_sha256": "ee528199d676472ef01f69fbb6c44279bad0a932c32ed1b6e5bc0224c2103c95",
+      "scope_contract_sha256": "9288de76b62dc0ec37917aeb6e84b2d0ebf7edd0438e23280598a941996583a7",
+      "callsite_sha256": "3e449559d7d5fb2447fe2450686312da52d7f825665570ac4db6b5a65bc754d9",
       "occurrence": 1,
       "reason": "src/scripts/build-dist.ts#copyDirIfPresent removes only its isolated fixture, generated build output, or scoped temporary artifact during cleanup."
     },
@@ -4424,8 +4415,8 @@
       "file": "src/scripts/codex-lb-fast-ui-preservation-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "cfbf17ee2264f144ac1740a21cfa93fef2a46b2c35d153017e73c4349c58ef2f",
-      "callsite_sha256": "b2343dd5eef6b722acec934dc6dc6ed563bb520ee7e3f0610f0a51d3fa968929",
+      "scope_contract_sha256": "d63f99a78c984c6cacc5653022de314a8f64976b6cbedaa4e577ca8a0edef92b",
+      "callsite_sha256": "7c20bd84c2b7ab7363d692d643a2673999e72f4dc7ffa50974f9ec15fc0b5738",
       "occurrence": 1,
       "reason": "Release/check script writes, removes, or chmods only scoped fixture, report, manifest, or temp artifacts; exact callsite is audited."
     },
@@ -4433,8 +4424,8 @@
       "file": "src/scripts/codex-lb-fast-ui-preservation-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "cfbf17ee2264f144ac1740a21cfa93fef2a46b2c35d153017e73c4349c58ef2f",
-      "callsite_sha256": "6b6a4514261de0af948be5bffc5232eb5c4f31775a925e7fb3eaef1ecae0db69",
+      "scope_contract_sha256": "d63f99a78c984c6cacc5653022de314a8f64976b6cbedaa4e577ca8a0edef92b",
+      "callsite_sha256": "e9bd87923e6db0cdb15139440682d3d7cb520413da6ecd21b4cd4ada02ac9d85",
       "occurrence": 1,
       "reason": "Release/check script writes, removes, or chmods only scoped fixture, report, manifest, or temp artifacts; exact callsite is audited."
     },
@@ -4442,8 +4433,8 @@
       "file": "src/scripts/codex-lb-fast-ui-preservation-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "cfbf17ee2264f144ac1740a21cfa93fef2a46b2c35d153017e73c4349c58ef2f",
-      "callsite_sha256": "3f940fb5c9218ba7186f6d189c49a39141b69714c56e7d36887e00ad7d790f18",
+      "scope_contract_sha256": "d63f99a78c984c6cacc5653022de314a8f64976b6cbedaa4e577ca8a0edef92b",
+      "callsite_sha256": "694a0e6093f8d4b4503daa3eabfbfd97b307368d8768fd838ac1080745abf8a7",
       "occurrence": 1,
       "reason": "Release/check script writes, removes, or chmods only scoped fixture, report, manifest, or temp artifacts; exact callsite is audited."
     },
@@ -4451,8 +4442,8 @@
       "file": "src/scripts/codex-lb-gpt56-fast-profile-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "9ce44a64d8367bfca177f9bd8b42dc5ca62c4608af00e50f1bada3c0d81befa3",
-      "callsite_sha256": "b2fef8ba8d303778d5a849c1efe809505a470768b30c3691a0ed29411cbae3b6",
+      "scope_contract_sha256": "9e680bfc033c89340ec6bb12f2058c9ad742b156b82386f4773ded5132863f0b",
+      "callsite_sha256": "7c13b2e47072b931a194ca5ac59d2fb61e79053d22f46f04d0846b9e9beab961",
       "occurrence": 1,
       "reason": "Release/check script writes, removes, or chmods only scoped fixture, report, manifest, or temp artifacts; exact callsite is audited."
     },
@@ -4460,8 +4451,8 @@
       "file": "src/scripts/codex-lb-gpt56-fast-profile-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "9ce44a64d8367bfca177f9bd8b42dc5ca62c4608af00e50f1bada3c0d81befa3",
-      "callsite_sha256": "c50a75d49e3bff43f12e04081f433d8f94107164b98b1feb4c42dd8dfc4706a1",
+      "scope_contract_sha256": "9e680bfc033c89340ec6bb12f2058c9ad742b156b82386f4773ded5132863f0b",
+      "callsite_sha256": "e193b0c86b75fae3cf10150d3847ba48864b5a48389f02c006ee7e5dff2be914",
       "occurrence": 1,
       "reason": "Release/check script writes, removes, or chmods only scoped fixture, report, manifest, or temp artifacts; exact callsite is audited."
     },
@@ -4892,8 +4883,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "module",
       "token": "fsp.rm",
-      "scope_contract_sha256": "c0e2f9e00dd471e32046c410c31aa7fcddce546c35a184b7d201f7bc2e0c6cc2",
-      "callsite_sha256": "9288ceb73a88499e5f342c508ebaabe94aa07ec68c0d97118d7837632c7069ae",
+      "scope_contract_sha256": "0ad9d53ea1f7fec12ac6572a8dad9ab927d0257f0b782569cbf8c88a3d475270",
+      "callsite_sha256": "05fea0c2fdbfde263e51bf113605910e6e0679deeae3688751faf1030ca6a0ba",
       "occurrence": 1,
       "reason": "Current-surface E2E removes only its mkdtemp-owned upgrade fixture root in finally."
     },
@@ -7205,8 +7196,8 @@
       "file": "src/scripts/release-metadata-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "d0c37cb4ae3e30b153cd2da2e514cc6bb2af41b970fc69c46793685a4bbe18bf",
-      "callsite_sha256": "e863fbabe1f0d94062f753e052071c0cd3784ce05a70f3d3eae8414475df9c0e",
+      "scope_contract_sha256": "d93ec90e89e9733066a317257835dd07f9a2b5940440bd3cf9af4ed614281a12",
+      "callsite_sha256": "7585a91d4400eb255336602b16660112912d8fd6e8bc79284b82a94c254ee7ab",
       "occurrence": 1,
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     },
@@ -8645,8 +8636,8 @@
       "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "bfdbb9377c9166b7fb38ebfa5f804ff64a2d26f6851338a56296e4792a5de755",
-      "callsite_sha256": "595b0d9e1a18769b08aebe10b8dfa35c8683d49054e1e899de14ddbf9b5380bd",
+      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
+      "callsite_sha256": "94da86f6b85792ce1914da0e471c188c1342ca3f2e96685f8cff7abfb1913a2c",
       "occurrence": 1,
       "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
     },
@@ -8654,8 +8645,8 @@
       "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "bfdbb9377c9166b7fb38ebfa5f804ff64a2d26f6851338a56296e4792a5de755",
-      "callsite_sha256": "99ec18411e6ed259e1e40ff776e97e3db70696634d52c8e85ec2aaa64c57e46b",
+      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
+      "callsite_sha256": "6c74d04979750e0e055b0177660cebcafb9f7c9a2a2d93141e42de7c240749d2",
       "occurrence": 1,
       "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
     },
@@ -8663,8 +8654,8 @@
       "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "bfdbb9377c9166b7fb38ebfa5f804ff64a2d26f6851338a56296e4792a5de755",
-      "callsite_sha256": "9cf1648b4d7c04aa8c836626e1c4c32dd398f197c6ea740a62a8dde9d303857d",
+      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
+      "callsite_sha256": "40f7c6b2a2ca43ecba89bffaa814d4b5d331fa34d25f36e519913cd0e2cae12f",
       "occurrence": 1,
       "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
     },
@@ -8672,8 +8663,8 @@
       "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "bfdbb9377c9166b7fb38ebfa5f804ff64a2d26f6851338a56296e4792a5de755",
-      "callsite_sha256": "d03d85e2c99973ee0e72ff1abfd2ad1931c696272375924026d2c3d5456b8324",
+      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
+      "callsite_sha256": "99721bc95dbf23c31f4e4270de3ed2ffa9a5fa9b335d0651b1bc2cf82f81a139",
       "occurrence": 1,
       "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
     },
@@ -8681,8 +8672,8 @@
       "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "bfdbb9377c9166b7fb38ebfa5f804ff64a2d26f6851338a56296e4792a5de755",
-      "callsite_sha256": "d456e60147c79eedf1f12204278ba8a317911d52addd376fddab2ed4a80c5d15",
+      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
+      "callsite_sha256": "e99b76246e25c257dfc40f399cb74b26ec4aed905c7236a9c302bec925a93f8d",
       "occurrence": 1,
       "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
     },
@@ -8690,8 +8681,8 @@
       "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "bfdbb9377c9166b7fb38ebfa5f804ff64a2d26f6851338a56296e4792a5de755",
-      "callsite_sha256": "688aec303d994bf587f4a6369a39b0fc85d0b0dc56559d2afbf9b38d34ec5456",
+      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
+      "callsite_sha256": "e6ec42edf2abdcdda0a71d34c96faa5c43ebb1fbbbd85fd40d1a9a88647f527e",
       "occurrence": 1,
       "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
     },
@@ -8699,8 +8690,8 @@
       "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "bfdbb9377c9166b7fb38ebfa5f804ff64a2d26f6851338a56296e4792a5de755",
-      "callsite_sha256": "1aae31cb291b3cfe6e50005381264d54eade4dc49a293e99b5a0f92ec2f971be",
+      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
+      "callsite_sha256": "0fd0c7b8176bf48032cc5e631f9885b684aff048fee75e125c9943587fedb425",
       "occurrence": 1,
       "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
     },
@@ -8708,8 +8699,8 @@
       "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "bfdbb9377c9166b7fb38ebfa5f804ff64a2d26f6851338a56296e4792a5de755",
-      "callsite_sha256": "fe4d9c063c9246776de21db652daf2e288dbc003d670bab66a6dab4f48df1191",
+      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
+      "callsite_sha256": "e8cb2536496f960cc47b3075a281d612f20986b8ebdcb3510a7a2d94919179ee",
       "occurrence": 1,
       "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
     },
@@ -8717,8 +8708,8 @@
       "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
       "symbol": "module",
       "token": "fs.rm",
-      "scope_contract_sha256": "bfdbb9377c9166b7fb38ebfa5f804ff64a2d26f6851338a56296e4792a5de755",
-      "callsite_sha256": "2487b2a93e316bd8d32d7d33dd0e78ca33bf3a0cae0e2682d7e478aa9711d663",
+      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
+      "callsite_sha256": "3e6bf0097672222061140f623f0d57482477d102e8862979c38101345114bab7",
       "occurrence": 1,
       "reason": "Release/check script removes only the scoped mkdtemp slot-pane fixture directory after hydration proof."
     },
@@ -8726,8 +8717,8 @@
       "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
       "symbol": "module",
       "token": "fs.rm",
-      "scope_contract_sha256": "bfdbb9377c9166b7fb38ebfa5f804ff64a2d26f6851338a56296e4792a5de755",
-      "callsite_sha256": "2ade65bb93d0e8f09117357c1a7e78e60eba3db9c399df5af6461f32daa75503",
+      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
+      "callsite_sha256": "b1c069f7d9cf185a771d616213dbbca3b666278e2bab25e5f04ab5acfbe810db",
       "occurrence": 1,
       "reason": "Release/check script removes only the scoped mkdtemp slot-pane fixture directory after hydration proof."
     },
@@ -8955,6 +8946,150 @@
       "callsite_sha256": "9dab4a128df270b6f07af82c63ddccd5112b172646f034ae4abe5eb20e41bf00",
       "occurrence": 1,
       "reason": "Telegram liveness cleanup removes only its randomized sibling temporary receipt in the writer finally block."
+    },
+    {
+      "file": "src/core/architecture-hardening/state/state-service.ts",
+      "symbol": "ArchitectureStateService.commit",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "7c6035108fa2d3bc7e0b39ed2155e36e8bc67aa860d841b594bff505b1ac42e5",
+      "callsite_sha256": "db77578135c2ab9ca466eda8d328ba2f9efaf7523198acd845f10992311bb30a",
+      "occurrence": 1,
+      "reason": "Architecture state commit removes only its validated draft after atomically publishing last-known-good under the dedicated state root."
+    },
+    {
+      "file": "src/core/architecture-hardening/state/state-service.ts",
+      "symbol": "ArchitectureStateService.rollbackDraft",
+      "token": "unlink",
+      "scope_contract_sha256": "cabfe8c399c6278b944ef1dc4d798bd6e5100a26c1a1b9ae5d05dc38d7c2cef0",
+      "callsite_sha256": "2b8535c98492ee440e7211a3771be9fa5aaf12e6f50d705cfdedeaf825b95f02",
+      "occurrence": 1,
+      "reason": "Architecture draft rollback removes only the service-owned draft path derived from the dedicated architecture state root."
+    },
+    {
+      "file": "src/core/evidence/v2/evidence-key.ts",
+      "symbol": "ensureProjectId",
+      "token": "fsp.writeFile",
+      "scope_contract_sha256": "731032a3478f8a4a00cbf5ef88d75db39a85abfcaf135bb6e4f17a69e361a14b",
+      "callsite_sha256": "9014d571fb71edc4ce73a665e53721c2a995645353295f17bfa4a5e324b04833",
+      "occurrence": 1,
+      "reason": "Project identity creation uses exclusive create semantics and mode 0600, then accepts only a valid identifier from a concurrent creator."
+    },
+    {
+      "file": "src/core/telegram/keychain.ts",
+      "symbol": "preflightTelegramTokenStorage",
+      "token": "unlink",
+      "scope_contract_sha256": "c7ce7006505768d947ede7afc6a0e69218e8bf9d678ab6402d33dcb6874189d1",
+      "callsite_sha256": "2feee3a0e6fb67295906ffd818b2154b142e1045e4761faff4c34d03b582e9c3",
+      "occurrence": 1,
+      "reason": "Telegram token preflight unlinks only its exclusive random probe after verifying the same regular-file device and inode identity."
+    },
+    {
+      "file": "src/core/telegram/state-lock.ts",
+      "symbol": "acquireStateLock",
+      "token": "unlink",
+      "scope_contract_sha256": "30573770165eae8e225754afb4d26cf7a2d947185e312f1397498bd3cf34cbe4",
+      "callsite_sha256": "6e1ee2c8f61de04bce908e10afc9a7365293beed4e977cacfaee82547317fe11",
+      "occurrence": 1,
+      "reason": "Telegram lock acquisition unlinks only its exclusive owner candidate after publication or bounded cleanup of that same candidate."
+    },
+    {
+      "file": "src/core/telegram/state-lock.ts",
+      "symbol": "acquireStateLock",
+      "token": "unlink",
+      "scope_contract_sha256": "30573770165eae8e225754afb4d26cf7a2d947185e312f1397498bd3cf34cbe4",
+      "callsite_sha256": "6e1ee2c8f61de04bce908e10afc9a7365293beed4e977cacfaee82547317fe11",
+      "occurrence": 2,
+      "reason": "Telegram lock acquisition unlinks only its exclusive owner candidate after publication or bounded cleanup of that same candidate."
+    },
+    {
+      "file": "src/core/telegram/state-lock.ts",
+      "symbol": "reclaimDeadStateLock",
+      "token": "unlink",
+      "scope_contract_sha256": "5883339f5e17316ee0bb3bb03d840e93b9bc2e57f976cf8c8a271efca08dfe9f",
+      "callsite_sha256": "75e4ad80b2299d57a296317c3f54926e128f1423ce9659f9158bab8fe2a20ab7",
+      "occurrence": 1,
+      "reason": "Telegram lock reclaim unlinks only a safely inspected matching lock whose recorded owner is dead while the reclaim barrier is held."
+    },
+    {
+      "file": "src/core/telegram/state-lock.ts",
+      "symbol": "settleReclaimBarrier",
+      "token": "unlink",
+      "scope_contract_sha256": "c77b890b4dd0709aeb4cfa17f5e6747bcbc75370aa782450d58a9537b84d33ae",
+      "callsite_sha256": "b5b14e455cfae61bfa43c3b0d9e7ad58fca890bee9c7258c7bfaa187133d1bc2",
+      "occurrence": 1,
+      "reason": "Telegram reclaim settlement unlinks only a safely inspected lock whose recorded owner is dead while participating in the barrier."
+    },
+    {
+      "file": "src/core/telegram/state-lock.ts",
+      "symbol": "joinReclaimBarrier",
+      "token": "unlink",
+      "scope_contract_sha256": "7fdb2de539a7182c2a0ee77d8b1c95afcd253e6722c8f00507797baf22313332",
+      "callsite_sha256": "4e252f701eb761904a531de93b33b1f7f486f973b0315a8c8a579f5745f16779",
+      "occurrence": 1,
+      "reason": "Telegram reclaim join unlinks only its exclusive owner candidate after identity-checked publication or bounded candidate cleanup."
+    },
+    {
+      "file": "src/core/telegram/state-lock.ts",
+      "symbol": "joinReclaimBarrier",
+      "token": "unlink",
+      "scope_contract_sha256": "7fdb2de539a7182c2a0ee77d8b1c95afcd253e6722c8f00507797baf22313332",
+      "callsite_sha256": "4e252f701eb761904a531de93b33b1f7f486f973b0315a8c8a579f5745f16779",
+      "occurrence": 2,
+      "reason": "Telegram reclaim join unlinks only its exclusive owner candidate after identity-checked publication or bounded candidate cleanup."
+    },
+    {
+      "file": "src/core/telegram/state-lock.ts",
+      "symbol": "createOwnerCandidate",
+      "token": "chmod",
+      "scope_contract_sha256": "38ab55aec608aef2e040e1093cfcc68dadbb902ac1c3d0de7029cf201afee5cf",
+      "callsite_sha256": "032fe2819fd1774e688eb7995800a544a8900fd7ec1d8685926d538cbb786df7",
+      "occurrence": 1,
+      "reason": "Telegram lock candidate hardening applies 0600 through the O_NOFOLLOW handle opened with exclusive-create semantics."
+    },
+    {
+      "file": "src/core/telegram/state-lock.ts",
+      "symbol": "createOwnerCandidate",
+      "token": "unlink",
+      "scope_contract_sha256": "38ab55aec608aef2e040e1093cfcc68dadbb902ac1c3d0de7029cf201afee5cf",
+      "callsite_sha256": "0ced494a6a1d961801eee35233e97a507c7cef964ca181dab299f70c6193f327",
+      "occurrence": 1,
+      "reason": "Telegram lock candidate failure cleanup unlinks only the random exclusive-create candidate owned by the current attempt."
+    },
+    {
+      "file": "src/core/telegram/state-lock.ts",
+      "symbol": "unlinkOwnedFile",
+      "token": "unlink",
+      "scope_contract_sha256": "bcbe19e45d77f028d585913083412de72882a07d0232fbdb1d313e60298b2ced",
+      "callsite_sha256": "803c4a8fffe59781961e06a8022dc2c4ca3d891e823369ac0a6f7abf96160caa",
+      "occurrence": 1,
+      "reason": "Telegram lock release unlinks only after exact device, inode, pid, and random-token ownership verification."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/snapshot-store.ts",
+      "symbol": "stageAndCommitContextGraphSnapshot.run",
+      "token": "rename",
+      "scope_contract_sha256": "a2ed569fa706c1e409a6dc9be4825ececbad8ac8c1296ab5df10f56f472247be",
+      "callsite_sha256": "c6df8f176dfa1ca1f1dfb6bf574ea3dd8de8b4291e2010d88d4c0a9d9638e801",
+      "occurrence": 1,
+      "reason": "TriWiki snapshot promotion renames only validated staged generations while holding the evidence writer lock after expected-current hash verification."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/snapshot-store.ts",
+      "symbol": "stageAndCommitContextGraphSnapshot.run",
+      "token": "rename",
+      "scope_contract_sha256": "a2ed569fa706c1e409a6dc9be4825ececbad8ac8c1296ab5df10f56f472247be",
+      "callsite_sha256": "fd5ef1a3853990df5388b2e71ceb7af65d522a8d9a76ce5f831c4cd5c06de43a",
+      "occurrence": 1,
+      "reason": "TriWiki snapshot promotion renames only validated staged generations while holding the evidence writer lock after expected-current hash verification."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/snapshot-store.ts",
+      "symbol": "stageAndCommitContextGraphSnapshot",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "3b1a2791e9ef744d5c7e7ea538da52394893d7a7d9112dc601cf74c0ec62545b",
+      "callsite_sha256": "4950dd4b82ab7171d927257fa98fa7cadba47d6a565afbf9206ba0f90d3c52d8",
+      "occurrence": 1,
+      "reason": "TriWiki snapshot cleanup removes only the private staging directory created for the current bounded commit attempt."
     }
   ]
 }

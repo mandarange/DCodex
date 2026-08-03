@@ -2,6 +2,20 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import type { DesktopBridgeConfig, DesktopBridgeRemoteTarget, PreparedDesktopBridgeConfig } from './types.js';
 import { DesktopBridgeError } from './types.js';
+import { assertProviderModeModel } from '../../codex-app/provider-mode.js';
+import {
+  parseProviderPolicySnapshot,
+  stableArchitectureHash,
+  type ProviderMode,
+  type SessionPin,
+} from '../../architecture-hardening/contracts/contracts.js';
+import { decideProviderRoute } from '../provider-routing/provider-router.js';
+import { decideChildSelection } from '../../codex-app/child-policy/child-policy.js';
+import {
+  assertSessionRequest,
+  resumeSessionPin,
+  sessionPinHash,
+} from '../../codex-app/session-policy/session-pinning.js';
 
 const MIN_HIGH_PORT = 49_152;
 const MAX_PORT = 65_535;
@@ -58,6 +72,94 @@ function headerValues(value: string | string[] | undefined): string[] {
   return (Array.isArray(value) ? value : value === undefined ? [] : [value])
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function singlePolicyHeader(
+  headers: NodeJS.Dict<string | string[]>,
+  name: string,
+): string | null {
+  const values = headerValues(headers[name]);
+  if (values.length > 1) throw new DesktopBridgeError('bridge_policy_header_ambiguous');
+  return values[0] || null;
+}
+
+/**
+ * Final loopback choke point for provider, session, and child policy. Internal
+ * policy headers are consumed locally and stripped before the upstream request.
+ */
+export function assertDesktopBridgeRequestPolicy(input: {
+  headers: NodeJS.Dict<string | string[]>;
+  config: DesktopBridgeConfig;
+  model?: unknown;
+}): void {
+  const { config } = input;
+  if (!config.providerMode) return;
+  const requestedMode = singlePolicyHeader(input.headers, 'x-sks-provider-mode');
+  if (requestedMode && requestedMode !== config.providerMode) {
+    throw new DesktopBridgeError('bridge_provider_route_cross_mode_forbidden');
+  }
+
+  const policy = config.providerPolicy;
+  if (!policy) {
+    if (input.model !== undefined) {
+      try {
+        assertProviderModeModel(config.providerMode, input.model, config.allowedModels || []);
+      } catch (error) {
+        throw new DesktopBridgeError(`bridge_${(error as Error).message}`);
+      }
+    }
+    if (config.requireSessionPin) throw new DesktopBridgeError('bridge_session_policy_missing');
+    return;
+  }
+
+  const credential = config.credentialReadiness || {
+    status: 'unavailable' as const,
+    reason_code: 'bridge_credential_readiness_missing',
+  };
+  if (input.model !== undefined) {
+    const route = decideProviderRoute({
+      policy,
+      credential,
+      requestedMode: (requestedMode || config.providerMode) as ProviderMode,
+      model: String(input.model || ''),
+    });
+    if (!route.ok) throw new DesktopBridgeError(`bridge_${route.blockers[0] || 'provider_route_blocked'}`);
+  }
+
+  const sessionId = singlePolicyHeader(input.headers, 'x-sks-session-id');
+  if (!sessionId) {
+    if (config.requireSessionPin) throw new DesktopBridgeError('bridge_session_pin_required');
+    return;
+  }
+  const pin = (config.sessionPins || []).find((entry) => entry.session_id === sessionId);
+  if (!pin) throw new DesktopBridgeError('bridge_session_pin_unknown');
+  const resume = resumeSessionPin(pin, policy);
+  if (!resume.ok) throw new DesktopBridgeError(`bridge_${resume.blocker || 'session_pin_blocked'}`);
+
+  const childFlag = singlePolicyHeader(input.headers, 'x-sks-child-request');
+  if (childFlag && childFlag !== '1') throw new DesktopBridgeError('bridge_child_request_header_invalid');
+  const childHash = singlePolicyHeader(input.headers, 'x-sks-child-policy-hash') || policy.child_policy_hash;
+  const requestModel = String(input.model === undefined ? pin.model : input.model || '');
+  try {
+    assertSessionRequest(pin, {
+      mode: config.providerMode,
+      model: childFlag === '1' ? pin.model : requestModel,
+      childPolicyHash: childHash,
+    });
+  } catch (error) {
+    throw new DesktopBridgeError(`bridge_${(error as Error).message}`);
+  }
+
+  if (childFlag !== '1') return;
+  const childPolicy = config.childPolicy;
+  if (!childPolicy) throw new DesktopBridgeError('bridge_child_policy_missing');
+  const parentHash = singlePolicyHeader(input.headers, 'x-sks-parent-snapshot-hash');
+  if (!parentHash || parentHash !== sessionPinHash(pin)) {
+    throw new DesktopBridgeError('bridge_child_parent_snapshot_mismatch');
+  }
+  const requestedChildModel = singlePolicyHeader(input.headers, 'x-sks-child-model') || requestModel;
+  const child = decideChildSelection({ session: pin, policy: childPolicy, requestedModel: requestedChildModel });
+  if (!child.ok) throw new DesktopBridgeError(`bridge_${child.blockers[0] || 'child_policy_blocked'}`);
 }
 
 function comparableOrigin(value: string, referer: boolean): string {
@@ -153,6 +255,43 @@ export function validateDesktopBridgeConfig(config: DesktopBridgeConfig): URL {
   }
   if (!config.gatewayKey || /[\r\n\0]/.test(config.gatewayKey)) {
     throw new DesktopBridgeError('bridge_gateway_key_invalid');
+  }
+  if (config.providerMode !== undefined) {
+    if (config.providerMode !== 'codex-lb' && config.providerMode !== 'openrouter') {
+      throw new DesktopBridgeError('bridge_provider_mode_invalid');
+    }
+    if (!Array.isArray(config.allowedModels) || config.allowedModels.length === 0) {
+      throw new DesktopBridgeError('bridge_provider_model_allowlist_empty');
+    }
+    for (const model of config.allowedModels) {
+      try {
+        assertProviderModeModel(config.providerMode, model, config.allowedModels);
+      } catch (error) {
+        throw new DesktopBridgeError(`bridge_${(error as Error).message}`);
+      }
+    }
+    if (config.providerPolicy) {
+      const policy = parseProviderPolicySnapshot(config.providerPolicy);
+      if (policy.mode !== config.providerMode) throw new DesktopBridgeError('bridge_provider_policy_mode_mismatch');
+      if (stableArchitectureHash([...policy.allowed_models].sort()) !== stableArchitectureHash([...(config.allowedModels || [])].sort())) {
+        throw new DesktopBridgeError('bridge_provider_policy_model_allowlist_mismatch');
+      }
+      if (!config.credentialReadiness) throw new DesktopBridgeError('bridge_credential_readiness_missing');
+      if (config.childPolicy) {
+        if (config.childPolicy.mode !== policy.mode) throw new DesktopBridgeError('bridge_child_policy_mode_mismatch');
+        if (config.childPolicy.policy_hash !== policy.child_policy_hash) throw new DesktopBridgeError('bridge_child_policy_snapshot_mismatch');
+      }
+      const sessionIds = new Set<string>();
+      for (const pin of config.sessionPins || []) {
+        if (!pin || pin.schema !== 'sks.session-pin.v1') throw new DesktopBridgeError('bridge_session_pin_invalid');
+        if (sessionIds.has(pin.session_id)) throw new DesktopBridgeError('bridge_session_pin_duplicate');
+        sessionIds.add(pin.session_id);
+        const resume = resumeSessionPin(pin as SessionPin, policy);
+        if (!resume.ok) throw new DesktopBridgeError(`bridge_${resume.blocker || 'session_pin_invalid'}`);
+      }
+    } else if (config.requireSessionPin) {
+      throw new DesktopBridgeError('bridge_session_policy_missing');
+    }
   }
   if (config.gatewayAuthTransport !== 'x-codex-lb-api-key' && config.gatewayAuthTransport !== 'authorization-bearer-compat') {
     throw new DesktopBridgeError('bridge_gateway_auth_transport_invalid');

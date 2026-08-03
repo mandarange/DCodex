@@ -29,6 +29,7 @@ import {
   normalizeCodexLbBaseUrl
 } from './install-helpers-codex-lb-shared.js';
 import { escapeRegExp } from '../core/text/regex.js';
+import { upsertExplicitCodexProviderMode } from '../core/codex-app/provider-mode.js';
 
 export interface NativeDesktopConfigInput {
   bridgeBaseUrl: string;
@@ -122,8 +123,9 @@ export function upsertCodexLbNativeDesktopConfig(
     CODEX_LB_DESKTOP_BRIDGE_MARKER,
     [LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER]
   );
+  next = upsertTopLevelTomlString(next, 'model_provider', 'openai');
   next = upsertTomlTable(next, 'model_providers.codex-lb', cliProviderBlock(input.remoteBaseUrl));
-  return ensureTrailingNewline(next);
+  return ensureTrailingNewline(upsertExplicitCodexProviderMode(next, 'codex-lb'));
 }
 
 export function upsertCodexLbCompatDesktopConfig(
@@ -190,7 +192,7 @@ export function restoreCodexLbOAuthSelectionConfig(text: string): string {
     'openai',
     CODEX_LB_OAUTH_SELECTION_MARKER
   );
-  return ensureTrailingNewline(next);
+  return ensureTrailingNewline(upsertExplicitCodexProviderMode(next, 'chatgpt-oauth'));
 }
 
 export function removeManagedCodexLbSelection(text: string): string {

@@ -128,9 +128,10 @@ export async function listOpenRouterModels(input: {
   const models = await listOpenRouterModelsWithKey(resolved.key, input, authenticationError === null);
   if (!authenticationError) return models;
   return {
-    ...models,
+    ...emptyModelsResult(`openrouter_authentication_failed:${authenticationError.code}`, models.warnings),
+    generated_at: models.generated_at,
     authenticated: false,
-    warnings: [...models.warnings, `openrouter_authentication_failed:${authenticationError.code}`],
+    warnings: [...models.warnings],
     authentication_error: authenticationError
   };
 }

@@ -52,6 +52,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(statusLine)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Open SKS Control Center…", #selector(openCenter)))
+        menu.addItem(item("Open Provider Settings…", #selector(openProviders)))
         menu.addItem(pendingLine)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(fastLine)
@@ -71,6 +72,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(updateCodex)
         menu.addItem(item("Open Updates…", #selector(openUpdates)))
         menu.addItem(item("View Last Operation", #selector(viewLastOperation)))
+        menu.addItem(item("Retry Last Operation", #selector(retryLastOperation)))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Quit SKS Menu", #selector(quit)))
         statusItem.menu = menu
@@ -93,7 +95,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         refreshLocalState()
     }
 
-    func retryLastOperation() {
+    @objc func retryLastOperation() {
         guard let arguments = lastOperationArguments else { openControlCenter(.overview); return }
         run(arguments, kind: "retry", mutationGroup: nil, summary: "Retry operation")
     }
@@ -308,7 +310,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication, app.bundleIdentifier == bundle else { return }
             let config = self?.readJson(path: AppRuntime.configPath)
             if config?["quit_with_codex"] as? Bool == true { NSApplication.shared.terminate(nil) }
-            else { self?.statusItem.isVisible = false }
+            else {
+                // Provider/proxy/network failure must not strand recovery behind
+                // a hidden accessory app. Keep settings and retry actions alive.
+                self?.statusItem.isVisible = true
+                self?.refreshLocalState()
+            }
         }
     }
 
@@ -330,6 +337,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openCenter() { openControlCenter(.overview) }
+    @objc private func openProviders() { openControlCenter(.providers) }
     @objc private func openUpdates() { openControlCenter(.updates) }
     @objc private func checkUpdates() {
         run(

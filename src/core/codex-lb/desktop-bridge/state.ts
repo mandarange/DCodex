@@ -22,8 +22,14 @@ export function desktopBridgeConfigGeneration(config: DesktopBridgeConfig): stri
   const stable = JSON.stringify({
     listenHost: config.listenHost,
     listenPort: config.listenPort,
+    providerMode: config.providerMode || 'codex-lb',
+    allowedModels: [...(config.allowedModels || [])].sort(),
+    providerPolicy: config.providerPolicy || null,
+    credentialReadiness: config.credentialReadiness || null,
+    childPolicy: config.childPolicy || null,
+    sessionPins: [...(config.sessionPins || [])].sort((left, right) => left.session_id.localeCompare(right.session_id)),
+    requireSessionPin: config.requireSessionPin === true,
     remoteBaseUrl: new URL(config.remoteBaseUrl).toString().replace(/\/$/, ''),
-    gatewayKeySha256: sha256Hex(config.gatewayKey),
     gatewayAuthTransport: config.gatewayAuthTransport,
     allowedPathPrefixes: [...config.allowedPathPrefixes],
     allowedOrigins: [...config.allowedOrigins],
@@ -39,14 +45,22 @@ export function createDesktopBridgePublicState(
 ): DesktopBridgePublicState {
   const listenOrigin = desktopBridgeListenOrigin(config);
   const remote = new URL(config.remoteBaseUrl);
+  const providerMode = config.providerMode || 'codex-lb';
+  const allowedModels = [...(config.allowedModels || [])].sort();
   return {
     schema: DESKTOP_BRIDGE_STATE_SCHEMA,
     pid: options.pid ?? process.pid,
     started_at: (options.now ?? new Date()).toISOString(),
     listen_origin: listenOrigin,
-    codex_base_url: `${listenOrigin}/backend-api/codex`,
+    codex_base_url: providerMode === 'openrouter'
+      ? `${listenOrigin}/api/v1`
+      : `${listenOrigin}/backend-api/codex`,
+    provider_mode: providerMode,
+    allowed_models_sha256: sha256Hex(JSON.stringify(allowedModels)),
+    ...(config.providerPolicy ? { provider_policy_sha256: sha256Hex(JSON.stringify(config.providerPolicy)) } : {}),
+    ...(config.childPolicy ? { child_policy_sha256: sha256Hex(JSON.stringify(config.childPolicy)) } : {}),
+    session_pin_enforcement: config.requireSessionPin === true ? 'required' : 'compatibility',
     remote_origin_sha256: sha256Hex(remote.origin),
-    gateway_key_sha256: sha256Hex(config.gatewayKey),
     gateway_auth_transport: config.gatewayAuthTransport,
     config_generation: desktopBridgeConfigGeneration(config),
   };
@@ -63,11 +77,17 @@ export function isDesktopBridgePublicState(value: unknown): value is DesktopBrid
     && typeof row.listen_origin === 'string'
     && /^http:\/\/(?:127\.0\.0\.1|\[::1\]):\d+$/.test(row.listen_origin)
     && typeof row.codex_base_url === 'string'
-    && row.codex_base_url === `${row.listen_origin}/backend-api/codex`
+    && (row.provider_mode === 'codex-lb' || row.provider_mode === 'openrouter')
+    && row.codex_base_url === (row.provider_mode === 'openrouter'
+      ? `${row.listen_origin}/api/v1`
+      : `${row.listen_origin}/backend-api/codex`)
+    && typeof row.allowed_models_sha256 === 'string'
+    && /^[a-f0-9]{64}$/.test(row.allowed_models_sha256)
+    && (row.provider_policy_sha256 === undefined || typeof row.provider_policy_sha256 === 'string' && /^[a-f0-9]{64}$/.test(row.provider_policy_sha256))
+    && (row.child_policy_sha256 === undefined || typeof row.child_policy_sha256 === 'string' && /^[a-f0-9]{64}$/.test(row.child_policy_sha256))
+    && (row.session_pin_enforcement === undefined || row.session_pin_enforcement === 'required' || row.session_pin_enforcement === 'compatibility')
     && typeof row.remote_origin_sha256 === 'string'
     && /^[a-f0-9]{64}$/.test(row.remote_origin_sha256)
-    && typeof row.gateway_key_sha256 === 'string'
-    && /^[a-f0-9]{64}$/.test(row.gateway_key_sha256)
     && (row.gateway_auth_transport === 'x-codex-lb-api-key' || row.gateway_auth_transport === 'authorization-bearer-compat')
     && typeof row.config_generation === 'string'
     && /^[a-f0-9]{64}$/.test(row.config_generation);

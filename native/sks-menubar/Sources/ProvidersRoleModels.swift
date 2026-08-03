@@ -44,6 +44,10 @@ extension ProvidersViewController {
             controls.current.setAccessibilityLabel("\(title) current and effective model")
             controls.save.setAccessibilityLabel("Save \(title) model override")
             controls.reset.setAccessibilityLabel("Reset \(title) model override")
+            registerProviderAction(controls.save, id: "sks-provider-save-role-model")
+            registerProviderAction(controls.reset, id: "sks-provider-reset-role-model")
+            controls.save.setAccessibilityIdentifier("sks-provider-save-role-model-\(role)")
+            controls.reset.setAccessibilityIdentifier("sks-provider-reset-role-model-\(role)")
             controls.model.isEnabled = false
             controls.reasoning.isEnabled = false
             controls.save.isEnabled = false
@@ -62,6 +66,7 @@ extension ProvidersViewController {
             if role != definitions.last?.0 { let separator = NSBox(); separator.boxType = .separator; views.append(separator) }
         }
         let refresh = NativeView.button("Refresh Role Settings", target: self, action: #selector(refreshRoleModelsAction(_:)))
+        registerProviderAction(refresh, id: "sks-provider-refresh-role-models")
         roleRefreshButton = refresh
         actionButtons.append(refresh)
         views.append(refresh)

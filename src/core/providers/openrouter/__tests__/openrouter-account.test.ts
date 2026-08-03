@@ -106,7 +106,7 @@ test('OpenRouter connection test fails closed and redacts rejected key material'
   assert.equal(JSON.stringify(result).includes(key), false);
 });
 
-test('OpenRouter catalog stays usable but never claims authentication when /key rejects the saved key', async () => {
+test('OpenRouter catalog is withdrawn and never claims authentication when /key rejects the saved key', async () => {
   const key = 'sk-or-v1-rejected-catalog-key-abcdefghijklmnop';
   const fetchImpl = async (input: string | URL | Request) => String(input).endsWith('/key')
     ? new Response(`api_key=${key}`, { status: 401 })
@@ -115,10 +115,10 @@ test('OpenRouter catalog stays usable but never claims authentication when /key 
     env: { HOME: '/tmp/openrouter-catalog-rejected', OPENROUTER_API_KEY: key },
     fetchImpl: fetchImpl as typeof fetch
   });
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
   assert.equal(result.authenticated, false);
-  assert.equal(result.models[0]?.id, 'z-ai/glm-5.2');
-  assert.ok(result.warnings.includes('openrouter_authentication_failed:glm_openrouter_unauthorized'));
+  assert.deepEqual(result.models, []);
+  assert.ok(result.blockers.includes('openrouter_authentication_failed:glm_openrouter_unauthorized'));
   assert.equal(result.authentication_error?.status, 401);
   assert.equal(JSON.stringify(result).includes(key), false);
 });

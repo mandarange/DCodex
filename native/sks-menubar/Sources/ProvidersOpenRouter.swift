@@ -5,7 +5,7 @@ extension ProvidersViewController {
         NativeView.card(
             title: "Active Provider",
             subtitle: "Shows the live Desktop mode: Codex LB, ChatGPT OAuth, OpenRouter, or Multi-Provider Router. Switch with Use Codex LB or Use ChatGPT OAuth Only below.",
-            views: [activeProviderBadge]
+            views: [activeProviderBadge, oauthCredentialStatus]
         )
     }
 
@@ -60,6 +60,11 @@ extension ProvidersViewController {
         // CLI would reject with snapshot_missing.
         restorePrevious.isEnabled = false
         openRouterRestoreButton = restorePrevious
+        registerProviderAction(refreshModels, id: "sks-provider-refresh-openrouter-catalog")
+        registerProviderAction(saveKey, id: "sks-provider-save-openrouter-key")
+        registerProviderAction(test, id: "sks-provider-test-openrouter")
+        registerProviderAction(activate, id: "sks-provider-activate-openrouter")
+        registerProviderAction(restorePrevious, id: "sks-provider-restore-previous")
         actionButtons += [refreshModels, saveKey, test, activate, restorePrevious]
 
         let catalogLabel = NSTextField(labelWithString: "Catalog")
@@ -70,7 +75,7 @@ extension ProvidersViewController {
             title: "OpenRouter",
             subtitle: "Saving the key prepares OpenRouter but does not switch providers. Activate switches Desktop routing; SKS remaps the local thread sidebar so prior provider chats stay visible, and keeps a one-click restore snapshot.",
             views: [
-                openRouterCredentialStatus,
+                openRouterCredentialStatus, openRouterKeychainStatus,
                 openRouterActiveStatus,
                 NativeView.row([catalogLabel, openRouterModelPopup, refreshModels]),
                 openRouterCatalogStatus,
@@ -98,6 +103,8 @@ extension ProvidersViewController {
                 return
             }
             let keyPresent = json["key_present"] as? Bool == true
+            let keyValidated = json["key_validated"] as? Bool == true
+                || json["credential_validated"] as? Bool == true
             let providerPresent = json["provider_present"] as? Bool == true
             let selected = json["selected"] as? Bool == true
             let activeModel = json["model"] as? String ?? "unset"
@@ -107,10 +114,13 @@ extension ProvidersViewController {
             }
             self.synchronizeOpenRouterPopupSelection()
             self.openRouterSelectedNow = selected
+            self.openRouterCredentialValidatedNow = keyValidated
             self.openRouterActiveModel = activeModel
             self.renderActiveProviderSummary()
-            self.openRouterCredentialStatus.stringValue = keyPresent
-                ? "Credential: saved securely\(providerPresent ? " · provider block ready" : " · provider setup needs repair")"
+            self.openRouterCredentialStatus.stringValue = keyValidated
+                ? "Credential: validated\(providerPresent ? " · provider route ready" : " · provider setup needs repair")"
+                : keyPresent
+                    ? "Credential: stored but not validated · models remain hidden until authenticated refresh succeeds"
                 : "Credential: missing · save a key before testing or activation"
             self.openRouterActiveStatus.stringValue = selected
                 ? "Active provider: OpenRouter · main model \(activeModel)"
@@ -121,7 +131,8 @@ extension ProvidersViewController {
                     ? summary
                     : "\(summary) \(self.structuredPublicDetail(json, fallback: result.output))"
             }
-            self.openRouterCredentialStatus.textColor = keyPresent ? .secondaryLabelColor : .systemOrange
+            self.openRouterCredentialStatus.textColor = keyValidated ? .secondaryLabelColor : .systemOrange
+            if !keyValidated { self.clearOpenRouterModels(reason: "Credential not validated · model and child-agent lists are hidden. Choose Reconnect, then Refresh Models.") }
             self.openRouterActiveStatus.textColor = selected ? .systemGreen : .secondaryLabelColor
             self.openRouterRestoreAvailable = json["previous_routing_restore_available"] as? Bool == true
             self.openRouterRestoreButton?.isEnabled = !self.busy && self.openRouterRestoreAvailable
@@ -147,6 +158,7 @@ extension ProvidersViewController {
     func refreshOpenRouterModels() {
         guard !catalogRefreshInFlight else { return }
         catalogRefreshInFlight = true
+        clearOpenRouterModels(reason: "Validating the saved credential before exposing models…")
         openRouterRefreshButton?.isEnabled = false
         openRouterCatalogStatus.stringValue = "Loading OpenRouter model catalog…"
         processClient.run(["codex-app", "openrouter-models", "--ids-only", "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
@@ -154,29 +166,43 @@ extension ProvidersViewController {
             self.catalogRefreshInFlight = false
             self.openRouterRefreshButton?.isEnabled = !self.busy
             guard let json = self.json(result.output) else {
-                self.openRouterCatalogStatus.stringValue = "Catalog unavailable · manual model id entry still works. Next: save the key or retry."
+                self.clearOpenRouterModels(reason: "Catalog unavailable · no model list is exposed. Next: reconnect the key or retry.")
                 return
             }
             guard result.code == 0, json["ok"] as? Bool == true else {
-                self.openRouterCatalogStatus.stringValue = "Catalog unavailable · \(self.structuredPublicDetail(json, fallback: result.output)) Manual model id entry still works."
+                self.clearOpenRouterModels(reason: "Catalog unavailable · \(self.structuredPublicDetail(json, fallback: result.output)) No model list is exposed.")
+                return
+            }
+            guard json["authenticated"] as? Bool == true else {
+                self.clearOpenRouterModels(reason: "Credential validation failed · model and child-agent lists were withdrawn. Choose Reconnect OpenRouter credential.")
                 return
             }
             let models = self.openRouterModelIds(json)
             guard !models.isEmpty else {
-                self.openRouterCatalogStatus.stringValue = "Catalog returned no selectable models · manual model id entry still works."
+                self.clearOpenRouterModels(reason: "Authenticated catalog returned no selectable models · no model list is exposed.")
                 return
             }
+            self.openRouterCredentialValidatedNow = true
             self.openRouterModels = models
             self.openRouterModelPopup.removeAllItems()
             self.openRouterModelPopup.addItem(withTitle: "Choose from \(models.count) models…")
             self.openRouterModelPopup.addItems(withTitles: models)
             self.synchronizeOpenRouterPopupSelection()
             self.openRouterModelPopup.isEnabled = !self.busy
-            let authenticated = json["authenticated"] as? Bool == true
-            self.openRouterCatalogStatus.stringValue = authenticated
-                ? "Catalog ready · \(models.count) models · saved key authenticated. Selecting one copies its id into the editable field."
-                : "Catalog ready · \(models.count) public models · saved key was not authenticated. Next: replace the key, then run Test Connection."
+            self.openRouterCatalogStatus.stringValue = "Catalog ready · \(models.count) models · saved key authenticated. Selecting one copies its id into the editable field."
         }
+    }
+
+    private func clearOpenRouterModels(reason: String) {
+        openRouterCredentialValidatedNow = false
+        openRouterModels = []
+        openRouterModelPopup.removeAllItems()
+        openRouterModelPopup.addItem(withTitle: "Models hidden until credential validation")
+        openRouterModelPopup.isEnabled = false
+        openRouterModelField.stringValue = ""
+        openRouterModelField.isEnabled = false
+        openRouterCatalogStatus.stringValue = reason
+        openRouterCatalogStatus.textColor = .systemOrange
     }
 
     private func openRouterModelIds(_ json: [String: Any]) -> [String] {
@@ -235,6 +261,7 @@ extension ProvidersViewController {
             args: ["codex-app", "set-openrouter-key", "--api-key-stdin", "--json"],
             kind: "openrouter-set-key",
             title: "Save OpenRouter key",
+            credential: .openRouterApiKey,
             statusLabel: openRouterStatus,
             successSummary: "OpenRouter key saved",
             failSummary: "OpenRouter key save failed"
@@ -336,16 +363,20 @@ extension ProvidersViewController {
     }
 
     private func performUseOpenRouter(model: String) {
-        guard let snapshot = operations.begin(kind: "openrouter-use", mutationGroup: "codex-config", summary: "Use OpenRouter") else {
+        guard openRouterCredentialValidatedNow else {
+            openRouterStatus.stringValue = "Activation blocked · OpenRouter credential is not validated. Models remain hidden; choose Reconnect, then Refresh Models."
+            return
+        }
+        guard let snapshot = beginProviderApply(kind: "openrouter-use", summary: "Use OpenRouter", mode: "openrouter", model: model) else {
             openRouterStatus.stringValue = "Another guarded mutation is already running. Wait or open Diagnostics."
             return
         }
         setBusy(true)
         openRouterStatus.stringValue = "Activating OpenRouter main model \(model) and restarting Codex App…"
-        _ = operations.update(snapshot, state: .running, stage: "activating", progress: nil, summary: "Use OpenRouter")
+        let running = operations.update(snapshot, state: .running, stage: "activating", progress: nil, summary: "Use OpenRouter")
         processClient.run(["codex-app", "use-openrouter", "--model", model, "--restart-app", "--json"], timeout: NativeView.mutationTimeout) { [weak self] activation in
             guard let self = self else { return }
-            _ = self.operations.update(snapshot, state: .running, stage: "verifying", progress: nil, summary: "Verify OpenRouter main model")
+            _ = self.operations.update(running, state: .running, stage: "verifying", progress: nil, summary: "Verify OpenRouter main model")
             self.processClient.run(["codex-app", "openrouter-status", "--json"], timeout: NativeView.statusTimeout) { [weak self] status in
                 guard let self = self else { return }
                 self.setBusy(false)
@@ -363,8 +394,18 @@ extension ProvidersViewController {
                 let restartOK = activationJson?["restart_ok"] as? Bool == true
                 let remapped = (activationJson?["thread_sidebar_remap"] as? [String: Any])?["remapped"] as? Int ?? 0
                 let restoreAvailable = activationJson?["previous_routing_restore_available"] as? Bool == true
-                let complete = configApplied && restartOK
-                _ = self.operations.update(snapshot, state: complete ? .succeeded : .failed, stage: "complete", progress: 1, summary: complete ? "OpenRouter main model active" : configApplied ? "OpenRouter saved; restart required" : "OpenRouter activation needs action")
+                var applyJson = activationJson ?? [:]
+                applyJson["catalog_refreshed"] = status.code == 0
+                    && statusJson?["key_validated"] as? Bool == true
+                    && activeModel == model
+                applyJson["new_session_ready"] = restartOK
+                let applied = self.recordProviderApplyResult(
+                    running,
+                    json: applyJson,
+                    configurationSaved: configApplied,
+                    proxyApplied: selected && activeModel == model
+                )
+                let complete = configApplied && restartOK && applied.providerApply?.allSucceeded == true
                 if complete {
                     var parts = ["Activation complete · OpenRouter is active · main model \(model)"]
                     if remapped > 0 { parts.append("sidebar kept \(remapped) prior-provider chats visible") }

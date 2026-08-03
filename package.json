@@ -34,6 +34,8 @@
     "!dist/**/__tests__",
     "!dist/**/*.test.js",
     "!dist/native/**/Tests",
+    "!dist/native/**/UITests",
+    "!dist/native/**/QAFixtures",
     "!dist/cli/install-helpers-codex-lb-selftest.js",
     "!dist/cli/install-helpers-codex-lb-selftest-chain.js",
     "!dist/scripts/**",

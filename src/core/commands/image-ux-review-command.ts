@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fsp from 'node:fs/promises';
+import { registerPathImageReference, upsertImageReferenceRegistry } from '../image/reference-evidence/reference-registry.js';
 import { ensureDir, nowIso, projectRoot, readJson, writeJsonAtomic } from '../fsx.js';
 import { createMission, findLatestMission, loadMission, missionDir } from '../mission.js';
 import { flag, readOption } from './command-utils.js';
@@ -507,7 +508,7 @@ async function attachAfterImageCommand(root: string, command: string, args: any[
   }
   const { dir, mission } = await loadMission(root, missionId);
   const contract = await readJson(path.join(dir, 'decision-contract.json'), { prompt: mission.prompt, answers: {}, sealed_hash: null });
-  const staged = await stageImage(root, dir, imagePath, 'after-screens');
+  const staged = await stageImageReference(root, dir, imagePath, 'after-screens');
   const absolute = path.resolve(root, staged);
   const dims = await imageDimensions(absolute);
   const sha = await sha256File(absolute);
@@ -950,19 +951,26 @@ async function ensureFixtureImageVoxelRelation(root: string, missionId: string, 
 }
 
 async function stageSourceImage(root: string, dir: string, imagePath: string) {
-  return stageImage(root, dir, imagePath, 'source-screens');
+  return stageImageReference(root, dir, imagePath, 'source-screens');
 }
 
 async function stageGeneratedImage(root: string, dir: string, imagePath: string, preferredName: string | null = null) {
-  return stageImage(root, dir, imagePath, 'generated-callouts', preferredName);
+  return stageImageReference(root, dir, imagePath, 'generated-callouts', preferredName);
 }
 
-async function stageImage(root: string, dir: string, imagePath: string, subdir: string, preferredName: string | null = null) {
+export async function stageImageReference(root: string, dir: string, imagePath: string, subdir: string, preferredName: string | null = null) {
   const source = path.resolve(root, imagePath);
-  const dest = path.join(dir, subdir, preferredName || path.basename(source));
-  await ensureDir(path.dirname(dest));
-  if (source !== dest) await fsp.copyFile(source, dest);
-  return path.relative(root, dest).split(path.sep).join('/');
+  const id = `${subdir}-${preferredName || path.basename(source)}`.replace(/[^A-Za-z0-9._:-]+/g, '-');
+  const reference = await registerPathImageReference({
+    id,
+    filePath: source,
+    allowedRoots: [root],
+    allowOutOfRoot: path.isAbsolute(imagePath),
+    consent: 'local-only'
+  });
+  await upsertImageReferenceRegistry(path.join(dir, 'image-references.json'), reference);
+  const relative = path.relative(root, source).split(path.sep).join('/');
+  return relative.startsWith('../') ? source : relative;
 }
 
 function promptForRun(command: string, args: any[]) {

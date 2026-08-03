@@ -38,6 +38,8 @@ export async function buildMenuBarAppStaging(input: {
   const executable = path.join(stagingMacOS, 'SKSMenuBar');
   const compileWork = runProcess(input.swiftc, [
     '-framework', 'Cocoa',
+    '-framework', 'LocalAuthentication',
+    '-framework', 'Security',
     '-framework', 'UserNotifications',
     ...sources.files,
     '-o', executable

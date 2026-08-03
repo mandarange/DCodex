@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { stagePublish } from '../../dist/core/release/stage-publish.js';
 
 // A runner that records every command instead of executing one, so the tests
@@ -122,6 +123,7 @@ test('a failed push stops before the workflow is dispatched', () => {
 // Automation must stop before approval: the command is printed, never executed.
 test('the approval command is reported but never run', () => {
   const commit = 'a'.repeat(40);
+  const artifactDir = '/tmp/sks-stage-fixture';
   const rec = recorder({
     ...GREEN_PREFLIGHT,
     'run list': { stdout: JSON.stringify([{ databaseId: 4242, headSha: commit, status: 'completed' }]) }
@@ -130,8 +132,8 @@ test('the approval command is reported but never run', () => {
     recorder: rec,
     opts: {
       confirm: true,
-      artifactDir: '/tmp/sks-stage-fixture',
-      readJsonFile: (file) => (String(file).includes('stage-receipt')
+      artifactDir,
+      readJsonFile: (file) => (file === path.join(artifactDir, 'stage-receipt.json')
         ? { stage_id: '11111111-2222-3333-4444-555555555555' }
         : { version: '7.3.0' })
     }
@@ -144,8 +146,42 @@ test('the approval command is reported but never run', () => {
   assert.ok(!rec.calls.some((call) => call.includes('npm publish')), rec.calls.join('\n'));
 });
 
+test('multi-artifact downloads discover the nested receipt and verify the named handoff', () => {
+  const commit = 'a'.repeat(40);
+  const artifactDir = '/tmp/sks-stage-multi-artifact-fixture';
+  const receiptPath = path.join(artifactDir, `npm-stage-receipt-${commit}`, 'stage-receipt.json');
+  const handoffDir = path.join(artifactDir, `stage-input-${commit}`);
+  const rec = recorder({
+    ...GREEN_PREFLIGHT,
+    'run list': { stdout: JSON.stringify([{ databaseId: 4242, headSha: commit, status: 'completed' }]) }
+  });
+  const { opts } = options({
+    recorder: rec,
+    opts: {
+      confirm: true,
+      artifactDir,
+      readJsonFile: (file) => (file === receiptPath
+        ? { stage_id: '11111111-2222-3333-4444-555555555555' }
+        : null)
+    }
+  });
+
+  const report = stagePublish(opts);
+
+  assert.equal(report.stage_id, '11111111-2222-3333-4444-555555555555');
+  assert.equal(report.steps.find((entry) => entry.id === 'stage_receipt')?.detail, receiptPath);
+  const download = rec.calls.find((call) => call.startsWith('gh run download')) || '';
+  assert.match(download, new RegExp(`--name stage-input-${commit}(?: |$)`));
+  assert.match(download, new RegExp(`--name npm-stage-receipt-${commit}(?: |$)`));
+  const verify = rec.calls.find((call) => call.includes('npm-stage-tarball-verifier.js')) || '';
+  assert.match(verify, new RegExp(`--local-receipt ${escapeRegex(path.join(handoffDir, 'pack-receipt.json'))}(?: |$)`));
+  assert.match(verify, new RegExp(`--local-tarball ${escapeRegex(path.join(handoffDir, 'sneakoscope-7.3.0.tgz'))}(?: |$)`));
+  assert.match(verify, new RegExp(`--stage-receipt ${escapeRegex(receiptPath)}(?: |$)`));
+});
+
 test('a stage id that is not a uuid is rejected rather than approved', () => {
   const commit = 'a'.repeat(40);
+  const artifactDir = '/tmp/sks-stage-fixture';
   const rec = recorder({
     ...GREEN_PREFLIGHT,
     'run list': { stdout: JSON.stringify([{ databaseId: 7, headSha: commit, status: 'completed' }]) }
@@ -154,8 +190,8 @@ test('a stage id that is not a uuid is rejected rather than approved', () => {
     recorder: rec,
     opts: {
       confirm: true,
-      artifactDir: '/tmp/sks-stage-fixture',
-      readJsonFile: (file) => (String(file).includes('stage-receipt')
+      artifactDir,
+      readJsonFile: (file) => (file === path.join(artifactDir, 'stage-receipt.json')
         ? { stage_id: 'not-a-uuid' }
         : { version: '7.3.0' })
     }
@@ -165,3 +201,7 @@ test('a stage id that is not a uuid is rejected rather than approved', () => {
   assert.equal(report.approval_command, null);
   assert.ok(report.blockers.includes('stage_id_uuid_invalid'));
 });
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

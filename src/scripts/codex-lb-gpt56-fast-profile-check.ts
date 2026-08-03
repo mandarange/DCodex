@@ -170,7 +170,7 @@ function assertFastProfile(
     ...(parsed.user?.fast_mode === undefined ? [] : ['user_fast_mode_legacy_table_present']),
     ...(parsed.profiles?.['sks-fast-high'] === undefined ? [] : ['sks_fast_high_legacy_profile_present']),
     ...(parsed.model === undefined ? [] : ['codex_app_model_was_injected']),
-    ...(parsed.model_provider === undefined ? [] : ['desktop_model_provider_was_selected']),
+    ...(parsed.model_provider === 'openai' ? [] : ['desktop_model_provider_must_be_openai']),
     ...(provider.name === 'codex-lb' ? [] : ['codex_lb_cli_provider_name_mismatch']),
     ...(provider.requires_openai_auth === false ? [] : ['codex_lb_cli_requires_openai_auth_not_false']),
     ...(provider.env_key === 'CODEX_LB_API_KEY' ? [] : ['codex_lb_cli_env_key_missing']),

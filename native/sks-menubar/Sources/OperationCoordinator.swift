@@ -1,92 +1,5 @@
 import Foundation
 
-// SKS CLI timestamps come from JavaScript Date.toISOString() and carry
-// fractional seconds ("2026-07-24T00:00:00.000Z"), which the default
-// ISO8601DateFormatter options cannot parse. Try fractional first, then plain.
-enum SKSTimestamp {
-    private static let fractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-    private static let plain = ISO8601DateFormatter()
-
-    static func date(from value: String) -> Date? {
-        fractional.date(from: value) ?? plain.date(from: value)
-    }
-}
-
-enum OperationState: String, Codable {
-    case queued, running, waitingForConfirmation, succeeded, failed, cancelled, terminalUncertain
-}
-
-struct OperationSnapshot: Codable {
-    let schema: String
-    let id: String
-    let kind: String
-    let state: OperationState
-    let stage: String?
-    let progress: Double?
-    let startedAt: String
-    let updatedAt: String
-    let publicSummary: String
-    let logPath: String?
-    let retryable: Bool
-    let targetVersion: String?
-    let projectRoot: String?
-    let registry: String?
-}
-
-struct UpdateOperationStageSnapshot: Codable {
-    let id: String
-    let ok: Bool
-    let status: String
-    let updatedAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case id, ok, status
-        case updatedAt = "updated_at"
-    }
-}
-
-struct UpdateOperationReceiptSnapshot: Codable {
-    let schema: String
-    let id: String
-    let kind: String
-    let state: String
-    let currentStage: String?
-    let startedAt: String
-    let updatedAt: String
-    let fromVersion: String
-    let targetVersion: String?
-    let previousVersion: String
-    let projectRoot: String?
-    let registry: String?
-    let rollbackCommand: String
-    let sideEffectsStarted: Bool
-    let stages: [UpdateOperationStageSnapshot]
-    let resultStatus: String?
-    let publicError: String?
-    let receiptPath: String
-
-    enum CodingKeys: String, CodingKey {
-        case schema, id, kind, state, stages
-        case currentStage = "current_stage"
-        case startedAt = "started_at"
-        case updatedAt = "updated_at"
-        case fromVersion = "from_version"
-        case targetVersion = "target_version"
-        case previousVersion = "previous_version"
-        case projectRoot = "project_root"
-        case registry
-        case rollbackCommand = "rollback_command"
-        case sideEffectsStarted = "side_effects_started"
-        case resultStatus = "result_status"
-        case publicError = "public_error"
-        case receiptPath = "receipt_path"
-    }
-}
-
 final class OperationCoordinator {
     static let updateStageOrder = [
         "preflight", "download_or_registry_check", "temporary_install_smoke", "global_install",
@@ -116,7 +29,8 @@ final class OperationCoordinator {
         summary: String,
         targetVersion: String? = nil,
         projectRoot: String? = nil,
-        registry: String? = nil
+        registry: String? = nil,
+        providerApply: ProviderApplyProjection? = nil
     ) -> OperationSnapshot? {
         queue.sync {
             if mutationGroup != nil, activeMutation != nil { return nil }
@@ -126,7 +40,7 @@ final class OperationCoordinator {
                 state: .queued, stage: "queued", progress: 0, startedAt: now,
                 updatedAt: now, publicSummary: summary, logPath: AppRuntime.lastActionLogPath,
                 retryable: true, targetVersion: targetVersion, projectRoot: projectRoot,
-                registry: registry
+                registry: registry, recovery: nil, providerApply: providerApply
             )
             if let group = mutationGroup { activeMutation = (snapshot.id, group) }
             write(snapshot)
@@ -150,7 +64,8 @@ final class OperationCoordinator {
                 updatedAt: ISO8601DateFormatter().string(from: Date()),
                 publicSummary: summary, logPath: snapshot.logPath, retryable: retryable,
                 targetVersion: snapshot.targetVersion, projectRoot: snapshot.projectRoot,
-                registry: snapshot.registry
+                registry: snapshot.registry, recovery: snapshot.recovery,
+                providerApply: snapshot.providerApply
             )
             write(next)
             if releaseMutationGuard, [.succeeded, .failed, .cancelled, .terminalUncertain].contains(state) {
@@ -177,6 +92,147 @@ final class OperationCoordinator {
                 return try? decoder.decode(OperationSnapshot.self, from: data)
             }.max { $0.updatedAt < $1.updatedAt }
         }
+    }
+
+    /// Records the public recovery decision in the existing private operation
+    /// receipt. No request body, credential, account identifier, or secret-derived
+    /// fingerprint is accepted by this API.
+    func recordRecovery(
+        _ snapshot: OperationSnapshot,
+        status: OperationRecoveryStatus,
+        summary: String
+    ) -> OperationSnapshot {
+        queue.sync {
+            let nextState: OperationState
+            switch status.state {
+            case .autoResumePending: nextState = .running
+            case .pausedResumable: nextState = .waitingForConfirmation
+            default: nextState = snapshot.state
+            }
+            let next = OperationSnapshot(
+                schema: snapshot.schema, id: snapshot.id, kind: snapshot.kind,
+                state: nextState, stage: snapshot.stage, progress: snapshot.progress,
+                startedAt: snapshot.startedAt,
+                updatedAt: ISO8601DateFormatter().string(from: Date()),
+                publicSummary: summary, logPath: snapshot.logPath,
+                retryable: status.state == .autoResumePending || status.state == .pausedResumable,
+                targetVersion: snapshot.targetVersion, projectRoot: snapshot.projectRoot,
+                registry: snapshot.registry, recovery: status,
+                providerApply: snapshot.providerApply
+            )
+            write(next)
+            if status.state == .pausedResumable, activeMutation?.id == snapshot.id {
+                activeMutation = nil
+            }
+            return next
+        }
+    }
+
+    func recordProviderApplyStage(
+        _ snapshot: OperationSnapshot,
+        stage: ProviderApplyStageName,
+        status: ProviderApplyStageState,
+        reasonCode: String? = nil
+    ) throws -> OperationSnapshot {
+        try queue.sync {
+            guard let current = snapshot.providerApply else {
+                throw ProviderApplyProjectionError.invalidProjection
+            }
+            let projection = try current.transitioning(stage: stage, to: status, reasonCode: reasonCode)
+            let nextState: OperationState
+            if projection.failedStage != nil { nextState = .waitingForConfirmation }
+            else if projection.allSucceeded { nextState = .succeeded }
+            else { nextState = .running }
+            let next = OperationSnapshot(
+                schema: snapshot.schema, id: snapshot.id, kind: snapshot.kind,
+                state: nextState, stage: stage.rawValue,
+                progress: Double(projection.stages.filter { $0.status == .succeeded }.count) / Double(ProviderApplyStageName.allCases.count),
+                startedAt: snapshot.startedAt,
+                updatedAt: ISO8601DateFormatter().string(from: Date()),
+                publicSummary: providerApplySummary(projection), logPath: snapshot.logPath,
+                retryable: projection.failedStage != nil,
+                targetVersion: snapshot.targetVersion, projectRoot: snapshot.projectRoot,
+                registry: snapshot.registry, recovery: snapshot.recovery,
+                providerApply: projection
+            )
+            write(next)
+            if (nextState == .waitingForConfirmation || nextState == .succeeded)
+                && activeMutation?.id == snapshot.id {
+                activeMutation = nil
+            }
+            return next
+        }
+    }
+
+    /// Executes one caller-declared retry-safe operation. The exact same closure
+    /// may be re-entered only for a transient network classification and at most
+    /// twice. Authentication, provider mode, account binding, external settings,
+    /// and unknown causes are preserved as a manual resumable pause.
+    func executeWithRecovery(
+        _ snapshot: OperationSnapshot,
+        pinnedMode: String?,
+        pinnedModel: String?,
+        retryDelay: TimeInterval = 0.25,
+        attempt: @escaping (_ attemptNumber: Int, _ finish: @escaping (OperationRecoveryAttemptOutcome) -> Void) -> Void,
+        onStatus: @escaping (OperationSnapshot) -> Void,
+        completion: @escaping (_ succeeded: Bool, _ snapshot: OperationSnapshot) -> Void
+    ) {
+        var sameNetworkCauseRetries = 0
+        var currentSnapshot = snapshot
+        var runAttempt: (() -> Void)!
+        runAttempt = { [weak self] in
+            guard let self = self else { return }
+            attempt(sameNetworkCauseRetries) { outcome in
+                DispatchQueue.main.async {
+                    if outcome.succeeded {
+                        let active = OperationRecoveryPolicy.evaluate(
+                            cause: nil,
+                            sameCauseRetryCount: sameNetworkCauseRetries,
+                            progressSignal: outcome.progressSignal,
+                            progressObserved: true,
+                            secondsWithoutProgress: 0,
+                            warningAfter: 1,
+                            pinnedMode: pinnedMode,
+                            pinnedModel: pinnedModel
+                        )
+                        currentSnapshot = self.recordRecovery(
+                            currentSnapshot,
+                            status: active,
+                            summary: "Progress observed · \(outcome.progressSignal.rawValue)"
+                        )
+                        onStatus(currentSnapshot)
+                        completion(true, currentSnapshot)
+                        return
+                    }
+                    let cause = outcome.cause ?? .unknown
+                    let decision = OperationRecoveryPolicy.evaluate(
+                        cause: cause,
+                        sameCauseRetryCount: sameNetworkCauseRetries,
+                        progressSignal: outcome.progressSignal,
+                        progressObserved: false,
+                        secondsWithoutProgress: 0,
+                        warningAfter: 1,
+                        pinnedMode: pinnedMode,
+                        pinnedModel: pinnedModel
+                    )
+                    currentSnapshot = self.recordRecovery(
+                        currentSnapshot,
+                        status: decision,
+                        summary: decision.nextAction
+                    )
+                    onStatus(currentSnapshot)
+                    guard decision.state == .autoResumePending else {
+                        completion(false, currentSnapshot)
+                        return
+                    }
+                    sameNetworkCauseRetries = decision.retryCount
+                    DispatchQueue.main.asyncAfter(deadline: .now() + max(0, retryDelay)) {
+                        runAttempt()
+                    }
+                }
+            }
+        }
+        runAttempt()
     }
 
     func latestUpdateReceipt() -> UpdateOperationReceiptSnapshot? {
@@ -332,6 +388,16 @@ final class OperationCoordinator {
             try? FileManager.default.removeItem(at: target)
             try? FileManager.default.moveItem(at: temporary, to: target)
         }
+    }
+
+    private func providerApplySummary(_ projection: ProviderApplyProjection) -> String {
+        if let failed = projection.failedStage {
+            return "Provider apply paused at \(failed.stage.rawValue) · \(failed.reasonCode ?? "provider_apply_failed")"
+        }
+        let completed = projection.stages.filter { $0.status == .succeeded }.count
+        return projection.allSucceeded
+            ? "Provider apply complete · new sessions use \(projection.newSessionDefault.mode) / \(projection.newSessionDefault.model)"
+            : "Provider apply stage \(completed)/\(ProviderApplyStageName.allCases.count)"
     }
 
     private func readUpdateReceipt(_ url: URL) -> UpdateOperationReceiptSnapshot? {

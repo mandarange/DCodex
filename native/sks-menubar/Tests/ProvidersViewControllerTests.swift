@@ -252,6 +252,36 @@ final class ProvidersViewControllerTests: XCTestCase {
         XCTAssertTrue(parsed?.renderedSummary.contains("7 in / 4 out / 11 total") == true)
     }
 
+    func testProviderActionInventoryHasNoDeadOrSilentControls() {
+        let items = ProviderActionInventory.items
+        XCTAssertGreaterThanOrEqual(items.count, 20)
+        XCTAssertEqual(Set(items.map(\.id)).count, items.count)
+        for item in items {
+            XCTAssertTrue(item.id.hasPrefix("sks-provider-"))
+            XCTAssertFalse(item.handler.isEmpty)
+            XCTAssertFalse(item.backend.isEmpty)
+            XCTAssertFalse(item.loadingState.isEmpty)
+            XCTAssertFalse(item.successState.isEmpty)
+            XCTAssertFalse(item.recoveryAction.isEmpty)
+        }
+    }
+
+    func testProviderActionInventoryCoversRecoveryAndModeControls() {
+        let ids = Set(ProviderActionInventory.items.map(\.id))
+        for required in [
+            "sks-provider-use-codex-lb",
+            "sks-provider-use-chatgpt-oauth",
+            "sks-provider-reconnect-codex-lb",
+            "sks-provider-reconnect-openrouter",
+            "sks-provider-refresh-openrouter-catalog",
+            "sks-provider-activate-openrouter",
+            "sks-provider-restore-previous",
+            "sks-provider-open-codex-signin"
+        ] {
+            XCTAssertTrue(ids.contains(required), "Missing action inventory row: \(required)")
+        }
+    }
+
     private func connectTestFixture() -> [String: Any] {
         [
             "schema": "sks.codex-lb-connect-test.v1",

@@ -203,7 +203,8 @@ struct Harness {
 }
 `);
   const source = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources', 'OperationCoordinator.swift');
-  const compiled = await run('swiftc', [source, harness, '-o', binary]);
+  const models = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources', 'OperationModels.swift');
+  const compiled = await run('swiftc', [models, source, harness, '-o', binary]);
   assert.equal(compiled.code, 0, `${compiled.stdout}\n${compiled.stderr}`);
   const executed = await run(binary, [temp, receiptPath]);
   assert.equal(executed.code, 0, `${executed.stdout}\n${executed.stderr}`);
@@ -387,8 +388,9 @@ struct Harness {
   const executionState = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources', 'ProcessExecutionState.swift');
   const identityGuard = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources', 'ProcessIdentityGuard.swift');
   const secureEnvelope = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources', 'SecureProcessEnvelope.swift');
+  const operationModels = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources', 'OperationModels.swift');
   const coordinatorSource = path.join(process.cwd(), 'native', 'sks-menubar', 'Sources', 'OperationCoordinator.swift');
-  const compiled = await run('swiftc', [source, executionState, identityGuard, secureEnvelope, coordinatorSource, harness, '-o', binary]);
+  const compiled = await run('swiftc', [source, executionState, identityGuard, secureEnvelope, operationModels, coordinatorSource, harness, '-o', binary]);
   assert.equal(compiled.code, 0, `${compiled.stdout}\n${compiled.stderr}`);
   const executed = await run(binary, [temp, actionScript], 10_000);
   assert.equal(executed.code, 0, `${executed.stdout}\n${executed.stderr}`);

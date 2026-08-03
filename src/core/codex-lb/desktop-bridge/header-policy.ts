@@ -25,6 +25,12 @@ const NEVER_FORWARD_FROM_CLIENT = new Set([
   'x-forwarded-port',
   'x-forwarded-proto',
   'x-real-ip',
+  'x-sks-child-model',
+  'x-sks-child-policy-hash',
+  'x-sks-child-request',
+  'x-sks-parent-snapshot-hash',
+  'x-sks-provider-mode',
+  'x-sks-session-id',
 ]);
 
 const NEVER_FORWARD_TO_CLIENT = new Set([

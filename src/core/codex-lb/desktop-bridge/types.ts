@@ -1,5 +1,12 @@
 import type { Server } from 'node:http';
 import type { Socket } from 'node:net';
+import type { CodexProxyProviderMode } from '../../codex-app/provider-mode.js';
+import type {
+  ChildPolicySnapshot,
+  CredentialReadiness,
+  ProviderPolicySnapshot,
+  SessionPin,
+} from '../../architecture-hardening/contracts/contracts.js';
 
 export const DESKTOP_BRIDGE_STATE_SCHEMA = 'sks.codex-lb-desktop-bridge.v1' as const;
 
@@ -8,6 +15,7 @@ export const DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES = [
   '/backend-api/files',
   '/backend-api/transcribe',
   '/backend-api/wham/',
+  '/api/v1/',
   '/v1/',
 ] as const;
 
@@ -16,6 +24,17 @@ export type DesktopBridgeGatewayAuthTransport =
   | 'authorization-bearer-compat';
 
 export interface DesktopBridgeConfig {
+  /** Present for every managed runtime. Omitted only by legacy direct callers. */
+  providerMode?: CodexProxyProviderMode;
+  /** Exact provider-mode catalog accepted on Responses requests. */
+  allowedModels?: readonly string[];
+  /** Managed callers seal these snapshots before the bridge starts. */
+  providerPolicy?: ProviderPolicySnapshot;
+  credentialReadiness?: CredentialReadiness;
+  childPolicy?: ChildPolicySnapshot;
+  sessionPins?: readonly SessionPin[];
+  /** Enabled only when the Codex caller supplies the sealed session headers. */
+  requireSessionPin?: boolean;
   listenHost: '127.0.0.1' | '::1';
   listenPort: number;
   remoteBaseUrl: string;
@@ -48,8 +67,13 @@ export interface DesktopBridgePublicState {
   started_at: string;
   listen_origin: string;
   codex_base_url: string;
+  /** Added for managed v1 states; optional only for typed legacy fixtures. */
+  provider_mode?: CodexProxyProviderMode;
+  allowed_models_sha256?: string;
+  provider_policy_sha256?: string;
+  child_policy_sha256?: string;
+  session_pin_enforcement?: 'required' | 'compatibility';
   remote_origin_sha256: string;
-  gateway_key_sha256: string;
   gateway_auth_transport: DesktopBridgeGatewayAuthTransport;
   config_generation: string;
 }

@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash } from 'node:crypto';
 import {
   COMMAND_ALIASES_LITE,
   COMMAND_MANIFEST_BY_NAME,
@@ -7,6 +9,15 @@ import {
 import { ui as cliUi } from './cli-theme.js';
 import { helpResult, isHelpRequest, renderManifestHelp } from './help.js';
 import { findRetiredGlobalExecutionArgumentErrors } from './global-mode-router.js';
+import {
+  normalizeIntentCommand,
+  type NormalizedIntentCommand,
+} from '../core/commands/intent-normalization/normalizer.js';
+import type {
+  IntentContract,
+  IntentEffect,
+} from '../core/safety/intent-contract/intent-contract.js';
+import type { ProviderMode } from '../core/architecture-hardening/contracts/contracts.js';
 
 export interface NormalizedCommand {
   command: CommandNameLite | null;
@@ -20,6 +31,65 @@ export interface UnknownCommandResult {
   status: 'blocked';
   command: string;
   reason: 'unknown_command';
+}
+
+export interface RouterIntentInheritance {
+  readonly parentContract?: IntentContract;
+  readonly naturalLanguageEffect?: string;
+  readonly effect?: IntentEffect;
+  readonly modeSnapshot?: ProviderMode;
+  readonly evidenceState?: IntentContract['evidence_state'];
+  readonly retryBudget?: number;
+}
+
+const routerIntentStorage = new AsyncLocalStorage<IntentContract>();
+
+export function currentRouterIntentContract(): IntentContract | null {
+  return routerIntentStorage.getStore() || null;
+}
+
+/** Builds the immutable execution contract before the legacy alias router runs. */
+export function prepareRouterExecutionIntent(
+  argv: readonly string[],
+  inheritance: RouterIntentInheritance = {},
+): NormalizedIntentCommand {
+  const effectiveArgv = argv.length ? [...argv] : ['doctor'];
+  const rawCommand = effectiveArgv[0]?.startsWith('$')
+    ? effectiveArgv.join(' ')
+    : `sks ${effectiveArgv.join(' ')}`;
+  const parent = inheritance.parentContract;
+  if (parent) {
+    const normalized = normalizeIntentCommand({
+      rawCommand,
+      naturalLanguageEffect: parent.natural_language_effect,
+      effect: parent.effect,
+      observedChangedPaths: parent.observed_changed_paths,
+      targetHashes: parent.target_hashes,
+      policyVersion: parent.policy_version,
+      modeSnapshot: parent.mode_snapshot,
+      evidenceState: parent.evidence_state,
+      retryBudget: parent.retry_budget,
+      requestedRisk: parent.risk,
+      explicitUltraOptIn: parent.risk === 'ULTRA',
+      force: parent.force,
+    });
+    if (normalized.contract.contract_hash !== parent.contract_hash) {
+      throw new Error('router_parent_intent_contract_mismatch');
+    }
+    return Object.freeze({ ...normalized, contract: parent });
+  }
+  const preflight = normalizeIntentCommand({
+    rawCommand,
+    naturalLanguageEffect: inheritance.naturalLanguageEffect || `Execute ${effectiveArgv[0] || 'doctor'}`,
+    effect: inheritance.effect || classifyCliIntentEffect(effectiveArgv),
+    targetHashes: [createHash('sha256').update(`${process.cwd()}\0${effectiveArgv[0] || 'doctor'}`).digest('hex')],
+    policyVersion: 'sks-cli-router-v1',
+    modeSnapshot: inheritance.modeSnapshot || providerModeFromEnvironment(),
+    evidenceState: inheritance.evidenceState || 'missing',
+    retryBudget: inheritance.retryBudget ?? 0,
+    force: effectiveArgv.includes('--force'),
+  });
+  return preflight;
 }
 
 export function isCommandName(value: string): value is CommandNameLite {
@@ -44,7 +114,25 @@ export function normalizeCommand(args: readonly string[] = []): NormalizedComman
 export async function dispatch(args?: readonly string[]): Promise<unknown> {
   const argv = args ?? process.argv.slice(2);
   try {
-    return await dispatchInner(argv);
+    let intent: NormalizedIntentCommand | null = null;
+    try {
+      intent = prepareRouterExecutionIntent(argv);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      if (code === 'intent_legacy_option_unsupported') {
+        process.exitCode = 1;
+        const result = { ok: false, status: 'blocked', reason: code, command: argv[0] || 'doctor' };
+        if (argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
+        else console.error(code);
+        return result;
+      }
+      if (!['intent_cli_command_unknown', 'intent_dollar_command_unknown', 'intent_dollar_command_unmapped'].includes(code)) {
+        throw error;
+      }
+    }
+    return intent
+      ? await routerIntentStorage.run(intent.contract, () => dispatchInner(argv))
+      : await dispatchInner(argv);
   } catch (err: unknown) {
     // Final choke point: any uncaught bug anywhere in the dispatch chain (gate
     // checks, lazy command import, command run()) must never leak a raw stack
@@ -65,6 +153,28 @@ export async function dispatch(args?: readonly string[]): Promise<unknown> {
     if (argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
     return result;
   }
+}
+
+function providerModeFromEnvironment(): ProviderMode {
+  const mode = String(process.env.SKS_PROVIDER_MODE || '').trim();
+  return mode === 'codex-lb' || mode === 'openrouter' || mode === 'chatgpt-oauth'
+    ? mode
+    : 'chatgpt-oauth';
+}
+
+function classifyCliIntentEffect(argv: readonly string[]): IntentEffect {
+  const normalized = normalizeCommand(argv);
+  const command = normalized.command;
+  const entry = command ? COMMAND_MANIFEST_BY_NAME[command] : null;
+  const tokens = argv.map((value) => String(value).toLowerCase());
+  const action = tokens.slice(1).find((value) => !value.startsWith('-')) || '';
+  if (entry?.readonly === true || safeReadOnlySubcommand(command as CommandNameLite, normalized.args)) return 'read';
+  if (/^(?:delete|remove|uninstall|purge|cleanup)$/.test(action)) return 'delete';
+  if (/^(?:deploy|publish|release|push)$/.test(action)) return 'deploy';
+  if (/^(?:login|logout|signin|sign-in|auth|setup|reconnect)$/.test(action)) return 'auth';
+  if (/^(?:install|update|upgrade|add-dependency)$/.test(action)) return 'dependency';
+  if (/^(?:security|permissions|sign|verify-signature|rotate)$/.test(action)) return 'security';
+  return 'write';
 }
 
 async function dispatchInner(argv: readonly string[]): Promise<unknown> {

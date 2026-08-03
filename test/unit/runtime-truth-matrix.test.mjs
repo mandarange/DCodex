@@ -48,6 +48,31 @@ test('runtime truth matrix promotes only a complete official subagent evidence s
   }
 });
 
+test('runtime truth matrix keeps optional supporting-proof blockers local to their rows', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-runtime-truth-optional-'));
+  try {
+    const mod = await import('../../dist/core/proof/runtime-truth-matrix.js');
+    const reports = passingOfficialReports();
+    reports['zellij-pane-proof.json'] = {
+      schema: 'sks.zellij-pane-proof.v1',
+      ok: true,
+      status: 'passed'
+    };
+    const matrix = await mod.buildRuntimeTruthMatrix({
+      root,
+      releaseVersion: 'test',
+      reports
+    });
+    const zellij = matrix.rows.find((row) => row.subsystem === 'zellij_pane');
+    assert.deepEqual(zellij?.blockers, ['runtime_success_claim_without_receipt']);
+    assert.equal(zellij?.required_mode, false);
+    assert.deepEqual(matrix.blockers, []);
+    assert.equal(matrix.ok, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function passingOfficialReports() {
   const runId = 'runtime-truth-v2-test';
   return {

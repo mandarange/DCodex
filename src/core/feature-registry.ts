@@ -967,6 +967,7 @@ function isExternalPromptCommandMention(mention: any) {
     '$SKS_CODEX_APP_IMAGEGEN_OUTPUT',
     '$SKS_CODEX_APP_IMAGEGEN_OUTPUT_ID',
     '$SKS_CODEX_APP_IMAGEGEN_CREATED_AT',
+    '$SKS_TELEGRAM_TOKEN',
     '$SKS_WORKTREE_ROOT',
     '$XDG_CACHE_HOME',
     '$IMAGEGEN'

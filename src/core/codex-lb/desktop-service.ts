@@ -8,7 +8,19 @@ import {
   which,
   writeTextAtomic
 } from '../fsx.js';
-import { loadCodexLbEnv, type CodexLbEnvLoadResult } from './codex-lb-env.js';
+import { loadCodexLbEnv, readCodexLbModelCatalog, type CodexLbEnvLoadResult } from './codex-lb-env.js';
+import { resolveOpenRouterApiKey } from '../providers/openrouter/openrouter-secret-store.js';
+import type { CodexProxyProviderMode } from '../codex-app/provider-mode.js';
+import {
+  ARCHITECTURE_HARDENING_CONTRACT_VERSION,
+  credentialClassForMode,
+  stableArchitectureHash,
+  type ChildPolicySnapshot,
+  type CredentialReadiness,
+  type ProviderPolicySnapshot,
+  type SessionPin,
+} from '../architecture-hardening/contracts/contracts.js';
+import { createChildPolicySnapshot } from '../codex-app/child-policy/child-policy.js';
 import {
   DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
   DESKTOP_BRIDGE_LAUNCHD_LABEL,
@@ -42,15 +54,24 @@ export const CODEX_LB_DESKTOP_BRIDGE_SERVICE_SCHEMA = 'sks.codex-lb-desktop-brid
 const DEFAULT_ALLOWED_ORIGINS = ['app://codex'] as const;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60_000;
+const OPENROUTER_RESPONSES_BASE_URL = 'https://openrouter.ai/api/v1';
+
+type DesktopBridgeCredentialSource = CodexLbEnvLoadResult['source'] | 'openrouter-env' | 'openrouter-user-secret-store';
 
 export interface DesktopBridgeServiceSettings {
   schema: typeof CODEX_LB_DESKTOP_BRIDGE_SETTINGS_SCHEMA;
   listen_host: '127.0.0.1' | '::1';
   listen_port: number;
+  provider_mode: CodexProxyProviderMode;
+  allowed_models: string[];
   gateway_auth_transport: CodexLbGatewayAuthTransport;
   allowed_origins: string[];
   connect_timeout_ms: number;
   idle_timeout_ms: number;
+  catalog_version?: string;
+  registered_child_models?: string[];
+  session_pins?: SessionPin[];
+  require_session_pin?: boolean;
 }
 
 export interface DesktopBridgeServicePaths {
@@ -74,7 +95,7 @@ export interface DesktopBridgeServiceStatus {
   state: DesktopBridgePublicState | null;
   settings: DesktopBridgeServiceSettings | null;
   expected_config_generation: string | null;
-  credential_source: CodexLbEnvLoadResult['source'] | null;
+  credential_source: DesktopBridgeCredentialSource | null;
   blockers: string[];
 }
 
@@ -121,13 +142,53 @@ export function defaultDesktopBridgeServiceSettings(
     schema: CODEX_LB_DESKTOP_BRIDGE_SETTINGS_SCHEMA,
     listen_host: input.listen_host || DEFAULT_CODEX_LB_DESKTOP_BRIDGE_HOST,
     listen_port: input.listen_port ?? DEFAULT_CODEX_LB_DESKTOP_BRIDGE_PORT,
+    provider_mode: input.provider_mode || 'codex-lb',
+    allowed_models: [...(input.allowed_models || [])],
     gateway_auth_transport: parseCodexLbGatewayAuthTransport(
       input.gateway_auth_transport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT
     ),
     allowed_origins: [...(input.allowed_origins || DEFAULT_ALLOWED_ORIGINS)],
     connect_timeout_ms: input.connect_timeout_ms ?? DEFAULT_CONNECT_TIMEOUT_MS,
-    idle_timeout_ms: input.idle_timeout_ms ?? DEFAULT_IDLE_TIMEOUT_MS
+    idle_timeout_ms: input.idle_timeout_ms ?? DEFAULT_IDLE_TIMEOUT_MS,
+    catalog_version: input.catalog_version,
+    registered_child_models: input.registered_child_models,
+    session_pins: input.session_pins,
+    require_session_pin: input.require_session_pin
   });
+}
+
+export function desktopBridgeArchitecturePolicy(settings: DesktopBridgeServiceSettings): {
+  policy: ProviderPolicySnapshot;
+  credential: CredentialReadiness;
+  child: ChildPolicySnapshot;
+  sessionPins: readonly SessionPin[];
+  requireSessionPin: boolean;
+} {
+  const mode = settings.provider_mode;
+  const allowedModels = [...settings.allowed_models];
+  const catalogVersion = settings.catalog_version
+    || `catalog-${stableArchitectureHash({ mode, allowed_models: [...allowedModels].sort() }).slice(0, 24)}`;
+  const seed: ProviderPolicySnapshot = {
+    schema: 'sks.provider-policy-snapshot.v1',
+    contract_version: ARCHITECTURE_HARDENING_CONTRACT_VERSION,
+    mode,
+    credential_class: credentialClassForMode(mode),
+    allowed_models: allowedModels,
+    child_policy_hash: '0'.repeat(64),
+    catalog_version: catalogVersion,
+  };
+  const registered = settings.registered_child_models === undefined
+    ? allowedModels
+    : settings.registered_child_models;
+  const child = createChildPolicySnapshot(seed, registered);
+  const policy = { ...seed, child_policy_hash: child.policy_hash };
+  return {
+    policy,
+    credential: { status: 'ready', reason_code: null },
+    child,
+    sessionPins: [...(settings.session_pins || [])],
+    requireSessionPin: settings.require_session_pin === true,
+  };
 }
 
 export async function resolveDesktopBridgeActivationSettings(
@@ -189,7 +250,8 @@ export async function resolveDesktopBridgeRuntimeConfig(
 ): Promise<{
   config: DesktopBridgeConfig;
   settings: DesktopBridgeServiceSettings;
-  loaded_env: CodexLbEnvLoadResult;
+  loaded_env: CodexLbEnvLoadResult | null;
+  credential_source: DesktopBridgeCredentialSource;
   paths: DesktopBridgeServicePaths;
 }> {
   const home = options.home || options.env?.HOME || process.env.HOME || os.homedir();
@@ -200,33 +262,31 @@ export async function resolveDesktopBridgeRuntimeConfig(
     ...(persisted || {}),
     ...(options.settings || {})
   });
-  const loadedEnv = await loadCodexLbEnv({
-    home,
-    ...(options.envPath ? { envPath: options.envPath } : {}),
-    ...(options.metadataPath ? { metadataPath: options.metadataPath } : {}),
-    ...(options.env ? { processEnv: options.env } : {})
-  });
-  if (!loadedEnv.base_url || !loadedEnv.secret_api_key || !loadedEnv.configured) {
-    throw new Error(
-      loadedEnv.credential_binding.blockers[0]
-      || loadedEnv.missing[0]
-      || 'codex_lb_credentials_unavailable'
-    );
-  }
+  if (!settings.allowed_models.length) throw new Error('desktop_bridge_provider_model_allowlist_empty');
+  const credentials = await resolveDesktopBridgeCredentials(settings, { ...options, home });
+  const architecture = desktopBridgeArchitecturePolicy(settings);
   return {
     config: {
       listenHost: settings.listen_host,
       listenPort: settings.listen_port,
-      remoteBaseUrl: loadedEnv.base_url,
-      gatewayKey: loadedEnv.secret_api_key,
-      gatewayAuthTransport: settings.gateway_auth_transport,
+      providerMode: settings.provider_mode,
+      allowedModels: settings.allowed_models,
+      providerPolicy: architecture.policy,
+      credentialReadiness: architecture.credential,
+      childPolicy: architecture.child,
+      sessionPins: architecture.sessionPins,
+      requireSessionPin: architecture.requireSessionPin,
+      remoteBaseUrl: credentials.remote_base_url,
+      gatewayKey: credentials.key,
+      gatewayAuthTransport: credentials.auth_transport,
       allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
       allowedOrigins: settings.allowed_origins,
       connectTimeoutMs: settings.connect_timeout_ms,
       idleTimeoutMs: settings.idle_timeout_ms
     },
     settings,
-    loaded_env: loadedEnv,
+    loaded_env: credentials.loaded_env,
+    credential_source: credentials.source,
     paths
   };
 }
@@ -259,13 +319,13 @@ export async function desktopBridgeServiceStatus(
   const installed = await exists(paths.launch_agent_path);
   const settings = await readDesktopBridgeServiceSettings(paths.settings_path).catch(() => null);
   let expectedConfigGeneration: string | null = null;
-  let credentialSource: CodexLbEnvLoadResult['source'] | null = null;
+  let credentialSource: DesktopBridgeCredentialSource | null = null;
   const credentialBlockers: string[] = [];
   if (settings) {
     try {
       const runtime = await resolveDesktopBridgeRuntimeConfig({ ...options, home, settingsPath: paths.settings_path });
       expectedConfigGeneration = desktopBridgeConfigGeneration(runtime.config);
-      credentialSource = runtime.loaded_env.source;
+      credentialSource = runtime.credential_source;
     } catch (error: unknown) {
       credentialBlockers.push(safeServiceError(error));
     }
@@ -314,18 +374,15 @@ export async function installAndStartDesktopBridgeService(
   if (platform !== 'darwin') {
     return desktopBridgeServiceStatus({ ...options, home, platform });
   }
-  const settings = await resolveDesktopBridgeActivationSettings({
+  let settings = await resolveDesktopBridgeActivationSettings({
     ...options,
     home,
     settingsPath: paths.settings_path
   });
-  const loadedEnv = await loadCodexLbEnv({
-    home,
-    ...(options.envPath ? { envPath: options.envPath } : {}),
-    ...(options.metadataPath ? { metadataPath: options.metadataPath } : {}),
-    ...(options.env ? { processEnv: options.env } : {})
-  });
-  if (!loadedEnv.base_url || !loadedEnv.secret_api_key || !loadedEnv.configured) {
+  let credentials: Awaited<ReturnType<typeof resolveDesktopBridgeCredentials>>;
+  try {
+    credentials = await resolveDesktopBridgeCredentials(settings, { ...options, home });
+  } catch (error: unknown) {
     return {
       schema: CODEX_LB_DESKTOP_BRIDGE_SERVICE_SCHEMA,
       ok: false,
@@ -339,20 +396,48 @@ export async function installAndStartDesktopBridgeService(
       state: await readDesktopBridgeState(paths.state_path).catch(() => null),
       settings,
       expected_config_generation: null,
-      credential_source: loadedEnv.source,
-      blockers: [
-        loadedEnv.credential_binding.blockers[0]
-        || loadedEnv.missing[0]
-        || 'codex_lb_credentials_unavailable'
-      ]
+      credential_source: null,
+      blockers: [safeServiceError(error)]
     };
+  }
+  if (!settings.allowed_models.length && settings.provider_mode === 'codex-lb' && credentials.loaded_env) {
+    const catalog = await readCodexLbModelCatalog({
+      loadedEnv: credentials.loaded_env,
+      gatewayAuthTransport: credentials.auth_transport
+    });
+    if (!catalog.ok || !catalog.models.length) {
+      return failedServiceStatus({
+        paths,
+        settings,
+        service: desktopBridgeLaunchService(options.uid),
+        status: 'credentials_unavailable',
+        credentialSource: credentials.source,
+        expectedConfigGeneration: null,
+        blocker: catalog.blockers[0] || 'codex_lb_model_catalog_unavailable'
+      });
+    }
+    settings = defaultDesktopBridgeServiceSettings({ ...settings, allowed_models: catalog.models });
+  }
+  if (!settings.allowed_models.length) {
+    return failedServiceStatus({
+      paths,
+      settings,
+      service: desktopBridgeLaunchService(options.uid),
+      status: 'credentials_unavailable',
+      credentialSource: credentials.source,
+      expectedConfigGeneration: null,
+      blocker: 'desktop_bridge_provider_model_allowlist_empty'
+    });
   }
   const config: DesktopBridgeConfig = {
     listenHost: settings.listen_host,
     listenPort: settings.listen_port,
-    remoteBaseUrl: loadedEnv.base_url,
-    gatewayKey: loadedEnv.secret_api_key,
-    gatewayAuthTransport: settings.gateway_auth_transport,
+    providerMode: settings.provider_mode,
+    allowedModels: settings.allowed_models,
+    ...desktopBridgeConfigArchitectureFields(settings),
+    remoteBaseUrl: credentials.remote_base_url,
+    gatewayKey: credentials.key,
+    gatewayAuthTransport: credentials.auth_transport,
     allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
     allowedOrigins: settings.allowed_origins,
     connectTimeoutMs: settings.connect_timeout_ms,
@@ -366,7 +451,7 @@ export async function installAndStartDesktopBridgeService(
       settings,
       service: desktopBridgeLaunchService(options.uid),
       status: 'credentials_unavailable',
-      credentialSource: loadedEnv.source,
+      credentialSource: credentials.source,
       expectedConfigGeneration: desktopBridgeConfigGeneration(config),
       blocker: safeBridgeErrorCode(error)
     });
@@ -379,7 +464,7 @@ export async function installAndStartDesktopBridgeService(
       settings,
       service: desktopBridgeLaunchService(options.uid),
       status: 'settings_missing',
-      credentialSource: loadedEnv.source,
+      credentialSource: credentials.source,
       expectedConfigGeneration: desktopBridgeConfigGeneration(config),
       blocker: 'desktop_bridge_sks_executable_missing'
     });
@@ -406,7 +491,6 @@ export async function installAndStartDesktopBridgeService(
     stderrPath: paths.stderr_log_path
   });
   await writeTextAtomic(paths.launch_agent_path, plist, { mode: 0o600 });
-  await fsp.chmod(paths.launch_agent_path, 0o600);
 
   const run = options.run || runProcess;
   const launchctl = options.launchctl || '/bin/launchctl';
@@ -431,7 +515,7 @@ export async function installAndStartDesktopBridgeService(
       settings,
       service,
       status: 'missing',
-      credentialSource: loadedEnv.source,
+      credentialSource: credentials.source,
       expectedConfigGeneration: desktopBridgeConfigGeneration(config),
       blocker: 'desktop_bridge_launchd_bootstrap_failed'
     });
@@ -568,6 +652,49 @@ export async function serveDesktopBridge(
   }
 }
 
+async function resolveDesktopBridgeCredentials(
+  settings: DesktopBridgeServiceSettings,
+  options: DesktopBridgeServiceOptions & { home: string }
+): Promise<{
+  remote_base_url: string;
+  key: string;
+  auth_transport: CodexLbGatewayAuthTransport;
+  source: DesktopBridgeCredentialSource;
+  loaded_env: CodexLbEnvLoadResult | null;
+}> {
+  if (settings.provider_mode === 'openrouter') {
+    const resolved = await resolveOpenRouterApiKey({ env: options.env || process.env });
+    if (!resolved.key) throw new Error('openrouter_key_missing');
+    return {
+      remote_base_url: OPENROUTER_RESPONSES_BASE_URL,
+      key: resolved.key,
+      auth_transport: 'authorization-bearer-compat',
+      source: resolved.source === 'env' ? 'openrouter-env' : 'openrouter-user-secret-store',
+      loaded_env: null
+    };
+  }
+  const loaded = await loadCodexLbEnv({
+    home: options.home,
+    ...(options.envPath ? { envPath: options.envPath } : {}),
+    ...(options.metadataPath ? { metadataPath: options.metadataPath } : {}),
+    ...(options.env ? { processEnv: options.env } : {})
+  });
+  if (!loaded.base_url || !loaded.secret_api_key || !loaded.configured) {
+    throw new Error(
+      loaded.credential_binding.blockers[0]
+      || loaded.missing[0]
+      || 'codex_lb_credentials_unavailable'
+    );
+  }
+  return {
+    remote_base_url: loaded.base_url,
+    key: loaded.secret_api_key,
+    auth_transport: settings.gateway_auth_transport,
+    source: loaded.source,
+    loaded_env: loaded
+  };
+}
+
 function validateDesktopBridgeServiceSettings(value: unknown): DesktopBridgeServiceSettings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('desktop_bridge_settings_invalid');
@@ -578,18 +705,36 @@ function validateDesktopBridgeServiceSettings(value: unknown): DesktopBridgeServ
   }
   const listenHost = row.listen_host;
   const listenPort = Number(row.listen_port);
+  const providerMode = row.provider_mode === undefined ? 'codex-lb' : row.provider_mode;
+  const allowedModels = Array.isArray(row.allowed_models)
+    ? [...new Set(row.allowed_models.map((entry) => String(entry || '').trim()).filter(Boolean))]
+    : [];
   const gatewayAuthTransport = parseCodexLbGatewayAuthTransport(row.gateway_auth_transport);
   const allowedOrigins = Array.isArray(row.allowed_origins)
     ? row.allowed_origins.map((entry) => String(entry || '').trim()).filter(Boolean)
     : [];
   const connectTimeoutMs = Number(row.connect_timeout_ms);
   const idleTimeoutMs = Number(row.idle_timeout_ms);
+  const catalogVersion = row.catalog_version === undefined ? undefined : String(row.catalog_version || '').trim();
+  const registeredChildModels = row.registered_child_models === undefined
+    ? undefined
+    : Array.isArray(row.registered_child_models)
+      ? [...new Set(row.registered_child_models.map((entry) => String(entry || '').trim()).filter(Boolean))]
+      : null;
+  const sessionPins = row.session_pins === undefined
+    ? undefined
+    : Array.isArray(row.session_pins) ? row.session_pins as SessionPin[] : null;
+  const requireSessionPin = row.require_session_pin === true;
   if (listenHost !== '127.0.0.1' && listenHost !== '::1') {
     throw new Error('desktop_bridge_settings_listen_host_invalid');
   }
   if (!Number.isInteger(listenPort) || listenPort < 49_152 || listenPort > 65_535) {
     throw new Error('desktop_bridge_settings_listen_port_invalid');
   }
+  if (providerMode !== 'codex-lb' && providerMode !== 'openrouter') {
+    throw new Error('desktop_bridge_settings_provider_mode_invalid');
+  }
+  if (allowedModels.length > 512) throw new Error('desktop_bridge_settings_allowed_models_too_many');
   if (!allowedOrigins.length) throw new Error('desktop_bridge_settings_allowed_origins_empty');
   if (!Number.isFinite(connectTimeoutMs) || connectTimeoutMs < 100 || connectTimeoutMs > 120_000) {
     throw new Error('desktop_bridge_settings_connect_timeout_invalid');
@@ -597,14 +742,42 @@ function validateDesktopBridgeServiceSettings(value: unknown): DesktopBridgeServ
   if (!Number.isFinite(idleTimeoutMs) || idleTimeoutMs < 1_000 || idleTimeoutMs > 86_400_000) {
     throw new Error('desktop_bridge_settings_idle_timeout_invalid');
   }
+  if (catalogVersion !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(catalogVersion)) {
+    throw new Error('desktop_bridge_settings_catalog_version_invalid');
+  }
+  if (registeredChildModels === null || (registeredChildModels?.length ?? 0) > 512) {
+    throw new Error('desktop_bridge_settings_child_models_invalid');
+  }
+  if (sessionPins === null || (sessionPins?.length ?? 0) > 10_000) {
+    throw new Error('desktop_bridge_settings_session_pins_invalid');
+  }
   return {
     schema: CODEX_LB_DESKTOP_BRIDGE_SETTINGS_SCHEMA,
     listen_host: listenHost,
     listen_port: listenPort,
+    provider_mode: providerMode,
+    allowed_models: allowedModels,
     gateway_auth_transport: gatewayAuthTransport,
     allowed_origins: [...new Set(allowedOrigins)],
     connect_timeout_ms: connectTimeoutMs,
-    idle_timeout_ms: idleTimeoutMs
+    idle_timeout_ms: idleTimeoutMs,
+    ...(catalogVersion === undefined ? {} : { catalog_version: catalogVersion }),
+    ...(registeredChildModels === undefined ? {} : { registered_child_models: registeredChildModels }),
+    ...(sessionPins === undefined ? {} : { session_pins: sessionPins }),
+    require_session_pin: requireSessionPin
+  };
+}
+
+function desktopBridgeConfigArchitectureFields(
+  settings: DesktopBridgeServiceSettings,
+): Pick<DesktopBridgeConfig, 'providerPolicy' | 'credentialReadiness' | 'childPolicy' | 'sessionPins' | 'requireSessionPin'> {
+  const architecture = desktopBridgeArchitecturePolicy(settings);
+  return {
+    providerPolicy: architecture.policy,
+    credentialReadiness: architecture.credential,
+    childPolicy: architecture.child,
+    sessionPins: architecture.sessionPins,
+    requireSessionPin: architecture.requireSessionPin,
   };
 }
 
@@ -715,7 +888,7 @@ function failedServiceStatus(input: {
   settings: DesktopBridgeServiceSettings;
   service: string;
   status: DesktopBridgeServiceStatus['status'];
-  credentialSource: CodexLbEnvLoadResult['source'] | null;
+  credentialSource: DesktopBridgeCredentialSource | null;
   expectedConfigGeneration: string | null;
   blocker: string;
 }): DesktopBridgeServiceStatus {

@@ -2,6 +2,12 @@
 
 SKS uses Codex App as the app-facing control surface for dollar-command skills, managed hooks, image generation, Codex Chrome Extension web verification, and native macOS Computer Use evidence.
 
+> Architecture note (2026-08-02): new Desktop provider work follows
+> [native OpenAI transport with exclusive SKS provider modes](architecture/native-openai-exclusive-provider-modes.md).
+> Later custom-provider and OpenCodex sections in this file remain legacy
+> compatibility/migration documentation and are superseded as the target
+> architecture. Their continued source presence is not a live-routing claim.
+
 ## Current Compatibility Baseline
 
 SKS 7.4.0 prefers the OpenAI Codex CLI/App channel `rust-v0.145.0` as the package-tracked latest, with the 0.145.0 SDK/CLI dependency graph, active release manifest, and App Server v2 schemas kept in lockstep for release proof. Runtime policy remains version-agnostic: feature routes capability-gate, and Menu Bar / Center induce updates to preferred latest. Hook output validation uses the vendored OpenAI Codex `latest` generated schemas plus the SKS zero-warning strict subset documented in [codex-cli-compat.md](codex-cli-compat.md). Codex 0.134-0.139 notes remain inherited historical compatibility evidence; they are not an exclusive product lock.
@@ -117,3 +123,32 @@ The Providers page also manages official subagent role preferences with `sks cod
 Imagegen/gpt-image-2 remains a Codex App capability first. UX-Review/PPT require generated gpt-image-2 callout evidence before verified visual claims. `npm run imagegen:capability` checks that the official Codex App `$imagegen` surface is visible, but full visual verification still needs an actual generated output file with hash/dimensions/provider metadata. Direct OpenAI API, Responses image-generation, codex-lb, or `CODEX_LB_API_KEY` fallback paths are non-Codex API fallbacks and do not satisfy Codex App imagegen evidence unless a separate API task is explicitly requested. When the official app, Chrome Extension, or OS blocks required capabilities, SKS records the external block and marks live verification unverified instead of substituting browser automation or prose-only critique.
 
 Secrets such as `CODEX_ACCESS_TOKEN`, `OPENAI_API_KEY`, and `CODEX_LB_API_KEY` are reported only as redacted presence states.
+
+## Hardened provider and Center behavior
+
+Codex continues to see provider identity `openai`. The managed bridge exposes
+only loopback endpoints and enforces one internal mode. The public bridge state
+shows provider mode and irreversible policy hashes, never credentials or
+account identifiers. Unknown or mismatched session/child metadata fails closed
+when strict pinning is enabled.
+
+SKS Center maintains an explicit action inventory. Every provider action has a
+handler, backend operation, loading state, success state, and recovery action.
+Provider changes render separate `config_saved`, `proxy_applied`,
+`catalog_refreshed`, and `new_session_ready` receipts. Existing sessions keep
+their pinned copy while the successful last-known-good becomes the default for
+new sessions. The menu-bar settings and retry actions remain present when
+Codex, the proxy, catalog, or network is unavailable.
+
+Normal launch, restart, and background refresh read SKS-owned Keychain items
+non-interactively. Development and production use different stable service
+names; official ChatGPT OAuth remains Codex-owned. Only an explicit Center
+Reconnect action can write an SKS key or allow authentication UI. The CLI
+setup path still maintains its owner-only env file for non-App consumers; the
+Center confirms both its backend configuration result and native Keychain
+write instead of treating either one alone as success.
+
+Implementation is contract-tested, including the UI action inventory and
+Keychain error matrix. A production Developer ID app plus configured UI-test
+bundle is still required for live repeated-restart proof; see
+[`run-signed-restart-qa.mjs`](../native/sks-menubar/UITests/run-signed-restart-qa.mjs).

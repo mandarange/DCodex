@@ -18,7 +18,7 @@ export async function computerUseCommand(command: any, args: any = []) {
   const action = args[0] || 'import';
   if (action === 'status' || action === 'doctor') {
     const result = await computerUseStatusReport();
-    if (flag(args, '--json')) return printJson(result);
+    if (flag(args, '--json')) return printJson(result, { failureExitCode: action === 'doctor' });
     console.log(`Computer Use status: ${result.status}`);
     if (result.guidance?.length) for (const line of result.guidance) console.log(`- ${line}`);
     if (!result.ok && action === 'doctor') process.exitCode = result.status === 'not_macos' ? 0 : 1;

@@ -1291,6 +1291,25 @@ export function looksLikeCodeChangingWork(prompt: any = '') {
     || /(코드|구현|개발|수정|변경|추가|삭제|해결|고쳐|바꿔|리팩터|마이그레이션)/i.test(text);
 }
 
+export type PromptExecutionEffect = 'read' | 'write' | 'auth' | 'security' | 'delete' | 'deploy' | 'dependency';
+
+/**
+ * Classifies the requested effect, not risky nouns. A prompt explaining deploy
+ * or authentication remains read-only until it asks to perform that action.
+ */
+export function classifyPromptExecutionEffect(prompt: any = ''): PromptExecutionEffect {
+  const text = String(prompt || '').trim();
+  const action = /(해줘|해라|진행|실행|적용|바꿔|수정|설치|삭제|배포|인증|로그인)/i.test(text)
+    || /\b(configure|execute|apply|change|modify|install|delete|remove|deploy|publish|authenticate)\b|\blog\s*in\b|\bsign\s*in\b/i.test(text);
+  if (!action) return 'read';
+  if (/(삭제|제거|지워|delete|remove|uninstall|purge)/i.test(text)) return 'delete';
+  if (/(배포|출시|게시|deploy|publish|release)/i.test(text)) return 'deploy';
+  if (/(인증|로그인|로그아웃|재연결|authenticate|log\s*(?:in|out)|sign\s*(?:in|out)|reconnect)/i.test(text)) return 'auth';
+  if (/(보안|권한|서명|키\s*회전|security|permission|signing|rotate\s+key)/i.test(text)) return 'security';
+  if (/(설치|업그레이드|의존성|install|upgrade|dependenc)/i.test(text)) return 'dependency';
+  return 'write';
+}
+
 export function looksLikeExecutionWork(prompt: any = '') {
   const text = String(prompt || '');
   return looksLikeCodeChangingWork(text)

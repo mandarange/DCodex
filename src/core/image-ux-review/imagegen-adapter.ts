@@ -166,16 +166,15 @@ export function createCodexAppImagegenAdapter(opts: any = {}): ImageUxReviewImag
         return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker: 'gpt_image_2_request_validation_failed', provider: 'codex_app_imagegen', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: null };
       }
       if (suppliedOutput && await exists(path.resolve(suppliedOutput))) {
-        const dest = path.join(input.output_dir, path.basename(String(suppliedOutput)));
-        await fsp.copyFile(path.resolve(suppliedOutput), dest);
-        const meta = await generatedImageMetadata(process.cwd(), dest, {
+        const referencedOutput = path.resolve(suppliedOutput);
+        const meta = await generatedImageMetadata(process.cwd(), referencedOutput, {
           source_screen_id: input.source_screen_id,
           provider_surface: 'codex_app_imagegen',
           output_id: opts.outputId || null,
           real_generated: true
         });
         const outputSource = manualOutput ? 'manual_attach' : 'auto_discovered_generated_images';
-        const imageContract = await writeGeneratedImagePathContract(input, dest, 'codex_app_imagegen').catch(() => null);
+        const imageContract = await writeGeneratedImagePathContract(input, referencedOutput, 'codex_app_imagegen').catch(() => null);
         await writeJsonAtomic(responseArtifact, {
           schema: 'sks.image-ux-gpt-image-2-response.v1',
           created_at: nowIso(),
@@ -184,7 +183,7 @@ export function createCodexAppImagegenAdapter(opts: any = {}): ImageUxReviewImag
           model: 'gpt-image-2',
           ok: true,
           status: 'generated',
-          output_image_path: dest,
+          output_image_path: referencedOutput,
           output_image_sha256: meta.sha256,
           output_sha256: meta.sha256,
           output_id: meta.output_id,
@@ -197,7 +196,7 @@ export function createCodexAppImagegenAdapter(opts: any = {}): ImageUxReviewImag
         return {
           ok: true,
           status: 'generated',
-          generated_image_path: dest,
+          generated_image_path: referencedOutput,
           output_id: opts.outputId || null,
           blocker: null,
           provider: 'codex_app_imagegen',
@@ -309,8 +308,7 @@ export function createFakeImagegenAdapter(opts: any = {}): ImageUxReviewImagegen
         return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker: 'gpt_image_2_request_validation_failed', provider: 'fake_imagegen_adapter', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
       }
       const sourcePath = path.resolve(input.source_image_path);
-      const out = path.join(input.output_dir, `fake-gpt-image-2-callout-${input.source_screen_id || 'screen'}.png`);
-      await fsp.copyFile(sourcePath, out);
+      const out = sourcePath;
       const meta = await generatedImageMetadata(process.cwd(), out, {
         source_screen_id: input.source_screen_id,
         provider_surface: 'fake_imagegen_adapter',

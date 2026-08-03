@@ -60,7 +60,8 @@ async function copyRuntimeConfigFiles() {
 async function copyNativeMenuBarSources() {
   await copyDirIfPresent(
     path.join(root, 'native', 'sks-menubar'),
-    path.join(distRoot, 'native', 'sks-menubar')
+    path.join(distRoot, 'native', 'sks-menubar'),
+    { excludedDirectories: new Set(['Tests', 'UITests', 'QAFixtures']) }
   );
 }
 
@@ -166,15 +167,16 @@ function stripGeneratedCommonJsExports(text, names) {
     .trimEnd();
 }
 
-async function copyDirIfPresent(from, to) {
+async function copyDirIfPresent(from, to, options = {}) {
   from = fileURLToPathIfNeeded(from);
   if (!fs.existsSync(from)) return;
   await fsp.rm(to, { recursive: true, force: true });
   await fsp.mkdir(to, { recursive: true });
   for (const entry of await fsp.readdir(from, { withFileTypes: true })) {
+    if (entry.isDirectory() && options.excludedDirectories?.has(entry.name)) continue;
     const source = path.join(from, entry.name);
     const target = path.join(to, entry.name);
-    if (entry.isDirectory()) await copyDirIfPresent(source, target);
+    if (entry.isDirectory()) await copyDirIfPresent(source, target, options);
     else if (entry.isFile()) await fsp.copyFile(source, target);
   }
 }

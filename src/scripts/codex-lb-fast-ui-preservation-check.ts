@@ -148,7 +148,7 @@ function assertConfig(
     ...(tableKey(text, 'model_providers.codex-lb', 'name') === 'codex-lb' ? [] : ['cli_provider_name_not_codex_lb']),
     ...(tableKey(text, 'model_providers.codex-lb', 'requires_openai_auth') === 'false' ? [] : ['cli_provider_requires_openai_auth_not_false']),
     ...(tableKey(text, 'model_providers.codex-lb', 'env_key') === 'CODEX_LB_API_KEY' ? [] : ['cli_provider_env_key_missing']),
-    ...(topLevelKey(text, 'model_provider') ? ['desktop_model_provider_must_not_be_selected'] : []),
+    ...(topLevelKey(text, 'model_provider') === 'openai' ? [] : ['desktop_model_provider_must_be_openai']),
     ...(expectBridge && topLevelKey(text, 'openai_base_url') !== bridgeBaseUrl ? ['native_bridge_base_url_missing'] : []),
     ...(!expectBridge && topLevelKey(text, 'openai_base_url') ? ['disabled_routing_still_has_openai_base_url'] : []),
     ...(topLevelKey(text, 'model') === 'future-codex-model' ? [] : ['user_model_not_preserved']),
