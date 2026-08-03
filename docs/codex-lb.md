@@ -177,8 +177,10 @@ Provider and auth invariants:
   not read it as fallback authentication.
 - **Use codex-lb** commits `[model_providers.codex-lb]` and top-level
   `model_provider = "codex-lb"` as one guarded transaction. The provider uses
-  the configured remote `base_url`, `env_key = "CODEX_LB_API_KEY"`, and
-  `requires_openai_auth = false`. A provider definition without its requested
+  the configured remote `base_url`,
+  `env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }`, and
+  `requires_openai_auth = false`, without an additional `env_key` Bearer path.
+  A provider definition without its requested
   active selection is drift, not an enabled state.
 - Remote base URLs, including a codex-lb Docker deployment on another machine,
   are first-class. No localhost-only assumption, implicit OAuth substitution,
@@ -217,7 +219,8 @@ Provider and auth invariants:
   `desktop_dual_auth_compat_unavailable`. It is never reported ready and cannot
   be activated through CLI, setup, Center, repair, or internal routing APIs.
 - The codex-lb provider uses `name = "codex-lb"`,
-  `env_key = "CODEX_LB_API_KEY"`, and `requires_openai_auth = false`.
+  `env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }`, and
+  `requires_openai_auth = false`, with no `env_key` Bearer authentication.
   Credential-only setup may leave it stored and unselected; the explicit
   Center/CLI **Use codex-lb** action promotes that same definition to the active
   top-level selection atomically.

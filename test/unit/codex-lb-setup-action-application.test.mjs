@@ -59,7 +59,8 @@ test('codex-lb setup applies selected actions and reports drift-free writes', as
     assert.equal(json.routing_truth?.status, 'verified');
     assert.equal(await exists(path.join(home, '.codex', 'sks-codex-lb.env')), true);
     assert.match(config, /# sks-codex-lb-managed-provider-selection\nmodel_provider = "codex-lb"/);
-    assert.match(config, /^\s*env_key\s*=\s*"CODEX_LB_API_KEY"/m);
+    assert.doesNotMatch(config, /^\s*env_key\s*=/m);
+    assert.match(config, /^\s*env_http_headers\s*=\s*\{\s*"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"\s*\}$/m);
     assert.match(config, /^\s*requires_openai_auth\s*=\s*false/m);
     assert.equal(json.tool_catalog?.status, 'not_bound_for_cli_provider');
     assert.deepEqual(json.drift, []);

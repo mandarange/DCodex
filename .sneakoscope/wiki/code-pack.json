@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-03T07:42:49.902Z",
-  "git_head_sha": "5481b12c53af95747efdae81790bcc8626d5e4a6",
+  "generated_at": "2026-08-03T15:52:19.507Z",
+  "git_head_sha": "9df65b8c77a8dda8e34c25eb10a28e61041f9f87",
   "source_file_count": 2919,
-  "index_digest": "311801fb6326097780694c814b6e815850f8b007df91520e857e2c082d17c691",
+  "index_digest": "f674cea15fc0b11adba9d63af52b4c2ec337919f498977468f32141fabd73ade",
   "entries": [
     {
       "id": "code:core-triwiki",
@@ -1845,6 +1845,27 @@
       "token_cost": 53
     },
     {
+      "id": "code:core-provider",
+      "text": "core-provider is a module at src/core/provider (4 files, low risk). Key exports: DEFAULT_SUBAGENT_EFFORT, LUNA_SUBAGENT_EFFORT, LbHealth, ModelChoice, ModelReasoning, and 45 more. Depends on: core, core-codex, core-codex-native, core-subagents, core-text.",
+      "citations": [
+        {
+          "path": "src/core/provider/provider-badge.ts"
+        },
+        {
+          "path": "src/core/provider/model-router.ts"
+        },
+        {
+          "path": "src/core/provider/provider-self-heal.ts"
+        },
+        {
+          "path": "src/core/provider/provider-context.ts"
+        }
+      ],
+      "trust_score": 0.8,
+      "freshness": "fresh",
+      "token_cost": 64
+    },
+    {
       "id": "code:core-source-intelligence",
       "text": "core-source-intelligence is a module at src/core/source-intelligence (5 files, low risk). Key exports: APPSHOTS_EVIDENCE_SCHEMA, AppshotsCapability, AppshotsEvidence, AppshotsOperatorPolicy, AppshotsSourceMetadata, and 38 more. Depends on: core, core-codex, core-super-search.",
       "citations": [
@@ -1867,27 +1888,6 @@
       "trust_score": 0.8,
       "freshness": "fresh",
       "token_cost": 69
-    },
-    {
-      "id": "code:core-provider",
-      "text": "core-provider is a module at src/core/provider (4 files, low risk). Key exports: DEFAULT_SUBAGENT_EFFORT, LUNA_SUBAGENT_EFFORT, LbHealth, ModelChoice, ModelReasoning, and 44 more. Depends on: core, core-codex, core-codex-native, core-subagents, core-text.",
-      "citations": [
-        {
-          "path": "src/core/provider/provider-badge.ts"
-        },
-        {
-          "path": "src/core/provider/model-router.ts"
-        },
-        {
-          "path": "src/core/provider/provider-self-heal.ts"
-        },
-        {
-          "path": "src/core/provider/provider-context.ts"
-        }
-      ],
-      "trust_score": 0.8,
-      "freshness": "fresh",
-      "token_cost": 64
     },
     {
       "id": "code:cli-__tests__",

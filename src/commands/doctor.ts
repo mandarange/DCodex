@@ -604,7 +604,7 @@ export async function codexLbRoutingTruthForStatus(
     const baseUrl = loaded.base_url || status.base_url || null;
     const configuredHost = publicUrlHost(baseUrl);
     const authTransport = mode === 'cli-provider'
-      ? 'authorization-bearer'
+      ? 'x-codex-lb-api-key'
       : doctorBridgeRoutingTransport(status, receipt);
     const contextReceipt = await readCodexLbRoutingTruthReceipt({
       ...receiptOptions,
@@ -631,7 +631,7 @@ export async function codexLbRoutingTruthForStatus(
       baseUrl: status.base_url || null,
       apiKey: null,
       authTransport: mode === 'cli-provider'
-        ? 'authorization-bearer'
+        ? 'x-codex-lb-api-key'
         : doctorBridgeRoutingTransport(status, receipt),
       measure: false
     }, {

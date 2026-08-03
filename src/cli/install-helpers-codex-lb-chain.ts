@@ -167,16 +167,20 @@ function codexLbServiceTierEvidence(...responses: any[]) {
   };
 }
 
-async function fetchCodexLbResponse(fetchImpl: any, endpoint: any, apiKey: any, body: any, timeoutMs: any) {
+function codexLbGatewayHeaders(apiKey: any, authTransport: any = 'x-codex-lb-api-key') {
+  const credentialHeader = String(authTransport).startsWith('authorization-bearer')
+    ? { authorization: `Bearer ${String(apiKey)}` }
+    : { 'X-Codex-LB-API-Key': String(apiKey) };
+  return { ...credentialHeader, 'content-type': 'application/json' };
+}
+
+async function fetchCodexLbResponse(fetchImpl: any, endpoint: any, apiKey: any, body: any, timeoutMs: any, authTransport: any = 'x-codex-lb-api-key') {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs).unref?.();
   try {
     const response = await fetchImpl(endpoint, {
       method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json'
-      },
+      headers: codexLbGatewayHeaders(apiKey, authTransport),
       body: JSON.stringify(body),
       redirect: 'error',
       signal: controller.signal
@@ -315,7 +319,7 @@ export async function testCodexLbConnection(status: any = {}, opts: any = {}) {
   };
   const nowMs = typeof opts.nowMs === 'function' ? opts.nowMs : Date.now;
   const startedAt = nowMs();
-  const fetched = await fetchCodexLbResponse(fetchImpl, endpoint, apiKey, body, timeoutMs);
+  const fetched = await fetchCodexLbResponse(fetchImpl, endpoint, apiKey, body, timeoutMs, opts.gatewayAuthTransport);
   const latencyMs = Math.max(0, Math.round(nowMs() - startedAt));
   if (!fetched.ok) {
     const error = redactSecretText(
@@ -422,6 +426,7 @@ export async function checkCodexLbResponseChain(status: any = {}, opts: any = {}
   const model = String(opts.model || env.SKS_CODEX_MODEL || env.CODEX_MODEL || '').trim();
   if (!model) return { ok: true, status: 'skipped', skipped: true, reason: 'model_unselected_use_explicit_model_or_codex_catalog' };
   const timeoutMs = Number(opts.timeoutMs || env.SKS_CODEX_LB_CHAIN_CHECK_TIMEOUT_MS || 8000);
+  const gatewayAuthTransport = opts.gatewayAuthTransport || 'x-codex-lb-api-key';
   const serviceTier = opts.fastMode === true || opts.serviceTier === 'fast' || opts.serviceTier === CODEX_LB_CANONICAL_FAST_SERVICE_TIER
     ? CODEX_LB_CANONICAL_FAST_SERVICE_TIER
     : null;
@@ -436,7 +441,7 @@ export async function checkCodexLbResponseChain(status: any = {}, opts: any = {}
     tool_choice: 'auto',
     reasoning: { effort: 'low' }
   };
-  const first = await fetchCodexLbResponse(fetchImpl, endpoint, apiKey, baseBody, timeoutMs);
+  const first = await fetchCodexLbResponse(fetchImpl, endpoint, apiKey, baseBody, timeoutMs, gatewayAuthTransport);
   if (!first.ok || !first.response_id) {
     return recordCodexLbChainHealth(await writeCodexLbChainCache({
       ok: false,
@@ -449,7 +454,7 @@ export async function checkCodexLbResponseChain(status: any = {}, opts: any = {}
       error: redactSecretText(first.error_payload?.error?.message || first.error_payload?.response?.error?.message || first.text || 'codex-lb first Responses request failed', [apiKey])
     }, { endpoint, home, opts, env }), opts);
   }
-  const second = await fetchCodexLbResponse(fetchImpl, endpoint, apiKey, { ...baseBody, previous_response_id: first.response_id }, timeoutMs);
+  const second = await fetchCodexLbResponse(fetchImpl, endpoint, apiKey, { ...baseBody, previous_response_id: first.response_id }, timeoutMs, gatewayAuthTransport);
   if (second.ok) return recordCodexLbChainHealth(await writeCodexLbChainCache({ ok: true, status: 'chain_ok', endpoint, response_id: first.response_id, chained_response_id: second.response_id || null, http_status: second.status, requested_service_tier: serviceTier, service_tier_evidence: codexLbServiceTierEvidence(first, second) }, { endpoint, home, opts, env }), opts);
   const previousMissing = isPreviousResponseNotFound(second.error_payload || second.json || second.text);
   return recordCodexLbChainHealth(await writeCodexLbChainCache({

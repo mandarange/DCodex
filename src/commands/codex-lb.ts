@@ -129,7 +129,8 @@ export async function run(command: any, args: any = []) {
     const routingTruth = await measureAndWriteCodexLbRoutingTruth({
       selected: status.selected === true,
       baseUrl: loadedEnv.base_url,
-      apiKey: loadedEnv.secret_api_key
+      apiKey: loadedEnv.secret_api_key,
+      authTransport: 'x-codex-lb-api-key'
     }, {
       home: path.dirname(path.dirname(status.env_path))
     });
@@ -165,7 +166,8 @@ export async function run(command: any, args: any = []) {
     const routingTruth = await measureAndWriteCodexLbRoutingTruth({
       selected: status.selected === true,
       baseUrl: loadedEnv.base_url,
-      apiKey: loadedEnv.secret_api_key
+      apiKey: loadedEnv.secret_api_key,
+      authTransport: 'x-codex-lb-api-key'
     }, {
       home: path.dirname(path.dirname(status.env_path))
     });
@@ -565,7 +567,7 @@ export async function run(command: any, args: any = []) {
           selected: result.codex_lb?.selected === true,
           baseUrl: result.base_url || null,
           apiKey: options.apiKey,
-          authTransport: 'authorization-bearer'
+          authTransport: 'x-codex-lb-api-key'
         }, {
           home: path.dirname(path.dirname(result.env_path))
         })

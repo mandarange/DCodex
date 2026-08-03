@@ -16,13 +16,17 @@ function jsonResponse(payload: unknown, status: number): Response {
 }
 
 test('cli image probe verifies a real generation carried by the gateway stream', async () => {
-  const calls: Array<{ body: any; auth: string | null }> = []
+  const calls: Array<{ body: any; auth: string | null; gatewayApiKey: string | null }> = []
   const result = await probeCodexLbCliImageGeneration({
     baseUrl: BASE,
     apiKey: KEY,
     model: MODEL,
     fetchImpl: (async (url: any, init: any) => {
-      calls.push({ body: JSON.parse(String(init.body)), auth: init.headers.authorization || null })
+      calls.push({
+        body: JSON.parse(String(init.body)),
+        auth: init.headers.authorization || null,
+        gatewayApiKey: init.headers['X-Codex-LB-API-Key'] || null
+      })
       return sseResponse([
         { type: 'response.created', response: { id: 'resp_img_1' } },
         { type: 'response.image_generation_call.in_progress' },
@@ -40,7 +44,8 @@ test('cli image probe verifies a real generation carried by the gateway stream',
   assert.equal(result.artifact_materialized, true)
   assert.deepEqual(result.blockers, [])
   assert.equal(calls.length, 1)
-  assert.equal(calls[0]?.auth, `Bearer ${KEY}`)
+  assert.equal(calls[0]?.auth, null)
+  assert.equal(calls[0]?.gatewayApiKey, KEY)
   assert.deepEqual(calls[0]?.body.tools, [{ type: 'image_generation' }])
   assert.deepEqual(calls[0]?.body.tool_choice, { type: 'image_generation' })
   assert.equal(calls[0]?.body.model, MODEL)

@@ -388,6 +388,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
         provider: useResponsesImageTool ? 'openai_responses_image_generation' : 'openai_images_api',
         endpoint: effectiveEndpoint,
         auth_source: auth.auth_source,
+        auth_transport: auth.auth_transport,
         model: 'gpt-image-2',
         responses_model: useResponsesImageTool ? responsesModel : null,
         source_screen_id: input.source_screen_id,
@@ -454,7 +455,12 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
           const { result: attemptResult, attempts, retry_log } = await withResponsesRetry(async () => {
             const response = await fetchWithTimeout(effectiveEndpoint, {
               method: 'POST',
-              headers: { authorization: `Bearer ${auth.apiKey}`, 'content-type': 'application/json' },
+              headers: {
+                ...(auth.auth_transport === 'x-codex-lb-api-key'
+                  ? { 'X-Codex-LB-API-Key': auth.apiKey }
+                  : { authorization: `Bearer ${auth.apiKey}` }),
+                'content-type': 'application/json'
+              },
               body: JSON.stringify({
                 model: responsesModel,
                 input: [{
@@ -657,6 +663,9 @@ export async function generateGptImage2CalloutReview(input: ImageUxReviewImagege
     ...(opts.openai || {}),
     codexLb: allowCodexLbApiFallback ? opts.openai?.codexLb || capability?.codex_lb || null : null,
     codexLbTarget,
+    codexLbAuthTransport: capability?.codex_lb?.cli_contract === true
+      ? 'x-codex-lb-api-key'
+      : codexLbTarget?.auth_transport,
     allowCodexLbApiFallback
   };
   const codexAdapter = createCodexAppImagegenAdapter({
@@ -711,6 +720,7 @@ async function resolveImagesApiAuth(opts: any = {}) {
     return {
       apiKey: openAiKey,
       auth_source: 'OPENAI_API_KEY',
+      auth_transport: 'authorization-bearer',
       api_key_source: null,
       responses_model: responsesImagegenModel(opts),
       responses_model_source: responsesImagegenModel(opts) ? 'explicit' : null,
@@ -723,6 +733,7 @@ async function resolveImagesApiAuth(opts: any = {}) {
     return {
       apiKey: null,
       auth_source: null,
+      auth_transport: 'authorization-bearer',
       api_key_source: null,
       responses_model: responsesImagegenModel(opts),
       responses_model_source: null,
@@ -749,6 +760,9 @@ function codexLbImagesApiAuth(opts: any, codexLb: any, target: any) {
   return {
     apiKey: codexLbKey || null,
     auth_source: envKey,
+    auth_transport: opts.codexLbAuthTransport || target?.auth_transport || (codexLb?.cli_contract === true
+      ? 'x-codex-lb-api-key'
+      : 'authorization-bearer'),
     api_key_source: target?.api_key_source || null,
     // config.toml's `model` is often a slug this key cannot use; the served
     // catalog is the only source that is safe to default to.

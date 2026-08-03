@@ -247,17 +247,18 @@ test('default Doctor routing probe performs one authenticated measurement and wr
     'name = "codex-lb"',
     `base_url = "${BASE_URL}"`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
   ].join('\n'));
   const receiptPath = path.join(setup.codexHome, 'routing-truth.json');
-  const requests: Array<{ url: string; authorization: string | null }> = [];
+  const requests: Array<{ url: string; authorization: string | null; gatewayKey: string | null }> = [];
   const fetchImpl: typeof fetch = async (input, init) => {
     requests.push({
       url: String(input),
-      authorization: new Headers(init?.headers).get('authorization')
+      authorization: new Headers(init?.headers).get('authorization'),
+      gatewayKey: new Headers(init?.headers).get('x-codex-lb-api-key')
     });
     return new Response('{"data":[]}', { status: 200 });
   };
@@ -278,7 +279,8 @@ test('default Doctor routing probe performs one authenticated measurement and wr
   const request = requests[0];
   assert.ok(request);
   assert.match(request.url, /\/backend-api\/codex\/models$/);
-  assert.equal(request.authorization, `Bearer ${API_KEY}`);
+  assert.equal(request.authorization, null);
+  assert.equal(request.gatewayKey, API_KEY);
   const receiptText = await fsp.readFile(receiptPath, 'utf8');
   assert.doesNotMatch(receiptText, new RegExp(API_KEY));
   assert.equal((await fsp.stat(receiptPath)).mode & 0o777, 0o600);

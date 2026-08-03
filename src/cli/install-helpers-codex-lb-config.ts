@@ -258,7 +258,7 @@ function cliProviderBlock(remoteBaseUrl: string): string {
     'name = "codex-lb"',
     `base_url = ${JSON.stringify(remoteBaseUrl)}`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false'
   ].join('\n');

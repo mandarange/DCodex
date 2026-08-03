@@ -173,7 +173,9 @@ function assertFastProfile(
     ...(parsed.model_provider === 'openai' ? [] : ['desktop_model_provider_must_be_openai']),
     ...(provider.name === 'codex-lb' ? [] : ['codex_lb_cli_provider_name_mismatch']),
     ...(provider.requires_openai_auth === false ? [] : ['codex_lb_cli_requires_openai_auth_not_false']),
-    ...(provider.env_key === 'CODEX_LB_API_KEY' ? [] : ['codex_lb_cli_env_key_missing']),
+    ...(provider.env_http_headers?.['X-Codex-LB-API-Key'] === 'CODEX_LB_API_KEY'
+      ? []
+      : ['codex_lb_cli_gateway_header_env_missing']),
     ...(provider.wire_api === 'responses' ? [] : ['codex_lb_wire_api_not_responses']),
     ...(expectBridge && parsed.openai_base_url === bridgeBaseUrl ? [] : expectBridge ? ['native_bridge_base_url_missing'] : []),
     ...(!expectBridge && parsed.openai_base_url !== undefined ? ['disabled_routing_still_has_openai_base_url'] : []),

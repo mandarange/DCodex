@@ -30,7 +30,7 @@ export interface CodexLbCliImageProbeInput {
 export const DEFAULT_CLI_IMAGE_PROBE_TIMEOUT_MS = 90_000
 
 // CLI-plane verification: authenticate exactly like the Codex CLI codex-lb
-// provider contract (Authorization: Bearer from env_key) and run one real,
+// provider contract (X-Codex-LB-API-Key from env_http_headers) and run one real,
 // minimal image generation through the gateway. A tool that merely round-trips
 // a text request does not prove image_generation, so the probe forces the tool
 // once and falls back to an acceptance check only when the gateway rejects the
@@ -131,7 +131,7 @@ async function postImageProbe(
     const response = await fetchImpl(endpoint, {
       method: 'POST',
       headers: {
-        authorization: `Bearer ${apiKey}`,
+        'X-Codex-LB-API-Key': apiKey,
         'content-type': 'application/json'
       },
       body: JSON.stringify({

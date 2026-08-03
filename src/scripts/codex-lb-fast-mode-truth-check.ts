@@ -17,7 +17,7 @@ await fs.writeFile(path.join(home, '.codex', 'config.toml'), [
   'name = "codex-lb"',
   'base_url = "https://lb.example.test/backend-api/codex"',
   'wire_api = "responses"',
-  'env_key = "CODEX_LB_API_KEY"',
+  'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
   'supports_websockets = true',
   'requires_openai_auth = false',
   ''
@@ -52,6 +52,7 @@ const requestedOnly = await runFastCheck({
 const ok = chain.ok === true
   && chain.status === 'fast_verified'
   && calls[0]?.body?.service_tier === 'priority'
+  && calls.every((call) => call.authorization === null && call.gatewayKey === 'sk-fixture')
   && requestedOnly.ok === false
   && requestedOnly.status === 'fast_requested_but_actual_unverified'
   && requestedOnly.blockers.includes('codex_lb_actual_fast_service_tier_unverified');
@@ -60,6 +61,7 @@ console.log(JSON.stringify({
   schema: 'sks.codex-lb-fast-mode-truth-check.v1',
   ok,
   priority_request_sent: calls[0]?.body?.service_tier === 'priority',
+  custom_header_transport_verified: calls.every((call) => call.authorization === null && call.gatewayKey === 'sk-fixture'),
   verified_case: chain,
   requested_only_case: requestedOnly,
   blockers: ok ? [] : ['codex_lb_fast_mode_truth_check_failed']
@@ -86,7 +88,12 @@ async function runFastCheck(env: NodeJS.ProcessEnv) {
         });
       }
       const body = JSON.parse(String(init.body || '{}'));
-      calls.push({ body });
+      const headers = new Headers(init.headers);
+      calls.push({
+        body,
+        authorization: headers.get('authorization'),
+        gatewayKey: headers.get('x-codex-lb-api-key')
+      });
       const id = calls.length % 2 === 1 ? 'resp_fast_1' : 'resp_fast_2';
       const actual = env.SKS_TEST_FAST_ACTUAL_DEFAULT === '1' ? 'default' : 'priority';
       return new Response(JSON.stringify({

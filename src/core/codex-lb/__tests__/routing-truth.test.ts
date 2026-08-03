@@ -16,6 +16,7 @@ const BASE_URL = 'https://lb.example.test/backend-api/codex';
 test('measured routing truth records redacted host, auth outcome, time, and latency', async () => {
   const ticks = [10, 35];
   let authorization = '';
+  let gatewayKey = '';
   const truth = await measureCodexLbRoutingTruth({
     selected: true,
     baseUrl: BASE_URL,
@@ -24,6 +25,7 @@ test('measured routing truth records redacted host, auth outcome, time, and late
     nowIso: () => '2026-08-01T00:00:00.000Z',
     fetchImpl: async (_url, init) => {
       authorization = String((init?.headers as Record<string, string>)?.Authorization || '');
+      gatewayKey = String((init?.headers as Record<string, string>)?.['X-Codex-LB-API-Key'] || '');
       return new Response('{"data":[]}', { status: 200 });
     }
   });
@@ -33,12 +35,13 @@ test('measured routing truth records redacted host, auth outcome, time, and late
   assert.equal(truth.mode, 'cli-provider');
   assert.equal(truth.configured_host, 'lb.example.test');
   assert.equal(truth.actual_host, 'lb.example.test');
-  assert.equal(truth.auth_transport, 'authorization-bearer');
+  assert.equal(truth.auth_transport, 'x-codex-lb-api-key');
   assert.equal(truth.auth_outcome, 'accepted');
   assert.equal(truth.measured_at, '2026-08-01T00:00:00.000Z');
   assert.equal(truth.checked_at, '2026-08-01T00:00:00.000Z');
   assert.equal(truth.latency_ms, 25);
-  assert.match(authorization, /^Bearer /);
+  assert.equal(authorization, '');
+  assert.equal(gatewayKey, 'sk-clb-routing-truth-secret');
   assert.doesNotMatch(JSON.stringify(truth), /routing-truth-secret/);
 });
 
@@ -134,7 +137,7 @@ test('routing truth receipt is atomic, owner-only, secret-free, and stale receip
   assert.equal(persisted.latency_ms, 14);
   assert.equal(persisted.configured_host, 'lb.example.test');
   assert.equal(persisted.actual_host, 'lb.example.test');
-  assert.equal(persisted.auth_transport, 'authorization-bearer');
+  assert.equal(persisted.auth_transport, 'x-codex-lb-api-key');
   assert.equal(persisted.auth_outcome, 'accepted');
   assert.equal(persisted.http_status, 200);
   assert.deepEqual(persisted.blockers, []);
@@ -146,7 +149,7 @@ test('routing truth receipt is atomic, owner-only, secret-free, and stale receip
     expectedMode: 'cli-provider',
     expectedSelected: true,
     expectedConfiguredHost: 'lb.example.test',
-    expectedAuthTransport: 'authorization-bearer'
+    expectedAuthTransport: 'x-codex-lb-api-key'
   });
   assert.equal(stale?.status, 'stale');
   assert.equal(stale?.ok, false);
@@ -160,7 +163,7 @@ test('routing truth receipt is atomic, owner-only, secret-free, and stale receip
     expectedMode: 'cli-provider',
     expectedSelected: true,
     expectedConfiguredHost: 'lb.example.test',
-    expectedAuthTransport: 'authorization-bearer'
+    expectedAuthTransport: 'x-codex-lb-api-key'
   });
   const second = await readFreshCodexLbRoutingTruthStamp({
     receiptPath,
@@ -168,7 +171,7 @@ test('routing truth receipt is atomic, owner-only, secret-free, and stale receip
     expectedMode: 'cli-provider',
     expectedSelected: true,
     expectedConfiguredHost: 'lb.example.test',
-    expectedAuthTransport: 'authorization-bearer'
+    expectedAuthTransport: 'x-codex-lb-api-key'
   });
   assert.ok(first);
   assert.deepEqual(second, first);

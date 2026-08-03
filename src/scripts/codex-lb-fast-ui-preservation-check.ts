@@ -147,7 +147,9 @@ function assertConfig(
     ...(hasTable(text, 'model_providers.codex-lb') ? [] : ['codex_lb_provider_table_missing']),
     ...(tableKey(text, 'model_providers.codex-lb', 'name') === 'codex-lb' ? [] : ['cli_provider_name_not_codex_lb']),
     ...(tableKey(text, 'model_providers.codex-lb', 'requires_openai_auth') === 'false' ? [] : ['cli_provider_requires_openai_auth_not_false']),
-    ...(tableKey(text, 'model_providers.codex-lb', 'env_key') === 'CODEX_LB_API_KEY' ? [] : ['cli_provider_env_key_missing']),
+    ...(tableEnvHttpHeader(text, 'model_providers.codex-lb', 'X-Codex-LB-API-Key') === 'CODEX_LB_API_KEY'
+      ? []
+      : ['cli_provider_gateway_header_env_missing']),
     ...(topLevelKey(text, 'model_provider') === 'openai' ? [] : ['desktop_model_provider_must_be_openai']),
     ...(expectBridge && topLevelKey(text, 'openai_base_url') !== bridgeBaseUrl ? ['native_bridge_base_url_missing'] : []),
     ...(!expectBridge && topLevelKey(text, 'openai_base_url') ? ['disabled_routing_still_has_openai_base_url'] : []),
@@ -163,6 +165,14 @@ function hasLegacyFastModeTables(text: string) {
 
 function hasTable(text: string, table: string) {
   return new RegExp(`(^|\\n)\\[${escapeRegExp(table)}\\](?=\\n|$)`).test(text)
+}
+
+function tableEnvHttpHeader(text: string, table: string, header: string) {
+  const tableMatch = text.match(new RegExp(`(^|\\n)\\[${escapeRegExp(table)}\\]([\\s\\S]*?)(?=\\n\\[[^\\]]+\\]|\\s*$)`))
+  const body = tableMatch?.[2] || ''
+  const match = body.match(/(?:^|\n)\s*env_http_headers\s*=\s*\{([^}]*)\}/)
+  const entries = match?.[1] || ''
+  return entries.match(new RegExp(`"${escapeRegExp(header)}"\\s*=\\s*"([^"]+)"`))?.[1] || ''
 }
 
 function tableKey(text: string, table: string, key: string) {

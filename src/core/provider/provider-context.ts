@@ -27,6 +27,7 @@ export interface ProviderContext {
     model_provider: string | null
     codex_lb_provider_block_present?: boolean
     codex_lb_env_key?: string | null
+    codex_lb_gateway_header_env_key?: string | null
     codex_lb_requires_openai_auth?: boolean | null
     codex_lb_available?: boolean
   }
@@ -46,9 +47,14 @@ export async function resolveProviderContext(input: {
   const configText = await readText(path.join(codexHome, 'config.toml'), '').catch(() => '')
   const configModelProvider = readTopLevelTomlString(configText, 'model_provider')
   const codexLbProviderBlockPresent = hasCodexLbProviderBlock(configText)
-  const codexLbEnvKey = codexLbProviderEnvKey(configText) || (codexLbProviderBlockPresent ? 'CODEX_LB_API_KEY' : null)
+  const codexLbBearerEnvKey = codexLbProviderBearerEnvKey(configText)
+  const codexLbGatewayHeaderEnvKey = codexLbProviderGatewayHeaderEnvKey(configText)
+  const codexLbEnvKey = codexLbGatewayHeaderEnvKey || codexLbBearerEnvKey
   const codexLbRequiresOpenAiAuth = codexLbProviderRequiresOpenAiAuth(configText)
-  const codexLbProviderValid = codexLbProviderBlockPresent && codexLbRequiresOpenAiAuth === true
+  const codexLbProviderValid = codexLbProviderBlockPresent
+    && codexLbGatewayHeaderEnvKey === 'CODEX_LB_API_KEY'
+    && codexLbBearerEnvKey === null
+    && codexLbRequiresOpenAiAuth === false
   const openaiKey = Boolean(String(env.OPENAI_API_KEY || '').trim())
   const lbKey = Boolean(String((codexLbEnvKey ? env[codexLbEnvKey] : env.CODEX_LB_API_KEY) || env.CODEX_LB_API_KEY || '').trim())
   const envProvider = String(env.SKS_MODEL_PROVIDER || env.CODEX_MODEL_PROVIDER || env.OPENAI_MODEL_PROVIDER || '').trim()
@@ -112,6 +118,7 @@ export async function resolveProviderContext(input: {
       model_provider: modelProvider,
       codex_lb_provider_block_present: codexLbProviderBlockPresent,
       codex_lb_env_key: codexLbEnvKey,
+      codex_lb_gateway_header_env_key: codexLbGatewayHeaderEnvKey,
       codex_lb_requires_openai_auth: codexLbRequiresOpenAiAuth,
       codex_lb_available: codexLbProviderValid && lbKey
     }
@@ -147,6 +154,17 @@ export function hasCodexLbProviderBlock(text: string): boolean {
 }
 
 export function codexLbProviderEnvKey(text: string): string | null {
+  return codexLbProviderGatewayHeaderEnvKey(text) || codexLbProviderBearerEnvKey(text)
+}
+
+export function codexLbProviderGatewayHeaderEnvKey(text: string): string | null {
+  const body = codexLbProviderBody(text)
+  if (body == null) return null
+  const inline = body.match(/(?:^|\n)\s*env_http_headers\s*=\s*\{([^}]*)\}/)?.[1] || ''
+  return inline.match(/"X-Codex-LB-API-Key"\s*=\s*"([^"]+)"/)?.[1] || null
+}
+
+function codexLbProviderBearerEnvKey(text: string): string | null {
   const body = codexLbProviderBody(text)
   return body == null ? null : readTopLevelTomlString(body, 'env_key')
 }

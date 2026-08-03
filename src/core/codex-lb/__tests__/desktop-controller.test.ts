@@ -119,6 +119,7 @@ test('native activation fails closed before config commit when the bridge cannot
 test('CLI ON verifies the remote route then atomically selects codex-lb', async (t) => {
   const setup = await fixture(t);
   let authorization = '';
+  let gatewayApiKey = '';
   let syncedMode = '';
   const result = await configureCodexLbCliMode({
     home: setup.home,
@@ -128,6 +129,7 @@ test('CLI ON verifies the remote route then atomically selects codex-lb', async 
     platform: 'linux',
     fetchImpl: async (_url, init) => {
       authorization = String((init?.headers as Record<string, string>)?.Authorization || '');
+      gatewayApiKey = String((init?.headers as Record<string, string>)?.['X-Codex-LB-API-Key'] || '');
       return new Response('{"data":[]}', { status: 200 });
     },
     syncCenterCredentialsImpl: async (options = { mode: 'disabled' }) => {
@@ -155,7 +157,8 @@ test('CLI ON verifies the remote route then atomically selects codex-lb', async 
   assert.equal((result.routing_truth as Record<string, unknown>).mode, 'cli-provider');
   assert.equal(syncedMode, 'cli-provider');
   assert.equal((result.center_credentials as Record<string, unknown>).ok, true);
-  assert.match(authorization, /^Bearer /);
+  assert.equal(authorization, '');
+  assert.equal(gatewayApiKey, API_KEY);
   const config = await fsp.readFile(setup.configPath, 'utf8');
   assert.match(config, /# sks-codex-lb-managed-provider-selection\nmodel_provider = "codex-lb"/);
   assert.match(config, new RegExp(`base_url = "${REMOTE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
@@ -172,7 +175,7 @@ test('CLI ON leaves an existing selected route fail-closed when the endpoint is 
     'name = "codex-lb"',
     `base_url = "${REMOTE}"`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -205,7 +208,7 @@ test('repair preserves selected provider and failed measured truth for the nativ
     'name = "codex-lb"',
     `base_url = "${REMOTE}"`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -264,7 +267,7 @@ test('selected CLI status with a missing key stays on codex-lb and reports no OA
     'name = "codex-lb"',
     `base_url = "${REMOTE}"`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -556,7 +559,7 @@ test('status separates the stored Desktop transport from the effective CLI trans
     'name = "codex-lb"',
     `base_url = "${REMOTE}"`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -589,7 +592,7 @@ test('status separates the stored Desktop transport from the effective CLI trans
     null
   );
   assert.equal(status.stored_gateway_auth_transport, 'authorization-bearer-compat');
-  assert.equal(status.gateway_auth_transport, 'authorization-bearer');
+  assert.equal(status.gateway_auth_transport, 'x-codex-lb-api-key');
 });
 
 test('compat activation rejects before transaction, bridge, routing, restart, or auth mutation', async (t) => {
@@ -651,7 +654,7 @@ test('status v2 infers managed modes without conflating identity and routing', a
     'name = "codex-lb"',
     `base_url = "${REMOTE}"`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -697,7 +700,7 @@ test('bridge status measures the remote upstream with its gateway transport and 
     'name = "codex-lb"',
     `base_url = "${REMOTE}"`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -753,7 +756,7 @@ test('status v2 reports stored CLI credentials as ready but inactive with the ef
     'name = "codex-lb"',
     `base_url = "${REMOTE}"`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -773,7 +776,7 @@ test('status v2 reports stored CLI credentials as ready but inactive with the ef
   assert.equal(status.credentials_ready, true);
   assert.equal(status.routing_active, false);
   assert.equal(status.activation_required, true);
-  assert.equal(status.gateway_auth_transport, 'authorization-bearer');
+  assert.equal(status.gateway_auth_transport, 'x-codex-lb-api-key');
   assert.equal((status.bridge as Record<string, unknown>).gateway_auth_transport, null);
 });
 
@@ -1008,7 +1011,7 @@ test('legacy migration quiesces the app, verifies bridge transport, and reports 
   assert.equal(await fsp.readFile(setup.authPath, 'utf8'), setup.auth);
 });
 
-test('cli-provider capabilities verify the CLI plane with bearer auth and a real image probe', async (t) => {
+test('cli-provider capabilities verify the CLI plane with custom-header auth and a real image probe', async (t) => {
   const setup = await fixture(t);
   await fsp.writeFile(setup.configPath, [
     'service_tier = "fast"',
@@ -1017,7 +1020,7 @@ test('cli-provider capabilities verify the CLI plane with bearer auth and a real
     'name = "codex-lb"',
     `base_url = "${REMOTE}"`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -1097,7 +1100,7 @@ test('cli-provider capabilities verify the CLI plane with bearer auth and a real
 
   assert.equal(report.mode, 'cli-provider');
   assert.equal(report.gateway_auth_transport.state, 'verified');
-  assert.equal(report.gateway_auth_transport.evidence.standard_authorization_bearer, true);
+  assert.equal(report.gateway_auth_transport.evidence.preferred_custom_header, true);
   assert.equal(report.provider_identity.state, 'verified');
   assert.equal(report.catalog.state, 'verified');
   assert.equal(report.model_picker.state, 'verified');
@@ -1108,10 +1111,11 @@ test('cli-provider capabilities verify the CLI plane with bearer auth and a real
   assert.equal(report.overall, 'verified');
   assert.equal(imageProbeCalls, 1);
   const modelsCall = fetchCalls.find((call) => call.url.endsWith('/models'));
-  assert.equal(modelsCall?.auth, `Bearer ${API_KEY}`);
-  assert.equal(modelsCall?.customHeader, null);
+  assert.equal(modelsCall?.auth, null);
+  assert.equal(modelsCall?.customHeader, API_KEY);
   const responsesCall = fetchCalls.find((call) => call.url.endsWith('/responses'));
-  assert.equal(responsesCall?.auth, `Bearer ${API_KEY}`);
+  assert.equal(responsesCall?.auth, null);
+  assert.equal(responsesCall?.customHeader, API_KEY);
 });
 
 test('rollback command rejects receipt traversal before touching the filesystem', async (t) => {

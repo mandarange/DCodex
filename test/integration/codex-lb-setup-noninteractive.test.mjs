@@ -16,7 +16,11 @@ test('codex-lb noninteractive setup configures env loader and metadata', async (
   const requests = [];
   const models = [catalogModel('gpt-5.6-luna'), catalogModel('gpt-5.6-terra'), catalogModel('gpt-5.6-sol')];
   const server = http.createServer((request, response) => {
-    requests.push({ url: request.url, authorization: request.headers.authorization });
+    requests.push({
+      url: request.url,
+      authorization: request.headers.authorization,
+      codexLbApiKey: request.headers['x-codex-lb-api-key']
+    });
     if (request.url === '/health') {
       response.writeHead(200, { 'content-type': 'application/json', 'x-app-version': '1.21.0-beta.3' });
       response.end('{"ok":true}');
@@ -55,7 +59,11 @@ test('codex-lb noninteractive setup configures env loader and metadata', async (
     assert.equal(json.routing_active, true);
     assert.equal(json.codex_lb.selected, true);
     assert.ok(requests.some((request) => request.url === '/health'));
-    assert.ok(requests.some((request) => request.url === '/backend-api/codex/models' && request.authorization === `Bearer ${apiKey}`));
+    assert.ok(requests.some((request) => (
+      request.url === '/backend-api/codex/models'
+      && request.authorization === undefined
+      && request.codexLbApiKey === apiKey
+    )));
     const metadata = JSON.parse(await fs.readFile(path.join(home, '.codex', 'sks-codex-lb.json'), 'utf8'));
     assert.equal(metadata.api_key.redacted, true);
     assert.ok(metadata.api_key.sha256);

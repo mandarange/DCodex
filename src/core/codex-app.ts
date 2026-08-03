@@ -934,7 +934,8 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
   const codexLbCliProviderContractOk = codexLbProviderPresent
     && hasTomlString(codexLbProvider, 'name', 'codex-lb')
     && hasTomlString(codexLbProvider, 'wire_api', 'responses')
-    && hasTomlString(codexLbProvider, 'env_key', 'CODEX_LB_API_KEY')
+    && /"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"/.test(codexLbProvider)
+    && !/(?:^|\n)\s*env_key\s*=/.test(codexLbProvider)
     && hasTomlBoolean(codexLbProvider, 'supports_websockets', true)
     && hasTomlBoolean(codexLbProvider, 'requires_openai_auth', false);
   const codexLbSelectedDefault = /(?:^|\n)\s*model_provider\s*=\s*"codex-lb"\s*(?:#.*)?(?=\n|$)/.test(topLevelToml(globalConfig));

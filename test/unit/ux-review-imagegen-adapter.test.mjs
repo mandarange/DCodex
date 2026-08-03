@@ -85,7 +85,11 @@ test('gpt-image-2 fallback uses codex-lb key only when explicitly enabled', asyn
   const calls = [];
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
-    calls.push({ url: String(url), authorization: init?.headers?.authorization || init?.headers?.Authorization || '' });
+    calls.push({
+      url: String(url),
+      authorization: init?.headers?.authorization || init?.headers?.Authorization || '',
+      gatewayKey: init?.headers?.['X-Codex-LB-API-Key'] || ''
+    });
     return new Response(JSON.stringify({
       id: 'resp_lb_1',
       output: [{
@@ -122,7 +126,8 @@ test('gpt-image-2 fallback uses codex-lb key only when explicitly enabled', asyn
     assert.equal(result.provider, 'openai_responses_image_generation');
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, 'https://lb.example.test/backend-api/codex/responses');
-    assert.equal(calls[0].authorization, 'Bearer sk-clb-test');
+    assert.equal(calls[0].authorization, '');
+    assert.equal(calls[0].gatewayKey, 'sk-clb-test');
   } finally {
     globalThis.fetch = previousFetch;
   }
@@ -232,6 +237,7 @@ test('a selected codex-lb provider wins over an unrelated OPENAI_API_KEY', async
     calls.push({
       url: String(url),
       authorization: init?.headers?.authorization || init?.headers?.Authorization || '',
+      gatewayKey: init?.headers?.['X-Codex-LB-API-Key'] || '',
       body: JSON.parse(String(init?.body || '{}'))
     });
     return new Response(JSON.stringify({
@@ -278,7 +284,8 @@ test('a selected codex-lb provider wins over an unrelated OPENAI_API_KEY', async
     assert.equal(result.provider, 'openai_responses_image_generation');
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, 'https://lb.example.test/backend-api/codex/responses');
-    assert.equal(calls[0].authorization, 'Bearer sk-clb-test');
+    assert.equal(calls[0].authorization, '');
+    assert.equal(calls[0].gatewayKey, 'sk-clb-test');
     assert.equal(calls[0].body.model, 'gpt-5.6-sol');
   } finally {
     globalThis.fetch = previousFetch;
@@ -479,12 +486,12 @@ function codexLbConfig() {
   return `model_provider = "codex-lb"
 
 [model_providers.codex-lb]
-name = "OpenAI"
+name = "codex-lb"
 base_url = "https://lb.example.test/backend-api/codex"
 wire_api = "responses"
-env_key = "CODEX_LB_API_KEY"
+env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }
 supports_websockets = true
-requires_openai_auth = true
+requires_openai_auth = false
 `;
 }
 

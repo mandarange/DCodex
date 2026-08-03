@@ -1884,12 +1884,16 @@ export async function codexLbStatus(opts: any = {}) {
     && providerName === 'codex-lb'
     && providerWireApi === 'responses'
     && providerEnvKey === CODEX_LB_PROVIDER_ENV_KEY
+    && providerHasSeparateGatewayAuth
     && providerSupportsWebsockets === true
     && providerOpenAiAuthDisabled;
   const retiredCompatConfigured = desktopMode === 'desktop-dual-auth-compat';
   const definedButNotSelected = providerConfigured && !selected && desktopMode === null;
   const providerContractOk = !retiredCompatConfigured && cliProviderContractOk;
-  const providerUsesCodexLbEnvAuth = providerConfigured && providerEnvKey === CODEX_LB_PROVIDER_ENV_KEY && providerOpenAiAuthDisabled;
+  const providerUsesCodexLbEnvAuth = providerConfigured
+    && providerEnvKey === CODEX_LB_PROVIDER_ENV_KEY
+    && providerHasSeparateGatewayAuth
+    && providerOpenAiAuthDisabled;
   const oauthAvailable = authMode.mode === 'chatgpt_oauth' || authMode.mode === 'browser_marker';
   const authRoutingCoherent = desktopMode === 'desktop-native-bridge'
     ? !selected && oauthAvailable && !codexLbKeyInSharedAuth
@@ -2130,12 +2134,16 @@ function codexLbProviderOpenAiAuthDisabled(text: any = '') {
 
 function codexLbProviderEnvKey(text: any = '') {
   const block = String(text || '').match(/(^|\n)\[model_providers\.codex-lb\]([\s\S]*?)(?=\n\[[^\]]+\]|\s*$)/)?.[2] || '';
-  return block.match(/(^|\n)\s*env_key\s*=\s*"([^"]+)"/)?.[2] || '';
+  return block.match(/(^|\n)\s*env_key\s*=\s*"([^"]+)"/)?.[2]
+    || block.match(/env_http_headers\s*=\s*\{[^}]*"X-Codex-LB-API-Key"\s*=\s*"([^"]+)"[^}]*\}/)?.[1]
+    || '';
 }
 
 function codexLbProviderHasSeparateGatewayAuth(text: any = '') {
   const block = String(text || '').match(/(^|\n)\[model_providers\.codex-lb\]([\s\S]*?)(?=\n\[[^\]]+\]|\s*$)/)?.[2] || '';
-  return /X-Codex-LB-API-Key/.test(block) && /CODEX_LB_API_KEY/.test(block);
+  return /X-Codex-LB-API-Key/.test(block)
+    && /CODEX_LB_API_KEY/.test(block)
+    && !/(^|\n)\s*env_key\s*=/.test(block);
 }
 
 function codexLbFastModeConfigStatus(text: any = '') {

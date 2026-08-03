@@ -25,6 +25,7 @@ export interface CodexLbImagegenTarget {
   readonly base_url: string | null;
   readonly api_key: string | null;
   readonly api_key_source: string | null;
+  readonly auth_transport: 'x-codex-lb-api-key' | 'authorization-bearer';
   readonly model: string | null;
   readonly model_source: 'explicit' | 'configured_model_in_catalog' | 'catalog_default' | null;
   readonly catalog_models: readonly string[];
@@ -45,6 +46,7 @@ export async function resolveCodexLbImagegenTarget(opts: {
     ? opts.configText
     : await readText(path.join(codexHome, 'config.toml'), '').catch(() => '');
   const selected = topLevelTomlString(configText, 'model_provider') === 'codex-lb';
+  const authTransport = codexLbAuthTransport(configText);
   const loaded = await loadCodexLbEnv({
     home,
     processEnv: {},
@@ -67,11 +69,19 @@ export async function resolveCodexLbImagegenTarget(opts: {
     base_url: loaded?.base_url || null,
     api_key: loaded?.secret_api_key || null,
     api_key_source: loaded?.api_key?.source || null,
+    auth_transport: authTransport,
     model,
     model_source,
     catalog_models: catalogModels,
     blocker: codexLbImagegenBlocker({ selected, loaded, model })
   };
+}
+
+function codexLbAuthTransport(configText: string): CodexLbImagegenTarget['auth_transport'] {
+  const provider = String(configText || '').match(/(?:^|\n)\[model_providers\.codex-lb\]([\s\S]*?)(?=\n\[[^\]]+\]|\s*$)/)?.[1] || '';
+  const customHeader = /(?:^|\n)\s*env_http_headers\s*=\s*\{[^}]*"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"[^}]*\}/.test(provider);
+  const bearerEnvKey = /(?:^|\n)\s*env_key\s*=/.test(provider);
+  return customHeader && !bearerEnvKey ? 'x-codex-lb-api-key' : 'authorization-bearer';
 }
 
 function codexLbImagegenBlocker(state: { selected: boolean; loaded: any; model: string | null }): string | null {

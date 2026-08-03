@@ -105,7 +105,9 @@ export async function measureCodexLbRoutingTruth(
   const mode = options.mode || 'cli-provider';
   const probeBaseUrl = normalizeCodexLbBaseUrl(options.probeBaseUrl || '');
   const bridgeLoopbackProbe = Boolean(probeBaseUrl);
-  const authTransport = options.authTransport || 'authorization-bearer';
+  const authTransport = options.authTransport || (mode === 'cli-provider'
+    ? 'x-codex-lb-api-key'
+    : 'authorization-bearer');
   const base = {
     schema: CODEX_LB_ROUTING_TRUTH_SCHEMA,
     mode,

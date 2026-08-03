@@ -12,7 +12,11 @@ test('codex-lb setup output redacts API key and writes only metadata fingerprint
   const secret = 'sk-redaction-secret';
   const requests = [];
   const server = http.createServer((request, response) => {
-    requests.push({ url: request.url, authorization: request.headers.authorization });
+    requests.push({
+      url: request.url,
+      authorization: request.headers.authorization,
+      codexLbApiKey: request.headers['x-codex-lb-api-key']
+    });
     if (request.url === '/health') {
       response.writeHead(200, {
         'content-type': 'application/json',
@@ -58,7 +62,8 @@ test('codex-lb setup output redacts API key and writes only metadata fingerprint
     assert.ok(requests.some((request) => request.url === '/health' && request.authorization === undefined));
     const modelRequests = requests.filter((request) => request.url === '/backend-api/codex/models');
     assert.equal(modelRequests.length, 1);
-    assert.equal(modelRequests[0].authorization, `Bearer ${secret}`);
+    assert.equal(modelRequests[0].authorization, undefined);
+    assert.equal(modelRequests[0].codexLbApiKey, secret);
     const metadata = JSON.parse(await fs.readFile(path.join(home, '.codex', 'sks-codex-lb.json'), 'utf8'));
     assert.equal(metadata.api_key.redacted, true);
     assert.ok(metadata.api_key.sha256);

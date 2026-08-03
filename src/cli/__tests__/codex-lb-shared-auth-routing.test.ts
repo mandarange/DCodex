@@ -45,7 +45,7 @@ function providerConfig(selected = true, topLevel = '') {
     'name = "OpenAI"',
     `base_url = "${BASE_URL}"`,
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = true',
     ''
@@ -456,6 +456,7 @@ test('codex-lb health tests stored credentials without globally selecting the CL
   const requests: Array<{
     url: string | undefined;
     authorization: string | undefined;
+    gateway_api_key: string | undefined;
     previous_response_id: string | null;
   }> = [];
   const server = http.createServer(async (request, response) => {
@@ -465,6 +466,7 @@ test('codex-lb health tests stored credentials without globally selecting the CL
     requests.push({
       url: request.url,
       authorization: request.headers.authorization,
+      gateway_api_key: request.headers['x-codex-lb-api-key'] as string | undefined,
       previous_response_id: typeof body.previous_response_id === 'string' ? body.previous_response_id : null
     });
     if (request.url === '/backend-api/codex/responses') {
@@ -498,7 +500,7 @@ test('codex-lb health tests stored credentials without globally selecting the CL
     '[model_providers.codex-lb]',
     'name = "codex-lb"',
     `base_url = "${baseUrl}"`,
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'wire_api = "responses"',
     'supports_websockets = true',
     'requires_openai_auth = false',
@@ -536,5 +538,6 @@ test('codex-lb health tests stored credentials without globally selecting the CL
   assert.equal(json.codex_lb.selected, false);
   assert.equal(json.model_selection.source, 'global_config');
   assert.deepEqual(requests.map((request) => request.previous_response_id), [null, 'resp_health_1']);
-  assert.ok(requests.every((request) => request.authorization === 'Bearer sk-clb-health-fixture'));
+  assert.ok(requests.every((request) => request.authorization === undefined));
+  assert.ok(requests.every((request) => request.gateway_api_key === 'sk-clb-health-fixture'));
 });

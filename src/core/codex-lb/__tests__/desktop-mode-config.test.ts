@@ -59,7 +59,8 @@ test('native Desktop mode retains built-in OpenAI and removes only SKS-owned leg
   assert.doesNotMatch(result, /^model_catalog_json\s*=/m);
   assert.match(result, /^service_tier\s*=\s*"fast"$/m);
   assert.match(result, /^name\s*=\s*"codex-lb"$/m);
-  assert.match(result, /^env_key\s*=\s*"CODEX_LB_API_KEY"$/m);
+  assert.doesNotMatch(result, /^env_key\s*=/m);
+  assert.match(result, /^env_http_headers\s*=\s*\{\s*"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"\s*\}$/m);
   assert.match(result, /^requires_openai_auth\s*=\s*false$/m);
 });
 

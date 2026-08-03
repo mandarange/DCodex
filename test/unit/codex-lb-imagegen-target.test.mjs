@@ -81,8 +81,8 @@ test('target discovery reads config, credentials, and catalog from CODEX_HOME', 
     '',
     '[model_providers.codex-lb]',
     `base_url = "${baseUrl}"`,
-    'env_key = "CODEX_LB_API_KEY"',
-    'requires_openai_auth = true'
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'requires_openai_auth = false'
   ].join('\n'));
   await fs.writeFile(path.join(codexHome, 'sks-codex-lb-tool-catalog.json'), JSON.stringify({
     models: [{ slug: 'gpt-5.6-terra' }]

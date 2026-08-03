@@ -280,7 +280,7 @@ export async function codexLbDesktopStatusV2(
     && codexLbRoutingTruthIsActive(routingTruth);
   const diagnosticOk = uniqueBlockers.length === 0 && !overallBlocked;
   const effectiveGatewayAuthTransport = context.mode === 'cli-provider'
-    ? 'authorization-bearer'
+    ? 'x-codex-lb-api-key'
     : context.mode === 'desktop-native-bridge' || context.mode === 'desktop-dual-auth-compat'
       ? context.gatewayAuthTransport
       : null;
@@ -731,7 +731,7 @@ export async function configureCodexLbCliMode(
     selected: true,
     baseUrl: context.loadedEnv.base_url,
     apiKey: context.loadedEnv.secret_api_key,
-    authTransport: 'authorization-bearer',
+    authTransport: 'x-codex-lb-api-key',
     ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
     ...(input.capabilityTimeoutMs ? { timeoutMs: input.capabilityTimeoutMs } : {})
   }, {
@@ -916,30 +916,23 @@ export async function buildCodexLbDesktopCapabilities(
     effective_service_tier?: string | null;
   } | null = null;
   if (transportRequested && target && model) {
-    if (context.mode !== 'desktop-native-bridge' && target.effectiveTransport === 'x-codex-lb-api-key') {
-      textResponses = {
-        configured: true,
-        blockers: ['text_responses_custom_header_adapter_required'],
-        evidence: { gateway_auth_transport: target.effectiveTransport }
-      };
-    } else {
-      const chain = await checkCodexLbResponseChain({
-        base_url: target.baseUrl,
-        provider_base_url_matches_credential: true
-      }, {
-        force: true,
-        cache: false,
-        recordCircuit: false,
-        baseUrl: target.baseUrl,
-        apiKey: context.loadedEnv.secret_api_key,
-        model,
-        fastMode: configuredServiceTier === 'fast',
-        fetch: input.fetchImpl || globalThis.fetch,
-        timeoutMs: input.capabilityTimeoutMs || 8_000
-      });
-      textChainServiceTier = chain?.service_tier_evidence || null;
-      textResponses = capabilityEvidenceToSignal(codexLbResponseChainCapabilityEvidence(chain));
-    }
+    const chain = await checkCodexLbResponseChain({
+      base_url: target.baseUrl,
+      provider_base_url_matches_credential: true
+    }, {
+      force: true,
+      cache: false,
+      recordCircuit: false,
+      baseUrl: target.baseUrl,
+      apiKey: context.loadedEnv.secret_api_key,
+      gatewayAuthTransport: target.effectiveTransport,
+      model,
+      fastMode: configuredServiceTier === 'fast',
+      fetch: input.fetchImpl || globalThis.fetch,
+      timeoutMs: input.capabilityTimeoutMs || 8_000
+    });
+    textChainServiceTier = chain?.service_tier_evidence || null;
+    textResponses = capabilityEvidenceToSignal(codexLbResponseChainCapabilityEvidence(chain));
   }
   // CLI-plane image verification: one real, minimal generation through the
   // gateway proves the image_generation tool round-trips on the CLI routing
@@ -984,7 +977,7 @@ export async function buildCodexLbDesktopCapabilities(
     oauthPreserved: context.oauthPresent,
     manifest,
     gatewayAuth: {
-      transport: cliPlane ? 'authorization-bearer' : context.gatewayAuthTransport,
+      transport: cliPlane ? 'x-codex-lb-api-key' : context.gatewayAuthTransport,
       configured: context.loadedEnv.configured,
       observed: gatewayObserved,
       fixture,
@@ -1471,7 +1464,8 @@ function providerStatus(config: string, mode: CodexLbDesktopMode): {
   const cliContractOk = Boolean(provider)
     && hasTomlString(provider, 'name', 'codex-lb')
     && hasTomlString(provider, 'wire_api', 'responses')
-    && hasTomlString(provider, 'env_key', 'CODEX_LB_API_KEY')
+    && /"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"/.test(provider)
+    && !/(?:^|\n)\s*env_key\s*=/.test(provider)
     && hasTomlBoolean(provider, 'requires_openai_auth', false)
     && hasTomlBoolean(provider, 'supports_websockets', true);
   if (mode === 'cli-provider') {
@@ -1781,12 +1775,11 @@ function capabilityTarget(context: DesktopContext): {
       effectiveTransport: context.gatewayAuthTransport
     };
   }
-  // cli-provider plane: the Codex CLI authenticates on the codex-lb provider
-  // contract with env_key, which the CLI sends as Authorization: Bearer. Probes
-  // that verify the CLI plane must authenticate exactly like the CLI does;
-  // the configured desktop-plane gateway transport does not apply here.
+  // CLI-provider plane: Codex maps CODEX_LB_API_KEY into the dedicated gateway
+  // header through env_http_headers. Probes must use that same transport; the
+  // independently configured desktop-bridge transport does not apply here.
   const effectiveTransport = context.mode === 'cli-provider'
-    ? 'authorization-bearer' as const
+    ? 'x-codex-lb-api-key' as const
     : context.gatewayAuthTransport;
   const headers = effectiveTransport === 'x-codex-lb-api-key'
     ? { 'X-Codex-LB-API-Key': context.loadedEnv.secret_api_key }
@@ -2073,7 +2066,8 @@ function routingTruthAuthTransport(
   mode: CodexLbDesktopMode,
   gatewayAuthTransport: CodexLbGatewayAuthTransport
 ): CodexLbRoutingTruthAuthTransport {
-  if (mode === 'desktop-native-bridge' && gatewayAuthTransport === 'x-codex-lb-api-key') {
+  if (mode === 'cli-provider'
+    || (mode === 'desktop-native-bridge' && gatewayAuthTransport === 'x-codex-lb-api-key')) {
     return 'x-codex-lb-api-key';
   }
   return 'authorization-bearer';

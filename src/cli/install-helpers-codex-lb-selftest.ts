@@ -236,7 +236,7 @@ export async function selftestCodexLb(tmp: any) {
     'name = "OpenAI"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = true',
     ''
@@ -326,7 +326,7 @@ export async function selftestCodexLb(tmp: any) {
     'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
+    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -380,7 +380,7 @@ export async function selftestCodexLb(tmp: any) {
       codexLbEnvOnlyPostinstallConfig.includes('[model_providers.codex-lb]')
       && (
         !codexLbEnvOnlyPostinstallConfig.includes('name = "codex-lb"')
-        || !codexLbEnvOnlyPostinstallConfig.includes('env_key = "CODEX_LB_API_KEY"')
+        || !codexLbEnvOnlyPostinstallConfig.includes('env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }')
         || !codexLbEnvOnlyPostinstallConfig.includes('requires_openai_auth = false')
       )
     )

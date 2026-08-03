@@ -115,14 +115,17 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
   const selected = opts.codexLbSelected === true || topLevelTomlString(configText, 'model_provider') === 'codex-lb';
   const providerConfigured = Boolean(block);
   const requiresOpenAiAuth = tomlBoolean(block, 'requires_openai_auth');
-  const envKey = tomlString(block, 'env_key');
-  // cli-provider contract: codex CLI routes to the gateway with env_key bearer
-  // auth (requires_openai_auth=false); this is a first-class lb imagegen auth
-  // path, not the legacy desktop destructive shape.
+  const bearerEnvKey = tomlString(block, 'env_key');
+  const gatewayHeaderEnvKey = tomlEnvHttpHeader(block, 'X-Codex-LB-API-Key');
+  const envKey = gatewayHeaderEnvKey || bearerEnvKey;
+  // CLI provider contract: Codex resolves the gateway key from the environment
+  // into the dedicated gateway header. It must not also install env_key Bearer
+  // auth, which would send the same secret through two authentication channels.
   const cliContract = providerConfigured
     && tomlString(block, 'name') === 'codex-lb'
     && tomlString(block, 'wire_api') === 'responses'
-    && envKey === 'CODEX_LB_API_KEY'
+    && gatewayHeaderEnvKey === 'CODEX_LB_API_KEY'
+    && !bearerEnvKey
     && requiresOpenAiAuth === false;
   const baseUrl = tomlString(block, 'base_url') || String(env.CODEX_LB_BASE_URL || '').trim();
   const envPath = opts.codexLbEnvPath || path.join(codexHome, 'sks-codex-lb.env');
@@ -159,9 +162,12 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
     receiptPath: routingTruthReceiptPath
   }).catch(() => null);
   const configuredHost = publicUrlHost(baseUrl);
+  const routingAuthTransport = cliContract
+    ? 'x-codex-lb-api-key'
+    : 'authorization-bearer';
   const routingTruthContextMatches = routingTruth?.selected === selected
     && routingTruth?.configured_host === configuredHost
-    && routingTruth?.auth_transport === 'authorization-bearer';
+    && routingTruth?.auth_transport === routingAuthTransport;
   const routingActive = routingTruthContextMatches
     && codexLbRoutingTruthIsActive(routingTruth);
   return {
@@ -186,6 +192,7 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
       selected,
       configuredHost,
       routingTruth,
+      expectedAuthTransport: routingAuthTransport,
       routingTruthContextMatches,
       routingActive
     }),
@@ -197,6 +204,7 @@ function codexLbRoutingBlocker(state: {
   selected: boolean;
   configuredHost: string | null;
   routingTruth: any;
+  expectedAuthTransport: 'authorization-bearer' | 'x-codex-lb-api-key';
   routingTruthContextMatches: boolean;
   routingActive: boolean;
 }): string | null {
@@ -204,7 +212,7 @@ function codexLbRoutingBlocker(state: {
   if (!state.routingTruth) return 'codex_lb_routing_truth_receipt_missing';
   if (state.routingTruth.selected !== true) return 'codex_lb_routing_truth_selection_mismatch';
   if (state.routingTruth.configured_host !== state.configuredHost) return 'codex_lb_routing_truth_host_mismatch';
-  if (state.routingTruth.auth_transport !== 'authorization-bearer') return 'codex_lb_routing_truth_auth_transport_mismatch';
+  if (state.routingTruth.auth_transport !== state.expectedAuthTransport) return 'codex_lb_routing_truth_auth_transport_mismatch';
   if (!state.routingTruthContextMatches || !state.routingActive) {
     return state.routingTruth.blockers?.[0] || 'codex_lb_routing_truth_unverified';
   }
@@ -342,6 +350,11 @@ function tomlTableBlock(text: any = '', table: any = '') {
 function tomlString(text: any = '', key: any = '') {
   const re = new RegExp(`(^|\\n)\\s*${escapeRegExp(key)}\\s*=\\s*"([^"]*)"\\s*(?:#.*)?(?=\\n|$)`);
   return String(text || '').match(re)?.[2] || '';
+}
+
+function tomlEnvHttpHeader(text: any = '', header: any = '') {
+  const inline = String(text || '').match(/(?:^|\n)\s*env_http_headers\s*=\s*\{([^}]*)\}/)?.[1] || '';
+  return inline.match(new RegExp(`"${escapeRegExp(header)}"\\s*=\\s*"([^"]+)"`))?.[1] || '';
 }
 
 function tomlBoolean(text: any = '', key: any = '') {
