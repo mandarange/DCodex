@@ -17,7 +17,6 @@ export const MUTATION_KINDS = [
   'process_kill',
   'codex_app_flag_change',
   'codex_lb_auth_change',
-  'zellij_install',
   'database_write',
   'skill_snapshot_promotion'
 ] as const
@@ -37,7 +36,6 @@ const KIND_TO_SCOPE: Record<MutationLedgerKind, MutationKind> = {
   process_kill: 'codex_app_process',
   codex_app_flag_change: 'global_codex_config',
   codex_lb_auth_change: 'codex_lb_auth',
-  zellij_install: 'zellij_install',
   database_write: 'project_files',
   skill_snapshot_promotion: 'skill_snapshot_promotion'
 }

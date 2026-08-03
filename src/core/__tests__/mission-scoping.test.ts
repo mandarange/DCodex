@@ -163,7 +163,7 @@ test('loadOwnedRouteState preserves same-session and unowned legacy gates', asyn
   await fsp.writeFile(stateFile(root), JSON.stringify({
     mission_id: 'M-standalone',
     mode: 'MADSKS',
-    phase: 'MADSKS_ZELLIJ_PERMISSION_ACTIVE'
+    phase: 'MADSKS_NATIVE_PERMISSION_ACTIVE'
   }));
   const standalone = await loadOwnedRouteState(root);
   assert.equal(standalone.mission_id, 'M-standalone');

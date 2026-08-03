@@ -54,7 +54,6 @@ export function routeNarutoLoopWorker(node: SksLoopNode, role: Extract<SksLoopRo
 }
 
 function roleLabels(domain: string): { maker: string; checker: string } {
-  if (domain.includes('zellij')) return { maker: 'zellij implementer', checker: 'zellij QA/verifier' };
   if (domain.includes('release')) return { maker: 'release optimizer', checker: 'release gate verifier' };
   if (domain.includes('research')) return { maker: 'source shard/synthesis', checker: 'final reviewer' };
   if (domain.includes('codex')) return { maker: 'capability/probe implementer', checker: 'real probe verifier' };

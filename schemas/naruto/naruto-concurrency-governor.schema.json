@@ -2,13 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sks.naruto-concurrency-governor.v1",
   "type": "object",
-  "required": ["schema", "requested_workers", "total_work_items", "safe_active_workers", "safe_zellij_visible_panes", "headless_workers", "backpressure"],
+  "required": ["schema", "requested_workers", "total_work_items", "safe_active_workers", "headless_workers", "backpressure"],
   "properties": {
     "schema": { "const": "sks.naruto-concurrency-governor.v1" },
     "requested_workers": { "type": "integer", "minimum": 1 },
     "total_work_items": { "type": "integer", "minimum": 1 },
     "safe_active_workers": { "type": "integer", "minimum": 1 },
-    "safe_zellij_visible_panes": { "type": "integer", "minimum": 1 },
     "headless_workers": { "type": "integer", "minimum": 0 },
     "local_llm_parallel": { "type": "integer", "minimum": 1 },
     "remote_codex_parallel": { "type": "integer", "minimum": 1 },
@@ -18,4 +17,3 @@
   },
   "additionalProperties": true
 }
-

@@ -52,7 +52,6 @@ try {
       SKS_TEST_DOCTOR_EMIT_MIGRATION_RECEIPT: '1',
       SKS_TEST_OLD_DOCTOR_FAIL: '1',
       SKS_UPDATE_SKIP_SKS_MENUBAR: '1',
-      SKS_REQUIRE_ZELLIJ: '0',
       SKS_POSTINSTALL_GLOBAL_DOCTOR: '0',
       SKS_MIGRATION_DOCTOR_TIMEOUT_MS: '30000',
       // The updated-package doctor and receipt writer repeat the expensive
@@ -322,7 +321,7 @@ async function seedUpgradeFixture(home: string, project: string): Promise<void> 
     '- Database work uses `$MAD-DB`.',
     '- Clone work uses `$ShadowClone` or `$Kagebunshin`.',
     '- Persisted work uses `$Ralph`.',
-    '- Do not use `sks --naruto`, `sks --clones`, `sks --glm`, or `sks zellij dashboard`.',
+    '- Do not use `sks --naruto`, `sks --clones`, or `sks --glm`.',
     '<!-- END Sneakoscope Codex GX MANAGED BLOCK -->',
     ''
   ].join('\n'));

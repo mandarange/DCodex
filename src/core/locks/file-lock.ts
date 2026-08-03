@@ -278,7 +278,6 @@ function lockScopeContract(lockPath: string): RequestedScopeContract {
       codex_app_process: false,
       codex_lb_auth: false,
       package_install: false,
-      zellij_install: false,
       network: false,
       skill_snapshot_promotion: false
     },

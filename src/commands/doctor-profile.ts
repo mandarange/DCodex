@@ -56,7 +56,7 @@ export function doctorPhaseIdsForProfile(profile: DoctorProfile): string[] {
 function unknownDoctorFlags(args: any[]): string[] {
   const knownBoolean = new Set([
     '--fix', '--yes', '-y', '--machine-only', '--actual-codex', '--require-actual-codex',
-    '--full', '--capabilities', '--repair-codex-app-ui', '--repair-zellij', '--install-homebrew',
+    '--full', '--capabilities', '--repair-codex-app-ui',
     '--repair-native-capabilities', '--repair-codex-native', '--local-only', '--global-only', '--project', '--global',
     '--dry-run', '--json'
   ]);

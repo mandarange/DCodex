@@ -16,6 +16,7 @@ import {
 } from '../codex/codex-config-guard.js';
 import { formatSksUpdateStageText } from '../commands/basic-cli.js';
 import { dispatch } from '../../cli/router.js';
+import { escapeRegExp } from '../text/regex.js';
 
 test('marker-less project receipt failure prints its config path, marker, and adopt remedy', async (t) => {
   const fixture = await configFixture('model = "gpt-5.4"\n');
@@ -237,8 +238,4 @@ async function configFixture(text: string) {
     configPath,
     cleanup: () => fsp.rm(root, { recursive: true, force: true })
   };
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

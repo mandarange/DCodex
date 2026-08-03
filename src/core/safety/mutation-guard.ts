@@ -105,8 +105,6 @@ function scopeForKind(kind: MutationLedgerKind): MutationKind {
       return 'codex_app_process'
     case 'codex_lb_auth_change':
       return 'codex_lb_auth'
-    case 'zellij_install':
-      return 'zellij_install'
     case 'skill_snapshot_promotion':
       return 'skill_snapshot_promotion'
     default:

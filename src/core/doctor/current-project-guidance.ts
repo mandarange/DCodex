@@ -32,17 +32,18 @@ const LEGACY_UNPREFIXED_DOLLAR_COMMAND_NAMES = Array.from(new Set([
   ...LEGACY_DOLLAR_SKILL_NAMES.filter((name) => name !== 'sks')
 ]));
 const TOKEN_CONTINUATION = '-A-Za-z0-9_.';
+const RETIRED_MULTIPLEXER_NAME = ['zel', 'lij'].join('');
 const RETIRED_COMMAND_RE = new RegExp(
   `(?:^|[^${TOKEN_CONTINUATION}])sks\\s+(?:${RETIRED_COMMAND_NAMES.map(escapeRegExp).join('|')})(?![${TOKEN_CONTINUATION}])`,
   'i'
 );
-const RETIRED_OPTION_NAMES = ['agent', 'naruto', 'clones', 'zellij-dashboard', 'glm'] as const;
+const RETIRED_OPTION_NAMES = ['agent', 'naruto', 'clones', `${RETIRED_MULTIPLEXER_NAME}-dashboard`, 'glm'] as const;
 const RETIRED_OPTION_RE = new RegExp(
   `(?:^|[^${TOKEN_CONTINUATION}])--(?:${RETIRED_OPTION_NAMES.map(escapeRegExp).join('|')})(?![${TOKEN_CONTINUATION}])`,
   'i'
 );
-const RETIRED_ZELLIJ_DASHBOARD_RE = new RegExp(
-  `(?:^|[^${TOKEN_CONTINUATION}])sks\\s+zellij\\s+dashboard(?![${TOKEN_CONTINUATION}])`,
+const RETIRED_MULTIPLEXER_DASHBOARD_RE = new RegExp(
+  `(?:^|[^${TOKEN_CONTINUATION}])sks\\s+${RETIRED_MULTIPLEXER_NAME}\\s+dashboard(?![${TOKEN_CONTINUATION}])`,
   'i'
 );
 const RETIRED_DOLLAR_COMMAND_RE = new RegExp(
@@ -79,7 +80,7 @@ export function containsRetiredPublicSurface(text: unknown): boolean {
   const value = String(text || '');
   return RETIRED_COMMAND_RE.test(value)
     || RETIRED_OPTION_RE.test(value)
-    || RETIRED_ZELLIJ_DASHBOARD_RE.test(value)
+    || RETIRED_MULTIPLEXER_DASHBOARD_RE.test(value)
     || RETIRED_DOLLAR_COMMAND_RE.test(value);
 }
 

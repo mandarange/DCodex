@@ -39,7 +39,6 @@ export interface AgentCodexCockpitState {
   codex_web_search_status: string | null
   goal_mode_status: string | null
   terminal_session_status: string | null
-  zellij_attach_command: string | null
   target_active_slots: number | null
   active_slot_count: number | null
   pending_queue_count: number | null
@@ -96,7 +95,6 @@ export async function buildAgentCodexCockpitState(
   const namespace = await readJson<any>(path.join(missionDir, 'project-session-namespace.json'), null)
   const sourceIntelligence = await readJson<any>(path.join(missionDir, 'source-intelligence-evidence.json'), null)
   const goalMode = await readJson<any>(path.join(missionDir, 'goal-mode-applied.json'), null)
-  const zellijLayout = await readJson<any>(path.join(root, 'agent-zellij-layout.json'), null)
   const scheduler = await readJson<any>(path.join(root, 'agent-scheduler-state.json'), null)
   const workerSlots = await readJson<any>(path.join(root, 'agent-worker-slots.json'), null)
   const generations = await readJson<any>(path.join(root, 'agent-session-generations.json'), null)
@@ -136,7 +134,6 @@ export async function buildAgentCodexCockpitState(
     codex_web_search_status: sourceIntelligence?.codex_web_search?.status || sourceIntelligence?.policy?.codex_web_search?.status || null,
     goal_mode_status: goalMode?.mode || null,
     terminal_session_status: terminalClosed ? 'closed' : proof ? 'blocked_or_unverified' : null,
-    zellij_attach_command: zellijLayout?.attach_command || null,
     target_active_slots: scheduler?.target_active_slots ?? null,
     active_slot_count: scheduler?.active_slot_count ?? null,
     pending_queue_count: scheduler?.pending_count ?? null,
@@ -191,7 +188,6 @@ function summarizeLiveState(state: AgentCodexCockpitState) {
     codex_web_search_status: state.codex_web_search_status,
     goal_mode_status: state.goal_mode_status,
     terminal_session_status: state.terminal_session_status,
-    zellij_attach_command: state.zellij_attach_command,
     blockers: state.blockers,
   }
 }

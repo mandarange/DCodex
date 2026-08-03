@@ -104,7 +104,6 @@ id_ed25519
 # Lane/slot state and the renderer heartbeat are per-machine runtime output.
 # Untracked, `sks commit` swept them into a commit on at least one machine.
 /lanes/
-zellij-lane-renderer-heartbeat.jsonl
 .opensks/
 .sneakoscope/missions/
 .sneakoscope/layouts/

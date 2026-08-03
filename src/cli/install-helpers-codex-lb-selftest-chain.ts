@@ -127,7 +127,7 @@ export async function runCodexLbLaunchChainSelftest(input: {
   const codexLbLaunch = `codex --config model_provider='"codex-lb"'`;
   if (!codexLbLaunch.includes('model_provider')) throw new Error('selftest: CLI launch must select the stored codex-lb provider explicitly');
   if (/source\s+.*sks-codex-lb\.env/.test(codexLbLaunch)) throw new Error('selftest: Desktop/CLI happy path must not require sourcing sks-codex-lb.env');
-  if (codexLbLaunch.includes('--model')) throw new Error('selftest: Zellij launch command without an explicit model must inherit the Codex selection');
+  if (codexLbLaunch.includes('--model')) throw new Error('selftest: native Codex launch without an explicit model must inherit the Codex selection');
   const madLaunchSource = await safeReadText(path.join(packageRoot(), 'src', 'core', 'commands', 'mad-sks-command.ts'));
   if (
     !madLaunchSource.includes("const lb = { status: 'deferred_until_provider_route', ok: true")

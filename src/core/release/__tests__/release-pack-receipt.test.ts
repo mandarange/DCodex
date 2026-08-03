@@ -128,15 +128,16 @@ test('release pack inspection rejects retired Ralph identity in generated custom
 test('release pack inspection rejects removed dashboard prose and command surfaces', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-dashboard-surface-'))
   try {
+    const retiredToken = ['zel', 'lij'].join('')
     const tarball = createTarball(root, 'dashboard-surface', '8.0.0', '', {
       'dist/cli/command-manifest-lite.js': 'export const summary = "Open Dashboard with sks ui";\n',
-      'dist/core/runtime/leak.js': 'export const option = "--zellij-dashboard"; export const artifact = "agent-codex-dashboard.json";\n'
+      'dist/core/runtime/leak.js': `export const option = "--${retiredToken}-dashboard"; export const artifact = "agent-codex-dashboard.json";\n`
     })
     const receipt = inspectReleaseTarball({ tarball, kind: 'staged', root })
     const kinds = new Set(receipt.retired_surface_scan.findings.map((finding) => finding.kind))
     assert.equal(receipt.ok, false)
     assert.equal(kinds.has('retired_ui_command'), true)
-    assert.equal(kinds.has('retired_zellij_dashboard_option'), true)
+    assert.equal(kinds.has('retired_terminal_multiplexer'), true)
     assert.equal(kinds.has('retired_dashboard_surface'), true)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
@@ -146,10 +147,11 @@ test('release pack inspection rejects removed dashboard prose and command surfac
 test('release pack inspection rejects removed dashboard files even when their contents are empty', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-dashboard-file-'))
   try {
+    const retiredToken = ['zel', 'lij'].join('')
     const tarball = createTarball(root, 'dashboard-file', '8.0.0', '', {
       'dist/core/commands/ui-command.js': '',
       'dist/core/ui/dashboard-html.js': '',
-      'dist/core/zellij/zellij-dashboard-pane.js': ''
+      [`dist/core/${retiredToken}/${retiredToken}-dashboard-pane.js`]: ''
     })
     const receipt = inspectReleaseTarball({ tarball, kind: 'staged', root })
     assert.equal(receipt.ok, false)

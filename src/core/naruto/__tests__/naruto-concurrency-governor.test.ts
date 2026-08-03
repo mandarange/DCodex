@@ -59,7 +59,7 @@ test('governor lets light lanes scale into the hundreds when hardware budgets al
   assert.equal(governed.safe_active_workers, 200)
   assert.ok(governed.safe_active_workers > 32)
   assert.equal(governed.backpressure, 'normal')
-  assert.ok(governed.headless_workers > 0)
+  assert.equal(governed.headless_workers, governed.safe_active_workers)
 })
 
 test('governor scales heavy codex-sdk lanes honestly via the rate-limit env override', () => {
@@ -108,6 +108,7 @@ test('official-subagent lane permits 256 host threads without applying local wor
     }
   }))
   assert.equal(governed.safe_active_workers, 256)
+  assert.equal(governed.headless_workers, 0)
   assert.equal(governed.hardware.remote_api_rate_limit_budget_source, 'default_unmeasured')
   assert.deepEqual(governed.limiting_factors, [])
 })

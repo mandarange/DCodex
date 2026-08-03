@@ -12,7 +12,7 @@ export function classifyLoopRisk(node: Pick<SksLoopNode, 'loop_id' | 'owner_scop
   if (/(db|mad-sks.*sql-plane|mcp|token|auth|postinstall|publish|global config)/.test(scope)) {
     level = 'critical';
     reasons.push('critical_scope');
-  } else if (/(release-gates|worktree|scheduler|zellij|codex-control|agent|worker-runtime)/.test(scope)) {
+  } else if (/(release-gates|worktree|scheduler|codex-control|agent|worker-runtime)/.test(scope)) {
     level = 'high';
     reasons.push('runtime_or_scheduler_scope');
   } else if (/(qa-loop|research|image|docs)/.test(scope)) {

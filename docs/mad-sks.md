@@ -39,11 +39,9 @@ credential, token, project, organization, and branch operations remain denied.
 
 ## Official Subagent Cockpit
 
-`sks --mad` may open the Zellij cockpit for the current official workflow. It
-does not launch extra local processes merely to fill panes. Official
-subagent lifecycle events populate the monitor and bounded viewports, while a
-trustworthy structured parent outcome remains the only terminal success or
-failure authority.
+MAD-SKS uses the native Codex CLI and official subagent lifecycle events for the
+current workflow. A trustworthy structured parent outcome remains the only
+terminal success or failure authority.
 
 ## Evidence And Boundaries
 

@@ -262,7 +262,6 @@ try {
     'process_kill',
     'codex_app_flag_change',
     'codex_lb_auth_change',
-    'zellij_install',
     'skill_snapshot_promotion'
   ];
   for (const kind of requiredKinds) {

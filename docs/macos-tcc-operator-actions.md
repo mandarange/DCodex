@@ -8,4 +8,3 @@ Check:
 - Grant access to the launching app: Warp, Terminal, iTerm, Codex app, or the app that starts Codex CLI.
 - If the project is under Desktop, Documents, iCloud Drive, or an external volume, also check Files and Folders.
 - Fully restart the terminal/Codex app after changing permissions.
-- Rerun `sks doctor --fix --yes --json`, then use `sks zellij repair --json` if terminal observability is affected.

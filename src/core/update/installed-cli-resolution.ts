@@ -2,6 +2,7 @@ import { constants as fsConstants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { runProcess } from '../fsx.js';
+import { uniqueTruthyStrings as uniqueStrings } from '../text/strings.js';
 import { extractSemVer } from './semver.js';
 
 export const INSTALLED_CLI_RESOLUTION_SCHEMA = 'sks.installed-cli-resolution.v1' as const;
@@ -203,8 +204,4 @@ function normalizeShimPath(value: string): string {
 function pathIsWithin(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.filter(Boolean))];
 }

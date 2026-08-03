@@ -36,7 +36,6 @@ function safeDiagnosticSubcommand(command: string, subcommand: string, args: rea
     wiki: ['status', 'validate', 'validate-shared'],
     gc: ['stats', 'status'],
     pipeline: ['', 'status'],
-    zellij: ['', 'status', 'check'],
     'stop-gate': ['', 'check'],
     status: [''],
     root: [''],

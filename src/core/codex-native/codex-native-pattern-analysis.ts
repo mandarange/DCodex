@@ -25,7 +25,6 @@ export interface CodexNativePatternAnalysis {
 }
 
 const PATTERN_ROWS: Array<Omit<CodexNativePatternAnalysis['patterns'][number], 'confidence' | 'evidence_hashes'>> = [
-  row('no-global-optional-tooling', 'Optional tooling stays non-global by default', 'adapt', ['src/core/zellij/zellij-self-heal.ts'], ['Keep optional repair/install paths explicit and proof-backed.']),
   row('plugin-lifecycle-state-separation', 'Plugin install and approval are separate states', 'adopt', ['src/core/codex-native/codex-native-feature-broker.ts'], ['Do not count installed tools as approved evidence.']),
   row('hook-approval-gating', 'Hook approval gates counted evidence', 'adopt', ['src/core/codex-app/codex-hook-lifecycle.ts'], ['Unknown or pending hook approval does not count as proof.']),
   row('skill-picker-route-bridge', 'SKS route skills bridge command picker usage', 'adapt', ['src/core/codex-app/codex-skill-sync.ts'], ['Managed skills expose route purpose, command, proof path, and failure recovery.']),
@@ -34,7 +33,7 @@ const PATTERN_ROWS: Array<Omit<CodexNativePatternAnalysis['patterns'][number], '
   row('directory-local-memory', 'Directory-local memory is guidance', 'adapt', ['src/core/codex-app/codex-init-deep.ts', 'src/core/loops/loop-planner.ts'], ['Memory hints never widen owner scope.']),
   row('plan-work-proof-separation', 'Plan, work, and proof stay separate', 'adopt', ['src/core/loops', 'src/core/naruto'], ['Route artifacts separate planning, execution, and verification.']),
   row('continuation-enforcer', 'Continuation is stateful and bounded', 'adapt', ['src/core/loops/loop-continuation-enforcer.ts'], ['Use runtime proof when hook approval is not approved.']),
-  row('doctor-harness-matrix', 'Doctor merges readiness into one story', 'adopt', ['src/commands/doctor.ts'], ['Doctor should show Zellij, Codex Native, Loop, QA, and Research together.']),
+  row('doctor-harness-matrix', 'Doctor merges readiness into one story', 'adopt', ['src/commands/doctor.ts'], ['Doctor should show Codex Native, Loop, QA, and Research together.']),
   row('mcp-tool-candidate-inventory', 'MCP plugin servers are candidates', 'adapt', ['src/core/mcp/mcp-plugin-inventory.ts'], ['Candidate-only inventory prevents accidental destructive auto-enable.']),
   row('non-clobber-managed-assets', 'Managed assets avoid clobbering user files', 'adopt', ['src/core/codex-app/codex-skill-sync.ts', 'src/core/codex-app/codex-agent-role-sync.ts'], ['Skip unmarked user assets and include checksums for managed content.'])
 ]

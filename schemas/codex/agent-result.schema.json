@@ -63,7 +63,6 @@
         "process",
         "codex-sdk",
         "python-codex-sdk",
-        "zellij",
         "ollama",
         "local-llm"
       ]
@@ -201,7 +200,6 @@
               "fixture",
               "model_authored",
               "process_generated",
-              "zellij_generated",
               "git-worktree-diff"
             ]
           },
@@ -431,10 +429,6 @@
       "additionalProperties": true
     },
     "process_child_report": {
-      "type": "object",
-      "additionalProperties": true
-    },
-    "zellij_child_report": {
       "type": "object",
       "additionalProperties": true
     },

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import fsp from 'node:fs/promises';
-import { findGlmOnlyMadFlagBlockers, findRetiredGlmMadFlagBlockers, findUnsupportedMadArgumentErrors, isOptionalZellijUnavailableLaunch, madHighCommand, resolveMadCliDegraded, stripMadLaunchOnlyArgs } from '../mad-sks-command.js';
+import { findGlmOnlyMadFlagBlockers, findRetiredGlmMadFlagBlockers, findUnsupportedMadArgumentErrors, madHighCommand, stripMadLaunchOnlyArgs } from '../mad-sks-command.js';
 
 test('retired GLM MAD flags are blocked instead of launched', () => {
   assert.deepEqual(findRetiredGlmMadFlagBlockers(['--mad', '--bench']), ['retired_glm_mad_flag:--bench']);
@@ -67,42 +67,6 @@ test('removed MAD namespaces and runtime flags are unsupported instead of redire
     console.error = originalError;
     process.exitCode = originalExitCode;
   }
-});
-
-test('CLI (non-interactive) MAD launches resolve the headless degradation contract', () => {
-  // Piped/headless stdout or stdin degrades the launch.
-  assert.equal(resolveMadCliDegraded({ args: [], stdoutIsTTY: undefined, stdinIsTTY: undefined }), true);
-  assert.equal(resolveMadCliDegraded({ args: [], stdoutIsTTY: true, stdinIsTTY: undefined }), true);
-  // A fully interactive TTY keeps the blocking repair contract.
-  assert.equal(resolveMadCliDegraded({ args: [], stdoutIsTTY: true, stdinIsTTY: true }), false);
-  // --json is a machine-consumer signal and degrades even on a TTY.
-  assert.equal(resolveMadCliDegraded({ args: ['--json'], stdoutIsTTY: true, stdinIsTTY: true }), true);
-  // SKS_NO_QUESTION=1 is the scripted-launch signal.
-  assert.equal(resolveMadCliDegraded({ args: [], env: { SKS_NO_QUESTION: '1' }, stdoutIsTTY: true, stdinIsTTY: true }), true);
-  // --attach opts back into the interactive contract.
-  assert.equal(resolveMadCliDegraded({ args: ['--attach'], stdoutIsTTY: undefined, stdinIsTTY: undefined }), false);
-  // Explicit --headless is handled on its own path, not as CLI degradation.
-  assert.equal(resolveMadCliDegraded({ args: [], explicitHeadless: true, stdoutIsTTY: undefined, stdinIsTTY: undefined }), false);
-  // SKS_MAD_CLI_HEADLESS=0 restores the legacy blocking behavior.
-  assert.equal(resolveMadCliDegraded({ args: [], env: { SKS_MAD_CLI_HEADLESS: '0' }, stdoutIsTTY: undefined, stdinIsTTY: undefined }), false);
-});
-
-test('only optional zellij-unavailable launch reports convert to a CLI headless fallback', () => {
-  assert.equal(isOptionalZellijUnavailableLaunch({
-    ok: false,
-    blockers: [],
-    warnings: ['zellij_missing_optional_integration', 'zellij_launch_skipped_optional_missing']
-  }), true);
-  assert.equal(isOptionalZellijUnavailableLaunch({ ok: true, blockers: [], warnings: [] }), false);
-  // Required-zellij failures carry blockers and must stay failures.
-  assert.equal(isOptionalZellijUnavailableLaunch({
-    ok: false,
-    blockers: ['zellij_missing_required'],
-    warnings: ['zellij_launch_skipped_optional_missing']
-  }), false);
-  // A failed background session without the skipped-optional warning is a real launch failure.
-  assert.equal(isOptionalZellijUnavailableLaunch({ ok: false, blockers: [], warnings: ['zellij_launch_some_other_warning'] }), false);
-  assert.equal(isOptionalZellijUnavailableLaunch(null), false);
 });
 
 async function makeMadSksMission(gate: Record<string, unknown>) {

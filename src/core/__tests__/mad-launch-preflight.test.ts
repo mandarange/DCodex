@@ -13,7 +13,6 @@ test('MAD launch preflight reports the first read-only failure without repeating
   const result = await runCodexLaunchPreflight(root, {
     fix: false,
     launchFast: true,
-    zellijCapability: false,
     skipCodexLbToolOutputRecovery: true,
     writeReport: false
   });

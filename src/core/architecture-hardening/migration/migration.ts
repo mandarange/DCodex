@@ -1,7 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { writeCodexConfigGuarded } from '../../codex/codex-config-guard.js';
+import { sha256 } from '../../fsx.js';
 import type { ProviderMode } from '../contracts/contracts.js';
 
 export type MigrationFindingKind = 'custom_provider' | 'mixed_catalog' | 'missing_session_metadata' | 'obsolete_command';
@@ -48,7 +49,7 @@ export function inspectArchitectureMigration(input: {
   return {
     schema: 'sks.architecture-migration-plan.v1',
     status: !findings.length ? 'no_op' : ambiguous ? 'migration_required' : 'ready',
-    source_hash: hash(input.configText), findings,
+    source_hash: sha256(input.configText), findings,
     removable_paths: findings.flatMap((finding) => finding.removable_path ? [finding.removable_path] : []),
     blockers: ambiguous ? findings.filter((finding) => finding.kind === 'mixed_catalog' || finding.kind === 'missing_session_metadata').map((finding) => finding.code) : []
   };
@@ -65,7 +66,7 @@ export async function applyArchitectureMigration(input: {
   if (!input.explicitApply) throw new Error('architecture_migration_explicit_apply_required');
   if (input.plan.status !== 'ready') throw new Error('architecture_migration_plan_not_ready');
   const current = await fsp.readFile(input.configPath, 'utf8');
-  if (hash(current) !== input.plan.source_hash) throw new Error('architecture_migration_user_edit_conflict');
+  if (sha256(current) !== input.plan.source_hash) throw new Error('architecture_migration_user_edit_conflict');
   const confirmed = new Set(input.confirmedRemovablePaths);
   if (input.plan.removable_paths.some((entry) => !confirmed.has(entry))) throw new Error('architecture_migration_reference_proof_required');
   const stat = await fsp.stat(input.configPath);
@@ -86,7 +87,7 @@ export async function applyArchitectureMigration(input: {
   if (!write.ok || !write.changed || !write.backup_path) throw new Error(`architecture_migration_${write.status}`);
   return {
     schema: 'sks.architecture-migration-receipt.v1', status: 'applied', source_hash: input.plan.source_hash,
-    output_hash: hash(migrated), backup_hash: hash(current), backup_path_hash: hash(path.resolve(write.backup_path)), target_mode: input.targetMode
+    output_hash: sha256(migrated), backup_hash: sha256(current), backup_path_hash: sha256(path.resolve(write.backup_path)), target_mode: input.targetMode
   };
 }
 
@@ -98,9 +99,9 @@ export async function rollbackArchitectureMigration(input: {
 }): Promise<ArchitectureMigrationReceipt> {
   if (!input.explicitRollback) throw new Error('architecture_migration_explicit_rollback_required');
   const current = await fsp.readFile(input.configPath, 'utf8');
-  if (hash(current) !== input.receipt.output_hash) throw new Error('architecture_migration_rollback_conflict');
+  if (sha256(current) !== input.receipt.output_hash) throw new Error('architecture_migration_rollback_conflict');
   const backup = await fsp.readFile(input.backupPath, 'utf8');
-  if (hash(backup) !== input.receipt.backup_hash || hash(path.resolve(input.backupPath)) !== input.receipt.backup_path_hash) {
+  if (sha256(backup) !== input.receipt.backup_hash || sha256(path.resolve(input.backupPath)) !== input.receipt.backup_path_hash) {
     throw new Error('architecture_migration_backup_mismatch');
   }
   const stat = await fsp.stat(input.configPath);
@@ -118,7 +119,7 @@ export async function rollbackArchitectureMigration(input: {
     preserveTextFormatting: true
   });
   if (!write.ok || !write.changed) throw new Error(`architecture_migration_${write.status}`);
-  return { ...input.receipt, status: 'rolled_back', output_hash: hash(backup) };
+  return { ...input.receipt, status: 'rolled_back', output_hash: sha256(backup) };
 }
 
 function migrateConfigText(source: string, mode: ProviderMode, loopbackBaseUrl: string | null, removablePaths: readonly string[]): string {
@@ -141,8 +142,4 @@ function migrateConfigText(source: string, mode: ProviderMode, loopbackBaseUrl: 
   const header = [`# sks-managed-provider-mode:${mode}`, 'model_provider = "openai"'];
   if (mode !== 'chatgpt-oauth') header.push(`openai_base_url = ${JSON.stringify(loopbackBaseUrl)}`);
   return `${header.join('\n')}\n${text ? `${text}\n` : ''}`;
-}
-
-function hash(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
 }

@@ -491,7 +491,7 @@ function codexNativeSksMenuStatus() {
 export function codexAppGuidance({ appInstalled, codex, mcpList, featureList, requiredFeatureFlags = {}, requiredFeatureFlagsOk = true, defaultPlugins = { ok: true, missing_enabled: [] }, productDesignPlugin = null, pluginSkillShadows = { ok: true, blocking: [] }, fastModeConfig = { ok: true, blockers: [] }, providerModelUi = null, nativeSksMenu = null, gitActions = { ok: true, blockers: [] }, imageGenerationReady, inAppBrowserReady, browserUseFeatureReady, computerUseReady, browserUseReady, browserToolReady, computerUseMcpListed, browserUseMcpListed, chromeExtension, remoteControl }: any) {
   const lines: any[] = [];
   if (!appInstalled) {
-    lines.push('Install and open Codex App for first-party MCP/plugin tools. SKS Zellij launch can still run with Codex CLI alone, but Codex Computer Use and imagegen/gpt-image-2 evidence will be unavailable until Codex App is ready.');
+    lines.push('Install and open Codex App for first-party MCP/plugin tools. Base Codex CLI flows remain available, but Codex Computer Use and imagegen/gpt-image-2 evidence will be unavailable until Codex App is ready.');
     lines.push(`Docs: ${CODEX_APP_DOCS_URL}`);
   }
   if (!codex?.bin) lines.push('Install Codex CLI too: npm i -g @openai/codex, or set SKS_CODEX_BIN.');

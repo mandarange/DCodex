@@ -133,7 +133,6 @@ export function buildDopamineOrchestrationArtifacts(gate: AdhdOrchestratingGateA
       schema: MICRO_WIN_TASK_BOARD_SCHEMA,
       generated_at: gate.generated_at,
       summary_available: true,
-      zellij_summary_available: true,
       items: gate.micro_wins.map((task) => ({
         id: task.id,
         title: task.title,

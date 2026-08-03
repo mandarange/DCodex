@@ -22,7 +22,7 @@ const plan = selectGates(manifest.gates, changedFiles, { publish });
 
 // --- Hermetic invariant proofs (independent of the current git state) ---
 // 1) A docs-only change must NOT select any real/heavy gate.
-const docsOnly = selectGates(manifest.gates, ['docs/zellij-ui-design.md'], { publish: false });
+const docsOnly = selectGates(manifest.gates, ['docs/release-readiness.md'], { publish: false });
 const realSelectedOnDocs = docsOnly.selected.filter((g) => g.cost === 'real' || g.cost === 'heavy');
 assertGate(realSelectedOnDocs.length === 0, 'docs-only change must not select real/heavy gates', { offenders: realSelectedOnDocs.map((g) => g.id) });
 // At least one heavy/real gate must be skipped on a docs-only change (proves narrowing).

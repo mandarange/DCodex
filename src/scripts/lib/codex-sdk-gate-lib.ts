@@ -49,8 +49,7 @@ export async function runFakeCodexSdkTaskFixture(label = 'fixture', extra = {}) 
         mad_sks_authorized: true,
         ...(extra.requestedScopeContract || {})
       },
-      mutationLedgerRoot: tmp,
-      zellijPaneId: extra.zellijPaneId || null
+      mutationLedgerRoot: tmp
     });
     const proof = await readJsonFile(path.join(tmp, 'codex-control-proof.json'));
     const registry = await readJsonFile(path.join(tmp, 'codex-thread-registry.json'));

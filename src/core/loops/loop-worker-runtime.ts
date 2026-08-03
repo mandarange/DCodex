@@ -98,20 +98,8 @@ async function runLoopWorkerNative(input: LoopWorkerRunInput): Promise<LoopWorke
     desiredCapability: 'agent-role'
   }).catch(() => null);
   const workGraph = buildLoopNarutoWorkGraph(input, workerCount, executionProfile, invocationPlan);
-  // Root-cause-1 fix: keep the ORCHESTRATOR root on the MAIN repo (input.root), not the
-  // loop worktree. All zellij/right-column/slot-telemetry state derives from the orchestrator
-  // root, so anchoring it on input.root makes the SLOTS snapshot land under
-  // <main repo>/.sneakoscope/missions/<missionId>/... where the main session's anchor + slot
-  // renderer panes watch it (previously it landed under the worktree and went permanently stale).
-  // The loop worktree is still where workers cwd + write: it is threaded through the per-worker
-  // `worktree` opt below, which launchWorker reads as ctx.opts.worktree -> workerCwd.
-  const insideZellij = Boolean(process.env.SKS_ZELLIJ_SESSION_NAME || process.env.ZELLIJ);
-  const visiblePaneCap = Math.min(resolveLoopVisiblePaneCap(workerCount), Math.max(1, workerCount));
-  const zellijPlacementOpts = insideZellij ? {
-    workerPlacement: 'zellij-pane' as const,
-    ...(process.env.SKS_ZELLIJ_SESSION_NAME ? { zellijSessionName: process.env.SKS_ZELLIJ_SESSION_NAME } : {}),
-    zellijVisiblePaneCap: visiblePaneCap
-  } : {};
+  // Keep the orchestrator rooted in the main repository while each worker receives
+  // its bounded worktree below. Native workers are process-based and need no UI placement.
   const orchestrator = await runNativeAgentOrchestrator({
     root: input.root,
     missionId: input.plan.mission_id,
@@ -130,9 +118,7 @@ async function runLoopWorkerNative(input: LoopWorkerRunInput): Promise<LoopWorke
     minimumWorkItems: 1,
     maxAgentCount: Math.max(1, workerCount),
     targetActiveSlots: Math.max(1, workerCount),
-    visualLaneCount: visiblePaneCap,
     narutoWorkGraph: workGraph,
-    ...zellijPlacementOpts,
     env: {
       SKS_LOOP_ID: input.node.loop_id,
       SKS_LOOP_PHASE: input.phase,
@@ -372,15 +358,6 @@ function summarizeNativeResult(result: any): Record<string, unknown> {
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.flat().map((item) => String(item || '').trim()).filter(Boolean))];
-}
-
-// Visible pane cap for loop workers: defaults to min(4, workers) so the right
-// column stays readable; SKS_ZELLIJ_VISIBLE_PANE_CAP overrides for tall
-// terminals (overflow workers run headless and stay visible in SLOTS rows).
-function resolveLoopVisiblePaneCap(workerCount: number): number {
-  const fromEnv = Number(process.env.SKS_ZELLIJ_VISIBLE_PANE_CAP || 0);
-  if (Number.isFinite(fromEnv) && fromEnv >= 1) return Math.floor(fromEnv);
-  return Math.min(4, Math.max(1, workerCount));
 }
 
 function fixtureChildEntrypoint(): string {

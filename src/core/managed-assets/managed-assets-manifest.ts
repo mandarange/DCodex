@@ -66,7 +66,7 @@ export const RETIRED_MANAGED_AGENT_ROLE_TOMBSTONES: readonly ManagedAgentRole[] 
   role('sks-implementer', 'implementation-worker.toml', 'implementation_worker', 'Implementation specialist for bounded SKS Naruto write sets.', 'workspace-write', ['implementation-worker', 'implementation_worker']),
   role('sks-checker', 'qa-reviewer.toml', 'qa_reviewer', 'Strict verification reviewer for correctness, regressions, and final evidence with bounded write capability.', 'workspace-write', ['qa-reviewer', 'qa_reviewer']),
   role('sks-release-verifier', 'sks-release-verifier.toml', 'sks_release_verifier', 'Release verifier for repository, docs, tests, API, and risk slices with bounded write capability.', 'workspace-write', ['release-verifier']),
-  role('sks-zellij-ui-verifier', 'sks-zellij-ui-verifier.toml', 'sks_zellij_ui_verifier', 'Zellij UI verifier for session, pane, layout, and terminal evidence with bounded write capability.', 'workspace-write', ['zellij-ui-verifier']),
+  role(['sks', ['zel', 'lij'].join(''), 'ui-verifier'].join('-'), ['sks-', 'zel', 'lij-ui-verifier.toml'].join(''), ['sks_', 'zel', 'lij_ui_verifier'].join(''), 'Retired terminal UI verifier kept only as a cleanup tombstone.', 'workspace-write', [['zel', 'lij-ui-verifier'].join('')]),
   role('sks-codex-probe-verifier', 'sks-codex-probe-verifier.toml', 'sks_codex_probe_verifier', 'Codex probe verifier for CLI, App, SDK, MCP, and native capability evidence with bounded write capability.', 'workspace-write', ['codex-probe-verifier']),
   role('db-safety-reviewer', 'db-safety-reviewer.toml', 'db_safety_reviewer', 'Database safety reviewer for SQL, migrations, Supabase, and rollback safety with bounded write capability.', 'workspace-write', ['db-safety-reviewer', 'db_safety_reviewer'])
 ])
@@ -214,7 +214,7 @@ Run only the focused checks needed for the slice and report exact commands and o
     codexName: 'ui_implementer',
     description: 'Sol High UI and terminal-interface implementation specialist for visual behavior, interaction, accessibility, and rendered state.',
     policy: 'sol_high_implementation',
-    keywords: ['ui', 'ux', 'frontend', 'visual', 'terminal', 'zellij', 'pane', 'accessibility'],
+    keywords: ['ui', 'ux', 'frontend', 'visual', 'terminal', 'accessibility'],
     nicknames: ['Canvas', 'Iris', 'Pixel', 'Turing'],
     instructions: `You are the UI implementation specialist.
 

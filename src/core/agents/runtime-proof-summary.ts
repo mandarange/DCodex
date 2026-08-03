@@ -2,7 +2,6 @@ import path from 'node:path'
 import { findLatestMission, missionDir } from '../mission.js'
 import { readJson, writeJsonAtomic } from '../fsx.js'
 import { readAgentMessageBus, type AgentMessageBusEntry } from './agent-message-bus.js'
-import { buildZellijWorkerPaneSummary, type ZellijWorkerPaneSummary } from '../zellij/zellij-worker-pane-summary.js'
 import { readLoopGraphProof, summarizeLoopGraphProof } from '../loops/loop-observability.js'
 
 export const RUNTIME_PROOF_SUMMARY_SCHEMA = 'sks.runtime-proof-summary.v1'
@@ -17,12 +16,6 @@ export interface RuntimeProofSummary {
     unique_worker_pids: number
     speedup_ratio: number
     proof_passed: boolean
-  }
-  ui: {
-    visible_panes: number
-    headless_workers: number
-    telemetry_age_ms: number
-    stale: boolean
   }
   model_calls: {
     max_observed: number
@@ -39,15 +32,6 @@ export interface RuntimeProofSummary {
     warning_count: number
     error_count: number
   }
-  zellij: Pick<ZellijWorkerPaneSummary,
-    | 'stacked_requested_count'
-    | 'stacked_applied_count'
-    | 'stacked_fallback_count'
-    | 'fallback_modes'
-    | 'pane_lock_wait_p95_ms'
-    | 'pane_lock_held_p95_ms'
-    | 'duplicate_slot_anchor_count'
-  >
   loops: {
     total: number
     running: number
@@ -73,28 +57,20 @@ export async function buildRuntimeProofSummary(root: string, missionIdInput: str
   const parallel = await readJson<any>(path.join(agentsDir, 'parallel-runtime-proof.json'), null)
   const scheduler = await readJson<any>(path.join(agentsDir, 'agent-scheduler-state.json'), null)
   const runtime = await readJson<any>(path.join(agentsDir, 'native-cli-worker-runtime.json'), null)
-  const telemetry = await readJson<any>(path.join(dir, 'zellij', 'slot-telemetry.snapshot.json'), null)
   const stopGate = await readJson<any>(path.join(dir, 'stop-gate.json'), null)
   const governor = await readJson<any>(path.join(agentsDir, 'naruto-concurrency-governor.json'), null)
   const messagesAll = await readAgentMessageBus(root, missionId, { max: 500 })
   const recentMessages = await readAgentMessageBus(root, missionId, { max: opts.maxMessages || 8 })
-  const zellijSummary = await buildZellijWorkerPaneSummary(root, missionId).catch(() => null)
   const loopSummary = summarizeLoopGraphProof(await readLoopGraphProof(root, missionId).catch(() => null))
   const failedMessages = messagesAll.filter((row) => row.event_type === 'worker_failed')
   const errorMessages = messagesAll.filter((row) => row.level === 'error')
-  const telemetryAgeMs = telemetry?.updated_at ? Math.max(0, Date.now() - Date.parse(telemetry.updated_at)) : Number.MAX_SAFE_INTEGER
   const terminalProofAccepted = canonicalTerminalProofAccepted(stopGate, missionId)
-  const visiblePanes = Number(parallel?.visible_panes ?? runtime?.zellij_pane_worker_sessions ?? telemetryVisiblePaneCount(telemetry) ?? 0)
-  const targetActive = Number(scheduler?.target_active_slots ?? parallel?.target_active_slots ?? runtime?.target_active_slots ?? governor?.target_active_slots ?? 0)
-  const headlessWorkers = Number(parallel?.headless_workers ?? runtime?.headless_overflow_worker_count ?? Math.max(0, targetActive - visiblePanes))
   const parallelBlockers = parallel?.passed === false ? parallel.blockers || ['parallel_runtime_proof_failed'] : []
   const blockers = [
     ...(!parallel ? ['parallel_runtime_proof_missing'] : []),
     ...(!scheduler ? ['agent_scheduler_state_missing'] : []),
     ...(terminalProofAccepted ? parallelBlockers.filter((blocker: unknown) => String(blocker) !== 'speedup_ratio_below_target') : parallelBlockers),
-    ...(errorMessages.length ? ['agent_message_bus_error_blockers'] : []),
-    ...(telemetryAgeMs > 3000 && !terminalProofAccepted ? ['zellij_telemetry_stale'] : []),
-    ...(zellijSummary?.blockers || [])
+    ...(errorMessages.length ? ['agent_message_bus_error_blockers'] : [])
   ].map(String)
   const summary: RuntimeProofSummary = {
     schema: RUNTIME_PROOF_SUMMARY_SCHEMA,
@@ -106,12 +82,6 @@ export async function buildRuntimeProofSummary(root: string, missionIdInput: str
       unique_worker_pids: Number(parallel?.unique_worker_pids || uniqueNumbers(runtime?.process_ids).length || 0),
       speedup_ratio: Number(parallel?.speedup_ratio || 0),
       proof_passed: parallel?.passed === true
-    },
-    ui: {
-      visible_panes: visiblePanes,
-      headless_workers: headlessWorkers,
-      telemetry_age_ms: telemetryAgeMs,
-      stale: telemetryAgeMs > 3000
     },
     model_calls: {
       max_observed: Number(parallel?.max_observed_model_calls || 0),
@@ -127,15 +97,6 @@ export async function buildRuntimeProofSummary(root: string, missionIdInput: str
       failed_count: failedMessages.length,
       warning_count: messagesAll.filter((row) => row.level === 'warning').length,
       error_count: errorMessages.length
-    },
-    zellij: {
-      stacked_requested_count: Number(zellijSummary?.stacked_requested_count || 0),
-      stacked_applied_count: Number(zellijSummary?.stacked_applied_count || 0),
-      stacked_fallback_count: Number(zellijSummary?.stacked_fallback_count || 0),
-      fallback_modes: zellijSummary?.fallback_modes || {},
-      pane_lock_wait_p95_ms: Number(zellijSummary?.pane_lock_wait_p95_ms || 0),
-      pane_lock_held_p95_ms: Number(zellijSummary?.pane_lock_held_p95_ms || 0),
-      duplicate_slot_anchor_count: Number(zellijSummary?.duplicate_slot_anchor_count || 0)
     },
     loops: loopSummary,
     terminal_proof: {
@@ -156,13 +117,7 @@ export function renderRuntimeProofSummary(summary: RuntimeProofSummary): string 
     `Active workers: ${summary.parallel.max_active_workers}`,
     `Unique PIDs: ${summary.parallel.unique_worker_pids}`,
     `Speedup: ${summary.parallel.speedup_ratio}x`,
-    `Visible/headless: ${summary.ui.visible_panes} / ${summary.ui.headless_workers}`,
-    `Telemetry: ${summary.ui.stale ? `stale ${(summary.ui.telemetry_age_ms / 1000).toFixed(1)}s` : `fresh ${(summary.ui.telemetry_age_ms / 1000).toFixed(1)}s`}`,
     `Model calls max: ${summary.model_calls.max_observed}`,
-    `Zellij stacked panes: ${summary.zellij.stacked_applied_count}/${summary.zellij.stacked_requested_count} applied`,
-    `Stack fallback: ${summary.zellij.stacked_fallback_count}`,
-    `Pane lock wait p95: ${summary.zellij.pane_lock_wait_p95_ms}ms`,
-    `SLOTS anchors: ${summary.zellij.duplicate_slot_anchor_count}`,
     `Loops: ${summary.loops.total} total / ${summary.loops.completed} done / ${summary.loops.blocked} blocked / ${summary.loops.speedup_ratio}x`,
     ...(summary.messages.recent.length ? [
       'Recent worker messages:',
@@ -188,11 +143,6 @@ function messageStatusLabel(row: AgentMessageBusEntry): string {
   if (row.level === 'warning') return '[warn]'
   if (row.level === 'error') return '[err]'
   return '[info]'
-}
-
-function telemetryVisiblePaneCount(snapshot: any) {
-  const slots = snapshot?.slots && typeof snapshot.slots === 'object' ? Object.values(snapshot.slots) : []
-  return slots.filter((row: any) => row?.status && row.status !== 'headless').length
 }
 
 function uniqueNumbers(values: unknown) {

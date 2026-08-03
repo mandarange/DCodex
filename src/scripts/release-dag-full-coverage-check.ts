@@ -35,20 +35,11 @@ const releaseIds = new Set(releasePreset.map((gate) => gate.id))
 const harnessIds = new Set(harnessPreset.map((gate) => gate.id))
 const releaseContract = releaseGateContractSnapshot()
 const requiredReleasePresetIds = releaseContract.ids
-const requiredHarnessPresetIds = [
-  'zellij:layout-valid',
-  'zellij:compact-slot-renderer',
-  'zellij:slot-telemetry',
-  'zellij:slot-pane-telemetry-renderer',
-  'zellij:first-slot-down-stack',
-  'zellij:right-column-geometry-proof'
-]
+const requiredHarnessPresetIds: string[] = []
 const missingRequiredReleasePreset = requiredReleasePresetIds.filter((id) => !releaseIds.has(id))
 const unexpectedReleasePreset = [...releaseIds].filter((id) => !requiredReleasePresetIds.includes(id)).sort()
 const missingRequiredHarnessPreset = requiredHarnessPresetIds.filter((id) => !harnessIds.has(id))
 const duplicateAcrossManifests = [...releaseIds].filter((id) => harnessIds.has(id))
-const releaseZellij = [...releaseIds].filter((id) => id.startsWith('zellij:'))
-const harnessNonZellij = [...harnessIds].filter((id) => !id.startsWith('zellij:'))
 const npmRunCommands = [...releasePreset, ...harnessPreset].filter((gate) => /\bnpm\s+run\b/.test(gate.command)).map((gate) => gate.id)
 const schemaComplete = [...releaseManifest.gates, ...harnessManifest.gates].every(isReleaseGate)
 
@@ -60,8 +51,7 @@ const report = {
     && unexpectedReleasePreset.length === 0
     && missingRequiredHarnessPreset.length === 0
     && duplicateAcrossManifests.length === 0
-    && releaseZellij.length === 0
-    && harnessNonZellij.length === 0
+    && harnessPreset.length === 0
     && npmRunCommands.length === 0,
   release_gate_count: releasePreset.length,
   harness_gate_count: harnessPreset.length,
@@ -72,8 +62,7 @@ const report = {
   required_harness_preset_ids: requiredHarnessPresetIds,
   missing_required_harness_preset: missingRequiredHarnessPreset,
   duplicate_across_manifests: duplicateAcrossManifests,
-  release_zellij: releaseZellij,
-  harness_non_zellij: harnessNonZellij,
+  retired_harness_empty: harnessPreset.length === 0,
   npm_run_commands: npmRunCommands,
   schema_complete: schemaComplete,
   package_script_count: Object.keys(packageJson.scripts || {}).length

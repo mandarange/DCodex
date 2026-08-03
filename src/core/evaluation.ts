@@ -91,22 +91,6 @@ export const DEFAULT_MULTIAGENT_V2 = Object.freeze({
   subagent_output: 'structured_summary_only'
 });
 
-export const ZELLIJ_COCKPIT_VIEWS = Object.freeze([
-  'Mission / Goal View',
-  'Agent Grid View',
-  'MultiAgentV2 Graph View',
-  'Work Order Ledger View',
-  'Skill Autopilot View',
-  'TriWiki Memory Health View',
-  'Forget Queue View',
-  'Mistake Immunity View',
-  'Tool Reliability View',
-  'Harness Experiments View',
-  'Dogfood Evidence View',
-  'Code Structure View',
-  'Statusline / Terminal Title Preview'
-]);
-
 export function serializedSizeBytes(value: any) {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   return Buffer.byteLength(String(text ?? ''), 'utf8');
@@ -295,10 +279,6 @@ export function harnessGrowthReport(input: any = {}) {
       multiagent_v2: DEFAULT_MULTIAGENT_V2,
       goal_checkpoint_required_fields: ['goal_id', 'phase', 'summary', 'completed_checkboxes', 'open_checkboxes', 'blockers', 'evidence'],
       external_session_import: 'structured_summary_only_with_utility_score_and_forgetting_metadata'
-    },
-    zellij: {
-      views: ZELLIJ_COCKPIT_VIEWS,
-      status_terms: ['idle', 'planning', 'exploring', 'implementing', 'waiting_for_tool', 'waiting_for_approval', 'dogfooding', 'verifying', 'summarizing', 'blocked', 'failed', 'completed', 'paused', 'resuming']
     },
     reliability: {
       tool_error_taxonomy: TOOL_ERROR_TAXONOMY,

@@ -229,7 +229,7 @@ export function inferAnswersForPrompt(prompt: any, explicitAnswers: any = {}) {
     || /(?:올려|올리|상향|증가|bump|upgrade|publish|배포|출시)[^\n]{0,48}(?:버전|version)/.test(lower)
     || /(?:릴리스|release)[^\n]{0,48}(?:준비|prepare|cut|ship|publish)/.test(lower)
     || /(?:준비|prepare|cut|ship|publish)[^\n]{0,48}(?:릴리스|release)/.test(lower);
-  const installWork = /bootstrap|postinstall|doctor|deps|zellij|homebrew|first install|최초\s*설치|설치\s*ux|셋업|setup/.test(lower);
+  const installWork = /bootstrap|postinstall|doctor|deps|homebrew|first install|최초\s*설치|설치\s*ux|셋업|setup/.test(lower);
   const questionGateWork = /모호|ambiguity|clarification|질문|triwiki|추론|infer|predict|예측|answers?\.json|decision-contract/.test(lower);
   const requestIntakeWork = /(모호|ambiguity|ambiguous|vague|rough|의도|intent|요청사항|requirements?|프롬프트|prompt|triwiki|위키|wiki)/.test(lower)
     && /(파이프라인|pipeline|변환|transform|rewrite|compile|리스트|list|누락|missing|의도|intent|request[- ]?intake|intake)/.test(lower);

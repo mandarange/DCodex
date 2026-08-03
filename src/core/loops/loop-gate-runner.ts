@@ -6,6 +6,7 @@ import { loopBudgetPath, loopGatePath, loopStatePath } from './loop-artifacts.js
 import { resolveLoopGate, type LoopGateDefinition } from './loop-gate-registry.js';
 import { decideLoopFixturePolicy, writeLoopFixturePolicyDecision } from './loop-fixture-policy.js';
 import { loopFinalArbiterGateContractRelativePath, writeLoopFinalArbiterGateContract } from './loop-final-arbiter-contract.js';
+import { uniqueTruthyStrings as uniqueStrings } from '../text/strings.js';
 
 export interface SksLoopGateRunResult {
   ok: boolean;
@@ -278,10 +279,6 @@ function checkerArtifactPathCandidates(root: string, missionId: string, artifact
     safeResolveWithin(resolvedMissionRoot, raw),
     safeResolveWithin(path.join(resolvedMissionRoot, 'loops'), raw)
   ].filter((value): value is string => Boolean(value)));
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.filter(Boolean))];
 }
 
 async function checkerArtifactReadablePath(root: string, missionId: string, candidate: string): Promise<string | null> {

@@ -8,8 +8,7 @@ test('fake-real proof policy v3 recognizes only official Codex subagent executio
     require_official_subagents: true
   });
   const supporting = mod.evaluateFakeRealProofPolicy({
-    backend: 'zellij',
-    zellij_pane_verified: true,
+    cleanup_proof: { ok: true },
     output_schema_used: true,
     output_last_message_path: 'result.json'
   });
@@ -20,13 +19,13 @@ test('fake-real proof policy v3 recognizes only official Codex subagent executio
   assert.equal(Object.values(official.subsystems).filter((row) => row.evidence_role === 'execution_authority').length, 1);
   assert.deepEqual(Object.keys(official.subsystems).sort(), [
     'cleanup', 'dynamic_scheduler', 'goal_mode', 'intelligent_work_graph', 'official_codex_subagent',
-    'route_blackbox', 'source_intelligence', 'warp_mad_lanes', 'zellij_pane'
+    'route_blackbox', 'source_intelligence'
   ]);
   assert.equal(requiredMissing.proof_level, 'real_required_missing');
   assert.equal(requiredMissing.subsystem_levels.official_codex_subagent, 'real_required_missing');
   assert.equal(requiredMissing.ok, false);
   assert.equal(supporting.proof_level, 'integration_optional');
-  assert.equal(supporting.subsystem_levels.zellij_pane, 'proven');
+  assert.equal(supporting.subsystem_levels.cleanup, 'proven');
   assert.deepEqual(supporting.real_claims, []);
   assert.ok(supporting.supporting_claims.includes('codex_structured_output_evidence'));
 });

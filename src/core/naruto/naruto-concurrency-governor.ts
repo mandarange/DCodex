@@ -13,7 +13,6 @@ export interface NarutoConcurrencyGovernorInput {
   activeLeaseConflicts?: number
   backend?: string
   hardware?: HardwareCapacityProbeInput
-  zellijVisiblePaneCap?: number
   parallelismMode?: 'extreme' | 'balanced' | 'safe' | string
   /** Optional spawned-child slot cap (max_threads). Defaults to DEFAULT_NARUTO_MAX_THREADS. */
   maxThreads?: number
@@ -26,7 +25,6 @@ export interface NarutoConcurrencyGovernorDecision {
   requested_workers: number
   total_work_items: number
   safe_active_workers: number
-  safe_zellij_visible_panes: number
   headless_workers: number
   local_llm_parallel: number
   remote_codex_parallel: number
@@ -50,7 +48,7 @@ export interface NarutoConcurrencyGovernorDecision {
  * Official Codex subagents are host-managed remote threads: local CPU/RAM/fd
  * budgets and an unmeasured default API budget do not cap that lane. A measured
  * external host cap or explicitly configured API budget still applies exactly.
- * Heavy local backends (codex-sdk/zellij/process/ollama) are bounded by the remote
+ * Heavy local backends (codex-sdk/process/ollama) are bounded by the remote
  * API rate-limit budget and 1.5 GB/worker; light lanes (any other backend) skip
  * the remote budget and use 0.5 GB/worker, so they can scale into the hundreds
  * when the real memory/fd/cpu floors below allow it.
@@ -68,10 +66,6 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
   const pending = normalizeNonNegativeInt(input.pendingWorkQueueSize, totalWorkItems)
   const leaseConflicts = normalizeNonNegativeInt(input.activeLeaseConflicts, 0)
   const hardware = probeHardwareCapacity(input.hardware || {})
-  const zellijVisiblePaneCap = normalizePositiveInt(
-    input.zellijVisiblePaneCap,
-    Math.min(frameBudget, Math.max(4, Math.floor(hardware.terminal_rows / 5)))
-  )
   const backend = String(input.backend || 'codex-sdk')
   const officialSubagentLane = backend === 'official-subagent'
   const parallelismMode = normalizeParallelismMode(input.parallelismMode)
@@ -79,7 +73,7 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
   const totalGb = hardware.total_memory_bytes / (1024 * 1024 * 1024)
   const reservedInteractiveGb = Math.max(2, totalGb * 0.2)
   const memoryBudgetGb = Math.max(0.5, freeGb - reservedInteractiveGb)
-  const heavy = backend === 'codex-sdk' || backend === 'zellij' || backend === 'process' || backend === 'ollama'
+  const heavy = backend === 'codex-sdk' || backend === 'process' || backend === 'ollama'
   const gbPerWorker = heavy
     ? normalizePositiveNumber(process.env.SKS_NARUTO_GB_PER_WORKER, 1.5)
     : normalizePositiveNumber(process.env.SKS_NARUTO_LIGHT_GB_PER_WORKER, 0.5)
@@ -106,7 +100,7 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
     ? explicitRemoteApiBudget ? remoteCodexParallel : frameBudget
     : backend === 'ollama' || backend === 'local-llm'
     ? localLlmParallel
-    : backend === 'codex-sdk' || backend === 'zellij'
+    : backend === 'codex-sdk'
       ? Math.min(remoteCodexParallel, processCap)
       : processCap
   const queueCap = Math.max(1, Math.min(requestedWorkers, pending || totalWorkItems))
@@ -126,7 +120,7 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
     ...(externalCodexHostCap === null ? [] : [externalCodexHostCap]),
     frameBudget
   ))
-  const pressure = monitorNarutoResourcePressure(hardware, { activeWorkers: rawSafe, zellijVisiblePaneCap })
+  const pressure = monitorNarutoResourcePressure(hardware, { activeWorkers: rawSafe })
   const backpressure = applyNarutoBackpressure(rawSafe, pressure)
   const currentSafeActiveWorkers = officialSubagentLane
     ? rawSafe
@@ -138,7 +132,6 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
       ? Math.max(1, Math.ceil(rawSafe * 0.75))
       : rawSafe
   const safeActiveWorkers = Math.max(1, Math.min(modeCap, currentSafeActiveWorkers))
-  const safeVisible = Math.min(safeActiveWorkers, zellijVisiblePaneCap)
   const exactLimiters = [
     ...(externalCodexHostCap !== null && externalCodexHostCap === rawSafe
       ? [`external_codex_host_cap:${externalCodexHostCap}`]
@@ -176,7 +169,6 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
       ? [`external_codex_host_cap:${externalCodexHostCap}`]
       : []),
     ...(frameBudget < requestedWorkers ? [`naruto_max_threads_child_slot_cap:${frameBudget}`] : []),
-    ...(safeVisible < safeActiveWorkers ? ['zellij_ui_pane_budget'] : []),
     ...(leaseConflicts > 0 ? ['active_lease_conflicts'] : []),
     ...(!officialSubagentLane ? pressure.reasons : [])
   ]
@@ -185,8 +177,7 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
     requested_workers: requestedWorkers,
     total_work_items: totalWorkItems,
     safe_active_workers: safeActiveWorkers,
-    safe_zellij_visible_panes: safeVisible,
-    headless_workers: Math.max(0, safeActiveWorkers - safeVisible),
+    headless_workers: officialSubagentLane ? 0 : safeActiveWorkers,
     local_llm_parallel: localLlmParallel,
     remote_codex_parallel: remoteCodexParallel,
     process_parallel: officialSubagentLane ? frameBudget : processCap,

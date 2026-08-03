@@ -6,7 +6,6 @@ import path from 'node:path'
 import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 
 const CORE_NO_TS_NOCHECK_DIRS = [
-  'src/core/zellij',
   'src/core/doctor',
   'src/core/codex-app',
   'src/core/loops',
@@ -14,9 +13,6 @@ const CORE_NO_TS_NOCHECK_DIRS = [
 ]
 
 const TARGET_TYPED_FILES = [
-  'src/core/zellij/zellij-self-heal.ts',
-  'src/core/zellij/homebrew-policy.ts',
-  'src/core/doctor/doctor-zellij-repair.ts',
   'src/core/codex-app/codex-app-harness-matrix.ts',
   'src/core/codex-native/codex-native-pattern-analysis.ts',
   'src/core/codex-app/codex-skill-sync.ts',
@@ -32,7 +28,6 @@ export async function runTypedRoutingGate(id: string) {
   if (id === 'lint:no-ts-nocheck-core') return noTsNoCheckCore(id)
   if (id === 'codex-app:type-safety') return codexAppTypeSafety(id)
   if (id === 'type-surface:codex-app') return typeSurfaceCodexApp(id)
-  if (id.startsWith('zellij:')) return zellijGate(id)
   if (id.startsWith('codex-app:hook-approval')) return hookApprovalGate(id)
   if (id.startsWith('codex-app:agent-type')) return agentTypeGate(id)
   if (id.includes('init-deep') || id.includes('planner-project-memory-deep')) return initDeepGate(id)
@@ -57,7 +52,6 @@ function noTsNoCheckCore(id: string) {
 function codexAppTypeSafety(id: string) {
   const required = [
     'src/core/codex-app/codex-app-types.ts',
-    'src/core/zellij/zellij-self-heal-types.ts',
     'src/core/codex-app/codex-hook-approval-probe.ts',
     'src/core/codex-app/codex-agent-type-probe.ts',
     'src/core/codex-native/codex-native-reference-source.ts'
@@ -75,7 +69,6 @@ function codexAppTypeSafety(id: string) {
 
 async function typeSurfaceCodexApp(id: string) {
   const types = await importDist('core/codex-app/codex-app-types.js')
-  const zellijTypes = await importDist('core/zellij/zellij-self-heal-types.js')
   const agentProbe = await importDist('core/codex-app/codex-agent-type-probe.js')
   const sampleMatrix = {
     schema: 'sks.codex-app-harness-matrix.v1',
@@ -107,41 +100,9 @@ async function typeSurfaceCodexApp(id: string) {
     warnings: []
   }
   assertGate(types.isCodexAppHarnessMatrix(sampleMatrix) === true, 'CodexAppHarnessMatrix guard rejected valid sample')
-  const normalized = zellijTypes.normalizeZellijSelfHealResult({ schema: 'sks.zellij-self-heal.v1', ok: true, requested_by: 'setup', strategy: 'none-current', before: {}, after: {}, blockers: [], warnings: [] })
-  assertGate(normalized.dry_run === false && Array.isArray(normalized.planned_mutations), 'zellij self-heal normalizer must backfill new fields', normalized)
   const payload = agentProbe.agentRolePayloadFor('sks-checker', { supported: true, schema: 'sks.codex-agent-type-probe.v1' })
   assertGate(payload.strategy === 'agent_type' && payload.agent_type === 'sks-checker', 'agent role payload must select agent_type when supported', payload)
-  emitGate(id, { guards: 3 })
-}
-
-async function zellijGate(id: string) {
-  const rootDir = await tempRoot(id)
-  const selfHeal = await importDist('core/zellij/zellij-self-heal.js')
-  if (id === 'zellij:self-heal-status-contract') {
-    const update = await importDist('core/zellij/zellij-update.js')
-    const result = await update.maybePromptZellijUpdateForLaunch(['--yes'], {
-      label: 'MAD launch',
-      root: rootDir,
-      selfHealOnMissing: true,
-      allowHeadlessFallback: true,
-      env: fakeZellijEnv('missing', { brew: false })
-    })
-    assertGate(result.status === 'headless_fallback', 'missing zellij with headless fallback must return headless_fallback', result)
-    return emitGate(id, { status: result.status })
-  }
-  const result = await selfHeal.repairZellijForSks({
-    root: rootDir,
-    requestedBy: 'doctor --fix',
-    fixRequested: true,
-    autoApprove: true,
-    dryRun: id.includes('dry-run') || id.includes('typed-blackbox'),
-    installHomebrew: false,
-    env: fakeZellijEnv('missing', { brew: true })
-  })
-  assertGate(result.dry_run === true, 'dry-run zellij result must set dry_run', result)
-  assertGate(result.planned_mutations.length >= 1, 'dry-run zellij result must include planned mutations', result)
-  assertGate(result.mutation_guard_artifact?.endsWith('#planned'), 'dry-run zellij mutation artifact must be planned-only', result)
-  emitGate(id, { planned: result.planned_mutations.length })
+  emitGate(id, { guards: 2 })
 }
 
 async function hookApprovalGate(id: string) {
@@ -188,18 +149,19 @@ async function agentTypeGate(id: string) {
 
 async function initDeepGate(id: string) {
   const rootDir = await tempRoot(id)
-  await fsp.mkdir(path.join(rootDir, 'src/core/zellij'), { recursive: true })
-  for (let i = 0; i < 18; i += 1) await fsp.writeFile(path.join(rootDir, 'src/core/zellij', `f${i}.ts`), 'export {}\n')
-  await fsp.writeFile(path.join(rootDir, 'src/core/zellij', 'AGENTS.md'), '# User local guidance\nKeep me.\n')
+  const targetDir = path.join(rootDir, 'src/core/naruto')
+  await fsp.mkdir(targetDir, { recursive: true })
+  for (let i = 0; i < 18; i += 1) await fsp.writeFile(path.join(targetDir, `f${i}.ts`), 'export {}\n')
+  await fsp.writeFile(path.join(targetDir, 'AGENTS.md'), '# User local guidance\nKeep me.\n')
   const init = await importDist('core/codex-app/codex-init-deep.js')
   const report = await init.runCodexInitDeep({ root: rootDir, apply: true, directoryLocal: true })
-  const agents = fs.readFileSync(path.join(rootDir, 'src/core/zellij', 'AGENTS.md'), 'utf8')
+  const agents = fs.readFileSync(path.join(targetDir, 'AGENTS.md'), 'utf8')
   assertGate(/BEGIN SKS INIT-DEEP MANAGED SECTION/.test(agents), 'directory AGENTS.md managed block missing', { agents })
   assertGate(agents.includes('Keep me.'), 'directory AGENTS.md must preserve user content', { agents })
   assertGate(report.directory_local_agents.backup_paths.length >= 1, 'directory AGENTS.md backup missing', report)
   if (id === 'loop:planner-project-memory-deep') {
     const planner = await importDist('core/loops/loop-planner.js')
-    const plan = await planner.planLoopsFromRequest({ root: rootDir, missionId: 'M-memory-deep', request: 'change zellij self heal and loop planner', sourceCommand: 'loop' })
+    const plan = await planner.planLoopsFromRequest({ root: rootDir, missionId: 'M-memory-deep', request: 'change naruto scheduler and loop planner', sourceCommand: 'loop' })
     assertGate(plan.graph.nodes.some((node: any) => Array.isArray(node.memory_hints) && node.memory_hints.length), 'loop nodes must consume deep memory hints', plan)
   }
   emitGate(id, { managed_agents: report.directory_local_agents.created.length + report.directory_local_agents.updated.length })
@@ -283,21 +245,6 @@ async function tempRoot(id: string) {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), `sks-315-${id.replace(/[^a-z0-9]+/gi, '-')}-`))
   await fsp.mkdir(path.join(dir, '.sneakoscope', 'reports'), { recursive: true })
   return dir
-}
-
-function fakeZellijEnv(status: string, opts: { brew?: boolean } = {}) {
-  return {
-    ...process.env,
-    SKS_ZELLIJ_CAPABILITY_FAKE_STATUS: status,
-    SKS_ZELLIJ_CAPABILITY_FAKE_VERSION: status === 'too_old' ? '0.40.0' : '0.44.0',
-    SKS_ZELLIJ_SELF_HEAL_BEFORE_STATUS: status,
-    SKS_ZELLIJ_SELF_HEAL_BEFORE_VERSION: status === 'too_old' ? '0.40.0' : '',
-    SKS_ZELLIJ_SELF_HEAL_AFTER_STATUS: 'ok',
-    SKS_ZELLIJ_SELF_HEAL_AFTER_VERSION: '0.44.3',
-    SKS_ZELLIJ_LATEST_VERSION: '0.44.3',
-    SKS_ZELLIJ_SELF_HEAL_FAKE_RUN: '1',
-    SKS_ZELLIJ_SELF_HEAL_BREW_PRESENT: opts.brew ? '1' : '0'
-  }
 }
 
 function swapEnv(next: Record<string, string>) {

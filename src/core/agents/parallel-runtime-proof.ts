@@ -10,10 +10,6 @@ export type ParallelRuntimeEventType =
   | 'slot_reserved'
   | 'worker_launch_invoked'
   | 'worker_process_spawned'
-  | 'zellij_pane_creation_lock_requested'
-  | 'zellij_pane_creation_lock_acquired'
-  | 'zellij_pane_creation_lock_released'
-  | 'zellij_pane_created'
   | 'worker_heartbeat_seen'
   | 'model_call_started'
   | 'model_call_completed'
@@ -23,7 +19,7 @@ export type ParallelRuntimeEventType =
   | 'worker_failed'
   | 'batch_dispatch_completed'
 
-export type ParallelRuntimePlacement = 'zellij-pane' | 'process' | 'headless' | 'headless_by_design_viewport_ui' | 'unknown'
+export type ParallelRuntimePlacement = 'process' | 'unknown'
 
 export interface ParallelRuntimeEvent {
   schema: typeof PARALLEL_RUNTIME_EVENT_SCHEMA
@@ -78,8 +74,6 @@ export interface ParallelRuntimeProof {
   }>
   changed_file_count: number
   changed_files_by_worker: Record<string, string[]>
-  visible_panes: number
-  headless_workers: number
   utilization_proof_consistency: {
     ok: boolean
     scheduler_max_active: number
@@ -119,7 +113,6 @@ export async function appendParallelRuntimeEvent(
 export async function buildParallelRuntimeProof(root: string, missionId: string, opts: {
   requestedWorkers?: number
   targetActiveSlots?: number
-  visiblePanes?: number
   expectedWorkerRuntimeMs?: number
   minActiveWorkers?: number
   minSpeedupRatio?: number
@@ -210,9 +203,6 @@ export async function buildParallelRuntimeProof(root: string, missionId: string,
   const sequentialEstimateMs = workerDurations.length
     ? workerDurations.reduce((sum, value) => sum + value, 0)
     : requestedWorkers * positiveInt(opts.expectedWorkerRuntimeMs, 4000)
-  const visiblePanes = nonNegativeInt(opts.visiblePanes, sorted.filter((event) => event.placement === 'zellij-pane').length ? new Set(sorted.filter((event) => event.placement === 'zellij-pane').map((event) => event.slot_id || event.session_id || '')).size : 0)
-  const observedHeadlessWorkers = sorted.filter((event) => (event.placement === 'headless' || event.placement === 'headless_by_design_viewport_ui') && (event.event_type === 'worker_launch_invoked' || event.event_type === 'worker_process_spawned')).length
-  const headlessWorkers = Math.max(observedHeadlessWorkers, Math.max(0, targetActiveSlots - visiblePanes))
   const minActiveWorkers = opts.minActiveWorkers === undefined
     ? Math.min(targetActiveSlots, requestedWorkers)
     : nonNegativeInt(opts.minActiveWorkers, Math.min(targetActiveSlots, requestedWorkers))
@@ -268,8 +258,6 @@ export async function buildParallelRuntimeProof(root: string, missionId: string,
     overlap_windows: [...coalescedOverlapWindows, ...workerEvidence.overlap_windows],
     changed_file_count: workerEvidence.changed_file_count,
     changed_files_by_worker: workerEvidence.changed_files_by_worker,
-    visible_panes: visiblePanes,
-    headless_workers: headlessWorkers,
     utilization_proof_consistency: utilizationProofConsistency,
     passed,
     event_read_mode: eventRead.mode,
@@ -348,7 +336,7 @@ function normalizeParallelRuntimeEvent(
 
 function normalizePlacement(value: unknown): ParallelRuntimePlacement {
   const text = String(value || 'unknown')
-  if (text === 'zellij-pane' || text === 'process' || text === 'headless' || text === 'headless_by_design_viewport_ui') return text
+  if (text === 'process') return text
   return 'unknown'
 }
 

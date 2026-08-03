@@ -206,7 +206,7 @@ path.
   while release authorization additionally requires a real command/reply E2E
   from a cellular network. A token, fixture, local-network run, or Doctor
   readiness result cannot substitute for that live gate;
-- Zellij is observability only and cannot satisfy completion proof.
+- Display state cannot satisfy completion proof.
 
 ### Database Safety
 

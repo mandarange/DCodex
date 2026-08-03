@@ -3383,7 +3383,6 @@
           "src/**",
           "schemas/**",
           "src/scripts/release-cache-glob-hashing-check.ts",
-          "src/core/zellij/**",
           "src/core/naruto/**",
           "src/core/release/**"
         ]

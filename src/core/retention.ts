@@ -67,7 +67,6 @@ const DISPOSABLE_MISSION_DIRS = Object.freeze([
   'agents/codex-sdk-workers',
   'agents/tmp',
   'agents/worktrees',
-  'zellij',
   'research/cycles',
   'research/tmp'
 ]);

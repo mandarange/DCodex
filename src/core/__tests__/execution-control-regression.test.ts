@@ -151,10 +151,10 @@ test('runtime truth rejects generated success and accepts receipt-backed runtime
   const matrix = await buildRuntimeTruthMatrix({
     root,
     releaseVersion: 'test',
-    required: { zellij_pane: true },
-    reports: { 'zellij-pane-proof.json': { ok: true, status: 'passed' } }
+    required: { native_worker_backend_router: true },
+    reports: { 'agent-worker-backend-router.json': { ok: true, status: 'passed' } }
   })
-  const row = matrix.rows.find((item) => item.subsystem === 'zellij_pane')
+  const row = matrix.rows.find((item) => item.subsystem === 'native_worker_backend_router')
   assert.equal(row?.working_claim_allowed, false)
   assert.equal(row?.proof_level, 'blocked')
   assert.ok(row?.blockers.includes('runtime_success_claim_without_receipt'))

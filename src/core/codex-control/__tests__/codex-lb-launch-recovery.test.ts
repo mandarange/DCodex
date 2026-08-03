@@ -15,7 +15,6 @@ import { attemptCodexAppLaunch } from '../../codex-app/codex-app-launcher.js'
 import { restartCodexApp } from '../../codex-app/codex-app-restart.js'
 import { runCodexExecResumeWithOutputSchema } from '../../codex-exec-output-schema.js'
 import { runCodexExecAgent } from '../../agents/agent-runner-codex-exec.js'
-import { launchMadZellijUi } from '../../zellij/zellij-launcher.js'
 import { runCodex0139ImageReferencedPathRealProbe } from '../codex-0139-image-path-real-probe.js'
 import { runCodex0139WebSearchRealProbe } from '../codex-0139-web-search-probe.js'
 
@@ -454,41 +453,6 @@ test('every real Codex launch wrapper blocks before spawning when selected codex
       }
     )
     assert.ok(agent.blockers.includes('codex_lb_launch_selection_not_forwarded'), JSON.stringify(agent))
-
-    const previousFakeAdapter = process.env.SKS_ZELLIJ_FAKE_ADAPTER
-    const previousFakeRoot = process.env.SKS_ZELLIJ_FAKE_ROOT
-    process.env.SKS_ZELLIJ_FAKE_ADAPTER = '1'
-    process.env.SKS_ZELLIJ_FAKE_ROOT = root
-    try {
-      const zellij = await launchMadZellijUi(['--session', 'sks-recovery-blocked'], {
-        root,
-        missionId: 'M-zellij-recovery-blocked',
-        ledgerRoot: path.join(root, '.sneakoscope', 'missions', 'M-zellij-recovery-blocked', 'agents'),
-        codexArgs: ['-c', 'model_provider="codex-lb"'],
-        launchEnv: env,
-        recoveryFetch: oldFetch
-      })
-      assert.equal(zellij.ok, false)
-      assert.equal(zellij.launch, null)
-      assert.equal(zellij.session_reset, null)
-      assert.equal(zellij.codex_lb_tool_output_recovery.status, 'version_too_old')
-      assert.ok(zellij.blockers.includes('codex_lb_tool_output_recovery_version_too_old'))
-
-      const acknowledgedZellij = await launchMadZellijUi(['--session', 'sks-recovery-acknowledged'], {
-        root,
-        missionId: 'M-zellij-recovery-acknowledged',
-        ledgerRoot: path.join(root, '.sneakoscope', 'missions', 'M-zellij-recovery-acknowledged', 'agents'),
-        codexArgs: ['-c', 'model_provider="codex-lb"'],
-        launchEnv: env,
-        recoveryFetch: oldFetch,
-        recoveryAllowUnverified: true
-      })
-      assert.equal(acknowledgedZellij.codex_lb_tool_output_recovery.status, 'override_acknowledged')
-      assert.equal(acknowledgedZellij.launch?.create_background?.ok, true)
-    } finally {
-      restoreOneEnv('SKS_ZELLIJ_FAKE_ADAPTER', previousFakeAdapter)
-      restoreOneEnv('SKS_ZELLIJ_FAKE_ROOT', previousFakeRoot)
-    }
 
     const imageProbe = await runCodex0139ImageReferencedPathRealProbe({
       root,

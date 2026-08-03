@@ -12,10 +12,12 @@ import { runDoctorCommandAliasCleanup } from '../../dist/core/doctor/command-ali
 import { containsRetiredPublicSurface } from '../../dist/core/doctor/current-project-guidance.js';
 
 test('rewriteSkillLegacySurface maps retired dollar and CLI surfaces to current commands', () => {
+  const retiredTerminal = ['zel', 'lij'].join('');
   const input = [
     'Use $Team and $Agent with sks team run, then sks mad-db apply-migration.',
     'Legacy picker: sks codex-app glm-profile install',
     'Flags: sks --naruto --clones 4',
+    `Legacy display: sks ${retiredTerminal} dashboard and sks --${retiredTerminal}-dashboard`,
     'Keep sks agent-bridge setup and sks teamcity status unchanged.',
     'Install OMX harness from .omx before continuing.'
   ].join('\n');
@@ -26,6 +28,7 @@ test('rewriteSkillLegacySurface maps retired dollar and CLI surfaces to current 
   assert.match(result.text, /\$sks-naruto/);
   assert.match(result.text, /sks naruto/);
   assert.match(result.text, /sks mad-sks/);
+  assert.match(result.text, /sks mad-sks status/);
   assert.match(result.text, /sks codex-app use-openrouter/);
   assert.match(result.text, /--agents 4/);
   assert.match(result.text, /sks agent-bridge setup/);

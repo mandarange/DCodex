@@ -6,7 +6,6 @@ import { root } from './lib/ensure-dist-fresh.js';
 
 const scanRoots = ['src', 'scripts', 'package.json', 'README.md', 'docs'];
 const migrationOnlyFiles = new Set([
-  'docs/zellij-ui.md',
   'dist/scripts/runtime-current-terminal-check.js',
   'src/scripts/runtime-current-terminal-check.ts',
   'src/cli/command-registry.ts',
@@ -94,7 +93,7 @@ function inspectDocs(rel, text) {
 function inspectRuntimeRecommendations(rel, text) {
   const lines = String(text).split(/\r?\n/);
   lines.forEach((line, index) => {
-    if (/\bremoved[-_ ]runtime\b|migration notice|Use Zellij instead|replacement:\s*['"]zellij['"]/i.test(line)) return;
+    if (/\bremoved[-_ ]runtime\b|migration notice/i.test(line)) return;
     if (docRecommendationRe.test(line)) issues.push({ file: rel, line: index + 1, pattern: 'tmux_runtime_recommendation' });
   });
 }

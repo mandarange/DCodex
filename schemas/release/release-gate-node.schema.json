@@ -18,7 +18,7 @@
             "type": "array",
             "minItems": 1,
             "items": {
-              "enum": ["cpu-light", "cpu-heavy", "io-light", "io-heavy", "git", "git-worktree", "zellij-real", "browser-real", "secret-sensitive", "local-llm-real", "remote-model-real", "python", "network", "global-config", "publish", "fs-read", "fs-write", "timing-sensitive"]
+              "enum": ["cpu-light", "cpu-heavy", "io-light", "io-heavy", "git", "git-worktree", "browser-real", "secret-sensitive", "local-llm-real", "remote-model-real", "python", "network", "global-config", "publish", "fs-read", "fs-write", "timing-sensitive"]
             }
           },
           "side_effect": { "enum": ["hermetic", "real-env"] },

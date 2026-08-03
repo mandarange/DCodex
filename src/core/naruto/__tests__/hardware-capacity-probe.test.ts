@@ -28,6 +28,23 @@ test('remote api rate-limit budget defaults to the conservative floor of 12', ()
   const probe = withRateLimitEnv({}, () => probeHardwareCapacity({}))
   assert.equal(probe.remote_api_rate_limit_budget, 12)
   assert.equal(probe.remote_api_rate_limit_budget_source, 'default_unmeasured')
+  assert.deepEqual(Object.keys(probe).sort(), [
+    'cpu_core_count',
+    'current_load_average',
+    'disk_io_pressure',
+    'file_descriptor_limit',
+    'free_memory_bytes',
+    'gpu_available',
+    'gpu_vram_mb',
+    'local_llm_max_parallel_requests',
+    'node_heap_total_bytes',
+    'node_heap_used_bytes',
+    'process_count',
+    'remote_api_rate_limit_budget',
+    'remote_api_rate_limit_budget_source',
+    'schema',
+    'total_memory_bytes'
+  ])
 })
 
 test('SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET raises the rate-limit budget for mass fan-out', () => {

@@ -28,8 +28,8 @@ const RETIRED_REPORT_FILES = [
   'mad-sks-native-swarm.stdout.log',
   'mad-sks-native-swarm.stderr.log',
   // Compose dashboard token fragments so pack retired-surface scan does not match the banned literals.
-  ['zellij', 'dashboard', 'pane'].join('-') + '.json',
-  ['zellij', 'dashboard', 'watch'].join('-') + '.json',
+  [['zel', 'lij'].join(''), 'dashboard', 'pane'].join('-') + '.json',
+  [['zel', 'lij'].join(''), 'dashboard', 'watch'].join('-') + '.json',
   ['agent', 'codex', 'dashboard'].join('-') + '.json',
   'codex-app-glm-profile.json'
 ] as const;

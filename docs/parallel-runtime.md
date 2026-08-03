@@ -6,4 +6,4 @@ For non-Git projects, SKS falls back to patch-envelope-only execution. Workers c
 
 Release DAG gates run hermetic checks in parallel. Runtime claims should be backed by blackbox artifacts, release gate reports, or real checks. Source-string checks can exist as guardrails, but public release claims require runtime proof.
 
-Real environment checks are opt-in with `SKS_REQUIRE_*` variables. For example, Zellij geometry checks require `SKS_REQUIRE_ZELLIJ=1`; otherwise they report a skipped optional real gate instead of pretending live evidence exists.
+Real environment checks are opt-in with `SKS_REQUIRE_*` variables; skipped optional real gates must not be presented as live evidence.

@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from '../fsx.js';
+import { uniqueTruthyStrings as uniqueStrings } from '../text/strings.js';
 import { codexLbBaseUrlSecurityBlocker, normalizeCodexLbBaseUrl } from './codex-lb-env.js';
 
 export const CODEX_LB_ROUTING_TRUTH_SCHEMA = 'sks.codex-lb-routing-truth.v1' as const;
@@ -403,10 +404,6 @@ function stringOrNull(input: unknown): string | null {
 
 function finiteNumberOrNull(input: unknown): number | null {
   return typeof input === 'number' && Number.isFinite(input) && input >= 0 ? input : null;
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.filter(Boolean))];
 }
 
 function safePublicUrl(input: string): { url: string; host: string } | null {

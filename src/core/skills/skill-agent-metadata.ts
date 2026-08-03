@@ -1,3 +1,5 @@
+import { escapeRegExp } from '../text/regex.js';
+
 const OFFICIAL_TOP_LEVEL_KEYS = new Set(['interface', 'policy', 'dependencies']);
 const OFFICIAL_INTERFACE_KEYS = new Set([
   'display_name',
@@ -368,8 +370,4 @@ function parseYamlScalar(rawValue: string): string | null {
 
 function yamlString(value: string): string {
   return JSON.stringify(value);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

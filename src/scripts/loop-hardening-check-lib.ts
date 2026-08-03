@@ -31,7 +31,7 @@ export async function runLoopHardeningCheck(id) {
     assert(allowed.allowed && allowed.reason.includes('release_check_script'), 'fixture policy allows check/blackbox temp runs', allowed);
     assert(!denied.allowed && denied.blockers.includes('loop_gate_fixture_forbidden_in_production'), 'fixture policy blocks production command fixture', denied);
   } else if (id === 'loop:gate-fixture-guard') {
-    const node = sampleNode('loop-zellij', 'M-prod-gate-fixture');
+    const node = sampleNode('loop-runtime', 'M-prod-gate-fixture');
     const prev = process.env.SKS_LOOP_GATE_FIXTURE;
     const argv = replaceArgv(['sks', 'loop', 'run']);
     await fs.writeFile(path.join(temp, 'package.json'), JSON.stringify({ scripts: { 'release:version-truth': 'node -e "process.exit(0)"' } }, null, 2));
@@ -41,7 +41,7 @@ export async function runLoopHardeningCheck(id) {
     restoreArgv(argv);
     assert(!gates.ok && gates.blockers.includes('loop_gate_fixture_forbidden_in_production'), 'production gate fixture cannot synthetic-pass');
   } else if (id === 'loop:worker-fixture-guard') {
-    const plan = samplePlan('M-prod-worker-fixture', [sampleNode('loop-zellij', 'M-prod-worker-fixture')]);
+    const plan = samplePlan('M-prod-worker-fixture', [sampleNode('loop-runtime', 'M-prod-worker-fixture')]);
     const prev = process.env.SKS_LOOP_RUNTIME_FIXTURE;
     const argv = replaceArgv(['sks', 'loop', 'run']);
     process.env.SKS_LOOP_RUNTIME_FIXTURE = '1';
@@ -54,9 +54,9 @@ export async function runLoopHardeningCheck(id) {
     restoreEnv('SKS_LOOP_RUNTIME_FIXTURE', prev);
     restoreArgv(argv);
   } else if (id === 'loop:gpt-final-fixture-guard') {
-    const plan = samplePlan('M-prod-gpt-fixture', [sampleNode('loop-zellij', 'M-prod-gpt-fixture')]);
+    const plan = samplePlan('M-prod-gpt-fixture', [sampleNode('loop-runtime', 'M-prod-gpt-fixture')]);
     const argv = replaceArgv(['sks', 'loop', 'run']);
-    const arbiter = await runLoopGptFinalArbiter({ root: temp, plan, proofs: [sampleProof('loop-zellij', 'M-prod-gpt-fixture', ['src/core/zellij/a.ts'])], integrationMerge: sampleMerge(['src/core/zellij/a.ts']), forceVerdict: 'approve' });
+    const arbiter = await runLoopGptFinalArbiter({ root: temp, plan, proofs: [sampleProof('loop-runtime', 'M-prod-gpt-fixture', ['src/core/runtime/a.ts'])], integrationMerge: sampleMerge(['src/core/runtime/a.ts']), forceVerdict: 'approve' });
     restoreArgv(argv);
     assert(!arbiter.ok && arbiter.blockers.includes('loop_gpt_final_fixture_forbidden_in_production'), 'production GPT final fixture cannot approve');
   } else if (id === 'loop:fixture-production-misuse-blackbox') {
@@ -70,22 +70,22 @@ export async function runLoopHardeningCheck(id) {
     assert(contract.handled_by === 'loop-finalizer' && contract.production_fixture_allowed === false, 'final arbiter contract is finalizer-owned');
     assert(await exists(path.join(temp, '.sneakoscope/missions/M-check-final-contract/loops/gpt-final-arbiter-gate-contract.json')), 'contract artifact written');
   } else if (id === 'loop:gpt-final-gate-contract') {
-    const node = sampleNode('loop-zellij', 'M-check-gpt-final-gate');
+    const node = sampleNode('loop-runtime', 'M-check-gpt-final-gate');
     const result = await runLoopGates({ root: temp, missionId: node.mission_id, node, gates: { triage: [], local: [], checker: [], integration: [], final: ['gpt:final-arbiter'] } });
-    const artifact = await readJson(path.join(temp, '.sneakoscope/missions/M-check-gpt-final-gate/loops/loop-zellij/gates/gpt-final-arbiter.json'));
+    const artifact = await readJson(path.join(temp, '.sneakoscope/missions/M-check-gpt-final-gate/loops/loop-runtime/gates/gpt-final-arbiter.json'));
     assert(result.ok && result.skipped_gates.includes('gpt:final-arbiter'), 'gpt final pseudo gate is skipped by gate runner');
     assert(artifact.handled_by === 'loop-finalizer' && artifact.deferred_contract_path, 'gate artifact points to finalizer contract');
   } else if (id === 'loop:gpt-final-contract-crossref') {
-    const plan = samplePlan('M-check-gpt-crossref', [sampleNode('loop-zellij', 'M-check-gpt-crossref')]);
-    const arbiter = await runLoopGptFinalArbiter({ root: temp, plan, proofs: [sampleProof('loop-zellij', plan.mission_id, ['src/core/zellij/a.ts'])], integrationMerge: sampleMerge(['src/core/zellij/a.ts']), forceVerdict: 'approve' });
+    const plan = samplePlan('M-check-gpt-crossref', [sampleNode('loop-runtime', 'M-check-gpt-crossref')]);
+    const arbiter = await runLoopGptFinalArbiter({ root: temp, plan, proofs: [sampleProof('loop-runtime', plan.mission_id, ['src/core/runtime/a.ts'])], integrationMerge: sampleMerge(['src/core/runtime/a.ts']), forceVerdict: 'approve' });
     assert(arbiter.ok, 'check mission may use forced GPT final verdict');
     assert(await exists(path.join(temp, '.sneakoscope/missions/M-check-gpt-crossref/loops/fixture-policy.json')), 'GPT final fixture policy artifact written');
   } else if (id === 'loop:merge-strategy' || id === 'loop:merge-strategy-blackbox') {
     const fixture = await gitFixture('merge-strategy');
-    const proof = sampleProof('loop-zellij', 'M-check-merge-strategy', ['src/core/zellij/a.ts']);
+    const proof = sampleProof('loop-runtime', 'M-check-merge-strategy', ['src/core/runtime/a.ts']);
     proof.worktree.path = fixture.worktree;
     proof.worktree.branch = 'loop-branch';
-    await fs.writeFile(path.join(fixture.worktree, 'src/core/zellij/a.ts'), 'changed\n');
+    await fs.writeFile(path.join(fixture.worktree, 'src/core/runtime/a.ts'), 'changed\n');
     const merge = await mergeSingleLoopWorktree({ root: fixture.root, proof, worktreePath: fixture.worktree, allowBranchMerge: true });
     assert(merge.ok && ['apply', 'apply-3way', 'cherry-pick', 'already_applied'].includes(String(merge.selected_strategy)), 'merge strategy ladder applies simple patch', merge);
     if (id === 'loop:merge-strategy-blackbox') {
@@ -94,38 +94,38 @@ export async function runLoopHardeningCheck(id) {
     }
   } else if (id === 'loop:integration-merge-strategy') {
     const fixture = await gitFixture('integration-merge');
-    await fs.writeFile(path.join(fixture.worktree, 'src/core/zellij/a.ts'), 'integrated\n');
-    const proof = sampleProof('loop-zellij', 'M-check-integration-merge', ['src/core/zellij/a.ts']);
+    await fs.writeFile(path.join(fixture.worktree, 'src/core/runtime/a.ts'), 'integrated\n');
+    const proof = sampleProof('loop-runtime', 'M-check-integration-merge', ['src/core/runtime/a.ts']);
     proof.worktree.path = fixture.worktree;
     const plan = samplePlan('M-check-integration-merge', [
-      sampleNode('loop-zellij', 'M-check-integration-merge'),
+      sampleNode('loop-runtime', 'M-check-integration-merge'),
       sampleNode('loop-integration', 'M-check-integration-merge')
     ]);
     const result = await mergeLoopWorktrees({ root: fixture.root, plan, proofs: [proof] });
-    assert(result.ok && result.merge_attempts?.['loop-zellij'], 'integration merge records merge strategy attempts');
+    assert(result.ok && result.merge_attempts?.['loop-runtime'], 'integration merge records merge strategy attempts');
   } else if (id === 'loop:mutation-ledger') {
-    await appendLoopMutationEvent(temp, 'M-check-ledger', { loop_id: 'loop-zellij', event_type: 'file_changed', file_path: 'src/core/zellij/a.ts', source: 'git-diff', allowed_by_owner_scope: true, details: {} });
+    await appendLoopMutationEvent(temp, 'M-check-ledger', { loop_id: 'loop-runtime', event_type: 'file_changed', file_path: 'src/core/runtime/a.ts', source: 'git-diff', allowed_by_owner_scope: true, details: {} });
     const rows = await readLoopMutationLedger(temp, 'M-check-ledger');
     assert(rows.length === 1 && rows[0].event_type === 'file_changed', 'mutation ledger append/read works');
   } else if (id === 'loop:side-effect-scanner' || id === 'loop:side-effect-blackbox') {
-    const proofs = [sampleProof('loop-zellij', 'M-check-side-effect', ['package.json'])];
+    const proofs = [sampleProof('loop-runtime', 'M-check-side-effect', ['package.json'])];
     await mutationLedgerFromLoopProofs({ root: temp, missionId: 'M-check-side-effect', proofs, integrationMerge: sampleMerge(['package.json']) });
     const report = await buildLoopSideEffectReport({ root: temp, missionId: 'M-check-side-effect', proofs, integrationMerge: sampleMerge(['package.json']) });
     assert(!report.ok && report.unexpected_package_changes.includes('package.json'), 'side-effect scanner blocks non-integration package mutation', report);
     if (id === 'loop:side-effect-blackbox') assert(report.blockers.some((row) => row.includes('unexpected_package_change')), 'side-effect blackbox exposes blocker');
   } else if (id === 'loop:side-effect-final-arbiter') {
-    const plan = samplePlan('M-check-side-effect-final', [sampleNode('loop-zellij', 'M-check-side-effect-final')]);
-    const report = await buildLoopSideEffectReport({ root: temp, missionId: plan.mission_id, proofs: [sampleProof('loop-zellij', plan.mission_id, ['package.json'])], integrationMerge: sampleMerge(['package.json']) });
-    const arbiter = await runLoopGptFinalArbiter({ root: temp, plan, proofs: [sampleProof('loop-zellij', plan.mission_id, ['package.json'])], integrationMerge: sampleMerge(['package.json']), sideEffectReport: report });
+    const plan = samplePlan('M-check-side-effect-final', [sampleNode('loop-runtime', 'M-check-side-effect-final')]);
+    const report = await buildLoopSideEffectReport({ root: temp, missionId: plan.mission_id, proofs: [sampleProof('loop-runtime', plan.mission_id, ['package.json'])], integrationMerge: sampleMerge(['package.json']) });
+    const arbiter = await runLoopGptFinalArbiter({ root: temp, plan, proofs: [sampleProof('loop-runtime', plan.mission_id, ['package.json'])], integrationMerge: sampleMerge(['package.json']), sideEffectReport: report });
     assert(!arbiter.ok && arbiter.verdict === 'reject', 'side-effect block rejects before GPT can approve');
   } else if (id === 'loop:interrupt-registry' || id === 'loop:worker-handle-registration') {
-    await registerLoopActiveWorker(temp, { mission_id: 'M-check-interrupt', loop_id: 'loop-zellij', phase: 'maker', worker_id: 'w1', session_id: 's1', pid: null, interrupt_supported: true });
+    await registerLoopActiveWorker(temp, { mission_id: 'M-check-interrupt', loop_id: 'loop-runtime', phase: 'maker', worker_id: 'w1', session_id: 's1', pid: null, interrupt_supported: true });
     const handles = await readLoopActiveWorkers(temp, 'M-check-interrupt');
     assert(handles.length === 1 && handles[0].status === 'running', 'active worker handle registers');
   } else if (id === 'loop:worker-interrupt' || id === 'loop:kill-interrupt-real-blackbox') {
     const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
-    await registerLoopActiveWorker(temp, { mission_id: 'M-check-interrupt-real', loop_id: 'loop-zellij', phase: 'maker', worker_id: 'sleepy', session_id: null, pid: child.pid || null, interrupt_supported: true });
-    const result = await interruptLoopWorkers({ root: temp, missionId: 'M-check-interrupt-real', target: 'loop-zellij', graceMs: 50 });
+    await registerLoopActiveWorker(temp, { mission_id: 'M-check-interrupt-real', loop_id: 'loop-runtime', phase: 'maker', worker_id: 'sleepy', session_id: null, pid: child.pid || null, interrupt_supported: true });
+    const result = await interruptLoopWorkers({ root: temp, missionId: 'M-check-interrupt-real', target: 'loop-runtime', graceMs: 50 });
     assert(result.interrupted.includes('sleepy'), 'active worker receives interrupt');
     child.kill('SIGKILL');
   } else if (id === 'loop:concurrency-budget' || id === 'loop:concurrency-budget-runtime' || id === 'loop:concurrency-oversubscription-blackbox') {
@@ -135,11 +135,11 @@ export async function runLoopHardeningCheck(id) {
     assert(budget.per_loop_worker_budget.reduce((sum, row) => sum + row.maker_workers + row.checker_workers, 0) <= 16, 'per-loop worker budget does not oversubscribe');
   } else if (id === 'loop:mesh-production-e2e-blackbox') {
     const fixture = await gitFixture('mesh-e2e');
-    const proof = sampleProof('loop-zellij', 'M-check-mesh-e2e', ['src/core/zellij/a.ts']);
+    const proof = sampleProof('loop-runtime', 'M-check-mesh-e2e', ['src/core/runtime/a.ts']);
     proof.worktree.path = fixture.worktree;
-    await fs.writeFile(path.join(fixture.worktree, 'src/core/zellij/a.ts'), 'mesh\n');
+    await fs.writeFile(path.join(fixture.worktree, 'src/core/runtime/a.ts'), 'mesh\n');
     const merge = await mergeSingleLoopWorktree({ root: fixture.root, proof, worktreePath: fixture.worktree, allowBranchMerge: true });
-    const side = await buildLoopSideEffectReport({ root: fixture.root, missionId: 'M-check-mesh-e2e', proofs: [proof], integrationMerge: sampleMerge(['src/core/zellij/a.ts']) });
+    const side = await buildLoopSideEffectReport({ root: fixture.root, missionId: 'M-check-mesh-e2e', proofs: [proof], integrationMerge: sampleMerge(['src/core/runtime/a.ts']) });
     const fixturePolicy = decideLoopFixturePolicy({ root: fixture.root, missionId: 'M-check-mesh-e2e', mode: 'gpt-final', requested: true, argv: ['/x/dist/scripts/loop-mesh-production-e2e-blackbox.js'], env: {} });
     assert(merge.ok && side.ok && fixturePolicy.allowed, 'production e2e blackbox covers merge, side effects, and check-only final fixture');
   } else if (id === 'loop:status-proof-ux') {
@@ -175,7 +175,7 @@ function sampleNode(loopId, missionId, makerWorkers = 2, checkerWorkers = 1) {
     purpose: 'fixture node',
     level: 'L2-action',
     route: loopId.includes('integration') ? '$Integration' : '$Loop',
-    owner_scope: { files: [], directories: ['src/core/zellij'], package_scripts: [], release_gate_ids: [], exclusive: true, collision_policy: 'handoff' },
+    owner_scope: { files: [], directories: ['src/core/runtime'], package_scripts: [], release_gate_ids: [], exclusive: true, collision_policy: 'handoff' },
     state_file: 'state.json',
     run_log_file: 'run.jsonl',
     budget: defaultLoopBudget({ max_model_calls: 8, max_subagents: makerWorkers + checkerWorkers }),
@@ -212,7 +212,7 @@ function sampleProof(loopId, missionId, changedFiles) {
     loop_id: loopId,
     status: 'completed',
     iterations: 1,
-    owner_scope: { files: [], directories: ['src/core/zellij'], package_scripts: [], release_gate_ids: [], exclusive: true, collision_policy: 'handoff' },
+    owner_scope: { files: [], directories: ['src/core/runtime'], package_scripts: [], release_gate_ids: [], exclusive: true, collision_policy: 'handoff' },
     worktree: { id: loopId, path: null, branch: null },
     maker_result: { ok: true, worker_count: 1, artifacts: [], patch_candidates: [], backend: 'deterministic-fixture', changed_files: changedFiles, runtime_proof_path: null },
     checker_result: { ok: true, worker_count: 1, artifacts: [], blockers: [], backend: 'deterministic-fixture', checker_findings: [], fresh_session: true, runtime_proof_path: null },
@@ -226,13 +226,13 @@ function sampleProof(loopId, missionId, changedFiles) {
 }
 
 function sampleMerge(changedFiles) {
-  return { schema: 'sks.loop-integration-merge.v1', ok: true, applied_loops: ['loop-zellij'], conflict_loops: [], changed_files: changedFiles, blockers: [] };
+  return { schema: 'sks.loop-integration-merge.v1', ok: true, applied_loops: ['loop-runtime'], conflict_loops: [], changed_files: changedFiles, blockers: [] };
 }
 
 async function gitFixture(name) {
   const repo = await fs.mkdtemp(path.join(os.tmpdir(), `sks-312-git-${safe(name)}-`));
-  await fs.mkdir(path.join(repo, 'src/core/zellij'), { recursive: true });
-  await fs.writeFile(path.join(repo, 'src/core/zellij/a.ts'), 'base\n');
+  await fs.mkdir(path.join(repo, 'src/core/runtime'), { recursive: true });
+  await fs.writeFile(path.join(repo, 'src/core/runtime/a.ts'), 'base\n');
   await runProcess('git', ['init'], { cwd: repo, maxOutputBytes: 10000 });
   await runProcess('git', ['config', 'user.email', 'sks@example.invalid'], { cwd: repo, maxOutputBytes: 10000 });
   await runProcess('git', ['config', 'user.name', 'SKS Check'], { cwd: repo, maxOutputBytes: 10000 });

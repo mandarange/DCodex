@@ -1,7 +1,9 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { ProviderMode } from '../../architecture-hardening/contracts/contracts.js';
+import { sha256 } from '../../fsx.js';
+import { canonicalJson } from '../../json/canonical.js';
 
 export interface EvidenceKeyV2Input {
   readonly project_id: string;
@@ -90,7 +92,7 @@ export function buildEvidenceKeyV2(input: EvidenceKeyV2Input): EvidenceKeyV2 {
     environment_hash: hashValue(input.environment_hash, 'evidence_environment_hash_invalid'),
     toolchain_hash: hashValue(input.toolchain_hash, 'evidence_toolchain_hash_invalid')
   };
-  return Object.freeze({ ...base, direct_target_hashes: Object.freeze(base.direct_target_hashes), key: hash(stableJson(base)) });
+  return Object.freeze({ ...base, direct_target_hashes: Object.freeze(base.direct_target_hashes), key: sha256(canonicalJson(base)) });
 }
 
 export function selectAffectedReceipts(
@@ -128,13 +130,13 @@ function normalizeHashes(values: readonly string[], code: string): string[] {
 }
 
 function merkle(values: readonly string[]): string {
-  let layer = values.map((value) => hash(`leaf:${value}`));
+  let layer = values.map((value) => sha256(`leaf:${value}`));
   while (layer.length > 1) {
     const next: string[] = [];
     for (let index = 0; index < layer.length; index += 2) {
       const left = layer[index];
       if (!left) throw new Error('evidence_merkle_invalid');
-      next.push(hash(`node:${left}:${layer[index + 1] || left}`));
+      next.push(sha256(`node:${left}:${layer[index + 1] || left}`));
     }
     layer = next;
   }
@@ -151,17 +153,4 @@ function safeId(value: string, code: string): string {
 function hashValue(value: string, code: string): string {
   if (!/^[a-f0-9]{64}$/.test(String(value || ''))) throw new Error(code);
   return value;
-}
-
-function hash(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const row = value as Record<string, unknown>;
-    return `{${Object.keys(row).sort().map((key) => `${JSON.stringify(key)}:${stableJson(row[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
 }

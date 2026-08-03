@@ -68,7 +68,7 @@ try {
 }
 
 // Hermetic invariant proofs preserved from the planner (self-prove narrowing).
-const docsOnly = selectGates(manifest.gates, ['docs/zellij-ui-design.md'], { publish: false });
+const docsOnly = selectGates(manifest.gates, ['docs/release-readiness.md'], { publish: false });
 const realOnDocs = docsOnly.selected.filter((g) => g.cost === 'real' || g.cost === 'heavy');
 const publishPlan = selectGates(manifest.gates, [], { publish: true });
 const requiredIds = manifest.gates.filter((g) => g.required_for_publish).map((g) => g.id);

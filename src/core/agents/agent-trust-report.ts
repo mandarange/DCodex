@@ -4,12 +4,8 @@ import {
   OFFICIAL_SUBAGENT_EXECUTION_ARTIFACTS,
   OFFICIAL_SUBAGENT_EXECUTION_AUTHORITY
 } from '../proof/fake-real-proof-policy.js'
-import { readZellijLaneSupervisor } from './zellij-lane-supervisor.js'
 
 export async function writeAgentTrustReport(root: string, input: any = {}) {
-  const laneSupervisor = await readZellijLaneSupervisor(root)
-  const zellijRuntimeManifest = await readJson<any>(path.join(root, 'zellij-lane-runtime.json'), null)
-  const zellijPaneProof = await readJson<any>(path.join(root, 'zellij-pane-proof.json'), null)
   const cleanupProof = await readJson<any>(path.join(root, 'agent-cleanup-proof.json'), null)
   const intelligentWorkGraph = await readJson<any>(path.join(root, 'agent-intelligent-work-graph.json'), null)
   const fakeRealPolicy = await readJson<any>(path.join(root, 'fake-real-proof-policy.json'), null)
@@ -30,14 +26,12 @@ export async function writeAgentTrustReport(root: string, input: any = {}) {
     else if (/passed|proven/.test(status)) runtimeTruthGroups.Proven.push(label)
     else if (/blocked|failed|missing/.test(status)) runtimeTruthGroups.Blocked.push(label)
   }
-  pushTruth(zellijPaneProof?.ok === true ? 'passed' : zellijPaneProof ? 'blocked' : 'not_run', 'Zellij pane proof')
   pushTruth(cleanupProof?.ok === true ? 'passed' : cleanupProof ? 'blocked' : 'not_run', 'cleanup executor')
   pushTruth(intelligentWorkGraph?.ok === true ? 'passed' : intelligentWorkGraph ? 'partial' : 'not_run', 'intelligent work graph')
   pushTruth(officialSubagentExecution?.proof_level || 'not_run', 'official Codex subagent execution')
   const subsystemProofLevels = {
     ...(fakeRealPolicy?.subsystem_levels || {}),
     ...Object.fromEntries((runtimeTruthMatrix?.rows || runtimeTruthMatrix?.subsystems || []).map((row: any) => [row.subsystem, row.proof_level])),
-    zellij_pane: runtimeTruthMatrix?.rows?.find?.((row: any) => row.subsystem === 'zellij_pane')?.proof_level || fakeRealPolicy?.subsystem_levels?.zellij_pane || (zellijPaneProof?.ok === true ? 'proven' : zellijPaneProof ? 'blocked' : 'not_run'),
     cleanup: runtimeTruthMatrix?.rows?.find?.((row: any) => row.subsystem === 'cleanup')?.proof_level || fakeRealPolicy?.subsystem_levels?.cleanup || (cleanupProof?.ok === true ? 'proven' : cleanupProof ? 'blocked' : 'not_run'),
     intelligent_work_graph: runtimeTruthMatrix?.rows?.find?.((row: any) => row.subsystem === 'intelligent_work_graph')?.proof_level || fakeRealPolicy?.subsystem_levels?.intelligent_work_graph || intelligentWorkGraph?.proof_level || (intelligentWorkGraph ? 'partial' : 'not_run')
   }
@@ -64,31 +58,10 @@ export async function writeAgentTrustReport(root: string, input: any = {}) {
       expected_backfill_count: input.proof?.expected_backfill_count ?? input.scheduler?.expected_backfill_count ?? null,
       pending_queue_drained: input.proof?.pending_queue_drained ?? input.scheduler?.pending_queue_drained ?? null,
       generation_count: input.proof?.generation_count ?? null,
-      zellij_attach_command: input.missionId ? `zellij attach sks-${input.missionId}` : null,
-      zellij_lane_manifest: 'agent-zellij-lanes.json',
-      zellij_lane_persistence: {
-        supervisor: 'agent-zellij-lane-supervisor.json',
-        runtime_manifest: zellijRuntimeManifest ? 'zellij-lane-runtime.json' : null,
-        dispatch_mode: laneSupervisor?.dispatch_mode || zellijRuntimeManifest?.dispatch_mode || null,
-        fifo_policy: laneSupervisor?.fifo_policy || zellijRuntimeManifest?.fifo_policy || null,
-        resource_throttle_ms: laneSupervisor?.resource_throttle_ms || zellijRuntimeManifest?.resource_throttle_ms || null,
-        nice_level: laneSupervisor?.nice_level ?? zellijRuntimeManifest?.nice_level ?? null,
-        runtime_policy_ok: Array.isArray(laneSupervisor?.lanes) && laneSupervisor.lanes.every((lane: any) => lane?.dispatch_mode === 'jsonl_nonblocking' && lane?.command_inbox && lane?.state_dir),
-        pane_id_source_ok: Array.isArray(laneSupervisor?.lanes) && laneSupervisor.lanes.every((lane: any) => typeof lane?.pane_id_source === 'string' && lane.pane_id_source.length > 0),
-        no_flicker_verified: laneSupervisor?.no_flicker_verified === true,
-        pane_survival_checked: laneSupervisor?.pane_survival_checked === true,
-        unexpected_close_count: laneSupervisor?.unexpected_close_count || 0,
-        lane_count: laneSupervisor?.lane_count || 0,
-        pane_proof_ok: zellijPaneProof?.ok === true,
-        pane_proof_status: zellijPaneProof ? (zellijPaneProof.ok === true ? 'passed' : 'blocked') : 'not_run',
-        pane_proof: zellijPaneProof ? 'zellij-pane-proof.json' : null,
-        pane_count: zellijPaneProof?.pane_count ?? null
-      },
       cleanup_executor: {
         status: cleanupProof?.ok === true ? 'passed' : cleanupProof ? 'blocked' : 'not_run',
         proof: cleanupProof ? 'agent-cleanup-proof.json' : null,
         stale_processes_killed: cleanupProof?.stale_processes_killed || [],
-        stale_zellij_panes_closed: cleanupProof?.stale_zellij_panes_closed || [],
         orphan_temp_dirs_removed: cleanupProof?.orphan_temp_dirs_removed || [],
         stale_locks_removed: cleanupProof?.stale_locks_removed || [],
         skipped_active_sessions: cleanupProof?.skipped_active_sessions || []
@@ -153,15 +126,6 @@ function renderAgentTrustReportMarkdown(report: any) {
     `- backfill_count: ${orchestration.backfill_count ?? 'unknown'}`,
     `- expected_backfill_count: ${orchestration.expected_backfill_count ?? 'unknown'}`,
     `- pending_queue_drained: ${orchestration.pending_queue_drained === true}`,
-    `- zellij_lane_manifest: ${orchestration.zellij_lane_manifest || 'unknown'}`,
-    `- zellij_runtime_manifest: ${orchestration.zellij_lane_persistence?.runtime_manifest || 'not_run'}`,
-    `- zellij_dispatch_mode: ${orchestration.zellij_lane_persistence?.dispatch_mode || 'unknown'}`,
-    `- zellij_fifo_policy: ${orchestration.zellij_lane_persistence?.fifo_policy || 'unknown'}`,
-    `- zellij_runtime_policy_ok: ${orchestration.zellij_lane_persistence?.runtime_policy_ok === true}`,
-    `- zellij_no_flicker_verified: ${orchestration.zellij_lane_persistence?.no_flicker_verified === true}`,
-    `- zellij_pane_survival_checked: ${orchestration.zellij_lane_persistence?.pane_survival_checked === true}`,
-    `- zellij_pane_proof_ok: ${orchestration.zellij_lane_persistence?.pane_proof_ok === true}`,
-    `- zellij_pane_count: ${orchestration.zellij_lane_persistence?.pane_count ?? 'unknown'}`,
     `- cleanup_executor: ${orchestration.cleanup_executor?.status || 'not_run'}`,
     `- work_graph_quality_score: ${orchestration.intelligent_work_graph?.score ?? 'unknown'}`,
     `- runtime_truth_fake: ${(report.runtime_truth_groups?.Fake || []).join(', ') || 'None'}`,

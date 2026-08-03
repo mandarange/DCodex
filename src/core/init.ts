@@ -1181,7 +1181,7 @@ export function codexAppQuickReference(scope: any, commandPrefix: any) {
     `Command: \`${commandPrefix} <command>\``,
     `Files: AGENTS.md, .codex/hooks.json, .codex/config.toml, .codex/SNEAKOSCOPE.md, ${AUTHORITATIVE_SKS_SKILL_ROOT_REFERENCE}/sks-* (authoritative managed SKS skills), .codex/agents, .sneakoscope/missions.`,
     `Skill paths: UserPromptSubmit, compact-resume SessionStart, active PreToolUse, and SubagentStart re-resolve files under ${AUTHORITATIVE_SKS_SKILL_ROOT_REFERENCE}/sks-*/SKILL.md. Current files override stale project-local, .codex/skills, plugin-cache, picker, pre-compaction, and prior-message links. Successful remaps stay silent; unresolved skills are never guessed.`,
-    `Discover: ${commandPrefix} bootstrap; ${commandPrefix} deps check; ${commandPrefix} commands; ${commandPrefix} codex-app check; ${commandPrefix} codex-app remote-control --status; npm run zellij:capability; ${commandPrefix} dollar-commands; ${commandPrefix} pipeline status; ${commandPrefix} pipeline plan.`,
+    `Discover: ${commandPrefix} bootstrap; ${commandPrefix} deps check; ${commandPrefix} commands; ${commandPrefix} codex-app check; ${commandPrefix} codex-app remote-control --status; ${commandPrefix} dollar-commands; ${commandPrefix} pipeline status; ${commandPrefix} pipeline plan.`,
     coreEngineeringDirectiveReferenceText(),
     'dollar-commands:',
     ...currentDollarCommands().map((c: any) => `- \`${sksPrefixedDollarCommand(c.command)}\`: ${c.route}`),

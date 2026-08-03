@@ -87,12 +87,10 @@ export const REQUIRED_FOR_PUBLISH = new Set<string>([
   'core-skill:heldout-validation',
   'core-skill:deployment-snapshot',
   'core-skill:no-inference-optimizer',
-  'core-skill:rollout-scoring',
-  'zellij:launch-command-truth',
-  'zellij:ui-design'
+  'core-skill:rollout-scoring'
 ])
 
-const P0_PREFIXES = ['architecture:', 'core-skill:', 'safety:', 'side-effect:', 'runtime:', 'release:', 'legacy:', 'migration:', 'publish:', 'postinstall:', 'zellij:']
+const P0_PREFIXES = ['architecture:', 'core-skill:', 'safety:', 'side-effect:', 'runtime:', 'release:', 'legacy:', 'migration:', 'publish:', 'postinstall:']
 
 function tierFor(id: string): GateTier {
   if (P0_PREFIXES.some((p) => id.startsWith(p))) return 'P0'
@@ -100,7 +98,7 @@ function tierFor(id: string): GateTier {
 }
 
 function costFor(id: string): GateCost {
-  if (id.includes(':require-real') || id.includes(':actual') || id.startsWith('agent:real-codex') || id.includes('real-session') || id === 'zellij:pane-proof' || id === 'zellij:screen-proof') {
+  if (id.includes(':require-real') || id.includes(':actual') || id.startsWith('agent:real-codex') || id.includes('real-session')) {
     return 'real'
   }
   return 'hermetic'
@@ -114,8 +112,6 @@ export function affectedGlobsFor(id: string): string[] {
       return ['src/core/safety/ssot-guard.ts', 'src/core/pipeline-internals/runtime-core.ts', 'src/core/pipeline-internals/runtime-gates.ts', 'src/core/commands/naruto-command.ts', 'src/scripts/release-parallel-check.ts', 'src/scripts/architecture-guard-check.ts', 'docs/architecture-ts-rust-boundary.md', 'package.json']
     case 'core-skill':
       return ['src/core/skills/**', 'schemas/skills/**', 'src/scripts/core-skill-*.ts']
-    case 'zellij':
-      return ['src/core/zellij/**', 'src/scripts/zellij-*.ts', 'templates/zellij/**', 'src/core/agents/zellij-lane-supervisor.ts']
     case 'safety':
       return ['src/core/safety/**', 'src/scripts/side-effect-zero-gate-check.ts', 'src/scripts/mutation-callsite-coverage-check.ts', 'safety-mutation-allowlist.json']
     case 'side-effect':

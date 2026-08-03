@@ -185,12 +185,10 @@ export function validateHarnessGrowthReport(data: any = {}) {
   pushMissing(errors, isObj(data.skills), 'skills_missing');
   pushMissing(errors, isObj(data.experiments), 'experiments_missing');
   pushMissing(errors, isObj(data.codex_native), 'codex_native_missing');
-  pushMissing(errors, isObj(data.zellij), 'zellij_missing');
   pushMissing(errors, isObj(data.reliability), 'reliability_missing');
   if (data.forgetting?.fixture?.passed !== true) errors.push('forgetting_fixture_failed');
   if (!Array.isArray(data.reliability?.tool_error_taxonomy) || !data.reliability.tool_error_taxonomy.includes('Unknown')) errors.push('tool_error_taxonomy_missing_unknown');
   if (data.reliability?.unknown_errors_are_bugs !== true) errors.push('unknown_errors_not_marked_bug');
-  if (!Array.isArray(data.zellij?.views) || data.zellij.views.length < 10) errors.push('zellij_views_incomplete');
   return validationResult('HarnessGrowthReport', errors);
 }
 

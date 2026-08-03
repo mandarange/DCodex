@@ -211,7 +211,7 @@ async function scoreDirectories(root: string): Promise<DirectoryScore[]> {
   const counts = new Map<string, { file_count: number; langs: Set<string> }>()
   await walk(path.join(root, 'src'), root, counts)
   await walk(path.join(root, 'docs'), root, counts)
-  const highRisk = [/src\/core\/zellij/, /src\/core\/loops/, /src\/core\/codex-app/, /src\/commands/]
+  const highRisk = [/src\/core\/loops/, /src\/core\/codex-app/, /src\/commands/]
   return [...counts.entries()].map(([dir, value]): DirectoryScore => {
     const risky = highRisk.some((re) => re.test(dir))
     const score = Math.min(10, Math.ceil(value.file_count / 6) + value.langs.size + (risky ? 3 : 0))

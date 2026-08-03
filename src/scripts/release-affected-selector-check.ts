@@ -32,7 +32,7 @@ const releaseScriptOnly = selectorMod.selectAffectedReleaseGates(root, manifest,
 })
 const releaseScriptIds = new Set<string>(releaseScriptOnly.selection.selected_gate_ids.map(String))
 assertGate(releaseScriptIds.has('release:batch-runner-comprehensive'), 'release script change must select release gates', releaseScriptOnly.selection)
-assertGate(![...releaseScriptIds].some((id) => id.startsWith('zellij:') || id.startsWith('naruto:') || id.startsWith('research:')), 'release script change must not expand to unrelated route gates', releaseScriptOnly.selection)
+assertGate(![...releaseScriptIds].some((id) => id.startsWith('naruto:') || id.startsWith('research:')), 'release script change must not expand to unrelated route gates', releaseScriptOnly.selection)
 assertGate(releaseScriptIds.size < Math.ceil(gates.length / 3), 'release script change must stay affected-sized instead of near-full release', releaseScriptOnly.selection)
 
 const schedulerScriptOnly = selectorMod.selectAffectedReleaseGates(root, manifest, gates, {
@@ -41,7 +41,7 @@ const schedulerScriptOnly = selectorMod.selectAffectedReleaseGates(root, manifes
 })
 const schedulerScriptIds = new Set<string>(schedulerScriptOnly.selection.selected_gate_ids.map(String))
 assertGate(schedulerScriptIds.has('scheduler:comprehensive'), 'scheduler script change must select scheduler gates', schedulerScriptOnly.selection)
-assertGate(![...schedulerScriptIds].some((id) => id.startsWith('research:') || id.startsWith('zellij:')), 'scheduler script change must not expand to unrelated route gates', schedulerScriptOnly.selection)
+assertGate(![...schedulerScriptIds].some((id) => id.startsWith('research:') || id.startsWith('docs:')), 'scheduler script change must not expand to unrelated route gates', schedulerScriptOnly.selection)
 
 const officialSubagentOnly = selectorMod.selectAffectedReleaseGates(root, manifest, gates, {
   changedFiles: ['src/core/subagents/subagent-evidence.ts'],

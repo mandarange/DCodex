@@ -41,7 +41,7 @@ Generated from `sks commands --json`, `src/cli/command-registry.ts COMMANDS`, `s
 | `cli-update-check` | core-cli | stable | sks update-check [--json] | static:pass | static_contract | none recorded |
 | `cli-mcp` | core-cli | beta | sks mcp config list\|get\|add\|edit\|duplicate\|enable\|disable\|remove\|test\|login\|logout\|backups\|restore [--scope global\|project\|effective] [--stdin-json] [--json] | execute:pass | runtime_verified | none recorded |
 | `cli-wizard` | core-cli | stable | sks wizard | execute:pass | runtime_verified | none recorded |
-| `cli-usage` | core-cli | stable | sks usage [install\|setup\|bootstrap\|root\|deps\|zellij\|auto-review\|naruto\|qa-loop\|ppt\|image-ux-review\|computer-use\|goal\|fast-mode\|review\|research\|seo-geo-optimizer\|git\|codex\|codex-app\|codex-native\|hooks\|features\|all-features\|dfix\|commit\|commit-and-push\|design\|imagegen\|dollar\|context7\|super-search\|pipeline\|reasoning\|guard\|conflicts\|versioning\|eval\|harness\|hproof\|gx\|wiki\|memory\|wrongness\|code-structure\|proof-field\|skill-dream\|rust] | execute:pass | runtime_verified | none recorded |
+| `cli-usage` | core-cli | stable | sks usage [install\|setup\|bootstrap\|root\|deps\|auto-review\|naruto\|qa-loop\|ppt\|image-ux-review\|computer-use\|goal\|fast-mode\|review\|research\|seo-geo-optimizer\|git\|codex\|codex-app\|codex-native\|hooks\|features\|all-features\|dfix\|commit\|commit-and-push\|design\|imagegen\|dollar\|context7\|super-search\|pipeline\|reasoning\|guard\|conflicts\|versioning\|eval\|harness\|hproof\|gx\|wiki\|memory\|wrongness\|code-structure\|proof-field\|skill-dream\|rust] | execute:pass | runtime_verified | none recorded |
 | `cli-quickstart` | core-cli | stable | sks quickstart | execute:pass | runtime_verified | none recorded |
 | `cli-setup` | install | stable | sks setup [--bootstrap] [--install-scope global\|project] [--local-only] [--force] [--json] | real_optional:pass | integration_optional | none recorded |
 | `cli-bootstrap` | install | stable | sks bootstrap [--install-scope global\|project] [--local-only] [--json] | execute:pass | runtime_verified | none recorded |
@@ -60,12 +60,6 @@ Generated from `sks commands --json`, `src/cli/command-registry.ts COMMANDS`, `s
 | `cli-menubar` | core-cli | beta | sks menubar | static:pass | static_contract | none recorded |
 | `cli-remote` | core-cli | beta | sks remote readiness\|machines\|worker ... [--json] | real_optional:pass | integration_optional | none recorded |
 | `cli-hooks` | integration | beta | sks hooks explain\|status\|trust-report\|replay\|codex-validate\|warning-check ... [--json]<br>sks hook | execute:pass | runtime_verified | mobile/event payload details remain unknown |
-| `cli-zellij-lane` | core-cli | beta | sks zellij-lane | static:pass | static_contract | none recorded |
-| `cli-zellij-slot-pane` | core-cli | beta | sks zellij-slot-pane | static:pass | static_contract | none recorded |
-| `cli-zellij-monitor-pane` | core-cli | beta | sks zellij-monitor-pane | static:pass | static_contract | none recorded |
-| `cli-zellij-viewport-pane` | core-cli | beta | sks zellij-viewport-pane | static:pass | static_contract | none recorded |
-| `cli-zellij-slot-column-anchor` | core-cli | beta | sks zellij-slot-column-anchor | static:pass | static_contract | none recorded |
-| `cli-zellij` | core-cli | beta | sks zellij status\|repair [--json] \| sks --mad | execute:pass | runtime_verified | none recorded |
 | `cli-mad-sks` | core-cli | beta | sks mad-sks plan\|run\|apply\|sql\|apply-migration\|status\|close\|rollback-apply ... \| sks --mad [--high] | static:pass | static_contract | none recorded |
 | `cli-auto-review` | core-cli | beta | sks auto-review status\|enable\|start [--high] \| sks --Auto-review --high | execute:pass | runtime_verified | none recorded |
 | `cli-dollar-commands` | core-cli | stable | sks dollar-commands [--json] | execute:pass | runtime_verified | none recorded |

@@ -8,9 +8,9 @@ assertGate(fake.schema === 'sks.fake-real-proof-policy.v3', 'fake-real proof pol
 assertGate(fake.ok === true && fake.proof_level === 'fixture_only' && fake.real_claims.length === 0, 'fake backend must remain fixture-only', fake);
 const badFake = mod.evaluateFakeRealProofPolicy({ backend: 'fake', real_parallel_claim: true });
 assertGate(badFake.ok === false && badFake.blockers.includes('fake_backend_claimed_real_execution'), 'fake backend cannot claim execution authority', badFake);
-const supporting = mod.evaluateFakeRealProofPolicy({ backend: 'zellij', zellij_pane_verified: true });
+const supporting = mod.evaluateFakeRealProofPolicy({ cleanup_proof: { ok: true } });
 assertGate(supporting.ok === true && supporting.proof_level === 'integration_optional', 'supporting runtime evidence cannot become execution proof', supporting);
-assertGate(supporting.subsystem_levels.zellij_pane === 'proven' && supporting.real_claims.length === 0, 'Zellij evidence must remain supporting-only', supporting);
+assertGate(supporting.subsystem_levels.cleanup === 'proven' && supporting.real_claims.length === 0, 'supporting evidence must remain non-authoritative', supporting);
 const official = mod.evaluateFakeRealProofPolicy(passingOfficialEvidence());
 assertGate(official.ok === true && official.proof_level === 'proven', 'official Codex subagent evidence must satisfy execution proof', official);
 assertGate(official.execution_authority.workflow === 'official_codex_subagent', 'official Codex subagent must be the execution authority', official);

@@ -104,13 +104,6 @@ for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
       "process.on('SIGTERM', () => process.exit(0))",
       'setInterval(() => {}, 1000)'
     ].join('\n'))
-    fs.mkdirSync(path.join(fixture, 'dist', 'scripts'), { recursive: true })
-    fs.writeFileSync(path.join(fixture, 'dist', 'scripts', 'zellij-real-session-cleanup-check.js'), [
-      "const fs = require('node:fs')",
-      "fs.writeFileSync('zellij-env.json', JSON.stringify({ TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, SKS_TMP_DIR: process.env.SKS_TMP_DIR, ZELLIJ_SOCKET_DIR: process.env.ZELLIJ_SOCKET_DIR }))",
-      "console.log(JSON.stringify({ schema: 'sks.zellij-real-session-cleanup-check.v1', ok: true, blockers: [] }))"
-    ].join('\n'))
-
     const child = spawn(process.execPath, [checker], {
       cwd: fixture,
       env: { ...process.env, TMPDIR: scratchBase, TMP: scratchBase, TEMP: scratchBase, SKS_TMP_DIR: path.join(scratchBase, 'caller') },
@@ -131,14 +124,11 @@ for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
     const result = await waitForClose(child)
     assert.equal(result.code, exitCode, stderr)
     const report = JSON.parse(fs.readFileSync(path.join(fixture, '.sneakoscope', 'reports', 'release-real-check.json'), 'utf8'))
-    const zellijEnv = JSON.parse(fs.readFileSync(path.join(fixture, 'zellij-env.json'), 'utf8'))
     assert.ok(report.blockers.includes(`release_real_check_signal:${signal}`))
     assert.equal(report.scratch_isolation.root, inherited.TMPDIR)
     assert.equal(report.scratch_isolation.cleanup.trigger, `signal:${signal}`)
     assert.equal(report.scratch_isolation.cleanup.ok, true)
     assert.equal(report.scratch_isolation.cleanup.removed, true)
-    assert.deepEqual([zellijEnv.TMPDIR, zellijEnv.TMP, zellijEnv.TEMP, zellijEnv.SKS_TMP_DIR], Array(4).fill(inherited.TMPDIR))
-    assert.equal(zellijEnv.ZELLIJ_SOCKET_DIR, report.zellij_isolation.socket_dir)
     assert.equal(fs.existsSync(inherited.TMPDIR), false)
     await waitFor(() => !processExists(inherited.pid), 5_000)
   } finally {

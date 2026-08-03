@@ -157,10 +157,9 @@ export function applyFastModeToRoster<T extends Record<string, any>>(roster: T, 
 export async function writeFastModePropagationProof(root: string, input: { policy: FastModePolicy; backend?: string; results?: any[] } = { policy: resolveFastModePolicy() }) {
   const workerProcessReports = await collectNamedJson(root, 'worker-process-report.json')
   const agentProcessReports = await collectNamedJson(root, 'agent-process-report.json')
-  const zellijReports = await collectNamedJson(root, 'agent-zellij-report.json')
   const madReports = await collectNamedJson(root, 'mad-sks-worker-report.json')
   const defaultFastExpected = input.policy.fast_mode === true
-  const childReports = [...workerProcessReports, ...agentProcessReports, ...zellijReports, ...madReports]
+  const childReports = [...workerProcessReports, ...agentProcessReports, ...madReports]
   const missingFast = defaultFastExpected
     ? childReports.filter((row) => row.json?.fast_mode !== true && row.json?.fast_mode !== 'true')
     : []
@@ -185,7 +184,6 @@ export async function writeFastModePropagationProof(root: string, input: { polic
     worker_process_report_count: workerProcessReports.length,
     codex_sdk_process_report_count: agentProcessReports.filter((row) => row.json?.backend === 'codex-sdk').length,
     process_report_count: agentProcessReports.filter((row) => row.json?.backend === 'process').length,
-    zellij_report_count: zellijReports.length,
     mad_report_count: madReports.length,
     child_report_count: childReports.length,
     artifacts: childReports.map((row) => row.relative_path),

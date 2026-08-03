@@ -187,7 +187,6 @@ function readyInput(overrides: Record<string, unknown>) {
         { name: 'spawned_child_read', ok: true }
       ]
     },
-    zellij: { ok: true, status: 'ok' },
     agent_role_config: { ok: true },
     ...overrides
   };

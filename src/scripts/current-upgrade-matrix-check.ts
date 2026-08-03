@@ -199,31 +199,6 @@ try {
       exit: removedCommand.status
     };
 
-    const zj = spawnSync(process.execPath, ['dist/bin/sks.js', 'zellij', 'status', '--json'], {
-      cwd: root,
-      encoding: 'utf8'
-    });
-    let zjJson;
-    try {
-      zjJson = JSON.parse(zj.stdout);
-    } catch (err) {
-      assertGate(false, 'zellij_status_informational: stdout is not valid JSON', {
-        stdout: zj.stdout,
-        stderr: zj.stderr,
-        error: String(err)
-      });
-    }
-    assertGate(
-      Object.prototype.hasOwnProperty.call(zjJson, 'status'),
-      'zellij_status_informational: missing status field',
-      { json: zjJson }
-    );
-    assertGate(
-      zjJson.ok === true,
-      'zellij_status_informational: informational status hard-failed (ok !== true)',
-      { json: zjJson }
-    );
-    summary.states.zellij_status_informational = { status: zjJson.status, ok: zjJson.ok };
   }
 
   {
@@ -265,21 +240,21 @@ try {
     const result = await policy.repairCodexConfigStructure(configPath, { apply: true });
     assertGate(
       result.status === 'structure_ok',
-      '1.19.x_zellij_project_noop: clean config did not report structure_ok',
+      'clean_config_noop: clean config did not report structure_ok',
       { status: result.status }
     );
     const after = fs.readFileSync(configPath, 'utf8');
     assertGate(
       after === before,
-      '1.19.x_zellij_project_noop: clean config was modified by a no-op upgrade',
+      'clean_config_noop: clean config was modified by a no-op upgrade',
       { before, after }
     );
     assertGate(
       result.changed === false && result.applied === false && !result.backup_path,
-      '1.19.x_zellij_project_noop: no-op upgrade reported a change/backup',
+      'clean_config_noop: no-op upgrade reported a change/backup',
       { changed: result.changed, applied: result.applied, backup_path: result.backup_path }
     );
-    summary.states['1.19.x_zellij_project_noop'] = {
+    summary.states.clean_config_noop = {
       status: result.status,
       changed: result.changed,
       byte_identical: true
@@ -346,9 +321,8 @@ try {
       'flags_not_reenabled',
       'splitter_preserves_project',
       'current_surface_unknown_command',
-      'zellij_status_informational',
       'migration_journal',
-      '1.19.x_zellij_project_noop',
+      'clean_config_noop',
       'existing_skill_cards_preserved'
     ]
   });

@@ -10,7 +10,7 @@ export async function writeNoSubagentScalingPolicy(root: string, input: { native
   const events = await readText(path.join(root, 'agent-events.jsonl'), '')
   const subagentEventCount = String(events).split(/\n/).filter((line) => /Subagent(Start|Stop)|subagent/i.test(line)).length
   const nativeProcessCount = Number(nativeProof?.spawned_worker_process_count || runtime?.spawned_worker_process_count || 0)
-  const allowedScalingPrimitives = new Set(['native_cli_process', 'native_cli_process_in_zellij_worker_pane'])
+  const allowedScalingPrimitives = new Set(['native_cli_process'])
   const blockers = [
     ...(allowedScalingPrimitives.has(String(runtime?.scaling_primitive || '')) ? [] : ['main_scaling_primitive_not_native_cli_process']),
     ...(nativeProcessCount > 0 ? [] : ['native_cli_worker_process_proof_missing']),

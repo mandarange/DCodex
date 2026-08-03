@@ -355,7 +355,6 @@ export async function setupCommand(args: any = []) {
   console.log(`${result.ok ? 'Setup complete' : 'Setup blocked'}: ${root}`);
   console.log(`Install scope: ${installScope}`);
   console.log(`Codex CLI: ${cliTools.codex.status}${cliTools.codex.version ? ` ${cliTools.codex.version}` : ''}`);
-  console.log(`Zellij: ${cliTools.zellij.ok ? 'ok' : cliTools.zellij.repair.status}${cliTools.zellij.version ? ` ${cliTools.zellij.version}` : ''}`);
   for (const file of result.created) console.log(`- ${file}`);
   for (const warning of readiness.warnings) console.log(`Warning: ${warning}`);
   for (const blocker of readiness.blockers) console.error(`Blocker: ${blocker}`);
@@ -455,20 +454,18 @@ export async function depsCommand(sub: any = 'check', args: any = []) {
   const { ensureRelatedCliTools } = await import('../../cli/install-helpers.js');
   const repairRequested = flag(args, '--yes') || flag(args, '-y');
   const cliTools = await ensureRelatedCliTools(repairRequested ? args : [...args, '--dry-run']);
-  const zellijReady = cliTools.zellij.ok === true;
   const codexReady = cliTools.codex.status === 'present' || cliTools.codex.status === 'installed';
   const result = {
     schema: 'sks.deps-status.v1',
     root,
-    ready: Boolean(nodeOk && npm && codexReady && zellijReady),
+    ready: Boolean(nodeOk && npm && codexReady),
     node: { ok: nodeOk, version: process.version },
     npm: { ok: Boolean(npm), bin: npm },
     cli_tools: cliTools,
     next_actions: [
       ...(!nodeOk ? ['Install Node.js 20.11+.'] : []),
       ...(!npm ? ['Install npm or a Node.js distribution that includes npm.'] : []),
-      ...(!codexReady ? [`Run sks deps check --yes or npm i -g @openai/codex@latest.`] : []),
-      ...(!zellijReady ? [`Run sks deps check --yes or ${cliTools.zellij.install_hint || 'install Zellij'}.`] : [])
+      ...(!codexReady ? [`Run sks deps check --yes or npm i -g @openai/codex@latest.`] : [])
     ]
   };
   if (flag(args, '--json')) return printJson(result);
@@ -476,7 +473,6 @@ export async function depsCommand(sub: any = 'check', args: any = []) {
   console.log(`Node: ${result.node.ok ? 'ok' : 'missing'} ${result.node.version}`);
   console.log(`npm:  ${result.npm.ok ? 'ok' : 'missing'} ${result.npm.bin || ''}`.trim());
   console.log(`Codex CLI: ${cliTools.codex.status}${cliTools.codex.version ? ` ${cliTools.codex.version}` : ''}`);
-  console.log(`Zellij: ${zellijReady ? 'ok' : cliTools.zellij.repair.status}${cliTools.zellij.version ? ` ${cliTools.zellij.version}` : ''}`);
   for (const action of result.next_actions) console.log(`Next: ${action}`);
   if (!result.ready) process.exitCode = 1;
 }

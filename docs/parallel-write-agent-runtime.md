@@ -34,6 +34,5 @@ every requested thread has a trustworthy parent outcome, no thread remains
 open or failed, the parent integration is complete, and scoped verification
 passes.
 
-Zellij is an observability surface. It may show running and verifying threads,
-but its display state never substitutes for the official event and parent
+Displayed thread state never substitutes for the official event and parent
 summary contract.

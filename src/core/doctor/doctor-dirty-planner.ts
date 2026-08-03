@@ -131,7 +131,6 @@ function phaseInputHash(root: string, id: string): string {
 }
 
 function phaseInputFiles(id: string): string[] {
-  if (id.includes('zellij')) return ['src/core/zellij', 'src/core/doctor/doctor-zellij-repair.ts'];
   if (id.includes('context7')) return ['src/core/doctor/context7-mcp-repair.ts', '.codex/config.toml'];
   if (id.includes('startup')) return ['src/core/doctor/codex-startup-config-repair.ts', '.codex/config.toml'];
   if (id.includes('supabase')) return ['src/core/doctor/supabase-mcp-repair.ts', '.codex/config.toml'];
@@ -177,7 +176,6 @@ function phaseEnvPresence(id: string): Record<string, boolean> {
 function phaseSemanticState(root: string, id: string): Record<string, unknown> {
   const config = readTextIfSmall(path.join(root, '.codex', 'config.toml'));
   return {
-    zellij_capability_present: id.includes('zellij') ? fs.existsSync(path.join(root, 'src', 'core', 'zellij')) : undefined,
     context7_transport: id.includes('context7') ? parseMcpTransport(config, 'context7') : undefined,
     startup_config_targets: id.includes('startup') ? parseConfigTargets(config) : undefined,
     supabase_env_present: id.includes('supabase') ? process.env.SUPABASE_ACCESS_TOKEN !== undefined : undefined,
@@ -260,7 +258,7 @@ function proofExists(root: string, proofId: string): boolean {
 }
 
 function phaseRequiresPostcheck(id: string): boolean {
-  return /zellij|context7|startup|supabase|native|secret|menubar/i.test(id);
+  return /context7|startup|supabase|native|secret|menubar/i.test(id);
 }
 
 function runtimeProbeFailures(root: string, id: string): string[] {

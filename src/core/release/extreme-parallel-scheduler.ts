@@ -177,7 +177,6 @@ function emptyUsedResources(): Record<string, number> {
     fs_read: 0,
     network: 0,
     remote_model_real: 0,
-    zellij_real: 0,
     browser_real: 0,
     secret_sensitive: 0
   };
@@ -191,7 +190,6 @@ function resourceKeysForPack(classes: string[]): Array<keyof ResourceClassBudget
     if (value === 'io-heavy') return 'io_heavy';
     if (value === 'fs-read') return 'fs_read';
     if (value === 'remote-model-real') return 'remote_model_real';
-    if (value === 'zellij-real') return 'zellij_real';
     if (value === 'browser-real') return 'browser_real';
     if (value === 'secret-sensitive' || value === 'secret') return 'secret_sensitive';
     if (value === 'network') return 'network';

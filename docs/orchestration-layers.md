@@ -25,12 +25,7 @@ The parent owns decomposition, integration, verification, and the final answer.
 Codex owns the official child threads. Codex App sessions reuse the current
 parent instead of launching a nested orchestrator.
 
-## Terminal UI
+## Completion Evidence
 
-`src/core/zellij/**` renders the current official-thread telemetry. A monitor
-and a bounded set of viewports show lifecycle and redacted activity without
-claiming success. Pane count, process count, and display state never satisfy the
-completion contract.
-
-Official model, budget, prompt, and evidence semantics belong in
-`src/core/subagents/**`; visual rendering belongs in `src/core/zellij/**`.
+Process count and display state never satisfy the completion contract. Official
+model, budget, prompt, and evidence semantics belong in `src/core/subagents/**`.

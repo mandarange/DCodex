@@ -123,7 +123,6 @@ export function qaLoopShouldRequestAppHandoff(input: {
   args?: string[]
   uiRequired?: boolean
   visualArtifactsPresent?: boolean
-  zellijUiBlocked?: boolean
   pluginAppTemplateUnavailable?: boolean
   userRequestedDesktopReview?: boolean
 } = {}) {
@@ -131,7 +130,6 @@ export function qaLoopShouldRequestAppHandoff(input: {
   return args.includes('--app-handoff')
     || process.env.SKS_QA_LOOP_APP_HANDOFF === '1'
     || input.visualArtifactsPresent === true
-    || input.zellijUiBlocked === true
     || input.pluginAppTemplateUnavailable === true
     || input.userRequestedDesktopReview === true
     || input.uiRequired === true && process.env.SKS_QA_LOOP_APP_HANDOFF_FOR_VISUAL === '1'

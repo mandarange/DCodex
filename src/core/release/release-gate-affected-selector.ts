@@ -88,7 +88,6 @@ function gateSelectionReason(gate: ReleaseGateNode, changedFiles: string[], pres
     return gate.id.startsWith('scheduler:') ? 'scheduler_source_changed' : null
   }
   if (changedFiles.some((file) => file.startsWith('src/core/research/'))) return gate.id.startsWith('research:') ? 'research_source_changed' : null
-  if (changedFiles.some((file) => file.startsWith('src/core/zellij/') || file.startsWith('src/commands/zellij'))) return gate.id.startsWith('zellij:') || gate.id.startsWith('agent:zellij') || gate.id.startsWith('naruto:zellij') ? 'zellij_source_changed' : null
   if (
     changedFiles.some((file) => file.includes('/db') || file.includes('mad-sks/sql-plane') || file.includes('mcp'))
     && /db|mcp|mad-sks/.test(gate.id)

@@ -16,12 +16,6 @@ export const RELEASE_REAL_REQUIRED_CHECK_IDS = Object.freeze([
   'codex:0144:capability:real',
   'doctor:actual',
   'release:pack-receipt',
-  'zellij:capability',
-  'zellij:layout-valid',
-  'zellij:real-session-launch',
-  'zellij:pane-proof',
-  'zellij:screen-proof',
-  'zellij:real-session-cleanup',
   'naruto:worktree-coding:blackbox',
   'codex-sdk:real-smoke'
 ])

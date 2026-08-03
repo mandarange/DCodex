@@ -30,14 +30,11 @@ import { appendAgentCodexCockpitHookEvent, writeAgentCodexCockpitArtifacts } fro
 import { runAgentJanitor } from './agent-janitor.js'
 import { startAgentTerminalSession, closeAgentTerminalSession } from './agent-terminal-session.js'
 import { writeScoutPolicyArtifact } from './scout-policy.js'
-import { writeZellijRightLaneCockpit } from './zellij-right-lane-cockpit.js'
 import { buildProjectNamespace, namespacedAgentSessionId, writeProjectNamespaceArtifact } from '../session/project-namespace.js'
 import { normalizeTargetActiveSlots, runAgentScheduler } from './agent-scheduler.js'
 import { runSourceIntelligence } from '../source-intelligence/source-intelligence-runner.js'
 import { detectOfficialGoalMode, writeOfficialGoalModeArtifact } from '../codex/official-goal-mode.js'
 import { writeAgentTaskGraph } from './agent-task-graph.js'
-import { drainZellijLaneSupervisor, initializeZellijLaneSupervisorEmpty, updateZellijLaneSupervisorFromSlots, verifyZellijLaneSurvival } from './zellij-lane-supervisor.js'
-import { writeZellijPaneProof } from '../zellij/zellij-pane-proof.js'
 import { writeIntelligentWorkGraphArtifacts } from './intelligent-work-graph.js'
 import { writeAdhdOrchestrationArtifacts } from '../strategy/adhd-orchestrating-gate.js'
 import { compileStrategy, writeStrategyCompilerArtifacts } from '../strategy/strategy-compiler.js'
@@ -75,8 +72,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
   const requestedBackend = String(opts.backend || (opts.mock ? 'fake' : 'codex-sdk'))
   const backend = normalizeAgentBackend(requestedBackend)
   const maxAgentCount = Number.isFinite(Number(opts.maxAgentCount)) && Number(opts.maxAgentCount) >= 1 ? Math.floor(Number(opts.maxAgentCount)) : MAX_AGENT_COUNT
-  const realZellij = backend === 'zellij' && opts.real === true
-  const realZellijProofRequired = realZellij && process.env.SKS_REQUIRE_ZELLIJ === '1'
   const created = opts.missionId
     ? { id: opts.missionId, dir: missionDir(root, opts.missionId), mission: { id: opts.missionId, mode: 'internal-worker-runtime', prompt } }
     : await createMission(root, { mode: 'internal-worker-runtime', prompt, sessionKey })
@@ -118,7 +113,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     })
   }))
   const targetActiveSlots = normalizeTargetActiveSlots(opts.targetActiveSlots ?? opts.agents ?? roster.agent_count, maxAgentCount)
-  const visualLaneCount = normalizeVisualLaneCount(opts.visualLaneCount ?? opts.agents ?? roster.agent_count, roster.agent_count, Math.min(maxAgentCount, DEFAULT_AGENT_CONCURRENCY))
   const desiredWorkItemCount = normalizeDesiredWorkItemCount(opts.desiredWorkItemCount, opts.minimumWorkItems, targetActiveSlots)
   const minimumWorkItems = normalizeMinimumWorkItems(opts.minimumWorkItems, targetActiveSlots)
   const sourceIntelligence = await runSourceIntelligence({ root, missionDir: dir, route, query: prompt, offline: true, context7Available: true })
@@ -246,9 +240,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
   await writeStrategyGateArtifact(ledgerRoot, strategyGate)
   await writeIntelligentWorkGraphArtifacts(ledgerRoot, partition.intelligent_work_graph)
   await writeScoutPolicyArtifact(ledgerRoot)
-  await writeZellijRightLaneCockpit(ledgerRoot, { missionId, sessionName: `sks-${missionId}`, agents: roster.roster })
-  await initializeZellijLaneSupervisorEmpty(ledgerRoot, { missionId, sessionName: `sks-${missionId}` })
-  await writeZellijPaneProof(root, { missionId, require: realZellijProofRequired, phase: 'initial', ledgerRoot })
   await writeAgentCodexCockpitArtifacts(dir, { missionId, projectHash: namespace.root_hash })
   await writeJsonAtomic(path.join(ledgerRoot, 'agent-no-overlap-proof.json'), partition.no_overlap_proof || { schema: 'sks.agent-no-overlap-proof.v1', ok: false, blockers: ['missing_no_overlap_proof'] })
   await writeAgentLifecyclePolicy(ledgerRoot)
@@ -261,7 +252,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     concurrency: roster.concurrency,
     batch_count: 0,
     target_active_slots: targetActiveSlots,
-    visual_lane_count: visualLaneCount,
     desired_work_items: desiredWorkItemCount,
     minimum_work_items: minimumWorkItems,
     requested_work_items: desiredWorkItemCount,
@@ -350,8 +340,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     noOllama: opts.noOllama === true,
     route,
     fastModePolicy,
-    ...(opts.workerPlacement === undefined ? {} : { workerPlacement: String(opts.workerPlacement) }),
-    zellijVisiblePaneCap: Number(opts.zellijVisiblePaneCap || visualLaneCount || targetActiveSlots),
     projectRoot: root
   })
   const schedulerHardTimeoutMs = normalizeMissionHardTimeoutMs(opts, route)
@@ -412,7 +400,7 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
       await appendAgentLedgerEvent(ledgerRoot, { agent_id: agent.id, session_id: agent.session_id, event_type: 'agent_started', payload: { backend, slice_id: slice.id } })
       await startAgentTerminalSession(ledgerRoot, agent, {
         backend,
-        real: backend === 'process' || (backend === 'codex-sdk' && opts.real === true) || backend === 'zellij',
+        real: backend === 'process' || (backend === 'codex-sdk' && opts.real === true),
         slotId: agent.slot_id,
         generationIndex: agent.generation_index,
         requireGeneration: true
@@ -474,22 +462,10 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     },
     onSchedulerEvent: async ({ event, slots, state }) => {
       await reapTimedOutAgentSessions()
-      const paneBySlot = await readZellijPaneIdsBySlot(ledgerRoot)
-      const enrichedSlots = slots.map((slot) => ({ ...slot, pane_id: paneBySlot.get(slot.slot_id) || null, launch_status: paneBySlot.has(slot.slot_id) ? 'launched' : slot.status }))
-      await writeZellijRightLaneCockpit(ledgerRoot, { missionId, sessionName: `sks-${missionId}`, slots: enrichedSlots })
       await writeAgentCodexCockpitArtifacts(dir, { missionId, projectHash: namespace.root_hash })
       if (['session_completed', 'backfill_event', 'scheduler_drained'].includes(String(event.event_type))) {
         const periodicJanitor = await runAgentJanitor({ missionDir: dir, missionId, projectHash: namespace.root_hash })
         if (!periodicJanitor.ok) await appendAgentLedgerEvent(ledgerRoot, { agent_id: 'orchestrator', session_id: 'orchestrator', event_type: 'periodic_janitor_blocked', payload: periodicJanitor })
-      }
-      if (String(event.event_type) === 'scheduler_draining') {
-        await verifyZellijLaneSurvival(ledgerRoot)
-        await writeZellijPaneProof(root, { missionId, require: realZellijProofRequired, phase: 'before_drain', ledgerRoot })
-      }
-      await updateZellijLaneSupervisorFromSlots(ledgerRoot, { missionId, sessionName: `sks-${missionId}`, slots, state, event })
-      if (String(event.event_type) === 'scheduler_drained') {
-        await drainZellijLaneSupervisor(ledgerRoot)
-        await writeZellijPaneProof(root, { missionId, require: realZellijProofRequired, phase: 'after_drain', ledgerRoot })
       }
     }
   })
@@ -498,7 +474,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
   const parallelRuntimeProof = await writeParallelRuntimeProof(ledgerRoot, missionId, {
     requestedWorkers: Number(opts.agents || roster.agent_count || targetActiveSlots),
     targetActiveSlots,
-    visiblePanes: visualLaneCount,
     expectedWorkerRuntimeMs: targetActiveSlots >= 10 ? 8000 : targetActiveSlots >= 2 ? 2000 : 25,
     minActiveWorkers: Math.min(targetActiveSlots, desiredWorkItemCount),
     ...(backend === 'codex-sdk' && opts.real === true ? { minSpeedupRatio: 3 } : {}),
@@ -576,10 +551,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
   const outputValidation = await writeAgentOutputValidationReport(ledgerRoot, results)
   const outputTails = await writeAgentOutputTailReport(ledgerRoot, results)
   const backendReport = await writeAgentBackendReport(ledgerRoot, { backend, results, outputTails, fastModePolicy })
-  const finalPaneBySlot = await readZellijPaneIdsBySlot(ledgerRoot)
-  const finalZellijSlots = scheduler.slots.map((slot: any) => ({ ...slot, pane_id: finalPaneBySlot.get(slot.slot_id) || null, launch_status: finalPaneBySlot.has(slot.slot_id) ? 'launched' : slot.status }))
-  await writeZellijRightLaneCockpit(ledgerRoot, { missionId, sessionName: `sks-${missionId}`, slots: finalZellijSlots })
-  await writeZellijPaneProof(root, { missionId, require: realZellijProofRequired, phase: 'final', ledgerRoot })
   await compactAgentLedger(ledgerRoot)
   const cleanup = await writeAgentCleanupReport(ledgerRoot)
   const janitor = await runAgentJanitor({ missionDir: dir, missionId, projectHash: namespace.root_hash })
@@ -610,7 +581,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     minimumWorkItems: partition.task_graph?.minimum_work_items || minimumWorkItems,
     targetActiveSlots,
     realParallel: backend === 'codex-sdk' && opts.mock !== true,
-    visualLaneCount,
     roster,
     partition,
     consensus,
@@ -655,7 +625,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     requested_work_items: partition.task_graph?.desired_work_items || desiredWorkItemCount,
     actual_total_work_items: partition.task_graph?.total_work_items || partition.slices.length,
     target_active_slots: targetActiveSlots,
-    visual_lane_count: visualLaneCount,
     minimum_work_items: partition.task_graph?.minimum_work_items || minimumWorkItems,
     scheduler,
     source_intelligence: sourceIntelligenceRef,
@@ -1874,17 +1843,6 @@ function normalizeMinimumWorkItems(value: unknown, targetActiveSlots: number) {
   return Math.max(1, Math.floor(parsed))
 }
 
-function normalizeVisualLaneCount(value: unknown, fallback: unknown, maxAgentCount: number) {
-  const parsed = Number(value)
-  const fallbackCount = Number(fallback)
-  const raw = Number.isFinite(parsed) && parsed > 0
-    ? parsed
-    : Number.isFinite(fallbackCount) && fallbackCount > 0
-      ? fallbackCount
-      : 1
-  return Math.max(1, Math.min(maxAgentCount, Math.floor(raw)))
-}
-
 function isWriteCapableRun(opts: AgentRunOptions) {
   if (opts.readonly === true) return false
   return opts.applyPatches === true || opts.dryRunPatches === true || (opts.writeMode !== undefined && opts.writeMode !== 'off')
@@ -2002,18 +1960,6 @@ function buildProvidedAgentRoster(input: any, opts: any = {}) {
     roster,
     effort_policy: input?.effort_policy || { schema: 'sks.agent-effort-policy.v1', dynamic: true, decisions: [] }
   }
-}
-
-async function readZellijPaneIdsBySlot(root: string) {
-  const out = new Map<string, string>()
-  const text = await readText(path.join(root, 'agent-zellij-pane-launch-ledger.jsonl'), '')
-  for (const line of String(text).split(/\n/).filter(Boolean)) {
-    try {
-      const entry = JSON.parse(line)
-      if (entry.slot_id && entry.pane_id) out.set(String(entry.slot_id), String(entry.pane_id))
-    } catch {}
-  }
-  return out
 }
 
 async function writeAgentOutputTailReport(root: string, results: any[]) {

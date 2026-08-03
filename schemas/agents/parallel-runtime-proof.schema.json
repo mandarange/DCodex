@@ -29,7 +29,6 @@
     "overlap_windows",
     "changed_file_count",
     "changed_files_by_worker",
-    "visible_panes",
     "headless_workers",
     "utilization_proof_consistency",
     "passed",
@@ -62,7 +61,6 @@
     "overlap_windows": { "type": "array" },
     "changed_file_count": { "type": "integer", "minimum": 0 },
     "changed_files_by_worker": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
-    "visible_panes": { "type": "integer", "minimum": 0 },
     "headless_workers": { "type": "integer", "minimum": 0 },
     "utilization_proof_consistency": {
       "type": "object",

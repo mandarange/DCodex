@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { sha256 } from '../../fsx.js';
 
 export type ProgressSignalKind = 'evidence' | 'file' | 'test' | 'model' | 'tool';
 export type PauseCause = 'network' | 'auth' | 'mode' | 'account' | 'external-config' | 'integrity' | 'unknown';
@@ -94,11 +95,11 @@ export async function runWithProgressRecovery<T>(input: {
 export function issueManualResume(state: ProgressRecoveryState): { state: ProgressRecoveryState; token: string } {
   if (state.status !== 'paused') throw new Error('progress_resume_requires_paused_state');
   const token = randomBytes(24).toString('base64url');
-  return { state: { ...state, resume_token_hash: hash(token) }, token };
+  return { state: { ...state, resume_token_hash: sha256(token) }, token };
 }
 
 export function confirmManualResume(state: ProgressRecoveryState, token: string): ProgressRecoveryState {
-  if (state.status !== 'paused' || !state.resume_token_hash || hash(token) !== state.resume_token_hash) {
+  if (state.status !== 'paused' || !state.resume_token_hash || sha256(token) !== state.resume_token_hash) {
     throw new Error('progress_resume_token_invalid');
   }
   return { ...state, status: 'running', pause_cause: null, pause_reason: null, resume_token_hash: null };
@@ -116,8 +117,4 @@ function safeCode(error: unknown): string {
 
 function safeReason(value: string): string {
   return /^[a-z][a-z0-9_]{1,99}$/.test(value) ? value : 'unknown_failure';
-}
-
-function hash(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
 }

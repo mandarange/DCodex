@@ -11,7 +11,7 @@ export const CORE_ROLLOUT_TRACE_SCHEMA = 'sks.core-rollout-trace.v1'
 export const CORE_SKILL_SCORE_SCHEMA = 'sks.core-skill-rollout-score.v1'
 
 export type CoreSkillStatus = 'candidate' | 'accepted' | 'rejected' | 'deployed'
-export type SkillBackend = 'codex-sdk' | 'fake' | 'process' | 'zellij'
+export type SkillBackend = 'codex-sdk' | 'fake' | 'process'
 
 export interface CoreSkillSideEffectScope {
   allowed_mutations: string[]

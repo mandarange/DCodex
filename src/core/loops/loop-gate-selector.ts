@@ -12,7 +12,6 @@ export function selectLoopGates(input: {
   const local = new Set<string>();
   if (input.node.level === 'L0-report') return { triage, local: [], checker: [], integration: [], final: [] };
   if (isDocsOnly(input.changedFiles, input.node)) add(local, ['docs:loop-runtime', 'changelog:check']);
-  else if (/zellij/.test(files) || input.node.loop_id.includes('zellij')) add(local, ['zellij:slot-telemetry-live-flush', 'zellij:slot-pane-stale-detection']);
   else if (/release/.test(files) || input.node.loop_id.includes('release')) add(local, ['release:affected-selector', 'release:dynamic-presets']);
   else if (/research/.test(files) || input.node.loop_id.includes('research')) add(local, ['research:quality-contract']);
   else if (/qa-loop/.test(files) || input.node.loop_id.includes('qa-loop')) add(local, ['qa-loop:app-handoff-gate-lifecycle']);

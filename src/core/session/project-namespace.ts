@@ -14,7 +14,6 @@ export interface ProjectNamespace {
   mission_id: string | null
   mission_namespace_id: string | null
   orchestrator_id: string
-  zellij_prefix: string
   temp_dir: string
   lock_dir: string
   artifact_dir: string
@@ -51,7 +50,6 @@ export async function buildProjectNamespace(input: {
     mission_id: missionId,
     mission_namespace_id: missionNamespaceId,
     orchestrator_id: orchestratorId,
-    zellij_prefix: namespaceForPaths,
     temp_dir: path.join(os.tmpdir(), namespaceForPaths),
     lock_dir: path.join(projectRoot, '.sneakoscope', 'locks', rootHash),
     artifact_dir: missionId
@@ -68,11 +66,6 @@ export function namespacedAgentSessionId(input: {
 }): string {
   const suffix = input.index === undefined ? '' : `-${String(input.index).padStart(2, '0')}`
   return `${input.agentId}-${input.missionId}-${input.rootHash}${suffix}`
-}
-
-export function namespacedZellijSessionName(namespace: ProjectNamespace, label = 'work'): string {
-  const raw = `${namespace.zellij_prefix}-${label}`
-  return raw.replace(/[^A-Za-z0-9_.:-]+/g, '-').slice(0, 80)
 }
 
 export async function writeProjectNamespaceArtifact(

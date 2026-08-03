@@ -1,7 +1,7 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { writeJsonAtomic } from '../../fsx.js';
+import { sha256, writeJsonAtomic } from '../../fsx.js';
 
 export type ImageReferenceConsent = 'local-only' | 'external-transfer-approved';
 export type ImageReferenceStatus = 'valid' | 'expired_reference';
@@ -123,13 +123,13 @@ export class ExternalTransferPermitRegistry {
     if (reference.status !== 'valid') throw new Error('image_reference_expired');
     if (reference.consent !== 'external-transfer-approved') throw new Error('image_external_transfer_consent_required');
     const token = randomBytes(24).toString('base64url');
-    this.permits.set(reference.id, hash(token));
+    this.permits.set(reference.id, sha256(token));
     return { schema: 'sks.image-external-transfer-permit.v1', reference_id: reference.id, token };
   }
 
   consume(reference: ImageReferenceEvidence, token: string): void {
     const expected = this.permits.get(reference.id);
-    if (!expected || expected !== hash(token)) throw new Error('image_external_transfer_permit_invalid');
+    if (!expected || expected !== sha256(token)) throw new Error('image_external_transfer_permit_invalid');
     this.permits.delete(reference.id);
   }
 }
@@ -167,9 +167,5 @@ function isInside(root: string, candidate: string): boolean {
 }
 
 async function sha256File(file: string): Promise<string> {
-  return createHash('sha256').update(await fsp.readFile(file)).digest('hex');
-}
-
-function hash(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
+  return sha256(await fsp.readFile(file));
 }

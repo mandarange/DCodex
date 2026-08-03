@@ -18,7 +18,6 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
   const actual = checks.find((check: any) => check.name === 'actual_codex_cli_config_load') || {}
   const nodeRead = checks.find((check: any) => check.name === 'node_process_read' || check.name === 'node_read') || {}
   const childRead = checks.find((check: any) => check.name === 'spawned_child_read' || check.name === 'spawned_node_child_read') || {}
-  const zellij = input.zellij || null
   const codexDoctor = input.codex_doctor || null
   const codexCliRequired = input.require_codex_cli_config_load === true
   const actualOk = actual.ok === true && !String(actual.status || '').includes('not_requested')
@@ -35,9 +34,6 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
     for (const blocker of configBlockers) blockers.add(blocker)
     if (!configBlockers.length) blockers.add('codex_cli_config_load_unverified')
   }
-  const zellijStatus = zellij?.status || 'missing'
-  const zellijReadyForInteractive = zellij?.ok === true && zellijStatus === 'ok'
-  if (!zellijReadyForInteractive) warnings.add(`zellij_${zellijStatus}`)
   const codexDoctorBlockers = normalizeList(codexDoctor?.blockers)
   const codexDoctorBlockingChecks = Array.isArray(codexDoctor?.blocking_checks)
     ? codexDoctor.blocking_checks.map((check: any) => String(check?.issue || check?.id || '')).filter(Boolean)
@@ -110,14 +106,13 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
   const codexConfigNode = nodeRead.ok !== false && codexConfig.ok !== false
   const codexConfigChild = childRead.ok !== false && codexConfig.ok !== false
   const cliReady = codexBinOk && codexConfigNode && codexConfigChild && cliConfigOk
-  const madReady = cliReady && zellijReadyForInteractive
+  const madReady = cliReady
   const nextActions = normalizeList(input.operator_actions || codexConfig.operator_actions)
   for (const [scope, list] of Object.entries(routeBlockers)) {
     for (const blocker of Array.isArray(list) ? list : []) nextActions.push(nextActionForRouteBlocker(String(scope), String(blocker)))
   }
   if (!nextActions.length && blockers.size) nextActions.push(...nextActionsForBlockers([...blockers]))
   if (input.codex_app_ui?.requires_confirmation === true) nextActions.push(input.codex_app_ui.next_action || 'Run `sks doctor --fix --repair-codex-app-ui` after reviewing the repair plan.')
-  if (!zellijReadyForInteractive) nextActions.push('Install Zellij for `sks --mad` and interactive lane UI. On macOS: `brew install zellij`.')
 
   const managedStateCurrent = repairReadiness.ok && agentRoleConfig.ok !== false
   const coreReady = blockers.size === 0 && cliReady && managedStateCurrent
@@ -148,16 +143,6 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
     mad_ready: madReady,
     codex_config_readable_by_node: codexConfigNode,
     codex_config_readable_by_codex_cli: actualOk,
-    codex_config_readable_in_zellij_context: zellijReadyForInteractive,
-    zellij: zellij ? {
-      ...zellij,
-      required_for: ['sks --mad', 'interactive lane UI'],
-      ready_for_interactive_runtime: zellijReadyForInteractive
-    } : {
-      status: 'missing',
-      required_for: ['sks --mad', 'interactive lane UI'],
-      ready_for_interactive_runtime: false
-    },
     codex_doctor: codexDoctor || null,
     codex_0138_doctor: codex0138Doctor,
     codex_0139_real_probes: codex0139RealProbes,

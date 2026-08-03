@@ -353,8 +353,7 @@ async function runRealNarutoCommandWriteE2e(): Promise<NarutoWriteE2eReport> {
       '2',
       '--backend',
       'codex-sdk',
-      '--real',
-      '--no-open-zellij'
+      '--real'
     ], {
       cwd: tempRoot,
       timeoutMs: readPositiveIntEnv('SKS_NARUTO_REAL_E2E_TIMEOUT_MS', 300_000),

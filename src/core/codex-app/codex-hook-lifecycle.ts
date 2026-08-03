@@ -51,7 +51,7 @@ export async function buildCodexHookLifecycle(input: { root?: string; apply?: bo
     PreToolUse: ['requested_scope_guard', 'mad_sks_sql_plane_priority_resolver', 'side_effect_zero_gate'],
     PostToolUse: ['evidence_ledger', 'mutation_ledger', 'side_effect_scanner', 'context7_native_session_updates'],
     Stop: ['continuation_enforcer', 'final_proof_check', 'loop_resume_hint'],
-    Notification: ['operator_status', 'zellij_anchor', 'codex_app_status']
+    Notification: ['operator_status', 'codex_app_status']
   }
   const installedEvents = new Set(Array.isArray(actual.entries) ? actual.entries.map((entry: { event?: unknown }) => String(entry.event || '')) : [])
   const report: CodexHookLifecycleReport = {

@@ -53,6 +53,7 @@ import {
   type InstalledCliResolution
 } from './update/installed-cli-resolution.js';
 import { ui as cliUi, withHeartbeat } from '../cli/cli-theme.js';
+import { uniqueTruthyStrings as uniqueStrings } from './text/strings.js';
 
 export interface SksUpdateCheckOptions {
   packageName?: string;
@@ -2457,8 +2458,4 @@ function highestPackageVersion(versions: Array<string | null | undefined>): stri
   return versions
     .filter((version): version is string => typeof version === 'string' && version.length > 0)
     .reduce((best, candidate) => comparePackageVersions(candidate, best) > 0 ? candidate : best, '0.0.0');
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values.filter(Boolean))];
 }

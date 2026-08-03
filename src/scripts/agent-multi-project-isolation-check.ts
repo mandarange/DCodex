@@ -43,7 +43,6 @@ async function runFixture() {
   if (nsA.root_hash === nsB.root_hash) issues.push('fixture_root_hash_collision');
   if (nsA.mission_namespace_id === nsB.mission_namespace_id) issues.push('fixture_mission_namespace_collision');
   if (!nsA.temp_dir.includes(nsA.root_hash) || !nsB.temp_dir.includes(nsB.root_hash)) issues.push('fixture_temp_dir_missing_hash');
-  if (mod.namespacedZellijSessionName(nsA, 'work') === mod.namespacedZellijSessionName(nsB, 'work')) issues.push('fixture_zellij_session_collision');
   const sessionA = mod.namespacedAgentSessionId({ agentId: 'agent_1', missionId: 'M-same', rootHash: nsA.root_hash, index: 1 });
   const sessionB = mod.namespacedAgentSessionId({ agentId: 'agent_1', missionId: 'M-same', rootHash: nsB.root_hash, index: 1 });
   if (sessionA === sessionB) issues.push('fixture_agent_session_collision');

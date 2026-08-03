@@ -7,7 +7,6 @@ export const RELEASE_GATE_RESOURCE_CLASSES = [
   'io-heavy',
   'git',
   'git-worktree',
-  'zellij-real',
   'browser-real',
   'secret-sensitive',
   'local-llm-real',

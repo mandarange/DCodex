@@ -15,7 +15,6 @@ export function defaultReleaseGateBudget(): ReleaseGateBudget {
     'git-worktree': 1,
     python: 2,
     network: 2,
-    'zellij-real': 1,
     'browser-real': 1,
     'secret-sensitive': 1,
     'local-llm-real': Math.max(1, Number(process.env.SKS_LOCAL_LLM_MAX_PARALLEL || 1)),

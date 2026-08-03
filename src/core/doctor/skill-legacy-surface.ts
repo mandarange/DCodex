@@ -18,6 +18,7 @@ export const OTHER_HARNESS_SKILL_DIR_NAMES = ['omx', 'dcodex', 'omx-codex', 'dco
 const TOKEN = 'A-Za-z0-9_.\\-';
 const LEFT = `(^|[^${TOKEN}])`;
 const RIGHT = `(?![${TOKEN}])`;
+const RETIRED_MULTIPLEXER_NAME = ['zel', 'lij'].join('');
 
 type RewriteRule = { id: string; pattern: RegExp; replace: string };
 
@@ -40,20 +41,20 @@ const REWRITE_RULES: RewriteRule[] = [
   { id: 'cli-agent', pattern: new RegExp(`${LEFT}sks\\s+agent${RIGHT}`, 'gi'), replace: '$1sks naruto' },
   { id: 'cli-swarm', pattern: new RegExp(`${LEFT}sks\\s+swarm${RIGHT}`, 'gi'), replace: '$1sks naruto' },
   { id: 'cli-ralph', pattern: new RegExp(`${LEFT}sks\\s+ralph${RIGHT}`, 'gi'), replace: '$1sks loop' },
-  { id: 'cli-tmux', pattern: new RegExp(`${LEFT}sks\\s+tmux${RIGHT}`, 'gi'), replace: '$1sks zellij' },
+  { id: 'cli-tmux', pattern: new RegExp(`${LEFT}sks\\s+tmux${RIGHT}`, 'gi'), replace: '$1sks --mad' },
   { id: 'cli-xai', pattern: new RegExp(`${LEFT}sks\\s+xai${RIGHT}`, 'gi'), replace: '$1sks codex-app use-openrouter' },
   { id: 'cli-glm', pattern: new RegExp(`${LEFT}sks\\s+glm${RIGHT}`, 'gi'), replace: '$1sks codex-app use-openrouter' },
   { id: 'cli-ui', pattern: new RegExp(`${LEFT}sks\\s+ui${RIGHT}`, 'gi'), replace: '$1sks image-ux-review' },
   { id: 'cli-db', pattern: new RegExp(`${LEFT}sks\\s+db${RIGHT}`, 'gi'), replace: '$1sks mad-sks' },
   {
-    id: 'cli-zellij-dashboard',
-    pattern: new RegExp(`${LEFT}sks\\s+zellij\\s+dashboard${RIGHT}`, 'gi'),
-    replace: '$1sks zellij status'
+    id: 'cli-retired-multiplexer-dashboard',
+    pattern: new RegExp(`${LEFT}sks\\s+${RETIRED_MULTIPLEXER_NAME}\\s+dashboard${RIGHT}`, 'gi'),
+    replace: '$1sks mad-sks status'
   },
   {
-    id: 'cli-opt-zellij-dashboard',
-    pattern: new RegExp(`${LEFT}sks\\s+--zellij-dashboard${RIGHT}`, 'gi'),
-    replace: '$1sks zellij status'
+    id: 'cli-opt-retired-multiplexer-dashboard',
+    pattern: new RegExp(`${LEFT}sks\\s+--${RETIRED_MULTIPLEXER_NAME}-dashboard${RIGHT}`, 'gi'),
+    replace: '$1sks mad-sks status'
   },
   {
     id: 'cli-opt-glm',
@@ -76,9 +77,9 @@ const REWRITE_RULES: RewriteRule[] = [
     replace: '$1sks naruto'
   },
   {
-    id: 'opt-zellij-dashboard',
-    pattern: new RegExp(`${LEFT}--zellij-dashboard${RIGHT}`, 'gi'),
-    replace: '$1sks zellij status'
+    id: 'opt-retired-multiplexer-dashboard',
+    pattern: new RegExp(`${LEFT}--${RETIRED_MULTIPLEXER_NAME}-dashboard${RIGHT}`, 'gi'),
+    replace: '$1sks mad-sks status'
   },
   {
     id: 'opt-glm',

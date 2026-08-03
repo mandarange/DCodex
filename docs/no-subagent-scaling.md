@@ -1,7 +1,7 @@
 # Official Codex Subagent Scaling
 
 `$sks-naruto` uses Codex official subagents as its default execution workflow.
-SKS no longer treats native child-process count, PID overlap, Zellij pane count,
+SKS no longer treats native child-process count, PID overlap, terminal display count,
 or a custom active pool as Naruto completion evidence.
 
 The canonical policy is:

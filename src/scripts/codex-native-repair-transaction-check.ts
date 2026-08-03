@@ -5,8 +5,8 @@ import path from 'node:path'
 import { repairCodexNativeManagedAssets } from '../core/codex-native/codex-native-repair-transaction.js'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-repair-transaction-'))
-await fs.mkdir(path.join(root, 'src', 'core', 'zellij'), { recursive: true })
-await fs.writeFile(path.join(root, 'src', 'core', 'zellij', 'fixture.ts'), 'export {}\n', 'utf8')
+await fs.mkdir(path.join(root, 'src', 'core', 'runtime'), { recursive: true })
+await fs.writeFile(path.join(root, 'src', 'core', 'runtime', 'fixture.ts'), 'export {}\n', 'utf8')
 const previous = process.env.CODEX_HOME
 process.env.CODEX_HOME = path.join(root, 'codex-home')
 try {

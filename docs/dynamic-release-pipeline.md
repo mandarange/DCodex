@@ -9,7 +9,7 @@ critical: only one tier can authorize a publish.
 |------|---------|---------|---------------------|
 | Full hermetic | `npm run release:check` | Runs the complete hermetic gate set (the `&&` chain + parallel DAG). The publish gate. | **Yes** |
 | Change-aware (incremental) | `npm run release:check:dynamic:execute` | Runs only the gates whose `affected_by` globs match the changed files (plus always-on), with caching. Fast local/CI feedback. | **No** |
-| Environment / real | `npm run release:real-check` | Runs gates that need a real Codex/Zellij/Imagegen environment. Reports proven / integration_optional / blocked honestly. | Required alongside full check for publish |
+| Environment / real | `npm run release:real-check` | Runs gates that need a real Codex or Imagegen environment. Reports proven / integration_optional / blocked honestly. | Required alongside full check for publish |
 
 ## release:check:dynamic vs release:check:dynamic:execute
 

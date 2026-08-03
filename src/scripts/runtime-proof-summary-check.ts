@@ -10,7 +10,6 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-runtime-summary-'))
 const missionId = 'M-runtime-summary'
 const dir = path.join(root, '.sneakoscope', 'missions', missionId)
 const agents = path.join(dir, 'agents')
-await fs.mkdir(path.join(dir, 'zellij'), { recursive: true })
 await fs.mkdir(agents, { recursive: true })
 await fs.writeFile(path.join(agents, 'parallel-runtime-proof.json'), `${JSON.stringify({
   schema: 'sks.parallel-runtime-proof.v1',
@@ -32,19 +31,16 @@ await fs.writeFile(path.join(agents, 'parallel-runtime-proof.json'), `${JSON.str
   sequential_estimate_ms: 82000,
   speedup_ratio: 6.833,
   overlap_windows: [],
-  visible_panes: 8,
-  headless_workers: 24,
   utilization_proof_consistency: { ok: true, scheduler_max_active: 32, proof_max_active: 32, wall_ms_delta: 100 },
   passed: true,
   blockers: []
 })}\n`)
 await fs.writeFile(path.join(agents, 'agent-scheduler-state.json'), `${JSON.stringify({ target_active_slots: 32, max_observed_active_slots: 32, largest_batch_size: 32, scheduler_utilization: 0.88, wall_time_ms: 12100 })}\n`)
-await fs.writeFile(path.join(agents, 'native-cli-worker-runtime.json'), `${JSON.stringify({ process_ids: Array.from({ length: 32 }, (_, i) => 8000 + i), zellij_pane_worker_sessions: 8, headless_overflow_worker_count: 24 })}\n`)
+await fs.writeFile(path.join(agents, 'native-cli-worker-runtime.json'), `${JSON.stringify({ process_ids: Array.from({ length: 32 }, (_, i) => 8000 + i) })}\n`)
 await fs.writeFile(path.join(agents, 'naruto-concurrency-governor.json'), `${JSON.stringify({ target_active_slots: 32 })}\n`)
-await fs.writeFile(path.join(dir, 'zellij', 'slot-telemetry.snapshot.json'), `${JSON.stringify({ schema: 'sks.zellij-slot-telemetry-snapshot.v1', mission_id: missionId, updated_at: new Date(Date.now() - 800).toISOString(), slots: {}, counts: {} })}\n`)
 const summary = await buildRuntimeProofSummary(root, missionId)
 assertGate(summary.ok === true, 'runtime proof summary must pass complete fixture', summary)
-assertGate(summary.parallel.max_active_workers === 32 && summary.parallel.unique_worker_pids === 32 && summary.ui.visible_panes === 8 && summary.ui.headless_workers === 24, 'runtime proof summary values mismatch', summary)
+assertGate(summary.parallel.max_active_workers === 32 && summary.parallel.unique_worker_pids === 32 && summary.model_calls.max_observed === 12 && summary.scheduler.largest_batch_size === 32, 'runtime proof summary values mismatch', summary)
 assertGate(await exists(path.join(agents, 'runtime-proof-summary.json')), 'runtime proof summary file missing')
 emitGate('runtime:proof-summary', summary)
 

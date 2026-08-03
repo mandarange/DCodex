@@ -50,14 +50,12 @@ async function runFixture() {
   fs.writeFileSync(path.join(negativeMission, 'project-session-namespace.json'), JSON.stringify({ mission_id: 'M-janitor-negative', root_hash: 'fixture', lock_dir: lockDir, temp_dir: activeTemp }));
   fs.writeFileSync(path.join(negativeAgentDir, 'agent-sessions.json'), JSON.stringify({ schema: 'sks.agent-sessions.v1', sessions: { agent_1: { agent_id: 'agent_1', session_id: 's1', status: 'running', heartbeat_at: '2026-05-25T00:00:00.000Z' } } }));
   fs.writeFileSync(path.join(negativeSessionDir, 'agent-process-report.json'), JSON.stringify({ schema: 'sks.agent-process-report.v1', agent_id: 'agent_1', session_id: 's1', pid: 999999999, exit_code: null }));
-  fs.writeFileSync(path.join(negativeSessionDir, 'agent-zellij-report.json'), JSON.stringify({ schema: 'sks.agent-zellij-report.v1', agent_id: 'agent_1', session_id: 's1', launch_mode: 'launched' }));
   const lockFile = path.join(lockDir, 'agent.lock');
   fs.writeFileSync(lockFile, 'lock');
   const old = new Date(Date.now() - 60_000);
   fs.utimesSync(lockFile, old, old);
-  fs.utimesSync(path.join(negativeSessionDir, 'agent-zellij-report.json'), old, old);
   const blocked = await mod.runAgentJanitor({ missionDir: negativeMission, missionId: 'M-janitor-negative', projectHash: 'fixture', staleMs: 1 });
-  for (const token of ['stale_heartbeat:s1', 'zombie_process:s1', 'stale_zellij:s1']) {
+  for (const token of ['stale_heartbeat:s1', 'zombie_process:s1']) {
     if (!blocked.blockers.includes(token)) issues.push(`fixture_janitor_missing:${token}`);
   }
   if (!blocked.blockers.some((entry) => entry.startsWith('stale_lock:'))) issues.push('fixture_janitor_missing_stale_lock');

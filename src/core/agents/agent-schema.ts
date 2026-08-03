@@ -27,11 +27,11 @@ export const MAX_AGENT_COUNT = 20
 export const DEFAULT_AGENT_CONCURRENCY = DEFAULT_NARUTO_MAX_THREADS
 /** Hard concurrency ceiling shared with the Naruto capacity ledger. */
 export const HARD_AGENT_CONCURRENCY = HARD_NARUTO_MAX_THREADS
-export const AGENT_BACKENDS = ['fake', 'process', 'codex-sdk', 'zellij', 'ollama', 'local-llm'] as const
+export const AGENT_BACKENDS = ['fake', 'process', 'codex-sdk', 'ollama', 'local-llm'] as const
 
 export type AgentBackend = typeof AGENT_BACKENDS[number]
 export type AgentExecutionBackend = 'codex-sdk' | 'python-codex-sdk' | 'local-llm' | 'fake'
-export type AgentWorkerPlacement = 'zellij-pane' | 'process' | 'headless'
+export type AgentWorkerPlacement = 'process'
 export type AgentServiceTier = 'fast' | 'standard'
 export type AgentStatus = 'pending' | 'running' | 'closed' | 'blocked' | 'failed'
 export type AgentRole = 'architect' | 'implementer' | 'verifier' | 'safety' | 'integrator' | 'research' | 'documentation' | 'schema' | 'release' | 'ux' | 'db'
@@ -139,9 +139,6 @@ export interface AgentRunOptions {
   noOllama?: boolean
   ollamaModel?: string | null
   ollamaBaseUrl?: string | null
-  zellijSessionName?: string | null
-  zellijPaneWorker?: boolean
-  zellijVisiblePaneCap?: number
   worktree?: {
     id: string
     path: string
@@ -149,7 +146,6 @@ export interface AgentRunOptions {
     main_repo_root?: string | null
   } | null
   maxAgentCount?: number
-  visualLaneCount?: number
   narutoWorkGraph?: NarutoWorkGraph | null
   narutoAllocationPolicy?: unknown
   narutoRebalancePolicy?: unknown
@@ -242,7 +238,6 @@ export interface AgentRunnerResult {
   codex_child_report?: Record<string, unknown>
   codex_sdk_thread?: Record<string, unknown>
   process_child_report?: Record<string, unknown>
-  zellij_child_report?: Record<string, unknown>
   model_authored_patch_envelopes?: boolean
   fixture_patch_envelopes?: boolean
   no_patch_reason?: Record<string, unknown>

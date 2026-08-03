@@ -15,7 +15,7 @@ test('runtime truth matrix gate writes the v2 supporting-proof contract', () => 
   assert.equal(report.release_version, pkg.version);
   assert.equal(report.execution_authority.workflow, 'official_codex_subagent');
   assert.equal(report.rows.filter((row) => row.evidence_role === 'execution_authority').length, 1);
-  for (const subsystem of ['official_codex_subagent', 'zellij_pane', 'cleanup', 'intelligent_work_graph', 'source_intelligence', 'goal_mode', 'route_blackbox', 'dynamic_scheduler', 'warp_mad_lanes', 'codex_0_134', 'mcp_0_134', 'parallel_write', 'patch_proof']) {
+  for (const subsystem of ['official_codex_subagent', 'cleanup', 'intelligent_work_graph', 'source_intelligence', 'goal_mode', 'route_blackbox', 'dynamic_scheduler', 'codex_0_134', 'mcp_0_134', 'parallel_write', 'patch_proof', 'native_worker_backend_router']) {
     const row = report.rows.find((item) => item.subsystem === subsystem);
     assert.ok(row, `missing subsystem ${subsystem}`);
     assert.equal(typeof row.proof_level, 'string');
@@ -42,31 +42,6 @@ test('runtime truth matrix promotes only a complete official subagent evidence s
     assert.equal(authorityRows[0].subsystem, 'official_codex_subagent');
     assert.equal(authorityRows[0].proof_level, 'proven');
     assert.equal(matrix.rows.find((row) => row.subsystem === 'appshots')?.proof_level, 'integration_optional');
-    assert.equal(matrix.ok, true);
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('runtime truth matrix keeps optional supporting-proof blockers local to their rows', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-runtime-truth-optional-'));
-  try {
-    const mod = await import('../../dist/core/proof/runtime-truth-matrix.js');
-    const reports = passingOfficialReports();
-    reports['zellij-pane-proof.json'] = {
-      schema: 'sks.zellij-pane-proof.v1',
-      ok: true,
-      status: 'passed'
-    };
-    const matrix = await mod.buildRuntimeTruthMatrix({
-      root,
-      releaseVersion: 'test',
-      reports
-    });
-    const zellij = matrix.rows.find((row) => row.subsystem === 'zellij_pane');
-    assert.deepEqual(zellij?.blockers, ['runtime_success_claim_without_receipt']);
-    assert.equal(zellij?.required_mode, false);
-    assert.deepEqual(matrix.blockers, []);
     assert.equal(matrix.ok, true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

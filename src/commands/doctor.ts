@@ -36,7 +36,6 @@ import {
   inspectOAuthCallbackPortConflict,
   oauthCallbackDoctorGuidance
 } from '../core/codex/oauth-callback-port-diagnostic.js';
-import { checkZellijCapability } from '../core/zellij/zellij-capability.js';
 import { inventoryCodexPermissionProfiles } from '../core/codex/codex-permission-profiles.js';
 import { appendMigrationEvents, hashConfigText } from '../core/migration/migration-transaction-journal.js';
 import { resolveProviderContext } from '../core/provider/provider-context.js';
@@ -821,15 +820,13 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     managed_state_current: sneakoscopeExists,
     codex_config_readable_by_node: Boolean(codexConfig?.ok),
     codex_config_readable_by_codex_cli: false,
-    codex_config_readable_in_zellij_context: false,
     codex_app_ready: false,
     primary_blocker: codexConfig?.ok ? null : 'codex_config_unreadable',
     blockers: codexConfig?.ok ? [] : ['codex_config_unreadable'],
     next_actions: codexConfig?.ok ? [] : ['Run `sks doctor --fix --json` to repair managed config.']
   };
   const codexNativeFeatureMatrix = fallbackCodexNativeFeatureMatrix(codex, [], ['native_feature_matrix_deferred_to_full_doctor_or_route_gate']);
-  const zellijReadiness = buildZellijReadiness(root, { status: 'skipped', required_for: ['sks --mad', 'interactive lane UI'] }, ready);
-  const runtimeReadiness = buildRuntimeReadiness(zellijReadiness, codexNativeFeatureMatrix);
+  const runtimeReadiness = buildRuntimeReadiness(codexNativeFeatureMatrix);
   const deferredImagegen = deferredNativeRepair('sks.doctor-imagegen-repair.v1', false, [
     'Run `sks doctor --fix --repair-native-capabilities --json` after enabling Codex App image_generation.'
   ]);
@@ -912,8 +909,6 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     post_repair_codex_doctor: null,
     codex_doctor_diff: null,
     observational_codex_doctor_diff: null,
-    zellij: { ok: true, skipped: true, status: 'skipped_fast_path', required_for: ['sks --mad', 'interactive lane UI'] },
-    zellij_repair: { schema: 'sks.zellij-self-heal.v1', ok: true, skipped: true, blockers: [], warnings: ['zellij_repair_deferred_to_full_doctor_or_route_gate'] },
     context7_repair: { schema: 'sks.doctor-context7-repair.v1', ok: true, fix: false, skipped: true, actions: [], blockers: [], warnings: ['context7_repair_deferred_to_fix'] },
     codex_startup_repair: { schema: 'sks.doctor-codex-startup-repair.v1', ok: true, fix: false, skipped: true, actions: [], blockers: [], warnings: ['codex_startup_repair_deferred_to_fix'] },
     startup_config_repair: null,
@@ -924,7 +919,6 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     postcheck: null,
     local_model: null,
     agent_role_config: { schema: 'sks.agent-role-config-repair.v1', ok: true, apply: false, skipped: true, blockers: [] },
-    zellij_readiness: zellijReadiness,
     codex_permission_profiles: { skipped: true, reason: 'doctor_json_fast_path_optional_diagnostics_skipped' },
     command_aliases: { schema: 'sks.command-alias-cleanup.v1', ok: true, skipped: true, reason: 'doctor_json_fast_path_no_write' },
     sks_temp_sweep: { ok: true, skipped: true, action_count: 0, reason: 'doctor_without_fix', error: null },
@@ -945,7 +939,6 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
       migration_journal: null,
       global_sks_installs: null,
       agent_role_config: null,
-      zellij: null,
       context7: null,
       codex_startup: null,
       startup_config: null,
@@ -992,7 +985,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   const actualCodexProbeEnabled = deepDiagnostics || actualCodexProbeRequested;
   const requireActualCodexProbe = flag(args, '--require-actual-codex') || (deepDiagnostics && doctorFix);
   const shouldEvaluateCodexAppUiRepair = doctorFix || deepDiagnostics || flag(args, '--repair-codex-app-ui');
-  const shouldRunZellijRepair = deepDiagnostics || flag(args, '--repair-zellij') || flag(args, '--install-homebrew') || process.env.SKS_REQUIRE_ZELLIJ === '1';
   const nativeCapabilityDiagnosticsRequested = deepDiagnostics || flag(args, '--repair-native-capabilities');
   const requireLegacyGlobalHookCleanup = doctorFix && doctorProfile === 'migration';
   // Migration Doctor has one mutation owner: the project migration receipt.
@@ -1005,7 +997,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   const { runDoctorContext7Repair } = await import('../core/doctor/doctor-context7-repair.js');
   const { compareCodexDoctorBridge, runCodexDoctorBridge } = await import('../core/doctor/codex-doctor-bridge.js');
   const { repairCodexAppFastUi } = await import('../core/codex-app/codex-app-fast-ui-repair.js');
-  const { runDoctorZellijRepair, doctorZellijRepairConsoleLine } = await import('../core/doctor/doctor-zellij-repair.js');
   const { repairAgentRoleConfigs } = await import('../core/agents/agent-role-config.js');
   const { runCodex0138Doctor } = await import('../core/doctor/codex-0138-doctor.js');
   const { writeDoctorReadinessMatrix } = await import('../core/doctor/doctor-readiness-matrix.js');
@@ -1316,42 +1307,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     root,
     env: process.env
   }, deps);
-  const zellijRepair = shouldRunZellijRepair
-    ? await runDoctorZellijRepair({ root, args, doctorFix }).catch((err: any) => ({
-        schema: 'sks.zellij-self-heal.v1',
-        ok: false,
-        requested_by: 'doctor --fix',
-        fix_requested: doctorFix,
-        auto_approved: flag(args, '--yes') || flag(args, '-y'),
-        install_homebrew_allowed: false,
-        before: { status: 'unknown', version: null, bin: null },
-        latest_version: null,
-        strategy: 'failed',
-        command: 'sks doctor --fix --yes',
-        after: { status: 'unknown', version: null, bin: null },
-        mutation_guard_artifact: null,
-        homebrew: { present: false, bin: null, install_attempted: false, install_allowed: false },
-        blockers: [err?.message || String(err)],
-        warnings: []
-      }))
-    : {
-        schema: 'sks.zellij-self-heal.v1',
-        ok: true,
-        skipped: true,
-        requested_by: 'doctor --fix',
-        fix_requested: doctorFix,
-        auto_approved: false,
-        install_homebrew_allowed: false,
-        before: { status: 'skipped', version: null, bin: null },
-        latest_version: null,
-        strategy: 'deferred',
-        command: 'sks doctor --fix --full --yes',
-        after: { status: 'skipped', version: null, bin: null },
-        mutation_guard_artifact: null,
-        homebrew: { present: false, bin: null, install_attempted: false, install_allowed: false },
-        blockers: [],
-        warnings: ['zellij_repair_deferred_to_full_doctor_or_route_gate']
-      };
   const context7Repair = await runDoctorContext7Repair({ root, fix: doctorFix }).catch((err: any) => ({
     schema: 'sks.doctor-context7-repair.v1',
     ok: false,
@@ -1609,7 +1564,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
       } as any))
     : null;
   const doctorFixPostcheck = doctorFix ? (await import('../core/doctor/doctor-repair-postcheck.js')).doctorRepairPostcheck(doctorFixTransaction as any) : null;
-  const zellij = await checkZellijCapability({ root, require: process.env.SKS_REQUIRE_ZELLIJ === '1' });
   const localModel = await readLocalModelConfig().catch(() => null);
   const permissionProfiles = await inventoryCodexPermissionProfiles(root, { writeReport: true });
   const startupRoleRepair = (startupConfigRepair as any)?.role_repair;
@@ -1844,7 +1798,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     pre_repair_codex_doctor: preRepairCodexDoctor,
     post_repair_codex_doctor: postRepairCodexDoctor,
     require_codex_doctor: deepDiagnostics || flag(args, '--require-actual-codex'),
-    zellij,
     context7_repair: context7Repair,
     codex_startup_repair: codexStartupRepair,
     startup_config_repair: startupConfigRepair,
@@ -1872,7 +1825,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     operator_actions: [
       ...(codexConfig.operator_actions || []),
       ...(configRepair?.operator_actions || []),
-      ...(zellijRepair && !(zellijRepair as any).ok && (zellijRepair as any).command ? [`Run: ${(zellijRepair as any).command}`] : []),
       ...((codexStartupRepair as any).manual_actions || []),
       ...((codexConfigSyntaxRepair as any)?.manual_actions || []),
       ...(pluginPolicy?.doctor_warnings || []),
@@ -1882,14 +1834,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   };
   let ready = await writeDoctorReadinessMatrix(root, doctorReadinessInput);
   if (doctorFix) {
-    if (migrationReceiptOwnsReconcile) {
-      // The migration receipt is a completion claim. Verify the resulting
-      // public command/skill surface first so a failed postcheck can never
-      // leave behind a "current" receipt.
-      commandAliasCleanup = await inspectCommandAliasCleanup(false);
-      doctorReadinessInput.command_aliases = commandAliasCleanup;
-      ready = await writeDoctorReadinessMatrix(root, doctorReadinessInput);
-    }
     const readinessBlockers = [
       ...(Array.isArray((ready as any).blockers) ? (ready as any).blockers.map(String).filter(Boolean) : []),
       ...((openRouterProviderRepair as any)?.ok === false
@@ -1919,6 +1863,25 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
         warnings: migrationWarnings
       };
       if (receiptBlockers.length) receiptInput.status = 'blocked';
+      if (migrationReceiptOwnsReconcile) {
+        // The receipt-owned stages perform the mutation. Re-run the
+        // public-surface check after those stages, but before the receipt is
+        // published, so repaired pre-migration findings cannot stale-block
+        // the same command that repaired them.
+        receiptInput.postMigrationStageCheck = async () => {
+          commandAliasCleanup = await inspectCommandAliasCleanup(false);
+          doctorReadinessInput.command_aliases = commandAliasCleanup;
+          ready = await writeDoctorReadinessMatrix(root, doctorReadinessInput);
+          return {
+            blockers: Array.isArray((commandAliasCleanup as any)?.blockers)
+              ? (commandAliasCleanup as any).blockers.map(String).filter(Boolean)
+              : [],
+            warnings: Array.isArray((commandAliasCleanup as any)?.warnings)
+              ? (commandAliasCleanup as any).warnings.map(String).filter(Boolean)
+              : []
+          };
+        };
+      }
       const receipt = await writeProjectUpdateMigrationReceipt(receiptInput);
       sksUpdate = {
         schema: 'sks.update-now.v2',
@@ -1945,8 +1908,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
       };
     }
   }
-  const zellijReadiness = buildZellijReadiness(root, zellij as any, ready as any);
-  const runtimeReadiness = buildRuntimeReadiness(zellijReadiness, codexNativeFeatureMatrix as any);
+  const runtimeReadiness = buildRuntimeReadiness(codexNativeFeatureMatrix as any);
   const resultOk = ready.ready
     && (!sksUpdate || (sksUpdate as any).ok !== false)
     && (commandAliasCleanup as any).ok !== false
@@ -1996,8 +1958,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     post_repair_codex_doctor: postRepairCodexDoctor,
     codex_doctor_diff: codexDoctorAuthoritativeDiff,
     observational_codex_doctor_diff: codexDoctorDiff,
-    zellij,
-    zellij_repair: zellijRepair,
     context7_repair: context7Repair,
     codex_startup_repair: codexStartupRepair,
     startup_config_repair: startupConfigRepair,
@@ -2015,7 +1975,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     local_model: localModel,
     agent_role_config: agentRoleConfigRepair,
     official_subagent_config: officialSubagentConfig,
-    zellij_readiness: zellijReadiness,
     codex_permission_profiles: permissionProfiles,
     command_aliases: commandAliasCleanup,
     sks_temp_sweep: {
@@ -2049,7 +2008,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     sneakoscope: { ok: await exists(`${root}/.sneakoscope`) },
     package: { bytes: pkgBytes, human: formatBytes(pkgBytes) },
     skills: skillsReconcile,
-    repair: { sks_update: sksUpdate, setup: setupRepair, openrouter_provider: openRouterProviderRepair, codex_config: configRepair, migration_journal: migrationJournal, global_sks_installs: globalSksInstallCleanup, agent_role_config: agentRoleConfigRepair, zellij: zellijRepair, context7: context7Repair, codex_startup: codexStartupRepair, startup_config: startupConfigRepair, context7_mcp: context7McpRepair, supabase_mcp: supabaseMcpRepair, mcp_transport_collision: mcpTransportCollisionRepair, imagegen: imagegenRepair, computer_use: computerUseRepair, browser_use: browserUseRepair, hook_trust: hookTrustRepair, sks_menubar: sksMenuBar, doctor_transaction: doctorFixTransaction, doctor_dirty_plan: doctorDirtyPlan, doctor_postcheck: doctorFixPostcheck, codex_native: codexNativeRepair, doctor_native_capability: doctorNativeCapabilityRepair, command_aliases: commandAliasCleanup, skills: skillsReconcile, sks_temp_sweep: sksTempSweep }
+    repair: { sks_update: sksUpdate, setup: setupRepair, openrouter_provider: openRouterProviderRepair, codex_config: configRepair, migration_journal: migrationJournal, global_sks_installs: globalSksInstallCleanup, agent_role_config: agentRoleConfigRepair, context7: context7Repair, codex_startup: codexStartupRepair, startup_config: startupConfigRepair, context7_mcp: context7McpRepair, supabase_mcp: supabaseMcpRepair, mcp_transport_collision: mcpTransportCollisionRepair, imagegen: imagegenRepair, computer_use: computerUseRepair, browser_use: browserUseRepair, hook_trust: hookTrustRepair, sks_menubar: sksMenuBar, doctor_transaction: doctorFixTransaction, doctor_dirty_plan: doctorDirtyPlan, doctor_postcheck: doctorFixPostcheck, codex_native: codexNativeRepair, doctor_native_capability: doctorNativeCapabilityRepair, command_aliases: commandAliasCleanup, skills: skillsReconcile, sks_temp_sweep: sksTempSweep }
   };
   if (reportFile) await writeJsonReportFile(reportFile, result);
   if (machineOnly && !flag(args, '--json')) {
@@ -2078,14 +2037,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   console.log('Project config:');
   console.log(`  node read:       ${ready.codex_config_readable_by_node ? 'ok' : 'failed'}`);
   console.log(`  codex cli read:  ${ready.codex_config_readable_by_codex_cli ? 'ok' : (actual?.status || 'failed')}`);
-  console.log('Zellij:');
-  console.log(`  binary:      ${zellijReadiness.binary} ${zellijReadiness.version || ''} ${zellijReadiness.status === 'ok' ? 'ok' : zellijReadiness.status}`);
-  console.log(`  required_for: ${zellijReadiness.required_for.join(', ')}`);
-  console.log(`  layout:      ${zellijReadiness.layout_proof}`);
-  console.log(`  pane proof:  ${zellijReadiness.pane_proof}`);
-  console.log(`  screen proof:${zellijReadiness.screen_proof}`);
-  const zellijRepairLine = doctorZellijRepairConsoleLine(zellijRepair as any);
-  if (zellijRepairLine) console.log(zellijRepairLine);
   console.log('Context7 MCP:');
   console.log(`  transport: ${(context7Repair as any).preferred_transport || 'remote'}`);
   console.log(`  repair: ${(context7Repair as any).ok ? 'ok' : 'blocked'}`);
@@ -2107,7 +2058,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   console.log(`Rust acc.: ${rust.mode || (rust.available ? 'rust_accelerated' : 'js_fallback')} ${rust.version || rust.status || ''}`);
   console.log(`Codex App: ${ready.codex_app_ready ? 'ok' : 'optional_missing'}`);
   console.log('SKS Runtime Readiness:');
-  console.log(`  Zellij: ${runtimeReadiness.zellij}`);
   console.log(`  Codex Native: ${runtimeReadiness.codex_native}`);
   console.log(`  Loop Mesh: ${runtimeReadiness.loop_mesh}`);
   console.log(`  QA Visual: ${runtimeReadiness.qa_visual}`);
@@ -2305,29 +2255,26 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   if (!result.ok) process.exitCode = 1;
 }
 
-function buildRuntimeReadiness(zellijReadiness: any, matrix: any) {
+export function buildRuntimeReadiness(matrix: any) {
   const defaults = matrix?.invocation_defaults || {};
   const hookPolicy = defaults.hook_evidence_policy || 'unknown-do-not-count';
   const agentStrategy = defaults.loop_worker_role_strategy || 'message-role';
   const multiAgentMode = defaults.multi_agent_mode || 'none';
   const rolloutBudget = defaults.rollout_budget_strategy || 'sks-local-only';
   const researchSource = defaults.research_source_strategy || 'local-files';
-  const zellijStatus = zellijReadiness?.status === 'ok'
-    ? 'ok'
-    : zellijReadiness?.cli_ready ? 'headless_available' : 'repair_required';
-  const codexNative = matrix?.ok === true
-    ? 'ok'
-    : matrix?.codex_cli?.available ? 'degraded' : 'blocked';
+  const codexNative = matrix?.ok === true ? 'ok' : matrix?.codex_cli?.available ? 'degraded' : 'blocked';
   const repairActions: string[] = [];
-  if (zellijStatus !== 'ok') {
-    repairActions.push('Zellij: sks doctor --fix --yes');
-    repairActions.push('Homebrew + Zellij: sks doctor --fix --install-homebrew --yes');
+  if (codexNative !== 'ok') {
+    repairActions.push([
+      'Codex Native managed assets: sks doctor',
+      '--fix',
+      '--repair-codex-native',
+      '--yes'
+    ].join(' '));
   }
-  if (codexNative !== 'ok') repairActions.push('Codex Native managed assets: sks doctor --fix --repair-codex-native --yes');
   if (matrix?.features?.project_memory?.ok !== true) repairActions.push('Project memory: sks codex-native init-deep --apply --directory-local');
   return {
     schema: 'sks.runtime-readiness-story.v1',
-    zellij: zellijStatus,
     codex_native: codexNative,
     loop_mesh: agentStrategy === 'agent_type' ? 'ok' : 'fallback',
     qa_visual: defaults.qa_visual_review_strategy || 'blocked',
@@ -2340,12 +2287,11 @@ function buildRuntimeReadiness(zellijReadiness: any, matrix: any) {
     current_time_source: defaults.current_time_source || 'external-clock',
     overload_retry_policy: defaults.overload_retry_policy || 'generic',
     notes: [
-      ...(zellijStatus === 'headless_available' ? ['MAD can run with --headless; live panes require repair'] : []),
       ...(hookPolicy !== 'approved-only' ? ['hook-derived evidence will not count'] : []),
       ...(agentStrategy !== 'agent_type' ? ['message-role fallback active'] : []),
-      ...(multiAgentMode === 'proactive' ? [`Codex ${CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion} multi-agent proactive mode available for Naruto-style routes`] : []),
-      ...(rolloutBudget === 'codex-0144-shared' ? [`Codex ${CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion} rollout budget can be recorded in route proof`] : []),
-      ...(researchSource === 'indexed-web-search' ? [`Codex ${CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion} indexed web search selected for source-intelligence routes`] : [])
+      ...(multiAgentMode === 'proactive' ? ['Proactive multi-agent mode is available for Naruto-style routes'] : []),
+      ...(rolloutBudget === 'codex-0144-shared' ? ['Shared rollout budgeting is available for route proof'] : []),
+      ...(researchSource === 'indexed-web-search' ? ['Indexed web search is selected for source-intelligence routes'] : [])
     ],
     repair_actions: [...new Set(repairActions)]
   };
@@ -2433,27 +2379,6 @@ function doctorDedupeStatus(skillDedupe: any): string {
   if (Array.isArray(skillDedupe.actions) && skillDedupe.actions.some((action: any) => action.action === 'quarantined')) return 'repaired';
   if (Array.isArray(skillDedupe.blockers) && skillDedupe.blockers.length) return 'manual_required';
   return 'none';
-}
-
-function buildZellijReadiness(root: string, zellij: any, ready: any) {
-  const status = String(zellij?.status || 'missing');
-  const usable = status === 'ok';
-  const proofStatus = usable ? 'optional' : 'unavailable';
-  const readiness: Record<string, any> = {
-    schema: 'sks.zellij-readiness.v1',
-    binary: zellij?.bin || 'zellij',
-    status,
-    min_version: zellij?.min_version || '0.41.0',
-    version: zellij?.version || null,
-    required_for: zellij?.required_for || ['sks --mad', 'interactive lane UI'],
-    layout_proof: proofStatus,
-    pane_proof: proofStatus,
-    screen_proof: proofStatus,
-    mad_ready: ready?.mad_ready === true,
-    cli_ready: ready?.cli_ready === true,
-    ready_for_interactive_runtime: ready?.codex_config_readable_in_zellij_context === true
-  };
-  return readiness;
 }
 
 async function codexHomeConfigPath(): Promise<string> {

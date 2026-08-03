@@ -16,7 +16,7 @@ export interface ReleaseGateBatchResult {
   results: Array<{ id: string; ok: boolean; exit_code: number | null; signal: NodeJS.Signals | null; timed_out: boolean; duration_ms: number; report_dir?: string }>
 }
 
-const DISALLOWED_BATCH_RESOURCES = new Set(['zellij-real', 'git-worktree', 'local-llm-real', 'remote-model-real', 'publish', 'global-config', 'timing-sensitive'])
+const DISALLOWED_BATCH_RESOURCES = new Set(['git-worktree', 'local-llm-real', 'remote-model-real', 'publish', 'global-config', 'timing-sensitive'])
 
 export function isReleaseGateBatchable(gate: ReleaseGateNode): boolean {
   if (gate.side_effect !== 'hermetic') return false

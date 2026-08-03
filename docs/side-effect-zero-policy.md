@@ -25,7 +25,7 @@ builds a contract (schema `sks.requested-scope-contract.v1`) where:
 - `project_files` is the **only** mutation kind allowed by default.
 - Every global/destructive kind is `false` by default:
   `global_codex_config`, `codex_app_process`, `codex_lb_auth`, `package_install`,
-  `zellij_install`, `network`, `skill_snapshot_promotion`.
+  `network`, `skill_snapshot_promotion`.
 - `allowed_paths` is scoped to the project root (`<projectRoot>/**`).
 - `forbidden_paths` always includes the global Codex config (`~/.codex/config.toml`)
   and installed applications (`/Applications/**`).
@@ -56,7 +56,6 @@ The kinds that always require explicit confirmation are exported as
 - `package_install`
 - `codex_app_process`
 - `codex_lb_auth`
-- `zellij_install`
 - `skill_snapshot_promotion`
 
 Confirmation is delivered out-of-band by the operator via `--yes` or an environment
@@ -73,10 +72,9 @@ and forbidden paths the contract guards:
 3. Changing **codex-lb auth** (login/token/provider) — `codex_lb_auth_change`.
 4. **Killing the Codex App process** — `process_kill` (`codex_app_process` scope).
 5. **Installing packages** (npm/global) — `package_install`.
-6. **Installing Zellij** — `zellij_install`.
-7. Touching anything under **`/Applications/**`** (installed apps).
-8. **Promoting a skill snapshot** — `skill_snapshot_promotion`.
-9. Any **network** mutation — `network`.
+6. Touching anything under **`/Applications/**`** (installed apps).
+7. **Promoting a skill snapshot** — `skill_snapshot_promotion`.
+8. Any **network** mutation — `network`.
 
 A `project_files` mutation inside the project tree is the only category that is
 allowed without confirmation.
@@ -87,7 +85,7 @@ allowed without confirmation.
 append-only ledger at `.sneakoscope/reports/mutation-ledger.jsonl` (schema
 `sks.mutation-ledger.v1`). `MUTATION_KINDS` enumerates every recordable kind,
 including `file_write`, `global_config_write`, `package_install`, `process_kill`,
-`codex_app_flag_change`, `codex_lb_auth_change`, `zellij_install`, and
+`codex_app_flag_change`, `codex_lb_auth_change`, and
 `skill_snapshot_promotion`.
 
 `evaluateMutation(contract, kind, { target, confirmed?, backupPath?, noOpReason?, applied })`

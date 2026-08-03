@@ -45,20 +45,6 @@ export async function doctorJsonFastInline(input: {
       hook_evidence_policy: 'unknown-do-not-count',
       agent_role_strategy: 'message-role'
     },
-    zellij_readiness: {
-      schema: 'sks.zellij-readiness.v1',
-      binary: 'zellij',
-      status: 'skipped',
-      min_version: '0.41.0',
-      version: null,
-      required_for: ['sks --mad', 'interactive lane UI'],
-      layout_proof: 'unavailable',
-      pane_proof: 'unavailable',
-      screen_proof: 'unavailable',
-      mad_ready: false,
-      cli_ready: false,
-      ready_for_interactive_runtime: false
-    },
     codex: { bin: null, version: null, available: null, skipped: true, reason: 'fast_readonly_json' },
     repair: {
       setup: null,

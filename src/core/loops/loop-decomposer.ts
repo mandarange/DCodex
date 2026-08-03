@@ -13,7 +13,6 @@ export interface LoopDomain {
 }
 
 export const LOOP_DOMAIN_RULES: LoopDomainRule[] = [
-  { id: 'zellij', dirs: ['src/core/zellij', 'src/scripts/zellij-'], gates: ['zellij:*'] },
   { id: 'release', dirs: ['src/core/release', 'src/scripts/release-', 'release-gates.v2.json'], gates: ['release:*'] },
   { id: 'research', dirs: ['src/core/research', 'src/scripts/research-'], gates: ['research:*'] },
   { id: 'qa-loop', dirs: ['src/core/qa-loop', 'src/core/commands/qa-loop-command.ts'], gates: ['qa-loop:*'] },

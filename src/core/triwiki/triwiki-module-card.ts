@@ -31,13 +31,12 @@ export const DEFAULT_TRIWIKI_MODULE_CARDS: TriWikiModuleCard[] = [
   moduleCard('secret-preservation', ['src/core/**/secret*.ts', 'src/scripts/secret-*.ts', 'safety-mutation-allowlist.json'], ['secret:', 'supabase-secret'], ['doctor-production'], 'critical'),
   moduleCard('core-skill', ['.agents/skills/**', 'src/scripts/core-skill-*.ts'], ['core-skill:'], ['core-skill'], 'high'),
   moduleCard('skill-dedupe', ['src/scripts/skill-*.ts', '.sneakoscope/skills/**'], ['skill:'], ['skill-dedupe'], 'medium'),
-  moduleCard('zellij-runtime', ['src/core/zellij/**', 'src/commands/zellij*.ts', 'templates/zellij/**'], ['zellij:'], ['zellij'], 'high'),
   moduleCard('codex-0140', ['src/scripts/codex-0140-*.ts', 'src/vendor/openai-codex/**'], ['codex:0140'], ['codex-0140'], 'medium'),
   moduleCard('loop-mesh', ['src/core/loops/**', 'src/scripts/loop-*.ts'], ['loop:'], ['loop-mesh'], 'medium'),
   moduleCard('qa-loop', ['src/commands/qa-loop.ts', 'src/scripts/qa-*.ts'], ['qa-', 'qa:'], ['qa-research-image'], 'medium'),
   moduleCard('research', ['src/commands/research.ts', 'src/scripts/research-*.ts'], ['research:'], ['qa-research-image'], 'medium'),
   moduleCard('image-path', ['src/commands/image-ux-review.ts', 'src/scripts/*image*.ts', 'src/scripts/ux-review-*.ts'], ['image:', 'ux-review:'], ['qa-research-image'], 'medium'),
-  moduleCard('legacy-purge', ['src/scripts/legacy-*.ts', 'src/scripts/orphan-*.ts', 'docs/sks-4-migration.md'], ['legacy:', 'orphan:'], ['zellij'], 'high'),
+  moduleCard('legacy-purge', ['src/scripts/legacy-*.ts', 'src/scripts/orphan-*.ts', 'docs/sks-4-migration.md'], ['legacy:', 'orphan:'], ['release-parity'], 'high'),
   moduleCard('cli-check', ['src/core/commands/check-command.ts', 'src/commands/**/*.ts', 'src/cli/**'], ['cli:', 'sks:', 'check:'], ['native-capability'], 'high')
 ];
 

@@ -4,7 +4,6 @@ import { buildCodexExecArgs } from '../codex/codex-cli-syntax-builder.js'
 import { inspectCodexConfigReadability } from '../codex/codex-config-readability.js'
 import { repairCodexConfigEperm } from '../codex/codex-config-eperm-repair.js'
 import { splitCodexProjectConfigPolicy } from '../codex/codex-project-config-policy.js'
-import { checkZellijCapability } from '../zellij/zellij-capability.js'
 import { codexLbStatus } from '../../cli/install-helpers.js'
 import { codexLbToolOutputRecoveryOverrideAcknowledged } from '../codex-lb/codex-lb-tool-output-recovery.js'
 
@@ -34,9 +33,8 @@ export async function runParallelPreflight(checks: Array<{ id: string; run: () =
 export async function runCodexLaunchPreflight(rootInput: string = process.cwd(), opts: any = {}) {
   const root = path.resolve(rootInput || process.cwd())
   const reportPath = opts.reportPath || path.join(root, '.sneakoscope', 'reports', 'mad-launch-preflight.json')
-  // On the interactive launch path the real codex profile is exercised the moment the
-  // Zellij session opens, so spawning `codex exec` here (up to ~20s, and again inside
-  // the repair re-inspections) is redundant. launchFast skips ONLY the live-codex probe;
+  // The native launch path exercises the real Codex profile after this preflight.
+  // launchFast skips ONLY the live-codex probe;
   // all filesystem/permission/symlink/ACL/EPERM readability + repair checks still run, so
   // the EPERM/tcc_possible/EACCES blockers still fire for unreadable configs
   // (codex_cli_config_eperm is probe-only and intentionally not exercised on this path).
@@ -54,10 +52,6 @@ export async function runCodexLaunchPreflight(rootInput: string = process.cwd(),
   const repair = opts.fix === true
     ? await repairCodexConfigEperm(root, { ...opts, codexProbe: probeCodex, actualCodex: probeCodex, fix: true, writeReport: false })
     : null
-  const providedZellijCapability = reusableZellijCapability(opts.zellijCapability, opts.requireZellij === true)
-  const zellijCapability = opts.zellijCapability === false
-    ? null
-    : providedZellijCapability || await checkZellijCapability({ root, require: opts.requireZellij === true, writeReport: false })
   const codexArgs = buildCodexExecArgs({
     json: true,
     outputLastMessage: path.join(root, '.sneakoscope', 'reports', 'codex-preflight-output.json'),
@@ -76,8 +70,8 @@ export async function runCodexLaunchPreflight(rootInput: string = process.cwd(),
     service_tier: opts.serviceTier || 'fast',
     codex_args: codexArgs
   }
-  const blockers = [...new Set([...(readonly.blockers || []), ...(repair?.blockers || []), ...(zellijCapability?.blockers || []), ...(fastTierProof.ok ? [] : ['service_tier_not_passed_to_codex'])])]
-  const operatorActions = [...new Set([...(readonly.operator_actions || []), ...(repair?.operator_actions || []), ...(zellijCapability?.operator_actions || [])])]
+  const blockers = [...new Set([...(readonly.blockers || []), ...(repair?.blockers || []), ...(fastTierProof.ok ? [] : ['service_tier_not_passed_to_codex'])])]
+  const operatorActions = [...new Set([...(readonly.operator_actions || []), ...(repair?.operator_actions || [])])]
   const codexLbToolOutputRecovery = readonly.results.find((result) => result.id === 'codex_lb_tool_output_recovery')?.value || null
   const report = {
     schema: 'sks.mad-launch-preflight.v1',
@@ -86,7 +80,6 @@ export async function runCodexLaunchPreflight(rootInput: string = process.cwd(),
     ok: blockers.length === 0,
     readonly,
     repair,
-    zellij_capability: zellijCapability,
     codex_lb_tool_output_recovery: codexLbToolOutputRecovery,
     fast_tier_proof: fastTierProof,
     blockers,
@@ -94,12 +87,6 @@ export async function runCodexLaunchPreflight(rootInput: string = process.cwd(),
   }
   if (opts.writeReport !== false) await writeJsonAtomic(reportPath, { ...report, report_path: reportPath })
   return report
-}
-
-function reusableZellijCapability(value: any, requireZellij: boolean) {
-  if (!value || value.schema !== 'sks.zellij-capability.v1' || typeof value.status !== 'string') return null
-  if (requireZellij && value.status !== 'ok') return null
-  return value
 }
 
 export async function inspectCodexLbToolOutputRecoveryForLaunch(opts: any = {}) {

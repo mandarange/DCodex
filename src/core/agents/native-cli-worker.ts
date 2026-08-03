@@ -4,7 +4,6 @@ import { scanAgentTextForRecursion } from './agent-recursion-guard.js'
 import { validateAgentWorkerResult } from './agent-worker-pipeline.js'
 import { resolveFastModePolicy } from './fast-mode-policy.js'
 import { runNativeWorkerBackendRouter } from './native-worker-backend-router.js'
-import { appendZellijSlotTelemetry, type ZellijSlotTelemetryEventType, type ZellijSlotTelemetryStatus } from '../zellij/zellij-slot-telemetry.js'
 
 export const NATIVE_CLI_WORKER_SCHEMA = 'sks.native-cli-worker.v1'
 
@@ -71,7 +70,7 @@ export async function runNativeCliWorker(input: any = {}) {
     patch_envelope_path: patchRel,
     backend,
     codex_task: {
-      backend: backend === 'zellij' ? 'codex-sdk' : backend,
+      backend,
       output_schema_id: 'sks.agent-worker-result.v1',
       sandbox_policy: Array.isArray(slice.write_paths) && slice.write_paths.length > 0 ? 'workspace-write' : 'read-only',
       thread_policy: 'new_thread_per_generation',
@@ -258,7 +257,6 @@ export async function runNativeCliWorker(input: any = {}) {
     codex_child_report: routed.result.codex_child_report,
     codex_sdk_thread: routed.result.codex_sdk_thread,
     process_child_report: routed.result.process_child_report,
-    zellij_child_report: routed.result.zellij_child_report,
     model_authored_patch_envelopes: patchEnvelopes.some((envelope: any) => envelope.source === 'model_authored'),
     fixture_patch_envelopes: patchEnvelopes.some((envelope: any) => envelope.source === 'fixture'),
     ...(!patchEnvelopes.length ? { no_patch_reason: noPatchReason } : {}),
@@ -306,7 +304,7 @@ function startWorkerProgressTelemetry(input: {
   backend: string
   serviceTier: string
 }) {
-  const parsed = Number(process.env.SKS_ZELLIJ_WORKER_PROGRESS_MS || 10000)
+  const parsed = Number(process.env.SKS_WORKER_PROGRESS_MS || 10000)
   const intervalMs = Math.max(1000, Number.isFinite(parsed) ? Math.floor(parsed) : 10000)
   let tick = 0
   const timer = setInterval(() => {
@@ -382,8 +380,8 @@ function normalizeWorkerWorktree(value: any): {
 }
 
 async function workerTelemetry(agentRoot: string, intake: any, agent: any, slice: any, input: {
-  eventType: ZellijSlotTelemetryEventType
-  status: ZellijSlotTelemetryStatus
+  eventType: 'task_started' | 'heartbeat' | 'task_progress' | 'patch_candidate' | 'artifact_written' | 'worker_completed' | 'worker_failed'
+  status: 'queued' | 'launching' | 'running' | 'completed' | 'failed'
   backend: string
   serviceTier: string
   artifacts?: string[]
@@ -393,8 +391,9 @@ async function workerTelemetry(agentRoot: string, intake: any, agent: any, slice
 }) {
   const missionId = String(intake.mission_id || intake.parent_mission_id || '')
   if (!missionId) return
-  await appendZellijSlotTelemetry(agentRoot, {
-    schema: 'sks.zellij-slot-telemetry-event.v1',
+  const workerDirRel = String(intake.worker_artifact_dir || path.join(agent.session_artifact_dir || path.join('sessions', agent.id || 'worker'), 'worker'))
+  await appendJsonlBounded(path.resolve(agentRoot, workerDirRel, 'worker-events.jsonl'), {
+    schema: 'sks.native-cli-worker-event.v1',
     ts: nowIso(),
     mission_id: missionId,
     slot_id: String(agent.slot_id || agent.id || 'slot-001'),
@@ -414,7 +413,7 @@ async function workerTelemetry(agentRoot: string, intake: any, agent: any, slice
     artifact_paths: input.artifacts || [],
     log_tail: input.logTail || '',
     blockers: input.blockers || []
-  }).catch(() => undefined)
+  }, 2 * 1024 * 1024).catch(() => undefined)
 }
 
 function workerOwnerId(agent: any, slice: any) {

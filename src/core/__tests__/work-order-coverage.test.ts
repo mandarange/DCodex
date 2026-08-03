@@ -270,13 +270,13 @@ test('reused session missions append new work-order prompts without duplicating 
   const merged = await createAndWriteWorkOrderLedgerForPrompt(dir, {
     missionId: 'M-wo-session',
     route: 'Naruto',
-    prompt: 'Show official subagent activity in the Zellij viewports.'
+    prompt: 'Show official subagent activity in the native Codex task view.'
   });
 
   assert.equal(merged.items.length, 2);
   assert.deepEqual(merged.items.map((item: any) => item.id), ['WO-001', 'WO-002']);
   assert.match(merged.items[0].source.verbatim, /custom agent catalog/i);
-  assert.match(merged.items[1].source.verbatim, /Zellij viewports/i);
+  assert.match(merged.items[1].source.verbatim, /native Codex task view/i);
 });
 
 test('semantic slice parsing also respects numbered and sentence boundaries', async () => {

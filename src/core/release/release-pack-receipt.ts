@@ -273,14 +273,15 @@ const SECRET_PATTERNS: ReleasePackContentPattern[] = [
   { kind: 'npm_auth_token', regex: /(?:^|\n)\s*(?:\/\/[^\s:]+\/?:)?_authToken\s*=\s*[^\s${][^\r\n]{15,}/g }
 ]
 
+const RETIRED_MULTIPLEXER_TOKEN = ['zel', 'lij'].join('')
+
 const RETIRED_SURFACE_PATTERNS: ReleasePackContentPattern[] = [
   { kind: 'retired_dollar_command', regex: /\$(?:Agent|Team|MAD-DB|Swarm|ShadowClone|Kagebunshin)\b/gi },
   { kind: 'retired_cli_command', regex: /\bsks\s+team(?=$|[\s"'`])/gi },
   { kind: 'retired_cli_command', regex: /\bsks\s+(?:mad-db|tmux|xai|swarm|agent)(?=$|[\s"'`])/g },
   { kind: 'retired_ui_command', regex: /\bsks\s+ui(?=$|[\s"'`])/gi },
-  { kind: 'retired_zellij_dashboard_command', regex: /\bsks\s+zellij\s+dashboard(?=$|[\s"'`])/gi },
-  { kind: 'retired_zellij_dashboard_option', regex: /(^|[\s"'`])--zellij-dashboard(?=$|[=\s"'`])/gim },
-  { kind: 'retired_dashboard_surface', regex: /\b(?:Open Dashboard|SKS Dashboard|dashboard-plus-slots|zellij-dashboard-(?:pane|renderer|watch)|agent-codex-dashboard)\b/gi },
+  { kind: 'retired_terminal_multiplexer', regex: new RegExp(RETIRED_MULTIPLEXER_TOKEN, 'gi') },
+  { kind: 'retired_dashboard_surface', regex: /\b(?:Open Dashboard|SKS Dashboard|dashboard-plus-slots|agent-codex-dashboard)\b/gi },
   { kind: 'retired_team_workdir', regex: /\bteam-inbox\b/gi },
   { kind: 'retired_team_current_wording', regex: /\bTeam\s+(?:workflow|architecture)\b/gi },
   { kind: 'retired_agent_option', regex: /(^|[\s"'`])--agent(?=$|[=\s"'`])/gim },
@@ -299,9 +300,7 @@ const RETIRED_PACKAGED_FILE_PATTERNS = [
   /^package\/dist\/core\/telegram\/controller\.js$/,
   /^package\/dist\/core\/commands\/ui-command\.js$/,
   /^package\/dist\/core\/ui\/dashboard-html\.js$/,
-  /^package\/dist\/core\/zellij\/zellij-dashboard-(?:pane|renderer)\.js$/,
-  /^package\/dist\/core\/zellij\/zellij-naruto-dashboard\.js$/,
-  /^package\/dist\/scripts\/zellij-dashboard-(?:pane-check|watch)\.js$/
+  new RegExp(`^package/.*${RETIRED_MULTIPLEXER_TOKEN}`, 'i')
 ]
 
 const RETIRED_SURFACE_ALLOWLIST: Array<{ path: RegExp; kinds: Set<string> }> = [

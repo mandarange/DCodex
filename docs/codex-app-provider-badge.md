@@ -13,7 +13,6 @@ If an official Codex App badge surface is unavailable, SKS reports `Codex App na
 
 - `sks status`
 - `doctor --json`
-- Zellij pane title/footer
 - command hints
 
 Provider context is redacted and records only which auth path is present, not credential values.

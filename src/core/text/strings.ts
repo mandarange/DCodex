@@ -17,6 +17,11 @@ export function uniqueStrings(values: readonly unknown[]): string[] {
   return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
 }
 
+/** De-duplicate already-normalized strings while dropping only empty values. */
+export function uniqueTruthyStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
 /** As {@link uniqueStrings}, then sorted — for deterministic receipts/digests. */
 export function uniqueStringsSorted(values: readonly unknown[]): string[] {
   return uniqueStrings(values).sort();

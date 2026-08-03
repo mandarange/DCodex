@@ -30,10 +30,10 @@ const envProofScript = [
 const passGate = { ...base, id: 'batch:pass', command: `${process.execPath} -e ${JSON.stringify(envProofScript)}` }
 const failGate = { ...base, id: 'batch:fail', command: `${process.execPath} -e "process.exit(7)"` }
 const timeoutGate = { ...base, id: 'batch:timeout', timeout_ms: 50, command: `${process.execPath} -e "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"` }
-const zellijGate = { ...base, id: 'batch:zellij-real', resource: ['zellij-real'], side_effect: 'real-env', command: `${process.execPath} -e "process.exit(0)"` }
+const browserGate = { ...base, id: 'batch:browser-real', resource: ['browser-real'], side_effect: 'real-env', command: `${process.execPath} -e "process.exit(0)"` }
 
 assertGate(batch.isReleaseGateBatchable(passGate) === true, 'hermetic cpu-light fs-read gate must be batchable')
-assertGate(batch.isReleaseGateBatchable(zellijGate) === false, 'zellij-real gate must not be batchable')
+assertGate(batch.isReleaseGateBatchable(browserGate) === false, 'browser-real gate must not be batchable')
 
 const result = await batch.runReleaseGateBatch(root, [passGate, failGate], { concurrency: 2, reportRoot })
 assertGate(result.ok === false && result.failed === 1, 'one failed child gate must fail the batch', result)

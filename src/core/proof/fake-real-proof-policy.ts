@@ -113,7 +113,6 @@ export function evaluateFakeRealProofPolicy(input: any = {}): FakeRealProofPolic
     required: input.require_official_subagents === true
   })
   const backend = String(input.backend || input.agent_orchestration?.backend || '')
-  const zellijPane = input.zellij_pane_verified === true || input.real_truth_summary?.zellij_pane_verified === true
   const routeBlackboxKind = String(input.route_blackbox_kind || '')
   const sourceIntelligenceOk = input.source_intelligence?.ok === true
     || input.source_intelligence_generation_refs_ok === true
@@ -124,13 +123,6 @@ export function evaluateFakeRealProofPolicy(input: any = {}): FakeRealProofPolic
   const dynamicSchedulerOk = input.scheduler_state === 'agent-scheduler-state.json'
     || input.scheduler?.pending_queue_drained === true
     || input.pending_queue_drained === true
-  const warpMadRequired = input.require_warp_mad_lanes === true
-  const warpMadProof = input.warp_mad_lanes || input.mad_sks_zellij_lane_ui || null
-  const warpMadLevel: ProofLevel = warpMadProof?.ok === true ? 'proven'
-    : warpMadRequired ? 'real_required_missing'
-    : warpMadProof ? 'blocked'
-    : 'integration_optional'
-  const realZellijRequired = input.require_real_zellij === true
   const cleanupLevel: ProofLevel = input.cleanup_proof?.ok === true || input.real_truth_summary?.cleanup_executor_status === 'passed' ? 'proven'
     : input.cleanup_proof || input.real_truth_summary?.cleanup_executor_status === 'blocked' ? 'blocked'
     : 'integration_optional'
@@ -148,25 +140,20 @@ export function evaluateFakeRealProofPolicy(input: any = {}): FakeRealProofPolic
     ? ['official_codex_subagent_execution']
     : []
   const supportingClaims = uniqueStrings([
-    ...(zellijPane ? ['zellij_pane_evidence'] : []),
     ...(cleanupLevel === 'proven' ? ['cleanup_evidence'] : []),
     ...(workGraphLevel === 'proven' ? ['work_graph_evidence'] : []),
     ...(sourceIntelligenceOk ? ['source_intelligence_evidence'] : []),
     ...(goalModeOk ? ['goal_mode_evidence'] : []),
     ...(dynamicSchedulerOk ? ['scheduler_evidence'] : []),
-    ...(warpMadLevel === 'proven' ? ['warp_mad_lane_evidence'] : []),
     ...(structuredOutputEvidence ? ['codex_structured_output_evidence'] : [])
   ])
   const integrationOptional = uniqueStrings([
-    ...(official.present === false ? ['official_subagent_execution_not_available'] : []),
-    ...(backend === 'zellij' && !zellijPane ? ['zellij_pane_evidence_not_available'] : [])
+    ...(official.present === false ? ['official_subagent_execution_not_available'] : [])
   ])
   const blockers = uniqueStrings([
     ...official.blockers,
     ...(backend === 'fake' && unsupportedExecutionClaim ? ['fake_backend_claimed_real_execution'] : []),
     ...(unsupportedExecutionClaim && official.proof_level !== 'proven' ? ['unsupported_execution_claim_without_official_subagent_evidence'] : []),
-    ...(realZellijRequired && !zellijPane ? ['real_zellij_required_missing'] : []),
-    ...(warpMadRequired && warpMadLevel !== 'proven' ? ['warp_mad_lanes_required_missing'] : []),
     ...(input.real_route_command_used === false ? ['route_standin_cannot_satisfy_real_route'] : [])
   ])
   const proofLevel: ProofLevel = official.proof_level === 'proven' && blockers.length === 0 ? 'proven'
@@ -191,20 +178,12 @@ export function evaluateFakeRealProofPolicy(input: any = {}): FakeRealProofPolic
       official.blockers,
       'execution_authority'
     ),
-    zellij_pane: row(
-      zellijPane ? 'proven' : realZellijRequired ? 'real_required_missing' : backend === 'zellij' ? 'integration_optional' : 'fixture_only',
-      ['zellij-pane-proof.json'],
-      zellijPane ? 'Zellij pane evidence present' : realZellijRequired ? 'capture current Zellij pane evidence' : 'no action required',
-      realZellijRequired,
-      realZellijRequired && !zellijPane ? ['real_zellij_required_missing'] : []
-    ),
     cleanup: row(cleanupLevel, ['agent-cleanup-proof.json'], cleanupLevel === 'proven' ? 'cleanup after-state verified' : 'run the managed cleanup verification', false, cleanupLevel === 'blocked' ? ['cleanup_proof_blocked'] : []),
     intelligent_work_graph: row(workGraphLevel, ['agent-intelligent-work-graph-v2.json', 'agent-symbol-ownership-map.json'], workGraphLevel === 'proven' ? 'AST work graph quality sufficient' : workGraphLevel === 'partial' ? 'raise AST coverage or ownership confidence' : 'build AST-aware work graph evidence', false, workGraphLevel === 'blocked' ? ['work_graph_quality_too_low'] : []),
     source_intelligence: row(sourceIntelligenceOk ? 'proven' : 'integration_optional', ['source-intelligence-evidence.json'], sourceIntelligenceOk ? 'source intelligence refs are present' : 'hydrate source intelligence evidence before risky claims', false, []),
     goal_mode: row(goalModeOk ? 'proven' : 'integration_optional', ['goal-mode-applied.json'], goalModeOk ? 'Goal mode refs are present' : 'record official goal mode evidence', false, []),
     route_blackbox: row(routeBlackboxLevel, ['subagent-evidence.json', 'naruto-gate.json'], input.real_route_command_used === false ? 'use the actual Naruto route, not a stand-in' : official.next_action, false, input.real_route_command_used === false ? ['route_standin_cannot_satisfy_real_route'] : []),
-    dynamic_scheduler: row(dynamicSchedulerOk ? 'proven' : 'partial', ['agent-scheduler-state.json'], dynamicSchedulerOk ? 'scheduler drain evidence present' : 'record scheduler drain evidence', false, []),
-    warp_mad_lanes: row(warpMadLevel, ['zellij-pane-proof.json'], warpMadLevel === 'proven' ? 'MAD Zellij lane UI evidence present' : warpMadRequired ? 'capture visible Zellij lane evidence or record a blocker' : 'no action required', warpMadRequired, warpMadLevel === 'blocked' || warpMadLevel === 'real_required_missing' ? ['warp_mad_lane_ui_missing'] : [])
+    dynamic_scheduler: row(dynamicSchedulerOk ? 'proven' : 'partial', ['agent-scheduler-state.json'], dynamicSchedulerOk ? 'scheduler drain evidence present' : 'record scheduler drain evidence', false, [])
   }
   const subsystemLevels: Record<string, ProofLevel> = Object.fromEntries(Object.entries(subsystems).map(([key, value]) => [key, value.proof_level]))
   subsystemLevels.execution = official.proof_level

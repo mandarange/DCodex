@@ -6,7 +6,6 @@ Allowed uses:
 
 - log analysis
 - large JSONL summarization
-- Zellij screen dump parsing
 - performance report aggregation
 - optional platform diagnostics
 

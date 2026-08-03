@@ -24,6 +24,7 @@ import {
 import { probeCodexLbCliImageGeneration } from './probes/cli-image-tool-probe.js';
 import { quitCodexApp, restartCodexApp } from '../codex-app/codex-app-restart.js';
 import { readJson, readText } from '../fsx.js';
+import { escapeRegExp } from '../text/regex.js';
 import {
   assertDesktopOAuthSemanticIdentity,
   captureCodexAuthSnapshot
@@ -2048,10 +2049,6 @@ function safeControllerError(error: unknown): string {
 
 function uniqueStrings(values: unknown[]): string[] {
   return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

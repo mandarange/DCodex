@@ -27,7 +27,7 @@ export async function probePythonTools(root: string = process.cwd()): Promise<Py
     python_bin: pythonBin,
     optional: true,
     core_runtime_requires_python: false,
-    allowed_domains: ['log_analysis', 'jsonl_summarization', 'zellij_screen_dump_parsing', 'performance_report_aggregation', 'platform_diagnostics'],
+    allowed_domains: ['log_analysis', 'jsonl_summarization', 'performance_report_aggregation', 'platform_diagnostics'],
     forbidden_runtime_paths: ['postinstall', 'publish', 'config_write', 'global_state_write'],
     blockers
   }

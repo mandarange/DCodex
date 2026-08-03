@@ -10,7 +10,7 @@ const manifest = loadDynamicManifest();
 const t0 = Date.now();
 
 const docsOnly = summarize(['docs/release-readiness.md']);
-const zellijOnly = summarize(['src/core/zellij/zellij-capability.ts']);
+const narutoOnly = summarize(['src/core/naruto/naruto-loop-mesh.ts']);
 const coreSkillOnly = summarize(['src/core/skills/core-skill-deployment.ts']);
 const currentReport = readJson('.sneakoscope/reports/release-check-dynamic-execute.json', null);
 const durationMs = Date.now() - t0;
@@ -29,13 +29,13 @@ const report = {
   } : null,
   fixtures: {
     docs_only: docsOnly,
-    zellij_only: zellijOnly,
+    naruto_only: narutoOnly,
     core_skill_only: coreSkillOnly
   },
   warnings: durationMs > 30_000 ? ['dynamic_performance_check_over_budget'] : []
 };
 report.ok = docsOnly.heavy_selected === 0
-  && zellijOnly.selected.every((id) => id.startsWith('zellij:') || alwaysOn(id) || scopedRuntimeBoundary(id))
+  && narutoOnly.selected.every((id) => id.startsWith('naruto:') || alwaysOn(id) || scopedRuntimeBoundary(id))
   && coreSkillOnly.selected.every((id) => id.startsWith('core-skill:') || alwaysOn(id) || scopedRuntimeBoundary(id))
   && docsOnly.selected_count < manifest.gates.length;
 
@@ -46,7 +46,7 @@ assertGate(report.ok, 'dynamic release performance fixtures failed', report);
 emitGate('release:dynamic-performance', {
   gates: manifest.gates.length,
   docs_only_selected: docsOnly.selected_count,
-  zellij_only_selected: zellijOnly.selected_count,
+  naruto_only_selected: narutoOnly.selected_count,
   core_skill_only_selected: coreSkillOnly.selected_count,
   duration_ms: durationMs
 });
@@ -73,8 +73,7 @@ function scopedRuntimeBoundary(id) {
     'runtime:ts-python-boundary',
     'runtime:proof-summary',
     'runtime:proof-summary-cli',
-    'runtime:proof-summary-messages',
-    'runtime:proof-zellij-stacked-summary'
+    'runtime:proof-summary-messages'
   ].includes(id);
 }
 

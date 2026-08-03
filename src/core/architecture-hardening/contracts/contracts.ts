@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { canonicalJson } from '../../json/canonical.js';
 
 export const ARCHITECTURE_HARDENING_CONTRACT_VERSION = 'sks.architecture-hardening.v1' as const;
 
@@ -133,7 +134,7 @@ export function credentialClassForMode(mode: ProviderMode): CredentialClass {
 }
 
 export function stableArchitectureHash(value: unknown): string {
-  return createHash('sha256').update(stableJson(value)).digest('hex');
+  return createHash('sha256').update(canonicalJson(value)).digest('hex');
 }
 
 export function parseProviderPolicySnapshot(value: unknown): ProviderPolicySnapshot {
@@ -173,7 +174,7 @@ export function assertProviderPolicyCompatible(expected: ProviderPolicySnapshot,
   if (expected.credential_class !== actual.credential_class) fail('provider_policy_credential_mismatch');
   if (expected.child_policy_hash !== actual.child_policy_hash) fail('provider_policy_child_mismatch');
   if (expected.catalog_version !== actual.catalog_version) fail('provider_policy_catalog_mismatch');
-  if (stableJson([...expected.allowed_models].sort()) !== stableJson([...actual.allowed_models].sort())) {
+  if (canonicalJson([...expected.allowed_models].sort()) !== canonicalJson([...actual.allowed_models].sort())) {
     fail('provider_policy_model_allowlist_mismatch');
   }
 }
@@ -265,15 +266,6 @@ function safeVersion(value: unknown): value is string {
 
 function safeHash(value: unknown): value is string {
   return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const row = value as Record<string, unknown>;
-    return `{${Object.keys(row).sort().map((key) => `${JSON.stringify(key)}:${stableJson(row[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function fail(code: string): never {

@@ -50,8 +50,9 @@ export function isRetiredPublicValue(value: unknown): boolean {
     if (command === name || command.startsWith(`${name} `)) return true;
     if (new RegExp(`^sks\\s+${escapeRegExp(name)}(?:\\s|$)`).test(command)) return true;
   }
-  if (/^sks\s+--(?:agent|naruto|clones|zellij-dashboard|glm)(?:[=\s]|$)/.test(command)) return true;
-  if (/^sks\s+zellij\s+dashboard(?:\s|$)/.test(command)) return true;
+  const retiredMultiplexerName = ['zel', 'lij'].join('');
+  if (new RegExp(`^sks\\s+--(?:agent|naruto|clones|${retiredMultiplexerName}-dashboard|glm)(?:[=\\s]|$)`).test(command)) return true;
+  if (new RegExp(`^sks\\s+${retiredMultiplexerName}\\s+dashboard(?:\\s|$)`).test(command)) return true;
   return false;
 }
 

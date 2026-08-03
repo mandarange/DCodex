@@ -7,59 +7,11 @@ import { exists, globalSksRoot, PACKAGE_VERSION, runProcess, which } from '../co
 import { hasContext7ConfigText } from '../core/routes.js'
 import { createRequestedScopeContract } from '../core/safety/requested-scope-contract.js'
 import { guardedPackageInstall, guardContextForRoute } from '../core/safety/mutation-guard.js'
-import { checkZellijCapability } from '../core/zellij/zellij-capability.js'
 
 export async function ensureRelatedCliTools(args: any = []) {
   const skip = args.includes('--skip-cli-tools') || process.env.SKS_SKIP_CLI_TOOLS === '1'
   const codex = await ensureCodexCliTool({ skip, args })
-  const zellijRepair = skip ? { status: 'skipped', reason: 'SKS_SKIP_CLI_TOOLS=1 or --skip-cli-tools' } : await ensureZellijCliTool(args)
-  const zellij = await checkZellijCapability({ require: false, writeReport: false })
-  return {
-    codex,
-    zellij: {
-      ok: zellij.status === 'ok',
-      bin: zellij.bin,
-      version: zellij.version,
-      min_version: zellij.min_version,
-      current_session: false,
-      repair: zellijRepair,
-      install_hint: zellij.status === 'ok' ? null : zellijInstallHint(),
-      error: (zellijRepair as any).error || zellij.blockers[0] || zellij.warnings[0] || null
-    }
-  }
-}
-
-export async function ensureMadLaunchDependencies(args: any = []) {
-  const skip = args.includes('--skip-cli-tools') || process.env.SKS_SKIP_CLI_TOOLS === '1'
-  const zellijRepair = skip ? { target: 'zellij', status: 'skipped', reason: 'SKS_SKIP_CLI_TOOLS=1 or --skip-cli-tools' } : await ensureZellijCliTool(args)
-  const zellij = await checkZellijCapability({ require: false, writeReport: false })
-  const ready = zellij.status === 'ok'
-  return {
-    ready,
-    actions: ready ? [] : [{
-      target: 'zellij',
-      status: zellijRepair.status,
-      command: (zellijRepair as any).command || zellijInstallHint(),
-      error: (zellijRepair as any).error || zellij.blockers[0] || zellij.warnings[0] || null,
-      repair: zellijRepair
-    }],
-    status: {
-      zellij: {
-        ok: ready,
-        status: zellij.status,
-        version: zellij.version,
-        min_version: zellij.min_version,
-        repair: zellijRepair,
-        install_hint: ready ? null : zellijInstallHint()
-      }
-    }
-  }
-}
-
-export function formatMadLaunchDependencyAction(action: any = {}) {
-  const command = action.command ? ` Run: ${action.command}.` : ''
-  const error = action.error ? ` ${action.error}` : ''
-  return `${action.target || 'dependency'} ${action.status || 'blocked'}.${command}${error}`.trim()
+  return { codex }
 }
 
 export async function ensureCodexCliTool({ skip = false, args = [] }: any = {}) {
@@ -92,42 +44,13 @@ export async function ensureCodexCliTool({ skip = false, args = [] }: any = {}) 
   }
 }
 
-export async function ensureZellijCliTool(args: any = [], opts: any = {}) {
-  const before = await checkZellijCapability({ require: false, writeReport: false })
-  if (before.status === 'ok') return { target: 'zellij', status: 'present', bin: before.bin, version: before.version || null }
-  const command = zellijInstallHint()
-  if (process.platform !== 'darwin') return { target: 'zellij', status: 'manual_required', command, error: before.blockers[0] || before.warnings[0] || 'zellij not found' }
-  const brew = await which('brew').catch(() => null)
-  if (!brew) return { target: 'zellij', status: 'manual_required', command: 'Install Homebrew, then run: brew install zellij', error: before.blockers[0] || before.warnings[0] || 'zellij not found' }
-  if (args.includes('--dry-run') || opts.dryRun) return { target: 'zellij', status: 'dry_run', command, error: before.blockers[0] || before.warnings[0] || null }
-  const hasInstalledZellij = Boolean(before.version)
-  const question = hasInstalledZellij
-    ? `Homebrew Zellij ${before.version || 'unknown'} is not ready. Upgrade to latest Zellij with ${command}?`
-    : `Zellij is missing. Install latest Zellij with ${command}?`
-  if (!await confirmInstallYesDefault(question, args)) return { target: 'zellij', status: 'needs_approval', command, error: before.blockers[0] || before.warnings[0] || null }
-  const brewArgs = hasInstalledZellij ? ['upgrade', 'zellij'] : ['install', 'zellij']
-  const zellijRoot = globalSksRoot()
-  const zellijContract = createRequestedScopeContract({
-    route: 'install', userRequest: command, projectRoot: zellijRoot, overrides: { package_install: true, zellij_install: true }
-  })
-  const install = await guardedPackageInstall(
-    guardContextForRoute(zellijRoot, zellijContract, command),
-    'zellij',
-    { confirmed: true, command: brew, args: brewArgs, timeoutMs: 180000 }
-  ).catch((err: any) => ({ code: 1, stdout: '', stderr: err.message }))
-  if (install.code !== 0) return { target: 'zellij', status: 'failed', command, error: `${install.stderr || install.stdout || command + ' failed'}`.trim() }
-  const after = await checkZellijCapability({ require: false, writeReport: false })
-  if (after.status !== 'ok') return { target: 'zellij', status: 'installed_not_ready', command, error: after.blockers[0] || after.warnings[0] || 'zellij installed but not ready' }
-  return { target: 'zellij', status: hasInstalledZellij ? 'upgraded' : 'installed', command, bin: after.bin, version: after.version || null }
-}
-
 export async function maybePromptCodexUpdateForLaunch(args: any = [], opts: any = {}) {
   if (hasFlag(args, '--json') || hasFlag(args, '--skip-cli-tools') || hasFlag(args, '--skip-codex-update') || process.env.SKS_SKIP_CODEX_UPDATE === '1') return { status: 'skipped' }
   const latest = await npmPackageVersion('@openai/codex')
   const codex = await getCodexInfo().catch(() => EMPTY_CODEX_INFO)
   const current = codexCliVersionNumber(codex.version)
   const command = 'npm i -g @openai/codex@latest'
-  const label = opts.label || 'Zellij launch'
+  const label = opts.label || 'Codex launch'
   const missing = !codex.bin
   const updateAvailable = Boolean(latest.version && current && compareVersions(latest.version, current) > 0)
   if (!missing && !updateAvailable) return { status: 'current', latest: latest.version || null, current, bin: codex.bin || null, error: latest.error || null }
@@ -215,10 +138,6 @@ export async function checkContext7(root: any) {
   }
   result.ok = result.project.ok || result.codex_mcp_list.ok || (result.global.ok && !list.checked)
   return result
-}
-
-function zellijInstallHint() {
-  return process.platform === 'darwin' ? 'brew install zellij' : 'Install Zellij from https://zellij.dev/documentation/installation.html'
 }
 
 async function confirmInstallYesDefault(question: any, args: any = []) {

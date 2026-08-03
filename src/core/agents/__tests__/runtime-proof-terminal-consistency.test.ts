@@ -10,7 +10,6 @@ async function runtimeFixture(terminal: boolean) {
   const missionId = terminal ? 'M-terminal' : 'M-active'
   const dir = path.join(root, '.sneakoscope', 'missions', missionId)
   const agents = path.join(dir, 'agents')
-  await fs.mkdir(path.join(dir, 'zellij'), { recursive: true })
   await fs.mkdir(agents, { recursive: true })
   await fs.writeFile(path.join(agents, 'parallel-runtime-proof.json'), JSON.stringify({
     mission_id: missionId,
@@ -19,10 +18,6 @@ async function runtimeFixture(terminal: boolean) {
     blockers: ['speedup_ratio_below_target']
   }))
   await fs.writeFile(path.join(agents, 'agent-scheduler-state.json'), JSON.stringify({ target_active_slots: 1 }))
-  await fs.writeFile(path.join(dir, 'zellij', 'slot-telemetry.snapshot.json'), JSON.stringify({
-    updated_at: new Date(Date.now() - 60_000).toISOString(),
-    slots: {}
-  }))
   if (terminal) {
     await fs.writeFile(path.join(dir, 'stop-gate.json'), JSON.stringify({
       schema: 'sks.stop-gate.v1',
@@ -36,22 +31,19 @@ async function runtimeFixture(terminal: boolean) {
   return { root, missionId }
 }
 
-test('terminal Naruto proof honors the canonical stop gate without inventing stale or speedup blockers', async () => {
+test('terminal Naruto proof honors the canonical stop gate without retaining a superseded speedup blocker', async () => {
   const fixture = await runtimeFixture(true)
   const summary = await buildRuntimeProofSummary(fixture.root, fixture.missionId)
   assert.equal(summary.ok, true)
   assert.equal(summary.terminal_proof.accepted, true)
-  assert.equal(summary.ui.stale, true)
   assert.equal(summary.parallel.proof_passed, false)
-  assert.ok(!summary.blockers.includes('zellij_telemetry_stale'))
   assert.ok(!summary.blockers.includes('speedup_ratio_below_target'))
 })
 
-test('active Naruto proof keeps stale telemetry and speedup blockers', async () => {
+test('active Naruto proof keeps the speedup blocker', async () => {
   const fixture = await runtimeFixture(false)
   const summary = await buildRuntimeProofSummary(fixture.root, fixture.missionId)
   assert.equal(summary.ok, false)
   assert.equal(summary.terminal_proof.accepted, false)
-  assert.ok(summary.blockers.includes('zellij_telemetry_stale'))
   assert.ok(summary.blockers.includes('speedup_ratio_below_target'))
 })

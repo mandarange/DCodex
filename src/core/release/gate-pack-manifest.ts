@@ -27,7 +27,6 @@ export const REQUIRED_GATE_PACK_IDS = [
   'secret',
   'core-skill',
   'skill-dedupe',
-  'zellij',
   'loop-mesh',
   'qa-research-image',
   'triwiki'
@@ -71,7 +70,7 @@ export function packForGateId(id: string): string {
   if (id.startsWith('secret:') || id.includes('secret')) return 'secret';
   if (id.startsWith('core-skill:')) return 'core-skill';
   if (id.includes('skill-dedupe') || id.startsWith('skill:')) return 'skill-dedupe';
-  if (id.includes('zellij') || id.startsWith('legacy:') || id.startsWith('orphan:')) return 'zellij';
+  if (id.startsWith('legacy:') || id.startsWith('orphan:')) return 'release-parity';
   if (id.startsWith('loop:')) return 'loop-mesh';
   if (id.startsWith('qa-') || id.startsWith('research:') || id.startsWith('image:')) return 'qa-research-image';
   return 'release-parity';
@@ -87,7 +86,6 @@ function descriptionForPack(id: string): string {
     secret: 'Secret-preservation and redaction checks.',
     'core-skill': 'Immutable core skill checks.',
     'skill-dedupe': 'Skill duplication and inventory checks.',
-    zellij: 'Zellij and removed legacy runtime checks.',
     'loop-mesh': 'Loop mesh runtime checks.',
     'qa-research-image': 'QA, research, and image route checks.',
     triwiki: 'TriWiki proof bank and affected graph checks.'
@@ -96,7 +94,7 @@ function descriptionForPack(id: string): string {
 }
 
 function maxParallelForPack(id: string): number {
-  if (id === 'secret' || id === 'zellij') return 1;
+  if (id === 'secret') return 1;
   if (id === 'qa-research-image' || id === 'codex-current') return 2;
   return 4;
 }
@@ -111,7 +109,6 @@ function estimatedMsForPack(id: string): number {
 
 function resourceClassesForPack(id: string): string[] {
   if (id === 'secret') return ['secret-sensitive', 'fs-read'];
-  if (id === 'zellij') return ['zellij-real'];
   if (id === 'qa-research-image') return ['browser-real', 'cpu-heavy', 'io-heavy'];
   if (id === 'codex-current') return ['remote-model-real'];
   return ['cpu-light', 'fs-read'];

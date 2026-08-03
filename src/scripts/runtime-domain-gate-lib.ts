@@ -6,86 +6,9 @@ import path from 'node:path'
 import { assertGate, emitGate, importDist, root } from './gate-lib.js'
 
 export async function runRuntimeDomainGate(id: string) {
-  if (id.startsWith('zellij:')) return zellijGate(id)
-  if (id.startsWith('doctor:zellij')) return doctorZellijGate(id)
-  if (id.startsWith('mad:zellij')) return madZellijGate(id)
   if (id.startsWith('codex-app:') || id === 'doctor:codex-app-harness') return codexAppGate(id)
   if (id.startsWith('loop:')) return loopGate(id)
   throw new Error(`unknown_gate:${id}`)
-}
-
-async function zellijGate(id: string) {
-  const rootDir = await tempRoot(`sks-${id.replace(/[:/]/g, '-')}-`)
-  const selfHeal = await importDist('core/zellij/zellij-self-heal.js')
-  const policy = await importDist('core/zellij/homebrew-policy.js')
-  if (id === 'zellij:homebrew-policy') {
-    assertGate(policy.resolveHomebrewInstallPolicy({ env: {} }).allowed === false, 'Homebrew install must not be silent by default')
-    assertGate(policy.resolveHomebrewInstallPolicy({ installHomebrew: true }).allowed === false, 'Homebrew install flag alone must still require --yes or interactive/env approval')
-    assertGate(policy.resolveHomebrewInstallPolicy({ installHomebrew: true, autoApprove: true }).allowed === true, 'Homebrew install should be allowed with explicit flag+yes')
-    assertGate(policy.homebrewMissingDoctorMessage().includes('sks doctor --fix --install-homebrew --yes'), 'Homebrew policy must expose one-shot doctor command')
-    return emitGate(id, { fixtures: 3 })
-  }
-  if (id === 'zellij:update-missing-self-heal') {
-    const update = await importDist('core/zellij/zellij-update.js')
-    const result = await update.maybePromptZellijUpdateForLaunch(['--yes'], {
-      label: 'MAD launch',
-      root: rootDir,
-      selfHealOnMissing: true,
-      autoApprove: true,
-      env: fakeZellijEnv('missing', { brew: true })
-    })
-    assertGate(result.status === 'installed', 'missing update path must self-heal when requested', result)
-    return emitGate(id, { status: result.status })
-  }
-  const result = await selfHeal.repairZellijForSks({
-    root: rootDir,
-    requestedBy: 'doctor --fix',
-    fixRequested: true,
-    autoApprove: true,
-    installHomebrew: false,
-    env: fakeZellijEnv('missing', { brew: true })
-  })
-  assertGate(result.ok === true, 'zellij self-heal must succeed with fake brew present', result)
-  assertGate(result.strategy === 'brew-install-zellij', 'missing zellij must select brew-install-zellij', result)
-  assertGate(fs.existsSync(path.join(rootDir, '.sneakoscope', 'reports', 'zellij-self-heal.json')), 'self-heal artifact missing')
-  emitGate(id, { strategy: result.strategy })
-}
-
-async function doctorZellijGate(id: string) {
-  const rootDir = await tempRoot(`sks-${id.replace(/[:/]/g, '-')}-`)
-  const mod = await importDist('core/doctor/doctor-zellij-repair.js')
-  const env = fakeZellijEnv(id.includes('upgrade') ? 'too_old' : 'missing', { brew: !id.includes('no-homebrew') })
-  const previous = swapEnv(env)
-  try {
-    const result = await mod.runDoctorZellijRepair({ root: rootDir, args: ['--fix', '--yes'], doctorFix: true })
-    if (id.includes('no-homebrew')) {
-      assertGate(result.strategy === 'manual-required', 'no-homebrew doctor repair must be manual-required', result)
-      assertGate(String(result.command).includes('--install-homebrew'), 'manual no-homebrew path must show install-homebrew command', result)
-    } else if (id.includes('upgrade')) {
-      assertGate(result.strategy === 'brew-upgrade-zellij', 'stale zellij must upgrade', result)
-    } else {
-      assertGate(result.strategy === 'brew-install-zellij', 'missing zellij must install', result)
-    }
-    if (id === 'doctor:zellij-fix-output') {
-      const line = mod.doctorZellijRepairConsoleLine(result)
-      assertGate(!/optional live panes disabled/i.test(line), 'doctor repair output must not use optional/blocking wording', { line })
-    }
-    emitGate(id, { strategy: result.strategy })
-  } finally {
-    restoreEnv(previous)
-  }
-}
-
-async function madZellijGate(id: string) {
-  const source = fs.readFileSync(path.join(root, 'src/core/commands/mad-sks-command.ts'), 'utf8')
-  assertGate(source.includes("requestedBy: 'sks --mad'"), 'MAD must request zellij self-heal as sks --mad')
-  assertGate(source.includes('--headless') && source.includes('live_panes: false'), 'MAD must support headless live_panes=false')
-  assertGate(!/optional live panes disabled/.test(source), 'MAD source must not print optional live panes disabled')
-  if (id === 'mad:zellij-no-contradictory-output') {
-    const update = fs.readFileSync(path.join(root, 'src/core/zellij/zellij-update.ts'), 'utf8')
-    assertGate(!/Zellij not found \(optional live panes disabled\)/.test(update), 'Zellij missing output must not be contradictory optional wording')
-  }
-  emitGate(id, { source_checked: true })
 }
 
 async function codexAppGate(id: string) {
@@ -131,8 +54,8 @@ async function codexAppGate(id: string) {
     }
     if (id === 'codex-app:init-deep') {
       const mod = await importDist('core/codex-app/codex-init-deep.js')
-      await fsp.mkdir(path.join(rootDir, 'src/core/zellij'), { recursive: true })
-      await fsp.writeFile(path.join(rootDir, 'src/core/zellij/a.ts'), 'export {}\n')
+      await fsp.mkdir(path.join(rootDir, 'src/core/runtime'), { recursive: true })
+      await fsp.writeFile(path.join(rootDir, 'src/core/runtime/a.ts'), 'export {}\n')
       const report = await mod.runCodexInitDeep({ root: rootDir, apply: true })
       assertGate(report.root_agents_preserved === true, 'init-deep must preserve user AGENTS.md', report)
       return emitGate(id, { guidance: report.directory_guidance.length })
@@ -173,21 +96,6 @@ async function loopGate(id: string) {
   const report = await mod.evaluateLoopContinuation({ root: rootDir, missionId: 'M-loop-cont' })
   assertGate(report.should_continue === true, 'loop continuation should request resume when proof missing', report)
   emitGate(id, { should_continue: report.should_continue })
-}
-
-function fakeZellijEnv(status: string, opts: { brew?: boolean } = {}) {
-  return {
-    ...process.env,
-    SKS_ZELLIJ_CAPABILITY_FAKE_STATUS: status,
-    SKS_ZELLIJ_CAPABILITY_FAKE_VERSION: status === 'too_old' ? '0.40.0' : '0.44.0',
-    SKS_ZELLIJ_SELF_HEAL_BEFORE_STATUS: status,
-    SKS_ZELLIJ_SELF_HEAL_BEFORE_VERSION: status === 'too_old' ? '0.40.0' : '',
-    SKS_ZELLIJ_SELF_HEAL_AFTER_STATUS: 'ok',
-    SKS_ZELLIJ_SELF_HEAL_AFTER_VERSION: '0.44.3',
-    SKS_ZELLIJ_LATEST_VERSION: '0.44.3',
-    SKS_ZELLIJ_SELF_HEAL_FAKE_RUN: '1',
-    SKS_ZELLIJ_SELF_HEAL_BREW_PRESENT: opts.brew ? '1' : '0'
-  }
 }
 
 async function tempRoot(prefix: string) {

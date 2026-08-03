@@ -55,7 +55,6 @@ export interface CodexTaskInput {
     requiresGptFinal: boolean
   }
   mutationLedgerRoot: string
-  zellijPaneId?: string | null
   model?: string | null
   reasoningEffort?: string | null
   modelReasoningEffort?: string | null

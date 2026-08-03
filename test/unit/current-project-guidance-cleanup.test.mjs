@@ -12,6 +12,7 @@ const RETIRED_POLICY = 'In MAD-SKS launches, allow only scoped non-MadDB high-ri
 const OBSERVED_RETIRED_POLICY = 'In MAD-SKS launches, allow only the scoped non-MadDB high-risk surfaces approved for the active invocation and keep catastrophic DB wipe/all-row safeguards active. In first-class MAD-DB cycles, the explicit $MAD-DB or sks mad-db run|exec|apply-migration invocation is the SQL-plane approval boundary: execute requested execute_sql/apply_migration mutations with mission-local write transport, read-back proof, and final read-only restoration. Supabase project/account/billing/credential control-plane actions remain denied.';
 
 test('retired guidance detection uses exact argv, option, and dollar-command boundaries', () => {
+  const retiredTerminal = ['zel', 'lij'].join('');
   for (const value of [
     'run sks team --json',
     'run `sks mad-db apply-migration`',
@@ -26,9 +27,9 @@ test('retired guidance detection uses exact argv, option, and dollar-command bou
     'sks --agent=reviewer',
     'sks --naruto',
     'sks --clones 4',
-    'sks --zellij-dashboard',
+    `sks --${retiredTerminal}-dashboard`,
     'sks --glm',
-    'sks zellij dashboard',
+    `sks ${retiredTerminal} dashboard`,
     '$Agent',
     '$Team now',
     '$MAD-DB',
@@ -47,7 +48,7 @@ test('retired guidance detection uses exact argv, option, and dollar-command bou
     'sks ralph2 status',
     'sks db2 check',
     'sks naruto run task --agents 5',
-    'sks zellij status',
+    'sks mad-sks status',
     'sks codex-app glm-profile install',
     '$TeamCity',
     '$MAD-DB2',

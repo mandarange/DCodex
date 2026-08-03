@@ -5,19 +5,15 @@ import { validateAgentLedgerHashChain } from './agent-central-ledger.js'
 import { assertAllAgentSessionsClosed } from './agent-lifecycle.js'
 import { assertAgentTerminalSessionsClosed } from './agent-terminal-session.js'
 import { assertAgentSessionGenerationsClosed } from './agent-session-generation.js'
-import { readZellijLaneSupervisor } from './zellij-lane-supervisor.js'
 import { writeFakeRealProofPolicyReport } from '../proof/fake-real-proof-policy.js'
 import { buildRuntimeTruthMatrix, writeRuntimeTruthMatrix } from '../proof/runtime-truth-matrix.js'
 import { evaluateLocalCollaborationFinalGate, localCollaborationParticipated, resolveLocalCollaborationPolicy } from '../local-llm/local-collaboration-policy.js'
 
-export async function writeAgentProofEvidence(root: string, input: { missionId: string; backend: string; route?: string; routeCommand?: string; routeBlackboxKind?: string; requestedWorkItems?: number; minimumWorkItems?: number; targetActiveSlots?: number; visualLaneCount?: number; realParallel?: boolean; roster?: any; partition?: any; consensus?: any; results?: any[]; cleanup?: any; janitor?: any; trust?: any; wrongness?: any; outputTails?: any; timeoutKill?: any; scheduler?: any; parallelWritePolicy?: any; gitWorktreeRuntime?: any; patchHandoff?: any; strategyGate?: any; nativeCliWorkerRuntimeProof?: any; noSubagentScalingPolicy?: any; officialSubagentHelperPolicy?: any; fastModePolicy?: any; fastModePropagation?: any; triwikiContext?: any; selectedCoreSkill?: any; localCollaborationPolicy?: any; gptFinalArbiter?: any; finalGptPatchStage?: any }) {
+export async function writeAgentProofEvidence(root: string, input: { missionId: string; backend: string; route?: string; routeCommand?: string; routeBlackboxKind?: string; requestedWorkItems?: number; minimumWorkItems?: number; targetActiveSlots?: number; realParallel?: boolean; roster?: any; partition?: any; consensus?: any; results?: any[]; cleanup?: any; janitor?: any; trust?: any; wrongness?: any; outputTails?: any; timeoutKill?: any; scheduler?: any; parallelWritePolicy?: any; gitWorktreeRuntime?: any; patchHandoff?: any; strategyGate?: any; nativeCliWorkerRuntimeProof?: any; noSubagentScalingPolicy?: any; officialSubagentHelperPolicy?: any; fastModePolicy?: any; fastModePropagation?: any; triwikiContext?: any; selectedCoreSkill?: any; localCollaborationPolicy?: any; gptFinalArbiter?: any; finalGptPatchStage?: any }) {
   const lifecycle = await assertAllAgentSessionsClosed(root)
   const terminal = await assertAgentTerminalSessionsClosed(root)
   const generations = await assertAgentSessionGenerationsClosed(root)
   const ledger = await validateAgentLedgerHashChain(root)
-  const zellijLanes = await readJson<any>(path.join(root, 'agent-zellij-lanes.json'), null)
-  const laneSupervisor = await readZellijLaneSupervisor(root)
-  const zellijRuntimeManifest = await readJson<any>(path.join(root, 'zellij-lane-runtime.json'), null)
   const workQueue = await readJson<any>(path.join(root, 'agent-work-queue.json'), null)
   const scheduler = input.scheduler || await readJson<any>(path.join(root, 'agent-scheduler-state.json'), null)
   const taskGraph = input.partition?.task_graph || await readJson<any>(path.join(root, 'agent-task-graph.json'), null)
@@ -52,15 +48,12 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
   const noSubagentScalingPolicy = input.noSubagentScalingPolicy || await readJson<any>(path.join(root, 'no-subagent-scaling-policy.json'), null)
   const officialSubagentHelperPolicy = input.officialSubagentHelperPolicy || await readJson<any>(path.join(root, 'official-subagent-helper-policy.json'), null)
   const fastModePropagation = input.fastModePropagation || await readJson<any>(path.join(root, 'fast-mode-propagation-proof.json'), null)
-  const zellijPaneProof = await readJson<any>(path.join(root, 'zellij-pane-proof.json'), null)
   const cleanupProof = await readJson<any>(path.join(root, 'agent-cleanup-proof.json'), null)
   const intelligentWorkGraph = await readJson<any>(path.join(root, 'agent-intelligent-work-graph.json'), null)
   const slots = await readJson<any>(path.join(root, 'agent-worker-slots.json'), null)
   const generationArtifact = await readJson<any>(path.join(root, 'agent-session-generations.json'), null)
   const strategyGate = input.strategyGate || await readJson<any>(path.join(root, 'strategy-gate.json'), null)
   const schedulerEvents = await readTextSafe(path.join(root, 'agent-scheduler-events.jsonl'))
-  const zellijLaunchLedger = await readTextSafe(path.join(root, 'agent-zellij-pane-launch-ledger.jsonl'))
-  const zellijPaneLaunchCount = zellijLaunchLedger.split(/\n/).filter(Boolean).length
   const terminalCloseReportCount = terminal.total_sessions || 0
   const generationCount = generations.generation_count || 0
   const finalWorkItemCount = Number(scheduler?.completed_count || 0) + Number(scheduler?.failed_count || 0) + Number(scheduler?.blocked_count || 0)
@@ -69,7 +62,6 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
   const workQueueTotalWorkItems = Number(workQueue?.total_work_items || 0)
   const schedulerTotalWorkItems = Number(scheduler?.total_work_items || 0)
   const targetActiveSlots = Number(input.targetActiveSlots || scheduler?.target_active_slots || taskGraph?.target_active_slots || input.roster?.agent_count || 0)
-  const visualLaneCount = Number(input.visualLaneCount || zellijLanes?.lane_count || laneSupervisor?.lane_count || targetActiveSlots || 0)
   const minimumWorkItems = Number(input.minimumWorkItems || taskGraph?.minimum_work_items || targetActiveSlots || 0)
   const taskGraphMatchesCliOptions = Boolean(taskGraph) && requestedWorkItems === taskGraphTotalWorkItems && targetActiveSlots === Number(taskGraph.target_active_slots || 0)
   const workQueueMatchesTaskGraph = Boolean(workQueue && taskGraph) && workQueueTotalWorkItems === taskGraphTotalWorkItems
@@ -85,24 +77,6 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
   const isNarutoRoute = route === '$Naruto'
   const routeCommand = String(input.routeCommand || 'internal-worker-runtime')
   const realRouteCommandUsed = routeCommand !== 'internal-worker-runtime'
-  const laneSupervisorIntegrated = Boolean(laneSupervisor)
-  const zellijSpawnOnDemandSupervisor = Boolean(laneSupervisor)
-    && Number(laneSupervisor?.lane_count || 0) === 0
-    && Array.isArray(laneSupervisor?.lanes)
-    && laneSupervisor.lanes.length === 0
-    && Number(zellijRuntimeManifest?.lane_count || 0) === 0
-    && Array.isArray(zellijRuntimeManifest?.lanes)
-    && zellijRuntimeManifest.lanes.length === 0
-  const zellijLaneRuntimePolicyOk = zellijSpawnOnDemandSupervisor || Boolean(laneSupervisor)
-    && Array.isArray(laneSupervisor?.lanes)
-    && laneSupervisor.lanes.length > 0
-    && laneSupervisor.lanes.every((lane: any) => lane?.dispatch_mode === 'jsonl_nonblocking'
-      && lane?.command_inbox
-      && lane?.state_dir
-      && lane?.runtime?.dispatch?.fifo_policy === 'disabled_to_avoid_writer_blocking')
-  const zellijLanePaneIdSourceOk = Boolean(laneSupervisor)
-    && Array.isArray(laneSupervisor?.lanes)
-    && laneSupervisor.lanes.every((lane: any) => typeof lane?.pane_id_source === 'string' && lane.pane_id_source.length > 0)
   const patchEntries = Array.isArray(patchQueue?.entries) ? patchQueue.entries : []
   const patchApplyRows = Array.isArray(patchApplyResults?.results) ? patchApplyResults.results : []
   const patchQueuePendingCount = Number(patchQueue?.queued_count || patchEntries.filter((entry: any) => entry.status === 'pending').length || 0)
@@ -178,18 +152,6 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
     ...(generationCount < finalWorkItemCount ? ['session_generation_count_below_finished_work_items'] : []),
     ...(terminalCloseReportCount < generationCount ? ['terminal_close_report_count_below_generation_count'] : []),
     ...(slots && slots.all_slots_closed_after_drain !== true ? ['agent_worker_slots_not_closed_after_drain'] : []),
-    ...(!laneSupervisor ? ['zellij_lane_supervisor_missing'] : []),
-    ...(laneSupervisor && !zellijSpawnOnDemandSupervisor && visualLaneCount > 0 && Number(laneSupervisor.lane_count || 0) < visualLaneCount ? ['zellij_lane_count_below_visual_lane_count'] : []),
-    ...(laneSupervisor && laneSupervisor.no_flicker_verified !== true ? ['zellij_lane_no_flicker_not_verified'] : []),
-    ...(laneSupervisor && laneSupervisor.pane_survival_checked !== true ? ['zellij_lane_survival_not_checked'] : []),
-    ...(laneSupervisor && Number(laneSupervisor.unexpected_close_count || 0) > 0 ? ['zellij_lane_unexpected_close_before_drain'] : []),
-    ...(laneSupervisor && !zellijLaneRuntimePolicyOk ? ['zellij_lane_runtime_policy_missing'] : []),
-    ...(laneSupervisor && !zellijLanePaneIdSourceOk ? ['zellij_lane_pane_id_source_missing'] : []),
-    ...(laneSupervisor?.blockers || []),
-    ...(input.backend === 'zellij' && zellijPaneProof?.ok !== true ? ['zellij_pane_proof_missing'] : []),
-    ...(input.backend === 'zellij' && Array.isArray(zellijPaneProof?.blockers) ? zellijPaneProof.blockers : []),
-    ...(input.backend === 'zellij' && zellijLanes?.ok !== true ? ['zellij_right_lane_manifest_missing'] : []),
-    ...(input.backend === 'zellij' && zellijPaneLaunchCount === 0 ? ['zellij_pane_launch_evidence_missing'] : []),
     ...(ledger.blockers || []),
     ...(input.partition?.blockers || []),
     ...(input.consensus?.blockers || []),
@@ -296,8 +258,6 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
     naruto_implementation_like_ratio: Number(narutoRoleDistribution?.implementation_like_ratio || 0),
     naruto_concurrency_governor: narutoConcurrencyGovernor ? 'naruto-concurrency-governor.json' : null,
     naruto_safe_active_workers: Number(narutoConcurrencyGovernor?.safe_active_workers || 0),
-    naruto_safe_zellij_visible_panes: Number(narutoConcurrencyGovernor?.safe_zellij_visible_panes || 0),
-    naruto_headless_workers: Number(narutoConcurrencyGovernor?.headless_workers || 0),
     naruto_active_pool: narutoActivePool ? 'naruto-active-pool.json' : null,
     naruto_active_pool_refill_events: Number(narutoActivePool?.refill_events || 0),
     naruto_verification_dag: narutoVerificationDag ? 'naruto-verification-dag.json' : null,
@@ -332,7 +292,6 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
     all_generations_closed: generations.ok,
     scheduler_state: 'agent-scheduler-state.json',
     target_active_slots: targetActiveSlots,
-    visual_lane_count: visualLaneCount,
     requested_work_items: requestedWorkItems,
     actual_total_work_items: taskGraphTotalWorkItems || schedulerTotalWorkItems,
     minimum_work_items: minimumWorkItems,
@@ -359,31 +318,8 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
     work_queue_goal_refs_ok: workQueueGoalRefsOk,
     task_graph_strategy_refs_ok: taskGraphStrategyRefsOk,
     work_queue_strategy_refs_ok: workQueueStrategyRefsOk,
-    zellij_lane_manifest: 'agent-zellij-lanes.json',
-    zellij_lane_manifest_ok: zellijLanes?.ok === true,
-    zellij_lane_supervisor: 'agent-zellij-lane-supervisor.json',
-    lane_supervisor_integrated: laneSupervisorIntegrated,
-    zellij_lane_runtime_manifest: zellijRuntimeManifest ? 'zellij-lane-runtime.json' : null,
-    zellij_spawn_on_demand_supervisor: zellijSpawnOnDemandSupervisor,
-    zellij_lane_runtime_policy_ok: zellijLaneRuntimePolicyOk,
-    zellij_lane_dispatch_mode: laneSupervisor?.dispatch_mode || zellijRuntimeManifest?.dispatch_mode || null,
-    zellij_lane_fifo_policy: laneSupervisor?.fifo_policy || zellijRuntimeManifest?.fifo_policy || null,
-    zellij_lane_resource_throttle_ms: laneSupervisor?.resource_throttle_ms || zellijRuntimeManifest?.resource_throttle_ms || null,
-    zellij_lane_nice_level: laneSupervisor?.nice_level ?? zellijRuntimeManifest?.nice_level ?? null,
-    zellij_lane_pane_id_source_ok: zellijLanePaneIdSourceOk,
-    zellij_lane_no_flicker_verified: laneSupervisor?.no_flicker_verified === true,
-    zellij_lane_survival_checked: laneSupervisor?.pane_survival_checked === true,
-    zellij_lane_unexpected_close_count: laneSupervisor?.unexpected_close_count || 0,
-    zellij_lane_auto_reopen_count: laneSupervisor?.auto_reopen_count || 0,
-    zellij_pane_launch_ledger: 'agent-zellij-pane-launch-ledger.jsonl',
-    zellij_pane_launch_count: zellijPaneLaunchCount,
-    zellij_pane_verified: zellijPaneProof?.ok === true,
-    zellij_pane_proof: 'zellij-pane-proof.json',
-    zellij_pane_count: zellijPaneProof?.pane_count ?? null,
     real_truth_summary: {
       fake_backend: input.backend === 'fake',
-      zellij_pane_verified: zellijPaneProof?.ok === true,
-      real_zellij_status: zellijPaneProof ? (zellijPaneProof.ok === true ? 'passed' : 'blocked') : (input.backend === 'zellij' ? 'missing' : 'not_applicable'),
       cleanup_executor_status: cleanupProof?.ok === true ? 'passed' : cleanupProof ? 'blocked' : 'not_run',
       work_graph_quality_score: Number(intelligentWorkGraph?.work_graph_quality_score || taskGraph?.work_graph_quality_score || 0),
       fake_vs_real_policy: 'fake-real-proof-policy.json'
@@ -424,7 +360,6 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
     agentRoot: root,
     releaseVersion: PACKAGE_VERSION,
     reports: {
-      'zellij-pane-proof.json': zellijPaneProof,
       'agent-cleanup-proof.json': cleanupProof,
       'agent-intelligent-work-graph.json': intelligentWorkGraph,
       'source-intelligence-evidence.json': input.partition?.source_intelligence_refs,

@@ -315,9 +315,9 @@ async function hookLifecycleProof(id: string): Promise<void> {
 
 async function initDeepBackupRetention(id: string): Promise<void> {
   const tmp = await tempRoot(id)
-  await fsp.mkdir(path.join(tmp, 'src/core/zellij'), { recursive: true })
-  await fsp.writeFile(path.join(tmp, 'src/core/zellij', 'AGENTS.md'), '# User local guidance\nKeep me.\n', 'utf8')
-  for (let index = 0; index < 18; index += 1) await fsp.writeFile(path.join(tmp, 'src/core/zellij', `f${index}.ts`), 'export {}\n', 'utf8')
+  await fsp.mkdir(path.join(tmp, 'src/core/runtime'), { recursive: true })
+  await fsp.writeFile(path.join(tmp, 'src/core/runtime', 'AGENTS.md'), '# User local guidance\nKeep me.\n', 'utf8')
+  for (let index = 0; index < 18; index += 1) await fsp.writeFile(path.join(tmp, 'src/core/runtime', `f${index}.ts`), 'export {}\n', 'utf8')
   const previous = process.env.SKS_INIT_DEEP_BACKUP_RETENTION
   process.env.SKS_INIT_DEEP_BACKUP_RETENTION = '1'
   try {
@@ -376,10 +376,21 @@ async function doctorReadinessUx(id: string): Promise<void> {
 }
 
 async function doctorRepairActions(id: string): Promise<void> {
-  const source = readText('src/commands/doctor.ts')
-  for (const token of ['sks doctor --fix --yes', 'sks doctor --fix --repair-codex-native --yes', 'sks codex-native init-deep --apply --directory-local']) {
-    assertGate(source.includes(token), `doctor repair action missing:${token}`)
-  }
+  const doctor = await importDist('commands/doctor.js')
+  const readiness = doctor.buildRuntimeReadiness({
+    ok: false,
+    codex_cli: { available: true },
+    features: { project_memory: { ok: false } }
+  })
+  const expected = [
+    ['Codex Native managed assets: sks doctor', '--fix', '--repair-codex-native', '--yes'].join(' '),
+    'Project memory: sks codex-native init-deep --apply --directory-local'
+  ]
+  assertGate(
+    expected.every((action) => readiness.repair_actions.includes(action)),
+    'doctor repair actions must expose executable base Codex recovery commands',
+    { repair_actions: readiness.repair_actions, expected }
+  )
   emitGate(id)
 }
 

@@ -35,8 +35,7 @@ export interface NarutoWorktreeActivePoolReport extends NarutoActivePoolReport {
 }
 
 export interface NarutoWorkerPlacementDecision {
-  placement: 'zellij-pane' | 'headless'
-  visible_index: number | null
+  placement: 'headless'
   reason: string
 }
 
@@ -79,12 +78,11 @@ export interface NarutoRealActivePoolReport extends NarutoActivePoolReport {
   active_cap: number
   average_active_workers: number
   active_pool_utilization: number
-  visible_workers: number
   headless_workers: number
   refill_latency_ms_p95: number
   worker_lifecycle: Array<{
     work_item_id: string
-    placement: 'zellij-pane' | 'headless'
+    placement: 'headless'
     pid?: number | null
     worker_artifact_dir?: string | null
     started_at: number
@@ -103,7 +101,6 @@ export async function runNarutoRealActivePool(input: {
   hardTimeoutMs?: number
 }): Promise<NarutoRealActivePoolReport> {
   const safeActiveWorkers = Math.max(1, input.governor.safe_active_workers)
-  const visibleCap = Math.max(0, input.governor.safe_zellij_visible_panes)
   const pending = [...input.graph.work_items]
   const active = new Map<string, NarutoWorkerHandle>()
   const completed = new Map<string, NarutoWorkerResult>()
@@ -114,21 +111,16 @@ export async function runNarutoRealActivePool(input: {
   let tick = 0
   let refillEvents = 0
   let maxObserved = 0
-  let visibleRunning = 0
 
   while (pending.length || active.size) {
     const beforeLaunch = Date.now()
     const completedIds = new Set(completed.keys())
     const launchActiveMap = activeToGenerationMap(active)
     const batch: Array<{ item: NarutoWorkItem; placement: NarutoWorkerPlacementDecision }> = []
-    let batchVisibleRunning = visibleRunning
     while (active.size + batch.length < safeActiveWorkers) {
       const item = popRunnable(pending, completedIds, launchActiveMap, byId)
       if (!item) break
-      const placement: NarutoWorkerPlacementDecision = batchVisibleRunning < visibleCap
-        ? { placement: 'zellij-pane', visible_index: batchVisibleRunning + 1, reason: 'within_visible_cap' }
-        : { placement: 'headless', visible_index: null, reason: `visible_pane_cap:${visibleCap}` }
-      if (placement.placement === 'zellij-pane') batchVisibleRunning += 1
+      const placement: NarutoWorkerPlacementDecision = { placement: 'headless', reason: 'headless_process' }
       batch.push({ item, placement })
       launchActiveMap.set(`batch:${item.id}`, createNarutoGeneration(item, launchActiveMap.size + 1, tick))
     }
@@ -138,9 +130,8 @@ export async function runNarutoRealActivePool(input: {
       for (const handle of handles) {
         const item = handle.item
         const placement = handle.placement
-        if (placement.placement === 'zellij-pane') visibleRunning += 1
-      active.set(handle.id, handle)
-      lifecycle.push({ work_item_id: item.id, placement: placement.placement, pid: handle.pid || null, worker_artifact_dir: handle.worker_artifact_dir || null, started_at: handle.started_at, completed_at: null, ok: null })
+        active.set(handle.id, handle)
+        lifecycle.push({ work_item_id: item.id, placement: placement.placement, pid: handle.pid || null, worker_artifact_dir: handle.worker_artifact_dir || null, started_at: handle.started_at, completed_at: null, ok: null })
       }
       refillEvents += handles.length
       refillLatencies.push(Date.now() - beforeLaunch)
@@ -156,7 +147,6 @@ export async function runNarutoRealActivePool(input: {
     }
     for (const handle of done) {
       active.delete(handle.id)
-      if (handle.placement.placement === 'zellij-pane') visibleRunning = Math.max(0, visibleRunning - 1)
       const result = handle.force_timed_out ? await forceCollectTimedOutWorker(handle) : await input.collectWorker(handle)
       completed.set(result.item.id, result)
       const row = lifecycle.find((entry) => entry.work_item_id === result.item.id && entry.completed_at == null)
@@ -215,8 +205,7 @@ export async function runNarutoRealActivePool(input: {
     max_observed_write_lease_conflicts: 0,
     average_active_workers: Number(averageSaturatedActiveWorkers.toFixed(4)),
     active_pool_utilization: Number(activePoolUtilization.toFixed(4)),
-    visible_workers: lifecycle.filter((row) => row.placement === 'zellij-pane').length,
-    headless_workers: lifecycle.filter((row) => row.placement === 'headless').length,
+    headless_workers: lifecycle.length,
     refill_latency_ms_p95: percentile(refillLatencies, 0.95),
     worker_lifecycle: lifecycle,
     timeline,

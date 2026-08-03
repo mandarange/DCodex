@@ -8,7 +8,6 @@ export interface NarutoResourcePressure {
   memory_pressure: number
   cpu_pressure: number
   fd_pressure: number
-  zellij_pressure: number
   disk_io_pressure: number
   dominant_metric: string
   dominant_pressure: number
@@ -20,20 +19,16 @@ const PRESSURE_HISTORY: Array<Record<string, number>> = []
 
 export function monitorNarutoResourcePressure(probe: HardwareCapacityProbe, input: {
   activeWorkers?: number
-  zellijVisiblePaneCap?: number
 } = {}): NarutoResourcePressure {
   const activeWorkers = Math.max(1, Math.floor(Number(input.activeWorkers || 1)))
-  const zellijCap = Math.max(1, Math.floor(Number(input.zellijVisiblePaneCap || 12)))
   const memoryPressure = 1 - (probe.free_memory_bytes / Math.max(1, probe.total_memory_bytes))
   const cpuPressure = Math.min(1, (probe.current_load_average[0] || 0) / Math.max(1, probe.cpu_core_count))
   const fdPressure = Math.min(1, (activeWorkers * 6 + probe.process_count) / Math.max(1, probe.file_descriptor_limit))
-  const zellijPressure = Math.min(1, probe.zellij_pane_count / zellijCap)
   const diskIoPressure = Number(probe.disk_io_pressure || 0)
   const current = {
     memory: memoryPressure,
     cpu: cpuPressure,
     fd: fdPressure,
-    zellij: zellijPressure,
     disk: diskIoPressure
   }
   const average = movingAveragePressure(current)
@@ -51,7 +46,6 @@ export function monitorNarutoResourcePressure(probe: HardwareCapacityProbe, inpu
     memory_pressure: round(sample.memory),
     cpu_pressure: round(sample.cpu),
     fd_pressure: round(sample.fd),
-    zellij_pressure: round(sample.zellij),
     disk_io_pressure: round(sample.disk),
     dominant_metric: dominantMetric,
     dominant_pressure: round(dominantPressure),
@@ -66,7 +60,7 @@ function movingAveragePressure(sample: Record<string, number>) {
   for (const key of Object.keys(sample)) {
     averaged[key] = PRESSURE_HISTORY.reduce((sum, row) => sum + Number(row[key] || 0), 0) / PRESSURE_HISTORY.length
   }
-  return averaged as { memory: number; cpu: number; fd: number; zellij: number; disk: number }
+  return averaged as { memory: number; cpu: number; fd: number; disk: number }
 }
 
 function round(value: number) {

@@ -17,7 +17,7 @@ export async function writeNativeCliWorkerRuntimeProof(root: string, input: { re
   const spawnedWorkerProcessCount = Number(runtime?.spawned_worker_process_count || 0)
   const maxObservedWorkerProcessCount = Number(runtime?.max_observed_worker_process_count || 0)
   const processIds = Array.isArray(runtime?.process_ids) ? runtime.process_ids.filter((pid: any) => Number.isFinite(Number(pid))) : []
-  const allowedScalingPrimitives = new Set(['native_cli_process', 'native_cli_process_in_zellij_worker_pane'])
+  const allowedScalingPrimitives = new Set(['native_cli_process'])
   const blockers = [
     ...(!runtime ? ['native_cli_worker_runtime_missing'] : []),
     ...(runtime && !allowedScalingPrimitives.has(String(runtime.scaling_primitive || '')) ? ['scaling_primitive_not_native_cli_process'] : []),

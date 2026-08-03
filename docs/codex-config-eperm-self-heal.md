@@ -1,6 +1,6 @@
 # Codex Config EPERM Self-Heal
 
-SKS 1.20.5 treats `.codex/config.toml` readability as a launch-critical proof, not a setup side effect, and keeps the Zellij socket-dir launch fallback plus MAD attach-command guidance separate from config repair.
+SKS 1.20.5 treats `.codex/config.toml` readability as a launch-critical proof, not a setup side effect, and keeps config repair separate from launch behavior.
 
 `inspectCodexConfigReadability()` writes `.sneakoscope/reports/codex-config-readability.json` with project config existence, parent traversal, stat/lstat, owner/mode, macOS ACL/flags/xattrs/quarantine, symlink safety, Node read, spawned-child read, and actual Codex CLI config-load checks.
 

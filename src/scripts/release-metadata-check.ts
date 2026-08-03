@@ -26,7 +26,6 @@ const requiredDocs = [
   'docs/release-readiness.md',
   'docs/release-proof-truth.md',
   'docs/naruto.md',
-  'docs/zellij-ui.md',
   'docs/AGENT-BRIDGE.md',
   'docs/runtime-truth-matrix.md',
   'docs/feature-fixtures.md',
@@ -85,14 +84,7 @@ const requiredReleaseGates = [
   'policy:gate-audit',
   'typecheck'
 ];
-const requiredHarnessGates = [
-  'zellij:layout-valid',
-  'zellij:compact-slot-renderer',
-  'zellij:slot-telemetry',
-  'zellij:slot-pane-telemetry-renderer',
-  'zellij:first-slot-down-stack',
-  'zellij:right-column-geometry-proof'
-];
+const requiredHarnessGates = [];
 
 assertGate(/^\d+\.\d+\.\d+$/.test(RELEASE_VERSION), 'package.json version must be a stable semver', { version: pkg.version });
 assertGate(lock.version === RELEASE_VERSION, `package-lock version must be ${RELEASE_VERSION}`, { version: lock.version });
@@ -118,7 +110,7 @@ assertGate(
 assertGate(releaseManifest?.schema === 'sks.release-gates.v2', 'release gate manifest schema mismatch', { schema: releaseManifest?.schema || null });
 assertGate(harnessManifest?.schema === 'sks.infra-harness-gates.v1', 'infra harness manifest schema mismatch', { schema: harnessManifest?.schema || null });
 assertGate(releaseGates.length > 0 && releaseGates.length <= 200, 'release manifest must include 1..200 release gates', { release_gates: releaseGates.length });
-assertGate(harnessGates.length > 0, 'infra harness manifest must include harness gates', { harness_gates: harnessGates.length });
+assertGate(harnessGates.length === 0, 'retired infra harness manifest must remain empty', { harness_gates: harnessGates.length });
 assertGate(Object.keys(pkg.scripts || {}).length <= 101, 'package script budget exceeded', { script_count: Object.keys(pkg.scripts || {}).length, limit: 101 });
 for (const script of requiredPackageScripts) assertGate(Boolean(pkg.scripts?.[script]), `missing package script: ${script}`);
 
@@ -129,8 +121,6 @@ for (const id of requiredReleaseGates) assertGate(releaseGateIds.has(id), `criti
 for (const id of requiredHarnessGates) assertGate(harnessGateIds.has(id), `critical harness gate missing: ${id}`, { id });
 const duplicateAcrossManifests = [...releaseGateIds].filter((id) => harnessGateIds.has(id));
 assertGate(duplicateAcrossManifests.length === 0, 'gate appears in both release and harness manifests', { duplicate_count: duplicateAcrossManifests.length });
-assertGate([...releaseGateIds].every((id) => !id.startsWith('zellij:')), 'Zellij gates must remain in the harness preset');
-assertGate([...harnessGateIds].every((id) => id.startsWith('zellij:')), 'harness manifest must contain only Zellij gates');
 assertGate(allManifestGates.every((gate: any) => !/\bnpm\s+run\b/.test(String(gate.command))), 'gate manifest commands must not use npm run indirection');
 const retiredPublicSurfaceGateCount = allManifestGates.filter((gate: any) =>
   /(?:^|[^a-z0-9])(?:team|mad-db|tmux|xai|swarm|ralph)(?:[^a-z0-9]|$)/i.test(`${String(gate.id || '')}\n${String(gate.command || '')}`)

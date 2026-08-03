@@ -12,6 +12,7 @@ import { codexAuthChatgptBackupPath } from '../../cli/install-helpers-codex-lb-s
 import { ensureTrailingNewline, safeWriteCodexConfigToml } from '../codex-runtime/codex-desktop-config-policy.js';
 import { messageOf as errorMessage } from '../errors/message.js';
 import { ensureDir, readText } from '../fsx.js';
+import { escapeRegExp } from '../text/regex.js';
 import {
   assertDesktopAuthUnchangedBySks,
   assertDesktopOAuthSemanticIdentity,
@@ -724,9 +725,6 @@ async function writeBufferAtomic(filePath: string, bytes: Buffer): Promise<void>
   }
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 function desktopCompatMigrationUnavailable(mode: unknown): boolean {
   return mode === 'desktop-dual-auth-compat';

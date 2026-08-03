@@ -12,11 +12,9 @@ export interface AgentJanitorReport {
   project_hash: string | null
   stale_heartbeat_sessions: string[]
   zombie_process_sessions: string[]
-  stale_zellij_sessions: string[]
   active_generation_sessions: string[]
   active_generation_count: number
   cleaned_generation_count: number
-  skipped_active_generations: string[]
   orphan_generation_dirs: string[]
   slot_generation_cleanup: string[]
   orphan_temp_dirs: string[]
@@ -60,10 +58,6 @@ export async function runAgentJanitor(input: {
     if (row.session_id) statusBySession.set(String(row.session_id), status)
   }
   const zombieProcesses = await detectZombieProcessSessions(agentRoot, statusByAgent, statusBySession)
-  const rawStaleZellijSessions = await detectStaleZellijSessions(agentRoot, staleMs)
-  const activeGenerationSet = new Set(activeGenerationSessions)
-  const staleZellijSessions = rawStaleZellijSessions.filter((id) => !activeGenerationSet.has(id))
-  const skippedActiveGenerations = rawStaleZellijSessions.filter((id) => activeGenerationSet.has(id))
   const orphanGenerationDirs = await detectOrphanGenerationDirs(agentRoot, new Set(generationRows.map((row) => String(row.artifact_dir || ''))))
   const orphanTempDirs = await scopedExistingPaths(
     Array.isArray(namespace?.orphan_temp_dirs) ? namespace.orphan_temp_dirs : [],
@@ -85,7 +79,6 @@ export async function runAgentJanitor(input: {
   const blockers = [
     ...staleHeartbeat.map((id) => `stale_heartbeat:${id}`),
     ...zombieProcesses.map((id) => `zombie_process:${id}`),
-    ...staleZellijSessions.map((id) => `stale_zellij:${id}`),
     ...staleLocks.map((id) => `stale_lock:${id}`),
   ]
   const report: AgentJanitorReport = {
@@ -96,11 +89,9 @@ export async function runAgentJanitor(input: {
     project_hash: projectHash,
     stale_heartbeat_sessions: staleHeartbeat,
     zombie_process_sessions: zombieProcesses,
-    stale_zellij_sessions: staleZellijSessions,
     active_generation_sessions: activeGenerationSessions,
     active_generation_count: activeGenerationSessions.length,
     cleaned_generation_count: cleaned.filter((entry) => entry.includes(`${path.sep}sessions${path.sep}`)).length,
-    skipped_active_generations: skippedActiveGenerations,
     orphan_generation_dirs: orphanGenerationDirs,
     slot_generation_cleanup: cleaned.filter((entry) => entry.includes(`${path.sep}sessions${path.sep}`)),
     orphan_temp_dirs: orphanTempDirs,
@@ -165,18 +156,6 @@ async function detectZombieProcessSessions(agentRoot: string, statusByAgent: Map
     const status = statusBySession.get(String(report?.session_id || '')) || statusByAgent.get(String(report?.agent_id || '')) || ''
     const alive = processIsAlive(pid)
     if ((!alive && !['closed', 'completed', 'done'].includes(status)) || (alive && ['closed', 'completed', 'done'].includes(status))) out.push(id)
-  }
-  return out
-}
-
-async function detectStaleZellijSessions(agentRoot: string, staleMs: number): Promise<string[]> {
-  const out: string[] = []
-  const now = Date.now()
-  for (const file of await listNamedFiles(path.join(agentRoot, 'sessions'), 'agent-zellij-report.json')) {
-    const report = await readJson<any>(file, null)
-    if (!report || report.launch_mode === 'optional_not_launched') continue
-    const stat = await fsp.stat(file).catch(() => null)
-    if (stat && now - stat.mtimeMs > staleMs) out.push(String(report.session_id || report.agent_id || path.basename(path.dirname(file))))
   }
   return out
 }

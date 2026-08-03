@@ -4,7 +4,6 @@ import { buildFixturePatchEnvelopes } from './agent-runner-fake.js'
 import { runProcessAgent } from './agent-runner-process.js'
 import { classifyOllamaWorkerSlice, runOllamaAgent } from './agent-runner-ollama.js'
 import { resolveOllamaWorkerConfig } from './ollama-worker-config.js'
-import { runZellijAgent } from './agent-runner-zellij.js'
 import { validateAgentWorkerResult } from './agent-worker-pipeline.js'
 import { normalizeAgentPatchEnvelope, type AgentPatchEnvelope } from './agent-patch-schema.js'
 import { runCodexTask } from '../codex-control/codex-control-plane.js'
@@ -17,7 +16,7 @@ import { readConfiguredCodexModelRoutingContext } from '../codex-app/codex-model
 
 export const NATIVE_WORKER_BACKEND_ROUTER_SCHEMA = 'sks.native-worker-backend-router.v1'
 
-type BackendSource = 'fixture' | 'process_generated' | 'model_authored' | 'zellij_generated'
+type BackendSource = 'fixture' | 'process_generated' | 'model_authored'
 
 export async function runNativeWorkerBackendRouter(input: {
   agentRoot: string
@@ -108,7 +107,7 @@ export async function runNativeWorkerBackendRouter(input: {
       fixture_patch_envelopes: false,
       verification: { status: ollamaRun.status === 'done' ? 'passed' : 'failed', checks: [...(ollamaRun.verification?.checks || []), 'native-worker-backend-router', 'ollama-api-generate'] }
     })
-  } else if (backend === 'codex-sdk' || backend === 'zellij' || backend === 'local-llm') {
+  } else if (backend === 'codex-sdk' || backend === 'local-llm') {
     const localPreferred = backend === 'local-llm'
     modelRouting = await resolveWorkerModelRouting(input)
     if (modelRouting.blockers.length) {
@@ -152,7 +151,6 @@ export async function runNativeWorkerBackendRouter(input: {
         requiresGptFinal: true
       } } : {}),
       mutationLedgerRoot: path.join(root, input.workerDirRel),
-      zellijPaneId: await readZellijPaneId(root, input.workerDirRel),
       reliabilityPolicy: {
         maxEmptyResultRetries: 1,
         timeoutClass: codexTimeoutClassForRoute(input.intake.route, 'standard')
@@ -214,29 +212,6 @@ export async function runNativeWorkerBackendRouter(input: {
       }
     })
     }
-  } else {
-    const zellijRun = await runZellijAgent(input.agent, input.slice, {
-      missionId: input.intake.mission_id || input.intake.parent_mission_id || '',
-      agentRoot: root,
-      cwd: input.intake.cwd || root,
-      real: input.intake.real_zellij === true || input.intake.real === true,
-      fastMode: input.fastModePolicy.fast_mode,
-      serviceTier: input.fastModePolicy.service_tier
-    })
-    const zellijReportRel = zellijRun.artifacts.find((artifact: string) => artifact.endsWith('agent-zellij-report.json')) || null
-    const zellijReport = zellijReportRel ? await readJson<any>(path.join(root, zellijReportRel), null) : null
-    childReports = zellijReport ? [zellijReport] : []
-    patchEnvelopes = buildGeneratedPatchEnvelopes(input, 'zellij_generated')
-    proofLevel = zellijReport?.launch_mode === 'real_zellij' ? 'zellij_child_proven' : 'fixture_only'
-    result = validateAgentWorkerResult({
-      ...zellijRun,
-      patch_envelopes: patchEnvelopes,
-      ...(patchEnvelopes.length ? {} : { no_patch_reason: buildNoPatchReason(input, backend) }),
-      zellij_child_report: zellijReport,
-      model_authored_patch_envelopes: false,
-      fixture_patch_envelopes: false,
-      verification: { status: zellijRun.status === 'done' ? 'passed' : 'failed', checks: [...(zellijRun.verification?.checks || []), 'native-worker-backend-router', 'zellij-child-execution'] }
-    })
   }
 
   const report = {
@@ -427,8 +402,8 @@ export function narutoWorkerBackendBlocker(backend: string | null, narutoRequest
   return null
 }
 
-function normalizeBackend(value: string): 'fake' | 'process' | 'codex-sdk' | 'zellij' | 'ollama' | 'local-llm' | null {
-  return value === 'fake' || value === 'process' || value === 'codex-sdk' || value === 'zellij' || value === 'ollama' || value === 'local-llm' ? value : null
+function normalizeBackend(value: string): 'fake' | 'process' | 'codex-sdk' | 'ollama' | 'local-llm' | null {
+  return value === 'fake' || value === 'process' || value === 'codex-sdk' || value === 'ollama' || value === 'local-llm' ? value : null
 }
 
 function envelopeOpts(input: any, source: BackendSource, childPid?: number) {
@@ -504,11 +479,6 @@ function writePaths(slice: any, intake: any) {
 
 function workerOwnerId(input: any) {
   return String(input.slice?.owner_agent_id || input.slice?.owner || input.agent?.agent_id || input.agent?.id || '')
-}
-
-async function readZellijPaneId(root: string, workerDirRel: string) {
-  const pane = await readJson<any>(path.join(root, workerDirRel, 'zellij-worker-pane.json'), null)
-  return pane?.pane_id ? String(pane.pane_id) : null
 }
 
 function normalizeSdkWorkerResultPaths(result: any, input: any, root: string) {

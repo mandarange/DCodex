@@ -5,7 +5,7 @@ import path from 'node:path'
 import { runCodexInitDeep } from '../core/codex-app/codex-init-deep.js'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-init-deep-retention-'))
-const target = path.join(root, 'src', 'core', 'zellij')
+const target = path.join(root, 'src', 'core', 'runtime')
 await fs.mkdir(target, { recursive: true })
 for (let index = 0; index < 18; index += 1) await fs.writeFile(path.join(target, `f${index}.ts`), 'export {}\n', 'utf8')
 await fs.writeFile(path.join(target, 'AGENTS.md'), '# User local guidance\nKeep me.\n', 'utf8')

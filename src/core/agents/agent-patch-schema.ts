@@ -13,7 +13,7 @@ export interface AgentPatchOperation {
 
 export interface AgentPatchEnvelope {
   schema: typeof AGENT_PATCH_SCHEMA
-  source?: 'fixture' | 'model_authored' | 'process_generated' | 'zellij_generated' | 'git-worktree-diff'
+  source?: 'fixture' | 'model_authored' | 'process_generated' | 'git-worktree-diff'
   mission_id?: string
   route?: string
   agent_id: string
@@ -138,7 +138,7 @@ export function validateAgentPatchEnvelope(envelope: AgentPatchEnvelope): { ok: 
   if (!Number.isInteger(envelope.generation_index) || envelope.generation_index < 0) violations.push('generation_index_missing')
   if (!envelope.lease_id && !envelope.lease_proof?.lease_id) violations.push('lease_id_missing')
   if (!envelope.operations.length) violations.push('operations_missing')
-  if (envelope.source && !['fixture', 'model_authored', 'process_generated', 'zellij_generated', 'git-worktree-diff'].includes(envelope.source)) violations.push('source_invalid')
+  if (envelope.source && !['fixture', 'model_authored', 'process_generated', 'git-worktree-diff'].includes(envelope.source)) violations.push('source_invalid')
   if (envelope.source === 'model_authored' && !hasFiniteNumber(envelope.backend_child_process_id) && !envelope.backend_sdk_thread_id && !envelope.backend_ollama_request_id) violations.push('model_authored_backend_proof_missing')
   if (envelope.source === 'fixture' && envelope.backend_child_process_id !== undefined) violations.push('fixture_backend_child_process_id_present')
   if (envelope.source === 'git-worktree-diff' && !envelope.git_worktree?.worktree_path) violations.push('git_worktree_metadata_missing')
@@ -160,7 +160,7 @@ export function validateAgentPatchEnvelope(envelope: AgentPatchEnvelope): { ok: 
 
 function normalizeEnvelopeSource(value: any): AgentPatchEnvelope['source'] | null {
   const text = String(value || '')
-  return text === 'fixture' || text === 'model_authored' || text === 'process_generated' || text === 'zellij_generated' || text === 'git-worktree-diff' ? text : null
+  return text === 'fixture' || text === 'model_authored' || text === 'process_generated' || text === 'git-worktree-diff' ? text : null
 }
 
 function hasFiniteNumber(value: any): boolean {

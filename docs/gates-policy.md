@@ -6,7 +6,7 @@ Release gates protect user-visible trust concerns, not harness implementation de
 
 - The `release` preset in `release-gates.v2.json` must stay at or below 200 gates.
 - Total release-manifest gates should stay in the 150-200 range.
-- Harness infrastructure gates, including `zellij:*`, live in `infra-harness-gates.json` with the `harness` preset.
+- Harness infrastructure gates live in `infra-harness-gates.json` with the `harness` preset.
 - `package.json` scripts are user entry points only and must stay at or below 100. Gate commands execute the manifest command directly.
 
 ## Addition Rule
@@ -26,6 +26,5 @@ Every release update touching `package.json`, `release-gates.v2.json`, `infra-ha
 
 - release preset count is at or below 200;
 - npm script count is at or below 100;
-- `zellij:*` gates are absent from the release preset;
 - repeated route families are represented by comprehensive gates.
 - split-review target files from the 2026-07-02 cleanup (`research.ts`, `ppt.ts`, `init.ts`, `hooks-runtime.ts`, `recallpulse.ts`) remain at or below 1200 lines.

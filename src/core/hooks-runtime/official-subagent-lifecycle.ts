@@ -6,10 +6,6 @@ import { ensureConfinedDirectory } from '../managed-path-safety.js';
 import { NARUTO_PARENT_EFFORT, NARUTO_PARENT_MODEL } from '../subagents/model-policy.js';
 import { officialSubagentRolePlan } from '../subagents/agent-catalog.js';
 import {
-  recordOfficialSubagentParentOutcomesTelemetry,
-  recordOfficialSubagentZellijTelemetry
-} from '../zellij/zellij-official-subagent-telemetry.js';
-import {
   bindTrustworthySubagentParentSummaryToRun,
   normalizeSubagentEvent,
   normalizeSubagentParentSummary,
@@ -180,32 +176,6 @@ export async function recordAndRefreshSubagentEvidence(
       eventPayload,
       eventName
     );
-    const zellijTelemetry = await recordOfficialSubagentZellijTelemetry({
-      root,
-      routeMissionId: plan?.mission_id || state?.mission_id || null,
-      event,
-      payload: eventPayload,
-      plan
-    }).catch(async (error: any) => {
-      await appendJsonl(path.join(artifactDir, 'zellij-telemetry-warnings.jsonl'), {
-        ts: nowIso(),
-        warning: 'official_subagent_zellij_telemetry_failed',
-        event_name: eventName,
-        thread_id: event.thread_id,
-        error: String(error?.message || error)
-      }).catch(() => null);
-      return null;
-    });
-    if (zellijTelemetry?.blocker) {
-      await appendJsonl(path.join(artifactDir, 'zellij-telemetry-warnings.jsonl'), {
-        ts: nowIso(),
-        warning: 'official_subagent_zellij_telemetry_incomplete',
-        event_name: eventName,
-        thread_id: event.thread_id,
-        blocker: zellijTelemetry.blocker,
-        failed_mission_ids: 'failed_mission_ids' in zellijTelemetry ? zellijTelemetry.failed_mission_ids : []
-      }).catch(() => null);
-    }
     const lifecycle = await refreshSubagentWaveLifecycle(artifactDir, { plan, event, events });
     const refreshedPlan = lifecycle ? { ...plan, wave_lifecycle: lifecycle } : plan;
     const existing: any = await readJson(path.join(artifactDir, SUBAGENT_EVIDENCE_FILENAME), {});
@@ -356,30 +326,6 @@ async function refreshOfficialSubagentCompletionArtifactsLocked(root: any, state
       ? { hostCapabilityEvidence: hostCapabilityCompletion.evidence }
       : {})
   });
-  if (structuredParentSummary.trustworthy) {
-    const parentTelemetry = await recordOfficialSubagentParentOutcomesTelemetry({
-      root,
-      routeMissionId: id,
-      parentSummary: structuredParentSummary.raw,
-      plan: refreshedPlan
-    }).catch(async (error: any) => {
-      await appendJsonl(path.join(dir, 'zellij-telemetry-warnings.jsonl'), {
-        ts: nowIso(),
-        warning: 'official_subagent_parent_outcome_telemetry_failed',
-        error: String(error?.message || error)
-      }).catch(() => null);
-      return null;
-    });
-    if (parentTelemetry?.blocker) {
-      await appendJsonl(path.join(dir, 'zellij-telemetry-warnings.jsonl'), {
-        ts: nowIso(),
-        warning: 'official_subagent_parent_outcome_telemetry_incomplete',
-        blocker: parentTelemetry.blocker,
-        failed_mission_ids: 'failed_mission_ids' in parentTelemetry ? parentTelemetry.failed_mission_ids : [],
-        skipped_thread_ids: 'skipped_thread_ids' in parentTelemetry ? parentTelemetry.skipped_thread_ids : []
-      }).catch(() => null);
-    }
-  }
   const isNaruto = String(state?.mode || '').toUpperCase() === 'NARUTO'
     || String(state?.route || state?.route_command || '').replace(/^\$/, '').toUpperCase() === 'NARUTO';
   if (!isNaruto) {

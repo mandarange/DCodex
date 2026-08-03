@@ -61,7 +61,6 @@ import {
   type NarutoMissionRunLease,
   writeNarutoGate
 } from '../subagents/official-subagent-preparation.js'
-import { recordOfficialSubagentParentOutcomesTelemetry } from '../zellij/zellij-official-subagent-telemetry.js'
 import { effectiveSubagentTarget, refreshSubagentWaveLifecycle } from '../subagents/wave-lifecycle.js'
 import {
   HOST_CAPABILITY_HOOK_RUNTIME_FILENAME,
@@ -516,30 +515,6 @@ async function narutoRunTransaction(
     additionalBlockers: [...configBlockers, ...hostCapabilityBinding.blockers],
     ...(run.host_capability_evidence ? { hostCapabilityEvidence: run.host_capability_evidence } : {})
   })
-  if (!appSession) {
-    const parentTelemetry = await recordOfficialSubagentParentOutcomesTelemetry({
-      root,
-      routeMissionId: id,
-      parentSummary: effectiveParentSummary,
-      plan: completedPlan
-    }).catch(async (error: any) => {
-      await appendJsonl(path.join(dir, 'zellij-telemetry-warnings.jsonl'), {
-        ts: nowIso(),
-        warning: 'official_subagent_parent_outcome_telemetry_failed',
-        error: String(error?.message || error)
-      }).catch(() => undefined)
-      return null
-    })
-    if (parentTelemetry?.blocker) {
-      await appendJsonl(path.join(dir, 'zellij-telemetry-warnings.jsonl'), {
-        ts: nowIso(),
-        warning: 'official_subagent_parent_outcome_telemetry_incomplete',
-        blocker: parentTelemetry.blocker,
-        failed_mission_ids: 'failed_mission_ids' in parentTelemetry ? parentTelemetry.failed_mission_ids : [],
-        skipped_thread_ids: 'skipped_thread_ids' in parentTelemetry ? parentTelemetry.skipped_thread_ids : []
-      }).catch(() => undefined)
-    }
-  }
   const candidatePassed = run.ok === true && evidence.ok === true && appSession === false
   const blockers = uniqueStrings([
     ...(Array.isArray(evidence.blockers) ? evidence.blockers : []),

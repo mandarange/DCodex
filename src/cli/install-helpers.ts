@@ -9,7 +9,6 @@ import { guardedPackageInstall, guardContextForRoute } from '../core/safety/muta
 import { formatHarnessConflictReport, llmHarnessCleanupPrompt, scanHarnessConflicts } from '../core/harness-conflicts.js';
 import { initProject, installGlobalSkills } from '../core/init.js';
 import { context7ConfigToml, DOLLAR_SKILL_NAMES, GETDESIGN_REFERENCE, hasContext7ConfigText, RECOMMENDED_SKILLS } from '../core/routes.js';
-import { checkZellijCapability } from '../core/zellij/zellij-capability.js';
 import { reconcileCodexAppUpgradeProcesses } from '../core/codex-app.js';
 import { restartCodexApp } from '../core/codex-app/codex-app-restart.js';
 import { cleanupMacLaunchSecretEnvironment } from '../core/codex-app/menubar/index.js';
@@ -3165,10 +3164,7 @@ async function inspectCodexLbMacLaunchEnvironment(baseUrl: any = '', opts: any =
 export {
   checkContext7,
   ensureCodexCliTool,
-  ensureMadLaunchDependencies,
   ensureRelatedCliTools,
-  ensureZellijCliTool,
-  formatMadLaunchDependencyAction,
   maybePromptCodexUpdateForLaunch,
   maybePromptSksUpdateForLaunch,
   shouldAutoApproveInstall

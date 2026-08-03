@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Migration: SKS now uses the native Codex CLI for interactive and release
+  execution; no separate terminal runtime is required.
+
 ## [8.0.4] - 2026-08-02
 
 ### Changed
@@ -421,7 +426,6 @@
 
 - Retire the frozen 6.3.0 release-closure subsystem. It was an attestation of a single past audit — a pinned mission id, 28 finding/work-order ids, a fixed work-order sha256 — that could never pass on a fresh clone, since 9 of its 11 required artifacts live under gitignored `.sneakoscope/missions/`. The contract, validator, fixture and 27 tracked audit artifacts (two of which embedded an operator's absolute home path) are gone; the six generic file/git/JSON primitives the push guards used moved to `release-proof-io`. `main-push-guard` and `main-push-receipt` survive intact minus the closure. `file-ownership` is genuinely reusable, so its shared-file request directory is now parameterized by release line and resolves fail-closed with a `release_unresolved` blocker instead of silently granting a 6.3.0-scoped carve-out.
 - Remove seven orphan gate scripts that no tracked file referenced and no registered gate id reached: `codex-0140-goal-attachment-preservation-check`, the frozen `release-3112`/`release-3113`/`release-4001`/`release-4002` required-gate id lists (which still named retired `codex:0140-*` gates), and `update-doctor-lifecycle-check` / `update-new-binary-reexec-check`, whose own `scriptContains` assertion demanded a `package.json` script that does not exist. The update-lifecycle contract they grep-checked is covered behaviourally by `update-simulated-upgrade`, `update-failure-modes` and the Menu Bar stage-parity tests.
-- Ignore `/lanes/` and `zellij-lane-renderer-heartbeat.jsonl` so `sks commit` stops sweeping per-machine runtime state into commits.
 
 ### Fixed
 
@@ -714,7 +718,6 @@
 
 - Make MCP configuration updates fail closed for unreadable, malformed, symlinked, non-regular, or concurrently changed files while preserving unrelated TOML, multiline strings, comments, and byte layout.
 - Keep MCP secrets and sensitive URL or command details out of SKS process arguments, inherited process environment, errors, and command output; configured per-server environment values remain in the guarded Codex TOML. Bind reused codex-lb launch proof to the effective base URL.
-- Preserve explicit `--yes` pre-launch update behavior while allowing ordinary launches to defer the remote Zellij update lookup.
 
 ### Performance
 
@@ -730,7 +733,6 @@
 - Add an independent versioned full release-gate contract, content-bound npm pack proof IDs and hashes, exact packlist/package-contract cache validation, and source/dist authorization snapshots.
 - Add SKS menu bar controls for the current Codex CLI version, update-needed indicator, `Update Codex CLI Now`, and `Run sks doctor --fix`, with pinned action-integrity checks and operator-install detection.
 - Add sixteen project-scoped official custom-agent roles plus risk-based automatic fan-out: one by default, two for explicit parallel or independent risk domains, and three only for critical multi-domain work.
-- Add an official-subagent Zellij telemetry bridge that mirrors route and host missions, tails exact supported child rollouts for redacted live activity, shows running/verifying/parent-verdict states, preserves reused thread generations, and keeps recent completions visible.
 
 ### Changed
 
@@ -738,7 +740,6 @@
 - Route clear bounded tasks to Luna Max and UI implementation, debugging/root-cause analysis, review, architecture, integration, security, database, Research synthesis, and release judgment to Sol Max; Terra remains explicit compatibility only and is never selected automatically.
 - Keep setup and `doctor --fix` conflict-blocked before writes when OMX/DCodex is present, migrate only SKS-owned official agent config, preserve user TOMLs, warn without overwriting `max_depth > 1`, and use the supported `max_threads`, `max_depth`, runtime, and interrupt fields.
 - Reuse one clean build across affected/confidence release checks, run the canonical recursive test corpus in the full release workflow, and reject lifecycle-enabled `npm publish` before `prepack` can rebuild an already authorized package.
-- Reduce the default Zellij cockpit to one monitor plus one viewport, with an explicit maximum of three viewports, and make the historical MAD native swarm opt-in instead of a pane-population default.
 
 ### Fixed
 
@@ -853,7 +854,6 @@
 - Preserve arbitrary explicit model IDs, provider configuration, and reasoning choices through install, update, Codex LB, Fast mode, doctor, and auto-review migrations; only provenance-marked SKS legacy locks are removed.
 - Fix top-level TOML lookup when a config has no table header, which previously made valid top-level values appear absent.
 - Prevent extreme Naruto mode from bypassing live backpressure, stop verification pools from overlapping clone pools, and clamp accidental global/project agent limits such as 1000 to four unless explicitly opted out.
-- Apply the same four-worker active cap to the central agent scheduler, Research, QA, route review, Zellij panes, and real parallelism gates; larger rosters remain queued and refill bounded slots.
 - Eliminate the stale hardcoded CLI help version and synchronize npm, TypeScript, Rust, README, and changelog release metadata at 6.0.2.
 
 ## [6.0.1] - 2026-07-10
@@ -1559,7 +1559,6 @@
 
 ### Fixed
 
-- Changed `sks --mad --glm` so bare/no-task invocation returns GLM readiness/status instead of falling through to a long-lived MAD/Zellij launch.
 - Changed the GLM speed profile to avoid `high`/`xhigh` reasoning by default and to use `provider.require_parameters: false` with throughput-first routing.
 - Added bounded GLM direct-run state, loop guard, request timeout, repeated-output/no-progress termination, and terminal run artifacts.
 - Added real encoded OpenRouter request body reuse, AbortSignal/timeout support, and streaming TTFT/usage collection scaffolding.
@@ -1603,7 +1602,6 @@
 
 - Fixed `sks --mad --glm` stopping after the GLM readiness banner instead of entering the MAD launch path.
 - Wired GLM MAD launches to Codex with OpenRouter `z-ai/glm-5.2`, `model_provider="openrouter"`, and no codex-lb/OpenAI fallback.
-- Added a mission-local GLM Codex wrapper so OpenRouter keys are read at runtime without writing raw secrets into Zellij layout artifacts.
 - Disabled the existing GPT/codex-sdk native swarm by default for GLM MAD launches to keep the no-GPT-fallback contract honest until a GLM worker backend exists.
 - Added launch proof in `mad-glm-launch.json` and regression tests for GLM launch args, secret handling, and swarm fallback blocking.
 
@@ -1735,14 +1733,12 @@
 - Secret preservation rollback now protects changed protected values as well as missing protected values across setup/update/doctor paths without writing raw secret values to reports.
 - Release gate parity now requires every `release` preset gate to have a package script, while still checking the required 3.1.12 gates and the real-check preset.
 - `sks doctor --fix` now repairs stale `node_repl` MCP config without leaving an orphan `[mcp_servers.node_repl.env]` child table. When the current Codex App `cua_node/bin/node_repl` command exists, doctor rewrites to that path and preserves env; otherwise it removes the whole stale parent/child block.
-- MAD Zellij visible worker panes now reconcile native stacked placement with `zellij action stack-panes` after pane ids are observed, keeping second and later workers in one right-column stack instead of relying only on focus-sensitive `new-pane --stacked`.
 - Release metadata is aligned for 3.1.12 across package, lockfile, CLI constants, Rust helper metadata, README, and changelog.
 
 ## [3.1.11] - 2026-06-16
 
 ### Fixed
 
-- `sks doctor --fix` now treats Zellij 0.43.0 as the minimum interactive runtime so `sks --mad` can use native stacked panes instead of falling back to fragmented splits.
 - `sks doctor --fix` detects local stdio Context7 MCP config and migrates it to the remote Context7 MCP endpoint, avoiding launches that appear stuck at the Context7 stdio server banner.
 - `sks doctor --fix` repairs stale Codex startup config by making SKS agent `config_file` paths absolute/existing, removing unsupported managed `message_role_prefix` role fields, preserving optional `supabase_sauron`, and dropping missing-command `node_repl` MCP blocks.
 
@@ -1754,7 +1750,6 @@
 - Release wiring parity gate for package scripts, release gates, required DAG ids, and built dist targets.
 - Capability-specific native postchecks for image generation, follow-up edit paths, Computer Use, Chrome/web review, screenshots, app handoff, image path exposure, and saved artifact contracts.
 - Secret value hash preservation with backup rollback for protected Supabase and MCP token sources.
-- Doctor full mutation guard around `doctor --fix` setup, config, UI, Zellij, native repair, and capability repair paths.
 - Skill duplicate active-name proof and the 3.1.10 all-feature regression blackbox.
 
 ### Fixed
@@ -1827,7 +1822,6 @@
 
 ### Added
 
-- Typed Codex App and Zellij self-heal contract surfaces for hook approval, `agent_type`, execution profile, and dry-run repair planning.
 - Live Codex Native reference source evidence analysis with hashed snippets and merged confidence in the pattern analysis report.
 - Init-deep directory-local managed `AGENTS.md` sections, backups, and Loop node `memory_hints`.
 - Execution profile propagation through Loop/Naruto, QA-LOOP, and Research artifacts.
@@ -1835,18 +1829,13 @@
 
 ### Fixed
 
-- `doctor --fix --dry-run` and `sks --mad --dry-run` now plan Zellij repair mutations without launching or installing.
-- Zellij launch repair status now distinguishes `headless_fallback` and `repair_required`.
 - Codex App harness matrix no longer hardcodes unknown hook approval or env-only `agent_type` support.
-- Core Codex App, Zellij, Doctor, Loop, and Naruto target files are typechecked without `@ts-nocheck`.
 
 
 ## [3.1.4] - 2026-06-13
 
 ### Added
 
-- Zellij doctor self-heal and install/upgrade transaction.
-- `sks --mad` Zellij preflight self-heal.
 - Codex Native reference/neutral reference reverse-analysis artifact.
 - Codex App Harness Matrix.
 - Codex plugin/hook/skill/agent-role lifecycle health.
@@ -1855,9 +1844,6 @@
 
 ### Fixed
 
-- `doctor --fix` no longer leaves Zellij missing/manual when repair is possible.
-- Missing Zellij no longer prints contradictory optional/blocking messages.
-- MAD launch attempts safe Zellij repair before blocking.
 - Codex App features are consumed through capability/proof artifacts instead of brittle assumptions.
 
 
@@ -1951,7 +1937,6 @@
 
 - Codex 0.139 required release coverage across `codex:0139-capability` and the new feature fixture gates.
 - Codex 0.139 feature-probe fixtures for `interrupt_agent`, `oneOf`/`allOf`, doctor env redaction, marketplace `source`, `-P` profile alias, and code-mode web search availability.
-- Real openWorkerPane pane-lock integration blackbox through a fake Zellij adapter.
 - Runtime proof summary stacked/fallback visibility with pane-lock p95 and SLOTS anchor counts.
 - Release wording clarifying that SKS bundles @openai/codex-sdk 0.138.0 while Codex 0.139 features come from the external Codex CLI when supported; release gates include hermetic fixtures and optional real probes.
 
@@ -1959,7 +1944,6 @@
 
 - `codex:0139-capability` and its high-value fixture gates are now required by release-dag-full-coverage.
 - Codex 0.139 capability detector no longer relies only on version flags for high-value features.
-- Zellij pane-lock proof now exercises the SKS worker pane manager path rather than only synthetic lock simulation.
 
 
 ## [3.0.2] - 2026-06-10
@@ -1967,8 +1951,6 @@
 ### Added
 
 - Codex `rust-v0.139.0` capability detection (`codex:0139-capability` gate, `.sneakoscope/codex-0139-capability.json` root + mission artifacts on `sks --mad` / `sks naruto run`): standalone web search in code mode, preserved `oneOf`/`allOf` tool schemas, doctor editor/pager env details, plugin marketplace `source` field and cached remote catalog, `-P` sandbox profile alias, and the multi-agent v2 `interrupt_agent` rename. See [docs/codex-0.139-compat.md](docs/codex-0.139-compat.md).
-- Zellij stacked-pane version matrix gates for `>=0.43`, `<0.43`, `v`-prefixed versions, and unknown version text.
-- Zellij pane creation lock metrics and a 32-worker blackbox proving pane serialization does not serialize worker execution.
 - Release cache version-neutral safety fixtures that prove only pure version-surface changes are neutralized.
 - Agent message bus runtime summary fields and `sks naruto proof latest --messages N` proof output.
 - Release proof source-truth artifact with commit, branch, dirty status, file hashes, and npm packlist size.
@@ -1976,8 +1958,6 @@
 ### Fixed
 
 - Cockpit subagent-stage classification now accepts the Codex 0.139 multi-agent v2 `interrupt_agent` event name alongside the pre-0.139 `close_agent`, so lifecycle events keep mapping to `result` stages on newer CLIs.
-- Zellij update prompt mode now resolves CI, `SKS_NO_QUESTION`, headless, skip flag, and skip env cases before any interactive prompt.
-- Zellij `<0.43` no longer receives unsupported worker `--stacked` pane calls; worker pane artifacts record requested/applied/fallback state.
 - Release cache neutralization now parses package, lockfile, version constants, and build manifest surfaces instead of replacing every matching version string.
 - Runtime proof summary now counts recent worker completion/failure/warning/error messages and blocks on error-level message bus entries.
 
@@ -1985,26 +1965,21 @@
 
 ### Added
 
-- Zellij worker panes now join a native stacked-pane group (`new-pane --stacked`, zellij >= 0.43): the first worker splits down from the SLOTS anchor and every following worker stacks vertically instead of fragmenting the screen. Opt out with `SKS_ZELLIJ_WORKER_STACKED=0`.
-- Zellij version check and latest-stable upgrade flow, mirroring the Codex CLI update prompt: launch-time `[Y/n]` prompt on `sks --mad-sks` / `sks naruto run`, a new `sks zellij update [--yes]` subcommand, GitHub releases lookup with a 6h on-disk cache, and `SKS_SKIP_ZELLIJ_UPDATE` / `--skip-zellij-update` escapes. Brew installs/upgrades run through the mutation guard with an explicit `zellij_install` scope contract so the mutation ledger records them.
 - Naruto finalizer policy is wired into the run result: `naruto-finalizer.json` artifact plus a console blocker line when local-LLM output still needs the GPT final arbiter.
 - Worker completion/failure messages now flow through the agent message bus (`agent-messages.jsonl`) for operator-readable swarm history.
 
 ### Fixed
 
-- Zellij slot pane renderers froze for the entire mission: the telemetry snapshot cache never invalidated, so `--watch` loops re-rendered the first frame forever. Snapshot reads are now mtime-aware and multi-process flushes merge instead of clobbering each other's slots.
 - Concurrent workers raced anchor creation and each opened its own `SLOTS` column with `--direction right`, splitting the screen into N side-by-side columns. Anchor + worker pane creation is now serialized per session with fresh state re-reads under the lock.
 - Worker panes defaulted to `full-debug`, which runs the worker with `--json` and shows nothing until exit. The default is now the live `compact-slots` slot renderer, which streams heartbeat, current file, tool events, and stdout tails every second.
 - `focus-pane-id` returning non-zero for an already-focused pane silently degraded stacked placement to plain down-splits.
 - Scheduler batch dispatch serialized two telemetry file writes per worker before launching the next one; telemetry appends now run concurrently across launches while preserving per-slot ordering.
 - `npm publish` re-ran the entire release DAG from zero on every release: the gate cache key hashed the raw package version, package.json, and dist/build-manifest.json, so a pure `sks versioning bump` (which also rewrites the three PACKAGE_VERSION constant sources) invalidated ~280 behavior gates including the ~11-minute blackbox suite. Cache hashing is now version-neutral for the five version-surface files; behavior changes still invalidate keys, version-correctness gates stay cache-disabled and always re-run, and `SKS_RELEASE_CACHE_VERSION_SENSITIVE=1` restores the old hashing.
 - Naruto backpressure throttling (50% throttled / 25% saturated) is no longer silent: the run header reports when host resource pressure reduced active workers.
-- GitHub release tags with a leading `v` failed version parsing in the zellij update check.
 - npm packlist could balloon past gate limits (4683 files / 13MB) when stray TypeScript `.d.ts`/`.map` artifacts landed in `dist` (tsconfig emits declarations + source maps; only `build-dist` prunes them). The package `files` field now excludes `dist/**/*.d.ts`, `*.map`, and `*.tsbuildinfo` outright, so the published package stays at ~830 files regardless of how `dist` was produced.
 
 ### Removed
 
-- Dead code: `naruto-work-stealing.ts` (never invoked; the scheduler's backfill already refills idle slots from the queue) and `zellij-right-column-layout-proof.ts` (no consumers).
 
 ## [2.0.19] - 2026-06-09
 
@@ -2029,7 +2004,6 @@
 ### Added
 
 - Codex 0.138 capability detection with root and mission artifacts for `/app` handoff, plugin JSON, image path exposure, model-defined efforts, token usage, PAT v2, and OAuth MCP pre-refresh support.
-- QA-LOOP Codex Desktop `/app` handoff artifacts, CLI flags, status output, Zellij pending-status surfacing, and explicit separation from Codex Chrome Extension web UI evidence.
 - Codex plugin JSON inventory and candidate-only remote MCP server policy, including unavailable app-template doctor warnings and QA handoff recommendations.
 - Image artifact saved-path contracts for QA/imagegen outputs so follow-up visual edits use real model-visible local paths.
 - Model-advertised reasoning effort order support, QA effort escalation, Codex account token usage telemetry, and QA budget policy artifacts.
@@ -2049,7 +2023,6 @@
 
 - Strict production PID enforcement for parallel runtime proof.
 - True active-time scheduler utilization.
-- 1-second live Zellij telemetry snapshot flush.
 - Mad-DB MCP result lifecycle audit.
 - Unified runtime/release proof summary.
 
@@ -2069,7 +2042,6 @@
 - Naruto real parallelism blackbox, parallelism modes, and production parallel proof summary.
 - Model-call concurrency metrics separate from worker process concurrency.
 - Worktree allocation batch/pool proof and scheduler prewarm wiring.
-- Incremental Zellij slot telemetry snapshots and performance gates.
 - Full release parallelism blackbox report.
 
 ### Fixed
@@ -2135,11 +2107,9 @@
 
 ### Added
 
-- Add first-slot down-stack Zellij proof semantics, including slot renderer pane classification and a real-session geometry gate for worker panes stacked below the `SLOTS` anchor.
 - Add release DAG closure for slot renderer proof semantics, Naruto allocation runtime wiring, GPT Final worktree apply policy, and cache glob hashing coverage.
 - Add Naruto allocation/rebalance production wiring so assignment owners flow into work graph items, scheduler slices, queue ownership, and worker runtime proof artifacts.
 - Add Naruto actual worker production integration proof that records control-plane worker result validity and keeps pre-run smoke opt-in.
-- Add Git worktree public operator docs for parallel runtime, Zellij slot UI, Naruto worktree parallelism, and release DAG usage.
 
 ### Fixed
 
@@ -2156,13 +2126,11 @@
 
 ### Added
 
-- Add slot-only Zellij UI gates for compact slot rendering, headless right-column overflow, and real right-column geometry proof.
 - Add real Naruto active-pool and extreme-parallelism runtime checks that spawn actual child workers and validate result artifacts.
 - Add primary-repo worktree integration runtime proof and agent role-config repair proof.
 
 ### Fixed
 
-- Keep Zellij visible worker reservations capped before pane launch and close headless overflow worker state when runtime workers exit.
 - Keep Naruto active-pool collection tied to completed workers instead of arbitrary first-half selection.
 - Keep Git worktree integration applying validated worker diffs back to the primary repo with rollback hash evidence.
 - Keep release audit, dynamic release planning, dynamic execution, and release-check stamps aligned to `release-gates.v2.json`.
@@ -2180,7 +2148,6 @@
 ### Added
 
 - Add the `release-gates.v2.json` manifest, release gate node schema, and a DAG-based `release:check` runner with resource-aware scheduling, hermetic per-gate environments, bounded logs, per-gate reports, cache proof, and speed-budget reporting.
-- Add directive-named release gates for DAG runner proof, parallel speed budget, Git worktree manifest append, dirty main detection, untracked diff inclusion, single-operation worktree patch envelopes, integration worktree merge queue, dirty worktree locks, Naruto worktree coding blackbox, and Zellij real worker pane contract proof.
 
 ### Fixed
 
@@ -2192,8 +2159,6 @@
 ### Added
 
 - Add Git worktree detection, capability, root allocation, worker worktree management, diff export, patch-envelope conversion, integration merge queue, cleanup/dirty-retention, cache policy, and pool planning modules.
-- Add Naruto Git worktree mode so write-capable Git missions record `git-worktree` policy, non-Git missions degrade to patch-envelope-only without probing `git worktree`, Zellij dashboard titles include WT/branch context, and GPT Final packs carry worktree diffs.
-- Add release gates for Git worktree capability, manager, diff export, merge queue, cleanup, cache/pool performance, Naruto worktree coding, Naruto worktree Zellij UI, and Naruto worktree GPT Final evidence.
 
 ### Fixed
 
@@ -2237,19 +2202,16 @@
 
 ## [2.0.2] - 2026-06-04
 
-P0 closure release: make `sks --mad` stop rewriting user-level Codex App config, make safe Fast UI repair apply through `doctor --fix`, wire interactive MAD worker panes through real Zellij sessions, and tighten provider/runtime release gates.
 
 ### Added
 
 - **MAD no-mutation release gate.** Added `mad-sks:app-ui-no-mutation` to exercise the actual `madHighCommand()` fixture path and assert `~/.codex/config.toml` hashes, plugin flags, profile files, and legacy profile tables are unchanged.
-- **MAD Zellij pane-worker gate.** Added `mad-sks:zellij-default-pane-worker` and `zellij:worker-pane-manager-single-owner` to prove interactive MAD defaults to the Zellij worker-pane contract, with WorkerPaneManager as the single native worker pane creator.
 - **Provider config.toml gate.** Added `provider:context-config-toml` to verify `model_provider = "codex-lb"` plus `[model_providers.codex-lb]` and `CODEX_LB_API_KEY` resolve to a high-confidence provider badge.
 
 ### Fixed
 
 - `sks --mad` now uses a read-only launch profile with `-c service_tier=fast` / `-c model_reasoning_effort=high` overrides instead of calling the user-config-writing `enableMadHighProfile()` path.
 - `sks --mad` launch preflight no longer repairs config by default; mutation-capable repair is limited to explicit repair flags.
-- `sks --mad` creates the main Zellij session before starting the native swarm, then passes the session name into worker pane startup.
 - `doctor --fix` now auto-applies safe Codex App Fast UI repair plans and leaves unsafe user-selected `standard` / `flex` state for explicit confirmation.
 - Provider context resolution now reads `~/.codex/config.toml` provider selection and codex-lb provider blocks instead of relying only on env/auth state.
 - Production runtime MJS enforcement now covers both root `scripts/*.mjs` and `bin/*.mjs`; the obsolete `bin/sks.mjs` shim was removed.
@@ -2262,10 +2224,6 @@ P0 closure release: make `sks --mad` stop rewriting user-level Codex App config,
 - `npm run doctor:fixes-codex-app-fast-ui`
 - `npm run provider:badge-context`
 - `npm run provider:context-config-toml`
-- `npm run mad-sks:zellij-default-pane-worker`
-- `npm run mad-sks:zellij-launch`
-- `npm run zellij:worker-pane-manager`
-- `npm run zellij:worker-pane-manager-single-owner`
 - `npm run runtime:no-mjs-scripts`
 - `npm run runtime:ts-source-of-truth`
 - `npm run runtime:ts-python-boundary`
@@ -2282,7 +2240,6 @@ Patch release: preserve Codex App Fast UI state around `sks --mad`, make provide
 
 - **Codex App Fast UI preservation.** Added UI state snapshots, host-owned key diffing, project-local clobber detection, repair planning, and a doctor repair path guarded by explicit `--repair-codex-app-ui`.
 - **Provider badge context.** Added provider resolution for `openai`, `codex-lb`, and `codex-app`, plus badge/fallback reporting that avoids mutating private Codex App UI state.
-- **Zellij worker proof metadata.** Spawn-on-demand worker panes now record pane titles, provider context, and `service_tier`, and worker-pane communication proof checks `codex-control-proof.json`, pane lifecycle events, worker results, and pane drain evidence.
 - **TypeScript runtime scripts and optional Python diagnostics.** Production gates now run from `dist/scripts/*.js` built from `src/scripts/*.ts`; optional Python helpers live under `pytools` and are not runtime fallbacks.
 
 ### Changed
@@ -2308,14 +2265,11 @@ Patch release: preserve Codex App Fast UI state around `sks --mad`, make provide
 - `npm run doctor:fixes-codex-app-fast-ui`
 - `npm run provider:badge-context`
 - `npm run codex-app:provider-badge`
-- `npm run zellij:spawn-on-demand-layout`
-- `npm run zellij:worker-pane-manager`
 - `npm run agent:worker-pane-communication-contract`
 - `sks wiki validate .sneakoscope/wiki/context-pack.json`
 
 ## [2.0.0] - 2026-06-03
 
-Major architecture release: unify Codex runtime execution behind the Codex SDK Control Plane, add UltraRouter task/profile decisions, harden SDK reliability behavior, and keep Zellij worker panes spawn-on-demand instead of pre-created runtime lanes.
 
 ### Added
 
@@ -2327,7 +2281,6 @@ Major architecture release: unify Codex runtime execution behind the Codex SDK C
 
 - `runCodexTask` now records UltraRouter decisions and Reliability Shield reports in `codex-control-proof.json`.
 - Native worker SDK tasks pass explicit worker tier and reliability policy into the control plane.
-- `release:check` now includes the new `codex-control:*` and `ultra-router:*` gates alongside the existing SDK, Zellij, safety, and release gates.
 - Version truth was advanced to `2.0.0` across package, lockfile, TypeScript, Rust, README, and changelog surfaces through the SKS versioning bump path.
 
 ### Removed
@@ -2340,18 +2293,15 @@ Major architecture release: unify Codex runtime execution behind the Codex SDK C
 
 ## [1.21.9] - 2026-06-03
 
-Patch release: replace runtime Codex execution with the Codex SDK Control Plane, keep Zellij as visual pane proof, and add SDK-specific release gates.
 
 ### Added
 
 - **Codex SDK Control Plane.** New `src/core/codex-control/*` modules manage SDK capability, thread registry, event translation, structured output schemas, sandbox/env/config policy, fake hermetic adapter, real SDK adapter, and control proof artifacts.
 - **SDK proof artifacts.** Every SDK worker writes `codex-control-proof.json`, `codex-thread-registry.json`, `codex-sdk-events.jsonl`, and `codex-sdk-worker-result.json` with `sdk_thread_id`, `sdk_run_id`, stream event count, and output schema id.
-- **Release gates.** Added `codex-sdk:*` checks for capability, no legacy fallback, backend routing, structured output, event ledgers, thread registry, sandbox policy, Zellij pane binding, all pipelines, route-specific pipelines, and real smoke.
 
 ### Changed
 
 - **Native agent default backend is `codex-sdk`.** Team, QA-LOOP, Research, Naruto, MAD-SKS, and direct agent command surfaces now default to SDK execution unless mock/fake mode is requested.
-- **Zellij is pane proof, not execution fallback.** Worker pane records use `worker_codex_sdk` and link pane/slot/generation/session records to SDK thread evidence.
 - **Fast/proof policy recognizes SDK evidence.** Real/fake proof policy, fast-mode propagation, route collaboration, and real-parallel proof now treat SDK thread and event evidence as the Codex runtime proof.
 
 ### Removed
@@ -2364,87 +2314,50 @@ Patch release: replace runtime Codex execution with the Codex SDK Control Plane,
 - Context7/OpenAI Codex SDK documentation was consulted for `@openai/codex-sdk` thread, run, streaming, output schema, sandbox, approval, and working directory APIs.
 - `npm run typecheck`
 - `npm run build`
-- `npm run codex-sdk:capability && npm run codex-sdk:no-legacy-fallback && npm run codex-sdk:backend-router && npm run codex-sdk:structured-output && npm run codex-sdk:event-stream-ledger && npm run codex-sdk:thread-registry && npm run codex-sdk:sandbox-policy && npm run codex-sdk:zellij-pane-binding && npm run codex-sdk:all-pipelines && npm run codex-sdk:dfix-pipeline && npm run codex-sdk:qa-pipeline && npm run codex-sdk:research-pipeline && npm run codex-sdk:team-naruto-agent-pipeline && npm run codex-sdk:release-review-pipeline && npm run codex-sdk:ux-ppt-review-pipeline && npm run codex-sdk:core-skill-pipeline && npm run codex-sdk:real-smoke`
 
 ## [1.21.8] - 2026-06-02
 
-Patch release: replace pre-created Zellij worker lanes with spawn-on-demand worker panes, preserve trackpad scrollback in interactive Codex panes, and add release gates for the slot/pane communication contract.
 
 ### Added
 
-- **Zellij WorkerPaneManager.** `src/core/zellij/zellij-worker-pane-manager.ts` opens named worker panes at slot generation time with `zellij --session <session> action new-pane --name slot-001/gen-1 -- sh -lc <worker-command>`, writes `zellij-worker-pane.json`, and records pane lifecycle events.
 - **Slot/pane proof gates.** New checks cover main-only layout generation, worker pane manager metadata, scheduler spawn order, slot-to-pane binding, worker artifact communication, dynamic backfill panes, and real-codex-in-worker-pane wiring:
-  - `npm run zellij:spawn-on-demand-layout`
-  - `npm run zellij:worker-pane-manager`
-  - `npm run zellij:worker-pane-spawn-order`
   - `npm run agent:slot-pane-binding-proof`
   - `npm run agent:worker-pane-communication-contract`
-  - `npm run agent:zellij-dynamic-backfill-panes`
-  - `npm run agent:real-codex-in-zellij-worker-pane`
-- **Worker pane schema.** `schemas/zellij/zellij-worker-pane.schema.json` documents the runtime artifact contract for slot generation panes.
 
 ### Changed
 
-- **Zellij layouts are main-only by default.** Generated layouts no longer pre-split `slot-*` worker panes or embed `zellij-lane --slot` commands. `initial_worker_panes` is now `0`; the optional monitor pane is behind `SKS_ZELLIJ_MONITOR_PANE=1`.
-- **Real Zellij native workers use pane-bound scaling.** The native CLI swarm now records `native_cli_process_in_zellij_worker_pane`, accepts only real pane id sources (`zellij_worker_new_pane_stdout` or `zellij_worker_list_panes`), and uses durable worker artifacts for parent/worker communication.
-- **Zellij lane supervisor starts empty.** The orchestrator no longer initializes persistent scheduler lanes before worker scheduling; the supervisor records an empty, drained state while worker panes are owned by WorkerPaneManager.
-- **Release wiring covers the new runtime contract.** `release:check` includes the first five spawn-on-demand gates, and `release:real-check` includes real Zellij pane/screen proof plus `agent:real-codex-in-zellij-worker-pane -- --require-real`.
 
 ### Fixed
 
-- Fix a Zellij mouse-mode regression in SKS-launched interactive Codex panes: `mouse_mode` now defaults to true again so trackpad/wheel gestures scroll the conversation pane instead of being translated into prompt-history navigation inside the focused input area. Clipboard integration remains enabled through `copy_command=pbcopy` and `copy_on_select=true`; opt out with `SKS_ZELLIJ_MOUSE_MODE=0` when terminal-native drag selection is preferred.
-- Prevent worker-pane-internal Zellij backend reports from writing legacy synthetic persistent-lane launch evidence.
-- Accept `native_cli_process_in_zellij_worker_pane` as a native worker scaling primitive in native session proof and no-subagent scaling policy.
 - Keep release metadata aligned after an explicit SKS version bump advances the package version.
 
 ### Verified
 
 - `npm view sneakoscope version --json` returned `1.21.7` before the bump, so no newer package update prompt was required.
-- Context7 Zellij documentation was consulted for current `--session`, `new-pane`, `list-panes --json --all`, mouse mode, and copy command behavior.
 - `npm run build`
 - `npm run typecheck`
-- `npm run zellij:spawn-on-demand-layout`
-- `npm run zellij:worker-pane-manager`
-- `npm run zellij:worker-pane-spawn-order`
 - `npm run agent:slot-pane-binding-proof`
 - `npm run agent:worker-pane-communication-contract`
-- `npm run agent:zellij-dynamic-backfill-panes`
-- `npm run zellij:layout-valid`
-- `npm run agent:zellij-runtime`
 - `npm run agent:native-cli-session-swarm`
 - `npm run agent:native-cli-session-swarm-10`
 - `npm run agent:native-cli-session-swarm-20`
-- `npm run mad-sks:zellij-launch`
-- `npm run agent:real-codex-in-zellij-worker-pane`
-- Real smoke: `SKS_ZELLIJ_WORKER_RESULT_TIMEOUT_MS=45000 SKS_ZELLIJ_WORKER_HEARTBEAT_TIMEOUT_MS=15000 SKS_ZELLIJ_WORKER_PANE_HOLD_MS=200 node ./dist/bin/sks.js agent run "spawn on demand zellij worker pane smoke" --backend zellij --real --agents 1 --concurrency 1 --work-items 1 --minimum-work-items 1 --json`
 
 ## [1.21.7] - 2026-06-02
 
-Patch release: make real Zellij backend workers run inside named slot panes, wire parent/worker communication through durable worker artifacts, and refresh release metadata for npm publication.
 
 ### Changed
 
-- **Real Zellij workers are now pane-bound sessions.** For `--backend zellij --real`, the native CLI swarm creates or targets the Zellij session, opens a named slot pane with `zellij --session <name> action new-pane --name slot-...`, launches the worker CLI inside that pane, and waits for `worker-result.json` plus heartbeat/log artifacts instead of only spawning the worker from the parent process.
-- **Zellij pane ids are reconciled immediately.** When `new-pane` does not print a pane id, SKS queries `zellij --session <name> action list-panes --json --all` and matches by slot title plus worker command/result path, recording `zellij_worker_list_panes` evidence.
-- **README current-release guidance is shorter and task-focused.** The top release section now highlights the Zellij/Naruto runtime fix, the relevant artifacts, and the focused verification commands instead of carrying forward several old release narratives.
 
 ### Fixed
 
-- **Zellij supervisor pane creation no longer depends on ambient session state.** Real supervisor lane launches now include `--session`, so pane creation targets the intended SKS Zellij session from outside Zellij as well as inside it.
 - **Release metadata stays aligned after the explicit version bump.** `sks versioning bump patch` advanced package, Cargo, README, and changelog version surfaces to 1.21.7.
 
 ### Verified
 
 - `npm view sneakoscope version --json` returned `1.21.6` before the bump, so no newer package update prompt was required.
-- Context7 Zellij docs confirmed current `--session`, `new-pane`, `list-panes --json --all`, and background session syntax.
 - `npm run typecheck`
 - `npm run build`
-- `npm run agent:zellij-runtime`
-- `npm run zellij:layout-valid`
-- `npm run zellij:pane-proof`
-- `npm run zellij:lane-renderer`
 - `sks naruto run ... --clones 3 --work-items 3 --readonly --json`
-- `SKS_ZELLIJ_WORKER_RESULT_TIMEOUT_MS=45000 SKS_ZELLIJ_WORKER_PANE_HOLD_MS=1500 node ./dist/bin/sks.js naruto run ... --clones 1 --work-items 1 --backend zellij --real --readonly --json`
 
 ## [1.21.6] - 2026-06-02
 
@@ -2454,7 +2367,6 @@ Patch release: promote OpenAI Codex CLI `rust-v0.136.0` as the current compatibi
 
 - **Codex 0.136 compatibility matrix and release gate.** New `codex:0.136-compat` / `codex:0.136-compat:require-real` checks record `rust-v0.136.0` evidence for session archive/unarchive, app-server `--stdio` plus resumed-turn/status behavior, `CODEX_API_KEY` remote registration, short-lived remote-control server tokens, elevated Windows sandbox setup, feature-gated image-generation extension support, ChatGPT auth refresh/relogin-required handling, command-safety hardening, sandbox cleanup, Bedrock region fallback, and rmcp 1.7.0 compatibility.
 - **0.136 release documentation and truthfulness coverage.** `docs/codex-0.136-compat.md`, the Codex CLI compatibility guide, official docs compatibility report, release-readiness report, and README now name the 0.136 capability ids directly while keeping 0.135/0.134/0.133 as inherited baselines.
-- **`sks zellij dispatch` / `sks zellij send`.** Operators can queue a lane command through the nonblocking JSONL bus, and optionally target a reconciled real pane id with Zellij `write-chars` via `--write-pane`.
 
 ### Changed
 
@@ -2463,7 +2375,6 @@ Patch release: promote OpenAI Codex CLI `rust-v0.136.0` as the current compatibi
 
 ### Fixed
 
-- **Zellij parallel lanes now have a real runtime contract.** Generated KDL lanes receive per-slot SKS state dirs, nonblocking JSONL command inbox/ack/outbox files, `SKS_ZELLIJ_*` env, `nice -n 10` launch priority, dispatch throttle metadata, and a FIFO policy that explicitly avoids blocking writers. Live pane proof reconciles dynamic Zellij pane ids back into the lane supervisor instead of relying only on synthetic `zellij-pane-slot-*` ids.
 - **`npm publish` now fails before `prepack` when npm auth is missing, stale, or not a maintainer.** The registry gate checks `npm whoami` and the package maintainer list under `--require-publish-auth`, detects configured-but-rejected npmrc tokens, and explains how to refresh `npm login` or configure an npm-consumed registry token before the expensive build and final registry `PUT /sneakoscope`.
 - **Release metadata stays aligned after the explicit version bump.** `sks versioning bump patch` advanced package, Cargo, README, and changelog version surfaces to 1.21.6.
 
@@ -2481,7 +2392,6 @@ Patch release: restore Codex App compatibility for Codex CLI 0.135-era hook rout
 - **Context7 MCP mentions no longer misroute non-database repair work to `$DB`.** Bare `mcp` wording is no longer treated as a database signal; database routing still triggers on concrete database terms such as SQL, Supabase, Postgres, migrations, RLS, Prisma, Drizzle, Knex, `database`, `DB`, and `execute_sql`.
 - **Codex App Git Actions readiness no longer depends on the removed `remote_control` feature flag.** SKS now treats `codex remote-control` command/version support as the remote-control capability source for Commit, Push, Commit and Push, and PR flows. On Codex CLI 0.135.0, this removes the stale `remote_control_feature` blocker while preserving real blockers when the command is unavailable.
 - **`$Naruto` / native-agent parallelism is no longer gated by CPU cores.** Codex-exec workers are network-bound (each mostly idle awaiting the Codex API), so live concurrency now scales by memory and the provider rate limit up to the 100-clone ceiling — a capable host can run up to 100 in parallel regardless of core count (a 10-core / 32 GB host now allows 64). Tunable via `SKS_NARUTO_MAX_CONCURRENCY`, `SKS_NARUTO_GB_PER_WORKER`, and `SKS_NARUTO_MIN_CONCURRENCY`.
-- **Zellij trackpad scroll now scrolls the conversation, not the prompt.** SKS-launched sessions enable `mouse_mode`, routing the trackpad wheel to the pane under the cursor (the transcript scrollback) instead of the focused Codex prompt. Copy still works via `copy_command=pbcopy` + `copy_on_select`; opt out with `SKS_ZELLIJ_MOUSE_MODE=0`.
 - **Image generation works when authenticated through codex-lb.** `gpt-image-2` routes through the same Codex `/responses` backend the load balancer already proxies, so `$imagegen` no longer hard-blocks for codex-lb-only users (no direct `OPENAI_API_KEY`). The official Codex App `$imagegen` surface stays primary; opt out with `SKS_IMAGEGEN_ALLOW_CODEX_LB_API_FALLBACK=0`.
 - **The MAD / Naruto cockpit lane reflects live fan-out.** When the lane's own mission ledger is idle, the renderer mirrors the most-recent active agent mission so parallel work shows up instead of a permanent "Workers idle". Disable with `SKS_LANE_FOLLOW_ACTIVE_MISSION=0`.
 - **`sks --mad` now fans out through the native agent swarm.** MAD launch starts a read-only `sks agent run` swarm in the same MAD mission ledger before opening the cockpit, so the right-side lanes are backed by live native workers instead of a single orchestrator-only session. Tune with `--mad-agents`, `--mad-swarm-work-items`, and `--mad-swarm-backend`; use `--no-mad-swarm` only as an emergency UI-only fallback.
@@ -2506,7 +2416,6 @@ Patch release: restore Codex App compatibility for Codex CLI 0.135-era hook rout
 - `node --test test/unit/mad-sks-native-swarm-wiring.test.mjs test/unit/auto-review-profile-config.test.mjs test/unit/official-goal-mode.test.mjs`
 - `npm run goal-mode:official-default --silent`
 - `node ./scripts/codex-app-ui-preservation-check.mjs`
-- `npm run mad-sks:zellij-launch --silent`
 - `npm run typecheck --silent`
 - `node --test test/unit/hook-active-route-parallel-refresh.test.mjs test/unit/hook-command-output.test.mjs test/unit/hooks-update-check-control-plane.test.mjs`
 - `npm run hooks:runtime-replay-warning-zero --silent`
@@ -2516,36 +2425,25 @@ Patch release: restore Codex App compatibility for Codex CLI 0.135-era hook rout
 
 ## [1.21.4] - 2026-06-01
 
-Patch release: make SKS Fast mode on/off status visible from the Zellij lane UI, restore Mac trackpad scrollback for interactive Codex-in-Zellij panes, and prepare the next npm release candidate.
 
 ### Fixed
 
-- **Zellij lanes now show the active Fast mode state accurately.** The lane renderer now falls back to the project-local Fast mode policy when live scheduler/worker artifacts have not recorded `fast_mode` yet, so a Zellij lane can show `Fast  on · service_tier=fast` or `Fast  off · service_tier=standard` immediately. The check fixture now covers both the implicit default-on state and an explicit project-local off preference.
 - **Naruto live parallelism no longer collapses to one slot on capable Macs.** The host-capacity model now treats low macOS `freemem` as only one pressure signal and uses a conservative reclaimable-memory floor from total RAM, so `codex-exec` Naruto runs keep useful parallel slots on machines that can sustain them. Operators can still override with `SKS_NARUTO_MAX_CONCURRENCY`, and `sks naruto run` also accepts `--concurrency` / `--target-active-slots` for an explicit run-level target.
-- **Naruto Zellij lanes are opened before clone scheduling starts.** Non-JSON real Naruto runs now reserve the mission id, launch the right-side Zellij lane stack up front, and then start the native scheduler, so each clone slot can show live activity instead of opening after the scheduler has already drained. Zellij cockpit lane manifests also stop capping visible lanes at 20, matching Naruto's larger fan-out.
-- **Mac trackpad scroll now favors the conversation history in SKS-launched Codex panes.** Interactive Codex panes generated by SKS Zellij layouts now launch with Codex CLI's `--no-alt-screen` option, preserving terminal scrollback so wheel/trackpad gestures scroll the conversation transcript instead of moving through the prompt textarea/history. Set `SKS_ZELLIJ_CODEX_ALT_SCREEN=1` before launch to opt back into Codex's alternate-screen UI.
 
 ### Verified
 
 - `npm run build --silent`
-- `npm run zellij:lane-renderer --silent`
-- `npm run zellij:layout-valid --silent`
 - `npm run naruto:shadow-clone-swarm --silent`
-- `npm run zellij:ui-design --silent`
 - `npm run terminal:tui-output-stability --silent`
-- `npm run mad-sks:zellij-launch --silent`
 - `npm run typecheck --silent`
 - `npm run changelog:check --silent`
 - `npm run release:version-truth --silent`
 
 ## [1.21.3] - 2026-06-01
 
-Patch release: restore macOS native `Cmd+C` text copy in SKS-launched Zellij sessions, keep every native agent visible in the right-side Zellij UI, harden direct publish stamp repair, and make explicit Fast mode toggles repair Codex Fast mode too.
 
 ### Fixed
 
-- **`Cmd+C` text copy works in `sks --mad` Zellij sessions.** SKS now writes `mouse_mode false` into the generated Zellij clipboard config and passes `--mouse-mode false` with the launch options, while preserving `copy_command pbcopy` and `copy_on_select true`. This leaves drag-select + `Cmd+C` to the terminal/system clipboard instead of letting Zellij intercept the selection.
-- **Native agent Zellij lanes no longer collapse to the active concurrency cap.** Team and Naruto routes now separate runtime concurrency (`target_active_slots`) from right-side UI lane count (`visual_lane_count`), so each native agent/clone gets a visible right pane even when the scheduler is throttled to fewer active workers.
 - **Direct `npm publish` self-heals stale release stamps safely.** The publish path now runs `prepublish:release-check-or-fast`: if the existing release-check stamp is current, publish stays on the fast path; if the stamp is missing or stale, publish runs the full authoritative `npm run release:check` once, then rechecks the stamp before continuing. This fixes the recurring stale `prepublish:fast-check` failure after version bumps without replacing the full release gate with a synthetic stamp write.
 - **`sks fast-mode on` now also repairs Codex Fast mode.** The explicit on action still writes the project-local SKS preference, and now also restores Codex's Fast mode UI/default profile keys (`[user.fast_mode] enabled/visible/default_profile`) plus top-level `service_tier = "fast"` when those were disabled, while preserving unrelated user/plugin settings.
 - **Release proof structure checks see the minimum-agent blocker again.** The agent gate now records `agent_count_below_5` as well as the dynamic expected-count blocker, restoring the release DAG's route-proof artifact audit.
@@ -2554,29 +2452,22 @@ Patch release: restore macOS native `Cmd+C` text copy in SKS-launched Zellij ses
 
 - `npm run build --silent`
 - `node --test test/e2e/route-team-native-agents.test.mjs`
-- `node --test test/unit/zellij-clipboard-config.test.mjs`
 - `node --test test/unit/prepublish-release-check-or-fast.test.mjs`
 - `node --test test/blackbox/fast-mode-command-packed.test.mjs`
-- `npm run mad-sks:zellij-launch --silent`
 - `npm run routes:proof-artifact-structure --silent`
 - `npm run release:version-truth --silent`
 
 ## [1.21.2] - 2026-06-01
 
-Patch release: fix the `sks --mad` Zellij launch regression from 1.21.1.
 
 ### Fixed
 
-- **`sks --mad` opens again with Zellij clipboard support enabled.** Zellij 0.44 rejects `--copy-command` when it is paired with the OSC52-only `--copy-clipboard` option, so the background session launch now passes only `--copy-command pbcopy` and `--copy-on-select true`. The generated config file still records `copy_clipboard "system"` for attach/config-file consumers, but the CLI no longer combines the mutually exclusive flags.
 
 ## [1.21.1] - 2026-06-01
 
-Patch release: three `sks --mad` launch fixes — faster launch, working Zellij clipboard copy, and no more Codex legacy-profile deprecation warning.
 
 ### Fixed
 
-- **`sks --mad` launch is no longer slow.** `activateMadZellijPermissionState` content-hashed the entire protected core (~1,900 files across `dist`/`src`/`scripts`/`schemas`) on every launch, even though that "before" snapshot is only stored and never compared during the interactive session. `snapshotProtectedCore` (`src/core/mad-sks/immutable-harness-guard.ts`) gained an opt-in `mode: 'metadata'` (lstat-only, no file reads) used only for the launch snapshot; the default stays `'content'` so the `mad-sks:immutable-harness` / `mad-sks:no-harness-modification` gates and `run`/`apply` comparisons are unchanged. The launch preflight also skips the redundant live `codex exec` config probe via a new `launchFast` flag in `runCodexLaunchPreflight` (`src/core/preflight/parallel-preflight-engine.ts`); the real Codex profile is exercised when the Zellij session opens moments later. All filesystem/permission/EPERM readability checks still run, and `SKS_LAUNCH_FULL_CODEX_PROBE=1` restores the full probe.
-- **Text copy works inside the MAD Zellij session.** Zellij's default OSC 52 clipboard is dropped by macOS Terminal.app, and SKS passed no clipboard configuration. New `src/core/zellij/zellij-clipboard-config.ts` writes a clipboard config (`copy_command "pbcopy"`, `copy_on_select true`, `copy_clipboard "system"`); `zellij-launcher.ts` appends the `--copy-command/--copy-clipboard/--copy-on-select` options to the created session (after `--default-layout`, preserving the launch-command shape) and steers the foreground attach at the config via `ZELLIJ_CONFIG_FILE`. Holding Shift while drag-selecting remains the native-terminal selection fallback.
 - **No more Codex "legacy profile" deprecation warning on launch.** `enableMadHighProfile` already removed `[profiles.sks-mad-high]`, but `runCodexLaunchPreflight`'s project-config splitter ran afterward and re-injected the legacy `[profiles.*]` tables from the project config back into `~/.codex/config.toml` every launch. Codex 0.134+ deprecated config-profile tables and the top-level `profile=` selector in favor of per-file `$CODEX_HOME/<name>.config.toml` overlays loaded by `--profile`. `splitCodexProjectConfigPolicy` (`src/core/codex/codex-project-config-policy.ts`) now drops those deprecated tables/selectors (reported as `removed_legacy_profiles`) instead of relocating them; `init.ts` and `install-helpers.ts` stopped emitting the legacy tables; and `migrateSksProfilesToPerFile` (`src/core/auto-review.ts`) writes per-file profile overlays and strips the stale tables on `sks --mad`. The Codex App fast-mode `[profiles.sks-fast-high]` table, `[user.fast_mode] default_profile`, and `model_provider = "codex-lb"` are preserved.
 
 ## [1.21.0] - 2026-06-01
@@ -2587,37 +2478,28 @@ Patch release: three `sks --mad` launch fixes — faster launch, working Zellij 
 
 ## [1.20.5] - 2026-06-01
 
-Patch release: `sks --mad` now actually opens the Zellij session in an interactive terminal instead of only printing an attach hint.
 
 ### Fixed
 
-- **MAD Zellij session now auto-attaches.** A successful `sks --mad` launch previously created a *detached* background Zellij session (`zellij attach --create-background …`) and only printed `Attach with: …`, so nothing opened in the operator's terminal and stale sessions accumulated. SKS now performs the follow-up foreground attach automatically when launched in an interactive TTY, so the session takes over the terminal as expected. New `attachZellijSessionInteractive` (`src/core/zellij/zellij-launcher.ts`) spawns `zellij attach <session>` with `stdio: 'inherit'` and the same `ZELLIJ_SOCKET_DIR` namespace used to create the session, and never throws — on failure it falls back to printing the manual attach command.
-- **Non-interactive launches are unchanged.** Auto-attach is skipped (keeping the `Attach with: …` hint) for `--json`, non-TTY/piped invocations, when already inside a Zellij session (`$ZELLIJ`), or when `SKS_NO_ZELLIJ_ATTACH=1` / `--no-attach` is set. `--attach` forces attaching even without a detected TTY.
 
 ### Verified
 
 - `npm run typecheck`
-- `npm run runtime:dist-parity`, `npm run zellij:launch-command-truth`, `npm run release:version-truth`
 - `git diff --check`
 
 ## [1.20.4] - 2026-06-01
 
-Patch release: makes successful `sks --mad` / codex-lb Zellij launches immediately actionable by printing the exact attach command that uses the same socket namespace as the background session.
 
 ### Fixed
 
-- **MAD Zellij attach guidance.** After a successful `sks --mad` launch, SKS now prints `Attach with: ZELLIJ_SOCKET_DIR=... zellij attach ...` using the already-generated `attach_command_with_env`. This closes the confusing state where a fresh Zellij session existed but the operator had to infer the `/tmp/zj<uid>` socket namespace manually.
 
 ### Verified
 
-- Confirmed `sks --mad` created the live `sks-codex-lb-mpue8wem-Sneakoscope-Codex` Zellij session under `/tmp/zj501`.
-- Confirmed Zellij session discovery and attach syntax with Context7 Zellij docs.
 - `npm run typecheck --silent`
 - `git diff --check`
 
 ## [1.20.3] - 2026-05-31
 
-Patch release: fixes macOS Zellij IPC socket path failures during `sks --mad` / codex-lb launches when `$TMPDIR` is long.
 
 ### Added
 
@@ -2625,15 +2507,10 @@ Patch release: fixes macOS Zellij IPC socket path failures during `sks --mad` / 
 
 ### Fixed
 
-- **Zellij socket path fallback for MAD/codex-lb launches.** SKS-launched Zellij commands now default `ZELLIJ_SOCKET_DIR` to a short per-user `/tmp/zj<uid>` directory when the operator has not set one, preserving explicit `ZELLIJ_SOCKET_DIR` / `SKS_ZELLIJ_SOCKET_DIR` overrides. Launch reports include `*_command_with_env`, `zellij_socket_dir`, and `zellij_socket_dir_source` so manual attach commands use the same socket namespace.
-- **Session name length guard.** Zellij session names are capped at 64 characters with a deterministic hash suffix when truncated, keeping the generated `contract_version_1/<session>` socket path under the Unix-domain socket path limit with SKS's default socket directory.
-- **Sharper failure diagnosis.** Zellij stderr containing `IPC socket path is too long` is now classified as `zellij_socket_path_too_long` instead of the generic `zellij_command_failed`.
 
 ### Verified
 
-- Added `test/unit/zellij-socket-dir.test.mjs` covering the long macOS `$TMPDIR` case, explicit socket-dir preservation, attach-command surfacing, and precise blocker classification.
 - Added `test/blackbox/fast-mode-command-packed.test.mjs` and expanded `test/unit/fast-mode-policy.test.mjs` to cover project-local preference on/off/clear behavior, dollar-command discovery, and explicit flag precedence.
-- Reproduced the user-shaped launch condition with a long `TMPDIR` and session `sks-codex-lb-mptvbk59-Sneakoscope-Codex`; the real background Zellij launch succeeded with `ZELLIJ_SOCKET_DIR=/tmp/zj501`.
 
 ## [1.20.2] - 2026-05-31
 
@@ -2641,10 +2518,8 @@ Stabilization patch: closes the enforcement / integration / execution layers tha
 
 ### Added
 
-- **Mutation Guard + call-site coverage gate (side-effect-zero enforcement).** New `src/core/safety/mutation-guard.ts` wraps `evaluateMutation`/`recordMutation` from the existing Requested-Scope-Contract + Mutation-Ledger: each `guarded*` op scope-checks before applying, enforces a backup/no-op reason for config/skill mutations, records to the ledger, and throws on violation. The two global package installs (`npm i -g @openai/codex`, `brew install zellij`) in `install-helpers.ts` are routed through `guardedPackageInstall`. New gate `safety:mutation-callsite-coverage` (`scripts/mutation-callsite-coverage-check.mjs`) statically fails any genuinely-risky mutation (package install / global config write / chmod / xattr / chflags / rename / process kill) on the risk-surface files that is neither guarded nor allowlisted with a function-level reason.
 - **`release:check:dynamic:execute` — real caching gate runner.** New `scripts/release-check-dynamic-execute.mjs` executes the change-selected hermetic gates (reusing `gate-manifest` + `gate-cache` + the `release-real-check` spawn model), serves cache hits to skip re-runs (cache key includes affected-file hashes + dist digest + git HEAD), defers real/heavy gates to `release:real-check`, and emits a `sks.release-check-dynamic.v2` report (`mode/selected/skipped/executed/cache_hits/failures/ok`). `--plan-only` preserves planning; `--publish` runs every `required_for_publish` gate. Standalone (never in the chain/DAG/manifest). Docs: `docs/dynamic-release-pipeline.md`; publish policy added to `docs/release-readiness.md` (dynamic-only cannot authorize a publish).
 - **Core Skill route-runtime integration.** `runNativeAgentOrchestrator` now consults the route's deployed Core Skill snapshot (`selectRouteSkill`, read-only, never invokes the optimizer) and records `selected_core_skill` (skill_id/version/hash/source/optimizer_invoked) in `agent-proof-evidence.json` for the agent/qa/research/naruto routes. `promoteToDeployed` gained an optional 3rd `opts` param (2-arg callers unchanged) that records `skill_snapshot_promotion` in the mutation ledger with the archived snapshot as the rollback pointer. New gates `core-skill:route-runtime-integration`, `core-skill:promotion-side-effect-ledger`.
-- **`zellij:doctor-readiness` + explicit doctor Zellij block.** `sks doctor --json` now exposes a `zellij_readiness` block (binary/status/min_version/version/required_for/layout_proof/pane_proof/screen_proof/tmux_removed_runtime) and a verbose console section; Zellij missing keeps `mad_ready=false` while `cli_ready` can stay true. The screen-proof scrapeable section set and the UI-design composed-frame section set were reconciled to a single canonical pair (`ZELLIJ_SCREEN_SCRAPEABLE_SECTIONS` ⊂ `ZELLIJ_LANE_SECTIONS`) in `zellij-lane-renderer.ts`, asserted by the new gate.
 
 ### Changed
 
@@ -2653,12 +2528,10 @@ Stabilization patch: closes the enforcement / integration / execution layers tha
 
 ### Verified
 
-- **1.18.13 Codex config-load-truth / MAD-repair / fast-mode goal confirmed already shipped.** The 1.18.13 goal document was written against a 1.18.12 baseline, but its entire Definition of Done had already landed across 1.19.x/1.20.1. Re-verified on live code (codex-cli 0.135.0): the actual-Codex config-load probe (`scripts/codex-config-load-probe.mjs` schema v2 with signal classification + fake-codex harness), readiness matrix (`src/core/doctor/doctor-readiness-matrix.ts`), TCC diagnostic (`src/core/doctor/macos-tcc-diagnostic.ts`), TOML-aware project-config splitter, EPERM/ACL/symlink repair, `-c service_tier=fast` default, launch preflight that blocks the Codex pane on unreadable config (`runCodexLaunchPreflight`), and `sks mad repair-config`. All five hermetic gates (`codex:config-eperm-fixture`, `doctor:fix-proves-codex-read`, `mad:preflight-blocks-unreadable-config`, `fast:codex-service-tier-proof`, `codex:project-config-policy-splitter`) and the real-Codex `codex:actual-config-load-probe` pass. The spec's tmux-context smoke (Task 4.2) is a **non-goal**: tmux was removed in favour of Zellij, and `mad repair-config --tmux-smoke` deliberately reports `tmux_runtime_removed_use_zellij`.
 
 ### Fixed
 
 - **Stale splitter test.** `test/unit/codex-config-preflight.test.mjs` expected a separate `~/.codex/<profile>.config.toml`; the redesigned splitter folds `[profiles.*]` into the single `~/.codex/config.toml` (the file Codex actually loads) and keeps `profile_config_path` null. Test updated to assert the verified behaviour.
-- **Pre-existing tmux→Zellij stale-test rot (a full-suite sweep surfaced 8 latent failures, none run by any release gate).** Five were stale assertions referencing removed/renamed behaviour, each fixed to match verified-correct current output: `runtime-truth-matrix` (`tmux_physical`→`zellij_pane`), `release-readiness-report` (`agent_terminal_tmux_1_18`→`agent_terminal_zellij_1_18`), `fake-real-policy-v2` (`backend:'tmux'`/`physical_tmux_verified`→`backend:'zellij'`/`zellij_pane_verified`), `parallel-write-agents` (envelope now requires `session_id`/`slot_id`/`generation_index`/`lease_id` for `wall_clock_parallel_evidence`), and `mad-sks-shell-argv-classifier` (must use an unrelated temp `targetRoot` so protected-core blocking is exercised instead of the engine-source exception; references the engine's `src/core` by absolute path).
 - **`$Naruto` route protected-core blocking proof** is now correctly exercised by the shell-classifier test above; the engine_source_exception path is documented inline.
 
 ### Completed
@@ -2667,8 +2540,6 @@ Stabilization patch: closes the enforcement / integration / execution layers tha
 
 ### Removed
 
-- **tmux-runtime test/script rot from the Zellij migration.** Deleted 21 dead test files and 16 unwired gate scripts left behind when the tmux runtime source modules were removed (commit 5328dd5): 13 unit/integration tests importing deleted `dist/core/**` modules (`ERR_MODULE_NOT_FOUND`), 8 tests asserting tmux-runtime artifacts the Zellij runtime no longer produces, and 16 `scripts/*tmux*`/`*warp-right-lane*` gate scripts referenced by no npm script or DAG task. The tmux-named **blackbox** tests were kept — they were already migrated to drive the live Zellij runtime (`agent:zellij-runtime`, `zellij-pane-proof`, `zellij-layout-valid`, `zellij-lane-renderer`). Migration tooling (`runtime-no-tmux-check.mjs`, `tmux-removal-inventory.mjs`) retained.
-- Untracked three stray `.sneakoscope/layouts/*.kdl` Zellij layout artifacts accidentally committed in `52a696f` (already covered by `.gitignore`); clears the `repo-audit` publish gate.
 
 ### Added
 
@@ -2685,9 +2556,7 @@ Core Engine SkillOpt release: introduces the SKS Core Skill Engine (a safe, self
 ### Added
 
 - **SKS Core Skill Engine** (`src/core/skills/**`, SkillOpt-derived). Skills are the frozen agent's external versioned state — **Core Skill Cards** (route-scoped, candidate/accepted/rejected/deployed). A **Core Skill Optimizer** (pure, no model call) proposes **bounded add/delete/replace** edits (**Core SkillPatch**) to a *single* skill document under a **textual edit budget**; patches that target code/config/package/global files or exceed budget are rejected. Edits are accepted **only on strict held-out improvement** (`core-skill:heldout-validation`); rejected patches are recorded in a **Rejected SkillPatch Buffer** (`.sneakoscope/skills/rejected-skill-patches.jsonl`) and never retried. Accepted candidates are promoted via an explicit gate to an **immutable Deployment Snapshot**; the **inference/deployment path reads the snapshot only and makes no extra model call** (`core-skill:no-inference-optimizer` proves the optimizer throws in deployment context). Rollout traces are scored with a side-effect-zero hard-fail component. Gates: `core-skill:card-schema`, `core-skill:rollout-scoring`, `core-skill:patch`, `core-skill:heldout-validation`, `core-skill:deployment-snapshot`, `core-skill:no-inference-optimizer`. Schemas: `schemas/skills/core-skill-card.schema.json`, `schemas/skills/core-skill-patch.schema.json`. Doc: `docs/core-skill-engine.md`.
-- **Requested-Scope Contract + Mutation Ledger** (`src/core/safety/**`): a deny-by-default contract per route declares which mutations are allowed; global/destructive mutations (global config, package install, process kill, codex-lb auth, Zellij install, skill promotion) require explicit confirmation, and every mutation is recorded in a ledger with `requested_scope_allowed` + a backup/no-op reason. Applying a mutation outside scope, or a config/skill mutation without a backup, is a violation. The skill optimizer cannot bypass the contract. Gate: `safety:side-effect-zero`. Doc: `docs/side-effect-zero-policy.md`.
 - **Dynamic release pipeline** (`src/core/release/**`): `release:gate-planner` builds the gate manifest `release-gates.json` (tier/cost/affected_by/always_on/required_for_publish) from the live release-gate set and validates manifest↔release parity; `release:check:dynamic` selects only P0 always-on gates plus gates whose `affected_by` files changed (docs-only changes skip heavy/real gates; publish mode never skips a required gate); `release:gate-budget` reports the slowest gates and any over the hard ceiling.
-- Legacy upgrade matrix extended to 1.20.1 with `1.19.x_zellij_project_noop` and `existing_skill_cards_preserved` states; `docs/legacy-upgrade-1.20.md`; `prepublish:fast-check` (stamp-based fast-path verification).
 - **TriWiki runtime consumption** (`src/core/triwiki-runtime.ts`): the native agent kernel (`agent-orchestrator`, which executes Team/Naruto/ReleaseReview/$Agent workers) now **consults the deployed TriWiki context pack** (`.sneakoscope/wiki/context-pack.json`) read-only before dispatch — surfacing `attention.use_first`/`hydrate_first` — and **references it in worker proof** (`agent-proof-evidence.json` gains `triwiki_context_consulted` + `context_pack_hash` + `agent-triwiki-context.json`). This closes the worker-level root cause where the kernel was wiki-blind (it is also the first runtime consumer of `triwiki-attention`). Gate: `agent:wiki-context-proof`.
 - **Wiki memory gates now verified at release.** The five previously-orphaned core wiki/memory gates — `shared-memory:check`, `wrongness:check`, `wrongness:fixtures`, `trust:check`, `git-collaboration:e2e` (shared-TriWiki merge + wrongness sync e2e) — were defined but absent from `release:check`/the DAG/the gate manifest. They are now wired into `release:check`, the DAG, the gate-existence-audit allowlist, and the gate manifest, so TriWiki shared-memory, negative-evidence, and trust-validation semantics are verified on every release.
 
@@ -2699,21 +2568,15 @@ Core Engine SkillOpt release: introduces the SKS Core Skill Engine (a safe, self
 
 ## [1.19.1] - 2026-05-30
 
-Final hardening release: closes the remaining legacy-upgrade, publish, postinstall, runtime-boundary, and Zellij UX risks so 1.19.x is safe to merge to `main` and publish to npm. The 1.19.0 feature set is unchanged.
 
 ### Fixed
 
 - **Legacy upgrade zero-break (`init.ts`).** `sks setup` / project `.codex/config.toml` regeneration no longer force-overwrites user keys or re-enables user-disabled Codex App flags. `mergeManagedCodexConfigToml` now seeds `model`/`service_tier`/`suppress_unstable_features_warning` and every `[features]` flag and `[user.fast_mode]` key **set-if-absent**, and plugin tables are auto-enabled only under `SKS_MANAGE_CODEX_APP_PLUGINS=1` (and even then never overwrite an existing table). This matches the already-hardened install-helpers path and is the same rationale that fixed the Codex App UI breakage: force-writing those tables reverted a user's `enabled = false`.
-- **Zellij real-session heartbeat is now a blocker.** `waitForLaneHeartbeat` (in `zellij-screen-proof.ts`) returns a decisive result and a timeout produces the `zellij_lane_heartbeat_timeout` blocker; `zellij:real-session-launch --require-real` fails (with the heartbeat path and waited/timeout ms recorded) instead of silently continuing when the lane renderer never emits a heartbeat.
 
 ### Added
 
 - **Migration transaction journal** (`src/core/migration/migration-transaction-journal.ts`) writing `.sneakoscope/reports/migration-1.19-journal.jsonl`: every config mutation records `before_hash`, `after_hash`, `backup_path`, `changed`, and `rollback_available`. `sks doctor --fix` builds the journal for the whole fix transaction (project + CODEX_HOME config) and prints the journal path.
-- **Redesigned Zellij lane UI** (`composeLaneFrame`): sections SKS Lane / Mission / Mode / Fast / Workers / Codex child · Work (Current/Queue/Patch) · Safety (Lease/Protected/Rollback) · Blockers (max 3, rest → `+N more → <report>`) · Reports · `Keys:` footer. Width-safe at 80/100/120 with middle-ellipsis on long paths, `NO_COLOR`-respecting (status-only colors, screen proof strips ANSI), and a footer of real commands (`Ctrl+q detach · sks doctor --fix · sks zellij status · sks agent rollback-patches`).
-- **`sks zellij status|repair` command** — inspects Zellij runtime capability/readiness and explains repair steps (`brew install zellij`, `sks deps check --yes`, `sks doctor --fix`) without auto-installing anything.
-- **Release gates** added to `release:check`: `zellij:launch-command-truth` (locks the documented `attach --create-background … --default-layout` command and bans the stale `--session … --layout` form), `zellij:real-session-heartbeat` (hermetic heartbeat-blocker proof), `zellij:ui-design` (width/section/ellipsis/NO_COLOR/footer-command checks), `legacy:upgrade-zero-break` (10-state 1.18→1.19 upgrade matrix), `publish:packlist-performance` (tarball file-count/size + forbidden-path guard, also run in `prepublishOnly`), `postinstall:safe-side-effects` (no default network/tool-install/process-kill), `runtime:ts-rust-boundary` (TS source-of-truth; publish never compiles Rust; JS fallback proven). Added to `release:real-check`: `publish:dry-run-performance`.
 - **Naruto proof** now asserts `concurrency_capped` and host-derived `safe_concurrency`, making the fan-out (`clones`) vs live-concurrency (`target_active_slots`) distinction explicit ("N clones, running M at a time").
-- New docs: `docs/legacy-upgrade-1.19.md`, `docs/architecture-ts-rust-boundary.md`, `docs/zellij-ui-design.md`.
 
 ### Changed
 
@@ -2730,10 +2593,7 @@ Final hardening release: closes the remaining legacy-upgrade, publish, postinsta
 - `sks doctor --fix` now backs up the managed project `.codex/config.toml` before `--force` regeneration, so a hand-edited config is always recoverable.
 - `$Naruto` agents now get dynamic, team-style per-clone effort: truly simple / no-tool work runs at `low`, any tool use lifts a clone to `medium` (never high/xhigh), and every clone runs in fast service tier.
 
-- Make `sks --mad` install or repair its Zellij CLI dependency through the existing install/bootstrap and launch dependency flow, instead of letting a missing Homebrew package reach the Zellij launch path.
-- Launch MAD/Team Zellij layouts with the documented `zellij attach --create-background <session> options --default-layout <layout>` command, avoiding the stale `zellij --session <session> --layout <layout>` pattern that can fail after auth/preflight succeeds.
 - Keep npm postinstall from silently mutating Homebrew/npm global tools by default; explicit repair paths are `sks bootstrap --yes`, `sks deps check --yes`, `sks --mad --yes`, or opt-in `SKS_POSTINSTALL_AUTO_INSTALL_CLI_TOOLS=1`.
-- Surface labeled Zellij stdout/stderr tails and the report path in the `MAD Zellij action` line when launch still fails, so operators can act on the real Zellij error instead of only seeing `zellij_command_failed`.
 - Make `sks doctor --fix` actually recover an already-corrupted Codex config (its whole reason to exist). Previously the splitter could not help once machine-local keys were physically nested inside a table — it saw them as table members, not top-level keys — and `doctor --fix` only ever touched the project `.codex/config.toml`, never the global `CODEX_HOME/config.toml` that Codex actually loads. Added a structural recovery pass (`repairCodexConfigStructure`) that hoists misplaced machine-local keys (e.g. `model_provider`, `notify`) out of `mcp_servers`/`env` tables (and anything trailing an absorbed `# SKS moved …` comment) back above the first table, with backup + atomic write, and wired it into `doctor --fix` / `mad repair-config` for **both** the project and global configs. Legitimate keys inside `[profiles.*]` are preserved.
 - Detect structurally-broken configs: the config-load probe now classifies serde/TOML deserialize failures (`invalid type: …`, `expected a string`, `Error loading config.toml` without an EPERM cause) as `codex_cli_config_toml_parse_error` instead of silently falling back to `codex_cli_config_load_unverified`, and surfaces a `sks doctor --fix` operator action for it.
 - Stop the machine-local config mover from corrupting `~/.codex/config.toml`: moved top-level keys (e.g. `model_provider`, and array-valued `notify`) are now merged structurally **before** any `[table]` header instead of being appended at end-of-file, where TOML parsed them as members of the trailing table (producing `invalid type: sequence, expected a string` and a config Codex refused to load). Restores `sks --mad` gating and codex-lb when a machine-local `model_provider`/`notify` is present.
@@ -2759,16 +2619,12 @@ Final hardening release: closes the remaining legacy-upgrade, publish, postinsta
 
 ### Breaking
 
-- Remove tmux as a supported SKS interactive runtime. SKS now uses Zellij exclusively for MAD, lane UI, and interactive multi-agent cockpit sessions.
-- `sks --mad` no longer launches tmux or falls back to tmux. Install Zellij to use interactive MAD/lane UI.
 
 ### Changed
 
 - Add actual Codex CLI config-load probing with structured EPERM/TOML/untrusted-project classification, fake Codex hermetic fixtures, and release gates for Node-read-success plus Codex-read-failure regressions.
 - Make `sks doctor --fix` write a readiness matrix with primary blockers and next actions, and require actual Codex config-load evidence before reporting Ready yes.
-- Strengthen MAD launch preflight, add `sks mad repair-config`, add Zellij readiness proof, and prevent config preflight failures from launching a Codex pane.
 - Harden project config splitting, deprecated approval-policy normalization, macOS EPERM/TCC/symlink/ACL repair reporting, and official `service_tier=fast` CLI proof.
-- Wire Codex 0.135, permission profile, Zellij layout/pane/screen proof, and strict no-tmux gates into the release DAG.
 - Fix the MAD-SKS source-project exception so the Sneakoscope source repo is not misclassified as protected core while installed harness core remains immutable.
 
 

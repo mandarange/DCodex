@@ -183,7 +183,7 @@ remote change on the operator's behalf.
 | `$sks-mad-sks` / `sks mad-sks` | Single high-risk MAD route for scoped permission widening plus SQL-plane execution, including read-back proof and profile closure. |
 | `$sks-review` / `sks review --staged` | Reviews diffs with `evidence: machine` findings sorted above `evidence: llm`. |
 
-`sks --mad` now prioritizes the interactive ready path: independent macOS config probes run concurrently, failed read-only preflight does not repeat mutation-capable repair inspection, verified Zellij/codex-lb evidence is reused, and the remote Zellij update lookup runs after the UI is ready. Existing unreadable or malformed config still blocks safely; pass an explicit repair flag such as `--repair-config` when repair is intended.
+`sks --mad` now prioritizes the interactive ready path: independent macOS config probes run concurrently, failed read-only preflight does not repeat mutation-capable repair inspection, and verified Codex evidence is reused. Existing unreadable or malformed config still blocks safely; pass an explicit repair flag such as `--repair-config` when repair is intended.
 
 ## Naruto Workflow
 
@@ -213,7 +213,7 @@ Gates are task-profile aware: greetings and answer-only turns create no mission 
 
 Every installed Codex hook runs one common Naruto decision gate. The gate records `none`, `generic_naruto`, or `route_owned`: Answer, DFix, Wiki, Computer Use, Goal, and simple Git/control turns stay lightweight; ordinary non-trivial work defaults to two independent official subagents; critical work spanning at least three risk domains may use three. Research, AutoResearch, and QA-Loop retain their own exact orchestration contracts instead of receiving a second generic fan-out. Explicit `--agents N` remains authoritative.
 
-SKS installs twenty-five narrow project custom agents, including native AppKit, toolchain, protocol, runtime-reliability, TriWiki-evidence, long-context, Computer Use, Browser/Chrome, and image-generation specialists. Delegation prompts inject at most the three roles recommended for the current goal rather than serializing the full catalog, so expanding role coverage does not serialize the full inventory into every prompt. TriWiki context is also bounded and query-aware: ordinary work receives up to four trust/hydration anchors and complex, parallel, or high-risk work receives up to six, with source hydration required before relying on lower-trust hints. In CLI Zellij mode, the right side is a live observability surface rather than a static lane reservation: one monitor plus one viewport by default (maximum three) shows official thread role/model, redacted live phase/task/file updates from rollout-compatible Codex sessions on the official latest stable CLI, plus `running`, `verifying`, and trustworthy parent-verdict completion/failure states. Rollout activity is display-only and never completion proof.
+SKS installs twenty-five narrow project custom agents, including native AppKit, toolchain, protocol, runtime-reliability, TriWiki-evidence, long-context, Computer Use, Browser/Chrome, and image-generation specialists. Delegation prompts inject at most the three roles recommended for the current goal rather than serializing the full catalog, so expanding role coverage does not serialize the full inventory into every prompt. TriWiki context is also bounded and query-aware: ordinary work receives up to four trust/hydration anchors and complex, parallel, or high-risk work receives up to six, with source hydration required before relying on lower-trust hints. Official event evidence and the parent verdict—not display state—determine completion.
 
 Official subagent requests use `--agents`; removed scheduler, pool, backend, and model flags fail closed.
 
@@ -327,7 +327,7 @@ Adapter rules that keep updates safe:
 | Did tests/typecheck fail? | Another model may say so. | Machine check output is tagged `evidence: machine`. |
 | Are findings ranked? | Usually one blended opinion. | Machine evidence sorts before LLM findings. |
 | Can work stop? | The model decides. | Stop gates, Completion Proof, and Honest Mode decide. |
-| Can I inspect agent-thread progress? | Usually no runtime UI. | Use the official Codex subagent/thread surfaces and SKS Zellij monitor/viewport panes. |
+| Can I inspect agent-thread progress? | Usually no runtime UI. | Use the official Codex subagent/thread surfaces and their proof artifacts. |
 
 ## Demo
 
@@ -377,7 +377,6 @@ It shows the current quickstart flow: one-line install, `$sks-plan`, `sks review
   - The menu displays the installed Codex CLI version, adds an `⬆` status icon when `sks codex update-status` sees a newer release, runs the official self-updater through `Update Codex CLI Now`, and exposes `Run sks doctor --fix` as a background repair action.
   - **Codex Fast** is labeled as the official 1.5× Codex speed option, with a verified service-tier status row and direct On/Off actions. Center explains that ChatGPT-sign-in GPT-5.6/GPT-5.5 use 2.5× Standard credits and GPT-5.4 uses 2×, while API-key token pricing and API Priority processing are separate. Model selection, Codex-Spark, and reasoning effort remain independent; status failures render as unavailable with neither choice falsely selected.
 - If Codex shows `[No tool output found for custom tool call ...]`, SKS blocks reuse of that structurally ambiguous thread. Upgrade codex-lb or run `sks codex-lb disable`, inspect possible side effects, then continue the persisted mission in a fresh Codex task. SKS never rewrites session JSONL or fabricates a successful tool output.
-- Zellij optional but recommended for terminal worker panes
 
 ## License
 

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { ProviderMode } from '../../architecture-hardening/contracts/contracts.js';
+import { canonicalJson } from '../../json/canonical.js';
 
 export type IntentRisk = 'FAST' | 'HEAVY' | 'ULTRA';
 export type IntentEffect = 'read' | 'write' | 'auth' | 'security' | 'delete' | 'deploy' | 'dependency';
@@ -113,16 +114,7 @@ function safeIdentifier(value: string, code: string): string {
 }
 
 function stableHash(value: unknown): string {
-  return createHash('sha256').update(stableJson(value)).digest('hex');
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const row = value as Record<string, unknown>;
-    return `{${Object.keys(row).sort().map((key) => `${JSON.stringify(key)}:${stableJson(row[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
+  return createHash('sha256').update(canonicalJson(value)).digest('hex');
 }
 
 function deepFreeze<T>(value: T): T {

@@ -403,7 +403,7 @@ function transcriptGroupForChannel(channel: NonRecursivePipelineChannel) {
 
 function isWorkerExecutionSurface(rel: string, channel: NonRecursivePipelineChannel) {
   if (channel === 'stdout' || channel === 'stderr' || channel === 'agent_result') return true
-  return /(?:^|\/)agent-worker-pipeline\.(?:ts|mjs|js)$/.test(rel) || /(?:^|\/)agent-runner-(?:process|zellij|ollama)\.(?:ts|mjs|js)$/.test(rel)
+  return /(?:^|\/)agent-worker-pipeline\.(?:ts|mjs|js)$/.test(rel) || /(?:^|\/)agent-runner-(?:process|ollama)\.(?:ts|mjs|js)$/.test(rel)
 }
 
 function classifyNonRecursivePipelinePath(file: string): NonRecursivePipelineChannel {

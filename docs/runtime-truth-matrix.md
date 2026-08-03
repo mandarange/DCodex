@@ -12,7 +12,6 @@ cannot promote a subsystem to proven.
 - parent-owned integration and scoped verification
 - route-specific safety and completion gates
 - TriWiki source hydration where the decision depends on recalled context
-- Zellij telemetry integrity without treating display state as proof
 - update, doctor, managed-residue, and installed-package verification
 - package, tarball, macOS, Linux, and registry evidence for a release
 

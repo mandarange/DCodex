@@ -229,6 +229,10 @@ export async function writeProjectUpdateMigrationReceipt(input: {
   fromVersion?: string | null;
   blockers?: string[];
   warnings?: string[];
+  postMigrationStageCheck?: () => Promise<{
+    blockers?: string[];
+    warnings?: string[];
+  }>;
 }): Promise<UpdateMigrationReceipt> {
   const receiptPath = projectUpdateMigrationReceiptPath(input.root);
   const epoch = await ensureInstallationEpoch(input.source);
@@ -237,8 +241,26 @@ export async function writeProjectUpdateMigrationReceipt(input: {
   const migrationStages = migrationStageRuns.map(summarizeMigrationStage);
   const stageBlockers = migrationStageRuns.flatMap((stage) => stage.blockers.map((blocker) => `${stage.id}:${blocker}`));
   const stageWarnings = migrationStageRuns.flatMap((stage) => stage.warnings.map((warning) => `${stage.id}:${warning}`));
-  const requiredBlockers = [...(input.blockers || []), ...stageBlockers];
-  const optionalWarnings = [...(input.warnings || []), ...stageWarnings];
+  let postStageCheck: { blockers?: string[]; warnings?: string[] } = {};
+  if (input.postMigrationStageCheck) {
+    try {
+      postStageCheck = await input.postMigrationStageCheck();
+    } catch (error: unknown) {
+      postStageCheck = {
+        blockers: [`post_migration_stage_check_failed:${error instanceof Error ? error.message : String(error)}`]
+      };
+    }
+  }
+  const requiredBlockers = [...new Set([
+    ...(input.blockers || []),
+    ...stageBlockers,
+    ...(postStageCheck.blockers || [])
+  ])];
+  const optionalWarnings = [...new Set([
+    ...(input.warnings || []),
+    ...stageWarnings,
+    ...(postStageCheck.warnings || [])
+  ])];
   const receipt: UpdateMigrationReceipt = {
     schema: UPDATE_MIGRATION_SCHEMA,
     status: input.status || (requiredBlockers.length ? 'blocked' : 'current'),

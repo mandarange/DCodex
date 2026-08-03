@@ -44,7 +44,6 @@ export function runSks(args, options = {}) {
     stdio: 'pipe',
     env: {
       ...process.env,
-      SKS_REQUIRE_ZELLIJ: '0',
       SKS_TEST_REAL_IMAGEGEN: '0',
       SKS_REAL_IMAGEGEN: '0',
       SKS_REQUIRE_REAL_COMPUTER_USE: '0',

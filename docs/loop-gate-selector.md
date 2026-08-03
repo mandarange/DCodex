@@ -1,6 +1,6 @@
 # Loop Gate Selector
 
-The loop gate selector replaces monolithic gate execution with affected local gates where safe. `L0-report` loops only validate state and budget. Docs-only loops run docs and changelog checks. Zellij, release, research, QA loop, Codex control, MAD-SKS, scheduler, and worker runtime scopes receive their matching affected gates.
+The loop gate selector replaces monolithic gate execution with affected local gates where safe. `L0-report` loops only validate state and budget. Docs-only loops run docs and changelog checks. Release, research, QA loop, Codex control, MAD-SKS, scheduler, and worker runtime scopes receive their matching affected gates.
 
 Gate choice is recorded on each Loop Graph node so the final proof can distinguish loop-local gates from integration gates.
 

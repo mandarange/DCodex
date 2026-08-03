@@ -6,6 +6,64 @@ import path from 'node:path';
 
 const OBSERVED_RETIRED_POLICY = 'In MAD-SKS launches, allow only the scoped non-MadDB high-risk surfaces approved for the active invocation and keep catastrophic DB wipe/all-row safeguards active. In first-class MAD-DB cycles, the explicit $MAD-DB or sks mad-db run|exec|apply-migration invocation is the SQL-plane approval boundary: execute requested execute_sql/apply_migration mutations with mission-local write transport, read-back proof, and final read-only restoration. Supabase project/account/billing/credential control-plane actions remain denied.';
 
+test('project update migration runs its final public-surface check after reconciliation and before receipt publication', async () => {
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-post-stage-check-'));
+  const home = path.join(fixture, 'home');
+  const project = path.join(fixture, 'project');
+  const globalRoot = path.join(home, '.sneakoscope-global');
+  const previousHome = process.env.HOME;
+  const previousGlobalRoot = process.env.SKS_GLOBAL_ROOT;
+  const previousRetention = process.env.SKS_UPDATE_RETENTION_CLEANUP;
+  process.env.HOME = home;
+  process.env.SKS_GLOBAL_ROOT = globalRoot;
+  process.env.SKS_UPDATE_RETENTION_CLEANUP = '0';
+  try {
+    const { writeProjectUpdateMigrationReceipt } = await import('../../dist/core/update/update-migration-state.js');
+    const retiredMultiplexer = ['zel', 'lij'].join('');
+    const quickReference = path.join(project, '.codex', 'SNEAKOSCOPE.md');
+    await writeText(quickReference, [
+      '# ㅅㅋㅅ',
+      'Install scope: `project`',
+      'Command: `node ./dist/bin/sks.js <command>`',
+      'Files: AGENTS.md, .codex/hooks.json, .codex/config.toml, .codex/SNEAKOSCOPE.md',
+      `Legacy command: sks ${retiredMultiplexer} dashboard`,
+      ''
+    ].join('\n'));
+
+    let checkedAfterReconcile = false;
+    let receiptPublishedDuringCheck = false;
+    const receipt = await writeProjectUpdateMigrationReceipt({
+      root: project,
+      source: 'unit-post-stage-public-surface-check',
+      blockers: [],
+      warnings: [],
+      postMigrationStageCheck: async () => {
+        const reconciled = await fs.readFile(quickReference, 'utf8');
+        checkedAfterReconcile = !reconciled.toLowerCase().includes(retiredMultiplexer);
+        receiptPublishedDuringCheck = await fs.access(
+          path.join(project, '.sneakoscope', 'update', 'migration-receipt.json')
+        ).then(() => true, () => false);
+        return checkedAfterReconcile
+          ? { blockers: [], warnings: [] }
+          : { blockers: ['retired_public_surface_postcheck_failed'], warnings: [] };
+      }
+    });
+
+    assert.equal(checkedAfterReconcile, true);
+    assert.equal(receiptPublishedDuringCheck, false);
+    assert.equal(receipt.status, 'current');
+    assert.deepEqual(receipt.required_blockers, []);
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousGlobalRoot === undefined) delete process.env.SKS_GLOBAL_ROOT;
+    else process.env.SKS_GLOBAL_ROOT = previousGlobalRoot;
+    if (previousRetention === undefined) delete process.env.SKS_UPDATE_RETENTION_CLEANUP;
+    else process.env.SKS_UPDATE_RETENTION_CLEANUP = previousRetention;
+    await fs.rm(fixture, { recursive: true, force: true });
+  }
+});
+
 test('project update migration receipt cleans disposable closed-mission runtime sessions', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-retention-unit-'));
   const home = path.join(root, 'home');

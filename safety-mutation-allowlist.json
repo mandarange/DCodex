@@ -183,10 +183,10 @@
     },
     {
       "file": "src/cli/install-helpers.ts",
-      "symbol": "restoreInstalledPackageBuildStamp.callback@257",
+      "symbol": "restoreInstalledPackageBuildStamp.callback@256",
       "token": "fsp.writeFile",
       "scope_contract_sha256": "48b0fbf652aabac368a11b6ccc15f0a738cd6bc63461ab977eb6e6ae085e1e7d",
-      "callsite_sha256": "d38b7c768dc59c0904f5545b06198b7718d4fd46d15ff1b20c69de9f044c2f2d",
+      "callsite_sha256": "0cdcdee7a80225d5572e2cc3529b421e2a71ab084ba38df0eb280f5f9fd13fc9",
       "occurrence": 1,
       "reason": "Default postinstall restores only the package-local dist stamp after proving the target remains inside the installed package root."
     },
@@ -320,8 +320,8 @@
       "file": "src/core/agents/agent-janitor.ts",
       "symbol": "runAgentJanitor",
       "token": "fsp.rm",
-      "scope_contract_sha256": "bdd3c63ff47f5331c99c5f2dac2b3ef7cbd9f5414d5417d6a282b221597f7795",
-      "callsite_sha256": "fce79e54fe916421b07be29522fd061dc36c31c54b6f8d59a25f048fce68b0fc",
+      "scope_contract_sha256": "3edd964b89cd3863b87b99ccf53c878ac41efb95fc4b043104c68df448e14b5f",
+      "callsite_sha256": "8f17548385767d6c51ae4412e48fa06de82a24001a29c17f79a754f076b807e6",
       "occurrence": 1,
       "reason": "Cleanup/removal path is route-owned, generated, or temporary artifact; exact callsite is audited."
     },
@@ -329,8 +329,8 @@
       "file": "src/core/agents/agent-janitor.ts",
       "symbol": "runAgentJanitor",
       "token": "fsp.rm",
-      "scope_contract_sha256": "bdd3c63ff47f5331c99c5f2dac2b3ef7cbd9f5414d5417d6a282b221597f7795",
-      "callsite_sha256": "049ab4392aa5e0ab7cf1b2de62d1f36f5dcc2069e10cb2a5a68f01863ed1a1fe",
+      "scope_contract_sha256": "3edd964b89cd3863b87b99ccf53c878ac41efb95fc4b043104c68df448e14b5f",
+      "callsite_sha256": "4a01c10ae554728c74e531626e2bceb0ae77c88c114d2ff02a5dd1b713298b7f",
       "occurrence": 1,
       "reason": "Cleanup/removal path is route-owned, generated, or temporary artifact; exact callsite is audited."
     },
@@ -2622,55 +2622,55 @@
     },
     {
       "file": "src/core/safety/mutation-guard.ts",
-      "symbol": "guardedRm.callback@153",
+      "symbol": "guardedRm.callback@151",
       "token": "fsp.rm",
       "scope_contract_sha256": "c0c09007c74be59895e95a6bf9b6ac7b96c629f30c34087c06c7d67248174d25",
-      "callsite_sha256": "1b25a815f24a65fd92f1fe68306095203704c004801b6bf7d49496ee48874246",
+      "callsite_sha256": "1f0e66812dce3ce51a486bcb4151a956a8d8f4b8e0b2db7d0c78c00c43df53cd",
       "occurrence": 1,
       "reason": "Low-level mutation guard primitive executes only after contract and path scope checks."
     },
     {
       "file": "src/core/safety/mutation-guard.ts",
-      "symbol": "guardedRename.callback@157",
+      "symbol": "guardedRename.callback@155",
       "token": "rename",
       "scope_contract_sha256": "fb708ab590a7abdee448815cf838fbdba4984bbdd8583e5661a40f71a81b785b",
-      "callsite_sha256": "d901e3b9f98ded54acfa7845ab3cb48cdf62b32b386fe19d0425b8252f66f681",
+      "callsite_sha256": "c1d97406ce55cab56adca6aabf214c18b4f08d2954c520106cdc161c06989348",
       "occurrence": 1,
       "reason": "Low-level mutation guard primitive executes only after contract and path scope checks."
     },
     {
       "file": "src/core/safety/mutation-guard.ts",
-      "symbol": "guardedChmod.callback@161",
+      "symbol": "guardedChmod.callback@159",
       "token": "chmod",
       "scope_contract_sha256": "74715586c184d4c79d4a7ffbfe57be0d021650963538e6ef1884e1d218a13c0a",
-      "callsite_sha256": "a488141cc6e4c116e96dce15ddb879f7d8cd8940d6ac54c6b0f73f29b4fb768d",
+      "callsite_sha256": "4794402bbecda83c054837de8f70c9a4bc512e2cec111aeba1e69a50fa73f908",
       "occurrence": 1,
       "reason": "Low-level mutation guard primitive executes only after contract and path scope checks."
     },
     {
       "file": "src/core/safety/mutation-guard.ts",
-      "symbol": "guardedChflags.callback@165",
+      "symbol": "guardedChflags.callback@163",
       "token": "chflags",
       "scope_contract_sha256": "c9fc29d9891e7bcf4fe963d61e089b91f16cd3d828b3cae4249b7dfae3c3f415",
-      "callsite_sha256": "5fae5c6f5f0ae84aeea857d8c7decb64c1bba9e13b106375edf4ffe27131e43a",
+      "callsite_sha256": "f098cfd2466087a14f236b096a9c8bac6c56a9372566e26ab6521b0c1d8c2af2",
       "occurrence": 1,
       "reason": "Low-level mutation guard primitive executes only after contract and path scope checks."
     },
     {
       "file": "src/core/safety/mutation-guard.ts",
-      "symbol": "guardedXattr.callback@172",
+      "symbol": "guardedXattr.callback@170",
       "token": "xattr",
       "scope_contract_sha256": "003ee76371fb317fd72eafd596a058af4c22d2c4ab92ab1e9254f3004308dbc1",
-      "callsite_sha256": "3eb5c427a805416a87d21f96884107ddbf8cfaee0825b2cb191b302da447b85c",
+      "callsite_sha256": "2ffa5994c7ca374a7c5d4ed6bee5a3b0c3b032ab3514f7e600a7bd026a234dfc",
       "occurrence": 1,
       "reason": "Low-level mutation guard primitive executes only after contract and path scope checks."
     },
     {
       "file": "src/core/safety/mutation-guard.ts",
-      "symbol": "guardedProcessKill.callback@183",
+      "symbol": "guardedProcessKill.callback@181",
       "token": "process.kill",
       "scope_contract_sha256": "4a46a3d7078ded397500805f57967090a47c307ef2187843562bc08416265bfc",
-      "callsite_sha256": "15273676ac040b76baeb6e10a1a5572c155a21740517ede658f54249acf15ee2",
+      "callsite_sha256": "bff26b033b19668cf537da6c8c793766e1a953755d3ed2c087e5caad3c3668d4",
       "occurrence": 1,
       "reason": "Low-level mutation guard primitive executes only after contract and path scope checks."
     },
@@ -2982,19 +2982,19 @@
     },
     {
       "file": "src/core/update/update-migration-state.ts",
-      "symbol": "runReceiptRotationStage.callback@993",
+      "symbol": "runReceiptRotationStage.callback@1015",
       "token": "fsp.rm",
       "scope_contract_sha256": "726c33ccb78af2363eba7a72f9427d010bf6abd0ce871c126f068bf181df0aa1",
-      "callsite_sha256": "9fa8124ff0dc526f2573540508bd3bf0a4e503094200cbc95a06a972bfa902e6",
+      "callsite_sha256": "ea3ed1f5d7975f13ed46f1bb19037dd6c0178eee762958b81842b74ff2cffea6",
       "occurrence": 1,
       "reason": "Update migration receipt rotation removes only bounded rotated receipt files in the SKS update state path."
     },
     {
       "file": "src/core/update/update-migration-state.ts",
-      "symbol": "pruneLegacyDoctorMigrationReports.callback@1733",
+      "symbol": "pruneLegacyDoctorMigrationReports.callback@1755",
       "token": "fsp.rm",
       "scope_contract_sha256": "729f2353f697a60d21e86be4dfa3a6cf04676bd74f0e8c92b4fe1b49aceda6a5",
-      "callsite_sha256": "eaeffb208c3cb612e18af23fc4c54481bcd5d46cf3a2d0ec1d0c355bb3215051",
+      "callsite_sha256": "a966588f2e68a05156fb636fa542fef90b2f14a2b3eaf75dd373434c97463484",
       "occurrence": 1,
       "reason": "Update migration pruning removes only aged or excess regular reports matching doctor-migration-<epoch>.json in the scoped update directory."
     },
@@ -3215,15 +3215,6 @@
       "reason": "Runtime artifact writer has caller-scoped path and is externally audited for guard migration."
     },
     {
-      "file": "src/core/zellij/zellij-command.ts",
-      "symbol": "prepareZellijProcessEnv",
-      "token": "chmod",
-      "scope_contract_sha256": "c345060acd0d9a28d19ccdb5825142099d6dbdb08e784591063caab169c5d1a9",
-      "callsite_sha256": "1399c15349cc599a84da6d6ef73fa4b49344aa9fc0cf231a00f8161bc5d71f1f",
-      "occurrence": 1,
-      "reason": "Permission normalization for created auth, shim, socket, or release artifacts; exact callsite is audited."
-    },
-    {
       "file": "src/scripts/agent-ast-aware-work-graph-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
@@ -3326,8 +3317,8 @@
       "file": "src/scripts/agent-janitor-check.ts",
       "symbol": "runFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "4e7b122cd399e565b5b6c03541ca8ebc870edf2e0bd8fa44481af0149fcf714f",
-      "callsite_sha256": "26ed2626a076c4c3b1a6d9464e78eecd9ca11507e3229cb2446b0c93ba36ee72",
+      "scope_contract_sha256": "bd51b58327455b70a0a93b6052310f7b2c2d33670b40d2a3d83b23af75e4875c",
+      "callsite_sha256": "36b0d6ff1061509d3685f79140324f9055b40b7b79c7d7dc1f9244dd5dc29da3",
       "occurrence": 1,
       "reason": "src/scripts/agent-janitor-check.ts#runFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -3335,8 +3326,8 @@
       "file": "src/scripts/agent-janitor-check.ts",
       "symbol": "runFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "4e7b122cd399e565b5b6c03541ca8ebc870edf2e0bd8fa44481af0149fcf714f",
-      "callsite_sha256": "1144a43d4d393978e18bba0b35d4ac44faebd148c8986640784e7bb7c462efb2",
+      "scope_contract_sha256": "bd51b58327455b70a0a93b6052310f7b2c2d33670b40d2a3d83b23af75e4875c",
+      "callsite_sha256": "cc2e05b0072b835479d99a1f2f8e5da5307c37fd3833ba299774729b7b71157e",
       "occurrence": 1,
       "reason": "src/scripts/agent-janitor-check.ts#runFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -3344,8 +3335,8 @@
       "file": "src/scripts/agent-janitor-check.ts",
       "symbol": "runFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "4e7b122cd399e565b5b6c03541ca8ebc870edf2e0bd8fa44481af0149fcf714f",
-      "callsite_sha256": "f81f49de5760660e946baba1d8375d918e3f78ded5652080215e9fa3eb9f9a70",
+      "scope_contract_sha256": "bd51b58327455b70a0a93b6052310f7b2c2d33670b40d2a3d83b23af75e4875c",
+      "callsite_sha256": "aa98a073a175d90876684534fec2e8e795f47ca770e596151dc978e083946db7",
       "occurrence": 1,
       "reason": "src/scripts/agent-janitor-check.ts#runFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -3353,8 +3344,8 @@
       "file": "src/scripts/agent-janitor-check.ts",
       "symbol": "runFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "4e7b122cd399e565b5b6c03541ca8ebc870edf2e0bd8fa44481af0149fcf714f",
-      "callsite_sha256": "d582d1a015b22fdd22e6aa248b88a3e3c57a8b22986eb355881c659cf01baa20",
+      "scope_contract_sha256": "bd51b58327455b70a0a93b6052310f7b2c2d33670b40d2a3d83b23af75e4875c",
+      "callsite_sha256": "b74af00aa5b6df460dc22ef49bc72935298d227ea15b4e4993a6087b38f138b0",
       "occurrence": 1,
       "reason": "src/scripts/agent-janitor-check.ts#runFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -3362,17 +3353,8 @@
       "file": "src/scripts/agent-janitor-check.ts",
       "symbol": "runFixture",
       "token": "writeFileSync",
-      "scope_contract_sha256": "4e7b122cd399e565b5b6c03541ca8ebc870edf2e0bd8fa44481af0149fcf714f",
-      "callsite_sha256": "7c5b6e5d2573640a80365554430d1406bc703d1c9a1286d254cb765639950d06",
-      "occurrence": 1,
-      "reason": "src/scripts/agent-janitor-check.ts#runFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/agent-janitor-check.ts",
-      "symbol": "runFixture",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "4e7b122cd399e565b5b6c03541ca8ebc870edf2e0bd8fa44481af0149fcf714f",
-      "callsite_sha256": "80063858a30aa8803bb3b31542b4ba7ecd098b0a5689e903b86159ce0a9b7022",
+      "scope_contract_sha256": "bd51b58327455b70a0a93b6052310f7b2c2d33670b40d2a3d83b23af75e4875c",
+      "callsite_sha256": "a5179cbda4164c58927d3edbf29686fa3b58fca8940f439b7d62c05756d808ae",
       "occurrence": 1,
       "reason": "src/scripts/agent-janitor-check.ts#runFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -3510,42 +3492,6 @@
       "callsite_sha256": "dfc6551546d1541311e592bb8d5ee49e5104673c66873977651664ea806b850f",
       "occurrence": 1,
       "reason": "src/scripts/agent-role-config-repair-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/agent-slot-pane-binding-proof-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a31d46b7ee8938e3428315553f565d0840d63e36b803b5bd1081a7e6412e8cc2",
-      "callsite_sha256": "4c7beafc3b60eb74bc11950c04ae0b9b75b9eccaf913070a824dd85902efd426",
-      "occurrence": 1,
-      "reason": "src/scripts/agent-slot-pane-binding-proof-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/agent-slot-pane-binding-proof-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a31d46b7ee8938e3428315553f565d0840d63e36b803b5bd1081a7e6412e8cc2",
-      "callsite_sha256": "9e4fda8f74ac6202956a98769d300712e56a30a303735255d91b9eb2a0653ad5",
-      "occurrence": 1,
-      "reason": "src/scripts/agent-slot-pane-binding-proof-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/agent-slot-pane-binding-proof-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a31d46b7ee8938e3428315553f565d0840d63e36b803b5bd1081a7e6412e8cc2",
-      "callsite_sha256": "98aa56819d4b546b1565af31321d04f8473e2babb3f0503f3ddf22bf7feabc5c",
-      "occurrence": 1,
-      "reason": "src/scripts/agent-slot-pane-binding-proof-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/agent-slot-pane-binding-proof-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a31d46b7ee8938e3428315553f565d0840d63e36b803b5bd1081a7e6412e8cc2",
-      "callsite_sha256": "271c81dba1d5f9dfcb30c89fc94f6b420dcf7aace9d78beded0870fa70cc8ef5",
-      "occurrence": 1,
-      "reason": "src/scripts/agent-slot-pane-binding-proof-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
       "file": "src/scripts/agent-terminal-generations-check.ts",
@@ -4514,8 +4460,8 @@
       "file": "src/scripts/codex-native-gate-lib.ts",
       "symbol": "initDeepBackupRetention",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "45f92dbe701a9ae32d1bdfafa6279d4cd7c197ea8b04ac42641ae93b7dbea456",
-      "callsite_sha256": "3c65437e17dd1d49869584c1f7aae8cf076c4be5ee9b71e2428c3e295a61c794",
+      "scope_contract_sha256": "3bff38d4657474f8cc897aa1645317dc9cbe875925f9d079c8c3a51ab77ccb3c",
+      "callsite_sha256": "e99de4d9b8a7f3808b07b2f204816d05eddc4c903ad72f1b811c22e897de0c66",
       "occurrence": 1,
       "reason": "src/scripts/codex-native-gate-lib.ts#initDeepBackupRetention writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -4523,8 +4469,8 @@
       "file": "src/scripts/codex-native-gate-lib.ts",
       "symbol": "initDeepBackupRetention",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "45f92dbe701a9ae32d1bdfafa6279d4cd7c197ea8b04ac42641ae93b7dbea456",
-      "callsite_sha256": "0e521f6cf7896be95f623c6ce97739dfa3c49bc797ae52f7b36e9d7720e6a43f",
+      "scope_contract_sha256": "3bff38d4657474f8cc897aa1645317dc9cbe875925f9d079c8c3a51ab77ccb3c",
+      "callsite_sha256": "ed06d20738b8cb1ae9bc20b92277bb0e40539a03f8e77a93e4b4dd76a3e90937",
       "occurrence": 1,
       "reason": "src/scripts/codex-native-gate-lib.ts#initDeepBackupRetention writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -4586,8 +4532,8 @@
       "file": "src/scripts/codex-native-repair-transaction-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "1055d6a4f51485215296c67c5da177d241764f7d81f066fc9547548e07154dad",
-      "callsite_sha256": "467e95816e7ab3d277bd5e62bb8ffca8181c9bf02d64f56ffe5f34de7b2dbe41",
+      "scope_contract_sha256": "e1b033d5b3ff40e0361d1fa31ecca45f1e907bd463524df6d7481618abaaa69f",
+      "callsite_sha256": "27efb53d31c00c2535fc9cdc5e74028bbe82b7e22e336b142cbafbc15ef39520",
       "occurrence": 1,
       "reason": "Codex Native repair transaction gate writes only a mkdtemp source fixture file before exercising confirmed repair behavior."
     },
@@ -4883,8 +4829,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "module",
       "token": "fsp.rm",
-      "scope_contract_sha256": "0ad9d53ea1f7fec12ac6572a8dad9ab927d0257f0b782569cbf8c88a3d475270",
-      "callsite_sha256": "05fea0c2fdbfde263e51bf113605910e6e0679deeae3688751faf1030ca6a0ba",
+      "scope_contract_sha256": "e9ba2140111cd3f84b4a0fe9e6833d76eadfd4a18c428335f599a595d96a3f76",
+      "callsite_sha256": "3eba72a12ef08e6343260db850a69e24b3341461efc5e1f37efae1c5398297bb",
       "occurrence": 1,
       "reason": "Current-surface E2E removes only its mkdtemp-owned upgrade fixture root in finally."
     },
@@ -4901,8 +4847,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "b064483f35e4b2474d75694706d1b28b497339624af18d29d155d78131cb85a8",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "120dd1d868b28f218d384e259fabdb8cf3a777e8e32cc3bd1064944179e75370",
       "occurrence": 1,
       "reason": "Upgrade fixture seeding writes only managed and customer-preservation fixtures under isolated project, HOME, and global roots."
     },
@@ -4910,8 +4856,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "9de02434d347c62551b87e6e3a3eff72bc61c7be6bb0976bb2d4a1afc7fd10a6",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "ac235aa647460f4561940f483626871cbd2490b015adc3b177aa3ed2b758afcc",
       "occurrence": 1,
       "reason": "Upgrade fixture seeding writes only managed and customer-preservation fixtures under isolated project, HOME, and global roots."
     },
@@ -4919,8 +4865,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "codex config write",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "f7bb26a12afb055a3ca5798eb4d93f22557720f5c24a627922c03f4853e0ade9",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "b95edad112a6015784e8e0c872f20965c8495cb9047be1d1cd7a7d9ea0d8ae5b",
       "occurrence": 1,
       "reason": "Upgrade fixture seeding writes only legacy Codex config fixtures under isolated HOME and global roots."
     },
@@ -4928,8 +4874,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "c564b6661d5f3022ef53263f663d1cffd031e15401f3595101cb9e9625a3344c",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "353b923c6d81d7ffdc5b913e960f4718b9b03f759ac0788b19cdb63c383beb0f",
       "occurrence": 1,
       "reason": "Upgrade fixture seeding writes only managed and customer-preservation fixtures under isolated project, HOME, and global roots."
     },
@@ -4937,8 +4883,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "2b1227eef1c9cff0267d4dedcdb4a8900c2985a85f30384c6bedfbe88e85af72",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "8a6b4e1cc0b825bc3e870c2ee9cc4e358d6edecc2ccd9016855cee9b129f6f29",
       "occurrence": 1,
       "reason": "Upgrade fixture seeding writes only managed and customer-preservation fixtures under isolated project, HOME, and global roots."
     },
@@ -4946,8 +4892,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "codex config write",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "f1ee1ffe761d1ba264871629e4fa73b627fb7d73c520c2900175ccd43c1a9207",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "a081b97bc85b0725903a3d22011e78d8a3d55ad7b77f1a8b4dcfe7ee4dd72d45",
       "occurrence": 1,
       "reason": "Upgrade fixture seeding writes only legacy Codex config fixtures under isolated HOME and global roots."
     },
@@ -4955,8 +4901,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "a459f1dc8d522b919f2689fd909a6f02684f1191c15d1991057c9e8334649623",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "3cb2f0940186d751b6c79b2dcd77989c46d3d90bb38d415e780bbea365177e2b",
       "occurrence": 1,
       "reason": "Upgrade fixture seeding writes only managed and customer-preservation fixtures under isolated project, HOME, and global roots."
     },
@@ -4964,8 +4910,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "codex config write",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "760af934f5ea0d0f682d4f3bcf03eaeb56305fc0bcee8c8f890c0840d354c42d",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "7c47416f112e1422553b1b5d90501ed6bf1027ce390e4eefa2fde6d8f7c4ab9b",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy Codex configs under its isolated project and global roots."
     },
@@ -4973,8 +4919,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "7044f2d8aa9dfdb60dd268bd49a12d5440fbcd7dcbe2b90cbdb5221e2746f44d",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "67a4c5884511af098fcef20778d02b99af1edfeefbc45ddffde143c9a7c8a661",
       "occurrence": 1,
       "reason": "Upgrade fixture seeding writes only managed and customer-preservation fixtures under isolated project, HOME, and global roots."
     },
@@ -4982,8 +4928,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "10b60b79a15f44d44def78e91c11b3afd392bbe6693ca41f10e9d3402756e949",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "6716eb37ae684129b8dd3121f457582129fa637e58502fcaeca40bc429e2ad07",
       "occurrence": 1,
       "reason": "Upgrade fixture seeding writes only managed and customer-preservation fixtures under isolated project, HOME, and global roots."
     },
@@ -4991,8 +4937,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "codex config write",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "7d6d46b5d1265b352f7825db0e55feff6c095ef82994d2445aafd921f44494d5",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "9c95c4e3c67053bd94b4adf532cad5423a9bfdb7f3994e9ed7832be278305c17",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy Codex configs under its isolated project and global roots."
     },
@@ -5000,8 +4946,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "a0e98b6b3a6893f5a56b58ca5fe48ec65cd18843826447989c0e324ba653ac64",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "590d6e0362903a78ea933489d88a877fce1a3e3bfad09698f9932e083bb217a2",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5009,8 +4955,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "codex config write",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "82e93f1c11a454c72f3659e22d2694e5e8c9b64febd96527bc7fa6cc58117217",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "e3f7e16a95c0893f7d17e12bfa702f3d990bd1dfab0d89c408312b998f18c241",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy Codex configs under its isolated project and global roots."
     },
@@ -5018,8 +4964,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "d52a614f7e687524e7a3ca72d027d06c729993a328275da8c8375f88898b0ec9",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "605556713cdf99dd55c3dd67416ee1f16c2e8f64c17975672a3c979515c0b5a9",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5027,8 +4973,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "92694644e53cbe5e121578c8a7e0adc518bf4172d285263745d2619877549b03",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "ed55dd1de0edd714523cea8ce6a36ca21ab099b20f1ca9a9f7f8ea20a1b28fce",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5036,8 +4982,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "f2fb1fb25ae17636d0aa87bb772fb51d8717a183effd995d14337f159a6bba4c",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "7428cc90acf17a1312e6333b1ea9328468567554b888974c6f606bb215c27090",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5045,8 +4991,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "f5bac6190cdf258850387bd66867bc4a932d95d7e9fcfdbdcf52c1e23e297bc9",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "da93f5584cd7885b5f2a3b44904740d5b2eda5af569def6b9fc285ba9be29b01",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5054,8 +5000,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "3a47227d23af25064de564d610bf9f5bb096218cb3399fc033dfbc99efa84bfc",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "4692ff299d1f9ec51a1e1b51b505a788d727bce34ba1b7631c7c23023260b338",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5063,8 +5009,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "c9a0452027e70053e2ba05ad86c3116e5c2a20c8c5478cd4851ff00c3165a3c0",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "5d9a1478419688c45bd42cab2f152b3bf8b7f79cfae4aa348623b5f33e312907",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5072,8 +5018,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "e6cded7318954e4972813bbbbc2b25527973c5d9ea0cbb33b8d2461317c3279b",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "ec5125f610f2ae8377973a822cd3bdcc0c569c6759a177c1ffb0d9bde7afb3bb",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5081,8 +5027,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "449c30c067c68d077d5d4fce7d8475b290fa47833ae031c3faa50d260a08b12a",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "6ee8b73de1e31d75ff153f2adf655395e30fca460e56c6bf84132ca942a4a327",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5090,8 +5036,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "56d4f58ddcf303bf2e017ea6ca21f5e3f565907fb157ac99c14d05bf54c51c10",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "90df732a26d664fd6ed7b84b7978cc16ee8d6a8e3541861e28079c8e745a5381",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5099,8 +5045,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "50720642389a55d6baab16904a60052b907179e9700150e4f0fd5b24156c0e2d",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "d4d8594dd7e9557c4269049d66012985a3ce7831a87119ea777f016b43529b3a",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5108,8 +5054,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "cf8a935b5715d7175696466f648aa37393efebd28cc19e4cbd359bc179da455e",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "d09e6824eb7a1c121cb98cd91309b7e4417a9f914e10fd0a74086cef8754caa8",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5117,8 +5063,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "4ea3288ab50763ff3f91036928346f95020d74a29da834ba99f732b09739f1a7",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "bc059d789edf4fded5035889bb228170c44415eabcaf9075c948dbf064927512",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5126,8 +5072,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "d4eee9c04cc8338363fe720fb2755df451e460a0dbcf792e1dde20f06f81cffa",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "49be35cb2566c852d145a6499cc86fa301a9a0f48bcbf3af4fc5abd000d161d6",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5135,8 +5081,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "875e5217cbfe15060db2e4ec8669cdec7366a39592a94881bdea151fb2ef2529",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "a9dc74a5a2f9df3ad990fb264143030674b9d0c652c9fabf07eae62c496d3e57",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy and preservation artifacts under its isolated project, HOME, and global roots."
     },
@@ -5144,8 +5090,8 @@
       "file": "src/scripts/current-surface-update-e2e-check.ts",
       "symbol": "seedUpgradeFixture",
       "token": "codex config write",
-      "scope_contract_sha256": "6597cd67eb19920fb7d25f30e1125c6214d4f2690370b4e8b1aac3321194f28c",
-      "callsite_sha256": "16c6e4438877d26f522c2b9a3d34ed4afd3728dee556b67f2cdf41bcecac6b7e",
+      "scope_contract_sha256": "8d85be26fa939580848f71cd884221f24f6ba6ad27317c4be3d66104b59e500f",
+      "callsite_sha256": "328418a8df0e20156d7c1c278d993c502e706a624016168aedd16d3b347b3a34",
       "occurrence": 1,
       "reason": "Current-surface fixture writes only legacy Codex configs under its isolated project and global roots."
     },
@@ -5180,8 +5126,8 @@
       "file": "src/scripts/current-upgrade-matrix-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "1f4b2e989050c9f1ca18f2f4c7cdef5ed0751660babe189a9dd689772aa44d16",
-      "callsite_sha256": "4bd7c17c274b4aed1f7cd1af07662e538066cac03d2f987b35aa0c15e76408b4",
+      "scope_contract_sha256": "16cfbb8b29567e3ca9a7c9d8ed1a96e55fe94126e4373cc6b734b674669ac1ab",
+      "callsite_sha256": "755e010e84eb2dbb39df6827a683262e5dd4a137446b589b8d503c343fa17a25",
       "occurrence": 1,
       "reason": "Current upgrade matrix writes only config and skill fixtures under its mkdtemp-owned test roots."
     },
@@ -5189,8 +5135,8 @@
       "file": "src/scripts/current-upgrade-matrix-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "1f4b2e989050c9f1ca18f2f4c7cdef5ed0751660babe189a9dd689772aa44d16",
-      "callsite_sha256": "acfc36562f17f2aae1cb9b94dfdb5e469e7a4dbf962a80e7f96bf0fb66f87b09",
+      "scope_contract_sha256": "16cfbb8b29567e3ca9a7c9d8ed1a96e55fe94126e4373cc6b734b674669ac1ab",
+      "callsite_sha256": "75f4c96563adecfa6e7a9cd081e3f33fa68a20ca6d224870d158440b5212881b",
       "occurrence": 1,
       "reason": "Current upgrade matrix writes only config and skill fixtures under its mkdtemp-owned test roots."
     },
@@ -5198,8 +5144,8 @@
       "file": "src/scripts/current-upgrade-matrix-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "1f4b2e989050c9f1ca18f2f4c7cdef5ed0751660babe189a9dd689772aa44d16",
-      "callsite_sha256": "7b89a671d5efcfe6c56012595fdc6a48a87b4506060080f5553e19fe8ea4a4ae",
+      "scope_contract_sha256": "16cfbb8b29567e3ca9a7c9d8ed1a96e55fe94126e4373cc6b734b674669ac1ab",
+      "callsite_sha256": "7e60414de4a16e1240e77af0f98f49635f02b69bd6482782cdf3ba8da0e3af2b",
       "occurrence": 1,
       "reason": "Current upgrade matrix writes only config and skill fixtures under its mkdtemp-owned test roots."
     },
@@ -5207,8 +5153,8 @@
       "file": "src/scripts/current-upgrade-matrix-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "1f4b2e989050c9f1ca18f2f4c7cdef5ed0751660babe189a9dd689772aa44d16",
-      "callsite_sha256": "8e7e52f92a9c3e1f89eece25f90f519635f6314ff671d555e811acc8184b64ee",
+      "scope_contract_sha256": "16cfbb8b29567e3ca9a7c9d8ed1a96e55fe94126e4373cc6b734b674669ac1ab",
+      "callsite_sha256": "d4ffa8215b57cc4507c685a87f86f6c15736e99d815ff15482ef412b16f427ca",
       "occurrence": 1,
       "reason": "Current upgrade matrix writes only config and skill fixtures under its mkdtemp-owned test roots."
     },
@@ -5216,8 +5162,8 @@
       "file": "src/scripts/current-upgrade-matrix-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "1f4b2e989050c9f1ca18f2f4c7cdef5ed0751660babe189a9dd689772aa44d16",
-      "callsite_sha256": "ed8e8d06f620d8610a3a0765bd10f82610958c70e22f6d2dcfd97aec9905aac5",
+      "scope_contract_sha256": "16cfbb8b29567e3ca9a7c9d8ed1a96e55fe94126e4373cc6b734b674669ac1ab",
+      "callsite_sha256": "ac8c881b7a6696c6797025d2c42fc325a4d7139de9742d7540334445a635397a",
       "occurrence": 1,
       "reason": "Current upgrade matrix writes only config and skill fixtures under its mkdtemp-owned test roots."
     },
@@ -6080,8 +6026,8 @@
       "file": "src/scripts/init-deep-backup-retention-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "8fc52e2c76e51e2e677c7f0cd03adab17e394330be5df8684c083ace05cb83bc",
-      "callsite_sha256": "296241e43bd0fb7c9bea0c80d78b7f173a1f55c2802c6aceb17092cd8ca495f4",
+      "scope_contract_sha256": "0f39d355fec197e2f86bc60ff3b9f7b80828f2c1d2d981999ce05efaa0ae146f",
+      "callsite_sha256": "d61e86313f1a824eac9d09cf375628bbaaaafac8c01f6b6b073897881f567fe6",
       "occurrence": 1,
       "reason": "src/scripts/init-deep-backup-retention-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6089,8 +6035,8 @@
       "file": "src/scripts/init-deep-backup-retention-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "8fc52e2c76e51e2e677c7f0cd03adab17e394330be5df8684c083ace05cb83bc",
-      "callsite_sha256": "cc76d33fef612c58619976ff9624c197be938b5b7a39036a7d939663750b1467",
+      "scope_contract_sha256": "0f39d355fec197e2f86bc60ff3b9f7b80828f2c1d2d981999ce05efaa0ae146f",
+      "callsite_sha256": "21301e59a662468a9db6fd52fc52b3696c5babf66b3bfe7420ed9862368ab7f5",
       "occurrence": 1,
       "reason": "src/scripts/init-deep-backup-retention-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6287,8 +6233,8 @@
       "file": "src/scripts/loop-directive-check-lib.ts",
       "symbol": "runLoopDirectiveCheck",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "c234b67f77f33c8667dc7fdae197833a1d6c09c130193875304a5b02acee14e5",
-      "callsite_sha256": "0a0a87cfe58c77e12bf5e574e7b400e571a0bb2f2a1999360340675589b28ae8",
+      "scope_contract_sha256": "b477752e7ebefac6bb523f8e8476a1169c35de596f856ea7ddc76a433f9b7704",
+      "callsite_sha256": "a6e2ca6ad231b0f5628bb9efc2bf249f1510bf5f15270f2d49cb592ed7ebfe07",
       "occurrence": 1,
       "reason": "src/scripts/loop-directive-check-lib.ts#assert writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6296,8 +6242,8 @@
       "file": "src/scripts/loop-directive-check-lib.ts",
       "symbol": "runLoopDirectiveCheck",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "c234b67f77f33c8667dc7fdae197833a1d6c09c130193875304a5b02acee14e5",
-      "callsite_sha256": "8d786e70322bc14d58cc7a9c397e9ab6cc1bb7fd2f5d00d457b248e116299979",
+      "scope_contract_sha256": "b477752e7ebefac6bb523f8e8476a1169c35de596f856ea7ddc76a433f9b7704",
+      "callsite_sha256": "32f8c484e6cc39b4002aec565db48d026270794a86a14d16ec492173978e5868",
       "occurrence": 1,
       "reason": "src/scripts/loop-directive-check-lib.ts#assert writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6305,8 +6251,8 @@
       "file": "src/scripts/loop-directive-check-lib.ts",
       "symbol": "runLoopDirectiveCheck",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "c234b67f77f33c8667dc7fdae197833a1d6c09c130193875304a5b02acee14e5",
-      "callsite_sha256": "cede410ef68b9add5caebeda95ed8a21ba118c995c9f7d9b39e10e7d53f8b8e2",
+      "scope_contract_sha256": "b477752e7ebefac6bb523f8e8476a1169c35de596f856ea7ddc76a433f9b7704",
+      "callsite_sha256": "a613b1fbe8027a435ff3a5ee4e5ba65c6ca132a9b2e1c71bf388691bf3a260a5",
       "occurrence": 1,
       "reason": "src/scripts/loop-directive-check-lib.ts#assert writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6314,8 +6260,8 @@
       "file": "src/scripts/loop-directive-check-lib.ts",
       "symbol": "writeLightweightLoopArtifacts",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "197bf56c37b875edd2dd097e9c5ccce26d57d53fbe2ca68d9f99cb4b98685eea",
-      "callsite_sha256": "827ab1a126e87bc1cd28147d225efdc3a13371a8c47ab2e83981bd797749bd44",
+      "scope_contract_sha256": "50b054ef98d8b5883faab193689098cc5cbb95a7ea3d4da7c558279eb44167e9",
+      "callsite_sha256": "26d1b60a370bd3ea079b04d3b144a350b7238975c7a0fd5f03842ae9813b2526",
       "occurrence": 1,
       "reason": "src/scripts/loop-directive-check-lib.ts#writeLightweightLoopArtifacts writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6323,8 +6269,8 @@
       "file": "src/scripts/loop-directive-check-lib.ts",
       "symbol": "writeLightweightLoopArtifacts",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "197bf56c37b875edd2dd097e9c5ccce26d57d53fbe2ca68d9f99cb4b98685eea",
-      "callsite_sha256": "64c2726d6404b6865d476465eeaf3a12f0390b15b99810b6a8d6d5bce4af8a56",
+      "scope_contract_sha256": "50b054ef98d8b5883faab193689098cc5cbb95a7ea3d4da7c558279eb44167e9",
+      "callsite_sha256": "0f003809cbd4cb8875b2893f5c06d4412a2b4399f19e5448122cbf66a1ec630e",
       "occurrence": 1,
       "reason": "src/scripts/loop-directive-check-lib.ts#writeLightweightLoopArtifacts writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6332,8 +6278,8 @@
       "file": "src/scripts/loop-directive-check-lib.ts",
       "symbol": "writeLightweightLoopArtifacts",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "197bf56c37b875edd2dd097e9c5ccce26d57d53fbe2ca68d9f99cb4b98685eea",
-      "callsite_sha256": "7ea513e7a379955da8b8fc34914d9cc012679673a5aa285e4bf3cd3b10153280",
+      "scope_contract_sha256": "50b054ef98d8b5883faab193689098cc5cbb95a7ea3d4da7c558279eb44167e9",
+      "callsite_sha256": "36370b6040c82d7f7c4ad2fc195ec6268fdef82537481512d17d9748c3666395",
       "occurrence": 1,
       "reason": "src/scripts/loop-directive-check-lib.ts#writeLightweightLoopArtifacts writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6341,8 +6287,8 @@
       "file": "src/scripts/loop-hardening-check-lib.ts",
       "symbol": "runLoopHardeningCheck",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "2ece4ee8032726b26b9cd5fa7c30d5eddccb8c4eb8c6e8be345edbe27e9f3814",
-      "callsite_sha256": "c296ca16269085d23a96c9e54a314a380777b754f480eb15df6f6145a0b408eb",
+      "scope_contract_sha256": "3bde222eddca9f4e267c88dd0a11f692e64039c003267c64481c509c7f5bbe07",
+      "callsite_sha256": "d996e0711e4e4f9eae1ddb8837f354c796aaabf1f0ee115f0bd257a9d6a259d5",
       "occurrence": 1,
       "reason": "src/scripts/loop-hardening-check-lib.ts#assert writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6350,8 +6296,8 @@
       "file": "src/scripts/loop-hardening-check-lib.ts",
       "symbol": "runLoopHardeningCheck",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "2ece4ee8032726b26b9cd5fa7c30d5eddccb8c4eb8c6e8be345edbe27e9f3814",
-      "callsite_sha256": "f23e184bd50d74fbcad6bdb4687356b4182c7096025a2db2d572a798abd1d7c3",
+      "scope_contract_sha256": "3bde222eddca9f4e267c88dd0a11f692e64039c003267c64481c509c7f5bbe07",
+      "callsite_sha256": "857aa8fede3c386756665ddf2a2fb81c002db0f8582b200d9717bd134652b64d",
       "occurrence": 1,
       "reason": "src/scripts/loop-hardening-check-lib.ts#assert writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6359,8 +6305,8 @@
       "file": "src/scripts/loop-hardening-check-lib.ts",
       "symbol": "runLoopHardeningCheck",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "2ece4ee8032726b26b9cd5fa7c30d5eddccb8c4eb8c6e8be345edbe27e9f3814",
-      "callsite_sha256": "97fa1b5e4eaf42f6f50580afa9bd294c3032dfe058a50180b5a3d3cd175e6b6f",
+      "scope_contract_sha256": "3bde222eddca9f4e267c88dd0a11f692e64039c003267c64481c509c7f5bbe07",
+      "callsite_sha256": "f74545a7940a86b4ffca103e6213ea4f6151a248860490148aec76b6b842a215",
       "occurrence": 1,
       "reason": "src/scripts/loop-hardening-check-lib.ts#assert writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6368,8 +6314,8 @@
       "file": "src/scripts/loop-hardening-check-lib.ts",
       "symbol": "runLoopHardeningCheck",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "2ece4ee8032726b26b9cd5fa7c30d5eddccb8c4eb8c6e8be345edbe27e9f3814",
-      "callsite_sha256": "c60ab40a0dba7632f76e9a9ccb738d5713be932a028f5c0d69881f7ada6733cf",
+      "scope_contract_sha256": "3bde222eddca9f4e267c88dd0a11f692e64039c003267c64481c509c7f5bbe07",
+      "callsite_sha256": "573661fb0c96edef3e854354e4c4d293d63e372045ff2f6e84ee80e0ce9cde2c",
       "occurrence": 1,
       "reason": "src/scripts/loop-hardening-check-lib.ts#assert writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6377,8 +6323,8 @@
       "file": "src/scripts/loop-hardening-check-lib.ts",
       "symbol": "gitFixture",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "c66b411973c0963838c264afd4e0c35fff2ff3f461fc9d346690c22e52c40e75",
-      "callsite_sha256": "2f9d598658fbcaa5a732ad73604aed2b146d99af26f9f972e21fa9807c11b03e",
+      "scope_contract_sha256": "f0a7c72c7107b49412db11773c27de83d8b3938d979246350f764c3bd9908253",
+      "callsite_sha256": "f14fef7886306bc23791f724afbfd081ecf10d89a4b3c0163cf95bb222b55cbd",
       "occurrence": 1,
       "reason": "src/scripts/loop-hardening-check-lib.ts#gitFixture writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6422,28 +6368,19 @@
       "file": "src/scripts/mad-sks-app-ui-no-mutation-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "1bf35a5a620192481b54afd1c8105858b1e889c4a53c6ac9196900824dbb2677",
-      "callsite_sha256": "1637dbc1fca1a40bbf6b0398defe3bda50563a7f095b40de8e6c52fd082e4655",
+      "scope_contract_sha256": "4e2cd2e9b9455f8976968ee67a062368f0ba410d746b7a889d9184886a80655e",
+      "callsite_sha256": "3ab458f940ebdeca899704126b25b405f3aee311bc6c873801475b3110cd9a8e",
       "occurrence": 1,
       "reason": "src/scripts/mad-sks-app-ui-no-mutation-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
     {
       "file": "src/scripts/mad-sks-app-ui-no-mutation-check.ts",
-      "symbol": "cleanupOwnedSession",
+      "symbol": "module",
       "token": "fs.rm",
-      "scope_contract_sha256": "1f10d9cc6f7627c643a143b36fe6503768b780299635722f431573026ad9b4b2",
-      "callsite_sha256": "c2babb3bfdafe0ec543f1cd99b9200d3c19a8c465e58c719c1df7d1eaf156b62",
+      "scope_contract_sha256": "4e2cd2e9b9455f8976968ee67a062368f0ba410d746b7a889d9184886a80655e",
+      "callsite_sha256": "1faacdb1634ac196a9ffb5c7abbbf963ce938422201c5e20cd8b3b4409488416",
       "occurrence": 1,
       "reason": "The MAD UI fixture removes only its run-unique /tmp/sks-zj-madui-* socket directory after the owned session is absent and no other socket entries remain."
-    },
-    {
-      "file": "src/scripts/mad-sks-app-ui-no-mutation-check.ts",
-      "symbol": "removeFixtureRootAfterQuiescence",
-      "token": "fs.rm",
-      "scope_contract_sha256": "f6195f6206faf9f48045d595ab437af61f22b2e38acf908b0a47100a012e0faa",
-      "callsite_sha256": "a9cb9dad72d332b4a14c1641d63fa6a5fe505fd087322626f75ae3f38e2ebefa",
-      "occurrence": 1,
-      "reason": "The MAD UI fixture removes only its own mkdtemp root after its private Zellij process tree and socket namespace are proven absent, then verifies the root is not recreated."
     },
     {
       "file": "src/scripts/mad-sks-fast-mode-propagation-check.ts",
@@ -6476,8 +6413,8 @@
       "file": "src/scripts/mad-sks-launch-sql-plane-boundary-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "e7debf78f52b6018621bc30de1f359c6756dbd7c72188e73a64122fef2beaa38",
-      "callsite_sha256": "90e049e48bd019c913acd84388a394a0a83936582d1935160f2af41d88681cc5",
+      "scope_contract_sha256": "de14dbfe9fbedb028492fd24534e8b7ab27f01ba7e7c0f50b64caa56043be9b5",
+      "callsite_sha256": "6243344db34b058cceca6019abc8a2ad0db5136f21da13412e3dcb54f06d8dfb",
       "occurrence": 1,
       "reason": "MAD-SKS boundary check writes only global and project Codex config fixtures under its isolated temp root."
     },
@@ -6485,8 +6422,8 @@
       "file": "src/scripts/mad-sks-launch-sql-plane-boundary-check.ts",
       "symbol": "module",
       "token": "codex config write",
-      "scope_contract_sha256": "e7debf78f52b6018621bc30de1f359c6756dbd7c72188e73a64122fef2beaa38",
-      "callsite_sha256": "f81fed317c7ee4d21b428a737164c8f181a9e55d908f3e8c2cbd4f00a63b8c8c",
+      "scope_contract_sha256": "de14dbfe9fbedb028492fd24534e8b7ab27f01ba7e7c0f50b64caa56043be9b5",
+      "callsite_sha256": "3b2e8e814af4059b6bf64db04899082a25a4ca72a2cf18ebed13d05c67cb6f29",
       "occurrence": 1,
       "reason": "MAD-SKS boundary check writes only isolated global and project Codex config fixtures."
     },
@@ -6494,8 +6431,8 @@
       "file": "src/scripts/mad-sks-launch-sql-plane-boundary-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "e7debf78f52b6018621bc30de1f359c6756dbd7c72188e73a64122fef2beaa38",
-      "callsite_sha256": "14f65d24ded05464c43f20e1b459cebc5b2f39ac1320d8ea5213e11b212052d0",
+      "scope_contract_sha256": "de14dbfe9fbedb028492fd24534e8b7ab27f01ba7e7c0f50b64caa56043be9b5",
+      "callsite_sha256": "137fa4865964824b3bc4134d874add88e1b8a60624bd10a11459204a39932e22",
       "occurrence": 1,
       "reason": "MAD-SKS boundary check writes only global and project Codex config fixtures under its isolated temp root."
     },
@@ -6503,8 +6440,8 @@
       "file": "src/scripts/mad-sks-launch-sql-plane-boundary-check.ts",
       "symbol": "module",
       "token": "codex config write",
-      "scope_contract_sha256": "e7debf78f52b6018621bc30de1f359c6756dbd7c72188e73a64122fef2beaa38",
-      "callsite_sha256": "f29a296d1fddf90551f0e7cfae68e11aa713fff33ccc70b19470aa7bd2596d8c",
+      "scope_contract_sha256": "de14dbfe9fbedb028492fd24534e8b7ab27f01ba7e7c0f50b64caa56043be9b5",
+      "callsite_sha256": "412c0afca6fc54f8b0fa5812b79d8d817f4ed2a55c94cbc0b31fe29b2b6a80ab",
       "occurrence": 1,
       "reason": "MAD-SKS boundary check writes only isolated global and project Codex config fixtures."
     },
@@ -6572,15 +6509,6 @@
       "reason": "src/scripts/mad-sks-sql-plane-supabase-transport-diagnostics-check.ts#module writes only an isolated temporary Codex configuration fixture used by the release check."
     },
     {
-      "file": "src/scripts/mad-sks-zellij-launch-check.ts",
-      "symbol": "writeMadZellijLaunchGate",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "e6b783a5fd50aa67f07eb2c79fff72af2d7a2b85abe1f0e890ad5a593373b164",
-      "callsite_sha256": "06fe70811d89e049088b805462150b9690650dd6b758f03cc2fbe174b27b1492",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
       "file": "src/scripts/mcp-0-134-modernization-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
@@ -6642,60 +6570,6 @@
       "callsite_sha256": "149f6fec1bf930ff461cfb6345a06d5aeca2815537effc238d20037de0ab2fdc",
       "occurrence": 1,
       "reason": "Naruto E2E gate writes only a package.json fixture inside its mkdtemp-created isolated temp project."
-    },
-    {
-      "file": "src/scripts/naruto-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "2f66c6aebe5920bb8155d9281faf273c3c99f001bc4b9f446249333a4f95ef09",
-      "callsite_sha256": "01550b8ce65729d32678a7d49a34b6cd5ae833b8bf1ffa362c1ae96abe286c87",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/naruto-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "2f66c6aebe5920bb8155d9281faf273c3c99f001bc4b9f446249333a4f95ef09",
-      "callsite_sha256": "abc91eff35ce2ddfc5e57b8d69001d0323caed0bbbe22cf4d9fd5589e6a79b95",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/naruto-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "2f66c6aebe5920bb8155d9281faf273c3c99f001bc4b9f446249333a4f95ef09",
-      "callsite_sha256": "1b96873817ade3fc41a4814f836febb44db64059707edff5872b58c9f6e77675",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/naruto-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "2f66c6aebe5920bb8155d9281faf273c3c99f001bc4b9f446249333a4f95ef09",
-      "callsite_sha256": "0168ac69db07d877b38cdaaf99e25dc025560c08372cb3851575fbed71c88e8e",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/naruto-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "2f66c6aebe5920bb8155d9281faf273c3c99f001bc4b9f446249333a4f95ef09",
-      "callsite_sha256": "122f4b43ab78d14534e5767b18cf15e4ae92335accd1a4d1fb773ae689e67f02",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/naruto-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "2f66c6aebe5920bb8155d9281faf273c3c99f001bc4b9f446249333a4f95ef09",
-      "callsite_sha256": "1b261de882cfabd60edfc9ab7f3788adc85f69f321dddc57d03c53938ac90906",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
     },
     {
       "file": "src/scripts/naruto-worktree-coding-blackbox.ts",
@@ -7151,8 +7025,8 @@
       "file": "src/scripts/release-check-dynamic-execute.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "af71117e6b57312e0d3ca3acdbd3a0a8a7c3a0d9cd90104d0e760c6a7e63d3bf",
-      "callsite_sha256": "c61469e6931ba1461c1ac17bb29a7d7bb8af40ed9d097518819c9f24288a5c52",
+      "scope_contract_sha256": "9a08e1c7cd1ea1c03871a34a53598246886fbdde98fdba224604db683ab662b9",
+      "callsite_sha256": "25c7e52634fef2c1e1a9447266d72b325391491974cc562293e7830496fd4f86",
       "occurrence": 1,
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     },
@@ -7160,8 +7034,8 @@
       "file": "src/scripts/release-check-dynamic.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "0db3c5ed2ebf62ebad8bfc9b4b05e61418ea13c969213fc3f5981e669aad372d",
-      "callsite_sha256": "53730a256c540de39bb42307ccd8e12c82cc37410fe6dc116ff02b37cd46cbad",
+      "scope_contract_sha256": "945517ffcd45992b6ccb2e8612366a6b1c071ead9f3b12eaeab047c14df48100",
+      "callsite_sha256": "bb66f6daf966924ac62284d19da28cdba2704092adda7b25b31d61ee8a8a5572",
       "occurrence": 1,
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     },
@@ -7178,8 +7052,8 @@
       "file": "src/scripts/release-dynamic-performance-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "1d1b489dfbe9817e7be349adf520ff75f2539a31a2c112ca642e4c9b148fe93a",
-      "callsite_sha256": "49c6e6494e19e41a7e8a9aecab3694495a063de7e057e19c6367ed65c8ec20c2",
+      "scope_contract_sha256": "11ece8470149e8f6f8148e5d99b1c940c461c5e06378fe5b958666ee118f6e4c",
+      "callsite_sha256": "5efe2d22089a85334315fe6fd3753cc315d3286264844db58a280459245c88d6",
       "occurrence": 1,
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     },
@@ -7196,8 +7070,8 @@
       "file": "src/scripts/release-metadata-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "d93ec90e89e9733066a317257835dd07f9a2b5940440bd3cf9af4ed614281a12",
-      "callsite_sha256": "7585a91d4400eb255336602b16660112912d8fd6e8bc79284b82a94c254ee7ab",
+      "scope_contract_sha256": "246fc63f6c89f904017e868dc87b609310997e31b7026cd09fb2ada644b23e75",
+      "callsite_sha256": "7404e2632af9851a95aa9e8eb829b27adab4711a2414a4bce2a541530af432ef",
       "occurrence": 1,
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     },
@@ -7295,8 +7169,8 @@
       "file": "src/scripts/release-stability-report-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "be6e81dc60aaa2a2167f7d0c7a523a07d84f96ec66ff921e417d2733437c5212",
-      "callsite_sha256": "42d3e6d06bc4094c19f44c6689b9a25c243c5138fa483c19f5a439411953a4a3",
+      "scope_contract_sha256": "255afa44108e8a4c1da464c7144028a678170cab0d182c82dd9c7d35508f2145",
+      "callsite_sha256": "8d51b81ad122be02773607cc38ef75a3515c950730f7dc2f6cf313086d8b9a52",
       "occurrence": 1,
       "reason": "Release/check script writes the scoped stability proof report under .sneakoscope/reports."
     },
@@ -7574,8 +7448,8 @@
       "file": "src/scripts/runtime-domain-gate-lib.ts",
       "symbol": "codexAppGate",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "8d77bdc5c57e9b2a0d547d16056699346bf2d1fee105d378a81cc0cb106245bd",
-      "callsite_sha256": "7f466b7619668999c65056ce637a29076423bdec81ac3f229f55a5e88d57d24b",
+      "scope_contract_sha256": "200e5195b30953670c773bb6b59cba5a103cb1f82160092d908ba453f77ef67d",
+      "callsite_sha256": "37ef3e03e0b3f274bbc472ce39e2291e3c8a4c40c573aaa2f17ef75753fb959b",
       "occurrence": 1,
       "reason": "src/scripts/runtime-domain-gate-lib.ts#codexAppGate writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7601,8 +7475,8 @@
       "file": "src/scripts/runtime-proof-summary-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "f37d36227ccf1f7cdf284119620cfedc8033b2bc556c22a848ad4a5a64d34181",
-      "callsite_sha256": "25986d2666128ccd33d17c3fee6adb23fa5b9d8dcf9973ffee48a49a8db61ffe",
+      "scope_contract_sha256": "73afc69faefa1cafcda9914234ee1669c8581e3a7d9e20c3fbd44bedfe7037eb",
+      "callsite_sha256": "306bf81024b8b256b802d4a090ce143fe3a365418e86ee963a67eea1a72db3fb",
       "occurrence": 1,
       "reason": "src/scripts/runtime-proof-summary-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7610,8 +7484,8 @@
       "file": "src/scripts/runtime-proof-summary-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "f37d36227ccf1f7cdf284119620cfedc8033b2bc556c22a848ad4a5a64d34181",
-      "callsite_sha256": "aa1b3bc91e73768b98d8afaf132439d40b2a50b88f1def71b153cf7f9cfe5615",
+      "scope_contract_sha256": "73afc69faefa1cafcda9914234ee1669c8581e3a7d9e20c3fbd44bedfe7037eb",
+      "callsite_sha256": "47697169c2d5610b8db8be82d4185cfd00294cfdb60c4d2684dbf453eac6fa76",
       "occurrence": 1,
       "reason": "src/scripts/runtime-proof-summary-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7619,8 +7493,8 @@
       "file": "src/scripts/runtime-proof-summary-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "f37d36227ccf1f7cdf284119620cfedc8033b2bc556c22a848ad4a5a64d34181",
-      "callsite_sha256": "4beed801dad0c788186093501b5dedaf246467f7195084d3df1f80680c7ca9a3",
+      "scope_contract_sha256": "73afc69faefa1cafcda9914234ee1669c8581e3a7d9e20c3fbd44bedfe7037eb",
+      "callsite_sha256": "82e48e0288122f190666dd4b6356a178848dcd2b19226dc92d4fa64a21c7273d",
       "occurrence": 1,
       "reason": "src/scripts/runtime-proof-summary-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7628,17 +7502,8 @@
       "file": "src/scripts/runtime-proof-summary-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "f37d36227ccf1f7cdf284119620cfedc8033b2bc556c22a848ad4a5a64d34181",
-      "callsite_sha256": "d9e8f51b31fcc43b3e621b7fd4304352532becd903ea5426be782fd625a5a5ea",
-      "occurrence": 1,
-      "reason": "src/scripts/runtime-proof-summary-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/runtime-proof-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f37d36227ccf1f7cdf284119620cfedc8033b2bc556c22a848ad4a5a64d34181",
-      "callsite_sha256": "5574cd1cd9752a516e07ee39b89979a0c6bd74c56bc3ffbf031927c68b664792",
+      "scope_contract_sha256": "73afc69faefa1cafcda9914234ee1669c8581e3a7d9e20c3fbd44bedfe7037eb",
+      "callsite_sha256": "8b626c2f22aa1b34d1101ddf00f1fbad6f601d19dfe6387355f4c11b5cd60bad",
       "occurrence": 1,
       "reason": "src/scripts/runtime-proof-summary-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7646,8 +7511,8 @@
       "file": "src/scripts/runtime-proof-summary-cli-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "0e829283ce5a64d2475d38b5748e232200ae6144b9f1ba7a34f39edb69ae0158",
-      "callsite_sha256": "6e7d165d68fd26db37ad53a422f3d426a775962aaf0b8065fb6e5169aa7d51fc",
+      "scope_contract_sha256": "053d1422fcc90f5fb2bb4f3a806a13ffb8baeca46414b48d6474153a13d37e3c",
+      "callsite_sha256": "e3c0f86cf7c9172c0f17c5b443ac02e26a3399d09cc2f5f3d25e5fa8e3452f22",
       "occurrence": 1,
       "reason": "src/scripts/runtime-proof-summary-cli-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7655,17 +7520,8 @@
       "file": "src/scripts/runtime-proof-summary-cli-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "0e829283ce5a64d2475d38b5748e232200ae6144b9f1ba7a34f39edb69ae0158",
-      "callsite_sha256": "7f09c5248b04f921fbd9332bae6828d1eb8ff25c30296e8f48870d36cc2a35ef",
-      "occurrence": 1,
-      "reason": "src/scripts/runtime-proof-summary-cli-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/runtime-proof-summary-cli-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "0e829283ce5a64d2475d38b5748e232200ae6144b9f1ba7a34f39edb69ae0158",
-      "callsite_sha256": "a6b0398577a43906b3137464e77c08af6782e75deb2bd5cd808578663efc5fb4",
+      "scope_contract_sha256": "053d1422fcc90f5fb2bb4f3a806a13ffb8baeca46414b48d6474153a13d37e3c",
+      "callsite_sha256": "c80d26f57c70267f3ba98bd74aaacec43d7ee17724b42ba4c86f1b27828d4d7c",
       "occurrence": 1,
       "reason": "src/scripts/runtime-proof-summary-cli-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7673,8 +7529,8 @@
       "file": "src/scripts/runtime-proof-summary-messages-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "7542df094110b12a0fc92682f743ea0342bfd52567dec2e59f068a1f69a332e4",
-      "callsite_sha256": "65d5a5b904494a1d1496986f9976ab16f6e945f0b58f7eab869bb761747d18e0",
+      "scope_contract_sha256": "6482a744ec09683054071928edd209fe729a4e77d445f47cb1f4a781144a4d43",
+      "callsite_sha256": "d33ddeab91c1d1c0bbbf59a8542ed5c79a555eac2bc368ba4ca331fab5187824",
       "occurrence": 1,
       "reason": "src/scripts/runtime-proof-summary-messages-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7682,8 +7538,8 @@
       "file": "src/scripts/runtime-proof-summary-messages-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "7542df094110b12a0fc92682f743ea0342bfd52567dec2e59f068a1f69a332e4",
-      "callsite_sha256": "978d782e968f67d4bd9871738906aded677610569e4a552041e1fd13fba1f57f",
+      "scope_contract_sha256": "6482a744ec09683054071928edd209fe729a4e77d445f47cb1f4a781144a4d43",
+      "callsite_sha256": "12ff841c28b045db6f9797c7a9a0a23fd493067d0e4269e01ded0f5d3f3e1457",
       "occurrence": 1,
       "reason": "src/scripts/runtime-proof-summary-messages-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -7691,91 +7547,10 @@
       "file": "src/scripts/runtime-proof-summary-messages-check.ts",
       "symbol": "module",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "7542df094110b12a0fc92682f743ea0342bfd52567dec2e59f068a1f69a332e4",
-      "callsite_sha256": "8504ad9d16179a8deeb141fdf8ab3b9f41673f454cf1183f02e103a66ca4faeb",
+      "scope_contract_sha256": "6482a744ec09683054071928edd209fe729a4e77d445f47cb1f4a781144a4d43",
+      "callsite_sha256": "3370771fb2edd60629095e91f64429b1102f295d264709f4d3b979691fcfb646",
       "occurrence": 1,
       "reason": "src/scripts/runtime-proof-summary-messages-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/runtime-proof-summary-messages-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "7542df094110b12a0fc92682f743ea0342bfd52567dec2e59f068a1f69a332e4",
-      "callsite_sha256": "aa7d7d03ce57308fe95989d897806b57ac5c97f27cac1ee82c25130db0ffb38c",
-      "occurrence": 1,
-      "reason": "src/scripts/runtime-proof-summary-messages-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/runtime-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "1edc0225d98403abe8aa4a6c9fa2c0513235eeda3aea0e14892c3bfce1f2edcf",
-      "callsite_sha256": "fc77fae46eb3f92496ce6840afbb4bae79ec1a7bbf9d57f52c58bf6214f40de2",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/runtime-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "1edc0225d98403abe8aa4a6c9fa2c0513235eeda3aea0e14892c3bfce1f2edcf",
-      "callsite_sha256": "55e39edf21d54a34a0e82fa514bc0cdfe6e4cc0e03529eec77cca8429881e25b",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/runtime-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "1edc0225d98403abe8aa4a6c9fa2c0513235eeda3aea0e14892c3bfce1f2edcf",
-      "callsite_sha256": "31d5a6d2911990be36b62d9353a7ed7a23cef2065cdce9abbfbf795baa5e3973",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/runtime-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "1edc0225d98403abe8aa4a6c9fa2c0513235eeda3aea0e14892c3bfce1f2edcf",
-      "callsite_sha256": "6ced4d55d28a5365c253eadca128a44b500df5d922a104d967d6189e08fba274",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/runtime-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "1edc0225d98403abe8aa4a6c9fa2c0513235eeda3aea0e14892c3bfce1f2edcf",
-      "callsite_sha256": "e95209ce8726d3927761db9c9ea442c50efd31996dd8ea2cc3a20a7a7c57920b",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/runtime-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "1edc0225d98403abe8aa4a6c9fa2c0513235eeda3aea0e14892c3bfce1f2edcf",
-      "callsite_sha256": "776ef2744dcb17fb7a794c2614726b89253902c627eb88a6ddf3bd5ee934f7bb",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/runtime-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "1edc0225d98403abe8aa4a6c9fa2c0513235eeda3aea0e14892c3bfce1f2edcf",
-      "callsite_sha256": "d0a2666fd1dea5d25b77d81ca0302bdf9d8b8aa9950edb72e688b1a28e6ceb3d",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
-    },
-    {
-      "file": "src/scripts/runtime-proof-zellij-stacked-summary-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "1edc0225d98403abe8aa4a6c9fa2c0513235eeda3aea0e14892c3bfce1f2edcf",
-      "callsite_sha256": "848d3b2795c6df2f3e6a47b5604a9ad784bfa67a32c0f2709e43dc06abe105fb",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped temp Zellij summary fixture artifacts under an mkdtemp root."
     },
     {
       "file": "src/scripts/runtime-script-pack-closure-check.ts",
@@ -8024,8 +7799,8 @@
       "file": "src/scripts/side-effect-zero-gate-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "be4d8fb22d0cd6902b151cf9f5522f4e2220cfc8e2ac3f5c8797ccb73738b7e6",
-      "callsite_sha256": "62d377497f270907156f457443766ce183628ab4d161b5149236c661672c9863",
+      "scope_contract_sha256": "53aed929f911ceb3611087fb85fa0cbbb55b727f128b701e7a882f9591e74259",
+      "callsite_sha256": "317ce9a8856e23a04cc74bb0f3261e450e6d662ac0a580fac4dfddf29144e070",
       "occurrence": 1,
       "reason": "src/scripts/side-effect-zero-gate-check.ts#rmTmp writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -8033,8 +7808,8 @@
       "file": "src/scripts/side-effect-zero-gate-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "be4d8fb22d0cd6902b151cf9f5522f4e2220cfc8e2ac3f5c8797ccb73738b7e6",
-      "callsite_sha256": "9288ec9c276507c0e5fce9f819f229caa00c4b1c461eeb6c37592c095dad3cc4",
+      "scope_contract_sha256": "53aed929f911ceb3611087fb85fa0cbbb55b727f128b701e7a882f9591e74259",
+      "callsite_sha256": "dfd087b14badb9a1f393462e1727c8412159477e8776d597b01e8ff4dd52185c",
       "occurrence": 1,
       "reason": "src/scripts/side-effect-zero-gate-check.ts#rmTmp writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -8240,8 +8015,8 @@
       "file": "src/scripts/typed-routing-gate-lib.ts",
       "symbol": "initDeepGate",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "214e709050a522c712a5f1cf7808e7e620e623cb2d6c34781ed089483a0135be",
-      "callsite_sha256": "bb7c0c89765642518cc546c3c2b007b3ea4e877a98cb512c7f376f033ba5548d",
+      "scope_contract_sha256": "230f14ce2eebd7d6943c3254ee1a8299a0cea67f7ec72c69ec26e03b45409eb8",
+      "callsite_sha256": "2ff391f6191ef2c018413d9218efdd84ee8fe2e9345a2ec8dea75683a0bf0458",
       "occurrence": 1,
       "reason": "src/scripts/typed-routing-gate-lib.ts#initDeepGate writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -8249,8 +8024,8 @@
       "file": "src/scripts/typed-routing-gate-lib.ts",
       "symbol": "initDeepGate",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "214e709050a522c712a5f1cf7808e7e620e623cb2d6c34781ed089483a0135be",
-      "callsite_sha256": "c80c7f70e905401d670324fb4cbc86142c02e2107322b2e98cadad2391f0a024",
+      "scope_contract_sha256": "230f14ce2eebd7d6943c3254ee1a8299a0cea67f7ec72c69ec26e03b45409eb8",
+      "callsite_sha256": "43e07e5b7455ce0c5afce43ceffd9b7890b2aac2668e652b45ebb79106a0c5a1",
       "occurrence": 1,
       "reason": "src/scripts/typed-routing-gate-lib.ts#initDeepGate writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -8316,528 +8091,6 @@
       "callsite_sha256": "a91c74c1d164b2f48f05dd6ed3aedc4530bf73b584a430934fe13795eb475e11",
       "occurrence": 1,
       "reason": "src/scripts/ux-review-image-voxel-relations-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/worker-pane-communication-contract-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ce529fc48dd826bd487b097fdd01a2f20dfcbff37bf99ec9f1c59f95d142ed3d",
-      "callsite_sha256": "6de9baac5c679e09ef500ff56fc69bd6510454c041d02774d57f46bd492c3a95",
-      "occurrence": 1,
-      "reason": "src/scripts/worker-pane-communication-contract-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/worker-pane-communication-contract-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ce529fc48dd826bd487b097fdd01a2f20dfcbff37bf99ec9f1c59f95d142ed3d",
-      "callsite_sha256": "9f491812341f3022598ad5ea50aba966926fa840cd3a31b1a9e27219a8c9d54f",
-      "occurrence": 1,
-      "reason": "src/scripts/worker-pane-communication-contract-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/worker-pane-communication-contract-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ce529fc48dd826bd487b097fdd01a2f20dfcbff37bf99ec9f1c59f95d142ed3d",
-      "callsite_sha256": "51c1e81b5f6ce31eceeab293c1f9ca3259c34240b9f8dfdb4295bf088477ce2e",
-      "occurrence": 1,
-      "reason": "src/scripts/worker-pane-communication-contract-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/worker-pane-communication-contract-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ce529fc48dd826bd487b097fdd01a2f20dfcbff37bf99ec9f1c59f95d142ed3d",
-      "callsite_sha256": "bbf134a3a0402b65e775c4c9c0327a1b2c5ab009031b8a2ca4c500bccf18a1d7",
-      "occurrence": 1,
-      "reason": "src/scripts/worker-pane-communication-contract-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/worker-pane-communication-contract-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ce529fc48dd826bd487b097fdd01a2f20dfcbff37bf99ec9f1c59f95d142ed3d",
-      "callsite_sha256": "7349c90758463d7242b89fa28939fc945e997f5def50cadd58cb101ae9224cbe",
-      "occurrence": 1,
-      "reason": "src/scripts/worker-pane-communication-contract-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/worker-pane-communication-contract-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ce529fc48dd826bd487b097fdd01a2f20dfcbff37bf99ec9f1c59f95d142ed3d",
-      "callsite_sha256": "330b3d897c207fa1d795a81aa2c9936dd85677afbbbda5381243e56dd65f4a62",
-      "occurrence": 1,
-      "reason": "src/scripts/worker-pane-communication-contract-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/worker-pane-communication-contract-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ce529fc48dd826bd487b097fdd01a2f20dfcbff37bf99ec9f1c59f95d142ed3d",
-      "callsite_sha256": "bcf370c6a9b5ad1d13f4750597f47fba6de692e35d2aac9f061112ee3f662273",
-      "occurrence": 1,
-      "reason": "src/scripts/worker-pane-communication-contract-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/worker-pane-communication-contract-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ce529fc48dd826bd487b097fdd01a2f20dfcbff37bf99ec9f1c59f95d142ed3d",
-      "callsite_sha256": "25946da5633551c997e8702837c6b4274e9c076306da8af526d92de7b4349836",
-      "occurrence": 1,
-      "reason": "src/scripts/worker-pane-communication-contract-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/worker-pane-communication-contract-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ce529fc48dd826bd487b097fdd01a2f20dfcbff37bf99ec9f1c59f95d142ed3d",
-      "callsite_sha256": "7726dd77f3474d5349c972d21ab91af111b41de86bc38af9c158d58d2288c84d",
-      "occurrence": 1,
-      "reason": "src/scripts/worker-pane-communication-contract-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "a9fb2ce1048960e0ae8c4f0a60232d6ed2202a04ffa89d5a7b3323bc7df376ce",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "662324a9410ede1fc5dc042db9ad739216edeba0d846d93c9710db8a1fb6a7b3",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "6a51e8242fc3cf251d3d20c2cdc2272d699d8736e82567b6edc8e9c575ab45d2",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "217afc779e45525835e5ff24d334dc6d3bded831ead9bae4c7dffbad0106ed43",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "f32199129dd98f5f3daac84b4fe6e0996afdd9cef633b1db91c26a071fd3e99a",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "540028f42d0689988e99fbd36dfef389b81f74706cb1b30987cd360d5f62a428",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "5f4ad3fddef11a96f5f3c41614ec03630eedef93a6fb5bec51e057e39adb1f85",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "59375442e3017338cef0e5ec3263a5c413624adc5e60c5788baf0468f85b8d06",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "7ef318d2d3b9abe90c6f235d2c1ec4f431f40f4ad53e7f45d2d6a499882d65f0",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "c38b0bd486b1f637f4510f8f9a0385bed7ddba2a43d7f664ea6041accd64c62e",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "b4ad110fa0697dd7576942f81c65b1080d11d5d0bc0ed181d01b19ccda8c49a5",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "3011df9ddb1d41c42a6fc05310d17ceb3d21f5776b900a857f9e3e8b4fe929e5",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-lane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "086997fedc68fda3ac757a6775009123114692b6cba5a9042cff7d2f78386564",
-      "callsite_sha256": "ce8c0c64ee9124cc3a7bf322946f705b23e0c3fd14c8279c1eee6c66705f5824",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-launch-command-truth-check.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "fdb4132c3327db4b4220818b0d9e4d6c4c5c48e739094e6097b2e1d1cae2946b",
-      "callsite_sha256": "4ba815330b03fb0ac911eb6422102fe22241806da5581c79c84f44d76c8df50f",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-layout-valid-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "035dcfaebeaf5bff41e336ea85c31a97bb4c5014c6b18a8eda262b9443e1f67f",
-      "callsite_sha256": "a1947ba9c497ffcedbe7793a5629b149d13474fdebd1ba2f2d3d6422066c0ba8",
-      "occurrence": 1,
-      "reason": "Release/check script writes, removes, or chmods only scoped fixture, report, manifest, or temp artifacts; exact callsite is audited."
-    },
-    {
-      "file": "src/scripts/zellij-layout-valid-check.ts",
-      "symbol": "module",
-      "token": "fs.rm",
-      "scope_contract_sha256": "035dcfaebeaf5bff41e336ea85c31a97bb4c5014c6b18a8eda262b9443e1f67f",
-      "callsite_sha256": "5005ad487d7ea9b2f4b602083b44f5e757c2934a41d31e4ea254234a9e53651d",
-      "occurrence": 1,
-      "reason": "The layout check removes only its mkdtemp layout and run-unique /tmp/sks-zj-layout-* socket namespace after the owned session is absent."
-    },
-    {
-      "file": "src/scripts/zellij-layout-valid-check.ts",
-      "symbol": "module",
-      "token": "fs.rm",
-      "scope_contract_sha256": "035dcfaebeaf5bff41e336ea85c31a97bb4c5014c6b18a8eda262b9443e1f67f",
-      "callsite_sha256": "cc55a138c08ba3ffc0469f8f38bf5c32772edadce6a5ba5e9dbf6da173a20c01",
-      "occurrence": 1,
-      "reason": "The layout check removes only its mkdtemp layout and run-unique /tmp/sks-zj-layout-* socket namespace after the owned session is absent."
-    },
-    {
-      "file": "src/scripts/zellij-real-session-cleanup-check.ts",
-      "symbol": "module",
-      "token": "fs.rm",
-      "scope_contract_sha256": "be58c167d2968bc98ae3baea7c1c2c8b0ef04f511c5886efe755898c5ef5e5d4",
-      "callsite_sha256": "ea02752ea3368d9735082a226d379e59ee36f5ed2c68ea343988584107aea94b",
-      "occurrence": 1,
-      "reason": "The real-session cleanup removes only a token-owned run-unique /tmp/sks-zj-rr-* namespace after its session is absent and the namespace has no other sockets."
-    },
-    {
-      "file": "src/scripts/zellij-real-session-cleanup-check.ts",
-      "symbol": "module",
-      "token": "fs.rm",
-      "scope_contract_sha256": "be58c167d2968bc98ae3baea7c1c2c8b0ef04f511c5886efe755898c5ef5e5d4",
-      "callsite_sha256": "132727dcb424363fc6951640ca0d9e542eb08402d22a20199446e2f62966d01e",
-      "occurrence": 1,
-      "reason": "The real-session cleanup removes only a token-owned run-unique /tmp/sks-zj-rr-* namespace after its session is absent and the namespace has no other sockets."
-    },
-    {
-      "file": "src/scripts/zellij-real-session-cleanup-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "be58c167d2968bc98ae3baea7c1c2c8b0ef04f511c5886efe755898c5ef5e5d4",
-      "callsite_sha256": "6e5f959fc2dcf95d663764dfa418801a7ee6996be97735e0015619893f3fe03f",
-      "occurrence": 1,
-      "reason": "The real-session cleanup writes only its mission-local cleanup evidence after validating the ownership marker, token hash, session, and socket namespace."
-    },
-    {
-      "file": "src/scripts/zellij-real-session-heartbeat-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f1f213eaeaa0fe954f1cedfc009223031d3ead891497cd11dd554d9202c4397f",
-      "callsite_sha256": "c326505628120223d3f2fb51e17a94c5d83ac01e19e1c1641466430629ad1fd4",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-real-session-heartbeat-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f1f213eaeaa0fe954f1cedfc009223031d3ead891497cd11dd554d9202c4397f",
-      "callsite_sha256": "d93e6d087163913ec0229728b9a629b0d85623c404687589e424c5fac2af4901",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-real-session-heartbeat-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f1f213eaeaa0fe954f1cedfc009223031d3ead891497cd11dd554d9202c4397f",
-      "callsite_sha256": "2c8a2afe1c0e62eeac367469d20b2714f891a1d3e0135b60a47d17c8b35912f5",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-real-session-launch-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "457f75f3ff9d79777f73b1ab97f0fff6c8ea0fadcb5d93e783be90908386a9e3",
-      "callsite_sha256": "d90becbf42ae0d5ff29296eda57d7fa59e3c18764904e59529e91326c5628403",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-real-session-launch-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "457f75f3ff9d79777f73b1ab97f0fff6c8ea0fadcb5d93e783be90908386a9e3",
-      "callsite_sha256": "a25b0800b0456eab7e70e2c493fc3df6cfdf96408b5680e4452167cdec9e05b7",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-real-session-launch-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "457f75f3ff9d79777f73b1ab97f0fff6c8ea0fadcb5d93e783be90908386a9e3",
-      "callsite_sha256": "f1a055227e18f0a9b9b7df38b3df143818aba7de40efa10da98e0ebf0f32203f",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
-      "callsite_sha256": "94da86f6b85792ce1914da0e471c188c1342ca3f2e96685f8cff7abfb1913a2c",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
-      "callsite_sha256": "6c74d04979750e0e055b0177660cebcafb9f7c9a2a2d93141e42de7c240749d2",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
-      "callsite_sha256": "40f7c6b2a2ca43ecba89bffaa814d4b5d331fa34d25f36e519913cd0e2cae12f",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
-      "callsite_sha256": "99721bc95dbf23c31f4e4270de3ed2ffa9a5fa9b335d0651b1bc2cf82f81a139",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
-      "callsite_sha256": "e99b76246e25c257dfc40f399cb74b26ec4aed905c7236a9c302bec925a93f8d",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
-      "callsite_sha256": "e6ec42edf2abdcdda0a71d34c96faa5c43ebb1fbbbd85fd40d1a9a88647f527e",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
-      "callsite_sha256": "0fd0c7b8176bf48032cc5e631f9885b684aff048fee75e125c9943587fedb425",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
-      "callsite_sha256": "e8cb2536496f960cc47b3075a281d612f20986b8ebdcb3510a7a2d94919179ee",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot-pane fixture artifacts under mkdtemp before renderer hydration."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.rm",
-      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
-      "callsite_sha256": "3e6bf0097672222061140f623f0d57482477d102e8862979c38101345114bab7",
-      "occurrence": 1,
-      "reason": "Release/check script removes only the scoped mkdtemp slot-pane fixture directory after hydration proof."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-renderer-check.ts",
-      "symbol": "module",
-      "token": "fs.rm",
-      "scope_contract_sha256": "f71d307f58733b4a7dabb3e0c47fdcc988eb91adb197915d5b493f27ed9818be",
-      "callsite_sha256": "b1c069f7d9cf185a771d616213dbbca3b666278e2bab25e5f04ab5acfbe810db",
-      "occurrence": 1,
-      "reason": "Release/check script removes only the scoped mkdtemp slot-pane fixture directory after hydration proof."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-stale-detection-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a694aca714a7fcc6ab0dc3d383b55b4ab623df2bab9f25345d657811f3ea64c1",
-      "callsite_sha256": "3534e7d456556843fb82fd57e748673bf3e52e1d329c25b8d2d0f6dd4e3b7362",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot telemetry snapshots under mkdtemp for stale detection proof."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-stale-detection-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a694aca714a7fcc6ab0dc3d383b55b4ab623df2bab9f25345d657811f3ea64c1",
-      "callsite_sha256": "c6ab22cf55c05849946eab6c2431193dbe86067d1058338aa76aa24d1c771fc1",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot telemetry snapshots under mkdtemp for stale detection proof."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-stale-detection-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a694aca714a7fcc6ab0dc3d383b55b4ab623df2bab9f25345d657811f3ea64c1",
-      "callsite_sha256": "0b35f719635fa13e5ed296e7871a9b5a9a4863c2679205aaf7d35ea41334c241",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot telemetry snapshots under mkdtemp for stale detection proof."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-stale-detection-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a694aca714a7fcc6ab0dc3d383b55b4ab623df2bab9f25345d657811f3ea64c1",
-      "callsite_sha256": "aeea9508627609e4bd4e7afcc01a49f0544ec57637b262a99d2ed26442c6757f",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot telemetry snapshots under mkdtemp for stale detection proof."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-stale-detection-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a694aca714a7fcc6ab0dc3d383b55b4ab623df2bab9f25345d657811f3ea64c1",
-      "callsite_sha256": "dcfea20777e4ea5e7f5f5d0d2a5f0842764ac6362426b10b29aac79f2d6277a1",
-      "occurrence": 1,
-      "reason": "Release/check script writes only scoped temporary slot telemetry snapshots under mkdtemp for stale detection proof."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-stale-detection-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a694aca714a7fcc6ab0dc3d383b55b4ab623df2bab9f25345d657811f3ea64c1",
-      "callsite_sha256": "dcfea20777e4ea5e7f5f5d0d2a5f0842764ac6362426b10b29aac79f2d6277a1",
-      "occurrence": 2,
-      "reason": "Release/check script writes only scoped temporary slot telemetry snapshots under mkdtemp for stale detection proof."
-    },
-    {
-      "file": "src/scripts/zellij-slot-pane-stale-detection-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "a694aca714a7fcc6ab0dc3d383b55b4ab623df2bab9f25345d657811f3ea64c1",
-      "callsite_sha256": "dcfea20777e4ea5e7f5f5d0d2a5f0842764ac6362426b10b29aac79f2d6277a1",
-      "occurrence": 3,
-      "reason": "Release/check script writes only scoped temporary slot telemetry snapshots under mkdtemp for stale detection proof."
-    },
-    {
-      "file": "src/scripts/zellij-slot-telemetry-incremental-check.ts",
-      "symbol": "guardedRm",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "c8882d97a56acdab55146cf0b2bbe7a4c6c3346519382d6e4798633067cde014",
-      "callsite_sha256": "cd3d4ba23a65522709f1a3582e31ca05bb2c337979a9f7de1beaca26870e2385",
-      "occurrence": 1,
-      "reason": "The bound fs.rm alias removes only the exact mkdtemp telemetry fixture after parent-directory and filename-prefix validation."
-    },
-    {
-      "file": "src/scripts/zellij-slot-telemetry-live-flush-check.ts",
-      "symbol": "guardedRm",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "c8882d97a56acdab55146cf0b2bbe7a4c6c3346519382d6e4798633067cde014",
-      "callsite_sha256": "3f670e7a36f2f6c5ccb60b729e3f22fa55435f718cc19e0c71e7f00546e72d5f",
-      "occurrence": 1,
-      "reason": "The bound fs.rm alias removes only the exact mkdtemp telemetry fixture after parent-directory and filename-prefix validation."
-    },
-    {
-      "file": "src/scripts/zellij-slot-telemetry-performance-check.ts",
-      "symbol": "guardedRm",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "c8882d97a56acdab55146cf0b2bbe7a4c6c3346519382d6e4798633067cde014",
-      "callsite_sha256": "c29c1dff039624a9095e1b90ec89e5650e56e5c4106a57b89f611f63eba556a6",
-      "occurrence": 1,
-      "reason": "The bound fs.rm alias removes only the exact mkdtemp telemetry fixture after parent-directory and filename-prefix validation."
-    },
-    {
-      "file": "src/scripts/zellij-ui-design-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "91cf275ac77b33e7edba9ff81bc7b55bdd6fa035f01196a1dba841eb730d8773",
-      "callsite_sha256": "3b3c3f5e228cafe40df90e3560082442f53a13502c8f022772d8ba4ee9f4f117",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
-      "file": "src/scripts/zellij-worker-pane-real-ui-blackbox.ts",
-      "symbol": "module",
-      "token": "rmSync",
-      "scope_contract_sha256": "c63b7efd72560542b13b2c606bb20f4423ee5494a18f474705a42e373ef23cc1",
-      "callsite_sha256": "2f1e7b08c2222dbc4c38348a24819da27e4b73115fce2bf194b61080ccc9fb0c",
-      "occurrence": 1,
-      "reason": "Real Zellij blackbox cleans only its generated mission fixture directory before recreating it."
-    },
-    {
-      "file": "src/scripts/zellij-worker-pane-real-ui-blackbox.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "c63b7efd72560542b13b2c606bb20f4423ee5494a18f474705a42e373ef23cc1",
-      "callsite_sha256": "214c60c9ec7e02d47c746c893d791108d493a61a4230ab5ac93e4d7b39c953fd",
-      "occurrence": 1,
-      "reason": "Real Zellij blackbox writes scoped worker fixture results and the matching proof report."
     },
     {
       "file": "src/core/codex/codex-config-guard.ts",

@@ -8,6 +8,7 @@ import { routeRequiresOfficialSubagents } from '../agents/agent-plan.js';
 import { rootCauseAnalysisIssue } from './root-cause-policy.js';
 import { effectiveSubagentTarget, normalizeLegacySubagentCountFields } from '../subagents/wave-lifecycle.js';
 import { latestTrustReport } from '../trust-kernel/trust-report.js';
+import { canonicalJson } from '../json/canonical.js';
 
 export async function validateRouteCompletionProof(root: any, { missionId = null, route = null, state = {}, visualClaim = undefined }: any = {}) {
   const proofRequired = state.proof_required === true || routeRequiresCompletionProof(route);
@@ -64,7 +65,7 @@ export async function validateRouteCompletionProof(root: any, { missionId = null
           plan
         );
         if (!diskGate) issues.push('official_subagent_current_gate_missing');
-        else if (stableJson(routeGate) !== stableJson(diskGate)) issues.push('official_subagent_current_gate_mismatch');
+        else if (canonicalJson(routeGate) !== canonicalJson(diskGate)) issues.push('official_subagent_current_gate_mismatch');
       }
     }
     if (modernRunContract && (!proof.evidence?.trust_report || !proof.evidence?.route_contract || !proof.evidence?.evidence_router)) {
@@ -89,15 +90,6 @@ export async function validateRouteCompletionProof(root: any, { missionId = null
     issues,
     proof
   };
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const row = value as Record<string, unknown>;
-    return `{${Object.keys(row).sort().map((key) => `${JSON.stringify(key)}:${stableJson(row[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function officialSubagentCurrentGateFile(route: any, state: any = {}): string | null {

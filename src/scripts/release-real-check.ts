@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -33,17 +33,6 @@ const releaseScratchEnv = {
   TEMP: releaseScratchDir,
   SKS_TMP_DIR: releaseScratchDir
 }
-const zellijRunId = `${process.pid}-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`
-const zellijMissionId = `M-release-real-zellij-${zellijRunId}`
-const zellijSessionName = `sks-rrz-${zellijRunId}`
-const zellijSocketDir = path.join('/tmp', `sks-zj-rr-${zellijRunId}`)
-const zellijOwnerToken = randomBytes(24).toString('hex')
-const zellijOwnedEnv = {
-  SKS_REQUIRE_ZELLIJ: '1',
-  SKS_ZELLIJ_CHECK_OWNER_TOKEN: zellijOwnerToken,
-  ZELLIJ_SOCKET_DIR: zellijSocketDir
-}
-
 const report = {
   schema: 'sks.release-real-check.v1',
   generated_at: new Date().toISOString(),
@@ -52,20 +41,13 @@ const report = {
     schema: 'sks.release-real-check-diamond.v1',
     stages: ['design', 'parallel_processing', 'parallel_verification', 'aggregation'],
     concurrency,
-    dependency_model: 'dag-with-ordered-zellij-proof-chains'
-  },
-  zellij_isolation: {
-    mission_id: zellijMissionId,
-    session_name: zellijSessionName,
-    socket_dir: zellijSocketDir,
-    user_sessions_shared: false
+    dependency_model: 'dependency-ordered-dag'
   },
   scratch_isolation: {
     schema: 'sks.release-real-scratch-isolation.v1',
     root: releaseScratchDir,
     owned: true,
     child_environment: ['TMPDIR', 'TMP', 'TEMP', 'SKS_TMP_DIR'],
-    zellij_socket_dir_preserved: true,
     cleanup: null
   },
   release_check: null,
@@ -80,7 +62,6 @@ const report = {
   real_ui_checks: [],
   release_authorizing_checks: [],
   live_coverage: null,
-  emergency_cleanup: null,
   all_checks: [],
   phase_results: [],
   blockers: [],
@@ -110,14 +91,6 @@ const tasks = [
   task('codex:0144:capability:real', 'direct', { command: nodeScript('codex-0144-capability-check.js'), group: 'environment_required', phase: 'parallel_verification', args: ['--require-real'], deps: ['codex:0144:app-server-v2:real'], policy: requiredPolicy(['sks.release-gate.v1']) }),
   task('doctor:actual', 'direct', { command: [process.execPath, './dist/bin/sks.js', 'doctor', '--json'], group: 'environment_required', phase: 'parallel_processing', policy: requiredPolicy(['sks.doctor-status.v3'], { statusRequired: true, passStatuses: ['fast_readonly_ok', 'ok'] }) }),
   task('release:pack-receipt', 'release:pack-receipt', { group: 'environment_required', phase: 'parallel_processing', policy: requiredPolicy(['sks.release-pack-receipt.v1']) }),
-  task('zellij:capability', 'zellij:capability', { group: 'environment_required', phase: 'parallel_processing', args: ['--require-real'], env: { SKS_REQUIRE_ZELLIJ: '1' }, policy: requiredPolicy(['sks.zellij-capability.v1', 'sks.zellij-capability-check.v1'], { statusRequired: true, passStatuses: ['ok'] }) }),
-  task('zellij:layout-valid', 'zellij:layout-valid', { group: 'environment_required', phase: 'parallel_processing', args: ['--require-real'], env: { SKS_REQUIRE_ZELLIJ: '1' }, deps: ['zellij:capability'], policy: requiredPolicy(['sks.zellij-layout-valid-check.v1']) }),
-
-  task('zellij:real-session-launch', 'direct', { command: nodeScript('zellij-real-session-launch-check.js'), group: 'real_ui', phase: 'parallel_verification', args: ['--require-real', '--main-only', '--owned-session', '--mission', zellijMissionId, '--session', zellijSessionName], env: zellijOwnedEnv, deps: ['zellij:layout-valid'], policy: requiredPolicy(['sks.zellij-real-session-launch-check.v1']) }),
-  task('zellij:pane-proof', 'direct', { command: nodeScript('zellij-pane-proof-check.js'), group: 'real_ui', phase: 'parallel_verification', args: ['--require-real', '--mission', zellijMissionId, '--session', zellijSessionName, '--expected-lanes', '0'], env: zellijOwnedEnv, deps: ['zellij:real-session-launch'], policy: requiredPolicy(['sks.zellij-pane-proof.v1', 'sks.zellij-pane-proof-check.v1']) }),
-  task('zellij:screen-proof', 'direct', { command: nodeScript('zellij-screen-proof-check.js'), group: 'real_ui', phase: 'parallel_verification', args: ['--require-real', '--main-only', '--mission', zellijMissionId], env: zellijOwnedEnv, deps: ['zellij:real-session-launch'], policy: requiredPolicy(['sks.zellij-screen-proof.v1', 'sks.zellij-screen-proof-check.v1']) }),
-  task('zellij:real-session-cleanup', 'direct', { command: nodeScript('zellij-real-session-cleanup-check.js'), group: 'real_ui', phase: 'aggregation', args: ['--mission', zellijMissionId, '--session', zellijSessionName, '--owned-socket-dir', zellijSocketDir], env: zellijOwnedEnv, deps: ['zellij:pane-proof', 'zellij:screen-proof'], alwaysRun: true, policy: requiredPolicy(['sks.zellij-real-session-cleanup-check.v1']) }),
-
   task('naruto:worktree-coding:blackbox', 'direct', { command: nodeScript('naruto-worktree-coding-blackbox.js'), group: 'real_smoke', phase: 'parallel_processing', args: ['--require-real'], env: { SKS_REQUIRE_GIT_WORKTREE: '1' }, policy: requiredPolicy(['sks.release-gate.v1']) }),
   task('codex-sdk:real-smoke', 'direct', { command: nodeScript('codex-sdk-real-smoke-check.js'), group: 'real_smoke', phase: 'parallel_processing', args: ['--require-real'], policy: requiredPolicy(['sks.release-gate.v1'], { statusRequired: true, passStatuses: ['proven'] }) }),
   task('codex-lb:desktop-real-evidence', 'direct', {
@@ -133,8 +106,6 @@ const tasks = [
 ]
 const taskContract = validateReleaseRealTaskIds(tasks.map((row) => row.id))
 report.task_contract = taskContract
-let ownedCleanupSucceeded = false
-let emergencyCleanupPromise = null
 let terminating = false
 let skipProofRevalidated = false
 let scratchCleanupSucceeded = false
@@ -144,7 +115,6 @@ main().catch(async (err) => {
   terminating = true
   report.blockers.push(`release_real_check_exception:${err?.message || String(err)}`)
   await stopActiveChildren('SIGTERM')
-  await bestEffortOwnedZellijCleanup('exception')
   await finish(false, 'exception')
 })
 
@@ -154,7 +124,6 @@ for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
     terminating = true
     report.blockers.push(`release_real_check_signal:${signal}`)
     await stopActiveChildren(signal)
-    await bestEffortOwnedZellijCleanup(`signal:${signal}`)
     await finish(false, `signal:${signal}`)
     process.exit(exitCode)
   })
@@ -295,7 +264,6 @@ async function runNpm(row) {
         attempts,
         retried: attempts.length > 1
       }
-      if (row.id === 'zellij:real-session-cleanup' && finalResult.outcome === 'passed') ownedCleanupSucceeded = true
       return finalResult
     }
     await sleep(Math.max(0, Number(row.retryDelayMs || 0)))
@@ -399,27 +367,6 @@ async function settleWithTimeout(promises, timeoutMs) {
   } finally {
     if (timer) clearTimeout(timer)
   }
-}
-
-async function bestEffortOwnedZellijCleanup(trigger) {
-  if (ownedCleanupSucceeded) {
-    report.emergency_cleanup = { trigger, ok: true, outcome: 'already_cleaned' }
-    return report.emergency_cleanup
-  }
-  if (emergencyCleanupPromise) return emergencyCleanupPromise
-  const cleanupTask = tasks.find((row) => row.id === 'zellij:real-session-cleanup')
-  emergencyCleanupPromise = cleanupTask
-    ? runNpm(cleanupTask).then((result) => {
-        report.emergency_cleanup = { trigger, ...result }
-        if (!result.ok) report.warnings.push(`zellij_emergency_cleanup_not_proven:${trigger}`)
-        return report.emergency_cleanup
-      }).catch((error) => {
-        report.emergency_cleanup = { trigger, ok: false, outcome: 'failed', error: error?.message || String(error) }
-        report.warnings.push(`zellij_emergency_cleanup_exception:${trigger}`)
-        return report.emergency_cleanup
-      })
-    : Promise.resolve({ trigger, ok: false, outcome: 'failed', error: 'cleanup_task_missing' })
-  return emergencyCleanupPromise
 }
 
 function collect(result) {
