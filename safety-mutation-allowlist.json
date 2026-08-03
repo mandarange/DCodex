@@ -7070,10 +7070,10 @@
       "file": "src/scripts/release-metadata-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "246fc63f6c89f904017e868dc87b609310997e31b7026cd09fb2ada644b23e75",
-      "callsite_sha256": "7404e2632af9851a95aa9e8eb829b27adab4711a2414a4bce2a541530af432ef",
+      "scope_contract_sha256": "a26ffd9831a12e5890c0ec4f29d6f54822c3917214810f29701bf6bca0434c85",
+      "callsite_sha256": "d7a1727bded96b3d2c8da16aeeb63069c4c84714b6463371c73cb718e235ad67",
       "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
+      "reason": "Release metadata validation writes only its fixed versioned JSON report beneath the repository .sneakoscope/reports directory."
     },
     {
       "file": "src/scripts/release-native-agent-fixture-check.ts",
@@ -7151,19 +7151,19 @@
       "file": "src/scripts/release-registry-check.ts",
       "symbol": "checkPublishAuth",
       "token": "writeFileSync",
-      "scope_contract_sha256": "99503c9bf3e1027538629ed0501018097eefd9cd9bf215245722a607aed12638",
-      "callsite_sha256": "b1c48ce95c0e56942b11d4b89175687091da81adce82c00ee697966fdc5cf95b",
+      "scope_contract_sha256": "6153d990eb0c9ef1d81471562c29804aeff82ef0a922bbee34138c65b9425c00",
+      "callsite_sha256": "0caae091818cd816eac0656533ca106d71e774765a9049d558894257a79b9692",
       "occurrence": 1,
-      "reason": "Release registry auth preflight writes only the scoped release-publish-auth report under .sneakoscope/reports."
+      "reason": "Token auth preflight writes exactly one redacted release-publish-auth JSON report to the canonical path or the caller's explicit fixture-isolation path."
     },
     {
       "file": "src/scripts/release-registry-check.ts",
       "symbol": "checkTrustedPublisherAuth",
       "token": "writeFileSync",
-      "scope_contract_sha256": "4e477d94691bd70922c4b64bd914b5c2e9f121b10fcb537263a651342ab94915",
-      "callsite_sha256": "fc358c517f38def4b70b02681fa0856b7bd61dea6f7d2669bdd14dfa860c9bb6",
+      "scope_contract_sha256": "70e5eced78844b5ad6e574dc6c2d9fe88ba867b29663e44dbabe0ca81701c09e",
+      "callsite_sha256": "64b4b49b3f724b938a9a041aacc2f084756c411c6da310da1f760300dd96ac27",
       "occurrence": 1,
-      "reason": "Release registry auth preflight writes only the scoped release-publish-auth report under .sneakoscope/reports."
+      "reason": "Trusted-publisher preflight writes exactly one redacted release-publish-auth JSON report to the canonical path or the caller's explicit fixture-isolation path."
     },
     {
       "file": "src/scripts/release-stability-report-check.ts",
