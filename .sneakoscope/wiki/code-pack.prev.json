@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-03T19:47:44.482Z",
+  "generated_at": "2026-08-03T19:56:31.457Z",
   "git_head_sha": "d2b32d3b7366352b978ae00f7aeea31ad2895ce5",
   "source_file_count": 2796,
-  "index_digest": "784089955bc7a540e5ddfe8a93a7873486449f2c0f2e863de11c65a7e3ce69cf",
+  "index_digest": "9e1dd44b5a5a1128d7f33a8bfd12c8d9993ead42c4a752ca4ec5e0babf17a81c",
   "entries": [
     {
       "id": "code:core-triwiki",
@@ -535,7 +535,7 @@
     },
     {
       "id": "code:commands",
-      "text": "commands is a module at src/commands (46 files, low risk). Key exports: CODEX_LB_TOOL_OUTPUT_RECOVERY_OVERRIDE_FLAG, CURRENT_CODEX_RELEASE_MANIFEST, CapabilityProbeLevel, CodexLbDesktopCapabilityReport, CodexLbDesktopControllerOptions, and 221 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 22 more.",
+      "text": "commands is a module at src/commands (46 files, low risk). Key exports: CODEX_LB_TOOL_OUTPUT_RECOVERY_OVERRIDE_FLAG, CURRENT_CODEX_RELEASE_MANIFEST, CapabilityProbeLevel, CodexLbDesktopCapabilityReport, CodexLbDesktopControllerOptions, and 222 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 22 more.",
       "citations": [
         {
           "path": "src/commands/research.ts"
