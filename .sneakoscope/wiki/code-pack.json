@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-04T01:12:36.643Z",
-  "git_head_sha": "571ae49fd19ea51fedf6de47da32d40f5d33f54f",
+  "generated_at": "2026-08-04T02:02:34.684Z",
+  "git_head_sha": "88396c0a6d1669767c0db7de3ed0d2dbf4c1a0df",
   "source_file_count": 2799,
-  "index_digest": "3212a0705c92475137d862e93fff9ca52f33034c3bc8fe5777ac08c54df7debb",
+  "index_digest": "36a9f6e0bb5b205834de6989bdb68e0b8b637af3552f0abba3a180420b7de6f5",
   "entries": [
     {
       "id": "code:core-triwiki",
