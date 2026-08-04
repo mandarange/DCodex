@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-03T21:16:10.946Z",
-  "git_head_sha": "f4324fd73635ba88357705d36e6a2c91396394aa",
-  "source_file_count": 2796,
-  "index_digest": "93563d1a4e6be24b444fea3c13990bf7f5c818a010d789194fff5a7a6db7047f",
+  "generated_at": "2026-08-04T00:03:59.279Z",
+  "git_head_sha": "881eba9b3dbd438f26db6d75849172e2f6f0a93b",
+  "source_file_count": 2799,
+  "index_digest": "aa00ae5829a3c8f1b33dd692bcdcf90eef002bf5f5241e59172bf880638c74f6",
   "entries": [
     {
       "id": "code:core-triwiki",
@@ -73,7 +73,7 @@
     },
     {
       "id": "code:scripts",
-      "text": "scripts is a module at src/scripts (493 files, low risk). Key exports: AGENT_RUNTIME_FILES, CODEX_0144_FEATURE_KEYS, CODEX_0_133_RELEASE_EVIDENCE, CODEX_LB_DESKTOP_REAL_EVIDENCE_CHECK_SCHEMA, CODEX_LB_TOOL_OUTPUT_RECOVERY_MIN_VERSION, and 501 more. Depends on: cli, commands, core, core-agent-guidance, core-agents, and 40 more.",
+      "text": "scripts is a module at src/scripts (494 files, low risk). Key exports: AGENT_RUNTIME_FILES, CODEX_0144_FEATURE_KEYS, CODEX_0_133_RELEASE_EVIDENCE, CODEX_LB_DESKTOP_REAL_EVIDENCE_CHECK_SCHEMA, CODEX_LB_TOOL_OUTPUT_RECOVERY_MIN_VERSION, and 502 more. Depends on: cli, commands, core, core-agent-guidance, core-agents, and 40 more.",
       "citations": [
         {
           "path": "src/scripts/codex-app-ui-clobber-guard-check.ts"
@@ -238,7 +238,7 @@
     },
     {
       "id": "code:core-release",
-      "text": "core-release is a module at src/core/release (70 files, low risk). Key exports: ALWAYS_ON_GATES, CANONICAL_TEST_PROOF_SCHEMA, CanonicalTestCorpus, CanonicalTestProof, CanonicalTestProofInput, and 317 more. Depends on: core, core-__tests__, core-safety, core-text, core-triwiki, and 1 more.",
+      "text": "core-release is a module at src/core/release (72 files, low risk). Key exports: ALWAYS_ON_GATES, CANONICAL_TEST_PROOF_SCHEMA, CanonicalTestCorpus, CanonicalTestProof, CanonicalTestProofInput, and 323 more. Depends on: core, core-__tests__, core-safety, core-text, core-triwiki, and 1 more.",
       "citations": [
         {
           "path": "src/core/release/__tests__/release-upgrade-smoke.test.ts"
