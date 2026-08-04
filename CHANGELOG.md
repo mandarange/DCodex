@@ -30,6 +30,11 @@
 
 ### Fixed
 
+- Read the complete native Codex plugin catalog, including available but not
+  installed entries, without issuing per-plugin detail calls for the full
+  catalog. Reject stale marketplace selectors before install and report exact
+  current-catalog candidates instead of attempting an invalid selector and
+  surfacing a misleading install failure.
 - Fail closed before npm staging unless the maintainer's pinned npm session can
   authenticate, inspect existing stages, and prove that the candidate version
   is not already staged. Correlate a dispatched GitHub Actions run against a

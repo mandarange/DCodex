@@ -12,6 +12,9 @@ export interface CodexPluginInventory {
   detail_fetch_count: number
   detail_fetch_failed_count: number
   detail_json_supported?: boolean
+  catalog_complete: boolean
+  installed_count: number
+  available_count: number
   duration_ms: number
   plugins: Array<{
     id: string
@@ -34,11 +37,16 @@ export interface CodexPluginInventory {
   blockers: string[]
 }
 
-export async function runCodexPluginListJson(codexBin?: string | null): Promise<any> {
+export async function runCodexPluginListJson(
+  codexBin?: string | null,
+  runJson: (bin: string, args: string[]) => Promise<any> = runCodexJson
+): Promise<any> {
   if (process.env.SKS_CODEX_PLUGIN_JSON_FAKE === '1') return fakePluginList()
   const bin = codexBin === undefined ? await findCodexBinary() : codexBin
   if (!bin) return { plugins: [], blockers: ['codex_cli_missing'] }
-  return runCodexJson(bin, ['plugin', 'list', '--json'])
+  const complete = await runJson(bin, ['plugin', 'list', '--available', '--json'])
+  if (!pluginListAvailableFlagUnsupported(complete)) return complete
+  return runJson(bin, ['plugin', 'list', '--json'])
 }
 
 export async function runCodexPluginDetailJson(pluginId: string, codexBin?: string | null): Promise<any> {
@@ -52,6 +60,7 @@ export async function buildCodexPluginInventory(input: {
   codexBin?: string | null
   listJson?: any
   detailJsonSupported?: boolean
+  detailFactory?: (pluginId: string, codexBin?: string | null) => Promise<any>
 } = {}): Promise<CodexPluginInventory> {
   const started = Date.now()
   const capability = await detectCodex0138Capability()
@@ -60,14 +69,21 @@ export async function buildCodexPluginInventory(input: {
   const summaries = normalizePluginList(listJson)
   const concurrency = Math.max(1, Number(process.env.SKS_CODEX_PLUGIN_DETAIL_CONCURRENCY || 6) || 6)
   const detailJsonSupported = input.detailJsonSupported ?? await codexPluginDetailJsonSupported(codexBin)
+  const detailFactory = input.detailFactory || runCodexPluginDetailJson
+  let detailFetchCount = 0
   let failed = 0
   const plugins = await mapWithConcurrency(summaries, concurrency, async (summary) => {
-    const detail = detailJsonSupported
-      ? await runCodexPluginDetailJson(pluginSelector(summary), codexBin).catch((err: any) => ({ error: err?.message || String(err) }))
+    const fetchDetail = detailJsonSupported && summary?.installed !== false
+    if (fetchDetail) detailFetchCount += 1
+    const detail = fetchDetail
+      ? await detailFactory(pluginSelector(summary), codexBin).catch((err: any) => ({ error: err?.message || String(err) }))
       : {}
-    if (detail?.error || normalizeList(detail?.blockers).length > 0) failed += 1
+    if (fetchDetail && (detail?.error || normalizeList(detail?.blockers).length > 0)) failed += 1
     return normalizePlugin(summary, detail)
   })
+  const installedCount = plugins.filter((plugin) => plugin.installed).length
+  const availableCount = plugins.length - installedCount
+  const catalogComplete = Array.isArray(listJson?.available) && normalizeList(listJson?.blockers).length === 0
   const blockers = [
     ...(capability.supports_plugin_json ? [] : ['codex_0_138_plugin_json_unavailable']),
     ...normalizeList(listJson?.blockers),
@@ -78,9 +94,12 @@ export async function buildCodexPluginInventory(input: {
     generated_at: nowIso(),
     codex_0138_capability: capability,
     fetch_concurrency: concurrency,
-    detail_fetch_count: detailJsonSupported ? summaries.length : 0,
+    detail_fetch_count: detailFetchCount,
     detail_fetch_failed_count: failed,
     detail_json_supported: detailJsonSupported,
+    catalog_complete: catalogComplete,
+    installed_count: installedCount,
+    available_count: availableCount,
     duration_ms: Date.now() - started,
     plugins,
     marketplace_available: plugins.some((plugin) => plugin.source === 'marketplace' || plugin.source === 'remote' || plugin.marketplace) || Boolean(listJson?.marketplace_available || listJson?.marketplaceAvailable),
@@ -227,6 +246,15 @@ function boolish(value: any, fallback = false) {
   if (value === true || value === 'true') return true
   if (value === false || value === 'false') return false
   return fallback
+}
+
+function pluginListAvailableFlagUnsupported(value: any) {
+  const rawText = String(value?.raw_text || '')
+  const parseFailed = normalizeList(value?.blockers).some((blocker) => blocker.includes('codex_plugin_json_parse_failed'))
+  return parseFailed && (
+    /(?:unexpected|unrecognized|unknown)[^\n]*--available/i.test(rawText)
+    || /--available[^\n]*(?:unexpected|unrecognized|unknown)/i.test(rawText)
+  )
 }
 
 function fakePluginList() {
