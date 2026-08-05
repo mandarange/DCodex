@@ -1,90 +1,126 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  ARCHITECTURE_HARDENING_CONTRACT_VERSION,
   ArchitectureContractError,
-  assertProviderPolicyCompatible,
+  MAX_AUDIT_PROJECTION_DEPTH,
   assertSafeAuditProjection,
-  jsonRoundTrip,
-  parseProviderPolicySnapshot,
+  createSafeAuditProjection,
+  decodeHistoricalSessionPinV1,
   stableArchitectureHash,
-  validateArchitectureConfiguration,
-  type ArchitectureConfiguration,
-  type ProviderPolicySnapshot
+  validateCurrentProviderSessionPin,
+  type HistoricalSessionPinDecodeContext,
+  type HistoricalSessionPinV1
 } from '../contracts.js';
 
-function policy(mode: ProviderPolicySnapshot['mode'] = 'codex-lb'): ProviderPolicySnapshot {
+const HASH = 'a'.repeat(64);
+
+function historicalPin(overrides: Partial<HistoricalSessionPinV1> = {}): HistoricalSessionPinV1 {
   return {
-    schema: 'sks.provider-policy-snapshot.v1',
-    contract_version: ARCHITECTURE_HARDENING_CONTRACT_VERSION,
-    mode,
-    credential_class: mode === 'chatgpt-oauth' ? 'codex-native-oauth' : mode === 'codex-lb' ? 'codex-lb-api-key' : 'openrouter-api-key',
-    allowed_models: mode === 'openrouter' ? ['anthropic/claude-sonnet-4'] : ['gpt-5.6-codex'],
-    child_policy_hash: 'a'.repeat(64),
-    catalog_version: 'catalog-v1'
+    schema: 'sks.session-pin.v1',
+    session_id: 'thread-123',
+    mode: 'codex-lb',
+    model: 'gpt-5.6-sol',
+    credential_class: 'codex-lb-api-key',
+    allowed_models: ['gpt-5.6-sol'],
+    lb_affinity_token_hash: null,
+    child_policy_hash: HASH,
+    catalog_version: 'catalog-7',
+    parent_session_id: null,
+    ...overrides
   };
 }
 
-test('provider modes are exhaustive, exclusive, strict, and JSON stable', () => {
-  for (const mode of ['chatgpt-oauth', 'codex-lb', 'openrouter'] as const) {
-    const source = policy(mode);
-    assert.deepEqual(parseProviderPolicySnapshot(jsonRoundTrip(source)), source);
-    assert.equal(stableArchitectureHash(source), stableArchitectureHash(jsonRoundTrip(source)));
-  }
-  assert.throws(
-    () => parseProviderPolicySnapshot({ ...policy(), mode: 'automatic' }),
-    (error) => error instanceof ArchitectureContractError && error.code === 'provider_policy_mode_invalid'
-  );
-  assert.throws(
-    () => parseProviderPolicySnapshot({ ...policy(), unexpected: true }),
-    /provider_policy_unknown_field/
-  );
-});
-
-test('mode, credential, child policy, catalog and allowlist mismatches fail with stable codes', () => {
-  assert.throws(() => assertProviderPolicyCompatible(policy('codex-lb'), policy('openrouter')), /provider_policy_mode_mismatch/);
-  assert.throws(
-    () => assertProviderPolicyCompatible(policy(), { ...policy(), child_policy_hash: 'b'.repeat(64) }),
-    /provider_policy_child_mismatch/
-  );
-  assert.throws(
-    () => assertProviderPolicyCompatible(policy(), { ...policy(), catalog_version: 'catalog-v2' }),
-    /provider_policy_catalog_mismatch/
-  );
-});
-
-test('architecture configuration rejects credential material at the schema boundary', () => {
-  const configuration: ArchitectureConfiguration = {
-    schema: 'sks.architecture-configuration.v1',
-    policy: policy(),
-    credential: { status: 'ready', reason_code: null },
-    catalog: {
-      schema: 'sks.catalog-snapshot.v1',
-      version: 'catalog-v1',
-      models: ['gpt-5.6-codex'],
-      checked_at: '2026-08-02T00:00:00.000Z'
-    },
-    features: []
+function decodeContext(overrides: Partial<HistoricalSessionPinDecodeContext> = {}): HistoricalSessionPinDecodeContext {
+  return {
+    current_provider_id: 'codex-lb',
+    current_upstream_model: 'gpt-5.6-sol',
+    current_catalog_generation: 'catalog-7',
+    current_route_policy_generation: 'policy-9',
+    expected_child_policy_hash: HASH,
+    created_at: '2026-08-06T00:00:00.000Z',
+    ...overrides
   };
-  assert.deepEqual(validateArchitectureConfiguration(jsonRoundTrip(configuration)), configuration);
-  assert.throws(() => assertSafeAuditProjection({ nested: { credential_fingerprint: 'nope' } }), /audit_projection_prohibited_field/);
-  assert.throws(
-    () => validateArchitectureConfiguration({ ...configuration, api_key: 'must-not-cross-boundary' }),
-    /architecture_configuration_unknown_field/
+}
+
+test('historical session pin decodes only against explicit current bridge facts', () => {
+  const result = decodeHistoricalSessionPinV1(historicalPin(), decodeContext());
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.pin, {
+    thread_id: 'thread-123',
+    provider_id: 'codex-lb',
+    public_model: 'gpt-5.6-sol',
+    upstream_model: 'gpt-5.6-sol',
+    catalog_generation: 'catalog-7',
+    route_policy_generation: 'policy-9',
+    created_at: '2026-08-06T00:00:00.000Z'
+  });
+  assert.equal(validateCurrentProviderSessionPin(result.pin), true);
+});
+
+test('historical session pin decoder fails closed for unsupported, stale, or lossy inputs', () => {
+  assert.deepEqual(
+    decodeHistoricalSessionPinV1(historicalPin({ mode: 'chatgpt-oauth', credential_class: 'codex-native-oauth' }), decodeContext()),
+    { ok: false, pin: null, blocker: 'historical_session_pin_mode_unsupported' }
+  );
+  assert.equal(
+    decodeHistoricalSessionPinV1(historicalPin({ parent_session_id: 'parent-1' }), decodeContext()).blocker,
+    'historical_session_pin_semantics_unrepresentable'
+  );
+  assert.equal(
+    decodeHistoricalSessionPinV1(historicalPin(), decodeContext({ current_catalog_generation: 'catalog-8' })).blocker,
+    'historical_session_pin_catalog_stale'
+  );
+  assert.equal(
+    decodeHistoricalSessionPinV1(historicalPin(), decodeContext({ current_provider_id: 'openrouter' })).blocker,
+    'historical_session_pin_provider_mismatch'
+  );
+  assert.equal(
+    decodeHistoricalSessionPinV1({ ...historicalPin(), unexpected: true }, decodeContext()).blocker,
+    'historical_session_pin_unknown_field'
   );
 });
 
-test('audit projections reject cyclic and excessively deep structures with stable codes', () => {
+test('current session pin validator rejects non-canonical or incomplete pins', () => {
+  const decoded = decodeHistoricalSessionPinV1(historicalPin(), decodeContext());
+  assert.equal(decoded.ok, true);
+  if (!decoded.ok) return;
+  assert.equal(validateCurrentProviderSessionPin({ ...decoded.pin, public_model: 'GPT-5.6-SOL' }), false);
+  assert.equal(validateCurrentProviderSessionPin({ ...decoded.pin, created_at: 'not-a-date' }), false);
+  assert.equal(validateCurrentProviderSessionPin({ ...decoded.pin, extra: true }), false);
+});
+
+test('audit projection is deterministic JSON and strips object identity', () => {
+  const source = { z: [{ b: true, a: null }], a: 'first', count: -0 };
+  const projection = createSafeAuditProjection(source);
+  assert.equal(JSON.stringify(projection), '{"a":"first","count":0,"z":[{"a":null,"b":true}]}');
+  assert.deepEqual(JSON.parse(JSON.stringify(projection)), projection);
+  assert.notEqual(projection, source);
+  assert.equal(stableArchitectureHash(source), stableArchitectureHash({ count: 0, a: 'first', z: [{ a: null, b: true }] }));
+});
+
+test('audit projection prohibits sensitive fields at any nesting level', () => {
+  for (const field of ['api_key', 'openrouterApiKey', 'authorization', 'client-secret', 'access_token', 'credential_fingerprint']) {
+    assert.throws(
+      () => createSafeAuditProjection({ safe: { [field]: 'not-a-secret-value' } }),
+      (error) => error instanceof ArchitectureContractError && error.code === 'audit_projection_prohibited_field'
+    );
+  }
+});
+
+test('audit projection rejects cycles, excess depth, and non-JSON values', () => {
   const cyclic: Record<string, unknown> = {};
   cyclic.self = cyclic;
   assert.throws(() => assertSafeAuditProjection(cyclic), /audit_projection_cycle/);
 
   const root: Record<string, unknown> = {};
   let cursor = root;
-  for (let index = 0; index < 66; index += 1) {
+  for (let index = 0; index <= MAX_AUDIT_PROJECTION_DEPTH; index += 1) {
     const next: Record<string, unknown> = {};
     cursor.next = next;
     cursor = next;
   }
   assert.throws(() => assertSafeAuditProjection(root), /audit_projection_depth_exceeded/);
+  assert.throws(() => assertSafeAuditProjection({ value: Number.NaN }), /audit_projection_number_invalid/);
+  assert.throws(() => assertSafeAuditProjection({ value: undefined }), /audit_projection_value_unsupported/);
 });
