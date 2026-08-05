@@ -75,3 +75,12 @@ target provider have been exercised. A built app, fixture, or static catalog
 does not prove a live credential, a Desktop restart, a WebSocket frame round
 trip, or a deep feature artifact. Those are release evidence items and remain
 `not-run-real` until collected.
+
+## Current Codex compatibility anchors
+
+The packaged compatibility manifest is pinned to `rust-v0.146.0` and validates
+the current App Server v2 contract before SKS interprets Desktop state. Browser
+evidence depends on the Codex Chrome Extension, and image generation targets
+`gpt-image-2` through the managed Desktop Bridge route. Those identifiers are
+compatibility inputs only: their presence in source or configuration is not
+live Desktop, browser, or image evidence.

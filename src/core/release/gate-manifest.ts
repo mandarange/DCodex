@@ -99,7 +99,6 @@ export function affectedGlobsFor(id: string): string[] {
     case 'postinstall':
       return [
         'src/cli/install-helpers.ts',
-        'src/cli/install-helpers-codex-lb-selftest.ts',
         'src/cli/install-helpers-install-support.ts',
         'src/core/init.ts',
         'src/core/install/installed-package-smoke.ts',

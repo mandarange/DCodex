@@ -1,13 +1,11 @@
 import os from 'node:os';
 import path from 'node:path';
-import { exists, nowIso, readText, runProcess, sha256, which, writeTextAtomic } from '../../fsx.js';
+import { nowIso, readText, runProcess, sha256, which, writeTextAtomic } from '../../fsx.js';
 import {
   ensureConfinedDirectory,
   inspectConfinedPath,
   removeManagedPathVerified
 } from '../../managed-path-safety.js';
-import { SECRET_LAUNCH_ENV_KEYS } from './constants.js';
-import type { SecretLaunchEnvCleanupResult } from './types.js';
 
 const RETIRED_REMOTE_BRIDGE_LABEL = 'com.sneakoscope.telegram-hub';
 
@@ -280,49 +278,6 @@ export function isManagedRetiredRemoteBridgeLaunchAgent(source: string): boolean
     && /<key>ProgramArguments<\/key>\s*<array>/.test(source)
     && /<string>\/usr\/bin\/caffeinate<\/string>/.test(source)
     && /<string>telegram<\/string>\s*<string>hub<\/string>\s*<string>run<\/string>/.test(source);
-}
-
-export async function cleanupMacLaunchSecretEnvironment(opts: {
-  env?: NodeJS.ProcessEnv;
-  force?: boolean;
-  launchctlBin?: string;
-  runProcessImpl?: typeof runProcess;
-} = {}): Promise<SecretLaunchEnvCleanupResult> {
-  if (process.platform !== 'darwin' && !opts.force) {
-    return { ok: true, status: 'not_macos', variables: [...SECRET_LAUNCH_ENV_KEYS], cleaned: [], failed: [], next_actions: [] };
-  }
-  const env = opts.env || process.env;
-  const launchctl = opts.launchctlBin
-    || (await exists('/bin/launchctl') ? '/bin/launchctl' : null);
-  if (!launchctl) {
-    return {
-      ok: false, status: 'launchctl_missing', variables: [...SECRET_LAUNCH_ENV_KEYS], cleaned: [],
-      failed: SECRET_LAUNCH_ENV_KEYS.map((key) => ({ key, error: 'launchctl_missing' })),
-      next_actions: SECRET_LAUNCH_ENV_KEYS.map((key) => `Run: launchctl unsetenv ${key}`)
-    };
-  }
-  const cleaned: string[] = [];
-  const failed: Array<{ key: string; error: string }> = [];
-  const childEnv = { ...env };
-  for (const key of SECRET_LAUNCH_ENV_KEYS) delete childEnv[key];
-  const run = opts.runProcessImpl || runProcess;
-  for (const key of SECRET_LAUNCH_ENV_KEYS) {
-    const result = await run(launchctl, ['unsetenv', key], {
-      timeoutMs: 3_000,
-      maxOutputBytes: 8 * 1024,
-      env: childEnv,
-      envMode: 'replace'
-    })
-      .catch((error: unknown) => ({ code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) }));
-    if (result.code === 0) cleaned.push(key);
-    else failed.push({ key, error: String(result.stderr || result.stdout || 'launchctl unsetenv failed').trim() });
-  }
-  return {
-    ok: failed.length === 0,
-    status: failed.length === 0 ? 'cleaned' : 'partial',
-    variables: [...SECRET_LAUNCH_ENV_KEYS], cleaned, failed,
-    next_actions: ['Rotate credentials if they were previously exposed in the launchd environment.']
-  };
 }
 
 function processFailure(error: unknown) {

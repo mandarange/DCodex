@@ -195,7 +195,7 @@ export async function codexAppIntegrationStatus(opts: any = {}) {
       fast_mode_config: fastModeConfig,
       provider_model_ui: providerModelUi,
       selected_provider_ready: selectedProviderReady,
-      codex_lb_capabilities: opts.codexLbCapabilityReport || null,
+      desktop_bridge_capabilities: opts.desktopBridgeCapabilityReport || null,
       git_actions: gitActions,
       image_generation: imageGenerationReady,
       image_generation_source: imageGenerationReady ? 'codex_features_list' : 'missing',

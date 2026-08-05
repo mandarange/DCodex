@@ -213,10 +213,17 @@ sks bridge verify --level transport --json
 Configure secrets through stdin only:
 
 ```sh
-printf '%s\n' "$CODEX_LB_API_KEY" | \
+read -r -s codex_lb_key
+printf '\n'
+printf '%s\n' "$codex_lb_key" | \
   sks bridge provider configure codex-lb --host lb.example.com --api-key-stdin --json
-printf '%s\n' "$OPENROUTER_API_KEY" | \
+unset codex_lb_key
+
+read -r -s openrouter_key
+printf '\n'
+printf '%s\n' "$openrouter_key" | \
   sks bridge provider configure openrouter --api-key-stdin --json
+unset openrouter_key
 ```
 
 `sks codex-lb` is removed and returns `unknown_command`; it has no alias.

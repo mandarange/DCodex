@@ -15,7 +15,9 @@ import {
 } from '../provider-credentials.js';
 import {
   bridgeProviderRegistryPath,
+  buildStoredBridgeProviderRegistry,
   resolveBridgeProviderRegistry,
+  serializeStoredBridgeProviderRegistry,
   setBridgeProviderEnabled
 } from '../provider-registry.js';
 import { buildBridgeRoutingPolicy, setBridgeRoutingDefault } from '../provider-route-policy.js';
@@ -44,7 +46,7 @@ async function credentialFixture(t: test.TestContext) {
     schema: 'sks.codex-lb-metadata.v1',
     base_url: lbEndpoint,
     api_key: { sha256: sha256(lbKey), redacted: true },
-    gateway_auth_transport: 'authorization-bearer-compat'
+    gateway_auth_transport: 'authorization-bearer'
   }, null, 2)}\n`, { mode: 0o600 });
   const openRouterKey = 'or-secret-coexistence-fixture-987654321';
   const openRouterPaths = openRouterSecretPaths({ HOME: home } as NodeJS.ProcessEnv);
@@ -90,6 +92,28 @@ test('R01-R05: provider credentials coexist and serialize only stable redacted m
   assert.equal(serialized.includes(fixture.lbKey), false);
   assert.equal(serialized.includes(fixture.openRouterKey), false);
   assert.equal(serialized.includes('"secret"'), false);
+
+  const historicalRegistry = buildStoredBridgeProviderRegistry({
+    credentials,
+    overrides: {
+      'codex-lb': {
+        present: true,
+        enabled: true,
+        endpoint_url: 'https://lb.example.test/backend-api/codex',
+        auth_transport: 'x-codex-lb-api-key'
+      },
+      openrouter: {
+        present: true,
+        enabled: true,
+        endpoint_url: 'https://openrouter.ai/api/v1',
+        auth_transport: 'openrouter-bearer'
+      }
+    }
+  });
+  const historicalRegistryText = serializeStoredBridgeProviderRegistry(historicalRegistry);
+  assert.equal(historicalRegistry.profiles['codex-lb'].auth_transport, 'x-codex-lb-api-key');
+  assert.equal(historicalRegistry.profiles.openrouter.auth_transport, 'openrouter-bearer');
+  assert.doesNotMatch(historicalRegistryText, new RegExp(`${fixture.lbKey}|${fixture.openRouterKey}`));
 
   const noCredentials = await resolveAllProviderCredentials({
     codexLb: { home: path.join(fixture.home, 'absent'), processEnv: {} },
@@ -192,6 +216,37 @@ test('R10-R13/R31: enable/default changes preserve both stores and removal is ex
   assert.equal(afterRemoval.openrouter.state, 'configured_unverified');
 });
 
+test('R31/S17: credential removal refuses paths outside the provider-owned store', async (t) => {
+  const fixture = await credentialFixture(t);
+  const sentinel = path.join(fixture.home, 'must-not-delete.txt');
+  const sentinelBytes = Buffer.from('preserve-user-data\n');
+  await fs.writeFile(sentinel, sentinelBytes, { mode: 0o600 });
+
+  const openRouterResult = await removeProviderCredential({
+    provider_id: 'openrouter',
+    confirmed: true,
+    openRouterPaths: {
+      ...fixture.openRouterPaths,
+      keyPath: sentinel
+    }
+  });
+  assert.equal(openRouterResult.removed, false);
+  assert.deepEqual(openRouterResult.blockers, ['openrouter_credential_path_outside_secret_store']);
+  assert.deepEqual(await fs.readFile(sentinel), sentinelBytes);
+  await fs.access(fixture.openRouterPaths.keyPath);
+
+  const codexLbResult = await removeProviderCredential({
+    provider_id: 'codex-lb',
+    confirmed: true,
+    home: fixture.home,
+    codexLbEnvPath: sentinel
+  });
+  assert.equal(codexLbResult.removed, false);
+  assert.deepEqual(codexLbResult.blockers, ['codex_lb_credential_path_outside_codex_home']);
+  assert.deepEqual(await fs.readFile(sentinel), sentinelBytes);
+  await fs.access(fixture.lbEnvPath);
+});
+
 test('R31: rotating one key changes only that provider profile generation', async (t) => {
   const fixture = await credentialFixture(t);
   const options = () => ({
@@ -219,7 +274,7 @@ test('R31: rotating one key changes only that provider profile generation', asyn
     schema: 'sks.codex-lb-metadata.v1',
     base_url: endpoint,
     api_key: { sha256: sha256(rotated), redacted: true },
-    gateway_auth_transport: 'authorization-bearer-compat'
+    gateway_auth_transport: 'authorization-bearer'
   }, null, 2)}\n`, { mode: 0o600 });
   const afterCredentials = await resolveAllProviderCredentials(options());
   const after = await resolveBridgeProviderRegistry({ registryPath: fixture.registryPath, credentials: afterCredentials });

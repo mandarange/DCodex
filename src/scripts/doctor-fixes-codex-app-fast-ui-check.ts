@@ -35,25 +35,29 @@ const unsafePlan = await repairCodexAppFastUi(unsafeRoot, { codexHome: unsafeCod
 const unsafeAfter = await fs.readFile(path.join(unsafeCodexHome, 'config.toml'), 'utf8')
 const ok = plan.fast_selector === 'manual_action_required'
   && plan.provider_selector === 'manual_action_required'
-  && plan.selected_provider_blockers.includes('codex_lb_api_key_missing')
-  && plan.selected_provider_blockers.includes('codex_lb_base_url_missing')
-  && plan.provider_actions.includes('sks codex-app set-openrouter-key --api-key-stdin')
-  && plan.provider_actions.includes('sks codex-lb setup --host <domain> --api-key-stdin --yes')
+  && plan.selected_provider_blockers.includes('bridge_active_route_not_selected')
+  && plan.selected_provider_blockers.includes('combined_catalog_active_generation_missing')
+  && plan.selected_provider_blockers.includes('bridge_route_policy_missing')
+  && plan.provider_actions.includes('sks bridge provider configure')
+  && plan.provider_actions.includes('sks bridge provider validate')
+  && plan.provider_actions.includes('sks bridge provider enable')
+  && plan.provider_actions.includes('sks bridge catalog sync')
+  && plan.provider_actions.includes('sks bridge route set-default')
   && plan.safe_auto_apply === true
   && repaired.fast_selector === 'repaired'
-  // Contract-valid codex-lb selection is preserved through Fast UI repair; without
-  // hermetic credentials/catalog the selected provider stays setup-required.
+  // The retired SKS-owned direct selection is removed; the hermetic fixture has
+  // no verified Desktop Bridge route, so provider readiness remains manual.
   && repaired.provider_selector === 'manual_action_required'
-  && repaired.selected_provider_blockers.includes('codex_lb_api_key_missing')
-  && repaired.selected_provider_blockers.includes('codex_lb_base_url_missing')
-  && repaired.selected_provider_blockers.includes('codex_lb_model_catalog_json_unselected')
+  && repaired.selected_provider_blockers.includes('bridge_active_route_not_selected')
+  && repaired.selected_provider_blockers.includes('combined_catalog_active_generation_missing')
+  && repaired.selected_provider_blockers.includes('bridge_route_policy_missing')
   && repaired.safe_auto_apply === true
   && backups.length >= 1
   && /^model\s*=\s*"future-codex-model"$/m.test(projectAfter.split(/\n\s*\[/)[0] || '')
   && /^model_reasoning_effort\s*=\s*"medium"$/m.test(projectAfter.split(/\n\s*\[/)[0] || '')
   && !/^model\s*=/m.test(homeTopLevel)
   && !/^model_reasoning_effort\s*=/m.test(homeTopLevel)
-  && /^model_provider\s*=\s*"codex-lb"$/m.test(homeTopLevel)
+  && !/^model_provider\s*=/m.test(homeTopLevel)
   && /model_provider\s*=\s*"codex-lb"/.test(projectAfter)
   && /^service_tier\s*=\s*"fast"$/m.test(homeTopLevel)
   && /fast_mode = false/.test(homeAfter)

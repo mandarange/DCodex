@@ -1,81 +1,74 @@
-# Architecture-hardening migration
+# Desktop Bridge migration and recovery
 
-This migration replaces legacy external custom-provider injection and mixed
-catalog/session metadata with the native `openai` loopback architecture. It is
-explicit and provenance-preserving; inspection alone never writes.
+Sneakoscope 8.1.3 has one managed Desktop routing runtime: the loopback
+Desktop Bridge. Codex-LB and OpenRouter are independent provider profiles
+inside that runtime. ChatGPT OAuth remains owned by Codex and is never moved
+into a provider profile.
 
-## Status vocabulary
+There is no alternate legacy runtime, legacy command, or legacy-only source
+directory. Historical SKS-authored configuration is decoded only inside the
+current migration implementation so it can be converted or rejected safely.
 
-- `policy`: the accepted native identity, exclusive modes, immutable pins, and
-  no-fallback invariants.
-- `implemented`: source exists and is connected to the bridge/CLI/Center choke
-  points.
-- `contract-tested`: unit, generated Swift, or hermetic mock evidence passed.
-- `live-verified`: an approved real provider or signed app was exercised.
+## Current contract
 
-Current migration code is implemented and contract-tested. No user Codex
-configuration was migrated and no live provider was used in this worktree.
+- `sks bridge` is the only public management surface.
+- `sks codex-lb` is removed and returns `unknown_command`.
+- The combined catalog and route index activate as one generation.
+- Requests use an explicit route or a validated session pin; model spelling and
+  slash prefixes never select a provider.
+- Codex-LB and OpenRouter credentials can coexist and are never copied into
+  receipts, catalogs, route indexes, launchd configuration, or UI JSON.
+- There is no automatic provider fallback.
 
-## What is superseded
+## Inspect, migrate, and roll back
 
-New Desktop setup must not inject `sks-router`, `openrouter`, or `codex-lb` as
-an unsealed external transport identity. Those tables and command aliases may
-remain readable so the migrator can identify ownership and prepare rollback,
-but they are superseded by built-in `openai` plus a loopback endpoint. Legacy
-CLI-only consumers remain a compatibility lane and are not silently rewritten.
+[`desktop-bridge-migration.ts`](../src/core/codex-lb/desktop-bridge-migration.ts)
+owns the migration transaction:
 
-## Inspect, plan, apply
+1. Inspect exact configuration bytes and classify only recognized SKS-authored
+   historical state.
+2. Fail closed on ambiguous or user-owned values.
+3. Build current provider profiles, route policy, catalog binding, and service
+   metadata without moving secret values.
+4. Publish a checksummed, redacted receipt only after read-back succeeds.
+5. On rollback, restore receipt-owned metadata while preserving credentials
+   and OAuth state that changed after migration.
 
-[`migration.ts`](../src/core/architecture-hardening/migration/migration.ts)
-implements three boundaries:
+Running the migration twice produces a no-op receipt. A failed write or
+generation activation preserves the previous verified generation. Credential
+removal is a separate, explicitly confirmed operation.
 
-1. Inspect the exact configuration text and session metadata. Classify custom
-   provider injection, mixed catalogs, missing session pins, obsolete aliases,
-   unsupported options, and unmarked user edits.
-2. Produce a plan with fixed reason codes, target mode, removable-path proof,
-   and ambiguity blockers. Ambiguous ownership returns `migration_required`;
-   it is never guessed.
-3. Apply only with explicit authorization and confirmed removable paths. The
-   writer creates a mode-preserving backup receipt, uses guarded atomic replace,
-   re-reads the result, and rolls back on failure. It does not store secret
-   values in the receipt.
+## Persistent recovery state
 
-Unmarked user edits and referenced provider tables are retained. Missing
-session metadata is not fabricated: the old session stays blocked for explicit
-migration while new sessions use a freshly sealed pin.
-
-## Runtime transition
-
-The desired four-stage result is:
+The architecture state service is provider-neutral infrastructure. It records
+draft, last-known-good, stage receipts, and rollback information; it is not a
+provider-mode selector. The four public stages remain:
 
 1. configuration saved;
-2. proxy applied;
-3. native catalog refreshed;
+2. bridge applied;
+3. combined catalog refreshed;
 4. new session ready.
 
-A failed stage leaves last-known-good unchanged. Existing sessions keep their
-original mode/model/child snapshot. The operator may discard only the draft or
-restore the recorded pre-apply configuration; a migration failure never
-deletes an older credential or graph snapshot automatically.
+A partial failure leaves last-known-good bytes intact. Session-pin compatibility
+is decoded into the current bridge pin contract and then validated for thread,
+provider, model, and generation affinity. Invalid or tampered pins fail closed.
 
-Current Codex Desktop does not yet send the sealed session and parent snapshot
-headers needed for strict per-request pin enforcement. The compatibility bridge
-therefore leaves `require_session_pin` off unless the caller supplies that
-verified protocol. Do not enable it by deriving identity from model names or
-ambient account state.
+## Verification
 
-## Verification and rollback
-
-Run the focused contracts and hermetic matrix after migration changes:
+Run the focused contracts and the Desktop Bridge hermetic matrix:
 
 ```bash
 npm run typecheck --silent
 npm run build:incremental --silent
 node --test dist/core/architecture-hardening/__tests__/integration.test.js
 node --test test/e2e/architecture-hardening/hermetic-sandbox.test.mjs
+node dist/scripts/desktop-bridge-unification-check.js
 ```
 
-Production claims additionally need the real LB probe and signed menu-bar QA
-described in [Hermetic E2E Testing](testing-hermetic-e2e.md). If those inputs
-are absent, record `not_verified`; do not read the user's saved credentials or
-promote a mock pass.
+The hermetic matrix proves contract behavior with isolated homes and sentinel
+credentials; it is not live provider evidence. `npm run
+desktop-bridge:real-evidence` reports whether explicitly supplied real inputs
+were exercised, but its receipt is non-release-authorizing. macOS launchd,
+Codex Desktop restart, real OAuth identity, real providers, WebSocket exchange,
+and native deep artifacts require separately attached real-environment
+receipts. Missing inputs remain `not-run-real`.

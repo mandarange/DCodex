@@ -20,7 +20,7 @@ export const RELEASE_REAL_REQUIRED_CHECK_IDS = Object.freeze([
   'codex-sdk:real-smoke'
 ])
 export const RELEASE_REAL_OPTIONAL_CHECK_IDS = Object.freeze([
-  'codex-lb:desktop-real-evidence',
+  'desktop-bridge:real-evidence',
   'imagegen:real-smoke',
   'ux-review:real-imagegen-smoke',
   'ppt:real-imagegen-smoke'

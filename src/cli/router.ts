@@ -16,8 +16,8 @@ import {
 import type {
   IntentContract,
   IntentEffect,
+  RoutingRuntimeSnapshot,
 } from '../core/safety/intent-contract/intent-contract.js';
-import type { ProviderMode } from '../core/architecture-hardening/contracts/contracts.js';
 
 export interface NormalizedCommand {
   command: CommandNameLite | null;
@@ -37,7 +37,7 @@ export interface RouterIntentInheritance {
   readonly parentContract?: IntentContract;
   readonly naturalLanguageEffect?: string;
   readonly effect?: IntentEffect;
-  readonly modeSnapshot?: ProviderMode;
+  readonly runtimeSnapshot?: RoutingRuntimeSnapshot;
   readonly evidenceState?: IntentContract['evidence_state'];
   readonly retryBudget?: number;
 }
@@ -66,7 +66,7 @@ export function prepareRouterExecutionIntent(
       observedChangedPaths: parent.observed_changed_paths,
       targetHashes: parent.target_hashes,
       policyVersion: parent.policy_version,
-      modeSnapshot: parent.mode_snapshot,
+      runtimeSnapshot: parent.runtime_snapshot,
       evidenceState: parent.evidence_state,
       retryBudget: parent.retry_budget,
       requestedRisk: parent.risk,
@@ -84,7 +84,7 @@ export function prepareRouterExecutionIntent(
     effect: inheritance.effect || classifyCliIntentEffect(effectiveArgv),
     targetHashes: [createHash('sha256').update(`${process.cwd()}\0${effectiveArgv[0] || 'doctor'}`).digest('hex')],
     policyVersion: 'sks-cli-router-v1',
-    modeSnapshot: inheritance.modeSnapshot || providerModeFromEnvironment(),
+    runtimeSnapshot: inheritance.runtimeSnapshot || 'desktop-bridge',
     evidenceState: inheritance.evidenceState || 'missing',
     retryBudget: inheritance.retryBudget ?? 0,
     force: effectiveArgv.includes('--force'),
@@ -153,13 +153,6 @@ export async function dispatch(args?: readonly string[]): Promise<unknown> {
     if (argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
     return result;
   }
-}
-
-function providerModeFromEnvironment(): ProviderMode {
-  const mode = String(process.env.SKS_PROVIDER_MODE || '').trim();
-  return mode === 'codex-lb' || mode === 'openrouter' || mode === 'chatgpt-oauth'
-    ? mode
-    : 'chatgpt-oauth';
 }
 
 function classifyCliIntentEffect(argv: readonly string[]): IntentEffect {

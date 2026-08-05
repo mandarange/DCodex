@@ -18,7 +18,14 @@ test('doctor JSON fast path writes an exact report file when requested', () => {
     const result = spawnSync(process.execPath, ['dist/bin/sks.js', 'doctor', '--json', '--report-file', reportFile], {
       cwd: root,
       encoding: 'utf8',
-      maxBuffer: 16 * 1024 * 1024
+      maxBuffer: 16 * 1024 * 1024,
+      env: {
+        ...process.env,
+        CODEX_LB_API_KEY: '',
+        CODEX_LB_BASE_URL: '',
+        OPENROUTER_API_KEY: '',
+        OPENROUTER_BASE_URL: ''
+      }
     })
     assert.equal(result.status, 0, result.stderr || result.stdout)
     assert.equal(fs.statSync(reportFile).isFile(), true)

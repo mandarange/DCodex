@@ -41,15 +41,6 @@ export interface SksMenuBarTargetCheck {
   used_previous_script: boolean;
 }
 
-export interface SecretLaunchEnvCleanupResult {
-  ok: boolean;
-  status: 'cleaned' | 'skipped' | 'not_macos' | 'launchctl_missing' | 'partial';
-  variables: string[];
-  cleaned: string[];
-  failed: Array<{ key: string; error: string }>;
-  next_actions: string[];
-}
-
 export interface SksMenuBarConfig {
   schema: 'sks.sks-menubar-config.v1';
   codex_bundle_id: string | null;
@@ -180,7 +171,6 @@ export interface SksMenuBarInstallResult {
   target_check?: SksMenuBarTargetCheck;
   build_stamp?: SksMenuBarBuildStamp | null;
   tcc_automation_status?: 'unknown' | 'granted' | 'denied';
-  secret_env_cleanup?: SecretLaunchEnvCleanupResult;
   next_actions: string[];
   blockers: string[];
   warnings: string[];

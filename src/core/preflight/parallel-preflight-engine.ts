@@ -4,8 +4,7 @@ import { buildCodexExecArgs } from '../codex/codex-cli-syntax-builder.js'
 import { inspectCodexConfigReadability } from '../codex/codex-config-readability.js'
 import { repairCodexConfigEperm } from '../codex/codex-config-eperm-repair.js'
 import { splitCodexProjectConfigPolicy } from '../codex/codex-project-config-policy.js'
-import { codexLbStatus } from '../../cli/install-helpers.js'
-import { codexLbToolOutputRecoveryOverrideAcknowledged } from '../codex-lb/codex-lb-tool-output-recovery.js'
+import { desktopBridgeStatusV3 } from '../codex-lb/desktop-controller-v3.js'
 
 export const PARALLEL_PREFLIGHT_SCHEMA = 'sks.parallel-preflight.v1'
 
@@ -42,7 +41,7 @@ export async function runCodexLaunchPreflight(rootInput: string = process.cwd(),
   const readonly = await runParallelPreflight([
     { id: 'codex_config_readability', run: () => inspectCodexConfigReadability(root, { ...opts, codexProbe: probeCodex, actualCodex: probeCodex, writeReport: false }) },
     { id: 'codex_project_config_policy', run: () => splitCodexProjectConfigPolicy(root, { ...opts, writeReport: false }) },
-    { id: 'codex_lb_tool_output_recovery', run: () => inspectCodexLbToolOutputRecoveryForLaunch(opts) }
+    { id: 'desktop_bridge_status', run: () => inspectDesktopBridgeForLaunch(opts) }
   ])
   // A failed read-only preflight must not invoke the full repair inspector unless
   // the operator explicitly requested repair. The repair path re-runs readability
@@ -72,7 +71,7 @@ export async function runCodexLaunchPreflight(rootInput: string = process.cwd(),
   }
   const blockers = [...new Set([...(readonly.blockers || []), ...(repair?.blockers || []), ...(fastTierProof.ok ? [] : ['service_tier_not_passed_to_codex'])])]
   const operatorActions = [...new Set([...(readonly.operator_actions || []), ...(repair?.operator_actions || [])])]
-  const codexLbToolOutputRecovery = readonly.results.find((result) => result.id === 'codex_lb_tool_output_recovery')?.value || null
+  const desktopBridgeStatus = readonly.results.find((result) => result.id === 'desktop_bridge_status')?.value || null
   const report = {
     schema: 'sks.mad-launch-preflight.v1',
     generated_at: nowIso(),
@@ -80,7 +79,7 @@ export async function runCodexLaunchPreflight(rootInput: string = process.cwd(),
     ok: blockers.length === 0,
     readonly,
     repair,
-    codex_lb_tool_output_recovery: codexLbToolOutputRecovery,
+    desktop_bridge_status: desktopBridgeStatus,
     fast_tier_proof: fastTierProof,
     blockers,
     operator_actions: operatorActions
@@ -89,63 +88,38 @@ export async function runCodexLaunchPreflight(rootInput: string = process.cwd(),
   return report
 }
 
-export async function inspectCodexLbToolOutputRecoveryForLaunch(opts: any = {}) {
-  if (opts.skipCodexLbToolOutputRecovery === true) {
+export async function inspectDesktopBridgeForLaunch(opts: any = {}) {
+  if (opts.skipDesktopBridgeStatus === true) {
     return {
-      schema: 'sks.codex-lb-launch-recovery-preflight.v1',
+      schema: 'sks.desktop-bridge-launch-preflight.v1',
       ok: true,
-      status: 'not_applicable',
-      selected: false,
+      status: 'skipped',
+      managed: false,
       blockers: [],
       operator_actions: []
     }
   }
-  const allowUnverifiedToolOutputRecovery = opts.allowUnverifiedToolOutputRecovery === true
-    || codexLbToolOutputRecoveryOverrideAcknowledged({ env: opts.env || process.env })
-  const status = await codexLbStatus({
+  const status = await (opts.desktopBridgeStatusImpl || desktopBridgeStatusV3)({
     ...opts,
-    // Prefer an explicit fixture home (codexHome) so launch preflight tests do not
-    // inherit the operator machine's selected codex-lb provider.
-    ...(opts.home || opts.codexHome ? { home: opts.home || opts.codexHome } : {}),
-    ...(opts.codexLbConfigPath ? { configPath: opts.codexLbConfigPath } : {}),
-    ...(opts.codexLbEnvPath ? { envPath: opts.codexLbEnvPath } : {}),
-    ...(typeof opts.codexLbToolOutputRecoveryFetch === 'function'
-      ? { toolOutputRecoveryFetch: opts.codexLbToolOutputRecoveryFetch }
-      : {}),
-    ...(opts.codexLbToolOutputRecoveryTimeoutMs
-      ? { toolOutputRecoveryTimeoutMs: opts.codexLbToolOutputRecoveryTimeoutMs }
-      : {}),
-    probeToolOutputRecovery: true,
-    allowUnverifiedToolOutputRecovery
+    ...(opts.home || opts.codexHome ? { home: opts.home || opts.codexHome } : {})
   })
-  const recovery = status.tool_output_recovery
-  const required = status.selected === true
-  const providerReady = status.provider_ready === true
-  const providerBlockers = Array.isArray(status.blockers)
-    ? status.blockers.map(String).filter(Boolean)
+  const managed = status.management?.managed === true
+  const ready = status.readiness?.ready === true
+  const blockers = managed && !ready
+    ? Array.isArray(status.readiness?.blockers)
+      ? status.readiness.blockers.map(String).filter(Boolean)
+      : ['desktop_bridge_not_ready']
     : []
-  const ok = !required || (providerReady && recovery?.ok === true)
   return {
-    schema: 'sks.codex-lb-launch-recovery-preflight.v1',
-    ok,
-    status: !required
-      ? 'not_selected'
-      : !providerReady
-        ? providerBlockers[0] || 'provider_not_ready'
-        : recovery?.status || 'version_unverified',
-    selected: required,
-    provider_ready: providerReady,
-    base_url: status.base_url || null,
-    tool_output_recovery: recovery || null,
-    blockers: ok
-      ? []
-      : !providerReady
-        ? providerBlockers.length > 0
-          ? providerBlockers
-          : ['codex_lb_provider_not_ready']
-        : recovery?.blockers || ['codex_lb_tool_output_recovery_version_unverified'],
-    operator_actions: ok ? [] : recovery?.operator_actions || [
-      'Upgrade codex-lb, or run `sks codex-lb disable`; SKS will not change routing or authentication silently.'
-    ]
+    schema: 'sks.desktop-bridge-launch-preflight.v1',
+    ok: !managed || ready,
+    status: !managed ? 'not_managed' : ready ? 'ready' : 'blocked',
+    managed,
+    ready,
+    correlation_id: status.correlation_id || null,
+    blockers,
+    operator_actions: managed && !ready && Array.isArray(status.recovery_actions)
+      ? status.recovery_actions.map(String).filter(Boolean)
+      : []
   }
 }

@@ -51,7 +51,7 @@ const IDS = {
 
 /** Gate universe: one always-on release gate plus gates whose globs never match the changed file. */
 const GATES: GateManifestEntry[] = [
-  buildGateEntry('release:metadata'),
+  buildGateEntry('release:metadata-current'),
   buildGateEntry('custom:thing'),
   buildGateEntry('security:secret-scan'),
   buildGateEntry('lint:fast')
@@ -188,8 +188,8 @@ test('a gate reachable only through a dependent file is added with its reason pa
 test('protected release and security gates are always in the result', () => {
   const result = run([PATHS.unrelated]);
 
-  assert.ok(result.gates.includes('release:metadata'), 'an always-on release gate never falls out');
-  assert.ok(result.protected_gates.includes('release:metadata'));
+  assert.ok(result.gates.includes('release:metadata-current'), 'an always-on release gate never falls out');
+  assert.ok(result.protected_gates.includes('release:metadata-current'));
   const security = run([PATHS.changed]);
   assert.ok(security.gates.includes('security:secret-scan'));
   const detail = security.gate_details.find((row) => row.gate_id === 'security:secret-scan');

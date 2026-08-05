@@ -1,7 +1,6 @@
 import { COMMAND_ALIASES_LITE, COMMAND_MANIFEST_LITE } from '../../../cli/command-manifest-lite.js';
 import { DOLLAR_COMMAND_ALIASES_LITE, DOLLAR_COMMANDS_LITE } from '../../routes/dollar-manifest-lite.js';
-import { buildIntentContract, type IntentContract, type IntentEffect, type IntentRisk } from '../../safety/intent-contract/intent-contract.js';
-import type { ProviderMode } from '../../architecture-hardening/contracts/contracts.js';
+import { buildIntentContract, type IntentContract, type IntentEffect, type IntentRisk, type RoutingRuntimeSnapshot } from '../../safety/intent-contract/intent-contract.js';
 
 export interface DeprecationDescriptor {
   readonly option: string;
@@ -33,7 +32,7 @@ export function normalizeIntentCommand(input: {
   observedChangedPaths?: readonly string[];
   targetHashes: readonly string[];
   policyVersion: string;
-  modeSnapshot: ProviderMode;
+  runtimeSnapshot: RoutingRuntimeSnapshot;
   evidenceState: IntentContract['evidence_state'];
   retryBudget?: number;
   requestedRisk?: IntentRisk;
@@ -54,7 +53,7 @@ export function normalizeIntentCommand(input: {
     canonicalCommand,
     targetHashes: input.targetHashes,
     policyVersion: input.policyVersion,
-    modeSnapshot: input.modeSnapshot,
+    runtimeSnapshot: input.runtimeSnapshot,
     evidenceState: input.evidenceState,
     ...(input.observedChangedPaths === undefined ? {} : { observedChangedPaths: input.observedChangedPaths }),
     ...(input.retryBudget === undefined ? {} : { retryBudget: input.retryBudget }),

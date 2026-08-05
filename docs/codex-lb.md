@@ -22,10 +22,17 @@ sks bridge status --json
 sks bridge ensure --json
 
 # Read the key from standard input; never put it in argv.
-printf '%s\n' "$CODEX_LB_API_KEY" | \
+read -r -s codex_lb_key
+printf '\n'
+printf '%s\n' "$codex_lb_key" | \
   sks bridge provider configure codex-lb --host lb.example.com --api-key-stdin --json
-printf '%s\n' "$OPENROUTER_API_KEY" | \
+unset codex_lb_key
+
+read -r -s openrouter_key
+printf '\n'
+printf '%s\n' "$openrouter_key" | \
   sks bridge provider configure openrouter --api-key-stdin --json
+unset openrouter_key
 
 sks bridge provider validate codex-lb --json
 sks bridge provider validate openrouter --json
@@ -44,6 +51,17 @@ sks bridge provider remove-credential codex-lb --confirm --json
 Bridge results expose secret-free credential metadata only: state, source,
 redacted fingerprint, and check time. They never serialize provider keys,
 OAuth tokens, or a complete endpoint query.
+
+### Credential persistence classes
+
+The status contract reports the credential persistence class without exposing
+the credential. `durable_env_file` is the owner-only CLI store,
+`durable_keychain` is available only through an explicit signed-app reconnect,
+`shell_profile` identifies an operator-owned shell source that SKS does not
+rewrite, and `process_only_ephemeral` means the value disappears with the
+process. A profile containing a **base URL only** is configured-incomplete, not
+ready. None of these classes authorizes automatic authentication UI or copying
+ChatGPT OAuth into a provider profile.
 
 ## Catalog and routing
 

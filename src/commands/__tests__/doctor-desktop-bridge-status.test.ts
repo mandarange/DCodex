@@ -72,6 +72,21 @@ test('Doctor blocks on managed Desktop Bridge readiness blockers but not an unma
   assert.deepEqual(unmanaged.blockers, []);
 });
 
+test('Doctor does not block a fresh managed runtime with no enabled provider profile', async () => {
+  const status = bridgeStatus({ managed: true, ready: false });
+  status.providers['codex-lb'].enabled = false;
+  status.providers['codex-lb'].credential.state = 'absent';
+  status.providers['codex-lb'].endpoint.configured = false;
+
+  const result: any = await inspectDoctorDesktopBridgeStatus({}, {
+    desktopBridgeStatusImpl: async () => status
+  });
+
+  assert.equal(result.managed, true);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.blockers, []);
+});
+
 test('Doctor fails closed when Desktop Bridge status is unavailable', async () => {
   const result: any = await inspectDoctorDesktopBridgeStatus({}, {
     desktopBridgeStatusImpl: async () => { throw new Error('bridge unavailable'); }

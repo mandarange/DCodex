@@ -8,6 +8,11 @@ import {
   readPrivateCredentialFile,
   writePrivateTextAtomic
 } from '../../security/private-credential-file.js';
+import {
+  inspectConfinedPath,
+  isLexicallyConfined,
+  removeManagedPathVerified
+} from '../../managed-path-safety.js';
 
 export const OPENROUTER_KEY_ENV_NAMES = ['OPENROUTER_API_KEY', 'SKS_OPENROUTER_API_KEY'] as const;
 
@@ -145,11 +150,57 @@ export async function removeStoredOpenRouterKey(input: {
     };
   }
   const paths = input.paths || openRouterSecretPaths();
+  const secretDir = path.resolve(paths.secretDir);
+  const files = [path.resolve(paths.keyPath), path.resolve(paths.metadataPath)];
+  if (files.some((file) => file === secretDir || !isLexicallyConfined(secretDir, file))) {
+    return {
+      schema: 'sks.openrouter-key-removal.v1',
+      removed: false,
+      removed_paths: [],
+      blockers: ['openrouter_credential_path_outside_secret_store']
+    };
+  }
+  if (new Set(files).size !== files.length) {
+    return {
+      schema: 'sks.openrouter-key-removal.v1',
+      removed: false,
+      removed_paths: [],
+      blockers: ['openrouter_credential_path_collision']
+    };
+  }
+  const secretDirStat = await fs.lstat(secretDir).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!secretDirStat) {
+    return {
+      schema: 'sks.openrouter-key-removal.v1',
+      removed: false,
+      removed_paths: [],
+      blockers: []
+    };
+  }
+  if (!secretDirStat.isDirectory() || secretDirStat.isSymbolicLink()) {
+    return {
+      schema: 'sks.openrouter-key-removal.v1',
+      removed: false,
+      removed_paths: [],
+      blockers: ['openrouter_credential_secret_store_unsafe']
+    };
+  }
   const existing: string[] = [];
-  for (const file of [paths.keyPath, paths.metadataPath]) {
-    const stat = await fs.lstat(file).catch(() => null);
-    if (!stat) continue;
-    if (!stat.isFile() || stat.isSymbolicLink()) {
+  for (const file of files) {
+    const inspected = await inspectConfinedPath(secretDir, file).catch(() => null);
+    if (!inspected) {
+      return {
+        schema: 'sks.openrouter-key-removal.v1',
+        removed: false,
+        removed_paths: [],
+        blockers: ['openrouter_credential_path_unsafe']
+      };
+    }
+    if (!inspected.exists) continue;
+    if (inspected.leafSymlink || !inspected.stat?.isFile()) {
       return {
         schema: 'sks.openrouter-key-removal.v1',
         removed: false,
@@ -161,7 +212,7 @@ export async function removeStoredOpenRouterKey(input: {
   }
   const removed: string[] = [];
   for (const file of existing) {
-    await fs.unlink(file);
+    await removeManagedPathVerified(secretDir, file);
     removed.push(file);
   }
   return {

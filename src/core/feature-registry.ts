@@ -965,6 +965,8 @@ function isExternalPromptCommandMention(mention: any) {
     '$CODEX_HOME',
     '$HOME',
     '$CODEX_LB_API_KEY',
+    '$CODEX_LB_KEY',
+    '$OPENROUTER_KEY',
     '$SKS_CODEX_APP_IMAGEGEN_OUTPUT',
     '$SKS_CODEX_APP_IMAGEGEN_OUTPUT_ID',
     '$SKS_CODEX_APP_IMAGEGEN_CREATED_AT',

@@ -22,10 +22,6 @@ import { writeCodexCurrentCoreCapabilityArtifacts } from '../codex-control/codex
 import { resolveCodexNativeInvocationPlan } from '../codex-native/codex-native-invocation-router.js';
 import { assertNonGlmMadRoute } from '../routes/model-mode-router.js';
 import { evaluateGate } from '../stop-gate/gate-evaluator.js';
-import {
-  CODEX_LB_TOOL_OUTPUT_RECOVERY_OVERRIDE_FLAG,
-  codexLbToolOutputRecoveryOverrideAcknowledged
-} from '../codex-lb/codex-lb-tool-output-recovery.js';
 import { writeMadNativeSession } from './mad-sks-headless.js';
 
 const MAD_SKS_DEFAULT_TTL_MS = 10 * 60 * 1000;
@@ -151,15 +147,13 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
   // readability + repair checks still run. SKS_LAUNCH_FULL_CODEX_PROBE=1 restores the
   // old behavior.
   const allowMadRepair = rawArgs.includes('--repair-config') || rawArgs.includes('--fix') || rawArgs.includes('--yes-repair');
-  const allowUnverifiedToolOutputRecovery = codexLbToolOutputRecoveryOverrideAcknowledged({ args: rawArgs });
   const launchPreflightOpts = {
     fix: allowMadRepair,
     launchFast: process.env.SKS_LAUNCH_FULL_CODEX_PROBE !== '1',
     profile: profile.profile_name,
     sandbox: 'danger-full-access',
     serviceTier: 'fast',
-    skipCodexLbToolOutputRecovery: false,
-    allowUnverifiedToolOutputRecovery
+    skipDesktopBridgeStatus: false
   };
   let launchPreflight = await runCodexLaunchPreflight(launchRoot, launchPreflightOpts);
   // Fresh-project bootstrap: when the ONLY blocker is that the managed Codex config does
@@ -392,7 +386,6 @@ function baseMadLaunchOnlyFlags() {
     '--dry-run',
     '--plan-only',
 	    '--ack',
-    CODEX_LB_TOOL_OUTPUT_RECOVERY_OVERRIDE_FLAG
   ]);
 }
 

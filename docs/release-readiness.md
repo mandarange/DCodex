@@ -1,4 +1,4 @@
-# 8.1.3 Release Readiness
+# SKS 8.1.3 Release Readiness
 
 ## Current decision
 
@@ -6,6 +6,11 @@
 Desktop Bridge contract and its required checks. It does not assert that a
 real macOS service, user credential, Codex Desktop session, WebSocket frame
 round trip, or deep feature has passed.
+
+The current execution surface is `$sks-naruto` / `sks naruto run`, with
+`$sks-work` as the explicit plan-execution route. `sks doctor --fix` remains an
+operator-run repair command; release automation must never silently invoke it.
+Update and Control Center views share the `sks.update-status.v3` snapshot.
 
 ## Product contract checklist
 
@@ -77,3 +82,47 @@ redacted evidence. They cannot be inferred from the required checks above:
   evidence status.
 - [ ] Release proof declares missing real evidence instead of converting it
   into a pass.
+
+## TriWiki source binding
+
+For a generated code pack, `git_head_sha` is the generation parent commit. A
+later metadata-only code-pack commit may carry that pack only while the bound
+parent remains an ancestor and intervening changes are confined to metadata.
+Any source-change history invalidates the pack. The release flow starts from a
+clean worktree and refreshes the pack after source changes; stale, truncated,
+or non-ancestor history is a blocker rather than inferred freshness.
+
+## Official Remote and SKS fleet control
+
+The official Remote transport remains host-owned. SKS does not implement,
+proxy, or reverse engineer that transport and never presents an SKS worker ID
+as an official Remote session ID. The separate SKS SSH stdio worker is
+proof-aware fleet control over an allowlisted typed channel; it is not a
+replacement for official high-fidelity Remote coding.
+
+## Release staging boundary
+
+After all source-bound gates and physical evidence are current, the authorized
+operator may create a registry staging record with `npm stage publish`. A
+second explicit authorization uses `npm stage approve <stage-id>`. Neither
+command is implied by this work order, and a dry run is not publication.
+
+Maintainer-side stage review resolves the pinned npm CLI explicitly as
+`npx --yes npm@11.15.0`. Before any separately authorized approval, run the
+read-only verifier against the exact local and staged artifacts:
+
+```sh
+node dist/core/release/npm-stage-tarball-verifier.js \
+  --local-receipt /absolute/path/to/local-pack-receipt.json \
+  --local-tarball /absolute/path/to/sneakoscope-8.1.3.tgz \
+  --stage-receipt /absolute/path/to/npm-stage-receipt.json
+```
+
+Those inputs bind the local receipt, local tarball bytes, and immutable stage
+receipt. The verifier is read-only and does not approve, reject, or publish a
+stage.
+
+The final migration matrix includes a `7.6.0 to 8.1.3 upgrade smoke`, including
+the removed-command surface, Desktop Bridge receipt migration, credential
+preservation, and current update finalization. Fixture success cannot replace
+the real macOS and provider evidence listed above.

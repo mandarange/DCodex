@@ -1,7 +1,6 @@
 export const SKS_MENUBAR_LABEL = 'com.sneakoscope.sks-menubar';
 export const CONTROL_CENTER_DOMAIN = 'com.apple.controlcenter';
 export const CONTROL_CENTER_PREFERRED_POSITION = 360;
-export const SECRET_LAUNCH_ENV_KEYS = ['CODEX_LB_API_KEY', 'OPENROUTER_API_KEY'] as const;
 
 export const MENU_ITEMS = [
   'Open SKS Control Center',
@@ -24,12 +23,9 @@ export const NATIVE_SOURCE_FILES = [
   'MCPServersViewController.swift',
   'ProvidersViewController.swift',
   'ProvidersReliability.swift',
-  'ProvidersConnectTest.swift',
   'ProvidersRoutingTruth.swift',
-  'ProvidersFastMode.swift',
   'ProvidersOpenRouter.swift',
-  'ProvidersRoleModels.swift',
-  'ProvidersMultiProvider.swift',
+  'ProvidersBridgeCatalog.swift',
   'RemoteCodingViewController.swift',
   'DiagnosticsViewController.swift',
   'SettingsViewController.swift',

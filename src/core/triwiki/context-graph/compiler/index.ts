@@ -352,21 +352,21 @@ export async function compileContextGraph(
   const startedAt = Date.now();
   const root = path.resolve(input.root);
   if (input.useCompileLock === false) return compileLocked(input, root, startedAt);
-  try {
-    return await withTriWikiStateLock(root, async () => {
-      const outcome = await withContextGraphCompileLock(root, () => compileLocked(input, root, startedAt));
-      if (outcome.acquired) return outcome.value;
-      await appendContextGraphEvent(root, {
-        type: 'compile.lock_contended',
-        at: input.observedAt ?? new Date().toISOString(),
-        reason: 'lock_held'
-      });
-      return failure('lock_held', ['lock_held'], Date.now() - startedAt);
-    });
-  } catch (error) {
-    if (!String(error).includes('file_lock_timeout:')) throw error;
-    return failure('lock_held', ['triwiki_state_lock_held'], Date.now() - startedAt);
-  }
+  const outcome = await withContextGraphCompileLock(root, async () => {
+    try {
+      return await withTriWikiStateLock(root, () => compileLocked(input, root, startedAt));
+    } catch (error) {
+      if (!String(error).includes('file_lock_timeout:')) throw error;
+      return failure('lock_held', ['triwiki_state_lock_held'], Date.now() - startedAt);
+    }
+  });
+  if (outcome.acquired) return outcome.value;
+  await appendContextGraphEvent(root, {
+    type: 'compile.lock_contended',
+    at: input.observedAt ?? new Date().toISOString(),
+    reason: 'lock_held'
+  });
+  return failure('lock_held', ['lock_held'], Date.now() - startedAt);
 }
 
 export { DEFAULT_CONTEXT_GRAPH_LIMITS } from './extract.js';

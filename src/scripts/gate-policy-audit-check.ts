@@ -20,8 +20,6 @@ const splitReviewFiles = [
   'src/core/recallpulse.ts'
 ]
 const policyCallsiteAllowlist = new Map([
-  ['codex_config_write|src/cli/install-helpers-codex-lb-selftest-chain.ts|runCodexLbLaunchChainSelftest|writeTextAtomic', 'isolated launch-chain selftest config'],
-  ['codex_config_write|src/cli/install-helpers-codex-lb-selftest.ts|selftestCodexLb|writeTextAtomic', 'isolated Codex LB selftest config'],
   ['mkdtemp|src/core/codex-control/codex-sdk-env-policy.ts|prepareNativeCodexAuthBridge|mkdtemp', 'identity-checked 0700 OAuth bridge root with explicit cleanup proof'],
   ['mkdtemp|src/core/mcp-config/codex-cli-adapter.ts|CodexMcpCliAdapter|mkdtemp', 'isolated official CLI transform HOME'],
   ['mkdtemp|src/core/perf/release-latency-slo.ts|runReleaseLatencySlo|mkdtemp', 'run-local latency fixture root'],

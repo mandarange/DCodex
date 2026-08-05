@@ -6,7 +6,7 @@ function build(overrides: Partial<Parameters<typeof buildIntentContract>[0]> = {
   return buildIntentContract({
     naturalLanguageEffect: 'Inspect security and delete policy without changing files.',
     effect: 'read', canonicalCommand: 'sks review', targetHashes: ['a'.repeat(64)],
-    policyVersion: 'policy-v1', modeSnapshot: 'codex-lb', evidenceState: 'valid', ...overrides
+    policyVersion: 'policy-v1', runtimeSnapshot: 'desktop-bridge', evidenceState: 'valid', ...overrides
   });
 }
 
@@ -31,7 +31,7 @@ test('replay detects target, policy and mode drift and gates expired evidence by
   assert.equal(decideIntentReplay(build(), build()).action, 'reuse');
   assert.equal(decideIntentReplay(build(), build({ targetHashes: ['b'.repeat(64)] })).action, 'replan');
   assert.equal(decideIntentReplay(build(), build({ policyVersion: 'policy-v2' })).action, 'replan');
-  assert.equal(decideIntentReplay(build(), build({ modeSnapshot: 'openrouter' })).action, 'replan');
+  assert.equal(decideIntentReplay(build(), build({ runtimeSnapshot: 'unmanaged' })).action, 'replan');
   assert.equal(decideIntentReplay(build(), build({ evidenceState: 'expired' })).action, 'refresh_direct_evidence');
   assert.equal(decideIntentReplay(build(), build({ effect: 'security', evidenceState: 'expired' })).action, 'replan');
   const heavyExpired = build({ effect: 'security', evidenceState: 'expired' });

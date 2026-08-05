@@ -3061,7 +3061,7 @@
           "package.json",
           "release-gates.v2.json",
           "src/commands/codex.ts",
-          "src/commands/codex-lb.ts",
+          "src/commands/bridge.ts",
           "src/commands/doctor.ts",
           "src/cli/install-helpers.ts",
           "src/core/codex-control/**",
@@ -3655,7 +3655,7 @@
     },
     {
       "id": "desktop-bridge:comprehensive",
-      "command": "node ./dist/scripts/desktop-bridge-unification-check.js && node ./dist/scripts/codex-lb-desktop-bridge-check.js && node ./dist/scripts/codex-lb-desktop-bridge-latency-check.js && node ./dist/scripts/codex-lb-catalog-passthrough-check.js && node ./dist/scripts/codex-lb-desktop-capabilities-check.js",
+      "command": "node ./dist/scripts/desktop-bridge-unification-check.js && node ./dist/scripts/desktop-bridge-transport-check.js && node ./dist/scripts/desktop-bridge-latency-check.js && node ./dist/scripts/codex-lb-catalog-passthrough-check.js && node ./dist/scripts/desktop-bridge-capabilities-check.js",
       "deps": [],
       "resource": [
         "cpu-light",

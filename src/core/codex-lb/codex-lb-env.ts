@@ -7,13 +7,18 @@ import {
   PrivateCredentialFileError,
   readPrivateCredentialFile
 } from '../security/private-credential-file.js';
+import {
+  inspectConfinedPath,
+  isLexicallyConfined,
+  removeManagedPathVerified
+} from '../managed-path-safety.js';
 
 const CODEX_LB_CREDENTIAL_AUTH_TRANSPORTS = [
   'x-codex-lb-api-key',
-  'authorization-bearer-compat'
+  'authorization-bearer'
 ] as const;
 type CodexLbCredentialAuthTransport = (typeof CODEX_LB_CREDENTIAL_AUTH_TRANSPORTS)[number];
-const DEFAULT_CODEX_LB_CREDENTIAL_AUTH_TRANSPORT: CodexLbCredentialAuthTransport = 'authorization-bearer-compat';
+const DEFAULT_CODEX_LB_CREDENTIAL_AUTH_TRANSPORT: CodexLbCredentialAuthTransport = 'authorization-bearer';
 
 export const CODEX_LB_SECURE_KEYCHAIN_SERVICE = 'com.sneakoscope.codex-lb.api-key.v2' as const;
 export const CODEX_LB_LEGACY_KEYCHAIN_SERVICE = 'sks-codex-lb' as const;
@@ -103,7 +108,7 @@ export async function removeStoredCodexLbCredential(input: {
     path.resolve(input.envPath || codexLbEnvPath(home)),
     path.resolve(input.metadataPath || codexLbMetadataPath(home))
   ];
-  if (files.some((file) => file !== codexHome && !file.startsWith(`${codexHome}${path.sep}`))) {
+  if (files.some((file) => file === codexHome || !isLexicallyConfined(codexHome, file))) {
     return {
       schema: 'sks.codex-lb-credential-removal.v1',
       removed: false,
@@ -111,11 +116,47 @@ export async function removeStoredCodexLbCredential(input: {
       blockers: ['codex_lb_credential_path_outside_codex_home']
     };
   }
+  if (new Set(files).size !== files.length) {
+    return {
+      schema: 'sks.codex-lb-credential-removal.v1',
+      removed: false,
+      removed_paths: [],
+      blockers: ['codex_lb_credential_path_collision']
+    };
+  }
+  const codexHomeStat = await fsp.lstat(codexHome).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!codexHomeStat) {
+    return {
+      schema: 'sks.codex-lb-credential-removal.v1',
+      removed: false,
+      removed_paths: [],
+      blockers: []
+    };
+  }
+  if (!codexHomeStat.isDirectory() || codexHomeStat.isSymbolicLink()) {
+    return {
+      schema: 'sks.codex-lb-credential-removal.v1',
+      removed: false,
+      removed_paths: [],
+      blockers: ['codex_lb_credential_store_unsafe']
+    };
+  }
   const existing: string[] = [];
   for (const file of files) {
-    const stat = await fsp.lstat(file).catch(() => null);
-    if (!stat) continue;
-    if (!stat.isFile() || stat.isSymbolicLink()) {
+    const inspected = await inspectConfinedPath(codexHome, file).catch(() => null);
+    if (!inspected) {
+      return {
+        schema: 'sks.codex-lb-credential-removal.v1',
+        removed: false,
+        removed_paths: [],
+        blockers: ['codex_lb_credential_path_unsafe']
+      };
+    }
+    if (!inspected.exists) continue;
+    if (inspected.leafSymlink || !inspected.stat?.isFile()) {
       return {
         schema: 'sks.codex-lb-credential-removal.v1',
         removed: false,
@@ -127,7 +168,7 @@ export async function removeStoredCodexLbCredential(input: {
   }
   const removed: string[] = [];
   for (const file of existing) {
-    await fsp.unlink(file);
+    await removeManagedPathVerified(codexHome, file);
     removed.push(file);
   }
   return {
@@ -158,7 +199,7 @@ export async function readCodexLbModelCatalog(opts: {
   loadedEnv?: CodexLbEnvLoadResult;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
-  gatewayAuthTransport?: 'x-codex-lb-api-key' | 'authorization-bearer-compat' | 'authorization-bearer';
+  gatewayAuthTransport?: CodexLbCredentialAuthTransport;
 } = {}): Promise<CodexLbModelCatalogResult> {
   const loaded = opts.loadedEnv || await loadCodexLbEnv();
   if (!loaded.configured || !loaded.base_url || !loaded.secret_api_key) {

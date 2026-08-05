@@ -18,8 +18,6 @@ test('bridge is registered with JSON support and rich non-secret help', async ()
   assert.match(help, /unmanage --confirm/);
   assert.doesNotMatch(help, /--api-key <|desktop-native-bridge|cli-provider/);
 
-  const compatibility = COMMAND_MANIFEST_BY_NAME['codex-lb'];
-  assert.equal(compatibility.deprecated, true);
-  assert.equal(compatibility.supportsJson, true);
-  assert.match(compatibility.summary, /Deprecated one-patch facade/);
+  assert.equal('codex-lb' in COMMAND_MANIFEST_BY_NAME, false);
+  assert.equal('codex-lb' in COMMANDS, false);
 });

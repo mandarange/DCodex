@@ -63,11 +63,14 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
   const codexAppHarness = input.codex_app_harness_matrix || null
   for (const warning of normalizeList(codexAppHarness?.warnings)) warnings.add(warning)
   if (codexAppHarness?.ok === false) for (const blocker of normalizeList(codexAppHarness.blockers)) warnings.add(`codex_app_harness:${blocker}`)
-  if (input.codex_lb?.ok === false) warnings.add(`codex_lb_${input.codex_lb?.circuit?.state || 'blocked'}`)
-  if (input.codex_lb?.provider_status?.selected === true && input.codex_lb?.routing_ok !== true) {
-    const routingBlockers = normalizeList(input.codex_lb?.routing_truth?.blockers)
-    for (const blocker of routingBlockers) blockers.add(blocker)
-    if (!routingBlockers.length) blockers.add('codex_lb_routing_truth_unverified')
+  const desktopBridge = input.desktop_bridge_status || input.desktop_bridge || null
+  if (desktopBridge?.management?.managed === true && desktopBridge?.readiness?.ready !== true) {
+    const bridgeBlockers = normalizeList(desktopBridge?.readiness?.blockers)
+    for (const blocker of bridgeBlockers) blockers.add(blocker)
+    if (!bridgeBlockers.length) blockers.add('desktop_bridge_not_ready')
+  }
+  if (desktopBridge?.management?.managed === true && desktopBridge?.service?.running !== true) {
+    warnings.add('desktop_bridge_service_not_running')
   }
   const localModel = input.local_model || {}
   const localStatus = String(localModel.status || (localModel.enabled ? 'enabled_unverified' : 'disabled'))

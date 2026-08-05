@@ -5,7 +5,7 @@ import { allIntentNormalizationForms, normalizeIntentCommand } from '../normaliz
 
 const base = {
   naturalLanguageEffect: 'Read the current status without changing state.', effect: 'read' as const,
-  targetHashes: ['a'.repeat(64)], policyVersion: 'policy-v1', modeSnapshot: 'codex-lb' as const,
+  targetHashes: ['a'.repeat(64)], policyVersion: 'policy-v1', runtimeSnapshot: 'desktop-bridge' as const,
   evidenceState: 'valid' as const
 };
 

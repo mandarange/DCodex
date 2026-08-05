@@ -33,6 +33,7 @@ interface ProjectMenuBarDuplicateCandidates {
 }
 
 const MENU_BAR_EXECUTABLE_SUFFIX = path.join('SKSMenuBar.app', 'Contents', 'MacOS', 'SKSMenuBar');
+const MENU_BAR_PROCESS_DISCOVERY_TIMEOUT_MS = 5_000;
 
 export function projectMenuBarDuplicateInstallDirs(input: {
   paths: ReturnType<typeof sksMenuBarPaths>;
@@ -244,7 +245,7 @@ async function runningMenuBarDuplicateInstallDirs(
     ...(uid === null ? [] : ['-U', String(uid)]),
     '-f',
     'SKSMenuBar\\.app/Contents/MacOS/SKSMenuBar'
-  ], { timeoutMs: 2_000, maxOutputBytes: 32 * 1024 }).catch(() => ({ code: 1, stdout: '' }));
+  ], { timeoutMs: MENU_BAR_PROCESS_DISCOVERY_TIMEOUT_MS, maxOutputBytes: 32 * 1024 }).catch(() => ({ code: 1, stdout: '' }));
   if (result.code !== 0) return [];
   const rows = String(result.stdout || '').split(/\r?\n/).filter(Boolean).map((line) => ({
     line,
@@ -264,7 +265,7 @@ async function runningMenuBarDuplicateInstallDirs(
         unresolvedPids.join(','),
         '-o',
         'pid=,command='
-      ], { timeoutMs: 2_000, maxOutputBytes: 64 * 1024 }).catch(() => ({ code: 1, stdout: '' }));
+      ], { timeoutMs: MENU_BAR_PROCESS_DISCOVERY_TIMEOUT_MS, maxOutputBytes: 64 * 1024 }).catch(() => ({ code: 1, stdout: '' }));
       if (processList.code === 0) {
         executablePaths.push(...String(processList.stdout || '')
           .split(/\r?\n/)

@@ -29,7 +29,7 @@ test('rewriteSkillLegacySurface maps retired dollar and CLI surfaces to current 
   assert.match(result.text, /sks naruto/);
   assert.match(result.text, /sks mad-sks/);
   assert.match(result.text, /sks mad-sks status/);
-  assert.match(result.text, /sks codex-app use-openrouter/);
+  assert.match(result.text, /sks bridge provider configure openrouter --api-key-stdin/);
   assert.match(result.text, /--agents 4/);
   assert.match(result.text, /sks agent-bridge setup/);
   assert.match(result.text, /sks teamcity status/);

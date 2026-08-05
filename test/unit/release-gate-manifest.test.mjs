@@ -6,7 +6,6 @@ test('postinstall gate routing includes packed lifecycle proof inputs', () => {
   const affected = affectedGlobsFor('postinstall:safe-side-effects');
   for (const required of [
     'src/cli/install-helpers.ts',
-    'src/cli/install-helpers-codex-lb-selftest.ts',
     'src/core/install/installed-package-smoke.ts',
     'src/scripts/installed-package-smoke-check.ts',
     'src/scripts/postinstall-safe-side-effects-check.ts',

@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import type { ProviderMode } from '../../architecture-hardening/contracts/contracts.js';
 import { canonicalJson } from '../../json/canonical.js';
 
 export type IntentRisk = 'FAST' | 'HEAVY' | 'ULTRA';
 export type IntentEffect = 'read' | 'write' | 'auth' | 'security' | 'delete' | 'deploy' | 'dependency';
 export type IntentTerminalState = 'failed' | 'paused' | 'unverified' | 'completed';
+export type RoutingRuntimeSnapshot = 'desktop-bridge' | 'unmanaged';
 
 export interface IntentContract {
   readonly schema: 'sks.intent-contract.v1';
@@ -15,7 +15,7 @@ export interface IntentContract {
   readonly canonical_command: string;
   readonly target_hashes: readonly string[];
   readonly policy_version: string;
-  readonly mode_snapshot: ProviderMode;
+  readonly runtime_snapshot: RoutingRuntimeSnapshot;
   readonly evidence_state: 'valid' | 'expired' | 'missing';
   readonly retry_budget: number;
   readonly risk: IntentRisk;
@@ -35,7 +35,7 @@ export function buildIntentContract(input: {
   canonicalCommand: string;
   targetHashes: readonly string[];
   policyVersion: string;
-  modeSnapshot: ProviderMode;
+  runtimeSnapshot: RoutingRuntimeSnapshot;
   evidenceState: IntentContract['evidence_state'];
   retryBudget?: number;
   requestedRisk?: IntentRisk;
@@ -57,7 +57,7 @@ export function buildIntentContract(input: {
     canonical_command: normalizeCommand(input.canonicalCommand),
     target_hashes: [...new Set(input.targetHashes)].sort(),
     policy_version: safeIdentifier(input.policyVersion, 'intent_policy_version_invalid'),
-    mode_snapshot: input.modeSnapshot,
+    runtime_snapshot: input.runtimeSnapshot,
     evidence_state: input.evidenceState,
     retry_budget: Math.max(0, Math.min(2, input.retryBudget ?? 0)),
     risk,
@@ -72,7 +72,7 @@ export function buildIntentContract(input: {
 export function decideIntentReplay(previous: IntentContract, current: IntentContract): IntentReplayDecision {
   const reasons: string[] = [];
   if (previous.policy_version !== current.policy_version) reasons.push('policy_version_changed');
-  if (previous.mode_snapshot !== current.mode_snapshot) reasons.push('mode_snapshot_changed');
+  if (previous.runtime_snapshot !== current.runtime_snapshot) reasons.push('runtime_snapshot_changed');
   if (JSON.stringify(previous.target_hashes) !== JSON.stringify(current.target_hashes)) reasons.push('target_hash_changed');
   if (previous.effect !== current.effect || previous.canonical_command !== current.canonical_command) reasons.push('intent_effect_changed');
   if (reasons.length) return { action: 'replan', reasons };

@@ -2,11 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   executeBridgeCommand,
+  loadBridgeCommandFacade,
   type BridgeCommandFacade,
   type BridgeCommandIo,
   type BridgeCommandRequest
 } from '../bridge.js';
-import { runCodexLbCompatibilityCommand } from '../codex-lb.js';
+
+test('bridge command default facade exports the current controller entrypoint', async () => {
+  const facade = await loadBridgeCommandFacade();
+  assert.equal(typeof facade.execute, 'function');
+});
 
 function fixture(
   response: unknown = { schema: 'sks.bridge-operation.v1', ok: true }
@@ -73,6 +78,35 @@ test('bridge command maps the complete non-secret CLI surface to one controller 
     assert.deepEqual(setup.requests, [expected], args.join(' '));
     assert.equal(result.output.execution_ok, true, args.join(' '));
   }
+});
+
+test('hidden serve entry validates its settings path and bypasses the management facade', async () => {
+  const setup = fixture();
+  const settingsPath = '/tmp/codex-lb-desktop-bridge-settings.json';
+  const calls: string[] = [];
+  const result = await executeBridgeCommand([
+    'serve', '--settings', settingsPath, '--json'
+  ], {
+    ...setup,
+    serve: async (options) => {
+      calls.push(String(options?.settingsPath));
+      return {
+        schema: 'sks.codex-lb-desktop-bridge-serve.v1',
+        ok: true,
+        status: 'stopped',
+        state: null
+      };
+    }
+  });
+  assert.equal(result.exit_code, 0);
+  assert.deepEqual(calls, [settingsPath]);
+  assert.deepEqual(setup.requests, []);
+
+  const relative = await executeBridgeCommand([
+    'serve', '--settings', 'codex-lb-desktop-bridge-settings.json', '--json'
+  ], setup);
+  assert.equal(relative.exit_code, 1);
+  assert.deepEqual(relative.output.blockers, ['desktop_bridge_settings_path_must_be_absolute']);
 });
 
 test('provider configuration accepts a secret only through stdin and redacts reflected values', async () => {
@@ -149,25 +183,6 @@ test('verify treats malformed v3 catalog truth as operation failure', async () =
   assert.equal(result.output.execution_ok, false);
   assert.deepEqual(result.output.blockers, ['capability_schema_invalid']);
   assert.equal(result.exit_code, 1);
-});
-
-test('legacy codex-lb provider-selection alias executes bridge lifecycle and emits deprecation metadata only', async () => {
-  const setup = fixture((request: BridgeCommandRequest) => ({
-    schema: 'sks.bridge-operation.v1',
-    ok: true,
-    operation: request.operation
-  }));
-  const output = await runCodexLbCompatibilityCommand(['use-codex-lb', '--json'], setup);
-  assert.deepEqual(setup.requests, [
-    { operation: 'ensure' },
-    { operation: 'provider.enable', provider_id: 'codex-lb' },
-    { operation: 'route.set-default', provider_id: 'codex-lb' }
-  ]);
-  assert.equal(output.deprecated_command, 'use-codex-lb');
-  assert.equal(output.managed_runtime, 'desktop-bridge');
-  assert.equal(output.deprecation_removal_version, '8.2.0');
-  assert.equal('mode' in output, false);
-  assert.equal(setup.stderr.length, 0);
 });
 
 function capabilityReport(options: { transport: boolean; deep: boolean; full: boolean }) {

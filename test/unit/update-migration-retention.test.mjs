@@ -95,6 +95,14 @@ test('project update migration receipt cleans disposable closed-mission runtime 
 
     assert.equal(receipt.retention_cleanup?.status, 'completed');
     assert.ok((receipt.retention_cleanup?.action_count || 0) > 0);
+    const cleanupReport = JSON.parse(await fs.readFile(
+      path.join(root, '.sneakoscope', 'reports', 'retention-cleanup.json'),
+      'utf8'
+    ));
+    assert.ok(cleanupReport.actions.some((action) => (
+      action.action === 'skip_sks_temp_sweep'
+      && action.reason === 'explicit_temp_sweep_skip'
+    )));
     await assertExists(path.join(mission, 'completion-proof.json'));
     await assertExists(path.join(mission, 'agents', 'agent-proof-evidence.json'));
     await assertMissing(path.join(mission, 'agents', 'sessions', 'slot-001', 'gen-1', 'worker', 'codex-sdk-home', 'codex', 'cache.bin'));

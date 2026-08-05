@@ -1,26 +1,26 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { DesktopBridgeStatusV3 } from '../../core/codex-lb/bridge-contracts.js'
-import { codexAppStatusWithCodexLbCapabilities } from '../codex-app.js'
+import { codexAppStatusWithDesktopBridgeCapabilities } from '../codex-app.js'
 
 test('ordinary Codex App status injects the current DesktopBridgeStatusV3', async () => {
   let integrationInput: Record<string, unknown> | null = null
   const bridgeStatus = fixtureBridgeStatus()
-  const result = await codexAppStatusWithCodexLbCapabilities({
-    codexLbStatusImpl: async () => bridgeStatus,
+  const result = await codexAppStatusWithDesktopBridgeCapabilities({
+    desktopBridgeStatusImpl: async () => bridgeStatus,
     codexAppStatusImpl: async (input: Record<string, unknown>) => {
       integrationInput = input
       return {
         ok: true,
         desktopBridgeStatus: input.desktopBridgeStatus,
-        features: { codex_lb_capabilities: input.codexLbCapabilityReport }
+        features: { desktop_bridge_capabilities: input.desktopBridgeCapabilityReport }
       }
     }
   })
 
   assert.equal(result.desktopBridgeStatus, bridgeStatus)
   assert.equal((integrationInput as unknown as Record<string, unknown>).desktopBridgeStatus, bridgeStatus)
-  const report = (result.features as Record<string, unknown>).codex_lb_capabilities as Record<string, unknown>
+  const report = (result.features as Record<string, unknown>).desktop_bridge_capabilities as Record<string, unknown>
   assert.equal(report.availability, 'reported')
   assert.equal(report.runtime, 'desktop-bridge')
   assert.equal(report.overall, 'verified')
@@ -28,16 +28,16 @@ test('ordinary Codex App status injects the current DesktopBridgeStatusV3', asyn
 })
 
 test('ordinary Codex App status clearly reports bridge evidence as unavailable', async () => {
-  const result = await codexAppStatusWithCodexLbCapabilities({
-    codexLbStatusImpl: async () => {
+  const result = await codexAppStatusWithDesktopBridgeCapabilities({
+    desktopBridgeStatusImpl: async () => {
       throw new Error('status unavailable')
     },
     codexAppStatusImpl: async (input: Record<string, unknown>) => input
   })
-  const report = result.codexLbCapabilityReport as Record<string, unknown>
+  const report = result.desktopBridgeCapabilityReport as Record<string, unknown>
   assert.equal(result.desktopBridgeStatus, null)
   assert.equal(report.availability, 'unavailable')
-  assert.deepEqual(report.blockers, ['codex_lb_capability_report_unavailable'])
+  assert.deepEqual(report.blockers, ['desktop_bridge_capability_report_unavailable'])
 })
 
 function fixtureBridgeStatus(): DesktopBridgeStatusV3 {

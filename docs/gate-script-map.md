@@ -14,7 +14,6 @@ Generated from `release-gates.v2.json`; release gate IDs and commands are the ma
 | `codex-app:handoff` | `release` | `node ./dist/scripts/codex-app-handoff-check.js` | direct |
 | `codex-control:all-pipelines` | `release` | `node ./dist/scripts/codex-control-all-pipelines-check.js` | direct |
 | `codex-control:event-stream-ledger` | `release` | `node ./dist/scripts/codex-control-event-stream-ledger-check.js` | direct |
-| `codex-lb:comprehensive` | `release` | `node ./dist/scripts/codex-lb-fast-ui-preservation-check.js && node ./dist/scripts/codex-lb-fast-mode-truth-check.js && node --test --test-concurrency=1 dist/core/__tests__/codex-lb-tool-catalog.test.js dist/core/__tests__/codex-lb-transport-security.test.js && node ./dist/scripts/codex-lb-gpt56-fast-profile-check.js` | direct |
 | `codex-native:agent-role-content` | `release` | `node ./dist/scripts/codex-native-agent-role-content-check.js` | direct |
 | `codex-native:feature-broker-comprehensive` | `release` | `node ./dist/scripts/codex-native-feature-broker-check.js && node ./dist/scripts/codex-native-feature-broker-blackbox.js && node ./dist/scripts/codex-native-harness-compat-check.js` | direct |
 | `codex-native:hook-lifecycle-proof` | `release` | `node ./dist/scripts/codex-native-hook-lifecycle-proof-check.js` | direct |
@@ -40,6 +39,7 @@ Generated from `release-gates.v2.json`; release gate IDs and commands are the ma
 | `dfix:patch-handoff` | `release` | `node ./dist/scripts/dfix-patch-handoff-check.js` | direct |
 | `dfix:verification` | `release` | `node ./dist/scripts/dfix-verification-check.js` | direct |
 | `dfix:verification-recommendation` | `release` | `node ./dist/scripts/dfix-verification-recommendation-check.js` | direct |
+| `desktop-bridge:comprehensive` | `release` | `node ./dist/scripts/desktop-bridge-unification-check.js && node ./dist/scripts/desktop-bridge-transport-check.js && node ./dist/scripts/desktop-bridge-latency-check.js && node ./dist/scripts/codex-lb-catalog-passthrough-check.js && node ./dist/scripts/desktop-bridge-capabilities-check.js` | direct |
 | `doctor:codex-app-harness` | `release` | `node ./dist/scripts/doctor-codex-app-harness-check.js` | direct |
 | `doctor:fix-proves-codex-read` | `release` | `node ./dist/scripts/doctor-fix-proves-codex-read-check.js` | direct |
 | `doctor:fixes-codex-app-fast-ui` | `release` | `node ./dist/scripts/doctor-fixes-codex-app-fast-ui-check.js` | direct |

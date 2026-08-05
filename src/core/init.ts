@@ -710,7 +710,6 @@ function mergeManagedCodexConfigToml(existingContent: any = '', opts: any = {}) 
 }
 
 async function mergeGlobalCodexConfigIfAvailable(configText: any = '', configPath: any = '', opts: any = {}) {
-  const selectedRe = /(^|\n)\s*model_provider\s*=\s*"codex-lb"\s*(?:#.*)?(?=\n|$)/;
   const home = opts.home || process.env.HOME || '';
   if (!home) return configText;
   const codexHome = opts.codexHome || process.env.CODEX_HOME || path.join(home, '.codex');
@@ -719,43 +718,7 @@ async function mergeGlobalCodexConfigIfAvailable(configText: any = '', configPat
   const globalConfig = await readText(globalConfigPath, '');
   let next = mergeGlobalMcpServers(configText, globalConfig);
   next = mergeGlobalCodexAppRuntimeTables(next, globalConfig);
-  if (selectedRe.test(next) && /\[model_providers\.codex-lb\]/.test(next)) {
-    return `${next.trim()}\n`;
-  }
-  const envPath = path.join(codexHome, 'sks-codex-lb.env');
-  if (!(await exists(envPath))) return next;
-  const envText = await readText(envPath, '');
-  const baseUrl = globalConfig.match(/(^|\n)\[model_providers\.codex-lb\][\s\S]*?\n\s*base_url\s*=\s*"([^"]+)"/)?.[2] || parseCodexLbEnvBaseUrl(envText);
-  if (!parseCodexLbEnvKey(envText) || !baseUrl) return next;
-  const shouldSelectCodexLb = selectedRe.test(next) || selectedRe.test(globalConfig);
-  next = shouldSelectCodexLb
-    ? upsertTopLevelTomlString(next, 'model_provider', 'codex-lb')
-    : removeTopLevelTomlKeyIfValue(next, 'model_provider', 'codex-lb');
-  next = upsertTomlTable(next, 'model_providers.codex-lb', `[model_providers.codex-lb]\nname = "codex-lb"\nbase_url = "${baseUrl}"\nwire_api = "responses"\nenv_key = "CODEX_LB_API_KEY"\nsupports_websockets = true\nrequires_openai_auth = false`);
   return `${next.trim()}\n`;
-}
-
-function parseCodexLbEnvKey(text: any = '') {
-  return parseShellEnvValue(text, 'CODEX_LB_API_KEY');
-}
-
-function parseCodexLbEnvBaseUrl(text: any = '') {
-  const value = parseShellEnvValue(text, 'CODEX_LB_BASE_URL');
-  if (!value) return '';
-  let host = value.trim();
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(host)) host = `https://${host}`;
-  host = host.replace(/\/+$/, '');
-  return /\/backend-api\/codex$/i.test(host) ? host : `${host}/backend-api/codex`;
-}
-
-function parseShellEnvValue(text: any = '', key: any = '') {
-  const re = new RegExp(`^\\s*(?:export\\s+)?${escapeRegExp(key)}\\s*=\\s*(.+?)\\s*$`, 'm');
-  const raw = String(text || '').match(re)?.[1]?.trim() || '';
-  if (!raw) return '';
-  if (raw.startsWith("'")) return raw.endsWith("'") && raw.length > 1 ? raw.slice(1, -1).replace(/'\\''/g, "'") : '';
-  if (raw.startsWith('"')) return raw.endsWith('"') && raw.length > 1 ? raw.slice(1, -1).replace(/\\"/g, '"') : '';
-  if (raw.includes("'") || raw.includes('"') || /\s/.test(raw)) return '';
-  return raw;
 }
 
 function mergeGlobalMcpServers(configText: any = '', globalConfig: any = '') {
@@ -791,29 +754,6 @@ function removeWholeTomlTable(text: any = '', table: any = '') {
     if (ln !== undefined && /^\s*\[.+\]\s*$/.test(ln)) { end = i; break; }
   }
   return lines.filter((_: any, index: any) => index < start || index >= end).join('\n').replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n');
-}
-
-function removeTopLevelTomlKeyIfValue(text: any = '', key: any = '', value: any = '') {
-  const lines = String(text || '').split('\n');
-  const firstTable = lines.findIndex((x: any) => /^\s*\[.+\]\s*$/.test(x));
-  const end = firstTable === -1 ? lines.length : firstTable;
-  const keyPattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*"${escapeRegExp(value)}"\\s*(?:#.*)?$`);
-  return lines.filter((line: any, index: any) => index >= end || !keyPattern.test(line)).join('\n').replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n');
-}
-
-function upsertTopLevelTomlString(text: any, key: any, value: any) {
-  const line = `${key} = "${value}"`;
-  const lines = String(text || '').split('\n');
-  const firstTable = lines.findIndex((x: any) => /^\s*\[.+\]\s*$/.test(x));
-  const end = firstTable === -1 ? lines.length : firstTable;
-  for (let i = 0; i < end; i += 1) {
-    if (new RegExp(`^\\s*${escapeRegExp(key)}\\s*=`).test(lines[i] || '')) {
-      lines[i] = line;
-      return lines.join('\n').replace(/\n{3,}/g, '\n\n');
-    }
-  }
-  lines.splice(end, 0, line);
-  return lines.join('\n').replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n');
 }
 
 function upsertTopLevelTomlBoolean(text: any, key: any, value: any) {

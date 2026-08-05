@@ -1,6 +1,4 @@
-import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   ensureDir, exists, PACKAGE_VERSION, readJson, readText, runProcess, sha256, which,
   writeJsonAtomic, writeTextAtomic
@@ -8,7 +6,7 @@ import {
 import { actionScriptSource } from './action-runner.js';
 import { buildMenuBarAppStaging, MenuBarBuildError } from './app-bundle.js';
 import { aggregateFileHashes, createSksMenuBarBuildStamp, menuBarBuildStampsEqual } from './build-stamp.js';
-import { MENU_ITEMS, SKS_MENUBAR_LABEL } from './constants.js';
+import { SKS_MENUBAR_LABEL } from './constants.js';
 import { resolveCodexBundleId, writeDefaultMenuBarConfig } from './config.js';
 import {
   applyMenuBarGenerationTransaction,
@@ -38,7 +36,9 @@ import { sksMenuBarPaths } from './paths.js';
 import { infoPlistSource, inspectInstalledResources, loadNativeMenuBarSources, nativeResourceHashes } from './resources.js';
 import { inspectMenuBarArtifactSet, normalizeLegacyMenuBarBuildStamp, rollbackSksMenuBar } from './rollback.js';
 import { inspectSignature } from './signature.js';
-import { defaultNextActions, inspectSksMenuBarStatus, isMenuBarInstallPathUnderTempDir } from './status.js';
+import { inspectSksMenuBarStatus, isMenuBarInstallPathUnderTempDir } from './status.js';
+import { baseResult, writeReport } from './installer/result.js';
+import { realUserHome, resolveSksEntryForInstall, toolVersion } from './installer/runtime.js';
 import type { NativeSourceInput, SksMenuBarBuildStamp, SksMenuBarGenerationTransactionOutcome, SksMenuBarInstallOptions, SksMenuBarInstallResult, SksMenuBarLegacyBuildStampV1, SksMenuBarRollbackResult, SksMenuBarTargetCheck } from './types.js';
 
 export function sksMenuBarRestartDeferred(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -446,42 +446,4 @@ export function shouldAutoRollbackMenuBarLaunch(input: {
     && input.launch.terminal_uncertain !== true
     && !input.upToDate
     && input.rollbackCandidateExists;
-}
-
-function baseResult(paths: ReturnType<typeof sksMenuBarPaths>, apply: boolean, status: SksMenuBarInstallResult['status'], ok: boolean, actions: string[], warnings: string[]): SksMenuBarInstallResult {
-  return {
-    schema: 'sks.codex-app-sks-menubar.v1', ok, apply, status, platform: process.platform,
-    app_path: paths.app_path, executable_path: paths.executable_path,
-    launch_agent_path: paths.launch_agent_path, action_script_path: paths.action_script_path,
-    build_stamp_path: paths.build_stamp_path, config_path: paths.config_path,
-    report_path: paths.report_path, menu_items: [...MENU_ITEMS], actions,
-    tcc_automation_status: 'unknown', next_actions: defaultNextActions(), blockers: [], warnings
-  };
-}
-
-async function resolveSksEntryForInstall(explicit: string | undefined, root: string): Promise<SksMenuBarTargetCheck> {
-  const packaged = fileURLToPath(new URL('../../../bin/sks.js', import.meta.url));
-  const requested = explicit ? path.resolve(explicit) : null;
-  const candidate = requested || packaged;
-  const found = await exists(candidate);
-  const relative = path.relative(path.resolve(root), candidate);
-  return {
-    requested, resolved: found ? candidate : null, packaged, exists: found,
-    project_local: relative === '' || (Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative)),
-    used_previous_script: false
-  };
-}
-
-async function toolVersion(tool: string, args: string[]): Promise<string> {
-  const result = await runProcess(tool, args, { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => ({ code: 1, stdout: '', stderr: '' }));
-  return result.code === 0 ? String(result.stdout || result.stderr).trim().split(/\r?\n/)[0] || 'unknown' : 'unknown';
-}
-
-function realUserHome(): string {
-  try { return path.resolve(os.userInfo().homedir); } catch { return path.resolve(os.homedir()); }
-}
-
-async function writeReport(reportPath: string, result: SksMenuBarInstallResult): Promise<void> {
-  try { await writeJsonAtomic(reportPath, result); }
-  catch { result.report_write_failed = true; result.warnings.push('menubar_report_write_failed'); }
 }

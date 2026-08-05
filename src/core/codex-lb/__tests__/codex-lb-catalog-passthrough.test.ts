@@ -5,8 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   ensureCodexLbToolCatalog,
-  normalizeCodexLbToolCatalog,
-  shouldBindLocalModelCatalog
+  normalizeCodexLbToolCatalog
 } from '../codex-lb-tool-catalog.js'
 
 function modelRow(slug = 'future-codex-model') {
@@ -50,13 +49,6 @@ test('catalog validates the known subset without rejecting or deleting future fi
   assert.equal(result.ok, false)
   assert.ok(result.blockers.includes('codex_lb_model_catalog_field_type_invalid:0:display_name'))
   assert.equal(Object.prototype.hasOwnProperty.call(result.catalog.models[0], 'another_future_field'), true)
-})
-
-test('native bridge never binds a replacement catalog while compat and CLI modes may', () => {
-  assert.equal(shouldBindLocalModelCatalog('desktop-native-bridge'), false)
-  assert.equal(shouldBindLocalModelCatalog('desktop-dual-auth-compat'), true)
-  assert.equal(shouldBindLocalModelCatalog('cli-provider'), true)
-  assert.equal(shouldBindLocalModelCatalog('disabled'), false)
 })
 
 test('catalog metadata records pass-through contract and upstream validators', async (t) => {

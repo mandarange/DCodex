@@ -113,12 +113,12 @@ test('ordinary Doctor keeps legacy global hook cleanup blockers optional', () =>
   assert.ok(matrix.warnings.includes(`optional:legacy_global_hooks:${blocker}`));
 });
 
-test('selected codex-lb route fails readiness when measured routing truth is rejected', () => {
+test('managed Desktop Bridge fails readiness when its active route is blocked', () => {
   const matrix = buildDoctorReadinessMatrix(readyInput({
-    codex_lb: {
-      provider_status: { selected: true },
-      routing_ok: false,
-      routing_truth: { blockers: ['codex_lb_auth_rejected'] }
+    desktop_bridge_status: {
+      management: { managed: true },
+      service: { running: true },
+      readiness: { ready: false, blockers: ['codex_lb_auth_rejected'] }
     }
   }));
 

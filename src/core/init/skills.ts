@@ -1,7 +1,6 @@
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
 import type { Dirent } from 'node:fs';
 import { ensureDir, exists, nowIso, PACKAGE_VERSION, readJson, readText, sha256, withScratchDir, writeJsonAtomic, writeTextAtomic } from '../fsx.js';
 import { buildSksCoreSkillManifest, isCoreSkillName, legacyCoreSkillNames } from '../codex-native/core-skill-manifest.js';
@@ -34,83 +33,47 @@ import {
   renderSkillAgentMetadata,
   skillFrontmatterDescription
 } from '../skills/skill-agent-metadata.js';
+import {
+  REMOVED_SKS_SKILL_NAMES,
+  LEGACY_UNPREFIXED_SKS_SKILL_NAMES,
+  LEGACY_SKS_SUPPORT_SKILL_NAMES,
+  PACKAGED_SKILLS_MANIFEST_SCHEMA,
+  REMOVED_SKS_SKILL_NAME_SET,
+  RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIASES,
+  RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIAS_SET,
+  SKILL_ALIASES,
+  SKS_SKILL_MANIFEST_FILE,
+  SKS_SKILL_NAMES_TO_CLEAN_UP,
+  canonicalSkillNameFromValue
+} from './skills/inventory.js';
+import {
+  listSkillDirs,
+  pruneProjectGeneratedManifest,
+  rootFromSkillsDir
+} from './skills/filesystem.js';
+import {
+  loadBundledSkillsManifest,
+  loadSkillsManifest,
+  mergePackagedSkillsManifestHashHistory,
+  normalizeSkillsManifest,
+  runtimeBuildSourceTime,
+  skillManifestGenerationSha256,
+  skillsManifestFromHashLedger
+} from './skills/manifest.js';
 
-const SKS_SKILL_MANIFEST_FILE = '.sks-generated.json';
-const PACKAGED_SKILLS_MANIFEST_SCHEMA = 'sks.skills-manifest.v1';
-const SKILLS_HASH_LEDGER_SCHEMA = 'sks.skills-hash-ledger.v1';
+export { REMOVED_SKS_SKILL_NAMES, LEGACY_UNPREFIXED_SKS_SKILL_NAMES } from './skills/inventory.js';
+export {
+  loadBundledSkillsManifest,
+  loadSkillsManifest,
+  mergePackagedSkillsManifestHashHistory,
+  skillsManifestFromHashLedger
+} from './skills/manifest.js';
+
 const MANAGED_SKILL_MARKER_VERSION = '1';
-const MAX_SKILL_HASH_HISTORY = 8;
 const GENERATED_PRUNE_POLICY = 'remove_previous_sks_generated_paths_absent_from_current_manifest';
 const REFLECTION_MEMORY_PATH = '.sneakoscope/memory/q2_facts/post-route-reflection.md';
 const MANAGED_SKILL_MARKER_RE = /BEGIN SKS (?:IMMUTABLE CORE|MANAGED) SKILL/;
 const FORGE_SKILL_MARKER_RE = /BEGIN SKS FORGE SKILL/;
-const RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIASES = [
-  'sks-ux-review',
-  'sks-visual-review',
-  'sks-ui-ux-review'
-] as const;
-const RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIAS_SET = new Set<string>(RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIASES);
-export const REMOVED_SKS_SKILL_NAMES = [
-  'old-workflow',
-  'team-legacy',
-  'team',
-  'agent-team',
-  'agent',
-  'mad-db',
-  'tmux',
-  'xai',
-  'swarm',
-  'shadow-clone',
-  'shadow-clone-legacy',
-  'kage-bunshin',
-  'qaloop',
-  'wiki-refresh',
-  'wikirefresh',
-  'research-discovery',
-  'sks-research-discovery',
-  'ralph',
-  'ralph-supervisor',
-  'ralph-resolver',
-  // NC-38: SKS-owned persisted loop retired; Codex native Goal owns goals/loops
-  'loop',
-  'sks-loop'
-] as const;
-const LEGACY_SKS_SUPPORT_SKILL_NAMES = [
-  'autoresearch-loop',
-  'context7-docs',
-  'db-safety-guard',
-  'design-artifact-expert',
-  'design-system-builder',
-  'design-ui-editor',
-  'from-chat-img',
-  'getdesign-reference',
-  'gx-visual-generate',
-  'gx-visual-read',
-  'gx-visual-validate',
-  'honest-mode',
-  'hproof-claim-ledger',
-  'hproof-evidence-bind',
-  'imagegen',
-  'imagegen-source-scout',
-  'performance-evaluator',
-  'pipeline-runner',
-  'prompt-pipeline',
-  'reasoning-router',
-  'reflection',
-  'solution-scout',
-  'turbo-context-pack'
-] as const;
-export const LEGACY_UNPREFIXED_SKS_SKILL_NAMES = Array.from(new Set([
-  ...LEGACY_DOLLAR_SKILL_NAMES,
-  ...legacyCoreSkillNames(),
-  ...LEGACY_SKS_SUPPORT_SKILL_NAMES
-].map((name) => canonicalSkillNameFromValue(name)).filter((name) => name && name !== 'sks'))).sort();
-const SKS_SKILL_NAMES_TO_CLEAN_UP = Array.from(new Set([
-  ...REMOVED_SKS_SKILL_NAMES,
-  ...LEGACY_UNPREFIXED_SKS_SKILL_NAMES
-]));
-const REMOVED_SKS_SKILL_NAME_SET = new Set<string>(SKS_SKILL_NAMES_TO_CLEAN_UP);
-const SKILL_ALIASES: Record<string, string[]> = {};
 
 function reflectionInstructionText(commandPrefix: any = 'sks') {
   return `Post-route reflection: full routes load \`reflection\` after work/tests and before final; DFix/Answer/Help/Wiki/SKS discovery are exempt. Write reflection.md; record only real misses/gaps, or no_issue_acknowledged. For lessons, append TriWiki claim rows to ${REFLECTION_MEMORY_PATH}. Run "${commandPrefix} wiki refresh" or pack, validate, then pass reflection-gate.json.`;
@@ -1116,113 +1079,6 @@ async function quarantineSkillDir(root: string, sourceDir: string, name: string,
   return target;
 }
 
-export async function loadSkillsManifest(): Promise<any> {
-  const bundled = await loadBundledSkillsManifest();
-  if (bundled) return bundled;
-  const candidates = [
-    // When the package tree is a partial workspace build (tsc without
-    // build-dist), accept only a same-version, complete installed manifest.
-    path.join(path.resolve(process.env.HOME || os.homedir()), '.agents', 'skills', 'skills-manifest.json')
-  ];
-  return (await loadFirstCompleteSkillsManifest(candidates)) || buildFallbackSkillsManifest();
-}
-
-export async function loadBundledSkillsManifest(): Promise<any | null> {
-  const packaged = await loadFirstCompleteSkillsManifest([
-    path.join(packageRootDir(), 'dist', 'config', 'skills-manifest.json'),
-    path.join(packageRootDir(), 'config', 'skills-manifest.json')
-  ]);
-  if (packaged) return packaged;
-  const ledger = await readJson(
-    path.join(packageRootDir(), 'config', 'skills-hash-ledger.v1.json'),
-    null
-  );
-  return skillsManifestFromHashLedger(ledger);
-}
-
-async function loadFirstCompleteSkillsManifest(candidates: readonly string[]): Promise<any | null> {
-  for (const file of candidates) {
-    const data = await readJson(file, null);
-    if (data?.schema !== PACKAGED_SKILLS_MANIFEST_SCHEMA
-      || data?.package_version !== PACKAGE_VERSION
-      || !Array.isArray(data.skills)) continue;
-    const normalized = normalizeSkillsManifest(data);
-    if (!skillsManifestHasContentDigests(normalized)) continue;
-    return normalized;
-  }
-  return null;
-}
-
-function skillsManifestHasContentDigests(manifest: any): boolean {
-  const skills = Array.isArray(manifest?.skills) ? manifest.skills : [];
-  if (!skills.length) return false;
-  const names = new Set<string>();
-  for (const skill of skills) {
-    const name = canonicalSkillNameFromValue(skill?.canonical_name);
-    if (!name
-      || names.has(name)
-      || typeof skill?.content_sha256 !== 'string'
-      || !/^[a-f0-9]{64}$/i.test(skill.content_sha256)) {
-      return false;
-    }
-    names.add(name);
-  }
-  return buildFallbackSkillsManifest().skills.every((skill: any) => (
-    names.has(canonicalSkillNameFromValue(skill.canonical_name))
-  ));
-}
-
-export function skillsManifestFromHashLedger(ledger: any): any | null {
-  if (ledger?.schema !== SKILLS_HASH_LEDGER_SCHEMA || !Array.isArray(ledger?.skills)) {
-    return null;
-  }
-  const expected = new Set(
-    buildFallbackSkillsManifest().skills.map(
-      (skill: any) => canonicalSkillNameFromValue(skill.canonical_name)
-    )
-  );
-  const names = new Set<string>();
-  const skills: any[] = [];
-  for (const row of ledger.skills) {
-    const canonicalName = canonicalSkillNameFromValue(row?.canonical_name);
-    const trusted = Array.isArray(row?.trusted_sha256)
-      ? row.trusted_sha256.map((value: unknown) => String(value || '').trim().toLowerCase())
-      : [];
-    if (!canonicalName
-      || canonicalName !== row?.canonical_name
-      || names.has(canonicalName)
-      || trusted.length < 1
-      || trusted.length > MAX_SKILL_HASH_HISTORY + 1
-      || trusted.some((digest: string) => !/^[a-f0-9]{64}$/.test(digest))
-      || new Set(trusted).size !== trusted.length) {
-      return null;
-    }
-    names.add(canonicalName);
-    // The ledger retains historical digests so older installations can be
-    // recognized and cleaned safely. Known retired skills are tombstones, not
-    // part of the current authoritative generation.
-    if (REMOVED_SKS_SKILL_NAME_SET.has(canonicalName)) continue;
-    skills.push({
-      canonical_name: canonicalName,
-      type: isCoreSkillName(canonicalName) ? 'core' : 'official',
-      content_sha256: trusted[0],
-      hash_history: trusted.slice(1),
-      deprecated_aliases: SKILL_ALIASES[canonicalName] || []
-    });
-  }
-  if ([...expected].some((name) => !names.has(name))) {
-    return null;
-  }
-  const manifest = {
-    schema: PACKAGED_SKILLS_MANIFEST_SCHEMA,
-    package_version: PACKAGE_VERSION,
-    skills: skills.sort((left, right) => (
-      left.canonical_name.localeCompare(right.canonical_name)
-    ))
-  };
-  return skillsManifestHasContentDigests(manifest) ? manifest : null;
-}
-
 async function quarantineUntrustedGlobalManagedSkills(
   root: string,
   targetDir: string,
@@ -1265,67 +1121,6 @@ async function quarantineUntrustedGlobalManagedSkills(
   return [...new Set(quarantined)].sort();
 }
 
-function skillManifestGenerationSha256(manifest: any): string | null {
-  if (manifest?.schema !== PACKAGED_SKILLS_MANIFEST_SCHEMA || !Array.isArray(manifest?.skills)) {
-    return null;
-  }
-  const rows = manifest.skills
-    .map((skill: any) => ({
-      canonical_name: canonicalSkillNameFromValue(skill?.canonical_name),
-      content_sha256: String(skill?.content_sha256 || '').trim().toLowerCase()
-    }))
-    .filter((skill: any) => (
-      skill.canonical_name && /^[a-f0-9]{64}$/.test(skill.content_sha256)
-    ))
-    .sort((left: any, right: any) => left.canonical_name.localeCompare(right.canonical_name));
-  return rows.length ? sha256(JSON.stringify(rows)) : null;
-}
-
-function normalizeSkillsManifest(manifest: any) {
-  const skills = (manifest.skills || [])
-    .map((skill: any) => ({
-      ...skill,
-      deprecated_aliases: (skill.deprecated_aliases || [])
-        .filter((name: any) => !REMOVED_SKS_SKILL_NAME_SET.has(canonicalSkillNameFromValue(name)))
-    }))
-    .filter((skill: any) => !REMOVED_SKS_SKILL_NAME_SET.has(canonicalSkillNameFromValue(skill.canonical_name)));
-  const { removed_skills: _retiredInventory, ...current } = manifest || {};
-  return { ...current, skills };
-}
-
-export function mergePackagedSkillsManifestHashHistory(
-  currentManifest: any,
-  previousManifest: any
-): any {
-  const previousByName = new Map<string, any>(
-    (Array.isArray(previousManifest?.skills) ? previousManifest.skills : [])
-      .map((row: any) => [canonicalSkillNameFromValue(row?.canonical_name), row])
-      .filter(([name]: [string, any]) => Boolean(name))
-  );
-  return {
-    ...currentManifest,
-    skills: (Array.isArray(currentManifest?.skills) ? currentManifest.skills : [])
-      .map((row: any) => {
-        const canonicalName = canonicalSkillNameFromValue(row?.canonical_name);
-        const currentDigest = String(row?.content_sha256 || '').trim().toLowerCase();
-        const previous = previousByName.get(canonicalName);
-        const history = [
-          previous?.content_sha256,
-          ...(Array.isArray(previous?.hash_history) ? previous.hash_history : []),
-          ...(Array.isArray(row?.hash_history) ? row.hash_history : [])
-        ]
-          .map((value) => String(value || '').trim().toLowerCase())
-          .filter((value, index, values) => (
-            /^[a-f0-9]{64}$/.test(value)
-            && value !== currentDigest
-            && values.indexOf(value) === index
-          ))
-          .slice(0, MAX_SKILL_HASH_HISTORY);
-        return { ...row, hash_history: history };
-      })
-  };
-}
-
 export async function generatePackagedSkillsManifest(): Promise<any> {
   return withScratchDir('skills-manifest-', async (dir) => {
     await installOfficialSkills(dir);
@@ -1354,120 +1149,6 @@ export async function writePackagedSkillManifest(targetDir: string, manifest: an
   await prepareReservedSkillManifestForWrite(rootFromSkillsDir(targetDir), file, 'skills-manifest.json');
   await writeJsonAtomic(file, manifest);
   return file;
-}
-
-function buildFallbackSkillsManifest() {
-  const names = new Set<string>([
-    ...DOLLAR_SKILL_NAMES.map((name: any) => canonicalSkillNameFromValue(name)),
-    ...RECOMMENDED_SKILLS.map((name: any) => canonicalSkillNameFromValue(name)),
-    ...DOLLAR_COMMANDS.map((command: any) => canonicalSkillNameFromValue(String(command.command || '').replace(/^\$/, ''))),
-    ...buildSksCoreSkillManifest().skills.map((skill) => skill.canonical_name)
-  ].filter((name) => Boolean(name)
-    && !REMOVED_SKS_SKILL_NAME_SET.has(String(name))
-    && !RETIRED_PUBLIC_IMAGE_UX_REVIEW_SKILL_ALIAS_SET.has(String(name))));
-  return {
-    schema: PACKAGED_SKILLS_MANIFEST_SCHEMA,
-    package_version: PACKAGE_VERSION,
-    skills: [...names].sort().map((name) => ({
-      canonical_name: name,
-      type: isCoreSkillName(name) ? 'core' : 'official',
-      content_sha256: '',
-      hash_history: [],
-      deprecated_aliases: SKILL_ALIASES[name] || []
-    }))
-  };
-}
-
-async function listSkillDirs(targetDir: string, opts: { includeUnsafeEntries?: boolean } = {}) {
-  const boundary = rootFromSkillsDir(targetDir);
-  let rootInspection;
-  try {
-    rootInspection = await inspectConfinedPath(boundary, targetDir);
-  } catch (error: unknown) {
-    if (nodeErrorCode(error) === 'ENOENT') return [];
-    throw error;
-  }
-  if (!rootInspection.exists) return [];
-  if (rootInspection.leafSymlink || !rootInspection.stat?.isDirectory()) {
-    throw new Error(`skill_target_not_safe_directory:${targetDir}`);
-  }
-  const rows = await fsp.readdir(targetDir, { withFileTypes: true });
-  const out: any[] = [];
-  for (const row of rows) {
-    const dir = path.join(targetDir, row.name);
-    const directoryCanonical = canonicalSkillNameFromValue(row.name);
-    if (row.isSymbolicLink() || !row.isDirectory()) {
-      if (opts.includeUnsafeEntries) {
-        out.push({
-          name: row.name,
-          dir,
-          skillMdPath: null,
-          text: '',
-          canonical: directoryCanonical,
-          declaredCanonical: '',
-          directoryCanonical,
-          hash: '',
-          unsafeEntry: row.isSymbolicLink() ? 'symlink' : 'non-directory'
-        });
-      }
-      continue;
-    }
-    const skillMdPath = path.join(dir, 'SKILL.md');
-    const inspected = await inspectConfinedPath(boundary, skillMdPath);
-    if (!inspected.exists || inspected.leafSymlink || !inspected.stat?.isFile()) {
-      if (opts.includeUnsafeEntries) {
-        out.push({
-          name: row.name,
-          dir,
-          skillMdPath,
-          text: '',
-          canonical: directoryCanonical,
-          declaredCanonical: '',
-          directoryCanonical,
-          hash: '',
-          unsafeEntry: inspected.leafSymlink ? 'skill-file-symlink' : 'missing-or-non-file-skill'
-        });
-      }
-      continue;
-    }
-    const text = await fsp.readFile(skillMdPath, 'utf8');
-    const displayName = /^name:\s*(.+)\s*$/m.exec(text)?.[1] || row.name;
-    const declaredCanonical = canonicalSkillNameFromValue(displayName);
-    out.push({
-      name: row.name,
-      dir,
-      skillMdPath,
-      text,
-      canonical: declaredCanonical,
-      declaredCanonical,
-      directoryCanonical,
-      hash: sha256(text)
-    });
-  }
-  return out;
-}
-
-function rootFromSkillsDir(targetDir: string) {
-  const normalized = path.resolve(targetDir);
-  if (path.basename(normalized) === 'skills' && path.basename(path.dirname(normalized)) === '.agents') {
-    return path.dirname(path.dirname(normalized));
-  }
-  return path.dirname(path.dirname(normalized));
-}
-
-function canonicalSkillNameFromValue(value: any) {
-  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-}
-
-function packageRootDir() {
-  return path.resolve(
-    process.env.SKS_BUILD_SOURCE_ROOT
-    || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-  );
-}
-
-async function pruneProjectGeneratedManifest(targetDir: string) {
-  await fsp.rm(path.join(targetDir, SKS_SKILL_MANIFEST_FILE), { force: true }).catch(() => undefined);
 }
 
 function generatedSkillFiles(skillNames: any) {
@@ -1511,16 +1192,6 @@ async function writeGeneratedSkillManifest(root: any, skillNames: any) {
     skills: [...skillNames].sort(),
     files: generatedSkillFiles(skillNames)
   });
-}
-
-async function runtimeBuildSourceTime(): Promise<number | null> {
-  const stamp: any = await readJson(
-    path.join(packageRootDir(), 'dist', '.sks-build-stamp.json'),
-    null
-  );
-  return Number.isFinite(stamp?.built_at_source_time) && stamp.built_at_source_time > 0
-    ? stamp.built_at_source_time
-    : null;
 }
 
 async function removeStaleGeneratedSkillsFromManifest(

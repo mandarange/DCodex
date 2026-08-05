@@ -57,7 +57,6 @@ for (const changedFile of [
   'src/core/codex-control/codex-reliability-shield.ts',
   'src/core/hooks-runtime.ts',
   'src/commands/codex.ts',
-  'src/commands/codex-lb.ts',
   'src/commands/doctor.ts',
   'src/core/preflight/parallel-preflight-engine.ts'
 ]) {

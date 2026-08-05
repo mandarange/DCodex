@@ -4,12 +4,6 @@ import { ensureDir, exists, nowIso, sha256, writeTextAtomic } from '../fsx.js'
 import { codexLbBaseUrlSecurityBlocker, normalizeCodexLbBaseUrl } from './codex-lb-env.js'
 import type { BridgeCatalogModel } from './bridge-contracts.js'
 
-type LegacyCodexLbDesktopMode =
-  | 'desktop-native-bridge'
-  | 'desktop-dual-auth-compat'
-  | 'cli-provider'
-  | 'disabled'
-
 export const CODEX_LB_TOOL_CATALOG_FILENAME = 'sks-codex-lb-tool-catalog.json'
 export const CODEX_LB_TOOL_CATALOG_SCHEMA = 'sks.codex-lb-tool-catalog.v1'
 export const CODEX_LB_TOOL_CATALOG_METADATA_SCHEMA = 'sks.codex-lb-tool-catalog-metadata.v1'
@@ -36,10 +30,6 @@ type CatalogIdentity = {
 
 export function isCodexLbGpt56Model(model: unknown): boolean {
   return GPT56_MODEL_RE.test(String(model || '').trim())
-}
-
-export function shouldBindLocalModelCatalog(mode: LegacyCodexLbDesktopMode): boolean {
-  return mode === 'desktop-dual-auth-compat' || mode === 'cli-provider'
 }
 
 export function codexLbToolCatalogPath(codexHome: string): string {

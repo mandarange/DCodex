@@ -48,7 +48,7 @@ export async function helpCommand(args: string[] = []): Promise<void | unknown> 
   for (const row of commandRows().filter((entry) => entry.maturity !== 'labs')) {
     console.log(`  ${row.usage.padEnd(58)} ${row.description}`);
   }
-  console.log('\nThree core promises: Completion Proof for serious routes, Image Voxel TriWiki for visual routes, and release-gated Codex App/codex-lb/hooks/Rust evidence.');
+  console.log('\nThree core promises: Completion Proof for serious routes, Image Voxel TriWiki for visual routes, and release-gated Codex App/Desktop Bridge/hooks/Rust evidence.');
 }
 
 export function commandsCommand(args: string[] = []): unknown {

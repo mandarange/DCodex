@@ -1,18 +1,26 @@
+import path from 'node:path';
 import { readStdin } from '../core/fsx.js';
-import { redactString, REDACTION_MARKER } from '../core/secret-redaction.js';
 import type {
   BridgeProviderId,
   CapabilityRequestedLevel
 } from '../core/codex-lb/bridge-contracts.js';
-import { validateDesktopCapabilityReportV3 } from '../core/codex-lb/bridge-runtime-validation.js';
+import { serveDesktopBridge } from '../core/codex-lb/desktop-service.js';
+import {
+  BridgeCliError,
+  errorOutput,
+  mergeMetadata,
+  ordinaryOutput,
+  sanitizeBridgeValue,
+  textSummary,
+  verificationOutput
+} from './bridge-command-output.js';
 
-const COMMAND_SCHEMA = 'sks.bridge-command.v1' as const;
-const ERROR_SCHEMA = 'sks.bridge-command-error.v1' as const;
 const CONTROLLER_FACADE_EXPORT = 'executeDesktopBridgeCommand' as const;
 const MAX_STDIN_SECRET_BYTES = 64 * 1024;
 
 export type BridgeCommandRequest =
   | { operation: 'status' }
+  | { operation: 'serve'; settings_path: string }
   | { operation: 'ensure' }
   | { operation: 'repair' }
   | { operation: 'verify'; level: CapabilityRequestedLevel }
@@ -45,6 +53,7 @@ export interface BridgeCommandRunOptions {
   facade?: BridgeCommandFacade;
   io?: BridgeCommandIo;
   metadata?: Readonly<Record<string, unknown>>;
+  serve?: typeof serveDesktopBridge;
 }
 
 export interface BridgeCommandExecution {
@@ -65,15 +74,6 @@ interface ParsedArgs {
   positionals: string[];
   flags: Set<string>;
   values: Map<string, string>;
-}
-
-class BridgeCliError extends Error {
-  constructor(
-    readonly code: string,
-    readonly recoveryAction: string | null = 'review_bridge_command_help'
-  ) {
-    super(code);
-  }
 }
 
 const DEFAULT_IO: BridgeCommandIo = {
@@ -148,8 +148,9 @@ export async function executeBridgeCommand(
   }
 
   try {
-    const facade = options.facade || await loadBridgeCommandFacade();
-    const raw = await facade.execute(parsed.request);
+    const raw = parsed.request.operation === 'serve'
+      ? await (options.serve || serveDesktopBridge)({ settingsPath: parsed.request.settings_path })
+      : await (options.facade || await loadBridgeCommandFacade()).execute(parsed.request);
     const output = parsed.request.operation === 'verify'
       ? verificationOutput(raw, parsed.request.level, parsed.strict)
       : ordinaryOutput(raw, parsed.label);
@@ -201,6 +202,21 @@ async function parseInvocation(args: string[], io: BridgeCommandIo): Promise<Par
   if (area === 'status' && action === undefined) {
     allowOnly(parsed, ['--json'], []);
     return { ...base, request: { operation: 'status' }, label: 'Desktop Bridge status' };
+  }
+  if (area === 'serve' && action === undefined) {
+    allowOnly(parsed, ['--json'], ['--settings']);
+    const settingsPath = parsed.values.get('--settings') || '';
+    if (!path.isAbsolute(settingsPath)) {
+      throw new BridgeCliError('desktop_bridge_settings_path_must_be_absolute');
+    }
+    if (path.basename(settingsPath) !== 'codex-lb-desktop-bridge-settings.json') {
+      throw new BridgeCliError('desktop_bridge_settings_path_invalid');
+    }
+    return {
+      ...base,
+      request: { operation: 'serve', settings_path: settingsPath },
+      label: 'Desktop Bridge service'
+    };
   }
   if ((area === 'ensure' || area === 'repair') && action === undefined) {
     allowOnly(parsed, ['--json'], []);
@@ -330,7 +346,7 @@ function parseArgs(args: string[]): ParsedArgs {
   const booleanOptions = new Set([
     '--json', '--strict', '--require-ready', '--api-key-stdin', '--confirm'
   ]);
-  const valueOptions = new Set(['--level', '--host']);
+  const valueOptions = new Set(['--level', '--host', '--settings']);
   for (let index = 0; index < args.length; index += 1) {
     const value = String(args[index] || '');
     if (!value.startsWith('--')) {
@@ -391,118 +407,4 @@ function capabilityLevel(value: string): CapabilityRequestedLevel {
 function provider(value: string): BridgeProviderId {
   if (value === 'codex-lb' || value === 'openrouter') return value;
   throw new BridgeCliError('bridge_provider_must_be_codex_lb_or_openrouter');
-}
-
-function verificationOutput(
-  value: unknown,
-  level: CapabilityRequestedLevel,
-  strict: boolean
-): Record<string, unknown> {
-  const report = record(value);
-  const reportGenerated = validateDesktopCapabilityReportV3(value).ok;
-  if (!reportGenerated) {
-    return errorOutput('capability_schema_invalid', 'update_sks_and_rebuild_menubar');
-  }
-  const executionOk = record(report.execution).ok === true;
-  const summary = record(report.summary);
-  const levelSatisfied = summary.level_satisfied === true;
-  const fullFeatureVerified = summary.full_feature_verified === true;
-  return {
-    ...report,
-    ok: executionOk && (!strict || levelSatisfied),
-    execution_ok: executionOk,
-    report_generated: true,
-    requested_level: level,
-    level_satisfied: levelSatisfied,
-    full_feature_verified: fullFeatureVerified,
-    strict
-  };
-}
-
-function ordinaryOutput(value: unknown, label: string): Record<string, unknown> {
-  const result = record(value);
-  if (Object.keys(result).length === 0 || typeof result.schema !== 'string') {
-    return errorOutput('bridge_controller_response_invalid', 'update_sks_and_rebuild_bridge_controller');
-  }
-  const executionOk = result.execution_ok === false
-    ? false
-    : result.ok === false
-      ? false
-      : record(result.execution).ok === false
-        ? false
-        : true;
-  return {
-    ...result,
-    schema: typeof result.schema === 'string' ? result.schema : COMMAND_SCHEMA,
-    ok: executionOk,
-    execution_ok: executionOk,
-    command_summary: label
-  };
-}
-
-function errorOutput(
-  blocker: string,
-  recoveryAction: string | null,
-  error?: unknown
-): Record<string, unknown> {
-  return {
-    schema: ERROR_SCHEMA,
-    ok: false,
-    execution_ok: false,
-    status: 'failed',
-    blockers: [blocker],
-    recovery_action: recoveryAction,
-    ...(error instanceof BridgeCliError
-      ? {}
-      : error instanceof Error
-        ? { error: redactString(error.message) }
-        : {})
-  };
-}
-
-function sanitizeBridgeValue(value: unknown, secrets: readonly string[]): unknown {
-  if (typeof value === 'string') {
-    let text = redactString(value);
-    for (const secret of secrets) text = text.split(secret).join(REDACTION_MARKER);
-    return text;
-  }
-  if (Array.isArray(value)) return value.map((entry) => sanitizeBridgeValue(entry, secrets));
-  if (!value || typeof value !== 'object') return value;
-  const output: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    output[key] = isSecretValueKey(key)
-      ? REDACTION_MARKER
-      : sanitizeBridgeValue(entry, secrets);
-  }
-  return output;
-}
-
-function isSecretValueKey(key: string): boolean {
-  return /^(?:api_key|secret|token|password|authorization|bearer|cookie|set_cookie)$/i.test(key)
-    || /(?:^|_)(?:api_key|secret|token|password|authorization)$/i.test(key)
-    || /^(?:headers?|env)$/i.test(key);
-}
-
-function mergeMetadata(
-  output: Record<string, unknown>,
-  metadata: Readonly<Record<string, unknown>> | undefined
-): Record<string, unknown> {
-  return metadata ? { ...output, ...metadata } : output;
-}
-
-function textSummary(output: Record<string, unknown>): string {
-  const status = output.ok === false ? 'failed' : 'completed';
-  const summary = typeof output.command_summary === 'string'
-    ? output.command_summary
-    : 'Desktop Bridge command';
-  const blockers = Array.isArray(output.blockers)
-    ? output.blockers.map(String).filter(Boolean).join(', ')
-    : '';
-  return blockers ? `${summary}: ${status} (${blockers})` : `${summary}: ${status}`;
-}
-
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }

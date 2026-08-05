@@ -6,7 +6,8 @@ import { reconcileSkills } from '../core/init/skills.js';
 
 const root = await makeTempRoot('sks-skill-dedupe-');
 process.env.CODEX_HOME = path.join(root, 'codex-home');
-// NC-38: sks-loop is removed; leave residue that reconcile --fix must delete.
+// NC-38: sks-loop is removed. Markerless bytes are unowned, so reconcile must
+// remove them from the active surface by quarantining rather than deleting.
 async function writeRetiredResidue(relSkills: string, name: string) {
   const dir = path.join(root, relSkills, name);
   await fs.mkdir(dir, { recursive: true });
@@ -22,10 +23,13 @@ const agentsSkill = await fs.stat(path.join(root, '.agents', 'skills', 'sks-loop
 const codexSkill = await fs.stat(path.join(root, '.codex', 'skills', 'sks-loop', 'SKILL.md')).then(() => true, () => false);
 const answerOriginal = await fs.stat(path.join(root, '.agents', 'skills', 'sks-answer', 'SKILL.md')).then(() => true, () => false);
 const quarantinedAnswers = await findFiles(path.join(root, '.sneakoscope', 'quarantine', 'skills', 'sks-answer'), 'SKILL.md');
-assertGate(report.removed.some((item) => item.endsWith('/sks-loop')), 'project official skill residue must be removed under reconcile --fix', report);
+assertGate(report.retired_residue?.quarantined_user_collision_count === 2, 'markerless retired skill residue must be quarantined under reconcile --fix', report);
 assertGate(!agentsSkill && !codexSkill, 'project official residue must be removed from .agents/skills and .codex/skills', { agentsSkill, codexSkill });
 assertGate(!answerOriginal && quarantinedAnswers.length === 1, 'official-name user collision must move to unique quarantine outside skill root without data loss', { answerOriginal, quarantinedAnswers });
-emitGate('skill:dedupe', { removed: report.removed.length });
+emitGate('skill:dedupe', {
+  removed: report.removed.length,
+  quarantined_retired_residue: report.retired_residue?.quarantined_user_collision_count || 0
+});
 
 async function findFiles(dir: string, name: string): Promise<string[]> {
   const rows = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);

@@ -106,10 +106,10 @@ test('current Desktop Bridge comprehensive selection is exact and contains only 
   const command = selected[0]?.command || ''
   assert.deepEqual(command.split(' && '), [
     'node ./dist/scripts/desktop-bridge-unification-check.js',
-    'node ./dist/scripts/codex-lb-desktop-bridge-check.js',
-    'node ./dist/scripts/codex-lb-desktop-bridge-latency-check.js',
+    'node ./dist/scripts/desktop-bridge-transport-check.js',
+    'node ./dist/scripts/desktop-bridge-latency-check.js',
     'node ./dist/scripts/codex-lb-catalog-passthrough-check.js',
-    'node ./dist/scripts/codex-lb-desktop-capabilities-check.js'
+    'node ./dist/scripts/desktop-bridge-capabilities-check.js'
   ])
 })
 
@@ -127,10 +127,10 @@ test('current Desktop Bridge comprehensive scripts are all installed-runtime req
   const requiredPaths = new Set((runtimeManifest.scripts || []).map((entry) => entry.path))
   assert.deepEqual(commandPaths, [
     'dist/scripts/desktop-bridge-unification-check.js',
-    'dist/scripts/codex-lb-desktop-bridge-check.js',
-    'dist/scripts/codex-lb-desktop-bridge-latency-check.js',
+    'dist/scripts/desktop-bridge-transport-check.js',
+    'dist/scripts/desktop-bridge-latency-check.js',
     'dist/scripts/codex-lb-catalog-passthrough-check.js',
-    'dist/scripts/codex-lb-desktop-capabilities-check.js'
+    'dist/scripts/desktop-bridge-capabilities-check.js'
   ])
   for (const scriptPath of commandPaths) assert.equal(requiredPaths.has(scriptPath), true)
 })

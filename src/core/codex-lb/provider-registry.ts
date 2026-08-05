@@ -61,6 +61,13 @@ export interface BridgeProviderRegistry {
   readonly warnings: readonly string[];
 }
 
+export interface StoredBridgeProviderProfileOverride {
+  readonly present: boolean;
+  readonly enabled: boolean;
+  readonly endpoint_url: string | null;
+  readonly auth_transport: BridgeProviderAuthTransport | null;
+}
+
 export function bridgeProviderRegistryPath(home: string = process.env.HOME || os.homedir()): string {
   return path.join(path.resolve(home), '.codex', 'sks', BRIDGE_PROVIDER_REGISTRY_FILENAME);
 }
@@ -73,10 +80,13 @@ export async function resolveBridgeProviderRegistry(options: {
     readonly codexLb?: ResolveProviderCredentialOptions;
     readonly openrouter?: ResolveProviderCredentialOptions;
   };
+  readonly storedRegistry?: StoredBridgeProviderRegistry;
 } = {}): Promise<BridgeProviderRegistry> {
   const credentials = options.credentials || await resolveAllProviderCredentials(options.credentialOptions || {});
   const file = options.registryPath || bridgeProviderRegistryPath(options.home);
-  const read = await readStoredBridgeProviderRegistry(file);
+  const read = options.storedRegistry
+    ? { registry: options.storedRegistry, blockers: [] }
+    : await readStoredBridgeProviderRegistry(file);
   const stored = read.registry || defaultStoredRegistry(credentials);
   const profiles = {
     'codex-lb': resolveProfile('codex-lb', stored.profiles['codex-lb'], credentials['codex-lb']),
@@ -101,6 +111,49 @@ export async function resolveBridgeProviderRegistry(options: {
       ...profiles.openrouter.warnings
     ])
   };
+}
+
+export async function loadStoredBridgeProviderRegistry(options: {
+  readonly home?: string;
+  readonly registryPath?: string;
+} = {}): Promise<{
+  readonly path: string;
+  readonly registry: StoredBridgeProviderRegistry | null;
+  readonly blockers: readonly string[];
+}> {
+  const file = options.registryPath || bridgeProviderRegistryPath(options.home);
+  const read = await readStoredBridgeProviderRegistry(file);
+  return { path: file, registry: read.registry, blockers: read.blockers };
+}
+
+/** Build secret-free registry bytes without writing them. */
+export function buildStoredBridgeProviderRegistry(input: {
+  readonly credentials: Record<BridgeProviderId, ResolvedProviderCredential>;
+  readonly overrides?: Partial<Record<BridgeProviderId, StoredBridgeProviderProfileOverride>>;
+}): StoredBridgeProviderRegistry {
+  const base = defaultStoredRegistry(input.credentials);
+  const profiles = { ...base.profiles };
+  for (const providerId of ['codex-lb', 'openrouter'] as const) {
+    const override = input.overrides?.[providerId];
+    if (!override?.present) continue;
+    const endpoint = normalizeEndpoint(override.endpoint_url || base.profiles[providerId].endpoint_url || '');
+    const origin = endpointOrigin(endpoint);
+    const authTransport = override.auth_transport || defaultAuthTransport(providerId);
+    const blocker = providerEndpointSecurityBlocker(providerId, endpoint, origin ? [origin] : []);
+    if (blocker) throw new Error(blocker);
+    profiles[providerId] = {
+      enabled: override.enabled,
+      endpoint_url: endpoint,
+      allowed_origins: origin ? [origin] : [],
+      auth_transport: authTransport
+    };
+  }
+  return { schema: BRIDGE_PROVIDER_REGISTRY_SCHEMA, profiles };
+}
+
+export function serializeStoredBridgeProviderRegistry(registry: StoredBridgeProviderRegistry): string {
+  if (!isStoredRegistry(registry)) throw new Error('provider_registry_schema_invalid');
+  return `${JSON.stringify(registry, null, 2)}\n`;
 }
 
 export async function setBridgeProviderEnabled(input: {

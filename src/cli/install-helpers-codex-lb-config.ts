@@ -35,19 +35,19 @@ export function upsertDesktopBridgeManagedConfig(
     selectedProvider !== 'openai'
     || !topLevelHasLine(next, DESKTOP_BRIDGE_MANAGED_MARKER)
   )) {
-    throw new Error('legacy_user_owned_config_conflict:model_provider');
+    throw new Error('historical_user_owned_config_conflict:model_provider');
   }
 
   const existingBaseUrl = topLevelTomlString(next, 'openai_base_url');
   const baseUrlOwned = topLevelHasLine(next, DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER);
   if (existingBaseUrl && !baseUrlOwned) {
-    throw new Error('legacy_user_owned_config_conflict:openai_base_url');
+    throw new Error('historical_user_owned_config_conflict:openai_base_url');
   }
 
   const existingCatalog = topLevelTomlString(next, 'model_catalog_json');
   const catalogOwned = topLevelHasLine(next, DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER);
   if (existingCatalog && !catalogOwned) {
-    throw new Error('legacy_user_owned_config_conflict:model_catalog_json');
+    throw new Error('historical_user_owned_config_conflict:model_catalog_json');
   }
 
   next = removeManagedBridgeTopLevelBindings(next);

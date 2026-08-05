@@ -19,13 +19,13 @@ import {
 const terminal = ['failed', 'blocked', 'skipped', 'integration_optional', 'optional']
 
 test('release-real contract records trusted real Codex Desktop evidence as optional live coverage', () => {
-  assert.equal(RELEASE_REAL_REQUIRED_CHECK_IDS.includes('codex-lb:desktop-real-evidence'), false)
-  assert.ok(RELEASE_REAL_OPTIONAL_CHECK_IDS.includes('codex-lb:desktop-real-evidence'))
+  assert.equal(RELEASE_REAL_REQUIRED_CHECK_IDS.includes('desktop-bridge:real-evidence'), false)
+  assert.ok(RELEASE_REAL_OPTIONAL_CHECK_IDS.includes('desktop-bridge:real-evidence'))
   const missing = validateReleaseRealTaskIds(
-    RELEASE_REAL_CHECK_IDS.filter((id) => id !== 'codex-lb:desktop-real-evidence')
+    RELEASE_REAL_CHECK_IDS.filter((id) => id !== 'desktop-bridge:real-evidence')
   )
   assert.equal(missing.ok, false)
-  assert.ok(missing.missing_ids.includes('codex-lb:desktop-real-evidence'))
+  assert.ok(missing.missing_ids.includes('desktop-bridge:real-evidence'))
 })
 
 test('release DAG summary identity binds run id, directory, and summary path', () => {

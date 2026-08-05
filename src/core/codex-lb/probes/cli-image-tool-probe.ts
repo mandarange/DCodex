@@ -23,7 +23,7 @@ export interface CodexLbCliImageProbeInput {
   baseUrl: string
   apiKey: string
   model: string
-  gatewayAuthTransport?: 'authorization-bearer-compat' | 'authorization-bearer' | 'x-codex-lb-api-key'
+  gatewayAuthTransport?: 'authorization-bearer' | 'x-codex-lb-api-key'
   fetchImpl?: typeof fetch
   timeoutMs?: number
 }

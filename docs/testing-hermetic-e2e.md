@@ -34,7 +34,7 @@ Representative tests:
 - `test/integration/sks-run-happy-path.test.mjs`
 - `test/integration/sks-run-visual-path.test.mjs`
 
-## Architecture-hardening sandbox
+## Desktop Bridge architecture sandbox
 
 The provider architecture has a separate hermetic runner:
 
@@ -45,11 +45,12 @@ node --test test/e2e/architecture-hardening/hermetic-sandbox.test.mjs
 
 [`run.mjs`](../scripts/architecture-hardening-sandbox/run.mjs) starts a worker
 with fresh temp `HOME`, `CODEX_HOME`, and `SKS_HOME`. The child receives no
-ambient provider credentials. Four loopback fixture servers represent Codex
-LB, OpenRouter, ChatGPT OAuth, and the native catalog. The matrix covers the
-three exclusive modes, credential withdrawal, session/child pinning,
-four-stage success and partial failure, catalog offline/restart behavior,
-bounded pause/resume, graph writer locking, and secret-safe output.
+ambient provider credentials. Loopback fixtures represent Codex-LB,
+OpenRouter, ChatGPT OAuth identity, and the combined catalog. The matrix covers
+one bridge runtime with both provider profiles, explicit route-index
+resolution with no fallback, credential withdrawal, session-pin affinity and
+tamper rejection, four-stage success and partial failure, catalog
+offline/restart recovery, write confinement, and secret-safe output.
 
 All generated paths are enumerated relative to the sandbox root, and the
 runner asserts that every write is inside it. It never reads or cleans the real
@@ -57,19 +58,18 @@ user home, Codex configuration, or Keychain. Set
 `SKS_ARCHITECTURE_KEEP_SANDBOX=1` only when a retained local evidence directory
 is useful; the default removes the temp root.
 
-Live evidence is a separate field. The optional probe runs only with all of:
+Live evidence is separate:
 
-```text
-CODEX_LB_API_KEY
-CODEX_LB_BASE_URL
-SKS_ARCHITECTURE_LIVE_APPROVED=1
+```bash
+npm run desktop-bridge:real-evidence
 ```
 
-It additionally requires a working `codex` executable, validates the base URL
-as HTTPS or loopback HTTP, and sends one bounded Responses protocol check. The
-key is never a command argument or report field. Missing inputs produce
-`not_verified: secret_injection_required` (or an explicit approval/runtime
-reason); fixtures never substitute for them.
+The check consumes only explicitly supplied inputs, validates provider
+endpoints, and never places a key in argv or report fields. Missing inputs are
+reported as `not-run-real`; fixtures never substitute for them. Its report is
+diagnostic and non-release-authorizing, so release evidence must still include
+the target-bound real macOS, OAuth, provider, WebSocket, and native artifact
+receipts required by the implementation report.
 
 Production menu-bar QA is intentionally separate:
 

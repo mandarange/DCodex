@@ -2,13 +2,9 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { readTopLevelTomlString } from '../codex-app/codex-model-catalog.js';
-import {
-  loadCodexLbEnv,
-  type CodexLbEnvLoadResult
-} from '../codex-lb/codex-lb-env.js';
 
-export const CODEX_APP_SERVER_PROVIDER_CREDENTIALS_UNAVAILABLE =
-  'codex_app_server_provider_credentials_unavailable';
+export const CODEX_APP_SERVER_DIRECT_PROVIDER_SELECTION_RETIRED =
+  'desktop_bridge_direct_provider_selection_retired';
 export const CODEX_APP_SERVER_CONFIG_READ_FAILED =
   'codex_app_server_config_read_failed';
 
@@ -19,11 +15,10 @@ export class CodexAppServerRuntimeEnvError extends Error {
   }
 }
 
-export function codexAppServerProviderCredentialGuidance(home: string): string[] {
+export function desktopBridgeMigrationGuidance(): string[] {
   return [
-    `Store the key in ${path.join(home, '.codex', 'sks-codex-lb.env')} (owner-only mode 0600).`,
-    'Run: sks codex-lb setup --host <domain> --api-key-stdin --yes',
-    'Alternatively, provide CODEX_LB_API_KEY in the launching environment.'
+    'Run `sks bridge ensure --json` to migrate SKS-owned routing to Desktop Bridge.',
+    'If the direct provider selection is user-owned, review and remove it manually before retrying.'
   ];
 }
 
@@ -57,7 +52,6 @@ export async function prepareCodexAppServerRuntimeEnv(input: {
   readonly nodeBin?: string;
   readonly configText?: string;
   readonly readConfigTextImpl?: (file: string) => Promise<string>;
-  readonly loadCodexLbEnvImpl?: (options: Record<string, unknown>) => Promise<CodexLbEnvLoadResult>;
 } = {}): Promise<NodeJS.ProcessEnv> {
   const sourceEnv = input.env || process.env;
   const home = path.resolve(input.home || sourceEnv.HOME || os.homedir());
@@ -84,34 +78,13 @@ export async function prepareCodexAppServerRuntimeEnv(input: {
     })
   };
 
-  if (selectedProvider !== 'codex-lb') {
-    delete env.CODEX_LB_API_KEY;
-    delete env.CODEX_LB_BASE_URL;
-    return env;
-  }
-
-  const load = input.loadCodexLbEnvImpl || loadCodexLbEnv;
-  let loaded: CodexLbEnvLoadResult | null = null;
-  try {
-    loaded = await load({
-      home,
-      processEnv: {},
-      envPath: path.join(codexHome, 'sks-codex-lb.env'),
-      metadataPath: path.join(codexHome, 'sks-codex-lb.json')
-    });
-  } catch {
+  delete env.CODEX_LB_API_KEY;
+  delete env.CODEX_LB_BASE_URL;
+  if (selectedProvider === 'codex-lb' || selectedProvider === 'openrouter') {
     throw new CodexAppServerRuntimeEnvError(
-      CODEX_APP_SERVER_PROVIDER_CREDENTIALS_UNAVAILABLE,
-      codexAppServerProviderCredentialGuidance(home)
+      CODEX_APP_SERVER_DIRECT_PROVIDER_SELECTION_RETIRED,
+      desktopBridgeMigrationGuidance()
     );
   }
-  if (!loaded?.configured || !loaded.secret_api_key || !loaded.base_url) {
-    throw new CodexAppServerRuntimeEnvError(
-      CODEX_APP_SERVER_PROVIDER_CREDENTIALS_UNAVAILABLE,
-      codexAppServerProviderCredentialGuidance(home)
-    );
-  }
-  env.CODEX_LB_API_KEY = loaded.secret_api_key;
-  env.CODEX_LB_BASE_URL = loaded.base_url;
   return env;
 }

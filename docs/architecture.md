@@ -78,3 +78,14 @@ Architecture checks fail release verification when module boundaries,
 ownership, generated/runtime parity, or the current command surface drift.
 They must inspect the actual source and callers. A fixture or a static diagram
 does not prove live bridge, credential, Desktop, or deep-feature behavior.
+
+The machine-readable budget SSOT is
+[`config/architecture-budgets.v1.json`](../config/architecture-budgets.v1.json).
+Its current line ceilings are `250` for the Menu Bar AppDelegate, `450` for
+Menu Bar TypeScript, `500` for Menu Bar Swift, `900` for command modules,
+`1200` for pipeline/trust/evidence/proof modules, and `1800` for other
+handwritten source. Files at `3000` lines require split review. Run
+`npm run architecture:check -- --strict-all` to apply the full repository
+policy; `--strict-all` is the explicit full-surface flag. Waivers are
+**shrink-only**: an already oversized file may not grow,
+and a refactor must reduce or split it instead of raising its ceiling.

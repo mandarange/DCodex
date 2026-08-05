@@ -302,7 +302,6 @@ const COMMAND_DEFINITIONS = {
   'codex-app': skipMigrationGate(entry('beta', 'Check Codex App readiness', 'dist/commands/codex-app.js', directCommand(() => import('../commands/codex-app.js'), 'dist/commands/codex-app.js'))),
   'codex-native': entry('beta', 'Inspect Codex Native broker and routing readiness', 'dist/commands/codex-native.js', directCommand(() => import('../commands/codex-native.js'), 'dist/commands/codex-native.js')),
   bridge: skipMigrationGate(entry('beta', 'Manage the single Desktop Bridge runtime, provider profiles, catalog, and routes', 'dist/commands/bridge.js', directCommand(() => import('../commands/bridge.js'), 'dist/commands/bridge.js'))),
-  'codex-lb': skipMigrationGate(entry('beta', 'Deprecated one-patch facade for Desktop Bridge commands', 'dist/commands/codex-lb.js', directCommand(() => import('../commands/codex-lb.js'), 'dist/commands/codex-lb.js'))),
   menubar: activeRouteDiagnostic(entry('beta', 'Inspect/install/restart/uninstall SKS menu bar', 'dist/core/commands/menubar-command.js', subcommand(() => import('../core/commands/menubar-command.js'), 'menubarCommand', 'dist/core/commands/menubar-command.js', 'status'))),
   remote: entry('beta', 'Inspect official Remote readiness and run the proof-aware SSH stdio worker', 'dist/core/commands/remote-command.js', argsCommand(() => import('../core/commands/remote-command.js'), 'remoteCommand', 'dist/core/commands/remote-command.js')),
   telegram: skipMigrationGate(entry('beta', 'Pair and inspect the Telegram remote-control transport', 'dist/core/commands/telegram-command.js', argsCommand(() => import('../core/commands/telegram-command.js'), 'telegramCommand', 'dist/core/commands/telegram-command.js'))),
@@ -390,7 +389,6 @@ const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(CO
   'commit-and-push': { risk: 'R3' },
   'computer-use': { latency: 'long' },
   config: { risk: 'R2', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
-  'codex-lb': { risk: 'R3', latency: 'long', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   dfix: { latency: 'long' },
   eval: { latency: 'long' },
   gates: {

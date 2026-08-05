@@ -119,12 +119,22 @@ test('feature registry does not silently allow unknown uppercase dollar mentions
       dollar_commands: ['$Fixture'],
       app_skill_aliases: [],
       skills: [],
-      doc_route_mentions: ['$FOO_BAR', '$CODEX_HOME', '$HOME', '$SKS_WORKTREE_ROOT', '$XDG_CACHE_HOME']
+      doc_route_mentions: [
+        '$FOO_BAR',
+        '$CODEX_HOME',
+        '$HOME',
+        '$codex_lb_key',
+        '$openrouter_key',
+        '$SKS_WORKTREE_ROOT',
+        '$XDG_CACHE_HOME'
+      ]
     }
   });
   assert.ok(coverage.blockers.includes('doc_route_mention_without_route:$FOO_BAR'));
   assert.equal(coverage.doc_route_mentions_without_route.includes('$CODEX_HOME'), false);
   assert.equal(coverage.doc_route_mentions_without_route.includes('$HOME'), false);
+  assert.equal(coverage.doc_route_mentions_without_route.includes('$codex_lb_key'), false);
+  assert.equal(coverage.doc_route_mentions_without_route.includes('$openrouter_key'), false);
   assert.equal(coverage.doc_route_mentions_without_route.includes('$SKS_WORKTREE_ROOT'), false);
   assert.equal(coverage.doc_route_mentions_without_route.includes('$XDG_CACHE_HOME'), false);
 });

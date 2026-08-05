@@ -89,7 +89,7 @@ export async function run(_command: any, args: any = []) {
     return;
   }
   if (action === 'check' || action === 'status') {
-    const status = await codexAppStatusWithCodexLbCapabilities({
+    const status = await codexAppStatusWithDesktopBridgeCapabilities({
       autoInstallProductDesign: flag(args, '--install-product-design') || flag(args, '--auto-install-product-design')
     });
     if (flag(args, '--json')) {
@@ -106,23 +106,23 @@ export async function run(_command: any, args: any = []) {
   process.exitCode = 1;
 }
 
-export async function codexAppStatusWithCodexLbCapabilities(opts: {
+export async function codexAppStatusWithDesktopBridgeCapabilities(opts: {
   autoInstallProductDesign?: boolean;
   codexAppStatusImpl?: (options: Record<string, unknown>) => Promise<any>;
-  codexLbStatusImpl?: (options: DesktopBridgeControllerV3Options) => Promise<DesktopBridgeStatusV3>;
-  codexLbStatusOptions?: DesktopBridgeControllerV3Options;
+  desktopBridgeStatusImpl?: (options: DesktopBridgeControllerV3Options) => Promise<DesktopBridgeStatusV3>;
+  desktopBridgeStatusOptions?: DesktopBridgeControllerV3Options;
   [key: string]: unknown;
 } = {}) {
   const {
     codexAppStatusImpl = codexAppIntegrationStatus,
-    codexLbStatusImpl = currentDesktopBridgeStatus,
-    codexLbStatusOptions,
+    desktopBridgeStatusImpl = currentDesktopBridgeStatus,
+    desktopBridgeStatusOptions,
     ...integrationOptions
   } = opts;
   let desktopBridgeStatus: DesktopBridgeStatusV3 | null = null;
-  let codexLbCapabilityReport: Record<string, unknown>;
+  let desktopBridgeCapabilityReport: Record<string, unknown>;
   try {
-    const status = await codexLbStatusImpl(codexLbStatusOptions || {});
+    const status = await desktopBridgeStatusImpl(desktopBridgeStatusOptions || {});
     desktopBridgeStatus = status;
     const statusRecord = status as unknown as Record<string, unknown>;
     const capabilities = status?.capabilities;
@@ -132,7 +132,7 @@ export async function codexAppStatusWithCodexLbCapabilities(opts: {
     const summary = report?.summary && typeof report.summary === 'object' && !Array.isArray(report.summary)
       ? report.summary as Record<string, unknown>
       : null;
-    codexLbCapabilityReport = report
+    desktopBridgeCapabilityReport = report
       ? {
           ...report,
           availability: 'reported',
@@ -147,14 +147,14 @@ export async function codexAppStatusWithCodexLbCapabilities(opts: {
             : statusRecord.full_capability_verified === true,
           deep_evidence_validation: statusRecord.deep_evidence_validation || null
         }
-      : unavailableCodexLbCapabilityReport('codex_lb_capability_report_missing');
+      : unavailableDesktopBridgeCapabilityReport('desktop_bridge_capability_report_missing');
   } catch {
-    codexLbCapabilityReport = unavailableCodexLbCapabilityReport('codex_lb_capability_report_unavailable');
+    desktopBridgeCapabilityReport = unavailableDesktopBridgeCapabilityReport('desktop_bridge_capability_report_unavailable');
   }
   return codexAppStatusImpl({
     ...integrationOptions,
     desktopBridgeStatus,
-    codexLbCapabilityReport
+    desktopBridgeCapabilityReport
   });
 }
 
@@ -163,9 +163,9 @@ async function currentDesktopBridgeStatus(options: DesktopBridgeControllerV3Opti
   return controller.desktopBridgeStatusV3(options);
 }
 
-function unavailableCodexLbCapabilityReport(blocker: string): Record<string, unknown> {
+function unavailableDesktopBridgeCapabilityReport(blocker: string): Record<string, unknown> {
   return {
-    schema: 'sks.codex-lb-desktop-capability-status.v2',
+    schema: 'sks.desktop-bridge-capability-status.v3',
     availability: 'unavailable',
     ready: false,
     state: 'available_unverified',

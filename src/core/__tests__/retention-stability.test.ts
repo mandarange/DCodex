@@ -256,6 +256,43 @@ test('managed SKS temp cleanup preserves the active environment and live leased 
   }
 });
 
+test('managed SKS temp cleanup preserves children beneath an active canonical runner lease', async () => {
+  const root = await makeRoot('sks-retention-active-runner-root-');
+  const isolatedTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-retention-active-runner-tmp-'));
+  const previousTmpdir = process.env.TMPDIR;
+  process.env.TMPDIR = isolatedTmp;
+  const managed = managedSksTmpRoot();
+  const fixture = path.join(managed, `active-runner-child-${process.pid}`);
+  try {
+    await fs.mkdir(fixture, { recursive: true });
+    await fs.writeFile(path.join(fixture, 'payload.txt'), 'owned by the active canonical test runner\n');
+    await writeJson(path.join(isolatedTmp, SKS_TEMP_LEASE_FILE), {
+      schema: 'sks.temp-lease.v1',
+      kind: 'canonical-test-runner',
+      pid: process.pid,
+      created_at: new Date().toISOString()
+    });
+
+    const retained = await sweepSksTempDirs(root, { maxAgeHours: 0 });
+    assert.equal(await fs.access(fixture).then(() => true, () => false), true);
+    assert.ok(retained.actions.some((action: any) => action.action === 'skip_sks_temp_sweep'
+      && action.path === managed
+      && action.reason === 'active_parent_temp_lease'
+      && action.owner_pid === process.pid));
+
+    await fs.rm(path.join(isolatedTmp, SKS_TEMP_LEASE_FILE), { force: true });
+    const removed = await sweepSksTempDirs(root, { maxAgeHours: 0 });
+    assert.equal(await fs.access(fixture).then(() => true, () => false), false);
+    assert.ok(removed.actions.some((action: any) => action.action === 'remove_sks_temp'
+      && action.path === fixture));
+  } finally {
+    if (previousTmpdir === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previousTmpdir;
+    await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(isolatedTmp, { recursive: true, force: true });
+  }
+});
+
 test('managed SKS temp cleanup removes a dead canonical-test lease without the bounded recursive scan', async () => {
   const root = await makeRoot('sks-retention-dead-canonical-lease-');
   const isolatedTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-retention-dead-canonical-root-'));
