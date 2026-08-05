@@ -1,47 +1,42 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 import {
   passthroughCodexDesktopEvent,
-  runAuxiliarySurfacesProbe
+  runAuxiliarySurfacesProbeV3
 } from '../probes/auxiliary-surfaces-probe.js'
 
-test('unknown auxiliary events pass through without schema loss', () => {
-  const event = {
-    type: 'response.future_tool.delta',
-    sequence_number: 7,
-    future_payload: {
-      nested: ['exact', { bytes: 'preserved' }]
-    }
-  }
-  const output = passthroughCodexDesktopEvent(event)
-  const result = runAuxiliarySurfacesProbe({
-    level: 'transport',
-    checkedAt: '2026-07-28T00:00:00.000Z',
-    routesAdvertised: true,
-    attempted: true,
-    fixture: true,
-    inputEvents: [event],
-    outputEvents: [output],
-    requestBodyHashPreserved: true
-  })
+const context = {
+  requestedLevel: 'deep' as const,
+  checkedAt: '2026-08-05T16:00:00.000Z',
+  reportId: 'report-auxiliary-001',
+  correlationId: 'correlation-auxiliary-001',
+  sessionId: 'session-auxiliary-001',
+  providerId: 'codex-lb' as const
+}
 
-  assert.equal(output, event)
-  assert.equal(result.state, 'available_unverified')
+test('auxiliary event passthrough preserves the exact payload and verifies bound deep evidence', () => {
+  const event = { type: 'future.event', nested: { value: 1 }, extra: ['preserve'] }
+  assert.equal(passthroughCodexDesktopEvent(event), event)
+  const result = runAuxiliarySurfacesProbeV3({
+    ...context,
+    attempted: true,
+    eventPayloadsPreserved: true,
+    requestBodyHashPreserved: true,
+    ownerAffinityPreserved: true
+  })
+  assert.equal(result.state, 'verified')
   assert.equal(result.evidence.event_payloads_preserved, true)
-  assert.deepEqual(result.evidence.unknown_event_types, ['response.future_tool.delta'])
-  assert.deepEqual(result.warnings, ['unknown_event_type_observed'])
 })
 
-test('auxiliary probe blocks payload rewriting or field deletion', () => {
-  const result = runAuxiliarySurfacesProbe({
-    level: 'transport',
-    checkedAt: '2026-07-28T00:00:00.000Z',
+test('auxiliary fixture evidence cannot verify a deep capability', () => {
+  const result = runAuxiliarySurfacesProbeV3({
+    ...context,
     attempted: true,
-    inputEvents: [{ type: 'response.future_tool.delta', future: true }],
-    outputEvents: [{ type: 'response.future_tool.delta' }],
-    requestBodyHashPreserved: true
+    fixture: true,
+    eventPayloadsPreserved: true,
+    requestBodyHashPreserved: true,
+    ownerAffinityPreserved: true
   })
-
-  assert.equal(result.state, 'blocked')
-  assert.ok(result.blockers.includes('auxiliary_event_payload_changed'))
+  assert.equal(result.state, 'not_attempted')
+  assert.ok(result.warnings.includes('auxiliary_fixture_not_live_evidence'))
 })

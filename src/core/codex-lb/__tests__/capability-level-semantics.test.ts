@@ -10,10 +10,7 @@ import type {
   CapabilityScope,
   CombinedCatalogSyncStatus
 } from '../bridge-contracts.js'
-import {
-  adaptDesktopCapabilityReportV3ToV2,
-  runDesktopCapabilityReportV3
-} from '../capability-runner.js'
+import { runDesktopCapabilityReportV3 } from '../capability-runner.js'
 import { runImageGenerationProbeV3 } from '../probes/image-generation-probe.js'
 import { capabilityProbeResultV3 } from '../probes/probe-evidence.js'
 import {
@@ -157,25 +154,6 @@ test('level_satisfied follows the requested shallow level without overclaiming t
   assert.equal(report.bridge.capabilities.http_health!.state, 'not_attempted')
 })
 
-test('the v2 adapter preserves verified facts but never invents legacy deep trust', () => {
-  const v3 = runDesktopCapabilityReportV3({
-    ...ids,
-    activeProviderIds: ['codex-lb'],
-    catalogSync: verifiedCatalog(),
-    results: transportResults('codex-lb')
-  })
-  const v2 = adaptDesktopCapabilityReportV3ToV2(v3, {
-    mode: 'desktop-native-bridge',
-    configured: true,
-    oauthPreserved: true
-  })
-  assert.equal(v2.bridge.state, 'verified')
-  assert.equal(v2.catalog.state, 'verified')
-  assert.equal(v2.image_generation.state, 'available_unverified')
-  assert.equal(v2.deep_evidence_validation.trusted, false)
-  assert.equal(v2.deep_evidence_validation.state, 'available_unverified')
-})
-
 test('catalog_sync omission is an execution schema failure, not state-not-reported success', () => {
   const report = runDesktopCapabilityReportV3({
     ...ids,
@@ -290,8 +268,11 @@ test('deep trust binds provider, capability, report, freshness, and redacts key-
     created_at: checkedAt,
     target: {
       provider_id: 'codex-lb' as const,
+      scope: 'provider:codex-lb' as const,
       capability: 'image_generation',
-      report_id: ids.reportId
+      report_id: ids.reportId,
+      catalog_generation: 'combined-generation',
+      endpoint: 'https://gateway.example.test/v1'
     },
     payload: {
       artifact_validated: true,
@@ -313,22 +294,31 @@ test('deep trust binds provider, capability, report, freshness, and redacts key-
   }
   const verified = validateCapabilityDeepEvidenceV2(envelope, {
     expectedProviderId: 'codex-lb',
+    expectedScope: 'provider:codex-lb',
     expectedCapability: 'image_generation',
     expectedReportId: ids.reportId,
+    expectedCatalogGeneration: 'combined-generation',
+    expectedEndpoint: 'https://gateway.example.test/v1',
     trustAnchors: [anchor],
     now: checkedAt
   })
   const mismatched = validateCapabilityDeepEvidenceV2(envelope, {
     expectedProviderId: 'openrouter',
+    expectedScope: 'provider:openrouter',
     expectedCapability: 'image_generation',
     expectedReportId: ids.reportId,
+    expectedCatalogGeneration: 'combined-generation',
+    expectedEndpoint: 'https://gateway.example.test/v1',
     trustAnchors: [anchor],
     now: checkedAt
   })
   const stale = validateCapabilityDeepEvidenceV2(envelope, {
     expectedProviderId: 'codex-lb',
+    expectedScope: 'provider:codex-lb',
     expectedCapability: 'image_generation',
     expectedReportId: ids.reportId,
+    expectedCatalogGeneration: 'combined-generation',
+    expectedEndpoint: 'https://gateway.example.test/v1',
     trustAnchors: [anchor],
     now: '2026-08-05T15:00:01.000Z'
   })

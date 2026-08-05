@@ -1,305 +1,146 @@
 #!/usr/bin/env node
-import {
-  runCodexLbDesktopCapabilityReport,
-  shapeCodexLbDesktopCapabilityStatus
-} from '../core/codex-lb/capability-runner.js'
-import type { CodexLbCapabilityKey } from '../core/codex-lb/capability-types.js'
+import type {
+  BridgeProviderId,
+  CapabilityEvidenceSource,
+  CapabilityProbeResultV3,
+  CapabilityScope,
+  CombinedCatalogSyncStatus
+} from '../core/codex-lb/bridge-contracts.js'
+import { runDesktopCapabilityReportV3 } from '../core/codex-lb/capability-runner.js'
+import { capabilityProbeResultV3 } from '../core/codex-lb/probes/probe-evidence.js'
 import { assertGate, emitGate } from './gate-lib.js'
 
-const checkedAt = '2026-07-28T00:00:00.000Z'
-const manifest = {
-  schema_version: 'codex-lb.desktop-capabilities.v1',
-  routes: {
-    responses_http: true,
-    models: true,
-    images_generations: true,
-    realtime_calls: true,
-    files: true,
-    transcribe: true,
-    images_edits: true,
-    thread_goal: true,
-    memories_trace_summarize: true,
-    safety_arc: true,
-    agent_identities_jwks: true
-  },
-  tools: {
-    image_generation: true,
-    computer_use_passthrough: true,
-    web_search: true
-  }
-}
-const catalog = {
-  models: [{
-    id: 'future-codex-model',
-    display_name: 'Future Codex',
-    supported_reasoning_levels: [{ effort: 'high' }],
-    truncation_policy: { mode: 'tokens' },
-    additional_speed_tiers: ['fast'],
-    service_tiers: [{ id: 'priority' }],
-    use_responses_lite: false,
-    future_catalog_field: true
-  }]
+const checkedAt = '2026-08-05T16:00:00.000Z'
+const context = {
+  requestedLevel: 'transport' as const,
+  checkedAt,
+  reportId: 'release-capability-check-001',
+  correlationId: 'release-capability-correlation-001',
+  sessionId: 'release-capability-session-001'
 }
 
-const advertisedOnly = runCodexLbDesktopCapabilityReport({
-  mode: 'desktop-native-bridge',
-  level: 'shallow',
-  configured: true,
-  oauthPreserved: true,
-  checkedAt,
-  manifest,
-  gatewayAuth: {
-    transport: 'x-codex-lb-api-key',
-    configured: true,
-    observed: false
-  },
-  providerIdentity: {
-    configured: true,
-    source: 'config'
-  },
-  browserUse: {
-    advertised: true,
-    source: 'manifest'
-  },
-  plugins: {
-    advertised: true,
-    source: 'manifest'
-  }
-})
-const advertisedStatus = shapeCodexLbDesktopCapabilityStatus(advertisedOnly)
-
-const fixtureOnly = runCodexLbDesktopCapabilityReport({
-  mode: 'desktop-native-bridge',
-  level: 'deep',
-  configured: true,
-  oauthPreserved: true,
-  checkedAt,
-  manifest,
-  gatewayAuth: {
-    transport: 'x-codex-lb-api-key',
-    configured: true,
-    observed: true,
-    fixture: true
-  },
-  providerIdentity: {
-    verified: true,
-    fixture: true,
-    source: 'transport'
-  },
-  bridge: {
-    configured: true,
-    processRunning: true,
-    transportAttempted: true,
-    httpRoundTrip: true,
-    websocketRoundTrip: true,
-    fixture: true
-  },
-  catalog: {
-    catalog,
-    configuredServiceTier: 'fast',
-    pickerControlVisible: true,
-    pickerSelectedModel: 'future-codex-model',
-    requestServiceTier: 'fast',
-    responseActualServiceTier: 'priority',
-    fixture: true
-  },
-  imageGeneration: {
-    attempted: true,
-    requestToolsPresent: true,
-    events: [{ type: 'response.image_generation_call.completed' }],
-    artifactMaterialized: true,
-    fixture: true
-  },
-  computerUse: {
-    attempted: true,
-    events: [{ type: 'response.computer_call.created' }],
-    localExecutorCompleted: true,
-    outputSubmitted: true,
-    followUpCompleted: true,
-    sessionAffinityPreserved: true,
-    fixture: true
-  },
-  browserUse: {
-    verified: true,
-    fixture: true,
-    source: 'deep_probe'
-  },
-  voiceMode: {
-    attempted: true,
-    createRouteVerified: true,
-    locationReceived: true,
-    locationRewritten: true,
-    websocketUpgraded: true,
-    serverEventSeen: true,
-    cleanClose: true,
-    ownerBindingVerified: true,
-    fixture: true
-  },
-  plugins: {
-    verified: true,
-    fixture: true,
-    source: 'deep_probe'
-  },
-  auxiliarySurfaces: {
-    attempted: true,
-    inputEvents: [{ type: 'future.desktop.event', payload: { keep: true } }],
-    outputEvents: [{ type: 'future.desktop.event', payload: { keep: true } }],
-    requestBodyHashPreserved: true,
-    sessionAffinityPreserved: true,
-    fixture: true
-  }
-})
-const fixtureStatus = shapeCodexLbDesktopCapabilityStatus(fixtureOnly)
-
-const textOnly = runCodexLbDesktopCapabilityReport({
-  mode: 'cli-provider',
-  level: 'transport',
-  configured: true,
-  oauthPreserved: false,
-  checkedAt,
-  manifest,
-  textResponses: {
-    attempted: true,
-    verified: true,
-    source: 'transport',
-    evidence: { response_completed: true }
-  },
-  browserUse: {
-    advertised: true,
-    source: 'manifest'
-  },
-  plugins: {
-    advertised: true,
-    source: 'manifest'
-  }
-})
-
-const authIndependentBase = {
-  mode: 'cli-provider' as const,
-  level: 'shallow' as const,
-  configured: true,
-  checkedAt,
-  manifest,
-  gatewayAuth: {
-    transport: 'x-codex-lb-api-key' as const,
-    configured: true,
-    observed: false
-  },
-  providerIdentity: {
-    requiresOauth: true,
-    configured: true
-  },
-  catalog: {
-    catalog,
-    configuredServiceTier: 'fast'
-  },
-  browserUse: {
-    advertised: true,
-    source: 'manifest' as const
-  },
-  plugins: {
-    advertised: true,
-    source: 'manifest' as const
-  }
+function result(
+  scope: CapabilityScope,
+  capability: string,
+  source: CapabilityEvidenceSource = 'transport',
+  evidence: Record<string, unknown> = {}
+): CapabilityProbeResultV3 {
+  return capabilityProbeResultV3({
+    ...context,
+    scope,
+    capability,
+    stage: source === 'config' ? 'preflight' : 'complete',
+    state: 'verified',
+    source,
+    evidence
+  })
 }
-const oauthAvailable = runCodexLbDesktopCapabilityReport({
-  ...authIndependentBase,
-  oauthPreserved: true
-})
-const oauthMissing = runCodexLbDesktopCapabilityReport({
-  ...authIndependentBase,
-  oauthPreserved: false
-})
 
-const fixtureVerifiableKeys: CodexLbCapabilityKey[] = [
-  'gateway_auth_transport',
-  'provider_identity',
-  'bridge',
-  'catalog',
-  'model_picker',
-  'fast_mode',
-  'image_generation',
-  'computer_use',
-  'browser_use',
-  'voice_mode',
-  'plugins',
-  'auxiliary_surfaces'
-]
-const authIndependentKeys: CodexLbCapabilityKey[] = [
-  'gateway_auth_transport',
-  'catalog',
-  'model_picker',
-  'fast_mode',
-  'image_generation',
-  'computer_use',
-  'browser_use',
-  'voice_mode',
-  'plugins',
-  'auxiliary_surfaces'
-]
-const textIndependentKeys: CodexLbCapabilityKey[] = [
-  'image_generation',
-  'computer_use',
-  'browser_use',
-  'voice_mode',
-  'plugins',
-  'auxiliary_surfaces'
-]
-
-const advertisedNotVerified = advertisedStatus.ready === false
-  && advertisedOnly.overall === 'available_unverified'
-  && capabilityEntries(advertisedOnly).every(([, evidence]) => evidence.state !== 'verified')
-const fixtureNotVerified = fixtureStatus.ready === false
-  && fixtureOnly.overall === 'available_unverified'
-  && fixtureVerifiableKeys.every((key) => fixtureOnly[key].state === 'available_unverified')
-const textDoesNotPromoteOtherCapabilities = textOnly.text_responses.state === 'verified'
-  && textIndependentKeys.every((key) => textOnly[key].state !== 'verified')
-const independentFromAuthMode = oauthAvailable.provider_identity.state === 'available_unverified'
-  && oauthMissing.provider_identity.state === 'blocked'
-  && authIndependentKeys.every((key) => (
-    oauthAvailable[key].state === oauthMissing[key].state
-    && JSON.stringify(oauthAvailable[key].blockers) === JSON.stringify(oauthMissing[key].blockers)
-  ))
-
-const report = {
-  schema: 'sks.codex-lb-desktop-capabilities-check.v1',
-  ok: advertisedNotVerified
-    && fixtureNotVerified
-    && textDoesNotPromoteOtherCapabilities
-    && independentFromAuthMode,
-  advertised_not_verified: advertisedNotVerified,
-  fixture_not_verified: fixtureNotVerified,
-  text_does_not_promote_other_capabilities: textDoesNotPromoteOtherCapabilities,
-  independent_from_auth_mode: independentFromAuthMode,
-  states: {
-    advertised_only: advertisedOnly.overall,
-    fixture_only: fixtureOnly.overall,
-    text_only: textOnly.overall,
-    oauth_available_provider_identity: oauthAvailable.provider_identity.state,
-    oauth_missing_provider_identity: oauthMissing.provider_identity.state
-  },
-  blockers: [
-    ...(advertisedNotVerified ? [] : ['manifest_or_config_promoted_to_verified']),
-    ...(fixtureNotVerified ? [] : ['fixture_evidence_promoted_to_verified']),
-    ...(textDoesNotPromoteOtherCapabilities ? [] : ['text_response_evidence_promoted_other_capability']),
-    ...(independentFromAuthMode ? [] : ['independent_capability_changed_with_auth_mode'])
+function routingResults(provider: BridgeProviderId): CapabilityProbeResultV3[] {
+  return [
+    result('bridge', 'runtime', 'config'),
+    result('bridge', 'http_health'),
+    result('bridge', 'websocket_transport'),
+    result('native-identity', 'oauth_identity', 'config'),
+    result('catalog:combined', 'route_policy', 'config'),
+    result('catalog:combined', 'model_route'),
+    result(`provider:${provider}`, 'credential', 'config'),
+    result(`provider:${provider}`, 'provider_auth'),
+    result(`provider:${provider}`, 'model_route'),
+    result(`provider:${provider}`, 'text_responses')
   ]
 }
 
-assertGate(report.ok, 'codex-lb Desktop capability evidence gate failed', report)
-emitGate('codex-lb:desktop-capabilities', {
-  advertised_not_verified: report.advertised_not_verified,
-  fixture_not_verified: report.fixture_not_verified,
-  text_does_not_promote_other_capabilities: report.text_does_not_promote_other_capabilities,
-  independent_from_auth_mode: report.independent_from_auth_mode
+function catalog(openRouterState: 'verified' | 'failed' = 'verified'): CombinedCatalogSyncStatus {
+  const provider = (providerId: BridgeProviderId, state: 'verified' | 'failed') => ({
+    schema: 'sks.catalog-sync-state.v2' as const,
+    provider_id: providerId,
+    state,
+    source: providerId === 'codex-lb' ? 'gateway' as const : 'openrouter' as const,
+    generation: state === 'verified' ? `generation-${providerId}` : null,
+    digest: state === 'verified' ? 'a'.repeat(64) : null,
+    model_count: state === 'verified' ? 2 : null,
+    checked_at: checkedAt,
+    expires_at: null,
+    blockers: state === 'failed' ? [`${providerId}_catalog_failed`] : [],
+    warnings: [],
+    recovery_action: state === 'failed' ? 'retry_catalog_sync' : null
+  })
+  return {
+    schema: 'sks.combined-catalog-sync.v1',
+    state: openRouterState === 'failed' ? 'degraded' : 'verified',
+    generation: 'generation-combined',
+    digest: 'b'.repeat(64),
+    model_count: 4,
+    route_count: 4,
+    conflict_count: 0,
+    checked_at: checkedAt,
+    providers: {
+      'codex-lb': provider('codex-lb', 'verified'),
+      openrouter: provider('openrouter', openRouterState)
+    },
+    blockers: [],
+    warnings: [],
+    recovery_action: null
+  }
+}
+
+const advertisedRows = routingResults('codex-lb').filter((entry) => entry.capability !== 'provider_auth')
+advertisedRows.push(result('provider:codex-lb', 'provider_auth', 'manifest', { advertised: true }))
+const advertised = runDesktopCapabilityReportV3({
+  ...context,
+  activeProviderIds: ['codex-lb'],
+  catalogSync: catalog(),
+  results: advertisedRows
 })
 
-function capabilityEntries(
-  report: ReturnType<typeof runCodexLbDesktopCapabilityReport>
-): Array<[CodexLbCapabilityKey, ReturnType<typeof runCodexLbDesktopCapabilityReport>[CodexLbCapabilityKey]]> {
-  return Object.entries(report)
-    .filter((entry): entry is [CodexLbCapabilityKey, ReturnType<typeof runCodexLbDesktopCapabilityReport>[CodexLbCapabilityKey]] => {
-      const value = entry[1]
-      return Boolean(value && typeof value === 'object' && 'state' in value && 'evidence' in value)
-    })
+const fixtureRows = routingResults('codex-lb').filter((entry) => entry.capability !== 'text_responses')
+fixtureRows.push(result('provider:codex-lb', 'text_responses', 'transport', { fixture: true }))
+const fixture = runDesktopCapabilityReportV3({
+  ...context,
+  activeProviderIds: ['codex-lb'],
+  catalogSync: catalog(),
+  results: fixtureRows
+})
+
+const transport = runDesktopCapabilityReportV3({
+  ...context,
+  activeProviderIds: ['codex-lb'],
+  enabledProviderIds: ['codex-lb', 'openrouter'],
+  catalogSync: catalog('failed'),
+  results: routingResults('codex-lb')
+})
+
+const invalidCatalog = runDesktopCapabilityReportV3({
+  ...context,
+  activeProviderIds: ['codex-lb'],
+  catalogSync: undefined as unknown as CombinedCatalogSyncStatus,
+  results: routingResults('codex-lb')
+})
+
+const advertisedNotVerified = advertised.providers['codex-lb'].capabilities.provider_auth?.state === 'not_attempted'
+const fixtureNotVerified = fixture.providers['codex-lb'].capabilities.text_responses?.state === 'not_attempted'
+const transportSatisfied = transport.summary.transport_level_satisfied
+  && transport.summary.deep_level_satisfied === false
+const inactiveProviderIsolated = transport.summary.active_routes_ready
+  && transport.summary.inactive_provider_failures.includes('openrouter:openrouter_catalog_failed')
+  && transport.summary.blockers.length === 0
+const invalidCatalogFailsExecution = invalidCatalog.execution.status === 'failed'
+  && invalidCatalog.execution.blockers.includes('capability_schema_invalid:catalog_sync_missing')
+
+const report = {
+  schema: 'sks.desktop-capabilities-check.v3',
+  ok: advertisedNotVerified
+    && fixtureNotVerified
+    && transportSatisfied
+    && inactiveProviderIsolated
+    && invalidCatalogFailsExecution,
+  advertised_not_verified: advertisedNotVerified,
+  fixture_not_verified: fixtureNotVerified,
+  transport_satisfied_without_deep: transportSatisfied,
+  inactive_provider_isolated: inactiveProviderIsolated,
+  invalid_catalog_fails_execution: invalidCatalogFailsExecution
 }
+
+assertGate(report.ok, 'desktop capability v3 evidence gate failed', report)
+emitGate('desktop-capabilities:v3', report)

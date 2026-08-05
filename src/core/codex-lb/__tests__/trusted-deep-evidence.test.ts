@@ -1,177 +1,124 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  CODEX_LB_DEEP_EVIDENCE_TRUST_ANCHOR_SCHEMA,
-  CODEX_LB_DEEP_EVIDENCE_TRUST_ANCHOR_SET_SCHEMA,
-  CODEX_LB_TRUSTED_DEEP_EVIDENCE_SCHEMA,
-  codexLbDeepEvidenceContentSha256,
-  parseCodexLbDeepEvidenceTrustAnchorSet,
-  validateCodexLbDesktopDeepEvidence,
-  type CodexLbDeepEvidenceTrustAnchor,
-  type CodexLbTrustedDeepEvidenceEnvelope
+  CAPABILITY_DEEP_EVIDENCE_TRUST_ANCHOR_SCHEMA,
+  CAPABILITY_TRUSTED_DEEP_EVIDENCE_SCHEMA,
+  capabilityDeepEvidenceContentSha256V2,
+  validateCapabilityDeepEvidenceV2,
+  type CapabilityDeepEvidenceTrustAnchorV2,
+  type CapabilityTrustedDeepEvidenceEnvelopeV2,
+  type ValidateCapabilityDeepEvidenceOptionsV2
 } from '../trusted-deep-evidence.js'
 
-const now = '2026-07-28T12:00:00.000Z'
-const endpoint = 'https://lb.example.test/backend-api/codex'
+const createdAt = '2026-08-05T14:00:00.000Z'
+const target = {
+  provider_id: 'codex-lb' as const,
+  scope: 'provider:codex-lb' as const,
+  capability: 'image_generation',
+  report_id: 'report-trust-001',
+  catalog_generation: 'generation-001',
+  endpoint: 'https://gateway.example.test/v1'
+}
+const producer = { id: 'sks.deep-probe', version: '1.0.0', run_id: 'run-trust-001' }
 
-function trustedFixture(overrides: Partial<CodexLbTrustedDeepEvidenceEnvelope> = {}) {
+function signed(payload: Record<string, unknown> = { artifact_validated: true }): {
+  envelope: CapabilityTrustedDeepEvidenceEnvelopeV2
+  anchor: CapabilityDeepEvidenceTrustAnchorV2
+} {
   const content = {
-    schema: CODEX_LB_TRUSTED_DEEP_EVIDENCE_SCHEMA,
-    producer: {
-      id: 'sks.codex-lb-desktop-blackbox',
-      version: '1.0.0',
-      run_id: 'run-verified-001'
-    },
-    created_at: now,
-    target: {
-      mode: 'desktop-native-bridge' as const,
-      endpoint
-    },
-    payload: {
-      image_artifact_materialized: true,
-      computer_executor_completed: true,
-      browser_use_verified: true,
-      voice_clean_close: true,
-      plugins_verified: true,
-      auxiliary_owner_affinity_verified: true
-    },
-    ...overrides
+    schema: CAPABILITY_TRUSTED_DEEP_EVIDENCE_SCHEMA,
+    producer,
+    created_at: createdAt,
+    target,
+    payload
   }
-  const contentSha256 = codexLbDeepEvidenceContentSha256(content)
-  const envelope: CodexLbTrustedDeepEvidenceEnvelope = {
+  const digest = capabilityDeepEvidenceContentSha256V2(content)
+  const envelope: CapabilityTrustedDeepEvidenceEnvelopeV2 = {
     ...content,
     integrity: {
       algorithm: 'sha256',
-      content_sha256: contentSha256,
-      trust_anchor_id: 'anchor.desktop-run-001'
+      content_sha256: digest,
+      trust_anchor_id: 'anchor.trust-001'
     }
   }
-  const anchor: CodexLbDeepEvidenceTrustAnchor = {
-    schema: CODEX_LB_DEEP_EVIDENCE_TRUST_ANCHOR_SCHEMA,
-    anchor_id: envelope.integrity.trust_anchor_id,
-    producer: envelope.producer,
-    target: envelope.target,
-    content_sha256: contentSha256
+  return {
+    envelope,
+    anchor: {
+      schema: CAPABILITY_DEEP_EVIDENCE_TRUST_ANCHOR_SCHEMA,
+      anchor_id: envelope.integrity.trust_anchor_id,
+      producer,
+      target,
+      content_sha256: digest
+    }
   }
-  return { envelope, anchor }
 }
 
-test('a parseable fabricated JSON object cannot verify deep capabilities', () => {
-  const fabricated = {
-    image_artifact_materialized: true,
-    computer_executor_completed: true,
-    browser_use_verified: true,
-    voice_clean_close: true,
-    plugins_verified: true,
-    auxiliary_owner_affinity_verified: true
+function options(anchor?: CapabilityDeepEvidenceTrustAnchorV2): ValidateCapabilityDeepEvidenceOptionsV2 {
+  return {
+    expectedProviderId: 'codex-lb',
+    expectedScope: 'provider:codex-lb',
+    expectedCapability: 'image_generation',
+    expectedReportId: target.report_id,
+    expectedCatalogGeneration: target.catalog_generation,
+    expectedEndpoint: target.endpoint,
+    trustAnchors: anchor ? [anchor] : [],
+    now: createdAt
   }
-  const result = validateCodexLbDesktopDeepEvidence(fabricated, {
-    expectedMode: 'desktop-native-bridge',
-    expectedEndpoint: endpoint,
-    now
-  })
-  assert.equal(result.trusted, false)
-  assert.equal(result.state, 'blocked')
-  assert.equal(result.evidence, null)
-  assert.ok(result.blockers.includes('codex_lb_deep_evidence_schema_invalid'))
-})
+}
 
-test('a self-hashed envelope cannot verify without its out-of-band trust anchor', () => {
-  const { envelope } = trustedFixture()
-  const result = validateCodexLbDesktopDeepEvidence(envelope, {
-    expectedMode: 'desktop-native-bridge',
-    expectedEndpoint: endpoint,
-    now
+test('trusted evidence verifies only for its current provider scope, generation, endpoint, and report', () => {
+  const { envelope, anchor } = signed({
+    artifact_validated: true,
+    authorization: 'Bearer sk-sensitive-value-12345678'
   })
-  assert.equal(result.trusted, false)
-  assert.equal(result.evidence, null)
-  assert.ok(result.blockers.includes('codex_lb_deep_evidence_trust_anchor_missing'))
-})
-
-test('trusted evidence verifies only when producer, hash, mode, endpoint, and freshness bind', () => {
-  const { envelope, anchor } = trustedFixture()
-  const result = validateCodexLbDesktopDeepEvidence(envelope, {
-    expectedMode: 'desktop-native-bridge',
-    expectedEndpoint: `${endpoint}/`,
-    trustAnchors: [anchor],
-    now
-  })
+  const result = validateCapabilityDeepEvidenceV2(envelope, options(anchor))
   assert.equal(result.state, 'verified')
   assert.equal(result.trusted, true)
-  assert.deepEqual(result.evidence, envelope.payload)
-  assert.deepEqual(result.blockers, [])
+  assert.equal(result.scope, target.scope)
+  assert.equal(result.catalog_generation, target.catalog_generation)
+  assert.equal(result.endpoint, target.endpoint)
+  assert.equal(result.evidence?.authorization, '[REDACTED]')
 })
 
-test('tampered, stale, and target-mismatched evidence is rejected', () => {
-  const { envelope, anchor } = trustedFixture()
+test('each current-target binding rejects evidence from another execution target', () => {
+  const { envelope, anchor } = signed()
+  const cases: Array<[Partial<ValidateCapabilityDeepEvidenceOptionsV2>, string]> = [
+    [{ expectedProviderId: 'openrouter', expectedScope: 'provider:openrouter' }, 'capability_deep_evidence_provider_mismatch'],
+    [{ expectedScope: 'provider:openrouter' }, 'capability_deep_evidence_scope_mismatch'],
+    [{ expectedReportId: 'report-trust-002' }, 'capability_deep_evidence_report_mismatch'],
+    [{ expectedCatalogGeneration: 'generation-002' }, 'capability_deep_evidence_generation_mismatch'],
+    [{ expectedEndpoint: 'https://other.example.test/v1' }, 'capability_deep_evidence_endpoint_mismatch']
+  ]
+  for (const [override, blocker] of cases) {
+    const result = validateCapabilityDeepEvidenceV2(envelope, { ...options(anchor), ...override })
+    assert.equal(result.state, 'blocked')
+    assert.ok(result.blockers.includes(blocker), blocker)
+  }
+})
+
+test('tampering, missing trust, stale evidence, and fixtures never verify', () => {
+  const { envelope, anchor } = signed()
   const tampered = structuredClone(envelope)
-  tampered.payload.browser_use_verified = false
-  const tamperedResult = validateCodexLbDesktopDeepEvidence(tampered, {
-    expectedMode: 'desktop-native-bridge',
-    expectedEndpoint: endpoint,
-    trustAnchors: [anchor],
-    now
+  tampered.payload.artifact_validated = false
+  const badDigest = validateCapabilityDeepEvidenceV2(tampered, options(anchor))
+  const missingAnchor = validateCapabilityDeepEvidenceV2(envelope, options())
+  const stale = validateCapabilityDeepEvidenceV2(envelope, {
+    ...options(anchor),
+    now: '2026-08-05T15:00:01.000Z'
   })
-  assert.equal(tamperedResult.evidence, null)
-  assert.ok(tamperedResult.blockers.includes('codex_lb_deep_evidence_content_sha256_mismatch'))
+  const fixtureBundle = signed({ fixture: true, artifact_validated: true })
+  const fixture = validateCapabilityDeepEvidenceV2(
+    fixtureBundle.envelope,
+    options(fixtureBundle.anchor)
+  )
+  const missing = validateCapabilityDeepEvidenceV2(null, options(anchor))
 
-  const stale = trustedFixture({ created_at: '2026-07-28T11:00:00.000Z' })
-  const staleResult = validateCodexLbDesktopDeepEvidence(stale.envelope, {
-    expectedMode: 'desktop-native-bridge',
-    expectedEndpoint: endpoint,
-    trustAnchors: [stale.anchor],
-    now
-  })
-  assert.ok(staleResult.blockers.includes('codex_lb_deep_evidence_stale'))
-
-  const mismatchResult = validateCodexLbDesktopDeepEvidence(envelope, {
-    expectedMode: 'desktop-dual-auth-compat',
-    expectedEndpoint: 'https://other.example.test/backend-api/codex',
-    trustAnchors: [anchor],
-    now
-  })
-  assert.ok(mismatchResult.blockers.includes('codex_lb_deep_evidence_target_mode_mismatch'))
-  assert.ok(mismatchResult.blockers.includes('codex_lb_deep_evidence_target_endpoint_mismatch'))
-})
-
-test('trusted fixture evidence remains available_unverified and cannot promote capabilities', () => {
-  const fixture = trustedFixture({
-    payload: {
-      fixture: true,
-      image_artifact_materialized: true,
-      computer_executor_completed: true,
-      browser_use_verified: true,
-      voice_clean_close: true,
-      plugins_verified: true,
-      auxiliary_owner_affinity_verified: true
-    }
-  })
-  const result = validateCodexLbDesktopDeepEvidence(fixture.envelope, {
-    expectedMode: 'desktop-native-bridge',
-    expectedEndpoint: endpoint,
-    trustAnchors: [fixture.anchor],
-    now
-  })
-  assert.equal(result.state, 'available_unverified')
-  assert.equal(result.trusted, false)
-  assert.equal(result.evidence, null)
-  assert.ok(result.blockers.includes('codex_lb_deep_evidence_fixture_unverified'))
-})
-
-test('trust-anchor sets reject malformed and duplicate anchors', () => {
-  const { anchor } = trustedFixture()
-  const valid = parseCodexLbDeepEvidenceTrustAnchorSet({
-    schema: CODEX_LB_DEEP_EVIDENCE_TRUST_ANCHOR_SET_SCHEMA,
-    anchors: [anchor]
-  })
-  assert.equal(valid.ok, true)
-  assert.deepEqual(valid.anchors, [anchor])
-
-  const duplicate = parseCodexLbDeepEvidenceTrustAnchorSet({
-    schema: CODEX_LB_DEEP_EVIDENCE_TRUST_ANCHOR_SET_SCHEMA,
-    anchors: [anchor, anchor]
-  })
-  assert.equal(duplicate.ok, false)
-  assert.deepEqual(duplicate.anchors, [])
-  assert.ok(duplicate.blockers.some((blocker) => blocker.startsWith('codex_lb_deep_evidence_trust_anchor_duplicate')))
+  assert.equal(badDigest.state, 'blocked')
+  assert.ok(badDigest.blockers.includes('capability_deep_evidence_content_sha256_mismatch'))
+  assert.equal(missingAnchor.state, 'blocked')
+  assert.ok(missingAnchor.blockers.includes('capability_deep_evidence_trust_anchor_missing'))
+  assert.equal(stale.state, 'stale')
+  assert.equal(fixture.state, 'not_attempted')
+  assert.ok(fixture.warnings.includes('capability_deep_evidence_fixture_unverified'))
+  assert.equal(missing.state, 'not_attempted')
 })

@@ -1,370 +1,148 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  runCodexLbDesktopCapabilityReport,
-  shapeCodexLbDesktopCapabilityStatus
-} from '../capability-runner.js'
+import test from 'node:test'
+import type {
+  BridgeProviderId,
+  CapabilityEvidenceSource,
+  CapabilityProbeResultV3,
+  CapabilityScope,
+  CombinedCatalogSyncStatus
+} from '../bridge-contracts.js'
+import { runDesktopCapabilityReportV3 } from '../capability-runner.js'
+import { capabilityProbeResultV3 } from '../probes/probe-evidence.js'
 
-const checkedAt = '2026-07-28T00:00:00.000Z'
-const manifest = {
-  schema_version: 'codex-lb.desktop-capabilities.v1',
-  routes: {
-    responses_http: true,
-    models: true,
-    images_generations: true,
-    realtime_calls: true,
-    files: true,
-    transcribe: true,
-    images_edits: true,
-    thread_goal: true,
-    memories_trace_summarize: true,
-    safety_arc: true,
-    agent_identities_jwks: true
-  },
-  tools: {
-    image_generation: true,
-    computer_use_passthrough: true,
-    web_search: true
+const checkedAt = '2026-08-05T16:00:00.000Z'
+const context = {
+  requestedLevel: 'transport' as const,
+  checkedAt,
+  reportId: 'report-matrix-001',
+  correlationId: 'correlation-matrix-001',
+  sessionId: 'session-matrix-001'
+}
+
+function result(
+  scope: CapabilityScope,
+  capability: string,
+  source: CapabilityEvidenceSource,
+  evidence: Record<string, unknown> = {}
+): CapabilityProbeResultV3 {
+  return capabilityProbeResultV3({
+    ...context,
+    scope,
+    capability,
+    stage: source === 'config' ? 'preflight' : 'complete',
+    state: 'verified',
+    source,
+    evidence
+  })
+}
+
+function routeResults(provider: BridgeProviderId): CapabilityProbeResultV3[] {
+  return [
+    result('bridge', 'runtime', 'config'),
+    result('bridge', 'http_health', 'transport'),
+    result('bridge', 'websocket_transport', 'transport'),
+    result('native-identity', 'oauth_identity', 'config'),
+    result('catalog:combined', 'route_policy', 'config'),
+    result('catalog:combined', 'model_route', 'transport'),
+    result(`provider:${provider}`, 'credential', 'config'),
+    result(`provider:${provider}`, 'provider_auth', 'transport'),
+    result(`provider:${provider}`, 'model_route', 'transport'),
+    result(`provider:${provider}`, 'text_responses', 'transport')
+  ]
+}
+
+function catalog(): CombinedCatalogSyncStatus {
+  const provider = (providerId: BridgeProviderId) => ({
+    schema: 'sks.catalog-sync-state.v2' as const,
+    provider_id: providerId,
+    state: 'verified' as const,
+    source: providerId === 'codex-lb' ? 'gateway' as const : 'openrouter' as const,
+    generation: `generation-${providerId}`,
+    digest: 'a'.repeat(64),
+    model_count: 2,
+    checked_at: checkedAt,
+    expires_at: null,
+    blockers: [],
+    warnings: [],
+    recovery_action: null
+  })
+  return {
+    schema: 'sks.combined-catalog-sync.v1',
+    state: 'verified',
+    generation: 'generation-combined',
+    digest: 'b'.repeat(64),
+    model_count: 4,
+    route_count: 4,
+    conflict_count: 0,
+    checked_at: checkedAt,
+    providers: { 'codex-lb': provider('codex-lb'), openrouter: provider('openrouter') },
+    blockers: [],
+    warnings: [],
+    recovery_action: null
   }
 }
 
-const catalog = {
-  models: [{
-    slug: 'future-codex-model',
-    display_name: 'Future Codex',
-    supported_reasoning_levels: [{ effort: 'high' }],
-    truncation_policy: { mode: 'tokens' },
-    additional_speed_tiers: ['fast'],
-    service_tiers: [{ id: 'priority' }],
-    use_responses_lite: false,
-    future_catalog_field: true
-  }]
-}
-
-test('API-key routing and missing OAuth do not globally mark independent features unsupported', () => {
-  const report = runCodexLbDesktopCapabilityReport({
-    mode: 'cli-provider',
-    level: 'shallow',
-    configured: true,
-    oauthPreserved: false,
-    checkedAt,
-    manifest,
-    gatewayAuth: {
-      transport: 'x-codex-lb-api-key',
-      configured: true,
-      observed: false
-    },
-    providerIdentity: {
-      requiresOauth: true,
-      configured: true
-    },
-    catalog: {
-      catalog,
-      configuredServiceTier: 'fast'
-    },
-    browserUse: {
-      advertised: true,
-      source: 'manifest',
-      evidence: { browser_plugin_advertised: true }
-    },
-    plugins: {
-      advertised: true,
-      source: 'manifest',
-      evidence: { plugin_catalog_advertised: true }
-    }
+test('transport evidence verifies routing while config and manifest cannot verify transport requirements', () => {
+  const rows = routeResults('codex-lb').filter((entry) => entry.capability !== 'provider_auth')
+  rows.push(result('provider:codex-lb', 'provider_auth', 'manifest', { advertised: true }))
+  const report = runDesktopCapabilityReportV3({
+    ...context,
+    activeProviderIds: ['codex-lb'],
+    catalogSync: catalog(),
+    results: rows
   })
-
-  assert.equal(report.provider_identity.state, 'blocked')
-  assert.deepEqual(report.provider_identity.blockers, ['chatgpt_oauth_identity_not_preserved'])
-  for (const key of ['image_generation', 'computer_use', 'browser_use', 'voice_mode', 'plugins'] as const) {
-    assert.equal(report[key].state, 'available_unverified', key)
-    assert.equal(report[key].blockers.length, 0, key)
-  }
-  assert.equal(report.bridge.state, 'skipped')
+  const auth = report.providers['codex-lb'].capabilities.provider_auth!
+  assert.equal(auth.state, 'not_attempted')
+  assert.ok(auth.warnings.includes('non_live_evidence_cannot_verify'))
+  assert.equal(report.summary.transport_level_satisfied, false)
 })
 
-test('manifest/config and fixture transport evidence never become verified readiness', () => {
-  const report = runCodexLbDesktopCapabilityReport({
-    mode: 'desktop-native-bridge',
-    level: 'transport',
-    configured: true,
-    oauthPreserved: true,
-    checkedAt,
-    manifest,
-    gatewayAuth: {
-      transport: 'x-codex-lb-api-key',
-      configured: true,
-      observed: true,
-      fixture: true
-    },
-    providerIdentity: {
-      verified: true,
-      fixture: true,
-      source: 'transport'
-    },
-    bridge: {
-      configured: true,
-      processRunning: true,
-      transportAttempted: true,
-      httpRoundTrip: true,
-      websocketRoundTrip: true,
-      fixture: true
-    },
-    catalog: {
-      catalog,
-      fixture: true,
-      configuredServiceTier: 'fast',
-      requestServiceTier: 'fast',
-      responseActualServiceTier: 'priority'
-    },
-    imageGeneration: {
-      attempted: true,
-      fixture: true,
-      requestToolsPresent: true,
-      events: [{ type: 'response.image_generation_call.completed' }]
-    },
-    computerUse: {
-      attempted: true,
-      fixture: true,
-      events: [{ type: 'response.computer_call.created' }]
-    },
-    voiceMode: {
-      attempted: true,
-      fixture: true,
-      createRouteVerified: true,
-      locationReceived: true,
-      locationRewritten: true,
-      websocketUpgraded: true,
-      serverEventSeen: true,
-      cleanClose: true,
-      ownerBindingVerified: true
-    },
-    browserUse: { verified: true, fixture: true, source: 'transport' },
-    plugins: { verified: true, fixture: true, source: 'transport' }
+test('fixture evidence remains not attempted even when the producer claims verified', () => {
+  const rows = routeResults('codex-lb').filter((entry) => entry.capability !== 'text_responses')
+  rows.push(result('provider:codex-lb', 'text_responses', 'transport', { fixture: true }))
+  const report = runDesktopCapabilityReportV3({
+    ...context,
+    activeProviderIds: ['codex-lb'],
+    catalogSync: catalog(),
+    results: rows
   })
-  const status = shapeCodexLbDesktopCapabilityStatus(report)
-
-  assert.equal(report.overall, 'available_unverified')
-  assert.equal(status.ready, false)
-  assert.equal(status.verified.length, 0)
-  assert.ok(status.available_unverified.includes('bridge'))
-  assert.ok(status.available_unverified.includes('image_generation'))
-  assert.deepEqual(report.deep_evidence_validation.blockers, [])
-  assert.ok(report.deep_evidence_validation.warnings.includes('deep_verification_not_requested'))
+  const text = report.providers['codex-lb'].capabilities.text_responses!
+  assert.equal(text.state, 'not_attempted')
+  assert.ok(text.warnings.includes('non_live_evidence_cannot_verify'))
+  assert.equal(report.summary.active_routes_ready, false)
 })
 
-test('gateway auth prefers Authorization Bearer and still accepts custom header without silent fallback', () => {
-  const customHeader = runCodexLbDesktopCapabilityReport({
-    mode: 'cli-provider',
-    checkedAt,
-    gatewayAuth: {
-      transport: 'x-codex-lb-api-key',
-      configured: true,
-      observed: true
-    }
+test('binding mismatch makes otherwise verified evidence stale', () => {
+  const rows = routeResults('codex-lb').filter((entry) => entry.capability !== 'provider_auth')
+  rows.push({
+    ...result('provider:codex-lb', 'provider_auth', 'transport'),
+    report_id: 'report-matrix-stale'
   })
-  const bearer = runCodexLbDesktopCapabilityReport({
-    mode: 'cli-provider',
-    checkedAt,
-    gatewayAuth: {
-      transport: 'authorization-bearer-compat',
-      configured: true,
-      observed: true
-    }
+  const report = runDesktopCapabilityReportV3({
+    ...context,
+    activeProviderIds: ['codex-lb'],
+    catalogSync: catalog(),
+    results: rows
   })
-
-  assert.equal(bearer.gateway_auth_transport.state, 'verified')
-  assert.equal(bearer.gateway_auth_transport.evidence.preferred_authorization_bearer, true)
-  assert.equal(bearer.gateway_auth_transport.evidence.silent_fallback, false)
-  assert.equal(customHeader.gateway_auth_transport.state, 'verified')
-  assert.equal(customHeader.gateway_auth_transport.evidence.preferred_custom_header, true)
-  assert.deepEqual(customHeader.gateway_auth_transport.warnings, ['custom_x_codex_lb_api_key_transport_active'])
+  const auth = report.providers['codex-lb'].capabilities.provider_auth!
+  assert.equal(auth.state, 'stale')
+  assert.deepEqual(auth.blockers, ['capability_result_binding_mismatch'])
+  assert.equal(auth.evidence.stale_result_rejected, true)
 })
 
-test('Fast evidence distinguishes configured, catalog-advertised, and effective priority processing', () => {
-  const report = runCodexLbDesktopCapabilityReport({
-    mode: 'desktop-dual-auth-compat',
-    level: 'deep',
-    checkedAt,
-    catalog: {
-      catalog,
-      localCatalogBound: true,
-      configuredServiceTier: 'fast',
-      pickerControlVisible: true,
-      pickerSelectedModel: 'future-codex-model',
-      requestServiceTier: 'fast',
-      responseActualServiceTier: 'priority'
-    }
+test('terminal probes expose one root cause and demote secondary diagnostics to warnings', () => {
+  const failed = capabilityProbeResultV3({
+    ...context,
+    scope: 'bridge',
+    capability: 'websocket_transport',
+    stage: 'websocket_protocol',
+    state: 'blocked',
+    terminal: true,
+    rootCause: 'desktop_bridge_websocket_protocol_failed',
+    blockers: ['desktop_bridge_websocket_protocol_failed', 'secondary_socket_close_error'],
+    source: 'transport',
+    evidence: {}
   })
-
-  assert.equal(report.fast_mode.state, 'verified')
-  assert.equal(report.fast_mode.evidence.configured, true)
-  assert.equal(report.fast_mode.evidence.advertised, true)
-  assert.equal(report.fast_mode.evidence.effective, true)
-  assert.equal(report.fast_mode.evidence.request_priority_mapping, 'priority')
-})
-
-test('cli-provider overall follows the CLI request plane instead of freezing at available_unverified', () => {
-  const report = runCodexLbDesktopCapabilityReport({
-    mode: 'cli-provider',
-    level: 'transport',
-    configured: true,
-    oauthPreserved: false,
-    checkedAt,
-    gatewayAuth: {
-      transport: 'authorization-bearer',
-      configured: true,
-      observed: true
-    },
-    providerIdentity: {
-      attempted: true,
-      verified: true,
-      source: 'transport',
-      requiresOauth: false
-    },
-    catalog: {
-      catalog,
-      configuredServiceTier: 'fast',
-      requestServiceTier: 'priority',
-      responseActualServiceTier: 'priority'
-    },
-    textResponses: {
-      attempted: true,
-      verified: true,
-      source: 'transport'
-    },
-    imageGeneration: {
-      attempted: true,
-      toolAdvertised: true,
-      requestToolsPresent: true,
-      cliTransportAccepted: true,
-      route: 'responses_tool',
-      events: [{ type: 'response.image_generation_call.completed', result: 'aW1n' }],
-      artifactMaterialized: true
-    }
-  })
-  const status = shapeCodexLbDesktopCapabilityStatus(report)
-
-  assert.equal(report.gateway_auth_transport.state, 'verified')
-  assert.equal(report.gateway_auth_transport.evidence.standard_authorization_bearer, true)
-  assert.equal(report.provider_identity.state, 'verified')
-  assert.equal(report.catalog.state, 'verified')
-  assert.equal(report.model_picker.state, 'verified')
-  assert.equal(status.model_picker, report.model_picker)
-  assert.equal(report.fast_mode.state, 'verified')
-  assert.equal(report.text_responses.state, 'verified')
-  assert.equal(report.image_generation.state, 'verified')
-  assert.equal(report.overall, 'verified')
-  assert.equal(status.ready, true)
-  assert.ok(status.verified.includes('image_generation'))
-  // Desktop-plane surfaces stay honestly reported but do not gate the CLI verdict.
-  assert.ok(status.available_unverified.includes('computer_use'))
-  assert.ok(status.available_unverified.includes('voice_mode'))
-})
-
-test('cli-provider overall is blocked when the gateway rejects the image tool', () => {
-  const report = runCodexLbDesktopCapabilityReport({
-    mode: 'cli-provider',
-    level: 'transport',
-    configured: true,
-    checkedAt,
-    gatewayAuth: {
-      transport: 'authorization-bearer',
-      configured: true,
-      observed: true
-    },
-    providerIdentity: {
-      attempted: true,
-      verified: true,
-      source: 'transport',
-      requiresOauth: false
-    },
-    catalog: {
-      catalog,
-      configuredServiceTier: 'fast',
-      requestServiceTier: 'priority',
-      responseActualServiceTier: 'priority'
-    },
-    textResponses: {
-      attempted: true,
-      verified: true,
-      source: 'transport'
-    },
-    imageGeneration: {
-      attempted: true,
-      toolAdvertised: false,
-      cliTransportAccepted: false,
-      blockers: ['image_generation_tool_rejected_by_gateway']
-    }
-  })
-
-  assert.equal(report.image_generation.state, 'blocked')
-  assert.ok(report.image_generation.blockers.includes('image_generation_tool_rejected_by_gateway'))
-  assert.equal(report.overall, 'blocked')
-})
-
-test('full overall cannot hide unverified browser and auxiliary Desktop surfaces', () => {
-  const report = runCodexLbDesktopCapabilityReport({
-    mode: 'desktop-native-bridge',
-    level: 'deep',
-    configured: true,
-    oauthPreserved: true,
-    checkedAt,
-    manifest,
-    gatewayAuth: {
-      transport: 'x-codex-lb-api-key',
-      configured: true,
-      observed: true
-    },
-    providerIdentity: {
-      verified: true,
-      source: 'deep_probe'
-    },
-    bridge: {
-      configured: true,
-      transportAttempted: true,
-      httpRoundTrip: true,
-      websocketRoundTrip: true
-    },
-    catalog: {
-      catalog,
-      configuredServiceTier: 'fast',
-      pickerControlVisible: true,
-      pickerSelectedModel: 'future-codex-model',
-      requestServiceTier: 'fast',
-      responseActualServiceTier: 'priority'
-    },
-    imageGeneration: {
-      attempted: true,
-      requestToolsPresent: true,
-      events: [{ type: 'response.image_generation_call.completed' }],
-      artifactMaterialized: true
-    },
-    computerUse: {
-      attempted: true,
-      events: [{ type: 'response.computer_call.created' }],
-      localExecutorCompleted: true,
-      outputSubmitted: true,
-      followUpCompleted: true,
-      sessionAffinityPreserved: true
-    },
-    voiceMode: {
-      attempted: true,
-      createRouteVerified: true,
-      locationReceived: true,
-      locationRewritten: true,
-      websocketUpgraded: true,
-      serverEventSeen: true,
-      cleanClose: true,
-      ownerBindingVerified: true
-    },
-    plugins: {
-      verified: true,
-      source: 'deep_probe'
-    }
-  })
-
-  assert.equal(report.browser_use.state, 'available_unverified')
-  assert.equal(report.auxiliary_surfaces.state, 'available_unverified')
-  assert.equal(report.overall, 'available_unverified')
+  assert.deepEqual(failed.blockers, ['desktop_bridge_websocket_protocol_failed'])
+  assert.ok(failed.warnings.includes('secondary_diagnostic:secondary_socket_close_error'))
 })

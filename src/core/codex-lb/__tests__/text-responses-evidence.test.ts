@@ -1,31 +1,41 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
-import { codexLbResponseChainCapabilityEvidence } from '../../../cli/install-helpers-codex-lb-chain.js'
+import test from 'node:test'
+import { capabilityProbeResultV3 } from '../probes/probe-evidence.js'
 
-test('response-chain success verifies only the text_responses sub-probe', () => {
-  const evidence = codexLbResponseChainCapabilityEvidence({
-    ok: true,
-    status: 'chain_ok',
-    http_status: 200,
-    service_tier_evidence: {
-      requested_service_tier: 'fast',
-      actual_service_tier: 'priority'
-    }
-  }, { checkedAt: '2026-07-28T00:00:00.000Z' })
+const context = {
+  requestedLevel: 'transport' as const,
+  checkedAt: '2026-08-05T16:00:00.000Z',
+  reportId: 'report-text-001',
+  correlationId: 'correlation-text-001',
+  sessionId: 'session-text-001'
+}
 
+test('live response-chain evidence verifies only its provider-scoped text capability', () => {
+  const evidence = capabilityProbeResultV3({
+    ...context,
+    scope: 'provider:codex-lb',
+    capability: 'text_responses',
+    stage: 'feature_response',
+    state: 'verified',
+    source: 'transport',
+    evidence: { response_chain_completed: true, status_code: 200 }
+  })
   assert.equal(evidence.state, 'verified')
-  assert.equal(evidence.evidence.probe, 'text_responses')
+  assert.equal(evidence.scope, 'provider:codex-lb')
+  assert.equal(evidence.capability, 'text_responses')
   assert.equal(evidence.evidence.response_chain_completed, true)
 })
 
-test('a skipped/config-only chain check cannot become verified readiness', () => {
-  const evidence = codexLbResponseChainCapabilityEvidence({
-    ok: true,
-    status: 'skipped',
-    skipped: true,
-    reason: 'model_unselected'
-  }, { checkedAt: '2026-07-28T00:00:00.000Z' })
-
-  assert.equal(evidence.state, 'skipped')
+test('a config-only skipped chain is represented as not attempted', () => {
+  const evidence = capabilityProbeResultV3({
+    ...context,
+    scope: 'provider:codex-lb',
+    capability: 'text_responses',
+    stage: 'preflight',
+    state: 'not_attempted',
+    source: 'config',
+    evidence: { reason: 'model_unselected' }
+  })
+  assert.equal(evidence.state, 'not_attempted')
   assert.equal(evidence.source, 'config')
 })
