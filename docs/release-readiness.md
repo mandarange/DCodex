@@ -232,9 +232,10 @@ path.
 
 ## Physical 8.0.5 Release Gates
 
-All four receipts below are required before tagging, staging, publishing, or a
-release-complete claim. Hermetic tests remain necessary but cannot replace
-these environment-bound checks.
+All four receipts below are required before `sks release stage` / OIDC staging
+or a release-complete claim that includes those physical surfaces. Direct
+`npm publish` still requires clean `main` and exact `v*` tags. Hermetic tests
+remain necessary but cannot replace these environment-bound checks.
 
 The tracked summary lives at
 `release-evidence/<version>/physical-gates.json` with schema
@@ -310,9 +311,10 @@ npm publish --dry-run --json --registry https://registry.npmjs.org/ --tag latest
 The dry-run is registry-nonmutating. Its reproducibility preflight requires
 clean `main`, live `origin/main`, and the current release stamp but does not
 require a local or remote `v<version>` tag. The separate registry check above
-proves the version is still unpublished. A real direct `npm publish` also
-requires both tags to resolve to the exact HEAD and verifies the four
-source-bound physical release receipts before npm can mutate the registry.
+proves the version is still unpublished. A real direct `npm publish` requires
+clean `main`, live `origin/main`, and both tags to resolve to the exact HEAD.
+The four source-bound physical release receipts are required by
+`sks release stage` / the OIDC stage workflow, not by direct `npm publish`.
 
 Focused checks must cover the changed Menu Bar, MCP, update, Remote,
 official-subagent, managed-residue, command-surface, and release-pack paths.

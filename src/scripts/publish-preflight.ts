@@ -5,10 +5,12 @@ import { inspectPublishPreflight } from '../core/release/publish-preflight.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const dryRun = ['1', 'true'].includes(String(process.env.npm_config_dry_run || process.env.NPM_CONFIG_DRY_RUN || '').toLowerCase());
+// Direct `npm publish` matches the 8.0.4 path: clean main + origin + v* tags.
+// Source-bound physical receipts remain enforced by `sks release stage` / CI.
 const report = inspectPublishPreflight({
   root,
   requireReleaseTag: !dryRun,
-  requirePhysicalReleaseGates: !dryRun,
+  requirePhysicalReleaseGates: false,
 });
 console.log(JSON.stringify(report, null, 2));
 if (!report.ok) {

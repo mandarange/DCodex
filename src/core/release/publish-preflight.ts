@@ -15,7 +15,10 @@ export interface PublishPreflightOptions {
   run?: (command: string, args: string[], cwd: string) => PublishPreflightCommandResult;
   /** Real publication requires the exact local and remote tag; a dry-run does not mutate the registry. */
   requireReleaseTag?: boolean;
-  /** Real publication requires source-bound physical receipts; a dry-run does not. */
+  /**
+   * Opt-in. Direct `npm publish` does not require physical receipts (stage/CI does).
+   * Callers that need the four environment-bound receipts must pass true explicitly.
+   */
   requirePhysicalReleaseGates?: boolean;
 }
 
@@ -23,7 +26,7 @@ export function inspectPublishPreflight(options: PublishPreflightOptions) {
   const root = path.resolve(options.root);
   const run = options.run || runCommand;
   const requireReleaseTag = options.requireReleaseTag !== false;
-  const requirePhysicalReleaseGates = options.requirePhysicalReleaseGates ?? requireReleaseTag;
+  const requirePhysicalReleaseGates = options.requirePhysicalReleaseGates === true;
   const blockers: string[] = [];
   const pkg = readPackageJson(root, blockers);
   const version = typeof pkg?.version === 'string' ? pkg.version : '';

@@ -33,6 +33,9 @@
 
 ### Fixed
 
+- Keep direct `npm publish` on the clean-main + tag reproducibility path; the
+  four physical release receipts stay required for `sks release stage` / OIDC
+  staging, not for local registry publish (restores the 8.0.4 publish path).
 - Accept exact project `.agents` / `.agents/skills` aliases to the authoritative
   global skill root without running project residue cleanup against the aliased
   path (realpath identity skip).
