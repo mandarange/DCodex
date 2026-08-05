@@ -58,9 +58,7 @@ assertGate(
   'getdesign metadata must record the reviewed upstream commit'
 );
 
-// Config writes are gated (unparseable preserved / unsafe rewrite skipped) and backed up.
-assertGate(helpers.includes('unparseable_config_preserved'), 'postinstall must preserve unparseable config');
-assertGate(helpers.includes('skipped_unsafe_rewrite'), 'postinstall must skip unsafe config rewrites');
+// Any remaining explicit config writes use the guarded desktop policy and backup.
 assertGate(desktopConfigPolicy.includes('backupCodexConfig'), 'postinstall config writes must back up the existing config');
 
 // Host-owned feature choices are set-if-absent, and model/reasoning keys are
@@ -86,9 +84,23 @@ assertGate(postinstallBody.includes('catch'), 'postinstall body must use catch (
 assertGate(postinstallBody.includes('finally'), 'postinstall body must use finally (never fail npm install)');
 const defaultReturn = postinstallBody.indexOf('if (!postinstallExternalMutationsAllowed(process.env))');
 const conflictScan = postinstallBody.indexOf('scanHarnessConflicts');
-const configSnapshot = postinstallBody.indexOf('capturePostinstallCodexLbConfigSnapshot');
 assertGate(defaultReturn !== -1, 'postinstall must have a default no-bootstrap return');
-assertGate(defaultReturn < conflictScan && defaultReturn < configSnapshot, 'postinstall default return must precede project scanning and config snapshots');
+assertGate(defaultReturn < conflictScan, 'postinstall default return must precede project scanning');
+assertGate(
+  !helpers.includes('capturePostinstallCodexLbConfigSnapshot')
+    && !helpers.includes('restorePostinstallCodexLbConfigSnapshot')
+    && !helpers.includes('ensureStoredOpenRouterProviderDuringInstall')
+    && !helpers.includes('ensureCodexLbAuthDuringInstall')
+    && !helpers.includes('configureCodexLb(')
+    && !helpers.includes('maybePromptCodexLbSetupForLaunch'),
+  'postinstall must not retain the retired provider setup/mode pipeline'
+);
+assertGate(
+  helpers.includes('Provider credentials and Codex provider selection were left byte-for-byte unchanged during install.')
+    && helpers.includes('sks bridge provider configure codex-lb')
+    && helpers.includes('sks bridge provider configure openrouter'),
+  'postinstall must preserve provider state and guide explicit Bridge provider configuration'
+);
 assertGate(
   helpers.includes("process.env.SKS_POSTINSTALL_BOOTSTRAP !== '1'")
     && helpers.includes("process.env.SKS_POSTINSTALL_NO_BOOTSTRAP === '1'"),
@@ -110,7 +122,10 @@ assertGate(
 // Explicit repair / opt-in paths must be surfaced to the user.
 assertGate(helpers.includes('sks bootstrap'), 'postinstall must surface `sks bootstrap` repair path');
 assertGate(helpers.includes('sks deps check'), 'postinstall must surface `sks deps check` repair path');
-assertGate(helpers.includes('sks doctor --fix'), 'postinstall must surface `sks doctor --fix` repair path');
+assertGate(
+  helpers.includes("['sks doctor', '--fix'].join(' ')"),
+  'postinstall must surface the explicit Doctor repair path'
+);
 assertGate(
   helpers.includes('SKS_POSTINSTALL_AUTO_INSTALL_CLI_TOOLS=1'),
   'postinstall hint must mention the SKS_POSTINSTALL_AUTO_INSTALL_CLI_TOOLS=1 opt-in'

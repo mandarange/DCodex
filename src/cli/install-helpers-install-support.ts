@@ -1,65 +1,13 @@
 import path from 'node:path';
 import os from 'node:os';
 import fsp from 'node:fs/promises';
-import readline from 'node:readline/promises';
-import { stdin as input, stdout as output } from 'node:process';
-import { ensureDir, exists, globalSksRoot, packageRoot, PACKAGE_VERSION, readText, runProcess, tmpdir, which, writeTextAtomic } from '../core/fsx.js';
-import { createRequestedScopeContract } from '../core/safety/requested-scope-contract.js';
-import { guardedPackageInstall, guardContextForRoute } from '../core/safety/mutation-guard.js';
+import { ensureDir, exists, packageRoot, PACKAGE_VERSION, runProcess, tmpdir, writeTextAtomic } from '../core/fsx.js';
 import { EMPTY_CODEX_INFO, getCodexInfo } from '../core/codex-adapter.js';
-import { formatHarnessConflictReport, llmHarnessCleanupPrompt, scanHarnessConflicts } from '../core/harness-conflicts.js';
-import { initProject, installGlobalSkills } from '../core/init.js';
+import { installGlobalSkills } from '../core/init.js';
 import { context7ConfigToml, DOLLAR_SKILL_NAMES, GETDESIGN_REFERENCE, hasContext7ConfigText, RECOMMENDED_SKILLS } from '../core/routes.js';
-import { reconcileCodexAppUpgradeProcesses } from '../core/codex-app.js';
-import { restartCodexApp } from '../core/codex-app/codex-app-restart.js';
-import { cleanupMacLaunchSecretEnvironment } from '../core/codex-app/menubar/index.js';
-import { recordCodexLbHealthEvent } from '../core/codex-lb-circuit.js';
-import { loadCodexLbEnv, codexLbMetadataPath } from '../core/codex-lb/codex-lb-env.js';
-import {
-  codexLbToolCatalogPath,
-  ensureCodexLbToolCatalog
-} from '../core/codex-lb/codex-lb-tool-catalog.js';
-import {
-  codexLbToolOutputRecoveryNotChecked,
-  codexLbToolOutputRecoveryNotSelected,
-  codexLbToolOutputRecoveryOverrideAcknowledged,
-  probeCodexLbToolOutputRecovery,
-  type CodexLbToolOutputRecoveryProbe
-} from '../core/codex-lb/codex-lb-tool-output-recovery.js';
-import {
-  GLM_CODEX_CONFIG_PROFILE_ID,
-  GLM_CODEX_CONFIG_PROVIDER_ID,
-  GLM_CODEX_CONFIG_REASONING_PROFILES,
-  GLM_52_OPENROUTER_MODEL
-} from '../core/codex-app/openrouter-provider.js';
-import {
-  buildCodexLbSetupPlan,
-  codexLbPersistenceSummary,
-  installCodexLbShellProfileSnippet,
-  selectedCodexLbPersistenceModes,
-  type CodexLbPersistenceSummary,
-  type CodexLbPersistenceMode
-} from '../core/codex-lb/codex-lb-setup.js';
-import { extractTomlTable, writeCodexConfigGuarded } from '../core/codex/codex-config-guard.js';
-import {
-  ensureGlobalCodexFastModeDuringInstall,
-  ensureTrailingNewline,
-  normalizeCodexFastModeUiConfig,
-  removeTopLevelTomlKeyIfValue,
-  safeWriteCodexConfigToml,
-  upsertTopLevelTomlString,
-  upsertTomlTable
-} from '../core/codex-runtime/codex-desktop-config-policy.js';
-import { runPostinstallGlobalDoctorAndMarkPending } from '../core/update/update-migration-state.js';
+import { writeCodexConfigGuarded } from '../core/codex/codex-config-guard.js';
 import { repairCodexImagegen } from '../core/doctor/imagegen-repair.js';
-import {
-  canAskYesNo,
-  compareVersions,
-  hasCodexUnstableFeatureWarningSuppression,
-  hasDeprecatedCodexHooksFeatureFlag,
-  hasTopLevelCodexModeLock,
-  isProjectSetupCandidate
-} from './install-tool-helpers.js';
+import { compareVersions } from './install-tool-helpers.js';
 
 export type SksPostinstallShimResult = {
   status: string;
