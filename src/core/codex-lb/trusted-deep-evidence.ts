@@ -1,5 +1,6 @@
 import { sha256 } from '../fsx.js'
 import { uniqueValues as unique } from '../text/strings.js'
+import type { BridgeProviderId, CapabilityProbeState } from './bridge-contracts.js'
 import type { CodexLbDesktopMode } from './desktop-mode.js'
 
 export const CODEX_LB_TRUSTED_DEEP_EVIDENCE_SCHEMA = 'sks.codex-lb-trusted-deep-evidence.v1' as const
@@ -7,6 +8,9 @@ export const CODEX_LB_DEEP_EVIDENCE_TRUST_ANCHOR_SCHEMA = 'sks.codex-lb-deep-evi
 export const CODEX_LB_DEEP_EVIDENCE_TRUST_ANCHOR_SET_SCHEMA = 'sks.codex-lb-deep-evidence-trust-anchor-set.v1' as const
 export const CODEX_LB_DEEP_EVIDENCE_VALIDATION_SCHEMA = 'sks.codex-lb-deep-evidence-validation.v1' as const
 export const DEFAULT_CODEX_LB_DEEP_EVIDENCE_MAX_AGE_MS = 15 * 60 * 1000
+export const CAPABILITY_TRUSTED_DEEP_EVIDENCE_SCHEMA = 'sks.capability-trusted-deep-evidence.v2' as const
+export const CAPABILITY_DEEP_EVIDENCE_TRUST_ANCHOR_SCHEMA = 'sks.capability-deep-evidence-trust-anchor.v2' as const
+export const CAPABILITY_DEEP_EVIDENCE_VALIDATION_SCHEMA = 'sks.capability-deep-evidence-validation.v2' as const
 const DEFAULT_FUTURE_SKEW_MS = 60 * 1000
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i
 const ID_PATTERN = /^[a-z0-9][a-z0-9._:/-]{2,127}$/i
@@ -198,6 +202,151 @@ export interface CodexLbDeepEvidenceValidation {
   trust_anchor_id: string | null
   blockers: string[]
   warnings: string[]
+}
+
+export interface CapabilityDeepEvidenceTargetV2 {
+  provider_id: BridgeProviderId
+  capability: string
+  report_id: string
+}
+
+export interface CapabilityTrustedDeepEvidenceEnvelopeV2 {
+  schema: typeof CAPABILITY_TRUSTED_DEEP_EVIDENCE_SCHEMA
+  producer: CodexLbDeepEvidenceProducer
+  created_at: string
+  target: CapabilityDeepEvidenceTargetV2
+  payload: Record<string, unknown>
+  integrity: CodexLbDeepEvidenceIntegrity
+}
+
+export interface CapabilityDeepEvidenceTrustAnchorV2 {
+  schema: typeof CAPABILITY_DEEP_EVIDENCE_TRUST_ANCHOR_SCHEMA
+  anchor_id: string
+  producer: CodexLbDeepEvidenceProducer
+  target: CapabilityDeepEvidenceTargetV2
+  content_sha256: string
+}
+
+export interface ValidateCapabilityDeepEvidenceOptionsV2 {
+  expectedProviderId: BridgeProviderId
+  expectedCapability: string
+  expectedReportId: string
+  trustAnchors?: readonly CapabilityDeepEvidenceTrustAnchorV2[]
+  now?: Date | number | string
+  maxAgeMs?: number
+  maxFutureSkewMs?: number
+}
+
+export interface CapabilityDeepEvidenceValidationV2 {
+  schema: typeof CAPABILITY_DEEP_EVIDENCE_VALIDATION_SCHEMA
+  state: Extract<CapabilityProbeState, 'not_attempted' | 'verified' | 'blocked' | 'stale'>
+  trusted: boolean
+  provider_id: BridgeProviderId
+  capability: string
+  report_id: string
+  evidence: Record<string, unknown> | null
+  producer_id: string | null
+  created_at: string | null
+  content_sha256: string | null
+  trust_anchor_id: string | null
+  blockers: string[]
+  warnings: string[]
+}
+
+/**
+ * Validate one provider/feature/report-bound evidence bundle. Missing evidence
+ * is not a transport blocker, and a failure can affect only the named target.
+ */
+export function validateCapabilityDeepEvidenceV2(
+  value: unknown,
+  options: ValidateCapabilityDeepEvidenceOptionsV2
+): CapabilityDeepEvidenceValidationV2 {
+  if (value == null) return capabilityValidation(options, 'not_attempted', [], [])
+  const blockers: string[] = []
+  if (!isRecord(value) || !hasExactKeys(value, ['schema', 'producer', 'created_at', 'target', 'payload', 'integrity'])) {
+    return capabilityValidation(options, 'blocked', ['capability_deep_evidence_schema_invalid'], [])
+  }
+  if (value.schema !== CAPABILITY_TRUSTED_DEEP_EVIDENCE_SCHEMA) blockers.push('capability_deep_evidence_schema_invalid')
+  const producer = parseProducer(value.producer, blockers, 'evidence')
+  const target = parseCapabilityTarget(value.target, blockers)
+  const integrity = parseIntegrity(value.integrity, blockers)
+  const payload = isRecord(value.payload) ? value.payload : null
+  if (!payload) blockers.push('capability_deep_evidence_payload_invalid')
+  const createdAt = typeof value.created_at === 'string' ? value.created_at : ''
+  const createdAtMs = Date.parse(createdAt)
+  if (!createdAt || !Number.isFinite(createdAtMs)) blockers.push('capability_deep_evidence_created_at_invalid')
+
+  if (target?.provider_id !== options.expectedProviderId) blockers.push('capability_deep_evidence_provider_mismatch')
+  if (target?.capability !== options.expectedCapability) blockers.push('capability_deep_evidence_capability_mismatch')
+  if (target?.report_id !== options.expectedReportId) blockers.push('capability_deep_evidence_report_mismatch')
+
+  const nowMs = normalizeNow(options.now)
+  const maxAgeMs = positiveFinite(options.maxAgeMs, DEFAULT_CODEX_LB_DEEP_EVIDENCE_MAX_AGE_MS)
+  const futureSkewMs = positiveFinite(options.maxFutureSkewMs, DEFAULT_FUTURE_SKEW_MS)
+  const stale = Number.isFinite(createdAtMs) && createdAtMs < nowMs - maxAgeMs
+  if (Number.isFinite(createdAtMs) && createdAtMs > nowMs + futureSkewMs) {
+    blockers.push('capability_deep_evidence_created_at_in_future')
+  }
+
+  let contentSha256: string | null = null
+  if (producer && target && payload && createdAt && integrity) {
+    contentSha256 = capabilityDeepEvidenceContentSha256V2({
+      schema: CAPABILITY_TRUSTED_DEEP_EVIDENCE_SCHEMA,
+      producer,
+      created_at: createdAt,
+      target,
+      payload
+    })
+    if (integrity.content_sha256 !== contentSha256) blockers.push('capability_deep_evidence_content_sha256_mismatch')
+  }
+  const anchor = integrity
+    ? (options.trustAnchors || []).find((candidate) => candidate.anchor_id === integrity.trust_anchor_id)
+    : null
+  if (!anchor) blockers.push('capability_deep_evidence_trust_anchor_missing')
+  else validateCapabilityAnchor(anchor, producer, target, contentSha256, blockers)
+
+  const fixture = payload?.fixture === true
+  const common = {
+    producer_id: producer?.id || null,
+    created_at: createdAt || null,
+    content_sha256: contentSha256,
+    trust_anchor_id: integrity?.trust_anchor_id || null
+  }
+  if (fixture) {
+    return {
+      ...capabilityValidation(options, 'not_attempted', [], ['capability_deep_evidence_fixture_unverified']),
+      ...common
+    }
+  }
+  if (blockers.length > 0 || !payload) {
+    return {
+      ...capabilityValidation(options, 'blocked', unique(blockers), []),
+      ...common
+    }
+  }
+  if (stale) {
+    return {
+      ...capabilityValidation(options, 'stale', ['capability_deep_evidence_stale'], []),
+      ...common
+    }
+  }
+  return {
+    ...capabilityValidation(options, 'verified', [], []),
+    ...common,
+    trusted: true,
+    evidence: redactCapabilityEvidence(payload)
+  }
+}
+
+export function capabilityDeepEvidenceContentSha256V2(
+  content: Omit<CapabilityTrustedDeepEvidenceEnvelopeV2, 'integrity'>
+): string {
+  return sha256(canonicalJson(content))
+}
+
+/** Redact key-like fields and token-shaped strings before evidence reaches UI/logs. */
+export function redactCapabilityEvidence(value: Record<string, unknown>): Record<string, unknown> {
+  return redactRecord(value)
 }
 
 /**
@@ -482,6 +631,95 @@ function hasExactKeys(value: Record<string, unknown>, expected: readonly string[
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function parseCapabilityTarget(
+  value: unknown,
+  blockers: string[]
+): CapabilityDeepEvidenceTargetV2 | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['provider_id', 'capability', 'report_id'])) {
+    blockers.push('capability_deep_evidence_target_invalid')
+    return null
+  }
+  if (value.provider_id !== 'codex-lb' && value.provider_id !== 'openrouter') {
+    blockers.push('capability_deep_evidence_target_invalid')
+    return null
+  }
+  if (typeof value.capability !== 'string' || !ID_PATTERN.test(value.capability)) {
+    blockers.push('capability_deep_evidence_target_invalid')
+    return null
+  }
+  if (typeof value.report_id !== 'string' || !ID_PATTERN.test(value.report_id)) {
+    blockers.push('capability_deep_evidence_target_invalid')
+    return null
+  }
+  return value as unknown as CapabilityDeepEvidenceTargetV2
+}
+
+function validateCapabilityAnchor(
+  anchor: CapabilityDeepEvidenceTrustAnchorV2,
+  producer: CodexLbDeepEvidenceProducer | null,
+  target: CapabilityDeepEvidenceTargetV2 | null,
+  contentSha256: string | null,
+  blockers: string[]
+): void {
+  if (!isRecord(anchor) || !hasExactKeys(anchor, ['schema', 'anchor_id', 'producer', 'target', 'content_sha256'])) {
+    blockers.push('capability_deep_evidence_trust_anchor_invalid')
+    return
+  }
+  if (anchor.schema !== CAPABILITY_DEEP_EVIDENCE_TRUST_ANCHOR_SCHEMA) blockers.push('capability_deep_evidence_trust_anchor_invalid')
+  if (!ID_PATTERN.test(anchor.anchor_id)) blockers.push('capability_deep_evidence_trust_anchor_invalid')
+  const anchorProducer = parseProducer(anchor.producer, blockers, 'anchor')
+  const anchorTarget = parseCapabilityTarget(anchor.target, blockers)
+  if (!SHA256_PATTERN.test(anchor.content_sha256)) blockers.push('capability_deep_evidence_trust_anchor_hash_invalid')
+  if (contentSha256 && anchor.content_sha256 !== contentSha256) blockers.push('capability_deep_evidence_trust_anchor_hash_mismatch')
+  if (producer && anchorProducer && canonicalJson(producer) !== canonicalJson(anchorProducer)) {
+    blockers.push('capability_deep_evidence_trust_anchor_producer_mismatch')
+  }
+  if (target && anchorTarget && canonicalJson(target) !== canonicalJson(anchorTarget)) {
+    blockers.push('capability_deep_evidence_trust_anchor_target_mismatch')
+  }
+}
+
+function capabilityValidation(
+  options: ValidateCapabilityDeepEvidenceOptionsV2,
+  state: CapabilityDeepEvidenceValidationV2['state'],
+  blockers: string[],
+  warnings: string[]
+): CapabilityDeepEvidenceValidationV2 {
+  return {
+    schema: CAPABILITY_DEEP_EVIDENCE_VALIDATION_SCHEMA,
+    state,
+    trusted: false,
+    provider_id: options.expectedProviderId,
+    capability: options.expectedCapability,
+    report_id: options.expectedReportId,
+    evidence: null,
+    producer_id: null,
+    created_at: null,
+    content_sha256: null,
+    trust_anchor_id: null,
+    blockers,
+    warnings
+  }
+}
+
+function redactRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => {
+    if (/(?:authorization|api[_-]?key|token|secret|credential)/i.test(key)) return [key, '[REDACTED]']
+    if (typeof entry === 'string') return [key, redactString(entry)]
+    if (Array.isArray(entry)) return [key, entry.map((item) => (
+      isRecord(item) ? redactRecord(item) : typeof item === 'string' ? redactString(item) : item
+    ))]
+    if (isRecord(entry)) return [key, redactRecord(entry)]
+    return [key, entry]
+  }))
+}
+
+function redactString(value: string): string {
+  return value
+    .replace(/\b(?:sk|or|sess|key)-[A-Za-z0-9_-]{8,}\b/g, '[REDACTED]')
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]{8,}/gi, 'Bearer [REDACTED]')
 }
 
 function validation(

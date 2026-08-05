@@ -149,6 +149,8 @@ test('manifest/config and fixture transport evidence never become verified readi
   assert.equal(status.verified.length, 0)
   assert.ok(status.available_unverified.includes('bridge'))
   assert.ok(status.available_unverified.includes('image_generation'))
+  assert.deepEqual(report.deep_evidence_validation.blockers, [])
+  assert.ok(report.deep_evidence_validation.warnings.includes('deep_verification_not_requested'))
 })
 
 test('gateway auth prefers Authorization Bearer and still accepts custom header without silent fallback', () => {
