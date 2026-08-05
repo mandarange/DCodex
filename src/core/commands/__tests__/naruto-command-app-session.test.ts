@@ -72,7 +72,7 @@ test('App Naruto reuses the active mission bound to the current Codex thread sta
   }
 })
 
-test('App Naruto blocks invalid explicit config before entering the delegation runner', async () => {
+test('App Naruto normalizes an oversized persisted preference before entering the delegation runner', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-naruto-app-config-blocker-'))
   const threadId = 'thread-app-config-blocker'
   const oldCwd = process.cwd()
@@ -90,19 +90,24 @@ test('App Naruto blocks invalid explicit config before entering the delegation r
     process.env.HOME = path.join(root, 'home')
     process.env.CODEX_HOME = path.join(root, 'home', '.codex')
     await fs.mkdir(path.join(root, '.codex'), { recursive: true })
-    await fs.writeFile(
-      path.join(root, '.codex', 'config.toml'),
-      '[agents]\nmax_concurrent_threads_per_session = 257\n'
-    )
+    const configPath = path.join(root, '.codex', 'config.toml')
+    const configSource = '[agents]\nmax_concurrent_threads_per_session = 257\n'
+    await fs.writeFile(configPath, configSource)
     console.log = () => undefined
     console.warn = () => undefined
 
-    const result: any = await narutoCommand(['run', 'must not delegate', '--json'])
-    assert.equal(result.status, 'blocked')
-    assert.ok(result.blockers.includes(
-      'project_official_subagent_max_threads_exceeds_hard_cap:257:256'
+    const result: any = await narutoCommand(['run', 'delegate within the effective cap', '--json'])
+    const plan = JSON.parse(await fs.readFile(
+      path.join(root, '.sneakoscope', 'missions', result.mission_id, 'subagent-plan.json'),
+      'utf8'
     ))
-    assert.equal(result.started_subagents, undefined)
+    assert.equal(result.status, 'delegation_context_ready')
+    assert.equal(result.max_threads, 256)
+    assert.equal(plan.max_threads, 256)
+    assert.ok(result.blockers.includes('official_subagent_execution_pending_in_current_parent'))
+    assert.ok(!result.blockers.some((blocker: string) => blocker.includes('max_threads_exceeds_hard_cap')))
+    assert.equal(result.started_subagents, 0)
+    assert.equal(await fs.readFile(configPath, 'utf8'), configSource)
   } finally {
     process.chdir(oldCwd)
     restoreEnv('CODEX_THREAD_ID', oldThreadId)
