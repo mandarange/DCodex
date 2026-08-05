@@ -17,7 +17,6 @@ export async function runCodexCurrentCoreImageReferencedPathRealProbe(input: {
   timeoutMs?: number
   codexBin?: string | null
   env?: NodeJS.ProcessEnv
-  recoveryFetch?: typeof fetch
   runProcessImpl?: typeof runProcess
 }): Promise<CodexCurrentCoreSingleProbe> {
   const started = Date.now()
@@ -81,7 +80,6 @@ export async function runCodexCurrentCoreImageReferencedPathRealProbe(input: {
     maxBufferBytes: 512 * 1024,
     codexBin,
     env: runtimeEnv,
-    ...(typeof input.recoveryFetch === 'function' ? { recoveryFetch: input.recoveryFetch } : {}),
     ...(typeof input.runProcessImpl === 'function' ? { runProcessImpl: input.runProcessImpl } : {})
   }).catch((err: any) => ({ code: 1, stdout: '', stderr: err?.message || String(err) }))
   const outputText = await fs.readFile(outputFile, 'utf8').catch(() => '')
@@ -111,12 +109,12 @@ export async function runCodexCurrentCoreImageReferencedPathRealProbe(input: {
       process_exited_successfully: processExitedSuccessfully,
       process_warning: processExitedSuccessfully ? null : 'Codex emitted the referenced path evidence before process timeout/nonzero exit.',
       output_file: outputFile,
-      codex_lb_tool_output_recovery: (result as any).codexLbToolOutputRecovery || null,
+      desktop_bridge_launch_guard: (result as any).desktop_bridge_launch_guard || null,
       contract_blockers: contract.blockers
     },
     blockers: ok ? [] : [
       ...(processExitedSuccessfully ? [] : ['codex_image_referenced_path_process_failed_or_timed_out']),
-      ...((result as any).codexLbToolOutputRecovery?.blockers || []),
+      ...((result as any).desktop_bridge_launch_guard?.blockers || []),
       ...(!exactReferencedPath || !commandReferencesOnlyInputB || !outputReferencesInputB || contract.blockers.length > 0
         ? ['codex_image_referenced_path_actual_cli_probe_failed']
         : [])

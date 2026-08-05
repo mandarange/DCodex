@@ -328,7 +328,7 @@ export async function loadCodexLbEnv(opts: any = {}): Promise<CodexLbEnvLoadResu
   const guidance = [
     ...envFile.guidance,
     ...(!apiKey
-      ? [`Configure CODEX_LB_API_KEY with \`sks codex-lb setup --host <domain> --api-key-stdin --yes\`, put it in ${envPaths[0]} (mode 0600), or export CODEX_LB_API_KEY.`]
+      ? [`Configure CODEX_LB_API_KEY with \`sks bridge provider configure codex-lb --host <host> --api-key-stdin --json\`, put it in ${envPaths[0]} (mode 0600), or export CODEX_LB_API_KEY.`]
       : [])
   ];
   return {
@@ -496,7 +496,7 @@ async function readEnvFile(file: string, opts: { privateFile?: boolean } = {}) {
     } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException | null)?.code !== 'ENOENT') {
         blockers.push('codex_lb_env_file_read_failed');
-        guidance.push(`Replace the unreadable credential file at ${file} with \`sks codex-lb setup --host <domain> --api-key-stdin --yes\`.`);
+        guidance.push(`Replace the unreadable credential file at ${file} with \`sks bridge provider configure codex-lb --host <host> --api-key-stdin --json\`.`);
       }
     }
     if (!pathExists) {
@@ -510,7 +510,7 @@ async function readEnvFile(file: string, opts: { privateFile?: boolean } = {}) {
         blockers.push(`codex_lb_env_file_${code}`);
         guidance.push(code === 'mode_not_0600'
           ? `Run \`chmod 600 ${file}\` or \`sks doctor --fix\`, then retry.`
-          : `Replace the unsafe credential file at ${file} with \`sks codex-lb setup --host <domain> --api-key-stdin --yes\`.`);
+          : `Replace the unsafe credential file at ${file} with \`sks bridge provider configure codex-lb --host <host> --api-key-stdin --json\`.`);
       }
     }
   } else {

@@ -1,9 +1,10 @@
 import { findCodexBinary } from '../codex-adapter.js'
 import { runProcess } from '../fsx.js'
 import {
-  inspectCodexLbCliLaunchRecovery
-} from '../codex-control/codex-lb-launch-recovery.js'
-import type { CodexLbToolOutputRecoveryProbe } from '../codex-lb/codex-lb-tool-output-recovery.js'
+  inspectDesktopBridgeCliLaunchGuard,
+  stripRetiredDirectProviderEnv,
+  type DesktopBridgeLaunchGuard
+} from '../codex-control/desktop-bridge-launch-guard.js'
 
 export interface CodexAppLaunchAttempt {
   schema: 'sks.codex-app-launch-attempt.v1'
@@ -17,7 +18,7 @@ export interface CodexAppLaunchAttempt {
   stderr_tail: string
   fallback_reason: string | null
   blockers: string[]
-  tool_output_recovery?: CodexLbToolOutputRecoveryProbe
+  desktop_bridge_launch_guard?: DesktopBridgeLaunchGuard
 }
 
 export async function attemptCodexAppLaunch(input: {
@@ -27,8 +28,6 @@ export async function attemptCodexAppLaunch(input: {
   mode: 'artifact-only' | 'attempt-launch'
   timeoutMs?: number
   env?: NodeJS.ProcessEnv
-  recoveryFetch?: typeof fetch
-  recoveryTimeoutMs?: number
   runProcessImpl?: typeof runProcess
   findCodexBinaryImpl?: typeof findCodexBinary
   platform?: NodeJS.Platform
@@ -77,16 +76,14 @@ export async function attemptCodexAppLaunch(input: {
       blockers: launched ? [] : ['codex_app_launch_failed']
     })
   }
-  const env = input.env || process.env
+  const env = stripRetiredDirectProviderEnv(input.env || process.env)
   const execute = input.runProcessImpl || runProcess
-  const toolOutputRecovery = await inspectCodexLbCliLaunchRecovery({
+  const launchGuard = await inspectDesktopBridgeCliLaunchGuard({
     root: input.cwd,
     env,
-    cliArgs: ['/app'],
-    ...(input.recoveryFetch ? { fetchImpl: input.recoveryFetch } : {}),
-    ...(input.recoveryTimeoutMs === undefined ? {} : { timeoutMs: input.recoveryTimeoutMs })
+    cliArgs: ['/app']
   })
-  if (!toolOutputRecovery.ok) {
+  if (!launchGuard.ok) {
     return launchAttempt({
       attempted: false,
       launched: false,
@@ -94,9 +91,9 @@ export async function attemptCodexAppLaunch(input: {
       mode: input.mode,
       command_line: commandLine,
       exit_code: null,
-      fallback_reason: 'codex_lb_tool_output_recovery_blocked',
-      blockers: toolOutputRecovery.blockers,
-      tool_output_recovery: toolOutputRecovery
+      fallback_reason: 'desktop_bridge_launch_guard_blocked',
+      blockers: launchGuard.blockers,
+      desktop_bridge_launch_guard: launchGuard
     })
   }
   codexBin ||= await (input.findCodexBinaryImpl || findCodexBinary)()
@@ -111,7 +108,7 @@ export async function attemptCodexAppLaunch(input: {
       exit_code: null,
       fallback_reason: 'codex_cli_missing_artifact_only_fallback',
       blockers: ['codex_cli_missing'],
-      tool_output_recovery: toolOutputRecovery
+      desktop_bridge_launch_guard: launchGuard
     })
   }
   const result = await execute(codexBin, ['/app'], {
@@ -151,7 +148,7 @@ export async function attemptCodexAppLaunch(input: {
     stderr_tail: stderr.slice(-4000),
     fallback_reason: fallbackReason,
     blockers: launched ? [] : [timedOut ? 'codex_app_launch_interactive_or_timeout' : 'codex_app_launch_failed'],
-    tool_output_recovery: toolOutputRecovery
+    desktop_bridge_launch_guard: launchGuard
   })
 }
 

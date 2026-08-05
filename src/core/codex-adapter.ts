@@ -4,9 +4,9 @@ import { preserveCodexModelArgs } from './codex-model-guard.js';
 import { managedProxyEnvForChild } from './codex/managed-proxy-env.js';
 import { resolveCodexRuntime } from './codex-runtime/resolve-codex-runtime.js';
 import {
-  codexLbRecoveryBlockedProcessResult,
-  withCodexLbCliLaunchRecovery
-} from './codex-control/codex-lb-launch-recovery.js';
+  desktopBridgeLaunchBlockedProcessResult,
+  withDesktopBridgeCliLaunchGuard
+} from './codex-control/desktop-bridge-launch-guard.js';
 import { prepareCodexAppServerRuntimeEnv } from './codex-control/codex-app-server-runtime-env.js';
 
 export async function findCodexBinary(): Promise<string | null> {
@@ -53,18 +53,16 @@ export function buildCodexExecArgs({ root, prompt, outputFile, json = true, prof
   return args;
 }
 
-export async function runCodexExec({ root, recoveryRoot = root, prompt, outputFile, json = true, profile = null, extraArgs = [], onStdout, onStderr, logDir = null, stdoutFile = null, stderrFile = null, maxBufferBytes = 256 * 1024, timeoutMs = null, env = process.env, codexBin = null, findCodexBinaryImpl = findCodexBinary, runProcessImpl = runProcess, prepareCodexRuntimeEnvImpl = prepareCodexAppServerRuntimeEnv, recoveryFetch = undefined, recoveryTimeoutMs = undefined }: any): Promise<RunProcessResult> {
+export async function runCodexExec({ root, recoveryRoot = root, prompt, outputFile, json = true, profile = null, extraArgs = [], onStdout, onStderr, logDir = null, stdoutFile = null, stderrFile = null, maxBufferBytes = 256 * 1024, timeoutMs = null, env = process.env, codexBin = null, findCodexBinaryImpl = findCodexBinary, runProcessImpl = runProcess, prepareCodexRuntimeEnvImpl = prepareCodexAppServerRuntimeEnv }: any): Promise<RunProcessResult> {
   const args = buildCodexExecArgs({ root, prompt, outputFile, json, profile, extraArgs });
   const effectiveTimeoutMs = Number(timeoutMs || process.env.SKS_CODEX_TIMEOUT_MS || process.env.DCODEX_CODEX_TIMEOUT_MS || 30 * 60 * 1000);
   const recoveryArgs = args.slice(1, -1);
   const runtimeEnv = await prepareCodexRuntimeEnvImpl({ env });
-  const guarded = await withCodexLbCliLaunchRecovery({
+  const guarded = await withDesktopBridgeCliLaunchGuard({
     root: recoveryRoot,
     env: runtimeEnv,
-    cliArgs: recoveryArgs,
-    ...(typeof recoveryFetch === 'function' ? { fetchImpl: recoveryFetch } : {}),
-    ...(recoveryTimeoutMs === undefined ? {} : { timeoutMs: recoveryTimeoutMs })
-  }, async () => {
+    cliArgs: recoveryArgs
+  }, async (sanitizedEnv) => {
     const bin = codexBin || await findCodexBinaryImpl();
     if (!bin) {
       return {
@@ -79,7 +77,7 @@ export async function runCodexExec({ root, recoveryRoot = root, prompt, outputFi
     }
     return runProcessImpl(bin, args, {
       cwd: root,
-      env: { ...runtimeEnv, ...managedProxyEnvForChild(runtimeEnv) },
+      env: { ...sanitizedEnv, ...managedProxyEnvForChild(sanitizedEnv) },
       onStdout,
       onStderr,
       timeoutMs: effectiveTimeoutMs,
@@ -89,6 +87,6 @@ export async function runCodexExec({ root, recoveryRoot = root, prompt, outputFi
     });
   });
   return guarded.launched
-    ? guarded.value
-    : codexLbRecoveryBlockedProcessResult(guarded.toolOutputRecovery);
+    ? { ...guarded.value, desktop_bridge_launch_guard: guarded.desktopBridgeLaunchGuard }
+    : desktopBridgeLaunchBlockedProcessResult(guarded.desktopBridgeLaunchGuard);
 }

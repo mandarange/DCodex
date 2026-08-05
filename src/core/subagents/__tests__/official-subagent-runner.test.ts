@@ -2133,17 +2133,13 @@ test('trusted host pending runtime is removed after child failure or launch exce
   }
 })
 
-test('standalone official subagent launch honors selected codex-lb and injects the canonical key', async () => {
-  const baseUrl = 'https://lb.official-subagent.example.test/backend-api/codex'
+test('standalone official subagent blocks retired direct provider selection before spawn', async () => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-official-subagent-codex-lb-'))
   const home = path.join(root, 'home')
   const codexHome = path.join(home, '.codex')
   await fsp.mkdir(codexHome, { recursive: true })
   await fsp.writeFile(path.join(codexHome, 'config.toml'), [
     'model_provider = "codex-lb"',
-    '',
-    '[model_providers.codex-lb]',
-    `base_url = "${baseUrl}"`,
     ''
   ].join('\n'))
   const env = {
@@ -2153,12 +2149,8 @@ test('standalone official subagent launch honors selected codex-lb and injects t
     CODEX_LB_API_KEY: 'stale-synthetic-key'
   }
   let launches = 0
-  let launchedArgs: string[] = []
-  let launchedKey = ''
-  const runProcessImpl = async (_command: string, args: readonly string[], options: any) => {
+  const runProcessImpl = async () => {
     launches += 1
-    launchedArgs = [...args]
-    launchedKey = String(options.env?.CODEX_LB_API_KEY || '')
     return { code: 1, stdout: '', stderr: 'fixture stop', stdoutBytes: 0, stderrBytes: 12, truncated: false, timedOut: false }
   }
   try {
@@ -2172,22 +2164,17 @@ test('standalone official subagent launch honors selected codex-lb and injects t
       env,
       prepareCodexRuntimeEnvImpl: async (input = {}) => ({
         ...(input.env || {}),
-        CODEX_LB_BASE_URL: baseUrl,
+        CODEX_LB_BASE_URL: 'https://lb.official-subagent.example.test/backend-api/codex',
         CODEX_LB_API_KEY: 'validated-synthetic-key'
-      }),
-      recoveryFetch: async () => new Response('{}', {
-        status: 200,
-        headers: { 'x-app-version': '1.21.0-beta.3' }
       }),
       runProcessImpl
     })
     assert.equal(result.ok, false)
-    assert.equal(result.status, 'parent_failed')
-    assert.equal(result.tool_output_recovery.status, 'compatible')
-    assert.equal(launches, 1)
-    assert.ok(launchedArgs.includes('model_provider="codex-lb"'))
-    assert.equal(launchedArgs.includes('forced_login_method="chatgpt"'), false)
-    assert.equal(launchedKey, 'validated-synthetic-key')
+    assert.equal(result.status, 'desktop_bridge_launch_guard_blocked')
+    assert.equal(result.desktop_bridge_launch_guard.status, 'direct_provider_selection_retired')
+    assert.ok(result.blockers.includes('desktop_bridge_direct_provider_selection_retired'))
+    assert.ok(result.operator_actions.some((action: string) => action.includes('sks bridge ensure --json')))
+    assert.equal(launches, 0)
     assert.doesNotMatch(JSON.stringify(result), /validated-synthetic-key|stale-synthetic-key/)
   } finally {
     await fsp.rm(root, { recursive: true, force: true })

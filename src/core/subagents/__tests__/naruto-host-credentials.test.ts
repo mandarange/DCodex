@@ -40,26 +40,35 @@ test('host auth mode injects neither the provider nor the login method', () => {
   assert.ok(resolved.warnings.includes('naruto_host_auth_mode_without_explicit_model_provider'))
 })
 
-test('host auth mode names the provider block the host configured', () => {
-  const resolved = policy(['--auth-mode', 'host', '--model-provider', 'codex-lb'])
-  assert.equal(resolved.modelProvider, 'codex-lb')
-  assert.deepEqual(narutoCredentialConfigArgs(resolved), ['-c', 'model_provider="codex-lb"'])
+test('host auth mode names an unmanaged provider block the host configured', () => {
+  const resolved = policy(['--auth-mode', 'host', '--model-provider', 'customer-gateway'])
+  assert.equal(resolved.modelProvider, 'customer-gateway')
+  assert.deepEqual(narutoCredentialConfigArgs(resolved), ['-c', 'model_provider="customer-gateway"'])
   assert.equal(resolved.forcedLoginMethod, null)
   assert.deepEqual(resolved.blockers, [])
 })
 
-test('the env contract matches the flag contract', () => {
+test('retired managed provider IDs are blocked and never emitted', () => {
+  for (const provider of ['codex-lb', 'openrouter']) {
+    const resolved = policy(['--auth-mode=host', `--model-provider=${provider}`])
+    assert.equal(resolved.modelProvider, null, provider)
+    assert.ok(resolved.blockers.includes('desktop_bridge_direct_provider_selection_retired'), provider)
+    assert.equal(narutoCredentialConfigArgs(resolved).some((arg) => arg.includes(provider)), false, provider)
+  }
+})
+
+test('the env contract rejects retired managed provider IDs', () => {
   const resolved = policy([], {
     SKS_NARUTO_AUTH_MODE: 'host',
     SKS_NARUTO_MODEL_PROVIDER: 'openrouter',
-    CODEX_LB_API_KEY: 'not-read-by-sks',
-    SKS_NARUTO_PROVIDER_ENV_KEY: 'CODEX_LB_API_KEY'
+    CUSTOMER_API_KEY: 'not-read-by-sks',
+    SKS_NARUTO_PROVIDER_ENV_KEY: 'CUSTOMER_API_KEY'
   })
   assert.equal(resolved.authMode, 'host')
-  assert.equal(resolved.modelProvider, 'openrouter')
-  assert.equal(resolved.providerEnvKey, 'CODEX_LB_API_KEY')
+  assert.equal(resolved.modelProvider, null)
+  assert.equal(resolved.providerEnvKey, 'CUSTOMER_API_KEY')
   assert.equal(resolved.sources.authMode, 'env')
-  assert.deepEqual(resolved.blockers, [])
+  assert.ok(resolved.blockers.includes('desktop_bridge_direct_provider_selection_retired'))
 })
 
 test('--no-forced-login-method releases the login without switching provider', () => {
@@ -112,7 +121,7 @@ test('GPT-5.6 family overrides enforce the sealed effort profiles', () => {
 })
 
 test('a host-mode run carries no chatgpt login into the codex arguments', () => {
-  const resolved = policy(['--auth-mode=host', '--model-provider=codex-lb'])
+  const resolved = policy(['--auth-mode=host', '--model-provider=customer-gateway'])
   const args = buildOfficialSubagentCodexArgs({
     prompt: 'task',
     maxThreads: 2,
@@ -120,18 +129,18 @@ test('a host-mode run carries no chatgpt login into the codex arguments', () => 
     credentialPolicy: resolved
   })
   assert.ok(!args.some((arg) => arg.includes('forced_login_method')))
-  assert.ok(args.includes('model_provider="codex-lb"'))
+  assert.ok(args.includes('model_provider="customer-gateway"'))
 })
 
 test('the named provider key reaches the child, and nothing else does', () => {
-  const resolved = policy(['--auth-mode=host', '--provider-env-key=CODEX_LB_API_KEY'], {
-    CODEX_LB_API_KEY: 'value-under-test'
+  const resolved = policy(['--auth-mode=host', '--provider-env-key=CUSTOMER_API_KEY'], {
+    CUSTOMER_API_KEY: 'value-under-test'
   })
   const childEnv = buildOfficialSubagentChildEnv({
-    env: { CODEX_LB_API_KEY: 'value-under-test', OPENAI_API_KEY: 'unrelated', HOME: '/tmp/home' },
+    env: { CUSTOMER_API_KEY: 'value-under-test', OPENAI_API_KEY: 'unrelated', HOME: '/tmp/home' },
     credentialPolicy: resolved
   })
-  assert.equal(childEnv.CODEX_LB_API_KEY, 'value-under-test')
+  assert.equal(childEnv.CUSTOMER_API_KEY, 'value-under-test')
   assert.equal(childEnv.OPENAI_API_KEY, undefined)
 })
 
@@ -154,13 +163,13 @@ test('a provider env key that is absent from the environment blocks before Codex
 })
 
 test('the receipt records the decision and never the credential', () => {
-  const resolved = policy(['--auth-mode=host', '--model-provider=codex-lb', '--provider-env-key=CODEX_LB_API_KEY'], {
-    CODEX_LB_API_KEY: 'super-secret-value'
+  const resolved = policy(['--auth-mode=host', '--model-provider=customer-gateway', '--provider-env-key=CUSTOMER_API_KEY'], {
+    CUSTOMER_API_KEY: 'super-secret-value'
   })
   const receipt = narutoCredentialPolicyReceipt(resolved)
   const serialized = JSON.stringify(receipt)
   assert.ok(!serialized.includes('super-secret-value'))
-  assert.ok(serialized.includes('CODEX_LB_API_KEY'))
+  assert.ok(serialized.includes('CUSTOMER_API_KEY'))
   assert.equal(receipt.credential_handled_by, 'host_config_toml_provider_block')
   assert.equal(receipt.auth_mode, 'host')
 })

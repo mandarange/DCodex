@@ -1,6 +1,9 @@
 import { exists, runProcess, which } from '../fsx.js'
-import { inspectCodexLbCliLaunchRecovery } from '../codex-control/codex-lb-launch-recovery.js'
-import type { CodexLbToolOutputRecoveryProbe } from '../codex-lb/codex-lb-tool-output-recovery.js'
+import {
+  inspectDesktopBridgeCliLaunchGuard,
+  stripRetiredDirectProviderEnv,
+  type DesktopBridgeLaunchGuard
+} from '../codex-control/desktop-bridge-launch-guard.js'
 
 export interface CodexAppRestartResult {
   schema: 'sks.codex-app-restart.v1'
@@ -14,7 +17,7 @@ export interface CodexAppRestartResult {
   exit_wait?: { ok: boolean; attempts: number; error?: string | null }
   open?: { ok: boolean; code: number | null; error?: string | null }
   blockers: string[]
-  tool_output_recovery?: CodexLbToolOutputRecoveryProbe
+  desktop_bridge_launch_guard?: DesktopBridgeLaunchGuard
 }
 
 export interface CodexAppQuitResult {
@@ -123,11 +126,9 @@ export async function restartCodexApp(opts: {
   openPath?: string
   env?: NodeJS.ProcessEnv
   root?: string
-  recoveryFetch?: typeof fetch
-  recoveryTimeoutMs?: number
   runProcessImpl?: typeof runProcess
 } = {}): Promise<CodexAppRestartResult> {
-  const env = opts.env || process.env
+  const env = stripRetiredDirectProviderEnv(opts.env || process.env)
   const appName = String(opts.appName || env.SKS_CODEX_APP_NAME || 'ChatGPT')
   const bundleId = String(opts.bundleId || env.SKS_CODEX_APP_BUNDLE_ID || 'com.openai.codex')
   if (opts.enabled === false || env.SKS_SKIP_CODEX_APP_RESTART === '1') {
@@ -149,22 +150,20 @@ export async function restartCodexApp(opts: {
       ]
     }
   }
-  const toolOutputRecovery = await inspectCodexLbCliLaunchRecovery({
+  const launchGuard = await inspectDesktopBridgeCliLaunchGuard({
     root: opts.root || process.cwd(),
     env,
-    cliArgs: ['/app'],
-    ...(opts.recoveryFetch ? { fetchImpl: opts.recoveryFetch } : {}),
-    ...(opts.recoveryTimeoutMs === undefined ? {} : { timeoutMs: opts.recoveryTimeoutMs })
+    cliArgs: ['/app']
   })
-  if (!toolOutputRecovery.ok) {
+  if (!launchGuard.ok) {
     return {
       schema: 'sks.codex-app-restart.v1',
       ok: false,
-      status: 'tool_output_recovery_blocked',
+      status: 'desktop_bridge_launch_guard_blocked',
       app_name: appName,
       bundle_id: bundleId,
-      blockers: toolOutputRecovery.blockers,
-      tool_output_recovery: toolOutputRecovery
+      blockers: launchGuard.blockers,
+      desktop_bridge_launch_guard: launchGuard
     }
   }
   const appTarget = bundleId ? `application id ${JSON.stringify(bundleId)}` : `application ${JSON.stringify(appName)}`
@@ -198,7 +197,7 @@ export async function restartCodexApp(opts: {
       quit: { ok: true, code: quit.code, error: null },
       exit_wait: { ok: false, attempts, error: 'codex_app_exit_timeout' },
       blockers: ['codex_app_exit_timeout'],
-      tool_output_recovery: toolOutputRecovery
+      desktop_bridge_launch_guard: launchGuard
     }
   }
   await sleep(Number(opts.delayMs ?? env.SKS_CODEX_APP_RESTART_DELAY_MS ?? 150))
@@ -221,7 +220,7 @@ export async function restartCodexApp(opts: {
       ...(quitOk ? [] : ['codex_app_quit_failed']),
       ...(openOk ? [] : ['codex_app_open_failed'])
     ],
-    tool_output_recovery: toolOutputRecovery
+    desktop_bridge_launch_guard: launchGuard
   }
 }
 

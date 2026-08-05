@@ -6,8 +6,8 @@
  * is the credential, and the run cannot silently drift onto some other provider.
  *
  * That default is wrong for an unattended host. An orchestrator that already
- * holds and rotates a customer's OpenAI-compatible credential (a local codex-lb
- * endpoint, OpenRouter, any `env_key` provider block) cannot log in
+ * holds and rotates a customer's OpenAI-compatible credential (an unmanaged
+ * custom `env_key` provider block) cannot log in
  * interactively on every node, and forcing `chatgpt` makes Codex treat an
  * `auth_mode="apikey"` session as a hard logout and delete `auth.json`. Host
  * mode hands that decision back: SKS stops injecting the provider and the login
@@ -29,6 +29,7 @@ export type NarutoAuthMode = (typeof NARUTO_AUTH_MODES)[number];
 
 /** Config-block and model identifiers only — never a URL, a path, or a secret. */
 const IDENTIFIER_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const RETIRED_DIRECT_MANAGED_PROVIDERS = new Set(['codex-lb', 'openrouter']);
 
 export const NARUTO_EFFORT_TIERS = ['minimal', 'low', 'medium', 'high', 'max'] as const;
 
@@ -131,6 +132,8 @@ export function resolveNarutoCredentialPolicy(input: NarutoCredentialPolicyInput
       // Naming a provider while SKS still forces a ChatGPT login would produce a
       // run that authenticates one way and bills another.
       blockers.push('naruto_model_provider_requires_host_auth_mode');
+    } else if (RETIRED_DIRECT_MANAGED_PROVIDERS.has(providerRaw.value)) {
+      blockers.push('desktop_bridge_direct_provider_selection_retired');
     } else {
       modelProvider = providerRaw.value;
       sources.modelProvider = providerRaw.source;
@@ -239,7 +242,9 @@ function validateGpt56EffortPair(
 /** The `-c` overrides this policy contributes. Empty in host mode by design. */
 export function narutoCredentialConfigArgs(policy: NarutoCredentialPolicy): string[] {
   const out: string[] = [];
-  if (policy.modelProvider) out.push('-c', `model_provider="${policy.modelProvider}"`);
+  if (policy.modelProvider && !RETIRED_DIRECT_MANAGED_PROVIDERS.has(policy.modelProvider)) {
+    out.push('-c', `model_provider="${policy.modelProvider}"`);
+  }
   if (policy.forcedLoginMethod) out.push('-c', `forced_login_method="${policy.forcedLoginMethod}"`);
   return out;
 }

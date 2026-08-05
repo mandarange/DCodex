@@ -3,9 +3,12 @@ import fsp from 'node:fs/promises';
 import { ensureDir, exists, packageRoot, readJson, runProcess, which } from './fsx.js';
 import { codexVersionPolicy, compareSemverLike, parseCodexVersionText } from './codex-compat/codex-version-policy.js';
 import { validateJsonSchemaRecursive } from './json-schema-validator.js';
-import { inspectCodexLbCliLaunchRecovery } from './codex-control/codex-lb-launch-recovery.js';
+import {
+  inspectDesktopBridgeCliLaunchGuard,
+  stripRetiredDirectProviderEnv,
+  type DesktopBridgeLaunchGuard
+} from './codex-control/desktop-bridge-launch-guard.js';
 import { prepareCodexAppServerRuntimeEnv } from './codex-control/codex-app-server-runtime-env.js';
-import type { CodexLbToolOutputRecoveryProbe } from './codex-lb/codex-lb-tool-output-recovery.js';
 
 export interface CodexExecResumeOutputSchemaAvailability {
   schema: 'sks.codex-exec-output-schema-availability.v1';
@@ -137,7 +140,7 @@ export interface CodexExecResumeOutputSchemaRunResult {
   stderr_tail: string;
   timed_out: boolean;
   exit_code: number | null;
-  codex_lb_tool_output_recovery: CodexLbToolOutputRecoveryProbe;
+  desktop_bridge_launch_guard: DesktopBridgeLaunchGuard;
 }
 
 export async function detectCodexExecResumeOutputSchema(opts: any = {}): Promise<CodexExecResumeOutputSchemaAvailability> {
@@ -233,20 +236,18 @@ export async function buildCodexExecResumeOutputSchemaArgs(input: CodexResumeOut
 
 export async function runCodexExecResumeWithOutputSchema(
   input: CodexResumeOutputSchemaCommandInput,
-  opts: { codexBin?: string | null; timeoutMs?: number; maxOutputBytes?: number; cwd?: string; env?: NodeJS.ProcessEnv; recoveryFetch?: typeof fetch; recoveryTimeoutMs?: number; runProcessImpl?: typeof runProcess; prepareCodexRuntimeEnvImpl?: typeof prepareCodexAppServerRuntimeEnv } = {}
+  opts: { codexBin?: string | null; timeoutMs?: number; maxOutputBytes?: number; cwd?: string; env?: NodeJS.ProcessEnv; runProcessImpl?: typeof runProcess; prepareCodexRuntimeEnvImpl?: typeof prepareCodexAppServerRuntimeEnv } = {}
 ): Promise<CodexExecResumeOutputSchemaRunResult> {
   const root = opts.cwd || packageRoot();
-  const env = await (opts.prepareCodexRuntimeEnvImpl || prepareCodexAppServerRuntimeEnv)({
+  const env = stripRetiredDirectProviderEnv(await (opts.prepareCodexRuntimeEnvImpl || prepareCodexAppServerRuntimeEnv)({
     env: opts.env || process.env
-  });
-  const toolOutputRecovery = await inspectCodexLbCliLaunchRecovery({
+  }));
+  const launchGuard = await inspectDesktopBridgeCliLaunchGuard({
     root,
     env,
-    cliArgs: input.extraArgs || [],
-    ...(opts.recoveryFetch ? { fetchImpl: opts.recoveryFetch } : {}),
-    ...(opts.recoveryTimeoutMs === undefined ? {} : { timeoutMs: opts.recoveryTimeoutMs })
+    cliArgs: input.extraArgs || []
   });
-  if (!toolOutputRecovery.ok) {
+  if (!launchGuard.ok) {
     return {
       schema: 'sks.codex-exec-output-schema-run.v1',
       ok: false,
@@ -255,13 +256,13 @@ export async function runCodexExecResumeWithOutputSchema(
       codex_bin: opts.codexBin || null,
       output_file: null,
       parsed_json: null,
-      blocker: structuredOutputBlocker('codex_lb_tool_output_recovery_blocked', toolOutputRecovery.blockers.join(', ')),
-      validation: { ok: false, issues: ['codex_lb_tool_output_recovery_blocked'] },
+      blocker: structuredOutputBlocker('desktop_bridge_launch_guard_blocked', launchGuard.blockers.join(', ')),
+      validation: { ok: false, issues: ['desktop_bridge_launch_guard_blocked'] },
       stdout_tail: '',
       stderr_tail: '',
       timed_out: false,
       exit_code: null,
-      codex_lb_tool_output_recovery: toolOutputRecovery
+      desktop_bridge_launch_guard: launchGuard
     };
   }
   const availability = await detectCodexExecResumeOutputSchema({ codexBin: opts.codexBin || undefined });
@@ -281,7 +282,7 @@ export async function runCodexExecResumeWithOutputSchema(
       stderr_tail: '',
       timed_out: false,
       exit_code: null,
-      codex_lb_tool_output_recovery: toolOutputRecovery
+      desktop_bridge_launch_guard: launchGuard
     };
   }
 
@@ -320,7 +321,7 @@ export async function runCodexExecResumeWithOutputSchema(
     stderr_tail: redactCodexOutput(result.stderr).slice(-12_000),
     timed_out: result.timedOut,
     exit_code: result.code,
-    codex_lb_tool_output_recovery: toolOutputRecovery
+    desktop_bridge_launch_guard: launchGuard
   };
 }
 

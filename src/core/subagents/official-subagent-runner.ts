@@ -8,7 +8,10 @@ import {
   NARUTO_PARENT_EFFORT,
   NARUTO_PARENT_MODEL
 } from './model-policy.js'
-import { inspectCodexLbCliLaunchRecovery } from '../codex-control/codex-lb-launch-recovery.js'
+import {
+  inspectDesktopBridgeCliLaunchGuard,
+  stripRetiredDirectProviderEnv
+} from '../codex-control/desktop-bridge-launch-guard.js'
 import { prepareCodexAppServerRuntimeEnv } from '../codex-control/codex-app-server-runtime-env.js'
 import { probeNarutoCodexCapability } from '../codex-compat/codex-capability-matrix.js'
 import { resolveOfficialCodexPackageRuntime } from '../codex-runtime/resolve-codex-runtime.js'
@@ -117,8 +120,6 @@ export interface OfficialSubagentWorkflowInput {
   env?: NodeJS.ProcessEnv
   runProcessImpl?: typeof runProcess
   prepareCodexRuntimeEnvImpl?: typeof prepareCodexAppServerRuntimeEnv
-  recoveryFetch?: typeof fetch
-  recoveryTimeoutMs?: number
   oauthCallbackDiagnosticRunner?: OAuthCallbackDiagnosticRunner
   onChildSpawn?: (pid: number) => void | Promise<void>
   hostCapabilityDependencies?: HostCapabilityRuntimeDependencies
@@ -461,27 +462,12 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
     hostCapabilityLaunchNonce = randomId(32)
     hostCapabilityPendingDir = officialSubagentMissionDir(canonicalRoot, input.missionId)
   }
-  const sourceEnv = { ...process.env, ...(input.env || {}) }
-  const runtimeEnv = input.credentialPolicy?.authMode === 'managed'
+  const sourceEnv = stripRetiredDirectProviderEnv({ ...process.env, ...(input.env || {}) })
+  const preparedRuntimeEnv = input.credentialPolicy?.authMode === 'managed'
     ? sourceEnv
     : await (input.prepareCodexRuntimeEnvImpl || prepareCodexAppServerRuntimeEnv)({ env: sourceEnv })
-  const codexLbCliSelected = Boolean(runtimeEnv.CODEX_LB_API_KEY && runtimeEnv.CODEX_LB_BASE_URL)
-  const resolvedCredentialPolicy = input.credentialPolicy ?? (codexLbCliSelected
-    ? resolveNarutoCredentialPolicy({
-        args: ['--auth-mode=host', '--model-provider=codex-lb', '--provider-env-key=CODEX_LB_API_KEY'],
-        env: runtimeEnv,
-        defaultParentModel: NARUTO_PARENT_MODEL,
-        defaultParentEffort: NARUTO_PARENT_EFFORT,
-        defaultSubagentModel: DEFAULT_SUBAGENT_MODEL,
-        defaultSubagentEffort: DEFAULT_SUBAGENT_EFFORT
-      })
-    : defaultNarutoCredentialPolicy())
-  const credentialPolicy: NarutoCredentialPolicy = codexLbCliSelected
-    && resolvedCredentialPolicy.authMode === 'host'
-    && resolvedCredentialPolicy.modelProvider === null
-    && resolvedCredentialPolicy.providerEnvKey === null
-    ? { ...resolvedCredentialPolicy, providerEnvKey: 'CODEX_LB_API_KEY' }
-    : resolvedCredentialPolicy
+  const runtimeEnv = stripRetiredDirectProviderEnv(preparedRuntimeEnv)
+  const credentialPolicy: NarutoCredentialPolicy = input.credentialPolicy ?? defaultNarutoCredentialPolicy()
   const inheritedSecretValues = knownInheritedSecretValues(runtimeEnv)
   const childEnv = buildOfficialSubagentChildEnv({
     env: runtimeEnv,
@@ -598,27 +584,25 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
     hostCapabilityConfigArgs: hostCapabilityCodexConfigArgs(hostCapabilityRuntime),
     credentialPolicy
   })
-  const toolOutputRecovery = await inspectCodexLbCliLaunchRecovery({
+  const launchGuard = await inspectDesktopBridgeCliLaunchGuard({
     root: input.root,
     env: childEnv,
-    cliArgs: args.slice(0, -1),
-    ...(input.recoveryFetch ? { fetchImpl: input.recoveryFetch } : {}),
-    ...(input.recoveryTimeoutMs === undefined ? {} : { timeoutMs: input.recoveryTimeoutMs })
+    cliArgs: args.slice(0, -1)
   })
-  if (!toolOutputRecovery.ok) {
+  if (!launchGuard.ok) {
     return {
       ...base,
       ok: false,
-      status: 'tool_output_recovery_blocked',
+      status: 'desktop_bridge_launch_guard_blocked',
       prepared: false,
       codex_exit_code: null,
       parent_summary: null,
       parent_summary_file: null,
       host_capability_runtime: hostCapabilityRuntime,
       host_capability_evidence: hostCapabilityCollector.finish(),
-      tool_output_recovery: toolOutputRecovery,
-      blockers: toolOutputRecovery.blockers,
-      operator_actions: toolOutputRecovery.operator_actions,
+      desktop_bridge_launch_guard: launchGuard,
+      blockers: launchGuard.blockers,
+      operator_actions: launchGuard.operator_actions,
       completion_evidence: false
     }
   }
@@ -642,7 +626,7 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
         parent_summary_file: null,
         host_capability_runtime: hostCapabilityRuntime,
         host_capability_evidence: hostCapabilityCollector.finish(),
-        tool_output_recovery: toolOutputRecovery,
+        desktop_bridge_launch_guard: launchGuard,
         blockers: ['host_capability_pending_runtime_write_failed'],
         completion_evidence: false
       }
@@ -722,7 +706,7 @@ export async function runOfficialSubagentWorkflow(input: OfficialSubagentWorkflo
     oauth_callback_port_diagnostic: oauthCallbackPortDiagnostic,
     host_capability_runtime: hostCapabilityRuntime,
     host_capability_evidence: hostCapabilityEvidence,
-    tool_output_recovery: toolOutputRecovery,
+    desktop_bridge_launch_guard: launchGuard,
     process: {
       pid: processResult.pid || null,
       timed_out: processResult.timedOut,

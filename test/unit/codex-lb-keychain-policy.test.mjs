@@ -27,5 +27,6 @@ test('codex-lb env loader reports an honest missing key without using Keychain',
   assert.equal(result.api_key.redacted, true);
   assert.equal(result.secret_api_key, null);
   assert.ok(result.credential_binding.blockers.includes('codex_lb_api_key_missing'));
-  assert.match(result.guidance.join('\n'), /sks codex-lb setup/);
+  assert.match(result.guidance.join('\n'), /sks bridge provider configure codex-lb --host <host> --api-key-stdin --json/);
+  assert.doesNotMatch(result.guidance.join('\n'), /sks codex-lb setup/);
 });

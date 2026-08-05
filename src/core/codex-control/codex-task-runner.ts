@@ -1,7 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { appendJsonlBounded, ensureDir, nowIso, packageRoot, writeJsonAtomic } from '../fsx.js'
-import { writeCodexConfigGuarded } from '../codex/codex-config-guard.js'
 import { validateJsonSchemaRecursive } from '../json-schema-validator.js'
 import type { CodexTaskInput, CodexTaskResult } from './codex-control-plane.js'
 import { resolveCodexOutputSchema } from './codex-output-schemas.js'
@@ -19,7 +18,10 @@ import { readLocalModelConfig } from '../agents/ollama-worker-config.js'
 import { runLocalLlmTask } from '../local-llm/local-llm-control-adapter.js'
 import { detectPythonCodexSdkCapability, runPythonCodexSdkTask } from './python-codex-sdk-adapter.js'
 import { defaultModelCallBudget, withModelCallSlot } from './model-call-concurrency.js'
-import { inspectCodexLbSdkLaunchRecovery } from './codex-lb-launch-recovery.js'
+import {
+  inspectDesktopBridgeSdkLaunchGuard,
+  stripRetiredDirectProviderEnv
+} from './desktop-bridge-launch-guard.js'
 import { prepareNativeCodexAuthBridge } from './codex-sdk-env-policy.js'
 
 export async function runCodexTask(input: CodexTaskInput): Promise<CodexTaskResult & Record<string, unknown>> {
@@ -35,6 +37,7 @@ export async function runCodexTask(input: CodexTaskInput): Promise<CodexTaskResu
   const capability = await detectCodexSdkCapability()
   const sandbox = mapCodexSdkSandboxPolicy(task)
   const runtime = codexSdkRuntimePolicies(task)
+  runtime.env.env = stripRetiredDirectProviderEnv(runtime.env.env) as Record<string, string>
   const bundledCodex = resolveBundledCodexBinary()
   if (bundledCodex && !runtime.env.env.SKS_PYTHON_CODEX_SDK_CODEX_BIN) runtime.env.env.SKS_PYTHON_CODEX_SDK_CODEX_BIN = bundledCodex
   if (runtime.env.env.HOME) await ensureDir(runtime.env.env.HOME)
@@ -45,17 +48,15 @@ export async function runCodexTask(input: CodexTaskInput): Promise<CodexTaskResu
     runtime.env.proof.home = runtime.env.env.HOME
     runtime.env.proof.codex_home = runtime.env.env.CODEX_HOME
   }
-  const codexLbToolOutputRecovery = await inspectCodexLbSdkLaunchRecovery({
+  const desktopBridgeLaunchGuard = inspectDesktopBridgeSdkLaunchGuard({
     config: runtime.config,
-    env: runtime.env.env,
-    overrideEnv: process.env
+    env: runtime.env.env
   })
-  if (codexLbToolOutputRecovery.ok) await ensurePythonCodexLbConfig(runtime.env.env, runtime.config)
   const blockers = [
     ...(capability.ok || fakeAllowed ? [] : capability.blockers),
     ...(sandbox.ok ? [] : sandbox.blockers),
     ...(nativeCodexAuthBridge.ok ? [] : nativeCodexAuthBridge.blockers),
-    ...(codexLbToolOutputRecovery.ok ? [] : codexLbToolOutputRecovery.blockers)
+    ...(desktopBridgeLaunchGuard.ok ? [] : desktopBridgeLaunchGuard.blockers)
   ]
   let adapterResult: any = null
   let nativeAuthCleanupBlockers: string[] = []
@@ -145,7 +146,7 @@ export async function runCodexTask(input: CodexTaskInput): Promise<CodexTaskResu
     workerResultPath,
     patchEnvelopePath,
     blockers: finalBlockers,
-    codexLbToolOutputRecovery,
+    desktop_bridge_launch_guard: desktopBridgeLaunchGuard,
     reliabilityShield: adapterResult?.reliabilityShield || null,
     capacityFallback: adapterResult?.reliabilityShield?.selected_model_capacity_fallback === true,
     modelCapacityRetryCount: Number(adapterResult?.reliabilityShield?.model_capacity_retry_count || 0),
@@ -181,7 +182,7 @@ export async function runCodexTask(input: CodexTaskInput): Promise<CodexTaskResu
       capacity_fallback_selected: result.capacityFallback === true,
       model_capacity_retry_count: result.modelCapacityRetryCount,
       native_codex_auth_bridge: nativeCodexAuthBridge.proof,
-      codex_lb_tool_output_recovery: codexLbToolOutputRecovery
+      desktop_bridge_launch_guard: desktopBridgeLaunchGuard
     },
     config: runtime.config,
     reliabilityShield: adapterResult?.reliabilityShield || null,
@@ -194,6 +195,7 @@ export async function runCodexTask(input: CodexTaskInput): Promise<CodexTaskResu
 async function runPythonControlTask(root: string, task: CodexTaskInput, schema: Record<string, unknown>, routerDecision: unknown) {
   const capability = await detectPythonCodexSdkCapability()
   const runtime = codexSdkRuntimePolicies(task)
+  runtime.env.env = stripRetiredDirectProviderEnv(runtime.env.env) as Record<string, string>
   if (runtime.env.env.HOME) await ensureDir(runtime.env.env.HOME)
   if (runtime.env.env.CODEX_HOME) await ensureDir(runtime.env.env.CODEX_HOME)
   const fakeAllowed = process.env.SKS_PYTHON_CODEX_SDK_FAKE === '1'
@@ -202,15 +204,14 @@ async function runPythonControlTask(root: string, task: CodexTaskInput, schema: 
     runtime.env.proof.home = runtime.env.env.HOME
     runtime.env.proof.codex_home = runtime.env.env.CODEX_HOME
   }
-  const codexLbToolOutputRecovery = await inspectCodexLbSdkLaunchRecovery({
+  const desktopBridgeLaunchGuard = inspectDesktopBridgeSdkLaunchGuard({
     config: runtime.config,
-    env: runtime.env.env,
-    overrideEnv: process.env
+    env: runtime.env.env
   })
   let adapterResult: any
   let nativeAuthCleanupBlockers: string[] = []
   try {
-    adapterResult = codexLbToolOutputRecovery.ok && nativeCodexAuthBridge.ok && (capability.ok || fakeAllowed)
+    adapterResult = desktopBridgeLaunchGuard.ok && nativeCodexAuthBridge.ok && (capability.ok || fakeAllowed)
       ? await withModelCallSlot({
         root,
         missionId: task.missionId,
@@ -229,7 +230,7 @@ async function runPythonControlTask(root: string, task: CodexTaskInput, schema: 
           threadId: '',
           turnId: '',
           blockers: [
-            ...(codexLbToolOutputRecovery.ok ? [] : codexLbToolOutputRecovery.blockers),
+            ...(desktopBridgeLaunchGuard.ok ? [] : desktopBridgeLaunchGuard.blockers),
             ...(nativeCodexAuthBridge.ok ? [] : nativeCodexAuthBridge.blockers),
             ...(capability.ok || fakeAllowed ? [] : capability.blockers)
           ],
@@ -287,7 +288,7 @@ async function runPythonControlTask(root: string, task: CodexTaskInput, schema: 
     structured_output_valid: validation.ok,
     worker_result_path: workerResultPath,
     native_codex_auth_bridge: nativeCodexAuthBridge.proof,
-    codex_lb_tool_output_recovery: codexLbToolOutputRecovery,
+    desktop_bridge_launch_guard: desktopBridgeLaunchGuard,
     blockers: finalBlockers
   })
   const result: CodexTaskResult & Record<string, unknown> = {
@@ -302,7 +303,7 @@ async function runPythonControlTask(root: string, task: CodexTaskInput, schema: 
     patchEnvelopePath,
     pythonSdkProofPath,
     blockers: finalBlockers,
-    codexLbToolOutputRecovery,
+    desktop_bridge_launch_guard: desktopBridgeLaunchGuard,
     reliabilityShield: {},
     ultraRouterDecision: routerDecision as Record<string, unknown>,
     outputSchemaId: task.outputSchemaId,
@@ -336,7 +337,7 @@ async function runPythonControlTask(root: string, task: CodexTaskInput, schema: 
       python_bin: capability.python_bin,
       python_version: capability.python_version,
       native_codex_auth_bridge: nativeCodexAuthBridge.proof,
-      codex_lb_tool_output_recovery: codexLbToolOutputRecovery
+      desktop_bridge_launch_guard: desktopBridgeLaunchGuard
     },
     config: { ...runtime.config, backend: 'python-codex-sdk', package_name: capability.package_name, import_name: capability.import_name },
     reliabilityShield: null,
@@ -529,7 +530,7 @@ function isRunFailureBlocker(blockers: readonly unknown[]): boolean {
       || text.startsWith('native_codex_auth_cleanup_failed')
       || text.startsWith('local_llm_generate_failed')
       || text.startsWith('local_llm_eligibility_blocked')
-      || text.startsWith('codex_lb_tool_output_recovery_')
+      || text.startsWith('desktop_bridge_launch_')
       || text.endsWith('_adapter_reported_failure')
       || text === 'codex_reliability_shield_failed'
       || text === 'codex_reliability_fatal_error_no_retry'
@@ -570,47 +571,6 @@ function parseStructuredOutput(text: string) {
     }
     return null
   }
-}
-
-async function ensurePythonCodexLbConfig(env: Record<string, string>, config: Record<string, unknown>) {
-  const codexHome = env.CODEX_HOME
-  const lbBaseUrl = normalizeCodexLbBaseUrl(env.CODEX_LB_BASE_URL)
-  if (!codexHome || !lbBaseUrl || !env.CODEX_LB_API_KEY) return
-  const model = String(config.model || env.SKS_CODEX_MODEL || env.CODEX_MODEL || '').trim()
-  const text = [
-    ...(model ? [`model = ${tomlQuote(model)}`] : []),
-    'model_provider = "codex-lb"',
-    'service_tier = "fast"',
-    `model_reasoning_effort = ${tomlQuote(String(config.model_reasoning_effort || env.SKS_CODEX_REASONING || env.CODEX_MODEL_REASONING_EFFORT || 'minimal'))}`,
-    'approval_policy = "never"',
-    '',
-    '[model_providers.codex-lb]',
-    'name = "codex-lb"',
-    `base_url = ${tomlQuote(lbBaseUrl)}`,
-    'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
-    'supports_websockets = true',
-    'requires_openai_auth = false',
-    ''
-  ].join('\n')
-  const configPath = path.join(codexHome, 'config.toml')
-  await writeCodexConfigGuarded({
-    configPath,
-    cause: 'python-codex-lb-config',
-    mutate: () => text
-  })
-}
-
-function normalizeCodexLbBaseUrl(value: unknown) {
-  let host = String(value || '').trim()
-  if (!host) return ''
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(host)) host = `https://${host}`
-  host = host.replace(/\/+$/, '')
-  return /\/backend-api\/codex$/i.test(host) ? host : `${host}/backend-api/codex`
-}
-
-function tomlQuote(value: string) {
-  return JSON.stringify(value)
 }
 
 function resolveBundledCodexBinary() {

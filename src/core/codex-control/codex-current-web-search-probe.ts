@@ -12,7 +12,6 @@ export async function runCodexCurrentCoreWebSearchRealProbe(input: {
   timeoutMs?: number
   codexBin?: string | null
   env?: NodeJS.ProcessEnv
-  recoveryFetch?: typeof fetch
   runProcessImpl?: typeof runProcess
 }): Promise<CodexCurrentCoreSingleProbe> {
   const started = Date.now()
@@ -42,7 +41,6 @@ export async function runCodexCurrentCoreWebSearchRealProbe(input: {
     stderrFile: path.join(tempDir, 'codex.stderr.log'),
     codexBin,
     env: runtimeEnv,
-    ...(typeof input.recoveryFetch === 'function' ? { recoveryFetch: input.recoveryFetch } : {}),
     ...(typeof input.runProcessImpl === 'function' ? { runProcessImpl: input.runProcessImpl } : {})
   }).catch((err: any) => ({
     code: 1,
@@ -85,11 +83,11 @@ export async function runCodexCurrentCoreWebSearchRealProbe(input: {
       process_exited_successfully: processExitedSuccessfully,
       process_warning: processExitedSuccessfully ? null : 'Codex emitted web-search evidence before process timeout/nonzero exit.',
       output_file: outputFile,
-      codex_lb_tool_output_recovery: (result as any).codexLbToolOutputRecovery || null
+      desktop_bridge_launch_guard: (result as any).desktop_bridge_launch_guard || null
     },
     blockers: ok ? [] : [
       ...(processExitedSuccessfully ? [] : ['codex_web_search_process_failed_or_timed_out']),
-      ...((result as any).codexLbToolOutputRecovery?.blockers || []),
+      ...((result as any).desktop_bridge_launch_guard?.blockers || []),
       ...(!sawPlaintextResult || !resultContainsExpectedMarker ? ['codex_web_search_real_probe_failed'] : [])
     ]
   }
