@@ -283,9 +283,8 @@ export async function readOfficialSubagentConfig(
     DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS,
     positiveInteger
   )
-  // Keep downstream arithmetic bounded even for an invalid file, but the
-  // config-layer blocker below makes the explicit over-cap intent a hard
-  // admission failure instead of accepting a silently rewritten value.
+  // Repository/user configuration is a preference, so valid over-cap values
+  // normalize to the SKS structural ceiling. Invalid values remain blockers.
   const effectiveMaxThreads = Math.min(maxThreads.value, HARD_NARUTO_MAX_THREADS)
   const maxDepth = resolveLayeredValue(
     projectLayer.agents.max_depth,
@@ -316,10 +315,18 @@ export async function readOfficialSubagentConfig(
     globalLayer.features.multi_agent_v2,
     effectiveMaxThreads
   )
+  const effectiveMultiAgentV2 = {
+    ...multiAgentV2.value,
+    maxConcurrentThreadsPerSession: Math.min(
+      multiAgentV2.value.maxConcurrentThreadsPerSession,
+      HARD_NARUTO_MAX_THREADS + 1
+    )
+  }
 
   const depthCoerced = maxDepth.value > 1
   const warnings = [
     ...(depthCoerced ? [`official_subagent_max_depth_coerced_to_one:${maxDepth.value}:${maxDepth.source}`] : []),
+    ...capacityNormalizationWarnings(maxThreads, multiAgentV2),
     ...(projectLayer.legacyWarnings),
     ...(globalLayer.legacyWarnings)
   ]
@@ -332,7 +339,7 @@ export async function readOfficialSubagentConfig(
     interruptMessage: interruptMessage.value,
     defaultSubagentModel: defaultSubagentModel.value,
     defaultSubagentReasoningEffort: defaultSubagentReasoningEffort.value,
-    multiAgentV2: multiAgentV2.value,
+    multiAgentV2: effectiveMultiAgentV2,
     sources: {
       enabled: enabled.source,
       maxThreads: maxThreads.source,
@@ -353,6 +360,18 @@ export function officialSubagentConfigWarnings(text: string = '', inheritedText:
   const project = configLayer(text, 'project')
   const inherited = configLayer(inheritedText, 'global')
   if (project.blockers.length || inherited.blockers.length) return []
+  const maxThreads = resolveLayeredValue(
+    readAgentsMaxThreadsFromRecord(project.agents),
+    readAgentsMaxThreadsFromRecord(inherited.agents),
+    DEFAULT_OFFICIAL_SUBAGENT_MAX_THREADS,
+    positiveInteger
+  )
+  const effectiveMaxThreads = Math.min(maxThreads.value, HARD_NARUTO_MAX_THREADS)
+  const multiAgentV2 = resolveMultiAgentV2Layer(
+    project.features.multi_agent_v2,
+    inherited.features.multi_agent_v2,
+    effectiveMaxThreads
+  )
   const maxDepth = resolveLayeredValue(
     project.agents.max_depth,
     inherited.agents.max_depth,
@@ -363,6 +382,7 @@ export function officialSubagentConfigWarnings(text: string = '', inheritedText:
     ...(maxDepth.value > 1
       ? [`official_subagent_max_depth_coerced_to_one:${maxDepth.value}:${maxDepth.source}`]
       : []),
+    ...capacityNormalizationWarnings(maxThreads, multiAgentV2),
     ...project.legacyWarnings,
     ...inherited.legacyWarnings
   ]
@@ -587,16 +607,8 @@ function configLayer(text: string, label: 'project' | 'global') {
       ...(configuredMaxThreads !== undefined && positiveInteger(configuredMaxThreads) === null
         ? [`${label}_official_subagent_max_threads_invalid`]
         : []),
-      ...(positiveInteger(configuredMaxThreads) !== null
-        && Number(configuredMaxThreads) > HARD_NARUTO_MAX_THREADS
-        ? [`${label}_official_subagent_max_threads_exceeds_hard_cap:${configuredMaxThreads}:${HARD_NARUTO_MAX_THREADS}`]
-        : []),
       ...(configuredV2Threads !== undefined && positiveInteger(configuredV2Threads) === null
         ? [`${label}_official_subagent_multi_agent_v2_max_threads_invalid`]
-        : []),
-      ...(positiveInteger(configuredV2Threads) !== null
-        && Number(configuredV2Threads) > HARD_NARUTO_MAX_THREADS + 1
-        ? [`${label}_official_subagent_multi_agent_v2_max_threads_exceeds_hard_cap:${configuredV2Threads}:${HARD_NARUTO_MAX_THREADS + 1}`]
         : [])
     ],
     legacyWarnings
@@ -621,6 +633,30 @@ function resolveMultiAgentV2Layer(
   const global = normalizeMultiAgentV2(globalValue, fallback)
   if (global) return { value: global, source: 'global' }
   return { value: fallback, source: 'default' }
+}
+
+function capacityNormalizationWarnings(
+  maxThreads: { value: number; source: 'project' | 'global' | 'default' },
+  multiAgentV2: {
+    value: OfficialSubagentConfig['multiAgentV2']
+    source: 'project' | 'global' | 'default'
+  }
+): string[] {
+  return [
+    ...(maxThreads.value > HARD_NARUTO_MAX_THREADS
+      ? [
+          `official_subagent_max_threads_normalized:configured=${maxThreads.value}`
+          + `:effective=${HARD_NARUTO_MAX_THREADS}:source=${maxThreads.source}`
+        ]
+      : []),
+    ...(multiAgentV2.value.maxConcurrentThreadsPerSession > HARD_NARUTO_MAX_THREADS + 1
+      ? [
+          'official_subagent_multi_agent_v2_max_threads_normalized'
+          + `:configured=${multiAgentV2.value.maxConcurrentThreadsPerSession}`
+          + `:effective=${HARD_NARUTO_MAX_THREADS + 1}:source=${multiAgentV2.source}`
+        ]
+      : [])
+  ]
 }
 
 function normalizeMultiAgentV2(

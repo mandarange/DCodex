@@ -9,7 +9,7 @@ import {
 } from '../official-subagent-runner.js'
 import { readOfficialSubagentConfig } from '../official-subagent-config.js'
 import { HARD_NARUTO_MAX_THREADS } from '../thread-budget.js'
-import { writeNarutoGate } from '../official-subagent-preparation.js'
+import { prepareOfficialSubagentMission, writeNarutoGate } from '../official-subagent-preparation.js'
 import { trustedHostCapabilityReceiptBindingBlockers } from '../subagent-evidence.js'
 import { addMcpServer, editMcpServer } from '../../mcp-config/mutation.js'
 import type { CodexCliMutationOperation, CodexMcpCliPort } from '../../mcp-config/codex-cli-adapter.js'
@@ -1870,31 +1870,59 @@ test('standalone parent passes a large fan-out frame budget through to the Codex
   }
 })
 
-test('official subagent config accepts frame budgets up to the hard cap and blocks explicit over-cap values', async (t) => {
+test('official subagent preparation admits an eight-child request after normalizing over-cap project preferences', async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-official-config-hard-cap-'))
   t.after(async () => fsp.rm(root, { recursive: true, force: true }))
   const codexHome = path.join(root, 'home', '.codex')
+  const missionDir = path.join(root, '.sneakoscope', 'missions', 'M-over-cap-config')
   await fsp.mkdir(path.join(root, '.codex'), { recursive: true })
   await fsp.mkdir(codexHome, { recursive: true })
+  await fsp.mkdir(missionDir, { recursive: true })
   const projectConfigPath = path.join(root, '.codex', 'config.toml')
 
-  const beyondHardCap = HARD_NARUTO_MAX_THREADS + 100
-  await fsp.writeFile(projectConfigPath, `[agents]\nmax_concurrent_threads_per_session = ${beyondHardCap}\n`)
+  const beyondHardCap = 1000
+  const source = [
+    '[agents]',
+    `max_concurrent_threads_per_session = ${beyondHardCap}`,
+    '',
+    '[features.multi_agent_v2]',
+    `max_concurrent_threads_per_session = ${beyondHardCap}`,
+    ''
+  ].join('\n')
+  await fsp.writeFile(projectConfigPath, source)
   const coerced = await readOfficialSubagentConfig(root, { codexHome })
   assert.equal(coerced.maxThreads, HARD_NARUTO_MAX_THREADS)
   assert.equal(coerced.sources.maxThreads, 'project')
-  assert.ok(coerced.blockers.includes(
-    `project_official_subagent_max_threads_exceeds_hard_cap:${beyondHardCap}:${HARD_NARUTO_MAX_THREADS}`
-  ))
-  assert.deepEqual(coerced.warnings, [])
+  assert.deepEqual(coerced.blockers, [])
+  assert.deepEqual(coerced.warnings, [
+    `official_subagent_max_threads_normalized:configured=${beyondHardCap}:effective=${HARD_NARUTO_MAX_THREADS}:source=project`,
+    `official_subagent_multi_agent_v2_max_threads_normalized:configured=${beyondHardCap}:effective=${HARD_NARUTO_MAX_THREADS + 1}:source=project`
+  ])
   assert.equal(coerced.multiAgentV2.maxConcurrentThreadsPerSession, HARD_NARUTO_MAX_THREADS + 1)
+  assert.equal(await fsp.readFile(projectConfigPath, 'utf8'), source)
 
-  await fsp.writeFile(projectConfigPath, `[agents]\nmax_concurrent_threads_per_session = ${HARD_NARUTO_MAX_THREADS}\n`)
-  const atCap = await readOfficialSubagentConfig(root, { codexHome })
-  assert.equal(atCap.maxThreads, HARD_NARUTO_MAX_THREADS)
-  assert.equal(atCap.sources.maxThreads, 'project')
-  assert.deepEqual(atCap.warnings, [])
-  assert.equal(atCap.multiAgentV2.maxConcurrentThreadsPerSession, HARD_NARUTO_MAX_THREADS + 1)
+  const prepared = await prepareOfficialSubagentMission({
+    root,
+    dir: missionDir,
+    missionId: 'M-over-cap-config',
+    goal: 'implement eight independent bounded slices',
+    route: '$Naruto',
+    requestedSubagents: 8,
+    requestedSubagentsExplicit: true,
+    mode: 'naruto',
+    preparationOnly: true,
+    capacity: { activeThreadCount: 0 }
+  })
+  assert.equal(prepared.budget.maxThreads, HARD_NARUTO_MAX_THREADS)
+  assert.equal(prepared.budget.requestedSubagents, 8)
+  assert.equal(prepared.budget.firstWave, 8)
+  assert.equal(prepared.budget.capacity.reservations.active_threads, 0)
+  assert.equal(prepared.plan.config_source, 'project')
+  assert.equal(prepared.plan.config_blockers.some((blocker: string) => (
+    blocker.includes('official_subagent_max_threads')
+    || blocker.includes('official_subagent_multi_agent_v2_max_threads')
+  )), false)
+  assert.equal(await fsp.readFile(projectConfigPath, 'utf8'), source)
 })
 
 test('standalone parent registers the child PID before waiting and exposes a bounded registration blocker', async () => {

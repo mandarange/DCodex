@@ -22,8 +22,10 @@ import {
   installOfficialSubagentAgentConfigs,
   mergeOfficialSubagentConfig,
   officialSubagentConfigOwnershipProof,
+  officialSubagentConfigWarnings,
   readOfficialSubagentConfig
 } from '../official-subagent-config.js'
+import { resolveSubagentThreadBudget } from '../thread-budget.js'
 import {
   buildOfficialSubagentCodexArgs,
   buildOfficialSubagentChildEnv,
@@ -194,35 +196,131 @@ test('project and inherited user concurrency values are preserved', () => {
   }
 })
 
-test('official config accepts 256 child slots and blocks 257 without silently clamping intent', async () => {
+test('official config normalizes valid over-cap project and inherited preferences without changing source bytes', async () => {
   const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-official-config-hard-cap-'))
   const root = path.join(fixture, 'project')
   const codexHome = path.join(fixture, 'codex-home')
   const configPath = path.join(root, '.codex', 'config.toml')
+  const globalConfigPath = path.join(codexHome, 'config.toml')
   await fs.mkdir(path.dirname(configPath), { recursive: true })
+  await fs.mkdir(codexHome, { recursive: true })
 
-  await fs.writeFile(configPath, [
+  const atCapSource = [
     '[agents]',
     'max_concurrent_threads_per_session = 256',
     '',
     '[features.multi_agent_v2]',
     'enabled = true',
     'max_concurrent_threads_per_session = 257'
-  ].join('\n'))
+  ].join('\n')
+  await fs.writeFile(configPath, atCapSource)
   const accepted = await readOfficialSubagentConfig(root, { codexHome })
   assert.equal(accepted.maxThreads, 256)
   assert.equal(accepted.multiAgentV2.maxConcurrentThreadsPerSession, 257)
   assert.deepEqual(accepted.blockers, [])
+  assert.deepEqual(accepted.warnings, [])
 
-  await fs.writeFile(configPath, '[agents]\nmax_concurrent_threads_per_session = 257\n')
-  const rejected = await readOfficialSubagentConfig(root, { codexHome })
-  assert.equal(rejected.maxThreads, 256)
-  assert.ok(rejected.blockers.includes('project_official_subagent_max_threads_exceeds_hard_cap:257:256'))
+  const oversizedProjectSource = [
+    '[agents]',
+    'max_concurrent_threads_per_session = 1000',
+    '',
+    '[features.multi_agent_v2]',
+    'enabled = true',
+    'max_concurrent_threads_per_session = 1000',
+    ''
+  ].join('\n')
+  await fs.writeFile(configPath, oversizedProjectSource)
+  const project = await readOfficialSubagentConfig(root, { codexHome })
+  assert.equal(project.maxThreads, 256)
+  assert.equal(project.multiAgentV2.maxConcurrentThreadsPerSession, 257)
+  assert.deepEqual(project.blockers, [])
+  assert.deepEqual(project.warnings, [
+    'official_subagent_max_threads_normalized:configured=1000:effective=256:source=project',
+    'official_subagent_multi_agent_v2_max_threads_normalized:configured=1000:effective=257:source=project'
+  ])
+  assert.deepEqual(officialSubagentConfigWarnings(oversizedProjectSource), project.warnings)
+  assert.equal(await fs.readFile(configPath, 'utf8'), oversizedProjectSource)
+  const projectBudget = resolveSubagentThreadBudget({
+    requested: 8,
+    configuredMaxThreads: project.maxThreads,
+    activeThreadCount: 0
+  })
+  assert.equal(projectBudget.firstWave, 8)
+  assert.equal(projectBudget.capacity.available_thread_slots, 256)
+  const activeLimitedBudget = resolveSubagentThreadBudget({
+    requested: 8,
+    configuredMaxThreads: project.maxThreads,
+    activeThreadCount: 255
+  })
+  assert.equal(activeLimitedBudget.firstWave, 1)
+  assert.equal(activeLimitedBudget.capacity.available_thread_slots, 1)
+  const hostLimitedBudget = resolveSubagentThreadBudget({
+    requested: 8,
+    configuredMaxThreads: project.maxThreads,
+    activeThreadCount: 0,
+    externalCodexHostCap: 3
+  })
+  assert.equal(hostLimitedBudget.firstWave, 3)
+  assert.ok(hostLimitedBudget.capacity.limiting_factors.includes('external_codex_host_cap'))
+
+  await fs.rm(configPath)
+  const oversizedGlobalSource = oversizedProjectSource
+  await fs.writeFile(globalConfigPath, oversizedGlobalSource)
+  const inherited = await readOfficialSubagentConfig(root, { codexHome })
+  assert.equal(inherited.maxThreads, 256)
+  assert.equal(inherited.sources.maxThreads, 'global')
+  assert.equal(inherited.multiAgentV2.maxConcurrentThreadsPerSession, 257)
+  assert.equal(inherited.sources.multiAgentV2, 'global')
+  assert.deepEqual(inherited.blockers, [])
+  assert.deepEqual(inherited.warnings, [
+    'official_subagent_max_threads_normalized:configured=1000:effective=256:source=global',
+    'official_subagent_multi_agent_v2_max_threads_normalized:configured=1000:effective=257:source=global'
+  ])
+  assert.deepEqual(officialSubagentConfigWarnings('', oversizedGlobalSource), inherited.warnings)
+  assert.equal(await fs.readFile(globalConfigPath, 'utf8'), oversizedGlobalSource)
+  const inheritedBudget = resolveSubagentThreadBudget({
+    requested: 8,
+    configuredMaxThreads: inherited.maxThreads,
+    activeThreadCount: 0
+  })
+  assert.equal(inheritedBudget.firstWave, 8)
+  assert.equal(inheritedBudget.capacity.available_thread_slots, 256)
 
   assert.throws(
     () => mergeOfficialSubagentConfig('', { defaultMaxThreads: 257 }),
     /max_threads_must_be_integer_1_to_256:257/
   )
+})
+
+test('official config still fails closed for invalid, nonpositive, and noninteger capacity values', async () => {
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-official-config-invalid-capacity-'))
+  const root = path.join(fixture, 'project')
+  const codexHome = path.join(fixture, 'codex-home')
+  const configPath = path.join(root, '.codex', 'config.toml')
+  await fs.mkdir(path.dirname(configPath), { recursive: true })
+
+  for (const value of ['0', '-1', '1.5', '"1000"']) {
+    await fs.writeFile(configPath, `[agents]\nmax_concurrent_threads_per_session = ${value}\n`)
+    const agents = await readOfficialSubagentConfig(root, { codexHome })
+    assert.ok(agents.blockers.includes('project_official_subagent_max_threads_invalid'), value)
+
+    await fs.writeFile(configPath, [
+      '[features.multi_agent_v2]',
+      `max_concurrent_threads_per_session = ${value}`,
+      ''
+    ].join('\n'))
+    const multiAgentV2 = await readOfficialSubagentConfig(root, { codexHome })
+    assert.ok(
+      multiAgentV2.blockers.includes('project_official_subagent_multi_agent_v2_max_threads_invalid'),
+      value
+    )
+  }
+
+  const invalidToml = '[agents\nmax_concurrent_threads_per_session = 1000\n'
+  await fs.writeFile(configPath, invalidToml)
+  const invalid = await readOfficialSubagentConfig(root, { codexHome })
+  assert.ok(invalid.blockers.includes('project_official_subagent_config_toml_parse_failed'))
+  assert.equal(await fs.readFile(configPath, 'utf8'), invalidToml)
 })
 
 test('legacy SKS-owned 4/5/6/12 defaults migrate only with proven ownership', () => {
