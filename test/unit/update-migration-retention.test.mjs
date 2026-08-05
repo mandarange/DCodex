@@ -70,8 +70,10 @@ test('project update migration receipt cleans disposable closed-mission runtime 
   const globalRoot = path.join(home, '.sneakoscope-global');
   const previousHome = process.env.HOME;
   const previousGlobalRoot = process.env.SKS_GLOBAL_ROOT;
+  const previousRetention = process.env.SKS_UPDATE_RETENTION_CLEANUP;
   process.env.HOME = home;
   process.env.SKS_GLOBAL_ROOT = globalRoot;
+  process.env.SKS_UPDATE_RETENTION_CLEANUP = '1';
   try {
     const { writeProjectUpdateMigrationReceipt } = await import('../../dist/core/update/update-migration-state.js');
     const mission = path.join(root, '.sneakoscope', 'missions', 'M-done');
@@ -103,6 +105,8 @@ test('project update migration receipt cleans disposable closed-mission runtime 
     else process.env.HOME = previousHome;
     if (previousGlobalRoot === undefined) delete process.env.SKS_GLOBAL_ROOT;
     else process.env.SKS_GLOBAL_ROOT = previousGlobalRoot;
+    if (previousRetention === undefined) delete process.env.SKS_UPDATE_RETENTION_CLEANUP;
+    else process.env.SKS_UPDATE_RETENTION_CLEANUP = previousRetention;
     await fs.rm(root, { recursive: true, force: true });
   }
 });

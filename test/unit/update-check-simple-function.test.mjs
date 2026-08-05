@@ -132,8 +132,21 @@ process.exit(1);
 `);
   await fs.chmod(fakeNpm, 0o755);
   const globalPackageRoot = path.join(tmp, 'node_modules', 'sneakoscope');
-  await fs.mkdir(path.dirname(globalPackageRoot), { recursive: true });
-  await fs.symlink(process.cwd(), globalPackageRoot, process.platform === 'win32' ? 'junction' : 'dir');
+  const installedEntrypoint = path.join(globalPackageRoot, 'dist', 'bin', 'sks.js');
+  await fs.mkdir(path.dirname(installedEntrypoint), { recursive: true });
+  await fs.writeFile(path.join(globalPackageRoot, 'package.json'), `${JSON.stringify({
+    name: 'sneakoscope',
+    version: packageVersion,
+    type: 'module',
+    bin: {
+      sks: 'dist/bin/sks.js',
+      sneakoscope: 'dist/bin/sks.js'
+    }
+  }, null, 2)}\n`);
+  await fs.writeFile(installedEntrypoint, `#!/usr/bin/env node
+process.stdout.write(${JSON.stringify(`sneakoscope ${packageVersion}\n`)});
+`);
+  await fs.chmod(installedEntrypoint, 0o755);
   const pathSks = path.join(tmp, 'sks');
   await fs.writeFile(pathSks, `#!${process.execPath}
 const fs = require('node:fs');
@@ -158,7 +171,7 @@ console.log(fs.readFileSync(${JSON.stringify(stateFile)}, 'utf8').trim());
       SKS_FAKE_NPM_ROOT: tmp,
       SKS_FAKE_STATE: stateFile,
       SKS_FAKE_PATH_SKS: pathSks,
-      SKS_FAKE_ENTRYPOINT: path.join(process.cwd(), 'dist', 'bin', 'sks.js'),
+      SKS_FAKE_ENTRYPOINT: installedEntrypoint,
       SKS_MUTATION_LEDGER_ROOT: tmp,
       SKS_TEST_DOCTOR_OK: '1',
       SKS_TEST_DOCTOR_EMIT_MIGRATION_RECEIPT: '1',
