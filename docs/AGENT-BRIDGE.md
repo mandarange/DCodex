@@ -175,7 +175,7 @@ or binary fallback.
     "manifest_schema": "sks.agent-manifest.v2",
     "proof_schema": "sks.naruto-subagent-workflow.v1",
     "host_capability_schema": "sks.host-capabilities.v1",
-    "package_version": "8.1.2"
+    "package_version": "8.1.3"
   },
   "host_capabilities": {
     "schema": "sks.host-capabilities.v1",
@@ -281,6 +281,21 @@ mission artifacts persist only its SHA-256 binding.
 Connection tokens, Center URLs, Supabase access tokens, provider API keys, Slack `*TOKEN`
 variables, `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`, and env-file path overrides are never
 copied into the child environment.
+
+## Desktop Bridge command contract
+
+Agent consumers that need managed Codex routing use the `bridge` command
+manifest entry. The command owns one local Desktop Bridge runtime and exposes
+profile, catalog, route, verification, unmanage, and receipt-based rollback
+operations. Codex-LB and OpenRouter are profiles in the command payload; they
+are not agent-visible runtime modes.
+
+Provider secrets are accepted only through the command's stdin path. Agent
+manifests and JSON results must contain no raw credential. A non-strict
+`bridge verify` result may have a completed execution with unmet readiness;
+agents must inspect both fields and must not infer deep verification from a
+transport report. The removed `sks codex-lb` name is absent from the manifest
+and returns `unknown_command` if invoked.
 
 ## Security notes
 

@@ -32,6 +32,15 @@ This page is the English product-facing projection of those decisions.
 - **Adapters (e.g. codex-lb):** must not rewrite host credentials/sessions or forge tool output.
 - **Installed harness:** immutable outside the engine repo except user-run `sks doctor --fix` and explicit install/update. Agents never run `sks doctor --fix`.
 
+## Desktop Bridge routing (8.1.3)
+
+- **One managed runtime:** SKS routes managed Codex Desktop and CLI traffic through one local Desktop Bridge. There are no competing provider or bridge modes.
+- **Profiles, not modes:** Codex-LB and OpenRouter are independent profiles. Both credentials may be configured, validated, enabled, and displayed at the same time; changing one cannot delete the other.
+- **Identity boundary:** ChatGPT OAuth remains Codex-owned. SKS preserves its semantic identity and does not forward its authorization to either provider upstream.
+- **Explicit routing:** the combined catalog's route index selects a provider and upstream model. Fallback is always `none`; missing and ambiguous routes fail explicitly.
+- **Configuration ownership:** only provably SKS-authored historical routing state is migrated. User-owned or ambiguous provider/catalog/base-URL state fails closed instead of being overwritten.
+- **Removal boundary:** `sks bridge unmanage --confirm` is an explicit unmanaged/rollback action, not a profile switch. The removed `sks codex-lb` command is unknown and has no alias.
+
 ## Codex compatibility SSOT
 
 - Compatibility SSOT is always **current latest stable**, measured by capability probes.
@@ -79,5 +88,6 @@ This page is the English product-facing projection of those decisions.
 - Trusted-project may default on for local personal repos under operator policy; users must not modify the installed SKS engine; Codex `config.toml` remains user-editable.
 - Internal/optional routes (not core trust-layer completion): SEO/GEO, Design, PPT, GX, Autoresearch, `$sks-research`, Local LLM.
 - Performance: no product SLA or bench-number promises; measurements are internal/optional.
+- Naruto accepts an oversized persisted thread preference without rewriting it, but uses an effective maximum of 256 child threads and 257 total threads. Explicit CLI values above 256 are rejected; the parent remains outside the child-slot cap.
 - Contributions: welcome via standard PR/issues.
 - Default logs are minimal; verbose/debug requires an explicit flag.

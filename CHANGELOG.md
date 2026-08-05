@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [8.1.3] - 2026-08-06
+
+### Changed
+
+- Unified managed Codex Desktop and CLI routing behind one local Desktop Bridge.
+  Codex-LB and OpenRouter are now independent, simultaneous provider profiles;
+  ChatGPT OAuth remains Codex-owned.
+- Replaced provider-mode routing with an atomically activated combined catalog
+  and explicit model route index. Routes never use silent fallback, model-name
+  heuristics, or a competing direct activation path.
+- Added scoped v3 capability reporting. Bridge, native identity, each provider,
+  and the combined catalog report separately; transport execution/readiness is
+  distinct from deep evidence.
+- Made catalog sync mandatory in valid v3 reports and made WebSocket evidence
+  stage-aware, with one terminal root cause for a failed probe path.
+- Documented receipt-backed private migration, user-owned configuration
+  fail-closed behavior, and rollback that preserves newer OAuth and credentials.
+- Naruto now preserves an oversized persisted concurrency preference while
+  clamping runtime capacity to 256 child threads / 257 total threads. Explicit
+  CLI requests above 256 are rejected.
+
+### Removed
+
+- Removed the `sks codex-lb` command family, all aliases, and all active legacy
+  provider/bridge modes. The removed command returns `unknown_command`.
+
+### Evidence note
+
+- Real macOS, credential, Codex Desktop, WebSocket-frame, and deep-artifact
+  proof is not claimed by this changelog. Those items remain pending
+  target-bound, redacted final release evidence.
+
 
 
 

@@ -1,249 +1,70 @@
-# Release Proof Truth
-
-## Release proof retention (NC-39 / U7)
-
-Keep only essential release-proof information in-repo. Do not permanently archive
-every historical proof bank artifact. Prune proof that is no longer required for
-the current package’s release gates so the repository stays light. Mission
-retention (completion receipt before delete) is separate from release-proof prune.
-
-SKS 8.1.2 release proof truth requires package metadata, the root lockfile
-entries, the runtime constant, Rust crate metadata, README identity, and the
-latest dated changelog section to agree on 8.0.5. It also requires an isolated
-8.0.4-to-8.0.5 update regression in which the exact npm-global package
-manifest, package-local entrypoint, first `sks` on `PATH`, and subsequent
-effective-version probe all resolve 8.0.5, plus a shadow-prefix regression that
-fails closed while preserving rollback availability. Four environment-bound
-receipts remain required and cannot be replaced by fixtures or prose:
-
-1. `sks update` completes in a large-repository fixture whose guidance scan
-   encounters 5,001 directories. Any bounded cutoff is the explicit
-   non-blocking `guidance_scan_truncated` warning with cutoff path/count and is
-   never counted as legacy residue.
-2. A prior-version Menu Bar is replaced and process readback proves exactly one
-   companion whose running version is 8.0.5. A build stamp, installed bundle,
-   or successful launch command without process/version readback is not enough.
-3. With **Use codex-lb** selected, one real request reaches the configured
-   remote base URL using the issued gateway key rather than ChatGPT OAuth.
-   Doctor and Menu Bar must bind to one measured result containing target host,
-   authentication class, time, and latency.
-4. A paired command sent from a cellular network is executed by the Mac and
-   its result returns through Telegram. `getMe`, poller liveness, configured
-   credentials, fixtures, same-LAN traffic, and mock Bot API responses cannot
-   authorize this gate.
-
-Naruto proof for 8.0.5 must preserve explicit `--agents` and `--max-threads`
-values from 1 through 256 rather than reducing them to automatic tiers.
-`--max-threads 256` is a child-slot ceiling and must not subtract the root twice,
-but it is not evidence that the current host ran 256 children. The plan and
-runtime evidence must state the actual lower limiter whenever the ready DAG,
-ownership, tools, or verifier capacity prevents that wave. For the official
-Codex lane, local CPU, RAM, file-descriptor capacity, and an unmeasured default
-API budget are not authoritative limiters. Only an explicitly configured
-provider/API quota and a measured or host-provided external Codex child-slot
-cap may limit that lane's infrastructure concurrency.
-`SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET` cannot override a lower external-host
-limit.
-
-SKS 8.1.2 must not claim that a required live gate passed when credentials or
-the environment were unavailable, and must not claim tagging, staging,
-publication, deployment, or a 256-child load test from this documentation
-change. Configuration, manifests, mocks, hermetic tests, and historical
-receipts cannot serve as 8.1.2 evidence.
-
-SKS 8.0.2 release proof truth requires codex-lb Desktop integration to preserve
-shared ChatGPT OAuth and the built-in OpenAI provider while keeping the gateway
-credential on the owner-only loopback hop. Setup, install, repair, update, and
-ordinary launch preparation must not write shared Codex auth, select codex-lb
-globally, bind a local Desktop catalog, change Fast/UI state, or infer a gateway
-credential from `auth.json`. The installed release closure must directly
-execute the Desktop auth invariant, loopback bridge and redaction, catalog v2
-pass-through, and capability-evidence boundary checks through
-`codex-lb:comprehensive`, package those checks as required runtime scripts, and
-remain within the 101-script package budget without aliases masking coverage.
-The 8.0.2 closure must also prove that CLI and Control Center updates share the
-same 16-stage order, that both installed and already-current `sks update now`
-paths run a read-only migration-profile `update_finalize_doctor`, and that a
-final-Doctor failure is preserved in the stage, operation receipt, status, and
-public error. The newly installed package-local migration Doctor and its
-migration receipt must remain the single owners of repair and legacy-surface
-mutation; final verification cannot repair its own evidence. The migration
-result must replace—not accumulate beside—the pre-repair observation through
-a fresh read-only public-surface inspection. Config repair proof must cover
-guarded backups,
-unparseable TOML, unmanaged project-file preservation, valid TOML basic and
-literal strings, and retired syntax cleanup. codex-lb proof must show that the
-public CLI uses the owner-only `0600` env file, never delegates secret access
-to a reusable interpreter or generic security process, and fails closed on
-Keychain requests until a dedicated signed helper can prove identity and
-post-write state.
-The same closure must prove a single bounded OAuth listener probe, different-PID
-conflict classification, exact conditional callback recovery guidance, and
-zero listener/process/config mutation. Managed-skill recovery proof must bind
-the before bytes to a timestamped backup and migration-journal rollback path,
-restore current authoritative bytes for newer or unparseable managed markers,
-and leave markerless, name-mismatched, symlinked, nonregular, and path-unsafe
-files untouched and blocked under the existing
-`sks.skills-manifest.v1` contract.
-The environment-dependent `release-real-check` must also execute
-`codex-lb:desktop-real-evidence` as explicit optional live coverage. The
-standalone evidence check fails with `real_required_missing` unless a fresh,
-target-bound, producer-bound,
-hash-anchored real Codex Desktop capture proves the picker, Fast, image
-artifact, Computer Use loop, browser, voice, plugins, auxiliary routes,
-existing/new threads, disable/rollback, restart/reboot recovery, separately
-hosted other-Mac runtime, and authentication-mode-independent native feature
-surface. Configuration, manifests, hermetic transport tests, and fixtures do
-not satisfy this real-evidence requirement. A missing capture therefore
-remains visible and non-authorizing without making the cross-platform release
-run fail for not being a native Desktop or separately hosted other-Mac
-environment.
-
-SKS 7.5.0 release proof truth requires that `sks search context` is answered from the compiled TriWiki Context Graph and never from a lexical fallback: a missing, stale or corrupt snapshot must return `context_graph_missing`, `context_graph_stale` or `context_graph_corrupt` with the repair command and zero matches, and a graph that reports `fresh` must agree with the current source hashes. Every edge in a returned explanation must exist in the snapshot, every selected node must carry provenance back to a workspace-relative path, and no graph artifact may contain a secret, a raw environment value, a raw prompt, raw tool output, or an absolute or home path. Compiling the same repository state three times must produce the same snapshot hash, which means one codepoint comparator across extractors, compiler and lint rather than a locale-sensitive collation. Hard safety floors are evaluated before any composite score: protected-gate recall and write-scope conflict recall must be 1.00, provenance coverage must be 1.00, dangling edges and edges without provenance must be zero, no project code may execute during extraction, and the query hot path must spawn no process. The locked benchmark corpus carries an integrity hash, so deleting a failing case or editing a gold set is an integrity failure rather than a score improvement, and the candidate must beat the recorded baseline composite by at least five percent.
-
-7.5.0 proof must also show that Naruto host-credential delegation never widens authority by accident. `--auth-mode=host` must stop SKS injecting `model_provider` and `forced_login_method` so Codex authenticates with the operator's own provider block; only the environment variable named by `--provider-env-key` may reach the child; and the credential value must appear in no receipt, proof card or log line while its name may. A malformed auth mode, provider name, effort tier, or an env key absent from the environment must block before mission state is written, and naming a provider while the managed ChatGPT login is still forced must be refused rather than resolved by a precedence rule. The managed default and its real-credential smoke evidence are unchanged. User-facing guidance must recommend the official latest stable release and defer to capability probes, with pinned version numbers confined to changelogs, compatibility matrices, schema ids, lockfiles and fixtures.
-
-7.5.0 proof must also execute the packed npm lifecycle with scripts enabled and
-show that default `postinstall` changes no consumer project, HOME, Codex, global
-SKS, or `launchctl` state. The only default write is the build stamp inside the
-installed package root. External setup requires the exact
-`SKS_POSTINSTALL_BOOTSTRAP=1` opt-in, and
-`SKS_POSTINSTALL_NO_BOOTSTRAP=1` remains a stronger override.
-
-SKS release proof truth distinguishes provider/App Server catalog evidence from live Desktop picker evidence. It requires the package and lockfile to resolve `@openai/codex-sdk` and its `@openai/codex` CLI exactly to the stable 0.146.0 release, the active manifest target to be `rust-v0.146.0`, and the manifest digest to match schemas regenerated by that resolved CLI; Naruto requires this multi-agent V2 baseline. It also requires exact model/effort parity from Naruto work kind through worker intake, SDK config, and proof reports; Voxel TriWiki one-to-one coordinate/voxel validation and bounded wrongness recall; generation-aware retention dry-run/apply evidence; current Codex plugin inventory/repair evidence; new-package menu installation/version proof; duplicate-hook suppression; bundle-id restart completion; and secret-safe Fast status JSON. The native proof inherited from 7.0.0 must still show truthful Control Center update, repair, Overview, and menu-state behavior; 8.1.2 proof must additionally show codex-lb activation reaching connection-test readiness with structured redacted feedback, the Codex CLI update action remaining mutation-guarded, update-owned restart deferral reaching nested Doctor/npm lifecycle children, and migration-profile Doctor skipping Menu Bar mutation. Generated-image proof is classified by provenance, not by the surface that happened to answer: `codex_app_imagegen` and `codex_lb_provider_imagegen` are full evidence because both come from the Codex provider the user has selected, while `non_codex_api_fallback` — including codex-lb enabled as a fallback while another provider is selected — and `mock_fixture` are not, and capability detection remains no substitute for a real output file.
-
-Command and retention proof must also show that every retired public-command probe fails closed without creating a mission, `route_closed` state is not treated as active, and a recently updated non-closed session is protected by the two-hour grace window. New compaction must preserve durable JSON, Image UX/PPT review assets, and unknown evidence byte-for-byte while deleting only the explicit disposable-runtime allowlist. Legacy gzip archives remain readable only when hydration reproduces the original bytes and the SHA-256 in `retention-archive-manifest.json`; storage-budget proof must count every `.sneakoscope` top-level directory and root file under the per-directory 1,000,000-file safety ceiling; release-run retention must leave at most five run directories by default.
-
-SKS 7.4.0 must not claim publication, repaired native tools, or Desktop picker visibility from fixture/TOML evidence alone. Publication proof requires the clean canonical recursive test suite, release metadata/version/dist/pack gates, the full manifest-backed release DAG, and the environment-dependent real check. Only that full sequence may write the v2 release stamp, whose verification rebinds the current source/package/dist hashes and both full-run summaries. Repaired plugins require a post-install inventory plus a new-task or restart boundary; picker proof requires a restarted ChatGPT/Codex app and user-visible post-restart observation.
-
-The current implementation handoff is bounded to typecheck, one clean build, focused changed-surface tests, `release:check:affected`, and one `release:check:confidence`; it neither creates publish authorization nor claims a publish rehearsal. A maintainer may run `npm publish --dry-run --json --registry https://registry.npmjs.org/ --tag latest --access public` only after `release:check:full` has written the current source-bound release stamp and `release-check-stamp.js verify` has accepted it. Publication is a distinct repository-maintainer workflow: the manual main-only OIDC job independently reruns the full contract, verifies the same proof boundary, and only then reaches its intentional stage/publish step. The removed `publish:npm` and `release:publish` aliases are historical only and cannot serve as 7.4.0 evidence.
-
-SKS 5.10.0 keeps release proof truth aligned with the 5.10.0 package metadata, built output, performance baseline/improvement reports, import/fs hot-path reports, perf/hook latency reports, Super-Search offline/local/live smoke, Naruto hermetic/real-Codex E2E evidence, doctor/update fast-path reports, retention dry-run/apply smoke, command/dollar scorecards, release runner efficiency, package surface budget, and lifecycle-disabled publish readiness evidence before `npm publish --ignore-scripts`.
-
-SKS 5.10.0 release proof truth requires proof that fast paths reduce real import and I/O work instead of removing validation, hook output remains bounded and safe, Super-Search local fetch is SSRF-gated, Naruto real-runtime proof is separated from hermetic fixture proof, duplicate release builds remain at zero, and package/version/lockfile/docs/dist surfaces agree before publication.
-
-SKS 5.9.0 keeps release proof truth aligned with the 5.9.0 package metadata, built output, quantum baseline report, competitor scorecard, installed package smoke, perf/hook latency reports, Super-Search contracts, production parallel smoke, doctor idempotence, retention budget, package surface budget, and lifecycle-disabled publish readiness evidence before `npm publish --ignore-scripts`.
-
-SKS 5.9.0 release proof truth requires proof that installed-package success is based on a real tarball bootstrap plus doctor run, hook latency does not include migration-gate self-repair on the hot path, optional native capability repairs are explicit rather than hidden default doctor work, Super-Search does not fake provider readiness, and package/version/lockfile/docs/dist surfaces agree before publication.
-
-SKS 5.8.0 keeps release proof truth aligned with the 5.8.0 package metadata, built output, intent-routing fixtures, Naruto parallel-runtime proof v2, fake-success policy coverage, Super-Search name guard evidence, canonical Super-Search command/route/artifact surfaces, and lifecycle-disabled publish readiness evidence before `npm publish --ignore-scripts`.
-
-SKS 5.8.0 release proof truth requires proof that question-shaped directives do not fall through to `$Answer`, production parallel-write proof is not mock-only, Super-Search does not synthesize sources or default fetch URLs, legacy search aliases are not executable, and package/version/lockfile/docs/dist surfaces agree before publication.
-
-SKS 5.1.1 keeps release proof truth aligned with the 5.1.1 package metadata, built output, release gate inventory, mock/real proof schemas, route stop-gate evaluator, gate-result output contract, feature fixture quality labels, and publish readiness evidence before `npm publish --ignore-scripts`.
-
-SKS 5.1.1 release proof truth requires proof that mock fixtures cannot set `passed: true` as real evidence, that `execution_class: mock_fixture` blocks success claims, and that release gates read structured `sks.gate-result.v1` output instead of trusting exit code alone.
-
-SKS 4.8.6 keeps release proof truth aligned with the 4.8.6 package metadata, built output, release gate inventory, harness gate inventory, script-backed check inventory, worker MCP isolation evidence, gate honesty evidence, telemetry bounds evidence, module split evidence, and publish readiness evidence before `npm publish --ignore-scripts`.
-
-SKS 4.8.6 release proof truth requires proof that the parallel-runtime hardening changes are backed by real release gates instead of stale manifests, and that version truth spans package metadata, lockfiles, CLI constants, Rust helper metadata, README, changelog, version-gated docs, and built output before publication.
-
-SKS 4.8.4 keeps release proof truth aligned with the 4.8.4 package metadata, built output, managed asset metadata, SKS menu bar install evidence, Terminal action interpolation evidence, codex-lb setup menu evidence, and publish readiness evidence before publication.
-
-SKS 4.8.4 release proof truth requires proof that SKS menu bar Terminal actions no longer execute `(escaped)` and that codex-lb base URL/API-key setup is reachable from the menu without exposing the key in generated command strings.
-
-SKS 4.8.3 keeps release proof truth aligned with the 4.8.3 package metadata, built output, managed asset metadata, SKS menu bar install evidence, LaunchAgent lifecycle evidence, idle process sample evidence, Computer Use visual evidence, and publish readiness evidence before publication.
-
-SKS 4.8.3 release proof truth requires proof that the macOS menu bar companion is event-driven while idle and that the generated LaunchAgent removes unconditional `KeepAlive`, uses `RunAtLoad` only for login/bootstrap launch, and declares `ProcessType=Interactive` for the user-facing status item.
-
-SKS 4.8.2 keeps release proof truth aligned with the 4.8.2 package metadata, built output, managed asset metadata, SKS menu bar install evidence, Control Center preferred-position evidence, LaunchAgent fixture isolation evidence, Computer Use visual evidence, and publish dry-run evidence before publication.
-
-SKS 4.8.2 release proof truth also requires proof that the macOS menu bar companion presents a visible text-only `SKS` label ahead of crowded notch-adjacent status items, seeds and persists its preferred Control Center position, and skips launch/preferred-position mutation for temp-home, temp-`HOME`, and hermetic release fixtures.
-
-SKS 4.8.0 keeps release proof truth aligned with the 4.8.0 package metadata, built output, managed asset metadata, codex-lb provider-contract evidence, codex-lb Fast Mode requested-vs-actual evidence, Codex App GLM profile/key setup evidence, Codex App native menu unsupported evidence, auth-switch restart evidence, and the existing 4.7.x release gate evidence before publication.
-
-SKS 4.8.0 release proof truth also requires proof that configured Fast Mode is not treated as actual Fast Mode for codex-lb: request-level `service_tier=priority` must be recorded separately from `actualServiceTier/serviceTier=priority`, and missing actual-tier evidence must keep the fast-check gate blocked.
-
-SKS 4.7.0 keeps release proof truth aligned with the 4.7.0 package metadata, built output, managed asset metadata, Codex model guard evidence, dynamic GPT worker tier evidence, GLM 5.2 effort routing evidence, Codex App GLM profile/key setup evidence, Fast Mode TOML evidence, doctor duplicate TOML repair evidence, and `npm publish --ignore-scripts` dry-run evidence before publication.
-
-SKS 4.7.0 release proof truth also requires proof that external MCP settings such as Context7 and Supabase are preserved while duplicate managed TOML blocks are removed, managed native/agent roles remain bounded write-capable, `gpt-5.4-mini` is accepted for simple worker tasks, GLM-mode workers stay on `z-ai/glm-5.2`, and lifecycle-disabled npm publication uses the freshly built `4.7.0` dist surface.
-
-SKS 4.6.5 keeps release proof truth aligned with the 4.6.5 package metadata, Rust helper metadata, built output, release metadata, npm unpublished-version evidence, doctor console status regression evidence, default doctor repair smoke evidence, and `npm publish --ignore-scripts` dry-run evidence before publication.
-
-SKS 4.6.5 release proof truth also requires proof that a missing/skipped optional Codex Doctor bridge is represented as `unavailable` in human console output rather than crashing default `sks doctor --fix` runs.
-
-SKS 4.6.4 keeps release proof truth aligned with the 4.6.4 package metadata, Rust helper metadata, built output, release metadata, provenance, npm unpublished-version evidence, publish auth evidence, mission-retention cleanup evidence, update migration cleanup evidence, project-scoped postinstall cleanup evidence, and `npm publish --ignore-scripts` dry-run evidence before publication.
-
-SKS 4.6.4 release proof truth also requires proof that closed missions no longer preserve raw `sessions`/`agents/sessions` trees as durable context, terminal inactive agent sessions remove heavy `codex-sdk-home` runtime caches while keeping blocked diagnostics, update migration receipts record retention cleanup results, and direct lifecycle-disabled npm publish uses a fresh built `dist` for `sneakoscope@4.6.4`.
-
-SKS 4.6.3 keeps release proof truth aligned with the 4.6.3 package metadata, Rust helper metadata, built output, release stamp, provenance, npm unpublished-version evidence, SuperSearch command rename evidence, unified `seo-geo-optimizer` route evidence, SQL-plane direct `apply_migration` hook evidence, Supabase transport diagnostics evidence, global npm update detection evidence, Lean Engineering Policy evidence, and publish wrapper evidence before publication.
-
-SKS 4.6.3 release proof truth also requires proof that `sks super-search` and `$Super-Search` are the primary source-intelligence command surfaces with SuperSearch kept only as compatibility aliases; that the public split `seo` and `geo` command surfaces are removed; `$SEO-GEO-OPTIMIZER` is the single dollar-command route; crawler/claim/llms.txt gates remain mode-specific; no ranking, traffic, indexing, or AI citation guarantee is claimed; the SQL-plane direct apply-migration hook gate passes; Supabase transport diagnostics distinguish read-only transport denial from SQL-plane timeout/interruption/auth failures; `sks update-check` cannot let a newer source checkout mask a stale global npm package; and the latest publish tag avoids downgrading the npm `latest` dist-tag.
-
-SKS 4.4.0 keeps release proof truth aligned with the 4.4.0 package metadata, Rust helper metadata, built output, release stamp, provenance, npm unpublished-version evidence, SuperSearch provider-independent proof, Source Intelligence Policy v2 proof, and publish wrapper evidence before publication.
-
-SKS 4.4.0 release proof truth also requires proof that X public discovery remains marked partial until a real parity corpus passes, and that the retired X-specific discovery surface is absent rather than acting as a provider authority.
-
-SKS 4.2.1 keeps release proof truth aligned with the 4.2.1 package metadata, Rust helper metadata, built output, release stamp, provenance, npm unpublished-version evidence, and publish wrapper evidence before publication.
-
-SKS 4.2.1 release proof truth also requires proof that `publish:ignore-scripts` and `publish:npm` run `prepublishOnly` explicitly before `npm publish --ignore-scripts`, preserving release checks even when npm lifecycle scripts are disabled for the actual publish command.
-
-SKS 4.2.0 keeps release proof truth aligned with the 4.2.0 package metadata, Rust helper metadata, built output, release stamp, provenance, npm unpublished-version evidence, first-class SQL-plane route evidence, capability v2/runtime profile proof, hook idempotency and parallel lifecycle proof, Supabase MCP tool inventory evidence, and real disposable Supabase E2E status before publication.
-
-SKS 4.2.0 release proof truth also requires proof that persistent Supabase MCP configuration is read-only after every SQL-plane cycle, mission-local write profiles do not persist, scoped SQL writes remain owned by `$MAD-SKS`, control-plane Supabase operations stay denied, `publish:fast` is quarantined, and any missing disposable Supabase project ref blocks real-E2E claims.
-
-SKS 4.1.1 keeps release proof truth aligned with the 4.1.1 package metadata, Rust helper metadata, built output, release stamp, provenance, npm unpublished-version evidence, v2 project migration receipts, migration Doctor fast-profile evidence, core-vs-route readiness separation, managed role filename uniqueness, and MAD deferred-bootstrap evidence before publication.
-
-SKS 4.1.1 release proof truth also requires proof that optional native capability warnings do not block core readiness, first-command migration records exact required blockers separately from optional warnings, stale migration locks are recoverable, `doctor --fix --profile migration --machine-only` writes a report file suitable for update gates, and version-gated docs mention 4.1.1.
-
-SKS 4.1.0 keeps release proof truth aligned with the 4.1.0 package metadata, built output, release stamp, provenance, npm unpublished-version evidence, semantic Doctor readiness, post-repair authoritative Doctor checks, managed asset manifest parity, update migration lifecycle evidence, and local machine-evidence cleanup before publication.
-
-SKS 4.1.0 release proof truth also requires proof that optional Codex/native capability warnings stay non-blocking for core readiness, plain `sks doctor --fix` repairs native managed assets, update completion is gated on a current project migration receipt, postinstall uses the package-local global Doctor path, and release metadata mentions 4.1.0 across version-gated docs.
-
-SKS 4.0.15 keeps release proof truth aligned with the 4.0.15 package metadata, built output, provenance, npm unpublished-version evidence, Codex 0.142 release manifest, generated app-server schema hash, app-server-v2 proof, thread-store proof, runtime binary identity proof, SDK child-env isolation proof, and package published-contract evidence before publication.
-
-SKS 4.0.15 release proof truth also requires proof that 0.142 publish authorization does not rely on `assumed_by_version` or fixture-only evidence, that SDK/app-server/Doctor/compatibility surfaces use the same resolved Codex binary identity, that native thread list/read/search and current-time handling are represented by app-server-v2 evidence, that host secrets are not inherited by SDK child processes, and that postinstall/update paths do not install global `@openai/codex@latest` unattended.
-
-SKS 4.0.14 keeps release proof truth aligned with the 4.0.14 package metadata, built output, provenance, npm unpublished-version evidence, GLM Naruto parallel-stage execution metrics, bounded parallel queue proof, requirement coverage tracking proof, MAD route isolation proof, and benchmark/proof metadata regression-fix evidence before publication.
-
-SKS 4.0.14 release proof truth also requires proof that GLM requests stay locked to `z-ai/glm-5.2`, provider/model fallbacks remain disabled, parallel candidate/worktree/verifier queues stay bounded, requirement coverage artifacts exist for every parallel worker, and `sks --mad` keeps GPT/Codex/MAD routes isolated from GLM/OpenRouter mode.
-
-SKS 4.0.12 keeps release proof truth aligned with the 4.0.12 package metadata, built output, provenance, npm unpublished-version evidence, GLM Naruto extracted-diff worktree evidence, adaptive scheduler artifacts, targeted apply checks, dirty-tree policy, and final seal stop-gate evidence before publication.
-
-SKS 4.0.12 release proof truth also requires proof that GLM requests stay locked to `z-ai/glm-5.2`, provider/model fallbacks remain disabled, live bench distinguishes true direct GLM from Naruto worker cases, and `final-seal.json` records model, isolation, scheduler, candidate, apply, secret-audit, and stop-gate invariants.
-
-SKS 4.0.8 keeps release proof truth aligned with the 4.0.8 package metadata, built output, release stamp, provenance, npm unpublished-version evidence, GLM speed-profile tests, GLM loop-guard artifacts, GLM bench/trace artifacts, OpenRouter fallback blocking, disabled GPT fallback-path proof, and Codex compatibility evidence before publication.
-
-SKS 4.0.8 release proof truth also requires proof that `sks --mad --glm` no longer launches long-lived sessions by default, that non-GLM MAD/Codex paths keep their previous defaults, and that GLM request artifacts use compact context, bounded completion tokens, disabled default tools, terminal loop guards, and redacted diagnostics.
-
-SKS 4.0.4 keeps release proof truth aligned with the 4.0.4 package metadata, built output, release stamp, provenance, npm unpublished-version evidence, GLM 5.2 alternate-provider launch checks, OpenRouter key wrapper evidence, disabled GPT fallback-path proof, and Codex `rust-v0.141.0` compatibility evidence before publication.
-
-SKS 4.0.4 release proof truth also requires proof that GLM MAD launches inject Codex OpenRouter `z-ai/glm-5.2` args, do not write raw OpenRouter keys into wrapper artifacts, continue into MAD after readiness, and record `mad-glm-launch.json` for each launch.
-
-SKS 4.0.3 keeps release proof truth aligned with the 4.0.3 package metadata, built output, release stamp, provenance, npm unpublished-version evidence, GLM 5.2 MAD route checks, OpenRouter key handling evidence, Codex App GLM profile proof, and Codex `rust-v0.141.0` compatibility evidence before publication.
-
-SKS 4.0.3 release proof truth also requires proof that GLM requests use `z-ai/glm-5.2`, do not include GPT/OpenAI fallback model arrays, disable OpenRouter provider fallbacks, reject non-GLM returned models, and leave CI/CD publishing infrastructure unchanged.
-
-SKS 4.0.2 keeps release proof truth aligned with the 4.0.2 package metadata, built output, release stamp, provenance, npm unpublished-version evidence, build-once proof reuse, TriWiki-first DAG selection, proof-bank/cache bridge evidence, resource-aware gate-pack timelines, semantic dirty-doctor proof ids, sksd protocol evidence, and 4.0.2 regression certificates.
-
-SKS 4.0.2 release proof truth also requires final legacy/orphan purge evidence, mutation-callsite coverage for new build/cache/report writers, and five-minute affected-scope release-equivalent blackboxes to be present in the release graph before publication.
-
-SKS 4.0.1 keeps release proof truth aligned with the 4.0.1 package metadata, built output, release stamp, provenance, npm unpublished-version evidence, TriWiki proof-bank invalidation material, and actual SLA execution metrics required for the next publication after 4.0.0.
-
-SKS 4.0.1 release proof truth also requires TriWiki-first affected graph evidence, gate-pack shared fixture evidence, executable scheduler evidence, semantic doctor dirty repair evidence, optional sksd warming evidence, orphan gate detection, and legacy alias purge evidence to be present in the release graph before publication.
-
-SKS 4.0.0 keeps release proof truth aligned with the 4.0.0 package metadata, built output, release stamp, provenance, and npm unpublished-version evidence required for the next publication after 3.1.16.
-
-SKS 4.0.0 release proof truth also requires TriWiki proof bank evidence, affected graph evidence, gate-pack runner evidence, five-minute SLA certificate evidence, doctor dirty repair evidence, orphan gate detection, and legacy alias purge evidence to be present in the release graph before publication.
-
-SKS 3.1.16 keeps release proof truth aligned with the 3.1.16 package metadata, built output, release stamp, provenance, and npm unpublished-version evidence required for the next publication after 3.1.15.
-
-SKS 3.1.13 keeps release proof truth aligned with Codex 0.140 feature-state certainty, real usage parsing, goal attachment roundtrip proof, Naruto usage-budget provenance, doctor transaction phase/postcheck reports, managed TOML startup repair, Context7/Supabase MCP readiness reports, native capability proof, and secret line rollback evidence.
-
-SKS 3.1.12 keeps release proof truth aligned with the MAD right-column `stack-panes` reconciliation evidence, the `doctor --fix` `node_repl` parent/child MCP repair evidence, Codex 0.140 capability and integration gates, doctor production transaction/postcheck reports, Context7/Supabase MCP repair reports, and protected secret rollback evidence.
-
-
-SKS 3.1.10 keeps release proof truth aligned with the hardening evidence for release wiring parity, immutable core skills, native capability postchecks, duplicate skill proof, and secret rollback.
-
-SKS 3.1.8 extends release proof truth to immutable core skills, duplicate skill dedupe, native capability repair, doctor repair output, Supabase/secret preservation, update secret migration journals, and 3.1.8 release DAG coverage.
-
-SKS 3.1.7 extends release proof truth to Codex Native hardening evidence: five real route blackboxes, bounded reference-cache artifacts, read-only broker proof, explicit repair-transaction reports, read/repair split blackboxes, generated-artifact neutrality, and 3.1.7 release DAG coverage must be traceable from release checks and generated reports.
-
-SKS 3.1.6 extends release proof truth to the Codex-native harness brand-neutrality evidence: external reference branding leakage checks, Codex-native feature broker reports, invocation router/default proof, route-map coverage, reference-source evidence, init-deep backup and memory-scope safety, doctor readiness UX, and release-script type-safety gates must be traceable from release checks and generated reports.
-
-
-SKS 3.1.3 keeps release proof truth aligned with Loop Mesh production-hardening evidence: fixture-policy decisions, finalizer-owned GPT Final Arbiter contracts, merge-strategy summaries, mutation ledgers, side-effect reports, interrupt results, and concurrency budgets must be traceable from loop proof artifacts instead of being inferred from prose.
-
-SKS 3.1.1 writes `.sneakoscope/release-proof-truth.json` and `dist/release-proof-truth.json` as source-truth evidence for release review. The artifact records the package version, Git commit, dirty-worktree status, npm packlist count, dist manifest version, and source digest so release notes can distinguish the intended package from stale local or built output.
-
-`npm run release:proof-truth` refreshes the artifact, and `npm run release:github-body-helper` includes its path, commit, dirty status, bundled `@openai/codex-sdk` version, external Codex CLI capability summary, and current Codex real-probe summary. A dirty worktree is reported as a warning for local review; version or proof-truth mismatches remain release blockers.
+# Release Proof Truth — 8.1.3
+
+## Claim boundary
+
+This document defines the proof boundary for Sneakoscope Codex 8.1.3. It is
+not a release authorization, publication record, deployment record, or a claim
+that real credentials or macOS evidence have been collected.
+
+8.1.3 has one SKS-managed routing runtime: Desktop Bridge. Codex-LB and
+OpenRouter are independent profiles that may coexist. Requests are routed from
+the combined catalog's explicit route index with fallback fixed to `none`.
+The removed `sks codex-lb` command must return `unknown_command`; no alias or
+legacy mode may make it runnable.
+
+## What must be proved before a release claim
+
+| Area | Required evidence | What does not prove it |
+| --- | --- | --- |
+| Version identity | package metadata, lockfile, runtime/Rust metadata, README identity, and one 8.1.3 changelog section agree | a version string in one file |
+| Command surface | installed/help/registry proof that `sks bridge` is registered and the removed command is unknown | a documentation statement |
+| Routing | combined catalog and route-index tests prove explicit resolution, conflict rejection, and no fallback | a slash-containing model name or a selected profile |
+| Credentials | profile-isolation tests plus redacted target-bound live checks | configured state, fixtures, or a key-presence flag |
+| OAuth | byte/semantic preservation and upstream-header stripping evidence | a stored OAuth file or a provider setup result |
+| Migration | receipt/idempotency/rollback tests and ownership conflict checks | a migration code path without a read-back receipt |
+| Transport | stage-aware TCP, HTTP, WebSocket upgrade/protocol/frame/close evidence | process running, HTTP health, or upgrade alone |
+| Capability v3 | scope/level/schema tests; transport and deep readiness are separately reported | a successful command exit or a manifest advertisement |
+| Catalog | atomic generation/read-back tests and mandatory catalog-sync schema | a catalog temp file or an old receipt |
+| Native UI | a target-bound macOS build/run and visual/state proof | Swift compilation, fixture-only decoder tests, or screenshots from another version |
+| Deep features | provider-bound live artifact/evidence per feature | fixtures, synthetic output, or a capability declaration |
+
+## Truth rules
+
+- `execution.ok` says whether a diagnostic/report operation completed; it does
+  not mean every requested feature is ready.
+- A transport report may be satisfied while deep rows are `not_attempted`.
+- An inactive profile failure is recorded in that profile's warning/evidence
+  scope; it is not a top-level routing failure when an active route is ready.
+- A stale receipt is stale, not current verified evidence.
+- A successful image assertion requires an actual validated output artifact;
+  fixture data never becomes live evidence.
+- Secrets, OAuth tokens, raw keys, and unredacted endpoint details must not
+  appear in status, reports, logs, receipts, catalog data, route indexes, or
+  release evidence.
+
+## Required real-environment evidence
+
+The following are **not-run-real pending final evidence** for this release
+until a redacted, target-bound receipt exists:
+
+- macOS launchd/service installation, restart, repair, and process read-back;
+- Codex Desktop restart and native Providers view state;
+- ChatGPT OAuth byte/semantic preservation through bridge/profile/catalog
+  actions;
+- live Codex-LB authentication, catalog fetch, and bounded text request;
+- live OpenRouter authentication, catalog fetch, and bounded text request;
+- simultaneous credential preservation on the same user profile;
+- a real WebSocket protocol/frame/clean-close result where supported; and
+- each deep capability, including a real image artifact and its digest.
+
+No local fixture, static source inspection, inferred status, credential
+configuration, or build result may change one of these items to passed.
+
+## Evidence intake and release decision
+
+The final release owner must record each executed command and result, bind
+artifacts to the release source/version, and update
+`docs/internal/8.1.3-implementation-report.md`. The release is **BLOCKED**
+while required proof is absent, stale, mismatched, or red. Running a package
+dry-run does not publish; publication, deployment, credential changes, and
+service mutation require separately authorized operator actions.

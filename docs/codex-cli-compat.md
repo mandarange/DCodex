@@ -4,7 +4,21 @@ SKS compatibility SSOT is always the **current latest stable** Codex host. Capab
 
 Updating SKS converges managed configuration, skills, MCP metadata, hooks, and release proof to the current measured contract instead of preserving historical Codex compatibility matrices. Hook outputs are validated against the vendored OpenAI Codex `latest` generated schemas plus the stricter SKS zero-warning strict subset. The current hook snapshot has 10 events and 20 schema files, including `SubagentStart` and `SubagentStop`.
 
-Computer Use and codex-lb compatibility notes are bounded: native Mac/non-web Computer Use live evidence can be `probe_only`, `live_capture_success`, or a structured blocker depending on the local Codex App/macOS capability, while web/browser/webapp verification uses the Codex Chrome Extension gate first; codex-lb can be durable or `process_only_ephemeral` depending on setup choices. Recovery commands are `sks computer-use smoke --json` for a probe-only native status and `sks codex-lb setup --write-env-file --keychain --launchctl` for durable persistence. Local screenshots and secrets stay private/redacted by default.
+Computer Use and Desktop Bridge compatibility notes are bounded: native Mac/non-web Computer Use live evidence can be `probe_only`, `live_capture_success`, or a structured blocker depending on the local Codex App/macOS capability, while web/browser/webapp verification uses the Codex Chrome Extension gate first. Bridge profile state and durability are reported independently of native-feature evidence. Recovery commands are `sks computer-use smoke --json` and `sks bridge repair --json`; local screenshots and secrets stay private/redacted by default.
+
+## Desktop Bridge compatibility
+
+SKS 8.1.3 exposes one managed routing runtime through `sks bridge`. Codex-LB
+and OpenRouter are simultaneous bridge profiles, not direct Codex provider
+activation paths. The removed `sks codex-lb` command returns `unknown_command`
+and has no alias.
+
+Compatibility requires v3 status/capability decoding: a combined catalog,
+explicit route index, `fallback: none`, provider-scoped credential/catalog
+state, and stage-aware WebSocket evidence. A persisted Naruto concurrency
+preference above the execution limit is read without rewriting it and clamped
+at runtime to 256 children / 257 total threads; explicit CLI values above 256
+are rejected.
 
 ## Checks
 

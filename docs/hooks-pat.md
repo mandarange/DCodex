@@ -24,7 +24,7 @@ SKS 1.14.1 validates against the vendored OpenAI Codex `latest` hook snapshot fr
 
 1.14.1 also writes `codex-hook-parity-1.14.1.json`, uses `sks.codex-hook-official-parity.v2`, and records an official hash oracle result. When the official hash is unavailable, SKS enforces managed-only hook repair and keeps unmanaged trusted-hash writing disabled.
 
-This page is documentation-only evidence: it distinguishes probe/mock/live evidence, avoids universal Computer Use availability claims, and keeps PAT/secret handling private and redacted. For recovery, run `sks hooks warning-check --json`, `sks computer-use smoke --json`, or `sks codex-lb setup --write-env-file --keychain --launchctl` depending on the failing surface.
+This page is documentation-only evidence: it distinguishes probe/mock/live evidence, avoids universal Computer Use availability claims, and keeps PAT/secret handling private and redacted. For recovery, run `sks hooks warning-check --json`, `sks computer-use smoke --json`, or `sks bridge repair --json` depending on the failing surface. Provider secrets are configured only through the Desktop Bridge stdin-based profile flow; the removed `sks codex-lb` command is unknown.
 
 Supported event names are `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `SessionStart`, `UserPromptSubmit`, `SubagentStart`, `SubagentStop`, and `Stop`.
 

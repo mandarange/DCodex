@@ -1,5 +1,20 @@
 # Known Gaps
 
+## 8.1.3 Desktop Bridge evidence gaps
+
+- A build, fixture, or static status cannot prove a real macOS bridge service,
+  Codex Desktop restart, provider credential, WebSocket frame round trip, or
+  deep feature artifact. These remain `not-run-real` pending target-bound,
+  redacted release evidence.
+- The release has no alias or fallback path for the removed `sks codex-lb`
+  command. It is expected to be unknown; bridge operations use `sks bridge`.
+- A disabled or failing inactive profile is not silently substituted. Missing
+  and ambiguous model routes are explicit blockers until an operator resolves
+  the catalog/route policy.
+- A user-owned or ambiguous routing configuration is intentionally not
+  rewritten. The safe gap is a fail-closed recovery action, not automatic
+  conversion.
+
 ## Known Gaps
 
 No P0 blocker is intentionally left open for Codex CLI `rust-v0.133.0` compatibility detection, `codex exec resume --output-schema` fixture coverage, UX-Review generated callout ingestion, text-only fallback blocking, mock-as-real blocking, Image Voxel relation validation, memory summary rebuilds, repeated blocker stops, version drift, or release readiness reporting.
@@ -37,7 +52,7 @@ Bounded 1.0.7 claims:
 - Computer Use screenshots are local-only by default. Shared TriWiki can record metadata/anchors, but screenshot binaries are not published automatically.
 - Browser Use evidence and manual screenshots are separate evidence sources, not substitutes for Codex Chrome Extension web evidence or native Computer Use live evidence.
 - codex-lb setup reports `durable_env_file`, `durable_keychain`, `shell_profile`, `process_only_ephemeral`, or `none` according to actual setup choices and effects. `--launchctl` is base URL only and removes API-key launchd env values. If all durable choices are off, the next shell may require setup or explicit environment variables again.
-- Recovery commands: `sks computer-use smoke --json`, `sks computer-use smoke --real --capture-screenshot --json`, and `sks codex-lb setup --write-env-file --keychain`.
+- Recovery commands: `sks computer-use smoke --json`, `sks computer-use smoke --real --capture-screenshot --json`, and `sks bridge repair --json`.
 
 P1 future enhancements:
 

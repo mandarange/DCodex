@@ -22,13 +22,13 @@ Proof-first orchestration for Codex CLI, ChatGPT Desktop, AI coding agents, mult
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-This README documents package **SKS 8.1.2** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
+This README documents package **SKS 8.1.3** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
 
 Use the official latest stable SKS and Codex CLI releases. The Codex compatibility SSOT is always the **current latest stable** host; capability probes measure what that host can actually do. Product docs do not crown a fixed `0.x.y` string as SSOT (release pins and schema directories are measured artifacts for the current package, not a permanent product version claim). Menu Bar / Center induce updates to the latest stable build. Run `sks update-check` for what is installed and read the capability report for what is supported. Install SSOT is npm `sneakoscope@latest`; PATH `sks` and Menu Bar stamped generation must match that version or gates fail. It resolves managed SKS skills from the authoritative global install, preserves a runnable Naruto child slot when `max_threads=2`, and keeps Menu Bar repair transactional so stamped generations remain verifiable. Naruto uses stable opt-in multi-agent V2 when the host exposes it (Codex official multi-agent wrap-only; SKS does not reimplement a parallel runtime). Local code search is mode-separated (`sks search files|text|structure|symbol|context`); `context` is answered by the compiled TriWiki Context Graph (`context-graph.json` is exhaustive authority; `context-pack.json` and managed `AGENTS.md` are bounded projections) — see [docs/architecture/context-graph.md](docs/architecture/context-graph.md) and [docs/PRODUCT-CONTRACT.md](docs/PRODUCT-CONTRACT.md). See [CHANGELOG.md](CHANGELOG.md).
 
-## What 7.0.0 Ships
+## What 8.1.3 Ships
 
-| Problem | 7.0.0 behavior |
+| Problem | 8.1.3 behavior |
 | --- | --- |
 | Overview mixed Menu Bar, installed SKS, and cached registry versions | Each value is labeled by authority, stale or unavailable probes remain explicit, and Refresh forces a bounded update-status refresh. |
 | Naruto stopped creating children after its first wave | The root parent records settled waves, recovers open-thread capacity, rescans the ready DAG, and can launch later direct-child waves under the same workflow run. |
@@ -36,6 +36,9 @@ Use the official latest stable SKS and Codex CLI releases. The Codex compatibili
 | Goal creation started a second SKS-owned mission and loop | Codex native Goal is the only persisted owner; create/edit objectives are detailed and bounded, while SKS writes no Goal state or fallback loop. |
 | Global instructions accumulated duplicated route rules and forced synthetic tests | One Core Engineering Directive anchors all work, route-specific details stay with their route, and verification targets normal behavior, meaningful boundaries, and plausible failures. |
 | GUI-launched status commands could hang or contaminate real update state during tests | Menu Bar commands use a safe HOME cwd, closed stdin, and timeouts; update fixtures use isolated HOME and cache paths. |
+| Codex routing was split across legacy provider paths | One local Desktop Bridge is the managed routing runtime; Codex-LB and OpenRouter are simultaneous credential profiles. |
+| Requests could be coupled to a provider mode or weak model heuristic | The combined catalog's explicit route index resolves provider/model pairs with `fallback: none`; missing or ambiguous routes block. |
+| Transport verification was confused with deep evidence | Capability v3 records scope, stage, requested level, execution, and readiness separately; unattempted deep work is not a transport failure. |
 
 ## Install In One Command
 
@@ -185,11 +188,55 @@ remote change on the operator's behalf.
 
 `sks --mad` now prioritizes the interactive ready path: independent macOS config probes run concurrently, failed read-only preflight does not repeat mutation-capable repair inspection, and verified Codex evidence is reused. Existing unreadable or malformed config still blocks safely; pass an explicit repair flag such as `--repair-config` when repair is intended.
 
+## Desktop Bridge
+
+SKS 8.1.3 uses a single local **Desktop Bridge** for managed Codex Desktop and
+CLI routing. ChatGPT OAuth stays in the Codex identity plane. Codex-LB and
+OpenRouter credentials are independent profiles that can be configured and
+validated simultaneously; changing one profile does not remove the other.
+
+The bridge uses an atomically activated combined catalog and explicit route
+index. It never guesses a provider from a model name and never silently falls
+back. A missing or ambiguous route is a visible blocker. Provider-bound
+upstream requests strip incoming ChatGPT OAuth authorization; status and
+receipts contain only redacted credential metadata.
+
+```sh
+sks bridge status --json
+sks bridge ensure --json
+sks bridge provider list --json
+sks bridge catalog sync --json
+sks bridge route explain <model> --json
+sks bridge verify --level transport --json
+```
+
+Configure secrets through stdin only:
+
+```sh
+printf '%s\n' "$CODEX_LB_API_KEY" | \
+  sks bridge provider configure codex-lb --host lb.example.com --api-key-stdin --json
+printf '%s\n' "$OPENROUTER_API_KEY" | \
+  sks bridge provider configure openrouter --api-key-stdin --json
+```
+
+`sks codex-lb` is removed and returns `unknown_command`; it has no alias.
+Migration recognizes historical SKS-authored routing state only in a private,
+receipt-backed path. Ambiguous user-owned configuration fails closed. Use
+`sks bridge unmanage --confirm --json` or `sks bridge rollback <receipt-id>
+--confirm --json` only for explicit rollback/removal.
+
 ## Naruto Workflow
 
 `$sks-naruto` and `sks naruto run "task" --agents 8 --max-threads 12` use Codex official subagents. Standalone and Codex App tasks that request project-host database, spreadsheet, or render tools require the non-persistent `--trusted-project` flag after the operator reviews the checkout; an App session ID scopes evidence but does not grant trust. The parent is GPT-5.6 Sol Max. Tiny mechanical `worker` slices—including clear simple code, configuration, and setup changes—use Luna Max; ordinary UI, logic, backend, and native coding uses Sol High; review, testing, debugging, architecture, integration, security, database, research, release, and other judgment-sensitive work uses Sol Max; long-context scans, long-term memory, large-scale first-draft code processing, and direct Computer Use, Browser/Chrome, or image-generation execution use Terra Max. Mixed execution/judgment work is split when possible, and unsplittable judgment defaults to Sol Max.
 
-Fresh SKS-owned project config enables Codex 0.145+ multi-agent V2 with `agents.max_concurrent_threads_per_session = 256`, `features.multi_agent_v2.max_concurrent_threads_per_session = 257`, `max_depth = 1`, and `interrupt_message = true`. Nested delegation remains forbidden. Explicit user-owned limits are preserved, while legacy SKS-owned 12/13 defaults migrate to 256/257.
+Fresh SKS-owned project config enables Codex multi-agent V2 with an effective
+cap of `agents.max_concurrent_threads_per_session = 256` children and
+`features.multi_agent_v2.max_concurrent_threads_per_session = 257` total
+threads, `max_depth = 1`, and `interrupt_message = true`. Nested delegation
+remains forbidden. An existing user-owned persisted preference of 1000 is
+preserved on disk but normalized at runtime to 256/257 with an explicit
+warning; it is not an entitlement to spawn 1000 children. Explicit
+`--agents` and `--max-threads` values above 256 are rejected.
 
 Naruto's automatic starting tiers are 4/6/8 children for ordinary work and 16
 for mass cheap-model work. After decomposition, either lane may expand to the
@@ -219,32 +266,29 @@ Official subagent requests use `--agents`; removed scheduler, pool, backend, and
 
 ## Embedding SKS In Another Agent System
 
-By default SKS owns the credential: it pins `model_provider="openai"` and `forced_login_method="chatgpt"`, so an operator's interactive ChatGPT session authenticates the run and it cannot drift onto another provider unnoticed.
-
-That default is wrong for an unattended host. An orchestrator that already holds and rotates a customer's OpenAI-compatible credential — a local codex-lb endpoint, OpenRouter, any `env_key` provider block — cannot log in interactively on every node, and forcing `chatgpt` makes Codex treat an `auth_mode="apikey"` session as a hard logout and delete `auth.json`. **Host mode** hands that decision back.
+For Bridge-managed routing, the bridge owns provider selection and credential
+isolation; adapters must not write a competing global routing configuration.
+ChatGPT OAuth remains Codex-owned, while provider secrets stay inside their
+bridge profiles. An adapter can still run Naruto normally:
 
 ```sh
-sks naruto run "task" \
-  --auth-mode=host \
-  --model-provider=codex-lb \
-  --provider-env-key=CODEX_LB_API_KEY
+sks naruto run "task" --agents 2 --json
 ```
 
-| Surface | Flag | Environment | Effect |
-| --- | --- | --- | --- |
-| Who authenticates | `--auth-mode=host` | `SKS_NARUTO_AUTH_MODE=host` | SKS injects neither `model_provider` nor `forced_login_method`; Codex uses your `config.toml` provider block |
-| Which provider block | `--model-provider=<name>` | `SKS_NARUTO_MODEL_PROVIDER` | Names a `[model_providers.<name>]` block. Host mode only |
-| Which credential variable | `--provider-env-key=<NAME>` | `SKS_NARUTO_PROVIDER_ENV_KEY` | Forwards exactly that variable to the child so the block's `env_key` resolves. Host mode only |
-| Release the login only | `--no-forced-login-method` | `SKS_NARUTO_FORCED_LOGIN_METHOD=none` | Keeps the SKS provider, drops the forced ChatGPT login |
-| Parent model / effort | `--parent-model`, `--parent-effort` | `SKS_NARUTO_PARENT_MODEL`, `SKS_NARUTO_PARENT_EFFORT` | Overrides the built-in parent policy; GPT-5.6 parents remain Sol/Terra/Luna Max-only as applicable |
-| Subagent model / effort | `--subagent-model`, `--subagent-effort` | `SKS_NARUTO_SUBAGENT_MODEL`, `SKS_NARUTO_SUBAGENT_EFFORT` | Overrides the default subagent policy; GPT-5.6 Luna/Terra require Max and Sol requires High or Max |
+| Surface | Flag | Effect |
+| --- | --- | --- |
+| Parent model / effort | `--parent-model`, `--parent-effort` | Overrides the parent policy when the current host allows it. |
+| Subagent model / effort | `--subagent-model`, `--subagent-effort` | Overrides the default subagent policy when the current host allows it. |
+| Bridge state | `sks bridge status --json` | Returns secret-free routing/readiness state for the host to inspect. |
 
 Guarantees this contract makes:
 
-- **SKS never reads, stores, forwards to a third party, or logs your credential.** It forwards one named environment variable to the Codex child and records only that variable's *name* in receipts. Values of secret-shaped variables are redacted from captured output.
-- **A malformed or policy-invalid value blocks the run.** An unknown auth mode, a provider name with a space, an effort tier that is not `minimal|low|medium|high|max`, a GPT-5.6 Luna/Terra effort other than Max, or a `--provider-env-key` that is absent from the environment all fail before mission state is written. SKS never quietly falls back to its own credential — that surprise is the failure mode this contract exists to prevent.
-- **Mixed configurations are refused.** Naming a provider while SKS still forces a ChatGPT login would authenticate one way and bill another, so it is a blocker rather than a silent precedence rule.
-- **The default is unchanged.** Managed mode still pins the ChatGPT login, and the real-credential smoke gate still proves it.
+- **SKS never logs or serializes bridge credentials.** Provider operations accept
+  secrets through stdin and record only redacted metadata.
+- **Ambiguous routing blocks the run.** SKS does not silently select another
+  profile, provider, or model when a requested route cannot be resolved.
+- **Bridge state is not live proof.** Real provider/OAuth/Desktop evidence must
+  be collected separately for a release claim.
 
 ### Designing an adapter that wraps SKS without fighting it
 
@@ -262,9 +306,6 @@ export interface SksMissionRequest {
   task: string
   agents?: number
   tenant: {
-    providerBlock: string    // [model_providers.<name>] the host wrote into config.toml
-    credentialEnvKey: string // env var the block's env_key points at
-    credential: string       // held by the host; never persisted by SKS
     parentModel?: string
     subagentModel?: string
   }
@@ -275,20 +316,10 @@ export async function runSksMission(request: SksMissionRequest) {
     'naruto', 'run', request.task,
     '--json',
     ...(request.agents ? ['--agents', String(request.agents)] : []),
-    // Host owns authentication and model policy.
-    '--auth-mode=host',
-    `--model-provider=${request.tenant.providerBlock}`,
-    `--provider-env-key=${request.tenant.credentialEnvKey}`,
     ...(request.tenant.parentModel ? [`--parent-model=${request.tenant.parentModel}`] : []),
     ...(request.tenant.subagentModel ? [`--subagent-model=${request.tenant.subagentModel}`] : [])
   ], {
     cwd: request.workspace,
-    env: {
-      ...process.env,
-      // The one variable the provider block resolves. Scope it to this call
-      // rather than exporting it process-wide.
-      [request.tenant.credentialEnvKey]: request.tenant.credential
-    },
     maxBuffer: 64 * 1024 * 1024
   })
   // SKS answers with its own result schema; treat it as the source of truth for
@@ -315,7 +346,7 @@ Adapter rules that keep updates safe:
 1. **One process boundary.** Shell out to the `sks` CLI with `--json`. Do not import SKS internals; they are not a published API and they move.
 2. **Never patch `dist/`.** A local patch is overwritten by every install and is asserted against by release gates. If a behaviour you need is missing, it belongs behind a flag like the ones above.
 3. **Host owns the workspace, SKS owns `.sneakoscope/`.** Write your own state anywhere else; treat `.sneakoscope/` as SKS-owned and read-only from outside.
-4. **Pass credentials per invocation, not per machine.** A per-call `env` entry keeps one tenant's key out of another tenant's run.
+4. **Do not write routing state.** Use `sks bridge` for explicit profile and route operations; keep provider secrets out of adapter argv, logs, and local state.
 5. **Let the gates fail.** A blocked mission with blockers is a correct answer. Do not retry it with safety flags off, and do not treat `--trusted-project` as a default — it is an operator decision about a reviewed checkout.
 6. **Do not pin a version in your own docs or error strings.** Ask for the official latest stable release and read the capability report; SKS enforces this on itself with the `latest-version:guidance` gate.
 7. **Parallelism advice is advisory.** `sks naruto` decides its own wave shape; if you plan slices yourself, check them against the graph advisory rather than assuming disjointness.
@@ -347,9 +378,9 @@ It shows the current quickstart flow: one-line install, `$sks-plan`, `sks review
 - Project memory: `sks memory build`
 - Codebase index/pack for LLM context: `sks align run` (wiki/pack rebuild SSOT; `sks wiki refresh --code` aliases into align), `sks wiki validate --json`
 - Native capability repair: `sks doctor --fix` (imagegen/Computer Use/Browser Use), `.sneakoscope/reports/native-capability-readiness.json`
-- codex-lb continuity: `sks codex-lb status --json` verifies the selected proxy's unauthenticated `/health` `X-App-Version`. Tool-heavy continuation requires a codex-lb deployment that reports the capability; use the official latest stable release. Older or unverified deployments block setup, doctor, and launch instead of silently falling back. A selected route is green only after one measured request records the destination host, gateway-key authentication class, measurement time, and latency; config presence alone is not routing proof.
+- Desktop Bridge: `sks bridge status --json`, `sks bridge route explain <model> --json`, and `sks bridge verify --level transport --json` report service, explicit routing, and staged transport truth. A configured profile or catalog is not routing proof, and a missing route never silently falls back.
 - Agent bridge for any agent system: `sks mcp-server`, `sks agent-bridge setup`, `SKS_AGENT_MODE=1` — see [docs/AGENT-BRIDGE.md](docs/AGENT-BRIDGE.md)
-- Release gates: `npm run release:check:affected` for ordinary change-aware verification and `npm run release:check:confidence` for the final local confidence pass. Evidence for the 8.1.0 physical checklist includes a successful prior-to-8.1.0 resolved-CLI upgrade, a 5,001-directory update scan, exactly one running Menu Bar process at the current package version, one measured real codex-lb request to the selected remote host, and one Telegram command/reply E2E over cellular.
+- Release gates: `npm run release:check:affected` for ordinary change-aware verification and `npm run release:check:confidence` for the final local confidence pass. 8.1.3 still requires target-bound real evidence for macOS lifecycle, OAuth preservation, both provider profiles, WebSocket protocol/frame truth, and deep artifacts; documentation and fixtures do not satisfy those gates.
 - Release preparation: typecheck, one clean build, focused tests, affected/confidence gates, all four source-bound physical receipts, then `npm publish --dry-run --json --registry https://registry.npmjs.org/ --tag latest --access public`. The dry-run does not publish or require release tags; real staging/publication remains a separate authenticated maintainer workflow.
 - Release readiness notes: [docs/release-readiness.md](docs/release-readiness.md) and [CHANGELOG.md](CHANGELOG.md)
 - Image generation review routes require Codex App `$imagegen`/`gpt-image-2` evidence with recorded output hashes; direct API fallback and mock fixtures do not satisfy full route gates.
@@ -360,15 +391,13 @@ It shows the current quickstart flow: one-line install, `$sks-plan`, `sks review
 - Git for diff/review and release proof
 - macOS optional: menu bar integration and `/usr/bin/open`
   - The menubar icon shows and hides itself automatically as the Codex desktop app launches/quits; set `quit_with_codex: true` in `~/.codex/sks-menubar/config.json` to have the menubar fully quit with Codex instead of just hiding (default `false`).
-  - Native input dialogs (API keys, codex-lb setup) pass secrets to `sks` via `--api-key-stdin` instead of a visible Terminal window or process arguments.
-  - Codex Desktop keeps `~/.codex/auth.json` byte-preserved. **Use codex-lb** atomically stores the provider definition and active top-level selection and resolves its separate gateway key from the owner-only `0600` env file; while selected, requests must not consume the stored ChatGPT OAuth identity. Turning codex-lb off returns to the official OAuth path. Keychain requests fail closed until a dedicated signed helper is available.
-  - Explicit codex-lb setup/reconfiguration migrates the retired generic `sks-codex-lb` Keychain item only after the replacement owner-only store is verified, deletes only the exact legacy account, and proves absence by readback. If cleanup cannot be proved, the replacement store is retained and the provider key should be rotated.
-  - Providers exposes atomic **Use codex-lb** / **Use ChatGPT OAuth** selection plus shared RoutingTruth. A green codex-lb state requires one measured request to the configured remote base URL; the Menu Bar and Doctor render the same host, authentication class, measurement time, and latency.
-  - The retired dual-auth compatibility mode is detected only for safe migration. It cannot be activated or reported ready because it would require a global GUI secret.
-  - Authentication and routing modes do not toggle Codex App's native model picker, Fast, image, Browser Use, Computer Use, voice, plugins/apps, or other built-in surfaces. Capability status describes measured evidence for the codex-lb data path, not permission to use a native feature.
-  - `sks update`, setup, repair, and routing changes preserve OAuth, user model/reasoning/Fast settings, unknown catalog fields, and unrelated provider configuration. Legacy shared-auth routing requires explicit `sks codex-lb migrate-legacy-desktop --restart-app`; without a real restart and post-restart identity check it cannot finalize a migration receipt.
-  - The remote codex-lb service remains independently hosted and operated. SKS uses only the configured URL and gateway key; it does not deploy, restart, or change credentials on that host.
-  - Full release proof blocks with `real_required_missing` until fresh trust-anchored evidence covers the real Desktop feature/lifecycle matrix, one measured gateway-key request to the selected separately hosted codex-lb instance, and the other-Mac runtime; fixtures and configuration cannot satisfy that boundary.
+  - Native input dialogs and the bridge CLI pass provider secrets via `--api-key-stdin`, never a visible Terminal command or process argument.
+  - Codex Desktop keeps `~/.codex/auth.json` byte/semantic-preserved. Desktop Bridge strips incoming OAuth authorization before either provider upstream request.
+  - Providers displays one bridge runtime, two independent profile rows, a combined catalog, explicit routes, and a scoped capability matrix. A status row is not a claim that a credential, WebSocket frame, or deep feature has been proven live.
+  - Migration recognizes historical SKS-authored values privately, writes a redacted receipt, and fails closed on user-owned/ambiguous configuration. It does not reactivate a legacy mode or create a legacy directory.
+  - `sks bridge unmanage --confirm` and `sks bridge rollback <receipt-id> --confirm` are explicit recovery actions; neither deletes newer credentials or OAuth state.
+  - The provider services remain independently operated. SKS never deploys them, changes remote credentials, or silently substitutes one profile for another.
+  - Full release proof remains `not-run-real` until fresh target-bound evidence covers the real Desktop service/UI, OAuth preservation, both provider profiles, staged WebSocket verification, and each claimed deep artifact.
   - Update installs stop and verify every prior Menu Bar process before replacement, rebuild the companion from the newly installed SKS package, bootstrap it, and require exactly one running process whose version probe equals the current package version.
   - Telegram remote control uses one bounded long-poller inside that same Menu Bar process. Release evidence must include a real cellular command/reply round trip; `getMe`, a local fixture, or a configured token alone cannot satisfy the E2E gate.
   - The menubar dropdown's `View Last Log` item opens the most recent background action's log file, so you don't need to keep a Terminal window open to see command output.
