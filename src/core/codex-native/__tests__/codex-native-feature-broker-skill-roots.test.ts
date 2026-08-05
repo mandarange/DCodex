@@ -29,6 +29,7 @@ async function writeRequiredManagedSkills(root: string) {
 }
 
 test('feature broker requires authoritative HOME skills and rejects project-only residue', async () => {
+  assert.equal(MANAGED_SKILLS.some((skill) => currentSksSkillName(skill.id) === 'sks-loop'), false);
   const fixture = await createCodexNativeRuntimeFixture({
     hook: 'approved',
     agentType: 'supported',

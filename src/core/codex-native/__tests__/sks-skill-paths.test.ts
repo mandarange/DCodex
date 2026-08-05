@@ -238,6 +238,7 @@ test('source ledger preserves managed digests when the dist manifest is absent u
     const releaseReview = manifest.skills.find((skill: any) => skill.canonical_name === 'sks-release-review');
     assert.equal(releaseReview?.type, 'official');
     assert.match(String(releaseReview?.content_sha256 || ''), /^[a-f0-9]{64}$/);
+    assert.equal(manifest.skills.some((skill: any) => skill.canonical_name === 'sks-loop'), false);
 
     await fsp.mkdir(home, { recursive: true });
     const install = await installedSkillsModule.installGlobalSkills(home);

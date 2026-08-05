@@ -508,7 +508,6 @@ Return the measurement method, observed result, uncertainty, and next cheapest e
 ])
 
 export const MANAGED_SKILLS: readonly ManagedSkillAsset[] = Object.freeze([
-  'loop',
   'naruto',
   'qa-loop',
   'research',

@@ -1198,6 +1198,10 @@ export function skillsManifestFromHashLedger(ledger: any): any | null {
       return null;
     }
     names.add(canonicalName);
+    // The ledger retains historical digests so older installations can be
+    // recognized and cleaned safely. Known retired skills are tombstones, not
+    // part of the current authoritative generation.
+    if (REMOVED_SKS_SKILL_NAME_SET.has(canonicalName)) continue;
     skills.push({
       canonical_name: canonicalName,
       type: isCoreSkillName(canonicalName) ? 'core' : 'official',
