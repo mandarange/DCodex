@@ -6,7 +6,7 @@ import test from 'node:test';
 import {
   assertAllowedOrigin,
   assertAllowedPath,
-  buildUpstreamHeaders,
+  buildProviderUpstreamHeaders,
   createDesktopBridgePublicState,
   desktopBridgeConfigGeneration,
   getDesktopBridgeStatus,
@@ -17,20 +17,74 @@ import {
   rewriteLocationHeader,
   writeDesktopBridgeState,
   type DesktopBridgeConfig,
-  type DesktopBridgeGatewayAuthTransport,
+  type DesktopBridgeProviderAuthTransport,
 } from '../index.js';
 
-function config(transport: DesktopBridgeGatewayAuthTransport = 'x-codex-lb-api-key'): DesktopBridgeConfig {
+const CODEX_LB_SECRET = 'lb-key-unit-secret';
+const CATALOG_GENERATION = 'catalog-generation';
+const POLICY_GENERATION = 'policy-generation';
+const CREDENTIAL_GENERATION = 'credential-generation';
+const CREDENTIAL_FINGERPRINT = 'credential-fingerprint';
+
+function config(transport: DesktopBridgeProviderAuthTransport = 'x-codex-lb-api-key'): DesktopBridgeConfig {
+  const baseUrl = 'https://lb.example.com/backend-api/codex';
   return {
     listenHost: '127.0.0.1',
     listenPort: 55_000,
-    remoteBaseUrl: 'https://lb.example.com/backend-api/codex',
-    gatewayKey: 'lb-key-unit-secret',
-    gatewayAuthTransport: transport,
+    providerRegistry: {
+      schema: 'sks.desktop-bridge-provider-registry.v1',
+      generation: 'registry-generation',
+      created_at: '2026-08-05T00:00:00.000Z',
+      providers: {
+        'codex-lb': {
+          provider_id: 'codex-lb', enabled: true, base_url: baseUrl,
+          allowed_origins: [new URL(baseUrl).origin], auth_transport: transport,
+          credential_state: 'ready', credential_fingerprint: CREDENTIAL_FINGERPRINT,
+          credential_generation: CREDENTIAL_GENERATION, catalog_generation: CATALOG_GENERATION,
+        },
+        openrouter: {
+          provider_id: 'openrouter', enabled: false, base_url: 'https://openrouter.ai/api/v1',
+          allowed_origins: ['https://openrouter.ai'], auth_transport: 'openrouter-bearer',
+          credential_state: 'not_configured', credential_fingerprint: null,
+          credential_generation: 'openrouter-credential-generation', catalog_generation: null,
+        },
+      },
+    },
+    routePolicy: {
+      schema: 'sks.bridge-routing-policy.v1', default_provider_id: 'codex-lb', fallback: 'none',
+      model_routes: { 'public-model': { provider_id: 'codex-lb', upstream_model: 'upstream-model' } },
+      catalog_generation: CATALOG_GENERATION, policy_generation: POLICY_GENERATION,
+      changed_at: '2026-08-05T00:00:00.000Z',
+    },
+    providerSessionPins: [],
+    resolveProviderCredential: async (providerId, expectedGeneration) => ({
+      provider_id: providerId,
+      value: providerId === 'codex-lb' ? CODEX_LB_SECRET : 'unused-openrouter-secret',
+      source: 'test',
+      fingerprint: providerId === 'codex-lb' ? CREDENTIAL_FINGERPRINT : 'unused-openrouter-fingerprint',
+      generation: expectedGeneration,
+    }),
     allowedPathPrefixes: ['/backend-api/codex/', '/backend-api/files'],
     allowedOrigins: ['app://codex'],
     connectTimeoutMs: 2_000,
     idleTimeoutMs: 30_000,
+  };
+}
+
+function withCodexLbBaseUrl(input: DesktopBridgeConfig, baseUrl: string): DesktopBridgeConfig {
+  return {
+    ...input,
+    providerRegistry: {
+      ...input.providerRegistry,
+      providers: {
+        ...input.providerRegistry.providers,
+        'codex-lb': {
+          ...input.providerRegistry.providers['codex-lb'],
+          base_url: baseUrl,
+          allowed_origins: [new URL(baseUrl).origin],
+        },
+      },
+    },
   };
 }
 
@@ -63,7 +117,7 @@ test('path and origin policy keeps identity/control surfaces outside the bridge'
   );
 });
 
-test('both explicit gateway transports strip Desktop OAuth and cookies without fallback', () => {
+test('both current Codex-LB auth transports strip Desktop OAuth and cookies without fallback', () => {
   const inbound = {
     authorization: 'Bearer chatgpt-oauth-secret',
     cookie: 'session=desktop-secret',
@@ -72,36 +126,42 @@ test('both explicit gateway transports strip Desktop OAuth and cookies without f
     'content-type': 'application/json',
   };
 
-  const preferred = buildUpstreamHeaders(inbound, config('x-codex-lb-api-key'), 'lb.example.com');
+  const preferred = buildProviderUpstreamHeaders(inbound, {
+    providerId: 'codex-lb', authTransport: 'x-codex-lb-api-key',
+    credential: { provider_id: 'codex-lb', value: CODEX_LB_SECRET, source: 'test', fingerprint: CREDENTIAL_FINGERPRINT, generation: CREDENTIAL_GENERATION },
+  }, 'lb.example.com');
   assert.equal(preferred.authorization, undefined);
   assert.equal(preferred.cookie, undefined);
   assert.equal(preferred['x-codex-lb-api-key'], 'lb-key-unit-secret');
   assert.equal(preferred['content-type'], 'application/json');
 
-  const compat = buildUpstreamHeaders(inbound, config('authorization-bearer-compat'), 'lb.example.com');
-  assert.equal(compat.authorization, 'Bearer lb-key-unit-secret');
-  assert.equal(compat.cookie, undefined);
-  assert.equal(compat['x-codex-lb-api-key'], undefined);
-  assert.notEqual(compat.authorization, inbound.authorization);
+  const bearer = buildProviderUpstreamHeaders(inbound, {
+    providerId: 'codex-lb', authTransport: 'authorization-bearer',
+    credential: { provider_id: 'codex-lb', value: CODEX_LB_SECRET, source: 'test', fingerprint: CREDENTIAL_FINGERPRINT, generation: CREDENTIAL_GENERATION },
+  }, 'lb.example.com');
+  assert.equal(bearer.authorization, `Bearer ${CODEX_LB_SECRET}`);
+  assert.equal(bearer.cookie, undefined);
+  assert.equal(bearer['x-codex-lb-api-key'], undefined);
+  assert.notEqual(bearer.authorization, inbound.authorization);
 });
 
 test('remote preflight pins DNS and blocks insecure or private-origin targets', async () => {
   const prepared = await prepareDesktopBridgeConfig(config(), async () => [{ address: '93.184.216.34', family: 4 }]);
-  assert.equal(prepared.remote.address, '93.184.216.34');
-  assert.equal(prepared.remote.hostname, 'lb.example.com');
-  assert.equal(prepared.remote.tlsServername, 'lb.example.com');
+  assert.equal(prepared.providers['codex-lb'].remote.address, '93.184.216.34');
+  assert.equal(prepared.providers['codex-lb'].remote.hostname, 'lb.example.com');
+  assert.equal(prepared.providers['codex-lb'].remote.tlsServername, 'lb.example.com');
 
   await assert.rejects(
     prepareDesktopBridgeConfig(config(), async () => [{ address: '127.0.0.1', family: 4 }]),
     /bridge_remote_dns_private_address/,
   );
   await assert.rejects(
-    prepareDesktopBridgeConfig({ ...config(), remoteBaseUrl: 'http://lb.example.com/backend-api/codex' }),
+    prepareDesktopBridgeConfig(withCodexLbBaseUrl(config(), 'http://lb.example.com/backend-api/codex')),
     /bridge_remote_transport_forbidden/,
   );
   await assert.rejects(
     prepareDesktopBridgeConfig(
-      { ...config(), remoteBaseUrl: 'http://localhost:8443/backend-api/codex' },
+      withCodexLbBaseUrl(config(), 'http://localhost:8443/backend-api/codex'),
       async () => [{ address: '93.184.216.34', family: 4 }],
     ),
     /bridge_remote_dns_rebinding_blocked/,
@@ -127,23 +187,27 @@ test('Location rewrite accepts only the configured HTTP/WebSocket endpoint famil
   );
 });
 
-test('0600 public state contains hashes and explicit auth transport but no gateway secret', async () => {
+test('0600 v2 public state contains registry, route, and credential generations but no provider secret', async () => {
   const temp = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-desktop-bridge-state-'));
   const file = path.join(temp, 'state.json');
   try {
-    const state = createDesktopBridgePublicState(config('authorization-bearer-compat'), {
+    const currentConfig = config('authorization-bearer');
+    const state = createDesktopBridgePublicState(currentConfig, {
       pid: 42,
-      now: new Date('2026-07-28T00:00:00.000Z'),
+      now: new Date(),
     });
     await writeDesktopBridgeState(file, state);
     const raw = await fsp.readFile(file, 'utf8');
     const stat = await fsp.stat(file);
     assert.equal(stat.mode & 0o777, 0o600);
-    assert.equal(raw.includes('lb-key-unit-secret'), false);
-    assert.equal(raw.includes('authorization-bearer-compat'), true);
+    assert.equal(raw.includes(CODEX_LB_SECRET), false);
+    assert.equal(state.provider_registry_generation, currentConfig.providerRegistry.generation);
+    assert.equal(state.route_policy_generation, currentConfig.routePolicy.policy_generation);
+    assert.equal(state.catalog_generation, currentConfig.routePolicy.catalog_generation);
+    assert.equal(state.provider_credential_generations['codex-lb'], CREDENTIAL_GENERATION);
     assert.deepEqual(await readDesktopBridgeState(file), state);
 
-    const generation = desktopBridgeConfigGeneration(config('authorization-bearer-compat'));
+    const generation = desktopBridgeConfigGeneration(currentConfig);
     assert.equal((await getDesktopBridgeStatus({
       statePath: file,
       expectedConfigGeneration: generation,
@@ -173,7 +237,7 @@ test('0600 public state contains hashes and explicit auth transport but no gatew
 test('launchd rendering contains no environment/key material and rejects secret arguments', () => {
   const plist = renderDesktopBridgeLaunchdPlist({
     executablePath: '/usr/local/bin/sks',
-    arguments: ['codex-lb', 'desktop-bridge', 'serve', '--config', '/Users/test/.codex/sks/bridge-config.json'],
+    arguments: ['bridge', 'serve', '--settings', '/Users/test/.codex/sks/bridge-settings.json'],
     stdoutPath: '/Users/test/Library/Logs/sks-bridge.out.log',
     stderrPath: '/Users/test/Library/Logs/sks-bridge.err.log',
   });

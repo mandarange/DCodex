@@ -16,12 +16,17 @@ import {
   startDesktopBridge,
   stopDesktopBridge,
   type DesktopBridgeConfig,
-  type DesktopBridgeGatewayAuthTransport,
+  type DesktopBridgeProviderAuthTransport,
   type DesktopBridgeHandle
 } from '../core/codex-lb/desktop-bridge/index.js'
 import { assertGate, emitGate } from './gate-lib.js'
 
-const gatewayKey = 'desktop-bridge-gateway-secret'
+const providerSecret = 'desktop-bridge-provider-secret'
+const publicModel = 'desktop-bridge-check-model'
+const catalogGeneration = 'desktop-bridge-check-catalog'
+const policyGeneration = 'desktop-bridge-check-policy'
+const credentialGeneration = 'desktop-bridge-check-credential'
+const credentialFingerprint = 'desktop-bridge-check-fingerprint'
 const desktopAuthorization = 'Bearer desktop-oauth-secret'
 const desktopCookie = 'desktop=session-secret'
 const upstreamObservations: {
@@ -83,7 +88,7 @@ const upstream = http.createServer((request, response) => {
         'set-cookie': 'remote=session-secret',
         'x-codex-lb-api-key': 'response-secret'
       })
-      response.end('{"transport":"compat"}')
+      response.end('{"transport":"authorization-bearer"}')
     })
     return
   }
@@ -132,7 +137,7 @@ const home = path.join(temporaryRoot, 'home')
 await fs.mkdir(path.join(home, '.codex'), { recursive: true })
 
 let preferredBridge: DesktopBridgeHandle | null = null
-let compatBridge: DesktopBridgeHandle | null = null
+let bearerBridge: DesktopBridgeHandle | null = null
 let preferredPort = 0
 let stateSecretSafe = false
 let stateRemovedOnStop = false
@@ -150,7 +155,7 @@ try {
     { statePath }
   )
   const stateText = await fs.readFile(statePath, 'utf8')
-  stateSecretSafe = !stateText.includes(gatewayKey)
+  stateSecretSafe = !stateText.includes(providerSecret)
     && !stateText.includes(desktopAuthorization)
     && !stateText.includes(desktopCookie)
 
@@ -162,7 +167,7 @@ try {
       'content-type': 'application/json',
       origin: 'app://codex'
     }),
-    chunks: [Buffer.from('{"stream":true}')],
+    chunks: [Buffer.from(JSON.stringify({ model: publicModel, stream: true }))],
     onData: () => {
       if (!sseEnded) firstSseChunkBeforeEnd = true
     }
@@ -193,24 +198,24 @@ try {
   preferredBridge = null
   stateRemovedOnStop = await fs.access(statePath).then(() => false, () => true)
 
-  const compatPort = await selectAvailableDesktopBridgePort('127.0.0.1')
-  compatBridge = await startDesktopBridge(
-    bridgeConfig(compatPort, upstreamPort, 'authorization-bearer-compat'),
+  const bearerPort = await selectAvailableDesktopBridgePort('127.0.0.1')
+  bearerBridge = await startDesktopBridge(
+    bridgeConfig(bearerPort, upstreamPort, 'authorization-bearer'),
     { writeState: false }
   )
   httpResult = await request({
-    port: compatPort,
+    port: bearerPort,
     path: '/v1/responses',
     method: 'POST',
     headers: clientHeaders({
       'content-type': 'application/json',
       origin: 'app://codex'
     }),
-    chunks: [Buffer.from('{"input":"hello"}')]
+    chunks: [Buffer.from(JSON.stringify({ model: publicModel, input: 'hello' }))]
   })
 } finally {
   if (preferredBridge) await stopDesktopBridge(preferredBridge).catch(() => undefined)
-  if (compatBridge) await stopDesktopBridge(compatBridge).catch(() => undefined)
+  if (bearerBridge) await stopDesktopBridge(bearerBridge).catch(() => undefined)
   await close(upstream).catch(() => undefined)
   await fs.rm(temporaryRoot, { recursive: true, force: true })
 }
@@ -222,7 +227,7 @@ const websocketHeaders = upstreamObservations.websocket || {}
 const sseVerified = sseResult?.status === 200
   && sseResult.body.toString('utf8') === 'data: first\n\ndata: second\n\n'
   && firstSseChunkBeforeEnd
-  && sseRequestBody.toString('utf8') === '{"stream":true}'
+  && sseRequestBody.toString('utf8') === JSON.stringify({ model: publicModel, stream: true })
   && sseResult.headers.location === `ws://127.0.0.1:${preferredPort}/backend-api/codex/call-1?token=opaque`
 const multipartVerified = multipartResult?.status === 200
   && multipartResult.body.toString('utf8') === '{"ok":true}'
@@ -233,18 +238,18 @@ const webSocketVerified = Boolean(webSocketResult
   && !/Set-Cookie|X-Codex-LB-Api-Key/i.test(webSocketResult.responseHead)
   && webSocketResult.frames.equals(Buffer.concat([serverBinaryFrame, serverCloseFrame]))
   && receivedClientFrame.subarray(0, maskedClientFrame.length).equals(maskedClientFrame))
-const preferredAuthVerified = sseHeaders['x-codex-lb-api-key'] === gatewayKey
+const preferredAuthVerified = sseHeaders['x-codex-lb-api-key'] === providerSecret
   && sseHeaders.authorization === undefined
   && sseHeaders.cookie === undefined
-  && multipartHeaders['x-codex-lb-api-key'] === gatewayKey
+  && multipartHeaders['x-codex-lb-api-key'] === providerSecret
   && multipartHeaders.authorization === undefined
   && multipartHeaders.cookie === undefined
-  && websocketHeaders['x-codex-lb-api-key'] === gatewayKey
+  && websocketHeaders['x-codex-lb-api-key'] === providerSecret
   && websocketHeaders.authorization === undefined
   && websocketHeaders.cookie === undefined
-const compatAuthVerified = httpResult?.status === 200
-  && httpResult.body.toString('utf8') === '{"transport":"compat"}'
-  && httpHeaders.authorization === `Bearer ${gatewayKey}`
+const bearerAuthVerified = httpResult?.status === 200
+  && httpResult.body.toString('utf8') === '{"transport":"authorization-bearer"}'
+  && httpHeaders.authorization === `Bearer ${providerSecret}`
   && httpHeaders['x-codex-lb-api-key'] === undefined
   && httpHeaders.cookie === undefined
 const responseHeadersRedacted = [sseResult, multipartResult, httpResult].every((result) => (
@@ -260,16 +265,16 @@ const report = {
     && multipartVerified
     && webSocketVerified
     && preferredAuthVerified
-    && compatAuthVerified
+    && bearerAuthVerified
     && responseHeadersRedacted
     && stateSecretSafe
     && stateRemovedOnStop,
-  http: compatAuthVerified,
+  http: bearerAuthVerified,
   sse: sseVerified,
   multipart: multipartVerified,
   websocket: webSocketVerified,
-  preferred_gateway_auth_transport: preferredAuthVerified,
-  explicit_legacy_gateway_auth_transport: compatAuthVerified,
+  x_codex_lb_api_key_transport: preferredAuthVerified,
+  authorization_bearer_transport: bearerAuthVerified,
   response_headers_redacted: responseHeadersRedacted,
   public_state_secret_safe: stateSecretSafe,
   public_state_removed_on_stop: stateRemovedOnStop,
@@ -278,7 +283,7 @@ const report = {
     ...(multipartVerified ? [] : ['desktop_bridge_multipart_round_trip_failed']),
     ...(webSocketVerified ? [] : ['desktop_bridge_websocket_round_trip_failed']),
     ...(preferredAuthVerified ? [] : ['desktop_bridge_preferred_auth_transport_failed']),
-    ...(compatAuthVerified ? [] : ['desktop_bridge_compat_auth_transport_failed']),
+    ...(bearerAuthVerified ? [] : ['desktop_bridge_authorization_bearer_transport_failed']),
     ...(responseHeadersRedacted ? [] : ['desktop_bridge_response_secret_header_leaked']),
     ...(stateSecretSafe ? [] : ['desktop_bridge_public_state_contains_secret']),
     ...(stateRemovedOnStop ? [] : ['desktop_bridge_state_not_removed_on_stop'])
@@ -291,9 +296,9 @@ emitGate('codex-lb:desktop-bridge', {
   sse: report.sse,
   multipart: report.multipart,
   websocket: report.websocket,
-  gateway_auth_transports: [
+  provider_auth_transports: [
     'x-codex-lb-api-key',
-    'authorization-bearer-compat'
+    'authorization-bearer'
   ],
   response_headers_redacted: report.response_headers_redacted,
   public_state_secret_safe: report.public_state_secret_safe
@@ -302,14 +307,45 @@ emitGate('codex-lb:desktop-bridge', {
 function bridgeConfig(
   listenPort: number,
   remotePort: number,
-  gatewayAuthTransport: DesktopBridgeGatewayAuthTransport
+  authTransport: DesktopBridgeProviderAuthTransport
 ): DesktopBridgeConfig {
+  const baseUrl = `http://127.0.0.1:${remotePort}/backend-api/codex`
   return {
     listenHost: '127.0.0.1',
     listenPort,
-    remoteBaseUrl: `http://127.0.0.1:${remotePort}/backend-api/codex`,
-    gatewayKey,
-    gatewayAuthTransport,
+    providerRegistry: {
+      schema: 'sks.desktop-bridge-provider-registry.v1',
+      generation: 'desktop-bridge-check-registry',
+      created_at: '2026-08-05T00:00:00.000Z',
+      providers: {
+        'codex-lb': {
+          provider_id: 'codex-lb', enabled: true, base_url: baseUrl,
+          allowed_origins: [new URL(baseUrl).origin], auth_transport: authTransport,
+          credential_state: 'ready', credential_fingerprint: credentialFingerprint,
+          credential_generation: credentialGeneration, catalog_generation: catalogGeneration
+        },
+        openrouter: {
+          provider_id: 'openrouter', enabled: false, base_url: 'https://openrouter.ai/api/v1',
+          allowed_origins: ['https://openrouter.ai'], auth_transport: 'openrouter-bearer',
+          credential_state: 'not_configured', credential_fingerprint: null,
+          credential_generation: 'desktop-bridge-check-openrouter-credential', catalog_generation: null
+        }
+      }
+    },
+    routePolicy: {
+      schema: 'sks.bridge-routing-policy.v1', default_provider_id: 'codex-lb', fallback: 'none',
+      model_routes: { [publicModel]: { provider_id: 'codex-lb', upstream_model: publicModel } },
+      catalog_generation: catalogGeneration, policy_generation: policyGeneration,
+      changed_at: '2026-08-05T00:00:00.000Z'
+    },
+    providerSessionPins: [],
+    resolveProviderCredential: async (providerId, expectedGeneration) => ({
+      provider_id: providerId,
+      value: providerId === 'codex-lb' ? providerSecret : 'unused-openrouter-secret',
+      source: 'release-check',
+      fingerprint: providerId === 'codex-lb' ? credentialFingerprint : 'unused-openrouter-fingerprint',
+      generation: expectedGeneration
+    }),
     allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
     allowedOrigins: ['app://codex'],
     connectTimeoutMs: 2_000,
@@ -322,6 +358,7 @@ function clientHeaders(additional: http.OutgoingHttpHeaders = {}): http.Outgoing
     authorization: desktopAuthorization,
     cookie: desktopCookie,
     'x-codex-lb-api-key': 'client-forged-key',
+    'x-sks-model': publicModel,
     ...additional
   }
 }
@@ -407,6 +444,7 @@ async function websocketRoundTrip(port: number): Promise<{ responseHead: string;
           + 'Sec-WebSocket-Version: 13\r\n'
           + 'Sec-WebSocket-Protocol: codex.realtime.v1\r\n'
           + 'Origin: app://codex\r\n'
+          + `X-SKS-Model: ${publicModel}\r\n`
           + `Authorization: ${desktopAuthorization}\r\n`
           + `Cookie: ${desktopCookie}\r\n`
           + 'X-Codex-LB-Api-Key: client-forged-key\r\n'

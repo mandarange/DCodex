@@ -10,6 +10,7 @@ import {
   selectAvailableDesktopBridgePort,
   startDesktopBridge,
   stopDesktopBridge,
+  type DesktopBridgeConfig,
   type DesktopBridgeHandle
 } from '../core/codex-lb/desktop-bridge/index.js'
 import { assertGate, emitGate } from './gate-lib.js'
@@ -21,6 +22,12 @@ const SSE_MEASURED_SAMPLES = 100
 const HTTP_P50_BUDGET_MS = 2
 const HTTP_P95_BUDGET_MS = 5
 const SSE_FIRST_BYTE_P95_BUDGET_MS = 10
+const PUBLIC_MODEL = 'desktop-bridge-latency-model'
+const CATALOG_GENERATION = 'desktop-bridge-latency-catalog'
+const POLICY_GENERATION = 'desktop-bridge-latency-policy'
+const CREDENTIAL_GENERATION = 'desktop-bridge-latency-credential'
+const CREDENTIAL_FINGERPRINT = 'desktop-bridge-latency-fingerprint'
+const PROVIDER_SECRET = 'latency-probe-provider-secret'
 
 const upstream = http.createServer((request, response) => {
   request.resume()
@@ -53,17 +60,7 @@ const bridgeAgent = new Agent({ keepAlive: true, maxSockets: 1 })
 
 let report: Record<string, unknown>
 try {
-  bridge = await startDesktopBridge({
-    listenHost: '127.0.0.1',
-    listenPort: bridgePort,
-    remoteBaseUrl: `http://127.0.0.1:${upstreamPort}`,
-    gatewayKey: 'latency-probe-gateway-key',
-    gatewayAuthTransport: 'x-codex-lb-api-key',
-    allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
-    allowedOrigins: ['app://codex'],
-    connectTimeoutMs: 2_000,
-    idleTimeoutMs: 10_000
-  }, { writeState: false })
+  bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort), { writeState: false })
 
   await warmup('/v1/latency/headers', HTTP_WARMUP_SAMPLES, false)
   const httpOverhead = await pairedOverhead('/v1/latency/headers', HTTP_MEASURED_SAMPLES, false)
@@ -167,7 +164,8 @@ async function requestLatency(
         ? {
             origin: 'app://codex',
             authorization: 'Bearer desktop-oauth-redacted',
-            cookie: 'desktop-session=redacted'
+            cookie: 'desktop-session=redacted',
+            'x-sks-model': PUBLIC_MODEL
           }
         : undefined
     })
@@ -199,6 +197,51 @@ async function measureResponse(
     })
     response.resume()
   })
+}
+
+function bridgeConfig(listenPort: number, upstreamPort: number): DesktopBridgeConfig {
+  const baseUrl = `http://127.0.0.1:${upstreamPort}`
+  return {
+    listenHost: '127.0.0.1',
+    listenPort,
+    providerRegistry: {
+      schema: 'sks.desktop-bridge-provider-registry.v1',
+      generation: 'desktop-bridge-latency-registry',
+      created_at: '2026-08-05T00:00:00.000Z',
+      providers: {
+        'codex-lb': {
+          provider_id: 'codex-lb', enabled: true, base_url: baseUrl,
+          allowed_origins: [new URL(baseUrl).origin], auth_transport: 'x-codex-lb-api-key',
+          credential_state: 'ready', credential_fingerprint: CREDENTIAL_FINGERPRINT,
+          credential_generation: CREDENTIAL_GENERATION, catalog_generation: CATALOG_GENERATION
+        },
+        openrouter: {
+          provider_id: 'openrouter', enabled: false, base_url: 'https://openrouter.ai/api/v1',
+          allowed_origins: ['https://openrouter.ai'], auth_transport: 'openrouter-bearer',
+          credential_state: 'not_configured', credential_fingerprint: null,
+          credential_generation: 'desktop-bridge-latency-openrouter-credential', catalog_generation: null
+        }
+      }
+    },
+    routePolicy: {
+      schema: 'sks.bridge-routing-policy.v1', default_provider_id: 'codex-lb', fallback: 'none',
+      model_routes: { [PUBLIC_MODEL]: { provider_id: 'codex-lb', upstream_model: PUBLIC_MODEL } },
+      catalog_generation: CATALOG_GENERATION, policy_generation: POLICY_GENERATION,
+      changed_at: '2026-08-05T00:00:00.000Z'
+    },
+    providerSessionPins: [],
+    resolveProviderCredential: async (providerId, expectedGeneration) => ({
+      provider_id: providerId,
+      value: providerId === 'codex-lb' ? PROVIDER_SECRET : 'unused-openrouter-secret',
+      source: 'latency-check',
+      fingerprint: providerId === 'codex-lb' ? CREDENTIAL_FINGERPRINT : 'unused-openrouter-fingerprint',
+      generation: expectedGeneration
+    }),
+    allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
+    allowedOrigins: ['app://codex'],
+    connectTimeoutMs: 2_000,
+    idleTimeoutMs: 10_000
+  }
 }
 
 function percentile(values: number[], quantile: number): number {

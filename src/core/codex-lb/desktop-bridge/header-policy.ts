@@ -2,7 +2,6 @@ import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
 import type { BridgeProviderId } from '../bridge-contracts.js';
 import { rewriteLocationHeader } from './location-rewrite.js';
 import type {
-  DesktopBridgeConfig,
   DesktopBridgeProviderAuthTransport,
   DesktopBridgeResolvedCredential,
 } from './types.js';
@@ -62,20 +61,6 @@ export function buildProviderUpstreamHeaders(
   return result;
 }
 
-/** @deprecated One-patch adapter for existing single-provider tests. */
-export function buildUpstreamHeaders(
-  inbound: IncomingHttpHeaders,
-  config: Pick<DesktopBridgeConfig, 'gatewayKey' | 'gatewayAuthTransport'>,
-  upstreamHost: string,
-): OutgoingHttpHeaders {
-  if (!config.gatewayKey || !config.gatewayAuthTransport) throw new DesktopBridgeError('bridge_provider_credential_resolver_missing');
-  return buildProviderUpstreamHeaders(inbound, {
-    providerId: 'codex-lb',
-    authTransport: config.gatewayAuthTransport === 'x-codex-lb-api-key' ? 'x-codex-lb-api-key' : 'authorization-bearer',
-    credential: { provider_id: 'codex-lb', value: config.gatewayKey, source: 'legacy-adapter', fingerprint: 'legacy', generation: 'legacy' },
-  }, upstreamHost);
-}
-
 export function buildProviderWebSocketHeaders(
   inbound: IncomingHttpHeaders,
   context: Parameters<typeof buildProviderUpstreamHeaders>[1],
@@ -92,15 +77,7 @@ export function buildProviderWebSocketHeaders(
   return result;
 }
 
-/** @deprecated One-patch adapter. */
-export function buildWebSocketHeaders(inbound: IncomingHttpHeaders, config: Pick<DesktopBridgeConfig, 'gatewayKey' | 'gatewayAuthTransport'>, upstreamHost: string): OutgoingHttpHeaders {
-  const result = buildUpstreamHeaders(inbound, config, upstreamHost);
-  for (const [name, value] of Object.entries(inbound)) if (value !== undefined && name.toLowerCase().startsWith('sec-websocket-')) result[name] = value;
-  result.connection = 'Upgrade'; result.upgrade = 'websocket';
-  return result;
-}
-
-export function rewriteResponseHeaders(inbound: IncomingHttpHeaders, remoteBaseUrl: string, localOrigin: string): OutgoingHttpHeaders {
+export function rewriteResponseHeaders(inbound: IncomingHttpHeaders, providerBaseUrl: string, localOrigin: string): OutgoingHttpHeaders {
   const result: OutgoingHttpHeaders = {};
   const dynamic = connectionTokens(inbound);
   for (const [rawName, rawValue] of Object.entries(inbound)) {
@@ -110,7 +87,7 @@ export function rewriteResponseHeaders(inbound: IncomingHttpHeaders, remoteBaseU
     if (name === 'location') {
       const values = Array.isArray(rawValue) ? rawValue : [rawValue];
       if (values.length !== 1 || !values[0]) throw new DesktopBridgeError('bridge_location_header_invalid');
-      result.location = rewriteLocationHeader(values[0], remoteBaseUrl, localOrigin);
+      result.location = rewriteLocationHeader(values[0], providerBaseUrl, localOrigin);
     } else result[name] = rawValue;
   }
   return result;

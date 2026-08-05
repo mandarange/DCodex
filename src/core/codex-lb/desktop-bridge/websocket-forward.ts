@@ -14,6 +14,7 @@ import {
   type DesktopBridgeRouteContext,
   type DesktopBridgeWebSocketProbeOptions,
   type PreparedDesktopBridgeConfig,
+  type PreparedDesktopBridgeProvider,
 } from './types.js';
 import type { WebSocketProbeResult } from '../bridge-contracts.js';
 
@@ -52,7 +53,7 @@ function validateUpgrade(head: Buffer, key: string, requestedProtocol: string | 
   return { status: parsed.status, protocol };
 }
 
-function rewriteUpgradeResponseHead(head: Buffer, remoteBaseUrl: string, localOrigin: string): Buffer {
+function rewriteUpgradeResponseHead(head: Buffer, providerBaseUrl: string, localOrigin: string): Buffer {
   const lines = head.toString('latin1').split('\r\n'); const status = lines.shift();
   if (!status) throw new DesktopBridgeError('bridge_websocket_response_invalid');
   const output = [status];
@@ -61,19 +62,14 @@ function rewriteUpgradeResponseHead(head: Buffer, remoteBaseUrl: string, localOr
     const colon = line.indexOf(':'); if (colon <= 0) throw new DesktopBridgeError('bridge_websocket_response_invalid');
     const name = line.slice(0, colon).toLowerCase(); const value = line.slice(colon + 1).trim();
     if (REDACTED_RESPONSE_HEADERS.has(name) || name.startsWith('access-control-')) continue;
-    output.push(name === 'location' ? `${line.slice(0, colon)}: ${rewriteLocationHeader(value, remoteBaseUrl, localOrigin)}` : line);
+    output.push(name === 'location' ? `${line.slice(0, colon)}: ${rewriteLocationHeader(value, providerBaseUrl, localOrigin)}` : line);
   }
   return Buffer.from(`${output.join('\r\n')}\r\n\r\n`, 'latin1');
 }
 
 export async function prepareDesktopBridgeWebSocketRequest(req: IncomingMessage, config: PreparedDesktopBridgeConfig): Promise<{
-  route: DesktopBridgeRouteContext | null; credential: DesktopBridgeResolvedCredential; provider: PreparedDesktopBridgeConfig['providers']['codex-lb'];
+  route: DesktopBridgeRouteContext; credential: DesktopBridgeResolvedCredential; provider: PreparedDesktopBridgeProvider;
 }> {
-  if (!config.routePolicy) {
-    const provider = config.providers['codex-lb'];
-    if (!provider || !config.resolveProviderCredential) throw new DesktopBridgeError('bridge_provider_credential_resolver_missing');
-    return { route: null, provider, credential: await config.resolveProviderCredential('codex-lb', provider.credential_generation) };
-  }
   const route = assertDesktopBridgeRouteContext({
     public_model: singleBridgeHeader(req.headers, 'x-sks-model') || '',
     session_id: singleBridgeHeader(req.headers, 'x-sks-session-id'),
@@ -81,7 +77,7 @@ export async function prepareDesktopBridgeWebSocketRequest(req: IncomingMessage,
     transport: 'websocket', headers: req.headers,
   }, config);
   const provider = config.providers[route.provider_id];
-  if (!provider || !config.resolveProviderCredential) throw new DesktopBridgeError('bridge_provider_credential_resolver_missing');
+  if (!provider) throw new DesktopBridgeError('bridge_provider_route_unavailable');
   const credential = await config.resolveProviderCredential(route.provider_id, provider.credential_generation);
   if (credential.provider_id !== route.provider_id || credential.generation !== provider.credential_generation
     || (provider.credential_fingerprint && credential.fingerprint !== provider.credential_fingerprint)) {

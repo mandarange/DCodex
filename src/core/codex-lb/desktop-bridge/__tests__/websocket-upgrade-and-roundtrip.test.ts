@@ -39,8 +39,32 @@ test('R19 successful upgrade followed by no frame reports frame receive only', a
 });
 
 function bridgeConfig(port: number, upstreamPort: number): DesktopBridgeConfig {
+  const baseUrl = `http://127.0.0.1:${upstreamPort}/backend-api/codex`;
   return {
-    listenHost: '127.0.0.1', listenPort: port, remoteBaseUrl: `http://127.0.0.1:${upstreamPort}/backend-api/codex`, gatewayKey: 'legacy-fixture', gatewayAuthTransport: 'x-codex-lb-api-key',
+    listenHost: '127.0.0.1', listenPort: port,
+    providerRegistry: {
+      schema: 'sks.desktop-bridge-provider-registry.v1', generation: 'registry-generation', created_at: '2026-08-05T00:00:00.000Z',
+      providers: {
+        'codex-lb': {
+          provider_id: 'codex-lb', enabled: true, base_url: baseUrl, allowed_origins: [new URL(baseUrl).origin], auth_transport: 'x-codex-lb-api-key',
+          credential_state: 'ready', credential_fingerprint: 'credential-fingerprint', credential_generation: 'credential-generation', catalog_generation: 'catalog-generation',
+        },
+        openrouter: {
+          provider_id: 'openrouter', enabled: false, base_url: 'https://openrouter.ai/api/v1', allowed_origins: ['https://openrouter.ai'], auth_transport: 'openrouter-bearer',
+          credential_state: 'not_configured', credential_fingerprint: null, credential_generation: 'openrouter-credential-generation', catalog_generation: null,
+        },
+      },
+    },
+    routePolicy: {
+      schema: 'sks.bridge-routing-policy.v1', default_provider_id: 'codex-lb', fallback: 'none',
+      model_routes: { 'public-model': { provider_id: 'codex-lb', upstream_model: 'public-model' } },
+      catalog_generation: 'catalog-generation', policy_generation: 'policy-generation', changed_at: '2026-08-05T00:00:00.000Z',
+    },
+    providerSessionPins: [],
+    resolveProviderCredential: async (providerId, expectedGeneration) => ({
+      provider_id: providerId, value: 'unused-diagnostic-secret', source: 'test',
+      fingerprint: providerId === 'codex-lb' ? 'credential-fingerprint' : 'unused-openrouter-fingerprint', generation: expectedGeneration,
+    }),
     allowedPathPrefixes: ['/backend-api/codex/'], allowedOrigins: ['app://codex'], connectTimeoutMs: 500, idleTimeoutMs: 2_000,
   };
 }

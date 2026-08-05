@@ -9,8 +9,8 @@ import { DesktopBridgeError, type DesktopBridgeResolvedCredential, type DesktopB
 
 export interface PreparedDesktopBridgeRequest {
   body: Buffer | null;
-  route: DesktopBridgeRouteContext | null;
-  credential: DesktopBridgeResolvedCredential | null;
+  route: DesktopBridgeRouteContext;
+  credential: DesktopBridgeResolvedCredential;
 }
 
 function bodyCarriesModel(rawUrl: string | undefined): boolean {
@@ -32,7 +32,7 @@ async function readBoundedBody(req: IncomingMessage, maximum: number): Promise<B
 
 async function resolveCredential(config: PreparedDesktopBridgeConfig, route: DesktopBridgeRouteContext): Promise<DesktopBridgeResolvedCredential> {
   const provider = config.providers[route.provider_id];
-  if (!provider || !config.resolveProviderCredential) throw new DesktopBridgeError('bridge_provider_credential_resolver_missing');
+  if (!provider) throw new DesktopBridgeError('bridge_provider_route_unavailable');
   const credential = await config.resolveProviderCredential(route.provider_id, provider.credential_generation);
   if (credential.provider_id !== route.provider_id || credential.generation !== provider.credential_generation
     || (provider.credential_fingerprint && credential.fingerprint !== provider.credential_fingerprint)) {
@@ -43,8 +43,6 @@ async function resolveCredential(config: PreparedDesktopBridgeConfig, route: Des
 
 export async function prepareDesktopBridgeRequest(req: IncomingMessage, config: PreparedDesktopBridgeConfig): Promise<PreparedDesktopBridgeRequest> {
   const pathname = new URL(String(req.url || '/'), 'http://bridge.invalid').pathname;
-  const legacy = !config.routePolicy;
-  if (legacy) return { body: null, route: null, credential: null };
   let body: Buffer | null = null;
   let payload: Record<string, unknown> | null = null;
   if (bodyCarriesModel(req.url)) {
@@ -67,11 +65,6 @@ export async function prepareDesktopBridgeRequest(req: IncomingMessage, config: 
   }
   const credential = await resolveCredential(config, route);
   return { body, route, credential };
-}
-
-/** Compatibility alias used by 8.1.2 callers. */
-export async function prepareDesktopBridgeRequestBody(req: IncomingMessage, config: PreparedDesktopBridgeConfig): Promise<Buffer | null> {
-  return (await prepareDesktopBridgeRequest(req, config)).body;
 }
 
 function connectTimeout(request: ClientRequest, config: PreparedDesktopBridgeConfig): void {
@@ -100,17 +93,12 @@ export async function forwardHttp(
 ): Promise<void> {
   try {
     const request = prepared || await prepareDesktopBridgeRequest(req, config);
-    const provider = request.route ? config.providers[request.route.provider_id] : config.providers['codex-lb'];
+    const provider = config.providers[request.route.provider_id];
     if (!provider) throw new DesktopBridgeError('bridge_provider_route_unavailable');
-    let credential = request.credential;
-    if (!credential) {
-      if (!config.resolveProviderCredential) throw new DesktopBridgeError('bridge_provider_credential_resolver_missing');
-      credential = await config.resolveProviderCredential('codex-lb', provider.credential_generation);
-    }
     const target = resolveDesktopBridgeTarget(req.url, provider.remote);
     const transport = provider.remote.secure ? https : http;
     const headers = buildProviderUpstreamHeaders(req.headers, {
-      providerId: provider.provider_id, authTransport: provider.auth_transport, credential,
+      providerId: provider.provider_id, authTransport: provider.auth_transport, credential: request.credential,
     }, target.host);
     if (request.body) headers['content-length'] = String(request.body.length);
     else delete headers['content-length'];

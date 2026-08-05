@@ -1,10 +1,6 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import type { BridgeProviderId, BridgeRoutingPolicy, ProviderSessionPin } from '../bridge-contracts.js';
-import { assertProviderModeModel } from '../../codex-app/provider-mode.js';
-import { assertSessionRequest, resumeSessionPin, sessionPinHash } from '../../codex-app/session-policy/session-pinning.js';
-import type { SessionPin } from '../../architecture-hardening/contracts/contracts.js';
-import { decideChildSelection } from '../../codex-app/child-policy/child-policy.js';
 import type {
   DesktopBridgeConfig,
   DesktopBridgeProviderRegistrySnapshot,
@@ -150,10 +146,9 @@ export function assertDesktopBridgeRouteContext(
   request: DesktopBridgeRouteRequest,
   config: PreparedDesktopBridgeConfig,
 ): DesktopBridgeRouteContext {
-  const policy = config.routePolicy;
-  if (!policy) throw new DesktopBridgeError('catalog_model_route_missing');
   const resolver = config.resolveRequestRoute || resolveBridgeRequestRoute;
-  const route = resolver(request, policy, config.providerSessionPins || []);
+  const route = resolver(request, config.routePolicy, config.providerSessionPins);
+  const policy = config.routePolicy;
   const expected = policy.model_routes[route.public_model];
   if (!expected || expected.provider_id !== route.provider_id || expected.upstream_model !== route.upstream_model) {
     throw new DesktopBridgeError('catalog_model_route_missing');
@@ -171,35 +166,6 @@ export function assertDesktopBridgeRouteContext(
     throw new DesktopBridgeError('bridge_provider_origin_forbidden');
   }
   return route;
-}
-
-/** Compatibility choke point retained for old call sites; active requests use assertDesktopBridgeRouteContext. */
-export function assertDesktopBridgeRequestPolicy(input: { headers: NodeJS.Dict<string | string[]>; config: DesktopBridgeConfig; model?: unknown }): void {
-  const { config } = input;
-  if (!config.providerMode) return;
-  const requestedMode = singleBridgeHeader(input.headers, 'x-sks-provider-mode');
-  if (requestedMode && requestedMode !== config.providerMode) throw new DesktopBridgeError('bridge_provider_route_cross_mode_forbidden');
-  if (input.model !== undefined) {
-    try { assertProviderModeModel(config.providerMode, input.model, config.allowedModels || []); }
-    catch (error) { throw new DesktopBridgeError(`bridge_${(error as Error).message}`); }
-  }
-  const sessionId = singleBridgeHeader(input.headers, 'x-sks-session-id');
-  if (!sessionId) { if (config.requireSessionPin) throw new DesktopBridgeError('bridge_session_pin_required'); return; }
-  const pin = (config.sessionPins || []).find((entry): entry is SessionPin => 'session_id' in entry && entry.session_id === sessionId);
-  if (!pin) throw new DesktopBridgeError('bridge_session_pin_unknown');
-  if (config.providerPolicy) {
-    const resume = resumeSessionPin(pin, config.providerPolicy);
-    if (!resume.ok) throw new DesktopBridgeError(`bridge_${resume.blocker || 'session_pin_blocked'}`);
-  }
-  const childFlag = singleBridgeHeader(input.headers, 'x-sks-child-request');
-  const childHash = singleBridgeHeader(input.headers, 'x-sks-child-policy-hash') || config.providerPolicy?.child_policy_hash || '';
-  try { assertSessionRequest(pin, { mode: config.providerMode, model: childFlag === '1' ? pin.model : String(input.model || pin.model), childPolicyHash: childHash }); }
-  catch (error) { throw new DesktopBridgeError(`bridge_${(error as Error).message}`); }
-  if (childFlag !== '1') return;
-  if (!config.childPolicy) throw new DesktopBridgeError('bridge_child_policy_missing');
-  if (singleBridgeHeader(input.headers, 'x-sks-parent-snapshot-hash') !== sessionPinHash(pin)) throw new DesktopBridgeError('bridge_child_parent_snapshot_mismatch');
-  const child = decideChildSelection({ session: pin, policy: config.childPolicy, requestedModel: singleBridgeHeader(input.headers, 'x-sks-child-model') || pin.model });
-  if (!child.ok) throw new DesktopBridgeError(`bridge_${child.blockers[0] || 'child_policy_blocked'}`);
 }
 
 function stripIpv6Brackets(hostname: string): string { return hostname.replace(/^\[/, '').replace(/\]$/, ''); }
@@ -282,7 +248,6 @@ function assertRegistryAndPolicy(config: DesktopBridgeConfig, registry: DesktopB
     validateRemoteUrl(provider.base_url);
   }
   const policy = config.routePolicy;
-  if (!policy) return;
   if (policy.schema !== 'sks.bridge-routing-policy.v1' || policy.fallback !== 'none' || !policy.catalog_generation || !policy.policy_generation) {
     throw new DesktopBridgeError('bridge_route_policy_invalid');
   }
@@ -292,7 +257,7 @@ function assertRegistryAndPolicy(config: DesktopBridgeConfig, registry: DesktopB
     }
   }
   const pinIds = new Set<string>();
-  for (const pin of config.providerSessionPins || []) {
+  for (const pin of config.providerSessionPins) {
     if (!pin.thread_id || pinIds.has(pin.thread_id) || !ids.includes(pin.provider_id)
       || !pin.public_model || !pin.upstream_model || !pin.catalog_generation || !pin.route_policy_generation) {
       throw new DesktopBridgeError('bridge_session_pin_invalid');
@@ -301,50 +266,33 @@ function assertRegistryAndPolicy(config: DesktopBridgeConfig, registry: DesktopB
   }
 }
 
-function legacyRegistry(config: DesktopBridgeConfig): DesktopBridgeProviderRegistrySnapshot | null {
-  if (!config.remoteBaseUrl || !config.gatewayKey || !config.gatewayAuthTransport) return null;
-  const codex = {
-    provider_id: 'codex-lb' as const, enabled: true, base_url: config.remoteBaseUrl,
-    allowed_origins: [new URL(config.remoteBaseUrl).origin],
-    auth_transport: config.gatewayAuthTransport === 'x-codex-lb-api-key' ? 'x-codex-lb-api-key' as const : 'authorization-bearer' as const,
-    credential_state: 'ready' as const, credential_fingerprint: 'legacy', credential_generation: 'legacy', catalog_generation: null,
-  };
-  const disabled = { provider_id: 'openrouter' as const, enabled: false, base_url: 'https://openrouter.ai/api/v1', allowed_origins: ['https://openrouter.ai'], auth_transport: 'openrouter-bearer' as const, credential_state: 'not_configured' as const, credential_fingerprint: null, credential_generation: 'legacy', catalog_generation: null };
-  return { schema: 'sks.desktop-bridge-provider-registry.v1', generation: 'legacy', created_at: new Date(0).toISOString(), providers: { 'codex-lb': codex, openrouter: disabled } };
-}
-
-export function validateDesktopBridgeConfig(config: DesktopBridgeConfig): URL {
+export function validateDesktopBridgeConfig(config: DesktopBridgeConfig): void {
   assertLoopbackListenHost(config.listenHost);
   if (!Number.isInteger(config.listenPort) || config.listenPort < MIN_HIGH_PORT || config.listenPort > MAX_PORT) throw new DesktopBridgeError('bridge_listen_port_not_high');
   if (!config.allowedPathPrefixes.length) throw new DesktopBridgeError('bridge_path_allowlist_empty');
   if (!Number.isFinite(config.connectTimeoutMs) || config.connectTimeoutMs < 100 || config.connectTimeoutMs > 120_000) throw new DesktopBridgeError('bridge_connect_timeout_invalid');
   if (!Number.isFinite(config.idleTimeoutMs) || config.idleTimeoutMs < 1_000 || config.idleTimeoutMs > 86_400_000) throw new DesktopBridgeError('bridge_idle_timeout_invalid');
   for (const origin of config.allowedOrigins) normalizeAllowedOrigin(origin);
-  const registry = config.providerRegistry || legacyRegistry(config);
-  if (!registry) throw new DesktopBridgeError('bridge_provider_registry_missing');
-  assertRegistryAndPolicy(config, registry);
-  const first = Object.values(registry.providers).find((provider) => provider.enabled);
-  if (!first) throw new DesktopBridgeError('bridge_provider_registry_no_enabled_provider');
-  return validateRemoteUrl(first.base_url);
+  if (!config.providerRegistry) throw new DesktopBridgeError('bridge_provider_registry_missing');
+  if (!config.routePolicy) throw new DesktopBridgeError('bridge_route_policy_invalid');
+  if (!Array.isArray(config.providerSessionPins)) throw new DesktopBridgeError('bridge_session_pin_invalid');
+  if (typeof config.resolveProviderCredential !== 'function') throw new DesktopBridgeError('bridge_provider_credential_resolver_missing');
+  assertRegistryAndPolicy(config, config.providerRegistry);
+  if (!Object.values(config.providerRegistry.providers).some((provider) => provider.enabled)) {
+    throw new DesktopBridgeError('bridge_provider_registry_no_enabled_provider');
+  }
 }
 
 export async function prepareDesktopBridgeConfig(config: DesktopBridgeConfig, lookup: DesktopBridgeLookup = defaultLookup): Promise<PreparedDesktopBridgeConfig> {
   validateDesktopBridgeConfig(config);
-  const registry = config.providerRegistry || legacyRegistry(config);
-  if (!registry) throw new DesktopBridgeError('bridge_provider_registry_missing');
-  const entries = await Promise.all((Object.keys(registry.providers) as BridgeProviderId[]).map(async (id) => {
-    const provider = registry.providers[id];
+  const entries = await Promise.all((Object.keys(config.providerRegistry.providers) as BridgeProviderId[]).map(async (id) => {
+    const provider = config.providerRegistry.providers[id];
     if (!provider) throw new DesktopBridgeError('bridge_provider_registry_invalid');
     const prepared = await prepareProvider({ ...provider, remote: {} as DesktopBridgeRemoteTarget }, lookup);
     return [id, prepared] as const;
   }));
   const providers = Object.fromEntries(entries) as Record<BridgeProviderId, PreparedDesktopBridgeProvider>;
-  const resolveProviderCredential = config.resolveProviderCredential || (async (providerId: BridgeProviderId) => {
-    if (providerId !== 'codex-lb' || !config.gatewayKey) throw new DesktopBridgeError('bridge_provider_credential_resolver_missing');
-    return { provider_id: providerId, value: config.gatewayKey, source: 'legacy-adapter', fingerprint: 'legacy', generation: 'legacy' };
-  });
-  const selected = (Object.keys(providers) as BridgeProviderId[]).map((id) => providers[id]).find((provider) => provider.enabled) || providers['codex-lb'];
-  return { ...config, providerRegistry: registry, resolveProviderCredential, providers, remote: selected.remote };
+  return { ...config, providers };
 }
 
 export function validatePreparedDesktopBridgeConfig(config: PreparedDesktopBridgeConfig): void {

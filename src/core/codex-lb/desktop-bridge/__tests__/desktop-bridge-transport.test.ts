@@ -13,9 +13,16 @@ import {
   startDesktopBridge,
   stopDesktopBridge,
   type DesktopBridgeConfig,
-  type DesktopBridgeGatewayAuthTransport,
+  type DesktopBridgeProviderAuthTransport,
   type DesktopBridgeHandle,
 } from '../index.js';
+
+const PUBLIC_MODEL = 'public-model';
+const CATALOG_GENERATION = 'catalog-generation';
+const POLICY_GENERATION = 'policy-generation';
+const CREDENTIAL_GENERATION = 'credential-generation';
+const CREDENTIAL_FINGERPRINT = 'credential-fingerprint';
+const CODEX_LB_SECRET = 'lb-key-blackbox-secret';
 
 async function listen(server: Server, host = '127.0.0.1'): Promise<number> {
   await new Promise<void>((resolve, reject) => {
@@ -33,14 +40,45 @@ async function close(server: Server): Promise<void> {
 function bridgeConfig(
   listenPort: number,
   upstreamPort: number,
-  transport: DesktopBridgeGatewayAuthTransport,
+  transport: DesktopBridgeProviderAuthTransport,
 ): DesktopBridgeConfig {
+  const baseUrl = `http://127.0.0.1:${upstreamPort}/backend-api/codex`;
   return {
     listenHost: '127.0.0.1',
     listenPort,
-    remoteBaseUrl: `http://127.0.0.1:${upstreamPort}/backend-api/codex`,
-    gatewayKey: 'lb-key-blackbox-secret',
-    gatewayAuthTransport: transport,
+    providerRegistry: {
+      schema: 'sks.desktop-bridge-provider-registry.v1',
+      generation: 'registry-generation',
+      created_at: '2026-08-05T00:00:00.000Z',
+      providers: {
+        'codex-lb': {
+          provider_id: 'codex-lb', enabled: true, base_url: baseUrl,
+          allowed_origins: [new URL(baseUrl).origin], auth_transport: transport,
+          credential_state: 'ready', credential_fingerprint: CREDENTIAL_FINGERPRINT,
+          credential_generation: CREDENTIAL_GENERATION, catalog_generation: CATALOG_GENERATION,
+        },
+        openrouter: {
+          provider_id: 'openrouter', enabled: false, base_url: 'https://openrouter.ai/api/v1',
+          allowed_origins: ['https://openrouter.ai'], auth_transport: 'openrouter-bearer',
+          credential_state: 'not_configured', credential_fingerprint: null,
+          credential_generation: 'openrouter-credential-generation', catalog_generation: null,
+        },
+      },
+    },
+    routePolicy: {
+      schema: 'sks.bridge-routing-policy.v1', default_provider_id: 'codex-lb', fallback: 'none',
+      model_routes: { [PUBLIC_MODEL]: { provider_id: 'codex-lb', upstream_model: PUBLIC_MODEL } },
+      catalog_generation: CATALOG_GENERATION, policy_generation: POLICY_GENERATION,
+      changed_at: '2026-08-05T00:00:00.000Z',
+    },
+    providerSessionPins: [],
+    resolveProviderCredential: async (providerId, expectedGeneration) => ({
+      provider_id: providerId,
+      value: providerId === 'codex-lb' ? CODEX_LB_SECRET : 'unused-openrouter-secret',
+      source: 'test',
+      fingerprint: providerId === 'codex-lb' ? CREDENTIAL_FINGERPRINT : 'unused-openrouter-fingerprint',
+      generation: expectedGeneration,
+    }),
     allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
     allowedOrigins: ['app://codex'],
     connectTimeoutMs: 2_000,
@@ -116,6 +154,7 @@ test('HTTP/SSE streams without buffering, rewrites Location, and uses only the p
         authorization: 'Bearer desktop-oauth-secret',
         cookie: 'desktop=session-secret',
         'x-codex-lb-api-key': 'client-forged-key',
+        'x-sks-model': PUBLIC_MODEL,
         'content-type': 'application/json',
       },
       chunks: [Buffer.from('{"stream":true}')],
@@ -141,7 +180,7 @@ test('HTTP/SSE streams without buffering, rewrites Location, and uses only the p
   }
 });
 
-test('multipart request bytes are unchanged and legacy auth is explicit Bearer LB key only', async () => {
+test('multipart request bytes are unchanged and current Codex-LB bearer auth is explicit', async () => {
   const received = createHash('sha256');
   let receivedLength = 0;
   let upstreamHeaders: IncomingMessage['headers'] = {};
@@ -169,7 +208,7 @@ test('multipart request bytes are unchanged and legacy auth is explicit Bearer L
   const expected = createHash('sha256').update(payload).digest('hex');
   let bridge: DesktopBridgeHandle | null = null;
   try {
-    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 'authorization-bearer-compat'), {
+    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 'authorization-bearer'), {
       writeState: false,
     });
     const result = await request({
@@ -180,6 +219,7 @@ test('multipart request bytes are unchanged and legacy auth is explicit Bearer L
         authorization: 'Bearer desktop-oauth-secret',
         cookie: 'desktop=session-secret',
         'x-codex-lb-api-key': 'client-forged-key',
+        'x-sks-model': PUBLIC_MODEL,
         'content-type': 'multipart/form-data; boundary=boundary',
         'content-length': String(payload.length),
       },
@@ -225,6 +265,9 @@ test('unauthorized path/origin and cross-origin Location fail closed without pro
     const redirectRejected = await request({
       port: bridgePort,
       path: '/backend-api/codex/responses',
+      method: 'POST',
+      headers: { 'x-sks-model': PUBLIC_MODEL, 'content-type': 'application/json' },
+      chunks: [Buffer.from(JSON.stringify({ model: PUBLIC_MODEL }))],
     });
     assert.equal(redirectRejected.status, 502);
     assert.equal(redirectRejected.headers.location, undefined);
@@ -254,7 +297,10 @@ test('client disconnect destroys the upstream streaming socket', async () => {
       writeState: false,
     });
     await new Promise<void>((resolve, reject) => {
-      const req = http.get(`http://127.0.0.1:${bridgePort}/backend-api/codex/responses`, (res) => {
+      const req = http.get({
+        host: '127.0.0.1', port: bridgePort, path: '/backend-api/codex/stream',
+        headers: { 'x-sks-model': PUBLIC_MODEL },
+      }, (res) => {
         res.once('data', () => {
           req.destroy();
           res.destroy();
@@ -275,8 +321,7 @@ test('client disconnect destroys the upstream streaming socket', async () => {
   }
 });
 
-test('raw WebSocket tunnel preserves subprotocol, binary bytes, close frame, and legacy auth separation', async () => {
-  const gatewayKey = 'lb-key-blackbox-secret';
+test('raw WebSocket tunnel preserves subprotocol, binary bytes, close frame, and provider auth separation', async () => {
   const clientPayload = Buffer.from([1, 2, 3, 4]);
   const mask = Buffer.from([5, 6, 7, 8]);
   const maskedPayload = Buffer.from(clientPayload.map((value, index) => value ^ (mask[index % 4] || 0)));
@@ -316,7 +361,7 @@ test('raw WebSocket tunnel preserves subprotocol, binary bytes, close frame, and
   let bridge: DesktopBridgeHandle | null = null;
   const clientHolder: { socket: Socket | null } = { socket: null };
   try {
-    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 'authorization-bearer-compat'), {
+    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 'authorization-bearer'), {
       writeState: false,
     });
     const result = await new Promise<{ responseHead: string; frames: Buffer }>((resolve, reject) => {
@@ -333,6 +378,7 @@ test('raw WebSocket tunnel preserves subprotocol, binary bytes, close frame, and
           + 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n'
           + 'Sec-WebSocket-Version: 13\r\n'
           + 'Sec-WebSocket-Protocol: codex.realtime.v1\r\n'
+          + `X-SKS-Model: ${PUBLIC_MODEL}\r\n`
           + 'Authorization: Bearer desktop-oauth-secret\r\n'
           + 'Cookie: desktop=session-secret\r\n'
           + '\r\n',
@@ -366,7 +412,7 @@ test('raw WebSocket tunnel preserves subprotocol, binary bytes, close frame, and
     assert.doesNotMatch(result.responseHead, /Set-Cookie/i);
     assert.deepEqual(result.frames, Buffer.concat([serverBinaryFrame, serverCloseFrame]));
     assert.deepEqual(receivedClientFrame.subarray(0, maskedClientFrame.length), maskedClientFrame);
-    assert.equal(upgradeHeaders.authorization, `Bearer ${gatewayKey}`);
+    assert.equal(upgradeHeaders.authorization, `Bearer ${CODEX_LB_SECRET}`);
     assert.equal(upgradeHeaders.cookie, undefined);
     assert.equal(upgradeHeaders['x-codex-lb-api-key'], undefined);
     assert.equal(upgradeHeaders['sec-websocket-protocol'], 'codex.realtime.v1');

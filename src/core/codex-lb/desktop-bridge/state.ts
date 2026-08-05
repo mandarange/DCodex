@@ -20,11 +20,11 @@ export function desktopBridgeConfigGeneration(config: DesktopBridgeConfig): stri
   const registry = config.providerRegistry;
   return sha256Hex(JSON.stringify({
     listen_host: config.listenHost, listen_port: config.listenPort,
-    provider_registry_generation: registry?.generation || 'legacy',
-    provider_credential_generations: registry ? Object.fromEntries((Object.keys(registry.providers) as BridgeProviderId[]).map((id) => [id, registry.providers[id].credential_generation])) : { 'codex-lb': 'legacy' },
-    route_policy_generation: config.routePolicy?.policy_generation || 'legacy',
-    catalog_generation: config.routePolicy?.catalog_generation || 'legacy',
-    provider_session_pins: [...(config.providerSessionPins || [])].sort((a, b) => a.thread_id.localeCompare(b.thread_id)),
+    provider_registry_generation: registry.generation,
+    provider_credential_generations: Object.fromEntries((Object.keys(registry.providers) as BridgeProviderId[]).map((id) => [id, registry.providers[id].credential_generation])),
+    route_policy_generation: config.routePolicy.policy_generation,
+    catalog_generation: config.routePolicy.catalog_generation,
+    provider_session_pins: [...config.providerSessionPins].sort((a, b) => a.thread_id.localeCompare(b.thread_id)),
     allowed_paths: [...config.allowedPathPrefixes], allowed_origins: [...config.allowedOrigins].sort(),
     connect_timeout_ms: config.connectTimeoutMs, idle_timeout_ms: config.idleTimeoutMs,
   }));
@@ -32,21 +32,17 @@ export function desktopBridgeConfigGeneration(config: DesktopBridgeConfig): stri
 
 export function createDesktopBridgePublicState(config: DesktopBridgeConfig, options: { pid?: number; now?: Date } = {}): DesktopBridgePublicStateV2 {
   const now = options.now ?? new Date(); const registry = config.providerRegistry;
-  const enabled: BridgeProviderId[] = registry ? (Object.keys(registry.providers) as BridgeProviderId[]).filter((id) => registry.providers[id].enabled) : ['codex-lb'];
-  const credentialGenerations = registry
-    ? Object.fromEntries((Object.keys(registry.providers) as BridgeProviderId[]).map((id) => [id, registry.providers[id].credential_generation])) as Record<BridgeProviderId, string>
-    : { 'codex-lb': 'legacy', openrouter: 'legacy' };
+  const enabled = (Object.keys(registry.providers) as BridgeProviderId[]).filter((id) => registry.providers[id].enabled);
+  const credentialGenerations = Object.fromEntries((Object.keys(registry.providers) as BridgeProviderId[]).map((id) => [id, registry.providers[id].credential_generation])) as Record<BridgeProviderId, string>;
   const listen = desktopBridgeListenOrigin(config);
   return {
     schema: DESKTOP_BRIDGE_STATE_SCHEMA, runtime: 'desktop-bridge', pid: options.pid ?? process.pid,
     started_at: now.toISOString(), updated_at: now.toISOString(),
-    stale_after: new Date(now.getTime() + (config.providerRegistry ? (config.stateFreshnessMs ?? DEFAULT_FRESHNESS_MS) : 10 * 365 * 24 * 60 * 60_000)).toISOString(),
+    stale_after: new Date(now.getTime() + (config.stateFreshnessMs ?? DEFAULT_FRESHNESS_MS)).toISOString(),
     listen_origin: listen, codex_base_url: `${listen}/backend-api/codex`, process_generation: randomUUID(),
-    provider_registry_generation: registry?.generation || 'legacy', route_policy_generation: config.routePolicy?.policy_generation || 'legacy',
-    catalog_generation: config.routePolicy?.catalog_generation || 'legacy', enabled_providers: enabled,
+    provider_registry_generation: registry.generation, route_policy_generation: config.routePolicy.policy_generation,
+    catalog_generation: config.routePolicy.catalog_generation, enabled_providers: enabled,
     provider_credential_generations: credentialGenerations, last_verified_probe_ids: [], config_generation: desktopBridgeConfigGeneration(config),
-    ...(config.remoteBaseUrl ? { remote_origin_sha256: sha256Hex(new URL(config.remoteBaseUrl).origin) } : {}),
-    ...(config.gatewayAuthTransport ? { gateway_auth_transport: config.gatewayAuthTransport } : {}),
   };
 }
 
@@ -82,7 +78,7 @@ export async function refreshDesktopBridgeState(
 }
 
 export function isDesktopBridgeStateFresh(state: DesktopBridgePublicState, now: Date = new Date()): boolean {
-  return state.schema === DESKTOP_BRIDGE_STATE_SCHEMA ? Date.parse(state.stale_after) > now.getTime() : true;
+  return Date.parse(state.stale_after) > now.getTime();
 }
 
 export async function writeDesktopBridgeState(file: string, state: DesktopBridgePublicState): Promise<void> {

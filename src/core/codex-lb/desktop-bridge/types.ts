@@ -7,8 +7,6 @@ import type {
   ProviderSessionPin,
   WebSocketProbeResult,
 } from '../bridge-contracts.js';
-import type { CodexProxyProviderMode } from '../../codex-app/provider-mode.js';
-import type { ChildPolicySnapshot, CredentialReadiness, ProviderPolicySnapshot, SessionPin } from '../../architecture-hardening/contracts/contracts.js';
 
 export const DESKTOP_BRIDGE_STATE_SCHEMA = 'sks.codex-lb-desktop-bridge.v2' as const;
 export const DESKTOP_BRIDGE_REGISTRY_SCHEMA = 'sks.desktop-bridge-provider-registry.v1' as const;
@@ -29,11 +27,6 @@ export type DesktopBridgeProviderAuthTransport =
   | 'x-codex-lb-api-key'
   | 'authorization-bearer'
   | 'openrouter-bearer';
-
-/** @deprecated Compatibility spelling for one-patch legacy callers. */
-export type DesktopBridgeGatewayAuthTransport =
-  | 'x-codex-lb-api-key'
-  | 'authorization-bearer-compat';
 
 export interface DesktopBridgeProviderSnapshot {
   provider_id: BridgeProviderId;
@@ -82,7 +75,7 @@ export interface DesktopBridgeRouteContext {
 export type DesktopBridgeRouteResolver = (
   request: DesktopBridgeRouteRequest,
   policy: BridgeRoutingPolicy,
-  sessionPins: readonly ProviderSessionPin[],
+  providerSessionPins: readonly ProviderSessionPin[],
 ) => DesktopBridgeRouteContext;
 
 export type DesktopBridgeCredentialResolver = (
@@ -91,14 +84,11 @@ export type DesktopBridgeCredentialResolver = (
 ) => Promise<DesktopBridgeResolvedCredential>;
 
 export interface DesktopBridgeConfig {
-  providerRegistry?: DesktopBridgeProviderRegistrySnapshot;
-  routePolicy?: BridgeRoutingPolicy;
-  /** Legacy session-policy pins retained only by the compatibility adapter. */
-  sessionPins?: readonly SessionPin[];
-  /** Frozen 8.1.3 provider-affinity pins used by active route resolution. */
-  providerSessionPins?: readonly ProviderSessionPin[];
+  providerRegistry: DesktopBridgeProviderRegistrySnapshot;
+  routePolicy: BridgeRoutingPolicy;
+  providerSessionPins: readonly ProviderSessionPin[];
   resolveRequestRoute?: DesktopBridgeRouteResolver;
-  resolveProviderCredential?: DesktopBridgeCredentialResolver;
+  resolveProviderCredential: DesktopBridgeCredentialResolver;
   listenHost: '127.0.0.1' | '::1';
   listenPort: number;
   allowedPathPrefixes: readonly string[];
@@ -107,17 +97,6 @@ export interface DesktopBridgeConfig {
   idleTimeoutMs: number;
   maxRequestBodyBytes?: number;
   stateFreshnessMs?: number;
-
-  /** One-patch adapter only. New settings never serialize these fields. */
-  remoteBaseUrl?: string;
-  gatewayKey?: string;
-  gatewayAuthTransport?: DesktopBridgeGatewayAuthTransport;
-  providerMode?: CodexProxyProviderMode;
-  allowedModels?: readonly string[];
-  providerPolicy?: ProviderPolicySnapshot;
-  credentialReadiness?: CredentialReadiness;
-  childPolicy?: ChildPolicySnapshot;
-  requireSessionPin?: boolean;
 }
 
 export interface DesktopBridgeRemoteTarget {
@@ -137,8 +116,6 @@ export interface PreparedDesktopBridgeProvider extends DesktopBridgeProviderSnap
 
 export interface PreparedDesktopBridgeConfig extends DesktopBridgeConfig {
   providers: Record<BridgeProviderId, PreparedDesktopBridgeProvider>;
-  /** @deprecated Legacy selected target view. */
-  remote: DesktopBridgeRemoteTarget;
 }
 
 export interface DesktopBridgePublicStateV2 {
@@ -158,24 +135,9 @@ export interface DesktopBridgePublicStateV2 {
   provider_credential_generations: Record<BridgeProviderId, string>;
   last_verified_probe_ids: string[];
   config_generation: string;
-  /** @deprecated Legacy status adapter fields; omitted from v2 state writes. */
-  remote_origin_sha256?: string;
-  gateway_auth_transport?: DesktopBridgeGatewayAuthTransport;
 }
 
-export interface DesktopBridgePublicStateV1 {
-  schema: 'sks.codex-lb-desktop-bridge.v1';
-  pid: number;
-  started_at: string;
-  listen_origin: string;
-  codex_base_url: string;
-  remote_origin_sha256: string;
-  gateway_key_sha256?: string;
-  gateway_auth_transport: DesktopBridgeGatewayAuthTransport;
-  config_generation: string;
-}
-
-export type DesktopBridgePublicState = DesktopBridgePublicStateV2 | DesktopBridgePublicStateV1;
+export type DesktopBridgePublicState = DesktopBridgePublicStateV2;
 
 export interface DesktopBridgeHandle {
   server: Server;
