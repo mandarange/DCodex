@@ -1,9 +1,23 @@
 import { randomBytes } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { ProviderMode } from '../../architecture-hardening/contracts/contracts.js';
+import type { BridgeProviderId } from '../../codex-lb/bridge-contracts.js';
 import { sha256 } from '../../fsx.js';
 import { canonicalJson } from '../../json/canonical.js';
+
+/**
+ * Evidence-only snapshot of the route that produced a receipt.
+ *
+ * This is deliberately data, not a runtime selector: it carries no endpoint,
+ * credential, fallback, or transport configuration.
+ */
+export interface EvidenceRouteContextV2 {
+  readonly provider_id: BridgeProviderId;
+  readonly public_model: string;
+  readonly upstream_model: string;
+  readonly catalog_generation: string;
+  readonly route_policy_generation: string;
+}
 
 export interface EvidenceKeyV2Input {
   readonly project_id: string;
@@ -11,7 +25,7 @@ export interface EvidenceKeyV2Input {
   readonly check: string;
   readonly direct_target_hashes: readonly string[];
   readonly direct_dependency_hashes: readonly string[];
-  readonly auth_mode: ProviderMode;
+  readonly provider_route_context: EvidenceRouteContextV2;
   readonly model_policy_hash: string;
   readonly validator_rule: string;
   readonly validator_version: string;
@@ -27,7 +41,7 @@ export interface EvidenceKeyV2 {
   readonly check: string;
   readonly direct_target_hashes: readonly string[];
   readonly direct_dependency_merkle: string;
-  readonly auth_mode: ProviderMode;
+  readonly provider_route_context: EvidenceRouteContextV2;
   readonly model_policy_hash: string;
   readonly validator_rule: string;
   readonly validator_version: string;
@@ -44,7 +58,7 @@ export interface EvidenceReceiptV2 {
 export interface EvidenceInvalidationChange {
   readonly target_hashes?: readonly string[];
   readonly dependency_hashes?: readonly string[];
-  readonly auth_mode?: ProviderMode;
+  readonly provider_route_context?: EvidenceRouteContextV2;
   readonly model_policy_hash?: string;
   readonly validator_rule?: string;
   readonly validator_version?: string;
@@ -63,6 +77,7 @@ export async function ensureProjectId(file: string): Promise<string> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
+
   await fsp.mkdir(path.dirname(resolved), { recursive: true, mode: 0o700 });
   const projectId = createProjectId();
   try {
@@ -78,6 +93,7 @@ export function buildEvidenceKeyV2(input: EvidenceKeyV2Input): EvidenceKeyV2 {
   const projectId = validateProjectId(input.project_id);
   const directTargets = normalizeHashes(input.direct_target_hashes, 'evidence_target_hash_invalid');
   const directDependencies = normalizeHashes(input.direct_dependency_hashes, 'evidence_dependency_hash_invalid');
+  const routeContext = normalizeRouteContext(input.provider_route_context);
   const base = {
     schema: 'sks.evidence-key.v2' as const,
     project_id: projectId,
@@ -85,14 +101,20 @@ export function buildEvidenceKeyV2(input: EvidenceKeyV2Input): EvidenceKeyV2 {
     check: safeId(input.check, 'evidence_check_invalid'),
     direct_target_hashes: directTargets,
     direct_dependency_merkle: merkle(directDependencies),
-    auth_mode: input.auth_mode,
+    provider_route_context: routeContext,
     model_policy_hash: hashValue(input.model_policy_hash, 'evidence_model_policy_hash_invalid'),
     validator_rule: safeId(input.validator_rule, 'evidence_validator_rule_invalid'),
     validator_version: safeId(input.validator_version, 'evidence_validator_version_invalid'),
     environment_hash: hashValue(input.environment_hash, 'evidence_environment_hash_invalid'),
     toolchain_hash: hashValue(input.toolchain_hash, 'evidence_toolchain_hash_invalid')
   };
-  return Object.freeze({ ...base, direct_target_hashes: Object.freeze(base.direct_target_hashes), key: sha256(canonicalJson(base)) });
+
+  return Object.freeze({
+    ...base,
+    direct_target_hashes: Object.freeze(base.direct_target_hashes),
+    provider_route_context: Object.freeze(base.provider_route_context),
+    key: sha256(canonicalJson(base))
+  });
 }
 
 export function selectAffectedReceipts(
@@ -101,11 +123,16 @@ export function selectAffectedReceipts(
 ): readonly EvidenceReceiptV2[] {
   const changedTargets = new Set(change.target_hashes || []);
   const changedDependencies = new Set(change.dependency_hashes || []);
+  const changedRouteContext = change.provider_route_context === undefined
+    ? undefined
+    : canonicalJson(normalizeRouteContext(change.provider_route_context));
+
   return receipts.filter((receipt) => {
     const evidence = receipt.evidence;
     return evidence.direct_target_hashes.some((value) => changedTargets.has(value))
       || receipt.direct_dependency_hashes.some((value) => changedDependencies.has(value))
-      || (change.auth_mode !== undefined && change.auth_mode !== evidence.auth_mode)
+      || (changedRouteContext !== undefined
+        && changedRouteContext !== canonicalJson(evidence.provider_route_context))
       || (change.model_policy_hash !== undefined && change.model_policy_hash !== evidence.model_policy_hash)
       || (change.validator_rule !== undefined && change.validator_rule !== evidence.validator_rule)
       || (change.validator_version !== undefined && change.validator_version !== evidence.validator_version)
@@ -129,6 +156,19 @@ function normalizeHashes(values: readonly string[], code: string): string[] {
   return normalized;
 }
 
+function normalizeRouteContext(value: EvidenceRouteContextV2): EvidenceRouteContextV2 {
+  if (!value || !['codex-lb', 'openrouter'].includes(value.provider_id)) {
+    throw new Error('evidence_route_provider_invalid');
+  }
+  return {
+    provider_id: value.provider_id,
+    public_model: safeModelId(value.public_model, 'evidence_route_public_model_invalid'),
+    upstream_model: safeModelId(value.upstream_model, 'evidence_route_upstream_model_invalid'),
+    catalog_generation: safeId(value.catalog_generation, 'evidence_route_catalog_generation_invalid'),
+    route_policy_generation: safeId(value.route_policy_generation, 'evidence_route_policy_generation_invalid')
+  };
+}
+
 function merkle(values: readonly string[]): string {
   let layer = values.map((value) => sha256(`leaf:${value}`));
   while (layer.length > 1) {
@@ -147,6 +187,11 @@ function merkle(values: readonly string[]): string {
 
 function safeId(value: string, code: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(String(value || ''))) throw new Error(code);
+  return value;
+}
+
+function safeModelId(value: string, code: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(String(value || ''))) throw new Error(code);
   return value;
 }
 
