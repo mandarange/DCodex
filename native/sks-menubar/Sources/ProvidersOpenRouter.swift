@@ -7,21 +7,23 @@ extension ProvidersViewController {
     }
 
     func makeProviderCredentialsCard() -> NSBox {
-        let lbConfigure = NativeView.button("Configure / Rotate", target: self, action: #selector(configureCodexLbProfile))
+        let lbConfigure = NativeView.button(ProviderReconnectLabel.codexLb, target: self, action: #selector(configureCodexLbProfile))
         let lbValidate = NativeView.button("Validate", target: self, action: #selector(validateCodexLbProfile))
         let lbToggle = NativeView.button("Enable / Disable", target: self, action: #selector(toggleCodexLbProfile))
-        let orConfigure = NativeView.button("Configure / Rotate", target: self, action: #selector(configureOpenRouterProfile))
+        let orConfigure = NativeView.button(ProviderReconnectLabel.openRouter, target: self, action: #selector(configureOpenRouterProfile))
         let orValidate = NativeView.button("Validate", target: self, action: #selector(validateOpenRouterProfile))
         let orToggle = NativeView.button("Enable / Disable", target: self, action: #selector(toggleOpenRouterProfile))
+        let codexSignIn = NativeView.button(ProviderReconnectLabel.codexSignIn, target: self, action: #selector(openCodexSignInAction))
         registerProviderAction(lbConfigure, id: "sks-provider-reconnect-codex-lb")
         registerProviderAction(lbValidate, id: "sks-provider-validate-codex-lb")
         registerProviderAction(lbToggle, id: "sks-provider-toggle-codex-lb")
         registerProviderAction(orConfigure, id: "sks-provider-reconnect-openrouter")
         registerProviderAction(orValidate, id: "sks-provider-validate-openrouter")
         registerProviderAction(orToggle, id: "sks-provider-toggle-openrouter")
+        registerProviderAction(codexSignIn, id: "sks-provider-open-codex-sign-in")
         providerButtons["codex-lb"] = [lbConfigure, lbValidate, lbToggle]
         providerButtons["openrouter"] = [orConfigure, orValidate, orToggle]
-        actionButtons += [lbConfigure, lbValidate, lbToggle, orConfigure, orValidate, orToggle]
+        actionButtons += [lbConfigure, lbValidate, lbToggle, orConfigure, orValidate, orToggle, codexSignIn]
         let card = NativeView.card(
             title: "Provider Credentials",
             subtitle: "Profiles coexist. Enable, disable, validate, rotate, or remove one credential without changing the other or Codex-owned ChatGPT OAuth.",
@@ -30,7 +32,8 @@ extension ProvidersViewController {
                 ControlKit.actionRow([lbConfigure, lbValidate, lbToggle]),
                 NativeView.sectionTitle("OpenRouter"), openRouterKeychainStatus, openRouterCredentialStatus,
                 ControlKit.actionRow([orConfigure, orValidate, orToggle]),
-                oauthCredentialStatus
+                oauthCredentialStatus,
+                ControlKit.actionRow([codexSignIn])
             ]
         )
         card.setAccessibilityIdentifier("sks-provider-card-credentials")

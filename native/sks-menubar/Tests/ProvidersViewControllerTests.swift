@@ -21,7 +21,7 @@ final class ProvidersViewControllerTests: XCTestCase {
 
     func testProviderActionInventoryHasNoDeadOrSilentControls() {
         let items = ProviderActionInventory.items
-        XCTAssertEqual(items.count, 12)
+        XCTAssertEqual(items.count, 13)
         XCTAssertEqual(Set(items.map(\.id)).count, items.count)
         for item in items {
             XCTAssertTrue(item.id.hasPrefix("sks-provider-"))
@@ -43,6 +43,7 @@ final class ProvidersViewControllerTests: XCTestCase {
             "sks-provider-reconnect-openrouter",
             "sks-provider-validate-codex-lb",
             "sks-provider-validate-openrouter",
+            "sks-provider-open-codex-sign-in",
             "sks-provider-refresh-catalog",
             "sks-provider-route-explain"
         ] {

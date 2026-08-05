@@ -38,10 +38,10 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
     'main.swift', 'AppDelegate.swift', 'StatusItemController.swift',
     'ControlCenterWindowController.swift', 'SidebarItem.swift', 'ControlKit.swift',
     'OverviewViewController.swift', 'OverviewSummary.swift', 'UpdatesViewController.swift',
-    'MCPServersViewController.swift', 'ProvidersViewController.swift', 'ProvidersReliability.swift', 'ProvidersConnectTest.swift',
-    'ProvidersRoutingTruth.swift', 'ProvidersFastMode.swift',
+    'MCPServersViewController.swift', 'ProvidersViewController.swift', 'ProvidersReliability.swift',
+    'ProvidersRoutingTruth.swift',
     'ProvidersOpenRouter.swift',
-    'ProvidersRoleModels.swift', 'ProvidersMultiProvider.swift',
+    'ProvidersBridgeCatalog.swift',
     'RemoteCodingViewController.swift',
     'DiagnosticsViewController.swift',
     'SettingsViewController.swift', 'OperationModels.swift', 'OperationCoordinator.swift',
@@ -63,8 +63,8 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
   for (const name of NATIVE_RESOURCE_FILES) assert.ok(fs.statSync(path.join(root, 'Resources', name)).size > 0, name);
   assert.match(fs.readFileSync(path.join(root, 'Resources', 'AppIcon.icns')).subarray(0, 4).toString('ascii'), /icns/);
   const materialized = source();
-  assert.match(materialized, /\/\/ MARK: - ProvidersMultiProvider\.swift/);
-  assert.match(materialized, /final class MultiProviderRouterControls/);
+  assert.match(materialized, /\/\/ MARK: - ProvidersBridgeCatalog\.swift/);
+  assert.doesNotMatch(materialized, /MultiProviderRouterControls|ProvidersConnectTest/);
   assert.match(materialized, /One managed Desktop Bridge routes through independent Codex-LB and OpenRouter profiles/);
   assert.match(materialized, /\["bridge", "route", "explain", model, "--json"\]/);
   assert.doesNotMatch(materialized, /model\.contains\("\/"\) \? model :/);
@@ -408,8 +408,7 @@ test('Providers configures independent bridge profiles through masked stdin with
     fs.readFileSync(path.join(root, 'Sources', 'ProvidersReliability.swift'), 'utf8'),
     fs.readFileSync(path.join(root, 'Sources', 'ProvidersOpenRouter.swift'), 'utf8')
   ].join('\n');
-  const connectTest = fs.readFileSync(path.join(root, 'Sources', 'ProvidersConnectTest.swift'), 'utf8');
-  const providersSurface = `${providers}\n${connectTest}`;
+  const providersSurface = providers;
   const processClient = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProcessClient.swift'), 'utf8');
   const secureEnvelope = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'SecureProcessEnvelope.swift'), 'utf8');
   const alertFactory = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AlertFactory.swift'), 'utf8');
@@ -417,7 +416,8 @@ test('Providers configures independent bridge profiles through masked stdin with
   const appDelegate = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppDelegate.swift'), 'utf8');
   assert.match(providers, /title: "Provider Credentials"/);
   assert.match(providers, /Profiles coexist/);
-  assert.match(providers, /NativeView\.button\("Configure \/ Rotate"/);
+  assert.match(providers, /NativeView\.button\(ProviderReconnectLabel\.codexLb/);
+  assert.match(providers, /NativeView\.button\(ProviderReconnectLabel\.openRouter/);
   assert.match(providers, /#selector\(configureCodexLbProfile\)/);
   assert.match(providers, /#selector\(configureOpenRouterProfile\)/);
   assert.match(providers, /secure: true/);
@@ -489,7 +489,7 @@ test('Providers exposes one Desktop Bridge with strict v3 scoped evidence and ex
   ].join('\n');
   const routingTruth = fs.readFileSync(path.join(root, 'Sources', 'ProvidersRoutingTruth.swift'), 'utf8');
   const openRouter = fs.readFileSync(path.join(root, 'Sources', 'ProvidersOpenRouter.swift'), 'utf8');
-  const routeCards = fs.readFileSync(path.join(root, 'Sources', 'ProvidersMultiProvider.swift'), 'utf8');
+  const routeCards = fs.readFileSync(path.join(root, 'Sources', 'ProvidersBridgeCatalog.swift'), 'utf8');
   const providersSurface = `${providers}\n${routingTruth}\n${openRouter}\n${routeCards}`;
 
   for (const label of ['Desktop Bridge', 'Provider Credentials', 'Combined Model Catalog', 'Routes', 'Capability Matrix']) {
@@ -509,7 +509,8 @@ test('Providers exposes one Desktop Bridge with strict v3 scoped evidence and ex
   assert.match(routingTruth, /frameRoundTrip = "frame_round_trip"/);
   assert.match(routingTruth, /cleanClose = "clean_close"/);
   assert.match(routingTruth, /catalog_sync missing/);
-  assert.match(providers, /case \.degraded, \.stale, \.notAttempted: return \.systemOrange/);
+  assert.match(providers, /case "degraded", "stale", "available_unverified", "configured_unverified": return \.systemOrange/);
+  assert.match(providers, /case "not_attempted", "unsupported": return \.secondaryLabelColor/);
   assert.doesNotMatch(providersSurface, /deepEvidenceTrusted/);
   assert.match(providersSurface, /fallback none/);
   assert.match(openRouter, /Profiles coexist/);
@@ -536,11 +537,9 @@ test('Providers manages OpenRouter as a coexisting bridge profile instead of a m
   assert.match(providers, /providerButtons\["openrouter"\]/);
 });
 
-test('Menu Bar exposes truthful accessible Fast state with direct on and off actions', () => {
+test('Menu Bar keeps global Fast controls outside the five-card Providers page', () => {
   const swift = source();
   const providers = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersViewController.swift'), 'utf8');
-  const providersFast = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersFastMode.swift'), 'utf8');
-  const providersSurface = `${providers}\n${providersFast}`;
   for (const label of ['Codex Fast: Checking…', 'Codex Fast On', 'Codex Fast Off']) assert.match(swift, new RegExp(label));
   assert.match(swift, /\["fast-mode", "status", "--json"\]/);
   assert.match(swift, /\["fast-mode", "on", "--json"\]/);
@@ -552,10 +551,7 @@ test('Menu Bar exposes truthful accessible Fast state with direct on and off act
   assert.match(swift, /setAccessibilityLabel\("Current Codex Fast state"\)/);
   assert.match(swift, /setAccessibilityLabel\("Turn Codex Fast on"\)/);
   assert.match(swift, /setAccessibilityLabel\("Turn Codex Fast off"\)/);
-  assert.match(providersSurface, /\["fast-mode", "status", "--json"\]/);
-  assert.match(providersSurface, /official service_tier=/);
-  assert.match(providersSurface, /model and reasoning remain separate/);
-  assert.match(providersSurface, /Codex Fast: unavailable — no state was assumed\./);
+  assert.doesNotMatch(providers, /fast-mode|Codex Fast/);
 });
 
 test('operation coordinator persists redacted bounded-tail receipts and excludes concurrent mutations', () => {
@@ -837,19 +833,7 @@ test('materialized Control Center source typechecks as one Swift translation uni
   assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
 });
 
-test('Role model controls stay usable when role-models reports recoverable blockers', () => {
-  // `sks codex-app role-models` exits 1 for soft states such as
-  // role_model_preference_not_in_active_catalog while still returning the full
-  // roles/supported_profiles payload. Gating the Center on the exit code locked
-  // every control — including Reset, the only way to clear the bad override.
-  const roleModels = fs.readFileSync(
-    path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProvidersRoleModels.swift'),
-    'utf8'
-  );
-  const refresh = roleModels.slice(roleModels.indexOf('["codex-app", "role-models", "--json"]'));
-  assert.doesNotMatch(refresh, /guard result\.code == 0, let json/);
-  assert.match(refresh, /store_blockers/);
-  assert.match(refresh, /guard let json = self\.json\(result\.output\), storeBlockers\.isEmpty else/);
-  assert.match(refresh, /json\["preference_blockers"\] as\? \[String\]/);
-  assert.match(refresh, /needs attention: \\\(roleBlockers\)/);
+test('Providers source inventory has no retired role-model compatibility screen', () => {
+  assert.equal(NATIVE_SOURCE_FILES.includes('ProvidersRoleModels.swift' as never), false);
+  assert.doesNotMatch(source(), /ProvidersRoleModels\.swift|role-models/);
 });

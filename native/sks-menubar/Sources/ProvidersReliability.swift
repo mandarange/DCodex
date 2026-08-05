@@ -9,6 +9,12 @@ struct ProviderActionInventoryItem: Equatable {
     let recoveryAction: String
 }
 
+enum ProviderReconnectLabel {
+    static let codexLb = "Reconnect Codex LB credential…"
+    static let openRouter = "Reconnect OpenRouter credential…"
+    static let codexSignIn = "Open Codex sign-in…"
+}
+
 enum ProviderActionInventory {
     static let items: [ProviderActionInventoryItem] = [
         .init(id: "sks-provider-bridge-repair", handler: "repairDesktopBridge", backend: "sks bridge repair --json", loadingState: "repairing", successState: "bridge receipt", recoveryAction: "inspect bridge logs"),
@@ -20,6 +26,7 @@ enum ProviderActionInventory {
         .init(id: "sks-provider-reconnect-openrouter", handler: "configureOpenRouterProfile", backend: "sks bridge provider configure openrouter", loadingState: "saving", successState: "profile configured", recoveryAction: "repair Keychain and reconnect"),
         .init(id: "sks-provider-validate-openrouter", handler: "validateOpenRouterProfile", backend: "sks bridge provider validate openrouter --json", loadingState: "validating", successState: "provider report", recoveryAction: "rotate credential"),
         .init(id: "sks-provider-toggle-openrouter", handler: "toggleOpenRouterProfile", backend: "sks bridge provider enable or disable openrouter", loadingState: "updating profile", successState: "profile state updated", recoveryAction: "retry provider update"),
+        .init(id: "sks-provider-open-codex-sign-in", handler: "openCodexSignInAction", backend: "open Codex application", loadingState: "opening Codex", successState: "Codex sign-in opened", recoveryAction: "install or open Codex manually"),
         .init(id: "sks-provider-refresh-catalog", handler: "refreshCombinedCatalog", backend: "sks bridge catalog sync --json", loadingState: "syncing", successState: "combined catalog report", recoveryAction: "retry catalog sync"),
         .init(id: "sks-provider-open-catalog-report", handler: "openCatalogReport", backend: "sks bridge catalog status --json", loadingState: "loading report", successState: "combined catalog report", recoveryAction: "retry catalog status"),
         .init(id: "sks-provider-route-explain", handler: "explainRoute", backend: "sks bridge route explain --json", loadingState: "resolving", successState: "explicit route shown", recoveryAction: "refresh catalog or choose supported model")
