@@ -297,8 +297,8 @@ export async function migrateDesktopBridgeConfig(
       managed_runtime: null,
       receipt_path: null,
       auth_semantic_identity_preserved: true,
-      blockers: [message.startsWith('legacy_user_owned_config_conflict')
-        ? 'legacy_user_owned_config_conflict'
+      blockers: [message.startsWith('historical_user_owned_config_conflict')
+        ? 'historical_user_owned_config_conflict'
         : message],
       error: message
     };
@@ -371,6 +371,9 @@ export async function migrateDesktopBridgeConfig(
     );
     if (!configWrite.ok) throw new Error(`desktop_bridge_config_write_failed:${configWrite.status}`);
     if (configWrite.status === 'written') mutatedPaths.add(path.resolve(configPath));
+    if (await fileSha256OrMissing(configPath) !== sha256(nextConfig)) {
+      throw new Error('desktop_bridge_config_readback_failed');
+    }
     for (const update of metadataUpdates) {
       const backup = backups.find((entry) => path.resolve(entry.path) === path.resolve(update.path));
       if (!backup) throw new Error(`desktop_bridge_metadata_backup_missing:${update.path}`);
@@ -380,6 +383,9 @@ export async function migrateDesktopBridgeConfig(
       if (sha256(update.text) !== backup.before_sha256) {
         mutatedPaths.add(path.resolve(update.path));
         await writeBufferAtomic(update.path, Buffer.from(update.text));
+        if (await fileSha256OrMissing(update.path) !== sha256(update.text)) {
+          throw new Error(`desktop_bridge_metadata_readback_failed:${update.kind}`);
+        }
       }
     }
 
@@ -638,9 +644,9 @@ function buildReceipt(input: {
     auth_before_sha256: input.authBeforeSha,
     auth_after_sha256: input.authAfterSha,
     auth_semantic_identity_preserved: input.authSemanticIdentityPreserved ?? true,
-    legacy_state: {
+    historical_state: {
       desktop_mode: input.historicalState.desktop_mode,
-      provider_mode: input.historicalState.provider_mode,
+      historical_provider_selection: input.historicalState.provider_mode,
       model_provider: input.historicalState.model_provider,
       catalog_path: input.historicalState.catalog_path
     },
@@ -765,7 +771,7 @@ function validateMetadataUpdates(
     }
     if (seen.has(filePath)) throw new Error('desktop_bridge_metadata_path_duplicate');
     seen.add(filePath);
-    if (!['bridge_settings', 'catalog_binding', 'route_policy', 'launchd_state'].includes(update.kind)) {
+    if (!['bridge_settings', 'provider_registry', 'catalog_binding', 'route_policy', 'launchd_state'].includes(update.kind)) {
       throw new Error('desktop_bridge_metadata_kind_invalid');
     }
     if (typeof update.text !== 'string') throw new Error('desktop_bridge_metadata_text_invalid');
@@ -776,6 +782,9 @@ function canonicalMetadataPath(home: string, kind: DesktopBridgeMigrationMetadat
   const resolvedHome = path.resolve(home);
   if (kind === 'bridge_settings') {
     return path.join(resolvedHome, '.codex', 'sks', 'codex-lb-desktop-bridge-settings.json');
+  }
+  if (kind === 'provider_registry') {
+    return path.join(resolvedHome, '.codex', 'sks', 'sks-bridge-provider-registry.json');
   }
   if (kind === 'catalog_binding') {
     return path.join(resolvedHome, '.codex', 'sks', 'sks-bridge-active-generation.json');

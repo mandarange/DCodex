@@ -415,9 +415,9 @@ export interface DesktopBridgeUnificationReceipt {
   auth_before_sha256: string;
   auth_after_sha256: string;
   auth_semantic_identity_preserved: boolean;
-  legacy_state: {
+  historical_state: {
     desktop_mode: string | null;
-    provider_mode: string | null;
+    historical_provider_selection: string | null;
     model_provider: string | null;
     catalog_path: string | null;
   };

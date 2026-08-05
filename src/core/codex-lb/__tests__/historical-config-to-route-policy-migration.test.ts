@@ -226,8 +226,10 @@ test('R06/R33/R35: historical provider selection preserves credentials and the s
   assert.doesNotMatch(receiptText, new RegExp(LB_KEY));
   assert.doesNotMatch(receiptText, new RegExp(OR_KEY));
   assert.doesNotMatch(receiptText, /oauth-(?:access|refresh)-before/);
+  assert.doesNotMatch(receiptText, /"provider_mode"/);
   assert.equal(first.receipt?.credentials_deleted, false);
   assert.equal(first.receipt?.auth_before_sha256, first.receipt?.auth_after_sha256);
+  assert.equal(first.receipt?.historical_state.historical_provider_selection, 'codex-lb');
 
   const receiptEntriesBefore = await fsp.readdir(path.dirname(first.receipt_path!));
   const second = await migrateDesktopBridgeConfig({
@@ -316,7 +318,7 @@ test('R09: custom provider and custom catalog fail closed byte-for-byte', async 
   });
   assert.equal(result.ok, false);
   assert.equal(result.status, 'blocked');
-  assert.deepEqual(result.blockers, ['legacy_user_owned_config_conflict']);
+  assert.deepEqual(result.blockers, ['historical_user_owned_config_conflict']);
   assert.deepEqual(await Promise.all([
     fsp.readFile(setup.configPath),
     fsp.readFile(setup.authPath),

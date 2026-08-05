@@ -6,7 +6,7 @@ import { messageOf as errorMessage } from '../errors/message.js';
 import { ensureDir, exists, readText, writeTextAtomic } from '../fsx.js';
 import type { DesktopBridgeUnificationReceipt } from './bridge-contracts.js';
 
-export interface CodexLbMigrationReceiptFile {
+export interface DesktopBridgeMigrationReceiptFile {
   path: string;
   before_sha256: string | null;
   after_sha256: string | null;
@@ -14,48 +14,22 @@ export interface CodexLbMigrationReceiptFile {
   owned_by_sks: boolean;
 }
 
-export interface CodexLbMigrationReceipt {
-  schema: 'sks.codex-lb-migration-receipt.v1';
-  id: string;
-  created_at: string;
-  from_mode: string;
-  to_mode: string;
-  files: CodexLbMigrationReceiptFile[];
-  bridge_state_path: string | null;
-  oauth_preserved: boolean;
-  capability_summary: Record<string, string>;
-}
-
-export interface CodexLbMigrationFileBackup {
+export interface DesktopBridgeMigrationFileBackup {
   path: string;
   before_sha256: string | null;
   backup_path: string | null;
   owned_by_sks: boolean;
 }
 
-export interface CodexLbMigrationRollbackResult {
-  schema: 'sks.codex-lb-migration-rollback.v1';
-  ok: boolean;
-  status: 'rolled_back' | 'rollback_conflict' | 'invalid_receipt' | 'rollback_failed';
-  receipt_id: string | null;
-  restored_files: string[];
-  conflicts: Array<{
-    path: string;
-    expected_after_sha256: string | null;
-    current_sha256: string | null;
-    reason: string;
-  }>;
-  error?: string;
-}
-
 export type DesktopBridgeRollbackMetadataKind =
   | 'config'
   | 'bridge_settings'
+  | 'provider_registry'
   | 'catalog_binding'
   | 'route_policy'
   | 'launchd_state';
 
-export interface DesktopBridgeRollbackMetadataFile extends CodexLbMigrationReceiptFile {
+export interface DesktopBridgeRollbackMetadataFile extends DesktopBridgeMigrationReceiptFile {
   kind: DesktopBridgeRollbackMetadataKind;
 }
 
@@ -94,12 +68,15 @@ export interface DesktopBridgeUnificationRollbackResult {
   restored_files: string[];
   credentials_overwritten: false;
   auth_overwritten: false;
-  conflicts: CodexLbMigrationRollbackResult['conflicts'];
+  conflicts: DesktopBridgeRollbackConflict[];
   error?: string;
 }
 
-export function codexLbMigrationReceiptDir(home: string = process.env.HOME || os.homedir()): string {
-  return path.join(home, '.codex', 'sks-codex-lb-migrations');
+export interface DesktopBridgeRollbackConflict {
+  path: string;
+  expected_after_sha256: string | null;
+  current_sha256: string | null;
+  reason: string;
 }
 
 export function desktopBridgeUnificationReceiptDir(
@@ -108,17 +85,15 @@ export function desktopBridgeUnificationReceiptDir(
   return path.join(home, '.codex', 'sks-desktop-bridge-migrations');
 }
 
-export function createCodexLbMigrationReceiptId(now: Date = new Date()): string {
+export function createDesktopBridgeUnificationReceiptId(now: Date = new Date()): string {
   return `${now.toISOString().replace(/[-:.TZ]/g, '')}-${randomUUID().slice(0, 8)}`;
 }
 
-export const createDesktopBridgeUnificationReceiptId = createCodexLbMigrationReceiptId;
-
-export async function backupCodexLbMigrationFile(
+export async function backupDesktopBridgeMigrationFile(
   filePath: string,
   backupDir: string,
   ownedBySks: boolean
-): Promise<CodexLbMigrationFileBackup> {
+): Promise<DesktopBridgeMigrationFileBackup> {
   const before = await readRegularFileOrMissing(filePath);
   if (!before) {
     return {
@@ -142,43 +117,20 @@ export async function backupCodexLbMigrationFile(
   };
 }
 
-export async function finalizeCodexLbMigrationReceiptFiles(
-  backups: CodexLbMigrationFileBackup[]
-): Promise<CodexLbMigrationReceiptFile[]> {
+export async function finalizeDesktopBridgeMigrationReceiptFiles(
+  backups: DesktopBridgeMigrationFileBackup[]
+): Promise<DesktopBridgeMigrationReceiptFile[]> {
   return Promise.all(backups.map(async (backup) => ({
     ...backup,
     after_sha256: await fileSha256OrMissing(backup.path)
   })));
 }
 
-export async function writeCodexLbMigrationReceipt(
-  receipt: CodexLbMigrationReceipt,
-  input: { receiptDir?: string; receiptPath?: string } = {}
-): Promise<string> {
-  validateReceipt(receipt);
-  const receiptDir = input.receiptDir || codexLbMigrationReceiptDir();
-  const receiptPath = input.receiptPath || path.join(receiptDir, `${receipt.id}.json`);
-  await writeTextAtomic(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
-  await fsp.chmod(receiptPath, 0o600).catch(() => {});
-  return receiptPath;
-}
-
-export async function readCodexLbMigrationReceipt(receiptPath: string): Promise<CodexLbMigrationReceipt> {
-  const text = await readText(receiptPath);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error('invalid_codex_lb_migration_receipt');
-  }
-  validateReceipt(parsed);
-  return parsed;
-}
-
 export async function writeDesktopBridgeUnificationReceipt(
   receipt: StoredDesktopBridgeUnificationReceipt,
   input: { receiptDir?: string; receiptPath?: string } = {}
 ): Promise<string> {
+  normalizeHistoricalSelectionCompatibility(receipt);
   validateDesktopBridgeUnificationReceipt(receipt);
   const receiptDir = input.receiptDir || desktopBridgeUnificationReceiptDir();
   const receiptPath = input.receiptPath || path.join(receiptDir, `${receipt.receipt_id}.json`);
@@ -197,6 +149,7 @@ export async function readDesktopBridgeUnificationReceipt(
   } catch {
     throw new Error('invalid_desktop_bridge_unification_receipt');
   }
+  normalizeHistoricalSelectionCompatibility(parsed);
   validateDesktopBridgeUnificationReceipt(parsed);
   return parsed;
 }
@@ -208,6 +161,7 @@ export async function rollbackDesktopBridgeUnificationReceipt(input: {
   let receipt: StoredDesktopBridgeUnificationReceipt;
   try {
     if (input.receipt) {
+      normalizeHistoricalSelectionCompatibility(input.receipt);
       validateDesktopBridgeUnificationReceipt(input.receipt);
       receipt = input.receipt;
     } else if (input.receiptPath) {
@@ -242,62 +196,9 @@ export async function rollbackDesktopBridgeUnificationReceipt(input: {
     };
   }
 
-  // Reuse the verified metadata rollback engine. The compatibility envelope is
-  // constructed in memory only; neither OAuth nor provider secret-store files
-  // are admitted by the v1 unification receipt validator.
-  const legacyEnvelope: CodexLbMigrationReceipt = {
-    schema: 'sks.codex-lb-migration-receipt.v1',
-    id: receipt.receipt_id,
-    created_at: receipt.created_at,
-    from_mode: receipt.legacy_state.desktop_mode || receipt.legacy_state.provider_mode || 'legacy',
-    to_mode: 'desktop-bridge',
-    files: receipt.rollback_metadata.files,
-    bridge_state_path: null,
-    oauth_preserved: receipt.auth_semantic_identity_preserved,
-    capability_summary: {}
-  };
-  const result = await rollbackCodexLbMigrationReceipt({ receipt: legacyEnvelope });
-  return {
-    schema: 'sks.desktop-bridge-unification-rollback.v1',
-    ok: result.ok,
-    status: result.status,
-    receipt_id: result.receipt_id,
-    restored_files: result.restored_files,
-    credentials_overwritten: false,
-    auth_overwritten: false,
-    conflicts: result.conflicts,
-    ...(result.error ? { error: result.error } : {})
-  };
-}
-
-export async function rollbackCodexLbMigrationReceipt(input: {
-  receipt?: CodexLbMigrationReceipt;
-  receiptPath?: string;
-}): Promise<CodexLbMigrationRollbackResult> {
-  let receipt: CodexLbMigrationReceipt;
-  try {
-    if (input.receipt) {
-      validateReceipt(input.receipt);
-      receipt = input.receipt;
-    } else if (input.receiptPath) {
-      receipt = await readCodexLbMigrationReceipt(input.receiptPath);
-    } else {
-      throw new Error('missing_codex_lb_migration_receipt');
-    }
-  } catch (error: unknown) {
-    return {
-      schema: 'sks.codex-lb-migration-rollback.v1',
-      ok: false,
-      status: 'invalid_receipt',
-      receipt_id: null,
-      restored_files: [],
-      conflicts: [],
-      error: errorMessage(error)
-    };
-  }
-
-  const conflicts: CodexLbMigrationRollbackResult['conflicts'] = [];
-  for (const file of receipt.files) {
+  const files = receipt.rollback_metadata.files;
+  const conflicts: DesktopBridgeRollbackConflict[] = [];
+  for (const file of files) {
     const currentSha = await fileSha256OrMissing(file.path);
     if (currentSha !== file.after_sha256) {
       conflicts.push({
@@ -331,20 +232,22 @@ export async function rollbackCodexLbMigrationReceipt(input: {
   }
   if (conflicts.length) {
     return {
-      schema: 'sks.codex-lb-migration-rollback.v1',
+      schema: 'sks.desktop-bridge-unification-rollback.v1',
       ok: false,
       status: 'rollback_conflict',
-      receipt_id: receipt.id,
+      receipt_id: receipt.receipt_id,
       restored_files: [],
+      credentials_overwritten: false,
+      auth_overwritten: false,
       conflicts
     };
   }
 
   const currentBytes = new Map<string, Buffer | null>();
-  for (const file of receipt.files) currentBytes.set(file.path, await readRegularFileOrMissing(file.path));
+  for (const file of files) currentBytes.set(file.path, await readRegularFileOrMissing(file.path));
   const restoredFiles: string[] = [];
   try {
-    for (const file of receipt.files) {
+    for (const file of files) {
       if (file.before_sha256 === null) {
         await fsp.rm(file.path, { force: true });
       } else {
@@ -365,22 +268,26 @@ export async function rollbackCodexLbMigrationReceipt(input: {
       } catch {}
     }
     return {
-      schema: 'sks.codex-lb-migration-rollback.v1',
+      schema: 'sks.desktop-bridge-unification-rollback.v1',
       ok: false,
       status: 'rollback_failed',
-      receipt_id: receipt.id,
+      receipt_id: receipt.receipt_id,
       restored_files: [],
+      credentials_overwritten: false,
+      auth_overwritten: false,
       conflicts: [],
       error: errorMessage(error)
     };
   }
 
   return {
-    schema: 'sks.codex-lb-migration-rollback.v1',
+    schema: 'sks.desktop-bridge-unification-rollback.v1',
     ok: true,
     status: 'rolled_back',
-    receipt_id: receipt.id,
+    receipt_id: receipt.receipt_id,
     restored_files: restoredFiles,
+    credentials_overwritten: false,
+    auth_overwritten: false,
     conflicts: []
   };
 }
@@ -421,36 +328,6 @@ async function writeBufferAtomic(filePath: string, bytes: Buffer, mode: number):
   }
 }
 
-function validateReceipt(value: unknown): asserts value is CodexLbMigrationReceipt {
-  if (!value || typeof value !== 'object') throw new Error('invalid_codex_lb_migration_receipt');
-  const receipt = value as Partial<CodexLbMigrationReceipt>;
-  if (
-    receipt.schema !== 'sks.codex-lb-migration-receipt.v1'
-    || typeof receipt.id !== 'string'
-    || !receipt.id
-    || typeof receipt.created_at !== 'string'
-    || typeof receipt.from_mode !== 'string'
-    || typeof receipt.to_mode !== 'string'
-    || !Array.isArray(receipt.files)
-    || typeof receipt.oauth_preserved !== 'boolean'
-  ) {
-    throw new Error('invalid_codex_lb_migration_receipt');
-  }
-  for (const file of receipt.files) {
-    if (
-      !file
-      || typeof file.path !== 'string'
-      || !file.path
-      || (file.before_sha256 !== null && typeof file.before_sha256 !== 'string')
-      || (file.after_sha256 !== null && typeof file.after_sha256 !== 'string')
-      || (file.backup_path !== null && typeof file.backup_path !== 'string')
-      || typeof file.owned_by_sks !== 'boolean'
-    ) {
-      throw new Error('invalid_codex_lb_migration_receipt_file');
-    }
-  }
-}
-
 function validateDesktopBridgeUnificationReceipt(
   value: unknown
 ): asserts value is StoredDesktopBridgeUnificationReceipt {
@@ -464,7 +341,7 @@ function validateDesktopBridgeUnificationReceipt(
   if (
     receipt.schema !== 'sks.desktop-bridge-unification-receipt.v1'
     || typeof receipt.receipt_id !== 'string'
-    || !receipt.receipt_id
+    || !/^[A-Za-z0-9._-]{1,160}$/.test(receipt.receipt_id)
     || typeof receipt.created_at !== 'string'
     || receipt.baseline_version !== '8.1.2'
     || receipt.target_version !== '8.1.3'
@@ -473,8 +350,8 @@ function validateDesktopBridgeUnificationReceipt(
     || typeof receipt.auth_before_sha256 !== 'string'
     || typeof receipt.auth_after_sha256 !== 'string'
     || typeof receipt.auth_semantic_identity_preserved !== 'boolean'
-    || !receipt.legacy_state
-    || typeof receipt.legacy_state !== 'object'
+    || !receipt.historical_state
+    || typeof receipt.historical_state !== 'object'
     || !Array.isArray(receipt.migrated_profiles)
     || receipt.credentials_deleted !== false
     || receipt.new_runtime !== 'desktop-bridge'
@@ -487,10 +364,15 @@ function validateDesktopBridgeUnificationReceipt(
   ) {
     throw new Error('invalid_desktop_bridge_unification_receipt');
   }
-  for (const key of ['desktop_mode', 'provider_mode', 'model_provider', 'catalog_path'] as const) {
-    const entry = receipt.legacy_state[key];
+  for (const key of [
+    'desktop_mode',
+    'historical_provider_selection',
+    'model_provider',
+    'catalog_path'
+  ] as const) {
+    const entry = receipt.historical_state[key];
     if (entry !== null && typeof entry !== 'string') {
-      throw new Error('invalid_desktop_bridge_unification_receipt_legacy_state');
+      throw new Error('invalid_desktop_bridge_unification_receipt_historical_state');
     }
   }
   if (receipt.migrated_profiles.some((entry) => entry !== 'codex-lb' && entry !== 'openrouter')) {
@@ -503,13 +385,21 @@ function validateDesktopBridgeUnificationReceipt(
     throw new Error('invalid_desktop_bridge_unification_receipt_catalog_generation');
   }
   const seenPaths = new Set<string>();
+  const canonicalHomes = new Set<string>();
   for (const file of receipt.rollback_metadata.files) {
     validateDesktopBridgeRollbackFile(file);
+    if (file.backup_path !== null) {
+      validateDesktopBridgeBackupPath(file.backup_path, receipt.receipt_id);
+    }
     const resolved = path.resolve(file.path);
     if (seenPaths.has(resolved)) {
       throw new Error('invalid_desktop_bridge_unification_receipt_duplicate_path');
     }
     seenPaths.add(resolved);
+    canonicalHomes.add(canonicalHomeForRollbackFile(file));
+  }
+  if (canonicalHomes.size > 1) {
+    throw new Error('desktop_bridge_rollback_metadata_home_mismatch');
   }
   const metadataBackupPaths = new Set(
     receipt.rollback_metadata.files
@@ -541,6 +431,37 @@ function validateDesktopBridgeUnificationReceipt(
   }
 }
 
+function normalizeHistoricalSelectionCompatibility(value: unknown): void {
+  if (!value || typeof value !== 'object') return;
+  const historicalState = (value as { historical_state?: unknown }).historical_state;
+  if (!historicalState || typeof historicalState !== 'object') return;
+  const state = historicalState as Record<string, unknown>;
+  const compatibilityKey = ['provider', 'mode'].join('_');
+  const compatibilityValue = state[compatibilityKey];
+  if (compatibilityValue === undefined) return;
+  const currentValue = state.historical_provider_selection;
+  if (currentValue !== undefined && currentValue !== compatibilityValue) {
+    throw new Error('invalid_desktop_bridge_unification_receipt_historical_selection_conflict');
+  }
+  if (currentValue === undefined) {
+    state.historical_provider_selection = compatibilityValue;
+  }
+  delete state[compatibilityKey];
+}
+
+function validateDesktopBridgeBackupPath(backupPath: string, receiptId: string): void {
+  const resolved = path.resolve(backupPath);
+  const filesDir = path.dirname(resolved);
+  const receiptDir = path.dirname(filesDir);
+  if (
+    path.basename(resolved).match(/^[a-f0-9]{16}\.before$/) === null
+    || path.basename(filesDir) !== 'files'
+    || path.basename(receiptDir) !== receiptId
+  ) {
+    throw new Error('desktop_bridge_rollback_backup_path_not_canonical');
+  }
+}
+
 function validateDesktopBridgeRollbackFile(file: unknown): asserts file is DesktopBridgeRollbackMetadataFile {
   if (!file || typeof file !== 'object') {
     throw new Error('invalid_desktop_bridge_unification_rollback_file');
@@ -549,6 +470,7 @@ function validateDesktopBridgeRollbackFile(file: unknown): asserts file is Deskt
   const kinds: DesktopBridgeRollbackMetadataKind[] = [
     'config',
     'bridge_settings',
+    'provider_registry',
     'catalog_binding',
     'route_policy',
     'launchd_state'
@@ -562,6 +484,16 @@ function validateDesktopBridgeRollbackFile(file: unknown): asserts file is Deskt
     || (entry.after_sha256 !== null && typeof entry.after_sha256 !== 'string')
     || (entry.backup_path !== null && typeof entry.backup_path !== 'string')
     || typeof entry.owned_by_sks !== 'boolean'
+  ) {
+    throw new Error('invalid_desktop_bridge_unification_rollback_file');
+  }
+  const hashPattern = /^[a-f0-9]{64}$/;
+  if (
+    (entry.before_sha256 !== null && !hashPattern.test(entry.before_sha256))
+    || (entry.after_sha256 !== null && !hashPattern.test(entry.after_sha256))
+    || (entry.before_sha256 === null && entry.backup_path !== null)
+    || (entry.before_sha256 !== null && entry.backup_path === null)
+    || (entry.backup_path !== null && !path.isAbsolute(entry.backup_path))
   ) {
     throw new Error('invalid_desktop_bridge_unification_rollback_file');
   }
@@ -581,9 +513,57 @@ function validateDesktopBridgeRollbackFile(file: unknown): asserts file is Deskt
   ) {
     throw new Error('desktop_bridge_rollback_secret_file_forbidden');
   }
-  if (entry.kind === 'config' && basename !== 'config.toml') {
-    throw new Error('desktop_bridge_rollback_config_path_invalid');
+  if (!path.isAbsolute(entry.path)) {
+    throw new Error('desktop_bridge_rollback_metadata_path_not_canonical');
   }
+  if (entry.kind === 'config' ? entry.owned_by_sks : !entry.owned_by_sks) {
+    throw new Error('desktop_bridge_rollback_metadata_ownership_invalid');
+  }
+}
+
+function canonicalHomeForRollbackFile(file: DesktopBridgeRollbackMetadataFile): string {
+  const resolved = path.resolve(file.path);
+  if (file.kind === 'config') {
+    const codexHome = path.dirname(resolved);
+    const home = path.dirname(codexHome);
+    if (
+      path.basename(resolved) === 'config.toml'
+      && path.basename(codexHome) === '.codex'
+      && path.join(home, '.codex', 'config.toml') === resolved
+    ) return home;
+  } else if (file.kind === 'launchd_state') {
+    const launchAgents = path.dirname(resolved);
+    const library = path.dirname(launchAgents);
+    const home = path.dirname(library);
+    if (
+      path.basename(resolved) === 'com.sneakoscope.codex-lb-desktop-bridge.plist'
+      && path.basename(launchAgents) === 'LaunchAgents'
+      && path.basename(library) === 'Library'
+      && path.join(
+        home,
+        'Library',
+        'LaunchAgents',
+        'com.sneakoscope.codex-lb-desktop-bridge.plist'
+      ) === resolved
+    ) return home;
+  } else {
+    const expectedBasename: Record<Exclude<DesktopBridgeRollbackMetadataKind, 'config' | 'launchd_state'>, string> = {
+      bridge_settings: 'codex-lb-desktop-bridge-settings.json',
+      provider_registry: 'sks-bridge-provider-registry.json',
+      catalog_binding: 'sks-bridge-active-generation.json',
+      route_policy: 'sks-bridge-route-policy.json'
+    };
+    const sksDir = path.dirname(resolved);
+    const codexHome = path.dirname(sksDir);
+    const home = path.dirname(codexHome);
+    if (
+      path.basename(resolved) === expectedBasename[file.kind]
+      && path.basename(sksDir) === 'sks'
+      && path.basename(codexHome) === '.codex'
+      && path.join(home, '.codex', 'sks', expectedBasename[file.kind]) === resolved
+    ) return home;
+  }
+  throw new Error(`desktop_bridge_rollback_metadata_path_not_canonical:${file.kind}`);
 }
 
 function sha256(bytes: Buffer): string {
