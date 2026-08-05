@@ -109,6 +109,6 @@ export function interruptedToolOutputRecoveryBlockReason(input: {
     `SKS blocked same-thread continuation because custom tool call ${callId} has no correlated output (active mission: ${missionId}).`,
     'The current Codex conversation state may be structurally invalid, so additional context cannot repair the pending Responses request.',
     'Treat the call result as unknown and do not replay a possibly mutating action.',
-    'Upgrade the selected codex-lb to the official latest stable release (`sks codex-lb status --json` reports whether the deployment satisfies tool-heavy continuation), or explicitly disable only codex-lb routing with `sks codex-lb disable`, then open a fresh Codex thread and continue the persisted mission after inspecting side effects. ChatGPT OAuth is not replaced by either action.'
+    'Inspect the current provider with `sks bridge status --json` and verify it with `sks bridge verify --level deep --strict`; if codex-lb remains unavailable, disable only that provider with `sks bridge provider disable codex-lb`, then open a fresh Codex thread and continue the persisted mission after inspecting side effects. These actions do not replace ChatGPT OAuth or delete provider credentials.'
   ].join(' ')
 }

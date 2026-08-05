@@ -21,7 +21,7 @@ async function fixture(t: TestContext, config: string) {
   return { root, codexHome, configPath }
 }
 
-test('Codex App Fast UI repair removes blank-separated SKS model locks but reports retired codex-lb compatibility as blocked', async (t) => {
+test('Codex App Fast UI repair removes a provenance-owned retired direct provider selection', async (t) => {
   const input = [
     'suppress_unstable_features_warning = true',
     '# SKS moved machine-local Codex config from .codex/config.toml',
@@ -70,9 +70,8 @@ test('Codex App Fast UI repair removes blank-separated SKS model locks but repor
   assert.equal(repaired.fast_selector, 'repaired')
   assert.equal(repaired.before_fast_selector, 'maybe_hidden_or_locked')
   assert.equal(repaired.after_fast_selector, 'available')
-  assert.ok(repaired.selected_provider_blockers.includes('desktop_dual_auth_compat_unavailable'))
-  assert.deepEqual(globalAction?.removed_keys, ['model', 'model_reasoning_effort'])
-  assert.match(after, /^model_provider = "codex-lb"$/m)
+  assert.deepEqual(globalAction?.removed_keys, ['model_provider', 'model', 'model_reasoning_effort'])
+  assert.doesNotMatch(after, /^model_provider =/m)
   assert.match(after, /^service_tier = "fast"$/m)
   assert.doesNotMatch(after, /^model =/m)
   assert.doesNotMatch(after, /^model_reasoning_effort =/m)
@@ -97,7 +96,7 @@ test('Codex App Fast UI repair removes blank-separated SKS model locks but repor
   assert.equal(second.actions.some((action) => action.changed), false)
 })
 
-test('Codex App Fast UI repair follows SKS provenance past unrelated managed comments while reporting retired compatibility', async (t) => {
+test('Codex App Fast UI repair follows SKS provenance past unrelated comments and removes the direct selection', async (t) => {
   const input = [
     '# SKS moved machine-local Codex config from .codex/config.toml',
     '',
@@ -137,9 +136,8 @@ test('Codex App Fast UI repair follows SKS provenance past unrelated managed com
   const after = await fs.readFile(configPath, 'utf8')
 
   assert.equal(repaired.ok, false)
-  assert.ok(repaired.selected_provider_blockers.includes('desktop_dual_auth_compat_unavailable'))
-  assert.deepEqual(repaired.actions.find((action) => action.scope === 'codex_home')?.removed_keys, ['model', 'model_reasoning_effort'])
-  assert.match(after, /^model_provider = "codex-lb"$/m)
+  assert.deepEqual(repaired.actions.find((action) => action.scope === 'codex_home')?.removed_keys, ['model_provider', 'model', 'model_reasoning_effort'])
+  assert.doesNotMatch(after, /^model_provider =/m)
   assert.match(after, /^notify = /m)
   assert.doesNotMatch(after, /^model =/m)
   assert.doesNotMatch(after, /^model_reasoning_effort =/m)
@@ -160,6 +158,18 @@ test('Codex App UI snapshot reports API-key auth with an OAuth backup as Chat/Pr
   assert.equal(snapshot.indicators.chat_surface, 'chatgpt_oauth_inactive')
   assert.doesNotMatch(serialized, new RegExp(secret))
   assert.doesNotMatch(serialized, new RegExp(oauthAccess))
+})
+
+test('Codex App UI repair points inactive ChatGPT OAuth to current Desktop Bridge setup', async (t) => {
+  const { root, codexHome } = await fixture(t, '[features]\nfast_mode = true\n')
+  await fs.writeFile(path.join(codexHome, 'auth.json'), `${JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'fixture-secret' })}\n`, { mode: 0o600 })
+  await fs.writeFile(path.join(codexHome, 'auth.chatgpt-backup.json'), `${JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: 'oauth-access', refresh_token: 'oauth-refresh' } })}\n`, { mode: 0o600 })
+
+  const repaired = await repairCodexAppFastUi(root, { codexHome, apply: true, env: { HOME: path.dirname(codexHome) } })
+
+  assert.match(repaired.next_action, /codex login/)
+  assert.match(repaired.next_action, /sks bridge ensure/)
+  assert.doesNotMatch(repaired.next_action, /sks codex-lb/)
 })
 
 test('Codex App Fast UI repair still removes SKS-marked non-lb provider locks after migration', async (t) => {
@@ -206,7 +216,7 @@ test('Codex App Fast UI repair preserves unmarked user model and effort choices'
   assert.equal(await fs.readFile(configPath, 'utf8'), input)
 })
 
-test('Codex App Fast UI repair preserves unmarked codex-lb selection and provider credentials', async (t) => {
+test('Codex App Fast UI repair preserves an unmarked user-owned direct selection but fails closed', async (t) => {
   const input = [
     'model_provider = "codex-lb"',
     'service_tier = "fast"',
@@ -221,9 +231,11 @@ test('Codex App Fast UI repair preserves unmarked codex-lb selection and provide
   ].join('\n')
   const { root, codexHome, configPath } = await fixture(t, input)
 
-  await repairCodexAppFastUi(root, { codexHome, apply: true, env: {} })
+  const repaired = await repairCodexAppFastUi(root, { codexHome, apply: true, env: {} })
 
   assert.equal(await fs.readFile(configPath, 'utf8'), input)
+  assert.equal(repaired.ok, false)
+  assert.equal(repaired.provider_selector, 'manual_action_required')
 })
 
 test('documented SKS Fast service tier is an available selector signal, not a lock', async (t) => {
@@ -340,7 +352,7 @@ test('Fast UI repair does not infer provider readiness from an empty blocker lis
   assert.ok(repaired.blockers.includes('selected_provider:routing_or_picker_unverified'))
 })
 
-test('Codex App Fast UI repair preserves an active OpenRouter selection under migration markers', async (t) => {
+test('Codex App Fast UI repair removes an SKS-owned OpenRouter selection without deleting an unproven model choice', async (t) => {
   const input = [
     '# SKS moved machine-local Codex config from .codex/config.toml at 2026-07-24T07:04:58.256Z',
     '',
@@ -368,8 +380,9 @@ test('Codex App Fast UI repair preserves an active OpenRouter selection under mi
   } as any)
   const after = await fs.readFile(configPath, 'utf8')
   const globalAction = repaired.actions.find((action) => action.scope === 'codex_home')
-  assert.equal(globalAction?.changed, false)
-  assert.match(after, /^model_provider = "openrouter"$/m)
+  assert.equal(globalAction?.changed, true)
+  assert.deepEqual(globalAction?.removed_keys, ['model_provider'])
+  assert.doesNotMatch(after, /^model_provider =/m)
   assert.match(after, /^model = "moonshotai\/kimi-k3"$/m)
   assert.match(after, /^model_catalog_json = /m)
 })
