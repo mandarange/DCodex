@@ -529,11 +529,12 @@ function catalogSyncResults(
   const results = [catalogResult(
     input,
     'catalog:combined',
-    catalog.state,
+    activeCatalogCapabilityState(input, catalog),
     catalog.blockers,
     catalog.warnings,
     catalog.recovery_action,
     {
+      aggregate_state: catalog.state,
       generation: catalog.generation,
       digest: catalog.digest,
       model_count: catalog.model_count,
@@ -561,6 +562,20 @@ function catalogSyncResults(
     ))
   }
   return results
+}
+
+function activeCatalogCapabilityState(
+  input: DesktopCapabilityRunnerInputV3,
+  catalog: CombinedCatalogSyncStatus
+): CombinedCatalogSyncStatus['state'] {
+  if (catalog.state !== 'degraded' || catalog.conflict_count > 0) return catalog.state
+  const active = providerSet(input.activeProviderIds)
+  if (active.size === 0) return catalog.state
+  const activeProvidersVerified = [...active].every((provider) =>
+    catalog.providers[provider]?.state === 'verified')
+  return activeProvidersVerified && Number(catalog.route_count || 0) > 0
+    ? 'verified'
+    : catalog.state
 }
 
 function catalogResult(
@@ -599,7 +614,11 @@ function catalogResult(
     attempt_id: 1,
     terminal: probeState === 'blocked',
     root_cause: rootCause,
-    blockers: rootCause ? [rootCause] : uniqueStrings(blockers),
+    blockers: probeState === 'not_attempted'
+      ? []
+      : rootCause
+        ? [rootCause]
+        : uniqueStrings(blockers),
     warnings: uniqueStrings(warnings),
     retryable: probeState === 'blocked' || probeState === 'stale',
     recovery_action: recoveryAction,

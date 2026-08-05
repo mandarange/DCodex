@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sneakoscope.dev/schemas/codex/desktop-capabilities-v3.schema.json",
+  "title": "SKS Desktop Capability Report v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "report_id", "correlation_id", "session_id", "requested_level",
+    "checked_at", "catalog_generation", "execution", "bridge", "native_identity",
+    "providers", "combined_catalog", "summary", "catalog_sync"
+  ],
+  "properties": {
+    "schema": { "const": "sks.desktop-capabilities.v3" },
+    "report_id": { "$ref": "#/$defs/nonEmptyString" },
+    "correlation_id": { "$ref": "#/$defs/nonEmptyString" },
+    "session_id": { "$ref": "#/$defs/nonEmptyString" },
+    "requested_level": { "$ref": "#/$defs/requestedLevel" },
+    "checked_at": { "$ref": "#/$defs/dateTime" },
+    "catalog_generation": { "type": ["string", "null"] },
+    "execution": { "$ref": "#/$defs/execution" },
+    "bridge": { "$ref": "#/$defs/scopeSummary" },
+    "native_identity": { "$ref": "#/$defs/scopeSummary" },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codex-lb", "openrouter"],
+      "properties": {
+        "codex-lb": { "$ref": "#/$defs/scopeSummary" },
+        "openrouter": { "$ref": "#/$defs/scopeSummary" }
+      }
+    },
+    "combined_catalog": { "$ref": "#/$defs/scopeSummary" },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bridge_ready", "active_routes_ready", "level_satisfied",
+        "transport_level_satisfied", "deep_level_satisfied", "full_feature_verified",
+        "inactive_provider_failures", "blockers", "warnings"
+      ],
+      "properties": {
+        "bridge_ready": { "type": "boolean" },
+        "active_routes_ready": { "type": "boolean" },
+        "level_satisfied": { "type": "boolean" },
+        "transport_level_satisfied": { "type": "boolean" },
+        "deep_level_satisfied": { "type": "boolean" },
+        "full_feature_verified": { "type": "boolean" },
+        "inactive_provider_failures": { "$ref": "#/$defs/stringArray" },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "catalog_sync": { "$ref": "#/$defs/combinedCatalog" }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "dateTime": { "type": "string", "format": "date-time" },
+    "nullableDateTime": {
+      "anyOf": [
+        { "$ref": "#/$defs/dateTime" },
+        { "type": "null" }
+      ]
+    },
+    "stringArray": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "requestedLevel": {
+      "enum": ["shallow", "transport", "deep"]
+    },
+    "probeState": {
+      "enum": ["not_attempted", "running", "verified", "degraded", "blocked", "failed", "unsupported", "stale"]
+    },
+    "probeStage": {
+      "enum": [
+        "preflight", "process", "tcp_connect", "http_health", "websocket_upgrade",
+        "websocket_protocol", "frame_round_trip", "clean_close", "provider_auth",
+        "catalog_sync", "model_route", "feature_request", "feature_response",
+        "artifact_validation", "complete"
+      ]
+    },
+    "scope": {
+      "enum": ["bridge", "native-identity", "provider:codex-lb", "provider:openrouter", "catalog:combined"]
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "status", "blockers"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "status": { "enum": ["completed", "partial", "failed"] },
+        "blockers": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema", "capability", "scope", "requested_level", "stage", "state",
+        "checked_at", "report_id", "correlation_id", "session_id", "attempt_id",
+        "terminal", "root_cause", "blockers", "warnings", "retryable",
+        "recovery_action", "source", "evidence"
+      ],
+      "properties": {
+        "schema": { "const": "sks.capability-probe.v3" },
+        "capability": { "$ref": "#/$defs/nonEmptyString" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "requested_level": { "$ref": "#/$defs/requestedLevel" },
+        "stage": { "$ref": "#/$defs/probeStage" },
+        "state": { "$ref": "#/$defs/probeState" },
+        "checked_at": { "$ref": "#/$defs/dateTime" },
+        "report_id": { "$ref": "#/$defs/nonEmptyString" },
+        "correlation_id": { "$ref": "#/$defs/nonEmptyString" },
+        "session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "attempt_id": { "type": "integer", "minimum": 0 },
+        "terminal": { "type": "boolean" },
+        "root_cause": { "type": ["string", "null"] },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" },
+        "retryable": { "type": "boolean" },
+        "recovery_action": { "type": ["string", "null"] },
+        "source": { "enum": ["config", "manifest", "transport", "desktop_ui", "deep_probe", "artifact"] },
+        "evidence": { "type": "object" }
+      }
+    },
+    "scopeSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "scope", "state", "checked_at", "capabilities", "blockers", "warnings"],
+      "properties": {
+        "schema": { "const": "sks.scope-capability-summary.v1" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "state": { "$ref": "#/$defs/probeState" },
+        "checked_at": { "$ref": "#/$defs/dateTime" },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/probe" }
+        },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "catalogState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema", "provider_id", "state", "source", "generation", "digest",
+        "model_count", "checked_at", "expires_at", "blockers", "warnings",
+        "recovery_action"
+      ],
+      "properties": {
+        "schema": { "const": "sks.catalog-sync-state.v2" },
+        "provider_id": { "enum": ["codex-lb", "openrouter"] },
+        "state": { "enum": ["not_started", "syncing", "verified", "degraded", "failed", "stale"] },
+        "source": { "enum": ["gateway", "openrouter", null] },
+        "generation": { "type": ["string", "null"] },
+        "digest": { "type": ["string", "null"] },
+        "model_count": { "type": ["integer", "null"], "minimum": 0 },
+        "checked_at": { "$ref": "#/$defs/nullableDateTime" },
+        "expires_at": { "$ref": "#/$defs/nullableDateTime" },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" },
+        "recovery_action": { "type": ["string", "null"] }
+      }
+    },
+    "combinedCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema", "state", "generation", "digest", "model_count", "route_count",
+        "conflict_count", "checked_at", "providers", "blockers", "warnings",
+        "recovery_action"
+      ],
+      "properties": {
+        "schema": { "const": "sks.combined-catalog-sync.v1" },
+        "state": { "enum": ["not_started", "syncing", "verified", "degraded", "failed", "stale"] },
+        "generation": { "type": ["string", "null"] },
+        "digest": { "type": ["string", "null"] },
+        "model_count": { "type": ["integer", "null"], "minimum": 0 },
+        "route_count": { "type": ["integer", "null"], "minimum": 0 },
+        "conflict_count": { "type": "integer", "minimum": 0 },
+        "checked_at": { "$ref": "#/$defs/nullableDateTime" },
+        "providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["codex-lb", "openrouter"],
+          "properties": {
+            "codex-lb": { "$ref": "#/$defs/catalogState" },
+            "openrouter": { "$ref": "#/$defs/catalogState" }
+          }
+        },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" },
+        "recovery_action": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

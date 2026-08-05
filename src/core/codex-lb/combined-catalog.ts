@@ -194,7 +194,11 @@ export async function activateCombinedBridgeCatalog(input: {
       blockers: layout.blockers
     };
   }
-  if (!input.build.ok || input.build.blockers.length > 0) {
+  // A degraded build can still be a valid atomic generation when at least one
+  // enabled provider produced a verified catalog. Provider-local failures stay
+  // visible in status and must not prevent an active provider from routing.
+  // Conflicts/no-ready-provider builds use ok=false and remain fail-closed.
+  if (!input.build.ok) {
     return {
       schema: 'sks.bridge-combined-catalog-activation.v1',
       activated: false,
@@ -381,7 +385,10 @@ function normalizeProviderCatalog(input: ProviderCatalogBuildInput): {
     };
   }
   if (input.provider_id === 'codex-lb') {
-    const normalized = normalizeCodexLbBridgeCatalogModels(input.models, input.generation || 'unknown');
+    const normalized = normalizeCodexLbBridgeCatalogModels(
+      normalizeCodexLbCatalogRows(input.models),
+      input.generation || 'unknown'
+    );
     return {
       state: input.state,
       models: normalized.models.map(canonicalModel).filter(isModel),
@@ -426,6 +433,21 @@ function normalizeProviderCatalog(input: ProviderCatalogBuildInput): {
     models,
     blockers: unique(blockers),
     warnings: unique(input.warnings || [])
+  };
+}
+
+function normalizeCodexLbCatalogRows(value: unknown): unknown {
+  const rows = Array.isArray(value)
+    ? value
+    : Array.isArray((value as any)?.models)
+      ? (value as any).models
+      : Array.isArray((value as any)?.data)
+        ? (value as any).data
+        : [];
+  return {
+    models: rows.map((row: unknown) => typeof row === 'string'
+      ? { id: row, slug: row, display_name: row, supported_in_api: true }
+      : row)
   };
 }
 

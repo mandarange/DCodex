@@ -15,6 +15,7 @@ enum CapabilityProbeState: String, Codable, CaseIterable {
 enum CapabilityProbeStage: String, Codable {
     case preflight, process, tcpConnect = "tcp_connect", httpHealth = "http_health"
     case websocketUpgrade = "websocket_upgrade", websocketProtocol = "websocket_protocol"
+    case frameRoundTrip = "frame_round_trip", cleanClose = "clean_close"
     case providerAuth = "provider_auth", catalogSync = "catalog_sync", modelRoute = "model_route"
     case featureRequest = "feature_request", featureResponse = "feature_response"
     case artifactValidation = "artifact_validation", complete
@@ -246,13 +247,19 @@ struct DesktopCapabilityReportV3: Codable, Equatable {
 }
 
 struct DesktopBridgeStatusV3Truth {
+    private static let keys: Set<String> = [
+        "schema", "checked_at", "correlation_id", "management", "service",
+        "http_probe", "websocket_probe", "native_identity", "providers", "routing",
+        "catalog_sync", "capabilities", "readiness", "recovery_actions"
+    ]
     let raw: [String: Any]
     let checkedAt: String
     let correlationId: String
     let capabilities: DesktopCapabilityReportV3?
 
     static func decode(from json: [String: Any]) throws -> DesktopBridgeStatusV3Truth {
-        guard json["schema"] as? String == "sks.desktop-bridge-status.v3",
+        guard Set(json.keys) == keys,
+              json["schema"] as? String == "sks.desktop-bridge-status.v3",
               let checkedAt = nonempty(json["checked_at"]), let correlationId = nonempty(json["correlation_id"]),
               let management = json["management"] as? [String: Any],
               let service = json["service"] as? [String: Any],
@@ -260,7 +267,8 @@ struct DesktopBridgeStatusV3Truth {
               let providers = json["providers"] as? [String: Any],
               let routing = json["routing"] as? [String: Any],
               let catalog = json["catalog_sync"] as? [String: Any],
-              let readiness = json["readiness"] as? [String: Any] else {
+              let readiness = json["readiness"] as? [String: Any],
+              json["recovery_actions"] is [String] else {
             throw ProviderFacadeError.schemaInvalid("desktop_bridge_status_schema_invalid")
         }
         let managed = management["managed"] as? Bool == true
@@ -273,7 +281,9 @@ struct DesktopBridgeStatusV3Truth {
               routing["fallback"] as? String == "none", readiness["ready"] is Bool,
               ["ready", "awaiting_provider", "degraded", "blocked", "unmanaged"].contains(readiness["state"] as? String ?? ""),
               profileValid(providers["codex-lb"], id: "codex-lb"),
-              profileValid(providers["openrouter"], id: "openrouter") else {
+              profileValid(providers["openrouter"], id: "openrouter"),
+              transportProbeValid(json["http_probe"], websocket: false),
+              transportProbeValid(json["websocket_probe"], websocket: true) else {
             throw ProviderFacadeError.schemaInvalid("desktop_bridge_status_schema_invalid")
         }
         if let policy = routing["policy"] as? [String: Any] {
@@ -290,11 +300,45 @@ struct DesktopBridgeStatusV3Truth {
         if json["capabilities"] is NSNull || json["capabilities"] == nil { report = nil }
         else {
             report = try DesktopCapabilityReportV3.decode(from: json)
-            guard report?.correlationId == correlationId else {
-                throw ProviderFacadeError.schemaInvalid("desktop_bridge_status_schema_invalid: correlation mismatch")
-            }
         }
         return DesktopBridgeStatusV3Truth(raw: json, checkedAt: checkedAt, correlationId: correlationId, capabilities: report)
+    }
+
+    private static func transportProbeValid(_ value: Any?, websocket: Bool) -> Bool {
+        if value is NSNull { return true }
+        guard let probe = value as? [String: Any] else { return false }
+        let expected: Set<String> = websocket
+            ? ["schema", "state", "terminal_stage", "root_cause", "status_code", "negotiated_protocol",
+               "upgrade_verified", "protocol_verified", "frame_round_trip_verified", "clean_close_verified",
+               "latency_ms", "blockers", "warnings"]
+            : ["schema", "state", "terminal_stage", "root_cause", "status_code", "latency_ms", "blockers", "warnings"]
+        guard Set(probe.keys) == expected,
+              probe["schema"] as? String == (websocket ? "sks.desktop-bridge-websocket-probe.v2" : "sks.desktop-bridge-http-probe.v1"),
+              let state = probe["state"] as? String,
+              let stage = probe["terminal_stage"] as? String,
+              probe["root_cause"] is NSNull || probe["root_cause"] is String,
+              probe["status_code"] is NSNull || probe["status_code"] is NSNumber,
+              probe["latency_ms"] is NSNull || probe["latency_ms"] is NSNumber,
+              probe["blockers"] is [String], probe["warnings"] is [String] else { return false }
+        if websocket {
+            guard ["not_attempted", "verified", "degraded", "blocked", "failed", "unsupported"].contains(state),
+                  ["tcp_connect", "websocket_upgrade", "websocket_protocol", "frame_round_trip", "clean_close", "complete"].contains(stage),
+                  probe["negotiated_protocol"] is NSNull || probe["negotiated_protocol"] is String,
+                  probe["upgrade_verified"] is Bool, probe["protocol_verified"] is Bool,
+                  probe["frame_round_trip_verified"] is Bool, probe["clean_close_verified"] is Bool else { return false }
+            if state == "verified" {
+                return stage == "complete" && probe["root_cause"] is NSNull
+                    && probe["upgrade_verified"] as? Bool == true
+                    && probe["protocol_verified"] as? Bool == true
+                    && probe["frame_round_trip_verified"] as? Bool == true
+                    && probe["clean_close_verified"] as? Bool == true
+            }
+            return state != "not_attempted"
+                || probe["root_cause"] is NSNull && (probe["blockers"] as? [String])?.isEmpty == true
+        }
+        guard ["verified", "blocked", "failed", "unsupported"].contains(state),
+              ["tcp_connect", "http_health", "complete"].contains(stage) else { return false }
+        return state != "verified" || stage == "complete" && probe["root_cause"] is NSNull
     }
 
     private static func profileValid(_ value: Any?, id: String) -> Bool {

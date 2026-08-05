@@ -40,7 +40,7 @@ final class ArchitectureHardeningRestartQATests: XCTestCase {
         }
         providerSettings.click()
         XCTAssertTrue(app.buttons["sks-provider-reconnect-codex-lb"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["sks-provider-verify-capabilities"].exists)
+        XCTAssertTrue(app.buttons["sks-provider-verify-transport"].exists)
         XCTAssertTrue(app.staticTexts["sks-center-provider-apply-status"].exists)
     }
 }

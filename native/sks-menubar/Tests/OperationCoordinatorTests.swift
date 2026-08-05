@@ -241,5 +241,36 @@ final class OperationCoordinatorTests: XCTestCase {
         XCTAssertFalse(auth.automaticResume)
         XCTAssertEqual(auth.evidenceIntegrity, "preserved")
     }
+
+    func testDiagnosticMetadataPersistsWithoutReportBodyOrSecrets() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sks-operation-diagnostic-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let coordinator = OperationCoordinator(directory: directory.path)
+        let operation = try XCTUnwrap(coordinator.begin(
+            kind: "bridge-verify-transport", mutationGroup: nil, summary: "Verify Desktop Bridge transport"
+        ))
+        let metadata = DiagnosticOperationMetadata(
+            schema: "sks.operation-diagnostic-metadata.v1", executionOK: true,
+            reportGenerated: true, requestedLevel: "transport", levelSatisfied: false,
+            fullFeatureVerified: false, reportId: "report-public", correlationId: "correlation-public",
+            attemptId: 2, catalogGeneration: "catalog-generation-public"
+        )
+        _ = coordinator.recordDiagnostic(operation, metadata: metadata)
+
+        let loaded = try XCTUnwrap(coordinator.latestSnapshot())
+        XCTAssertEqual(loaded.diagnostic, metadata)
+        let receiptURL = directory.appendingPathComponent("\(operation.id).json")
+        let receipt = try String(contentsOf: receiptURL, encoding: .utf8)
+        XCTAssertFalse(receipt.contains("request_body"))
+        XCTAssertFalse(receipt.contains("Authorization"))
+        XCTAssertFalse(receipt.contains("api_key"))
+        XCTAssertFalse(receipt.contains("secret"))
+        let permissions = try XCTUnwrap(
+            (try FileManager.default.attributesOfItem(atPath: receiptURL.path)[.posixPermissions] as? NSNumber)?.intValue
+        )
+        XCTAssertEqual(permissions & 0o077, 0)
+    }
 }
 #endif

@@ -329,6 +329,9 @@ export interface DesktopBridgeStatusV3 {
     blockers: string[];
     warnings: string[];
   };
+  /** Latest explicit diagnostic results. Status refresh never runs these probes. */
+  http_probe: HttpProbeResult | null;
+  websocket_probe: WebSocketProbeResult | null;
   native_identity: {
     state: CapabilityProbeState;
     configured: boolean;

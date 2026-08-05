@@ -179,7 +179,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             providerStatus.stringValue = "Desktop Bridge · blocked · managed runtime state missing"
             providerStatus.textColor = .systemRed; return
         }
-        providerStatus.stringValue = "Runtime: \(state) · desktop-bridge · last verified \(management?["checked_at"] as? String ?? "never")"
+        providerStatus.stringValue = "Runtime: \(state) · desktop-bridge · last verified \(json["checked_at"] as? String ?? "never")"
         providerStatus.textColor = state == "ready" ? .systemGreen : (state == "blocked" ? .systemRed : .systemOrange)
         let service = json["service"] as? [String: Any]
         bridgeServiceStatus.stringValue = "Service: installed \(yesNo(service?["installed"])) · loaded \(yesNo(service?["loaded"])) · running \(yesNo(service?["running"])) · endpoint \(ProviderSecretRedactor.redactEndpoint(service?["loopback_origin"] as? String ?? "unreported"))"
@@ -220,7 +220,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             guard let self = self else { return }
             let decoded = self.json(result.output).flatMap { try? DesktopCapabilityReportV3.decode(from: $0) }
             let executionSucceeded = decoded?.execution.ok == true
-            _ = self.operations.update(snapshot, state: executionSucceeded ? .succeeded : .failed, stage: "complete", progress: 1, summary: executionSucceeded ? "Diagnostic report generated" : "Diagnostic execution failed")
+            let completed = self.operations.update(snapshot, state: executionSucceeded ? .succeeded : .failed, stage: "complete", progress: 1, summary: executionSucceeded ? "Diagnostic report generated" : "Diagnostic execution failed")
             guard let report = decoded, let checked = SKSTimestamp.date(from: report.checkedAt) else {
                 if generation == self.responseGate.activeRequestGeneration {
                     self.capabilityStatus.stringValue = "Capability schema invalid · capability_schema_invalid"
@@ -230,14 +230,16 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             }
             let identity = ProviderResponseIdentity(requestGeneration: generation, reportId: report.reportId, correlationId: report.correlationId, attemptId: report.maximumAttemptId, checkedAt: checked, catalogGeneration: report.catalogGeneration)
             guard self.responseGate.accept(identity) else { return }
-            self.lastDiagnosticMetadata = DiagnosticOperationMetadata(
+            let metadata = DiagnosticOperationMetadata(
                 schema: "sks.operation-diagnostic-metadata.v1", executionOK: report.execution.ok,
                 reportGenerated: true, requestedLevel: report.requestedLevel,
-                levelSatisfied: report.requestedLevel == "deep" ? report.summary.deepLevelSatisfied : report.summary.transportLevelSatisfied,
+                levelSatisfied: report.summary.levelSatisfied,
                 fullFeatureVerified: report.summary.fullFeatureVerified, reportId: report.reportId,
                 correlationId: report.correlationId, attemptId: report.maximumAttemptId,
                 catalogGeneration: report.catalogGeneration
             )
+            self.lastDiagnosticMetadata = metadata
+            _ = self.operations.recordDiagnostic(completed, metadata: metadata)
             self.globalSpinner.stopAnimation(nil)
             self.renderCapabilityReport(report)
             self.renderCombinedCatalog(["catalog_sync": self.jsonObject(report.catalogSync)])
@@ -263,7 +265,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
                 capabilityStack.addArrangedSubview(value)
             }
         }
-        let satisfied = report.requestedLevel == "deep" ? report.summary.deepLevelSatisfied : report.summary.transportLevelSatisfied
+        let satisfied = report.summary.levelSatisfied
         capabilityStatus.stringValue = "\(report.requestedLevel.capitalized) diagnostic completed · readiness \(satisfied ? "satisfied" : "needs action") · full deep \(report.summary.fullFeatureVerified ? "verified" : "not verified")"
         capabilityStatus.textColor = satisfied ? .systemGreen : .systemOrange
         capabilityLastCheckedStatus.stringValue = "Last feature check: \(report.checkedAt) · report \(report.reportId)"

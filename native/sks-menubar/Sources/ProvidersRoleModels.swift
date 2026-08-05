@@ -187,7 +187,7 @@ extension ProvidersViewController {
         (json?["reasoning"] as? String) ?? (json?["reasoning_effort"] as? String) ?? (json?["model_reasoning_effort"] as? String)
     }
 
-    private func roleModelDisplay(provider: String, model: String) -> String { model.contains("/") ? model : "\(provider):\(model)" }
+    private func roleModelDisplay(provider: String, model: String) -> String { "\(provider) · \(model)" }
 
     private func selectRoleProfile(model: String, reasoning: String, controls: RoleModelControls) {
         if !controls.model.itemTitles.contains(model) {

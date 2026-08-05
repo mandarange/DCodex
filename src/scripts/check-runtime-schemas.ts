@@ -21,6 +21,7 @@ try {
   const proof = await import(pathToFileURL(path.join(root, 'dist', 'core', 'proof', 'proof-schema.js')));
   const evidence = await import(pathToFileURL(path.join(root, 'dist', 'core', 'evidence', 'evidence-schema.js')));
   const voxel = await import(pathToFileURL(path.join(root, 'dist', 'core', 'wiki-image', 'image-voxel-schema.js')));
+  const bridge = await import(pathToFileURL(path.join(root, 'dist', 'core', 'codex-lb', 'bridge-runtime-validation.js')));
   validatorsOk = proof.isCompletionProof({
     schema: 'sks.completion-proof.v1',
     mission_id: null,
@@ -47,7 +48,9 @@ try {
     images: [],
     anchors: [],
     relations: []
-  });
+  })
+    && bridge.validateDesktopCapabilityReportV3({ schema: 'sks.desktop-capabilities.v3' }).ok === false
+    && bridge.validateDesktopBridgeStatusV3({ schema: 'sks.desktop-bridge-status.v3' }).ok === false;
 } catch (err) {
   issues.push(`validator_import:${err.message}`);
 }
@@ -66,7 +69,9 @@ for (const file of [
   'dfix-patch-plan.schema.json',
   'dfix-verification.schema.json',
   'all-feature-completion.schema.json',
-  'non-recursive-pipeline-report.schema.json'
+  'non-recursive-pipeline-report.schema.json',
+  'desktop-capabilities-v3.schema.json',
+  'desktop-bridge-status-v3.schema.json'
 ]) {
   const full = path.join(codexSchemaDir, file);
   if (!fs.existsSync(full)) {

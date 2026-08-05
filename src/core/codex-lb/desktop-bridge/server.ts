@@ -29,7 +29,11 @@ import type {
   PreparedDesktopBridgeConfig,
 } from './types.js';
 import { DesktopBridgeError } from './types.js';
-import { DESKTOP_BRIDGE_DIAGNOSTIC_PATH, DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL } from './types.js';
+import {
+  DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH,
+  DESKTOP_BRIDGE_DIAGNOSTIC_PATH,
+  DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL
+} from './types.js';
 import { forwardWebSocket } from './websocket-forward.js';
 
 function pathnameFromRequest(req: IncomingMessage): string {
@@ -104,6 +108,29 @@ function writeUpgradeRejection(socket: Duplex, error: unknown): void {
   );
 }
 
+function writeDiagnosticHealth(
+  req: IncomingMessage,
+  res: ServerResponse,
+  input: PreparedDesktopBridgeConfig
+): void {
+  if (req.method !== 'GET') throw new DesktopBridgeError('bridge_diagnostic_method_not_allowed');
+  const payload = {
+    schema: 'sks.desktop-bridge-health.v1',
+    runtime: 'desktop-bridge',
+    state: 'ready',
+    provider_registry_generation: input.providerRegistry?.generation || null,
+    route_policy_generation: input.routePolicy?.policy_generation || null,
+    catalog_generation: input.routePolicy?.catalog_generation || null,
+    secret_fields_redacted: true
+  };
+  res.writeHead(200, {
+    'content-type': 'application/json',
+    'cache-control': 'no-store',
+    connection: 'close'
+  });
+  res.end(JSON.stringify(payload));
+}
+
 async function listenExact(server: NetServer, host: DesktopBridgeConfig['listenHost'], port: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const onError = (error: NodeJS.ErrnoException): void => {
@@ -166,7 +193,12 @@ export async function startPreparedDesktopBridge(
       try {
         assertLoopbackPeer(req.socket.remoteAddress);
         assertAllowedOrigin(req.headers, input.allowedOrigins);
-        assertAllowedPath(pathnameFromRequest(req), input.allowedPathPrefixes);
+        const pathname = pathnameFromRequest(req);
+        if (pathname === DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH) {
+          writeDiagnosticHealth(req, res, input);
+          return;
+        }
+        assertAllowedPath(pathname, input.allowedPathPrefixes);
         const prepared = await prepareDesktopBridgeRequest(req, input);
         await forwardHttp(req, res, input, prepared);
       } catch (error) {

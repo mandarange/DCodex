@@ -197,8 +197,11 @@ function capabilityReport(options: { transport: boolean; deep: boolean; full: bo
   return {
     schema: 'sks.desktop-capabilities.v3',
     report_id: 'report-1',
+    correlation_id: 'correlation-1',
+    session_id: 'session-1',
     requested_level: 'transport',
     checked_at: '2026-08-05T00:00:00.000Z',
+    catalog_generation: 'generation',
     execution: { ok: true, status: 'completed', blockers: [] },
     bridge: scope('bridge'),
     native_identity: scope('native-identity'),
@@ -210,6 +213,7 @@ function capabilityReport(options: { transport: boolean; deep: boolean; full: bo
     summary: {
       bridge_ready: true,
       active_routes_ready: true,
+      level_satisfied: options.transport,
       transport_level_satisfied: options.transport,
       deep_level_satisfied: options.deep,
       full_feature_verified: options.full,

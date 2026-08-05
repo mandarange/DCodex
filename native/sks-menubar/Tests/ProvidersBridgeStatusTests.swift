@@ -14,6 +14,32 @@ final class ProvidersBridgeStatusTests: XCTestCase {
         XCTAssertThrowsError(try DesktopBridgeStatusV3Truth.decode(from: status))
     }
 
+    func testAggregateStatusRequiresExplicitTransportProbeFields() {
+        var status = ProviderV3Fixture.status()
+        status.removeValue(forKey: "http_probe")
+        XCTAssertThrowsError(try DesktopBridgeStatusV3Truth.decode(from: status))
+
+        status = ProviderV3Fixture.status()
+        status.removeValue(forKey: "websocket_probe")
+        XCTAssertThrowsError(try DesktopBridgeStatusV3Truth.decode(from: status))
+    }
+
+    func testVerifiedWebSocketRequiresFrameRoundTripAndCleanCloseEvidence() {
+        var status = ProviderV3Fixture.status()
+        var probe = ProviderV3Fixture.webSocketProbe()
+        probe["frame_round_trip_verified"] = false
+        status["websocket_probe"] = probe
+        XCTAssertThrowsError(try DesktopBridgeStatusV3Truth.decode(from: status))
+    }
+
+    func testStatusAndNestedDiagnosticMayHaveDifferentCorrelationIdentities() throws {
+        var status = ProviderV3Fixture.status()
+        status["correlation_id"] = "status-observation-2"
+        let decoded = try DesktopBridgeStatusV3Truth.decode(from: status)
+        XCTAssertEqual(decoded.correlationId, "status-observation-2")
+        XCTAssertEqual(decoded.capabilities?.correlationId, "correlation-1")
+    }
+
     func testDiagnosticExecutionAndReadinessAreIndependent() throws {
         var json = ProviderV3Fixture.report()
         var summary = json["summary"] as! [String: Any]

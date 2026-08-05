@@ -135,6 +135,34 @@ export function upsertDesktopBridgeManagedConfig(
   return ensureTrailingNewline(next);
 }
 
+/**
+ * Remove only the three explicitly SKS-owned 8.1.3 bindings. Provider tables,
+ * credentials, auth.json, and every user-owned key remain untouched.
+ */
+export function removeDesktopBridgeManagedConfig(text: string): string {
+  let next = String(text || '');
+  const selectedProvider = topLevelTomlString(next, 'model_provider');
+  const baseUrl = topLevelTomlString(next, 'openai_base_url');
+  const catalog = topLevelTomlString(next, 'model_catalog_json');
+  const owned = [
+    [DESKTOP_BRIDGE_MANAGED_MARKER, 'model_provider', selectedProvider === 'openai'],
+    [DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER, 'openai_base_url', Boolean(baseUrl)],
+    [DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER, 'model_catalog_json', Boolean(catalog)]
+  ] as const;
+  for (const [marker, key, valid] of owned) {
+    if (!topLevelHasLine(next, marker)) {
+      if ((key === 'model_provider' ? selectedProvider : key === 'openai_base_url' ? baseUrl : catalog)) {
+        throw new Error(`desktop_bridge_unmanage_ownership_missing:${key}`);
+      }
+      continue;
+    }
+    if (!valid) throw new Error(`desktop_bridge_unmanage_owned_value_invalid:${key}`);
+    next = removeTopLevelTomlKey(next, key);
+    next = removeTopLevelLine(next, marker);
+  }
+  return ensureTrailingNewline(next);
+}
+
 export type DesktopBridgeOrphanManagedMarkerCleanup = {
   schema: 'sks.desktop-bridge-orphan-managed-marker-cleanup.v1';
   changed: boolean;

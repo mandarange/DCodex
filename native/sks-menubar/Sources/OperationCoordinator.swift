@@ -40,7 +40,7 @@ final class OperationCoordinator {
                 state: .queued, stage: "queued", progress: 0, startedAt: now,
                 updatedAt: now, publicSummary: summary, logPath: AppRuntime.lastActionLogPath,
                 retryable: true, targetVersion: targetVersion, projectRoot: projectRoot,
-                registry: registry, recovery: nil, providerApply: providerApply
+                registry: registry, recovery: nil, providerApply: providerApply, diagnostic: nil
             )
             if let group = mutationGroup { activeMutation = (snapshot.id, group) }
             write(snapshot)
@@ -65,7 +65,7 @@ final class OperationCoordinator {
                 publicSummary: summary, logPath: snapshot.logPath, retryable: retryable,
                 targetVersion: snapshot.targetVersion, projectRoot: snapshot.projectRoot,
                 registry: snapshot.registry, recovery: snapshot.recovery,
-                providerApply: snapshot.providerApply
+                providerApply: snapshot.providerApply, diagnostic: snapshot.diagnostic
             )
             write(next)
             if releaseMutationGuard, [.succeeded, .failed, .cancelled, .terminalUncertain].contains(state) {
@@ -118,7 +118,7 @@ final class OperationCoordinator {
                 retryable: status.state == .autoResumePending || status.state == .pausedResumable,
                 targetVersion: snapshot.targetVersion, projectRoot: snapshot.projectRoot,
                 registry: snapshot.registry, recovery: status,
-                providerApply: snapshot.providerApply
+                providerApply: snapshot.providerApply, diagnostic: snapshot.diagnostic
             )
             write(next)
             if status.state == .pausedResumable, activeMutation?.id == snapshot.id {
@@ -153,13 +153,37 @@ final class OperationCoordinator {
                 retryable: projection.failedStage != nil,
                 targetVersion: snapshot.targetVersion, projectRoot: snapshot.projectRoot,
                 registry: snapshot.registry, recovery: snapshot.recovery,
-                providerApply: projection
+                providerApply: projection, diagnostic: snapshot.diagnostic
             )
             write(next)
             if (nextState == .waitingForConfirmation || nextState == .succeeded)
                 && activeMutation?.id == snapshot.id {
                 activeMutation = nil
             }
+            return next
+        }
+    }
+
+    /// Persists only the non-secret diagnostic identity/readiness projection on
+    /// the operation receipt. The CLI report body and provider credentials never
+    /// enter the operation store.
+    func recordDiagnostic(
+        _ snapshot: OperationSnapshot,
+        metadata: DiagnosticOperationMetadata
+    ) -> OperationSnapshot {
+        queue.sync {
+            let next = OperationSnapshot(
+                schema: snapshot.schema, id: snapshot.id, kind: snapshot.kind,
+                state: snapshot.state, stage: snapshot.stage, progress: snapshot.progress,
+                startedAt: snapshot.startedAt,
+                updatedAt: ISO8601DateFormatter().string(from: Date()),
+                publicSummary: snapshot.publicSummary, logPath: snapshot.logPath,
+                retryable: snapshot.retryable, targetVersion: snapshot.targetVersion,
+                projectRoot: snapshot.projectRoot, registry: snapshot.registry,
+                recovery: snapshot.recovery, providerApply: snapshot.providerApply,
+                diagnostic: metadata
+            )
+            write(next)
             return next
         }
     }

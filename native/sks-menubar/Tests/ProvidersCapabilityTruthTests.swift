@@ -36,6 +36,21 @@ enum ProviderV3Fixture {
          "blockers": [], "warnings": [], "recovery_action": NSNull()]
     }
 
+    static func httpProbe() -> [String: Any] {
+        ["schema": "sks.desktop-bridge-http-probe.v1", "state": "verified",
+         "terminal_stage": "complete", "root_cause": NSNull(), "status_code": 200,
+         "latency_ms": 4.5, "blockers": [], "warnings": []]
+    }
+
+    static func webSocketProbe() -> [String: Any] {
+        ["schema": "sks.desktop-bridge-websocket-probe.v2", "state": "verified",
+         "terminal_stage": "complete", "root_cause": NSNull(), "status_code": 101,
+         "negotiated_protocol": "openai-beta.realtime-v1", "upgrade_verified": true,
+         "protocol_verified": true, "frame_round_trip_verified": true,
+         "clean_close_verified": true, "latency_ms": 7.5,
+         "blockers": [], "warnings": []]
+    }
+
     static func report() -> [String: Any] {
         ["schema": "sks.desktop-capabilities.v3", "report_id": "report-1", "correlation_id": "correlation-1",
          "session_id": "session-1", "requested_level": "transport", "catalog_generation": "catalog-gen-2",
@@ -60,11 +75,13 @@ enum ProviderV3Fixture {
         return ["schema": "sks.desktop-bridge-status.v3", "checked_at": "2026-08-05T14:00:00.000Z", "correlation_id": "correlation-1",
                 "management": ["managed": true, "runtime": "desktop-bridge", "state": "ready", "reason": NSNull()],
                 "service": ["state": "ready", "installed": true, "loaded": true, "running": true, "loopback_origin": "http://127.0.0.1:10100", "pid": 42, "checked_at": "2026-08-05T14:00:00.000Z", "blockers": [], "warnings": []],
+                "http_probe": httpProbe(), "websocket_probe": webSocketProbe(),
                 "native_identity": ["state": "verified", "configured": true, "semantic_identity_preserved": true, "checked_at": "2026-08-05T14:00:00.000Z", "blockers": [], "warnings": []],
                 "providers": ["codex-lb": profile("codex-lb"), "openrouter": profile("openrouter")],
                 "routing": ["policy": ["schema": "sks.bridge-routing-policy.v1", "default_provider_id": "codex-lb", "fallback": "none", "model_routes": [:], "catalog_generation": "catalog-gen-2", "policy_generation": "policy-gen-1", "changed_at": "2026-08-05T14:00:00.000Z"], "selected_model": NSNull(), "selected_route": NSNull(), "session_pin": NSNull(), "fallback": "none", "blockers": [], "warnings": []],
                 "catalog_sync": catalog(), "capabilities": report(),
-                "readiness": ["ready": true, "state": "ready", "bridge_ready": true, "active_routes_ready": true, "combined_catalog_ready": true, "blockers": [], "warnings": []]]
+                "readiness": ["ready": true, "state": "ready", "bridge_ready": true, "active_routes_ready": true, "combined_catalog_ready": true, "blockers": [], "warnings": []],
+                "recovery_actions": []]
     }
 }
 
@@ -106,6 +123,17 @@ final class ProvidersCapabilityTruthTests: XCTestCase {
         let row = try XCTUnwrap(CapabilityDisplayRow.rows(from: DesktopCapabilityReportV3.decode(from: json)).first)
         XCTAssertEqual(row.rootCause, "desktop_bridge_websocket_upgrade_failed")
         XCTAssertEqual(row.stage, .websocketUpgrade)
+    }
+
+    func testFrameRoundTripAndCleanCloseStagesDecodeFromV3Fixture() throws {
+        var json = ProviderV3Fixture.report()
+        json["bridge"] = ProviderV3Fixture.scope("bridge", probes: [
+            "websocket-frame": ProviderV3Fixture.probe("websocket-frame", scope: "bridge", stage: "frame_round_trip"),
+            "websocket-close": ProviderV3Fixture.probe("websocket-close", scope: "bridge", stage: "clean_close")
+        ])
+        let rows = CapabilityDisplayRow.rows(from: try DesktopCapabilityReportV3.decode(from: json))
+        XCTAssertEqual(rows.first { $0.capability == "websocket-frame" }?.stage, .frameRoundTrip)
+        XCTAssertEqual(rows.first { $0.capability == "websocket-close" }?.stage, .cleanClose)
     }
 }
 #endif

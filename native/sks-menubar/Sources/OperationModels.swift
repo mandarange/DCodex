@@ -54,7 +54,6 @@ struct ProviderResponseIdentity: Equatable {
 struct ProviderResponseGate {
     private(set) var activeRequestGeneration = 0
     private(set) var accepted: ProviderResponseIdentity?
-
     mutating func begin() -> Int { activeRequestGeneration += 1; return activeRequestGeneration }
     mutating func accept(_ candidate: ProviderResponseIdentity) -> Bool {
         guard candidate.requestGeneration == activeRequestGeneration else { return false }
@@ -408,6 +407,7 @@ struct OperationSnapshot: Codable {
     let registry: String?
     let recovery: OperationRecoveryStatus?
     let providerApply: ProviderApplyProjection?
+    let diagnostic: DiagnosticOperationMetadata?
 
     init(
         schema: String,
@@ -425,7 +425,8 @@ struct OperationSnapshot: Codable {
         projectRoot: String?,
         registry: String?,
         recovery: OperationRecoveryStatus? = nil,
-        providerApply: ProviderApplyProjection? = nil
+        providerApply: ProviderApplyProjection? = nil,
+        diagnostic: DiagnosticOperationMetadata? = nil
     ) {
         self.schema = schema
         self.id = id
@@ -443,6 +444,7 @@ struct OperationSnapshot: Codable {
         self.registry = registry
         self.recovery = recovery
         self.providerApply = providerApply
+        self.diagnostic = diagnostic
     }
 }
 

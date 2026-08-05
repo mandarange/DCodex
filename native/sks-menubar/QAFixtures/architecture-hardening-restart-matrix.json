@@ -20,7 +20,7 @@
     "provider_settings_menu": "Open Provider Settings",
     "retry_menu": "Retry Last Operation",
     "provider_reconnect": "sks-provider-reconnect-codex-lb",
-    "provider_verify": "sks-provider-verify-capabilities",
+    "provider_verify": "sks-provider-verify-transport",
     "provider_apply_status": "sks-center-provider-apply-status"
   },
   "scenarios": [

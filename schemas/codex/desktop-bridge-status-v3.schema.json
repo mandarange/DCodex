@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sneakoscope.dev/schemas/codex/desktop-bridge-status-v3.schema.json",
+  "title": "SKS Desktop Bridge Status v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "checked_at", "correlation_id", "management", "service",
+    "http_probe", "websocket_probe", "native_identity", "providers", "routing",
+    "catalog_sync", "capabilities", "readiness", "recovery_actions"
+  ],
+  "properties": {
+    "schema": { "const": "sks.desktop-bridge-status.v3" },
+    "checked_at": { "$ref": "#/$defs/dateTime" },
+    "correlation_id": { "$ref": "#/$defs/nonEmptyString" },
+    "management": { "$ref": "#/$defs/management" },
+    "service": { "$ref": "#/$defs/service" },
+    "http_probe": {
+      "anyOf": [
+        { "$ref": "#/$defs/httpProbe" },
+        { "type": "null" }
+      ]
+    },
+    "websocket_probe": {
+      "anyOf": [
+        { "$ref": "#/$defs/webSocketProbe" },
+        { "type": "null" }
+      ]
+    },
+    "native_identity": { "$ref": "#/$defs/nativeIdentity" },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codex-lb", "openrouter"],
+      "properties": {
+        "codex-lb": { "$ref": "#/$defs/providerProfile" },
+        "openrouter": { "$ref": "#/$defs/providerProfile" }
+      }
+    },
+    "routing": { "$ref": "#/$defs/routing" },
+    "catalog_sync": {
+      "$ref": "desktop-capabilities-v3.schema.json#/$defs/combinedCatalog"
+    },
+    "capabilities": {
+      "anyOf": [
+        { "$ref": "desktop-capabilities-v3.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "readiness": { "$ref": "#/$defs/readiness" },
+    "recovery_actions": { "$ref": "#/$defs/stringArray" }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "dateTime": { "type": "string", "format": "date-time" },
+    "nullableDateTime": {
+      "anyOf": [
+        { "$ref": "#/$defs/dateTime" },
+        { "type": "null" }
+      ]
+    },
+    "stringArray": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "runtimeState": {
+      "enum": ["not_installed", "starting", "ready", "degraded", "blocked", "stopped", "stale"]
+    },
+    "probeState": {
+      "enum": ["not_attempted", "running", "verified", "degraded", "blocked", "failed", "unsupported", "stale"]
+    },
+    "management": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["managed", "runtime", "state", "reason"],
+          "properties": {
+            "managed": { "const": true },
+            "runtime": { "const": "desktop-bridge" },
+            "state": { "$ref": "#/$defs/runtimeState" },
+            "reason": { "type": "null" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["managed", "runtime", "state", "reason"],
+          "properties": {
+            "managed": { "const": false },
+            "runtime": { "type": "null" },
+            "state": { "enum": ["not_installed", "stopped"] },
+            "reason": { "enum": ["uninstalled", "rollback_complete", "never_configured"] }
+          }
+        }
+      ]
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "installed", "loaded", "running", "loopback_origin", "pid", "checked_at", "blockers", "warnings"],
+      "properties": {
+        "state": { "$ref": "#/$defs/runtimeState" },
+        "installed": { "type": "boolean" },
+        "loaded": { "type": "boolean" },
+        "running": { "type": "boolean" },
+        "loopback_origin": { "type": ["string", "null"] },
+        "pid": { "type": ["integer", "null"], "minimum": 0 },
+        "checked_at": { "$ref": "#/$defs/dateTime" },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "httpProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "state", "terminal_stage", "root_cause", "status_code", "latency_ms", "blockers", "warnings"],
+      "properties": {
+        "schema": { "const": "sks.desktop-bridge-http-probe.v1" },
+        "state": { "enum": ["verified", "blocked", "failed", "unsupported"] },
+        "terminal_stage": { "enum": ["tcp_connect", "http_health", "complete"] },
+        "root_cause": { "type": ["string", "null"] },
+        "status_code": { "type": ["integer", "null"] },
+        "latency_ms": { "type": ["number", "null"], "minimum": 0 },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "webSocketProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema", "state", "terminal_stage", "root_cause", "status_code",
+        "negotiated_protocol", "upgrade_verified", "protocol_verified",
+        "frame_round_trip_verified", "clean_close_verified", "latency_ms",
+        "blockers", "warnings"
+      ],
+      "properties": {
+        "schema": { "const": "sks.desktop-bridge-websocket-probe.v2" },
+        "state": { "enum": ["not_attempted", "verified", "degraded", "blocked", "failed", "unsupported"] },
+        "terminal_stage": { "enum": ["tcp_connect", "websocket_upgrade", "websocket_protocol", "frame_round_trip", "clean_close", "complete"] },
+        "root_cause": { "type": ["string", "null"] },
+        "status_code": { "type": ["integer", "null"] },
+        "negotiated_protocol": { "type": ["string", "null"] },
+        "upgrade_verified": { "type": "boolean" },
+        "protocol_verified": { "type": "boolean" },
+        "frame_round_trip_verified": { "type": "boolean" },
+        "clean_close_verified": { "type": "boolean" },
+        "latency_ms": { "type": ["number", "null"], "minimum": 0 },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "nativeIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "configured", "semantic_identity_preserved", "checked_at", "blockers", "warnings"],
+      "properties": {
+        "state": { "$ref": "#/$defs/probeState" },
+        "configured": { "type": "boolean" },
+        "semantic_identity_preserved": { "type": ["boolean", "null"] },
+        "checked_at": { "$ref": "#/$defs/nullableDateTime" },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "providerProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "provider_id", "enabled", "credential", "endpoint", "catalog", "capabilities"],
+      "properties": {
+        "schema": { "const": "sks.bridge-provider-profile-status.v1" },
+        "provider_id": { "enum": ["codex-lb", "openrouter"] },
+        "enabled": { "type": "boolean" },
+        "credential": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "source", "fingerprint", "checked_at", "blockers", "warnings"],
+          "properties": {
+            "state": { "enum": ["not_configured", "configured_unverified", "validating", "ready", "rejected", "unavailable", "stale"] },
+            "source": { "type": ["string", "null"] },
+            "fingerprint": { "type": ["string", "null"] },
+            "checked_at": { "$ref": "#/$defs/nullableDateTime" },
+            "blockers": { "$ref": "#/$defs/stringArray" },
+            "warnings": { "$ref": "#/$defs/stringArray" }
+          }
+        },
+        "endpoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["configured", "origin_redacted", "auth_transport"],
+          "properties": {
+            "configured": { "type": "boolean" },
+            "origin_redacted": { "type": ["string", "null"] },
+            "auth_transport": { "enum": ["authorization-bearer", "x-codex-lb-api-key", "openrouter-bearer", null] }
+          }
+        },
+        "catalog": { "$ref": "desktop-capabilities-v3.schema.json#/$defs/catalogState" },
+        "capabilities": { "$ref": "desktop-capabilities-v3.schema.json#/$defs/scopeSummary" }
+      }
+    },
+    "routeTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_id", "upstream_model"],
+      "properties": {
+        "provider_id": { "enum": ["codex-lb", "openrouter"] },
+        "upstream_model": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "routingPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "default_provider_id", "fallback", "model_routes", "catalog_generation", "policy_generation", "changed_at"],
+      "properties": {
+        "schema": { "const": "sks.bridge-routing-policy.v1" },
+        "default_provider_id": { "enum": ["codex-lb", "openrouter", null] },
+        "fallback": { "const": "none" },
+        "model_routes": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/routeTarget" }
+        },
+        "catalog_generation": { "$ref": "#/$defs/nonEmptyString" },
+        "policy_generation": { "$ref": "#/$defs/nonEmptyString" },
+        "changed_at": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "sessionPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["thread_id", "provider_id", "public_model", "upstream_model", "catalog_generation", "route_policy_generation", "created_at"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/nonEmptyString" },
+        "provider_id": { "enum": ["codex-lb", "openrouter"] },
+        "public_model": { "$ref": "#/$defs/nonEmptyString" },
+        "upstream_model": { "$ref": "#/$defs/nonEmptyString" },
+        "catalog_generation": { "$ref": "#/$defs/nonEmptyString" },
+        "route_policy_generation": { "$ref": "#/$defs/nonEmptyString" },
+        "created_at": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "selected_model", "selected_route", "session_pin", "fallback", "blockers", "warnings"],
+      "properties": {
+        "policy": {
+          "anyOf": [
+            { "$ref": "#/$defs/routingPolicy" },
+            { "type": "null" }
+          ]
+        },
+        "selected_model": { "type": ["string", "null"] },
+        "selected_route": {
+          "anyOf": [
+            { "$ref": "#/$defs/routeTarget" },
+            { "type": "null" }
+          ]
+        },
+        "session_pin": {
+          "anyOf": [
+            { "$ref": "#/$defs/sessionPin" },
+            { "type": "null" }
+          ]
+        },
+        "fallback": { "const": "none" },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready", "state", "bridge_ready", "active_routes_ready", "combined_catalog_ready", "blockers", "warnings"],
+      "properties": {
+        "ready": { "type": "boolean" },
+        "state": { "enum": ["ready", "awaiting_provider", "degraded", "blocked", "unmanaged"] },
+        "bridge_ready": { "type": "boolean" },
+        "active_routes_ready": { "type": "boolean" },
+        "combined_catalog_ready": { "type": "boolean" },
+        "blockers": { "$ref": "#/$defs/stringArray" },
+        "warnings": { "$ref": "#/$defs/stringArray" }
+      }
+    }
+  }
+}

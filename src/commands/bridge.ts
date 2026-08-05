@@ -4,6 +4,7 @@ import type {
   BridgeProviderId,
   CapabilityRequestedLevel
 } from '../core/codex-lb/bridge-contracts.js';
+import { validateDesktopCapabilityReportV3 } from '../core/codex-lb/bridge-runtime-validation.js';
 
 const COMMAND_SCHEMA = 'sks.bridge-command.v1' as const;
 const ERROR_SCHEMA = 'sks.bridge-command-error.v1' as const;
@@ -398,20 +399,13 @@ function verificationOutput(
   strict: boolean
 ): Record<string, unknown> {
   const report = record(value);
-  const reportGenerated = report.schema === 'sks.desktop-capabilities.v3'
-    && record(report.catalog_sync).schema === 'sks.combined-catalog-sync.v1';
+  const reportGenerated = validateDesktopCapabilityReportV3(value).ok;
   if (!reportGenerated) {
     return errorOutput('capability_schema_invalid', 'update_sks_and_rebuild_menubar');
   }
   const executionOk = record(report.execution).ok === true;
   const summary = record(report.summary);
-  const levelSatisfied = level === 'transport'
-    ? summary.transport_level_satisfied === true
-    : level === 'deep'
-      ? summary.deep_level_satisfied === true
-      : summary.bridge_ready === true
-        && summary.active_routes_ready === true
-        && record(report.combined_catalog).state === 'verified';
+  const levelSatisfied = summary.level_satisfied === true;
   const fullFeatureVerified = summary.full_feature_verified === true;
   return {
     ...report,

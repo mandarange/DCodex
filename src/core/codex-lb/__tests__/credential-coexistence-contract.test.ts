@@ -6,8 +6,12 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  configureProviderCredential,
+  providerCredentialValidationPath,
+  recordProviderCredentialValidation,
   removeProviderCredential,
-  resolveAllProviderCredentials
+  resolveAllProviderCredentials,
+  resolveAllProviderCredentialsWithValidation
 } from '../provider-credentials.js';
 import {
   bridgeProviderRegistryPath,
@@ -250,6 +254,89 @@ test('provider registry reports an invalid stored endpoint instead of throwing d
   assert.equal(registry.profiles['codex-lb'].state, 'blocked');
   assert.ok(registry.profiles['codex-lb'].blockers.includes('provider_endpoint_invalid'));
   assert.equal(registry.profiles.openrouter.state, 'configured_unverified');
+});
+
+test('provider configure is provider-local, transactional, and verifies the stored OpenRouter key instead of an ambient key', async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-provider-configure-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const codexHome = path.join(home, '.codex');
+  await fs.mkdir(codexHome, { recursive: true });
+  const configPath = path.join(codexHome, 'config.toml');
+  const authPath = path.join(codexHome, 'auth.json');
+  const config = 'model = "user-model"\n';
+  const auth = '{"tokens":{"access_token":"oauth-preserved"}}\n';
+  await fs.writeFile(configPath, config);
+  await fs.writeFile(authPath, auth, { mode: 0o600 });
+  const openRouterPaths = openRouterSecretPaths({ HOME: home } as NodeJS.ProcessEnv);
+  const configuredOpenRouter = await configureProviderCredential({
+    provider_id: 'openrouter',
+    api_key: 'or-configured-store-key-123456',
+    home,
+    processEnv: { HOME: home, OPENROUTER_API_KEY: 'or-ambient-key-must-not-win' },
+    openRouterPaths
+  });
+  assert.equal(configuredOpenRouter.configured, true);
+  assert.equal(configuredOpenRouter.credential.source, 'user-secret-store');
+  assert.equal(
+    (await resolveOpenRouterApiKey({ env: { HOME: home }, paths: openRouterPaths })).key,
+    'or-configured-store-key-123456'
+  );
+
+  const openRouterBefore = await fs.readFile(openRouterPaths.keyPath);
+  const configuredLb = await configureProviderCredential({
+    provider_id: 'codex-lb',
+    api_key: 'lb-configured-store-key-654321',
+    host: 'https://lb.example.test/backend-api/codex',
+    home,
+    processEnv: {}
+  });
+  assert.equal(configuredLb.configured, true);
+  assert.deepEqual(await fs.readFile(openRouterPaths.keyPath), openRouterBefore);
+  assert.equal(await fs.readFile(configPath, 'utf8'), config);
+  assert.equal(await fs.readFile(authPath, 'utf8'), auth);
+});
+
+test('validation readiness is bound to credential fingerprint and becomes unverified after rotation', async (t) => {
+  const fixture = await credentialFixture(t);
+  const validationPath = providerCredentialValidationPath(fixture.home);
+  const before = await resolveAllProviderCredentials({
+    codexLb: { home: fixture.home, processEnv: {} },
+    openrouter: {
+      processEnv: { HOME: fixture.home },
+      openRouterPaths: fixture.openRouterPaths
+    }
+  });
+  await recordProviderCredentialValidation({
+    provider_id: 'openrouter',
+    credential: before.openrouter,
+    state: 'ready',
+    checked_at: '2026-08-05T00:00:00.000Z',
+    home: fixture.home,
+    validationPath
+  });
+  const ready = await resolveAllProviderCredentialsWithValidation({
+    home: fixture.home,
+    validationPath,
+    codexLb: { home: fixture.home, processEnv: {} },
+    openrouter: {
+      processEnv: { HOME: fixture.home },
+      openRouterPaths: fixture.openRouterPaths
+    }
+  });
+  assert.equal(ready.openrouter.state, 'ready');
+
+  await writeStoredOpenRouterKey('or-rotated-validation-key-000000', { paths: fixture.openRouterPaths });
+  const rotated = await resolveAllProviderCredentialsWithValidation({
+    home: fixture.home,
+    validationPath,
+    codexLb: { home: fixture.home, processEnv: {} },
+    openrouter: {
+      processEnv: { HOME: fixture.home },
+      openRouterPaths: fixture.openRouterPaths
+    }
+  });
+  assert.equal(rotated.openrouter.state, 'configured_unverified');
+  assert.notEqual(rotated.openrouter.fingerprint, ready.openrouter.fingerprint);
 });
 
 function sha256(value: string): string {

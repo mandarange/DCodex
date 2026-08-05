@@ -65,9 +65,9 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
   const materialized = source();
   assert.match(materialized, /\/\/ MARK: - ProvidersMultiProvider\.swift/);
   assert.match(materialized, /final class MultiProviderRouterControls/);
-  assert.match(materialized, /OpenCodex setup: run ocx start, then ensure the catalog stamps multi_agent_version = \\"v2\\"/);
-  assert.match(materialized, /replace 10100 with the live port reported by ocx status/);
-  assert.match(materialized, /model\.contains\("\/"\) \? model : "\\\(provider\):\\\(model\)"/);
+  assert.match(materialized, /One managed Desktop Bridge routes through independent Codex-LB and OpenRouter profiles/);
+  assert.match(materialized, /\["bridge", "route", "explain", model, "--json"\]/);
+  assert.doesNotMatch(materialized, /model\.contains\("\/"\) \? model :/);
 });
 
 test('status template resources are distinct valid 18x18 PDFs', () => {
@@ -401,11 +401,12 @@ test('confirmation and input flows use sheets and never nest modal loops', () =>
   assert.doesNotMatch(swift, /tell application "Terminal"|runInTerminal|runSksInTerminal/);
 });
 
-test('Providers configures the CLI provider through masked paste fields and stdin', () => {
+test('Providers configures independent bridge profiles through masked stdin without exposing secrets', () => {
   const root = resolvePackagedMenuBarSourceRoot();
   const providers = [
     fs.readFileSync(path.join(root, 'Sources', 'ProvidersViewController.swift'), 'utf8'),
-    fs.readFileSync(path.join(root, 'Sources', 'ProvidersReliability.swift'), 'utf8')
+    fs.readFileSync(path.join(root, 'Sources', 'ProvidersReliability.swift'), 'utf8'),
+    fs.readFileSync(path.join(root, 'Sources', 'ProvidersOpenRouter.swift'), 'utf8')
   ].join('\n');
   const connectTest = fs.readFileSync(path.join(root, 'Sources', 'ProvidersConnectTest.swift'), 'utf8');
   const providersSurface = `${providers}\n${connectTest}`;
@@ -414,30 +415,27 @@ test('Providers configures the CLI provider through masked paste fields and stdi
   const alertFactory = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AlertFactory.swift'), 'utf8');
   const appIdentity = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppIdentity.swift'), 'utf8');
   const appDelegate = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'AppDelegate.swift'), 'utf8');
-  assert.match(providers, /Reconnect Codex LB credential…/);
-  assert.match(providers, /ControlKit\.primaryButton\("Use Codex LB", target: self, action: #selector\(useCliProvider\)\)/);
-  assert.match(providersSurface, /NativeView\.button\("Run Connect Test"/);
+  assert.match(providers, /title: "Provider Credentials"/);
+  assert.match(providers, /Profiles coexist/);
+  assert.match(providers, /NativeView\.button\("Configure \/ Rotate"/);
+  assert.match(providers, /#selector\(configureCodexLbProfile\)/);
+  assert.match(providers, /#selector\(configureOpenRouterProfile\)/);
   assert.match(providers, /secure: true/);
-  assert.match(providers, /The field stays masked/);
   assert.match(providers, /placeholder: "https:\/\/lb\.example\.com"/);
   assert.match(providers, /placeholder: "sk-clb-…"/);
-  assert.match(providers, /https:\/\/ is optional/);
-  assert.match(providersSurface, /\["codex-lb", "connect-test", "--json"\]/);
-  assert.match(providers, /\["codex-lb", "setup", "--host", host, "--gateway-auth", "bearer-compat", "--api-key-stdin", "--yes", "--write-env-file", "--json"\]/);
+  assert.match(providers, /placeholder: "sk-or-…"/);
+  assert.match(providers, /\["bridge", "provider", "configure", "codex-lb", "--host", host, "--api-key-stdin", "--json"\]/);
+  assert.match(providers, /\["bridge", "provider", "configure", "openrouter", "--api-key-stdin", "--json"\]/);
+  assert.match(providers, /\["bridge", "provider", "validate", "codex-lb", "--json"\]/);
+  assert.match(providers, /\["bridge", "provider", "validate", "openrouter", "--json"\]/);
   assert.doesNotMatch(providers, /"--keychain"/);
   assert.match(providers, /keychainStore\.store\(key, credential: credential, explicitUserAction: true\)/);
-  // Center locks Authorization: Bearer — no transport picker / custom-header choice.
   assert.match(providers, /AlertFactory\.textSheet\(/);
-  assert.doesNotMatch(providers, /Codex LB Gateway Key Transport/);
-  assert.doesNotMatch(providers, /\("custom-header"/);
-  assert.doesNotMatch(providers, /X-Codex-LB-API-Key custom header/);
-  assert.match(providers, /Authorization: Bearer/);
-  assert.match(providers, /No transport picker/);
   assert.match(providers, /"--api-key-stdin"/);
   assert.match(providers, /stdin: key \+ "\\n"/);
   assert.doesNotMatch(providers, /"--api-key",\s*key/);
-  assert.match(providers, /describeCliStatus/);
-  assert.match(providers, /ChatGPT OAuth mode: active/);
+  assert.match(providers, /ChatGPT OAuth remain(?:s)? unchanged/);
+  assert.match(providers, /providerActionInFlight\.contains\(providerId\)/);
   assert.match(providers, /result\.code == 0 && parsed\?\["ok"\] as\? Bool == true/);
   assert.match(providers, /operations\.begin\(kind: kind, mutationGroup: group/);
   assert.match(providers, /ControlCenterPage/);
@@ -454,9 +452,6 @@ test('Providers configures the CLI provider through masked paste fields and stdi
   assert.match(processClient, /SecureProcessEnvelope\.render\(payload: payload, code: code, arguments: arguments\)/);
   assert.match(secureEnvelope, /sks\.secure-input-operation\.v1/);
   assert.match(secureEnvelope, /code == 0 && object != nil && schemaOk && sourceOk/);
-  assert.match(secureEnvelope, /sks\.codex-lb-setup\.v2/);
-  assert.match(secureEnvelope, /partial_configuration/);
-  assert.match(secureEnvelope, /secret_recovery_paths/);
   assert.doesNotMatch(secureEnvelope, /"ok": code == 0/);
 });
 
@@ -486,138 +481,59 @@ test('Control Center avoids competing Return defaults and protects recovery-sens
   assert.match(mcp, /NativeView\.scrollable\(stack\)/);
 });
 
-test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, and requires measured evidence', () => {
+test('Providers exposes one Desktop Bridge with strict v3 scoped evidence and explicit routes', () => {
   const root = resolvePackagedMenuBarSourceRoot();
   const providers = [
     fs.readFileSync(path.join(root, 'Sources', 'ProvidersViewController.swift'), 'utf8'),
     fs.readFileSync(path.join(root, 'Sources', 'ProvidersReliability.swift'), 'utf8')
   ].join('\n');
-  const connectTest = fs.readFileSync(path.join(root, 'Sources', 'ProvidersConnectTest.swift'), 'utf8');
   const routingTruth = fs.readFileSync(path.join(root, 'Sources', 'ProvidersRoutingTruth.swift'), 'utf8');
   const openRouter = fs.readFileSync(path.join(root, 'Sources', 'ProvidersOpenRouter.swift'), 'utf8');
-  const providersSurface = `${providers}\n${connectTest}\n${routingTruth}`;
+  const routeCards = fs.readFileSync(path.join(root, 'Sources', 'ProvidersMultiProvider.swift'), 'utf8');
+  const providersSurface = `${providers}\n${routingTruth}\n${openRouter}\n${routeCards}`;
 
-  for (const label of [
-    'Advanced', 'Desktop Bridge Mode (keeps ChatGPT sign-in)',
-    'Use Codex LB', 'Verify Capabilities', 'Use ChatGPT OAuth Only',
-    'Codex LB · Credentials & Primary Provider', 'Copy CLI Command', 'Latest Codex Feature Compatibility'
-  ]) assert.match(providers, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.doesNotMatch(providers, /Authentication Recovery/);
-  assert.doesNotMatch(providers, /One-off command:/);
-  assert.doesNotMatch(providers, /Legacy Codex LB provider selection/);
-  assert.match(providers, /ControlKit\.primaryButton\("Use Codex LB", target: self, action: #selector\(useCliProvider\)\)/);
-  assert.match(providers, /NativeView\.button\("Desktop Bridge Mode \(keeps ChatGPT sign-in\)", target: self, action: #selector\(enableDesktopFull\)\)/);
-  assert.doesNotMatch(providers, /primaryButton\("Use Codex LB"[^\n]*enableDesktopFull/);
-  assert.match(providers, /NativeView\.button\("Use ChatGPT OAuth Only"/);
-  assert.doesNotMatch(providers, /Enable \/ Repair|Enable Codex LB|Disable Routing/);
-  // Credentials "Use Codex LB" must select the atomic CLI provider and refresh Connection Proof.
-  assert.match(providers, /func useCliProvider\(\)[\s\S]*?performCliCommand\(\["codex-lb", "use-cli", "--json"\]/);
-  assert.match(providers, /backend: "sks codex-lb use-cli"/);
-  // Advanced Desktop Bridge stays on use-desktop-full / disable.
-  assert.match(providers, /func enableDesktopFull\(\)[\s\S]*?\["codex-lb", "use-desktop-full", "--restart-app", "--json"\]/);
-  assert.match(providers, /id: "sks-provider-desktop-bridge-mode"/);
-  assert.match(providers, /id: "sks-provider-activate-codex-lb"[\s\S]*?backend: "sks codex-lb use-cli"/);
-  assert.doesNotMatch(providers, /id: "sks-provider-use-codex-lb"/);
-  // Desktop status CTAs must not steer Desktop-bridge enablement to the CLI Use Codex LB button.
-  assert.doesNotMatch(providers, /Choose Use Codex LB to switch/);
-  assert.match(providers, /Choose Desktop Bridge Mode \(keeps ChatGPT sign-in\) to switch/);
-  assert.match(providers, /choose Reconnect Codex LB credential…/);
-  assert.doesNotMatch(providers, /choose Configure \/ Update…/);
-  assert.match(providers, /\["codex-lb", "capabilities", "--level", "transport", "--json"\]/);
-  assert.match(providers, /\["codex-lb", "disable", "--restart-app", "--json"\]/);
-  assert.match(providersSurface, /\["codex-lb", "connect-test", "--json"\]/);
-  assert.doesNotMatch(providers, /\["codex-lb", "use-codex-lb"/);
-  assert.doesNotMatch(providers, /\["codex-lb", "use-oauth"/);
-  assert.doesNotMatch(providers, /Use codex-lb|Restore Chat \/ Pro/);
-  assert.match(providers, /ProviderRoutingTruth\.snapshot\(from:/);
-  assert.match(routingTruth, /legacyCodexLbSelected/);
-  assert.match(routingTruth, /chatgptOauthPresent/);
-  assert.match(providers, /Use Codex LB through the atomic CLI provider path/);
-  assert.match(providers, /never hide the advanced bridge or ChatGPT OAuth actions based on status parsing/);
-  assert.ok(providers.indexOf('makeActiveProviderCard(),') >= 0);
-  assert.ok(providers.indexOf('cli,') >= 0);
-  assert.match(providers, /title: "Advanced"/);
-  assert.match(providers, /No transport picker/);
-
-  for (const label of ['OAuth Identity', 'Built-in Provider', 'Bridge', 'Models', 'Fast', 'Image', 'Computer', 'Browser', 'Voice', 'Plugins']) {
-    assert.match(providers, new RegExp(`"${label}"`));
+  for (const label of ['Desktop Bridge', 'Provider Credentials', 'Combined Model Catalog', 'Routes', 'Capability Matrix']) {
+    assert.match(providersSurface, new RegExp(label));
   }
-  for (const state of ['verified', 'available_unverified', 'blocked', 'unsupported', 'skipped']) {
-    assert.match(providers, new RegExp(`"${state}"`));
-  }
-  assert.match(providers, /state == "verified", source == "config" \|\| source == "manifest"/);
-  assert.match(providers, /return "available_unverified"/);
-  assert.match(providers, /No capability was assumed/);
-  assert.match(providersSurface, /CapabilityVerificationTruth\.deepEvidenceTrusted/);
-  assert.match(providersSurface, /deep_evidence_validation/);
-  assert.match(providers, /overall == "verified"/);
-  assert.match(providers, /Capability verification blocked/);
-  assert.match(providers, /mode == expectedMode && oauthPreserved != false/);
-  assert.match(providers, /measuredRoute\?\.measured == true/);
-  assert.match(providers, /measuredRoute\?\.ok == true/);
-  assert.match(providers, /desktopFullRoutingNow = snapshot\.desktopFullRouting && measuredRoutingOk/);
-  assert.match(providers, /measuredRoute\?\.selected == true/);
-  assert.match(providers, /measuredRoute\?\.ok == true/);
-  assert.match(routingTruth, /selected && measured && fresh && ok && status == "verified"/);
-  assert.match(providersSurface, /Codex LB · degraded/);
-  assert.match(providersSurface, /Codex LB · unverified/);
-  assert.match(openRouter, /Codex LB · Desktop Bridge · ChatGPT OAuth \+ built-in OpenAI/);
-  assert.match(openRouter, /ChatGPT OAuth mode · built-in OpenAI models/);
-  assert.match(providers, /private let cliLaunchCommand = "codex"/);
-  assert.match(providers, /NSPasteboard\.general\.setString\(cliLaunchCommand, forType: \.string\)/);
+  for (const removed of [
+    'Desktop Bridge Mode (keeps ChatGPT sign-in)', 'Use ChatGPT OAuth Only',
+    'Use Codex LB through the atomic CLI provider path', 'SKS selects one provider path'
+  ]) assert.doesNotMatch(providersSurface, new RegExp(removed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(providers, /\["bridge", "status", "--json"\]/);
+  assert.match(providers, /\["bridge", "verify", "--level", level, "--json"\]/);
+  assert.match(providers, /report\.summary\.levelSatisfied/);
+  assert.match(providers, /responseGate\.accept\(identity\)/);
+  assert.match(providers, /operations\.recordDiagnostic\(completed, metadata: metadata\)/);
+  assert.match(routingTruth, /sks\.desktop-capabilities\.v3/);
+  assert.match(routingTruth, /sks\.desktop-bridge-status\.v3/);
+  assert.match(routingTruth, /frameRoundTrip = "frame_round_trip"/);
+  assert.match(routingTruth, /cleanClose = "clean_close"/);
+  assert.match(routingTruth, /catalog_sync missing/);
+  assert.match(providers, /case \.degraded, \.stale, \.notAttempted: return \.systemOrange/);
+  assert.doesNotMatch(providersSurface, /deepEvidenceTrusted/);
+  assert.match(providersSurface, /fallback none/);
+  assert.match(openRouter, /Profiles coexist/);
+  assert.match(openRouter, /ChatGPT OAuth remain(?:s)? unchanged/);
 });
 
-test('Providers exposes OpenRouter save key, freeform model id, and Use OpenRouter', () => {
+test('Providers manages OpenRouter as a coexisting bridge profile instead of a mode', () => {
   const root = resolvePackagedMenuBarSourceRoot();
   const providers = [
     fs.readFileSync(path.join(root, 'Sources', 'ProvidersViewController.swift'), 'utf8'),
     fs.readFileSync(path.join(root, 'Sources', 'ProvidersReliability.swift'), 'utf8'),
     fs.readFileSync(path.join(root, 'Sources', 'ProvidersOpenRouter.swift'), 'utf8')
   ].join('\n');
-  assert.match(providers, /Save OpenRouter key…/);
-  assert.match(providers, /Use OpenRouter/);
-  assert.match(providers, /placeholderString = "z-ai\/glm-5\.2"/);
-  assert.match(providers, /\["codex-app", "set-openrouter-key", "--api-key-stdin", "--json"\]/);
-  assert.match(providers, /backend: "sks codex-app set-openrouter-key"/);
-  assert.doesNotMatch(providers, /backend: "sks codex-app save-openrouter-key"/);
-  assert.match(providers, /\["codex-app", "use-openrouter", "--model", model, "--restart-app", "--json"\]/);
-  assert.match(providers, /\["codex-app", "openrouter-status", "--json"\]/);
-  assert.match(providers, /\["codex-app", "openrouter-models", "--ids-only", "--json"\]/);
-  assert.match(providers, /Restore previous provider/);
-  assert.match(providers, /\["codex-app", "restore-desktop-routing", "--restart-app", "--json"\]/);
-  assert.match(providers, /backend: "sks codex-app restore-desktop-routing"/);
-  assert.doesNotMatch(providers, /backend: "sks codex-app restore-provider"/);
-  assert.match(providers, /\["codex-app", "openrouter-test"/);
-  assert.match(providers, /backend: "sks codex-app openrouter-test"/);
-  assert.doesNotMatch(providers, /backend: "sks codex-app test-openrouter"/);
-  assert.match(providers, /thread_sidebar_remap/);
-  assert.match(providers, /previous_routing_restore_available/);
-  // Restore stays disabled until status reports a restorable snapshot, so the
-  // button cannot promise a restore the CLI answers with snapshot_missing.
-  assert.match(providers, /openRouterRestoreButton = restorePrevious/);
-  assert.match(providers, /restorePrevious\.isEnabled = false/);
-  assert.match(providers, /openRouterRestoreAvailable = json\["previous_routing_restore_available"\]/);
-  assert.match(providers, /openRouterRestoreButton\?\.isEnabled = !value && openRouterRestoreAvailable/);
-  assert.match(providers, /No previous provider snapshot to restore\./);
-  // A blocked sidebar retag is partial success, not a failed restore. The
-  // prefix match also covers restored_sidebar_and_restart_blocked.
-  assert.match(providers, /status\.hasPrefix\("restored_sidebar"\)/);
-  assert.match(providers, /prior-provider chats stay hidden/);
-  assert.match(providers, /describeOpenRouterStatus/);
-  assert.match(providers, /OpenRouter: key missing/);
-  assert.match(providers, /activationJson\?\["config_applied"\]/);
-  assert.match(providers, /activationJson\?\["restart_ok"\]/);
-  assert.match(providers, /Configuration saved · main model/);
-  assert.match(providers, /beginProviderApply\(kind: "openrouter-use"/);
-  assert.match(providers, /kind: "openrouter-set-key"/);
-  const statusRefresh = providers.slice(
-    providers.indexOf('func refreshOpenRouterStatus()'),
-    providers.indexOf('func describeOpenRouterStatus')
-  );
-  assert.match(statusRefresh, /guard let json = self\.json\(result\.output\)/);
-  assert.doesNotMatch(statusRefresh, /guard result\.code == 0/);
-  assert.match(statusRefresh, /if selected, activeModel != "unset"/);
-  assert.ok(providers.includes('key stored · activation model \\(selectedOpenRouterModel())'));
+  assert.match(providers, /#selector\(configureOpenRouterProfile\)/);
+  assert.match(providers, /#selector\(validateOpenRouterProfile\)/);
+  assert.match(providers, /#selector\(toggleOpenRouterProfile\)/);
+  assert.match(providers, /\["bridge", "provider", "configure", "openrouter", "--api-key-stdin", "--json"\]/);
+  assert.match(providers, /\["bridge", "provider", "validate", "openrouter", "--json"\]/);
+  assert.match(providers, /\["bridge", "provider", verb, id, "--json"\]/);
+  assert.match(providers, /OpenRouter profile configured; Codex-LB preserved/);
+  assert.match(providers, /Codex-LB and ChatGPT OAuth remain unchanged/);
+  assert.doesNotMatch(providers, /\["codex-app", "use-openrouter"/);
+  assert.doesNotMatch(providers, /Restore previous provider/);
+  assert.match(providers, /providerButtons\["openrouter"\]/);
 });
 
 test('Menu Bar exposes truthful accessible Fast state with direct on and off actions', () => {
@@ -637,11 +553,8 @@ test('Menu Bar exposes truthful accessible Fast state with direct on and off act
   assert.match(swift, /setAccessibilityLabel\("Turn Codex Fast on"\)/);
   assert.match(swift, /setAccessibilityLabel\("Turn Codex Fast off"\)/);
   assert.match(providersSurface, /\["fast-mode", "status", "--json"\]/);
-  assert.match(providers, /Official Codex speed option: 1\.5× faster on supported models\./);
-  assert.match(providers, /not the selected model, Codex-Spark, or reasoning effort/);
-  assert.match(providers, /GPT-5\.6 and GPT-5\.5 use credits at 2\.5× Standard; GPT-5\.4 uses 2× Standard/);
-  assert.match(providers, /API-key Codex uses API token pricing instead/);
-  assert.match(providers, /API Priority processing is a separate billing path/);
+  assert.match(providersSurface, /official service_tier=/);
+  assert.match(providersSurface, /model and reasoning remain separate/);
   assert.match(providersSurface, /Codex Fast: unavailable — no state was assumed\./);
 });
 

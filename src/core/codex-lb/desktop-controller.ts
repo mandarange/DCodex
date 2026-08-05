@@ -97,6 +97,13 @@ import {
   readCodexLbRoutingTruthReceipt,
   type CodexLbRoutingTruthAuthTransport
 } from './routing-truth.js';
+export {
+  desktopBridgeStatusV3,
+  executeDesktopBridgeCommandV3 as executeDesktopBridgeCommand,
+  verifyDesktopBridgeV3,
+  type DesktopBridgeControllerRequestV3,
+  type DesktopBridgeControllerV3Options
+} from './desktop-controller-v3.js';
 
 export const CODEX_LB_STATUS_SCHEMA_V2 = 'sks.codex-lb-status.v2' as const;
 export const CODEX_LB_ACTIVATION_SCHEMA_V2 = 'sks.codex-lb-desktop-activation.v2' as const;

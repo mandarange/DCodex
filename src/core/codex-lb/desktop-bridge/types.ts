@@ -12,6 +12,7 @@ import type { ChildPolicySnapshot, CredentialReadiness, ProviderPolicySnapshot, 
 
 export const DESKTOP_BRIDGE_STATE_SCHEMA = 'sks.codex-lb-desktop-bridge.v2' as const;
 export const DESKTOP_BRIDGE_REGISTRY_SCHEMA = 'sks.desktop-bridge-provider-registry.v1' as const;
+export const DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH = '/__sks/diagnostics/health' as const;
 export const DESKTOP_BRIDGE_DIAGNOSTIC_PATH = '/__sks/diagnostics/websocket' as const;
 export const DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL = 'sks.desktop-bridge.probe.v2' as const;
 
