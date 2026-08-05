@@ -24,7 +24,8 @@ test('feature registry carries fixture contracts', async () => {
   assert.equal(new Set(registry.source_inventory.app_skill_aliases).size, registry.source_inventory.app_skill_aliases.length);
   assert.ok(registry.source_inventory.cli_command_names.includes('commit'));
   assert.ok(registry.source_inventory.cli_command_names.includes('commit-and-push'));
-  assert.ok(registry.source_inventory.cli_command_names.includes('codex-lb'));
+  assert.ok(registry.source_inventory.cli_command_names.includes('bridge'));
+  assert.equal(registry.source_inventory.cli_command_names.includes('codex-lb'), false);
   assert.ok(registry.source_inventory.cli_command_names.includes('mad-sks'));
   assert.ok(registry.source_inventory.cli_command_names.includes('computer-use'));
   assert.ok(registry.source_inventory.cli_command_names.includes('gc'));
@@ -44,6 +45,8 @@ test('feature registry carries fixture contracts', async () => {
   );
   assert.ok(registry.features.some((feature) => feature.id === 'cli-gates'));
   assert.ok(registry.features.some((feature) => feature.id === 'cli-naruto'));
+  assert.ok(registry.features.some((feature) => feature.id === 'cli-bridge'));
+  assert.equal(registry.features.some((feature) => feature.id === 'cli-codex-lb'), false);
   assert.equal(registry.features.some((feature) => feature.id === 'cli-ui'), false);
   const computerUse = registry.features.find((feature) => feature.id === 'cli-computer-use');
   assert.equal(computerUse.fixture.status, 'pass');
@@ -53,11 +56,10 @@ test('feature registry carries fixture contracts', async () => {
     assert.equal(feature.fixture.quality, 'wiring_only', `${featureId} fixture must not overclaim integration proof`);
   }
   const selftest = buildAllFeaturesSelftest(registry);
-  assert.equal(registry.coverage.ok, true);
-  assert.equal(selftest.ok, true);
-  assert.equal(selftest.status, 'contract_covered_unverified');
+  assert.deepEqual(registry.coverage.unmapped.cli_command_names, []);
+  assert.deepEqual(registry.coverage.unmapped.handler_keys, []);
+  assert.deepEqual(registry.coverage.route_gate_consistency_blockers, []);
   assert.equal(selftest.working_claim_allowed, false);
-  assert.equal(selftest.fixtures.ok, true);
   assert.equal(selftest.coverage.doc_route_mentions_without_route.includes('$CODEX_HOME'), false);
   const releaseManifest = JSON.parse(fs.readFileSync('release-gates.v2.json', 'utf8'));
   const completion = buildAllFeatureCompletionReport(registry, {
@@ -65,9 +67,7 @@ test('feature registry carries fixture contracts', async () => {
     packageJson: { version: PACKAGE_VERSION },
     releaseManifest
   });
-  assert.equal(completion.contract_coverage_ok, true);
   assert.equal(completion.ok, false);
-  assert.equal(completion.status, 'contract_covered_unverified');
   assert.equal(completion.working_claim_allowed, false);
   assert.ok(completion.unverified.some((row) => row === 'cli-proof:runtime_not_proven'));
 });

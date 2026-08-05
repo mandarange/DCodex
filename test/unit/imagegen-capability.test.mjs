@@ -70,17 +70,17 @@ remote_control                      stable             true
   assert.equal(capability.codex_app.blocker, 'codex_app_imagegen_not_detected');
 });
 
-test('imagegen capability rejects legacy codex-lb imagegen auth without treating it as Codex App evidence', async () => {
-  const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-imagegen-codex-lb-'));
+test('imagegen capability fails closed when Desktop Bridge status is unavailable', async () => {
+  const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-imagegen-bridge-unavailable-'));
   const capability = await withoutCodexImagegenEnv(() => detectImagegenCapability({
     codexBin: path.join(home, 'missing-codex'),
     timeoutMs: 100,
-    env: { HOME: home, CODEX_LB_API_KEY: 'sk-clb-test' },
-    configText: codexLbConfig('false')
+    env: { HOME: home },
+    desktopBridgeStatusImpl: async () => null
   }));
   assert.equal(capability.codex_lb.available, false);
-  assert.equal(capability.codex_lb.openai_auth_disabled, true);
-  assert.equal(capability.codex_lb.blocker, 'codex_lb_legacy_openai_auth_disabled');
+  assert.equal(capability.codex_lb.selected, false);
+  assert.equal(capability.codex_lb.blocker, 'desktop_bridge_status_unavailable');
   assert.equal(capability.codex_lb.satisfies_codex_app_builtin_evidence, false);
   assert.equal(capability.codex_lb.accepted_for_core_readiness, false);
   assert.equal(capability.openai_images_api.available, false);
@@ -94,19 +94,21 @@ test('imagegen capability rejects legacy codex-lb imagegen auth without treating
   assert.deepEqual(capability.blockers, ['codex_app_builtin_imagegen_capability_missing', 'imagegen_capability_missing']);
 });
 
-test('imagegen capability records supported codex-lb auth without satisfying Codex App imagegen evidence', async () => {
-  const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-imagegen-codex-lb-oauth-'));
+test('verified Desktop Bridge provider capability does not substitute for Codex App imagegen evidence', async () => {
+  const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-imagegen-desktop-bridge-'));
   const capability = await withoutCodexImagegenEnv(() => detectImagegenCapability({
     codexBin: path.join(home, 'missing-codex'),
     timeoutMs: 100,
     env: { HOME: home },
-    codexLbEnvText: 'CODEX_LB_API_KEY=sk-clb-test\n',
-    configText: codexLbConfig('true')
+    desktopBridgeStatus: desktopBridgeImagegenStatus()
   }));
   assert.equal(capability.codex_lb.available, true);
+  assert.equal(capability.codex_lb.selected, true);
+  assert.equal(capability.codex_lb.routing_active, true);
   assert.equal(capability.codex_lb.blocker, null);
-  assert.equal(capability.codex_lb.api_key.source, 'env-file');
+  assert.equal(capability.codex_lb.capability_evidence.state, 'verified');
   assert.equal(capability.openai_images_api.available, false);
+  assert.equal(capability.openai_images_api.codex_lb_proxy.accepted_for_core_readiness, false);
   assert.equal(capability.core_ready, false);
   assert.deepEqual(capability.core_blockers, ['codex_app_builtin_imagegen_capability_missing']);
   assert.deepEqual(capability.route_generation_blockers, ['imagegen_capability_missing']);
@@ -152,17 +154,36 @@ process.exit(64);
   return codexBin;
 }
 
-function codexLbConfig(requiresOpenAiAuth) {
-  return `model_provider = "codex-lb"
-
-[model_providers.codex-lb]
-name = "OpenAI"
-base_url = "https://lb.example.test/backend-api/codex"
-wire_api = "responses"
-env_key = "CODEX_LB_API_KEY"
-supports_websockets = true
-requires_openai_auth = ${requiresOpenAiAuth}
-`;
+function desktopBridgeImagegenStatus() {
+  return {
+    schema: 'sks.desktop-bridge-status.v3',
+    checked_at: '2026-08-06T00:00:00.000Z',
+    providers: {
+      'codex-lb': {
+        enabled: true,
+        credential: { state: 'ready', source: 'user-secret-store', blockers: [] },
+        endpoint: {
+          configured: true,
+          origin_redacted: 'https://lb.example.test',
+          auth_transport: 'authorization-bearer'
+        },
+        capabilities: {
+          capabilities: {
+            image_generation: { state: 'verified', blockers: [] }
+          }
+        }
+      }
+    },
+    routing: {
+      policy: {
+        default_provider_id: 'codex-lb',
+        fallback: 'none',
+        model_routes: {
+          'gpt-image-2': { provider_id: 'codex-lb', upstream_model: 'gpt-image-2' }
+        }
+      }
+    }
+  };
 }
 
 async function withoutCodexImagegenEnv(fn) {
