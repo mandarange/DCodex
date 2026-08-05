@@ -109,7 +109,9 @@ export async function runParallelProductionSmoke(options: ParallelProductionSmok
     await fsp.mkdir(worktreesRoot, { recursive: true })
 
     const workerSpecs = buildWorkerSpecs(options.injectFailure === true)
-    await Promise.all(workerSpecs.map((worker) => setupWorkerWorktree(repoRoot, worktreesRoot, worker)))
+    for (const worker of workerSpecs) {
+      await setupWorkerWorktree(repoRoot, worktreesRoot, worker)
+    }
 
     const workerResults = await Promise.all(workerSpecs.map((worker) => runWorker(worker, path.join(worktreesRoot, worker.id))))
     const successfulWorkers = workerResults.filter((result) => result.ok)

@@ -129,15 +129,9 @@ test('runProcess timeout terminates its POSIX descendant process group', { skip:
     }
     await fs.rm(root, { recursive: true, force: true });
   });
-  const descendant = "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)";
-  const parent = [
-    "const fs=require('node:fs')",
-    "const {spawn}=require('node:child_process')",
-    `const child=spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:'ignore'})`,
-    "fs.writeFileSync(process.argv[1],String(child.pid))",
-    "setInterval(()=>{},1000)"
-  ].join(';');
-  const result = await runProcess(process.execPath, ['-e', parent, pidFile], { timeoutMs: 250 });
+  const descendant = 'trap "" TERM; while :; do sleep 1; done';
+  const parent = `trap "" TERM; /bin/sh -c '${descendant}' & printf '%s' "$!" > "$1"; while :; do sleep 1; done`;
+  const result = await runProcess('/bin/sh', ['-c', parent, 'sks-run-process-tree', pidFile], { timeoutMs: 1_000 });
   assert.equal(result.timedOut, true);
   assert.equal(result.code, 124);
   descendantPid = Number(await fs.readFile(pidFile, 'utf8'));
