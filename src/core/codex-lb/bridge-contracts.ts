@@ -105,6 +105,8 @@ export type CapabilityProbeStage =
   | 'http_health'
   | 'websocket_upgrade'
   | 'websocket_protocol'
+  | 'frame_round_trip'
+  | 'clean_close'
   | 'provider_auth'
   | 'catalog_sync'
   | 'model_route'
@@ -254,7 +256,13 @@ export interface HttpProbeResult {
 
 export interface WebSocketProbeResult {
   schema: 'sks.desktop-bridge-websocket-probe.v2';
-  state: 'verified' | 'blocked' | 'failed' | 'unsupported';
+  state:
+    | 'not_attempted'
+    | 'verified'
+    | 'degraded'
+    | 'blocked'
+    | 'failed'
+    | 'unsupported';
   terminal_stage:
     | 'tcp_connect'
     | 'websocket_upgrade'
@@ -277,8 +285,11 @@ export interface WebSocketProbeResult {
 export interface DesktopCapabilityReportV3 {
   schema: 'sks.desktop-capabilities.v3';
   report_id: string;
+  correlation_id: string;
+  session_id: string;
   requested_level: CapabilityRequestedLevel;
   checked_at: string;
+  catalog_generation: string | null;
   execution: {
     ok: boolean;
     status: 'completed' | 'partial' | 'failed';
@@ -291,6 +302,7 @@ export interface DesktopCapabilityReportV3 {
   summary: {
     bridge_ready: boolean;
     active_routes_ready: boolean;
+    level_satisfied: boolean;
     transport_level_satisfied: boolean;
     deep_level_satisfied: boolean;
     full_feature_verified: boolean;
@@ -299,6 +311,94 @@ export interface DesktopCapabilityReportV3 {
     warnings: string[];
   };
   catalog_sync: CombinedCatalogSyncStatus;
+}
+
+export interface DesktopBridgeStatusV3 {
+  schema: 'sks.desktop-bridge-status.v3';
+  checked_at: string;
+  correlation_id: string;
+  management: DesktopBridgeManagementStatus;
+  service: {
+    state: DesktopBridgeRuntimeState;
+    installed: boolean;
+    loaded: boolean;
+    running: boolean;
+    loopback_origin: string | null;
+    pid: number | null;
+    checked_at: string;
+    blockers: string[];
+    warnings: string[];
+  };
+  native_identity: {
+    state: CapabilityProbeState;
+    configured: boolean;
+    semantic_identity_preserved: boolean | null;
+    checked_at: string | null;
+    blockers: string[];
+    warnings: string[];
+  };
+  providers: Record<BridgeProviderId, BridgeProviderProfileStatus>;
+  routing: {
+    policy: BridgeRoutingPolicy | null;
+    selected_model: string | null;
+    selected_route: BridgeRouteTarget | null;
+    session_pin: ProviderSessionPin | null;
+    fallback: 'none';
+    blockers: string[];
+    warnings: string[];
+  };
+  catalog_sync: CombinedCatalogSyncStatus;
+  capabilities: DesktopCapabilityReportV3 | null;
+  readiness: {
+    ready: boolean;
+    state: 'ready' | 'awaiting_provider' | 'degraded' | 'blocked' | 'unmanaged';
+    bridge_ready: boolean;
+    active_routes_ready: boolean;
+    combined_catalog_ready: boolean;
+    blockers: string[];
+    warnings: string[];
+  };
+  recovery_actions: string[];
+}
+
+export type DesktopBridgeCommandOperation =
+  | 'status'
+  | 'ensure'
+  | 'repair'
+  | 'provider.list'
+  | 'provider.configure'
+  | 'provider.validate'
+  | 'provider.enable'
+  | 'provider.disable'
+  | 'provider.remove-credential'
+  | 'catalog.sync'
+  | 'catalog.status'
+  | 'route.list'
+  | 'route.set-default'
+  | 'route.explain'
+  | 'unmanage'
+  | 'rollback';
+
+export interface DesktopBridgeCommandResult {
+  schema: 'sks.desktop-bridge-command-result.v1';
+  operation: DesktopBridgeCommandOperation;
+  operation_id: string;
+  correlation_id: string;
+  checked_at: string;
+  ok: boolean;
+  execution: {
+    ok: boolean;
+    status: 'completed' | 'partial' | 'failed';
+    blockers: string[];
+  };
+  readiness: {
+    ready: boolean;
+    blockers: string[];
+    warnings: string[];
+  };
+  status: DesktopBridgeStatusV3 | null;
+  result: Record<string, unknown>;
+  recovery_action: string | null;
 }
 
 export interface DesktopBridgeUnificationReceipt {
