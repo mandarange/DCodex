@@ -1,9 +1,9 @@
-import { compactMcpToolSchema } from '../mcp/mcp-0-134-policy.js'
+import { compactMcpToolSchema } from '../mcp/mcp-tool-policy.js'
 
-export function buildCodex0139RichToolSchemaFixture() {
+export function buildCodexCurrentCoreRichToolSchemaFixture() {
   return {
     type: 'object',
-    description: 'Codex 0.139 rich tool schema preservation fixture',
+    description: 'Current Codex rich tool schema preservation fixture',
     oneOf: [
       { required: ['mode'], properties: { mode: { const: 'guided' } } },
       { required: ['query'], properties: { query: { type: 'string' } } }
@@ -32,15 +32,15 @@ export function buildCodex0139RichToolSchemaFixture() {
   }
 }
 
-export function passCodex0139RichToolSchemaThroughBridge(schema: any = buildCodex0139RichToolSchemaFixture()) {
+export function passCodexCurrentCoreRichToolSchemaThroughBridge(schema: any = buildCodexCurrentCoreRichToolSchemaFixture()) {
   return compactMcpToolSchema(schema, 128).schema
 }
 
-export function evaluateCodex0139RichToolSchemaPreservation(schema: any = buildCodex0139RichToolSchemaFixture()) {
-  const bridged = passCodex0139RichToolSchemaThroughBridge(schema)
+export function evaluateCodexCurrentCoreRichToolSchemaPreservation(schema: any = buildCodexCurrentCoreRichToolSchemaFixture()) {
+  const bridged = passCodexCurrentCoreRichToolSchemaThroughBridge(schema)
   const required = Array.isArray(bridged?.required) ? bridged.required : []
   const result = {
-    schema: 'sks.codex-0139-rich-tool-schema-preservation.v1',
+    schema: 'sks.codex-current-core-rich-tool-schema-preservation.v1',
     ok: Array.isArray(bridged?.oneOf)
       && Array.isArray(bridged?.allOf)
       && Boolean(bridged?.properties?.payload?.properties?.target)

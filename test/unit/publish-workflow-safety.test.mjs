@@ -34,6 +34,7 @@ const closureReasonCounts = {
 for (const probe of [...INSTALLED_REMOVED_ARGUMENT_PROBES, ...INSTALLED_REMOVED_SUBCOMMAND_PROBES]) {
   closureReasonCounts[probe.expected_reason] += 1;
 }
+const closureContract = JSON.parse(fs.readFileSync('config/installed-public-surface-closure.v1.json', 'utf8'));
 
 test('npm workflow stages one immutable tarball after Linux and macOS proof', () => {
   assert.match(workflow, /workflow_dispatch:/);
@@ -130,14 +131,17 @@ test('workflow proves Node 20, 22, and 24 and runs exact-tarball smoke plus secr
   assert.match(stageJob, /main-push-guard\.json/);
   assert.match(stageJob, /upgrade-7\.6-to-\$\{process\.env\.VERSION\}\.json/);
   assert.match(stageJob, /closure\.rejected_count !== closure\.command_probe_count \+ closure\.dollar_command_probe_count \+ closure\.argument_probe_count \+ closure\.subcommand_probe_count/);
-  for (const [field, count] of Object.entries(closureProbeCounts)) {
-    assert.match(stageJob, new RegExp(`closure\\.${field} !== ${count}`));
-  }
-  assert.match(stageJob, new RegExp(`closure\\.rejected_count !== ${closureRejectedCount}`));
-  for (const [reason, count] of Object.entries(closureReasonCounts)) {
-    assert.match(stageJob, new RegExp(`expected_reason_counts\\?\\.${reason} !== ${count}`));
-    assert.match(stageJob, new RegExp(`observed_reason_counts\\?\\.${reason} !== ${count}`));
-  }
+  assert.equal(closureContract.schema, 'sks.installed-public-surface-closure.v1');
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(closureProbeCounts).map((field) => [field, closureContract[field]])),
+    closureProbeCounts
+  );
+  assert.equal(closureContract.rejected_count, closureRejectedCount);
+  assert.deepEqual(closureContract.reason_counts, closureReasonCounts);
+  assert.match(stageJob, /config\/installed-public-surface-closure\.v1\.json/);
+  assert.match(stageJob, /closure\[field\] !== closureContract\[field\]/);
+  assert.match(stageJob, /closure\.expected_reason_counts\?\.\[reason\] !== closureContract\.reason_counts\?\.\[reason\]/);
+  assert.match(stageJob, /closure\.observed_reason_counts\?\.\[reason\] !== closureContract\.reason_counts\?\.\[reason\]/);
   assert.match(stageJob, /observed_reason_counts\?\.other !== 0/);
 });
 

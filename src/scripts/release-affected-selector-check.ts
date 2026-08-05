@@ -5,6 +5,7 @@ const dag = await importDist('core/release/release-gate-dag.js')
 const selectorMod = await importDist('core/release/release-gate-affected-selector.js')
 const manifest = dag.loadReleaseGateManifest(root)
 const gates = dag.selectReleaseGatePreset(manifest, 'affected')
+const confidenceGates = dag.selectReleaseGatePreset(manifest, 'confidence')
 const releaseIds = new Set<string>(dag.selectReleaseGatePreset(manifest, 'release').map((gate: any) => String(gate.id)))
 const incrementalIds = new Set<string>(dag.selectReleaseGatePreset(manifest, 'incremental').map((gate: any) => String(gate.id)))
 for (const id of ['test:commands-regression', 'test:menubar-doctor', 'test:core-root-regression']) {
@@ -17,35 +18,35 @@ for (const id of ['release:proof-truth', 'typecheck', 'schema:check']) {
   assertGate(ids.has(id), `affected selector must always keep ${id}`, selected.selection)
 }
 
-const codexCurrentOnly = selectorMod.selectAffectedReleaseGates(root, manifest, gates, {
+const codexCurrentOnly = selectorMod.selectAffectedReleaseGates(root, manifest, confidenceGates, {
   changedFiles: ['src/core/codex-control/codex-sdk-adapter.ts'],
-  preset: 'affected'
+  preset: 'confidence'
 })
 const codexCurrentIds = new Set<string>(codexCurrentOnly.selection.selected_gate_ids.map(String))
 for (const id of ['codex-control:all-pipelines', 'codex-control:event-stream-ledger', 'codex-sdk:all-pipelines', 'codex-sdk:integration-comprehensive']) {
   assertGate(codexCurrentIds.has(id), `codex current surface change must select ${id}`, codexCurrentOnly.selection)
 }
 
-const releaseScriptOnly = selectorMod.selectAffectedReleaseGates(root, manifest, gates, {
+const releaseScriptOnly = selectorMod.selectAffectedReleaseGates(root, manifest, confidenceGates, {
   changedFiles: ['src/scripts/release-full-parallelism-blackbox.ts'],
-  preset: 'affected'
+  preset: 'confidence'
 })
 const releaseScriptIds = new Set<string>(releaseScriptOnly.selection.selected_gate_ids.map(String))
 assertGate(releaseScriptIds.has('release:batch-runner-comprehensive'), 'release script change must select release gates', releaseScriptOnly.selection)
 assertGate(![...releaseScriptIds].some((id) => id.startsWith('naruto:') || id.startsWith('research:')), 'release script change must not expand to unrelated route gates', releaseScriptOnly.selection)
-assertGate(releaseScriptIds.size < Math.ceil(gates.length / 3), 'release script change must stay affected-sized instead of near-full release', releaseScriptOnly.selection)
+assertGate(releaseScriptIds.size < Math.ceil(confidenceGates.length / 3), 'release script change must stay affected-sized instead of near-full release', releaseScriptOnly.selection)
 
-const schedulerScriptOnly = selectorMod.selectAffectedReleaseGates(root, manifest, gates, {
+const schedulerScriptOnly = selectorMod.selectAffectedReleaseGates(root, manifest, confidenceGates, {
   changedFiles: ['src/scripts/scheduler-utilization-integral-check.ts'],
-  preset: 'affected'
+  preset: 'confidence'
 })
 const schedulerScriptIds = new Set<string>(schedulerScriptOnly.selection.selected_gate_ids.map(String))
 assertGate(schedulerScriptIds.has('scheduler:comprehensive'), 'scheduler script change must select scheduler gates', schedulerScriptOnly.selection)
 assertGate(![...schedulerScriptIds].some((id) => id.startsWith('research:') || id.startsWith('docs:')), 'scheduler script change must not expand to unrelated route gates', schedulerScriptOnly.selection)
 
-const officialSubagentOnly = selectorMod.selectAffectedReleaseGates(root, manifest, gates, {
+const officialSubagentOnly = selectorMod.selectAffectedReleaseGates(root, manifest, confidenceGates, {
   changedFiles: ['src/core/subagents/subagent-evidence.ts'],
-  preset: 'affected'
+  preset: 'confidence'
 })
 const officialSubagentIds = new Set<string>(officialSubagentOnly.selection.selected_gate_ids.map(String))
 assertGate(officialSubagentIds.has('naruto:canonical-stop-gate'), 'official subagent source changes must select the canonical Naruto stop gate', officialSubagentOnly.selection)
@@ -113,9 +114,9 @@ for (const changedFile of [
   'docs/feature-inventory.md',
   'test/unit/feature-registry.test.mjs'
 ]) {
-  const selectedForFeatures = selectorMod.selectAffectedReleaseGates(root, manifest, gates, {
+  const selectedForFeatures = selectorMod.selectAffectedReleaseGates(root, manifest, confidenceGates, {
     changedFiles: [changedFile],
-    preset: 'affected'
+    preset: 'confidence'
   })
   const featureIds = new Set<string>(selectedForFeatures.selection.selected_gate_ids.map(String))
   assertGate(featureIds.has('all-features:deep-completion'), `Command manifest, registry, inventory, or feature-test changes must select all-features:deep-completion (${changedFile})`, selectedForFeatures.selection)

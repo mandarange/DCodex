@@ -258,7 +258,7 @@ async function narutoParentSummaryTransaction(parsed: NarutoArgs, root: string, 
     || !sameParentAuthoredSummary(normalizedPersisted.raw, submittedSummary)) {
     return blockedParentSummary(parsed, ['naruto_parent_summary_canonical_commit_mismatch'])
   }
-  const hardBlocked = normalizedPersisted.status === 'failed'
+  const hardBlocked = normalizedPersisted.status === 'blocked' || normalizedPersisted.status === 'failed'
   const completionEvidence = route === 'NARUTO'
     ? gate?.passed === true
     : evidence?.ok === true

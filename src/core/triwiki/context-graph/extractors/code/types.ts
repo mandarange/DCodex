@@ -8,7 +8,7 @@ import type ts from 'typescript';
 
 /** Extractor identity written into every edge provenance record. */
 export const CODE_GRAPH_EXTRACTOR_ID = 'code';
-export const CODE_GRAPH_EXTRACTOR_REVISION = '1.0.0';
+export const CODE_GRAPH_EXTRACTOR_REVISION = '2.0.0';
 
 /** Bound on how far a `export ... from` barrel chain is followed before giving up. */
 export const MAX_REEXPORT_DEPTH = 8;
@@ -24,10 +24,50 @@ export const CODE_SYMBOL_KINDS = [
   'const',
   'let',
   'var',
-  'default'
+  'default',
+  'struct',
+  'protocol',
+  'trait',
+  'actor',
+  'extension',
+  'module',
+  'method',
+  'procedure',
+  'table',
+  'view'
 ] as const;
 
 export type CodeSymbolKind = (typeof CODE_SYMBOL_KINDS)[number];
+
+export type CodeLanguage =
+  | 'typescript'
+  | 'javascript'
+  | 'python'
+  | 'ruby'
+  | 'go'
+  | 'rust'
+  | 'java'
+  | 'kotlin'
+  | 'swift'
+  | 'php'
+  | 'c'
+  | 'cpp'
+  | 'csharp'
+  | 'scala'
+  | 'shell'
+  | 'vue'
+  | 'svelte'
+  | 'dart'
+  | 'objective-c'
+  | 'perl'
+  | 'lua'
+  | 'elixir'
+  | 'clojure'
+  | 'haskell'
+  | 'ocaml'
+  | 'julia'
+  | 'sql'
+  | 'r';
 
 /** A source file the walker accepted, together with the bytes it hashed. */
 export interface CodeSourceFileRecord {
@@ -42,7 +82,10 @@ export interface CodeSourceFileRecord {
   lines: number;
   isTest: boolean;
   extension: string;
-  language: 'typescript' | 'javascript';
+  language: CodeLanguage;
+  parser: 'typescript' | 'text';
+  /** Leading source comment/docstring only; never inferred from docs or memory. */
+  purpose: string | null;
 }
 
 export interface CodeInventory {

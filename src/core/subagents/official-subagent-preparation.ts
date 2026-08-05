@@ -57,6 +57,7 @@ import {
   HOST_CAPABILITY_HOOK_RUNTIME_FILENAME
 } from '../agent-bridge/host-capability-runtime.js'
 import { uniqueStrings } from '../text/strings.js'
+import { officialSubagentEvidenceReady } from './terminal-subagent-state.js'
 
 export const NARUTO_RESULT_SCHEMA = 'sks.naruto-subagent-workflow.v1'
 export const SUBAGENT_PLAN_FILENAME = 'subagent-plan.json'
@@ -877,6 +878,11 @@ export function buildNarutoGateResult(input: any) {
   const open = Array.isArray(input.evidence?.open_thread_ids) ? input.evidence.open_thread_ids.length : 0
   const unmatched = Array.isArray(input.evidence?.unmatched_stop_thread_ids) ? input.evidence.unmatched_stop_thread_ids.length : 0
   const ambiguous = Array.isArray(input.evidence?.ambiguous_stop_thread_ids) ? input.evidence.ambiguous_stop_thread_ids.length : 0
+  const officialSubagentEvidence = officialSubagentEvidenceReady(input.evidence)
+  const terminalBlocked = !passed
+    && officialSubagentEvidence
+    && input.evidence?.parent_summary_status === 'blocked'
+    && input.ssotGuard === true
   return {
     schema: 'sks.naruto-gate.v1',
     route: sksPrefixedDollarCommand('naruto'),
@@ -888,10 +894,10 @@ export function buildNarutoGateResult(input: any) {
     parent_model_match: input.parentModelMatch ?? null,
     status: passed ? 'passed' : 'blocked',
     passed,
-    terminal: passed,
+    terminal: passed || terminalBlocked,
     terminal_state: passed ? 'completed' : 'blocked',
     subagent_plan_ready: true,
-    official_subagent_evidence: input.evidence?.ok === true,
+    official_subagent_evidence: officialSubagentEvidence,
     session_cleanup: target > 0
       && started === target
       && completed === target
@@ -899,7 +905,7 @@ export function buildNarutoGateResult(input: any) {
       && open === 0
       && unmatched === 0
       && ambiguous === 0,
-    subagent_evidence_ready: input.evidence?.ok === true,
+    subagent_evidence_ready: officialSubagentEvidence,
     requested_subagents: requested || null,
     count_policy: input.evidence?.count_policy || 'exact',
     target_subagents: target || null,

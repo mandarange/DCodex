@@ -213,13 +213,13 @@ test('a stale graph keeps the exact selection and refuses to widen or shrink it'
   assert.equal(stale.graph_status, 'stale');
   assert.equal(stale.graph_used, false);
   assert.equal(stale.error_code, 'context_graph_stale');
-  assert.equal(stale.repair_command, 'sks wiki refresh --code');
+  assert.equal(stale.repair_command, 'sks align run');
   assert.equal(stale.conservative, true);
   assert.ok(stale.conservative_reasons.includes('context_graph_stale'));
   assert.deepEqual(stale.added_gates, [], 'stale evidence never adds a gate');
   assert.deepEqual(stale.recommended_tests, []);
   assert.deepEqual(stale.gates, stale.baseline_gates);
-  assert.ok(stale.errors.some((line) => line.includes('sks wiki refresh --code')));
+  assert.ok(stale.errors.some((line) => line.includes('sks align run')));
   assertNeverFewer(stale);
 });
 
@@ -268,7 +268,7 @@ test('a workspace with no compiled graph still returns the exact selection', asy
     assert.equal(result.error_code, 'context_graph_missing');
     assert.deepEqual(result.gates, baselineIds([PATHS.changed]));
     assert.deepEqual(result.added_gates, []);
-    assert.ok(result.errors.some((line) => line.includes('sks wiki refresh --code')));
+    assert.ok(result.errors.some((line) => line.includes('sks align run')));
     assertNeverFewer(result);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

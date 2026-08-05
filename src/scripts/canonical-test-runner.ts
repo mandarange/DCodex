@@ -4,10 +4,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { SKS_TEMP_LEASE_FILE, tmpdir, writeJsonAtomic } from '../core/fsx.js';
 import {
+  allCanonicalTestFiles,
   canonicalTestCorpus,
+  canonicalTestFiles,
   canonicalTestProofPath,
+  RELEASE_HARNESS_REGRESSION_TESTS,
   sameCanonicalTestCorpus,
   writeCanonicalTestProof
 } from '../core/release/canonical-test-proof.js';
@@ -17,19 +21,24 @@ import {
 } from '../core/release/release-authorization-snapshot.js';
 
 const root = process.cwd();
+const allTestsRequested = process.argv.includes('--all');
+const forwardedTestArgs = process.argv.slice(2).filter((arg) => arg !== '--all');
 const proofPath = canonicalTestProofPath(root);
 function removeCanonicalTestProof(): void {
   fs.rmSync(proofPath, { force: true });
 }
 
-removeCanonicalTestProof();
+if (!allTestsRequested) removeCanonicalTestProof();
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const startedAt = new Date().toISOString();
-const initialAuthorization = releaseAuthorizationSnapshot(root, pkg);
-const initialCorpus = canonicalTestCorpus(root);
-const compiled = discover(path.join(root, 'dist'), (file) => file.endsWith('.test.js') && file.includes(`${path.sep}__tests__${path.sep}`));
-const unit = discover(path.join(root, 'test', 'unit'), (file) => file.endsWith('.test.mjs'));
+const initialAuthorization = allTestsRequested ? null : releaseAuthorizationSnapshot(root, pkg);
+const initialCorpus = allTestsRequested ? null : canonicalTestCorpus(root);
+const { compiled, unit } = allTestsRequested ? allCanonicalTestFiles(root) : canonicalTestFiles(root);
 const files = [...compiled, ...unit].sort();
+const testConcurrency = resolveTestConcurrency(process.env.SKS_CANONICAL_TEST_CONCURRENCY);
+const serialFileSuffixes = new Set<string>(RELEASE_HARNESS_REGRESSION_TESTS);
+const serialFiles = files.filter((file) => serialFileSuffixes.has(relativePosix(file)));
+const parallelFiles = files.filter((file) => !serialFileSuffixes.has(relativePosix(file)));
 
 if (!compiled.length || !unit.length) {
   console.error(JSON.stringify({
@@ -82,7 +91,7 @@ const cleanup = async (): Promise<Error | null> => {
 process.once('exit', () => {
   const error = removeScratchSync();
   if (error) console.error(`canonical test cleanup failed during exit: ${error.message}`);
-  if (!proofCommitted) removeCanonicalTestProof();
+  if (!proofCommitted && !allTestsRequested) removeCanonicalTestProof();
 });
 
 await writeJsonAtomic(path.join(scratch, SKS_TEMP_LEASE_FILE), {
@@ -162,18 +171,9 @@ delete childEnv.NODE_OPTIONS;
 // codexHomePath() prefers env.CODEX_HOME over both explicit home arguments and
 // $HOME. Tests that need CODEX_HOME set it themselves.
 delete childEnv.CODEX_HOME;
-const child = spawn(process.execPath, ['--test', '--test-concurrency=1', ...files, ...process.argv.slice(2)], {
-  cwd: root,
-  detached: isolatedProcessGroup,
-  env: childEnv,
-  stdio: 'inherit'
-});
-child.on('error', (error) => {
-  void finalize(1, null, error);
-});
-child.on('close', (code, signal) => {
-  void finalize(code ?? 1, signal, null);
-});
+console.log(`SKS ${allTestsRequested ? 'exhaustive' : 'release'} tests: ${files.length} files, parallel=${parallelFiles.length}@${testConcurrency}, serial=${serialFiles.length}@1`);
+let activeChild: ChildProcess | null = null;
+void runTestPhases();
 
 type ForwardedSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP';
 const signals: ForwardedSignal[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
@@ -199,6 +199,38 @@ function removeSignalHandlers(): void {
   for (const [signal, handler] of signalHandlers) process.removeListener(signal, handler);
 }
 
+async function runTestPhases(): Promise<void> {
+  try {
+    const parallel = await runChild(process.execPath, ['--test', `--test-concurrency=${testConcurrency}`, ...parallelFiles, ...forwardedTestArgs]);
+    if (parallel.code !== 0 || parallel.signal) return await finalize(parallel.code, parallel.signal, null);
+    if (serialFiles.length) {
+      const serial = await runChild(process.execPath, ['--test', '--test-concurrency=1', ...serialFiles, ...forwardedTestArgs]);
+      return await finalize(serial.code, serial.signal, null);
+    }
+    await finalize(0, null, null);
+  } catch (error: unknown) {
+    await finalize(1, null, error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+function runChild(command: string, args: string[]): Promise<{ code: number; signal: NodeJS.Signals | null }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: root,
+      detached: isolatedProcessGroup,
+      env: childEnv,
+      stdio: 'inherit'
+    });
+    activeChild = child;
+    child.once('error', reject);
+    child.once('close', async (code, signal) => {
+      await settleSpecificChildTree(child);
+      if (activeChild === child) activeChild = null;
+      resolve({ code: code ?? 1, signal });
+    });
+  });
+}
+
 async function finalize(code: number, signal: NodeJS.Signals | null, spawnError: Error | null): Promise<void> {
   if (finalized) return;
   finalized = true;
@@ -215,14 +247,14 @@ async function finalize(code: number, signal: NodeJS.Signals | null, spawnError:
   if (breachError) console.error(breachError.message);
   let proofError: Error | null = null;
   const successfulRun = code === 0 && !signal && !forwardedSignal && !spawnError && !cleanupError && !breachError;
-  if (successfulRun) {
+  if (successfulRun && !allTestsRequested) {
     try {
       const finalAuthorization = releaseAuthorizationSnapshot(root, pkg);
       const finalCorpus = canonicalTestCorpus(root);
-      if (!sameReleaseAuthorizationSnapshot(initialAuthorization, finalAuthorization)) {
+      if (!initialAuthorization || !sameReleaseAuthorizationSnapshot(initialAuthorization, finalAuthorization)) {
         throw new Error('canonical_test_release_authorization_drift');
       }
-      if (!sameCanonicalTestCorpus(initialCorpus, finalCorpus)) {
+      if (!initialCorpus || !sameCanonicalTestCorpus(initialCorpus, finalCorpus)) {
         throw new Error('canonical_test_corpus_drift');
       }
       await writeCanonicalTestProof(root, {
@@ -237,14 +269,15 @@ async function finalize(code: number, signal: NodeJS.Signals | null, spawnError:
       console.error(`canonical test proof failed: ${proofError.message}`);
     }
   }
-  if (!proofCommitted) removeCanonicalTestProof();
+  if (!proofCommitted && !allTestsRequested) removeCanonicalTestProof();
   if (forwardedSignal) process.kill(process.pid, forwardedSignal);
   else if (signal) process.kill(process.pid, signal);
   else process.exitCode = spawnError || cleanupError || breachError || proofError ? 1 : code;
 }
 
 function signalChildTree(signal: NodeJS.Signals): void {
-  if (!child.pid) return;
+  const child = activeChild;
+  if (!child?.pid) return;
   if (isolatedProcessGroup) {
     try {
       process.kill(-child.pid, signal);
@@ -255,6 +288,11 @@ function signalChildTree(signal: NodeJS.Signals): void {
 }
 
 function childTreeAlive(): boolean {
+  const child = activeChild;
+  return child ? childProcessGroupAlive(child) : false;
+}
+
+function childProcessGroupAlive(child: ChildProcess): boolean {
   if (!isolatedProcessGroup || !child.pid) return false;
   try {
     process.kill(-child.pid, 0);
@@ -262,6 +300,32 @@ function childTreeAlive(): boolean {
   } catch {
     return false;
   }
+}
+
+function signalSpecificChildTree(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (!child.pid) return;
+  if (isolatedProcessGroup) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {}
+  }
+  try { child.kill(signal); } catch {}
+}
+
+async function settleSpecificChildTree(child: ChildProcess): Promise<void> {
+  if (!childProcessGroupAlive(child)) return;
+  signalSpecificChildTree(child, 'SIGTERM');
+  const termDeadline = Date.now() + 750;
+  while (childProcessGroupAlive(child) && Date.now() < termDeadline) await delay(25);
+  if (!childProcessGroupAlive(child)) return;
+  signalSpecificChildTree(child, 'SIGKILL');
+  const killDeadline = Date.now() + 750;
+  while (childProcessGroupAlive(child) && Date.now() < killDeadline) await delay(25);
+}
+
+function relativePosix(file: string): string {
+  return path.relative(root, file).split(path.sep).join('/');
 }
 
 async function settleChildTree(): Promise<void> {
@@ -279,19 +343,13 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function discover(dir: string, accept: (file: string) => boolean): string[] {
-  const out: string[] = [];
-  if (!fs.existsSync(dir)) return out;
-  const stack = [dir];
-  while (stack.length) {
-    const current = stack.pop();
-    if (!current) continue;
-    const entries = fs.readdirSync(current, { withFileTypes: true });
-    for (const entry of entries) {
-      const file = path.join(current, entry.name);
-      if (entry.isDirectory()) stack.push(file);
-      else if (entry.isFile() && accept(file)) out.push(file);
-    }
+function resolveTestConcurrency(raw: string | undefined): number {
+  const available = Math.max(1, os.availableParallelism() - 1);
+  const safeDefault = Math.min(6, available);
+  if (raw === undefined || raw.trim() === '') return safeDefault;
+  const requested = Number(raw);
+  if (!Number.isInteger(requested) || requested < 1) {
+    throw new Error('SKS_CANONICAL_TEST_CONCURRENCY must be a positive integer');
   }
-  return out;
+  return Math.min(requested, available);
 }

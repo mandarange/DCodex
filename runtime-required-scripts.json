@@ -3,6 +3,11 @@
   "root_mode": "manifest_ssot",
   "scripts": [
     {
+      "path": "dist/scripts/canonical-test-runner.js",
+      "category": "installed_runtime",
+      "reason": "the packaged test, test:all, and test:release scripts dispatch the canonical test runner"
+    },
+    {
       "path": "dist/scripts/codex-config-load-probe.js",
       "category": "installed_repair",
       "reason": "installed doctor and repair paths probe whether Codex can load the managed project config"
@@ -125,12 +130,12 @@
       "reason": "the built public DFix route selects these verification scripts when DFix source changes"
     },
     {
-      "source": "src/core/doctor/codex-0139-doctor.ts",
+      "source": "src/core/doctor/codex-current-core-probe-doctor.ts",
       "classification": "installed_runtime",
       "reason": "installed Doctor exposes the strict real-probe command and must not point at a missing script"
     },
     {
-      "source": "dist/core/doctor/codex-0139-doctor.js",
+      "source": "dist/core/doctor/codex-current-core-probe-doctor.js",
       "classification": "installed_runtime",
       "reason": "built installed Doctor exposes the strict real-probe command"
     },

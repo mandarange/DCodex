@@ -63,7 +63,12 @@ function runBuild() {
   });
 }
 
-function failClosed(status = 1) {
+function stopAfterFailure(status = 1, message: string) {
+  console.error(message);
+  process.exit(status || 1);
+}
+
+function failStampCheck(status = 1) {
   console.error('Prepublish requires a current authoritative full-release stamp.');
   console.error('Run `npm run release:check:full` separately, then rerun the publish command.');
   process.exit(status || 1);
@@ -72,17 +77,27 @@ function failClosed(status = 1) {
 function verifyReleaseStamp() {
   if (String(process.env.npm_command || '').toLowerCase() === 'publish') {
     const preflight = runPublishPreflight();
-    if (preflight.status !== 0) failClosed(preflight.status);
+    if (preflight.status !== 0) {
+      stopAfterFailure(
+        preflight.status,
+        'Prepublish stopped at the reproducibility preflight. Resolve the reported release blockers before retrying `npm publish`.'
+      );
+    }
 
     const tag = runPublishTagCheck();
-    if (tag.status !== 0) failClosed(tag.status);
+    if (tag.status !== 0) {
+      stopAfterFailure(
+        tag.status,
+        'Prepublish stopped at npm dist-tag validation. Resolve the reported tag configuration before retrying `npm publish`.'
+      );
+    }
   }
 
   const fast = runFastCheck();
-  if (fast.status !== 0) failClosed(fast.status);
+  if (fast.status !== 0) failStampCheck(fast.status);
 
   const stamp = runStampVerify();
-  if (stamp.status !== 0) failClosed(stamp.status);
+  if (stamp.status !== 0) failStampCheck(stamp.status);
 }
 
 function main() {

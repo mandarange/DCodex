@@ -43,13 +43,77 @@ export interface CurrentCanonicalTestProof {
   blockers: string[]
 }
 
+export interface CanonicalTestFiles {
+  compiled: string[]
+  unit: string[]
+}
+
+const CURRENT_COMPILED_TESTS = new Set([
+  'dist/core/__tests__/codex-capability-matrix.test.js',
+  'dist/core/__tests__/codex-release-manifest-current.test.js',
+  'dist/core/__tests__/release-gate-hermetic-env.test.js',
+  'dist/core/__tests__/update-menubar-package-local.test.js',
+  'dist/core/__tests__/update-simulated-upgrade.test.js',
+  'dist/core/__tests__/version-manager-current-docs.test.js',
+  'dist/core/install/__tests__/installed-package-smoke.test.js',
+  'dist/core/perf/__tests__/release-latency-slo.test.js'
+])
+
+const CURRENT_UNIT_TEST = /^(?:codex-(?:exec-output-schema(?:-parity)?|version-policy)|memory-summary-version|(?:package|publish|release|runtime)-.+)\.test\.mjs$/
+
+/**
+ * These tests exercise the release-check/stamp harness by launching nested
+ * release verification processes. Running them from inside
+ * `release:check:full` recursively repeats the same expensive contract and
+ * cannot add product-release coverage. They remain part of `test:all` and the
+ * explicit `test:release-harness-regression` maintenance command.
+ */
+export const RELEASE_HARNESS_REGRESSION_TESTS = [
+  'test/regression/prepublish-release-check-or-fast.test.mjs',
+  'test/regression/release-check-stamp.test.mjs',
+  'test/regression/release-readiness-report.test.mjs'
+] as const
+
+const RELEASE_HARNESS_REGRESSION_SET = new Set<string>(RELEASE_HARNESS_REGRESSION_TESTS)
+
 export function canonicalTestProofPath(root: string): string {
   return path.join(root, '.sneakoscope', 'reports', 'canonical-test-proof.json')
 }
 
-export function canonicalTestCorpus(root: string): CanonicalTestCorpus {
-  const compiled = discover(path.join(root, 'dist'), (file) => file.endsWith('.test.js') && file.includes(`${path.sep}__tests__${path.sep}`))
+/**
+ * Release authorization runs the current release/package/runtime contract,
+ * not the repository's historical and feature-development test archive. The
+ * full release DAG separately exercises the current product gate contracts.
+ */
+export function canonicalTestFiles(root: string): CanonicalTestFiles {
+  const compiled = discover(path.join(root, 'dist'), (file) => {
+    if (!file.endsWith('.test.js') || !file.includes(`${path.sep}__tests__${path.sep}`)) return false
+    const relative = repoRelative(root, file)
+    return relative.startsWith('dist/core/release/__tests__/') || CURRENT_COMPILED_TESTS.has(relative)
+  })
+  const unit = discover(path.join(root, 'test', 'unit'), (file) => {
+    return file.endsWith('.test.mjs') && CURRENT_UNIT_TEST.test(path.basename(file))
+  })
+  unit.push(...discover(path.join(root, 'test', 'regression'), (file) => (
+    file.endsWith('.test.mjs')
+    && !RELEASE_HARNESS_REGRESSION_SET.has(repoRelative(root, file))
+  )))
+  unit.sort()
+  return { compiled, unit }
+}
+
+export function allCanonicalTestFiles(root: string): CanonicalTestFiles {
   const unit = discover(path.join(root, 'test', 'unit'), (file) => file.endsWith('.test.mjs'))
+  unit.push(...discover(path.join(root, 'test', 'regression'), (file) => file.endsWith('.test.mjs')))
+  unit.sort()
+  return {
+    compiled: discover(path.join(root, 'dist'), (file) => file.endsWith('.test.js') && file.includes(`${path.sep}__tests__${path.sep}`)),
+    unit
+  }
+}
+
+export function canonicalTestCorpus(root: string): CanonicalTestCorpus {
+  const { compiled, unit } = canonicalTestFiles(root)
   const rows = [
     ...compiled.map((file) => ({ kind: 'compiled', file })),
     ...unit.map((file) => ({ kind: 'unit', file }))
@@ -171,4 +235,8 @@ function discover(dir: string, accept: (file: string) => boolean): string[] {
 
 function sha256(value: crypto.BinaryLike): string {
   return crypto.createHash('sha256').update(value).digest('hex')
+}
+
+function repoRelative(root: string, file: string): string {
+  return path.relative(root, file).split(path.sep).join('/')
 }

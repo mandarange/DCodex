@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+
+## [8.0.5] - 2026-08-05
+
+### Changed
+
+- Adopt `docs/AMBIGUITY-RESOLUTIONS.md` as a product-contract SSOT and publish
+  the English projection in `docs/PRODUCT-CONTRACT.md`.
+- Codex compatibility prose now tracks **current latest stable** plus capability
+  probes; product copy no longer claims version-agnostic SSOT or crowns a fixed
+  `0.x.y` as permanent product SSOT.
+- Keep a single App Server schema tree (`schemas/codex/app-server-0.146`) and one
+  current Codex CLI compat doc; retire per-version compat archives from the repo.
+- Converge code-index / wiki+pack rebuild into `$sks-align` / `sks align run`.
+  `sks wiki refresh --code` remains a compatibility alias.
+- Retire the `$sks-loop` product surface; Codex native Goal is the only persisted
+  goal/loop owner. `$sks-qa-loop` remains a separate dogfood route.
+- Encode light completion routes as Answer, DFix, and Help/status-class
+  read-only surfaces (`src/core/routes/light-routes.ts`).
+- Document install SSOT as npm `sneakoscope@latest`, with package/plugin agreement
+  enforced by `install-surface-ssot-check` and runtime PATH/Menu Bar enforcement
+  available via `SKS_ENFORCE_RUNTIME_INSTALL_SSOT=1`.
+- Align public one-liner copy on README, `package.json`, and the Codex plugin
+  marketplace manifest to the P1 product sentence.
+- Separate required release evidence (release gates) from recommended checks
+  (typecheck / focused tests / publish dry-run) in release readiness docs.
+- Write durable mission completion receipts under
+  `.sneakoscope/retention/completion-receipts/` before capacity prune of closed
+  missions so directory absence cannot restart incomplete loops.
+
+### Fixed
+
+- Accept exact project `.agents` / `.agents/skills` aliases to the authoritative
+  global skill root without running project residue cleanup against the aliased
+  path (realpath identity skip).
+- Align canonical-test-runner fixtures with the narrowed release-authorization
+  corpus so `test:core-root-regression` stays green.
+- Register explicit `cli-cleanup` / `route-cleanup` feature fixtures for the
+  read-only `sks cleanup plan` contract so all-feature completion coverage stays
+  complete after the Cleanup product surface landed.
+- Make `sks codex-lb connect-test` honor both the gateway authentication
+  transport stored by SKS Center and an explicit `--compat-bearer` override.
+  Bearer-only gateways now receive `Authorization: Bearer` instead of silently
+  falling back to `X-Codex-LB-API-Key`; invalid stored transport metadata still
+  fails closed before a request is sent.
+
 ## [8.0.4] - 2026-08-02
 
 ### Changed

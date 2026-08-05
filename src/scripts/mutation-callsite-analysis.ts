@@ -138,6 +138,10 @@ export function mutationCallsiteOccurrences(hashes: string[]): number[] {
   });
 }
 
+export function mutationSymbolsEquivalent(left: string, right: string): boolean {
+  return stableMutationSymbol(left) === stableMutationSymbol(right);
+}
+
 export function allRegexMatchIndexes(pattern: RegExp, value: string): number[] {
   const flags = [...new Set(`${pattern.flags.replace(/[gy]/g, '')}g`)].join('');
   const matcher = new RegExp(pattern.source, flags);
@@ -448,6 +452,10 @@ function structuralScopeSha256(node: ts.Node, sourceFile: ts.SourceFile): string
     tokens.push(scanner.getTokenText());
   }
   return createHash('sha256').update(tokens.join('\0')).digest('hex');
+}
+
+function stableMutationSymbol(value: string): string {
+  return String(value || '').replace(/\.callback@\d+/g, '.callback@*');
 }
 
 function symbolForNode(node: ts.Node, parentSymbol: string, sourceFile: ts.SourceFile): string | null {

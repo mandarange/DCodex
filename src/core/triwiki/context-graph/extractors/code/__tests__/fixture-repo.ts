@@ -132,6 +132,28 @@ export function makeCodeFixture(): string {
     ].join('\n')
   );
   write(root, 'src/legacy.py', 'def legacy():\n    return 1\n');
+  write(
+    root,
+    'lib/task_runner.rb',
+    ['# Runs a repository maintenance task.', 'class TaskRunner', '  def run_task(value)', '    value + 1', '  end', 'end', ''].join('\n')
+  );
+  write(
+    root,
+    'native/engine.cpp',
+    ['// Executes the native graph engine.', 'struct EngineState {', '  int value;', '};', '', 'int run_engine(int value) {', '  return value + 1;', '}', ''].join('\n')
+  );
+  write(
+    root,
+    'native/Runner.swift',
+    ['/// Runs the native menu-bar command.', 'public struct Runner {', '  public func start() {}', '}', ''].join('\n')
+  );
+  write(
+    root,
+    'crates/engine/src/lib.rs',
+    ['//! Evaluates the native graph accelerator.', 'pub struct Engine;', '', 'pub fn evaluate() -> bool { true }', ''].join('\n')
+  );
+  write(root, 'src/internal.ts', ['function hiddenHelper(): number {', '  return 1;', '}', '', 'export const publicValue = hiddenHelper();', ''].join('\n'));
+  write(root, 'src/core/build/build-once-runner.ts', 'export function buildOnce(): boolean { return true; }\n');
   // A source file that legitimately uses a raw NUL as a key separator, exactly
   // like `context-graph/ids.ts` does. It must still be parsed.
   write(

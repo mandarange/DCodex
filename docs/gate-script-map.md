@@ -21,16 +21,12 @@ Generated from `release-gates.v2.json`; release gate IDs and commands are the ma
 | `codex-plugin:app-template-policy` | `release` | `node ./dist/scripts/codex-plugin-app-template-policy-check.js` | direct |
 | `codex-sdk:all-pipelines` | `release` | `node ./dist/scripts/codex-sdk-all-pipelines-check.js` | direct |
 | `codex-sdk:integration-comprehensive` | `release` | `node ./dist/scripts/codex-sdk-backend-router-check.js && node ./dist/scripts/codex-sdk-capability-check.js && node ./dist/scripts/codex-sdk-event-stream-ledger-check.js` | direct |
-| `codex:0.134-runner-truth` | `release` | `node ./dist/scripts/codex-0-134-runner-truth-check.js` | direct |
-| `codex:0.137-compat` | `release` | `node ./dist/scripts/codex-0-137-compat-check.js` | direct |
-| `codex:0138-capability-comprehensive` | `release` | `node ./dist/scripts/codex-0138-capability-check.js && node ./dist/scripts/codex-0138-capability-artifact-check.js && node ./dist/scripts/codex-0138-feature-probes-check.js` | direct |
-| `codex:0138-doctor` | `release` | `node ./dist/scripts/codex-0138-doctor-check.js` | direct |
-| `codex:0144:app-server-v2` | `release` | `node ./dist/scripts/codex-0144-app-server-v2-check.js` | direct |
-| `codex:0144:binary-identity` | `release` | `node ./dist/scripts/codex-0144-binary-identity-check.js` | direct |
-| `codex:0144:capability` | `release` | `node ./dist/scripts/codex-0144-capability-check.js` | direct |
-| `codex:0144:manifest` | `release` | `node ./dist/scripts/codex-0144-manifest-check.js` | direct |
-| `codex:0144:policy` | `release` | `node ./dist/scripts/codex-0144-policy-check.js` | direct |
-| `codex:0144:thread-store` | `release` | `node ./dist/scripts/codex-0144-thread-store-check.js` | direct |
+| `codex:current:app-server-v2` | `release` | `node ./dist/scripts/codex-current-app-server-v2-check.js` | direct |
+| `codex:current:binary-identity` | `release` | `node ./dist/scripts/codex-current-binary-identity-check.js` | direct |
+| `codex:current:capability` | `release` | `node ./dist/scripts/codex-current-capability-check.js` | direct |
+| `codex:current:manifest` | `release` | `node ./dist/scripts/codex-current-manifest-check.js` | direct |
+| `codex:current:policy` | `release` | `node ./dist/scripts/codex-current-policy-check.js` | direct |
+| `codex:current:thread-store` | `release` | `node ./dist/scripts/codex-current-thread-store-check.js` | direct |
 | `codex:app-handoff-comprehensive` | `release` | `node ./dist/scripts/codex-app-handoff-check.js && node ./dist/scripts/codex-app-handoff-launch-check.js && node ./dist/scripts/qa-loop-app-handoff-check.js && node ./dist/scripts/qa-loop-app-handoff-capability-check.js && node ./dist/scripts/qa-loop-app-handoff-cli-check.js && node ./dist/scripts/qa-loop-app-handoff-confirmation-check.js && node ./dist/scripts/qa-loop-app-handoff-gate-lifecycle-check.js && node ./dist/scripts/qa-loop-app-handoff-launch-check.js && node ./dist/scripts/qa-loop-app-handoff-status-lifecycle-check.js` | direct |
 | `codex:product-design-plugin-routing` | `release` | `node ./dist/scripts/product-design-plugin-routing-check.js` | direct |
 | `config:managed-merge` | `release` | `node ./dist/scripts/managed-config-merge-check.js` | direct |
@@ -62,9 +58,6 @@ Generated from `release-gates.v2.json`; release gate IDs and commands are the ma
 | `hooks:concurrent-session-collision` | `release` | `node ./dist/scripts/concurrent-session-collision-check.js` | direct |
 | `image:artifact-path-contract` | `release` | `node ./dist/scripts/image-artifact-path-contract-check.js` | direct |
 | `init-deep:backup-retention` | `release` | `node ./dist/scripts/init-deep-backup-retention-check.js` | direct |
-| `legacy:gate-inventory` | `release` | `node ./dist/scripts/legacy-gate-inventory-check.js` | direct |
-| `legacy:gate-purge` | `release` | `node ./dist/scripts/legacy-gate-purge-check.js` | direct |
-| `legacy:strong-inventory` | `release` | `node ./dist/scripts/legacy-strong-inventory-check.js` | direct |
 | `migration:current-surface-e2e` | `release` | `node ./dist/scripts/current-surface-update-e2e-check.js` | direct |
 | `local-collab:all-pipelines-final-gpt` | `release` | `node ./dist/scripts/local-collab-all-pipelines-final-gpt-check.js` | direct |
 | `loop-integration-finalizer-check` | `release` | `node ./dist/scripts/loop-integration-finalizer-check.js` | direct |

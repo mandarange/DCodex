@@ -15,7 +15,7 @@ import { runNativeAgentOrchestrator } from '../agents/agent-orchestrator.js';
 import { flag, promptOf, readBoundedIntegerFlag, readFlagValue, readMaxCycles, resolveMissionId, safeReadTextFile } from './command-utils.js';
 import { runCodexAppHandoff, qaLoopShouldRequestAppHandoff } from '../codex-app/codex-app-handoff.js';
 import { evaluateGate } from '../stop-gate/gate-evaluator.js';
-import { writeCodex0138CapabilityArtifacts } from '../codex-control/codex-0138-capability.js';
+import { writeCodexCurrentAppCapabilityArtifacts } from '../codex-control/codex-current-app-capability.js';
 import { writeCodexAccountUsageArtifacts } from '../usage/codex-account-usage.js';
 import { buildQaLoopBudgetPolicy, selectQaLoopEscalatedEffort } from '../qa-loop/qa-loop-budget-policy.js';
 import { initializeQaRuntimeArtifacts } from '../qa-loop/qa-runtime-artifacts.js';
@@ -199,7 +199,7 @@ async function qaLoopRun(args: any) {
   const surfaceSelection = await readJson(path.join(dir, QA_SURFACE_SELECTION_ARTIFACT), null);
   const selectedSurface = surfaceSelection?.selected_surface || null;
   const gptImage2ReviewRequired = qaGptImage2AnnotatedReviewRequired(contract, mission.prompt);
-  const capabilityArtifact = await writeCodex0138CapabilityArtifacts(root, { missionId: id }).catch((err: any) => ({ error: err?.message || String(err), report: null }));
+  const capabilityArtifact = await writeCodexCurrentAppCapabilityArtifacts(root, { missionId: id }).catch((err: any) => ({ error: err?.message || String(err), report: null }));
   const usageArtifact = await writeCodexAccountUsageArtifacts(root, { missionId: id }).catch((err: any) => ({ error: err?.message || String(err), snapshot: null }));
   const budgetPolicy = buildQaLoopBudgetPolicy({ usage: (usageArtifact as any)?.snapshot || null, provider: 'codex-sdk' });
   await writeJsonAtomic(path.join(dir, 'qa-loop', 'qa-loop-budget-policy.json'), budgetPolicy);
@@ -240,12 +240,12 @@ async function qaLoopRun(args: any) {
           'qa-gate.json',
           'qa-ledger.json',
           reportFile,
-          capabilityArtifact && !(capabilityArtifact as any).error ? 'codex-0138-capability.json' : '',
+          capabilityArtifact && !(capabilityArtifact as any).error ? 'codex-current-app-capability.json' : '',
           imagePathContract ? 'qa-loop/image-artifact-path-contract.json' : ''
         ].filter(Boolean),
         prompt: mission.prompt || 'QA-LOOP desktop handoff',
         require_desktop: appHandoffRequired,
-        capability_required: 'codex-0.138',
+        capability_required: 'codex-current',
         launch_mode: flag(args, '--app-handoff-artifact-only') ? 'artifact-only' : launchMode
       }).catch((err: any) => ({
         ok: false,

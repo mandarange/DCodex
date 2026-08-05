@@ -33,10 +33,16 @@ sks mcp-server            # exposes read-only commands only
 sks mcp-server --expose-exec   # also exposes non-read-only commands
 ```
 
-Any MCP-capable host can register this as a toolset. It speaks standard MCP over stdio, built on the
-already-installed `@modelcontextprotocol/sdk` (the same SDK SKS already uses as an MCP *client*
-elsewhere in the codebase) — `initialize`, `tools/list`, and `tools/call` are handled by the
-real SDK, not a hand-rolled wire protocol.
+Any MCP-capable host can register this as a toolset. It speaks the MCP `2026-07-28` protocol over
+stdio. The server is modern-only: clients discover it with `server/discover`, then send
+`tools/list` and `tools/call` with the negotiated protocol version and client capabilities in the
+standard per-request `_meta` envelope. The retired `initialize`/`initialized` handshake is not
+accepted on this SKS-owned surface. SKS's Context7 client uses the official
+`@modelcontextprotocol/client` v2 negotiation path in `auto` mode so an external third-party MCP
+server can still select the modern era or fall back to its supported legacy handshake.
+The SKS server itself is built with `@modelcontextprotocol/server` v2's `McpServer`,
+`serveStdio`, and `StdioServerTransport` APIs, with legacy handling set to `reject`. Registered
+tool input schemas are adapted from the command contracts with the SDK's `fromJsonSchema` helper.
 
 - **`tools/list`** returns one tool per command in the agent manifest. By default only
   `read_only: true` commands are exposed (see `src/core/agent-bridge/agent-manifest.ts` — derived
@@ -44,10 +50,15 @@ real SDK, not a hand-rolled wire protocol.
   server startup to also expose mutating commands — off by default, since a generic MCP client
   should not be able to run `sks uninstall` or a MAD-SKS route without an explicit opt-in.
 - **`tools/call`** validates the requested tool name against the manifest before spawning
-  anything. An unknown or unexposed name returns an MCP error result — it never spawns a
-  process for a name the caller invented.
+  anything. An unknown or unexposed name returns the MCP JSON-RPC `Invalid Params` error
+  (`-32602`) — it never spawns a process for a name the caller invented.
 - Each tool call runs `sks <name> [--json]` as a subprocess with `SKS_AGENT_MODE=1` set (see
   Contract 2) so the invocation is guaranteed to be non-interactive and returns clean JSON.
+- Every successful modern response carries `resultType: "complete"` and the server identity under
+  `_meta["io.modelcontextprotocol/serverInfo"]`. Cacheable discovery/list responses use the
+  conservative `ttlMs: 0` and `cacheScope: "private"` defaults.
+- Stdio messages are capped at 10 MiB. Tool execution is also bounded to four active calls and 64
+  queued calls by default; excess calls return a structured `SERVER_BUSY` tool error.
 
 Register with a CLI host:
 
@@ -164,7 +175,7 @@ or binary fallback.
     "manifest_schema": "sks.agent-manifest.v2",
     "proof_schema": "sks.naruto-subagent-workflow.v1",
     "host_capability_schema": "sks.host-capabilities.v1",
-    "package_version": "7.4.0"
+    "package_version": "8.0.5"
   },
   "host_capabilities": {
     "schema": "sks.host-capabilities.v1",

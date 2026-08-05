@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { detectCodex0138Capability, type Codex0138Capability } from '../codex-control/codex-0138-capability.js'
+import { detectCodexCurrentAppCapability, type CodexCurrentAppCapability } from '../codex-control/codex-current-app-capability.js'
 import { nowIso, writeJsonAtomic, writeTextAtomic } from '../fsx.js'
 import { attemptCodexAppLaunch, type CodexAppLaunchAttempt } from './codex-app-launcher.js'
 
@@ -13,7 +13,7 @@ export interface CodexAppHandoffRequest {
   artifacts: string[]
   prompt: string
   require_desktop: boolean
-  capability_required: 'codex-0.138'
+  capability_required: 'codex-current'
   launch_mode?: 'artifact-only' | 'attempt-launch'
 }
 
@@ -23,7 +23,7 @@ export interface CodexAppHandoffResult {
   attempted: boolean
   launched: boolean
   status: 'pending' | 'skipped' | 'blocked_for_desktop_review' | 'launched_pending_confirmation'
-  codex_0138_capability: Codex0138Capability
+  codex_current_app_capability: CodexCurrentAppCapability
   command_line: string[]
   launch_attempt?: CodexAppLaunchAttempt | null
   confirmation_required: boolean
@@ -54,7 +54,7 @@ export function buildCodexAppHandoffPrompt(request: CodexAppHandoffRequest): str
 }
 
 export async function runCodexAppHandoff(root: string, request: CodexAppHandoffRequest): Promise<CodexAppHandoffResult> {
-  const capability = await detectCodex0138Capability()
+  const capability = await detectCodexCurrentAppCapability()
   const platformSupported = process.platform === 'darwin' || process.platform === 'win32'
   const desktopSupported = capability.supports_app_handoff === true && platformSupported
   const launchMode = request.launch_mode || 'artifact-only'
@@ -62,7 +62,7 @@ export async function runCodexAppHandoff(root: string, request: CodexAppHandoffR
   const artifactPath = path.join(dir, 'app-handoff.json')
   const promptArtifactPath = path.join(dir, 'app-handoff-prompt.md')
   const blockers = [
-    ...(capability.supports_app_handoff ? [] : ['codex_0_138_app_handoff_unavailable']),
+    ...(capability.supports_app_handoff ? [] : ['codex_current_app_handoff_unavailable']),
     ...(platformSupported ? [] : ['codex_app_handoff_platform_unsupported'])
   ]
   const prompt = buildCodexAppHandoffPrompt(request)
@@ -95,7 +95,7 @@ export async function runCodexAppHandoff(root: string, request: CodexAppHandoffR
     attempted: launchAttempt.attempted,
     launched: launchAttempt.launched,
     status,
-    codex_0138_capability: capability,
+    codex_current_app_capability: capability,
     command_line: launchAttempt.command_line,
     launch_attempt: launchAttempt,
     confirmation_required: request.require_desktop,

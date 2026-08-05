@@ -18,7 +18,7 @@ export interface ContextGraphIndex {
   incoming: ReadonlyMap<string, readonly string[]>;
   /** workspace-relative path -> node ids that live at that path, sorted */
   nodesByPath: ReadonlyMap<string, readonly string[]>;
-  /** lowercased label -> node ids, sorted */
+  /** lowercased label or source-derived purpose text -> node ids, sorted */
   nodesByLabel: ReadonlyMap<string, readonly string[]>;
   /** node id -> id of the strongly connected component it belongs to, when the component has more than one node */
   cycleByNode: ReadonlyMap<string, string>;
@@ -50,6 +50,12 @@ export function buildContextGraphIndex(snapshot: ContextGraphSnapshot): ContextG
     const nodePath = node.path ?? contextGraphPathFromId(node.id);
     if (nodePath) push(nodesByPath, nodePath, node.id);
     if (node.label) push(nodesByLabel, node.label.toLowerCase(), node.id);
+    const purpose = typeof node.metadata?.purpose === 'string' ? node.metadata.purpose.trim() : '';
+    // Keep purpose as a whole lexical key. It is discoverable by the bounded
+    // lexical sweep but is never promoted to an exact label match.
+    if (purpose && purpose.toLowerCase() !== node.label?.toLowerCase()) {
+      push(nodesByLabel, purpose.toLowerCase(), node.id);
+    }
   }
   for (const edge of snapshot.edges) {
     edgesById.set(edge.id, edge);

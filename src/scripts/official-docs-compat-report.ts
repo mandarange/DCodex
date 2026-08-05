@@ -10,7 +10,7 @@ const reportDir = path.join(root, '.sneakoscope', 'reports');
 const releaseVersion = String(pkg.version || 'unknown');
 const jsonPath = path.join(reportDir, `official-docs-compat-${releaseVersion}.json`);
 const mdPath = path.join(reportDir, `official-docs-compat-${releaseVersion}.md`);
-const codexTag = 'rust-v0.145.0';
+const codexTag = 'rust-v0.146.0';
 
 const sources = {
   codex_release: `https://github.com/openai/codex/releases/tag/${codexTag}`,
@@ -27,7 +27,7 @@ const sources = {
 const fetched = await Promise.all(Object.entries(sources).map(async ([id, url]) => [id, await fetchOfficial(url)]));
 const bodies = Object.fromEntries(fetched);
 const sourceValidations = [
-  sourceRow('codex_release', sources.codex_release, bodies.codex_release, ['rust-v0.145.0', '0.145.0', 'Bug Fixes']),
+  sourceRow('codex_release', sources.codex_release, bodies.codex_release, ['rust-v0.146.0', '0.146.0', 'Bug Fixes']),
   sourceRow('codex_config_schema', sources.codex_config_schema, bodies.codex_config_schema, ['definitions', 'mcp_servers', 'profiles']),
   sourceRow('browser', sources.browser, bodies.browser, ['built-in browser', 'Chrome extension', 'Computer Use']),
   sourceRow('chrome_extension', sources.chrome_extension, bodies.chrome_extension, ['Chrome extension', 'signed-in', 'Connected']),
@@ -39,31 +39,31 @@ const sourceValidations = [
 ];
 
 const checks = [
-  fileRow('codex_0144_manifest', codexTag, 'config/codex-releases/rust-v0.145.0.json', [
-    '"targetTag": "rust-v0.145.0"',
-    '"requiredCliVersion": "0.145.0"',
-    '"preferredCliVersion": "0.145.0"',
-    '"minimumSupportedVersion": "0.133.0"',
-    '"narutoCapabilityFloorVersion": "0.145.0"',
-    '"sdkVersion": "0.145.0"',
+  fileRow('codex_current_manifest', codexTag, 'config/codex-releases/rust-v0.146.0.json', [
+    '"targetTag": "rust-v0.146.0"',
+    '"requiredCliVersion": "0.146.0"',
+    '"preferredCliVersion": "0.146.0"',
+    '"minimumSupportedVersion": "0.146.0"',
+    '"narutoCapabilityFloorVersion": "0.146.0"',
+    '"sdkVersion": "0.146.0"',
     '"protocolMode": "app-server-v2"'
   ]),
-  fileRow('codex_0144_manifest_ssot', codexTag, 'src/core/codex-compat/codex-release-manifest.ts', [
-    "targetTag: 'rust-v0.145.0'",
-    "requiredCliVersion: '0.145.0'",
-    "preferredCliVersion: '0.145.0'",
-    "minimumSupportedVersion: '0.133.0'",
-    "sdkVersion: '0.145.0'"
+  fileRow('codex_current_manifest_ssot', codexTag, 'src/core/codex-compat/codex-release-manifest.ts', [
+    "targetTag: 'rust-v0.146.0'",
+    "requiredCliVersion: '0.146.0'",
+    "preferredCliVersion: '0.146.0'",
+    "minimumSupportedVersion: '0.146.0'",
+    "sdkVersion: '0.146.0'"
   ]),
-  fileRow('codex_0144_release_gates', codexTag, 'release-gates.v2.json', [
-    'codex:0144:manifest',
-    'codex:0144:binary-identity',
-    'codex:0144:policy',
-    'codex:0144:app-server-v2',
-    'codex:0144:thread-store',
-    'codex:0144:capability'
+  fileRow('codex_current_release_gates', codexTag, 'release-gates.v2.json', [
+    'codex:current:manifest',
+    'codex:current:binary-identity',
+    'codex:current:policy',
+    'codex:current:app-server-v2',
+    'codex:current:thread-store',
+    'codex:current:capability'
   ]),
-  fileRow('codex_0144_app_server_schema', codexTag, 'schemas/codex/app-server-0.145/codex_app_server_protocol.v2.schemas.json', [
+  fileRow('codex_current_app_server_schema', codexTag, 'schemas/codex/app-server-0.146/codex_app_server_protocol.v2.schemas.json', [
     '"thread/list"',
     '"thread/read"',
     '"searchTerm"',
@@ -113,7 +113,7 @@ const report = {
   generated_at: new Date().toISOString(),
   package_version: releaseVersion,
   codex_release_baseline: codexTag,
-  codex_cli_version: '0.145.0',
+  codex_cli_version: '0.146.0',
   codex_app_docs_baseline: {
     browser: sources.browser,
     chrome_extension: sources.chrome_extension,

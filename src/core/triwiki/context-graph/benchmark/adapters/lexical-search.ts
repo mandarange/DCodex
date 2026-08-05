@@ -7,7 +7,7 @@
  * It must never be wired into `src/core/search/context.ts`, into the query
  * engine, or into any code path that answers a real user request: a missing or
  * stale graph is required to surface `context_graph_missing` /
- * `context_graph_stale` plus `sks wiki refresh --code`, never a text answer.
+ * `context_graph_stale` plus `sks align run`, never a text answer.
  *
  * What it reproduces: a path search plus a text search over the workspace,
  * merged into one ranked list, every hit labelled `context_pack`, and

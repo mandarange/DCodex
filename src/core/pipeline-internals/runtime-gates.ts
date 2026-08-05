@@ -40,6 +40,10 @@ import {
   normalizeLegacySubagentCountFields,
   subagentCountContractBlockers
 } from '../subagents/wave-lifecycle.js';
+import {
+  officialSubagentEvidenceReady,
+  terminalBlockedNarutoGate
+} from '../subagents/terminal-subagent-state.js';
 
 const REFLECTION_ARTIFACT = 'reflection.md';
 const REFLECTION_GATE = 'reflection-gate.json';
@@ -369,6 +373,7 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
       if (stopCheck.action === 'allow_stop') {
         if (narutoFamily) {
           const activeGateNotApplicable = stopCheck.diagnostics.reason === 'gate_not_applicable';
+          const activeGateTerminalBlocked = stopCheck.diagnostics.reason === 'gate_terminal_blocked';
           if (!activeGateNotApplicable) {
             const nativeGate = await readJson(path.join(missionDir(root, state.mission_id), 'naruto-gate.json'), null);
             const officialMissing = nativeGate
@@ -389,7 +394,12 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
           }
           const reflection = await reflectionGateStatus(root, state, jsonCache);
           if (!reflection.ok) return complianceBlock(root, state, reflectionStopReason(state, reflection), { gate: 'reflection', missing: reflection.missing });
-          return { continue: true, systemMessage: `SKS: canonical stop-gate ${activeGateNotApplicable ? 'was not applicable and independent gates passed' : 'passed'} at ${stopCheck.gate_path}` };
+          const gateOutcome = activeGateNotApplicable
+            ? 'was not applicable and independent gates passed'
+            : activeGateTerminalBlocked
+              ? 'reached a trustworthy terminal blocked state; independent gates passed'
+              : 'passed';
+          return { continue: true, systemMessage: `SKS: canonical stop-gate ${gateOutcome} at ${stopCheck.gate_path}` };
         }
       } else if (stopCheck.action === 'hard_blocked') {
         return { continue: true, systemMessage: stopCheck.feedback, action: 'hard_blocked', gate: stopCheck.gate_path };
@@ -676,6 +686,7 @@ async function passedActiveGate(root: any, state: any, jsonCache?: Map<string, P
         ...await missingRequiredGateArtifacts(root, file, state, gate)
       ];
       if (gate.passed === true && !missing.length) return { ok: true, file };
+      if (terminalBlockedNarutoGate(gate) && !missing.length) return { ok: true, file, terminal_blocked: true };
       if (missing.length) return { ok: false, file, missing };
       return { ok: false, file };
     }
@@ -948,6 +959,7 @@ async function missingNarutoArtifacts(root: any, state: any = {}, gate: any = {}
     subagentEvidence(root, state)
   ]);
   const normalizedGate: any = normalizeLegacySubagentCountFields(gate, plan);
+  const terminalBlocked = terminalBlockedNarutoGate(normalizedGate);
   const evidenceFile = normalizeLegacySubagentCountFields(rawEvidenceFile, plan);
   const summary = normalizeLegacySubagentCountFields(rawSummary, plan);
   if (plan?.schema !== 'sks.subagent-plan.v1') missing.push('subagent-plan.json:schema');
@@ -960,7 +972,7 @@ async function missingNarutoArtifacts(root: any, state: any = {}, gate: any = {}
   missing.push(...subagentCountContractBlockers(plan, Number(recomputedEvidence?.started_threads || 0)).map((item) => `subagent-plan.json:${item}`));
   if (evidenceFile?.schema !== 'sks.subagent-evidence.v1') missing.push('subagent-evidence.json:schema');
   if (evidenceFile?.workflow !== 'official_codex_subagent') missing.push('subagent-evidence.json:workflow');
-  if (recomputedEvidence?.ok !== true) missing.push(...(Array.isArray(recomputedEvidence?.blockers) && recomputedEvidence.blockers.length ? recomputedEvidence.blockers.map((item: any) => `subagent-evidence.json:${String(item)}`) : ['subagent-evidence.json:ok']));
+  if (!officialSubagentEvidenceReady(recomputedEvidence)) missing.push(...(Array.isArray(recomputedEvidence?.blockers) && recomputedEvidence.blockers.length ? recomputedEvidence.blockers.map((item: any) => `subagent-evidence.json:${String(item)}`) : ['subagent-evidence.json:ok']));
   if (recomputedEvidence?.parent_summary_present !== true || recomputedEvidence?.parent_summary_trustworthy !== true) missing.push('subagent-evidence.json:parent_summary_trustworthy');
   const countTarget = effectiveSubagentTarget(plan, Number(recomputedEvidence?.started_threads || 0));
   const legacyCountContract = !plan?.wave_lifecycle?.count_policy;
@@ -975,7 +987,17 @@ async function missingNarutoArtifacts(root: any, state: any = {}, gate: any = {}
   if (Number(summary?.target_subagents || 0) !== countTarget.targetSubagents) missing.push('naruto-summary.json:target_subagents');
   if (!legacyCountContract && normalizedGate?.count_policy !== countTarget.countPolicy) missing.push('naruto-gate.json:count_policy');
   if (!legacyCountContract && Number(normalizedGate?.target_subagents || 0) !== countTarget.targetSubagents) missing.push('naruto-gate.json:target_subagents');
-  if (summary?.ok !== true || summary?.status !== 'completed') missing.push('naruto-summary.json:completed');
+  if (terminalBlocked) {
+    const summaryBlockers = Array.isArray(summary?.blockers) ? [...new Set(summary.blockers.map(String))] : [];
+    if (summary?.ok === true
+      || summary?.status !== 'blocked'
+      || summaryBlockers.length !== 1
+      || summaryBlockers[0] !== 'parent_summary_blocked') {
+      missing.push('naruto-summary.json:terminal_blocked');
+    }
+  } else if (summary?.ok !== true || summary?.status !== 'completed') {
+    missing.push('naruto-summary.json:completed');
+  }
   if (summary?.parent_summary_present !== true || !String(summary?.parent_summary || '').trim()) missing.push('naruto-summary.json:parent_summary');
   if (!String(summary?.verification?.budget || '').trim()) missing.push('naruto-summary.json:verification.budget');
   // observed_model_match is advisory LOD evidence; do not hard-stop on mismatch.

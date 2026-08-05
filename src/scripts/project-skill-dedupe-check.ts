@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { assertGate, emitGate, makeTempRoot, writeManagedCoreSkill } from './skill-fixture-check-lib.js';
+import { assertGate, emitGate, makeTempRoot } from './skill-fixture-check-lib.js';
 import { reconcileSkills } from '../core/init/skills.js';
 
 const root = await makeTempRoot('sks-skill-dedupe-');
 process.env.CODEX_HOME = path.join(root, 'codex-home');
-await writeManagedCoreSkill(root, '.agents/skills', 'sks-loop');
-await writeManagedCoreSkill(root, '.codex/skills', 'sks-loop');
+// NC-38: sks-loop is removed; leave residue that reconcile --fix must delete.
+async function writeRetiredResidue(relSkills: string, name: string) {
+  const dir = path.join(root, relSkills, name);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: retired residue\n---\n\nretired.\n`);
+}
+await writeRetiredResidue('.agents/skills', 'sks-loop');
+await writeRetiredResidue('.codex/skills', 'sks-loop');
 await fs.mkdir(path.join(root, '.agents', 'skills', 'quarantine', 'sks-answer'), { recursive: true });
 await fs.mkdir(path.join(root, '.agents', 'skills', 'sks-answer'), { recursive: true });
 await fs.writeFile(path.join(root, '.agents', 'skills', 'sks-answer', 'SKILL.md'), '---\nname: sks-answer\ndescription: user collision\n---\n\nuser-owned answer.\n');

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { normalizeReleaseOrigin, RELEASE_ORIGIN_IDENTITY } from './release-origin.js';
+import { inspectPhysicalReleaseGates } from './physical-release-gates.js';
 
 export interface PublishPreflightCommandResult {
   status: number | null;
@@ -14,12 +15,15 @@ export interface PublishPreflightOptions {
   run?: (command: string, args: string[], cwd: string) => PublishPreflightCommandResult;
   /** Real publication requires the exact local and remote tag; a dry-run does not mutate the registry. */
   requireReleaseTag?: boolean;
+  /** Real publication requires source-bound physical receipts; a dry-run does not. */
+  requirePhysicalReleaseGates?: boolean;
 }
 
 export function inspectPublishPreflight(options: PublishPreflightOptions) {
   const root = path.resolve(options.root);
   const run = options.run || runCommand;
   const requireReleaseTag = options.requireReleaseTag !== false;
+  const requirePhysicalReleaseGates = options.requirePhysicalReleaseGates ?? requireReleaseTag;
   const blockers: string[] = [];
   const pkg = readPackageJson(root, blockers);
   const version = typeof pkg?.version === 'string' ? pkg.version : '';
@@ -61,6 +65,17 @@ export function inspectPublishPreflight(options: PublishPreflightOptions) {
     else if (head && remoteTag !== head) blockers.push(`remote_release_tag_not_head:${releaseTag}`);
   }
 
+  const physicalReleaseGates = requirePhysicalReleaseGates
+    ? inspectPhysicalReleaseGates({
+        root,
+        version,
+        sourceCommit: validSha(head) ? head : null,
+      })
+    : null;
+  if (physicalReleaseGates && !physicalReleaseGates.ok) {
+    blockers.push(...physicalReleaseGates.blockers);
+  }
+
   return {
     schema: 'sks.publish-preflight.v1',
     ok: blockers.length === 0,
@@ -68,6 +83,8 @@ export function inspectPublishPreflight(options: PublishPreflightOptions) {
     package_version: version || null,
     release_tag: releaseTag,
     release_tag_required: requireReleaseTag,
+    physical_release_gates_required: requirePhysicalReleaseGates,
+    physical_release_gates: physicalReleaseGates,
     branch: branch || null,
     head: validSha(head) ? head : null,
     origin_identity: originIdentity || null,

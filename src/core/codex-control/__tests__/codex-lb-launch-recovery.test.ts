@@ -15,8 +15,8 @@ import { attemptCodexAppLaunch } from '../../codex-app/codex-app-launcher.js'
 import { restartCodexApp } from '../../codex-app/codex-app-restart.js'
 import { runCodexExecResumeWithOutputSchema } from '../../codex-exec-output-schema.js'
 import { runCodexExecAgent } from '../../agents/agent-runner-codex-exec.js'
-import { runCodex0139ImageReferencedPathRealProbe } from '../codex-0139-image-path-real-probe.js'
-import { runCodex0139WebSearchRealProbe } from '../codex-0139-web-search-probe.js'
+import { runCodexCurrentCoreImageReferencedPathRealProbe } from '../codex-current-image-path-real-probe.js'
+import { runCodexCurrentCoreWebSearchRealProbe } from '../codex-current-web-search-probe.js'
 
 test('ambient codex-lb credentials cannot select the native SDK control paths', async () => {
   let authorization: string | undefined
@@ -454,7 +454,7 @@ test('every real Codex launch wrapper blocks before spawning when selected codex
     )
     assert.ok(agent.blockers.includes('codex_lb_launch_selection_not_forwarded'), JSON.stringify(agent))
 
-    const imageProbe = await runCodex0139ImageReferencedPathRealProbe({
+    const imageProbe = await runCodexCurrentCoreImageReferencedPathRealProbe({
       root,
       codexBin: '/fixture/codex',
       env,
@@ -463,7 +463,7 @@ test('every real Codex launch wrapper blocks before spawning when selected codex
     })
     assert.ok(imageProbe.blockers.includes('codex_lb_tool_output_recovery_version_too_old'))
 
-    const webProbe = await runCodex0139WebSearchRealProbe({
+    const webProbe = await runCodexCurrentCoreWebSearchRealProbe({
       root,
       requireReal: true,
       allowNetwork: true,

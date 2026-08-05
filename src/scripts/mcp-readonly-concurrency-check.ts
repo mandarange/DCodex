@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
-const mod = await importDist('core/mcp/mcp-0-134-policy.js');
+const mod = await importDist('core/mcp/mcp-tool-policy.js');
 const readOnly = mod.classifyMcpToolForConcurrency({ name: 'search_docs', annotations: { readOnlyHint: true }, inputSchema: { type: 'object' } });
 const destructive = mod.classifyMcpToolForConcurrency({ name: 'delete_docs', annotations: { readOnlyHint: true }, inputSchema: { type: 'object' } });
 const report = { schema: 'sks.mcp-readonly-concurrency-check.v1', ok: readOnly.concurrency === 'candidate_parallel_readonly' && destructive.concurrency === 'serial_required', readOnly, destructive };

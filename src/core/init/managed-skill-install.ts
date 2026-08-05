@@ -1,15 +1,16 @@
 import path from 'node:path';
 import os from 'node:os';
-import { ensureDir, sameFilesystemPath } from '../fsx.js';
+import { ensureDir } from '../fsx.js';
 import { AUTHORITATIVE_SKS_SKILL_ROOT_REFERENCE } from '../codex-native/sks-skill-paths.js';
+import type { SkillReconcileReport } from './skills.js';
 import {
-  installGlobalSkills,
-  installProjectSkills,
-  type SkillReconcileReport
-} from './skills.js';
+  reconcileLegacyManagedGeneration,
+  type LegacyGenerationConvergenceReport
+} from './legacy-generation-convergence.js';
 
 export type ManagedSkillInstallReport = SkillReconcileReport & {
   project_residue_reconcile?: SkillReconcileReport;
+  legacy_generation_convergence?: LegacyGenerationConvergenceReport;
 };
 
 function mergedStrings(left: unknown, right: unknown): string[] {
@@ -26,12 +27,24 @@ export async function reconcileManagedSkillInstallation(root: string, home?: str
   const globalSkillHome = path.resolve(home || process.env.HOME || os.homedir());
   await ensureDir(globalSkillHome);
 
-  const skillInstall: ManagedSkillInstallReport = await installGlobalSkills(globalSkillHome);
-  const globalSkillTarget = path.resolve(globalSkillHome, '.agents', 'skills');
-  const projectSkillTarget = path.resolve(root, '.agents', 'skills');
-  const projectSkillCleanup = await sameFilesystemPath(projectSkillTarget, globalSkillTarget)
-    ? null
-    : await installProjectSkills(root);
+  const convergence = await reconcileLegacyManagedGeneration({
+    root,
+    home: globalSkillHome,
+    fix: true
+  });
+  if (!('schema' in convergence.global_skills)) {
+    throw new Error(`authoritative_global_skill_reconcile_failed:${convergence.global_skills.error}`);
+  }
+  // Keep the convergence report and the public skill-install result as
+  // separate objects. `convergence.global_skills` is already owned by the
+  // convergence report; attaching the report back onto that same object would
+  // create `global_skills -> legacy_generation_convergence -> global_skills`
+  // and make bootstrap/setup JSON output impossible to serialize.
+  const skillInstall: ManagedSkillInstallReport = { ...convergence.global_skills };
+  const projectSkillCleanup = convergence.project_skills.find((report): report is SkillReconcileReport => (
+    'schema' in report && path.resolve(report.target_dir) === path.resolve(root, '.agents', 'skills')
+  )) || null;
+  skillInstall.legacy_generation_convergence = convergence;
   const created: string[] = [];
 
   if (projectSkillCleanup) {
@@ -57,5 +70,12 @@ export async function reconcileManagedSkillInstallation(root: string, home?: str
   if (removedStaleGeneratedSkills.length) created.push(`stale generated skills removed (${removedStaleGeneratedSkills.length})`);
   if (removedAgentSkillAliases.length) created.push(`deprecated generated skill aliases removed (${removedAgentSkillAliases.length})`);
   if (removedCodexSkillMirrors.length) created.push(`.codex/skills generated mirrors removed (${removedCodexSkillMirrors.length})`);
+  if (convergence.retired_agent_roles.removed_count) created.push(`retired SKS-owned agent roles removed (${convergence.retired_agent_roles.removed_count})`);
+  if (convergence.managed_configs.rewritten_count) created.push(`retired SKS-owned config/MCP entries reconciled (${convergence.managed_configs.detected_count})`);
+  const removedRuntimeAssets = convergence.retired_runtime_scopes.reduce(
+    (sum, report) => sum + report.removed_managed_artifact_count,
+    0
+  );
+  if (removedRuntimeAssets) created.push(`retired SKS-owned runtime assets removed (${removedRuntimeAssets})`);
   return { skillInstall, created };
 }

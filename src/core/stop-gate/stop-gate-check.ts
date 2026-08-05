@@ -4,6 +4,7 @@ import { missionDir } from '../mission.js';
 import { resolveStopGate, gateStatInfo } from './stop-gate-resolver.js';
 import type { SksStopGateV1, StopGateCheckResult, StopGateDiagnostics, StopGateAction } from './stop-gate-types.js';
 import { isRecord } from '../json/records.js';
+import { terminalBlockedNarutoGate } from '../subagents/terminal-subagent-state.js';
 
 const HARD_BLOCKER_FILE = 'hard-blocker.json';
 
@@ -45,6 +46,7 @@ function rawGateToV1(raw: Record<string, unknown> | null, gatePath: string, rout
   const terminalState = (raw.terminal_state as string) || (passed ? 'completed' : 'blocked');
   const evidence = isRecord(raw.evidence) ? raw.evidence : {};
   return {
+    ...(raw as any),
     schema: 'sks.stop-gate.v1',
     route: route || String(raw.route || 'Naruto'),
     route_command: String(raw.route_command || '$Naruto'),
@@ -173,19 +175,20 @@ export async function checkStopGate(input: {
   }
 
   const notApplicable = normalizedGate.status === 'not_applicable';
+  const terminalBlocked = route === 'Naruto' && terminalBlockedNarutoGate(normalizedGate);
   const missingFields: string[] = [];
-  if (!notApplicable && normalizedGate.status !== 'passed') missingFields.push('status');
-  if (!notApplicable && normalizedGate.passed !== true) missingFields.push('passed');
+  if (!notApplicable && !terminalBlocked && normalizedGate.status !== 'passed') missingFields.push('status');
+  if (!notApplicable && !terminalBlocked && normalizedGate.passed !== true) missingFields.push('passed');
   if (notApplicable && !String(normalizedGate.reason || '').trim()) missingFields.push('not_applicable_reason');
-  if (normalizedGate.blockers.length > 0) missingFields.push('blockers');
-  if (normalizedGate.missing_fields.length > 0) missingFields.push(...normalizedGate.missing_fields.map((field) => `missing_fields:${field}`));
+  if (!terminalBlocked && normalizedGate.blockers.length > 0) missingFields.push('blockers');
+  if (!terminalBlocked && normalizedGate.missing_fields.length > 0) missingFields.push(...normalizedGate.missing_fields.map((field) => `missing_fields:${field}`));
   if (normalizedGate.evidence.required_coverage_passed === false) missingFields.push('coverage_required_but_not_passed');
   if ((normalizedGate.evidence.uncovered_required_count ?? 0) > 0) missingFields.push(`work_order_uncovered_count:${normalizedGate.evidence.uncovered_required_count}`);
 
   if (
-    (normalizedGate.status === 'passed' && normalizedGate.passed === true || notApplicable)
-    && normalizedGate.blockers.length === 0
-    && normalizedGate.missing_fields.length === 0
+    (normalizedGate.status === 'passed' && normalizedGate.passed === true || notApplicable || terminalBlocked)
+    && (terminalBlocked || normalizedGate.blockers.length === 0)
+    && (terminalBlocked || normalizedGate.missing_fields.length === 0)
     && missingFields.length === 0
   ) {
     const action: StopGateAction = 'allow_stop';
@@ -201,9 +204,9 @@ export async function checkStopGate(input: {
       selected_gate_mtime: statInfo.mtime,
       current_state_path: resolution.current_state_path,
       current_state_mission_id: resolution.current_state_mission_id,
-      reason: notApplicable ? 'gate_not_applicable' : 'gate_passed',
+      reason: notApplicable ? 'gate_not_applicable' : terminalBlocked ? 'gate_terminal_blocked' : 'gate_passed',
       missing_fields: [],
-      blockers: [],
+      blockers: terminalBlocked ? normalizedGate.blockers : [],
     };
     await writeDiagnostics(root, missionId, diagnostics);
     return {
@@ -217,6 +220,8 @@ export async function checkStopGate(input: {
       diagnostics,
       feedback: notApplicable
         ? `Stop allowed: active gate is not applicable at ${resolution.gate_path}`
+        : terminalBlocked
+          ? `Stop allowed: official subagent workflow reached a trustworthy terminal blocked state at ${resolution.gate_path}`
         : `Stop allowed: gate passed at ${resolution.gate_path}`,
     };
   }

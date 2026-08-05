@@ -53,12 +53,12 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
     for (const blocker of normalizeList(telegramRemote.blockers)) warnings.add(`telegram_remote:${blocker}`)
     if (!normalizeList(telegramRemote.blockers).length) warnings.add('telegram_remote_degraded')
   }
-  const codex0138Doctor = input.codex_0138_doctor || null
-  if (codex0138Doctor?.ok === false) for (const blocker of normalizeList(codex0138Doctor.blockers)) warnings.add(blocker)
-  for (const warning of normalizeList(codex0138Doctor?.warnings)) warnings.add(warning)
-  const codex0139RealProbes = input.codex_0139_real_probes || null
-  if (codex0139RealProbes?.real_probes_last_run_status === 'blocked') warnings.add('codex_0139_real_probes_blocked')
-  if (codex0139RealProbes?.real_probes_last_run_status === 'not_run') warnings.add('codex_0139_real_probes_not_run')
+  const codexCurrentAppDoctor = input.codex_current_app_doctor || null
+  if (codexCurrentAppDoctor?.ok === false) for (const blocker of normalizeList(codexCurrentAppDoctor.blockers)) warnings.add(blocker)
+  for (const warning of normalizeList(codexCurrentAppDoctor?.warnings)) warnings.add(warning)
+  const codexCurrentCoreRealProbes = input.codex_current_core_real_probes || null
+  if (codexCurrentCoreRealProbes?.real_probes_last_run_status === 'blocked') warnings.add('codex_current_core_real_probes_blocked')
+  if (codexCurrentCoreRealProbes?.real_probes_last_run_status === 'not_run') warnings.add('codex_current_core_real_probes_not_run')
   for (const warning of normalizeList(input.codex_plugin_app_template_policy?.doctor_warnings)) warnings.add(warning)
   const codexAppHarness = input.codex_app_harness_matrix || null
   for (const warning of normalizeList(codexAppHarness?.warnings)) warnings.add(warning)
@@ -84,6 +84,30 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
     if (report.ok === false || report.core_skill_integrity?.ok === false) {
       blockers.add(`${scope}_skills_reconcile_failed`)
       for (const warning of normalizeList(report.warnings)) warnings.add(`${scope}_skills:${warning}`)
+    }
+  }
+  const legacyGenerationConvergence = skills?.convergence || null
+  const legacyGenerationConvergenceRequired = input.require_legacy_generation_convergence === true
+  if (legacyGenerationConvergenceRequired && legacyGenerationConvergence?.ok !== true) {
+    blockers.add(legacyGenerationConvergence ? 'legacy_generation_convergence_failed' : 'legacy_generation_convergence_missing')
+  }
+  if (legacyGenerationConvergence?.ok === false) {
+    blockers.add('legacy_generation_convergence_failed')
+    for (const blocker of normalizeList(legacyGenerationConvergence.blockers)) {
+      blockers.add(`legacy_generation:${blocker}`)
+    }
+    for (const warning of normalizeList(legacyGenerationConvergence.warnings)) {
+      warnings.add(`legacy_generation:${warning}`)
+    }
+    if (legacyGenerationConvergence.retired_agent_roles?.ok === false) {
+      blockers.add('retired_agent_role_reconcile_failed')
+    }
+    if (legacyGenerationConvergence.managed_configs?.ok === false) {
+      blockers.add('managed_config_convergence_failed')
+    }
+    if (Array.isArray(legacyGenerationConvergence.retired_runtime_scopes)
+      && legacyGenerationConvergence.retired_runtime_scopes.some((report: any) => report?.ok !== true)) {
+      blockers.add('retired_runtime_scope_reconcile_failed')
     }
   }
   const repairReadiness = buildRepairReadiness(input)
@@ -144,8 +168,8 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
     codex_config_readable_by_node: codexConfigNode,
     codex_config_readable_by_codex_cli: actualOk,
     codex_doctor: codexDoctor || null,
-    codex_0138_doctor: codex0138Doctor,
-    codex_0139_real_probes: codex0139RealProbes,
+    codex_current_app_doctor: codexCurrentAppDoctor,
+    codex_current_core_real_probes: codexCurrentCoreRealProbes,
     codex_plugin_inventory: input.codex_plugin_inventory || null,
     codex_plugin_app_template_policy: input.codex_plugin_app_template_policy || null,
     codex_app_harness_matrix: codexAppHarness,

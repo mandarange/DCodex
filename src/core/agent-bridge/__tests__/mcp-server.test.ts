@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
+import { Client, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { invokeSksTool, runMcpServer } from '../mcp-server.js';
 import { buildAgentManifest } from '../agent-manifest.js';
 import {
@@ -15,12 +16,50 @@ import { commandContract, validateJsonSchema } from '../../safety/command-contra
 import { runProcess } from '../../fsx.js';
 import { resolveOfficialCodexPackageRuntime } from '../../codex-runtime/resolve-codex-runtime.js';
 import { hostCapabilityProjectCodexConfigArgs } from '../../subagents/official-subagent-runner.js';
+import {
+  MCP_PROTOCOL_VERSION,
+  MCP_SERVER_INFO_META_KEY,
+  modernMcpRequest
+} from '../../mcp/modern-protocol.js';
 
 interface JsonRpcResponse {
   jsonrpc: string;
   id: number;
   result?: any;
-  error?: { code: number; message: string };
+  error?: { code: number; message: string; data?: any };
+}
+
+class InMemoryMcpTransport implements Transport {
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+  onmessage?: (message: JSONRPCMessage) => void;
+  private buffer = '';
+
+  constructor(
+    private readonly input: PassThrough,
+    private readonly output: PassThrough
+  ) {}
+
+  async start(): Promise<void> {
+    this.output.on('data', (chunk: Buffer) => {
+      this.buffer += chunk.toString('utf8');
+      for (;;) {
+        const newline = this.buffer.indexOf('\n');
+        if (newline < 0) break;
+        const line = this.buffer.slice(0, newline).trim();
+        this.buffer = this.buffer.slice(newline + 1);
+        if (line) this.onmessage?.(JSON.parse(line) as JSONRPCMessage);
+      }
+    });
+  }
+
+  async send(message: JSONRPCMessage): Promise<void> {
+    this.input.write(`${JSON.stringify(message)}\n`);
+  }
+
+  async close(): Promise<void> {
+    this.input.end();
+  }
 }
 
 function makeHarness() {
@@ -42,6 +81,12 @@ function makeHarness() {
 
 function send(stream: PassThrough, message: Record<string, unknown>): void {
   stream.write(`${JSON.stringify(message)}\n`);
+}
+
+function mcpRequest(id: number, method: string, params: Record<string, unknown> = {}): Record<string, unknown> {
+  return modernMcpRequest(id, method, params, {
+    clientInfo: { name: 'sks-mcp-test-client', version: '0.0.1' }
+  });
 }
 
 function nativeHostCapabilityDependencies(toolNames: string[]) {
@@ -84,45 +129,80 @@ async function waitForResponseId(responses: JsonRpcResponse[], id: number, timeo
   throw new Error(`Timed out waiting for JSON-RPC response id ${id}`);
 }
 
-test('runMcpServer responds to initialize with well-formed protocol/server info', async () => {
+test('runMcpServer responds to server/discover with modern protocol/server info', async () => {
   const { clientToServer, serverToClient, responses } = makeHarness();
   await runMcpServer({ input: clientToServer, output: serverToClient });
 
-  send(clientToServer, {
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'initialize',
-    params: {
-      protocolVersion: '2024-11-05',
-      capabilities: {},
-      clientInfo: { name: 'sks-mcp-test-client', version: '0.0.1' }
-    }
-  });
+  send(clientToServer, mcpRequest(1, 'server/discover'));
 
   const response = await waitForResponseId(responses, 1);
   assert.equal(response.jsonrpc, '2.0');
   assert.equal(response.id, 1);
-  assert.ok(response.result, 'initialize response missing result');
-  assert.equal(typeof response.result.protocolVersion, 'string');
-  assert.equal(response.result.serverInfo?.name, 'sks-mcp-server');
-  assert.equal(typeof response.result.serverInfo?.version, 'string');
-  assert.ok(response.result.capabilities, 'initialize response missing capabilities');
-  assert.ok('tools' in response.result.capabilities, 'initialize capabilities missing tools key');
+  assert.ok(response.result, 'server/discover response missing result');
+  assert.equal(response.result.resultType, 'complete');
+  assert.deepEqual(response.result.supportedVersions, [MCP_PROTOCOL_VERSION]);
+  assert.equal(response.result._meta?.[MCP_SERVER_INFO_META_KEY]?.name, 'sks-mcp-server');
+  assert.equal(typeof response.result._meta?.[MCP_SERVER_INFO_META_KEY]?.version, 'string');
+  assert.ok(response.result.capabilities, 'server/discover response missing capabilities');
+  assert.ok('tools' in response.result.capabilities, 'server/discover capabilities missing tools key');
+  assert.equal(response.result.ttlMs, 0);
+  assert.equal(response.result.cacheScope, 'private');
+});
+
+test('official MCP v2 client negotiates the 2026-07-28 era with runMcpServer', async () => {
+  const clientToServer = new PassThrough();
+  const serverToClient = new PassThrough();
+  await runMcpServer({ input: clientToServer, output: serverToClient });
+  const client = new Client(
+    { name: 'sks-sdk-negotiation-test', version: '0.0.1' },
+    { versionNegotiation: { mode: 'auto', probe: { timeoutMs: 2_000, maxRetries: 0 } } }
+  );
+
+  try {
+    await client.connect(new InMemoryMcpTransport(clientToServer, serverToClient), { timeout: 2_000 });
+    assert.equal(client.getProtocolEra(), 'modern');
+    assert.equal(client.getNegotiatedProtocolVersion(), MCP_PROTOCOL_VERSION);
+    assert.equal(client.getServerVersion()?.name, 'sks-mcp-server');
+    assert.ok(client.getServerCapabilities()?.tools);
+
+    const result = await client.listTools({}, { timeout: 2_000, cacheMode: 'refresh' });
+    assert.ok(result.tools.some((tool) => tool.name === 'status'));
+  } finally {
+    await client.close();
+  }
+});
+
+test('runMcpServer rejects legacy initialize because the SKS-owned server is modern-only', async () => {
+  const { clientToServer, serverToClient, responses } = makeHarness();
+  await runMcpServer({ input: clientToServer, output: serverToClient });
+  send(clientToServer, {
+    jsonrpc: '2.0', id: 1, method: 'initialize',
+    params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'c', version: '0' } }
+  });
+  const response = await waitForResponseId(responses, 1);
+  assert.equal(response.error?.code, -32022);
+  assert.deepEqual(response.error?.data, {
+    supported: [MCP_PROTOCOL_VERSION],
+    requested: '2024-11-05'
+  });
 });
 
 test('runMcpServer tools/list returns only read-only manifest tools by default', async () => {
   const { clientToServer, serverToClient, responses } = makeHarness();
   await runMcpServer({ input: clientToServer, output: serverToClient });
 
-  send(clientToServer, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'c', version: '0' } } });
+  send(clientToServer, mcpRequest(1, 'server/discover'));
   await waitForResponseId(responses, 1);
 
-  send(clientToServer, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+  send(clientToServer, mcpRequest(2, 'tools/list'));
   const response = await waitForResponseId(responses, 2);
 
   assert.equal(response.jsonrpc, '2.0');
   assert.ok(response.result, 'tools/list response missing result');
   assert.ok(Array.isArray(response.result.tools), 'tools/list result.tools must be an array');
+  assert.equal(response.result.resultType, 'complete');
+  assert.equal(response.result.ttlMs, 0);
+  assert.equal(response.result.cacheScope, 'private');
   assert.ok(response.result.tools.length > 0, 'tools/list returned no tools');
 
   const manifest = buildAgentManifest();
@@ -344,10 +424,10 @@ test('runMcpServer tools/call on a safe read-only tool spawns sks and returns it
   const { clientToServer, serverToClient, responses } = makeHarness();
   await runMcpServer({ input: clientToServer, output: serverToClient });
 
-  send(clientToServer, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'c', version: '0' } } });
+  send(clientToServer, mcpRequest(1, 'server/discover'));
   await waitForResponseId(responses, 1);
 
-  send(clientToServer, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'status', arguments: {} } });
+  send(clientToServer, mcpRequest(2, 'tools/call', { name: 'status', arguments: {} }));
   const response = await waitForResponseId(responses, 2, 60_000);
 
   assert.equal(response.jsonrpc, '2.0');
@@ -357,27 +437,26 @@ test('runMcpServer tools/call on a safe read-only tool spawns sks and returns it
   assert.equal(response.result.content[0].type, 'text');
   assert.equal(typeof response.result.content[0].text, 'string');
   assert.equal(response.result.isError, false);
+  assert.equal(response.result.resultType, 'complete');
 });
 
-test('runMcpServer tools/call rejects a tool name absent from the manifest without spawning a process', async () => {
+test('runMcpServer tools/call rejects a tool name absent from the manifest with Invalid Params', async () => {
   const { clientToServer, serverToClient, responses } = makeHarness();
   await runMcpServer({ input: clientToServer, output: serverToClient });
 
-  send(clientToServer, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'c', version: '0' } } });
+  send(clientToServer, mcpRequest(1, 'server/discover'));
   await waitForResponseId(responses, 1);
 
   const bogusName = 'definitely_not_a_real_sks_command_xyz';
   const manifest = buildAgentManifest();
   assert.ok(!manifest.tools.some((t) => t.name === bogusName), 'fixture assumption invalid: bogus tool name collides with a real command');
 
-  send(clientToServer, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: bogusName, arguments: {} } });
+  send(clientToServer, mcpRequest(2, 'tools/call', { name: bogusName, arguments: {} }));
   const response = await waitForResponseId(responses, 2);
 
   assert.equal(response.jsonrpc, '2.0');
-  assert.ok(response.result, 'unknown tool call should return a tool-result (isError: true), not hang');
-  assert.equal(response.result.isError, true);
-  assert.ok(Array.isArray(response.result.content) && response.result.content.length > 0);
-  assert.match(response.result.content[0].text, /Unknown or unexposed tool/);
+  assert.equal(response.error?.code, -32602);
+  assert.match(response.error?.message || '', /Tool .* not found/);
 });
 
 test('runMcpServer tools/call rejects a non-read-only tool when --expose-exec is not set', async () => {
@@ -388,13 +467,36 @@ test('runMcpServer tools/call rejects a non-read-only tool when --expose-exec is
   const nonReadOnly = manifest.tools.find((t) => !t.read_only);
   assert.ok(nonReadOnly, 'fixture assumption invalid: no non-read-only commands in manifest');
 
-  send(clientToServer, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'c', version: '0' } } });
+  send(clientToServer, mcpRequest(1, 'server/discover'));
   await waitForResponseId(responses, 1);
 
-  send(clientToServer, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: nonReadOnly!.name, arguments: {} } });
+  send(clientToServer, mcpRequest(2, 'tools/call', { name: nonReadOnly!.name, arguments: {} }));
   const response = await waitForResponseId(responses, 2);
 
-  assert.ok(response.result, 'non-exposed tool call should return a tool-result (isError: true), not hang');
-  assert.equal(response.result.isError, true);
-  assert.match(response.result.content[0].text, /Unknown or unexposed tool/);
+  assert.equal(response.error?.code, -32602);
+  assert.match(response.error?.message || '', /Tool .* not found/);
+});
+
+test('runMcpServer bounds concurrent tool execution and rejects calls when its queue is full', async () => {
+  const { clientToServer, serverToClient, responses } = makeHarness();
+  await runMcpServer({
+    input: clientToServer,
+    output: serverToClient,
+    maxConcurrentTools: 1,
+    maxQueuedTools: 0
+  });
+
+  send(clientToServer, mcpRequest(1, 'server/discover'));
+  await waitForResponseId(responses, 1);
+
+  send(clientToServer, mcpRequest(2, 'tools/call', { name: 'status', arguments: {} }));
+  send(clientToServer, mcpRequest(3, 'tools/call', { name: 'status', arguments: {} }));
+  const first = await waitForResponseId(responses, 2, 60_000);
+  const second = await waitForResponseId(responses, 3, 60_000);
+  const results = [first.result, second.result];
+
+  assert.equal(results.filter((result) => result?.isError === false).length, 1);
+  const busy = results.find((result) => result?.structuredContent?.code === 'SERVER_BUSY');
+  assert.ok(busy, 'one concurrent request should be rejected when no queue capacity is configured');
+  assert.equal(busy.isError, true);
 });

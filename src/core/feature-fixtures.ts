@@ -68,7 +68,7 @@ const FIXTURES = Object.freeze({
   // feature-fixture-executor.ts), so a real full scan (~79 modules) needs a
   // realistic budget; the 8000 default is sized for smaller/typical repos, not
   // this one, so pass an explicit larger budget rather than lowering the gate.
-  'cli-wiki-code': fixture('execute_and_validate_artifacts', 'sks wiki refresh --code --token-budget 20000 --json', [{ path: '.sneakoscope/wiki/code-pack.json', schema: 'sks.code-pack.v1', optional: true }], 'pass'),
+  'cli-wiki-code': fixture('execute_and_validate_artifacts', 'sks align run --token-budget 20000 --json', [{ path: '.sneakoscope/wiki/code-pack.json', schema: 'sks.code-pack.v1', optional: true }], 'pass'),
   'cli-agent-bridge': fixture('execute_and_validate_artifacts', 'sks agent-bridge setup --json', [{ path: '.sneakoscope/agent-bridge/manifest.json', schema: 'sks.agent-manifest.v2', optional: true }], 'pass'),
   'cli-mcp-server': fixture('execute', 'sks mcp-server --probe', [], 'pass'),
   'cli-selftest': fixture('execute', 'sks selftest --mock', [], 'pass'),
@@ -96,6 +96,9 @@ const FIXTURES = Object.freeze({
   'cli-rust': fixture('execute', 'sks rust smoke --json', [], 'pass'),
   'cli-skill-dream': fixture('execute', 'sks skill-dream status --json', [], 'pass'),
   'cli-gc': fixture('execute', 'sks gc --dry-run --json', [], 'pass'),
+  'cli-cleanup': fixture('execute', 'sks cleanup plan --json', [], 'pass', {
+    reason: 'Destructive blank-state apply stays behind explicit `sks cleanup run --apply`; the contract fixture only exercises the read-only plan surface.'
+  }),
   'cli-memory': fixture('execute', 'sks memory --dry-run --json', [], 'pass', { timeout_ms: 300000 }),
   'cli-stats': fixture('execute', 'sks stats --json', [], 'pass'),
   'cli-dollar-commands': fixture('execute', 'sks dollar-commands --json', [], 'pass'),
@@ -186,6 +189,9 @@ const FIXTURES = Object.freeze({
   'route-ux-review': fixture('mock', 'sks image-ux-review fixture --mock --json', ['completion-proof.json', { path: 'image-voxel-ledger.json', schema: 'sks.image-voxel-ledger.v1' }, 'image-ux-generated-review-ledger.json'], 'pass', { reason: 'Alias of route-image-ux-review ($UX-Review -> $Image-UX-Review); shares the identical underlying command and the same intentional exit-1/ok:false mock-fixture hardening in imageUxFixture().' }),
   'route-db': fixture('execute', 'node ./dist/scripts/db-route-materialization-check.js', [], 'pass', { root_mode: 'source_checkout_required' }),
   'route-wiki': fixture('execute_and_validate_artifacts', 'sks wiki image-ingest test/fixtures/images/one-by-one.png --json', [{ path: 'completion-proof.json', schema: 'sks.completion-proof.v1' }, { path: 'image-voxel-ledger.json', schema: 'sks.image-voxel-ledger.v1' }], 'pass'),
+  'route-cleanup': fixture('execute', 'sks cleanup plan --json', [], 'pass', {
+    reason: '$Cleanup / sks cleanup destructive apply remains explicit (`run --apply`); contract coverage uses the read-only plan command.'
+  }),
   'route-gx': fixture('execute_and_validate_artifacts', 'sks gx validate fixture --mock --json', ['completion-proof.json', { path: 'image-voxel-ledger.json', schema: 'sks.image-voxel-ledger.v1' }, 'gx-validation.json'], 'blocked', { reason: 'gxValidateFixture() intentionally exits non-zero (execution_class: mock_fixture) for an honest mock/blocked result; it does write all three declared artifacts.' }),
   'route-sks': fixture('static', '$SKS control-surface route', ['completion-proof.json'], 'pass', {
     quality: 'wiring_only',

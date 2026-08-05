@@ -27,7 +27,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -92,7 +92,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -121,7 +121,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -152,7 +152,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -183,7 +183,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -212,7 +212,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -243,7 +243,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -251,7 +251,7 @@
       "id": "codex-app:handoff",
       "command": "node ./dist/scripts/codex-app-handoff-check.js",
       "deps": [
-        "codex:0138-capability-comprehensive"
+        "codex:current:capability"
       ],
       "resource": [
         "cpu-light",
@@ -275,7 +275,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -304,7 +304,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -334,7 +334,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -365,7 +365,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -396,7 +396,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -426,7 +426,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -455,97 +455,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
-      ],
-      "output_contract": "sks.gate-result.v1"
-    },
-    {
-      "id": "codex:0.134-runner-truth",
-      "command": "node ./dist/scripts/codex-0-134-runner-truth-check.js",
-      "deps": [],
-      "resource": [
-        "cpu-light",
-        "fs-read"
-      ],
-      "side_effect": "hermetic",
-      "timeout_ms": 120000,
-      "cache": {
-        "enabled": true,
-        "inputs": [
-          "package.json",
-          "release-gates.v2.json",
-          "src/**",
-          "schemas/**"
-        ]
-      },
-      "isolation": {
-        "home": "temp",
-        "codex_home": "temp",
-        "report_dir": "per-gate"
-      },
-      "preset": [
-        "release"
-      ],
-      "output_contract": "sks.gate-result.v1"
-    },
-    {
-      "id": "codex:0.137-compat",
-      "command": "node ./dist/scripts/codex-0-137-compat-check.js",
-      "deps": [],
-      "resource": [
-        "cpu-light",
-        "fs-read"
-      ],
-      "side_effect": "hermetic",
-      "timeout_ms": 180000,
-      "cache": {
-        "enabled": true,
-        "inputs": [
-          "package.json",
-          "release-gates.v2.json",
-          "src/**",
-          "schemas/**"
-        ]
-      },
-      "isolation": {
-        "home": "temp",
-        "codex_home": "temp",
-        "report_dir": "per-gate"
-      },
-      "preset": [
-        "release"
-      ],
-      "output_contract": "sks.gate-result.v1"
-    },
-    {
-      "id": "codex:0138-doctor",
-      "command": "node ./dist/scripts/codex-0138-doctor-check.js",
-      "deps": [
-        "codex:0138-capability-comprehensive"
-      ],
-      "resource": [
-        "cpu-light",
-        "fs-read"
-      ],
-      "side_effect": "hermetic",
-      "timeout_ms": 120000,
-      "cache": {
-        "enabled": true,
-        "inputs": [
-          "package.json",
-          "package-lock.json",
-          "release-gates.v2.json",
-          "src/**",
-          "schemas/**"
-        ]
-      },
-      "isolation": {
-        "home": "temp",
-        "codex_home": "temp",
-        "report_dir": "per-gate"
-      },
-      "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -574,7 +484,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -608,7 +518,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -701,7 +611,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -730,7 +640,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -759,7 +669,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -788,7 +698,35 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
+      ],
+      "output_contract": "sks.gate-result.v1"
+    },
+    {
+      "id": "install-surface:ssot",
+      "command": "node ./dist/scripts/install-surface-ssot-check.js",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 60000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "plugins/sks/.codex-plugin/plugin.json",
+          "src/scripts/install-surface-ssot-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -818,7 +756,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -849,7 +787,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -879,7 +817,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -908,7 +846,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -937,7 +875,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -966,7 +904,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -994,7 +932,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1021,7 +959,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1048,7 +986,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1075,7 +1013,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1106,7 +1044,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1137,7 +1075,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1167,7 +1105,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1198,7 +1136,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1227,72 +1165,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
-      ],
-      "output_contract": "sks.gate-result.v1"
-    },
-    {
-      "id": "legacy:gate-purge",
-      "command": "node ./dist/scripts/legacy-gate-purge-check.js",
-      "deps": [],
-      "resource": [
-        "cpu-light",
-        "fs-read"
-      ],
-      "side_effect": "hermetic",
-      "timeout_ms": 120000,
-      "cache": {
-        "enabled": true,
-        "inputs": [
-          "package.json",
-          "release-gates.v2.json",
-          "src/cli/**",
-          "src/commands/**",
-          "src/core/agents/**",
-          "src/core/commands/**",
-          "src/core/init/**",
-          "src/core/routes.ts",
-          "src/scripts/legacy-gate-purge-check.ts"
-        ]
-      },
-      "isolation": {
-        "home": "temp",
-        "codex_home": "temp",
-        "report_dir": "per-gate"
-      },
-      "preset": [
-        "release"
-      ],
-      "output_contract": "sks.gate-result.v1"
-    },
-    {
-      "id": "legacy:gate-inventory",
-      "command": "node ./dist/scripts/legacy-gate-inventory-check.js",
-      "deps": [
-        "legacy:gate-purge"
-      ],
-      "resource": [
-        "cpu-light",
-        "fs-read"
-      ],
-      "side_effect": "hermetic",
-      "timeout_ms": 120000,
-      "cache": {
-        "enabled": true,
-        "inputs": [
-          "package.json",
-          "release-gates.v2.json",
-          "docs/sks-4-migration.md",
-          "src/scripts/legacy-gate-inventory-check.ts"
-        ]
-      },
-      "isolation": {
-        "home": "temp",
-        "codex_home": "temp",
-        "report_dir": "per-gate"
-      },
-      "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1320,7 +1193,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1347,39 +1220,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
-      ],
-      "output_contract": "sks.gate-result.v1"
-    },
-    {
-      "id": "legacy:strong-inventory",
-      "command": "node ./dist/scripts/legacy-strong-inventory-check.js",
-      "deps": [
-        "legacy:gate-inventory"
-      ],
-      "resource": [
-        "cpu-light",
-        "fs-read"
-      ],
-      "side_effect": "hermetic",
-      "timeout_ms": 120000,
-      "cache": {
-        "enabled": true,
-        "inputs": [
-          "package.json",
-          "release-gates.v2.json",
-          "docs/sks-4-migration.md",
-          "src/core/triwiki/triwiki-gate-impact-map.ts",
-          "src/scripts/legacy-strong-inventory-check.ts"
-        ]
-      },
-      "isolation": {
-        "home": "temp",
-        "codex_home": "temp",
-        "report_dir": "per-gate"
-      },
-      "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1387,7 +1228,7 @@
       "id": "migration:upgrade-safety",
       "command": "node ./dist/scripts/current-upgrade-matrix-check.js",
       "deps": [
-        "legacy:strong-inventory"
+        "commands:current-surface-only"
       ],
       "resource": [
         "cpu-light",
@@ -1474,7 +1315,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1503,7 +1344,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1532,7 +1373,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1592,7 +1433,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1623,7 +1464,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1656,7 +1497,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1689,7 +1530,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1718,7 +1559,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1747,7 +1588,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1776,7 +1617,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1806,7 +1647,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1830,7 +1671,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1867,7 +1708,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1898,7 +1739,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -1931,7 +1772,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2069,7 +1910,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2098,7 +1939,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2132,7 +1973,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2161,7 +2002,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2222,7 +2063,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2251,7 +2092,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2280,7 +2121,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2351,8 +2192,7 @@
         "codex-control:all-pipelines",
         "codex-sdk:all-pipelines",
         "codex-sdk:integration-comprehensive",
-        "codex:0.134-runner-truth",
-        "codex:0.137-compat",
+        "codex:current:capability",
         "core-skill:card-schema-deployment-snapshot",
         "core-skill:heldout-validation",
         "core-skill:no-inference-optimizer",
@@ -2399,7 +2239,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2517,7 +2357,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2546,7 +2386,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2570,7 +2410,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2693,7 +2533,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2722,7 +2562,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2781,7 +2621,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2812,7 +2652,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2843,7 +2683,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2874,7 +2714,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2903,7 +2743,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2934,7 +2774,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -2992,7 +2832,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3021,7 +2861,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3393,7 +3233,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3425,7 +3265,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3454,37 +3294,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
-      ],
-      "output_contract": "sks.gate-result.v1"
-    },
-    {
-      "id": "codex:0138-capability-comprehensive",
-      "command": "node ./dist/scripts/codex-0138-capability-check.js && node ./dist/scripts/codex-0138-capability-artifact-check.js && node ./dist/scripts/codex-0138-feature-probes-check.js",
-      "deps": [],
-      "resource": [
-        "cpu-light",
-        "fs-read"
-      ],
-      "side_effect": "hermetic",
-      "timeout_ms": 420000,
-      "cache": {
-        "enabled": true,
-        "inputs": [
-          "package.json",
-          "package-lock.json",
-          "release-gates.v2.json",
-          "src/**",
-          "schemas/**"
-        ]
-      },
-      "isolation": {
-        "home": "temp",
-        "codex_home": "temp",
-        "report_dir": "per-gate"
-      },
-      "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3515,7 +3325,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3546,7 +3356,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3577,7 +3387,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3606,7 +3416,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3637,7 +3447,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3661,7 +3471,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3692,7 +3502,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3721,7 +3531,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3750,7 +3560,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3779,7 +3589,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3808,7 +3618,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3839,7 +3649,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3871,7 +3681,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3900,7 +3710,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3925,7 +3735,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -3954,13 +3764,13 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
     {
-      "id": "codex:0144:manifest",
-      "command": "node ./dist/scripts/codex-0144-manifest-check.js",
+      "id": "codex:current:manifest",
+      "command": "node ./dist/scripts/codex-current-manifest-check.js",
       "deps": [],
       "resource": [
         "cpu-light",
@@ -3992,10 +3802,10 @@
       "output_contract": "sks.gate-result.v1"
     },
     {
-      "id": "codex:0144:binary-identity",
-      "command": "node ./dist/scripts/codex-0144-binary-identity-check.js",
+      "id": "codex:current:binary-identity",
+      "command": "node ./dist/scripts/codex-current-binary-identity-check.js",
       "deps": [
-        "codex:0144:manifest"
+        "codex:current:manifest"
       ],
       "resource": [
         "cpu-light",
@@ -4011,7 +3821,7 @@
           "release-gates.v2.json",
           "src/core/codex-compat/**",
           "src/core/codex-runtime/**",
-          "src/scripts/codex-0144-binary-identity-check.ts"
+          "src/scripts/codex-current-binary-identity-check.ts"
         ]
       },
       "isolation": {
@@ -4025,10 +3835,10 @@
       "output_contract": "sks.gate-result.v1"
     },
     {
-      "id": "codex:0144:policy",
-      "command": "node ./dist/scripts/codex-0144-policy-check.js",
+      "id": "codex:current:policy",
+      "command": "node ./dist/scripts/codex-current-policy-check.js",
       "deps": [
-        "codex:0144:manifest"
+        "codex:current:manifest"
       ],
       "resource": [
         "cpu-light",
@@ -4042,7 +3852,7 @@
           "package.json",
           "release-gates.v2.json",
           "src/core/codex-control/**",
-          "src/scripts/codex-0144-policy-check.ts"
+          "src/scripts/codex-current-policy-check.ts"
         ]
       },
       "isolation": {
@@ -4056,10 +3866,10 @@
       "output_contract": "sks.gate-result.v1"
     },
     {
-      "id": "codex:0144:app-server-v2",
-      "command": "node ./dist/scripts/codex-0144-app-server-v2-check.js",
+      "id": "codex:current:app-server-v2",
+      "command": "node ./dist/scripts/codex-current-app-server-v2-check.js",
       "deps": [
-        "codex:0144:manifest"
+        "codex:current:manifest"
       ],
       "resource": [
         "cpu-light",
@@ -4074,8 +3884,8 @@
           "release-gates.v2.json",
           "src/core/codex-control/**",
           "src/core/codex-compat/**",
-          "schemas/codex/app-server-0.145/**",
-          "src/scripts/codex-0144-app-server-v2-check.ts"
+          "schemas/codex/app-server-0.146/**",
+          "src/scripts/codex-current-app-server-v2-check.ts"
         ]
       },
       "isolation": {
@@ -4089,10 +3899,10 @@
       "output_contract": "sks.gate-result.v1"
     },
     {
-      "id": "codex:0144:thread-store",
-      "command": "node ./dist/scripts/codex-0144-thread-store-check.js",
+      "id": "codex:current:thread-store",
+      "command": "node ./dist/scripts/codex-current-thread-store-check.js",
       "deps": [
-        "codex:0144:manifest"
+        "codex:current:manifest"
       ],
       "resource": [
         "cpu-light",
@@ -4106,7 +3916,7 @@
           "package.json",
           "release-gates.v2.json",
           "src/core/codex-control/**",
-          "src/scripts/codex-0144-thread-store-check.ts"
+          "src/scripts/codex-current-thread-store-check.ts"
         ]
       },
       "isolation": {
@@ -4120,12 +3930,12 @@
       "output_contract": "sks.gate-result.v1"
     },
     {
-      "id": "codex:0144:capability",
-      "command": "node ./dist/scripts/codex-0144-capability-check.js",
+      "id": "codex:current:capability",
+      "command": "node ./dist/scripts/codex-current-capability-check.js",
       "deps": [
-        "codex:0144:manifest",
-        "codex:0144:binary-identity",
-        "codex:0144:app-server-v2"
+        "codex:current:manifest",
+        "codex:current:binary-identity",
+        "codex:current:app-server-v2"
       ],
       "resource": [
         "cpu-light",
@@ -4143,7 +3953,7 @@
           "src/core/codex-compat/**",
           "src/core/codex-runtime/**",
           "config/codex-releases/**",
-          "schemas/codex/app-server-0.145/**"
+          "schemas/codex/app-server-0.146/**"
         ]
       },
       "isolation": {
@@ -4181,7 +3991,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4210,7 +4020,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4239,7 +4049,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4271,7 +4081,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4300,7 +4110,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4329,7 +4139,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4361,7 +4171,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4392,7 +4202,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4421,7 +4231,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4452,7 +4262,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4483,7 +4293,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4514,7 +4324,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4548,7 +4358,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4590,7 +4400,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4689,7 +4499,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4726,7 +4536,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4762,7 +4572,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4798,7 +4608,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },
@@ -4831,7 +4641,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "release"
+        "confidence"
       ],
       "output_contract": "sks.gate-result.v1"
     },

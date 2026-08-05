@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 import { inspectPhysicalReleaseGates, PHYSICAL_RELEASE_GATES_SCHEMA } from '../physical-release-gates.js'
 
-const VERSION = '8.0.4'
+const VERSION = '8.0.5'
 const SHA = 'a'.repeat(40)
 
 test('physical release gates bind all four real receipts to version, commit, and artifact bytes', () => {

@@ -18,36 +18,36 @@ interface LockShape {
   packages?: Record<string, { version?: string }>
 }
 
-test('current Codex manifest, dependency graph, schemas, and package allowlist agree on preferred 0.145.0', async () => {
+test('current Codex manifest, dependency graph, schemas, and package allowlist agree on preferred 0.146.0', async () => {
   const root = process.cwd()
   const pkg = JSON.parse(await fsp.readFile(path.join(root, 'package.json'), 'utf8')) as PackageShape
   const lock = JSON.parse(await fsp.readFile(path.join(root, 'package-lock.json'), 'utf8')) as LockShape
   const parity = await codexReleaseManifestParity(root)
   const packageFiles = pkg.files || []
 
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.targetTag, 'rust-v0.145.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion, '0.145.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.preferredCliVersion, '0.145.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.sdkVersion, '0.145.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.minimumSupportedVersion, '0.133.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.narutoCapabilityFloorVersion, '0.145.0')
+  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.targetTag, 'rust-v0.146.0')
+  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion, '0.146.0')
+  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.preferredCliVersion, '0.146.0')
+  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.sdkVersion, '0.146.0')
+  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.minimumSupportedVersion, '0.146.0')
+  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.narutoCapabilityFloorVersion, '0.146.0')
   assert.equal(parity.ok, true, parity.mismatches.join(', '))
-  assert.equal(currentCodexReleaseManifestPath(root), path.join(root, 'config', 'codex-releases', 'rust-v0.145.0.json'))
-  assert.equal(pkg.dependencies?.['@openai/codex-sdk'], '0.145.0')
-  assert.equal(lock.packages?.['node_modules/@openai/codex-sdk']?.version, '0.145.0')
-  assert.equal(lock.packages?.['node_modules/@openai/codex']?.version, '0.145.0')
-  assert.ok(packageFiles.includes('config/codex-releases/rust-v0.145.0.json'))
-  assert.ok(packageFiles.includes('schemas/codex/app-server-0.145/codex_app_server_protocol.v2.schemas.json'))
+  assert.equal(currentCodexReleaseManifestPath(root), path.join(root, 'config', 'codex-releases', 'rust-v0.146.0.json'))
+  assert.equal(pkg.dependencies?.['@openai/codex-sdk'], '0.146.0')
+  assert.equal(lock.packages?.['node_modules/@openai/codex-sdk']?.version, '0.146.0')
+  assert.equal(lock.packages?.['node_modules/@openai/codex']?.version, '0.146.0')
+  assert.ok(packageFiles.includes('config/codex-releases/rust-v0.146.0.json'))
+  assert.ok(packageFiles.includes('schemas/codex/app-server-0.146/codex_app_server_protocol.v2.schemas.json'))
   assert.deepEqual(
     packageFiles.filter((entry) => entry.includes('config/codex-releases/rust-v0.')),
-    ['config/codex-releases/rust-v0.145.0.json']
+    ['config/codex-releases/rust-v0.146.0.json']
   )
   assert.equal(
-    packageFiles.filter((entry) => entry.includes('schemas/codex/app-server-0.')).every((entry) => entry.includes('app-server-0.145')),
+    packageFiles.filter((entry) => entry.includes('schemas/codex/app-server-0.')).every((entry) => entry.includes('app-server-0.146')),
     true
   )
 
-  const schemaRoot = path.join(root, 'schemas', 'codex', 'app-server-0.145')
+  const schemaRoot = path.join(root, 'schemas', 'codex', 'app-server-0.146')
   assert.equal(await canonicalSchemaDirectorySha256(schemaRoot), CURRENT_CODEX_RELEASE_MANIFEST.generatedSchemaSha256)
 })
 

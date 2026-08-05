@@ -259,7 +259,7 @@ dependencies = [
 
 [[package]]
 name = "sks-core"
-version = "8.0.4"
+version = "8.0.5"
 dependencies = [
  "globset",
  "grep-matcher",

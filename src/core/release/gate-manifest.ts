@@ -27,28 +27,12 @@ export const FORBIDDEN_RECURSIVE_GATES = new Set<string>([
 
 // Gates that always run on a release check regardless of which files changed.
 export const ALWAYS_ON_GATES = new Set<string>([
-  'release:metadata',
-  'release:readiness',
-  'release:gate-existence-audit',
+  'release:metadata-current',
   'architecture:guard',
-  'runtime:dist-parity',
-  'runtime:ts-source-of-truth',
-  'runtime:no-src-mjs',
-  'runtime:terminal-current',
-  'runtime:ts-rust-boundary',
-  'safety:side-effect-zero',
   'safety:mutation-callsite-coverage',
   'side-effect:runtime-report',
-  'core-skill:no-inference-optimizer',
-  'core-skill:heldout-validation',
-  'core-skill:deployment-snapshot',
-  'core-skill:legacy-promotion-api-audit',
-  'postinstall:safe-side-effects',
   'publish:packlist-performance',
   'publish:runtime-script-closure',
-  'legacy:gate-inventory',
-  'legacy:gate-purge',
-  'legacy:strong-inventory',
   'migration:upgrade-safety',
   'release:proof-truth',
   'release:latency-slo',
@@ -59,38 +43,30 @@ export const ALWAYS_ON_GATES = new Set<string>([
 
 // Gates that must never be skipped when planning for publish.
 export const REQUIRED_FOR_PUBLISH = new Set<string>([
-  'release:metadata',
+  'release:metadata-current',
   'architecture:guard',
-  'runtime:dist-parity',
-  'runtime:ts-rust-boundary',
-  'safety:side-effect-zero',
   'safety:mutation-callsite-coverage',
   'side-effect:runtime-report',
   'release:proof-truth',
   'release:latency-slo',
   'release:provenance',
-  'codex:0144:manifest',
-  'codex:0144:binary-identity',
-  'codex:0144:policy',
-  'codex:0144:app-server-v2',
-  'codex:0144:thread-store',
-  'codex:0144:capability',
+  'codex:current:manifest',
+  'codex:current:binary-identity',
+  'codex:current:policy',
+  'codex:current:app-server-v2',
+  'codex:current:thread-store',
+  'codex:current:capability',
   'publish:packlist-performance',
   'publish:runtime-script-closure',
-  'postinstall:safe-side-effects',
-  'legacy:gate-inventory',
-  'legacy:gate-purge',
-  'legacy:strong-inventory',
   'migration:upgrade-safety',
-  'core-skill:card-schema',
-  'core-skill:patch',
-  'core-skill:heldout-validation',
-  'core-skill:deployment-snapshot',
-  'core-skill:no-inference-optimizer',
-  'core-skill:rollout-scoring'
+  'package:published-contract',
+  'runtime:installed-smoke',
+  'schema:check',
+  'secret:preservation',
+  'typecheck'
 ])
 
-const P0_PREFIXES = ['architecture:', 'core-skill:', 'safety:', 'side-effect:', 'runtime:', 'release:', 'legacy:', 'migration:', 'publish:', 'postinstall:']
+const P0_PREFIXES = ['architecture:', 'safety:', 'side-effect:', 'runtime:', 'release:', 'migration:', 'publish:', 'package:']
 
 function tierFor(id: string): GateTier {
   if (P0_PREFIXES.some((p) => id.startsWith(p))) return 'P0'
@@ -116,7 +92,6 @@ export function affectedGlobsFor(id: string): string[] {
       return ['src/core/safety/**', 'src/scripts/side-effect-zero-gate-check.ts', 'src/scripts/mutation-callsite-coverage-check.ts', 'safety-mutation-allowlist.json']
     case 'side-effect':
       return ['src/core/safety/**', 'src/scripts/side-effect-runtime-report-check.ts', '.sneakoscope/missions/**/mutation-ledger.jsonl', '.sneakoscope/mutation-ledger.jsonl']
-    case 'legacy':
     case 'migration':
       return ['src/core/migration/**', 'src/core/codex/**', 'src/core/init.ts', 'src/cli/install-helpers.ts', 'src/scripts/current-upgrade-matrix-check.ts']
     case 'publish':

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { appendJsonl, nowIso, readJson, writeJsonAtomic } from '../fsx.js';
 import { missionDir, setCurrent } from '../mission.js';
+import { isLightCompletionRoute } from '../routes/light-routes.js';
 import { conversationId } from './payload-signals.js';
 
 const LIGHT_ROUTE_STOP_ARTIFACT = 'light-route-stop.json';
@@ -119,7 +120,8 @@ function honestGapLineResolved(line: any) {
 export function shouldLoopBackAfterHonestMode(state: any = {}) {
   if (!state?.mission_id || state.implementation_allowed === false) return false;
   const route = String(state.route || state.mode || '').toLowerCase();
-  if (['answer', 'dfix', 'wiki'].includes(route)) return false;
+  // C6 light paths + wiki (memory pack) skip Honest Mode loopback churn (T1).
+  if (isLightCompletionRoute(route) || route === 'wiki') return false;
   const attempts = Number(state.honest_loop_attempt_count || 0);
   if (Number.isFinite(attempts) && attempts >= MAX_HONEST_LOOPBACK_ATTEMPTS) return false;
   return Boolean(state.ambiguity_gate_passed || state.clarification_passed || /CONTRACT_SEALED|HONEST_LOOPBACK/i.test(String(state.phase || '')));

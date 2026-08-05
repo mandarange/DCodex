@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { rebuildMemorySummaries, TRIWIKI_SUMMARY_SCHEMA_VERSION, WRONGNESS_SUMMARY_SCHEMA_VERSION } from '../../dist/core/memory-summary.js';
 import { tempImageRoot } from '../helpers/ux-review-1-0-8-fixtures.mjs';
 
-test('memory summary rebuild writes Codex 0.133 schema v2 summaries', async () => {
+test('memory summary rebuild writes current schema v2 summaries', async () => {
   const { root } = await tempImageRoot('sks-memory-summary-');
   const summary = await rebuildMemorySummaries(root);
   assert.equal(summary.schema, 'sks.memory-summary.v2');

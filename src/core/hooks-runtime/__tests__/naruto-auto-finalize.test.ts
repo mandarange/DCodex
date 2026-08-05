@@ -68,6 +68,79 @@ test('valid current-run Naruto proof is full, byte-stable, and invalidates refle
   }
 })
 
+test('settled official children with a blocked parent produce a valid partial proof and terminal stop gate', async () => {
+  const fixture = await createNarutoFixture()
+  try {
+    const blockedParentSummary = {
+      ...fixture.parentSummary,
+      status: 'blocked',
+      summary: 'All official child slices completed and were integrated; external release prerequisites remain.',
+      blockers: ['external_release_prerequisites']
+    }
+    await refreshOfficialSubagentCompletionArtifacts(
+      fixture.root,
+      fixture.state,
+      blockedParentSummary,
+      fixture.sessionKey
+    )
+
+    const [persistedParent, evidence, summary, gate, proof, state] = await Promise.all([
+      readJson(path.join(fixture.dir, 'subagent-parent-summary.json')),
+      readJson(path.join(fixture.dir, 'subagent-evidence.json')),
+      readJson(path.join(fixture.dir, 'naruto-summary.json')),
+      readJson(path.join(fixture.dir, 'naruto-gate.json')),
+      readJson(path.join(fixture.dir, 'completion-proof.json')),
+      loadStateForSession(fixture.root, fixture.sessionKey)
+    ])
+    assert.deepEqual(persistedParent, blockedParentSummary)
+    assert.equal(evidence.ok, false)
+    assert.equal(evidence.status, 'blocked')
+    assert.deepEqual(evidence.blockers, ['parent_summary_blocked'])
+    assert.equal(summary.ok, false)
+    assert.equal(summary.status, 'blocked')
+    assert.deepEqual(summary.blockers, ['parent_summary_blocked'])
+    assert.equal(gate.passed, false)
+    assert.equal(gate.terminal, true)
+    assert.equal(gate.terminal_state, 'blocked')
+    assert.equal(gate.official_subagent_evidence, true)
+    assert.equal(gate.session_cleanup, true)
+    assert.deepEqual(gate.blockers, ['parent_summary_blocked'])
+    assert.equal(proof.status, 'verified_partial')
+    assert.deepEqual(proof.blockers, [])
+    assert.ok(proof.unverified.some((item: string) => item.includes('parent_summary_blocked')))
+    assert.deepEqual(proof.evidence.route_gate.blockers, ['parent_summary_blocked'])
+    assert.equal(state.reflection_invalidation_required, true)
+
+    const validation = await validateRouteCompletionProof(fixture.root, {
+      missionId: fixture.missionId,
+      route: '$Naruto',
+      state: fixture.state
+    })
+    assert.equal(validation.ok, true, JSON.stringify(validation.issues))
+    assert.equal(validation.status, 'verified_partial')
+
+    const stopGate = await checkStopGate({
+      root: fixture.root,
+      route: 'Naruto',
+      missionId: fixture.missionId,
+      allowLatestFallback: false
+    })
+    assert.equal(stopGate.action, 'allow_stop')
+    assert.equal(stopGate.diagnostics.reason, 'gate_terminal_blocked')
+
+    const parentBytes = await fsp.readFile(path.join(fixture.dir, 'subagent-parent-summary.json'), 'utf8')
+    await refreshOfficialSubagentCompletionArtifacts(
+      fixture.root,
+      fixture.state,
+      'Completion Summary: all child work is integrated; external release prerequisites remain blocked. SKS Honest Mode: no release was claimed.',
+      fixture.sessionKey
+    )
+    assert.equal(await fsp.readFile(path.join(fixture.dir, 'subagent-parent-summary.json'), 'utf8'), parentBytes)
+  } finally {
+    await fixture.cleanup()
+  }
+})
+
 test('newer same-run terminal proof resolves a stale official-subagent compliance hard blocker', async () => {
   const fixture = await createNarutoFixture()
   try {

@@ -52,7 +52,7 @@ test('standalone parent args launch one Sol Max Codex parent with the official t
 test('Naruto capability branching prefers multi_agent_v2 probes and update CTAs', async () => {
   const { assertNarutoMultiAgentV2Capability, buildCodexCapabilityMatrix } = await import('../../codex-compat/codex-capability-matrix.js')
   const available = buildCodexCapabilityMatrix({
-    version: '0.145.0',
+    version: '0.146.0',
     helpText: 'multi_agent_v2 max_concurrent_threads_per_session'
   })
   assert.equal(assertNarutoMultiAgentV2Capability(available).ok, true)

@@ -281,3 +281,38 @@ test('Naruto gate cleanup binds the effective target and rejects unsafe thread s
     assert.equal(gate.session_cleanup, false)
   }
 })
+
+test('Naruto records complete official lifecycle evidence for a terminal blocked parent', () => {
+  const gate = buildNarutoGateResult({
+    missionId: 'M-terminal-blocked',
+    passed: false,
+    ssotGuard: true,
+    blockers: ['parent_summary_blocked'],
+    evidence: {
+      ok: false,
+      status: 'blocked',
+      requested_subagents: 2,
+      count_policy: 'exact',
+      target_subagents: 2,
+      started_threads: 2,
+      completed_threads: 2,
+      failed_threads: 0,
+      open_thread_ids: [],
+      unmatched_stop_thread_ids: [],
+      ambiguous_stop_thread_ids: [],
+      parent_summary_present: true,
+      parent_summary_trustworthy: true,
+      parent_summary_status: 'blocked',
+      event_sources: ['SubagentStart', 'SubagentStop'],
+      blockers: ['parent_summary_blocked']
+    }
+  })
+
+  assert.equal(gate.passed, false)
+  assert.equal(gate.terminal, true)
+  assert.equal(gate.terminal_state, 'blocked')
+  assert.equal(gate.official_subagent_evidence, true)
+  assert.equal(gate.subagent_evidence_ready, true)
+  assert.equal(gate.session_cleanup, true)
+  assert.deepEqual(gate.blockers, ['parent_summary_blocked'])
+})

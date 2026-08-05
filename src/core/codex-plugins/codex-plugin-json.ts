@@ -1,13 +1,13 @@
 import path from 'node:path'
 import { findCodexBinary } from '../codex-adapter.js'
-import { detectCodex0138Capability } from '../codex-control/codex-0138-capability.js'
+import { detectCodexCurrentAppCapability } from '../codex-control/codex-current-app-capability.js'
 import { nowIso, runProcess, writeJsonAtomic } from '../fsx.js'
 import { redactSecrets, redactString } from '../secret-redaction.js'
 
 export interface CodexPluginInventory {
   schema: 'sks.codex-plugin-inventory.v1'
   generated_at: string
-  codex_0138_capability: any
+  codex_current_app_capability: any
   fetch_concurrency: number
   detail_fetch_count: number
   detail_fetch_failed_count: number
@@ -63,7 +63,7 @@ export async function buildCodexPluginInventory(input: {
   detailFactory?: (pluginId: string, codexBin?: string | null) => Promise<any>
 } = {}): Promise<CodexPluginInventory> {
   const started = Date.now()
-  const capability = await detectCodex0138Capability()
+  const capability = await detectCodexCurrentAppCapability()
   const codexBin = input.codexBin === undefined ? await findCodexBinary() : input.codexBin
   const listJson = input.listJson === undefined ? await runCodexPluginListJson(codexBin) : input.listJson
   const summaries = normalizePluginList(listJson)
@@ -92,7 +92,7 @@ export async function buildCodexPluginInventory(input: {
   return redactSecrets({
     schema: 'sks.codex-plugin-inventory.v1',
     generated_at: nowIso(),
-    codex_0138_capability: capability,
+    codex_current_app_capability: capability,
     fetch_concurrency: concurrency,
     detail_fetch_count: detailFetchCount,
     detail_fetch_failed_count: failed,

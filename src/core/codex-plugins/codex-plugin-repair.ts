@@ -138,7 +138,7 @@ function failedInventory(err: unknown): CodexPluginInventory {
   return {
     schema: 'sks.codex-plugin-inventory.v1',
     generated_at: nowIso(),
-    codex_0138_capability: null,
+    codex_current_app_capability: null,
     fetch_concurrency: 0,
     detail_fetch_count: 0,
     detail_fetch_failed_count: 0,

@@ -211,7 +211,9 @@ test('canonical test runner settles surviving test descendants before removing t
 async function fixtureRoot(prefix: string): Promise<string> {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), prefix));
   await Promise.all([
-    fsp.mkdir(path.join(root, 'dist', 'fixture', '__tests__'), { recursive: true }),
+    // Must land inside the release-authorization compiled corpus
+    // (`dist/core/release/__tests__/**` or CURRENT_COMPILED_TESTS).
+    fsp.mkdir(path.join(root, 'dist', 'core', 'release', '__tests__'), { recursive: true }),
     fsp.mkdir(path.join(root, 'test', 'unit'), { recursive: true }),
     fsp.mkdir(path.join(root, 'src'), { recursive: true })
   ]);
@@ -229,8 +231,9 @@ async function fixtureRoot(prefix: string): Promise<string> {
 
 async function writeFixtureTests(root: string, compiledSource: string): Promise<void> {
   await Promise.all([
-    fsp.writeFile(path.join(root, 'dist', 'fixture', '__tests__', 'fixture.test.js'), compiledSource),
-    fsp.writeFile(path.join(root, 'test', 'unit', 'fixture.test.mjs'), `
+    fsp.writeFile(path.join(root, 'dist', 'core', 'release', '__tests__', 'fixture.test.js'), compiledSource),
+    // Basename must match CURRENT_UNIT_TEST (`release-*.test.mjs`).
+    fsp.writeFile(path.join(root, 'test', 'unit', 'release-fixture.test.mjs'), `
       import test from 'node:test';
       import assert from 'node:assert/strict';
       test('unit surface exists', () => assert.ok(true));

@@ -6,26 +6,120 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { contextGraphNodeId } from '../../../ids.js';
 import { createCodeGraphExtractor } from '../index.js';
+import { walkCodeInventory } from '../inventory.js';
+import { extractTextDeclarations } from '../text-declarations.js';
+import type { CodeLanguage, CodeSourceFileRecord, CodeSymbolKind } from '../types.js';
 import { fixtureInput, fixtureLimits, makeCodeFixture, removeFixture } from './fixture-repo.js';
 
 const CONSUMER = contextGraphNodeId({ kind: 'file', path: 'src/consumer.ts' });
 const ALPHA = contextGraphNodeId({ kind: 'file', path: 'src/alpha/index.ts' });
 const BETA = contextGraphNodeId({ kind: 'file', path: 'src/beta/index.ts' });
 
-test('unsupported and binary files are recorded as explicit skips', async () => {
+test('every advertised text language has a literal declaration navigation case', () => {
+  const cases: Array<{ language: CodeLanguage; extension: string; source: string; name: string; kind: CodeSymbolKind }> = [
+    { language: 'python', extension: '.py', source: 'def run_task():', name: 'run_task', kind: 'function' },
+    { language: 'ruby', extension: '.rb', source: 'class TaskRunner', name: 'TaskRunner', kind: 'class' },
+    { language: 'go', extension: '.go', source: 'func RunTask() {}', name: 'RunTask', kind: 'function' },
+    { language: 'rust', extension: '.rs', source: 'pub struct TaskRunner;', name: 'TaskRunner', kind: 'struct' },
+    { language: 'java', extension: '.java', source: 'public class TaskRunner {', name: 'TaskRunner', kind: 'class' },
+    { language: 'kotlin', extension: '.kt', source: 'public class TaskRunner {', name: 'TaskRunner', kind: 'class' },
+    { language: 'swift', extension: '.swift', source: 'public actor TaskRunner {', name: 'TaskRunner', kind: 'actor' },
+    { language: 'php', extension: '.php', source: 'final class TaskRunner {', name: 'TaskRunner', kind: 'class' },
+    { language: 'c', extension: '.c', source: 'int run_task(int value) {', name: 'run_task', kind: 'function' },
+    { language: 'cpp', extension: '.cpp', source: 'struct TaskRunner {', name: 'TaskRunner', kind: 'struct' },
+    { language: 'csharp', extension: '.cs', source: 'public class TaskRunner {', name: 'TaskRunner', kind: 'class' },
+    { language: 'scala', extension: '.scala', source: 'final class TaskRunner {', name: 'TaskRunner', kind: 'class' },
+    { language: 'shell', extension: '.sh', source: 'run_task() {', name: 'run_task', kind: 'function' },
+    { language: 'vue', extension: '.vue', source: 'export function runTask() {', name: 'runTask', kind: 'function' },
+    { language: 'svelte', extension: '.svelte', source: 'export const runTask = () => 1;', name: 'runTask', kind: 'const' },
+    { language: 'dart', extension: '.dart', source: 'sealed class TaskRunner {', name: 'TaskRunner', kind: 'class' },
+    { language: 'objective-c', extension: '.m', source: '@interface TaskRunner : NSObject', name: 'TaskRunner', kind: 'class' },
+    { language: 'perl', extension: '.pl', source: 'sub run_task {', name: 'run_task', kind: 'function' },
+    { language: 'lua', extension: '.lua', source: 'function run_task()', name: 'run_task', kind: 'function' },
+    { language: 'elixir', extension: '.ex', source: 'defmodule TaskRunner do', name: 'TaskRunner', kind: 'module' },
+    { language: 'clojure', extension: '.clj', source: '(defn run-task []', name: 'run-task', kind: 'function' },
+    { language: 'haskell', extension: '.hs', source: 'runTask :: Int -> Int', name: 'runTask', kind: 'function' },
+    { language: 'ocaml', extension: '.ml', source: 'let run_task value = value + 1', name: 'run_task', kind: 'function' },
+    { language: 'julia', extension: '.jl', source: 'function run_task(value)', name: 'run_task', kind: 'function' },
+    { language: 'sql', extension: '.sql', source: 'CREATE TABLE task_runs (', name: 'task_runs', kind: 'table' },
+    { language: 'r', extension: '.r', source: 'run_task <- function(value) {', name: 'run_task', kind: 'function' }
+  ];
+  for (const [index, entry] of cases.entries()) {
+    const text = `# fixture\n  ${entry.source}\n`;
+    const record: CodeSourceFileRecord = {
+      rel: `src/fixture-${index}${entry.extension}`,
+      abs: `/fixture/src/fixture-${index}${entry.extension}`,
+      hash: `hash-${index}`,
+      text,
+      bytes: Buffer.byteLength(text),
+      lines: 2,
+      isTest: false,
+      extension: entry.extension,
+      language: entry.language,
+      parser: 'text',
+      purpose: null
+    };
+    const symbol = extractTextDeclarations(record).find((candidate) => candidate.name === entry.name);
+    assert.ok(symbol, `${entry.language} must locate ${entry.name}`);
+    assert.equal(symbol.symbolKind, entry.kind, `${entry.language} kind`);
+    assert.equal(symbol.line, 2, `${entry.language} line`);
+    assert.equal(symbol.column, 3 + entry.source.indexOf(entry.name), `${entry.language} column`);
+  }
+});
+
+test('supported polyglot declarations are indexed at literal source locations while binary files are skipped', async () => {
   const root = makeCodeFixture();
   try {
     const fragment = await createCodeGraphExtractor().extract(fixtureInput(root));
-    const python = fragment.skipped.find((skip) => skip.path === 'src/legacy.py');
-    assert.ok(python, 'a Python source file must be skipped, not ignored');
-    assert.equal(python.reason, 'unsupported_language');
-    assert.ok(python.detail && python.detail.length > 0);
+    const python = fragment.nodes.find((node) => node.kind === 'symbol' && node.path === 'src/legacy.py' && node.label === 'legacy');
+    assert.ok(python, 'a Python declaration must be indexed');
+    assert.equal(python.locator?.line, 1);
+
+    const swift = fragment.nodes.find((node) => node.kind === 'symbol' && node.path === 'native/Runner.swift' && node.label === 'Runner');
+    assert.ok(swift, 'a Swift declaration must be indexed');
+    assert.equal(swift.locator?.line, 2);
+
+    const rust = fragment.nodes.find((node) => node.kind === 'symbol' && node.path === 'crates/engine/src/lib.rs' && node.label === 'evaluate');
+    assert.ok(rust, 'a Rust declaration must be indexed');
+    assert.equal(rust.locator?.line, 4);
+
+    const rubyClass = fragment.nodes.find((node) => node.kind === 'symbol' && node.path === 'lib/task_runner.rb' && node.label === 'TaskRunner');
+    assert.ok(rubyClass, 'a Ruby class declaration must be indexed');
+    assert.equal(rubyClass.locator?.line, 2);
+    assert.equal(rubyClass.metadata.symbolKind, 'class');
+    const rubyMethod = fragment.nodes.find((node) => node.kind === 'symbol' && node.path === 'lib/task_runner.rb' && node.label === 'run_task');
+    assert.ok(rubyMethod, 'a Ruby method declaration must be indexed');
+    assert.equal(rubyMethod.locator?.line, 3);
+    assert.equal(rubyMethod.metadata.symbolKind, 'method');
+
+    const cppStruct = fragment.nodes.find((node) => node.kind === 'symbol' && node.path === 'native/engine.cpp' && node.label === 'EngineState');
+    assert.ok(cppStruct, 'a C++ struct declaration must be indexed');
+    assert.equal(cppStruct.locator?.line, 2);
+    assert.equal(cppStruct.metadata.symbolKind, 'struct');
+    const cppFunction = fragment.nodes.find((node) => node.kind === 'symbol' && node.path === 'native/engine.cpp' && node.label === 'run_engine');
+    assert.ok(cppFunction, 'a C++ function declaration must be indexed');
+    assert.equal(cppFunction.locator?.line, 6);
+    assert.equal(cppFunction.metadata.symbolKind, 'function');
 
     const blob = fragment.skipped.find((skip) => skip.path === 'src/blob.ts');
     assert.ok(blob, 'a binary payload with a source extension must be skipped');
     assert.equal(blob.reason, 'binary');
     assert.ok(!fragment.nodes.some((node) => node.path === 'src/blob.ts'));
-    assert.ok(!fragment.nodes.some((node) => node.path === 'src/legacy.py'));
+    assert.ok(fragment.nodes.some((node) => node.path === 'src/legacy.py'));
+  } finally {
+    removeFixture(root);
+  }
+});
+
+test('full extraction retains internal symbols and source directories named build', async () => {
+  const root = makeCodeFixture();
+  try {
+    const fragment = await createCodeGraphExtractor().extract(fixtureInput(root));
+    const hidden = fragment.nodes.find((node) => node.kind === 'symbol' && node.path === 'src/internal.ts' && node.label === 'hiddenHelper');
+    assert.ok(hidden, 'internal declarations are navigation targets even when they are not exported');
+    assert.equal(hidden.metadata.exported, false);
+    assert.ok(fragment.nodes.some((node) => node.kind === 'file' && node.path === 'src/core/build/build-once-runner.ts'));
+    assert.ok(fragment.nodes.some((node) => node.kind === 'symbol' && node.path === 'src/core/build/build-once-runner.ts' && node.label === 'buildOnce'));
   } finally {
     removeFixture(root);
   }
@@ -147,6 +241,50 @@ test('the file cap is enforced and reported as a cap_reached skip', async () => 
     );
     assert.ok(fragment.skipped.some((skip) => skip.reason === 'cap_reached' && (skip.detail ?? '').includes('maxFiles')));
     assert.ok(Object.keys(fragment.inputHashes).length <= 3, 'only the files actually read are hashed');
+  } finally {
+    removeFixture(root);
+  }
+});
+
+test('the inventory bounds directory entries even when they are not supported source files', async () => {
+  const root = makeCodeFixture();
+  try {
+    for (let index = 0; index < 12; index += 1) fs.writeFileSync(path.join(root, `noise-${index}.md`), 'not code\n');
+    const fragment = await createCodeGraphExtractor().extract(
+      fixtureInput(root, { limits: fixtureLimits({ maxEntries: 4 }) })
+    );
+    assert.ok(fragment.skipped.some((skip) => skip.reason === 'cap_reached' && (skip.detail ?? '').includes('maxEntries=4')));
+  } finally {
+    removeFixture(root);
+  }
+});
+
+test('the inventory walk is iterative and fails closed beyond its directory-depth bound', async () => {
+  const root = makeCodeFixture();
+  try {
+    const deep = path.join(root, 'deep', 'one', 'two', 'three');
+    fs.mkdirSync(deep, { recursive: true });
+    fs.writeFileSync(path.join(deep, 'value.ts'), 'export const value = 1;\n');
+    const fragment = await createCodeGraphExtractor().extract(
+      fixtureInput(root, { limits: fixtureLimits({ maxDepth: 2 }) })
+    );
+    assert.ok(fragment.skipped.some((skip) => skip.reason === 'cap_reached' && (skip.detail ?? '').includes('maxDepth=2')));
+  } finally {
+    removeFixture(root);
+  }
+});
+
+test('a prepared inventory is reused for compilation instead of reading the source tree twice', async () => {
+  const root = makeCodeFixture();
+  try {
+    const limits = fixtureLimits();
+    const inventory = walkCodeInventory(root, limits);
+    fs.rmSync(path.join(root, 'src', 'internal.ts'));
+    const fragment = await createCodeGraphExtractor({ preparedInventory: inventory }).extract(
+      fixtureInput(root, { limits })
+    );
+    assert.ok(fragment.nodes.some((node) => node.path === 'src/internal.ts'));
+    assert.equal(fragment.inputHashes['src/internal.ts'], inventory.byRel.get('src/internal.ts')?.hash);
   } finally {
     removeFixture(root);
   }

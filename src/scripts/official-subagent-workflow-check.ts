@@ -112,7 +112,14 @@ try {
     workflowStatus: 'blocked',
     preparationOnly: false
   })
-  assertGate(blocked.ok === false && blocked.parent_summary_status === 'failed', 'blocked parent outcomes must fail closed', blocked)
+  assertGate(
+    blocked.ok === false
+      && blocked.status === 'blocked'
+      && blocked.parent_summary_status === 'blocked'
+      && blocked.blockers.includes('parent_summary_blocked'),
+    'blocked parent outcomes must remain distinct from failed parent outcomes',
+    blocked
+  )
 
   const failedResultText = await writeSubagentEvidence(fixture, {
     requestedSubagents: 3,

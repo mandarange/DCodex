@@ -8,8 +8,17 @@ import { normalizeMcpServerName } from './secret-policy.js';
 import { resolveMcpScope } from './scope.js';
 import { MCP_HEALTH_SCHEMA, type McpHealthResultV1, type McpScope, type McpWritableScope } from './types.js';
 import { PACKAGE_VERSION } from '../version.js';
+import {
+  MCP_PROTOCOL_VERSION,
+  isRecognizedModernError,
+  modernHttpHeaders,
+  modernMcpRequest,
+  modernServerInfo,
+  requireModernCompleteResult
+} from '../mcp/modern-protocol.js';
 
-const PROTOCOL_VERSION = '2024-11-05';
+const LEGACY_PROTOCOL_VERSION = '2024-11-05';
+const HEALTH_CLIENT_INFO = { name: 'sks-mcp-health', version: PACKAGE_VERSION };
 const OUTPUT_CAP = 64 * 1024;
 let activeHealthChecks = 0;
 const healthQueue: Array<() => void> = [];
@@ -88,17 +97,34 @@ async function probeStdio(
   }
   const channel = new JsonLineChannel(child);
   try {
-    channel.send(initializeRequest());
-    const init = await channel.wait(1, timeoutMs(raw.startup_timeout_sec, 10));
-    if (!isRecord(init) || !isRecord(init.result)) return result(name, scope, 'protocol_error', null, null, null, null, 'mcp_initialize_invalid', options);
-    const protocol = typeof init.result.protocolVersion === 'string' ? init.result.protocolVersion : null;
-    const instructions = typeof init.result.instructions === 'string';
-    channel.send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
-    channel.send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    channel.send(modernMcpRequest(1, 'server/discover', {}, { clientInfo: HEALTH_CLIENT_INFO }));
+    let discover: unknown;
+    try {
+      discover = await channel.wait(1, discoveryTimeoutMs(raw));
+    } catch (error) {
+      const message = redactMcpError(error);
+      if (!isStdioLegacyProbeSignal(message)) throw error;
+      channel.close();
+      return probeLegacyStdioFresh(name, scope, raw, options);
+    }
+    if (!isRecord(discover) || !isRecord(discover.result)) {
+      if (isRecognizedModernError(discover)) {
+        return result(name, scope, 'protocol_error', null, null, null, null, modernProbeError(discover), options);
+      }
+      channel.close();
+      return probeLegacyStdioFresh(name, scope, raw, options);
+    }
+    const discoverResult = requireModernCompleteResult(discover.result);
+    if (!Array.isArray(discoverResult.supportedVersions) || !discoverResult.supportedVersions.includes(MCP_PROTOCOL_VERSION)) {
+      return result(name, scope, 'protocol_error', null, null, null, null, 'mcp_protocol_version_unsupported', options);
+    }
+    const instructions = typeof discoverResult.instructions === 'string';
+    channel.send(modernMcpRequest(2, 'tools/list', {}, { clientInfo: HEALTH_CLIENT_INFO }));
     const tools = await channel.wait(2, timeoutMs(raw.tool_timeout_sec, 30));
-    const list = isRecord(tools) && isRecord(tools.result) && Array.isArray(tools.result.tools) ? tools.result.tools : null;
-    if (!list) return result(name, scope, 'protocol_error', protocol, null, instructions, null, 'mcp_tools_list_invalid', options);
-    return result(name, scope, 'healthy', protocol, list.length, instructions, null, null, options, toolNames(list));
+    const toolsResult = isRecord(tools) && isRecord(tools.result) ? requireModernCompleteResult(tools.result) : null;
+    const list = toolsResult && Array.isArray(toolsResult.tools) ? toolsResult.tools : null;
+    if (!list) return result(name, scope, 'protocol_error', MCP_PROTOCOL_VERSION, null, instructions, null, 'mcp_tools_list_invalid', options);
+    return result(name, scope, 'healthy', MCP_PROTOCOL_VERSION, list.length, instructions, null, null, options, toolNames(list));
   } catch (error) {
     const message = redactMcpError(error);
     return result(
@@ -106,19 +132,82 @@ async function probeStdio(
       scope,
       message.includes('timeout')
         ? 'timeout'
-        : message.includes('output_cap') || message.includes('protocol')
+        : message.includes('output_cap') || message.includes('protocol') || message.includes('mcp_result')
           ? 'protocol_error'
           : 'startup_failed',
       null,
       null,
       null,
       null,
-      message,
+      message === 'mcp_process_not_writable' ? 'mcp_process_error' : message,
       options
     );
   } finally {
     channel.close();
   }
+}
+
+async function probeLegacyStdioFresh(
+  name: string,
+  scope: McpWritableScope,
+  raw: Record<string, unknown>,
+  options: McpHealthOptions
+): Promise<McpHealthResultV1> {
+  const command = typeof raw.command === 'string' ? raw.command : '';
+  if (!command) return result(name, scope, 'startup_failed', null, null, null, null, 'mcp_stdio_command_missing', options);
+  const args = rawStringArray(raw.args);
+  const cwd = typeof raw.cwd === 'string' && path.isAbsolute(raw.cwd) ? raw.cwd : undefined;
+  const env = { ...process.env, ...privateEnvironment(raw) };
+  const spawnProcess = options.dependencies?.spawnProcess ?? defaultSpawn;
+  let child: ChildProcessWithoutNullStreams;
+  try {
+    child = spawnProcess(command, args, { ...(cwd ? { cwd } : {}), env });
+  } catch (error) {
+    return result(name, scope, 'startup_failed', null, null, null, null, redactMcpError(error), options);
+  }
+  const channel = new JsonLineChannel(child);
+  try {
+    return await probeLegacyStdio(name, scope, raw, options, channel);
+  } catch (error) {
+    const message = redactMcpError(error);
+    return result(
+      name,
+      scope,
+      message.includes('timeout') ? 'timeout'
+        : message.includes('output_cap') || message.includes('protocol') ? 'protocol_error'
+          : 'startup_failed',
+      null,
+      null,
+      null,
+      null,
+      message === 'mcp_process_not_writable' ? 'mcp_process_error' : message,
+      options
+    );
+  } finally {
+    channel.close();
+  }
+}
+
+async function probeLegacyStdio(
+  name: string,
+  scope: McpWritableScope,
+  raw: Record<string, unknown>,
+  options: McpHealthOptions,
+  channel: JsonLineChannel
+): Promise<McpHealthResultV1> {
+  channel.send(legacyInitializeRequest(2));
+  const init = await channel.wait(2, timeoutMs(raw.startup_timeout_sec, 10));
+  if (!isRecord(init) || !isRecord(init.result)) {
+    return result(name, scope, 'protocol_error', null, null, null, null, 'mcp_initialize_invalid', options);
+  }
+  const protocol = typeof init.result.protocolVersion === 'string' ? init.result.protocolVersion : null;
+  const instructions = typeof init.result.instructions === 'string';
+  channel.send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
+  channel.send({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} });
+  const tools = await channel.wait(3, timeoutMs(raw.tool_timeout_sec, 30));
+  const list = isRecord(tools) && isRecord(tools.result) && Array.isArray(tools.result.tools) ? tools.result.tools : null;
+  if (!list) return result(name, scope, 'protocol_error', protocol, null, instructions, null, 'mcp_tools_list_invalid', options);
+  return result(name, scope, 'healthy', protocol, list.length, instructions, null, null, options, toolNames(list));
 }
 
 async function probeHttp(
@@ -140,24 +229,66 @@ async function probeHttp(
   const envName = typeof raw.bearer_token_env_var === 'string' ? raw.bearer_token_env_var : null;
   const bearer = envName ? process.env[envName] : undefined;
   try {
-    const init = await postRpc(fetchImpl, url, initializeRequest(), timeoutMs(raw.startup_timeout_sec, 10), bearer);
-    if (init.status === 401 || init.status === 403) return result(name, scope, 'oauth_required', null, null, null, null, null, options);
-    if (!init.ok || !isRecord(init.json) || !isRecord(init.json.result)) {
-      return result(name, scope, 'protocol_error', null, null, null, null, `mcp_http_initialize_${init.status}`, options);
+    const discoverMessage = modernMcpRequest(1, 'server/discover', {}, { clientInfo: HEALTH_CLIENT_INFO });
+    const discover = await postRpc(fetchImpl, url, discoverMessage, timeoutMs(raw.startup_timeout_sec, 10), bearer, {
+      modern: true, method: 'server/discover', params: {}
+    });
+    if (discover.status === 401 || discover.status === 403) return result(name, scope, 'oauth_required', null, null, null, null, null, options);
+    if (isRecognizedModernError(discover.json)) {
+      return result(name, scope, 'protocol_error', null, null, null, null, modernProbeError(discover.json), options);
     }
-    const protocol = typeof init.json.result.protocolVersion === 'string' ? init.json.result.protocolVersion : null;
-    const instructions = typeof init.json.result.instructions === 'string';
-    await postRpc(fetchImpl, url, { jsonrpc: '2.0', method: 'notifications/initialized', params: {} }, timeoutMs(raw.tool_timeout_sec, 30), bearer, init.sessionId);
-    const tools = await postRpc(fetchImpl, url, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }, timeoutMs(raw.tool_timeout_sec, 30), bearer, init.sessionId);
-    if (tools.status === 401 || tools.status === 403) return result(name, scope, 'oauth_required', protocol, null, instructions, null, null, options);
-    const list = tools.ok && isRecord(tools.json) && isRecord(tools.json.result) && Array.isArray(tools.json.result.tools)
-      ? tools.json.result.tools : null;
-    if (!list) return result(name, scope, 'protocol_error', protocol, null, instructions, null, `mcp_http_tools_${tools.status}`, options);
-    return result(name, scope, 'healthy', protocol, list.length, instructions, null, null, options, toolNames(list));
+    if (!discover.ok || !isRecord(discover.json) || !isRecord(discover.json.result)) {
+      if (shouldFallbackLegacyHttp(discover)) {
+        return probeLegacyHttp(name, scope, raw, options, fetchImpl, url, bearer);
+      }
+      return result(name, scope, 'protocol_error', null, null, null, null, `mcp_http_discover_${discover.status}`, options);
+    }
+    const discoverResult = requireModernCompleteResult(discover.json.result);
+    if (!Array.isArray(discoverResult.supportedVersions) || !discoverResult.supportedVersions.includes(MCP_PROTOCOL_VERSION)) {
+      return result(name, scope, 'protocol_error', null, null, null, null, 'mcp_protocol_version_unsupported', options);
+    }
+    const instructions = typeof discoverResult.instructions === 'string';
+    const toolsMessage = modernMcpRequest(2, 'tools/list', {}, { clientInfo: HEALTH_CLIENT_INFO });
+    const tools = await postRpc(fetchImpl, url, toolsMessage, timeoutMs(raw.tool_timeout_sec, 30), bearer, {
+      modern: true, method: 'tools/list', params: {}
+    });
+    if (tools.status === 401 || tools.status === 403) return result(name, scope, 'oauth_required', MCP_PROTOCOL_VERSION, null, instructions, null, null, options);
+    const toolsResult = tools.ok && isRecord(tools.json) && isRecord(tools.json.result)
+      ? requireModernCompleteResult(tools.json.result) : null;
+    const list = toolsResult && Array.isArray(toolsResult.tools) ? toolsResult.tools : null;
+    if (!list) return result(name, scope, 'protocol_error', MCP_PROTOCOL_VERSION, null, instructions, null, `mcp_http_tools_${tools.status}`, options);
+    return result(name, scope, 'healthy', MCP_PROTOCOL_VERSION, list.length, instructions, null, null, options, toolNames(list));
   } catch (error) {
     const message = redactMcpError(error);
     return result(name, scope, message.includes('AbortError') || message.includes('timeout') ? 'timeout' : 'startup_failed', null, null, null, null, message, options);
   }
+}
+
+async function probeLegacyHttp(
+  name: string,
+  scope: McpWritableScope,
+  raw: Record<string, unknown>,
+  options: McpHealthOptions,
+  fetchImpl: typeof fetch,
+  url: string,
+  bearer?: string
+): Promise<McpHealthResultV1> {
+  const init = await postRpc(fetchImpl, url, legacyInitializeRequest(2), timeoutMs(raw.startup_timeout_sec, 10), bearer, { modern: false });
+  if (!init.ok || !isRecord(init.json) || !isRecord(init.json.result)) {
+    return result(name, scope, 'protocol_error', null, null, null, null, `mcp_http_initialize_${init.status}`, options);
+  }
+  const protocol = typeof init.json.result.protocolVersion === 'string' ? init.json.result.protocolVersion : null;
+  const instructions = typeof init.json.result.instructions === 'string';
+  await postRpc(fetchImpl, url, { jsonrpc: '2.0', method: 'notifications/initialized', params: {} }, timeoutMs(raw.tool_timeout_sec, 30), bearer, {
+    modern: false, sessionId: init.sessionId, legacyProtocolVersion: protocol
+  });
+  const tools = await postRpc(fetchImpl, url, { jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} }, timeoutMs(raw.tool_timeout_sec, 30), bearer, {
+    modern: false, sessionId: init.sessionId, legacyProtocolVersion: protocol
+  });
+  const list = tools.ok && isRecord(tools.json) && isRecord(tools.json.result) && Array.isArray(tools.json.result.tools)
+    ? tools.json.result.tools : null;
+  if (!list) return result(name, scope, 'protocol_error', protocol, null, instructions, null, `mcp_http_tools_${tools.status}`, options);
+  return result(name, scope, 'healthy', protocol, list.length, instructions, null, null, options, toolNames(list));
 }
 
 class JsonLineChannel {
@@ -248,18 +379,24 @@ async function postRpc(
   message: unknown,
   timeout: number,
   bearer?: string,
-  sessionId?: string | null
+  transport: {
+    modern: boolean;
+    method?: string;
+    params?: Record<string, unknown>;
+    sessionId?: string | null;
+    legacyProtocolVersion?: string | null;
+  } = { modern: false }
 ): Promise<{ ok: boolean; status: number; json: unknown; sessionId: string | null }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('mcp_http_timeout')), timeout);
   timer.unref?.();
   try {
-    const headers: Record<string, string> = {
-      accept: 'application/json, text/event-stream',
-      'content-type': 'application/json'
-    };
+    const headers: Record<string, string> = transport.modern
+      ? modernHttpHeaders(transport.method || '', transport.params || {})
+      : { accept: 'application/json, text/event-stream', 'content-type': 'application/json' };
     if (bearer) headers.authorization = `Bearer ${bearer}`;
-    if (sessionId) headers['mcp-session-id'] = sessionId;
+    if (transport.sessionId) headers['mcp-session-id'] = transport.sessionId;
+    if (!transport.modern && transport.legacyProtocolVersion) headers['mcp-protocol-version'] = transport.legacyProtocolVersion;
     const response = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(message), signal: controller.signal });
     const text = await boundedResponseText(response);
     return {
@@ -301,11 +438,34 @@ function parseHttpPayload(text: string): unknown {
   return JSON.parse(trimmed);
 }
 
-function initializeRequest(): Record<string, unknown> {
+function legacyInitializeRequest(id: number): Record<string, unknown> {
   return {
-    jsonrpc: '2.0', id: 1, method: 'initialize',
-    params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'sks-mcp-health', version: PACKAGE_VERSION } }
+    jsonrpc: '2.0', id, method: 'initialize',
+    params: { protocolVersion: LEGACY_PROTOCOL_VERSION, capabilities: {}, clientInfo: HEALTH_CLIENT_INFO }
   };
+}
+
+function discoveryTimeoutMs(raw: Record<string, unknown>): number {
+  return Math.min(1_000, timeoutMs(raw.startup_timeout_sec, 10));
+}
+
+function isStdioLegacyProbeSignal(message: string): boolean {
+  return message === 'mcp_handshake_timeout'
+    || message === 'mcp_process_closed'
+    || message === 'mcp_process_error';
+}
+
+function shouldFallbackLegacyHttp(probe: { status: number; json: unknown }): boolean {
+  if (isRecognizedModernError(probe.json)) return false;
+  if ([400, 404, 405].includes(probe.status)) return true;
+  return isRecord(probe.json)
+    && isRecord(probe.json.error)
+    && Number(probe.json.error.code) === -32601;
+}
+
+function modernProbeError(value: unknown): string {
+  const code = isRecord(value) && isRecord(value.error) ? Number(value.error.code) : NaN;
+  return Number.isFinite(code) ? `mcp_modern_probe_error_${code}` : 'mcp_modern_probe_error';
 }
 
 function timeoutMs(value: unknown, fallback: number): number {

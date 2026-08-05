@@ -11,7 +11,7 @@ import {
 test('Codex output-schema syntax detection checks fresh exec separately from resume', async () => {
   const availability = await detectCodexExecOutputSchemaSyntax({
     codexBin: process.execPath,
-    versionText: 'codex-cli 0.133.0',
+    versionText: 'codex-cli 0.145.0',
     execHelpText: 'Usage: codex exec --output-schema <file> --json <prompt>',
     resumeHelpText: 'Usage: codex exec resume --json --output-schema <file> <session-id>'
   });

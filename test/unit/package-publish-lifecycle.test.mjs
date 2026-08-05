@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -82,8 +81,8 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   assert.match(scripts['release:check:full'], /release-check-stamp\.js write/);
   assert.match(scripts['release:check:full'], /release-real-check\.js --skip-release-check/);
   assert.equal(count(scripts['release:check:full'], 'build:clean'), 1);
-  assert.equal(count(scripts['release:check:full'], 'npm test --silent'), 1);
-  assert.ok(scripts['release:check:full'].indexOf('build:clean') < scripts['release:check:full'].indexOf('npm test --silent'));
+  assert.equal(count(scripts['release:check:full'], 'npm run test:release --silent'), 1);
+  assert.ok(scripts['release:check:full'].indexOf('build:clean') < scripts['release:check:full'].indexOf('npm run test:release --silent'));
   assert.match(scripts['release:check:full'], /release-real-check\.js --skip-release-check && npm run release:dist-freshness --silent && node \.\/dist\/scripts\/release-check-stamp\.js write/);
   assert.match(scripts.prepublishOnly, /prepublish-release-check-or-fast\.js/);
   assert.doesNotMatch(scripts.prepublishOnly, /--block-lifecycle-publish/);
@@ -175,27 +174,7 @@ test('npm pack excludes native checkout-only QA surfaces while retaining require
   }
 });
 
-test('plain lifecycle publish requires release proof instead of being categorically blocked', () => {
-  const missingStamp = path.join(os.tmpdir(), `sks-missing-release-stamp-${process.pid}.json`);
-  const result = spawnSync(process.execPath, ['./dist/scripts/prepublish-release-check-or-fast.js'], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      npm_lifecycle_event: 'prepublishOnly',
-      npm_command: 'publish',
-      SKS_RELEASE_STAMP_PATH: missingStamp
-    }
-  });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /current authoritative full-release stamp/);
-  assert.doesNotMatch(result.stderr, /Lifecycle-enabled npm publish is unsupported/);
-  assert.doesNotMatch(result.stderr, /Direct npm publish is disabled/);
-  assert.doesNotMatch(buildManifestWriter, /generated_at/);
-  assert.match(distRuntimeCheck, /build_manifest_generated_at_non_deterministic/);
-});
-
-test('actual npm publish lifecycle fails closed in a dirty or detached worktree', () => {
+test('actual npm publish lifecycle reports repository blockers without misdiagnosing the release stamp', () => {
   const result = spawnSync(process.execPath, ['./dist/scripts/prepublish-release-check-or-fast.js'], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -210,6 +189,13 @@ test('actual npm publish lifecycle fails closed in a dirty or detached worktree'
   assert.match(result.stdout, /"ok": false/);
   assert.match(result.stderr, /npm publish blocked by reproducibility preflight/);
   assert.match(`${result.stdout}\n${result.stderr}`, /publish_requires_main_branch:detached|worktree_not_clean/);
+  assert.match(result.stderr, /Prepublish stopped at the reproducibility preflight/);
+  assert.doesNotMatch(result.stderr, /current authoritative full-release stamp/);
+  assert.doesNotMatch(result.stderr, /Run `npm run release:check:full` separately/);
+  assert.doesNotMatch(result.stderr, /Lifecycle-enabled npm publish is unsupported/);
+  assert.doesNotMatch(result.stderr, /Direct npm publish is disabled/);
+  assert.doesNotMatch(buildManifestWriter, /generated_at/);
+  assert.match(distRuntimeCheck, /build_manifest_generated_at_non_deterministic/);
 });
 
 test('build-dist CommonJS conversion is byte-idempotent across incremental rebuilds', () => {

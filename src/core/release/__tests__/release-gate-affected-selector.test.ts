@@ -75,6 +75,40 @@ test('an MCP change does not suppress unrelated gates selected by another change
   assert.equal(selected.selection.reasons['test:role-models'], 'cache_input_changed')
 })
 
+test('package metadata changes do not select unrelated Codex-current gates', () => {
+  const releaseGate: any = {
+    id: 'release:metadata-current',
+    command: 'node release-check.js',
+    deps: [],
+    preset: ['release'],
+    cache: { enabled: true, inputs: ['package.json'] }
+  }
+  const runtimeGate: any = {
+    id: 'runtime:closure',
+    command: 'node runtime-check.js',
+    deps: [],
+    preset: ['release'],
+    cache: { enabled: true, inputs: ['package.json'] }
+  }
+  const codexGate: any = {
+    id: 'codex-control:regression',
+    command: 'node codex-check.js',
+    deps: [],
+    preset: ['release'],
+    cache: { enabled: true, inputs: ['src/core/codex-control/**'] }
+  }
+  const gates = [releaseGate, runtimeGate, codexGate]
+  const selected = selectAffectedReleaseGates(process.cwd(), { gates } as any, gates, {
+    changedFiles: ['package.json', 'package-lock.json'],
+    preset: 'affected'
+  })
+
+  assert.deepEqual(selected.selection.selected_gate_ids, [releaseGate.id, runtimeGate.id])
+  assert.equal(selected.selection.reasons[releaseGate.id], 'package_metadata_changed')
+  assert.equal(selected.selection.reasons[runtimeGate.id], 'package_metadata_changed')
+  assert.equal(selected.selection.reasons[codexGate.id], undefined)
+})
+
 function git(cwd: string, args: string[]) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
   assert.equal(result.status, 0, `${args.join(' ')}\n${result.stdout || ''}${result.stderr || ''}`)

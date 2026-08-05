@@ -10,20 +10,81 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ContextGraphExtractionLimits } from '../../contracts.js';
 import { isSymlinkEscape } from '../../paths.js';
-import type { CodeInventory, CodeInventorySkip, CodeSourceFileRecord } from './types.js';
+import type { CodeInventory, CodeInventorySkip, CodeLanguage, CodeSourceFileRecord } from './types.js';
 
-/** Directories never descended into; `.`-prefixed directories are skipped as tool state. */
-const EXCLUDED_DIR_NAMES: ReadonlySet<string> = new Set(['node_modules', 'dist', 'build', 'coverage', 'archive']);
+/**
+ * Generated/vendor directories that are never repository source.
+ *
+ * This is deliberately path-aware. A basename rule used to drop real modules
+ * such as `src/core/build/**` merely because one segment was named `build`.
+ * Hidden directories are also not blanket-excluded: `.github` and `.codex` can
+ * contain real repository code. Only known runtime/generated roots and vendor
+ * segments are omitted.
+ */
+const EXCLUDED_ROOT_DIRS: ReadonlySet<string> = new Set([
+  '.git',
+  '.sneakoscope',
+  '.next',
+  'archive',
+  'build',
+  'coverage',
+  'dist',
+  'out',
+  'target'
+]);
+const EXCLUDED_ANYWHERE_DIRS: ReadonlySet<string> = new Set(['node_modules']);
+const EXCLUDED_DIRECTORY_PREFIXES = Object.freeze([
+  '.claude/worktrees'
+]);
 
-const SUPPORTED_EXTENSIONS: ReadonlyMap<string, 'typescript' | 'javascript'> = new Map([
-  ['.ts', 'typescript'],
-  ['.tsx', 'typescript'],
-  ['.mts', 'typescript'],
-  ['.cts', 'typescript'],
-  ['.js', 'javascript'],
-  ['.jsx', 'javascript'],
-  ['.mjs', 'javascript'],
-  ['.cjs', 'javascript']
+interface CodeExtensionProfile {
+  language: CodeLanguage;
+  parser: 'typescript' | 'text';
+}
+
+const SUPPORTED_EXTENSIONS: ReadonlyMap<string, CodeExtensionProfile> = new Map([
+  ['.ts', { language: 'typescript', parser: 'typescript' }],
+  ['.tsx', { language: 'typescript', parser: 'typescript' }],
+  ['.mts', { language: 'typescript', parser: 'typescript' }],
+  ['.cts', { language: 'typescript', parser: 'typescript' }],
+  ['.js', { language: 'javascript', parser: 'typescript' }],
+  ['.jsx', { language: 'javascript', parser: 'typescript' }],
+  ['.mjs', { language: 'javascript', parser: 'typescript' }],
+  ['.cjs', { language: 'javascript', parser: 'typescript' }],
+  ['.py', { language: 'python', parser: 'text' }],
+  ['.rb', { language: 'ruby', parser: 'text' }],
+  ['.go', { language: 'go', parser: 'text' }],
+  ['.rs', { language: 'rust', parser: 'text' }],
+  ['.java', { language: 'java', parser: 'text' }],
+  ['.kt', { language: 'kotlin', parser: 'text' }],
+  ['.kts', { language: 'kotlin', parser: 'text' }],
+  ['.swift', { language: 'swift', parser: 'text' }],
+  ['.php', { language: 'php', parser: 'text' }],
+  ['.c', { language: 'c', parser: 'text' }],
+  ['.h', { language: 'c', parser: 'text' }],
+  ['.cc', { language: 'cpp', parser: 'text' }],
+  ['.cpp', { language: 'cpp', parser: 'text' }],
+  ['.hpp', { language: 'cpp', parser: 'text' }],
+  ['.cs', { language: 'csharp', parser: 'text' }],
+  ['.scala', { language: 'scala', parser: 'text' }],
+  ['.sh', { language: 'shell', parser: 'text' }],
+  ['.bash', { language: 'shell', parser: 'text' }],
+  ['.zsh', { language: 'shell', parser: 'text' }],
+  ['.vue', { language: 'vue', parser: 'text' }],
+  ['.svelte', { language: 'svelte', parser: 'text' }],
+  ['.dart', { language: 'dart', parser: 'text' }],
+  ['.m', { language: 'objective-c', parser: 'text' }],
+  ['.mm', { language: 'objective-c', parser: 'text' }],
+  ['.pl', { language: 'perl', parser: 'text' }],
+  ['.lua', { language: 'lua', parser: 'text' }],
+  ['.ex', { language: 'elixir', parser: 'text' }],
+  ['.exs', { language: 'elixir', parser: 'text' }],
+  ['.clj', { language: 'clojure', parser: 'text' }],
+  ['.hs', { language: 'haskell', parser: 'text' }],
+  ['.ml', { language: 'ocaml', parser: 'text' }],
+  ['.jl', { language: 'julia', parser: 'text' }],
+  ['.sql', { language: 'sql', parser: 'text' }],
+  ['.r', { language: 'r', parser: 'text' }]
 ]);
 
 /**
@@ -31,12 +92,6 @@ const SUPPORTED_EXTENSIONS: ReadonlyMap<string, 'typescript' | 'javascript'> = n
  * earn an `unsupported_language` skip: recording one for every `.md` or `.png`
  * in a repository would bury the skips that actually mean something.
  */
-const FOREIGN_CODE_EXTENSIONS: ReadonlySet<string> = new Set([
-  '.py', '.rb', '.go', '.rs', '.java', '.kt', '.kts', '.swift', '.php', '.c', '.h', '.cc', '.cpp',
-  '.hpp', '.cs', '.scala', '.sh', '.bash', '.zsh', '.vue', '.svelte', '.dart', '.m', '.mm', '.pl',
-  '.lua', '.ex', '.exs', '.clj', '.hs', '.ml', '.jl', '.sql', '.r'
-]);
-
 /** How many `excluded` / `cap_reached` skips are worth keeping before they become noise. */
 const MAX_EXCLUDED_SKIPS = 64;
 const MAX_CAP_SKIPS = 32;
@@ -66,8 +121,12 @@ export function isTestPath(relativePath: string): boolean {
   return /\.(?:test|spec)\.[cm]?[jt]sx?$/i.test(base);
 }
 
-function isExcludedDirName(name: string): boolean {
-  return name.startsWith('.') || EXCLUDED_DIR_NAMES.has(name);
+function isExcludedDirectory(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, '/').replace(/^\.\//, '');
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.some((part) => EXCLUDED_ANYWHERE_DIRS.has(part))) return true;
+  if (EXCLUDED_DIRECTORY_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`))) return true;
+  return parts.length === 1 && EXCLUDED_ROOT_DIRS.has(parts[0] ?? '');
 }
 
 function hashBytes(bytes: Buffer): string {
@@ -108,9 +167,31 @@ function looksBinary(bytes: Buffer): boolean {
   return density.count >= MIN_BINARY_CONTROL_BYTES && density.percent >= MIN_BINARY_CONTROL_PERCENT;
 }
 
+function leadingSourcePurpose(text: string, language: CodeLanguage): string | null {
+  const head = text.replace(/^\uFEFF/, '').slice(0, 8192).replace(/^#![^\n]*(?:\n|$)/, '').trimStart();
+  const hashComment = new Set<CodeLanguage>(['python', 'ruby', 'shell', 'perl', 'r']).has(language);
+  const match = head.match(hashComment
+    ? /^(?:\/\*\*?([\s\S]*?)\*\/|((?:\/\/[^\n]*(?:\n|$))+)|((?:#[^\n]*(?:\n|$))+)|(?:"""|''')([\s\S]*?)(?:"""|'''))/
+    : /^(?:\/\*\*?([\s\S]*?)\*\/|((?:\/\/[^\n]*(?:\n|$))+)|(?:"""|''')([\s\S]*?)(?:"""|'''))/);
+  const raw = match?.slice(1).find((value) => typeof value === 'string' && value.trim()) ?? '';
+  const compact = raw
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*(?:\*|\/\/|#)\s?/, '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+  return compact || null;
+}
+
 interface WalkState {
   root: string;
   limits: ContextGraphExtractionLimits;
+  deadlineMs: number;
+  maxEntries: number;
+  maxDepth: number;
+  visitedEntries: number;
   files: CodeSourceFileRecord[];
   skipped: CodeInventorySkip[];
   excludedSkips: number;
@@ -134,23 +215,48 @@ function addSkip(state: WalkState, skip: CodeInventorySkip): void {
   state.skipped.push(skip);
 }
 
-function readEntries(absolute: string): fs.Dirent[] | null {
+function stopWalk(state: WalkState, pathValue: string, detail: string): void {
+  if (!state.stopped) {
+    state.skipped.push({ path: pathValue, reason: 'cap_reached', detail });
+    state.capSkips += 1;
+  }
+  state.stopped = true;
+}
+
+function readEntries(state: WalkState, relative: string, absolute: string): fs.Dirent[] | null {
+  let directory: fs.Dir | null = null;
   try {
-    return fs.readdirSync(absolute, { withFileTypes: true }).sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+    directory = fs.opendirSync(absolute);
+    const entries: fs.Dirent[] = [];
+    for (;;) {
+      if (Date.now() >= state.deadlineMs) {
+        stopWalk(state, relative || '.', `timeoutMs=${state.limits.timeoutMs} exceeded during inventory`);
+        break;
+      }
+      const entry = directory.readSync();
+      if (!entry) break;
+      if (state.visitedEntries + entries.length >= state.maxEntries) {
+        stopWalk(state, relative || '.', `maxEntries=${state.maxEntries} reached`);
+        break;
+      }
+      entries.push(entry);
+    }
+    return entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
   } catch {
     return null;
+  } finally {
+    try { directory?.closeSync(); } catch { /* the scan is already failing closed */ }
   }
 }
 
 function ingestFile(state: WalkState, rel: string, absolute: string): void {
-  const extension = path.posix.extname(rel).toLowerCase();
-  const language = SUPPORTED_EXTENSIONS.get(extension);
-  if (!language) {
-    if (FOREIGN_CODE_EXTENSIONS.has(extension)) {
-      addSkip(state, { path: rel, reason: 'unsupported_language', detail: `no extractor for ${extension} sources` });
-    }
+  if (Date.now() >= state.deadlineMs) {
+    stopWalk(state, rel, `timeoutMs=${state.limits.timeoutMs} exceeded during inventory`);
     return;
   }
+  const extension = path.posix.extname(rel).toLowerCase();
+  const profile = SUPPORTED_EXTENSIONS.get(extension);
+  if (!profile) return;
   if (isSymlinkEscape(state.root, rel)) {
     addSkip(state, { path: rel, reason: 'symlink_escape', detail: 'symlink resolves outside the workspace' });
     return;
@@ -195,67 +301,94 @@ function ingestFile(state: WalkState, rel: string, absolute: string): void {
     lines: countLines(text),
     isTest: isTestPath(rel),
     extension,
-    language
+    language: profile.language,
+    parser: profile.parser,
+    purpose: leadingSourcePurpose(text, profile.language)
   });
 }
 
-function walkDirectory(state: WalkState, relDir: string): void {
-  if (state.stopped) return;
-  const absolute = relDir ? path.join(state.root, relDir) : state.root;
-  let real: string;
-  try {
-    real = fs.realpathSync(absolute);
-  } catch {
-    addSkip(state, { path: relDir || '.', reason: 'unreadable', detail: 'directory realpath failed' });
-    return;
-  }
-  if (state.visitedDirs.has(real)) return;
-  state.visitedDirs.add(real);
-  const entries = readEntries(absolute);
-  if (!entries) {
-    addSkip(state, { path: relDir || '.', reason: 'unreadable', detail: 'directory listing failed' });
-    return;
-  }
-  for (const entry of entries) {
-    if (state.stopped) return;
-    const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) {
-      if (isExcludedDirName(entry.name)) {
-        addSkip(state, { path: rel, reason: 'excluded', detail: 'directory is not scanned by the code extractor' });
-        continue;
-      }
-      walkDirectory(state, rel);
+function walkDirectories(state: WalkState): void {
+  const stack: Array<{ rel: string; depth: number }> = [{ rel: '', depth: 0 }];
+  while (stack.length > 0 && !state.stopped) {
+    const current = stack.pop()!;
+    if (current.depth > state.maxDepth) {
+      stopWalk(state, current.rel || '.', `maxDepth=${state.maxDepth} reached`);
+      break;
+    }
+    if (Date.now() >= state.deadlineMs) {
+      stopWalk(state, current.rel || '.', `timeoutMs=${state.limits.timeoutMs} exceeded during inventory`);
+      break;
+    }
+    const absolute = current.rel ? path.join(state.root, current.rel) : state.root;
+    let real: string;
+    try {
+      real = fs.realpathSync(absolute);
+    } catch {
+      addSkip(state, { path: current.rel || '.', reason: 'unreadable', detail: 'directory realpath failed' });
       continue;
     }
-    if (entry.isSymbolicLink()) {
-      let target: fs.Stats;
-      try {
-        target = fs.statSync(path.join(state.root, rel));
-      } catch {
-        addSkip(state, { path: rel, reason: 'unreadable', detail: 'broken symlink' });
+    if (state.visitedDirs.has(real)) continue;
+    state.visitedDirs.add(real);
+    const entries = readEntries(state, current.rel, absolute);
+    if (!entries) {
+      addSkip(state, { path: current.rel || '.', reason: 'unreadable', detail: 'directory listing failed' });
+      continue;
+    }
+    const childDirectories: string[] = [];
+    for (const entry of entries) {
+      if (state.stopped) break;
+      state.visitedEntries += 1;
+      const rel = current.rel ? `${current.rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (isExcludedDirectory(rel)) {
+          addSkip(state, { path: rel, reason: 'excluded', detail: 'directory is not scanned by the code extractor' });
+        } else {
+          childDirectories.push(rel);
+        }
         continue;
       }
-      if (target.isDirectory()) {
-        if (isSymlinkEscape(state.root, rel)) {
-          addSkip(state, { path: rel, reason: 'symlink_escape', detail: 'symlinked directory resolves outside the workspace' });
+      if (entry.isSymbolicLink()) {
+        let target: fs.Stats;
+        try {
+          target = fs.statSync(path.join(state.root, rel));
+        } catch {
+          addSkip(state, { path: rel, reason: 'unreadable', detail: 'broken symlink' });
           continue;
         }
-        if (isExcludedDirName(entry.name)) continue;
-        walkDirectory(state, rel);
-        continue;
+        if (target.isDirectory()) {
+          if (isSymlinkEscape(state.root, rel)) {
+            addSkip(state, { path: rel, reason: 'symlink_escape', detail: 'symlinked directory resolves outside the workspace' });
+          } else if (!isExcludedDirectory(rel)) {
+            childDirectories.push(rel);
+          }
+          continue;
+        }
       }
+      if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+      ingestFile(state, rel, path.join(state.root, rel));
     }
-    if (!entry.isFile() && !entry.isSymbolicLink()) continue;
-    ingestFile(state, rel, path.join(state.root, rel));
+    for (let index = childDirectories.length - 1; index >= 0; index -= 1) {
+      stack.push({ rel: childDirectories[index]!, depth: current.depth + 1 });
+    }
   }
 }
 
 /** Walk the workspace and return every parseable source file plus explicit skips. */
 export function walkCodeInventory(root: string, limits: ContextGraphExtractionLimits): CodeInventory {
   const absoluteRoot = path.resolve(root);
+  const maxEntries = Number.isFinite(limits.maxEntries) && Number(limits.maxEntries) > 0
+    ? Math.trunc(Number(limits.maxEntries))
+    : Math.max(4_096, Math.min(1_000_000, Math.trunc(limits.maxFiles * 8)));
+  const maxDepth = Number.isFinite(limits.maxDepth) && Number(limits.maxDepth) >= 0
+    ? Math.trunc(Number(limits.maxDepth))
+    : 256;
   const state: WalkState = {
     root: absoluteRoot,
     limits,
+    deadlineMs: Date.now() + Math.max(1, limits.timeoutMs),
+    maxEntries,
+    maxDepth,
+    visitedEntries: 1,
     files: [],
     skipped: [],
     excludedSkips: 0,
@@ -263,7 +396,7 @@ export function walkCodeInventory(root: string, limits: ContextGraphExtractionLi
     stopped: false,
     visitedDirs: new Set<string>()
   };
-  if (fs.existsSync(absoluteRoot)) walkDirectory(state, '');
+  if (fs.existsSync(absoluteRoot)) walkDirectories(state);
   state.files.sort((left, right) => (left.rel < right.rel ? -1 : left.rel > right.rel ? 1 : 0));
   const byRel = new Map<string, CodeSourceFileRecord>();
   for (const file of state.files) byRel.set(file.rel, file);

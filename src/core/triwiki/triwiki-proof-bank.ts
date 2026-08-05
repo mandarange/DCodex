@@ -40,7 +40,7 @@ export function writeTriWikiProofCard(root: string, card: TriWikiProofCard, subj
   // would let a missing or corrupted manifest turn every subsequent proof write
   // into a full directory walk, which is the cost the index exists to remove.
   // A missing index is reported through the update's own status and seeded by
-  // the explicit maintenance path (`sks wiki refresh --code`). Failing to index
+  // the explicit maintenance path (`sks align run`). Failing to index
   // must never lose the proof card that is already durably written.
   updateTriWikiProofIndexEntry(root, card, written);
   return written;

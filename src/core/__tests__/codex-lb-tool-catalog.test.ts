@@ -13,7 +13,7 @@ import { packageRoot, runProcess } from '../fsx.js'
 
 const CODEX_PARSER_PROBE_TIMEOUT_MS = 20_000
 
-function codex0144Model(slug: string, extra: Record<string, unknown> = {}) {
+function codexCurrentModel(slug: string, extra: Record<string, unknown> = {}) {
   return {
     slug,
     display_name: slug.replace('gpt-', 'GPT-').replaceAll('-', ' '),
@@ -36,14 +36,14 @@ function codex0144Model(slug: string, extra: Record<string, unknown> = {}) {
 
 const remoteCatalog = {
   models: [
-    codex0144Model('gpt-5.6-sol', { minimal_client_version: '0.144.5', debug_echoed_authorization: 'sk-must-not-persist' }),
-    codex0144Model('gpt-5.6-terra'),
-    codex0144Model('gpt-5.6-luna'),
-    codex0144Model('gpt-5.4', { tool_mode: null, use_responses_lite: false })
+    codexCurrentModel('gpt-5.6-sol', { minimal_client_version: '0.144.5', debug_echoed_authorization: 'sk-must-not-persist' }),
+    codexCurrentModel('gpt-5.6-terra'),
+    codexCurrentModel('gpt-5.6-luna'),
+    codexCurrentModel('gpt-5.4', { tool_mode: null, use_responses_lite: false })
   ]
 }
 
-test('normalizes the Codex 0.144.5 catalog and preserves native GPT-5.6 tool transport', () => {
+test('normalizes the Current Codex 0.146.0 catalog and preserves native GPT-5.6 tool transport', () => {
   const result = normalizeCodexLbToolCatalog(remoteCatalog)
   assert.equal(result.ok, true)
   assert.equal(result.tools_transport, 'full_responses')
@@ -59,9 +59,9 @@ test('normalizes the Codex 0.144.5 catalog and preserves native GPT-5.6 tool tra
 
 test('catalog v2 derives slug from id while preserving the remaining Codex model contract', () => {
   const result = normalizeCodexLbToolCatalog({ data: [
-    codex0144IdModel('gpt-5.6-sol'),
-    codex0144IdModel('gpt-5.6-terra'),
-    codex0144IdModel('gpt-5.6-luna')
+    codexCurrentIdModel('gpt-5.6-sol'),
+    codexCurrentIdModel('gpt-5.6-terra'),
+    codexCurrentIdModel('gpt-5.6-luna')
   ] })
   assert.equal(result.ok, true)
   assert.deepEqual(result.catalog.models.map((row: any) => row.slug), [
@@ -73,8 +73,8 @@ test('catalog v2 derives slug from id while preserving the remaining Codex model
   assert.ok(result.catalog.models.every((row: any) => row.use_responses_lite === false))
 })
 
-function codex0144IdModel(id: string) {
-  const { slug: _slug, ...row } = codex0144Model(id)
+function codexCurrentIdModel(id: string) {
+  const { slug: _slug, ...row } = codexCurrentModel(id)
   return { id, ...row }
 }
 
@@ -167,8 +167,8 @@ test('validates transport and cache identity before reusing any catalog', async 
 
 test('caps response bytes and model count before writing a catalog', async () => {
   const tooMany = normalizeCodexLbToolCatalog({ models: [
-    codex0144Model('gpt-5.6-sol'),
-    codex0144Model('gpt-5.6-terra')
+    codexCurrentModel('gpt-5.6-sol'),
+    codexCurrentModel('gpt-5.6-terra')
   ] }, { maxModels: 1 })
   assert.equal(tooMany.ok, false)
   assert.ok(tooMany.blockers.includes('codex_lb_model_catalog_model_limit_exceeded:2:1'))
@@ -226,7 +226,7 @@ test('emitted minimum catalog parses in the project-local Codex CLI preferred ch
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-codex-lb-tool-catalog-parser-'))
   try {
-    const catalog = { models: [codex0144Model('gpt-5.6-sol')] }
+    const catalog = { models: [codexCurrentModel('gpt-5.6-sol')] }
     const ensured = await ensureCodexLbToolCatalog({
       codexHome: root,
       baseUrl: 'https://lb.example.test',

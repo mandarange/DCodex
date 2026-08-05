@@ -4,8 +4,7 @@ import path from 'node:path';
 import { LEGACY_DOLLAR_SKILL_NAMES } from '../routes.js';
 import { legacyCoreSkillNames } from '../codex-native/core-skill-manifest.js';
 import { prefixKnownSksDollarReferences } from '../routes/dollar-prefix.js';
-import { inspectConfinedPath, moveConfinedPath, uniqueConfinedPath } from '../managed-path-safety.js';
-import { writeTextAtomic } from '../fsx.js';
+import { inspectConfinedPath } from '../managed-path-safety.js';
 import { messageOf as errorMessage } from '../errors/message.js';
 import { collectNestedProjectRoots } from './current-project-guidance-nested.js';
 import { containsRetiredPublicSurface } from './current-project-guidance.js';
@@ -29,7 +28,7 @@ const REWRITE_RULES: RewriteRule[] = [
   { id: 'dollar-team', pattern: new RegExp(`${LEFT}\\$Team${RIGHT}`, 'gi'), replace: '$1$sks-naruto' },
   { id: 'dollar-agent', pattern: new RegExp(`${LEFT}\\$Agent${RIGHT}`, 'gi'), replace: '$1$sks-naruto' },
   { id: 'dollar-swarm', pattern: new RegExp(`${LEFT}\\$Swarm${RIGHT}`, 'gi'), replace: '$1$sks-naruto' },
-  { id: 'dollar-ralph', pattern: new RegExp(`${LEFT}\\$Ralph${RIGHT}`, 'gi'), replace: '$1$sks-loop' },
+  { id: 'dollar-ralph', pattern: new RegExp(`${LEFT}\\$Ralph${RIGHT}`, 'gi'), replace: '$1$sks-naruto' },
 
   {
     id: 'cli-glm-profile',
@@ -104,7 +103,7 @@ const REWRITE_RULES: RewriteRule[] = [
   {
     id: 'harness-omx-install',
     pattern: /(?:^|\n)[^\n]*(?:\.omx\b|\.dcodex\b|(?<![A-Za-z0-9_-])omx(?![A-Za-z0-9_-])|(?<![A-Za-z0-9_-])dcodex(?![A-Za-z0-9_-]))[^\n]*\b(?:install|setup|enable|activate)\b[^\n]*|(?:^|\n)[^\n]*\b(?:install|setup|enable|activate)\b[^\n]*(?:\.omx\b|\.dcodex\b|(?<![A-Za-z0-9_-])omx(?![A-Za-z0-9_-])|(?<![A-Za-z0-9_-])dcodex(?![A-Za-z0-9_-]))[^\n]*/gi,
-    replace: '\nRun `sks conflicts cleanup --yes` (or `sks doctor --fix` / `sks update`) to clear conflicting third-party Codex harness markers from the live surface.'
+    replace: '\nRun `sks conflicts cleanup --yes` to quarantine conflicting third-party Codex harness markers from the live surface.'
   }
 ];
 
@@ -134,13 +133,18 @@ export interface SkillLegacySurfaceReport {
   scanned_count: number;
   rewritten_count: number;
   removed_other_harness_skill_count: number;
+  preserved_other_harness_skill_count: number;
+  preserved_user_skill_count: number;
   remaining_count: number;
   preserved_clean_count: number;
   error_count: number;
   rewritten: string[];
   removed_other_harness_skills: string[];
+  preserved_other_harness_skills: string[];
+  preserved_user_skills: string[];
   remaining: string[];
   errors: string[];
+  cleanup_prompt_command: 'sks conflicts cleanup --yes';
 }
 
 export function rewriteSkillLegacySurface(input: unknown): SkillLegacyRewriteResult {
@@ -208,11 +212,11 @@ export async function reconcileSkillLegacySurface(opts: {
       || path.join(home, '.sneakoscope-global')
   );
   const fix = opts.fix === true;
-  const runId = `${Date.now()}-${process.pid}`;
-
   const skillRoots = await collectSkillRoots(projectRoot, home, globalRuntimeRoot);
   const rewritten: string[] = [];
   const removedOtherHarness: string[] = [];
+  const preservedOtherHarness: string[] = [];
+  const preservedUserSkills: string[] = [];
   const remaining: string[] = [];
   const errors: string[] = [];
   let scanned = 0;
@@ -265,19 +269,10 @@ export async function reconcileSkillLegacySurface(opts: {
 
       if (isOtherHarnessSkillDirName(row.name)) {
         scanned += 1;
-        if (!fix) {
-          remaining.push(display);
-          continue;
-        }
-        try {
-          const quarantineRoot = path.join(ownerRoot, '.sneakoscope', 'quarantine', 'other-harness-skills', runId);
-          const dest = await uniqueConfinedPath(ownerRoot, path.join(quarantineRoot, path.relative(ownerRoot, dir)));
-          await moveConfinedPath(ownerRoot, dir, dest);
-          removedOtherHarness.push(display);
-        } catch (error: unknown) {
-          errors.push(`${display}:${errorMessage(error)}`);
-          if (await pathExists(ownerRoot, dir)) remaining.push(display);
-        }
+        // Doctor/update are not authorized to move third-party harness files.
+        // The dedicated conflicts cleanup command owns that quarantining path.
+        preservedOtherHarness.push(display);
+        remaining.push(display);
         continue;
       }
 
@@ -312,21 +307,11 @@ export async function reconcileSkillLegacySurface(opts: {
         remaining.push(display);
         continue;
       }
-
-      if (!fix) {
-        remaining.push(display);
-        continue;
-      }
-
-      try {
-        await writeTextAtomic(skillFile, result.text);
-        const after = await fsp.readFile(skillFile, 'utf8');
-        if (skillLegacySurfaceNeedsRewrite(after)) remaining.push(display);
-        else rewritten.push(display);
-      } catch (error: unknown) {
-        errors.push(`${displayPath(skillRoot, skillFile)}:${errorMessage(error)}`);
-        remaining.push(display);
-      }
+      // A skill body without an independently verified generation receipt may
+      // be user-authored even when it contains historical SKS commands. Keep
+      // it byte-for-byte and block with operator guidance instead of editing it.
+      preservedUserSkills.push(display);
+      remaining.push(display);
     }
   }
 
@@ -337,13 +322,18 @@ export async function reconcileSkillLegacySurface(opts: {
     scanned_count: scanned,
     rewritten_count: rewritten.length,
     removed_other_harness_skill_count: removedOtherHarness.length,
+    preserved_other_harness_skill_count: preservedOtherHarness.length,
+    preserved_user_skill_count: preservedUserSkills.length,
     remaining_count: remaining.length,
     preserved_clean_count: preservedClean,
     error_count: errors.length,
     rewritten: Array.from(new Set(rewritten)).sort(),
     removed_other_harness_skills: Array.from(new Set(removedOtherHarness)).sort(),
+    preserved_other_harness_skills: Array.from(new Set(preservedOtherHarness)).sort(),
+    preserved_user_skills: Array.from(new Set(preservedUserSkills)).sort(),
     remaining: Array.from(new Set(remaining)).sort(),
-    errors: Array.from(new Set(errors)).sort()
+    errors: Array.from(new Set(errors)).sort(),
+    cleanup_prompt_command: 'sks conflicts cleanup --yes'
   };
 }
 
@@ -385,12 +375,4 @@ function displayPath(root: SkillRoot, target: string): string {
   if (root.scope === 'global-runtime') return `$SKS_GLOBAL_ROOT/${rel}`;
   if (root.scope === 'global') return `~/${rel}`;
   return rel;
-}
-
-async function pathExists(ownerRoot: string, target: string): Promise<boolean> {
-  try {
-    return (await inspectConfinedPath(ownerRoot, target)).exists;
-  } catch {
-    return false;
-  }
 }

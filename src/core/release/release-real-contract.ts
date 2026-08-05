@@ -11,9 +11,9 @@ export const RELEASE_REAL_LIVE_COVERAGE_SCHEMA = 'sks.release-real-live-coverage
 export const RELEASE_REAL_SKIP_PROOF_SCHEMA = 'sks.release-real-skip-proof.v1'
 export const RELEASE_REAL_REQUIRED_CHECK_IDS = Object.freeze([
   'codex:actual-config-load-probe',
-  'codex:0144-core-real-probes:require-real',
-  'codex:0144:app-server-v2:real',
-  'codex:0144:capability:real',
+  'codex:current-core-real-probes:require-real',
+  'codex:current:app-server-v2:real',
+  'codex:current:capability:real',
   'doctor:actual',
   'release:pack-receipt',
   'naruto:worktree-coding:blackbox',

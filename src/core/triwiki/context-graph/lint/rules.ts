@@ -31,6 +31,16 @@ import {
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const MIN_ENV_VALUE_LENGTH = 12;
 
+/**
+ * Codex exposes its caller surface as public process metadata. The value is a
+ * product label, not user data or a credential, and legitimately appears in
+ * source-purpose comments. Keep this exception exact so arbitrary values in the
+ * same variable (and every other environment variable) remain leak-checked.
+ */
+function isPublicRuntimeLabel(key: string, value: string): boolean {
+  return key === 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE' && value === 'Codex Desktop';
+}
+
 /** Node kinds that can ground a protected gate in repository truth. */
 const SOURCE_RELATION_KINDS: ReadonlySet<ContextGraphNodeKind> = new Set<ContextGraphNodeKind>([
   'file',
@@ -135,8 +145,12 @@ function isStructuralValue(value: string): boolean {
 
 function environmentValues(env: NodeJS.ProcessEnv): string[] {
   const out: string[] = [];
-  for (const value of Object.values(env)) {
-    if (typeof value === 'string' && value.length >= MIN_ENV_VALUE_LENGTH) out.push(value);
+  for (const [key, value] of Object.entries(env)) {
+    if (
+      typeof value === 'string'
+      && value.length >= MIN_ENV_VALUE_LENGTH
+      && !isPublicRuntimeLabel(key, value)
+    ) out.push(value);
   }
   return out;
 }

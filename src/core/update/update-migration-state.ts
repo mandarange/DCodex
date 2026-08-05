@@ -4,11 +4,11 @@ import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { ensureDir, exists, globalSksRoot, nowIso, packageRoot, PACKAGE_VERSION, projectRoot, readJson, readText, runProcess, sameFilesystemPath, sha256, which, writeJsonAtomic, writeReceiptRotated, writeTextAtomic } from '../fsx.js';
+import { ensureDir, exists, globalSksRoot, nowIso, packageRoot, PACKAGE_VERSION, projectRoot, readJson, readText, runProcess, sha256, which, writeJsonAtomic, writeReceiptRotated, writeTextAtomic } from '../fsx.js';
 import { MANAGED_ASSET_VERSION } from '../managed-assets/managed-assets-manifest.js';
 import { enforceRetention } from '../retention.js';
 import { COMMANDS } from '../../cli/command-registry.js';
-import { reconcileSkills } from '../init/skills.js';
+import { reconcileLegacyManagedGeneration } from '../init/legacy-generation-convergence.js';
 import { codexHookTrustDoctor } from '../codex-hooks/codex-hook-trust-doctor.js';
 import { writeCodexConfigGuarded } from '../codex/codex-config-guard.js';
 import { compareSemVer } from './semver.js';
@@ -376,6 +376,11 @@ const UPDATE_MIGRATION_STAGES: UpdateMigrationStageDefinition[] = [
     run: runOtherHarnessCleanupStage
   },
   {
+    id: 'skills-reconcile',
+    min_from_version: '0.0.0',
+    run: runSkillsReconcileStage
+  },
+  {
     id: 'current-public-surface-reconcile',
     min_from_version: '0.0.0',
     run: runCurrentPublicSurfaceReconcileStage
@@ -384,11 +389,6 @@ const UPDATE_MIGRATION_STAGES: UpdateMigrationStageDefinition[] = [
     id: 'session-state-split',
     min_from_version: '0.0.0',
     run: runSessionStateSplitStage
-  },
-  {
-    id: 'skills-reconcile',
-    min_from_version: '0.0.0',
-    run: runSkillsReconcileStage
   },
   {
     id: 'menubar-retarget',
@@ -447,20 +447,23 @@ async function runOtherHarnessCleanupStage(root: string): Promise<Omit<UpdateMig
 async function runCurrentPublicSurfaceReconcileStage(root: string): Promise<Omit<UpdateMigrationStageRun, 'schema' | 'id' | 'min_from_version' | 'from_version'>> {
   const [
     { runDoctorCommandAliasCleanup },
-    { reconcileRetiredAgentRoleResidue },
     { migrateSksProfilesToPerFile },
     { cleanupRetiredRemoteBridgeLaunchAgent, quarantineRetiredRemoteBridgeBindings }
   ] = await Promise.all([
     import('../doctor/command-alias-cleanup.js'),
-    import('../agents/agent-role-config.js'),
     import('../auto-review.js'),
     import('../codex-app/menubar/migration.js')
   ]);
   const home = path.resolve(process.env.HOME || os.homedir());
   const globalRuntimeRoot = path.resolve(process.env.SKS_GLOBAL_ROOT || path.join(home, '.sneakoscope-global'));
   // Serialize config writers: public-surface guidance and profile migration both touch ~/.codex/config.toml.
-  const publicSurface = await runDoctorCommandAliasCleanup({ root, home, globalRuntimeRoot, fix: true });
-  const retiredRoles = await reconcileRetiredAgentRoleResidue({ root, home, globalRuntimeRoot, fix: true });
+  const publicSurface = await runDoctorCommandAliasCleanup({
+    root,
+    home,
+    globalRuntimeRoot,
+    fix: true,
+    managedGenerationAlreadyConverged: true
+  });
   const profileMigration = await migrateSksProfilesToPerFile({ env: process.env }).catch((err: any) => ({
     error: err?.message || String(err),
     retired_profile_table_count: 0,
@@ -470,11 +473,9 @@ async function runCurrentPublicSurfaceReconcileStage(root: string): Promise<Omit
   const retiredBindings = await quarantineRetiredRemoteBridgeBindings(root);
   const remainingCount = Number(publicSurface.cleanup?.remaining_count || 0)
     + Number(publicSurface.cleanup?.managed_runtime?.remaining_managed_artifact_count || 0)
-    + Number(publicSurface.cleanup?.project_guidance?.remaining_count || 0)
-    + retiredRoles.remaining_count;
+    + Number(publicSurface.cleanup?.project_guidance?.remaining_count || 0);
   const blockers = [
     ...(publicSurface.ok === true ? [] : ['public_surface_reconcile_failed']),
-    ...(retiredRoles.ok === true ? [] : ['retired_agent_role_reconcile_failed']),
     ...(retiredLaunchAgent.ok ? [] : retiredLaunchAgent.blockers),
     ...(retiredBindings.ok ? [] : retiredBindings.blockers),
     ...((profileMigration as any).error ? [`retired_profile_migration_failed:${(profileMigration as any).error}`] : []),
@@ -501,8 +502,8 @@ async function runCurrentPublicSurfaceReconcileStage(root: string): Promise<Omit
       quarantined_runtime_collision_count: Number(publicSurface.cleanup?.managed_runtime?.preserved_user_file_count || 0),
       reconciled_guidance_count: Number(publicSurface.cleanup?.project_guidance?.reconciled_count || 0),
       quarantined_guidance_collision_count: Number(publicSurface.cleanup?.project_guidance?.preserved_user_file_count || 0),
-      removed_retired_role_count: retiredRoles.removed_count,
-      quarantined_retired_role_collision_count: retiredRoles.quarantined_user_collision_count,
+      removed_retired_role_count: 0,
+      quarantined_retired_role_collision_count: 0,
       retired_profile_table_count: Number((profileMigration as any).retired_profile_table_count || 0),
       retired_profile_file_removed_count: Number((profileMigration as any).retired_profile_file_removed_count || 0),
       retired_remote_bridge_launch_agent_status: retiredLaunchAgent.status,
@@ -829,47 +830,76 @@ async function runSkillsReconcileStage(root: string): Promise<Omit<UpdateMigrati
     };
   }
   const home = path.resolve(process.env.HOME || os.homedir());
-  const globalTarget = path.resolve(home, '.agents', 'skills');
-  const projectTarget = path.resolve(root, '.agents', 'skills');
-  const global = await reconcileSkills({ targetDir: globalTarget, scope: 'global', fix: true })
-    .catch((err: any) => ({ ok: false, error: err?.message || String(err) }));
-  const sameSkillRoot = await sameFilesystemPath(projectTarget, globalTarget);
-  const project = sameSkillRoot
-    ? {
-        schema: 'sks.skill-reconcile.v1',
-        ok: true,
-        scope: 'project',
-        target_dir: projectTarget,
-        fix: true,
-        skipped: true,
-        reason: 'same_as_authoritative_global_skill_root'
-      }
-    : await reconcileSkills({ targetDir: projectTarget, scope: 'project', fix: true })
-      .catch((err: any) => ({ ok: false, error: err?.message || String(err) }));
-  const globalRemaining = Number((global as any).retired_residue?.remaining_count || 0);
-  const projectRemaining = Number((project as any).retired_residue?.remaining_count || 0);
+  const globalRuntimeRoot = path.resolve(process.env.SKS_GLOBAL_ROOT || path.join(home, '.sneakoscope-global'));
+  const convergence = await reconcileLegacyManagedGeneration({
+    root,
+    home,
+    globalRuntimeRoot,
+    fix: true
+  });
+  const skillReports = [convergence.global_skills, ...convergence.project_skills];
+  const globalRemaining = Number((convergence.global_skills as any).retired_residue?.remaining_count || 0);
+  const projectRemaining = convergence.project_skills.reduce(
+    (sum, report) => sum + Number((report as any).retired_residue?.remaining_count || 0),
+    0
+  );
+  const runtimeRemaining = convergence.retired_runtime_scopes.reduce(
+    (sum, report) => sum + report.remaining_managed_artifact_count,
+    0
+  );
+  const runtimeErrors = convergence.retired_runtime_scopes.reduce(
+    (sum, report) => sum + report.error_count,
+    0
+  );
   const blockers = [
-    ...((global as any).ok === false || (global as any).error ? [`global:${(global as any).error || 'failed'}`] : []),
-    ...((project as any).ok === false || (project as any).error ? [`project:${(project as any).error || 'failed'}`] : []),
+    ...skillReports.flatMap((report) => report.ok ? [] : [
+      `${report.scope}:${'error' in report ? report.error : 'failed'}`
+    ]),
     ...(globalRemaining ? [`global_retired_residue_remaining:${globalRemaining}`] : []),
-    ...(projectRemaining ? [`project_retired_residue_remaining:${projectRemaining}`] : [])
+    ...(projectRemaining ? [`project_retired_residue_remaining:${projectRemaining}`] : []),
+    ...(convergence.retired_agent_roles.ok ? [] : ['retired_agent_role_reconcile_failed']),
+    ...(runtimeRemaining ? [`retired_runtime_residue_remaining:${runtimeRemaining}`] : []),
+    ...(runtimeErrors ? [`retired_runtime_reconcile_failed:${runtimeErrors}`] : []),
+    ...(convergence.managed_configs.remaining_count
+      ? [`retired_config_residue_remaining:${convergence.managed_configs.remaining_count}`]
+      : []),
+    ...(convergence.managed_configs.error_count
+      ? [`retired_config_reconcile_failed:${convergence.managed_configs.error_count}`]
+      : []),
+    ...((convergence as any).blockers || [])
   ];
+  const uniqueBlockers = [...new Set(blockers)];
+  const global = convergence.global_skills;
   return {
-    ok: blockers.length === 0,
-    status: blockers.length ? 'failed' : 'ok',
+    ok: uniqueBlockers.length === 0,
+    status: uniqueBlockers.length ? 'failed' : 'ok',
     actions: [
+      'reconciled_latest_managed_generation',
       'reconciled_global_skills',
-      sameSkillRoot ? 'skipped_project_skills_same_as_global' : 'reconciled_project_skills'
+      'reconciled_project_skills'
     ],
-    blockers,
-    warnings: [],
+    blockers: uniqueBlockers,
+    warnings: convergence.warnings,
     detail: {
       global_installed: Array.isArray((global as any).installed) ? (global as any).installed.length : null,
       global_removed_count: Number((global as any).retired_residue?.removed_count || 0)
         + (Array.isArray((global as any).removed) ? (global as any).removed.length : 0),
-      project_removed_count: Number((project as any).retired_residue?.removed_count || 0)
-        + (Array.isArray((project as any).removed) ? (project as any).removed.length : 0),
-      residue_remaining_count: globalRemaining + projectRemaining
+      project_removed_count: convergence.project_skills.reduce(
+        (sum, report) => sum
+          + Number((report as any).retired_residue?.removed_count || 0)
+          + (Array.isArray((report as any).removed) ? (report as any).removed.length : 0),
+        0
+      ),
+      retired_agent_role_removed_count: convergence.retired_agent_roles.removed_count,
+      retired_runtime_removed_count: convergence.retired_runtime_scopes.reduce(
+        (sum, report) => sum + report.removed_managed_artifact_count,
+        0
+      ),
+      retired_config_rewritten_count: convergence.managed_configs.rewritten_count,
+      residue_remaining_count: globalRemaining
+        + projectRemaining
+        + runtimeRemaining
+        + convergence.managed_configs.remaining_count
     }
   };
 }

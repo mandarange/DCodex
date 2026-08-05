@@ -1,0 +1,45 @@
+{
+  "schema": "sks.codex-release-manifest.v1",
+  "targetTag": "rust-v0.146.0",
+  "requiredCliVersion": "0.146.0",
+  "preferredCliVersion": "0.146.0",
+  "sdkVersion": "0.146.0",
+  "minimumSupportedVersion": "0.146.0",
+  "narutoCapabilityFloorVersion": "0.146.0",
+  "protocolMode": "app-server-v2",
+  "generatedSchemaSha256": "2be4fd32103409b5b4864daaf429f6b61a5e55eb98ca5f63cd43569556b009c8",
+  "upstreamCommit": "rust-v0.146.0",
+  "featurePolicies": {
+    "multiAgentMode": "delegate",
+    "multiAgentV2": "delegate",
+    "agentsMaxConcurrentThreads": "delegate",
+    "indexedWebSearch": "probe",
+    "currentTimeRead": "wrap",
+    "threadListSearchRead": "probe",
+    "pluginCatalogRefresh": "probe",
+    "terminalSubagentErrorPropagation": "probe",
+    "execMcpTransientRecovery": "probe",
+    "remoteNativeEnvironment": "probe",
+    "rolloutTokenBudget": "probe",
+    "mcpStartupToolTimeouts": "wrap",
+    "gpt56TerraLunaSolRouting": "delegate"
+  },
+  "requiredRealProbes": [
+    "runtime_identity",
+    "protocol_schema_generation",
+    "multi_agent_mode_schema",
+    "indexed_web_search_schema",
+    "current_time_read_schema",
+    "thread_list_search_schema",
+    "terminal_error_schema",
+    "rollout_budget_schema"
+  ],
+  "supportedPlatforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64",
+    "win32-arm64",
+    "win32-x64"
+  ]
+}

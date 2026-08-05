@@ -24,6 +24,7 @@ import {
 } from '../compiler/cache-key.js';
 import { readSourceHashes } from '../compiler/freshness.js';
 import { inspectCodePackHeadFreshness } from '../../code-pack-head-freshness.js';
+import { inspectCodeNavigationSources } from '../../code-navigation-policy.js';
 import { readContextGraphMeta, readContextGraphSnapshot } from './snapshot-store.js';
 
 const STATUS_SCHEMA = 'sks.context-graph-status.v1' as const;
@@ -115,12 +116,20 @@ export async function contextGraphStatus(
   const reasons: ContextGraphStaleReason[] = [];
   if (snapshot.schemaRevision !== CONTEXT_GRAPH_SCHEMA_REVISION) reasons.push('schema_revision_changed');
 
-  const current =
-    options.cacheKey
+  const codeOnly = meta.cacheKeyParts.sourcePolicy === 'repository_code_only';
+  // A caller-supplied/neutral key cannot prove a code-only inventory. Always
+  // rescan the accepted current source bytes for this policy so additions,
+  // deletions, and edits cannot be hidden behind artifact-only freshness.
+  const sourceInspection = codeOnly
+    ? await inspectCodeNavigationSources(root, options.extractors ?? snapshot.extractors)
+    : null;
+  if (sourceInspection?.fatalSkips.length) reasons.push('source_inventory_incomplete');
+  const current = sourceInspection?.cacheKey
+    ?? options.cacheKey
     ?? (await computeContextGraphCacheKey({ root, extractors: options.extractors ?? [] }));
-  if (!current.reusable) reasons.push('git_state_unknown');
+  if (!current.reusable && !codeOnly) reasons.push('git_state_unknown');
   const cacheReasons = compareCacheKeyParts(meta.cacheKeyParts, current.parts);
-  if (cacheReasons.includes('head_changed') && meta.cacheKeyParts.head) {
+  if (!codeOnly && cacheReasons.includes('head_changed') && meta.cacheKeyParts.head) {
     const headFreshness = await inspectCodePackHeadFreshness(root, meta.cacheKeyParts.head, {
       timeoutMs: METADATA_ONLY_HEAD_CHECK_TIMEOUT_MS
     });
@@ -135,7 +144,7 @@ export async function contextGraphStatus(
     reasons.push(reason);
   }
 
-  if (options.verifySources !== false) {
+  if (options.verifySources !== false && !codeOnly) {
     const recorded = Object.keys(meta.inputHashes ?? {}).sort();
     const limit = Math.max(0, options.maxVerifiedSources ?? DEFAULT_MAX_VERIFIED_SOURCES);
     const observed = await readSourceHashes(root, recorded.slice(0, limit));

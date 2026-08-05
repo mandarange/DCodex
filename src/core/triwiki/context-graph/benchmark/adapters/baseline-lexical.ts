@@ -9,7 +9,7 @@
  * no production module, and it must never be re-attached to
  * `src/core/search/context.ts` or to any other answer path. When the graph is
  * missing or stale the product surfaces `context_graph_missing` /
- * `context_graph_stale` plus `sks wiki refresh --code`; it does not run this.
+ * `context_graph_stale` plus `sks align run`; it does not run this.
  *
  * Everything the instrument cannot observe is reported as unobserved rather
  * than guessed. In particular it reports no provenance, no gate topology, no

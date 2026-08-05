@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { buildCodexPluginInventory, runCodexPluginListJson } from '../../codex-plugins/codex-plugin-json.js';
 import { ensureCodexPlugins } from '../../codex-plugins/codex-plugin-repair.js';
 
-const CODEX_0144_LIST = {
+const CODEX_CURRENT_LIST = {
   installed: [
     {
       pluginId: 'browser@openai-bundled',
@@ -42,7 +42,7 @@ const CODEX_0144_LIST = {
 test('Codex 0.144 installed/available plugin manifest is normalized without unsupported detail calls', async () => {
   const inventory = await buildCodexPluginInventory({
     codexBin: null,
-    listJson: CODEX_0144_LIST,
+    listJson: CODEX_CURRENT_LIST,
     detailJsonSupported: false
   });
   assert.equal(inventory.plugins.length, 3);
@@ -65,9 +65,9 @@ test('plugin inventory requests the complete available catalog', async () => {
   const calls: Array<{ bin: string; args: string[] }> = [];
   const result = await runCodexPluginListJson('/fixture/codex', async (bin, args) => {
     calls.push({ bin, args });
-    return CODEX_0144_LIST;
+    return CODEX_CURRENT_LIST;
   });
-  assert.equal(result, CODEX_0144_LIST);
+  assert.equal(result, CODEX_CURRENT_LIST);
   assert.deepEqual(calls, [{
     bin: '/fixture/codex',
     args: ['plugin', 'list', '--available', '--json']
@@ -83,9 +83,9 @@ test('plugin inventory falls back only when an older CLI rejects --available', a
           raw_text: "error: unexpected argument '--available' found",
           blockers: ['codex_plugin_json_parse_failed:plugin list --available --json']
         }
-      : { installed: CODEX_0144_LIST.installed };
+      : { installed: CODEX_CURRENT_LIST.installed };
   });
-  assert.deepEqual(result, { installed: CODEX_0144_LIST.installed });
+  assert.deepEqual(result, { installed: CODEX_CURRENT_LIST.installed });
   assert.deepEqual(calls, [
     ['plugin', 'list', '--available', '--json'],
     ['plugin', 'list', '--json']
@@ -96,7 +96,7 @@ test('complete catalog detail lookup stays bounded to installed plugins', async 
   const detailed: string[] = [];
   const inventory = await buildCodexPluginInventory({
     codexBin: null,
-    listJson: CODEX_0144_LIST,
+    listJson: CODEX_CURRENT_LIST,
     detailJsonSupported: true,
     detailFactory: async (pluginId) => {
       detailed.push(pluginId);
@@ -121,13 +121,13 @@ test('catalog errors keep selector completeness unknown instead of causing a fal
 test('plugin repair runs official add command, rechecks, and requires a new task manifest', async () => {
   const before = await buildCodexPluginInventory({
     codexBin: null,
-    listJson: { installed: [], available: CODEX_0144_LIST.available },
+    listJson: { installed: [], available: CODEX_CURRENT_LIST.available },
     detailJsonSupported: false
   });
   const after = await buildCodexPluginInventory({
     codexBin: null,
     listJson: {
-      installed: [{ ...CODEX_0144_LIST.available[0], installed: true, enabled: true }],
+      installed: [{ ...CODEX_CURRENT_LIST.available[0], installed: true, enabled: true }],
       available: []
     },
     detailJsonSupported: false
@@ -155,7 +155,7 @@ test('plugin repair runs official add command, rechecks, and requires a new task
 test('plugin repair redacts credentials from process output tails', async () => {
   const inventory = await buildCodexPluginInventory({
     codexBin: null,
-    listJson: { installed: [], available: CODEX_0144_LIST.available },
+    listJson: { installed: [], available: CODEX_CURRENT_LIST.available },
     detailJsonSupported: false
   });
   const secret = 'sk-proj-secret-value-1234567890';

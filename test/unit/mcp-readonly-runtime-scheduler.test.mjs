@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { proveMcpReadOnlyRuntimeScheduler } from '../../dist/core/mcp/mcp-0-134-policy.js';
+import { proveMcpReadOnlyRuntimeScheduler } from '../../dist/core/mcp/mcp-tool-policy.js';
 
 test('MCP readOnly runtime scheduler records read-only overlap and serialized writes', async () => {
   const proof = await proveMcpReadOnlyRuntimeScheduler();

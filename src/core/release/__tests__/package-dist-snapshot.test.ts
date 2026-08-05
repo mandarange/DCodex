@@ -11,11 +11,13 @@ test('package snapshots include brace-reincluded runtime scripts in release auth
   const pkg = {
     files: [
       'dist',
+      '!dist/**/*.test-helper.js',
       '!dist/scripts/**',
       'dist/scripts/{required-a.js,required-b.js}'
     ]
   }
   await write(root, 'dist/core/runtime.js', 'runtime\n')
+  await write(root, 'dist/core/runtime.test-helper.js', 'checkout-only test helper\n')
   await write(root, 'dist/scripts/required-a.js', 'required-a-v1\n')
   await write(root, 'dist/scripts/required-b.js', 'required-b\n')
   await write(root, 'dist/scripts/excluded.js', 'excluded-v1\n')

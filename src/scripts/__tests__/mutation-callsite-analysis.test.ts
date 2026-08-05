@@ -5,7 +5,8 @@ import {
   buildMutationAstIndex,
   mutationAstContextAt,
   mutationCallsiteOccurrences,
-  mutationCallsiteSha256
+  mutationCallsiteSha256,
+  mutationSymbolsEquivalent
 } from '../mutation-callsite-analysis.js';
 
 test('mutation scope comes from the TypeScript AST rather than prose or string contents', () => {
@@ -42,6 +43,12 @@ test('identical mutations in one reviewed scope receive distinct occurrence iden
     scopeContractSha256
   });
   assert.deepEqual(mutationCallsiteOccurrences([hash, hash]), [1, 2]);
+});
+
+test('callback identities ignore line-only movement while retaining their enclosing symbol', () => {
+  assert.equal(mutationSymbolsEquivalent('rotate.callback@1015', 'rotate.callback@1045'), true);
+  assert.equal(mutationSymbolsEquivalent('rotate.callback@1015', 'prune.callback@1015'), false);
+  assert.equal(mutationSymbolsEquivalent('rotate', 'rotate.callback@1015'), false);
 });
 
 test('every risky token on one source line is enumerated', () => {

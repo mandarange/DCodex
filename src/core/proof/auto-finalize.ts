@@ -3,6 +3,10 @@ import { exists, readJson, writeJsonAtomic, type JsonData } from '../fsx.js';
 import { finalizeRouteWithProof } from './route-finalizer.js';
 import { evaluateGate } from '../stop-gate/gate-evaluator.js';
 import { effectiveSubagentTarget } from '../subagents/wave-lifecycle.js';
+import {
+  officialSubagentEvidenceReady,
+  terminalBlockedNarutoGate
+} from '../subagents/terminal-subagent-state.js';
 
 export async function maybeFinalizeRoute(root: any, {
   missionId,
@@ -50,9 +54,14 @@ export async function maybeFinalizeRoute(root: any, {
     ? [`route_gate_${gateVerdict.verdict}`, ...gateVerdict.reasons.map((item) => `route_gate_${item}`)]
     : [];
   if (callerGateMismatch) gateBlockers.push('route_gate_caller_disk_mismatch');
+  const terminalBlocked = terminalBlockedNarutoGate(gateObject)
+    && officialSubagentBinding.blockers.length === 0
+    && blockers.length === 0
+    && !callerGateMismatch;
   const computedStatus = computeAutoFinalizeStatus({
     mock,
     passed,
+    terminalBlocked,
     blockers: [...blockers, ...gateBlockers, ...officialSubagentBinding.blockers]
   });
   const statusResolution = applyStatusHint(computedStatus, statusHint);
@@ -76,13 +85,16 @@ export async function maybeFinalizeRoute(root: any, {
       ...(mock ? ['Route was finalized from an explicit mock/fixture command path.'] : []),
       ...(gateVerdict?.verdict === 'mock_only' ? ['Route gate is mock fixture evidence and cannot satisfy a real completion gate.'] : []),
       ...(statusResolution.rejected ? [`statusHint rejected: requested ${statusResolution.rejected.requested}, computed ${statusResolution.rejected.computed}.`] : []),
+      ...(terminalBlocked
+        ? [`Official subagent lifecycle evidence is complete, but the parent outcome is terminally blocked: ${(gateObject?.blockers || []).join(', ')}.`]
+        : []),
       ...(!passed && !mock ? ['Route gate did not pass' + (reason ? ': ' + reason : '') + '.'] : [])
     ],
     blockers: [
       ...blockers,
-      ...gateBlockers,
+      ...(!terminalBlocked ? gateBlockers : []),
       ...officialSubagentBinding.blockers,
-      ...(!passed && !mock && !gateBlockers.length ? ['route_gate_not_passed'] : [])
+      ...(!passed && !mock && !terminalBlocked && !gateBlockers.length ? ['route_gate_not_passed'] : [])
     ],
     statusHint: finalStatus,
     statusHintRejected: statusResolution.rejected,
@@ -107,8 +119,9 @@ const STATUS_RANK: Record<string, number> = {
   verified: 3
 };
 
-function computeAutoFinalizeStatus({ mock, passed, blockers }: { mock: boolean; passed: boolean; blockers: unknown[] }) {
+function computeAutoFinalizeStatus({ mock, passed, terminalBlocked, blockers }: { mock: boolean; passed: boolean; terminalBlocked: boolean; blockers: unknown[] }) {
   if (mock) return 'mock_only';
+  if (terminalBlocked) return 'verified_partial';
   if (blockers.length > 0) return 'blocked';
   return passed ? 'verified' : 'blocked';
 }
@@ -155,17 +168,18 @@ async function bindOfficialSubagentEvidence(missionDir: string, gate: any) {
   const blockers: string[] = [];
   const evidenceShapeValid = evidence?.schema === 'sks.subagent-evidence.v1'
     && evidence?.workflow === 'official_codex_subagent';
-  if (!evidenceShapeValid || evidence?.ok !== true || evidence?.status !== 'completed') {
+  if (!evidenceShapeValid || !officialSubagentEvidenceReady(evidence)) {
     blockers.push('official_subagent_evidence_missing');
   }
   if (!workflowRunId || String(evidence?.run_id || '').trim() !== workflowRunId) {
     blockers.push('official_subagent_workflow_run_id_mismatch');
   }
+  const parentSummaryStatus = String(evidence?.parent_summary_status || '');
   const parentSummaryPresent = evidence?.parent_summary_present === true
     && evidence?.parent_summary_trustworthy === true
-    && evidence?.parent_summary_status === 'completed'
+    && ['completed', 'blocked'].includes(parentSummaryStatus)
     && parentSummary?.schema === 'sks.subagent-parent-summary.v1'
-    && parentSummary?.status === 'completed'
+    && parentSummary?.status === parentSummaryStatus
     && String(parentSummary?.run_id || '').trim() === workflowRunId;
   if (!parentSummaryPresent) blockers.push('official_subagent_parent_summary_missing');
   if (evidence?.count_policy !== target.countPolicy) blockers.push('official_subagent_count_policy_mismatch');

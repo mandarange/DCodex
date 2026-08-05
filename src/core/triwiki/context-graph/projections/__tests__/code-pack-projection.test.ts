@@ -250,8 +250,8 @@ test('a missing graph is reported explicitly instead of producing a degraded pac
     assert.equal(result.ok, false);
     assert.equal(result.pack, null);
     assert.equal(result.errorCode, CONTEXT_GRAPH_MISSING_ERROR);
-    assert.equal(result.repairCommand, 'sks wiki refresh --code');
-    assert.ok(result.errors.some((issue) => issue.includes('sks wiki refresh --code')));
+    assert.equal(result.repairCommand, 'sks align run');
+    assert.ok(result.errors.some((issue) => issue.includes('sks align run')));
   } finally {
     clearContextGraphSnapshotCache();
     removeProjectionFixture(fixture.root);

@@ -1,4 +1,11 @@
 import { fileURLToPath } from 'node:url';
+import type { Readable, Writable } from 'node:stream';
+import { McpServer, fromJsonSchema, type CallToolResult } from '@modelcontextprotocol/server';
+import {
+  StdioServerTransport,
+  serveStdio,
+  type StdioServerHandle
+} from '@modelcontextprotocol/server/stdio';
 import { buildAgentManifest, type AgentManifestEntry } from './agent-manifest.js';
 import { AGENT_MODE_ENV_PASSTHROUGH } from './agent-mode.js';
 import { exists, runProcess } from '../fsx.js';
@@ -9,38 +16,27 @@ import {
   validateJsonSchema,
   type CommandContractV3
 } from '../safety/command-contract/index.js';
+import {
+  MCP_PROTOCOL_VERSION,
+  modernMcpRequest,
+  modernServerInfo
+} from '../mcp/modern-protocol.js';
 
 export interface RunMcpServerOptions {
   exposeExec?: boolean;
-  input?: NodeJS.ReadableStream;
-  output?: NodeJS.WritableStream;
+  input?: Readable;
+  output?: Writable;
+  maxConcurrentTools?: number;
+  maxQueuedTools?: number;
+  onError?: (error: Error) => void;
 }
 
 const MCP_SERVER_NAME = 'sks-mcp-server';
 const MCP_SERVER_VERSION = '1.0.0';
-
-// Same dynamic-import trick as the MAD-SKS SQL-plane MCP executor: avoids TS
-// bundling the SDK's ESM entrypoints as a static import target this file must
-// resolve at compile time, while still using the real installed SDK.
-async function loadMcpSdk(): Promise<{
-  Server: any;
-  StdioServerTransport: any;
-  ListToolsRequestSchema: any;
-  CallToolRequestSchema: any;
-}> {
-  const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
-  const [{ Server }, { StdioServerTransport }, types] = await Promise.all([
-    dynamicImport('@modelcontextprotocol/sdk/server/index.js'),
-    dynamicImport('@modelcontextprotocol/sdk/server/stdio.js'),
-    dynamicImport('@modelcontextprotocol/sdk/types.js')
-  ]);
-  return {
-    Server,
-    StdioServerTransport,
-    ListToolsRequestSchema: types.ListToolsRequestSchema,
-    CallToolRequestSchema: types.CallToolRequestSchema
-  };
-}
+const MCP_SERVER_INFO = { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION };
+const MAX_MCP_MESSAGE_BYTES = 10 * 1024 * 1024;
+const DEFAULT_MAX_CONCURRENT_TOOLS = 4;
+const DEFAULT_MAX_QUEUED_TOOLS = 64;
 
 function exposedTools(manifest: AgentManifestEntry[], exposeExec: boolean): AgentManifestEntry[] {
   return manifest.filter((tool) =>
@@ -50,25 +46,18 @@ function exposedTools(manifest: AgentManifestEntry[], exposeExec: boolean): Agen
   );
 }
 
-function toMcpToolDescriptor(entry: AgentManifestEntry): Record<string, unknown> {
-  return {
-    name: entry.name,
-    description: entry.description,
-    inputSchema: entry.input_schema,
-    annotations: {
-      readOnlyHint: entry.read_only,
-      destructiveHint: entry.risk === 'R2' || entry.risk === 'R3',
-      title: entry.name
-    }
-  };
-}
-
 async function resolveSksEntrypoint(): Promise<string> {
-  // Mirrors src/core/commands/run-command.ts's runSks() bin resolution: prefer the
-  // packaged dist entrypoint, fall back to the source-tree relative path in dev.
+  // Prefer the packaged sibling. Source-driven tests/dev runs resolve the built
+  // dist entrypoint, then the TypeScript entrypoint when the current runtime can
+  // execute it (Bun). Every candidate is derived from import.meta.url so cwd cannot
+  // redirect the command to an untrusted path.
   const packedBin = fileURLToPath(new URL('../../bin/sks.js', import.meta.url));
-  const sourceBin = fileURLToPath(new URL('../../../bin/sks.js', import.meta.url));
-  return (await exists(packedBin)) ? packedBin : sourceBin;
+  const sourceTreeDistBin = fileURLToPath(new URL('../../../dist/bin/sks.js', import.meta.url));
+  const sourceBin = fileURLToPath(new URL('../../bin/sks.ts', import.meta.url));
+  for (const candidate of [packedBin, sourceTreeDistBin, sourceBin]) {
+    if (await exists(candidate)) return candidate;
+  }
+  throw new McpInvocationError('ENTRYPOINT_MISSING', 'Sneakoscope CLI entrypoint is unavailable');
 }
 
 export async function invokeSksTool(
@@ -114,7 +103,7 @@ export class McpInvocationError extends Error {
   }
 }
 
-function mcpToolErrorResult(message: string, code = 'EXECUTION_FAILED'): Record<string, unknown> {
+function mcpToolErrorResult(message: string, code = 'EXECUTION_FAILED'): CallToolResult {
   return {
     content: [{ type: 'text', text: message }],
     isError: true,
@@ -122,58 +111,114 @@ function mcpToolErrorResult(message: string, code = 'EXECUTION_FAILED'): Record<
   };
 }
 
-export async function runMcpServer(opts: RunMcpServerOptions = {}): Promise<void> {
+class BoundedToolExecutor {
+  private active = 0;
+  private readonly waiting: Array<() => void> = [];
+
+  constructor(
+    private readonly maxConcurrent: number,
+    private readonly maxQueued: number
+  ) {
+    if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) {
+      throw new RangeError('maxConcurrentTools must be a positive integer');
+    }
+    if (!Number.isInteger(maxQueued) || maxQueued < 0) {
+      throw new RangeError('maxQueuedTools must be a non-negative integer');
+    }
+  }
+
+  async run<T>(operation: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await operation();
+    } finally {
+      this.release();
+    }
+  }
+
+  private async acquire(): Promise<void> {
+    if (this.active < this.maxConcurrent) {
+      this.active += 1;
+      return;
+    }
+    if (this.waiting.length >= this.maxQueued) {
+      throw new McpInvocationError('SERVER_BUSY', 'MCP tool execution queue is full');
+    }
+    await new Promise<void>((resolve) => this.waiting.push(resolve));
+  }
+
+  private release(): void {
+    const next = this.waiting.shift();
+    if (next) next();
+    else this.active -= 1;
+  }
+}
+
+function buildMcpServer(exposeExec: boolean, executor: BoundedToolExecutor): McpServer {
+  const server = new McpServer(MCP_SERVER_INFO, {
+    capabilities: { tools: {} },
+    instructions: 'Use tools/list to discover safe Sneakoscope commands before calling tools/call.'
+  });
+  const manifest = buildAgentManifest();
+  for (const entry of exposedTools(manifest.tools, exposeExec)) {
+    const contract = commandContract(entry.name);
+    if (!contract) {
+      throw new McpInvocationError('CONTRACT_MISSING', `Missing command contract: ${entry.name}`);
+    }
+    server.registerTool(entry.name, {
+      title: entry.name,
+      description: entry.description,
+      inputSchema: fromJsonSchema(contract.input_schema),
+      annotations: {
+        readOnlyHint: entry.read_only,
+        destructiveHint: entry.risk === 'R2' || entry.risk === 'R3',
+        title: entry.name
+      }
+    }, async (input): Promise<CallToolResult> => {
+      try {
+        return await executor.run(async () => {
+          const result = await invokeSksTool(contract, input);
+          if (!result.ok) {
+            const code = result.timed_out ? 'TIMEOUT' : result.truncated ? 'OUTPUT_LIMIT' : 'EXECUTION_FAILED';
+            return mcpToolErrorResult(
+              result.stderr || result.stdout || `sks ${entry.name} exited with code ${result.code}`,
+              code
+            );
+          }
+          return {
+            content: [{ type: 'text', text: result.stdout }],
+            isError: false
+          };
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        const code = error instanceof McpInvocationError ? error.code : 'EXECUTION_FAILED';
+        return mcpToolErrorResult(`Failed to run sks ${entry.name}: ${message}`, code);
+      }
+    });
+  }
+  return server;
+}
+
+export async function runMcpServer(opts: RunMcpServerOptions = {}): Promise<StdioServerHandle> {
   const exposeExec = opts.exposeExec === true;
   const input = opts.input ?? process.stdin;
   const output = opts.output ?? process.stdout;
-
-  const { Server, StdioServerTransport, ListToolsRequestSchema, CallToolRequestSchema } = await loadMcpSdk();
-
-  const server = new Server(
-    { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
-    { capabilities: { tools: {} } }
+  const executor = new BoundedToolExecutor(
+    opts.maxConcurrentTools ?? DEFAULT_MAX_CONCURRENT_TOOLS,
+    opts.maxQueuedTools ?? DEFAULT_MAX_QUEUED_TOOLS
   );
-
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const manifest = buildAgentManifest();
-    const tools = exposedTools(manifest.tools, exposeExec).map(toMcpToolDescriptor);
-    return { tools };
+  const transport = new StdioServerTransport(input, output, {
+    maxBufferSize: MAX_MCP_MESSAGE_BYTES
   });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
-    const toolName = String(request?.params?.name || '');
-    const manifest = buildAgentManifest();
-    const allowed = exposedTools(manifest.tools, exposeExec);
-    // Never spawn a child process for a name the caller invented; only names present
-    // in the (possibly exec-filtered) manifest are legitimate `sks <name>` invocations.
-    const entry = allowed.find((candidate) => candidate.name === toolName);
-    if (!entry) {
-      return mcpToolErrorResult(`Unknown or unexposed tool: ${toolName}`);
-    }
-    try {
-      const contract = commandContract(entry.name);
-      if (!contract) return mcpToolErrorResult(`Missing command contract: ${entry.name}`, 'CONTRACT_MISSING');
-      const result = await invokeSksTool(contract, request?.params?.arguments ?? {});
-      if (!result.ok) {
-        const code = result.timed_out ? 'TIMEOUT' : result.truncated ? 'OUTPUT_LIMIT' : 'EXECUTION_FAILED';
-        return mcpToolErrorResult(result.stderr || result.stdout || `sks ${toolName} exited with code ${result.code}`, code);
-      }
-      return {
-        content: [{ type: 'text', text: result.stdout }],
-        isError: false
-      };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      const code = err instanceof McpInvocationError ? err.code : 'EXECUTION_FAILED';
-      return mcpToolErrorResult(`Failed to run sks ${toolName}: ${message}`, code);
-    }
+  return serveStdio(() => buildMcpServer(exposeExec, executor), {
+    legacy: 'reject',
+    transport,
+    ...(opts.onError ? { onerror: opts.onError } : {})
   });
-
-  const transport = new StdioServerTransport(input as any, output as any);
-  await server.connect(transport);
 }
 
-/** Round-trips initialize -> tools/list over in-memory streams and returns, instead of
+/** Round-trips server/discover -> tools/list over in-memory streams and returns, instead of
  * staying resident on real stdio — this is what `sks mcp-server --probe` runs, so a
  * fixture/CI check can prove the server actually works without hanging on a real client. */
 export async function probeMcpServer(opts: { exposeExec?: boolean; timeoutMs?: number } = {}): Promise<{ ok: boolean; server_name: string | null; protocol_version: string | null; tool_count: number }> {
@@ -203,17 +248,29 @@ export async function probeMcpServer(opts: { exposeExec?: boolean; timeoutMs?: n
     }
     throw new Error(`mcp_probe_timed_out_waiting_for_response_id_${id}`);
   };
-  runMcpServer({ exposeExec: opts.exposeExec === true, input: clientToServer, output: serverToClient }).catch(() => undefined);
-  const timeoutMs = opts.timeoutMs ?? 10_000;
-  send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'sks-mcp-probe', version: '1.0.0' } } });
-  const initResponse = await waitForId(1, timeoutMs);
-  send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-  const listResponse = await waitForId(2, timeoutMs);
-  clientToServer.end();
-  return {
-    ok: Boolean(initResponse?.result) && Array.isArray(listResponse?.result?.tools),
-    server_name: initResponse?.result?.serverInfo?.name || null,
-    protocol_version: initResponse?.result?.protocolVersion || null,
-    tool_count: Array.isArray(listResponse?.result?.tools) ? listResponse.result.tools.length : 0
-  };
+  const handle = await runMcpServer({ exposeExec: opts.exposeExec === true, input: clientToServer, output: serverToClient });
+  try {
+    const timeoutMs = opts.timeoutMs ?? 10_000;
+    const clientInfo = { name: 'sks-mcp-probe', version: '1.0.0' };
+    send(modernMcpRequest(1, 'server/discover', {}, { clientInfo }));
+    const discoverResponse = await waitForId(1, timeoutMs);
+    send(modernMcpRequest(2, 'tools/list', {}, { clientInfo }));
+    const listResponse = await waitForId(2, timeoutMs);
+    const serverInfo = modernServerInfo(discoverResponse?.result);
+    return {
+      ok: discoverResponse?.result?.resultType === 'complete'
+        && listResponse?.result?.resultType === 'complete'
+        && Array.isArray(listResponse?.result?.tools),
+      server_name: serverInfo?.name || null,
+      protocol_version: Array.isArray(discoverResponse?.result?.supportedVersions)
+        && discoverResponse.result.supportedVersions.includes(MCP_PROTOCOL_VERSION)
+        ? MCP_PROTOCOL_VERSION
+        : null,
+      tool_count: Array.isArray(listResponse?.result?.tools) ? listResponse.result.tools.length : 0
+    };
+  } finally {
+    clientToServer.end();
+    await handle.close();
+    serverToClient.end();
+  }
 }

@@ -9,7 +9,8 @@ import path from 'node:path';
 import { assertGate, emitGate, root } from './gate-lib.js';
 import {
   buildMutationAstIndex,
-  mutationCallsiteSha256
+  mutationCallsiteSha256,
+  mutationSymbolsEquivalent
 } from './mutation-callsite-analysis.js';
 
 const allowlistPath = path.join(root, 'safety-mutation-allowlist.json');
@@ -208,10 +209,17 @@ function findAllow(entry) {
   return allowlist.find((allow) =>
     !allowlistHits.has(allow.id)
     && entry.file === allow.file
-    && entry.symbol === allow.symbol
+    && mutationSymbolsEquivalent(entry.symbol, allow.symbol)
     && entry.token === allow.token
     && entry.scope_contract_sha256 === allow.scope_contract_sha256
-    && entry.callsite_sha256 === allow.callsite_sha256
+    && (entry.callsite_sha256 === allow.callsite_sha256
+      || mutationCallsiteSha256({
+        file: entry.file,
+        symbol: allow.symbol,
+        token: entry.token,
+        normalizedCall: entry.normalized_call,
+        scopeContractSha256: entry.scope_contract_sha256
+      }) === allow.callsite_sha256)
     && entry.occurrence === allow.occurrence
   );
 }

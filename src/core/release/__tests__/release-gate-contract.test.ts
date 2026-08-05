@@ -42,13 +42,24 @@ test('full release excludes duplicate canonical suites while incremental selecto
   const manifest = JSON.parse(fs.readFileSync('release-gates.v2.json', 'utf8'))
   const releaseIds = selectReleaseGatePreset(manifest, 'release').map((gate) => gate.id).sort()
   const incrementalIds = selectReleaseGatePreset(manifest, 'incremental').map((gate) => gate.id).sort()
+  const confidenceOnlyIds = manifest.gates
+    .filter((gate: any) => Array.isArray(gate.preset) && gate.preset.includes('confidence'))
+    .map((gate: any) => String(gate.id))
+    .sort()
+  assert.equal(releaseIds.length, 29)
   assert.deepEqual(incrementalIds, INCREMENTAL_ONLY_GATE_IDS)
+  assert.ok(confidenceOnlyIds.length > 0)
   for (const id of INCREMENTAL_ONLY_GATE_IDS) assert.equal(releaseIds.includes(id), false, id)
+  for (const id of confidenceOnlyIds) assert.equal(releaseIds.includes(id), false, id)
 
   const combinedIds = [...releaseIds, ...incrementalIds].sort()
-  for (const preset of ['affected', 'fast', 'confidence']) {
+  for (const preset of ['affected', 'fast']) {
     assert.deepEqual(selectReleaseGatePreset(manifest, preset).map((gate) => gate.id).sort(), combinedIds, preset)
   }
+  assert.deepEqual(
+    selectReleaseGatePreset(manifest, 'confidence').map((gate) => gate.id).sort(),
+    [...combinedIds, ...confidenceOnlyIds].sort()
+  )
 
   assert.deepEqual(
     selectReleaseGateClosure(manifest, ['test:commands-regression']).map((gate) => gate.id),

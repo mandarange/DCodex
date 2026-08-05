@@ -559,6 +559,7 @@ const SAFE_EXECUTABLE_FIXTURE_ARGS = Object.freeze({
   'cli-rust': ['rust', 'smoke', '--json'],
   'cli-skill-dream': ['skill-dream', 'status', '--json'],
   'cli-gc': ['gc', '--dry-run', '--json'],
+  'cli-cleanup': ['cleanup', 'plan', '--json'],
   'cli-memory': ['memory', '--dry-run', '--json'],
   'cli-stats': ['stats', '--json'],
   'cli-dollar-commands': ['dollar-commands', '--json'],
@@ -581,6 +582,7 @@ const SAFE_EXECUTABLE_FIXTURE_ARGS = Object.freeze({
   'route-seo-geo-optimizer': ['seo-geo-optimizer', 'fixture', '--mode', 'geo', '--json'],
   'route-fast-mode': ['fast-mode', 'status', '--json'],
   'route-wiki': ['wiki', 'image-ingest', 'test/fixtures/images/one-by-one.png', '--json'],
+  'route-cleanup': ['cleanup', 'plan', '--json'],
   'route-gx': ['gx', 'validate', 'fixture', '--mock', '--json']
 });
 
@@ -733,7 +735,7 @@ function officialSubagentProofFeature() {
 function wikiCodePackFeature() {
   return baseFeature({
     id: 'cli-wiki-code',
-    commands: ['sks wiki refresh --code --json', 'sks wiki validate --json'],
+    commands: ['sks align run --json', 'sks wiki validate --json'],
     aliases: ['wiki.code_pack', 'code_pack_refresh'],
     category: 'triwiki',
     maturity: 'beta',

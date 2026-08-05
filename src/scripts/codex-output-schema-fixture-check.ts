@@ -9,7 +9,7 @@ const mod = await import(pathToFileURL(path.join(root, 'dist/core/codex-exec-out
 
 const availability = await mod.detectCodexExecResumeOutputSchema({
   codexBin: process.execPath,
-  versionText: 'codex-cli 0.133.0',
+  versionText: 'codex-cli 0.145.0',
   resumeHelpText: 'Usage: codex exec resume [OPTIONS]\n      --output-schema <FILE>\n  -o, --output-last-message <FILE>'
 });
 assert.equal(availability.output_schema_supported, true);

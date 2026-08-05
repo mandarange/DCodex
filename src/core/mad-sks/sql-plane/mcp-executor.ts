@@ -1,4 +1,5 @@
 import { performance } from 'node:perf_hooks';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { nowIso, sha256 } from '../../fsx.js';
 import { PACKAGE_VERSION } from '../../version.js';
 import type { MadSksSqlPlaneRuntimeProfile } from './runtime-profile.js';
@@ -31,8 +32,8 @@ export interface MadSksSqlPlaneToolResult {
 }
 
 export class MadSksSqlPlaneMcpExecutor {
-  private client: any = null;
-  private transport: any = null;
+  private client: Client | null = null;
+  private transport: StreamableHTTPClientTransport | null = null;
   // A successful inventory() result is cached for this executor instance's
   // lifetime (one DB operation cycle) — previously every executeSql/
   // applyMigration call re-fetched the full tool list from the MCP server
@@ -47,12 +48,28 @@ export class MadSksSqlPlaneMcpExecutor {
 
   async connect(): Promise<void> {
     if (this.client) return;
-    const { Client, StreamableHTTPClientTransport } = await loadMcpSdk();
-    this.client = new Client({ name: 'sneakoscope-mad-sks-sql-plane', version: PACKAGE_VERSION });
+    const timeout = this.opts.timeoutMs || 10_000;
+    const client = new Client(
+      { name: 'sneakoscope-mad-sks-sql-plane', version: PACKAGE_VERSION },
+      {
+        versionNegotiation: {
+          mode: 'auto',
+          probe: { timeoutMs: timeout, maxRetries: 0 }
+        },
+        inputRequired: { autoFulfill: false }
+      }
+    );
     const headers = authHeaders();
     const options = headers ? { requestInit: { headers } } : {};
-    this.transport = new StreamableHTTPClientTransport(new URL(this.profile.server_url), options);
-    await this.client.connect(this.transport);
+    const transport = new StreamableHTTPClientTransport(new URL(this.profile.server_url), options);
+    try {
+      await client.connect(transport, { timeout });
+      this.client = client;
+      this.transport = transport;
+    } catch (error) {
+      await client.close().catch(() => undefined);
+      throw error;
+    }
   }
 
   async inventory(): Promise<MadSksSqlPlaneToolInventory> {
@@ -60,7 +77,10 @@ export class MadSksSqlPlaneMcpExecutor {
     const started = performance.now();
     try {
       await this.connect();
-      const result = await this.client!.listTools({}, { timeout: this.opts.timeoutMs || 10_000 });
+      const result = await this.client!.listTools({}, {
+        timeout: this.opts.timeoutMs || 10_000,
+        cacheMode: 'refresh'
+      });
       const names = (result.tools || []).map((tool: any) => String(tool?.name || '')).filter(Boolean).sort();
       const inventory: MadSksSqlPlaneToolInventory = {
         schema: 'sks.mad-sks-sql-plane-tool-inventory.v1',
@@ -105,8 +125,7 @@ export class MadSksSqlPlaneMcpExecutor {
   }
 
   async close(): Promise<void> {
-    /* intentional: best-effort teardown on close, session/client are being discarded either way */
-    await this.transport?.terminateSession().catch(() => undefined);
+    // Modern 2026-07-28 MCP is stateless: there is no protocol session to terminate.
     await this.client?.close().catch(() => undefined);
     this.client = null;
     this.transport = null;
@@ -123,7 +142,6 @@ export class MadSksSqlPlaneMcpExecutor {
       try {
         const result = await this.client!.callTool(
           { name: tool, arguments: args },
-          undefined,
           { timeout: this.opts.timeoutMs || 60_000, resetTimeoutOnProgress: true, maxTotalTimeout: 10 * 60_000 }
         );
         return {
@@ -157,15 +175,6 @@ export class MadSksSqlPlaneMcpExecutor {
       retry_guidance: madSksSqlPlaneRetryGuidance(kind)
     };
   }
-}
-
-async function loadMcpSdk(): Promise<{ Client: any; StreamableHTTPClientTransport: any }> {
-  const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
-  const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all([
-    dynamicImport('@modelcontextprotocol/sdk/client/index.js'),
-    dynamicImport('@modelcontextprotocol/sdk/client/streamableHttp.js')
-  ]);
-  return { Client, StreamableHTTPClientTransport };
 }
 
 function hasTool(names: string[], name: string): boolean {

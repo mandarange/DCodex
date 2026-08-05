@@ -4,6 +4,7 @@ import path from 'node:path';
 import { COMMAND_CATALOG } from '../routes.js';
 import { nowIso, writeJsonAtomic } from '../fsx.js';
 import { cleanupRemovedSksSkillResidue, type RemovedSksSkillResidueReport } from '../init/skills.js';
+import type { LegacyGenerationConvergenceReport } from '../init/legacy-generation-convergence.js';
 import { COMMANDS, LEGACY_COMMAND_ALIASES, commandNames } from '../../cli/command-registry.js';
 import { REMOVED_PUBLIC_COMMANDS } from './retired-managed-residue-private.js';
 import { reconcileRetiredManagedResidue, RETIRED_MANAGED_RESIDUE_SCHEMA, type RetiredManagedResidueReport } from './retired-managed-residue.js';
@@ -22,6 +23,8 @@ export interface DoctorCommandAliasCleanupOptions {
   globalRuntimeRoot?: string;
   env?: NodeJS.ProcessEnv;
   fix?: boolean;
+  managedGenerationAlreadyConverged?: boolean;
+  managedGenerationConvergence?: LegacyGenerationConvergenceReport;
 }
 
 export async function runDoctorCommandAliasCleanup(opts: DoctorCommandAliasCleanupOptions) {
@@ -32,12 +35,33 @@ export async function runDoctorCommandAliasCleanup(opts: DoctorCommandAliasClean
       || (opts.home || opts.env ? '' : process.env.SKS_GLOBAL_ROOT || '')
       || path.join(home, '.sneakoscope-global')
   );
-  const skillResidue = await cleanupRemovedSksSkillResidue({
-    root: opts.root,
-    home,
-    globalRuntimeRoot,
-    fix: opts.fix === true
-  });
+  const skillResidueInspection = opts.managedGenerationConvergence
+    ? skillResidueFromConvergence(opts.managedGenerationConvergence)
+    : opts.managedGenerationAlreadyConverged
+      ? emptySkillResidue(opts.fix === true)
+      : await cleanupRemovedSksSkillResidue({
+        root: opts.root,
+        home,
+        globalRuntimeRoot,
+        fix: false
+      });
+  const userOwnedSkillConflicts = skillResidueInspection.detected
+    .filter((entry) => entry.ownership === 'user_authored');
+  const skillResidue = opts.fix === true
+    && userOwnedSkillConflicts.length === 0
+    && skillResidueInspection.errors.length === 0
+    && skillResidueInspection.remaining.length > 0
+    ? await cleanupRemovedSksSkillResidue({
+        root: opts.root,
+        home,
+        globalRuntimeRoot,
+        fix: true
+      })
+    : {
+        ...skillResidueInspection,
+        fix: opts.fix === true,
+        ok: userOwnedSkillConflicts.length === 0 && skillResidueInspection.errors.length === 0
+      };
   const skillLegacySurface = await reconcileSkillLegacySurface({
     root: opts.root,
     home,
@@ -45,12 +69,16 @@ export async function runDoctorCommandAliasCleanup(opts: DoctorCommandAliasClean
     fix: opts.fix === true
   });
   const [managedResidue, projectGuidance] = await Promise.all([
-    reconcileManagedRuntimeScopes({
-      projectRoot: opts.root,
-      home,
-      globalRuntimeRoot,
-      fix: opts.fix === true
-    }),
+    opts.managedGenerationConvergence
+      ? Promise.resolve(managedResidueFromConvergence(opts.managedGenerationConvergence))
+      : opts.managedGenerationAlreadyConverged
+        ? Promise.resolve(emptyManagedResidue(opts.fix === true))
+        : reconcileManagedRuntimeScopes({
+          projectRoot: opts.root,
+          home,
+          globalRuntimeRoot,
+          fix: opts.fix === true
+        }),
     reconcileCurrentProjectGuidance({
       root: opts.root,
       home,
@@ -151,7 +179,11 @@ export function commandAliasCleanupReport(
     ...(redirectingRemovedCommands.length ? [`retired_redirect_entries_present:${redirectingRemovedCommands.length}`] : []),
     ...(missingCanonicalTargets.length ? [`current_alias_targets_missing:${missingCanonicalTargets.length}`] : []),
     ...(skillResidue.remaining.length ? [`retired_managed_skill_residue_remaining:${skillResidue.remaining.length}`] : []),
+    ...(skillResidue.detected.some((entry) => entry.ownership === 'user_authored')
+      ? [`user_owned_skill_conflict_remaining:${skillResidue.detected.filter((entry) => entry.ownership === 'user_authored').length}`]
+      : []),
     ...(skillResidue.errors.length ? [`retired_managed_skill_cleanup_failed:${skillResidue.errors.length}`] : []),
+    ...(opts.managedGenerationConvergence?.ok === false ? ['legacy_generation_convergence_failed'] : []),
     ...(skillLegacySurface.remaining_count ? [`skill_legacy_surface_remaining:${skillLegacySurface.remaining_count}`] : []),
     ...(skillLegacySurface.error_count ? [`skill_legacy_surface_rewrite_failed:${skillLegacySurface.error_count}`] : []),
     ...(managedResidue.remaining_managed_artifact_count ? [`retired_managed_runtime_residue_remaining:${managedResidue.remaining_managed_artifact_count}`] : []),
@@ -192,6 +224,7 @@ export function commandAliasCleanupReport(
       remaining_count: skillResidue.remaining.length + skillLegacySurface.remaining_count,
       error_count: skillResidue.errors.length + skillLegacySurface.error_count,
       managed_runtime: managedResidue,
+      managed_generation_convergence: summarizeManagedGenerationConvergence(opts.managedGenerationConvergence),
       project_guidance: projectGuidance,
       skill_legacy_surface: skillLegacySurface
     },
@@ -199,15 +232,84 @@ export function commandAliasCleanupReport(
       ? [{
           action: opts.fix ? 'doctor_fix_reconciled_current_public_surface' : 'verify_current_public_surface',
           ok: true,
-          detail: `Current commands are the only public surface; rewritten ${skillLegacySurface.rewritten_count} skill bodies, removed ${skillLegacySurface.removed_other_harness_skill_count} OMX/DCodex skill dirs plus ${skillResidue.removed.length + managedResidue.removed_managed_artifact_count} SKS-managed retired items, reconciled ${projectGuidance.reconciled_count} guidance files, and quarantined ${skillResidue.quarantined_user_collisions.length} user-authored retired-name collisions.`
+          detail: `Current commands are the only public surface; removed ${skillResidue.removed.length + managedResidue.removed_managed_artifact_count} proven SKS-managed retired items and reconciled ${projectGuidance.reconciled_count} managed guidance files without changing foreign or user-owned skills.`
         }]
       : [{
           action: 'current_public_surface_reconciliation_required',
           ok: false,
-          detail: 'Rewrite legacy commands inside skills, remove OMX/DCodex from the live surface, and reconcile retired SKS-managed residue.'
+          detail: `Preserved foreign and user-owned skill surfaces. Run \`${skillLegacySurface.cleanup_prompt_command}\` for OMX/DCodex conflicts; update user-owned legacy command references manually, then rerun doctor/update.`
         }],
     warnings,
     blockers
+  };
+}
+
+function skillResidueFromConvergence(
+  convergence: LegacyGenerationConvergenceReport
+): RemovedSksSkillResidueReport {
+  const reports = [convergence.global_skills, ...convergence.project_skills];
+  const failed = reports.filter((report) => report.ok !== true);
+  const remainingCount = reports.reduce(
+    (sum, report) => sum + Number('retired_residue' in report ? report.retired_residue?.remaining_count || 0 : 0),
+    0
+  );
+  const errorCount = reports.reduce(
+    (sum, report) => sum + Number('retired_residue' in report ? report.retired_residue?.error_count || 0 : 0),
+    0
+  );
+  return {
+    schema: 'sks.removed-skill-residue.v1',
+    ok: failed.length === 0 && remainingCount === 0 && errorCount === 0,
+    fix: convergence.fix,
+    detected: [],
+    removed: reports.flatMap((report) => 'removed' in report ? report.removed : []),
+    quarantined_user_collisions: reports.flatMap((report) =>
+      'quarantined_user_collisions' in report ? report.quarantined_user_collisions : []
+    ),
+    remaining: remainingCount > 0 ? [`central_convergence_remaining:${remainingCount}`] : [],
+    errors: [
+      ...failed.map((report) => `central_convergence_skill_failed:${report.scope}:${report.target_dir}`),
+      ...(errorCount > 0 ? [`central_convergence_skill_errors:${errorCount}`] : [])
+    ]
+  };
+}
+
+function managedResidueFromConvergence(
+  convergence: LegacyGenerationConvergenceReport
+): RetiredManagedResidueReport {
+  const reports = convergence.retired_runtime_scopes;
+  return {
+    schema: RETIRED_MANAGED_RESIDUE_SCHEMA,
+    ok: reports.every((report) => report.ok),
+    fix: convergence.fix,
+    detected_managed_artifact_count: sumManagedResidue(reports, 'detected_managed_artifact_count'),
+    removed_managed_artifact_count: sumManagedResidue(reports, 'removed_managed_artifact_count'),
+    rewritten_state_file_count: sumManagedResidue(reports, 'rewritten_state_file_count'),
+    agent_bridge_manifest: aggregateAgentBridgeManifest(reports),
+    preserved_user_file_count: sumManagedResidue(reports, 'preserved_user_file_count'),
+    remaining_managed_artifact_count: sumManagedResidue(reports, 'remaining_managed_artifact_count'),
+    error_count: sumManagedResidue(reports, 'error_count')
+  };
+}
+
+function summarizeManagedGenerationConvergence(
+  convergence: LegacyGenerationConvergenceReport | undefined
+) {
+  if (!convergence) return null;
+  return {
+    schema: convergence.schema,
+    ok: convergence.ok,
+    fix: convergence.fix,
+    skill_scope_count: 1 + convergence.project_skills.length,
+    failed_skill_scope_count: [convergence.global_skills, ...convergence.project_skills]
+      .filter((report) => report.ok !== true).length,
+    retired_agent_roles_ok: convergence.retired_agent_roles.ok,
+    retired_runtime_scope_count: convergence.retired_runtime_scopes.length,
+    failed_retired_runtime_scope_count: convergence.retired_runtime_scopes
+      .filter((report) => report.ok !== true).length,
+    managed_configs_ok: convergence.managed_configs.ok,
+    blockers: convergence.blockers,
+    warnings: convergence.warnings
   };
 }
 
@@ -261,12 +363,17 @@ function emptySkillLegacySurface(fix: boolean): SkillLegacySurfaceReport {
     scanned_count: 0,
     rewritten_count: 0,
     removed_other_harness_skill_count: 0,
+    preserved_other_harness_skill_count: 0,
+    preserved_user_skill_count: 0,
     remaining_count: 0,
     preserved_clean_count: 0,
     error_count: 0,
     rewritten: [],
     removed_other_harness_skills: [],
+    preserved_other_harness_skills: [],
+    preserved_user_skills: [],
     remaining: [],
-    errors: []
+    errors: [],
+    cleanup_prompt_command: 'sks conflicts cleanup --yes'
   };
 }

@@ -94,7 +94,7 @@ const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'naruto', summary: 'Run the $sks-naruto Codex official subagent workflow', maturity: 'labs', mutatesRouteState: true },
   { name: 'stop-gate', summary: 'Check canonical stop-gate resolution for a route/mission', maturity: 'beta', readonly: true, skipMigrationGate: true, allowedDuringActiveRoute: true, diagnostic: true },
   { name: 'route', summary: 'Inspect or close active route state', maturity: 'beta', skipMigrationGate: true, allowedDuringActiveRoute: true, diagnostic: true },
-  { name: 'loop', summary: 'Dynamic Loop Runtime: plan/run/status/proof loop graphs.', maturity: 'labs', mutatesRouteState: true },
+  { name: 'loop', summary: 'Retired: use Codex native Goal for persisted goals/loops (NC-38)', maturity: 'labs' },
   { name: 'qa-loop', summary: 'Run QA loop missions', maturity: 'beta', mutatesRouteState: true },
   { name: 'research', summary: 'Run research missions', maturity: 'labs', mutatesRouteState: true },
   { name: 'autoresearch', summary: 'Alias for research/autoresearch route', maturity: 'labs', mutatesRouteState: true },
@@ -111,7 +111,8 @@ const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'versioning', summary: 'Manage release version metadata', maturity: 'stable' },
   { name: 'reasoning', summary: 'Show reasoning route', maturity: 'labs' },
   { name: 'aliases', summary: 'Show command aliases', maturity: 'stable' },
-  { name: 'align', summary: 'Prepare or inspect the evidence-gated $sks-align GPT-5.6 / Plugins modernization mission', maturity: 'beta', mutatesRouteState: true },
+  { name: 'cleanup', summary: 'Permanently blank active TriWiki without retaining a previous generation', maturity: 'beta' },
+  { name: 'align', summary: 'Create or replace TriWiki as a code-only repository navigation graph', maturity: 'beta', mutatesRouteState: true },
   { name: 'selftest', summary: 'Run local mock selftest', maturity: 'stable' },
   { name: 'goal', summary: 'Print stateless Codex native Goal controls', maturity: 'beta' },
   { name: 'seo-geo-optimizer', summary: 'Run unified SEO/GEO optimizer audit/plan/apply/verify plus research/strategy (--include-marketing) on the search-visibility kernel', maturity: 'beta' },
@@ -154,6 +155,7 @@ const SAFE_COMMAND_CONTRACT_LITE: CommandContractMetadataLite = {
 
 const COMMAND_CONTRACT_OVERRIDES_LITE = {
   align: { latency: 'long', supportsJson: true, inputProfile: 'json-only' },
+  cleanup: { risk: 'R3', latency: 'long', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   autoresearch: { latency: 'long' },
   bench: { latency: 'long' },
   check: { risk: 'R1', latency: 'long' },

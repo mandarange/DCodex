@@ -11,7 +11,7 @@ import {
 test('Codex exec resume output-schema detector and builder are schema-bound', async () => {
   const availability = await detectCodexExecResumeOutputSchema({
     codexBin: process.execPath,
-    versionText: 'codex-cli 0.133.0',
+    versionText: 'codex-cli 0.145.0',
     resumeHelpText: 'codex exec resume --output-schema <file> -o, --output-last-message <file>'
   });
   assert.equal(availability.status, 'available');

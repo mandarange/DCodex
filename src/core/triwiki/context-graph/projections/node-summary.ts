@@ -71,10 +71,11 @@ function headline(node: ContextGraphNode, extras: NodeSummaryExtras): string {
   switch (node.kind) {
     case 'file': {
       const language = metaString(node.metadata, 'language') ?? 'source';
+      const purpose = metaString(node.metadata, 'purpose');
       const lines = metaNumber(node.metadata, 'lines');
       const fanIn = metaNumber(node.metadata, 'fanIn') ?? 0;
       const size = lines === null ? '' : `${lines} lines, `;
-      return `${node.label} is a ${language} file${where} (${size}fan-in ${fanIn}, ${node.risk} risk).`;
+      return `${node.label} is a ${language} file${where} (${size}fan-in ${fanIn}, ${node.risk} risk).${purpose ? ` Source purpose: ${purpose}.` : ''}`;
     }
     case 'symbol': {
       const symbolKind = metaString(node.metadata, 'symbolKind') ?? 'symbol';

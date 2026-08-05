@@ -122,13 +122,21 @@ test('doctor --fix reports a real migration receipt result instead of hard-coded
   assert.doesNotMatch(source, /manual_update_commands_only/);
   assert.doesNotMatch(source, /migration_current:\s*true/);
   assert.match(source, /writeProjectUpdateMigrationReceipt/);
-  assert.match(source, /inspectCommandAliasCleanup\(doctorFix\s*&&\s*!migrationReceiptOwnsReconcile\)/);
+  assert.match(
+    source,
+    /managedGenerationConvergence\s*=\s*doctorFix\s*&&\s*!migrationReceiptOwnsReconcile[\s\S]*?skillsReconcile[\s\S]*?\.convergence/
+  );
+  assert.match(
+    source,
+    /inspectCommandAliasCleanup\(\s*doctorFix\s*&&\s*!migrationReceiptOwnsReconcile,\s*managedGenerationConvergence\s*\)/s
+  );
+  assert.match(source, /require_legacy_generation_convergence:\s*doctorFix\s*&&\s*!migrationReceiptOwnsReconcile/);
   assert.match(source, /deferCommandAliasCleanupToMigrationReceipt\(commandAliasCleanup\)/);
-  assert.match(source, /commandAliasCleanup\s*=\s*await inspectCommandAliasCleanup\(false\)/);
+  assert.match(source, /commandAliasCleanup\s*=\s*await inspectCommandAliasCleanup\(false,\s*null,\s*true\)/);
   assert.match(source, /doctor_fix_wrote_current_project_migration_receipt/);
   assert.match(source, /doctor_fix_migration_receipt_failed/);
   assert.ok(
-    source.indexOf('commandAliasCleanup = await inspectCommandAliasCleanup(false)') <
+    source.indexOf('commandAliasCleanup = await inspectCommandAliasCleanup(false, null, true)') <
       source.indexOf('const receipt = await writeProjectUpdateMigrationReceipt(receiptInput)'),
     'the final public-surface postcheck must run before the migration receipt is published'
   );

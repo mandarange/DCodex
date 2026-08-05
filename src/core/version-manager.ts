@@ -386,10 +386,6 @@ async function syncSourcePackageVersion(root: any, version: any) {
         .replace(/official-docs-compat-\d+\.\d+\.\d+\.(json|md)/g, `official-docs-compat-${version}.$1`)
     },
     {
-      rel: 'docs/codex-0.139-compat.md',
-      replace: (text: string) => text.replace(/^SKS \d+\.\d+\.\d+ keeps the historical/m, `SKS ${version} keeps the historical`)
-    },
-    {
       rel: 'docs/codex-cli-compat.md',
       replace: (text: string) => text
         .replace(/^SKS \d+\.\d+\.\d+ targets/m, `SKS ${version} targets`)

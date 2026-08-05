@@ -49,7 +49,7 @@ test('official Codex App $imagegen references are current and never rewritten', 
   });
 });
 
-test('doctor --fix rewrites customer skills and removes OMX skill directories from the live picker', async () => {
+test('doctor --fix preserves customer and OMX skills and blocks with explicit cleanup guidance', async () => {
   const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-skill-legacy-'));
   const project = path.join(fixture, 'project');
   const home = path.join(fixture, 'home');
@@ -57,8 +57,10 @@ test('doctor --fix rewrites customer skills and removes OMX skill directories fr
   try {
     const customerSkill = path.join(project, '.agents', 'skills', 'customer-workflow');
     const omxSkill = path.join(project, '.agents', 'skills', 'omx');
+    const userRetiredNameSkill = path.join(project, '.agents', 'skills', 'team');
     await fs.mkdir(customerSkill, { recursive: true });
     await fs.mkdir(path.join(omxSkill, 'agents'), { recursive: true });
+    await fs.mkdir(userRetiredNameSkill, { recursive: true });
     await fs.mkdir(path.join(home, '.agents', 'skills'), { recursive: true });
     await fs.mkdir(path.join(globalRuntimeRoot, '.agents', 'skills'), { recursive: true });
     await fs.writeFile(path.join(customerSkill, 'SKILL.md'), [
@@ -72,6 +74,10 @@ test('doctor --fix rewrites customer skills and removes OMX skill directories fr
       ''
     ].join('\n'));
     await fs.writeFile(path.join(omxSkill, 'SKILL.md'), '---\nname: omx\ndescription: foreign harness\n---\n\nOMX skill\n');
+    await fs.writeFile(path.join(userRetiredNameSkill, 'SKILL.md'), '---\nname: team\ndescription: customer owned\n---\n\nKeep this skill.\n');
+    const customerBefore = await fs.readFile(path.join(customerSkill, 'SKILL.md'), 'utf8');
+    const omxBefore = await fs.readFile(path.join(omxSkill, 'SKILL.md'), 'utf8');
+    const userRetiredNameBefore = await fs.readFile(path.join(userRetiredNameSkill, 'SKILL.md'), 'utf8');
 
     const dry = await reconcileSkillLegacySurface({
       root: project,
@@ -88,21 +94,18 @@ test('doctor --fix rewrites customer skills and removes OMX skill directories fr
       globalRuntimeRoot,
       fix: true
     });
-    assert.equal(report.ok, true, JSON.stringify(report.blockers));
-    assert.ok(report.cleanup.skill_legacy_surface.rewritten_count >= 1, JSON.stringify(report.cleanup.skill_legacy_surface));
-    assert.ok(report.cleanup.skill_legacy_surface.removed_other_harness_skill_count >= 1, JSON.stringify(report.cleanup.skill_legacy_surface));
-
-    const rewritten = await fs.readFile(path.join(customerSkill, 'SKILL.md'), 'utf8');
-    assert.match(rewritten, /\$sks-naruto/);
-    assert.match(rewritten, /sks naruto/);
-    assert.match(rewritten, /sks loop/);
-    assert.match(rewritten, /sks codex-app use-openrouter/);
-    assert.doesNotMatch(rewritten, /\$Team\b|sks agent run|sks ralph|glm-profile/i);
-    assert.equal(skillLegacySurfaceNeedsRewrite(rewritten), false);
-
-    await assert.rejects(fs.access(omxSkill));
-    const quarantined = await findFiles(path.join(project, '.sneakoscope', 'quarantine'), 'SKILL.md');
-    assert.ok(quarantined.length >= 1);
+    assert.equal(report.ok, false, JSON.stringify(report.blockers));
+    assert.equal(report.cleanup.skill_legacy_surface.rewritten_count, 0);
+    assert.equal(report.cleanup.skill_legacy_surface.removed_other_harness_skill_count, 0);
+    assert.equal(report.cleanup.skill_legacy_surface.preserved_other_harness_skill_count, 1);
+    assert.equal(report.cleanup.skill_legacy_surface.preserved_user_skill_count, 1);
+    assert.equal(report.cleanup.skill_legacy_surface.cleanup_prompt_command, 'sks conflicts cleanup --yes');
+    assert.ok(report.blockers.includes('user_owned_skill_conflict_remaining:1'));
+    assert.match(report.actions[0].detail, /sks conflicts cleanup --yes/);
+    assert.equal(await fs.readFile(path.join(customerSkill, 'SKILL.md'), 'utf8'), customerBefore);
+    assert.equal(await fs.readFile(path.join(omxSkill, 'SKILL.md'), 'utf8'), omxBefore);
+    assert.equal(await fs.readFile(path.join(userRetiredNameSkill, 'SKILL.md'), 'utf8'), userRetiredNameBefore);
+    assert.equal((await findFiles(path.join(project, '.sneakoscope', 'quarantine'), 'SKILL.md')).length, 0);
   } finally {
     await fs.rm(fixture, { recursive: true, force: true });
   }

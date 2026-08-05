@@ -107,6 +107,7 @@ Generated from `sks commands --json`, `src/cli/command-registry.ts COMMANDS`, `s
 | `cli-wiki` | visual-memory | beta | sks wiki coords\|pack\|refresh\|publish\|rebuild-index\|validate\|validate-shared\|wrongness ... | execute_and_validate_artifacts:pass | runtime_verified | none recorded |
 | `cli-memory` | core-cli | beta | sks memory build [--json] \| sks memory gc [--dry-run] | execute:pass | runtime_verified | none recorded |
 | `cli-gc` | core-cli | labs | sks gc [--dry-run] [--json]<br>sks memory | execute:pass | runtime_verified | none recorded |
+| `cli-cleanup` | core-cli | beta | sks cleanup plan\|status\|proof\|run --apply [--json] | execute:pass | static_contract | plan/status/proof only in fixtures; apply remains explicit |
 | `cli-stats` | core-cli | labs | sks stats [--full] [--json] | execute:pass | runtime_verified | none recorded |
 | `cli-features` | core-cli | beta | sks features list\|check\|inventory [--json] [--write-docs] | execute:pass | runtime_verified | feature fixtures remain progressive |
 | `cli-all-features` | core-cli | beta | sks all-features selftest --mock [--json] | execute_and_validate_artifacts:pass | runtime_verified | feature fixtures remain progressive |
@@ -143,6 +144,7 @@ Generated from `sks commands --json`, `src/cli/command-registry.ts COMMANDS`, `s
 | `route-mad-sks` | route | beta | $sks-mad-sks | mock:pass | wiring_only | permission closed by owning gate |
 | `route-gx` | route | labs | $sks-gx | execute_and_validate_artifacts:blocked | runtime_verified | none recorded |
 | `route-wiki` | route | stable | $sks-wiki | execute_and_validate_artifacts:pass | runtime_verified | none recorded |
+| `route-cleanup` | route | beta | $Cleanup / sks cleanup plan | execute:pass | static_contract | destructive apply remains explicit (`run --apply`) |
 | `route-help` | route | stable | $sks-help | static:pass | wiring_only | none recorded |
 | `proof-official-subagent-evidence` | proof-route | stable | subagent-plan.json + subagent-parent-summary.json + subagent-evidence.json | execute_and_validate_artifacts:pass | runtime_verified | parallel speed claims still require measured runtime evidence |
 | `doctor:imagegen-repair` | safety | beta | sks doctor --json<br>sks doctor --fix --json<br>repair.imagegen<br>imagegen_repair | execute_and_validate_artifacts:pass | runtime_verified | live Codex App feature enablement remains environment-dependent and reports manual actions when unavailable |

@@ -541,19 +541,34 @@ export const ROUTES = [
     examples: ['$Wiki refresh', '$Wiki prune and validate']
   },
   {
+    id: 'Cleanup',
+    command: '$Cleanup',
+    mode: 'CLEANUP',
+    route: 'destructive TriWiki blank-state transition',
+    description: 'Plan, apply, or prove an R3 cleanup that permanently removes active TriWiki memory, indexes, caches, reports, and managed AGENTS projections while preserving source, ordinary docs, missions, evidence, and release proof history. No prior generation is retained.',
+    requiredSkills: ['cleanup', 'sks', 'honest-mode'],
+    lifecycle: ['cleanup_plan', 'explicit_apply', 'locked_hash_bound_temporary_swap', 'blank_state_proof', 'permanent_swap_removal', 'honest_mode'],
+    context7Policy: 'not_required',
+    reasoningPolicy: 'high',
+    stopGate: 'none',
+    coverageExemptReason: 'fixed local R3 maintenance command with its own receipt/proof contract; it does not create a free-form mission',
+    cliEntrypoint: 'sks cleanup plan|run|status|proof',
+    examples: ['$Cleanup plan', 'sks cleanup run --apply', 'sks cleanup proof --json']
+  },
+  {
     id: 'Align',
     command: '$Align',
     mode: 'ALIGN',
-    route: 'evidence-gated GPT-5.6 / Plugins modernization',
-    description: 'One-shot modernization of SKS prompts, settings, and generated skill/command surfaces against current GPT-5.6 prompting, programmatic tool calling, Agents, Codex skill-schema, and Plugins contracts. It records adoption decisions, audits complete surface coverage, removes superseded compatibility settings, and deduplicates policy without weakening invariants.',
+    route: 'code-only TriWiki navigation rebuild',
+    description: 'Create or replace TriWiki by rereading every accepted repository source file from current bytes and rebuilding an exact file/symbol/line and extractor-supported directed-relation navigation graph for fast LLM code lookup. Cleanup is optional; prior memory, missions, docs, external sources, proof cards, inference, and incremental cache reuse are excluded.',
     requiredSkills: ['align', 'pipeline-runner', 'prompt-pipeline', REFLECTION_SKILL_NAME, 'honest-mode'],
-    lifecycle: ['align_plan', 'latest_model_prompt_grammar', 'programmatic_tool_calling', 'agents_guidance', 'codex_skills_and_plugins', 'latest_only_cleanup', 'deduplicate_prompt_config', 'align_ledger', 'align_gate', 'post_route_reflection', 'honest_mode'],
-    context7Policy: 'if_external_docs',
+    lifecycle: ['align_plan', 'absent_or_existing_input', 'full_source_inventory', 'code_graph_compile', 'source_cas_recheck', 'staged_validation', 'transactional_wiki_replacement', 'temporary_prior_state_removal', 'agents_navigation_projection', 'align_gate', 'post_route_reflection', 'honest_mode'],
+    context7Policy: 'not_required',
     reasoningPolicy: 'high',
     stopGate: 'align-gate.json',
     coverage_required: true,
     cliEntrypoint: 'sks align prepare|run|status|proof',
-    examples: ['$Align modernize SKS skills to latest GPT-5.6', 'sks align prepare --json', 'sks align run "prompts and skills"']
+    examples: ['$Align rebuild the code navigation index', 'sks align prepare --json', 'sks align run']
   },
   {
     id: 'Help',
@@ -695,10 +710,10 @@ export const COMMAND_CATALOG = [
   { name: 'update', usage: 'sks update status|check|review|now|rollback [--refresh] [--version <version>] [--json] [--dry-run]', description: 'Inspect update-status.v3, review the exact staged operation, update the global package, or run guarded rollback.' },
   { name: 'uninstall', usage: 'sks uninstall [--dry-run] [--yes] [--keep-config] [--keep-data] [--purge-projects] [--json]', description: 'Remove SKS global skills, hooks, menu bar, state, temp files, and optional project residue while preserving user-owned content by default.' },
   { name: 'deps', usage: 'sks deps check [--json] [--yes]', description: 'Check Node/npm and Codex CLI readiness; pass --yes to repair missing Codex CLI tooling when supported.' },
-  { name: 'codex', usage: 'sks codex compatibility|version|update-status [--refresh]|update|doctor|schema|0.144 [--json]', description: 'Check Codex CLI compatibility/version/update status, run the official `codex update`, and inspect current manifest, capability, and hook-schema evidence.' },
+  { name: 'codex', usage: 'sks codex compatibility|version|update-status [--refresh]|update|doctor|schema|current [--json]', description: 'Check Codex CLI compatibility/version/update status, run the official `codex update`, and inspect current manifest, capability, and hook-schema evidence.' },
   { name: 'codex-app', usage: 'sks codex-app [check|set-openrouter-key --api-key-stdin|use-openrouter --model <id>|openrouter-status|product-design|chrome-extension|pat status|remote-control]', description: 'Check Codex App install, OpenRouter provider activation, codex-lb key-entry guidance, Product Design plugin readiness, Codex Chrome Extension web verification readiness, PAT-safe status, first-party MCP/plugin readiness, and Codex CLI remote-control availability.' },
   { name: 'codex-native', usage: 'sks codex-native status|feature-broker|invocation-plan|init-deep [--json]', description: 'Inspect Codex Native feature broker readiness, invocation routing, pattern evidence, and managed memory setup.' },
-  { name: 'hooks', usage: 'sks hooks explain|status|trust-report|replay|codex-validate|warning-check ... [--json]', description: 'Explain Codex hook events, validate vendored latest 10-event output schemas, replay fixtures, and enforce warning-zero SKS hook policies under the 0.134 compatibility matrix.' },
+  { name: 'hooks', usage: 'sks hooks explain|status|trust-report|replay|codex-validate|warning-check ... [--json]', description: 'Explain Codex hook events, validate current vendored event output schemas, replay fixtures, and enforce warning-zero SKS hook policies.' },
   { name: 'codex-lb', usage: 'sks codex-lb status|connect-test|health|metrics|doctor|circuit|repair|setup ...', description: 'Configure, run a one-request connection proof, health-check, repair, and record circuit evidence for codex-lb provider auth without confusing ChatGPT OAuth and proxy keys.' },
   { name: 'remote', usage: 'sks remote readiness|machines|worker ... [--json]', description: 'Inspect official Codex Remote readiness and the allowlisted proof-aware SSH stdio worker surface.' },
   { name: 'mad-sks', usage: 'sks mad-sks plan|run|apply|sql|apply-migration|status|close|rollback-apply ... | sks --mad [--high]', description: 'Open or inspect MAD-SKS scoped permission workflows, merged SQL-plane execution, and the native Codex permission launcher.' },
@@ -724,7 +739,8 @@ export const COMMAND_CATALOG = [
   { name: 'features', usage: 'sks features list|check|inventory [--json] [--write-docs]', description: 'Build and validate the feature registry that maps CLI commands, hidden handlers, dollar routes, app skill aliases, and skills.' },
   { name: 'all-features', usage: 'sks all-features selftest --mock [--json]', description: 'Run the mock all-features contract selftest for feature registry, proof, Voxel TriWiki, and failure-contract coverage.' },
   { name: 'aliases', usage: 'sks aliases', description: 'Show command aliases and npm binary names.' },
-  { name: 'align', usage: 'sks align prepare|run|status|proof ["scope"] [--json]', description: 'Prepare or inspect the $sks-align modernization mission that aligns SKS prompts, settings, and skills to latest GPT-5.6 / openai/skills guidance.' },
+  { name: 'cleanup', usage: 'sks cleanup plan|run|status|proof [--apply] [--json]', description: 'Permanently blank active TriWiki without retaining a previous generation; preserve source and audit history.' },
+  { name: 'align', usage: 'sks align prepare|run|status|proof [mission|"scope"] [--json]', description: 'Create or replace TriWiki as a code-only repository navigation graph with exact file/symbol/line coordinates and transactional publication.' },
   { name: 'setup', usage: 'sks setup [--bootstrap] [--install-scope global|project] [--local-only] [--force] [--json]', description: 'Initialize SKS state, Codex App files, hooks, skills, and rules.' },
   { name: 'fix-path', usage: 'sks fix-path [--install-scope global|project] [--json]', description: 'Refresh hook commands with the resolved SKS binary path.' },
   { name: 'doctor', usage: 'sks doctor [--fix] [--local-only] [--json] [--install-scope global|project]', description: 'Check and repair SKS generated files, while blocking setup if another Codex harness is detected.' },
@@ -757,7 +773,7 @@ export const COMMAND_CATALOG = [
   { name: 'profile', usage: 'sks profile show|set <model>', description: 'Inspect or set the current SKS model profile metadata.' },
   { name: 'gc', usage: 'sks gc [--dry-run] [--json]', description: 'Compact oversized logs and prune stale runtime artifacts.' },
   { name: 'stats', usage: 'sks stats [--full] [--json]', description: 'Show package and .sneakoscope storage size.' },
-  { name: 'mcp-server', usage: 'sks mcp-server [--expose-exec] [--probe]', description: 'Run a stdio MCP server exposing SKS read-only commands as tools for any MCP-capable agent host; --expose-exec also exposes non-read-only commands; --probe round-trips initialize/tools-list and exits.' },
+  { name: 'mcp-server', usage: 'sks mcp-server [--expose-exec] [--probe]', description: 'Run a modern stateless stdio MCP server exposing SKS read-only commands as tools for any MCP-capable agent host; --expose-exec also exposes non-read-only commands; --probe round-trips server/discover and tools/list, then exits.' },
   { name: 'agent-bridge', usage: 'sks agent-bridge setup [--trusted-project] [--json]', description: 'Publish the agent-bridge manifest, print host registration snippets (generic MCP host, Codex CLI, non-interactive contract), and run a live non-interactive smoke test; project MCP inventory requires explicit project trust.' }
 ];
 

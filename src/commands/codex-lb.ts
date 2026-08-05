@@ -78,18 +78,21 @@ export async function run(command: any, args: any = []) {
     return;
   }
   if (action === 'connect-test') {
-    const status = await codexLbStatus();
+    const options = controllerOptions(args);
+    const status = await codexLbStatus(options);
     const modelSelection = await resolveCodexLbHealthModel(status);
     const loadedEnv = await loadCodexLbEnv({
-      home: path.dirname(path.dirname(status.env_path)),
-      envPath: status.env_path
+      home: options.home || path.dirname(path.dirname(status.env_path)),
+      envPath: options.envPath || status.env_path,
+      ...(options.metadataPath ? { metadataPath: options.metadataPath } : {})
     });
     const result = await testCodexLbConnection(status, {
       requireSelected: true,
       model: modelSelection.model,
       baseUrl: loadedEnv.base_url,
       apiKey: loadedEnv.secret_api_key,
-      credentialBindingBlockers: loadedEnv.credential_binding.blockers
+      credentialBindingBlockers: loadedEnv.credential_binding.blockers,
+      gatewayAuthTransport: options.gatewayAuthTransport || loadedEnv.gateway_auth_transport || undefined
     });
     if (!result.ok) process.exitCode = 1;
     if (flag(args, '--json')) return printJson(result);

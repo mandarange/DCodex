@@ -31,7 +31,7 @@ export const DEFAULT_TRIWIKI_MODULE_CARDS: TriWikiModuleCard[] = [
   moduleCard('secret-preservation', ['src/core/**/secret*.ts', 'src/scripts/secret-*.ts', 'safety-mutation-allowlist.json'], ['secret:', 'supabase-secret'], ['doctor-production'], 'critical'),
   moduleCard('core-skill', ['.agents/skills/**', 'src/scripts/core-skill-*.ts'], ['core-skill:'], ['core-skill'], 'high'),
   moduleCard('skill-dedupe', ['src/scripts/skill-*.ts', '.sneakoscope/skills/**'], ['skill:'], ['skill-dedupe'], 'medium'),
-  moduleCard('codex-0140', ['src/scripts/codex-0140-*.ts', 'src/vendor/openai-codex/**'], ['codex:0140'], ['codex-0140'], 'medium'),
+  moduleCard('codex-current-feature', ['src/scripts/codex-current-feature-*.ts', 'src/vendor/openai-codex/**'], ['codex:current-feature'], ['codex-current-feature'], 'medium'),
   moduleCard('loop-mesh', ['src/core/loops/**', 'src/scripts/loop-*.ts'], ['loop:'], ['loop-mesh'], 'medium'),
   moduleCard('qa-loop', ['src/commands/qa-loop.ts', 'src/scripts/qa-*.ts'], ['qa-', 'qa:'], ['qa-research-image'], 'medium'),
   moduleCard('research', ['src/commands/research.ts', 'src/scripts/research-*.ts'], ['research:'], ['qa-research-image'], 'medium'),

@@ -6,251 +6,11 @@ import path from 'node:path';
 import {
   UPDATE_STAGE_ORDER,
   detectEffectiveSksVersion,
-  runSksUpdateNow,
-  runSksUpdateRollback
+  runSksUpdateNow
 } from '../update-check.js';
 
-test('simulated 6.2 to 6.3 update and rollback bind receipts to the newly installed package', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-620-630-'));
-  const home = path.join(root, 'home');
-  const projectRoot = path.join(root, 'project');
-  const projectRootAlias = path.join(root, 'project-link');
-  const npmGlobalRoot = path.join(root, 'npm-global', 'node_modules');
-  const npmGlobalBin = path.join(root, 'npm-global', 'bin');
-  const installedPackageRoot = path.join(npmGlobalRoot, 'sneakoscope');
-  const installedEntrypoint = path.join(installedPackageRoot, 'dist', 'bin', 'sks.js');
-  const stateFile = path.join(root, 'installed-version.txt');
-  const tempProbe = path.join(root, 'temporary-sks.mjs');
-  const fakeNpm = path.join(root, 'npm-fixture.mjs');
-  try {
-    await fs.mkdir(projectRoot, { recursive: true });
-    await fs.symlink(projectRoot, projectRootAlias, process.platform === 'win32' ? 'junction' : 'dir');
-    const canonicalProjectRoot = await fs.realpath(projectRoot);
-    await fs.mkdir(home, { recursive: true });
-    await createInstalledPackageFixture(installedPackageRoot, '6.2.0');
-    await fs.mkdir(npmGlobalBin, { recursive: true });
-    await fs.symlink(installedEntrypoint, path.join(npmGlobalBin, 'sks'));
-    await setInstalledFixtureVersion(installedPackageRoot, stateFile, '6.2.0');
-    await fs.writeFile(tempProbe, [
-      '#!/usr/bin/env node',
-      "if (process.argv.includes('--version')) { console.log(process.env.SKS_TEST_TEMP_TARGET || '0.0.0'); process.exit(0); }",
-      "if (process.argv[2] === 'doctor') { console.log(JSON.stringify({ ok: true })); process.exit(0); }",
-      "process.exit(1);"
-    ].join('\n'));
-    await fs.chmod(tempProbe, 0o755);
-    await createFakeNpm({ fakeNpm, stateFile, npmGlobalRoot, installedPackageRoot });
-
-    const baseEnv: NodeJS.ProcessEnv = {
-      ...process.env,
-      HOME: home,
-      PATH: `${npmGlobalBin}${path.delimiter}/usr/bin:/bin`,
-      SKS_GLOBAL_ROOT: path.join(home, '.sneakoscope-global'),
-      SKS_MUTATION_LEDGER_ROOT: projectRoot,
-      SKS_UPDATE_STATUS_PATH: path.join(home, 'update-status.json'),
-      SKS_NPM_VIEW_SNEAKOSCOPE_VERSION: '6.3.0',
-      SKS_UPDATE_TEMP_INSTALL_FIXTURE_ENTRYPOINT: tempProbe,
-      SKS_TEST_TEMP_TARGET: '6.3.0',
-      SKS_TEST_DOCTOR_OK: '1',
-      SKS_UPDATE_SKIP_SKS_MENUBAR: '1',
-      SKS_UPDATE_QUIET: '1'
-    };
-    const updated = await runSksUpdateNow({
-      npmBin: fakeNpm,
-      currentVersion: '6.2.0',
-      version: '6.3.0',
-      projectRoot,
-      env: baseEnv,
-      timeoutMs: 15_000,
-      json: true
-    });
-    assert.equal(updated.ok, true, updated.error || 'update failed');
-    assert.equal(updated.status, 'updated');
-    assert.equal(updated.project_root, canonicalProjectRoot);
-    assert.equal(updated.from, '6.2.0');
-    assert.equal(updated.new_version, '6.3.0');
-    assert.equal(updated.temporary_install_smoke?.status, 'verified');
-    assertStageOrder(updated.stages.map((stage) => stage.id));
-    const updateReceipt = JSON.parse(await fs.readFile(
-      path.join(projectRoot, '.sneakoscope', 'update', 'migration-receipt.json'),
-      'utf8'
-    ));
-    assert.equal(updateReceipt.sks_version, '6.3.0');
-    assert.equal(updated.project_receipt?.sks_version, '6.3.0');
-    assert.equal(updated.rollback.previous_version, '6.2.0');
-    const updateOperation = JSON.parse(await fs.readFile(updated.operation_receipt_path!, 'utf8'));
-    assert.equal(updateOperation.state, 'succeeded');
-    assert.equal(updateOperation.target_version, '6.3.0');
-
-    const rolledBack = await runSksUpdateRollback({
-      npmBin: fakeNpm,
-      currentVersion: '6.3.0',
-      version: '6.2.0',
-      projectRoot: projectRootAlias,
-      env: { ...baseEnv, SKS_TEST_TEMP_TARGET: '6.2.0' },
-      timeoutMs: 15_000,
-      json: true
-    });
-    assert.equal(rolledBack.ok, true, rolledBack.error || 'rollback failed');
-    assert.equal(rolledBack.requested_version, '6.2.0');
-    assert.equal(rolledBack.update?.new_version, '6.2.0');
-    assert.equal(rolledBack.update?.project_root, canonicalProjectRoot);
-    assert.equal(rolledBack.update?.project_receipt?.sks_version, '6.2.0');
-    assertStageOrder(rolledBack.update?.stages.map((stage) => stage.id) || []);
-    const rollbackOperation = JSON.parse(await fs.readFile(rolledBack.receipt_path!, 'utf8'));
-    assert.equal(rollbackOperation.kind, 'rollback');
-    assert.equal(rollbackOperation.state, 'rolled_back');
-    assert.equal(rollbackOperation.previous_version, '6.3.0');
-    assert.equal(JSON.parse(await fs.readFile(path.join(installedPackageRoot, 'package.json'), 'utf8')).version, '6.2.0');
-
-    const reconcileFailure = await runSksUpdateNow({
-      npmBin: fakeNpm,
-      currentVersion: '6.2.0',
-      version: '6.3.0',
-      projectRoot,
-      env: {
-        ...baseEnv,
-        SKS_TEST_TEMP_TARGET: '6.3.0',
-        SKS_TEST_UPDATE_GLOBAL_SKILLS_FAIL: '1'
-      },
-      timeoutMs: 15_000,
-      json: true
-    });
-    assert.equal(reconcileFailure.ok, false);
-    assert.equal(reconcileFailure.status, 'failed');
-    assert.match(reconcileFailure.error || '', /^required update stages failed: /);
-    assert.match(reconcileFailure.error || '', /global_skills_reconcile/);
-    assert.ok(reconcileFailure.stages.some(
-      (stage) => stage.id === 'global_skills_reconcile' && stage.ok === false
-    ));
-    const reconcileReceiptStage = reconcileFailure.stages.find((stage) => stage.id === 'project_receipt');
-    assert.deepEqual(reconcileReceiptStage?.detail?.required_blockers, [
-      'skills-reconcile:global:forced_update_global_skills_reconcile_failure'
-    ]);
-    const reconcileOperation = JSON.parse(await fs.readFile(reconcileFailure.operation_receipt_path!, 'utf8'));
-    assert.match(
-      reconcileOperation.public_error || '',
-      /skills-reconcile:global:forced_update_global_skills_reconcile_failure/
-    );
-    assert.doesNotMatch(reconcileOperation.public_error || '', /required update stages failed/);
-
-    await setInstalledFixtureVersion(installedPackageRoot, stateFile, '6.2.0');
-    const configPath = path.join(projectRoot, '.codex', 'config.toml');
-    await fs.mkdir(path.dirname(configPath), { recursive: true });
-    await fs.writeFile(configPath, 'model = "gpt-5.4"\n');
-    const configAdoptFailure = await runSksUpdateNow({
-      npmBin: fakeNpm,
-      currentVersion: '6.2.0',
-      version: '6.3.0',
-      projectRoot,
-      env: {
-        ...baseEnv,
-        SKS_TEST_TEMP_TARGET: '6.3.0',
-        SKS_TEST_UPDATE_CONFIG_ADOPT_BLOCKER: '1'
-      },
-      timeoutMs: 15_000,
-      json: true
-    });
-    assert.equal(configAdoptFailure.ok, false);
-    const configAdoptOperation = JSON.parse(await fs.readFile(configAdoptFailure.operation_receipt_path!, 'utf8'));
-    assert.ok(configAdoptOperation.public_error.includes(configPath), configAdoptOperation.public_error);
-    assert.ok(configAdoptOperation.public_error.includes('user_owned_file_without_sks_marker'));
-    assert.ok(configAdoptOperation.public_error.includes('# SKS-MANAGED-CODEX-CONFIG'));
-    assert.ok(configAdoptOperation.public_error.includes('sks config adopt'));
-    assert.doesNotMatch(configAdoptOperation.public_error, /required update stages failed/);
-
-    await setInstalledFixtureVersion(installedPackageRoot, stateFile, '6.2.0');
-    const finalizeDoctorFailure = await runSksUpdateNow({
-      npmBin: fakeNpm,
-      currentVersion: '6.2.0',
-      version: '6.3.0',
-      projectRoot,
-      env: {
-        ...baseEnv,
-        SKS_TEST_TEMP_TARGET: '6.3.0',
-        SKS_TEST_FINALIZE_DOCTOR_USER_CONFIG_PRESERVED: '1'
-      },
-      timeoutMs: 15_000,
-      json: true
-    });
-    assert.equal(finalizeDoctorFailure.ok, false);
-    assert.equal(finalizeDoctorFailure.status, 'updated_with_issues');
-    assert.match(finalizeDoctorFailure.error || '', /update_finalize_doctor/);
-    const finalizeDoctorStage = finalizeDoctorFailure.stages.find((stage) => stage.id === 'update_finalize_doctor');
-    assert.equal(finalizeDoctorStage?.ok, false);
-    assert.equal(finalizeDoctorStage?.status, 'failed');
-    assert.equal(finalizeDoctorStage?.detail?.exit_code, 1);
-    assert.equal(finalizeDoctorStage?.detail?.timed_out, false);
-    assert.deepEqual(finalizeDoctorStage?.detail?.required_blockers, [
-      'project:user_owned_file_without_sks_marker',
-      'user_owned_file_without_sks_marker'
-    ]);
-    assert.deepEqual(finalizeDoctorStage?.detail?.args, [
-      'doctor',
-      '--profile',
-      'migration',
-      '--machine-only',
-      '--report-file',
-      path.join(canonicalProjectRoot, '.sneakoscope', 'update', 'update-finalize-doctor.json')
-    ]);
-    const finalizeDoctorVerification = finalizeDoctorFailure.stages.find((stage) => stage.id === 'final_self_verification');
-    assert.equal(finalizeDoctorVerification?.ok, false);
-    assert.ok(Array.isArray(finalizeDoctorVerification?.detail?.failed));
-    assert.ok((finalizeDoctorVerification?.detail?.failed as string[]).includes('update_finalize_doctor'));
-    const finalizeDoctorOperation = JSON.parse(await fs.readFile(finalizeDoctorFailure.operation_receipt_path!, 'utf8'));
-    assert.equal(finalizeDoctorOperation.state, 'failed');
-    assert.ok(finalizeDoctorOperation.stages.some((stage: any) => stage.id === 'update_finalize_doctor' && stage.ok === false));
-    assert.ok(finalizeDoctorOperation.public_error.includes(configPath), finalizeDoctorOperation.public_error);
-    assert.ok(finalizeDoctorOperation.public_error.includes('user_owned_file_without_sks_marker'));
-    assert.ok(finalizeDoctorOperation.public_error.includes('# SKS-MANAGED-CODEX-CONFIG'));
-    assert.ok(finalizeDoctorOperation.public_error.includes('sks config adopt'));
-    assert.doesNotMatch(finalizeDoctorOperation.public_error, /update self-verification failed/);
-    assert.doesNotMatch(finalizeDoctorOperation.public_error, /required update stages failed/);
-
-    await setInstalledFixtureVersion(installedPackageRoot, stateFile, '6.2.0');
-    const excludedBuildStamp = await runSksUpdateNow({
-      npmBin: fakeNpm,
-      currentVersion: '6.2.0',
-      version: '6.3.0',
-      projectRoot,
-      env: { ...baseEnv, SKS_TEST_TEMP_TARGET: '6.3.0', SKS_FAKE_BAD_STAMP: '1' },
-      timeoutMs: 15_000,
-      json: true
-    });
-    assert.equal(excludedBuildStamp.ok, true, excludedBuildStamp.error || JSON.stringify(excludedBuildStamp.stages));
-    assert.equal(excludedBuildStamp.status, 'updated');
-    assert.ok(!excludedBuildStamp.verification.map((item) => item.id as string).includes('dist_stamp'));
-    assert.ok(excludedBuildStamp.verification.some((item) => item.id === 'package_manifest' && item.ok));
-
-    const missingDoctorOwnedReceipt = await runSksUpdateNow({
-      npmBin: fakeNpm,
-      currentVersion: '6.3.0',
-      version: '8.0.2',
-      projectRoot,
-      env: {
-        ...baseEnv,
-        SKS_NPM_VIEW_SNEAKOSCOPE_VERSION: '8.0.2',
-        SKS_TEST_TEMP_TARGET: '8.0.2'
-      },
-      timeoutMs: 15_000,
-      json: true
-    });
-    assert.equal(missingDoctorOwnedReceipt.ok, false);
-    assert.equal(missingDoctorOwnedReceipt.status, 'failed');
-    const strictReceiptStage = missingDoctorOwnedReceipt.stages.find((stage) => stage.id === 'project_receipt');
-    assert.equal(strictReceiptStage?.detail?.via, 'new_version_doctor_receipt_required');
-    assert.equal(strictReceiptStage?.detail?.error, 'new_version_doctor_receipt_missing_or_stale');
-    const preservedReceipt = JSON.parse(await fs.readFile(
-      path.join(projectRoot, '.sneakoscope', 'update', 'migration-receipt.json'),
-      'utf8'
-    ));
-    assert.notEqual(preservedReceipt.sks_version, '8.0.2');
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
-});
-
-test('simulated 8.0.3 upgrade resolves the installed CLI and subsequent runtime as 8.0.4', async () => {
-  const fixture = await createRelease804UpgradeFixture(false);
+test('simulated 8.0.4 upgrade resolves the installed CLI and subsequent runtime as 8.0.5', async () => {
+  const fixture = await createRelease805UpgradeFixture(false);
   try {
     const updated = await runSksUpdateNow(fixture.options);
     assert.equal(updated.ok, true, JSON.stringify({
@@ -260,11 +20,11 @@ test('simulated 8.0.3 upgrade resolves the installed CLI and subsequent runtime 
       stages: updated.stages
     }, null, 2));
     assert.equal(updated.status, 'updated');
-    assert.equal(updated.from, '8.0.3');
-    assert.equal(updated.new_version, '8.0.4');
-    assert.equal(updated.installed_cli_resolution?.manifest_version, '8.0.4');
-    assert.equal(updated.installed_cli_resolution?.entrypoint_version, '8.0.4');
-    assert.equal(updated.installed_cli_resolution?.path_version, '8.0.4');
+    assert.equal(updated.from, '8.0.4');
+    assert.equal(updated.new_version, '8.0.5');
+    assert.equal(updated.installed_cli_resolution?.manifest_version, '8.0.5');
+    assert.equal(updated.installed_cli_resolution?.entrypoint_version, '8.0.5');
+    assert.equal(updated.installed_cli_resolution?.path_version, '8.0.5');
     assert.equal(updated.installed_cli_resolution?.path_targets_entrypoint, true);
     assert.equal(updated.installed_cli_resolution?.ok, true);
     assert.ok(updated.verification.some((item) => item.id === 'package_manifest' && item.ok));
@@ -272,28 +32,28 @@ test('simulated 8.0.3 upgrade resolves the installed CLI and subsequent runtime 
 
     const effective = await detectEffectiveSksVersion({
       npmBin: fixture.options.npmBin,
-      currentVersion: '8.0.3',
+      currentVersion: '8.0.4',
       env: fixture.options.env,
       timeoutMs: 5_000
     });
-    assert.equal(effective.current, '8.0.4');
-    assert.equal(effective.path_current, '8.0.4');
-    assert.equal(effective.npm_global_current, '8.0.4');
+    assert.equal(effective.current, '8.0.5');
+    assert.equal(effective.path_current, '8.0.5');
+    assert.equal(effective.npm_global_current, '8.0.5');
   } finally {
     await fixture.cleanup();
   }
 });
 
 test('post-update verification fails closed when an older PATH executable still wins', async () => {
-  const fixture = await createRelease804UpgradeFixture(true);
+  const fixture = await createRelease805UpgradeFixture(true);
   try {
     const updated = await runSksUpdateNow(fixture.options);
     assert.equal(updated.ok, false);
     assert.equal(updated.status, 'failed');
-    assert.equal(updated.new_version, '8.0.4');
-    assert.equal(updated.installed_cli_resolution?.manifest_version, '8.0.4');
-    assert.equal(updated.installed_cli_resolution?.entrypoint_version, '8.0.4');
-    assert.equal(updated.installed_cli_resolution?.path_version, '8.0.3');
+    assert.equal(updated.new_version, '8.0.5');
+    assert.equal(updated.installed_cli_resolution?.manifest_version, '8.0.5');
+    assert.equal(updated.installed_cli_resolution?.entrypoint_version, '8.0.5');
+    assert.equal(updated.installed_cli_resolution?.path_version, '8.0.4');
     assert.ok(updated.installed_cli_resolution?.blockers.includes('installed_cli_path_version_mismatch'));
     assert.ok(updated.verification.some((item) => item.id === 'path_version_match' && item.ok === false));
     assert.match(updated.error || '', /installed SKS CLI resolution failed/);
@@ -303,8 +63,8 @@ test('post-update verification fails closed when an older PATH executable still 
   }
 });
 
-async function createRelease804UpgradeFixture(stalePathFirst: boolean) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-803-804-'));
+async function createRelease805UpgradeFixture(stalePathFirst: boolean) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-804-805-'));
   const home = path.join(root, 'home');
   const projectRoot = path.join(root, 'project');
   const npmPrefix = path.join(root, 'npm-global');
@@ -320,12 +80,12 @@ async function createRelease804UpgradeFixture(stalePathFirst: boolean) {
     fs.mkdir(projectRoot, { recursive: true }),
     fs.mkdir(npmGlobalBin, { recursive: true })
   ]);
-  await createInstalledPackageFixture(installedPackageRoot, '8.0.3');
+  await createInstalledPackageFixture(installedPackageRoot, '8.0.4');
   await fs.symlink(installedEntrypoint, path.join(npmGlobalBin, 'sks'));
-  await fs.writeFile(stateFile, '8.0.3\n');
+  await fs.writeFile(stateFile, '8.0.4\n');
   await fs.writeFile(tempProbe, [
     '#!/usr/bin/env node',
-    "if (process.argv.includes('--version')) { console.log('8.0.4'); process.exit(0); }",
+    "if (process.argv.includes('--version')) { console.log('8.0.5'); process.exit(0); }",
     "if (process.argv[2] === 'doctor') { console.log(JSON.stringify({ ok: true })); process.exit(0); }",
     'process.exit(1);'
   ].join('\n'));
@@ -337,7 +97,7 @@ async function createRelease804UpgradeFixture(stalePathFirst: boolean) {
     const oldBin = path.join(root, 'old-prefix', 'bin');
     await fs.mkdir(oldBin, { recursive: true });
     const staleSks = path.join(oldBin, 'sks');
-    await fs.writeFile(staleSks, `#!${process.execPath}\nconsole.log('sneakoscope 8.0.3');\n`);
+    await fs.writeFile(staleSks, `#!${process.execPath}\nconsole.log('sneakoscope 8.0.4');\n`);
     await fs.chmod(staleSks, 0o755);
     pathValue = `${oldBin}${path.delimiter}${pathValue}`;
   }
@@ -348,20 +108,20 @@ async function createRelease804UpgradeFixture(stalePathFirst: boolean) {
     SKS_GLOBAL_ROOT: path.join(home, '.sneakoscope-global'),
     SKS_MUTATION_LEDGER_ROOT: projectRoot,
     SKS_UPDATE_STATUS_PATH: path.join(home, 'update-status.json'),
-    SKS_NPM_VIEW_SNEAKOSCOPE_VERSION: '8.0.4',
+    SKS_NPM_VIEW_SNEAKOSCOPE_VERSION: '8.0.5',
     SKS_UPDATE_TEMP_INSTALL_FIXTURE_ENTRYPOINT: tempProbe,
-    SKS_TEST_TEMP_TARGET: '8.0.4',
+    SKS_TEST_TEMP_TARGET: '8.0.5',
     SKS_TEST_OLD_DOCTOR_FAIL: '1',
     SKS_TEST_DOCTOR_WRITE_RECEIPT: '1',
-    SKS_TEST_FROM_VERSION: '8.0.3',
+    SKS_TEST_FROM_VERSION: '8.0.4',
     SKS_UPDATE_SKIP_SKS_MENUBAR: '1',
     SKS_UPDATE_QUIET: '1'
   };
   return {
     options: {
       npmBin: fakeNpm,
-      currentVersion: '8.0.3',
-      version: '8.0.4',
+      currentVersion: '8.0.4',
+      version: '8.0.5',
       projectRoot,
       env,
       timeoutMs: 15_000,

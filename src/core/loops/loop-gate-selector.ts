@@ -15,7 +15,7 @@ export function selectLoopGates(input: {
   else if (/release/.test(files) || input.node.loop_id.includes('release')) add(local, ['release:affected-selector', 'release:dynamic-presets']);
   else if (/research/.test(files) || input.node.loop_id.includes('research')) add(local, ['research:quality-contract']);
   else if (/qa-loop/.test(files) || input.node.loop_id.includes('qa-loop')) add(local, ['qa-loop:app-handoff-gate-lifecycle']);
-  else if (/codex/.test(files) || input.node.loop_id.includes('codex')) add(local, ['codex:0139-capability', 'codex-sdk:version-compat']);
+  else if (/codex/.test(files) || input.node.loop_id.includes('codex')) add(local, ['codex:current-core-capability', 'codex-sdk:version-compat']);
   else if (/mad-sks.*sql-plane|db-safety/.test(files) || input.node.loop_id.includes('mad-sks-sql-plane')) add(local, ['mad-sks:sql-plane-capability', 'mad-sks:sql-plane-operation-lifecycle']);
   else if (/agent|scheduler|worker-runtime/.test(files) || input.node.loop_id.includes('naruto')) add(local, ['parallel:runtime-real-blackbox', 'scheduler:utilization-proof']);
   else add(local, ['loop:affected']);

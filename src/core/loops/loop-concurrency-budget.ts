@@ -6,7 +6,7 @@ import type { SksLoopPlan } from './loop-schema.js';
 export interface LoopCodexUsageSignal {
   available: boolean;
   certainty: 'actual' | 'discovered' | 'fixture' | 'assumed_by_version' | 'unverified';
-  source: 'codex-0140-usage' | 'env' | 'fixture' | 'none';
+  source: 'codex-current-feature-usage' | 'env' | 'fixture' | 'none';
   evidence: string[];
   warnings: string[];
 }
@@ -14,7 +14,7 @@ export interface LoopCodexUsageSignal {
 export interface LoopConcurrencyBudget {
   schema: 'sks.loop-concurrency-budget.v1';
   mission_id: string;
-  usage_budget_source: 'codex-0140-usage' | 'sks-local-estimate';
+  usage_budget_source: 'codex-current-feature-usage' | 'sks-local-estimate';
   codex_usage_signal: LoopCodexUsageSignal;
   max_active_loops: number;
   max_active_workers: number;
@@ -38,7 +38,7 @@ export function computeLoopConcurrencyBudget(input: {
   const env = input.env || process.env;
   const codexUsageSignal = input.codexUsageSignal || codexUsageSignalFromEnv(env);
   const usageBudgetSource = codexUsageSignal.available && (codexUsageSignal.certainty === 'actual' || codexUsageSignal.certainty === 'discovered')
-    ? 'codex-0140-usage'
+    ? 'codex-current-feature-usage'
     : 'sks-local-estimate';
   const cores = Math.max(1, os.cpus().length || 1);
   const requestedLoops = input.parallelism === 'safe' ? 1 : input.parallelism === 'extreme' ? Math.min(4, cores) : Math.min(2, cores);
@@ -98,14 +98,14 @@ function positiveInt(value: unknown): number | null {
 }
 
 function codexUsageSignalFromEnv(env: NodeJS.ProcessEnv): LoopCodexUsageSignal {
-  const certainty = normalizeUsageCertainty(env.SKS_CODEX_0140_USAGE_CERTAINTY);
-  const available = env.SKS_CODEX_0140_USAGE_AVAILABLE === '1' || certainty === 'actual' || certainty === 'discovered';
+  const certainty = normalizeUsageCertainty(env.SKS_CODEX_CURRENT_FEATURE_USAGE_CERTAINTY);
+  const available = env.SKS_CODEX_CURRENT_FEATURE_USAGE_AVAILABLE === '1' || certainty === 'actual' || certainty === 'discovered';
   return {
     available,
     certainty,
     source: available ? 'env' : 'none',
-    evidence: env.SKS_CODEX_0140_USAGE_EVIDENCE ? [env.SKS_CODEX_0140_USAGE_EVIDENCE] : [],
-    warnings: available ? [] : ['codex_0140_usage_signal_unavailable_using_local_estimate']
+    evidence: env.SKS_CODEX_CURRENT_FEATURE_USAGE_EVIDENCE ? [env.SKS_CODEX_CURRENT_FEATURE_USAGE_EVIDENCE] : [],
+    warnings: available ? [] : ['codex_current_feature_usage_signal_unavailable_using_local_estimate']
   };
 }
 

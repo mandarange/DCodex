@@ -23,8 +23,9 @@ import { buildImportAndReexportEdges, collectModuleFacts } from './module-graph.
 import { buildModuleContainsEdges, buildModuleNodes, inferModuleBoundaries, moduleDirForPath } from './modules.js';
 import { buildReferenceEdges } from './references.js';
 import { selectExtractionTargets } from './selection.js';
+import { extractTextDeclarations } from './text-declarations.js';
 import { createCodeSourceFile, createResolutionContext } from './ts-config.js';
-import type { CodeSourceFileRecord, DeclaredSymbol, ModuleFacts, ParsedCodeFile } from './types.js';
+import type { CodeInventory, CodeSourceFileRecord, DeclaredSymbol, ModuleFacts, ParsedCodeFile } from './types.js';
 import { CODE_GRAPH_EXTRACTOR_ID, CODE_GRAPH_EXTRACTOR_REVISION, estimateTokenCost } from './types.js';
 
 /** Unresolved first-party imports are worth reporting, but not thousands of them. */
@@ -61,13 +62,15 @@ export class CodeGraphExtractor implements ContextGraphExtractor {
   readonly id = CODE_GRAPH_EXTRACTOR_ID;
   readonly revision = CODE_GRAPH_EXTRACTOR_REVISION;
 
+  constructor(private readonly preparedInventory: CodeInventory | null = null) {}
+
   async extract(input: ContextGraphExtractionInput): Promise<ContextGraphFragment> {
     const startedAt = Date.now();
     const deadline = startedAt + Math.max(1, input.limits.timeoutMs);
     const root = realRoot(input.root);
     const sink = new CodeGraphSink(input.limits, input.observedAt);
 
-    const inventory = walkCodeInventory(root, input.limits);
+    const inventory = this.preparedInventory ?? walkCodeInventory(root, input.limits);
     for (const skip of inventory.skipped) sink.addSkip(skip);
 
     const hashes = new Map<string, string>();
@@ -94,13 +97,19 @@ export class CodeGraphExtractor implements ContextGraphExtractor {
     }
 
     const phase = this.parseAndCollect(context, inventory, selection.targets, sink, deadline);
+    for (const rel of selection.selectedRels) {
+      const record = inventory.byRel.get(rel);
+      if (!record || record.parser !== 'text') continue;
+      phase.declarationsByRel.set(rel, extractTextDeclarations(record));
+    }
     this.reportUnresolved(sink, phase.factsByRel);
 
     const fanIn = countFanIn(phase.factsByRel);
-    const nodeRels = collectNodeRels(phase.factsByRel, phase.parsedByRel, inventory);
+    const nodeRels = collectNodeRels(phase.factsByRel, phase.parsedByRel, inventory, selection.selectedRels);
+    const scannedRels = new Set(selection.selectedRels);
     const fileNodeIdByRel = new Map<string, string>();
     const testNodeIdByRel = new Map<string, string>();
-    this.buildFileNodes({ sink, inventory, nodeRels, parsed: phase.parsedByRel, fanIn, fileNodeIdByRel, testNodeIdByRel });
+    this.buildFileNodes({ sink, inventory, nodeRels, scannedRels, fanIn, fileNodeIdByRel, testNodeIdByRel });
     this.buildSymbolNodes(sink, inventory, phase.declarationsByRel);
 
     const boundaries = inferModuleBoundaries([...fileNodeIdByRel.keys()].sort());
@@ -180,7 +189,7 @@ export class CodeGraphExtractor implements ContextGraphExtractor {
     sink: CodeGraphSink;
     inventory: ReturnType<typeof walkCodeInventory>;
     nodeRels: string[];
-    parsed: ReadonlyMap<string, ParsedCodeFile>;
+    scannedRels: ReadonlySet<string>;
     fanIn: ReadonlyMap<string, number>;
     fileNodeIdByRel: Map<string, string>;
     testNodeIdByRel: Map<string, string>;
@@ -188,7 +197,7 @@ export class CodeGraphExtractor implements ContextGraphExtractor {
     for (const rel of args.nodeRels) {
       const record = args.inventory.byRel.get(rel);
       if (!record) continue;
-      const scanned = args.parsed.has(rel);
+      const scanned = args.scannedRels.has(rel);
       const id = contextGraphNodeId({ kind: 'file', path: rel });
       const added = args.sink.addNode(
         {
@@ -207,7 +216,8 @@ export class CodeGraphExtractor implements ContextGraphExtractor {
             bytes: record.bytes,
             isTest: record.isTest,
             fanIn: args.fanIn.get(rel) ?? 0,
-            scanned
+            scanned,
+            ...(record.purpose ? { purpose: record.purpose } : {})
           }
         },
         rel
@@ -254,7 +264,7 @@ export class CodeGraphExtractor implements ContextGraphExtractor {
             path: rel,
             contentHash: record.hash,
             locator: { line: symbol.line, column: symbol.column, endLine: symbol.endLine, endColumn: symbol.endColumn },
-            trust: 1,
+            trust: record.parser === 'text' ? 0.85 : 1,
             risk: 'low',
             tokenCost: symbol.tokenCost,
             metadata: {
@@ -292,7 +302,7 @@ export class CodeGraphExtractor implements ContextGraphExtractor {
           from,
           to: symbol.nodeId,
           type: 'contains',
-          confidence: 'exact',
+          confidence: record.parser === 'text' ? 'syntactic' : 'exact',
           path: rel,
           hash: record.hash,
           line: symbol.line
@@ -302,7 +312,7 @@ export class CodeGraphExtractor implements ContextGraphExtractor {
           from,
           to: symbol.nodeId,
           type: 'defines',
-          confidence: 'exact',
+          confidence: record.parser === 'text' ? 'syntactic' : 'exact',
           path: rel,
           hash: record.hash,
           line: symbol.line
@@ -328,9 +338,10 @@ function countFanIn(factsByRel: ReadonlyMap<string, ModuleFacts>): Map<string, n
 function collectNodeRels(
   factsByRel: ReadonlyMap<string, ModuleFacts>,
   parsedByRel: ReadonlyMap<string, ParsedCodeFile>,
-  inventory: ReturnType<typeof walkCodeInventory>
+  inventory: ReturnType<typeof walkCodeInventory>,
+  selectedRels: readonly string[]
 ): string[] {
-  const rels = new Set<string>(parsedByRel.keys());
+  const rels = new Set<string>([...parsedByRel.keys(), ...selectedRels]);
   for (const facts of factsByRel.values()) {
     for (const entry of facts.imports) if (inventory.byRel.has(entry.targetRel)) rels.add(entry.targetRel);
     for (const record of facts.reexports) if (inventory.byRel.has(record.targetRel)) rels.add(record.targetRel);
@@ -338,8 +349,8 @@ function collectNodeRels(
   return [...rels].sort();
 }
 
-export function createCodeGraphExtractor(): ContextGraphExtractor {
-  return new CodeGraphExtractor();
+export function createCodeGraphExtractor(options: { preparedInventory?: CodeInventory } = {}): ContextGraphExtractor {
+  return new CodeGraphExtractor(options.preparedInventory ?? null);
 }
 
 export { CODE_GRAPH_EXTRACTOR_ID, CODE_GRAPH_EXTRACTOR_REVISION } from './types.js';

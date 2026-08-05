@@ -36,6 +36,7 @@ import {
 import { computeContextGraphCacheKey, type ContextGraphCacheKeyResult } from './cache-key.js';
 import { DEFAULT_CONTEXT_GRAPH_LIMITS, runContextGraphExtractors } from './extract.js';
 import { applyContextGraphFreshness } from './freshness.js';
+import { withTriWikiStateLock } from '../../triwiki-cleanup.js';
 import {
   applyContextGraphCaps,
   carryForwardFromSnapshot,
@@ -63,6 +64,12 @@ export interface CompileContextGraphInput {
   observedAt?: string | undefined;
   tokenBudget?: number | undefined;
   useFragmentCache?: boolean | undefined;
+  /** Pre-computed cache identity for callers with a narrower source policy. */
+  cacheKey?: ContextGraphCacheKeyResult | undefined;
+  /** Build and validate in memory without publishing graph artifacts or events. */
+  persistArtifacts?: boolean | undefined;
+  /** Skip the graph lock only when the caller already holds a broader state-transition lock. */
+  useCompileLock?: boolean | undefined;
   env?: NodeJS.ProcessEnv | undefined;
 }
 
@@ -143,17 +150,20 @@ async function compileLocked(
   const observedAt = input.observedAt ?? new Date().toISOString();
   const limits = resolveLimits(input.limits);
   const changedPaths = normalizeChangedPaths(root, input.changedPaths);
-  const cacheKey: ContextGraphCacheKeyResult = await computeContextGraphCacheKey({
+  const cacheKey: ContextGraphCacheKeyResult = input.cacheKey ?? await computeContextGraphCacheKey({
     root,
     extractors: input.extractors
   });
+  const persistArtifacts = input.persistArtifacts !== false;
 
-  await appendContextGraphEvent(root, {
-    type: 'compile.started',
-    at: observedAt,
-    cacheKey: cacheKey.key,
-    incremental: changedPaths !== null
-  });
+  if (persistArtifacts) {
+    await appendContextGraphEvent(root, {
+      type: 'compile.started',
+      at: observedAt,
+      cacheKey: cacheKey.key,
+      incremental: changedPaths !== null
+    });
+  }
 
   const extraction = await runContextGraphExtractors({
     root,
@@ -167,12 +177,14 @@ async function compileLocked(
     useFragmentCache: (input.useFragmentCache ?? true) && cacheKey.reusable
   });
   if (extraction.blockers.length > 0) {
-    await appendContextGraphEvent(root, {
-      type: 'compile.blocked',
-      at: observedAt,
-      cacheKey: cacheKey.key,
-      reason: extraction.blockers[0] ?? 'extractor_failed'
-    });
+    if (persistArtifacts) {
+      await appendContextGraphEvent(root, {
+        type: 'compile.blocked',
+        at: observedAt,
+        cacheKey: cacheKey.key,
+        reason: extraction.blockers[0] ?? 'extractor_failed'
+      });
+    }
     return failure('extractor_failed', extraction.blockers, Date.now() - startedAt, {
       cacheKey: cacheKey.key,
       cacheReusable: cacheKey.reusable,
@@ -222,15 +234,17 @@ async function compileLocked(
   const issues = [...extraction.issues, ...merged.issues, ...lint.issues];
   const errors = issues.filter((issue) => issue.severity === 'error');
   if (errors.length > 0) {
-    await appendContextGraphEvent(root, {
-      type: 'compile.blocked',
-      at: observedAt,
-      cacheKey: cacheKey.key,
-      snapshotHash: snapshot.snapshotHash,
-      errorCount: errors.length,
-      warningCount: issues.length - errors.length,
-      reason: errors[0]?.code ?? 'lint_error'
-    });
+    if (persistArtifacts) {
+      await appendContextGraphEvent(root, {
+        type: 'compile.blocked',
+        at: observedAt,
+        cacheKey: cacheKey.key,
+        snapshotHash: snapshot.snapshotHash,
+        errorCount: errors.length,
+        warningCount: issues.length - errors.length,
+        reason: errors[0]?.code ?? 'lint_error'
+      });
+    }
     return {
       ok: false,
       snapshot,
@@ -269,28 +283,29 @@ async function compileLocked(
     skipped: skipped.slice(0, MAX_META_SKIPPED),
     durationMs
   };
-  await writeContextGraphSnapshot({ root, snapshot, meta });
-
-  await appendContextGraphEvent(root, {
-    type: 'compile.committed',
-    at: observedAt,
-    cacheKey: cacheKey.key,
-    snapshotHash: snapshot.snapshotHash,
-    previousSnapshotHash,
-    nodeCount: snapshot.nodeCount,
-    edgeCount: snapshot.edgeCount,
-    errorCount: 0,
-    warningCount: issues.length,
-    durationMs,
-    incremental: carryForward !== null
-  });
+  if (persistArtifacts) {
+    await writeContextGraphSnapshot({ root, snapshot, meta });
+    await appendContextGraphEvent(root, {
+      type: 'compile.committed',
+      at: observedAt,
+      cacheKey: cacheKey.key,
+      snapshotHash: snapshot.snapshotHash,
+      previousSnapshotHash,
+      nodeCount: snapshot.nodeCount,
+      edgeCount: snapshot.edgeCount,
+      errorCount: 0,
+      warningCount: issues.length,
+      durationMs,
+      incremental: carryForward !== null
+    });
+  }
 
   return {
     ok: true,
     snapshot,
     meta,
     issues,
-    wrote: true,
+    wrote: persistArtifacts,
     snapshotHash: snapshot.snapshotHash,
     previousSnapshotHash,
     durationMs,
@@ -336,14 +351,22 @@ export async function compileContextGraph(
 ): Promise<CompileContextGraphResult> {
   const startedAt = Date.now();
   const root = path.resolve(input.root);
-  const outcome = await withContextGraphCompileLock(root, () => compileLocked(input, root, startedAt));
-  if (outcome.acquired) return outcome.value;
-  await appendContextGraphEvent(root, {
-    type: 'compile.lock_contended',
-    at: input.observedAt ?? new Date().toISOString(),
-    reason: 'lock_held'
-  });
-  return failure('lock_held', ['lock_held'], Date.now() - startedAt);
+  if (input.useCompileLock === false) return compileLocked(input, root, startedAt);
+  try {
+    return await withTriWikiStateLock(root, async () => {
+      const outcome = await withContextGraphCompileLock(root, () => compileLocked(input, root, startedAt));
+      if (outcome.acquired) return outcome.value;
+      await appendContextGraphEvent(root, {
+        type: 'compile.lock_contended',
+        at: input.observedAt ?? new Date().toISOString(),
+        reason: 'lock_held'
+      });
+      return failure('lock_held', ['lock_held'], Date.now() - startedAt);
+    });
+  } catch (error) {
+    if (!String(error).includes('file_lock_timeout:')) throw error;
+    return failure('lock_held', ['triwiki_state_lock_held'], Date.now() - startedAt);
+  }
 }
 
 export { DEFAULT_CONTEXT_GRAPH_LIMITS } from './extract.js';

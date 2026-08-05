@@ -7,6 +7,11 @@ import {
   PrivateCredentialFileError,
   readPrivateCredentialFile
 } from '../security/private-credential-file.js';
+import {
+  DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT,
+  parseCodexLbGatewayAuthTransport,
+  type CodexLbGatewayAuthTransport
+} from './desktop-mode.js';
 
 export const CODEX_LB_SECURE_KEYCHAIN_SERVICE = 'com.sneakoscope.codex-lb.api-key.v2' as const;
 export const CODEX_LB_LEGACY_KEYCHAIN_SERVICE = 'sks-codex-lb' as const;
@@ -20,6 +25,7 @@ export type CodexLbEnvLoadResult = {
   source: CodexLbEnvSource;
   source_priority: CodexLbEnvSource[];
   base_url: string | null;
+  gateway_auth_transport?: CodexLbGatewayAuthTransport | null;
   api_key: {
     present: boolean;
     usable: boolean;
@@ -270,6 +276,7 @@ export async function loadCodexLbEnv(opts: any = {}): Promise<CodexLbEnvLoadResu
     source: apiKey ? keySource : 'missing',
     source_priority: sourcePriority,
     base_url: baseUrl || null,
+    gateway_auth_transport: metadata.gatewayAuthTransport,
     api_key: {
       present: Boolean(apiKey),
       usable: apiKeyUsable,
@@ -298,20 +305,44 @@ async function readCodexLbCredentialMetadata(file: string): Promise<{
   valid: boolean;
   baseUrl: string;
   apiKeySha256: string;
+  gatewayAuthTransport: CodexLbGatewayAuthTransport | null;
 }> {
-  if (!(await exists(file))) return { present: false, valid: false, baseUrl: '', apiKeySha256: '' };
+  if (!(await exists(file))) {
+    return {
+      present: false,
+      valid: false,
+      baseUrl: '',
+      apiKeySha256: '',
+      gatewayAuthTransport: DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT
+    };
+  }
   const value = await readJson<any>(file, null).catch(() => null);
   const baseUrl = normalizeCodexLbBaseUrl(value?.base_url || '');
   const apiKeySha256 = String(value?.api_key?.sha256 || '').trim().toLowerCase();
+  let gatewayAuthTransport: CodexLbGatewayAuthTransport | null = null;
+  try {
+    gatewayAuthTransport = parseCodexLbGatewayAuthTransport(
+      value?.gateway_auth_transport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT
+    );
+  } catch {
+    gatewayAuthTransport = null;
+  }
   const valid = value?.schema === 'sks.codex-lb-metadata.v1'
     && Boolean(baseUrl)
     && codexLbBaseUrlSecurityBlocker(baseUrl) === null
-    && /^[a-f0-9]{64}$/.test(apiKeySha256);
-  return { present: true, valid, baseUrl, apiKeySha256 };
+    && /^[a-f0-9]{64}$/.test(apiKeySha256)
+    && gatewayAuthTransport !== null;
+  return { present: true, valid, baseUrl, apiKeySha256, gatewayAuthTransport };
 }
 
 function evaluateCodexLbCredentialBinding(input: {
-  metadata: { present: boolean; valid: boolean; baseUrl: string; apiKeySha256: string };
+  metadata: {
+    present: boolean;
+    valid: boolean;
+    baseUrl: string;
+    apiKeySha256: string;
+    gatewayAuthTransport: CodexLbGatewayAuthTransport | null;
+  };
   metadataPath: string;
   apiKeySha256: string;
   configuredBaseUrl: string;

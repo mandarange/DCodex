@@ -22,14 +22,14 @@ export interface CodexNativeFeatureState {
 export interface CodexNativeInvocationDefaults {
   loop_worker_role_strategy: 'agent_type' | 'message-role'
   multi_agent_mode: 'none' | 'explicitRequestOnly' | 'proactive'
-  rollout_budget_strategy: 'codex-0144-shared' | 'sks-local-only'
+  rollout_budget_strategy: 'codex-current-shared' | 'sks-local-only'
   qa_visual_review_strategy: 'app-handoff' | 'headless-artifact' | 'blocked'
   research_source_strategy: 'indexed-web-search' | 'mcp-plugin-candidates' | 'web-sources' | 'local-files'
   image_followup_strategy: 'model-visible-path' | 'artifact-path' | 'blocked'
   hook_evidence_policy: 'approved-only' | 'unknown-do-not-count' | 'not-installed'
   skill_bridge_strategy: 'sks-managed-skills' | 'cli-only'
   current_time_source: 'codex-currentTime-read' | 'external-clock'
-  overload_retry_policy: 'codex-0144-retryable' | 'generic'
+  overload_retry_policy: 'codex-current-retryable' | 'generic'
 }
 
 export interface CodexNativeFeatureMatrix {
@@ -53,7 +53,7 @@ export interface CodexNativeFeatureMatrix {
     app_handoff: CodexNativeFeatureState
     image_path_exposure: CodexNativeFeatureState
     code_mode_web_search: CodexNativeFeatureState
-    codex_0144: CodexNativeFeatureState
+    codex_current: CodexNativeFeatureState
     multi_agent_mode: CodexNativeFeatureState
     rollout_budget: CodexNativeFeatureState
     indexed_web_search: CodexNativeFeatureState
@@ -64,7 +64,7 @@ export interface CodexNativeFeatureMatrix {
     native_thread_list_search: CodexNativeFeatureState
     remote_native_environment: CodexNativeFeatureState
     app_server_overload: CodexNativeFeatureState
-    codex_0140: CodexNativeFeatureState
+    codex_current_feature: CodexNativeFeatureState
     usage_views: CodexNativeFeatureState
     goal_attachment_preservation: CodexNativeFeatureState
     session_delete: CodexNativeFeatureState
@@ -116,14 +116,14 @@ export function computeCodexNativeInvocationDefaults(matrix: Pick<CodexNativeFea
   return {
     loop_worker_role_strategy: features.agent_type.ok ? 'agent_type' : 'message-role',
     multi_agent_mode: multiAgentOk && features.agent_type.ok ? 'proactive' : multiAgentOk ? 'explicitRequestOnly' : 'none',
-    rollout_budget_strategy: rolloutBudgetOk ? 'codex-0144-shared' : 'sks-local-only',
+    rollout_budget_strategy: rolloutBudgetOk ? 'codex-current-shared' : 'sks-local-only',
     qa_visual_review_strategy: features.app_handoff.ok ? 'app-handoff' : 'headless-artifact',
     research_source_strategy: indexedSearchOk ? 'indexed-web-search' : features.mcp_inventory.ok ? 'mcp-plugin-candidates' : features.code_mode_web_search.ok ? 'web-sources' : 'local-files',
     image_followup_strategy: features.image_path_exposure.ok ? 'model-visible-path' : 'artifact-path',
     hook_evidence_policy: hookStatus === 'available' ? 'approved-only' : hookStatus === 'unavailable' ? 'not-installed' : 'unknown-do-not-count',
     skill_bridge_strategy: features.skill_sync.ok || features.skill_picker.ok ? 'sks-managed-skills' : 'cli-only',
     current_time_source: currentTimeOk ? 'codex-currentTime-read' : 'external-clock',
-    overload_retry_policy: overloadOk ? 'codex-0144-retryable' : 'generic'
+    overload_retry_policy: overloadOk ? 'codex-current-retryable' : 'generic'
   }
 }
 

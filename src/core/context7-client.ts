@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { PACKAGE_VERSION } from './version.js';
 
 const DEFAULT_CONTEXT7_COMMAND = 'npx';
 const DEFAULT_CONTEXT7_ARGS = ['-y', '@upstash/context7-mcp@latest'];
-const DEFAULT_PROTOCOL_VERSION = '2024-11-05';
 
 export function defaultContext7ServerConfig() {
   const command = process.env.SKS_CONTEXT7_MCP_COMMAND || DEFAULT_CONTEXT7_COMMAND;
@@ -16,11 +16,11 @@ export function defaultContext7ServerConfig() {
 export async function context7Tools(opts: any = {}) {
   const client = new LocalMcpClient(resolveContext7Config(opts), opts);
   try {
-    const initialize = await client.initialize();
+    const connection = await client.connect();
     const tools = await client.listTools();
     return {
       ok: true,
-      initialize,
+      connection,
       tools,
       tool_names: tools.map((tool: any) => tool.name),
       server: client.serverInfo()
@@ -33,7 +33,7 @@ export async function context7Tools(opts: any = {}) {
 export async function context7Resolve(libraryName: any, opts: any = {}) {
   const client = new LocalMcpClient(resolveContext7Config(opts), opts);
   try {
-    await client.initialize();
+    await client.connect();
     const result = await client.callTool('resolve-library-id', {
       libraryName,
       query: opts.query || libraryName
@@ -54,7 +54,7 @@ export async function context7Resolve(libraryName: any, opts: any = {}) {
 export async function context7Docs(libraryNameOrId: any, opts: any = {}) {
   const client = new LocalMcpClient(resolveContext7Config(opts), opts);
   try {
-    await client.initialize();
+    await client.connect();
     const tools = await client.listTools();
     const toolNames = tools.map((tool: any) => tool.name);
     const docsTool = pickDocsTool(toolNames);
@@ -157,22 +157,18 @@ function resolveContext7Config(opts: any) {
 class LocalMcpClient {
   config: any;
   timeoutMs: number;
-  child: ReturnType<typeof spawn> | null;
-  nextId: number;
-  pending: Map<number, { resolve: (value: any) => void; reject: (reason?: any) => void; timer: NodeJS.Timeout }>;
-  stdoutBuffer: string;
+  client: Client | null;
+  transport: StdioClientTransport | null;
   stderr: string;
-  initializeResult: any;
+  connectionResult: any;
 
   constructor(config: any, opts: any = {}) {
     this.config = config;
     this.timeoutMs = Number(opts.timeoutMs || process.env.SKS_CONTEXT7_TIMEOUT_MS || 30000);
-    this.child = null;
-    this.nextId = 1;
-    this.pending = new Map();
-    this.stdoutBuffer = '';
+    this.client = null;
+    this.transport = null;
     this.stderr = '';
-    this.initializeResult = null;
+    this.connectionResult = null;
   }
 
   serverInfo() {
@@ -180,107 +176,76 @@ class LocalMcpClient {
       command: this.config.command,
       args: this.config.args,
       stderr: this.stderr.trim(),
-      info: this.initializeResult?.serverInfo || null
+      info: this.client?.getServerVersion() || null,
+      protocol_version: this.client?.getNegotiatedProtocolVersion() || null,
+      protocol_era: this.client?.getProtocolEra() || null
     };
   }
 
-  async initialize() {
-    this.start();
-    const result = await this.request('initialize', {
-      protocolVersion: DEFAULT_PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: 'sneakoscope-context7', version: PACKAGE_VERSION }
+  async connect() {
+    if (this.connectionResult) return this.connectionResult;
+    const transport = new StdioClientTransport({
+      command: this.config.command,
+      args: this.config.args || [],
+      env: definedEnvironment(process.env),
+      stderr: 'pipe',
+      maxBufferSize: 10 * 1024 * 1024
     });
-    this.initializeResult = result;
-    this.notify('notifications/initialized', {});
-    return result;
+    transport.stderr?.on('data', (chunk: any) => {
+      this.stderr += chunk.toString('utf8');
+      if (this.stderr.length > 64 * 1024) this.stderr = this.stderr.slice(-64 * 1024);
+    });
+    const client = new Client(
+      { name: 'sneakoscope-context7', version: PACKAGE_VERSION },
+      {
+        versionNegotiation: {
+          mode: 'auto',
+          probe: { timeoutMs: this.timeoutMs, maxRetries: 0 }
+        },
+        inputRequired: { autoFulfill: false }
+      }
+    );
+    try {
+      await client.connect(transport, { timeout: this.timeoutMs });
+      this.client = client;
+      this.transport = transport;
+      this.connectionResult = {
+        protocol_version: client.getNegotiatedProtocolVersion(),
+        protocol_era: client.getProtocolEra(),
+        server_info: client.getServerVersion() || null,
+        capabilities: client.getServerCapabilities() || {}
+      };
+      return this.connectionResult;
+    } catch (error) {
+      await client.close().catch(() => undefined);
+      throw error;
+    }
   }
 
   async listTools() {
-    const result = await this.request('tools/list', {});
+    if (!this.client) throw new Error('Context7 MCP is not connected.');
+    const result = await this.client.listTools({}, { timeout: this.timeoutMs, cacheMode: 'refresh' });
     return Array.isArray(result?.tools) ? result.tools : [];
   }
 
   async callTool(name: any, args: any = {}) {
-    const result = await this.request('tools/call', { name, arguments: args });
-    return result;
-  }
-
-  start() {
-    if (this.child) return;
-    this.child = spawn(this.config.command, this.config.args || [], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: false,
-      env: process.env
-    });
-    this.child.stdout?.on('data', (chunk: any) => this.handleStdout(chunk));
-    this.child.stderr?.on('data', (chunk: any) => {
-      this.stderr += chunk.toString('utf8');
-      if (this.stderr.length > 64 * 1024) this.stderr = this.stderr.slice(-64 * 1024);
-    });
-    this.child.on('error', (err: any) => this.rejectAll(err));
-    this.child.on('close', (code: any) => {
-      this.rejectAll(new Error(`Context7 MCP exited before response (code ${code ?? 'signal'}). ${this.stderr.trim()}`.trim()));
-    });
-  }
-
-  handleStdout(chunk: any) {
-    this.stdoutBuffer += chunk.toString('utf8');
-    const lines = this.stdoutBuffer.split(/\r?\n/);
-    this.stdoutBuffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let message;
-      try {
-        message = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (!message.id || !this.pending.has(message.id)) continue;
-      const pending = this.pending.get(message.id);
-      if (!pending) continue;
-      this.pending.delete(message.id);
-      clearTimeout(pending.timer);
-      if (message.error) pending.reject(new Error(message.error.message || JSON.stringify(message.error)));
-      else pending.resolve(message.result);
-    }
-  }
-
-  request(method: any, params: any) {
-    this.start();
-    const id = this.nextId++;
-    const message = { jsonrpc: '2.0', id, method, params };
-    return new Promise<any>((resolve: any, reject: any) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Context7 MCP request timed out: ${method}. ${this.stderr.trim()}`.trim()));
-      }, this.timeoutMs);
-      timer.unref?.();
-      this.pending.set(id, { resolve, reject, timer });
-      this.child?.stdin?.write(`${JSON.stringify(message)}\n`);
-    });
-  }
-
-  notify(method: any, params: any) {
-    this.start();
-    this.child?.stdin?.write(`${JSON.stringify({ jsonrpc: '2.0', method, params })}\n`);
-  }
-
-  rejectAll(err: any) {
-    for (const [id, pending] of this.pending.entries()) {
-      clearTimeout(pending.timer);
-      pending.reject(err);
-      this.pending.delete(id);
-    }
+    if (!this.client) throw new Error('Context7 MCP is not connected.');
+    return this.client.callTool({ name, arguments: args }, { timeout: this.timeoutMs });
   }
 
   async close() {
-    if (!this.child) return;
-    const child = this.child;
-    this.child = null;
-    try { child.stdin?.end(); } catch {}
-    try { child.kill('SIGTERM'); } catch {}
+    const client = this.client;
+    this.client = null;
+    this.transport = null;
+    this.connectionResult = null;
+    await client?.close().catch(() => undefined);
   }
+}
+
+function definedEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  );
 }
 
 function splitShellWords(value: any) {

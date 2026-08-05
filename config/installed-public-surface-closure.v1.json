@@ -1,0 +1,13 @@
+{
+  "schema": "sks.installed-public-surface-closure.v1",
+  "command_probe_count": 8,
+  "dollar_command_probe_count": 68,
+  "argument_probe_count": 5,
+  "subcommand_probe_count": 2,
+  "rejected_count": 83,
+  "reason_counts": {
+    "unknown_command": 79,
+    "unknown_subcommand": 2,
+    "unsupported_argument": 2
+  }
+}

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { assertGate, emitGate, importDist, root } from './gate-lib.js';
 
-const mod = await importDist('core/mcp/mcp-0-134-policy.js');
+const mod = await importDist('core/mcp/mcp-tool-policy.js');
 const proof = await mod.proveMcpReadOnlyRuntimeScheduler();
 const report = { schema: 'sks.mcp-readonly-runtime-scheduler-check.v1', ok: proof.ok, proof };
 const out = path.join(root, '.sneakoscope', 'reports', 'mcp-readonly-runtime-scheduler.json');

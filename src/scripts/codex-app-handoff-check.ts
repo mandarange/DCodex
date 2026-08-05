@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { assertGate, emitGate, importDist } from './gate-lib.js'
-process.env.SKS_CODEX_0138_FAKE = '1'
+process.env.SKS_CODEX_CURRENT_APP_FAKE = '1'
 const mod = await importDist('core/codex-app/codex-app-handoff.js')
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-app-handoff-'))
 const result = await mod.runCodexAppHandoff(root, {
@@ -16,7 +16,7 @@ const result = await mod.runCodexAppHandoff(root, {
   artifacts: ['qa-gate.json'],
   prompt: 'fixture prompt',
   require_desktop: false,
-  capability_required: 'codex-0.138'
+  capability_required: 'codex-current'
 })
 const artifact = JSON.parse(await fs.readFile(result.artifact_path, 'utf8'))
 assertGate(result.ok === true && artifact.operator_instruction.open === 'codex /app', 'Codex App handoff must write operator handoff artifact', result)

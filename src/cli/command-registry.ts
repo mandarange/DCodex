@@ -317,7 +317,7 @@ const COMMAND_DEFINITIONS = {
   naruto: routeStateMutator(entry('labs', 'Run the $sks-naruto Codex official subagent workflow', 'dist/core/commands/naruto-command.js', argsCommand(() => import('../core/commands/naruto-command.js'), 'narutoCommand', 'dist/core/commands/naruto-command.js')), ['naruto-gate.json', 'stop-gate.json']),
   'stop-gate': readOnly(entry('beta', 'Check canonical stop-gate resolution for a route/mission', 'dist/core/commands/stop-gate-command.js', commandArgsCommand(() => import('../core/commands/stop-gate-command.js'), 'stopGateCommand', 'dist/core/commands/stop-gate-command.js'))),
   route: activeRouteDiagnostic(entry('beta', 'Inspect or close active route state', 'dist/core/commands/route-command.js', subcommand(() => import('../core/commands/route-command.js'), 'routeCommand', 'dist/core/commands/route-command.js', 'status'))),
-  loop: routeStateMutator(entry('labs', 'Dynamic Loop Runtime: plan/run/status/proof loop graphs.', 'dist/core/commands/loop-command.js', subcommand(() => import('../core/commands/loop-command.js'), 'loopCommand', 'dist/core/commands/loop-command.js', 'help')), ['loop-graph-proof.json']),
+  loop: entry('labs', 'Retired: SKS loop removed; use Codex native Goal (NC-38)', 'dist/core/commands/loop-command.js', subcommand(() => import('../core/commands/loop-command.js'), 'loopCommand', 'dist/core/commands/loop-command.js', 'help')),
   'qa-loop': routeStateMutator(entry('beta', 'Run QA loop missions', 'dist/core/commands/qa-loop-command.js', subcommand(() => import('../core/commands/qa-loop-command.js'), 'qaLoopCommand', 'dist/core/commands/qa-loop-command.js')), ['qa-gate.json']),
   research: routeStateMutator(entry('labs', 'Run research missions', 'dist/core/commands/research-command.js', subcommand(() => import('../core/commands/research-command.js'), 'researchCommand', 'dist/core/commands/research-command.js')), ['research-gate.json']),
   autoresearch: routeStateMutator(entry('labs', 'Alias for research/autoresearch route', 'dist/core/commands/autoresearch-command.js', subcommand(() => import('../core/commands/autoresearch-command.js'), 'autoresearchCommand', 'dist/core/commands/autoresearch-command.js', 'status')), ['research-gate.json']),
@@ -344,7 +344,8 @@ const COMMAND_DEFINITIONS = {
   versioning: entry('stable', 'Manage release version metadata', 'dist/commands/versioning.js', directCommand(() => import('../commands/versioning.js'), 'dist/commands/versioning.js')),
   reasoning: entry('labs', 'Show reasoning route', 'dist/core/commands/basic-cli.js', basicArgs('reasoningCommand')),
   aliases: entry('stable', 'Show command aliases', 'dist/core/commands/basic-cli.js', basicNoArgs('aliasesCommand')),
-  align: routeStateMutator(entry('beta', 'Prepare or inspect the evidence-gated $sks-align GPT-5.6 / Plugins modernization mission', 'dist/core/commands/align-command.js', subcommand(() => import('../core/commands/align-command.js'), 'alignCommand', 'dist/core/commands/align-command.js', 'prepare')), ['align-gate.json']),
+  cleanup: entry('beta', 'Plan, apply, or prove a destructive R3 active-TriWiki blank-state transition with no retained generation', 'dist/core/commands/cleanup-command.js', subcommand(() => import('../core/commands/cleanup-command.js'), 'cleanupCommand', 'dist/core/commands/cleanup-command.js', 'plan')),
+  align: routeStateMutator(entry('beta', 'Create or replace TriWiki as a code-only repository navigation graph', 'dist/core/commands/align-command.js', subcommand(() => import('../core/commands/align-command.js'), 'alignCommand', 'dist/core/commands/align-command.js', 'prepare')), ['align-gate.json']),
   selftest: entry('stable', 'Run local mock selftest', 'dist/core/commands/basic-cli.js', basicArgs('selftestCommand')),
   goal: entry('beta', 'Print stateless Codex native Goal controls', 'dist/core/commands/goal-command.js', subcommand(() => import('../core/commands/goal-command.js'), 'goalCommand', 'dist/core/commands/goal-command.js')),
   'seo-geo-optimizer': entry('beta', 'Run unified SEO/GEO optimizer audit/plan/apply/verify plus research/strategy (--include-marketing) on the search-visibility kernel', 'dist/core/commands/seo-command.js', argsCommand(() => import('../core/commands/seo-command.js'), 'seoGeoOptimizerCommand', 'dist/core/commands/seo-command.js')),
@@ -380,6 +381,7 @@ const COMMAND_DEFINITIONS = {
 
 const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(COMMAND_DEFINITIONS, {
   align: { latency: 'long', supportsJson: true, inputProfile: 'json-only' },
+  cleanup: { risk: 'R3', latency: 'long', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   autoresearch: { latency: 'long' },
   bench: { latency: 'long' },
   check: { risk: 'R1', latency: 'long' },

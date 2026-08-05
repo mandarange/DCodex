@@ -29,11 +29,12 @@ function runner(root: string, overrides: Record<string, PublishPreflightCommandR
 
 test('publish preflight binds a clean main checkout to live origin/main and the exact version tag', async () => {
   const root = await fixture();
-  const report = inspectPublishPreflight({ root, run: runner(root) });
+  const report = inspectPublishPreflight({ root, run: runner(root), requirePhysicalReleaseGates: false });
   assert.equal(report.ok, true, report.blockers.join(', '));
   assert.equal(report.package_version, '8.0.3');
   assert.equal(report.release_tag, 'v8.0.3');
   assert.equal(report.release_tag_required, true);
+  assert.equal(report.physical_release_gates_required, false);
   assert.equal(report.head, SHA);
   assert.equal(report.origin_main, SHA);
   assert.equal(report.clean_tree, true);
@@ -52,6 +53,7 @@ test('publish dry-run keeps main and origin binding but does not require release
   assert.equal(report.ok, true, report.blockers.join(', '));
   assert.equal(report.release_tag, 'v8.0.3');
   assert.equal(report.release_tag_required, false);
+  assert.equal(report.physical_release_gates_required, false);
   assert.equal(report.head, SHA);
   assert.equal(report.origin_main, SHA);
   assert.equal(report.local_release_tag_commit, null);
@@ -68,10 +70,23 @@ test('dirty, detached, stale-remote, and mistagged publish states fail closed', 
     ['remote tag mismatch', { 'git ls-remote --exit-code origin refs/tags/v8.0.3 refs/tags/v8.0.3^{}': ok(`${'b'.repeat(40)}\trefs/tags/v8.0.3\n`) }, 'remote_release_tag_not_head:v8.0.3'],
   ];
   for (const [name, overrides, blocker] of cases) {
-    const report = inspectPublishPreflight({ root, run: runner(root, overrides) });
+    const report = inspectPublishPreflight({ root, run: runner(root, overrides), requirePhysicalReleaseGates: false });
     assert.equal(report.ok, false, name);
     assert.ok(report.blockers.some((value) => value.startsWith(blocker)), `${name}: ${report.blockers.join(', ')}`);
   }
+});
+
+test('real publish preflight fails closed when source-bound physical release evidence is missing', async () => {
+  const root = await fixture();
+  const report = inspectPublishPreflight({
+    root,
+    run: runner(root),
+    requirePhysicalReleaseGates: true,
+  });
+  assert.equal(report.ok, false);
+  assert.equal(report.physical_release_gates_required, true);
+  assert.equal(report.physical_release_gates?.ok, false);
+  assert.ok(report.blockers.includes('physical_receipt_missing_or_invalid'));
 });
 
 function ok(stdout: string): PublishPreflightCommandResult {

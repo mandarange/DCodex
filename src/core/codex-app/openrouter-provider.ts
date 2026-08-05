@@ -95,7 +95,7 @@ export interface SksCodexAppModelProfile {
     readonly provider_require_parameters: boolean;
   };
   readonly codexCompatibility: {
-    readonly target: 'rust-v0.145.0';
+    readonly target: 'rust-v0.146.0';
     readonly selectedExecutorPluginMcp: 'defer-to-codex-native';
     readonly duplicateAppMcpDeclarations: 'dedupe-by-codex';
     readonly cwdShellPathSemantics: 'preserve-codex-native';
@@ -130,7 +130,7 @@ export function buildGlmCodexAppModelProfile(): SksCodexAppModelProfile {
       provider_require_parameters: false,
     },
     codexCompatibility: {
-      target: 'rust-v0.145.0',
+      target: 'rust-v0.146.0',
       selectedExecutorPluginMcp: 'defer-to-codex-native',
       duplicateAppMcpDeclarations: 'dedupe-by-codex',
       cwdShellPathSemantics: 'preserve-codex-native',

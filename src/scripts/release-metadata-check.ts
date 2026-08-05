@@ -40,6 +40,8 @@ const versionedDocs = new Set([
 const requiredPackageScripts = [
   'build',
   'build:incremental',
+  'test:all',
+  'test:release',
   'release:ensure-build',
   'typecheck',
   'release:check',
@@ -61,27 +63,34 @@ const requiredPackageScripts = [
   'naruto:e2e-hermetic-write'
 ];
 const requiredReleaseGates = [
+  'architecture:guard',
+  'codex:current:manifest',
+  'codex:current:binary-identity',
+  'codex:current:policy',
+  'codex:current:app-server-v2',
+  'codex:current:thread-store',
+  'codex:current:capability',
   'commands:current-surface-only',
-  'naruto:ssot-routing',
-  'naruto:ssot-route-normalization',
-  'naruto:ssot-gate-aliases',
-  'naruto:ssot-pipeline-default',
-  'naruto:canonical-stop-gate',
-  'codex:app-handoff-comprehensive',
-  'qa-loop:comprehensive-verification',
-  'loop-integration-finalizer-check',
-  'codex-control:event-stream-ledger',
-  'runtime:proof-summary',
+  'config:managed-merge',
+  'docs:truthfulness',
+  'latest-version:guidance',
+  'migration:current-surface-e2e',
+  'migration:upgrade-safety',
   'runtime:installed-smoke',
   'release:metadata-current',
-  'docs:truthfulness',
   'publish:packlist-performance',
   'publish:runtime-script-closure',
   'package:published-contract',
   'release:dag-runner',
   'release:gate-budget',
-  'release:gate-selection-comprehensive',
+  'release:latency-slo',
+  'release:proof-truth',
+  'release:provenance',
   'policy:gate-audit',
+  'safety:mutation-callsite-coverage',
+  'schema:check',
+  'secret:preservation',
+  'side-effect:runtime-report',
   'typecheck'
 ];
 const requiredHarnessGates = [];
@@ -116,7 +125,9 @@ for (const script of requiredPackageScripts) assertGate(Boolean(pkg.scripts?.[sc
 
 const fullReleaseScript = String(pkg.scripts?.['release:check:full'] || '');
 assertGate((fullReleaseScript.match(/build:clean/g) || []).length === 1, 'release:check:full must perform exactly one clean build', { script: fullReleaseScript });
-assertGate((fullReleaseScript.match(/npm test --silent/g) || []).length === 1, 'release:check:full must run the canonical test suite exactly once', { script: fullReleaseScript });
+assertGate((fullReleaseScript.match(/npm run test:release --silent/g) || []).length === 1, 'release:check:full must run the release test corpus exactly once', { script: fullReleaseScript });
+assertGate(pkg.scripts?.test === 'node ./dist/scripts/canonical-test-runner.js --all' && pkg.scripts?.['test:all'] === pkg.scripts?.test, 'npm test and test:all must preserve the exhaustive developer corpus');
+assertGate(pkg.scripts?.['test:release'] === 'node ./dist/scripts/canonical-test-runner.js', 'test:release must use the proof-producing release corpus selector');
 for (const id of requiredReleaseGates) assertGate(releaseGateIds.has(id), `critical release gate missing: ${id}`, { id });
 for (const id of requiredHarnessGates) assertGate(harnessGateIds.has(id), `critical harness gate missing: ${id}`, { id });
 const duplicateAcrossManifests = [...releaseGateIds].filter((id) => harnessGateIds.has(id));
@@ -207,6 +218,7 @@ assertGate(/npx --yes npm@11\.15\.0/.test(releaseReadinessDoc), 'release readine
 assertGate(/npm-stage-tarball-verifier\.js/.test(releaseReadinessDoc) && /--local-receipt/.test(releaseReadinessDoc) && /--local-tarball/.test(releaseReadinessDoc) && /--stage-receipt/.test(releaseReadinessDoc), 'release readiness must document the maintainer-local read-only verifier inputs');
 assertGate(/release-physical-gates-check\.js/.test(stageWorkflow), 'stage workflow must verify tracked source-bound physical release receipts before staging');
 assertGate(/release-physical-gates-check\.js/.test(stagePublishSource), 'local stage preflight must verify physical release receipts before mutation');
+assertGate(/requirePhysicalReleaseGates:\s*!dryRun/.test(text('src/scripts/publish-preflight.ts')), 'real direct npm publish preflight must verify physical release receipts');
 assertGate(/PHYSICAL_RELEASE_GATE_IDS/.test(physicalReleaseGateSource) && /artifact_sha256/.test(physicalReleaseGateSource), 'physical release gate contract must bind all required gates to evidence artifact hashes');
 assertGate(pkg.scripts?.prepublishOnly === 'node ./dist/scripts/prepublish-release-check-or-fast.js', 'prepublishOnly must verify release proof during official npm publish');
 assertGate(pkg.scripts?.prepack === 'node ./dist/scripts/prepublish-release-check-or-fast.js --prepack-build', 'prepack must rebuild and reverify official npm publish output');

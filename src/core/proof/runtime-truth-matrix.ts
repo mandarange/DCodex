@@ -18,10 +18,8 @@ export const RUNTIME_TRUTH_SUBSYSTEMS = [
   'goal_mode',
   'route_blackbox',
   'dynamic_scheduler',
-  'codex_0_136',
-  'codex_0_134',
-  'mcp_0_134',
-  'mcp_readonly_runtime_scheduler',
+  'codex_current',
+  'mcp_current',
   'adhd_orchestration',
   'appshots',
   'parallel_write',
@@ -89,7 +87,7 @@ export async function buildRuntimeTruthMatrix(input: {
     return null
   }
   const required = { ...(input.required || {}) } as Partial<Record<RuntimeTruthSubsystem, boolean>>
-  const [subagentPlan, subagentEvidence, narutoSummary, narutoGate, workerBackendRouter, cleanup, workGraph, fakeReal, sourceIntel, goalMode, scheduler, codex0136, codex0134, mcp0134, mcpReadonlyRuntime, adhdOrchestration, appshots, parallelWrite, patchProof] = await Promise.all([
+  const [subagentPlan, subagentEvidence, narutoSummary, narutoGate, workerBackendRouter, cleanup, workGraph, fakeReal, sourceIntel, goalMode, scheduler, codexCurrent, mcpCurrent, adhdOrchestration, appshots, parallelWrite, patchProof] = await Promise.all([
     readReport('subagent-plan.json'),
     readReport('subagent-evidence.json'),
     readReport('naruto-summary.json'),
@@ -101,9 +99,7 @@ export async function buildRuntimeTruthMatrix(input: {
     readReport('source-intelligence-evidence.json'),
     readReport('goal-mode-applied.json'),
     readReport('agent-scheduler-state.json'),
-    readReport('codex-0.136-compat.json'),
-    readReport('codex-0-134-official-compat.json'),
-    readReport('mcp-0-134-modernization.json'),
+    readReport('codex-current-capability.json'),
     readReport('mcp-readonly-runtime-scheduler.json'),
     readReport('strategy-gate.json', ['strategy-adhd-orchestrating-gate.json', 'adhd-orchestrating-gate.json']),
     readReport('appshots-evidence.json'),
@@ -127,10 +123,8 @@ export async function buildRuntimeTruthMatrix(input: {
     row('goal_mode', goalMode?.ok === true ? 'proven' : 'integration_optional', ['goal-mode-applied.json'], false, goalMode, 'record official goal mode evidence'),
     row('route_blackbox', fakeReal?.subsystem_levels?.route_blackbox || (official.proof_level === 'proven' ? 'proven' : 'integration_optional'), ['subagent-evidence.json', 'naruto-gate.json', 'fake-real-proof-policy.json'], false, fakeReal, official.next_action),
     row('dynamic_scheduler', schedulerRuntime.proof_level, ['agent-scheduler-state.json'], false, schedulerRuntime.report, 'record scheduler drain evidence'),
-    row('codex_0_136', levelFromOk(codex0136, 'integration_optional'), ['codex-0.136-compat.json'], false, codex0136, 'run `npm run codex:0.136-compat`'),
-    row('codex_0_134', levelFromOk(codex0134, 'integration_optional'), ['codex-0-134-official-compat.json'], false, codex0134, 'run `npm run codex:0.134-official-compat`'),
-    row('mcp_0_134', levelFromOk(mcp0134, 'integration_optional'), ['mcp-0-134-modernization.json'], false, mcp0134, 'run `npm run mcp:0.134-modernization`'),
-    row('mcp_readonly_runtime_scheduler', levelFromOk(mcpReadonlyRuntime, 'integration_optional'), ['mcp-readonly-runtime-scheduler.json'], false, mcpReadonlyRuntime, 'run `npm run mcp:readonly-runtime-scheduler`'),
+    row('codex_current', levelFromOk(codexCurrent, 'integration_optional'), ['codex-current-capability.json', 'config/codex-releases/rust-v0.146.0.json'], false, codexCurrent, 'run the current Codex capability release gate'),
+    row('mcp_current', levelFromOk(mcpCurrent, 'integration_optional'), ['mcp-readonly-runtime-scheduler.json'], false, mcpCurrent, 'run the current MCP runtime scheduler release gate'),
     row('adhd_orchestration', levelFromOk(adhdOrchestration, 'integration_optional'), ['strategy-gate.json', 'adhd-orchestrating-gate.json'], false, adhdOrchestration, 'run `npm run strategy:adhd-orchestrating-gate`'),
     row('appshots', levelFromAppshots(appshots), ['appshots-evidence.json'], false, appshots, 'run `npm run appshots:evidence`'),
     row('parallel_write', levelFromOk(parallelWrite, 'integration_optional'), ['agent-parallel-write-kernel.json'], false, parallelWrite, 'run parallel-write kernel verification'),

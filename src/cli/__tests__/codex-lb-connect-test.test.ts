@@ -2,6 +2,7 @@ import '../../core/__tests__/helpers/isolated-test-home.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { run as runCodexLbCommand } from '../../commands/codex-lb.js';
@@ -17,8 +18,10 @@ async function localResponsesServer(
 ) {
   let requests = 0;
   let requestBody: any = null;
+  let requestHeaders: http.IncomingHttpHeaders | null = null;
   const server = http.createServer((request, response) => {
     requests += 1;
+    requestHeaders = request.headers;
     const chunks: Buffer[] = [];
     request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
     request.on('end', () => {
@@ -34,7 +37,8 @@ async function localResponsesServer(
   return {
     baseUrl: `http://127.0.0.1:${address.port}/backend-api/codex`,
     requests: () => requests,
-    body: () => requestBody
+    body: () => requestBody,
+    headers: () => requestHeaders
   };
 }
 
@@ -82,6 +86,8 @@ test('connect test sends exactly one bounded, non-stored Responses request and r
   });
   assert.equal('tools' in fixture.body(), false);
   assert.equal('previous_response_id' in fixture.body(), false);
+  assert.equal(fixture.headers()?.['x-codex-lb-api-key'], API_KEY);
+  assert.equal(fixture.headers()?.authorization, undefined);
   assert.deepEqual(result, {
     schema: 'sks.codex-lb-connect-test.v1',
     ok: true,
@@ -305,4 +311,156 @@ test('codex-lb connect-test command selects a model from the official Codex cach
   assert.equal(result.status, 'connected');
   assert.equal(result.model, MODEL);
   assert.equal(result.result, 'OK');
+});
+
+test('codex-lb connect-test command honors an explicit bearer compatibility override', async (t) => {
+  const fixture = await localResponsesServer(t, {
+    id: 'resp_connect_explicit_bearer',
+    status: 'completed',
+    model: MODEL,
+    error: null,
+    output: [{ type: 'message', status: 'completed', content: [{ type: 'output_text', text: 'OK' }] }],
+    usage: { input_tokens: 4, output_tokens: 3, total_tokens: 7 }
+  });
+  const codexHome = path.join(String(process.env.HOME), '.codex');
+  await fsp.mkdir(codexHome, { recursive: true });
+  await fsp.writeFile(
+    path.join(codexHome, 'config.toml'),
+    upsertCodexLbCliProviderConfig(`model = ${JSON.stringify(MODEL)}\n`, {
+      remoteBaseUrl: fixture.baseUrl,
+      selectGlobally: true
+    })
+  );
+  await fsp.writeFile(
+    path.join(codexHome, 'sks-codex-lb.env'),
+    `export CODEX_LB_BASE_URL=${JSON.stringify(fixture.baseUrl)}\nexport CODEX_LB_API_KEY=${JSON.stringify(API_KEY)}\n`,
+    { mode: 0o600 }
+  );
+
+  const priorExitCode = process.exitCode;
+  const priorConsoleLog = console.log;
+  console.log = () => {};
+  t.after(() => {
+    console.log = priorConsoleLog;
+    process.exitCode = priorExitCode;
+  });
+
+  process.exitCode = undefined;
+  await runCodexLbCommand('codex-lb', ['connect-test', '--compat-bearer', '--json']);
+
+  assert.equal(process.exitCode, undefined);
+  assert.equal(fixture.requests(), 1);
+  assert.equal(fixture.headers()?.authorization, `Bearer ${API_KEY}`);
+  assert.equal(fixture.headers()?.['x-codex-lb-api-key'], undefined);
+});
+
+test('codex-lb connect-test command honors the bearer transport stored by Center setup', async (t) => {
+  const fixture = await localResponsesServer(t, {
+    id: 'resp_connect_stored_bearer',
+    status: 'completed',
+    model: MODEL,
+    error: null,
+    output: [{ type: 'message', status: 'completed', content: [{ type: 'output_text', text: 'OK' }] }],
+    usage: { input_tokens: 4, output_tokens: 3, total_tokens: 7 }
+  });
+  const codexHome = path.join(String(process.env.HOME), '.codex');
+  await fsp.mkdir(codexHome, { recursive: true });
+  await fsp.writeFile(
+    path.join(codexHome, 'config.toml'),
+    upsertCodexLbCliProviderConfig(`model = ${JSON.stringify(MODEL)}\n`, {
+      remoteBaseUrl: fixture.baseUrl,
+      selectGlobally: true
+    })
+  );
+  await fsp.writeFile(
+    path.join(codexHome, 'sks-codex-lb.env'),
+    `export CODEX_LB_BASE_URL=${JSON.stringify(fixture.baseUrl)}\nexport CODEX_LB_API_KEY=${JSON.stringify(API_KEY)}\n`,
+    { mode: 0o600 }
+  );
+  await fsp.writeFile(
+    path.join(codexHome, 'sks-codex-lb.json'),
+    JSON.stringify({
+      schema: 'sks.codex-lb-metadata.v1',
+      base_url: fixture.baseUrl,
+      gateway_auth_transport: 'authorization-bearer-compat',
+      api_key: {
+        redacted: true,
+        sha256: createHash('sha256').update(API_KEY).digest('hex')
+      }
+    }),
+    { mode: 0o600 }
+  );
+
+  const priorExitCode = process.exitCode;
+  const priorConsoleLog = console.log;
+  console.log = () => {};
+  t.after(() => {
+    console.log = priorConsoleLog;
+    process.exitCode = priorExitCode;
+  });
+
+  process.exitCode = undefined;
+  await runCodexLbCommand('codex-lb', ['connect-test', '--json']);
+
+  assert.equal(process.exitCode, undefined);
+  assert.equal(fixture.requests(), 1);
+  assert.equal(fixture.headers()?.authorization, `Bearer ${API_KEY}`);
+  assert.equal(fixture.headers()?.['x-codex-lb-api-key'], undefined);
+});
+
+test('codex-lb connect-test command rejects an invalid stored transport before any request', async (t) => {
+  const fixture = await localResponsesServer(t, {
+    id: 'resp_connect_invalid_transport',
+    status: 'completed',
+    model: MODEL,
+    error: null,
+    output: [{ type: 'message', status: 'completed', content: [{ type: 'output_text', text: 'OK' }] }],
+    usage: { input_tokens: 4, output_tokens: 3, total_tokens: 7 }
+  });
+  const codexHome = path.join(String(process.env.HOME), '.codex');
+  await fsp.mkdir(codexHome, { recursive: true });
+  await fsp.writeFile(
+    path.join(codexHome, 'config.toml'),
+    upsertCodexLbCliProviderConfig(`model = ${JSON.stringify(MODEL)}\n`, {
+      remoteBaseUrl: fixture.baseUrl,
+      selectGlobally: true
+    })
+  );
+  await fsp.writeFile(
+    path.join(codexHome, 'sks-codex-lb.env'),
+    `export CODEX_LB_BASE_URL=${JSON.stringify(fixture.baseUrl)}\nexport CODEX_LB_API_KEY=${JSON.stringify(API_KEY)}\n`,
+    { mode: 0o600 }
+  );
+  await fsp.writeFile(
+    path.join(codexHome, 'sks-codex-lb.json'),
+    JSON.stringify({
+      schema: 'sks.codex-lb-metadata.v1',
+      base_url: fixture.baseUrl,
+      gateway_auth_transport: 'unsupported-transport',
+      api_key: {
+        redacted: true,
+        sha256: createHash('sha256').update(API_KEY).digest('hex')
+      }
+    }),
+    { mode: 0o600 }
+  );
+
+  const output: string[] = [];
+  const priorExitCode = process.exitCode;
+  const priorConsoleLog = console.log;
+  console.log = (...values: unknown[]) => output.push(values.map(String).join(' '));
+  t.after(() => {
+    console.log = priorConsoleLog;
+    process.exitCode = priorExitCode;
+  });
+
+  process.exitCode = undefined;
+  await runCodexLbCommand('codex-lb', ['connect-test', '--json']);
+
+  assert.equal(fixture.requests(), 0);
+  assert.equal(process.exitCode, 1);
+  const result = JSON.parse(output.join('\n'));
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'credential_binding_drift');
+  assert.deepEqual(result.blockers, ['codex_lb_credential_metadata_invalid']);
 });

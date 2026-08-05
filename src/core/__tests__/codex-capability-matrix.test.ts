@@ -38,11 +38,11 @@ test('capability matrix prefers live multi_agent_v2 probes over hard version loc
   assert.match(withHelp.warnings.join('\n'), /below preferred/)
 })
 
-test('package tracks preferred latest while soft floor stays version-agnostic', () => {
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.preferredCliVersion, '0.145.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion, '0.145.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.minimumSupportedVersion, '0.133.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.narutoCapabilityFloorVersion, '0.145.0')
+test('package tracks the current Codex release as its only supported floor', () => {
+  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.preferredCliVersion, '0.146.0')
+  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion, '0.146.0')
+  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.minimumSupportedVersion, '0.146.0')
+  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.narutoCapabilityFloorVersion, '0.146.0')
   assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.featurePolicies.multiAgentV2, 'delegate')
   assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.featurePolicies.mcpStartupToolTimeouts, 'wrap')
 })

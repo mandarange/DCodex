@@ -11,7 +11,7 @@
  * import anything from `benchmark/adapters/`, and it must never be re-attached
  * to `src/core/search/context.ts`: when the graph is missing or stale the
  * product surfaces `context_graph_missing` / `context_graph_stale` plus
- * `sks wiki refresh --code`, and never a silent text answer.
+ * `sks align run`, and never a silent text answer.
  */
 export {
   BASELINE_LEXICAL_ADAPTER_ID,

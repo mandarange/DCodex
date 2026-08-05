@@ -24,9 +24,10 @@ test('explicit managed dollar/app skills are allowlisted, ordered, and never ref
     ['$with-local-llm-off', ['sks-with-local-llm-off']],
     ['[$UX-Review](skill://unsafe\nsecret) inspect', ['sks-image-ux-review']],
     ['$Computer-Use inspect native settings', ['sks-computer-use']],
-    ['$sks-loop continue the bounded mission', ['sks-loop']],
+    ['$sks-loop continue the bounded mission', []],
     ['$sks-init-deep refresh managed context', ['sks-init-deep']],
     ['$sks-align modernize prompts and skills', ['sks-align']],
+    ['$sks-cleanup blank TriWiki', ['sks-cleanup']],
     ['$Release-Review audit', ['sks-release-review']],
     ['$Naruto $sks-context7-docs inspect current docs', ['sks-naruto', 'sks-context7-docs']],
     ['$Naruto $sks-hproof-claim-ledger verify claims', ['sks-naruto', 'sks-hproof-claim-ledger']],
@@ -41,9 +42,10 @@ test('explicit managed dollar/app skills are allowlisted, ordered, and never ref
     assert.deepEqual(selected, expected, prompt);
     assert.doesNotMatch(JSON.stringify(selected), /unsafe|attacker-secret|escape|also-unknown/i, prompt);
   }
-  for (const coreSkill of ['sks-computer-use', 'sks-init-deep', 'sks-loop', 'sks-align']) {
+  for (const coreSkill of ['sks-computer-use', 'sks-init-deep', 'sks-align', 'sks-cleanup']) {
     assert.ok(MANAGED_ROUTE_SKILL_NAMES.includes(coreSkill), coreSkill);
   }
+  assert.equal(MANAGED_ROUTE_SKILL_NAMES.includes('sks-loop'), false);
 
   const workRoute = routePrompt('$Work implement the fix');
   assert.deepEqual(

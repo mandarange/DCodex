@@ -40,7 +40,7 @@ import { inventoryCodexPermissionProfiles } from '../core/codex/codex-permission
 import { appendMigrationEvents, hashConfigText } from '../core/migration/migration-transaction-journal.js';
 import { resolveProviderContext } from '../core/provider/provider-context.js';
 import { readLocalModelConfig } from '../core/agents/ollama-worker-config.js';
-import { writeCodex0138CapabilityArtifacts } from '../core/codex-control/codex-0138-capability.js';
+import { writeCodexCurrentAppCapabilityArtifacts } from '../core/codex-control/codex-current-app-capability.js';
 import { writeCodexPluginInventoryArtifacts, pluginAppTemplatePolicy } from '../core/codex-plugins/codex-plugin-json.js';
 import { writeMcpPluginInventoryArtifacts } from '../core/mcp/mcp-plugin-inventory.js';
 import { buildCodexAppHarnessMatrix } from '../core/codex-app/codex-app-harness-matrix.js';
@@ -924,7 +924,7 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     sks_temp_sweep: { ok: true, skipped: true, action_count: 0, reason: 'doctor_without_fix', error: null },
     imagegen: { ok: false, auth_readiness: null, codex_app_builtin_available: false },
     imagegen_repair: deferredImagegen,
-    codex_0138: { capability: null, doctor: { schema: 'sks.codex-0138-doctor.v1', ok: true, skipped: true, blockers: [], warnings: ['historical_codex_0138_doctor_skipped'] }, plugins: null, plugin_app_template_policy: null, mcp_plugin_inventory: null },
+    codex_current_app: { capability: null, doctor: { schema: 'sks.codex-current-app-doctor.v1', ok: true, skipped: true, blockers: [], warnings: ['historical_codex_current_app_doctor_skipped'] }, plugins: null, plugin_app_template_policy: null, mcp_plugin_inventory: null },
     codex_app_harness_matrix: { schema: 'sks.codex-app-harness-matrix.v1', ok: true, skipped: true, app_features: {}, sks_integrations: {}, blockers: [], warnings: ['codex_app_harness_optional_diagnostic_skipped'] },
     codex_native_feature_matrix: codexNativeFeatureMatrix,
     runtime_readiness: runtimeReadiness,
@@ -998,7 +998,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   const { compareCodexDoctorBridge, runCodexDoctorBridge } = await import('../core/doctor/codex-doctor-bridge.js');
   const { repairCodexAppFastUi } = await import('../core/codex-app/codex-app-fast-ui-repair.js');
   const { repairAgentRoleConfigs } = await import('../core/agents/agent-role-config.js');
-  const { runCodex0138Doctor } = await import('../core/doctor/codex-0138-doctor.js');
+  const { runCodexCurrentAppDoctor } = await import('../core/doctor/codex-current-app-doctor.js');
   const { writeDoctorReadinessMatrix } = await import('../core/doctor/doctor-readiness-matrix.js');
   const doctorDirtyPlan = doctorFix ? (await import('../core/doctor/doctor-dirty-planner.js')).planDoctorDirtyRepair(root, doctorPhaseIds) : null;
   let setupRepair = null;
@@ -1035,9 +1035,18 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     };
   }
   const skillsReconcile = await reconcileDoctorSkills(root, doctorFix && !migrationReceiptOwnsReconcile);
-  const inspectCommandAliasCleanup = (fix: boolean) => runDoctorCommandAliasCleanup({
+  const managedGenerationConvergence = doctorFix && !migrationReceiptOwnsReconcile
+    ? (skillsReconcile as any)?.convergence || null
+    : null;
+  const inspectCommandAliasCleanup = (
+    fix: boolean,
+    convergence: any = null,
+    managedGenerationAlreadyConverged = false
+  ) => runDoctorCommandAliasCleanup({
     root,
-    fix
+    fix,
+    managedGenerationAlreadyConverged,
+    ...(convergence ? { managedGenerationConvergence: convergence } : {})
   }).catch((err: any) => ({
     schema: 'sks.command-alias-cleanup.v1',
     ok: false,
@@ -1051,7 +1060,10 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     actions: [],
     blockers: [err?.message || String(err)]
   }));
-  let commandAliasCleanup = await inspectCommandAliasCleanup(doctorFix && !migrationReceiptOwnsReconcile);
+  let commandAliasCleanup = await inspectCommandAliasCleanup(
+    doctorFix && !migrationReceiptOwnsReconcile,
+    managedGenerationConvergence
+  );
   const commandAliasCleanupBeforeReceipt = migrationReceiptOwnsReconcile
     ? deferCommandAliasCleanupToMigrationReceipt(commandAliasCleanup)
     : commandAliasCleanup;
@@ -1707,12 +1719,12 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   if (doctorFix) {
     await writeJsonAtomic(path.join(root, '.sneakoscope', 'reports', 'native-capability-readiness.json'), nativeCapabilityReadiness).catch(() => undefined);
   }
-  const codex0138Capability = deepDiagnostics
-    ? await writeCodex0138CapabilityArtifacts(root, { codexBin: codexBin || null }).catch((err: any) => ({ error: err?.message || String(err), report: null }))
+  const codexCurrentAppCapability = deepDiagnostics
+    ? await writeCodexCurrentAppCapabilityArtifacts(root, { codexBin: codexBin || null }).catch((err: any) => ({ error: err?.message || String(err), report: null }))
     : { skipped: true, report: null };
-  const codex0138Doctor = deepDiagnostics
-    ? await runCodex0138Doctor(root, { fix: doctorFix }).catch((err: any) => ({ schema: 'sks.codex-0138-doctor.v1', ok: false, error: err?.message || String(err), blockers: ['codex_0138_doctor_exception'], warnings: [] }))
-    : { schema: 'sks.codex-0138-doctor.v1', ok: true, skipped: true, blockers: [], warnings: ['historical_codex_0138_doctor_skipped'] };
+  const codexCurrentAppDoctor = deepDiagnostics
+    ? await runCodexCurrentAppDoctor(root, { fix: doctorFix }).catch((err: any) => ({ schema: 'sks.codex-current-app-doctor.v1', ok: false, error: err?.message || String(err), blockers: ['codex_current_app_doctor_exception'], warnings: [] }))
+    : { schema: 'sks.codex-current-app-doctor.v1', ok: true, skipped: true, blockers: [], warnings: ['historical_codex_current_app_doctor_skipped'] };
   const pluginInventory = deepDiagnostics
     ? await writeCodexPluginInventoryArtifacts(root).catch((err: any) => ({ error: err?.message || String(err), report: null, artifact: null }))
     : { skipped: true, report: null, artifact: null };
@@ -1810,6 +1822,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     command_aliases: migrationReceiptOwnsReconcile ? commandAliasCleanupBeforeReceipt : undefined,
     doctor_native_capability: doctorNativeCapabilityRepair,
     require_legacy_global_hook_cleanup: requireLegacyGlobalHookCleanup,
+    require_legacy_generation_convergence: doctorFix && !migrationReceiptOwnsReconcile,
     skills: skillsReconcile,
     local_model: localModel,
     agent_role_config: agentRoleConfigRepair,
@@ -1817,7 +1830,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     codex_app_ui: codexAppUi,
     sks_menubar: sksMenuBar,
     telegram_remote: telegramRemote,
-    codex_0138_doctor: codex0138Doctor,
+    codex_current_app_doctor: codexCurrentAppDoctor,
     codex_plugin_inventory: (pluginInventory as any)?.report || null,
     codex_plugin_app_template_policy: pluginPolicy,
     codex_app_harness_matrix: codexAppHarnessMatrix,
@@ -1869,7 +1882,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
         // published, so repaired pre-migration findings cannot stale-block
         // the same command that repaired them.
         receiptInput.postMigrationStageCheck = async () => {
-          commandAliasCleanup = await inspectCommandAliasCleanup(false);
+          commandAliasCleanup = await inspectCommandAliasCleanup(false, null, true);
           doctorReadinessInput.command_aliases = commandAliasCleanup;
           ready = await writeDoctorReadinessMatrix(root, doctorReadinessInput);
           return {
@@ -1911,6 +1924,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   const runtimeReadiness = buildRuntimeReadiness(codexNativeFeatureMatrix as any);
   const resultOk = ready.ready
     && (!sksUpdate || (sksUpdate as any).ok !== false)
+    && (!doctorFix || migrationReceiptOwnsReconcile || (skillsReconcile as any)?.convergence?.ok === true)
     && (commandAliasCleanup as any).ok !== false
     && (codexStartupRepair as any).ok !== false
     && (codexConfigSyntaxRepair as any)?.ok !== false
@@ -1994,9 +2008,9 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
       codex_app_builtin_available: (imagegen as any).codex_app?.available === true
     },
     imagegen_repair: imagegenRepair,
-    codex_0138: {
-      capability: (codex0138Capability as any).report || null,
-      doctor: codex0138Doctor,
+    codex_current_app: {
+      capability: (codexCurrentAppCapability as any).report || null,
+      doctor: codexCurrentAppDoctor,
       plugins: (pluginInventory as any)?.report || null,
       plugin_app_template_policy: pluginPolicy,
       mcp_plugin_inventory: (mcpPluginInventory as any)?.candidates || null
@@ -2177,7 +2191,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     const manifestExists = await exists(manifestPath);
     console.log(`Agent bridge: ${manifestExists ? 'manifest present' : 'not set up'}${manifestExists ? '' : ' — run `sks agent-bridge setup` to publish the manifest and register with an MCP host'}`);
   }
-  const codex0138 = (codex0138Capability as any).report || {};
+  const codexCurrentApp = (codexCurrentAppCapability as any).report || {};
   console.log('Codex current compatibility:');
   console.log(`  target: ${CURRENT_CODEX_RELEASE_MANIFEST.targetTag}`);
   console.log(`  runtime: ${codex.version || 'unknown'}`);
@@ -2185,11 +2199,11 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   console.log(`  rollout budget: ${(codexNativeFeatureMatrix as any).features?.rollout_budget?.ok ? 'verified' : 'unverified'}`);
   console.log(`  indexed search: ${(codexNativeFeatureMatrix as any).features?.indexed_web_search?.ok ? 'verified' : 'unverified'}`);
   console.log(`  current time: ${(codexNativeFeatureMatrix as any).features?.current_time_read?.ok ? 'verified' : 'unverified'}`);
-  console.log('Historical compatibility: Codex 0.138 features:');
-  console.log(`  /app handoff: ${codex0138.supports_app_handoff ? 'ok' : 'unavailable'}`);
-  console.log(`  plugin JSON: ${codex0138.supports_plugin_json ? 'ok' : 'unavailable'}`);
-  console.log(`  image path exposure: ${codex0138.supports_image_path_exposure ? 'ok' : 'unavailable'}`);
-  console.log(`  OAuth MCP pre-refresh: ${codex0138.supports_oauth_mcp_prerefresh ? 'ok' : 'unavailable'}`);
+  console.log('Current Codex app features:');
+  console.log(`  /app handoff: ${codexCurrentApp.supports_app_handoff ? 'ok' : 'unavailable'}`);
+  console.log(`  plugin JSON: ${codexCurrentApp.supports_plugin_json ? 'ok' : 'unavailable'}`);
+  console.log(`  image path exposure: ${codexCurrentApp.supports_image_path_exposure ? 'ok' : 'unavailable'}`);
+  console.log(`  OAuth MCP pre-refresh: ${codexCurrentApp.supports_oauth_mcp_prerefresh ? 'ok' : 'unavailable'}`);
   const plugins = (pluginInventory as any)?.report?.plugins || [];
   const remoteMcpCount = plugins.flatMap((plugin: any) => plugin.remote_mcp_servers || []).length;
   const unavailableTemplates = pluginPolicy?.unavailable_app_templates?.length || 0;
@@ -2197,7 +2211,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   console.log(`  Remote MCP servers: ${remoteMcpCount} candidates`);
   console.log(`  Unavailable app templates: ${unavailableTemplates}`);
   for (const warning of pluginPolicy?.doctor_warnings || []) console.log(`  warning: ${warning}`);
-  if ((codex0138Doctor as any)?.fixed?.length) console.log(`  doctor --fix repaired: ${(codex0138Doctor as any).fixed.join(', ')}`);
+  if ((codexCurrentAppDoctor as any)?.fixed?.length) console.log(`  doctor --fix repaired: ${(codexCurrentAppDoctor as any).fixed.join(', ')}`);
   console.log(`codex-lb:  ${codexLb.ok ? 'ok' : `warning ${codexLb.circuit?.state || 'unknown'}`}`);
   console.log(`  key source: ${codexLb.secret_resolution.source}${codexLb.secret_resolution.path ? ` (${codexLb.secret_resolution.path})` : ''}; prompt risk: ${codexLb.secret_resolution.prompt_risk}`);
   for (const action of codexLb.legacy_keychain_migration?.operator_actions || []) console.log(`  action: ${action}`);
@@ -2290,7 +2304,7 @@ export function buildRuntimeReadiness(matrix: any) {
       ...(hookPolicy !== 'approved-only' ? ['hook-derived evidence will not count'] : []),
       ...(agentStrategy !== 'agent_type' ? ['message-role fallback active'] : []),
       ...(multiAgentMode === 'proactive' ? ['Proactive multi-agent mode is available for Naruto-style routes'] : []),
-      ...(rolloutBudget === 'codex-0144-shared' ? ['Shared rollout budgeting is available for route proof'] : []),
+      ...(rolloutBudget === 'codex-current-shared' ? ['Shared rollout budgeting is available for route proof'] : []),
       ...(researchSource === 'indexed-web-search' ? ['Indexed web search is selected for source-intelligence routes'] : [])
     ],
     repair_actions: [...new Set(repairActions)]

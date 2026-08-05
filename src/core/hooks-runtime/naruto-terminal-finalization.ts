@@ -12,6 +12,7 @@ import {
   SUBAGENT_EVIDENCE_FILENAME,
   SUBAGENT_PARENT_SUMMARY_FILENAME
 } from '../subagents/subagent-evidence.js';
+import { terminalBlockedNarutoGate } from '../subagents/terminal-subagent-state.js';
 import { closeWorkOrderLedgerForRouteResult } from '../work-order-ledger.js';
 import { guardContextForRoute, guardedRm } from '../safety/mutation-guard.js';
 import { createRequestedScopeContract } from '../safety/requested-scope-contract.js';
@@ -39,9 +40,10 @@ export async function finalizeNarutoTerminalProof(
       readJson(path.join(dir, 'subagent-plan.json'), null).catch(() => null),
       readJson(path.join(dir, 'naruto-gate.json'), null).catch(() => null)
     ]);
+    const terminalBlocked = terminalBlockedNarutoGate(currentGate);
     if (String(currentPlan?.workflow_run_id || '').trim() !== terminal.workflowRunId
       || String(currentGate?.workflow_run_id || '').trim() !== terminal.workflowRunId
-      || currentGate?.passed !== true
+      || (currentGate?.passed !== true && !terminalBlocked)
       || currentGate?.terminal !== true) return;
     let proofStatus = await currentNarutoProofStatus(root, terminal.missionId, terminal.workflowRunId, state);
     if (!proofStatus.valid) {
@@ -67,15 +69,20 @@ export async function finalizeNarutoTerminalProof(
       proofStatus = await currentNarutoProofStatus(root, terminal.missionId, terminal.workflowRunId, state);
     }
     if (!proofStatus.valid) throw new Error('naruto_terminal_proof_invalid_after_finalize');
-    await resolveStaleOfficialSubagentComplianceBlocker({
-      root,
-      dir,
-      missionId: terminal.missionId,
-      workflowRunId: terminal.workflowRunId,
-      gate: currentGate,
-      proof: proofStatus.proof
+    if (currentGate?.passed === true) {
+      await resolveStaleOfficialSubagentComplianceBlocker({
+        root,
+        dir,
+        missionId: terminal.missionId,
+        workflowRunId: terminal.workflowRunId,
+        gate: currentGate,
+        proof: proofStatus.proof
+      });
+    }
+    await closeWorkOrderLedgerForRouteResult(dir, {
+      ok: currentGate?.passed === true,
+      blockers: Array.isArray(currentGate?.blockers) ? currentGate.blockers : []
     });
-    await closeWorkOrderLedgerForRouteResult(dir, { ok: true });
     await invalidateReflectionForNarutoProofOnce(
       root,
       state,

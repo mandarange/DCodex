@@ -645,6 +645,57 @@ function proofClosed(proof: any) {
   return ['verified', 'verified_partial', 'pass', 'passed'].includes(status);
 }
 
+/**
+ * NC-20: Write or confirm a durable completion receipt before mission directory deletion.
+ * The receipt is independent of the mission directory remaining on disk so restart
+ * logic must not treat absence as incomplete.
+ */
+async function ensureMissionCompletionReceiptBeforeDelete(
+  mission: any,
+  dryRun: boolean,
+  actions: any[],
+  reason: string
+): Promise<{ ok: boolean; blockers: string[] }> {
+  const blockers: string[] = [];
+  const proof = await readJson(path.join(mission.path, 'completion-proof.json'), null).catch(() => null);
+  if (!proofClosed(proof) && !(await missionClosed(mission))) {
+    blockers.push('mission_not_closed_for_delete');
+    return { ok: false, blockers };
+  }
+  const receiptsRoot = path.join(path.dirname(mission.path), '..', 'retention', 'completion-receipts');
+  const receiptPath = path.join(receiptsRoot, `${mission.id}.json`);
+  const existing = await readJson(receiptPath, null).catch(() => null);
+  if (existing?.schema === 'sks.mission-completion-receipt.v1' && existing?.mission_id === mission.id) {
+    actions.push({
+      action: 'reuse_mission_completion_receipt',
+      mission: mission.id,
+      path: receiptPath,
+      reason
+    });
+    return { ok: true, blockers };
+  }
+  const receipt = {
+    schema: 'sks.mission-completion-receipt.v1',
+    mission_id: mission.id,
+    completed_at: nowIso(),
+    retention_reason: reason,
+    completion_status: String(proof?.status || 'closed'),
+    delete_after_receipt: true,
+    note: 'Mission directory may be deleted after this receipt; absence must not restart the mission.'
+  };
+  actions.push({
+    action: 'write_mission_completion_receipt',
+    mission: mission.id,
+    path: receiptPath,
+    reason
+  });
+  if (!dryRun) {
+    await ensureDir(receiptsRoot);
+    await writeJsonAtomic(receiptPath, receipt);
+  }
+  return { ok: true, blockers };
+}
+
 function proofRequiresDiagnostics(proof: any) {
   if (!proof || typeof proof !== 'object') return false;
   const status = String(proof.status || '').toLowerCase();
@@ -1296,11 +1347,27 @@ async function pruneOldMissions(root: any, policy: any, dryRun: any, actions: an
         } else if (policy.compact_inactive_open_mission_workdirs !== false && !(await missionHasLiveSessions(m))) {
           await compactMissionToDurableContext(m, dryRun, actions, 'compact_inactive_open_mission_context', reason);
         }
-      } else if (await hasDurableMissionArtifacts(m)) {
-        await compactOldMissionWithDurableArtifacts(m, dryRun, actions, reason);
       } else {
-        actions.push({ action: 'remove_mission', mission: m.id, path: m.path, bytes: m.size ?? null, reason });
-        if (!dryRun) await rmrf(m.path);
+        // NC-20 / S2: closed missions may be compacted or deleted for capacity, but only
+        // after a durable completion receipt exists outside the mission directory.
+        const completionReceipt = await ensureMissionCompletionReceiptBeforeDelete(m, dryRun, actions, reason);
+        if (!completionReceipt.ok) {
+          actions.push({
+            action: 'retain_mission_missing_completion_receipt',
+            mission: m.id,
+            path: m.path,
+            bytes: m.size ?? null,
+            reason: `${reason}_completion_receipt_required_before_delete`,
+            blockers: completionReceipt.blockers
+          });
+          continue;
+        }
+        if (await hasDurableMissionArtifacts(m)) {
+          await compactOldMissionWithDurableArtifacts(m, dryRun, actions, reason);
+        } else {
+          actions.push({ action: 'remove_mission', mission: m.id, path: m.path, bytes: m.size ?? null, reason });
+          if (!dryRun) await rmrf(m.path);
+        }
       }
     }
   }

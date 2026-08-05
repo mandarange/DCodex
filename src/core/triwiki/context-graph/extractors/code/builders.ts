@@ -170,36 +170,8 @@ export class CodeGraphSink {
     this.issues.push(issue);
   }
 
-  /**
-   * A symbol node exists to be the endpoint of a relation. One that is neither
-   * exported (so no other file can import it) nor touched by any edge other than
-   * its own `contains` carries no information the graph can traverse — on this
-   * repository that is 11k of 18k symbols and roughly a quarter of the artifact.
-   * Dropping them takes their `contains` edge with them so nothing dangles.
-   */
-  private pruneUnreachableSymbols(): void {
-    const reachable = new Set<string>();
-    for (const edge of this.edges.values()) {
-      if (edge.type === 'contains') continue;
-      reachable.add(edge.from);
-      reachable.add(edge.to);
-    }
-    const dropped = new Set<string>();
-    for (const [id, node] of this.nodes) {
-      if (node.kind !== 'symbol') continue;
-      if (node.metadata.exported === true || reachable.has(id)) continue;
-      dropped.add(id);
-      this.nodes.delete(id);
-    }
-    if (!dropped.size) return;
-    for (const [id, edge] of this.edges) {
-      if (dropped.has(edge.from) || dropped.has(edge.to)) this.edges.delete(id);
-    }
-  }
-
   /** Sorted, deduplicated fragment payload. Identical input yields an identical result. */
   result(): CodeGraphSinkResult {
-    this.pruneUnreachableSymbols();
     const nodes = [...this.nodes.values()].sort((left, right) => compareContextGraphIds(left.id, right.id));
     const edges = [...this.edges.values()].sort((left, right) => compareContextGraphIds(left.id, right.id));
     const skipped = [...this.skips].sort(

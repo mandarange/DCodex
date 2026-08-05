@@ -54,7 +54,7 @@ export interface SubagentEvidence {
   event_sources: SubagentEventName[]
   parent_summary_present: boolean
   parent_summary_trustworthy: boolean
-  parent_summary_status: 'completed' | 'failed' | 'ambiguous' | null
+  parent_summary_status: 'completed' | 'blocked' | 'failed' | 'ambiguous' | null
   ambiguous_stop_thread_ids: string[]
   run_id: string | null
   run_epoch: string | null
@@ -379,8 +379,8 @@ export function buildSubagentEvidence(input: BuildSubagentEvidenceInput): Subage
     && hostCapabilityBlockers.length === 0
     && runScope.blockers.length === 0
     && runScope.parentBlockers.length === 0
-  const parentCompletedStructurallyTrustworthy = parentSummaryStructurallyTrustworthy
-    && parentSummary.status === 'completed'
+  const parentAllowsCompletedChildOutcomes = parentSummaryStructurallyTrustworthy
+    && (parentSummary.status === 'completed' || parentSummary.raw?.status === 'blocked')
 
   for (const event of events) {
     eventSources.add(event.event_name)
@@ -413,7 +413,7 @@ export function buildSubagentEvidence(input: BuildSubagentEvidenceInput): Subage
       failedStops.add(event.thread_id)
       successfulStops.delete(event.thread_id)
       ambiguousStops.delete(event.thread_id)
-    } else if (parentOutcome === 'completed' && parentCompletedStructurallyTrustworthy) {
+    } else if (parentOutcome === 'completed' && parentAllowsCompletedChildOutcomes) {
       successfulStops.add(event.thread_id)
       failedStops.delete(event.thread_id)
       ambiguousStops.delete(event.thread_id)
@@ -490,6 +490,7 @@ export function buildSubagentEvidence(input: BuildSubagentEvidenceInput): Subage
   blockers.push(...parentThreadIdentityBlockers)
   if (!parentSummaryPresent) blockers.push('parent_summary_missing')
   else if (!parentSummary.trustworthy) blockers.push(...parentSummary.blockers)
+  if (parentSummary.status === 'blocked') blockers.push('parent_summary_blocked')
   if (parentSummary.status === 'failed') blockers.push('parent_summary_failed')
   blockers.push(...hostCapabilityBlockers)
   if (input.hostCapabilityEvidence !== undefined && input.hostCapabilityEvidence !== null && !hostCapabilityEvidence) {
@@ -511,11 +512,13 @@ export function buildSubagentEvidence(input: BuildSubagentEvidenceInput): Subage
   const ok = uniqueBlockers.length === 0
   const status: SubagentEvidence['status'] = preparationOnly
     ? 'preparation_only'
-    : ok
-      ? 'completed'
-      : failedThreadIds.length > 0 || hostCapabilityBlockers.length > 0 || Boolean(hostCapabilityEvidence && !hostCapabilityEvidence.ok)
-        ? 'blocked'
-        : 'incomplete'
+    : parentSummary.status === 'blocked'
+      ? 'blocked'
+      : ok
+        ? 'completed'
+        : failedThreadIds.length > 0 || hostCapabilityBlockers.length > 0 || Boolean(hostCapabilityEvidence && !hostCapabilityEvidence.ok)
+          ? 'blocked'
+          : 'incomplete'
 
   return {
     schema: SUBAGENT_EVIDENCE_SCHEMA,
@@ -598,7 +601,10 @@ export async function persistOrReuseTrustworthySubagentParentSummary(
   const workflowFailed = isFailureWorkflowStatus(opts.workflowStatus)
   const activeRunId = firstText(opts.runId)
   const incomingMatchesActiveRun = !activeRunId || !incoming.run_id || incoming.run_id === activeRunId
-  if (incoming.trustworthy && incoming.status === 'failed' && incoming.raw && incomingMatchesActiveRun) {
+  if (incoming.trustworthy
+    && (incoming.status === 'blocked' || incoming.status === 'failed')
+    && incoming.raw
+    && incomingMatchesActiveRun) {
     await writeJsonAtomic(file, incoming.raw)
     return incoming.raw
   }
@@ -609,9 +615,11 @@ export async function persistOrReuseTrustworthySubagentParentSummary(
     const incomingContradictsFailure = incoming.trustworthy
       && incoming.status === 'completed'
       && incomingMatchesActiveRun
+    const persistedTerminalOutcomeCanSurviveProse = persisted.status === 'failed'
+      || (!workflowFailed && persisted.status === 'blocked')
     if (!incomingContradictsFailure
       && persisted.trustworthy
-      && persisted.status === 'failed'
+      && persistedTerminalOutcomeCanSurviveProse
       && persisted.raw) {
       return persisted.raw
     }
@@ -697,7 +705,7 @@ function stopAmbiguous(row: Record<string, unknown>): boolean {
 export function normalizeSubagentParentSummary(value: unknown): {
   present: boolean
   trustworthy: boolean
-  status: 'completed' | 'failed' | 'ambiguous' | null
+  status: 'completed' | 'blocked' | 'failed' | 'ambiguous' | null
   summary: string | null
   run_id: string | null
   run_epoch: string | null
@@ -788,7 +796,7 @@ export function normalizeSubagentParentSummary(value: unknown): {
     }
   }
 
-  const status = strictTerminalOutcome(parsed.status)
+  const status = strictParentOutcome(parsed.status)
   if (status === 'ambiguous') blockers.push('parent_summary_status_ambiguous')
   if (status === 'completed' && containsFailedOrAmbiguousOutcomeText(summary)) blockers.push('parent_summary_text_contradiction')
   if (status === 'completed' && Array.isArray(parsed.blockers) && parsed.blockers.length > 0) {
@@ -1045,6 +1053,14 @@ function strictTerminalOutcome(value: unknown): 'completed' | 'failed' | 'ambigu
   const status = String(value || '').trim().toLowerCase()
   if (status === 'completed') return 'completed'
   if (status === 'blocked' || status === 'failed') return 'failed'
+  return 'ambiguous'
+}
+
+function strictParentOutcome(value: unknown): 'completed' | 'blocked' | 'failed' | 'ambiguous' {
+  const status = String(value || '').trim().toLowerCase()
+  if (status === 'completed') return 'completed'
+  if (status === 'blocked') return 'blocked'
+  if (status === 'failed') return 'failed'
   return 'ambiguous'
 }
 

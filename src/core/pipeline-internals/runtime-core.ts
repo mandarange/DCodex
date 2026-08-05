@@ -71,6 +71,7 @@ import {
   normalizeLegacySubagentCountFields,
   subagentCountContractBlockers
 } from '../subagents/wave-lifecycle.js';
+import { officialSubagentEvidenceReady } from '../subagents/terminal-subagent-state.js';
 
 export { routePrompt };
 
@@ -1006,7 +1007,7 @@ async function appNarutoParentEvidenceState(root: any, state: any): Promise<'com
     && gate?.terminal_state === 'completed') {
     return 'completed';
   }
-  if (evidence.parent_summary_status === 'failed'
+  if (['blocked', 'failed'].includes(String(evidence.parent_summary_status || ''))
     && ['blocked', 'incomplete'].includes(String(summary?.status || ''))
     && summary?.completion_evidence !== true
     && gate?.passed !== true
@@ -1331,11 +1332,12 @@ async function prepareAlign(root: any, route: any, task: any, required: any, opt
     context7_required: required,
     context_tracking: triwikiContextTracking(),
     stop_gate: route.stopGate,
-    official_sources: artifacts.plan.official_sources,
-    deprecated_migration_sources: artifacts.plan.deprecated_migration_sources,
-    workstreams: artifacts.plan.workstreams,
-    required_verifications: artifacts.plan.required_verifications,
-    prompt_evaluation_min_cases: artifacts.plan.prompt_evaluation_min_cases,
+    purpose: artifacts.plan.purpose,
+    requires_cleanup_receipt: artifacts.plan.requires_cleanup_receipt,
+    source_policy: artifacts.plan.source_policy,
+    scan_limits: artifacts.plan.limits,
+    acceptance: artifacts.plan.acceptance,
+    outputs: artifacts.plan.outputs,
     artifacts: {
       plan: ALIGN_PLAN_ARTIFACT,
       ledger: ALIGN_LEDGER_ARTIFACT,
@@ -1810,7 +1812,7 @@ function canonicalEvidenceMismatch(canonical: any, recomputed: any): string | nu
 }
 
 export async function hasSubagentEvidence(root: any, state: any) {
-  return (await subagentEvidence(root, state)).ok;
+  return officialSubagentEvidenceReady(await subagentEvidence(root, state));
 }
 
 function context7ToolName(payload: any) {

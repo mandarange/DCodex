@@ -18,7 +18,7 @@ await writeText(path.join(skillsRoot, 'sks-qa-loop', 'SKILL.md'), `${renderCoreS
 const restored = await syncCoreSkillsIntegrity({ root, apply: true, skillsRoot });
 assertGate(restored.restored.length === 1, 'managed drift must be restored', restored);
 const userRoot = path.join(root, 'user-skills');
-await writeUserSkill(root, 'user-skills', 'sks-loop', 'sks-loop');
+await writeUserSkill(root, 'user-skills', 'sks-align', 'sks-align');
 const user = await syncCoreSkillsIntegrity({ root, apply: true, skillsRoot: userRoot });
 assertGate(user.skipped_user_authored.length === 1, 'user-authored same-name core skill must be preserved', user);
 emitGate('core-skill:no-drift', { skills: manifest.skills.length });

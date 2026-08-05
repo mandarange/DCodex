@@ -36,15 +36,14 @@ export function requiredCodexVersionFromBaseline(value: unknown): string {
 export type CodexVersionPolicyStatus =
   | 'ok'
   | 'integration_optional'
-  | 'below_preferred_baseline'
   | 'blocked_below_minimum_supported'
   | 'blocked_below_required_baseline'
   | 'blocked_missing_required_codex';
 
 /**
- * Version-agnostic policy: prefer the package-tracked latest channel, keep a soft
- * minimum for general integration, and hard-block only when explicitRequire is set
- * or the host is below the soft floor.
+ * Current-release policy: SKS supports the package-tracked Codex release only.
+ * Missing Codex remains optional for routes that do not invoke it, but an
+ * installed older runtime is rejected instead of entering a compatibility path.
  */
 export function codexVersionPolicy(
   detected: { available?: boolean; version?: string | null; source?: string | null } = {},
@@ -126,10 +125,9 @@ export function codexVersionPolicy(
     };
   }
 
-  // Soft prefer-latest: SKS keeps working; feature routes gate themselves.
   return {
-    ok: true,
-    status: 'below_preferred_baseline' as CodexVersionPolicyStatus,
+    ok: false,
+    status: 'blocked_below_minimum_supported' as CodexVersionPolicyStatus,
     preferred_baseline: preferredBaseline,
     preferred_version: preferredVersion,
     required_baseline: preferredBaseline,
@@ -137,7 +135,7 @@ export function codexVersionPolicy(
     minimum_supported_version: minimumSupported,
     update_available_hint: true,
     warnings: [
-      `detected Codex ${detected.version} from ${detected.source || 'unknown'}; preferred channel is ${preferredBaseline} (${preferredVersion})`,
+      `detected Codex ${detected.version} from ${detected.source || 'unknown'}; current supported release is ${preferredBaseline} (${preferredVersion})`,
       UPDATE_CTA
     ]
   };

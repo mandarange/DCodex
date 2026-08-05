@@ -237,14 +237,14 @@ test('a stale graph yields the conservative result and never a wider fan-out', (
   assert.equal(stale.ok, false);
   assert.equal(stale.graph_status, 'stale');
   assert.equal(stale.error_code, 'context_graph_stale');
-  assert.equal(stale.repair_command, 'sks wiki refresh --code');
+  assert.equal(stale.repair_command, 'sks align run');
   assert.equal(stale.conservative, true);
   assert.ok(stale.conservative_reasons.includes('context_graph_stale'));
   assert.equal(stale.parallel_safe, false);
   assert.equal(stale.pairs.every((pair) => pair.parallel_safe === false && pair.kind === 'graph_not_usable'), true);
   assert.deepEqual(stale.recommended_tests, []);
   assert.deepEqual(stale.recommended_gates, []);
-  assert.ok(stale.errors.some((line) => line.includes('sks wiki refresh --code')));
+  assert.ok(stale.errors.some((line) => line.includes('sks align run')));
   assert.ok(
     stale.recommended_max_parallel_slices <= fresh.recommended_max_parallel_slices,
     'stale evidence must never widen the recommended fan-out'
@@ -286,7 +286,7 @@ test('a workspace with no compiled graph reports missing instead of guessing', a
     assert.equal(advice.error_code, 'context_graph_missing');
     assert.equal(advice.parallel_safe, false);
     assert.equal(advice.recommended_max_parallel_slices, 1);
-    assert.ok(advice.errors.some((line) => line.includes('sks wiki refresh --code')));
+    assert.ok(advice.errors.some((line) => line.includes('sks align run')));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

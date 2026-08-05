@@ -9,5 +9,8 @@ export async function mcpServerCommand(args: readonly string[] = []): Promise<vo
     process.exitCode = result.ok ? 0 : 1;
     return;
   }
-  await runMcpServer({ exposeExec });
+  await runMcpServer({
+    exposeExec,
+    onError: (error) => process.stderr.write(`[sks-mcp-server] ${error.message}\n`)
+  });
 }

@@ -226,7 +226,7 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
 
     @objc private func testConnection() {
         guard let selection = selected(), selection.row.managedBy != "plugin" else { return }
-        status.stringValue = "Testing \(selection.row.name) with bounded initialize and tools/list…"
+        status.stringValue = "Testing \(selection.row.name) with bounded discovery and tools/list…"
         processClient.run(["mcp", "config", "test", selection.row.name, "--scope", selection.row.scope] + scopeContext(selection.row.scope, mutation: false) + ["--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
             guard let self = self, let json = self.json(result.output) else {
                 self?.status.stringValue = result.code == 0

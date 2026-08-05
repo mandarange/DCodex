@@ -43,6 +43,10 @@ import { observedParentModelMismatch } from './payload-signals.js';
 import { finalizeNarutoTerminalProof } from './naruto-terminal-finalization.js';
 import { subagentSkillAvailabilityRunBlockers } from './subagent-skill-availability.js';
 import { MAX_LIFECYCLE_THREADS } from './subagent-skill-availability-contract.js';
+import {
+  officialSubagentEvidenceReady,
+  terminalBlockedNarutoGate
+} from '../subagents/terminal-subagent-state.js';
 
 const SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_SCHEMA = 'sks.subagent-lifecycle-capture-failure.v1';
 const MAX_SUBAGENT_LIFECYCLE_CAPTURE_FAILURES = 528;
@@ -77,7 +81,7 @@ export async function inspectActiveOfficialSubagentWorkflow(
     }
     const gate: any = await readJson(path.join(artifactDir, 'naruto-gate.json'), null).catch(() => null);
     if (gate?.terminal === true
-      && gate?.passed === true
+      && (gate?.passed === true || terminalBlockedNarutoGate(gate))
       && String(gate?.workflow_run_id || '').trim() === workflowRunId) {
       return { status: 'inactive' };
     }
@@ -240,7 +244,7 @@ export async function refreshOfficialSubagentCompletionArtifacts(
     dir,
     () => refreshOfficialSubagentCompletionArtifactsLocked(root, state, parentSummary, sessionKey, dir)
   );
-  if (snapshot?.terminal?.passed === true) {
+  if (snapshot?.terminal?.terminal === true) {
     await finalizeNarutoTerminalProof(root, state, sessionKey, dir, snapshot.terminal);
   }
   return snapshot?.evidence ?? snapshot;
@@ -269,7 +273,13 @@ async function refreshOfficialSubagentCompletionArtifactsLocked(root: any, state
   })) {
     return {
       evidence: existingEvidence,
-      terminal: { passed: true, missionId: state.mission_id, workflowRunId, gate: existingGate }
+      terminal: {
+        passed: existingGate?.passed === true,
+        terminal: true,
+        missionId: state.mission_id,
+        workflowRunId,
+        gate: existingGate
+      }
     };
   }
   const events = await readSubagentEvents(dir);
@@ -416,7 +426,9 @@ async function refreshOfficialSubagentCompletionArtifactsLocked(root: any, state
   }, { sessionKey: sessionKey || state._session_key });
   return {
     evidence,
-    terminal: passed ? { passed: true, missionId: id, workflowRunId, gate } : null
+    terminal: gate.terminal === true
+      ? { passed, terminal: true, missionId: id, workflowRunId, gate }
+      : null
   };
 }
 
@@ -591,7 +603,7 @@ async function rebuildHostCapabilityEvidenceForFinalization(input: {
 export function completeNarutoTerminalBundle(input: any) {
   const runId = String(input.workflowRunId || '').trim();
   const parent = normalizeSubagentParentSummary(input.parentSummary);
-  return Boolean(
+  const completed = Boolean(
     runId
       && input.gate?.workflow_run_id === runId
       && input.gate?.passed === true
@@ -606,4 +618,18 @@ export function completeNarutoTerminalBundle(input: any) {
       && parent.status === 'completed'
       && parent.run_id === runId
   );
+  const blocked = Boolean(
+    runId
+      && input.gate?.workflow_run_id === runId
+      && terminalBlockedNarutoGate(input.gate)
+      && input.summary?.workflow_run_id === runId
+      && input.summary?.ok !== true
+      && input.summary?.status === 'blocked'
+      && input.evidence?.run_id === runId
+      && officialSubagentEvidenceReady(input.evidence)
+      && parent.trustworthy
+      && parent.status === 'blocked'
+      && parent.run_id === runId
+  );
+  return completed || blocked;
 }

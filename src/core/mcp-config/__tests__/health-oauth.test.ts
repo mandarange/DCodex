@@ -7,6 +7,12 @@ import path from 'node:path';
 import { buildCodexMcpAddArgs, type CodexCliMutationOperation, type CodexMcpCliPort } from '../codex-cli-adapter.js';
 import { testMcpConnection } from '../health-check.js';
 import { loginMcpServer, logoutMcpServer } from '../oauth.js';
+import {
+  MCP_CLIENT_CAPABILITIES_META_KEY,
+  MCP_PROTOCOL_VERSION,
+  MCP_PROTOCOL_VERSION_META_KEY,
+  MCP_SERVER_INFO_META_KEY
+} from '../../mcp/modern-protocol.js';
 
 class AuthCli implements CodexMcpCliPort {
   calls: Array<{ action: string; name: string; scopes?: readonly string[] }> = [];
@@ -32,7 +38,7 @@ async function fixture(t: test.TestContext) {
   return { home, configPath };
 }
 
-test('stdio health performs initialize and tools/list with bounded secret-safe output', async (t) => {
+test('stdio health uses modern discovery first and safely falls back for an initialization-era server', async (t) => {
   const s = await fixture(t);
   const server = path.join(s.home, 'fixture-server.mjs');
   await fsp.writeFile(server, [
@@ -40,6 +46,7 @@ test('stdio health performs initialize and tools/list with bounded secret-safe o
     "const rl = readline.createInterface({ input: process.stdin });",
     "rl.on('line', (line) => {",
     "  const msg = JSON.parse(line);",
+    "  if (msg.method === 'server/discover') console.log(JSON.stringify({ jsonrpc:'2.0', id:msg.id, error:{ code:-32601, message:'Method not found' } }));",
     "  if (msg.method === 'initialize') console.log(JSON.stringify({ jsonrpc:'2.0', id:msg.id, result:{ protocolVersion:'2024-11-05', instructions:'safe' } }));",
     "  if (msg.method === 'tools/list') console.log(JSON.stringify({ jsonrpc:'2.0', id:msg.id, result:{ tools:[{name:'one'},{name:'two'}] } }));",
     "});"
@@ -125,6 +132,7 @@ test('stdio tool-list timeout is bounded independently from startup', { timeout:
     "const rl = readline.createInterface({ input: process.stdin });",
     "rl.on('line', (line) => {",
     "  const msg = JSON.parse(line);",
+    "  if (msg.method === 'server/discover') console.log(JSON.stringify({ jsonrpc:'2.0', id:msg.id, error:{ code:-32601, message:'Method not found' } }));",
     "  if (msg.method === 'initialize') console.log(JSON.stringify({ jsonrpc:'2.0', id:msg.id, result:{ protocolVersion:'2024-11-05' } }));",
     "});",
     "setInterval(() => {}, 1000);"
@@ -151,6 +159,7 @@ test('stdio stdout protocol pollution fails closed without echoing polluted outp
     "const rl = readline.createInterface({ input: process.stdin });",
     "rl.on('line', (line) => {",
     "  const msg = JSON.parse(line);",
+    "  if (msg.method === 'server/discover') console.log(JSON.stringify({ jsonrpc:'2.0', id:msg.id, error:{ code:-32601, message:'Method not found' } }));",
     "  if (msg.method === 'initialize') {",
     "    console.log('polluted stdout detail must stay private');",
     "    console.log(JSON.stringify({ jsonrpc:'2.0', id:msg.id, result:{ protocolVersion:'2024-11-05' } }));",
@@ -171,7 +180,63 @@ test('stdio stdout protocol pollution fails closed without echoing polluted outp
   assert.doesNotMatch(JSON.stringify(health), /polluted stdout detail/);
 });
 
-test('streamable HTTP health initializes, lists tools, preserves session ID, and reports OAuth required', async (t) => {
+test('streamable HTTP health uses the 2026-07-28 stateless request and header contract', async (t) => {
+  const s = await fixture(t);
+  const observed: Array<{ method: string; headers: http.IncomingHttpHeaders; meta: Record<string, unknown> }> = [];
+  const server = http.createServer(async (request, response) => {
+    const parsed = JSON.parse(await readRequest(request)) as {
+      id: number;
+      method: string;
+      params?: { _meta?: Record<string, unknown> };
+    };
+    observed.push({ method: parsed.method, headers: request.headers, meta: parsed.params?._meta || {} });
+    const serverMeta = {
+      [MCP_SERVER_INFO_META_KEY]: { name: 'modern-health-fixture', version: '1.0.0' }
+    };
+    const value = parsed.method === 'server/discover'
+      ? {
+          resultType: 'complete',
+          supportedVersions: [MCP_PROTOCOL_VERSION],
+          capabilities: { tools: {} },
+          ttlMs: 1_000,
+          cacheScope: 'private',
+          _meta: serverMeta
+        }
+      : {
+          resultType: 'complete',
+          tools: [{ name: 'modern-tool' }],
+          ttlMs: 1_000,
+          cacheScope: 'private',
+          _meta: serverMeta
+        };
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: value }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  await fsp.writeFile(s.configPath, [
+    '[mcp_servers.modern]',
+    `url = "http://127.0.0.1:${address.port}/mcp"`,
+    ''
+  ].join('\n'), { mode: 0o600 });
+
+  const health = await testMcpConnection('modern', 'global', { home: s.home });
+  assert.equal(health.status, 'healthy');
+  assert.equal(health.protocol_version, MCP_PROTOCOL_VERSION);
+  assert.deepEqual(health.tool_names, ['modern-tool']);
+  assert.deepEqual(observed.map((entry) => entry.method), ['server/discover', 'tools/list']);
+  for (const entry of observed) {
+    assert.equal(entry.headers['mcp-protocol-version'], MCP_PROTOCOL_VERSION);
+    assert.equal(entry.headers['mcp-method'], entry.method);
+    assert.equal(entry.headers['mcp-session-id'], undefined);
+    assert.equal(entry.meta[MCP_PROTOCOL_VERSION_META_KEY], MCP_PROTOCOL_VERSION);
+    assert.deepEqual(entry.meta[MCP_CLIENT_CAPABILITIES_META_KEY], {});
+  }
+});
+
+test('streamable HTTP health negotiates modern first, falls back for a legacy server, and reports OAuth required', async (t) => {
   const s = await fixture(t);
   const sessionHeaders: string[] = [];
   const server = http.createServer(async (request, response) => {
@@ -182,6 +247,11 @@ test('streamable HTTP health initializes, lists tools, preserves session ID, and
       return;
     }
     const parsed = JSON.parse(body) as { method?: string; id?: number };
+    if (parsed.method === 'server/discover') {
+      response.writeHead(400, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, error: { code: -32601, message: 'Method not found' } }));
+      return;
+    }
     if (parsed.method === 'initialize') {
       response.writeHead(200, { 'content-type': 'application/json', 'mcp-session-id': 'session-1' });
       response.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { protocolVersion: '2024-11-05' } }));
@@ -230,12 +300,17 @@ test('health runner allows at most two concurrent handshakes', async (t) => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     active -= 1;
     const message = JSON.parse(String(init?.body || '{}')) as { method?: string; id?: number };
-    const body = message.method === 'initialize'
+    const body = message.method === 'server/discover'
+      ? { jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Method not found' } }
+      : message.method === 'initialize'
       ? { jsonrpc: '2.0', id: message.id, result: { protocolVersion: '2024-11-05' } }
       : message.method === 'tools/list'
         ? { jsonrpc: '2.0', id: message.id, result: { tools: [] } }
         : null;
-    return new Response(body ? JSON.stringify(body) : '', { status: body ? 200 : 202, headers: { 'content-type': 'application/json' } });
+    return new Response(body ? JSON.stringify(body) : '', {
+      status: message.method === 'server/discover' ? 400 : body ? 200 : 202,
+      headers: { 'content-type': 'application/json' }
+    });
   };
   const results = await Promise.all(['a', 'b', 'c'].map((name) => testMcpConnection(name, 'global', {
     home: s.home,

@@ -162,7 +162,7 @@ test('codePackFreshnessNote reports stale when source code changes after a code-
   git(['commit', '-q', '-m', 'change source']);
 
   const note = await codePackFreshnessNote(root, { budgetMs: SEMANTIC_TEST_BUDGET_MS });
-  assert.match(String(note || ''), /wiki refresh --code/);
+  assert.match(String(note || ''), /sks align run/);
 });
 
 test('codePackFreshnessNote sees source changes on an older side branch merged after the pack commit', async () => {
@@ -194,7 +194,7 @@ test('codePackFreshnessNote sees source changes on an older side branch merged a
   git(['merge', '--no-ff', '-q', 'older-side', '-m', 'merge older side']);
 
   const note = await codePackFreshnessNote(root, { budgetMs: SEMANTIC_TEST_BUDGET_MS });
-  assert.match(String(note || ''), /wiki refresh --code/);
+  assert.match(String(note || ''), /sks align run/);
 });
 
 test('codePackFreshnessNote stays stale when a committed source change is later reverted', async () => {
@@ -209,7 +209,7 @@ test('codePackFreshnessNote stays stale when a committed source change is later 
   git(['commit', '-q', '-m', 'revert source']);
 
   const note = await codePackFreshnessNote(root, { budgetMs: SEMANTIC_TEST_BUDGET_MS });
-  assert.match(String(note || ''), /wiki refresh --code/);
+  assert.match(String(note || ''), /sks align run/);
 });
 
 test('codePackFreshnessNote does not normalize a leading-space path into metadata allowlist', async () => {
@@ -223,7 +223,7 @@ test('codePackFreshnessNote does not normalize a leading-space path into metadat
   git(['commit', '-q', '-m', 'add disguised metadata path']);
 
   const note = await codePackFreshnessNote(root, { budgetMs: SEMANTIC_TEST_BUDGET_MS });
-  assert.match(String(note || ''), /wiki refresh --code/);
+  assert.match(String(note || ''), /sks align run/);
 });
 
 test('codePackFreshnessNote reports stale when the recorded pack commit is not an ancestor of HEAD', async () => {
@@ -238,7 +238,7 @@ test('codePackFreshnessNote reports stale when the recorded pack commit is not a
   assert.equal(inspection.conclusive, true);
   assert.equal(inspection.reason, 'pack_not_ancestor');
   const note = await codePackFreshnessNote(root, { budgetMs: SEMANTIC_TEST_BUDGET_MS });
-  assert.match(String(note || ''), /wiki refresh --code/);
+  assert.match(String(note || ''), /sks align run/);
 });
 
 test('authoritative freshness ignores an ambient GIT_DIR pointing at a sibling repository', async () => {

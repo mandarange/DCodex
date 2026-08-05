@@ -8,6 +8,63 @@ import { writeRouteCompletionProof } from '../../proof/route-adapter.js'
 import { evaluateStop } from '../../pipeline.js'
 import { checkStopGate } from '../stop-gate-check.js'
 
+test('trustworthy terminal blocked Naruto gate allows an honest stop without claiming pass', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-terminal-blocked-naruto-'))
+  try {
+    const mission: any = await createMission(root, { mode: 'naruto', prompt: 'finish with an external blocker' })
+    const gatePath = path.join(mission.dir, 'naruto-gate.json')
+    const gate = {
+      schema: 'sks.naruto-gate.v1',
+      workflow: 'official_codex_subagent',
+      mission_id: mission.id,
+      status: 'blocked',
+      passed: false,
+      terminal: true,
+      terminal_state: 'blocked',
+      subagent_plan_ready: true,
+      official_subagent_evidence: true,
+      subagent_evidence_ready: true,
+      parent_summary_present: true,
+      session_cleanup: true,
+      ssot_guard: true,
+      evidence: {},
+      blockers: ['parent_summary_blocked'],
+      missing_fields: ['parent_summary_blocked'],
+      updated_at: new Date().toISOString()
+    }
+    await fs.writeFile(gatePath, JSON.stringify(gate))
+
+    const checked = await checkStopGate({
+      root,
+      route: 'Naruto',
+      missionId: mission.id,
+      explicitGatePath: gatePath,
+      allowLatestFallback: false
+    })
+    assert.equal(checked.ok, true)
+    assert.equal(checked.action, 'allow_stop')
+    assert.equal(checked.normalized_gate?.passed, false)
+    assert.equal(checked.normalized_gate?.terminal_state, 'blocked')
+    assert.equal(checked.diagnostics.reason, 'gate_terminal_blocked')
+
+    await fs.writeFile(gatePath, JSON.stringify({
+      ...gate,
+      blockers: ['parent_summary_blocked', 'unsettled_code_failure']
+    }))
+    const unsafe = await checkStopGate({
+      root,
+      route: 'Naruto',
+      missionId: mission.id,
+      explicitGatePath: gatePath,
+      allowLatestFallback: false
+    })
+    assert.equal(unsafe.ok, false)
+    assert.equal(unsafe.action, 'continue')
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
 test('not_applicable satisfies only the active gate and still enforces proof reflection and work-order coverage', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-not-applicable-independent-gates-'))
   try {

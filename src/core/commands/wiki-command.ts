@@ -23,17 +23,12 @@ import { publishSharedMemory, rebuildSharedIndexes, sharedMemorySummary, validat
 import {
   codePackPath,
   isCodePackProjectionBoundToSnapshot,
-  validateCodePack,
-  writeCodePackAtomic,
   type CodePack
 } from '../triwiki/code-pack.js';
-import { repairTriWikiProofIndex } from '../triwiki/triwiki-proof-bank-index.js';
 import { runContextGraphLint } from '../triwiki/context-graph/lint/index.js';
 import { contextGraphStatus } from '../triwiki/context-graph/store/graph-status.js';
 import { readContextGraphMeta, readContextGraphSnapshot } from '../triwiki/context-graph/store/snapshot-store.js';
-import { compileContextGraph } from '../triwiki/context-graph/compiler/index.js';
-import { contextGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
-import { buildWorkspaceCodePack } from '../triwiki/context-graph/projections/code-pack-workspace.js';
+import { codeNavigationGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
 import { CONTEXT_GRAPH_REPAIR_COMMAND } from '../triwiki/context-graph/contracts.js';
 import { inspectCodePackHeadFreshness } from '../triwiki/code-pack-head-freshness.js';
 import { sealTriWikiContextPack, validateTriWikiContextPackProvenance } from '../triwiki-provenance.js';
@@ -219,10 +214,10 @@ export async function wikiCommand(sub: any, args: any = []) {
  * Graph half of `sks wiki validate`: schema and lint, snapshot/meta parity,
  * source-hash freshness, and projection parity between the snapshot and the
  * code pack that was projected from it. A stale or missing graph is reported,
- * never repaired here — repair belongs to `sks wiki refresh --code`.
+ * never repaired here — repair belongs to `sks align run`.
  */
 async function wikiValidateContextGraph(root: string): Promise<{ ok: boolean; status: string; snapshot_hash: string | null; issues: string[] }> {
-  const status = await contextGraphStatus(root, { extractors: contextGraphExtractors() });
+  const status = await contextGraphStatus(root, { extractors: codeNavigationGraphExtractors() });
   if (status.status !== 'fresh') {
     return {
       ok: false,
@@ -257,85 +252,19 @@ async function wikiValidateContextGraph(root: string): Promise<{ ok: boolean; st
 }
 
 /**
- * `sks wiki refresh --code` owns the full graph rebuild: compile the Context
- * Graph incrementally, lint it, write the snapshot atomically, then project the
- * code pack from that snapshot. There is no second scanner running alongside —
- * the graph is the single compiled source and the pack is its projection.
+ * NC-21: code-index / wiki / pack rebuild SSOT is `$sks-align`.
+ * `sks wiki refresh --code` remains as a compatibility alias into `sks align run`.
+ * Image/voxel wiki subcommands stay on this command and are not part of the alias.
  */
 async function wikiRefreshCode(args: any = []): Promise<void> {
-  const root = await sksRoot();
-  const tokenBudgetRaw = readFlagValue(args, '--token-budget', null);
-  const parsedBudget = tokenBudgetRaw ? Number.parseInt(String(tokenBudgetRaw), 10) : Number.NaN;
-  const tokenBudget = Number.isFinite(parsedBudget) ? parsedBudget : undefined;
-
-  // This is the explicit maintenance path, so it is where the proof reverse
-  // index is seeded or healed. Proof writes deliberately never walk the bank to
-  // create it, and the evidence extractor needs it to avoid a directory read.
-  const proofIndex = repairTriWikiProofIndex(root);
-
-  const compiled = await compileContextGraph({
-    root,
-    extractors: contextGraphExtractors(),
-    // `context-pack.json` is a generated graph input but is intentionally
-    // excluded from the cache key. The explicit repair path must therefore
-    // re-read extractor inputs instead of replaying a fragment captured before
-    // the latest `wiki pack`.
-    useFragmentCache: false
-  });
-  const lintErrors = compiled.issues.filter((issue: any) => issue.severity === 'error');
-  if (!compiled.ok || !compiled.snapshot) {
-    const blocked = {
-      schema: 'sks.wiki-refresh-code.v1',
-      ok: false,
-      reason: compiled.reason ?? 'context_graph_compile_failed',
-      blockers: compiled.blockers ?? [],
-      issues: lintErrors.slice(0, 20).map((issue: any) => `${issue.code}: ${issue.message}`),
-      repair_command: CONTEXT_GRAPH_REPAIR_COMMAND,
-      written: null
-    };
-    process.exitCode = 2;
-    process.stderr.write(`wiki-refresh-code: root=${root} graph=blocked reason=${blocked.reason} blockers=${JSON.stringify(blocked.blockers)}\n`);
-    if (flag(args, '--json')) return console.log(JSON.stringify(blocked, null, 2));
-    console.log('Sneakoscope TriWiki Context Graph Refresh');
-    console.log(`Context graph: blocked (${blocked.reason})`);
-    for (const issue of blocked.issues) console.log(`- ${issue}`);
-    return;
+  const { alignCommand } = await import('./align-command.js');
+  if (flag(args, '--json')) {
+    // Preserve JSON callers: align emits its own schema; note the alias.
+    process.stderr.write('wiki-refresh-code: aliasing to sks align run (product SSOT)\n');
+  } else {
+    console.log('sks wiki refresh --code → sks align run (product SSOT for code-index rebuild)');
   }
-
-  const projected = await buildWorkspaceCodePack(root, {
-    ...(tokenBudget === undefined ? {} : { tokenBudget }),
-    status: { status: 'fresh', snapshotHash: compiled.snapshotHash }
-  });
-  const pack = projected.pack;
-  const validation = pack ? await validateCodePack(pack, root) : { ok: false, issues: projected.errors };
-  const written = pack && validation.ok ? await writeCodePackAtomic(root, pack) : null;
-
-  const result = {
-    schema: 'sks.wiki-refresh-code.v1',
-    ok: validation.ok,
-    issues: validation.issues,
-    snapshot_hash: compiled.snapshotHash,
-    nodes: compiled.snapshot.nodeCount,
-    edges: compiled.snapshot.edgeCount,
-    graph_warnings: compiled.issues.filter((issue: any) => issue.severity === 'warning').length,
-    incremental: Boolean(compiled.incremental),
-    proof_index: { ok: proofIndex.ok, indexed: proofIndex.indexed_count, previous_status: proofIndex.previous_status },
-    compile_ms: compiled.durationMs,
-    entries: pack ? pack.entries.length : 0,
-    token_cost: pack ? pack.total_token_cost : 0,
-    token_budget: pack ? pack.token_budget : 0,
-    written: written ? written.path : null
-  };
-  process.exitCode = validation.ok ? 0 : 2;
-  // Always note the counts/issues on stderr (even in --json mode, where stdout must
-  // stay pure JSON) so a blocked run is diagnosable from stderr_tail alone without
-  // needing to reproduce it separately in an isolated environment.
-  process.stderr.write(`wiki-refresh-code: root=${root} nodes=${result.nodes} edges=${result.edges} entries=${result.entries} token_cost=${result.token_cost}/${result.token_budget} issues=${JSON.stringify(validation.issues)}\n`);
-  if (flag(args, '--json')) return console.log(JSON.stringify(result, null, 2));
-  console.log('Sneakoscope TriWiki Context Graph Refresh');
-  console.log(`Context graph: ok (${result.nodes} nodes, ${result.edges} edges, snapshot ${String(result.snapshot_hash).slice(0, 12)})`);
-  console.log(`Code pack projection: ${validation.ok ? 'ok' : 'blocked'} (${result.entries} entries, ${result.token_cost}/${result.token_budget} tokens)`);
-  for (const issue of validation.issues) console.log(`- ${issue}`);
+  await alignCommand('run', Array.isArray(args) ? args : []);
 }
 
 /** Cheap freshness check: compares the code pack's recorded git HEAD sha (at

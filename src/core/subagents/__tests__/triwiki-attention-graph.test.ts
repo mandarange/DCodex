@@ -91,7 +91,7 @@ test('a missing graph is reported explicitly instead of degrading to text matchi
     const attention = await readBoundedTriwikiAttention(fixture.root, 8, HUB_FILE);
     assert.equal(attention.available, false);
     assert.equal(attention.reason, 'context_graph_missing');
-    assert.equal(attention.repair_command, 'sks wiki refresh --code');
+    assert.equal(attention.repair_command, 'sks align run');
     assert.deepEqual(attention.anchors, []);
     assert.equal(attention.attention_mode, null);
     assert.equal(attention.profile, null);
@@ -109,7 +109,7 @@ test('a stale graph is refused rather than answered from a lexical index', async
     assert.equal(attention.available, false);
     assert.equal(attention.reason, 'context_graph_stale');
     assert.deepEqual(attention.anchors, []);
-    assert.equal(attention.repair_command, 'sks wiki refresh --code');
+    assert.equal(attention.repair_command, 'sks align run');
   });
 });
 

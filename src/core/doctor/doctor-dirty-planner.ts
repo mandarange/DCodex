@@ -138,7 +138,7 @@ function phaseInputFiles(id: string): string[] {
   if (id.includes('skill')) return ['.agents/skills', 'src/scripts/skill-registry-ledger-check.ts'];
   if (id.includes('native')) return ['src/core/codex-native', 'src/scripts/native-capability-postcheck-check.ts'];
   if (id.includes('secret')) return ['safety-mutation-allowlist.json', 'src/scripts/secret-preservation-check.ts'];
-  return ['package.json', 'config/codex-releases/rust-v0.145.0.json'];
+  return ['package.json', 'config/codex-releases/rust-v0.146.0.json'];
 }
 
 function packageIdentity(): Record<string, string | null> {

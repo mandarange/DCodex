@@ -1,13 +1,11 @@
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import fs from 'node:fs/promises';
 import { canonicalFilesystemPath, PACKAGE_VERSION, packageRoot, readJson, runProcess, throttleLines, which } from './fsx.js';
 import { createRequestedScopeContract } from './safety/requested-scope-contract.js';
 import { guardedPackageInstall, guardContextForRoute } from './safety/mutation-guard.js';
 import {
   isUpdateMigrationReceiptCurrent,
-  projectUpdateMigrationReceiptPath,
   readProjectUpdateMigrationReceipt,
   resolveInstalledSksEntrypoint,
   runPackageLocalDoctor,
@@ -118,8 +116,6 @@ export interface SksUpdateCheckResult {
 }
 
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org/';
-const DOCTOR_OWNED_UPDATE_MIGRATION_SINCE = '8.0.2';
-
 export interface SksLockedInstalledVersionProbeInput {
   packageName: string;
   npmBin: string | null;
@@ -1347,29 +1343,13 @@ async function runSksUpdateNowInternal(
         expectedVersion: installVersion,
         root: projectReceiptRoot
       });
-      const legacyCompatibilityReceiptAllowed =
-        compareSemVer(installVersion, DOCTOR_OWNED_UPDATE_MIGRATION_SINCE) === -1;
       const receiptResult = doctorReceiptCurrent
         ? { receipt: doctorReceipt, error: null, via: 'new_version_doctor' }
-        : legacyCompatibilityReceiptAllowed
-          ? {
-            ...(await writeUpdatedPackageMigrationReceipt({
-              newBinary,
-              expectedVersion: installVersion,
-              root: projectReceiptRoot,
-              source: 'update-now-compatibility-fallback',
-              doctor: newVersionDoctor,
-              updateStages: stages,
-              fromVersion: check.current,
-              env: nestedProcessEnv
-            })),
-            via: 'new_package_compatibility_fallback'
-          }
-          : {
-              receipt: doctorReceipt,
-              error: 'new_version_doctor_receipt_missing_or_stale',
-              via: 'new_version_doctor_receipt_required'
-            };
+        : {
+            receipt: doctorReceipt,
+            error: 'new_version_doctor_receipt_missing_or_stale',
+            via: 'new_version_doctor_receipt_required'
+          };
       projectReceipt = receiptResult.receipt;
       migrationCurrent = isUpdateMigrationReceiptCurrent(projectReceipt, installVersion);
       recordMigrationReceiptStage(stage, 'hook_trust_repair', projectReceipt, 'hook-trust-refresh');
@@ -1383,13 +1363,10 @@ async function runSksUpdateNowInternal(
         error: receiptResult.error
       });
       recordMigrationReceiptStage(stage, 'global_skills_reconcile', projectReceipt, 'skills-reconcile');
-      const nativeSetupOwnedByDoctor = receiptResult.via === 'new_version_doctor';
       stage('native_capability_setup', migrationCurrent, migrationCurrent
-        ? nativeSetupOwnedByDoctor
-          ? 'owned_by_new_version_doctor'
-          : 'skipped_legacy_target_compatibility'
+        ? 'owned_by_new_version_doctor'
         : 'doctor_migration_not_current', {
-        owner: nativeSetupOwnedByDoctor ? 'new_version_doctor' : 'legacy_compatibility_receipt',
+        owner: 'new_version_doctor',
         doctor_status: newVersionDoctor.status,
         receipt_source: projectReceipt?.source || null,
         receipt_version: projectReceipt?.sks_version || null
@@ -1666,78 +1643,6 @@ function isFreshDoctorMigrationReceipt(input: {
   return receipt.generated_at !== priorReceipt.generated_at
     || receipt.source !== priorReceipt.source
     || receipt.installation_epoch_sha256 !== priorReceipt.installation_epoch_sha256;
-}
-
-async function writeUpdatedPackageMigrationReceipt(input: {
-  newBinary: string;
-  expectedVersion: string;
-  root: string;
-  source: string;
-  doctor: PackageLocalDoctorRun;
-  updateStages: SksUpdateNowStage[];
-  fromVersion: string;
-  env: NodeJS.ProcessEnv;
-}): Promise<{ receipt: UpdateMigrationReceipt | null; error: string | null }> {
-  const newPackageRoot = path.resolve(path.dirname(input.newBinary), '..', '..');
-  const moduleHref = pathToFileURL(path.join(newPackageRoot, 'dist', 'core', 'update', 'update-migration-state.js')).href;
-  const script = [
-    "let raw = '';",
-    "for await (const chunk of process.stdin) raw += chunk;",
-    `const m = await import(${JSON.stringify(moduleHref)});`,
-    'const receipt = await m.writeProjectUpdateMigrationReceipt(JSON.parse(raw));',
-    "console.log(JSON.stringify({ schema: 'sks.update-migration-write-ack.v1', status: receipt.status, sks_version: receipt.sks_version, generated_at: receipt.generated_at }));"
-  ].join('\n');
-  const payload = {
-    root: input.root,
-    source: input.source,
-    doctor: input.doctor,
-    updateStages: input.updateStages,
-    fromVersion: input.fromVersion,
-    blockers: [],
-    warnings: []
-  };
-  const run = await runProcess(process.execPath, ['--input-type=module', '-e', script], {
-    cwd: input.root,
-    env: input.env,
-    input: JSON.stringify(payload),
-    timeoutMs: updateDoctorTimeoutMs(input.env),
-    maxOutputBytes: 128 * 1024
-  }).catch((error: unknown) => ({
-    code: 1,
-    stdout: '',
-    stderr: error instanceof Error ? error.message : String(error),
-    timedOut: false
-  }));
-  let ack: any = null;
-  for (const line of String(run.stdout || '').trim().split(/\r?\n/).reverse()) {
-    try {
-      ack = JSON.parse(line);
-      break;
-    } catch {}
-  }
-  const receipt = run.code === 0
-    ? await readJson<UpdateMigrationReceipt | null>(projectUpdateMigrationReceiptPath(input.root), null).catch(() => null)
-    : null;
-  const acknowledgementMatches = ack?.schema === 'sks.update-migration-write-ack.v1'
-    && ack.status === receipt?.status
-    && ack.sks_version === receipt?.sks_version
-    && ack.generated_at === receipt?.generated_at;
-  const current = run.code === 0
-    && acknowledgementMatches
-    && isUpdateMigrationReceiptCurrent(receipt, input.expectedVersion);
-  const receiptError = run.code !== 0
-    ? run.timedOut === true
-      ? `new package migration receipt writer timed out after ${updateDoctorTimeoutMs(input.env)}ms`
-      : String(run.stderr || run.stdout || 'new package migration receipt writer failed').trim()
-    : !acknowledgementMatches
-      ? 'new package migration receipt acknowledgement did not match the written receipt'
-      : `new package migration receipt did not bind to ${input.expectedVersion}`;
-  return {
-    receipt,
-    error: current
-      ? null
-      : receiptError.slice(-500)
-  };
 }
 
 export function sksGlobalInstallArgs(packageName: string, version: string, registry = DEFAULT_REGISTRY): string[] {

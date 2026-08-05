@@ -24,7 +24,7 @@ async function computeNote(root: string, gitTimeoutMs: number): Promise<string |
     advisoryCache: true,
   });
   if (!freshness.conclusive || !freshness.current_sha || freshness.fresh) return null;
-  return 'SKS note: the codebase code pack is stale (HEAD moved since it was built). Run `sks wiki refresh --code` to refresh source-cited code context.';
+  return 'SKS note: the codebase code pack is stale (HEAD moved since it was built). Run `sks align run` to refresh source-cited code context.';
 }
 
 async function raceWithTimeout<T>(work: Promise<T>, ms: number): Promise<T | null> {

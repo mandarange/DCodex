@@ -277,7 +277,7 @@ async function skillContent(id: string): Promise<void> {
   const mod = await importDist('core/codex-app/codex-skill-sync.js')
   const skillsRoot = path.join(tmp, 'skills')
   const report = await mod.syncCodexSksSkills({ root: tmp, skillsRoot, apply: true })
-  const skill = fs.readFileSync(path.join(skillsRoot, 'sks-loop', 'SKILL.md'), 'utf8')
+  const skill = fs.readFileSync(path.join(skillsRoot, 'sks-align', 'SKILL.md'), 'utf8')
   assertGate(skill.includes('Purpose:') && skill.includes('Route:') && skill.includes('Proof paths:') && skill.includes('Failure recovery:'), 'managed skill content incomplete', { skill, report })
   assertGate(report.interop.clobbered_user_skills === false, 'skill sync clobbered user skills', report)
   emitGate(id)
@@ -471,8 +471,8 @@ function forbiddenTerms(): string[] {
 
 function fakeEnv(opts: { hook: 'approved' | 'unknown'; agentType: 'supported' | 'unsupported' }): Record<string, string | undefined> {
   return swapEnv({
-    SKS_CODEX_0138_FAKE: '1',
-    SKS_CODEX_0139_FAKE: '1',
+    SKS_CODEX_CURRENT_APP_FAKE: '1',
+    SKS_CODEX_CURRENT_CORE_FAKE: '1',
     SKS_CODEX_PLUGIN_JSON_FAKE: '1',
     SKS_CODEX_HOOK_APPROVAL_FIXTURE: opts.hook,
     SKS_CODEX_AGENT_TYPE_FIXTURE: opts.agentType,

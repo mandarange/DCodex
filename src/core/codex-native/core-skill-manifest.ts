@@ -5,7 +5,6 @@ import { compactSkillDiscoveryDescription } from '../skills/skill-agent-metadata
 import { canonicalSkillName } from './skill-name-canonicalizer.js';
 
 type LegacySksCoreSkillRoute =
-  | '$Loop'
   | '$Naruto'
   | '$QA-LOOP'
   | '$Research'
@@ -14,6 +13,7 @@ type LegacySksCoreSkillRoute =
   | '$Computer-Use'
   | '$Init-Deep'
   | '$SEO-GEO-OPTIMIZER'
+  | '$Cleanup'
   | '$Align';
 
 export type SksCoreSkillRoute = '$sks' | `$sks-${string}`;
@@ -55,16 +55,6 @@ const CORE_SKILL_DEFINITIONS: Array<{
   evidence: string;
   fallback: string;
 }> = [
-  {
-    id: 'sks-core-loop',
-    canonical_name: 'loop',
-    display_name: 'loop',
-    route: '$Loop',
-    purpose: 'compile persisted route work into bounded loop plans with continuation evidence.',
-    when: 'Use for resumable route stages, memory hints, and loop mission artifacts.',
-    evidence: '.sneakoscope/loops/** plus route-local proof artifacts.',
-    fallback: 'Record the unavailable surface as blocked; do not fabricate a loop proof.'
-  },
   {
     id: 'sks-core-naruto',
     canonical_name: 'naruto',
@@ -171,17 +161,30 @@ const CORE_SKILL_DEFINITIONS: Array<{
     fallback: 'Do not auto-allow training crawlers or fabricate AI answer visibility; mark missing live outcomes unverified and keep recovery on the unified optimizer route.'
   },
   {
+    id: 'sks-core-cleanup',
+    canonical_name: 'cleanup',
+    display_name: 'cleanup',
+    route: '$Cleanup',
+    purpose: 'blank the active SKS TriWiki so no prior memory, wrongness, generated graph, pack, cache, report, or AGENTS projection can influence the next code index.',
+    when: 'Use only when the user asks for TriWiki cleanup/reset/blanking or invokes $Cleanup; this is an explicit R3 local mutation.',
+    workflow: 'Run sks cleanup plan first. After the operator reviews the inventory, run sks cleanup run --apply. The command locks TriWiki state, re-hashes the planned bytes, moves active TriWiki surfaces through a temporary same-filesystem swap, removes managed AGENTS.md projections, verifies the blank state, then permanently deletes the swap. No prior generation or quarantine is retained. Use sks cleanup proof to verify the blank state. It never consolidates old prose into new active memory.',
+    safety: 'Preserve repository source, ordinary docs, missions, evidence, and release proof history. Refuse symlink targets, plan/apply byte drift, and implicit apply. Roll back before the deletion commit; after deletion begins, report any incomplete deletion honestly. Never run doctor --fix as a substitute.',
+    cli: 'sks cleanup plan|run|status|proof [--apply] [--json]',
+    evidence: '.sneakoscope/triwiki-cleanup-receipt.json proving destructive blanking, no retained backup, and removal of the temporary swap.',
+    fallback: 'If the active state or temporary-swap deletion cannot be proved, keep the command blocked and report exact paths; do not claim cleanup.'
+  },
+  {
     id: 'sks-core-align',
     canonical_name: 'align',
     display_name: 'align',
     route: '$Align',
-    purpose: 'run a one-shot, evidence-gated modernization of SKS prompts, settings, and generated skill/command surfaces for GPT-5.6.',
-    when: 'Use when the user invokes $Align or requests a current OpenAI prompting, tool-calling, agent-orchestration, skill, or plugin contract audit.',
-    workflow: 'Run sks align prepare|run to create the skill-first mission and register the literal request in work-order-ledger.json. Then execute the sealed workstreams: (1) align outcome-first prompt grammar to https://developers.openai.com/api/docs/guides/latest-model, retaining success criteria, stop conditions, permissions, safety, tool routing, and validation; (2) make and evidence a programmatic-tool-calling adoption decision from https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling instead of forcing PTC onto adaptive, approval-bound, or write-capable work; (3) make and evidence an Agents SDK adoption decision from https://developers.openai.com/api/docs/guides/agents while preserving the current Sol/Terra/Luna role and lifecycle contracts; (4) audit the official Codex skill schema at https://developers.openai.com/codex/skills, current Plugins guidance at https://developers.openai.com/codex/plugins, and https://github.com/openai/plugins, using the deprecated openai/skills repository only as migration evidence rather than as the active baseline; (5) inventory and test every generated SKS command and skill surface; (6) remove superseded version-specific settings and deduplicate common policy text without weakening invariants. Use Naruto for genuinely independent slices. Keep source receipts, decisions, coverage, changed paths, deletions, deduplication, and verification current in align-ledger.json, pass align-gate.json, then close the work order only after the canonical Completion Proof and trust report both verify.',
-    safety: 'Protect immutable core skills (mutable_by_doctor/update/setup=false). Do not invent official guidance or modernization evidence. Do not keep superseded model-prompt compatibility knobs, force PTC or Agents SDK where their preconditions are absent, or rewrite this align skill body through doctor/update/setup.',
-    cli: 'sks align prepare|run|status|proof ["scope"] [--json]',
-    evidence: 'work-order-ledger.json, align-plan.json, align-ledger.json, source receipts, PTC and Agents decisions, complete command/skill coverage, focused eval results, align-gate.json, completion-proof.json, trust-report.json, changed-path inventory, deleted-legacy-settings list, deduplicated-surfaces list, and Honest Mode.',
-    fallback: 'If required official GPT-5.6, tool-calling, Agents, skill, or Plugins guidance cannot be verified, record the missing source and blocker in align-ledger.json and keep align-gate.json unpassed.'
+    purpose: 'create or replace TriWiki with an exhaustive repository code-navigation index so an LLM can find the purpose, file, symbol, exact coordinate, and supported directed relationships of current code quickly.',
+    when: 'Use when the user invokes $Align or asks to reread the current codebase and rebuild or repair TriWiki strictly from current code. Cleanup is optional and independent.',
+    workflow: 'Run sks align run directly against either an absent or existing TriWiki. Align ignores all prior TriWiki state as index input, walks every accepted current source file without incremental or fragment cache reuse, derives purpose only from source comments/docstrings, records exact file and symbol coordinates plus extractor-supported source relations, rechecks the full source inventory digest, validates graph/meta/manifest/code-pack/context-pack in temporary staging, transactionally replaces the active generation, then deletes the temporary prior-state handle. context-graph.json is the exhaustive authority; context-pack.json and managed AGENTS.md blocks are bounded fast-lookup projections. Keep align-ledger.json and align-gate.json truthful, then finish reflection and Honest Mode.',
+    safety: 'Never read prior TriWiki memory, wrongness, mission prompts, ordinary docs, external docs, proof cards, or LLM inference as index input. Refuse caps, extraction-limit violations, unreadable/oversized/binary supported-source files, symlink escapes, source drift during the scan, partial staging, non-code extractors, or incomplete file coverage. Do not retain a previous generation.',
+    cli: 'sks align prepare|run|status|proof [mission|"scope"] [--json]',
+    evidence: 'work-order-ledger.json, align-plan.json, align-ledger.json, align-gate.json, .sneakoscope/wiki/context-graph.json, context-graph.meta.json, code-navigation-manifest.json, code-pack.json, context-pack.json, managed AGENTS.md projections, completion-proof.json, trust-report.json, and Honest Mode.',
+    fallback: 'If exhaustive source coverage, source CAS, staging validation, projection, transactional replacement, or temporary-swap deletion cannot be proved, roll back before deletion when possible, record the exact blocker, and leave align-gate.json blocked.'
   }
 ];
 

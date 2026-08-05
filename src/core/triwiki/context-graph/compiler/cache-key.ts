@@ -100,6 +100,10 @@ export interface ComputeContextGraphCacheKeyInput {
   extractors: readonly ExtractorIdentity[];
 }
 
+export interface ComputeSourceOnlyContextGraphCacheKeyInput extends ComputeContextGraphCacheKeyInput {
+  inputHashes: Readonly<Record<string, string>>;
+}
+
 function toPosix(value: string): string {
   return value.replace(/\\/g, '/');
 }
@@ -265,6 +269,8 @@ function extractorSchemaRevision(extractors: readonly ExtractorIdentity[]): stri
 export function contextGraphCacheKey(parts: ContextGraphCacheKeyParts): string {
   return sha256(
     JSON.stringify([
+      parts.sourcePolicy ?? 'workspace',
+      parts.sourceInventoryHash ?? '',
       parts.workspaceIdentity,
       parts.head ?? 'no-head',
       parts.gitState,
@@ -296,6 +302,7 @@ export async function computeContextGraphCacheKey(
     ]);
 
   const parts: ContextGraphCacheKeyParts = {
+    sourcePolicy: 'workspace',
     workspaceIdentity: identity,
     head: git.head,
     gitState: git.state,
@@ -318,7 +325,53 @@ export async function computeContextGraphCacheKey(
   };
 }
 
+/**
+ * Cache identity for the code-navigation graph. Only accepted source bytes,
+ * extractor revisions and TypeScript resolution config participate. Missions,
+ * package names, checkout directory names, docs, proof banks, existing wiki
+ * state, git history, and release manifests cannot influence this key.
+ */
+export async function computeSourceOnlyContextGraphCacheKey(
+  input: ComputeSourceOnlyContextGraphCacheKeyInput
+): Promise<ContextGraphCacheKeyResult> {
+  const root = path.resolve(input.root);
+  const empty = sha256('');
+  const sourceInventoryHash = sha256(
+    Object.entries(input.inputHashes)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([relative, hash]) => `${relative}\u0000${hash}`)
+      .join('\n')
+  );
+  const parts: ContextGraphCacheKeyParts = {
+    sourcePolicy: 'repository_code_only',
+    sourceInventoryHash,
+    // Source-only graphs are content-addressed and portable across equivalent
+    // checkouts. Project/package names and directory basenames are not code
+    // semantics and must not invalidate an otherwise identical index.
+    workspaceIdentity: sha256('repository_code_only'),
+    head: null,
+    gitState: 'clean',
+    trackedDirtyFingerprint: sourceInventoryHash,
+    untrackedFingerprint: empty,
+    schemaRevision: extractorSchemaRevision(input.extractors),
+    tsconfigHash: await fingerprintFiles(root, TSCONFIG_INPUTS),
+    commandManifestHash: empty,
+    gateManifestHash: empty,
+    proofIndexHash: empty,
+    wikiContextHash: empty
+  };
+  return {
+    key: contextGraphCacheKey(parts),
+    parts,
+    reusable: true,
+    reasons: [],
+    dirtyPaths: []
+  };
+}
+
 const PART_REASONS: ReadonlyArray<readonly [keyof ContextGraphCacheKeyParts, ContextGraphStaleReason]> = [
+  ['sourcePolicy', 'cache_key_changed'],
+  ['sourceInventoryHash', 'dirty_fingerprint_changed'],
   ['head', 'head_changed'],
   ['trackedDirtyFingerprint', 'dirty_fingerprint_changed'],
   ['untrackedFingerprint', 'dirty_fingerprint_changed'],

@@ -3,7 +3,7 @@
  *
  * These are inspection surfaces, not build surfaces: nothing here compiles,
  * writes, or repairs the graph. A full rebuild is owned by
- * `sks wiki refresh --code`, and every failure here names that command rather
+ * `sks align run`, and every failure here names that command rather
  * than quietly doing it for you.
  */
 import { flag, readOption } from '../../cli/args.js';
@@ -12,7 +12,7 @@ import {
   type ContextGraphLintIssue
 } from '../triwiki/context-graph/contracts.js';
 import { contextGraphFreshnessPreflight } from '../hooks-runtime/context-graph-freshness-preflight.js';
-import { contextGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
+import { codeNavigationGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
 import { runContextGraphLint } from '../triwiki/context-graph/lint/index.js';
 import { contextGraphQueryProfile } from '../triwiki/context-graph/profiles.js';
 import { queryContextGraph } from '../triwiki/context-graph/query/index.js';
@@ -55,7 +55,7 @@ async function graphStatusFast(root: string): Promise<{ result: unknown; ok: boo
 }
 
 async function graphStatus(root: string): Promise<{ result: unknown; ok: boolean; lines: string[] }> {
-  const status = await contextGraphStatus(root, { extractors: contextGraphExtractors() });
+  const status = await contextGraphStatus(root, { extractors: codeNavigationGraphExtractors() });
   const meta = await readContextGraphMeta(root);
   const result = {
     schema: 'sks.triwiki-graph-status.v1',

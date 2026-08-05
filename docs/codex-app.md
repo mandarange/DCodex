@@ -10,7 +10,7 @@ SKS uses Codex App as the app-facing control surface for dollar-command skills, 
 
 ## Current Compatibility Baseline
 
-SKS 7.4.0 prefers the OpenAI Codex CLI/App channel `rust-v0.145.0` as the package-tracked latest, with the 0.145.0 SDK/CLI dependency graph, active release manifest, and App Server v2 schemas kept in lockstep for release proof. Runtime policy remains version-agnostic: feature routes capability-gate, and Menu Bar / Center induce updates to preferred latest. Hook output validation uses the vendored OpenAI Codex `latest` generated schemas plus the SKS zero-warning strict subset documented in [codex-cli-compat.md](codex-cli-compat.md). Codex 0.134-0.139 notes remain inherited historical compatibility evidence; they are not an exclusive product lock.
+SKS 8.0.5 uses the OpenAI Codex CLI/App channel `rust-v0.146.0` as its current runtime contract, with the 0.146.0 SDK/CLI dependency graph, active release manifest, and App Server v2 schemas kept in lockstep for release proof. Menu Bar / Center induce updates to this current version, and SKS-managed configuration is reconciled to the same contract instead of retaining historical compatibility surfaces. Hook output validation uses the vendored OpenAI Codex `latest` generated schemas plus the SKS zero-warning strict subset documented in [codex-cli-compat.md](codex-cli-compat.md).
 
 ## Chat, Pro Models, And Fast UI Preservation
 
@@ -61,7 +61,7 @@ sks codex-lb disable
 sks codex-lb capabilities --level transport --json
 sks codex-lb migrate-legacy-desktop --restart-app
 sks codex-app chrome-extension --json
-sks codex compatibility --require rust-v0.145.0 --json
+sks codex compatibility --require rust-v0.146.0 --json
 sks codex 0.144 --json
 sks codex schema --json
 sks codex update-status --json

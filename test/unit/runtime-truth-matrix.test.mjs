@@ -15,7 +15,7 @@ test('runtime truth matrix gate writes the v2 supporting-proof contract', () => 
   assert.equal(report.release_version, pkg.version);
   assert.equal(report.execution_authority.workflow, 'official_codex_subagent');
   assert.equal(report.rows.filter((row) => row.evidence_role === 'execution_authority').length, 1);
-  for (const subsystem of ['official_codex_subagent', 'cleanup', 'intelligent_work_graph', 'source_intelligence', 'goal_mode', 'route_blackbox', 'dynamic_scheduler', 'codex_0_134', 'mcp_0_134', 'parallel_write', 'patch_proof', 'native_worker_backend_router']) {
+  for (const subsystem of ['official_codex_subagent', 'cleanup', 'intelligent_work_graph', 'source_intelligence', 'goal_mode', 'route_blackbox', 'dynamic_scheduler', 'codex_current', 'mcp_current', 'parallel_write', 'patch_proof', 'native_worker_backend_router']) {
     const row = report.rows.find((item) => item.subsystem === subsystem);
     assert.ok(row, `missing subsystem ${subsystem}`);
     assert.equal(typeof row.proof_level, 'string');

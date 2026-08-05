@@ -9,14 +9,13 @@ export interface CodexReleaseManifest {
   readonly schema: typeof CODEX_RELEASE_MANIFEST_SCHEMA;
   /** Preferred / recommended latest Codex channel tracked by this SKS package. */
   readonly targetTag: string;
-  /** Preferred CLI version (release channel), not an exclusive product lock. */
+  /** Required CLI version for the current package release. */
   readonly requiredCliVersion: string;
-  /** Alias of requiredCliVersion — preferred latest operator Codex. */
+  /** Alias of requiredCliVersion used by update messaging. */
   readonly preferredCliVersion: string;
   readonly sdkVersion: string;
   /**
-   * Soft floor for general SKS integration. Features that need newer Codex
-   * degrade or block only themselves (with update CTA), not all of SKS.
+   * Old runtimes are not supported; update/doctor converge to this version.
    */
   readonly minimumSupportedVersion: string;
   /**
@@ -34,15 +33,15 @@ export interface CodexReleaseManifest {
 
 export const CURRENT_CODEX_RELEASE_MANIFEST: CodexReleaseManifest = {
   schema: CODEX_RELEASE_MANIFEST_SCHEMA,
-  targetTag: 'rust-v0.145.0',
-  requiredCliVersion: '0.145.0',
-  preferredCliVersion: '0.145.0',
-  sdkVersion: '0.145.0',
-  minimumSupportedVersion: '0.133.0',
-  narutoCapabilityFloorVersion: '0.145.0',
+  targetTag: 'rust-v0.146.0',
+  requiredCliVersion: '0.146.0',
+  preferredCliVersion: '0.146.0',
+  sdkVersion: '0.146.0',
+  minimumSupportedVersion: '0.146.0',
+  narutoCapabilityFloorVersion: '0.146.0',
   protocolMode: 'app-server-v2',
-  generatedSchemaSha256: '57b4a85429300c37f2f2e5fc8662c3dbeb88d51419e25becb8501c46348e1ecf',
-  upstreamCommit: 'rust-v0.145.0',
+  generatedSchemaSha256: '2be4fd32103409b5b4864daaf429f6b61a5e55eb98ca5f63cd43569556b009c8',
+  upstreamCommit: 'rust-v0.146.0',
   featurePolicies: {
     multiAgentMode: 'delegate',
     multiAgentV2: 'delegate',

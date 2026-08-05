@@ -115,6 +115,31 @@ test('a secret-like value and a raw environment value are both hard errors', () 
   }
 });
 
+test('the exact public Codex origin label is not treated as a leaked environment value', () => {
+  const root = makeFixtureRoot('cgl-public-origin');
+  try {
+    const node = fileNode('src/a.ts', A_HASH, {
+      metadata: { purpose: 'Codex Desktop integration constants.' }
+    });
+    const result = runContextGraphLint({
+      root,
+      snapshot: snapshotOf([node], []),
+      env: { CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'Codex Desktop' }
+    });
+    assert.equal(result.ok, true, result.errors.map((issue) => issue.message).join(','));
+
+    const arbitraryOverride = runContextGraphLint({
+      root,
+      snapshot: snapshotOf([node], []),
+      env: { CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'Codex Desktop integration constants.' }
+    });
+    assert.equal(arbitraryOverride.ok, false);
+    assert.ok(codes(arbitraryOverride.errors).includes('secret_like_value'));
+  } finally {
+    removeFixtureRoot(root);
+  }
+});
+
 test('a duplicate node id is a hard error', () => {
   const root = makeFixtureRoot('cgl-duplicate');
   try {

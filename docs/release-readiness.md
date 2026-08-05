@@ -1,8 +1,21 @@
-# SKS 8.0.4 Release Readiness
+# SKS 8.0.5 Release Readiness
 
 This document is the current fail-closed release contract for `sneakoscope`
-8.0.4. The current package version on this branch is 8.0.4. It is a readiness
+8.0.5. The current package version on this branch is 8.0.5. It is a readiness
 checklist, not evidence that the version has already been published.
+
+## Required vs recommended evidence
+
+**Required** for “release-ready” claims: green **release gates**
+(`npm run release:check:affected` / `npm run release:check:confidence` and the
+gates they compose), including release-core review/security/bugbot evidence when
+those gates demand it. Run review-class checks near the end of work once, then
+retry only remaining gaps.
+
+**Recommended** (helpful, not automatic substitutes for the required set):
+TypeScript typecheck, focused unit/integration tests, and
+`npm publish --dry-run`. Do not treat recommended checks as the release SSOT
+without an explicit AMBIGUITY-RESOLUTIONS revision.
 
 ## Completion Boundary
 
@@ -217,7 +230,7 @@ path.
 - no live data mutation is performed by a release test unless the sealed test
   contract explicitly permits it.
 
-## Physical 8.0.4 Release Gates
+## Physical 8.0.5 Release Gates
 
 All four receipts below are required before tagging, staging, publishing, or a
 release-complete claim. Hermetic tests remain necessary but cannot replace
@@ -245,7 +258,7 @@ missing or stale evidence blocks before registry mutation.
    false residue blocker.
 2. **One current Menu Bar process:** begin with a prior-version companion,
    complete update, and prove the process inventory contains exactly one SKS
-   Menu Bar. Its running-process version probe must equal 8.0.4. A build stamp
+   Menu Bar. Its running-process version probe must equal 8.0.5. A build stamp
    without process readback is insufficient.
 3. **Measured codex-lb request:** turn **Use codex-lb** on and capture one real
    request whose destination matches the configured remote base URL and whose
@@ -258,20 +271,17 @@ missing or stale evidence blocks before registry mutation.
    this gate.
 
 This repository change records the gate contract only. It does not claim that
-credentials were available, any live gate ran, or 8.0.4 was tagged, staged,
+credentials were available, any live gate ran, or 8.0.5 was tagged, staged,
 published, or deployed.
 
 ## Local Verification Order
 
 The order is strict: cut the intended version once, then run every
 version-bound check, write and verify the full release stamp, and only then run
-the package dry-run. For this branch, 8.0.3 to 8.0.4 adds exact installed-CLI
-resolution after install, PATH-shadow fail-closed behavior, a working
-explicit `npm exec --package=sneakoscope@latest -- sneakoscope install` command,
-Luna/Terra max-only model-policy corrections, removal of retired product guidance,
-and the hardened BotFather/Telegram Center flow with bot-bound polling state.
-Earlier remediation and the one-time 7.6.0-to-8.0.0 major version
-cut already shipped and must not be rerun.
+the package dry-run. For this branch, 8.0.4 to 8.0.5 makes the Codex LB
+connection proof honor the gateway authentication transport stored by Center
+or explicitly selected for one invocation. Earlier remediation and the one-time
+7.6.0-to-8.0.0 major version cut already shipped and must not be rerun.
 
 After that version cut, start from a clean dependency installation and one
 clean build:
@@ -293,13 +303,16 @@ source-bound stamp must verify:
 ```bash
 npm run release:check:full --silent
 node ./dist/scripts/release-check-stamp.js verify
+node ./dist/scripts/release-registry-check.js --require-unpublished --require-pack-proof
 npm publish --dry-run --json --registry https://registry.npmjs.org/ --tag latest --access public
 ```
 
-The dry-run is registry-nonmutating, so its reproducibility preflight requires
-clean `main`, live `origin/main`, the current release stamp, and unpublished
-version state but does not require a local or remote `v<version>` tag. A real
-direct `npm publish` still requires both tags to resolve to the exact HEAD.
+The dry-run is registry-nonmutating. Its reproducibility preflight requires
+clean `main`, live `origin/main`, and the current release stamp but does not
+require a local or remote `v<version>` tag. The separate registry check above
+proves the version is still unpublished. A real direct `npm publish` also
+requires both tags to resolve to the exact HEAD and verifies the four
+source-bound physical release receipts before npm can mutate the registry.
 
 Focused checks must cover the changed Menu Bar, MCP, update, Remote,
 official-subagent, managed-residue, command-surface, and release-pack paths.
@@ -331,7 +344,7 @@ Inspect the exact packed file list and tarball, not only the source checkout.
 - generated project guidance contains only current dollar routes;
 - an isolated prefix install can run version, help, doctor, Naruto status, MCP
   status, update status, and Menu Bar diagnostics;
-- the 7.6.0 to 8.0.4 upgrade smoke and focused 8.0.3-to-8.0.4 resolved-CLI
+- the 7.6.0 to 8.0.5 upgrade smoke and focused 8.0.4-to-8.0.5 resolved-CLI
   regression use isolated HOME/prefix state and prove managed
   cleanup, user-file preservation, new-binary re-exec, rollback receipts,
   exact lifecycle command inventory, no timeout, no host HOME/prefix reuse,
@@ -341,7 +354,7 @@ Inspect the exact packed file list and tarball, not only the source checkout.
 - Linux package smoke and macOS native/Menu Bar smoke both pass.
 
 Record the tarball path, size, SHA-256, integrity, file inventory, installed
-smoke report, and platform-gate reports under the 8.0.4 release evidence root.
+smoke report, and platform-gate reports under the 8.0.5 release evidence root.
 
 ## Version Cut (Step 1, Before Local Verification)
 
@@ -355,13 +368,13 @@ npm run build:clean --silent
 npm run release:version-truth --silent
 ```
 
-The `patch` increment is the explicit 8.0.3-to-8.0.4 routing and installed-CLI
-resolution correction. Earlier patches and the one-time 7.6.0-to-8.0.0 `major`
-cut already shipped; do not rerun a version command after `package.json`
-reports 8.0.4.
+The `patch` increment is the explicit 8.0.4-to-8.0.5 Codex LB connection-proof
+authentication transport correction. Earlier patches and the one-time
+7.6.0-to-8.0.0 `major` cut already shipped; do not rerun a version command after
+`package.json` reports 8.0.5.
 
 Package metadata, lockfile, runtime constants, Rust metadata, managed assets,
-README, changelog, built output, and release evidence must agree on 8.0.4.
+README, changelog, built output, and release evidence must agree on 8.0.5.
 Sneakoscope does not install or rely on a Git pre-commit version hook.
 
 ## Trusted Staged Publishing
@@ -426,7 +439,7 @@ A maintainer then performs the separate human approval step with 2FA:
 npm stage approve <stage-id>
 ```
 
-Automation must stop before this approval. It must not claim that 8.0.4 is
+Automation must stop before this approval. It must not claim that 8.0.5 is
 published while only a stage exists.
 
 Because the trusted publisher is bound to the configured workflow on the
@@ -439,13 +452,13 @@ not restaged until the cause and version-uniqueness state are understood.
 After maintainer approval, verify the live registry independently:
 
 ```bash
-npm view sneakoscope@8.0.4 version dist.integrity dist.tarball --json
+npm view sneakoscope@8.0.5 version dist.integrity dist.tarball --json
 npm view sneakoscope dist-tags --json
 ```
 
-Then install `sneakoscope@8.0.4` into a fresh isolated prefix and rerun the
+Then install `sneakoscope@8.0.5` into a fresh isolated prefix and rerun the
 installed-package smoke. Completion requires the registry version to be
-8.0.4, `latest` to resolve to 8.0.4, integrity to match, and the fresh install
+8.0.5, `latest` to resolve to 8.0.5, integrity to match, and the fresh install
 to pass.
 
 ## Fail-Closed Rules

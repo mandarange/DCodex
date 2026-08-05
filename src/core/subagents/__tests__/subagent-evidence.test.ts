@@ -182,6 +182,42 @@ test('evidence completes only unique correlated start and stop thread ids with a
   assert.equal(evidence.ok, true)
 })
 
+test('a blocked parent can still prove that every requested child slice completed', () => {
+  const evidence = buildSubagentEvidence({
+    requestedSubagents: 2,
+    parentSummary: {
+      schema: SUBAGENT_PARENT_SUMMARY_SCHEMA,
+      status: 'blocked',
+      summary: 'Integration is blocked by an external release prerequisite.',
+      thread_outcomes: ['thread-a', 'thread-b'].map((threadId) => ({
+        thread_id: threadId,
+        status: 'completed',
+        summary: `${threadId}: assigned review completed`
+      })),
+      changed_files: [],
+      verification: [],
+      blockers: ['external_release_prerequisite']
+    },
+    events: [
+      { event_name: 'SubagentStart', thread_id: 'thread-a' },
+      { event_name: 'SubagentStart', thread_id: 'thread-b' },
+      { event_name: 'SubagentStop', thread_id: 'thread-a' },
+      { event_name: 'SubagentStop', thread_id: 'thread-b' }
+    ]
+  })
+
+  assert.equal(evidence.started_threads, 2)
+  assert.equal(evidence.completed_threads, 2)
+  assert.equal(evidence.failed_threads, 0)
+  assert.deepEqual(evidence.open_thread_ids, [])
+  assert.equal(evidence.parent_summary_status, 'blocked')
+  assert.equal(evidence.parent_summary_trustworthy, true)
+  assert.equal(evidence.ok, false)
+  assert.equal(evidence.status, 'blocked')
+  assert.ok(evidence.blockers.includes('parent_summary_blocked'))
+  assert.ok(!evidence.blockers.includes('parent_summary_failed'))
+})
+
 test('changed files require a named passed check or a justified not-applicable verification row', () => {
   const events = [
     { event_name: 'SubagentStart', thread_id: 'thread-a' },
@@ -1034,6 +1070,79 @@ test('a later prose final cannot downgrade a persisted trustworthy parent summar
     assert.deepEqual(await persistOrReuseTrustworthySubagentParentSummary(dir, 'Completion Summary: prose retry'), structured)
     const persisted = JSON.parse(await fsp.readFile(path.join(dir, SUBAGENT_PARENT_SUMMARY_FILENAME), 'utf8'))
     assert.deepEqual(persisted, structured)
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a trustworthy blocked parent summary persists as canonical terminal evidence', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-subagent-parent-summary-blocked-'))
+  try {
+    const blocked = {
+      schema: SUBAGENT_PARENT_SUMMARY_SCHEMA,
+      status: 'blocked',
+      summary: 'Parent integration is blocked by an external prerequisite.',
+      thread_outcomes: [{
+        thread_id: 'thread-a',
+        status: 'completed',
+        summary: 'Assigned audit completed.'
+      }],
+      changed_files: [],
+      verification: [],
+      blockers: ['external_prerequisite'],
+      run_id: 'run-blocked'
+    }
+
+    assert.deepEqual(
+      await persistOrReuseTrustworthySubagentParentSummary(dir, blocked, {
+        workflowStatus: 'parent_completed',
+        runId: 'run-blocked'
+      }),
+      blocked
+    )
+    assert.deepEqual(
+      JSON.parse(await fsp.readFile(path.join(dir, SUBAGENT_PARENT_SUMMARY_FILENAME), 'utf8')),
+      blocked
+    )
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('an honest prose final cannot delete same-run trustworthy blocked parent evidence', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-subagent-parent-summary-blocked-prose-'))
+  try {
+    const blocked = {
+      schema: SUBAGENT_PARENT_SUMMARY_SCHEMA,
+      status: 'blocked',
+      summary: 'Parent integration is blocked by external publication prerequisites.',
+      thread_outcomes: [{
+        thread_id: 'thread-a',
+        status: 'completed',
+        summary: 'Assigned audit completed.'
+      }],
+      changed_files: [],
+      verification: [],
+      blockers: ['worktree_not_clean'],
+      run_id: 'run-blocked'
+    }
+    await persistOrReuseTrustworthySubagentParentSummary(dir, blocked, {
+      workflowStatus: 'parent_completed',
+      runId: 'run-blocked'
+    })
+
+    const honestFinal = '검증 실패 0건입니다. 다만 실제 배포는 worktree_not_clean 때문에 차단된 상태이며 배포 준비 완료라고 주장하지 않습니다.'
+    assert.deepEqual(
+      await persistOrReuseTrustworthySubagentParentSummary(dir, honestFinal, {
+        workflowStatus: 'parent_completed',
+        runId: 'run-blocked'
+      }),
+      blocked
+    )
+    assert.deepEqual(
+      JSON.parse(await fsp.readFile(path.join(dir, SUBAGENT_PARENT_SUMMARY_FILENAME), 'utf8')),
+      blocked
+    )
   } finally {
     await fsp.rm(dir, { recursive: true, force: true })
   }

@@ -3,7 +3,7 @@
  *
  * The compiled Context Graph engine — extractors, compiler, store, lint, query,
  * projections — is required at runtime: `sks search context`,
- * `sks wiki refresh --code`, TriWiki attention and the Naruto advisory all read
+ * `sks align run`, TriWiki attention and the Naruto advisory all read
  * it from an installed package. Its benchmark corpus, fixtures and tuning
  * optimizer are development instruments and are excluded from the packlist
  * instead of being paid for here.

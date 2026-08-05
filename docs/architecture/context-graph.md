@@ -42,7 +42,7 @@ Repository Truth
    never reaches a snapshot; the lint treats it as a hard error.
 3. **No silent fallback.** A missing or stale graph produces
    `context_graph_missing` / `context_graph_stale` plus the repair command
-   `sks wiki refresh --code`. It never quietly degrades to text search.
+   `sks align run`. It never quietly degrades to text search.
 4. **No model-authored facts.** Only mechanically observed relations, or claims
    that cite a source, become edges.
 5. **Nothing leaks.** No secrets, environment values, raw prompts, raw tool
@@ -175,14 +175,14 @@ budget is respected.
 
 ## What each consumer gets
 
-- **`sks wiki refresh --code`** compiles the graph incrementally, lints it,
+- **`sks align run`** compiles the graph incrementally, lints it,
   writes the snapshot atomically, and projects `code-pack.json` from it. The old
   scanner is not kept running alongside — one source of truth, one projection.
 - **`sks wiki validate`** additionally checks graph schema/lint, snapshot/meta
   parity, source-hash freshness, projection parity, proof invalidation
   propagation, and the latest-version guidance policy.
 - **`sks triwiki graph-status|graph-lint|graph-query`** are read-only
-  diagnostics. Rebuilds belong to `sks wiki refresh --code`.
+  diagnostics. Rebuilds belong to `sks align run`.
 - **`sks search context`** answers from the graph. Symbol/path/text search is
   used only to acquire seeds, and each seed keeps its own confidence — a text hit
   never becomes an exact reference. `hydrated` is true only when selected nodes

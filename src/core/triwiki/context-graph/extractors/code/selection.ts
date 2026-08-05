@@ -16,6 +16,8 @@ import type { CodeInventory, CodeSourceFileRecord } from './types.js';
 export interface ExtractionSelection {
   /** files to parse, sorted by path */
   targets: CodeSourceFileRecord[];
+  /** every source file read for this extraction, including text-parsed languages */
+  selectedRels: string[];
   /** `true` when the whole inventory is being extracted */
   full: boolean;
   /** normalized changed paths that are not scannable source files in this workspace */
@@ -45,6 +47,10 @@ function buildForwardDependencies(
 ): Map<string, string[]> {
   const forward = new Map<string, string[]>();
   for (const record of inventory.files) {
+    if (record.parser !== 'typescript') {
+      forward.set(record.rel, []);
+      continue;
+    }
     const mode = impliedFormat(context, record);
     const targets = new Set<string>();
     let preprocessed: ts.PreProcessedFileInfo;
@@ -86,7 +92,13 @@ export function selectExtractionTargets(
   changedPaths: readonly string[] | null
 ): ExtractionSelection {
   if (changedPaths === null) {
-    return { targets: [...inventory.files], full: true, unknownChanged: [], unmappableChanged: 0 };
+    return {
+      targets: inventory.files.filter((record) => record.parser === 'typescript'),
+      selectedRels: inventory.files.map((record) => record.rel),
+      full: true,
+      unknownChanged: [],
+      unmappableChanged: 0
+    };
   }
 
   const seeds: string[] = [];
@@ -123,9 +135,11 @@ export function selectExtractionTargets(
     for (const dependency of forward.get(rel) ?? []) selected.add(dependency);
   }
 
-  const targets = inventory.files.filter((record) => selected.has(record.rel));
+  const selectedRels = inventory.files.filter((record) => selected.has(record.rel)).map((record) => record.rel);
+  const targets = inventory.files.filter((record) => selected.has(record.rel) && record.parser === 'typescript');
   return {
     targets,
+    selectedRels,
     full: false,
     unknownChanged: [...new Set(unknownChanged)].sort(),
     unmappableChanged

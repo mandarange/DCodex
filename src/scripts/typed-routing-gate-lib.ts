@@ -206,7 +206,7 @@ async function richContentGate(id: string) {
     const mod = await importDist('core/codex-app/codex-skill-sync.js')
     const skillsRoot = path.join(rootDir, 'skills')
     const report = await mod.syncCodexSksSkills({ root: rootDir, skillsRoot, apply: true })
-    const skill = fs.readFileSync(path.join(skillsRoot, 'sks-loop', 'SKILL.md'), 'utf8')
+    const skill = fs.readFileSync(path.join(skillsRoot, 'sks-align', 'SKILL.md'), 'utf8')
     assertGate(/Purpose:|Evidence:|Fallback:/.test(skill), 'managed skill must include rich route content', { skill, report })
     for (const name of ['search-visibility-core', 'seo-geo-optimizer']) {
       const file = path.join(skillsRoot, name, 'SKILL.md')

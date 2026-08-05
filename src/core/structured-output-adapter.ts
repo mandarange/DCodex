@@ -96,7 +96,7 @@ export async function runOpenAIStructuredOutput(request: StructuredOutputAdapter
       parsed_json: null,
       validation: { ok: false, issues: ['openai_api_key_missing'] },
       blocker: structuredOutputBlocker('openai_api_key_missing', 'Set OPENAI_API_KEY to enable Structured Outputs fallback.'),
-      setup_guidance: 'Set OPENAI_API_KEY or use Codex 0.133 codex exec resume --output-schema; do not accept unstructured extraction as verified evidence.',
+      setup_guidance: 'Set OPENAI_API_KEY or use current Codex `exec resume --output-schema`; do not accept unstructured extraction as verified evidence.',
       source_sha256: sourceSha
     };
   }
