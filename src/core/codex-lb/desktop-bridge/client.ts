@@ -1,5 +1,5 @@
 import type { DesktopBridgeStatus } from './types.js';
-import { readDesktopBridgeState } from './state.js';
+import { isDesktopBridgeStateFresh, readDesktopBridgeState } from './state.js';
 import { safeBridgeErrorCode } from './security.js';
 
 export type DesktopBridgeProcessProbe = (pid: number) => boolean;
@@ -35,6 +35,9 @@ export async function getDesktopBridgeStatus(input: {
   const processExists = input.processExists || desktopBridgeProcessExists;
   if (!processExists(state.pid)) {
     return { status: 'stale', state, blocker: 'bridge_process_not_running' };
+  }
+  if (!isDesktopBridgeStateFresh(state)) {
+    return { status: 'stale', state, blocker: 'bridge_state_stale' };
   }
   return { status: 'running', state };
 }

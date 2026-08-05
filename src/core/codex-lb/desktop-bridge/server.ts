@@ -3,11 +3,11 @@ import http, { type Server, type ServerResponse } from 'node:http';
 import net, { type Server as NetServer, type Socket } from 'node:net';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { forwardHttp, prepareDesktopBridgeRequestBody } from './http-forward.js';
+import { createHash } from 'node:crypto';
+import { forwardHttp, prepareDesktopBridgeRequest } from './http-forward.js';
 import {
   assertAllowedOrigin,
   assertAllowedPath,
-  assertDesktopBridgeRequestPolicy,
   assertLoopbackPeer,
   assertLoopbackListenHost,
   assertWebSocketUpgrade,
@@ -18,6 +18,7 @@ import {
 import {
   createDesktopBridgePublicState,
   desktopBridgeStatePath,
+  refreshDesktopBridgeState,
   removeDesktopBridgeStateIfOwned,
   writeDesktopBridgeState,
 } from './state.js';
@@ -28,6 +29,7 @@ import type {
   PreparedDesktopBridgeConfig,
 } from './types.js';
 import { DesktopBridgeError } from './types.js';
+import { DESKTOP_BRIDGE_DIAGNOSTIC_PATH, DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL } from './types.js';
 import { forwardWebSocket } from './websocket-forward.js';
 
 function pathnameFromRequest(req: IncomingMessage): string {
@@ -36,6 +38,36 @@ function pathnameFromRequest(req: IncomingMessage): string {
   } catch {
     throw new DesktopBridgeError('bridge_request_target_invalid');
   }
+}
+
+function handleDiagnosticWebSocket(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+  const protocols = String(req.headers['sec-websocket-protocol'] || '').split(',').map((value) => value.trim());
+  if (!protocols.includes(DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL)) throw new DesktopBridgeError('bridge_websocket_protocol_mismatch');
+  const key = String(req.headers['sec-websocket-key'] || '');
+  const accept = createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
+  socket.write(
+    'HTTP/1.1 101 Switching Protocols\r\n'
+    + 'Upgrade: websocket\r\nConnection: Upgrade\r\n'
+    + `Sec-WebSocket-Accept: ${accept}\r\n`
+    + `Sec-WebSocket-Protocol: ${DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL}\r\n\r\n`,
+  );
+  let buffered = head;
+  const consume = (chunk?: Buffer): void => {
+    if (chunk) buffered = Buffer.concat([buffered, chunk]);
+    while (buffered.length >= 6) {
+      const opcode = buffered[0]! & 0x0f;
+      const masked = (buffered[1]! & 0x80) !== 0;
+      const length = buffered[1]! & 0x7f;
+      if (!masked || length > 125) { socket.destroy(); return; }
+      if (buffered.length < 6 + length) return;
+      const mask = buffered.subarray(2, 6); const raw = buffered.subarray(6, 6 + length); const payload = Buffer.alloc(length);
+      for (let index = 0; index < length; index += 1) payload[index] = (raw[index] || 0) ^ (mask[index % 4] || 0);
+      buffered = buffered.subarray(6 + length);
+      if (opcode === 1 || opcode === 2) socket.write(Buffer.concat([Buffer.from([0x80 | opcode, length]), payload]));
+      else if (opcode === 8) { socket.end(Buffer.concat([Buffer.from([0x88, payload.length]), payload])); return; }
+    }
+  };
+  socket.on('data', consume); consume();
 }
 
 function rejectionStatus(code: string): number {
@@ -135,9 +167,8 @@ export async function startPreparedDesktopBridge(
         assertLoopbackPeer(req.socket.remoteAddress);
         assertAllowedOrigin(req.headers, input.allowedOrigins);
         assertAllowedPath(pathnameFromRequest(req), input.allowedPathPrefixes);
-        assertDesktopBridgeRequestPolicy({ headers: req.headers, config: input });
-        const body = await prepareDesktopBridgeRequestBody(req, input);
-        await forwardHttp(req, res, input, body);
+        const prepared = await prepareDesktopBridgeRequest(req, input);
+        await forwardHttp(req, res, input, prepared);
       } catch (error) {
         req.resume();
         writeBridgeRejection(res, error);
@@ -158,13 +189,13 @@ export async function startPreparedDesktopBridge(
     try {
       assertLoopbackPeer(req.socket.remoteAddress);
       assertAllowedOrigin(req.headers, input.allowedOrigins);
-      assertAllowedPath(pathnameFromRequest(req), input.allowedPathPrefixes);
-      assertDesktopBridgeRequestPolicy({ headers: req.headers, config: input });
       assertWebSocketUpgrade(req.headers, req.method);
-      if (input.providerMode === 'openrouter') {
-        throw new DesktopBridgeError('bridge_openrouter_websocket_unsupported');
+      if (pathnameFromRequest(req) === DESKTOP_BRIDGE_DIAGNOSTIC_PATH) {
+        handleDiagnosticWebSocket(req, socket, head);
+        return;
       }
-      forwardWebSocket(req, socket, head, input);
+      assertAllowedPath(pathnameFromRequest(req), input.allowedPathPrefixes);
+      void forwardWebSocket(req, socket, head, input).catch((error) => writeUpgradeRejection(socket, error));
     } catch (error) {
       writeUpgradeRejection(socket, error);
     }
@@ -184,6 +215,12 @@ export async function startPreparedDesktopBridge(
     throw error;
   }
 
+  const freshnessMs = input.stateFreshnessMs ?? 5 * 60_000;
+  const heartbeat = statePath ? setInterval(() => {
+    void refreshDesktopBridgeState(statePath, state, new Date(), freshnessMs).catch(() => undefined);
+  }, Math.max(1_000, Math.floor(freshnessMs / 3))) : null;
+  heartbeat?.unref();
+
   let stopped = false;
   const handle: DesktopBridgeHandle = {
     server,
@@ -193,6 +230,7 @@ export async function startPreparedDesktopBridge(
     async stop(): Promise<void> {
       if (stopped) return;
       stopped = true;
+      if (heartbeat) clearInterval(heartbeat);
       await closeServer(server, sockets);
       if (statePath) await removeDesktopBridgeStateIfOwned(statePath, state);
     },

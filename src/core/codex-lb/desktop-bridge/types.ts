@@ -1,14 +1,19 @@
 import type { Server } from 'node:http';
 import type { Socket } from 'node:net';
-import type { CodexProxyProviderMode } from '../../codex-app/provider-mode.js';
 import type {
-  ChildPolicySnapshot,
-  CredentialReadiness,
-  ProviderPolicySnapshot,
-  SessionPin,
-} from '../../architecture-hardening/contracts/contracts.js';
+  BridgeProviderId,
+  BridgeRoutingPolicy,
+  CapabilityRequestedLevel,
+  ProviderSessionPin,
+  WebSocketProbeResult,
+} from '../bridge-contracts.js';
+import type { CodexProxyProviderMode } from '../../codex-app/provider-mode.js';
+import type { ChildPolicySnapshot, CredentialReadiness, ProviderPolicySnapshot, SessionPin } from '../../architecture-hardening/contracts/contracts.js';
 
-export const DESKTOP_BRIDGE_STATE_SCHEMA = 'sks.codex-lb-desktop-bridge.v1' as const;
+export const DESKTOP_BRIDGE_STATE_SCHEMA = 'sks.codex-lb-desktop-bridge.v2' as const;
+export const DESKTOP_BRIDGE_REGISTRY_SCHEMA = 'sks.desktop-bridge-provider-registry.v1' as const;
+export const DESKTOP_BRIDGE_DIAGNOSTIC_PATH = '/__sks/diagnostics/websocket' as const;
+export const DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL = 'sks.desktop-bridge.probe.v2' as const;
 
 export const DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES = [
   '/backend-api/codex/',
@@ -19,31 +24,99 @@ export const DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES = [
   '/v1/',
 ] as const;
 
+export type DesktopBridgeProviderAuthTransport =
+  | 'x-codex-lb-api-key'
+  | 'authorization-bearer'
+  | 'openrouter-bearer';
+
+/** @deprecated Compatibility spelling for one-patch legacy callers. */
 export type DesktopBridgeGatewayAuthTransport =
   | 'x-codex-lb-api-key'
   | 'authorization-bearer-compat';
 
+export interface DesktopBridgeProviderSnapshot {
+  provider_id: BridgeProviderId;
+  enabled: boolean;
+  base_url: string;
+  allowed_origins: readonly string[];
+  auth_transport: DesktopBridgeProviderAuthTransport;
+  credential_state: 'not_configured' | 'configured_unverified' | 'validating' | 'ready' | 'rejected' | 'unavailable' | 'stale';
+  credential_fingerprint: string | null;
+  credential_generation: string;
+  catalog_generation: string | null;
+}
+
+export interface DesktopBridgeProviderRegistrySnapshot {
+  schema: typeof DESKTOP_BRIDGE_REGISTRY_SCHEMA;
+  generation: string;
+  created_at: string;
+  providers: Record<BridgeProviderId, DesktopBridgeProviderSnapshot>;
+}
+
+export interface DesktopBridgeResolvedCredential {
+  provider_id: BridgeProviderId;
+  value: string;
+  source: string;
+  fingerprint: string;
+  generation: string;
+}
+
+export interface DesktopBridgeRouteRequest {
+  public_model: string;
+  session_id: string | null;
+  pathname: string;
+  transport: 'http' | 'websocket';
+  headers: Readonly<NodeJS.Dict<string | string[]>>;
+}
+
+export interface DesktopBridgeRouteContext {
+  provider_id: BridgeProviderId;
+  public_model: string;
+  upstream_model: string;
+  catalog_generation: string;
+  route_policy_generation: string;
+  session_pin: ProviderSessionPin | null;
+}
+
+export type DesktopBridgeRouteResolver = (
+  request: DesktopBridgeRouteRequest,
+  policy: BridgeRoutingPolicy,
+  sessionPins: readonly ProviderSessionPin[],
+) => DesktopBridgeRouteContext;
+
+export type DesktopBridgeCredentialResolver = (
+  providerId: BridgeProviderId,
+  expectedGeneration: string,
+) => Promise<DesktopBridgeResolvedCredential>;
+
 export interface DesktopBridgeConfig {
-  /** Present for every managed runtime. Omitted only by legacy direct callers. */
-  providerMode?: CodexProxyProviderMode;
-  /** Exact provider-mode catalog accepted on Responses requests. */
-  allowedModels?: readonly string[];
-  /** Managed callers seal these snapshots before the bridge starts. */
-  providerPolicy?: ProviderPolicySnapshot;
-  credentialReadiness?: CredentialReadiness;
-  childPolicy?: ChildPolicySnapshot;
+  providerRegistry?: DesktopBridgeProviderRegistrySnapshot;
+  routePolicy?: BridgeRoutingPolicy;
+  /** Legacy session-policy pins retained only by the compatibility adapter. */
   sessionPins?: readonly SessionPin[];
-  /** Enabled only when the Codex caller supplies the sealed session headers. */
-  requireSessionPin?: boolean;
+  /** Frozen 8.1.3 provider-affinity pins used by active route resolution. */
+  providerSessionPins?: readonly ProviderSessionPin[];
+  resolveRequestRoute?: DesktopBridgeRouteResolver;
+  resolveProviderCredential?: DesktopBridgeCredentialResolver;
   listenHost: '127.0.0.1' | '::1';
   listenPort: number;
-  remoteBaseUrl: string;
-  gatewayKey: string;
-  gatewayAuthTransport: DesktopBridgeGatewayAuthTransport;
   allowedPathPrefixes: readonly string[];
   allowedOrigins: readonly string[];
   connectTimeoutMs: number;
   idleTimeoutMs: number;
+  maxRequestBodyBytes?: number;
+  stateFreshnessMs?: number;
+
+  /** One-patch adapter only. New settings never serialize these fields. */
+  remoteBaseUrl?: string;
+  gatewayKey?: string;
+  gatewayAuthTransport?: DesktopBridgeGatewayAuthTransport;
+  providerMode?: CodexProxyProviderMode;
+  allowedModels?: readonly string[];
+  providerPolicy?: ProviderPolicySnapshot;
+  credentialReadiness?: CredentialReadiness;
+  childPolicy?: ChildPolicySnapshot;
+  requireSessionPin?: boolean;
 }
 
 export interface DesktopBridgeRemoteTarget {
@@ -57,26 +130,51 @@ export interface DesktopBridgeRemoteTarget {
   tlsServername?: string;
 }
 
-export interface PreparedDesktopBridgeConfig extends DesktopBridgeConfig {
+export interface PreparedDesktopBridgeProvider extends DesktopBridgeProviderSnapshot {
   remote: DesktopBridgeRemoteTarget;
 }
 
-export interface DesktopBridgePublicState {
+export interface PreparedDesktopBridgeConfig extends DesktopBridgeConfig {
+  providers: Record<BridgeProviderId, PreparedDesktopBridgeProvider>;
+  /** @deprecated Legacy selected target view. */
+  remote: DesktopBridgeRemoteTarget;
+}
+
+export interface DesktopBridgePublicStateV2 {
   schema: typeof DESKTOP_BRIDGE_STATE_SCHEMA;
+  runtime: 'desktop-bridge';
+  pid: number;
+  started_at: string;
+  updated_at: string;
+  stale_after: string;
+  listen_origin: string;
+  codex_base_url: string;
+  process_generation: string;
+  provider_registry_generation: string;
+  route_policy_generation: string;
+  catalog_generation: string;
+  enabled_providers: BridgeProviderId[];
+  provider_credential_generations: Record<BridgeProviderId, string>;
+  last_verified_probe_ids: string[];
+  config_generation: string;
+  /** @deprecated Legacy status adapter fields; omitted from v2 state writes. */
+  remote_origin_sha256?: string;
+  gateway_auth_transport?: DesktopBridgeGatewayAuthTransport;
+}
+
+export interface DesktopBridgePublicStateV1 {
+  schema: 'sks.codex-lb-desktop-bridge.v1';
   pid: number;
   started_at: string;
   listen_origin: string;
   codex_base_url: string;
-  /** Added for managed v1 states; optional only for typed legacy fixtures. */
-  provider_mode?: CodexProxyProviderMode;
-  allowed_models_sha256?: string;
-  provider_policy_sha256?: string;
-  child_policy_sha256?: string;
-  session_pin_enforcement?: 'required' | 'compatibility';
   remote_origin_sha256: string;
+  gateway_key_sha256?: string;
   gateway_auth_transport: DesktopBridgeGatewayAuthTransport;
   config_generation: string;
 }
+
+export type DesktopBridgePublicState = DesktopBridgePublicStateV2 | DesktopBridgePublicStateV1;
 
 export interface DesktopBridgeHandle {
   server: Server;
@@ -96,9 +194,25 @@ export interface DesktopBridgeStartOptions {
 export type DesktopBridgeStatus =
   | { status: 'missing'; state: null }
   | { status: 'invalid'; state: null; blocker: string }
-  | { status: 'stale'; state: DesktopBridgePublicState; blocker: 'bridge_process_not_running' }
+  | { status: 'stale'; state: DesktopBridgePublicState; blocker: 'bridge_process_not_running' | 'bridge_state_stale' }
   | { status: 'configuration_mismatch'; state: DesktopBridgePublicState; blocker: 'bridge_config_generation_mismatch' }
   | { status: 'running'; state: DesktopBridgePublicState };
+
+export interface DesktopBridgeWebSocketProbeOptions {
+  url: string;
+  origin?: string;
+  protocol?: string;
+  framePayload?: string | Buffer;
+  handshakeOnly?: boolean;
+  requestedLevel?: CapabilityRequestedLevel;
+  connectTimeoutMs?: number;
+  stageTimeoutMs?: number;
+  totalTimeoutMs?: number;
+  maxRetries?: number;
+  jitter?: () => number;
+}
+
+export type DesktopBridgeWebSocketProbe = WebSocketProbeResult;
 
 export class DesktopBridgeError extends Error {
   readonly code: string;

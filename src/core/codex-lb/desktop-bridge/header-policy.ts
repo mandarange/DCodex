@@ -1,131 +1,126 @@
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
-import type { DesktopBridgeConfig } from './types.js';
+import type { BridgeProviderId } from '../bridge-contracts.js';
 import { rewriteLocationHeader } from './location-rewrite.js';
+import type {
+  DesktopBridgeConfig,
+  DesktopBridgeProviderAuthTransport,
+  DesktopBridgeResolvedCredential,
+} from './types.js';
 import { DesktopBridgeError } from './types.js';
 
-const HOP_BY_HOP = new Set([
-  'connection',
-  'keep-alive',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'te',
-  'trailer',
-  'transfer-encoding',
-  'upgrade',
-]);
-
+const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
+const INTERNAL_PREFIX = 'x-sks-';
 const NEVER_FORWARD_FROM_CLIENT = new Set([
-  'authorization',
-  'cookie',
-  'forwarded',
-  'proxy-authorization',
-  'x-codex-lb-api-key',
-  'x-forwarded-for',
-  'x-forwarded-host',
-  'x-forwarded-port',
-  'x-forwarded-proto',
-  'x-real-ip',
-  'x-sks-child-model',
-  'x-sks-child-policy-hash',
-  'x-sks-child-request',
-  'x-sks-parent-snapshot-hash',
-  'x-sks-provider-mode',
-  'x-sks-session-id',
+  'authorization', 'cookie', 'forwarded', 'proxy-authorization', 'x-api-key', 'x-codex-lb-api-key',
+  'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-port', 'x-forwarded-proto', 'x-real-ip',
 ]);
-
 const NEVER_FORWARD_TO_CLIENT = new Set([
-  'authorization',
-  'cookie',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'set-cookie',
-  'x-codex-lb-api-key',
+  'authorization', 'cookie', 'proxy-authenticate', 'proxy-authorization', 'set-cookie', 'x-api-key', 'x-codex-lb-api-key',
 ]);
+const OPENROUTER_CLIENT_HEADERS = new Set(['http-referer', 'x-title']);
 
 function connectionTokens(inbound: IncomingHttpHeaders): Set<string> {
-  const raw = inbound.connection;
-  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  return new Set(values.flatMap((value) => value.split(',')).map((value) => value.trim().toLowerCase()).filter(Boolean));
+  const values = Array.isArray(inbound.connection) ? inbound.connection : inbound.connection ? [inbound.connection] : [];
+  return new Set(values.flatMap((v) => v.split(',')).map((v) => v.trim().toLowerCase()).filter(Boolean));
 }
 
-function injectGatewayCredential(
+function injectCredential(
   result: OutgoingHttpHeaders,
-  gatewayKey: string,
-  transport: DesktopBridgeConfig['gatewayAuthTransport'],
+  providerId: BridgeProviderId,
+  transport: DesktopBridgeProviderAuthTransport,
+  credential: DesktopBridgeResolvedCredential,
 ): void {
-  if (transport === 'x-codex-lb-api-key') {
-    result['x-codex-lb-api-key'] = gatewayKey;
-    return;
+  if (credential.provider_id !== providerId || !credential.value || /[\r\n\0]/.test(credential.value)) {
+    throw new DesktopBridgeError('bridge_provider_credential_invalid');
   }
-  result.authorization = `Bearer ${gatewayKey}`;
+  if (providerId === 'openrouter' && transport !== 'openrouter-bearer') throw new DesktopBridgeError('bridge_provider_auth_transport_mismatch');
+  if (providerId === 'codex-lb' && transport === 'openrouter-bearer') throw new DesktopBridgeError('bridge_provider_auth_transport_mismatch');
+  if (transport === 'x-codex-lb-api-key') result['x-codex-lb-api-key'] = credential.value;
+  else result.authorization = `Bearer ${credential.value}`;
 }
 
+export function buildProviderUpstreamHeaders(
+  inbound: IncomingHttpHeaders,
+  context: {
+    providerId: BridgeProviderId;
+    authTransport: DesktopBridgeProviderAuthTransport;
+    credential: DesktopBridgeResolvedCredential;
+  },
+  upstreamHost: string,
+): OutgoingHttpHeaders {
+  const result: OutgoingHttpHeaders = {};
+  const dynamic = connectionTokens(inbound);
+  for (const [rawName, rawValue] of Object.entries(inbound)) {
+    if (rawValue === undefined) continue;
+    const name = rawName.toLowerCase();
+    if (HOP_BY_HOP.has(name) || dynamic.has(name) || NEVER_FORWARD_FROM_CLIENT.has(name) || name === 'host' || name.startsWith(INTERNAL_PREFIX)) continue;
+    if (context.providerId !== 'openrouter' && OPENROUTER_CLIENT_HEADERS.has(name)) continue;
+    result[name] = rawValue;
+  }
+  result.host = upstreamHost;
+  injectCredential(result, context.providerId, context.authTransport, context.credential);
+  return result;
+}
+
+/** @deprecated One-patch adapter for existing single-provider tests. */
 export function buildUpstreamHeaders(
   inbound: IncomingHttpHeaders,
   config: Pick<DesktopBridgeConfig, 'gatewayKey' | 'gatewayAuthTransport'>,
   upstreamHost: string,
 ): OutgoingHttpHeaders {
-  const result: OutgoingHttpHeaders = {};
-  const dynamicHopByHop = connectionTokens(inbound);
-  for (const [rawName, rawValue] of Object.entries(inbound)) {
-    if (rawValue === undefined) continue;
-    const name = rawName.toLowerCase();
-    if (HOP_BY_HOP.has(name) || dynamicHopByHop.has(name)) continue;
-    if (NEVER_FORWARD_FROM_CLIENT.has(name) || name === 'host') continue;
-    result[name] = rawValue;
-  }
-  result.host = upstreamHost;
-  injectGatewayCredential(result, config.gatewayKey, config.gatewayAuthTransport);
-  return result;
+  if (!config.gatewayKey || !config.gatewayAuthTransport) throw new DesktopBridgeError('bridge_provider_credential_resolver_missing');
+  return buildProviderUpstreamHeaders(inbound, {
+    providerId: 'codex-lb',
+    authTransport: config.gatewayAuthTransport === 'x-codex-lb-api-key' ? 'x-codex-lb-api-key' : 'authorization-bearer',
+    credential: { provider_id: 'codex-lb', value: config.gatewayKey, source: 'legacy-adapter', fingerprint: 'legacy', generation: 'legacy' },
+  }, upstreamHost);
 }
 
-export function buildWebSocketHeaders(
+export function buildProviderWebSocketHeaders(
   inbound: IncomingHttpHeaders,
-  config: Pick<DesktopBridgeConfig, 'gatewayKey' | 'gatewayAuthTransport'>,
+  context: Parameters<typeof buildProviderUpstreamHeaders>[1],
   upstreamHost: string,
 ): OutgoingHttpHeaders {
-  const result = buildUpstreamHeaders(inbound, config, upstreamHost);
+  const result = buildProviderUpstreamHeaders(inbound, context, upstreamHost);
   for (const [rawName, rawValue] of Object.entries(inbound)) {
     if (rawValue === undefined) continue;
     const name = rawName.toLowerCase();
-    if (name === 'connection' || name === 'upgrade' || name.startsWith('sec-websocket-')) {
-      result[name] = rawValue;
-    }
+    if (name.startsWith('sec-websocket-')) result[name] = rawValue;
   }
   result.connection = 'Upgrade';
   result.upgrade = 'websocket';
   return result;
 }
 
-export function rewriteResponseHeaders(
-  inbound: IncomingHttpHeaders,
-  config: DesktopBridgeConfig,
-  localOrigin: string,
-): OutgoingHttpHeaders {
+/** @deprecated One-patch adapter. */
+export function buildWebSocketHeaders(inbound: IncomingHttpHeaders, config: Pick<DesktopBridgeConfig, 'gatewayKey' | 'gatewayAuthTransport'>, upstreamHost: string): OutgoingHttpHeaders {
+  const result = buildUpstreamHeaders(inbound, config, upstreamHost);
+  for (const [name, value] of Object.entries(inbound)) if (value !== undefined && name.toLowerCase().startsWith('sec-websocket-')) result[name] = value;
+  result.connection = 'Upgrade'; result.upgrade = 'websocket';
+  return result;
+}
+
+export function rewriteResponseHeaders(inbound: IncomingHttpHeaders, remoteBaseUrl: string, localOrigin: string): OutgoingHttpHeaders {
   const result: OutgoingHttpHeaders = {};
-  const dynamicHopByHop = connectionTokens(inbound);
+  const dynamic = connectionTokens(inbound);
   for (const [rawName, rawValue] of Object.entries(inbound)) {
     if (rawValue === undefined) continue;
     const name = rawName.toLowerCase();
-    if (HOP_BY_HOP.has(name) || dynamicHopByHop.has(name) || NEVER_FORWARD_TO_CLIENT.has(name)) continue;
-    if (name.startsWith('access-control-')) continue;
+    if (HOP_BY_HOP.has(name) || dynamic.has(name) || NEVER_FORWARD_TO_CLIENT.has(name) || name.startsWith('access-control-')) continue;
     if (name === 'location') {
-      if (Array.isArray(rawValue) && rawValue.length !== 1) {
-        throw new DesktopBridgeError('bridge_location_header_invalid');
-      }
-      const location = Array.isArray(rawValue) ? rawValue[0] : rawValue;
-      if (!location) throw new DesktopBridgeError('bridge_location_header_invalid');
-      result.location = rewriteLocationHeader(location, config.remoteBaseUrl, localOrigin);
-      continue;
-    }
-    result[name] = rawValue;
+      const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+      if (values.length !== 1 || !values[0]) throw new DesktopBridgeError('bridge_location_header_invalid');
+      result.location = rewriteLocationHeader(values[0], remoteBaseUrl, localOrigin);
+    } else result[name] = rawValue;
   }
   return result;
 }
 
 export function isRedactedHeaderName(name: string): boolean {
   const normalized = name.toLowerCase();
-  return NEVER_FORWARD_FROM_CLIENT.has(normalized)
-    || NEVER_FORWARD_TO_CLIENT.has(normalized)
-    || normalized === 'set-cookie';
+  return NEVER_FORWARD_FROM_CLIENT.has(normalized) || NEVER_FORWARD_TO_CLIENT.has(normalized) || normalized.startsWith(INTERNAL_PREFIX);
+}
+
+export function redactHeaderValue(name: string, value: unknown): string {
+  return isRedactedHeaderName(name) ? '[REDACTED]' : String(value ?? '');
 }
