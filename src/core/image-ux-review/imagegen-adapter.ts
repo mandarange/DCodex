@@ -3,10 +3,15 @@ import fsp from 'node:fs/promises';
 import { ensureDir, exists, nowIso, projectRoot, readJson, writeJsonAtomic } from '../fsx.js';
 import { sha256File, imageDimensions } from '../wiki-image/image-hash.js';
 import { detectImagegenCapability } from '../imagegen/imagegen-capability.js';
-import { resolveCodexLbImagegenTarget } from '../imagegen/codex-lb-imagegen-target.js';
+import {
+  DESKTOP_BRIDGE_IMAGEGEN_RECOVERY_GUIDANCE,
+  resolveDesktopBridgeImagegenTarget,
+  type DesktopBridgeImagegenTarget
+} from '../imagegen/desktop-bridge-imagegen-target.js';
 import {
   CODEX_LB_PROVIDER_IMAGEGEN_EVIDENCE_CLASS,
   CODEX_LB_PROVIDER_OUTPUT_SOURCE,
+  MOCK_FIXTURE_EVIDENCE_CLASS,
   NON_CODEX_API_FALLBACK_EVIDENCE_CLASS
 } from '../imagegen/imagegen-evidence.js';
 import { validateGptImage2Request } from '../imagegen/gpt-image-2-request-validator.js';
@@ -24,6 +29,7 @@ const responseDeadlines = new WeakMap<Response, {
   timeoutMs: number;
   timer: ReturnType<typeof setTimeout>;
 }>();
+const runtimeDesktopBridgeTargets = new WeakSet<object>();
 
 export interface ImageUxReviewImagegenAdapter {
   surface: 'codex_app_imagegen' | 'openai_images_api' | 'fake_imagegen_adapter';
@@ -347,12 +353,11 @@ export function createFakeImagegenAdapter(opts: any = {}): ImageUxReviewImagegen
 
 export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImagegenAdapter {
   const apiKey = opts.apiKey || process.env.OPENAI_API_KEY || null;
-  const allowCodexLbApiFallback = opts.allowCodexLbApiFallback === true || process.env.SKS_IMAGEGEN_ALLOW_CODEX_LB_API_FALLBACK === '1';
-  const codexLb = allowCodexLbApiFallback && opts.codexLb?.available === true ? opts.codexLb : null;
+  const desktopBridgeTarget = trustedDesktopBridgeTarget(opts.desktopBridgeTarget);
   return {
     surface: 'openai_images_api',
     model: 'gpt-image-2',
-    available: Boolean(apiKey || codexLb),
+    available: Boolean(apiKey || desktopBridgeTarget?.selected || desktopBridgeTarget?.model),
     async generateCalloutReview(input: ImageUxReviewImagegenRequest) {
       const started = Date.now();
       await ensureDir(input.output_dir);
@@ -360,18 +365,19 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
       const responseArtifact = path.join(input.output_dir, 'image-ux-gpt-image-2-response.json');
       const sourcePath = path.resolve(input.source_image_path);
       const sourceSha = await sha256File(sourcePath);
-      const auth = await resolveImagesApiAuth({ ...opts, apiKey, codexLb });
-      const useResponsesImageTool = auth.auth_source === 'CODEX_LB_API_KEY' && Boolean(auth.responses_endpoint);
+      const auth = await resolveImagesApiAuth({ ...opts, apiKey, desktopBridgeTarget });
+      const useResponsesImageTool = auth.auth_source === 'DESKTOP_BRIDGE_LOOPBACK' && Boolean(auth.responses_endpoint);
       const effectiveEndpoint = useResponsesImageTool ? auth.responses_endpoint : auth.endpoint;
       const responsesModel = String(auth.responses_model || '');
-      // Only a *selected* codex-lb provider earns the codex-lb evidence class.
-      // codex-lb enabled as a fallback while another provider is active is a
-      // detour and stays classified as one.
-      const codexLbProviderSelected = useResponsesImageTool && (opts.codexLbTarget?.selected === true || codexLb?.selected === true);
-      const responsesEvidenceClass = codexLbProviderSelected
-        ? CODEX_LB_PROVIDER_IMAGEGEN_EVIDENCE_CLASS
+      const desktopBridgeSelected = useResponsesImageTool && auth.desktop_bridge_selected === true;
+      const responsesEvidenceClass = desktopBridgeSelected
+        ? auth.live_evidence_allowed === true
+          ? CODEX_LB_PROVIDER_IMAGEGEN_EVIDENCE_CLASS
+          : MOCK_FIXTURE_EVIDENCE_CLASS
         : NON_CODEX_API_FALLBACK_EVIDENCE_CLASS;
-      const responsesOutputSource = codexLbProviderSelected ? CODEX_LB_PROVIDER_OUTPUT_SOURCE : null;
+      const responsesOutputSource = desktopBridgeSelected && auth.live_evidence_allowed === true
+        ? CODEX_LB_PROVIDER_OUTPUT_SOURCE
+        : null;
       const validation = await validateGptImage2Request({
         provider: 'openai_images_api',
         endpoint: String(effectiveEndpoint || ''),
@@ -385,7 +391,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
       await writeJsonAtomic(requestArtifact, {
         schema: 'sks.image-ux-gpt-image-2-request.v1',
         created_at: nowIso(),
-        provider: useResponsesImageTool ? 'openai_responses_image_generation' : 'openai_images_api',
+        provider: useResponsesImageTool ? 'desktop_bridge_responses_image_generation' : 'openai_images_api',
         endpoint: effectiveEndpoint,
         auth_source: auth.auth_source,
         auth_transport: auth.auth_transport,
@@ -415,7 +421,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
         });
         return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker: 'gpt_image_2_request_validation_failed', provider: 'openai_images_api', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
       }
-      if (auth.blocker || !auth.apiKey) {
+      if (auth.blocker || (!useResponsesImageTool && !auth.apiKey)) {
         const blocked = {
           schema: 'sks.image-ux-gpt-image-2-response.v1',
           created_at: nowIso(),
@@ -425,8 +431,8 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
           ok: false,
           status: 'blocked',
           blocker: auth.blocker,
-          setup_guidance: auth.auth_source === 'CODEX_LB_API_KEY'
-            ? 'Repair the selected codex-lb credential binding. Completed output from a selected provider can satisfy full evidence; codex-lb used only as a fallback while another provider is selected cannot.'
+          setup_guidance: auth.auth_source === 'DESKTOP_BRIDGE_LOOPBACK'
+            ? auth.setup_guidance || DESKTOP_BRIDGE_IMAGEGEN_RECOVERY_GUIDANCE
             : 'Set OPENAI_API_KEY only for an explicit non-Codex Images API fallback, or attach a real Codex App $imagegen output image for full SKS verification.',
           local_only: true
         };
@@ -438,16 +444,16 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
         await writeJsonAtomic(responseArtifact, {
           schema: 'sks.image-ux-gpt-image-2-response.v1',
           created_at: nowIso(),
-          provider: 'openai_responses_image_generation',
+          provider: 'desktop_bridge_responses_image_generation',
           evidence_class: 'non_codex_api_fallback',
           model: 'gpt-image-2',
           ok: false,
           status: 'blocked',
           blocker,
-          setup_guidance: 'Set SKS_IMAGEGEN_RESPONSES_MODEL to a model available through the configured Responses provider; SKS does not hardcode a text model.',
+          setup_guidance: DESKTOP_BRIDGE_IMAGEGEN_RECOVERY_GUIDANCE,
           local_only: true
         });
-        return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker, provider: 'openai_responses_image_generation', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
+        return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker, provider: 'desktop_bridge_responses_image_generation', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
       }
       try {
         if (useResponsesImageTool) {
@@ -456,9 +462,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
             const response = await fetchWithTimeout(effectiveEndpoint, {
               method: 'POST',
               headers: {
-                ...(auth.auth_transport === 'x-codex-lb-api-key'
-                  ? { 'X-Codex-LB-API-Key': auth.apiKey }
-                  : { authorization: `Bearer ${auth.apiKey}` }),
+                'x-sks-model': responsesModel,
                 'content-type': 'application/json'
               },
               body: JSON.stringify({
@@ -480,40 +484,41 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
           }, imagegenRetryOptions(opts));
           const { response, payload } = attemptResult;
           if (!response.ok) {
-            await writeJsonAtomic(responseArtifact, redactedImagegenResponse(payload, false, Date.now() - started, 'openai_responses_image_generation', { attempts, retry_log }));
-            return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker: imagegenErrorKind(payload), provider: 'openai_responses_image_generation', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
+            await writeJsonAtomic(responseArtifact, redactedImagegenResponse(payload, false, Date.now() - started, 'desktop_bridge_responses_image_generation', { attempts, retry_log }));
+            return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker: imagegenErrorKind(payload), provider: 'desktop_bridge_responses_image_generation', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
           }
           if (payload?.error) {
-            await writeJsonAtomic(responseArtifact, redactedImagegenResponse(payload, false, Date.now() - started, 'openai_responses_image_generation'));
-            return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker: imagegenErrorKind(payload), provider: 'openai_responses_image_generation', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
+            await writeJsonAtomic(responseArtifact, redactedImagegenResponse(payload, false, Date.now() - started, 'desktop_bridge_responses_image_generation'));
+            return { ok: false, status: 'blocked', generated_image_path: null, output_id: null, blocker: imagegenErrorKind(payload), provider: 'desktop_bridge_responses_image_generation', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
           }
           const generated = findResponsesImageGenerationOutput(payload);
           if (!generated?.b64) {
-            await writeJsonAtomic(responseArtifact, redactedImagegenResponse({ ...payload, blocker: 'missing_b64_image_output' }, false, Date.now() - started, 'openai_responses_image_generation'));
-            return { ok: false, status: 'blocked', generated_image_path: null, output_id: generated?.id || null, blocker: 'missing_b64_image_output', provider: 'openai_responses_image_generation', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
+            await writeJsonAtomic(responseArtifact, redactedImagegenResponse({ ...payload, blocker: 'missing_b64_image_output' }, false, Date.now() - started, 'desktop_bridge_responses_image_generation'));
+            return { ok: false, status: 'blocked', generated_image_path: null, output_id: generated?.id || null, blocker: 'missing_b64_image_output', provider: 'desktop_bridge_responses_image_generation', request_artifact: requestArtifact, response_artifact: responseArtifact, latency_ms: Date.now() - started };
           }
           const out = path.join(input.output_dir, `gpt-image-2-callout-${Date.now()}.png`);
           await fsp.writeFile(out, Buffer.from(String(generated.b64), 'base64'));
           const meta = await generatedImageMetadata(process.cwd(), out, {
             source_screen_id: input.source_screen_id,
-            provider_surface: 'openai_responses_image_generation',
+            provider_surface: 'desktop_bridge_responses_image_generation',
             output_id: generated.id || payload?.id || null,
             evidence_class: responsesEvidenceClass,
             output_source: responsesOutputSource,
-            real_generated: true
+            real_generated: auth.live_evidence_allowed === true,
+            mock: auth.live_evidence_allowed !== true
           });
-          const imageContract = await writeGeneratedImagePathContract(input, out, 'openai_responses_image_generation').catch(() => null);
+          const imageContract = await writeGeneratedImagePathContract(input, out, 'desktop_bridge_responses_image_generation').catch(() => null);
           await writeJsonAtomic(responseArtifact, {
             schema: 'sks.image-ux-gpt-image-2-response.v1',
             created_at: nowIso(),
-            provider: 'openai_responses_image_generation',
+            provider: 'desktop_bridge_responses_image_generation',
             evidence_class: responsesEvidenceClass,
             model: 'gpt-image-2',
             responses_model: responsesModel,
             responses_model_source: auth.responses_model_source || null,
             auth_source: auth.auth_source,
-            api_key_source: auth.api_key_source || null,
-            codex_lb_provider_selected: codexLbProviderSelected,
+            desktop_bridge_selected: desktopBridgeSelected,
+            desktop_bridge_route_provider: auth.route_provider_id || null,
             ok: true,
             status: 'generated',
             output_image_path: out,
@@ -530,7 +535,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
             token_cost_metadata: payload?.usage || null,
             local_only: true
           });
-          return { ok: true, status: 'generated', generated_image_path: out, output_id: meta.output_id, blocker: null, provider: 'openai_responses_image_generation', request_artifact: requestArtifact, response_artifact: responseArtifact, image_artifact_path_contract: imageContract?.artifact_path || null, latency_ms: Date.now() - started };
+          return { ok: true, status: 'generated', generated_image_path: out, output_id: meta.output_id, blocker: null, provider: 'desktop_bridge_responses_image_generation', request_artifact: requestArtifact, response_artifact: responseArtifact, image_artifact_path_contract: imageContract?.artifact_path || null, latency_ms: Date.now() - started };
         }
         const sourceBytes = await fsp.readFile(sourcePath);
         const qualityParam = imagegenQualityParam(opts);
@@ -589,7 +594,7 @@ export function createOpenAIImagesApiAdapter(opts: any = {}): ImageUxReviewImage
         });
         return { ok: true, status: 'generated', generated_image_path: out, output_id: meta.output_id, blocker: null, provider: 'openai_images_api', request_artifact: requestArtifact, response_artifact: responseArtifact, image_artifact_path_contract: imageContract?.artifact_path || null, latency_ms: Date.now() - started };
       } catch (err: unknown) {
-        const provider = useResponsesImageTool ? 'openai_responses_image_generation' : 'openai_images_api';
+        const provider = useResponsesImageTool ? 'desktop_bridge_responses_image_generation' : 'openai_images_api';
         const payload = { error: { message: err instanceof Error ? err.message : String(err) } };
         const response = redactedImagegenResponse(payload, false, Date.now() - started, provider);
         await writeJsonAtomic(responseArtifact, response);
@@ -639,35 +644,24 @@ export async function generateGptImage2CalloutReview(input: ImageUxReviewImagege
     return createFakeImagegenAdapter({ ...(opts.fakeAdapter || {}), mockContext: true }).generateCalloutReview(input);
   }
   const capability = await detectImagegenCapability(opts.capability || {}).catch(() => null);
-  // Resolve the provider from the same home/env the capability probe used, so a
-  // caller that supplies a hermetic root is never answered from the operator's
-  // real ~/.codex/config.toml.
-  const codexLbTarget = opts.codexLbTarget || await resolveCodexLbImagegenTarget(codexLbTargetInputs(opts.capability)).catch(() => null);
-  // codex-lb output is still classified as a non-Codex-App fallback, but when
-  // codex-lb is the *selected* provider there is no other route to reach: the
-  // Codex App surface answers through this same proxy. Requiring an opt-in flag
-  // there left the only working path unreachable, so selection enables it and an
-  // explicit `0`/false still switches it off.
-  const explicitDisableCodexLbFallback = opts.allowCodexLbApiFallback === false || process.env.SKS_IMAGEGEN_ALLOW_CODEX_LB_API_FALLBACK === '0';
-  const allowCodexLbApiFallback = !explicitDisableCodexLbFallback && (
-    opts.allowCodexLbApiFallback === true
-    || process.env.SKS_IMAGEGEN_ALLOW_CODEX_LB_API_FALLBACK === '1'
-    || codexLbTarget?.selected === true
-  );
+  const suppliedTarget = opts.desktopBridgeTarget
+    ? trustedDesktopBridgeTarget(opts.desktopBridgeTarget)
+    : null;
+  const desktopBridgeTarget = suppliedTarget || await resolveDesktopBridgeImagegenTarget(
+    desktopBridgeTargetInputs(opts.capability, opts.openai || opts)
+  ).catch(() => null);
+  if (!suppliedTarget && desktopBridgeTarget?.status_source === 'runtime') {
+    runtimeDesktopBridgeTargets.add(desktopBridgeTarget);
+  }
+  const managedBridgeRequested = Boolean(desktopBridgeTarget?.selected || desktopBridgeTarget?.model);
   const allowApiFallback = (
     opts.allowApiFallback === true
     || process.env.SKS_IMAGEGEN_ALLOW_API_FALLBACK === '1'
-    || allowCodexLbApiFallback
+    || managedBridgeRequested
   );
   const openaiOptions = {
     ...(opts.openai || {}),
-    codexLb: allowCodexLbApiFallback ? opts.openai?.codexLb || capability?.codex_lb || null : null,
-    codexLbTarget,
-    // The CLI provider contract is env_key ⇒ Authorization: Bearer.
-    codexLbAuthTransport: capability?.codex_lb?.cli_contract === true
-      ? 'authorization-bearer'
-      : codexLbTarget?.auth_transport,
-    allowCodexLbApiFallback
+    desktopBridgeTarget
   };
   const codexAdapter = createCodexAppImagegenAdapter({
     ...(opts.codexApp || {}),
@@ -678,12 +672,14 @@ export async function generateGptImage2CalloutReview(input: ImageUxReviewImagege
   return createOpenAIImagesApiAdapter(openaiOptions).generateCalloutReview(input);
 }
 
-function codexLbTargetInputs(source: any = {}) {
-  const inputs: { home?: string; codexHome?: string; env?: NodeJS.ProcessEnv; configText?: string } = {};
+function desktopBridgeTargetInputs(source: any = {}, request: any = {}) {
+  const inputs: Record<string, unknown> = {
+    explicitModel: String(request.responsesModel || source?.env?.SKS_IMAGEGEN_RESPONSES_MODEL || '').trim() || null
+  };
   if (source?.home) inputs.home = source.home;
-  if (source?.codexHome) inputs.codexHome = source.codexHome;
   if (source?.env) inputs.env = source.env;
-  if (typeof source?.configText === 'string') inputs.configText = source.configText;
+  if (source?.desktopBridgeStatus !== undefined) inputs.desktopBridgeStatus = source.desktopBridgeStatus;
+  if (source?.desktopBridgeStatusImpl) inputs.desktopBridgeStatusImpl = source.desktopBridgeStatusImpl;
   return inputs;
 }
 
@@ -702,19 +698,15 @@ export function imagegenCapabilityBlocker(surface = 'Codex App $imagegen') {
     blocker: 'imagegen_capability_missing',
     surface,
     model: 'gpt-image-2',
-    guidance: 'Run the request with gpt-image-2 through Codex App $imagegen or a selected, ready codex-lb provider and bind the completed generated image path. OPENAI_API_KEY, or codex-lb used while another provider is selected, remains non-Codex fallback evidence. SKS must not fabricate or substitute a text-only review.'
+    guidance: 'Run the request with gpt-image-2 through Codex App $imagegen, or provide an explicit model routed by the verified managed Desktop Bridge. Direct provider credentials remain non-Codex fallback evidence. SKS must not fabricate or substitute a text-only review.'
   };
 }
 
 async function resolveImagesApiAuth(opts: any = {}) {
-  const codexLb = opts.codexLb?.available === true ? opts.codexLb : null;
-  const target = opts.codexLbTarget || (codexLb
-    ? await resolveCodexLbImagegenTarget(codexLbTargetInputs(opts)).catch(() => null)
-    : null);
-  // Provider selection is authoritative. A separately exported OPENAI_API_KEY
-  // must not reroute a codex-lb session to api.openai.com, change the evidence
-  // class, and leave the selected proxy unused.
-  if (target?.selected === true) return codexLbImagesApiAuth(opts, codexLb, target);
+  const target = trustedDesktopBridgeTarget(opts.desktopBridgeTarget);
+  // Managed routing is authoritative. Even a blocked bridge target must not be
+  // detoured to an ambient provider key.
+  if (target && (target.selected || target.model)) return desktopBridgeImagesApiAuth(target);
 
   const openAiKey = String(opts.apiKey || process.env.OPENAI_API_KEY || '').trim();
   if (openAiKey) {
@@ -722,54 +714,62 @@ async function resolveImagesApiAuth(opts: any = {}) {
       apiKey: openAiKey,
       auth_source: 'OPENAI_API_KEY',
       auth_transport: 'authorization-bearer',
-      api_key_source: null,
       responses_model: responsesImagegenModel(opts),
       responses_model_source: responsesImagegenModel(opts) ? 'explicit' : null,
       endpoint: imageEditsEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
       responses_endpoint: responsesEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
-      blocker: null
+      blocker: null,
+      desktop_bridge_selected: false,
+      route_provider_id: null,
+      live_evidence_allowed: false,
+      setup_guidance: null
     };
   }
-  if (!codexLb) {
-    return {
-      apiKey: null,
-      auth_source: null,
-      auth_transport: 'authorization-bearer',
-      api_key_source: null,
-      responses_model: responsesImagegenModel(opts),
-      responses_model_source: null,
-      endpoint: imageEditsEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
-      responses_endpoint: responsesEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
-      blocker: 'openai_api_key_missing'
-    };
-  }
-  // The fingerprint-bound loader, not raw process.env: a stale exported
-  // CODEX_LB_API_KEY otherwise shadows the SKS-managed env file and the proxy
-  // answers 401 while every capability probe still reports "ready".
-  return codexLbImagesApiAuth(opts, codexLb, target);
+  return {
+    apiKey: null,
+    auth_source: null,
+    auth_transport: 'authorization-bearer',
+    responses_model: responsesImagegenModel(opts),
+    responses_model_source: null,
+    endpoint: imageEditsEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
+    responses_endpoint: responsesEndpoint(opts.baseUrl || 'https://api.openai.com/v1'),
+    blocker: 'openai_api_key_missing',
+    desktop_bridge_selected: false,
+    route_provider_id: null,
+    live_evidence_allowed: false,
+    setup_guidance: null
+  };
 }
 
-function codexLbImagesApiAuth(opts: any, codexLb: any, target: any) {
-  const envKey = codexLb?.env_key || 'CODEX_LB_API_KEY';
-  const codexLbKey = String(opts.codexLbApiKey || target?.api_key || '').trim();
-  const baseUrl = target?.base_url || codexLb?.base_url || opts.baseUrl || '';
-  const blocker = !baseUrl
-    ? 'codex_lb_base_url_missing'
-    : codexLbKey
-      ? null
-      : target?.blocker || 'codex_lb_api_key_missing';
+function desktopBridgeImagesApiAuth(target: DesktopBridgeImagegenTarget) {
   return {
-    apiKey: codexLbKey || null,
-    auth_source: envKey,
-    auth_transport: opts.codexLbAuthTransport || target?.auth_transport || 'authorization-bearer',
-    api_key_source: target?.api_key_source || null,
-    // config.toml's `model` is often a slug this key cannot use; the served
-    // catalog is the only source that is safe to default to.
-    responses_model: responsesImagegenModel(opts) || target?.model || '',
-    responses_model_source: responsesImagegenModel(opts) ? 'explicit' : target?.model_source || null,
-    endpoint: baseUrl ? imageEditsEndpoint(baseUrl) : null,
-    responses_endpoint: baseUrl ? responsesEndpoint(baseUrl) : null,
-    blocker
+    apiKey: null,
+    auth_source: 'DESKTOP_BRIDGE_LOOPBACK',
+    auth_transport: 'loopback-route',
+    responses_model: target.model || '',
+    responses_model_source: target.model_source,
+    endpoint: null,
+    responses_endpoint: target.endpoint,
+    blocker: target.blocker,
+    desktop_bridge_selected: target.selected,
+    route_provider_id: target.provider_id,
+    live_evidence_allowed: target.live_evidence_allowed,
+    setup_guidance: target.setup_guidance
+  };
+}
+
+function trustedDesktopBridgeTarget(value: unknown): DesktopBridgeImagegenTarget | null {
+  if (!value || typeof value !== 'object') return null;
+  const target = value as DesktopBridgeImagegenTarget;
+  const runtimeTrusted = runtimeDesktopBridgeTargets.has(target);
+  if (runtimeTrusted
+    && target.status_source === 'runtime'
+    && target.bridge_verified === true
+    && target.live_evidence_allowed === true) return target;
+  return {
+    ...target,
+    status_source: 'injected_fixture',
+    live_evidence_allowed: false
   };
 }
 
