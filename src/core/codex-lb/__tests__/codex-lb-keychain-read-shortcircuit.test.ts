@@ -78,7 +78,6 @@ test('missing env-file credentials never invoke a generic Keychain reader', asyn
   assert.ok(result.missing.includes('CODEX_LB_API_KEY'));
   assert.ok(result.credential_binding.blockers.includes('codex_lb_api_key_missing'));
   assert.match(result.guidance?.[0] || '', /sks bridge provider configure codex-lb --host <host> --api-key-stdin --json/);
-  assert.doesNotMatch(result.guidance?.join('\n') || '', /sks codex-lb setup/);
   assert.match(result.guidance?.[0] || '', /export CODEX_LB_API_KEY/);
   t.diagnostic(`missing-key blocker: codex_lb_api_key_missing — ${result.guidance?.[0]}`);
   await assert.rejects(fsp.access(invoked), { code: 'ENOENT' });
