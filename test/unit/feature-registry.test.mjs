@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildAllFeatureCompletionReport, buildAllFeaturesSelftest, buildFeatureRegistry, validateFeatureRegistry } from '../../dist/core/feature-registry.js';
 import { PACKAGE_VERSION } from '../../dist/core/fsx.js';
+import { runFeatureFixture } from '../../dist/core/feature-fixture-runner.js';
 import { COMMAND_MANIFEST_LITE } from '../../dist/cli/command-manifest-lite.js';
 import { COMMANDS } from '../../dist/cli/command-registry.js';
 
@@ -45,7 +46,16 @@ test('feature registry carries fixture contracts', async () => {
   );
   assert.ok(registry.features.some((feature) => feature.id === 'cli-gates'));
   assert.ok(registry.features.some((feature) => feature.id === 'cli-naruto'));
-  assert.ok(registry.features.some((feature) => feature.id === 'cli-bridge'));
+  const bridge = registry.features.find((feature) => feature.id === 'cli-bridge');
+  assert.equal(bridge.fixture.kind, 'execute');
+  assert.equal(bridge.fixture.quality, 'runtime_verified');
+  assert.equal(bridge.fixture.status, 'pass');
+  assert.equal(bridge.fixture.command, 'sks bridge status --json');
+  assert.deepEqual(bridge.fixture.expected_stdout_fields, {
+    schema: 'sks.desktop-bridge-status.v3',
+    execution_ok: true,
+    'routing.fallback': 'none'
+  });
   assert.equal(registry.features.some((feature) => feature.id === 'cli-codex-lb'), false);
   assert.equal(registry.features.some((feature) => feature.id === 'cli-ui'), false);
   const computerUse = registry.features.find((feature) => feature.id === 'cli-computer-use');
@@ -60,6 +70,8 @@ test('feature registry carries fixture contracts', async () => {
   assert.deepEqual(registry.coverage.unmapped.handler_keys, []);
   assert.deepEqual(registry.coverage.route_gate_consistency_blockers, []);
   assert.equal(selftest.working_claim_allowed, false);
+  assert.equal(selftest.fixtures.ok, true);
+  assert.equal(selftest.checks.find((check) => check.id === 'fixture_fallback_removed')?.ok, true);
   assert.equal(selftest.coverage.doc_route_mentions_without_route.includes('$CODEX_HOME'), false);
   const releaseManifest = JSON.parse(fs.readFileSync('release-gates.v2.json', 'utf8'));
   const completion = buildAllFeatureCompletionReport(registry, {
@@ -70,6 +82,21 @@ test('feature registry carries fixture contracts', async () => {
   assert.equal(completion.ok, false);
   assert.equal(completion.working_claim_allowed, false);
   assert.ok(completion.unverified.some((row) => row === 'cli-proof:runtime_not_proven'));
+});
+
+test('Desktop Bridge feature fixture executes the current V3 no-fallback JSON contract', async () => {
+  const registry = await buildFeatureRegistry({ root: process.cwd() });
+  const bridge = registry.features.find((feature) => feature.id === 'cli-bridge');
+  const result = runFeatureFixture(bridge, {
+    root: process.cwd(),
+    execute: true,
+    commandArgs: ['bridge', 'status', '--json']
+  });
+
+  assert.equal(result.root_mode, 'hermetic_temp_project');
+  assert.equal(result.execution.ok, true);
+  assert.equal(result.execution.stdout_contract.ok, true);
+  assert.equal(result.ok, true);
 });
 
 test('feature registry does not silently allow unknown uppercase dollar mentions', () => {

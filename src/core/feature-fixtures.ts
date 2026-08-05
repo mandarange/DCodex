@@ -31,7 +31,14 @@ const FIXTURES = Object.freeze({
   'cli-setup': fixture('real_optional', 'sks setup --json --local-only', [], 'pass'),
   'cli-codex': fixture('execute', 'sks codex compatibility --json', [], 'pass'),
   'cli-codex-app': fixture('real_optional', 'sks codex-app check --json', [], 'pass'),
-  'cli-codex-lb': fixture('execute_and_validate_artifacts', 'sks codex-lb metrics --json', [], 'pass'),
+  'cli-bridge': fixture('execute', 'sks bridge status --json', [], 'pass', {
+    expected_stdout_fields: {
+      schema: 'sks.desktop-bridge-status.v3',
+      execution_ok: true,
+      'routing.fallback': 'none'
+    },
+    reason: 'The read-only status command proves the installed Desktop Bridge JSON facade and fail-closed no-fallback routing contract without configuring a provider, starting a service, or reading a plaintext credential.'
+  }),
   'cli-telegram': fixture('execute', 'sks telegram --help', [], 'pass', {
     quality: 'wiring_only',
     reason: 'The non-mutating help path proves the installed Telegram command is wired without requiring a bot token, private-file state, resident poller, or network access; transport behavior is covered by focused Telegram tests.'

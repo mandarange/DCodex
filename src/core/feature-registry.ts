@@ -17,7 +17,6 @@ export const ALL_FEATURES_SELFTEST_SCHEMA = 'sks.all-features-selftest.v1';
 export const ALL_FEATURE_COMPLETION_SCHEMA = 'sks.all-feature-completion.v1';
 
 const HANDLER_ALIAS_TO_COMMAND = Object.freeze({
-  auth: 'codex-lb',
   hook: 'hooks',
   memory: 'gc',
   postinstall: 'postinstall',
@@ -551,7 +550,7 @@ const SAFE_EXECUTABLE_FIXTURE_ARGS = Object.freeze({
   'cli-wrongness': ['wrongness', 'validate', 'project', '--json'],
   'cli-wiki': ['wiki', 'image-ingest', 'test/fixtures/images/one-by-one.png', '--json'],
   'cli-codex': ['codex', 'compatibility', '--json'],
-  'cli-codex-lb': ['codex-lb', 'metrics', '--json'],
+  'cli-bridge': ['bridge', 'status', '--json'],
   'cli-hooks': ['hooks', 'trust-report', '--json'],
   'cli-perf': ['perf', 'cold-start', '--json', '--iterations', '1'],
   'cli-bench': ['bench', 'core', '--tier', 'npx-one-shot', '--json', '--iterations', '1'],
