@@ -24,7 +24,7 @@ test('explicit managed dollar/app skills are allowlisted, ordered, and never ref
     ['$with-local-llm-off', ['sks-with-local-llm-off']],
     ['[$UX-Review](skill://unsafe\nsecret) inspect', ['sks-image-ux-review']],
     ['$Computer-Use inspect native settings', ['sks-computer-use']],
-    ['$sks-loop continue the bounded mission', []],
+    ['$sks-loop continue the bounded mission', [INVALID_EXPLICIT_MANAGED_SKILL_NAME]],
     ['$sks-init-deep refresh managed context', ['sks-init-deep']],
     ['$sks-align modernize prompts and skills', ['sks-align']],
     ['$sks-cleanup blank TriWiki', ['sks-cleanup']],
