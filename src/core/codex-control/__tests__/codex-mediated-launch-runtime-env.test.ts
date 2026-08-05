@@ -5,7 +5,7 @@ import path from 'node:path'
 import fsp from 'node:fs/promises'
 import { runCodexExec } from '../../codex-adapter.js'
 
-test('generic SKS Codex exec launches with validated runtime credentials', async (t) => {
+test('generic SKS Codex exec strips retired provider credentials after runtime preparation', async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-codex-mediated-env-'))
   t.after(() => fsp.rm(root, { recursive: true, force: true }))
   let childEnv: NodeJS.ProcessEnv | undefined
@@ -15,6 +15,7 @@ test('generic SKS Codex exec launches with validated runtime credentials', async
     codexBin: '/fixture/codex',
     env: {
       HOME: root,
+      CODEX_ACCESS_TOKEN: 'oauth-workspace-token',
       CODEX_LB_API_KEY: 'stale-synthetic-key',
       CODEX_LB_BASE_URL: 'https://stale.example.test/backend-api/codex'
     },
@@ -37,7 +38,7 @@ test('generic SKS Codex exec launches with validated runtime credentials', async
     }
   })
   assert.equal(result.code, 0)
-  assert.equal(childEnv?.CODEX_LB_API_KEY, 'validated-synthetic-key')
-  assert.equal(childEnv?.CODEX_LB_BASE_URL, 'https://validated.example.test/backend-api/codex')
-  assert.notEqual(childEnv?.CODEX_LB_API_KEY, 'stale-synthetic-key')
+  assert.equal(childEnv?.CODEX_LB_API_KEY, undefined)
+  assert.equal(childEnv?.CODEX_LB_BASE_URL, undefined)
+  assert.equal(childEnv?.CODEX_ACCESS_TOKEN, 'oauth-workspace-token')
 })

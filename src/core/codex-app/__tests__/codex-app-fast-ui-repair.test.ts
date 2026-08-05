@@ -290,7 +290,7 @@ test('Codex App snapshots never expose inline header, environment, or collection
   assert.doesNotMatch(JSON.stringify(signals), new RegExp(secret))
 })
 
-test('Fast UI repair fails closed when codex-lb is selected but its runtime credentials are missing', async (t) => {
+test('Fast UI repair fails closed on a retired direct selection through Desktop Bridge V3 readiness', async (t) => {
   const input = [
     'model_provider = "codex-lb"',
     'service_tier = "fast"',
@@ -310,13 +310,19 @@ test('Fast UI repair fails closed when codex-lb is selected but its runtime cred
   const repaired = await repairCodexAppFastUi(root, { codexHome, apply: true, env: {} })
 
   assert.equal(repaired.ok, false)
+  assert.equal(repaired.provider_model_ui.verification_scope, 'desktop_bridge_status_v3')
+  assert.equal(repaired.provider_model_ui.selected_provider, null)
   assert.equal(repaired.provider_selector, 'manual_action_required')
-  assert.ok(repaired.selected_provider_blockers.includes('codex_lb_api_key_missing'))
-  assert.ok(repaired.selected_provider_blockers.includes('codex_lb_base_url_missing'))
-  assert.ok(repaired.blockers.includes('selected_provider:codex_lb_api_key_missing'))
+  assert.deepEqual(repaired.selected_provider_blockers, [
+    'bridge_active_route_not_selected',
+    'combined_catalog_active_generation_missing',
+    'bridge_route_policy_missing'
+  ])
+  assert.ok(repaired.blockers.includes('selected_provider:bridge_active_route_not_selected'))
+  assert.equal(repaired.selected_provider_blockers.includes('codex_lb_api_key_missing'), false)
 })
 
-test('Fast UI repair does not infer provider readiness from an empty blocker list without picker evidence', async (t) => {
+test('Fast UI repair does not infer readiness from retired catalog or picker inputs', async (t) => {
   const input = [
     'model_provider = "codex-lb"',
     '[model_providers.codex-lb]',
@@ -343,13 +349,20 @@ test('Fast UI repair does not infer provider readiness from an empty blocker lis
       ok: true,
       models: ['gpt-5.6-sol'],
       blockers: []
-    }
+    },
+    desktopPickerEvidence: { state: 'verified' }
   })
 
-  assert.deepEqual(repaired.selected_provider_blockers, [])
+  assert.equal(repaired.provider_model_ui.verification_scope, 'desktop_bridge_status_v3')
+  assert.deepEqual(repaired.selected_provider_blockers, [
+    'bridge_active_route_not_selected',
+    'combined_catalog_active_generation_missing',
+    'bridge_route_policy_missing'
+  ])
   assert.equal(repaired.provider_model_ui.effective_ready, false)
   assert.equal(repaired.provider_selector, 'manual_action_required')
-  assert.ok(repaired.blockers.includes('selected_provider:routing_or_picker_unverified'))
+  assert.ok(repaired.blockers.includes('selected_provider:bridge_route_policy_missing'))
+  assert.equal(repaired.blockers.includes('selected_provider:routing_or_picker_unverified'), false)
 })
 
 test('Codex App Fast UI repair removes an SKS-owned OpenRouter selection without deleting an unproven model choice', async (t) => {

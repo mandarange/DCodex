@@ -89,6 +89,12 @@ export async function repairCodexAppFastUi(root: string = process.cwd(), input: 
     home: path.dirname(home),
     configPath: path.join(home, 'config.toml'),
     codexLbEnvPath: path.join(home, 'sks-codex-lb.env'),
+    desktopBridgeStatusOptions: {
+      home: path.dirname(home),
+      env: input.env || process.env,
+      configPath: path.join(home, 'config.toml'),
+      authPath: path.join(home, 'auth.json')
+    },
     ...(input.codexLbModelCatalog ? { codexLbModelCatalog: input.codexLbModelCatalog } : {}),
     ...(input.desktopPickerEvidence ? { desktopPickerEvidence: input.desktopPickerEvidence } : {})
   })
