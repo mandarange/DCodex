@@ -392,6 +392,11 @@ export function safeActiveRouteContinuation(command: CommandNameLite, args: read
     return Boolean(state.mission_id)
       && (requestedMission === String(state.mission_id) || requestedMission === 'latest');
   }
+  if (command === 'align') {
+    if (activeRoute !== 'ALIGN' || !['run', 'proof'].includes(subcommand)) return false;
+    const requestedMission = String(args[1] || '').trim();
+    return Boolean(state.mission_id) && requestedMission === String(state.mission_id);
+  }
   const expectedRoutes = new Map<CommandNameLite, readonly string[]>([
     ['research', ['RESEARCH']],
     ['autoresearch', ['AUTORESEARCH', 'RESEARCH']],

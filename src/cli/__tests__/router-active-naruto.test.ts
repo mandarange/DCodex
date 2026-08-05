@@ -69,6 +69,22 @@ test('active Image UX Review admits only explicit same-mission continuation acti
   assert.equal(safeActiveRouteContinuation('image-ux-review', ['proof', 'M-active'], { ...state, route: 'Naruto' }), false)
 })
 
+test('active Align admits only explicit same-mission run and proof continuations', () => {
+  const state = {
+    mission_id: 'M-active',
+    route: 'Align',
+    phase: 'ALIGN_PREPARED',
+    route_closed: false
+  }
+  assert.equal(safeActiveRouteContinuation('align', ['run', 'M-active', '--json'], state), true)
+  assert.equal(safeActiveRouteContinuation('align', ['proof', 'M-active', '--json'], state), true)
+  assert.equal(safeActiveRouteContinuation('align', ['run', 'M-other', '--json'], state), false)
+  assert.equal(safeActiveRouteContinuation('align', ['proof', 'latest', '--json'], state), false)
+  assert.equal(safeActiveRouteContinuation('align', ['proof', '--json'], state), false)
+  assert.equal(safeActiveRouteContinuation('align', ['fixture', 'M-active'], state), false)
+  assert.equal(safeActiveRouteContinuation('align', ['proof', 'M-active'], { ...state, route: 'Naruto' }), false)
+})
+
 test('active non-Naruto route admits only an exact same-mission parent summary', () => {
   const state = {
     mission_id: 'M-active',
