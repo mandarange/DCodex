@@ -149,7 +149,7 @@ export async function configureBridgeProviderProfile(input: {
 }): Promise<BridgeProviderRegistry> {
   const credentials = input.credentials || await resolveAllProviderCredentials();
   const endpoint = normalizeEndpoint(input.endpoint_url);
-  const origin = endpoint ? new URL(endpoint).origin : '';
+  const origin = endpointOrigin(endpoint) || '';
   const blocker = providerEndpointSecurityBlocker(input.provider_id, endpoint, input.allowed_origins || [origin]);
   if (blocker) throw new Error(blocker);
   const file = input.registryPath || bridgeProviderRegistryPath(input.home);
@@ -242,7 +242,7 @@ function defaultProfile(
   enabled: boolean
 ): StoredBridgeProviderProfile {
   const endpoint = normalizeEndpoint(endpointUrl || '');
-  const origin = endpoint ? new URL(endpoint).origin : null;
+  const origin = endpointOrigin(endpoint);
   return {
     enabled,
     endpoint_url: endpoint,
@@ -272,7 +272,7 @@ function resolveProfile(
         : credentialStatus.state === 'not_configured'
           ? 'not_configured'
           : 'configured_unverified';
-  const origin = endpoint ? new URL(endpoint).origin : null;
+  const origin = endpointOrigin(endpoint);
   const profileGeneration = digest({
     provider_id: providerId,
     enabled: stored.enabled,
@@ -332,6 +332,15 @@ function normalizeEndpoint(value: string): string | null {
     return new URL(text).toString().replace(/\/+$/, '');
   } catch {
     return text;
+  }
+}
+
+function endpointOrigin(endpoint: string | null): string | null {
+  if (!endpoint) return null;
+  try {
+    return new URL(endpoint).origin;
+  } catch {
+    return null;
   }
 }
 

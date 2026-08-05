@@ -223,6 +223,35 @@ test('R31: rotating one key changes only that provider profile generation', asyn
   assert.equal(after.profiles.openrouter.profile_generation, before.profiles.openrouter.profile_generation);
 });
 
+test('provider registry reports an invalid stored endpoint instead of throwing during status', async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-provider-invalid-endpoint-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const credential = (provider_id: 'codex-lb' | 'openrouter', endpoint_url: string) => ({
+    schema: 'sks.provider-credential-status.v1' as const,
+    provider_id,
+    state: 'configured_unverified' as const,
+    source: 'fixture',
+    fingerprint: 'fixture-fingerprint',
+    checked_at: null,
+    blockers: [],
+    warnings: [],
+    endpoint_url,
+    secret: null
+  });
+
+  const registry = await resolveBridgeProviderRegistry({
+    home,
+    credentials: {
+      'codex-lb': credential('codex-lb', 'not a valid URL'),
+      openrouter: credential('openrouter', 'https://openrouter.ai/api/v1')
+    }
+  });
+
+  assert.equal(registry.profiles['codex-lb'].state, 'blocked');
+  assert.ok(registry.profiles['codex-lb'].blockers.includes('provider_endpoint_invalid'));
+  assert.equal(registry.profiles.openrouter.state, 'configured_unverified');
+});
+
 function sha256(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
