@@ -18,9 +18,9 @@
       "reason": "the installed public release gate DAG verifies catalog v2 pass-through against the packaged runtime"
     },
     {
-      "path": "dist/scripts/codex-lb-desktop-auth-invariant-check.js",
+      "path": "dist/scripts/desktop-bridge-unification-check.js",
       "category": "installed_runtime",
-      "reason": "the installed public release gate DAG verifies Desktop OAuth byte preservation and guarded rollback behavior"
+      "reason": "the installed public release gate DAG hermetically verifies Desktop Bridge credential coexistence, migration idempotency, rollback isolation, retired CLI routing, and no-fallback policy"
     },
     {
       "path": "dist/scripts/codex-lb-desktop-bridge-check.js",

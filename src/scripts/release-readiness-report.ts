@@ -38,7 +38,7 @@ const requiredGateGroups = {
   codex_desktop: [
     'codex-app:fast-ui-preservation',
     'doctor:fixes-codex-app-fast-ui',
-    'codex-lb:comprehensive',
+    'desktop-bridge:comprehensive',
     'native-capability:repair-matrix',
     'native:image-generation-repair',
     'mcp:plugin-inventory'

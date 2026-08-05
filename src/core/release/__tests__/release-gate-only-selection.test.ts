@@ -30,23 +30,21 @@ function nodeCommand(source: string) {
   return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(source)}`
 }
 
-test('single codex-lb gate selection closes over and executes its Codex App dependency', async () => {
+test('single Desktop Bridge gate selection executes without a retired gate alias or dependency', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-release-gate-only-'))
-  const marker = path.join(root, 'codex-app-ready.marker')
   const manifest: ReleaseGateManifestV2 = {
     schema: 'sks.release-gates.v2',
     gates: [
-      gate('codex-app:fast-ui-preservation', [], nodeCommand(`require('fs').writeFileSync(${JSON.stringify(marker)}, 'ready'); console.log(JSON.stringify({schema:'sks.gate-result.v1',ok:true}))`)),
-      gate('codex-lb:comprehensive', ['codex-app:fast-ui-preservation'], nodeCommand(`if (!require('fs').existsSync(${JSON.stringify(marker)})) process.exit(2); console.log(JSON.stringify({schema:'sks.gate-result.v1',ok:true}))`))
+      gate('desktop-bridge:comprehensive', [], nodeCommand("console.log(JSON.stringify({schema:'sks.gate-result.v1',ok:true}))"))
     ]
   }
   try {
     await fs.writeFile(path.join(root, 'release-gates.v2.json'), `${JSON.stringify(manifest, null, 2)}\n`)
-    const result = await runReleaseGateDag({ root, onlyGateIds: ['codex-lb:comprehensive'], noCache: true })
+    const result = await runReleaseGateDag({ root, onlyGateIds: ['desktop-bridge:comprehensive'], noCache: true })
     assert.equal(result.ok, true)
-    assert.deepEqual(result.selected_gate_ids, ['codex-app:fast-ui-preservation', 'codex-lb:comprehensive'])
-    assert.deepEqual(result.executed_gates, ['codex-app:fast-ui-preservation', 'codex-lb:comprehensive'])
-    assert.equal(result.completed, 2)
+    assert.deepEqual(result.selected_gate_ids, ['desktop-bridge:comprehensive'])
+    assert.deepEqual(result.executed_gates, ['desktop-bridge:comprehensive'])
+    assert.equal(result.completed, 1)
     assert.equal(result.failed, 0)
   } finally {
     await fs.rm(root, { recursive: true, force: true })
@@ -100,11 +98,41 @@ test('gate-pack completion requires exact pack reports and selected-gate coverag
   assert.equal(gatePackRunCoverageComplete(2, { ...complete, pack_reports: [...complete.pack_reports, ...complete.pack_reports] }), false)
 })
 
-test('current codex-lb comprehensive selection includes its declared Codex App dependency', () => {
+test('current Desktop Bridge comprehensive selection is exact and contains only packaged bridge checks', () => {
   const manifest = loadReleaseGateManifest(process.cwd())
-  const selected = selectReleaseGateClosure(manifest, ['codex-lb:comprehensive']).map((entry) => entry.id)
-  assert.ok(selected.includes('codex-app:fast-ui-preservation'))
-  assert.ok(selected.includes('codex-lb:comprehensive'))
+  const selected = selectReleaseGateClosure(manifest, ['desktop-bridge:comprehensive'])
+  assert.deepEqual(selected.map((entry) => entry.id), ['desktop-bridge:comprehensive'])
+  assert.equal(manifest.gates.some((entry) => entry.id === 'codex-lb:comprehensive'), false)
+  const command = selected[0]?.command || ''
+  assert.deepEqual(command.split(' && '), [
+    'node ./dist/scripts/desktop-bridge-unification-check.js',
+    'node ./dist/scripts/codex-lb-desktop-bridge-check.js',
+    'node ./dist/scripts/codex-lb-desktop-bridge-latency-check.js',
+    'node ./dist/scripts/codex-lb-catalog-passthrough-check.js',
+    'node ./dist/scripts/codex-lb-desktop-capabilities-check.js'
+  ])
+})
+
+test('current Desktop Bridge comprehensive scripts are all installed-runtime requirements', async () => {
+  const manifest = loadReleaseGateManifest(process.cwd())
+  const selected = selectReleaseGateClosure(manifest, ['desktop-bridge:comprehensive'])
+  const commandPaths = (selected[0]?.command || '')
+    .split(' && ')
+    .map((command) => command.match(/node \.\/(dist\/scripts\/[^ ]+\.js)$/)?.[1])
+    .filter((entry): entry is string => Boolean(entry))
+  const runtimeManifest = JSON.parse(await fs.readFile(
+    path.join(process.cwd(), 'runtime-required-scripts.json'),
+    'utf8'
+  )) as { scripts?: Array<{ path?: string }> }
+  const requiredPaths = new Set((runtimeManifest.scripts || []).map((entry) => entry.path))
+  assert.deepEqual(commandPaths, [
+    'dist/scripts/desktop-bridge-unification-check.js',
+    'dist/scripts/codex-lb-desktop-bridge-check.js',
+    'dist/scripts/codex-lb-desktop-bridge-latency-check.js',
+    'dist/scripts/codex-lb-catalog-passthrough-check.js',
+    'dist/scripts/codex-lb-desktop-capabilities-check.js'
+  ])
+  for (const scriptPath of commandPaths) assert.equal(requiredPaths.has(scriptPath), true)
 })
 
 test('single-gate selection fails immediately for unknown gates and dependency cycles', () => {
