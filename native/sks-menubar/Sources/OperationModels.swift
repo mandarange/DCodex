@@ -20,6 +20,115 @@ enum OperationState: String, Codable {
     case queued, running, waitingForConfirmation, succeeded, failed, cancelled, terminalUncertain
 }
 
+/// Diagnostic commands can complete successfully while reporting that runtime
+/// readiness is not satisfied. This metadata deliberately excludes request
+/// bodies, credentials, endpoint query strings, and secret fingerprints.
+struct DiagnosticOperationMetadata: Codable, Equatable {
+    let schema: String
+    let executionOK: Bool
+    let reportGenerated: Bool
+    let requestedLevel: String
+    let levelSatisfied: Bool
+    let fullFeatureVerified: Bool
+    let reportId: String
+    let correlationId: String
+    let attemptId: Int
+    let catalogGeneration: String?
+
+    enum CodingKeys: String, CodingKey { case schema
+        case executionOK = "execution_ok", reportGenerated = "report_generated"
+        case requestedLevel = "requested_level", levelSatisfied = "level_satisfied"
+        case fullFeatureVerified = "full_feature_verified", reportId = "report_id"
+        case correlationId = "correlation_id", attemptId = "attempt_id"
+        case catalogGeneration = "catalog_generation"
+    }
+}
+struct ProviderResponseIdentity: Equatable {
+    let requestGeneration: Int
+    let reportId: String
+    let correlationId: String
+    let attemptId: Int
+    let checkedAt: Date
+    let catalogGeneration: String?
+}
+struct ProviderResponseGate {
+    private(set) var activeRequestGeneration = 0
+    private(set) var accepted: ProviderResponseIdentity?
+
+    mutating func begin() -> Int { activeRequestGeneration += 1; return activeRequestGeneration }
+    mutating func accept(_ candidate: ProviderResponseIdentity) -> Bool {
+        guard candidate.requestGeneration == activeRequestGeneration else { return false }
+        if let previous = accepted {
+            guard candidate.checkedAt > previous.checkedAt
+                    || candidate.checkedAt == previous.checkedAt && candidate.attemptId >= previous.attemptId else { return false }
+        }
+        accepted = candidate
+        return true
+    }
+    func statusMayMerge(checkedAt: Date, catalogGeneration: String?) -> Bool {
+        guard let accepted = accepted else { return true }
+        if let generation = catalogGeneration, let current = accepted.catalogGeneration, generation != current {
+            return checkedAt >= accepted.checkedAt
+        }
+        return checkedAt >= accepted.checkedAt
+    }
+}
+enum ProviderRecoveryAction: String, CaseIterable {
+    case repairBridgeService = "repair_bridge_service"
+    case restartBridgeAndRetry = "restart_bridge_and_retry"
+    case inspectBridgeLogs = "inspect_bridge_logs_and_retry_transport"
+    case updateBridgeProtocol = "update_bridge_or_codex_protocol"
+    case configureCodexLb = "configure_codex_lb_credential"
+    case rotateCodexLb = "rotate_codex_lb_credential"
+    case configureOpenRouter = "configure_openrouter_credential"
+    case rotateOpenRouter = "rotate_openrouter_credential"
+    case retryCatalog = "retry_catalog_sync"
+    case resolveConflict = "resolve_catalog_route_conflict"
+    case refreshCatalog = "refresh_catalog_or_select_supported_model"
+    case runDeep = "run_deep_verification"
+    case updateMenubar = "update_sks_and_rebuild_menubar"
+    case reviewConfig = "review_config_manually"
+
+    var buttonTitle: String {
+        switch self {
+        case .repairBridgeService, .restartBridgeAndRetry: return "Repair Bridge"
+        case .inspectBridgeLogs: return "Open Diagnostics"
+        case .updateBridgeProtocol, .updateMenubar: return "Check for Updates"
+        case .configureCodexLb, .rotateCodexLb: return "Configure Codex-LB"
+        case .configureOpenRouter, .rotateOpenRouter: return "Configure OpenRouter"
+        case .retryCatalog, .resolveConflict, .refreshCatalog: return "Refresh Catalog"
+        case .runDeep: return "Verify Deep"
+        case .reviewConfig: return "Review Config"
+        }
+    }
+}
+enum ProviderSecretRedactor {
+    private static let patterns = [
+        (#"(?i)(authorization\s*:\s*bearer\s+)[^\s,;]+"#, "$1[REDACTED]"),
+        (#"(?i)(x-codex-lb-api-key\s*[:=]\s*)[^\s,;]+"#, "$1[REDACTED]"),
+        (#"\bsk-(?:clb|or|proj)?-[A-Za-z0-9_-]{6,}\b"#, "[REDACTED]"),
+        (#"(?i)(api[_-]?key\s*[:=]\s*)[^\s,;]+"#, "$1[REDACTED]")
+    ]
+
+    static func redact(_ value: String) -> String {
+        patterns.reduce(value) { output, entry in
+            let (pattern, replacement) = entry
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return output }
+            return regex.stringByReplacingMatches(in: output, range: NSRange(output.startIndex..., in: output), withTemplate: replacement)
+        }
+    }
+
+    static func redactEndpoint(_ value: String) -> String {
+        let cleaned = redact(value)
+        guard var components = URLComponents(string: cleaned), components.scheme != nil else { return cleaned }
+        components.user = nil
+        components.password = nil
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? "[REDACTED ENDPOINT]"
+    }
+}
+
 enum OperationProgressSignal: String, Codable, CaseIterable {
     case evidence, fileChange, testResult, modelResponse, toolResponse, none
 }
@@ -386,4 +495,3 @@ struct UpdateOperationReceiptSnapshot: Codable {
         case receiptPath = "receipt_path"
     }
 }
-

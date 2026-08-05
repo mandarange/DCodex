@@ -11,28 +11,18 @@ struct ProviderActionInventoryItem: Equatable {
 
 enum ProviderActionInventory {
     static let items: [ProviderActionInventoryItem] = [
-        .init(id: "sks-provider-desktop-bridge-mode", handler: "enableDesktopFull", backend: "sks codex-lb use-desktop-full", loadingState: "routing", successState: "four-stage receipt", recoveryAction: "review provider stages"),
-        .init(id: "sks-provider-verify-capabilities", handler: "verifyDesktopCapabilities", backend: "sks codex-lb capabilities", loadingState: "verifying", successState: "trusted capability matrix", recoveryAction: "retry verification"),
-        .init(id: "sks-provider-use-chatgpt-oauth", handler: "disableDesktopRouting", backend: "sks codex-lb disable", loadingState: "routing", successState: "four-stage receipt", recoveryAction: "open provider settings"),
-        .init(id: "sks-provider-reconnect-codex-lb", handler: "setDomainAndKey", backend: "sks codex-lb setup", loadingState: "saving", successState: "Keychain confirmed", recoveryAction: "repair Keychain and reconnect"),
-        .init(id: "sks-provider-run-connect-test", handler: "testConnection", backend: "sks codex-lb connect-test", loadingState: "testing", successState: "bounded response proof", recoveryAction: "retry connect test"),
-        .init(id: "sks-provider-copy-cli-command", handler: "copyCliCommand", backend: "local pasteboard", loadingState: "copying", successState: "command copied", recoveryAction: "copy again"),
-        .init(id: "sks-provider-activate-codex-lb", handler: "useCliProvider", backend: "sks codex-lb use-cli", loadingState: "applying", successState: "connection proof", recoveryAction: "review Credentials Connection Proof"),
-        .init(id: "sks-provider-reconnect-openrouter", handler: "saveOpenRouterKey", backend: "sks codex-app set-openrouter-key", loadingState: "saving", successState: "Keychain confirmed", recoveryAction: "repair Keychain and reconnect"),
-        .init(id: "sks-provider-save-openrouter-key", handler: "saveOpenRouterKey", backend: "sks codex-app set-openrouter-key", loadingState: "saving", successState: "Keychain confirmed", recoveryAction: "repair Keychain and reconnect"),
-        .init(id: "sks-provider-refresh-openrouter-catalog", handler: "refreshOpenRouterModelsAction", backend: "sks codex-app openrouter-models", loadingState: "refreshing", successState: "validated catalog", recoveryAction: "reconnect then refresh"),
-        .init(id: "sks-provider-test-openrouter", handler: "testOpenRouterConnection", backend: "sks codex-app openrouter-test", loadingState: "testing", successState: "model verified", recoveryAction: "choose a validated model"),
-        .init(id: "sks-provider-activate-openrouter", handler: "useOpenRouter", backend: "sks codex-app use-openrouter", loadingState: "applying", successState: "four-stage receipt", recoveryAction: "restore previous provider"),
-        .init(id: "sks-provider-restore-previous", handler: "restorePreviousDesktopRouting", backend: "sks codex-app restore-desktop-routing", loadingState: "restoring", successState: "snapshot restored", recoveryAction: "review restore blocker"),
-        .init(id: "sks-provider-open-codex-signin", handler: "openCodexSignInAction", backend: "NSWorkspace Codex launch", loadingState: "opening", successState: "Codex opened", recoveryAction: "install or open Codex manually"),
-        .init(id: "sks-provider-fast-on", handler: "fastOn", backend: "sks fast-mode on", loadingState: "applying", successState: "service tier verified", recoveryAction: "refresh status"),
-        .init(id: "sks-provider-fast-off", handler: "fastOff", backend: "sks fast-mode off", loadingState: "applying", successState: "service tier verified", recoveryAction: "refresh status"),
-        .init(id: "sks-provider-refresh-router", handler: "refreshMultiProviderRouterAction", backend: "sks codex-app router-status", loadingState: "refreshing", successState: "router catalog loaded", recoveryAction: "retry refresh"),
-        .init(id: "sks-provider-test-router", handler: "testMultiProviderRouter", backend: "sks codex-app router-test", loadingState: "testing", successState: "router verified", recoveryAction: "review router blocker"),
-        .init(id: "sks-provider-configure-router", handler: "useMultiProviderRouter", backend: "sks codex-app use-router", loadingState: "applying", successState: "router configured", recoveryAction: "restore provider settings"),
-        .init(id: "sks-provider-refresh-role-models", handler: "refreshRoleModelsAction", backend: "sks codex-app role-models", loadingState: "refreshing", successState: "role settings loaded", recoveryAction: "retry refresh"),
-        .init(id: "sks-provider-save-role-model", handler: "saveRoleModel", backend: "sks codex-app set-role-model", loadingState: "saving", successState: "role override saved", recoveryAction: "retry or reset"),
-        .init(id: "sks-provider-reset-role-model", handler: "resetRoleModel", backend: "sks codex-app reset-role-model", loadingState: "resetting", successState: "role override reset", recoveryAction: "retry reset")
+        .init(id: "sks-provider-bridge-repair", handler: "repairDesktopBridge", backend: "sks bridge repair --json", loadingState: "repairing", successState: "bridge receipt", recoveryAction: "inspect bridge logs"),
+        .init(id: "sks-provider-verify-transport", handler: "verifyTransport", backend: "sks bridge verify --level transport --json", loadingState: "verifying", successState: "v3 report", recoveryAction: "retry transport verification"),
+        .init(id: "sks-provider-verify-deep", handler: "verifyDeep", backend: "sks bridge verify --level deep --json", loadingState: "verifying", successState: "v3 report", recoveryAction: "review scoped findings"),
+        .init(id: "sks-provider-reconnect-codex-lb", handler: "configureCodexLbProfile", backend: "sks bridge provider configure codex-lb", loadingState: "saving", successState: "profile configured", recoveryAction: "repair Keychain and reconnect"),
+        .init(id: "sks-provider-validate-codex-lb", handler: "validateCodexLbProfile", backend: "sks bridge provider validate codex-lb --json", loadingState: "validating", successState: "provider report", recoveryAction: "rotate credential"),
+        .init(id: "sks-provider-toggle-codex-lb", handler: "toggleCodexLbProfile", backend: "sks bridge provider enable or disable codex-lb", loadingState: "updating profile", successState: "profile state updated", recoveryAction: "retry provider update"),
+        .init(id: "sks-provider-reconnect-openrouter", handler: "configureOpenRouterProfile", backend: "sks bridge provider configure openrouter", loadingState: "saving", successState: "profile configured", recoveryAction: "repair Keychain and reconnect"),
+        .init(id: "sks-provider-validate-openrouter", handler: "validateOpenRouterProfile", backend: "sks bridge provider validate openrouter --json", loadingState: "validating", successState: "provider report", recoveryAction: "rotate credential"),
+        .init(id: "sks-provider-toggle-openrouter", handler: "toggleOpenRouterProfile", backend: "sks bridge provider enable or disable openrouter", loadingState: "updating profile", successState: "profile state updated", recoveryAction: "retry provider update"),
+        .init(id: "sks-provider-refresh-catalog", handler: "refreshCombinedCatalog", backend: "sks bridge catalog sync --json", loadingState: "syncing", successState: "combined catalog report", recoveryAction: "retry catalog sync"),
+        .init(id: "sks-provider-open-catalog-report", handler: "openCatalogReport", backend: "sks bridge catalog status --json", loadingState: "loading report", successState: "combined catalog report", recoveryAction: "retry catalog status"),
+        .init(id: "sks-provider-route-explain", handler: "explainRoute", backend: "sks bridge route explain --json", loadingState: "resolving", successState: "explicit route shown", recoveryAction: "refresh catalog or choose supported model")
     ]
 
     static func item(_ id: String) -> ProviderActionInventoryItem? { items.first { $0.id == id } }
@@ -104,7 +94,7 @@ extension ProvidersViewController {
     ) -> OperationSnapshot {
         var current = snapshot
         let catalog = (json?["catalog_sync"] as? [String: Any]) ?? (json?["model_catalog_sync"] as? [String: Any])
-        let catalogReady = catalog?["status"] as? String == "ready" || json?["catalog_refreshed"] as? Bool == true
+        let catalogReady = catalog?["state"] as? String == "verified" || json?["catalog_refreshed"] as? Bool == true
         let restart = json?["restart_performed"] as? Bool == true
             || json?["new_session_ready"] as? Bool == true
             || (json?["restart_app"] as? [String: Any])?["ok"] as? Bool == true
@@ -162,21 +152,34 @@ extension ProvidersViewController {
     }
 
     func renderCatalogSyncStatus(_ json: [String: Any]) {
-        let catalog = (json["catalog_sync"] as? [String: Any])
-            ?? (json["model_catalog_sync"] as? [String: Any])
-        guard let catalog = catalog else {
-            catalogSyncStatus.stringValue = "Native Codex catalog sync: state not reported · last verified catalog was not assumed. Retry provider status or Verify Capabilities."
-            catalogSyncStatus.textColor = .systemOrange
+        let payload = (json["schema"] as? String == "sks.desktop-capabilities.v3" ? json : nil)
+            ?? (json["report"] as? [String: Any])
+            ?? (json["capability_report"] as? [String: Any])
+        guard payload?["schema"] as? String == "sks.desktop-capabilities.v3",
+              let catalog = payload?["catalog_sync"] as? [String: Any],
+              catalog["schema"] as? String == "sks.combined-catalog-sync.v1" else {
+            catalogSyncStatus.stringValue = "Capability schema invalid · catalog_sync missing · capability_schema_invalid"
+            catalogSyncStatus.textColor = .systemRed
             return
         }
-        let state = (catalog["status"] as? String) ?? "unverified"
-        let updatedAt = (catalog["updated_at"] as? String) ?? "unknown time"
-        let changed = catalog["changed"] as? Bool
-        let failure = (catalog["failure_reason"] as? String) ?? (catalog["error"] as? String)
-        let changeText = changed == true ? "changed" : changed == false ? "unchanged" : "change unknown"
-        let failureText = failure.map { " · reason: \($0) · recovery: retry catalog sync" } ?? ""
-        catalogSyncStatus.stringValue = "Native Codex catalog sync: \(state) · \(changeText) · last \(updatedAt)\(failureText)"
-        catalogSyncStatus.textColor = failure == nil && state == "ready" ? .secondaryLabelColor : .systemOrange
+        let state = catalog["state"] as? String ?? "failed"
+        let models = (catalog["model_count"] as? NSNumber)?.intValue
+        let conflicts = (catalog["conflict_count"] as? NSNumber)?.intValue ?? 0
+        let providers = catalog["providers"] as? [String: Any]
+        func count(_ id: String) -> String {
+            guard let row = providers?[id] as? [String: Any] else { return "invalid" }
+            let rowState = row["state"] as? String ?? "invalid"
+            return (row["model_count"] as? NSNumber).map { "\($0.intValue)" } ?? rowState
+        }
+        let modelText = models.map { " · \($0) models" } ?? ""
+        let conflictText = conflicts > 0 ? " · \(conflicts) conflicts" : ""
+        let blocker = (catalog["blockers"] as? [String])?.first.map { " · \(ProviderSecretRedactor.redact($0))" } ?? ""
+        catalogSyncStatus.stringValue = "Combined catalog · \(state)\(modelText) · Codex-LB \(count("codex-lb")) / OpenRouter \(count("openrouter"))\(conflictText)\(blocker)"
+        switch state {
+        case "verified": catalogSyncStatus.textColor = .systemGreen
+        case "failed": catalogSyncStatus.textColor = .systemRed
+        default: catalogSyncStatus.textColor = .systemOrange
+        }
     }
 
     func refreshCredentialHealth() {
@@ -198,20 +201,24 @@ extension ProvidersViewController {
         }
     }
 
-    func promptForSecretKey(window: NSWindow, sheetTitle: String, sheetMessage: String, placeholder: String, args: [String], kind: String, title: String, credential: SKSKeychainCredential, statusLabel: NSTextField, successSummary: String, failSummary: String, codePrefix: String = "E-LB") {
+    func promptForSecretKey(window: NSWindow, sheetTitle: String, sheetMessage: String, placeholder: String, args: [String], kind: String, title: String, credential: SKSKeychainCredential, statusLabel: NSTextField, successSummary: String, failSummary: String, codePrefix: String = "E-LB", providerId: String? = nil) {
         AlertFactory.textSheet(window: window, title: sheetTitle, message: sheetMessage, secure: true, placeholder: placeholder) { [weak self] key in
             guard let self = self, let key = key else { return }
-            guard !self.busy else { statusLabel.stringValue = "Another provider action is already running."; return }
+            if let providerId = providerId, self.providerActionInFlight.contains(providerId) {
+                statusLabel.stringValue = "That provider already has an operation in progress."
+                return
+            }
+            guard providerId != nil || !self.busy else { statusLabel.stringValue = "Another provider action is already running."; return }
             guard let snapshot = self.operations.begin(kind: kind, mutationGroup: "codex-config", summary: title) else {
                 statusLabel.stringValue = "Another guarded mutation is already running. Wait or open Diagnostics."
                 return
             }
-            self.setBusy(true)
+            if let providerId = providerId { self.setProviderActionBusy(providerId, true) } else { self.setBusy(true) }
             statusLabel.stringValue = "\(title)…"
             _ = self.operations.update(snapshot, state: .running, stage: "running", progress: nil, summary: title)
             self.processClient.run(args, stdin: key + "\n", timeout: NativeView.mutationTimeout) { [weak self] result in
                 guard let self = self else { return }
-                self.setBusy(false)
+                if let providerId = providerId { self.setProviderActionBusy(providerId, false) } else { self.setBusy(false) }
                 let parsed = self.json(result.output)
                 let configurationSaved = result.code == 0 && parsed?["ok"] as? Bool == true
                 let keychainWrite = configurationSaved
@@ -259,45 +266,4 @@ extension ProvidersViewController {
         }
     }
 
-    func performDesktopRouting(_ args: [String], title: String, kind: String, expectedMode: String) {
-        guard !busy else { providerStatus.stringValue = "Another provider action is already running."; return }
-        let targetMode = expectedMode == "disabled" ? "chatgpt-oauth" : "codex-lb"
-        let targetModel = targetMode == "chatgpt-oauth" ? "native-catalog-selection" : "catalog-selection-required"
-        guard let snapshot = beginProviderApply(kind: kind, summary: title, mode: targetMode, model: targetModel) else {
-            providerStatus.stringValue = "Another guarded mutation is already running. Wait or open Diagnostics."
-            return
-        }
-        setBusy(true)
-        providerStatus.stringValue = "\(title)…"
-        let running = operations.update(snapshot, state: .running, stage: "routing", progress: nil, summary: title)
-        processClient.run(args, timeout: NativeView.mutationTimeout) { [weak self] result in
-            guard let self = self else { return }
-            self.setBusy(false)
-            let parsed = self.json(result.output)
-            let routing = parsed.map(ProviderRoutingTruth.snapshot(from:))
-            let mode = routing?.mode
-            let oauthPreserved = routing.flatMap { $0.oauthPreservedFlag }
-            let routeConfirmed = result.code == 0 && parsed?["ok"] as? Bool == true && mode == expectedMode && oauthPreserved != false
-            let configSaved = parsed?["config_committed"] as? Bool == true || parsed?["config_applied"] as? Bool == true
-            let applied = self.recordProviderApplyResult(running, json: parsed, configurationSaved: configSaved, proxyApplied: routeConfirmed)
-            let fullyApplied = applied.providerApply?.allSucceeded == true
-            guard routeConfirmed else {
-                self.providerStatus.stringValue = "\(title) was not confirmed · \(self.structuredPublicDetail(parsed, fallback: result.output)) No routing or OAuth change was assumed."
-                return
-            }
-            let bridgeSelected = expectedMode == "desktop-native-bridge"
-            self.desktopFullRoutingNow = false
-            self.codexLbSelectedNow = false
-            self.codexLbProvedNow = false
-            self.chatgptOauthPresentNow = routing?.chatgptOauthPresent ?? self.chatgptOauthPresentNow
-            self.renderActiveProviderSummary()
-            if bridgeSelected { self.renderMeasuredRoutingBadge(nil, routeExpected: true) }
-            self.providerStatus.stringValue = fullyApplied
-                ? (bridgeSelected
-                    ? "Desktop Bridge Mode applied · ChatGPT sign-in preserved · all four local stages confirmed."
-                    : "ChatGPT OAuth mode applied · all four local stages confirmed.")
-                : "Routing changed, but one or more apply stages remain unverified. Review Provider Apply Stages before starting new sessions."
-            self.refresh()
-        }
-    }
 }

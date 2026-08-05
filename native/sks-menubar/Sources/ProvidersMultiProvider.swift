@@ -1,41 +1,11 @@
 import Cocoa
 
+// Retained as a small compatibility container for role-model code compiled in
+// the same translation unit. Active 8.1.3 routing is the Desktop Bridge policy.
 final class MultiProviderRouterControls {
-    let baseURL: NSTextField = {
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        field.placeholderString = "http://127.0.0.1:10100/v1"
-        field.stringValue = "http://127.0.0.1:10100/v1"
-        field.setAccessibilityLabel("Multi-provider router base URL")
-        field.setAccessibilityHelp("Only loopback HTTP or HTTPS endpoints ending in /v1 are accepted.")
-        field.toolTip = "Loopback only: localhost, 127.0.0.1, or ::1, ending in /v1."
-        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return field
-    }()
-    let catalogPath: NSTextField = {
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
-        field.placeholderString = "~/.codex/opencodex-catalog.json"
-        field.stringValue = "~/.codex/opencodex-catalog.json"
-        field.setAccessibilityLabel("Codex multi-provider model catalog path")
-        field.setAccessibilityHelp("OpenCodex writes this owner-only Codex catalog. Other routers must export a complete Codex ModelInfo catalog.")
-        field.toolTip = "OpenCodex default: $CODEX_HOME/opencodex-catalog.json"
-        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return field
-    }()
-    let model: NSTextField = {
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        field.placeholderString = "anthropic/claude-sonnet"
-        field.setAccessibilityLabel("Multi-provider router model slug")
-        field.setAccessibilityPlaceholderValue("provider/model")
-        field.setAccessibilityHelp("Enter an exact model slug from the configured Codex catalog.")
-        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return field
-    }()
+    let baseURL = NSTextField(), catalogPath = NSTextField(), model = NSTextField()
     let modelPopup = NSPopUpButton()
-    let status: NSTextField = {
-        let field = NativeView.detail("Multi-provider router status has not loaded yet.")
-        field.setAccessibilityLabel("Multi-provider router status")
-        return field
-    }()
+    let status = NativeView.detail("Desktop Bridge route policy is loading…")
     weak var refreshButton: NSButton?
     var models: [String] = []
     var refreshInFlight = false
@@ -43,289 +13,149 @@ final class MultiProviderRouterControls {
 }
 
 extension ProvidersViewController {
-    func makeMultiProviderRouterCard() -> NSBox {
-        multiProvider.model.delegate = self
-        multiProvider.modelPopup.addItem(withTitle: "Choose from catalog…")
-        multiProvider.modelPopup.target = self
-        multiProvider.modelPopup.action = #selector(selectMultiProviderModel(_:))
-        multiProvider.modelPopup.setAccessibilityLabel("Multi-provider routed model catalog")
-        multiProvider.modelPopup.setAccessibilityHelp("Choose an exact provider/model slug from the active Codex catalog.")
-        multiProvider.modelPopup.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        multiProvider.modelPopup.widthAnchor.constraint(equalToConstant: 230).isActive = true
-        multiProvider.modelPopup.isEnabled = false
+    func makeCombinedCatalogCard() -> NSBox {
+        let refresh = NativeView.button("Refresh", target: self, action: #selector(refreshCombinedCatalog))
+        let report = NativeView.button("Open Report", target: self, action: #selector(openCatalogReport))
+        registerProviderAction(refresh, id: "sks-provider-refresh-catalog")
+        registerProviderAction(report, id: "sks-provider-open-catalog-report")
+        actionButtons += [refresh, report]
+        let card = NativeView.card(title: "Combined Model Catalog", subtitle: "Codex-LB and OpenRouter catalogs activate atomically with one explicit route index. A failed build keeps the prior verified generation.", views: [catalogSyncStatus, ControlKit.actionRow([refresh, report])])
+        card.setAccessibilityIdentifier("sks-provider-card-combined-catalog")
+        return card
+    }
 
-        let refresh = NativeView.button("Refresh Router", target: self, action: #selector(refreshMultiProviderRouterAction(_:)))
-        let test = NativeView.button("Check Router", target: self, action: #selector(testMultiProviderRouter))
-        let activate = NativeView.button("Configure Router Model", target: self, action: #selector(useMultiProviderRouter))
-        refresh.setAccessibilityLabel("Refresh multi-provider router and catalog status")
-        test.setAccessibilityLabel("Check the loopback multi-provider router")
-        activate.setAccessibilityLabel("Configure the selected routed model and restart Codex App")
-        test.setAccessibilityHelp("Checks that the selected model exists in both the local catalog and the live loopback router. No configuration is changed.")
-        activate.setAccessibilityHelp("Validates the loopback router, writes its provider and catalog settings to Codex config, and restarts Codex App. Runtime adoption still requires a live Codex check.")
-        multiProvider.refreshButton = refresh
-        registerProviderAction(refresh, id: "sks-provider-refresh-router")
-        registerProviderAction(test, id: "sks-provider-test-router")
-        registerProviderAction(activate, id: "sks-provider-configure-router")
-        actionButtons += [refresh, test, activate]
+    func makeRoutesCard() -> NSBox {
+        let explain = NativeView.button("Explain Route", target: self, action: #selector(explainRoute))
+        registerProviderAction(explain, id: "sks-provider-route-explain")
+        actionButtons.append(explain)
+        let card = NativeView.card(title: "Routes", subtitle: "Routes come only from the canonical model index or a validated session pin. Fallback is always none.", views: [routesStatus, NativeView.row([routeModelField, explain])])
+        card.setAccessibilityIdentifier("sks-provider-card-routes")
+        return card
+    }
 
-        let routerLabel = NSTextField(labelWithString: "Router URL")
-        let catalogLabel = NSTextField(labelWithString: "Catalog")
-        let modelsLabel = NSTextField(labelWithString: "Models")
-        let modelLabel = NSTextField(labelWithString: "Model slug")
-        for label in [routerLabel, catalogLabel, modelsLabel, modelLabel] {
-            label.setContentHuggingPriority(.required, for: .horizontal)
+    func renderCombinedCatalog(_ json: [String: Any]) {
+        let catalog = (json["catalog_sync"] as? [String: Any])
+            ?? (json["report"] as? [String: Any])?["catalog_sync"] as? [String: Any]
+            ?? (json["capability_report"] as? [String: Any])?["catalog_sync"] as? [String: Any]
+        guard catalog?["schema"] as? String == "sks.combined-catalog-sync.v1",
+              let data = try? JSONSerialization.data(withJSONObject: catalog as Any),
+              let decoded = try? JSONDecoder().decode(CombinedCatalogSyncStatusV1.self, from: data),
+              decoded.providers["codex-lb"]?.schema == "sks.catalog-sync-state.v2",
+              decoded.providers["openrouter"]?.schema == "sks.catalog-sync-state.v2" else {
+            catalogSyncStatus.stringValue = "Capability schema invalid · catalog_sync missing · capability_schema_invalid"
+            catalogSyncStatus.textColor = .systemRed
+            return
         }
-        let security = NativeView.detail(
-            "Security: only loopback HTTP(S) /v1 endpoints are accepted. SKS Control Center does not accept or store router credentials; keep upstream credentials inside the local router."
-        )
-        security.setAccessibilityLabel("Multi-provider router security")
-        let setup = NativeView.detail(
-            "OpenCodex setup: run ocx start, then ensure the catalog stamps multi_agent_version = \"v2\" on routed models. If OpenCodex chose a fallback port, replace 10100 with the live port reported by ocx status."
-        )
-        setup.setAccessibilityLabel("OpenCodex multi-provider setup guidance")
-
-        return NativeView.card(
-            title: "Multi-Provider Router",
-            subtitle: "Connects Codex to one local Responses router, such as OpenCodex. Multi-agent v2 catalog slugs (multi_agent_version = \"v2\") can then be assigned to different agent roles.",
-            views: [
-                security,
-                setup,
-                multiProvider.status,
-                NativeView.row([routerLabel, multiProvider.baseURL]),
-                NativeView.row([catalogLabel, multiProvider.catalogPath]),
-                NativeView.row([modelsLabel, multiProvider.modelPopup, refresh]),
-                NativeView.row([modelLabel, multiProvider.model]),
-                NativeView.row([test, activate])
-            ]
-        )
+        renderCatalogStatus(decoded)
     }
 
-    func setMultiProviderRouterBusy(_ value: Bool) {
-        multiProvider.baseURL.isEnabled = !value
-        multiProvider.catalogPath.isEnabled = !value
-        multiProvider.model.isEnabled = !value
-        multiProvider.modelPopup.isEnabled = !value && !multiProvider.models.isEmpty
-        multiProvider.refreshButton?.isEnabled = !value && !multiProvider.refreshInFlight
+    func renderCatalogStatus(_ catalog: CombinedCatalogSyncStatusV1) {
+        func providerText(_ id: String) -> String {
+            guard let state = catalog.providers[id] else { return "invalid" }
+            return state.modelCount.map(String.init) ?? state.state
+        }
+        let modelText = catalog.modelCount.map { " · \($0) models" } ?? ""
+        let routeText = catalog.routeCount.map { " · \($0) routes" } ?? ""
+        let conflictText = catalog.conflictCount > 0 ? " · \(catalog.conflictCount) conflicts" : ""
+        let cause = catalog.blockers.first.map { " · \(ProviderSecretRedactor.redact($0))" } ?? ""
+        let recovery = catalog.recoveryAction.flatMap(ProviderRecoveryAction.init(rawValue:)).map { " · recovery \($0.buttonTitle)" } ?? ""
+        catalogSyncStatus.stringValue = "Combined catalog · \(catalog.state)\(modelText)\(routeText) · Codex-LB \(providerText("codex-lb")) / OpenRouter \(providerText("openrouter"))\(conflictText)\(cause)\(recovery)"
+        switch catalog.state {
+        case "verified": catalogSyncStatus.textColor = .systemGreen
+        case "failed": catalogSyncStatus.textColor = .systemRed
+        default: catalogSyncStatus.textColor = .systemOrange
+        }
     }
 
-    @objc func refreshMultiProviderRouterAction(_ sender: NSButton) {
-        refreshMultiProviderRouterStatus()
+    func renderRoutes(_ json: [String: Any]) {
+        guard let routing = json["routing"] as? [String: Any],
+              let policy = routing["policy"] as? [String: Any],
+              policy["schema"] as? String == "sks.bridge-routing-policy.v1",
+              policy["fallback"] as? String == "none" else {
+            routesStatus.stringValue = "Routes · schema invalid or fallback is not none"
+            routesStatus.textColor = .systemRed
+            return
+        }
+        let provider = policy["default_provider_id"] as? String ?? "none"
+        let generation = policy["policy_generation"] as? String ?? "unreported"
+        let catalogGeneration = policy["catalog_generation"] as? String ?? "unreported"
+        let pin = routing["session_pin"] as? [String: Any]
+        let pinText = pin.map { "\($0["provider_id"] as? String ?? "invalid") / \($0["public_model"] as? String ?? "invalid")" } ?? "none"
+        let selected = routing["selected_route"] as? [String: Any]
+        let selectedModel = routing["selected_model"] as? String ?? "unknown"
+        let selectedText = selected.map { "\(selectedModel) → \($0["provider_id"] as? String ?? "unknown")" } ?? "none"
+        routesStatus.stringValue = "Default provider: \(provider) · selected model: \(selectedText) · session pin: \(pinText) · fallback: none · policy \(generation) · catalog \(catalogGeneration)"
+        routesStatus.textColor = .secondaryLabelColor
     }
 
-    func refreshMultiProviderRouterStatus() {
-        guard !multiProvider.refreshInFlight else { return }
-        multiProvider.refreshInFlight = true
-        multiProvider.refreshButton?.isEnabled = false
-        if !busy { multiProvider.status.stringValue = "Checking multi-provider router and catalog…" }
-        processClient.run(["codex-app", "router-status", "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
+    @objc func refreshCombinedCatalog() {
+        runCatalogCommand(["bridge", "catalog", "sync", "--json"], title: "Refresh combined catalog", mutationGroup: "codex-config")
+    }
+
+    @objc func openCatalogReport() {
+        runCatalogCommand(["bridge", "catalog", "status", "--json"], title: "Load combined catalog report", mutationGroup: nil)
+    }
+
+    private func runCatalogCommand(_ args: [String], title: String, mutationGroup: String?) {
+        guard !catalogRefreshInFlight, let snapshot = operations.begin(kind: "bridge-catalog", mutationGroup: mutationGroup, summary: title) else { return }
+        catalogRefreshInFlight = true
+        catalogSyncStatus.stringValue = "Combined catalog · syncing"
+        _ = operations.update(snapshot, state: .running, stage: "catalog_sync", progress: nil, summary: title)
+        processClient.run(args, timeout: NativeView.mutationTimeout) { [weak self] result in
             guard let self = self else { return }
-            self.multiProvider.refreshInFlight = false
-            self.multiProvider.refreshButton?.isEnabled = !self.busy
+            self.catalogRefreshInFlight = false
             guard let json = self.json(result.output) else {
-                if !self.busy {
-                    self.multiProvider.status.stringValue = "Router status unavailable · no configuration was changed."
-                    self.multiProvider.status.textColor = .systemOrange
-                }
-                self.setMultiProviderRouterBusy(self.busy)
-                return
+                _ = self.operations.update(snapshot, state: .failed, stage: "complete", progress: 1, summary: "Catalog report schema invalid")
+                self.catalogSyncStatus.stringValue = "Capability schema invalid · catalog_sync missing · capability_schema_invalid"
+                self.catalogSyncStatus.textColor = .systemRed; return
             }
-            if let baseURL = json["base_url"] as? String, !baseURL.isEmpty {
-                self.multiProvider.baseURL.stringValue = baseURL
-            }
-            if let catalogPath = json["catalog_path"] as? String, !catalogPath.isEmpty {
-                self.multiProvider.catalogPath.stringValue = catalogPath
-            }
-            let models = (json["models"] as? [String]) ?? []
-            self.multiProvider.models = models
-            self.multiProvider.modelPopup.removeAllItems()
-            self.multiProvider.modelPopup.addItem(withTitle: models.isEmpty ? "Catalog has no models" : "Choose from \(models.count) models…")
-            if !models.isEmpty { self.multiProvider.modelPopup.addItems(withTitles: models) }
-            if let activeModel = json["active_model"] as? String,
-               !activeModel.isEmpty,
-               !self.multiProvider.modelSelectionPending,
-               self.multiProvider.model.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                self.multiProvider.model.stringValue = activeModel
-            }
-            self.synchronizeMultiProviderPopupSelection()
-            let selected = json["selected"] as? Bool == true
-            self.routerSelectedNow = selected
-            self.routerActiveModel = (json["active_model"] as? String) ?? ""
-            self.renderActiveProviderSummary()
-            let providerReady = json["provider_contract_ok"] as? Bool == true
-            let catalog = json["catalog"] as? [String: Any]
-            let catalogReady = catalog?["ok"] as? Bool == true
-            let activeModel = json["active_model"] as? String ?? "unset"
-            let modelCount = json["model_count"] as? Int ?? models.count
-            let truncated = json["models_truncated"] as? Bool == true
-            let modelSummary = truncated
-                ? "\(models.count) of \(modelCount) catalog models shown"
-                : "\(modelCount) catalog models available"
-            let state = json["status"] as? String ?? "unknown"
-            let ownership = json["routing_ownership"] as? [String: Any]
-            let ownershipClass = ownership?["classification"] as? String ?? ""
-            let desktopPicker = json["desktop_picker"] as? [String: Any]
-            let cacheInvalidated = desktopPicker?["models_cache_invalidated"] as? Bool == true
-            let restartRecommended = desktopPicker?["restart_recommended"] as? Bool == true
-            if !self.busy {
-                var suffix = ""
-                if ownershipClass == "opencodex_design_b" {
-                    suffix += " · OpenCodex Design B owns openai_base_url (do not overwrite without --force-routing-override)"
-                } else if !ownershipClass.isEmpty && ownershipClass != "sks_router" && ownershipClass != "unconfigured" {
-                    suffix += " · routing owner: \(ownershipClass)"
-                }
-                if restartRecommended {
-                    suffix += cacheInvalidated
-                        ? " · Desktop models cache marked stale; restart Codex App if the picker is still old"
-                        : " · restart Codex App after catalog changes so the Desktop picker refreshes"
-                }
-                if selected && providerReady && catalogReady {
-                    self.multiProvider.status.stringValue = "Router configured · \(activeModel) · \(modelSummary). Runtime adoption is not verified here.\(suffix)"
-                    self.multiProvider.status.textColor = .systemGreen
-                } else if providerReady && catalogReady {
-                    self.multiProvider.status.stringValue = "Router definition ready, not selected · \(modelSummary). Choose a model and configure when ready.\(suffix)"
-                    self.multiProvider.status.textColor = .secondaryLabelColor
-                } else {
-                    self.multiProvider.status.stringValue = "Router \(state.replacingOccurrences(of: "_", with: " ")) · \(self.multiProviderPublicDetail(json, fallback: result.output))\(suffix)"
-                    self.multiProvider.status.textColor = .systemOrange
-                }
-            }
-            self.setMultiProviderRouterBusy(self.busy)
+            self.renderCombinedCatalog(json)
+            let valid = !self.catalogSyncStatus.stringValue.contains("schema invalid")
+            _ = self.operations.update(snapshot, state: valid ? .succeeded : .failed, stage: "complete", progress: 1, summary: valid ? "Catalog report generated" : "Catalog report schema invalid")
+            self.refresh()
         }
     }
 
-    @objc private func selectMultiProviderModel(_ sender: NSPopUpButton) {
-        guard sender.indexOfSelectedItem > 0, let model = sender.titleOfSelectedItem else { return }
-        multiProvider.modelSelectionPending = true
-        multiProvider.model.stringValue = model
-        multiProvider.status.stringValue = "Selected \(model). Check the router before activation."
-        multiProvider.status.textColor = .secondaryLabelColor
-    }
-
-    @objc func testMultiProviderRouter() {
-        let values = multiProviderRouterInput()
-        guard !values.model.isEmpty else {
-            multiProvider.status.stringValue = "Router check blocked · choose or enter a provider/model catalog slug."
-            multiProvider.status.textColor = .systemOrange
-            return
+    @objc func explainRoute() {
+        let model = routeModelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty, let snapshot = operations.begin(kind: "bridge-route-explain", mutationGroup: nil, summary: "Explain model route") else {
+            routesStatus.stringValue = "Route explain blocked · choose an exact model from the combined catalog."
+            routesStatus.textColor = .systemOrange; return
         }
-        guard !busy else { multiProvider.status.stringValue = "Another provider action is already running."; return }
-        guard let snapshot = operations.begin(kind: "multi-provider-router-test", mutationGroup: nil, summary: "Check multi-provider router") else {
-            multiProvider.status.stringValue = "Another guarded mutation is already running. Wait or open Diagnostics."
-            return
-        }
-        setBusy(true)
-        multiProvider.status.stringValue = "Checking \(values.model) through the loopback router…"
-        _ = operations.update(snapshot, state: .running, stage: "testing", progress: nil, summary: "Check multi-provider router")
-        processClient.run([
-            "codex-app", "router-test",
-            "--base-url", values.baseURL,
-            "--catalog", values.catalogPath,
-            "--model", values.model,
-            "--json"
-        ], timeout: NativeView.mutationTimeout) { [weak self] result in
+        routesStatus.stringValue = "Explaining \(model) through the explicit route index…"
+        _ = operations.update(snapshot, state: .running, stage: "model_route", progress: nil, summary: "Explain model route")
+        processClient.run(["bridge", "route", "explain", model, "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
             guard let self = self else { return }
-            self.setBusy(false)
             let json = self.json(result.output)
-            let ok = result.code == 0 && json?["ok"] as? Bool == true
-            _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? "Multi-provider router ready" : "Multi-provider router needs action")
-            self.multiProvider.status.stringValue = ok
-                ? "Router check passed · \(values.model) is present in both the Codex catalog and live router."
-                : "Router check failed · \(self.multiProviderPublicDetail(json, fallback: result.output))"
-            self.multiProvider.status.textColor = ok ? .systemGreen : .systemOrange
+            let route = json?["route"] as? [String: Any]
+            let provider = route?["provider_id"] as? String
+            let upstream = route?["upstream_model"] as? String
+            let fallback = json?["fallback"] as? String
+            let valid = provider != nil && upstream != nil && fallback == "none"
+            _ = self.operations.update(snapshot, state: valid ? .succeeded : .failed, stage: "complete", progress: 1, summary: valid ? "Route explained" : "Route unavailable")
+            self.routesStatus.stringValue = valid
+                ? "\(model) → \(provider!) / \(upstream!) · fallback none"
+                : "\(model) · route missing or ambiguous · no fallback · \(self.structuredPublicDetail(json, fallback: result.output, fallbackNext: "Refresh catalog or choose a supported model"))"
+            self.routesStatus.textColor = valid ? .systemGreen : .systemRed
         }
     }
 
-    @objc func useMultiProviderRouter() {
-        let values = multiProviderRouterInput()
-        guard !values.model.isEmpty else {
-            multiProvider.status.stringValue = "Configuration blocked · choose or enter a provider/model catalog slug."
-            multiProvider.status.textColor = .systemOrange
-            return
+    // Compatibility no-ops for source files from 8.1.2 that are not active cards.
+    func setMultiProviderRouterBusy(_ value: Bool) {}
+    func refreshMultiProviderRouterStatus() {
+        let current = multiProvider.model.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !self.multiProvider.modelSelectionPending,
+           current.isEmpty,
+           !routerActiveModel.isEmpty {
+            self.multiProvider.model.stringValue = routerActiveModel
         }
-        guard !busy else { multiProvider.status.stringValue = "Another provider action is already running."; return }
-        guard let window = view.window else { return }
-        AlertFactory.confirmSheet(
-            window: window,
-            title: "Configure Router Model?",
-            message: "\(values.model) becomes the routed Codex main model and Codex App restarts.",
-            destructive: false
-        ) { [weak self] approved in
-            guard let self = self, approved else { return }
-            self.performUseMultiProviderRouter(values: values)
-        }
-    }
-
-    private func performUseMultiProviderRouter(values: (baseURL: String, catalogPath: String, model: String)) {
-        guard let snapshot = operations.begin(kind: "multi-provider-router-use", mutationGroup: "codex-config", summary: "Configure multi-provider router") else {
-            multiProvider.status.stringValue = "Another guarded mutation is already running. Wait or open Diagnostics."
-            return
-        }
-        setBusy(true)
-        multiProvider.status.stringValue = "Validating and configuring \(values.model), then restarting Codex App…"
-        _ = operations.update(snapshot, state: .running, stage: "configuring", progress: nil, summary: "Configure multi-provider router")
-        processClient.run([
-            "codex-app", "use-router",
-            "--base-url", values.baseURL,
-            "--catalog", values.catalogPath,
-            "--model", values.model,
-            "--restart-app",
-            "--json"
-        ], timeout: NativeView.mutationTimeout) { [weak self] result in
-            guard let self = self else { return }
-            self.setBusy(false)
-            let json = self.json(result.output)
-            let applied = json?["config_applied"] as? Bool == true
-            let restarted = json?["restart_completed"] as? Bool == true
-            let ok = result.code == 0 && json?["ok"] as? Bool == true && applied && restarted
-            _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? "Multi-provider router configured" : applied ? "Router configured; restart needs action" : "Router configuration needs action")
-            if ok {
-                let desktopPicker = json?["desktop_picker"] as? [String: Any]
-                let cacheNote = desktopPicker?["models_cache_invalidated"] as? Bool == true
-                    ? " Desktop models cache was marked stale."
-                    : ""
-                self.multiProvider.status.stringValue = "Configuration saved and Codex App restarted · \(values.model).\(cacheNote) Run a live Codex turn before treating runtime adoption as verified."
-                self.multiProvider.status.textColor = .systemGreen
-            } else if applied {
-                let desktopPicker = json?["desktop_picker"] as? [String: Any]
-                let cacheNote = desktopPicker?["models_cache_invalidated"] as? Bool == true
-                    ? " Desktop models cache was marked stale."
-                    : ""
-                self.multiProvider.status.stringValue = "Router configuration saved, but Codex App did not restart.\(cacheNote) Reopen the app, then refresh status."
-                self.multiProvider.status.textColor = .systemOrange
-            } else {
-                self.multiProvider.status.stringValue = "Router configuration failed · \(self.multiProviderPublicDetail(json, fallback: result.output))"
-                self.multiProvider.status.textColor = .systemOrange
-            }
-            if applied {
-                self.multiProvider.modelSelectionPending = false
-            }
-            self.refreshMultiProviderRouterStatus()
-            self.refreshRoleModels()
-        }
+        self.synchronizeMultiProviderPopupSelection()
+        refresh()
     }
 
     func synchronizeMultiProviderPopupSelection() {
         let current = multiProvider.model.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let index = multiProvider.models.firstIndex(of: current) {
-            multiProvider.modelPopup.selectItem(at: index + 1)
-        } else {
-            multiProvider.modelPopup.selectItem(at: 0)
-        }
-    }
-
-    private func multiProviderRouterInput() -> (baseURL: String, catalogPath: String, model: String) {
-        (
-            multiProvider.baseURL.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
-            multiProvider.catalogPath.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
-            multiProvider.model.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-    }
-
-    private func multiProviderPublicDetail(_ json: [String: Any]?, fallback: String) -> String {
-        if let blockers = json?["blockers"] as? [String], !blockers.isEmpty {
-            return "Reason: \(blockers.joined(separator: ", ").replacingOccurrences(of: "_", with: " "))."
-        }
-        if let hint = json?["hint"] as? String, !hint.isEmpty { return "Next: \(hint)." }
-        return "Next: \(NativeView.redactPreview(fallback))"
+        if let index = multiProvider.models.firstIndex(of: current) { multiProvider.modelPopup.selectItem(at: index + 1) }
+        else { multiProvider.modelPopup.selectItem(at: 0) }
     }
 }

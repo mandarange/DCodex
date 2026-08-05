@@ -2,40 +2,8 @@
 import XCTest
 
 final class ProvidersViewControllerTests: XCTestCase {
-    func testUnsignedStructuredCapabilityJSONCannotVerify() {
-        let fabricated: [String: Any] = [
-            "overall": "verified",
-            "image_generation": ["state": "verified", "source": "deep_probe"],
-            "computer_use": ["state": "verified", "source": "deep_probe"]
-        ]
-        XCTAssertFalse(CapabilityVerificationTruth.deepEvidenceTrusted(in: fabricated))
-    }
-
-    func testTrustedValidationRequiresExactVerifiedAttestation() {
-        let trusted: [String: Any] = [
-            "overall": "verified",
-            "deep_evidence_validation": [
-                "schema": "sks.codex-lb-deep-evidence-validation.v1",
-                "state": "verified",
-                "trusted": true,
-                "blockers": []
-            ]
-        ]
-        XCTAssertTrue(CapabilityVerificationTruth.deepEvidenceTrusted(in: trusted))
-    }
-
-    func testStructuredBlockersArePreservedForFailureRendering() {
-        let blocked: [String: Any] = [
-            "overall": "blocked",
-            "image_generation": [
-                "state": "blocked",
-                "blockers": ["codex_lb_deep_evidence_stale"]
-            ]
-        ]
-        XCTAssertEqual(
-            CapabilityVerificationTruth.blockers(in: blocked),
-            ["codex_lb_deep_evidence_stale"]
-        )
+    func testCapabilityV3RejectsUnsignedLegacyShape() {
+        XCTAssertThrowsError(try DesktopCapabilityReportV3.decode(from: ["overall": "verified"]))
     }
 
     func testStatusV2BuiltinOpenAISelectionIsChatGPTOauthModeNotLegacyCodexLb() {
@@ -254,7 +222,7 @@ final class ProvidersViewControllerTests: XCTestCase {
 
     func testProviderActionInventoryHasNoDeadOrSilentControls() {
         let items = ProviderActionInventory.items
-        XCTAssertGreaterThanOrEqual(items.count, 20)
+        XCTAssertEqual(items.count, 12)
         XCTAssertEqual(Set(items.map(\.id)).count, items.count)
         for item in items {
             XCTAssertTrue(item.id.hasPrefix("sks-provider-"))
@@ -266,17 +234,18 @@ final class ProvidersViewControllerTests: XCTestCase {
         }
     }
 
-    func testProviderActionInventoryCoversRecoveryAndModeControls() {
+    func testProviderActionInventoryCoversBridgeAndIndependentProfileControls() {
         let ids = Set(ProviderActionInventory.items.map(\.id))
         for required in [
-            "sks-provider-desktop-bridge-mode",
-            "sks-provider-use-chatgpt-oauth",
+            "sks-provider-bridge-repair",
+            "sks-provider-verify-transport",
+            "sks-provider-verify-deep",
             "sks-provider-reconnect-codex-lb",
             "sks-provider-reconnect-openrouter",
-            "sks-provider-refresh-openrouter-catalog",
-            "sks-provider-activate-openrouter",
-            "sks-provider-restore-previous",
-            "sks-provider-open-codex-signin"
+            "sks-provider-validate-codex-lb",
+            "sks-provider-validate-openrouter",
+            "sks-provider-refresh-catalog",
+            "sks-provider-route-explain"
         ] {
             XCTAssertTrue(ids.contains(required), "Missing action inventory row: \(required)")
         }
