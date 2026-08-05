@@ -101,7 +101,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         let fastOff = NativeView.button("Codex Fast Off", target: self, action: #selector(fastOff))
         let reconnectOpenRouter = NativeView.button("Reconnect OpenRouter credential…", target: self, action: #selector(saveOpenRouterKey))
         let openCodexSignIn = NativeView.button("Open Codex sign-in…", target: self, action: #selector(openCodexSignInAction))
-        registerProviderAction(enableDesktop, id: "sks-provider-use-codex-lb")
+        registerProviderAction(enableDesktop, id: "sks-provider-desktop-bridge-mode")
         registerProviderAction(verifyDesktop, id: "sks-provider-verify-capabilities")
         registerProviderAction(disableDesktop, id: "sks-provider-use-chatgpt-oauth")
         registerProviderAction(configureCli, id: "sks-provider-reconnect-codex-lb")
@@ -236,22 +236,22 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     }
     private func describeDesktopStatus(_ snapshot: ProviderRoutingTruth.Snapshot) -> String {
         if snapshot.legacyDestructive {
-            return "Legacy destructive provider/auth state detected · choose Use Codex LB for migration guidance, or Use ChatGPT OAuth Only to remove SKS-owned routing."
+            return "Legacy destructive provider/auth state detected · choose Desktop Bridge Mode or Use Codex LB for migration guidance, or Use ChatGPT OAuth Only to remove SKS-owned routing."
         }
         if snapshot.mode == "desktop-native-bridge" {
             let oauth = snapshot.chatgptOauthPresent
                 ? "ChatGPT OAuth present"
-                : "ChatGPT OAuth missing — sign in with ChatGPT, then Use Codex LB"
+                : "ChatGPT OAuth missing — sign in with ChatGPT"
             return "Codex LB mode: enabled · \(oauth) · built-in OpenAI via bridge. Run Verify Capabilities for evidence."
         }
         if snapshot.mode == "disabled" {
             return snapshot.chatgptOauthPresent
-                ? "ChatGPT OAuth mode: active · Codex LB Desktop routing disabled. Choose Use Codex LB to switch."
+                ? "ChatGPT OAuth mode: active · Codex LB Desktop routing disabled. Choose Desktop Bridge Mode (keeps ChatGPT sign-in) to switch."
                 : "ChatGPT OAuth mode: selected, but ChatGPT sign-in is missing · run codex login."
         }
         return snapshot.chatgptOauthPresent
-            ? "ChatGPT OAuth mode: active · Codex LB Desktop routing not enabled. Choose Use Codex LB to switch."
-            : "ChatGPT OAuth mode available · ChatGPT sign-in is missing · run codex login, then Use Codex LB if needed."
+            ? "ChatGPT OAuth mode: active · Codex LB Desktop routing not enabled. Choose Desktop Bridge Mode (keeps ChatGPT sign-in) to switch."
+            : "ChatGPT OAuth mode available · ChatGPT sign-in is missing · run codex login, then Desktop Bridge Mode or Use Codex LB if needed."
     }
     private func describeCliStatus(_ snapshot: ProviderRoutingTruth.Snapshot, measuredRoute: ProviderRoutingTruth.MeasuredRoute?) -> String {
         if let route = measuredRoute, route.selected {
@@ -267,12 +267,12 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             }
         }
         if snapshot.cliCredentialsConfigured && snapshot.cliProviderStored {
-            return "CLI provider: configured · availability remains unverified until Test succeeds."
+            return "CLI provider: configured · availability remains unverified until Run Connect Test succeeds."
         }
         if snapshot.cliProviderStored {
-            return "CLI provider: configured, but credentials are incomplete · choose Configure / Update…"
+            return "CLI provider: configured, but credentials are incomplete · choose Reconnect Codex LB credential…"
         }
-        return "CLI provider: not configured · choose Configure / Update…"
+        return "CLI provider: not configured · choose Reconnect Codex LB credential…"
     }
     private func capabilityPayload(_ json: [String: Any]) -> [String: Any] {
         for key in ["report", "capabilities", "desktop_capabilities", "capability_report"] { if let payload = json[key] as? [String: Any] { return payload } }
@@ -414,7 +414,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         }
     }
     @objc private func useCliProvider() {
-        performDesktopRouting(["codex-lb", "use-desktop-full", "--restart-app", "--json"], title: "Use Codex LB", kind: "codex-lb-use-desktop-full", expectedMode: "desktop-native-bridge")
+        performCliCommand(["codex-lb", "use-cli", "--json"], title: "Use Codex LB", kind: "codex-lb-use-cli")
     }
     private func performCliCommand(_ args: [String], title: String, kind: String) {
         guard !busy else { cliProviderStatus.stringValue = "Another provider action is already running."; return }

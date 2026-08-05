@@ -505,10 +505,21 @@ test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, a
   assert.doesNotMatch(providers, /primaryButton\("Use Codex LB"[^\n]*enableDesktopFull/);
   assert.match(providers, /NativeView\.button\("Use ChatGPT OAuth Only"/);
   assert.doesNotMatch(providers, /Enable \/ Repair|Enable Codex LB|Disable Routing/);
-  assert.match(providers, /\["codex-lb", "use-desktop-full", "--restart-app", "--json"\]/);
+  // Credentials "Use Codex LB" must select the atomic CLI provider and refresh Connection Proof.
+  assert.match(providers, /func useCliProvider\(\)[\s\S]*?performCliCommand\(\["codex-lb", "use-cli", "--json"\]/);
+  assert.match(providers, /backend: "sks codex-lb use-cli"/);
+  // Advanced Desktop Bridge stays on use-desktop-full / disable.
+  assert.match(providers, /func enableDesktopFull\(\)[\s\S]*?\["codex-lb", "use-desktop-full", "--restart-app", "--json"\]/);
+  assert.match(providers, /id: "sks-provider-desktop-bridge-mode"/);
+  assert.match(providers, /id: "sks-provider-activate-codex-lb"[\s\S]*?backend: "sks codex-lb use-cli"/);
+  assert.doesNotMatch(providers, /id: "sks-provider-use-codex-lb"/);
+  // Desktop status CTAs must not steer Desktop-bridge enablement to the CLI Use Codex LB button.
+  assert.doesNotMatch(providers, /Choose Use Codex LB to switch/);
+  assert.match(providers, /Choose Desktop Bridge Mode \(keeps ChatGPT sign-in\) to switch/);
+  assert.match(providers, /choose Reconnect Codex LB credential…/);
+  assert.doesNotMatch(providers, /choose Configure \/ Update…/);
   assert.match(providers, /\["codex-lb", "capabilities", "--level", "transport", "--json"\]/);
   assert.match(providers, /\["codex-lb", "disable", "--restart-app", "--json"\]/);
-  assert.doesNotMatch(providers, /\["codex-lb", "use-cli"/);
   assert.match(providersSurface, /\["codex-lb", "connect-test", "--json"\]/);
   assert.doesNotMatch(providers, /\["codex-lb", "use-codex-lb"/);
   assert.doesNotMatch(providers, /\["codex-lb", "use-oauth"/);
@@ -559,11 +570,18 @@ test('Providers exposes OpenRouter save key, freeform model id, and Use OpenRout
   assert.match(providers, /Use OpenRouter/);
   assert.match(providers, /placeholderString = "z-ai\/glm-5\.2"/);
   assert.match(providers, /\["codex-app", "set-openrouter-key", "--api-key-stdin", "--json"\]/);
+  assert.match(providers, /backend: "sks codex-app set-openrouter-key"/);
+  assert.doesNotMatch(providers, /backend: "sks codex-app save-openrouter-key"/);
   assert.match(providers, /\["codex-app", "use-openrouter", "--model", model, "--restart-app", "--json"\]/);
   assert.match(providers, /\["codex-app", "openrouter-status", "--json"\]/);
   assert.match(providers, /\["codex-app", "openrouter-models", "--ids-only", "--json"\]/);
   assert.match(providers, /Restore previous provider/);
   assert.match(providers, /\["codex-app", "restore-desktop-routing", "--restart-app", "--json"\]/);
+  assert.match(providers, /backend: "sks codex-app restore-desktop-routing"/);
+  assert.doesNotMatch(providers, /backend: "sks codex-app restore-provider"/);
+  assert.match(providers, /\["codex-app", "openrouter-test"/);
+  assert.match(providers, /backend: "sks codex-app openrouter-test"/);
+  assert.doesNotMatch(providers, /backend: "sks codex-app test-openrouter"/);
   assert.match(providers, /thread_sidebar_remap/);
   assert.match(providers, /previous_routing_restore_available/);
   // Restore stays disabled until status reports a restorable snapshot, so the

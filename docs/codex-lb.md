@@ -191,7 +191,7 @@ Provider and auth invariants:
   `--compat-bearer` pin a different transport for a single invocation only. No
   command silently substitutes a default transport, so a gateway that only
   accepts `Authorization: Bearer` stays reachable from SKS Center without a CLI
-  step. SKS Center asks for the transport in `Configure / Update…`.
+  step. SKS Center asks for the transport in `Reconnect Codex LB credential…`.
 - A gateway that answers `401`/`403` to the configured transport is reported as
   `codex_lb_gateway_auth_rejected_for_transport:<transport>` with guidance to
   re-run setup with the other transport. It is never reported as an

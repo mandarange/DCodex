@@ -3,6 +3,26 @@
 ## [Unreleased]
 
 
+
+## [8.1.0] - 2026-08-05
+
+### Fixed
+
+- Wire Control Center **Use Codex LB** to `sks codex-lb use-cli` so the Credentials
+  Connection Proof updates instead of silently applying Desktop Bridge mode.
+- Point Desktop-mode status CTAs at **Desktop Bridge Mode (keeps ChatGPT sign-in)**
+  and CLI credential CTAs at **Reconnect Codex LB credential…** / **Run Connect Test**.
+- Align provider reliability inventory backends with real argv
+  (`set-openrouter-key`, `openrouter-test`, `restore-desktop-routing`) and rename
+  the Desktop Bridge inventory id to `sks-provider-desktop-bridge-mode`.
+- Document SKS Center gateway-transport entry as `Reconnect Codex LB credential…`
+  in `docs/codex-lb.md`.
+
+### Changed
+
+- Cut package metadata to **8.1.0** for the Menu Bar provider wiring/copy/inventory
+  parity release (minor bump from 8.0.5).
+
 ## [8.0.5] - 2026-08-05
 
 ### Changed

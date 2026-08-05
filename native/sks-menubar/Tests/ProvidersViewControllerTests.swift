@@ -269,7 +269,7 @@ final class ProvidersViewControllerTests: XCTestCase {
     func testProviderActionInventoryCoversRecoveryAndModeControls() {
         let ids = Set(ProviderActionInventory.items.map(\.id))
         for required in [
-            "sks-provider-use-codex-lb",
+            "sks-provider-desktop-bridge-mode",
             "sks-provider-use-chatgpt-oauth",
             "sks-provider-reconnect-codex-lb",
             "sks-provider-reconnect-openrouter",
