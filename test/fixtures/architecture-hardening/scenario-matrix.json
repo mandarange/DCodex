@@ -1,35 +1,24 @@
 {
-  "schema": "sks.architecture-hardening-sandbox-scenarios.v1",
-  "modes": [
-    {
-      "mode": "chatgpt-oauth",
-      "model": "gpt-5.6-codex",
-      "credential_class": "codex-native-oauth",
-      "child_owner": "codex-native"
+  "schema": "sks.desktop-bridge-hermetic-scenarios.v1",
+  "providers": {
+    "codex-lb": {
+      "upstream_model": "Vendor/LB-Sandbox-Model",
+      "route_key": "codex-lb:vendor/lb-sandbox-model"
     },
-    {
-      "mode": "codex-lb",
-      "model": "gpt-5.6-codex",
-      "credential_class": "codex-lb-api-key",
-      "child_owner": "codex-lb"
-    },
-    {
-      "mode": "openrouter",
-      "model": "openai/gpt-5.6-codex",
-      "credential_class": "openrouter-api-key",
-      "child_owner": "sks-center"
+    "openrouter": {
+      "upstream_model": "openrouter-sandbox-model",
+      "route_key": "openrouter:openrouter-sandbox-model"
     }
-  ],
-  "required_scenarios": [
-    "exclusive_modes",
-    "credential_withdrawal",
-    "session_pin",
-    "child_policy",
-    "four_stage_apply",
-    "offline_restart",
-    "pause_resume",
-    "graph_writer_gate",
-    "filesystem_isolation",
-    "secret_safe_logs"
+  },
+  "required_assertions": [
+    "isolated_roots",
+    "single_bridge_runtime",
+    "simultaneous_provider_profiles",
+    "explicit_route_index_no_fallback",
+    "pin_affinity_tamper_fail_closed",
+    "restart_generation_recovery",
+    "ambient_credential_stripping",
+    "write_confinement",
+    "secret_free_output_and_state"
   ]
 }

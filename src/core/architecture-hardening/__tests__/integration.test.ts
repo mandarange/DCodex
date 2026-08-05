@@ -1,210 +1,237 @@
 import assert from 'node:assert/strict';
-import fsp from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
 import test from 'node:test';
-import { prepareRouterExecutionIntent } from '../../../cli/router.js';
-import { classifyPromptExecutionEffect } from '../../routes.js';
-import { decideAuxiliaryOAuthRoute } from '../../codex-app/auxiliary-oauth-policy.js';
-import { createSessionPin, sessionPinHash } from '../../codex-app/session-policy/session-pinning.js';
-import {
-  assertDesktopBridgeRequestPolicy,
-} from '../../codex-lb/desktop-bridge/security.js';
-import { buildUpstreamHeaders } from '../../codex-lb/desktop-bridge/header-policy.js';
-import type { DesktopBridgeConfig } from '../../codex-lb/desktop-bridge/types.js';
-import {
-  defaultDesktopBridgeServiceSettings,
-  desktopBridgeArchitecturePolicy,
-} from '../../codex-lb/desktop-service.js';
+import type { BridgeProviderId, ProviderSessionPin } from '../../codex-lb/bridge-contracts.js';
+import { buildCombinedBridgeCatalog } from '../../codex-lb/combined-catalog.js';
+import type { ResolvedProviderCredential } from '../../codex-lb/provider-credentials.js';
+import { buildBridgeRoutingPolicy } from '../../codex-lb/provider-route-policy.js';
+import { resolveBridgeProviderRegistry } from '../../codex-lb/provider-registry.js';
+import { resolveBridgeRequestRoute } from '../../codex-lb/request-route-resolver.js';
+import { sha256Stable } from '../../codex-lb/route-index.js';
 import {
   buildProviderUpstreamHeaders,
-  createNativeOpenAiTransportContract,
-} from '../../codex-lb/native-openai-transport/transport.js';
-import { classifyProviderRouteFailure } from '../../codex-lb/provider-routing/provider-router.js';
-import { stageImageReference } from '../../commands/image-ux-review-command.js';
-import { decideImageReferenceUse } from '../../image-ux-review/reference-policy/reference-policy.js';
-import { withEvidenceWriterLock } from '../../triwiki/context-graph/store/evidence-write-lock.js';
-import {
-  inspectArchitectureMigration,
-  applyArchitectureMigration,
-} from '../migration/migration.js';
-import { ArchitectureStateService } from '../state/state-service.js';
+  createDesktopBridgePublicState,
+  desktopBridgeConfigGeneration,
+  type DesktopBridgeConfig,
+  type DesktopBridgeProviderRegistrySnapshot,
+} from '../../codex-lb/desktop-bridge/index.js';
 
-function managedBridgeConfig(): { config: DesktopBridgeConfig; sessionId: string } {
-  const settings = defaultDesktopBridgeServiceSettings({
-    listen_port: 55_000,
-    provider_mode: 'codex-lb',
-    allowed_models: ['gpt-5.6-codex'],
-    require_session_pin: true,
-  });
-  const architecture = desktopBridgeArchitecturePolicy(settings);
-  const session = createSessionPin({
-    sessionId: 'session-1',
-    policy: architecture.policy,
-    model: 'gpt-5.6-codex',
-    lbAffinityToken: 'opaque-affinity-fixture',
-  });
-  return {
-    sessionId: session.session_id,
-    config: {
-      listenHost: '127.0.0.1',
-      listenPort: 55_000,
-      providerMode: 'codex-lb',
-      allowedModels: settings.allowed_models,
-      providerPolicy: architecture.policy,
-      credentialReadiness: architecture.credential,
-      childPolicy: architecture.child,
-      sessionPins: [session],
-      requireSessionPin: true,
-      remoteBaseUrl: 'https://lb.example.test/backend-api/codex',
-      gatewayKey: 'fixture-upstream-credential',
-      gatewayAuthTransport: 'x-codex-lb-api-key',
-      allowedPathPrefixes: ['/backend-api/codex/'],
-      allowedOrigins: ['app://codex'],
-      connectTimeoutMs: 2_000,
-      idleTimeoutMs: 30_000,
+const LB_SECRET = 'integration-lb-secret-do-not-serialize';
+const OPENROUTER_SECRET = 'integration-openrouter-secret-do-not-serialize';
+const credentials: Record<BridgeProviderId, ResolvedProviderCredential> = {
+  'codex-lb': credential('codex-lb', LB_SECRET, 'lb-fingerprint', 'https://lb.example.test/backend-api/codex'),
+  openrouter: credential('openrouter', OPENROUTER_SECRET, 'openrouter-fingerprint', 'https://openrouter.ai/api/v1'),
+};
+
+test('Desktop Bridge seam keeps simultaneous provider routes explicit, pinned, isolated, and generation-bound', async () => {
+  const registry = await resolveBridgeProviderRegistry({
+    credentials,
+    storedRegistry: {
+      schema: 'sks.bridge-provider-registry.v1',
+      profiles: {
+        'codex-lb': {
+          enabled: true,
+          endpoint_url: credentials['codex-lb'].endpoint_url,
+          allowed_origins: ['https://lb.example.test'],
+          auth_transport: 'x-codex-lb-api-key',
+        },
+        openrouter: {
+          enabled: true,
+          endpoint_url: credentials.openrouter.endpoint_url,
+          allowed_origins: ['https://openrouter.ai'],
+          auth_transport: 'openrouter-bearer',
+        },
+      },
     },
+  });
+  assert.deepEqual(
+    Object.values(registry.profiles).map((profile) => profile.state),
+    ['ready', 'ready'],
+  );
+
+  const first = catalog(registry, 'first');
+  const policy = buildBridgeRoutingPolicy({
+    route_index: first.route_index,
+    catalog_generation: first.catalog.generation,
+    default_provider_id: null,
+    changed_at: '2026-08-06T00:00:00.000Z',
+  });
+  assert.equal(policy.fallback, 'none');
+  const lbRoute = resolveBridgeRequestRoute({ model: 'codex-lb:vendor/lb-integration' }, policy, {
+    route_index: first.route_index,
+    registry,
+  });
+  const openRouterRoute = resolveBridgeRequestRoute({
+    model: 'openrouter:openrouter-integration',
+    thread_id: 'integration-thread',
+  }, policy, {
+    route_index: first.route_index,
+    registry,
+    now: () => '2026-08-06T00:01:00.000Z',
+  });
+  assert.equal(lbRoute.route?.provider_id, 'codex-lb');
+  assert.equal(openRouterRoute.route?.provider_id, 'openrouter');
+  assert.ok(openRouterRoute.proposed_session_pin);
+  const pin = openRouterRoute.proposed_session_pin;
+  assert.equal(resolveBridgeRequestRoute({
+    model: pin.public_model,
+    thread_id: pin.thread_id,
+  }, policy, {
+    route_index: first.route_index,
+    registry,
+    session_pins: [pin],
+  }).source, 'session_pin');
+  const tampered = resolveBridgeRequestRoute({ model: pin.public_model, thread_id: pin.thread_id }, policy, {
+    route_index: first.route_index,
+    registry,
+    session_pins: [{ ...pin, provider_id: 'codex-lb' }],
+  });
+  assert.deepEqual(tampered.blockers, ['session_pin_route_unavailable']);
+  assert.equal(tampered.fallback, 'none');
+
+  const inbound = {
+    authorization: 'Bearer desktop-oauth-secret',
+    cookie: 'desktop=session',
+    'x-codex-lb-api-key': 'forged-provider-key',
+    'x-sks-session-id': pin.thread_id,
+  };
+  const lbHeaders = buildProviderUpstreamHeaders(inbound, {
+    providerId: 'codex-lb',
+    authTransport: 'x-codex-lb-api-key',
+    credential: runtimeCredential('codex-lb', LB_SECRET, 'lb-fingerprint', registry.profiles['codex-lb'].profile_generation),
+  }, 'lb.example.test');
+  const openRouterHeaders = buildProviderUpstreamHeaders(inbound, {
+    providerId: 'openrouter',
+    authTransport: 'openrouter-bearer',
+    credential: runtimeCredential('openrouter', OPENROUTER_SECRET, 'openrouter-fingerprint', registry.profiles.openrouter.profile_generation),
+  }, 'openrouter.ai');
+  assert.equal(lbHeaders['x-codex-lb-api-key'], LB_SECRET);
+  assert.equal(lbHeaders.authorization, undefined);
+  assert.equal(openRouterHeaders.authorization, `Bearer ${OPENROUTER_SECRET}`);
+  assert.equal(openRouterHeaders['x-codex-lb-api-key'], undefined);
+  for (const headers of [lbHeaders, openRouterHeaders]) {
+    assert.equal(headers.cookie, undefined);
+    assert.equal(headers['x-sks-session-id'], undefined);
+    assert.doesNotMatch(JSON.stringify(headers), /desktop-oauth-secret|forged-provider-key/);
+  }
+
+  const firstConfig = bridgeConfig(registrySnapshot(registry, first.route_index), policy, pin);
+  const firstState = createDesktopBridgePublicState(firstConfig, {
+    pid: 42,
+    now: new Date('2026-08-06T00:02:00.000Z'),
+  });
+  assert.equal(firstState.runtime, 'desktop-bridge');
+  assert.deepEqual(new Set(firstState.enabled_providers), new Set(['codex-lb', 'openrouter']));
+  assert.doesNotMatch(JSON.stringify(firstState), new RegExp(`${LB_SECRET}|${OPENROUTER_SECRET}`));
+
+  const restarted = catalog(registry, 'restarted');
+  const restartedPolicy = buildBridgeRoutingPolicy({
+    route_index: restarted.route_index,
+    catalog_generation: restarted.catalog.generation,
+    default_provider_id: null,
+    changed_at: '2026-08-06T00:03:00.000Z',
+  });
+  assert.notEqual(restartedPolicy.catalog_generation, policy.catalog_generation);
+  assert.deepEqual(resolveBridgeRequestRoute({ model: pin.public_model, thread_id: pin.thread_id }, restartedPolicy, {
+    route_index: restarted.route_index,
+    registry,
+    session_pins: [pin],
+  }).blockers, ['session_pin_route_unavailable']);
+  const restartedConfig = bridgeConfig(registrySnapshot(registry, restarted.route_index), restartedPolicy, null);
+  assert.notEqual(desktopBridgeConfigGeneration(restartedConfig), desktopBridgeConfigGeneration(firstConfig));
+});
+
+function credential(
+  providerId: BridgeProviderId,
+  secret: string,
+  fingerprint: string,
+  endpointUrl: string,
+): ResolvedProviderCredential {
+  return {
+    schema: 'sks.provider-credential-status.v1',
+    provider_id: providerId,
+    state: 'ready',
+    source: 'integration-fixture',
+    fingerprint,
+    checked_at: '2026-08-06T00:00:00.000Z',
+    blockers: [],
+    warnings: [],
+    secret,
+    endpoint_url: endpointUrl,
   };
 }
 
-test('managed native transport and proxy choke point enforce exclusive mode, session and child snapshots', () => {
-  const transport = createNativeOpenAiTransportContract({
-    nativeProviderId: 'openai',
-    mode: 'codex-lb',
-    listenOrigin: 'http://127.0.0.1:55000',
-  });
-  const nativeHeaders = buildProviderUpstreamHeaders(transport, {
-    authorization: 'Bearer desktop-oauth',
-    'x-native-metadata': 'preserved',
-  }, 'fixture-upstream-credential');
-  assert.equal(nativeHeaders.authorization, undefined);
-  assert.equal(nativeHeaders['x-native-metadata'], 'preserved');
-
-  const { config, sessionId } = managedBridgeConfig();
-  const session = config.sessionPins?.[0];
-  assert.ok(session);
-  const headers = {
-    'x-sks-provider-mode': 'codex-lb',
-    'x-sks-session-id': sessionId,
-    'x-sks-child-policy-hash': config.childPolicy?.policy_hash || '',
-  };
-  assert.doesNotThrow(() => assertDesktopBridgeRequestPolicy({ headers, config, model: 'gpt-5.6-codex' }));
-  assert.throws(
-    () => assertDesktopBridgeRequestPolicy({ headers: { ...headers, 'x-sks-provider-mode': 'openrouter' }, config, model: 'gpt-5.6-codex' }),
-    /bridge_provider_route_cross_mode_forbidden/,
-  );
-  assert.throws(
-    () => assertDesktopBridgeRequestPolicy({ headers: { ...headers, 'x-sks-session-id': 'unknown' }, config, model: 'gpt-5.6-codex' }),
-    /bridge_session_pin_unknown/,
-  );
-  const childHeaders = {
-    ...headers,
-    'x-sks-child-request': '1',
-    'x-sks-child-model': 'gpt-5.6-codex',
-    'x-sks-parent-snapshot-hash': sessionPinHash(session),
-  };
-  assert.doesNotThrow(() => assertDesktopBridgeRequestPolicy({ headers: childHeaders, config, model: 'gpt-5.6-codex' }));
-  assert.throws(
-    () => assertDesktopBridgeRequestPolicy({ headers: { ...childHeaders, 'x-sks-parent-snapshot-hash': '0'.repeat(64) }, config, model: 'gpt-5.6-codex' }),
-    /bridge_child_parent_snapshot_mismatch/,
-  );
-
-  const upstream = buildUpstreamHeaders({ ...headers, authorization: 'Bearer desktop-oauth' }, config, 'lb.example.test');
-  assert.equal(upstream.authorization, undefined);
-  assert.equal(upstream['x-sks-session-id'], undefined);
-  assert.equal(upstream['x-codex-lb-api-key'], 'fixture-upstream-credential');
-  assert.equal(classifyProviderRouteFailure(503).failover_allowed, false);
-});
-
-test('OAuth auxiliary routing is explicit and never changes the provider session mode', () => {
-  const contract = { feature: 'voice', request_path: '/backend-api/voice', protocol_verified: true, proxy_supported: false };
-  const denied = decideAuxiliaryOAuthRoute({ mode: 'codex-lb', contract, oauthConnected: true, userAllowed: false });
-  assert.equal(denied.status, 'permission_required');
-  const allowed = decideAuxiliaryOAuthRoute({ mode: 'codex-lb', contract, oauthConnected: true, userAllowed: true });
-  assert.equal(allowed.status, 'auxiliary_oauth');
-  assert.equal(allowed.session_mode_changed, false);
-  assert.equal(allowed.session_mode, 'codex-lb');
-});
-
-test('router normalizes aliases before dispatch and reuses an inherited evidence/retry contract', () => {
-  const parent = prepareRouterExecutionIntent(['image-ux-review'], {
-    naturalLanguageEffect: 'Read the current image review state.',
-    effect: 'read',
-    evidenceState: 'valid',
-    retryBudget: 2,
-    modeSnapshot: 'codex-lb',
-  });
-  const alias = prepareRouterExecutionIntent(['visual-review'], { parentContract: parent.contract });
-  assert.equal(alias.canonical_command, 'sks image-ux-review');
-  assert.equal(alias.contract.contract_hash, parent.contract.contract_hash);
-  assert.equal(alias.contract.retry_budget, 2);
-  assert.equal(alias.contract.evidence_state, 'valid');
-  assert.equal(classifyPromptExecutionEffect('Explain the deployment security policy.'), 'read');
-  assert.equal(classifyPromptExecutionEffect('Deploy this build now.'), 'deploy');
-});
-
-test('state apply, migration, and image staging use the hardened transaction/reference paths', async () => {
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-architecture-integration-'));
-  try {
-    const settings = defaultDesktopBridgeServiceSettings({
-      listen_port: 55_001,
-      provider_mode: 'codex-lb',
-      allowed_models: ['gpt-5.6-codex'],
-    });
-    const architecture = desktopBridgeArchitecturePolicy(settings);
-    const state = new ArchitectureStateService(path.join(root, 'state'));
-    await state.stage({
-      schema: 'sks.architecture-configuration.v1',
-      policy: architecture.policy,
-      credential: architecture.credential,
-      catalog: null,
-      features: [],
-    });
-    const applied = await state.commit({
-      applyProxy: async () => undefined,
-      refreshCatalog: async () => undefined,
-      makeNewSessionReady: async () => undefined,
-    }, () => new Date('2026-08-02T00:00:00.000Z'));
-    assert.equal(applied.ok, true);
-    assert.deepEqual(applied.receipts.map((receipt) => receipt.status), ['succeeded', 'succeeded', 'succeeded', 'succeeded']);
-
-    const configPath = path.join(root, 'config.toml');
-    const legacy = '[model_providers.legacy]\nbase_url = "https://legacy.example"\n';
-    await fsp.writeFile(configPath, legacy, { mode: 0o600 });
-    const plan = inspectArchitectureMigration({ configText: legacy, sessionMetadataPresent: true });
-    const receipt = await applyArchitectureMigration({
-      configPath,
-      plan,
-      targetMode: 'codex-lb',
-      loopbackBaseUrl: 'http://127.0.0.1:55001/backend-api/codex',
-      confirmedRemovablePaths: plan.removable_paths,
-      explicitApply: true,
-    });
-    assert.equal(receipt.status, 'applied');
-    assert.match(await fsp.readFile(configPath, 'utf8'), /model_provider = "openai"/);
-
-    const imagePath = path.join(root, 'screen.png');
-    const evidenceDir = path.join(root, 'evidence');
-    await fsp.writeFile(imagePath, Buffer.from('png-fixture'));
-    const staged = await stageImageReference(root, evidenceDir, 'screen.png', 'source-screens');
-    assert.equal(staged, 'screen.png');
-    assert.equal(await fsp.stat(imagePath).then((stat) => stat.isFile()), true);
-    await assert.rejects(fsp.stat(path.join(evidenceDir, 'source-screens', 'screen.png')), /ENOENT/);
-    const registry = JSON.parse(await fsp.readFile(path.join(evidenceDir, 'image-references.json'), 'utf8')) as { references: any[] };
-    assert.equal(registry.references.length, 1);
-    assert.equal(decideImageReferenceUse({ reference: registry.references[0], operation: 'local-review' }).allowed, true);
-
-    const graphGate = await withEvidenceWriterLock({
-      root,
-      projectId: 'architecture-integration-project',
-      run: async (lock) => {
-        await fsp.writeFile(path.join(root, 'graph-staging.json'), JSON.stringify({ acquired: lock.acquired }), { mode: 0o600 });
-        return lock;
+function catalog(registry: Awaited<ReturnType<typeof resolveBridgeProviderRegistry>>, suffix: string) {
+  const result = buildCombinedBridgeCatalog(registry, {
+    created_at: suffix === 'first' ? '2026-08-06T00:00:00.000Z' : '2026-08-06T00:03:00.000Z',
+    catalogs: {
+      'codex-lb': {
+        provider_id: 'codex-lb',
+        state: 'verified',
+        generation: `lb-${suffix}`,
+        models: { models: [{ slug: 'Vendor/LB-Integration', display_name: 'LB integration' }] },
       },
-    });
-    assert.equal(graphGate.acquired, true);
-    assert.match(graphGate.project_id_hash, /^[a-f0-9]{64}$/);
-  } finally {
-    await fsp.rm(root, { recursive: true, force: true });
-  }
-});
+      openrouter: {
+        provider_id: 'openrouter',
+        state: 'verified',
+        generation: `openrouter-${suffix}`,
+        models: [{ id: 'openrouter-integration', name: 'OpenRouter integration' }],
+      },
+    },
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.blockers));
+  return result;
+}
+
+function registrySnapshot(
+  registry: Awaited<ReturnType<typeof resolveBridgeProviderRegistry>>,
+  routeIndex: ReturnType<typeof catalog>['route_index'],
+): DesktopBridgeProviderRegistrySnapshot {
+  const providers = Object.fromEntries((['codex-lb', 'openrouter'] as const).map((providerId) => {
+    const profile = registry.profiles[providerId];
+    return [providerId, {
+      provider_id: providerId,
+      enabled: profile.enabled,
+      base_url: profile.endpoint.url!,
+      allowed_origins: profile.endpoint.allowed_origins,
+      auth_transport: profile.endpoint.auth_transport,
+      credential_state: profile.credential.state,
+      credential_fingerprint: profile.credential.fingerprint,
+      credential_generation: profile.profile_generation,
+      source_catalog_generation: routeIndex.providers[providerId].catalog_generation,
+    }];
+  })) as DesktopBridgeProviderRegistrySnapshot['providers'];
+  return {
+    schema: 'sks.desktop-bridge-provider-registry.v1',
+    generation: sha256Stable(providers),
+    created_at: '2026-08-06T00:00:00.000Z',
+    providers,
+  };
+}
+
+function bridgeConfig(
+  providerRegistry: DesktopBridgeProviderRegistrySnapshot,
+  routePolicy: ReturnType<typeof buildBridgeRoutingPolicy>,
+  pin: ProviderSessionPin | null,
+): DesktopBridgeConfig {
+  return {
+    providerRegistry,
+    routePolicy,
+    providerSessionPins: pin ? [pin] : [],
+    resolveProviderCredential: async (providerId, generation) => runtimeCredential(
+      providerId,
+      providerId === 'codex-lb' ? LB_SECRET : OPENROUTER_SECRET,
+      credentials[providerId].fingerprint!,
+      generation,
+    ),
+    listenHost: '127.0.0.1',
+    listenPort: 55_000,
+    allowedPathPrefixes: ['/v1/'],
+    allowedOrigins: ['app://codex'],
+    connectTimeoutMs: 2_000,
+    idleTimeoutMs: 5_000,
+  };
+}
+
+function runtimeCredential(providerId: BridgeProviderId, value: string, fingerprint: string, generation: string) {
+  return { provider_id: providerId, value, source: 'integration-fixture', fingerprint, generation };
+}
