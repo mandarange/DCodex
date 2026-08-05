@@ -5,8 +5,13 @@ import {
   CODEX_LB_MODEL_CATALOG_MARKER,
   CODEX_LB_OAUTH_SELECTION_MARKER,
   CODEX_LB_PROVIDER_SELECTION_MARKER,
+  DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER,
+  DESKTOP_BRIDGE_MANAGED_MARKER,
+  DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER,
   releaseSksManagedThirdPartySelection,
+  removeDesktopBridgeOrphanManagedMarkers,
   removeCodexLbManagedDesktopConfig,
+  upsertDesktopBridgeManagedConfig,
   upsertCodexLbCliProviderConfig,
   upsertCodexLbCompatDesktopConfig,
   upsertCodexLbNativeDesktopConfig
@@ -21,6 +26,7 @@ import {
 
 const REMOTE = 'https://lb.example.test/backend-api/codex';
 const BRIDGE = 'http://127.0.0.1:47821/backend-api/codex';
+const COMBINED_CATALOG = '/Users/op/.codex/sks/sks-bridge-catalog.json';
 
 const OPENROUTER_SELECTED = [
   'model_provider = "openrouter"',
@@ -33,6 +39,102 @@ const OPENROUTER_SELECTED = [
   'requires_openai_auth = false',
   ''
 ].join('\n');
+
+test('8.1.3 managed writer emits one exact bridge binding and is byte-idempotent', () => {
+  const source = [
+    '# sks-codex-lb-managed-provider-selection',
+    'model_provider = "codex-lb"',
+    '# sks-codex-lb-managed-openai-base-url',
+    `openai_base_url = "${REMOTE}"`,
+    CODEX_LB_MODEL_CATALOG_MARKER,
+    'model_catalog_json = "/Users/op/.codex/sks-codex-lb-tool-catalog.json"',
+    'service_tier = "fast"',
+    '',
+    '[model_providers.codex-lb]',
+    'name = "codex-lb"',
+    `base_url = "${REMOTE}"`,
+    'env_key = "CODEX_LB_API_KEY"',
+    '',
+    '[model_providers.openrouter]',
+    'name = "OpenRouter"',
+    'base_url = "https://openrouter.ai/api/v1"',
+    ''
+  ].join('\n');
+  const result = upsertDesktopBridgeManagedConfig(source, {
+    bridgeBaseUrl: BRIDGE,
+    combinedCatalogPath: COMBINED_CATALOG
+  });
+
+  assert.match(result, new RegExp(`${DESKTOP_BRIDGE_MANAGED_MARKER}\\nmodel_provider = "openai"`));
+  assert.match(result, new RegExp(`${DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER}\\nopenai_base_url = "${BRIDGE}"`));
+  assert.match(result, new RegExp(`${DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER}\\nmodel_catalog_json = "${COMBINED_CATALOG.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
+  assert.doesNotMatch(result, /^model_provider\s*=\s*"(?:codex-lb|openrouter|sks-router)"$/m);
+  assert.doesNotMatch(result, /# sks-managed-provider-mode:/);
+  assert.match(result, /\[model_providers\.codex-lb\]/);
+  assert.match(result, /\[model_providers\.openrouter\]/);
+  assert.match(result, /^service_tier\s*=\s*"fast"$/m);
+  assert.equal(upsertDesktopBridgeManagedConfig(result, {
+    bridgeBaseUrl: BRIDGE,
+    combinedCatalogPath: COMBINED_CATALOG
+  }), result);
+});
+
+test('8.1.3 managed writer fails closed without changing user-owned bindings', () => {
+  for (const source of [
+    'model_provider = "my-proxy"\n',
+    'openai_base_url = "https://user-proxy.example/v1"\n',
+    'model_catalog_json = "/Users/op/private-catalog.json"\n',
+    'model_provider = "openrouter"\n'
+  ]) {
+    assert.throws(
+      () => upsertDesktopBridgeManagedConfig(source, {
+        bridgeBaseUrl: BRIDGE,
+        combinedCatalogPath: COMBINED_CATALOG
+      }),
+      /legacy_user_owned_config_conflict/
+    );
+  }
+  assert.throws(
+    () => upsertDesktopBridgeManagedConfig('', {
+      bridgeBaseUrl: 'https://remote.example/backend-api/codex',
+      combinedCatalogPath: COMBINED_CATALOG
+    }),
+    /desktop_bridge_loopback_base_url_required/
+  );
+  assert.throws(
+    () => upsertDesktopBridgeManagedConfig([
+      'model_catalog_json = "/Users/op/.codex/sks-openrouter-catalog.json"',
+      '',
+      '[model_providers.openrouter]',
+      'base_url = "https://openrouter.ai/api/v1"',
+      ''
+    ].join('\n'), {
+      bridgeBaseUrl: BRIDGE,
+      combinedCatalogPath: COMBINED_CATALOG
+    }),
+    /legacy_user_owned_config_conflict:model_catalog_json/
+  );
+});
+
+test('8.1.3 orphan cleanup removes comments only when their managed value is absent', () => {
+  const source = [
+    DESKTOP_BRIDGE_MANAGED_MARKER,
+    DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER,
+    `openai_base_url = "${BRIDGE}"`,
+    DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER,
+    'service_tier = "fast"',
+    ''
+  ].join('\n');
+  const cleanup = removeDesktopBridgeOrphanManagedMarkers(source);
+  assert.equal(cleanup.changed, true);
+  assert.deepEqual(cleanup.orphan_markers, [
+    DESKTOP_BRIDGE_MANAGED_MARKER,
+    DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER
+  ]);
+  assert.doesNotMatch(cleanup.text, new RegExp(`^${DESKTOP_BRIDGE_MANAGED_MARKER}$`, 'm'));
+  assert.match(cleanup.text, new RegExp(DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER));
+  assert.match(cleanup.text, /^service_tier = "fast"$/m);
+});
 
 test('explicit provider switches reclaim an SKS-authored OpenRouter selection', () => {
   // Use Codex LB takes over: openrouter selection + catalog released, its

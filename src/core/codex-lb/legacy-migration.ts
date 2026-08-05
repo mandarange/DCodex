@@ -5,6 +5,10 @@ import path from 'node:path';
 import {
   CODEX_LB_DESKTOP_BRIDGE_MARKER,
   CODEX_LB_MODEL_CATALOG_MARKER,
+  DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER,
+  DESKTOP_BRIDGE_MANAGED_MARKER,
+  DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER,
+  upsertDesktopBridgeManagedConfig,
   upsertCodexLbCompatDesktopConfig,
   upsertCodexLbNativeDesktopConfig
 } from '../../cli/install-helpers-codex-lb-config.js';
@@ -13,6 +17,9 @@ import { ensureTrailingNewline, safeWriteCodexConfigToml } from '../codex-runtim
 import { messageOf as errorMessage } from '../errors/message.js';
 import { ensureDir, readText } from '../fsx.js';
 import { escapeRegExp } from '../text/regex.js';
+import type { BridgeProviderId } from './bridge-contracts.js';
+import { parseLegacyCodexLbDesktopMode } from './legacy/legacy-desktop-mode.js';
+import { parseLegacyProviderConfig } from './legacy/legacy-provider-mode.js';
 import {
   assertDesktopAuthUnchangedBySks,
   assertDesktopOAuthSemanticIdentity,
@@ -28,11 +35,19 @@ import {
   backupCodexLbMigrationFile,
   codexLbMigrationReceiptDir,
   createCodexLbMigrationReceiptId,
+  createDesktopBridgeUnificationReceiptId,
+  desktopBridgeUnificationReceiptDir,
+  fileSha256OrMissing,
   finalizeCodexLbMigrationReceiptFiles,
   rollbackCodexLbMigrationReceipt,
+  rollbackDesktopBridgeUnificationReceipt,
+  writeDesktopBridgeUnificationReceipt,
   writeCodexLbMigrationReceipt,
   type CodexLbMigrationFileBackup,
-  type CodexLbMigrationReceipt
+  type CodexLbMigrationReceipt,
+  type DesktopBridgeRollbackMetadataFile,
+  type DesktopBridgeRollbackMetadataKind,
+  type StoredDesktopBridgeUnificationReceipt
 } from './migration-receipt.js';
 
 const LEGACY_OPENAI_ROUTING_MARKER = '# sks-codex-lb-managed-openai-base-url';
@@ -622,12 +637,362 @@ export async function migrateLegacyCodexLbDesktop(
   }
 }
 
+export interface DesktopBridgeMigrationMetadataUpdate {
+  kind: Exclude<DesktopBridgeRollbackMetadataKind, 'config'>;
+  path: string;
+  text: string;
+}
+
+export interface MigrateLegacyModeToDesktopBridgeOptions {
+  home?: string;
+  configPath?: string;
+  authPath?: string;
+  receiptDir?: string;
+  bridgeBaseUrl: string;
+  combinedCatalogPath?: string;
+  legacyDesktopMode?: unknown;
+  newCatalogGeneration?: string | null;
+  metadataUpdates?: DesktopBridgeMigrationMetadataUpdate[];
+  now?: Date;
+}
+
+export interface MigrateLegacyModeToDesktopBridgeResult {
+  schema: 'sks.desktop-bridge-unification-migration.v1';
+  ok: boolean;
+  status: 'migrated' | 'already_migrated' | 'blocked' | 'failed';
+  managed_runtime: 'desktop-bridge' | null;
+  config_path: string;
+  auth_path: string;
+  receipt_path: string | null;
+  receipt?: StoredDesktopBridgeUnificationReceipt;
+  migrated_profiles: BridgeProviderId[];
+  legacy_gateway_auth_transport: 'authorization-bearer' | 'x-codex-lb-api-key' | null;
+  credentials_deleted: false;
+  auth_semantic_identity_preserved: boolean;
+  blockers: string[];
+  rollback?: Awaited<ReturnType<typeof rollbackDesktopBridgeUnificationReceipt>>;
+  error?: string;
+}
+
+/**
+ * Convert any SKS-owned 8.1.2 selection into the single 8.1.3 bridge binding.
+ * Provider secret stores and Codex auth.json are intentionally not write
+ * targets. Optional updates are restricted to rollback-safe runtime metadata.
+ */
+export async function migrateLegacyModeToDesktopBridge(
+  input: MigrateLegacyModeToDesktopBridgeOptions
+): Promise<MigrateLegacyModeToDesktopBridgeResult> {
+  const home = input.home || process.env.HOME || os.homedir();
+  const configPath = input.configPath || path.join(home, '.codex', 'config.toml');
+  const authPath = input.authPath || path.join(home, '.codex', 'auth.json');
+  const receiptDir = input.receiptDir || desktopBridgeUnificationReceiptDir(home);
+  const combinedCatalogPath = input.combinedCatalogPath
+    || path.join(home, '.codex', 'sks', 'sks-bridge-catalog.json');
+  const currentConfig = await readText(configPath, '');
+  const authBefore = await captureCodexAuthSnapshot({ home, authPath });
+  const legacyDesktopMode = input.legacyDesktopMode === undefined
+    ? null
+    : parseLegacyCodexLbDesktopMode(input.legacyDesktopMode);
+  const legacyState = parseLegacyProviderConfig(currentConfig);
+  const baseResult = {
+    schema: 'sks.desktop-bridge-unification-migration.v1' as const,
+    config_path: configPath,
+    auth_path: authPath,
+    migrated_profiles: legacyState.migrated_profiles,
+    legacy_gateway_auth_transport: legacyState.gateway_auth_transport,
+    credentials_deleted: false as const
+  };
+  if (input.legacyDesktopMode !== undefined && !legacyDesktopMode) {
+    return {
+      ...baseResult,
+      ok: false,
+      status: 'blocked',
+      managed_runtime: null,
+      receipt_path: null,
+      auth_semantic_identity_preserved: true,
+      blockers: ['legacy_desktop_mode_invalid']
+    };
+  }
+  if (legacyState.blockers.length) {
+    return {
+      ...baseResult,
+      ok: false,
+      status: 'blocked',
+      managed_runtime: null,
+      receipt_path: null,
+      auth_semantic_identity_preserved: true,
+      blockers: legacyState.blockers
+    };
+  }
+
+  let nextConfig: string;
+  try {
+    nextConfig = upsertDesktopBridgeManagedConfig(currentConfig, {
+      bridgeBaseUrl: input.bridgeBaseUrl,
+      combinedCatalogPath
+    });
+    validateDesktopBridgeMetadataUpdates(input.metadataUpdates || [], { configPath, authPath });
+  } catch (error: unknown) {
+    const message = errorMessage(error);
+    const blocker = message.startsWith('legacy_user_owned_config_conflict')
+      ? 'legacy_user_owned_config_conflict'
+      : message;
+    return {
+      ...baseResult,
+      ok: false,
+      status: 'blocked',
+      managed_runtime: null,
+      receipt_path: null,
+      auth_semantic_identity_preserved: true,
+      blockers: [blocker],
+      error: message
+    };
+  }
+
+  const metadataUpdates = uniqueMetadataUpdates(input.metadataUpdates || []);
+  const metadataAlreadyCurrent = await Promise.all(metadataUpdates.map(async (update) => {
+    const currentSha = await fileSha256OrMissing(update.path);
+    return currentSha !== null && currentSha === sha256(update.text);
+  }));
+  const hasUnifiedMarkers = [
+    DESKTOP_BRIDGE_MANAGED_MARKER,
+    DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER,
+    DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER
+  ].every((marker) => hasAnyTopLevelMarker(currentConfig, [marker]));
+  if (
+    nextConfig === currentConfig
+    && hasUnifiedMarkers
+    && metadataAlreadyCurrent.every(Boolean)
+  ) {
+    const authAfter = await captureCodexAuthSnapshot({ home, authPath });
+    const authPreserved = authSemanticIdentityPreserved(authBefore, authAfter);
+    return {
+      ...baseResult,
+      ok: authPreserved,
+      status: authPreserved ? 'already_migrated' : 'blocked',
+      managed_runtime: authPreserved ? 'desktop-bridge' : null,
+      receipt_path: null,
+      auth_semantic_identity_preserved: authPreserved,
+      blockers: authPreserved ? [] : ['desktop_oauth_identity_changed']
+    };
+  }
+
+  const receiptId = createDesktopBridgeUnificationReceiptId(input.now || new Date());
+  const backupDir = path.join(receiptDir, receiptId, 'files');
+  const backupInputs: Array<{
+    kind: DesktopBridgeRollbackMetadataKind;
+    path: string;
+    owned: boolean;
+  }> = [
+    { kind: 'config', path: configPath, owned: false },
+    ...metadataUpdates.map((update) => ({ kind: update.kind, path: update.path, owned: true }))
+  ];
+  const backups: Array<CodexLbMigrationFileBackup & { kind: DesktopBridgeRollbackMetadataKind }> = [];
+  const mutatedPaths = new Set<string>();
+  try {
+    for (const entry of backupInputs) {
+      backups.push({
+        kind: entry.kind,
+        ...await backupCodexLbMigrationFile(entry.path, backupDir, entry.owned)
+      });
+    }
+    const configWrite = await safeWriteCodexConfigToml(
+      configPath,
+      currentConfig,
+      nextConfig,
+      'desktop-bridge-unification-migration',
+      { verifyUnchangedBeforeWrite: true }
+    );
+    if (!configWrite.ok) throw new Error(`desktop_bridge_config_write_failed:${configWrite.status}`);
+    if (configWrite.status === 'written') mutatedPaths.add(path.resolve(configPath));
+    for (const update of metadataUpdates) {
+      const backup = backups.find((entry) => path.resolve(entry.path) === path.resolve(update.path));
+      if (!backup) throw new Error(`desktop_bridge_metadata_backup_missing:${update.path}`);
+      if (await fileSha256OrMissing(update.path) !== backup.before_sha256) {
+        throw new Error(`desktop_bridge_metadata_changed_during_migration:${update.path}`);
+      }
+      if (sha256(update.text) !== backup.before_sha256) {
+        mutatedPaths.add(path.resolve(update.path));
+        await writeBufferAtomic(update.path, Buffer.from(update.text));
+      }
+    }
+
+    const authAfter = await captureCodexAuthSnapshot({ home, authPath });
+    const authPreserved = authSemanticIdentityPreserved(authBefore, authAfter);
+    if (!authPreserved) throw new Error('desktop_oauth_identity_changed');
+    const finalized = await finalizeCodexLbMigrationReceiptFiles(backups);
+    const rollbackFiles: DesktopBridgeRollbackMetadataFile[] = finalized.map((file, index) => ({
+      ...file,
+      kind: backups[index]!.kind
+    }));
+    const backupPaths = rollbackFiles
+      .map((file) => file.backup_path)
+      .filter((entry): entry is string => Boolean(entry));
+    const receipt: StoredDesktopBridgeUnificationReceipt = {
+      schema: 'sks.desktop-bridge-unification-receipt.v1',
+      receipt_id: receiptId,
+      created_at: (input.now || new Date()).toISOString(),
+      baseline_version: '8.1.2',
+      target_version: '8.1.3',
+      config_before_sha256: sha256(currentConfig),
+      config_after_sha256: sha256(nextConfig),
+      auth_before_sha256: authBefore.sha256 || 'missing',
+      auth_after_sha256: authAfter.sha256 || 'missing',
+      auth_semantic_identity_preserved: true,
+      legacy_state: {
+        desktop_mode: legacyDesktopMode,
+        provider_mode: legacyState.provider_mode,
+        model_provider: legacyState.model_provider,
+        catalog_path: legacyState.catalog_path
+      },
+      migrated_profiles: legacyState.migrated_profiles,
+      credentials_deleted: false,
+      new_runtime: 'desktop-bridge',
+      new_catalog_generation: input.newCatalogGeneration || null,
+      backup_paths: backupPaths,
+      rollback_supported: true,
+      blockers: [],
+      migration_status: 'migrated',
+      rollback_metadata: {
+        schema: 'sks.desktop-bridge-unification-rollback-metadata.v1',
+        files: rollbackFiles
+      }
+    };
+    const receiptPath = await writeDesktopBridgeUnificationReceipt(receipt, { receiptDir });
+    return {
+      ...baseResult,
+      ok: true,
+      status: 'migrated',
+      managed_runtime: 'desktop-bridge',
+      receipt_path: receiptPath,
+      receipt,
+      auth_semantic_identity_preserved: true,
+      blockers: []
+    };
+  } catch (error: unknown) {
+    const rollbackFiles: DesktopBridgeRollbackMetadataFile[] = backups
+      .filter((file) => mutatedPaths.has(path.resolve(file.path)))
+      .map((file) => ({
+        ...file,
+        after_sha256: path.resolve(file.path) === path.resolve(configPath)
+          ? sha256(nextConfig)
+          : sha256(metadataUpdates.find((update) => path.resolve(update.path) === path.resolve(file.path))?.text || ''),
+        kind: file.kind
+      }));
+    const authAfter = await captureCodexAuthSnapshot({ home, authPath });
+    const provisional: StoredDesktopBridgeUnificationReceipt = {
+      schema: 'sks.desktop-bridge-unification-receipt.v1',
+      receipt_id: receiptId,
+      created_at: (input.now || new Date()).toISOString(),
+      baseline_version: '8.1.2',
+      target_version: '8.1.3',
+      config_before_sha256: sha256(currentConfig),
+      config_after_sha256: await fileSha256OrMissing(configPath) || 'missing',
+      auth_before_sha256: authBefore.sha256 || 'missing',
+      auth_after_sha256: authAfter.sha256 || 'missing',
+      auth_semantic_identity_preserved: authSemanticIdentityPreserved(authBefore, authAfter),
+      legacy_state: {
+        desktop_mode: legacyDesktopMode,
+        provider_mode: legacyState.provider_mode,
+        model_provider: legacyState.model_provider,
+        catalog_path: legacyState.catalog_path
+      },
+      migrated_profiles: legacyState.migrated_profiles,
+      credentials_deleted: false,
+      new_runtime: 'desktop-bridge',
+      new_catalog_generation: input.newCatalogGeneration || null,
+      backup_paths: rollbackFiles
+        .map((file) => file.backup_path)
+        .filter((entry): entry is string => Boolean(entry)),
+      rollback_supported: true,
+      blockers: ['desktop_bridge_unification_migration_failed'],
+      migration_status: 'migrated',
+      rollback_metadata: {
+        schema: 'sks.desktop-bridge-unification-rollback-metadata.v1',
+        files: rollbackFiles
+      }
+    };
+    const rollback = rollbackFiles.length
+      ? await rollbackDesktopBridgeUnificationReceipt({ receipt: provisional })
+      : undefined;
+    return {
+      ...baseResult,
+      ok: false,
+      status: 'failed',
+      managed_runtime: null,
+      receipt_path: null,
+      auth_semantic_identity_preserved: provisional.auth_semantic_identity_preserved,
+      blockers: [
+        'desktop_bridge_unification_migration_failed',
+        ...(rollback && !rollback.ok ? ['desktop_bridge_unification_rollback_failed'] : [])
+      ],
+      ...(rollback ? { rollback } : {}),
+      error: errorMessage(error)
+    };
+  }
+}
+
 async function hasPriorReceipt(receiptDir: string): Promise<boolean> {
   try {
     return (await fsp.readdir(receiptDir)).some((entry) => entry.endsWith('.json'));
   } catch {
     return false;
   }
+}
+
+function authSemanticIdentityPreserved(
+  before: Awaited<ReturnType<typeof captureCodexAuthSnapshot>>,
+  after: Awaited<ReturnType<typeof captureCodexAuthSnapshot>>
+): boolean {
+  if (before.path !== after.path || before.exists !== after.exists) return false;
+  const beforeIsOAuth = before.mode === 'chatgpt_oauth' || before.mode === 'mixed';
+  const afterIsOAuth = after.mode === 'chatgpt_oauth' || after.mode === 'mixed';
+  if (beforeIsOAuth || afterIsOAuth) {
+    return beforeIsOAuth
+      && afterIsOAuth
+      && before.semantic_fingerprint !== null
+      && before.semantic_fingerprint === after.semantic_fingerprint;
+  }
+  return before.sha256 === after.sha256;
+}
+
+function validateDesktopBridgeMetadataUpdates(
+  updates: DesktopBridgeMigrationMetadataUpdate[],
+  protectedPaths: { configPath: string; authPath: string }
+): void {
+  const seen = new Set<string>();
+  for (const update of updates) {
+    const filePath = path.resolve(String(update.path || ''));
+    if (!update.path || !path.isAbsolute(update.path)) {
+      throw new Error('desktop_bridge_metadata_path_invalid');
+    }
+    if (filePath === path.resolve(protectedPaths.configPath)) {
+      throw new Error('desktop_bridge_metadata_config_path_forbidden');
+    }
+    if (filePath === path.resolve(protectedPaths.authPath) || migrationMetadataPathLooksSecret(filePath)) {
+      throw new Error('desktop_bridge_metadata_secret_path_forbidden');
+    }
+    if (seen.has(filePath)) throw new Error('desktop_bridge_metadata_path_duplicate');
+    seen.add(filePath);
+    if (!['bridge_settings', 'catalog_binding', 'route_policy', 'launchd_state'].includes(update.kind)) {
+      throw new Error('desktop_bridge_metadata_kind_invalid');
+    }
+    if (typeof update.text !== 'string') throw new Error('desktop_bridge_metadata_text_invalid');
+  }
+}
+
+function uniqueMetadataUpdates(
+  updates: DesktopBridgeMigrationMetadataUpdate[]
+): DesktopBridgeMigrationMetadataUpdate[] {
+  return updates.map((update) => ({ ...update, path: path.resolve(update.path) }));
+}
+
+function migrationMetadataPathLooksSecret(filePath: string): boolean {
+  const basename = path.basename(filePath).toLowerCase();
+  const segments = filePath.toLowerCase().split(path.sep);
+  return segments.includes('secrets')
+    || ['auth.json', 'sks-codex-lb.env', 'openrouter-api-key', 'openrouter-api-key.json'].includes(basename)
+    || /(?:credential|api-key|secret)/i.test(basename);
 }
 
 async function inspectOAuthBackupFile(filePath: string): Promise<{

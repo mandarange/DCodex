@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { messageOf as errorMessage } from '../errors/message.js';
 import { ensureDir, exists, readText, writeTextAtomic } from '../fsx.js';
+import type { DesktopBridgeUnificationReceipt } from './bridge-contracts.js';
 
 export interface CodexLbMigrationReceiptFile {
   path: string;
@@ -47,13 +48,54 @@ export interface CodexLbMigrationRollbackResult {
   error?: string;
 }
 
+export type DesktopBridgeRollbackMetadataKind =
+  | 'config'
+  | 'bridge_settings'
+  | 'catalog_binding'
+  | 'route_policy'
+  | 'launchd_state';
+
+export interface DesktopBridgeRollbackMetadataFile extends CodexLbMigrationReceiptFile {
+  kind: DesktopBridgeRollbackMetadataKind;
+}
+
+export interface DesktopBridgeUnificationRollbackMetadata {
+  schema: 'sks.desktop-bridge-unification-rollback-metadata.v1';
+  files: DesktopBridgeRollbackMetadataFile[];
+}
+
+export type StoredDesktopBridgeUnificationReceipt = DesktopBridgeUnificationReceipt & {
+  migration_status: 'migrated';
+  rollback_metadata: DesktopBridgeUnificationRollbackMetadata;
+};
+
+export interface DesktopBridgeUnificationRollbackResult {
+  schema: 'sks.desktop-bridge-unification-rollback.v1';
+  ok: boolean;
+  status: 'rolled_back' | 'rollback_conflict' | 'invalid_receipt' | 'rollback_failed';
+  receipt_id: string | null;
+  restored_files: string[];
+  credentials_overwritten: false;
+  auth_overwritten: false;
+  conflicts: CodexLbMigrationRollbackResult['conflicts'];
+  error?: string;
+}
+
 export function codexLbMigrationReceiptDir(home: string = process.env.HOME || os.homedir()): string {
   return path.join(home, '.codex', 'sks-codex-lb-migrations');
+}
+
+export function desktopBridgeUnificationReceiptDir(
+  home: string = process.env.HOME || os.homedir()
+): string {
+  return path.join(home, '.codex', 'sks-desktop-bridge-migrations');
 }
 
 export function createCodexLbMigrationReceiptId(now: Date = new Date()): string {
   return `${now.toISOString().replace(/[-:.TZ]/g, '')}-${randomUUID().slice(0, 8)}`;
 }
+
+export const createDesktopBridgeUnificationReceiptId = createCodexLbMigrationReceiptId;
 
 export async function backupCodexLbMigrationFile(
   filePath: string,
@@ -114,6 +156,88 @@ export async function readCodexLbMigrationReceipt(receiptPath: string): Promise<
   }
   validateReceipt(parsed);
   return parsed;
+}
+
+export async function writeDesktopBridgeUnificationReceipt(
+  receipt: StoredDesktopBridgeUnificationReceipt,
+  input: { receiptDir?: string; receiptPath?: string } = {}
+): Promise<string> {
+  validateDesktopBridgeUnificationReceipt(receipt);
+  const receiptDir = input.receiptDir || desktopBridgeUnificationReceiptDir();
+  const receiptPath = input.receiptPath || path.join(receiptDir, `${receipt.receipt_id}.json`);
+  await writeTextAtomic(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+  await fsp.chmod(receiptPath, 0o600).catch(() => {});
+  return receiptPath;
+}
+
+export async function readDesktopBridgeUnificationReceipt(
+  receiptPath: string
+): Promise<StoredDesktopBridgeUnificationReceipt> {
+  const text = await readText(receiptPath);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('invalid_desktop_bridge_unification_receipt');
+  }
+  validateDesktopBridgeUnificationReceipt(parsed);
+  return parsed;
+}
+
+export async function rollbackDesktopBridgeUnificationReceipt(input: {
+  receipt?: StoredDesktopBridgeUnificationReceipt;
+  receiptPath?: string;
+}): Promise<DesktopBridgeUnificationRollbackResult> {
+  let receipt: StoredDesktopBridgeUnificationReceipt;
+  try {
+    if (input.receipt) {
+      validateDesktopBridgeUnificationReceipt(input.receipt);
+      receipt = input.receipt;
+    } else if (input.receiptPath) {
+      receipt = await readDesktopBridgeUnificationReceipt(input.receiptPath);
+    } else {
+      throw new Error('missing_desktop_bridge_unification_receipt');
+    }
+  } catch (error: unknown) {
+    return {
+      schema: 'sks.desktop-bridge-unification-rollback.v1',
+      ok: false,
+      status: 'invalid_receipt',
+      receipt_id: null,
+      restored_files: [],
+      credentials_overwritten: false,
+      auth_overwritten: false,
+      conflicts: [],
+      error: errorMessage(error)
+    };
+  }
+
+  // Reuse the verified metadata rollback engine. The compatibility envelope is
+  // constructed in memory only; neither OAuth nor provider secret-store files
+  // are admitted by the v1 unification receipt validator.
+  const legacyEnvelope: CodexLbMigrationReceipt = {
+    schema: 'sks.codex-lb-migration-receipt.v1',
+    id: receipt.receipt_id,
+    created_at: receipt.created_at,
+    from_mode: receipt.legacy_state.desktop_mode || receipt.legacy_state.provider_mode || 'legacy',
+    to_mode: 'desktop-bridge',
+    files: receipt.rollback_metadata.files,
+    bridge_state_path: null,
+    oauth_preserved: receipt.auth_semantic_identity_preserved,
+    capability_summary: {}
+  };
+  const result = await rollbackCodexLbMigrationReceipt({ receipt: legacyEnvelope });
+  return {
+    schema: 'sks.desktop-bridge-unification-rollback.v1',
+    ok: result.ok,
+    status: result.status,
+    receipt_id: result.receipt_id,
+    restored_files: result.restored_files,
+    credentials_overwritten: false,
+    auth_overwritten: false,
+    conflicts: result.conflicts,
+    ...(result.error ? { error: result.error } : {})
+  };
 }
 
 export async function rollbackCodexLbMigrationReceipt(input: {
@@ -294,6 +418,124 @@ function validateReceipt(value: unknown): asserts value is CodexLbMigrationRecei
     ) {
       throw new Error('invalid_codex_lb_migration_receipt_file');
     }
+  }
+}
+
+function validateDesktopBridgeUnificationReceipt(
+  value: unknown
+): asserts value is StoredDesktopBridgeUnificationReceipt {
+  if (!value || typeof value !== 'object') {
+    throw new Error('invalid_desktop_bridge_unification_receipt');
+  }
+  const receipt = value as Partial<StoredDesktopBridgeUnificationReceipt>;
+  if (
+    receipt.schema !== 'sks.desktop-bridge-unification-receipt.v1'
+    || typeof receipt.receipt_id !== 'string'
+    || !receipt.receipt_id
+    || typeof receipt.created_at !== 'string'
+    || receipt.baseline_version !== '8.1.2'
+    || receipt.target_version !== '8.1.3'
+    || typeof receipt.config_before_sha256 !== 'string'
+    || typeof receipt.config_after_sha256 !== 'string'
+    || typeof receipt.auth_before_sha256 !== 'string'
+    || typeof receipt.auth_after_sha256 !== 'string'
+    || typeof receipt.auth_semantic_identity_preserved !== 'boolean'
+    || !receipt.legacy_state
+    || typeof receipt.legacy_state !== 'object'
+    || !Array.isArray(receipt.migrated_profiles)
+    || receipt.credentials_deleted !== false
+    || receipt.new_runtime !== 'desktop-bridge'
+    || !Array.isArray(receipt.backup_paths)
+    || receipt.rollback_supported !== true
+    || !Array.isArray(receipt.blockers)
+    || receipt.migration_status !== 'migrated'
+    || receipt.rollback_metadata?.schema !== 'sks.desktop-bridge-unification-rollback-metadata.v1'
+    || !Array.isArray(receipt.rollback_metadata.files)
+  ) {
+    throw new Error('invalid_desktop_bridge_unification_receipt');
+  }
+  for (const key of ['desktop_mode', 'provider_mode', 'model_provider', 'catalog_path'] as const) {
+    const entry = receipt.legacy_state[key];
+    if (entry !== null && typeof entry !== 'string') {
+      throw new Error('invalid_desktop_bridge_unification_receipt_legacy_state');
+    }
+  }
+  if (receipt.migrated_profiles.some((entry) => entry !== 'codex-lb' && entry !== 'openrouter')) {
+    throw new Error('invalid_desktop_bridge_unification_receipt_provider');
+  }
+  if (
+    receipt.new_catalog_generation !== null
+    && typeof receipt.new_catalog_generation !== 'string'
+  ) {
+    throw new Error('invalid_desktop_bridge_unification_receipt_catalog_generation');
+  }
+  const seenPaths = new Set<string>();
+  for (const file of receipt.rollback_metadata.files) {
+    validateDesktopBridgeRollbackFile(file);
+    const resolved = path.resolve(file.path);
+    if (seenPaths.has(resolved)) {
+      throw new Error('invalid_desktop_bridge_unification_receipt_duplicate_path');
+    }
+    seenPaths.add(resolved);
+  }
+  const metadataBackupPaths = new Set(
+    receipt.rollback_metadata.files
+      .map((file) => file.backup_path)
+      .filter((entry): entry is string => typeof entry === 'string')
+  );
+  if (
+    receipt.backup_paths.some((entry) => typeof entry !== 'string' || !metadataBackupPaths.has(entry))
+    || metadataBackupPaths.size !== receipt.backup_paths.length
+  ) {
+    throw new Error('invalid_desktop_bridge_unification_receipt_backup_paths');
+  }
+  if (receipt.blockers.some((entry) => typeof entry !== 'string')) {
+    throw new Error('invalid_desktop_bridge_unification_receipt_blockers');
+  }
+}
+
+function validateDesktopBridgeRollbackFile(file: unknown): asserts file is DesktopBridgeRollbackMetadataFile {
+  if (!file || typeof file !== 'object') {
+    throw new Error('invalid_desktop_bridge_unification_rollback_file');
+  }
+  const entry = file as Partial<DesktopBridgeRollbackMetadataFile>;
+  const kinds: DesktopBridgeRollbackMetadataKind[] = [
+    'config',
+    'bridge_settings',
+    'catalog_binding',
+    'route_policy',
+    'launchd_state'
+  ];
+  if (
+    !entry.kind
+    || !kinds.includes(entry.kind)
+    || typeof entry.path !== 'string'
+    || !entry.path
+    || (entry.before_sha256 !== null && typeof entry.before_sha256 !== 'string')
+    || (entry.after_sha256 !== null && typeof entry.after_sha256 !== 'string')
+    || (entry.backup_path !== null && typeof entry.backup_path !== 'string')
+    || typeof entry.owned_by_sks !== 'boolean'
+  ) {
+    throw new Error('invalid_desktop_bridge_unification_rollback_file');
+  }
+  const resolved = path.resolve(entry.path);
+  const basename = path.basename(resolved).toLowerCase();
+  const segments = resolved.toLowerCase().split(path.sep);
+  const sensitiveBasenames = new Set([
+    'auth.json',
+    'sks-codex-lb.env',
+    'openrouter-api-key',
+    'openrouter-api-key.json'
+  ]);
+  if (
+    sensitiveBasenames.has(basename)
+    || segments.includes('secrets')
+    || /(?:credential|api-key|secret)/i.test(basename)
+  ) {
+    throw new Error('desktop_bridge_rollback_secret_file_forbidden');
+  }
+  if (entry.kind === 'config' && basename !== 'config.toml') {
+    throw new Error('desktop_bridge_rollback_config_path_invalid');
   }
 }
 

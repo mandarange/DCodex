@@ -45,6 +45,16 @@ export interface CliProviderConfigInput {
   selectGlobally?: boolean;
 }
 
+export interface DesktopBridgeManagedConfigInput {
+  bridgeBaseUrl: string;
+  combinedCatalogPath: string;
+}
+
+/** 8.1.3 managed-runtime markers. Legacy markers below remain facade-only. */
+export const DESKTOP_BRIDGE_MANAGED_MARKER = '# sks-desktop-bridge-managed';
+export const DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER = '# sks-desktop-bridge-managed-base-url';
+export const DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER = '# sks-desktop-bridge-managed-model-catalog';
+
 export const CODEX_LB_DESKTOP_BRIDGE_MARKER = '# sks-codex-lb-managed-desktop-bridge';
 export const CODEX_LB_DESKTOP_COMPAT_MARKER = '# sks-codex-lb-managed-desktop-compat';
 export const CODEX_LB_MODEL_CATALOG_MARKER = '# sks-codex-lb-managed-model-catalog';
@@ -60,6 +70,100 @@ export const LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER = '# sks-codex-lb-managed-ope
 // model_provider value stays user-owned and fail-closed.
 const SKS_SWITCHABLE_THIRD_PARTY_PROVIDER_IDS = ['openrouter', 'sks-router'] as const;
 const SKS_THIRD_PARTY_CATALOG_BASENAMES = ['sks-openrouter-catalog.json', 'opencodex-catalog.json'];
+
+/**
+ * Write the only 8.1.3 managed Codex routing binding.
+ *
+ * Provider profiles and credentials deliberately remain outside these three
+ * top-level values. Existing provider tables are byte-preserved; this writer
+ * only takes over a selection when legacy SKS ownership is explicit.
+ */
+export function upsertDesktopBridgeManagedConfig(
+  text: string,
+  input: DesktopBridgeManagedConfigInput
+): string {
+  const bridgeBaseUrl = normalizeManagedBridgeBaseUrl(input.bridgeBaseUrl);
+  const combinedCatalogPath = String(input.combinedCatalogPath || '').trim();
+  if (!combinedCatalogPath || !path.isAbsolute(combinedCatalogPath)) {
+    throw new Error('desktop_bridge_combined_catalog_path_invalid');
+  }
+  if (path.basename(combinedCatalogPath) !== 'sks-bridge-catalog.json') {
+    throw new Error('desktop_bridge_combined_catalog_path_invalid');
+  }
+
+  const source = String(text || '');
+  const orphanCleanup = removeDesktopBridgeOrphanManagedMarkers(source);
+  let next = releaseSksManagedThirdPartySelection(orphanCleanup.text);
+  const selectedProvider = topLevelTomlString(next, 'model_provider');
+  if (selectedProvider === 'codex-lb' && !legacyCodexLbSelectionOwnedBySks(next)) {
+    throw new Error('legacy_user_owned_config_conflict:model_provider');
+  }
+  if (selectedProvider && selectedProvider !== 'openai' && selectedProvider !== 'codex-lb') {
+    throw new Error('legacy_user_owned_config_conflict:model_provider');
+  }
+
+  const existingBaseUrl = topLevelTomlString(next, 'openai_base_url');
+  const baseUrlOwned = hasAnyTopLevelMarker(next, [
+    DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER,
+    CODEX_LB_DESKTOP_BRIDGE_MARKER,
+    LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER
+  ]);
+  if (existingBaseUrl && !baseUrlOwned) {
+    throw new Error('legacy_user_owned_config_conflict:openai_base_url');
+  }
+
+  const existingCatalog = topLevelTomlString(next, 'model_catalog_json');
+  const catalogOwned = hasAnyTopLevelMarker(next, [
+    DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER,
+    CODEX_LB_MODEL_CATALOG_MARKER
+  ]) || isRecognizedSksCatalogBinding(next, existingCatalog);
+  if (existingCatalog && !catalogOwned) {
+    throw new Error('legacy_user_owned_config_conflict:model_catalog_json');
+  }
+
+  next = removeManagedBridgeTopLevelBindings(next);
+  next = upsertTopLevelTomlString(next, 'model_provider', 'openai');
+  next = addTopLevelMarkerBeforeKey(next, 'model_provider', DESKTOP_BRIDGE_MANAGED_MARKER);
+  next = upsertTopLevelTomlString(next, 'openai_base_url', bridgeBaseUrl);
+  next = addTopLevelMarkerBeforeKey(next, 'openai_base_url', DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER);
+  next = upsertTopLevelTomlString(next, 'model_catalog_json', combinedCatalogPath);
+  next = addTopLevelMarkerBeforeKey(
+    next,
+    'model_catalog_json',
+    DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER
+  );
+  return ensureTrailingNewline(next);
+}
+
+export type DesktopBridgeOrphanManagedMarkerCleanup = {
+  schema: 'sks.desktop-bridge-orphan-managed-marker-cleanup.v1';
+  changed: boolean;
+  orphan_markers: string[];
+  text: string;
+};
+
+export function removeDesktopBridgeOrphanManagedMarkers(
+  text: string
+): DesktopBridgeOrphanManagedMarkerCleanup {
+  const source = String(text || '');
+  const selectedProvider = topLevelTomlString(source, 'model_provider');
+  const markerTargets = [
+    [DESKTOP_BRIDGE_MANAGED_MARKER, selectedProvider === 'openai'],
+    [DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER, Boolean(topLevelTomlString(source, 'openai_base_url'))],
+    [DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER, Boolean(topLevelTomlString(source, 'model_catalog_json'))]
+  ] as const;
+  const orphanMarkers = markerTargets
+    .filter(([marker, hasManagedContent]) => topLevelHasLine(source, marker) && !hasManagedContent)
+    .map(([marker]) => marker);
+  let next = source;
+  for (const marker of orphanMarkers) next = removeTopLevelLine(next, marker);
+  return {
+    schema: 'sks.desktop-bridge-orphan-managed-marker-cleanup.v1',
+    changed: orphanMarkers.length > 0,
+    orphan_markers: orphanMarkers,
+    text: next
+  };
+}
 
 export function releaseSksManagedThirdPartySelection(text: string): string {
   let next = String(text || '');
@@ -1130,4 +1234,91 @@ function removeTopLevelLine(text: any = '', target: string) {
     if (lines[index]?.trim() === target) lines.splice(index, 1);
   }
   return lines.join('\n').replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n');
+}
+
+function hasAnyTopLevelMarker(text: string, markers: readonly string[]): boolean {
+  return markers.some((marker) => topLevelHasLine(text, marker));
+}
+
+function legacyCodexLbSelectionOwnedBySks(text: string): boolean {
+  if (topLevelTomlString(text, 'model_provider') !== 'codex-lb') return false;
+  return hasAnyTopLevelMarker(text, [
+    CODEX_LB_DESKTOP_COMPAT_MARKER,
+    CODEX_LB_PROVIDER_SELECTION_MARKER,
+    LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER
+  ]) || (
+    topLevelHasLine(text, '# sks-managed-provider-mode:codex-lb')
+    && new RegExp(`(^|\\n)\\[model_providers\\.${escapeRegExp('codex-lb')}\\]`).test(text)
+  );
+}
+
+function isRecognizedSksCatalogBinding(text: string, catalogPath: string): boolean {
+  if (!catalogPath) return false;
+  const basename = path.basename(catalogPath);
+  if (basename === 'sks-codex-lb-tool-catalog.json') {
+    return new RegExp(`(^|\\n)\\[model_providers\\.${escapeRegExp('codex-lb')}\\]`).test(text)
+      && (
+        legacyCodexLbSelectionOwnedBySks(text)
+        || topLevelHasLine(text, LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER)
+      );
+  }
+  return false;
+}
+
+function removeManagedBridgeTopLevelBindings(text: string): string {
+  let next = String(text || '');
+  next = removeTopLevelTomlKey(next, 'model_provider');
+  next = removeTopLevelTomlKey(next, 'openai_base_url');
+  next = removeTopLevelTomlKey(next, 'model_catalog_json');
+  for (const marker of [
+    DESKTOP_BRIDGE_MANAGED_MARKER,
+    DESKTOP_BRIDGE_MANAGED_BASE_URL_MARKER,
+    DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER,
+    CODEX_LB_DESKTOP_BRIDGE_MARKER,
+    CODEX_LB_DESKTOP_COMPAT_MARKER,
+    CODEX_LB_MODEL_CATALOG_MARKER,
+    CODEX_LB_PROVIDER_SELECTION_MARKER,
+    CODEX_LB_OAUTH_SELECTION_MARKER,
+    LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER
+  ]) {
+    next = removeTopLevelLine(next, marker);
+  }
+  next = removeTopLevelLinesWithPrefix(next, '# sks-managed-provider-mode:');
+  return next;
+}
+
+function removeTopLevelLinesWithPrefix(text: string, prefix: string): string {
+  const lines = String(text || '').split('\n');
+  const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
+  const end = firstTable === -1 ? lines.length : firstTable;
+  return lines
+    .filter((line, index) => index >= end || !line.trim().startsWith(prefix))
+    .join('\n')
+    .replace(/^\n+/, '')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+function normalizeManagedBridgeBaseUrl(value: string): string {
+  const normalized = String(value || '').trim().replace(/\/+$/, '');
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error('desktop_bridge_loopback_base_url_required');
+  }
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (
+    parsed.protocol !== 'http:'
+    || !['127.0.0.1', 'localhost', '::1'].includes(hostname)
+    || parsed.username
+    || parsed.password
+    || parsed.search
+    || parsed.hash
+  ) {
+    throw new Error('desktop_bridge_loopback_base_url_required');
+  }
+  if (parsed.pathname.replace(/\/+$/, '') !== '/backend-api/codex') {
+    throw new Error('desktop_bridge_loopback_base_url_required');
+  }
+  return normalized;
 }
