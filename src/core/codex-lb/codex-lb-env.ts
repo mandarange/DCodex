@@ -7,11 +7,13 @@ import {
   PrivateCredentialFileError,
   readPrivateCredentialFile
 } from '../security/private-credential-file.js';
-import {
-  DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT,
-  parseCodexLbGatewayAuthTransport,
-  type CodexLbGatewayAuthTransport
-} from './desktop-mode.js';
+
+const CODEX_LB_CREDENTIAL_AUTH_TRANSPORTS = [
+  'x-codex-lb-api-key',
+  'authorization-bearer-compat'
+] as const;
+type CodexLbCredentialAuthTransport = (typeof CODEX_LB_CREDENTIAL_AUTH_TRANSPORTS)[number];
+const DEFAULT_CODEX_LB_CREDENTIAL_AUTH_TRANSPORT: CodexLbCredentialAuthTransport = 'authorization-bearer-compat';
 
 export const CODEX_LB_SECURE_KEYCHAIN_SERVICE = 'com.sneakoscope.codex-lb.api-key.v2' as const;
 export const CODEX_LB_LEGACY_KEYCHAIN_SERVICE = 'sks-codex-lb' as const;
@@ -25,7 +27,7 @@ export type CodexLbEnvLoadResult = {
   source: CodexLbEnvSource;
   source_priority: CodexLbEnvSource[];
   base_url: string | null;
-  gateway_auth_transport?: CodexLbGatewayAuthTransport | null;
+  gateway_auth_transport?: CodexLbCredentialAuthTransport | null;
   api_key: {
     present: boolean;
     usable: boolean;
@@ -76,6 +78,66 @@ export function codexLbHealthPath(home: unknown = process.env.HOME || os.homedir
   return path.join(String(home || os.homedir()), '.codex', 'sks-codex-lb-health.json');
 }
 
+export async function removeStoredCodexLbCredential(input: {
+  home?: string;
+  envPath?: string;
+  metadataPath?: string;
+  confirmed: boolean;
+}): Promise<{
+  schema: 'sks.codex-lb-credential-removal.v1';
+  removed: boolean;
+  removed_paths: string[];
+  blockers: string[];
+}> {
+  if (input.confirmed !== true) {
+    return {
+      schema: 'sks.codex-lb-credential-removal.v1',
+      removed: false,
+      removed_paths: [],
+      blockers: ['codex_lb_credential_removal_confirmation_required']
+    };
+  }
+  const home = path.resolve(input.home || process.env.HOME || os.homedir());
+  const codexHome = path.join(home, '.codex');
+  const files = [
+    path.resolve(input.envPath || codexLbEnvPath(home)),
+    path.resolve(input.metadataPath || codexLbMetadataPath(home))
+  ];
+  if (files.some((file) => file !== codexHome && !file.startsWith(`${codexHome}${path.sep}`))) {
+    return {
+      schema: 'sks.codex-lb-credential-removal.v1',
+      removed: false,
+      removed_paths: [],
+      blockers: ['codex_lb_credential_path_outside_codex_home']
+    };
+  }
+  const existing: string[] = [];
+  for (const file of files) {
+    const stat = await fsp.lstat(file).catch(() => null);
+    if (!stat) continue;
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      return {
+        schema: 'sks.codex-lb-credential-removal.v1',
+        removed: false,
+        removed_paths: [],
+        blockers: ['codex_lb_credential_path_not_regular_file']
+      };
+    }
+    existing.push(file);
+  }
+  const removed: string[] = [];
+  for (const file of existing) {
+    await fsp.unlink(file);
+    removed.push(file);
+  }
+  return {
+    schema: 'sks.codex-lb-credential-removal.v1',
+    removed: removed.length > 0,
+    removed_paths: removed,
+    blockers: []
+  };
+}
+
 export async function readLbHealth(home: unknown = process.env.HOME || os.homedir()) {
   const file = codexLbHealthPath(home);
   const raw = await readJson<any>(file, null);
@@ -123,7 +185,7 @@ export async function readCodexLbModelCatalog(opts: {
     };
   }
   const fetchImpl = opts.fetchImpl || fetch;
-  const gatewayAuthTransport = opts.gatewayAuthTransport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT;
+  const gatewayAuthTransport = opts.gatewayAuthTransport || DEFAULT_CODEX_LB_CREDENTIAL_AUTH_TRANSPORT;
   const gatewayHeaders = gatewayAuthTransport === 'x-codex-lb-api-key'
     ? { 'X-Codex-LB-API-Key': loaded.secret_api_key }
     : { Authorization: `Bearer ${loaded.secret_api_key}` };
@@ -305,7 +367,7 @@ async function readCodexLbCredentialMetadata(file: string): Promise<{
   valid: boolean;
   baseUrl: string;
   apiKeySha256: string;
-  gatewayAuthTransport: CodexLbGatewayAuthTransport | null;
+  gatewayAuthTransport: CodexLbCredentialAuthTransport | null;
 }> {
   if (!(await exists(file))) {
     return {
@@ -313,16 +375,16 @@ async function readCodexLbCredentialMetadata(file: string): Promise<{
       valid: false,
       baseUrl: '',
       apiKeySha256: '',
-      gatewayAuthTransport: DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT
+      gatewayAuthTransport: DEFAULT_CODEX_LB_CREDENTIAL_AUTH_TRANSPORT
     };
   }
   const value = await readJson<any>(file, null).catch(() => null);
   const baseUrl = normalizeCodexLbBaseUrl(value?.base_url || '');
   const apiKeySha256 = String(value?.api_key?.sha256 || '').trim().toLowerCase();
-  let gatewayAuthTransport: CodexLbGatewayAuthTransport | null = null;
+  let gatewayAuthTransport: CodexLbCredentialAuthTransport | null = null;
   try {
-    gatewayAuthTransport = parseCodexLbGatewayAuthTransport(
-      value?.gateway_auth_transport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT
+    gatewayAuthTransport = parseCodexLbCredentialAuthTransport(
+      value?.gateway_auth_transport || DEFAULT_CODEX_LB_CREDENTIAL_AUTH_TRANSPORT
     );
   } catch {
     gatewayAuthTransport = null;
@@ -335,13 +397,21 @@ async function readCodexLbCredentialMetadata(file: string): Promise<{
   return { present: true, valid, baseUrl, apiKeySha256, gatewayAuthTransport };
 }
 
+function parseCodexLbCredentialAuthTransport(value: unknown): CodexLbCredentialAuthTransport {
+  const normalized = String(value || '').trim();
+  if ((CODEX_LB_CREDENTIAL_AUTH_TRANSPORTS as readonly string[]).includes(normalized)) {
+    return normalized as CodexLbCredentialAuthTransport;
+  }
+  throw new Error('codex_lb_credential_auth_transport_invalid');
+}
+
 function evaluateCodexLbCredentialBinding(input: {
   metadata: {
     present: boolean;
     valid: boolean;
     baseUrl: string;
     apiKeySha256: string;
-    gatewayAuthTransport: CodexLbGatewayAuthTransport | null;
+    gatewayAuthTransport: CodexLbCredentialAuthTransport | null;
   };
   metadataPath: string;
   apiKeySha256: string;

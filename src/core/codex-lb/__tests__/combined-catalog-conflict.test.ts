@@ -1,0 +1,155 @@
+import '../../__tests__/helpers/isolated-test-home.js';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import {
+  activateCombinedBridgeCatalog,
+  buildCombinedBridgeCatalog,
+  readActiveCombinedBridgeCatalog
+} from '../combined-catalog.js';
+import { resolveAllProviderCredentials } from '../provider-credentials.js';
+import { resolveBridgeProviderRegistry } from '../provider-registry.js';
+
+async function registryFixture() {
+  const credentials = await resolveAllProviderCredentials({
+    codexLb: {
+      loadCodexLbEnvImpl: async () => ({
+        schema: 'sks.codex-lb-env.v1', configured: true, missing: [], source: 'env-file', source_priority: ['env-file'],
+        base_url: 'https://lb.example.test/backend-api/codex',
+        api_key: { present: true, usable: true, source: 'env-file', redacted: true, fingerprint: 'aaaaaaaaaaaaaaaa' },
+        secret_api_key: 'lb-catalog-secret',
+        credential_binding: { checked: true, present: true, valid: true, status: 'matched', metadata_path: '/fixture', api_key_matches: true, base_url_matches: true, blockers: [] },
+        env_paths: ['/fixture'], keychain: { checked: false, available: false, status: 'not_used' }
+      }),
+      validation: { state: 'ready', checked_at: '2026-08-05T00:00:00.000Z' }
+    },
+    openrouter: {
+      resolveOpenRouterApiKeyImpl: async () => ({ key: 'or-catalog-secret', source: 'user-secret-store', key_preview: 'or-...', blockers: [], warnings: [] }),
+      validation: { state: 'ready', checked_at: '2026-08-05T00:00:00.000Z' }
+    }
+  });
+  return resolveBridgeProviderRegistry({ registryPath: '/missing/provider-registry.json', credentials });
+}
+
+function catalogs(shared = false, suffix = '') {
+  return {
+    'codex-lb': {
+      provider_id: 'codex-lb' as const,
+      state: 'verified' as const,
+      generation: `lb-generation${suffix}`,
+      models: { models: [{ slug: shared ? 'shared-model' : `lb-model${suffix}`, display_name: 'LB' }] }
+    },
+    openrouter: {
+      provider_id: 'openrouter' as const,
+      state: 'verified' as const,
+      generation: `or-generation${suffix}`,
+      models: [{ id: shared ? 'shared-model' : `or-model${suffix}`, name: 'OR' }]
+    }
+  };
+}
+
+test('R26: ambiguous public IDs are explicit conflicts with no silent provider priority', async () => {
+  const registry = await registryFixture();
+  const first = buildCombinedBridgeCatalog(registry, {
+    catalogs: catalogs(true),
+    created_at: '2026-08-05T00:00:00.000Z'
+  });
+  assert.equal(first.ok, false);
+  assert.ok(first.blockers.includes('catalog_model_route_ambiguous'));
+  assert.equal(first.route_index.routes['shared-model'], undefined);
+  assert.equal(first.route_index.routes['codex-lb:shared-model']?.provider_id, 'codex-lb');
+  assert.equal(first.route_index.routes['openrouter:shared-model']?.provider_id, 'openrouter');
+  assert.deepEqual(first.route_index.conflicts, [{
+    public_id: 'shared-model',
+    providers: ['codex-lb', 'openrouter'],
+    blocker: 'catalog_model_route_ambiguous'
+  }]);
+});
+
+test('deterministic catalog and route generations ignore observation time and contain no secrets', async () => {
+  const registry = await registryFixture();
+  const first = buildCombinedBridgeCatalog(registry, {
+    catalogs: catalogs(false),
+    created_at: '2026-08-05T00:00:00.000Z'
+  });
+  const second = buildCombinedBridgeCatalog(registry, {
+    catalogs: catalogs(false),
+    created_at: '2026-08-06T00:00:00.000Z'
+  });
+  assert.equal(first.catalog.generation, second.catalog.generation);
+  assert.equal(first.catalog.digest, second.catalog.digest);
+  assert.equal(first.route_index.generation, second.route_index.generation);
+  const serialized = JSON.stringify({ catalog: first.catalog, route_index: first.route_index });
+  assert.equal(serialized.includes('lb-catalog-secret'), false);
+  assert.equal(serialized.includes('or-catalog-secret'), false);
+});
+
+test('R23: one provider catalog failure degrades the combined result while retaining the ready provider routes', async () => {
+  const registry = await registryFixture();
+  const input = catalogs(false);
+  const result = buildCombinedBridgeCatalog(registry, {
+    catalogs: {
+      ...input,
+      openrouter: {
+        ...input.openrouter,
+        state: 'failed',
+        models: [],
+        blockers: ['openrouter_catalog_fetch_failed']
+      }
+    },
+    created_at: '2026-08-05T00:00:00.000Z'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.status.state, 'degraded');
+  assert.equal(result.route_index.routes['lb-model']?.provider_id, 'codex-lb');
+  assert.ok(result.status.blockers.includes('openrouter_catalog_fetch_failed'));
+});
+
+test('R32/R50: failed pair activation restores the previous verified generation', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-combined-activation-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const catalogPath = path.join(root, 'catalog.json');
+  const routeIndexPath = path.join(root, 'route-index.json');
+  const registry = await registryFixture();
+  const first = buildCombinedBridgeCatalog(registry, {
+    catalogs: catalogs(false),
+    created_at: '2026-08-05T00:00:00.000Z'
+  });
+  const activated = await activateCombinedBridgeCatalog({ build: first, catalogPath, routeIndexPath });
+  assert.equal(activated.activated, true, JSON.stringify(activated.blockers));
+  assert.ok(activated.catalog_path);
+  assert.ok(activated.route_index_path);
+  await assert.rejects(fs.access(catalogPath));
+  await assert.rejects(fs.access(routeIndexPath));
+  assert.equal(await fs.access(activated.pointer_path).then(() => true, () => false), true);
+  const beforeActive = await readActiveCombinedBridgeCatalog(catalogPath, routeIndexPath);
+  assert.equal(beforeActive.ok, true, JSON.stringify(beforeActive.blockers));
+  const beforeCatalog = await fs.readFile(beforeActive.catalog_path!);
+  const beforeRoute = await fs.readFile(beforeActive.route_index_path!);
+  const beforePointer = await fs.readFile(beforeActive.pointer_path);
+
+  const second = buildCombinedBridgeCatalog(registry, {
+    catalogs: catalogs(false, '-next'),
+    created_at: '2026-08-05T00:01:00.000Z'
+  });
+  const failed = await activateCombinedBridgeCatalog({
+    build: second,
+    catalogPath,
+    routeIndexPath,
+    testHooks: {
+      afterCatalogRename: () => {
+        throw new Error('injected_activation_failure');
+      }
+    }
+  });
+  assert.equal(failed.activated, false);
+  assert.deepEqual(await fs.readFile(beforeActive.catalog_path!), beforeCatalog);
+  assert.deepEqual(await fs.readFile(beforeActive.route_index_path!), beforeRoute);
+  assert.deepEqual(await fs.readFile(beforeActive.pointer_path), beforePointer);
+  const restarted = await readActiveCombinedBridgeCatalog(catalogPath, routeIndexPath);
+  assert.equal(restarted.ok, true, JSON.stringify(restarted.blockers));
+  assert.equal(restarted.catalog.generation, first.catalog.generation);
+  assert.equal(restarted.route_index.generation, first.route_index.generation);
+});

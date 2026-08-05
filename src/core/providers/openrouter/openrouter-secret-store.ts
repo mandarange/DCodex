@@ -4,6 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import type { OpenRouterKeyRecord, OpenRouterKeyResolution } from './openrouter-types.js';
 import { redactOpenRouterKey } from '../../security/redact-secrets.js';
+import {
+  readPrivateCredentialFile,
+  writePrivateTextAtomic
+} from '../../security/private-credential-file.js';
 
 export const OPENROUTER_KEY_ENV_NAMES = ['OPENROUTER_API_KEY', 'SKS_OPENROUTER_API_KEY'] as const;
 
@@ -64,7 +68,11 @@ export async function resolveOpenRouterApiKey(input: {
 
 export async function readStoredOpenRouterKey(paths: OpenRouterSecretPaths): Promise<string | null> {
   try {
-    const text = await fs.readFile(paths.keyPath, 'utf8');
+    const text = (await readPrivateCredentialFile(
+      paths.secretDir,
+      paths.keyPath,
+      'openrouter_api_key'
+    )).bytes.toString('utf8');
     const key = text.trim();
     return key || null;
   } catch {
@@ -87,22 +95,7 @@ export async function writeStoredOpenRouterKey(
   const timestamp = nowIso();
   const previous = input.previousRecord ?? await readOpenRouterKeyRecord(paths);
   await ensureSecretDir(paths.secretDir);
-  const tmp = `${paths.keyPath}.${process.pid}.${crypto.randomBytes(3).toString('hex')}.tmp`;
-  try {
-    const handle = await fs.open(tmp, 'w', 0o600);
-    try {
-      await handle.writeFile(`${key}\n`, 'utf8');
-      await handle.sync().catch(() => undefined);
-    } finally {
-      await handle.close().catch(() => undefined);
-    }
-    await fs.chmod(tmp, 0o600).catch(() => undefined);
-    await fs.rename(tmp, paths.keyPath);
-    await fs.chmod(paths.keyPath, 0o600).catch(() => undefined);
-  } catch (err: unknown) {
-    await fs.rm(tmp, { force: true }).catch(() => undefined);
-    throw err;
-  }
+  await writePrivateTextAtomic(paths.secretDir, paths.keyPath, `${key}\n`, 'openrouter_api_key');
   const record: OpenRouterKeyRecord = {
     schema: 'sks.openrouter-key.v1',
     created_at: previous?.created_at || timestamp,
@@ -110,19 +103,73 @@ export async function writeStoredOpenRouterKey(
     key_hash: crypto.createHash('sha256').update(key).digest('hex'),
     key_preview: redactOpenRouterKey(key)
   };
-  await fs.writeFile(paths.metadataPath, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  await fs.chmod(paths.metadataPath, 0o600).catch(() => undefined);
+  await writePrivateTextAtomic(
+    paths.secretDir,
+    paths.metadataPath,
+    `${JSON.stringify(record, null, 2)}\n`,
+    'openrouter_api_key_metadata'
+  );
   return record;
 }
 
 export async function readOpenRouterKeyRecord(paths: OpenRouterSecretPaths): Promise<OpenRouterKeyRecord | null> {
   try {
-    const parsed = JSON.parse(await fs.readFile(paths.metadataPath, 'utf8')) as Partial<OpenRouterKeyRecord>;
+    const text = (await readPrivateCredentialFile(
+      paths.secretDir,
+      paths.metadataPath,
+      'openrouter_api_key_metadata'
+    )).bytes.toString('utf8');
+    const parsed = JSON.parse(text) as Partial<OpenRouterKeyRecord>;
     if (parsed.schema !== 'sks.openrouter-key.v1' || !parsed.key_hash || !parsed.key_preview) return null;
     return parsed as OpenRouterKeyRecord;
   } catch {
     return null;
   }
+}
+
+export async function removeStoredOpenRouterKey(input: {
+  readonly paths?: OpenRouterSecretPaths;
+  readonly confirmed: boolean;
+}): Promise<{
+  readonly schema: 'sks.openrouter-key-removal.v1';
+  readonly removed: boolean;
+  readonly removed_paths: readonly string[];
+  readonly blockers: readonly string[];
+}> {
+  if (input.confirmed !== true) {
+    return {
+      schema: 'sks.openrouter-key-removal.v1',
+      removed: false,
+      removed_paths: [],
+      blockers: ['openrouter_credential_removal_confirmation_required']
+    };
+  }
+  const paths = input.paths || openRouterSecretPaths();
+  const existing: string[] = [];
+  for (const file of [paths.keyPath, paths.metadataPath]) {
+    const stat = await fs.lstat(file).catch(() => null);
+    if (!stat) continue;
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      return {
+        schema: 'sks.openrouter-key-removal.v1',
+        removed: false,
+        removed_paths: [],
+        blockers: ['openrouter_credential_path_not_regular_file']
+      };
+    }
+    existing.push(file);
+  }
+  const removed: string[] = [];
+  for (const file of existing) {
+    await fs.unlink(file);
+    removed.push(file);
+  }
+  return {
+    schema: 'sks.openrouter-key-removal.v1',
+    removed: removed.length > 0,
+    removed_paths: removed,
+    blockers: []
+  };
 }
 
 async function ensureSecretDir(secretDir: string): Promise<void> {

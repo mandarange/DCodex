@@ -2,7 +2,13 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { ensureDir, exists, nowIso, sha256, writeTextAtomic } from '../fsx.js'
 import { codexLbBaseUrlSecurityBlocker, normalizeCodexLbBaseUrl } from './codex-lb-env.js'
-import type { CodexLbDesktopMode } from './desktop-mode.js'
+import type { BridgeCatalogModel } from './bridge-contracts.js'
+
+type LegacyCodexLbDesktopMode =
+  | 'desktop-native-bridge'
+  | 'desktop-dual-auth-compat'
+  | 'cli-provider'
+  | 'disabled'
 
 export const CODEX_LB_TOOL_CATALOG_FILENAME = 'sks-codex-lb-tool-catalog.json'
 export const CODEX_LB_TOOL_CATALOG_SCHEMA = 'sks.codex-lb-tool-catalog.v1'
@@ -32,7 +38,7 @@ export function isCodexLbGpt56Model(model: unknown): boolean {
   return GPT56_MODEL_RE.test(String(model || '').trim())
 }
 
-export function shouldBindLocalModelCatalog(mode: CodexLbDesktopMode): boolean {
+export function shouldBindLocalModelCatalog(mode: LegacyCodexLbDesktopMode): boolean {
   return mode === 'desktop-dual-auth-compat' || mode === 'cli-provider'
 }
 
@@ -93,6 +99,49 @@ export function normalizeCodexLbToolCatalog(payload: any, opts: { maxModels?: nu
     tools_transport: compatible ? 'full_responses' : 'unverified',
     blockers
   }
+}
+
+export function normalizeCodexLbBridgeCatalogModels(
+  payload: unknown,
+  sourceCatalogGeneration: string
+): { models: BridgeCatalogModel[]; blockers: string[] } {
+  const rows = Array.isArray((payload as any)?.models)
+    ? (payload as any).models
+    : Array.isArray((payload as any)?.data)
+      ? (payload as any).data
+      : []
+  const models: BridgeCatalogModel[] = []
+  const blockers: string[] = []
+  for (const [index, value] of rows.entries()) {
+    if (!isPlainObject(value)) {
+      blockers.push(`codex_lb_model_catalog_row_invalid:${index}:object`)
+      continue
+    }
+    try {
+      const row = normalizeCodexLbModelRow(value, index)
+      const publicId = String(row.slug || '').trim()
+      const capabilities = [
+        ...(Array.isArray(row.supported_reasoning_levels) && row.supported_reasoning_levels.length > 0 ? ['reasoning'] : []),
+        ...(row.supports_tools === true || row.supports_tool_choice === true ? ['tools'] : []),
+        ...(row.supports_vision === true || row.vision === true ? ['vision'] : []),
+        ...(row.supports_audio === true || row.audio === true ? ['audio'] : [])
+      ]
+      models.push({
+        public_id: publicId,
+        provider_id: 'codex-lb',
+        upstream_model: publicId,
+        display_name: String(row.display_name || publicId).trim(),
+        supported_in_api: row.supported_in_api !== false,
+        capabilities: [...new Set(capabilities)].sort(),
+        source_catalog_generation: sourceCatalogGeneration,
+        route_key: `codex-lb:${publicId.toLowerCase()}`
+      })
+    } catch (error) {
+      blockers.push(error instanceof Error ? error.message : `codex_lb_model_catalog_row_invalid:${index}`)
+    }
+  }
+  if (models.length === 0) blockers.push('codex_lb_model_catalog_empty')
+  return { models, blockers: uniqueBounded(blockers) }
 }
 
 export async function inspectCodexLbToolCatalog(file: string, opts: {
