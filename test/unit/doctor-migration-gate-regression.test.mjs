@@ -11,7 +11,8 @@ import {
   deferCommandAliasCleanupToMigrationReceipt,
   doctorArgWarnings,
   doctorMenuBarInstallPolicy,
-  doctorProfileFromArgs
+  doctorProfileFromArgs,
+  doctorProfileRequiresDesktopBridgeReadiness
 } from '../../dist/commands/doctor.js';
 
 test('doctor remains executable when migration gate would otherwise block normal commands', async () => {
@@ -95,6 +96,12 @@ test('migration Doctor never applies or launches the Menu Bar before the update 
     ).launch,
     false
   );
+});
+
+test('migration Doctor defers live Desktop Bridge readiness while ordinary profiles still require it', () => {
+  assert.equal(doctorProfileRequiresDesktopBridgeReadiness('migration'), false);
+  assert.equal(doctorProfileRequiresDesktopBridgeReadiness('fix'), true);
+  assert.equal(doctorProfileRequiresDesktopBridgeReadiness('full'), true);
 });
 
 test('migration Doctor defers pre-migration public-surface findings to the receipt owner without claiming a repair', () => {

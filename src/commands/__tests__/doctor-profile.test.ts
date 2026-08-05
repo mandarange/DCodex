@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { doctorPhaseIdsForProfile } from '../doctor-profile.js';
+import {
+  doctorPhaseIdsForProfile,
+  doctorProfileRequiresDesktopBridgeReadiness
+} from '../doctor-profile.js';
 
 test('codex_config_syntax_repair runs in every doctor profile that repairs', () => {
   for (const profile of ['migration', 'fix', 'full', 'capabilities', 'fast'] as const) {
@@ -23,4 +26,11 @@ test('migration profile keeps the existing required phase order around the synta
     'hook_trust_repair',
     'command_alias_cleanup'
   ]);
+});
+
+test('migration profile does not turn optional live Desktop Bridge readiness into an update blocker', () => {
+  assert.equal(doctorProfileRequiresDesktopBridgeReadiness('migration'), false);
+  for (const profile of ['fast', 'fix', 'full', 'capabilities'] as const) {
+    assert.equal(doctorProfileRequiresDesktopBridgeReadiness(profile), true, profile);
+  }
 });

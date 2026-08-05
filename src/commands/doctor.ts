@@ -39,7 +39,8 @@ import {
   doctorArgWarnings as baseDoctorArgWarnings,
   doctorMenuBarInstallPolicy,
   doctorPhaseIdsForProfile,
-  doctorProfileFromArgs
+  doctorProfileFromArgs,
+  doctorProfileRequiresDesktopBridgeReadiness
 } from './doctor-profile.js';
 import {
   buildCodexAppUiDiagnosticFailure, buildRuntimeReadiness,
@@ -53,7 +54,7 @@ import {
   writeJsonReportFile
 } from './doctor-helpers.js';
 
-export { doctorMenuBarInstallPolicy, doctorProfileFromArgs } from './doctor-profile.js';
+export { doctorMenuBarInstallPolicy, doctorProfileFromArgs, doctorProfileRequiresDesktopBridgeReadiness } from './doctor-profile.js';
 export {
   buildCodexAppUiDiagnosticFailure,
   buildRuntimeReadiness,
@@ -1552,7 +1553,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     && (agentRoleConfigRepair as any).ok !== false
     && (openRouterProviderRepair as any).ok !== false
     && ((officialSubagentConfig as any).blockers || []).length === 0
-    && desktopBridge.ok !== false;
+    && (!doctorProfileRequiresDesktopBridgeReadiness(doctorProfile) || desktopBridge.ok !== false);
   const result = {
     schema: 'sks.doctor-status.v3',
     elapsed_ms: Date.now() - startedAtMs,

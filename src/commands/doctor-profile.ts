@@ -53,6 +53,14 @@ export function doctorPhaseIdsForProfile(profile: DoctorProfile): string[] {
   return [...required, ...optional];
 }
 
+export function doctorProfileRequiresDesktopBridgeReadiness(profile: DoctorProfile): boolean {
+  // The migration profile owns config/schema convergence only. Requiring a
+  // configured and running Desktop Bridge here makes the first command after
+  // an update fail even after it has written a current migration receipt.
+  // Ordinary Doctor profiles still report and enforce live bridge readiness.
+  return profile !== 'migration';
+}
+
 function unknownDoctorFlags(args: any[]): string[] {
   const knownBoolean = new Set([
     '--fix', '--yes', '-y', '--machine-only', '--actual-codex', '--require-actual-codex',
