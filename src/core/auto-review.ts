@@ -1,5 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { ensureDir, exists, readText, writeTextAtomic } from './fsx.js';
 import { writeCodexConfigGuarded } from './codex/codex-config-guard.js';
 import { inspectConfinedPath, removeManagedPathVerified } from './managed-path-safety.js';
@@ -7,7 +8,6 @@ import {
   RETIRED_AUTO_REVIEW_POLICY_TEXTS,
   RETIRED_SKS_CONFIG_PROFILE_NAMES
 } from './doctor/retired-auto-review-config.js';
-import { retiredGlmDesktopProfileBody } from './codex-app/openrouter-provider.js';
 import { escapeRegExp } from './text/regex.js';
 
 export { RETIRED_SKS_CONFIG_PROFILE_NAMES } from './doctor/retired-auto-review-config.js';
@@ -228,7 +228,8 @@ export function reconcileRetiredSksConfigText(text: string): RetiredSksConfigTex
 
 export function isSksGeneratedRetiredProfileText(text: string): boolean {
   const normalized = normalizeGeneratedProfileText(text);
-  return managedRetiredProfileBodies().has(normalized);
+  return managedRetiredProfileBodies().has(normalized)
+    || HISTORICAL_OPENROUTER_PROFILE_SHA256.has(sha256(normalized));
 }
 
 export function buildMadHighLaunchProfileNoWrite(opts: any = {}) {
@@ -504,12 +505,21 @@ function managedRetiredProfileBodies(): Set<string> {
       'approval_policy = "on-request"',
       'sandbox_mode = "workspace-write"',
       'model_reasoning_effort = "medium"'
-    ].join('\n'),
-    retiredGlmDesktopProfileBody('none'),
-    retiredGlmDesktopProfileBody('minimal'),
-    retiredGlmDesktopProfileBody('low'),
-    retiredGlmDesktopProfileBody('medium'),
-    retiredGlmDesktopProfileBody('high'),
-    retiredGlmDesktopProfileBody('xhigh')
+    ].join('\n')
   ].map(normalizeGeneratedProfileText));
+}
+
+// Exact hashes of retired generated OpenRouter profile bytes. The historical
+// direct-provider literals live only in migration tests, never in active code.
+const HISTORICAL_OPENROUTER_PROFILE_SHA256 = new Set([
+  '8405d346127e87805f284caa6c2f20a67cbd96595c4f3b194a46212c650837c4',
+  'ff97ebf844785bdd21e5b28dd109ec5684873fe52e75386c1bd1bd19c7cedcc8',
+  'be337e958e9379e72ccf8dd5576c1e4d8d348c338cebc4d68690bfb9d94a3048',
+  'feb9f6be9e4596a2a897f3c6b5b735fa838e64227a0fba1051d1ac93c0613e8c',
+  '0a482903a52392434f3746451166ad54e95053e6777c5013edf9fec2da23692e',
+  '364fbce652087e4ae8284bdb51e664e9c4e37eafee146123c68d5a6fb036c347'
+]);
+
+function sha256(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
 }

@@ -1,12 +1,12 @@
 import path from 'node:path'
-import { exists, nowIso, readJson, readText, writeJsonAtomic } from '../fsx.js'
-import { escapeRegExp } from '../text/regex.js'
+import type { BridgeProviderId, DesktopBridgeStatusV3 } from '../codex-lb/bridge-contracts.js'
+import { exists, nowIso, readJson, writeJsonAtomic } from '../fsx.js'
 
-export const PROVIDER_CONTEXT_SCHEMA = 'sks.provider-context.v1'
+export const PROVIDER_CONTEXT_SCHEMA = 'sks.provider-context.v2'
 
-export type ProviderId = 'openai' | 'codex-lb' | 'codex-app' | 'unknown'
-export type ProviderAuthMode = 'api_key' | 'chatgpt_oauth' | 'codex_lb_key' | 'unknown'
-export type ProviderContextSource = 'env' | 'config' | 'codex_app' | 'codex_lb' | 'unknown'
+export type ProviderId = 'openai' | 'desktop-bridge' | 'codex-app' | 'unknown'
+export type ProviderAuthMode = 'api_key' | 'chatgpt_oauth' | 'unknown'
+export type ProviderContextSource = 'env' | 'desktop_bridge' | 'codex_app' | 'unknown'
 
 export interface ProviderContext {
   schema: typeof PROVIDER_CONTEXT_SCHEMA
@@ -17,19 +17,17 @@ export interface ProviderContext {
   service_tier: 'fast' | 'standard' | 'unknown'
   source: ProviderContextSource
   confidence: 'high' | 'medium' | 'low'
-  conflict: boolean
+  conflict: false
   warnings: string[]
   signals: {
     openai_api_key_present: boolean
-    codex_lb_key_present: boolean
-    codex_lb_explicit: boolean
     codex_app_auth_present: boolean
-    model_provider: string | null
-    codex_lb_provider_block_present?: boolean
-    codex_lb_env_key?: string | null
-    codex_lb_gateway_header_env_key?: string | null
-    codex_lb_requires_openai_auth?: boolean | null
-    codex_lb_available?: boolean
+    desktop_bridge_status_available: boolean
+    desktop_bridge_managed: boolean
+    desktop_bridge_ready: boolean
+    desktop_bridge_provider: BridgeProviderId | null
+    desktop_bridge_native_identity_configured: boolean
+    desktop_bridge_credential_state: string | null
   }
 }
 
@@ -37,68 +35,66 @@ export async function resolveProviderContext(input: {
   root?: string
   route?: string | null
   serviceTier?: string | null
-  modelProvider?: string | null
   env?: NodeJS.ProcessEnv
   codexHome?: string | null
+  desktopBridgeStatus?: DesktopBridgeStatusV3 | null
+  desktopBridgeStatusImpl?: (options?: Record<string, unknown>) => Promise<DesktopBridgeStatusV3>
+  desktopBridgeStatusOptions?: Record<string, unknown>
 } = {}): Promise<ProviderContext> {
   const env = input.env || process.env
   const root = path.resolve(input.root || process.cwd())
-  const codexHome = path.resolve(String(input.codexHome || env.CODEX_HOME || path.join(env.HOME || '', '.codex')))
-  const configText = await readText(path.join(codexHome, 'config.toml'), '').catch(() => '')
-  const configModelProvider = readTopLevelTomlString(configText, 'model_provider')
-  const codexLbProviderBlockPresent = hasCodexLbProviderBlock(configText)
-  const codexLbBearerEnvKey = codexLbProviderBearerEnvKey(configText)
-  const codexLbGatewayHeaderEnvKey = codexLbProviderGatewayHeaderEnvKey(configText)
-  const codexLbEnvKey = codexLbGatewayHeaderEnvKey || codexLbBearerEnvKey
-  const codexLbRequiresOpenAiAuth = codexLbProviderRequiresOpenAiAuth(configText)
-  const codexLbProviderValid = codexLbProviderBlockPresent
-    && codexLbBearerEnvKey === 'CODEX_LB_API_KEY'
-    && codexLbGatewayHeaderEnvKey === null
-    && codexLbRequiresOpenAiAuth === false
-  const openaiKey = Boolean(String(env.OPENAI_API_KEY || '').trim())
-  const lbKey = Boolean(String((codexLbEnvKey ? env[codexLbEnvKey] : env.CODEX_LB_API_KEY) || env.CODEX_LB_API_KEY || '').trim())
-  const envProvider = String(env.SKS_MODEL_PROVIDER || env.CODEX_MODEL_PROVIDER || env.OPENAI_MODEL_PROVIDER || '').trim()
-  const modelProvider = String(input.modelProvider || envProvider || configModelProvider || '').trim() || null
-  const envLbExplicit = env.SKS_PROVIDER === 'codex-lb' || env.SKS_USE_CODEX_LB === '1'
-  const lbExplicit = modelProvider === 'codex-lb' || envLbExplicit
-  const auth = await readJson<any>(path.join(codexHome, 'auth.json'), null).catch(() => null)
+  const codexHome = path.resolve(String(input.codexHome || env.CODEX_HOME || path.join(env.HOME || root, '.codex')))
+  const auth = await readJson<unknown>(path.join(codexHome, 'auth.json'), null).catch(() => null)
   const appAuthPresent = Boolean(auth) || await exists(path.join(codexHome, 'auth.json'))
-  const conflict = (lbKey && openaiKey && !lbExplicit && !modelProvider) || (modelProvider === 'codex-lb' && !lbKey && openaiKey)
+  const openaiKeyPresent = Boolean(String(env.OPENAI_API_KEY || '').trim())
+
+  let bridgeStatus: DesktopBridgeStatusV3 | null = null
+  let bridgeStatusAvailable = false
+  try {
+    bridgeStatus = Object.prototype.hasOwnProperty.call(input, 'desktopBridgeStatus')
+      ? input.desktopBridgeStatus || null
+      : await (input.desktopBridgeStatusImpl || currentDesktopBridgeStatus)(input.desktopBridgeStatusOptions || {})
+    bridgeStatusAvailable = bridgeStatus?.schema === 'sks.desktop-bridge-status.v3'
+    if (!bridgeStatusAvailable) bridgeStatus = null
+  } catch {
+    bridgeStatus = null
+  }
+
+  const bridgeManaged = bridgeStatus?.management.managed === true
+  const bridgeReady = bridgeStatus?.readiness.ready === true
+  const bridgeProvider = selectedBridgeProvider(bridgeStatus)
+  const nativeIdentityConfigured = bridgeStatus?.native_identity.configured === true || appAuthPresent
+  const credentialState = bridgeProvider && bridgeStatus
+    ? bridgeStatus.providers[bridgeProvider].credential.state
+    : null
+
   let provider: ProviderId = 'unknown'
   let authMode: ProviderAuthMode = 'unknown'
   let source: ProviderContextSource = 'unknown'
   let confidence: ProviderContext['confidence'] = 'low'
-  if (envLbExplicit && lbKey) {
-    provider = 'codex-lb'
-    authMode = 'codex_lb_key'
-    source = 'codex_lb'
-    confidence = 'high'
-  } else if (modelProvider === 'codex-lb' && codexLbProviderValid && lbKey) {
-    provider = 'codex-lb'
-    authMode = 'codex_lb_key'
-    source = 'config'
-    confidence = 'high'
-  } else if (modelProvider === 'codex-lb' && codexLbProviderValid) {
-    provider = 'codex-lb'
-    authMode = 'unknown'
-    source = 'config'
-    confidence = 'low'
-  } else if (openaiKey) {
+  if (bridgeManaged) {
+    provider = 'desktop-bridge'
+    authMode = nativeIdentityConfigured ? 'chatgpt_oauth' : 'unknown'
+    source = 'desktop_bridge'
+    confidence = bridgeReady && nativeIdentityConfigured ? 'high' : 'medium'
+  } else if (openaiKeyPresent) {
     provider = 'openai'
     authMode = 'api_key'
     source = 'env'
-    confidence = conflict ? 'medium' : 'high'
+    confidence = 'high'
   } else if (appAuthPresent) {
     provider = 'codex-app'
     authMode = 'chatgpt_oauth'
     source = 'codex_app'
     confidence = 'medium'
   }
-  const warnings = [
-    ...(conflict ? ['provider_conflict'] : []),
-    ...(modelProvider === 'codex-lb' && !codexLbProviderValid && !envLbExplicit ? ['codex_lb_provider_config_missing_or_invalid'] : []),
-    ...(provider === 'codex-lb' && !lbKey ? ['codex_lb_selected_without_key'] : [])
-  ]
+
+  const warnings = unique([
+    ...(!bridgeStatusAvailable ? ['desktop_bridge_status_unavailable'] : []),
+    ...(bridgeManaged ? bridgeStatus?.readiness.blockers || [] : []),
+    ...(bridgeManaged ? bridgeStatus?.routing.blockers || [] : []),
+    ...(bridgeManaged && !nativeIdentityConfigured ? ['desktop_bridge_native_identity_required'] : [])
+  ])
   return {
     schema: PROVIDER_CONTEXT_SCHEMA,
     generated_at: nowIso(),
@@ -108,19 +104,17 @@ export async function resolveProviderContext(input: {
     service_tier: normalizeServiceTier(input.serviceTier || env.SKS_SERVICE_TIER),
     source,
     confidence,
-    conflict,
+    conflict: false,
     warnings,
     signals: {
-      openai_api_key_present: openaiKey,
-      codex_lb_key_present: lbKey,
-      codex_lb_explicit: lbExplicit,
+      openai_api_key_present: openaiKeyPresent,
       codex_app_auth_present: appAuthPresent,
-      model_provider: modelProvider,
-      codex_lb_provider_block_present: codexLbProviderBlockPresent,
-      codex_lb_env_key: codexLbEnvKey,
-      codex_lb_gateway_header_env_key: codexLbGatewayHeaderEnvKey,
-      codex_lb_requires_openai_auth: codexLbRequiresOpenAiAuth,
-      codex_lb_available: codexLbProviderValid && lbKey
+      desktop_bridge_status_available: bridgeStatusAvailable,
+      desktop_bridge_managed: bridgeManaged,
+      desktop_bridge_ready: bridgeReady,
+      desktop_bridge_provider: bridgeProvider,
+      desktop_bridge_native_identity_configured: nativeIdentityConfigured,
+      desktop_bridge_credential_state: credentialState
     }
   }
 }
@@ -132,6 +126,18 @@ export async function writeProviderContextReport(root: string = process.cwd(), i
   return { ...report, report_path: reportPath }
 }
 
+function selectedBridgeProvider(status: DesktopBridgeStatusV3 | null): BridgeProviderId | null {
+  return status?.routing.selected_route?.provider_id
+    || status?.routing.policy?.default_provider_id
+    || status?.routing.session_pin?.provider_id
+    || null
+}
+
+async function currentDesktopBridgeStatus(options: Record<string, unknown>): Promise<DesktopBridgeStatusV3> {
+  const controller = await import('../codex-lb/desktop-controller.js')
+  return controller.desktopBridgeStatusV3(options)
+}
+
 function normalizeServiceTier(value: unknown): ProviderContext['service_tier'] {
   const text = String(value || '').toLowerCase()
   if (text === 'fast' || text === 'priority') return 'fast'
@@ -139,55 +145,6 @@ function normalizeServiceTier(value: unknown): ProviderContext['service_tier'] {
   return 'unknown'
 }
 
-export function readTopLevelTomlString(text: string, key: string): string | null {
-  const lines = String(text || '').split(/\r?\n/)
-  for (const line of lines) {
-    if (/^\s*\[/.test(line)) break
-    const match = line.match(new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*"([^"]*)"\\s*(?:#.*)?$`))
-    if (match?.[1] != null) return match[1]
-  }
-  return null
-}
-
-export function hasCodexLbProviderBlock(text: string): boolean {
-  return codexLbProviderBody(text) != null
-}
-
-export function codexLbProviderEnvKey(text: string): string | null {
-  return codexLbProviderGatewayHeaderEnvKey(text) || codexLbProviderBearerEnvKey(text)
-}
-
-export function codexLbProviderGatewayHeaderEnvKey(text: string): string | null {
-  const body = codexLbProviderBody(text)
-  if (body == null) return null
-  const inline = body.match(/(?:^|\n)\s*env_http_headers\s*=\s*\{([^}]*)\}/)?.[1] || ''
-  return inline.match(/"X-Codex-LB-API-Key"\s*=\s*"([^"]+)"/)?.[1] || null
-}
-
-function codexLbProviderBearerEnvKey(text: string): string | null {
-  const body = codexLbProviderBody(text)
-  return body == null ? null : readTopLevelTomlString(body, 'env_key')
-}
-
-export function codexLbProviderRequiresOpenAiAuth(text: string): boolean | null {
-  const body = codexLbProviderBody(text)
-  if (body == null) return null
-  const match = body.match(/^\s*requires_openai_auth\s*=\s*(true|false)\s*(?:#.*)?$/m)
-  return match?.[1] === 'true' ? true : match?.[1] === 'false' ? false : null
-}
-
-function codexLbProviderBody(text: string): string | null {
-  const lines = String(text || '').split(/\r?\n/)
-  const out: string[] = []
-  let inTable = false
-  for (const line of lines) {
-    const table = line.match(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/)?.[1]?.trim()
-    if (table) {
-      if (inTable) break
-      inTable = table === 'model_providers.codex-lb' || table === 'model_providers."codex-lb"' || table === '"model_providers"."codex-lb"'
-      continue
-    }
-    if (inTable) out.push(line)
-  }
-  return inTable ? out.join('\n') : null
+function unique(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
 }

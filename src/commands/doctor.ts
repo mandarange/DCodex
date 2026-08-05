@@ -535,17 +535,26 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     },
     telegram_remote: telegramRemote,
     provider_context: {
-      schema: 'sks.provider-context.v1',
+      schema: 'sks.provider-context.v2',
       generated_at: nowIso(),
       provider: 'unknown',
       auth_mode: 'unknown',
       route: '$Doctor',
       service_tier: process.env.SKS_SERVICE_TIER || 'fast',
-      source: 'skipped',
+      source: 'unknown',
       confidence: 'low',
       conflict: false,
       warnings: ['provider_context_optional_diagnostic_skipped'],
-      signals: {}
+      signals: {
+        openai_api_key_present: false,
+        codex_app_auth_present: false,
+        desktop_bridge_status_available: false,
+        desktop_bridge_managed: false,
+        desktop_bridge_ready: false,
+        desktop_bridge_provider: null,
+        desktop_bridge_native_identity_configured: false,
+        desktop_bridge_credential_state: null
+      }
     },
     desktop_bridge: desktopBridge,
     codex_doctor: null,
@@ -799,7 +808,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   }, { desktopBridgeStatusImpl: deps.desktopBridgeStatusImpl });
   const providerContext = deepDiagnostics
     ? await resolveProviderContext({ root, route: '$Doctor', serviceTier: process.env.SKS_SERVICE_TIER || 'fast' }).catch((err: any) => ({
-        schema: 'sks.provider-context.v1',
+        schema: 'sks.provider-context.v2',
         generated_at: new Date().toISOString(),
         provider: 'unknown',
         auth_mode: 'unknown',
@@ -811,29 +820,35 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
         warnings: [err?.message || String(err)],
         signals: {
           openai_api_key_present: false,
-          codex_lb_key_present: false,
-          codex_lb_explicit: false,
           codex_app_auth_present: false,
-          model_provider: null
+          desktop_bridge_status_available: false,
+          desktop_bridge_managed: false,
+          desktop_bridge_ready: false,
+          desktop_bridge_provider: null,
+          desktop_bridge_native_identity_configured: false,
+          desktop_bridge_credential_state: null
         }
       }))
     : {
-        schema: 'sks.provider-context.v1',
+        schema: 'sks.provider-context.v2',
         generated_at: new Date().toISOString(),
         provider: 'unknown',
         auth_mode: 'unknown',
         route: '$Doctor',
         service_tier: process.env.SKS_SERVICE_TIER || 'fast',
-        source: 'skipped',
+        source: 'unknown',
         confidence: 'low',
         conflict: false,
         warnings: ['provider_context_optional_diagnostic_skipped'],
         signals: {
           openai_api_key_present: false,
-          codex_lb_key_present: false,
-          codex_lb_explicit: false,
           codex_app_auth_present: false,
-          model_provider: null
+          desktop_bridge_status_available: false,
+          desktop_bridge_managed: false,
+          desktop_bridge_ready: false,
+          desktop_bridge_provider: null,
+          desktop_bridge_native_identity_configured: false,
+          desktop_bridge_credential_state: null
         }
       };
   const explicitCodexAppUiRepair = flag(args, '--repair-codex-app-ui');

@@ -1,8 +1,9 @@
 import type { AgentPersona } from './agent-schema.js'
 import { codexModelEffortCapability, type CodexModelEffortCapability } from '../codex-control/codex-model-capabilities.js'
-import { GLM_52_OPENROUTER_MODEL, type Glm52ReasoningEffort } from '../codex-app/openrouter-provider.js'
+import { OPENROUTER_DEFAULT_MODEL } from '../codex-app/openrouter-provider.js'
 import { managedOfficialSubagentRoleByName } from '../managed-assets/managed-assets-manifest.js'
 import { isNarutoGpt56Model } from '../provider/model-router.js'
+import type { OpenRouterReasoningEffort } from '../providers/openrouter/openrouter-types.js'
 import { decideSubagentModel, subagentModelProfile } from '../subagents/model-policy.js'
 
 export type AgentReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
@@ -276,13 +277,13 @@ export function decideAgentWorkerModel(input: {
   const risky = HIGH_SIGNAL_RE.test(text) || XHIGH_SIGNAL_RE.test(text)
   const simple = SIMPLE_CODE_MOD_RE.test(simpleText) && !HIGH_SIGNAL_RE.test(simpleText) && !XHIGH_SIGNAL_RE.test(simpleText)
   if (glmMain) {
-    const glmEffort = glmWorkerEffort({ effort, risky, simple })
+    const openRouterEffort = openRouterWorkerEffort({ effort, risky, simple })
     return {
-      model: GLM_52_OPENROUTER_MODEL,
-      model_reasoning_effort: glmEffort,
-      model_tier: `glm-5.2-${glmEffort === 'none' ? 'minimal' : glmEffort}` as AgentWorkerModelTier,
-      model_profile: glmProfileForReasoning(glmEffort),
-      reason: `glm_52_${glmEffort}_worker`
+      model: OPENROUTER_DEFAULT_MODEL,
+      model_reasoning_effort: openRouterEffort,
+      model_tier: `glm-5.2-${openRouterEffort === 'none' ? 'minimal' : openRouterEffort}` as AgentWorkerModelTier,
+      model_profile: desktopBridgeOpenRouterProfile(openRouterEffort),
+      reason: `desktop_bridge_openrouter_${openRouterEffort}_worker`
     }
   }
   const modelEffort: AgentModelReasoningEffort = risky || effort === 'high' || effort === 'xhigh'
@@ -306,24 +307,18 @@ function safeProfileSegment(value: string): string {
 
 function isGlmWorkerMode(mainModel: string): boolean {
   const model = String(mainModel || '').trim().toLowerCase()
-  return model === GLM_52_OPENROUTER_MODEL
+  return model === OPENROUTER_DEFAULT_MODEL
     || model === 'glm-5.2'
     || model === 'glm5.2'
 }
 
-function glmWorkerEffort(input: { effort: string; risky: boolean; simple: boolean }): Glm52ReasoningEffort {
+function openRouterWorkerEffort(input: { effort: string; risky: boolean; simple: boolean }): OpenRouterReasoningEffort {
   if (input.effort === 'xhigh') return 'xhigh'
   if (input.risky || input.effort === 'high') return 'high'
   if (input.simple || input.effort === 'low') return 'minimal'
   return 'low'
 }
 
-function glmProfileForReasoning(effort: Glm52ReasoningEffort): string {
-  // Metadata label only — Desktop GLM profile tables are retired.
-  if (effort === 'xhigh') return 'sks-openrouter-xhigh'
-  if (effort === 'high') return 'sks-openrouter-high'
-  if (effort === 'medium') return 'sks-openrouter-medium'
-  if (effort === 'low') return 'sks-openrouter-low'
-  if (effort === 'none') return 'sks-openrouter-default'
-  return 'sks-openrouter-minimal'
+function desktopBridgeOpenRouterProfile(effort: OpenRouterReasoningEffort): string {
+  return `desktop-bridge-openrouter-${effort}`
 }
