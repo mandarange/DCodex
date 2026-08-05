@@ -31,7 +31,6 @@ import {
   verifiedProjectMenuBarDuplicateExecutablePaths
 } from './global-install.js';
 import {
-  cleanupMacLaunchSecretEnvironment,
   cleanupRetiredRemoteBridgeLaunchAgent,
   quarantineRetiredRemoteBridgeBindings
 } from './migration.js';
@@ -40,23 +39,11 @@ import { infoPlistSource, inspectInstalledResources, loadNativeMenuBarSources, n
 import { inspectMenuBarArtifactSet, normalizeLegacyMenuBarBuildStamp, rollbackSksMenuBar } from './rollback.js';
 import { inspectSignature } from './signature.js';
 import { defaultNextActions, inspectSksMenuBarStatus, isMenuBarInstallPathUnderTempDir } from './status.js';
-import type { NativeSourceInput, SecretLaunchEnvCleanupResult, SksMenuBarBuildStamp, SksMenuBarGenerationTransactionOutcome, SksMenuBarInstallOptions, SksMenuBarInstallResult, SksMenuBarLegacyBuildStampV1, SksMenuBarRollbackResult, SksMenuBarTargetCheck } from './types.js';
+import type { NativeSourceInput, SksMenuBarBuildStamp, SksMenuBarGenerationTransactionOutcome, SksMenuBarInstallOptions, SksMenuBarInstallResult, SksMenuBarLegacyBuildStampV1, SksMenuBarRollbackResult, SksMenuBarTargetCheck } from './types.js';
 
 export function sksMenuBarRestartDeferred(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.SKS_UPDATE_DEFER_MENUBAR_RESTART === '1'
     || env.SKS_SKIP_SKS_MENUBAR_LAUNCH === '1';
-}
-
-export function menuBarCredentialEnvironmentBlocker(input: {
-  cleanupOk: boolean;
-  compatibilityConfigured?: boolean;
-  compatibilityRestored?: boolean;
-}): string | null {
-  if (!input.cleanupOk) return 'launch_secret_env_cleanup_incomplete';
-  if (input.compatibilityConfigured && input.compatibilityRestored !== true) {
-    return 'desktop_compat_launch_env_restore_incomplete';
-  }
-  return null;
 }
 
 export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Promise<SksMenuBarInstallResult> {
@@ -67,7 +54,6 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
   const warnings: string[] = [];
   let targetCheck: SksMenuBarTargetCheck | undefined;
   let codexBundleId: string | null = null;
-  let cleanup: SecretLaunchEnvCleanupResult | undefined;
   let transaction: SksMenuBarGenerationTransactionOutcome | null = null;
 
   if (process.platform !== 'darwin') {
@@ -140,55 +126,6 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
   if (retiredBindings.status === 'quarantined') {
     actions.push(`quarantined ${retiredBindings.retired_binding_count} retired remote bridge binding(s)`);
   }
-  const injectedTestLaunchctl = (
-    env.SKS_TEST_FORBID_REAL_HOME === '1'
-    || env.SKS_TEST_ISOLATION === '1'
-  )
-    ? env.SKS_MENUBAR_LAUNCHCTL
-    : undefined;
-  cleanup = await cleanupMacLaunchSecretEnvironment({
-    env,
-    ...(injectedTestLaunchctl ? { launchctlBin: injectedTestLaunchctl } : {})
-  });
-  const cleanupBlocker = menuBarCredentialEnvironmentBlocker({ cleanupOk: cleanup.ok });
-  if (cleanupBlocker) {
-    return blocked(
-      cleanupBlocker,
-      'Global GUI secret environment cleanup could not be verified.'
-    );
-  }
-  // Legacy dual-auth compatibility required a global GUI secret. Never restore
-  // that secret after cleanup; fail closed until the local bridge is selected.
-  try {
-    const { syncDesktopCenterLaunchCredentials } = await import('../../codex-lb/desktop-center-credentials.js');
-    const { CODEX_LB_DESKTOP_COMPAT_MARKER } = await import('../../../cli/install-helpers-codex-lb-config.js');
-    const { readText } = await import('../../fsx.js');
-    const configText = await readText(path.join(paths.home, '.codex', 'config.toml'), '');
-    if (configText.includes(CODEX_LB_DESKTOP_COMPAT_MARKER)) {
-      const restored = await syncDesktopCenterLaunchCredentials({
-        mode: 'desktop-dual-auth-compat',
-        home: paths.home,
-        ...(injectedTestLaunchctl ? { launchctlBin: injectedTestLaunchctl } : {})
-      });
-      const restoreBlocker = menuBarCredentialEnvironmentBlocker({
-        cleanupOk: true,
-        compatibilityConfigured: true,
-        compatibilityRestored: restored.ok
-      });
-      if (restoreBlocker) {
-        return blocked(
-          restored.blockers[0] || restoreBlocker,
-          'Desktop compatibility cannot be restored without exposing a global GUI secret; use the local bridge.'
-        );
-      }
-    }
-  } catch (error: unknown) {
-    return blocked(
-      'desktop_compat_launch_env_restore_failed',
-      error instanceof Error ? error.message : String(error)
-    );
-  }
-
   const swiftc = env.SKS_MENUBAR_SWIFTC || await which('swiftc').catch(() => null) || '/usr/bin/swiftc';
   const codesign = env.SKS_MENUBAR_CODESIGN || await which('codesign').catch(() => null) || '/usr/bin/codesign';
   const launchctl = env.SKS_MENUBAR_LAUNCHCTL || await which('launchctl').catch(() => null) || '/bin/launchctl';
@@ -466,7 +403,6 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
   result.build_stamp = rollback?.ok
     ? await readJson<SksMenuBarBuildStamp | null>(paths.build_stamp_path, null)
     : stamp;
-  result.secret_env_cleanup = cleanup;
   result.launch = launch;
   result.installed_version = result.build_stamp?.package_version || null;
   if (launch.version_probe) {
@@ -492,7 +428,6 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
     const result = baseResult(paths, apply, terminalUncertain ? 'terminal_uncertain' : 'blocked', false, actions, detail ? [...warnings, detail] : warnings);
     result.codex_bundle_id = codexBundleId;
     if (targetCheck) result.target_check = targetCheck;
-    if (cleanup) result.secret_env_cleanup = cleanup;
     result.rollback = rollback;
     result.transaction = failedTransaction;
     result.blockers = [reason, ...(rollback && !rollback.ok ? rollback.blockers : [])];

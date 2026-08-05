@@ -1,15 +1,7 @@
-import os from 'node:os';
-import path from 'node:path';
-import { loadCodexLbEnv, parseShellEnvValue } from '../codex-lb/codex-lb-env.js';
-import {
-  CODEX_LB_ROUTING_TRUTH_RECEIPT,
-  codexLbRoutingTruthIsActive,
-  readCodexLbRoutingTruthReceipt
-} from '../codex-lb/routing-truth.js';
-import { nowIso, readText, runProcess, which } from '../fsx.js';
+import { desktopBridgeStatusV3 } from '../codex-lb/desktop-controller-v3.js';
+import { nowIso, runProcess, which } from '../fsx.js';
 import { redactSecrets, redactString } from '../secret-redaction.js';
 import { evaluateImagegenAuthReadiness } from './imagegen-auth-readiness.js';
-import { escapeRegExp } from '../text/regex.js';
 
 export async function detectImagegenCapability(opts: any = {}) {
   const codexBin = opts.codexBin || await which('codex').catch(() => null);
@@ -105,136 +97,58 @@ export async function detectImagegenCapability(opts: any = {}) {
 }
 
 async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env) {
-  const home = opts.home || env.HOME || process.env.HOME || os.homedir();
-  const codexHome = opts.codexHome || env.CODEX_HOME || path.join(home, '.codex');
-  const configPath = opts.configPath || path.join(codexHome, 'config.toml');
-  const configText = typeof opts.configText === 'string'
-    ? opts.configText
-    : await readText(configPath, '').catch(() => '');
-  const block = tomlTableBlock(configText, 'model_providers.codex-lb');
-  const selected = opts.codexLbSelected === true || topLevelTomlString(configText, 'model_provider') === 'codex-lb';
-  const providerConfigured = Boolean(block);
-  const requiresOpenAiAuth = tomlBoolean(block, 'requires_openai_auth');
-  const bearerEnvKey = tomlString(block, 'env_key');
-  const gatewayHeaderEnvKey = tomlEnvHttpHeader(block, 'X-Codex-LB-API-Key');
-  const envKey = bearerEnvKey || gatewayHeaderEnvKey;
-  // CLI provider contract: Codex resolves the gateway key from the environment
-  // through env_key (Authorization: Bearer). It must not also install the
-  // custom gateway header, which would send the same secret through two
-  // authentication channels.
-  const cliContract = providerConfigured
-    && tomlString(block, 'name') === 'codex-lb'
-    && tomlString(block, 'wire_api') === 'responses'
-    && bearerEnvKey === 'CODEX_LB_API_KEY'
-    && !gatewayHeaderEnvKey
-    && requiresOpenAiAuth === false;
-  const baseUrl = tomlString(block, 'base_url') || String(env.CODEX_LB_BASE_URL || '').trim();
-  const envPath = opts.codexLbEnvPath || path.join(codexHome, 'sks-codex-lb.env');
-  // Resolve through the fingerprint-bound loader rather than re-reading
-  // process.env here: a stale exported key otherwise reports as present and
-  // usable while the proxy rejects it. Callers may still inject a key or an
-  // env-file body directly for hermetic checks.
-  const injectedEnvText = typeof opts.codexLbEnvText === 'string' ? opts.codexLbEnvText : null;
-  const keyFromInjectedFile = injectedEnvText !== null && envKey ? parseShellEnvValue(injectedEnvText, envKey) : '';
-  const loaded = injectedEnvText === null
-    ? await loadCodexLbEnv({
-        home,
-        processEnv: {},
-        envPath,
-        metadataPath: path.join(codexHome, 'sks-codex-lb.json')
-      }).catch(() => null)
-    : null;
-  const apiKeyPresent = Boolean(opts.codexLbApiKey || keyFromInjectedFile || loaded?.secret_api_key);
-  const apiKeySource = opts.codexLbApiKey
-    ? 'option'
-    : keyFromInjectedFile ? 'env-file' : loaded?.api_key?.source || null;
-  const blocker = codexLbAuthBlocker({
-    selected,
-    providerConfigured,
-    requiresOpenAiAuth,
-    envKey,
-    baseUrl,
-    apiKeyPresent,
-    cliContract
-  });
-  const routingTruthReceiptPath = opts.codexLbRoutingTruthReceiptPath
-    || path.join(codexHome, CODEX_LB_ROUTING_TRUTH_RECEIPT);
-  const routingTruth = await readCodexLbRoutingTruthReceipt({
-    receiptPath: routingTruthReceiptPath
+  const status = opts.desktopBridgeStatus || await (opts.desktopBridgeStatusImpl || desktopBridgeStatusV3)({
+    home: opts.home || env.HOME,
+    env
   }).catch(() => null);
-  const configuredHost = publicUrlHost(baseUrl);
-  // Both planes now measure with Authorization: Bearer by default; the CLI
-  // contract (env_key) structurally guarantees it.
-  const routingAuthTransport = 'authorization-bearer';
-  const routingTruthContextMatches = routingTruth?.selected === selected
-    && routingTruth?.configured_host === configuredHost
-    && routingTruth?.auth_transport === routingAuthTransport;
-  const routingActive = routingTruthContextMatches
-    && codexLbRoutingTruthIsActive(routingTruth);
+  const provider = status?.providers?.['codex-lb'] || null;
+  const policy = status?.routing?.policy || null;
+  const modelRoutes = Object.values(policy?.model_routes || {}) as any[];
+  const selected = provider?.enabled === true && (
+    policy?.default_provider_id === 'codex-lb'
+    || modelRoutes.some((route) => route?.provider_id === 'codex-lb')
+  );
+  const credentialReady = provider?.credential?.state === 'ready';
+  const endpointConfigured = provider?.endpoint?.configured === true;
+  const capabilityEvidence = provider?.capabilities?.capabilities?.image_generation || null;
+  const capabilityReady = capabilityEvidence?.state === 'verified';
+  const blocker = !status
+    ? 'desktop_bridge_status_unavailable'
+    : !provider
+      ? 'codex_lb_provider_status_missing'
+      : !provider.enabled
+        ? 'codex_lb_provider_disabled'
+        : !credentialReady
+          ? provider.credential?.blockers?.[0] || `codex_lb_credential_${provider.credential?.state || 'unknown'}`
+          : !endpointConfigured
+            ? 'codex_lb_endpoint_missing'
+            : !selected
+              ? 'codex_lb_route_inactive'
+              : !capabilityReady
+                ? capabilityEvidence?.blockers?.[0] || `codex_lb_imagegen_capability_${capabilityEvidence?.state || 'unverified'}`
+                : null;
   return {
     available: blocker === null,
     selected,
-    cli_contract: cliContract,
-    provider_configured: providerConfigured,
-    requires_openai_auth: requiresOpenAiAuth,
-    openai_auth_disabled: requiresOpenAiAuth === false,
-    env_key: envKey || null,
-    base_url: baseUrl || null,
-    env_path: envPath,
+    cli_contract: provider?.endpoint?.auth_transport === 'authorization-bearer',
+    provider_configured: Boolean(provider),
+    requires_openai_auth: null,
+    openai_auth_disabled: null,
+    env_key: null,
+    base_url: provider?.endpoint?.origin_redacted || null,
+    env_path: null,
     api_key: {
-      present: apiKeyPresent,
-      source: apiKeySource,
+      present: credentialReady,
+      source: provider?.credential?.source || null,
       redacted: true
     },
-    routing_active: routingActive,
-    routing_truth: routingTruth,
-    routing_truth_receipt_path: routingTruthReceiptPath,
-    routing_blocker: codexLbRoutingBlocker({
-      selected,
-      configuredHost,
-      routingTruth,
-      expectedAuthTransport: routingAuthTransport,
-      routingTruthContextMatches,
-      routingActive
-    }),
+    routing_active: selected,
+    routing_blocker: selected ? null : 'codex_lb_route_inactive',
+    capability_evidence: capabilityEvidence,
+    provider_capability_summary: provider?.capabilities || null,
+    bridge_status_checked_at: status?.checked_at || null,
     blocker
   };
-}
-
-function codexLbRoutingBlocker(state: {
-  selected: boolean;
-  configuredHost: string | null;
-  routingTruth: any;
-  expectedAuthTransport: 'authorization-bearer' | 'x-codex-lb-api-key';
-  routingTruthContextMatches: boolean;
-  routingActive: boolean;
-}): string | null {
-  if (!state.selected) return 'codex_lb_not_selected';
-  if (!state.routingTruth) return 'codex_lb_routing_truth_receipt_missing';
-  if (state.routingTruth.selected !== true) return 'codex_lb_routing_truth_selection_mismatch';
-  if (state.routingTruth.configured_host !== state.configuredHost) return 'codex_lb_routing_truth_host_mismatch';
-  if (state.routingTruth.auth_transport !== state.expectedAuthTransport) return 'codex_lb_routing_truth_auth_transport_mismatch';
-  if (!state.routingTruthContextMatches || !state.routingActive) {
-    return state.routingTruth.blockers?.[0] || 'codex_lb_routing_truth_unverified';
-  }
-  return null;
-}
-
-function codexLbAuthBlocker(state: any) {
-  if (!state.selected && !state.cliContract) return 'codex_lb_not_selected';
-  if (!state.providerConfigured) return 'codex_lb_provider_missing';
-  if (state.cliContract) {
-    if (!state.apiKeyPresent) return 'codex_lb_api_key_missing';
-    if (!state.baseUrl) return 'codex_lb_base_url_missing';
-    return null;
-  }
-  if (state.requiresOpenAiAuth !== true) {
-    return state.requiresOpenAiAuth === false ? 'codex_lb_legacy_openai_auth_disabled' : 'codex_lb_requires_openai_auth_missing';
-  }
-  if (state.envKey !== 'CODEX_LB_API_KEY') return 'codex_lb_env_key_missing_or_unsupported';
-  if (!state.baseUrl) return 'codex_lb_base_url_missing';
-  if (!state.apiKeyPresent) return 'codex_lb_api_key_missing';
-  return null;
 }
 
 async function detectCodexAppImagegen(codexBin: string | null, opts: any = {}) {
@@ -328,39 +242,4 @@ function boolish(value: unknown): boolean | null {
   if (/^(true|enabled|available|on|yes)$/i.test(value.trim())) return true;
   if (/^(false|disabled|missing|off|no)$/i.test(value.trim())) return false;
   return null;
-}
-
-function publicUrlHost(value: unknown): string | null {
-  try {
-    return typeof value === 'string' && value ? new URL(value).host : null;
-  } catch {
-    return null;
-  }
-}
-
-function topLevelTomlString(text: any = '', key: any = '') {
-  const topLevel = String(text || '').split(/\n\s*\[/)[0] || '';
-  return tomlString(topLevel, key);
-}
-
-function tomlTableBlock(text: any = '', table: any = '') {
-  const re = new RegExp(`(^|\\n)\\[${escapeRegExp(table)}\\]([\\s\\S]*?)(?=\\n\\[[^\\]]+\\]|\\s*$)`);
-  return String(text || '').match(re)?.[2] || '';
-}
-
-function tomlString(text: any = '', key: any = '') {
-  const re = new RegExp(`(^|\\n)\\s*${escapeRegExp(key)}\\s*=\\s*"([^"]*)"\\s*(?:#.*)?(?=\\n|$)`);
-  return String(text || '').match(re)?.[2] || '';
-}
-
-function tomlEnvHttpHeader(text: any = '', header: any = '') {
-  const inline = String(text || '').match(/(?:^|\n)\s*env_http_headers\s*=\s*\{([^}]*)\}/)?.[1] || '';
-  return inline.match(new RegExp(`"${escapeRegExp(header)}"\\s*=\\s*"([^"]+)"`))?.[1] || '';
-}
-
-function tomlBoolean(text: any = '', key: any = '') {
-  const re = new RegExp(`(^|\\n)\\s*${escapeRegExp(key)}\\s*=\\s*(true|false)\\s*(?:#.*)?(?=\\n|$)`, 'i');
-  const raw = String(text || '').match(re)?.[2];
-  if (!raw) return null;
-  return raw.toLowerCase() === 'true';
 }

@@ -11,6 +11,23 @@ import {
 } from '../menubar/global-install.js';
 import { sksMenuBarPaths } from '../menubar/paths.js';
 
+function unmanagedDesktopBridgeStatus() {
+  const provider = (providerId: string) => ({
+    provider_id: providerId,
+    enabled: false,
+    credential: { state: 'absent', source: null, blockers: [], warnings: [] },
+    endpoint: { configured: false, origin_redacted: null, auth_transport: null }
+  });
+  return {
+    schema: 'sks.desktop-bridge-status.v3',
+    checked_at: new Date().toISOString(),
+    management: { managed: false },
+    providers: { 'codex-lb': provider('codex-lb'), openrouter: provider('openrouter') },
+    readiness: { ready: false, state: 'unmanaged', blockers: [], warnings: [] },
+    recovery_actions: []
+  };
+}
+
 test('menu global-only doctor preserves global skills and never runs project reconciliation', async () => {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-menubar-global-doctor-'));
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-menubar-global-doctor-project-'));
@@ -29,7 +46,7 @@ test('menu global-only doctor preserves global skills and never runs project rec
           menuRoot = opts.root;
           return { schema: 'sks.codex-app-sks-menubar.v1', ok: true, status: 'installed_launch_skipped', blockers: [], warnings: [] };
         },
-        codexLbStatusImpl: async () => ({ selected: false, provider_ready: true, tool_output_recovery: { ok: true, status: 'not_selected', blockers: [], operator_actions: [] } })
+        desktopBridgeStatusImpl: async () => unmanagedDesktopBridgeStatus()
       }
     );
 
@@ -50,24 +67,37 @@ test('menu global-only doctor preserves global skills and never runs project rec
   }
 });
 
-test('global-only doctor repairs a stored-key OpenRouter provider and reports the result', async () => {
+test('global-only doctor reports OpenRouter Desktop Bridge status without migrating credentials', async () => {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-global-doctor-openrouter-'));
-  let repairHome: string | null = null;
+  let migrationCalls = 0;
   try {
     const result: any = await executeDoctorGlobalOnlyFix(['--fix', '--global-only', '--json'], home, {
       home,
       reconcileSkillsImpl: async () => ({ schema: 'sks.skill-reconcile.v1', scope: 'global', core_skill_integrity: { ok: true } }),
       ensureGlobalCodexFastModeDuringInstallImpl: async () => ({ status: 'current', ok: true }),
-      ensureStoredOpenRouterProviderDuringInstallImpl: async (options: any) => {
-        repairHome = options.home;
-        return { schema: 'sks.openrouter-provider-upgrade-repair.v1', ok: true, status: 'updated', key_present: true, blockers: [], warnings: [] };
+      ensureStoredOpenRouterProviderDuringInstallImpl: async () => {
+        migrationCalls += 1;
+        throw new Error('credential migration must not run');
       },
       installSksMenuBarImpl: async () => ({ schema: 'sks.codex-app-sks-menubar.v1', ok: true, status: 'installed_launch_skipped', blockers: [], warnings: [] }),
-      codexLbStatusImpl: async () => ({ selected: false, provider_ready: true, tool_output_recovery: { ok: true, status: 'not_selected', blockers: [], operator_actions: [] } })
+      desktopBridgeStatusImpl: async () => ({
+        ...unmanagedDesktopBridgeStatus(),
+        providers: {
+          ...unmanagedDesktopBridgeStatus().providers,
+          openrouter: {
+            provider_id: 'openrouter',
+            enabled: true,
+            credential: { state: 'ready', source: 'provider-store', blockers: [], warnings: [] },
+            endpoint: { configured: true, origin_redacted: 'https://openrouter.ai', auth_transport: 'openrouter-bearer' }
+          }
+        },
+        readiness: { ready: true, state: 'ready', blockers: [], warnings: [] }
+      })
     });
     assert.equal(result.ok, true, JSON.stringify(result.blockers));
-    assert.equal(repairHome, home);
-    assert.equal(result.openrouter_provider.status, 'updated');
+    assert.equal(migrationCalls, 0);
+    assert.equal(result.openrouter_provider.credential.state, 'ready');
+    assert.equal(result.openrouter_provider.credential.source, 'provider-store');
   } finally {
     await fsp.rm(home, { recursive: true, force: true });
   }
@@ -92,7 +122,7 @@ test('global-only Doctor Fix does not restart the Menu Bar while an update paren
         menuOptions = options;
         return { schema: 'sks.codex-app-sks-menubar.v1', ok: true, status: 'installed_launch_skipped', blockers: [], warnings: [] };
       },
-      codexLbStatusImpl: async () => ({ selected: false, provider_ready: true, tool_output_recovery: { ok: true, status: 'not_selected', blockers: [], operator_actions: [] } })
+      desktopBridgeStatusImpl: async () => unmanagedDesktopBridgeStatus()
     });
 
     assert.equal(result.ok, true, JSON.stringify(result.blockers));
@@ -124,7 +154,7 @@ test('global-only doctor removes managed global legacy guidance without touching
       reconcileSkillsImpl: async () => ({ schema: 'sks.skill-reconcile.v1', scope: 'global', core_skill_integrity: { ok: true } }),
       ensureGlobalCodexFastModeDuringInstallImpl: async () => ({ status: 'current', ok: true }),
       installSksMenuBarImpl: async () => ({ schema: 'sks.codex-app-sks-menubar.v1', ok: true, status: 'installed_launch_skipped', blockers: [], warnings: [] }),
-      codexLbStatusImpl: async () => ({ selected: false, provider_ready: true, tool_output_recovery: { ok: true, status: 'not_selected', blockers: [], operator_actions: [] } })
+      desktopBridgeStatusImpl: async () => unmanagedDesktopBridgeStatus()
     });
 
     assert.equal(result.ok, true, JSON.stringify(result.blockers));
@@ -138,7 +168,7 @@ test('global-only doctor removes managed global legacy guidance without touching
   }
 });
 
-test('menu global-only doctor fails closed when codex-lb recovery status cannot be inspected', async () => {
+test('menu global-only doctor fails closed when Desktop Bridge status cannot be inspected', async () => {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-menubar-global-doctor-probe-failure-'));
   try {
     const result: any = await executeDoctorGlobalOnlyFix(
@@ -153,21 +183,21 @@ test('menu global-only doctor fails closed when codex-lb recovery status cannot 
         }),
         ensureGlobalCodexFastModeDuringInstallImpl: async () => ({ status: 'current', ok: true }),
         installSksMenuBarImpl: async () => ({ schema: 'sks.codex-app-sks-menubar.v1', ok: true, status: 'installed_launch_skipped', blockers: [], warnings: [] }),
-        codexLbStatusImpl: async () => { throw new Error('fixture recovery probe unavailable'); }
+        desktopBridgeStatusImpl: async () => { throw new Error('fixture bridge status unavailable'); }
       }
     );
 
     assert.equal(result.ok, false);
     assert.equal(result.status, 'blocked');
-    assert.equal(result.codex_lb.recovery_ok, false);
-    assert.equal(result.codex_lb.provider_status.recovery_probe_failed, true);
-    assert.ok(result.blockers.includes('codex_lb_tool_output_recovery_status_probe_failed'));
+    assert.equal(result.desktop_bridge.ok, false);
+    assert.equal(result.desktop_bridge.read_only, true);
+    assert.ok(result.blockers.includes('desktop_bridge_status_unavailable:fixture bridge status unavailable'));
   } finally {
     await fsp.rm(home, { recursive: true, force: true });
   }
 });
 
-test('menu global-only doctor fails closed when a required recovery probe returns no status', async () => {
+test('menu global-only doctor fails closed when Desktop Bridge returns no status', async () => {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-menubar-global-doctor-null-probe-'));
   try {
     const result: any = await executeDoctorGlobalOnlyFix(
@@ -178,12 +208,12 @@ test('menu global-only doctor fails closed when a required recovery probe return
         reconcileSkillsImpl: async () => ({ schema: 'sks.skill-reconcile.v1', scope: 'global', core_skill_integrity: { ok: true } }),
         ensureGlobalCodexFastModeDuringInstallImpl: async () => ({ status: 'current', ok: true }),
         installSksMenuBarImpl: async () => ({ schema: 'sks.codex-app-sks-menubar.v1', ok: true, status: 'installed_launch_skipped', blockers: [], warnings: [] }),
-        codexLbStatusImpl: async () => undefined
+        desktopBridgeStatusImpl: async () => undefined
       }
     );
     assert.equal(result.ok, false);
-    assert.equal(result.codex_lb.recovery_ok, false);
-    assert.ok(result.blockers.includes('codex_lb_tool_output_recovery_unverified'));
+    assert.equal(result.desktop_bridge.ok, false);
+    assert.ok(result.blockers.includes('desktop_bridge_status_unavailable:invalid Desktop Bridge status response'));
   } finally {
     await fsp.rm(home, { recursive: true, force: true });
   }
@@ -208,7 +238,7 @@ test('global-only doctor wrapper writes guard evidence under HOME and not the pr
       reconcileSkillsImpl: async () => ({ schema: 'sks.skill-reconcile.v1', scope: 'global', core_skill_integrity: { ok: true } }),
       ensureGlobalCodexFastModeDuringInstallImpl: async () => ({ status: 'current', ok: true }),
       installSksMenuBarImpl: async () => ({ schema: 'sks.codex-app-sks-menubar.v1', ok: true, status: 'installed_launch_skipped', blockers: [], warnings: [] }),
-      codexLbStatusImpl: async () => ({ selected: false, provider_ready: true, tool_output_recovery: { ok: true, status: 'not_selected', blockers: [], operator_actions: [] } })
+      desktopBridgeStatusImpl: async () => unmanagedDesktopBridgeStatus()
     });
     assert.equal(result.ok, true);
     assert.equal(result.no_project_writes_performed, true);

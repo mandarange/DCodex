@@ -1,65 +1,73 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
-import { createHash } from 'node:crypto';
-import os from 'node:os';
-import path from 'node:path';
-import { requireCodexImagegen } from '../../dist/core/imagegen/require-imagegen.js';
-import { measureAndWriteCodexLbRoutingTruth } from '../../dist/core/codex-lb/routing-truth.js';
+import { detectImagegenCapability } from '../../dist/core/imagegen/imagegen-capability.js';
 
-test('selected ready codex-lb satisfies real UX and PPT imagegen preflight without repair', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-imagegen-codex-lb-preflight-'));
-  const codexHome = path.join(root, 'custom-codex-home');
-  const apiKey = 'test-key';
-  const baseUrl = 'https://codex.hyper-lab.xyz/backend-api/codex';
-  await fs.mkdir(codexHome, { recursive: true });
-  await fs.writeFile(path.join(codexHome, 'config.toml'), [
-    'model_provider = "codex-lb"',
-    '',
-    '[model_providers.codex-lb]',
-    'name = "codex-lb"',
-    `base_url = "${baseUrl}"`,
-    'wire_api = "responses"',
-    'env_key = "CODEX_LB_API_KEY"',
-    'supports_websockets = true',
-    'requires_openai_auth = false'
-  ].join('\n'));
-  await fs.writeFile(path.join(codexHome, 'sks-codex-lb.env'), [
-    `export CODEX_LB_BASE_URL='${baseUrl}'`,
-    `export CODEX_LB_API_KEY='${apiKey}'`
-  ].join('\n'), { mode: 0o600 });
-  await fs.writeFile(path.join(codexHome, 'sks-codex-lb.json'), JSON.stringify({
-    schema: 'sks.codex-lb-metadata.v1',
-    base_url: baseUrl,
-    api_key: { sha256: createHash('sha256').update(apiKey).digest('hex') }
-  }), { mode: 0o600 });
-  await measureAndWriteCodexLbRoutingTruth({
-    selected: true,
-    baseUrl,
-    apiKey,
-    authTransport: 'authorization-bearer',
-    fetchImpl: async () => new Response('{"data":[]}', { status: 200 })
-  }, {
-    receiptPath: path.join(codexHome, 'sks-codex-lb-routing-truth.json')
-  });
-
-  const result = await requireCodexImagegen(root, {
-    autoRepair: true,
-    applyRepair: true,
-    codexBin: path.join(root, 'missing-codex'),
-    home: root,
-    env: { HOME: root, CODEX_HOME: codexHome }
+test('active ready codex-lb Desktop Bridge route satisfies imagegen provider preflight', async () => {
+  const result = await detectImagegenCapability({
+    codexBin: '/missing-codex',
+    env: {},
+    desktopBridgeStatus: {
+      schema: 'sks.desktop-bridge-status.v3',
+      checked_at: '2026-08-06T00:00:00.000Z',
+      providers: {
+        'codex-lb': {
+          enabled: true,
+          credential: { state: 'ready', source: 'provider-store', blockers: [], warnings: [] },
+          endpoint: {
+            configured: true,
+            origin_redacted: 'https://gateway.example',
+            auth_transport: 'authorization-bearer'
+          },
+          capabilities: {
+            state: 'verified',
+            blockers: [],
+            warnings: [],
+            capabilities: {
+              image_generation: { state: 'verified', blockers: [], warnings: [] }
+            }
+          }
+        }
+      },
+      routing: {
+        policy: {
+          default_provider_id: 'codex-lb',
+          model_routes: {},
+          fallback: 'none'
+        }
+      }
+    }
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.preflight_ready, true);
-  assert.equal(result.preflight_provider, 'codex_lb');
-  assert.equal(result.capability.core_ready, false);
-  assert.equal(result.capability.codex_lb.selected, true);
-  assert.equal(result.capability.codex_lb.available, true);
-  assert.equal(result.capability.codex_lb.routing_active, true);
-  assert.equal(result.capability.codex_lb.routing_truth.measured, true);
-  assert.equal(result.capability.codex_lb.routing_truth.fresh, true);
-  assert.equal(result.repair, null);
-  assert.deepEqual(result.blockers, []);
+  assert.equal(result.core_ready, false);
+  assert.equal(result.codex_lb.selected, true);
+  assert.equal(result.codex_lb.available, true);
+  assert.equal(result.codex_lb.routing_active, true);
+  assert.equal(result.codex_lb.api_key.present, true);
+  assert.equal(result.codex_lb.api_key.source, 'provider-store');
+  assert.equal(result.codex_lb.capability_evidence.state, 'verified');
+  assert.equal('routing_truth' in result.codex_lb, false);
+});
+
+test('codex-lb ImageGen readiness fails closed without provider-scoped capability evidence', async () => {
+  const result = await detectImagegenCapability({
+    codexBin: '/missing-codex',
+    env: {},
+    desktopBridgeStatus: {
+      schema: 'sks.desktop-bridge-status.v3',
+      checked_at: '2026-08-06T00:00:00.000Z',
+      providers: {
+        'codex-lb': {
+          enabled: true,
+          credential: { state: 'ready', source: 'provider-store', blockers: [], warnings: [] },
+          endpoint: { configured: true, origin_redacted: 'https://gateway.example', auth_transport: 'authorization-bearer' },
+          capabilities: { state: 'not_attempted', blockers: [], warnings: [], capabilities: {} }
+        }
+      },
+      routing: { policy: { default_provider_id: 'codex-lb', model_routes: {}, fallback: 'none' } }
+    }
+  });
+
+  assert.equal(result.codex_lb.available, false);
+  assert.equal(result.codex_lb.blocker, 'codex_lb_imagegen_capability_unverified');
 });

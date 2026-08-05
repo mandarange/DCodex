@@ -1,6 +1,5 @@
 import os from 'node:os';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { projectRoot, exists, formatBytes, nowIso, readText, writeJsonAtomic } from '../core/fsx.js';
 import { flag } from '../cli/args.js';
 import { printJson } from '../cli/output.js';
@@ -8,24 +7,7 @@ import { ui as cliUi } from '../cli/cli-theme.js';
 import { getCodexInfo } from '../core/codex-adapter.js';
 import { rustInfo } from '../core/rust-accelerator.js';
 import { codexAppIntegrationStatus } from '../core/codex-app.js';
-import { codexLbMetrics, readCodexLbCircuit } from '../core/codex-lb-circuit.js';
-import { codexLbStatus } from '../cli/install-helpers.js';
-import { codexLbToolOutputRecoveryOverrideAcknowledged } from '../core/codex-lb/codex-lb-tool-output-recovery.js';
-import { codexLbEnvPath, loadCodexLbEnv } from '../core/codex-lb/codex-lb-env.js';
-import {
-  codexLbLegacyKeychainMigrationStampPath,
-  inspectDesktopCenterLaunchCredentials,
-  inspectCodexLbLegacyKeychainMigration,
-  repairCodexLbLegacyKeychainMigration,
-  syncDesktopCenterLaunchCredentials
-} from '../core/codex-lb/desktop-center-credentials.js';
-import {
-  codexLbRoutingTruthIsActive,
-  measureAndWriteCodexLbRoutingTruth,
-  readCodexLbRoutingTruthReceipt
-} from '../core/codex-lb/routing-truth.js';
-import { removeCodexLbOrphanManagedMarkers } from '../cli/install-helpers-codex-lb-config.js';
-import { safeWriteCodexConfigToml } from '../core/codex-runtime/codex-desktop-config-policy.js';
+import { desktopBridgeStatusV3 } from '../core/codex-lb/desktop-controller-v3.js';
 import { probeTelegram, telegramSelfHealAction } from '../core/telegram/doctor.js';
 import { TelegramClient, type TelegramTokenProvider } from '../core/telegram/client.js';
 import { resolveTelegramBotToken } from '../core/telegram/keychain.js';
@@ -64,10 +46,8 @@ import {
 
 export { doctorMenuBarInstallPolicy, doctorProfileFromArgs } from './doctor-profile.js';
 
-const CODEX_LB_KEYCHAIN_MIGRATION_RETRY_FLAG = '--retry-codex-lb-keychain-migration';
-
 export function doctorArgWarnings(args: any[] = []): string[] {
-  return baseDoctorArgWarnings(args.filter((arg) => arg !== CODEX_LB_KEYCHAIN_MIGRATION_RETRY_FLAG));
+  return baseDoctorArgWarnings(args);
 }
 
 export function deferCommandAliasCleanupToMigrationReceipt(result: any) {
@@ -90,198 +70,49 @@ export function deferCommandAliasCleanupToMigrationReceipt(result: any) {
   };
 }
 
-export async function inspectDoctorCodexLbSecretResolution(input: any = {}, deps: any = {}) {
+export async function inspectDoctorDesktopBridgeStatus(input: any = {}, deps: any = {}) {
   const processEnv: NodeJS.ProcessEnv = input.processEnv || process.env;
   const home = path.resolve(input.home || processEnv.HOME || os.homedir());
-  const suppliedMigrationOptions = input.migrationOptions || {};
-  const migrationOptions: any = {
-    ...suppliedMigrationOptions,
-    home,
-    env: suppliedMigrationOptions.env || processEnv,
-    processEnv: suppliedMigrationOptions.processEnv || processEnv,
-    ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
-    ...(input.forceRetry === true ? { forceRetry: true } : {})
-  };
-  // Canonical tests redirect HOME but cannot isolate the user's login
-  // Keychain. Tests that exercise the real macOS path opt back in with an
-  // explicit fixture platform + security runner.
-  if (processEnv.SKS_TEST_FORBID_REAL_HOME === '1' && suppliedMigrationOptions.platform === undefined) {
-    migrationOptions.platform = 'linux';
-  }
-  const mode = input.fix === true ? 'repair' : 'inspect';
-  const reconcile = mode === 'repair'
-    ? deps.repairImpl || repairCodexLbLegacyKeychainMigration
-    : deps.inspectImpl || inspectCodexLbLegacyKeychainMigration;
-  let migration: any;
   try {
-    migration = await reconcile(migrationOptions);
-  } catch (error: unknown) {
-    migration = {
-      schema: 'sks.codex-lb-legacy-keychain-reconciliation.v1',
-      ok: false,
-      status: `${mode}_failed`,
-      mode,
-      env_key_valid: false,
-      keychain_item_present: null,
-      prompt_risk: 'none',
-      attempted: false,
-      stamp_path: codexLbLegacyKeychainMigrationStampPath(home),
-      stamp_outcome: null,
-      keychain_deleted: false,
-      keychain_cleared: [],
-      blockers: [`codex_lb_legacy_keychain_${mode}_failed:${error instanceof Error ? error.message : String(error)}`]
-    };
-  }
-  const envPath = String(suppliedMigrationOptions.envPath || codexLbEnvPath(home));
-  let loaded: any = null;
-  let resolutionError: string | null = null;
-  try {
-    loaded = await (deps.loadEnvImpl || loadCodexLbEnv)({
+    const status = await (deps.desktopBridgeStatusImpl || desktopBridgeStatusV3)({
       home,
-      processEnv,
-      envPath,
-      ...(suppliedMigrationOptions.metadataPath ? { metadataPath: suppliedMigrationOptions.metadataPath } : {})
+      env: processEnv
     });
-  } catch (error: unknown) {
-    resolutionError = error instanceof Error ? error.message : String(error);
-  }
-  const source = String(loaded?.source || 'missing');
-  const unsafeEnvFile = Array.isArray(loaded?.blockers)
-    && loaded.blockers.some((blocker: unknown) => String(blocker).startsWith('codex_lb_env_file_'));
-  const resolutionPath = source === 'env-file' || unsafeEnvFile
-    ? String(loaded?.env_paths?.[0] || envPath)
-    : null;
-  const operatorActions: string[] = [];
-  if (mode === 'inspect' && migration.prompt_risk === 'one_time_on_repair') {
-    operatorActions.push('Run `sks doctor --fix` to perform the one-time legacy Keychain transfer.');
-  }
-  if (mode === 'repair'
-    && migration.ok === false
-    && (migration.attempted === true || migration.status === 'already_attempted')) {
-    operatorActions.push(`Run \`sks doctor --fix ${CODEX_LB_KEYCHAIN_MIGRATION_RETRY_FLAG}\` to explicitly retry the one-time Keychain transfer.`);
-  }
-  return {
-    ok: migration.ok !== false && resolutionError === null,
-    secret_resolution: {
-      source,
-      path: resolutionPath,
-      prompt_risk: migration.prompt_risk || 'none'
-    },
-    legacy_keychain_migration: {
-      ...migration,
-      operator_actions: operatorActions,
-      ...(resolutionError ? { resolution_error: resolutionError } : {})
+    if (!status || typeof status !== 'object' || !status.providers || !status.readiness) {
+      throw new Error('invalid Desktop Bridge status response');
     }
-  };
-}
-
-export async function inspectDoctorCodexLbDivergence(input: any = {}, deps: any = {}) {
-  const processEnv: NodeJS.ProcessEnv = input.processEnv || process.env;
-  const home = path.resolve(input.home || processEnv.HOME || os.homedir());
-  const status = input.providerStatus || {};
-  const configPath = String(status.config_path || path.join(home, '.codex', 'config.toml'));
-  const configText = await (deps.readTextImpl || readText)(configPath, '');
-  const orphan = removeCodexLbOrphanManagedMarkers(configText);
-  let orphanRepair: any = {
-    schema: 'sks.codex-lb-orphan-managed-marker-repair.v1',
-    attempted: false,
-    changed: false,
-    markers: orphan.orphan_markers,
-    receipt: null
-  };
-  if (input.fix === true && orphan.changed) {
-    const write = deps.writeConfigImpl || safeWriteCodexConfigToml;
-    const receipt = await write(configPath, configText, orphan.text, 'doctor-codex-lb-orphan-marker');
-    orphanRepair = {
-      ...orphanRepair,
-      attempted: true,
-      changed: receipt?.ok !== false,
-      receipt
+    const enabledProviders = Object.values(status.providers as Record<string, any>)
+      .filter((provider: any) => provider?.enabled === true);
+    const expected = status.management?.managed === true || enabledProviders.length > 0;
+    const blockers = expected && status.readiness.ready !== true
+      ? (status.readiness.blockers || []).map(String).filter(Boolean)
+      : [];
+    return {
+      schema: 'sks.doctor-desktop-bridge.v1',
+      ok: blockers.length === 0,
+      read_only: true,
+      credentials_mutated: false,
+      managed: status.management?.managed === true,
+      status,
+      providers: status.providers,
+      blockers,
+      warnings: (status.readiness.warnings || []).map(String).filter(Boolean),
+      recovery_actions: (status.recovery_actions || []).map(String).filter(Boolean)
+    };
+  } catch (error: unknown) {
+    return {
+      schema: 'sks.doctor-desktop-bridge.v1',
+      ok: false,
+      read_only: true,
+      credentials_mutated: false,
+      managed: null,
+      status: null,
+      providers: null,
+      blockers: [`desktop_bridge_status_unavailable:${error instanceof Error ? error.message : String(error)}`],
+      warnings: [],
+      recovery_actions: ['Run `sks bridge status --json` to inspect Desktop Bridge provider readiness.']
     };
   }
-
-  const load = deps.loadEnvImpl || loadCodexLbEnv;
-  const canonical = await load({
-    home,
-    processEnv: {},
-    envPath: String(status.env_path || codexLbEnvPath(home))
-  }).catch(() => null);
-  const ambientKey = String(processEnv.CODEX_LB_API_KEY || '').trim();
-  const canonicalKey = String(canonical?.secret_api_key || '').trim();
-  const sha256 = (value: string) => value
-    ? createHash('sha256').update(value).digest('hex')
-    : null;
-  const ambientHash = sha256(ambientKey);
-  const canonicalHash = sha256(canonicalKey);
-  const staleAmbient = Boolean(ambientHash && canonicalHash && ambientHash !== canonicalHash);
-  const bridgeActive = status.desktop_mode === 'desktop-native-bridge';
-  const definedButNotSelected = status.provider_configured === true
-    && status.selected !== true
-    && !bridgeActive
-    && status.desktop_mode !== 'desktop-dual-auth-compat';
-  const mode = status.selected === true
-    ? 'cli-provider'
-    : bridgeActive
-      ? 'desktop-native-bridge'
-      : 'disabled';
-  const inspectLaunch = deps.inspectLaunchImpl || inspectDesktopCenterLaunchCredentials;
-  const syncLaunch = deps.syncLaunchImpl || syncDesktopCenterLaunchCredentials;
-  const launchOptions = {
-    mode,
-    home,
-    ...(input.launchctlBin ? { launchctlBin: input.launchctlBin } : {}),
-    ...(input.platform ? { platform: input.platform } : {}),
-    ...(input.forceLaunchctl ? { force: true } : {}),
-    ...(input.runProcessImpl ? { runProcessImpl: input.runProcessImpl } : {})
-  };
-  const launchBefore = await inspectLaunch(launchOptions);
-  const launchRepair = input.fix === true && launchBefore.ok === false
-    ? await syncLaunch({ ...launchOptions, skipPurge: true })
-    : null;
-  const launchAfter = launchRepair ? await inspectLaunch(launchOptions) : launchBefore;
-  const warnings = [
-    ...(definedButNotSelected
-      ? ['codex_lb_defined_but_not_selected']
-      : []),
-    ...(staleAmbient ? ['codex_lb_stale_ambient_key'] : []),
-    ...(orphan.orphan_markers.length > 0
-      ? [`codex_lb_orphan_managed_markers:${orphan.orphan_markers.join(',')}`]
-      : [])
-  ];
-  const blockers = [
-    ...(launchAfter.ok === false ? launchAfter.blockers || ['codex_lb_launchd_selection_state_mismatch'] : []),
-    ...(input.fix === true && orphan.changed && orphanRepair.changed !== true
-      ? ['codex_lb_orphan_marker_repair_failed']
-      : [])
-  ];
-  return {
-    schema: 'sks.doctor-codex-lb-divergence.v1',
-    ok: blockers.length === 0,
-    warnings,
-    blockers,
-    operator_actions: [
-      ...(definedButNotSelected
-        ? ['Run `sks codex-lb use-cli` to select the stored provider.']
-        : []),
-      ...(staleAmbient
-        ? ['Remove or update the stale shell export: `unset CODEX_LB_API_KEY`; the canonical key remains in ~/.codex/sks-codex-lb.env.']
-        : []),
-      ...(launchAfter.operator_actions || [])
-    ],
-    ambient_key: {
-      present: Boolean(ambientKey),
-      sha256: ambientHash,
-      matches_canonical: ambientHash && canonicalHash ? ambientHash === canonicalHash : null
-    },
-    canonical_key: {
-      present: Boolean(canonicalKey),
-      sha256: canonicalHash,
-      path: String(status.env_path || codexLbEnvPath(home))
-    },
-    orphan_markers: orphan.orphan_markers,
-    orphan_marker_repair: orphanRepair,
-    launchd: { before: launchBefore, repair: launchRepair, after: launchAfter }
-  };
 }
 
 export async function run(_command: any, args: any = [], deps: any = {}) {
@@ -347,51 +178,10 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     || (await import('../core/doctor/command-alias-cleanup.js')).runDoctorCommandAliasCleanup;
   const ensureGlobalFastModeImpl = deps.ensureGlobalCodexFastModeDuringInstallImpl
     || (await import('../cli/install-helpers.js')).ensureGlobalCodexFastModeDuringInstall;
-  const ensureStoredOpenRouterProviderImpl = deps.ensureStoredOpenRouterProviderDuringInstallImpl
-    || (await import('../cli/install-helpers.js')).ensureStoredOpenRouterProviderDuringInstall;
   const installMenuBarImpl = deps.installSksMenuBarImpl || installSksMenuBar;
-  const codexLbStatusImpl = deps.codexLbStatusImpl || codexLbStatus;
   const doctorEnv = deps.env || (deps.home
     ? { ...process.env, HOME: home }
     : process.env);
-
-  const statusOptions = {
-    home,
-    env: doctorEnv,
-    processEnv: doctorEnv
-  };
-  const preRepairProviderStatus = await codexLbStatusImpl({
-    ...statusOptions,
-    probeToolOutputRecovery: false
-  }).catch(() => null);
-  const codexLbSecretProbeImpl = deps.codexLbSecretProbeImpl || inspectDoctorCodexLbSecretResolution;
-  const codexLbSecretProbe = await codexLbSecretProbeImpl({
-    home,
-    processEnv: doctorEnv,
-    fix: true,
-    forceRetry: flag(args, CODEX_LB_KEYCHAIN_MIGRATION_RETRY_FLAG),
-    baseUrl: preRepairProviderStatus?.base_url || preRepairProviderStatus?.provider_base_url || null,
-    migrationOptions: {
-      ...(deps.codexLbMigrationOptions || {}),
-      ...(!deps.codexLbMigrationOptions && deps.codexLbStatusImpl ? { platform: 'linux' } : {})
-    }
-  });
-  const providerStatus = await codexLbStatusImpl({
-    ...statusOptions,
-    probeToolOutputRecovery: true,
-    allowUnverifiedToolOutputRecovery: codexLbToolOutputRecoveryOverrideAcknowledged({ args })
-  }).catch((err: any) => ({
-    selected: null,
-    provider_ready: false,
-    recovery_probe_failed: true,
-    tool_output_recovery: {
-      ok: false,
-      status: 'probe_failed',
-      blockers: ['codex_lb_tool_output_recovery_status_probe_failed'],
-      operator_actions: []
-    },
-    error: err?.message || String(err)
-  }));
   const globalSkills = await reconcileSkillsImpl({
     targetDir: path.join(home, '.agents', 'skills'),
     scope: 'global',
@@ -417,18 +207,6 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     status: 'failed',
     error: err?.message || String(err)
   }));
-  const openRouterEnv = {
-    ...doctorEnv,
-    HOME: home,
-    SKS_HOME: path.join(home, '.sneakoscope')
-  };
-  const openRouterProvider = await ensureStoredOpenRouterProviderImpl({ home, env: openRouterEnv }).catch((err: any) => ({
-    schema: 'sks.openrouter-provider-upgrade-repair.v1',
-    ok: false,
-    status: 'failed',
-    blockers: ['openrouter_provider_repair_failed'],
-    error: err?.message || String(err)
-  }));
   const menuBar = await installMenuBarImpl({
     home,
     root: home,
@@ -443,18 +221,10 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     blockers: [err?.message || String(err)],
     warnings: []
   }));
-  const codexLbRoutingTruth = await codexLbRoutingTruthForStatus(providerStatus, { home, remeasure: true });
-  const codexLbRoutingReady = !doctorCodexLbRouteExpected(providerStatus)
-    || codexLbRoutingTruthIsActive(codexLbRoutingTruth);
-  const codexLbDivergence = await inspectDoctorCodexLbDivergence({
+  const desktopBridge = await inspectDoctorDesktopBridgeStatus({
     home,
-    processEnv: doctorEnv,
-    providerStatus,
-    fix: true,
-    ...(deps.codexLbLaunchctlBin ? { launchctlBin: deps.codexLbLaunchctlBin } : {}),
-    ...(deps.codexLbLaunchPlatform ? { platform: deps.codexLbLaunchPlatform } : {}),
-    ...(deps.codexLbLaunchRunProcessImpl ? { runProcessImpl: deps.codexLbLaunchRunProcessImpl } : {})
-  }, deps.codexLbDivergenceDeps || {});
+    processEnv: doctorEnv
+  }, { desktopBridgeStatusImpl: deps.desktopBridgeStatusImpl });
   const telegramRemote = await inspectTelegramRemote({
     live: true,
     fix: true,
@@ -463,26 +233,20 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     env: doctorEnv
   }, deps);
 
-  const recoveryReady = codexLbRecoveryStatusReady(providerStatus, true);
   const globalSkillsReady = !(globalSkills as any)?.error
     && (globalSkills as any)?.ok !== false
     && (globalSkills as any)?.core_skill_integrity?.ok !== false;
   const globalFastModeReady = (globalFastMode as any)?.status !== 'failed'
     && (globalFastMode as any)?.ok !== false;
   const menuBarReady = (menuBar as any)?.ok !== false;
-  const openRouterProviderReady = (openRouterProvider as any)?.ok !== false;
   const blockers = [...new Set([
     ...(!globalSkillsReady ? [`global_skills_reconcile_failed:${(globalSkills as any)?.error || 'core_skill_integrity'}`] : []),
     ...((currentSurface as any)?.ok !== true ? ((currentSurface as any)?.blockers || ['global_current_surface_reconcile_failed']) : []),
     ...(!globalFastModeReady ? [`global_fast_mode_repair_failed:${(globalFastMode as any)?.error || (globalFastMode as any)?.status || 'unknown'}`] : []),
-    ...(!openRouterProviderReady ? ((openRouterProvider as any)?.blockers || ['openrouter_provider_repair_failed']) : []),
     ...(!menuBarReady ? ((menuBar as any)?.blockers || ['sks_menubar_repair_failed']) : []),
-    ...((codexLbSecretProbe as any).ok === false
-      ? ((codexLbSecretProbe as any).legacy_keychain_migration?.blockers || ['codex_lb_secret_resolution_failed'])
-      : []),
-    ...(!recoveryReady ? ((providerStatus as any)?.tool_output_recovery?.blockers || ['codex_lb_tool_output_recovery_unverified']) : []),
-    ...(!codexLbRoutingReady ? ((codexLbRoutingTruth as any)?.blockers || ['codex_lb_routing_truth_unverified']) : []),
-    ...(codexLbDivergence.blockers || [])
+    ...((desktopBridge as any).ok === false
+      ? ((desktopBridge as any).blockers || ['desktop_bridge_unavailable'])
+      : [])
   ].map(String).filter(Boolean))];
   const ok = blockers.length === 0;
   return {
@@ -509,26 +273,14 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     skills: { global: globalSkills, project: { skipped: true, reason: 'global_only_doctor' } },
     current_public_surface: currentSurface,
     codex_app_fast_mode: globalFastMode,
-    openrouter_provider: openRouterProvider,
+    openrouter_provider: desktopBridge.providers?.openrouter || null,
     sks_menubar: menuBar,
     telegram_remote: telegramRemote,
-    codex_lb: {
-      provider_status: providerStatus,
-      tool_output_recovery: providerStatus?.tool_output_recovery || null,
-      recovery_ok: recoveryReady,
-      routing_truth: codexLbRoutingTruth,
-      routing_ok: codexLbRoutingReady,
-      secret_resolution: codexLbSecretProbe.secret_resolution,
-      legacy_keychain_migration: codexLbSecretProbe.legacy_keychain_migration,
-      divergence: codexLbDivergence
-    },
+    desktop_bridge: desktopBridge,
     blockers,
     next_actions: [
-      ...(recoveryReady ? [] : ((providerStatus as any)?.tool_output_recovery?.operator_actions || [])),
-      ...((codexLbSecretProbe as any).legacy_keychain_migration?.operator_actions || []),
-      ...(codexLbDivergence.operator_actions || []),
+      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : []),
       ...telegramDoctorOperatorActions(telegramRemote),
-      ...(!openRouterProviderReady ? ['Run `sks codex-app set-openrouter-key` to repair the stored-key provider configuration without switching models.'] : []),
       'Run `sks doctor --fix --json` from a specific project directory when project-scoped repair is required.'
     ]
   };
@@ -555,117 +307,12 @@ async function runDoctorGlobalOnlyFix(args: any[] = [], root: string, deps: any 
     console.log(`Telegram Remote: ${(result.telegram_remote as any)?.status || 'unknown'} (self-heal ${telegramAction}${telegramOutcome?.attempted ? `, ${telegramOutcome.recovered ? 'recovered' : 'still degraded'}` : ''})`);
     const telegramCheckedLine = telegramDoctorCheckedLine(result.telegram_remote);
     if (telegramCheckedLine) console.log(telegramCheckedLine);
-    console.log(`codex-lb key: ${result.codex_lb.secret_resolution.source} (prompt risk ${result.codex_lb.secret_resolution.prompt_risk})`);
+    console.log(`Desktop Bridge: ${result.desktop_bridge.ok ? 'ready' : 'blocked'} (${result.desktop_bridge.status?.readiness?.state || 'unavailable'})`);
     for (const blocker of result.blockers) console.log(`- blocker: ${blocker}`);
     for (const action of result.next_actions) console.log(`- ${action}`);
   }
   if (!result.ok) process.exitCode = 1;
   return result;
-}
-
-function codexLbRecoveryStatusReady(status: any, probeRequired = false): boolean {
-  if (status == null) return !probeRequired;
-  if (status.recovery_probe_failed === true || status.error) return false;
-  if (status.selected === false) return true;
-  if (!probeRequired) return true;
-  return status.selected === true && status.tool_output_recovery?.ok === true;
-}
-
-export async function codexLbRoutingTruthForStatus(
-  status: any,
-  deps: { fetchImpl?: typeof fetch; receiptPath?: string; home?: string; remeasure?: boolean } = {}
-) {
-  if (!status) return null;
-  const statusEnvPath = typeof status.env_path === 'string' && status.env_path
-    ? status.env_path
-    : null;
-  const resolvedHome = deps.home
-    ? path.resolve(deps.home)
-    : statusEnvPath
-      ? path.dirname(path.dirname(statusEnvPath))
-      : undefined;
-  const envOptions = {
-    ...(resolvedHome ? { home: resolvedHome } : {}),
-    ...(statusEnvPath ? { envPath: statusEnvPath } : {})
-  };
-  const routeSelected = doctorCodexLbRouteExpected(status);
-  const mode = status.desktop_mode === 'desktop-native-bridge' ? 'bridge' : 'cli-provider';
-  const receiptOptions = {
-    ...(resolvedHome ? { home: resolvedHome } : {}),
-    ...(deps.receiptPath ? { receiptPath: deps.receiptPath } : {}),
-    expectedMode: mode as 'bridge' | 'cli-provider',
-    expectedSelected: routeSelected
-  };
-  const receipt = await readCodexLbRoutingTruthReceipt(receiptOptions).catch(() => null);
-  if (deps.remeasure !== true && receipt?.fresh === true) return receipt;
-  try {
-    const loaded = await loadCodexLbEnv({ ...envOptions, processEnv: {} });
-    const baseUrl = loaded.base_url || status.base_url || null;
-    const configuredHost = publicUrlHost(baseUrl);
-    // Plane rule: the CLI provider always sends Authorization: Bearer via
-    // env_key; only the bridge plane follows stored transport metadata.
-    const authTransport = mode === 'cli-provider'
-      ? 'authorization-bearer'
-      : doctorBridgeRoutingTransport(status, receipt);
-    const contextReceipt = await readCodexLbRoutingTruthReceipt({
-      ...receiptOptions,
-      expectedConfiguredHost: configuredHost,
-      expectedAuthTransport: authTransport
-    }).catch(() => null);
-    if (deps.remeasure !== true && contextReceipt?.fresh === true) return contextReceipt;
-    return measureAndWriteCodexLbRoutingTruth({
-      mode,
-      selected: routeSelected,
-      baseUrl,
-      apiKey: loaded.secret_api_key,
-      authTransport,
-      measure: routeSelected,
-      ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {})
-    }, {
-      ...envOptions,
-      ...(deps.receiptPath ? { receiptPath: deps.receiptPath } : {})
-    });
-  } catch {
-    return measureAndWriteCodexLbRoutingTruth({
-      mode,
-      selected: routeSelected,
-      baseUrl: status.base_url || null,
-      apiKey: null,
-      authTransport: mode === 'cli-provider'
-        ? 'authorization-bearer'
-        : doctorBridgeRoutingTransport(status, receipt),
-      measure: false
-    }, {
-      ...envOptions,
-      ...(deps.receiptPath ? { receiptPath: deps.receiptPath } : {})
-    });
-  }
-}
-
-function doctorCodexLbRouteExpected(status: any): boolean {
-  return status?.selected === true || status?.desktop_mode === 'desktop-native-bridge';
-}
-
-function doctorBridgeRoutingTransport(
-  status: any,
-  receipt: any
-): 'authorization-bearer' | 'x-codex-lb-api-key' {
-  if (receipt?.mode === 'bridge'
-    && (receipt.auth_transport === 'authorization-bearer'
-      || receipt.auth_transport === 'x-codex-lb-api-key')) {
-    return receipt.auth_transport;
-  }
-  return status?.gateway_auth_transport === 'x-codex-lb-api-key'
-    ? 'x-codex-lb-api-key'
-    : 'authorization-bearer';
-}
-
-function publicUrlHost(value: unknown): string | null {
-  try {
-    return value ? new URL(String(value)).host : null;
-  } catch {
-    return null;
-  }
 }
 
 export async function inspectTelegramRemote(input: {
@@ -796,7 +443,7 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     requireActualCodex: false,
     codexBin: codexBin || undefined
   };
-  const [codex, rust, codexConfig, sneakoscopeExists, oauthCallbackPortDiagnostic, codexLbSecretProbe] = await Promise.all([
+  const [codex, rust, codexConfig, sneakoscopeExists, oauthCallbackPortDiagnostic, desktopBridge] = await Promise.all([
     codexBin
       ? Promise.resolve({ bin: codexBin, version: 'fixture-or-explicit', available: true })
       : getCodexInfo().catch(() => ({ bin: null, version: null, available: false })),
@@ -809,7 +456,7 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     })),
     exists(`${root}/.sneakoscope`),
     inspectOAuthCallbackPortConflict(),
-    inspectDoctorCodexLbSecretResolution({ processEnv: process.env, fix: false })
+    inspectDoctorDesktopBridgeStatus({ processEnv: process.env })
   ]);
   const oauthCallbackOperatorActions = oauthCallbackDoctorGuidance(oauthCallbackPortDiagnostic);
   const telegramRemote = await inspectTelegramRemote();
@@ -838,18 +485,19 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
   const deferredBrowserUse = deferredNativeRepair('sks.doctor-browser-use-repair.v1', false, [
     'Chrome/web review route needs the Codex Chrome Extension enabled before use.'
   ]);
+  const desktopBridgeReady = (desktopBridge as any).ok !== false;
   const result = {
     schema: 'sks.doctor-status.v3',
     elapsed_ms: Date.now() - startedAtMs,
-    ok: true,
-    status: 'fast_readonly_ok',
+    ok: desktopBridgeReady,
+    status: desktopBridgeReady ? 'fast_readonly_ok' : 'blocked',
     diagnostic_depth: 'fast',
     deep_diagnostics_skipped: true,
     deep_ok: null,
     not_counted_as_full_doctor: true,
     next_actions: [
       'Run sks doctor --full --json for deep diagnostics.',
-      ...((codexLbSecretProbe as any).legacy_keychain_migration?.operator_actions || []),
+      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : []),
       ...telegramDoctorOperatorActions(telegramRemote)
     ],
     root,
@@ -859,7 +507,7 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     warnings: [...oauthCallbackPortDiagnostic.warnings],
     operator_actions: [
       ...oauthCallbackOperatorActions,
-      ...((codexLbSecretProbe as any).legacy_keychain_migration?.operator_actions || [])
+      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : [])
     ],
     node: { ok: Number(process.versions.node.split('.')[0]) >= 20, version: process.version },
     codex,
@@ -899,13 +547,7 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
       warnings: ['provider_context_optional_diagnostic_skipped'],
       signals: {}
     },
-    codex_lb: {
-      ...codexLbMetrics(await readCodexLbCircuit(root).catch(() => ({}))),
-      routing_truth: null,
-      routing_measurement_deferred: true,
-      secret_resolution: codexLbSecretProbe.secret_resolution,
-      legacy_keychain_migration: codexLbSecretProbe.legacy_keychain_migration
-    },
+    desktop_bridge: desktopBridge,
     codex_doctor: null,
     pre_repair_codex_doctor: null,
     post_repair_codex_doctor: null,
@@ -1005,20 +647,15 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   const doctorDirtyPlan = doctorFix ? (await import('../core/doctor/doctor-dirty-planner.js')).planDoctorDirtyRepair(root, doctorPhaseIds) : null;
   let setupRepair = null;
   let sksUpdate: any = null;
-  let openRouterProviderRepair: any = { ok: true, status: 'skipped', reason: 'doctor_without_fix' };
+  const openRouterProviderRepair: any = {
+    ok: true,
+    status: 'read_only',
+    reason: 'Desktop Bridge owns provider credentials; Doctor does not migrate them.'
+  };
   let migrationPreFix: Record<string, string | null> | null = null;
   if (doctorFix) {
     migrationPreFix = await captureCodexConfigSnapshot();
     const installScope = installScopeFromArgs(args);
-    openRouterProviderRepair = flag(args, '--local-only')
-      ? { ok: true, status: 'skipped', reason: 'local-only repair' }
-      : await (await import('../cli/install-helpers.js')).ensureStoredOpenRouterProviderDuringInstall().catch((err: any) => ({
-          schema: 'sks.openrouter-provider-upgrade-repair.v1',
-          ok: false,
-          status: 'failed',
-          blockers: ['openrouter_provider_repair_failed'],
-          error: err?.message || String(err)
-        }));
     setupRepair = {
       schema: 'sks.doctor-setup-phase.v2',
       ok: true,
@@ -1157,60 +794,9 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   const codexApp = deepDiagnostics
     ? await codexAppIntegrationStatus({ codex }).catch((err: any) => ({ ok: false, error: err.message }))
     : { ok: false, skipped: true, warnings: ['codex_app_optional_diagnostic_skipped'] };
-  const codexLbCircuit = codexLbMetrics(await readCodexLbCircuit(root).catch(() => ({})));
-  // Routing truth is required even for the default Doctor profile. Keep the
-  // heavier tool-output recovery check deep/fix-only, while always resolving
-  // the selected provider so a selected Codex LB route receives one measured,
-  // fail-closed request instead of being reported as uninspected.
-  const codexLbPreRepairStatus = doctorFix
-    ? await codexLbStatus({ probeToolOutputRecovery: false }).catch(() => null)
-    : null;
-  const codexLbSecretProbe = await inspectDoctorCodexLbSecretResolution({
-    processEnv: process.env,
-    fix: doctorFix,
-    forceRetry: flag(args, CODEX_LB_KEYCHAIN_MIGRATION_RETRY_FLAG),
-    baseUrl: codexLbPreRepairStatus?.base_url || codexLbPreRepairStatus?.provider_base_url || null
-  });
-  const codexLbProviderStatus = await codexLbStatus({
-    probeToolOutputRecovery: deepDiagnostics || doctorFix,
-    allowUnverifiedToolOutputRecovery: codexLbToolOutputRecoveryOverrideAcknowledged({ args })
-  }).catch((err: any) => ({
-    selected: null,
-    provider_ready: false,
-    recovery_probe_failed: deepDiagnostics || doctorFix,
-    tool_output_recovery: {
-      ok: false,
-      status: deepDiagnostics || doctorFix ? 'probe_failed' : 'not_checked',
-      blockers: deepDiagnostics || doctorFix ? ['codex_lb_tool_output_recovery_status_probe_failed'] : [],
-      operator_actions: []
-    },
-    error: err?.message || String(err)
-  }));
-  const codexLbRecoveryReady = codexLbRecoveryStatusReady(codexLbProviderStatus, deepDiagnostics || doctorFix);
-  const codexLbRoutingTruth = await codexLbRoutingTruthForStatus(codexLbProviderStatus, {
-    remeasure: deepDiagnostics || doctorFix
-  });
-  const codexLbRoutingReady = !doctorCodexLbRouteExpected(codexLbProviderStatus)
-    || codexLbRoutingTruthIsActive(codexLbRoutingTruth);
-  const codexLbDivergence = await inspectDoctorCodexLbDivergence({
-    processEnv: process.env,
-    providerStatus: codexLbProviderStatus,
-    fix: doctorFix,
-    ...(deps.codexLbLaunchctlBin ? { launchctlBin: deps.codexLbLaunchctlBin } : {}),
-    ...(deps.codexLbLaunchPlatform ? { platform: deps.codexLbLaunchPlatform } : {}),
-    ...(deps.codexLbLaunchRunProcessImpl ? { runProcessImpl: deps.codexLbLaunchRunProcessImpl } : {})
-  }, deps.codexLbDivergenceDeps || {});
-  const codexLb = {
-    ...codexLbCircuit,
-    provider_status: codexLbProviderStatus,
-    tool_output_recovery: codexLbProviderStatus?.tool_output_recovery || null,
-    recovery_ok: codexLbRecoveryReady,
-    routing_truth: codexLbRoutingTruth,
-    routing_ok: codexLbRoutingReady,
-    secret_resolution: codexLbSecretProbe.secret_resolution,
-    legacy_keychain_migration: codexLbSecretProbe.legacy_keychain_migration,
-    divergence: codexLbDivergence
-  };
+  const desktopBridge = await inspectDoctorDesktopBridgeStatus({
+    processEnv: process.env
+  }, { desktopBridgeStatusImpl: deps.desktopBridgeStatusImpl });
   const providerContext = deepDiagnostics
     ? await resolveProviderContext({ root, route: '$Doctor', serviceTier: process.env.SKS_SERVICE_TIER || 'fast' }).catch((err: any) => ({
         schema: 'sks.provider-context.v1',
@@ -1310,7 +896,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
       'Run: sks menubar status',
       'Run: sks menubar install',
       'Run: sks menubar restart',
-      'Rotate CODEX_LB_API_KEY and OPENROUTER_API_KEY if they were previously exposed in launchd.'
     ],
     blockers: [err?.message || String(err)],
     warnings: []
@@ -1807,7 +1392,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     codex,
     codex_config: codexConfig,
     codex_app: codexApp,
-    codex_lb: codexLb,
+    desktop_bridge: desktopBridge,
     codex_doctor: authoritativeCodexDoctor,
     pre_repair_codex_doctor: preRepairCodexDoctor,
     post_repair_codex_doctor: postRepairCodexDoctor,
@@ -1843,7 +1428,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
       ...((codexStartupRepair as any).manual_actions || []),
       ...((codexConfigSyntaxRepair as any)?.manual_actions || []),
       ...(pluginPolicy?.doctor_warnings || []),
-      ...((codexLbSecretProbe as any).legacy_keychain_migration?.operator_actions || []),
+      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : []),
       ...telegramDoctorOperatorActions(telegramRemote)
     ]
   };
@@ -1933,10 +1518,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     && (agentRoleConfigRepair as any).ok !== false
     && (openRouterProviderRepair as any).ok !== false
     && ((officialSubagentConfig as any).blockers || []).length === 0
-    && codexLbSecretProbe.ok !== false
-    && codexLbDivergence.ok !== false
-    && codexLbRecoveryReady
-    && codexLbRoutingReady;
+    && desktopBridge.ok !== false;
   const result = {
     schema: 'sks.doctor-status.v3',
     elapsed_ms: Date.now() - startedAtMs,
@@ -1951,11 +1533,10 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     not_counted_as_full_doctor: !deepDiagnostics,
     root,
     arg_warnings: argWarnings,
-    warnings: [...oauthCallbackPortDiagnostic.warnings, ...(codexLbDivergence.warnings || [])],
+    warnings: [...oauthCallbackPortDiagnostic.warnings, ...(desktopBridge.warnings || [])],
     operator_actions: [
       ...oauthCallbackOperatorActions,
-      ...((codexLbSecretProbe as any).legacy_keychain_migration?.operator_actions || []),
-      ...(codexLbDivergence.operator_actions || [])
+      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : [])
     ],
     node: { ok: Number(process.versions.node.split('.')[0]) >= 20, version: process.version },
     codex,
@@ -1964,11 +1545,11 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     rust,
     codex_app: codexApp,
     codex_app_ui: codexAppUi,
-    openrouter_provider: openRouterProviderRepair,
+    openrouter_provider: desktopBridge.providers?.openrouter || null,
     sks_menubar: sksMenuBar,
     telegram_remote: telegramRemote,
     provider_context: providerContext,
-    codex_lb: codexLb,
+    desktop_bridge: desktopBridge,
     codex_doctor: authoritativeCodexDoctor,
     pre_repair_codex_doctor: preRepairCodexDoctor,
     post_repair_codex_doctor: postRepairCodexDoctor,
@@ -2214,20 +1795,15 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   console.log(`  Unavailable app templates: ${unavailableTemplates}`);
   for (const warning of pluginPolicy?.doctor_warnings || []) console.log(`  warning: ${warning}`);
   if ((codexCurrentAppDoctor as any)?.fixed?.length) console.log(`  doctor --fix repaired: ${(codexCurrentAppDoctor as any).fixed.join(', ')}`);
-  console.log(`codex-lb:  ${codexLb.ok ? 'ok' : `warning ${codexLb.circuit?.state || 'unknown'}`}`);
-  console.log(`  key source: ${codexLb.secret_resolution.source}${codexLb.secret_resolution.path ? ` (${codexLb.secret_resolution.path})` : ''}; prompt risk: ${codexLb.secret_resolution.prompt_risk}`);
-  for (const action of codexLb.legacy_keychain_migration?.operator_actions || []) console.log(`  action: ${action}`);
-  for (const warning of codexLb.divergence?.warnings || []) console.log(`  warning: ${warning}`);
-  for (const action of codexLb.divergence?.operator_actions || []) console.log(`  action: ${action}`);
-  if (codexLb.routing_truth) {
-    const routingTruth: any = codexLb.routing_truth;
-    console.log(`  routing truth: ${codexLb.routing_ok ? 'verified' : 'blocked'} (${routingTruth.actual_host || routingTruth.configured_host || 'host unavailable'}, ${routingTruth.auth_outcome}, ${routingTruth.latency_ms ?? 'unmeasured'} ms at ${routingTruth.checked_at})`);
+  console.log(`Desktop Bridge: ${desktopBridge.ok ? 'ready' : 'blocked'} (${desktopBridge.status?.readiness?.state || 'unavailable'})`);
+  for (const providerId of ['codex-lb', 'openrouter']) {
+    const provider = desktopBridge.providers?.[providerId];
+    if (!provider) continue;
+    console.log(`  ${providerId}: ${provider.enabled ? 'enabled' : 'disabled'}; credential ${provider.credential?.state || 'unknown'} (${provider.credential?.source || 'none'}); endpoint ${provider.endpoint?.configured ? 'configured' : 'missing'}`);
   }
-  if (codexLb.tool_output_recovery) {
-    const recovery: any = codexLb.tool_output_recovery;
-    console.log(`  interrupted tool-output recovery: ${recovery.ok ? 'ready' : 'blocked'} (${recovery.observed_version || recovery.status}; minimum ${recovery.minimum_version})`);
-    if (!recovery.ok) for (const action of recovery.operator_actions || []) console.log(`  action: ${action}`);
-  }
+  for (const warning of desktopBridge.warnings || []) console.log(`  warning: ${warning}`);
+  for (const blocker of desktopBridge.blockers || []) console.log(`  blocker: ${blocker}`);
+  if (!desktopBridge.ok) for (const action of desktopBridge.recovery_actions || []) console.log(`  action: ${action}`);
   if (localModel) {
     console.log('Local LLM:');
     console.log(`  enabled: ${localModel.enabled ? 'yes' : 'no'}`);
