@@ -934,8 +934,8 @@ export async function codexProviderModelUiStatus(opts: any = {}) {
   const codexLbCliProviderContractOk = codexLbProviderPresent
     && hasTomlString(codexLbProvider, 'name', 'codex-lb')
     && hasTomlString(codexLbProvider, 'wire_api', 'responses')
-    && /"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"/.test(codexLbProvider)
-    && !/(?:^|\n)\s*env_key\s*=/.test(codexLbProvider)
+    && /(?:^|\n)\s*env_key\s*=\s*"CODEX_LB_API_KEY"\s*(?:#.*)?(?=\n|$)/.test(codexLbProvider)
+    && !/X-Codex-LB-API-Key/.test(codexLbProvider)
     && hasTomlBoolean(codexLbProvider, 'supports_websockets', true)
     && hasTomlBoolean(codexLbProvider, 'requires_openai_auth', false);
   const codexLbSelectedDefault = /(?:^|\n)\s*model_provider\s*=\s*"codex-lb"\s*(?:#.*)?(?=\n|$)/.test(topLevelToml(globalConfig));
@@ -1199,9 +1199,11 @@ function inferCodexLbDesktopModeForUi(config: string): CodexLbDesktopMode {
 function normalizeCodexLbGatewayAuthTransportForUi(
   value: unknown
 ): CodexLbGatewayAuthTransport {
-  return value === 'authorization-bearer-compat'
-    ? 'authorization-bearer-compat'
-    : 'x-codex-lb-api-key';
+  // Bearer is the product default; the custom header only applies when stored
+  // desktop-bridge metadata explicitly selected it.
+  return value === 'x-codex-lb-api-key'
+    ? 'x-codex-lb-api-key'
+    : 'authorization-bearer-compat';
 }
 
 async function findDefaultPluginSource(plugin: any, { home, configText }: any) {

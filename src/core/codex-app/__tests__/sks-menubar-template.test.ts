@@ -423,14 +423,16 @@ test('Providers configures the CLI provider through masked paste fields and stdi
   assert.match(providers, /placeholder: "sk-clb-…"/);
   assert.match(providers, /https:\/\/ is optional/);
   assert.match(providersSurface, /\["codex-lb", "connect-test", "--json"\]/);
-  assert.match(providers, /\["codex-lb", "setup", "--host", host, "--gateway-auth", transport, "--api-key-stdin", "--yes", "--write-env-file", "--json"\]/);
+  assert.match(providers, /\["codex-lb", "setup", "--host", host, "--gateway-auth", "bearer-compat", "--api-key-stdin", "--yes", "--write-env-file", "--json"\]/);
   assert.doesNotMatch(providers, /"--keychain"/);
   assert.match(providers, /keychainStore\.store\(key, credential: credential, explicitUserAction: true\)/);
-  // The gateway key transport is an explicit Center choice: a bearer-only gateway
-  // rejects the custom header, which Desktop reports as unrecognised codex-lb auth.
-  assert.match(providers, /AlertFactory\.choiceSheet\(/);
-  assert.match(providers, /\("custom-header", "X-Codex-LB-API-Key custom header \(default\)"\)/);
-  assert.match(providers, /\("bearer-compat", "Authorization: Bearer compatibility"\)/);
+  // Center locks Authorization: Bearer — no transport picker / custom-header choice.
+  assert.match(providers, /AlertFactory\.textSheet\(/);
+  assert.doesNotMatch(providers, /Codex LB Gateway Key Transport/);
+  assert.doesNotMatch(providers, /\("custom-header"/);
+  assert.doesNotMatch(providers, /X-Codex-LB-API-Key custom header/);
+  assert.match(providers, /Authorization: Bearer/);
+  assert.match(providers, /No transport picker/);
   assert.match(providers, /"--api-key-stdin"/);
   assert.match(providers, /stdin: key \+ "\\n"/);
   assert.doesNotMatch(providers, /"--api-key",\s*key/);
@@ -496,10 +498,13 @@ test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, a
   const providersSurface = `${providers}\n${connectTest}\n${routingTruth}`;
 
   for (const label of [
-    'Advanced · Desktop Bridge / ChatGPT Identity Mode', 'Desktop Bridge Mode (keeps ChatGPT sign-in)',
+    'Advanced', 'Desktop Bridge Mode (keeps ChatGPT sign-in)',
     'Use Codex LB', 'Verify Capabilities', 'Use ChatGPT OAuth Only',
     'Codex LB · Credentials & Primary Provider', 'Copy CLI Command', 'Latest Codex Feature Compatibility'
   ]) assert.match(providers, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(providers, /Authentication Recovery/);
+  assert.doesNotMatch(providers, /One-off command:/);
+  assert.doesNotMatch(providers, /Legacy Codex LB provider selection/);
   assert.match(providers, /ControlKit\.primaryButton\("Use Codex LB", target: self, action: #selector\(useCliProvider\)\)/);
   assert.match(providers, /NativeView\.button\("Desktop Bridge Mode \(keeps ChatGPT sign-in\)", target: self, action: #selector\(enableDesktopFull\)\)/);
   assert.doesNotMatch(providers, /primaryButton\("Use Codex LB"[^\n]*enableDesktopFull/);
@@ -529,7 +534,10 @@ test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, a
   assert.match(routingTruth, /chatgptOauthPresent/);
   assert.match(providers, /Use Codex LB through the atomic CLI provider path/);
   assert.match(providers, /never hide the advanced bridge or ChatGPT OAuth actions based on status parsing/);
-  assert.ok(providers.indexOf('makeActiveProviderCard(), cli, desktop') >= 0);
+  assert.ok(providers.indexOf('makeActiveProviderCard(),') >= 0);
+  assert.ok(providers.indexOf('cli,') >= 0);
+  assert.match(providers, /title: "Advanced"/);
+  assert.match(providers, /No transport picker/);
 
   for (const label of ['OAuth Identity', 'Built-in Provider', 'Bridge', 'Models', 'Fast', 'Image', 'Computer', 'Browser', 'Voice', 'Plugins']) {
     assert.match(providers, new RegExp(`"${label}"`));
@@ -553,7 +561,7 @@ test('Providers makes atomic CLI routing primary, demotes Desktop Bridge mode, a
   assert.match(routingTruth, /selected && measured && fresh && ok && status == "verified"/);
   assert.match(providersSurface, /Codex LB · degraded/);
   assert.match(providersSurface, /Codex LB · unverified/);
-  assert.match(openRouter, /Codex LB mode · ChatGPT OAuth \+ built-in OpenAI via bridge/);
+  assert.match(openRouter, /Codex LB · Desktop Bridge · ChatGPT OAuth \+ built-in OpenAI/);
   assert.match(openRouter, /ChatGPT OAuth mode · built-in OpenAI models/);
   assert.match(providers, /private let cliLaunchCommand = "codex"/);
   assert.match(providers, /NSPasteboard\.general\.setString\(cliLaunchCommand, forType: \.string\)/);

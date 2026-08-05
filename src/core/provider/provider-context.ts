@@ -52,8 +52,8 @@ export async function resolveProviderContext(input: {
   const codexLbEnvKey = codexLbGatewayHeaderEnvKey || codexLbBearerEnvKey
   const codexLbRequiresOpenAiAuth = codexLbProviderRequiresOpenAiAuth(configText)
   const codexLbProviderValid = codexLbProviderBlockPresent
-    && codexLbGatewayHeaderEnvKey === 'CODEX_LB_API_KEY'
-    && codexLbBearerEnvKey === null
+    && codexLbBearerEnvKey === 'CODEX_LB_API_KEY'
+    && codexLbGatewayHeaderEnvKey === null
     && codexLbRequiresOpenAiAuth === false
   const openaiKey = Boolean(String(env.OPENAI_API_KEY || '').trim())
   const lbKey = Boolean(String((codexLbEnvKey ? env[codexLbEnvKey] : env.CODEX_LB_API_KEY) || env.CODEX_LB_API_KEY || '').trim())

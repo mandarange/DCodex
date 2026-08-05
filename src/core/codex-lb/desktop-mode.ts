@@ -15,7 +15,7 @@ export const CODEX_LB_GATEWAY_AUTH_TRANSPORTS = [
 export type CodexLbGatewayAuthTransport = (typeof CODEX_LB_GATEWAY_AUTH_TRANSPORTS)[number];
 
 export const DEFAULT_CODEX_LB_DESKTOP_MODE: CodexLbDesktopMode = 'desktop-native-bridge';
-export const DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT: CodexLbGatewayAuthTransport = 'x-codex-lb-api-key';
+export const DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT: CodexLbGatewayAuthTransport = 'authorization-bearer-compat';
 
 export function parseCodexLbDesktopMode(value: unknown): CodexLbDesktopMode {
   const normalized = String(value ?? '').trim();

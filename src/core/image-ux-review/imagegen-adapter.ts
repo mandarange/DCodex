@@ -663,8 +663,9 @@ export async function generateGptImage2CalloutReview(input: ImageUxReviewImagege
     ...(opts.openai || {}),
     codexLb: allowCodexLbApiFallback ? opts.openai?.codexLb || capability?.codex_lb || null : null,
     codexLbTarget,
+    // The CLI provider contract is env_key ⇒ Authorization: Bearer.
     codexLbAuthTransport: capability?.codex_lb?.cli_contract === true
-      ? 'x-codex-lb-api-key'
+      ? 'authorization-bearer'
       : codexLbTarget?.auth_transport,
     allowCodexLbApiFallback
   };
@@ -760,9 +761,7 @@ function codexLbImagesApiAuth(opts: any, codexLb: any, target: any) {
   return {
     apiKey: codexLbKey || null,
     auth_source: envKey,
-    auth_transport: opts.codexLbAuthTransport || target?.auth_transport || (codexLb?.cli_contract === true
-      ? 'x-codex-lb-api-key'
-      : 'authorization-bearer'),
+    auth_transport: opts.codexLbAuthTransport || target?.auth_transport || 'authorization-bearer',
     api_key_source: target?.api_key_source || null,
     // config.toml's `model` is often a slug this key cannot use; the served
     // catalog is the only source that is safe to default to.

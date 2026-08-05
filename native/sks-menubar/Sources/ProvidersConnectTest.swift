@@ -79,6 +79,7 @@ extension ProvidersViewController {
             _ = self.operations.update(snapshot, state: proved ? .succeeded : .failed, stage: "complete", progress: 1, summary: proved ? "Codex LB connection proved" : "Codex LB connection proof failed")
             if let proof = proof, result.code == 0 {
                 self.codexLbSelectedNow = true
+                self.codexLbProvedNow = true
                 self.cliProviderStatus.stringValue = "Codex LB mode selected · connection proved by one live response."
                 ControlKit.setBadge(self.activeProviderBadge, text: "Codex LB · active · model \(proof.model) · \(proof.latencyMs) ms", tone: .ok)
                 self.renderCliConnectStages(
@@ -91,14 +92,16 @@ extension ProvidersViewController {
                 )
                 return
             }
+            self.codexLbProvedNow = false
             let selected = self.codexLbSelectedNow
+            let code = self.publicFailureCode(parsed)
             let failure = parsed.map(CodexLbConnectTestTruth.validationFailure(from:))
                 ?? "structured connect-test JSON was not returned"
             self.cliProviderStatus.stringValue = selected
-                ? "Codex LB mode is selected, but connection proof failed · \(failure)."
-                : "Codex LB connection proof failed and provider selection is unconfirmed · \(failure)."
+                ? "Codex LB mode is selected, but connection proof failed · \(code) · \(failure)."
+                : "Codex LB connection proof failed and provider selection is unconfirmed · \(code) · \(failure)."
             if selected {
-                ControlKit.setBadge(self.activeProviderBadge, text: "Codex LB · selected · connection proof failed", tone: .warning)
+                ControlKit.setBadge(self.activeProviderBadge, text: "Codex LB · selected · \(code) · connection proof failed", tone: .warning)
             }
             self.renderCliConnectStages(
                 progress: 3,
@@ -106,8 +109,8 @@ extension ProvidersViewController {
                 request: "completed without valid proof",
                 response: "failed",
                 result: selected
-                    ? "Mode is selected, but connection proof failed · \(failure). Use Run Connect Test to retry."
-                    : "Connection proof failed · \(failure). Confirm the provider, then retry.",
+                    ? "\(code) · Mode is selected, but connection proof failed · \(failure). Use Run Connect Test to retry."
+                    : "\(code) · Connection proof failed · \(failure). Confirm the provider, then retry.",
                 tone: .systemRed
             )
         }

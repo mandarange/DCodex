@@ -198,7 +198,7 @@ extension ProvidersViewController {
         }
     }
 
-    func promptForSecretKey(window: NSWindow, sheetTitle: String, sheetMessage: String, placeholder: String, args: [String], kind: String, title: String, credential: SKSKeychainCredential, statusLabel: NSTextField, successSummary: String, failSummary: String) {
+    func promptForSecretKey(window: NSWindow, sheetTitle: String, sheetMessage: String, placeholder: String, args: [String], kind: String, title: String, credential: SKSKeychainCredential, statusLabel: NSTextField, successSummary: String, failSummary: String, codePrefix: String = "E-LB") {
         AlertFactory.textSheet(window: window, title: sheetTitle, message: sheetMessage, secure: true, placeholder: placeholder) { [weak self] key in
             guard let self = self, let key = key else { return }
             guard !self.busy else { statusLabel.stringValue = "Another provider action is already running."; return }
@@ -229,7 +229,7 @@ extension ProvidersViewController {
                     }
                     statusLabel.stringValue = "Configuration saved, but Keychain was not applied · \(reason). Authentication Required: choose Reconnect after repairing Keychain."
                 } else {
-                    statusLabel.stringValue = "\(failSummary) · \(self.structuredPublicDetail(parsed, fallback: result.output))"
+                    statusLabel.stringValue = "\(failSummary) · \(self.structuredPublicDetail(parsed, fallback: result.output, codePrefix: codePrefix))"
                 }
                 self.refresh()
             }
@@ -288,6 +288,7 @@ extension ProvidersViewController {
             let bridgeSelected = expectedMode == "desktop-native-bridge"
             self.desktopFullRoutingNow = false
             self.codexLbSelectedNow = false
+            self.codexLbProvedNow = false
             self.chatgptOauthPresentNow = routing?.chatgptOauthPresent ?? self.chatgptOauthPresentNow
             self.renderActiveProviderSummary()
             if bridgeSelected { self.renderMeasuredRoutingBadge(nil, routeExpected: true) }

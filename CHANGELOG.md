@@ -4,6 +4,41 @@
 
 
 
+## [8.1.1] - 2026-08-05
+
+### Fixed
+
+- Gateway auth now follows one **plane rule**: the atomic CLI provider plane is
+  structurally `Authorization: Bearer` (Codex-native `env_key = "CODEX_LB_API_KEY"`),
+  so status / connect-test / doctor / capability / image probes always measure that
+  plane with Bearer — stale custom-header metadata from older installs can no longer
+  make probes 401 against Hyper-Lab-style gateways while real Codex traffic works
+  (or vice versa). Only the Desktop Bridge plane keeps a stored transport choice.
+- Atomic CLI provider contract writes `env_key = "CODEX_LB_API_KEY"` and every
+  validator (desktop-controller, doctor, codex-app UI state, imagegen, provider
+  context, release gates) agrees on that single shape, so Connection Proof no longer
+  fails with false `provider_contract_drift` after a successful setup.
+- Status guidance answers 401/403 with a credential-focused next action instead of
+  falling through to irrelevant “use-cli” advice.
+- Control Center Active Provider no longer labels modern `cli-provider` selection as
+  “Legacy … migration required”; auth failures surface stable `E-LB-*` codes with
+  HTTP status and transport, and a proven connection is never downgraded to
+  “connection unproved” by unrelated status refreshes.
+- OpenRouter failures now show `E-OR-*` codes and a provider-neutral next step
+  instead of `E-LB-*` codes with “Reconnect Codex LB credential” advice.
+
+### Changed
+
+- Center **Reconnect Codex LB credential…** always uses Bearer — the transport
+  picker is removed. `sks codex-lb setup` defaults to Bearer everywhere and rejects
+  `--gateway-auth custom-header` for `cli-only`
+  (`custom_header_transport_requires_desktop_bridge`); the custom header remains a
+  CLI-only escape for the Desktop Bridge plane.
+- Providers page demotes Desktop Bridge / capability chrome under **Advanced** and
+  drops Authentication Recovery / one-off command clutter; the Advanced desktop
+  status line now states that the bridge is unused while the CLI path is active
+  instead of claiming “ChatGPT OAuth mode: active”.
+
 ## [8.1.0] - 2026-08-05
 
 ### Fixed

@@ -64,8 +64,9 @@ credentials on that machine. Interactive setup asks for:
 
 - codex-lb domain or base URL
 - API key with hidden input
-- Desktop Full Capability or CLI-only routing
-- custom gateway header or explicit bearer-compat transport where supported
+- CLI-only routing (default) or Desktop Full Capability
+- for Desktop Bridge mode only: bearer-compat (default) or the custom gateway
+  header transport — the CLI provider plane always uses `Authorization: Bearer`
 - whether to write the shell env loader
 - whether to sync the non-secret base URL to the macOS `launchctl` environment
 - whether to install a shell profile snippet
@@ -177,21 +178,22 @@ Provider and auth invariants:
   not read it as fallback authentication.
 - **Use codex-lb** commits `[model_providers.codex-lb]` and top-level
   `model_provider = "codex-lb"` as one guarded transaction. The provider uses
-  the configured remote `base_url`,
-  `env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }`, and
-  `requires_openai_auth = false`, without an additional `env_key` Bearer path.
-  A provider definition without its requested
+  the configured remote `base_url`, `env_key = "CODEX_LB_API_KEY"`
+  (Codex-native `Authorization: Bearer`), and `requires_openai_auth = false`,
+  without a custom-header path. A provider definition without its requested
   active selection is drift, not an enabled state.
 - Remote base URLs, including a codex-lb Docker deployment on another machine,
   are first-class. No localhost-only assumption, implicit OAuth substitution,
   or unrelated `auth.json` API key can satisfy gateway authentication.
-- The gateway auth transport is stored once by setup (`sks-codex-lb.json`, and
-  the bridge settings for a running bridge). `status`, `capabilities`, and
-  `use-desktop-full` honour that stored choice; `--gateway-auth` /
-  `--compat-bearer` pin a different transport for a single invocation only. No
-  command silently substitutes a default transport, so a gateway that only
-  accepts `Authorization: Bearer` stays reachable from SKS Center without a CLI
-  step. SKS Center asks for the transport in `Reconnect Codex LB credential…`.
+- The gateway auth transport follows the **plane rule**. The CLI provider
+  plane is structurally `Authorization: Bearer` (`env_key`), so every probe of
+  that plane — `status`, `connect-test`, `capabilities`, Doctor — measures with
+  Bearer; setup rejects `--gateway-auth custom-header` for `cli-only`
+  (`custom_header_transport_requires_desktop_bridge`). Only the Desktop Bridge
+  plane stores a transport choice (`sks-codex-lb.json`, bridge settings):
+  bearer-compat by default, with the custom `X-Codex-LB-API-Key` header as the
+  explicit escape for gateways that require it. SKS Center always configures
+  Bearer and shows no transport picker.
 - A gateway that answers `401`/`403` to the configured transport is reported as
   `codex_lb_gateway_auth_rejected_for_transport:<transport>` with guidance to
   re-run setup with the other transport. It is never reported as an
@@ -219,8 +221,8 @@ Provider and auth invariants:
   `desktop_dual_auth_compat_unavailable`. It is never reported ready and cannot
   be activated through CLI, setup, Center, repair, or internal routing APIs.
 - The codex-lb provider uses `name = "codex-lb"`,
-  `env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }`, and
-  `requires_openai_auth = false`, with no `env_key` Bearer authentication.
+  `env_key = "CODEX_LB_API_KEY"` (`Authorization: Bearer`), and
+  `requires_openai_auth = false`, with no custom-header authentication.
   Credential-only setup may leave it stored and unselected; the explicit
   Center/CLI **Use codex-lb** action promotes that same definition to the active
   top-level selection atomically.

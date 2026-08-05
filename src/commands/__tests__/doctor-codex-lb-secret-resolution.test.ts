@@ -247,7 +247,7 @@ test('default Doctor routing probe performs one authenticated measurement and wr
     'name = "codex-lb"',
     `base_url = "${BASE_URL}"`,
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -279,8 +279,8 @@ test('default Doctor routing probe performs one authenticated measurement and wr
   const request = requests[0];
   assert.ok(request);
   assert.match(request.url, /\/backend-api\/codex\/models$/);
-  assert.equal(request.authorization, null);
-  assert.equal(request.gatewayKey, API_KEY);
+  assert.equal(request.authorization, `Bearer ${API_KEY}`);
+  assert.equal(request.gatewayKey, null);
   const receiptText = await fsp.readFile(receiptPath, 'utf8');
   assert.doesNotMatch(receiptText, new RegExp(API_KEY));
   assert.equal((await fsp.stat(receiptPath)).mode & 0o777, 0o600);

@@ -77,7 +77,7 @@ test('selected codex-lb readiness is not blocked by optional GLM/OpenRouter setu
     'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -175,7 +175,7 @@ test('selected codex-lb readiness prefers persisted model_catalog_json over a fa
     'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -226,7 +226,7 @@ test('unmarked user model_reasoning_effort does not fail Fast UI readiness under
     'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -285,7 +285,7 @@ test('native bridge mode does not require or bind the local replacement catalog'
     'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -359,7 +359,9 @@ test('retired compat provider is detected but never reported ready', async (t) =
   assert.equal(status.codex_lb.desktop_mode, 'desktop-dual-auth-compat')
   assert.equal(status.codex_lb.provider_contract, 'retired-desktop-dual-auth-compat')
   assert.equal(status.codex_lb.provider_contract_ok, false)
-  assert.equal(status.codex_lb.gateway_auth_transport, 'x-codex-lb-api-key')
+  // Stored metadata carries no transport here, so the UI echoes the product
+  // default (Bearer); the retired compat mode stays unactivatable regardless.
+  assert.equal(status.codex_lb.gateway_auth_transport, 'authorization-bearer-compat')
   assert.ok(status.codex_lb.blockers.includes('desktop_dual_auth_compat_unavailable'))
 })
 

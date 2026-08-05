@@ -47,7 +47,7 @@ export async function runCodexLbLaunchChainSelftest(input: {
     || missingProviderLaunchCalls.length !== 0
     || hasTopLevelCodexLbSelected(missingProviderRepairedConfig)
     || !missingProviderRepairedConfig.includes('[model_providers.codex-lb]')
-    || !missingProviderRepairedConfig.includes('env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }')
+    || !missingProviderRepairedConfig.includes('env_key = "CODEX_LB_API_KEY"')
     || !missingProviderRepairedConfig.includes('supports_websockets = true')
     || !missingProviderRepairedConfig.includes('requires_openai_auth = false')
     || !missingProviderRepairedConfig.includes('name = "codex-lb"')

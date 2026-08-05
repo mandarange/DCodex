@@ -32,9 +32,9 @@ disabled by SKS. A blocked codex-lb capability row describes missing evidence
 for that data path, not removal of the native feature.
 
 The separately stored CLI provider uses `name = "codex-lb"`,
-`env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }`, and
+`env_key = "CODEX_LB_API_KEY"` (`Authorization: Bearer`), and
 `requires_openai_auth = false`; it is not selected globally and does not also
-set `env_key` Bearer authentication. The explicit compatibility mode uses exact provider name
+set custom-header authentication. The explicit compatibility mode uses exact provider name
 `OpenAI`, preserves OAuth, and sends the gateway key through
 `X-Codex-LB-API-Key`. Legacy installations that placed the gateway key in the
 shared Codex auth slot are blocked until

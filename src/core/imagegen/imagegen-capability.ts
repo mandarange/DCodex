@@ -117,15 +117,16 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
   const requiresOpenAiAuth = tomlBoolean(block, 'requires_openai_auth');
   const bearerEnvKey = tomlString(block, 'env_key');
   const gatewayHeaderEnvKey = tomlEnvHttpHeader(block, 'X-Codex-LB-API-Key');
-  const envKey = gatewayHeaderEnvKey || bearerEnvKey;
+  const envKey = bearerEnvKey || gatewayHeaderEnvKey;
   // CLI provider contract: Codex resolves the gateway key from the environment
-  // into the dedicated gateway header. It must not also install env_key Bearer
-  // auth, which would send the same secret through two authentication channels.
+  // through env_key (Authorization: Bearer). It must not also install the
+  // custom gateway header, which would send the same secret through two
+  // authentication channels.
   const cliContract = providerConfigured
     && tomlString(block, 'name') === 'codex-lb'
     && tomlString(block, 'wire_api') === 'responses'
-    && gatewayHeaderEnvKey === 'CODEX_LB_API_KEY'
-    && !bearerEnvKey
+    && bearerEnvKey === 'CODEX_LB_API_KEY'
+    && !gatewayHeaderEnvKey
     && requiresOpenAiAuth === false;
   const baseUrl = tomlString(block, 'base_url') || String(env.CODEX_LB_BASE_URL || '').trim();
   const envPath = opts.codexLbEnvPath || path.join(codexHome, 'sks-codex-lb.env');
@@ -162,9 +163,9 @@ async function detectCodexLbImagegenAuth(opts: any = {}, env: any = process.env)
     receiptPath: routingTruthReceiptPath
   }).catch(() => null);
   const configuredHost = publicUrlHost(baseUrl);
-  const routingAuthTransport = cliContract
-    ? 'x-codex-lb-api-key'
-    : 'authorization-bearer';
+  // Both planes now measure with Authorization: Bearer by default; the CLI
+  // contract (env_key) structurally guarantees it.
+  const routingAuthTransport = 'authorization-bearer';
   const routingTruthContextMatches = routingTruth?.selected === selected
     && routingTruth?.configured_host === configuredHost
     && routingTruth?.auth_transport === routingAuthTransport;

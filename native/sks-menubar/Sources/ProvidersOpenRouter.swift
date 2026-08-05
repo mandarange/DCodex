@@ -4,7 +4,7 @@ extension ProvidersViewController {
     func makeActiveProviderCard() -> NSBox {
         NativeView.card(
             title: "Active Provider",
-            subtitle: "Shows the live Desktop mode: Codex LB, ChatGPT OAuth, OpenRouter, or Multi-Provider Router. Switch with Use Codex LB or Use ChatGPT OAuth Only below.",
+            subtitle: "Live provider path. Codex LB uses Authorization: Bearer. Switch with Use Codex LB, OpenRouter Activate, or Advanced · Use ChatGPT OAuth Only.",
             views: [activeProviderBadge, oauthCredentialStatus]
         )
     }
@@ -22,12 +22,17 @@ extension ProvidersViewController {
             ControlKit.setBadge(
                 activeProviderBadge,
                 text: chatgptOauthPresentNow
-                    ? "Codex LB mode · ChatGPT OAuth + built-in OpenAI via bridge"
-                    : "Codex LB mode enabled · ChatGPT OAuth missing — run codex login",
+                    ? "Codex LB · Desktop Bridge · ChatGPT OAuth + built-in OpenAI"
+                    : "Codex LB · Desktop Bridge · ChatGPT OAuth missing — run codex login",
                 tone: chatgptOauthPresentNow ? .ok : .warning
             )
         } else if codexLbSelectedNow {
-            ControlKit.setBadge(activeProviderBadge, text: "Legacy Codex LB provider selection · migration required", tone: .warning)
+            // Measured CLI selection is not legacy migration (that badge comes only from refresh snapshot markers).
+            if codexLbProvedNow {
+                ControlKit.setBadge(activeProviderBadge, text: "Codex LB · CLI · verified", tone: .ok)
+            } else {
+                ControlKit.setBadge(activeProviderBadge, text: "Codex LB · CLI · selected · connection unproved", tone: .warning)
+            }
         } else if chatgptOauthPresentNow {
             ControlKit.setBadge(activeProviderBadge, text: "ChatGPT OAuth mode · built-in OpenAI models", tone: .neutral)
         } else {
@@ -129,7 +134,7 @@ extension ProvidersViewController {
                 let summary = self.describeOpenRouterStatus(json)
                 self.openRouterStatus.stringValue = result.code == 0
                     ? summary
-                    : "\(summary) \(self.structuredPublicDetail(json, fallback: result.output))"
+                    : "\(summary) \(self.structuredPublicDetail(json, fallback: result.output, codePrefix: "E-OR"))"
             }
             self.openRouterCredentialStatus.textColor = keyValidated ? .secondaryLabelColor : .systemOrange
             if !keyValidated { self.clearOpenRouterModels(reason: "Credential not validated · model and child-agent lists are hidden. Choose Reconnect, then Refresh Models.") }
@@ -170,7 +175,7 @@ extension ProvidersViewController {
                 return
             }
             guard result.code == 0, json["ok"] as? Bool == true else {
-                self.clearOpenRouterModels(reason: "Catalog unavailable · \(self.structuredPublicDetail(json, fallback: result.output)) No model list is exposed.")
+                self.clearOpenRouterModels(reason: "Catalog unavailable · \(self.structuredPublicDetail(json, fallback: result.output, codePrefix: "E-OR")) No model list is exposed.")
                 return
             }
             guard json["authenticated"] as? Bool == true else {
@@ -264,7 +269,8 @@ extension ProvidersViewController {
             credential: .openRouterApiKey,
             statusLabel: openRouterStatus,
             successSummary: "OpenRouter key saved",
-            failSummary: "OpenRouter key save failed"
+            failSummary: "OpenRouter key save failed",
+            codePrefix: "E-OR"
         )
     }
 
@@ -289,7 +295,7 @@ extension ProvidersViewController {
             let json = self.json(result.output)
             let ok = result.code == 0 && json?["ok"] as? Bool == true
             let status = json?["status"] as? String ?? (ok ? "connected" : "failed")
-            let detail = self.structuredPublicDetail(json, fallback: result.output)
+            let detail = self.structuredPublicDetail(json, fallback: result.output, codePrefix: "E-OR")
             _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: ok ? "OpenRouter connection ready" : "OpenRouter connection needs action")
             self.openRouterStatus.stringValue = ok
                 ? "Connection test passed · \(model) · \(status). Next: activate it if you want it as the main model."
@@ -347,7 +353,7 @@ extension ProvidersViewController {
             let json = self.json(result.output)
             let ok = result.code == 0 && json?["ok"] as? Bool == true
             let status = json?["status"] as? String ?? (ok ? "restored" : "failed")
-            let detail = self.structuredPublicDetail(json, fallback: result.output)
+            let detail = self.structuredPublicDetail(json, fallback: result.output, codePrefix: "E-OR")
             // Routing rolls back before the sidebar retag, so a blocked retag is
             // partial success: the snapshot is kept and re-running finishes it.
             let sidebarBlocked = status.hasPrefix("restored_sidebar")
@@ -415,7 +421,7 @@ extension ProvidersViewController {
                 } else if configApplied {
                     self.openRouterStatus.stringValue = "Configuration saved · main model \(model) is selected, but Codex App did not restart. Next: reopen Codex App, then verify status."
                 } else {
-                    self.openRouterStatus.stringValue = "Activation incomplete · requested \(model), observed \(activeModel ?? "unknown") · \(self.structuredPublicDetail(activationJson, fallback: activation.output))"
+                    self.openRouterStatus.stringValue = "Activation incomplete · requested \(model), observed \(activeModel ?? "unknown") · \(self.structuredPublicDetail(activationJson, fallback: activation.output, codePrefix: "E-OR"))"
                 }
                 self.refreshOpenRouterStatus()
             }
@@ -426,14 +432,60 @@ extension ProvidersViewController {
         openRouterModelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func structuredPublicDetail(_ json: [String: Any]?, fallback: String) -> String {
+    /// One shared failure format: stable code · HTTP · transport · public message · Next: one action.
+    /// `codePrefix` keeps codes honest per surface (E-LB / E-OR); the neutral default next-step keeps OpenRouter failures from advertising Codex LB recovery actions.
+    func structuredPublicDetail(_ json: [String: Any]?, fallback: String, codePrefix: String = "E-LB", fallbackNext: String = "review the key, model id, and network, then retry") -> String {
+        let code = publicFailureCode(json, codePrefix: codePrefix)
+        let http = publicHttpStatus(json).map { "HTTP \($0)" }
+        let transport = publicAuthTransport(json)
+        let error = publicError(json)
+        var parts: [String] = [code]
+        if let http { parts.append(http) }
+        if let transport { parts.append("transport \(transport)") }
+        if let error, !error.isEmpty { parts.append(error) }
         if let blockers = json?["blockers"] as? [String], !blockers.isEmpty {
-            let error = publicError(json).map { " · \($0)" } ?? ""
-            return "Reason: \(blockers.joined(separator: ", ").replacingOccurrences(of: "_", with: " "))\(error). Next: \((json?["hint"] as? String) ?? "review the key, model id, and network, then retry")."
+            parts.append(blockers.prefix(2).joined(separator: ", "))
         }
-        if let error = publicError(json), !error.isEmpty { return "Reason: \(error). Next: review the key, model id, and network, then retry." }
-        if let hint = json?["hint"] as? String, !hint.isEmpty { return "Next: \(hint)." }
-        return "Next: \(NativeView.redactPreview(fallback))"
+        let next = firstGuidance(json) ?? (json?["hint"] as? String) ?? fallbackNext
+        return "\(parts.joined(separator: " · ")). Next: \(next)."
+    }
+
+    func publicFailureCode(_ json: [String: Any]?, codePrefix: String = "E-LB") -> String {
+        let blockers = json?["blockers"] as? [String] ?? []
+        let truth = json?["routing_truth"] as? [String: Any]
+        let truthBlockers = truth?["blockers"] as? [String] ?? []
+        let all = blockers + truthBlockers
+        if all.contains(where: { $0.contains("auth_rejected") || $0.contains("gateway_auth_rejected") }) {
+            return "\(codePrefix)-AUTH"
+        }
+        if all.contains(where: { $0.contains("unreachable") }) { return "\(codePrefix)-UNREACHABLE" }
+        if all.contains(where: { $0.contains("legacy") && $0.contains("migration") }) { return "\(codePrefix)-LEGACY-MIGRATE" }
+        if let http = publicHttpStatus(json), http >= 400 { return "\(codePrefix)-HTTP-\(http)" }
+        if json == nil || json?["ok"] as? Bool == false { return "\(codePrefix)-FAILED" }
+        return "\(codePrefix)-INFO"
+    }
+
+    func publicHttpStatus(_ json: [String: Any]?) -> Int? {
+        if let value = json?["http_status"] as? Int { return value }
+        if let value = (json?["http_status"] as? NSNumber)?.intValue { return value }
+        let truth = json?["routing_truth"] as? [String: Any]
+        if let value = truth?["http_status"] as? Int { return value }
+        return (truth?["http_status"] as? NSNumber)?.intValue
+    }
+
+    func publicAuthTransport(_ json: [String: Any]?) -> String? {
+        if let value = json?["gateway_auth_transport"] as? String, !value.isEmpty { return value }
+        if let value = json?["auth_transport"] as? String, !value.isEmpty { return value }
+        let truth = json?["routing_truth"] as? [String: Any]
+        if let value = truth?["auth_transport"] as? String, !value.isEmpty { return value }
+        return nil
+    }
+
+    func firstGuidance(_ json: [String: Any]?) -> String? {
+        if let rows = json?["guidance"] as? [String] {
+            return rows.first { !$0.isEmpty }
+        }
+        return nil
     }
 
     func publicError(_ json: [String: Any]?) -> String? {

@@ -1,7 +1,7 @@
-# SKS 8.1.0 Release Readiness
+# SKS 8.1.1 Release Readiness
 
 This document is the current fail-closed release contract for `sneakoscope`
-8.1.0. The current package version on this branch is 8.1.0. It is a readiness
+8.1.1. The current package version on this branch is 8.1.1. It is a readiness
 checklist, not evidence that the version has already been published.
 
 ## Required vs recommended evidence
@@ -346,7 +346,7 @@ Inspect the exact packed file list and tarball, not only the source checkout.
 - generated project guidance contains only current dollar routes;
 - an isolated prefix install can run version, help, doctor, Naruto status, MCP
   status, update status, and Menu Bar diagnostics;
-- the 7.6.0 to 8.1.0 upgrade smoke and focused 8.0.4-to-8.0.5 resolved-CLI
+- the 7.6.0 to 8.1.1 upgrade smoke and focused 8.0.4-to-8.0.5 resolved-CLI
   regression use isolated HOME/prefix state and prove managed
   cleanup, user-file preservation, new-binary re-exec, rollback receipts,
   exact lifecycle command inventory, no timeout, no host HOME/prefix reuse,
@@ -356,7 +356,7 @@ Inspect the exact packed file list and tarball, not only the source checkout.
 - Linux package smoke and macOS native/Menu Bar smoke both pass.
 
 Record the tarball path, size, SHA-256, integrity, file inventory, installed
-smoke report, and platform-gate reports under the 8.1.0 release evidence root.
+smoke report, and platform-gate reports under the 8.1.1 release evidence root.
 
 ## Version Cut (Step 1, Before Local Verification)
 
@@ -376,7 +376,7 @@ one-time 7.6.0-to-8.0.0 `major` cut already shipped; do not rerun a version
 command after `package.json` reports 8.1.0.
 
 Package metadata, lockfile, runtime constants, Rust metadata, managed assets,
-README, changelog, built output, and release evidence must agree on 8.1.0.
+README, changelog, built output, and release evidence must agree on 8.1.1.
 Sneakoscope does not install or rely on a Git pre-commit version hook.
 
 ## Trusted Staged Publishing
@@ -441,7 +441,7 @@ A maintainer then performs the separate human approval step with 2FA:
 npm stage approve <stage-id>
 ```
 
-Automation must stop before this approval. It must not claim that 8.1.0 is
+Automation must stop before this approval. It must not claim that 8.1.1 is
 published while only a stage exists.
 
 Because the trusted publisher is bound to the configured workflow on the
@@ -454,13 +454,13 @@ not restaged until the cause and version-uniqueness state are understood.
 After maintainer approval, verify the live registry independently:
 
 ```bash
-npm view sneakoscope@8.1.0 version dist.integrity dist.tarball --json
+npm view sneakoscope@8.1.1 version dist.integrity dist.tarball --json
 npm view sneakoscope dist-tags --json
 ```
 
-Then install `sneakoscope@8.1.0` into a fresh isolated prefix and rerun the
+Then install `sneakoscope@8.1.1` into a fresh isolated prefix and rerun the
 installed-package smoke. Completion requires the registry version to be
-8.1.0, `latest` to resolve to 8.1.0, integrity to match, and the fresh install
+8.1.1, `latest` to resolve to 8.1.1, integrity to match, and the fresh install
 to pass.
 
 ## Fail-Closed Rules

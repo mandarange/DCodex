@@ -253,12 +253,15 @@ export function upsertCodexLbConfig(text: any = '', baseUrl: any, selectDefault 
 }
 
 function cliProviderBlock(remoteBaseUrl: string): string {
+  // Codex maps env_key to Authorization: Bearer. Custom X-Codex-LB-API-Key
+  // headers are not used for the atomic CLI provider — gateways that only
+  // accept Bearer (e.g. Hyper-Lab) stay reachable without a transport picker.
   return [
     '[model_providers.codex-lb]',
     'name = "codex-lb"',
     `base_url = ${JSON.stringify(remoteBaseUrl)}`,
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false'
   ].join('\n');

@@ -500,7 +500,7 @@ test('codex-lb health tests stored credentials without globally selecting the CL
     '[model_providers.codex-lb]',
     'name = "codex-lb"',
     `base_url = "${baseUrl}"`,
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'wire_api = "responses"',
     'supports_websockets = true',
     'requires_openai_auth = false',
@@ -538,6 +538,6 @@ test('codex-lb health tests stored credentials without globally selecting the CL
   assert.equal(json.codex_lb.selected, false);
   assert.equal(json.model_selection.source, 'global_config');
   assert.deepEqual(requests.map((request) => request.previous_response_id), [null, 'resp_health_1']);
-  assert.ok(requests.every((request) => request.authorization === undefined));
-  assert.ok(requests.every((request) => request.gateway_api_key === 'sk-clb-health-fixture'));
+  assert.ok(requests.every((request) => request.authorization === 'Bearer sk-clb-health-fixture'));
+  assert.ok(requests.every((request) => request.gateway_api_key === undefined));
 });

@@ -588,7 +588,7 @@ async function ensurePythonCodexLbConfig(env: Record<string, string>, config: Re
     'name = "codex-lb"',
     `base_url = ${tomlQuote(lbBaseUrl)}`,
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''

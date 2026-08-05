@@ -167,14 +167,17 @@ function codexLbServiceTierEvidence(...responses: any[]) {
   };
 }
 
-function codexLbGatewayHeaders(apiKey: any, authTransport: any = 'x-codex-lb-api-key') {
-  const credentialHeader = String(authTransport).startsWith('authorization-bearer')
-    ? { authorization: `Bearer ${String(apiKey)}` }
-    : { 'X-Codex-LB-API-Key': String(apiKey) };
+// Default matches the atomic CLI provider contract: env_key ⇒ Authorization:
+// Bearer. The custom X-Codex-LB-API-Key header is only used when a stored
+// desktop-bridge transport explicitly asks for it.
+function codexLbGatewayHeaders(apiKey: any, authTransport: any = 'authorization-bearer-compat') {
+  const credentialHeader = authTransport === 'x-codex-lb-api-key'
+    ? { 'X-Codex-LB-API-Key': String(apiKey) }
+    : { authorization: `Bearer ${String(apiKey)}` };
   return { ...credentialHeader, 'content-type': 'application/json' };
 }
 
-async function fetchCodexLbResponse(fetchImpl: any, endpoint: any, apiKey: any, body: any, timeoutMs: any, authTransport: any = 'x-codex-lb-api-key') {
+async function fetchCodexLbResponse(fetchImpl: any, endpoint: any, apiKey: any, body: any, timeoutMs: any, authTransport: any = 'authorization-bearer-compat') {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs).unref?.();
   try {
@@ -426,7 +429,7 @@ export async function checkCodexLbResponseChain(status: any = {}, opts: any = {}
   const model = String(opts.model || env.SKS_CODEX_MODEL || env.CODEX_MODEL || '').trim();
   if (!model) return { ok: true, status: 'skipped', skipped: true, reason: 'model_unselected_use_explicit_model_or_codex_catalog' };
   const timeoutMs = Number(opts.timeoutMs || env.SKS_CODEX_LB_CHAIN_CHECK_TIMEOUT_MS || 8000);
-  const gatewayAuthTransport = opts.gatewayAuthTransport || 'x-codex-lb-api-key';
+  const gatewayAuthTransport = opts.gatewayAuthTransport || 'authorization-bearer-compat';
   const serviceTier = opts.fastMode === true || opts.serviceTier === 'fast' || opts.serviceTier === CODEX_LB_CANONICAL_FAST_SERVICE_TIER
     ? CODEX_LB_CANONICAL_FAST_SERVICE_TIER
     : null;

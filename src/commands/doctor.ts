@@ -602,8 +602,10 @@ export async function codexLbRoutingTruthForStatus(
     const loaded = await loadCodexLbEnv({ ...envOptions, processEnv: {} });
     const baseUrl = loaded.base_url || status.base_url || null;
     const configuredHost = publicUrlHost(baseUrl);
+    // Plane rule: the CLI provider always sends Authorization: Bearer via
+    // env_key; only the bridge plane follows stored transport metadata.
     const authTransport = mode === 'cli-provider'
-      ? 'x-codex-lb-api-key'
+      ? 'authorization-bearer'
       : doctorBridgeRoutingTransport(status, receipt);
     const contextReceipt = await readCodexLbRoutingTruthReceipt({
       ...receiptOptions,
@@ -630,7 +632,7 @@ export async function codexLbRoutingTruthForStatus(
       baseUrl: status.base_url || null,
       apiKey: null,
       authTransport: mode === 'cli-provider'
-        ? 'x-codex-lb-api-key'
+        ? 'authorization-bearer'
         : doctorBridgeRoutingTransport(status, receipt),
       measure: false
     }, {
@@ -653,9 +655,9 @@ function doctorBridgeRoutingTransport(
       || receipt.auth_transport === 'x-codex-lb-api-key')) {
     return receipt.auth_transport;
   }
-  return status?.gateway_auth_transport === 'authorization-bearer-compat'
-    ? 'authorization-bearer'
-    : 'x-codex-lb-api-key';
+  return status?.gateway_auth_transport === 'x-codex-lb-api-key'
+    ? 'x-codex-lb-api-key'
+    : 'authorization-bearer';
 }
 
 function publicUrlHost(value: unknown): string | null {

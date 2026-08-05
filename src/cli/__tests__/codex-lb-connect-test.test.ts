@@ -86,8 +86,8 @@ test('connect test sends exactly one bounded, non-stored Responses request and r
   });
   assert.equal('tools' in fixture.body(), false);
   assert.equal('previous_response_id' in fixture.body(), false);
-  assert.equal(fixture.headers()?.['x-codex-lb-api-key'], API_KEY);
-  assert.equal(fixture.headers()?.authorization, undefined);
+  assert.equal(fixture.headers()?.authorization, `Bearer ${API_KEY}`);
+  assert.equal(fixture.headers()?.['x-codex-lb-api-key'], undefined);
   assert.deepEqual(result, {
     schema: 'sks.codex-lb-connect-test.v1',
     ok: true,

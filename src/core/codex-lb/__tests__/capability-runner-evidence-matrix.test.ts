@@ -151,8 +151,8 @@ test('manifest/config and fixture transport evidence never become verified readi
   assert.ok(status.available_unverified.includes('image_generation'))
 })
 
-test('gateway auth distinguishes preferred header from explicit legacy compatibility without silent fallback', () => {
-  const preferred = runCodexLbDesktopCapabilityReport({
+test('gateway auth prefers Authorization Bearer and still accepts custom header without silent fallback', () => {
+  const customHeader = runCodexLbDesktopCapabilityReport({
     mode: 'cli-provider',
     checkedAt,
     gatewayAuth: {
@@ -161,7 +161,7 @@ test('gateway auth distinguishes preferred header from explicit legacy compatibi
       observed: true
     }
   })
-  const implicitLegacy = runCodexLbDesktopCapabilityReport({
+  const bearer = runCodexLbDesktopCapabilityReport({
     mode: 'cli-provider',
     checkedAt,
     gatewayAuth: {
@@ -170,23 +170,13 @@ test('gateway auth distinguishes preferred header from explicit legacy compatibi
       observed: true
     }
   })
-  const explicitLegacy = runCodexLbDesktopCapabilityReport({
-    mode: 'cli-provider',
-    checkedAt,
-    gatewayAuth: {
-      transport: 'authorization-bearer-compat',
-      configured: true,
-      observed: true,
-      legacyCompatibilityExplicit: true
-    }
-  })
 
-  assert.equal(preferred.gateway_auth_transport.state, 'verified')
-  assert.equal(preferred.gateway_auth_transport.evidence.silent_fallback, false)
-  assert.equal(implicitLegacy.gateway_auth_transport.state, 'blocked')
-  assert.ok(implicitLegacy.gateway_auth_transport.blockers.includes('legacy_gateway_auth_compatibility_not_explicit'))
-  assert.equal(explicitLegacy.gateway_auth_transport.state, 'verified')
-  assert.deepEqual(explicitLegacy.gateway_auth_transport.warnings, ['legacy_authorization_bearer_compatibility_active'])
+  assert.equal(bearer.gateway_auth_transport.state, 'verified')
+  assert.equal(bearer.gateway_auth_transport.evidence.preferred_authorization_bearer, true)
+  assert.equal(bearer.gateway_auth_transport.evidence.silent_fallback, false)
+  assert.equal(customHeader.gateway_auth_transport.state, 'verified')
+  assert.equal(customHeader.gateway_auth_transport.evidence.preferred_custom_header, true)
+  assert.deepEqual(customHeader.gateway_auth_transport.warnings, ['custom_x_codex_lb_api_key_transport_active'])
 })
 
 test('Fast evidence distinguishes configured, catalog-advertised, and effective priority processing', () => {

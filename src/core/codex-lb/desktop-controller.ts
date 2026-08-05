@@ -280,11 +280,13 @@ export async function codexLbDesktopStatusV2(
   const routingActive = configuredRoutingActive
     && codexLbRoutingTruthIsActive(routingTruth);
   const diagnosticOk = uniqueBlockers.length === 0 && !overallBlocked;
-  const effectiveGatewayAuthTransport = context.mode === 'cli-provider'
-    ? 'x-codex-lb-api-key'
-    : context.mode === 'desktop-native-bridge' || context.mode === 'desktop-dual-auth-compat'
-      ? context.gatewayAuthTransport
-      : null;
+  // Plane rule: cli-provider traffic is structurally Bearer (env_key); the
+  // stored desktop-bridge metadata is reported separately below.
+  const effectiveGatewayAuthTransport = context.mode === 'disabled'
+    ? null
+    : context.mode === 'cli-provider'
+      ? 'authorization-bearer-compat'
+      : context.gatewayAuthTransport;
   return {
     schema: CODEX_LB_STATUS_SCHEMA_V2,
     ok: diagnosticOk && routingActive,
@@ -362,7 +364,8 @@ export async function activateCodexLbDesktopMode(
       mode: input.mode,
       identity_plane: 'unchanged',
       routing_plane: 'unchanged',
-      gateway_auth_transport: 'x-codex-lb-api-key',
+      gateway_auth_transport: input.gatewayAuthTransport
+        || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT,
       oauth_preserved: true,
       bridge_started: false,
       config_committed: false,
@@ -727,12 +730,13 @@ export async function configureCodexLbCliMode(
 ): Promise<Record<string, unknown>> {
   const context = await loadDesktopContext(input);
   const selectedBefore = topLevelTomlString(context.config, 'model_provider') === 'codex-lb';
+  const cliAuthTransport = routingTruthAuthTransport('cli-provider', context.gatewayAuthTransport);
   const routingTruth = await measureAndWriteCodexLbRoutingTruth({
     mode: 'cli-provider',
     selected: true,
     baseUrl: context.loadedEnv.base_url,
     apiKey: context.loadedEnv.secret_api_key,
-    authTransport: 'x-codex-lb-api-key',
+    authTransport: cliAuthTransport,
     ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
     ...(input.capabilityTimeoutMs ? { timeoutMs: input.capabilityTimeoutMs } : {})
   }, {
@@ -949,6 +953,7 @@ export async function buildCodexLbDesktopCapabilities(
       baseUrl: target.baseUrl,
       apiKey: context.loadedEnv.secret_api_key || '',
       model,
+      gatewayAuthTransport: target.effectiveTransport,
       fetchImpl: input.fetchImpl || globalThis.fetch,
       ...(envTimeout > 0 ? { timeoutMs: envTimeout } : {})
     });
@@ -978,11 +983,11 @@ export async function buildCodexLbDesktopCapabilities(
     oauthPreserved: context.oauthPresent,
     manifest,
     gatewayAuth: {
-      transport: cliPlane ? 'x-codex-lb-api-key' : context.gatewayAuthTransport,
+      transport: cliPlane ? 'authorization-bearer-compat' : context.gatewayAuthTransport,
       configured: context.loadedEnv.configured,
       observed: gatewayObserved,
       fixture,
-      legacyCompatibilityExplicit: context.gatewayAuthTransport === 'authorization-bearer-compat',
+      legacyCompatibilityExplicit: false,
       blockers: [
         ...(gatewayAuthRejected
           ? [`codex_lb_gateway_auth_rejected_for_transport:${target?.effectiveTransport || context.gatewayAuthTransport}`]
@@ -1465,8 +1470,8 @@ function providerStatus(config: string, mode: CodexLbDesktopMode): {
   const cliContractOk = Boolean(provider)
     && hasTomlString(provider, 'name', 'codex-lb')
     && hasTomlString(provider, 'wire_api', 'responses')
-    && /"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"/.test(provider)
-    && !/(?:^|\n)\s*env_key\s*=/.test(provider)
+    && /(?:^|\n)\s*env_key\s*=\s*"CODEX_LB_API_KEY"\s*$/m.test(provider)
+    && !/"X-Codex-LB-API-Key"\s*=\s*"CODEX_LB_API_KEY"/.test(provider)
     && hasTomlBoolean(provider, 'requires_openai_auth', false)
     && hasTomlBoolean(provider, 'supports_websockets', true);
   if (mode === 'cli-provider') {
@@ -1776,12 +1781,14 @@ function capabilityTarget(context: DesktopContext): {
       effectiveTransport: context.gatewayAuthTransport
     };
   }
-  // CLI-provider plane: Codex maps CODEX_LB_API_KEY into the dedicated gateway
-  // header through env_http_headers. Probes must use that same transport; the
-  // independently configured desktop-bridge transport does not apply here.
-  const effectiveTransport = context.mode === 'cli-provider'
+  // Plane rule: the atomic CLI provider authenticates the way Codex itself
+  // does — env_key ⇒ Authorization: Bearer — so cli-provider probes never
+  // follow desktop-bridge transport metadata. Direct bridge-plane fallbacks
+  // keep the stored transport the bridge forwards upstream.
+  const effectiveTransport = context.mode !== 'cli-provider'
+      && context.gatewayAuthTransport === 'x-codex-lb-api-key'
     ? 'x-codex-lb-api-key' as const
-    : context.gatewayAuthTransport;
+    : 'authorization-bearer-compat' as const;
   const headers = effectiveTransport === 'x-codex-lb-api-key'
     ? { 'X-Codex-LB-API-Key': context.loadedEnv.secret_api_key }
     : { Authorization: `Bearer ${context.loadedEnv.secret_api_key}` };
@@ -2003,7 +2010,20 @@ function statusGuidance(
       `The gateway rejected the configured auth transport (${rejectedTransport}).`,
       rejectedTransport === 'x-codex-lb-api-key'
         ? 'If the gateway expects an Authorization header, re-run setup with: --gateway-auth bearer-compat'
-        : 'If the gateway expects the custom header, re-run setup with: --gateway-auth custom-header'
+        : 'If the gateway expects the custom header, use Desktop Bridge mode with: --gateway-auth custom-header (the atomic CLI provider is always Authorization: Bearer)'
+    ];
+  }
+  if (blockers.includes('codex_lb_auth_rejected')) {
+    return [
+      'The gateway rejected the API key (HTTP 401/403) over Authorization: Bearer.',
+      'Reconnect the Codex LB credential in Center, or re-run: sks codex-lb setup --host <domain> --api-key-stdin --yes',
+      'Then re-verify with: sks codex-lb connect-test'
+    ];
+  }
+  if (blockers.includes('codex_lb_endpoint_unreachable')) {
+    return [
+      'The gateway host could not be reached (network, DNS, or TLS).',
+      'Verify the host, then re-run: sks codex-lb connect-test'
     ];
   }
   if (mode === 'desktop-native-bridge') {
@@ -2063,11 +2083,13 @@ function routingTruthAuthTransport(
   mode: CodexLbDesktopMode,
   gatewayAuthTransport: CodexLbGatewayAuthTransport
 ): CodexLbRoutingTruthAuthTransport {
-  if (mode === 'cli-provider'
-    || (mode === 'desktop-native-bridge' && gatewayAuthTransport === 'x-codex-lb-api-key')) {
-    return 'x-codex-lb-api-key';
-  }
-  return 'authorization-bearer';
+  // Plane rule: the CLI provider plane always measures with Authorization:
+  // Bearer because env_key is the only contract shape Codex accepts there.
+  // Only bridge-plane measurements follow the stored transport metadata.
+  if (mode !== 'desktop-native-bridge') return 'authorization-bearer';
+  return gatewayAuthTransport === 'x-codex-lb-api-key'
+    ? 'x-codex-lb-api-key'
+    : 'authorization-bearer';
 }
 
 function publicHost(baseUrl: string | null): string | null {

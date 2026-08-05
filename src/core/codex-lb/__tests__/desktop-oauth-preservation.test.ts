@@ -110,13 +110,13 @@ test('CLI provider stays separate and does not alter Desktop OAuth', async (t) =
     'name = "codex-lb"',
     `base_url = "${REMOTE}"`,
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
   ].join('\n'));
   assert.doesNotMatch(config, /^model_provider\s*=/m);
-  assert.doesNotMatch(config, /^env_key\s*=/m);
+  assert.match(config, /^env_key\s*=\s*"CODEX_LB_API_KEY"$/m);
   assert.match(config, /^requires_openai_auth\s*=\s*false$/m);
 });
 

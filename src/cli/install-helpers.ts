@@ -2140,9 +2140,11 @@ function codexLbProviderEnvKey(text: any = '') {
 
 function codexLbProviderHasSeparateGatewayAuth(text: any = '') {
   const block = String(text || '').match(/(^|\n)\[model_providers\.codex-lb\]([\s\S]*?)(?=\n\[[^\]]+\]|\s*$)/)?.[2] || '';
-  return /X-Codex-LB-API-Key/.test(block)
-    && /CODEX_LB_API_KEY/.test(block)
-    && !/(^|\n)\s*env_key\s*=/.test(block);
+  // Canonical CLI contract: Codex-native Authorization: Bearer via env_key.
+  // A leftover custom-header block is contract drift (repair rewrites it),
+  // keeping this check consistent with desktop-controller providerStatus.
+  return /(^|\n)\s*env_key\s*=\s*"CODEX_LB_API_KEY"\s*(?:#.*)?(?=\n|$)/.test(block)
+    && !/X-Codex-LB-API-Key/.test(block);
 }
 
 function codexLbFastModeConfigStatus(text: any = '') {

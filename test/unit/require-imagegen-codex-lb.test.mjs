@@ -20,7 +20,7 @@ test('selected ready codex-lb satisfies real UX and PPT imagegen preflight witho
     'name = "codex-lb"',
     `base_url = "${baseUrl}"`,
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false'
   ].join('\n'));
@@ -37,7 +37,7 @@ test('selected ready codex-lb satisfies real UX and PPT imagegen preflight witho
     selected: true,
     baseUrl,
     apiKey,
-    authTransport: 'x-codex-lb-api-key',
+    authTransport: 'authorization-bearer',
     fetchImpl: async () => new Response('{"data":[]}', { status: 200 })
   }, {
     receiptPath: path.join(codexHome, 'sks-codex-lb-routing-truth.json')

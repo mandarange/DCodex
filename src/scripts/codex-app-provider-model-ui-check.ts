@@ -135,7 +135,7 @@ function readyConfig() {
     'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''
@@ -149,7 +149,7 @@ function codexLbOnlyConfig() {
     'name = "codex-lb"',
     'base_url = "https://lb.example.test/backend-api/codex"',
     'wire_api = "responses"',
-    'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+    'env_key = "CODEX_LB_API_KEY"',
     'supports_websockets = true',
     'requires_openai_auth = false',
     ''

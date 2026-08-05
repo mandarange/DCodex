@@ -92,7 +92,10 @@ export async function run(command: any, args: any = []) {
       baseUrl: loadedEnv.base_url,
       apiKey: loadedEnv.secret_api_key,
       credentialBindingBlockers: loadedEnv.credential_binding.blockers,
-      gatewayAuthTransport: options.gatewayAuthTransport || loadedEnv.gateway_auth_transport || undefined
+      gatewayAuthTransport: options.gatewayAuthTransport
+        || (directGatewayProbeTransport(status, loadedEnv) === 'x-codex-lb-api-key'
+          ? 'x-codex-lb-api-key'
+          : 'authorization-bearer-compat')
     });
     if (!result.ok) process.exitCode = 1;
     if (flag(args, '--json')) return printJson(result);
@@ -133,7 +136,7 @@ export async function run(command: any, args: any = []) {
       selected: status.selected === true,
       baseUrl: loadedEnv.base_url,
       apiKey: loadedEnv.secret_api_key,
-      authTransport: 'x-codex-lb-api-key'
+      authTransport: directGatewayProbeTransport(status, loadedEnv)
     }, {
       home: path.dirname(path.dirname(status.env_path))
     });
@@ -170,7 +173,7 @@ export async function run(command: any, args: any = []) {
       selected: status.selected === true,
       baseUrl: loadedEnv.base_url,
       apiKey: loadedEnv.secret_api_key,
-      authTransport: 'x-codex-lb-api-key'
+      authTransport: directGatewayProbeTransport(status, loadedEnv)
     }, {
       home: path.dirname(path.dirname(status.env_path))
     });
@@ -437,6 +440,28 @@ export async function run(command: any, args: any = []) {
   }
   if (action === 'setup' || action === 'reconfigure') {
     const options = await codexLbSetupOptions(args);
+    if (options.desktopMode === 'cli-provider' && options.gatewayAuthTransport === 'x-codex-lb-api-key') {
+      // Fail closed: the atomic CLI provider is env_key ⇒ Authorization: Bearer
+      // only. Recording an unusable custom-header transport would make probes
+      // measure a route real Codex traffic cannot take.
+      const result = {
+        schema: 'sks.codex-lb-setup.v1',
+        ok: false,
+        status: 'custom_header_transport_requires_desktop_bridge',
+        guidance: [
+          'The atomic CLI provider always sends Authorization: Bearer (Codex env_key).',
+          'For a gateway that only accepts the X-Codex-LB-API-Key header, use Desktop Bridge mode:',
+          'sks codex-lb setup --host <domain> --desktop-mode desktop-full --gateway-auth custom-header --api-key-stdin --yes'
+        ]
+      };
+      if (flag(args, '--json')) {
+        process.exitCode = 1;
+        return printJson(result);
+      }
+      console.error('codex-lb setup rejected: --gateway-auth custom-header only applies to Desktop Bridge mode; the CLI provider always uses Authorization: Bearer.');
+      process.exitCode = 1;
+      return;
+    }
     const plan = buildCodexLbSetupPlan({
       host_or_base_url: options.host || '',
       api_key_source: options.apiKeySource,
@@ -550,12 +575,6 @@ export async function run(command: any, args: any = []) {
         mode: 'desktop-native-bridge',
         gatewayAuthTransport: options.gatewayAuthTransport
       });
-    } else if (result.ok && options.desktopMode === 'desktop-dual-auth-compat') {
-      desktopActivation = await activateCodexLbDesktopMode({
-        ...controllerOptions(args),
-        mode: 'desktop-dual-auth-compat',
-        gatewayAuthTransport: 'x-codex-lb-api-key'
-      });
     }
     const capabilities = options.health && result.ok
       ? await buildCodexLbDesktopCapabilities({
@@ -570,7 +589,8 @@ export async function run(command: any, args: any = []) {
           selected: result.codex_lb?.selected === true,
           baseUrl: result.base_url || null,
           apiKey: options.apiKey,
-          authTransport: 'x-codex-lb-api-key'
+          // cli-provider setup is always env_key ⇒ Authorization: Bearer.
+          authTransport: 'authorization-bearer'
         }, {
           home: path.dirname(path.dirname(result.env_path))
         })
@@ -1075,22 +1095,40 @@ function normalizeDesktopSetupMode(value: unknown): CodexLbDesktopMode {
   throw new Error(`unsupported_codex_lb_desktop_mode:${normalized}`);
 }
 
+/**
+ * Plane rule for direct-to-gateway probes: the atomic CLI provider always
+ * authenticates like Codex itself (env_key ⇒ Authorization: Bearer). Only
+ * desktop-bridge installs emulate the stored transport the bridge forwards.
+ */
+function directGatewayProbeTransport(
+  status: any,
+  loadedEnv: any
+): 'authorization-bearer' | 'x-codex-lb-api-key' {
+  return status?.desktop_mode === 'desktop-native-bridge'
+      && loadedEnv?.gateway_auth_transport === 'x-codex-lb-api-key'
+    ? 'x-codex-lb-api-key'
+    : 'authorization-bearer';
+}
+
 function normalizeGatewayAuthChoice(value: unknown): CodexLbGatewayAuthTransport {
   const normalized = String(value || '').trim().toLowerCase();
+  // Default is Authorization: Bearer; the custom header is an explicit,
+  // desktop-bridge-only escape.
   if (
     !normalized
-    || normalized === 'custom-header'
+    || normalized === 'bearer'
+    || normalized === 'bearer-compat'
+    || normalized === 'authorization-bearer'
+    || normalized === 'authorization-bearer-compat'
+  ) {
+    return 'authorization-bearer-compat';
+  }
+  if (
+    normalized === 'custom-header'
     || normalized === 'header'
     || normalized === 'x-codex-lb-api-key'
   ) {
     return 'x-codex-lb-api-key';
-  }
-  if (
-    normalized === 'bearer'
-    || normalized === 'bearer-compat'
-    || normalized === 'authorization-bearer-compat'
-  ) {
-    return 'authorization-bearer-compat';
   }
   throw new Error(`unsupported_codex_lb_gateway_auth_transport:${normalized}`);
 }
@@ -1129,7 +1167,7 @@ async function codexLbSetupOptions(args: any = []) {
   let gatewayAuthTransport = parseCodexLbGatewayAuthTransport(
     normalizeGatewayAuthChoice(flag(args, '--compat-bearer')
       ? 'authorization-bearer-compat'
-      : readOption(args, '--gateway-auth', readOption(args, '--gateway-auth-transport', 'x-codex-lb-api-key')))
+      : readOption(args, '--gateway-auth', readOption(args, '--gateway-auth-transport', 'bearer-compat')))
   );
   let keychain = flag(args, '--keychain');
   if (flag(args, '--api-key-stdin')) apiKey = (await readStdin()).trim();
@@ -1150,17 +1188,19 @@ async function codexLbSetupOptions(args: any = []) {
     apiKey ||= (await askHidden('2. API key?\n   Input hidden. Value will be stored securely and never printed.\n> ')).trim();
     apiKeySource = 'hidden_prompt';
     desktopMode = normalizeDesktopSetupMode(
-      (await ask('3. Configure which mode? [desktop-full/cli-only] (desktop-full)\n> ')).trim()
-      || 'desktop-full'
+      (await ask('3. Configure which mode? [cli-only/desktop-full] (cli-only)\n> ')).trim()
+      || 'cli-only'
     );
     if (desktopMode === 'desktop-native-bridge') {
       gatewayAuthTransport = parseCodexLbGatewayAuthTransport(
         normalizeGatewayAuthChoice(
-          (await ask('4. Gateway key transport? [custom-header/bearer-compat] (custom-header)\n> ')).trim()
+          (await ask('4. Gateway key transport? [bearer-compat/custom-header] (bearer-compat)\n> ')).trim()
         )
       );
     } else {
-      gatewayAuthTransport = 'x-codex-lb-api-key';
+      // The atomic CLI provider always authenticates with Authorization:
+      // Bearer (env_key); there is no transport choice on this plane.
+      gatewayAuthTransport = 'authorization-bearer-compat';
     }
     writeEnvFile = parseYesNo(await ask('5. Write shell env loader to ~/.codex/sks-codex-lb.env? [Y/n] '), true);
     keychain = false;

@@ -1,6 +1,6 @@
 # Sneakoscope Codex performance and leak policy
 
-Sneakoscope Codex 8.1.0 is designed to keep runtime, package size, RAM, and storage bounded.
+Sneakoscope Codex 8.1.1 is designed to keep runtime, package size, RAM, and storage bounded.
 
 ## Speed
 
@@ -52,7 +52,7 @@ Each anchor stores id, RGBA key, `[domain, layer, phase, concentration]`, source
 
 ## Package size
 
-- Runtime dependencies remain explicit in `package.json`; the 8.1.0 package pins `@openai/codex-sdk` exactly to 0.146.0 and npm resolves its exact `@openai/codex` 0.146.0 dependency without vendoring that CLI package inside the SKS tarball. `SKS_CODEX_BIN` may select a separately installed compatible CLI.
+- Runtime dependencies remain explicit in `package.json`; the 8.1.1 package pins `@openai/codex-sdk` exactly to 0.146.0 and npm resolves its exact `@openai/codex` 0.146.0 dependency without vendoring that CLI package inside the SKS tarball. `SKS_CODEX_BIN` may select a separately installed compatible CLI.
 - Optional Rust source is in `crates/sks-core/` and is included in the npm package as source only. Build artifacts under `target/` stay excluded.
 - GX rendering uses only built-in Node.js APIs and ships as source in the npm package.
 - `npm run sizecheck` enforces package limits during `release:check`, local pack verification, and authorized publish: `<=2850 KiB` packed, `<=13,050,000 bytes` unpacked (about `12.45 MiB`), `<=2100` package files, and `<=384 KiB` per tracked file by default. The 8.0.4 BotFather/Center build measures `2,880,480` packed bytes and `12,980,920` unpacked bytes across `1,624` files after native tests and development-only fixtures are excluded, leaving `37,920` packed and `69,080` unpacked bytes of headroom.

@@ -78,28 +78,25 @@ export function gatewayAuthTransportEvidence(input: {
   blockers?: string[]
 }): CapabilityEvidence {
   const transport = input.transport || 'unknown'
-  const preferred = transport === 'x-codex-lb-api-key'
-  const standardBearer = transport === 'authorization-bearer'
-  const legacyExplicit = transport === 'authorization-bearer-compat'
-    && input.legacyCompatibilityExplicit === true
+  // Product default is Authorization: Bearer (authorization-bearer-compat).
+  // Custom X-Codex-LB-API-Key remains available for rare gateways only.
+  const preferredBearer = transport === 'authorization-bearer-compat'
+    || transport === 'authorization-bearer'
+  const customHeader = transport === 'x-codex-lb-api-key'
   return probeEvidence({
     configured: input.configured,
     attempted: input.observed,
-    verified: input.observed === true && (preferred || standardBearer || legacyExplicit),
+    verified: input.observed === true && (preferredBearer || customHeader),
     fixture: input.fixture,
     source: input.observed ? 'transport' : 'config',
-    blockers: [
-      ...(input.blockers || []),
-      ...(transport === 'authorization-bearer-compat' && !input.legacyCompatibilityExplicit
-        ? ['legacy_gateway_auth_compatibility_not_explicit']
-        : [])
-    ],
-    warnings: legacyExplicit ? ['legacy_authorization_bearer_compatibility_active'] : [],
+    blockers: [...(input.blockers || [])],
+    warnings: customHeader ? ['custom_x_codex_lb_api_key_transport_active'] : [],
     evidence: {
       configured_gateway_auth_transport: transport,
-      preferred_custom_header: preferred,
-      standard_authorization_bearer: standardBearer,
-      legacy_authorization_bearer_compatibility: legacyExplicit,
+      preferred_custom_header: customHeader,
+      preferred_authorization_bearer: preferredBearer,
+      standard_authorization_bearer: transport === 'authorization-bearer',
+      legacy_authorization_bearer_compatibility: false,
       silent_fallback: false,
       observed: input.observed === true
     }

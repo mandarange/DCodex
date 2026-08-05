@@ -96,7 +96,7 @@ export async function readCodexLbModelCatalog(opts: {
   loadedEnv?: CodexLbEnvLoadResult;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
-  gatewayAuthTransport?: 'x-codex-lb-api-key' | 'authorization-bearer-compat';
+  gatewayAuthTransport?: 'x-codex-lb-api-key' | 'authorization-bearer-compat' | 'authorization-bearer';
 } = {}): Promise<CodexLbModelCatalogResult> {
   const loaded = opts.loadedEnv || await loadCodexLbEnv();
   if (!loaded.configured || !loaded.base_url || !loaded.secret_api_key) {
@@ -123,10 +123,10 @@ export async function readCodexLbModelCatalog(opts: {
     };
   }
   const fetchImpl = opts.fetchImpl || fetch;
-  const gatewayAuthTransport = opts.gatewayAuthTransport || 'x-codex-lb-api-key';
-  const gatewayHeaders = gatewayAuthTransport === 'authorization-bearer-compat'
-    ? { Authorization: `Bearer ${loaded.secret_api_key}` }
-    : { 'X-Codex-LB-API-Key': loaded.secret_api_key };
+  const gatewayAuthTransport = opts.gatewayAuthTransport || DEFAULT_CODEX_LB_GATEWAY_AUTH_TRANSPORT;
+  const gatewayHeaders = gatewayAuthTransport === 'x-codex-lb-api-key'
+    ? { 'X-Codex-LB-API-Key': loaded.secret_api_key }
+    : { Authorization: `Bearer ${loaded.secret_api_key}` };
   try {
     const response = await fetchImpl(`${loaded.base_url}/models`, {
       headers: gatewayHeaders,

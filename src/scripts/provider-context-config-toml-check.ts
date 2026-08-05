@@ -15,7 +15,7 @@ const codexLbConfig = [
   'name = "codex-lb"',
   'base_url = "https://lb.example.test"',
   'wire_api = "responses"',
-  'env_http_headers = { "X-Codex-LB-API-Key" = "CODEX_LB_API_KEY" }',
+  'env_key = "CODEX_LB_API_KEY"',
   'requires_openai_auth = false',
   ''
 ].join('\n')
@@ -48,7 +48,8 @@ const malformed = await resolveProviderContext({
 
 const checks = {
   config_only_codex_lb: configOnlyLb.provider === 'codex-lb' && configOnlyLb.confidence === 'high' && configOnlyLb.source === 'config',
-  config_gateway_header_env_recorded: configOnlyLb.signals.codex_lb_gateway_header_env_key === 'CODEX_LB_API_KEY',
+  config_bearer_env_key_recorded: configOnlyLb.signals.codex_lb_env_key === 'CODEX_LB_API_KEY'
+    && configOnlyLb.signals.codex_lb_gateway_header_env_key === null,
   openai_selected_with_lb_available: openaiSelected.provider === 'openai' && openaiSelected.signals.codex_lb_available === true,
   malformed_unknown: malformed.provider === 'unknown' && malformed.warnings.includes('codex_lb_provider_config_missing_or_invalid')
 }

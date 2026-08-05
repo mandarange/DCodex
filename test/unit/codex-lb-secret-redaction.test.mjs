@@ -63,8 +63,8 @@ test('codex-lb setup redacts API keys from stdout and stderr', async () => {
     assert.ok(requests.some((request) => request.url === '/health' && request.authorization === undefined));
     const modelRequests = requests.filter((request) => request.url === '/backend-api/codex/models');
     assert.equal(modelRequests.length, 1);
-    assert.equal(modelRequests[0].authorization, undefined);
-    assert.equal(modelRequests[0].codexLbApiKey, secret);
+    assert.equal(modelRequests[0].authorization, `Bearer ${secret}`);
+    assert.equal(modelRequests[0].codexLbApiKey, undefined);
     const json = JSON.parse(result.stdout);
     assert.equal(json.api_key?.redacted, true);
     assert.doesNotMatch(JSON.stringify(json), new RegExp(secret));

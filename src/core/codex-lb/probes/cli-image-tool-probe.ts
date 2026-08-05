@@ -23,6 +23,7 @@ export interface CodexLbCliImageProbeInput {
   baseUrl: string
   apiKey: string
   model: string
+  gatewayAuthTransport?: 'authorization-bearer-compat' | 'authorization-bearer' | 'x-codex-lb-api-key'
   fetchImpl?: typeof fetch
   timeoutMs?: number
 }
@@ -30,11 +31,12 @@ export interface CodexLbCliImageProbeInput {
 export const DEFAULT_CLI_IMAGE_PROBE_TIMEOUT_MS = 90_000
 
 // CLI-plane verification: authenticate exactly like the Codex CLI codex-lb
-// provider contract (X-Codex-LB-API-Key from env_http_headers) and run one real,
-// minimal image generation through the gateway. A tool that merely round-trips
-// a text request does not prove image_generation, so the probe forces the tool
-// once and falls back to an acceptance check only when the gateway rejects the
-// forced tool_choice shape itself.
+// provider contract (env_key ⇒ Authorization: Bearer by default; the custom
+// X-Codex-LB-API-Key header only when the stored bridge transport says so) and
+// run one real, minimal image generation through the gateway. A tool that
+// merely round-trips a text request does not prove image_generation, so the
+// probe forces the tool once and falls back to an acceptance check only when
+// the gateway rejects the forced tool_choice shape itself.
 export async function probeCodexLbCliImageGeneration(
   input: CodexLbCliImageProbeInput
 ): Promise<CodexLbCliImageProbeResult> {
@@ -55,10 +57,13 @@ export async function probeCodexLbCliImageGeneration(
   }
   const endpoint = `${String(input.baseUrl || '').replace(/\/+$/, '')}/responses`
   const timeoutMs = input.timeoutMs || DEFAULT_CLI_IMAGE_PROBE_TIMEOUT_MS
-  const forced = await postImageProbe(fetchImpl, endpoint, input.apiKey, input.model, timeoutMs, true)
+  const authHeaders = input.gatewayAuthTransport === 'x-codex-lb-api-key'
+    ? { 'X-Codex-LB-API-Key': input.apiKey }
+    : { authorization: `Bearer ${input.apiKey}` }
+  const forced = await postImageProbe(fetchImpl, endpoint, authHeaders, input.model, timeoutMs, true)
   const forcedToolChoiceRejected = !forced.ok && /tool_choice/.test(String(forced.errorText || ''))
   const attempt = forcedToolChoiceRejected
-    ? await postImageProbe(fetchImpl, endpoint, input.apiKey, input.model, timeoutMs, false)
+    ? await postImageProbe(fetchImpl, endpoint, authHeaders, input.model, timeoutMs, false)
     : forced
   if (attempt.timedOut) {
     return result({
@@ -120,7 +125,7 @@ interface ProbeAttempt {
 async function postImageProbe(
   fetchImpl: typeof fetch,
   endpoint: string,
-  apiKey: string,
+  authHeaders: Record<string, string>,
   model: string,
   timeoutMs: number,
   forceTool: boolean
@@ -131,7 +136,7 @@ async function postImageProbe(
     const response = await fetchImpl(endpoint, {
       method: 'POST',
       headers: {
-        'X-Codex-LB-API-Key': apiKey,
+        ...authHeaders,
         'content-type': 'application/json'
       },
       body: JSON.stringify({
