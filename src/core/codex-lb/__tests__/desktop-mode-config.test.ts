@@ -5,6 +5,7 @@ import {
   CODEX_LB_MODEL_CATALOG_MARKER,
   CODEX_LB_OAUTH_SELECTION_MARKER,
   CODEX_LB_PROVIDER_SELECTION_MARKER,
+  releaseSksManagedThirdPartySelection,
   removeCodexLbManagedDesktopConfig,
   upsertCodexLbCliProviderConfig,
   upsertCodexLbCompatDesktopConfig,
@@ -20,6 +21,56 @@ import {
 
 const REMOTE = 'https://lb.example.test/backend-api/codex';
 const BRIDGE = 'http://127.0.0.1:47821/backend-api/codex';
+
+const OPENROUTER_SELECTED = [
+  'model_provider = "openrouter"',
+  'model_catalog_json = "/Users/op/.codex/sks-openrouter-catalog.json"',
+  '',
+  '[model_providers.openrouter]',
+  'name = "openrouter"',
+  'base_url = "https://openrouter.example/api/v1"',
+  'wire_api = "responses"',
+  'requires_openai_auth = false',
+  ''
+].join('\n');
+
+test('explicit provider switches reclaim an SKS-authored OpenRouter selection', () => {
+  // Use Codex LB takes over: openrouter selection + catalog released, its
+  // provider table (credentials) preserved for a later switch back.
+  const cli = upsertCodexLbCliProviderConfig(OPENROUTER_SELECTED, {
+    remoteBaseUrl: REMOTE,
+    selectGlobally: true
+  });
+  assert.match(cli, new RegExp(`${CODEX_LB_PROVIDER_SELECTION_MARKER}\\nmodel_provider = "codex-lb"`));
+  assert.doesNotMatch(cli, /model_provider = "openrouter"/);
+  assert.doesNotMatch(cli, /^model_catalog_json\s*=/m);
+  assert.match(cli, /\[model_providers\.openrouter\]/);
+
+  // Credential-only writes never move the selection.
+  const unselected = upsertCodexLbCliProviderConfig(OPENROUTER_SELECTED, { remoteBaseUrl: REMOTE });
+  assert.match(unselected, /model_provider = "openrouter"/);
+
+  // Desktop Bridge takeover works from the same state.
+  const bridge = upsertCodexLbNativeDesktopConfig(OPENROUTER_SELECTED, {
+    bridgeBaseUrl: BRIDGE,
+    remoteBaseUrl: REMOTE
+  });
+  assert.match(bridge, /model_provider = "openai"/);
+  assert.doesNotMatch(bridge, /model_provider = "openrouter"/);
+
+  // The release helper itself: no SKS provider table means user-owned — untouched.
+  const handWritten = 'model_provider = "openrouter"\n';
+  assert.equal(releaseSksManagedThirdPartySelection(handWritten), handWritten);
+
+  // A genuinely user-owned custom provider still fails closed.
+  assert.throws(
+    () => upsertCodexLbCliProviderConfig('model_provider = "my-proxy"\n', {
+      remoteBaseUrl: REMOTE,
+      selectGlobally: true
+    }),
+    /codex_lb_user_owned_model_provider_conflict/
+  );
+});
 
 test('desktop mode SSOT keeps every ordinary mode away from shared auth mutation', () => {
   assert.equal(DEFAULT_CODEX_LB_DESKTOP_MODE, 'desktop-native-bridge');

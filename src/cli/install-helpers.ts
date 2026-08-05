@@ -102,6 +102,7 @@ import {
   removeCodexLbSetupRecoveryPath,
   removeCodexLbOrphanManagedMarkers,
   removeCodexLbSharedOpenAiRouting,
+  releaseSksManagedThirdPartySelection,
   removeCodexLbManagedDesktopConfig,
   restoreCodexLbSetupWriteState,
   sha256Text,
@@ -609,7 +610,10 @@ export async function configureCodexLbDesktopRouting(
         })
       : mode === 'desktop-dual-auth-compat'
         ? upsertCodexLbCompatDesktopConfig(current, { remoteBaseUrl: String(opts.remoteBaseUrl) })
-        : removeCodexLbManagedDesktopConfig(current);
+        // Explicit disable (Use ChatGPT OAuth Only) also reclaims an
+        // SKS-authored OpenRouter/router selection so Desktop actually
+        // returns to the built-in OpenAI / ChatGPT OAuth path.
+        : releaseSksManagedThirdPartySelection(removeCodexLbManagedDesktopConfig(current));
   } catch (error: unknown) {
     return {
       ...base,
@@ -712,6 +716,7 @@ export async function configureCodexLbCliProvider(opts: {
   auth_before: CodexAuthSnapshot;
   auth_after: CodexAuthSnapshot;
   blockers: string[];
+  guidance?: string[];
   backup_path?: string | null;
 }> {
   const home = opts.home || process.env.HOME || os.homedir();
@@ -719,10 +724,37 @@ export async function configureCodexLbCliProvider(opts: {
   const authPath = opts.authPath || codexAuthPath(home);
   const authBefore = await captureCodexAuthSnapshot({ home, authPath });
   const current = await readText(configPath, '');
-  const next = upsertCodexLbCliProviderConfig(current, {
-    remoteBaseUrl: opts.remoteBaseUrl,
-    ...(opts.selectGlobally === undefined ? {} : { selectGlobally: opts.selectGlobally })
-  });
+  let next: string;
+  try {
+    next = upsertCodexLbCliProviderConfig(current, {
+      remoteBaseUrl: opts.remoteBaseUrl,
+      ...(opts.selectGlobally === undefined ? {} : { selectGlobally: opts.selectGlobally })
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      schema: 'sks.codex-lb-cli-provider.v1',
+      ok: false,
+      status: message,
+      mode: 'cli-provider',
+      identity_plane: 'unchanged',
+      routing_plane: 'cli_provider',
+      oauth_preserved: true,
+      auth_mutated: false,
+      config_path: configPath,
+      auth_path: authPath,
+      auth_before: authBefore,
+      auth_after: authBefore,
+      blockers: [message],
+      guidance: message === 'codex_lb_user_owned_model_provider_conflict'
+        ? [
+            'config.toml has a model_provider line SKS does not manage.',
+            'Remove or change that line yourself, then retry Use Codex LB.'
+          ]
+        : [],
+      backup_path: null
+    };
+  }
   const write = await safeWriteCodexConfigToml(
     configPath,
     current,

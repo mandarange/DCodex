@@ -145,7 +145,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             makeOpenRouterCard(),
             NativeView.card(
                 title: "Advanced",
-                subtitle: "Desktop Bridge keeps ChatGPT sign-in while routing traffic. Capability matrix and apply receipts appear after you run Verify or a provider mutation.",
+                subtitle: "You rarely need this section. Desktop Bridge is only for keeping ChatGPT sign-in while routing through codex-lb (or a custom-header-only gateway) — if Use Codex LB above works, skip it.",
                 views: [
                     oauthCredentialStatus,
                     NativeView.row([openCodexSignIn]),

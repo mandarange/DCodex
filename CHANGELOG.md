@@ -4,6 +4,31 @@
 
 
 
+
+## [8.1.2] - 2026-08-05
+
+### Fixed
+
+- Keep release metadata aligned after an explicit SKS version bump advances the package version.
+
+## [8.1.2] - 2026-08-05
+
+### Fixed
+
+- **Use Codex LB**, **Desktop Bridge Mode**, and **Use ChatGPT OAuth Only** can now
+  take over an OpenRouter / Multi-Provider Router selection that SKS itself wrote:
+  the unmarked `model_provider` line and its `sks-*-catalog.json` binding are
+  reclaimed (provider credentials stay), instead of failing with
+  `codex_lb_user_owned_model_provider_conflict` or silently staying on OpenRouter.
+  A model_provider value SKS never configured still fails closed, now with explicit
+  guidance instead of an irrelevant “Reconnect credential” next step.
+
+### Changed
+
+- Center **Advanced** section states plainly that Desktop Bridge is rarely needed —
+  only for keeping ChatGPT sign-in on the codex-lb route or for custom-header-only
+  gateways.
+
 ## [8.1.1] - 2026-08-05
 
 ### Fixed

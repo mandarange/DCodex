@@ -52,6 +52,37 @@ export const CODEX_LB_PROVIDER_SELECTION_MARKER = '# sks-codex-lb-managed-provid
 export const CODEX_LB_OAUTH_SELECTION_MARKER = '# sks-codex-lb-managed-oauth-selection';
 export const LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER = '# sks-codex-lb-managed-openai-base-url';
 
+// SKS's own OpenRouter / Multi-Provider Router activation writes an unmarked
+// top-level model_provider selection. Those providers only exist when SKS
+// configured them, so an explicit provider switch (Use Codex LB, Desktop
+// Bridge, Use ChatGPT OAuth Only) may reclaim that selection instead of
+// failing with codex_lb_user_owned_model_provider_conflict. Any other
+// model_provider value stays user-owned and fail-closed.
+const SKS_SWITCHABLE_THIRD_PARTY_PROVIDER_IDS = ['openrouter', 'sks-router'] as const;
+const SKS_THIRD_PARTY_CATALOG_BASENAMES = ['sks-openrouter-catalog.json', 'opencodex-catalog.json'];
+
+export function releaseSksManagedThirdPartySelection(text: string): string {
+  let next = String(text || '');
+  const selected = topLevelTomlString(next, 'model_provider');
+  if (!selected || !(SKS_SWITCHABLE_THIRD_PARTY_PROVIDER_IDS as readonly string[]).includes(selected)) {
+    return next;
+  }
+  // Evidence that SKS authored this selection: its provider table exists.
+  if (!new RegExp(`(^|\\n)\\[model_providers\\.${escapeRegExp(selected)}\\]`).test(next)) return next;
+  next = removeTopLevelTomlKeyIfValue(next, 'model_provider', selected);
+  const catalog = topLevelTomlString(next, 'model_catalog_json');
+  if (
+    catalog
+    && !topLevelHasLine(next, CODEX_LB_MODEL_CATALOG_MARKER)
+    && SKS_THIRD_PARTY_CATALOG_BASENAMES.some((name) => catalog.endsWith(`/${name}`) || catalog === name)
+  ) {
+    // The third-party catalog binding follows its selection out; the provider
+    // table and its credentials stay for a later switch back.
+    next = removeTopLevelTomlKey(next, 'model_catalog_json');
+  }
+  return next;
+}
+
 export type CodexLbOrphanManagedMarkerCleanup = {
   schema: 'sks.codex-lb-orphan-managed-marker-cleanup.v1';
   changed: boolean;
@@ -91,7 +122,9 @@ export function upsertCodexLbNativeDesktopConfig(
   text: string,
   input: NativeDesktopConfigInput
 ): string {
-  let next = removeCodexLbOrphanManagedMarkers(String(text || '')).text;
+  let next = releaseSksManagedThirdPartySelection(
+    removeCodexLbOrphanManagedMarkers(String(text || '')).text
+  );
   const selectedProvider = topLevelTomlString(next, 'model_provider');
   if (selectedProvider && selectedProvider !== 'openai' && selectedProvider !== 'codex-lb') {
     throw new Error('codex_lb_user_owned_model_provider_conflict');
@@ -161,7 +194,11 @@ export function upsertCodexLbCliProviderConfig(
   if (topLevelHasLine(cleaned, LEGACY_CODEX_LB_OPENAI_ROUTING_MARKER)) {
     throw new Error('codex_lb_legacy_desktop_config_requires_migration');
   }
-  const cliBase = removeCodexLbManagedDesktopConfig(cleaned);
+  // Explicit global selection may reclaim an SKS-authored OpenRouter/router
+  // selection; credential-only writes (selectGlobally false) never touch it.
+  const cliBase = input.selectGlobally === true
+    ? releaseSksManagedThirdPartySelection(removeCodexLbManagedDesktopConfig(cleaned))
+    : removeCodexLbManagedDesktopConfig(cleaned);
   const claimedSelection = input.selectGlobally === true
     && topLevelTomlString(cliBase, 'model_provider') === 'codex-lb'
     && !topLevelHasLine(cliBase, CODEX_LB_PROVIDER_SELECTION_MARKER)
