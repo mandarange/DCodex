@@ -9,6 +9,7 @@ import {
   DESKTOP_BRIDGE_MANAGED_MODEL_CATALOG_MARKER
 } from '../../../cli/install-helpers-codex-lb-config.js';
 import { migrateLegacyModeToDesktopBridge } from '../legacy-migration.js';
+import { rollbackDesktopBridgeUnificationReceipt } from '../migration-receipt.js';
 
 const BRIDGE = 'http://127.0.0.1:47821/backend-api/codex';
 const LB_KEY = 'sk-clb-preserve-this-value';
@@ -23,6 +24,7 @@ async function fixture(t: test.TestContext, config: string) {
   const lbCredentialPath = path.join(codexHome, 'sks-codex-lb.env');
   const orCredentialPath = path.join(home, '.sneakoscope', 'secrets', 'openrouter-api-key');
   const combinedCatalogPath = path.join(codexHome, 'sks', 'sks-bridge-catalog.json');
+  const providerProfilePath = path.join(codexHome, 'sks', 'provider-registry.json');
   const auth = `${JSON.stringify({
     auth_mode: 'chatgpt',
     account_id: 'acct-unification',
@@ -30,10 +32,13 @@ async function fixture(t: test.TestContext, config: string) {
   }, null, 2)}\n`;
   await fsp.mkdir(path.dirname(orCredentialPath), { recursive: true });
   await fsp.mkdir(codexHome, { recursive: true });
+  await fsp.mkdir(path.dirname(combinedCatalogPath), { recursive: true });
   await fsp.writeFile(configPath, config, { mode: 0o600 });
   await fsp.writeFile(authPath, auth, { mode: 0o600 });
   await fsp.writeFile(lbCredentialPath, `export CODEX_LB_API_KEY='${LB_KEY}'\n`, { mode: 0o600 });
   await fsp.writeFile(orCredentialPath, `${OR_KEY}\n`, { mode: 0o600 });
+  await fsp.writeFile(combinedCatalogPath, '{"schema":"fixture-catalog","models":[]}\n', { mode: 0o600 });
+  await fsp.writeFile(providerProfilePath, '{"schema":"fixture-provider-registry"}\n', { mode: 0o600 });
   return {
     home,
     configPath,
@@ -41,6 +46,7 @@ async function fixture(t: test.TestContext, config: string) {
     lbCredentialPath,
     orCredentialPath,
     combinedCatalogPath,
+    providerProfilePath,
     config,
     auth
   };
@@ -79,6 +85,8 @@ test('R06/R33/R35: cli-provider migration preserves both credentials and second 
   const beforeAuth = await fsp.readFile(setup.authPath);
   const beforeLb = await fsp.readFile(setup.lbCredentialPath);
   const beforeOr = await fsp.readFile(setup.orCredentialPath);
+  const beforeCatalog = await fsp.readFile(setup.combinedCatalogPath);
+  const beforeProfiles = await fsp.readFile(setup.providerProfilePath);
   const first = await migrateLegacyModeToDesktopBridge({
     home: setup.home,
     bridgeBaseUrl: BRIDGE,
@@ -112,16 +120,44 @@ test('R06/R33/R35: cli-provider migration preserves both credentials and second 
     home: setup.home,
     bridgeBaseUrl: BRIDGE,
     combinedCatalogPath: setup.combinedCatalogPath,
-    legacyDesktopMode: 'cli-provider'
+    legacyDesktopMode: 'cli-provider',
+    now: new Date('2026-08-05T12:01:00.000Z')
   });
   assert.equal(second.ok, true);
   assert.equal(second.status, 'already_migrated');
-  assert.equal(second.receipt_path, null);
+  assert.ok(second.receipt_path);
+  assert.equal(second.receipt?.migration_status, 'already_migrated');
+  assert.equal(second.receipt?.rollback_supported, false);
+  assert.deepEqual(second.receipt?.backup_paths, []);
+  assert.deepEqual(second.receipt?.rollback_metadata.files, []);
+  assert.equal(second.receipt?.config_before_sha256, second.receipt?.config_after_sha256);
+  assert.equal(second.receipt?.auth_before_sha256, second.receipt?.auth_after_sha256);
   assert.equal(await fsp.readFile(setup.configPath, 'utf8'), migratedConfig);
   assert.deepEqual(await fsp.readFile(setup.authPath), beforeAuth);
   assert.deepEqual(await fsp.readFile(setup.lbCredentialPath), beforeLb);
   assert.deepEqual(await fsp.readFile(setup.orCredentialPath), beforeOr);
-  assert.deepEqual(await fsp.readdir(path.dirname(first.receipt_path!)), receiptEntriesBefore);
+  assert.deepEqual(await fsp.readFile(setup.combinedCatalogPath), beforeCatalog);
+  assert.deepEqual(await fsp.readFile(setup.providerProfilePath), beforeProfiles);
+  const receiptEntriesAfter = await fsp.readdir(path.dirname(first.receipt_path!));
+  assert.equal(receiptEntriesAfter.length, receiptEntriesBefore.length + 1);
+  assert.ok(receiptEntriesAfter.includes(path.basename(second.receipt_path!)));
+  const noOpReceiptText = await fsp.readFile(second.receipt_path!, 'utf8');
+  assert.doesNotMatch(noOpReceiptText, new RegExp(LB_KEY));
+  assert.doesNotMatch(noOpReceiptText, new RegExp(OR_KEY));
+  assert.doesNotMatch(noOpReceiptText, /oauth-(?:access|refresh)-before/);
+
+  const noOpRollback = await rollbackDesktopBridgeUnificationReceipt({
+    receiptPath: second.receipt_path!
+  });
+  assert.equal(noOpRollback.ok, true);
+  assert.equal(noOpRollback.status, 'nothing_to_rollback');
+  assert.deepEqual(noOpRollback.restored_files, []);
+  assert.equal(await fsp.readFile(setup.configPath, 'utf8'), migratedConfig);
+  assert.deepEqual(await fsp.readFile(setup.authPath), beforeAuth);
+  assert.deepEqual(await fsp.readFile(setup.lbCredentialPath), beforeLb);
+  assert.deepEqual(await fsp.readFile(setup.orCredentialPath), beforeOr);
+  assert.deepEqual(await fsp.readFile(setup.combinedCatalogPath), beforeCatalog);
+  assert.deepEqual(await fsp.readFile(setup.providerProfilePath), beforeProfiles);
 });
 
 test('R07: dual-auth migration retains the legacy LB header transport as profile intent', async (t) => {

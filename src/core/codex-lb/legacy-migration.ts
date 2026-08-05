@@ -766,14 +766,80 @@ export async function migrateLegacyModeToDesktopBridge(
   ) {
     const authAfter = await captureCodexAuthSnapshot({ home, authPath });
     const authPreserved = authSemanticIdentityPreserved(authBefore, authAfter);
+    const configSha = sha256(currentConfig);
+    const configUnchanged = await fileSha256OrMissing(configPath) === configSha;
+    const authBytesUnchanged = authBefore.sha256 === authAfter.sha256;
+    if (!authPreserved || !configUnchanged || !authBytesUnchanged) {
+      return {
+        ...baseResult,
+        ok: false,
+        status: 'blocked',
+        managed_runtime: null,
+        receipt_path: null,
+        auth_semantic_identity_preserved: authPreserved,
+        blockers: [
+          ...(!configUnchanged ? ['desktop_bridge_config_changed_during_noop'] : []),
+          ...(!authPreserved ? ['desktop_oauth_identity_changed'] : []),
+          ...(authPreserved && !authBytesUnchanged ? ['desktop_auth_changed_during_noop'] : [])
+        ]
+      };
+    }
+    const noOpNow = input.now || new Date();
+    const receiptId = createDesktopBridgeUnificationReceiptId(noOpNow);
+    const receipt: StoredDesktopBridgeUnificationReceipt = {
+      schema: 'sks.desktop-bridge-unification-receipt.v1',
+      receipt_id: receiptId,
+      created_at: noOpNow.toISOString(),
+      baseline_version: '8.1.2',
+      target_version: '8.1.3',
+      config_before_sha256: configSha,
+      config_after_sha256: configSha,
+      auth_before_sha256: authBefore.sha256 || 'missing',
+      auth_after_sha256: authBefore.sha256 || 'missing',
+      auth_semantic_identity_preserved: true,
+      legacy_state: {
+        desktop_mode: legacyDesktopMode,
+        provider_mode: legacyState.provider_mode,
+        model_provider: legacyState.model_provider,
+        catalog_path: legacyState.catalog_path
+      },
+      migrated_profiles: legacyState.migrated_profiles,
+      credentials_deleted: false,
+      new_runtime: 'desktop-bridge',
+      new_catalog_generation: input.newCatalogGeneration || null,
+      backup_paths: [],
+      rollback_supported: false,
+      blockers: [],
+      migration_status: 'already_migrated',
+      rollback_metadata: {
+        schema: 'sks.desktop-bridge-unification-rollback-metadata.v1',
+        files: []
+      }
+    };
+    let receiptPath: string;
+    try {
+      receiptPath = await writeDesktopBridgeUnificationReceipt(receipt, { receiptDir });
+    } catch (error: unknown) {
+      return {
+        ...baseResult,
+        ok: false,
+        status: 'failed',
+        managed_runtime: 'desktop-bridge',
+        receipt_path: null,
+        auth_semantic_identity_preserved: true,
+        blockers: ['desktop_bridge_noop_receipt_write_failed'],
+        error: errorMessage(error)
+      };
+    }
     return {
       ...baseResult,
-      ok: authPreserved,
-      status: authPreserved ? 'already_migrated' : 'blocked',
-      managed_runtime: authPreserved ? 'desktop-bridge' : null,
-      receipt_path: null,
-      auth_semantic_identity_preserved: authPreserved,
-      blockers: authPreserved ? [] : ['desktop_oauth_identity_changed']
+      ok: true,
+      status: 'already_migrated',
+      managed_runtime: 'desktop-bridge',
+      receipt_path: receiptPath,
+      receipt,
+      auth_semantic_identity_preserved: true,
+      blockers: []
     };
   }
 

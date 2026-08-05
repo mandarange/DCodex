@@ -64,15 +64,32 @@ export interface DesktopBridgeUnificationRollbackMetadata {
   files: DesktopBridgeRollbackMetadataFile[];
 }
 
-export type StoredDesktopBridgeUnificationReceipt = DesktopBridgeUnificationReceipt & {
+export type MigratedDesktopBridgeUnificationReceipt = DesktopBridgeUnificationReceipt & {
   migration_status: 'migrated';
+  rollback_supported: true;
   rollback_metadata: DesktopBridgeUnificationRollbackMetadata;
 };
+
+export type AlreadyMigratedDesktopBridgeUnificationReceipt = DesktopBridgeUnificationReceipt & {
+  migration_status: 'already_migrated';
+  rollback_supported: false;
+  backup_paths: [];
+  rollback_metadata: DesktopBridgeUnificationRollbackMetadata & { files: [] };
+};
+
+export type StoredDesktopBridgeUnificationReceipt =
+  | MigratedDesktopBridgeUnificationReceipt
+  | AlreadyMigratedDesktopBridgeUnificationReceipt;
 
 export interface DesktopBridgeUnificationRollbackResult {
   schema: 'sks.desktop-bridge-unification-rollback.v1';
   ok: boolean;
-  status: 'rolled_back' | 'rollback_conflict' | 'invalid_receipt' | 'rollback_failed';
+  status:
+    | 'rolled_back'
+    | 'nothing_to_rollback'
+    | 'rollback_conflict'
+    | 'invalid_receipt'
+    | 'rollback_failed';
   receipt_id: string | null;
   restored_files: string[];
   credentials_overwritten: false;
@@ -209,6 +226,19 @@ export async function rollbackDesktopBridgeUnificationReceipt(input: {
       auth_overwritten: false,
       conflicts: [],
       error: errorMessage(error)
+    };
+  }
+
+  if (receipt.migration_status === 'already_migrated') {
+    return {
+      schema: 'sks.desktop-bridge-unification-rollback.v1',
+      ok: true,
+      status: 'nothing_to_rollback',
+      receipt_id: receipt.receipt_id,
+      restored_files: [],
+      credentials_overwritten: false,
+      auth_overwritten: false,
+      conflicts: []
     };
   }
 
@@ -427,7 +457,10 @@ function validateDesktopBridgeUnificationReceipt(
   if (!value || typeof value !== 'object') {
     throw new Error('invalid_desktop_bridge_unification_receipt');
   }
-  const receipt = value as Partial<StoredDesktopBridgeUnificationReceipt>;
+  const receipt = value as Partial<DesktopBridgeUnificationReceipt> & {
+    migration_status?: unknown;
+    rollback_metadata?: Partial<DesktopBridgeUnificationRollbackMetadata>;
+  };
   if (
     receipt.schema !== 'sks.desktop-bridge-unification-receipt.v1'
     || typeof receipt.receipt_id !== 'string'
@@ -446,9 +479,9 @@ function validateDesktopBridgeUnificationReceipt(
     || receipt.credentials_deleted !== false
     || receipt.new_runtime !== 'desktop-bridge'
     || !Array.isArray(receipt.backup_paths)
-    || receipt.rollback_supported !== true
+    || typeof receipt.rollback_supported !== 'boolean'
     || !Array.isArray(receipt.blockers)
-    || receipt.migration_status !== 'migrated'
+    || (receipt.migration_status !== 'migrated' && receipt.migration_status !== 'already_migrated')
     || receipt.rollback_metadata?.schema !== 'sks.desktop-bridge-unification-rollback-metadata.v1'
     || !Array.isArray(receipt.rollback_metadata.files)
   ) {
@@ -491,6 +524,20 @@ function validateDesktopBridgeUnificationReceipt(
   }
   if (receipt.blockers.some((entry) => typeof entry !== 'string')) {
     throw new Error('invalid_desktop_bridge_unification_receipt_blockers');
+  }
+  if (receipt.migration_status === 'already_migrated') {
+    if (
+      receipt.rollback_supported !== false
+      || receipt.backup_paths.length !== 0
+      || receipt.rollback_metadata.files.length !== 0
+      || receipt.config_before_sha256 !== receipt.config_after_sha256
+      || receipt.auth_before_sha256 !== receipt.auth_after_sha256
+      || receipt.auth_semantic_identity_preserved !== true
+    ) {
+      throw new Error('invalid_desktop_bridge_unification_noop_receipt');
+    }
+  } else if (receipt.rollback_supported !== true) {
+    throw new Error('invalid_desktop_bridge_unification_migrated_receipt');
   }
 }
 
