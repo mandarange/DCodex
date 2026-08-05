@@ -180,7 +180,7 @@ function classifyCliIntentEffect(argv: readonly string[]): IntentEffect {
 async function dispatchInner(argv: readonly string[]): Promise<unknown> {
   const retiredGlm = findRetiredGlobalExecutionArgumentErrors(argv).filter((item) => item.includes('--glm'));
   if (retiredGlm.length && argv.some((arg) => arg === '--glm' || String(arg).startsWith('--glm='))) {
-    const hint = 'GLM MAD CLI was removed. Use SKS Center Providers or: sks codex-app use-openrouter --model <id>';
+    const hint = 'GLM MAD CLI was removed. Use sks bridge provider configure|validate|enable, sks bridge catalog sync, and sks bridge route set-default.';
     console.error(hint);
     process.exitCode = 1;
     const result = {

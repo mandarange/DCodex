@@ -50,7 +50,7 @@ export interface GlobalModeBlockedResult {
   readonly status: 'blocked';
   readonly mode: 'glm';
   readonly reason: 'glm_mad_removed';
-  readonly hint: 'use SKS Center Providers or sks codex-app use-openrouter --model <id>';
+  readonly hint: 'use sks bridge provider configure|validate|enable, sks bridge catalog sync, and sks bridge route set-default';
 }
 
 /** @deprecated GLM MAD CLI was removed. */
@@ -60,6 +60,6 @@ export function glmWithoutMadResult(): GlobalModeBlockedResult {
     status: 'blocked',
     mode: 'glm',
     reason: 'glm_mad_removed',
-    hint: 'use SKS Center Providers or sks codex-app use-openrouter --model <id>'
+    hint: 'use sks bridge provider configure|validate|enable, sks bridge catalog sync, and sks bridge route set-default'
   };
 }

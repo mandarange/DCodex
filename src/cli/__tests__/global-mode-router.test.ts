@@ -12,7 +12,8 @@ test('detectGlobalMode no longer routes GLM MAD; --glm is retired', () => {
   assert.equal(detectGlobalMode(['--glm']), null);
   assert.deepEqual(stripGlobalModeFlags(['--mad', '--glm', '--repair']), ['--repair']);
   assert.ok(findRetiredGlobalExecutionArgumentErrors(['--glm']).includes('unsupported_argument:--glm'));
-  assert.match(glmWithoutMadResult().hint, /use-openrouter/);
+  assert.match(glmWithoutMadResult().hint, /sks bridge provider configure/);
+  assert.match(glmWithoutMadResult().hint, /sks bridge route set-default/);
 });
 
 test('detectGlobalMode leaves help/version alone', () => {

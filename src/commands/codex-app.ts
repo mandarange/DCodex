@@ -2,7 +2,7 @@ import { flag, readOption } from '../cli/args.js';
 import { printJson } from '../cli/output.js';
 import { codexAccessTokenStatus, codexAppIntegrationStatus, codexChromeExtensionStatus, codexProductDesignPluginStatus, formatCodexAppStatus, formatCodexProductDesignPluginStatus } from '../core/codex-app.js';
 import { codexAppRemoteControlCommand } from '../cli/codex-app-command.js';
-import { readStdin, sksRoot } from '../core/fsx.js';
+import { sksRoot } from '../core/fsx.js';
 import { buildCodexAppHarnessMatrix } from '../core/codex-app/codex-app-harness-matrix.js';
 import { syncCodexSksSkills } from '../core/codex-app/codex-skill-sync.js';
 import { syncCodexAgentRoles } from '../core/codex-app/codex-agent-role-sync.js';
@@ -10,23 +10,14 @@ import { runCodexInitDeep } from '../core/codex-app/codex-init-deep.js';
 import { buildCodexHookLifecycle } from '../core/codex-app/codex-hook-lifecycle.js';
 import { resolveCodexAppExecutionProfile } from '../core/codex-app/codex-app-execution-profile.js';
 import { repairCodexNativeManagedAssets } from '../core/codex-native/codex-native-repair-transaction.js';
-import { doctorCodexAppGlmProfile, installCodexAppGlmProfile } from '../core/codex-app/glm-profile-installer.js';
-import { openRouterStatus, restoreDesktopRoutingSnapshot, useOpenRouter } from '../core/codex-app/openrouter-activate.js';
-import { promptForOpenRouterKeyHidden, writeStoredOpenRouterKey } from '../core/providers/openrouter/openrouter-secret-store.js';
-import { compactOpenRouterModelsResult, listOpenRouterModels, testOpenRouterConnection } from '../core/providers/openrouter/openrouter-account.js';
 import { restartCodexApp } from '../core/codex-app/codex-app-restart.js';
-import {
-  MULTI_PROVIDER_ROUTER_DEFAULT_BASE_URL,
-  multiProviderRouterStatus,
-  testMultiProviderRouter,
-  useMultiProviderRouter
-} from '../core/codex-app/multi-provider-router.js';
 import {
   resetRoleModelPreference,
   roleModelPreferencesStatus,
   setRoleModelPreference
 } from '../core/subagents/role-model-preferences.js';
-import { codexLbDesktopStatusV2 } from '../core/codex-lb/desktop-controller.js';
+import type { DesktopBridgeControllerV3Options } from '../core/codex-lb/desktop-controller-v3.js';
+import type { DesktopBridgeStatusV3 } from '../core/codex-lb/bridge-contracts.js';
 
 export async function run(_command: any, args: any = []) {
   const action = args[0] || 'check';
@@ -41,100 +32,6 @@ export async function run(_command: any, args: any = []) {
   if (action === 'init-deep') return printCodexAppResult(args, await runCodexInitDeep({ root: await sksRoot(), apply: !flag(args, '--check-only') && !flag(args, '--dry-run') }));
   if (action === 'hook-lifecycle') return printCodexAppResult(args, await buildCodexHookLifecycle({ root: await sksRoot(), apply: flag(args, '--apply') || flag(args, '--fix') }));
   if (action === 'execution-profile') return printCodexAppResult(args, await resolveCodexAppExecutionProfile({ root: await sksRoot() }));
-  if (action === 'glm-profile') {
-    const subcommand = args[1] || 'doctor';
-    const root = await sksRoot();
-    // Legacy Desktop GLM profile surface is retired; install/repair only strips
-    // leftover profiles and ensures the OpenRouter provider table.
-    const result = subcommand === 'install' || subcommand === 'repair' || subcommand === 'remove'
-      ? await installCodexAppGlmProfile({ root, apply: true })
-      : await doctorCodexAppGlmProfile({ root });
-    return printCodexAppResult(args, result);
-  }
-  if (action === 'set-openrouter-key' || action === 'openrouter-key') {
-    const root = await sksRoot();
-    const key = await readOpenRouterKeyFromArgs(args.slice(1));
-    if (!key) {
-      const result = { schema: 'sks.codex-app-openrouter-key.v1', ok: false, status: 'missing_key', blockers: ['openrouter_key_missing'], warnings: [] };
-      return printCodexAppResult(args, result);
-    }
-    const record = await writeStoredOpenRouterKey(key);
-    const profile = await installCodexAppGlmProfile({ root, apply: true });
-    // Save-only: do not select OpenRouter as the default provider and do not restart
-    // unless explicitly requested (mirrors codex-lb setup --no-default-provider).
-    const restart = await restartCodexApp({ enabled: flag(args, '--restart-app') || flag(args, '--restart') });
-    const result = {
-      schema: 'sks.codex-app-openrouter-key.v1',
-      ok: Boolean(profile.ok && restart.ok),
-      status: !profile.ok ? 'stored_profile_blocked' : restart.ok ? 'stored' : 'stored_restart_blocked',
-      key_preview: record.key_preview,
-      raw_key_recorded: false,
-      secret_store: 'sks-openrouter-secret-store',
-      selected: false,
-      glm_profile: profile,
-      restart_app: restart,
-      blockers: [...(profile.blockers || []), ...(restart.blockers || [])],
-      warnings: profile.warnings || []
-    };
-    return printCodexAppResult(args, result);
-  }
-  if (action === 'use-openrouter' || action === 'use-or') {
-    const root = await sksRoot();
-    const model = readOption(args, '--model', '');
-    const result = await useOpenRouter({
-      root,
-      model,
-      restartApp: flag(args, '--restart-app') || flag(args, '--restart') || !flag(args, '--no-restart-app'),
-      preserveThreadSidebar: !flag(args, '--no-preserve-thread-sidebar')
-    });
-    return printCodexAppResult(args, result);
-  }
-  if (action === 'restore-desktop-routing' || action === 'restore-previous-provider') {
-    const result = await restoreDesktopRoutingSnapshot({
-      restartApp: flag(args, '--restart-app') || flag(args, '--restart') || !flag(args, '--no-restart-app'),
-      restartImpl: restartCodexApp
-    });
-    return printCodexAppResult(args, result);
-  }
-  if (action === 'openrouter-status') {
-    const result = await openRouterStatus({});
-    return printCodexAppResult(args, result);
-  }
-  if (action === 'openrouter-models') {
-    const models = await listOpenRouterModels({});
-    const result = flag(args, '--ids-only') ? compactOpenRouterModelsResult(models) : models;
-    return printCodexAppResult(args, result);
-  }
-  if (action === 'openrouter-test') {
-    const result = await testOpenRouterConnection({ model: readOption(args, '--model', '') });
-    return printCodexAppResult(args, result);
-  }
-  if (action === 'router-status' || action === 'multi-provider-status' || action === 'opencodex-status') {
-    const result = await multiProviderRouterStatus({
-      baseUrl: readOption(args, '--base-url', ''),
-      catalogPath: readOption(args, '--catalog', '')
-    });
-    return printCodexAppResult(args, result);
-  }
-  if (action === 'router-test' || action === 'multi-provider-test' || action === 'opencodex-test') {
-    const result = await testMultiProviderRouter({
-      baseUrl: readOption(args, '--base-url', MULTI_PROVIDER_ROUTER_DEFAULT_BASE_URL),
-      catalogPath: readOption(args, '--catalog', ''),
-      model: readOption(args, '--model', '')
-    });
-    return printCodexAppResult(args, result);
-  }
-  if (action === 'use-router' || action === 'use-multi-provider' || action === 'use-opencodex') {
-    const result = await useMultiProviderRouter({
-      model: readOption(args, '--model', ''),
-      baseUrl: readOption(args, '--base-url', MULTI_PROVIDER_ROUTER_DEFAULT_BASE_URL),
-      catalogPath: readOption(args, '--catalog', ''),
-      replaceCatalog: flag(args, '--replace-catalog'),
-      forceRoutingOverride: flag(args, '--force-routing-override'),
-      restartApp: flag(args, '--restart-app') || flag(args, '--restart') || !flag(args, '--no-restart-app')
-    });
-    return printCodexAppResult(args, result);
-  }
   if (action === 'role-models') {
     return printCodexAppResult(args, await roleModelPreferencesStatus());
   }
@@ -204,36 +101,51 @@ export async function run(_command: any, args: any = []) {
     if (!status.ok) process.exitCode = 1;
     return;
   }
-  console.error('Usage: sks codex-app check|status|harness-matrix|skill-sync|agent-role-sync|init-deep|hook-lifecycle|execution-profile|set-openrouter-key [--api-key-stdin]|use-openrouter --model <id>|restore-desktop-routing|openrouter-status|openrouter-models [--ids-only]|openrouter-test [--model <id>]|router-status [--base-url <loopback-url>] [--catalog <path>]|router-test --model <provider/model> [--base-url <loopback-url>] [--catalog <path>]|use-router --model <provider/model> [--base-url <loopback-url>] [--catalog <path>] [--replace-catalog] [--force-routing-override]|role-models|set-role-model --role <name> [--provider <id>] --model <catalog-slug> --reasoning <effort>|reset-role-model --role <name>|product-design [--check-only]|ensure-product-design|chrome-extension|pat status|remote-control [--json]');
-  console.error('Note: glm-profile is retired (strips leftover Desktop GLM profiles); use set-openrouter-key / use-openrouter.');
+  console.error('Usage: sks codex-app check|status|restart|harness-matrix|skill-sync|agent-role-sync|init-deep|hook-lifecycle|execution-profile|role-models|set-role-model --role <name> [--provider <id>] --model <catalog-slug> --reasoning <effort>|reset-role-model --role <name>|product-design [--check-only]|ensure-product-design|chrome-extension|pat status|remote-control [--json]');
+  console.error('Provider routing moved to: sks bridge provider configure|validate|enable; sks bridge catalog sync; sks bridge route set-default.');
   process.exitCode = 1;
 }
 
 export async function codexAppStatusWithCodexLbCapabilities(opts: {
   autoInstallProductDesign?: boolean;
   codexAppStatusImpl?: (options: Record<string, unknown>) => Promise<any>;
-  codexLbStatusImpl?: (options: Parameters<typeof codexLbDesktopStatusV2>[0]) => Promise<Record<string, unknown>>;
-  codexLbStatusOptions?: Parameters<typeof codexLbDesktopStatusV2>[0];
+  codexLbStatusImpl?: (options: DesktopBridgeControllerV3Options) => Promise<DesktopBridgeStatusV3>;
+  codexLbStatusOptions?: DesktopBridgeControllerV3Options;
   [key: string]: unknown;
 } = {}) {
   const {
     codexAppStatusImpl = codexAppIntegrationStatus,
-    codexLbStatusImpl = codexLbDesktopStatusV2,
+    codexLbStatusImpl = currentDesktopBridgeStatus,
     codexLbStatusOptions,
     ...integrationOptions
   } = opts;
+  let desktopBridgeStatus: DesktopBridgeStatusV3 | null = null;
   let codexLbCapabilityReport: Record<string, unknown>;
   try {
     const status = await codexLbStatusImpl(codexLbStatusOptions || {});
+    desktopBridgeStatus = status;
+    const statusRecord = status as unknown as Record<string, unknown>;
     const capabilities = status?.capabilities;
-    codexLbCapabilityReport = capabilities && typeof capabilities === 'object' && !Array.isArray(capabilities)
+    const report = capabilities && typeof capabilities === 'object' && !Array.isArray(capabilities)
+      ? capabilities as unknown as Record<string, unknown>
+      : null;
+    const summary = report?.summary && typeof report.summary === 'object' && !Array.isArray(report.summary)
+      ? report.summary as Record<string, unknown>
+      : null;
+    codexLbCapabilityReport = report
       ? {
-          ...(capabilities as Record<string, unknown>),
+          ...report,
           availability: 'reported',
-          mode: status.mode || null,
-          overall: status.overall || (capabilities as Record<string, unknown>).state || 'available_unverified',
-          full_capability_verified: status.full_capability_verified === true,
-          deep_evidence_validation: status.deep_evidence_validation || null
+          runtime: status.management && typeof status.management === 'object'
+            ? (status.management as Record<string, unknown>).runtime || null
+            : null,
+          overall: summary
+            ? summary.level_satisfied === true ? 'verified' : 'available_unverified'
+            : statusRecord.overall || report.state || 'available_unverified',
+          full_capability_verified: summary
+            ? summary.full_feature_verified === true
+            : statusRecord.full_capability_verified === true,
+          deep_evidence_validation: statusRecord.deep_evidence_validation || null
         }
       : unavailableCodexLbCapabilityReport('codex_lb_capability_report_missing');
   } catch {
@@ -241,8 +153,14 @@ export async function codexAppStatusWithCodexLbCapabilities(opts: {
   }
   return codexAppStatusImpl({
     ...integrationOptions,
+    desktopBridgeStatus,
     codexLbCapabilityReport
   });
+}
+
+async function currentDesktopBridgeStatus(options: DesktopBridgeControllerV3Options): Promise<DesktopBridgeStatusV3> {
+  const controller = await import('../core/codex-lb/desktop-controller.js');
+  return controller.desktopBridgeStatusV3(options);
 }
 
 function unavailableCodexLbCapabilityReport(blocker: string): Record<string, unknown> {
@@ -256,12 +174,6 @@ function unavailableCodexLbCapabilityReport(blocker: string): Record<string, unk
   };
 }
 
-async function readOpenRouterKeyFromArgs(args: any[] = []): Promise<string> {
-  const key = readOption(args, '--api-key', readOption(args, '--key', ''));
-  if (key) return String(key).trim();
-  if (flag(args, '--api-key-stdin') || flag(args, '--key-stdin')) return String(await readStdin()).trim();
-  return await promptForOpenRouterKeyHidden() || '';
-}
 
 function printCodexAppResult(args: any[] = [], result: any) {
   if (flag(args, '--json')) {

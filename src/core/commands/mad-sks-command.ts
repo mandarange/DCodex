@@ -101,7 +101,7 @@ export async function madHighCommand(args: any = [], deps: any = {}) {
       ok: false,
       status: 'blocked',
       blockers: retiredGlmFlagBlockers,
-      hint: 'GLM MAD CLI was removed. Use SKS Center Providers or sks codex-app use-openrouter --model <id>.'
+      hint: 'GLM MAD CLI was removed. Use sks bridge provider configure|validate|enable, sks bridge catalog sync, and sks bridge route set-default.'
     };
     if (rawArgs.includes('--json')) console.log(JSON.stringify(result, null, 2));
     else {

@@ -6,25 +6,7 @@ import { EMPTY_CODEX_INFO, getCodexInfo } from './codex-adapter.js';
 import { CODEX_CHROME_EXTENSION_DOC_URL, DEFAULT_CODEX_APP_PLUGINS as DEFAULT_CODEX_APP_PLUGIN_TUPLES, RESERVED_CODEX_PLUGIN_SKILL_NAMES } from './routes.js';
 import { PRODUCT_DESIGN_PLUGIN, normalizeProductDesignPluginEvidence } from './product-design-plugin.js';
 import { PRODUCT_DESIGN_AUTO_INSTALL_ENV, ensureProductDesignPluginInstalled, productDesignAutoInstallRequested } from './product-design-app-server.js';
-import { GLM_CODEX_CONFIG_PROVIDER_ID, GLM_52_OPENROUTER_MODEL, RETIRED_GLM_DESKTOP_CONFIG_PROFILE_IDS } from './codex-app/openrouter-provider.js';
-import { sksOpenRouterCatalogPath } from './codex-app/codex-model-catalog.js';
-import { resolveOpenRouterApiKey } from './providers/openrouter/openrouter-secret-store.js';
-import {
-  codexLbEnvPath,
-  codexLbMetadataPath,
-  loadCodexLbEnv,
-  parseShellEnvValue,
-  readCodexLbModelCatalog
-} from './codex-lb/codex-lb-env.js';
-import {
-  codexLbToolCatalogPath,
-  inspectCodexLbToolCatalog,
-  shouldBindLocalModelCatalog
-} from './codex-lb/codex-lb-tool-catalog.js';
-import type {
-  CodexLbDesktopMode,
-  CodexLbGatewayAuthTransport
-} from './codex-lb/desktop-mode.js';
+import type { DesktopBridgeStatusV3 } from './codex-lb/bridge-contracts.js';
 import { isSksOwnedGlobalUiLock } from './codex-app/codex-app-ui-state-snapshot.js';
 import { redactString } from './secret-redaction.js';
 import { escapeRegExp } from './text/regex.js';
@@ -477,9 +459,11 @@ function codexNativeSksMenuStatus() {
     companion_install_command: 'sks doctor --fix',
     alternatives: [
       'sks doctor --fix',
-      'sks codex-lb use-desktop-full',
-      'sks codex-lb disable',
-      'sks codex-app set-openrouter-key --api-key-stdin',
+      'sks bridge provider configure',
+      'sks bridge provider validate',
+      'sks bridge provider enable',
+      'sks bridge catalog sync',
+      'sks bridge route set-default',
       'codex://settings'
     ],
     evidence: [
@@ -544,24 +528,11 @@ export function codexAppGuidance({ appInstalled, codex, mcpList, featureList, re
     lines.push(`Codex App speed selector can be hidden or locked by config: ${fastModeConfig.blockers.join(', ')}.`);
     lines.push('Run: sks doctor --fix');
   }
-  if (providerModelUi?.glm?.exposed && providerModelUi.glm.openrouter_key_present) {
-    lines.push(`OpenRouter provider is ready: ${providerModelUi.glm.model} (activate with ${providerModelUi.glm.install_command}).`);
-  } else if (providerModelUi?.glm?.exposed) {
-    lines.push(`OpenRouter provider is present for ${providerModelUi.glm.model}, but the OpenRouter key is missing.`);
-    lines.push(`Run: ${providerModelUi.glm.key_command}; restart Codex App if the model picker was already open.`);
-  } else if (providerModelUi?.glm) {
-    lines.push(`OpenRouter provider is not ready yet: ${providerModelUi.glm.blockers.join(', ') || 'provider setup required'}.`);
-    lines.push(`Run: ${providerModelUi.glm.key_command}; then ${providerModelUi.glm.install_command}; restart Codex App if the model picker was already open.`);
-  }
-  if (providerModelUi?.codex_lb?.key_entry_visible && providerModelUi.codex_lb.key_present && providerModelUi.codex_lb.provider_present && providerModelUi.codex_lb.provider_contract_ok && providerModelUi.codex_lb.base_url_present) {
-    lines.push(`codex-lb key entry path is configured; provider catalog ${providerModelUi.codex_lb.expected_models_present ? 'contains GPT-5.6 Sol/Terra/Luna' : 'is not verified'}. Update command: ${providerModelUi.codex_lb.set_key_command}.`);
-    lines.push('Provider/config readiness does not by itself prove the already-running Desktop picker; auth/profile actions restart ChatGPT/Codex so it reloads model/list.');
-  } else if (providerModelUi?.codex_lb?.key_entry_visible) {
-    lines.push(`codex-lb key entry path is visible, but setup is incomplete: ${providerModelUi.codex_lb.blockers.join(', ') || 'setup required'}.`);
-    lines.push(`Run: ${providerModelUi.codex_lb.setup_command} or ${providerModelUi.codex_lb.set_key_command}.`);
-  } else if (providerModelUi?.codex_lb) {
-    lines.push(`codex-lb key entry path is not exposed yet: ${providerModelUi.codex_lb.blockers.join(', ') || 'setup required'}.`);
-    lines.push(`Run: ${providerModelUi.codex_lb.setup_command} or ${providerModelUi.codex_lb.set_key_command}.`);
+  if (providerModelUi?.checked && providerModelUi.effective_ready) {
+    lines.push(`Desktop bridge routing is ready${providerModelUi.selected_provider ? ` with ${providerModelUi.selected_provider} selected` : ''}.`);
+  } else if (providerModelUi) {
+    lines.push(`Desktop bridge routing is not ready: ${(providerModelUi.selected_provider_blockers || []).join(', ') || providerModelUi.readiness_state || 'status unavailable'}.`);
+    lines.push('Run: sks bridge provider configure; sks bridge provider validate; sks bridge provider enable; sks bridge catalog sync; sks bridge route set-default.');
   }
   if (!gitActions?.ok) {
     lines.push(`Codex App git commit/push actions are blocked: ${gitActions?.blockers?.join(', ') || 'git action readiness'}. The app Commit, Push, Commit and Push, and PR flows need codex_git_commit, hooks, and Codex CLI remote-control support.`);
@@ -613,9 +584,7 @@ export function formatCodexAppStatus(status: any, { includeRaw = false }: any = 
     `App Flags:  ${status.features?.required_flags_ok ? 'ok' : `missing ${missingRequiredFeatureFlags(status.features?.required_flags).join(', ') || 'required flags'}`}`,
     `Fast UI:    ${status.features?.fast_mode_config?.ok ? 'ok' : `locked ${(status.features?.fast_mode_config?.blockers || []).join(', ') || 'config'}`}`,
     `SKS Menu:   ${sksNativeMenuSummary(status.app?.sks_menu)}`,
-    `Provider UI:${providerModelUiSummary(status.features?.provider_model_ui)}`,
-    `GLM Model:  ${glmModelUiSummary(status.features?.provider_model_ui?.glm)}`,
-    `codex-lb Key:${codexLbKeyUiSummary(status.features?.provider_model_ui?.codex_lb)}`,
+    `Bridge UI:  ${providerModelUiSummary(status.features?.provider_model_ui)}`,
     `Default Plugins:${status.plugins?.default_plugins?.ok ? ' ok' : ` missing ${defaultPluginMissingSummary(status.plugins?.default_plugins) || 'plugin install/config'}`}`,
     `Product Design:${productDesignStatusSummary(status.plugins?.design_product)}`,
     `Plugin Picker:${status.plugins?.picker?.ok ? ' ok' : ` blocked ${pluginPickerBlockers(status).join(', ') || 'config'}`}`,
@@ -885,271 +854,101 @@ async function codexFastModeConfigStatus(opts: any = {}) {
 }
 
 export async function codexProviderModelUiStatus(opts: any = {}) {
-  const inputEnv = opts.env || process.env;
-  const home = opts.home || inputEnv.HOME || os.homedir();
-  const cwd = opts.cwd || process.cwd();
-  const env = { ...inputEnv, HOME: String(opts.home || inputEnv.HOME || home) };
-  const globalConfigPath = opts.configPath || path.join(home || '', '.codex', 'config.toml');
-  const projectConfigPath = path.join(cwd || '', '.codex', 'config.toml');
-  const globalConfig = await readTextIfExists(globalConfigPath);
-  const projectConfig = path.resolve(projectConfigPath) === path.resolve(globalConfigPath)
-    ? ''
-    : await readTextIfExists(projectConfigPath);
-  const configText = `${globalConfig}\n${projectConfig}`;
-  const openRouterKey = await resolveOpenRouterApiKey({ env }).catch((err: any) => ({
-    key: null,
-    source: null,
-    key_preview: null,
-    blockers: ['openrouter_key_lookup_failed'],
-    warnings: [err?.message || 'openrouter key lookup failed']
-  }));
-  const codexLbEnvFilePath = opts.codexLbEnvPath || codexLbEnvPath(home);
-  const codexLbEnvText = await readTextIfExists(codexLbEnvFilePath);
-  const codexLbApiKeySource = String(env.CODEX_LB_API_KEY || '').trim()
-    ? 'process.env'
-    : parseShellEnvValue(codexLbEnvText, 'CODEX_LB_API_KEY')
-      ? 'env-file'
-      : 'missing';
-  const codexLbBaseUrlSource = String(env.CODEX_LB_BASE_URL || '').trim()
-    ? 'process.env'
-    : parseShellEnvValue(codexLbEnvText, 'CODEX_LB_BASE_URL')
-      ? 'env-file'
-      : 'missing';
-  const openrouterProvider = tomlTableAny(configText, [
-    `model_providers.${GLM_CODEX_CONFIG_PROVIDER_ID}`,
-    `model_providers."${GLM_CODEX_CONFIG_PROVIDER_ID}"`
-  ]);
-  const glmProviderPresent = Boolean(openrouterProvider);
-  const profilesPresent: string[] = [];
-  const profilesMissing: string[] = [];
-  const glmProfileBlockers: string[] = [];
-  for (const profileId of RETIRED_GLM_DESKTOP_CONFIG_PROFILE_IDS) {
-    const body = tomlTableAny(configText, [`profiles.${profileId}`, `profiles."${profileId}"`]);
-    if (!body) continue;
-    profilesPresent.push(profileId);
-    glmProfileBlockers.push(`retired_glm_desktop_profile_present:${profileId}`);
+  let bridgeStatus: DesktopBridgeStatusV3;
+  try {
+    bridgeStatus = opts.desktopBridgeStatus
+      || await (opts.desktopBridgeStatusImpl || currentDesktopBridgeStatus)(opts.desktopBridgeStatusOptions || {});
+  } catch {
+    return unavailableProviderModelUiStatus('desktop_bridge_status_unavailable');
   }
-  const codexLbProvider = tomlTableAny(configText, ['model_providers.codex-lb', 'model_providers."codex-lb"']);
-  const codexLbProviderPresent = Boolean(codexLbProvider);
-  const codexLbCliProviderContractOk = codexLbProviderPresent
-    && hasTomlString(codexLbProvider, 'name', 'codex-lb')
-    && hasTomlString(codexLbProvider, 'wire_api', 'responses')
-    && /(?:^|\n)\s*env_key\s*=\s*"CODEX_LB_API_KEY"\s*(?:#.*)?(?=\n|$)/.test(codexLbProvider)
-    && !/X-Codex-LB-API-Key/.test(codexLbProvider)
-    && hasTomlBoolean(codexLbProvider, 'supports_websockets', true)
-    && hasTomlBoolean(codexLbProvider, 'requires_openai_auth', false);
-  const codexLbSelectedDefault = /(?:^|\n)\s*model_provider\s*=\s*"codex-lb"\s*(?:#.*)?(?=\n|$)/.test(topLevelToml(globalConfig));
-  const codexLbDesktopMode: CodexLbDesktopMode = opts.codexLbDesktopMode
-    || inferCodexLbDesktopModeForUi(globalConfig);
-  const retiredCodexLbCompatConfigured = codexLbDesktopMode === 'desktop-dual-auth-compat';
-  const codexLbProviderContractOk = !retiredCodexLbCompatConfigured
-    && codexLbCliProviderContractOk;
-  const metadata = await readJsonIfExists(
-    opts.codexLbMetadataPath || codexLbMetadataPath(home)
-  );
-  const gatewayAuthTransport = normalizeCodexLbGatewayAuthTransportForUi(
-    opts.codexLbGatewayAuthTransport || metadata?.gateway_auth_transport
-  );
-  const localCatalogBindingAllowed = shouldBindLocalModelCatalog(codexLbDesktopMode);
-  const selectedProviderValue = topLevelToml(globalConfig)
-    .match(/(?:^|\n)\s*model_provider\s*=\s*"([^"]+)"\s*(?:#.*)?(?=\n|$)/)?.[1] || null;
-  const managedCatalogPath = codexLbToolCatalogPath(path.join(home || '', '.codex'));
-  const configuredCatalogPath = topLevelToml(globalConfig).match(/(?:^|\n)\s*model_catalog_json\s*=\s*"([^"]+)"\s*(?:#.*)?(?=\n|$)/)?.[1] || '';
-  const managedCatalogConfigured = Boolean(configuredCatalogPath)
-    && path.resolve(configuredCatalogPath) === path.resolve(managedCatalogPath);
-  let persistedCatalog: any = null;
-  if (!opts.codexLbModelCatalog && managedCatalogConfigured && localCatalogBindingAllowed) {
-    persistedCatalog = await inspectCodexLbToolCatalog(managedCatalogPath).catch(() => null);
+  if (bridgeStatus?.schema !== 'sks.desktop-bridge-status.v3') {
+    return unavailableProviderModelUiStatus('desktop_bridge_status_schema_invalid');
   }
-  let liveCatalog = opts.codexLbModelCatalog || null;
-  if (!liveCatalog && !persistedCatalog?.ok && codexLbProviderContractOk && codexLbApiKeySource !== 'missing' && codexLbBaseUrlSource !== 'missing') {
-    const loadedEnv = await loadCodexLbEnv({ home, envPath: codexLbEnvFilePath }).catch(() => null);
-    liveCatalog = loadedEnv
-      ? await readCodexLbModelCatalog({
-          loadedEnv,
-          gatewayAuthTransport
-        }).catch(() => null)
-      : null;
-  }
-  // Prefer the persisted Codex-owned catalog that Desktop actually loads. Live
-  // /models remains freshness telemetry and a fallback when no managed file exists.
-  const codexLbModelCatalog = opts.codexLbModelCatalog || (persistedCatalog?.ok
-    ? {
-        ok: true,
-        models: Array.isArray(persistedCatalog.gpt56_models) ? persistedCatalog.gpt56_models : [],
-        blockers: [],
-        source: 'persisted_model_catalog_json',
-        tools_transport: persistedCatalog.tools_transport || null
-      }
-    : liveCatalog
-      ? { ...liveCatalog, source: liveCatalog.source || 'live_models' }
-      : persistedCatalog
-        ? {
-            ok: false,
-            models: Array.isArray(persistedCatalog.gpt56_models) ? persistedCatalog.gpt56_models : [],
-            blockers: persistedCatalog.blockers || ['codex_lb_persisted_catalog_invalid'],
-            source: 'persisted_model_catalog_json'
-          }
-        : null);
-  const catalogModels = Array.isArray(codexLbModelCatalog?.models) ? codexLbModelCatalog.models.map(String) : [];
-  const advertisedCodexLbModelsPresent = codexLbModelCatalog?.ok === true && catalogModels.length > 0;
-  const glmBlockers = [
-    ...(glmProviderPresent ? [] : ['glm_openrouter_provider_missing']),
-    ...glmProfileBlockers,
-    ...(openRouterKey.key ? [] : ['openrouter_key_missing'])
-  ];
-  const codexLbBlockers = [
-    ...(codexLbProviderPresent ? [] : ['codex_lb_provider_missing']),
-    ...(retiredCodexLbCompatConfigured
-      ? ['desktop_dual_auth_compat_unavailable']
-      : codexLbProviderPresent && !codexLbProviderContractOk
-        ? ['codex_lb_provider_contract_drift']
-        : []),
-    ...(codexLbApiKeySource !== 'missing' ? [] : ['codex_lb_api_key_missing']),
-    ...(codexLbBaseUrlSource !== 'missing' ? [] : ['codex_lb_base_url_missing']),
-    ...(codexLbDesktopMode === 'desktop-native-bridge' && managedCatalogConfigured
-      ? ['native_bridge_local_catalog_replacement_forbidden']
-      : []),
-    ...(codexLbSelectedDefault && localCatalogBindingAllowed && !managedCatalogConfigured && !advertisedCodexLbModelsPresent
-      ? ['codex_lb_model_catalog_json_unselected']
-      : []),
-    ...(codexLbProviderContractOk && codexLbApiKeySource !== 'missing' && codexLbBaseUrlSource !== 'missing' && !advertisedCodexLbModelsPresent
-      ? ['codex_lb_model_catalog_unverified']
-      : [])
-  ];
-  const openRouterSelectedDefault = selectedProviderValue === GLM_CODEX_CONFIG_PROVIDER_ID;
-  const openRouterManagedCatalogPath = sksOpenRouterCatalogPath({ home });
-  const openRouterCatalogBound = Boolean(configuredCatalogPath)
-    && path.resolve(configuredCatalogPath) === path.resolve(openRouterManagedCatalogPath);
-  // A bound OpenRouter catalog REPLACES the bundled catalog; if it survives a
-  // provider switch it hides every OpenAI model until it is unbound.
-  const openRouterCatalogDangling = openRouterCatalogBound && !openRouterSelectedDefault;
-  const openRouterSelectedBlockers = openRouterSelectedDefault
-    ? [
-        ...glmBlockers,
-        ...(openRouterCatalogBound ? [] : ['openrouter_model_catalog_json_unselected'])
-      ]
-    : [];
-  const selectedProviderBlockers = [
-    ...(codexLbSelectedDefault
-      ? codexLbBlockers
-      : openRouterSelectedDefault
-        ? openRouterSelectedBlockers
-        : []),
-    ...(openRouterCatalogDangling ? ['openrouter_model_catalog_json_dangling'] : [])
-  ];
-  const optionalProviderBlockers = codexLbSelectedDefault
-    ? glmBlockers
-    : openRouterSelectedDefault
-      ? codexLbBlockers
-      : [...glmBlockers, ...codexLbBlockers];
-  const keyCommand = 'sks codex-app set-openrouter-key --api-key-stdin';
-  const installCommand = 'sks codex-app use-openrouter --model z-ai/glm-5.2';
-  const setupCommand = 'sks codex-lb setup --host <domain> --api-key-stdin --yes';
-  const setKeyCommand = 'sks codex-lb set-key --api-key-stdin';
-  const desktopPickerEvidence = opts.desktopPickerEvidence
-    || opts.codexLbCapabilityReport?.model_picker
-    || opts.codexLbCapabilityReport?.capabilities?.model_picker
-    || opts.codexLbStatus?.capabilities?.model_picker
+  return providerModelUiStatusFromDesktopBridge(bridgeStatus);
+}
+
+async function currentDesktopBridgeStatus(options: Record<string, unknown>): Promise<DesktopBridgeStatusV3> {
+  const controller = await import('./codex-lb/desktop-controller.js');
+  return controller.desktopBridgeStatusV3(options);
+}
+
+function providerModelUiStatusFromDesktopBridge(status: DesktopBridgeStatusV3) {
+  const selectedProvider = status.routing.selected_route?.provider_id
+    || status.routing.policy?.default_provider_id
+    || status.routing.session_pin?.provider_id
     || null;
-  const desktopPickerVerified = desktopPickerEvidence?.state === 'verified'
-    || desktopPickerEvidence?.verified === true;
-  const selectedProviderConfigured = selectedProviderBlockers.length === 0;
-  const selectedProviderAdvertised = codexLbSelectedDefault
-    ? advertisedCodexLbModelsPresent
-    : true;
-  const effectiveReady = selectedProviderConfigured && selectedProviderAdvertised && desktopPickerVerified;
+  const selectedProfile = selectedProvider ? status.providers[selectedProvider] : null;
+  const selectedProviderBlockers = uniqueStrings([
+    ...status.readiness.blockers,
+    ...status.routing.blockers,
+    ...(selectedProfile?.credential.blockers || []),
+    ...(selectedProfile?.catalog.blockers || [])
+  ]);
   return {
-    schema: 'sks.codex-app-provider-model-ui.v1',
-    // The top-level readiness contract is intentionally scoped to the active
-    // provider. Optional GLM/OpenRouter and codex-lb setup diagnostics remain
-    // visible below without making an unrelated provider selection fail.
-    ok: effectiveReady,
-    selected_provider_ok: effectiveReady,
-    configured: selectedProviderConfigured,
-    advertised: selectedProviderAdvertised,
-    effective_ready: effectiveReady,
-    selected_provider: codexLbSelectedDefault ? 'codex-lb' : (selectedProviderValue || 'oauth'),
+    schema: 'sks.codex-app-provider-model-ui.v2',
+    ok: status.readiness.ready,
+    selected_provider_ok: status.readiness.ready,
+    configured: status.management.managed,
+    advertised: status.readiness.combined_catalog_ready,
+    effective_ready: status.readiness.ready,
+    selected_provider: selectedProvider,
     selected_provider_blockers: selectedProviderBlockers,
-    optional_provider_blockers: optionalProviderBlockers,
+    optional_provider_blockers: status.readiness.warnings,
     checked: true,
-    verification_scope: 'config_and_provider_catalog',
-    desktop_picker_verified: desktopPickerVerified,
-    desktop_picker_evidence: desktopPickerEvidence,
-    readiness_state: selectedProviderBlockers.length > 0
-      ? 'blocked'
-      : effectiveReady
-        ? 'verified'
-        : 'available_unverified',
-    status: selectedProviderBlockers.length > 0
-      ? 'setup_required'
-      : effectiveReady
-        ? 'ready'
-        : 'available_unverified',
-    optional_provider_status: optionalProviderBlockers.length === 0 ? 'ready' : 'setup_available',
-    config_paths: {
-      codex_config: globalConfigPath,
-      project_config: projectConfig ? projectConfigPath : null,
-      codex_lb_env: codexLbEnvFilePath
-    },
-    glm: {
-      exposed: glmProviderPresent && glmProfileBlockers.length === 0,
-      provider_present: glmProviderPresent,
-      provider: GLM_CODEX_CONFIG_PROVIDER_ID,
-      model: GLM_52_OPENROUTER_MODEL,
-      profiles_present: profilesPresent,
-      profiles_missing: profilesMissing,
-      openrouter_key_present: Boolean(openRouterKey.key),
-      openrouter_key_source: openRouterKey.source || null,
-      openrouter_key_preview: openRouterKey.key_preview || null,
-      openrouter_selected: openRouterSelectedDefault,
-      model_catalog_json_configured: openRouterCatalogBound,
-      model_catalog_json_path: openRouterManagedCatalogPath,
-      key_command: keyCommand,
-      install_command: installCommand,
-      doctor_command: 'sks codex-app openrouter-status',
-      blockers: glmBlockers
-    },
-    codex_lb: {
-      key_entry_visible: true,
-      provider_present: codexLbProviderPresent,
-      provider_contract_ok: codexLbProviderContractOk,
-      provider_contract: retiredCodexLbCompatConfigured
-        ? 'retired-desktop-dual-auth-compat'
-        : 'cli-provider',
-      selected_default: codexLbSelectedDefault,
-      key_present: codexLbApiKeySource !== 'missing',
-      api_key_source: codexLbApiKeySource,
-      base_url_present: codexLbBaseUrlSource !== 'missing',
-      base_url_source: codexLbBaseUrlSource,
-      model_catalog_checked: Boolean(codexLbModelCatalog),
-      model_catalog_ok: codexLbModelCatalog?.ok === true,
-      model_catalog_source: codexLbModelCatalog?.source || null,
-      desktop_mode: codexLbDesktopMode,
-      gateway_auth_transport: gatewayAuthTransport,
-      local_catalog_binding_allowed: localCatalogBindingAllowed,
-      model_catalog_json_configured: managedCatalogConfigured,
-      model_catalog_json_path: managedCatalogConfigured ? managedCatalogPath : configuredCatalogPath || null,
-      model_catalog_models: catalogModels,
-      expected_models: [],
-      expected_models_present: advertisedCodexLbModelsPresent,
-      advertised_models_present: advertisedCodexLbModelsPresent,
-      tools_transport: codexLbModelCatalog?.tools_transport || null,
-      model_catalog_blockers: codexLbModelCatalog?.blockers || [],
-      setup_command: setupCommand,
-      set_key_command: setKeyCommand,
-      status_command: 'sks codex-lb status',
-      blockers: codexLbBlockers
-    },
+    verification_scope: 'desktop_bridge_status_v3',
+    readiness_state: status.readiness.state,
+    status: status.readiness.ready ? 'ready' : status.readiness.state,
+    management: status.management,
+    service: status.service,
+    routing: status.routing,
+    catalog_sync: status.catalog_sync,
+    providers: status.providers,
+    recovery_actions: status.recovery_actions,
     ui_actions: [
-      keyCommand,
-      installCommand,
-      setupCommand,
-      setKeyCommand,
-      'sks codex-app status'
+      'sks bridge provider configure',
+      'sks bridge provider validate',
+      'sks bridge provider enable',
+      'sks bridge catalog sync',
+      'sks bridge route set-default'
     ],
     blockers: selectedProviderBlockers
   };
+}
+
+function unavailableProviderModelUiStatus(blocker: string) {
+  return {
+    schema: 'sks.codex-app-provider-model-ui.v2',
+    ok: false,
+    selected_provider_ok: false,
+    configured: false,
+    advertised: false,
+    effective_ready: false,
+    selected_provider: null,
+    selected_provider_blockers: [blocker],
+    optional_provider_blockers: [],
+    checked: false,
+    verification_scope: 'desktop_bridge_status_v3',
+    readiness_state: 'blocked',
+    status: 'blocked',
+    management: null,
+    service: null,
+    routing: null,
+    catalog_sync: null,
+    providers: null,
+    recovery_actions: [],
+    ui_actions: [
+      'sks bridge provider configure',
+      'sks bridge provider validate',
+      'sks bridge provider enable',
+      'sks bridge catalog sync',
+      'sks bridge route set-default'
+    ],
+    blockers: [blocker]
+  };
+}
+
+function uniqueStrings(values: readonly unknown[]): string[] {
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
 }
 
 async function readTextIfExists(file: any) {
@@ -1160,51 +959,6 @@ async function readTextIfExists(file: any) {
   }
 }
 
-async function readJsonIfExists(file: string): Promise<Record<string, unknown> | null> {
-  try {
-    const parsed = JSON.parse(await fsp.readFile(file, 'utf8'));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function inferCodexLbDesktopModeForUi(config: string): CodexLbDesktopMode {
-  const topLevel = topLevelToml(config);
-  const selected = topLevel.match(
-    /(?:^|\n)\s*model_provider\s*=\s*"([^"]+)"\s*(?:#.*)?(?=\n|$)/
-  )?.[1] || '';
-  const openAiBaseUrl = topLevel.match(
-    /(?:^|\n)\s*openai_base_url\s*=\s*"([^"]+)"\s*(?:#.*)?(?=\n|$)/
-  )?.[1] || '';
-  if (
-    config.includes('# sks-codex-lb-managed-desktop-bridge')
-    && /^http:\/\/(?:127\.0\.0\.1|\[::1\]):\d+\/backend-api\/codex\/?$/i.test(openAiBaseUrl)
-  ) {
-    return 'desktop-native-bridge';
-  }
-  if (
-    config.includes('# sks-codex-lb-managed-desktop-compat')
-    && selected === 'codex-lb'
-  ) {
-    return 'desktop-dual-auth-compat';
-  }
-  return tomlTableAny(config, ['model_providers.codex-lb', 'model_providers."codex-lb"'])
-    ? 'cli-provider'
-    : 'disabled';
-}
-
-function normalizeCodexLbGatewayAuthTransportForUi(
-  value: unknown
-): CodexLbGatewayAuthTransport {
-  // Bearer is the product default; the custom header only applies when stored
-  // desktop-bridge metadata explicitly selected it.
-  return value === 'x-codex-lb-api-key'
-    ? 'x-codex-lb-api-key'
-    : 'authorization-bearer-compat';
-}
 
 async function findDefaultPluginSource(plugin: any, { home, configText }: any) {
   const cached = await findPluginCache(plugin.name, { home });
@@ -1253,39 +1007,15 @@ function productDesignStatusSummary(status: any = {}) {
 
 function providerModelUiSummary(status: any = {}) {
   if (!status?.checked) return ' not checked';
-  const selected = status.selected_provider || 'oauth';
-  if (status.ok) {
-    const optionalSetup = (status.optional_provider_blockers || []).length > 0
-      ? ', optional providers can be configured'
-      : '';
-    return ` ${selected} ready${optionalSetup} (live picker reload required)`;
-  }
-  if (status.configured && status.readiness_state === 'available_unverified') {
-    return ` ${selected} configured, Desktop picker unverified`;
-  }
-  return ` ${selected} setup ${(status.selected_provider_blockers || status.blockers || []).join(', ') || 'required'}`;
+  const selected = status.selected_provider || 'no provider selected';
+  if (status.ok) return ` ${selected} ready`;
+  return ` ${selected} ${status.readiness_state || 'blocked'} ${(status.selected_provider_blockers || status.blockers || []).join(', ') || 'bridge setup required'}`;
 }
 
 function sksNativeMenuSummary(status: any = {}) {
   if (!status) return 'not checked';
   if (status.supported) return 'ok';
   return `${status.status || 'unsupported'} (use CLI/settings)`;
-}
-
-function glmModelUiSummary(status: any = {}) {
-  if (!status) return 'not checked';
-  if (status.exposed) {
-    const key = status.openrouter_key_present ? `key ${status.openrouter_key_source || 'present'}` : 'key missing';
-    return `ok ${status.model} (${key})`;
-  }
-  return `setup ${(status.blockers || []).join(', ') || 'provider missing'}; run ${status.key_command || 'sks codex-app set-openrouter-key --api-key-stdin'}`;
-}
-
-function codexLbKeyUiSummary(status: any = {}) {
-  if (!status) return ' not checked';
-  if (status.key_present && status.provider_contract_ok !== false) return ` configured (${status.api_key_source || 'present'})`;
-  if (status.key_present) return ` setup provider drift; run ${status.setup_command || 'sks codex-lb setup --host <domain> --api-key-stdin --yes'}`;
-  return ` missing (input: ${status.setup_command || 'sks codex-lb setup --host <domain> --api-key-stdin --yes'})`;
 }
 
 function defaultPluginMissingSummary(defaultPlugins: any = {}) {
@@ -1295,34 +1025,9 @@ function defaultPluginMissingSummary(defaultPlugins: any = {}) {
   ].join(', ');
 }
 
-function topLevelToml(text: any = '') {
-  const lines = String(text || '').split('\n');
-  const firstTable = lines.findIndex((line: any) => /^\s*\[.+\]\s*$/.test(line));
-  return (firstTable === -1 ? lines : lines.slice(0, firstTable)).join('\n');
-}
-
 function tomlTable(text: any = '', table: any = '') {
   const re = new RegExp(`(?:^|\\n)\\[${escapeRegExp(table)}\\]([\\s\\S]*?)(?=\\n\\[[^\\]]+\\]|\\s*$)`);
   return String(text || '').match(re)?.[1] || '';
-}
-
-function tomlTableAny(text: any = '', tables: any[] = []) {
-  for (const table of tables) {
-    const body = tomlTable(text, table);
-    if (body) return body;
-  }
-  return '';
-}
-
-function hasTomlString(text: any = '', key: any = '', value: any = '') {
-  const re = new RegExp(`(?:^|\\n)\\s*${escapeRegExp(key)}\\s*=\\s*"${escapeRegExp(value)}"\\s*(?:#.*)?(?=\\n|$)`);
-  return re.test(String(text || ''));
-}
-
-function hasTomlBoolean(text: any = '', key: any = '', value: boolean) {
-  const expected = value ? 'true' : 'false';
-  const re = new RegExp(`(?:^|\\n)\\s*${escapeRegExp(key)}\\s*=\\s*${expected}\\s*(?:#.*)?(?=\\n|$)`);
-  return re.test(String(text || ''));
 }
 
 // Guidance stays capability-first: the machine comparison against
