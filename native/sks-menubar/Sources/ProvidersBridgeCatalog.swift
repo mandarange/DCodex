@@ -1,17 +1,5 @@
 import Cocoa
 
-// Retained as a small compatibility container for role-model code compiled in
-// the same translation unit. Active 8.1.3 routing is the Desktop Bridge policy.
-final class MultiProviderRouterControls {
-    let baseURL = NSTextField(), catalogPath = NSTextField(), model = NSTextField()
-    let modelPopup = NSPopUpButton()
-    let status = NativeView.detail("Desktop Bridge route policy is loading…")
-    weak var refreshButton: NSButton?
-    var models: [String] = []
-    var refreshInFlight = false
-    var modelSelectionPending = false
-}
-
 extension ProvidersViewController {
     func makeCombinedCatalogCard() -> NSBox {
         let refresh = NativeView.button("Refresh", target: self, action: #selector(refreshCombinedCatalog))
@@ -34,9 +22,7 @@ extension ProvidersViewController {
     }
 
     func renderCombinedCatalog(_ json: [String: Any]) {
-        let catalog = (json["catalog_sync"] as? [String: Any])
-            ?? (json["report"] as? [String: Any])?["catalog_sync"] as? [String: Any]
-            ?? (json["capability_report"] as? [String: Any])?["catalog_sync"] as? [String: Any]
+        let catalog = json["catalog_sync"] as? [String: Any]
         guard catalog?["schema"] as? String == "sks.combined-catalog-sync.v1",
               let data = try? JSONSerialization.data(withJSONObject: catalog as Any),
               let decoded = try? JSONDecoder().decode(CombinedCatalogSyncStatusV1.self, from: data),
@@ -107,9 +93,19 @@ extension ProvidersViewController {
             guard let json = self.json(result.output) else {
                 _ = self.operations.update(snapshot, state: .failed, stage: "complete", progress: 1, summary: "Catalog report schema invalid")
                 self.catalogSyncStatus.stringValue = "Capability schema invalid · catalog_sync missing · capability_schema_invalid"
-                self.catalogSyncStatus.textColor = .systemRed; return
+                self.catalogSyncStatus.textColor = .systemRed
+                return
             }
-            self.renderCombinedCatalog(json)
+            guard json["schema"] as? String == "sks.desktop-bridge-command-result.v1",
+                  ["catalog.sync", "catalog.status"].contains(json["operation"] as? String ?? ""),
+                  let statusJSON = json["status"] as? [String: Any],
+                  let status = try? DesktopBridgeStatusV3Truth.decode(from: statusJSON) else {
+                _ = self.operations.update(snapshot, state: .failed, stage: "complete", progress: 1, summary: "Catalog command envelope invalid")
+                self.catalogSyncStatus.stringValue = "Capability schema invalid · current Desktop Bridge status missing"
+                self.catalogSyncStatus.textColor = .systemRed
+                return
+            }
+            self.renderCombinedCatalog(status.raw)
             let valid = !self.catalogSyncStatus.stringValue.contains("schema invalid")
             _ = self.operations.update(snapshot, state: valid ? .succeeded : .failed, stage: "complete", progress: 1, summary: valid ? "Catalog report generated" : "Catalog report schema invalid")
             self.refresh()
@@ -120,17 +116,19 @@ extension ProvidersViewController {
         let model = routeModelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !model.isEmpty, let snapshot = operations.begin(kind: "bridge-route-explain", mutationGroup: nil, summary: "Explain model route") else {
             routesStatus.stringValue = "Route explain blocked · choose an exact model from the combined catalog."
-            routesStatus.textColor = .systemOrange; return
+            routesStatus.textColor = .systemOrange
+            return
         }
         routesStatus.stringValue = "Explaining \(model) through the explicit route index…"
         _ = operations.update(snapshot, state: .running, stage: "model_route", progress: nil, summary: "Explain model route")
         processClient.run(["bridge", "route", "explain", model, "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
             guard let self = self else { return }
             let json = self.json(result.output)
-            let route = json?["route"] as? [String: Any]
+            let envelope = json?["result"] as? [String: Any]
+            let route = envelope?["route"] as? [String: Any]
             let provider = route?["provider_id"] as? String
             let upstream = route?["upstream_model"] as? String
-            let fallback = json?["fallback"] as? String
+            let fallback = envelope?["fallback"] as? String
             let valid = provider != nil && upstream != nil && fallback == "none"
             _ = self.operations.update(snapshot, state: valid ? .succeeded : .failed, stage: "complete", progress: 1, summary: valid ? "Route explained" : "Route unavailable")
             self.routesStatus.stringValue = valid
@@ -138,24 +136,5 @@ extension ProvidersViewController {
                 : "\(model) · route missing or ambiguous · no fallback · \(self.structuredPublicDetail(json, fallback: result.output, fallbackNext: "Refresh catalog or choose a supported model"))"
             self.routesStatus.textColor = valid ? .systemGreen : .systemRed
         }
-    }
-
-    // Compatibility no-ops for source files from 8.1.2 that are not active cards.
-    func setMultiProviderRouterBusy(_ value: Bool) {}
-    func refreshMultiProviderRouterStatus() {
-        let current = multiProvider.model.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !self.multiProvider.modelSelectionPending,
-           current.isEmpty,
-           !routerActiveModel.isEmpty {
-            self.multiProvider.model.stringValue = routerActiveModel
-        }
-        self.synchronizeMultiProviderPopupSelection()
-        refresh()
-    }
-
-    func synchronizeMultiProviderPopupSelection() {
-        let current = multiProvider.model.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let index = multiProvider.models.firstIndex(of: current) { multiProvider.modelPopup.selectItem(at: index + 1) }
-        else { multiProvider.modelPopup.selectItem(at: 0) }
     }
 }

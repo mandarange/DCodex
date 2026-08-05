@@ -197,15 +197,12 @@ struct DesktopCapabilityReportV3: Codable, Equatable {
     }
 
     static func decode(from json: [String: Any]) throws -> DesktopCapabilityReportV3 {
-        let payload: [String: Any]
-        if json["schema"] as? String == "sks.desktop-capabilities.v3" { payload = json }
-        else if let nested = ["report", "capability_report", "desktop_capabilities", "capabilities"].compactMap({ json[$0] as? [String: Any] }).first(where: { $0["schema"] as? String == "sks.desktop-capabilities.v3" }) { payload = nested }
-        else { throw ProviderFacadeError.schemaInvalid("capability_schema_invalid") }
-        guard payload["catalog_sync"] is [String: Any] else {
+        guard json["schema"] as? String == "sks.desktop-capabilities.v3",
+              json["catalog_sync"] is [String: Any] else {
             throw ProviderFacadeError.schemaInvalid("capability_schema_invalid: catalog_sync missing")
         }
         do {
-            let report = try JSONDecoder().decode(Self.self, from: JSONSerialization.data(withJSONObject: payload))
+            let report = try JSONDecoder().decode(Self.self, from: JSONSerialization.data(withJSONObject: json))
             try report.validate()
             return report
         } catch let error as ProviderFacadeError { throw error }
@@ -298,9 +295,9 @@ struct DesktopBridgeStatusV3Truth {
         }
         let report: DesktopCapabilityReportV3?
         if json["capabilities"] is NSNull || json["capabilities"] == nil { report = nil }
-        else {
-            report = try DesktopCapabilityReportV3.decode(from: json)
-        }
+        else if let capabilities = json["capabilities"] as? [String: Any] {
+            report = try DesktopCapabilityReportV3.decode(from: capabilities)
+        } else { throw ProviderFacadeError.schemaInvalid("desktop_bridge_status_schema_invalid: capabilities") }
         return DesktopBridgeStatusV3Truth(raw: json, checkedAt: checkedAt, correlationId: correlationId, capabilities: report)
     }
 
@@ -387,74 +384,4 @@ struct CapabilityDisplayRow: Equatable {
         if case .string(let raw)? = value { return raw }
         return nil
     }
-}
-
-// Compatibility adapter for the 8.1.2 status facade. Active v3 rendering does not
-// use mode strings, recurse through blockers, or infer provider ownership.
-struct ProviderRoutingTruth {
-    enum MeasuredState: Equatable { case inactive, active, degraded, unverified }
-    struct MeasuredRoute {
-        let selected: Bool, measured: Bool, fresh: Bool, ok: Bool
-        let status: String
-        let configuredHost: String?, actualHost: String?, authTransport: String?, authOutcome: String?
-        let httpStatus: Int?, measuredAt: String?, latencyMs: Int?
-        let blockers: [String]
-        var active: Bool { selected && measured && fresh && ok && status == "verified" }
-        var state: MeasuredState { !selected ? .inactive : active ? .active : (!measured || !fresh || status == "stale") ? .unverified : .degraded }
-    }
-    struct Snapshot {
-        let mode: String?, desktopFullRouting: Bool, legacyCodexLbSelected: Bool, chatgptOauthPresent: Bool
-        let cliProviderStored: Bool, cliCredentialsConfigured: Bool, legacyDestructive: Bool
-        let oauthPreservedFlag: Bool?, authMutated: Bool?
-    }
-    static func snapshot(from json: [String: Any]) -> Snapshot {
-        let mode = (json["desktop_mode"] as? String) ?? (json["mode"] as? String)
-        let oauth = json["oauth"] as? [String: Any], provider = json["provider"] as? [String: Any], bridge = json["bridge"] as? [String: Any]
-        let oauthPresent = json["chatgpt_oauth_present"] as? Bool ?? (oauth?["present"] as? Bool == true)
-        let providerId = provider?["id"] as? String
-        let providerSelected = provider?["selected"] as? Bool
-        let legacy = (providerId == "codex-lb" && providerSelected == true)
-            || (providerId == "openai" && providerSelected == false && ["cli-provider", "desktop-native-bridge"].contains(mode ?? ""))
-        return Snapshot(mode: mode, desktopFullRouting: mode == "desktop-native-bridge", legacyCodexLbSelected: legacy,
-            chatgptOauthPresent: oauthPresent, cliProviderStored: mode == "cli-provider" || mode == "desktop-native-bridge",
-            cliCredentialsConfigured: json["configured"] as? Bool == true || (bridge?["key_fingerprint"] as? String)?.isEmpty == false,
-            legacyDestructive: json["legacy_destructive_state"] as? Bool == true,
-            oauthPreservedFlag: json["oauth_preserved"] as? Bool ?? oauth?["preserved"] as? Bool,
-            authMutated: json["auth_mutated"] as? Bool)
-    }
-    static func measuredRoute(from json: [String: Any]) -> MeasuredRoute? {
-        guard let value = json["routing_truth"] as? [String: Any], value["schema"] as? String == "sks.codex-lb-routing-truth.v1" else { return nil }
-        return MeasuredRoute(selected: value["selected"] as? Bool == true, measured: value["measured"] as? Bool == true,
-            fresh: value["fresh"] as? Bool == true, ok: value["ok"] as? Bool == true, status: value["status"] as? String ?? "unavailable",
-            configuredHost: value["configured_host"] as? String, actualHost: value["actual_host"] as? String,
-            authTransport: value["auth_transport"] as? String, authOutcome: value["auth_outcome"] as? String,
-            httpStatus: (value["http_status"] as? NSNumber)?.intValue, measuredAt: value["measured_at"] as? String,
-            latencyMs: (value["latency_ms"] as? NSNumber)?.intValue, blockers: value["blockers"] as? [String] ?? [])
-    }
-}
-
-struct CodexLbConnectTestTruth {
-    static let maximumAcceptedOutputTokens = 128, maximumRenderedReplyCharacters = 240
-    struct Success { let model: String, latencyMs: Int, responseId: String, reply: String, inputTokens: Int, outputTokens: Int, totalTokens: Int, httpStatus: Int; var renderedSummary: String { "Model \(model) · latency \(latencyMs) ms · tokens \(inputTokens) in / \(outputTokens) out / \(totalTokens) total · reply: \(reply)" } }
-    static func success(from json: [String: Any]) -> Success? {
-        guard validationFailure(from: json) == "none", let model = string(json["model"]), let latency = integer(json["latency_ms"]),
-              let response = string(json["response_id"]), let reply = string(json["result"]), let usage = json["usage"] as? [String: Any],
-              let input = integer(usage["input_tokens"]), let output = integer(usage["output_tokens"]), let total = integer(usage["total_tokens"]),
-              let http = integer(json["http_status"]) else { return nil }
-        return Success(model: model, latencyMs: latency, responseId: response, reply: boundedReply(reply), inputTokens: input, outputTokens: output, totalTokens: total, httpStatus: http)
-    }
-    static func validationFailure(from json: [String: Any]) -> String {
-        guard json["schema"] as? String == "sks.codex-lb-connect-test.v1" else { return "unexpected or missing schema" }
-        guard json["ok"] as? Bool == true, json["status"] as? String == "connected" else { return "ok was not true" }
-        guard string(json["model"]) != nil, let latency = integer(json["latency_ms"]), latency >= 0, string(json["response_id"]) != nil else { return "model evidence is missing" }
-        guard string(json["result"]) != nil else { return "returned reply is empty" }
-        guard json["result_truncated"] as? Bool != nil, let http = integer(json["http_status"]), (200..<300).contains(http) else { return "HTTP success evidence is invalid" }
-        guard let blockers = json["blockers"] as? [String], blockers.isEmpty, let usage = json["usage"] as? [String: Any],
-              let input = integer(usage["input_tokens"]), let output = integer(usage["output_tokens"]), let total = integer(usage["total_tokens"]),
-              input >= 0, output >= 0, total == input + output else { return "token usage evidence is invalid" }
-        return output <= maximumAcceptedOutputTokens ? "none" : "low-token request evidence is invalid"
-    }
-    static func boundedReply(_ value: String) -> String { let compact = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " "); return compact.count <= maximumRenderedReplyCharacters ? compact : String(compact.prefix(maximumRenderedReplyCharacters)) + "…" }
-    private static func string(_ value: Any?) -> String? { guard let raw = value as? String else { return nil }; let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines); return clean.isEmpty ? nil : clean }
-    private static func integer(_ value: Any?) -> Int? { guard !(value is Bool), let number = value as? NSNumber, number.doubleValue.rounded(.towardZero) == number.doubleValue else { return nil }; return number.intValue }
 }

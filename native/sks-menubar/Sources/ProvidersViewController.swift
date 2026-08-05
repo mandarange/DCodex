@@ -1,5 +1,18 @@
 import Cocoa
 
+enum ProviderStatusColor {
+    static func forState(_ state: String) -> NSColor {
+        switch state {
+        case "verified", "ready": return .systemGreen
+        case "running": return .systemBlue
+        case "failed", "blocked", "rejected", "unavailable": return .systemRed
+        case "degraded", "stale", "available_unverified", "configured_unverified": return .systemOrange
+        case "not_attempted", "unsupported": return .secondaryLabelColor
+        default: return .secondaryLabelColor
+        }
+    }
+}
+
 final class ProvidersViewController: NSViewController, ControlCenterPage, NSTextFieldDelegate {
     let processClient: ProcessClient
     let operations: OperationCoordinator
@@ -24,38 +37,13 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         return field
     }()
 
-    // Compatibility state used by the remaining role/Fast/connect-test source files.
-    let cliConnectConfigurationStage = NativeView.detail("1. Configuration · waiting")
-    let cliConnectRequestStage = NativeView.detail("2. One-request low-token test · waiting")
-    let cliConnectResponseStage = NativeView.detail("3. Response · not received")
-    let cliConnectResult = NativeView.detail("Connection proof has not run.")
-    let cliConnectProgress: NSProgressIndicator = { let p = NSProgressIndicator(); p.style = .bar; p.minValue = 0; p.maxValue = 3; return p }()
-    let providerApplyStatus = NativeView.detail("Provider apply stages: no operation receipt yet.")
     let codexLbKeychainStatus = NativeView.detail("Codex-LB credential: checking Keychain without UI…")
     let openRouterKeychainStatus = NativeView.detail("OpenRouter credential: checking Keychain without UI…")
     let oauthCredentialStatus = NativeView.detail("ChatGPT OAuth: checking Codex-owned identity…")
-    let openRouterActiveStatus = NativeView.detail("OpenRouter enabled state: checking…")
-    let openRouterCatalogStatus = NativeView.detail("OpenRouter catalog: checking…")
-    let openRouterStatus = NativeView.detail("No OpenRouter action has run.")
-    let openRouterModelField = NSTextField()
-    let openRouterModelPopup = NSPopUpButton()
-    let multiProvider = MultiProviderRouterControls()
-    let roleStatus = NativeView.detail("Role model settings are loading…")
     let globalSpinner = NativeView.spinner(label: "Provider operation in progress")
-    let fastStatus = NativeView.detail("Codex Fast: checking…")
-    let activeProviderBadge = ControlKit.badge("Desktop Bridge · checking", tone: .busy)
     var capabilityRows: [String: NSTextField] = [:]
-    var desktopFullRoutingNow = false, codexLbSelectedNow = false, codexLbProvedNow = false
-    var chatgptOauthPresentNow = false, openRouterSelectedNow = false, openRouterCredentialValidatedNow = false
-    var openRouterActiveModel = "", routerSelectedNow = false, routerActiveModel = ""
-    var roleRows: [String: RoleModelControls] = [:]
     var actionButtons: [NSButton] = []
-    var openRouterModels: [String] = []
-    var supportedRoleProfiles: [(model: String, reasoning: String)] = []
-    var roleProfilesLoaded = false
-    weak var openRouterRefreshButton: NSButton?, openRouterRestoreButton: NSButton?, roleRefreshButton: NSButton?
-    var openRouterRestoreAvailable = false, catalogRefreshInFlight = false, roleRefreshInFlight = false
-    var openRouterModelSelectionPending = false, openRouterActionRan = false, connectTestInFlight = false
+    var catalogRefreshInFlight = false
     var busy = false
     let keychainStore = SKSKeychainStore()
 
@@ -87,7 +75,6 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         openRouterCredentialStatus.setAccessibilityIdentifier("sks-provider-openrouter-status")
         catalogSyncStatus.setAccessibilityIdentifier("sks-provider-combined-catalog-status")
         routesStatus.setAccessibilityIdentifier("sks-provider-routes-status")
-        providerApplyStatus.setAccessibilityIdentifier("sks-center-provider-apply-status")
 
         view = NativeView.page([
             NativeView.row([NativeView.title("Providers & Models"), globalSpinner]),
@@ -124,8 +111,6 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     func setBusy(_ value: Bool) {
         busy = value
         for button in actionButtons where !providerButtons.values.flatMap({ $0 }).contains(where: { $0 === button }) { button.isEnabled = !value }
-        openRouterModelField.isEnabled = !value && openRouterCredentialValidatedNow
-        updateRoleControlAvailability()
         value ? globalSpinner.startAnimation(nil) : globalSpinner.stopAnimation(nil)
     }
 
@@ -136,7 +121,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     }
 
     private func run(_ args: [String], title: String, kind: String, group: String?, timeout: TimeInterval = NativeView.mutationTimeout, completion: (() -> Void)? = nil) {
-        guard let snapshot = operations.begin(kind: kind, mutationGroup: group, summary: title) else { fastStatus.stringValue = "Another guarded mutation is running."; return }
+        guard let snapshot = operations.begin(kind: kind, mutationGroup: group, summary: title) else { providerStatus.stringValue = "Another guarded mutation is running."; return }
         setBusy(true)
         _ = operations.update(snapshot, state: .running, stage: "running", progress: nil, summary: title)
         processClient.run(args, timeout: timeout) { [weak self] result in
@@ -172,7 +157,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     }
 
     private func renderBridgeStatus(_ json: [String: Any]) {
-        let management = (json["management"] as? [String: Any]) ?? (json["bridge"] as? [String: Any])?["management"] as? [String: Any]
+        let management = json["management"] as? [String: Any]
         let runtime = management?["runtime"] as? String
         let state = management?["state"] as? String ?? "blocked"
         guard runtime == "desktop-bridge" else {
@@ -193,7 +178,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         let stage = probe?["terminal_stage"] as? String ?? "unknown"
         let cause = (probe?["root_cause"] as? String).map { " · root cause: \(ProviderSecretRedactor.redact($0))" } ?? ""
         label.stringValue = "\(title): \(state) · stage \(stage)\(cause)"
-        label.textColor = state == "verified" ? .systemGreen : .systemRed
+        label.textColor = ProviderStatusColor.forState(state)
     }
 
     private func statusReportMayMerge(_ report: DesktopCapabilityReportV3) -> Bool {
@@ -273,13 +258,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     }
 
     private func capabilityColor(_ state: CapabilityProbeState) -> NSColor {
-        switch state {
-        case .verified: return .systemGreen
-        case .running: return .systemBlue
-        case .blocked, .failed: return .systemRed
-        case .unsupported: return .secondaryLabelColor
-        case .degraded, .stale, .notAttempted: return .systemOrange
-        }
+        ProviderStatusColor.forState(state.rawValue)
     }
 
     @objc private func repairDesktopBridge() { run(["bridge", "repair", "--json"], title: "Repair Desktop Bridge", kind: "bridge-repair", group: "codex-config") { [weak self] in self?.refresh() } }
@@ -306,16 +285,8 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             capabilityStatus.stringValue = "Review user-owned config manually. SKS will not overwrite a conflicting custom provider."
         }
     }
-    @objc private func fastOn() { run(["fast-mode", "on", "--json"], title: "Codex Fast On", kind: "fast-mode-on", group: "codex-config") }
-    @objc private func fastOff() { run(["fast-mode", "off", "--json"], title: "Codex Fast Off", kind: "fast-mode-off", group: "codex-config") }
-
     func json(_ output: String) -> [String: Any]? { guard let data = output.data(using: .utf8) else { return nil }; return try? JSONSerialization.jsonObject(with: data) as? [String: Any] }
     func jsonObject<T: Encodable>(_ value: T) -> [String: Any] { guard let data = try? JSONEncoder().encode(value) else { return [:] }; return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:] }
     private func yesNo(_ value: Any?) -> String { value as? Bool == true ? "yes" : "no" }
 
-    // Compatibility badge writer for legacy connect-test callbacks only.
-    func renderMeasuredRoutingBadge(_ route: ProviderRoutingTruth.MeasuredRoute?, routeExpected: Bool) {
-        guard routeExpected else { return }
-        ControlKit.setBadge(activeProviderBadge, text: route?.active == true ? "Codex-LB · verified" : "Codex-LB · unverified", tone: route?.active == true ? .ok : .warning)
-    }
 }

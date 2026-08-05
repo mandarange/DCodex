@@ -1,27 +1,9 @@
 import Cocoa
 
 extension ProvidersViewController {
-    // Compatibility refresh keeps an unsaved editor value intact while the
-    // active 8.1.3 card obtains profile truth from `bridge status`.
-    func refreshOpenRouterStatus() {
-        let current = openRouterModelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !self.openRouterModelSelectionPending,
-           current.isEmpty,
-           !openRouterActiveModel.isEmpty {
-            openRouterModelField.stringValue = openRouterActiveModel
-        }
-        refresh()
-    }
-
     func describeOpenRouterStatus(_ json: [String: Any]) -> String {
         let enabled = json["enabled"] as? Bool == true
         return "OpenRouter profile · \(enabled ? "enabled" : "disabled")"
-    }
-
-    @objc private func selectOpenRouterModel(_ sender: NSPopUpButton) {
-        guard sender.indexOfSelectedItem > 0, let model = sender.titleOfSelectedItem else { return }
-        openRouterModelSelectionPending = true
-        openRouterModelField.stringValue = model
     }
 
     func makeProviderCredentialsCard() -> NSBox {
@@ -67,7 +49,6 @@ extension ProvidersViewController {
         renderProviderProfile(providers["openrouter"] as? [String: Any], id: "openrouter", label: openRouterCredentialStatus)
         let identity = json["native_identity"] as? [String: Any]
         let identityState = identity?["state"] as? String ?? "not_attempted"
-        chatgptOauthPresentNow = identityState == "verified" || identityState == "configured_unverified"
         oauthCredentialStatus.stringValue = "ChatGPT OAuth Identity · \(identityState) · Codex-owned; never copied into provider profiles"
         oauthCredentialStatus.textColor = identityState == "verified" ? .systemGreen : .secondaryLabelColor
     }
@@ -107,7 +88,6 @@ extension ProvidersViewController {
         promptForSecretKey(window: window, sheetTitle: "OpenRouter API Key", sheetMessage: "Paste the OpenRouter key. Codex-LB and ChatGPT OAuth remain unchanged.", placeholder: "sk-or-…", args: ["bridge", "provider", "configure", "openrouter", "--api-key-stdin", "--json"], kind: "bridge-provider-configure-openrouter", title: "Configure OpenRouter profile", credential: .openRouterApiKey, statusLabel: openRouterCredentialStatus, successSummary: "OpenRouter profile configured; Codex-LB preserved", failSummary: "OpenRouter profile configuration failed", codePrefix: "E-OR", providerId: "openrouter")
     }
 
-    @objc func saveOpenRouterKey() { configureOpenRouterProfile() }
     @objc func validateCodexLbProfile() { runProviderAction("codex-lb", args: ["bridge", "provider", "validate", "codex-lb", "--json"], title: "Validate Codex-LB", mutationGroup: nil) }
     @objc func validateOpenRouterProfile() { runProviderAction("openrouter", args: ["bridge", "provider", "validate", "openrouter", "--json"], title: "Validate OpenRouter", mutationGroup: nil) }
     @objc func toggleCodexLbProfile() { toggleProvider("codex-lb") }
@@ -133,11 +113,6 @@ extension ProvidersViewController {
             if !generated { label.stringValue = "\(title) failed · \(self.structuredPublicDetail(parsed, fallback: result.output))" }
             self.refresh()
         }
-    }
-
-    func renderActiveProviderSummary() {
-        let ready = [providerEnabled["codex-lb"] == true ? "Codex-LB" : nil, providerEnabled["openrouter"] == true ? "OpenRouter" : nil].compactMap { $0 }
-        ControlKit.setBadge(activeProviderBadge, text: ready.isEmpty ? "Desktop Bridge · awaiting provider" : "Desktop Bridge · \(ready.joined(separator: " + "))", tone: ready.isEmpty ? .warning : .ok)
     }
 
     func structuredPublicDetail(_ json: [String: Any]?, fallback: String, codePrefix: String = "E-PROVIDER", fallbackNext: String = "Retry the operation") -> String {
