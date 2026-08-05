@@ -6,6 +6,9 @@ import { buildProviderUpstreamHeaders, rewriteResponseHeaders } from './header-p
 import { assertDesktopBridgeRouteContext, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader } from './security.js';
 import { desktopBridgeListenOrigin } from './state.js';
 import { DesktopBridgeError, type DesktopBridgeResolvedCredential, type DesktopBridgeRouteContext, type PreparedDesktopBridgeConfig } from './types.js';
+import { redactCapabilityEvidence, redactCapabilityText } from '../trusted-deep-evidence.js';
+
+const MAX_UPSTREAM_ERROR_BODY_BYTES = 1024 * 1024;
 
 export interface PreparedDesktopBridgeRequest {
   body: Buffer | null;
@@ -85,6 +88,30 @@ function writeHttpBridgeError(res: ServerResponse, error: unknown): void {
   res.end(JSON.stringify({ error: { type: 'sks_bridge_error', code, message: code } }));
 }
 
+async function readRedactedUpstreamError(response: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const raw of response) {
+    const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+    total += chunk.length;
+    if (total > MAX_UPSTREAM_ERROR_BODY_BYTES) {
+      response.destroy();
+      return Buffer.from(JSON.stringify({ error: { type: 'upstream_error', message: '[REDACTED]' } }));
+    }
+    chunks.push(chunk);
+  }
+  const text = Buffer.concat(chunks).toString('utf8');
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return Buffer.from(JSON.stringify(redactCapabilityEvidence(parsed as Record<string, unknown>)));
+    }
+  } catch {
+    // Non-JSON provider errors are redacted as bounded text.
+  }
+  return Buffer.from(redactCapabilityText(text));
+}
+
 export async function forwardHttp(
   req: IncomingMessage,
   res: ServerResponse,
@@ -116,8 +143,20 @@ export async function forwardHttp(
       const abort = (): void => { if (!res.writableEnded) upstream.destroy(new DesktopBridgeError('bridge_client_disconnected')); };
       req.once('aborted', abort); res.once('close', abort); upstream.once('error', finish);
       upstream.once('response', (response) => {
+        const statusCode = response.statusCode || 502;
+        if (statusCode >= 400) {
+          void readRedactedUpstreamError(response).then((body) => {
+            responseStarted = true;
+            const responseHeaders = rewriteResponseHeaders(response.headers, provider.base_url, localOrigin);
+            responseHeaders['content-length'] = String(body.length);
+            delete responseHeaders['transfer-encoding'];
+            res.writeHead(statusCode, responseHeaders);
+            res.end(body, () => finish());
+          }).catch(finish);
+          return;
+        }
         responseStarted = true;
-        try { res.writeHead(response.statusCode || 502, rewriteResponseHeaders(response.headers, provider.base_url, localOrigin)); }
+        try { res.writeHead(statusCode, rewriteResponseHeaders(response.headers, provider.base_url, localOrigin)); }
         catch (error) { response.destroy(error instanceof Error ? error : undefined); finish(error); return; }
         void pipeline(response, res).then(() => finish(), finish);
       });

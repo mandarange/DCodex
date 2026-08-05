@@ -37,7 +37,8 @@ export interface DesktopBridgeProviderSnapshot {
   credential_state: 'not_configured' | 'configured_unverified' | 'validating' | 'ready' | 'rejected' | 'unavailable' | 'stale';
   credential_fingerprint: string | null;
   credential_generation: string;
-  catalog_generation: string | null;
+  /** Provider-source catalog generation; distinct from routePolicy.catalog_generation. */
+  source_catalog_generation: string | null;
 }
 
 export interface DesktopBridgeProviderRegistrySnapshot {

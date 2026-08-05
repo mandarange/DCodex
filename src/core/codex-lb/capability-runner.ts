@@ -69,7 +69,7 @@ export function runDesktopCapabilityReportV3(
   const activeProviders = providerSet(input.activeProviderIds)
   const enabledProviders = providerSet(input.enabledProviderIds || input.activeProviderIds)
   const candidates = [
-    ...(input.results || []),
+    ...(input.results || []).filter((result) => result.capability !== 'catalog_sync'),
     ...catalogSyncResults(input, catalogSync, checkedAt)
   ].map((result) => normalizeV3Result(result, input, checkedAt))
   let selected = selectCurrentResults(candidates, input)

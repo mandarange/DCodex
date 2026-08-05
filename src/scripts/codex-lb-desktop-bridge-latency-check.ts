@@ -213,13 +213,13 @@ function bridgeConfig(listenPort: number, upstreamPort: number): DesktopBridgeCo
           provider_id: 'codex-lb', enabled: true, base_url: baseUrl,
           allowed_origins: [new URL(baseUrl).origin], auth_transport: 'x-codex-lb-api-key',
           credential_state: 'ready', credential_fingerprint: CREDENTIAL_FINGERPRINT,
-          credential_generation: CREDENTIAL_GENERATION, catalog_generation: CATALOG_GENERATION
+          credential_generation: CREDENTIAL_GENERATION, source_catalog_generation: CATALOG_GENERATION
         },
         openrouter: {
           provider_id: 'openrouter', enabled: false, base_url: 'https://openrouter.ai/api/v1',
           allowed_origins: ['https://openrouter.ai'], auth_transport: 'openrouter-bearer',
           credential_state: 'not_configured', credential_fingerprint: null,
-          credential_generation: 'desktop-bridge-latency-openrouter-credential', catalog_generation: null
+          credential_generation: 'desktop-bridge-latency-openrouter-credential', source_catalog_generation: null
         }
       }
     },

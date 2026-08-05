@@ -12,6 +12,7 @@ import {
   getDesktopBridgeStatus,
   prepareDesktopBridgeConfig,
   readDesktopBridgeState,
+  refreshDesktopBridgeState,
   removeDesktopBridgeStateIfOwned,
   renderDesktopBridgeLaunchdPlist,
   rewriteLocationHeader,
@@ -22,6 +23,7 @@ import {
 
 const CODEX_LB_SECRET = 'lb-key-unit-secret';
 const CATALOG_GENERATION = 'catalog-generation';
+const SOURCE_CATALOG_GENERATION = 'provider-source-catalog-generation';
 const POLICY_GENERATION = 'policy-generation';
 const CREDENTIAL_GENERATION = 'credential-generation';
 const CREDENTIAL_FINGERPRINT = 'credential-fingerprint';
@@ -40,13 +42,13 @@ function config(transport: DesktopBridgeProviderAuthTransport = 'x-codex-lb-api-
           provider_id: 'codex-lb', enabled: true, base_url: baseUrl,
           allowed_origins: [new URL(baseUrl).origin], auth_transport: transport,
           credential_state: 'ready', credential_fingerprint: CREDENTIAL_FINGERPRINT,
-          credential_generation: CREDENTIAL_GENERATION, catalog_generation: CATALOG_GENERATION,
+          credential_generation: CREDENTIAL_GENERATION, source_catalog_generation: SOURCE_CATALOG_GENERATION,
         },
         openrouter: {
           provider_id: 'openrouter', enabled: false, base_url: 'https://openrouter.ai/api/v1',
           allowed_origins: ['https://openrouter.ai'], auth_transport: 'openrouter-bearer',
           credential_state: 'not_configured', credential_fingerprint: null,
-          credential_generation: 'openrouter-credential-generation', catalog_generation: null,
+          credential_generation: 'openrouter-credential-generation', source_catalog_generation: null,
         },
       },
     },
@@ -70,6 +72,12 @@ function config(transport: DesktopBridgeProviderAuthTransport = 'x-codex-lb-api-
     idleTimeoutMs: 30_000,
   };
 }
+
+test('R44/security: provider-source and combined catalog generations remain distinct on a valid route', async () => {
+  const prepared = await prepareDesktopBridgeConfig(config(), async () => [{ address: '93.184.216.34', family: 4 }]);
+  assert.equal(prepared.providers['codex-lb'].source_catalog_generation, SOURCE_CATALOG_GENERATION);
+  assert.notEqual(prepared.providers['codex-lb'].source_catalog_generation, prepared.routePolicy.catalog_generation);
+});
 
 function withCodexLbBaseUrl(input: DesktopBridgeConfig, baseUrl: string): DesktopBridgeConfig {
   return {
@@ -187,7 +195,7 @@ test('Location rewrite accepts only the configured HTTP/WebSocket endpoint famil
   );
 });
 
-test('0600 v2 public state contains registry, route, and credential generations but no provider secret', async () => {
+test('R37/security: 0600 public state records live probe IDs without provider secrets', async () => {
   const temp = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-desktop-bridge-state-'));
   const file = path.join(temp, 'state.json');
   try {
@@ -206,6 +214,9 @@ test('0600 v2 public state contains registry, route, and credential generations 
     assert.equal(state.catalog_generation, currentConfig.routePolicy.catalog_generation);
     assert.equal(state.provider_credential_generations['codex-lb'], CREDENTIAL_GENERATION);
     assert.deepEqual(await readDesktopBridgeState(file), state);
+    state.last_verified_probe_ids = ['report-transport-001', 'report-transport-001:bridge:http_health'];
+    assert.equal(await refreshDesktopBridgeState(file, state, new Date()), true);
+    assert.deepEqual((await readDesktopBridgeState(file))?.last_verified_probe_ids, state.last_verified_probe_ids);
 
     const generation = desktopBridgeConfigGeneration(currentConfig);
     assert.equal((await getDesktopBridgeStatus({

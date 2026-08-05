@@ -47,11 +47,11 @@ function bridgeConfig(port: number, upstreamPort: number): DesktopBridgeConfig {
       providers: {
         'codex-lb': {
           provider_id: 'codex-lb', enabled: true, base_url: baseUrl, allowed_origins: [new URL(baseUrl).origin], auth_transport: 'x-codex-lb-api-key',
-          credential_state: 'ready', credential_fingerprint: 'credential-fingerprint', credential_generation: 'credential-generation', catalog_generation: 'catalog-generation',
+          credential_state: 'ready', credential_fingerprint: 'credential-fingerprint', credential_generation: 'credential-generation', source_catalog_generation: 'catalog-generation',
         },
         openrouter: {
           provider_id: 'openrouter', enabled: false, base_url: 'https://openrouter.ai/api/v1', allowed_origins: ['https://openrouter.ai'], auth_transport: 'openrouter-bearer',
-          credential_state: 'not_configured', credential_fingerprint: null, credential_generation: 'openrouter-credential-generation', catalog_generation: null,
+          credential_state: 'not_configured', credential_fingerprint: null, credential_generation: 'openrouter-credential-generation', source_catalog_generation: null,
         },
       },
     },

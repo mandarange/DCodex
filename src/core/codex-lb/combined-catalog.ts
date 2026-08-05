@@ -30,6 +30,7 @@ interface BridgeActiveGenerationPointer {
   readonly schema: typeof BRIDGE_ACTIVE_GENERATION_SCHEMA;
   readonly catalog_generation: string;
   readonly route_index_generation: string;
+  readonly observation_generation?: string;
   readonly bundle_directory: string;
   readonly catalog_filename: string;
   readonly route_index_filename: string;
@@ -52,6 +53,7 @@ export interface CombinedBridgeCatalogArtifact {
   readonly created_at: string;
   readonly digest: string;
   readonly models: readonly BridgeCatalogModel[];
+  readonly provider_statuses: Record<BridgeProviderId, CatalogSyncState>;
 }
 
 export interface CombinedCatalogBuildResult {
@@ -62,6 +64,19 @@ export interface CombinedCatalogBuildResult {
   readonly status: CombinedCatalogSyncStatus;
   readonly blockers: readonly string[];
   readonly warnings: readonly string[];
+}
+
+export interface CombinedCatalogStagingResult {
+  readonly schema: 'sks.bridge-combined-catalog-staging.v1';
+  readonly staged: boolean;
+  readonly generation: string | null;
+  readonly previous_generation: string | null;
+  readonly catalog_path: string | null;
+  readonly route_index_path: string | null;
+  readonly pointer_path: string;
+  /** Secret-free bytes to commit as the single active-generation switch. */
+  readonly pointer_text: string | null;
+  readonly blockers: readonly string[];
 }
 
 export function combinedBridgeCatalogPath(codexHome: string = process.env.CODEX_HOME || path.join(os.homedir(), '.codex')): string {
@@ -102,6 +117,10 @@ export function buildCombinedBridgeCatalog(
     },
     created_at: createdAt
   });
+  const providerStatuses = {
+    'codex-lb': providerCatalogStatus(options.catalogs['codex-lb'], normalized['codex-lb']),
+    openrouter: providerCatalogStatus(options.catalogs.openrouter, normalized.openrouter)
+  };
   const semanticCatalog = { models };
   const digest = sha256Stable(semanticCatalog);
   const catalog: CombinedBridgeCatalogArtifact = {
@@ -109,7 +128,8 @@ export function buildCombinedBridgeCatalog(
     generation: digest,
     created_at: createdAt,
     digest,
-    models
+    models,
+    provider_statuses: providerStatuses
   };
   const blockers = unique([
     ...normalized['codex-lb'].blockers,
@@ -126,10 +146,6 @@ export function buildCombinedBridgeCatalog(
     : blockers.length > 0 || enabledReadyCount < enabledProviders.length
       ? 'degraded'
       : 'verified';
-  const providerStatuses = {
-    'codex-lb': providerCatalogStatus(options.catalogs['codex-lb'], normalized['codex-lb']),
-    openrouter: providerCatalogStatus(options.catalogs.openrouter, normalized.openrouter)
-  };
   const status: CombinedCatalogSyncStatus = {
     schema: 'sks.combined-catalog-sync.v1',
     state,
@@ -162,35 +178,28 @@ export function buildCombinedBridgeCatalog(
   };
 }
 
-export async function activateCombinedBridgeCatalog(input: {
+/**
+ * Persist and verify an immutable catalog/route-index generation without
+ * changing the active pointer. Callers that also mutate config or policy can
+ * include `pointer_text` in their own transaction and avoid a mixed state.
+ */
+export async function stageCombinedBridgeCatalog(input: {
   readonly build: CombinedCatalogBuildResult;
   readonly catalogPath: string;
   readonly routeIndexPath: string;
-  readonly testHooks?: {
-    readonly afterCatalogRename?: () => void | Promise<void>;
-    readonly beforeRouteIndexRename?: () => void | Promise<void>;
-  };
-}): Promise<{
-  readonly schema: 'sks.bridge-combined-catalog-activation.v1';
-  readonly activated: boolean;
-  readonly generation: string | null;
-  readonly previous_generation: string | null;
-  readonly catalog_path: string | null;
-  readonly route_index_path: string | null;
-  readonly pointer_path: string;
-  readonly blockers: readonly string[];
-}> {
+}): Promise<CombinedCatalogStagingResult> {
   const previous = await readActiveCombinedBridgeCatalog(input.catalogPath, input.routeIndexPath);
   const layout = generationBundleLayout(input.catalogPath, input.routeIndexPath, input.build);
   if (!layout.ok) {
     return {
-      schema: 'sks.bridge-combined-catalog-activation.v1',
-      activated: false,
+      schema: 'sks.bridge-combined-catalog-staging.v1',
+      staged: false,
       generation: null,
       previous_generation: previous.ok ? previous.catalog.generation : null,
       catalog_path: previous.ok ? previous.catalog_path : null,
       route_index_path: previous.ok ? previous.route_index_path : null,
       pointer_path: layout.pointerPath,
+      pointer_text: null,
       blockers: layout.blockers
     };
   }
@@ -200,13 +209,14 @@ export async function activateCombinedBridgeCatalog(input: {
   // Conflicts/no-ready-provider builds use ok=false and remain fail-closed.
   if (!input.build.ok) {
     return {
-      schema: 'sks.bridge-combined-catalog-activation.v1',
-      activated: false,
+      schema: 'sks.bridge-combined-catalog-staging.v1',
+      staged: false,
       generation: null,
       previous_generation: previous.ok ? previous.catalog.generation : null,
       catalog_path: previous.ok ? previous.catalog_path : null,
       route_index_path: previous.ok ? previous.route_index_path : null,
       pointer_path: layout.pointerPath,
+      pointer_text: null,
       blockers: unique(input.build.blockers.length > 0 ? input.build.blockers : ['combined_catalog_build_not_verified'])
     };
   }
@@ -215,7 +225,6 @@ export async function activateCombinedBridgeCatalog(input: {
   const tempBundle = `${layout.bundleDirectory}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
   const tempCatalog = path.join(tempBundle, layout.catalogFilename);
   const tempRouteIndex = path.join(tempBundle, layout.routeIndexFilename);
-  const priorPointer = await snapshot(layout.pointerPath);
   try {
     await fs.mkdir(layout.generationsRoot, { recursive: true, mode: 0o700 });
     await assertPrivateDirectory(layout.generationsRoot);
@@ -241,18 +250,80 @@ export async function activateCombinedBridgeCatalog(input: {
       await fs.rename(tempBundle, layout.bundleDirectory);
       await fsyncDirectory(layout.generationsRoot);
     }
-    await input.testHooks?.afterCatalogRename?.();
-    await input.testHooks?.beforeRouteIndexRename?.();
     const pointer: BridgeActiveGenerationPointer = {
       schema: BRIDGE_ACTIVE_GENERATION_SCHEMA,
       catalog_generation: input.build.catalog.generation,
       route_index_generation: input.build.route_index.generation,
+      observation_generation: catalogObservationGeneration(input.build.catalog),
       bundle_directory: path.relative(layout.parentDirectory, layout.bundleDirectory),
       catalog_filename: layout.catalogFilename,
       route_index_filename: layout.routeIndexFilename
     };
-    await writeTextAtomic(layout.pointerPath, `${JSON.stringify(pointer, null, 2)}\n`, { mode: 0o600 });
-    await fsyncDirectory(layout.parentDirectory);
+    return {
+      schema: 'sks.bridge-combined-catalog-staging.v1',
+      staged: true,
+      generation: input.build.catalog.generation,
+      previous_generation: previous.ok ? previous.catalog.generation : null,
+      catalog_path: layout.catalogPath,
+      route_index_path: layout.routeIndexPath,
+      pointer_path: layout.pointerPath,
+      pointer_text: `${JSON.stringify(pointer, null, 2)}\n`,
+      blockers: []
+    };
+  } catch (error) {
+    return {
+      schema: 'sks.bridge-combined-catalog-staging.v1',
+      staged: false,
+      generation: null,
+      previous_generation: previous.ok ? previous.catalog.generation : null,
+      catalog_path: previous.ok ? previous.catalog_path : null,
+      route_index_path: previous.ok ? previous.route_index_path : null,
+      pointer_path: layout.pointerPath,
+      pointer_text: null,
+      blockers: [safeErrorCode(error, 'combined_catalog_staging_failed')]
+    };
+  } finally {
+    await fs.rm(tempBundle, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+export async function activateCombinedBridgeCatalog(input: {
+  readonly build: CombinedCatalogBuildResult;
+  readonly catalogPath: string;
+  readonly routeIndexPath: string;
+  readonly testHooks?: {
+    readonly afterCatalogRename?: () => void | Promise<void>;
+    readonly beforeRouteIndexRename?: () => void | Promise<void>;
+  };
+}): Promise<{
+  readonly schema: 'sks.bridge-combined-catalog-activation.v1';
+  readonly activated: boolean;
+  readonly generation: string | null;
+  readonly previous_generation: string | null;
+  readonly catalog_path: string | null;
+  readonly route_index_path: string | null;
+  readonly pointer_path: string;
+  readonly blockers: readonly string[];
+}> {
+  const staged = await stageCombinedBridgeCatalog(input);
+  if (!staged.staged || !staged.pointer_text) {
+    return {
+      schema: 'sks.bridge-combined-catalog-activation.v1',
+      activated: false,
+      generation: null,
+      previous_generation: staged.previous_generation,
+      catalog_path: staged.catalog_path,
+      route_index_path: staged.route_index_path,
+      pointer_path: staged.pointer_path,
+      blockers: staged.blockers
+    };
+  }
+  const priorPointer = await snapshot(staged.pointer_path);
+  try {
+    await input.testHooks?.afterCatalogRename?.();
+    await input.testHooks?.beforeRouteIndexRename?.();
+    await writeTextAtomic(staged.pointer_path, staged.pointer_text, { mode: 0o600 });
+    await fsyncDirectory(path.dirname(staged.pointer_path));
     const activated = await readActiveCombinedBridgeCatalog(input.catalogPath, input.routeIndexPath);
     if (!activated.ok
       || activated.catalog.generation !== input.build.catalog.generation
@@ -262,35 +333,36 @@ export async function activateCombinedBridgeCatalog(input: {
     return {
       schema: 'sks.bridge-combined-catalog-activation.v1',
       activated: true,
-      generation: input.build.catalog.generation,
-      previous_generation: previous.ok ? previous.catalog.generation : null,
-      catalog_path: layout.catalogPath,
-      route_index_path: layout.routeIndexPath,
-      pointer_path: layout.pointerPath,
+      generation: staged.generation,
+      previous_generation: staged.previous_generation,
+      catalog_path: staged.catalog_path,
+      route_index_path: staged.route_index_path,
+      pointer_path: staged.pointer_path,
       blockers: []
     };
   } catch (error) {
     const rollbackBlockers: string[] = [];
     try {
-      await restoreSnapshot(layout.pointerPath, priorPointer);
+      await restoreSnapshot(staged.pointer_path, priorPointer);
     } catch {
       rollbackBlockers.push('combined_catalog_previous_generation_restore_failed');
     }
+    const restored = rollbackBlockers.length === 0
+      ? await readActiveCombinedBridgeCatalog(input.catalogPath, input.routeIndexPath)
+      : null;
     return {
       schema: 'sks.bridge-combined-catalog-activation.v1',
       activated: false,
       generation: null,
-      previous_generation: previous.ok ? previous.catalog.generation : null,
-      catalog_path: previous.ok ? previous.catalog_path : null,
-      route_index_path: previous.ok ? previous.route_index_path : null,
-      pointer_path: layout.pointerPath,
+      previous_generation: staged.previous_generation,
+      catalog_path: restored?.ok ? restored.catalog_path : null,
+      route_index_path: restored?.ok ? restored.route_index_path : null,
+      pointer_path: staged.pointer_path,
       blockers: unique([
         safeErrorCode(error, 'combined_catalog_activation_failed'),
         ...rollbackBlockers
       ])
     };
-  } finally {
-    await fs.rm(tempBundle, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -327,10 +399,9 @@ export async function readActiveCombinedBridgeCatalog(
     if (pointer.schema !== BRIDGE_ACTIVE_GENERATION_SCHEMA) throw new Error('combined_catalog_active_pointer_schema_invalid');
     const generationsRoot = path.join(parentDirectory, '.sks-bridge-generations');
     const bundleDirectory = path.resolve(parentDirectory, pointer.bundle_directory);
-    const expectedBundleDirectory = path.join(
-      generationsRoot,
-      `${pointer.catalog_generation}.${pointer.route_index_generation}`
-    );
+    const expectedBundleDirectory = path.join(generationsRoot, pointer.observation_generation
+      ? `${pointer.catalog_generation}.${pointer.route_index_generation}.${pointer.observation_generation}`
+      : `${pointer.catalog_generation}.${pointer.route_index_generation}`);
     if (bundleDirectory !== expectedBundleDirectory
       || !bundleDirectory.startsWith(`${generationsRoot}${path.sep}`)
       || pointer.catalog_filename !== path.basename(catalogPath)
@@ -524,14 +595,14 @@ function generationBundleLayout(
   const resolvedRoute = path.resolve(routeIndexPath);
   const parentDirectory = path.dirname(resolvedCatalog);
   const generationsRoot = path.join(parentDirectory, '.sks-bridge-generations');
-  const generationName = `${build.catalog.generation}.${build.route_index.generation}`;
+  const generationName = `${build.catalog.generation}.${build.route_index.generation}.${catalogObservationGeneration(build.catalog)}`;
   const bundleDirectory = path.join(generationsRoot, generationName);
   const catalogFilename = path.basename(resolvedCatalog);
   const routeIndexFilename = path.basename(resolvedRoute);
   const blockers = unique([
     ...(path.dirname(resolvedRoute) === parentDirectory ? [] : ['combined_catalog_paths_must_share_directory']),
     ...(catalogFilename !== routeIndexFilename ? [] : ['combined_catalog_paths_must_be_distinct']),
-    ...(/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(generationName) ? [] : ['combined_catalog_generation_invalid'])
+    ...(/^[a-f0-9]{64}\.[a-f0-9]{64}\.[a-f0-9]{64}$/.test(generationName) ? [] : ['combined_catalog_generation_invalid'])
   ]);
   return {
     ok: blockers.length === 0,
@@ -563,9 +634,12 @@ async function readVerifiedPair(catalogPath: string, routeIndexPath: string): Pr
   ]);
   const validCatalog = catalog.schema === COMBINED_BRIDGE_CATALOG_SCHEMA
     && catalog.digest === catalog.generation
-    && sha256Stable({ models: catalog.models }) === catalog.digest;
+    && sha256Stable({ models: catalog.models }) === catalog.digest
+    && validProviderStatuses(catalog.provider_statuses);
   const validRoute = routeIndexMatchesGeneration(routeIndex, routeIndex.generation);
-  if (!validCatalog || !validRoute) throw new Error('combined_catalog_active_generation_invalid');
+  const providerBindingsValid = validCatalog && (['codex-lb', 'openrouter'] as const).every((providerId) =>
+    catalog.provider_statuses[providerId].generation === routeIndex.providers[providerId].catalog_generation);
+  if (!validCatalog || !validRoute || !providerBindingsValid) throw new Error('combined_catalog_active_generation_invalid');
   return { ok: true, catalog, route_index: routeIndex, blockers: [] };
 }
 
@@ -645,7 +719,44 @@ function emptyCatalog(): CombinedBridgeCatalogArtifact {
     generation: digest,
     created_at: new Date(0).toISOString(),
     digest,
-    models: []
+    models: [],
+    provider_statuses: {
+      'codex-lb': emptyProviderStatus('codex-lb'),
+      openrouter: emptyProviderStatus('openrouter')
+    }
+  };
+}
+
+function catalogObservationGeneration(catalog: CombinedBridgeCatalogArtifact): string {
+  return sha256Stable(catalog.provider_statuses);
+}
+
+function validProviderStatuses(value: unknown): value is Record<BridgeProviderId, CatalogSyncState> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const rows = value as Record<string, CatalogSyncState | undefined>;
+  return (['codex-lb', 'openrouter'] as const).every((providerId) => {
+    const row = rows[providerId];
+    return Boolean(row
+      && row.schema === 'sks.catalog-sync-state.v2'
+      && row.provider_id === providerId
+      && (row.expires_at === null || Number.isFinite(Date.parse(row.expires_at))));
+  });
+}
+
+function emptyProviderStatus(providerId: BridgeProviderId): CatalogSyncState {
+  return {
+    schema: 'sks.catalog-sync-state.v2',
+    provider_id: providerId,
+    state: 'not_started',
+    source: providerId === 'codex-lb' ? 'gateway' : 'openrouter',
+    generation: null,
+    digest: null,
+    model_count: 0,
+    checked_at: null,
+    expires_at: null,
+    blockers: [],
+    warnings: [],
+    recovery_action: null
   };
 }
 

@@ -48,18 +48,31 @@ async function listen(server: net.Server): Promise<number> {
   return (server.address() as AddressInfo).port;
 }
 async function close(server: net.Server): Promise<void> { if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve())); }
-async function post(port: number, model: string): Promise<void> {
+async function post(port: number, model: string): Promise<{ status: number; body: string }> {
   const body = JSON.stringify({ model, input: 'hello' });
-  await new Promise<void>((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, path: '/v1/responses', method: 'POST', headers: { authorization: 'Bearer desktop-oauth', cookie: 'desktop=session', 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) } }, (res) => { res.resume(); res.once('end', resolve); });
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: '/v1/responses', method: 'POST', headers: { authorization: 'Bearer desktop-oauth', cookie: 'desktop=session', 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) } }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.once('end', () => resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString('utf8') }));
+    });
     req.once('error', reject); req.end(body);
   });
 }
 
-test('one bridge process keeps concurrent provider credentials and model rewrites request-local', async () => {
+test('R47/R48 security: concurrent credentials stay isolated and upstream key-like errors are redacted', async () => {
   const seen = new Map<string, { headers: IncomingMessage['headers']; body: string }>();
   const upstream = (name: string) => http.createServer((req, res) => {
-    const chunks: Buffer[] = []; req.on('data', (chunk: Buffer) => chunks.push(chunk)); req.once('end', () => { seen.set(name, { headers: req.headers, body: Buffer.concat(chunks).toString() }); res.end('{"ok":true}'); });
+    const chunks: Buffer[] = []; req.on('data', (chunk: Buffer) => chunks.push(chunk)); req.once('end', () => {
+      const body = Buffer.concat(chunks).toString();
+      seen.set(name, { headers: req.headers, body });
+      if (body.includes('lb/error')) {
+        res.writeHead(401, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Bearer sk-sensitive-upstream-key-12345678', api_key: 'sk-sensitive-upstream-key-12345678' }));
+        return;
+      }
+      res.end('{"ok":true}');
+    });
   });
   const lb = upstream('lb'); const openrouter = upstream('openrouter'); const lbPort = await listen(lb); const orPort = await listen(openrouter);
   const holder = net.createServer(); const bridgePort = await listen(holder); await close(holder); let bridge: DesktopBridgeHandle | null = null;
@@ -67,11 +80,11 @@ test('one bridge process keeps concurrent provider credentials and model rewrite
     providerRegistry: {
       schema: 'sks.desktop-bridge-provider-registry.v1', generation: 'registry-1', created_at: '2026-08-05T00:00:00.000Z',
       providers: {
-        'codex-lb': { provider_id: 'codex-lb', enabled: true, base_url: `http://127.0.0.1:${lbPort}`, allowed_origins: [`http://127.0.0.1:${lbPort}`], auth_transport: 'x-codex-lb-api-key', credential_state: 'ready', credential_fingerprint: 'lb-fp', credential_generation: 'lb-g1', catalog_generation: 'catalog-1' },
-        openrouter: { provider_id: 'openrouter', enabled: true, base_url: `http://127.0.0.1:${orPort}`, allowed_origins: [`http://127.0.0.1:${orPort}`], auth_transport: 'openrouter-bearer', credential_state: 'ready', credential_fingerprint: 'or-fp', credential_generation: 'or-g1', catalog_generation: 'catalog-1' },
+        'codex-lb': { provider_id: 'codex-lb', enabled: true, base_url: `http://127.0.0.1:${lbPort}`, allowed_origins: [`http://127.0.0.1:${lbPort}`], auth_transport: 'x-codex-lb-api-key', credential_state: 'ready', credential_fingerprint: 'lb-fp', credential_generation: 'lb-g1', source_catalog_generation: 'lb-source-catalog-1' },
+        openrouter: { provider_id: 'openrouter', enabled: true, base_url: `http://127.0.0.1:${orPort}`, allowed_origins: [`http://127.0.0.1:${orPort}`], auth_transport: 'openrouter-bearer', credential_state: 'ready', credential_fingerprint: 'or-fp', credential_generation: 'or-g1', source_catalog_generation: 'or-source-catalog-1' },
       },
     },
-    routePolicy: { schema: 'sks.bridge-routing-policy.v1', default_provider_id: null, fallback: 'none', model_routes: { public_lb: { provider_id: 'codex-lb', upstream_model: 'lb/upstream' }, public_or: { provider_id: 'openrouter', upstream_model: 'or/upstream' } }, catalog_generation: 'catalog-1', policy_generation: 'policy-1', changed_at: '2026-08-05T00:00:00.000Z' },
+    routePolicy: { schema: 'sks.bridge-routing-policy.v1', default_provider_id: null, fallback: 'none', model_routes: { public_lb: { provider_id: 'codex-lb', upstream_model: 'lb/upstream' }, public_or: { provider_id: 'openrouter', upstream_model: 'or/upstream' }, public_error: { provider_id: 'codex-lb', upstream_model: 'lb/error' } }, catalog_generation: 'combined-catalog-1', policy_generation: 'policy-1', changed_at: '2026-08-05T00:00:00.000Z' },
     providerSessionPins: [],
     resolveProviderCredential: async (id, expected) => {
       await new Promise((resolve) => setTimeout(resolve, id === 'codex-lb' ? 10 : 1));
@@ -87,5 +100,9 @@ test('one bridge process keeps concurrent provider credentials and model rewrite
     assert.equal(seen.get('openrouter')?.headers.authorization, 'Bearer or-concurrent-secret'); assert.equal(seen.get('openrouter')?.headers['x-codex-lb-api-key'], undefined);
     assert.equal(JSON.parse(seen.get('lb')?.body || '{}').model, 'lb/upstream'); assert.equal(JSON.parse(seen.get('openrouter')?.body || '{}').model, 'or/upstream');
     assert.doesNotMatch(JSON.stringify([...seen.values()]), /desktop-oauth|desktop=session/);
+    const redacted = await post(bridgePort, 'public_error');
+    assert.equal(redacted.status, 401);
+    assert.match(redacted.body, /\[REDACTED\]/);
+    assert.doesNotMatch(redacted.body, /sk-sensitive-upstream-key-12345678/);
   } finally { if (bridge) await stopDesktopBridge(bridge); await Promise.all([close(lb), close(openrouter)]); }
 });

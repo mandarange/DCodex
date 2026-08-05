@@ -322,13 +322,13 @@ function bridgeConfig(
           provider_id: 'codex-lb', enabled: true, base_url: baseUrl,
           allowed_origins: [new URL(baseUrl).origin], auth_transport: authTransport,
           credential_state: 'ready', credential_fingerprint: credentialFingerprint,
-          credential_generation: credentialGeneration, catalog_generation: catalogGeneration
+          credential_generation: credentialGeneration, source_catalog_generation: catalogGeneration
         },
         openrouter: {
           provider_id: 'openrouter', enabled: false, base_url: 'https://openrouter.ai/api/v1',
           allowed_origins: ['https://openrouter.ai'], auth_transport: 'openrouter-bearer',
           credential_state: 'not_configured', credential_fingerprint: null,
-          credential_generation: 'desktop-bridge-check-openrouter-credential', catalog_generation: null
+          credential_generation: 'desktop-bridge-check-openrouter-credential', source_catalog_generation: null
         }
       }
     },

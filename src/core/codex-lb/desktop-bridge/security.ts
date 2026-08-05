@@ -159,8 +159,8 @@ export function assertDesktopBridgeRouteContext(
   const provider = config.providers[route.provider_id];
   if (!provider || !provider.enabled) throw new DesktopBridgeError('bridge_provider_route_unavailable');
   if (provider.credential_state !== 'ready') throw new DesktopBridgeError(`${route.provider_id.replace('-', '_')}_credential_unavailable`);
-  if (provider.catalog_generation !== null && provider.catalog_generation !== route.catalog_generation) {
-    throw new DesktopBridgeError('bridge_catalog_generation_mismatch');
+  if (provider.source_catalog_generation !== null && !provider.source_catalog_generation.trim()) {
+    throw new DesktopBridgeError('bridge_provider_source_catalog_generation_invalid');
   }
   if (!provider.allowed_origins.map(normalizeAllowedOrigin).includes(provider.remote.origin)) {
     throw new DesktopBridgeError('bridge_provider_origin_forbidden');
@@ -242,6 +242,10 @@ function assertRegistryAndPolicy(config: DesktopBridgeConfig, registry: DesktopB
     const provider = registry.providers[id];
     if (!provider || provider.provider_id !== id || !provider.credential_generation || !Array.isArray(provider.allowed_origins) || !provider.allowed_origins.length) {
       throw new DesktopBridgeError('bridge_provider_registry_invalid');
+    }
+    if (provider.source_catalog_generation !== null
+      && (typeof provider.source_catalog_generation !== 'string' || !provider.source_catalog_generation.trim())) {
+      throw new DesktopBridgeError('bridge_provider_source_catalog_generation_invalid');
     }
     if (id === 'openrouter' && provider.auth_transport !== 'openrouter-bearer') throw new DesktopBridgeError('bridge_provider_auth_transport_mismatch');
     if (id === 'codex-lb' && provider.auth_transport === 'openrouter-bearer') throw new DesktopBridgeError('bridge_provider_auth_transport_mismatch');

@@ -7,10 +7,13 @@ import test from 'node:test';
 import {
   activateCombinedBridgeCatalog,
   buildCombinedBridgeCatalog,
-  readActiveCombinedBridgeCatalog
+  readActiveCombinedBridgeCatalog,
+  stageCombinedBridgeCatalog
 } from '../combined-catalog.js';
 import { resolveAllProviderCredentials } from '../provider-credentials.js';
 import { resolveBridgeProviderRegistry } from '../provider-registry.js';
+import { buildBridgeRoutingPolicy } from '../provider-route-policy.js';
+import { desktopBridgeCatalogStatusV3 } from '../desktop-controller-v3.js';
 
 async function registryFixture() {
   const credentials = await resolveAllProviderCredentials({
@@ -152,4 +155,73 @@ test('R32/R50: failed pair activation restores the previous verified generation'
   assert.equal(restarted.ok, true, JSON.stringify(restarted.blockers));
   assert.equal(restarted.catalog.generation, first.catalog.generation);
   assert.equal(restarted.route_index.generation, first.route_index.generation);
+});
+
+test('R28/R50: provider catalog expiry survives activation and full reload', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-combined-freshness-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const registry = await registryFixture();
+  const inputs = catalogs(false);
+  const build = buildCombinedBridgeCatalog(registry, {
+    catalogs: {
+      'codex-lb': { ...inputs['codex-lb'], checked_at: '2026-08-05T00:00:00.000Z', expires_at: '2026-08-05T00:15:00.000Z' },
+      openrouter: { ...inputs.openrouter, checked_at: '2026-08-05T00:00:00.000Z', expires_at: '2026-08-05T00:15:00.000Z' }
+    },
+    created_at: '2026-08-05T00:00:00.000Z'
+  });
+  const catalogPath = path.join(root, 'catalog.json');
+  const routeIndexPath = path.join(root, 'route-index.json');
+  const activated = await activateCombinedBridgeCatalog({ build, catalogPath, routeIndexPath });
+  assert.equal(activated.activated, true, JSON.stringify(activated.blockers));
+  const restarted = await readActiveCombinedBridgeCatalog(catalogPath, routeIndexPath);
+  assert.equal(restarted.ok, true, JSON.stringify(restarted.blockers));
+  assert.equal(restarted.catalog.provider_statuses['codex-lb'].expires_at, '2026-08-05T00:15:00.000Z');
+  assert.equal(restarted.catalog.provider_statuses.openrouter.expires_at, '2026-08-05T00:15:00.000Z');
+  const policy = buildBridgeRoutingPolicy({
+    route_index: restarted.route_index,
+    catalog_generation: restarted.catalog.generation,
+    changed_at: '2026-08-05T00:00:00.000Z'
+  });
+  const status = desktopBridgeCatalogStatusV3(
+    restarted,
+    registry,
+    policy,
+    [],
+    '2026-08-05T00:16:00.000Z'
+  );
+  assert.equal(status.state, 'stale');
+  assert.equal(status.providers['codex-lb'].state, 'stale');
+  assert.ok(status.blockers.includes('codex_lb_catalog_stale'));
+});
+
+test('R32/R34: staging a verified generation does not change the active binding', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-combined-staging-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const catalogPath = path.join(root, 'catalog.json');
+  const routeIndexPath = path.join(root, 'route-index.json');
+  const registry = await registryFixture();
+  const first = buildCombinedBridgeCatalog(registry, {
+    catalogs: catalogs(false),
+    created_at: '2026-08-05T00:00:00.000Z'
+  });
+  const activated = await activateCombinedBridgeCatalog({ build: first, catalogPath, routeIndexPath });
+  assert.equal(activated.activated, true, JSON.stringify(activated.blockers));
+  const pointerBefore = await fs.readFile(activated.pointer_path, 'utf8');
+
+  const next = buildCombinedBridgeCatalog(registry, {
+    catalogs: catalogs(false, '-staged'),
+    created_at: '2026-08-05T00:02:00.000Z'
+  });
+  const staged = await stageCombinedBridgeCatalog({ build: next, catalogPath, routeIndexPath });
+  assert.equal(staged.staged, true, JSON.stringify(staged.blockers));
+  assert.ok(staged.pointer_text);
+  assert.notEqual(staged.pointer_text, pointerBefore);
+  assert.equal(await fs.readFile(staged.pointer_path, 'utf8'), pointerBefore);
+
+  const active = await readActiveCombinedBridgeCatalog(catalogPath, routeIndexPath);
+  assert.equal(active.ok, true, JSON.stringify(active.blockers));
+  assert.equal(active.catalog.generation, first.catalog.generation);
+  assert.equal(active.route_index.generation, first.route_index.generation);
+  assert.equal(await fs.access(staged.catalog_path!).then(() => true, () => false), true);
+  assert.equal(await fs.access(staged.route_index_path!).then(() => true, () => false), true);
 });

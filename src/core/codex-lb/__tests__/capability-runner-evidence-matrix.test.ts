@@ -146,3 +146,22 @@ test('terminal probes expose one root cause and demote secondary diagnostics to 
   assert.deepEqual(failed.blockers, ['desktop_bridge_websocket_protocol_failed'])
   assert.ok(failed.warnings.includes('secondary_diagnostic:secondary_socket_close_error'))
 })
+
+test('R43/catalog security: caller results cannot override authoritative catalog_sync truth', () => {
+  const authoritative = catalog()
+  authoritative.state = 'failed'
+  authoritative.blockers = ['authoritative_catalog_failed']
+  const forged = {
+    ...result('catalog:combined', 'catalog_sync', 'transport'),
+    attempt_id: 99
+  }
+  const report = runDesktopCapabilityReportV3({
+    ...context,
+    activeProviderIds: ['codex-lb'],
+    catalogSync: authoritative,
+    results: [...routeResults('codex-lb'), forged]
+  })
+  assert.equal(report.catalog_sync.state, 'failed')
+  assert.equal(report.combined_catalog.capabilities.catalog_sync?.state, 'blocked')
+  assert.deepEqual(report.combined_catalog.capabilities.catalog_sync?.blockers, ['authoritative_catalog_failed'])
+})

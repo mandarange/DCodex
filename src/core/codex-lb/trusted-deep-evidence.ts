@@ -183,6 +183,10 @@ export function redactCapabilityEvidence(value: Record<string, unknown>): Record
   return redactRecord(value)
 }
 
+export function redactCapabilityText(value: string): string {
+  return redactString(value)
+}
+
 function parseProducer(
   value: unknown,
   blockers: string[],
@@ -363,4 +367,5 @@ function redactString(value: string): string {
   return value
     .replace(/\b(?:sk|or|sess|key)-[A-Za-z0-9_-]{8,}\b/g, '[REDACTED]')
     .replace(/Bearer\s+[A-Za-z0-9._~+/-]{8,}/gi, 'Bearer [REDACTED]')
+    .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|credential)\s*[=:]\s*["']?)[A-Za-z0-9._~+/-]{8,}/gi, '$1[REDACTED]')
 }

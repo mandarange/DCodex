@@ -10,7 +10,7 @@ import {
 } from '../../cli/install-helpers-codex-lb-config.js';
 import { codexAuthPath, codexLbConfigPath } from '../../cli/install-helpers-codex-lb-shared.js';
 import { safeWriteCodexConfigToml } from '../codex-runtime/codex-desktop-config-policy.js';
-import { readText, writeJsonAtomic, writeTextAtomic } from '../fsx.js';
+import { readText, writeJsonAtomic } from '../fsx.js';
 import { listOpenRouterModels, testOpenRouterConnection } from '../providers/openrouter/openrouter-account.js';
 import type {
   BridgeProviderId,
@@ -30,11 +30,12 @@ import type {
   WebSocketProbeResult
 } from './bridge-contracts.js';
 import {
-  activateCombinedBridgeCatalog,
   bridgeRouteIndexPath,
   buildCombinedBridgeCatalog,
   combinedBridgeCatalogPath,
   readActiveCombinedBridgeCatalog,
+  stageCombinedBridgeCatalog,
+  type CombinedCatalogStagingResult,
   type ProviderCatalogBuildInput
 } from './combined-catalog.js';
 import {
@@ -59,12 +60,14 @@ import {
   DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH,
   DESKTOP_BRIDGE_DIAGNOSTIC_PATH,
   probeDesktopBridgeWebSocket,
+  refreshDesktopBridgeState,
   type DesktopBridgeProviderRegistrySnapshot
 } from './desktop-bridge/index.js';
 import { captureCodexAuthSnapshot } from './desktop-auth-invariant.js';
 import {
-  migrateLegacyModeToDesktopBridge
-} from './legacy-migration.js';
+  inspectHistoricalDesktopBridgeIntent,
+  migrateDesktopBridgeConfig
+} from './desktop-bridge-migration.js';
 import {
   desktopBridgeUnificationReceiptDir,
   rollbackDesktopBridgeUnificationReceipt
@@ -79,9 +82,14 @@ import {
   type ResolvedProviderCredential
 } from './provider-credentials.js';
 import {
+  bridgeProviderRegistryPath,
+  buildStoredBridgeProviderRegistry,
   configureBridgeProviderProfile,
+  loadStoredBridgeProviderRegistry,
   resolveBridgeProviderRegistry,
+  serializeStoredBridgeProviderRegistry,
   setBridgeProviderEnabled,
+  type BridgeProviderAuthTransport,
   type BridgeProviderRegistry
 } from './provider-registry.js';
 import {
@@ -101,7 +109,27 @@ import {
   validateDesktopCapabilityReportV3
 } from './bridge-runtime-validation.js';
 import { runBridgeProbeV3 } from './probes/bridge-probe.js';
+import {
+  runImageGenerationProbeV3,
+  type ImageGenerationProbeInputV3
+} from './probes/image-generation-probe.js';
+import {
+  runComputerUseProbeV3,
+  type ComputerUseProbeInputV3
+} from './probes/computer-use-probe.js';
+import {
+  runVoiceRealtimeProbeV3,
+  type VoiceRealtimeProbeInputV3
+} from './probes/voice-realtime-probe.js';
+import {
+  runAuxiliarySurfacesProbeV3,
+  type AuxiliarySurfacesProbeInputV3
+} from './probes/auxiliary-surfaces-probe.js';
 import { capabilityProbeResultV3 } from './probes/probe-evidence.js';
+import {
+  validateCapabilityDeepEvidenceV2,
+  type CapabilityDeepEvidenceTrustAnchorV2
+} from './trusted-deep-evidence.js';
 
 const LAST_DIAGNOSTIC_SCHEMA = 'sks.desktop-bridge-last-diagnostic.v1' as const;
 const MAX_DIAGNOSTIC_BYTES = 4 * 1024 * 1024;
@@ -142,6 +170,30 @@ export interface DesktopBridgeControllerV3Options extends DesktopBridgeServiceOp
   installServiceImpl?: typeof installAndStartDesktopBridgeService;
   bootstrapServiceImpl?: typeof bootstrapExistingDesktopBridgeService;
   stopServiceImpl?: typeof stopDesktopBridgeService;
+  deepProbeImpl?: (input: DesktopBridgeDeepProbeRequestV3) => Promise<DesktopBridgeDeepProbeEvidenceV3 | null>;
+}
+
+export interface DesktopBridgeDeepProbeRequestV3 {
+  provider_id: BridgeProviderId;
+  report_id: string;
+  correlation_id: string;
+  session_id: string;
+  checked_at: string;
+  catalog_generation: string;
+  endpoint: string;
+}
+
+type DeepInput<T> = Omit<T, 'providerId' | 'requestedLevel' | 'checkedAt' | 'reportId' | 'correlationId' | 'sessionId'>;
+
+export interface DesktopBridgeDeepProbeEvidenceV3 {
+  image_generation?: DeepInput<ImageGenerationProbeInputV3>;
+  computer_use?: DeepInput<ComputerUseProbeInputV3>;
+  voice_mode?: DeepInput<VoiceRealtimeProbeInputV3>;
+  auxiliary_surfaces?: DeepInput<AuxiliarySurfacesProbeInputV3>;
+  trusted?: Partial<Record<string, {
+    envelope: unknown;
+    trust_anchors: readonly CapabilityDeepEvidenceTrustAnchorV2[];
+  }>>;
 }
 
 type ControllerPaths = {
@@ -172,10 +224,11 @@ type ControllerCore = {
   diagnostic: LastDiagnostic | null;
 };
 
-type LastDiagnostic = {
+export type LastDiagnostic = {
   schema: typeof LAST_DIAGNOSTIC_SCHEMA;
   checked_at: string;
   catalog_generation: string | null;
+  process_generation: string | null;
   report: DesktopCapabilityReportV3;
   http_probe: HttpProbeResult | null;
   websocket_probe: WebSocketProbeResult | null;
@@ -303,6 +356,11 @@ export async function verifyDesktopBridgeV3(
       probeProviderText(core, providerId, status.service.loopback_origin, probeContext, options)));
     results.push(...textResults);
   }
+  if (requestedLevel === 'deep') {
+    const deepResults = await Promise.all(activeProviders.map((providerId) =>
+      probeProviderDeep(core, providerId, probeContext, options)));
+    results.push(...deepResults.flat());
+  }
   const report = runDesktopCapabilityReportV3({
     requestedLevel,
     reportId,
@@ -317,10 +375,21 @@ export async function verifyDesktopBridgeV3(
     executionWarnings: status.service.running ? [] : ['bridge_service_not_running']
   });
   assertDesktopCapabilityReportV3(report);
+  const processGeneration = core.service.state?.process_generation || null;
+  if (processGeneration) {
+    const verifiedProbeIds = verifiedLiveProbeIds(report);
+    const stateUpdated = await refreshDesktopBridgeState(
+      core.service.paths.state_path,
+      { ...core.service.state!, last_verified_probe_ids: verifiedProbeIds },
+      options.now ? options.now() : new Date()
+    );
+    if (!stateUpdated) return report;
+  }
   await writeLastDiagnostic(core.paths.diagnosticPath, {
     schema: LAST_DIAGNOSTIC_SCHEMA,
     checked_at: checkedAt,
     catalog_generation: report.catalog_generation,
+    process_generation: processGeneration,
     report,
     http_probe: httpProbe || null,
     websocket_probe: websocketProbe || null
@@ -336,7 +405,14 @@ async function ensureDesktopBridge(
   let core = await loadCore(options);
   if (!core.activeCatalog.ok || !core.policy) {
     const status = statusFromCore(core, options);
-    return commandResult(operation, true, status, { catalog_sync: sync }, [], options);
+    return commandResult(
+      operation,
+      true,
+      status,
+      { catalog_sync: sync },
+      syncResultBlockers(sync),
+      options
+    );
   }
   const snapshot = providerRegistrySnapshot(core.registry, core.activeCatalog.route_index);
   const service = await (options.installServiceImpl || installAndStartDesktopBridgeService)({
@@ -350,6 +426,15 @@ async function ensureDesktopBridge(
   if (service.running) report = await verifyDesktopBridgeV3('shallow', options);
   const status = await desktopBridgeStatusV3(options);
   return commandResult(operation, true, status, { service, catalog_sync: sync, capabilities: report }, [], options);
+}
+
+function syncResultBlockers(result: Record<string, unknown>): string[] {
+  if (result.ok === true) return [];
+  const activation = result.activation && typeof result.activation === 'object' && !Array.isArray(result.activation)
+    ? result.activation as Record<string, unknown>
+    : {};
+  const blockers = stringArray(activation.blockers);
+  return blockers.length > 0 ? blockers : ['combined_catalog_sync_failed'];
 }
 
 async function repairDesktopBridge(
@@ -420,8 +505,13 @@ async function validateProvider(
       options
     );
   }
+  const registry = await resolveBridgeProviderRegistry({ home: paths.home, credentials });
   const result = providerId === 'codex-lb'
-    ? await validateCodexLbCredential(paths, options)
+    ? await validateCodexLbCredential(
+        paths,
+        options,
+        registry.profiles['codex-lb'].endpoint.auth_transport
+      )
     : await testOpenRouterConnection({
       env: controllerEnv(options),
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
@@ -487,30 +577,82 @@ async function syncCatalog(
 ): Promise<DesktopBridgeCommandResult> {
   const result = await syncCatalogInternal(options);
   const status = await desktopBridgeStatusV3(options);
-  return commandResult('catalog.sync', true, status, { catalog_sync: result }, [], options);
+  const activation = result.activation && typeof result.activation === 'object'
+    ? result.activation as Record<string, unknown>
+    : {};
+  return commandResult(
+    'catalog.sync',
+    result.ok === true,
+    status,
+    { catalog_sync: result },
+    result.ok === true ? [] : stringArray(activation.blockers),
+    options
+  );
 }
 
 async function syncCatalogInternal(
   options: DesktopBridgeControllerV3Options
 ): Promise<Record<string, unknown>> {
   const paths = controllerPaths(options);
-  const beforePointer = await snapshotOwnedFile(activePointerPath(paths.catalogPath));
+  const historicalIntent = inspectHistoricalDesktopBridgeIntent(await readText(paths.configPath, ''));
+  if (historicalIntent.blockers.length > 0) {
+    return {
+      ok: false,
+      historical_intent: historicalIntent,
+      activation: {
+        schema: 'sks.bridge-combined-catalog-activation.v1',
+        activated: false,
+        blockers: historicalIntent.blockers
+      },
+      migration: null
+    };
+  }
   const rawCredentials = await resolveRawCredentials(options, paths);
-  const initialRegistry = await resolveBridgeProviderRegistry({ home: paths.home, credentials: rawCredentials });
+  const storedRegistryRead = await loadStoredBridgeProviderRegistry({ home: paths.home });
+  if (storedRegistryRead.blockers.length > 0) {
+    return {
+      ok: false,
+      historical_intent: historicalIntent,
+      activation: {
+        schema: 'sks.bridge-combined-catalog-activation.v1',
+        activated: false,
+        blockers: storedRegistryRead.blockers
+      },
+      migration: null
+    };
+  }
+  const storedRegistry = storedRegistryRead.registry || buildStoredBridgeProviderRegistry({
+    credentials: rawCredentials,
+    overrides: historicalIntent.providers
+  });
+  const initialRegistry = await resolveBridgeProviderRegistry({
+    home: paths.home,
+    credentials: rawCredentials,
+    storedRegistry
+  });
   const catalogs = await fetchProviderCatalogs(initialRegistry, rawCredentials, paths, options);
   const credentials = await resolveValidatedCredentials(options, paths);
-  const registry = await resolveBridgeProviderRegistry({ home: paths.home, credentials });
+  const registry = await resolveBridgeProviderRegistry({
+    home: paths.home,
+    credentials,
+    storedRegistry
+  });
   const build = buildCombinedBridgeCatalog(registry, {
     catalogs,
     created_at: nowIso(options)
   });
-  const activation = await activateCombinedBridgeCatalog({
+  const staging = await stageCombinedBridgeCatalog({
     build,
     catalogPath: paths.catalogPath,
     routeIndexPath: paths.routeIndexPath
   });
-  if (!activation.activated || !activation.catalog_path) {
-    return { build, activation, migration: null };
+  if (!staging.staged || !staging.catalog_path || !staging.pointer_text) {
+    return {
+      ok: false,
+      build,
+      activation: activationResult(staging, false),
+      migration: null
+    };
   }
   const priorPolicy = await readBridgeRoutingPolicy(paths.routePolicyPath);
   const readyProviders = (['codex-lb', 'openrouter'] as const).filter((providerId) =>
@@ -518,8 +660,11 @@ async function syncCatalogInternal(
       && registry.profiles[providerId].state === 'ready'
       && Object.values(build.route_index.routes).some((route) => route.provider_id === providerId));
   const previousDefault = priorPolicy.policy?.default_provider_id || null;
+  const historicalDefault = historicalIntent.default_provider_id;
   const defaultProvider = previousDefault && readyProviders.includes(previousDefault)
     ? previousDefault
+    : historicalDefault && readyProviders.includes(historicalDefault)
+      ? historicalDefault
     : readyProviders.length === 1
       ? readyProviders[0] || null
       : null;
@@ -535,22 +680,49 @@ async function syncCatalogInternal(
     providerRegistry: providerRegistrySnapshot(registry, build.route_index),
     routePolicy: policy
   });
-  const migration = await migrateLegacyModeToDesktopBridge({
+  const migration = await migrateDesktopBridgeConfig({
     home: paths.home,
     configPath: paths.configPath,
     authPath: paths.authPath,
     receiptDir: paths.receiptDir,
     bridgeBaseUrl: bridgeBaseUrl(settings),
-    combinedCatalogPath: activation.catalog_path,
+    combinedCatalogPath: staging.catalog_path,
     newCatalogGeneration: build.catalog.generation,
     metadataUpdates: [
+      {
+        kind: 'provider_registry',
+        path: bridgeProviderRegistryPath(paths.home),
+        text: serializeStoredBridgeProviderRegistry(storedRegistry)
+      },
+      { kind: 'catalog_binding', path: staging.pointer_path, text: staging.pointer_text },
       { kind: 'route_policy', path: paths.routePolicyPath, text: `${JSON.stringify(policy, null, 2)}\n` },
       { kind: 'bridge_settings', path: desktopBridgeServicePaths(paths.home).settings_path, text: serializedSettings(settings) }
     ]
   });
   if (!migration.ok) {
-    await restoreOwnedFile(activePointerPath(paths.catalogPath), beforePointer);
-    return { build, activation, migration, active_generation_restored: true };
+    return {
+      ok: false,
+      build,
+      activation: activationResult(staging, false, migration.blockers),
+      migration,
+      active_generation_preserved: true
+    };
+  }
+  const active = await readActiveCombinedBridgeCatalog(paths.catalogPath, paths.routeIndexPath);
+  if (!active.ok
+    || active.catalog.generation !== build.catalog.generation
+    || active.route_index.generation !== build.route_index.generation) {
+    const rollback = migration.receipt
+      ? await rollbackDesktopBridgeUnificationReceipt({ receipt: migration.receipt })
+      : null;
+    return {
+      ok: false,
+      build,
+      activation: activationResult(staging, false, ['combined_catalog_activation_verification_failed']),
+      migration,
+      rollback,
+      active_generation_preserved: rollback?.ok === true
+    };
   }
   const serviceBefore = await (options.serviceStatusImpl || desktopBridgeServiceStatus)({ ...options, home: paths.home });
   if (serviceBefore.installed || serviceBefore.running) {
@@ -561,7 +733,12 @@ async function syncCatalogInternal(
       routePolicy: policy
     });
   }
-  return { build, activation, migration };
+  return {
+    ok: true,
+    build,
+    activation: activationResult(staging, true),
+    migration
+  };
 }
 
 async function setDefaultProvider(
@@ -580,6 +757,23 @@ async function setDefaultProvider(
   await persistRuntimeSettings(next, options);
   const status = await desktopBridgeStatusV3(options);
   return commandResult('route.set-default', true, status, { provider_id: providerId, policy_generation: policy.policy_generation }, [], options);
+}
+
+function activationResult(
+  staging: CombinedCatalogStagingResult,
+  activated: boolean,
+  blockers: readonly string[] = staging.blockers
+): Record<string, unknown> {
+  return {
+    schema: 'sks.bridge-combined-catalog-activation.v1',
+    activated,
+    generation: activated ? staging.generation : null,
+    previous_generation: staging.previous_generation,
+    catalog_path: activated ? staging.catalog_path : null,
+    route_index_path: activated ? staging.route_index_path : null,
+    pointer_path: staging.pointer_path,
+    blockers: unique(blockers)
+  };
 }
 
 async function explainRoute(
@@ -676,8 +870,13 @@ async function loadCore(options: DesktopBridgeControllerV3Options): Promise<Cont
     ...(snapshot ? { providerRegistry: snapshot } : {}),
     ...(policy ? { routePolicy: policy } : {})
   });
-  const catalogSync = catalogStatus(activeCatalog, registry, policy, policyBlockers, checkedAt);
-  const diagnostic = await readLastDiagnostic(paths.diagnosticPath, catalogSync.generation);
+  const catalogSync = desktopBridgeCatalogStatusV3(activeCatalog, registry, policy, policyBlockers, checkedAt);
+  const diagnostic = await readLastDiagnostic(
+    paths.diagnosticPath,
+    catalogSync.generation,
+    service.state?.process_generation || null,
+    service.state?.last_verified_probe_ids || []
+  );
   return {
     paths,
     checkedAt,
@@ -733,9 +932,11 @@ function statusFromCore(
   const oauthConfigured = core.auth.mode === 'chatgpt_oauth' || core.auth.mode === 'mixed';
   if (managedConfig && !oauthConfigured) activeBlockers.push('chatgpt_oauth_required_for_desktop');
   const lastReport = core.diagnostic?.report || null;
-  const bridgeReady = core.service.running && (lastReport?.summary.bridge_ready ?? false);
+  const reportReadiness = desktopBridgeReportReadinessV3(lastReport);
+  const bridgeReady = core.service.running && reportReadiness.bridge_ready;
   const activeRoutesReady = activeCatalogReady
-    && activeProviders.every((providerId) => core.registry.profiles[providerId].state === 'ready');
+    && activeProviders.every((providerId) => core.registry.profiles[providerId].state === 'ready')
+    && reportReadiness.active_routes_ready;
   const ready = managedConfig && bridgeReady && activeRoutesReady && oauthConfigured;
   const readinessState: DesktopBridgeStatusV3['readiness']['state'] = !managed
     ? 'unmanaged'
@@ -832,7 +1033,7 @@ function providerProfileStatus(
   };
 }
 
-function catalogStatus(
+export function desktopBridgeCatalogStatusV3(
   active: Awaited<ReturnType<typeof readActiveCombinedBridgeCatalog>>,
   registry: BridgeProviderRegistry,
   policy: BridgeRoutingPolicy | null,
@@ -845,16 +1046,25 @@ function catalogStatus(
       ? active.catalog.models.filter((model) => model.provider_id === providerId)
       : [];
     const indexed = active.ok ? active.route_index.providers[providerId] : null;
+    const persisted = active.ok ? active.catalog.provider_statuses[providerId] : null;
+    const expired = Boolean(persisted?.expires_at
+      && Date.parse(persisted.expires_at) <= Date.parse(checkedAt));
     const state: CatalogSyncState['state'] = !active.ok
       ? 'not_started'
       : !profile.enabled
         ? 'not_started'
-        : indexed?.state === 'ready' && models.length > 0
+        : expired
+          ? 'stale'
+          : indexed?.state === 'ready' && models.length > 0
+            && persisted?.state === 'verified'
+            && persisted.generation === indexed.catalog_generation
           ? 'verified'
           : profile.state === 'ready'
             ? 'failed'
             : 'degraded';
-    const blockers = state === 'failed'
+    const blockers = state === 'stale'
+      ? [`${providerCode(providerId)}_catalog_stale`]
+      : state === 'failed'
       ? [`${providerCode(providerId)}_catalog_not_verified`]
       : state === 'degraded'
         ? [...profile.blockers]
@@ -867,8 +1077,8 @@ function catalogStatus(
       generation: indexed?.catalog_generation || null,
       digest: models.length > 0 ? sha256Stable({ provider_id: providerId, models }) : null,
       model_count: models.length,
-      checked_at: active.ok ? active.catalog.created_at : null,
-      expires_at: null,
+      checked_at: persisted?.checked_at || (active.ok ? active.catalog.created_at : null),
+      expires_at: persisted?.expires_at || null,
       blockers: unique(blockers),
       warnings: [],
       recovery_action: blockers.length > 0 ? 'retry_catalog_sync' : null
@@ -877,6 +1087,7 @@ function catalogStatus(
   })) as Record<BridgeProviderId, CatalogSyncState>;
   const enabled = (['codex-lb', 'openrouter'] as const).filter((providerId) => registry.profiles[providerId].enabled);
   const verified = enabled.filter((providerId) => providerRows[providerId].state === 'verified');
+  const stale = enabled.filter((providerId) => providerRows[providerId].state === 'stale');
   const conflicts = active.ok ? active.route_index.conflicts.length : 0;
   const generationMatches = Boolean(active.ok && policy && policy.catalog_generation === active.catalog.generation);
   const state: CombinedCatalogSyncStatus['state'] = !active.ok
@@ -885,7 +1096,9 @@ function catalogStatus(
       ? 'failed'
       : !generationMatches
         ? 'stale'
-        : verified.length === 0
+        : verified.length === 0 && stale.length > 0
+          ? 'stale'
+          : verified.length === 0
           ? 'failed'
           : verified.length < enabled.length
             ? 'degraded'
@@ -895,6 +1108,7 @@ function catalogStatus(
     ...policyBlockers,
     ...(conflicts > 0 ? ['catalog_model_route_ambiguous'] : []),
     ...(active.ok && !generationMatches ? ['catalog_route_index_stale'] : []),
+    ...(state === 'stale' ? enabled.flatMap((providerId) => providerRows[providerId].blockers) : []),
     ...(state === 'failed' && conflicts === 0 ? enabled.flatMap((providerId) => providerRows[providerId].blockers) : [])
   ]);
   const warnings = unique(enabled
@@ -949,7 +1163,9 @@ async function fetchProviderCatalogs(
         loadedEnv: loaded,
         ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
         timeoutMs: timeoutMs(options),
-        gatewayAuthTransport: 'authorization-bearer'
+        gatewayAuthTransport: profile.endpoint.auth_transport === 'x-codex-lb-api-key'
+          ? 'x-codex-lb-api-key'
+          : 'authorization-bearer'
       });
       await recordProviderCredentialValidation({
         provider_id: providerId,
@@ -1063,7 +1279,7 @@ function providerRegistrySnapshot(
       credential_state: profile.credential.state,
       credential_fingerprint: profile.credential.fingerprint,
       credential_generation: profile.profile_generation,
-      catalog_generation: routeIndex.providers[providerId].catalog_generation
+      source_catalog_generation: routeIndex.providers[providerId].catalog_generation
     };
   };
   const providers: DesktopBridgeProviderRegistrySnapshot['providers'] = {
@@ -1357,6 +1573,95 @@ async function probeProviderText(
   }
 }
 
+async function probeProviderDeep(
+  core: ControllerCore,
+  providerId: BridgeProviderId,
+  context: ProbeContext,
+  options: DesktopBridgeControllerV3Options
+): Promise<CapabilityProbeResultV3[]> {
+  const endpoint = core.registry.profiles[providerId].endpoint.url || '';
+  const catalogGeneration = core.activeCatalog.ok ? core.activeCatalog.catalog.generation : '';
+  return runDesktopBridgeDeepProviderProbesV3(
+    providerId,
+    context,
+    endpoint,
+    catalogGeneration,
+    options.deepProbeImpl
+  );
+}
+
+export async function runDesktopBridgeDeepProviderProbesV3(
+  providerId: BridgeProviderId,
+  context: ProbeContext,
+  endpoint: string,
+  catalogGeneration: string,
+  probeImpl?: DesktopBridgeControllerV3Options['deepProbeImpl']
+): Promise<CapabilityProbeResultV3[]> {
+  let evidence: DesktopBridgeDeepProbeEvidenceV3 | null = null;
+  let adapterFailed = false;
+  if (probeImpl && endpoint && catalogGeneration) {
+    try {
+      evidence = await probeImpl({
+        provider_id: providerId,
+        report_id: context.reportId,
+        correlation_id: context.correlationId,
+        session_id: context.sessionId,
+        checked_at: context.checkedAt,
+        catalog_generation: catalogGeneration,
+        endpoint
+      });
+    } catch {
+      adapterFailed = true;
+      evidence = null;
+    }
+  }
+  const providerContext = { ...context, providerId };
+  const results: CapabilityProbeResultV3[] = [
+    runImageGenerationProbeV3({ ...providerContext, ...(evidence?.image_generation || {}) }),
+    runComputerUseProbeV3({ ...providerContext, ...(evidence?.computer_use || {}) }),
+    runVoiceRealtimeProbeV3({ ...providerContext, ...(evidence?.voice_mode || {}) }),
+    runAuxiliarySurfacesProbeV3({ ...providerContext, ...(evidence?.auxiliary_surfaces || {}) })
+  ];
+  if (adapterFailed) {
+    for (const result of results) result.warnings = unique([...result.warnings, 'deep_probe_adapter_failed']);
+  }
+  for (const [capability, trusted] of Object.entries(evidence?.trusted || {})) {
+    if (!trusted || results.some((result) => result.capability === capability)) continue;
+    const validation = validateCapabilityDeepEvidenceV2(trusted.envelope, {
+      expectedProviderId: providerId,
+      expectedScope: `provider:${providerId}`,
+      expectedCapability: capability,
+      expectedReportId: context.reportId,
+      expectedCatalogGeneration: catalogGeneration,
+      expectedEndpoint: endpoint,
+      trustAnchors: trusted.trust_anchors,
+      now: context.checkedAt
+    });
+    const rootCause = validation.state === 'blocked' ? validation.blockers[0] || 'capability_deep_evidence_invalid' : null;
+    results.push(capabilityProbeResultV3({
+      ...providerContext,
+      capability,
+      scope: `provider:${providerId}`,
+      stage: validation.state === 'verified' ? 'complete' : 'artifact_validation',
+      state: validation.state,
+      terminal: validation.state === 'blocked',
+      rootCause,
+      blockers: validation.blockers,
+      warnings: validation.warnings,
+      retryable: validation.state === 'blocked' || validation.state === 'stale',
+      recoveryAction: validation.state === 'verified' ? null : 'run_deep_verification',
+      source: validation.state === 'verified' ? 'deep_probe' : 'artifact',
+      evidence: {
+        ...(validation.evidence || {}),
+        producer_id: validation.producer_id,
+        trust_anchor_id: validation.trust_anchor_id,
+        content_sha256: validation.content_sha256
+      }
+    }));
+  }
+  return results;
+}
+
 async function probeBridgeHttp(
   loopbackOrigin: string | null,
   options: DesktopBridgeControllerV3Options
@@ -1446,7 +1751,8 @@ async function probeBridgeWebSocket(
 
 async function validateCodexLbCredential(
   paths: ControllerPaths,
-  options: DesktopBridgeControllerV3Options
+  options: DesktopBridgeControllerV3Options,
+  authTransport: BridgeProviderAuthTransport
 ): Promise<Record<string, unknown>> {
   const loaded = await loadCodexLbEnv({
     home: paths.home,
@@ -1458,7 +1764,9 @@ async function validateCodexLbCredential(
     loadedEnv: loaded,
     ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     timeoutMs: timeoutMs(options),
-    gatewayAuthTransport: 'authorization-bearer'
+    gatewayAuthTransport: authTransport === 'x-codex-lb-api-key'
+      ? 'x-codex-lb-api-key'
+      : 'authorization-bearer'
   });
   return {
     schema: 'sks.codex-lb-provider-validation.v1',
@@ -1617,7 +1925,9 @@ async function writeLastDiagnostic(file: string, value: LastDiagnostic): Promise
 
 async function readLastDiagnostic(
   file: string,
-  currentCatalogGeneration: string | null
+  currentCatalogGeneration: string | null,
+  currentProcessGeneration: string | null,
+  lastVerifiedProbeIds: readonly string[]
 ): Promise<LastDiagnostic | null> {
   const stat = await fs.lstat(file).catch(() => null);
   if (!stat) return null;
@@ -1631,41 +1941,57 @@ async function readLastDiagnostic(
     const validation = validateDesktopCapabilityReportV3(value.report);
     if (value.schema !== LAST_DIAGNOSTIC_SCHEMA
       || !validation.ok
-      || value.catalog_generation !== currentCatalogGeneration) return null;
+      || !desktopBridgeDiagnosticBindingCurrentV3(
+        value,
+        currentCatalogGeneration,
+        currentProcessGeneration,
+        lastVerifiedProbeIds
+      )) return null;
     return value;
   } catch {
     return null;
   }
 }
 
-type OwnedFileSnapshot = { exists: boolean; text: string };
-
-async function snapshotOwnedFile(file: string): Promise<OwnedFileSnapshot> {
-  const stat = await fs.lstat(file).catch(() => null);
-  if (!stat) return { exists: false, text: '' };
-  const expectedUid = typeof process.getuid === 'function' ? process.getuid() : null;
-  if (!stat.isFile() || stat.isSymbolicLink() || (expectedUid !== null && stat.uid !== expectedUid)) {
-    throw new Error('desktop_bridge_owned_file_snapshot_invalid');
-  }
-  return { exists: true, text: await fs.readFile(file, 'utf8') };
+export function desktopBridgeReportReadinessV3(report: DesktopCapabilityReportV3 | null): {
+  bridge_ready: boolean;
+  active_routes_ready: boolean;
+} {
+  const transportVerified = report?.summary.transport_level_satisfied === true
+    && (report.requested_level === 'transport' || report.requested_level === 'deep');
+  return {
+    bridge_ready: transportVerified && report?.summary.bridge_ready === true,
+    active_routes_ready: transportVerified && report?.summary.active_routes_ready === true
+  };
 }
 
-async function restoreOwnedFile(file: string, snapshot: OwnedFileSnapshot): Promise<void> {
-  if (snapshot.exists) {
-    await writeTextAtomic(file, snapshot.text, { mode: 0o600 });
-    return;
-  }
-  const stat = await fs.lstat(file).catch(() => null);
-  if (!stat) return;
-  const expectedUid = typeof process.getuid === 'function' ? process.getuid() : null;
-  if (!stat.isFile() || stat.isSymbolicLink() || (expectedUid !== null && stat.uid !== expectedUid)) {
-    throw new Error('desktop_bridge_owned_file_restore_invalid');
-  }
-  await fs.unlink(file);
+export function desktopBridgeDiagnosticBindingCurrentV3(
+  value: Pick<LastDiagnostic, 'catalog_generation' | 'process_generation' | 'report'>,
+  currentCatalogGeneration: string | null,
+  currentProcessGeneration: string | null,
+  lastVerifiedProbeIds: readonly string[]
+): boolean {
+  const hasVerifiedProbeBinding = value.report.summary.transport_level_satisfied !== true
+    || lastVerifiedProbeIds.some((probeId) => probeId.startsWith(`${value.report.report_id}:`));
+  return Boolean(currentProcessGeneration
+    && value.catalog_generation === currentCatalogGeneration
+    && value.process_generation === currentProcessGeneration
+    && hasVerifiedProbeBinding);
 }
 
-function activePointerPath(catalogPath: string): string {
-  return path.join(path.dirname(catalogPath), 'sks-bridge-active-generation.json');
+function verifiedLiveProbeIds(report: DesktopCapabilityReportV3): string[] {
+  const scopes = [
+    report.bridge,
+    report.native_identity,
+    report.providers['codex-lb'],
+    report.providers.openrouter,
+    report.combined_catalog
+  ];
+  return scopes.flatMap((scope) => Object.values(scope.capabilities))
+    .filter((probe) => probe.state === 'verified'
+      && ['transport', 'deep_probe', 'artifact'].includes(probe.source))
+    .map((probe) => `${report.report_id}:${probe.scope}:${probe.capability}`)
+    .sort();
 }
 
 function publicValidationResult(value: unknown): Record<string, unknown> {
@@ -1727,7 +2053,7 @@ function unique(values: readonly unknown[]): string[] {
   return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
 }
 
-type ProbeContext = {
+export type ProbeContext = {
   requestedLevel: CapabilityRequestedLevel;
   checkedAt: string;
   reportId: string;
