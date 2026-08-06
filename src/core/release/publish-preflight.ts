@@ -13,11 +13,11 @@ export interface PublishPreflightCommandResult {
 export interface PublishPreflightOptions {
   root: string;
   run?: (command: string, args: string[], cwd: string) => PublishPreflightCommandResult;
-  /** Real publication requires the exact local and remote tag; a dry-run does not mutate the registry. */
+  /** Opt-in for staged or tag-first publication flows; direct npm publication may tag afterward. */
   requireReleaseTag?: boolean;
   /**
-   * Opt-in for environment-bound callers. Real publication callers must pass true;
-   * non-mutating dry runs may leave this false while collecting local package proof.
+   * Opt-in. Direct `npm publish` does not require physical receipts (stage/CI does).
+   * Environment-bound staging callers must pass true explicitly.
    */
   requirePhysicalReleaseGates?: boolean;
 }

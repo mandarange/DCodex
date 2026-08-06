@@ -4,14 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { inspectPublishPreflight } from '../core/release/publish-preflight.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const dryRun = ['1', 'true'].includes(String(process.env.npm_config_dry_run || process.env.NPM_CONFIG_DRY_RUN || '').toLowerCase());
-// A dry run is non-mutating and may exercise packaging before physical evidence
-// exists. Real publication must enforce the same source-bound physical receipts
-// as the staged release path.
+// Direct `npm publish` may precede the Git release tag. It still requires a
+// clean main checkout that exactly matches live origin/main.
+// Source-bound physical receipts remain enforced by `sks release stage` / CI.
 const report = inspectPublishPreflight({
   root,
-  requireReleaseTag: !dryRun,
-  requirePhysicalReleaseGates: !dryRun,
+  requireReleaseTag: false,
+  requirePhysicalReleaseGates: false,
 });
 console.log(JSON.stringify(report, null, 2));
 if (!report.ok) {

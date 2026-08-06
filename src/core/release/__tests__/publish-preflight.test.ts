@@ -41,7 +41,7 @@ test('publish preflight binds a clean main checkout to live origin/main and the 
   assert.equal(report.clean_tree, true);
 });
 
-test('publish dry-run keeps main and origin binding but does not require release tags', async () => {
+test('tag-after-publish mode keeps main and origin binding but does not require release tags', async () => {
   const root = await fixture();
   const report = inspectPublishPreflight({
     root,

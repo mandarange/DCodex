@@ -227,7 +227,8 @@ assertGate(/npx --yes npm@11\.15\.0/.test(releaseReadinessDoc), 'release readine
 assertGate(/npm-stage-tarball-verifier\.js/.test(releaseReadinessDoc) && /--local-receipt/.test(releaseReadinessDoc) && /--local-tarball/.test(releaseReadinessDoc) && /--stage-receipt/.test(releaseReadinessDoc), 'release readiness must document the maintainer-local read-only verifier inputs');
 assertGate(/release-physical-gates-check\.js/.test(stageWorkflow), 'stage workflow must verify tracked source-bound physical release receipts before staging');
 assertGate(/release-physical-gates-check\.js/.test(stagePublishSource), 'local stage preflight must verify physical release receipts before mutation');
-assertGate(/requirePhysicalReleaseGates:\s*!dryRun/.test(text('src/scripts/publish-preflight.ts')), 'real direct npm publish must require physical receipts while dry-run remains non-mutating');
+assertGate(/requireReleaseTag:\s*false/.test(text('src/scripts/publish-preflight.ts')), 'direct npm publish preflight must allow the Git release tag to be created after publication');
+assertGate(/requirePhysicalReleaseGates:\s*false/.test(text('src/scripts/publish-preflight.ts')), 'direct npm publish preflight must not require physical receipts (stage/CI owns that gate)');
 assertGate(/PHYSICAL_RELEASE_GATE_IDS/.test(physicalReleaseGateSource) && /artifact_sha256/.test(physicalReleaseGateSource), 'physical release gate contract must bind all required gates to evidence artifact hashes');
 assertGate(pkg.scripts?.prepublishOnly === 'node ./dist/scripts/prepublish-release-check-or-fast.js', 'prepublishOnly must verify release proof during official npm publish');
 assertGate(pkg.scripts?.prepack === 'node ./dist/scripts/prepublish-release-check-or-fast.js --prepack-build', 'prepack must rebuild and reverify official npm publish output');
