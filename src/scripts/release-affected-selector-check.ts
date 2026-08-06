@@ -52,7 +52,7 @@ const officialSubagentIds = new Set<string>(officialSubagentOnly.selection.selec
 assertGate(officialSubagentIds.has('naruto:canonical-stop-gate'), 'official subagent source changes must select the canonical Naruto stop gate', officialSubagentOnly.selection)
 
 for (const changedFile of [
-  'src/core/codex-lb/codex-lb-tool-output-recovery.ts',
+  'src/core/codex-control/desktop-bridge-launch-guard.ts',
   'src/core/codex/codex-cli-update.ts',
   'src/core/codex-control/codex-reliability-shield.ts',
   'src/core/hooks-runtime.ts',

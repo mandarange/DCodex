@@ -39,7 +39,13 @@ if (!requireReal) {
   assertGate(result.ok === true, 'real Codex SDK smoke failed', result);
   const proof = JSON.parse(await fsp.readFile(path.join(mutationLedgerRoot, 'codex-control-proof.json'), 'utf8'));
   assertGate(result.backend === 'codex-sdk', 'real smoke must use the official Codex SDK backend', result);
-  assertGate(result.codexLbToolOutputRecovery?.required === false && result.codexLbToolOutputRecovery?.status === 'not_selected', 'real smoke must not select codex-lb', result);
+  assertGate(
+    result.desktop_bridge_launch_guard?.ok === true
+      && result.desktop_bridge_launch_guard?.status === 'allowed'
+      && result.desktop_bridge_launch_guard?.selected_provider === 'openai',
+    'real smoke must stay on native OpenAI without selecting Desktop Bridge',
+    result
+  );
   assertGate(proof?.config?.model_provider === 'openai', 'real smoke must bind proof to the native OpenAI provider', proof);
   assertGate(proof?.config?.forced_login_method === 'chatgpt', 'real smoke must require ChatGPT authentication', proof);
   assertGate(proof?.runtime_identity?.trusted === true && proof?.runtime_identity?.trust_basis, 'real smoke must bind proof to a trusted official Codex runtime', proof);
