@@ -22,14 +22,15 @@ Proof-first orchestration for Codex CLI, ChatGPT Desktop, AI coding agents, mult
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-This README documents package **SKS 8.1.3** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
+This README documents package **SKS 8.2.0** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
 
 Use the official latest stable SKS and Codex CLI releases. The Codex compatibility SSOT is always the **current latest stable** host; capability probes measure what that host can actually do. Product docs do not crown a fixed `0.x.y` string as SSOT (release pins and schema directories are measured artifacts for the current package, not a permanent product version claim). Menu Bar / Center induce updates to the latest stable build. Run `sks update-check` for what is installed and read the capability report for what is supported. Install SSOT is npm `sneakoscope@latest`; PATH `sks` and Menu Bar stamped generation must match that version or gates fail. It resolves managed SKS skills from the authoritative global install, preserves a runnable Naruto child slot when `max_threads=2`, and keeps Menu Bar repair transactional so stamped generations remain verifiable. Naruto uses stable opt-in multi-agent V2 when the host exposes it (Codex official multi-agent wrap-only; SKS does not reimplement a parallel runtime). Local code search is mode-separated (`sks search files|text|structure|symbol|context`); `context` is answered by the compiled TriWiki Context Graph (`context-graph.json` is exhaustive authority; `context-pack.json` and managed `AGENTS.md` are bounded projections) — see [docs/architecture/context-graph.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/architecture/context-graph.md) and [docs/PRODUCT-CONTRACT.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/PRODUCT-CONTRACT.md). See [CHANGELOG.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/CHANGELOG.md).
 
-## What 8.1.3 Ships
+## What 8.2.0 Ships
 
-| Problem | 8.1.3 behavior |
+| Problem | 8.2.0 behavior |
 | --- | --- |
+| SKS Center could reject a valid token for a user-selected BotFather bot with only a generic verification message | Setup accepts any bot the user owns, binds the exact `getMe` identity, returns actionable verification failures, and keeps native/CLI liveness receipts schema-compatible. |
 | Overview mixed Menu Bar, installed SKS, and cached registry versions | Each value is labeled by authority, stale or unavailable probes remain explicit, and Refresh forces a bounded update-status refresh. |
 | Naruto stopped creating children after its first wave | The root parent records settled waves, recovers open-thread capacity, rescans the ready DAG, and can launch later direct-child waves under the same workflow run. |
 | Most delegated work drifted to Sol Max | Read-heavy discovery uses Terra Max, ordinary implementation uses Sol High, and Sol Max is reserved for focused high-risk or final judgment slices. |
@@ -80,10 +81,11 @@ or public webhook.
 
 #### BotFather setup
 
-1. In Telegram, open **@BotFather**, send `/newbot`, and complete its name and
-   username prompts. BotFather returns the bot token. The token authorizes the
-   bot against the Bot API; treat it like a password. Do not place it in a
-   shell command, config file, commit, issue, or screenshot.
+1. In Telegram, open **@BotFather** and create a bot with `/newbot`, or select
+   any existing bot that you own. Copy that bot's token. SKS does not assume a
+   fixed bot name or username: it verifies the token with `getMe` and binds the
+   returned bot identity. Treat the token like a password. Do not place it in
+   a shell command, config file, commit, issue, or screenshot.
 2. On the Mac that runs SKS, open **SKS Center → Remote Coding**, choose
    **Enter Bot Token…**, and paste the token into the native secure-input
    sheet. SKS verifies `getMe` and the bot's webhook state before it stores
@@ -190,7 +192,7 @@ remote change on the operator's behalf.
 
 ## Desktop Bridge
 
-SKS 8.1.3 uses a single local **Desktop Bridge** for managed Codex Desktop and
+SKS 8.2.0 uses a single local **Desktop Bridge** for managed Codex Desktop and
 CLI routing. ChatGPT OAuth stays in the Codex identity plane. Codex-LB and
 OpenRouter credentials are independent profiles that can be configured and
 validated simultaneously; changing one profile does not remove the other.

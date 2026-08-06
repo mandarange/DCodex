@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [8.2.0] - 2026-08-06
+
+### Fixed
+
+- Let SKS Center and the CLI accept any user-owned BotFather bot, bind the
+  exact `getMe` identity instead of assuming a bot name, and return stable,
+  actionable errors for rejected tokens, network failures, and timeouts.
+- Emit canonical nullable Telegram liveness fields from the native companion
+  while continuing to read 8.1.x receipts that omitted those optional keys.
+- Keep Honest Mode from reopening a completed Korean fix merely because its
+  summary names a formerly missing field; phrases such as `해결 필요` remain
+  correctly classified as unresolved work, and zero-blocker counts remain
+  resolved when English labels use Korean particles.
+- Make release-document prose contracts insensitive to Markdown line wrapping
+  while still requiring the exact words and order, so harmless reflow cannot
+  break release verification or hide a semantic rewrite.
+
 ### Changed
 
 - Upgraded release process output to the strict `sks.gate-result.v2` contract;

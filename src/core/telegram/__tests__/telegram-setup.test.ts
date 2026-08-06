@@ -85,6 +85,72 @@ test('BotFather setup verifies and inspects before an optional lossless webhook 
     process.exitCode = priorExitCode;
   }
 });
+
+test('setup binds whichever BotFather bot getMe verifies and preserves actionable identity failures', async () => {
+  const priorExitCode = process.exitCode;
+  const priorLog = console.log;
+  const logs: string[] = [];
+  console.log = (...parts: unknown[]) => { logs.push(parts.map(String).join(' ')); };
+  process.exitCode = undefined;
+  try {
+    let boundBotId: number | null = null;
+    const selected = await telegramCommand(['setup', '--token-stdin', '--json'], {
+      environment: {},
+      readTokenStdin: async () => SYNTHETIC_TOKEN,
+      verifyToken: async () => ({
+        id: 8_765_432_109,
+        is_bot: true,
+        first_name: 'User Selected Bot',
+        username: 'user_selected_bot'
+      }),
+      inspectWebhook: async () => ({ url: '' }),
+      preflightTokenStorage: async () => undefined,
+      bindBotIdentity: async (botId) => {
+        boundBotId = botId;
+        return { bot_id: botId, previous_bot_id: null, rotated: false, state_reset: false };
+      },
+      storeToken: async () => undefined
+    }) as {
+      schema: string;
+      ok: boolean;
+      bot_id: number;
+      bot_username: string | null;
+      token_stored: boolean;
+    };
+    assert.equal(selected.schema, 'sks.telegram-setup-command.v1');
+    assert.equal(selected.ok, true);
+    assert.equal(selected.bot_id, 8_765_432_109);
+    assert.equal(selected.bot_username, 'user_selected_bot');
+    assert.equal(selected.token_stored, true);
+    assert.equal(boundBotId, 8_765_432_109);
+
+    process.exitCode = undefined;
+    const rejected = await telegramCommand(['setup', '--token-stdin', '--json'], {
+      environment: {},
+      readTokenStdin: async () => SYNTHETIC_TOKEN,
+      verifyToken: async () => { throw new Error('Unauthorized'); }
+    }) as {
+      schema: string;
+      ok: boolean;
+      error: string;
+      failure_stage: string;
+      token_stored: boolean;
+    };
+    assert.deepEqual(rejected, {
+      schema: 'sks.telegram-setup-command.v1',
+      ok: false,
+      error: 'telegram_token_rejected',
+      token_stored: false,
+      failure_stage: 'getme'
+    });
+    assert.equal(process.exitCode, 1);
+    assert.equal(JSON.stringify({ selected, rejected, logs }).includes(SYNTHETIC_TOKEN), false);
+  } finally {
+    console.log = priorLog;
+    process.exitCode = priorExitCode;
+  }
+});
+
 test('setup rejects webhook data loss and redacts failed removal before storing the token', async () => {
   const priorExitCode = process.exitCode;
   const priorLog = console.log;
@@ -104,9 +170,10 @@ test('setup rejects webhook data loss and redacts failed removal before storing 
       storeToken: async () => { touched += 1; }
     }) as { ok: boolean; error: string };
     assert.deepEqual(dangerous, {
-      schema: 'sks.telegram-command.v1',
+      schema: 'sks.telegram-setup-command.v1',
       ok: false,
-      error: 'telegram_drop_pending_updates_unsupported'
+      error: 'telegram_drop_pending_updates_unsupported',
+      token_stored: false
     });
     assert.equal(touched, 0);
 

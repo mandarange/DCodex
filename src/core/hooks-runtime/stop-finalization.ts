@@ -102,6 +102,7 @@ function honestGapHeadingResolved(line: any, nextLine: any) {
 }
 
 function honestGapLineResolved(line: any) {
+  if (honestIssueLineCompleted(line)) return true;
   if (/(?:unverified|미검증)\s*:\s*\[\s*\]/i.test(line) && /blockers?\s*:\s*\[\s*\]/i.test(line)) return true;
   if (/(?:^|[\s*-])(?:unverified|미검증|blockers?)\s*:\s*\[\s*\](?:\s*(?:[,.;]|$).*)?$/i.test(line)) return true;
   if (/(?:미해결|남은)\s*(?:gap|갭|문제|항목)\s*:\s*(?:없음|없습니다|없다|0|0개)(?:\s|,|\.|$)/i.test(line)) return true;
@@ -109,12 +110,20 @@ function honestGapLineResolved(line: any) {
   if (/no\s+unresolved\s+gaps?\s+remain/i.test(line)) return true;
   if (/(남은\s*(?:gap|갭|문제)\s*:\s*없음|남은\s*(?:gap|갭|문제)\s*없음|remaining\s+gaps?\s*:\s*(none|no|0)|no\s+remaining\s+gaps?)/i.test(line)) return true;
   if (/no\s+active\s+blocking\s+route\s+gate\s+detected/i.test(line)) return true;
-  if (/(?:blockers?|차단(?:\s*(?:항목|요소|건))?)\s*(?:[:=]\s*)?0(?:건|개)?\b/i.test(line)) return true;
+  if (/(?:blockers?(?:은|는|이|가)?|차단(?:\s*(?:항목|요소|건))?)\s*(?:[:=]\s*)?0(?:건|개)?\b/i.test(line)) return true;
   if (/(non[-\s]?blocker|non[-\s]?blocking|not\s+(?:a\s+)?blocker|no\s+blocker|does\s+not\s+block|not\s+blocking|비\s*차단|blocker\s*(?:는|가)?\s*(?:아님|아닙니다|없음)|차단(?:하지|하진|하지는)\s*않|막(?:지|지는)\s*않)/i.test(line)) return true;
   if (/(요약\s*(?:없으면|없는\s*경우).*(?:차단|block).*(?:요약\s*(?:있으면|있는\s*경우)|통과|pass)|(?:missing|without)\s+summary.*(?:block|blocked).*(?:with\s+summary|pass|accepted))/i.test(line)) return true;
   if (/(차단(?:되는지)?\s*검증|차단\s*(?:확인|검증)|blocked\s+(?:as\s+expected|verified))/i.test(line) && !/(미확인|미검증|못|안\s*됨|실패|failed|not\s+verified|not\s+blocked)/i.test(line)) return true;
   if (/(CHANGELOG|README|\.md|missing|누락|미완료|미검증|미실행|안 했|못했|못 했)/i.test(line)) return false;
   return /(없음|없습니다|없다|해당 없음|none|no unresolved|no remaining|no gaps|zero|0개|n\/a|not applicable)\.?\s*$/i.test(line);
+}
+
+function honestIssueLineCompleted(line: any) {
+  const text = String(line || '').trim();
+  const unresolved = /(?:미해결|미완료|해결|수정|보완)\s*(?:필요|예정|대기|중)|(?:not|isn't|wasn't)\s+(?:fixed|resolved|addressed|implemented|completed)|(?:still|remains?|pending)\b/i;
+  if (unresolved.test(text)) return false;
+  return /(?:해결|수정|보완|정상화|완료)(?:했(?:습니다|다|음)?|됐(?:습니다|다)?|됨|함)?[.!。`*_)]*$/i.test(text)
+    || /(?:fixed|resolved|addressed|implemented|completed)[.!。`*_)]*$/i.test(text);
 }
 
 export function shouldLoopBackAfterHonestMode(state: any = {}) {

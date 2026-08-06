@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-06T11:17:37.226Z",
+  "generated_at": "2026-08-06T14:11:17.534Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "f495b848432982542acf43908121ef6dca81afe7770ea167f94c26834ffd80a0",
-  "snapshot_hash": "d73ad66552b1ec6e25f40cc99966b5dd40ab915c9981ce503d84fa13b618a513",
+  "inventory_digest": "fced8f98d8551fc6df4d4f64beccb02248fd266ac7efb4a28d01cdae0513dd12",
+  "snapshot_hash": "1c5042df55ad97498475d71176d61a74afb867b1cd208b4dee28183ef68f2b4d",
   "source_file_count": 2764,
-  "symbol_count": 21861,
-  "edge_count": 65870,
+  "symbol_count": 21876,
+  "edge_count": 65890,
   "extractors": [
     {
       "id": "code",
@@ -353,10 +353,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/RemoteCodingViewController.swift",
-      "sha256": "bad28971ad78b969fde5491422c8e8e931beccf9219b52e83fd5a8c80c9de537",
+      "sha256": "19bb5f41c561d920edd28bc93d28478136c02e82a6fb07d16373593680e59d21",
       "language": "swift",
-      "lines": 485,
-      "bytes": 25007
+      "lines": 494,
+      "bytes": 26040
     },
     {
       "path": "native/sks-menubar/Sources/SKSKeychainStore.swift",
@@ -367,10 +367,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/SecureProcessEnvelope.swift",
-      "sha256": "e49e50e2e9f0370e4ac80af8575ae4bb60fb44c346dacdd08ce468adbecd5c36",
+      "sha256": "ae21dcc7c832fc3e703d707f2dbd1bf0a8bfd73c0f495037f16ffe63bd8af2d1",
       "language": "swift",
-      "lines": 214,
-      "bytes": 9696
+      "lines": 226,
+      "bytes": 10365
     },
     {
       "path": "native/sks-menubar/Sources/SettingsViewController.swift",
@@ -437,10 +437,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/TelegramSupport.swift",
-      "sha256": "146631db7de4dc88105d4c7875e65895223ff5ec49da7ad93802f40630741d8f",
+      "sha256": "815ac871571335fadb02ed6ee73836ab3a98a3a72da32a3d49ecaf4d16d79064",
       "language": "swift",
-      "lines": 187,
-      "bytes": 6253
+      "lines": 243,
+      "bytes": 9523
     },
     {
       "path": "native/sks-menubar/Sources/TelegramTransport.swift",
@@ -2538,10 +2538,10 @@
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-telegram-runtime.test.ts",
-      "sha256": "9a7db3c5c601bea497de710ab9a5cad1926ed6628774d66a56b9cade4d93d302",
+      "sha256": "92d5bc65d57313c8acb1ec7c300daaef13c6b7ecd6f503484cfb6a1e764f164c",
       "language": "typescript",
-      "lines": 449,
-      "bytes": 15974
+      "lines": 580,
+      "bytes": 21139
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-template.test.ts",
@@ -5077,10 +5077,10 @@
     },
     {
       "path": "src/core/commands/telegram-command.ts",
-      "sha256": "cccbe41a19a3762014d67a0fb4519bc4718971b59086af5685d29d3e1da6010d",
+      "sha256": "ea9e0c5df1b6fd99addacb86d83235ba4f981c2704e92bf206f65b96462b6d45",
       "language": "typescript",
-      "lines": 439,
-      "bytes": 19803
+      "lines": 480,
+      "bytes": 21417
     },
     {
       "path": "src/core/commands/triwiki-command.ts",
@@ -6346,10 +6346,10 @@
     },
     {
       "path": "src/core/hooks-runtime/stop-finalization.ts",
-      "sha256": "225478614edbce9797a8891088f47907945b22ead25541fb6839ee811528b96d",
+      "sha256": "ec63ad164eef3b545bc8be02df113e4d5d8657836440f87ac8e77c1ec6c050a2",
       "language": "typescript",
-      "lines": 221,
-      "bytes": 12207
+      "lines": 230,
+      "bytes": 12841
     },
     {
       "path": "src/core/hooks-runtime/stop-repeat-guard.ts",
@@ -8672,10 +8672,10 @@
     },
     {
       "path": "src/core/release/__tests__/release-doc-role-contracts.test.ts",
-      "sha256": "3eb9387024a11d0919d2f2be17d63c213ebab1b932955b5128b51f25708bc398",
+      "sha256": "3909d48f8e805915868464a469f1abce90d8f1b8c0e10f406c63378fd97ec310",
       "language": "typescript",
-      "lines": 43,
-      "bytes": 1865
+      "lines": 61,
+      "bytes": 2660
     },
     {
       "path": "src/core/release/__tests__/release-gate-affected-selector.test.ts",
@@ -10677,10 +10677,10 @@
     },
     {
       "path": "src/core/telegram/__tests__/telegram-setup.test.ts",
-      "sha256": "5ab69377636e587e9071201bd071927bd2df89110d9bfcc0e0450608333c228c",
+      "sha256": "0c5a4d0c7c0ab1cdf31a64cd77095411b400da289c31eca57da7aceb23fac9f6",
       "language": "typescript",
-      "lines": 372,
-      "bytes": 15946
+      "lines": 439,
+      "bytes": 18289
     },
     {
       "path": "src/core/telegram/__tests__/telegram-state-lock.test.ts",
@@ -10691,10 +10691,10 @@
     },
     {
       "path": "src/core/telegram/__tests__/telegram-transport.test.ts",
-      "sha256": "5aa1518434862875398b149b6d1a47aa291a8d314e089bbc2a9efdc6d9f5b206",
+      "sha256": "43bc12915f3ecb87768212fc4ce940d339cfd973add78adc2767bfb919b69420",
       "language": "typescript",
-      "lines": 396,
-      "bytes": 18784
+      "lines": 417,
+      "bytes": 19632
     },
     {
       "path": "src/core/telegram/access.ts",
@@ -10719,10 +10719,10 @@
     },
     {
       "path": "src/core/telegram/doctor.ts",
-      "sha256": "fa1c3ba7f2392bc820fae384927e649a5e1ff4587146177b4e1a25340ae67301",
+      "sha256": "5345ec57c6e52666d7dfe504494d6055689f1822ffbdfca8163d024d5ebbf3b8",
       "language": "typescript",
       "lines": 165,
-      "bytes": 7287
+      "bytes": 7303
     },
     {
       "path": "src/core/telegram/index.ts",
@@ -10740,10 +10740,10 @@
     },
     {
       "path": "src/core/telegram/liveness.ts",
-      "sha256": "660674d1b893b4f3504c0609210ccaa249aa894584741bacbe44fa5b3f4ab16d",
+      "sha256": "05c31b67f57ee1b95cecd92775621e834aa47d5d66b1b2042338f2254ae4345a",
       "language": "typescript",
-      "lines": 144,
-      "bytes": 6806
+      "lines": 151,
+      "bytes": 7033
     },
     {
       "path": "src/core/telegram/poller.ts",
@@ -10768,10 +10768,10 @@
     },
     {
       "path": "src/core/telegram/types.ts",
-      "sha256": "65d597e54e91b3d183882584b023b04226de0da2e8c8658078bacc3ea0e57293",
+      "sha256": "33911a1f483066e80635f5d563fe653d0da2ea3baba65de2033aa760e53166a9",
       "language": "typescript",
-      "lines": 98,
-      "bytes": 2402
+      "lines": 104,
+      "bytes": 2852
     },
     {
       "path": "src/core/text/regex.ts",
@@ -12327,7 +12327,7 @@
     },
     {
       "path": "src/core/version.ts",
-      "sha256": "a6cb42b6816d9d06dd8ec98c3fb3f8a8f247230be8e033bd6686dce147de95eb",
+      "sha256": "9d4c0c4c6f040f62248031ebb9a47bc141fb516c9a20cfd31779a5fd5b655a08",
       "language": "typescript",
       "lines": 1,
       "bytes": 40
@@ -18900,10 +18900,10 @@
     },
     {
       "path": "test/unit/hooks-replay-policy.test.mjs",
-      "sha256": "a7d68adc845fb43485772d467834e82e1992b64de54590c9c80bf91655128fdb",
+      "sha256": "460497356cd7f8e27e7c8ba3ece1d474de32c69a618aea108c9c1d4b744f167d",
       "language": "javascript",
-      "lines": 78,
-      "bytes": 2761
+      "lines": 94,
+      "bytes": 3556
     },
     {
       "path": "test/unit/hooks-stop-escalate-visible.test.mjs",
@@ -19862,11 +19862,11 @@
   ],
   "edges_by_type": {
     "calls": 9567,
-    "contains": 25527,
+    "contains": 25542,
     "defines": 7602,
-    "imports": 6160,
+    "imports": 6161,
     "reexports": 881,
-    "references": 13257,
-    "tests": 2876
+    "references": 13259,
+    "tests": 2878
   }
 }

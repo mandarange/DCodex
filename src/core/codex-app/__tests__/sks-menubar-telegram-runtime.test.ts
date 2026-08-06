@@ -393,6 +393,46 @@ private enum Harness {
         for sentinel in [tokenSentinel, rawSentinel, payloadSentinel, detailSentinel] {
             precondition(!rendered.contains(sentinel), "secret sentinel escaped secure envelope")
         }
+
+        let selected: [String: Any] = [
+            "schema": "sks.telegram-setup-command.v1",
+            "ok": true,
+            "getme_verified": true,
+            "token_stored": true,
+            "bot_id": 8765432109,
+            "bot_username": "user_selected_bot"
+        ]
+        let selectedBytes = try JSONSerialization.data(withJSONObject: selected)
+        let selectedEnvelope = SecureProcessEnvelope.render(
+            payload: String(decoding: selectedBytes, as: UTF8.self),
+            code: 0,
+            arguments: ["telegram", "setup", "--token-stdin", "--json"]
+        )
+        let selectedOutput = try JSONSerialization.jsonObject(
+            with: selectedEnvelope.data(using: .utf8)!
+        ) as! [String: Any]
+        precondition(selectedOutput["ok"] as? Bool == true)
+        precondition((selectedOutput["bot_id"] as? NSNumber)?.int64Value == 8765432109)
+        precondition(selectedOutput["bot_username"] as? String == "user_selected_bot")
+
+        let rejected: [String: Any] = [
+            "schema": "sks.telegram-setup-command.v1",
+            "ok": false,
+            "error": "telegram_token_rejected",
+            "failure_stage": "getme",
+            "token_stored": false
+        ]
+        let rejectedBytes = try JSONSerialization.data(withJSONObject: rejected)
+        let rejectedEnvelope = SecureProcessEnvelope.render(
+            payload: String(decoding: rejectedBytes, as: UTF8.self),
+            code: 1,
+            arguments: ["telegram", "setup", "--token-stdin", "--json"]
+        )
+        let rejectedOutput = try JSONSerialization.jsonObject(
+            with: rejectedEnvelope.data(using: .utf8)!
+        ) as! [String: Any]
+        precondition(rejectedOutput["error"] as? String == "telegram_token_rejected")
+        precondition(rejectedOutput["failure_stage"] as? String == "getme")
         print("secure-envelope-partial-ok")
     }
 }
@@ -423,6 +463,97 @@ private enum Harness {
     assert.equal(executed.stdout.includes(sentinel), false);
     assert.equal(executed.stderr.includes(sentinel), false);
   }
+});
+
+test('native Telegram liveness JSON emits canonical null fields for CLI parity', async (t) => {
+  if (process.platform !== 'darwin') return t.skip('Swift liveness harness is macOS-only');
+
+  const temp = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'sks-telegram-liveness-json-'));
+  t.after(() => fs.rm(temp, { recursive: true, force: true }));
+  const harness = path.join(temp, 'Harness.swift');
+  const binary = path.join(temp, 'telegram-liveness-json-harness');
+  const isolatedEnvironment: NodeJS.ProcessEnv = {
+    ...process.env,
+    HOME: temp,
+    CFFIXED_USER_HOME: temp,
+    TMPDIR: temp,
+    CLANG_MODULE_CACHE_PATH: path.join(temp, 'clang-module-cache'),
+    SWIFT_MODULECACHE_PATH: path.join(temp, 'swift-module-cache')
+  };
+
+  await fs.writeFile(harness, `
+import Foundation
+
+enum TelegramTokenSource: String, Codable, Sendable {
+    case environment = "env"
+    case userSecretFile = "user_secret_file"
+    case none
+}
+
+@main
+private enum Harness {
+    static func main() throws {
+        let poller = TelegramPollerReceipt(
+            schema: "sks.telegram-poller-state.v1",
+            running: false,
+            offset: 0,
+            consecutive_failures: 0,
+            last_poll_at: nil,
+            last_success_at: nil,
+            last_update_at: nil,
+            last_error: nil
+        )
+        let receipt = TelegramLivenessReceipt(
+            schema: "sks.telegram-liveness.v1",
+            generation: "generation-canonical-json",
+            pid: 123,
+            running: false,
+            token_configured: false,
+            token_source: .none,
+            bot_id: nil,
+            bot_identity_valid: false,
+            getme_checked_at: nil,
+            getme_latency_ms: nil,
+            paired_chat_count: 0,
+            started_at: "2026-08-06T00:00:00Z",
+            heartbeat_at: "2026-08-06T00:00:00Z",
+            stale_after_seconds: 120,
+            audit_healthy: true,
+            audit_last_error: nil,
+            poller: poller
+        )
+        let data = try JSONEncoder().encode(receipt)
+        let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        for key in ["bot_id", "getme_checked_at", "getme_latency_ms", "audit_last_error"] {
+            precondition(object[key] is NSNull, "missing canonical null: \(key)")
+        }
+        let encodedPoller = object["poller"] as! [String: Any]
+        for key in ["last_poll_at", "last_success_at", "last_update_at", "last_error"] {
+            precondition(encodedPoller[key] is NSNull, "missing canonical poller null: \(key)")
+        }
+        let decoded = try JSONDecoder().decode(TelegramLivenessReceipt.self, from: data)
+        precondition(decoded == receipt)
+        print("telegram-liveness-canonical-json-ok")
+    }
+}
+`);
+
+  const compiled = await run(
+    'swiftc',
+    [
+      path.join(process.cwd(), 'native', 'sks-menubar', 'Sources', 'TelegramSupport.swift'),
+      harness,
+      '-o',
+      binary
+    ],
+    isolatedEnvironment,
+    30_000
+  );
+  assert.equal(compiled.code, 0, `${compiled.stdout}\n${compiled.stderr}`);
+
+  const executed = await run(binary, [], isolatedEnvironment, 20_000);
+  assert.equal(executed.code, 0, `${executed.stdout}\n${executed.stderr}`);
+  assert.match(executed.stdout, /telegram-liveness-canonical-json-ok/);
 });
 
 async function run(

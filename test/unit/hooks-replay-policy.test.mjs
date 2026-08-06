@@ -76,3 +76,19 @@ test('honest loopback ignores Korean non-blocking boundaries and zero blocker su
   ].join('\n');
   assert.deepEqual(honestModeGapLines(text), []);
 });
+
+test('honest loopback distinguishes completed missing-field fixes from unresolved work', () => {
+  const completed = '- Swift의 누락된 optional 필드와 TypeScript 검증 불일치 해결';
+  const unresolved = '- Swift optional 필드 누락 해결 필요';
+
+  assert.deepEqual(honestModeGapLines(completed), []);
+  assert.deepEqual(honestModeGapLines(unresolved), [unresolved]);
+});
+
+test('honest loopback accepts zero blocker counts with Korean particles', () => {
+  const resolved = '현재 Proof와 Trust blocker는 0건입니다. 운영 범위를 완료로 주장하지 않습니다.';
+  const unresolved = '현재 Proof와 Trust blocker는 1건입니다.';
+
+  assert.deepEqual(honestModeGapLines(resolved), []);
+  assert.deepEqual(honestModeGapLines(unresolved), [unresolved]);
+});

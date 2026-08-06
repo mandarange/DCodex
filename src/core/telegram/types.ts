@@ -46,10 +46,14 @@ export interface TelegramPollSnapshot {
   running: boolean;
   offset: number;
   consecutive_failures: number;
-  last_poll_at: string | null;
-  last_success_at: string | null;
-  last_update_at: string | null;
-  last_error: string | null;
+  /** Optional only when reading receipts emitted by native SKS 8.1.x. */
+  last_poll_at?: string | null;
+  /** Optional only when reading receipts emitted by native SKS 8.1.x. */
+  last_success_at?: string | null;
+  /** Optional only when reading receipts emitted by native SKS 8.1.x. */
+  last_update_at?: string | null;
+  /** Optional only when reading receipts emitted by native SKS 8.1.x. */
+  last_error?: string | null;
 }
 
 export type TelegramTokenSource = 'env' | 'user_secret_file' | 'none' | 'unknown';
@@ -65,8 +69,10 @@ export interface TelegramLivenessReceipt {
   /** Optional for backward compatibility with receipts from older menu-bar builds. */
   bot_id?: number | null;
   bot_identity_valid: boolean;
-  getme_checked_at: string | null;
-  getme_latency_ms: number | null;
+  /** Optional only when reading receipts emitted by native SKS 8.1.x. */
+  getme_checked_at?: string | null;
+  /** Optional only when reading receipts emitted by native SKS 8.1.x. */
+  getme_latency_ms?: number | null;
   paired_chat_count: number;
   started_at: string;
   heartbeat_at: string;

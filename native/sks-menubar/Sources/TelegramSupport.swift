@@ -60,6 +60,27 @@ struct TelegramPollerReceipt: Codable, Sendable, Equatable {
     let last_success_at: String?
     let last_update_at: String?
     let last_error: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case schema, running, offset, consecutive_failures
+        case last_poll_at, last_success_at, last_update_at, last_error
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schema, forKey: .schema)
+        try container.encode(running, forKey: .running)
+        try container.encode(offset, forKey: .offset)
+        try container.encode(consecutive_failures, forKey: .consecutive_failures)
+        if let last_poll_at { try container.encode(last_poll_at, forKey: .last_poll_at) }
+        else { try container.encodeNil(forKey: .last_poll_at) }
+        if let last_success_at { try container.encode(last_success_at, forKey: .last_success_at) }
+        else { try container.encodeNil(forKey: .last_success_at) }
+        if let last_update_at { try container.encode(last_update_at, forKey: .last_update_at) }
+        else { try container.encodeNil(forKey: .last_update_at) }
+        if let last_error { try container.encode(last_error, forKey: .last_error) }
+        else { try container.encodeNil(forKey: .last_error) }
+    }
 }
 
 struct TelegramLivenessReceipt: Codable, Sendable, Equatable {
@@ -80,6 +101,39 @@ struct TelegramLivenessReceipt: Codable, Sendable, Equatable {
     let audit_healthy: Bool?
     let audit_last_error: String?
     let poller: TelegramPollerReceipt
+
+    private enum CodingKeys: String, CodingKey {
+        case schema, generation, pid, running, token_configured, token_source
+        case bot_id, bot_identity_valid, getme_checked_at, getme_latency_ms
+        case paired_chat_count, started_at, heartbeat_at, stale_after_seconds
+        case audit_healthy, audit_last_error, poller
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schema, forKey: .schema)
+        try container.encode(generation, forKey: .generation)
+        try container.encode(pid, forKey: .pid)
+        try container.encode(running, forKey: .running)
+        try container.encode(token_configured, forKey: .token_configured)
+        try container.encode(token_source, forKey: .token_source)
+        if let bot_id { try container.encode(bot_id, forKey: .bot_id) }
+        else { try container.encodeNil(forKey: .bot_id) }
+        try container.encode(bot_identity_valid, forKey: .bot_identity_valid)
+        if let getme_checked_at { try container.encode(getme_checked_at, forKey: .getme_checked_at) }
+        else { try container.encodeNil(forKey: .getme_checked_at) }
+        if let getme_latency_ms { try container.encode(getme_latency_ms, forKey: .getme_latency_ms) }
+        else { try container.encodeNil(forKey: .getme_latency_ms) }
+        try container.encode(paired_chat_count, forKey: .paired_chat_count)
+        try container.encode(started_at, forKey: .started_at)
+        try container.encode(heartbeat_at, forKey: .heartbeat_at)
+        try container.encode(stale_after_seconds, forKey: .stale_after_seconds)
+        if let audit_healthy { try container.encode(audit_healthy, forKey: .audit_healthy) }
+        else { try container.encodeNil(forKey: .audit_healthy) }
+        if let audit_last_error { try container.encode(audit_last_error, forKey: .audit_last_error) }
+        else { try container.encodeNil(forKey: .audit_last_error) }
+        try container.encode(poller, forKey: .poller)
+    }
 }
 
 struct TelegramCenterSetupResponse: Decodable {
@@ -98,6 +152,8 @@ struct TelegramCenterSetupResponse: Decodable {
     let webhook_removed: Bool?
     let pending_updates_dropped: Bool?
     let bot_state_reset: Bool?
+    let bot_id: Int64?
+    let bot_username: String?
     let operator_action: String?
     let recovery: Recovery?
 }

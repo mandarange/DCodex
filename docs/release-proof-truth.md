@@ -1,99 +1,77 @@
-# Release Proof Truth — 8.1.3
+# Release Proof Truth — 8.2.0
 
 ## Current assertion
 
-8.1.3 is **SOURCE COMPLETE / RELEASE BLOCKED**. This document does not
-authorize a release, publication, deployment, service mutation, credential
-change, tag, or push.
+8.2.0 is **SOURCE PREPARED / RELEASE BLOCKED**. The Telegram arbitrary-bot
+fix and 8.2.0 metadata are present in the working tree, but this document does
+not authorize publication, deployment, a credential change, a Git tag, or a
+push. Exact-commit proof can exist only after the candidate is committed and
+all source-bound gates are regenerated from that clean commit.
 
-The integrated source passed the current local corpus. Exact-commit package
-receipts must still be regenerated from the clean handoff commit, and trusted
-physical macOS/provider evidence is absent. Any artifact bound to an earlier
-SHA is historical only. The 8.1.2 release stamp is stale and cannot authorize
-8.1.3.
+All release artifacts bound to 8.1.3 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 8.2.0 evidence.
+
+## Claim ledger
+
+| Claim | Current support | Boundary |
+| --- | --- | --- |
+| A user may select any BotFather bot they own | supported in source and hermetic tests | setup verifies `getMe`, requires `is_bot` and a positive ID, and binds that exact identity; no fixed username is assumed |
+| Invalid credentials and identity-verification transport failures are distinguishable | supported in source and hermetic tests | stable secret-free errors cover rejection, timeout, network failure, and invalid identity |
+| Native and CLI liveness receipts interoperate | supported in cross-language tests | new Swift receipts encode nullable fields as `null`; TypeScript still accepts 8.1.x receipts that omitted those optional fields |
+| Bot tokens remain secret | supported by source boundaries and tests | tokens enter through secure input/stdin, are not included in receipts, and are not exposed as bot metadata |
+| The reported 8.2.0 package is ready to publish | not proved | requires a clean exact-commit build, release gates, package receipt, provenance, and the operator's final registry checks |
+| The original user's real bot now connects | not-run-real | no real token or private Telegram state was inspected or mutated during this preparation |
 
 ## Evidence classes
 
-- **passed-hermetic** means a local test, build, fixture, or gate artifact
-  passed. It is never proof of a user environment.
-- **not-run-real** means no redacted, target-bound real receipt exists.
-- **blocked-external** means a necessary target environment or operator
-  authority is outside this checkout.
+- **passed-hermetic** means a local build, fixture, test, or gate passed for the
+  inspected source. It is never proof of a user environment or registry state.
+- **not-run-real** means no redacted, target-bound receipt exists for the real
+  bot, macOS companion, or registry action.
+- **blocked-external** means the remaining action requires a clean promoted
+  commit, a private credential, a target machine, or explicit operator
+  authority.
 
-These classes are deliberately non-interchangeable. A successful diagnostic
-exit, a configured key, a process listing, or a fixture cannot promote a
-real-environment row to passed.
+These classes are not interchangeable. A configured token, process listing,
+fixture, or package dry run cannot promote a real-environment row to passed.
 
-## Product and user-override boundary
+## Telegram acceptance boundary
 
-8.1.3 has one SKS-managed routing runtime: Desktop Bridge. Codex-LB and
-OpenRouter are independent profiles that may coexist. Requests use the combined
-catalog's explicit route index with `fallback: none`.
+The setup contract stores a token only after Telegram `getMe` verifies the
+selected bot identity and webhook handling is resolved. A successful identity
+check does not prove later storage, webhook mutation, or poller restart; those
+stages retain their own failures and neutral UI wording. A successful save
+does not prove readiness until the resident Menu Bar poller runs and one
+private chat/user pair is enrolled.
 
-The user explicitly overrides the work order's former temporary-alias proposal:
+No source path is allowed to infer token invalidity from an unrelated setup
+failure. Public bot metadata is limited to a positive numeric ID and a bounded
+sanitized username. Secret values remain excluded from JSON, native UI
+receipts, liveness files, and logs.
 
-- public `sks codex-lb` paths are deleted and return `unknown_command`;
-- no legacy Desktop/provider mode is an active runtime state; and
-- historical SKS-owned values are readable only by the private,
-  receipt-backed migration path.
+## Exact-commit release evidence
 
-Historical migration recognition is not a live compatibility runtime and must
-not be represented as an alias or fallback path.
+Before any release claim, regenerate and verify current 8.2.0-bound artifacts
+from the clean handoff commit, including the build manifest, version metadata,
+package proof, pack receipt, release provenance, and release-check stamp. Each
+must bind the exact source digest, Git commit, tarball bytes, and package
+version required by its schema.
 
-## Current evidence inventory
+The existing 8.1.3 canonical-test proof, pack receipt, provenance, and stamp
+are stale for this candidate. Local focused tests and a dry-run tarball remain
+preparation evidence only until the repository's clean-commit release flow
+produces current receipts.
 
-| Area | Classification | Truth boundary |
-| --- | --- | --- |
-| source, fixture, and release-focused tests | passed-hermetic | current integrated source |
-| full canonical corpus | passed-hermetic | 2,851 parallel plus 33 resource-sensitive serial tests, zero failures |
-| Naruto capacity lifecycle | passed-hermetic | 102/102; terminal agents return capacity immediately and duplicate terminal events are idempotent |
-| physical/stage/release focused corpus | passed-hermetic | 50/50; producer trust and exact nonce/run association included |
-| package receipt and installed smoke | passed-hermetic when generated from the clean handoff commit | must bind the exact SHA and tarball bytes; historical receipts are invalid |
-| real-evidence check | not-run-real | result is `real_required_missing` and non-authorizing |
-| macOS/Providers UI/OAuth/provider/WebSocket/deep proof | not-run-real | required receipts are absent |
-| final stamp/physical receipts/upgrade proof | blocked-external | requires release-commit promotion and authorized real target collection |
-| GitHub main/tag/npm owner/stage approval | blocked-external | operator authority and human 2FA are required |
+## Remaining real and operator evidence
 
-## What must be proved before a release claim
+The following remain **not-run-real** or **blocked-external**:
 
-| Area | Required evidence | What does not prove it |
-| --- | --- | --- |
-| Version identity | final package/lock/runtime/Rust/README/changelog agreement plus a fresh source-bound stamp | a version string in one file or a stale stamp |
-| Command surface | installed/help/registry proof that `sks bridge` is registered and `sks codex-lb` is unknown | a documentation statement or a source-only fixture |
-| Routing | final combined-catalog/route-index tests and source-bound package proof | a selected profile or model-name convention |
-| Credentials | profile-isolation tests plus redacted target-bound live checks | configured state, fixtures, or a key-presence flag |
-| OAuth | byte/semantic preservation and upstream-header stripping evidence | a stored OAuth file or provider setup result |
-| Migration | receipt/idempotency/rollback tests and ownership conflict checks | a code path without a read-back receipt |
-| Transport | TCP, HTTP, upgrade, protocol, frame, and close evidence at their actual stages | process running, HTTP health, or upgrade alone |
-| Capability v3 | scoped level/schema tests with deep results reported separately | a successful command exit or manifest advertisement |
-| Catalog | atomic generation/read-back and mandatory catalog-sync schema | a temp file or stale receipt |
-| Native UI | target-bound macOS build/run and current Providers UI evidence | Swift compilation, decoder fixtures, or another-version screenshot |
-| Deep features | provider-bound real output/artifact for each feature | synthetic output, fixtures, or declarations |
+- saving a private real BotFather token through the installed 8.2.0 Center;
+- a live `getMe`, webhook inspection, resident poller restart, pairing, and
+  private-chat command round trip on the user's target machine;
+- clean-commit full release gates and exact-tarball installed smoke;
+- current npm identity, maintainer, registry-version, and dist-tag read-back;
+- any Git push, tag, stage approval, or npm publication.
 
-## Required real-environment evidence
-
-The following are **not-run-real** until each has a redacted, target-bound
-receipt for the final source/version:
-
-- macOS launchd/service installation, restart, repair, and process read-back;
-- Codex Desktop restart and native Providers view state;
-- ChatGPT OAuth byte/semantic preservation through bridge/profile/catalog
-  actions;
-- live Codex-LB authentication, catalog fetch, and bounded text request;
-- live OpenRouter authentication, catalog fetch, and bounded text request;
-- simultaneous credential preservation on the same user profile;
-- a real WebSocket protocol/frame/clean-close result where supported; and
-- each deep capability, including a real image artifact and its digest.
-
-## Release decision and handoff
-
-The release stays **BLOCKED** until exact-commit package evidence is current,
-all required real evidence exists, and separately authorized external release
-actions are available. Review
-[release readiness](release-readiness.md) for the exact final commands,
-including the read-only staged-tarball verifier.
-
-No local fixture, static source inspection, inferred status, configured
-credential, package dry-run, or build result may change a missing live item to
-passed. No action in this documentation process publishes, deploys, mutates a
-service, changes credentials, creates a tag, or pushes a branch.
+The operator owns those credentials and external mutations. This source task
+must stop before performing them.

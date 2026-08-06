@@ -272,6 +272,27 @@ test('native liveness bot_id round-trips through read and status, remains Doctor
   delete legacyReceipt.bot_id;
   await writeNativeReceipt(legacyReceipt);
   assert.equal((await readTelegramLivenessReceipt(file, now)).ok, true);
+
+  const native81Receipt = structuredClone(nativeReceipt) as Record<string, unknown> & {
+    poller: Record<string, unknown>;
+  };
+  native81Receipt.running = false;
+  native81Receipt.token_configured = false;
+  native81Receipt.token_source = 'none';
+  native81Receipt.bot_identity_valid = false;
+  native81Receipt.paired_chat_count = 0;
+  native81Receipt.poller.running = false;
+  delete native81Receipt.bot_id;
+  delete native81Receipt.getme_checked_at;
+  delete native81Receipt.getme_latency_ms;
+  delete native81Receipt.audit_last_error;
+  delete native81Receipt.poller.last_poll_at;
+  delete native81Receipt.poller.last_success_at;
+  delete native81Receipt.poller.last_update_at;
+  delete native81Receipt.poller.last_error;
+  await writeNativeReceipt(native81Receipt);
+  assert.equal((await readTelegramLivenessReceipt(file, now)).ok, true);
+
   await writeNativeReceipt({ ...nativeReceipt, bot_id: null });
   assert.equal((await readTelegramLivenessReceipt(file, now)).ok, true);
 

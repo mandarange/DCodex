@@ -46,8 +46,8 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
             subtitle: "Create a Telegram bot, then let SKS validate and store its token privately.",
             views: [
                 NativeView.detail(
-                    "1. Open @BotFather and send /newbot.  2. Finish the bot name and username prompts.  " +
-                    "3. Copy the HTTP API token BotFather returns.  4. Choose Enter Bot Token below."
+                    "1. Create or select any bot you own in @BotFather.  2. Copy that bot's complete HTTP API token.  " +
+                    "3. Choose Enter Bot Token below. SKS binds the identity returned by Telegram getMe; it never assumes a bot name or username."
                 ),
                 NativeView.detail(
                     "The token is sent only through process stdin to the canonical SKS setup command, verified with Telegram getMe, and stored in the private user secret file. It is never shown again or written to the SKS action log. Revoke it in BotFather if you suspect exposure."
@@ -113,8 +113,8 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
             window: window,
             title: "Enter Telegram Bot Token",
             message: removeWebhook
-                ? "Paste the BotFather token again. With your consent, SKS will remove this bot's existing webhook without dropping pending updates, verify the bot, and store the token privately."
-                : "Paste the HTTP API token supplied by @BotFather. SKS will verify the bot identity before storing it privately.",
+                ? "Paste this selected bot's BotFather token again. With your consent, SKS will remove that bot's existing webhook without dropping pending updates, verify its live identity, and store the token privately."
+                : "Paste the complete HTTP API token for any bot you own in @BotFather. SKS will accept the identity returned by Telegram getMe without assuming a bot name, then store the token privately.",
             secure: true,
             placeholder: "123456789:BotFatherToken",
             actionTitle: removeWebhook ? "Remove Webhook & Save" : "Verify & Save"
@@ -269,7 +269,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
                     "Token not saved",
                     detail: self.publicFailure(
                         result.output,
-                        fallback: "Telegram could not verify this bot token. Confirm it in @BotFather and try again."
+                        fallback: "Telegram setup could not complete. Check the connection and SKS diagnostics, then try again."
                     )
                 )
                 return
@@ -280,11 +280,12 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
                     let receipt = try await restart.value
                     self?.endOperation()
                     self?.render(receipt)
+                    let selectedBot = response.bot_username.map { "@\($0)" } ?? "The selected bot"
                     self?.showProgress(
                         "Bot verified and connected",
                         detail: response.bot_state_reset == true
-                            ? "The token is stored privately. Bot-scoped pairing and poll state were reset; generate a new pairing code."
-                            : "The token is stored privately. Generate a pairing code for the intended private chat."
+                            ? "\(selectedBot) is verified and stored privately. Bot-scoped pairing and poll state were reset; generate a new pairing code."
+                            : "\(selectedBot) is verified and stored privately. Generate a pairing code for the intended private chat."
                     )
                 } catch {
                     self?.endOperation()
@@ -448,6 +449,14 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
         switch error {
         case "telegram_token_invalid", "telegram_token_stdin_empty":
             return "That value is not a complete BotFather HTTP API token."
+        case "telegram_token_rejected":
+            return "Telegram rejected this token. In @BotFather, select the bot you want SKS to use and copy that bot's current complete token."
+        case "telegram_identity_verification_timeout":
+            return "Telegram identity verification timed out. Check the network connection and try the selected bot token again."
+        case "telegram_identity_verification_network_failed":
+            return "Telegram identity verification could not reach the Bot API. Check the network connection and try again."
+        case "telegram_identity_verification_failed":
+            return "Telegram returned an invalid bot identity response. Try the selected bot's current token again."
         case let value where value.contains("401") || value.contains("Unauthorized"):
             return "Telegram rejected this token. Copy the current token from @BotFather and try again."
         case let value where value.contains("timeout") || value.contains("network"):

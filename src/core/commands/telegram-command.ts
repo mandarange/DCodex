@@ -14,7 +14,7 @@ import {
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { TelegramClient } from '../telegram/client.js';
+import { TelegramApiError, TelegramClient } from '../telegram/client.js';
 import { redactTelegramError } from '../telegram/redaction.js';
 import type { TelegramUser } from '../telegram/types.js';
 import { projectRoot } from '../fsx.js';
@@ -111,7 +111,7 @@ export function usage(): string {
     '  doctor               Evaluate getMe, pairing, poller, and liveness evidence.',
     '  pair                 Issue a short-lived code for the intended private Telegram chat.',
     '  setup --token-stdin [--remove-webhook]',
-    '                       Verify and store an @BotFather token; an existing webhook requires explicit removal consent.',
+    '                       Verify and store the token for any @BotFather bot you own; an existing webhook requires explicit removal consent.',
     '  prepare --stdin-json  Validate an authorized native request through the typed contract.',
     '  execute --stdin-json  Execute a prepared request; destructive requests also need --confirmed.',
     '',
@@ -158,14 +158,19 @@ export async function telegramCommand(
       }, json);
     }
     if (action === 'setup') {
-      if (!args.includes('--token-stdin')) return fail('telegram_token_stdin_required', json);
-      if (args.includes('--drop-pending-updates')) return fail('telegram_drop_pending_updates_unsupported', json);
+      if (!args.includes('--token-stdin')) return telegramSetupFailure('telegram_token_stdin_required', json);
+      if (args.includes('--drop-pending-updates')) return telegramSetupFailure('telegram_drop_pending_updates_unsupported', json);
       const environment = dependencies.environment ?? process.env;
       const envOverrideActive = args.includes('--operator-env-override-active')
         || TELEGRAM_TOKEN_ENV_NAMES.some((name) => String(environment[name] ?? '').trim().length > 0);
       if (envOverrideActive) return telegramSetupEnvOverrideBlocked(json);
       const token = await (dependencies.readTokenStdin ?? readBoundedTokenStdin)();
-      const identity = await (dependencies.verifyToken ?? verifyTelegramToken)(token);
+      let identity: TelegramUser | void;
+      try {
+        identity = await (dependencies.verifyToken ?? verifyTelegramToken)(token);
+      } catch (error) {
+        return telegramSetupFailure(telegramIdentityFailure(error), json, 'getme');
+      }
       const removeWebhook = args.includes('--remove-webhook');
       let webhook: { url: string };
       try {
@@ -226,6 +231,7 @@ export async function telegramCommand(
         webhook_configured_before: webhookConfigured,
         webhook_removed: webhookRemoved, pending_updates_dropped: false,
         bot_id: identity?.id ?? null,
+        bot_username: publicBotUsername(identity?.username),
         bot_rotated: binding?.rotated ?? false,
         bot_state_reset: binding?.state_reset ?? false,
         restart_required: true
@@ -254,7 +260,10 @@ export async function telegramCommand(
     }
     return fail('telegram_unknown_action', json, ['status', 'doctor', 'pair', 'setup', 'prepare', 'execute']);
   } catch (error) {
-    return fail(error instanceof Error ? error.message : String(error), json);
+    const message = error instanceof Error ? error.message : String(error);
+    return action === 'setup'
+      ? telegramSetupFailure(redactTelegramError(error), json)
+      : fail(message, json);
   }
 }
 
@@ -384,6 +393,38 @@ function fail(error: string, json: boolean, supported?: string[]): unknown {
     schema: 'sks.telegram-command.v1', ok: false, error,
     ...(supported ? { supported } : {})
   }, json);
+}
+
+function telegramSetupFailure(error: string, json: boolean, failureStage?: 'getme'): unknown {
+  process.exitCode = 1;
+  return emit({
+    schema: 'sks.telegram-setup-command.v1',
+    ok: false,
+    error,
+    token_stored: false,
+    ...(failureStage ? { failure_stage: failureStage } : {})
+  }, json);
+}
+
+function telegramIdentityFailure(error: unknown): string {
+  const message = redactTelegramError(error);
+  const code = error instanceof TelegramApiError ? error.code : null;
+  if (code === 401 || code === 404 || /\b(?:401|404|Unauthorized|Not Found)\b/i.test(message)) {
+    return 'telegram_token_rejected';
+  }
+  if (/telegram_(?:request_)?timeout|timed?\s*out/i.test(message)) {
+    return 'telegram_identity_verification_timeout';
+  }
+  if (/fetch failed|network|ENOTFOUND|ECONN|EAI_AGAIN|offline/i.test(message)) {
+    return 'telegram_identity_verification_network_failed';
+  }
+  if (message === 'telegram_token_invalid') return message;
+  return 'telegram_identity_verification_failed';
+}
+
+function publicBotUsername(value: string | undefined): string | null {
+  const normalized = String(value ?? '').trim();
+  return /^[A-Za-z0-9_]{5,64}$/.test(normalized) ? normalized : null;
 }
 
 function telegramSetupPartialFailure(input: {

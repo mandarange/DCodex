@@ -113,8 +113,9 @@ function isTelegramLivenessReceipt(value: unknown): value is TelegramLivenessRec
     && (row.token_source === undefined || ['env', 'user_secret_file', 'none', 'unknown'].includes(String(row.token_source)))
     && optionalPositiveSafeInteger(row.bot_id)
     && typeof row.bot_identity_valid === 'boolean'
-    && nullableIso(row.getme_checked_at)
-    && (row.getme_latency_ms === null || (Number.isFinite(row.getme_latency_ms) && Number(row.getme_latency_ms) >= 0))
+    && optionalNullableIso(row.getme_checked_at)
+    && (row.getme_latency_ms === undefined || row.getme_latency_ms === null
+      || (Number.isFinite(row.getme_latency_ms) && Number(row.getme_latency_ms) >= 0))
     && Number.isSafeInteger(row.paired_chat_count) && Number(row.paired_chat_count) >= 0
     && typeof row.started_at === 'string' && Number.isFinite(Date.parse(row.started_at))
     && typeof row.heartbeat_at === 'string' && Number.isFinite(Date.parse(row.heartbeat_at))
@@ -135,10 +136,16 @@ function isPollSnapshot(value: unknown): value is TelegramPollSnapshot {
     && typeof row.running === 'boolean'
     && Number.isSafeInteger(row.offset) && Number(row.offset) >= 0
     && Number.isSafeInteger(row.consecutive_failures) && Number(row.consecutive_failures) >= 0
-    && nullableIso(row.last_poll_at) && nullableIso(row.last_success_at) && nullableIso(row.last_update_at)
-    && (row.last_error === null || typeof row.last_error === 'string');
+    && optionalNullableIso(row.last_poll_at)
+    && optionalNullableIso(row.last_success_at)
+    && optionalNullableIso(row.last_update_at)
+    && (row.last_error === undefined || row.last_error === null || typeof row.last_error === 'string');
 }
 
 function nullableIso(value: unknown): boolean {
   return value === null || (typeof value === 'string' && Number.isFinite(Date.parse(value)));
+}
+
+function optionalNullableIso(value: unknown): boolean {
+  return value === undefined || nullableIso(value);
 }

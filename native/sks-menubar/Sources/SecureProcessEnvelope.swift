@@ -63,6 +63,18 @@ enum SecureProcessEnvelope {
                        ["env", "user_secret_file", "none", "unchanged"].contains(source) {
                         envelope["token_source"] = source
                     }
+                    if let stage = boundedString(object["failure_stage"], limit: 40),
+                       stage == "getme" {
+                        envelope["failure_stage"] = stage
+                    }
+                    if let botID = object["bot_id"] as? NSNumber,
+                       botID.int64Value > 0 {
+                        envelope["bot_id"] = botID
+                    }
+                    if let username = boundedString(object["bot_username"], limit: 64),
+                       username.range(of: #"^[A-Za-z0-9_]{5,64}$"#, options: .regularExpression) != nil {
+                        envelope["bot_username"] = username
+                    }
                     if let action = boundedString(object["operator_action"], limit: 480) {
                         envelope["operator_action"] = action
                     }
