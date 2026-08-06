@@ -1,6 +1,6 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-06T07:10:38.499Z",
+  "generated_at": "2026-08-06T07:20:01.250Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
   "inventory_digest": "a4af39a3da7b3fe6d31f29bfa2c2863016072043b3f10ce7082cd3bac34059bb",
