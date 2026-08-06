@@ -1,10 +1,10 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-06T09:09:19.727Z",
+  "generated_at": "2026-08-06T11:17:37.226Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "335765f0e87863ff0aad5541bb3f34e47addb0ba4c13ef72b9c67a8425409818",
-  "snapshot_hash": "9f8073e8db8978bd987ec70362b2778e856d9a968f1abeae732f54fb86d48628",
+  "inventory_digest": "f495b848432982542acf43908121ef6dca81afe7770ea167f94c26834ffd80a0",
+  "snapshot_hash": "d73ad66552b1ec6e25f40cc99966b5dd40ab915c9981ce503d84fa13b618a513",
   "source_file_count": 2764,
   "symbol_count": 21861,
   "edge_count": 65870,
@@ -8665,10 +8665,10 @@
     },
     {
       "path": "src/core/release/__tests__/publish-preflight.test.ts",
-      "sha256": "f604fc02c404d2a88e861c9e61d4d56cf56f797e843d28cb5e110a7c839721b2",
+      "sha256": "6aad80231729c7d7b1fa0a5aefe130b16351085d422b38217cf1b0dcecd0ef02",
       "language": "typescript",
       "lines": 113,
-      "bytes": 5522
+      "bytes": 5529
     },
     {
       "path": "src/core/release/__tests__/release-doc-role-contracts.test.ts",
@@ -8728,10 +8728,10 @@
     },
     {
       "path": "src/core/release/__tests__/release-real-contract.test.ts",
-      "sha256": "03bb2bf985c8f3dd1ecf91558145caceb51d4b72e4dbbc84fb7ac3ebd87003d0",
+      "sha256": "a198fe9a379581124086b6050682a8547243dd90dc7942fae87df4e1045c2baf",
       "language": "typescript",
       "lines": 329,
-      "bytes": 15029
+      "bytes": 15025
     },
     {
       "path": "src/core/release/__tests__/release-upgrade-smoke-fixtures.ts",
@@ -8925,10 +8925,10 @@
     },
     {
       "path": "src/core/release/publish-preflight.ts",
-      "sha256": "4444cb6ffb0bc34fca2bec76c715421a10308cf9138cbb33bf531292bbb19050",
+      "sha256": "ac4473c99f0fd14e28988ed495984e1ab4712b7ac09e072a722ca1e098deca54",
       "language": "typescript",
       "lines": 148,
-      "bytes": 6576
+      "bytes": 6552
     },
     {
       "path": "src/core/release/release-authorization-snapshot.ts",
@@ -9072,7 +9072,7 @@
     },
     {
       "path": "src/core/release/release-real-contract.ts",
-      "sha256": "37e42eb19a92d0a383210e4788f4f89534c39f3ee79eec7da7e5b98a5cf80a79",
+      "sha256": "c0a3a34c1a82ac0c1d904210fa7d60265401092f500bedc8fb95c6c781c8a976",
       "language": "typescript",
       "lines": 553,
       "bytes": 25494
@@ -14946,10 +14946,10 @@
     },
     {
       "path": "src/scripts/publish-preflight.ts",
-      "sha256": "3b5af616f5fb466382dd8ad8bc563da556543ffcf3616eb0c8c9901cb73baf5d",
+      "sha256": "ca8cdb495105281789a5fda6f4ee1f6cc53a5f79587589b2f74e5d6f401f7436",
       "language": "typescript",
-      "lines": 20,
-      "bytes": 897
+      "lines": 19,
+      "bytes": 785
     },
     {
       "path": "src/scripts/python-codex-sdk-all-pipelines-check.ts",
@@ -15260,10 +15260,10 @@
     },
     {
       "path": "src/scripts/release-metadata-check.ts",
-      "sha256": "412050ef2256a943ed0a83c3bcc6e8121dee089a428f365909073141ee373d07",
+      "sha256": "3bee6d3a116517a9c51c4a5d79f290512046d5d1bb47bf981dd4198a35ed0dfd",
       "language": "typescript",
-      "lines": 309,
-      "bytes": 22528,
+      "lines": 313,
+      "bytes": 23445,
       "purpose": "@ts-nocheck"
     },
     {
@@ -15329,10 +15329,10 @@
     },
     {
       "path": "src/scripts/release-real-check.ts",
-      "sha256": "accdf16b8635942c1c0c9acde1bca1102213876993ae0c5dfc3b811ce8a50bc1",
+      "sha256": "bd13938d550036d27b6f42b5fc03e52d81bf0e3cd1dde394f2bea73dcfbca598",
       "language": "typescript",
-      "lines": 537,
-      "bytes": 24220,
+      "lines": 539,
+      "bytes": 24330,
       "purpose": "@ts-nocheck"
     },
     {
@@ -19167,10 +19167,10 @@
     },
     {
       "path": "test/unit/package-publish-lifecycle.test.mjs",
-      "sha256": "1f9a682fc4d414f0e66cc6eb6ad39a602373d9af8d1206840a0d98e9e258b447",
+      "sha256": "63de34355a2a08cf1dc6b6fc6c7f4a56d91bc9b3c1fc82b90e9ed3b4e66f8686",
       "language": "javascript",
-      "lines": 225,
-      "bytes": 13086
+      "lines": 230,
+      "bytes": 13719
     },
     {
       "path": "test/unit/parallel-verification-dag.test.mjs",
