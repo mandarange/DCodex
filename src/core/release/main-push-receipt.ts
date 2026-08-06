@@ -6,6 +6,7 @@ import { gitOk, gitText, readJson } from './release-proof-io.js'
 import { releaseProofDir, validateLocalReleasePackBinding } from './release-pack-receipt.js'
 import { validateFullReleaseStamp } from './release-stamp-proof.js'
 import { releaseOriginIdentity } from './release-origin.js'
+import { validatePhysicalReleaseGateInspection } from './physical-release-gates.js'
 
 export const MAIN_PUSH_RECEIPT_SCHEMA = 'sks.main-push-receipt.v1'
 
@@ -68,6 +69,13 @@ export function inspectMainPushReceipt(input: {
     targetTarballSha256: pack?.sha256
   })
   if (!macosValidation.ok) blockers.push(...macosValidation.blockers)
+  const physical = validatePhysicalReleaseGateInspection({
+    root: input.root,
+    version: input.version,
+    sourceCommit: head
+  })
+  if (!physical.ok) blockers.push(...physical.blockers.map((blocker) => `physical_proof:${blocker}`))
+  if (guard?.physical_proof !== physical.path) blockers.push('pre_push_guard_physical_proof_mismatch')
   return {
     schema: MAIN_PUSH_RECEIPT_SCHEMA,
     ok: blockers.length === 0,
@@ -85,6 +93,7 @@ export function inspectMainPushReceipt(input: {
     pack_proof: packProof,
     upgrade_proof: upgrade,
     macos_proof: macosProof,
+    physical_proof: physical.path,
     blockers: [...new Set(blockers)]
   }
 }

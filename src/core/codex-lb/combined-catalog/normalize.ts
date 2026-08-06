@@ -1,5 +1,4 @@
 import type { BridgeCatalogModel, BridgeProviderId, CatalogSyncState } from '../bridge-contracts.js';
-import { normalizeCodexLbBridgeCatalogModels } from '../codex-lb-tool-catalog.js';
 import type { BridgeProviderRegistry } from '../provider-registry.js';
 import {
   canonicalizeBridgeModelId,
@@ -119,6 +118,62 @@ function normalizeCodexLbCatalogRows(value: unknown): unknown {
       ? { id: row, slug: row, display_name: row, supported_in_api: true }
       : row)
   };
+}
+
+function normalizeCodexLbBridgeCatalogModels(
+  payload: unknown,
+  sourceCatalogGeneration: string
+): { models: BridgeCatalogModel[]; blockers: string[] } {
+  const rows = catalogRows(payload);
+  const models: BridgeCatalogModel[] = [];
+  const blockers: string[] = [];
+  for (const [index, value] of rows.entries()) {
+    if (!isPlainObject(value)) {
+      blockers.push(`codex_lb_model_catalog_row_invalid:${index}:object`);
+      continue;
+    }
+    try {
+      const row = sanitizeCodexLbModelRow(value, index);
+      const publicId = String(row.slug || '').trim();
+      const capabilities = [
+        ...(Array.isArray(row.supported_reasoning_levels) && row.supported_reasoning_levels.length > 0 ? ['reasoning'] : []),
+        ...(row.supports_tools === true || row.supports_tool_choice === true ? ['tools'] : []),
+        ...(row.supports_vision === true || row.vision === true ? ['vision'] : []),
+        ...(row.supports_audio === true || row.audio === true ? ['audio'] : [])
+      ];
+      models.push({
+        public_id: publicId,
+        provider_id: 'codex-lb',
+        upstream_model: publicId,
+        display_name: String(row.display_name || publicId).trim(),
+        supported_in_api: row.supported_in_api !== false,
+        capabilities: unique(capabilities).sort(),
+        source_catalog_generation: sourceCatalogGeneration,
+        route_key: `codex-lb:${publicId.toLowerCase()}`
+      });
+    } catch (error) {
+      blockers.push(error instanceof Error ? error.message : `codex_lb_model_catalog_row_invalid:${index}`);
+    }
+  }
+  if (models.length === 0) blockers.push('codex_lb_model_catalog_empty');
+  return { models, blockers: unique(blockers) };
+}
+
+function sanitizeCodexLbModelRow(row: Record<string, unknown>, index: number): Record<string, unknown> {
+  const cloned = structuredClone(row);
+  for (const key of Object.keys(cloned)) {
+    if (/(?:^|[_-])(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|set[_-]?cookie)(?:$|[_-])/i.test(key)) {
+      delete cloned[key];
+    }
+  }
+  const slug = String(cloned.slug ?? cloned.id ?? cloned.model ?? cloned.name ?? '').trim();
+  if (!slug) throw new Error(`codex_lb_model_catalog_slug_missing:${index}`);
+  cloned.slug = slug;
+  return cloned;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function providerCode(providerId: BridgeProviderId): string {

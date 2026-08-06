@@ -16,6 +16,7 @@ const report = inspectMainPushGuard({
   requireReleaseStamp: process.argv.includes('--require-release-stamp'),
   requirePackProof: process.argv.includes('--require-pack-proof'),
   requireMacosProof: process.argv.includes('--require-macos-proof'),
+  requirePhysicalProof: process.argv.includes('--require-physical-proof'),
   requireCleanTree: process.argv.includes('--require-clean-tree')
 })
 const output = path.join(releaseProofDir(root, expectedVersion), 'main-push-guard.json')

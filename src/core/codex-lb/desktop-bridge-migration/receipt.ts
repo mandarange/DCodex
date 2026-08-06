@@ -9,6 +9,7 @@ type AuthSnapshot = Awaited<ReturnType<typeof captureCodexAuthSnapshot>>;
 
 export function authSemanticIdentityPreserved(before: AuthSnapshot, after: AuthSnapshot): boolean {
   if (before.path !== after.path || before.exists !== after.exists) return false;
+  if (before.sha256 !== after.sha256) return false;
   const beforeIsOAuth = before.mode === 'chatgpt_oauth' || before.mode === 'mixed';
   const afterIsOAuth = after.mode === 'chatgpt_oauth' || after.mode === 'mixed';
   if (beforeIsOAuth || afterIsOAuth) {
@@ -17,7 +18,7 @@ export function authSemanticIdentityPreserved(before: AuthSnapshot, after: AuthS
       && before.semantic_fingerprint !== null
       && before.semantic_fingerprint === after.semantic_fingerprint;
   }
-  return before.sha256 === after.sha256;
+  return true;
 }
 
 export function buildDesktopBridgeMigrationReceipt(input: {

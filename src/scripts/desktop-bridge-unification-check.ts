@@ -30,7 +30,8 @@ import { buildBridgeRouteIndex } from '../core/codex-lb/route-index.js';
 import { openRouterSecretPaths } from '../core/providers/openrouter/openrouter-secret-store.js';
 import { emitGate } from './gate-lib.js';
 
-const bridgeBaseUrl = 'http://127.0.0.1:47821/backend-api/codex';
+const clientCapability = 'A'.repeat(43);
+const bridgeBaseUrl = `http://127.0.0.1:47821/__sks/client/${clientCapability}/backend-api/codex`;
 const codexLbEndpoint = 'https://lb.example.test/backend-api/codex';
 const initialCodexLbKey = 'fixture-codex-lb-key-initial-123456789';
 const initialOpenRouterKey = 'fixture-openrouter-key-initial-987654321';
@@ -196,6 +197,7 @@ try {
   assertSecretFree(await fs.readFile(routePolicyPath, 'utf8'), allFixtureSecrets);
   assertSecretFree(await fs.readFile(providerRegistryPath, 'utf8'), allFixtureSecrets);
   assertSecretFree(receiptText, allFixtureSecrets);
+  assert.equal(receiptText.includes(clientCapability), false);
 
   const second = await migrateDesktopBridgeConfig({
     home,

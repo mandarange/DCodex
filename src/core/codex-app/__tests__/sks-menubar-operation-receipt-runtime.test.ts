@@ -268,7 +268,7 @@ test('compiled ProcessClient bounds noisy output and completes timed-out childre
   const actionScript = path.join(temp, 'action.sh');
   await fs.writeFile(actionScript, `#!/bin/zsh
 if [ "$1" = "noisy" ]; then
-  while true; do /usr/bin/printf 'bounded-noisy-output-0123456789\\n'; done
+  while true; do printf 'bounded-noisy-output-0123456789\\n'; done
 fi
 if [ "$1" = "exited-parent" ]; then
   /bin/sleep 30 &

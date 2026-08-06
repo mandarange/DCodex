@@ -42,11 +42,6 @@
 ### Fixed
 
 - Keep release metadata aligned after an explicit SKS version bump advances the package version.
-
-## [8.1.2] - 2026-08-05
-
-### Fixed
-
 - **Use Codex LB**, **Desktop Bridge Mode**, and **Use ChatGPT OAuth Only** can now
   take over an OpenRouter / Multi-Provider Router selection that SKS itself wrote:
   the unmarked `model_provider` line and its `sks-*-catalog.json` binding are

@@ -26,6 +26,8 @@ import type {
   DesktopBridgeControllerV3Options
 } from './desktop-controller-v3/types.js';
 import { verifyDesktopBridgeV3 } from './desktop-controller-v3/verification.js';
+import { withFileLock } from '../locks/file-lock.js';
+import path from 'node:path';
 
 export type {
   DesktopBridgeControllerRequestV3,
@@ -51,38 +53,45 @@ export async function executeDesktopBridgeCommandV3(
   if (request.operation === 'verify') return verifyDesktopBridgeV3(request.level, options);
 
   try {
-    if (request.operation === 'ensure') return ensureDesktopBridge(options, 'ensure');
-    if (request.operation === 'repair') return repairDesktopBridge(options);
-    if (request.operation === 'provider.list') {
-      const status = await desktopBridgeStatusV3(options);
-      return commandResult('provider.list', true, status, { providers: status.providers }, [], options);
-    }
-    if (request.operation === 'provider.configure') return configureProvider(request, options);
-    if (request.operation === 'provider.validate') return validateProvider(request.provider_id, options);
-    if (request.operation === 'provider.enable' || request.operation === 'provider.disable') {
-      return setProviderState(
-        request.provider_id,
-        request.operation === 'provider.enable',
-        request.operation,
-        options
-      );
-    }
-    if (request.operation === 'provider.remove-credential') {
-      return removeCredential(request.provider_id, options);
-    }
-    if (request.operation === 'catalog.sync') return syncCatalog(options);
-    if (request.operation === 'catalog.status') {
-      const status = await desktopBridgeStatusV3(options);
-      return commandResult('catalog.status', true, status, { catalog_sync: status.catalog_sync }, [], options);
-    }
-    if (request.operation === 'route.list') {
-      const status = await desktopBridgeStatusV3(options);
-      return commandResult('route.list', true, status, { routing: status.routing }, [], options);
-    }
-    if (request.operation === 'route.set-default') return setDefaultProvider(request.provider_id, options);
-    if (request.operation === 'route.explain') return explainRoute(request.model, options);
-    if (request.operation === 'unmanage') return unmanageDesktopBridge(options);
-    return rollbackDesktopBridge(request.receipt_id, options);
+    const home = path.resolve(options.home || process.env.HOME || '.');
+    return await withFileLock({
+      lockPath: path.join(home, '.codex', 'sks', 'locks', 'desktop-bridge-controller.lock'),
+      timeoutMs: 30_000,
+      staleMs: 120_000
+    }, async () => {
+      if (request.operation === 'ensure') return ensureDesktopBridge(options, 'ensure');
+      if (request.operation === 'repair') return repairDesktopBridge(options);
+      if (request.operation === 'provider.list') {
+        const status = await desktopBridgeStatusV3(options);
+        return commandResult('provider.list', true, status, { providers: status.providers }, [], options);
+      }
+      if (request.operation === 'provider.configure') return configureProvider(request, options);
+      if (request.operation === 'provider.validate') return validateProvider(request.provider_id, options);
+      if (request.operation === 'provider.enable' || request.operation === 'provider.disable') {
+        return setProviderState(
+          request.provider_id,
+          request.operation === 'provider.enable',
+          request.operation,
+          options
+        );
+      }
+      if (request.operation === 'provider.remove-credential') {
+        return removeCredential(request.provider_id, options);
+      }
+      if (request.operation === 'catalog.sync') return syncCatalog(options);
+      if (request.operation === 'catalog.status') {
+        const status = await desktopBridgeStatusV3(options);
+        return commandResult('catalog.status', true, status, { catalog_sync: status.catalog_sync }, [], options);
+      }
+      if (request.operation === 'route.list') {
+        const status = await desktopBridgeStatusV3(options);
+        return commandResult('route.list', true, status, { routing: status.routing }, [], options);
+      }
+      if (request.operation === 'route.set-default') return setDefaultProvider(request.provider_id, options);
+      if (request.operation === 'route.explain') return explainRoute(request.model, options);
+      if (request.operation === 'unmanage') return unmanageDesktopBridge(options);
+      return rollbackDesktopBridge(request.receipt_id, options);
+    });
   } catch (error) {
     const blocker = safeCode(error, 'desktop_bridge_command_failed');
     const status = await desktopBridgeStatusV3(options).catch(() => null);

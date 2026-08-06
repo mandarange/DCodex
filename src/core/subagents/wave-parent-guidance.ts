@@ -38,7 +38,10 @@ export function buildWaveParentGuidance(
   }
   if (rescan || remaining > 0) {
     actions.push(REFRESH_LIFECYCLE_ACTION)
-    const nextWaveLimit = Math.min(remaining, waveCapacity)
+    // The frame is a concurrent live-thread limit. Settled children return
+    // their slots; only siblings that are still open consume capacity.
+    const reusableSlots = Math.max(0, waveCapacity - openThreads)
+    const nextWaveLimit = Math.min(remaining, reusableSlots)
     if (nextWaveLimit > 0) {
       actions.push(`${SPAWN_NEXT_WAVE_ACTION}:${nextWaveLimit}`)
     }

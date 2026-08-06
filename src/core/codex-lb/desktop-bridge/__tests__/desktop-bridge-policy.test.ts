@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,6 +10,7 @@ import {
   buildProviderUpstreamHeaders,
   createDesktopBridgePublicState,
   desktopBridgeConfigGeneration,
+  desktopBridgeClientPath,
   getDesktopBridgeStatus,
   prepareDesktopBridgeConfig,
   readDesktopBridgeState,
@@ -27,6 +29,8 @@ const SOURCE_CATALOG_GENERATION = 'provider-source-catalog-generation';
 const POLICY_GENERATION = 'policy-generation';
 const CREDENTIAL_GENERATION = 'credential-generation';
 const CREDENTIAL_FINGERPRINT = 'credential-fingerprint';
+const CLIENT_CAPABILITY = Buffer.alloc(32, 0x42).toString('base64url');
+const CLIENT_CAPABILITY_SHA256 = createHash('sha256').update(CLIENT_CAPABILITY).digest('hex');
 
 function config(transport: DesktopBridgeProviderAuthTransport = 'x-codex-lb-api-key'): DesktopBridgeConfig {
   const baseUrl = 'https://lb.example.com/backend-api/codex';
@@ -66,6 +70,7 @@ function config(transport: DesktopBridgeProviderAuthTransport = 'x-codex-lb-api-
       fingerprint: providerId === 'codex-lb' ? CREDENTIAL_FINGERPRINT : 'unused-openrouter-fingerprint',
       generation: expectedGeneration,
     }),
+    clientCapabilitySha256: CLIENT_CAPABILITY_SHA256,
     allowedPathPrefixes: ['/backend-api/codex/', '/backend-api/files'],
     allowedOrigins: ['app://codex'],
     connectTimeoutMs: 2_000,
@@ -181,9 +186,9 @@ test('Location rewrite accepts only the configured HTTP/WebSocket endpoint famil
     rewriteLocationHeader(
       'wss://lb.example.com/backend-api/codex/call-1?token=opaque',
       'https://lb.example.com/backend-api/codex',
-      'http://127.0.0.1:55000',
+      `http://127.0.0.1:55000/__sks/client/${CLIENT_CAPABILITY}`,
     ),
-    'ws://127.0.0.1:55000/backend-api/codex/call-1?token=opaque',
+    `ws://127.0.0.1:55000${desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/call-1?token=opaque')}`,
   );
   assert.throws(
     () => rewriteLocationHeader(
@@ -219,6 +224,18 @@ test('R37/security: 0600 public state records live probe IDs without provider se
     assert.deepEqual((await readDesktopBridgeState(file))?.last_verified_probe_ids, state.last_verified_probe_ids);
 
     const generation = desktopBridgeConfigGeneration(currentConfig);
+    assert.equal(desktopBridgeConfigGeneration({
+      ...currentConfig,
+      providerSessionPins: [{
+        thread_id: 'thread-runtime-pin',
+        provider_id: 'codex-lb',
+        public_model: 'public-model',
+        upstream_model: 'public-model',
+        catalog_generation: currentConfig.routePolicy.catalog_generation,
+        route_policy_generation: currentConfig.routePolicy.policy_generation,
+        created_at: new Date().toISOString(),
+      }],
+    }), generation);
     assert.equal((await getDesktopBridgeStatus({
       statePath: file,
       expectedConfigGeneration: generation,
@@ -252,7 +269,7 @@ test('launchd rendering contains no environment/key material and rejects secret 
     stdoutPath: '/Users/test/Library/Logs/sks-bridge.out.log',
     stderrPath: '/Users/test/Library/Logs/sks-bridge.err.log',
   });
-  assert.match(plist, /com\.sneakoscope\.codex-lb-desktop-bridge/);
+  assert.match(plist, /com\.sneakoscope\.desktop-bridge/);
   assert.equal(plist.includes('EnvironmentVariables'), false);
   assert.equal(plist.includes('lb-key-unit-secret'), false);
   for (const forbidden of [

@@ -20,6 +20,62 @@ final class ProvidersCorrelationTests: XCTestCase {
         XCTAssertFalse(gate.statusMayMerge(checkedAt: now.addingTimeInterval(-10), catalogGeneration: "g1"))
     }
 
+    func testNewerUnprovedStatusFromDifferentCatalogGenerationCannotReplaceVerifiedDisplay() {
+        var gate = ProviderResponseGate()
+        let verifiedGeneration = gate.begin()
+        let verifiedAt = Date(timeIntervalSince1970: 100)
+        XCTAssertTrue(gate.accept(.init(
+            requestGeneration: verifiedGeneration,
+            reportId: "verified-g1",
+            correlationId: "verify-g1",
+            attemptId: 1,
+            checkedAt: verifiedAt,
+            catalogGeneration: "catalog-g1"
+        )))
+
+        XCTAssertFalse(gate.statusMayMerge(
+            checkedAt: verifiedAt.addingTimeInterval(60),
+            catalogGeneration: "catalog-g2"
+        ))
+        XCTAssertTrue(gate.statusMayMerge(
+            checkedAt: verifiedAt.addingTimeInterval(60),
+            catalogGeneration: "catalog-g1"
+        ))
+        XCTAssertTrue(gate.statusMayMerge(
+            checkedAt: verifiedAt,
+            catalogGeneration: "catalog-g1"
+        ))
+        XCTAssertFalse(gate.statusMayMerge(
+            checkedAt: verifiedAt.addingTimeInterval(-1),
+            catalogGeneration: "catalog-g1"
+        ))
+    }
+
+    func testNewerVerifiedResponseMayAdvanceCatalogGeneration() {
+        var gate = ProviderResponseGate()
+        let firstGeneration = gate.begin()
+        let firstCheckedAt = Date(timeIntervalSince1970: 100)
+        XCTAssertTrue(gate.accept(.init(
+            requestGeneration: firstGeneration,
+            reportId: "verified-g1",
+            correlationId: "verify-g1",
+            attemptId: 1,
+            checkedAt: firstCheckedAt,
+            catalogGeneration: "catalog-g1"
+        )))
+
+        let nextGeneration = gate.begin()
+        XCTAssertTrue(gate.accept(.init(
+            requestGeneration: nextGeneration,
+            reportId: "verified-g2",
+            correlationId: "verify-g2",
+            attemptId: 1,
+            checkedAt: firstCheckedAt.addingTimeInterval(60),
+            catalogGeneration: "catalog-g2"
+        )))
+        XCTAssertEqual(gate.accepted?.catalogGeneration, "catalog-g2")
+    }
+
     func testMixedCorrelationReportIsSchemaInvalid() {
         var json = ProviderV3Fixture.report()
         var bridge = json["bridge"] as! [String: Any]

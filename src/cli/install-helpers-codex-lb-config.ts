@@ -184,7 +184,9 @@ function normalizeManagedBridgeBaseUrl(value: string): string {
     || parsed.password
     || parsed.search
     || parsed.hash
-    || parsed.pathname.replace(/\/+$/, '') !== '/backend-api/codex'
+    || !/^\/__sks\/client\/[A-Za-z0-9_-]{43}\/backend-api\/codex$/.test(
+      parsed.pathname.replace(/\/+$/, '')
+    )
   ) throw new Error('desktop_bridge_loopback_base_url_required');
   return normalized;
 }

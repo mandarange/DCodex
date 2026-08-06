@@ -22,10 +22,13 @@ import {
   validateDesktopCapabilityReportV3
 } from '../bridge-runtime-validation.js';
 import {
-  CODEX_LB_DESKTOP_BRIDGE_SERVICE_SCHEMA,
+  DESKTOP_BRIDGE_SERVICE_SCHEMA,
+  defaultDesktopBridgeServiceSettings,
   desktopBridgeServicePaths,
   type DesktopBridgeServiceStatus
 } from '../desktop-service.js';
+import { activeProviderIds } from '../desktop-controller-v3/shared.js';
+import { unmanageDesktopBridge } from '../desktop-controller-v3/lifecycle-commands.js';
 
 async function fixture(t: test.TestContext) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-desktop-controller-v3-'));
@@ -44,14 +47,14 @@ async function fixture(t: test.TestContext) {
 
 function stoppedService(home: string): DesktopBridgeServiceStatus {
   return {
-    schema: CODEX_LB_DESKTOP_BRIDGE_SERVICE_SCHEMA,
+    schema: DESKTOP_BRIDGE_SERVICE_SCHEMA,
     ok: false,
     supported: true,
     installed: false,
     loaded: false,
     running: false,
     status: 'missing',
-    service: 'gui/501/com.sneakoscope.codex-lb-desktop-bridge',
+    service: 'gui/501/com.sneakoscope.desktop-bridge',
     paths: desktopBridgeServicePaths(home),
     state: null,
     settings: null,
@@ -60,6 +63,76 @@ function stoppedService(home: string): DesktopBridgeServiceStatus {
     blockers: ['desktop_bridge_state_missing']
   };
 }
+
+function lifecycleService(
+  home: string,
+  state: { installed: boolean; running: boolean; settingsPresent: boolean }
+): DesktopBridgeServiceStatus {
+  return {
+    ...stoppedService(home),
+    ok: state.running,
+    installed: state.installed,
+    loaded: state.running,
+    running: state.running,
+    status: state.running ? 'running' : 'missing',
+    settings: state.settingsPresent ? defaultDesktopBridgeServiceSettings() : null,
+    blockers: []
+  };
+}
+
+function managedDesktopConfig(home: string): string {
+  return [
+    '# sks-desktop-bridge-managed',
+    'model_provider = "openai"',
+    '# sks-desktop-bridge-managed-base-url',
+    'openai_base_url = "http://127.0.0.1:49152/backend-api/codex"',
+    '# sks-desktop-bridge-managed-model-catalog',
+    `model_catalog_json = "${path.join(home, '.codex', 'sks-bridge-catalog.json')}"`,
+    ''
+  ].join('\n');
+}
+
+async function lifecycleArtifacts(home: string) {
+  const servicePaths = desktopBridgeServicePaths(home);
+  const configPath = path.join(home, '.codex', 'config.toml');
+  await fs.mkdir(path.dirname(servicePaths.settings_path), { recursive: true });
+  await fs.mkdir(path.dirname(servicePaths.launch_agent_path), { recursive: true });
+  await fs.writeFile(configPath, managedDesktopConfig(home));
+  await fs.writeFile(servicePaths.settings_path, '{}\n');
+  await fs.writeFile(servicePaths.launch_agent_path, '<plist/>\n');
+  return { configPath, servicePaths };
+}
+
+test('two ready explicitly routed providers stay active regardless of the UI default', () => {
+  const policy = {
+    schema: 'sks.bridge-routing-policy.v1',
+    default_provider_id: null,
+    fallback: 'none',
+    model_routes: {
+      'lb-model': { provider_id: 'codex-lb', upstream_model: 'lb-model' },
+      'or-model': { provider_id: 'openrouter', upstream_model: 'or-model' }
+    },
+    catalog_generation: 'catalog-both-ready',
+    policy_generation: 'policy-both-ready',
+    changed_at: '2026-08-05T00:00:00.000Z'
+  } as const;
+  const readyProfile = { enabled: true, state: 'ready' } as const;
+  const core = {
+    policy,
+    registry: {
+      profiles: {
+        'codex-lb': readyProfile,
+        openrouter: readyProfile
+      }
+    }
+  };
+
+  assert.deepEqual(activeProviderIds(core as never), ['codex-lb', 'openrouter']);
+  assert.deepEqual(activeProviderIds({
+    ...core,
+    policy: { ...policy, default_provider_id: 'openrouter' }
+  } as never), ['codex-lb', 'openrouter']);
+});
 
 test('status is a strict, secret-free observation and never starts network probes', async (t) => {
   const setup = await fixture(t);
@@ -82,10 +155,310 @@ test('status is a strict, secret-free observation and never starts network probe
   assert.equal(status.websocket_probe, null);
   assert.equal(status.native_identity.semantic_identity_preserved, null);
   assert.equal(status.readiness.ready, false);
+  assert.equal(status.readiness.state, 'unmanaged');
+  assert.equal(status.providers['codex-lb'].credential.state, 'not_configured');
+  assert.equal(status.providers.openrouter.credential.state, 'not_configured');
+  assert.deepEqual(status.recovery_actions.slice(0, 2), [
+    'configure_codex_lb_credential',
+    'configure_openrouter_credential'
+  ]);
   assert.equal(validateDesktopBridgeStatusV3(status).ok, true);
   const serialized = JSON.stringify(status);
   assert.doesNotMatch(serialized, /"(?:api_key|secret|token|authorization|cookie)"\s*:/i);
   assert.doesNotMatch(serialized, /or-ambient-key|lb-secret-/i);
+});
+
+test('dormant settings alone do not claim live Desktop Bridge ownership', async (t) => {
+  const setup = await fixture(t);
+  const status = await desktopBridgeStatusV3({
+    home: setup.home,
+    env: setup.env,
+    serviceStatusImpl: async () => lifecycleService(setup.home, {
+      installed: false,
+      running: false,
+      settingsPresent: true
+    }),
+    now: () => new Date('2026-08-05T00:00:00.000Z'),
+    id: () => 'dormant-settings'
+  });
+
+  assert.equal(status.management.managed, false);
+  assert.equal(status.management.reason, 'never_configured');
+  assert.equal(status.readiness.state, 'unmanaged');
+});
+
+test('unmanage preserves service artifacts and restarts the prior running service on guarded-write conflict', async (t) => {
+  const setup = await fixture(t);
+  const artifacts = await lifecycleArtifacts(setup.home);
+  const events: string[] = [];
+  const state = { installed: true, running: true, settingsPresent: true };
+  const result = await executeDesktopBridgeCommandV3({ operation: 'unmanage', confirmed: true }, {
+    home: setup.home,
+    env: setup.env,
+    serviceStatusImpl: async () => lifecycleService(setup.home, state),
+    stopServiceImpl: async (input) => {
+      assert.equal(input?.removePlist, undefined);
+      assert.equal(input?.removeSettings, undefined);
+      events.push('stop:preserve');
+      state.running = false;
+      return lifecycleService(setup.home, state);
+    },
+    safeWriteConfigImpl: async (configPath, _current, _next, _tag, writeOptions) => {
+      events.push('config:conflict');
+      assert.equal(configPath, artifacts.configPath);
+      assert.equal(writeOptions?.verifyUnchangedBeforeWrite, true);
+      return {
+        ok: false,
+        status: 'concurrent_change_detected',
+        config_path: configPath,
+        backup_path: null,
+        changed: false
+      };
+    },
+    bootstrapServiceImpl: async () => {
+      events.push('service:restart');
+      state.running = true;
+      return lifecycleService(setup.home, state);
+    }
+  });
+
+  assert.equal(result.schema, 'sks.desktop-bridge-command-result.v1');
+  if (result.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(result.execution.ok, false);
+  assert.deepEqual(result.execution.blockers, ['desktop_bridge_unmanage_config_concurrent_change_detected']);
+  assert.deepEqual(events, ['stop:preserve', 'config:conflict', 'service:restart']);
+  assert.equal(state.running, true);
+  assert.equal(await fs.readFile(artifacts.configPath, 'utf8'), managedDesktopConfig(setup.home));
+  await fs.access(artifacts.servicePaths.settings_path);
+  await fs.access(artifacts.servicePaths.launch_agent_path);
+});
+
+test('unmanage removes plist/settings only after a successful guarded config write', async (t) => {
+  const setup = await fixture(t);
+  const artifacts = await lifecycleArtifacts(setup.home);
+  const events: string[] = [];
+  const state = { installed: true, running: true, settingsPresent: true };
+  const result = await executeDesktopBridgeCommandV3({ operation: 'unmanage', confirmed: true }, {
+    home: setup.home,
+    env: setup.env,
+    serviceStatusImpl: async () => lifecycleService(setup.home, state),
+    stopServiceImpl: async (input) => {
+      if (!input?.removePlist && !input?.removeSettings) {
+        events.push('stop:preserve');
+        state.running = false;
+        return lifecycleService(setup.home, state);
+      }
+      events.push('service:cleanup');
+      assert.equal(input?.removePlist, true);
+      assert.equal(input?.removeSettings, true);
+      await fs.unlink(artifacts.servicePaths.launch_agent_path);
+      await fs.unlink(artifacts.servicePaths.settings_path);
+      state.installed = false;
+      state.settingsPresent = false;
+      return lifecycleService(setup.home, state);
+    },
+    safeWriteConfigImpl: async (configPath, _current, next, _tag, writeOptions) => {
+      events.push('config:write');
+      assert.equal(writeOptions?.verifyUnchangedBeforeWrite, true);
+      await fs.writeFile(configPath, next);
+      return {
+        ok: true,
+        status: 'written',
+        config_path: configPath,
+        backup_path: null,
+        changed: true
+      };
+    },
+    bootstrapServiceImpl: async () => {
+      throw new Error('successful_unmanage_must_not_restart');
+    }
+  });
+
+  assert.equal(result.schema, 'sks.desktop-bridge-command-result.v1');
+  if (result.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(result.execution.ok, true);
+  assert.equal(result.status?.management.managed, false);
+  assert.deepEqual(events, ['stop:preserve', 'config:write', 'service:cleanup']);
+  await assert.rejects(fs.access(artifacts.servicePaths.settings_path));
+  await assert.rejects(fs.access(artifacts.servicePaths.launch_agent_path));
+  assert.doesNotMatch(await fs.readFile(artifacts.configPath, 'utf8'), /sks-desktop-bridge-managed/);
+});
+
+test('rollback preserves service artifacts and restarts the prior running service when receipt rollback fails', async (t) => {
+  const setup = await fixture(t);
+  const artifacts = await lifecycleArtifacts(setup.home);
+  const events: string[] = [];
+  const state = { installed: true, running: true, settingsPresent: true };
+  const result = await executeDesktopBridgeCommandV3({ operation: 'rollback', receipt_id: 'receipt-failure', confirmed: true }, {
+    home: setup.home,
+    env: setup.env,
+    serviceStatusImpl: async () => lifecycleService(setup.home, state),
+    stopServiceImpl: async (input) => {
+      assert.equal(input?.removePlist, undefined);
+      assert.equal(input?.removeSettings, undefined);
+      events.push('stop:preserve');
+      state.running = false;
+      return lifecycleService(setup.home, state);
+    },
+    rollbackReceiptImpl: async () => {
+      events.push('receipt:rollback-failed');
+      return {
+        schema: 'sks.desktop-bridge-unification-rollback.v1',
+        ok: false,
+        status: 'rollback_conflict',
+        receipt_id: 'receipt-failure',
+        restored_files: [],
+        credentials_overwritten: false,
+        auth_overwritten: false,
+        conflicts: [{
+          path: artifacts.configPath,
+          expected_after_sha256: 'expected',
+          current_sha256: 'changed',
+          reason: 'current_file_changed_after_migration'
+        }]
+      };
+    },
+    bootstrapServiceImpl: async () => {
+      events.push('service:restart');
+      state.running = true;
+      return lifecycleService(setup.home, state);
+    }
+  });
+
+  assert.equal(result.schema, 'sks.desktop-bridge-command-result.v1');
+  if (result.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(result.execution.ok, false);
+  assert.deepEqual(result.execution.blockers, ['rollback_conflict']);
+  assert.deepEqual(events, ['stop:preserve', 'receipt:rollback-failed', 'service:restart']);
+  assert.equal(state.running, true);
+  await fs.access(artifacts.servicePaths.settings_path);
+  await fs.access(artifacts.servicePaths.launch_agent_path);
+});
+
+test('successful rollback cleans service artifacts after receipt restoration and reports rollback_complete', async (t) => {
+  const setup = await fixture(t);
+  const artifacts = await lifecycleArtifacts(setup.home);
+  const events: string[] = [];
+  const state = { installed: true, running: true, settingsPresent: true };
+  const result = await executeDesktopBridgeCommandV3({ operation: 'rollback', receipt_id: 'receipt-success', confirmed: true }, {
+    home: setup.home,
+    env: setup.env,
+    serviceStatusImpl: async () => lifecycleService(setup.home, state),
+    stopServiceImpl: async (input) => {
+      if (!input?.removePlist && !input?.removeSettings) {
+        events.push('stop:preserve');
+        state.running = false;
+        return lifecycleService(setup.home, state);
+      }
+      events.push('service:cleanup');
+      await fs.unlink(artifacts.servicePaths.launch_agent_path);
+      await fs.unlink(artifacts.servicePaths.settings_path);
+      state.installed = false;
+      state.settingsPresent = false;
+      return lifecycleService(setup.home, state);
+    },
+    rollbackReceiptImpl: async () => {
+      events.push('receipt:rollback');
+      await fs.writeFile(artifacts.configPath, 'service_tier = "fast"\n');
+      return {
+        schema: 'sks.desktop-bridge-unification-rollback.v1',
+        ok: true,
+        status: 'rolled_back',
+        receipt_id: 'receipt-success',
+        restored_files: [artifacts.configPath],
+        credentials_overwritten: false,
+        auth_overwritten: false,
+        conflicts: []
+      };
+    },
+    bootstrapServiceImpl: async () => {
+      throw new Error('successful_rollback_must_not_restart');
+    }
+  });
+
+  assert.equal(result.schema, 'sks.desktop-bridge-command-result.v1');
+  if (result.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(result.execution.ok, true);
+  assert.equal(result.status?.management.managed, false);
+  assert.equal(result.status?.management.reason, 'rollback_complete');
+  assert.equal(result.status?.readiness.state, 'unmanaged');
+  assert.deepEqual(events, ['stop:preserve', 'receipt:rollback', 'service:cleanup']);
+  await assert.rejects(fs.access(artifacts.servicePaths.settings_path));
+  await assert.rejects(fs.access(artifacts.servicePaths.launch_agent_path));
+});
+
+test('lifecycle recovery failure preserves the original transaction error as the command blocker', async (t) => {
+  const setup = await fixture(t);
+  await lifecycleArtifacts(setup.home);
+  const state = { installed: true, running: true, settingsPresent: true };
+  await assert.rejects(
+    unmanageDesktopBridge({
+      home: setup.home,
+      env: setup.env,
+      serviceStatusImpl: async () => lifecycleService(setup.home, state),
+      stopServiceImpl: async () => {
+        state.running = false;
+        return lifecycleService(setup.home, state);
+      },
+      safeWriteConfigImpl: async (configPath) => ({
+        ok: false,
+        status: 'concurrent_change_detected',
+        config_path: configPath,
+        backup_path: null,
+        changed: false
+      }),
+      bootstrapServiceImpl: async () => {
+        throw new Error('desktop_bridge_recovery_launch_failed');
+      }
+    }),
+    (error: unknown) => {
+      assert.equal(error instanceof Error && error.message, 'desktop_bridge_unmanage_config_concurrent_change_detected');
+      assert.equal(error instanceof Error && error.cause instanceof Error && error.cause.message, 'desktop_bridge_recovery_launch_failed');
+      return true;
+    }
+  );
+});
+
+test('R04/R05: OAuth-only ensure stays honest, gives setup guidance, and never auto-prompts or installs', async (t) => {
+  const setup = await fixture(t);
+  await fs.writeFile(path.join(setup.home, '.codex', 'auth.json'), JSON.stringify({
+    auth_mode: 'chatgpt',
+    account_id: 'account-fixture',
+    tokens: { access_token: 'oauth-fixture-access' }
+  }), { mode: 0o600 });
+  let fetchCalls = 0;
+  let installCalls = 0;
+  const result = await executeDesktopBridgeCommandV3({ operation: 'ensure' }, {
+    home: setup.home,
+    env: setup.env,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error('oauth_only_ensure_must_not_fetch');
+    },
+    installServiceImpl: async () => {
+      installCalls += 1;
+      throw new Error('oauth_only_ensure_must_not_install');
+    },
+    serviceStatusImpl: async () => stoppedService(setup.home),
+    now: () => new Date('2026-08-05T00:00:00.000Z'),
+    id: () => 'oauth-only'
+  });
+
+  assert.equal(fetchCalls, 0);
+  assert.equal(installCalls, 0);
+  assert.equal(result.schema, 'sks.desktop-bridge-command-result.v1');
+  if (result.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(result.execution.ok, true);
+  assert.equal(result.execution.status, 'partial');
+  assert.equal(result.readiness.ready, false);
+  assert.equal(result.status?.readiness.state, 'unmanaged');
+  assert.equal(result.status?.native_identity.configured, true);
+  assert.equal(result.status?.providers['codex-lb'].credential.state, 'not_configured');
+  assert.equal(result.status?.providers.openrouter.credential.state, 'not_configured');
+  assert.deepEqual(result.status?.recovery_actions.slice(0, 2), [
+    'configure_codex_lb_credential',
+    'configure_openrouter_credential'
+  ]);
 });
 
 test('R24/R37: status readiness requires active-route transport truth, not bridge process/config alone', async (t) => {

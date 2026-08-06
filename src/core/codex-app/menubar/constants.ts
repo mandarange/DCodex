@@ -30,6 +30,7 @@ export const NATIVE_SOURCE_FILES = [
   'DiagnosticsViewController.swift',
   'SettingsViewController.swift',
   'OperationModels.swift',
+  'ProviderRouteExplanation.swift',
   'OperationCoordinator.swift',
   'ProcessClient.swift',
   'ProcessExecutionState.swift',

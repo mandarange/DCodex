@@ -3,10 +3,9 @@ import https from 'node:https';
 import type { Socket } from 'node:net';
 import { pipeline } from 'node:stream/promises';
 import { buildProviderUpstreamHeaders, rewriteResponseHeaders } from './header-policy.js';
-import { assertDesktopBridgeRouteContext, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader } from './security.js';
+import { resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader } from './security.js';
 import { desktopBridgeListenOrigin } from './state.js';
 import { DesktopBridgeError, type DesktopBridgeResolvedCredential, type DesktopBridgeRouteContext, type PreparedDesktopBridgeConfig } from './types.js';
-import { redactCapabilityEvidence, redactCapabilityText } from '../trusted-deep-evidence.js';
 
 const MAX_UPSTREAM_ERROR_BODY_BYTES = 1024 * 1024;
 
@@ -58,8 +57,9 @@ export async function prepareDesktopBridgeRequest(req: IncomingMessage, config: 
   }
   const headerModel = singleBridgeHeader(req.headers, 'x-sks-model');
   const model = typeof payload?.model === 'string' ? payload.model : headerModel;
-  const route = assertDesktopBridgeRouteContext({
-    public_model: String(model || ''), session_id: singleBridgeHeader(req.headers, 'x-sks-session-id'),
+  const sessionIdentity = resolveCodexSessionIdentity(req.headers, payload);
+  const route = await resolveAndBindDesktopBridgeRouteContext({
+    public_model: String(model || ''), session_id: sessionIdentity.thread_id,
     pathname, transport: 'http', headers: req.headers,
   }, config);
   if (payload && payload.model !== route.upstream_model) {
@@ -89,27 +89,22 @@ function writeHttpBridgeError(res: ServerResponse, error: unknown): void {
 }
 
 async function readRedactedUpstreamError(response: IncomingMessage): Promise<Buffer> {
-  const chunks: Buffer[] = [];
   let total = 0;
   for await (const raw of response) {
     const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
     total += chunk.length;
     if (total > MAX_UPSTREAM_ERROR_BODY_BYTES) {
       response.destroy();
-      return Buffer.from(JSON.stringify({ error: { type: 'upstream_error', message: '[REDACTED]' } }));
+      break;
     }
-    chunks.push(chunk);
   }
-  const text = Buffer.concat(chunks).toString('utf8');
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return Buffer.from(JSON.stringify(redactCapabilityEvidence(parsed as Record<string, unknown>)));
+  return Buffer.from(JSON.stringify({
+    error: {
+      type: 'upstream_error',
+      code: 'bridge_upstream_request_failed',
+      message: 'Upstream request failed'
     }
-  } catch {
-    // Non-JSON provider errors are redacted as bounded text.
-  }
-  return Buffer.from(redactCapabilityText(text));
+  }));
 }
 
 export async function forwardHttp(
@@ -117,6 +112,7 @@ export async function forwardHttp(
   res: ServerResponse,
   config: PreparedDesktopBridgeConfig,
   prepared?: PreparedDesktopBridgeRequest,
+  authenticatedLocalBaseUrl = desktopBridgeListenOrigin(config),
 ): Promise<void> {
   try {
     const request = prepared || await prepareDesktopBridgeRequest(req, config);
@@ -129,7 +125,6 @@ export async function forwardHttp(
     }, target.host);
     if (request.body) headers['content-length'] = String(request.body.length);
     else delete headers['content-length'];
-    const localOrigin = desktopBridgeListenOrigin(config);
     await new Promise<void>((resolve, reject) => {
       let responseStarted = false; let settled = false;
       const finish = (error?: unknown): void => { if (settled) return; settled = true; error ? reject(error) : resolve(); };
@@ -147,7 +142,7 @@ export async function forwardHttp(
         if (statusCode >= 400) {
           void readRedactedUpstreamError(response).then((body) => {
             responseStarted = true;
-            const responseHeaders = rewriteResponseHeaders(response.headers, provider.base_url, localOrigin);
+            const responseHeaders = rewriteResponseHeaders(response.headers, provider.base_url, authenticatedLocalBaseUrl);
             responseHeaders['content-length'] = String(body.length);
             delete responseHeaders['transfer-encoding'];
             res.writeHead(statusCode, responseHeaders);
@@ -156,7 +151,7 @@ export async function forwardHttp(
           return;
         }
         responseStarted = true;
-        try { res.writeHead(statusCode, rewriteResponseHeaders(response.headers, provider.base_url, localOrigin)); }
+        try { res.writeHead(statusCode, rewriteResponseHeaders(response.headers, provider.base_url, authenticatedLocalBaseUrl)); }
         catch (error) { response.destroy(error instanceof Error ? error : undefined); finish(error); return; }
         void pipeline(response, res).then(() => finish(), finish);
       });

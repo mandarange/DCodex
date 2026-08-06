@@ -5,6 +5,7 @@ import { appendJsonl, ensureDir, nowIso, readText, sha256, writeTextAtomic } fro
 import { diffCodexAppUiSnapshots, snapshotCodexAppUiState } from '../codex-app/codex-app-ui-state-snapshot.js'
 import { cleanupCodexConfigBackups, validateCodexConfigRoundTrip } from './codex-config-toml.js'
 import { escapeRegExp } from '../text/regex.js'
+import { withFileLock } from '../locks/file-lock.js'
 
 export interface WriteCodexConfigGuardedInput {
   root?: string
@@ -62,6 +63,17 @@ const FAST_FEATURE_KEYS = [
 
 export async function writeCodexConfigGuarded(input: WriteCodexConfigGuardedInput): Promise<WriteCodexConfigGuardedResult> {
   const configPath = path.resolve(input.configPath)
+  return withFileLock({
+    lockPath: `${configPath}.lock`,
+    timeoutMs: 10_000,
+    staleMs: 60_000
+  }, () => writeCodexConfigGuardedUnlocked(input, configPath))
+}
+
+async function writeCodexConfigGuardedUnlocked(
+  input: WriteCodexConfigGuardedInput,
+  configPath: string
+): Promise<WriteCodexConfigGuardedResult> {
   const root = path.resolve(input.root || process.cwd())
   const cause = input.cause || 'codex-config'
   const before = input.before === undefined ? String(await readText(configPath, '')) : String(input.before || '')

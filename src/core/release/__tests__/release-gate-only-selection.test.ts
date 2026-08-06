@@ -108,7 +108,6 @@ test('current Desktop Bridge comprehensive selection is exact and contains only 
     'node ./dist/scripts/desktop-bridge-unification-check.js',
     'node ./dist/scripts/desktop-bridge-transport-check.js',
     'node ./dist/scripts/desktop-bridge-latency-check.js',
-    'node ./dist/scripts/codex-lb-catalog-passthrough-check.js',
     'node ./dist/scripts/desktop-bridge-capabilities-check.js'
   ])
 })
@@ -129,10 +128,17 @@ test('current Desktop Bridge comprehensive scripts are all installed-runtime req
     'dist/scripts/desktop-bridge-unification-check.js',
     'dist/scripts/desktop-bridge-transport-check.js',
     'dist/scripts/desktop-bridge-latency-check.js',
-    'dist/scripts/codex-lb-catalog-passthrough-check.js',
     'dist/scripts/desktop-bridge-capabilities-check.js'
   ])
   for (const scriptPath of commandPaths) assert.equal(requiredPaths.has(scriptPath), true)
+})
+
+test('runtime recovery cache is bound to the active Desktop Bridge command surface', () => {
+  const manifest = loadReleaseGateManifest(process.cwd())
+  const recovery = manifest.gates.find((entry) => entry.id === 'test:codex-runtime-recovery')
+  assert.ok(recovery)
+  assert.ok(recovery.cache.inputs.includes('src/commands/bridge.ts'))
+  assert.equal(recovery.cache.inputs.includes('src/commands/codex-lb.ts'), false)
 })
 
 test('single-gate selection fails immediately for unknown gates and dependency cycles', () => {

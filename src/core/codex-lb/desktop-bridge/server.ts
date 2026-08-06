@@ -1,9 +1,8 @@
-import { randomInt } from 'node:crypto';
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import http, { type Server, type ServerResponse } from 'node:http';
 import net, { type Server as NetServer, type Socket } from 'node:net';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { createHash } from 'node:crypto';
 import { forwardHttp, prepareDesktopBridgeRequest } from './http-forward.js';
 import {
   assertAllowedOrigin,
@@ -17,6 +16,7 @@ import {
 } from './security.js';
 import {
   createDesktopBridgePublicState,
+  desktopBridgeListenOrigin,
   desktopBridgeStatePath,
   refreshDesktopBridgeState,
   removeDesktopBridgeStateIfOwned,
@@ -30,18 +30,43 @@ import type {
 } from './types.js';
 import { DesktopBridgeError } from './types.js';
 import {
+  DESKTOP_BRIDGE_CLIENT_PATH_PREFIX,
   DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH,
   DESKTOP_BRIDGE_DIAGNOSTIC_PATH,
   DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL
 } from './types.js';
 import { forwardWebSocket } from './websocket-forward.js';
 
-function pathnameFromRequest(req: IncomingMessage): string {
-  try {
-    return new URL(req.url || '/', 'http://bridge.invalid').pathname;
-  } catch {
+function authenticateDesktopBridgeClient(
+  req: IncomingMessage,
+  input: PreparedDesktopBridgeConfig,
+): { pathname: string; clientBasePath: string } {
+  const raw = String(req.url || '/');
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) || raw.startsWith('//') || /[\r\n\0]/.test(raw)) {
     throw new DesktopBridgeError('bridge_request_target_invalid');
   }
+  let parsed: URL;
+  try { parsed = new URL(raw, 'http://bridge.invalid'); }
+  catch { throw new DesktopBridgeError('bridge_request_target_invalid'); }
+  const tokenPrefix = `${DESKTOP_BRIDGE_CLIENT_PATH_PREFIX}/`;
+  if (!parsed.pathname.startsWith(tokenPrefix)) throw new DesktopBridgeError('bridge_client_capability_required');
+  const remainder = parsed.pathname.slice(tokenPrefix.length);
+  const separator = remainder.indexOf('/');
+  const capability = separator > 0 ? remainder.slice(0, separator) : '';
+  const canonicalPathname = separator > 0 ? remainder.slice(separator) : '';
+  if (!/^[A-Za-z0-9_-]{43}$/.test(capability) || !canonicalPathname.startsWith('/')) {
+    throw new DesktopBridgeError('bridge_client_capability_invalid');
+  }
+  const actual = createHash('sha256').update(capability).digest();
+  const expected = Buffer.from(input.clientCapabilitySha256, 'hex');
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw new DesktopBridgeError('bridge_client_capability_invalid');
+  }
+  req.url = `${canonicalPathname}${parsed.search}`;
+  return {
+    pathname: canonicalPathname,
+    clientBasePath: `${DESKTOP_BRIDGE_CLIENT_PATH_PREFIX}/${capability}`,
+  };
 }
 
 function handleDiagnosticWebSocket(req: IncomingMessage, socket: Duplex, head: Buffer): void {
@@ -76,8 +101,18 @@ function handleDiagnosticWebSocket(req: IncomingMessage, socket: Duplex, head: B
 
 function rejectionStatus(code: string): number {
   if (code === 'bridge_path_not_allowed') return 404;
-  if (code.includes('origin') || code.includes('peer') || code.includes('loopback')) return 403;
+  if (code === 'bridge_request_capacity_exhausted') return 503;
+  if (code === 'bridge_session_pin_persist_failed' || code.startsWith('bridge_upstream_')) return 502;
+  if (code.includes('origin') || code.includes('peer') || code.includes('loopback') || code.includes('capability')) return 403;
   return 400;
+}
+
+function rejectionStatusText(status: number): string {
+  if (status === 404) return 'Not Found';
+  if (status === 403) return 'Forbidden';
+  if (status === 502) return 'Bad Gateway';
+  if (status === 503) return 'Service Unavailable';
+  return 'Bad Request';
 }
 
 function writeBridgeRejection(res: ServerResponse, error: unknown): void {
@@ -99,7 +134,7 @@ function writeUpgradeRejection(socket: Duplex, error: unknown): void {
   const code = safeBridgeErrorCode(error);
   const status = rejectionStatus(code);
   socket.end(
-    `HTTP/1.1 ${status} ${status === 404 ? 'Not Found' : status === 403 ? 'Forbidden' : 'Bad Request'}\r\n`
+    `HTTP/1.1 ${status} ${rejectionStatusText(status)}\r\n`
     + 'Content-Type: application/json\r\n'
     + 'Cache-Control: no-store\r\n'
     + 'Connection: close\r\n'
@@ -188,26 +223,44 @@ export async function startPreparedDesktopBridge(
 ): Promise<DesktopBridgeHandle> {
   validatePreparedDesktopBridgeConfig(input);
   const sockets = new Set<Socket>();
+  const maxConcurrentRequests = input.maxConcurrentRequests ?? 64;
+  let activeRequests = 0;
   const server = http.createServer((req, res) => {
     void (async () => {
+      let admitted = false;
       try {
+        if (activeRequests >= maxConcurrentRequests) throw new DesktopBridgeError('bridge_request_capacity_exhausted');
+        activeRequests += 1;
+        admitted = true;
         assertLoopbackPeer(req.socket.remoteAddress);
+        const authenticated = authenticateDesktopBridgeClient(req, input);
         assertAllowedOrigin(req.headers, input.allowedOrigins);
-        const pathname = pathnameFromRequest(req);
-        if (pathname === DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH) {
+        if (authenticated.pathname === DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH) {
           writeDiagnosticHealth(req, res, input);
           return;
         }
-        assertAllowedPath(pathname, input.allowedPathPrefixes);
+        assertAllowedPath(authenticated.pathname, input.allowedPathPrefixes);
         const prepared = await prepareDesktopBridgeRequest(req, input);
-        await forwardHttp(req, res, input, prepared);
+        await forwardHttp(
+          req,
+          res,
+          input,
+          prepared,
+          `${desktopBridgeListenOrigin(input)}${authenticated.clientBasePath}`,
+        );
       } catch (error) {
-        req.resume();
+        req.pause();
+        res.once('finish', () => {
+          if (!req.complete) req.destroy();
+        });
         writeBridgeRejection(res, error);
+      } finally {
+        if (admitted) activeRequests -= 1;
       }
     })();
   });
-  server.requestTimeout = 0;
+  server.maxConnections = input.maxConnections ?? 128;
+  server.requestTimeout = input.requestTimeoutMs ?? 30_000;
   server.headersTimeout = Math.max(5_000, input.connectTimeoutMs);
   server.keepAliveTimeout = Math.min(input.idleTimeoutMs, 60_000);
   server.on('connection', (socket) => {
@@ -220,14 +273,21 @@ export async function startPreparedDesktopBridge(
   server.on('upgrade', (req, socket, head) => {
     try {
       assertLoopbackPeer(req.socket.remoteAddress);
+      const authenticated = authenticateDesktopBridgeClient(req, input);
       assertAllowedOrigin(req.headers, input.allowedOrigins);
       assertWebSocketUpgrade(req.headers, req.method);
-      if (pathnameFromRequest(req) === DESKTOP_BRIDGE_DIAGNOSTIC_PATH) {
+      if (authenticated.pathname === DESKTOP_BRIDGE_DIAGNOSTIC_PATH) {
         handleDiagnosticWebSocket(req, socket, head);
         return;
       }
-      assertAllowedPath(pathnameFromRequest(req), input.allowedPathPrefixes);
-      void forwardWebSocket(req, socket, head, input).catch((error) => writeUpgradeRejection(socket, error));
+      assertAllowedPath(authenticated.pathname, input.allowedPathPrefixes);
+      void forwardWebSocket(
+        req,
+        socket,
+        head,
+        input,
+        `${desktopBridgeListenOrigin(input)}${authenticated.clientBasePath}`,
+      ).catch((error) => writeUpgradeRejection(socket, error));
     } catch (error) {
       writeUpgradeRejection(socket, error);
     }

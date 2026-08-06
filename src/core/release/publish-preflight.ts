@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { normalizeReleaseOrigin, RELEASE_ORIGIN_IDENTITY } from './release-origin.js';
-import { inspectPhysicalReleaseGates } from './physical-release-gates.js';
+import { validatePhysicalReleaseGateInspection } from './physical-release-gates.js';
 
 export interface PublishPreflightCommandResult {
   status: number | null;
@@ -69,10 +69,10 @@ export function inspectPublishPreflight(options: PublishPreflightOptions) {
   }
 
   const physicalReleaseGates = requirePhysicalReleaseGates
-    ? inspectPhysicalReleaseGates({
+    ? validatePhysicalReleaseGateInspection({
         root,
         version,
-        sourceCommit: validSha(head) ? head : null,
+        sourceCommit: validSha(head) ? head : '',
       })
     : null;
   if (physicalReleaseGates && !physicalReleaseGates.ok) {

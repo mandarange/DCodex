@@ -21,7 +21,10 @@ export function rewriteLocationHeader(
   }
 
   const local = new URL(localOrigin);
-  local.pathname = location.pathname;
+  const authenticatedBasePath = local.pathname === '/'
+    ? ''
+    : local.pathname.replace(/\/+$/, '');
+  local.pathname = `${authenticatedBasePath}${location.pathname}`;
   local.search = location.search;
   local.hash = '';
   if (location.protocol === 'wss:' || location.protocol === 'ws:') local.protocol = 'ws:';

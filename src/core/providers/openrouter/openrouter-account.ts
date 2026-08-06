@@ -139,6 +139,7 @@ export async function listOpenRouterModels(input: {
 export async function testOpenRouterConnection(input: {
   readonly model?: string | null;
   readonly env?: NodeJS.ProcessEnv;
+  readonly apiKey?: string;
   readonly fetchImpl?: typeof fetch;
   readonly timeoutMs?: number;
 } = {}) {
@@ -159,7 +160,9 @@ export async function testOpenRouterConnection(input: {
       warnings: []
     };
   }
-  const resolved = await resolveOpenRouterApiKey({ env: input.env || process.env });
+  const resolved = input.apiKey
+    ? { key: String(input.apiKey), source: 'explicit-validation-snapshot' as const, warnings: [] as string[] }
+    : await resolveOpenRouterApiKey({ env: input.env || process.env });
   if (!resolved.key) {
     return {
       schema: 'sks.openrouter-test.v1',

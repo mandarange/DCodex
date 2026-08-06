@@ -24,6 +24,10 @@ export function usage(): string {
     '                       stage workflow, wait, download and verify the tarball.',
     '                       Without it, stage only reports what it would do.',
     '  --version <semver>   Version to stage (defaults to package.json).',
+    '  --physical-evidence-run-id <id>',
+    '                       Successful trusted physical capture workflow run.',
+    '  --physical-evidence-archive <path>',
+    '                       Optional local copy of the attested capture archive.',
     '',
     'stage never runs `npm stage approve`; that approval is a human 2FA step.'
   ].join('\n');
@@ -89,7 +93,13 @@ async function runStageSubcommand(root: string, args: string[], json: boolean): 
     root,
     confirm: flag(args, '--confirm'),
     run: spawnRunner(root),
-    ...(readOption(args, '--version') ? { version: readOption(args, '--version')! } : {})
+    ...(readOption(args, '--version') ? { version: readOption(args, '--version')! } : {}),
+    ...(readOption(args, '--physical-evidence-run-id')
+      ? { physicalEvidenceRunId: readOption(args, '--physical-evidence-run-id')! }
+      : {}),
+    ...(readOption(args, '--physical-evidence-archive')
+      ? { physicalEvidenceArchive: readOption(args, '--physical-evidence-archive')! }
+      : {})
   });
   await writeJsonAtomic(path.join(root, '.sneakoscope', 'reports', 'release-stage-publish.json'), report).catch(() => {});
   if (!report.ok) process.exitCode = 1;

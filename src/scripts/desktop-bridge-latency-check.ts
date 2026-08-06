@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto'
 import http, {
   Agent,
   type IncomingMessage,
@@ -7,6 +8,7 @@ import http, {
 import { performance } from 'node:perf_hooks'
 import {
   DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
+  desktopBridgeClientPath,
   selectAvailableDesktopBridgePort,
   startDesktopBridge,
   stopDesktopBridge,
@@ -28,6 +30,8 @@ const POLICY_GENERATION = 'desktop-bridge-latency-policy'
 const CREDENTIAL_GENERATION = 'desktop-bridge-latency-credential'
 const CREDENTIAL_FINGERPRINT = 'desktop-bridge-latency-fingerprint'
 const PROVIDER_SECRET = 'latency-probe-provider-secret'
+const CLIENT_CAPABILITY = Buffer.alloc(32, 0x47).toString('base64url')
+const CLIENT_CAPABILITY_SHA256 = createHash('sha256').update(CLIENT_CAPABILITY).digest('hex')
 
 const upstream = http.createServer((request, response) => {
   request.resume()
@@ -157,7 +161,7 @@ async function requestLatency(
     const request = http.request({
       host: '127.0.0.1',
       port,
-      path: pathname,
+      path: throughBridge ? desktopBridgeClientPath(CLIENT_CAPABILITY, pathname) : pathname,
       method: 'GET',
       agent,
       headers: throughBridge
@@ -237,6 +241,7 @@ function bridgeConfig(listenPort: number, upstreamPort: number): DesktopBridgeCo
       fingerprint: providerId === 'codex-lb' ? CREDENTIAL_FINGERPRINT : 'unused-openrouter-fingerprint',
       generation: expectedGeneration
     }),
+    clientCapabilitySha256: CLIENT_CAPABILITY_SHA256,
     allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
     allowedOrigins: ['app://codex'],
     connectTimeoutMs: 2_000,

@@ -78,6 +78,56 @@ test('root-owned lifecycle reuses settled capacity for a later direct-child wave
   }
 })
 
+test('partial settlement, failed stops, and duplicate stops return only live-thread capacity', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-wave-partial-reuse-'))
+  const runId = 'run-partial-reuse'
+  try {
+    await fs.writeFile(path.join(dir, 'subagent-plan.json'), JSON.stringify({
+      schema: 'sks.subagent-plan.v1',
+      workflow_run_id: runId,
+      requested_subagents: 8,
+      requested_subagents_source: 'operator',
+      first_wave: 4,
+      wave_lifecycle: createSubagentWaveLifecycle({
+        workflowRunId: runId,
+        targetSubagents: 8,
+        countPolicy: 'exact',
+        waveCapacity: 4
+      })
+    }))
+
+    for (const threadId of ['a', 'b', 'c', 'd']) {
+      await recordSubagentEvent(dir, { agent_id: threadId, workflow_run_id: runId }, 'SubagentStart')
+    }
+    await recordSubagentEvent(dir, { agent_id: 'a', workflow_run_id: runId }, 'SubagentStop')
+    await recordSubagentEvent(dir, { agent_id: 'b', workflow_run_id: runId, outcome: 'failed' }, 'SubagentStop')
+    await recordSubagentEvent(dir, { agent_id: 'b', workflow_run_id: runId, outcome: 'failed' }, 'SubagentStop')
+
+    let lifecycle = await refreshSubagentWaveLifecycle(dir)
+    assert.equal(lifecycle?.cumulative_started, 4)
+    assert.equal(lifecycle?.cumulative_settled, 2)
+    assert.equal(lifecycle?.cumulative_completed, 1)
+    assert.equal(lifecycle?.cumulative_failed, 1)
+    assert.equal(lifecycle?.open_threads, 2)
+    assert.equal(lifecycle?.peak_open_threads, 4)
+    assert.equal(lifecycle?.recovered_capacity, 2)
+    assert.ok(lifecycle?.next_parent_actions.includes('spawn_next_direct_child_wave_upto:2'))
+
+    for (const threadId of ['e', 'f']) {
+      await recordSubagentEvent(dir, { agent_id: threadId, workflow_run_id: runId }, 'SubagentStart')
+    }
+    lifecycle = await refreshSubagentWaveLifecycle(dir)
+    const plan = JSON.parse(await fs.readFile(path.join(dir, 'subagent-plan.json'), 'utf8'))
+    assert.equal(lifecycle?.open_threads, 4)
+    assert.equal(lifecycle?.peak_open_threads, 4)
+    assert.equal(lifecycle?.recovered_capacity, 0)
+    assert.ok(!lifecycle?.next_parent_actions.some((action) => action.startsWith('spawn_next_direct_child_wave_upto:')))
+    assert.deepEqual(subagentCountContractBlockers(plan), [])
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('only dynamic automatic lifecycle targets may be amended between waves', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-wave-count-policy-'))
   try {
@@ -392,6 +442,7 @@ test('wave capacity is enforced from real lifecycle thread membership', () => {
     started_at: '2026-07-31T00:00:00.000Z',
     settled_at: null
   }]
+  delete (lifecycle as Partial<typeof lifecycle>).peak_open_threads
   assert.deepEqual(
     subagentCountContractBlockers({
       schema: 'sks.subagent-plan.v1',

@@ -263,6 +263,26 @@ test('official config normalizes valid over-cap project and inherited preference
   assert.equal(hostLimitedBudget.firstWave, 3)
   assert.ok(hostLimitedBudget.capacity.limiting_factors.includes('external_codex_host_cap'))
 
+  const literalStoredSource = [
+    '[agents]',
+    'max_threads = 1000',
+    '',
+    '[features.multi_agent_v2]',
+    'enabled = true',
+    'max_concurrent_threads_per_session = 1000',
+    ''
+  ].join('\n')
+  await fs.writeFile(configPath, literalStoredSource)
+  const literalStored = await readOfficialSubagentConfig(root, { codexHome })
+  assert.equal(literalStored.maxThreads, 256)
+  assert.equal(literalStored.multiAgentV2.maxConcurrentThreadsPerSession, 257)
+  assert.deepEqual(literalStored.blockers, [])
+  assert.ok(literalStored.warnings.includes('project_legacy_agents_max_threads_present'))
+  assert.ok(literalStored.warnings.includes(
+    'official_subagent_max_threads_normalized:configured=1000:effective=256:source=project'
+  ))
+  assert.equal(await fs.readFile(configPath, 'utf8'), literalStoredSource)
+
   await fs.rm(configPath)
   const oversizedGlobalSource = oversizedProjectSource
   await fs.writeFile(globalConfigPath, oversizedGlobalSource)

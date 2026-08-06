@@ -4,6 +4,7 @@ import {
   removeStoredOpenRouterKey,
   type OpenRouterSecretPaths
 } from '../../providers/openrouter/openrouter-secret-store.js';
+import { withProviderCredentialLock } from './locks.js';
 
 export async function removeProviderCredential(input: {
   readonly provider_id: BridgeProviderId;
@@ -19,6 +20,7 @@ export async function removeProviderCredential(input: {
   readonly removed_paths: readonly string[];
   readonly blockers: readonly string[];
 }> {
+  return withProviderCredentialLock(input.home, input.provider_id, async () => {
   if (input.provider_id === 'codex-lb') {
     const result = await removeStoredCodexLbCredential({
       confirmed: input.confirmed,
@@ -45,4 +47,5 @@ export async function removeProviderCredential(input: {
     removed_paths: result.removed_paths,
     blockers: result.blockers
   };
+  });
 }

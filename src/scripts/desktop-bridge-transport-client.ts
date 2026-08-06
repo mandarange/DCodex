@@ -59,6 +59,7 @@ export async function request(input: {
 
 export async function websocketRoundTrip(input: {
   port: number
+  clientCapability: string
   publicModel: string
   desktopAuthorization: string
   desktopCookie: string
@@ -82,7 +83,7 @@ export async function websocketRoundTrip(input: {
       timer.unref()
       client.once('connect', () => {
         client.write(
-          'GET /backend-api/codex/realtime/call-1?token=opaque HTTP/1.1\r\n'
+          `GET /__sks/client/${input.clientCapability}/backend-api/codex/realtime/call-1?token=opaque HTTP/1.1\r\n`
           + `Host: 127.0.0.1:${input.port}\r\n`
           + 'Connection: Upgrade\r\n'
           + 'Upgrade: websocket\r\n'

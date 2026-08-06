@@ -1,12 +1,14 @@
 import path from 'node:path';
 import { removeDesktopBridgeManagedConfig } from '../../../cli/install-helpers-codex-lb-config.js';
 import { safeWriteCodexConfigToml } from '../../codex-runtime/codex-desktop-config-policy.js';
-import { readText } from '../../fsx.js';
+import { exists, readText } from '../../fsx.js';
 import type { BridgeProviderId, DesktopBridgeCommandResult, DesktopCapabilityReportV3 } from '../bridge-contracts.js';
 import {
   bootstrapExistingDesktopBridgeService,
+  desktopBridgeServiceStatus,
   installAndStartDesktopBridgeService,
-  stopDesktopBridgeService
+  stopDesktopBridgeService,
+  type DesktopBridgeServiceStatus
 } from '../desktop-service.js';
 import { rollbackDesktopBridgeUnificationReceipt } from '../migration-receipt.js';
 import { resolveBridgeRequestRoute } from '../request-route-resolver.js';
@@ -109,31 +111,46 @@ export async function unmanageDesktopBridge(
   const paths = controllerPaths(options);
   const current = await readText(paths.configPath, '');
   const next = removeDesktopBridgeManagedConfig(current);
+  const serviceBefore = await currentServiceStatus(options, paths.home);
   const stopped = await (options.stopServiceImpl || stopDesktopBridgeService)({
     ...options,
-    home: paths.home,
-    removePlist: true,
-    removeSettings: true
+    home: paths.home
   });
-  const write = await safeWriteCodexConfigToml(
-    paths.configPath,
-    current,
-    next,
-    'desktop-bridge-unmanage',
-    { verifyUnchangedBeforeWrite: true }
-  );
-  if (!write.ok) {
-    await (options.bootstrapServiceImpl || bootstrapExistingDesktopBridgeService)({
-      ...options,
-      home: paths.home
-    }).catch(() => undefined);
-    throw new Error(`desktop_bridge_unmanage_config_${write.status}`);
+  requireStopped(stopped, 'unmanage');
+  let write: Awaited<ReturnType<typeof safeWriteCodexConfigToml>>;
+  try {
+    write = await (options.safeWriteConfigImpl || safeWriteCodexConfigToml)(
+      paths.configPath,
+      current,
+      next,
+      'desktop-bridge-unmanage',
+      { verifyUnchangedBeforeWrite: true }
+    );
+  } catch (error: unknown) {
+    await restartPreservedService(serviceBefore, error, options, paths.home);
+    throw error;
   }
+  if (!write.ok) {
+    const error = new Error(`desktop_bridge_unmanage_config_${write.status}`);
+    const recovery = await restartPreservedService(serviceBefore, error, options, paths.home);
+    const status = await desktopBridgeStatusV3(options);
+    return commandResult(
+      'unmanage',
+      false,
+      status,
+      { write, service: stopped, recovery },
+      [error.message],
+      options
+    );
+  }
+  const cleaned = await removePreservedServiceArtifacts(options, paths.home, 'unmanage');
   const status = await desktopBridgeStatusV3(options);
+  requireUnmanaged(status.management.managed, 'unmanage');
   return commandResult('unmanage', true, status, {
     unmanaged: true,
     credentials_deleted: false,
-    service: stopped,
+    service: cleaned,
+    stopped_service: stopped,
     config_backup_path: write.backup_path || null
   }, [], options);
 }
@@ -148,27 +165,108 @@ export async function rollbackDesktopBridge(
   if (!receiptPath.startsWith(`${path.resolve(paths.receiptDir)}${path.sep}`)) {
     throw new Error('desktop_bridge_receipt_path_invalid');
   }
+  const serviceBefore = await currentServiceStatus(options, paths.home);
   const stopped = await (options.stopServiceImpl || stopDesktopBridgeService)({
     ...options,
-    home: paths.home,
-    removePlist: true
+    home: paths.home
   });
-  const rollback = await rollbackDesktopBridgeUnificationReceipt({ receiptPath });
-  if (!rollback.ok) {
-    await (options.bootstrapServiceImpl || bootstrapExistingDesktopBridgeService)({
-      ...options,
-      home: paths.home
-    }).catch(() => undefined);
+  requireStopped(stopped, 'rollback');
+  let rollback: Awaited<ReturnType<typeof rollbackDesktopBridgeUnificationReceipt>>;
+  try {
+    rollback = await (options.rollbackReceiptImpl || rollbackDesktopBridgeUnificationReceipt)({ receiptPath });
+  } catch (error: unknown) {
+    await restartPreservedService(serviceBefore, error, options, paths.home);
+    throw error;
   }
-  const status = await desktopBridgeStatusV3(options);
+  if (!rollback.ok) {
+    const error = new Error(`desktop_bridge_rollback_${rollback.status}`);
+    const recovery = await restartPreservedService(serviceBefore, error, options, paths.home);
+    const status = await desktopBridgeStatusV3(options);
+    return commandResult(
+      'rollback',
+      false,
+      status,
+      { rollback, service: stopped, recovery },
+      [rollback.status],
+      options
+    );
+  }
+  const cleaned = await removePreservedServiceArtifacts(options, paths.home, 'rollback');
+  const observed = await desktopBridgeStatusV3(options);
+  if (observed.management.managed) throw new Error('desktop_bridge_rollback_final_state_managed');
+  const status = {
+    ...observed,
+    management: {
+      ...observed.management,
+      reason: 'rollback_complete' as const
+    }
+  };
   return commandResult(
     'rollback',
-    rollback.ok,
+    true,
     status,
-    { rollback, service: stopped },
-    rollback.ok ? [] : [rollback.status],
+    { rollback, service: cleaned, stopped_service: stopped },
+    [],
     options
   );
+}
+
+async function currentServiceStatus(
+  options: DesktopBridgeControllerV3Options,
+  home: string
+): Promise<DesktopBridgeServiceStatus> {
+  return (options.serviceStatusImpl || desktopBridgeServiceStatus)({ ...options, home });
+}
+
+function requireStopped(service: DesktopBridgeServiceStatus, operation: 'unmanage' | 'rollback'): void {
+  if (service.running) throw new Error(`desktop_bridge_${operation}_service_stop_failed`);
+}
+
+async function removePreservedServiceArtifacts(
+  options: DesktopBridgeControllerV3Options,
+  home: string,
+  operation: 'unmanage' | 'rollback'
+): Promise<DesktopBridgeServiceStatus> {
+  const cleaned = await (options.stopServiceImpl || stopDesktopBridgeService)({
+    ...options,
+    home,
+    removePlist: true,
+    removeSettings: true
+  });
+  const artifactsRemain = await Promise.all([
+    exists(cleaned.paths.launch_agent_path),
+    exists(cleaned.paths.settings_path)
+  ]);
+  if (cleaned.running || cleaned.installed || cleaned.settings || artifactsRemain.some(Boolean)) {
+    throw new Error(`desktop_bridge_${operation}_service_cleanup_failed`);
+  }
+  return cleaned;
+}
+
+async function restartPreservedService(
+  serviceBefore: DesktopBridgeServiceStatus,
+  originalError: unknown,
+  options: DesktopBridgeControllerV3Options,
+  home: string
+): Promise<DesktopBridgeServiceStatus | null> {
+  if (!serviceBefore.running) return null;
+  try {
+    const recovery = await (options.bootstrapServiceImpl || bootstrapExistingDesktopBridgeService)({
+      ...options,
+      home
+    });
+    if (!recovery.running) {
+      throw new Error(`desktop_bridge_lifecycle_recovery_not_running:${recovery.blockers.join(',')}`);
+    }
+    return recovery;
+  } catch (recoveryError: unknown) {
+    const message = originalError instanceof Error ? originalError.message : String(originalError || 'desktop_bridge_lifecycle_failed');
+    throw new Error(message, { cause: recoveryError });
+  }
+}
+
+function requireUnmanaged(managed: boolean, operation: 'unmanage' | 'rollback'): void {
+  if (managed) throw new Error(`desktop_bridge_${operation}_final_state_managed`);
 }
 
 function syncResultBlockers(result: Record<string, unknown>): string[] {

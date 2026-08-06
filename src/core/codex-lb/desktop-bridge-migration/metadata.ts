@@ -59,7 +59,7 @@ export async function writeBufferAtomic(filePath: string, bytes: Buffer): Promis
 function canonicalMetadataPath(home: string, kind: DesktopBridgeMigrationMetadataUpdate['kind']): string {
   const resolvedHome = path.resolve(home);
   if (kind === 'bridge_settings') {
-    return path.join(resolvedHome, '.codex', 'sks', 'codex-lb-desktop-bridge-settings.json');
+    return path.join(resolvedHome, '.codex', 'sks', 'desktop-bridge-settings.json');
   }
   if (kind === 'provider_registry') {
     return path.join(resolvedHome, '.codex', 'sks', 'sks-bridge-provider-registry.json');
@@ -74,7 +74,7 @@ function canonicalMetadataPath(home: string, kind: DesktopBridgeMigrationMetadat
     resolvedHome,
     'Library',
     'LaunchAgents',
-    'com.sneakoscope.codex-lb-desktop-bridge.plist'
+    'com.sneakoscope.desktop-bridge.plist'
   );
 }
 

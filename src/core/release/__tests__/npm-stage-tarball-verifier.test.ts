@@ -16,6 +16,15 @@ import {
 import { inspectReleaseTarball, type ReleasePackReceipt } from '../release-pack-receipt.js'
 
 const STAGE_ID = '123e4567-e89b-42d3-a456-426614174000'
+const DISPATCH_NONCE = 'a'.repeat(32)
+const PHYSICAL_EVIDENCE_RUN_ID = '987654321'
+const WORKFLOW_RUN_ID = '100'
+
+const EXPECTED_ASSOCIATION = {
+  expectedDispatchNonce: DISPATCH_NONCE,
+  expectedPhysicalEvidenceRunId: PHYSICAL_EVIDENCE_RUN_ID,
+  expectedWorkflowRunId: WORKFLOW_RUN_ID
+} as const
 
 test('maintainer-local verifier compares actual stage download bytes and all required digests', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-stage-review-pass-'))
@@ -25,6 +34,7 @@ test('maintainer-local verifier compares actual stage download bytes and all req
     const result = verifyNpmStageTarball({
       root,
       stageId: STAGE_ID,
+      ...EXPECTED_ASSOCIATION,
       localReceiptPath: fixture.localReceiptFile,
       localTarballPath: fixture.localTarball,
       stageReceiptPath: fixture.stageReceiptFile,
@@ -53,6 +63,9 @@ test('maintainer-local verifier compares actual stage download bytes and all req
     assert.equal(result.receipt.oidc_review_supported, false)
     assert.equal(result.receipt.maintainer_session_required, true)
     assert.equal(result.receipt.human_2fa_pending, true)
+    assert.equal(result.receipt.workflow_stage.dispatch_nonce, DISPATCH_NONCE)
+    assert.equal(result.receipt.workflow_stage.physical_evidence_run_id, PHYSICAL_EVIDENCE_RUN_ID)
+    assert.equal(result.receipt.workflow_stage.workflow_run_id, WORKFLOW_RUN_ID)
     assert.equal(fs.existsSync(result.receiptPath), true)
     assert.equal(fs.existsSync(path.join(outputDir, 'stage-view.json')), true)
     assert.equal(fs.existsSync(path.join(outputDir, 'stage-download.json')), true)
@@ -79,6 +92,7 @@ test('maintainer-local verifier persists a failing receipt when registry bytes d
     const result = verifyNpmStageTarball({
       root,
       stageId: STAGE_ID,
+      ...EXPECTED_ASSOCIATION,
       localReceiptPath: fixture.localReceiptFile,
       localTarballPath: fixture.localTarball,
       stageReceiptPath: fixture.stageReceiptFile,
@@ -138,6 +152,7 @@ test('maintainer-local verifier rejects OIDC/GitHub Actions and generic CI befor
     assert.throws(() => verifyNpmStageTarball({
       root,
       stageId: STAGE_ID,
+      ...EXPECTED_ASSOCIATION,
       localReceiptPath: fixture.localReceiptFile,
       localTarballPath: fixture.localTarball,
       stageReceiptPath: fixture.stageReceiptFile,
@@ -148,6 +163,7 @@ test('maintainer-local verifier rejects OIDC/GitHub Actions and generic CI befor
     assert.throws(() => verifyNpmStageTarball({
       root,
       stageId: STAGE_ID,
+      ...EXPECTED_ASSOCIATION,
       localReceiptPath: fixture.localReceiptFile,
       localTarballPath: fixture.localTarball,
       stageReceiptPath: fixture.stageReceiptFile,
@@ -168,6 +184,7 @@ test('maintainer-local verifier requires exact npm 11.15.0 and leaves no partial
     assert.throws(() => verifyNpmStageTarball({
       root,
       stageId: STAGE_ID,
+      ...EXPECTED_ASSOCIATION,
       localReceiptPath: fixture.localReceiptFile,
       localTarballPath: fixture.localTarball,
       stageReceiptPath: fixture.stageReceiptFile,
@@ -184,19 +201,25 @@ test('maintainer-local verifier requires exact npm 11.15.0 and leaves no partial
   }
 })
 
-test('maintainer-local verifier rejects stage receipts that do not bind local receipt and SHA-512 bytes', () => {
+test('maintainer-local verifier rejects stage receipts that do not bind dispatch, evidence, run, receipt, and SHA-512 bytes', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-stage-review-stage-receipt-'))
   try {
     const fixture = createFixture(root)
     const original = JSON.parse(fs.readFileSync(fixture.stageReceiptFile, 'utf8')) as Record<string, unknown>
     for (const [field, value, expectedDetail] of [
+      ['schema', 'sks.npm-stage-receipt.v1', 'schema_or_status_invalid'],
+      ['dispatch_nonce', 'b'.repeat(32), 'dispatch_nonce_mismatch'],
+      ['physical_evidence_run_id', '111', 'physical_evidence_run_id_mismatch'],
+      ['workflow_run_id', '101', 'workflow_run_id_mismatch'],
       ['local_pack_receipt_sha256', '0'.repeat(64), 'local_pack_receipt_sha256_mismatch'],
-      ['tarball_sha512', '0'.repeat(128), 'sha512_mismatch']
+      ['tarball_sha512', '0'.repeat(128), 'sha512_mismatch'],
+      ['release_tag', 'v0.0.0', 'release_tag_mismatch']
     ] as const) {
       fs.writeFileSync(fixture.stageReceiptFile, `${JSON.stringify({ ...original, [field]: value }, null, 2)}\n`)
       assert.throws(() => verifyNpmStageTarball({
         root,
         stageId: STAGE_ID,
+        ...EXPECTED_ASSOCIATION,
         localReceiptPath: fixture.localReceiptFile,
         localTarballPath: fixture.localTarball,
         stageReceiptPath: fixture.stageReceiptFile,
@@ -235,6 +258,9 @@ process.exit(child.status == null ? 1 : child.status)
     const result = spawnSync(process.execPath, [
       cli,
       '--stage-id', STAGE_ID,
+      '--dispatch-nonce', DISPATCH_NONCE,
+      '--physical-evidence-run-id', PHYSICAL_EVIDENCE_RUN_ID,
+      '--workflow-run-id', WORKFLOW_RUN_ID,
       '--local-receipt', fixture.localReceiptFile,
       '--local-tarball', fixture.localTarball,
       '--stage-receipt', fixture.stageReceiptFile,
@@ -265,10 +291,18 @@ process.exit(child.status == null ? 1 : child.status)
 function createFixture(root: string) {
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '8.0.0' }))
   const localTarball = createTarball(root, 'local', 'reviewed bytes')
+  fs.mkdirSync(path.join(root, 'dist'), { recursive: true })
+  fs.writeFileSync(path.join(root, 'dist', 'marker.txt'), 'reviewed bytes\n')
+  git(root, ['init'])
+  git(root, ['config', 'user.email', 'release-pack@example.invalid'])
+  git(root, ['config', 'user.name', 'Release Pack Test'])
+  git(root, ['add', 'package.json', 'dist/marker.txt'])
+  git(root, ['commit', '-m', 'fixture'])
+  const sourceCommit = git(root, ['rev-parse', 'HEAD'])
   const localReceipt = inspectReleaseTarball({
     tarball: localTarball,
     kind: 'local',
-    sourceCommit: 'a'.repeat(40),
+    sourceCommit,
     root,
     npmPackProof: {
       proof_id: 'b'.repeat(64),
@@ -282,11 +316,12 @@ function createFixture(root: string) {
   fs.writeFileSync(localReceiptFile, localReceiptBytes)
   const localBytes = fs.readFileSync(localTarball)
   const stageReceipt = {
-    schema: 'sks.npm-stage-receipt.v1',
+    schema: 'sks.npm-stage-receipt.v2',
     ok: true,
     stage_id: STAGE_ID,
     package_name: localReceipt.package_name,
     package_version: localReceipt.package_version,
+    release_tag: `v${localReceipt.package_version}`,
     source_commit: localReceipt.source_commit,
     tarball_sha256: digest(localBytes, 'sha256', 'hex'),
     tarball_sha512: digest(localBytes, 'sha512', 'hex'),
@@ -294,7 +329,9 @@ function createFixture(root: string) {
     packed_bytes: localReceipt.bytes,
     unpacked_bytes: localReceipt.unpacked_bytes,
     file_count: localReceipt.file_count,
-    workflow_run_id: '100',
+    dispatch_nonce: DISPATCH_NONCE,
+    physical_evidence_run_id: PHYSICAL_EVIDENCE_RUN_ID,
+    workflow_run_id: WORKFLOW_RUN_ID,
     workflow_run_attempt: '1',
     local_pack_receipt_sha256: digest(localReceiptBytes, 'sha256', 'hex'),
     stage_command_digest: 'e'.repeat(64),
@@ -317,6 +354,12 @@ function createFixture(root: string) {
     downloadInfo: downloadInfo(localReceipt, localBytes),
     viewInfo: viewInfo(localReceipt, localBytes)
   }
+}
+
+function git(root: string, args: string[]): string {
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr || result.stdout)
+  return String(result.stdout || '').trim()
 }
 
 function createTarball(root: string, name: string, marker: string): string {

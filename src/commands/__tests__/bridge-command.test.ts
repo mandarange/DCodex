@@ -82,7 +82,7 @@ test('bridge command maps the complete non-secret CLI surface to one controller 
 
 test('hidden serve entry validates its settings path and bypasses the management facade', async () => {
   const setup = fixture();
-  const settingsPath = '/tmp/codex-lb-desktop-bridge-settings.json';
+  const settingsPath = '/tmp/desktop-bridge-settings.json';
   const calls: string[] = [];
   const result = await executeBridgeCommand([
     'serve', '--settings', settingsPath, '--json'
@@ -91,7 +91,7 @@ test('hidden serve entry validates its settings path and bypasses the management
     serve: async (options) => {
       calls.push(String(options?.settingsPath));
       return {
-        schema: 'sks.codex-lb-desktop-bridge-serve.v1',
+        schema: 'sks.desktop-bridge-serve.v1',
         ok: true,
         status: 'stopped',
         state: null
@@ -103,7 +103,7 @@ test('hidden serve entry validates its settings path and bypasses the management
   assert.deepEqual(setup.requests, []);
 
   const relative = await executeBridgeCommand([
-    'serve', '--settings', 'codex-lb-desktop-bridge-settings.json', '--json'
+    'serve', '--settings', 'desktop-bridge-settings.json', '--json'
   ], setup);
   assert.equal(relative.exit_code, 1);
   assert.deepEqual(relative.output.blockers, ['desktop_bridge_settings_path_must_be_absolute']);

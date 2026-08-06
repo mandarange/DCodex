@@ -30,6 +30,27 @@ enum SecureProcessEnvelope {
                 for (key, recoveryValue) in recoveryFields(from: object) {
                     envelope[key] = recoveryValue
                 }
+                if sourceSchema == "sks.desktop-bridge-command-result.v1" {
+                    if let operation = boundedString(object["operation"], limit: 160) {
+                        envelope["operation"] = operation
+                    }
+                    if let recoveryAction = boundedString(object["recovery_action"], limit: 360) {
+                        envelope["recovery_action"] = recoveryAction
+                    }
+                    for key in ["execution", "readiness"] {
+                        if let source = object[key] as? [String: Any] {
+                            var publicStatus: [String: Any] = [:]
+                            if let ok = source["ok"] as? Bool { publicStatus["ok"] = ok }
+                            if let ready = source["ready"] as? Bool { publicStatus["ready"] = ready }
+                            if let status = boundedString(source["status"], limit: 120) { publicStatus["status"] = status }
+                            for listKey in ["blockers", "warnings"] {
+                                let rows = boundedStrings(source[listKey], maxCount: 24, maxLength: 240)
+                                if !rows.isEmpty { publicStatus[listKey] = rows }
+                            }
+                            if !publicStatus.isEmpty { envelope[key] = publicStatus }
+                        }
+                    }
+                }
                 if sourceSchema == "sks.telegram-setup-command.v1" {
                     for key in [
                         "getme_verified", "token_stored", "partial_success",
@@ -79,16 +100,13 @@ enum SecureProcessEnvelope {
 
     private static func expectedSourceSchemas(arguments: [String]) -> Set<String> {
         guard arguments.count >= 2 else { return [] }
+        if arguments.count >= 3,
+           arguments[0] == "bridge",
+           arguments[1] == "provider",
+           arguments[2] == "configure" {
+            return ["sks.desktop-bridge-command-result.v1"]
+        }
         switch (arguments[0], arguments[1]) {
-        case ("codex-lb", "setup"):
-            return ["sks.codex-lb-setup.v2"]
-        case ("codex-lb", "set-key"),
-             ("codex-lb", "update-key"),
-             ("codex-lb", "rotate-key"):
-            return ["sks.codex-lb-set-key.v1", "sks.codex-lb-set-key.v2"]
-        case ("codex-app", "set-openrouter-key"),
-             ("codex-app", "openrouter-key"):
-            return ["sks.codex-app-openrouter-key.v1"]
         case ("telegram", "setup"):
             return ["sks.telegram-setup-command.v1"]
         default:

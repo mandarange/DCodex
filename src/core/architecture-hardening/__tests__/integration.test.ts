@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import type { BridgeProviderId, ProviderSessionPin } from '../../codex-lb/bridge-contracts.js';
 import { buildCombinedBridgeCatalog } from '../../codex-lb/combined-catalog.js';
@@ -17,6 +18,8 @@ import {
 
 const LB_SECRET = 'integration-lb-secret-do-not-serialize';
 const OPENROUTER_SECRET = 'integration-openrouter-secret-do-not-serialize';
+const CLIENT_CAPABILITY = Buffer.alloc(32, 0x41).toString('base64url');
+const CLIENT_CAPABILITY_SHA256 = createHash('sha256').update(CLIENT_CAPABILITY).digest('hex');
 const credentials: Record<BridgeProviderId, ResolvedProviderCredential> = {
   'codex-lb': credential('codex-lb', LB_SECRET, 'lb-fingerprint', 'https://lb.example.test/backend-api/codex'),
   openrouter: credential('openrouter', OPENROUTER_SECRET, 'openrouter-fingerprint', 'https://openrouter.ai/api/v1'),
@@ -92,7 +95,9 @@ test('Desktop Bridge seam keeps simultaneous provider routes explicit, pinned, i
     authorization: 'Bearer desktop-oauth-secret',
     cookie: 'desktop=session',
     'x-codex-lb-api-key': 'forged-provider-key',
-    'x-sks-session-id': pin.thread_id,
+    'thread-id': pin.thread_id,
+    'session-id': pin.thread_id,
+    'x-codex-turn-metadata': JSON.stringify({ thread_id: pin.thread_id, session_id: pin.thread_id }),
   };
   const lbHeaders = buildProviderUpstreamHeaders(inbound, {
     providerId: 'codex-lb',
@@ -110,7 +115,9 @@ test('Desktop Bridge seam keeps simultaneous provider routes explicit, pinned, i
   assert.equal(openRouterHeaders['x-codex-lb-api-key'], undefined);
   for (const headers of [lbHeaders, openRouterHeaders]) {
     assert.equal(headers.cookie, undefined);
-    assert.equal(headers['x-sks-session-id'], undefined);
+    assert.equal(headers['thread-id'], undefined);
+    assert.equal(headers['session-id'], undefined);
+    assert.equal(headers['x-codex-turn-metadata'], undefined);
     assert.doesNotMatch(JSON.stringify(headers), /desktop-oauth-secret|forged-provider-key/);
   }
 
@@ -223,6 +230,7 @@ function bridgeConfig(
       credentials[providerId].fingerprint!,
       generation,
     ),
+    clientCapabilitySha256: CLIENT_CAPABILITY_SHA256,
     listenHost: '127.0.0.1',
     listenPort: 55_000,
     allowedPathPrefixes: ['/v1/'],

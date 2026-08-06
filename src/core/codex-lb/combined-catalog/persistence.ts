@@ -25,6 +25,7 @@ import {
   verifyStagedPair
 } from './storage.js';
 import { writeTextAtomic } from '../../fsx.js';
+import { withFileLock } from '../../locks/file-lock.js';
 
 /**
  * Persist and verify an immutable catalog/route-index generation without
@@ -139,38 +140,45 @@ export async function activateCombinedBridgeCatalog(input: {
   if (!staged.staged || !staged.pointer_text) {
     return activationResult(staged, false, null, staged.catalog_path, staged.route_index_path, staged.blockers);
   }
-  const priorPointer = await snapshot(staged.pointer_path);
-  try {
-    await input.testHooks?.afterCatalogRename?.();
-    await input.testHooks?.beforeRouteIndexRename?.();
-    await writeTextAtomic(staged.pointer_path, staged.pointer_text, { mode: 0o600 });
-    await fsyncDirectory(path.dirname(staged.pointer_path));
-    const activated = await readActiveCombinedBridgeCatalog(input.catalogPath, input.routeIndexPath);
-    if (!activated.ok
-      || activated.catalog.generation !== input.build.catalog.generation
-      || activated.route_index.generation !== input.build.route_index.generation) {
-      throw new Error('combined_catalog_activation_verification_failed');
-    }
-    return activationResult(staged, true, staged.generation, staged.catalog_path, staged.route_index_path, []);
-  } catch (error) {
-    const rollbackBlockers: string[] = [];
+  const pointerText = staged.pointer_text;
+  return withFileLock({
+    lockPath: `${path.resolve(staged.pointer_path)}.lock`,
+    timeoutMs: 10_000,
+    staleMs: 60_000
+  }, async () => {
+    const priorPointer = await snapshot(staged.pointer_path);
     try {
-      await restoreSnapshot(staged.pointer_path, priorPointer);
-    } catch {
-      rollbackBlockers.push('combined_catalog_previous_generation_restore_failed');
+      await input.testHooks?.afterCatalogRename?.();
+      await input.testHooks?.beforeRouteIndexRename?.();
+      await writeTextAtomic(staged.pointer_path, pointerText, { mode: 0o600 });
+      await fsyncDirectory(path.dirname(staged.pointer_path));
+      const activated = await readActiveCombinedBridgeCatalog(input.catalogPath, input.routeIndexPath);
+      if (!activated.ok
+        || activated.catalog.generation !== input.build.catalog.generation
+        || activated.route_index.generation !== input.build.route_index.generation) {
+        throw new Error('combined_catalog_activation_verification_failed');
+      }
+      return activationResult(staged, true, staged.generation, staged.catalog_path, staged.route_index_path, []);
+    } catch (error) {
+      const rollbackBlockers: string[] = [];
+      try {
+        await restoreSnapshot(staged.pointer_path, priorPointer);
+      } catch {
+        rollbackBlockers.push('combined_catalog_previous_generation_restore_failed');
+      }
+      const restored = rollbackBlockers.length === 0
+        ? await readActiveCombinedBridgeCatalog(input.catalogPath, input.routeIndexPath)
+        : null;
+      return activationResult(
+        staged,
+        false,
+        null,
+        restored?.ok ? restored.catalog_path : null,
+        restored?.ok ? restored.route_index_path : null,
+        unique([safeErrorCode(error, 'combined_catalog_activation_failed'), ...rollbackBlockers])
+      );
     }
-    const restored = rollbackBlockers.length === 0
-      ? await readActiveCombinedBridgeCatalog(input.catalogPath, input.routeIndexPath)
-      : null;
-    return activationResult(
-      staged,
-      false,
-      null,
-      restored?.ok ? restored.catalog_path : null,
-      restored?.ok ? restored.route_index_path : null,
-      unique([safeErrorCode(error, 'combined_catalog_activation_failed'), ...rollbackBlockers])
-    );
-  }
+  });
 }
 
 export async function readActiveCombinedBridgeCatalog(

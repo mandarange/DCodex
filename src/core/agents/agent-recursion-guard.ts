@@ -95,6 +95,32 @@ export function scanAgentTextForRecursion(text: unknown) {
   }
 }
 
+export function agentWorkerHookRecursionDecision(state: any = {}, payload: any = {}, command: any = '') {
+  if (!agentWorkerHookContext(state, payload)) return null
+  const guard = scanAgentTextForRecursion(command)
+  if (guard.ok) return null
+  return {
+    decision: 'block',
+    permissionDecision: 'deny',
+    reason: `Agent command recursion guard blocked nested SKS route command in Codex PreToolUse hook: ${guard.violations.join(', ')}`
+  }
+}
+
+export function agentWorkerHookContext(state: any = {}, payload: any = {}) {
+  const env = {
+    ...(payload.env || {}),
+    ...(payload.tool_input?.env || {}),
+    ...(payload.toolInput?.env || {}),
+    ...(payload.input?.env || {}),
+    ...(payload.tool?.input?.env || {})
+  }
+  void state
+  return Boolean(String(env.SKS_AGENT_WORKER || '') === '1'
+    || String(env.SKS_DISABLE_ROUTE_RECURSION || '') === '1'
+    || payload.agent_worker === true
+    || payload.agentWorker === true)
+}
+
 export function assertNoAgentRecursion(text: unknown) {
   const result = scanAgentTextForRecursion(text)
   if (!result.ok) throw new Error('Agent recursion blocked: ' + result.violations.join(', '))

@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import {
   compareReleasePacks,
+  inspectLocalReleaseSourceState,
   inspectReleaseTarball,
   releaseProofDir,
   validateLocalReleasePackBinding,
@@ -22,11 +23,14 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const proofDir = releaseProofDir(root, String(pkg.version || 'unknown'))
 
 if (action === 'create') createLocalReceipt()
+else if (action === 'verify') verifyLocalReceipt()
 else if (action === 'inspect') inspectDownloadedReceipt()
 else if (action === 'compare') compareReceipts()
 else fail(`unknown action: ${action}`)
 
 function createLocalReceipt() {
+  const sourceBeforePack = inspectLocalReleaseSourceState(root)
+  if (!sourceBeforePack.ok) fail('source tree is not clean and fully tracked for npm pack', sourceBeforePack.blockers.join('\n'))
   const outputDir = path.resolve(root, option('--output-dir') || path.join(proofDir, 'artifacts'))
   fs.mkdirSync(outputDir, { recursive: true })
   const result = spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', outputDir], {
@@ -48,7 +52,7 @@ function createLocalReceipt() {
   const receipt = inspectReleaseTarball({
     tarball,
     kind: 'local',
-    sourceCommit: gitHead(),
+    sourceCommit: sourceBeforePack.head,
     root,
     ...(gate.ok && gate.proof ? {
       npmPackProof: {
@@ -70,6 +74,10 @@ function createLocalReceipt() {
   if (Number(info?.unpackedSize || 0) !== receipt.unpacked_bytes) receipt.blockers.push('pack_metadata_unpacked_size_mismatch')
   if (Number(info?.entryCount || 0) !== receipt.file_count) receipt.blockers.push('pack_metadata_file_count_mismatch')
   if (String(info?.integrity || '') !== receipt.sha512_integrity) receipt.blockers.push('pack_metadata_integrity_mismatch')
+  const sourceAfterPack = inspectLocalReleaseSourceState(root)
+  if (!sourceAfterPack.ok) receipt.blockers.push(...sourceAfterPack.blockers.map((blocker) => `post_pack_source:${blocker}`))
+  if (sourceAfterPack.head !== sourceBeforePack.head) receipt.blockers.push('post_pack_source_commit_changed')
+  if (sourceAfterPack.source_tree_sha256 !== sourceBeforePack.source_tree_sha256) receipt.blockers.push('post_pack_source_tree_digest_changed')
   receipt.ok = receipt.blockers.length === 0
   const binding = validateLocalReleasePackBinding(root, receipt)
   if (!binding.ok) receipt.blockers.push(...binding.blockers.map((blocker) => `local_binding:${blocker}`))
@@ -78,6 +86,20 @@ function createLocalReceipt() {
   const file = path.join(proofDir, 'pack-receipt.json')
   writeReleaseJson(file, receipt)
   emit(receipt, file)
+}
+
+function verifyLocalReceipt() {
+  const file = path.join(proofDir, 'pack-receipt.json')
+  const receipt = readReceipt(file)
+  const validation = validateLocalReleasePackBinding(root, receipt)
+  const blockers = [
+    ...(Array.isArray(receipt.blockers) ? receipt.blockers : ['pack_receipt_blockers_invalid']),
+    ...validation.blockers.map((blocker) => `local_binding:${blocker}`)
+  ]
+  if (receipt.package_name !== pkg.name) blockers.push('pack_metadata_name_mismatch')
+  if (receipt.package_version !== pkg.version) blockers.push('pack_metadata_version_mismatch')
+  const report = { ...receipt, ok: blockers.length === 0, blockers: [...new Set(blockers)] }
+  emit(report, file)
 }
 
 function inspectDownloadedReceipt() {
@@ -109,11 +131,6 @@ function readReceipt(file: string): ReleasePackReceipt {
   } catch (error: any) {
     fail(`unable to read receipt ${file}`, error?.message || String(error))
   }
-}
-
-function gitHead(): string | null {
-  const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' })
-  return result.status === 0 ? String(result.stdout || '').trim() || null : null
 }
 
 function sha256Json(value: unknown): string {

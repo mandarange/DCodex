@@ -13,6 +13,29 @@ const retiredDirectProviderRecoveryModules = [
   ['codex', '-lb-tool-output-recovery'].join(''),
   ['codex', '-lb-launch-recovery'].join('')
 ];
+const retiredLegacyOnlyFiles = [
+  ['codex', '-lb-tool-catalog.ts'].join(''),
+  ['codex', '-lb-catalog-passthrough-check.ts'].join(''),
+  ['gpt-image-2-real-file-smoke.ts'].join('')
+];
+const retiredRuntimeNames = retiredLegacyOnlyFiles.map((name) => name.replace(/\.ts$/, '.js'));
+const retiredNativeCommandForms = [
+  ['codex', '-lb setup'].join(''),
+  ['codex', '-lb set-key'].join(''),
+  ['codex', '-lb update-key'].join(''),
+  ['codex', '-lb rotate-key'].join(''),
+  ['codex', '-app openrouter-key'].join('')
+];
+const retiredDesktopRuntimeIdentities = [
+  ['com.sneakoscope.', 'codex', '-lb-desktop', '-bridge'].join(''),
+  ['codex', '-lb-desktop', '-bridge-settings.json'].join(''),
+  ['codex', '-lb-desktop', '-bridge.json'].join(''),
+  ['sks.', 'codex', '-lb-desktop', '-bridge'].join('')
+];
+const retiredDesktopRuntimeRecognitionOwners = [
+  'src/core/codex-lb/desktop-bridge-migration/',
+  'src/core/codex-lb/migration-receipt.ts'
+];
 const registry = await read('src/cli/command-registry.ts');
 if (registry.includes(oldMainModule)) issues.push('registry_legacy_main');
 if (/lazy\s*:\s*legacy/.test(registry)) issues.push('registry_lazy_legacy');
@@ -25,10 +48,41 @@ for (const file of await listFiles(path.join(root, 'src', 'commands'))) {
 }
 for (const file of await listFiles(path.join(root, 'src'))) {
   const text = await fs.readFile(file, 'utf8');
+  if (retiredLegacyOnlyFiles.includes(path.basename(file))) issues.push(`${rel(file)}:retired_legacy_only_file`);
   if (/lazy\s*:\s*legacy/.test(text)) issues.push(`${rel(file)}:lazy_legacy`);
   if (text.includes(retiredDirectProviderRecoverySymbol)) issues.push(`${rel(file)}:retired_direct_provider_recovery_symbol`);
   for (const moduleName of retiredDirectProviderRecoveryModules) {
     if (text.includes(moduleName)) issues.push(`${rel(file)}:retired_direct_provider_recovery_module`);
+  }
+  if (
+    rel(file) === 'src/core/codex-control/codex-sdk-adapter.ts'
+    && text.includes(['CODEX', '_LB_API_KEY'].join(''))
+  ) issues.push(`${rel(file)}:direct_provider_credential_branch`);
+}
+for (const scanRoot of ['src', 'native', 'test']) {
+  for (const file of await listFiles(path.join(root, scanRoot))) {
+    const filePath = rel(file);
+    const text = await fs.readFile(file, 'utf8');
+    if (scanRoot !== 'src') {
+      for (const command of retiredNativeCommandForms) {
+        if (text.includes(command)) issues.push(`${filePath}:retired_native_command_form`);
+      }
+    }
+    const historicalOwner = retiredDesktopRuntimeRecognitionOwners.some((owner) => filePath.startsWith(owner));
+    if (!historicalOwner) {
+      for (const identity of retiredDesktopRuntimeIdentities) {
+        if (text.includes(identity)) issues.push(`${filePath}:retired_desktop_runtime_identity`);
+      }
+    }
+  }
+}
+for (const manifestPath of ['package.json', 'runtime-required-scripts.json', 'release-gates.v2.json']) {
+  const text = await read(manifestPath);
+  for (const retiredName of retiredRuntimeNames) {
+    if (text.includes(retiredName)) issues.push(`${manifestPath}:retired_legacy_only_runtime`);
+  }
+  for (const identity of retiredDesktopRuntimeIdentities) {
+    if (text.includes(identity)) issues.push(`${manifestPath}:retired_desktop_runtime_identity`);
   }
 }
 for (const dir of await listDirectories(path.join(root, 'src'))) {
@@ -60,7 +114,7 @@ async function listFiles(dir) {
   for (const entry of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {
     const file = path.join(dir, entry.name);
     if (entry.isDirectory()) out.push(...await listFiles(file));
-    else if (entry.isFile() && /\.(?:[cm]?[jt]s)$/.test(file)) out.push(file);
+    else if (entry.isFile() && /\.(?:[cm]?[jt]s|swift)$/.test(file)) out.push(file);
   }
   return out;
 }

@@ -9,6 +9,13 @@ import { DesktopBridgeError } from './types.js';
 
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 const INTERNAL_PREFIX = 'x-sks-';
+const REQUEST_HEADER_ALLOWLIST = new Set([
+  'accept', 'accept-encoding', 'cache-control', 'content-encoding', 'content-length', 'content-type',
+]);
+const CODEX_LOCAL_HEADERS = new Set([
+  'thread-id', 'session-id', 'x-client-request-id', 'x-codex-installation-id',
+  'x-codex-turn-metadata', 'x-codex-window-id', 'originator',
+]);
 const NEVER_FORWARD_FROM_CLIENT = new Set([
   'authorization', 'cookie', 'forwarded', 'proxy-authorization', 'x-api-key', 'x-codex-lb-api-key',
   'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-port', 'x-forwarded-proto', 'x-real-ip',
@@ -17,6 +24,9 @@ const NEVER_FORWARD_TO_CLIENT = new Set([
   'authorization', 'cookie', 'proxy-authenticate', 'proxy-authorization', 'set-cookie', 'x-api-key', 'x-codex-lb-api-key',
 ]);
 const OPENROUTER_CLIENT_HEADERS = new Set(['http-referer', 'x-title']);
+const WEBSOCKET_HEADER_ALLOWLIST = new Set([
+  'sec-websocket-key', 'sec-websocket-version', 'sec-websocket-protocol', 'sec-websocket-extensions',
+]);
 
 function connectionTokens(inbound: IncomingHttpHeaders): Set<string> {
   const values = Array.isArray(inbound.connection) ? inbound.connection : inbound.connection ? [inbound.connection] : [];
@@ -48,12 +58,11 @@ export function buildProviderUpstreamHeaders(
   upstreamHost: string,
 ): OutgoingHttpHeaders {
   const result: OutgoingHttpHeaders = {};
-  const dynamic = connectionTokens(inbound);
   for (const [rawName, rawValue] of Object.entries(inbound)) {
     if (rawValue === undefined) continue;
     const name = rawName.toLowerCase();
-    if (HOP_BY_HOP.has(name) || dynamic.has(name) || NEVER_FORWARD_FROM_CLIENT.has(name) || name === 'host' || name.startsWith(INTERNAL_PREFIX)) continue;
-    if (context.providerId !== 'openrouter' && OPENROUTER_CLIENT_HEADERS.has(name)) continue;
+    const providerAllowed = context.providerId === 'openrouter' && OPENROUTER_CLIENT_HEADERS.has(name);
+    if (!REQUEST_HEADER_ALLOWLIST.has(name) && !providerAllowed) continue;
     result[name] = rawValue;
   }
   result.host = upstreamHost;
@@ -70,7 +79,7 @@ export function buildProviderWebSocketHeaders(
   for (const [rawName, rawValue] of Object.entries(inbound)) {
     if (rawValue === undefined) continue;
     const name = rawName.toLowerCase();
-    if (name.startsWith('sec-websocket-')) result[name] = rawValue;
+    if (WEBSOCKET_HEADER_ALLOWLIST.has(name)) result[name] = rawValue;
   }
   result.connection = 'Upgrade';
   result.upgrade = 'websocket';
@@ -95,7 +104,10 @@ export function rewriteResponseHeaders(inbound: IncomingHttpHeaders, providerBas
 
 export function isRedactedHeaderName(name: string): boolean {
   const normalized = name.toLowerCase();
-  return NEVER_FORWARD_FROM_CLIENT.has(normalized) || NEVER_FORWARD_TO_CLIENT.has(normalized) || normalized.startsWith(INTERNAL_PREFIX);
+  return NEVER_FORWARD_FROM_CLIENT.has(normalized)
+    || NEVER_FORWARD_TO_CLIENT.has(normalized)
+    || CODEX_LOCAL_HEADERS.has(normalized)
+    || normalized.startsWith(INTERNAL_PREFIX);
 }
 
 export function redactHeaderValue(name: string, value: unknown): string {

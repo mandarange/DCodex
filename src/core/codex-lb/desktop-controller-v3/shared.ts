@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { codexAuthPath, codexLbConfigPath } from '../../../cli/install-helpers-codex-lb-shared.js';
@@ -18,12 +18,14 @@ import { codexLbEnvPath, codexLbMetadataPath } from '../codex-lb-env.js';
 import {
   bootstrapExistingDesktopBridgeService,
   desktopBridgeServicePaths,
+  readDesktopBridgeClientCapability,
   resolveDesktopBridgeActivationSettings,
+  stopDesktopBridgeService,
   writeDesktopBridgeServiceSettings,
   type DesktopBridgeServiceSettings,
   type DesktopBridgeServiceStatus
 } from '../desktop-service.js';
-import type { DesktopBridgeProviderRegistrySnapshot } from '../desktop-bridge/index.js';
+import { desktopBridgeClientPath, type DesktopBridgeProviderRegistrySnapshot } from '../desktop-bridge/index.js';
 import { desktopBridgeUnificationReceiptDir } from '../migration-receipt.js';
 import {
   providerCredentialValidationPath,
@@ -90,17 +92,10 @@ export async function resolveValidatedCredentials(
 
 export function activeProviderIds(core: Pick<ControllerCore, 'policy' | 'registry'>): BridgeProviderId[] {
   if (!core.policy) return [];
-  const preferred = core.policy.default_provider_id;
-  if (preferred
-    && core.registry.profiles[preferred].enabled
-    && Object.values(core.policy.model_routes).some((route) => route.provider_id === preferred)) {
-    return [preferred];
-  }
-  const candidates = (['codex-lb', 'openrouter'] as const).filter((providerId) =>
+  return (['codex-lb', 'openrouter'] as const).filter((providerId) =>
     core.registry.profiles[providerId].enabled
       && core.registry.profiles[providerId].state === 'ready'
       && Object.values(core.policy!.model_routes).some((route) => route.provider_id === providerId));
-  return candidates.length === 1 ? candidates : [];
 }
 
 export function providerRegistrySnapshot(
@@ -137,7 +132,8 @@ export function providerRegistrySnapshot(
 
 export async function persistRuntimeSettings(
   core: ControllerCore,
-  options: DesktopBridgeControllerV3Options
+  options: DesktopBridgeControllerV3Options,
+  behavior: { restartService?: boolean; failClosedRestart?: boolean } = {}
 ): Promise<void> {
   if (!core.activeCatalog.ok || !core.policy) return;
   const snapshot = providerRegistrySnapshot(core.registry, core.activeCatalog.route_index);
@@ -148,17 +144,51 @@ export async function persistRuntimeSettings(
     routePolicy: core.policy
   });
   await writeDesktopBridgeServiceSettings(
-    desktopBridgeServicePaths(core.paths.home).settings_path,
+    options.settingsPath || desktopBridgeServicePaths(core.paths.home).settings_path,
     settings
   );
-  if (core.service.installed || core.service.running) {
-    await (options.bootstrapServiceImpl || bootstrapExistingDesktopBridgeService)({
-      ...options,
-      home: core.paths.home,
-      providerRegistry: snapshot,
-      routePolicy: core.policy
-    });
+  const restartService = behavior.restartService ?? (core.service.installed || core.service.running);
+  if (!restartService) return;
+  const restartOptions = {
+    ...options,
+    home: core.paths.home,
+    providerRegistry: snapshot,
+    routePolicy: core.policy
+  };
+  let restarted: DesktopBridgeServiceStatus;
+  try {
+    restarted = await (options.bootstrapServiceImpl || bootstrapExistingDesktopBridgeService)(restartOptions);
+  } catch (error) {
+    await stopAfterFailedRestart(restartOptions, options);
+    throw error;
   }
+  if (!restarted.ok || !restarted.running) {
+    await stopAfterFailedRestart(restartOptions, options);
+    throw new Error(restarted.blockers[0] || 'desktop_bridge_restart_failed');
+  }
+}
+
+export async function quiesceRunningBridge(
+  core: ControllerCore,
+  options: DesktopBridgeControllerV3Options
+): Promise<boolean> {
+  if (!core.service.running) return false;
+  const stopped = await (options.stopServiceImpl || stopDesktopBridgeService)({
+    ...options,
+    home: core.paths.home
+  });
+  if (stopped.running) {
+    throw new Error(stopped.blockers[0] || 'desktop_bridge_process_still_running');
+  }
+  return true;
+}
+
+async function stopAfterFailedRestart(
+  restartOptions: DesktopBridgeControllerV3Options,
+  options: DesktopBridgeControllerV3Options
+): Promise<void> {
+  const stopped = await (options.stopServiceImpl || stopDesktopBridgeService)(restartOptions);
+  if (stopped.running) throw new Error(stopped.blockers[0] || 'desktop_bridge_process_still_running');
 }
 
 export function serializedSettings(settings: DesktopBridgeServiceSettings): string {
@@ -169,15 +199,64 @@ export function serializedSettings(settings: DesktopBridgeServiceSettings): stri
     provider_registry: settings.provider_registry,
     route_policy: settings.route_policy,
     provider_session_pins: settings.provider_session_pins,
+    client_capability_sha256: settings.client_capability_sha256,
     allowed_origins: settings.allowed_origins,
     connect_timeout_ms: settings.connect_timeout_ms,
     idle_timeout_ms: settings.idle_timeout_ms
   }, null, 2)}\n`;
 }
 
-export function bridgeBaseUrl(settings: DesktopBridgeServiceSettings): string {
+export async function bridgeBaseUrl(
+  settings: DesktopBridgeServiceSettings,
+  options: DesktopBridgeControllerV3Options
+): Promise<string> {
   const host = settings.listen_host === '::1' ? '[::1]' : settings.listen_host;
-  return `http://${host}:${settings.listen_port}/backend-api/codex`;
+  return bridgeClientUrl(
+    `http://${host}:${settings.listen_port}`,
+    '/backend-api/codex',
+    options,
+    settings.client_capability_sha256
+  );
+}
+
+export async function bridgeClientUrl(
+  loopbackOrigin: string,
+  canonicalPath: string,
+  options: DesktopBridgeControllerV3Options,
+  expectedCapabilitySha256?: string
+): Promise<string> {
+  const origin = validatedBridgeClientOrigin(loopbackOrigin);
+  const home = path.resolve(options.home || controllerEnv(options).HOME || os.homedir());
+  const capabilityPath = path.resolve(
+    options.clientCapabilityPath || desktopBridgeServicePaths(home).client_capability_path
+  );
+  const capability = await readDesktopBridgeClientCapability(capabilityPath);
+  if (expectedCapabilitySha256
+    && createHash('sha256').update(capability).digest('hex') !== expectedCapabilitySha256) {
+    throw new Error('desktop_bridge_client_capability_mismatch');
+  }
+  return `${origin}${desktopBridgeClientPath(capability, canonicalPath)}`;
+}
+
+function validatedBridgeClientOrigin(value: string): string {
+  let parsed: URL;
+  try { parsed = new URL(String(value || '')); }
+  catch { throw new Error('desktop_bridge_loopback_origin_invalid'); }
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const port = Number(parsed.port);
+  if (!['http:', 'ws:'].includes(parsed.protocol)
+    || !['127.0.0.1', '::1', 'localhost'].includes(hostname)
+    || !Number.isInteger(port)
+    || port < 49_152
+    || port > 65_535
+    || parsed.username
+    || parsed.password
+    || (parsed.pathname !== '/' && parsed.pathname !== '')
+    || parsed.search
+    || parsed.hash) {
+    throw new Error('desktop_bridge_loopback_origin_invalid');
+  }
+  return parsed.origin;
 }
 
 export function serviceLoopbackOrigin(service: DesktopBridgeServiceStatus): string | null {

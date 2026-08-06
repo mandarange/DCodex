@@ -12,10 +12,21 @@ import {
   inspectHistoricalDesktopBridgeIntent,
   migrateDesktopBridgeConfig
 } from '../desktop-bridge-migration.js';
+import { authSemanticIdentityPreserved } from '../desktop-bridge-migration/receipt.js';
 
-const BRIDGE = 'http://127.0.0.1:47821/backend-api/codex';
+const CLIENT_CAPABILITY = 'A'.repeat(43);
+const BRIDGE = `http://127.0.0.1:47821/__sks/client/${CLIENT_CAPABILITY}/backend-api/codex`;
 const LB_KEY = 'sk-clb-preserve-this-value';
 const OR_KEY = 'sk-or-preserve-this-value';
+
+test('OAuth migration preservation requires exact auth.json bytes as well as semantic identity', () => {
+  const before = {
+    path: '/tmp/auth.json', exists: true, sha256: 'before-bytes', semantic_fingerprint: 'same-account',
+    mode: 'chatgpt_oauth' as const, has_refresh_token: true, has_access_token: true, has_api_key: false,
+  };
+  assert.equal(authSemanticIdentityPreserved(before, { ...before }), true);
+  assert.equal(authSemanticIdentityPreserved(before, { ...before, sha256: 'different-bytes' }), false);
+});
 
 async function fixture(t: test.TestContext, config: string) {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-unification-migration-'));
@@ -227,6 +238,7 @@ test('R06/R33/R35: historical provider selection preserves credentials and the s
   assert.doesNotMatch(receiptText, new RegExp(OR_KEY));
   assert.doesNotMatch(receiptText, /oauth-(?:access|refresh)-before/);
   assert.doesNotMatch(receiptText, /"provider_mode"/);
+  assert.doesNotMatch(receiptText, new RegExp(CLIENT_CAPABILITY));
   assert.equal(first.receipt?.credentials_deleted, false);
   assert.equal(first.receipt?.auth_before_sha256, first.receipt?.auth_after_sha256);
   assert.equal(first.receipt?.historical_state.historical_provider_selection, 'codex-lb');

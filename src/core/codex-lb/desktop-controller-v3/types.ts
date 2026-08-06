@@ -17,6 +17,7 @@ import type { ResolvedProviderCredential } from '../provider-credentials.js';
 import type { BridgeProviderRegistry } from '../provider-registry.js';
 import type { readActiveCombinedBridgeCatalog } from '../combined-catalog.js';
 import type { captureCodexAuthSnapshot } from '../desktop-auth-invariant.js';
+import type { DesktopBridgeLookup } from '../desktop-bridge/security.js';
 import type { LastDiagnostic } from './diagnostics.js';
 
 export type DesktopBridgeControllerRequestV3 =
@@ -48,6 +49,7 @@ export interface DesktopBridgeControllerV3Options extends DesktopBridgeServiceOp
   validationPath?: string;
   diagnosticPath?: string;
   fetchImpl?: typeof fetch;
+  codexLbLookup?: DesktopBridgeLookup;
   timeoutMs?: number;
   now?: () => Date;
   id?: () => string;
@@ -55,6 +57,8 @@ export interface DesktopBridgeControllerV3Options extends DesktopBridgeServiceOp
   installServiceImpl?: typeof import('../desktop-service.js').installAndStartDesktopBridgeService;
   bootstrapServiceImpl?: typeof import('../desktop-service.js').bootstrapExistingDesktopBridgeService;
   stopServiceImpl?: typeof import('../desktop-service.js').stopDesktopBridgeService;
+  safeWriteConfigImpl?: typeof import('../../codex-runtime/codex-desktop-config-policy.js').safeWriteCodexConfigToml;
+  rollbackReceiptImpl?: typeof import('../migration-receipt.js').rollbackDesktopBridgeUnificationReceipt;
   deepProbeImpl?: (input: DesktopBridgeDeepProbeRequestV3) => Promise<DesktopBridgeDeepProbeEvidenceV3 | null>;
 }
 

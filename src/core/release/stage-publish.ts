@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import path from 'node:path'
 import fs from 'node:fs'
 import { RELEASE_ORIGIN_IDENTITY, releaseOriginIdentity } from './release-origin.js'
@@ -6,6 +7,11 @@ import {
   localNpmStageReviewEnvironmentBlocker,
   REQUIRED_NPM_STAGE_CLI_VERSION
 } from './npm-stage-contract.js'
+import { PHYSICAL_RELEASE_EVIDENCE_REPOSITORY } from './physical-release-gates.js'
+import {
+  NPM_STAGE_PUBLISH_RECEIPT_SCHEMA,
+  STAGE_DISPATCH_NONCE_PATTERN
+} from './npm-stage-tarball-verifier-support.js'
 
 /**
  * Drives the documented staged-publish flow as far as automation is allowed to
@@ -26,6 +32,7 @@ import {
 export const STAGE_PUBLISH_SCHEMA = 'sks.release-stage-publish.v1'
 export const STAGE_WORKFLOW_FILE = 'publish-npm.yml'
 export const RELEASE_BRANCH = 'main'
+export const STAGE_RUN_NAME_PREFIX = 'npm-stage'
 const NPM_REGISTRY = 'https://registry.npmjs.org/'
 const STAGE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -48,12 +55,16 @@ export interface StagePublishStep {
 export interface StagePublishOptions {
   readonly root: string
   readonly version?: string
+  readonly physicalEvidenceRunId?: string
+  readonly physicalEvidenceArchive?: string
   readonly confirm?: boolean
   readonly run: ProcessRunner
   readonly readJsonFile?: (file: string) => unknown
   readonly artifactDir?: string
   readonly watchTimeoutMs?: number
   readonly env?: NodeJS.ProcessEnv
+  /** Test seam for deterministic association; production uses 128 random bits. */
+  readonly generateDispatchNonce?: () => string
 }
 
 export interface StagePublishReport {
@@ -61,6 +72,9 @@ export interface StagePublishReport {
   readonly ok: boolean
   readonly confirmed: boolean
   readonly version: string
+  readonly release_tag: string
+  readonly physical_evidence_run_id: string | null
+  readonly dispatch_nonce: string | null
   readonly commit: string | null
   readonly run_id: string | null
   readonly stage_id: string | null
@@ -77,10 +91,12 @@ export function stagePublish(opts: StagePublishOptions): StagePublishReport {
   const steps: StagePublishStep[] = []
   const packageIdentity = readPackageIdentity(opts.root, readJsonFile)
   const version = String(opts.version || packageIdentity.version || '').trim()
+  const physicalEvidenceRunId = String(opts.physicalEvidenceRunId || '').trim()
   const confirmed = opts.confirm === true
   let commit: string | null = null
   let runId: string | null = null
   let stageId: string | null = null
+  let dispatchNonce: string | null = null
 
   const preflight = runPreflight(opts, packageIdentity.name, version)
   steps.push(...preflight.steps)
@@ -88,10 +104,20 @@ export function stagePublish(opts: StagePublishOptions): StagePublishReport {
   if (!preflight.ok) return finish()
 
   if (!confirmed) {
-    steps.push(skipped('push', 'confirm_required'), skipped('run_snapshot', 'confirm_required'), skipped('dispatch', 'confirm_required'))
+    steps.push(skipped('dispatch_nonce', 'confirm_required'), skipped('push', 'confirm_required'), skipped('run_snapshot', 'confirm_required'), skipped('dispatch', 'confirm_required'))
     steps.push(skipped('watch', 'confirm_required'), skipped('download', 'confirm_required'), skipped('verify', 'confirm_required'))
     return finish()
   }
+
+  dispatchNonce = String((opts.generateDispatchNonce || defaultDispatchNonce)()).trim()
+  const dispatchNonceOk = STAGE_DISPATCH_NONCE_PATTERN.test(dispatchNonce)
+  steps.push(step(
+    'dispatch_nonce',
+    dispatchNonceOk,
+    dispatchNonceOk ? dispatchNonce : null,
+    dispatchNonceOk ? null : 'stage_dispatch_nonce_invalid'
+  ))
+  if (!dispatchNonceOk) return finish()
 
   const push = opts.run('git', ['push', 'origin', RELEASE_BRANCH])
   steps.push(step('push', push.status === 0, `git push origin ${RELEASE_BRANCH}`, push.status === 0 ? null : 'stage_push_failed'))
@@ -110,13 +136,21 @@ export function stagePublish(opts: StagePublishOptions): StagePublishReport {
     'workflow', 'run', STAGE_WORKFLOW_FILE,
     '--ref', RELEASE_BRANCH,
     '-f', `version=${version}`,
+    '-f', `dispatch_nonce=${dispatchNonce}`,
+    '-f', `physical_evidence_run_id=${physicalEvidenceRunId}`,
     '-f', 'confirm_stage=true'
   ])
-  steps.push(step('dispatch', dispatch.status === 0, `gh workflow run ${STAGE_WORKFLOW_FILE} version=${version} confirm_stage=true`, dispatch.status === 0 ? null : 'stage_dispatch_failed'))
+  steps.push(step('dispatch', dispatch.status === 0, `gh workflow run ${STAGE_WORKFLOW_FILE} version=${version} dispatch_nonce=${dispatchNonce} physical_evidence_run_id=${physicalEvidenceRunId} confirm_stage=true`, dispatch.status === 0 ? null : 'stage_dispatch_failed'))
   if (dispatch.status !== 0) return finish()
 
-  runId = resolveRunId(opts, commit, priorRuns.ids)
-  steps.push(step('resolve_run', Boolean(runId), runId ? `run ${runId}` : null, runId ? null : 'stage_run_not_found'))
+  const resolvedRun = resolveRunId(
+    opts,
+    commit,
+    priorRuns.ids,
+    stageRunDisplayTitle(version, dispatchNonce, physicalEvidenceRunId)
+  )
+  runId = resolvedRun.runId
+  steps.push(step('resolve_run', Boolean(runId), runId ? `run ${runId}` : null, runId ? null : resolvedRun.blocker))
   if (!runId) return finish()
 
   const watch = opts.run('gh', ['run', 'watch', runId, '--exit-status'], { timeoutMs: opts.watchTimeoutMs ?? 3 * 60 * 60 * 1000 })
@@ -124,11 +158,11 @@ export function stagePublish(opts: StagePublishOptions): StagePublishReport {
   if (watch.status !== 0) return finish()
 
   const artifactDir = opts.artifactDir || path.join(opts.root, '.sneakoscope', 'reports', 'release', version, 'stage')
-  const download = downloadArtifacts(opts, runId, commit, artifactDir)
+  const download = downloadArtifacts(opts, runId, commit, dispatchNonce, artifactDir)
   steps.push(download.step)
   if (!download.step.ok) return finish()
 
-  const receipt = readStageReceipt(artifactDir, commit, readJsonFile)
+  const receipt = readStageReceipt(artifactDir, commit, dispatchNonce, physicalEvidenceRunId, runId, readJsonFile)
   stageId = receipt.stageId
   steps.push(step('stage_receipt', Boolean(stageId), receipt.path, stageId ? null : receipt.blocker))
   if (!stageId || !receipt.path) return finish()
@@ -137,7 +171,10 @@ export function stagePublish(opts: StagePublishOptions): StagePublishReport {
     handoffDir: receipt.handoffDir,
     stageReceiptPath: receipt.path,
     version,
-    stageId
+    stageId,
+    dispatchNonce,
+    physicalEvidenceRunId,
+    workflowRunId: runId
   })
   steps.push(verify)
   return finish()
@@ -150,6 +187,9 @@ export function stagePublish(opts: StagePublishOptions): StagePublishReport {
       ok: blockers.length === 0 && (confirmed ? reachedApproval : true),
       confirmed,
       version,
+      release_tag: `v${version}`,
+      physical_evidence_run_id: /^\d+$/.test(physicalEvidenceRunId) ? physicalEvidenceRunId : null,
+      dispatch_nonce: dispatchNonce,
       commit,
       run_id: runId,
       stage_id: stageId,
@@ -176,6 +216,7 @@ function runPreflight(opts: StagePublishOptions, packageName: string, version: s
   const steps: StagePublishStep[] = []
   const branch = text(opts.run('git', ['rev-parse', '--abbrev-ref', 'HEAD']))
   steps.push(step('branch', branch === RELEASE_BRANCH, branch, branch === RELEASE_BRANCH ? null : 'stage_requires_main_branch'))
+  const commit = text(opts.run('git', ['rev-parse', 'HEAD'])) || null
 
   const status = opts.run('git', ['status', '--porcelain'])
   const clean = status.status === 0 && text(status) === ''
@@ -183,6 +224,25 @@ function runPreflight(opts: StagePublishOptions, packageName: string, version: s
 
   const versionOk = /^\d+\.\d+\.\d+$/.test(version)
   steps.push(step('version', versionOk, version || null, versionOk ? null : 'stage_version_invalid'))
+
+  const releaseTag = versionOk ? `v${version}` : ''
+  const localTag = releaseTag
+    ? text(opts.run('git', ['rev-parse', `refs/tags/${releaseTag}^{commit}`]))
+    : ''
+  const localTagOk = Boolean(commit) && localTag === commit
+  steps.push(step(
+    'local_release_tag', localTagOk, localTag || releaseTag || null,
+    localTagOk ? null : 'stage_local_release_tag_mismatch'
+  ))
+  const remoteTagResult = releaseTag
+    ? opts.run('git', ['ls-remote', '--exit-code', 'origin', `refs/tags/${releaseTag}`, `refs/tags/${releaseTag}^{}`])
+    : { status: 1, stdout: '', stderr: '' }
+  const remoteTag = remoteTagResult.status === 0 ? remoteReleaseTagCommit(remoteTagResult.stdout, releaseTag) : ''
+  const remoteTagOk = Boolean(commit) && remoteTag === commit
+  steps.push(step(
+    'remote_release_tag', remoteTagOk, remoteTag || releaseTag || null,
+    remoteTagOk ? null : 'stage_remote_release_tag_mismatch'
+  ))
 
   const packageNameOk = packageName.length > 0
   steps.push(step('package_name', packageNameOk, packageName || null, packageNameOk ? null : 'stage_package_name_invalid'))
@@ -211,14 +271,35 @@ function runPreflight(opts: StagePublishOptions, packageName: string, version: s
   ))
 
   const physicalVerifier = path.join(opts.root, 'dist', 'scripts', 'release-physical-gates-check.js')
-  const physical = opts.run(process.execPath, [physicalVerifier])
+  const physicalEvidenceRunId = String(opts.physicalEvidenceRunId || '').trim()
+  const physicalEvidenceRunIdReady = /^\d+$/.test(physicalEvidenceRunId)
+  steps.push(step(
+    'physical_evidence_run_id',
+    physicalEvidenceRunIdReady,
+    physicalEvidenceRunId || null,
+    physicalEvidenceRunIdReady ? null : 'stage_physical_evidence_run_id_invalid'
+  ))
+  const physicalArgs = [
+    physicalVerifier,
+    ...(opts.physicalEvidenceArchive ? ['--archive', path.resolve(opts.root, opts.physicalEvidenceArchive)] : []),
+    '--evidence-run-id', physicalEvidenceRunId,
+    '--repository', PHYSICAL_RELEASE_EVIDENCE_REPOSITORY
+  ]
+  const physical = physicalEvidenceRunIdReady
+    ? opts.run(process.execPath, physicalArgs)
+    : { status: 1, stdout: '', stderr: 'physical evidence run id missing or invalid' }
   const physicalReport = safeJsonObject(physical.stdout)
-  const physicalReady = physical.status === 0 && physicalReport?.ok === true
+  const physicalReady = physical.status === 0
+    && physicalReport?.schema === 'sks.release-physical-gates-inspection.v2'
+    && physicalReport?.ok === true
+    && physicalReport?.status === 'passed'
+    && physicalReport?.release_authorizing === true
+    && physicalReport?.inspector_platform === 'darwin'
   steps.push(step(
     'physical_release_gates',
     physicalReady,
     physicalReady
-      ? 'all four source-bound physical release receipts verified'
+      ? 'all five source-bound physical release receipts and live Desktop Bridge artifacts verified on macOS'
       : compactPhysicalGateFailure(physical, physicalReport),
     physicalReady ? null : 'stage_physical_release_gates_invalid'
   ))
@@ -315,34 +396,62 @@ function runPreflight(opts: StagePublishOptions, packageName: string, version: s
   const gh = opts.run('gh', ['auth', 'status'])
   steps.push(step('gh_auth', gh.status === 0, gh.status === 0 ? 'authenticated' : null, gh.status === 0 ? null : 'stage_gh_not_authenticated'))
 
-  const commit = text(opts.run('git', ['rev-parse', 'HEAD'])) || null
   return { ok: steps.every((entry) => entry.ok), commit, steps }
 }
 
+function remoteReleaseTagCommit(output: string, tag: string): string {
+  const rows = String(output || '').trim().split(/\r?\n/).filter(Boolean)
+  const peeled = rows.find((row) => row.endsWith(`refs/tags/${tag}^{}`))
+  return text({ status: 0, stdout: peeled || rows[0] || '', stderr: '' }).split(/\s+/, 1)[0] || ''
+}
+
+export function stageRunDisplayTitle(version: string, dispatchNonce: string, physicalEvidenceRunId: string): string {
+  return `${STAGE_RUN_NAME_PREFIX}-${version}-${dispatchNonce}-physical-${physicalEvidenceRunId}`
+}
+
+function defaultDispatchNonce(): string {
+  return crypto.randomBytes(16).toString('hex')
+}
+
+interface StageRunResolution {
+  readonly runId: string | null
+  readonly blocker: 'stage_run_not_found' | 'stage_run_ambiguous'
+}
+
 /**
- * The dispatch returns before the run is queryable. Snapshotting the existing
- * run ids before dispatch prevents an older run for the same commit from being
- * mistaken for the newly requested stage workflow.
+ * The dispatch returns before the run is queryable. The pre-dispatch snapshot
+ * excludes old runs, while the run-name nonce excludes concurrent dispatches
+ * for the same commit. More than one exact match is an ambiguity, never a
+ * reason to guess.
  */
-function resolveRunId(opts: StagePublishOptions, commit: string | null, priorRunIds: ReadonlySet<string>): string | null {
-  if (!commit) return null
+function resolveRunId(
+  opts: StagePublishOptions,
+  commit: string | null,
+  priorRunIds: ReadonlySet<string>,
+  expectedDisplayTitle: string
+): StageRunResolution {
+  if (!commit) return { runId: null, blocker: 'stage_run_not_found' }
   for (let attempt = 0; attempt < 30; attempt += 1) {
     const listed = listWorkflowRuns(opts)
     if (listed.status === 0) {
       const rows = safeJsonArray(listed.stdout)
-      const match = rows.find((row: any) => {
+      const matches = rows.filter((row: any) => {
         const id = String(row?.databaseId ?? '')
         const event = String(row?.event || '')
         return String(row?.headSha || '') === commit
+          && String(row?.displayTitle || '') === expectedDisplayTitle
           && id.length > 0
           && !priorRunIds.has(id)
-          && (!event || event === 'workflow_dispatch')
+          && event === 'workflow_dispatch'
       })
-      if (match?.databaseId != null) return String(match.databaseId)
+      if (matches.length > 1) return { runId: null, blocker: 'stage_run_ambiguous' }
+      if (matches[0]?.databaseId != null) {
+        return { runId: String(matches[0].databaseId), blocker: 'stage_run_not_found' }
+      }
     }
     opts.run('sleep', ['2'])
   }
-  return null
+  return { runId: null, blocker: 'stage_run_not_found' }
 }
 
 function snapshotWorkflowRunIds(opts: StagePublishOptions, commit: string | null): { ok: boolean; ids: Set<string>; detail: string | null } {
@@ -363,13 +472,19 @@ function listWorkflowRuns(opts: StagePublishOptions): ProcessResult {
     'run', 'list',
     '--workflow', STAGE_WORKFLOW_FILE,
     '--branch', RELEASE_BRANCH,
-    '--limit', '20',
-    '--json', 'databaseId,headSha,status,event'
+    '--limit', '100',
+    '--json', 'databaseId,headSha,status,event,displayTitle'
   ])
 }
 
-function downloadArtifacts(opts: StagePublishOptions, runId: string, commit: string | null, dir: string): { step: StagePublishStep } {
-  const names = stageArtifactNames(commit)
+function downloadArtifacts(
+  opts: StagePublishOptions,
+  runId: string,
+  commit: string | null,
+  dispatchNonce: string,
+  dir: string
+): { step: StagePublishStep } {
+  const names = stageArtifactNames(commit, dispatchNonce)
   if (!names) return { step: step('download', false, null, 'stage_commit_unknown') }
   const args = ['run', 'download', runId, '--dir', dir]
   for (const name of [names.handoff, names.receipt]) args.push('--name', name)
@@ -382,11 +497,11 @@ interface StageArtifactNames {
   readonly receipt: string
 }
 
-function stageArtifactNames(commit: string | null): StageArtifactNames | null {
-  if (!commit) return null
+function stageArtifactNames(commit: string | null, dispatchNonce: string): StageArtifactNames | null {
+  if (!commit || !STAGE_DISPATCH_NONCE_PATTERN.test(dispatchNonce)) return null
   return {
-    handoff: `stage-input-${commit}`,
-    receipt: `npm-stage-receipt-${commit}`
+    handoff: `stage-input-${commit}-${dispatchNonce}`,
+    receipt: `npm-stage-receipt-${commit}-${dispatchNonce}`
   }
 }
 
@@ -400,9 +515,12 @@ interface StageReceiptLocation {
 function readStageReceipt(
   dir: string,
   commit: string | null,
+  dispatchNonce: string,
+  physicalEvidenceRunId: string,
+  workflowRunId: string,
   readJsonFile: (file: string) => unknown
 ): StageReceiptLocation {
-  const names = stageArtifactNames(commit)
+  const names = stageArtifactNames(commit, dispatchNonce)
   const layouts = names
     ? [
         {
@@ -416,11 +534,29 @@ function readStageReceipt(
   for (const layout of layouts) {
     for (const candidate of ['stage-receipt.json', 'stage-output.json', 'npm-stage-receipt.json']) {
       const file = path.join(layout.receiptDir, candidate)
-      const payload = readJsonFile(file) as { stage_id?: unknown } | null
+      const payload = readJsonFile(file) as {
+        schema?: unknown
+        stage_id?: unknown
+        dispatch_nonce?: unknown
+        physical_evidence_run_id?: unknown
+        workflow_run_id?: unknown
+      } | null
       const stageId = String(payload?.stage_id || '').trim()
       if (!stageId) continue
+      if (payload?.schema !== NPM_STAGE_PUBLISH_RECEIPT_SCHEMA) {
+        return { stageId: null, path: file, handoffDir: layout.handoffDir, blocker: 'stage_receipt_schema_invalid' }
+      }
       if (!STAGE_ID_RE.test(stageId)) {
         return { stageId: null, path: file, handoffDir: layout.handoffDir, blocker: 'stage_id_uuid_invalid' }
+      }
+      if (String(payload?.dispatch_nonce || '') !== dispatchNonce) {
+        return { stageId: null, path: file, handoffDir: layout.handoffDir, blocker: 'stage_receipt_dispatch_nonce_mismatch' }
+      }
+      if (String(payload?.physical_evidence_run_id || '') !== physicalEvidenceRunId) {
+        return { stageId: null, path: file, handoffDir: layout.handoffDir, blocker: 'stage_receipt_physical_evidence_run_id_mismatch' }
+      }
+      if (String(payload?.workflow_run_id || '') !== workflowRunId) {
+        return { stageId: null, path: file, handoffDir: layout.handoffDir, blocker: 'stage_receipt_workflow_run_id_mismatch' }
       }
       return { stageId, path: file, handoffDir: layout.handoffDir, blocker: null }
     }
@@ -433,6 +569,9 @@ function runLocalVerify(opts: StagePublishOptions, input: {
   stageReceiptPath: string
   version: string
   stageId: string
+  dispatchNonce: string
+  physicalEvidenceRunId: string
+  workflowRunId: string
 }): StagePublishStep {
   // The verifier is deliberately excluded from the published tarball; this
   // whole subcommand only runs from a source checkout of this repository.
@@ -441,6 +580,9 @@ function runLocalVerify(opts: StagePublishOptions, input: {
   const result = opts.run(process.execPath, [
     verifier,
     '--stage-id', input.stageId,
+    '--dispatch-nonce', input.dispatchNonce,
+    '--physical-evidence-run-id', input.physicalEvidenceRunId,
+    '--workflow-run-id', input.workflowRunId,
     '--local-receipt', path.join(input.handoffDir, 'pack-receipt.json'),
     '--local-tarball', path.join(input.handoffDir, `sneakoscope-${input.version}.tgz`),
     '--stage-receipt', input.stageReceiptPath

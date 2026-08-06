@@ -1,6 +1,10 @@
 # Gate Script Map
 
 Generated from `release-gates.v2.json`; release gate IDs and commands are the manifest SSOT.
+This is a command inventory, not evidence that any command has run or that a
+release is authorized. Current 8.1.3 classifications live in
+`docs/internal/8.1.3-requirement-traceability.md` and
+`docs/release-readiness.md`.
 
 | Gate | Preset | Command | Package Script |
 |---|---|---|---|
@@ -39,7 +43,7 @@ Generated from `release-gates.v2.json`; release gate IDs and commands are the ma
 | `dfix:patch-handoff` | `release` | `node ./dist/scripts/dfix-patch-handoff-check.js` | direct |
 | `dfix:verification` | `release` | `node ./dist/scripts/dfix-verification-check.js` | direct |
 | `dfix:verification-recommendation` | `release` | `node ./dist/scripts/dfix-verification-recommendation-check.js` | direct |
-| `desktop-bridge:comprehensive` | `release` | `node ./dist/scripts/desktop-bridge-unification-check.js && node ./dist/scripts/desktop-bridge-transport-check.js && node ./dist/scripts/desktop-bridge-latency-check.js && node ./dist/scripts/codex-lb-catalog-passthrough-check.js && node ./dist/scripts/desktop-bridge-capabilities-check.js` | direct |
+| `desktop-bridge:comprehensive` | `release` | `node ./dist/scripts/desktop-bridge-unification-check.js && node ./dist/scripts/desktop-bridge-transport-check.js && node ./dist/scripts/desktop-bridge-latency-check.js && node ./dist/scripts/desktop-bridge-capabilities-check.js` | direct |
 | `doctor:codex-app-harness` | `release` | `node ./dist/scripts/doctor-codex-app-harness-check.js` | direct |
 | `doctor:fix-proves-codex-read` | `release` | `node ./dist/scripts/doctor-fix-proves-codex-read-check.js` | direct |
 | `doctor:fixes-codex-app-fast-ui` | `release` | `node ./dist/scripts/doctor-fixes-codex-app-fast-ui-check.js` | direct |
@@ -132,3 +136,32 @@ Generated from `release-gates.v2.json`; release gate IDs and commands are the ma
 | `ux-review:patch-diff-recheck` | `release` | `node ./dist/scripts/ux-review-patch-diff-recheck-check.js` | direct |
 | `ux-review:run-wires-imagegen` | `release` | `node ./dist/scripts/ux-review-run-wires-imagegen-check.js` | `ux-review:run-wires-imagegen` |
 | `wrongness:check` | `release` | `node ./dist/bin/sks.js wrongness validate project --json && node ./dist/scripts/wrongness-fixture-check.js` | direct |
+
+## 8.1.3 evidence interpretation
+
+| Gate or command lane | Classification | Current boundary |
+| --- | --- | --- |
+| `desktop-bridge:comprehensive` and focused bridge/CLI/native checks | passed-hermetic | recorded artifacts are historical and must be rerun after final clean integration |
+| `release:proof-truth`, `release:provenance`, `policy:gate-audit`, `typecheck`, package/pack checks | passed-hermetic | a previous result does not bind changed source or dist bytes |
+| `npm run desktop-bridge:real-evidence` | not-run-real | the current artifact is fail-closed as `real_required_missing`, not a live pass |
+| macOS lifecycle, Codex Desktop UI, OAuth, providers, WebSocket, and deep capability receipts | not-run-real | each requires a redacted, target-bound artifact |
+| fresh final stamp, GitHub main/tag, npm-owner/stage/2FA action | blocked-external | requires a final clean source binding and separately authorized external action |
+
+The user override removes public legacy runtime/alias paths: `sks codex-lb`
+is unknown rather than a deprecated alias. The unified Desktop Bridge gate
+therefore intentionally does not invoke the removed legacy catalog-passthrough
+check.
+
+The staged-tarball verifier is a maintainer-local read-only command, not a
+manifest gate:
+
+```sh
+node ./dist/scripts/npm-stage-tarball-verifier.js \
+  --stage-id <stage-id> \
+  --dispatch-nonce <32-lowercase-hex> \
+  --physical-evidence-run-id <physical-capture-workflow-run-id> \
+  --workflow-run-id <stage-workflow-run-id> \
+  --local-receipt /absolute/path/to/local-pack-receipt.json \
+  --local-tarball /absolute/path/to/sneakoscope-8.1.3.tgz \
+  --stage-receipt /absolute/path/to/npm-stage-receipt.json
+```

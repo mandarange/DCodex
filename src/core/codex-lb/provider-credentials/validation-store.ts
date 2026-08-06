@@ -15,6 +15,8 @@ import type {
   ResolveProviderCredentialOptions,
   ResolvedProviderCredential
 } from './types.js';
+import { withFileLock } from '../../locks/file-lock.js';
+import { withProviderCredentialLock } from './locks.js';
 
 export function providerCredentialValidationPath(
   home: string = process.env.HOME || os.homedir()
@@ -81,30 +83,42 @@ export async function recordProviderCredentialValidation(input: {
   readonly warnings?: readonly string[];
   readonly home?: string;
   readonly validationPath?: string;
+  readonly resolveCurrentCredential?: () => Promise<ResolvedProviderCredential>;
 }): Promise<ProviderCredentialValidationStore> {
   if (!input.credential.fingerprint || !input.credential.endpoint_url) {
     throw new Error(`${providerCode(input.provider_id)}_credential_validation_binding_missing`);
   }
   const home = input.home || process.env.HOME || os.homedir();
   const file = input.validationPath || providerCredentialValidationPath(home);
-  const current = await readProviderCredentialValidationStore(file);
-  const next: ProviderCredentialValidationStore = {
-    schema: 'sks.provider-credential-validation-store.v1',
-    providers: {
-      ...current.providers,
-      [input.provider_id]: {
-        credential_fingerprint: input.credential.fingerprint,
-        endpoint_url: input.credential.endpoint_url,
-        state: input.state,
-        checked_at: input.checked_at || new Date().toISOString(),
-        blockers: unique(input.blockers || []),
-        warnings: unique(input.warnings || [])
+  return withProviderCredentialLock(home, input.provider_id, () => withFileLock({
+    lockPath: `${path.resolve(file)}.lock`, timeoutMs: 10_000, staleMs: 60_000,
+  }, async () => {
+    if (input.resolveCurrentCredential) {
+      const currentCredential = await input.resolveCurrentCredential();
+      if (currentCredential.fingerprint !== input.credential.fingerprint
+        || currentCredential.endpoint_url !== input.credential.endpoint_url) {
+        throw new Error(`${providerCode(input.provider_id)}_credential_validation_conflict`);
       }
     }
-  };
-  await writeJsonAtomic(file, next, { mode: 0o600 });
-  await fs.chmod(file, 0o600);
-  return next;
+    const current = await readProviderCredentialValidationStore(file);
+    const next: ProviderCredentialValidationStore = {
+      schema: 'sks.provider-credential-validation-store.v1',
+      providers: {
+        ...current.providers,
+        [input.provider_id]: {
+          credential_fingerprint: input.credential.fingerprint,
+          endpoint_url: input.credential.endpoint_url,
+          state: input.state,
+          checked_at: input.checked_at || new Date().toISOString(),
+          blockers: unique(input.blockers || []),
+          warnings: unique(input.warnings || [])
+        }
+      }
+    };
+    await writeJsonAtomic(file, next, { mode: 0o600 });
+    await fs.chmod(file, 0o600);
+    return next;
+  }));
 }
 
 export async function readProviderCredentialValidationStore(

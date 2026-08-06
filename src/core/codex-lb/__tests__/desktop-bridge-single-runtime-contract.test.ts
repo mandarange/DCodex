@@ -13,7 +13,7 @@ test('v2 service settings persist one bridge runtime with registry/policy snapsh
   const raw = await fsp.readFile(file, 'utf8');
   assert.doesNotMatch(raw, /provider_mode|gateway_auth_transport|gatewayKey|api_key/i);
   const parsed = JSON.parse(raw) as Record<string, unknown>;
-  assert.equal(parsed.schema, 'sks.codex-lb-desktop-bridge-settings.v2');
+  assert.equal(parsed.schema, 'sks.desktop-bridge-settings.v2');
   assert.equal((parsed.route_policy as Record<string, unknown>).fallback, 'none');
   assert.equal((parsed.route_policy as Record<string, unknown>).default_provider_id, null);
   assert.deepEqual(Object.keys((parsed.provider_registry as { providers: object }).providers).sort(), ['codex-lb', 'openrouter']);

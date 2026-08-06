@@ -66,12 +66,12 @@ struct ProviderResponseGate {
     }
     func statusMayMerge(checkedAt: Date, catalogGeneration: String?) -> Bool {
         guard let accepted = accepted else { return true }
-        if let generation = catalogGeneration, let current = accepted.catalogGeneration, generation != current {
-            return checkedAt >= accepted.checkedAt
-        }
+        // Ambient status can advance only the explicitly verified generation.
+        guard catalogGeneration == accepted.catalogGeneration else { return false }
         return checkedAt >= accepted.checkedAt
     }
 }
+
 enum ProviderRecoveryAction: String, CaseIterable {
     case repairBridgeService = "repair_bridge_service"
     case restartBridgeAndRetry = "restart_bridge_and_retry"

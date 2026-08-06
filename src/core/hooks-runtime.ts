@@ -19,7 +19,10 @@ import { localizedFinalizationReason } from './language-preference.js';
 import { classifyToolError } from './evaluation.js';
 import { dollarCommand, managedSkillNamesForPrompt, stripVisibleDecisionAnswerBlocks } from './routes.js';
 import { coreEngineeringDirectiveReferenceText } from './lean-engineering-policy.js';
-import { scanAgentTextForRecursion } from './agents/agent-recursion-guard.js';
+import {
+  agentWorkerHookContext,
+  agentWorkerHookRecursionDecision
+} from './agents/agent-recursion-guard.js';
 import { evaluateLoopContinuation } from './loops/loop-continuation-enforcer.js';
 import { diagnosticPromptAllowedDuringNoQuestions } from './routes/diagnostic-allowlist.js';
 import { maybeReconcileProjectSkillsPreflight } from './hooks-runtime/skill-reconcile-preflight.js';
@@ -130,6 +133,7 @@ import {
   standaloneParentManagedSkillNames
 } from './hooks-runtime/hook-context.js';
 import {
+  officialSubagentSkillGuardBinding,
   sealedSubagentRoutingContext,
   subagentRouteContext
 } from './hooks-runtime/subagent-context.js';
@@ -222,31 +226,46 @@ export async function evaluateHookPayload(name: any, payload: any = {}, opts: an
 async function hookSubagentStart(root: any, state: any, payload: any = {}, sessionKey: any = null) {
   const artifactDir = officialSubagentArtifactDir(root, state, sessionKey);
   const sessionArtifactDir = officialSubagentArtifactDir(root, {}, sessionKey);
+  const skillGuardBinding = officialSubagentSkillGuardBinding(state);
+  const bindingIncomplete = Boolean(skillGuardBinding && (
+    !String(skillGuardBinding.missionId || '').trim()
+    || !String(skillGuardBinding.workflowRunId || '').trim()
+  ));
   const artifactDirBlockers: string[] = [];
-  const artifactDirSafe = await ensureOfficialSubagentArtifactDirConfined(root, artifactDir)
-    .then(() => true)
-    .catch(() => false);
-  if (!artifactDirSafe) artifactDirBlockers.push('subagent_skill_availability_artifact_dir_unsafe');
+  const artifactDirSafe = skillGuardBinding
+    ? await ensureOfficialSubagentArtifactDirConfined(root, artifactDir)
+      .then(() => true)
+      .catch(() => false)
+    : true;
+  if (skillGuardBinding && !artifactDirSafe) {
+    artifactDirBlockers.push('subagent_skill_availability_artifact_dir_unsafe');
+  }
   // Codex can reuse an official child thread id for a later generation even
   // when the prior child never emitted SubagentStop. Clear any prior
   // generation's guard before evaluating and persisting this start's result.
-  await clearSubagentSkillAvailabilityGuards(root, payload, artifactDir, {
-    missionId: state?.mission_id,
-    workflowRunId: state?.official_subagent_run_id
-  }).catch(() => null);
+  if (skillGuardBinding) {
+    await clearSubagentSkillAvailabilityGuards(
+      root,
+      payload,
+      artifactDir,
+      skillGuardBinding
+    ).catch(() => null);
+  }
   const config = await readOfficialSubagentConfig(root);
   const budget = resolveSubagentThreadBudget({ configuredMaxThreads: config.maxThreads });
   const active = subagentRouteContext(state);
-  const routingContext = artifactDirSafe ? await sealedSubagentRoutingContext(artifactDir, payload) : '';
-  const resourceGuard = [
+  const routingContext = skillGuardBinding && artifactDirSafe
+    ? await sealedSubagentRoutingContext(artifactDir, payload)
+    : '';
+  const resourceGuard = skillGuardBinding ? [
     `SKS Naruto policy: max_threads frame budget is ${budget.maxThreads} (cap, not a spawn target).`,
     'GPT-5.6 four profiles are routing lanes, not an agent-count cap.',
     'Use max_depth=1. Naruto children must not spawn children.',
     'Do not duplicate an already assigned slice.',
     'Parallel writes require disjoint paths; serialize overlapping paths.',
     'Finish only your assigned slice, return a concise result, then stop so the Naruto parent can close this thread.'
-  ].join(' ');
-  const skillNames = selectedSksSkillNamesForActiveState(state);
+  ].join(' ') : '';
+  const skillNames = skillGuardBinding ? selectedSksSkillNamesForActiveState(state) : [];
   const resolution = skillNames.length
     ? await resolveManagedSkillSourcesForAdmission({
         root,
@@ -255,26 +274,29 @@ async function hookSubagentStart(root: any, state: any, payload: any = {}, sessi
       }).catch(() => null)
     : null;
   const skillBlockers = [
+    ...(bindingIncomplete ? ['subagent_skill_availability_guard_invalid'] : []),
     ...artifactDirBlockers,
     ...(skillNames.length ? authoritativeSksSkillResolutionBlockers(resolution) : [])
   ];
-  try {
-    await persistSubagentSkillAvailabilityBlocker({
-      root,
-      artifactDir,
-      sessionArtifactDir,
-      state,
-      payload,
-      blockers: skillBlockers
-    });
-  } catch (error: unknown) {
-    const blocker = error instanceof Error
-      && error.message === 'subagent_skill_availability_blocker_artifact_write_failed'
-      ? 'subagent_skill_availability_blocker_artifact_write_failed'
-      : 'subagent_skill_availability_guard_persistence_failed';
-    skillBlockers.push(blocker);
+  if (skillGuardBinding) {
+    try {
+      await persistSubagentSkillAvailabilityBlocker({
+        root,
+        artifactDir,
+        sessionArtifactDir,
+        state,
+        payload,
+        blockers: skillBlockers
+      });
+    } catch (error: unknown) {
+      const blocker = error instanceof Error
+        && error.message === 'subagent_skill_availability_blocker_artifact_write_failed'
+        ? 'subagent_skill_availability_blocker_artifact_write_failed'
+        : 'subagent_skill_availability_guard_persistence_failed';
+      skillBlockers.push(blocker);
+    }
   }
-  if (artifactDirSafe) {
+  if (skillGuardBinding && artifactDirSafe) {
     try {
       await recordAndRefreshSubagentEvidence(root, state, payload, 'SubagentStart', sessionKey);
     } catch {
@@ -285,16 +307,18 @@ async function hookSubagentStart(root: any, state: any, payload: any = {}, sessi
         'SubagentStart'
       ).catch(() => 'official_subagent_lifecycle_capture_failure_unpersisted');
       skillBlockers.push(lifecycleBlocker);
-      await persistSubagentSkillAvailabilityBlocker({
-        root,
-        artifactDir,
-        sessionArtifactDir,
-        state,
-        payload,
-        blockers: skillBlockers
-      }).catch(() => {
-        skillBlockers.push('subagent_skill_availability_guard_persistence_failed');
-      });
+      if (skillGuardBinding) {
+        await persistSubagentSkillAvailabilityBlocker({
+          root,
+          artifactDir,
+          sessionArtifactDir,
+          state,
+          payload,
+          blockers: skillBlockers
+        }).catch(() => {
+          skillBlockers.push('subagent_skill_availability_guard_persistence_failed');
+        });
+      }
     }
   }
   const skillContext = skillBlockers.length
@@ -653,32 +677,32 @@ async function consumeActiveOfficialWorkflowQueue(
 }
 async function hookPreTool(root: any, state: any, payload: any, noQuestion: any, sessionKey: any = null) {
   const artifactDir = officialSubagentArtifactDir(root, state, sessionKey);
-  const activeBinding = {
-    missionId: state?.mission_id,
-    workflowRunId: state?.official_subagent_run_id
-  };
-  const evaluateSkillAvailabilityBlock = () => subagentSkillAvailabilityPreToolBlockReason(
-    root,
-    payload,
-    artifactDir,
-    activeBinding
-  ).catch((error: unknown) => {
-    const code = error instanceof Error && error.message === 'subagent_skill_availability_guard_invalid'
-      ? 'subagent_skill_availability_guard_invalid'
-      : 'subagent_skill_availability_guard_check_failed';
-    return `SKS blocked this child tool call because managed skill availability failed (${code}). Return the blocker to the root parent without using tools.`;
-  });
-  let skillAvailabilityBlock = await evaluateSkillAvailabilityBlock();
-  if (isSubagentSkillAvailabilityAdmissionMissingReason(skillAvailabilityBlock)) {
-    const recovered = await recoverResumedOfficialSubagentSkillAvailabilityAdmission({
+  const activeBinding = officialSubagentSkillGuardBinding(state, { allowClosedOfficialChild: true });
+  let skillAvailabilityBlock: string | null = null;
+  if (activeBinding) {
+    const evaluateSkillAvailabilityBlock = () => subagentSkillAvailabilityPreToolBlockReason(
       root,
       payload,
       artifactDir,
-      sessionArtifactDir: officialSubagentArtifactDir(root, {}, sessionKey),
-      activeBinding,
-      skillNames: selectedSksSkillNamesForActiveState(state)
-    }).catch(() => false);
-    if (recovered) skillAvailabilityBlock = await evaluateSkillAvailabilityBlock();
+      activeBinding
+    ).catch((error: unknown) => {
+      const code = error instanceof Error && error.message === 'subagent_skill_availability_guard_invalid'
+        ? 'subagent_skill_availability_guard_invalid'
+        : 'subagent_skill_availability_guard_check_failed';
+      return `SKS blocked this child tool call because managed skill availability failed (${code}). Return the blocker to the root parent without using tools.`;
+    });
+    skillAvailabilityBlock = await evaluateSkillAvailabilityBlock();
+    if (isSubagentSkillAvailabilityAdmissionMissingReason(skillAvailabilityBlock)) {
+      const recovered = await recoverResumedOfficialSubagentSkillAvailabilityAdmission({
+        root,
+        payload,
+        artifactDir,
+        sessionArtifactDir: officialSubagentArtifactDir(root, {}, sessionKey),
+        activeBinding,
+        skillNames: selectedSksSkillNamesForActiveState(state)
+      }).catch(() => false);
+      if (recovered) skillAvailabilityBlock = await evaluateSkillAvailabilityBlock();
+    }
   }
   if (skillAvailabilityBlock) {
     return { decision: 'block', permissionDecision: 'deny', reason: skillAvailabilityBlock };
@@ -745,32 +769,6 @@ async function parentWaveGuidanceContext(root: any, state: any = {}, sessionKey:
   });
   if (!guidance?.required) return '';
   return renderWaveParentGuidance(guidance);
-}
-
-function agentWorkerHookRecursionDecision(state: any = {}, payload: any = {}, command: any = '') {
-  if (!agentWorkerHookContext(state, payload)) return null;
-  const guard = scanAgentTextForRecursion(command);
-  if (guard.ok) return null;
-  return {
-    decision: 'block',
-    permissionDecision: 'deny',
-    reason: `Agent command recursion guard blocked nested SKS route command in Codex PreToolUse hook: ${guard.violations.join(', ')}`
-  };
-}
-
-function agentWorkerHookContext(state: any = {}, payload: any = {}) {
-  const env = {
-    ...(payload.env || {}),
-    ...(payload.tool_input?.env || {}),
-    ...(payload.toolInput?.env || {}),
-    ...(payload.input?.env || {}),
-    ...(payload.tool?.input?.env || {})
-  };
-  void state;
-  return Boolean(String(env.SKS_AGENT_WORKER || '') === '1'
-    || String(env.SKS_DISABLE_ROUTE_RECURSION || '') === '1'
-    || payload.agent_worker === true
-    || payload.agentWorker === true);
 }
 
 async function hookPostTool(root: any, state: any, payload: any, noQuestion: any, sessionKey: any = null) {

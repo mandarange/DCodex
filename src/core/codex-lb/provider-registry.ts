@@ -12,6 +12,7 @@ import {
 } from './provider-credentials.js';
 import { codexLbBaseUrlSecurityBlocker } from './codex-lb-env.js';
 import { writeJsonAtomic } from '../fsx.js';
+import { withFileLock } from '../locks/file-lock.js';
 
 export const BRIDGE_PROVIDER_REGISTRY_SCHEMA = 'sks.bridge-provider-registry.v1' as const;
 export const BRIDGE_PROVIDER_REGISTRY_FILENAME = 'sks-bridge-provider-registry.json' as const;
@@ -169,24 +170,26 @@ export async function setBridgeProviderEnabled(input: {
 }): Promise<BridgeProviderRegistry> {
   const credentials = input.credentials || await resolveAllProviderCredentials(input.credentialOptions || {});
   const file = input.registryPath || bridgeProviderRegistryPath(input.home);
-  const read = await readStoredBridgeProviderRegistry(file);
-  if (read.blockers.length > 0) throw new Error(read.blockers[0]);
-  const current = read.registry || defaultStoredRegistry(credentials);
-  const next: StoredBridgeProviderRegistry = {
-    schema: BRIDGE_PROVIDER_REGISTRY_SCHEMA,
-    profiles: {
-      ...current.profiles,
-      [input.provider_id]: {
-        ...current.profiles[input.provider_id],
-        enabled: input.enabled
+  return withFileLock(registryLockOptions(file), async () => {
+    const read = await readStoredBridgeProviderRegistry(file);
+    if (read.blockers.length > 0) throw new Error(read.blockers[0]);
+    const current = read.registry || defaultStoredRegistry(credentials);
+    const next: StoredBridgeProviderRegistry = {
+      schema: BRIDGE_PROVIDER_REGISTRY_SCHEMA,
+      profiles: {
+        ...current.profiles,
+        [input.provider_id]: {
+          ...current.profiles[input.provider_id],
+          enabled: input.enabled
+        }
       }
-    }
-  };
-  await writeJsonAtomic(file, next, { mode: 0o600 });
-  return resolveBridgeProviderRegistry({
-    ...(input.home ? { home: input.home } : {}),
-    registryPath: file,
-    credentials
+    };
+    await writeJsonAtomic(file, next, { mode: 0o600 });
+    return resolveBridgeProviderRegistry({
+      ...(input.home ? { home: input.home } : {}),
+      registryPath: file,
+      credentials
+    });
   });
 }
 
@@ -206,25 +209,31 @@ export async function configureBridgeProviderProfile(input: {
   const blocker = providerEndpointSecurityBlocker(input.provider_id, endpoint, input.allowed_origins || [origin]);
   if (blocker) throw new Error(blocker);
   const file = input.registryPath || bridgeProviderRegistryPath(input.home);
-  const read = await readStoredBridgeProviderRegistry(file);
-  if (read.blockers.length > 0) throw new Error(read.blockers[0]);
-  const current = read.registry || defaultStoredRegistry(credentials);
-  const nextProfile: StoredBridgeProviderProfile = {
-    enabled: input.enabled ?? current.profiles[input.provider_id].enabled,
-    endpoint_url: endpoint,
-    allowed_origins: normalizeOrigins(input.allowed_origins || [origin]),
-    auth_transport: input.auth_transport || defaultAuthTransport(input.provider_id)
-  };
-  const next: StoredBridgeProviderRegistry = {
-    schema: BRIDGE_PROVIDER_REGISTRY_SCHEMA,
-    profiles: { ...current.profiles, [input.provider_id]: nextProfile }
-  };
-  await writeJsonAtomic(file, next, { mode: 0o600 });
-  return resolveBridgeProviderRegistry({
-    ...(input.home ? { home: input.home } : {}),
-    registryPath: file,
-    credentials
+  return withFileLock(registryLockOptions(file), async () => {
+    const read = await readStoredBridgeProviderRegistry(file);
+    if (read.blockers.length > 0) throw new Error(read.blockers[0]);
+    const current = read.registry || defaultStoredRegistry(credentials);
+    const nextProfile: StoredBridgeProviderProfile = {
+      enabled: input.enabled ?? current.profiles[input.provider_id].enabled,
+      endpoint_url: endpoint,
+      allowed_origins: normalizeOrigins(input.allowed_origins || [origin]),
+      auth_transport: input.auth_transport || defaultAuthTransport(input.provider_id)
+    };
+    const next: StoredBridgeProviderRegistry = {
+      schema: BRIDGE_PROVIDER_REGISTRY_SCHEMA,
+      profiles: { ...current.profiles, [input.provider_id]: nextProfile }
+    };
+    await writeJsonAtomic(file, next, { mode: 0o600 });
+    return resolveBridgeProviderRegistry({
+      ...(input.home ? { home: input.home } : {}),
+      registryPath: file,
+      credentials
+    });
   });
+}
+
+function registryLockOptions(file: string) {
+  return { lockPath: `${path.resolve(file)}.lock`, timeoutMs: 10_000, staleMs: 60_000 };
 }
 
 export function providerEndpointSecurityBlocker(

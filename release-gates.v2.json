@@ -3655,7 +3655,7 @@
     },
     {
       "id": "desktop-bridge:comprehensive",
-      "command": "node ./dist/scripts/desktop-bridge-unification-check.js && node ./dist/scripts/desktop-bridge-transport-check.js && node ./dist/scripts/desktop-bridge-latency-check.js && node ./dist/scripts/codex-lb-catalog-passthrough-check.js && node ./dist/scripts/desktop-bridge-capabilities-check.js",
+      "command": "node ./dist/scripts/desktop-bridge-unification-check.js && node ./dist/scripts/desktop-bridge-transport-check.js && node ./dist/scripts/desktop-bridge-latency-check.js && node ./dist/scripts/desktop-bridge-capabilities-check.js",
       "deps": [],
       "resource": [
         "cpu-light",

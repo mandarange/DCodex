@@ -16,7 +16,7 @@ import { runVoiceRealtimeProbeV3 } from '../probes/voice-realtime-probe.js';
 import { runAuxiliarySurfacesProbeV3 } from '../probes/auxiliary-surfaces-probe.js';
 import { capabilityProbeResultV3 } from '../probes/probe-evidence.js';
 import { validateCapabilityDeepEvidenceV2 } from '../trusted-deep-evidence.js';
-import { providerCode, safeCode, timeoutMs, unique } from './shared.js';
+import { bridgeClientUrl, providerCode, safeCode, timeoutMs, unique } from './shared.js';
 import type { ControllerCore, DesktopBridgeControllerV3Options, ProbeContext } from './types.js';
 
 export async function probeProviderText(
@@ -44,17 +44,36 @@ export async function probeProviderText(
   }
   const publicModel = route[0];
   const request = options.fetchImpl || globalThis.fetch;
-  const endpoint = providerId === 'codex-lb'
-    ? `${loopbackOrigin}/backend-api/codex/responses`
-    : `${loopbackOrigin}/api/v1/chat/completions`;
-  const body = providerId === 'codex-lb'
-    ? { model: publicModel, input: 'Reply with OK.', max_output_tokens: 1, store: false }
-    : {
-        model: publicModel,
-        messages: [{ role: 'user', content: 'Reply with OK.' }],
-        max_tokens: 1,
-        provider: { allow_fallbacks: false }
-      };
+  // Exercise the exact Codex Desktop ingress and Responses payload for every
+  // provider. Provider-specific endpoint translation happens only after the
+  // explicit model route is resolved inside the bridge.
+  let endpoint: string;
+  try {
+    endpoint = await bridgeClientUrl(loopbackOrigin, '/backend-api/codex/responses', options);
+  } catch (error: unknown) {
+    const root = safeCode(error, 'desktop_bridge_client_capability_invalid');
+    return capabilityProbeResultV3({
+      ...context,
+      capability: 'text_responses',
+      scope: `provider:${providerId}`,
+      stage: 'feature_request',
+      state: 'blocked',
+      terminal: true,
+      rootCause: root,
+      blockers: [root],
+      retryable: true,
+      recoveryAction: 'repair_bridge_service',
+      source: 'transport',
+      evidence: { provider_id: providerId, public_model: publicModel, fallback: 'none' }
+    });
+  }
+  const body = {
+    model: publicModel,
+    input: 'Reply with OK.',
+    max_output_tokens: 1,
+    store: false,
+    ...(providerId === 'openrouter' ? { provider: { allow_fallbacks: false } } : {})
+  };
   try {
     const response = await request(endpoint, {
       method: 'POST',
@@ -94,8 +113,10 @@ export async function probeProviderText(
         fallback: 'none'
       }
     });
-  } catch (error) {
-    const root = safeCode(error, `${providerCode(providerId)}_text_response_failed`);
+  } catch {
+    // Transport errors can embed the request URL. Never copy them into probe
+    // evidence because the loopback URL contains the client capability.
+    const root = `${providerCode(providerId)}_text_response_failed`;
     return capabilityProbeResultV3({
       ...context,
       capability: 'text_responses',
@@ -203,8 +224,13 @@ export async function probeBridgeHttp(
   const started = Date.now();
   if (!loopbackOrigin) return httpFailure('desktop_bridge_tcp_connect_failed', 'tcp_connect', null, started);
   try {
+    const endpoint = await bridgeClientUrl(
+      loopbackOrigin,
+      DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH,
+      options
+    );
     const response = await (options.fetchImpl || globalThis.fetch)(
-      `${loopbackOrigin}${DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH}`,
+      endpoint,
       {
         method: 'GET',
         redirect: 'error',
@@ -228,6 +254,10 @@ export async function probeBridgeHttp(
       warnings: []
     };
   } catch (error) {
+    const capabilityBlocker = safeCode(error, '');
+    if (capabilityBlocker.startsWith('desktop_bridge_client_capability_')) {
+      return httpFailure(capabilityBlocker, 'http_health', null, started);
+    }
     const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
     return httpFailure(
       timedOut ? 'desktop_bridge_http_health_timeout' : 'desktop_bridge_tcp_connect_failed',
@@ -279,11 +309,35 @@ export async function probeBridgeWebSocket(
     };
   }
   const websocketOrigin = loopbackOrigin.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+  let url: string;
+  try {
+    url = await bridgeClientUrl(websocketOrigin, DESKTOP_BRIDGE_DIAGNOSTIC_PATH, options);
+  } catch (error: unknown) {
+    return websocketFailure(safeCode(error, 'desktop_bridge_client_capability_invalid'));
+  }
   return probeDesktopBridgeWebSocket({
-    url: `${websocketOrigin}${DESKTOP_BRIDGE_DIAGNOSTIC_PATH}`,
+    url,
     origin: 'app://codex',
     requestedLevel: level,
     maxRetries: 2,
     totalTimeoutMs: timeoutMs(options)
   });
+}
+
+function websocketFailure(rootCause: string): WebSocketProbeResult {
+  return {
+    schema: 'sks.desktop-bridge-websocket-probe.v2',
+    state: 'failed',
+    terminal_stage: 'tcp_connect',
+    root_cause: rootCause,
+    status_code: null,
+    negotiated_protocol: null,
+    upgrade_verified: false,
+    protocol_verified: false,
+    frame_round_trip_verified: false,
+    clean_close_verified: false,
+    latency_ms: null,
+    blockers: [rootCause],
+    warnings: []
+  };
 }

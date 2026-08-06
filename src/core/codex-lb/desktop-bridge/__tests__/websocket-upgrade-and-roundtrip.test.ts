@@ -4,7 +4,10 @@ import http from 'node:http';
 import net, { type AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import test from 'node:test';
-import { probeDesktopBridgeWebSocket, startDesktopBridge, stopDesktopBridge, type DesktopBridgeConfig, type DesktopBridgeHandle } from '../index.js';
+import { desktopBridgeClientPath, probeDesktopBridgeWebSocket, startDesktopBridge, stopDesktopBridge, type DesktopBridgeConfig, type DesktopBridgeHandle } from '../index.js';
+
+const CLIENT_CAPABILITY = Buffer.alloc(32, 0x46).toString('base64url');
+const CLIENT_CAPABILITY_SHA256 = createHash('sha256').update(CLIENT_CAPABILITY).digest('hex');
 
 async function listen(server: net.Server): Promise<number> {
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
@@ -12,7 +15,7 @@ async function listen(server: net.Server): Promise<number> {
 }
 async function close(server: net.Server): Promise<void> { if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve())); }
 function accept(key: string): string { return createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64'); }
-function probe(port: number, extra: object = {}) { return probeDesktopBridgeWebSocket({ url: `ws://127.0.0.1:${port}/probe`, protocol: 'sks.desktop-bridge.probe.v2', maxRetries: 0, stageTimeoutMs: 250, totalTimeoutMs: 1_000, ...extra }); }
+function probe(port: number, extra: object = {}) { return probeDesktopBridgeWebSocket({ url: `ws://127.0.0.1:${port}${desktopBridgeClientPath(CLIENT_CAPABILITY, '/probe')}`, protocol: 'sks.desktop-bridge.probe.v2', maxRetries: 0, stageTimeoutMs: 250, totalTimeoutMs: 1_000, ...extra }); }
 
 test('R14 TCP failure reports exactly one terminal root cause', async () => {
   const holder = net.createServer(); const port = await listen(holder); await close(holder);
@@ -65,6 +68,7 @@ function bridgeConfig(port: number, upstreamPort: number): DesktopBridgeConfig {
       provider_id: providerId, value: 'unused-diagnostic-secret', source: 'test',
       fingerprint: providerId === 'codex-lb' ? 'credential-fingerprint' : 'unused-openrouter-fingerprint', generation: expectedGeneration,
     }),
+    clientCapabilitySha256: CLIENT_CAPABILITY_SHA256,
     allowedPathPrefixes: ['/backend-api/codex/'], allowedOrigins: ['app://codex'], connectTimeoutMs: 500, idleTimeoutMs: 2_000,
   };
 }
@@ -74,11 +78,12 @@ test('R20 diagnostic protocol proves upgrade, protocol, frame round trip, and cl
   const holder = net.createServer(); const bridgePort = await listen(holder); await close(holder); let bridge: DesktopBridgeHandle | null = null;
   try {
     bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort), { writeState: false });
-    const result = await probeDesktopBridgeWebSocket({ url: `ws://127.0.0.1:${bridgePort}/__sks/diagnostics/websocket`, origin: 'app://codex', maxRetries: 0, stageTimeoutMs: 1_000 });
+    const diagnosticUrl = `ws://127.0.0.1:${bridgePort}${desktopBridgeClientPath(CLIENT_CAPABILITY, '/__sks/diagnostics/websocket')}`;
+    const result = await probeDesktopBridgeWebSocket({ url: diagnosticUrl, origin: 'app://codex', maxRetries: 0, stageTimeoutMs: 1_000 });
     assert.equal(result.state, 'verified'); assert.equal(result.upgrade_verified, true); assert.equal(result.protocol_verified, true); assert.equal(result.frame_round_trip_verified, true); assert.equal(result.clean_close_verified, true); assert.deepEqual(result.blockers, []);
-    const handshake = await probeDesktopBridgeWebSocket({ url: `ws://127.0.0.1:${bridgePort}/__sks/diagnostics/websocket`, origin: 'app://codex', handshakeOnly: true, maxRetries: 0 });
+    const handshake = await probeDesktopBridgeWebSocket({ url: diagnosticUrl, origin: 'app://codex', handshakeOnly: true, maxRetries: 0 });
     assert.equal(handshake.state, 'degraded'); assert.equal(handshake.terminal_stage, 'websocket_protocol'); assert.equal(handshake.upgrade_verified, true); assert.equal(handshake.frame_round_trip_verified, false); assert.deepEqual(handshake.warnings, ['websocket_handshake_only_frame_not_attempted']);
-    const shallowHandshake = await probeDesktopBridgeWebSocket({ url: `ws://127.0.0.1:${bridgePort}/__sks/diagnostics/websocket`, origin: 'app://codex', handshakeOnly: true, requestedLevel: 'shallow', maxRetries: 0 });
+    const shallowHandshake = await probeDesktopBridgeWebSocket({ url: diagnosticUrl, origin: 'app://codex', handshakeOnly: true, requestedLevel: 'shallow', maxRetries: 0 });
     assert.equal(shallowHandshake.state, 'not_attempted'); assert.equal(shallowHandshake.frame_round_trip_verified, false);
   } finally { if (bridge) await stopDesktopBridge(bridge); await close(upstream); }
 });
@@ -110,7 +115,7 @@ test('retry success retains retry warning but no terminal blocker', async () => 
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept(key)}\r\nSec-WebSocket-Protocol: ${protocol}\r\n\r\n`);
   });
   const port = await listen(server); try {
-    const result = await probeDesktopBridgeWebSocket({ url: `ws://127.0.0.1:${port}/probe`, handshakeOnly: true, maxRetries: 1, jitter: () => 0, stageTimeoutMs: 500, totalTimeoutMs: 2_000 });
+    const result = await probeDesktopBridgeWebSocket({ url: `ws://127.0.0.1:${port}${desktopBridgeClientPath(CLIENT_CAPABILITY, '/probe')}`, handshakeOnly: true, maxRetries: 1, jitter: () => 0, stageTimeoutMs: 500, totalTimeoutMs: 2_000 });
     assert.equal(result.state, 'degraded'); assert.deepEqual(result.blockers, []); assert.match(result.warnings[0] || '', /^desktop_bridge_websocket_retry:1:/);
   } finally { for (const socket of sockets) socket.destroy(); await close(server); }
 });

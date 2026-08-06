@@ -8,9 +8,11 @@ import {
   REQUIRED_NPM_STAGE_CLI_VERSION
 } from './npm-stage-contract.js'
 
-export const NPM_STAGE_REVIEW_RECEIPT_SCHEMA = 'sks.npm-stage-review-receipt.v1'
+export const NPM_STAGE_REVIEW_RECEIPT_SCHEMA = 'sks.npm-stage-review-receipt.v2'
+export const NPM_STAGE_PUBLISH_RECEIPT_SCHEMA = 'sks.npm-stage-receipt.v2'
 export const NPM_STAGE_REGISTRY = 'https://registry.npmjs.org/'
 export const STAGE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const STAGE_DISPATCH_NONCE_PATTERN = /^[a-f0-9]{32}$/
 
 export { REQUIRED_NPM_STAGE_CLI_VERSION } from './npm-stage-contract.js'
 
@@ -24,6 +26,7 @@ export interface StagePublishReceipt {
   stage_id?: unknown
   package_name?: unknown
   package_version?: unknown
+  release_tag?: unknown
   source_commit?: unknown
   tarball_sha256?: unknown
   tarball_sha512?: unknown
@@ -31,6 +34,8 @@ export interface StagePublishReceipt {
   packed_bytes?: unknown
   unpacked_bytes?: unknown
   file_count?: unknown
+  dispatch_nonce?: unknown
+  physical_evidence_run_id?: unknown
   workflow_run_id?: unknown
   workflow_run_attempt?: unknown
   local_pack_receipt_sha256?: unknown
@@ -57,13 +62,22 @@ export class NpmStageReviewError extends Error {
 
 export function validateStagePublishReceipt(
   receipt: StagePublishReceipt,
-  expected: { stageId: string; localReceipt: ReleasePackReceipt; localReceiptSha256: string; localTarballSha512: string }
+  expected: {
+    stageId: string
+    dispatchNonce: string
+    physicalEvidenceRunId: string
+    workflowRunId: string
+    localReceipt: ReleasePackReceipt
+    localReceiptSha256: string
+    localTarballSha512: string
+  }
 ): string[] {
   const blockers: string[] = []
-  if (receipt.schema !== 'sks.npm-stage-receipt.v1' || receipt.ok !== true) blockers.push('schema_or_status_invalid')
+  if (receipt.schema !== NPM_STAGE_PUBLISH_RECEIPT_SCHEMA || receipt.ok !== true) blockers.push('schema_or_status_invalid')
   if (stringValue(receipt.stage_id).toLowerCase() !== expected.stageId) blockers.push('stage_id_mismatch')
   if (stringValue(receipt.package_name) !== expected.localReceipt.package_name) blockers.push('package_name_mismatch')
   if (stringValue(receipt.package_version) !== expected.localReceipt.package_version) blockers.push('package_version_mismatch')
+  if (stringValue(receipt.release_tag) !== `v${expected.localReceipt.package_version}`) blockers.push('release_tag_mismatch')
   if (stringValue(receipt.source_commit) !== String(expected.localReceipt.source_commit || '')) blockers.push('source_commit_mismatch')
   if (!SHA256_PATTERN.test(stringValue(receipt.tarball_sha256)) || stringValue(receipt.tarball_sha256) !== expected.localReceipt.sha256) blockers.push('sha256_mismatch')
   if (!SHA512_PATTERN.test(stringValue(receipt.tarball_sha512)) || stringValue(receipt.tarball_sha512) !== expected.localTarballSha512) blockers.push('sha512_mismatch')
@@ -71,7 +85,12 @@ export function validateStagePublishReceipt(
   if (numberValue(receipt.packed_bytes) !== expected.localReceipt.bytes) blockers.push('packed_bytes_mismatch')
   if (numberValue(receipt.unpacked_bytes) !== expected.localReceipt.unpacked_bytes) blockers.push('unpacked_bytes_mismatch')
   if (numberValue(receipt.file_count) !== expected.localReceipt.file_count) blockers.push('file_count_mismatch')
-  if (!/^\d+$/.test(stringValue(receipt.workflow_run_id))) blockers.push('workflow_run_id_invalid')
+  if (!STAGE_DISPATCH_NONCE_PATTERN.test(stringValue(receipt.dispatch_nonce))
+    || stringValue(receipt.dispatch_nonce) !== expected.dispatchNonce) blockers.push('dispatch_nonce_mismatch')
+  if (!/^\d+$/.test(stringValue(receipt.physical_evidence_run_id))
+    || stringValue(receipt.physical_evidence_run_id) !== expected.physicalEvidenceRunId) blockers.push('physical_evidence_run_id_mismatch')
+  if (!/^\d+$/.test(stringValue(receipt.workflow_run_id))
+    || stringValue(receipt.workflow_run_id) !== expected.workflowRunId) blockers.push('workflow_run_id_mismatch')
   if (!/^\d+$/.test(stringValue(receipt.workflow_run_attempt))) blockers.push('workflow_run_attempt_invalid')
   if (stringValue(receipt.local_pack_receipt_sha256) !== expected.localReceiptSha256) blockers.push('local_pack_receipt_sha256_mismatch')
   if (!SHA256_PATTERN.test(stringValue(receipt.stage_command_digest))) blockers.push('stage_command_digest_invalid')

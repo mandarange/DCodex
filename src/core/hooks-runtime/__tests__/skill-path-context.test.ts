@@ -103,6 +103,7 @@ test('global setup installs authoritative skills in HOME and the next route reso
       root,
       state: {
         mission_id: 'M-skill-path-setup',
+        official_subagent_run_id: 'run-skill-path-setup',
         route: 'Naruto',
         route_command: '$sks-naruto',
         mode: 'NARUTO',
@@ -112,6 +113,128 @@ test('global setup installs authoritative skills in HOME and the next route reso
     });
     const normalized: any = normalizeHookResult('subagent-start', child);
     assert.match(String(normalized.hookSpecificOutput?.additionalContext || ''), new RegExp(escapeRegExp(naruto)));
+  } finally {
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    await fsp.rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test('closed non-Naruto state does not admit or block an ordinary child thread as an official Naruto run', async () => {
+  const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-hook-closed-route-child-'));
+  const home = path.join(fixture, 'home');
+  const root = path.join(fixture, 'project');
+  const agentId = 'closed-align-audit-child';
+  const missionId = 'M-closed-align-audit';
+  const oldHome = process.env.HOME;
+  const oldCodexHome = process.env.CODEX_HOME;
+  try {
+    process.env.HOME = home;
+    process.env.CODEX_HOME = path.join(home, '.codex');
+    const state = {
+      mission_id: missionId,
+      route: 'Align',
+      route_command: '$Align',
+      mode: 'ALIGN',
+      route_closed: true,
+      required_skills: ['sks-align']
+    };
+    const started: any = await evaluateHookPayload('subagent-start', {
+      ...subagentPayload(agentId),
+      cwd: root
+    }, { root, state });
+    assert.equal(started.decision, undefined);
+    assert.doesNotMatch(
+      String(started.additionalContext || ''),
+      /SKS Naruto policy|MANDATORY SKS PARENT-BLOCK HANDOFF|subagent_skill_availability_guard_invalid/
+    );
+    await assert.rejects(fsp.access(path.join(
+      missionDir(root, missionId),
+      SUBAGENT_SKILL_AVAILABILITY_BLOCKER_FILENAME
+    )));
+
+    const transcript = await writeTranscript(home, agentId, true);
+    const tool: any = await evaluateHookPayload('pre-tool', {
+      ...preToolPayload(transcript, agentId),
+      cwd: root,
+      tool_use_id: 'tool-closed-align-audit-child'
+    }, { root, state });
+    assert.equal(tool.decision, undefined);
+  } finally {
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = oldCodexHome;
+    await fsp.rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test('route closure keeps an already-admitted official Naruto child guard fail-closed', async () => {
+  const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-hook-closed-official-child-'));
+  const home = path.join(fixture, 'home');
+  const root = path.join(fixture, 'project');
+  const missionId = 'M-closed-official-child';
+  const workflowRunId = 'run-closed-official-child';
+  const agentId = 'closed-official-agent';
+  const oldHome = process.env.HOME;
+  const oldCodexHome = process.env.CODEX_HOME;
+  try {
+    process.env.HOME = home;
+    process.env.CODEX_HOME = path.join(home, '.codex');
+    await writeOfficialSubagentPlan(root, missionId, workflowRunId);
+    const activeState = {
+      mission_id: missionId,
+      official_subagent_run_id: workflowRunId,
+      route: 'Naruto',
+      route_command: '$sks-naruto',
+      mode: 'NARUTO',
+      route_closed: false,
+      required_skills: ['sks-naruto']
+    };
+    const started: any = await evaluateHookPayload('subagent-start', {
+      ...subagentPayload(agentId),
+      cwd: root
+    }, { root, state: activeState });
+    assert.match(String(started.additionalContext || ''), /MANDATORY SKS PARENT-BLOCK HANDOFF/);
+
+    const transcript = await writeTranscript(home, agentId, true);
+    const tool: any = await evaluateHookPayload('pre-tool', {
+      ...preToolPayload(transcript, agentId),
+      cwd: root
+    }, { root, state: { ...activeState, route_closed: true } });
+    assert.equal(tool.decision, 'block');
+    assert.match(String(tool.reason || ''), /authoritative_sks_skill_unavailable:sks-naruto/);
+  } finally {
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = oldCodexHome;
+    await fsp.rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test('active Naruto state with a partial mission binding emits a mandatory invalid-guard handoff', async () => {
+  const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-hook-partial-official-binding-'));
+  const home = path.join(fixture, 'home');
+  const root = path.join(fixture, 'project');
+  const oldHome = process.env.HOME;
+  try {
+    process.env.HOME = home;
+    const started: any = await evaluateHookPayload('subagent-start', {
+      ...subagentPayload('partial-binding-agent'),
+      cwd: root
+    }, {
+      root,
+      state: {
+        mission_id: 'M-partial-binding',
+        route: 'Naruto',
+        mode: 'NARUTO',
+        route_closed: false,
+        required_skills: ['sks-naruto']
+      }
+    });
+    assert.match(String(started.additionalContext || ''), /MANDATORY SKS PARENT-BLOCK HANDOFF/);
+    assert.match(String(started.additionalContext || ''), /subagent_skill_availability_guard_invalid/);
   } finally {
     if (oldHome === undefined) delete process.env.HOME;
     else process.env.HOME = oldHome;

@@ -1,10 +1,19 @@
 name: Stage npm release
+run-name: npm-stage-${{ inputs.version }}-${{ inputs.dispatch_nonce }}-physical-${{ inputs.physical_evidence_run_id }}
 
 on:
   workflow_dispatch:
     inputs:
       version:
         description: Exact package.json version to stage
+        required: true
+        type: string
+      dispatch_nonce:
+        description: Unique 128-bit lowercase-hex identity for this stage dispatch
+        required: true
+        type: string
+      physical_evidence_run_id:
+        description: Successful trusted physical capture workflow run ID for this exact source commit
         required: true
         type: string
       confirm_stage:
@@ -79,13 +88,11 @@ jobs:
       - name: Install release dependencies
         run: npm ci --ignore-scripts
 
-      - name: Verify source-bound physical release receipts
-        run: node ./dist/scripts/release-physical-gates-check.js
-
       - name: Verify requested version and main SHA
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
           EXPECTED_SHA: ${{ github.sha }}
+          DISPATCH_NONCE: ${{ inputs.dispatch_nonce }}
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs'
@@ -94,21 +101,30 @@ jobs:
           const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
           const dirty = execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], { encoding: 'utf8' }).trim()
           const remoteMain = execFileSync('git', ['ls-remote', '--exit-code', 'origin', 'refs/heads/main'], { encoding: 'utf8' }).trim().split(/\s+/, 1)[0]
+          const releaseTag = `v${pkg.version}`
+          const localTag = execFileSync('git', ['rev-parse', `refs/tags/${releaseTag}^{commit}`], { encoding: 'utf8' }).trim()
+          const remoteTagRows = execFileSync('git', ['ls-remote', '--exit-code', 'origin', `refs/tags/${releaseTag}`, `refs/tags/${releaseTag}^{}`], { encoding: 'utf8' }).trim().split(/\r?\n/)
+          const remoteTag = (remoteTagRows.find(line => line.endsWith(`refs/tags/${releaseTag}^{}`)) || remoteTagRows[0] || '').split(/\s+/, 1)[0]
           const expectedTag = pkg.version.includes('-') ? 'rc' : 'latest'
           const npmrcTag = fs.readFileSync('.npmrc', 'utf8').split(/\r?\n/).map(line => line.trim()).find(line => line.startsWith('tag='))?.slice(4) || ''
+          if (!/^[a-f0-9]{32}$/.test(process.env.DISPATCH_NONCE || '')) throw new Error('dispatch nonce must be exactly 128 bits of lowercase hex')
           if (pkg.version !== process.env.REQUESTED_VERSION) throw new Error('requested version does not match package.json')
           if (head !== process.env.EXPECTED_SHA) throw new Error('checked out commit does not match workflow source SHA')
           if (dirty) throw new Error('release source tree is not clean')
           if (remoteMain !== head) throw new Error('checked out commit is not the live origin/main head')
+          if (localTag !== head || remoteTag !== head) throw new Error('exact local and remote release tag must resolve to workflow source SHA')
           if (pkg.publishConfig?.tag !== expectedTag || npmrcTag !== expectedTag) throw new Error('release dist-tag configuration does not match package version')
           NODE
 
-      - name: Run full Linux release proof
+      - name: Run deterministic Linux release proof
         env:
           SKS_PUBLISH_AUTH_MODE: trusted-publisher
         run: |
           npm run typecheck --silent
-          npm run release:check:full --silent
+          npm run build:clean --silent
+          npm run test:release --silent
+          node ./dist/scripts/release-gate-dag-runner.js --preset release --full
+          npm run release:dist-freshness --silent
 
       - name: Create exact tarball and content-bound receipt
         run: node ./dist/scripts/release-pack-receipt.js create
@@ -135,6 +151,10 @@ jobs:
     needs: [linux-release-proof]
     runs-on: macos-latest
     timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
     steps:
       - name: Checkout exact main source
         uses: actions/checkout@v6
@@ -157,12 +177,17 @@ jobs:
           const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
           const dirty = execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], { encoding: 'utf8' }).trim()
           const remoteMain = execFileSync('git', ['ls-remote', '--exit-code', 'origin', 'refs/heads/main'], { encoding: 'utf8' }).trim().split(/\s+/, 1)[0]
+          const releaseTag = `v${pkg.version}`
+          const localTag = execFileSync('git', ['rev-parse', `refs/tags/${releaseTag}^{commit}`], { encoding: 'utf8' }).trim()
+          const remoteTagRows = execFileSync('git', ['ls-remote', '--exit-code', 'origin', `refs/tags/${releaseTag}`, `refs/tags/${releaseTag}^{}`], { encoding: 'utf8' }).trim().split(/\r?\n/)
+          const remoteTag = (remoteTagRows.find(line => line.endsWith(`refs/tags/${releaseTag}^{}`)) || remoteTagRows[0] || '').split(/\s+/, 1)[0]
           const expectedTag = pkg.version.includes('-') ? 'rc' : 'latest'
           const npmrcTag = fs.readFileSync('.npmrc', 'utf8').split(/\r?\n/).map(line => line.trim()).find(line => line.startsWith('tag='))?.slice(4) || ''
           if (pkg.version !== process.env.REQUESTED_VERSION) throw new Error('requested version does not match package.json')
           if (head !== process.env.EXPECTED_SHA) throw new Error('checked out commit does not match workflow source SHA')
           if (dirty) throw new Error('release source tree is not clean')
           if (remoteMain !== head) throw new Error('checked out commit is not the live origin/main head')
+          if (localTag !== head || remoteTag !== head) throw new Error('exact local and remote release tag must resolve to workflow source SHA')
           if (pkg.publishConfig?.tag !== expectedTag || npmrcTag !== expectedTag) throw new Error('release dist-tag configuration does not match package version')
           NODE
       - name: Install release dependencies
@@ -176,6 +201,10 @@ jobs:
           path: downloaded/linux
       - name: Restore exact tarball and content-bound receipt
         run: tar -xzf downloaded/linux/linux-release-proof.tgz
+      - name: Rebind deterministic release proof to the macOS build
+        run: |
+          npm run test:release --silent
+          node ./dist/scripts/release-gate-dag-runner.js --preset release --full
       - name: Prove isolated 7.6.0 upgrade to the exact candidate
         env:
           VERSION: ${{ inputs.version }}
@@ -199,15 +228,183 @@ jobs:
           node ./dist/scripts/release-macos-menubar-proof.js \
             --install-report .sneakoscope/reports/menubar-install.json \
             --upgrade-report "$UPGRADE_PROOF"
+      - name: Validate exact trusted physical capture run
+        env:
+          PHYSICAL_EVIDENCE_RUN_ID: ${{ inputs.physical_evidence_run_id }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -n "$PHYSICAL_EVIDENCE_RUN_ID"
+          case "$PHYSICAL_EVIDENCE_RUN_ID" in *[!0-9]*) exit 1 ;; esac
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${PHYSICAL_EVIDENCE_RUN_ID}" > physical-evidence-run.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const run = JSON.parse(fs.readFileSync('physical-evidence-run.json', 'utf8'))
+          if (String(run.id) !== process.env.PHYSICAL_EVIDENCE_RUN_ID) throw new Error('physical capture run ID mismatch')
+          if (run.path !== '.github/workflows/capture-physical-release-evidence.yml') throw new Error('physical capture workflow identity mismatch')
+          if (run.head_sha !== process.env.SOURCE_COMMIT) throw new Error('physical capture source commit mismatch')
+          if (run.event !== 'workflow_dispatch' || run.status !== 'completed' || run.conclusion !== 'success') throw new Error('physical capture run is not successful')
+          if (run.repository?.full_name !== process.env.GITHUB_REPOSITORY) throw new Error('physical capture repository mismatch')
+          NODE
+
+      - name: Download exact cross-run physical evidence artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: physical-release-evidence-${{ github.sha }}
+          path: downloaded/physical
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.physical_evidence_run_id }}
+
+      - name: Verify attestation, manifest, and archive before inspection
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          PHYSICAL_EVIDENCE_RUN_ID: ${{ inputs.physical_evidence_run_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ARCHIVE=downloaded/physical/physical-release-evidence.tgz
+          TRUSTED_WORKFLOW="${GITHUB_REPOSITORY}/.github/workflows/capture-physical-release-evidence.yml"
+          test -f "$ARCHIVE"
+          ARCHIVE_SHA256="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
+          test "${#ARCHIVE_SHA256}" = 64
+          gh attestation verify "$ARCHIVE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$TRUSTED_WORKFLOW" \
+            --source-digest "$SOURCE_COMMIT" \
+            --format json > physical-evidence-attestation.json
+          export ARCHIVE ARCHIVE_SHA256
+          node --input-type=module <<'NODE'
+          import crypto from 'node:crypto'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          import { execFileSync } from 'node:child_process'
+          const archive = process.env.ARCHIVE
+          const safe = value => value && !value.startsWith('/') && !value.includes('\\')
+            && value.split('/').every(part => part && part !== '.' && part !== '..' && /^[A-Za-z0-9._-]+$/.test(part))
+          const collect = (value, key) => Array.isArray(value) ? value.flatMap(entry => collect(entry, key))
+            : value && typeof value === 'object' ? Object.entries(value).flatMap(([name, child]) => [
+              ...(name.toLowerCase() === key.toLowerCase() && typeof child === 'string' ? [child] : []),
+              ...collect(child, key)
+            ]) : []
+          const attestation = JSON.parse(fs.readFileSync('physical-evidence-attestation.json', 'utf8'))
+          const certificates = (Array.isArray(attestation) ? attestation : [attestation])
+            .map(row => row?.verificationResult?.signature?.certificate).filter(Boolean)
+          const expectedRunPrefix = `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.PHYSICAL_EVIDENCE_RUN_ID}/attempts/`
+          if (!certificates.flatMap(certificate => collect(certificate, 'runInvocationURI'))
+            .some(uri => uri.startsWith(expectedRunPrefix) && /^\d+$/.test(uri.slice(expectedRunPrefix.length)))) throw new Error('attestation certificate run binding mismatch')
+          const archiveSha256 = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex')
+          if (archiveSha256 !== process.env.ARCHIVE_SHA256) throw new Error('physical archive digest changed during verification')
+          const rawMembers = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean)
+          const members = new Map()
+          for (const raw of rawMembers) {
+            const normalized = raw.replace(/^\.\//, '')
+            if (!safe(normalized.replace(/\/$/, ''))) throw new Error(`unsafe physical archive path: ${raw}`)
+            if (normalized.endsWith('/')) continue
+            if (members.has(normalized)) throw new Error(`duplicate physical archive path: ${normalized}`)
+            members.set(normalized, raw)
+          }
+          const readMember = name => execFileSync(
+            'tar', ['-xOzf', archive, members.get(name)], { maxBuffer: 64 * 1024 * 1024 }
+          )
+          const manifestName = 'physical-evidence-artifact-manifest.json'
+          if (!members.has(manifestName)) throw new Error('physical evidence manifest missing')
+          const manifestBytes = readMember(manifestName)
+          const manifest = JSON.parse(manifestBytes.toString('utf8'))
+          if (manifest.schema !== 'sks.release-physical-evidence-artifact-manifest.v1'
+            || manifest.package_version !== process.env.VERSION
+            || manifest.source_commit !== process.env.SOURCE_COMMIT
+            || manifest.capture_platform !== 'darwin'
+            || manifest.github_repository !== process.env.GITHUB_REPOSITORY
+            || manifest.workflow_path !== '.github/workflows/capture-physical-release-evidence.yml'
+            || String(manifest.workflow_run_id) !== process.env.PHYSICAL_EVIDENCE_RUN_ID
+            || manifest.artifact_name !== `physical-release-evidence-${process.env.SOURCE_COMMIT}`) throw new Error('physical evidence manifest identity mismatch')
+          const captureAdapter = manifest.capture_adapter
+          const validId = value => /^[a-z0-9][a-z0-9._:/-]{2,159}$/i.test(String(value || ''))
+          if (captureAdapter?.schema !== 'sks.release-physical-capture-adapter.v1'
+            || captureAdapter.executable_path !== '/usr/local/bin/sks-physical-release-capture'
+            || !/^[a-f0-9]{64}$/.test(String(captureAdapter.executable_sha256 || ''))
+            || captureAdapter.owner_uid !== 0
+            || !validId(captureAdapter.adapter_id) || !validId(captureAdapter.adapter_version)
+            || !validId(captureAdapter.run_id) || !validId(captureAdapter.receipt_id)
+            || captureAdapter.receipt_path !== 'desktop-bridge/production-adapter-receipt.json'
+            || !/^[a-f0-9]{64}$/.test(String(captureAdapter.receipt_sha256 || ''))) throw new Error('physical capture adapter manifest binding invalid')
+          if (!Array.isArray(manifest.entries) || manifest.entries.length === 0) throw new Error('physical evidence manifest inventory missing')
+          const paths = manifest.entries.map(entry => String(entry.path || ''))
+          if (new Set(paths).size !== paths.length || JSON.stringify(paths) !== JSON.stringify([...paths].sort())) throw new Error('physical evidence manifest inventory invalid')
+          const expected = new Set([manifestName, ...paths])
+          if (members.size !== expected.size || [...members.keys()].some(name => !expected.has(name))) throw new Error('physical archive inventory mismatch')
+          for (const entry of manifest.entries) {
+            if (!safe(entry.path) || !entry.path.startsWith(`release-evidence/${process.env.VERSION}/`)) throw new Error(`physical evidence path invalid: ${entry.path}`)
+            if (!/^[a-f0-9]{64}$/.test(String(entry.sha256 || '')) || !Number.isSafeInteger(entry.bytes) || entry.bytes < 1) throw new Error(`physical evidence entry invalid: ${entry.path}`)
+            if (!members.has(entry.path)) throw new Error(`physical evidence entry missing: ${entry.path}`)
+            const bytes = readMember(entry.path)
+            if (bytes.length !== entry.bytes || crypto.createHash('sha256').update(bytes).digest('hex') !== entry.sha256) throw new Error(`physical evidence entry digest mismatch: ${entry.path}`)
+          }
+          const adapterReceiptMember = `release-evidence/${process.env.VERSION}/${captureAdapter.receipt_path}`
+          if (!members.has(adapterReceiptMember)) throw new Error('physical capture adapter receipt missing')
+          const adapterReceiptBytes = readMember(adapterReceiptMember)
+          const adapterReceipt = JSON.parse(adapterReceiptBytes.toString('utf8'))
+          if (crypto.createHash('sha256').update(adapterReceiptBytes).digest('hex') !== captureAdapter.receipt_sha256
+            || adapterReceipt.adapter_id !== captureAdapter.adapter_id
+            || adapterReceipt.adapter_version !== captureAdapter.adapter_version
+            || adapterReceipt.run_id !== captureAdapter.run_id
+            || adapterReceipt.receipt_id !== captureAdapter.receipt_id
+            || adapterReceipt.fixture !== false || adapterReceipt.mock !== false || adapterReceipt.synthetic !== false) throw new Error('physical capture adapter receipt binding mismatch')
+          fs.rmSync(path.join('release-evidence', process.env.VERSION), { recursive: true, force: true })
+          fs.rmSync(manifestName, { force: true })
+          for (const entry of manifest.entries) {
+            const bytes = readMember(entry.path)
+            fs.mkdirSync(path.dirname(entry.path), { recursive: true })
+            fs.writeFileSync(entry.path, bytes, { mode: 0o600, flag: 'wx' })
+            const stat = fs.lstatSync(entry.path)
+            const written = fs.readFileSync(entry.path)
+            if (!stat.isFile() || stat.isSymbolicLink() || written.length !== entry.bytes
+              || crypto.createHash('sha256').update(written).digest('hex') !== entry.sha256) throw new Error(`extracted physical evidence mismatch: ${entry.path}`)
+          }
+          const sealedManifest = path.join('.sneakoscope', 'reports', 'release', process.env.VERSION, manifestName)
+          fs.mkdirSync(path.dirname(sealedManifest), { recursive: true })
+          fs.writeFileSync(sealedManifest, manifestBytes, { mode: 0o600 })
+          fs.rmSync(manifestName)
+          NODE
+
+      - name: Verify attested physical Desktop Bridge receipts
+        env:
+          PHYSICAL_EVIDENCE_RUN_ID: ${{ inputs.physical_evidence_run_id }}
+        run: |
+          node ./dist/scripts/release-physical-gates-check.js \
+            --archive downloaded/physical/physical-release-evidence.tgz \
+            --evidence-run-id "$PHYSICAL_EVIDENCE_RUN_ID" \
+            --repository "$GITHUB_REPOSITORY"
+      - name: Run release-authorizing real checks on macOS
+        env:
+          SKS_PHYSICAL_EVIDENCE_RUN_ID: ${{ inputs.physical_evidence_run_id }}
+          SKS_PHYSICAL_EVIDENCE_REPOSITORY: ${{ github.repository }}
+        run: node ./dist/scripts/release-real-check.js --skip-release-check
+      - name: Seal the full release proof on macOS
+        run: |
+          npm run release:dist-freshness --silent
+          node ./dist/scripts/release-check-stamp.js write --preset release --full
       - name: Bundle macOS proof
         env:
           VERSION: ${{ inputs.version }}
         run: |
           UPGRADE_PROOF=".sneakoscope/reports/release/${VERSION}/upgrade-7.6-to-${VERSION}.json"
           test -f "$UPGRADE_PROOF"
+          test -f ".sneakoscope/reports/release/${VERSION}/physical-gates-inspection.json"
+          test -f ".sneakoscope/reports/release/${VERSION}/physical-evidence-archive.tgz"
+          test -f ".sneakoscope/reports/release/${VERSION}/physical-evidence-artifact-manifest.json"
+          test -f ".sneakoscope/reports/release-real-check.json"
+          test -f ".sneakoscope/reports/release-check-stamp.json"
           tar -czf macos-menubar-proof.tgz \
             .sneakoscope/reports/menubar-install.json \
+            .sneakoscope/reports/release-real-check.json \
+            .sneakoscope/reports/release-check-stamp.json \
             ".sneakoscope/reports/release/${VERSION}/macos-menubar-proof.json" \
+            ".sneakoscope/reports/release/${VERSION}/physical-gates-inspection.json" \
+            ".sneakoscope/reports/release/${VERSION}/physical-evidence-archive.tgz" \
+            ".sneakoscope/reports/release/${VERSION}/physical-evidence-artifact-manifest.json" \
+            "release-evidence/${VERSION}" \
             "$UPGRADE_PROOF"
       - name: Upload macOS proof
         uses: actions/upload-artifact@v4
@@ -223,6 +420,9 @@ jobs:
     needs: [linux-release-proof, macos-menubar-proof]
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      attestations: read
     steps:
       - name: Checkout exact main source
         uses: actions/checkout@v6
@@ -268,8 +468,12 @@ jobs:
           name: macos-menubar-proof-${{ github.sha }}
           path: downloaded/macos
       - name: Restore proof artifacts
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
           tar -xzf downloaded/linux/linux-release-proof.tgz
+          rm -rf "release-evidence/${VERSION}"
+          rm -f physical-evidence-artifact-manifest.json
           tar -xzf downloaded/macos/macos-menubar-proof.tgz
       - name: Reinspect and compare immutable tarball
         env:
@@ -306,6 +510,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           EXPECTED_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           node ./dist/scripts/release-main-push-guard.js \
             --expected-version "$VERSION" \
@@ -313,6 +518,7 @@ jobs:
             --require-release-stamp \
             --require-pack-proof \
             --require-macos-proof \
+            --require-physical-proof \
             --require-clean-tree
       - name: Create immutable release handoff
         env:
@@ -324,8 +530,11 @@ jobs:
           cp ".sneakoscope/reports/release/${VERSION}/pack-receipt.json" release-handoff/
           cp ".sneakoscope/reports/release/${VERSION}/pack-compare.json" release-handoff/
           cp ".sneakoscope/reports/release/${VERSION}/macos-menubar-proof.json" release-handoff/
+          cp ".sneakoscope/reports/release/${VERSION}/physical-gates-inspection.json" release-handoff/
           cp ".sneakoscope/reports/release/${VERSION}/upgrade-7.6-to-${VERSION}.json" release-handoff/
           cp ".sneakoscope/reports/release/${VERSION}/main-push-guard.json" release-handoff/
+          cp .sneakoscope/reports/release-check-stamp.json release-handoff/
+          cp .sneakoscope/reports/release-real-check.json release-handoff/
           cp .sneakoscope/reports/installed-package-smoke.json release-handoff/
           node --input-type=module <<'NODE'
           import crypto from 'node:crypto'
@@ -333,12 +542,12 @@ jobs:
           import path from 'node:path'
           const files = fs.readdirSync('release-handoff').sort()
           const entries = files.map(file => ({ file, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join('release-handoff', file))).digest('hex') }))
-          fs.writeFileSync('release-handoff/handoff-manifest.json', JSON.stringify({ schema: 'sks.release-handoff.v1', version: process.env.VERSION, source_commit: process.env.SOURCE_SHA, entries }, null, 2) + '\n')
+          fs.writeFileSync('release-handoff/handoff-manifest.json', JSON.stringify({ schema: 'sks.release-handoff.v1', version: process.env.VERSION, release_tag: `v${process.env.VERSION}`, source_commit: process.env.SOURCE_SHA, entries }, null, 2) + '\n')
           NODE
       - name: Upload immutable release handoff
         uses: actions/upload-artifact@v4
         with:
-          name: stage-input-${{ github.sha }}
+          name: stage-input-${{ github.sha }}-${{ inputs.dispatch_nonce }}
           path: release-handoff
           if-no-files-found: error
           retention-days: 7
@@ -372,12 +581,14 @@ jobs:
       - name: Download immutable release handoff
         uses: actions/download-artifact@v4
         with:
-          name: stage-input-${{ github.sha }}
+          name: stage-input-${{ github.sha }}-${{ inputs.dispatch_nonce }}
           path: release-handoff
       - name: Verify handoff identity and hashes
         env:
           VERSION: ${{ inputs.version }}
           SOURCE_SHA: ${{ github.sha }}
+          DISPATCH_NONCE: ${{ inputs.dispatch_nonce }}
+          PHYSICAL_EVIDENCE_RUN_ID: ${{ inputs.physical_evidence_run_id }}
         run: |
           node --input-type=module <<'NODE'
           import crypto from 'node:crypto'
@@ -385,17 +596,27 @@ jobs:
           import path from 'node:path'
           import { execFileSync } from 'node:child_process'
           const manifest = JSON.parse(fs.readFileSync('release-handoff/handoff-manifest.json', 'utf8'))
+          if (!/^[a-f0-9]{32}$/.test(process.env.DISPATCH_NONCE || '')) throw new Error('dispatch nonce must be exactly 128 bits of lowercase hex')
           if (manifest.schema !== 'sks.release-handoff.v1') throw new Error('handoff schema mismatch')
           if (manifest.version !== process.env.VERSION || manifest.source_commit !== process.env.SOURCE_SHA) throw new Error('handoff identity mismatch')
           if (execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() !== process.env.SOURCE_SHA) throw new Error('main SHA mismatch')
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
           if (pkg.version !== process.env.VERSION) throw new Error('requested version does not match package.json')
+          const releaseTag = `v${pkg.version}`
+          const localTag = execFileSync('git', ['rev-parse', `refs/tags/${releaseTag}^{commit}`], { encoding: 'utf8' }).trim()
+          const remoteTagRows = execFileSync('git', ['ls-remote', '--exit-code', 'origin', `refs/tags/${releaseTag}`, `refs/tags/${releaseTag}^{}`], { encoding: 'utf8' }).trim().split(/\r?\n/)
+          const remoteTag = (remoteTagRows.find(line => line.endsWith(`refs/tags/${releaseTag}^{}`)) || remoteTagRows[0] || '').split(/\s+/, 1)[0]
+          if (localTag !== process.env.SOURCE_SHA || remoteTag !== process.env.SOURCE_SHA) throw new Error('exact local and remote release tag must resolve to staged source SHA')
+          if (manifest.release_tag !== releaseTag) throw new Error('handoff release tag mismatch')
           const expectedFiles = [
             'installed-package-smoke.json',
             'main-push-guard.json',
             'macos-menubar-proof.json',
             'pack-compare.json',
             'pack-receipt.json',
+            'physical-gates-inspection.json',
+            'release-check-stamp.json',
+            'release-real-check.json',
             `sneakoscope-${process.env.VERSION}.tgz`,
             `upgrade-7.6-to-${process.env.VERSION}.json`
           ].sort()
@@ -410,9 +631,20 @@ jobs:
           const receiptBytes = fs.readFileSync('release-handoff/pack-receipt.json')
           const receipt = JSON.parse(receiptBytes.toString('utf8'))
           const receiptSha256 = crypto.createHash('sha256').update(receiptBytes).digest('hex')
-          if (receipt.schema !== 'sks.release-pack-receipt.v1' || receipt.kind !== 'local' || receipt.ok !== true) throw new Error('pack receipt is not an approved local receipt')
+          if (receipt.schema !== 'sks.release-pack-receipt.v2' || receipt.kind !== 'local' || receipt.ok !== true) throw new Error('pack receipt is not an approved local receipt')
           if (receipt.package_version !== process.env.VERSION || receipt.source_commit !== process.env.SOURCE_SHA) throw new Error('pack receipt identity mismatch')
           if (!/^[a-f0-9]{64}$/.test(receipt.sha256) || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(receipt.sha512_integrity)) throw new Error('pack receipt digest invalid')
+          for (const field of ['source_tree_sha256', 'source_package_sha256', 'source_package_binding_sha256']) {
+            if (!/^[a-f0-9]{64}$/.test(String(receipt[field] || ''))) throw new Error(`pack receipt ${field} invalid`)
+          }
+          const expectedSourceBinding = crypto.createHash('sha256').update([
+            'sks.release-pack-receipt.v2', receipt.source_commit, receipt.source_tree_sha256,
+            receipt.source_package_sha256, receipt.sha256
+          ].join('\n')).digest('hex')
+          if (receipt.source_package_binding_sha256 !== expectedSourceBinding) throw new Error('pack receipt source/package binding mismatch')
+          if (!/^[a-f0-9]{64}$/.test(String(receipt.npm_pack_proof?.proof_id || ''))
+            || !/^[a-f0-9]{64}$/.test(String(receipt.npm_pack_proof?.info_sha256 || ''))
+            || !/^[a-f0-9]{64}$/.test(String(receipt.npm_pack_proof?.file_list_sha256 || ''))) throw new Error('pack receipt npm-pack proof invalid')
           if (!Number.isSafeInteger(receipt.bytes) || receipt.bytes <= 0 || !Number.isSafeInteger(receipt.unpacked_bytes) || receipt.unpacked_bytes <= 0 || !Number.isSafeInteger(receipt.file_count) || receipt.file_count <= 0) throw new Error('pack receipt size inventory invalid')
           const comparison = JSON.parse(fs.readFileSync('release-handoff/pack-compare.json', 'utf8'))
           if (comparison.schema !== 'sks.release-pack-compare.v1' || comparison.ok !== true || comparison.local_sha256 !== receipt.sha256 || comparison.staged_sha256 !== receipt.sha256) throw new Error('pack comparison proof mismatch')
@@ -522,8 +754,49 @@ jobs:
           const guard = JSON.parse(fs.readFileSync('release-handoff/main-push-guard.json', 'utf8'))
           if (guard.schema !== 'sks.release-main-push-guard.v1' || guard.ok !== true || !Array.isArray(guard.blockers) || guard.blockers.length !== 0 || guard.force_push_allowed !== false) throw new Error('main push guard is not approved')
           if (guard.head !== process.env.SOURCE_SHA || guard.expected_origin_main !== process.env.SOURCE_SHA || guard.actual_origin_main !== process.env.SOURCE_SHA) throw new Error('main push guard source mismatch')
-          if (guard.pack_proof !== expectedReceiptPath || guard.macos_proof !== `${releaseRoot}/macos-menubar-proof.json`) throw new Error('main push guard proof path mismatch')
+          if (guard.pack_proof !== expectedReceiptPath
+            || guard.macos_proof !== `${releaseRoot}/macos-menubar-proof.json`
+            || guard.physical_proof !== `${releaseRoot}/physical-gates-inspection.json`) throw new Error('main push guard proof path mismatch')
           if (guard.upgrade_proof?.ok !== true || guard.upgrade_proof?.path !== expectedUpgradePath || guard.upgrade_proof?.sha256 !== upgradeSha256 || !Array.isArray(guard.upgrade_proof?.blockers) || guard.upgrade_proof.blockers.length !== 0) throw new Error('main push guard upgrade binding mismatch')
+          const physical = JSON.parse(fs.readFileSync('release-handoff/physical-gates-inspection.json', 'utf8'))
+          const expectedPhysicalGates = ['update_5001_directory', 'single_menubar_process', 'codex_lb_measured_request', 'telegram_cellular_e2e', 'desktop_bridge_live_evidence'].sort()
+          if (physical.schema !== 'sks.release-physical-gates-inspection.v2'
+            || physical.ok !== true
+            || physical.status !== 'passed'
+            || physical.release_authorizing !== true
+            || physical.inspector_platform !== 'darwin'
+            || physical.evidence_capture_platform !== 'darwin'
+            || physical.package_version !== process.env.VERSION
+            || physical.release_source_commit !== process.env.SOURCE_SHA
+            || physical.head_commit !== process.env.SOURCE_SHA
+            || !Array.isArray(physical.blockers)
+            || physical.blockers.length !== 0
+            || JSON.stringify([...physical.verified_gate_ids].sort()) !== JSON.stringify(expectedPhysicalGates)) throw new Error('physical gate inspection is not release-authorizing')
+          const physicalAttestation = physical.artifact_attestation
+          if (physicalAttestation?.schema !== 'sks.release-physical-evidence-artifact-attestation.v1'
+            || !/^[a-f0-9]{64}$/.test(String(physicalAttestation.archive_sha256 || ''))
+            || !/^[a-f0-9]{64}$/.test(String(physicalAttestation.manifest_sha256 || ''))
+            || physicalAttestation.github_repository !== process.env.GITHUB_REPOSITORY
+            || physicalAttestation.trusted_workflow !== `${process.env.GITHUB_REPOSITORY}/.github/workflows/capture-physical-release-evidence.yml`
+            || physicalAttestation.workflow_run_id !== process.env.PHYSICAL_EVIDENCE_RUN_ID
+            || physicalAttestation.artifact_name !== `physical-release-evidence-${process.env.SOURCE_SHA}`
+            || !physicalAttestation.run_invocation_uri?.startsWith(`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.PHYSICAL_EVIDENCE_RUN_ID}/attempts/`)
+            || !Number.isSafeInteger(physicalAttestation.entry_count)
+            || physicalAttestation.entry_count < 1
+            || !/^[a-f0-9]{64}$/.test(String(physicalAttestation.capture_adapter_executable_sha256 || ''))
+            || physicalAttestation.capture_adapter_id !== physical.desktop_bridge_evidence?.adapter_id
+            || physicalAttestation.capture_adapter_version !== physical.desktop_bridge_evidence?.adapter_version
+            || physicalAttestation.capture_adapter_run_id !== physical.desktop_bridge_evidence?.adapter_run_id
+            || physicalAttestation.capture_adapter_receipt_id !== physical.desktop_bridge_evidence?.adapter_receipt_id
+            || physicalAttestation.capture_adapter_receipt_sha256 !== physical.desktop_bridge_evidence?.adapter_receipt_sha256) throw new Error('physical artifact attestation binding mismatch')
+          const bridge = physical.desktop_bridge_evidence
+          if (bridge?.schema !== 'sks.desktop-bridge-release-evidence-inspection.v1'
+            || bridge?.ok !== true
+            || !/^[a-f0-9]{64}$/.test(String(bridge.report_sha256 || ''))
+            || !/^[a-f0-9]{64}$/.test(String(bridge.adapter_receipt_sha256 || ''))
+            || !/^[a-f0-9]{64}$/.test(String(bridge.native_screenshot_sha256 || ''))
+            || bridge.deep_artifact_count !== 14
+            || JSON.stringify([...bridge.providers].sort()) !== JSON.stringify(['codex-lb', 'openrouter'])) throw new Error('Desktop Bridge physical evidence binding mismatch')
           const closure = smoke.public_surface?.closure
           if (!closure || closure.all_rejected !== true || closure.receipt_safe !== true || closure.rejected_count !== closure.command_probe_count + closure.dollar_command_probe_count + closure.argument_probe_count + closure.subcommand_probe_count) throw new Error('installed public surface closure mismatch')
           const closureContract = JSON.parse(fs.readFileSync('config/installed-public-surface-closure.v1.json', 'utf8'))
@@ -552,7 +825,12 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           SOURCE_SHA: ${{ github.sha }}
+          DISPATCH_NONCE: ${{ inputs.dispatch_nonce }}
+          PHYSICAL_EVIDENCE_RUN_ID: ${{ inputs.physical_evidence_run_id }}
         run: |
+          test "${#DISPATCH_NONCE}" -eq 32
+          case "$DISPATCH_NONCE" in *[!a-f0-9]*) exit 1 ;; esac
+          case "$PHYSICAL_EVIDENCE_RUN_ID" in ''|*[!0-9]*) exit 1 ;; esac
           export TARBALL="release-handoff/sneakoscope-${VERSION}.tgz"
           mkdir -p stage-receipt
           npm stage publish "$TARBALL" --json --ignore-scripts --provenance --access public > stage-receipt/stage-output.json
@@ -590,11 +868,12 @@ jobs:
           const stageCommandDigest = crypto.createHash('sha256').update(JSON.stringify(stageCommand)).digest('hex')
           const stageOutputDigest = crypto.createHash('sha256').update(outputBytes).digest('hex')
           fs.writeFileSync('stage-receipt/stage-receipt.json', JSON.stringify({
-            schema: 'sks.npm-stage-receipt.v1',
+            schema: 'sks.npm-stage-receipt.v2',
             ok: true,
             stage_id: stageId,
             package_name: receipt.package_name,
             package_version: receipt.package_version,
+            release_tag: `v${receipt.package_version}`,
             source_commit: process.env.SOURCE_SHA,
             tarball_sha256: sha256,
             tarball_sha512: sha512,
@@ -602,12 +881,14 @@ jobs:
             packed_bytes: receipt.bytes,
             unpacked_bytes: receipt.unpacked_bytes,
             file_count: receipt.file_count,
+            dispatch_nonce: process.env.DISPATCH_NONCE,
+            physical_evidence_run_id: process.env.PHYSICAL_EVIDENCE_RUN_ID,
             workflow_run_id: process.env.GITHUB_RUN_ID,
             workflow_run_attempt: process.env.GITHUB_RUN_ATTEMPT,
             local_pack_receipt_sha256: localPackReceiptSha256,
             stage_command_digest: stageCommandDigest,
             stage_output_digest: stageOutputDigest,
-            review_verifier_schema: 'sks.npm-stage-review-receipt.v1',
+            review_verifier_schema: 'sks.npm-stage-review-receipt.v2',
             oidc_review_supported: false,
             maintainer_session_required: true,
             review_required: true,
@@ -619,7 +900,7 @@ jobs:
       - name: Upload stage receipt for maintainer review
         uses: actions/upload-artifact@v4
         with:
-          name: npm-stage-receipt-${{ github.sha }}
+          name: npm-stage-receipt-${{ github.sha }}-${{ inputs.dispatch_nonce }}
           path: stage-receipt
           if-no-files-found: error
           retention-days: 7

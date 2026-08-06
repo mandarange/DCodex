@@ -18,6 +18,9 @@ try {
   const result = verifyNpmStageTarball({
     root,
     stageId: required(parsed, 'stage-id'),
+    expectedDispatchNonce: required(parsed, 'dispatch-nonce'),
+    expectedPhysicalEvidenceRunId: required(parsed, 'physical-evidence-run-id'),
+    expectedWorkflowRunId: required(parsed, 'workflow-run-id'),
     localReceiptPath: required(parsed, 'local-receipt'),
     localTarballPath: required(parsed, 'local-tarball'),
     stageReceiptPath: required(parsed, 'stage-receipt'),
@@ -45,7 +48,16 @@ try {
 function parseArgs(args: string[]): { help: boolean; values: Record<string, string> } {
   const values: Record<string, string> = {}
   let help = false
-  const allowed = new Set(['stage-id', 'local-receipt', 'local-tarball', 'stage-receipt', 'output-dir'])
+  const allowed = new Set([
+    'stage-id',
+    'dispatch-nonce',
+    'physical-evidence-run-id',
+    'workflow-run-id',
+    'local-receipt',
+    'local-tarball',
+    'stage-receipt',
+    'output-dir'
+  ])
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
     if (arg === '--help' || arg === '-h') {
@@ -74,6 +86,9 @@ function printHelp(): void {
   console.log(`Usage:
   node ./dist/scripts/npm-stage-tarball-verifier.js \\
     --stage-id <uuid> \\
+    --dispatch-nonce <32-lowercase-hex> \\
+    --physical-evidence-run-id <github-run-id> \\
+    --workflow-run-id <github-run-id> \\
     --local-receipt <pack-receipt.json> \\
     --local-tarball <immutable.tgz> \\
     --stage-receipt <stage-receipt.json> \\

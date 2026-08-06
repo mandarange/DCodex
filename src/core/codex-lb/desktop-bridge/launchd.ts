@@ -3,8 +3,9 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { DesktopBridgeError } from './types.js';
+import { withFileLock } from '../../locks/file-lock.js';
 
-export const DESKTOP_BRIDGE_LAUNCHD_LABEL = 'com.sneakoscope.codex-lb-desktop-bridge';
+export const DESKTOP_BRIDGE_LAUNCHD_LABEL = 'com.sneakoscope.desktop-bridge';
 
 export interface DesktopBridgeLaunchdOptions {
   executablePath: string;
@@ -82,15 +83,21 @@ export async function writeDesktopBridgeLaunchdPlist(
   file: string,
   options: DesktopBridgeLaunchdOptions,
 ): Promise<void> {
-  const contents = renderDesktopBridgeLaunchdPlist(options);
-  const directory = path.dirname(file);
-  await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
-  const temp = path.join(directory, `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`);
-  try {
-    await fsp.writeFile(temp, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    await fsp.rename(temp, file);
-    await fsp.chmod(file, 0o600);
-  } finally {
-    await fsp.rm(temp, { force: true }).catch(() => undefined);
-  }
+  await withFileLock({
+    lockPath: `${path.resolve(file)}.lock`,
+    timeoutMs: 10_000,
+    staleMs: 60_000
+  }, async () => {
+    const contents = renderDesktopBridgeLaunchdPlist(options);
+    const directory = path.dirname(file);
+    await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+    const temp = path.join(directory, `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`);
+    try {
+      await fsp.writeFile(temp, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      await fsp.rename(temp, file);
+      await fsp.chmod(file, 0o600);
+    } finally {
+      await fsp.rm(temp, { force: true }).catch(() => undefined);
+    }
+  });
 }

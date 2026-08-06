@@ -5,7 +5,7 @@ import type { IncomingMessage, OutgoingHttpHeaders } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { buildProviderWebSocketHeaders } from './header-policy.js';
 import { rewriteLocationHeader } from './location-rewrite.js';
-import { assertDesktopBridgeRouteContext, resolveDesktopBridgeTarget, singleBridgeHeader } from './security.js';
+import { resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, singleBridgeHeader } from './security.js';
 import { desktopBridgeListenOrigin } from './state.js';
 import {
   DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL,
@@ -70,9 +70,10 @@ function rewriteUpgradeResponseHead(head: Buffer, providerBaseUrl: string, local
 export async function prepareDesktopBridgeWebSocketRequest(req: IncomingMessage, config: PreparedDesktopBridgeConfig): Promise<{
   route: DesktopBridgeRouteContext; credential: DesktopBridgeResolvedCredential; provider: PreparedDesktopBridgeProvider;
 }> {
-  const route = assertDesktopBridgeRouteContext({
+  const sessionIdentity = resolveCodexSessionIdentity(req.headers);
+  const route = await resolveAndBindDesktopBridgeRouteContext({
     public_model: singleBridgeHeader(req.headers, 'x-sks-model') || '',
-    session_id: singleBridgeHeader(req.headers, 'x-sks-session-id'),
+    session_id: sessionIdentity.thread_id,
     pathname: new URL(req.url || '/', 'http://bridge.invalid').pathname,
     transport: 'websocket', headers: req.headers,
   }, config);
@@ -90,7 +91,13 @@ function writeUpgradeFailure(client: Duplex): void {
   if (!client.destroyed) client.end('HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{"error":{"type":"sks_bridge_error","code":"bridge_websocket_upstream_unavailable"}}');
 }
 
-export async function forwardWebSocket(req: IncomingMessage, client: Duplex, head: Buffer, config: PreparedDesktopBridgeConfig): Promise<void> {
+export async function forwardWebSocket(
+  req: IncomingMessage,
+  client: Duplex,
+  head: Buffer,
+  config: PreparedDesktopBridgeConfig,
+  authenticatedLocalBaseUrl = desktopBridgeListenOrigin(config),
+): Promise<void> {
   let prepared;
   try { prepared = await prepareDesktopBridgeWebSocketRequest(req, config); }
   catch (error) { writeUpgradeFailure(client); throw error; }
@@ -117,7 +124,7 @@ export async function forwardWebSocket(req: IncomingMessage, client: Duplex, hea
       const raw = response.subarray(0, boundary); const remaining = response.subarray(boundary + 4);
       try {
         validateUpgrade(raw, key, requestedProtocol);
-        client.write(rewriteUpgradeResponseHead(raw, provider.base_url, desktopBridgeListenOrigin(config)));
+        client.write(rewriteUpgradeResponseHead(raw, provider.base_url, authenticatedLocalBaseUrl));
         if (remaining.length) client.write(remaining);
       } catch (error) { upstream.destroy(error instanceof Error ? error : undefined); return; }
       client.pipe(upstream); upstream.pipe(client);

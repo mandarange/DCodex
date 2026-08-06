@@ -48,6 +48,23 @@ test('wave parent guidance never exceeds an explicit 0, 1, 11, or 63 frame capac
   }
 });
 
+test('wave parent guidance counts only live children and immediately reuses settled slots', () => {
+  const guidance = buildWaveParentGuidance({
+    remaining_to_start: 6,
+    open_threads: 2,
+    wave_capacity: 4,
+    recovered_capacity: 2,
+    post_wave_rescan_required: false,
+    current_wave: 1,
+    completed_waves: 0
+  })
+
+  assert.ok(guidance.actions.includes('close_completed_child_threads_after_collecting_results'))
+  assert.ok(guidance.actions.includes('refresh_wave_lifecycle_and_ready_dag'))
+  assert.ok(guidance.actions.includes('spawn_next_direct_child_wave_upto:2'))
+  assert.ok(!guidance.actions.includes('spawn_next_direct_child_wave_upto:4'))
+})
+
 test('bound wave guidance ignores persisted instructions and rejects foreign mission or run bindings', () => {
   const plan = {
     schema: 'sks.subagent-plan.v1',

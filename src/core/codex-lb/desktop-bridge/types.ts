@@ -8,11 +8,12 @@ import type {
   WebSocketProbeResult,
 } from '../bridge-contracts.js';
 
-export const DESKTOP_BRIDGE_STATE_SCHEMA = 'sks.codex-lb-desktop-bridge.v2' as const;
+export const DESKTOP_BRIDGE_STATE_SCHEMA = 'sks.desktop-bridge-state.v2' as const;
 export const DESKTOP_BRIDGE_REGISTRY_SCHEMA = 'sks.desktop-bridge-provider-registry.v1' as const;
 export const DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH = '/__sks/diagnostics/health' as const;
 export const DESKTOP_BRIDGE_DIAGNOSTIC_PATH = '/__sks/diagnostics/websocket' as const;
 export const DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL = 'sks.desktop-bridge.probe.v2' as const;
+export const DESKTOP_BRIDGE_CLIENT_PATH_PREFIX = '/__sks/client' as const;
 
 export const DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES = [
   '/backend-api/codex/',
@@ -84,12 +85,18 @@ export type DesktopBridgeCredentialResolver = (
   expectedGeneration: string,
 ) => Promise<DesktopBridgeResolvedCredential>;
 
+export type DesktopBridgeSessionPinPersister = (
+  providerSessionPins: readonly ProviderSessionPin[],
+) => Promise<void>;
+
 export interface DesktopBridgeConfig {
   providerRegistry: DesktopBridgeProviderRegistrySnapshot;
   routePolicy: BridgeRoutingPolicy;
   providerSessionPins: readonly ProviderSessionPin[];
   resolveRequestRoute?: DesktopBridgeRouteResolver;
+  persistProviderSessionPins?: DesktopBridgeSessionPinPersister;
   resolveProviderCredential: DesktopBridgeCredentialResolver;
+  clientCapabilitySha256: string;
   listenHost: '127.0.0.1' | '::1';
   listenPort: number;
   allowedPathPrefixes: readonly string[];
@@ -97,6 +104,9 @@ export interface DesktopBridgeConfig {
   connectTimeoutMs: number;
   idleTimeoutMs: number;
   maxRequestBodyBytes?: number;
+  requestTimeoutMs?: number;
+  maxConcurrentRequests?: number;
+  maxConnections?: number;
   stateFreshnessMs?: number;
 }
 

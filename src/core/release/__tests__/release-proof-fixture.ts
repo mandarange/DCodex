@@ -6,6 +6,7 @@ import { MACOS_INSTALL_REQUIRED_CHECKS, MACOS_MENUBAR_PROOF_SCHEMA, MACOS_MENUBA
 import { MAIN_PUSH_GUARD_SCHEMA } from '../main-push-guard.js'
 import { writeNpmPackProof } from '../npm-pack-proof.js'
 import { inspectReleaseTarball, releaseProofDir } from '../release-pack-receipt.js'
+import { writePhysicalReleaseEvidence } from './physical-release-evidence-fixture.js'
 
 export function writeCompleteReleaseProofs(root: string, head: string, baseline = head, originIdentity = '') {
   const reports = path.join(root, '.sneakoscope', 'reports')
@@ -228,9 +229,11 @@ export function writeCompleteReleaseProofs(root: string, head: string, baseline 
     checks: Object.fromEntries(MACOS_MENUBAR_REQUIRED_CHECKS.map((key) => [key, true])),
     generated_at: new Date().toISOString(), blockers: []
   }))
+  writePhysicalReleaseEvidence(root, '8.0.0', head)
   fs.writeFileSync(path.join(proofDir, 'main-push-guard.json'), JSON.stringify({
     schema: MAIN_PUSH_GUARD_SCHEMA, ok: true, head, expected_origin_main: baseline, actual_origin_main: baseline,
     expected_origin_identity: originIdentity, actual_origin_identity: originIdentity,
+    physical_proof: path.relative(root, path.join(proofDir, 'physical-gates-inspection.json')).split(path.sep).join('/'),
     force_push_allowed: false, blockers: []
   }))
 }

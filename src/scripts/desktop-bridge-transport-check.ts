@@ -9,6 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
+  desktopBridgeClientPath,
   desktopBridgeStatePath,
   selectAvailableDesktopBridgePort,
   startDesktopBridge,
@@ -33,6 +34,8 @@ const credentialGeneration = 'desktop-bridge-check-credential'
 const credentialFingerprint = 'desktop-bridge-check-fingerprint'
 const desktopAuthorization = 'Bearer desktop-oauth-secret'
 const desktopCookie = 'desktop=session-secret'
+const clientCapability = Buffer.alloc(32, 0x48).toString('base64url')
+const clientCapabilitySha256 = createHash('sha256').update(clientCapability).digest('hex')
 const upstreamObservations: {
   sse?: IncomingHttpHeaders
   multipart?: IncomingHttpHeaders
@@ -82,7 +85,7 @@ const upstream = http.createServer((request, response) => {
     return
   }
 
-  if (request.url === '/v1/responses') {
+  if (request.url === '/backend-api/codex/responses') {
     upstreamObservations.http = request.headers
     request.resume()
     request.once('end', () => {
@@ -136,7 +139,7 @@ upstream.on('upgrade', (request, socket, head) => {
 })
 
 const upstreamPort = await listen(upstream)
-const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-codex-lb-desktop-bridge-gate-'))
+const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-desktop-bridge-gate-'))
 const home = path.join(temporaryRoot, 'home')
 await fs.mkdir(path.join(home, '.codex'), { recursive: true })
 
@@ -162,10 +165,11 @@ try {
   stateSecretSafe = !stateText.includes(providerSecret)
     && !stateText.includes(desktopAuthorization)
     && !stateText.includes(desktopCookie)
+    && !stateText.includes(clientCapability)
 
   sseResult = await request({
     port: preferredPort,
-    path: '/backend-api/codex/responses?stream=1',
+    path: desktopBridgeClientPath(clientCapability, '/backend-api/codex/responses?stream=1'),
     method: 'POST',
     headers: clientHeaders({
       'content-type': 'application/json',
@@ -184,7 +188,7 @@ try {
   ])
   multipartResult = await request({
     port: preferredPort,
-    path: '/backend-api/files',
+    path: desktopBridgeClientPath(clientCapability, '/backend-api/files'),
     method: 'POST',
     headers: clientHeaders({
       'content-type': 'multipart/form-data; boundary=boundary',
@@ -199,6 +203,7 @@ try {
 
   webSocketResult = await websocketRoundTrip({
     port: preferredPort,
+    clientCapability,
     publicModel,
     desktopAuthorization,
     desktopCookie,
@@ -216,7 +221,7 @@ try {
   )
   httpResult = await request({
     port: bearerPort,
-    path: '/v1/responses',
+    path: desktopBridgeClientPath(clientCapability, '/backend-api/codex/responses'),
     method: 'POST',
     headers: clientHeaders({
       'content-type': 'application/json',
@@ -239,7 +244,7 @@ const sseVerified = sseResult?.status === 200
   && sseResult.body.toString('utf8') === 'data: first\n\ndata: second\n\n'
   && firstSseChunkBeforeEnd
   && sseRequestBody.toString('utf8') === JSON.stringify({ model: publicModel, stream: true })
-  && sseResult.headers.location === `ws://127.0.0.1:${preferredPort}/backend-api/codex/call-1?token=opaque`
+  && sseResult.headers.location === `ws://127.0.0.1:${preferredPort}${desktopBridgeClientPath(clientCapability, '/backend-api/codex/call-1?token=opaque')}`
 const multipartVerified = multipartResult?.status === 200
   && multipartResult.body.toString('utf8') === '{"ok":true}'
   && createHash('sha256').update(multipartRequestBody).digest('hex') === multipartResult.requestBodySha256
@@ -357,6 +362,7 @@ function bridgeConfig(
       fingerprint: providerId === 'codex-lb' ? credentialFingerprint : 'unused-openrouter-fingerprint',
       generation: expectedGeneration
     }),
+    clientCapabilitySha256,
     allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
     allowedOrigins: ['app://codex'],
     connectTimeoutMs: 2_000,

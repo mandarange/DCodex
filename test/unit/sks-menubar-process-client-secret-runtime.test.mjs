@@ -23,7 +23,7 @@ case "$*" in
     exit 0
     ;;
   *--logical-fail*)
-    printf '{"schema":"sks.codex-lb-set-key.v2","ok":false,"status":"rejected"}\\n'
+    printf '{"schema":"sks.desktop-bridge-command-result.v1","operation":"provider_configure","ok":false,"status":"rejected","execution":{"ok":false,"status":"failed","blockers":["provider_configuration_rejected"]},"readiness":{"ready":false,"blockers":["provider_configuration_rejected"],"warnings":[]},"recovery_action":"review_bridge_status"}\\n'
     exit 0
     ;;
   *--unexpected-schema*)
@@ -31,15 +31,15 @@ case "$*" in
     exit 0
     ;;
   *--partial*)
-    printf '{"schema":"sks.codex-lb-set-key.v2","ok":false,"status":"partial_configuration_keychain_retained","error":"setup_failed","partial_configuration":{"schema":"sks.codex-lb-partial-configuration.v1","failure_stage":"sync_center_desktop_credentials","filesystem_state":"restored","process_environment_state":"unchanged","keychain_state":"replacement_retained","external_environment_state":"inspect_with_status","durable_applied_state":["macOS Keychain replacement retained"],"recovery_actions":["Run: sks codex-lb status --json"],"recovery_paths":["/tmp/sks-recovery"],"secret_recovery_paths":["/tmp/sks-secret-recovery"],"ignored_secret":"%s"},"rollback":{"recovery_paths":["/tmp/sks-backup"],"secret_recovery_paths":["/tmp/sks-secret-backup"]},"reflected":"%s"}\\n' "$value" "$value"
+    printf '{"schema":"sks.desktop-bridge-command-result.v1","operation":"provider_configure","ok":false,"status":"partial","error":"bridge_restart_failed","execution":{"ok":false,"status":"partial","blockers":["desktop_bridge_restart_failed"]},"readiness":{"ready":false,"blockers":["desktop_bridge_restart_failed"],"warnings":[]},"recovery_action":"run_bridge_repair","reflected":"%s"}\\n' "$value"
     exit 1
     ;;
   *--fail*)
-    printf '{"schema":"sks.codex-lb-set-key.v2","ok":false,"error":"secure_input_rejected","reflected":"%s"}\\n' "$value"
+    printf '{"schema":"sks.desktop-bridge-command-result.v1","operation":"provider_configure","ok":false,"error":"secure_input_rejected","execution":{"ok":false,"status":"failed","blockers":["secure_input_rejected"]},"readiness":{"ready":false,"blockers":["secure_input_rejected"],"warnings":[]},"reflected":"%s"}\\n' "$value"
     exit 1
     ;;
 esac
-printf '{"schema":"sks.codex-lb-set-key.v2","ok":true,"status":"stored","reflected":"%s"}\\n' "$value"
+printf '{"schema":"sks.desktop-bridge-command-result.v1","operation":"provider_configure","ok":true,"status":"stored","execution":{"ok":true,"status":"completed","blockers":[]},"readiness":{"ready":false,"blockers":[],"warnings":[]},"reflected":"%s"}\\n' "$value"
 `, { mode: 0o755 });
   await fs.writeFile(harness, `
 import Foundation
@@ -78,7 +78,7 @@ struct Harness {
 
         let secure = waitForResult(
             client,
-            arguments: ["codex-lb", "set-key", "--api-key-stdin", "--json"],
+            arguments: ["bridge", "provider", "configure", "codex-lb", "--api-key-stdin", "--json"],
             stdin: sentinel + "\\n"
         )
         precondition(secure.code == 0)
@@ -86,7 +86,17 @@ struct Harness {
         let securePayload = try JSONSerialization.jsonObject(with: Data(secure.output.utf8)) as! [String: Any]
         precondition(securePayload["ok"] as? Bool == true)
         precondition(securePayload["output_suppressed"] as? Bool == true)
-        precondition(securePayload["source_schema"] as? String == "sks.codex-lb-set-key.v2")
+        precondition(securePayload["source_schema"] as? String == "sks.desktop-bridge-command-result.v1")
+        precondition(securePayload["operation"] as? String == "provider_configure")
+        let openRouter = waitForResult(
+            client,
+            arguments: ["bridge", "provider", "configure", "openrouter", "--api-key-stdin", "--json"],
+            stdin: sentinel + "\\n"
+        )
+        precondition(openRouter.code == 0)
+        let openRouterPayload = try JSONSerialization.jsonObject(with: Data(openRouter.output.utf8)) as! [String: Any]
+        precondition(openRouterPayload["ok"] as? Bool == true)
+        precondition(openRouterPayload["source_schema"] as? String == "sks.desktop-bridge-command-result.v1")
         let secureLog = try String(contentsOfFile: log, encoding: .utf8)
         precondition(!secureLog.contains(sentinel))
         precondition(secureLog.contains("--api-key-stdin"))
@@ -96,7 +106,7 @@ struct Harness {
 
         let failed = waitForResult(
             client,
-            arguments: ["codex-lb", "set-key", "--api-key-stdin", "--json", "--fail"],
+            arguments: ["bridge", "provider", "configure", "codex-lb", "--api-key-stdin", "--json", "--fail"],
             stdin: sentinel + "\\n"
         )
         precondition(failed.code == 1)
@@ -110,7 +120,7 @@ struct Harness {
 
         let plainSuccess = waitForResult(
             client,
-            arguments: ["codex-lb", "set-key", "--api-key-stdin", "--json", "--plain-success"],
+            arguments: ["bridge", "provider", "configure", "codex-lb", "--api-key-stdin", "--json", "--plain-success"],
             stdin: sentinel + "\\n"
         )
         precondition(plainSuccess.code == 0)
@@ -120,7 +130,7 @@ struct Harness {
 
         let logicalFailure = waitForResult(
             client,
-            arguments: ["codex-lb", "set-key", "--api-key-stdin", "--json", "--logical-fail"],
+            arguments: ["bridge", "provider", "configure", "codex-lb", "--api-key-stdin", "--json", "--logical-fail"],
             stdin: sentinel + "\\n"
         )
         precondition(logicalFailure.code == 0)
@@ -130,7 +140,7 @@ struct Harness {
 
         let unexpectedSchema = waitForResult(
             client,
-            arguments: ["codex-lb", "set-key", "--api-key-stdin", "--json", "--unexpected-schema"],
+            arguments: ["bridge", "provider", "configure", "codex-lb", "--api-key-stdin", "--json", "--unexpected-schema"],
             stdin: sentinel + "\\n"
         )
         precondition(unexpectedSchema.code == 0)
@@ -140,18 +150,17 @@ struct Harness {
 
         let partial = waitForResult(
             client,
-            arguments: ["codex-lb", "set-key", "--api-key-stdin", "--json", "--partial"],
+            arguments: ["bridge", "provider", "configure", "codex-lb", "--api-key-stdin", "--json", "--partial"],
             stdin: sentinel + "\\n"
         )
         precondition(partial.code == 1)
         precondition(!partial.output.contains(sentinel))
         let partialPayload = try JSONSerialization.jsonObject(with: Data(partial.output.utf8)) as! [String: Any]
         precondition(partialPayload["ok"] as? Bool == false)
-        let partialConfiguration = partialPayload["partial_configuration"] as! [String: Any]
-        precondition(partialConfiguration["keychain_state"] as? String == "replacement_retained")
-        precondition(partialConfiguration["ignored_secret"] == nil)
-        precondition((partialPayload["recovery_paths"] as? [String]) == ["/tmp/sks-recovery", "/tmp/sks-backup"])
-        precondition((partialPayload["secret_recovery_paths"] as? [String]) == ["/tmp/sks-secret-recovery", "/tmp/sks-secret-backup"])
+        let execution = partialPayload["execution"] as! [String: Any]
+        precondition(execution["status"] as? String == "partial")
+        precondition((execution["blockers"] as? [String]) == ["desktop_bridge_restart_failed"])
+        precondition(partialPayload["recovery_action"] as? String == "run_bridge_repair")
 
         let ordinary = "ordinary-input"
         let normal = waitForResult(client, arguments: ["echo"], stdin: ordinary + "\\n")

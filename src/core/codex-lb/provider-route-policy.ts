@@ -13,6 +13,7 @@ import {
   sha256Stable
 } from './route-index.js';
 import { writeJsonAtomic } from '../fsx.js';
+import { withFileLock } from '../locks/file-lock.js';
 
 export const BRIDGE_ROUTE_POLICY_FILENAME = 'sks-bridge-route-policy.json' as const;
 
@@ -93,7 +94,11 @@ export async function writeBridgeRoutingPolicy(
 ): Promise<void> {
   const blockers = validateBridgeRoutingPolicy(policy, routeIndex);
   if (blockers.length > 0) throw new Error(blockers[0]);
-  await writeJsonAtomic(file, policy, { mode: 0o600 });
+  await withFileLock({
+    lockPath: `${path.resolve(file)}.lock`,
+    timeoutMs: 10_000,
+    staleMs: 60_000
+  }, () => writeJsonAtomic(file, policy, { mode: 0o600 }));
 }
 
 export async function readBridgeRoutingPolicy(file: string): Promise<{

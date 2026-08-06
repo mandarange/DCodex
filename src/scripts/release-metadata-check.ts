@@ -185,17 +185,22 @@ assertGate(!/npm\s+stage\s+(?:list|view|download|approve|reject)\b/.test(stageWo
 assertGate(/environment: npm-production/.test(stageWorkflow), 'stage workflow must use the npm-production environment');
 assertGate(!/id-token:/.test(workflowPermissions), 'workflow-global permissions must not grant OIDC identity');
 assertGate((stageWorkflow.match(/id-token: write/g) || []).length === 1 && /permissions:\n      contents: read\n      id-token: write/.test(stageJob), 'OIDC identity must be scoped only to stage-publish');
-for (const artifact of ['linux-release-proof', 'macos-menubar-proof', 'stage-input', 'npm-stage-receipt']) {
+for (const artifact of ['linux-release-proof', 'macos-menubar-proof']) {
   assertGate(new RegExp(`name: ${artifact}-\\$\\{\\{ github\\.sha \\}\\}`).test(stageWorkflow), `stage workflow artifact name mismatch: ${artifact}`);
 }
-for (const receiptField of ['tarball_sha256', 'tarball_sha512', 'tarball_integrity', 'packed_bytes', 'unpacked_bytes', 'file_count', 'workflow_run_id', 'local_pack_receipt_sha256', 'stage_command_digest', 'stage_output_digest', 'stage_id', 'review_verifier_schema', 'human_2fa_pending']) {
+for (const artifact of ['stage-input', 'npm-stage-receipt']) {
+  assertGate(new RegExp(`name: ${artifact}-\\$\\{\\{ github\\.sha \\}\\}-\\$\\{\\{ inputs\\.dispatch_nonce \\}\\}`).test(stageWorkflow), `stage workflow artifact name mismatch: ${artifact}`);
+}
+for (const receiptField of ['tarball_sha256', 'tarball_sha512', 'tarball_integrity', 'packed_bytes', 'unpacked_bytes', 'file_count', 'dispatch_nonce', 'physical_evidence_run_id', 'workflow_run_id', 'local_pack_receipt_sha256', 'stage_command_digest', 'stage_output_digest', 'stage_id', 'review_verifier_schema', 'human_2fa_pending']) {
   assertGate(new RegExp(`${receiptField}:`).test(stageJob), `stage receipt missing field: ${receiptField}`);
 }
 assertGate(/stage_id_uuid_invalid/.test(stageJob), 'stage workflow must fail closed on non-UUID stage IDs');
 assertGate(/sha512Integrity !== receipt\.sha512_integrity/.test(stageJob), 'stage workflow must recompute and verify tarball SHA-512 integrity');
 assertGate(/tarball_integrity: sha512Integrity/.test(stageJob), 'stage receipt must serialize recomputed tarball integrity');
 assertGate(/stage-receipt\/stage-output\.json/.test(stageJob) && /path: stage-receipt/.test(stageJob), 'stage receipt artifact must preserve digest-bound raw stage output');
-assertGate(/review_verifier_schema: 'sks\.npm-stage-review-receipt\.v1'/.test(stageJob), 'stage receipt must declare the maintainer verifier schema');
+assertGate(/schema: 'sks\.npm-stage-receipt\.v2'/.test(stageJob), 'stage receipt must use the nonce-bound v2 contract');
+assertGate(/review_verifier_schema: 'sks\.npm-stage-review-receipt\.v2'/.test(stageJob), 'stage receipt must declare the maintainer verifier schema');
+assertGate(/^run-name: npm-stage-\$\{\{ inputs\.version \}\}-\$\{\{ inputs\.dispatch_nonce \}\}-physical-\$\{\{ inputs\.physical_evidence_run_id \}\}$/m.test(stageWorkflow), 'stage workflow run name must bind version, dispatch nonce, and physical evidence run');
 assertGate(/localPackReceiptSha256 = crypto\.createHash\('sha256'\)\.update\(localPackReceiptBytes\)/.test(stageJob), 'stage receipt must bind immutable local pack receipt bytes');
 assertGate(/smoke\.postinstall_default\?\.scripts_enabled !== true/.test(stageJob), 'stage job must require scripts-enabled default postinstall proof');
 assertGate(/smoke\.postinstall_default\?\.external_snapshot_match !== true/.test(stageJob), 'stage job must require zero external postinstall mutation');
@@ -205,6 +210,8 @@ assertGate(!/\bnpm[ \t]+(?:ci|pack|run|publish|login|logout|whoami)\b/.test(stag
 assertGate(!/NODE_AUTH_TOKEN|NPM_TOKEN|_authToken/.test(stageWorkflow), 'stage workflow must not inject npm tokens');
 assertGate(/from '\.\/npm-stage-contract\.js'/.test(stageVerifierSupport), 'maintainer stage verifier support must use the shared npm stage contract');
 assertGate(/exactNpmStageCliInvocation\(\)/.test(stageVerifierSource), 'maintainer stage verifier must resolve the exact pinned npm CLI');
+assertGate(/dispatch_nonce_mismatch/.test(stageVerifierSupport) && /physical_evidence_run_id_mismatch/.test(stageVerifierSupport) && /workflow_run_id_mismatch/.test(stageVerifierSupport), 'maintainer stage verifier must validate exact workflow association');
+assertGate(/--dispatch-nonce/.test(stageVerifierCli) && /--physical-evidence-run-id/.test(stageVerifierCli) && /--workflow-run-id/.test(stageVerifierCli), 'maintainer stage verifier CLI must require workflow association inputs');
 assertGate(/\['stage', 'view', stageId, '--json'/.test(stageVerifierSource), 'maintainer stage verifier must inspect the exact stage ID read-only');
 assertGate(/\['stage', 'download', stageId, '--json'/.test(stageVerifierSource), 'maintainer stage verifier must download the exact stage ID read-only');
 assertGate(/exact_bytes_match/.test(stageVerifierSource) && /sha256_match/.test(stageVerifierSource) && /sha512_match/.test(stageVerifierSource) && /integrity_match/.test(stageVerifierSource), 'maintainer stage verifier must compare bytes and digests');
@@ -212,6 +219,8 @@ assertGate(/oidc_environment_not_allowed/.test(stageContract), 'maintainer stage
 assertGate(/local_review_verifier/.test(stagePublishSource), 'confirmed stage preflight must require the local review verifier');
 assertGate(/localNpmStageReviewEnvironmentBlocker/.test(stagePublishSource), 'confirmed stage preflight must reject CI and OIDC review environments');
 assertGate(/exactNpmStageCliInvocation\(\)/.test(stagePublishSource), 'confirmed stage preflight must resolve the pinned npm CLI before mutation');
+assertGate(/crypto\.randomBytes\(16\)\.toString\('hex'\)/.test(stagePublishSource), 'stage dispatch must use a cryptographic 128-bit nonce');
+assertGate(/displayTitle/.test(stagePublishSource) && /expectedDisplayTitle/.test(stagePublishSource), 'stage workflow selection must bind the exact nonce-scoped run title');
 assertGate(/if \(!preflight\.ok\) return finish\(\)/.test(stagePublishSource), 'stage preflight failures must stop before push or dispatch');
 assertGate(!/\['stage',\s*'(?:publish|approve|reject)'/.test(`${stageVerifierSource}\n${stageVerifierSupport}\n${stageVerifierCli}`), 'maintainer stage verifier must not contain mutating stage argv');
 assertGate(/npx --yes npm@11\.15\.0/.test(releaseReadinessDoc), 'release readiness must document pinned local npm stage resolution');

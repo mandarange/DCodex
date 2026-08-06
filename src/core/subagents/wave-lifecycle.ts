@@ -60,12 +60,15 @@ export function subagentCountContractBlockers(plan: Record<string, unknown> | nu
   const waveCapacity = positiveCount(lifecycle?.wave_capacity)
     || positiveCount(plan?.first_wave)
     || positiveCount((plan?.capacity_controller as Record<string, unknown> | undefined)?.selected_capacity)
-  const observedWavePeak = Array.isArray(lifecycle?.waves)
+  const legacyObservedWavePeak = Array.isArray(lifecycle?.waves)
     ? lifecycle.waves.reduce((peak, wave) => {
         if (!wave || typeof wave !== 'object' || !Array.isArray(wave.thread_ids)) return peak
         return Math.max(peak, new Set(wave.thread_ids.map(String).filter(Boolean)).size)
       }, 0)
     : 0
+  const observedWavePeak = lifecycle?.peak_open_threads === undefined
+    ? legacyObservedWavePeak
+    : normalizeCount(lifecycle.peak_open_threads)
   const waveCapacityExceeded = waveCapacity > 0 && observedWavePeak > waveCapacity
   return [
     ...(exactTargetRejected ? ['subagent_target_change_rejected'] : []),
@@ -135,6 +138,7 @@ export interface SubagentWaveLifecycle {
   cumulative_completed: number
   cumulative_failed: number
   cumulative_settled: number
+  peak_open_threads: number
   open_threads: number
   remaining_to_start: number
   post_wave_rescan_required: boolean
@@ -173,6 +177,7 @@ export function createSubagentWaveLifecycle(input: {
     cumulative_completed: 0,
     cumulative_failed: 0,
     cumulative_settled: 0,
+    peak_open_threads: 0,
     open_threads: 0,
     remaining_to_start: targetSubagents,
     post_wave_rescan_required: false,
@@ -224,12 +229,16 @@ export async function refreshSubagentWaveLifecycle(
         automaticSubagentTargetCap(plan),
         Math.max(requestedTargetSubagents, normalizeCount(existing?.target_subagents), startedCount)
       )
+  const waveCapacity = positiveCount(plan.first_wave)
+    || positiveCount((plan.capacity_controller as Record<string, unknown> | undefined)?.selected_capacity)
+    || positiveCount(existing?.wave_capacity)
+    || positiveCount(plan.max_threads)
+    || targetSubagents
   const next = projectLifecycle(existing || createSubagentWaveLifecycle({
     workflowRunId,
     targetSubagents,
     countPolicy,
-    waveCapacity: positiveCount(plan.first_wave)
-      || positiveCount((plan.capacity_controller as Record<string, unknown> | undefined)?.selected_capacity)
+    waveCapacity
   }), {
     workflowRunId,
     requestedTargetSubagents,
@@ -237,8 +246,7 @@ export async function refreshSubagentWaveLifecycle(
     countPolicy,
     events,
     evidence: input.evidence || null,
-    waveCapacity: positiveCount(plan.first_wave)
-      || positiveCount((plan.capacity_controller as Record<string, unknown> | undefined)?.selected_capacity),
+    waveCapacity,
     lastEvent: input.event?.event_name || null,
     targetChangeRejected: existing?.target_change_rejected === true || (
       countPolicy === 'exact'
@@ -319,6 +327,7 @@ function projectLifecycle(
   const cumulativeSettled = [...stops].filter((threadId) => starts.includes(threadId)).length
   const completed = Math.max(0, cumulativeSettled - failed.size)
   const openThreads = Math.max(0, starts.length - cumulativeSettled)
+  const peakOpenThreads = maxConcurrentOpenThreads(input.events)
   const remainingToStart = Math.max(0, input.targetSubagents - starts.length)
   const lastWave = waves.at(-1)
   const postWaveRescanRequired = Boolean(
@@ -326,9 +335,10 @@ function projectLifecycle(
       && openThreads === 0
       && remainingToStart > 0
   )
-  const recoveredCapacity = lastWave?.status === 'settled'
-    ? lastWave.thread_ids.length
-    : 0
+  const recoveredCapacity = Math.min(
+    cumulativeSettled,
+    Math.max(0, input.waveCapacity - openThreads)
+  )
   const parentGuidance = buildWaveParentGuidance({
     remaining_to_start: remainingToStart,
     open_threads: openThreads,
@@ -352,6 +362,7 @@ function projectLifecycle(
     cumulative_completed: completed,
     cumulative_failed: failed.size,
     cumulative_settled: cumulativeSettled,
+    peak_open_threads: peakOpenThreads,
     open_threads: openThreads,
     remaining_to_start: remainingToStart,
     post_wave_rescan_required: postWaveRescanRequired,
@@ -374,6 +385,25 @@ function normalizeLifecycle(value: unknown, workflowRunId: string): SubagentWave
 
 function uniqueThreadIds(events: NormalizedSubagentEvent[]): string[] {
   return [...new Set(events.map((event) => event.thread_id || '').filter(Boolean))]
+}
+
+function maxConcurrentOpenThreads(events: readonly NormalizedSubagentEvent[]): number {
+  const started = new Set<string>()
+  const open = new Set<string>()
+  let peak = 0
+  for (const event of events) {
+    const threadId = event.thread_id
+    if (!threadId) continue
+    if (event.event_name === 'SubagentStart') {
+      if (started.has(threadId)) continue
+      started.add(threadId)
+      open.add(threadId)
+      peak = Math.max(peak, open.size)
+      continue
+    }
+    if (started.has(threadId)) open.delete(threadId)
+  }
+  return peak
 }
 
 function latestEventTime(

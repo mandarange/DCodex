@@ -3,6 +3,7 @@ import { readMacosMenubarProof, validateMacosMenubarProofArtifacts } from './mac
 import { fileSha256, gitOk, gitText, readJson, relative, unique } from './release-proof-io.js'
 import { releaseOriginIdentity } from './release-origin.js'
 import { releaseProofDir, validateLocalReleasePackBinding } from './release-pack-receipt.js'
+import { validatePhysicalReleaseGateInspection } from './physical-release-gates.js'
 import { validateFullReleaseStamp } from './release-stamp-proof.js'
 import {
   RELEASE_UPGRADE_BASELINE_SHA256,
@@ -51,6 +52,7 @@ export interface MainPushGuardInput {
   requireReleaseStamp?: boolean
   requirePackProof?: boolean
   requireMacosProof?: boolean
+  requirePhysicalProof?: boolean
   requireCleanTree?: boolean
 }
 
@@ -101,6 +103,16 @@ export function inspectMainPushGuard(input: MainPushGuardInput) {
     targetTarballSha256: pack?.sha256
   }).blockers)
 
+  if (input.requirePhysicalProof !== true) blockers.push('physical_proof_requirement_missing')
+  const physical = input.requirePhysicalProof && head
+    ? validatePhysicalReleaseGateInspection({
+      root: input.root,
+      version: input.expectedVersion,
+      sourceCommit: head
+    })
+    : null
+  if (physical && !physical.ok) blockers.push(...physical.blockers.map((blocker) => `physical_proof:${blocker}`))
+
   if (input.requireCleanTree !== true) blockers.push('clean_tree_requirement_missing')
   return {
     schema: MAIN_PUSH_GUARD_SCHEMA,
@@ -116,6 +128,7 @@ export function inspectMainPushGuard(input: MainPushGuardInput) {
     pack_proof: input.requirePackProof ? path.relative(input.root, path.join(proofDir, 'pack-receipt.json')) : null,
     upgrade_proof: upgrade,
     macos_proof: input.requireMacosProof ? path.relative(input.root, path.join(proofDir, 'macos-menubar-proof.json')) : null,
+    physical_proof: physical?.path || null,
     force_push_allowed: false,
     blockers: unique(blockers),
     checked_at: new Date().toISOString()

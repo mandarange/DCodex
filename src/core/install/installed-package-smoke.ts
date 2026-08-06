@@ -387,7 +387,7 @@ async function readReceiptBinding(receipt: string, tarball: string): Promise<{
     const blockers: string[] = []
     const sha256 = normalizeSha256(parsed.sha256)
     const version = typeof parsed.package_version === 'string' ? parsed.package_version : null
-    if (parsed.schema !== 'sks.release-pack-receipt.v1' || parsed.ok !== true) blockers.push('pack_receipt_invalid')
+    if (parsed.schema !== 'sks.release-pack-receipt.v2' || parsed.ok !== true) blockers.push('pack_receipt_invalid')
     if (!sha256) blockers.push('pack_receipt_sha256_invalid')
     if (path.basename(String(parsed.tarball_path || parsed.tarball_name || '')) !== path.basename(tarball)) {
       blockers.push('pack_receipt_tarball_name_mismatch')

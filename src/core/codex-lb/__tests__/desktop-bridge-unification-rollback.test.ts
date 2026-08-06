@@ -1,16 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { migrateDesktopBridgeConfig } from '../desktop-bridge-migration.js';
 import * as migrationReceiptApi from '../migration-receipt.js';
 import {
+  desktopBridgeRollbackTargetLockPath,
   rollbackDesktopBridgeUnificationReceipt,
   type StoredDesktopBridgeUnificationReceipt
 } from '../migration-receipt.js';
+import { withFileLock } from '../../locks/file-lock.js';
 
-const BRIDGE = 'http://127.0.0.1:47821/backend-api/codex';
+const CLIENT_CAPABILITY = 'A'.repeat(43);
+const BRIDGE = `http://127.0.0.1:47821/__sks/client/${CLIENT_CAPABILITY}/backend-api/codex`;
+const RETIRED_RUNTIME_STEM = ['codex', '-lb-desktop', '-bridge'].join('');
 
 async function fixture(t: test.TestContext) {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-unification-rollback-'));
@@ -23,7 +28,13 @@ async function fixture(t: test.TestContext) {
   const routePolicyPath = path.join(codexHome, 'sks', 'sks-bridge-route-policy.json');
   const providerRegistryPath = path.join(codexHome, 'sks', 'sks-bridge-provider-registry.json');
   const catalogBindingPath = path.join(codexHome, 'sks', 'sks-bridge-active-generation.json');
-  const bridgeSettingsPath = path.join(codexHome, 'sks', 'codex-lb-desktop-bridge-settings.json');
+  const bridgeSettingsPath = path.join(codexHome, 'sks', 'desktop-bridge-settings.json');
+  const launchdStatePath = path.join(
+    home,
+    'Library',
+    'LaunchAgents',
+    'com.sneakoscope.desktop-bridge.plist'
+  );
   const combinedCatalogPath = path.join(codexHome, 'sks', 'sks-bridge-catalog.json');
   const config = [
     '# sks-codex-lb-managed-provider-selection',
@@ -57,6 +68,7 @@ async function fixture(t: test.TestContext) {
     providerRegistryPath,
     catalogBindingPath,
     bridgeSettingsPath,
+    launchdStatePath,
     combinedCatalogPath,
     config,
     auth
@@ -69,6 +81,7 @@ test('R34/R35: receipt rollback restores metadata but never overwrites rotated c
   const providerRegistry = '{"schema":"sks.bridge-provider-registry.v1","profiles":{}}\n';
   const catalogBinding = '{"schema":"sks.bridge-active-generation.v1"}\n';
   const bridgeSettings = '{"schema":"sks.desktop-bridge-settings.v2"}\n';
+  const launchdState = '<?xml version="1.0"?><plist version="1.0"><dict/></plist>\n';
   const migration = await migrateDesktopBridgeConfig({
     home: setup.home,
     bridgeBaseUrl: BRIDGE,
@@ -77,7 +90,8 @@ test('R34/R35: receipt rollback restores metadata but never overwrites rotated c
       { kind: 'provider_registry', path: setup.providerRegistryPath, text: providerRegistry },
       { kind: 'catalog_binding', path: setup.catalogBindingPath, text: catalogBinding },
       { kind: 'route_policy', path: setup.routePolicyPath, text: routePolicy },
-      { kind: 'bridge_settings', path: setup.bridgeSettingsPath, text: bridgeSettings }
+      { kind: 'bridge_settings', path: setup.bridgeSettingsPath, text: bridgeSettings },
+      { kind: 'launchd_state', path: setup.launchdStatePath, text: launchdState }
     ]
   });
   assert.equal(migration.ok, true);
@@ -85,6 +99,7 @@ test('R34/R35: receipt rollback restores metadata but never overwrites rotated c
   assert.equal(await fsp.readFile(setup.providerRegistryPath, 'utf8'), providerRegistry);
   assert.equal(await fsp.readFile(setup.catalogBindingPath, 'utf8'), catalogBinding);
   assert.equal(await fsp.readFile(setup.bridgeSettingsPath, 'utf8'), bridgeSettings);
+  assert.equal(await fsp.readFile(setup.launchdStatePath, 'utf8'), launchdState);
 
   const migratedConfig = await fsp.readFile(setup.configPath);
   const firstReceiptText = await fsp.readFile(migration.receipt_path!, 'utf8');
@@ -98,7 +113,8 @@ test('R34/R35: receipt rollback restores metadata but never overwrites rotated c
       { kind: 'provider_registry', path: setup.providerRegistryPath, text: providerRegistry },
       { kind: 'catalog_binding', path: setup.catalogBindingPath, text: catalogBinding },
       { kind: 'route_policy', path: setup.routePolicyPath, text: routePolicy },
-      { kind: 'bridge_settings', path: setup.bridgeSettingsPath, text: bridgeSettings }
+      { kind: 'bridge_settings', path: setup.bridgeSettingsPath, text: bridgeSettings },
+      { kind: 'launchd_state', path: setup.launchdStatePath, text: launchdState }
     ]
   });
   assert.equal(secondMigration.ok, true);
@@ -110,10 +126,12 @@ test('R34/R35: receipt rollback restores metadata but never overwrites rotated c
   assert.equal(await fsp.readFile(setup.providerRegistryPath, 'utf8'), providerRegistry);
   assert.equal(await fsp.readFile(setup.catalogBindingPath, 'utf8'), catalogBinding);
   assert.equal(await fsp.readFile(setup.bridgeSettingsPath, 'utf8'), bridgeSettings);
+  assert.equal(await fsp.readFile(setup.launchdStatePath, 'utf8'), launchdState);
   assert.deepEqual((await fsp.readdir(receiptDir)).sort(), receiptEntriesBefore);
   assert.equal(await fsp.readFile(migration.receipt_path!, 'utf8'), firstReceiptText);
   assert.match(firstReceiptText, /"historical_provider_selection": null/);
   assert.doesNotMatch(firstReceiptText, /"provider_mode"/);
+  assert.doesNotMatch(firstReceiptText, new RegExp(CLIENT_CAPABILITY));
 
   // Already-emitted v1 receipts are normalized on read, but every newly
   // written receipt uses the current terminology.
@@ -148,6 +166,7 @@ test('R34/R35: receipt rollback restores metadata but never overwrites rotated c
   await assert.rejects(fsp.access(setup.providerRegistryPath));
   await assert.rejects(fsp.access(setup.catalogBindingPath));
   await assert.rejects(fsp.access(setup.bridgeSettingsPath));
+  await assert.rejects(fsp.access(setup.launchdStatePath));
   assert.equal(await fsp.readFile(setup.authPath, 'utf8'), rotatedAuth);
   assert.equal(await fsp.readFile(setup.lbCredentialPath, 'utf8'), "export CODEX_LB_API_KEY='lb-rotated'\n");
   assert.equal(await fsp.readFile(setup.orCredentialPath, 'utf8'), 'or-rotated\n');
@@ -182,6 +201,182 @@ test('rollback fails closed when managed config changed after migration', async 
   assert.equal(rollback.status, 'rollback_conflict');
   assert.equal(await fsp.readFile(setup.configPath, 'utf8'), userEdited);
   assert.equal(await fsp.readFile(setup.lbCredentialPath, 'utf8'), "export CODEX_LB_API_KEY='lb-latest'\n");
+});
+
+test('receipt reads reject symlinks and permissive modes without touching managed state', async (t) => {
+  const setup = await fixture(t);
+  const migration = await migrateDesktopBridgeConfig({
+    home: setup.home,
+    bridgeBaseUrl: BRIDGE,
+    combinedCatalogPath: setup.combinedCatalogPath
+  });
+  assert.equal(migration.ok, true);
+  const migratedConfig = await fsp.readFile(setup.configPath);
+  const receiptPath = migration.receipt_path!;
+  const receiptBytes = await fsp.readFile(receiptPath);
+
+  await fsp.chmod(receiptPath, 0o644);
+  const permissive = await rollbackDesktopBridgeUnificationReceipt({ receiptPath });
+  assert.equal(permissive.ok, false);
+  assert.equal(permissive.status, 'invalid_receipt');
+  assert.match(permissive.error || '', /desktop_bridge_receipt_permissions_unsafe/);
+  assert.deepEqual(await fsp.readFile(setup.configPath), migratedConfig);
+
+  await fsp.chmod(receiptPath, 0o600);
+  const symlinkPath = path.join(path.dirname(receiptPath), 'receipt-symlink.json');
+  await fsp.symlink(receiptPath, symlinkPath);
+  const symlinked = await rollbackDesktopBridgeUnificationReceipt({ receiptPath: symlinkPath });
+  assert.equal(symlinked.ok, false);
+  assert.equal(symlinked.status, 'invalid_receipt');
+  assert.deepEqual(await fsp.readFile(setup.configPath), migratedConfig);
+  assert.deepEqual(await fsp.readFile(receiptPath), receiptBytes);
+});
+
+test('rollback securely revalidates and rejects a symlinked backup before restoration', async (t) => {
+  const setup = await fixture(t);
+  const migration = await migrateDesktopBridgeConfig({
+    home: setup.home,
+    bridgeBaseUrl: BRIDGE,
+    combinedCatalogPath: setup.combinedCatalogPath
+  });
+  assert.equal(migration.ok, true);
+  const migratedConfig = await fsp.readFile(setup.configPath);
+  const configRollback = migration.receipt!.rollback_metadata.files.find(
+    (file) => file.kind === 'config'
+  );
+  assert.ok(configRollback?.backup_path);
+  const replacement = path.join(setup.home, 'replacement-before-config.toml');
+  await fsp.writeFile(replacement, setup.config, { mode: 0o600 });
+  await fsp.unlink(configRollback.backup_path!);
+  await fsp.symlink(replacement, configRollback.backup_path!);
+
+  const rollback = await rollbackDesktopBridgeUnificationReceipt({ receipt: migration.receipt! });
+  assert.equal(rollback.ok, false);
+  assert.equal(rollback.status, 'rollback_conflict');
+  assert.ok(rollback.conflicts.some((entry) =>
+    entry.path === setup.configPath && entry.reason === 'before_backup_unsafe'
+  ));
+  assert.deepEqual(await fsp.readFile(setup.configPath), migratedConfig);
+});
+
+test('rollback revalidates every target after the barrier and writes none when one target changes', async (t) => {
+  const setup = await fixture(t);
+  const routePolicy = '{"schema":"sks.bridge-routing-policy.v1","fallback":"none"}\n';
+  const migration = await migrateDesktopBridgeConfig({
+    home: setup.home,
+    bridgeBaseUrl: BRIDGE,
+    combinedCatalogPath: setup.combinedCatalogPath,
+    metadataUpdates: [
+      { kind: 'route_policy', path: setup.routePolicyPath, text: routePolicy }
+    ]
+  });
+  assert.equal(migration.ok, true);
+  const migratedConfig = await fsp.readFile(setup.configPath);
+  const concurrentRoutePolicy = `${routePolicy.trimEnd()}\n{"concurrent_writer":true}\n`;
+
+  let releaseBarrier!: () => void;
+  const barrierRelease = new Promise<void>((resolve) => { releaseBarrier = resolve; });
+  let reachedBarrier!: () => void;
+  const barrierReached = new Promise<void>((resolve) => { reachedBarrier = resolve; });
+  const rollbackPromise = rollbackDesktopBridgeUnificationReceipt({
+    receipt: migration.receipt!,
+    beforeTargetLocks: async () => {
+      reachedBarrier();
+      await barrierRelease;
+    }
+  });
+
+  await barrierReached;
+  await fsp.writeFile(setup.routePolicyPath, concurrentRoutePolicy, { mode: 0o600 });
+  releaseBarrier();
+  const rollback = await rollbackPromise;
+
+  assert.equal(rollback.ok, false);
+  assert.equal(rollback.status, 'rollback_conflict');
+  assert.deepEqual(rollback.restored_files, []);
+  assert.ok(rollback.conflicts.some((conflict) =>
+    conflict.path === setup.routePolicyPath
+      && conflict.reason === 'current_file_changed_after_migration'
+  ));
+  assert.deepEqual(await fsp.readFile(setup.configPath), migratedConfig);
+  assert.equal(await fsp.readFile(setup.routePolicyPath, 'utf8'), concurrentRoutePolicy);
+});
+
+test('rollback cooperates with a concurrent target writer using the canonical lock path', async (t) => {
+  const setup = await fixture(t);
+  const migration = await migrateDesktopBridgeConfig({
+    home: setup.home,
+    bridgeBaseUrl: BRIDGE,
+    combinedCatalogPath: setup.combinedCatalogPath
+  });
+  assert.equal(migration.ok, true);
+  const concurrentConfig = `${await fsp.readFile(setup.configPath, 'utf8')}\n# cooperative concurrent writer\n`;
+
+  let writerAcquired!: () => void;
+  const writerIsHoldingLock = new Promise<void>((resolve) => { writerAcquired = resolve; });
+  let initialInspectionDone!: () => void;
+  const writerMayCommit = new Promise<void>((resolve) => { initialInspectionDone = resolve; });
+  const writer = withFileLock({
+    lockPath: desktopBridgeRollbackTargetLockPath(setup.configPath),
+    timeoutMs: 10_000,
+    staleMs: 60_000
+  }, async () => {
+    writerAcquired();
+    await writerMayCommit;
+    await fsp.writeFile(setup.configPath, concurrentConfig, { mode: 0o600 });
+  });
+  await writerIsHoldingLock;
+
+  const rollback = await rollbackDesktopBridgeUnificationReceipt({
+    receipt: migration.receipt!,
+    beforeTargetLocks: async () => { initialInspectionDone(); }
+  });
+  await writer;
+
+  assert.equal(rollback.ok, false);
+  assert.equal(rollback.status, 'rollback_conflict');
+  assert.deepEqual(rollback.restored_files, []);
+  assert.equal(await fsp.readFile(setup.configPath, 'utf8'), concurrentConfig);
+});
+
+test('rollback rejects an identity replacement even when the target hash is unchanged', async (t) => {
+  const setup = await fixture(t);
+  const routePolicy = '{"schema":"sks.bridge-routing-policy.v1","fallback":"none"}\n';
+  const migration = await migrateDesktopBridgeConfig({
+    home: setup.home,
+    bridgeBaseUrl: BRIDGE,
+    combinedCatalogPath: setup.combinedCatalogPath,
+    metadataUpdates: [
+      { kind: 'route_policy', path: setup.routePolicyPath, text: routePolicy }
+    ]
+  });
+  assert.equal(migration.ok, true);
+  const migratedConfig = await fsp.readFile(setup.configPath);
+  const replacementIdentity = { dev: -1, ino: -1 };
+
+  const rollback = await rollbackDesktopBridgeUnificationReceipt({
+    receipt: migration.receipt!,
+    beforeTargetLocks: async () => {
+      const replacement = `${setup.routePolicyPath}.replacement`;
+      await fsp.writeFile(replacement, routePolicy, { mode: 0o600 });
+      await fsp.rename(replacement, setup.routePolicyPath);
+      const replacementStat = await fsp.lstat(setup.routePolicyPath);
+      replacementIdentity.dev = replacementStat.dev;
+      replacementIdentity.ino = replacementStat.ino;
+    }
+  });
+
+  assert.equal(rollback.ok, false);
+  assert.equal(rollback.status, 'rollback_conflict');
+  assert.deepEqual(rollback.restored_files, []);
+  assert.ok(rollback.conflicts.some((conflict) =>
+    conflict.path === setup.routePolicyPath
+      && conflict.reason === 'current_file_identity_changed_during_rollback'
+  ));
+  const after = await fsp.lstat(setup.routePolicyPath);
+  assert.equal(after.dev, replacementIdentity.dev);
+  assert.equal(after.ino, replacementIdentity.ino);
+  assert.deepEqual(await fsp.readFile(setup.configPath), migratedConfig);
 });
 
 test('rollback receipt validator rejects auth and credential-store targets', async (t) => {
@@ -231,6 +426,95 @@ test('rollback receipt validator rejects non-canonical metadata targets', async 
   assert.equal(rollback.ok, false);
   assert.equal(rollback.status, 'invalid_receipt');
   assert.match(rollback.error || '', /desktop_bridge_rollback_metadata_path_not_canonical:route_policy/);
+});
+
+test('rollback receipt validator rejects every retired runtime artifact before target writes', async (t) => {
+  const setup = await fixture(t);
+  const migration = await migrateDesktopBridgeConfig({
+    home: setup.home,
+    bridgeBaseUrl: BRIDGE,
+    combinedCatalogPath: setup.combinedCatalogPath
+  });
+  assert.equal(migration.ok, true);
+  const migratedConfig = await fsp.readFile(setup.configPath);
+  const receiptFilesDir = path.dirname(
+    migration.receipt!.rollback_metadata.files.find((file) => file.kind === 'config')!.backup_path!
+  );
+  const runtimeDir = path.join(setup.home, '.codex', 'sks');
+  const retiredTargets = [
+    {
+      artifact: 'settings',
+      kind: 'bridge_settings' as const,
+      path: path.join(runtimeDir, `${RETIRED_RUNTIME_STEM}-settings.json`)
+    },
+    {
+      artifact: 'state',
+      kind: 'bridge_settings' as const,
+      path: path.join(runtimeDir, `${RETIRED_RUNTIME_STEM}.json`)
+    },
+    {
+      artifact: 'plist',
+      kind: 'launchd_state' as const,
+      path: path.join(
+        setup.home,
+        'Library',
+        'LaunchAgents',
+        `com.sneakoscope.${RETIRED_RUNTIME_STEM}.plist`
+      )
+    },
+    {
+      artifact: 'stdout_log',
+      kind: 'bridge_settings' as const,
+      path: path.join(runtimeDir, 'logs', `${RETIRED_RUNTIME_STEM}.out.log`)
+    },
+    {
+      artifact: 'stderr_log',
+      kind: 'bridge_settings' as const,
+      path: path.join(runtimeDir, 'logs', `${RETIRED_RUNTIME_STEM}.err.log`)
+    }
+  ];
+
+  for (const [index, target] of retiredTargets.entries()) {
+    await t.test(target.artifact, async () => {
+      const beforeBytes = Buffer.from(`retired-before-${target.artifact}\n`);
+      const afterBytes = Buffer.from(`retired-after-${target.artifact}\n`);
+      await fsp.mkdir(path.dirname(target.path), { recursive: true, mode: 0o700 });
+      await fsp.writeFile(target.path, afterBytes, { mode: 0o600 });
+
+      const malicious = JSON.parse(JSON.stringify(migration.receipt)) as StoredDesktopBridgeUnificationReceipt;
+      const backupPath = path.join(
+        receiptFilesDir,
+        `${(index + 1).toString(16).padStart(16, '0')}.before`
+      );
+      await fsp.writeFile(backupPath, beforeBytes, { mode: 0o600 });
+      malicious.rollback_metadata.files.push({
+        kind: target.kind,
+        path: target.path,
+        before_sha256: createHash('sha256').update(beforeBytes).digest('hex'),
+        after_sha256: createHash('sha256').update(afterBytes).digest('hex'),
+        backup_path: backupPath,
+        owned_by_sks: true
+      });
+      malicious.backup_paths.push(backupPath);
+      let reachedTargetBoundary = false;
+
+      const rollback = await rollbackDesktopBridgeUnificationReceipt({
+        receipt: malicious,
+        beforeTargetLocks: async () => { reachedTargetBoundary = true; }
+      });
+
+      assert.equal(rollback.ok, false);
+      assert.equal(rollback.status, 'invalid_receipt');
+      assert.deepEqual(rollback.restored_files, []);
+      assert.equal(reachedTargetBoundary, false);
+      assert.equal(
+        rollback.error,
+        `desktop_bridge_rollback_retired_runtime_target_forbidden:${target.artifact}`
+      );
+      assert.deepEqual(await fsp.readFile(target.path), afterBytes);
+      assert.deepEqual(await fsp.readFile(setup.configPath), migratedConfig);
+    });
+  }
 });
 
 test('migration rejects non-canonical metadata targets before any write', async (t) => {

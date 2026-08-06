@@ -1,0 +1,291 @@
+name: Capture physical release evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package.json version whose physical evidence will be captured
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: physical-release-capture-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    name: Trusted physical macOS capture
+    if: github.repository == 'mandarange/Sneakoscope-Codex' && github.ref == 'refs/heads/main'
+    environment: physical-release-capture
+    runs-on: [self-hosted, macOS, sneakoscope-physical-release]
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify capture identity
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import { execFileSync } from 'node:child_process'
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+          const remoteMain = execFileSync('git', ['ls-remote', '--exit-code', 'origin', 'refs/heads/main'], { encoding: 'utf8' }).trim().split(/\s+/, 1)[0]
+          const dirty = execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], { encoding: 'utf8' }).trim()
+          if (pkg.version !== process.env.VERSION) throw new Error('capture version does not match package.json')
+          if (head !== process.env.SOURCE_COMMIT || remoteMain !== head) throw new Error('capture source is not the exact live main HEAD')
+          if (dirty) throw new Error('capture source tree is not clean')
+          NODE
+
+      - name: Invoke trusted physical macOS capture adapter
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          EXPECTED_ADAPTER_SHA256: ${{ secrets.SKS_PHYSICAL_CAPTURE_ADAPTER_SHA256 }}
+        run: |
+          node --input-type=module <<'NODE'
+          import crypto from 'node:crypto'
+          import fs from 'node:fs'
+          import os from 'node:os'
+          import path from 'node:path'
+          import { spawnSync } from 'node:child_process'
+          const expected = String(process.env.EXPECTED_ADAPTER_SHA256 || '').toLowerCase()
+          if (!/^[a-f0-9]{64}$/.test(expected)) throw new Error('protected physical capture adapter digest is missing or invalid')
+          const adapter = '/usr/local/bin/sks-physical-release-capture'
+          const components = ['/', '/usr', '/usr/local', '/usr/local/bin']
+          const checkParents = () => components.map(component => {
+            const stat = fs.lstatSync(component)
+            if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(component) !== component) throw new Error(`physical capture adapter parent is not a real directory: ${component}`)
+            if (stat.uid !== 0 || (stat.mode & 0o022) !== 0) throw new Error(`physical capture adapter parent ownership or mode is unsafe: ${component}`)
+            return { component, dev: stat.dev, ino: stat.ino, uid: stat.uid, mode: stat.mode }
+          })
+          const beforeParents = checkParents()
+          const sourceStat = fs.lstatSync(adapter)
+          if (!sourceStat.isFile() || sourceStat.isSymbolicLink() || fs.realpathSync(adapter) !== adapter) throw new Error('physical capture adapter must be a non-symlink regular file')
+          if (sourceStat.uid !== 0 || (sourceStat.mode & 0o022) !== 0) throw new Error('physical capture adapter ownership or mode is unsafe')
+          if ((sourceStat.mode & 0o111) === 0) throw new Error('physical capture adapter must be executable')
+          const sourceFd = fs.openSync(adapter, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+          const openedStat = fs.fstatSync(sourceFd)
+          if (openedStat.dev !== sourceStat.dev || openedStat.ino !== sourceStat.ino) throw new Error('physical capture adapter changed while opening')
+          const sourceBytes = fs.readFileSync(sourceFd)
+          fs.closeSync(sourceFd)
+          const actual = crypto.createHash('sha256').update(sourceBytes).digest('hex')
+          if (actual !== expected) throw new Error('physical capture adapter digest is not approved')
+          const privateRoot = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || os.tmpdir(), 'physical-adapter.'))
+          fs.chmodSync(privateRoot, 0o700)
+          const privateAdapter = path.join(privateRoot, 'sks-physical-release-capture')
+          fs.writeFileSync(privateAdapter, sourceBytes, { mode: 0o500, flag: 'wx' })
+          const privateStat = fs.lstatSync(privateAdapter)
+          if (!privateStat.isFile() || privateStat.isSymbolicLink() || (privateStat.mode & 0o077) !== 0) throw new Error('private physical capture adapter copy is unsafe')
+          if (crypto.createHash('sha256').update(fs.readFileSync(privateAdapter)).digest('hex') !== actual) throw new Error('private physical capture adapter copy digest mismatch')
+          const captureRoot = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || os.tmpdir(), 'physical-release-capture.'))
+          const evidenceOutput = path.join(captureRoot, 'release-evidence', process.env.VERSION)
+          fs.mkdirSync(evidenceOutput, { recursive: true, mode: 0o700 })
+          const adapterEnvKeys = [
+            'HOME', 'PATH', 'SHELL', 'TMPDIR', 'USER', 'LOGNAME', 'LANG', 'LC_ALL',
+            'CI', 'GITHUB_ACTIONS', 'GITHUB_WORKSPACE', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID',
+            'GITHUB_RUN_ATTEMPT', 'GITHUB_SHA', 'GITHUB_REF_NAME', 'GITHUB_WORKFLOW_REF',
+            'RUNNER_TEMP', 'RUNNER_OS', 'RUNNER_ARCH', 'RUNNER_NAME'
+          ]
+          const adapterEnv = Object.fromEntries(adapterEnvKeys.flatMap(key => process.env[key] === undefined ? [] : [[key, process.env[key]]]))
+          const run = spawnSync(privateAdapter, [
+            '--workspace', process.env.GITHUB_WORKSPACE,
+            '--version', process.env.VERSION,
+            '--source-commit', process.env.SOURCE_COMMIT,
+            '--output', evidenceOutput
+          ], { env: adapterEnv, maxBuffer: 1024 * 1024 })
+          const stdoutBytes = Buffer.isBuffer(run.stdout) ? run.stdout : Buffer.alloc(0)
+          const stderrBytes = Buffer.isBuffer(run.stderr) ? run.stderr : Buffer.alloc(0)
+          const containsSecret = bytes => /(?:(?:"|')?(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|password|cookie|secret_value|credential_value)(?:"|')?\s*[:=])|\b(?:sk|or|sess|key)-[A-Za-z0-9_-]{8,}\b|Bearer\s+[A-Za-z0-9._~+/-]{8,}/i.test(bytes.toString('utf8'))
+          if (containsSecret(stdoutBytes) || containsSecret(stderrBytes)) throw new Error('physical capture adapter emitted prohibited secret-like output')
+          console.log(JSON.stringify({
+            adapter_exit_status: run.status,
+            stdout_sha256: crypto.createHash('sha256').update(stdoutBytes).digest('hex'),
+            stderr_sha256: crypto.createHash('sha256').update(stderrBytes).digest('hex')
+          }))
+          if (run.error || run.status !== 0) throw new Error('physical capture adapter execution failed')
+          const afterParents = checkParents()
+          if (JSON.stringify(afterParents) !== JSON.stringify(beforeParents)) throw new Error('physical capture adapter parent identity changed during execution')
+          const afterSource = fs.lstatSync(adapter)
+          if (afterSource.dev !== sourceStat.dev || afterSource.ino !== sourceStat.ino
+            || afterSource.size !== sourceStat.size || afterSource.mtimeMs !== sourceStat.mtimeMs
+            || afterSource.uid !== sourceStat.uid || afterSource.mode !== sourceStat.mode
+            || crypto.createHash('sha256').update(fs.readFileSync(adapter)).digest('hex') !== actual) throw new Error('physical capture adapter source changed during execution')
+          if (crypto.createHash('sha256').update(fs.readFileSync(privateAdapter)).digest('hex') !== actual) throw new Error('private physical capture adapter changed during execution')
+          fs.appendFileSync(process.env.GITHUB_ENV, [
+            `PHYSICAL_CAPTURE_ROOT=${captureRoot}`,
+            `PHYSICAL_CAPTURE_ADAPTER_SHA256=${actual}`,
+            `PHYSICAL_CAPTURE_ADAPTER_OWNER_UID=${sourceStat.uid}`,
+            ''
+          ].join('\n'))
+          NODE
+
+      - name: Seal exact capture manifest and archive
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        run: |
+          CAPTURE_ROOT="$PHYSICAL_CAPTURE_ROOT"
+          ARCHIVE="$RUNNER_TEMP/physical-release-evidence.tgz"
+          export CAPTURE_ROOT ARCHIVE
+          node --input-type=module <<'NODE'
+          import crypto from 'node:crypto'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          const root = path.resolve(process.env.CAPTURE_ROOT)
+          const evidenceRoot = path.join(root, 'release-evidence', process.env.VERSION)
+          const walk = directory => fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+            const file = path.join(directory, entry.name)
+            if (entry.isSymbolicLink()) throw new Error(`capture contains symlink: ${file}`)
+            return entry.isDirectory() ? walk(file) : entry.isFile() ? [file] : (() => { throw new Error(`capture contains non-file: ${file}`) })()
+          })
+          const files = walk(evidenceRoot)
+          if (files.length === 0) throw new Error('capture adapter produced no evidence')
+          const containsSecret = bytes => {
+            const text = bytes.toString('utf8')
+            return /(?:"|')?(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|password|cookie|secret_value|credential_value)(?:"|')?\s*[:=]/i.test(text)
+              || /\b(?:sk|or|sess|key)-[A-Za-z0-9_-]{8,}\b|Bearer\s+[A-Za-z0-9._~+/-]{8,}/i.test(text)
+          }
+          for (const file of files) {
+            if (containsSecret(fs.readFileSync(file))) throw new Error(`capture contains secret material: ${path.relative(root, file)}`)
+          }
+          const receipt = JSON.parse(fs.readFileSync(path.join(evidenceRoot, 'physical-gates.json'), 'utf8'))
+          if (receipt.schema !== 'sks.release-physical-gates.v2'
+            || receipt.package_version !== process.env.VERSION
+            || receipt.source_commit !== process.env.SOURCE_COMMIT
+            || receipt.capture_platform !== 'darwin'
+            || receipt.fixture !== false
+            || receipt.mock !== false
+            || receipt.synthetic !== false) throw new Error('capture adapter output identity mismatch')
+          const bridgeReport = JSON.parse(fs.readFileSync(path.join(evidenceRoot, 'desktop-bridge', 'release-evidence.json'), 'utf8'))
+          const adapterBinding = bridgeReport.production_adapter
+          if (adapterBinding?.receipt_path !== 'desktop-bridge/production-adapter-receipt.json') throw new Error('capture adapter receipt path mismatch')
+          const adapterReceiptPath = path.join(evidenceRoot, String(adapterBinding?.receipt_path || ''))
+          const adapterReceiptBytes = fs.readFileSync(adapterReceiptPath)
+          const adapterReceiptSha256 = crypto.createHash('sha256').update(adapterReceiptBytes).digest('hex')
+          const adapterReceipt = JSON.parse(adapterReceiptBytes.toString('utf8'))
+          if (adapterReceipt.schema !== 'sks.desktop-bridge-production-adapter-receipt.v1'
+            || adapterReceipt.release_authorizing !== true || adapterReceipt.execution_mode !== 'production'
+            || bridgeReport.fixture !== false || bridgeReport.mock !== false || bridgeReport.synthetic !== false
+            || adapterBinding?.fixture !== false || adapterBinding?.mock !== false || adapterBinding?.synthetic !== false
+            || adapterBinding?.receipt_sha256 !== adapterReceiptSha256
+            || adapterReceipt.adapter_id !== adapterBinding?.adapter_id
+            || adapterReceipt.adapter_version !== adapterBinding?.adapter_version
+            || adapterReceipt.run_id !== adapterBinding?.run_id
+            || adapterReceipt.receipt_id !== adapterBinding?.receipt_id
+            || adapterReceipt.fixture !== false || adapterReceipt.mock !== false || adapterReceipt.synthetic !== false
+            || receipt.capture_adapter_id !== adapterReceipt.adapter_id
+            || receipt.capture_adapter_version !== adapterReceipt.adapter_version
+            || receipt.capture_adapter_receipt_id !== adapterReceipt.receipt_id
+            || receipt.capture_adapter_receipt_sha256 !== adapterReceiptSha256) throw new Error('capture adapter receipt identity mismatch')
+          if (!Array.isArray(receipt.gates) || receipt.gates.some(gate => gate.fixture !== false
+            || gate.mock !== false || gate.synthetic !== false
+            || gate.capture_adapter_id !== adapterReceipt.adapter_id
+            || gate.capture_adapter_version !== adapterReceipt.adapter_version
+            || gate.producer_receipt_id !== adapterReceipt.receipt_id
+            || gate.producer_receipt_sha256 !== adapterReceiptSha256)) throw new Error('capture gate adapter binding mismatch')
+          const commandIds = {
+            update_5001_directory: 'sks.update.physical',
+            single_menubar_process: 'sks.menubar.process-readback',
+            codex_lb_measured_request: 'sks.codex-lb.measured-request',
+            telegram_cellular_e2e: 'sks.telegram.cellular-roundtrip'
+          }
+          const readEvidenceFile = (relative, label) => {
+            if (typeof relative !== 'string' || path.isAbsolute(relative) || relative.includes('\\')) throw new Error(`${label} path is unsafe`)
+            const resolved = path.resolve(evidenceRoot, relative)
+            const contained = path.relative(evidenceRoot, resolved)
+            if (!contained || contained.startsWith('..') || path.isAbsolute(contained)) throw new Error(`${label} path escapes evidence root`)
+            const stat = fs.lstatSync(resolved)
+            if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} is not a regular file`)
+            return fs.readFileSync(resolved)
+          }
+          for (const gate of receipt.gates.filter(gate => gate.id !== 'desktop_bridge_live_evidence')) {
+            const artifactBytes = readEvidenceFile(gate.artifact_path, `gate ${gate.id} artifact`)
+            if (crypto.createHash('sha256').update(artifactBytes).digest('hex') !== gate.artifact_sha256) throw new Error(`gate ${gate.id} artifact digest mismatch`)
+            const artifact = JSON.parse(artifactBytes.toString('utf8'))
+            const producer = artifact.producer
+            if (artifact.schema !== 'sks.release-physical-gate-artifact.v2'
+              || artifact.gate_id !== gate.id
+              || artifact.package_version !== process.env.VERSION
+              || artifact.source_commit !== process.env.SOURCE_COMMIT
+              || producer?.schema !== 'sks.release-physical-gate-producer.v1'
+              || producer?.capture_adapter_id !== adapterReceipt.adapter_id
+              || producer?.capture_adapter_version !== adapterReceipt.adapter_version
+              || producer?.receipt_id !== adapterReceipt.receipt_id
+              || producer?.receipt_sha256 !== adapterReceiptSha256
+              || producer?.command_id !== commandIds[gate.id]
+              || typeof producer?.invocation_id !== 'string' || !producer.invocation_id
+              || producer?.exit_code !== 0
+              || producer?.fixture !== false || producer?.mock !== false || producer?.synthetic !== false) throw new Error(`gate ${gate.id} producer contract mismatch`)
+            const outputBytes = readEvidenceFile(producer.output_path, `gate ${gate.id} producer output`)
+            if (crypto.createHash('sha256').update(outputBytes).digest('hex') !== producer.output_sha256) throw new Error(`gate ${gate.id} producer output digest mismatch`)
+            const output = JSON.parse(outputBytes.toString('utf8'))
+            if (output.schema !== 'sks.release-physical-gate-producer-output.v1'
+              || output.gate_id !== gate.id
+              || output.capture_adapter_id !== adapterReceipt.adapter_id
+              || output.capture_adapter_version !== adapterReceipt.adapter_version
+              || output.producer_receipt_id !== adapterReceipt.receipt_id
+              || output.invocation_id !== producer.invocation_id
+              || output.fixture !== false || output.mock !== false || output.synthetic !== false
+              || !output.measurement || typeof output.measurement !== 'object' || Array.isArray(output.measurement)) throw new Error(`gate ${gate.id} producer output contract mismatch`)
+          }
+          const entries = files.map(file => {
+            const bytes = fs.readFileSync(file)
+            return {
+              path: path.relative(root, file).split(path.sep).join('/'),
+              sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+              bytes: bytes.length
+            }
+          }).sort((left, right) => left.path.localeCompare(right.path))
+          const manifest = {
+            schema: 'sks.release-physical-evidence-artifact-manifest.v1',
+            package_version: process.env.VERSION,
+            source_commit: process.env.SOURCE_COMMIT,
+            capture_platform: 'darwin',
+            github_repository: process.env.GITHUB_REPOSITORY,
+            workflow_path: '.github/workflows/capture-physical-release-evidence.yml',
+            workflow_run_id: process.env.WORKFLOW_RUN_ID,
+            artifact_name: `physical-release-evidence-${process.env.SOURCE_COMMIT}`,
+            capture_adapter: {
+              schema: 'sks.release-physical-capture-adapter.v1',
+              executable_path: '/usr/local/bin/sks-physical-release-capture',
+              executable_sha256: process.env.PHYSICAL_CAPTURE_ADAPTER_SHA256,
+              owner_uid: Number(process.env.PHYSICAL_CAPTURE_ADAPTER_OWNER_UID),
+              adapter_id: adapterReceipt.adapter_id,
+              adapter_version: adapterReceipt.adapter_version,
+              run_id: adapterReceipt.run_id,
+              receipt_id: adapterReceipt.receipt_id,
+              receipt_path: adapterBinding.receipt_path,
+              receipt_sha256: adapterReceiptSha256
+            },
+            entries
+          }
+          fs.writeFileSync(path.join(root, 'physical-evidence-artifact-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 })
+          NODE
+          tar -czf "$ARCHIVE" -C "$CAPTURE_ROOT" \
+            physical-evidence-artifact-manifest.json \
+            "release-evidence/${VERSION}"
+
+      - name: Attest exact physical evidence archive
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/physical-release-evidence.tgz
+
+      - name: Upload exact attested physical evidence archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: physical-release-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/physical-release-evidence.tgz
+          if-no-files-found: error
+          retention-days: 7

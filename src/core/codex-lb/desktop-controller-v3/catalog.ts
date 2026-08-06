@@ -41,6 +41,7 @@ import {
   providerRegistrySnapshot,
   resolveRawCredentials,
   resolveValidatedCredentials,
+  safeCode,
   serializedSettings,
   stringArray,
   timeoutMs,
@@ -112,18 +113,32 @@ export async function syncCatalogInternal(
     default_provider_id: defaultProvider,
     changed_at: nowIso(options)
   });
-  const settings = await resolveDesktopBridgeActivationSettings({
-    ...options,
-    home: paths.home,
-    providerRegistry: providerRegistrySnapshot(registry, build.route_index),
-    routePolicy: policy
-  });
+  let settings: Awaited<ReturnType<typeof resolveDesktopBridgeActivationSettings>>;
+  let managedBridgeBaseUrl: string;
+  try {
+    settings = await resolveDesktopBridgeActivationSettings({
+      ...options,
+      home: paths.home,
+      providerRegistry: providerRegistrySnapshot(registry, build.route_index),
+      routePolicy: policy
+    });
+    managedBridgeBaseUrl = await bridgeBaseUrl(settings, { ...options, home: paths.home });
+  } catch (error: unknown) {
+    const blocker = safeCode(error, 'desktop_bridge_client_capability_invalid');
+    return {
+      ok: false,
+      build,
+      activation: activationResult(staging, false, [blocker]),
+      migration: null,
+      active_generation_preserved: true
+    };
+  }
   const migration = await migrateDesktopBridgeConfig({
     home: paths.home,
     configPath: paths.configPath,
     authPath: paths.authPath,
     receiptDir: paths.receiptDir,
-    bridgeBaseUrl: bridgeBaseUrl(settings),
+    bridgeBaseUrl: managedBridgeBaseUrl,
     combinedCatalogPath: staging.catalog_path,
     newCatalogGeneration: build.catalog.generation,
     metadataUpdates: [
@@ -234,6 +249,7 @@ async function fetchProviderCatalogs(
       const result = await readCodexLbModelCatalog({
         loadedEnv: loaded,
         ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+        ...(options.codexLbLookup ? { lookup: options.codexLbLookup } : {}),
         timeoutMs: timeoutMs(options),
         gatewayAuthTransport: profile.endpoint.auth_transport === 'x-codex-lb-api-key'
           ? 'x-codex-lb-api-key' : 'authorization-bearer'

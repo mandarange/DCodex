@@ -6,11 +6,17 @@ import net, { type AddressInfo, type Socket } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import type { ProviderSessionPin } from '../../bridge-contracts.js';
 import {
   DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
   DesktopBridgeError,
+  desktopBridgeClientPath,
+  prepareDesktopBridgeConfig,
+  resolveCodexSessionIdentity,
+  resolveAndBindDesktopBridgeRouteContext,
   selectAvailableDesktopBridgePort,
   startDesktopBridge,
+  startPreparedDesktopBridge,
   stopDesktopBridge,
   type DesktopBridgeConfig,
   type DesktopBridgeProviderAuthTransport,
@@ -23,6 +29,39 @@ const POLICY_GENERATION = 'policy-generation';
 const CREDENTIAL_GENERATION = 'credential-generation';
 const CREDENTIAL_FINGERPRINT = 'credential-fingerprint';
 const CODEX_LB_SECRET = 'lb-key-blackbox-secret';
+const CLIENT_CAPABILITY = Buffer.alloc(32, 0x43).toString('base64url');
+const CLIENT_CAPABILITY_SHA256 = createHash('sha256').update(CLIENT_CAPABILITY).digest('hex');
+const WRONG_CLIENT_CAPABILITY = Buffer.alloc(32, 0x44).toString('base64url');
+
+function codexSessionHeaders(threadId: string): Record<string, string> {
+  return {
+    'thread-id': threadId,
+    'session-id': threadId,
+    'x-client-request-id': `${threadId}:request`,
+    'x-codex-window-id': `${threadId}:0`,
+    'x-codex-turn-metadata': JSON.stringify({
+      installation_id: 'installation-fixture', session_id: threadId, thread_id: threadId,
+      turn_id: `${threadId}:turn`, window_id: `${threadId}:0`, request_kind: 'turn',
+      thread_source: 'user', sandbox: 'seatbelt', turn_started_at_unix_ms: 1_786_000_000_000,
+    }),
+  };
+}
+
+test('real Codex wire identity resolves to thread pin identity and rejects inconsistent sources', () => {
+  const threadId = '019fd56f-d48f-7942-a560-48ad9ef47223';
+  const headers = codexSessionHeaders(threadId);
+  assert.deepEqual(resolveCodexSessionIdentity(headers, {
+    client_metadata: { session_id: threadId, thread_id: threadId, turn_id: `${threadId}:turn` },
+  }), { thread_id: threadId, session_id: threadId });
+  assert.throws(() => resolveCodexSessionIdentity({ ...headers, 'session-id': 'different-session' }),
+    /bridge_codex_session_identity_conflict|bridge_codex_session_identity_mismatch/);
+  assert.throws(() => resolveCodexSessionIdentity(headers, {
+    client_metadata: { session_id: threadId, thread_id: 'different-thread' },
+  }), /bridge_codex_session_identity_conflict/);
+  assert.deepEqual(resolveCodexSessionIdentity({ 'x-sks-session-id': 'untrusted' }), {
+    thread_id: null, session_id: null,
+  });
+});
 
 async function listen(server: Server, host = '127.0.0.1'): Promise<number> {
   await new Promise<void>((resolve, reject) => {
@@ -79,6 +118,7 @@ function bridgeConfig(
       fingerprint: providerId === 'codex-lb' ? CREDENTIAL_FINGERPRINT : 'unused-openrouter-fingerprint',
       generation: expectedGeneration,
     }),
+    clientCapabilitySha256: CLIENT_CAPABILITY_SHA256,
     allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES,
     allowedOrigins: ['app://codex'],
     connectTimeoutMs: 2_000,
@@ -93,12 +133,15 @@ async function request(input: {
   headers?: http.OutgoingHttpHeaders;
   chunks?: readonly Buffer[];
   onData?: (chunk: Buffer) => void;
+  clientCapability?: string | null;
 }): Promise<{ status: number; headers: IncomingMessage['headers']; body: Buffer }> {
   return new Promise((resolve, reject) => {
     const req = http.request({
       host: '127.0.0.1',
       port: input.port,
-      path: input.path,
+      path: input.clientCapability === null
+        ? input.path
+        : desktopBridgeClientPath(input.clientCapability ?? CLIENT_CAPABILITY, input.path),
       method: input.method || 'GET',
       headers: input.headers,
     }, (res) => {
@@ -119,7 +162,55 @@ async function request(input: {
   });
 }
 
-test('HTTP/SSE streams without buffering, rewrites Location, and uses only the preferred gateway header', async () => {
+test('missing or wrong client capability is rejected before body parsing, routing, or upstream access', async () => {
+  let upstreamRequests = 0;
+  let credentialResolutions = 0;
+  const upstream = http.createServer((req, res) => {
+    upstreamRequests += 1;
+    req.resume();
+    res.end('{"unexpected":true}');
+  });
+  const upstreamPort = await listen(upstream);
+  const bridgePort = await selectAvailableDesktopBridgePort('127.0.0.1');
+  const config = bridgeConfig(bridgePort, upstreamPort, 'x-codex-lb-api-key');
+  config.resolveProviderCredential = async () => {
+    credentialResolutions += 1;
+    throw new Error('credential resolution must not run');
+  };
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    bridge = await startDesktopBridge(config, { writeState: false });
+    const attempts = [
+      {
+        path: '/backend-api/codex/responses',
+        code: 'bridge_client_capability_required',
+      },
+      {
+        path: desktopBridgeClientPath(WRONG_CLIENT_CAPABILITY, '/backend-api/codex/responses'),
+        code: 'bridge_client_capability_invalid',
+      },
+    ];
+    for (const attempt of attempts) {
+      const result = await request({
+        port: bridgePort,
+        path: attempt.path,
+        clientCapability: null,
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-sks-model': PUBLIC_MODEL },
+        chunks: [Buffer.from('{not-valid-json')],
+      });
+      assert.equal(result.status, 403);
+      assert.equal(JSON.parse(result.body.toString()).error.code, attempt.code);
+    }
+    assert.equal(credentialResolutions, 0);
+    assert.equal(upstreamRequests, 0);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await close(upstream);
+  }
+});
+
+test('correct client capability is stripped before upstream while HTTP/SSE binds the first session pin', async () => {
   let upstreamEnded = false;
   let upstreamHeaders: IncomingMessage['headers'] = {};
   const upstream = http.createServer((req, res) => {
@@ -141,8 +232,13 @@ test('HTTP/SSE streams without buffering, rewrites Location, and uses only the p
   const upstreamPort = await listen(upstream);
   const bridgePort = await selectAvailableDesktopBridgePort('127.0.0.1');
   let bridge: DesktopBridgeHandle | null = null;
+  let persistedPins: readonly ProviderSessionPin[] = [];
   try {
-    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 'x-codex-lb-api-key'), {
+    const config = bridgeConfig(bridgePort, upstreamPort, 'x-codex-lb-api-key');
+    config.persistProviderSessionPins = async (pins) => {
+      persistedPins = structuredClone(pins);
+    };
+    bridge = await startDesktopBridge(config, {
       writeState: false,
     });
     let firstArrivedBeforeEnd = false;
@@ -155,6 +251,7 @@ test('HTTP/SSE streams without buffering, rewrites Location, and uses only the p
         cookie: 'desktop=session-secret',
         'x-codex-lb-api-key': 'client-forged-key',
         'x-sks-model': PUBLIC_MODEL,
+        ...codexSessionHeaders('thread-http-1'),
         'content-type': 'application/json',
       },
       chunks: [Buffer.from('{"stream":true}')],
@@ -167,12 +264,25 @@ test('HTTP/SSE streams without buffering, rewrites Location, and uses only the p
     assert.equal(firstArrivedBeforeEnd, true);
     assert.equal(upstreamHeaders.authorization, undefined);
     assert.equal(upstreamHeaders.cookie, undefined);
+    assert.equal(upstreamHeaders['thread-id'], undefined);
+    assert.equal(upstreamHeaders['session-id'], undefined);
+    assert.equal(upstreamHeaders['x-codex-turn-metadata'], undefined);
     assert.equal(upstreamHeaders['x-codex-lb-api-key'], 'lb-key-blackbox-secret');
+    assert.equal(persistedPins.length, 1);
+    assert.deepEqual(persistedPins[0], {
+      thread_id: 'thread-http-1',
+      provider_id: 'codex-lb',
+      public_model: PUBLIC_MODEL,
+      upstream_model: PUBLIC_MODEL,
+      catalog_generation: CATALOG_GENERATION,
+      route_policy_generation: POLICY_GENERATION,
+      created_at: persistedPins[0]?.created_at,
+    });
     assert.equal(result.headers['set-cookie'], undefined);
     assert.equal(result.headers['x-codex-lb-api-key'], undefined);
     assert.equal(
       result.headers.location,
-      `ws://127.0.0.1:${bridgePort}/backend-api/codex/call-1?token=opaque`,
+      `ws://127.0.0.1:${bridgePort}${desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/call-1?token=opaque')}`,
     );
   } finally {
     if (bridge) await stopDesktopBridge(bridge);
@@ -279,6 +389,120 @@ test('unauthorized path/origin and cross-origin Location fail closed without pro
   }
 });
 
+test('failed session-pin persistence leaves bridge memory unchanged and never reaches upstream', async () => {
+  let upstreamRequests = 0;
+  const upstream = http.createServer((req, res) => {
+    upstreamRequests += 1;
+    req.resume();
+    res.end('{"unexpected":true}');
+  });
+  const upstreamPort = await listen(upstream);
+  const bridgePort = await selectAvailableDesktopBridgePort('127.0.0.1');
+  const config = bridgeConfig(bridgePort, upstreamPort, 'x-codex-lb-api-key');
+  config.persistProviderSessionPins = async () => {
+    throw new DesktopBridgeError('bridge_session_pin_persist_failed');
+  };
+  const prepared = await prepareDesktopBridgeConfig(config);
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    bridge = await startPreparedDesktopBridge(prepared, { writeState: false });
+    const result = await request({
+      port: bridgePort,
+      path: '/backend-api/codex/responses',
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...codexSessionHeaders('thread-persist-failure'),
+      },
+      chunks: [Buffer.from(JSON.stringify({ model: PUBLIC_MODEL, input: 'hello' }))],
+    });
+    assert.equal(result.status, 502);
+    assert.deepEqual(prepared.providerSessionPins, []);
+    assert.equal(upstreamRequests, 0);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await close(upstream);
+  }
+});
+
+test('concurrent first requests for one session persist exactly one pin', async () => {
+  let upstreamRequests = 0;
+  let persistenceCalls = 0;
+  let persistedPins: readonly ProviderSessionPin[] = [];
+  const upstream = http.createServer((req, res) => {
+    upstreamRequests += 1;
+    req.resume();
+    req.once('end', () => res.end('{"ok":true}'));
+  });
+  const upstreamPort = await listen(upstream);
+  const bridgePort = await selectAvailableDesktopBridgePort('127.0.0.1');
+  const config = bridgeConfig(bridgePort, upstreamPort, 'x-codex-lb-api-key');
+  config.persistProviderSessionPins = async (pins) => {
+    persistenceCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    persistedPins = structuredClone(pins);
+  };
+  const prepared = await prepareDesktopBridgeConfig(config);
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    bridge = await startPreparedDesktopBridge(prepared, { writeState: false });
+    const send = () => request({
+      port: bridgePort,
+      path: '/backend-api/codex/responses',
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...codexSessionHeaders('thread-concurrent-first'),
+      },
+      chunks: [Buffer.from(JSON.stringify({ model: PUBLIC_MODEL, input: 'hello' }))],
+    });
+    const results = await Promise.all([send(), send()]);
+    assert.deepEqual(results.map((result) => result.status), [200, 200]);
+    assert.equal(persistenceCalls, 1);
+    assert.equal(upstreamRequests, 2);
+    assert.equal(persistedPins.length, 1);
+    assert.equal(persistedPins[0]?.thread_id, 'thread-concurrent-first');
+    assert.deepEqual(prepared.providerSessionPins, persistedPins);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await close(upstream);
+  }
+});
+
+test('session-pin retention cap evicts the oldest pin when the 10,001st session binds', async () => {
+  const config = bridgeConfig(55_000, 55_001, 'x-codex-lb-api-key');
+  config.providerSessionPins = Array.from({ length: 10_000 }, (_, index): ProviderSessionPin => ({
+    thread_id: `thread-${String(index).padStart(5, '0')}`,
+    provider_id: 'codex-lb',
+    public_model: PUBLIC_MODEL,
+    upstream_model: PUBLIC_MODEL,
+    catalog_generation: CATALOG_GENERATION,
+    route_policy_generation: POLICY_GENERATION,
+    created_at: new Date(Date.UTC(2020, 0, 1) + index).toISOString(),
+  }));
+  let persistedPins: readonly ProviderSessionPin[] = [];
+  let persistenceCalls = 0;
+  config.persistProviderSessionPins = async (pins) => {
+    persistenceCalls += 1;
+    persistedPins = structuredClone(pins);
+  };
+  const prepared = await prepareDesktopBridgeConfig(config);
+
+  await resolveAndBindDesktopBridgeRouteContext({
+    public_model: PUBLIC_MODEL,
+    session_id: 'thread-newest',
+    pathname: '/backend-api/codex/responses',
+    transport: 'http',
+    headers: {},
+  }, prepared);
+
+  assert.equal(persistenceCalls, 1);
+  assert.equal(persistedPins.length, 10_000);
+  assert.equal(persistedPins.some((pin) => pin.thread_id === 'thread-00000'), false);
+  assert.equal(persistedPins.some((pin) => pin.thread_id === 'thread-newest'), true);
+  assert.deepEqual(prepared.providerSessionPins, persistedPins);
+});
+
 test('client disconnect destroys the upstream streaming socket', async () => {
   let resolveClosed: (() => void) | undefined;
   const upstreamClosed = new Promise<void>((resolve) => {
@@ -298,7 +522,8 @@ test('client disconnect destroys the upstream streaming socket', async () => {
     });
     await new Promise<void>((resolve, reject) => {
       const req = http.get({
-        host: '127.0.0.1', port: bridgePort, path: '/backend-api/codex/stream',
+        host: '127.0.0.1', port: bridgePort,
+        path: desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/stream'),
         headers: { 'x-sks-model': PUBLIC_MODEL },
       }, (res) => {
         res.once('data', () => {
@@ -334,6 +559,7 @@ test('raw WebSocket tunnel preserves subprotocol, binary bytes, close frame, and
   const upstream = http.createServer();
   upstream.on('upgrade', (req, socket, head) => {
     upgradeHeaders = req.headers;
+    assert.equal(req.url, '/backend-api/codex/realtime/call-1?token=opaque');
     const accept = createHash('sha1')
       .update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
       .digest('base64');
@@ -371,7 +597,7 @@ test('raw WebSocket tunnel preserves subprotocol, binary bytes, close frame, and
       let sentFrame = false;
       client.once('connect', () => {
         client.write(
-          'GET /backend-api/codex/realtime/call-1?token=opaque HTTP/1.1\r\n'
+          `GET ${desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/realtime/call-1?token=opaque')} HTTP/1.1\r\n`
           + `Host: 127.0.0.1:${bridgePort}\r\n`
           + 'Connection: Upgrade\r\n'
           + 'Upgrade: websocket\r\n'

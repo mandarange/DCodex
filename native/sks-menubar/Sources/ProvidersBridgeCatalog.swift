@@ -124,16 +124,16 @@ extension ProvidersViewController {
         processClient.run(["bridge", "route", "explain", model, "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
             guard let self = self else { return }
             let json = self.json(result.output)
-            let envelope = json?["result"] as? [String: Any]
-            let route = envelope?["route"] as? [String: Any]
-            let provider = route?["provider_id"] as? String
-            let upstream = route?["upstream_model"] as? String
-            let fallback = envelope?["fallback"] as? String
-            let valid = provider != nil && upstream != nil && fallback == "none"
+            let explanation = json.flatMap(ProviderRouteExplanation.decode(from:))
+            let explainedRoute = explanation.flatMap { explanation in
+                explanation.fallback == "none"
+                    ? "\(model) → \(explanation.providerId) / \(explanation.upstreamModel) · fallback none"
+                    : nil
+            }
+            let valid = explainedRoute != nil
             _ = self.operations.update(snapshot, state: valid ? .succeeded : .failed, stage: "complete", progress: 1, summary: valid ? "Route explained" : "Route unavailable")
-            self.routesStatus.stringValue = valid
-                ? "\(model) → \(provider!) / \(upstream!) · fallback none"
-                : "\(model) · route missing or ambiguous · no fallback · \(self.structuredPublicDetail(json, fallback: result.output, fallbackNext: "Refresh catalog or choose a supported model"))"
+            self.routesStatus.stringValue = explainedRoute
+                ?? "\(model) · route missing or ambiguous · no fallback · \(self.structuredPublicDetail(json, fallback: result.output, fallbackNext: "Refresh catalog or choose a supported model"))"
             self.routesStatus.textColor = valid ? .systemGreen : .systemRed
         }
     }

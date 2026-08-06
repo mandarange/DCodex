@@ -12,7 +12,7 @@ test('main push guard requires clean, source-bound release proofs', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-main-push-guard-'))
   try {
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '8.0.0' }))
-    fs.writeFileSync(path.join(root, '.gitignore'), '.sneakoscope/\ndist/\n')
+    fs.writeFileSync(path.join(root, '.gitignore'), '.sneakoscope/\ndist/\nrelease-evidence/\n')
     git(root, ['init', '-b', 'main'])
     git(root, ['config', 'user.email', 'fixture@example.test'])
     git(root, ['config', 'user.name', 'Release Fixture'])
@@ -37,6 +37,7 @@ test('main push guard requires clean, source-bound release proofs', () => {
       requireReleaseStamp: true,
       requirePackProof: true,
       requireMacosProof: true,
+      requirePhysicalProof: true,
       requireCleanTree: true,
       ...overrides
     })
@@ -84,6 +85,7 @@ test('main push guard requires clean, source-bound release proofs', () => {
     assert.equal(missingRequirements.blockers.includes('release_stamp_requirement_missing'), true)
     assert.equal(missingRequirements.blockers.includes('pack_proof_requirement_missing'), true)
     assert.equal(missingRequirements.blockers.includes('macos_proof_requirement_missing'), true)
+    assert.equal(missingRequirements.blockers.includes('physical_proof_requirement_missing'), true)
     assert.equal(missingRequirements.blockers.includes('clean_tree_requirement_missing'), true)
 
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '8.0.1' }))

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,6 +53,58 @@ test('codex-lb never sends bearer credentials over insecure remote transport', a
   assert.equal(codexLbBaseUrlSecurityBlocker('https://remote.example/backend-api/codex'), null);
   assert.equal(codexLbBaseUrlSecurityBlocker('http://127.0.0.1:8787/backend-api/codex'), null);
   assert.equal(codexLbBaseUrlSecurityBlocker('https://user:pass@remote.example/backend-api/codex'), 'codex_lb_base_url_userinfo_forbidden');
+});
+
+test('codex-lb catalog validation rejects private literal and DNS-resolved targets before credentials leave the process', async () => {
+  for (const [baseUrl, lookup, blocker] of [
+    ['https://10.0.0.7/backend-api/codex', undefined, 'codex_lb_remote_dns_private_address'],
+    ['https://[fd00::7]/backend-api/codex', undefined, 'codex_lb_remote_dns_private_address'],
+    [
+      'https://gateway.example.test/backend-api/codex',
+      async () => [{ address: '169.254.169.254', family: 4 as const }],
+      'codex_lb_remote_dns_private_address'
+    ],
+    [
+      'http://localhost:8787/backend-api/codex',
+      async () => [{ address: '93.184.216.34', family: 4 as const }],
+      'codex_lb_remote_dns_rebinding_blocked'
+    ]
+  ] as const) {
+    let called = false;
+    const result = await readCodexLbModelCatalog({
+      loadedEnv: loaded(baseUrl),
+      ...(lookup ? { lookup } : {}),
+      fetchImpl: (async () => {
+        called = true;
+        return new Response(JSON.stringify({ data: [{ id: 'must-not-be-returned' }] }), { status: 200 });
+      }) as typeof fetch
+    });
+    assert.equal(called, false, baseUrl);
+    assert.equal(result.ok, false, baseUrl);
+    assert.ok(result.blockers.includes(blocker), `${baseUrl}: ${result.blockers.join(',')}`);
+  }
+});
+
+test('production catalog validation connects to the policy-resolved address without a second fetch resolver', async (t) => {
+  let authorization = '';
+  const server = createServer((request, response) => {
+    authorization = String(request.headers.authorization || '');
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ data: [{ id: 'pinned-model' }] }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const result = await readCodexLbModelCatalog({
+    loadedEnv: loaded(`http://127.0.0.1:${address.port}/backend-api/codex`)
+  });
+  assert.equal(result.ok, true, result.blockers.join(','));
+  assert.deepEqual(result.models, ['pinned-model']);
+  assert.equal(authorization, 'Bearer sk-clb-fixture-secret');
 });
 
 test('codex-lb loader suppresses a persisted secret when metadata fingerprint or URL binding drifts', async (t) => {

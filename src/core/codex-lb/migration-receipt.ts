@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { constants as fsConstants } from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { messageOf as errorMessage } from '../errors/message.js';
-import { ensureDir, exists, readText, writeTextAtomic } from '../fsx.js';
+import { ensureDir, exists, writeTextAtomic } from '../fsx.js';
+import { withFileLock } from '../locks/file-lock.js';
 import type { DesktopBridgeUnificationReceipt } from './bridge-contracts.js';
 
 export interface DesktopBridgeMigrationReceiptFile {
@@ -85,6 +87,10 @@ export function desktopBridgeUnificationReceiptDir(
   return path.join(home, '.codex', 'sks-desktop-bridge-migrations');
 }
 
+export function desktopBridgeMigrationTransactionLockPath(home: string): string {
+  return path.join(path.resolve(home), '.codex', 'sks', 'locks', 'desktop-bridge-migration.lock');
+}
+
 export function createDesktopBridgeUnificationReceiptId(now: Date = new Date()): string {
   return `${now.toISOString().replace(/[-:.TZ]/g, '')}-${randomUUID().slice(0, 8)}`;
 }
@@ -103,7 +109,7 @@ export async function backupDesktopBridgeMigrationFile(
       owned_by_sks: ownedBySks
     };
   }
-  await ensureDir(backupDir);
+  await ensurePrivateDirectory(backupDir);
   const backupPath = path.join(
     backupDir,
     `${createHash('sha256').update(path.resolve(filePath)).digest('hex').slice(0, 16)}.before`
@@ -134,6 +140,7 @@ export async function writeDesktopBridgeUnificationReceipt(
   validateDesktopBridgeUnificationReceipt(receipt);
   const receiptDir = input.receiptDir || desktopBridgeUnificationReceiptDir();
   const receiptPath = input.receiptPath || path.join(receiptDir, `${receipt.receipt_id}.json`);
+  await ensurePrivateDirectory(path.dirname(receiptPath));
   await writeTextAtomic(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
   await fsp.chmod(receiptPath, 0o600).catch(() => {});
   return receiptPath;
@@ -142,7 +149,7 @@ export async function writeDesktopBridgeUnificationReceipt(
 export async function readDesktopBridgeUnificationReceipt(
   receiptPath: string
 ): Promise<StoredDesktopBridgeUnificationReceipt> {
-  const text = await readText(receiptPath);
+  const text = (await readSecureOwnerFile(receiptPath, 1024 * 1024, 'desktop_bridge_receipt')).toString('utf8');
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -157,6 +164,8 @@ export async function readDesktopBridgeUnificationReceipt(
 export async function rollbackDesktopBridgeUnificationReceipt(input: {
   receipt?: StoredDesktopBridgeUnificationReceipt;
   receiptPath?: string;
+  beforeTargetLocks?: () => Promise<void>;
+  transactionLockHeld?: boolean;
 }): Promise<DesktopBridgeUnificationRollbackResult> {
   let receipt: StoredDesktopBridgeUnificationReceipt;
   try {
@@ -196,77 +205,94 @@ export async function rollbackDesktopBridgeUnificationReceipt(input: {
     };
   }
 
-  const files = receipt.rollback_metadata.files;
-  const conflicts: DesktopBridgeRollbackConflict[] = [];
-  for (const file of files) {
-    const currentSha = await fileSha256OrMissing(file.path);
-    if (currentSha !== file.after_sha256) {
-      conflicts.push({
-        path: file.path,
-        expected_after_sha256: file.after_sha256,
-        current_sha256: currentSha,
-        reason: 'current_file_changed_after_migration'
-      });
-      continue;
+  if (input.transactionLockHeld !== true) {
+    const configTarget = receipt.rollback_metadata.files.find((file) => file.kind === 'config');
+    if (!configTarget) {
+      return {
+        schema: 'sks.desktop-bridge-unification-rollback.v1',
+        ok: false,
+        status: 'invalid_receipt',
+        receipt_id: receipt.receipt_id,
+        restored_files: [],
+        credentials_overwritten: false,
+        auth_overwritten: false,
+        conflicts: [],
+        error: 'desktop_bridge_rollback_config_target_missing'
+      };
     }
-    if (file.before_sha256 !== null) {
-      if (!file.backup_path || !(await exists(file.backup_path))) {
-        conflicts.push({
-          path: file.path,
-          expected_after_sha256: file.after_sha256,
-          current_sha256: currentSha,
-          reason: 'before_backup_missing'
-        });
-        continue;
-      }
-      const backupSha = await fileSha256OrMissing(file.backup_path);
-      if (backupSha !== file.before_sha256) {
-        conflicts.push({
-          path: file.path,
-          expected_after_sha256: file.after_sha256,
-          current_sha256: currentSha,
-          reason: 'before_backup_hash_mismatch'
-        });
-      }
-    }
-  }
-  if (conflicts.length) {
-    return {
-      schema: 'sks.desktop-bridge-unification-rollback.v1',
-      ok: false,
-      status: 'rollback_conflict',
-      receipt_id: receipt.receipt_id,
-      restored_files: [],
-      credentials_overwritten: false,
-      auth_overwritten: false,
-      conflicts
-    };
+    const home = path.dirname(path.dirname(path.resolve(configTarget.path)));
+    return withFileLock({
+      lockPath: desktopBridgeMigrationTransactionLockPath(home),
+      timeoutMs: 30_000,
+      staleMs: 120_000
+    }, () => rollbackDesktopBridgeUnificationReceipt({
+      receipt,
+      ...(input.beforeTargetLocks ? { beforeTargetLocks: input.beforeTargetLocks } : {}),
+      transactionLockHeld: true
+    }));
   }
 
-  const currentBytes = new Map<string, Buffer | null>();
-  for (const file of files) currentBytes.set(file.path, await readRegularFileOrMissing(file.path));
-  const restoredFiles: string[] = [];
+  const files = receipt.rollback_metadata.files;
+  const initial = await inspectRollbackFiles(files);
+  if (initial.conflicts.length) return rollbackConflict(receipt.receipt_id, initial.conflicts);
   try {
-    for (const file of files) {
-      if (file.before_sha256 === null) {
-        await fsp.rm(file.path, { force: true });
-      } else {
-        const backupPath = file.backup_path;
-        if (!backupPath) throw new Error(`before_backup_missing:${file.path}`);
-        await writeBufferAtomic(file.path, await fsp.readFile(backupPath), 0o600);
-      }
-      if ((await fileSha256OrMissing(file.path)) !== file.before_sha256) {
-        throw new Error(`rollback_readback_failed:${file.path}`);
-      }
-      restoredFiles.push(file.path);
-    }
-  } catch (error: unknown) {
-    for (const [filePath, bytes] of currentBytes) {
+    await input.beforeTargetLocks?.();
+    return await withRollbackTargetLocks(files, async () => {
+      // This is the all-target CAS boundary: backups are secured first, then
+      // every target is re-opened without following symlinks after every lock
+      // is held. No target is mutated until the complete pass succeeds.
+      const locked = await inspectRollbackFiles(files, initial.snapshots);
+      if (locked.conflicts.length) return rollbackConflict(receipt.receipt_id, locked.conflicts);
+
+      const restoredFiles: string[] = [];
       try {
-        if (bytes === null) await fsp.rm(filePath, { force: true });
-        else await writeBufferAtomic(filePath, bytes, 0o600);
-      } catch {}
-    }
+        for (const file of files) {
+          if (file.before_sha256 === null) {
+            await fsp.rm(file.path, { force: true });
+          } else {
+            if (!file.backup_path) throw new Error(`before_backup_missing:${file.path}`);
+            const backup = locked.backupBytes.get(path.resolve(file.path));
+            if (!backup) throw new Error(`before_backup_unavailable:${file.path}`);
+            await writeBufferAtomic(file.path, backup, 0o600);
+          }
+          if ((await fileSha256OrMissing(file.path)) !== file.before_sha256) {
+            throw new Error(`rollback_readback_failed:${file.path}`);
+          }
+          restoredFiles.push(file.path);
+        }
+      } catch (error: unknown) {
+        for (const file of files) {
+          const snapshot = locked.snapshots.get(path.resolve(file.path));
+          try {
+            if (!snapshot || snapshot.bytes === null) await fsp.rm(file.path, { force: true });
+            else await writeBufferAtomic(file.path, snapshot.bytes, 0o600);
+          } catch {}
+        }
+        return {
+          schema: 'sks.desktop-bridge-unification-rollback.v1',
+          ok: false,
+          status: 'rollback_failed',
+          receipt_id: receipt.receipt_id,
+          restored_files: [],
+          credentials_overwritten: false,
+          auth_overwritten: false,
+          conflicts: [],
+          error: errorMessage(error)
+        };
+      }
+
+      return {
+        schema: 'sks.desktop-bridge-unification-rollback.v1',
+        ok: true,
+        status: 'rolled_back',
+        receipt_id: receipt.receipt_id,
+        restored_files: restoredFiles,
+        credentials_overwritten: false,
+        auth_overwritten: false,
+        conflicts: []
+      };
+    });
+  } catch (error: unknown) {
     return {
       schema: 'sks.desktop-bridge-unification-rollback.v1',
       ok: false,
@@ -279,17 +305,191 @@ export async function rollbackDesktopBridgeUnificationReceipt(input: {
       error: errorMessage(error)
     };
   }
+}
 
+type RollbackTargetSnapshot = {
+  bytes: Buffer | null;
+  sha256: string | null;
+  identity: string | null;
+  parent_identity: string;
+};
+
+type RollbackInspection = {
+  snapshots: Map<string, RollbackTargetSnapshot>;
+  backupBytes: Map<string, Buffer>;
+  conflicts: DesktopBridgeRollbackConflict[];
+};
+
+async function inspectRollbackFiles(
+  files: readonly DesktopBridgeRollbackMetadataFile[],
+  expectedSnapshots?: ReadonlyMap<string, RollbackTargetSnapshot>
+): Promise<RollbackInspection> {
+  const backups = await inspectRollbackBackups(files);
+  const targets = await inspectRollbackTargets(files, expectedSnapshots);
+  return {
+    snapshots: targets.snapshots,
+    backupBytes: backups.backupBytes,
+    conflicts: [...backups.conflicts, ...targets.conflicts]
+  };
+}
+
+async function inspectRollbackBackups(
+  files: readonly DesktopBridgeRollbackMetadataFile[]
+): Promise<Pick<RollbackInspection, 'backupBytes' | 'conflicts'>> {
+  const backupBytes = new Map<string, Buffer>();
+  const conflicts: DesktopBridgeRollbackConflict[] = [];
+  for (const file of files) {
+    if (file.before_sha256 === null) continue;
+    const resolved = path.resolve(file.path);
+    if (!file.backup_path || !(await exists(file.backup_path))) {
+      conflicts.push(rollbackFileConflict(file, null, 'before_backup_missing'));
+      continue;
+    }
+    let backup: Buffer;
+    try {
+      backup = await readSecureOwnerFile(file.backup_path, 16 * 1024 * 1024, 'desktop_bridge_backup');
+    } catch {
+      conflicts.push(rollbackFileConflict(file, null, 'before_backup_unsafe'));
+      continue;
+    }
+    if (sha256(backup) !== file.before_sha256) {
+      conflicts.push(rollbackFileConflict(file, null, 'before_backup_hash_mismatch'));
+      continue;
+    }
+    backupBytes.set(resolved, backup);
+  }
+  return { backupBytes, conflicts };
+}
+
+async function inspectRollbackTargets(
+  files: readonly DesktopBridgeRollbackMetadataFile[],
+  expectedSnapshots?: ReadonlyMap<string, RollbackTargetSnapshot>
+): Promise<Pick<RollbackInspection, 'snapshots' | 'conflicts'>> {
+  const snapshots = new Map<string, RollbackTargetSnapshot>();
+  const conflicts: DesktopBridgeRollbackConflict[] = [];
+  for (const file of files) {
+    const resolved = path.resolve(file.path);
+    let snapshot: RollbackTargetSnapshot;
+    try {
+      snapshot = await readSecureRollbackTarget(resolved);
+      snapshots.set(resolved, snapshot);
+    } catch {
+      conflicts.push(rollbackFileConflict(file, null, 'current_file_unsafe'));
+      continue;
+    }
+    if (snapshot.sha256 !== file.after_sha256) {
+      conflicts.push(rollbackFileConflict(file, snapshot.sha256, 'current_file_changed_after_migration'));
+      continue;
+    }
+    const expected = expectedSnapshots?.get(resolved);
+    if (expected && !sameRollbackTargetIdentity(expected, snapshot)) {
+      conflicts.push(rollbackFileConflict(file, snapshot.sha256, 'current_file_identity_changed_during_rollback'));
+    }
+  }
+  return { snapshots, conflicts };
+}
+
+async function readSecureRollbackTarget(filePath: string): Promise<RollbackTargetSnapshot> {
+  const parent = await fsp.lstat(path.dirname(filePath));
+  const expectedUid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (!parent.isDirectory() || parent.isSymbolicLink() || (expectedUid !== null && parent.uid !== expectedUid)) {
+    throw new Error(`desktop_bridge_rollback_parent_unsafe:${filePath}`);
+  }
+  const parentIdentity = parentStatIdentity(parent);
+  let entry;
+  try {
+    entry = await fsp.lstat(filePath);
+  } catch (error: unknown) {
+    if (isMissingFileError(error)) {
+      return { bytes: null, sha256: null, identity: null, parent_identity: parentIdentity };
+    }
+    throw error;
+  }
+  if (!entry.isFile() || entry.isSymbolicLink()) throw new Error(`desktop_bridge_rollback_target_unsafe:${filePath}`);
+  const flags = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0);
+  const handle = await fsp.open(filePath, flags);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()
+      || stat.dev !== entry.dev
+      || stat.ino !== entry.ino
+      || (expectedUid !== null && stat.uid !== expectedUid)
+      || (process.platform !== 'win32' && (stat.mode & 0o077) !== 0)) {
+      throw new Error(`desktop_bridge_rollback_target_unsafe:${filePath}`);
+    }
+    const bytes = await handle.readFile();
+    return {
+      bytes,
+      sha256: sha256(bytes),
+      identity: statIdentity(stat),
+      parent_identity: parentIdentity
+    };
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+function statIdentity(stat: { dev: number; ino: number; uid: number; mode: number; size: number; mtimeMs: number; ctimeMs: number }): string {
+  return [stat.dev, stat.ino, stat.uid, stat.mode & 0o777, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
+}
+
+function parentStatIdentity(stat: { dev: number; ino: number; uid: number; mode: number }): string {
+  return [stat.dev, stat.ino, stat.uid, stat.mode & 0o777].join(':');
+}
+
+function sameRollbackTargetIdentity(before: RollbackTargetSnapshot, after: RollbackTargetSnapshot): boolean {
+  return before.identity === after.identity && before.parent_identity === after.parent_identity;
+}
+
+function rollbackFileConflict(
+  file: DesktopBridgeRollbackMetadataFile,
+  currentSha: string | null,
+  reason: string
+): DesktopBridgeRollbackConflict {
+  return {
+    path: file.path,
+    expected_after_sha256: file.after_sha256,
+    current_sha256: currentSha,
+    reason
+  };
+}
+
+function rollbackConflict(
+  receiptId: string,
+  conflicts: DesktopBridgeRollbackConflict[]
+): DesktopBridgeUnificationRollbackResult {
   return {
     schema: 'sks.desktop-bridge-unification-rollback.v1',
-    ok: true,
-    status: 'rolled_back',
-    receipt_id: receipt.receipt_id,
-    restored_files: restoredFiles,
+    ok: false,
+    status: 'rollback_conflict',
+    receipt_id: receiptId,
+    restored_files: [],
     credentials_overwritten: false,
     auth_overwritten: false,
-    conflicts: []
+    conflicts
   };
+}
+
+export function desktopBridgeRollbackTargetLockPath(filePath: string): string {
+  return `${path.resolve(filePath)}.lock`;
+}
+
+async function withRollbackTargetLocks<T>(
+  files: readonly DesktopBridgeRollbackMetadataFile[],
+  operation: () => Promise<T>
+): Promise<T> {
+  const targets = [...new Set(files.map((file) => path.resolve(file.path)))]
+    .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  const acquire = async (index: number): Promise<T> => {
+    const target = targets[index];
+    if (!target) return operation();
+    return withFileLock({
+      lockPath: desktopBridgeRollbackTargetLockPath(target),
+      timeoutMs: 10_000,
+      staleMs: 60_000
+    }, () => acquire(index + 1));
+  };
+  return acquire(0);
 }
 
 export async function fileSha256OrMissing(filePath: string): Promise<string | null> {
@@ -299,13 +499,51 @@ export async function fileSha256OrMissing(filePath: string): Promise<string | nu
 
 async function readRegularFileOrMissing(filePath: string): Promise<Buffer | null> {
   try {
-    const stat = await fsp.lstat(filePath);
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`migration_file_not_regular:${filePath}`);
-    return await fsp.readFile(filePath);
+    return await readFileWithoutFollowingSymlinks(filePath, Number.MAX_SAFE_INTEGER, 'migration_file');
   } catch (error: unknown) {
     if (isMissingFileError(error)) return null;
     throw error;
   }
+}
+
+async function readSecureOwnerFile(filePath: string, maxBytes: number, prefix: string): Promise<Buffer> {
+  return readFileWithoutFollowingSymlinks(filePath, maxBytes, prefix, true);
+}
+
+async function readFileWithoutFollowingSymlinks(
+  filePath: string,
+  maxBytes: number,
+  prefix: string,
+  ownerOnly = false
+): Promise<Buffer> {
+  const flags = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0);
+  const handle = await fsp.open(filePath, flags);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) throw new Error(`${prefix}_not_regular:${filePath}`);
+    if (stat.size > maxBytes) throw new Error(`${prefix}_too_large:${filePath}`);
+    if (ownerOnly) {
+      const expectedUid = typeof process.getuid === 'function' ? process.getuid() : null;
+      if (expectedUid !== null && stat.uid !== expectedUid) throw new Error(`${prefix}_owner_mismatch:${filePath}`);
+      if (process.platform !== 'win32' && (stat.mode & 0o077) !== 0) throw new Error(`${prefix}_permissions_unsafe:${filePath}`);
+    }
+    return await handle.readFile();
+  } finally {
+    await handle.close().catch(() => {});
+  }
+}
+
+async function ensurePrivateDirectory(directory: string): Promise<void> {
+  await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+  const stat = await fsp.lstat(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`desktop_bridge_private_directory_invalid:${directory}`);
+  }
+  const expectedUid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (expectedUid !== null && stat.uid !== expectedUid) {
+    throw new Error(`desktop_bridge_private_directory_owner_mismatch:${directory}`);
+  }
+  if (process.platform !== 'win32') await fsp.chmod(directory, 0o700);
 }
 
 async function writeBufferAtomic(filePath: string, bytes: Buffer, mode: number): Promise<void> {
@@ -523,6 +761,10 @@ function validateDesktopBridgeRollbackFile(file: unknown): asserts file is Deskt
 
 function canonicalHomeForRollbackFile(file: DesktopBridgeRollbackMetadataFile): string {
   const resolved = path.resolve(file.path);
+  const retiredArtifact = retiredDesktopBridgeRuntimeArtifact(resolved);
+  if (retiredArtifact !== null) {
+    throw new Error(`desktop_bridge_rollback_retired_runtime_target_forbidden:${retiredArtifact}`);
+  }
   if (file.kind === 'config') {
     const codexHome = path.dirname(resolved);
     const home = path.dirname(codexHome);
@@ -536,19 +778,19 @@ function canonicalHomeForRollbackFile(file: DesktopBridgeRollbackMetadataFile): 
     const library = path.dirname(launchAgents);
     const home = path.dirname(library);
     if (
-      path.basename(resolved) === 'com.sneakoscope.codex-lb-desktop-bridge.plist'
+      path.basename(resolved) === 'com.sneakoscope.desktop-bridge.plist'
       && path.basename(launchAgents) === 'LaunchAgents'
       && path.basename(library) === 'Library'
       && path.join(
         home,
         'Library',
         'LaunchAgents',
-        'com.sneakoscope.codex-lb-desktop-bridge.plist'
+        path.basename(resolved)
       ) === resolved
     ) return home;
   } else {
     const expectedBasename: Record<Exclude<DesktopBridgeRollbackMetadataKind, 'config' | 'launchd_state'>, string> = {
-      bridge_settings: 'codex-lb-desktop-bridge-settings.json',
+      bridge_settings: 'desktop-bridge-settings.json',
       provider_registry: 'sks-bridge-provider-registry.json',
       catalog_binding: 'sks-bridge-active-generation.json',
       route_policy: 'sks-bridge-route-policy.json'
@@ -564,6 +806,53 @@ function canonicalHomeForRollbackFile(file: DesktopBridgeRollbackMetadataFile): 
     ) return home;
   }
   throw new Error(`desktop_bridge_rollback_metadata_path_not_canonical:${file.kind}`);
+}
+
+function retiredDesktopBridgeRuntimeArtifact(resolvedPath: string):
+  'settings' | 'state' | 'plist' | 'stdout_log' | 'stderr_log' | null {
+  const basename = path.basename(resolvedPath);
+  const runtimeDir = path.dirname(resolvedPath);
+  const codexHome = path.dirname(runtimeDir);
+  const home = path.dirname(codexHome);
+  if (
+    path.basename(runtimeDir) === 'sks'
+    && path.basename(codexHome) === '.codex'
+    && path.join(home, '.codex', 'sks', basename) === resolvedPath
+  ) {
+    if (basename === 'codex-lb-desktop-bridge-settings.json') return 'settings';
+    if (basename === 'codex-lb-desktop-bridge.json') return 'state';
+  }
+
+  const logsDir = path.dirname(resolvedPath);
+  const logsRuntimeDir = path.dirname(logsDir);
+  const logsCodexHome = path.dirname(logsRuntimeDir);
+  const logsHome = path.dirname(logsCodexHome);
+  if (
+    path.basename(logsDir) === 'logs'
+    && path.basename(logsRuntimeDir) === 'sks'
+    && path.basename(logsCodexHome) === '.codex'
+    && path.join(logsHome, '.codex', 'sks', 'logs', basename) === resolvedPath
+  ) {
+    if (basename === 'codex-lb-desktop-bridge.out.log') return 'stdout_log';
+    if (basename === 'codex-lb-desktop-bridge.err.log') return 'stderr_log';
+  }
+
+  const launchAgents = path.dirname(resolvedPath);
+  const library = path.dirname(launchAgents);
+  const launchdHome = path.dirname(library);
+  if (
+    basename === 'com.sneakoscope.codex-lb-desktop-bridge.plist'
+    && path.basename(launchAgents) === 'LaunchAgents'
+    && path.basename(library) === 'Library'
+    && path.join(
+      launchdHome,
+      'Library',
+      'LaunchAgents',
+      'com.sneakoscope.codex-lb-desktop-bridge.plist'
+    ) === resolvedPath
+  ) return 'plist';
+
+  return null;
 }
 
 function sha256(bytes: Buffer): string {

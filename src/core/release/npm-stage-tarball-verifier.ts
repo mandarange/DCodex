@@ -11,6 +11,7 @@ import {
   NPM_STAGE_REVIEW_RECEIPT_SCHEMA,
   NpmStageReviewError,
   REQUIRED_NPM_STAGE_CLI_VERSION,
+  STAGE_DISPATCH_NONCE_PATTERN,
   STAGE_ID_PATTERN,
   assertCommandSucceeded,
   assertMaintainerLocalEnvironment,
@@ -67,6 +68,8 @@ export interface NpmStageReviewReceipt {
   workflow_stage: {
     receipt_path: string
     receipt_sha256: string
+    dispatch_nonce: string
+    physical_evidence_run_id: string
     workflow_run_id: string | null
     workflow_run_attempt: string | null
   }
@@ -119,6 +122,9 @@ export interface NpmStageReviewReceipt {
 export interface VerifyNpmStageTarballInput {
   root: string
   stageId: string
+  expectedDispatchNonce: string
+  expectedPhysicalEvidenceRunId: string
+  expectedWorkflowRunId: string
   localReceiptPath: string
   localTarballPath: string
   stageReceiptPath: string
@@ -138,6 +144,12 @@ export function verifyNpmStageTarball(input: VerifyNpmStageTarballInput): Verify
   const root = path.resolve(input.root)
   const stageId = String(input.stageId || '').trim().toLowerCase()
   if (!STAGE_ID_PATTERN.test(stageId)) throw new NpmStageReviewError('stage_id_uuid_invalid')
+  const expectedDispatchNonce = String(input.expectedDispatchNonce || '').trim()
+  if (!STAGE_DISPATCH_NONCE_PATTERN.test(expectedDispatchNonce)) throw new NpmStageReviewError('dispatch_nonce_invalid')
+  const expectedPhysicalEvidenceRunId = String(input.expectedPhysicalEvidenceRunId || '').trim()
+  if (!/^\d+$/.test(expectedPhysicalEvidenceRunId)) throw new NpmStageReviewError('physical_evidence_run_id_invalid')
+  const expectedWorkflowRunId = String(input.expectedWorkflowRunId || '').trim()
+  if (!/^\d+$/.test(expectedWorkflowRunId)) throw new NpmStageReviewError('workflow_run_id_invalid')
 
   const env = { ...process.env, ...(input.env || {}) }
   assertMaintainerLocalEnvironment(env)
@@ -157,6 +169,9 @@ export function verifyNpmStageTarball(input: VerifyNpmStageTarballInput): Verify
   }
   const stageReceiptBlockers = validateStagePublishReceipt(stageReceipt, {
     stageId,
+    dispatchNonce: expectedDispatchNonce,
+    physicalEvidenceRunId: expectedPhysicalEvidenceRunId,
+    workflowRunId: expectedWorkflowRunId,
     localReceipt,
     localReceiptSha256: hash(localReceiptBytes, 'sha256', 'hex'),
     localTarballSha512: hash(localTarballBytes, 'sha512', 'hex')
@@ -324,6 +339,8 @@ export function verifyNpmStageTarball(input: VerifyNpmStageTarballInput): Verify
       workflow_stage: {
         receipt_path: displayPath(root, stageReceiptFile),
         receipt_sha256: hash(stageReceiptBytes, 'sha256', 'hex'),
+        dispatch_nonce: expectedDispatchNonce,
+        physical_evidence_run_id: expectedPhysicalEvidenceRunId,
         workflow_run_id: nullableString(stageReceipt.workflow_run_id),
         workflow_run_attempt: nullableString(stageReceipt.workflow_run_attempt)
       },

@@ -45,7 +45,7 @@ function extractSubagentAgentName(payload: any = {}) {
 }
 
 export function subagentRouteContext(state: any = {}) {
-  if (!state?.route && !state?.mode) return '';
+  if (state?.route_closed === true || (!state?.route && !state?.mode)) return '';
   const route = state.route_command || state.route || state.mode;
   const mission = state.mission_id ? ` for mission ${state.mission_id}` : '';
   const artifacts = state.mission_id
@@ -55,4 +55,23 @@ export function subagentRouteContext(state: any = {}) {
     ? ' Keep database inspection read-only unless the parent supplied a separately sealed mutation contract.'
     : '';
   return `You are a child thread on ${route}${mission}. Execute only the slice assigned by the parent.${artifacts} Do not spawn or delegate other agents, wait for sibling threads, integrate sibling results, close the parent route, or author the sks.subagent-parent-summary.v1 parent result. Return a concise slice result to the parent.${databaseBoundary}`;
+}
+
+export function officialSubagentSkillGuardBinding(
+  state: any = {},
+  options: { allowClosedOfficialChild?: boolean } = {}
+) {
+  const missionId = String(state?.mission_id || '').trim();
+  const workflowRunId = String(state?.official_subagent_run_id || '').trim();
+  const routeIdentity = String(
+    state?.mode || state?.route || state?.route_command || ''
+  ).replace(/^\$/, '').toUpperCase();
+  const activeNaruto = routeIdentity === 'NARUTO' || routeIdentity === 'SKS-NARUTO';
+  if (state?.route_closed === true) {
+    return options.allowClosedOfficialChild && activeNaruto && missionId && workflowRunId
+      ? { missionId, workflowRunId }
+      : null;
+  }
+  if (!activeNaruto && (!missionId || !workflowRunId)) return null;
+  return { missionId, workflowRunId };
 }

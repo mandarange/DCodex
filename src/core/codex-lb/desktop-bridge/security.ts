@@ -1,6 +1,10 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import type { BridgeProviderId, BridgeRoutingPolicy, ProviderSessionPin } from '../bridge-contracts.js';
+import {
+  canonicalizeBridgeModelId,
+  normalizeBridgeUpstreamModelId,
+} from '../route-index.js';
 import type {
   DesktopBridgeConfig,
   DesktopBridgeProviderRegistrySnapshot,
@@ -10,10 +14,12 @@ import type {
   PreparedDesktopBridgeConfig,
   PreparedDesktopBridgeProvider,
 } from './types.js';
-import { DesktopBridgeError } from './types.js';
+import { DESKTOP_BRIDGE_CLIENT_PATH_PREFIX, DesktopBridgeError } from './types.js';
 
 const MIN_HIGH_PORT = 49_152;
 const MAX_PORT = 65_535;
+const MAX_SESSION_PINS = 10_000;
+const sessionPinMutationQueues = new WeakMap<PreparedDesktopBridgeConfig, Promise<void>>();
 
 const FORBIDDEN_REMOTE_ADDRESSES = new net.BlockList();
 FORBIDDEN_REMOTE_ADDRESSES.addSubnet('0.0.0.0', 8, 'ipv4');
@@ -55,6 +61,14 @@ export function assertAllowedPath(pathname: string, prefixes: readonly string[])
   if (!allowed) throw new DesktopBridgeError('bridge_path_not_allowed');
 }
 
+export function desktopBridgeClientPath(capability: string, canonicalPath: string): string {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(capability)) throw new DesktopBridgeError('bridge_client_capability_invalid');
+  if (!canonicalPath.startsWith('/') || canonicalPath.includes('\\') || /[\r\n\0]/.test(canonicalPath)) {
+    throw new DesktopBridgeError('bridge_request_target_invalid');
+  }
+  return `${DESKTOP_BRIDGE_CLIENT_PATH_PREFIX}/${capability}${canonicalPath}`;
+}
+
 function headerValues(value: string | string[] | undefined): string[] {
   return (Array.isArray(value) ? value : value === undefined ? [] : [value]).map((v) => v.trim()).filter(Boolean);
 }
@@ -63,6 +77,62 @@ export function singleBridgeHeader(headers: NodeJS.Dict<string | string[]>, name
   const values = headerValues(headers[name.toLowerCase()]);
   if (values.length > 1) throw new DesktopBridgeError('bridge_policy_header_ambiguous');
   return values[0] || null;
+}
+
+export interface CodexSessionIdentity {
+  thread_id: string | null;
+  session_id: string | null;
+}
+
+function codexMetadataObject(value: unknown, source: 'header' | 'body'): Record<string, unknown> | null {
+  if (value === undefined || value === null) return null;
+  let parsed = value;
+  if (source === 'header') {
+    if (typeof value !== 'string' || Buffer.byteLength(value) > 16 * 1024) {
+      throw new DesktopBridgeError('bridge_codex_turn_metadata_invalid');
+    }
+    try { parsed = JSON.parse(value); }
+    catch { throw new DesktopBridgeError('bridge_codex_turn_metadata_invalid'); }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new DesktopBridgeError(source === 'header'
+      ? 'bridge_codex_turn_metadata_invalid'
+      : 'bridge_codex_client_metadata_invalid');
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function oneCodexIdentity(values: unknown[], kind: 'thread' | 'session'): string | null {
+  const canonical = values
+    .filter((value) => value !== undefined && value !== null && value !== '')
+    .map(canonicalSessionId);
+  if (new Set(canonical).size > 1) throw new DesktopBridgeError('bridge_codex_session_identity_conflict');
+  return canonical[0] || null;
+}
+
+export function resolveCodexSessionIdentity(
+  headers: NodeJS.Dict<string | string[]>,
+  payload: Record<string, unknown> | null = null,
+): CodexSessionIdentity {
+  const turnMetadataValue = singleBridgeHeader(headers, 'x-codex-turn-metadata');
+  const turnMetadata = turnMetadataValue === null ? null : codexMetadataObject(turnMetadataValue, 'header');
+  const clientMetadataValue = payload?.client_metadata;
+  const clientMetadata = clientMetadataValue === undefined ? null : codexMetadataObject(clientMetadataValue, 'body');
+  const threadId = oneCodexIdentity([
+    singleBridgeHeader(headers, 'thread-id'),
+    turnMetadata?.thread_id,
+    clientMetadata?.thread_id,
+  ], 'thread');
+  const sessionId = oneCodexIdentity([
+    singleBridgeHeader(headers, 'session-id'),
+    turnMetadata?.session_id,
+    clientMetadata?.session_id,
+  ], 'session');
+  if (sessionId && !threadId) throw new DesktopBridgeError('bridge_codex_thread_id_missing');
+  if (threadId && sessionId && threadId !== sessionId) {
+    throw new DesktopBridgeError('bridge_codex_session_identity_mismatch');
+  }
+  return { thread_id: threadId, session_id: sessionId };
 }
 
 function comparableOrigin(value: string, referer: boolean): string {
@@ -97,9 +167,9 @@ export function assertWebSocketUpgrade(headers: NodeJS.Dict<string | string[]>, 
   }
 }
 
-function canonicalModel(value: unknown): string {
-  const model = typeof value === 'string' ? value.trim() : '';
-  if (!model || model.length > 512 || /[\r\n\0]/.test(model)) throw new DesktopBridgeError('catalog_model_route_missing');
+function canonicalPublicModel(value: unknown): string {
+  const model = canonicalizeBridgeModelId(value);
+  if (!model) throw new DesktopBridgeError('catalog_model_route_missing');
   return model;
 }
 
@@ -108,10 +178,10 @@ export function resolveBridgeRequestRoute(
   policy: BridgeRoutingPolicy,
   pins: readonly ProviderSessionPin[],
 ): DesktopBridgeRouteContext {
-  const publicModel = canonicalModel(request.public_model);
-  const pin = request.session_id ? pins.find((entry) => entry.thread_id === request.session_id) || null : null;
-  if (request.session_id && !pin) throw new DesktopBridgeError('session_pin_route_unavailable');
-  if (pin) {
+  const publicModel = canonicalPublicModel(request.public_model);
+  const sessionId = request.session_id ? canonicalSessionId(request.session_id) : null;
+  const pin = sessionId ? pins.find((entry) => entry.thread_id === sessionId) || null : null;
+  if (pin && pin.public_model === publicModel) {
     if (pin.public_model !== publicModel
       || pin.catalog_generation !== policy.catalog_generation
       || pin.route_policy_generation !== policy.policy_generation) {
@@ -132,13 +202,22 @@ export function resolveBridgeRequestRoute(
   }
   const route = policy.model_routes[publicModel];
   if (!route) throw new DesktopBridgeError('catalog_model_route_missing');
+  const nextPin = sessionId ? {
+    thread_id: sessionId,
+    provider_id: route.provider_id,
+    public_model: publicModel,
+    upstream_model: route.upstream_model,
+    catalog_generation: policy.catalog_generation,
+    route_policy_generation: policy.policy_generation,
+    created_at: new Date().toISOString(),
+  } satisfies ProviderSessionPin : null;
   return {
     provider_id: route.provider_id,
     public_model: publicModel,
     upstream_model: route.upstream_model,
     catalog_generation: policy.catalog_generation,
     route_policy_generation: policy.policy_generation,
-    session_pin: null,
+    session_pin: nextPin,
   };
 }
 
@@ -156,6 +235,20 @@ export function assertDesktopBridgeRouteContext(
   if (route.catalog_generation !== policy.catalog_generation || route.route_policy_generation !== policy.policy_generation) {
     throw new DesktopBridgeError('session_pin_route_unavailable');
   }
+  if (request.session_id) {
+    const sessionId = canonicalSessionId(request.session_id);
+    if (!route.session_pin
+      || route.session_pin.thread_id !== sessionId
+      || route.session_pin.provider_id !== route.provider_id
+      || route.session_pin.public_model !== route.public_model
+      || route.session_pin.upstream_model !== route.upstream_model
+      || route.session_pin.catalog_generation !== route.catalog_generation
+      || route.session_pin.route_policy_generation !== route.route_policy_generation) {
+      throw new DesktopBridgeError('bridge_session_pin_invalid');
+    }
+  } else if (route.session_pin) {
+    throw new DesktopBridgeError('bridge_session_pin_invalid');
+  }
   const provider = config.providers[route.provider_id];
   if (!provider || !provider.enabled) throw new DesktopBridgeError('bridge_provider_route_unavailable');
   if (provider.credential_state !== 'ready') throw new DesktopBridgeError(`${route.provider_id.replace('-', '_')}_credential_unavailable`);
@@ -166,6 +259,67 @@ export function assertDesktopBridgeRouteContext(
     throw new DesktopBridgeError('bridge_provider_origin_forbidden');
   }
   return route;
+}
+
+export async function resolveAndBindDesktopBridgeRouteContext(
+  request: DesktopBridgeRouteRequest,
+  config: PreparedDesktopBridgeConfig,
+): Promise<DesktopBridgeRouteContext> {
+  return withSessionPinMutation(config, async () => {
+    const route = assertDesktopBridgeRouteContext(request, config);
+    const pin = route.session_pin;
+    if (!pin) return route;
+    const existing = config.providerSessionPins.find((entry) => entry.thread_id === pin.thread_id) || null;
+    if (existing && sameSessionPin(existing, pin)) return route;
+    const nextPins = [
+      ...config.providerSessionPins.filter((entry) => entry.thread_id !== pin.thread_id),
+      pin,
+    ];
+    const retainedPins = nextPins.length > MAX_SESSION_PINS
+      ? nextPins
+        .sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at)
+          || left.thread_id.localeCompare(right.thread_id))
+        .slice(nextPins.length - MAX_SESSION_PINS)
+      : nextPins;
+    const persistedPins = retainedPins.sort((left, right) => left.thread_id.localeCompare(right.thread_id));
+    if (config.persistProviderSessionPins) {
+      await config.persistProviderSessionPins(persistedPins);
+    }
+    config.providerSessionPins = persistedPins;
+    return route;
+  });
+}
+
+async function withSessionPinMutation<T>(
+  config: PreparedDesktopBridgeConfig,
+  action: () => Promise<T>,
+): Promise<T> {
+  const previous = sessionPinMutationQueues.get(config) || Promise.resolve();
+  const run = previous.catch(() => undefined).then(action);
+  const tail = run.then(() => undefined, () => undefined);
+  sessionPinMutationQueues.set(config, tail);
+  try {
+    return await run;
+  } finally {
+    if (sessionPinMutationQueues.get(config) === tail) sessionPinMutationQueues.delete(config);
+  }
+}
+
+function sameSessionPin(left: ProviderSessionPin, right: ProviderSessionPin): boolean {
+  return left.thread_id === right.thread_id
+    && left.provider_id === right.provider_id
+    && left.public_model === right.public_model
+    && left.upstream_model === right.upstream_model
+    && left.catalog_generation === right.catalog_generation
+    && left.route_policy_generation === right.route_policy_generation;
+}
+
+function canonicalSessionId(value: unknown): string {
+  const sessionId = typeof value === 'string' ? value.trim() : '';
+  if (!sessionId || sessionId.length > 256 || !/^[A-Za-z0-9._:/-]+$/.test(sessionId)) {
+    throw new DesktopBridgeError('bridge_session_id_invalid');
+  }
+  return sessionId;
 }
 
 function stripIpv6Brackets(hostname: string): string { return hostname.replace(/^\[/, '').replace(/\]$/, ''); }
@@ -197,21 +351,12 @@ const defaultLookup: DesktopBridgeLookup = async (hostname) => {
   });
 };
 
-async function prepareProvider(provider: PreparedDesktopBridgeProvider, lookup: DesktopBridgeLookup): Promise<PreparedDesktopBridgeProvider> {
-  const remote = validateRemoteUrl(provider.base_url);
+export async function resolveDesktopBridgeRemoteTarget(
+  raw: string,
+  lookup: DesktopBridgeLookup = defaultLookup,
+): Promise<DesktopBridgeRemoteTarget> {
+  const remote = validateRemoteUrl(raw);
   const hostname = stripIpv6Brackets(remote.hostname);
-  if (!provider.allowed_origins.map(normalizeAllowedOrigin).includes(remote.origin)) throw new DesktopBridgeError('bridge_provider_origin_forbidden');
-  if (!provider.enabled) {
-    return {
-      ...provider,
-      base_url: remote.toString().replace(/\/$/, ''),
-      remote: {
-        baseUrl: remote.toString().replace(/\/$/, ''), origin: remote.origin, hostname,
-        port: Number(remote.port || (remote.protocol === 'https:' ? 443 : 80)), secure: remote.protocol === 'https:',
-        address: '0.0.0.0', family: 4, ...(net.isIP(hostname) ? {} : { tlsServername: hostname }),
-      },
-    };
-  }
   const family = net.isIP(hostname);
   let addresses: readonly { address: string; family: 4 | 6 }[];
   try { addresses = family ? [{ address: hostname, family: family as 4 | 6 }] : await lookup(hostname); }
@@ -229,6 +374,25 @@ async function prepareProvider(provider: PreparedDesktopBridgeProvider, lookup: 
     port: Number(remote.port || (remote.protocol === 'https:' ? 443 : 80)), secure: remote.protocol === 'https:',
     address: selected.address, family: selected.family, ...(family ? {} : { tlsServername: hostname }),
   };
+  return target;
+}
+
+async function prepareProvider(provider: PreparedDesktopBridgeProvider, lookup: DesktopBridgeLookup): Promise<PreparedDesktopBridgeProvider> {
+  const remote = validateRemoteUrl(provider.base_url);
+  const hostname = stripIpv6Brackets(remote.hostname);
+  if (!provider.allowed_origins.map(normalizeAllowedOrigin).includes(remote.origin)) throw new DesktopBridgeError('bridge_provider_origin_forbidden');
+  if (!provider.enabled) {
+    return {
+      ...provider,
+      base_url: remote.toString().replace(/\/$/, ''),
+      remote: {
+        baseUrl: remote.toString().replace(/\/$/, ''), origin: remote.origin, hostname,
+        port: Number(remote.port || (remote.protocol === 'https:' ? 443 : 80)), secure: remote.protocol === 'https:',
+        address: '0.0.0.0', family: 4, ...(net.isIP(hostname) ? {} : { tlsServername: hostname }),
+      },
+    };
+  }
+  const target = await resolveDesktopBridgeRemoteTarget(provider.base_url, lookup);
   return { ...provider, base_url: target.baseUrl, remote: target };
 }
 
@@ -256,14 +420,27 @@ function assertRegistryAndPolicy(config: DesktopBridgeConfig, registry: DesktopB
     throw new DesktopBridgeError('bridge_route_policy_invalid');
   }
   for (const [model, route] of Object.entries(policy.model_routes)) {
-    if (canonicalModel(model) !== model || !ids.includes(route.provider_id) || canonicalModel(route.upstream_model) !== route.upstream_model) {
+    if (canonicalizeBridgeModelId(model) !== model
+      || !ids.includes(route.provider_id)
+      || normalizeBridgeUpstreamModelId(route.upstream_model) !== route.upstream_model) {
       throw new DesktopBridgeError('bridge_route_policy_invalid');
     }
   }
   const pinIds = new Set<string>();
   for (const pin of config.providerSessionPins) {
-    if (!pin.thread_id || pinIds.has(pin.thread_id) || !ids.includes(pin.provider_id)
-      || !pin.public_model || !pin.upstream_model || !pin.catalog_generation || !pin.route_policy_generation) {
+    const keys = Object.keys(pin as unknown as Record<string, unknown>);
+    if (keys.some((key) => ![
+      'thread_id', 'provider_id', 'public_model', 'upstream_model',
+      'catalog_generation', 'route_policy_generation', 'created_at',
+    ].includes(key))
+      || canonicalSessionId(pin.thread_id) !== pin.thread_id
+      || pinIds.has(pin.thread_id)
+      || !ids.includes(pin.provider_id)
+      || canonicalizeBridgeModelId(pin.public_model) !== pin.public_model
+      || normalizeBridgeUpstreamModelId(pin.upstream_model) !== pin.upstream_model
+      || !pin.catalog_generation
+      || !pin.route_policy_generation
+      || !Number.isFinite(Date.parse(pin.created_at))) {
       throw new DesktopBridgeError('bridge_session_pin_invalid');
     }
     pinIds.add(pin.thread_id);
@@ -276,10 +453,23 @@ export function validateDesktopBridgeConfig(config: DesktopBridgeConfig): void {
   if (!config.allowedPathPrefixes.length) throw new DesktopBridgeError('bridge_path_allowlist_empty');
   if (!Number.isFinite(config.connectTimeoutMs) || config.connectTimeoutMs < 100 || config.connectTimeoutMs > 120_000) throw new DesktopBridgeError('bridge_connect_timeout_invalid');
   if (!Number.isFinite(config.idleTimeoutMs) || config.idleTimeoutMs < 1_000 || config.idleTimeoutMs > 86_400_000) throw new DesktopBridgeError('bridge_idle_timeout_invalid');
+  if (config.requestTimeoutMs !== undefined
+    && (!Number.isFinite(config.requestTimeoutMs) || config.requestTimeoutMs < 1_000 || config.requestTimeoutMs > 120_000)) {
+    throw new DesktopBridgeError('bridge_request_timeout_invalid');
+  }
+  if (config.maxConcurrentRequests !== undefined
+    && (!Number.isInteger(config.maxConcurrentRequests) || config.maxConcurrentRequests < 1 || config.maxConcurrentRequests > 1_024)) {
+    throw new DesktopBridgeError('bridge_concurrent_request_limit_invalid');
+  }
+  if (config.maxConnections !== undefined
+    && (!Number.isInteger(config.maxConnections) || config.maxConnections < 1 || config.maxConnections > 2_048)) {
+    throw new DesktopBridgeError('bridge_connection_limit_invalid');
+  }
   for (const origin of config.allowedOrigins) normalizeAllowedOrigin(origin);
   if (!config.providerRegistry) throw new DesktopBridgeError('bridge_provider_registry_missing');
   if (!config.routePolicy) throw new DesktopBridgeError('bridge_route_policy_invalid');
   if (!Array.isArray(config.providerSessionPins)) throw new DesktopBridgeError('bridge_session_pin_invalid');
+  if (!/^[a-f0-9]{64}$/.test(config.clientCapabilitySha256)) throw new DesktopBridgeError('bridge_client_capability_invalid');
   if (typeof config.resolveProviderCredential !== 'function') throw new DesktopBridgeError('bridge_provider_credential_resolver_missing');
   assertRegistryAndPolicy(config, config.providerRegistry);
   if (!Object.values(config.providerRegistry.providers).some((provider) => provider.enabled)) {
@@ -312,7 +502,21 @@ export function resolveDesktopBridgeTarget(rawRequestUrl: string | undefined, re
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) || raw.startsWith('//') || /[\r\n\0]/.test(raw)) throw new DesktopBridgeError('bridge_request_target_invalid');
   let inbound: URL;
   try { inbound = new URL(raw, 'http://bridge.invalid'); } catch { throw new DesktopBridgeError('bridge_request_target_invalid'); }
-  return new URL(`${inbound.pathname}${inbound.search}`, remote.origin);
+  const base = new URL(remote.baseUrl);
+  const basePath = base.pathname.replace(/\/+$/, '');
+  const providerRelative = providerRelativePath(inbound.pathname);
+  const pathname = providerRelative === null
+    ? inbound.pathname
+    : `${basePath}${providerRelative}` || '/';
+  return new URL(`${pathname}${inbound.search}`, remote.origin);
+}
+
+function providerRelativePath(pathname: string): string | null {
+  for (const prefix of ['/backend-api/codex', '/api/v1', '/v1']) {
+    if (pathname === prefix) return '';
+    if (pathname.startsWith(`${prefix}/`)) return pathname.slice(prefix.length);
+  }
+  return null;
 }
 
 export function safeBridgeErrorCode(error: unknown): string {

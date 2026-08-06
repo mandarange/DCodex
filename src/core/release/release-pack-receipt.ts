@@ -1,7 +1,9 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { tmpdir } from '../fsx.js'
 import { DEFAULT_MAX_PACK_BYTES, DEFAULT_MAX_UNPACKED_BYTES } from './package-size-budget.js'
 import { readCurrentNpmPackGateArtifacts } from './npm-pack-proof.js'
 import {
@@ -63,6 +65,10 @@ export function inspectReleaseTarball(input: {
   if (bytes.length && unpackedBytes <= 0) blockers.push('tarball_unpacked_size_unavailable')
   const sha256 = bytes.length ? hash(bytes, 'sha256', 'hex') : ''
   const sha512Base64 = bytes.length ? hash(bytes, 'sha512', 'base64') : ''
+  const sourceBinding = input.kind === 'local' && input.root && input.sourceCommit && bytes.length && inventory.blockers.length === 0
+    ? inspectSourcePackageBinding(input.root, input.sourceCommit, tarball, files, sha256)
+    : null
+  if (sourceBinding) blockers.push(...sourceBinding.blockers)
   const budgetBlockers = [
     ...(bytes.length > DEFAULT_MAX_PACK_BYTES ? ['packed_bytes_over_limit'] : []),
     ...(unpackedBytes > DEFAULT_MAX_UNPACKED_BYTES ? ['unpacked_bytes_over_limit'] : []),
@@ -76,6 +82,9 @@ export function inspectReleaseTarball(input: {
     package_name: String(packageJson?.name || ''),
     package_version: String(packageJson?.version || ''),
     source_commit: input.sourceCommit || null,
+    source_tree_sha256: sourceBinding?.source_tree_sha256 || null,
+    source_package_sha256: sourceBinding?.source_package_sha256 || null,
+    source_package_binding_sha256: sourceBinding?.source_package_binding_sha256 || null,
     tarball_name: path.basename(tarball),
     tarball_path: input.root ? normalizePath(path.relative(input.root, tarball)) : normalizePath(tarball),
     bytes: bytes.length,
@@ -128,7 +137,9 @@ export function compareReleasePacks(local: ReleasePackReceipt, staged: ReleasePa
 export function validateReleasePackReceipt(value: unknown, expectedKind?: ReleasePackKind, options: { requireNpmPackProof?: boolean } = {}) {
   const receipt = value as Partial<ReleasePackReceipt> | null
   const blockers: string[] = []
-  if (!receipt || receipt.schema !== RELEASE_PACK_RECEIPT_SCHEMA) blockers.push('schema_invalid')
+  if ((receipt as { schema?: unknown } | null)?.schema === 'sks.release-pack-receipt.v1') {
+    blockers.push('receipt_schema_v1_outdated_regenerate_with_npm_run_release:pack-receipt')
+  } else if (!receipt || receipt.schema !== RELEASE_PACK_RECEIPT_SCHEMA) blockers.push('schema_invalid')
   if (receipt?.ok !== true) blockers.push('not_ok')
   if (receipt?.kind !== 'local' && receipt?.kind !== 'staged') blockers.push('kind_invalid')
   if (expectedKind && receipt?.kind !== expectedKind) blockers.push(`kind_not_${expectedKind}`)
@@ -186,7 +197,19 @@ export function validateReleasePackReceipt(value: unknown, expectedKind?: Releas
     if (!/^[a-f0-9]{64}$/i.test(String(receipt?.npm_pack_proof?.info_sha256 || ''))) blockers.push('npm_pack_info_sha256_invalid')
     if (!/^[a-f0-9]{64}$/i.test(String(receipt?.npm_pack_proof?.file_list_sha256 || ''))) blockers.push('npm_pack_file_list_sha256_invalid')
   }
-  if (receipt?.kind === 'local' && !/^[a-f0-9]{40}$/i.test(String(receipt?.source_commit || ''))) blockers.push('source_commit_invalid')
+  if (receipt?.kind === 'local') {
+    if (!/^[a-f0-9]{40}$/i.test(String(receipt?.source_commit || ''))) blockers.push('source_commit_invalid')
+    if (!/^[a-f0-9]{64}$/i.test(String(receipt?.source_tree_sha256 || ''))) blockers.push('source_tree_sha256_invalid')
+    if (!/^[a-f0-9]{64}$/i.test(String(receipt?.source_package_sha256 || ''))) blockers.push('source_package_sha256_invalid')
+    if (!/^[a-f0-9]{64}$/i.test(String(receipt?.source_package_binding_sha256 || ''))) blockers.push('source_package_binding_sha256_invalid')
+    const expectedBinding = sourcePackageBindingSha256(
+      String(receipt?.source_commit || ''),
+      String(receipt?.source_tree_sha256 || ''),
+      String(receipt?.source_package_sha256 || ''),
+      String(receipt?.sha256 || '')
+    )
+    if (receipt?.source_package_binding_sha256 !== expectedBinding) blockers.push('source_package_binding_sha256_mismatch')
+  }
   return { ok: blockers.length === 0, receipt: receipt || null, blockers: unique(blockers) }
 }
 
@@ -208,25 +231,97 @@ export function validateLocalReleasePackBinding(root: string, value: unknown) {
     if (receipt?.file_count !== info.entryCount) blockers.push('npm_pack_file_count_mismatch')
     if (receipt?.sha512_integrity !== info.integrity) blockers.push('npm_pack_integrity_mismatch')
   }
-  const head = gitHead(root)
-  if (!head || receipt?.source_commit !== head) blockers.push('npm_pack_source_commit_mismatch')
-  const worktree = gitWorktreeState(root)
-  if (worktree === 'unavailable') blockers.push('npm_pack_worktree_status_unavailable')
-  else if (worktree === 'dirty') blockers.push('npm_pack_worktree_not_clean')
+  const sourceState = inspectLocalReleaseSourceState(root)
+  if (!sourceState.head || receipt?.source_commit !== sourceState.head) blockers.push('npm_pack_source_commit_mismatch')
+  if (!sourceState.source_tree_sha256 || receipt?.source_tree_sha256 !== sourceState.source_tree_sha256) blockers.push('npm_pack_source_tree_sha256_mismatch')
+  blockers.push(...sourceState.blockers)
   const tarball = receipt?.tarball_path ? path.resolve(root, receipt.tarball_path) : ''
   const managedRoot = path.resolve(root, '.sneakoscope', 'reports', 'release', String(receipt?.package_version || ''), 'artifacts')
   const relative = tarball ? path.relative(managedRoot, tarball) : '..'
   if (!tarball || relative.startsWith('..') || path.isAbsolute(relative) || !fs.existsSync(tarball)) blockers.push('local_tarball_artifact_missing_or_unsafe')
   else {
     const actual = inspectReleaseTarball({ tarball, kind: 'local', sourceCommit: receipt?.source_commit || null, root })
-    for (const key of ['package_name', 'package_version', 'tarball_name', 'tarball_path', 'bytes', 'unpacked_bytes', 'sha256', 'sha512_integrity', 'file_count', 'file_list_sha256'] as const) {
+    for (const key of ['package_name', 'package_version', 'source_tree_sha256', 'source_package_sha256', 'source_package_binding_sha256', 'tarball_name', 'tarball_path', 'bytes', 'unpacked_bytes', 'sha256', 'sha512_integrity', 'file_count', 'file_list_sha256'] as const) {
       if (actual[key] !== receipt?.[key]) blockers.push(`local_tarball_artifact_mismatch:${key}`)
     }
     if (JSON.stringify(actual.secret_scan) !== JSON.stringify(receipt?.secret_scan)) blockers.push('local_tarball_artifact_mismatch:secret_scan')
     if (JSON.stringify(actual.retired_surface_scan) !== JSON.stringify(receipt?.retired_surface_scan)) blockers.push('local_tarball_artifact_mismatch:retired_surface_scan')
     if (!actual.ok) blockers.push(...actual.blockers.map((blocker) => `local_tarball_artifact:${blocker}`))
   }
-  return { ok: blockers.length === 0, receipt, gate, blockers: unique(blockers) }
+  return { ok: blockers.length === 0, receipt, gate, sourceState, blockers: unique(blockers) }
+}
+
+export function inspectLocalReleaseSourceState(root: string): {
+  ok: boolean
+  head: string
+  source_tree_sha256: string
+  tracked_changes: boolean
+  pack_eligible_untracked: string[]
+  blockers: string[]
+} {
+  const blockers: string[] = []
+  const head = gitHead(root)
+  if (!head) blockers.push('npm_pack_source_commit_unavailable')
+  const sourceTreeSha256 = head ? gitTreeSha256(root, head) : ''
+  if (!sourceTreeSha256) blockers.push('npm_pack_source_tree_digest_unavailable')
+
+  const trackedStatus = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=no'], { cwd: root, encoding: 'utf8' })
+  const trackedChanges = trackedStatus.status === 0 && Boolean(String(trackedStatus.stdout || '').trim())
+  if (trackedStatus.status !== 0) blockers.push('npm_pack_tracked_status_unavailable')
+  else if (trackedChanges) blockers.push('npm_pack_tracked_changes_present')
+
+  // Generated dist is intentionally ignored by Git. Every other untracked
+  // worktree entry is rejected because an untracked source/config file can
+  // influence the clean build even when npm does not pack that file directly.
+  const fullStatus = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024
+  })
+  if (fullStatus.status !== 0) blockers.push('npm_pack_untracked_status_unavailable')
+  else if (String(fullStatus.stdout || '').split(/\r?\n/).some((line) => line.startsWith('?? '))) {
+    blockers.push('npm_pack_untracked_files_present')
+  }
+
+  const trackedFilesResult = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+  const trackedFiles = trackedFilesResult.status === 0
+    ? new Set(String(trackedFilesResult.stdout || '').split('\0').filter(Boolean).map(normalizePath))
+    : null
+  if (!trackedFiles) blockers.push('npm_pack_tracked_file_inventory_unavailable')
+
+  const dryRun = spawnSync('npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+    env: { ...process.env, npm_config_cache: process.env.SKS_RELEASE_NPM_CACHE || path.join(os.tmpdir(), 'sneakoscope-npm-cache') }
+  })
+  let packedFiles: string[] | null = null
+  if (dryRun.status === 0) {
+    try {
+      const parsed = JSON.parse(String(dryRun.stdout || '[]'))
+      const info = Array.isArray(parsed) ? parsed[0] : parsed
+      packedFiles = Array.isArray(info?.files)
+        ? info.files.map((file: any) => normalizePath(String(file?.path || ''))).filter(Boolean)
+        : null
+    } catch {
+      packedFiles = null
+    }
+  }
+  if (!packedFiles) blockers.push('npm_pack_dry_run_file_inventory_unavailable')
+  const packEligibleUntracked = trackedFiles && packedFiles
+    ? unique(packedFiles.filter((relative) =>
+      !trackedFiles.has(relative) && !isGeneratedDistPackagePath(relative)
+    )).sort()
+    : []
+  if (packEligibleUntracked.length > 0) blockers.push('npm_pack_eligible_untracked_files_present')
+  return {
+    ok: blockers.length === 0,
+    head,
+    source_tree_sha256: sourceTreeSha256,
+    tracked_changes: trackedChanges,
+    pack_eligible_untracked: packEligibleUntracked,
+    blockers: unique(blockers)
+  }
 }
 
 export function writeReleaseJson(file: string, value: unknown): void {
@@ -335,6 +430,107 @@ function hash(value: crypto.BinaryLike, algorithm: 'sha256' | 'sha512', encoding
   return crypto.createHash(algorithm).update(value).digest(encoding)
 }
 
+function inspectSourcePackageBinding(root: string, sourceCommit: string, tarball: string, files: string[], tarballSha256: string): {
+  source_tree_sha256: string
+  source_package_sha256: string
+  source_package_binding_sha256: string
+  blockers: string[]
+} {
+  const blockers: string[] = []
+  const sourceTreeSha256 = gitTreeSha256(root, sourceCommit)
+  if (!sourceTreeSha256) blockers.push('source_tree_digest_unavailable')
+  const temp = tmpdir('release-source-package-binding-')
+  const sourceRoot = path.join(temp, 'source')
+  const packageRoot = path.join(temp, 'packed')
+  const archive = path.join(temp, 'source.tar')
+  const packageHash = crypto.createHash('sha256')
+  try {
+    fs.mkdirSync(sourceRoot)
+    fs.mkdirSync(packageRoot)
+    const archived = spawnSync('git', ['archive', '--format=tar', `--output=${archive}`, sourceCommit], {
+      cwd: root,
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024
+    })
+    if (archived.status !== 0) blockers.push('source_commit_archive_unavailable')
+    const extractedSource = archived.status === 0
+      ? spawnSync('tar', ['-xf', archive, '-C', sourceRoot], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+      : null
+    if (!extractedSource || extractedSource.status !== 0) blockers.push('source_commit_extract_unavailable')
+    const extractedPackage = spawnSync('tar', ['-xzf', tarball, '-C', packageRoot], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+    if (extractedPackage.status !== 0) blockers.push('tarball_source_binding_extract_unavailable')
+
+    if (extractedSource?.status === 0 && extractedPackage.status === 0) {
+      for (const entry of [...files].sort()) {
+        const relative = normalizePath(entry).replace(/^package\//, '')
+        const packedFile = path.join(packageRoot, 'package', relative)
+        const sourceFile = path.join(sourceRoot, relative)
+        if (!fs.existsSync(packedFile) || !fs.statSync(packedFile).isFile()) {
+          blockers.push(`packed_file_unavailable_for_source_binding:${relative}`)
+          continue
+        }
+        const packedBytes = fs.readFileSync(packedFile)
+        const packedSha256 = hash(packedBytes, 'sha256', 'hex')
+        packageHash.update(relative)
+        packageHash.update('\0')
+        packageHash.update(String(packedBytes.length))
+        packageHash.update('\0')
+        packageHash.update(packedSha256)
+        packageHash.update('\0')
+        if (!fs.existsSync(sourceFile) || !fs.statSync(sourceFile).isFile()) {
+          if (isGeneratedDistPackagePath(relative)) {
+            // dist/** is intentionally ignored by Git, so bind each packed
+            // generated byte to the current clean build instead of pretending
+            // it exists in the source commit. The release stamp independently
+            // binds that build to the same clean source snapshot.
+            const builtFile = path.join(root, relative)
+            let builtStat: fs.Stats | null = null
+            try {
+              builtStat = fs.lstatSync(builtFile)
+            } catch {
+              builtStat = null
+            }
+            if (!builtStat?.isFile() || builtStat.isSymbolicLink()) {
+              blockers.push(`packed_generated_dist_missing_from_current_build:${relative}`)
+            } else if (!fs.readFileSync(builtFile).equals(packedBytes)) {
+              blockers.push(`packed_generated_dist_differs_from_current_build:${relative}`)
+            }
+          } else {
+            blockers.push(`packed_file_missing_from_source_commit:${relative}`)
+          }
+          continue
+        }
+        const sourceBytes = fs.readFileSync(sourceFile)
+        if (!sourceBytes.equals(packedBytes)) blockers.push(`packed_file_differs_from_source_commit:${relative}`)
+      }
+    }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true })
+  }
+  const sourcePackageSha256 = packageHash.digest('hex')
+  return {
+    source_tree_sha256: sourceTreeSha256,
+    source_package_sha256: sourcePackageSha256,
+    source_package_binding_sha256: sourcePackageBindingSha256(sourceCommit, sourceTreeSha256, sourcePackageSha256, tarballSha256),
+    blockers: unique(blockers)
+  }
+}
+
+function sourcePackageBindingSha256(sourceCommit: string, sourceTreeSha256: string, sourcePackageSha256: string, tarballSha256: string): string {
+  return hash(Buffer.from([
+    RELEASE_PACK_RECEIPT_SCHEMA,
+    sourceCommit,
+    sourceTreeSha256,
+    sourcePackageSha256,
+    tarballSha256
+  ].join('\n')), 'sha256', 'hex')
+}
+
+function isGeneratedDistPackagePath(relative: string): boolean {
+  const normalized = normalizePath(relative)
+  return normalized.startsWith('dist/') && !normalized.includes('/../')
+}
+
 function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))]
 }
@@ -344,10 +540,13 @@ function gitHead(root: string): string {
   return result.status === 0 ? String(result.stdout || '').trim() : ''
 }
 
-function gitWorktreeState(root: string): 'clean' | 'dirty' | 'unavailable' {
-  const result = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root, encoding: 'utf8' })
-  if (result.status !== 0) return 'unavailable'
-  return String(result.stdout || '').trim() ? 'dirty' : 'clean'
+function gitTreeSha256(root: string, commit: string): string {
+  if (!/^[a-f0-9]{40}$/i.test(commit)) return ''
+  const verified = spawnSync('git', ['rev-parse', '--verify', `${commit}^{commit}`], { cwd: root, encoding: 'utf8' })
+  if (verified.status !== 0 || String(verified.stdout || '').trim().toLowerCase() !== commit.toLowerCase()) return ''
+  const tree = spawnSync('git', ['ls-tree', '-r', '-z', '--full-tree', commit], { cwd: root, maxBuffer: 32 * 1024 * 1024 })
+  if (tree.status !== 0 || !Buffer.isBuffer(tree.stdout)) return ''
+  return hash(tree.stdout, 'sha256', 'hex')
 }
 
 function normalizePath(value: string): string {

@@ -9,7 +9,7 @@ import { DESKTOP_BRIDGE_STATE_SCHEMA, DesktopBridgeError } from './types.js';
 const DEFAULT_FRESHNESS_MS = 5 * 60_000;
 
 export function desktopBridgeStatePath(home: string = os.homedir()): string {
-  return path.join(home, '.codex', 'sks', 'codex-lb-desktop-bridge.json');
+  return path.join(home, '.codex', 'sks', 'desktop-bridge-state.json');
 }
 export function sha256Hex(value: string): string { return createHash('sha256').update(value).digest('hex'); }
 export function desktopBridgeListenOrigin(config: Pick<DesktopBridgeConfig, 'listenHost' | 'listenPort'>): string {
@@ -24,7 +24,7 @@ export function desktopBridgeConfigGeneration(config: DesktopBridgeConfig): stri
     provider_credential_generations: Object.fromEntries((Object.keys(registry.providers) as BridgeProviderId[]).map((id) => [id, registry.providers[id].credential_generation])),
     route_policy_generation: config.routePolicy.policy_generation,
     catalog_generation: config.routePolicy.catalog_generation,
-    provider_session_pins: [...config.providerSessionPins].sort((a, b) => a.thread_id.localeCompare(b.thread_id)),
+    client_capability_sha256: config.clientCapabilitySha256,
     allowed_paths: [...config.allowedPathPrefixes], allowed_origins: [...config.allowedOrigins].sort(),
     connect_timeout_ms: config.connectTimeoutMs, idle_timeout_ms: config.idleTimeoutMs,
   }));

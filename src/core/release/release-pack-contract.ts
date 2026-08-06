@@ -1,4 +1,4 @@
-export const RELEASE_PACK_RECEIPT_SCHEMA = 'sks.release-pack-receipt.v1'
+export const RELEASE_PACK_RECEIPT_SCHEMA = 'sks.release-pack-receipt.v2'
 export const RELEASE_PACK_COMPARE_SCHEMA = 'sks.release-pack-compare.v1'
 
 export type ReleasePackKind = 'local' | 'staged'
@@ -10,6 +10,9 @@ export interface ReleasePackReceipt {
   package_name: string
   package_version: string
   source_commit: string | null
+  source_tree_sha256: string | null
+  source_package_sha256: string | null
+  source_package_binding_sha256: string | null
   tarball_name: string
   tarball_path: string
   bytes: number

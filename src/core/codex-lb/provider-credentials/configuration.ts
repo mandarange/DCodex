@@ -26,6 +26,7 @@ import {
   providerCredentialStatus
 } from './runtime.js';
 import type { ProviderCredentialStatus } from './types.js';
+import { withProviderCredentialLock } from './locks.js';
 
 /** Persist one provider secret without selecting a runtime provider or editing Codex auth.json. */
 export async function configureProviderCredential(input: {
@@ -47,10 +48,9 @@ export async function configureProviderCredential(input: {
   const apiKey = String(input.api_key || '').trim();
   if (!apiKey) throw new Error(`${providerCode(input.provider_id)}_credential_empty`);
   const home = path.resolve(input.home || process.env.HOME || os.homedir());
-  if (input.provider_id === 'openrouter') {
-    return configureOpenRouterCredential(input, apiKey, home);
-  }
-  return configureCodexLbCredential(input, apiKey, home);
+  return withProviderCredentialLock(home, input.provider_id, () => input.provider_id === 'openrouter'
+    ? configureOpenRouterCredential(input, apiKey, home)
+    : configureCodexLbCredential(input, apiKey, home));
 }
 
 type ConfigureProviderCredentialInput = Parameters<typeof configureProviderCredential>[0];

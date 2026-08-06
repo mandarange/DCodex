@@ -209,7 +209,7 @@ async function parseInvocation(args: string[], io: BridgeCommandIo): Promise<Par
     if (!path.isAbsolute(settingsPath)) {
       throw new BridgeCliError('desktop_bridge_settings_path_must_be_absolute');
     }
-    if (path.basename(settingsPath) !== 'codex-lb-desktop-bridge-settings.json') {
+    if (path.basename(settingsPath) !== 'desktop-bridge-settings.json') {
       throw new BridgeCliError('desktop_bridge_settings_path_invalid');
     }
     return {

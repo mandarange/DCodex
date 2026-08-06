@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { inspectPublishPreflight, type PublishPreflightCommandResult } from '../publish-preflight.js';
+import { writePhysicalReleaseEvidence } from './physical-release-evidence-fixture.js';
 
 const SHA = 'a'.repeat(40);
 
@@ -86,7 +87,21 @@ test('real publish preflight fails closed when source-bound physical release evi
   assert.equal(report.ok, false);
   assert.equal(report.physical_release_gates_required, true);
   assert.equal(report.physical_release_gates?.ok, false);
-  assert.ok(report.blockers.includes('physical_receipt_missing_or_invalid'));
+  assert.ok(report.blockers.includes('physical_inspection_missing_or_invalid'));
+});
+
+test('real publish preflight independently revalidates saved source-bound physical evidence', async () => {
+  const root = await fixture();
+  writePhysicalReleaseEvidence(root, '8.0.3', SHA);
+  const report = inspectPublishPreflight({
+    root,
+    run: runner(root),
+    requirePhysicalReleaseGates: true,
+  });
+  assert.equal(report.ok, true, report.blockers.join(', '));
+  assert.equal(report.physical_release_gates_required, true);
+  assert.equal(report.physical_release_gates?.ok, true);
+  assert.equal(report.physical_release_gates?.report?.release_source_commit, SHA);
 });
 
 function ok(stdout: string): PublishPreflightCommandResult {

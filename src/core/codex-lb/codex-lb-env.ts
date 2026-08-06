@@ -1,6 +1,8 @@
 import path from 'node:path';
 import os from 'node:os';
 import fsp from 'node:fs/promises';
+import http from 'node:http';
+import https from 'node:https';
 import { exists, readJson, readText } from '../fsx.js';
 import { escapeRegExp } from '../text/regex.js';
 import {
@@ -12,6 +14,11 @@ import {
   isLexicallyConfined,
   removeManagedPathVerified
 } from '../managed-path-safety.js';
+import {
+  resolveDesktopBridgeRemoteTarget,
+  safeBridgeErrorCode,
+  type DesktopBridgeLookup
+} from './desktop-bridge/security.js';
 
 const CODEX_LB_CREDENTIAL_AUTH_TRANSPORTS = [
   'x-codex-lb-api-key',
@@ -198,6 +205,7 @@ export async function readLbHealth(home: unknown = process.env.HOME || os.homedi
 export async function readCodexLbModelCatalog(opts: {
   loadedEnv?: CodexLbEnvLoadResult;
   fetchImpl?: typeof fetch;
+  lookup?: DesktopBridgeLookup;
   timeoutMs?: number;
   gatewayAuthTransport?: CodexLbCredentialAuthTransport;
 } = {}): Promise<CodexLbModelCatalogResult> {
@@ -230,12 +238,33 @@ export async function readCodexLbModelCatalog(opts: {
   const gatewayHeaders = gatewayAuthTransport === 'x-codex-lb-api-key'
     ? { 'X-Codex-LB-API-Key': loaded.secret_api_key }
     : { Authorization: `Bearer ${loaded.secret_api_key}` };
+  let remote: Awaited<ReturnType<typeof resolveDesktopBridgeRemoteTarget>>;
   try {
-    const response = await fetchImpl(`${loaded.base_url}/models`, {
-      headers: gatewayHeaders,
-      redirect: 'error',
-      signal: AbortSignal.timeout(Math.max(250, Number(opts.timeoutMs || 5000)))
-    });
+    remote = await resolveDesktopBridgeRemoteTarget(
+      loaded.base_url,
+      ...(opts.lookup ? [opts.lookup] : [])
+    );
+  } catch (error) {
+    return {
+      schema: 'sks.codex-lb-model-catalog.v1',
+      ok: false,
+      status: 'blocked',
+      models: [],
+      model_efforts: {},
+      http_status: null,
+      blockers: [`codex_lb_${safeBridgeErrorCode(error).replace(/^bridge_/, '')}`]
+    };
+  }
+  try {
+    const timeoutMs = Math.max(250, Number(opts.timeoutMs || 5000));
+    const modelsUrl = new URL(`${loaded.base_url}/models`);
+    const response = opts.fetchImpl
+      ? await fetchImpl(modelsUrl, {
+        headers: gatewayHeaders,
+        redirect: 'error',
+        signal: AbortSignal.timeout(timeoutMs)
+      })
+      : await requestPinnedCodexLbCatalog(modelsUrl, remote, gatewayHeaders, timeoutMs);
     const payload = await response.json().catch(() => null);
     const models = normalizeCodexLbModelCatalogPayload(payload);
     const apiEfforts = normalizeCodexModelEffortCatalogPayload(payload);
@@ -267,6 +296,54 @@ export async function readCodexLbModelCatalog(opts: {
       blockers: ['codex_lb_model_catalog_unavailable']
     };
   }
+}
+
+async function requestPinnedCodexLbCatalog(
+  url: URL,
+  remote: Awaited<ReturnType<typeof resolveDesktopBridgeRemoteTarget>>,
+  credentialHeaders: Record<string, string>,
+  timeoutMs: number
+): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> {
+  const transport = remote.secure ? https : http;
+  const body = await new Promise<{ status: number; bytes: Buffer }>((resolve, reject) => {
+    const request = transport.request({
+      protocol: url.protocol,
+      hostname: remote.address,
+      family: remote.family,
+      port: remote.port,
+      method: 'GET',
+      path: `${url.pathname}${url.search}`,
+      headers: { accept: 'application/json', host: url.host, ...credentialHeaders },
+      agent: false,
+      maxHeaderSize: 16 * 1024,
+      ...(remote.tlsServername ? { servername: remote.tlsServername } : {})
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      let total = 0;
+      response.on('data', (raw: Buffer | string) => {
+        const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+        total += chunk.length;
+        if (total > 4 * 1024 * 1024) {
+          response.destroy(new Error('codex_lb_model_catalog_response_too_large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.once('error', reject);
+      response.once('end', () => resolve({ status: response.statusCode || 0, bytes: Buffer.concat(chunks) }));
+    });
+    request.once('error', reject);
+    request.setTimeout(timeoutMs, () => request.destroy(new Error('codex_lb_model_catalog_timeout')));
+    request.end();
+  });
+  return {
+    ok: body.status >= 200 && body.status < 300,
+    status: body.status,
+    json: async () => {
+      try { return JSON.parse(body.bytes.toString('utf8')); }
+      catch { return null; }
+    }
+  };
 }
 
 export function normalizeCodexModelEffortCatalogPayload(payload: any): Record<string, string[]> {

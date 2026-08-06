@@ -10,6 +10,7 @@ import {
 import { safeWriteCodexConfigToml } from '../codex-runtime/codex-desktop-config-policy.js';
 import { messageOf as errorMessage } from '../errors/message.js';
 import { readText } from '../fsx.js';
+import { withFileLock } from '../locks/file-lock.js';
 import { captureCodexAuthSnapshot } from './desktop-auth-invariant.js';
 import {
   parseHistoricalProviderConfig,
@@ -33,6 +34,7 @@ import type {
 import {
   backupDesktopBridgeMigrationFile,
   createDesktopBridgeUnificationReceiptId,
+  desktopBridgeMigrationTransactionLockPath,
   desktopBridgeUnificationReceiptDir,
   fileSha256OrMissing,
   finalizeDesktopBridgeMigrationReceiptFiles,
@@ -59,6 +61,17 @@ export type {
  * helpers and never become a selectable mode or active runtime dependency.
  */
 export async function migrateDesktopBridgeConfig(
+  input: DesktopBridgeMigrationOptions
+): Promise<DesktopBridgeMigrationResult> {
+  const home = path.resolve(input.home || process.env.HOME || os.homedir());
+  return withFileLock({
+    lockPath: desktopBridgeMigrationTransactionLockPath(home),
+    timeoutMs: 30_000,
+    staleMs: 120_000
+  }, () => migrateDesktopBridgeConfigUnlocked(input));
+}
+
+async function migrateDesktopBridgeConfigUnlocked(
   input: DesktopBridgeMigrationOptions
 ): Promise<DesktopBridgeMigrationResult> {
   const home = input.home || process.env.HOME || os.homedir();
@@ -259,7 +272,7 @@ export async function migrateDesktopBridgeConfig(
       authSemanticIdentityPreserved: authSemanticIdentityPreserved(authBefore, authAfter)
     });
     const rollback = rollbackFiles.length > 0
-      ? await rollbackDesktopBridgeUnificationReceipt({ receipt: provisional })
+      ? await rollbackDesktopBridgeUnificationReceipt({ receipt: provisional, transactionLockHeld: true })
       : undefined;
     return {
       ...baseResult,

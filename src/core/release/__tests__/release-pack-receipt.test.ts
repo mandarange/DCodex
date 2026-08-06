@@ -4,17 +4,26 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { spawnSync } from 'node:child_process'
-import { compareReleasePacks, inspectReleaseTarball, validateLocalReleasePackBinding } from '../release-pack-receipt.js'
+import { writeNpmPackProof } from '../npm-pack-proof.js'
+import {
+  RELEASE_PACK_RECEIPT_SCHEMA,
+  compareReleasePacks,
+  inspectLocalReleaseSourceState,
+  inspectReleaseTarball,
+  validateLocalReleasePackBinding,
+  validateReleasePackReceipt
+} from '../release-pack-receipt.js'
 
 test('release pack receipts bind exact local and staged tarball bytes', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-receipt-'))
   try {
-    const first = createTarball(root, 'first', '8.0.0')
+    const fixture = createLocalBindingFixture(root)
+    const first = fixture.tarball
     const second = createTarball(root, 'second', '8.0.1')
     const local = inspectReleaseTarball({
       tarball: first,
       kind: 'local',
-      sourceCommit: 'a'.repeat(40),
+      sourceCommit: fixture.head,
       root,
       npmPackProof: { proof_id: 'a'.repeat(64), info_sha256: 'b'.repeat(64), file_list_sha256: 'c'.repeat(64) }
     })
@@ -265,7 +274,7 @@ test('release pack inspection rejects current Supabase secret keys without echoi
 
 test('release pack comparison rejects matching but malformed receipts', () => {
   const malformed = {
-    schema: 'sks.release-pack-receipt.v1',
+    schema: RELEASE_PACK_RECEIPT_SCHEMA,
     ok: true,
     kind: 'local',
     package_name: 'sneakoscope',
@@ -292,7 +301,7 @@ test('release pack comparison rejects matching but malformed receipts', () => {
 
 test('release pack comparison recomputes frozen package budgets instead of trusting receipt claims', () => {
   const forged = {
-    schema: 'sks.release-pack-receipt.v1', ok: true, kind: 'local', package_name: 'sneakoscope', package_version: '8.0.0',
+    schema: RELEASE_PACK_RECEIPT_SCHEMA, ok: true, kind: 'local', package_name: 'sneakoscope', package_version: '8.0.0',
     source_commit: 'a'.repeat(40), tarball_name: 'sneakoscope-8.0.0.tgz', tarball_path: '.sneakoscope/reports/release/8.0.0/artifacts/sneakoscope-8.0.0.tgz', bytes: 999_999_999, unpacked_bytes: 999_999_999,
     sha256: 'a'.repeat(64), sha512_integrity: 'sha512-YQ==', file_count: 1, file_list_sha256: 'b'.repeat(64),
     budget: { ok: true, max_packed_bytes: 999_999_999, max_unpacked_bytes: 999_999_999, max_file_count: 999_999, blockers: [] },
@@ -305,45 +314,222 @@ test('release pack comparison recomputes frozen package budgets instead of trust
   assert.equal(result.blockers.includes('staged_receipt:package_budget_invalid_or_failed'), true)
 })
 
-test('local release pack binding rejects a dirty worktree instead of attributing dirty bytes to HEAD', () => {
+test('local release pack source state independently rejects tracked modifications', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-dirty-worktree-'))
   try {
-    git(root, ['init'])
-    git(root, ['config', 'user.email', 'release-pack@example.invalid'])
-    git(root, ['config', 'user.name', 'Release Pack Test'])
-    fs.writeFileSync(path.join(root, 'tracked.txt'), 'clean\n')
-    git(root, ['add', 'tracked.txt'])
-    git(root, ['commit', '-m', 'fixture'])
-    fs.writeFileSync(path.join(root, 'tracked.txt'), 'dirty\n')
-
-    const result = validateLocalReleasePackBinding(root, {
-      schema: 'sks.release-pack-receipt.v1',
-      ok: true,
-      kind: 'local',
-      package_name: 'sneakoscope',
-      package_version: '8.0.0',
-      source_commit: git(root, ['rev-parse', 'HEAD']),
-      tarball_name: 'sneakoscope-8.0.0.tgz',
-      tarball_path: '.sneakoscope/reports/release/8.0.0/artifacts/sneakoscope-8.0.0.tgz',
-      bytes: 1,
-      unpacked_bytes: 1,
-      sha256: 'a'.repeat(64),
-      sha512_integrity: 'sha512-YQ==',
-      file_count: 1,
-      file_list_sha256: 'b'.repeat(64),
-      secret_scan: { ok: true, scanned_files: 1, scanned_bytes: 1, findings: [], blockers: [] },
-      retired_surface_scan: { ok: true, scanned_files: 1, scanned_bytes: 1, allowlisted_finding_count: 0, findings: [], blockers: [] },
-      budget: { ok: true, max_packed_bytes: 2_938_880, max_unpacked_bytes: 13_200_000, max_file_count: 2100, blockers: [] },
-      npm_pack_proof: { proof_id: 'c'.repeat(64), info_sha256: 'd'.repeat(64), file_list_sha256: 'e'.repeat(64) },
-      generated_at: new Date().toISOString(),
-      blockers: []
-    })
+    const fixture = createLocalBindingFixture(root)
+    fs.writeFileSync(path.join(root, 'index.js'), 'export const value = "dirty"\n')
+    const sourceState = inspectLocalReleaseSourceState(root)
+    const result = validateLocalReleasePackBinding(root, fixture.receipt)
+    assert.equal(sourceState.ok, false)
+    assert.ok(sourceState.blockers.includes('npm_pack_tracked_changes_present'))
     assert.equal(result.ok, false)
-    assert.ok(result.blockers.includes('npm_pack_worktree_not_clean'))
+    assert.ok(result.blockers.includes('npm_pack_tracked_changes_present'))
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('local release pack source state independently rejects pack-eligible untracked files', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-untracked-source-'))
+  try {
+    const fixture = createLocalBindingFixture(root)
+    const untracked = path.join(root, 'untracked.js')
+    fs.writeFileSync(untracked, 'export const untracked = true\n')
+    const sourceState = inspectLocalReleaseSourceState(root)
+    const result = validateLocalReleasePackBinding(root, fixture.receipt)
+    assert.equal(sourceState.ok, false)
+    assert.deepEqual(sourceState.pack_eligible_untracked, ['untracked.js'])
+    assert.ok(sourceState.blockers.includes('npm_pack_eligible_untracked_files_present'))
+    assert.ok(result.blockers.includes('npm_pack_eligible_untracked_files_present'))
+    assert.equal(fs.existsSync(untracked), true, 'validation must preserve the rejected user file')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('local release pack binding rejects dirty packed bytes after the worktree is restored to HEAD without deleting evidence', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-dirty-tarball-'))
+  try {
+    const fixture = createLocalBindingFixture(root)
+    fs.writeFileSync(path.join(root, 'index.js'), 'export const value = "dirty packed bytes"\n')
+    const dirtyOutput = path.join(root, 'dirty-output')
+    const dirtyPack = npmPack(root, dirtyOutput)
+    fs.copyFileSync(dirtyPack.tarball, fixture.tarball)
+    const dirtyInspection = inspectReleaseTarball({ tarball: fixture.tarball, kind: 'local', sourceCommit: fixture.head, root })
+    assert.ok(dirtyInspection.blockers.includes('packed_file_differs_from_source_commit:index.js'))
+    fs.writeFileSync(path.join(root, 'index.js'), 'export const value = "clean"\n')
+    const dirtyProof = writeGateArtifacts(root, dirtyPack.info)
+    const forged = {
+      ...dirtyInspection,
+      ok: true,
+      blockers: [],
+      npm_pack_proof: {
+        proof_id: dirtyProof.proof_id,
+        info_sha256: dirtyProof.info_digest,
+        file_list_sha256: dirtyProof.file_list_digest
+      }
+    }
+    const before = fs.readFileSync(fixture.tarball)
+    const result = validateLocalReleasePackBinding(root, forged)
+    assert.equal(result.ok, false)
+    assert.ok(result.blockers.includes('local_tarball_artifact:packed_file_differs_from_source_commit:index.js'))
+    assert.deepEqual(fs.readFileSync(fixture.tarball), before, 'validation must not delete or rewrite rejected package bytes')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('local release pack binding accepts a clean commit-bound package receipt', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-clean-binding-'))
+  try {
+    const fixture = createLocalBindingFixture(root)
+    const result = validateLocalReleasePackBinding(root, fixture.receipt)
+    assert.equal(result.ok, true, result.blockers.join(','))
+    assert.match(fixture.receipt.source_tree_sha256 || '', /^[a-f0-9]{64}$/)
+    assert.match(fixture.receipt.source_package_sha256 || '', /^[a-f0-9]{64}$/)
+    assert.match(fixture.receipt.source_package_binding_sha256 || '', /^[a-f0-9]{64}$/)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('local release pack binding accepts ignored generated dist only when it matches the current clean build', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-generated-dist-'))
+  try {
+    const fixture = createGeneratedDistBindingFixture(root)
+    const sourceState = inspectLocalReleaseSourceState(root)
+    assert.equal(sourceState.ok, true, sourceState.blockers.join(','))
+    assert.deepEqual(sourceState.pack_eligible_untracked, [])
+    assert.equal(validateLocalReleasePackBinding(root, fixture.receipt).ok, true)
+
+    fs.writeFileSync(path.join(root, 'dist', 'index.js'), 'export const generated = "tampered"\n')
+    const mismatched = validateLocalReleasePackBinding(root, fixture.receipt)
+    assert.equal(mismatched.ok, false)
+    assert.ok(mismatched.blockers.includes(
+      'local_tarball_artifact:packed_generated_dist_differs_from_current_build:dist/index.js'
+    ))
+    assert.equal(fs.existsSync(fixture.tarball), true, 'validation must preserve the rejected tarball')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('release pack receipt v1 is rejected with a precise regeneration instruction', () => {
+  const result = validateReleasePackReceipt({ schema: 'sks.release-pack-receipt.v1', ok: true })
+  assert.ok(result.blockers.includes('receipt_schema_v1_outdated_regenerate_with_npm_run_release:pack-receipt'))
+})
+
+function createLocalBindingFixture(root: string) {
+  git(root, ['init'])
+  git(root, ['config', 'user.email', 'release-pack@example.invalid'])
+  git(root, ['config', 'user.name', 'Release Pack Test'])
+  fs.writeFileSync(path.join(root, '.gitignore'), '.sneakoscope/\ndirty-output/\n')
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    name: 'sneakoscope',
+    version: '8.0.0',
+    files: ['*.js']
+  }))
+  fs.writeFileSync(path.join(root, 'index.js'), 'export const value = "clean"\n')
+  git(root, ['add', '.gitignore', 'package.json', 'index.js'])
+  git(root, ['commit', '-m', 'fixture'])
+  const head = git(root, ['rev-parse', 'HEAD'])
+  const outputDir = path.join(root, '.sneakoscope', 'reports', 'release', '8.0.0', 'artifacts')
+  const packed = npmPack(root, outputDir)
+  const proof = writeGateArtifacts(root, packed.info)
+  const receipt = inspectReleaseTarball({
+    tarball: packed.tarball,
+    kind: 'local',
+    sourceCommit: head,
+    root,
+    npmPackProof: {
+      proof_id: proof.proof_id,
+      info_sha256: proof.info_digest,
+      file_list_sha256: proof.file_list_digest
+    }
+  })
+  assert.equal(receipt.ok, true, receipt.blockers.join(','))
+  return { head, tarball: packed.tarball, info: packed.info, receipt }
+}
+
+function createGeneratedDistBindingFixture(root: string) {
+  git(root, ['init'])
+  git(root, ['config', 'user.email', 'release-pack@example.invalid'])
+  git(root, ['config', 'user.name', 'Release Pack Test'])
+  fs.writeFileSync(path.join(root, '.gitignore'), '.sneakoscope/\ndist/\n')
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    name: 'sneakoscope',
+    version: '8.0.0',
+    files: ['dist/**']
+  }))
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true })
+  fs.writeFileSync(path.join(root, 'src', 'index.ts'), 'export const source = true\n')
+  git(root, ['add', '.gitignore', 'package.json', 'src/index.ts'])
+  git(root, ['commit', '-m', 'fixture'])
+  const head = git(root, ['rev-parse', 'HEAD'])
+  fs.mkdirSync(path.join(root, 'dist'), { recursive: true })
+  fs.writeFileSync(path.join(root, 'dist', 'index.js'), 'export const generated = true\n')
+  const outputDir = path.join(root, '.sneakoscope', 'reports', 'release', '8.0.0', 'artifacts')
+  const packed = npmPack(root, outputDir)
+  const proof = writeGateArtifacts(root, packed.info)
+  const receipt = inspectReleaseTarball({
+    tarball: packed.tarball,
+    kind: 'local',
+    sourceCommit: head,
+    root,
+    npmPackProof: {
+      proof_id: proof.proof_id,
+      info_sha256: proof.info_digest,
+      file_list_sha256: proof.file_list_digest
+    }
+  })
+  assert.equal(receipt.ok, true, receipt.blockers.join(','))
+  return { head, tarball: packed.tarball, info: packed.info, receipt }
+}
+
+function npmPack(root: string, outputDir: string): { tarball: string; info: Record<string, any> } {
+  fs.mkdirSync(outputDir, { recursive: true })
+  const result = spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', outputDir], {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024
+  })
+  assert.equal(result.status, 0, result.stderr || result.stdout)
+  const parsed = JSON.parse(String(result.stdout || '[]'))
+  const info = (Array.isArray(parsed) ? parsed[0] : parsed) as Record<string, any>
+  return { tarball: path.join(outputDir, String(info.filename || '')), info }
+}
+
+function writeGateArtifacts(root: string, info: Record<string, any>) {
+  const proof = writeNpmPackProof(root, info, 1)
+  const reports = path.join(root, '.sneakoscope', 'reports')
+  fs.mkdirSync(reports, { recursive: true })
+  fs.writeFileSync(path.join(reports, 'packlist-performance.json'), JSON.stringify({
+    schema: 'sks.packlist-performance.v1',
+    ok: true,
+    blockers: [],
+    forbidden: [],
+    runtime_required_missing: [],
+    pack_proof_id: proof.proof_id,
+    pack_info_sha256: proof.info_digest,
+    pack_file_list_sha256: proof.file_list_digest,
+    entryCount: info.entryCount,
+    size: info.size,
+    unpackedSize: info.unpackedSize
+  }))
+  fs.writeFileSync(path.join(reports, 'package-surface-budget.json'), JSON.stringify({
+    schema: 'sks.package-surface-budget.v1',
+    ok: true,
+    blockers: [],
+    forbidden_findings: [],
+    pack_proof_id: proof.proof_id,
+    pack_info_sha256: proof.info_digest,
+    pack_file_list_sha256: proof.file_list_digest,
+    actual_file_count: info.entryCount,
+    actual_tarball_bytes: info.size
+  }))
+  return proof
+}
 
 function createTarball(
   root: string,

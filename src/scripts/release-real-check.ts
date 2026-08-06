@@ -24,6 +24,8 @@ import { readCurrentCanonicalTestProof } from '../core/release/canonical-test-pr
 
 const args = process.argv.slice(2)
 const skipReleaseCheck = args.includes('--skip-release-check') || process.env.SKS_RELEASE_REAL_CHECK_SKIP_RELEASE_CHECK === '1'
+const physicalEvidenceRunId = String(process.env.SKS_PHYSICAL_EVIDENCE_RUN_ID || '')
+const physicalEvidenceRepository = String(process.env.SKS_PHYSICAL_EVIDENCE_REPOSITORY || '')
 const root = process.cwd()
 const concurrency = Math.max(1, Math.min(4, Math.floor(Number(process.env.SKS_RELEASE_REAL_CHECK_CONCURRENCY || 2))))
 const releaseScratchDir = tmpdir('rr-')
@@ -90,15 +92,19 @@ const tasks = [
   task('codex:current:app-server-v2:real', 'direct', { command: nodeScript('codex-current-app-server-v2-check.js'), group: 'environment_required', phase: 'parallel_processing', args: ['--require-real'], policy: requiredPolicy(['sks.release-gate.v1']) }),
   task('codex:current:capability:real', 'direct', { command: nodeScript('codex-current-capability-check.js'), group: 'environment_required', phase: 'parallel_verification', args: ['--require-real'], deps: ['codex:current:app-server-v2:real'], policy: requiredPolicy(['sks.release-gate.v1']) }),
   task('doctor:actual', 'direct', { command: [process.execPath, './dist/bin/sks.js', 'doctor', '--json'], group: 'environment_required', phase: 'parallel_processing', policy: requiredPolicy(['sks.doctor-status.v3'], { statusRequired: true, passStatuses: ['fast_readonly_ok', 'ok'] }) }),
-  task('release:pack-receipt', 'release:pack-receipt', { group: 'environment_required', phase: 'parallel_processing', policy: requiredPolicy(['sks.release-pack-receipt.v1']) }),
+  task('release:pack-receipt', 'release:pack-receipt', { command: nodeScript('release-pack-receipt.js', 'verify'), group: 'environment_required', phase: 'parallel_processing', policy: requiredPolicy(['sks.release-pack-receipt.v2']) }),
   task('naruto:worktree-coding:blackbox', 'direct', { command: nodeScript('naruto-worktree-coding-blackbox.js'), group: 'real_smoke', phase: 'parallel_processing', args: ['--require-real'], env: { SKS_REQUIRE_GIT_WORKTREE: '1' }, policy: requiredPolicy(['sks.release-gate.v1']) }),
   task('codex-sdk:real-smoke', 'direct', { command: nodeScript('codex-sdk-real-smoke-check.js'), group: 'real_smoke', phase: 'parallel_processing', args: ['--require-real'], policy: requiredPolicy(['sks.release-gate.v1'], { statusRequired: true, passStatuses: ['proven'] }) }),
   task('desktop-bridge:real-evidence', 'direct', {
-    command: nodeScript('desktop-bridge-real-evidence-check.js'),
+    command: nodeScript(
+      'release-physical-gates-check.js',
+      '--evidence-run-id', physicalEvidenceRunId,
+      '--repository', physicalEvidenceRepository
+    ),
     group: 'real_ui',
     phase: 'parallel_verification',
     deps: ['codex:actual-config-load-probe'],
-    policy: requiredPolicy(['sks.desktop-bridge-real-evidence-check.v1'], { statusRequired: true, passStatuses: ['passed'] })
+    policy: requiredPolicy(['sks.release-physical-gates-inspection.v2'], { statusRequired: true, passStatuses: ['passed'] })
   }),
   task('imagegen:real-smoke', 'direct', { command: nodeScript('imagegen-real-smoke-check.js'), group: 'real_smoke', phase: 'parallel_processing', policy: liveOptionalPolicy(['sks.imagegen-real-smoke.v1'], ['passed']) }),
   task('ux-review:real-imagegen-smoke', 'direct', { command: nodeScript('ux-review-real-imagegen-smoke-check.js'), group: 'real_smoke', phase: 'parallel_processing', deps: ['imagegen:real-smoke'], policy: liveOptionalPolicy(['sks.ux-real-imagegen-smoke.v1'], ['passed']) }),

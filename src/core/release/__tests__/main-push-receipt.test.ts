@@ -18,7 +18,7 @@ test('main push receipt independently revalidates remote main and the exact pre-
     fs.mkdirSync(root, { recursive: true })
     git(container, ['init', '--bare', remote])
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sneakoscope', version: '8.0.0' }))
-    fs.writeFileSync(path.join(root, '.gitignore'), '.sneakoscope/reports/\ndist/\n')
+    fs.writeFileSync(path.join(root, '.gitignore'), '.sneakoscope/reports/\ndist/\nrelease-evidence/\n')
     git(root, ['init', '-b', 'main'])
     git(root, ['config', 'user.email', 'fixture@example.test'])
     git(root, ['config', 'user.name', 'Release Fixture'])
@@ -42,6 +42,7 @@ test('main push receipt independently revalidates remote main and the exact pre-
       requireReleaseStamp: true,
       requirePackProof: true,
       requireMacosProof: true,
+      requirePhysicalProof: true,
       requireCleanTree: true
     })
     assert.equal(guard.ok, true, guard.blockers.join(','))

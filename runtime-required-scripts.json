@@ -13,11 +13,6 @@
       "reason": "installed doctor and repair paths probe whether Codex can load the managed project config"
     },
     {
-      "path": "dist/scripts/codex-lb-catalog-passthrough-check.js",
-      "category": "installed_runtime",
-      "reason": "the installed public release gate DAG verifies catalog v2 pass-through against the packaged runtime"
-    },
-    {
       "path": "dist/scripts/desktop-bridge-unification-check.js",
       "category": "installed_runtime",
       "reason": "the installed public release gate DAG hermetically verifies Desktop Bridge credential coexistence, migration idempotency, rollback isolation, retired CLI routing, and no-fallback policy"
@@ -41,6 +36,11 @@
       "path": "dist/scripts/desktop-bridge-real-evidence-check.js",
       "category": "installed_runtime",
       "reason": "the installed full release proof fails closed unless trusted real Codex Desktop evidence covers native features, lifecycle recovery, and the remote other-Mac runtime"
+    },
+    {
+      "path": "dist/scripts/release-physical-gates-check.js",
+      "category": "installed_package_verification",
+      "reason": "the installed full release proof validates macOS-captured, source-bound physical receipts including both Desktop Bridge providers, OAuth preservation, native UI, WebSocket, and production deep artifacts"
     },
     {
       "path": "dist/scripts/lib/ensure-dist-fresh.js",

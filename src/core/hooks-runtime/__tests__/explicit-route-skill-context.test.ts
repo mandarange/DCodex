@@ -150,7 +150,7 @@ test('a strict support skill persists with a real route while an unknown strict 
   }
 });
 
-test('persisted explicit alias skills survive compact resume, PreToolUse, and child SubagentStart', async () => {
+test('persisted explicit alias skills survive compact resume and PreToolUse without turning an ordinary child into Naruto', async () => {
   const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-explicit-skill-state-'));
   const home = path.join(fixture, 'home');
   const root = path.join(fixture, 'project');
@@ -213,10 +213,8 @@ test('persisted explicit alias skills survive compact resume, PreToolUse, and ch
       hook_event_name: 'SubagentStart'
     }, { root, state });
     const normalized: any = normalizeHookResult('subagent-start', child);
-    assert.match(
-      String(normalized.hookSpecificOutput?.additionalContext || ''),
-      new RegExp(escapeRegExp(skillPath))
-    );
+    assert.doesNotMatch(String(normalized.hookSpecificOutput?.additionalContext || ''), new RegExp(escapeRegExp(skillPath)));
+    assert.doesNotMatch(String(normalized.hookSpecificOutput?.additionalContext || ''), /SKS Naruto policy|Authoritative SKS skill sources/i);
   } finally {
     if (oldHome === undefined) delete process.env.HOME;
     else process.env.HOME = oldHome;

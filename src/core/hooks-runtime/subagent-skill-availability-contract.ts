@@ -12,7 +12,7 @@ export const MAX_GUARD_DIRECTORY_ENTRIES = (HARD_NARUTO_MAX_THREADS * 2) + 16;
 export const MAX_LIFECYCLE_GUARD_BYTES = 64 * 1024;
 export const MAX_SUBAGENT_PLAN_BYTES = 256 * 1024;
 export const ADMISSION_SCHEMA = 'sks.subagent-skill-availability-admission.v1';
-export const SUBAGENT_ADMISSION_BLOCKER_RE = /^(?:authoritative_sks_skill_resolution_failed|authoritative_sks_skill_candidate_rejected|authoritative_sks_skill_unavailable:sks(?:-[a-z0-9]+)*|subagent_skill_availability_(?:artifact_dir_unsafe|blocker_artifact_write_failed|guard_persistence_failed))$/;
+export const SUBAGENT_ADMISSION_BLOCKER_RE = /^(?:authoritative_sks_skill_resolution_failed|authoritative_sks_skill_candidate_rejected|authoritative_sks_skill_unavailable:sks(?:-[a-z0-9]+)*|subagent_skill_availability_(?:artifact_dir_unsafe|blocker_artifact_write_failed|guard_invalid|guard_persistence_failed))$/;
 
 export interface SubagentSkillAvailabilityBlocker {
   schema: typeof SUBAGENT_SKILL_AVAILABILITY_BLOCKER_SCHEMA;

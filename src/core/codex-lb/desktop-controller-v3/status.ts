@@ -87,7 +87,7 @@ export function statusFromCore(
 ): DesktopBridgeStatusV3 {
   const managedConfig = isManagedConfig(core.config);
   const serviceState = serviceRuntimeState(core.service);
-  const managed = managedConfig || core.service.installed || Boolean(core.service.settings);
+  const managed = managedConfig || core.service.installed || core.service.running;
   const management = managed
     ? { managed: true as const, runtime: 'desktop-bridge' as const, state: serviceState, reason: null }
     : {
@@ -128,6 +128,9 @@ export function statusFromCore(
       : ready
         ? 'ready'
         : core.service.running && activeCatalogReady ? 'degraded' : 'blocked';
+  const providerSetupActions = activeProviders.length === 0
+    ? ['configure_codex_lb_credential', 'configure_openrouter_credential']
+    : [];
   return {
     schema: 'sks.desktop-bridge-status.v3',
     checked_at: core.checkedAt,
@@ -178,7 +181,10 @@ export function statusFromCore(
       blockers: unique(activeBlockers),
       warnings: unique([...warnings, ...core.catalogSync.warnings])
     },
-    recovery_actions: recoveryActions(unique(activeBlockers))
+    recovery_actions: unique([
+      ...providerSetupActions,
+      ...recoveryActions(unique(activeBlockers))
+    ])
   };
 }
 

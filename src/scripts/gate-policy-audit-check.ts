@@ -43,6 +43,7 @@ const directCodexConfigWrites = scanDirectCodexConfigWrites()
 const commandGateContract = scanCommandGateContract()
 const directMkdtempCalls = scanDirectMkdtempCalls()
 const rustTempdirCalls = scanRustTempdirCalls()
+const releaseEvidenceArchitecture = scanReleaseEvidenceArchitecture()
 const unusedPolicyCallsiteAllowlist = [...policyCallsiteAllowlist.keys()].filter((key) => !policyCallsiteAllowlistHits.has(key))
 
 if (releaseGates.length > 200) blockers.push(`release_preset_gate_budget_exceeded:${releaseGates.length}`)
@@ -56,6 +57,7 @@ if (directCodexConfigWrites.length) blockers.push(`direct_codex_config_write_cal
 if (!commandGateContract.ok) blockers.push(`command_gate_contract:${commandGateContract.issues[0]}`)
 if (directMkdtempCalls.length) blockers.push(`direct_mkdtemp_callsite:${directMkdtempCalls[0].file}:${directMkdtempCalls[0].line}`)
 if (rustTempdirCalls.length) blockers.push(`rust_tempdir_without_raii:${rustTempdirCalls[0].file}:${rustTempdirCalls[0].line}`)
+if (!releaseEvidenceArchitecture.ok) blockers.push(`release_evidence_architecture:${releaseEvidenceArchitecture.issues[0]}`)
 if (unusedPolicyCallsiteAllowlist.length) blockers.push(`unused_policy_callsite_allowlist:${unusedPolicyCallsiteAllowlist[0]}`)
 for (const row of splitReviewLineCounts) {
   if (row.lines > splitReviewBudget) blockers.push(`split_review_budget_exceeded:${row.file}:${row.lines}`)
@@ -76,7 +78,50 @@ const result = {
   direct_mkdtemp_callsites: directMkdtempCalls.slice(0, 20),
   policy_callsite_allowlist: { used: policyCallsiteAllowlistHits.size, unused: unusedPolicyCallsiteAllowlist },
   rust_tempdir_raii: { ok: rustTempdirCalls.length === 0, direct_tempdir_callsites: rustTempdirCalls.slice(0, 20) },
+  release_evidence_architecture: releaseEvidenceArchitecture,
   blockers
+}
+
+function scanReleaseEvidenceArchitecture() {
+  const issues: string[] = []
+  const recovery = gates.find((gate) => gate.id === 'test:codex-runtime-recovery')
+  const recoveryInputs = Array.isArray(recovery?.cache?.inputs) ? recovery.cache.inputs.map(String) : []
+  if (!recoveryInputs.includes('src/commands/bridge.ts')) issues.push('recovery_cache_missing_active_bridge_command')
+  if (recoveryInputs.includes('src/commands/codex-lb.ts')) issues.push('recovery_cache_references_retired_bridge_command')
+
+  const runtime = fs.readFileSync(path.join(root, 'runtime-required-scripts.json'), 'utf8')
+  const packageJson = fs.readFileSync(path.join(root, 'package.json'), 'utf8')
+  const manifest = fs.readFileSync(path.join(root, 'release-gates.v2.json'), 'utf8')
+  const retiredCatalogScript = 'codex-lb-catalog-passthrough-check.js'
+  if ([runtime, packageJson, manifest].some((text) => text.includes(retiredCatalogScript))) issues.push('retired_catalog_passthrough_reference_present')
+  if (!runtime.includes('dist/scripts/release-physical-gates-check.js')) issues.push('physical_gate_validator_missing_from_runtime_closure')
+  if (!packageJson.includes('release-physical-gates-check.js')) issues.push('physical_gate_validator_missing_from_package_files')
+
+  const realCheck = fs.readFileSync(path.join(root, 'src', 'scripts', 'release-real-check.ts'), 'utf8')
+  if (!/nodeScript\(\s*['"]release-physical-gates-check\.js['"]/.test(realCheck)
+    || !realCheck.includes("'sks.release-physical-gates-inspection.v2'")) issues.push('release_real_check_not_bound_to_physical_inspection')
+  const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'publish-npm.yml'), 'utf8')
+  const linux = workflow.slice(workflow.indexOf('  linux-release-proof:'), workflow.indexOf('  macos-menubar-proof:'))
+  const macos = workflow.slice(workflow.indexOf('  macos-menubar-proof:'), workflow.indexOf('  pack-and-compare:'))
+  if (linux.includes('release-physical-gates-check.js') || linux.includes('release:check:full')) issues.push('linux_claims_macos_release_evidence')
+  const macosProofSequence = [
+    'npm run build:clean --silent',
+    'npm run test:release --silent',
+    'release-gate-dag-runner.js --preset release --full',
+    'release-physical-gates-check.js',
+    'release-real-check.js --skip-release-check',
+    'release-check-stamp.js write'
+  ]
+  const macosProofPositions = macosProofSequence.map((required) => macos.indexOf(required))
+  for (const required of macosProofSequence) {
+    if (!macos.includes(required)) issues.push(`macos_release_evidence_step_missing:${required}`)
+  }
+  if (macosProofPositions.every((position) => position >= 0)
+    && macosProofPositions.some((position, index) => index > 0 && position <= macosProofPositions[index - 1]!)) {
+    issues.push('macos_release_evidence_sequence_invalid')
+  }
+  if (!workflow.includes('--require-physical-proof')) issues.push('main_push_guard_does_not_require_physical_proof')
+  return { ok: issues.length === 0, issues, recovery_cache_inputs: recoveryInputs }
 }
 console.log(JSON.stringify(result, null, 2))
 if (!result.ok) process.exit(1)

@@ -36,7 +36,18 @@ const initialCorpus = allTestsRequested ? null : canonicalTestCorpus(root);
 const { compiled, unit } = allTestsRequested ? allCanonicalTestFiles(root) : canonicalTestFiles(root);
 const files = [...compiled, ...unit].sort();
 const testConcurrency = resolveTestConcurrency(process.env.SKS_CANONICAL_TEST_CONCURRENCY);
-const serialFileSuffixes = new Set<string>(RELEASE_HARNESS_REGRESSION_TESTS);
+// This suite deliberately uses real child processes, one-second handshake
+// deadlines, and process-group teardown assertions. Running it beside the
+// exhaustive process-heavy corpus can starve the fixture before its first
+// synchronous PID write, turning scheduler contention into a false timeout.
+// Keep the production MCP deadlines strict and isolate only the test file.
+const resourceSensitiveSerialTests = [
+  'dist/core/mcp-config/__tests__/health-oauth.test.js'
+] as const;
+const serialFileSuffixes = new Set<string>([
+  ...RELEASE_HARNESS_REGRESSION_TESTS,
+  ...resourceSensitiveSerialTests
+]);
 const serialFiles = files.filter((file) => serialFileSuffixes.has(relativePosix(file)));
 const parallelFiles = files.filter((file) => !serialFileSuffixes.has(relativePosix(file)));
 
