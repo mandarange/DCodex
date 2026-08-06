@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-05T20:41:40.280Z",
+  "generated_at": "2026-08-06T02:50:53.550Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "db231caca84c8ce2dc5436898fe2c9899ad20475b5af5ed08a26a2f298f21fd7",
-  "snapshot_hash": "57d868a208a5f43a4570d75af22b33334b183a4ae75b7fa7c97c47668ca139e8",
+  "inventory_digest": "d84f046a2113ce143029b3174ace328fca504038f7c586c40feddc09f16f4be6",
+  "snapshot_hash": "b0e9eaad6ec1dff768a65df1ba9f05d66387ca4dc2b80677f8838d42044cf45b",
   "source_file_count": 2761,
-  "symbol_count": 21667,
-  "edge_count": 65296,
+  "symbol_count": 21669,
+  "edge_count": 65301,
   "extractors": [
     {
       "id": "code",
@@ -8679,10 +8679,10 @@
     },
     {
       "path": "src/core/release/__tests__/release-pack-receipt.test.ts",
-      "sha256": "0d362f71e95ab23430dc83e1316e64f4b8548c4046e3d4b254ed25c3a75eb50c",
+      "sha256": "a89489a929eb4011b82b2d2e5fb15f5de0597a5ec7ee111bf3564890a19a2608",
       "language": "typescript",
-      "lines": 313,
-      "bytes": 15564
+      "lines": 375,
+      "bytes": 18560
     },
     {
       "path": "src/core/release/__tests__/release-proof-fixture.ts",
@@ -8693,10 +8693,10 @@
     },
     {
       "path": "src/core/release/__tests__/release-real-contract.test.ts",
-      "sha256": "585aeb9f953860673a6810cb0111a59928ff922bf33f4ff8d9b1078c8ea603b5",
+      "sha256": "03bb2bf985c8f3dd1ecf91558145caceb51d4b72e4dbbc84fb7ac3ebd87003d0",
       "language": "typescript",
       "lines": 329,
-      "bytes": 15027
+      "bytes": 15029
     },
     {
       "path": "src/core/release/__tests__/release-upgrade-smoke-fixtures.ts",
@@ -8883,10 +8883,10 @@
     },
     {
       "path": "src/core/release/publish-preflight.ts",
-      "sha256": "aef1898e68b8b2606176bfa72461d54d68dbbfcd259663e576068ff5761716ee",
+      "sha256": "0ac5a2f53d993bbd8909ab88b639e7276075afb5fe1a4ec839652b2ba86676d1",
       "language": "typescript",
       "lines": 148,
-      "bytes": 6560
+      "bytes": 6558
     },
     {
       "path": "src/core/release/release-authorization-snapshot.ts",
@@ -8995,10 +8995,10 @@
     },
     {
       "path": "src/core/release/release-pack-receipt.ts",
-      "sha256": "3f5554cb797d8c0910b2c8857fe93870f3b4a50eec0f833b880700487635d4eb",
+      "sha256": "86729be336a48f83f67de2ae638eb0b60cf8ddd6c965478e01ecf48234c3154a",
       "language": "typescript",
-      "lines": 345,
-      "bytes": 21856
+      "lines": 355,
+      "bytes": 22483
     },
     {
       "path": "src/core/release/release-pack-tarball.ts",
@@ -9023,7 +9023,7 @@
     },
     {
       "path": "src/core/release/release-real-contract.ts",
-      "sha256": "c0a3a34c1a82ac0c1d904210fa7d60265401092f500bedc8fb95c6c781c8a976",
+      "sha256": "37e42eb19a92d0a383210e4788f4f89534c39f3ee79eec7da7e5b98a5cf80a79",
       "language": "typescript",
       "lines": 553,
       "bytes": 25494
@@ -13492,10 +13492,10 @@
     },
     {
       "path": "src/scripts/desktop-bridge-real-evidence-check.ts",
-      "sha256": "32592a5c00283713a725cba7133b74aa5b0777ac71473d7420524b868fb3a27d",
+      "sha256": "65a757486317e2d4668d8a721aa702b8cf557acfc91b5a57d9f9d4d079cf16eb",
       "language": "typescript",
       "lines": 69,
-      "bytes": 2708
+      "bytes": 2705
     },
     {
       "path": "src/scripts/desktop-bridge-transport-check.ts",
@@ -14920,10 +14920,10 @@
     },
     {
       "path": "src/scripts/publish-preflight.ts",
-      "sha256": "96e4667a55a6e3d08d50da4d2ad4c1e2645e11e3405f19cc71e7b7247699a7ae",
+      "sha256": "3b5af616f5fb466382dd8ad8bc563da556543ffcf3616eb0c8c9901cb73baf5d",
       "language": "typescript",
-      "lines": 19,
-      "bytes": 860
+      "lines": 20,
+      "bytes": 897
     },
     {
       "path": "src/scripts/python-codex-sdk-all-pipelines-check.ts",
@@ -15234,10 +15234,10 @@
     },
     {
       "path": "src/scripts/release-metadata-check.ts",
-      "sha256": "e1c8941e7c9d61c0d2bff55f6892692abecb175aa02f40412693793bcb6d08e1",
+      "sha256": "210e59e0606eb753df516fe0a699e5985d0d68f9cfea23d078eb371f8a8ecc18",
       "language": "typescript",
       "lines": 300,
-      "bytes": 21069,
+      "bytes": 21071,
       "purpose": "@ts-nocheck"
     },
     {
@@ -15303,10 +15303,10 @@
     },
     {
       "path": "src/scripts/release-real-check.ts",
-      "sha256": "d47ed2df8fa1ab67c492eb8c4983e2a7d006bc532d15bc242883c2776e0773d5",
+      "sha256": "fb0f4b6a2a61d5f8e818634c075c4c87c3f45d5bb121742be0214f8b7e9faa04",
       "language": "typescript",
       "lines": 531,
-      "bytes": 23842,
+      "bytes": 23878,
       "purpose": "@ts-nocheck"
     },
     {
@@ -19842,12 +19842,12 @@
     }
   ],
   "edges_by_type": {
-    "calls": 9483,
-    "contains": 25329,
+    "calls": 9484,
+    "contains": 25331,
     "defines": 7567,
     "imports": 6112,
     "reexports": 881,
-    "references": 13135,
-    "tests": 2789
+    "references": 13136,
+    "tests": 2790
   }
 }
