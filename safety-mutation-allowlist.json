@@ -6800,8 +6800,8 @@
       "file": "src/scripts/release-metadata-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "1b6c2eafb942b4815c94d1d25dfcced5b69e1d540313fc23ee0a5b60cee96035",
-      "callsite_sha256": "8f09f7e22a50cc1e7e6602a51363367baaa23de354af18f3fdcc7835dcc6a8c4",
+      "scope_contract_sha256": "d7e16d46651a403677ba42a4d0fa8fae93eb3382da89807ae631c0aaca0af73d",
+      "callsite_sha256": "14fca0cc154be057ee7eb265a2964e4ff0e00acb676a14a80eaf97bac0c66e54",
       "occurrence": 1,
       "reason": "Release metadata validation writes only its fixed versioned JSON report beneath the repository .sneakoscope/reports directory."
     },

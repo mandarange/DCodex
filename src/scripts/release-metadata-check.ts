@@ -126,6 +126,9 @@ for (const script of requiredPackageScripts) assertGate(Boolean(pkg.scripts?.[sc
 const fullReleaseScript = String(pkg.scripts?.['release:check:full'] || '');
 assertGate((fullReleaseScript.match(/build:clean/g) || []).length === 1, 'release:check:full must perform exactly one clean build', { script: fullReleaseScript });
 assertGate((fullReleaseScript.match(/npm run test:release --silent/g) || []).length === 1, 'release:check:full must run the release test corpus exactly once', { script: fullReleaseScript });
+assertGate((fullReleaseScript.match(/release-pack-receipt\.js create/g) || []).length === 1, 'release:check:full must create the current clean-HEAD pack receipt exactly once', { script: fullReleaseScript });
+const fullReleaseOrder = ['release-gate-dag-runner.js --preset release --full', 'release-pack-receipt.js create', 'release-real-check.js --skip-release-check', 'release-check-stamp.js write'].map((needle) => fullReleaseScript.indexOf(needle));
+assertGate(fullReleaseOrder.every((index) => index >= 0) && fullReleaseOrder.every((index, position) => position === 0 || index > fullReleaseOrder[position - 1]!), 'release:check:full must create pack proof after the DAG and before real-check/stamp', { script: fullReleaseScript });
 assertGate(pkg.scripts?.test === 'node ./dist/scripts/canonical-test-runner.js --all' && pkg.scripts?.['test:all'] === pkg.scripts?.test, 'npm test and test:all must preserve the exhaustive developer corpus');
 assertGate(pkg.scripts?.['test:release'] === 'node ./dist/scripts/canonical-test-runner.js', 'test:release must use the proof-producing release corpus selector');
 for (const id of requiredReleaseGates) assertGate(releaseGateIds.has(id), `critical release gate missing: ${id}`, { id });

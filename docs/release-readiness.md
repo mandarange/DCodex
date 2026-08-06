@@ -77,14 +77,14 @@ node --test dist/core/codex-lb/__tests__/desktop-bridge-unification-rollback.tes
 node --test dist/core/subagents/__tests__/official-subagent-config.test.js
 npm run release:check:full
 npm run release:version-truth
-npm run release:pack-receipt
 ```
 
 For a direct maintainer `npm publish`, the Git release tag may be created after
 publication and missing target-bound physical receipts are recorded as optional
 coverage rather than a publish blocker. The staged/OIDC workflow remains stricter:
 it separately requires all five physical receipts, exact tag proof, and the
-source-bound pack comparison before mutation.
+source-bound pack comparison before mutation. `release:check:full` creates and
+verifies the current clean-HEAD pack receipt before real-check and stamp creation.
 
 The canonical runner includes the affected v3 capability, transport, route,
 mutation, native UI, capacity-lifecycle, and secret-redaction tests. Strict

@@ -80,10 +80,15 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   assert.doesNotMatch(scripts['release:check:full'], /\/tmp\//);
   assert.match(scripts['release:check:full'], /release-check-stamp\.js write/);
   assert.match(scripts['release:check:full'], /release-real-check\.js --skip-release-check/);
+  assert.match(scripts['release:check:full'], /release-pack-receipt\.js create/);
   assert.equal(count(scripts['release:check:full'], 'build:clean'), 1);
   assert.equal(count(scripts['release:check:full'], 'npm run test:release --silent'), 1);
+  assert.equal(count(scripts['release:check:full'], 'release-pack-receipt.js create'), 1);
   assert.ok(scripts['release:check:full'].indexOf('build:clean') < scripts['release:check:full'].indexOf('npm run test:release --silent'));
-  assert.match(scripts['release:check:full'], /release-real-check\.js --skip-release-check && npm run release:dist-freshness --silent && node \.\/dist\/scripts\/release-check-stamp\.js write/);
+  const fullReleaseOrder = ['release-gate-dag-runner.js --preset release --full', 'release-pack-receipt.js create', 'release-real-check.js --skip-release-check', 'release-check-stamp.js write'].map((needle) => scripts['release:check:full'].indexOf(needle));
+  assert.ok(fullReleaseOrder.every((index) => index >= 0));
+  assert.deepEqual([...fullReleaseOrder].sort((a, b) => a - b), fullReleaseOrder);
+  assert.match(scripts['release:check:full'], /release-pack-receipt\.js create && node \.\/dist\/scripts\/release-real-check\.js --skip-release-check && npm run release:dist-freshness --silent && node \.\/dist\/scripts\/release-check-stamp\.js write/);
   assert.match(scripts.prepublishOnly, /prepublish-release-check-or-fast\.js/);
   assert.doesNotMatch(scripts.prepublishOnly, /--block-lifecycle-publish/);
   assert.doesNotMatch(scripts.prepublishOnly, /publish:packlist-performance|release-registry-check/);
