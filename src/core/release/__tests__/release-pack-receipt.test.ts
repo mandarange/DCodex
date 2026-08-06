@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { spawnSync } from 'node:child_process'
-import { compareReleasePacks, inspectReleaseTarball } from '../release-pack-receipt.js'
+import { compareReleasePacks, inspectReleaseTarball, validateLocalReleasePackBinding } from '../release-pack-receipt.js'
 
 test('release pack receipts bind exact local and staged tarball bytes', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-receipt-'))
@@ -84,12 +84,13 @@ test('release pack inspection allows retired tokens only in explicit cleanup and
       'dist/core/doctor/retired-managed-residue-private.js': 'const tombstone = "sks team --json";\n',
       'dist/core/doctor/retired-managed-projection-residue.js': 'const oldMode = "strict-team";\n',
       'dist/core/doctor/retired-managed-residue-missions.js': 'const oldRoute = "$Team"; const oldGoalField = "ralph_removed";\n',
-      'dist/core/init/skills.js': 'const retiredSkill = "ralph-supervisor";\n'
+      'dist/core/init/skills.js': 'const retiredSkill = "ralph-supervisor";\n',
+      'dist/core/init/skills/inventory.js': 'const removedSkills = ["ralph", "ralph-supervisor", "ralph-resolver"];\n'
     })
     const receipt = inspectReleaseTarball({ tarball, kind: 'staged', root })
     assert.equal(receipt.ok, true, receipt.blockers.join(','))
     assert.equal(receipt.retired_surface_scan.ok, true)
-    assert.equal(receipt.retired_surface_scan.allowlisted_finding_count, 5)
+    assert.equal(receipt.retired_surface_scan.allowlisted_finding_count, 8)
     assert.equal(receipt.retired_surface_scan.findings.length, 0)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
@@ -247,6 +248,21 @@ test('release pack inspection fails closed on secret-like content without echoin
   }
 })
 
+test('release pack inspection rejects current Supabase secret keys without echoing them', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-supabase-secret-'))
+  const secret = `sb_secret_${'a'.repeat(32)}`
+  try {
+    const tarball = createTarball(root, 'supabase-secret', '8.0.0', secret)
+    const receipt = inspectReleaseTarball({ tarball, kind: 'staged', root })
+    assert.equal(receipt.ok, false)
+    assert.equal(receipt.secret_scan.ok, false)
+    assert.equal(receipt.secret_scan.findings.some((finding) => finding.kind === 'supabase_secret_key'), true)
+    assert.equal(JSON.stringify(receipt).includes(secret), false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('release pack comparison rejects matching but malformed receipts', () => {
   const malformed = {
     schema: 'sks.release-pack-receipt.v1',
@@ -289,6 +305,46 @@ test('release pack comparison recomputes frozen package budgets instead of trust
   assert.equal(result.blockers.includes('staged_receipt:package_budget_invalid_or_failed'), true)
 })
 
+test('local release pack binding rejects a dirty worktree instead of attributing dirty bytes to HEAD', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-dirty-worktree-'))
+  try {
+    git(root, ['init'])
+    git(root, ['config', 'user.email', 'release-pack@example.invalid'])
+    git(root, ['config', 'user.name', 'Release Pack Test'])
+    fs.writeFileSync(path.join(root, 'tracked.txt'), 'clean\n')
+    git(root, ['add', 'tracked.txt'])
+    git(root, ['commit', '-m', 'fixture'])
+    fs.writeFileSync(path.join(root, 'tracked.txt'), 'dirty\n')
+
+    const result = validateLocalReleasePackBinding(root, {
+      schema: 'sks.release-pack-receipt.v1',
+      ok: true,
+      kind: 'local',
+      package_name: 'sneakoscope',
+      package_version: '8.0.0',
+      source_commit: git(root, ['rev-parse', 'HEAD']),
+      tarball_name: 'sneakoscope-8.0.0.tgz',
+      tarball_path: '.sneakoscope/reports/release/8.0.0/artifacts/sneakoscope-8.0.0.tgz',
+      bytes: 1,
+      unpacked_bytes: 1,
+      sha256: 'a'.repeat(64),
+      sha512_integrity: 'sha512-YQ==',
+      file_count: 1,
+      file_list_sha256: 'b'.repeat(64),
+      secret_scan: { ok: true, scanned_files: 1, scanned_bytes: 1, findings: [], blockers: [] },
+      retired_surface_scan: { ok: true, scanned_files: 1, scanned_bytes: 1, allowlisted_finding_count: 0, findings: [], blockers: [] },
+      budget: { ok: true, max_packed_bytes: 2_938_880, max_unpacked_bytes: 13_200_000, max_file_count: 2100, blockers: [] },
+      npm_pack_proof: { proof_id: 'c'.repeat(64), info_sha256: 'd'.repeat(64), file_list_sha256: 'e'.repeat(64) },
+      generated_at: new Date().toISOString(),
+      blockers: []
+    })
+    assert.equal(result.ok, false)
+    assert.ok(result.blockers.includes('npm_pack_worktree_not_clean'))
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 function createTarball(
   root: string,
   name: string,
@@ -310,4 +366,10 @@ function createTarball(
   const result = spawnSync('tar', ['-czf', tarball, '-C', path.dirname(staging), 'package'], { encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr || result.stdout)
   return tarball
+}
+
+function git(root: string, args: string[]): string {
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr || result.stdout)
+  return String(result.stdout || '').trim()
 }

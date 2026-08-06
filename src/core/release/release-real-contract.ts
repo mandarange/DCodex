@@ -14,13 +14,13 @@ export const RELEASE_REAL_REQUIRED_CHECK_IDS = Object.freeze([
   'codex:current-core-real-probes:require-real',
   'codex:current:app-server-v2:real',
   'codex:current:capability:real',
+  'desktop-bridge:real-evidence',
   'doctor:actual',
   'release:pack-receipt',
   'naruto:worktree-coding:blackbox',
   'codex-sdk:real-smoke'
 ])
 export const RELEASE_REAL_OPTIONAL_CHECK_IDS = Object.freeze([
-  'desktop-bridge:real-evidence',
   'imagegen:real-smoke',
   'ux-review:real-imagegen-smoke',
   'ppt:real-imagegen-smoke'

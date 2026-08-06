@@ -18,9 +18,9 @@ import {
 
 const terminal = ['failed', 'blocked', 'skipped', 'integration_optional', 'optional']
 
-test('release-real contract records trusted real Codex Desktop evidence as optional live coverage', () => {
-  assert.equal(RELEASE_REAL_REQUIRED_CHECK_IDS.includes('desktop-bridge:real-evidence'), false)
-  assert.ok(RELEASE_REAL_OPTIONAL_CHECK_IDS.includes('desktop-bridge:real-evidence'))
+test('release-real contract requires trusted real Desktop Bridge evidence for release authorization', () => {
+  assert.ok(RELEASE_REAL_REQUIRED_CHECK_IDS.includes('desktop-bridge:real-evidence'))
+  assert.equal(RELEASE_REAL_OPTIONAL_CHECK_IDS.includes('desktop-bridge:real-evidence'), false)
   const missing = validateReleaseRealTaskIds(
     RELEASE_REAL_CHECK_IDS.filter((id) => id !== 'desktop-bridge:real-evidence')
   )

@@ -43,7 +43,7 @@ const report = {
   schema: 'sks.desktop-bridge-real-evidence-check.v1' as const,
   ok,
   status: ok ? 'passed' : 'real_required_missing',
-  release_authorizing: false,
+  release_authorizing: ok,
   managed_runtime: status?.management.runtime || null,
   bridge_running: status?.service.running === true,
   readiness: status?.readiness || null,

@@ -210,6 +210,9 @@ export function validateLocalReleasePackBinding(root: string, value: unknown) {
   }
   const head = gitHead(root)
   if (!head || receipt?.source_commit !== head) blockers.push('npm_pack_source_commit_mismatch')
+  const worktree = gitWorktreeState(root)
+  if (worktree === 'unavailable') blockers.push('npm_pack_worktree_status_unavailable')
+  else if (worktree === 'dirty') blockers.push('npm_pack_worktree_not_clean')
   const tarball = receipt?.tarball_path ? path.resolve(root, receipt.tarball_path) : ''
   const managedRoot = path.resolve(root, '.sneakoscope', 'reports', 'release', String(receipt?.package_version || ''), 'artifacts')
   const relative = tarball ? path.relative(managedRoot, tarball) : '..'
@@ -266,6 +269,7 @@ const SECRET_PATTERNS: ReleasePackContentPattern[] = [
   { kind: 'npm_token', regex: /\bnpm_[A-Za-z0-9]{30,}\b/g },
   { kind: 'slack_token', regex: /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/g },
   { kind: 'openai_token', regex: /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}\b/g },
+  { kind: 'supabase_secret_key', regex: /\bsb_secret_[A-Za-z0-9_-]{20,}\b/g },
   { kind: 'google_api_key', regex: /\bAIza[0-9A-Za-z_-]{30,}\b/g },
   { kind: 'aws_access_key', regex: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g },
   { kind: 'jwt', regex: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g },
@@ -309,7 +313,7 @@ const RETIRED_SURFACE_ALLOWLIST: Array<{ path: RegExp; kinds: Set<string> }> = [
   { path: /^dist\/core\/doctor\/skill-legacy-surface\.js$/, kinds: new Set(RETIRED_SURFACE_PATTERNS.map((pattern) => pattern.kind)) },
   { path: /^dist\/core\/doctor\/retired-managed-projection-residue\.js$/, kinds: new Set(['retired_team_runtime_identity']) },
   { path: /^dist\/core\/doctor\/retired-managed-residue(?:-artifact-helpers|-artifacts|-missions|-private|-runtime|-state)?\.js$/, kinds: new Set(['retired_cli_command', 'retired_dollar_command', 'retired_ralph_identity', 'retired_team_current_wording', 'retired_team_profile', 'retired_team_runtime_identity', 'retired_team_workdir']) },
-  { path: /^dist\/core\/init\/skills\.js$/, kinds: new Set(['retired_ralph_identity']) },
+  { path: /^dist\/core\/init\/(?:skills\.js|skills\/inventory\.js)$/, kinds: new Set(['retired_ralph_identity']) },
   { path: /^dist\/core\/install\/installed-package-smoke\.js$/, kinds: new Set(['retired_agent_option', 'retired_clones_option', 'retired_dollar_command', 'retired_menubar_mcp_identity', 'retired_naruto_option', 'retired_naruto_workers_command', 'retired_ralph_identity']) },
   { path: /^dist\/core\/ops\/upgrade-migration-fixtures\.js$/, kinds: new Set(['retired_dollar_command']) },
   { path: /^dist\/core\/release\/release-pack-receipt\.js$/, kinds: new Set(RETIRED_SURFACE_PATTERNS.map((pattern) => pattern.kind)) },
@@ -338,6 +342,12 @@ function unique(values: string[]): string[] {
 function gitHead(root: string): string {
   const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' })
   return result.status === 0 ? String(result.stdout || '').trim() : ''
+}
+
+function gitWorktreeState(root: string): 'clean' | 'dirty' | 'unavailable' {
+  const result = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root, encoding: 'utf8' })
+  if (result.status !== 0) return 'unavailable'
+  return String(result.stdout || '').trim() ? 'dirty' : 'clean'
 }
 
 function normalizePath(value: string): string {

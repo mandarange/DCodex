@@ -16,8 +16,8 @@ export interface PublishPreflightOptions {
   /** Real publication requires the exact local and remote tag; a dry-run does not mutate the registry. */
   requireReleaseTag?: boolean;
   /**
-   * Opt-in. Direct `npm publish` does not require physical receipts (stage/CI does).
-   * Callers that need the four environment-bound receipts must pass true explicitly.
+   * Opt-in for environment-bound callers. Real publication callers must pass true;
+   * non-mutating dry runs may leave this false while collecting local package proof.
    */
   requirePhysicalReleaseGates?: boolean;
 }
