@@ -15,6 +15,7 @@ const base = {
   resource: ['cpu-light', 'fs-read'],
   side_effect: 'hermetic',
   timeout_ms: 30000,
+  output_contract: 'sks.gate-result.v2',
   cache: { enabled: false, inputs: [] },
   isolation: { home: 'temp', codex_home: 'temp', report_dir: 'per-gate' },
   preset: ['release']
@@ -29,6 +30,11 @@ const envProofScript = [
 ].join(';')
 const passGate = { ...base, id: 'batch:pass', command: `${process.execPath} -e ${JSON.stringify(envProofScript)}` }
 const failGate = { ...base, id: 'batch:fail', command: `${process.execPath} -e "process.exit(7)"` }
+const contractFailGate = {
+  ...base,
+  id: 'batch:contract-fail',
+  command: `${process.execPath} -e ${JSON.stringify("console.log(JSON.stringify({schema:'sks.gate-result.v2',contract_mode:'strict',ok:false,blockers:['batch_child_blocker']}))")}`
+}
 const timeoutGate = { ...base, id: 'batch:timeout', timeout_ms: 50, command: `${process.execPath} -e "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"` }
 const browserGate = { ...base, id: 'batch:browser-real', resource: ['browser-real'], side_effect: 'real-env', command: `${process.execPath} -e "process.exit(0)"` }
 
@@ -40,6 +46,9 @@ assertGate(result.ok === false && result.failed === 1, 'one failed child gate mu
 assertGate(result.results.some((row: any) => row.id === 'batch:fail' && row.ok === false && row.exit_code === 7), 'batch result must report exact failed child id', result)
 assertGate(fs.existsSync(path.join(reportRoot, 'batch-pass', 'result.json')) && fs.existsSync(path.join(reportRoot, 'batch-fail', 'result.json')), 'batch runner must preserve individual result JSON files')
 assertGate(result.results.some((row: any) => row.id === 'batch:pass' && row.ok === true), 'batch runner must execute children with hermetic release-gate environment', result)
+assertGate(result.results.every((row: any) => row.output_contract === 'sks.gate-result.v2' && row.gate_result?.contract_mode === 'strict'), 'batch children must publish the strict current gate-result contract', result)
+const contractFailResult = await batch.runReleaseGateBatch(root, [contractFailGate], { concurrency: 1, reportRoot })
+assertGate(contractFailResult.ok === false && contractFailResult.results[0]?.gate_result?.blockers?.includes('batch_child_blocker'), 'strict child ok:false must fail the batch even with exit zero', contractFailResult)
 const timeoutResult = await batch.runReleaseGateBatch(root, [timeoutGate], { concurrency: 1, reportRoot })
 assertGate(timeoutResult.results.some((row: any) => row.id === 'batch:timeout' && row.ok === false && row.exit_code === 124 && row.timed_out === true), 'batch runner must report timed-out child process trees explicitly', timeoutResult)
 assertGate(timeoutResult.results.some((row: any) => row.id === 'batch:timeout' && row.duration_ms >= 1400), 'batch runner must wait for timed-out process tree hard-kill cleanup before resolving', timeoutResult)

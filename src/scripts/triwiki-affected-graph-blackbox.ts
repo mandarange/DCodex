@@ -15,6 +15,7 @@ await fs.writeFile(path.join(tmp, 'release-gates.v2.json'), JSON.stringify({
     resource: ['cpu-light'],
     side_effect: 'hermetic',
     timeout_ms: 1000,
+    output_contract: 'sks.gate-result.v2',
     cache: { enabled: true, inputs: ['src/core/triwiki/**'] },
     isolation: { home: 'temp', codex_home: 'temp', report_dir: 'per-gate' },
     preset: ['release']

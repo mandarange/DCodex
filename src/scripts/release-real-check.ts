@@ -143,7 +143,7 @@ async function main() {
     return await finish(false)
   }
   if (!skipReleaseCheck) {
-    report.release_check = await runNpm(task('release:check', 'release:check', { group: 'design', phase: 'design', policy: requiredPolicy(['sks.gate-result.v1']) }))
+    report.release_check = await runNpm(task('release:check', 'release:check', { group: 'design', phase: 'design', policy: requiredPolicy(['sks.gate-result.v2']) }))
     if (terminating) return
     collect(report.release_check)
     if (!report.release_check.ok) return await finish(false)

@@ -10,6 +10,7 @@ import {
   selectReleaseGateClosure
 } from '../release-gate-dag.js'
 import type { ReleaseGateManifestV2, ReleaseGateNode } from '../release-gate-node.js'
+import { validateReleaseGateManifest } from '../release-gate-node.js'
 
 function gate(id: string, deps: string[], command: string): ReleaseGateNode {
   return {
@@ -19,7 +20,7 @@ function gate(id: string, deps: string[], command: string): ReleaseGateNode {
     resource: ['cpu-light', 'fs-write'],
     side_effect: 'hermetic',
     timeout_ms: 10_000,
-    output_contract: 'sks.gate-result.v1',
+    output_contract: 'sks.gate-result.v2',
     cache: { enabled: false, inputs: [] },
     isolation: { home: 'temp', codex_home: 'temp', report_dir: 'per-gate' },
     preset: ['release']
@@ -30,12 +31,23 @@ function nodeCommand(source: string) {
   return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(source)}`
 }
 
+test('release manifest requires the strict current output contract on every gate', () => {
+  const valid = gate('gate:current-contract', [], 'true')
+  assert.equal(validateReleaseGateManifest({ schema: 'sks.release-gates.v2', gates: [valid] }).ok, true)
+  const missing = { ...valid } as Record<string, unknown>
+  delete missing.output_contract
+  assert.deepEqual(
+    validateReleaseGateManifest({ schema: 'sks.release-gates.v2', gates: [missing] }).errors,
+    ['gate_output_contract_invalid:gate:current-contract']
+  )
+})
+
 test('single Desktop Bridge gate selection executes without a retired gate alias or dependency', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-release-gate-only-'))
   const manifest: ReleaseGateManifestV2 = {
     schema: 'sks.release-gates.v2',
     gates: [
-      gate('desktop-bridge:comprehensive', [], nodeCommand("console.log(JSON.stringify({schema:'sks.gate-result.v1',ok:true}))"))
+      gate('desktop-bridge:comprehensive', [], nodeCommand("console.log('plain child output')"))
     ]
   }
   try {
@@ -56,8 +68,8 @@ test('in-progress DAG snapshots cannot claim a successful full release proof', a
   const manifest: ReleaseGateManifestV2 = {
     schema: 'sks.release-gates.v2',
     gates: [
-      gate('gate:fast', [], nodeCommand("setTimeout(() => console.log(JSON.stringify({schema:'sks.gate-result.v1',ok:true})), 10)")),
-      gate('gate:slow', [], nodeCommand("setTimeout(() => console.log(JSON.stringify({schema:'sks.gate-result.v1',ok:true})), 600)"))
+      gate('gate:fast', [], nodeCommand("setTimeout(() => console.log('fast child output'), 10)")),
+      gate('gate:slow', [], nodeCommand("setTimeout(() => console.log('slow child output'), 600)"))
     ]
   }
   const run = (async () => {
@@ -81,6 +93,29 @@ test('in-progress DAG snapshots cannot claim a successful full release proof', a
     assert.equal(result.completion_certificate.full_release_proof, 'current_run')
   } finally {
     await run.catch(() => null)
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('DAG adapter rejects a strict child contract that reports failure with exit zero', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-release-gate-contract-'))
+  const manifest: ReleaseGateManifestV2 = {
+    schema: 'sks.release-gates.v2',
+    gates: [
+      gate('gate:contract-failure', [], nodeCommand("console.log(JSON.stringify({schema:'sks.gate-result.v2',contract_mode:'strict',ok:false,blockers:['child_blocker']}))"))
+    ]
+  }
+  try {
+    await fs.writeFile(path.join(root, 'release-gates.v2.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+    const result = await runReleaseGateDag({ root, preset: 'release', full: true, noCache: true })
+    assert.equal(result.ok, false)
+    assert.equal(result.failed, 1)
+    assert.match(result.failures[0]?.stderr_tail || '', /child_blocker/)
+    const gateResult = JSON.parse(await fs.readFile(path.join(result.report_dir, 'gate-contract-failure', 'result.json'), 'utf8'))
+    assert.equal(gateResult.output_contract, 'sks.gate-result.v2')
+    assert.equal(gateResult.gate_result?.contract_mode, 'strict')
+    assert.equal(gateResult.gate_result?.ok, false)
+  } finally {
     await fs.rm(root, { recursive: true, force: true })
   }
 })

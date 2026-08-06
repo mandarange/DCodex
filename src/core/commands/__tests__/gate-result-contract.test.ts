@@ -7,12 +7,12 @@ test('gate result contract fails exit 0 with ok false', () => {
     status: 0,
     stdout: [
       'human readable gate output',
-      JSON.stringify({ schema: 'sks.gate-result.v1', ok: false, blockers: ['fixture_blocker'] })
+      JSON.stringify({ schema: 'sks.gate-result.v2', contract_mode: 'strict', ok: false, blockers: ['fixture_blocker'] })
     ].join('\n')
   });
 
   assert.equal(evaluation.ok, false);
-  assert.equal(evaluation.contract, 'sks.gate-result.v1');
+  assert.equal(evaluation.contract, 'sks.gate-result.v2');
   assert.equal(evaluation.reason, 'gate_result_not_ok');
   assert.deepEqual(evaluation.gate_result?.blockers, ['fixture_blocker']);
 });
@@ -21,32 +21,36 @@ test('required gate result contract rejects invalid final JSON', () => {
   const evaluation = evaluateGateProcessOutput({
     status: 0,
     stdout: 'not json',
-    requiresContract: true
   });
 
   assert.equal(evaluation.ok, false);
-  assert.equal(evaluation.contract, 'sks.gate-result.v1');
+  assert.equal(evaluation.contract, 'sks.gate-result.v2');
   assert.equal(evaluation.reason, 'gate_output_contract_violation');
   assert.equal(evaluation.gate_result, null);
 });
 
-test('legacy output is explicit when no gate contract is required', () => {
+test('uncontracted success output is rejected', () => {
   const evaluation = evaluateGateProcessOutput({
     status: 0,
-    stdout: 'legacy success'
+    stdout: 'uncontracted success'
   });
 
-  assert.equal(evaluation.ok, true);
-  assert.equal(evaluation.contract, 'legacy_exit_code_only');
-  assert.equal(evaluation.reason, 'legacy_exit_code_only');
+  assert.equal(evaluation.ok, false);
+  assert.equal(evaluation.contract, 'sks.gate-result.v2');
+  assert.equal(evaluation.reason, 'gate_output_contract_violation');
 });
 
 test('gate result parser reads the last stdout line only', () => {
   const parsed = parseGateResultFromStdout([
-    JSON.stringify({ schema: 'sks.gate-result.v1', ok: true, blockers: [] }),
-    JSON.stringify({ schema: 'sks.gate-result.v1', ok: false, blockers: ['last_line_wins'] })
+    JSON.stringify({ schema: 'sks.gate-result.v2', contract_mode: 'strict', ok: true, blockers: [] }),
+    JSON.stringify({ schema: 'sks.gate-result.v2', contract_mode: 'strict', ok: false, blockers: ['last_line_wins'] })
   ].join('\n'));
 
   assert.equal(parsed?.ok, false);
   assert.deepEqual(parsed?.blockers, ['last_line_wins']);
+});
+
+test('gate result parser rejects the retired contract revision and missing strict mode', () => {
+  assert.equal(parseGateResultFromStdout(JSON.stringify({ schema: 'sks.gate-result.v2', ok: true, blockers: [] })), null);
+  assert.equal(parseGateResultFromStdout(JSON.stringify({ schema: 'sks.gate-result.v0', contract_mode: 'strict', ok: true, blockers: [] })), null);
 });

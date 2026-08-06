@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-06T07:43:03.213Z",
+  "generated_at": "2026-08-06T09:09:19.727Z",
   "git_head_sha": null,
-  "source_file_count": 2763,
-  "index_digest": "df2c0f6ae4ac0d9b3823b6e24ec8a98ec50e6301cb95ccea016962af82983871",
+  "source_file_count": 2764,
+  "index_digest": "f23eef881f32880017d6edd3afff1661439269c2592d6ea173e7ccc1f1c4c64e",
   "entries": [
     {
       "id": "code:scripts",
-      "text": "scripts is a module at src/scripts (469 files, low risk). Key exports: AGENT_RUNTIME_FILES, BridgeProviderId, CODEX_CURRENT_FEATURE_KEYS, COMMANDS, COMMAND_ALIASES_LITE, and 505 more. Depends on: cli, core, core-agent-guidance, core-agents, core-codex-app, and 39 more.",
+      "text": "scripts is a module at src/scripts (469 files, low risk). Key exports: AGENT_RUNTIME_FILES, BridgeProviderId, CODEX_CURRENT_FEATURE_KEYS, COMMANDS, COMMAND_ALIASES_LITE, and 507 more. Depends on: cli, core, core-agent-guidance, core-agents, core-codex-app, and 39 more.",
       "citations": [
         {
           "path": "src/scripts/codex-app-ui-clobber-guard-check.ts"
@@ -139,7 +139,7 @@
     },
     {
       "id": "code:core-commands",
-      "text": "core-commands is a module at src/core/commands (94 files, low risk). Key exports: ALIGN_GATE_ARTIFACT, ALIGN_LEDGER_ARTIFACT, ALIGN_PLAN_ARTIFACT, ALLOWED_REASONING_EFFORTS, ARTIFACT_FILES, and 696 more. Depends on: cli, commands, core, core-agent-bridge, core-agents, and 44 more.",
+      "text": "core-commands is a module at src/core/commands (94 files, low risk). Key exports: ALIGN_GATE_ARTIFACT, ALIGN_LEDGER_ARTIFACT, ALIGN_PLAN_ARTIFACT, ALLOWED_REASONING_EFFORTS, ARTIFACT_FILES, and 697 more. Depends on: cli, commands, core, core-agent-bridge, core-agents, and 44 more.",
       "citations": [
         {
           "path": "src/core/commands/run-command.ts"
@@ -238,7 +238,7 @@
     },
     {
       "id": "code:core-release",
-      "text": "core-release is a module at src/core/release (74 files, low risk). Key exports: ALWAYS_ON_GATES, CANONICAL_TEST_PROOF_SCHEMA, CanonicalTestCorpus, CanonicalTestFiles, CanonicalTestProof, and 353 more. Depends on: core, core-__tests__, core-safety, core-text, core-triwiki, and 1 more.",
+      "text": "core-release is a module at src/core/release (75 files, low risk). Key exports: ALWAYS_ON_GATES, CANONICAL_TEST_PROOF_SCHEMA, CanonicalTestCorpus, CanonicalTestFiles, CanonicalTestProof, and 361 more. Depends on: core, core-__tests__, core-commands, core-safety, core-text, and 2 more.",
       "citations": [
         {
           "path": "src/core/release/__tests__/release-upgrade-smoke.test.ts"
@@ -267,7 +267,7 @@
       ],
       "trust_score": 0.8,
       "freshness": "fresh",
-      "token_cost": 71
+      "token_cost": 72
     },
     {
       "id": "code:core-codex-app",
@@ -2026,5 +2026,5 @@
     }
   ],
   "token_budget": 8000,
-  "total_token_cost": 4579
+  "total_token_cost": 4580
 }

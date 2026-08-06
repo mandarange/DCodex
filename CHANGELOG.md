@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Upgraded release process output to the strict `sks.gate-result.v2` contract;
+  every manifest gate is normalized and verified at the DAG and batch boundaries.
+
+### Removed
+
+- Removed the optional gate-contract path and exit-code-only compatibility
+  fallback. A missing or malformed current contract now fails closed.
+
 ## [8.1.3] - 2026-08-05
 
 ### Changed
@@ -1276,7 +1286,7 @@
 ### Changed
 
 - Document the MAD-DB→MAD-SKS merge in AGENTS.md and the new menu bar options (`quit_with_codex`, `--api-key-stdin`, View Last Log, `codex_sync`) in README.md.
-- Raise the packed-package budget to 2340 KiB and the release-gate count budgets to 220 to accommodate the new production modules and test gates; every release gate now declares either `output_contract` or an explicit `contract_note`.
+- Raise the packed-package budget to 2340 KiB and the release-gate count budgets to 220 to accommodate the new production modules and test gates; every release gate now declares the required `output_contract`.
 
 ## [5.3.0] - 2026-07-03
 

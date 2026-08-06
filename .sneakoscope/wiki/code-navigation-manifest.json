@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-06T07:43:03.213Z",
+  "generated_at": "2026-08-06T09:09:19.727Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "c6174500895d79adb923678d03bbd002e76d02b5bdac8e3471498281f967389f",
-  "snapshot_hash": "7e51635fdf14e1fca753d9e9aecc3e0b8f6ac3dfea0d2d09640c2230829410e4",
-  "source_file_count": 2763,
-  "symbol_count": 21851,
-  "edge_count": 65834,
+  "inventory_digest": "335765f0e87863ff0aad5541bb3f34e47addb0ba4c13ef72b9c67a8425409818",
+  "snapshot_hash": "9f8073e8db8978bd987ec70362b2778e856d9a968f1abeae732f54fb86d48628",
+  "source_file_count": 2764,
+  "symbol_count": 21861,
+  "edge_count": 65870,
   "extractors": [
     {
       "id": "code",
@@ -1485,10 +1485,10 @@
     },
     {
       "path": "src/core/__tests__/release-gate-hermetic-env.test.ts",
-      "sha256": "609bc7779b5c04037f7eeb895cd0feeb226e167d3a667d33ccc2b0454548895f",
+      "sha256": "df81ff9bdbf0990cde826c096474d8c93ce619b992ad83bbb4d68ee837baaf7d",
       "language": "typescript",
-      "lines": 69,
-      "bytes": 2710
+      "lines": 70,
+      "bytes": 2753
     },
     {
       "path": "src/core/__tests__/retention-durability.test.ts",
@@ -4489,10 +4489,10 @@
     },
     {
       "path": "src/core/commands/__tests__/gate-result-contract.test.ts",
-      "sha256": "aeb4537073beaf139b9d20cc4d1bd0626d3cd7bdea2980243c185f737f78bcc9",
+      "sha256": "3954296acaee07b97d6b72704ba692e3fc0caeca7d03c9608a213bbf3a89ea05",
       "language": "typescript",
-      "lines": 52,
-      "bytes": 1855
+      "lines": 56,
+      "bytes": 2269
     },
     {
       "path": "src/core/commands/__tests__/gc-command-help.test.ts",
@@ -4706,10 +4706,10 @@
     },
     {
       "path": "src/core/commands/check-command.ts",
-      "sha256": "310a3f9367291f1542ef95a296b6fe610730bb84c93ab5021f3ed548f5476c1c",
+      "sha256": "3b964fa8f0c02290955062406d98e8ea71909be1c7d15b206e0bf66875a624fb",
       "language": "typescript",
-      "lines": 163,
-      "bytes": 6901
+      "lines": 157,
+      "bytes": 6635
     },
     {
       "path": "src/core/commands/cleanup-command.ts",
@@ -4769,10 +4769,10 @@
     },
     {
       "path": "src/core/commands/gate-result-contract.ts",
-      "sha256": "f2e4dcfa0b39c74e135325aae045e3fa94a4993f5ddab2f237fbaae7e8a51744",
+      "sha256": "a748ffa5a693cd5e0cf1b32aa94d44cafc200e4c33912623400df83201796e1f",
       "language": "typescript",
-      "lines": 64,
-      "bytes": 1885
+      "lines": 61,
+      "bytes": 1738
     },
     {
       "path": "src/core/commands/gates-command.ts",
@@ -8686,7 +8686,7 @@
     },
     {
       "path": "src/core/release/__tests__/release-gate-cache-artifacts.test.ts",
-      "sha256": "9fe1c16f22d6de86218c2a039add81eec8ecb8d87c8eaf88495a40e1f0b6ac04",
+      "sha256": "c82f3daa679db04d4e8cde30fe064912aaab0bb0b403a4a86215ae6f22eec49f",
       "language": "typescript",
       "lines": 148,
       "bytes": 7110
@@ -8700,10 +8700,10 @@
     },
     {
       "path": "src/core/release/__tests__/release-gate-only-selection.test.ts",
-      "sha256": "f6962ffa8524de3129c1eaece66c459024375bb9ddfa225b046eff55c1f03097",
+      "sha256": "ad87f0606e8823ba278d87fb1469a96d0d74e0d11dd64fc3964a3c8af64ef5e3",
       "language": "typescript",
-      "lines": 171,
-      "bytes": 7855
+      "lines": 206,
+      "bytes": 9566
     },
     {
       "path": "src/core/release/__tests__/release-origin.test.ts",
@@ -8953,10 +8953,10 @@
     },
     {
       "path": "src/core/release/release-gate-batch-runner.ts",
-      "sha256": "4b28d351e97f283e86cc5e1120a0dcdd2fc2de63154b60b528b8a5f5372fd0b8",
+      "sha256": "88751a33a4c4ff78d0fcfa84d98634b2de37ddbc62270ce32834f1ce862e977e",
       "language": "typescript",
-      "lines": 134,
-      "bytes": 5764
+      "lines": 148,
+      "bytes": 6473
     },
     {
       "path": "src/core/release/release-gate-cache-v2.ts",
@@ -8974,10 +8974,10 @@
     },
     {
       "path": "src/core/release/release-gate-dag.ts",
-      "sha256": "13843ce0091949532bc28eb9105fbe20bd50039de3ad6842cb7896d3d3b68e71",
+      "sha256": "f92bd6cf836a22e581dff7fc2c4a1536e10436d7eb3a885e5a8714def177629a",
       "language": "typescript",
-      "lines": 645,
-      "bytes": 30230
+      "lines": 673,
+      "bytes": 31358
     },
     {
       "path": "src/core/release/release-gate-hermetic-env.ts",
@@ -8988,10 +8988,17 @@
     },
     {
       "path": "src/core/release/release-gate-node.ts",
-      "sha256": "44282321d9953a8a996590a00168a1f948f5dc7edcf20ba27d3558edf15eea7e",
+      "sha256": "2da1b875548f6dfcb5b09e49631f234ccda7e14a89a2558fb6ed7dd7e78f364f",
       "language": "typescript",
-      "lines": 82,
-      "bytes": 3566
+      "lines": 80,
+      "bytes": 3350
+    },
+    {
+      "path": "src/core/release/release-gate-output-contract.ts",
+      "sha256": "fb885f2117d5d793904d012975bfb81e04434851c152b86c9157809de0290667",
+      "language": "typescript",
+      "lines": 75,
+      "bytes": 2291
     },
     {
       "path": "src/core/release/release-gate-report.ts",
@@ -11063,7 +11070,7 @@
     },
     {
       "path": "src/core/triwiki/context-graph/benchmark/fixtures/definitions-code.ts",
-      "sha256": "a02b8001a12874a2fe910c8653033d723f11c2a5fe9e3c102ca2fc3910da7a8e",
+      "sha256": "0962f141ad4f12a045ffed6922d7754d643ecad4bab98ab0c81a165237d9d02f",
       "language": "typescript",
       "lines": 276,
       "bytes": 13878,
@@ -11071,7 +11078,7 @@
     },
     {
       "path": "src/core/triwiki/context-graph/benchmark/fixtures/definitions-safety.ts",
-      "sha256": "af25468cffd4d4bf7d5a198dcc3ff725b4a9d971567548355fd498a56d429a85",
+      "sha256": "cb51c4a15a6a4bf04db07377acf23d5171f937c2ca4c6bf596c043e2d403c965",
       "language": "typescript",
       "lines": 249,
       "bytes": 11179,
@@ -11424,14 +11431,14 @@
     },
     {
       "path": "src/core/triwiki/context-graph/extractors/topology/__tests__/topology-commands.test.ts",
-      "sha256": "6753d34d9656100693aa0b0a377867fc178b276e388c7a51c9d552eaa520b06a",
+      "sha256": "da5430e8405d260977c843a9648329bc5de6770b1d7fd4fa167a72487de41076",
       "language": "typescript",
-      "lines": 226,
-      "bytes": 10103
+      "lines": 228,
+      "bytes": 10197
     },
     {
       "path": "src/core/triwiki/context-graph/extractors/topology/__tests__/topology-gates.test.ts",
-      "sha256": "5a294c8a3caa632c89485012f998713e2642aac8497dfa41fbf7509b05a5c0d7",
+      "sha256": "b7c7dbbd51896890e6061b8dc79ef4ac2c6b027983afc8a1a13da5dbe1053d0e",
       "language": "typescript",
       "lines": 250,
       "bytes": 10636
@@ -13805,10 +13812,10 @@
     },
     {
       "path": "src/scripts/gate-pack-runner-blackbox.ts",
-      "sha256": "188dd2409d179fb947bdf1bdd9bc9831e3c7e66e3eaf1b527613e99c522ec6e5",
+      "sha256": "68f48756dabdf6d6def0bd2d2e66b96fe3767d6c62f7a0721a394fd167339a94",
       "language": "typescript",
-      "lines": 27,
-      "bytes": 1428,
+      "lines": 28,
+      "bytes": 1471,
       "purpose": "@ts-nocheck"
     },
     {
@@ -15079,17 +15086,17 @@
     },
     {
       "path": "src/scripts/release-aggressive-resource-governor-check.ts",
-      "sha256": "f4c8b705a693eb6a60b48d9ff10ed03e5a43a8eb27d59ff3d43aaa281fef96cd",
+      "sha256": "730fb85a51ecbcf308d6725911f4ee60c41b8db117614f2a8fb7e46a10bffa83",
       "language": "typescript",
       "lines": 25,
-      "bytes": 2817
+      "bytes": 2856
     },
     {
       "path": "src/scripts/release-cache-glob-hashing-check.ts",
-      "sha256": "036ef89062c5e0a2a01d04c7d5209c9f982049d7f91cbb63161d2f9d884ec14e",
+      "sha256": "0a8d19c6874649fa09613dbc6cd0c8e2147ca0e161b0ae70124a9e45cc873ee1",
       "language": "typescript",
-      "lines": 44,
-      "bytes": 1987,
+      "lines": 45,
+      "bytes": 2028,
       "purpose": "@ts-nocheck"
     },
     {
@@ -15110,10 +15117,10 @@
     },
     {
       "path": "src/scripts/release-cache-version-neutral-fixture-check.ts",
-      "sha256": "effdc947e57e90e85fff17909deacf305de3c7fdf663f128b1f4e20295dd51eb",
+      "sha256": "007854e565bfe848ad7b0263a0a0213a10722147fbf662d9020ebfddb59726ca",
       "language": "typescript",
-      "lines": 68,
-      "bytes": 3897,
+      "lines": 69,
+      "bytes": 3938,
       "purpose": "@ts-nocheck"
     },
     {
@@ -15179,18 +15186,18 @@
     },
     {
       "path": "src/scripts/release-full-parallelism-blackbox.ts",
-      "sha256": "c36ac69d1e06f9e393a7d3c553bfbb748a1a8a70c865416ace321da429e03653",
+      "sha256": "0545394ca94ec11ef3d69b031f427673a661b2dc84cb88f7b2553475f26c4708",
       "language": "typescript",
       "lines": 42,
-      "bytes": 2478,
+      "bytes": 2517,
       "purpose": "@ts-nocheck"
     },
     {
       "path": "src/scripts/release-gate-batch-runner-check.ts",
-      "sha256": "0113df9bdb3b1e6eb3c9f61e0ff90453cd31ab9b8006a16ec93b940f17bc230d",
+      "sha256": "54e0b064611df4d133230f4f8f565898d1a37fd4d81f6f37bbcdb38e1a573c98",
       "language": "typescript",
-      "lines": 70,
-      "bytes": 4399
+      "lines": 79,
+      "bytes": 5244
     },
     {
       "path": "src/scripts/release-gate-budget-check.ts",
@@ -15202,18 +15209,18 @@
     },
     {
       "path": "src/scripts/release-gate-dag-runner-check.ts",
-      "sha256": "13fdaeabeefbd4cef6ee1030e07f44b4a125b621a58ea7d1495e0aa09b0c3842",
+      "sha256": "8d66405640c222966e6d09568b0ee92cdde03be7c8f8940666cfba32f81b7358",
       "language": "typescript",
-      "lines": 130,
-      "bytes": 10121,
+      "lines": 140,
+      "bytes": 11048,
       "purpose": "@ts-nocheck"
     },
     {
       "path": "src/scripts/release-gate-dag-runner.ts",
-      "sha256": "f3b4bb94051e001de3fa509710a8b15e2814ba3ff22dbbf29df6dcf277af996d",
+      "sha256": "6a57beb3f7758bba5f525f4be526fc9ba22fc8ede53208286b49dd31e2d13842",
       "language": "typescript",
-      "lines": 119,
-      "bytes": 5129
+      "lines": 121,
+      "bytes": 5322
     },
     {
       "path": "src/scripts/release-gate-script-parity-check.ts",
@@ -15322,7 +15329,7 @@
     },
     {
       "path": "src/scripts/release-real-check.ts",
-      "sha256": "cb061787833cbbc2bfa275f34979ca160006fcf2a9fa072a25080e1a8f264a36",
+      "sha256": "accdf16b8635942c1c0c9acde1bca1102213876993ae0c5dfc3b811ce8a50bc1",
       "language": "typescript",
       "lines": 537,
       "bytes": 24220,
@@ -15981,10 +15988,10 @@
     },
     {
       "path": "src/scripts/triwiki-affected-graph-blackbox.ts",
-      "sha256": "045dc41548b12eec1725f3265e47f2f240260b33f0611803d4183d36d2cf8c21",
+      "sha256": "d52bedbd400b4e740fc7e5b7ad970827743e5e86f3d20488bb3371a6cef3e0ab",
       "language": "typescript",
-      "lines": 28,
-      "bytes": 1425,
+      "lines": 29,
+      "bytes": 1468,
       "purpose": "@ts-nocheck"
     },
     {
@@ -17837,10 +17844,10 @@
     },
     {
       "path": "test/regression/release-check-stamp.test.mjs",
-      "sha256": "628db177b455d87c346c1468d77983a2b4695c626d66703f4ce1b81e0419bee5",
+      "sha256": "3931043ec14151d43b9e4a3879d0951681fa2e8dafb8bb571ee2999bd2e4677a",
       "language": "javascript",
       "lines": 539,
-      "bytes": 23696
+      "bytes": 23735
     },
     {
       "path": "test/regression/release-readiness-report.test.mjs",
@@ -19307,10 +19314,10 @@
     },
     {
       "path": "test/unit/release-gate-cache-version-neutral.test.mjs",
-      "sha256": "02ce3ffa1f770ec0ed9b1487e169c85e94fb03fb7f5efe2f00f0dbb8e51eff59",
+      "sha256": "f926cda14ef987e3b007ac6f96e1f8728f85eab2c48c444071aed88108594fd1",
       "language": "javascript",
-      "lines": 104,
-      "bytes": 4687
+      "lines": 105,
+      "bytes": 4728
     },
     {
       "path": "test/unit/release-gate-manifest.test.mjs",
@@ -19854,12 +19861,12 @@
     }
   ],
   "edges_by_type": {
-    "calls": 9562,
-    "contains": 25516,
-    "defines": 7599,
-    "imports": 6156,
+    "calls": 9567,
+    "contains": 25527,
+    "defines": 7602,
+    "imports": 6160,
     "reexports": 881,
-    "references": 13245,
-    "tests": 2875
+    "references": 13257,
+    "tests": 2876
   }
 }

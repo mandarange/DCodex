@@ -19,7 +19,7 @@ test('packlist cache hits require current proof and related reports', () => {
     cache: { enabled: true, inputs: ['package.json', 'package-lock.json', 'dist/**'] },
     isolation: { home: 'temp', codex_home: 'temp', report_dir: 'per-gate' },
     preset: ['release'],
-    output_contract: 'sks.gate-result.v1'
+    output_contract: 'sks.gate-result.v2'
   }
   const info = {
     entryCount: 2,

@@ -9,7 +9,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "command", "deps", "resource", "side_effect", "timeout_ms", "cache", "isolation", "preset"],
+        "required": ["id", "command", "deps", "resource", "side_effect", "timeout_ms", "output_contract", "cache", "isolation", "preset"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "command": { "type": "string", "minLength": 1 },
@@ -23,8 +23,7 @@
           },
           "side_effect": { "enum": ["hermetic", "real-env"] },
           "timeout_ms": { "type": "integer", "minimum": 1 },
-          "output_contract": { "const": "sks.gate-result.v1" },
-          "contract_note": { "type": "string", "minLength": 1 },
+          "output_contract": { "const": "sks.gate-result.v2" },
           "cache": {
             "type": "object",
             "required": ["enabled", "inputs"],

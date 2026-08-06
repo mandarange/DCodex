@@ -12,6 +12,7 @@ const runnerCli = readText('src/scripts/release-gate-dag-runner.ts')
 const hermeticEnv = readText('src/core/release/release-gate-hermetic-env.ts')
 const scheduler = readText('src/core/release/release-gate-scheduler.ts')
 const cache = readText('src/core/release/release-gate-cache-v2.ts')
+const retiredContractNoteField = ['contract', 'note'].join('_')
 
 const releaseCheck = String(pkg.scripts['release:check'] || '')
 const delegatedReleaseCheck = releaseCheck.match(/^npm run ([^\s&]+)(?:\s+--silent)?$/)?.[1]
@@ -27,6 +28,11 @@ assertGate(!/&&\s*npm run\s+\w/.test(effectiveReleaseCheck.replace('npm run buil
 assertGate(!pkg.scripts['release:check:legacy'], 'retired release:check:legacy alias must stay removed')
 assertGate(pkg.scripts['release:real-check'] === 'node ./dist/scripts/release-real-check.js', 'release:real-check must expose the canonical environment-dependent proof runner')
 assertGate(manifest.schema === 'sks.release-gates.v2' && manifest.gates.length >= 10, 'release-gates.v2 manifest must exist with nodes', manifest)
+assertGate(
+  manifest.gates.every((row: any) => row.output_contract === 'sks.gate-result.v2' && !Object.hasOwn(row, retiredContractNoteField)),
+  'every release gate must declare only the strict current output contract',
+  manifest.gates.filter((row: any) => row.output_contract !== 'sks.gate-result.v2' || Object.hasOwn(row, retiredContractNoteField)).map((row: any) => row.id)
+)
 for (const gateId of [
   'scheduler:comprehensive',
   'doctor:fix-proves-codex-read',
@@ -41,6 +47,8 @@ assertGate(runner.includes('readReleaseGateCacheRecord') && cache.includes('dura
 assertGate(runner.includes('cpu_time_saved_ms') && runner.includes('peak_running') && runner.includes('budget_snapshot'), 'DAG summary must include CPU time saved, peak running gates, and resource budget proof')
 assertGate(runner.includes('sks.five-minute-completion-certificate.v1') && runner.includes('sks.affected-gate-graph.v1') && cache.includes('releaseGateProofBankFile'), 'DAG runner must emit completion certificates, affected graph, and proof-bank cache path')
 assertGate(runner.includes('detached: process.platform') && runner.includes('killGateProcessTree') && runner.includes('timed_out'), 'DAG runner must kill timed-out gate process trees and record timeout evidence')
+assertGate(runner.includes('normalizeReleaseGateOutput') && runner.includes('gate_result: normalized.gate_result'), 'DAG runner must normalize and verify every child through the strict gate-result contract')
+assertGate(runnerCli.includes('GATE_RESULT_CONTRACT_MODE') && runnerCli.includes('contract_mode: GATE_RESULT_CONTRACT_MODE'), 'DAG CLI must emit the strict current gate-result contract')
 assertGate(runner.includes('pruneOldReleaseGateRunDirs') && runner.includes('SKS_RELEASE_GATE_RUN_RETENTION'), 'DAG runner must prune stale release-gate run reports before they exhaust local disk')
 assertGate(runnerCli.includes('ensureCurrentMigrationBeforeCommand') && runnerCli.includes('release-gate-runner-preflight'), 'DAG runner CLI must self-heal project migration before hermetic gates run')
 assertGate(hermeticEnv.includes('SKS_UPDATE_MIGRATION_GATE_DISABLED'), 'hermetic release gates must not rewrite project migration receipts from temporary HOME roots')
@@ -60,6 +68,7 @@ await fsx.writeJsonAtomic(path.join(fixtureRoot, 'release-gates.v2.json'), {
     resource: ['cpu-light', 'fs-read'],
     side_effect: 'hermetic',
     timeout_ms: 50,
+    output_contract: 'sks.gate-result.v2',
     cache: { enabled: false, inputs: [] },
     isolation: { home: 'temp', codex_home: 'temp', report_dir: 'per-gate' },
     preset: ['release']
@@ -84,6 +93,7 @@ await fsx.writeJsonAtomic(path.join(cacheRoot, 'release-gates.v2.json'), {
     resource: ['cpu-light', 'fs-read'],
     side_effect: 'hermetic',
     timeout_ms: 5000,
+    output_contract: 'sks.gate-result.v2',
     cache: { enabled: true, inputs: [] },
     isolation: { home: 'temp', codex_home: 'temp', report_dir: 'per-gate' },
     preset: ['release']

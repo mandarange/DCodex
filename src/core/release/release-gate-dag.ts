@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { finished } from 'node:stream/promises'
 import { cleanupReleaseGateHermeticEnv, cleanupReleaseGateRunTemp, createReleaseGateHermeticEnv } from './release-gate-hermetic-env.js'
 import { appendReleaseGateJsonl, writeReleaseGateJson } from './release-gate-report.js'
 import { findReadyReleaseGateNodes, findReleaseGatesBlockedByFailedDeps, pickReadyLaunchableReleaseGates } from './release-gate-scheduler.js'
@@ -16,6 +17,7 @@ import { createRequestedScopeContract } from '../safety/requested-scope-contract
 import { rmrf } from '../fsx.js'
 import { sweepSksTempDirs } from '../retention.js'
 import type { ReleaseAuthorizationSnapshot } from './release-authorization-snapshot.js'
+import { normalizeReleaseGateOutput } from './release-gate-output-contract.js'
 
 export interface ReleaseGateDagRunResult {
   schema: 'sks.release-gate-dag-run.v1'
@@ -518,6 +520,7 @@ function runGate(root: string, runId: string, reportRoot: string, gate: ReleaseG
   const err = fs.createWriteStream(stderrFile)
   return new Promise((resolve) => {
     const child = spawn(gate.command, { cwd: root, shell: true, env: hermetic.env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
+    let stdoutTail = ''
     let timedOut = false
     let timeoutCleanup: Promise<void> | null = null
     const timer = setTimeout(() => {
@@ -525,27 +528,52 @@ function runGate(root: string, runId: string, reportRoot: string, gate: ReleaseG
       timeoutCleanup = cleanupTimedOutGateProcessTree(root, child)
     }, gate.timeout_ms)
     timer.unref?.()
-    child.stdout.pipe(out)
-    child.stderr.pipe(err)
+    child.stdout.on('data', (chunk) => {
+      stdoutTail = appendTail(stdoutTail, String(chunk))
+    })
+    child.stdout.pipe(out, { end: false })
+    child.stderr.pipe(err, { end: false })
     child.on('close', (code, signal) => {
       void (async () => {
         clearTimeout(timer)
         if (timeoutCleanup) await timeoutCleanup
+        const exitCode = timedOut ? 124 : code
+        const normalized = normalizeReleaseGateOutput({
+          gateId: gate.id,
+          status: exitCode,
+          signal,
+          timedOut,
+          stdout: stdoutTail
+        })
+        out.write(`${stdoutTail.endsWith('\n') || stdoutTail.length === 0 ? '' : '\n'}${normalized.line}\n`)
         out.end()
         err.end()
+        await Promise.allSettled([finished(out), finished(err)])
         const durationMs = Date.now() - started
         const stderrText = fs.existsSync(stderrFile) ? fs.readFileSync(stderrFile, 'utf8') : ''
         const timeoutTail = timedOut ? `release_gate_timeout:${gate.id}:${gate.timeout_ms}ms` : ''
         const signalTail = !timedOut && signal ? `release_gate_signal:${gate.id}:${signal}` : ''
-        const stderrTail = tail([stderrText, timeoutTail, signalTail].filter(Boolean).join('\n'))
-        const exitCode = timedOut ? 124 : code
-        const result = { id: gate.id, ok: exitCode === 0, exit_code: exitCode, signal, timed_out: timedOut, duration_ms: durationMs, cached: false, stderr_tail: stderrTail }
-        writeReleaseGateJson(path.join(hermetic.report_dir, 'result.json'), { schema: 'sks.release-gate-result.v1', ...result, stdout_log: stdoutFile, stderr_log: stderrFile })
+        const contractTail = normalized.evaluation.ok ? '' : normalized.gate_result.blockers.map(String).join('\n')
+        const stderrTail = tail([stderrText, timeoutTail, signalTail, contractTail].filter(Boolean).join('\n'))
+        const result = { id: gate.id, ok: normalized.evaluation.ok, exit_code: exitCode, signal, timed_out: timedOut, duration_ms: durationMs, cached: false, stderr_tail: stderrTail }
+        writeReleaseGateJson(path.join(hermetic.report_dir, 'result.json'), {
+          schema: 'sks.release-gate-result.v2',
+          ...result,
+          output_contract: gate.output_contract,
+          gate_result: normalized.gate_result,
+          stdout_log: stdoutFile,
+          stderr_log: stderrFile
+        })
         cleanupReleaseGateHermeticEnv(hermetic)
         resolve(result)
       })()
     })
   })
+}
+
+function appendTail(previous: string, next: string, limit = 64 * 1024): string {
+  const combined = `${previous}${next}`
+  return combined.length > limit ? combined.slice(-limit) : combined
 }
 
 async function cleanupTimedOutGateProcessTree(root: string, child: ChildProcess): Promise<void> {

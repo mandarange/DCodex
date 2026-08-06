@@ -1,7 +1,9 @@
-export const GATE_RESULT_CONTRACT = 'sks.gate-result.v1' as const;
+export const GATE_RESULT_CONTRACT = 'sks.gate-result.v2' as const;
+export const GATE_RESULT_CONTRACT_MODE = 'strict' as const;
 
 export interface GateResultContract {
   schema: typeof GATE_RESULT_CONTRACT;
+  contract_mode: typeof GATE_RESULT_CONTRACT_MODE;
   ok: boolean;
   blockers: unknown[];
   [key: string]: unknown;
@@ -9,9 +11,9 @@ export interface GateResultContract {
 
 export interface GateProcessEvaluation {
   ok: boolean;
-  contract: typeof GATE_RESULT_CONTRACT | 'legacy_exit_code_only';
+  contract: typeof GATE_RESULT_CONTRACT;
   gate_result: GateResultContract | null;
-  reason?: 'gate_output_contract_violation' | 'gate_result_not_ok' | 'legacy_exit_code_only';
+  reason?: 'gate_output_contract_violation' | 'gate_result_not_ok';
 }
 
 export function parseGateResultFromStdout(stdout: string): GateResultContract | null {
@@ -20,7 +22,12 @@ export function parseGateResultFromStdout(stdout: string): GateResultContract | 
   if (!last) return null;
   try {
     const parsed = JSON.parse(last) as Partial<GateResultContract>;
-    if (parsed?.schema === GATE_RESULT_CONTRACT && typeof parsed.ok === 'boolean' && Array.isArray(parsed.blockers)) {
+    if (
+      parsed?.schema === GATE_RESULT_CONTRACT
+      && parsed.contract_mode === GATE_RESULT_CONTRACT_MODE
+      && typeof parsed.ok === 'boolean'
+      && Array.isArray(parsed.blockers)
+    ) {
       return parsed as GateResultContract;
     }
     return null;
@@ -31,28 +38,18 @@ export function parseGateResultFromStdout(stdout: string): GateResultContract | 
 
 export function evaluateGateProcessOutput({
   status,
-  stdout,
-  requiresContract = false
+  stdout
 }: {
   status: number | null;
   stdout: string;
-  requiresContract?: boolean;
 }): GateProcessEvaluation {
   const gateResult = parseGateResultFromStdout(stdout);
   if (!gateResult) {
-    if (requiresContract) {
-      return {
-        ok: false,
-        contract: GATE_RESULT_CONTRACT,
-        gate_result: null,
-        reason: 'gate_output_contract_violation'
-      };
-    }
     return {
-      ok: status === 0,
-      contract: 'legacy_exit_code_only',
+      ok: false,
+      contract: GATE_RESULT_CONTRACT,
       gate_result: null,
-      ...(status === 0 ? { reason: 'legacy_exit_code_only' as const } : {})
+      reason: 'gate_output_contract_violation'
     };
   }
   return {

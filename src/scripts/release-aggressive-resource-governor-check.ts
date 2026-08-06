@@ -7,7 +7,7 @@ const governor = await importDist('core/release/release-gate-resource-governor.j
 const budget = governor.defaultReleaseGateBudget()
 assertGate(budget['cpu-light'] >= 1 && budget['cpu-light'] <= 4, 'resource governor env requests must not raise the desktop-safe cpu-light cap', budget)
 assertGate(governor.defaultReleaseGateMaxTotal() >= 1 && governor.defaultReleaseGateMaxTotal() <= 4, 'resource governor default total cap must stay desktop-safe', { max_total: governor.defaultReleaseGateMaxTotal() })
-const gate = (id: string) => ({ id, resource: ['cpu-light'], deps: [], command: 'true', side_effect: 'hermetic', timeout_ms: 1000, cache: { enabled: false, inputs: [] }, isolation: { report_dir: 'per-gate' }, preset: ['release'] })
+const gate = (id: string) => ({ id, resource: ['cpu-light'], deps: [], command: 'true', side_effect: 'hermetic', timeout_ms: 1000, output_contract: 'sks.gate-result.v2', cache: { enabled: false, inputs: [] }, isolation: { report_dir: 'per-gate' }, preset: ['release'] })
 const fsGate = (id: string) => ({ ...gate(id), resource: ['fs-read'] })
 const timingGate = (id: string) => ({ ...gate(id), resource: ['timing-sensitive'] })
 const picked = governor.pickLaunchableReleaseGates({ ready: [gate('a'), gate('b'), gate('c')], running: [], budget })

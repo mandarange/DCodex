@@ -65,7 +65,8 @@ test('a command reaches a gate through the preset pipeline it dispatches', async
         command: 'node ./dist/scripts/release-proof-truth-check.js',
         deps: [],
         cache: { enabled: true, inputs: ['package.json'] },
-        preset: ['release']
+        preset: ['release'],
+        output_contract: 'sks.gate-result.v2'
       }
     ]);
 
@@ -172,7 +173,8 @@ test('extraction is byte-deterministic and every edge cites a workspace-relative
         command: 'node ./dist/scripts/demo-check.js',
         deps: [],
         cache: { enabled: true, inputs: ['package.json'] },
-        preset: ['harness']
+        preset: ['harness'],
+        output_contract: 'sks.gate-result.v2'
       }
     ]);
 

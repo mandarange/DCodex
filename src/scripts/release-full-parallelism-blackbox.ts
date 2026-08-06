@@ -7,7 +7,7 @@ import { performance } from 'node:perf_hooks'
 import { runReleaseGateBatch } from '../core/release/release-gate-batch-runner.js'
 import { assertGate, emitGate, root } from './gate-lib.js'
 const reportRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-release-full-'))
-const gates = Array.from({ length: 80 }, (_, i) => ({ id: `synthetic:${i + 1}`, command: `${process.execPath} -e \"setTimeout(()=>process.exit(0),1000)\"`, deps: [], resource: ['cpu-light', 'fs-read'], side_effect: 'hermetic', timeout_ms: 15000, cache: { enabled: false, inputs: [] }, isolation: { home: 'temp', codex_home: 'temp', report_dir: 'per-gate' }, preset: ['release'] }))
+const gates = Array.from({ length: 80 }, (_, i) => ({ id: `synthetic:${i + 1}`, command: `${process.execPath} -e \"setTimeout(()=>process.exit(0),1000)\"`, deps: [], resource: ['cpu-light', 'fs-read'], side_effect: 'hermetic', timeout_ms: 15000, output_contract: 'sks.gate-result.v2', cache: { enabled: false, inputs: [] }, isolation: { home: 'temp', codex_home: 'temp', report_dir: 'per-gate' }, preset: ['release'] }))
 const started = performance.now()
 const result = await runReleaseGateBatch(root, gates, { concurrency: 40, reportRoot })
 const wallMs = Math.max(1, Math.round(performance.now() - started))

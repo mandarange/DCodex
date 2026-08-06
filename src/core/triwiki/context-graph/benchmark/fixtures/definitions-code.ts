@@ -33,7 +33,7 @@ function gates(entries: ReadonlyArray<Record<string, unknown>>): string {
         timeout_ms: 120000,
         cache: { enabled: true, inputs: [...inputs, ...tests] },
         preset: ['release'],
-        output_contract: 'sks.gate-result.v1'
+        output_contract: 'sks.gate-result.v2'
       };
     })
   });

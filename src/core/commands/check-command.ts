@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { flag } from '../../cli/args.js'
 import { printJson } from '../../cli/output.js'
 import { projectRoot } from '../fsx.js'
-import { evaluateGateProcessOutput } from './gate-result-contract.js'
+import { GATE_RESULT_CONTRACT, evaluateGateProcessOutput } from './gate-result-contract.js'
 
 const CHECK_SCHEMA = 'sks.check.v1'
 
@@ -47,13 +47,7 @@ export async function checkCommand(args: string[] = []): Promise<unknown> {
         reason = 'invalid_json_output'
       }
     }
-    if (step.output_contract === 'sks.gate-result.v1') {
-      const gateEval = evaluateGateProcessOutput({ status: result.status, stdout, requiresContract: true })
-      ok = gateEval.ok
-      reason = gateEval.reason
-      contract = gateEval.contract
-      gateResult = gateEval.gate_result
-    } else if (step.name.startsWith('release:')) {
+    if (step.output_contract === GATE_RESULT_CONTRACT) {
       const gateEval = evaluateGateProcessOutput({ status: result.status, stdout })
       ok = gateEval.ok
       reason = gateEval.reason
@@ -99,7 +93,7 @@ function buildCheckPlan(input: { tier: string; sla: string; changedSince: string
     steps.push({ name: 'real-check', command: process.execPath, args: ['dist/scripts/release-real-check.js'] })
   } else {
     steps.push({ name: buildScript, command: 'npm', args: ['run', buildScript, '--silent'] })
-    steps.push({ name: `release:${tier}`, command: process.execPath, args: dagArgs(tier, input.changedSince, input.sla), output_contract: 'sks.gate-result.v1' })
+    steps.push({ name: `release:${tier}`, command: process.execPath, args: dagArgs(tier, input.changedSince, input.sla), output_contract: GATE_RESULT_CONTRACT })
   }
   return {
     tier,

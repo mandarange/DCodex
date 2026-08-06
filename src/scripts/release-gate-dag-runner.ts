@@ -9,6 +9,7 @@ import {
 } from '../core/release/release-authorization-snapshot.js'
 import { ensureDistFresh } from './lib/ensure-dist-fresh.js'
 import { ensureCurrentMigrationBeforeCommand } from '../core/update/update-migration-state.js'
+import { GATE_RESULT_CONTRACT, GATE_RESULT_CONTRACT_MODE } from '../core/commands/gate-result-contract.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 process.env.SKS_RELEASE_GATE_CACHE_MEMOIZE ||= '1'
@@ -80,7 +81,8 @@ console.log(`SKS Release DAG
   report: ${result.report_dir}`)
 
 const gateResult = {
-  schema: 'sks.gate-result.v1',
+  schema: GATE_RESULT_CONTRACT,
+  contract_mode: GATE_RESULT_CONTRACT_MODE,
   ok: result.ok === true,
   blockers: result.ok ? [] : result.failures.map((failure) => `release_gate_failed:${failure.id}`),
   summary: {
@@ -103,7 +105,7 @@ if (!result.ok) {
 
 function failRunner(blocker: string): never {
   console.error(`SKS Release DAG blocked: ${blocker}`)
-  console.log(JSON.stringify({ schema: 'sks.gate-result.v1', ok: false, blockers: [blocker] }))
+  console.log(JSON.stringify({ schema: GATE_RESULT_CONTRACT, contract_mode: GATE_RESULT_CONTRACT_MODE, ok: false, blockers: [blocker] }))
   process.exit(1)
 }
 

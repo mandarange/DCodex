@@ -18,6 +18,7 @@ function gate(id: string): ReleaseGateNode {
     resource: ['cpu-light', 'fs-read'],
     side_effect: 'hermetic',
     timeout_ms: 1_000,
+    output_contract: 'sks.gate-result.v2',
     cache: { enabled: false, inputs: [] },
     isolation: { home: 'temp', codex_home: 'temp', report_dir: 'per-gate' },
     preset: ['release']

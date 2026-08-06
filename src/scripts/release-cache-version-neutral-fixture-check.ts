@@ -13,6 +13,7 @@ const gate = {
   resource: ['cpu-light'],
   side_effect: 'hermetic',
   timeout_ms: 1000,
+  output_contract: 'sks.gate-result.v2',
   cache: { enabled: true, inputs: ['package.json', 'package-lock.json', 'src/**', 'dist/build-manifest.json'] },
   isolation: { home: 'temp', codex_home: 'temp', report_dir: 'per-gate' },
   preset: ['release']
