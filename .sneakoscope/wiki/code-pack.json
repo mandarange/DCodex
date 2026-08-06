@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-06T07:20:01.250Z",
+  "generated_at": "2026-08-06T07:43:03.213Z",
   "git_head_sha": null,
   "source_file_count": 2763,
-  "index_digest": "10914fa8c02d67869b388777495e1f623f2257ba6b4116da5167b0325098508b",
+  "index_digest": "df2c0f6ae4ac0d9b3823b6e24ec8a98ec50e6301cb95ccea016962af82983871",
   "entries": [
     {
       "id": "code:scripts",

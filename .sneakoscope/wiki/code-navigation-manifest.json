@@ -1,10 +1,10 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-06T07:20:01.250Z",
+  "generated_at": "2026-08-06T07:43:03.213Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "a4af39a3da7b3fe6d31f29bfa2c2863016072043b3f10ce7082cd3bac34059bb",
-  "snapshot_hash": "d464b3be74ced72eb43c0f2dd19e8f204ccfebeed95fefc0fe44f854e90666f1",
+  "inventory_digest": "c6174500895d79adb923678d03bbd002e76d02b5bdac8e3471498281f967389f",
+  "snapshot_hash": "7e51635fdf14e1fca753d9e9aecc3e0b8f6ac3dfea0d2d09640c2230829410e4",
   "source_file_count": 2763,
   "symbol_count": 21851,
   "edge_count": 65834,
@@ -8039,17 +8039,17 @@
     },
     {
       "path": "src/core/policy/__tests__/latest-version-guidance.test.ts",
-      "sha256": "f27a01df3d760ce1a2036c7b489ba24c5416fba6d5b8d29cf29cd03fd5539acc",
+      "sha256": "eb21cc8e679dd49511f7b5d11c139dbfcde2699d3f0c7eca5d7d63e1358a78fc",
       "language": "typescript",
-      "lines": 87,
-      "bytes": 3736
+      "lines": 105,
+      "bytes": 4528
     },
     {
       "path": "src/core/policy/latest-version-guidance.ts",
-      "sha256": "36fd6e1b5a69737a39b1de06967fd2cb29e190e1f81c196bf3da8b55e5bef336",
+      "sha256": "cdc7bf7a9a26c1c51a6d369a8c93efaf1fcd75b5f76c523e0ed8144c707e303a",
       "language": "typescript",
-      "lines": 181,
-      "bytes": 5870,
+      "lines": 193,
+      "bytes": 6441,
       "purpose": "Latest-stable version guidance policy. User-facing guidance goes stale the moment it names a number. The rule for every surface a user reads — README, CLI usage/help/error text, agent directives, menu bar strings — is: recommend the officia"
     },
     {
