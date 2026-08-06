@@ -42,6 +42,24 @@ test('dates, two-part ranges, and schema ids do not trip the scanner', () => {
   assert.deepEqual(findings, []);
 });
 
+test('guidance trigger substrings inside paths and names do not trip the scanner', () => {
+  const findings = scanLatestVersionGuidance('docs/gate-script-map.md', [
+    'Current 8.1.3 classifications live in',
+    '`docs/internal/8.1.3-requirement-traceability.md` and',
+    '`docs/internal/8.1.3-recommendedness-audit.md`.'
+  ].join('\n'));
+  assert.deepEqual(findings, []);
+});
+
+test('standalone require trigger forms remain blocked', () => {
+  const findings = scanLatestVersionGuidance('README.md', [
+    'Remote control requires Codex CLI 0.140.0.',
+    'Codex CLI 0.141.0 is required for remote control.',
+    'Remote control features require Codex CLI 0.142.0.'
+  ].join('\n'));
+  assert.deepEqual(findings.map((finding) => finding.trigger), ['requires', 'required', 'require']);
+});
+
 test('source files are judged by what they print, not by their comments', () => {
   const source = [
     '// Compatibility note: the probe compares against 0.130.0, required for remote-control.',

@@ -714,39 +714,39 @@
     },
     {
       "file": "src/core/codex-lb/desktop-bridge/launchd.ts",
-      "symbol": "writeDesktopBridgeLaunchdPlist",
-      "token": "chmod",
-      "scope_contract_sha256": "69353c3f6988aaea08d89ba1c8fc314c800412e70d7755282316055204427df6",
-      "callsite_sha256": "ba106a3e2bf4892663b0f2f7077d34ac4ca22e60a4647e31cc1643c911bb1ae0",
-      "occurrence": 1,
-      "reason": "The launchd writer applies 0600 only to the caller-selected SKS bridge plist immediately after atomic promotion."
-    },
-    {
-      "file": "src/core/codex-lb/desktop-bridge/launchd.ts",
-      "symbol": "writeDesktopBridgeLaunchdPlist",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "69353c3f6988aaea08d89ba1c8fc314c800412e70d7755282316055204427df6",
-      "callsite_sha256": "34838a359705e4f878ceeb6bfdc7462320da78a5fc36669c8165dd79400bd2f7",
-      "occurrence": 1,
-      "reason": "The launchd writer cleanup removes only the randomized sibling temporary path derived inside this atomic write."
-    },
-    {
-      "file": "src/core/codex-lb/desktop-bridge/launchd.ts",
-      "symbol": "writeDesktopBridgeLaunchdPlist",
+      "symbol": "writeDesktopBridgeLaunchdPlist.callback@90",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "69353c3f6988aaea08d89ba1c8fc314c800412e70d7755282316055204427df6",
-      "callsite_sha256": "8c9a6141902f362fb227b62898bbb08f8e1707e6d6c71e6da0bc7afb950af901",
+      "scope_contract_sha256": "575da0fb133f6a5e0551d178e0642d1fa7bdd1acfdfd54d5497c0f697301bbb2",
+      "callsite_sha256": "845c9d6f7206108dc45f694ea240c788c9635c516aa7baf57f1c61dcad1c5c2a",
       "occurrence": 1,
       "reason": "The launchd writer exclusively creates one randomized sibling temporary file beside the caller-selected SKS bridge plist."
     },
     {
       "file": "src/core/codex-lb/desktop-bridge/launchd.ts",
-      "symbol": "writeDesktopBridgeLaunchdPlist",
+      "symbol": "writeDesktopBridgeLaunchdPlist.callback@90",
       "token": "rename",
-      "scope_contract_sha256": "69353c3f6988aaea08d89ba1c8fc314c800412e70d7755282316055204427df6",
-      "callsite_sha256": "ed9b7e06c8688469f90e2c52687a1d60e4d3bc71c8a59648954be82510ac1a4e",
+      "scope_contract_sha256": "575da0fb133f6a5e0551d178e0642d1fa7bdd1acfdfd54d5497c0f697301bbb2",
+      "callsite_sha256": "5763449d66bc3bc2d2f05761aeff34308c6f4e5de7472a6f64344123b2773bd2",
       "occurrence": 1,
       "reason": "The launchd writer atomically promotes only its randomized sibling temporary file onto the caller-selected SKS bridge plist."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/launchd.ts",
+      "symbol": "writeDesktopBridgeLaunchdPlist.callback@90",
+      "token": "chmod",
+      "scope_contract_sha256": "575da0fb133f6a5e0551d178e0642d1fa7bdd1acfdfd54d5497c0f697301bbb2",
+      "callsite_sha256": "760f662b75536260f30321f482d7b66a295bc2d38cc763b32df5d76b3d133c94",
+      "occurrence": 1,
+      "reason": "The launchd writer applies 0600 only to the caller-selected SKS bridge plist immediately after atomic promotion."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge/launchd.ts",
+      "symbol": "writeDesktopBridgeLaunchdPlist.callback@90",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "575da0fb133f6a5e0551d178e0642d1fa7bdd1acfdfd54d5497c0f697301bbb2",
+      "callsite_sha256": "940fb29ef0854cad32e5927c4a6a2ac89e80f5b17af554964f69f47c6a295c43",
+      "occurrence": 1,
+      "reason": "The launchd writer cleanup removes only the randomized sibling temporary path derived inside this atomic write."
     },
     {
       "file": "src/core/codex-lb/desktop-bridge/state.ts",
@@ -822,48 +822,102 @@
     },
     {
       "file": "src/core/codex-lb/desktop-service.ts",
-      "symbol": "stopDesktopBridgeService",
-      "token": "unlink",
-      "scope_contract_sha256": "8548ad749bd0c5c07c1efd2d5f50ae7f3a16f09788ae56e3aa5ec89ac41d99dc",
-      "callsite_sha256": "3af70ecbd652f435315e8d7da3e9292deac3f5da41cd2003d2aa195e663004ee",
-      "occurrence": 1,
-      "reason": "Service stop removes only resolved SKS bridge plist or settings paths, and only when the corresponding explicit removal option is true."
-    },
-    {
-      "file": "src/core/codex-lb/desktop-service.ts",
-      "symbol": "stopDesktopBridgeService",
-      "token": "unlink",
-      "scope_contract_sha256": "8548ad749bd0c5c07c1efd2d5f50ae7f3a16f09788ae56e3aa5ec89ac41d99dc",
-      "callsite_sha256": "da656f2668f91dbd27dc52433f4d0c47078e9ceb5b9097a6a37782201f71f904",
-      "occurrence": 1,
-      "reason": "Service stop removes only resolved SKS bridge plist or settings paths, and only when the corresponding explicit removal option is true."
-    },
-    {
-      "file": "src/core/codex-lb/desktop-service.ts",
-      "symbol": "writeDesktopBridgeServiceSettings",
+      "symbol": "ensureDesktopBridgeClientCapability.callback@110",
       "token": "chmod",
-      "scope_contract_sha256": "39d7a00c2f3ef093963002a511f4bc351ffc6e4888e5615077e5ecc2090684a5",
-      "callsite_sha256": "aff940c10dab7eef0fdcda1f3886ddc57200f4b0af324934ba9cfe910b924d85",
+      "scope_contract_sha256": "a382ad2197038bf475b147655c23bec32208bddeaebb4ac9395e00be8d72cda2",
+      "callsite_sha256": "f2b33b5fe04f3eded7942bf69af1c700708111d67b30eddd671f19b354022333",
+      "occurrence": 1,
+      "reason": "Client capability setup applies mode 0600 only to the newly generated capability file and verifies the exact value by a no-follow readback."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-service.ts",
+      "symbol": "writeDesktopBridgeServiceSettingsUnlocked",
+      "token": "chmod",
+      "scope_contract_sha256": "497cd3fb7e141eeb4d102c83430b3799ed3f51f01b3ebad833791c3b2b6270ea",
+      "callsite_sha256": "7ab73ffe0210df55e443ba8e20634abdf72b00e98c4029b05cd05d2a98cf0c4b",
       "occurrence": 1,
       "reason": "The service settings writer applies 0600 only to the validated settings document it just wrote atomically."
     },
     {
-      "file": "src/core/codex-lb/migration-receipt.ts",
-      "symbol": "rollbackDesktopBridgeUnificationReceipt",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "006fadc4dfbb2f1fe636d6c9eba776637868dc76de30b92ee06c3a7d81e87bd4",
-      "callsite_sha256": "382db47d5f575a1c488980dfe74144332a04dbe95e8d5b9f10d4bc70d3502b70",
+      "file": "src/core/codex-lb/desktop-service.ts",
+      "symbol": "stopDesktopBridgeService",
+      "token": "unlink",
+      "scope_contract_sha256": "5c73e268202696986637cd9a131c00bf02e63bde48e6eb16cd6ce90f38c3eba9",
+      "callsite_sha256": "dac90de6795d1ff72600a08a30fbee2f2c4e031185ebf4d94c35a8b2ee6d82be",
       "occurrence": 1,
-      "reason": "Rollback removes only receipt-listed metadata whose current digest matches the recorded post-migration state, or restores a path captured as absent during recovery."
+      "reason": "Service stop unlinks only resolved SKS bridge plist, settings, or client-capability paths under the corresponding explicit removal option."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-service.ts",
+      "symbol": "stopDesktopBridgeService",
+      "token": "unlink",
+      "scope_contract_sha256": "5c73e268202696986637cd9a131c00bf02e63bde48e6eb16cd6ce90f38c3eba9",
+      "callsite_sha256": "72210220d304065a5a6170b9cacf5bf474dbb3dbc1ca7d3544145f54412fa5de",
+      "occurrence": 1,
+      "reason": "Service stop unlinks only resolved SKS bridge plist, settings, or client-capability paths under the corresponding explicit removal option."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-service.ts",
+      "symbol": "stopDesktopBridgeService",
+      "token": "unlink",
+      "scope_contract_sha256": "5c73e268202696986637cd9a131c00bf02e63bde48e6eb16cd6ce90f38c3eba9",
+      "callsite_sha256": "570a4fc4bf9a8b3d5c1fd66d118a4761d0e237349fe2a37ed175d65fa5ea9c31",
+      "occurrence": 1,
+      "reason": "Service stop unlinks only resolved SKS bridge plist, settings, or client-capability paths under the corresponding explicit removal option."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-service.ts",
+      "symbol": "ensurePrivateDirectory",
+      "token": "chmod",
+      "scope_contract_sha256": "51cca5fd1008362d23529b12dde96e89c43681617f72453dda1cafb58b0ca408",
+      "callsite_sha256": "685c1858800d5092e252f9a5e08861d8621a992ce8e17dfffe428e68dc5ebb01",
+      "occurrence": 1,
+      "reason": "Desktop Bridge directory setup applies mode 0700 only after rejecting non-directories, symlinks, and owner mismatches."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-service.ts",
+      "symbol": "ensurePrivateLogFile",
+      "token": "chmod",
+      "scope_contract_sha256": "39019eea26e6174835bf4e36c7835476752700976557c6517f95df10fa1737e7",
+      "callsite_sha256": "75c53e9fc9be1dd56732bf12b281c1f3610e5668929f87cd6e3210a55b332da9",
+      "occurrence": 1,
+      "reason": "Desktop Bridge log setup applies mode 0600 through the no-follow handle only after validating regular-file type and owner."
     },
     {
       "file": "src/core/codex-lb/migration-receipt.ts",
-      "symbol": "rollbackDesktopBridgeUnificationReceipt",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "006fadc4dfbb2f1fe636d6c9eba776637868dc76de30b92ee06c3a7d81e87bd4",
-      "callsite_sha256": "4fb0f535bca2f13e115904e0913fc66542c63ed6e993957858d7f4d8cf76cc05",
+      "symbol": "writeDesktopBridgeUnificationReceipt",
+      "token": "chmod",
+      "scope_contract_sha256": "1185c94671c8aa45cd0b8a6f7098aac6cfaf90969b8430acf0cee7f35807894a",
+      "callsite_sha256": "0a0f584cc1b36890514fd36052aabf2a2ae8bc873fb44afc21c49088f72d0393",
       "occurrence": 1,
-      "reason": "Rollback removes only receipt-listed metadata whose current digest matches the recorded post-migration state, or restores a path captured as absent during recovery."
+      "reason": "Receipt persistence applies mode 0600 only to the validated Desktop Bridge unification receipt immediately after its atomic write."
+    },
+    {
+      "file": "src/core/codex-lb/migration-receipt.ts",
+      "symbol": "rollbackDesktopBridgeUnificationReceipt.callback@240",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "cb906cb0c5f06eb1399e0f4700efa7d5e400d84654992bd1ba9219bd00a474c8",
+      "callsite_sha256": "fa7530b0524ea38dab6900617d7f7e977824dd88b33f5f14f6268a51817ff338",
+      "occurrence": 1,
+      "reason": "Rollback removes only receipt-listed metadata after all-target locks and current-state digest and identity checks, or restores the locked snapshot during recovery."
+    },
+    {
+      "file": "src/core/codex-lb/migration-receipt.ts",
+      "symbol": "rollbackDesktopBridgeUnificationReceipt.callback@240",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "cb906cb0c5f06eb1399e0f4700efa7d5e400d84654992bd1ba9219bd00a474c8",
+      "callsite_sha256": "fa7530b0524ea38dab6900617d7f7e977824dd88b33f5f14f6268a51817ff338",
+      "occurrence": 2,
+      "reason": "Rollback removes only receipt-listed metadata after all-target locks and current-state digest and identity checks, or restores the locked snapshot during recovery."
+    },
+    {
+      "file": "src/core/codex-lb/migration-receipt.ts",
+      "symbol": "ensurePrivateDirectory",
+      "token": "chmod",
+      "scope_contract_sha256": "230c5947b1acc6af8176b202bb211c27068766dd8a5081d8864b4c595692fab4",
+      "callsite_sha256": "f54fca62fdb801adef705f3529fa5a7acf4410641b3fc4d9ce2b1bfdcd6a2bb0",
+      "occurrence": 1,
+      "reason": "Migration receipt directory setup applies mode 0700 only after rejecting non-directories, symlinks, and owner mismatches."
     },
     {
       "file": "src/core/codex-lb/migration-receipt.ts",
@@ -902,15 +956,6 @@
       "reason": "Receipt rollback atomically promotes only its exclusive randomized sibling temporary file onto the receipt-listed target."
     },
     {
-      "file": "src/core/codex-lb/migration-receipt.ts",
-      "symbol": "writeDesktopBridgeUnificationReceipt",
-      "token": "chmod",
-      "scope_contract_sha256": "becce9bb7121c4d3d99bf60b40720ce79a9abf86427c4226ac05e4cc4cdd1ddf",
-      "callsite_sha256": "5f59861cbf109b19c18fcbcaf577c58675d2b40676bcd89c9ac35fc601409c91",
-      "occurrence": 1,
-      "reason": "Receipt persistence applies mode 0600 only to the validated Desktop Bridge unification receipt immediately after its atomic write."
-    },
-    {
       "file": "src/core/codex-lb/provider-credentials/configuration.ts",
       "symbol": "configureOpenRouterCredential",
       "token": "chmod",
@@ -921,12 +966,12 @@
     },
     {
       "file": "src/core/codex-lb/provider-credentials/validation-store.ts",
-      "symbol": "recordProviderCredentialValidation",
+      "symbol": "recordProviderCredentialValidation.callback@93.callback@95",
       "token": "chmod",
-      "scope_contract_sha256": "75af39eb7eac45ded70d185306e03a63099a4e7a207d2e77592886bd786c46fd",
-      "callsite_sha256": "a701900a011bfe913954893a5bad8670f7df095e38f2ac2cb0d4ccce3e243cd2",
+      "scope_contract_sha256": "218db859e0f7c01d247110b4f2ecd94a04eceadfdc497fd8d783a6fcefc46ff7",
+      "callsite_sha256": "0315a3943a414fd289efdd1cec41b97444f2e957bb37c05ae4b2f1d6172f5de8",
       "occurrence": 1,
-      "reason": "Provider validation persistence applies mode 0600 only to the validation artifact immediately after its atomic write."
+      "reason": "Provider validation persistence applies mode 0600 only to the validation artifact immediately after its locked atomic write."
     },
     {
       "file": "src/core/codex-lb/provider-credentials/private-snapshot.ts",
@@ -2246,44 +2291,44 @@
       "file": "src/core/release/npm-stage-tarball-verifier.ts",
       "symbol": "verifyNpmStageTarball",
       "token": "chmodSync",
-      "scope_contract_sha256": "e7d78c2b350727e591172c53e443244b081ff60060916b2e390289dbff6cbb22",
-      "callsite_sha256": "796ebf6b74481249c53c346301263fb9ad8fc4205428dce9176a841197975eff",
+      "scope_contract_sha256": "6649e1299d5c3101a0a27854664dbd3e06c27b50436292f40493047a207f7b98",
+      "callsite_sha256": "973f72b895694ad5e01ad0b03bc1c8281445e531282318169b40071e02c5584f",
       "occurrence": 1,
-      "reason": "Stage verification sets owner-only modes only on its transaction root, downloaded tarball, and final review directory."
+      "reason": "Stage verification applies owner-only modes only to its run-unique transaction root, downloaded tarball, and completed review directory."
     },
     {
       "file": "src/core/release/npm-stage-tarball-verifier.ts",
       "symbol": "verifyNpmStageTarball",
       "token": "chmodSync",
-      "scope_contract_sha256": "e7d78c2b350727e591172c53e443244b081ff60060916b2e390289dbff6cbb22",
-      "callsite_sha256": "d770c9dcdd7bfd83f61383a49353853c4f01b6cc37b7f2706be6227eb5723231",
+      "scope_contract_sha256": "6649e1299d5c3101a0a27854664dbd3e06c27b50436292f40493047a207f7b98",
+      "callsite_sha256": "db82dc6e904f801a28dc1f7cd334e63f419b23f97d6315f5034f50275caba463",
       "occurrence": 1,
-      "reason": "Stage verification applies owner-only modes only to the downloaded tarball and completed review directory inside its run-unique transaction root."
-    },
-    {
-      "file": "src/core/release/npm-stage-tarball-verifier.ts",
-      "symbol": "verifyNpmStageTarball",
-      "token": "chmodSync",
-      "scope_contract_sha256": "e7d78c2b350727e591172c53e443244b081ff60060916b2e390289dbff6cbb22",
-      "callsite_sha256": "f0d11866a420d205791c30871b8e1fa06e276e5bb166ed333fc19ab78146a68e",
-      "occurrence": 1,
-      "reason": "Stage verification applies owner-only modes only to the downloaded tarball and completed review directory inside its run-unique transaction root."
+      "reason": "Stage verification applies owner-only modes only to its run-unique transaction root, downloaded tarball, and completed review directory."
     },
     {
       "file": "src/core/release/npm-stage-tarball-verifier.ts",
       "symbol": "verifyNpmStageTarball",
       "token": "renameSync",
-      "scope_contract_sha256": "e7d78c2b350727e591172c53e443244b081ff60060916b2e390289dbff6cbb22",
-      "callsite_sha256": "63ca870083abd348d9ad84a4a7218699bf96e7d3f1b5c63f286ec5ad73a0c320",
+      "scope_contract_sha256": "6649e1299d5c3101a0a27854664dbd3e06c27b50436292f40493047a207f7b98",
+      "callsite_sha256": "082edba0ce6aefe68f2332145b7d3631c790cd6b24daa828784b5aae4c09f92d",
       "occurrence": 1,
       "reason": "Stage verification atomically promotes only its completed run-unique review directory to the requested output path."
     },
     {
       "file": "src/core/release/npm-stage-tarball-verifier.ts",
       "symbol": "verifyNpmStageTarball",
+      "token": "chmodSync",
+      "scope_contract_sha256": "6649e1299d5c3101a0a27854664dbd3e06c27b50436292f40493047a207f7b98",
+      "callsite_sha256": "5acd4072b87559d05060acca66aa215fb654ff6c9f97bb4ef60ee0205f97b98a",
+      "occurrence": 1,
+      "reason": "Stage verification applies owner-only modes only to its run-unique transaction root, downloaded tarball, and completed review directory."
+    },
+    {
+      "file": "src/core/release/npm-stage-tarball-verifier.ts",
+      "symbol": "verifyNpmStageTarball",
       "token": "rmSync",
-      "scope_contract_sha256": "e7d78c2b350727e591172c53e443244b081ff60060916b2e390289dbff6cbb22",
-      "callsite_sha256": "ba2138b1e8355892790077b38b8c6efa8e3403dc74ef44081d4a8f05a275ab14",
+      "scope_contract_sha256": "6649e1299d5c3101a0a27854664dbd3e06c27b50436292f40493047a207f7b98",
+      "callsite_sha256": "aa9c4f29bfcb4b734b6de786452206ead3d351365fff9b3f20696d611f2a7355",
       "occurrence": 1,
       "reason": "Failed stage verification removes only its run-unique temporary review directory."
     },
@@ -3784,29 +3829,29 @@
     {
       "file": "src/scripts/canonical-test-runner.ts",
       "symbol": "module",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "a11f16fa8af47a4251aff9f72d1f130a9ecdf8b58a5799dd481976e6836530cf",
+      "callsite_sha256": "90f834cecfaa1dd2ddce37d857e085327bad88ca0644f3a998a81aa4f0fbd321",
+      "occurrence": 1,
+      "reason": "Canonical test runner seeds files only inside the isolated scratch HOME it created, keeping tests off the operator real home."
+    },
+    {
+      "file": "src/scripts/canonical-test-runner.ts",
+      "symbol": "module",
       "token": "codex config write",
-      "scope_contract_sha256": "c2970b919ee161f86ec29cf93f86b58717f40424b61b2b29e1968a7f6b2d2ffc",
-      "callsite_sha256": "81eb6d1cbc80c365fb1a790c174fdb1d7f46e5cb8b600d3ca00e14ae70da2578",
+      "scope_contract_sha256": "a11f16fa8af47a4251aff9f72d1f130a9ecdf8b58a5799dd481976e6836530cf",
+      "callsite_sha256": "c088176200a30acfc815de2974acda98e79c0e76e49b3bb03f5ca8b208c16cad",
       "occurrence": 1,
-      "reason": "Canonical test runner writes the sentinel Codex config only into its isolated scratch CODEX_HOME; any change to that tree is treated as an isolation breach and fails the run."
+      "reason": "Canonical test runner writes the sentinel Codex config only into its isolated scratch CODEX_HOME and fails on any unexpected tree change."
     },
     {
       "file": "src/scripts/canonical-test-runner.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "c2970b919ee161f86ec29cf93f86b58717f40424b61b2b29e1968a7f6b2d2ffc",
-      "callsite_sha256": "c05db80abfa41526cc60c6916eac7bb5711d81e2c48e86fb30188730991b3533",
+      "scope_contract_sha256": "a11f16fa8af47a4251aff9f72d1f130a9ecdf8b58a5799dd481976e6836530cf",
+      "callsite_sha256": "439c0acfaeaa2def70bf690a834c28e7dd9960c8e605da7a55c8cb9f1549743b",
       "occurrence": 1,
-      "reason": "Canonical test runner seeds files only inside the isolated scratch HOME it created, which keeps tests off the operator real home."
-    },
-    {
-      "file": "src/scripts/canonical-test-runner.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "c2970b919ee161f86ec29cf93f86b58717f40424b61b2b29e1968a7f6b2d2ffc",
-      "callsite_sha256": "f6074193e0e8dc2da90ce65baefb6cfc21293413cfb41d4aeab34350006405e4",
-      "occurrence": 1,
-      "reason": "Canonical test runner seeds files only inside the isolated scratch HOME it created, which keeps tests off the operator real home."
+      "reason": "Canonical test runner seeds files only inside the isolated scratch HOME it created, keeping tests off the operator real home."
     },
     {
       "file": "src/scripts/canonical-test-runner.ts",
@@ -4073,10 +4118,10 @@
       "file": "src/scripts/desktop-bridge-transport-check.ts",
       "symbol": "module",
       "token": "fs.rm",
-      "scope_contract_sha256": "b94a0e9e8e3c929d5bd7f19a6a14f10f2f52dbafcd7e96af009c3ba80f66fdd7",
-      "callsite_sha256": "dfbd92f623f0afdeb3fbeae7fbfce9a877ad0eff43e968c348ac7c160ca94b8f",
+      "scope_contract_sha256": "df2e64671e44492fc3cce8fa505e8801d8ee12573c5f06fcc72934a1cb1014c8",
+      "callsite_sha256": "9f9e31998e8e0becddfde5c053a876dbe216677a725bd5ae6d261f043f2921d7",
       "occurrence": 1,
-      "reason": "The desktop bridge gate removes only the exact mkdtemp root captured by its isolated consume closure."
+      "reason": "The Desktop Bridge transport gate removes only the exact mkdtemp root captured by its isolated fixture run."
     },
     {
       "file": "src/scripts/codex-native-broker-read-only-check.ts",
@@ -4864,38 +4909,38 @@
     {
       "file": "src/scripts/desktop-bridge-unification-check.ts",
       "symbol": "module",
+      "token": "fs.writeFile",
+      "scope_contract_sha256": "ed07d885455227ebd82badfde2ed4526a12958d398b3060862a0e01c2df7effb",
+      "callsite_sha256": "571fd1e02d200d083a0d4e08d670aa5d8b5400a946a1315120b7e4eaa3c5851a",
+      "occurrence": 1,
+      "reason": "The unification release gate writes only fixed fixture files inside its exact mkdtemp-owned temporary home."
+    },
+    {
+      "file": "src/scripts/desktop-bridge-unification-check.ts",
+      "symbol": "module",
+      "token": "fs.writeFile",
+      "scope_contract_sha256": "ed07d885455227ebd82badfde2ed4526a12958d398b3060862a0e01c2df7effb",
+      "callsite_sha256": "7ce1009018779be16220e6992b9453f44fdcda2e872f81d5c5348bfb95224a31",
+      "occurrence": 1,
+      "reason": "The unification release gate writes only fixed fixture files inside its exact mkdtemp-owned temporary home."
+    },
+    {
+      "file": "src/scripts/desktop-bridge-unification-check.ts",
+      "symbol": "module",
+      "token": "fs.writeFile",
+      "scope_contract_sha256": "ed07d885455227ebd82badfde2ed4526a12958d398b3060862a0e01c2df7effb",
+      "callsite_sha256": "8b7edd20e6ee9b2bd2a036d783153922bfe4eb6cd71571def4c459d274d09a4d",
+      "occurrence": 1,
+      "reason": "The unification release gate writes only fixed fixture files inside its exact mkdtemp-owned temporary home."
+    },
+    {
+      "file": "src/scripts/desktop-bridge-unification-check.ts",
+      "symbol": "module",
       "token": "fs.rm",
-      "scope_contract_sha256": "7d6247032902db886264b45c9cae25c7a7aaf0f12a5d95ea06123b1f67117c23",
-      "callsite_sha256": "b94da88debbcc18c4cca70c3dff036bec1aded411f9d3fb3e377ecafbf45437d",
+      "scope_contract_sha256": "ed07d885455227ebd82badfde2ed4526a12958d398b3060862a0e01c2df7effb",
+      "callsite_sha256": "c80f8114420e328323b32ff9ee8c99da22df3e35a7f8f8a8c11b6290f5195160",
       "occurrence": 1,
       "reason": "The unification release gate removes only the exact mkdtemp-owned temporary root captured at gate startup."
-    },
-    {
-      "file": "src/scripts/desktop-bridge-unification-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "7d6247032902db886264b45c9cae25c7a7aaf0f12a5d95ea06123b1f67117c23",
-      "callsite_sha256": "236e6f7480eaa1778ef0b9a9fec48f6d6e9a6d00366c987a9fe9f1cb3940bff2",
-      "occurrence": 1,
-      "reason": "The unification release gate writes only fixed fixture files inside its exact mkdtemp-owned temporary home."
-    },
-    {
-      "file": "src/scripts/desktop-bridge-unification-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "7d6247032902db886264b45c9cae25c7a7aaf0f12a5d95ea06123b1f67117c23",
-      "callsite_sha256": "6c4c9e49a2018d00c75c207bf4d58ef73b2ff110c162da8453e08e479302cbe5",
-      "occurrence": 1,
-      "reason": "The unification release gate writes only fixed fixture files inside its exact mkdtemp-owned temporary home."
-    },
-    {
-      "file": "src/scripts/desktop-bridge-unification-check.ts",
-      "symbol": "module",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "7d6247032902db886264b45c9cae25c7a7aaf0f12a5d95ea06123b1f67117c23",
-      "callsite_sha256": "e654eff884384bab00d1c0b06b1f8b0d7086732fe32e5f25f98060aa522030a9",
-      "occurrence": 1,
-      "reason": "The unification release gate writes only fixed fixture files inside its exact mkdtemp-owned temporary home."
     },
     {
       "file": "src/scripts/dfix-fast-blackbox-check.ts",
@@ -6755,8 +6800,8 @@
       "file": "src/scripts/release-metadata-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "1a55a44fed10fc3341f21a4673b1d409ce41f4fd7612006d726856fc3a7ec3d6",
-      "callsite_sha256": "287b4046408ca8d373767c52aaaef2b491d7d5e39537de21b62c3dc45dc089f2",
+      "scope_contract_sha256": "fa824c479499fbb765c8516a6cc37289dd0a3eccd329ed752e8f1642ca4061d1",
+      "callsite_sha256": "8264e8ba489cc908da24836608c32ee594cd68b8fe4d5f0b4087e347879e5bb2",
       "occurrence": 1,
       "reason": "Release metadata validation writes only its fixed versioned JSON report beneath the repository .sneakoscope/reports directory."
     },
@@ -7776,6 +7821,42 @@
       "callsite_sha256": "eb965f140c380389648d3a4a100db82beb9170f2cfd8bb25f93a13fc216c5ef2",
       "occurrence": 1,
       "reason": "src/scripts/ux-review-image-voxel-relations-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
+    },
+    {
+      "file": "src/core/codex-lb/desktop-bridge-migration/retired-runtime-cleanup.ts",
+      "symbol": "cleanupRetiredDesktopBridgeRuntime",
+      "token": "unlink",
+      "scope_contract_sha256": "037e218ae4d849306b3bf533466f2019a90103c9a4d48e71a8fa1174fb13043d",
+      "callsite_sha256": "88f3736ef6c59358810f26111e29c153bb93fff04921e771d6227d8806a46762",
+      "occurrence": 1,
+      "reason": "Retired-runtime migration cleanup unlinks only the fixed SKS runtime filenames derived from the caller-selected home after rejecting symlinks and verifying settings and state schemas."
+    },
+    {
+      "file": "src/core/release/release-pack-receipt.ts",
+      "symbol": "inspectSourcePackageBinding",
+      "token": "rmSync",
+      "scope_contract_sha256": "c18f058ef7886042c09597a4c5846101fbf73d3126e3b09f502b320025142ad2",
+      "callsite_sha256": "413ceedccd523886a6a8b4f04d5b7a9b3973384e752f527ba4aa518c0282b782",
+      "occurrence": 1,
+      "reason": "Source-package binding removes only the mkdtemp extraction root it created after comparing packed bytes with the current source and generated build."
+    },
+    {
+      "file": "src/scripts/release-physical-gates-check.ts",
+      "symbol": "module",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "c44167225d0e385440c2326af0376dd7313c79a520b882d47deccd9825bdfdad",
+      "callsite_sha256": "1a49c54f2466f3e94e4d46f3d9f7a77574af1014c17c7fe03d7d292cff6a9898",
+      "occurrence": 1,
+      "reason": "Physical release inspection writes only a process-scoped sibling temporary report beneath the versioned release evidence directory."
+    },
+    {
+      "file": "src/scripts/release-physical-gates-check.ts",
+      "symbol": "module",
+      "token": "renameSync",
+      "scope_contract_sha256": "c44167225d0e385440c2326af0376dd7313c79a520b882d47deccd9825bdfdad",
+      "callsite_sha256": "cc2052cc88333205ac2840d4d359a8897fc762699ee3633b48f586da09d45ac5",
+      "occurrence": 1,
+      "reason": "Physical release inspection atomically promotes only its process-scoped sibling report onto the fixed versioned inspection path."
     }
   ]
 }

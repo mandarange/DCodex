@@ -101,7 +101,19 @@ const WINDOW_CHARS = 90;
 function containsTrigger(haystack: string): string | null {
   const lower = haystack.toLowerCase();
   for (const trigger of GUIDANCE_TRIGGERS) {
-    if (lower.includes(trigger.toLowerCase())) return trigger;
+    const needle = trigger.toLowerCase();
+    let fromIndex = 0;
+    while (fromIndex <= lower.length - needle.length) {
+      const index = lower.indexOf(needle, fromIndex);
+      if (index < 0) break;
+      const before = index > 0 ? (lower[index - 1] ?? '') : '';
+      const afterIndex = index + needle.length;
+      const after = afterIndex < lower.length ? (lower[afterIndex] ?? '') : '';
+      const englishTrigger = /[a-z]/.test(needle);
+      const hasWordBoundaries = !englishTrigger || (!/[a-z0-9_]/.test(before) && !/[a-z0-9_]/.test(after));
+      if (hasWordBoundaries) return trigger;
+      fromIndex = index + 1;
+    }
   }
   return null;
 }
