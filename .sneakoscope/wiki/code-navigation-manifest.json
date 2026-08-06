@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-06T02:59:29.294Z",
+  "generated_at": "2026-08-06T03:11:53.394Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "d84f046a2113ce143029b3174ace328fca504038f7c586c40feddc09f16f4be6",
-  "snapshot_hash": "b0e9eaad6ec1dff768a65df1ba9f05d66387ca4dc2b80677f8838d42044cf45b",
+  "inventory_digest": "b07a0d41f872787b8e88dbe72b78325023be431800cec2e67a51b3769c814b23",
+  "snapshot_hash": "ea6de2fa4da6814612cd813fa1c48181e504c5d25efa1591b7e72864b7b683d4",
   "source_file_count": 2761,
-  "symbol_count": 21669,
-  "edge_count": 65301,
+  "symbol_count": 21673,
+  "edge_count": 65305,
   "extractors": [
     {
       "id": "code",
@@ -12870,10 +12870,10 @@
     },
     {
       "path": "src/scripts/check-legacy-free.ts",
-      "sha256": "fd12986f4cc8d7d4c2b6a6ec648446c211c850231a0b07aa583d7782c55bf56a",
+      "sha256": "c635a420a382d0ab0ddf4ef05d0ea6f76f650a6f73c70c857dbda6180aa0387e",
       "language": "typescript",
-      "lines": 57,
-      "bytes": 2320,
+      "lines": 80,
+      "bytes": 3407,
       "purpose": "@ts-nocheck"
     },
     {
@@ -13290,10 +13290,10 @@
     },
     {
       "path": "src/scripts/codex-sdk-real-smoke-check.ts",
-      "sha256": "8896485313be76e42813411590c812a666e1bca779a11c36691671a8bcc5aea5",
+      "sha256": "502a17882ea79ca3dfad2a1aa6304ca136a15e7b37ea788efa0ba914cc47c3ea",
       "language": "typescript",
-      "lines": 56,
-      "bytes": 3578,
+      "lines": 62,
+      "bytes": 3703,
       "purpose": "@ts-nocheck"
     },
     {
@@ -15053,10 +15053,10 @@
     },
     {
       "path": "src/scripts/release-affected-selector-check.ts",
-      "sha256": "0c4eaaef21286a908ef5e036dcf34baa93cf4d6dc1ca9bbcc4e0440cba145af5",
+      "sha256": "90995eaf04dced58d39395d3d03876acbdf1da55aa8b54c0ec0ebf301525fe9b",
       "language": "typescript",
       "lines": 130,
-      "bytes": 7323
+      "bytes": 7326
     },
     {
       "path": "src/scripts/release-aggressive-resource-governor-check.ts",
@@ -19843,7 +19843,7 @@
   ],
   "edges_by_type": {
     "calls": 9484,
-    "contains": 25331,
+    "contains": 25335,
     "defines": 7567,
     "imports": 6112,
     "reexports": 881,
