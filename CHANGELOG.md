@@ -6,6 +6,8 @@
 
 - Upgraded release process output to the strict `sks.gate-result.v2` contract;
   every manifest gate is normalized and verified at the DAG and batch boundaries.
+- Restored direct `npm publish` preparation without a pre-existing Git release
+  tag or stage-only physical receipts; staged/OIDC publishing retains both gates.
 
 ### Removed
 

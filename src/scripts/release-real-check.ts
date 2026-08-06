@@ -104,7 +104,9 @@ const tasks = [
     group: 'real_ui',
     phase: 'parallel_verification',
     deps: ['codex:actual-config-load-probe'],
-    policy: requiredPolicy(['sks.release-physical-gates-inspection.v2'], { statusRequired: true, passStatuses: ['passed'] })
+    // Direct npm publication records this target-bound evidence as optional.
+    // The staged/OIDC path enforces it separately before mutation.
+    policy: liveOptionalPolicy(['sks.release-physical-gates-inspection.v2'], ['passed'])
   }),
   task('imagegen:real-smoke', 'direct', { command: nodeScript('imagegen-real-smoke-check.js'), group: 'real_smoke', phase: 'parallel_processing', policy: liveOptionalPolicy(['sks.imagegen-real-smoke.v1'], ['passed']) }),
   task('ux-review:real-imagegen-smoke', 'direct', { command: nodeScript('ux-review-real-imagegen-smoke-check.js'), group: 'real_smoke', phase: 'parallel_processing', deps: ['imagegen:real-smoke'], policy: liveOptionalPolicy(['sks.ux-real-imagegen-smoke.v1'], ['passed']) }),
