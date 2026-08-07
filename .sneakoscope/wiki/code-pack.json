@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-07T08:00:24.471Z",
+  "generated_at": "2026-08-07T09:27:05.970Z",
   "git_head_sha": null,
   "source_file_count": 2734,
-  "index_digest": "df9aade2153a8c1331c5e9f4057ec17862608072d5fe61f7191ba421a868209b",
+  "index_digest": "536ddb9f7e2c9a0f609ce56d979ddcee3611ad8546af59f47743b8e2063c7230",
   "entries": [
     {
       "id": "code:scripts",
@@ -403,7 +403,7 @@
     },
     {
       "id": "code:core-codex-control",
-      "text": "core-codex-control is a module at src/core/codex-control (54 files, low risk). Key exports: CODEX_AGENT_WORKER_RESULT_SCHEMA_ID, CODEX_APP_SERVER_CONFIG_READ_FAILED, CODEX_APP_SERVER_DIRECT_PROVIDER_SELECTION_RETIRED, CODEX_CONTROL_PROOF_SCHEMA, CODEX_CURRENT_CORE_REAL_PROBE_NAMES, and 226 more. Depends on: core, core-__tests__, core-agents, core-codex, core-codex-app, and 7 more.",
+      "text": "core-codex-control is a module at src/core/codex-control (54 files, low risk). Key exports: CODEX_AGENT_WORKER_RESULT_SCHEMA_ID, CODEX_APP_SERVER_CONFIG_READ_FAILED, CODEX_APP_SERVER_DIRECT_PROVIDER_SELECTION_RETIRED, CODEX_CONTROL_PROOF_SCHEMA, CODEX_CURRENT_CORE_REAL_PROBE_NAMES, and 227 more. Depends on: core, core-__tests__, core-agents, core-codex, core-codex-app, and 7 more.",
       "citations": [
         {
           "path": "src/core/codex-control/codex-thread-registry.ts"

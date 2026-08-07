@@ -1,9 +1,8 @@
 import fsp from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../codex-compat/codex-runtime-contract.js';
 import { compareSemverLike } from '../codex-compat/codex-version-policy.js';
-import { nowIso, packageRoot, readJson, runProcess, sha256, writeJsonAtomic } from '../fsx.js';
+import { nowIso, packageRoot, readJson, runProcess, sha256, withScratchDir, writeJsonAtomic } from '../fsx.js';
 import { resolveCodexRuntime, type CodexRuntimeIdentity } from '../codex-runtime/resolve-codex-runtime.js';
 
 export type CodexCurrentCertainty = 'actual' | 'discovered' | 'hermetic_fixture' | 'network_verified' | 'unverified' | 'failed';
@@ -195,8 +194,7 @@ async function generateSchemaProbe(
       return { ok: true, text: cached.text, sha256: cached.sha256, mode: 'cached-schema' };
     }
   }
-  const out = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-codex-current-schema-'));
-  try {
+  return withScratchDir('codex-current-schema-', async (out) => {
     const result = await runProcess(runtime.realpath, ['app-server', 'generate-json-schema', '--out', out], {
       cwd: root,
       timeoutMs: 60_000,
@@ -225,9 +223,7 @@ async function generateSchemaProbe(
     const probe = { ok: true, text: joined, sha256: sha256(canonicalJoined), mode: 'real-schema' as const };
     await writeJsonAtomic(cachePath, probe).catch(() => undefined);
     return probe;
-  } finally {
-    await fsp.rm(out, { recursive: true, force: true }).catch(() => {});
-  }
+  });
 }
 
 export function codexCurrentSchemaCachePath(root: string, runtime: CodexRuntimeIdentity): string {

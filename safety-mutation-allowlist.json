@@ -497,15 +497,6 @@
       "reason": "Native source materialization writes only packaged Swift sources into the SKS staging directory."
     },
     {
-      "file": "src/core/codex-control/codex-current-capability.ts",
-      "symbol": "generateSchemaProbe",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "47fd150222185392a4bfc2d456b68955027397b40941b4a008d05e8f4f207888",
-      "callsite_sha256": "cfdfee77add2a4d124c61d99efb18b9ffc324fafaf2ad9a11a6b8e45f7453c5e",
-      "occurrence": 1,
-      "reason": "Current Codex schema probe removes only its scoped generated schema output directory before refresh."
-    },
-    {
       "file": "src/core/codex-control/codex-current-core-probe-runner.ts",
       "symbol": "cleanupProbeTempRoot",
       "token": "fs.rm",

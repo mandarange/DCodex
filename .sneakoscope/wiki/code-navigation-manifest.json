@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-07T08:00:24.471Z",
+  "generated_at": "2026-08-07T09:27:05.970Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "1109a98e976df4b563dd600c0bc4ffccc125353ceb5f6c9745d501e7e44eec9e",
-  "snapshot_hash": "9e3f7190438f9e8ef531e3cd2957894a4be6745f84a3008bd2ebe6c7370a1ff7",
+  "inventory_digest": "99cf0e9ac79f4acf97e713267c11ac2b1f44d440ca46c34c7379ea938d35dd17",
+  "snapshot_hash": "c822c0c4f6582c0f27e2a82e0bd3fb6ab50ee0d63e6a609f2640bd336775dce3",
   "source_file_count": 2734,
   "symbol_count": 20734,
-  "edge_count": 64332,
+  "edge_count": 64334,
   "extractors": [
     {
       "id": "code",
@@ -2974,10 +2974,10 @@
     },
     {
       "path": "src/core/codex-control/codex-current-capability.ts",
-      "sha256": "fcb52e23a8b3d3c81fc7ae9d7a345278359b5effd4684bb31ce877b54c855575",
+      "sha256": "f4882be94f287decf52b9a0b6da938a99a42bd26b4bef09b93f07f36f6bddfcf",
       "language": "typescript",
-      "lines": 313,
-      "bytes": 13607
+      "lines": 309,
+      "bytes": 13484
     },
     {
       "path": "src/core/codex-control/codex-current-collab-agent-real-probe.ts",
@@ -19651,12 +19651,12 @@
     }
   ],
   "edges_by_type": {
-    "calls": 9495,
+    "calls": 9496,
     "contains": 24363,
     "defines": 7529,
     "imports": 6104,
     "reexports": 872,
-    "references": 13143,
+    "references": 13144,
     "tests": 2826
   }
 }
