@@ -1837,9 +1837,7 @@
           "src/core/codex-compat/**",
           "src/core/codex-runtime/**",
           "src/core/codex-app-server/**",
-          "config/codex-releases/**",
-          "schemas/codex-*.json",
-          "schemas/codex/**"
+          "schemas/codex-*.json"
         ]
       },
       "isolation": {
@@ -3805,8 +3803,8 @@
       "output_contract": "sks.gate-result.v2"
     },
     {
-      "id": "codex:current:manifest",
-      "command": "node ./dist/scripts/codex-current-manifest-check.js",
+      "id": "codex:current:dependency-graph",
+      "command": "node ./dist/scripts/codex-current-dependency-check.js",
       "deps": [],
       "resource": [
         "cpu-light",
@@ -3822,9 +3820,7 @@
           "release-gates.v2.json",
           "src/core/codex-control/**",
           "src/core/codex-compat/**",
-          "src/core/codex-runtime/**",
-          "config/codex-releases/**",
-          "schemas/codex/**"
+          "src/core/codex-runtime/**"
         ]
       },
       "isolation": {
@@ -3841,7 +3837,7 @@
       "id": "codex:current:binary-identity",
       "command": "node ./dist/scripts/codex-current-binary-identity-check.js",
       "deps": [
-        "codex:current:manifest"
+        "codex:current:dependency-graph"
       ],
       "resource": [
         "cpu-light",
@@ -3874,7 +3870,7 @@
       "id": "codex:current:policy",
       "command": "node ./dist/scripts/codex-current-policy-check.js",
       "deps": [
-        "codex:current:manifest"
+        "codex:current:dependency-graph"
       ],
       "resource": [
         "cpu-light",
@@ -3905,7 +3901,7 @@
       "id": "codex:current:app-server-v2",
       "command": "node ./dist/scripts/codex-current-app-server-v2-check.js",
       "deps": [
-        "codex:current:manifest"
+        "codex:current:dependency-graph"
       ],
       "resource": [
         "cpu-light",
@@ -3920,7 +3916,6 @@
           "release-gates.v2.json",
           "src/core/codex-control/**",
           "src/core/codex-compat/**",
-          "schemas/codex/app-server-0.146/**",
           "src/scripts/codex-current-app-server-v2-check.ts"
         ]
       },
@@ -3938,7 +3933,7 @@
       "id": "codex:current:thread-store",
       "command": "node ./dist/scripts/codex-current-thread-store-check.js",
       "deps": [
-        "codex:current:manifest"
+        "codex:current:dependency-graph"
       ],
       "resource": [
         "cpu-light",
@@ -3969,7 +3964,7 @@
       "id": "codex:current:capability",
       "command": "node ./dist/scripts/codex-current-capability-check.js",
       "deps": [
-        "codex:current:manifest",
+        "codex:current:dependency-graph",
         "codex:current:binary-identity",
         "codex:current:app-server-v2"
       ],
@@ -3987,9 +3982,7 @@
           "release-gates.v2.json",
           "src/core/codex-control/**",
           "src/core/codex-compat/**",
-          "src/core/codex-runtime/**",
-          "config/codex-releases/**",
-          "schemas/codex/app-server-0.146/**"
+          "src/core/codex-runtime/**"
         ]
       },
       "isolation": {

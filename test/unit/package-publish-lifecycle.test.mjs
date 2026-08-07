@@ -63,8 +63,10 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   assert.match(telegramSurfaceSource, /Verify, Save & Apply/);
   assert.match(telegramPageSource, /Active Bot/);
   assert.match(telegramSurfaceSource, /Copy Pairing Command/);
-  assert.match(telegramPageSource, /The token is the only value you enter/);
+  assert.match(telegramPageSource, /Enter that bot's public @username and paste its complete HTTP API token/);
+  assert.match(telegramSettingsSource, /sks-center-telegram-bot-username/);
   assert.match(telegramPageSource, /\["telegram", "setup", "--token-stdin", "--json"\]/);
+  assert.match(telegramPageSource, /arguments\.append\(contentsOf: \["--expected-bot-username", expectedBotUsername\]\)/);
   assert.match(telegramPageSource, /\["telegram", "pair", "--json"\]/);
   assert.match(telegramPageSource, /\["telegram", "doctor", "--json"\]/);
   assert.doesNotMatch(telegramPageSource, /\borca\b|onorca|stablyai/i);

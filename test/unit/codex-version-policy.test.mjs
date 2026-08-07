@@ -7,13 +7,15 @@ import {
   CODEX_PREFERRED_VERSION,
   CODEX_MINIMUM_SUPPORTED_VERSION
 } from '../../dist/core/codex-compat/codex-version-policy.js';
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../../dist/core/codex-compat/codex-runtime-contract.js';
 
-test('Codex version policy accepts only the package-tracked current release', () => {
+test('Codex version policy uses the package-tracked floor without rejecting newer runtimes', () => {
   assert.equal(parseCodexVersionText('codex-cli 0.145.0'), '0.145.0');
   assert.equal(compareSemverLike('0.145.0', '0.144.5'), 1);
-  assert.equal(CODEX_PREFERRED_VERSION, '0.146.0');
-  assert.equal(CODEX_MINIMUM_SUPPORTED_VERSION, '0.146.0');
-  assert.equal(codexVersionPolicy({ available: true, version: '0.146.0', source: 'fixture' }).status, 'ok');
+  assert.equal(CODEX_PREFERRED_VERSION, CURRENT_CODEX_RUNTIME_CONTRACT.sdkVersion);
+  assert.equal(CODEX_MINIMUM_SUPPORTED_VERSION, CURRENT_CODEX_RUNTIME_CONTRACT.sdkVersion);
+  assert.equal(codexVersionPolicy({ available: true, version: CURRENT_CODEX_RUNTIME_CONTRACT.sdkVersion, source: 'fixture' }).status, 'ok');
+  assert.equal(codexVersionPolicy({ available: true, version: '999.0.0', source: 'future-fixture' }).status, 'ok');
   const older = codexVersionPolicy({ available: true, version: '0.144.0', source: 'fixture' });
   assert.equal(older.ok, false);
   assert.equal(older.status, 'blocked_below_minimum_supported');
@@ -24,7 +26,7 @@ test('Codex version policy accepts only the package-tracked current release', ()
   assert.equal(belowMinimum.status, 'blocked_below_minimum_supported');
   const explicit = codexVersionPolicy(
     { available: true, version: '0.144.0', source: 'fixture' },
-    { requiredBaseline: 'rust-v0.146.0', explicitRequire: true }
+    { requiredBaseline: CURRENT_CODEX_RUNTIME_CONTRACT.targetTag, explicitRequire: true }
   );
   assert.equal(explicit.ok, false);
   assert.equal(explicit.status, 'blocked_below_required_baseline');

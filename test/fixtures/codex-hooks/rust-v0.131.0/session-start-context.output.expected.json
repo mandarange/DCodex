@@ -1,7 +1,0 @@
-{
-  "continue": true,
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "SKS trust kernel active"
-  }
-}

@@ -7,7 +7,7 @@ export const RELEASE_GATE_CONTRACT_IDS: readonly string[] = Object.freeze([
   'codex:current:app-server-v2',
   'codex:current:binary-identity',
   'codex:current:capability',
-  'codex:current:manifest',
+  'codex:current:dependency-graph',
   'codex:current:policy',
   'codex:current:thread-store',
   'commands:current-surface-only',

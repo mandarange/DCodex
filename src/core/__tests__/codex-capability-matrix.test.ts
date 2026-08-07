@@ -4,7 +4,7 @@ import {
   assertNarutoMultiAgentV2Capability,
   buildCodexCapabilityMatrix
 } from '../codex-compat/codex-capability-matrix.js'
-import { CURRENT_CODEX_RELEASE_MANIFEST } from '../codex-compat/codex-release-manifest.js'
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../codex-compat/codex-runtime-contract.js'
 
 test('capability matrix prefers live multi_agent_v2 probes over hard version locks', () => {
   const withHelp = buildCodexCapabilityMatrix({
@@ -27,7 +27,7 @@ test('capability matrix prefers live multi_agent_v2 probes over hard version loc
   assert.ok(blocked.guidance.some((line) => /sks codex update|Update Codex CLI/i.test(line)))
 
   const preferredFloor = buildCodexCapabilityMatrix({
-    version: CURRENT_CODEX_RELEASE_MANIFEST.narutoCapabilityFloorVersion,
+    version: CURRENT_CODEX_RUNTIME_CONTRACT.narutoCapabilityFloorVersion,
     helpText: ''
   })
   assert.equal(preferredFloor.capabilities.multi_agent_v2.available, true)
@@ -38,11 +38,13 @@ test('capability matrix prefers live multi_agent_v2 probes over hard version loc
   assert.match(withHelp.warnings.join('\n'), /below preferred/)
 })
 
-test('package tracks the current Codex release as its only supported floor', () => {
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.preferredCliVersion, '0.146.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion, '0.146.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.minimumSupportedVersion, '0.146.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.narutoCapabilityFloorVersion, '0.146.0')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.featurePolicies.multiAgentV2, 'delegate')
-  assert.equal(CURRENT_CODEX_RELEASE_MANIFEST.featurePolicies.mcpStartupToolTimeouts, 'wrap')
+test('package derives the tested floor dynamically and leaves newer runtimes capability-driven', () => {
+  assert.equal(CURRENT_CODEX_RUNTIME_CONTRACT.preferredCliVersion, CURRENT_CODEX_RUNTIME_CONTRACT.sdkVersion)
+  assert.equal(CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion, CURRENT_CODEX_RUNTIME_CONTRACT.sdkVersion)
+  assert.equal(CURRENT_CODEX_RUNTIME_CONTRACT.minimumSupportedVersion, CURRENT_CODEX_RUNTIME_CONTRACT.sdkVersion)
+  assert.equal(CURRENT_CODEX_RUNTIME_CONTRACT.narutoCapabilityFloorVersion, CURRENT_CODEX_RUNTIME_CONTRACT.sdkVersion)
+  assert.equal(CURRENT_CODEX_RUNTIME_CONTRACT.dependencySource, 'package.json#dependencies.@openai/codex-sdk')
+  assert.equal(CURRENT_CODEX_RUNTIME_CONTRACT.featurePolicies.multiAgentV2, 'delegate')
+  assert.equal(CURRENT_CODEX_RUNTIME_CONTRACT.featurePolicies.mcpStartupToolTimeouts, 'wrap')
+  assert.equal(CURRENT_CODEX_RUNTIME_CONTRACT.featurePolicies.mcpPaginatedDiscovery, 'wrap')
 })

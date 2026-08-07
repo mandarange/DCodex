@@ -94,7 +94,9 @@ test('setup binds whichever BotFather bot getMe verifies and preserves actionabl
   process.exitCode = undefined;
   try {
     let boundBotId: number | null = null;
-    const selected = await telegramCommand(['setup', '--token-stdin', '--json'], {
+    const selected = await telegramCommand([
+      'setup', '--token-stdin', '--expected-bot-username', '@USER_SELECTED_BOT', '--json'
+    ], {
       environment: {},
       readTokenStdin: async () => SYNTHETIC_TOKEN,
       verifyToken: async () => ({
@@ -124,6 +126,64 @@ test('setup binds whichever BotFather bot getMe verifies and preserves actionabl
     assert.equal(selected.token_stored, true);
     assert.equal(boundBotId, 8_765_432_109);
 
+    let invalidUsernameReads = 0;
+    process.exitCode = undefined;
+    const invalidUsername = await telegramCommand([
+      'setup', '--token-stdin', '--expected-bot-username', 'bad name', '--json'
+    ], {
+      environment: {},
+      readTokenStdin: async () => { invalidUsernameReads += 1; return SYNTHETIC_TOKEN; }
+    }) as { schema: string; ok: boolean; error: string; failure_stage: string; token_stored: boolean };
+    assert.deepEqual(invalidUsername, {
+      schema: 'sks.telegram-setup-command.v1',
+      ok: false,
+      error: 'telegram_expected_bot_username_invalid',
+      token_stored: false,
+      failure_stage: 'getme'
+    });
+    assert.equal(invalidUsernameReads, 0);
+
+    let mismatchDownstreamCalls = 0;
+    process.exitCode = undefined;
+    const mismatch = await telegramCommand([
+      'setup', '--token-stdin', '--expected-bot-username', 'intended_bot', '--json'
+    ], {
+      environment: {},
+      readTokenStdin: async () => SYNTHETIC_TOKEN,
+      verifyToken: async () => ({
+        id: 9_999,
+        is_bot: true,
+        first_name: 'Different Bot',
+        username: 'different_bot'
+      }),
+      inspectWebhook: async () => { mismatchDownstreamCalls += 1; return { url: 'https://example.test/hook' }; },
+      preflightTokenStorage: async () => { mismatchDownstreamCalls += 1; },
+      removeWebhook: async () => { mismatchDownstreamCalls += 1; },
+      bindBotIdentity: async (botId) => {
+        mismatchDownstreamCalls += 1;
+        return { bot_id: botId, previous_bot_id: null, rotated: false, state_reset: false };
+      },
+      storeToken: async () => { mismatchDownstreamCalls += 1; }
+    }) as {
+      schema: string;
+      ok: boolean;
+      error: string;
+      failure_stage: string;
+      token_stored: boolean;
+      expected_bot_username: string;
+      bot_username: string | null;
+    };
+    assert.deepEqual(mismatch, {
+      schema: 'sks.telegram-setup-command.v1',
+      ok: false,
+      error: 'telegram_bot_username_mismatch',
+      failure_stage: 'getme',
+      token_stored: false,
+      expected_bot_username: 'intended_bot',
+      bot_username: 'different_bot'
+    });
+    assert.equal(mismatchDownstreamCalls, 0);
+
     process.exitCode = undefined;
     const rejected = await telegramCommand(['setup', '--token-stdin', '--json'], {
       environment: {},
@@ -144,7 +204,7 @@ test('setup binds whichever BotFather bot getMe verifies and preserves actionabl
       failure_stage: 'getme'
     });
     assert.equal(process.exitCode, 1);
-    assert.equal(JSON.stringify({ selected, rejected, logs }).includes(SYNTHETIC_TOKEN), false);
+    assert.equal(JSON.stringify({ selected, invalidUsername, mismatch, rejected, logs }).includes(SYNTHETIC_TOKEN), false);
   } finally {
     console.log = priorLog;
     process.exitCode = priorExitCode;
@@ -199,11 +259,81 @@ test('setup rejects webhook data loss and redacts failed removal before storing 
         throw new Error(`Conflict at /bot${SYNTHETIC_TOKEN}/deleteWebhook token=${SYNTHETIC_TOKEN}`);
       },
       storeToken: async () => { storeCalls += 1; }
-    }) as { ok: boolean; error: string };
+    }) as { ok: boolean; error: string; failure_stage: string };
     assert.equal(failedRemoval.ok, false);
     assert.match(failedRemoval.error, /^telegram_webhook_remove_failed:/);
+    assert.equal(failedRemoval.failure_stage, 'webhook');
     assert.equal(storeCalls, 0);
     assert.equal(JSON.stringify({ dangerous, consentRequired, failedRemoval, logs }).includes(SYNTHETIC_TOKEN), false);
+  } finally {
+    console.log = priorLog;
+    process.exitCode = priorExitCode;
+  }
+});
+
+test('setup returns stable secret-free stages for post-identity failures', async () => {
+  const priorExitCode = process.exitCode;
+  const priorLog = console.log;
+  const logs: string[] = [];
+  console.log = (...parts: unknown[]) => { logs.push(parts.map(String).join(' ')); };
+  process.exitCode = undefined;
+  try {
+    const identity = { id: 77, is_bot: true, first_name: 'Fixture' };
+    const webhook = await telegramCommand(['setup', '--token-stdin', '--json'], {
+      environment: {},
+      readTokenStdin: async () => SYNTHETIC_TOKEN,
+      verifyToken: async () => identity,
+      inspectWebhook: async () => { throw new Error('fetch failed'); }
+    }) as { ok: boolean; error: string; failure_stage: string; token_stored: boolean };
+    assert.deepEqual(webhook, {
+      schema: 'sks.telegram-setup-command.v1',
+      ok: false,
+      error: 'telegram_webhook_inspection_network_failed',
+      token_stored: false,
+      failure_stage: 'webhook'
+    });
+
+    let storageDownstreamCalls = 0;
+    const storage = await telegramCommand(['setup', '--token-stdin', '--json'], {
+      environment: {},
+      readTokenStdin: async () => SYNTHETIC_TOKEN,
+      verifyToken: async () => identity,
+      inspectWebhook: async () => ({ url: '' }),
+      preflightTokenStorage: async () => { throw new Error('permission detail'); },
+      bindBotIdentity: async () => {
+        storageDownstreamCalls += 1;
+        return { bot_id: 77, previous_bot_id: null, rotated: true, state_reset: true };
+      },
+      storeToken: async () => { storageDownstreamCalls += 1; }
+    }) as { ok: boolean; error: string; failure_stage: string; token_stored: boolean };
+    assert.deepEqual(storage, {
+      schema: 'sks.telegram-setup-command.v1',
+      ok: false,
+      error: 'telegram_token_storage_preflight_failed',
+      token_stored: false,
+      failure_stage: 'storage'
+    });
+    assert.equal(storageDownstreamCalls, 0);
+
+    let stateStoreCalls = 0;
+    const state = await telegramCommand(['setup', '--token-stdin', '--json'], {
+      environment: {},
+      readTokenStdin: async () => SYNTHETIC_TOKEN,
+      verifyToken: async () => identity,
+      inspectWebhook: async () => ({ url: '' }),
+      preflightTokenStorage: async () => undefined,
+      bindBotIdentity: async () => { throw new Error('state detail'); },
+      storeToken: async () => { stateStoreCalls += 1; }
+    }) as { ok: boolean; error: string; failure_stage: string; token_stored: boolean };
+    assert.deepEqual(state, {
+      schema: 'sks.telegram-setup-command.v1',
+      ok: false,
+      error: 'telegram_bot_state_bind_failed',
+      token_stored: false,
+      failure_stage: 'state'
+    });
+    assert.equal(stateStoreCalls, 0);
+    assert.equal(JSON.stringify({ webhook, storage, state, logs }).includes(SYNTHETIC_TOKEN), false);
   } finally {
     console.log = priorLog;
     process.exitCode = priorExitCode;
@@ -218,12 +348,14 @@ test('setup preflights storage before webhook mutation and returns secret-free p
   console.log = (...parts: unknown[]) => { logs.push(parts.map(String).join(' ')); };
   process.exitCode = undefined;
   try {
-    const result = await telegramCommand(['setup', '--token-stdin', '--remove-webhook', '--json'], {
+    const result = await telegramCommand([
+      'setup', '--token-stdin', '--expected-bot-username', '@fixture_bot', '--remove-webhook', '--json'
+    ], {
       environment: {},
       readTokenStdin: async () => { calls.push('read'); return SYNTHETIC_TOKEN; },
       verifyToken: async () => {
         calls.push('getMe');
-        return { id: 77, is_bot: true, first_name: 'Fixture' };
+        return { id: 77, is_bot: true, first_name: 'Fixture', username: 'fixture_bot' };
       },
       inspectWebhook: async () => {
         calls.push('getWebhookInfo');
@@ -250,6 +382,7 @@ test('setup preflights storage before webhook mutation and returns secret-free p
       webhook_removed: boolean;
       pending_updates_dropped: boolean;
       bot_id: number;
+      expected_bot_username: string;
       bot_rotated: boolean;
       bot_state_reset: boolean;
       recovery: { action: string; command: string; note: string };
@@ -268,11 +401,12 @@ test('setup preflights storage before webhook mutation and returns secret-free p
     assert.equal(result.webhook_removed, true);
     assert.equal(result.pending_updates_dropped, false);
     assert.equal(result.bot_id, 77);
+    assert.equal(result.expected_bot_username, 'fixture_bot');
     assert.equal(result.bot_rotated, true);
     assert.equal(result.bot_state_reset, true);
     assert.deepEqual(result.recovery, {
       action: 'rerun_secure_setup',
-      command: 'sks telegram setup --token-stdin',
+      command: 'sks telegram setup --token-stdin --expected-bot-username fixture_bot',
       note: 'The token was not printed or stored. Supply it again through non-TTY standard input.'
     });
     assert.equal(process.exitCode, 1);

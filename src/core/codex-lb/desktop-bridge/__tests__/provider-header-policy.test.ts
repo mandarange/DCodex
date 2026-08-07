@@ -16,7 +16,7 @@ const inbound = {
   'x-codex-window-id': 'thread-1:0', 'x-codex-turn-metadata': JSON.stringify({
     installation_id: 'install-1', thread_id: 'thread-1', session_id: 'thread-1', sandbox: 'seatbelt',
   }),
-  originator: 'codex_cli_rs', 'user-agent': 'codex_cli_rs/0.146.0',
+  originator: 'codex_cli_rs', 'user-agent': 'codex_cli_rs/9.9.9',
   'http-referer': 'https://client.example', 'x-title': 'Desktop',
 };
 

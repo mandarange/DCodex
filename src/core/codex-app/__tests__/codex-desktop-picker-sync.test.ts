@@ -12,6 +12,7 @@ import {
   opencodexDesignBBlocksRouterActivation
 } from '../codex-desktop-routing-ownership.js'
 import { stampRoleModelCatalogPriorities } from '../role-model-catalog-priority.js'
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../../codex-compat/codex-runtime-contract.js'
 
 test('invalidateCodexModelsCache merges catalog rows into existing cache by slug', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-models-cache-'))
@@ -21,7 +22,7 @@ test('invalidateCodexModelsCache merges catalog rows into existing cache by slug
   const cachePath = path.join(codexHome, 'models_cache.json')
   await fs.writeFile(cachePath, JSON.stringify({
     fetched_at: '2026-07-23T21:57:52.157964Z',
-    client_version: '0.146.0',
+    client_version: '9.9.9',
     models: [{ slug: 'gpt-5.6-sol', visibility: 'list', supported_in_api: true, priority: 1 }]
   }, null, 2))
   const catalogPath = path.join(codexHome, 'sks-openrouter-catalog.json')
@@ -37,7 +38,7 @@ test('invalidateCodexModelsCache merges catalog rows into existing cache by slug
   assert.equal(result.status, 'seeded_from_catalog')
   const rewritten = JSON.parse(await fs.readFile(cachePath, 'utf8'))
   assert.equal(rewritten.fetched_at, CODEX_MODELS_CACHE_STALE_FETCHED_AT)
-  assert.equal(rewritten.client_version, '0.146.0')
+  assert.equal(rewritten.client_version, '9.9.9')
   const slugs = rewritten.models.map((row: { slug: string }) => row.slug).sort()
   assert.deepEqual(slugs, ['gpt-5.6-sol', 'openrouter/new-model'])
 })
@@ -50,7 +51,7 @@ test('invalidateCodexModelsCache replace mode still overwrites models when reque
   const cachePath = path.join(codexHome, 'models_cache.json')
   await fs.writeFile(cachePath, JSON.stringify({
     fetched_at: '2026-07-23T21:57:52.157964Z',
-    client_version: '0.146.0',
+    client_version: '9.9.9',
     models: [{ slug: 'openai/gpt-test', visibility: 'list', supported_in_api: true }]
   }, null, 2))
   const catalogPath = path.join(codexHome, 'sks-openrouter-catalog.json')
@@ -65,6 +66,23 @@ test('invalidateCodexModelsCache replace mode still overwrites models when reque
   const rewritten = JSON.parse(await fs.readFile(cachePath, 'utf8'))
   assert.equal(rewritten.models.length, 1)
   assert.equal(rewritten.models[0].slug, 'openrouter/new-model')
+})
+
+test('invalidateCodexModelsCache derives a missing client version from package.json', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-models-cache-version-'))
+  const codexHome = path.join(home, '.codex')
+  const env = { ...process.env, HOME: home, CODEX_HOME: codexHome }
+  await fs.mkdir(codexHome, { recursive: true })
+  await fs.writeFile(path.join(codexHome, 'models_cache.json'), JSON.stringify({
+    fetched_at: '2026-07-23T21:57:52.157964Z',
+    client_version: '0.0.0',
+    models: [{ slug: 'gpt-test' }]
+  }))
+
+  const result = await invalidateCodexModelsCache({ home, env })
+  assert.equal(result.ok, true)
+  const rewritten = JSON.parse(await fs.readFile(path.join(codexHome, 'models_cache.json'), 'utf8'))
+  assert.equal(rewritten.client_version, CURRENT_CODEX_RUNTIME_CONTRACT.sdkVersion)
 })
 
 test('classifyCodexDesktopRouting detects OpenCodex Design B and blocks router unless forced', () => {

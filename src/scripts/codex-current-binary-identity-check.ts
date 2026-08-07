@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { assertGate, emitGate } from './gate-lib.js';
-import { CURRENT_CODEX_RELEASE_MANIFEST } from '../core/codex-compat/codex-release-manifest.js';
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../core/codex-compat/codex-runtime-contract.js';
 import { compareSemverLike } from '../core/codex-compat/codex-version-policy.js';
 import { resolveOfficialCodexPackageRuntime } from '../core/codex-runtime/resolve-codex-runtime.js';
 
@@ -8,8 +8,8 @@ const resolved = await resolveOfficialCodexPackageRuntime({ requestedBy: 'codex-
 assertGate(resolved.ok && resolved.identity !== null, 'Official Codex runtime identity must resolve', resolved);
 const identity = resolved.identity!;
 assertGate(
-  compareSemverLike(identity.version, CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion) >= 0,
-  `Codex runtime must satisfy ${CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion}`,
+  compareSemverLike(identity.version, CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion) >= 0,
+  `Codex runtime must satisfy ${CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion}`,
   identity
 );
 assertGate(identity.sha256.length === 64, 'Codex runtime identity must include SHA-256', identity);

@@ -32,7 +32,7 @@ machine-readable configuration, and the number must not be copied out into prose
 
 - `PACKAGE_VERSION` / package metadata for the package's own identity
 - machine-readable compatibility configuration (for example
-  `src/core/codex-compat/codex-release-manifest.ts`)
+  `src/core/codex-compat/codex-runtime-contract.ts`)
 - machine reason codes and status fields consumed by other programs
 - lockfiles, schema revisions, migration fixtures, vendored protocol snapshots
 - `CHANGELOG.md` and historical release ledgers, which record the past

@@ -2,6 +2,7 @@ import { performance } from 'node:perf_hooks';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { nowIso, sha256 } from '../../fsx.js';
 import { PACKAGE_VERSION } from '../../version.js';
+import { collectMcpListPages } from '../../mcp/modern-protocol.js';
 import type { MadSksSqlPlaneRuntimeProfile } from './runtime-profile.js';
 
 export interface MadSksSqlPlaneToolInventory {
@@ -77,11 +78,11 @@ export class MadSksSqlPlaneMcpExecutor {
     const started = performance.now();
     try {
       await this.connect();
-      const result = await this.client!.listTools({}, {
+      const tools = await collectMcpListPages<any>('tools', (params) => this.client!.listTools(params, {
         timeout: this.opts.timeoutMs || 10_000,
         cacheMode: 'refresh'
-      });
-      const names = (result.tools || []).map((tool: any) => String(tool?.name || '')).filter(Boolean).sort();
+      }), { requireModernResult: false });
+      const names = tools.map((tool: any) => String(tool?.name || '')).filter(Boolean).sort();
       const inventory: MadSksSqlPlaneToolInventory = {
         schema: 'sks.mad-sks-sql-plane-tool-inventory.v1',
         checked_at: nowIso(),

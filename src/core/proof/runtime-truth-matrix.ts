@@ -123,7 +123,7 @@ export async function buildRuntimeTruthMatrix(input: {
     row('goal_mode', goalMode?.ok === true ? 'proven' : 'integration_optional', ['goal-mode-applied.json'], false, goalMode, 'record official goal mode evidence'),
     row('route_blackbox', fakeReal?.subsystem_levels?.route_blackbox || (official.proof_level === 'proven' ? 'proven' : 'integration_optional'), ['subagent-evidence.json', 'naruto-gate.json', 'fake-real-proof-policy.json'], false, fakeReal, official.next_action),
     row('dynamic_scheduler', schedulerRuntime.proof_level, ['agent-scheduler-state.json'], false, schedulerRuntime.report, 'record scheduler drain evidence'),
-    row('codex_current', levelFromOk(codexCurrent, 'integration_optional'), ['codex-current-capability.json', 'config/codex-releases/rust-v0.146.0.json'], false, codexCurrent, 'run the current Codex capability release gate'),
+    row('codex_current', levelFromOk(codexCurrent, 'integration_optional'), ['codex-current-capability.json', 'package.json'], false, codexCurrent, 'run the current Codex capability release gate'),
     row('mcp_current', levelFromOk(mcpCurrent, 'integration_optional'), ['mcp-readonly-runtime-scheduler.json'], false, mcpCurrent, 'run the current MCP runtime scheduler release gate'),
     row('adhd_orchestration', levelFromOk(adhdOrchestration, 'integration_optional'), ['strategy-gate.json', 'adhd-orchestrating-gate.json'], false, adhdOrchestration, 'run `npm run strategy:adhd-orchestrating-gate`'),
     row('appshots', levelFromAppshots(appshots), ['appshots-evidence.json'], false, appshots, 'run `npm run appshots:evidence`'),

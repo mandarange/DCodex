@@ -1,14 +1,14 @@
-import { CURRENT_CODEX_RELEASE_MANIFEST } from './codex-release-manifest.js';
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from './codex-runtime-contract.js';
 
 export const CODEX_COMPAT_SCHEMA = 'sks.codex-compat.v2';
 /** Preferred / recommended latest channel (package-tracked), not an exclusive lock. */
-export const CODEX_REQUIRED_BASELINE_TAG = CURRENT_CODEX_RELEASE_MANIFEST.targetTag;
-export const CODEX_REQUIRED_VERSION = CURRENT_CODEX_RELEASE_MANIFEST.preferredCliVersion
-  || CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion;
+export const CODEX_REQUIRED_BASELINE_TAG = CURRENT_CODEX_RUNTIME_CONTRACT.targetTag;
+export const CODEX_REQUIRED_VERSION = CURRENT_CODEX_RUNTIME_CONTRACT.preferredCliVersion
+  || CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion;
 export const CODEX_PREFERRED_VERSION = CODEX_REQUIRED_VERSION;
-export const CODEX_MINIMUM_SUPPORTED_VERSION = CURRENT_CODEX_RELEASE_MANIFEST.minimumSupportedVersion;
-export const CODEX_HOOK_SCHEMA_BASELINE_TAG = CURRENT_CODEX_RELEASE_MANIFEST.targetTag;
-export const CODEX_HOOK_SCHEMA_VERSION = CURRENT_CODEX_RELEASE_MANIFEST.targetTag;
+export const CODEX_MINIMUM_SUPPORTED_VERSION = CURRENT_CODEX_RUNTIME_CONTRACT.minimumSupportedVersion;
+export const CODEX_HOOK_SCHEMA_BASELINE_TAG = 'latest';
+export const CODEX_HOOK_SCHEMA_VERSION = 'latest';
 
 const UPDATE_CTA = 'prefer latest Codex CLI via `sks codex update` or Menu Bar / SKS Center → Update Codex CLI Now';
 
@@ -41,7 +41,8 @@ export type CodexVersionPolicyStatus =
   | 'blocked_missing_required_codex';
 
 /**
- * Current-release policy: SKS supports the package-tracked Codex release only.
+ * Current-release policy: the package dependency defines the tested floor, while
+ * newer runtimes remain eligible when live capability probes pass.
  * Missing Codex remains optional for routes that do not invoke it, but an
  * installed older runtime is rejected instead of entering a compatibility path.
  */

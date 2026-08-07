@@ -1,6 +1,6 @@
 # Codex CLI Compatibility
 
-SKS compatibility SSOT is always the **current latest stable** Codex host. Capability probes measure what that host can do. This package’s release pins and schema paths are **measured artifacts for the current package**, not a permanent product SSOT version string to copy into marketing or user docs. The current measured pin for this package is Codex `rust-v0.146.0` / `0.146.0` (`minimumSupportedVersion` and preferred channel under `config/codex-releases/rust-v0.146.0.json`, App Server schemas under `schemas/codex/app-server-0.146`).
+SKS compatibility follows the **current stable** Codex dependency graph declared in `package.json`, then measures the resolved host at runtime. A release number is a dependency input, never a permanent product SSOT or a branch in application logic. App Server compatibility evidence is runtime-generated from `codex app-server generate-json-schema`; the package does not ship a second, version-named schema tree.
 
 Updating SKS converges managed configuration, skills, MCP metadata, hooks, and release proof to the current measured contract instead of preserving historical Codex compatibility matrices. Hook outputs are validated against the vendored OpenAI Codex `latest` generated schemas plus the stricter SKS zero-warning strict subset. The current hook snapshot has 10 events and 20 schema files, including `SubagentStart` and `SubagentStop`.
 
@@ -31,20 +31,20 @@ sks codex doctor --json
 sks codex schema --json
 ```
 
-Version detection checks `codex --version`, `codex exec --help`, `codex exec resume --help`, `codex --help`, installed `@openai/codex`, Homebrew cask metadata, and finally the vendored snapshot metadata. A missing or older live Codex binary is not accepted as a compatible runtime; SKS surfaces the update action (induce/check/fail). Host upgrade execution remains the user’s or Codex’s responsibility. Release hook validation uses the vendored snapshot, not the local binary.
+Version detection checks `codex --version`, `codex exec --help`, `codex exec resume --help`, `codex --help`, installed `@openai/codex`, Homebrew cask metadata, and finally the vendored hook snapshot metadata. A missing or older live Codex binary is not accepted as a compatible runtime; a newer host is accepted only after its capabilities are probed. SKS surfaces the update action (induce/check/fail). Host upgrade execution remains the user’s or Codex’s responsibility. Release hook validation uses the vendored snapshot, while App Server protocol validation uses the resolved runtime.
 
 ## Prefer-Latest Policy
 
-- **Preferred channel artifact**: the active file under `config/codex-releases/` tracks the latest Codex this SKS package has proven against (measured pin for release proof).
+- **Preferred channel artifact**: the exact `@openai/codex-sdk` dependency in `package.json` selects the tested graph; the lockfile proves the SDK and CLI resolutions agree.
 - **Capability matrix**: features such as `multi_agent_v2`, `agents.max_concurrent_threads_per_session`, thread-list search, MCP startup/tool timeouts, and GPT-5.6 Terra/Luna/Sol routing are probed or wrapped; missing capabilities fail that route with `sks codex update` / Menu Bar **Update Codex CLI Now** guidance.
 - **Update inducement**: SKS Menu Bar and Control Center surface Codex CLI update status and actions (`sks update status`, `sks codex update`).
 - Historical compatibility matrices and their release gates are not part of the active product or release surface.
 
 ## Current Measured Package Contract
 
-- The active preferred-channel manifest under `config/codex-releases/` must agree with the SDK/CLI dependency graph used for package release proof.
+- `package.json` and `package-lock.json` must agree on one SDK/CLI dependency graph. A version-named release manifest or App Server schema directory is rejected as duplicate truth.
 - Naruto enables stable opt-in `features.multi_agent_v2` when the host exposes it, with unified `[agents]` concurrency and default subagent model/reasoning settings. SKS wraps Codex official multi-agent only.
-- Binary identity, App Server v2 schema, thread-store behavior, and runtime policy are separate release gates; a version string alone is not sufficient evidence.
+- Binary identity, runtime-generated App Server v2 schema, thread-store behavior, and runtime policy are separate release gates; a version string alone is not sufficient evidence.
 - Official subagent lifecycle uses `SubagentStart` and `SubagentStop`, but completion additionally requires a trustworthy structured parent outcome for every thread.
 - Missing or malformed tool-output correlation fails closed instead of being treated as a successful continuation.
 - Older runtime hosts and historical compatibility reports do not authorize or extend the current release contract. Prerelease or unknown newer fields are also not automatic release evidence.
@@ -101,4 +101,4 @@ npm run release:check:affected
 npm run release:check:confidence
 ```
 
-The release DAG owns the `codex:current:*` manifest, binary-identity, policy, App Server v2, thread-store, and capability gates. Hook warning count must be `0`.
+The release DAG owns the `codex:current:*` dependency-graph, binary-identity, policy, App Server v2, thread-store, and capability gates. Hook warning count must be `0`.

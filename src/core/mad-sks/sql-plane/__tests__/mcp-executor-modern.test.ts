@@ -39,6 +39,24 @@ test('SQL-plane executor uses MCP v2 auto negotiation and the modern stateless H
         cacheScope: 'private',
         _meta: serverMeta
       };
+    } else if (message.method === 'tools/list' && params.cursor === 'page-2') {
+      result = {
+        resultType: 'complete',
+        tools: [
+          {
+            name: 'apply_migration',
+            description: 'Apply migration',
+            inputSchema: {
+              type: 'object',
+              properties: { name: { type: 'string' }, query: { type: 'string' } },
+              required: ['name', 'query']
+            }
+          }
+        ],
+        ttlMs: 1_000,
+        cacheScope: 'private',
+        _meta: serverMeta
+      };
     } else if (message.method === 'tools/list') {
       result = {
         resultType: 'complete',
@@ -53,17 +71,9 @@ test('SQL-plane executor uses MCP v2 auto negotiation and the modern stateless H
               },
               required: ['query']
             }
-          },
-          {
-            name: 'apply_migration',
-            description: 'Apply migration',
-            inputSchema: {
-              type: 'object',
-              properties: { name: { type: 'string' }, query: { type: 'string' } },
-              required: ['name', 'query']
-            }
           }
         ],
+        nextCursor: 'page-2',
         ttlMs: 1_000,
         cacheScope: 'private',
         _meta: serverMeta
@@ -111,8 +121,10 @@ test('SQL-plane executor uses MCP v2 auto negotiation and the modern stateless H
   assert.deepEqual(requests.map((entry) => entry.method), [
     'server/discover',
     'tools/list',
+    'tools/list',
     'tools/call'
   ]);
+  assert.equal(requests.filter((entry) => entry.method === 'tools/list')[1]?.params.cursor, 'page-2');
   for (const entry of requests) {
     assert.equal(entry.headers.authorization, 'Bearer fixture-token');
     assert.equal(entry.headers['mcp-protocol-version'], MCP_PROTOCOL_VERSION);

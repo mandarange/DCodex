@@ -1,9 +1,9 @@
 import { runProcess } from '../fsx.js';
 import {
-  CURRENT_CODEX_RELEASE_MANIFEST,
+  CURRENT_CODEX_RUNTIME_CONTRACT,
   NARUTO_REQUIRED_CODEX_VERSION,
   type CodexFeaturePolicy
-} from './codex-release-manifest.js';
+} from './codex-runtime-contract.js';
 import { compareSemverLike, parseCodexVersionText } from './codex-version-policy.js';
 
 export const CODEX_CAPABILITY_MATRIX_SCHEMA = 'sks.codex-capability-matrix.v1' as const;
@@ -42,11 +42,11 @@ export interface CodexCapabilityMatrix {
 const UPDATE_CTA = 'Update Codex CLI to the preferred latest: `sks codex update` or Menu Bar / SKS Center → Update Codex CLI Now.';
 
 export function preferredCodexCliVersion(): string {
-  return CURRENT_CODEX_RELEASE_MANIFEST.preferredCliVersion || CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion;
+  return CURRENT_CODEX_RUNTIME_CONTRACT.preferredCliVersion || CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion;
 }
 
 export function softMinimumCodexCliVersion(): string {
-  return CURRENT_CODEX_RELEASE_MANIFEST.minimumSupportedVersion;
+  return CURRENT_CODEX_RUNTIME_CONTRACT.minimumSupportedVersion;
 }
 
 export function narutoCodexFloorVersion(): string {
@@ -67,7 +67,7 @@ export function buildCodexCapabilityMatrix(input: {
   const help = String(input.helpText || '');
   const config = String(input.configText || '');
   const schema = String(input.schemaText || '');
-  const policies = CURRENT_CODEX_RELEASE_MANIFEST.featurePolicies;
+  const policies = CURRENT_CODEX_RUNTIME_CONTRACT.featurePolicies;
   const warnings: string[] = [];
 
   if (detected && compareSemverLike(detected, preferredCodexCliVersion()) < 0) {
@@ -194,8 +194,8 @@ function resolveMultiAgentV2(input: {
   config: string;
   schema: string;
 }): CodexCapabilityState {
-  const policy = CURRENT_CODEX_RELEASE_MANIFEST.featurePolicies.multiAgentV2
-    || CURRENT_CODEX_RELEASE_MANIFEST.featurePolicies.multiAgentMode
+  const policy = CURRENT_CODEX_RUNTIME_CONTRACT.featurePolicies.multiAgentV2
+    || CURRENT_CODEX_RUNTIME_CONTRACT.featurePolicies.multiAgentMode
     || 'delegate';
   const evidence: string[] = [];
   const helpHit = /\bmulti_agent_v2\b/.test(input.help);
@@ -245,7 +245,7 @@ function resolveAgentsConcurrency(input: {
   config: string;
   multiAgentV2: boolean;
 }): CodexCapabilityState {
-  const policy = CURRENT_CODEX_RELEASE_MANIFEST.featurePolicies.agentsMaxConcurrentThreads || 'delegate';
+  const policy = CURRENT_CODEX_RUNTIME_CONTRACT.featurePolicies.agentsMaxConcurrentThreads || 'delegate';
   const hit = /max_concurrent_threads_per_session/.test(input.help)
     || /max_concurrent_threads_per_session/.test(input.config);
   const available = hit || input.multiAgentV2;

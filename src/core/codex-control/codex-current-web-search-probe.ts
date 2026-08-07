@@ -23,7 +23,7 @@ export async function runCodexCurrentCoreWebSearchRealProbe(input: {
   if (!codexBin) return skippedCodexCurrentCoreProbe('codex_cli_missing')
   const tempDir = path.join(input.root, '.sneakoscope', 'tmp', 'codex-current-core-real-probes', `web-search-${Date.now()}`)
   await ensureDir(tempDir)
-  await writeTextAtomic(path.join(tempDir, 'README.md'), 'Temporary Current Codex 0.146.0 web-search real probe workspace.\n')
+  await writeTextAtomic(path.join(tempDir, 'README.md'), 'Temporary current Codex web-search real probe workspace.\n')
   const outputFile = path.join(tempDir, 'last-message.txt')
   const prompt = 'In code mode, use standalone web search to find the title of https://example.com. Return JSON {"used_web_search":true,"answer":"...","sources":[...]}.'
   const args = buildCodexExecArgs({ root: tempDir, prompt, outputFile, json: true, extraArgs: ['-c', 'mcp_servers={}'] })

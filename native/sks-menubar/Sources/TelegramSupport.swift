@@ -146,6 +146,7 @@ struct TelegramCenterSetupResponse: Decodable {
     let getme_verified: Bool?
     let token_stored: Bool?
     let error: String?
+    let failure_stage: String?
     let partial_success: Bool?
     let token_source: String?
     let storage_attempted: Bool?
@@ -154,6 +155,7 @@ struct TelegramCenterSetupResponse: Decodable {
     let bot_state_reset: Bool?
     let bot_id: Int64?
     let bot_username: String?
+    let expected_bot_username: String?
     let operator_action: String?
     let recovery: Recovery?
 }

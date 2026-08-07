@@ -10,6 +10,7 @@ import { MCP_HEALTH_SCHEMA, type McpHealthResultV1, type McpScope, type McpWrita
 import { PACKAGE_VERSION } from '../version.js';
 import {
   MCP_PROTOCOL_VERSION,
+  collectMcpListPages,
   isRecognizedModernError,
   modernHttpHeaders,
   modernMcpRequest,
@@ -119,11 +120,13 @@ async function probeStdio(
       return result(name, scope, 'protocol_error', null, null, null, null, 'mcp_protocol_version_unsupported', options);
     }
     const instructions = typeof discoverResult.instructions === 'string';
-    channel.send(modernMcpRequest(2, 'tools/list', {}, { clientInfo: HEALTH_CLIENT_INFO }));
-    const tools = await channel.wait(2, timeoutMs(raw.tool_timeout_sec, 30));
-    const toolsResult = isRecord(tools) && isRecord(tools.result) ? requireModernCompleteResult(tools.result) : null;
-    const list = toolsResult && Array.isArray(toolsResult.tools) ? toolsResult.tools : null;
-    if (!list) return result(name, scope, 'protocol_error', MCP_PROTOCOL_VERSION, null, instructions, null, 'mcp_tools_list_invalid', options);
+    const list = await collectMcpListPages('tools', async (params, pageIndex) => {
+      const id = 2 + pageIndex;
+      channel.send(modernMcpRequest(id, 'tools/list', params, { clientInfo: HEALTH_CLIENT_INFO }));
+      const response = await channel.wait(id, timeoutMs(raw.tool_timeout_sec, 30));
+      if (!isRecord(response) || !isRecord(response.result)) throw new Error('mcp_tools_list_invalid');
+      return response.result;
+    });
     return result(name, scope, 'healthy', MCP_PROTOCOL_VERSION, list.length, instructions, null, null, options, toolNames(list));
   } catch (error) {
     const message = redactMcpError(error);
@@ -203,10 +206,13 @@ async function probeLegacyStdio(
   const protocol = typeof init.result.protocolVersion === 'string' ? init.result.protocolVersion : null;
   const instructions = typeof init.result.instructions === 'string';
   channel.send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
-  channel.send({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} });
-  const tools = await channel.wait(3, timeoutMs(raw.tool_timeout_sec, 30));
-  const list = isRecord(tools) && isRecord(tools.result) && Array.isArray(tools.result.tools) ? tools.result.tools : null;
-  if (!list) return result(name, scope, 'protocol_error', protocol, null, instructions, null, 'mcp_tools_list_invalid', options);
+  const list = await collectMcpListPages('tools', async (params, pageIndex) => {
+    const id = 3 + pageIndex;
+    channel.send({ jsonrpc: '2.0', id, method: 'tools/list', params });
+    const response = await channel.wait(id, timeoutMs(raw.tool_timeout_sec, 30));
+    if (!isRecord(response) || !isRecord(response.result)) throw new Error('mcp_tools_list_invalid');
+    return response.result;
+  }, { requireModernResult: false });
   return result(name, scope, 'healthy', protocol, list.length, instructions, null, null, options, toolNames(list));
 }
 
@@ -248,19 +254,27 @@ async function probeHttp(
       return result(name, scope, 'protocol_error', null, null, null, null, 'mcp_protocol_version_unsupported', options);
     }
     const instructions = typeof discoverResult.instructions === 'string';
-    const toolsMessage = modernMcpRequest(2, 'tools/list', {}, { clientInfo: HEALTH_CLIENT_INFO });
-    const tools = await postRpc(fetchImpl, url, toolsMessage, timeoutMs(raw.tool_timeout_sec, 30), bearer, {
-      modern: true, method: 'tools/list', params: {}
+    const list = await collectMcpListPages('tools', async (params, pageIndex) => {
+      const toolsMessage = modernMcpRequest(2 + pageIndex, 'tools/list', params, { clientInfo: HEALTH_CLIENT_INFO });
+      const tools = await postRpc(fetchImpl, url, toolsMessage, timeoutMs(raw.tool_timeout_sec, 30), bearer, {
+        modern: true, method: 'tools/list', params
+      });
+      if (tools.status === 401 || tools.status === 403) throw new Error('mcp_oauth_required');
+      if (!tools.ok || !isRecord(tools.json) || !isRecord(tools.json.result)) {
+        throw new Error(`mcp_http_tools_${tools.status}`);
+      }
+      return tools.json.result;
     });
-    if (tools.status === 401 || tools.status === 403) return result(name, scope, 'oauth_required', MCP_PROTOCOL_VERSION, null, instructions, null, null, options);
-    const toolsResult = tools.ok && isRecord(tools.json) && isRecord(tools.json.result)
-      ? requireModernCompleteResult(tools.json.result) : null;
-    const list = toolsResult && Array.isArray(toolsResult.tools) ? toolsResult.tools : null;
-    if (!list) return result(name, scope, 'protocol_error', MCP_PROTOCOL_VERSION, null, instructions, null, `mcp_http_tools_${tools.status}`, options);
     return result(name, scope, 'healthy', MCP_PROTOCOL_VERSION, list.length, instructions, null, null, options, toolNames(list));
   } catch (error) {
     const message = redactMcpError(error);
-    return result(name, scope, message.includes('AbortError') || message.includes('timeout') ? 'timeout' : 'startup_failed', null, null, null, null, message, options);
+    if (message === 'mcp_oauth_required') return result(name, scope, 'oauth_required', MCP_PROTOCOL_VERSION, null, null, null, null, options);
+    const status = message.includes('AbortError') || message.includes('timeout')
+      ? 'timeout'
+      : message.includes('pagination') || message.includes('mcp_result') || message.includes('mcp_list') || message.includes('mcp_http_tools')
+        ? 'protocol_error'
+        : 'startup_failed';
+    return result(name, scope, status, null, null, null, null, message, options);
   }
 }
 
@@ -282,12 +296,15 @@ async function probeLegacyHttp(
   await postRpc(fetchImpl, url, { jsonrpc: '2.0', method: 'notifications/initialized', params: {} }, timeoutMs(raw.tool_timeout_sec, 30), bearer, {
     modern: false, sessionId: init.sessionId, legacyProtocolVersion: protocol
   });
-  const tools = await postRpc(fetchImpl, url, { jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} }, timeoutMs(raw.tool_timeout_sec, 30), bearer, {
-    modern: false, sessionId: init.sessionId, legacyProtocolVersion: protocol
-  });
-  const list = tools.ok && isRecord(tools.json) && isRecord(tools.json.result) && Array.isArray(tools.json.result.tools)
-    ? tools.json.result.tools : null;
-  if (!list) return result(name, scope, 'protocol_error', protocol, null, instructions, null, `mcp_http_tools_${tools.status}`, options);
+  const list = await collectMcpListPages('tools', async (params, pageIndex) => {
+    const tools = await postRpc(fetchImpl, url, { jsonrpc: '2.0', id: 3 + pageIndex, method: 'tools/list', params }, timeoutMs(raw.tool_timeout_sec, 30), bearer, {
+      modern: false, sessionId: init.sessionId, legacyProtocolVersion: protocol
+    });
+    if (!tools.ok || !isRecord(tools.json) || !isRecord(tools.json.result)) {
+      throw new Error(`mcp_http_tools_${tools.status}`);
+    }
+    return tools.json.result;
+  }, { requireModernResult: false });
   return result(name, scope, 'healthy', protocol, list.length, instructions, null, null, options, toolNames(list));
 }
 

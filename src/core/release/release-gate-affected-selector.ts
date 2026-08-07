@@ -107,7 +107,6 @@ function isCodexCurrentFile(file: string) {
     || file.startsWith('src/core/codex-policy/')
     || file === 'src/commands/codex.ts'
     || file === 'src/cli/install-helpers.ts'
-    || file.startsWith('config/codex-releases/')
     || file.startsWith('schemas/codex-')
 }
 

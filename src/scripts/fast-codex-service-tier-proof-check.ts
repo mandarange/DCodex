@@ -30,7 +30,6 @@ fs.writeFileSync(path.join(reportDir, 'worker-process-report.json'), `${JSON.str
 const proof = await fastMode.writeFastModePropagationProof(temp, { policy: fastMode.resolveFastModePolicy({ fastMode: true }) });
 const ok = args.includes('-c')
   && args.includes('service_tier=fast')
-  && !args.includes('--full-auto')
   && !args.includes('--dangerously-bypass-approvals-and-sandbox')
   && proof.ok === true;
 

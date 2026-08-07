@@ -35,21 +35,16 @@ test('codex exec args reject unsupported mode combinations', () => {
     () => buildCodexExecArgs({ prompt: 'x', danger: true }),
     /allowDanger=true/
   );
-  assert.throws(
-    () => buildCodexExecArgs({ prompt: 'x', fullAuto: true }),
-    /allowFullAuto=true/
-  );
-  assert.throws(
-    () => buildCodexExecArgs({ prompt: 'x', fullAuto: true, danger: true, allowDanger: true, allowFullAuto: true }),
-    /cannot combine full auto/
-  );
 });
 
-test('codex exec args keep default path away from unsafe automation flags', () => {
+test('codex exec args keep the default path away from current unsafe automation flags', () => {
   const args = buildCodexExecArgs({ prompt: 'x', sandbox: 'workspace-write', serviceTier: 'fast' });
-  assert.equal(args.includes('--full-auto'), false);
   assert.equal(args.includes('--dangerously-bypass-approvals-and-sandbox'), false);
   assert.equal(args[args.indexOf('--sandbox') + 1], 'workspace-write');
+});
+
+test('removed full-auto compatibility options are absent from the builder surface', () => {
+  assert.doesNotMatch(String(buildCodexExecArgs), /fullAuto|--full-auto|allowFullAuto/);
 });
 
 test('codex exec args normalize desktop service tier aliases to SKS canonical tiers', () => {

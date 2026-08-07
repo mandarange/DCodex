@@ -50,7 +50,7 @@ export interface CanonicalTestFiles {
 
 const CURRENT_COMPILED_TESTS = new Set([
   'dist/core/__tests__/codex-capability-matrix.test.js',
-  'dist/core/__tests__/codex-release-manifest-current.test.js',
+  'dist/core/__tests__/codex-runtime-contract-current.test.js',
   'dist/core/__tests__/release-gate-hermetic-env.test.js',
   'dist/core/__tests__/update-menubar-package-local.test.js',
   'dist/core/__tests__/version-manager-current-docs.test.js',

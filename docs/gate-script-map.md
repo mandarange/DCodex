@@ -27,7 +27,7 @@ release is authorized. Current 8.1.3 classifications live in
 | `codex:current:app-server-v2` | `release` | `node ./dist/scripts/codex-current-app-server-v2-check.js` | direct |
 | `codex:current:binary-identity` | `release` | `node ./dist/scripts/codex-current-binary-identity-check.js` | direct |
 | `codex:current:capability` | `release` | `node ./dist/scripts/codex-current-capability-check.js` | direct |
-| `codex:current:manifest` | `release` | `node ./dist/scripts/codex-current-manifest-check.js` | direct |
+| `codex:current:dependency-graph` | `release` | `node ./dist/scripts/codex-current-dependency-check.js` | direct |
 | `codex:current:policy` | `release` | `node ./dist/scripts/codex-current-policy-check.js` | direct |
 | `codex:current:thread-store` | `release` | `node ./dist/scripts/codex-current-thread-store-check.js` | direct |
 | `codex:app-handoff-comprehensive` | `release` | `node ./dist/scripts/codex-app-handoff-check.js && node ./dist/scripts/codex-app-handoff-launch-check.js && node ./dist/scripts/qa-loop-app-handoff-check.js && node ./dist/scripts/qa-loop-app-handoff-capability-check.js && node ./dist/scripts/qa-loop-app-handoff-cli-check.js && node ./dist/scripts/qa-loop-app-handoff-confirmation-check.js && node ./dist/scripts/qa-loop-app-handoff-gate-lifecycle-check.js && node ./dist/scripts/qa-loop-app-handoff-launch-check.js && node ./dist/scripts/qa-loop-app-handoff-status-lifecycle-check.js` | direct |

@@ -150,20 +150,20 @@
 
 ### C1. Codex SSOT에 고정 버전 문자열을 두지 않음
 
-- **모순·모호:** `0.146.0` 같은 숫자를 문서/스키마 SSOT로 박을지.
-- **증거:** P5(c); schemas/release pins.
+- **모순·모호:** `0.x.y` 같은 숫자를 문서/스키마 SSOT로 박을지.
+- **증거:** P5(c); package dependency graph and runtime probes.
 - **Q→결정:** 항상 최신이므로 고정 버전 문자열이 애초에 없는 편이 자연스럽다 → **채택.**
-- **확정 계약:** 제품 계약의 Codex SSOT는 **“current latest stable”** 개념이다. README·제품 카피·호환 문서에 특정 `0.x.y`를 SSOT로 고정하지 않는다. 저장소 artifact(스키마 디렉터리 등)는 최신 하나만 교체 유지하며(C2), 그 디렉터리명이 일시적으로 버전을 닮더라도 제품 문장이 그 숫자를 SSOT로 선포하지 않는다.
+- **확정 계약:** 제품 계약의 Codex SSOT는 **“current latest stable”** 개념이다. README·제품 카피·호환 문서에 특정 `0.x.y`를 SSOT로 고정하지 않는다. 패키지 의존성은 빌드 입력일 뿐이며 실제 지원 여부는 런타임 capability probe로 판정한다.
 - **후속:** 고정 버전을 SSOT처럼 읽는 문서/게이트 카피 제거 또는 재작성 → `needs-code`.
 - **상태:** `decided`
 
-### C2. app-server 스키마 디렉터리 정책
+### C2. App Server 스키마 증거 정책
 
-- **모순·모호:** `schemas/codex/app-server-*` 다중 버전 공존.
+- **모순·모호:** 버전별 App Server 스키마를 저장소와 패키지에 보관할지.
 - **증거:** schemas tree; D4; C1.
-- **Q→결정:** (a) 최신 디렉터리 하나만 유지, 나머지 삭제? → **(a).**
-- **확정 계약:** `schemas/codex/app-server-*`는 **최신 하나**만 유지한다. 이전 디렉터리는 삭제한다. “직전 1개 마이그레이션용 유지”는 하지 않는다.
-- **후속:** 스키마 트리 정리 + 참조 경로 갱신 → `needs-code`.
+- **Q→결정:** (a) 정적 최신 디렉터리 유지, (b) resolved CLI에서 검증 시 생성 → **(b).**
+- **확정 계약:** 버전별 App Server 스키마 디렉터리는 저장소와 npm 패키지에 두지 않는다. 검증 시 resolved CLI의 `generate-json-schema` 결과를 임시 디렉터리에 생성하고 capability evidence로 해석한다.
+- **후속:** 정적 스키마 트리와 버전 매니페스트 제거, 런타임 생성 게이트 연결 → `done`.
 - **상태:** `decided`
 
 ### C3. package / release / Menu Bar 버전 일치

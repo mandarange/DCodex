@@ -64,5 +64,4 @@ logs/
 build/
 out/
 dist/build-manifest.json
-dist/vendor/openai-codex/rust-v0.131.0/
 dist/scripts/release-readiness-report.js

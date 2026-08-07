@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { findCodexBinary } from '../codex-adapter.js'
 import { parseCodexVersionText } from '../codex-compat/codex-version-policy.js'
-import { CURRENT_CODEX_RELEASE_MANIFEST } from '../codex-compat/codex-release-manifest.js'
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../codex-compat/codex-runtime-contract.js'
 import { runProcess } from '../fsx.js'
 import { runCodexCurrentCoreDoctorEnvRealProbe } from './codex-current-doctor-real-probe.js'
 import { runCodexCurrentCoreImageReferencedPathRealProbe } from './codex-current-image-path-real-probe.js'
@@ -28,14 +28,14 @@ export async function runCodexCurrentCoreRealProbes(input: {
   const codexBin = input.codexBin || await findCurrentCodexRealProbeBinary()
   const versionText = await readCodexVersionText(codexBin, timeoutMs)
   const parsedVersion = parseCodexVersionText(versionText)
-  const currentVersion = parsedVersion === CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion
+  const currentVersion = parsedVersion === CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion
   const requestedRaw = input.probes?.length ? input.probes : CODEX_CURRENT_CORE_REAL_PROBE_NAMES
   const unknownProbeNames = requestedRaw.filter((name) => !(CODEX_CURRENT_CORE_REAL_PROBE_NAMES as string[]).includes(name))
   const requested = [...new Set(requestedRaw.filter((name): name is CodexCurrentCoreProbeName => (CODEX_CURRENT_CORE_REAL_PROBE_NAMES as string[]).includes(name)))]
   const probes = Object.fromEntries(CODEX_CURRENT_CORE_REAL_PROBE_NAMES.map((name) => [name, skippedCodexCurrentCoreProbe('probe_not_requested')])) as Record<CodexCurrentCoreProbeName, CodexCurrentCoreSingleProbe>
   const extraBlockers: string[] = unknownProbeNames.map((name) => `unknown_real_probe:${name}`)
   if (!codexBin) extraBlockers.push('codex_cli_missing')
-  if (!currentVersion) extraBlockers.push(`codex_${CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion.replaceAll('.', '_')}_required`)
+  if (!currentVersion) extraBlockers.push(`codex_${CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion.replaceAll('.', '_')}_required`)
 
   if (!codexBin || !currentVersion) {
     for (const name of requested) {
@@ -126,7 +126,7 @@ export async function findCurrentCodexRealProbeBinary(): Promise<string | null> 
     if (!firstExisting) firstExisting = candidate
     const versionText = await readCodexVersionText(candidate, 30000)
     const parsed = parseCodexVersionText(versionText)
-    if (parsed === CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion) return candidate
+    if (parsed === CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion) return candidate
   }
   return firstExisting || await findCodexBinary()
 }

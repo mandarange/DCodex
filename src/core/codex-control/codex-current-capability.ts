@@ -1,9 +1,9 @@
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { CURRENT_CODEX_RELEASE_MANIFEST } from '../codex-compat/codex-release-manifest.js';
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../codex-compat/codex-runtime-contract.js';
 import { compareSemverLike } from '../codex-compat/codex-version-policy.js';
-import { ensureDir, nowIso, packageRoot, readJson, runProcess, sha256, writeJsonAtomic } from '../fsx.js';
+import { nowIso, packageRoot, readJson, runProcess, sha256, writeJsonAtomic } from '../fsx.js';
 import { resolveCodexRuntime, type CodexRuntimeIdentity } from '../codex-runtime/resolve-codex-runtime.js';
 
 export type CodexCurrentCertainty = 'actual' | 'discovered' | 'hermetic_fixture' | 'network_verified' | 'unverified' | 'failed';
@@ -41,8 +41,7 @@ export interface CodexCurrentCapability {
   readonly required_version: string;
   readonly runtime_identity: CodexRuntimeIdentity | null;
   readonly generated_schema_sha256: string | null;
-  readonly manifest_schema_sha256: string;
-  readonly probe_mode: 'real-schema' | 'shipped-manifest-cache' | 'hermetic-fixture' | 'blocked';
+  readonly probe_mode: 'real-schema' | 'cached-schema' | 'hermetic-fixture' | 'blocked';
   readonly feature_states: Record<CodexCurrentFeatureKey, CodexCurrentFeatureState>;
   readonly blockers: readonly string[];
   readonly warnings: readonly string[];
@@ -62,11 +61,13 @@ export async function detectCodexCurrentCapability(input: {
   if (!runtime.identity) {
     return blockedCapability('blocked', null, null, [...runtime.blockers]);
   }
-  const versionOk = compareSemverLike(runtime.identity.version, CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion) >= 0;
-  const schemaProbe = await schemaProbeForMode(root, runtime.identity.realpath, input.requireReal === true);
+  const versionOk = compareSemverLike(runtime.identity.version, CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion) >= 0;
+  const schemaProbe = await generateSchemaProbe(root, runtime.identity, {
+    allowCache: input.requireReal !== true
+  });
   const implementationRoot = packageRoot();
   const appServerClientText = await fsp.readFile(path.join(implementationRoot, 'src', 'core', 'codex-control', 'codex-app-server-v2-client.ts'), 'utf8').catch(() => '');
-  const states = featureStatesFromSchema(schemaProbe.text, schemaProbe.ok, appServerClientText);
+  const states = featureStatesFromSchema(schemaProbe.text, schemaProbe.ok, schemaProbe.mode, appServerClientText);
   const blockers = [
     ...(versionOk ? [] : ['codex_current_release_required']),
     ...(schemaProbe.ok ? [] : ['codex_current_schema_generation_failed']),
@@ -75,24 +76,21 @@ export async function detectCodexCurrentCapability(input: {
   const realEnough = blockers.length === 0
     && schemaProbe.mode === 'real-schema'
     && schemaProbe.sha256 !== null
-    && CURRENT_CODEX_RELEASE_MANIFEST.generatedSchemaSha256 !== 'pending-generated-schema'
-    && schemaProbe.sha256 === CURRENT_CODEX_RELEASE_MANIFEST.generatedSchemaSha256
     && Object.values(states).every((state) => state.certainty === 'actual' || state.certainty === 'discovered');
   return {
     schema: 'sks.codex-current-capability.v1',
     generated_at: nowIso(),
     ok: blockers.length === 0,
     release_authorizing: realEnough,
-    target_tag: CURRENT_CODEX_RELEASE_MANIFEST.targetTag,
-    required_version: CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion,
+    target_tag: CURRENT_CODEX_RUNTIME_CONTRACT.targetTag,
+    required_version: CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion,
     runtime_identity: runtime.identity,
     generated_schema_sha256: schemaProbe.sha256,
-    manifest_schema_sha256: CURRENT_CODEX_RELEASE_MANIFEST.generatedSchemaSha256,
     probe_mode: schemaProbe.ok ? schemaProbe.mode : 'blocked',
     feature_states: states,
     blockers,
     warnings: [
-      ...(realEnough ? [] : ['codex_current_not_release_authorizing_until_schema_hash_and_all_required_real_probes_match']),
+      ...(realEnough ? [] : ['codex_current_not_release_authorizing_until_runtime_schema_and_required_probes_pass']),
       ...(input.requireReal && blockers.length ? ['required_real_probe_blocked'] : [])
     ]
   };
@@ -116,14 +114,20 @@ export async function writeCodexCurrentCapabilityArtifacts(
   return { report, root_artifact: rootArtifact, mission_artifact: missionArtifact };
 }
 
-function featureStatesFromSchema(schemaText: string, schemaOk: boolean, appServerClientText = ''): Record<CodexCurrentFeatureKey, CodexCurrentFeatureState> {
+function featureStatesFromSchema(
+  schemaText: string,
+  schemaOk: boolean,
+  schemaMode: 'real-schema' | 'cached-schema',
+  appServerClientText = ''
+): Record<CodexCurrentFeatureKey, CodexCurrentFeatureState> {
   const lower = schemaText.toLowerCase();
+  const schemaCertainty: CodexCurrentCertainty = schemaMode === 'real-schema' ? 'actual' : 'discovered';
   const actual = (key: CodexCurrentFeatureKey, needles: string[]): CodexCurrentFeatureState => {
     const found = schemaOk && needles.every((needle) => lower.includes(needle.toLowerCase()));
     return {
       supported: found,
-      certainty: found ? 'actual' : schemaOk ? 'unverified' : 'failed',
-      evidence: found ? needles.map((needle) => `generated_schema_contains:${needle}`) : [],
+      certainty: found ? schemaCertainty : schemaOk ? 'unverified' : 'failed',
+      evidence: found ? needles.map((needle) => `${schemaMode}_contains:${needle}`) : [],
       blockers: found ? [] : [`codex_current_${key}_not_verified`]
     };
   };
@@ -136,14 +140,16 @@ function featureStatesFromSchema(schemaText: string, schemaOk: boolean, appServe
     },
     protocol_schema_generation: {
       supported: schemaOk,
-      certainty: schemaOk ? 'actual' : 'failed',
-      evidence: schemaOk ? ['codex_app_server_generate_json_schema'] : [],
+      certainty: schemaOk ? schemaCertainty : 'failed',
+      evidence: schemaOk
+        ? [schemaMode === 'real-schema' ? 'codex_app_server_generate_json_schema' : 'cached_schema_non_authorizing']
+        : [],
       blockers: schemaOk ? [] : ['codex_app_server_schema_generation_failed']
     },
     multi_agent_mode_schema: actual('multi_agent_mode_schema', ['MultiAgentMode']),
     rollout_budget_schema: actual('rollout_budget_schema', ['budgetLimited']),
     indexed_web_search_schema: actual('indexed_web_search_schema', ['indexed']),
-    current_time_read_schema: currentTimeState(lower, schemaOk, appServerClientText),
+    current_time_read_schema: currentTimeState(lower, schemaOk, schemaMode, appServerClientText),
     native_thread_list_search_schema: actual('native_thread_list_search_schema', ['thread/list', 'ThreadSearchResult', 'thread/read']),
     plugin_catalog_refresh_schema: actual('plugin_catalog_refresh_schema', ['plugin/list', 'plugin/install', 'AppListUpdatedNotification']),
     terminal_subagent_error_schema: actual('terminal_subagent_error_schema', ['subagentStart', 'subagentStop', 'error']),
@@ -153,13 +159,18 @@ function featureStatesFromSchema(schemaText: string, schemaOk: boolean, appServe
   };
 }
 
-function currentTimeState(schemaTextLower: string, schemaOk: boolean, appServerClientText: string): CodexCurrentFeatureState {
+function currentTimeState(
+  schemaTextLower: string,
+  schemaOk: boolean,
+  schemaMode: 'real-schema' | 'cached-schema',
+  appServerClientText: string
+): CodexCurrentFeatureState {
   const schemaHasCurrentTime = schemaOk && schemaTextLower.includes('currenttime') && schemaTextLower.includes('read');
   if (schemaHasCurrentTime) {
     return {
       supported: true,
-      certainty: 'actual',
-      evidence: ['generated_schema_contains:currentTime/read'],
+      certainty: schemaMode === 'real-schema' ? 'actual' : 'discovered',
+      evidence: [`${schemaMode}_contains:currentTime/read`],
       blockers: []
     };
   }
@@ -172,76 +183,57 @@ function currentTimeState(schemaTextLower: string, schemaOk: boolean, appServerC
   };
 }
 
-async function schemaProbeForMode(root: string, codexBin: string, requireReal: boolean): Promise<{ ok: boolean; text: string; sha256: string | null; mode: 'real-schema' | 'shipped-manifest-cache' }> {
-  if (!requireReal && process.env.SKS_CODEX_CURRENT_REFRESH !== '1') {
-    const shipped = await shippedSchemaProbe();
-    if (shipped.ok) return shipped;
+async function generateSchemaProbe(
+  root: string,
+  runtime: CodexRuntimeIdentity,
+  options: { readonly allowCache: boolean }
+): Promise<{ ok: boolean; text: string; sha256: string | null; mode: 'real-schema' | 'cached-schema' }> {
+  const cachePath = codexCurrentSchemaCachePath(root, runtime);
+  if (options.allowCache) {
+    const cached = await readJson<{ ok?: boolean; text?: string; sha256?: string | null } | null>(cachePath, null).catch(() => null);
+    if (cached?.ok === true && typeof cached.text === 'string' && cached.sha256) {
+      return { ok: true, text: cached.text, sha256: cached.sha256, mode: 'cached-schema' };
+    }
   }
-  return generateSchemaProbe(root, codexBin);
-}
-
-async function shippedSchemaProbe(): Promise<{ ok: boolean; text: string; sha256: string | null; mode: 'shipped-manifest-cache' }> {
-  const schemaRoot = path.join(packageRoot(), 'schemas', 'codex', 'app-server-0.146');
-  const files = await listFiles(schemaRoot).catch(() => []);
-  if (!files.length) return { ok: false, text: 'shipped schema cache missing', sha256: null, mode: 'shipped-manifest-cache' };
-  const rows = await Promise.all(files.map(async (file) => {
-    const text = await fsp.readFile(file, 'utf8');
-    return {
-      relative: path.relative(schemaRoot, file),
-      text,
-      canonicalText: canonicalSchemaContent(file, text)
-    };
-  }));
-  const joined = rows.map((row) => `${row.relative}\n${row.text}`).join('\n');
-  const canonicalJoined = rows.map((row) => `${row.relative}\n${row.canonicalText}`).join('\n');
-  return { ok: true, text: joined, sha256: sha256(canonicalJoined), mode: 'shipped-manifest-cache' };
-}
-
-async function generateSchemaProbe(root: string, codexBin: string): Promise<{ ok: boolean; text: string; sha256: string | null; mode: 'real-schema' }> {
-  const cachePath = await schemaCachePath(root, codexBin);
-  const cached = await readJson<{ ok?: boolean; text?: string; sha256?: string | null; mode?: 'real-schema' } | null>(cachePath, null).catch(() => null);
-  if (cached?.ok === true && typeof cached.text === 'string' && cached.sha256) {
-    return { ok: true, text: cached.text, sha256: cached.sha256, mode: 'real-schema' };
+  const out = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-codex-current-schema-'));
+  try {
+    const result = await runProcess(runtime.realpath, ['app-server', 'generate-json-schema', '--out', out], {
+      cwd: root,
+      timeoutMs: 60_000,
+      maxOutputBytes: 256 * 1024
+    }).catch((err: unknown) => ({
+      code: 1,
+      stdout: '',
+      stderr: err instanceof Error ? err.message : String(err),
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      truncated: false,
+      timedOut: false
+    }));
+    if (result.code !== 0) return { ok: false, text: `${result.stdout}\n${result.stderr}`, sha256: null, mode: 'real-schema' };
+    const files = await listFiles(out);
+    const rows = await Promise.all(files.map(async (file) => {
+      const text = await fsp.readFile(file, 'utf8');
+      return {
+        relative: path.relative(out, file),
+        text,
+        canonicalText: canonicalSchemaContent(file, text)
+      };
+    }));
+    const joined = rows.map((row) => `${row.relative}\n${row.text}`).join('\n');
+    const canonicalJoined = rows.map((row) => `${row.relative}\n${row.canonicalText}`).join('\n');
+    const probe = { ok: true, text: joined, sha256: sha256(canonicalJoined), mode: 'real-schema' as const };
+    await writeJsonAtomic(cachePath, probe).catch(() => undefined);
+    return probe;
+  } finally {
+    await fsp.rm(out, { recursive: true, force: true }).catch(() => {});
   }
-  const out = path.join(os.tmpdir(), `sks-codex-current-schema-${process.pid}-${Date.now()}`);
-  await ensureDir(out);
-  const result = await runProcess(codexBin, ['app-server', 'generate-json-schema', '--out', out], {
-    cwd: root,
-    timeoutMs: 60_000,
-    maxOutputBytes: 256 * 1024
-  }).catch((err: unknown) => ({
-    code: 1,
-    stdout: '',
-    stderr: err instanceof Error ? err.message : String(err),
-    stdoutBytes: 0,
-    stderrBytes: 0,
-    truncated: false,
-    timedOut: false
-  }));
-  if (result.code !== 0) return { ok: false, text: `${result.stdout}\n${result.stderr}`, sha256: null, mode: 'real-schema' };
-  const files = await listFiles(out);
-  const rows = await Promise.all(files.map(async (file) => {
-    const text = await fsp.readFile(file, 'utf8');
-    return {
-      relative: path.relative(out, file),
-      text,
-      canonicalText: canonicalSchemaContent(file, text)
-    };
-  }));
-  const joined = rows.map((row) => `${row.relative}\n${row.text}`).join('\n');
-  const canonicalJoined = rows.map((row) => `${row.relative}\n${row.canonicalText}`).join('\n');
-  await fsp.rm(out, { recursive: true, force: true }).catch(() => {});
-  const probe = { ok: true, text: joined, sha256: sha256(canonicalJoined), mode: 'real-schema' as const };
-  await writeJsonAtomic(cachePath, probe).catch(() => undefined);
-  return probe;
 }
 
-async function schemaCachePath(root: string, codexBin: string): Promise<string> {
-  const realpath = await fsp.realpath(codexBin).catch(() => codexBin);
+export function codexCurrentSchemaCachePath(root: string, runtime: CodexRuntimeIdentity): string {
   const key = sha256(JSON.stringify({
-    realpath,
-    target: CURRENT_CODEX_RELEASE_MANIFEST.targetTag,
-    manifest_schema_sha256: CURRENT_CODEX_RELEASE_MANIFEST.generatedSchemaSha256,
+    realpath: runtime.realpath,
+    binary_sha256: runtime.sha256,
     platform: process.platform,
     arch: process.arch
   }));
@@ -286,11 +278,10 @@ function blockedCapability(probeMode: 'blocked', runtime: CodexRuntimeIdentity |
     generated_at: nowIso(),
     ok: false,
     release_authorizing: false,
-    target_tag: CURRENT_CODEX_RELEASE_MANIFEST.targetTag,
-    required_version: CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion,
+    target_tag: CURRENT_CODEX_RUNTIME_CONTRACT.targetTag,
+    required_version: CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion,
     runtime_identity: runtime,
     generated_schema_sha256: schemaSha,
-    manifest_schema_sha256: CURRENT_CODEX_RELEASE_MANIFEST.generatedSchemaSha256,
     probe_mode: probeMode,
     feature_states: state,
     blockers,
@@ -310,11 +301,10 @@ function fakeCapability(): CodexCurrentCapability {
     generated_at: nowIso(),
     ok: true,
     release_authorizing: false,
-    target_tag: CURRENT_CODEX_RELEASE_MANIFEST.targetTag,
-    required_version: CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion,
+    target_tag: CURRENT_CODEX_RUNTIME_CONTRACT.targetTag,
+    required_version: CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion,
     runtime_identity: null,
     generated_schema_sha256: 'fixture',
-    manifest_schema_sha256: CURRENT_CODEX_RELEASE_MANIFEST.generatedSchemaSha256,
     probe_mode: 'hermetic-fixture',
     feature_states: state,
     blockers: [],

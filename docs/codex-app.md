@@ -78,8 +78,8 @@ trip, or a deep feature artifact. Those are release evidence items and remain
 
 ## Current Codex compatibility anchors
 
-The packaged compatibility manifest is pinned to `rust-v0.146.0` and validates
-the current App Server v2 contract before SKS interprets Desktop state. Browser
+The exact SDK dependency in `package.json` selects the tested Codex graph, and
+the resolved runtime generates the current App Server v2 contract before SKS interprets Desktop state. Browser
 evidence depends on the Codex Chrome Extension, and image generation targets
 `gpt-image-2` through the managed Desktop Bridge route. Those identifiers are
 compatibility inputs only: their presence in source or configuration is not

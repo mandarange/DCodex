@@ -25,10 +25,11 @@ const mdPath = path.join(reportDir, `release-readiness-${version}.md`);
 const gates = Array.isArray(manifest.gates) ? manifest.gates : [];
 const gateIds = new Set(gates.map((gate) => String(gate.id || '')));
 const scriptNames = Object.keys(pkg.scripts || {});
+const codexSdkVersion = String(pkg.dependencies?.['@openai/codex-sdk'] || '');
 
 const requiredGateGroups = {
   codex_current: [
-    'codex:current:manifest',
+    'codex:current:dependency-graph',
     'codex:current:binary-identity',
     'codex:current:policy',
     'codex:current:app-server-v2',
@@ -106,7 +107,7 @@ const versionTruth = {
   version_ts: versionFromText(readText('src/core/version.ts')),
   cargo: cargoVersion(readText('crates/sks-core/Cargo.toml')),
   dist_build_manifest: String(readJson('dist/build-manifest.json', {}).version || ''),
-  codex_manifest_target: String(readJson('config/codex-releases/rust-v0.146.0.json', {}).targetTag || ''),
+  codex_dependency_target: codexSdkVersion ? `rust-v${codexSdkVersion}` : '',
   codex_sdk: String(pkg.dependencies?.['@openai/codex-sdk'] || ''),
   codex_sdk_lock: String(lock.packages?.['node_modules/@openai/codex-sdk']?.version || ''),
   codex_cli_lock: String(lock.packages?.['node_modules/@openai/codex']?.version || '')
@@ -118,11 +119,12 @@ for (const [id, actual] of Object.entries({
   dist_build_manifest: versionTruth.dist_build_manifest
 })) if (actual !== version) remainingP0.push(`version_mismatch:${id}:${actual || 'missing'}`);
 for (const [id, actual] of Object.entries({
-  codex_manifest_target: versionTruth.codex_manifest_target,
   codex_sdk: versionTruth.codex_sdk,
   codex_sdk_lock: versionTruth.codex_sdk_lock,
   codex_cli_lock: versionTruth.codex_cli_lock
-})) if (!['rust-v0.146.0', '0.146.0'].includes(actual)) remainingP0.push(`codex_current_version_mismatch:${id}:${actual || 'missing'}`);
+})) if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(codexSdkVersion) || actual !== codexSdkVersion) {
+  remainingP0.push(`codex_current_dependency_mismatch:${id}:${actual || 'missing'}`);
+}
 
 const checks = {
   docs_truthfulness: runScript('dist/scripts/docs-truthfulness-check.js'),
@@ -155,7 +157,7 @@ const report = {
   scope: {
     release_version: version,
     gate: `${version} current release DAG`,
-    ok_means: `current ${version} release contract, Codex 0.146.0, native capability self-repair, Voxel TriWiki, flagship routes, and signed full-run stamp have no structural blocker`,
+    ok_means: `current ${version} release contract, package-tracked Codex ${codexSdkVersion || 'dependency'}, runtime-generated capability evidence, native capability self-repair, Voxel TriWiki, flagship routes, and signed full-run stamp have no structural blocker`,
     legacy_report_surfaces_removed: true,
     strict_readiness_mode: true
   },

@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import { nowIso, sha256, writeJsonAtomic } from './fsx.js';
 import { imageDimensions, sha256File } from './wiki-image/image-hash.js';
 import { CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_CHROME_EXTENSION_DOC_URL, CODEX_IMAGEGEN_REQUIRED_POLICY, CODEX_WEB_VERIFICATION_POLICY } from './routes.js';
-import { CURRENT_CODEX_RELEASE_MANIFEST } from './codex-compat/codex-release-manifest.js';
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from './codex-compat/codex-runtime-contract.js';
 import { detectCodexExecResumeOutputSchema } from './codex-exec-output-schema.js';
 import { buildCalloutPrompt, imagegenCapabilityBlocker } from './image-ux-review/imagegen-adapter.js';
 import { buildIssueLedgerFromGeneratedCallouts } from './image-ux-review/callout-extraction.js';
@@ -142,8 +142,8 @@ export function buildImageUxReviewPolicy(contract: any = {}) {
     max_screen_retries: 2,
     codex_compatibility: {
       schema: 'sks.codex-current-image-ux-contract.v1',
-      target_tag: CURRENT_CODEX_RELEASE_MANIFEST.targetTag,
-      required_version: CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion,
+      target_tag: CURRENT_CODEX_RUNTIME_CONTRACT.targetTag,
+      required_version: CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion,
       output_schema_preferred: true
     },
     output_schema: outputSchema,

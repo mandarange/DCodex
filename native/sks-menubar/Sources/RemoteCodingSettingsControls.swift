@@ -2,9 +2,11 @@ import Cocoa
 
 final class RemoteCodingSettingsControls {
     private static let tokenPattern = #"^\d{5,20}:[A-Za-z0-9_-]{20,128}$"#
+    private static let botUsernamePattern = #"^[A-Za-z0-9_]{5,64}$"#
 
     let selectedBotDetail = NativeView.detail("No bot is configured.")
     let pairingCommandField = NativeView.detail("Generate a code to create the /start pairing command.")
+    let botUsernameField: NSTextField
     let botTokenField: NSSecureTextField
     let setupButton: NSButton
     let copyPairingButton: NSButton
@@ -14,6 +16,15 @@ final class RemoteCodingSettingsControls {
     private var selectedBotUsername: String?
 
     init(target: AnyObject, submitTokenAction: Selector, copyPairingAction: Selector) {
+        let usernameField = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
+        usernameField.placeholderString = "@your_bot_username"
+        usernameField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        usernameField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        usernameField.setAccessibilityLabel("Expected Telegram bot username")
+        usernameField.setAccessibilityHelp("Required. Enter the public @username chosen in BotFather. SKS connects only when the token's Telegram getMe username matches this value.")
+        usernameField.setAccessibilityIdentifier("sks-center-telegram-bot-username")
+        botUsernameField = usernameField
+
         let tokenField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
         tokenField.placeholderString = "Paste the complete BotFather HTTP API token"
         tokenField.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -42,7 +53,12 @@ final class RemoteCodingSettingsControls {
     }
 
     func configure(delegate: NSTextFieldDelegate) {
+        botUsernameField.delegate = delegate
         botTokenField.delegate = delegate
+    }
+
+    func expectedBotUsernameInput() -> String? {
+        Self.normalizedBotUsername(botUsernameField.stringValue)
     }
 
     func consumeTokenInput() -> String {
@@ -53,10 +69,12 @@ final class RemoteCodingSettingsControls {
 
     func updateActionControls(operationInFlight: Bool, tokenConfigured: Bool, environmentOverride: Bool) {
         let hasTokenInput = !botTokenField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasValidBotUsername = expectedBotUsernameInput() != nil
+        botUsernameField.isEnabled = !operationInFlight && !environmentOverride
         botTokenField.isEnabled = !operationInFlight && !environmentOverride
         setupButton.title = tokenConfigured ? "Verify, Replace & Apply" : "Verify, Save & Apply"
         setupButton.setAccessibilityLabel(setupButton.title)
-        setupButton.isEnabled = !operationInFlight && !environmentOverride && hasTokenInput
+        setupButton.isEnabled = !operationInFlight && !environmentOverride && hasTokenInput && hasValidBotUsername
         copyPairingButton.isEnabled = !operationInFlight && pairingCommand != nil
     }
 
@@ -77,6 +95,10 @@ final class RemoteCodingSettingsControls {
         let retainedUsername = username ?? (botID == selectedBotID ? selectedBotUsername : nil)
         selectedBotID = botID
         selectedBotUsername = retainedUsername
+        if let retainedUsername, identityValid {
+            botUsernameField.stringValue = "@\(retainedUsername)"
+            botUsernameField.setAccessibilityValue(botUsernameField.stringValue)
+        }
         if let botID, let retainedUsername, identityValid {
             selectedBotDetail.stringValue = "@\(retainedUsername) · Bot ID \(botID)"
         } else if let botID, identityValid {
@@ -114,11 +136,26 @@ final class RemoteCodingSettingsControls {
             && value.range(of: tokenPattern, options: .regularExpression) != nil
     }
 
+    static func normalizedBotUsername(_ value: String) -> String? {
+        var normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.hasPrefix("@") { normalized.removeFirst() }
+        guard normalized.range(of: botUsernamePattern, options: .regularExpression) != nil else {
+            return nil
+        }
+        return normalized
+    }
+
     static func publicFailure(_ output: String, fallback: String) -> String {
         guard let data = output.data(using: .utf8),
               let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let error = row["error"] as? String else { return fallback }
         switch error {
+        case "telegram_expected_bot_username_invalid":
+            return "Enter the complete public bot username from @BotFather, with or without the leading @."
+        case "telegram_bot_username_mismatch":
+            let expected = (row["expected_bot_username"] as? String).map { "@\($0)" } ?? "the entered bot"
+            let actual = (row["bot_username"] as? String).map { "@\($0)" } ?? "a bot with no usable public username"
+            return "This token belongs to \(actual), not \(expected). Copy the current token for \(expected) from @BotFather and try again."
         case "telegram_token_invalid", "telegram_token_stdin_empty":
             return "That value is not a complete BotFather HTTP API token."
         case "telegram_token_rejected":
@@ -129,6 +166,24 @@ final class RemoteCodingSettingsControls {
             return "Telegram identity verification could not reach the Bot API. Check the network connection and try again."
         case "telegram_identity_verification_failed":
             return "Telegram returned an invalid bot identity response. Try the selected bot's current token again."
+        case "telegram_webhook_inspection_timeout":
+            return "The bot was verified, but reading its Telegram webhook status timed out. Check the network connection and try again."
+        case "telegram_webhook_inspection_network_failed":
+            return "The bot was verified, but SKS could not reach Telegram to inspect its webhook status. Check the network connection and try again."
+        case "telegram_webhook_inspection_authorization_failed":
+            return "The bot token changed or was revoked while SKS inspected its webhook. Copy the current token from @BotFather and try again."
+        case "telegram_webhook_inspection_failed":
+            return "The bot was verified, but Telegram returned an invalid webhook status response. Try again and open Diagnostics if it repeats."
+        case "telegram_token_storage_preflight_failed":
+            return "The bot was verified, but SKS could not prepare its private token file. Run Doctor from Diagnostics, then try again."
+        case "telegram_bot_state_bind_failed":
+            return "The bot was verified, but SKS could not update the bot-specific local state. Run Doctor from Diagnostics, then try again."
+        case let value where value.hasPrefix("telegram_webhook_remove_failed:"):
+            return "The bot was verified, but its existing webhook could not be removed. Check Telegram connectivity and try again."
+        case "secure_input_operation_failed_exit_-2":
+            return "Telegram setup timed out before SKS received a complete response. Check the network connection and try again."
+        case "secure_input_operation_invalid_json", "secure_input_operation_unexpected_schema", "secure_input_operation_schema_unrecognized":
+            return "SKS received an incompatible setup response. Restart the Menu Bar app and confirm the CLI and Center versions match."
         case let value where value.contains("401") || value.contains("Unauthorized"):
             return "Telegram rejected this token. Copy the current token from @BotFather and try again."
         case let value where value.contains("timeout") || value.contains("network"):

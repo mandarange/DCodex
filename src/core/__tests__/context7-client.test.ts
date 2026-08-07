@@ -13,7 +13,8 @@ const LEGACY_MCP_SERVER = [
   "  } else if (request.method === 'initialize') {",
   "    send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'legacy-context7-fixture', version: '1.0.0' } } });",
   "  } else if (request.method === 'tools/list') {",
-  "    send({ jsonrpc: '2.0', id: request.id, result: { tools: [{ name: 'resolve-library-id', description: 'fixture', inputSchema: { type: 'object' } }] } });",
+  "    const second = request.params && request.params.cursor === 'page-2';",
+  "    send({ jsonrpc: '2.0', id: request.id, result: second ? { tools: [{ name: 'query-docs', description: 'fixture', inputSchema: { type: 'object' } }] } : { tools: [{ name: 'resolve-library-id', description: 'fixture', inputSchema: { type: 'object' } }], nextCursor: 'page-2' } });",
   "  }",
   "});"
 ].join('\n');
@@ -29,5 +30,5 @@ test('Context7 MCP client uses official auto negotiation and retains legacy stdi
   assert.equal(result.connection.protocol_era, 'legacy');
   assert.equal(result.connection.protocol_version, '2024-11-05');
   assert.equal(result.connection.server_info?.name, 'legacy-context7-fixture');
-  assert.deepEqual(result.tool_names, ['resolve-library-id']);
+  assert.deepEqual(result.tool_names, ['resolve-library-id', 'query-docs']);
 });

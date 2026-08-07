@@ -15,22 +15,14 @@ export type BuildCodexExecArgsOptions = {
   ignoreRules?: boolean
   sandbox?: CodexSandboxMode
   serviceTier?: CodexServiceTier | null
-  fullAuto?: boolean
-  allowFullAuto?: boolean
   danger?: boolean
   allowDanger?: boolean
   prompt: string
 }
 
 export function buildCodexExecArgs(opts: BuildCodexExecArgsOptions): string[] {
-  if (opts.fullAuto && opts.danger) {
-    throw new Error('codex exec cannot combine full auto and danger modes')
-  }
   if (opts.danger && !opts.allowDanger) {
     throw new Error('codex exec danger mode requires explicit allowDanger=true')
-  }
-  if (opts.fullAuto && !opts.allowFullAuto) {
-    throw new Error('codex exec full-auto mode requires explicit allowFullAuto=true')
   }
   if (opts.profile && opts.ignoreUserConfig) {
     throw new Error('codex exec cannot combine --profile with --ignore-user-config')
@@ -46,7 +38,6 @@ export function buildCodexExecArgs(opts: BuildCodexExecArgsOptions): string[] {
   if (opts.profile) args.push(...buildCodexProfileArgs(opts.profile, opts.profileAlias))
   else if (opts.ignoreUserConfig) args.push('--ignore-user-config')
   if (opts.ignoreRules) args.push('--ignore-rules')
-  if (opts.fullAuto) args.push('--full-auto')
   if (opts.danger) args.push('--dangerously-bypass-approvals-and-sandbox')
   else if (opts.sandbox) args.push('--sandbox', opts.sandbox)
   const serviceTier = normalizeCodexServiceTier(opts.serviceTier)

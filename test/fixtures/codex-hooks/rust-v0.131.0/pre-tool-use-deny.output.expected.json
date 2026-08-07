@@ -1,8 +1,0 @@
-{
-  "continue": true,
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "deny",
-    "permissionDecisionReason": "SKS DB safety policy blocked destructive SQL"
-  }
-}

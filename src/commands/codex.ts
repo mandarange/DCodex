@@ -4,7 +4,7 @@ import { codexCompatibilityReport, codexDoctorReport } from '../core/codex-compa
 import { codexVersionReport } from '../core/codex-compat/codex-version.js';
 import { codexSchemaSnapshotReport } from '../core/codex-compat/codex-schema-snapshot.js';
 import { detectCodexCurrentCapability } from '../core/codex-control/codex-current-capability.js';
-import { CURRENT_CODEX_RELEASE_MANIFEST } from '../core/codex-compat/codex-release-manifest.js';
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../core/codex-compat/codex-runtime-contract.js';
 import { codexCliUpdateConsoleLines, inspectCodexCliUpdate, updateCodexCliNow } from '../core/codex/codex-cli-update.js';
 
 export async function run(_command: any, args: any = []) {
@@ -49,10 +49,10 @@ export async function run(_command: any, args: any = []) {
     if (!result.ok) process.exitCode = 1;
     return;
   }
-  if (action === 'current' || action === CURRENT_CODEX_RELEASE_MANIFEST.targetTag) {
+  if (action === 'current' || action === CURRENT_CODEX_RUNTIME_CONTRACT.targetTag) {
     const result = await detectCodexCurrentCapability({ requireReal: flag(args, '--require-real') });
     if (flag(args, '--json')) return printJson(result);
-    console.log(`Codex ${CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion} compatibility: ${result.ok ? 'ok' : 'blocked'} (${result.probe_mode})`);
+    console.log(`Codex ${CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion} compatibility: ${result.ok ? 'ok' : 'blocked'} (${result.probe_mode})`);
     for (const blocker of result.blockers || []) console.log(`- blocker: ${blocker}`);
     for (const warning of result.warnings || []) console.log(`- warning: ${warning}`);
     if (!result.ok) process.exitCode = 1;

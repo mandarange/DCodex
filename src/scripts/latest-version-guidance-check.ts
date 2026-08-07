@@ -18,7 +18,7 @@ const DOC_EXEMPT_RE = /(?:^|\/)(?:CHANGELOG|RECALLPULSE_[^/]*|known-gaps|release
 
 /** Modules whose numbers exist for machine comparison, not user guidance. */
 const SOURCE_EXEMPT = new Set([
-  'src/core/codex-compat/codex-release-manifest.ts',
+  'src/core/codex-compat/codex-runtime-contract.ts',
   'src/core/release/npm-stage-tarball-verifier-support.ts'
 ]);
 

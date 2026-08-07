@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-07T02:58:42.466Z",
+  "generated_at": "2026-08-07T06:11:36.277Z",
   "git_head_sha": null,
   "source_file_count": 2764,
-  "index_digest": "95edd6e2885c5860a15c92785f5e3a8f5a32cdb3bfc4586932119f10c5822265",
+  "index_digest": "198e0d261752550b795eb00fe2a7dc7700f1eb7d842445007ae98a2fb4a0bd9c",
   "entries": [
     {
       "id": "code:scripts",
@@ -73,7 +73,7 @@
     },
     {
       "id": "code:core",
-      "text": "core is a module at src/core (77 files, low risk). Key exports: ALLOWED_REASONING_EFFORTS, ALL_FEATURES_SELFTEST_SCHEMA, ALL_FEATURE_COMPLETION_SCHEMA, ARTIFACT_FILES, ARTIFACT_SCHEMA_VERSION, and 1322 more. Depends on: cli, core-agent-bridge, core-agents, core-codex, core-codex-app, and 34 more.",
+      "text": "core is a module at src/core (77 files, low risk). Key exports: ALLOWED_REASONING_EFFORTS, ALL_FEATURES_SELFTEST_SCHEMA, ALL_FEATURE_COMPLETION_SCHEMA, ARTIFACT_FILES, ARTIFACT_SCHEMA_VERSION, and 1323 more. Depends on: cli, core-agent-bridge, core-agents, core-codex, core-codex-app, and 35 more.",
       "citations": [
         {
           "path": "src/core/computer-use-live-evidence.ts"
@@ -205,7 +205,7 @@
     },
     {
       "id": "code:core-agents",
-      "text": "core-agents is a module at src/core/agents (78 files, low risk). Key exports: AGENT_BACKENDS, AGENT_CENTRAL_LEDGER_RUNTIME_SCHEMAS, AGENT_CLEANUP_ACTION_LEDGER_SCHEMA, AGENT_CLEANUP_PROOF_SCHEMA, AGENT_CODEX_COCKPIT_EVENTS, and 483 more. Depends on: core, core-codex, core-codex-app, core-codex-control, core-codex-lb, and 17 more.",
+      "text": "core-agents is a module at src/core/agents (77 files, low risk). Key exports: AGENT_BACKENDS, AGENT_CENTRAL_LEDGER_RUNTIME_SCHEMAS, AGENT_CLEANUP_ACTION_LEDGER_SCHEMA, AGENT_CLEANUP_PROOF_SCHEMA, AGENT_CODEX_COCKPIT_EVENTS, and 476 more. Depends on: core, core-codex, core-codex-app, core-codex-control, core-codex-lb, and 17 more.",
       "citations": [
         {
           "path": "src/core/agents/agent-proof-evidence.ts"
@@ -271,7 +271,7 @@
     },
     {
       "id": "code:core-codex-app",
-      "text": "core-codex-app is a module at src/core/codex-app (65 files, low risk). Key exports: CANONICAL_DIRECTIVES, CODEX_APP_FAST_UI_PRESERVATION_SCHEMA, CODEX_APP_FAST_UI_REPAIR_SCHEMA, CODEX_APP_UI_CLOBBER_GUARD_SCHEMA, CODEX_APP_UI_STATE_SNAPSHOT_SCHEMA, and 289 more. Depends on: cli, commands, core, core-agent-guidance, core-agents, and 13 more.",
+      "text": "core-codex-app is a module at src/core/codex-app (65 files, low risk). Key exports: CANONICAL_DIRECTIVES, CODEX_APP_FAST_UI_PRESERVATION_SCHEMA, CODEX_APP_FAST_UI_REPAIR_SCHEMA, CODEX_APP_UI_CLOBBER_GUARD_SCHEMA, CODEX_APP_UI_STATE_SNAPSHOT_SCHEMA, and 290 more. Depends on: cli, commands, core, core-agent-guidance, core-agents, and 14 more.",
       "citations": [
         {
           "path": "src/core/codex-app/menubar/migration.ts"
@@ -304,7 +304,7 @@
     },
     {
       "id": "code:core-subagents",
-      "text": "core-subagents is a module at src/core/subagents (37 files, low risk). Key exports: AGENTS_MAX_CONCURRENT_THREADS_KEY, ActiveMainModelRouting, BOUNDED_TRIWIKI_ATTENTION_SCHEMA, BoundedTriwikiAttention, BoundedTriwikiAttentionAnchor, and 324 more. Depends on: core, core-agent-bridge, core-agents, core-codex, core-codex-app, and 18 more.",
+      "text": "core-subagents is a module at src/core/subagents (37 files, low risk). Key exports: AGENTS_MAX_CONCURRENT_THREADS_KEY, ActiveMainModelRouting, BOUNDED_TRIWIKI_ATTENTION_SCHEMA, BoundedTriwikiAttention, BoundedTriwikiAttentionAnchor, and 325 more. Depends on: core, core-agent-bridge, core-agents, core-codex, core-codex-app, and 18 more.",
       "citations": [
         {
           "path": "src/core/subagents/__tests__/wave-lifecycle.test.ts"
@@ -403,7 +403,7 @@
     },
     {
       "id": "code:core-codex-control",
-      "text": "core-codex-control is a module at src/core/codex-control (53 files, low risk). Key exports: CODEX_AGENT_WORKER_RESULT_SCHEMA_ID, CODEX_APP_SERVER_CONFIG_READ_FAILED, CODEX_APP_SERVER_DIRECT_PROVIDER_SELECTION_RETIRED, CODEX_CONTROL_PROOF_SCHEMA, CODEX_CURRENT_CORE_REAL_PROBE_NAMES, and 225 more. Depends on: core, core-__tests__, core-agents, core-codex, core-codex-app, and 7 more.",
+      "text": "core-codex-control is a module at src/core/codex-control (54 files, low risk). Key exports: CODEX_AGENT_WORKER_RESULT_SCHEMA_ID, CODEX_APP_SERVER_CONFIG_READ_FAILED, CODEX_APP_SERVER_DIRECT_PROVIDER_SELECTION_RETIRED, CODEX_CONTROL_PROOF_SCHEMA, CODEX_CURRENT_CORE_REAL_PROBE_NAMES, and 226 more. Depends on: core, core-__tests__, core-agents, core-codex, core-codex-app, and 7 more.",
       "citations": [
         {
           "path": "src/core/codex-control/codex-thread-registry.ts"
@@ -436,7 +436,7 @@
     },
     {
       "id": "code:core-mad-sks",
-      "text": "core-mad-sks is a module at src/core/mad-sks (36 files, low risk). Key exports: MAD_SKS_AUDIT_LEDGER_SCHEMA, MAD_SKS_AUTHORIZATION_SCHEMA, MAD_SKS_DEFAULT_FORBIDDEN_SCOPES, MAD_SKS_EXECUTOR_INPUT_SCHEMA, MAD_SKS_EXECUTOR_RESULT_SCHEMA, and 191 more. Depends on: core, core-codex, core-locks, core-mcp.",
+      "text": "core-mad-sks is a module at src/core/mad-sks (36 files, low risk). Key exports: MAD_SKS_AUDIT_LEDGER_SCHEMA, MAD_SKS_AUTHORIZATION_SCHEMA, MAD_SKS_DEFAULT_FORBIDDEN_SCOPES, MAD_SKS_EXECUTOR_INPUT_SCHEMA, MAD_SKS_EXECUTOR_RESULT_SCHEMA, and 192 more. Depends on: core, core-codex, core-locks, core-mcp.",
       "citations": [
         {
           "path": "src/core/mad-sks/rollback-plan.ts"
@@ -634,7 +634,7 @@
     },
     {
       "id": "code:core-mcp-config",
-      "text": "core-mcp-config is a module at src/core/mcp-config (19 files, low risk). Key exports: CodexCliAuthResult, CodexCliListResult, CodexCliMutationOperation, CodexCliTransformResult, CodexMcpCliAdapter, and 101 more. Depends on: core, core-codex, core-commands, core-errors, core-json, and 3 more.",
+      "text": "core-mcp-config is a module at src/core/mcp-config (19 files, low risk). Key exports: CodexCliAuthResult, CodexCliListResult, CodexCliMutationOperation, CodexCliTransformResult, CodexMcpCliAdapter, and 102 more. Depends on: core, core-codex, core-commands, core-errors, core-json, and 3 more.",
       "citations": [
         {
           "path": "src/core/mcp-config/index.ts"
@@ -766,11 +766,8 @@
     },
     {
       "id": "code:core-__tests__",
-      "text": "core-__tests__ is a module at src/core/__tests__ (57 files, low risk). Key exports: COMMAND_CATALOG, CURRENT_CODEX_RELEASE_MANIFEST, CodexLbEnvLoadResult, CompetitorScorecardBaseline, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, and 188 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 24 more.",
+      "text": "core-__tests__ is a module at src/core/__tests__ (57 files, low risk). Key exports: COMMAND_CATALOG, CURRENT_CODEX_RUNTIME_CONTRACT, CodexLbEnvLoadResult, CompetitorScorecardBaseline, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, and 187 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 24 more.",
       "citations": [
-        {
-          "path": "src/core/__tests__/codex-release-manifest-current.test.ts"
-        },
         {
           "path": "src/core/__tests__/codex-mode-lock-provenance.test.ts"
         },
@@ -791,6 +788,9 @@
         },
         {
           "path": "src/core/__tests__/codex-app-output-redaction.test.ts"
+        },
+        {
+          "path": "src/core/__tests__/wiki-context-pack-bounds.test.ts"
         }
       ],
       "trust_score": 0.8,
@@ -978,39 +978,6 @@
       "token_cost": 75
     },
     {
-      "id": "code:core-codex-compat",
-      "text": "core-codex-compat is a module at src/core/codex-compat (14 files, low risk). Key exports: CODEX_CAPABILITY_MATRIX_SCHEMA, CODEX_COMPAT_SCHEMA, CODEX_HOOK_EVENTS, CODEX_HOOK_EVENT_STATE_KEYS, CODEX_HOOK_EVENT_TO_FILE_STEM, and 102 more. Depends on: core, core-codex-control, core-codex-hooks, core-codex-runtime, core-json, and 1 more.",
-      "citations": [
-        {
-          "path": "src/core/codex-compat/codex-version-policy.ts"
-        },
-        {
-          "path": "src/core/codex-compat/codex-version.ts"
-        },
-        {
-          "path": "src/core/codex-compat/codex-hook-output-builders.ts"
-        },
-        {
-          "path": "src/core/codex-compat/codex-hook-issues.ts"
-        },
-        {
-          "path": "src/core/codex-compat/codex-schema-snapshot.ts"
-        },
-        {
-          "path": "src/core/codex-compat/codex-hook-warning-detector.ts"
-        },
-        {
-          "path": "src/core/codex-compat/codex-config-policy.ts"
-        },
-        {
-          "path": "src/core/codex-compat/codex-hook-events.ts"
-        }
-      ],
-      "trust_score": 0.8,
-      "freshness": "fresh",
-      "token_cost": 84
-    },
-    {
       "id": "code:core-skills",
       "text": "core-skills is a module at src/core/skills (16 files, low risk). Key exports: AggregatedReflection, CORE_ROLLOUT_TRACE_SCHEMA, CORE_SKILL_CARD_SCHEMA, CORE_SKILL_PATCH_SCHEMA, CORE_SKILL_SCORE_SCHEMA, and 106 more. Depends on: core, core-__tests__, core-init, core-safety, core-text.",
       "citations": [
@@ -1042,6 +1009,39 @@
       "trust_score": 0.8,
       "freshness": "fresh",
       "token_cost": 71
+    },
+    {
+      "id": "code:core-codex-compat",
+      "text": "core-codex-compat is a module at src/core/codex-compat (14 files, low risk). Key exports: CODEX_CAPABILITY_MATRIX_SCHEMA, CODEX_COMPAT_SCHEMA, CODEX_HOOK_EVENTS, CODEX_HOOK_EVENT_STATE_KEYS, CODEX_HOOK_EVENT_TO_FILE_STEM, and 99 more. Depends on: core, core-codex-control, core-codex-hooks, core-codex-runtime, core-json, and 1 more.",
+      "citations": [
+        {
+          "path": "src/core/codex-compat/codex-version-policy.ts"
+        },
+        {
+          "path": "src/core/codex-compat/codex-version.ts"
+        },
+        {
+          "path": "src/core/codex-compat/codex-hook-output-builders.ts"
+        },
+        {
+          "path": "src/core/codex-compat/codex-hook-issues.ts"
+        },
+        {
+          "path": "src/core/codex-compat/codex-schema-snapshot.ts"
+        },
+        {
+          "path": "src/core/codex-compat/codex-hook-warning-detector.ts"
+        },
+        {
+          "path": "src/core/codex-compat/codex-config-policy.ts"
+        },
+        {
+          "path": "src/core/codex-compat/codex-hook-events.ts"
+        }
+      ],
+      "trust_score": 0.8,
+      "freshness": "fresh",
+      "token_cost": 84
     },
     {
       "id": "code:core-agent-bridge",
@@ -1669,7 +1669,7 @@
     },
     {
       "id": "code:test-integration",
-      "text": "test-integration is a module at test/integration (103 files, low risk). Key exports: PNG_1X1, capturedInventory, createHermeticProjectRoot, createReleaseStampProof, importDist, and 5 more. Depends on: test-e2e, test-helpers.",
+      "text": "test-integration is a module at test/integration (102 files, low risk). Key exports: PNG_1X1, capturedInventory, createHermeticProjectRoot, createReleaseStampProof, importDist, and 5 more. Depends on: test-e2e, test-helpers.",
       "citations": [
         {
           "path": "test/integration/wrongness-setup-choice-drift.test.mjs"
@@ -1788,6 +1788,36 @@
       "token_cost": 76
     },
     {
+      "id": "code:core-mcp",
+      "text": "core-mcp is a module at src/core/mcp (7 files, low risk). Key exports: CONTEXT7_REMOTE_MCP_URL, CodexPluginInventory, MCP_CLIENT_CAPABILITIES_META_KEY, MCP_CLIENT_INFO_META_KEY, MCP_LIST_ITEM_LIMIT, and 47 more. Depends on: core, core-codex-plugins.",
+      "citations": [
+        {
+          "path": "src/core/mcp/mcp-plugin-inventory.ts"
+        },
+        {
+          "path": "src/core/mcp/modern-protocol.ts"
+        },
+        {
+          "path": "src/core/mcp/mcp-config-preservation.ts"
+        },
+        {
+          "path": "src/core/mcp/mcp-server-policy.ts"
+        },
+        {
+          "path": "src/core/mcp/mcp-tool-name-normalizer.ts"
+        },
+        {
+          "path": "src/core/mcp/__tests__/modern-protocol-pagination.test.ts"
+        },
+        {
+          "path": "src/core/mcp/mcp-tool-policy.ts"
+        }
+      ],
+      "trust_score": 0.8,
+      "freshness": "fresh",
+      "token_cost": 63
+    },
+    {
       "id": "code:test-blackbox",
       "text": "test-blackbox is a module at test/blackbox (95 files, low risk). Key exports: createReleaseStampProof, runNpmScript, runReleaseGate. Depends on: test-helpers.",
       "citations": [
@@ -1876,33 +1906,6 @@
       "trust_score": 0.8,
       "freshness": "fresh",
       "token_cost": 58
-    },
-    {
-      "id": "code:core-mcp",
-      "text": "core-mcp is a module at src/core/mcp (6 files, low risk). Key exports: CONTEXT7_REMOTE_MCP_URL, CodexPluginInventory, MCP_CLIENT_CAPABILITIES_META_KEY, MCP_CLIENT_INFO_META_KEY, MCP_PROTOCOL_VERSION, and 44 more. Depends on: core, core-codex-plugins.",
-      "citations": [
-        {
-          "path": "src/core/mcp/mcp-plugin-inventory.ts"
-        },
-        {
-          "path": "src/core/mcp/modern-protocol.ts"
-        },
-        {
-          "path": "src/core/mcp/mcp-config-preservation.ts"
-        },
-        {
-          "path": "src/core/mcp/mcp-server-policy.ts"
-        },
-        {
-          "path": "src/core/mcp/mcp-tool-name-normalizer.ts"
-        },
-        {
-          "path": "src/core/mcp/mcp-tool-policy.ts"
-        }
-      ],
-      "trust_score": 0.8,
-      "freshness": "fresh",
-      "token_cost": 63
     },
     {
       "id": "code:core-perf",

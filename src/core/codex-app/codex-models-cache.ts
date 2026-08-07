@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { writeTextAtomic } from '../fsx.js'
 import { codexHomePath } from './codex-model-catalog.js'
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../codex-compat/codex-runtime-contract.js'
 
 /** Far-past timestamp that forces Codex OnlineIfUncached to treat the cache as stale. */
 export const CODEX_MODELS_CACHE_STALE_FETCHED_AT = '2000-01-01T00:00:00Z'
@@ -145,7 +146,7 @@ export async function invalidateCodexModelsCache(input: {
   const existingClient = typeof existing?.client_version === 'string' ? existing.client_version.trim() : ''
   const clientVersion = existingClient && existingClient !== '0.0.0'
     ? existingClient
-    : '0.146.0'
+    : CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion
   const wrapper = {
     fetched_at: CODEX_MODELS_CACHE_STALE_FETCHED_AT,
     client_version: clientVersion,

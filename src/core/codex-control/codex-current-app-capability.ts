@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { findCodexBinary } from '../codex-adapter.js'
 import { compareSemverLike, parseCodexVersionText } from '../codex-compat/codex-version-policy.js'
-import { CURRENT_CODEX_RELEASE_MANIFEST } from '../codex-compat/codex-release-manifest.js'
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../codex-compat/codex-runtime-contract.js'
 import { nowIso, runProcess, writeJsonAtomic } from '../fsx.js'
 
 export interface CodexCurrentAppCapability {
@@ -32,10 +32,10 @@ export async function detectCodexCurrentAppCapability(input: { codexBin?: string
     ? input.codexBin || process.env.CODEX_BIN || 'codex'
     : input.codexBin || process.env.CODEX_BIN || await findCodexBinary()
   const versionText = fake
-    ? String(process.env.SKS_CODEX_VERSION_FAKE || `codex-cli ${CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion}`)
+    ? String(process.env.SKS_CODEX_VERSION_FAKE || `codex-cli ${CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion}`)
     : await readCodexVersionText(codexBin)
   const parsed = parseCodexVersion(versionText)
-  const currentRelease = Boolean(parsed && semverGte(parsed, CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion))
+  const currentRelease = Boolean(parsed && semverGte(parsed, CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion))
   const probeMode = process.env.SKS_CODEX_CURRENT_APP_PROBE === '1' ? 'feature-probe' : 'version-only'
   const featureProbeResults = probeMode === 'feature-probe'
     ? await probeCodexCurrentAppFeatures(codexBin, { fake })

@@ -64,7 +64,7 @@ enum SecureProcessEnvelope {
                         envelope["token_source"] = source
                     }
                     if let stage = boundedString(object["failure_stage"], limit: 40),
-                       stage == "getme" {
+                       ["getme", "webhook", "storage", "state"].contains(stage) {
                         envelope["failure_stage"] = stage
                     }
                     if let botID = object["bot_id"] as? NSNumber,
@@ -74,6 +74,10 @@ enum SecureProcessEnvelope {
                     if let username = boundedString(object["bot_username"], limit: 64),
                        username.range(of: #"^[A-Za-z0-9_]{5,64}$"#, options: .regularExpression) != nil {
                         envelope["bot_username"] = username
+                    }
+                    if let expectedUsername = boundedString(object["expected_bot_username"], limit: 64),
+                       expectedUsername.range(of: #"^[A-Za-z0-9_]{5,64}$"#, options: .regularExpression) != nil {
+                        envelope["expected_bot_username"] = expectedUsername
                     }
                     if let action = boundedString(object["operator_action"], limit: 480) {
                         envelope["operator_action"] = action

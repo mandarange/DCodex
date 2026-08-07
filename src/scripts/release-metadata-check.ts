@@ -65,7 +65,7 @@ const requiredPackageScripts = [
 ];
 const requiredReleaseGates = [
   'architecture:guard',
-  'codex:current:manifest',
+  'codex:current:dependency-graph',
   'codex:current:binary-identity',
   'codex:current:policy',
   'codex:current:app-server-v2',

@@ -1,7 +1,0 @@
-{
-  "continue": true,
-  "hookSpecificOutput": {
-    "hookEventName": "PostToolUse",
-    "additionalContext": "SKS recorded command evidence EV-fixture"
-  }
-}

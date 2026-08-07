@@ -433,6 +433,51 @@ private enum Harness {
         ) as! [String: Any]
         precondition(rejectedOutput["error"] as? String == "telegram_token_rejected")
         precondition(rejectedOutput["failure_stage"] as? String == "getme")
+
+        let mismatch: [String: Any] = [
+            "schema": "sks.telegram-setup-command.v1",
+            "ok": false,
+            "error": "telegram_bot_username_mismatch",
+            "failure_stage": "getme",
+            "token_stored": false,
+            "expected_bot_username": "intended_bot",
+            "bot_username": "different_bot"
+        ]
+        let mismatchBytes = try JSONSerialization.data(withJSONObject: mismatch)
+        let mismatchEnvelope = SecureProcessEnvelope.render(
+            payload: String(decoding: mismatchBytes, as: UTF8.self),
+            code: 1,
+            arguments: ["telegram", "setup", "--token-stdin", "--expected-bot-username", "intended_bot", "--json"]
+        )
+        let mismatchOutput = try JSONSerialization.jsonObject(
+            with: mismatchEnvelope.data(using: .utf8)!
+        ) as! [String: Any]
+        precondition(mismatchOutput["error"] as? String == "telegram_bot_username_mismatch")
+        precondition(mismatchOutput["failure_stage"] as? String == "getme")
+        precondition(mismatchOutput["expected_bot_username"] as? String == "intended_bot")
+        precondition(mismatchOutput["bot_username"] as? String == "different_bot")
+
+        let webhookFailure: [String: Any] = [
+            "schema": "sks.telegram-setup-command.v1",
+            "ok": false,
+            "error": "telegram_webhook_inspection_network_failed",
+            "failure_stage": "webhook",
+            "token_stored": false
+        ]
+        let webhookFailureBytes = try JSONSerialization.data(withJSONObject: webhookFailure)
+        let webhookFailureEnvelope = SecureProcessEnvelope.render(
+            payload: String(decoding: webhookFailureBytes, as: UTF8.self),
+            code: 1,
+            arguments: ["telegram", "setup", "--token-stdin", "--json"]
+        )
+        let webhookFailureOutput = try JSONSerialization.jsonObject(
+            with: webhookFailureEnvelope.data(using: .utf8)!
+        ) as! [String: Any]
+        precondition(
+            webhookFailureOutput["error"] as? String
+                == "telegram_webhook_inspection_network_failed"
+        )
+        precondition(webhookFailureOutput["failure_stage"] as? String == "webhook")
         print("secure-envelope-partial-ok")
     }
 }

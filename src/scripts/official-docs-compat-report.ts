@@ -10,7 +10,11 @@ const reportDir = path.join(root, '.sneakoscope', 'reports');
 const releaseVersion = String(pkg.version || 'unknown');
 const jsonPath = path.join(reportDir, `official-docs-compat-${releaseVersion}.json`);
 const mdPath = path.join(reportDir, `official-docs-compat-${releaseVersion}.md`);
-const codexTag = 'rust-v0.146.0';
+const codexVersion = String(pkg.dependencies?.['@openai/codex-sdk'] || '');
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(codexVersion)) {
+  throw new Error('package.json must pin @openai/codex-sdk to an exact semver');
+}
+const codexTag = `rust-v${codexVersion}`;
 
 const sources = {
   codex_release: `https://github.com/openai/codex/releases/tag/${codexTag}`,
@@ -27,7 +31,7 @@ const sources = {
 const fetched = await Promise.all(Object.entries(sources).map(async ([id, url]) => [id, await fetchOfficial(url)]));
 const bodies = Object.fromEntries(fetched);
 const sourceValidations = [
-  sourceRow('codex_release', sources.codex_release, bodies.codex_release, ['rust-v0.146.0', '0.146.0', 'Bug Fixes']),
+  sourceRow('codex_release', sources.codex_release, bodies.codex_release, [codexTag, codexVersion, 'Bug Fixes']),
   sourceRow('codex_config_schema', sources.codex_config_schema, bodies.codex_config_schema, ['definitions', 'mcp_servers', 'profiles']),
   sourceRow('browser', sources.browser, bodies.browser, ['built-in browser', 'Chrome extension', 'Computer Use']),
   sourceRow('chrome_extension', sources.chrome_extension, bodies.chrome_extension, ['Chrome extension', 'signed-in', 'Connected']),
@@ -39,35 +43,30 @@ const sourceValidations = [
 ];
 
 const checks = [
-  fileRow('codex_current_manifest', codexTag, 'config/codex-releases/rust-v0.146.0.json', [
-    '"targetTag": "rust-v0.146.0"',
-    '"requiredCliVersion": "0.146.0"',
-    '"preferredCliVersion": "0.146.0"',
-    '"minimumSupportedVersion": "0.146.0"',
-    '"narutoCapabilityFloorVersion": "0.146.0"',
-    '"sdkVersion": "0.146.0"',
-    '"protocolMode": "app-server-v2"'
+  fileRow('codex_current_dependency', codexTag, 'package.json', [
+    `"@openai/codex-sdk": "${codexVersion}"`,
+    'codex-current-dependency-check.js'
   ]),
-  fileRow('codex_current_manifest_ssot', codexTag, 'src/core/codex-compat/codex-release-manifest.ts', [
-    "targetTag: 'rust-v0.146.0'",
-    "requiredCliVersion: '0.146.0'",
-    "preferredCliVersion: '0.146.0'",
-    "minimumSupportedVersion: '0.146.0'",
-    "sdkVersion: '0.146.0'"
+  fileRow('codex_runtime_contract', codexTag, 'src/core/codex-compat/codex-runtime-contract.ts', [
+    'codexSdkDependencyVersion',
+    'package.json#dependencies.@openai/codex-sdk',
+    "protocolMode: 'app-server-v2'",
+    "mcpPaginatedDiscovery: 'wrap'",
+    "portableAgentPlugins: 'delegate'"
   ]),
   fileRow('codex_current_release_gates', codexTag, 'release-gates.v2.json', [
-    'codex:current:manifest',
+    'codex:current:dependency-graph',
     'codex:current:binary-identity',
     'codex:current:policy',
     'codex:current:app-server-v2',
     'codex:current:thread-store',
     'codex:current:capability'
   ]),
-  fileRow('codex_current_app_server_schema', codexTag, 'schemas/codex/app-server-0.146/codex_app_server_protocol.v2.schemas.json', [
-    '"thread/list"',
-    '"thread/read"',
-    '"searchTerm"',
-    '"ThreadSearchResult"'
+  fileRow('codex_runtime_generated_app_server_schema', codexTag, 'src/core/codex-control/codex-current-capability.ts', [
+    'generate-json-schema',
+    'real-schema',
+    'generated_schema_sha256',
+    'binary_sha256'
   ]),
   fileRow('codex_native_capability_self_repair', 'Codex Desktop native capabilities', 'src/core/doctor/doctor-native-capability-repair.ts', [
     'repairNativeCapabilities',
@@ -113,7 +112,7 @@ const report = {
   generated_at: new Date().toISOString(),
   package_version: releaseVersion,
   codex_release_baseline: codexTag,
-  codex_cli_version: '0.146.0',
+  codex_cli_version: codexVersion,
   codex_app_docs_baseline: {
     browser: sources.browser,
     chrome_extension: sources.chrome_extension,
@@ -153,8 +152,10 @@ function fileRow(feature, baseline, relFile, needles) {
 }
 
 function sourceRow(feature, url, fetchResult, needles) {
-  const text = String(fetchResult.body || '');
-  const missing = fetchResult.ok ? needles.filter((needle) => !text.toLowerCase().includes(String(needle).toLowerCase())) : needles;
+  const text = String(fetchResult.body || '').replace(/\s+/g, ' ').toLowerCase();
+  const missing = fetchResult.ok
+    ? needles.filter((needle) => !text.includes(String(needle).replace(/\s+/g, ' ').toLowerCase()))
+    : needles;
   return {
     feature,
     url,

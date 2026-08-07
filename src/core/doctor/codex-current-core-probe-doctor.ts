@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { CURRENT_CODEX_RELEASE_MANIFEST } from '../codex-compat/codex-release-manifest.js'
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../codex-compat/codex-runtime-contract.js'
 import { readJson } from '../fsx.js'
 
 export async function readCodexCurrentCoreDoctorRealProbeStatus(root: string) {
@@ -8,7 +8,7 @@ export async function readCodexCurrentCoreDoctorRealProbeStatus(root: string) {
   return {
     schema: 'sks.doctor-codex-current-core-real-probes.v1',
     codex_cli_version: result?.version_text || null,
-    capability_version_flag: result?.parsed_version === CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion,
+    capability_version_flag: result?.parsed_version === CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion,
     real_probes_last_run_status: summary ? (summary.ok ? 'ok' : 'blocked') : 'not_run',
     skipped_probes: result?.skipped || [],
     strict_probe_command: 'node ./dist/scripts/codex-current-core-real-probes-check.js --require-real --allow-network',

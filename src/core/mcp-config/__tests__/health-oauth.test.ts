@@ -187,7 +187,7 @@ test('streamable HTTP health uses the 2026-07-28 stateless request and header co
     const parsed = JSON.parse(await readRequest(request)) as {
       id: number;
       method: string;
-      params?: { _meta?: Record<string, unknown> };
+      params?: { _meta?: Record<string, unknown>; cursor?: string };
     };
     observed.push({ method: parsed.method, headers: request.headers, meta: parsed.params?._meta || {} });
     const serverMeta = {
@@ -202,9 +202,18 @@ test('streamable HTTP health uses the 2026-07-28 stateless request and header co
           cacheScope: 'private',
           _meta: serverMeta
         }
-      : {
+      : parsed.params?.cursor === 'page-2'
+        ? {
+          resultType: 'complete',
+          tools: [{ name: 'modern-tool-2' }],
+          ttlMs: 1_000,
+          cacheScope: 'private',
+          _meta: serverMeta
+        }
+        : {
           resultType: 'complete',
           tools: [{ name: 'modern-tool' }],
+          nextCursor: 'page-2',
           ttlMs: 1_000,
           cacheScope: 'private',
           _meta: serverMeta
@@ -225,8 +234,8 @@ test('streamable HTTP health uses the 2026-07-28 stateless request and header co
   const health = await testMcpConnection('modern', 'global', { home: s.home });
   assert.equal(health.status, 'healthy');
   assert.equal(health.protocol_version, MCP_PROTOCOL_VERSION);
-  assert.deepEqual(health.tool_names, ['modern-tool']);
-  assert.deepEqual(observed.map((entry) => entry.method), ['server/discover', 'tools/list']);
+  assert.deepEqual(health.tool_names, ['modern-tool', 'modern-tool-2']);
+  assert.deepEqual(observed.map((entry) => entry.method), ['server/discover', 'tools/list', 'tools/list']);
   for (const entry of observed) {
     assert.equal(entry.headers['mcp-protocol-version'], MCP_PROTOCOL_VERSION);
     assert.equal(entry.headers['mcp-method'], entry.method);

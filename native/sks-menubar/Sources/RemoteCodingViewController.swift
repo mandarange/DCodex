@@ -46,16 +46,17 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
 
         let setupCard = NativeView.card(
             title: "Connect with BotFather",
-            subtitle: "Create a Telegram bot, then let SKS validate and store its token privately.",
+            subtitle: "Choose the intended bot by username, then let SKS validate and store its token privately.",
             views: [
                 NativeView.detail(
-                    "1. Create or select any bot you own in @BotFather.  2. Copy that bot's complete HTTP API token.  " +
-                    "3. Paste it below and choose Verify, Save & Apply. The token is the only value you enter: SKS derives the bot ID from Telegram getMe, and learns chat and user IDs through private-chat pairing."
+                    "1. Create or select any bot you own in @BotFather.  2. Enter that bot's public @username and paste its complete HTTP API token.  " +
+                    "3. Choose Verify, Save & Apply. SKS accepts the token only when Telegram getMe returns the entered username, derives the authoritative bot ID, and learns chat and user IDs through private-chat pairing."
                 ),
                 NativeView.detail(
                     "The token is sent only through process stdin to the canonical SKS setup command, verified with Telegram getMe, and stored in the private user secret file. It is never shown again or written to the SKS action log. Revoke it in BotFather if you suspect exposure."
                 ),
                 ControlKit.keyValueRow("Active Bot", settingsControls.selectedBotDetail),
+                ControlKit.keyValueRow("Bot Username", settingsControls.botUsernameField),
                 ControlKit.keyValueRow("Bot Token", settingsControls.botTokenField),
                 NativeView.row([botFatherButton, settingsControls.setupButton])
             ]
@@ -111,6 +112,10 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
             )
             return
         }
+        guard let expectedBotUsername = settingsControls.expectedBotUsernameInput() else {
+            showAttention("Bot username required", detail: "Enter the complete public bot username from @BotFather, with or without the leading @.")
+            return
+        }
         let normalizedToken = settingsControls.consumeTokenInput()
         updateControls()
         guard RemoteCodingSettingsControls.validTokenShape(normalizedToken) else {
@@ -120,10 +125,10 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
             )
             return
         }
-        saveToken(normalizedToken, removeWebhook: false)
+        saveToken(normalizedToken, expectedBotUsername: expectedBotUsername, removeWebhook: false)
     }
 
-    private func promptForWebhookRemovalToken() {
+    private func promptForWebhookRemovalToken(expectedBotUsername: String) {
         guard !operationInFlight, let window = view.window else { return }
         AlertFactory.textSheet(
             window: window,
@@ -142,7 +147,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
                 )
                 return
             }
-            self.saveToken(normalizedToken, removeWebhook: true)
+            self.saveToken(normalizedToken, expectedBotUsername: expectedBotUsername, removeWebhook: true)
         }
     }
 
@@ -238,7 +243,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
         }
     }
 
-    private func saveToken(_ token: String, removeWebhook: Bool) {
+    private func saveToken(_ token: String, expectedBotUsername: String, removeWebhook: Bool) {
         let normalizedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard RemoteCodingSettingsControls.validTokenShape(normalizedToken) else {
             showAttention(
@@ -247,8 +252,9 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
             )
             return
         }
-        beginOperation("Verifying bot identity with Telegram…")
+        beginOperation("Verifying @\(expectedBotUsername) with Telegram…")
         var arguments = ["telegram", "setup", "--token-stdin", "--json"]
+        arguments.append(contentsOf: ["--expected-bot-username", expectedBotUsername])
         if TelegramPrivateFileStore.operatorEnvironmentOverrideActive() {
             arguments.append("--operator-env-override-active")
         }
@@ -258,7 +264,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
             stdin: normalizedToken + "\n",
             environment: telegramSecretFreeEnvironment,
             timeout: NativeView.mutationTimeout,
-            logOutput: false
+            logOutput: true
         ) { [weak self] result in
             guard let self else { return }
             let response = self.decode(TelegramCenterSetupResponse.self, result.output)
@@ -270,7 +276,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
                 self.endOperation()
                 if !removeWebhook,
                    response?.error == "telegram_webhook_configured_remove_consent_required" {
-                    self.confirmWebhookRemoval()
+                    self.confirmWebhookRemoval(expectedBotUsername: expectedBotUsername)
                     return
                 }
                 if response?.error == "telegram_operator_env_override_active" {
@@ -331,7 +337,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
         }
     }
 
-    private func confirmWebhookRemoval() {
+    private func confirmWebhookRemoval(expectedBotUsername: String) {
         guard let window = view.window else { return }
         AlertFactory.confirmSheet(
             window: window,
@@ -341,7 +347,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
             actionTitle: "Continue"
         ) { [weak self] confirmed in
             guard confirmed else { return }
-            self?.promptForWebhookRemovalToken()
+            self?.promptForWebhookRemovalToken(expectedBotUsername: expectedBotUsername)
         }
     }
 
@@ -481,7 +487,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage, NST
 
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField,
-              field === settingsControls.botTokenField else { return }
+              field === settingsControls.botTokenField || field === settingsControls.botUsernameField else { return }
         updateControls()
     }
 

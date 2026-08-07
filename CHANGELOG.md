@@ -3,6 +3,30 @@
 ## [Unreleased]
 
 
+
+## [8.2.2] - 2026-08-07
+
+### Changed
+
+- Derive Codex compatibility from the package dependency and the resolved runtime's
+  generated App Server schema instead of a checked-in release manifest or a
+  version-specific schema snapshot.
+- Consume cursor-paginated MCP tool and server inventories through one bounded,
+  fail-closed collector across health checks, Context7, and the SQL plane.
+- Refresh the vendored Codex hook contract from the current official source while
+  keeping the runtime integration version-neutral.
+- Keep ignored schema caches diagnostic-only; every `requireReal` compatibility
+  check regenerates the schema from the resolved Codex binary before it can
+  authorize a release.
+- Let Remote Coding bind an optional BotFather username to Telegram's verified
+  `getMe` identity without storing or logging the bot token.
+
+### Removed
+
+- Remove obsolete Codex 0.146 App Server schemas, Codex 0.131 hook fixtures, the
+  retired direct `codex exec` agent backend, deprecated `--full-auto` support,
+  and release checks or documentation tied to superseded versions.
+
 ## [8.2.1] - 2026-08-07
 
 ### Fixed

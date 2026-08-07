@@ -16,15 +16,16 @@ const limits = {
 };
 const trackedFileSizeAllowlist = new Set([
   'docs/sks-local-llm-mode/exports/sks-local-llm-mode-deck.pdf',
-  'release-gates.v2.json',
-  'schemas/codex/app-server-0.146/codex_app_server_protocol.schemas.json',
-  'schemas/codex/app-server-0.146/codex_app_server_protocol.v2.schemas.json'
+  'release-gates.v2.json'
 ]);
 const trackedFileSizeBudgets = new Map([
   // Append-only release history and the generated mutation policy are large
   // by design, but remain independently bounded instead of bypassing checks.
   ['CHANGELOG.md', 512 * 1024],
-  ['safety-mutation-allowlist.json', 512 * 1024]
+  ['safety-mutation-allowlist.json', 512 * 1024],
+  // The code-navigation manifest is generated project memory and is excluded
+  // from the npm tarball; keep a finite repository budget for it.
+  ['.sneakoscope/wiki/code-navigation-manifest.json', 768 * 1024]
 ]);
 
 const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';

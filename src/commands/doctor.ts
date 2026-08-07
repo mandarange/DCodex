@@ -33,7 +33,7 @@ import { inspectSksMenuBarStatus, installSksMenuBar, sksMenuBarPaths, sksMenuBar
 import { restartLaunchAgent } from '../core/codex-app/menubar/launch-agent.js';
 import { sweepSksTempDirs } from '../core/retention.js';
 import { detectImagegenCapability } from '../core/imagegen/imagegen-capability.js';
-import { CURRENT_CODEX_RELEASE_MANIFEST } from '../core/codex-compat/codex-release-manifest.js';
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../core/codex-compat/codex-runtime-contract.js';
 import { formatHarnessConflictReport, scanHarnessConflicts } from '../core/harness-conflicts.js';
 import {
   doctorArgWarnings as baseDoctorArgWarnings,
@@ -1811,7 +1811,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   }
   const codexCurrentApp = (codexCurrentAppCapability as any).report || {};
   console.log('Codex current compatibility:');
-  console.log(`  target: ${CURRENT_CODEX_RELEASE_MANIFEST.targetTag}`);
+  console.log(`  target: ${CURRENT_CODEX_RUNTIME_CONTRACT.targetTag}`);
   console.log(`  runtime: ${codex.version || 'unknown'}`);
   console.log(`  multi-agent mode: ${(codexNativeFeatureMatrix as any).features?.multi_agent_mode?.ok ? 'verified' : 'unverified'}`);
   console.log(`  rollout budget: ${(codexNativeFeatureMatrix as any).features?.rollout_budget?.ok ? 'verified' : 'unverified'}`);

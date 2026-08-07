@@ -3,9 +3,10 @@
   "upstream": "openai/codex",
   "upstream_url": "https://github.com/openai/codex",
   "tag": "latest",
-  "commit": "791b69dd53703e928cbbda4ca41cfc795b7397b0",
-  "codex_version": "main-2026-05-21",
-  "captured_at": "2026-05-21T11:46:38Z",
+  "source_tag": "rust-v0.147.0",
+  "commit": "be6e8eac029b183056b7e4402879f15d2c85f61b",
+  "codex_version": "0.147.0",
+  "captured_at": "2026-08-07T05:18:28Z",
   "schema_files_count": 20,
   "events": [
     "PreToolUse",
@@ -21,7 +22,8 @@
   ],
   "source_path": "codex-rs/hooks/schema/generated",
   "notes": [
-    "Captured from upstream OpenAI Codex HEAD using vendored generated hook schema fixtures.",
-    "SubagentStart and SubagentStop are release-blocking events for SKS 1.14.1 hook compatibility."
+    "Captured from the current package-tracked upstream OpenAI Codex release using generated hook schema fixtures.",
+    "The latest directory is version-neutral; source_tag and commit preserve capture provenance.",
+    "SubagentStart and SubagentStop are release-blocking events for SKS hook compatibility."
   ]
 }

@@ -6,7 +6,7 @@ import {
   CODEX_HOOK_SCHEMA_BASELINE_TAG,
   CODEX_REQUIRED_BASELINE_TAG
 } from './codex-version-policy.js';
-import { codexReleaseManifestParity } from './codex-release-manifest.js';
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from './codex-runtime-contract.js';
 import { codexSchemaSnapshotReport } from './codex-schema-snapshot.js';
 import { codexHookWarningCheck } from './codex-hook-warning-detector.js';
 
@@ -14,21 +14,18 @@ import { codexHookWarningCheck } from './codex-hook-warning-detector.js';
  * Current-release compatibility report.
  *
  * SKS intentionally does not aggregate superseded per-version matrices here.
- * Update/doctor converge the project to the package-tracked Codex release and
- * this report validates only that current manifest, runtime, and hook surface.
+ * Update/doctor converge the project to the package-tracked Codex dependency
+ * graph and this report validates that contract against the resolved runtime.
  */
 export async function codexCompatibilityReport(opts: any = {}) {
   const root = opts.root || await projectRoot();
   const requiredBaseline = opts.requiredBaseline || opts.require || CODEX_REQUIRED_BASELINE_TAG;
   const version = await codexVersionReport({ ...opts, requiredBaseline });
-  const releaseManifest = await codexReleaseManifestParity(root).catch((err: any) => ({
-    ok: false,
-    mismatches: ['manifest_load_failed'],
-    manifest: null,
-    manifest_path: null,
-    manifest_sha256: null,
-    error: err?.message || String(err)
-  }));
+  const releaseContract = {
+    ok: true,
+    dependency_source: CURRENT_CODEX_RUNTIME_CONTRACT.dependencySource,
+    contract: CURRENT_CODEX_RUNTIME_CONTRACT
+  };
   const snapshot = await codexSchemaSnapshotReport();
   const hooks = await codexHookWarningCheck(root, { recordWrongness: false });
   const current = await detectCodexCurrentCapability({
@@ -36,12 +33,12 @@ export async function codexCompatibilityReport(opts: any = {}) {
     codexBin: opts.codexBin || null,
     requireReal: opts.requireReal === true
   });
-  const ok = Boolean(version.policy.ok && releaseManifest.ok && snapshot.ok && hooks.ok && current.ok);
+  const ok = Boolean(version.policy.ok && snapshot.ok && hooks.ok && current.ok);
 
   return {
     schema: CODEX_COMPAT_SCHEMA,
     required_baseline: requiredBaseline,
-    release_manifest: releaseManifest,
+    release_contract: releaseContract,
     detected: version.detected,
     current_capability: current,
     capabilities: current.feature_states,
@@ -71,7 +68,6 @@ export async function codexCompatibilityReport(opts: any = {}) {
     ],
     blockers: [
       ...(version.policy.ok ? [] : ['codex_version_policy_failed']),
-      ...(releaseManifest.ok ? [] : ['codex_release_manifest_mismatch']),
       ...(snapshot.ok ? [] : ['codex_hook_schema_snapshot_invalid']),
       ...(hooks.ok ? [] : ['codex_hook_semantic_warning']),
       ...current.blockers

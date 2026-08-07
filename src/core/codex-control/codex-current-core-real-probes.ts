@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { CURRENT_CODEX_RELEASE_MANIFEST } from '../codex-compat/codex-release-manifest.js'
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../codex-compat/codex-runtime-contract.js'
 import { nowIso, writeJsonAtomic } from '../fsx.js'
 
 export type CodexCurrentCoreProbeName =
@@ -139,7 +139,7 @@ export function buildCodexCurrentCoreRealProbeResult(input: {
   const overallOk = input.requireReal ? blockers.length === 0 && failed.length === 0 && skipped.length === 0 : failed.length === 0
   return {
     schema: 'sks.codex-current-core-real-probe-result.v1',
-    target_version: CURRENT_CODEX_RELEASE_MANIFEST.requiredCliVersion,
+    target_version: CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion,
     compatibility_origin: 'codex-current-core-real-probe-result-v1',
     compatibility_authority: 'deprecated_non_authoritative_lineage_only',
     generated_at: nowIso(),

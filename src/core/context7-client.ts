@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { PACKAGE_VERSION } from './version.js';
+import { collectMcpListPages } from './mcp/modern-protocol.js';
 
 const DEFAULT_CONTEXT7_COMMAND = 'npx';
 const DEFAULT_CONTEXT7_ARGS = ['-y', '@upstash/context7-mcp@latest'];
@@ -224,8 +225,10 @@ class LocalMcpClient {
 
   async listTools() {
     if (!this.client) throw new Error('Context7 MCP is not connected.');
-    const result = await this.client.listTools({}, { timeout: this.timeoutMs, cacheMode: 'refresh' });
-    return Array.isArray(result?.tools) ? result.tools : [];
+    return collectMcpListPages<any>('tools', (params) => this.client!.listTools(params, {
+      timeout: this.timeoutMs,
+      cacheMode: 'refresh'
+    }), { requireModernResult: false });
   }
 
   async callTool(name: any, args: any = {}) {
