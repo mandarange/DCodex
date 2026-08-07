@@ -9,7 +9,7 @@ import {
   recoverMenuBarGenerationTransaction,
   rollbackGenerationPairs
 } from './generation-transaction.js';
-import { launchMenuBar, stopMenuBarForReplacement } from './launch-agent.js';
+import { launchMenuBar, menuBarLaunchdTouchAllowed, stopMenuBarForReplacement, terminateMenuBarProcesses } from './launch-agent.js';
 import { sksMenuBarPaths } from './paths.js';
 import { aggregateFileHashes } from './build-stamp.js';
 import { inspectInstalledResources } from './resources.js';
@@ -341,7 +341,7 @@ export async function rollbackSksMenuBar(opts: SksMenuBarRollbackOptions = {}): 
     transaction = committed;
   }
 
-  if (opts.launch === false || env.SKS_SKIP_SKS_MENUBAR_LAUNCH === '1') {
+  if (opts.launch === false || env.SKS_SKIP_SKS_MENUBAR_LAUNCH === '1' || !menuBarLaunchdTouchAllowed(paths, env)) {
     return result('rolled_back_launch_skipped', true, verificationBefore.package_version, replacedStamp?.package_version || null, verificationBefore, verificationAfter, { requested: false, method: 'skipped', ok: true }, [], warnings);
   }
   const launch = await launchMenuBar({
@@ -372,6 +372,21 @@ export async function rollbackSksMenuBar(opts: SksMenuBarRollbackOptions = {}): 
 
   async function stopBeforeReplacement(): Promise<SksMenuBarRollbackResult | null> {
     if (replacementStopped) return null;
+    if (!menuBarLaunchdTouchAllowed(paths, env)) {
+      const terminated = await terminateMenuBarProcesses([paths.executable_path], env);
+      if (!terminated.ok) {
+        return result(
+          'failed', false, null, null, null, null,
+          { requested: false, method: 'none', ok: false, error: 'menubar_rollback_stop_failed' },
+          ['menubar_rollback_stop_failed'],
+          warnings
+        );
+      }
+      replacementStopped = true;
+      warnings.push('launchd_stop_skipped_non_user_home');
+      actions.push('verified process termination without touching the user launchd service before journaled rollback replacement');
+      return null;
+    }
     const stopped = await stopMenuBarForReplacement({
       launchctl,
       paths,

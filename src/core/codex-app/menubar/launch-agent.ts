@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { exists, readJson, runProcess, which, writeJsonAtomic } from '../../fsx.js';
 import { CONTROL_CENTER_DOMAIN, CONTROL_CENTER_PREFERRED_POSITION, SKS_MENUBAR_LABEL } from './constants.js';
+import { realUserHome } from './installer/runtime.js';
 import type {
   SksMenuBarInstallResult,
   SksMenuBarRuntimeProcess,
@@ -22,6 +23,21 @@ export function launchAgentSource(executablePath: string, installDir: string): s
 <key>StandardOutPath</key><string>${xml(path.join(installDir, 'menubar.out.log'))}</string>
 <key>StandardErrorPath</key><string>${xml(path.join(installDir, 'menubar.err.log'))}</string>
 </dict></plist>\n`;
+}
+
+// launchd's Menu Bar service label (gui/<uid>/com.sneakoscope.sks-menubar) is
+// machine-global, not scoped to the install home. An implicitly resolved
+// launchctl therefore always reaches the OPERATOR's real session: an
+// install/rollback/uninstall running against any other home (isolated test
+// homes, sandboxes, custom --home) would boot out the operator's real Menu Bar
+// while writing its own files elsewhere. Callers that set SKS_MENUBAR_LAUNCHCTL
+// explicitly own that boundary (every test fixture injects one); everyone else
+// may only touch launchd when operating on the real user home.
+export function menuBarLaunchdTouchAllowed(
+  paths: Pick<ReturnType<typeof sksMenuBarPaths>, 'home'>,
+  env: NodeJS.ProcessEnv
+): boolean {
+  return Boolean(env.SKS_MENUBAR_LAUNCHCTL) || path.resolve(paths.home) === realUserHome();
 }
 
 export async function seedMenuBarPreferredPosition(env: NodeJS.ProcessEnv): Promise<boolean> {
@@ -357,14 +373,20 @@ export async function removeLaunchAgent(paths: ReturnType<typeof sksMenuBarPaths
   const actions: string[] = [];
   const warnings: string[] = [];
   const blockers: string[] = [];
-  const launchctl = env.SKS_MENUBAR_LAUNCHCTL || await which('launchctl').catch(() => null) || '/bin/launchctl';
-  const stopped = await stopMenuBarForReplacement({
-    launchctl,
-    paths,
-    executablePaths: [paths.executable_path],
-    env
-  });
-  if (!stopped.ok) blockers.push(stopped.error || 'menubar_process_stop_failed');
+  if (menuBarLaunchdTouchAllowed(paths, env)) {
+    const launchctl = env.SKS_MENUBAR_LAUNCHCTL || await which('launchctl').catch(() => null) || '/bin/launchctl';
+    const stopped = await stopMenuBarForReplacement({
+      launchctl,
+      paths,
+      executablePaths: [paths.executable_path],
+      env
+    });
+    if (!stopped.ok) blockers.push(stopped.error || 'menubar_process_stop_failed');
+  } else {
+    const terminated = await terminateMenuBarProcesses([paths.executable_path], env);
+    if (!terminated.ok) blockers.push('menubar_process_stop_failed');
+    else warnings.push('launchd_stop_skipped_non_user_home');
+  }
   if (blockers.length > 0) return { actions, warnings, blockers };
   await fs.rm(paths.launch_agent_path, { force: true }).catch((error: unknown) => blockers.push(`remove_launch_agent_failed:${String(error)}`));
   await fs.rm(paths.install_dir, { recursive: true, force: true }).catch((error: unknown) => blockers.push(`remove_install_dir_failed:${String(error)}`));

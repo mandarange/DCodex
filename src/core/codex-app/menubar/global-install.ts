@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { exists, nowIso, readJson, readText, runProcess, writeJsonAtomic } from '../../fsx.js';
 import { ensureConfinedDirectory, inspectConfinedPath, removeManagedPathVerified } from '../../managed-path-safety.js';
+import { realUserHome } from './installer/runtime.js';
 import type { SksMenuBarBuildStamp } from './types.js';
 import type { sksMenuBarPaths } from './paths.js';
 
@@ -61,6 +62,7 @@ export async function verifiedProjectMenuBarDuplicateExecutablePaths(input: {
   const executables: string[] = [];
   const candidates = await discoverProjectMenuBarDuplicateCandidates(input);
   for (const candidate of candidates.inspected) {
+    if (isOutsideScopeReapingRefused(candidate, root, home)) continue;
     const confinementRoot = confinementRootForCandidate(root, home, candidate);
     const state = await inspectConfinedPath(confinementRoot, candidate).catch(() => null);
     if (!state?.exists || state.leafSymlink || !state.stat?.isDirectory()) continue;
@@ -145,6 +147,11 @@ export async function cleanupProjectMenuBarDuplicates(input: {
   const warnings: string[] = [];
 
   for (const candidate of inspected) {
+    if (isOutsideScopeReapingRefused(candidate, root, input.paths.home)) {
+      preserved.push(candidate);
+      warnings.push(`menubar_project_duplicate_outside_scope_preserved:${candidate}`);
+      continue;
+    }
     const confinementRoot = confinementRootForCandidate(root, input.paths.home, candidate);
     const state = await inspectConfinedPath(confinementRoot, candidate).catch(() => null);
     if (!state) {
@@ -309,6 +316,21 @@ function duplicateInstallDirForExecutable(executablePath: string, canonicalInsta
   if (!executable.endsWith(suffix)) return null;
   if (isWithin(path.resolve(canonicalInstallDir), executable)) return null;
   return executable.slice(0, -suffix.length);
+}
+
+// Duplicate discovery is process-wide (pgrep/ps and the launchd plist), so a
+// run whose home is not the operator's real home — an isolated test home, a
+// sandbox, or a custom --home — will discover the operator's REAL canonical
+// install as a "duplicate" of its own temp canonical dir. Candidates outside
+// both the project root and the active home may only be terminated/removed
+// when the active home IS the real user home (cross-project reaping on the
+// operator's canonical install); every other run must leave them untouched.
+function isOutsideScopeReapingRefused(candidateInput: string, rootInput: string, homeInput: string): boolean {
+  const candidate = path.resolve(candidateInput);
+  const root = path.resolve(rootInput);
+  const home = path.resolve(homeInput);
+  if (isWithin(root, candidate) || isWithin(home, candidate)) return false;
+  return home !== realUserHome();
 }
 
 function confinementRootForCandidate(rootInput: string, homeInput: string, candidate: string): string {

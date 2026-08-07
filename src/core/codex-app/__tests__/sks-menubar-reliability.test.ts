@@ -15,6 +15,7 @@ import {
   isUnloadableLaunchdKickstartError,
   launchAgentSource,
   launchMenuBar,
+  menuBarLaunchdTouchAllowed,
   restartLaunchAgent,
   stopMenuBarForReplacement,
   terminateMenuBarProcesses
@@ -71,6 +72,12 @@ test('unloadable kickstart errors are classified without treating arbitrary fail
   assert.equal(isUnloadableLaunchdKickstartError('Could not kickstart service "com.sneakoscope.sks-menubar": 1: Operation not permitted'), true);
   assert.equal(isUnloadableLaunchdKickstartError('Bad request.'), true);
   assert.equal(isUnloadableLaunchdKickstartError('launchctl print failed: permission denied by policy'), false);
+});
+
+test('launchd control is refused for non-user homes unless a launchctl is explicitly injected', () => {
+  assert.equal(menuBarLaunchdTouchAllowed({ home: os.userInfo().homedir }, {}), true);
+  assert.equal(menuBarLaunchdTouchAllowed({ home: '/tmp/fixture-home' }, {}), false);
+  assert.equal(menuBarLaunchdTouchAllowed({ home: '/tmp/fixture-home' }, { SKS_MENUBAR_LAUNCHCTL: '/tmp/fake-launchctl' }), true);
 });
 
 test('bootout treats only a verified absent service as already stopped', () => {
@@ -457,8 +464,11 @@ test('duplicate cleanup preserves unverified content while explicitly reporting 
   await fs.mkdir(collision, { recursive: true });
   await fs.writeFile(path.join(collision, 'user-owned.txt'), 'preserve me\n');
 
-  const cleanup = await cleanupProjectMenuBarDuplicates({ paths: fixture.paths, root: fixture.root });
-  const state = await inspectProjectMenuBarCanonicalState({ paths: fixture.paths, root: fixture.root });
+  // fixture.env is mandatory here: without it, duplicate discovery falls back
+  // to process.env and the real pgrep/ps, which classify the operator's real
+  // running Menu Bar install as a removable duplicate of this temp canonical.
+  const cleanup = await cleanupProjectMenuBarDuplicates({ paths: fixture.paths, root: fixture.root, env: fixture.env });
+  const state = await inspectProjectMenuBarCanonicalState({ paths: fixture.paths, root: fixture.root, env: fixture.env });
 
   assert.equal(cleanup.ok, true);
   assert.equal(cleanup.canonical_only, false);

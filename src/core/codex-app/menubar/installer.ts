@@ -20,6 +20,7 @@ import {
   launchAgentSource,
   launchMenuBar,
   inspectRunningMenuBarProcess,
+  menuBarLaunchdTouchAllowed,
   seedMenuBarPreferredPosition,
   stopMenuBarForReplacement,
   terminateMenuBarProcesses
@@ -277,7 +278,14 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
   });
   const mustStopCanonical = !upToDate || (launchWanted && launchAllowed);
   let canonicalStopped = false;
-  if (mustStopCanonical) {
+  if (mustStopCanonical && !menuBarLaunchdTouchAllowed(paths, env)) {
+    const stopped = await terminateMenuBarProcesses([paths.executable_path, ...duplicateExecutablePaths], env);
+    if (!stopped.ok) {
+      return blocked('menubar_stop_before_replace_failed', `Remaining PIDs: ${stopped.remaining_pids.join(',')}`);
+    }
+    warnings.push('launchd_stop_skipped_non_user_home');
+    actions.push('verified canonical/project duplicate processes stopped without touching the user launchd service');
+  } else if (mustStopCanonical) {
     const stopped = await stopMenuBarForReplacement({
       launchctl,
       paths,

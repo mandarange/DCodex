@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { SKS_TEMP_LEASE_FILE, tmpdir, writeJsonAtomic } from '../core/fsx.js';
 import {
@@ -165,6 +165,66 @@ function diffIsolatedCodexHome(before: Map<string, string>, after: Map<string, s
 
 const isolatedHomeBaseline = snapshotIsolatedCodexHome();
 
+// HOME isolation cannot contain machine-global surfaces: os.userInfo().homedir,
+// pgrep/ps process discovery, and launchd's fixed gui/<uid> service label all
+// resolve the operator's REAL install regardless of $HOME. Snapshot the real
+// Menu Bar's stable artifacts (app bundle, build stamp, action script, launch
+// agent plist — never its runtime state or logs, which the live app mutates)
+// plus the launchd loaded state, and fail the run on any drift.
+const realMenuBarInstallDir = path.join(realHome, '.codex', 'sks-menubar');
+const realMenuBarLaunchAgentPath = path.join(realHome, 'Library', 'LaunchAgents', 'com.sneakoscope.sks-menubar.plist');
+const realMenuBarStableEntries = ['SKSMenuBar.app', 'build-stamp.json', 'sks-menubar-action.sh'];
+
+function snapshotRealMenuBarInstall(): Map<string, string> {
+  const out = new Map<string, string>();
+  const record = (file: string): void => {
+    try {
+      const stat = fs.lstatSync(file);
+      if (stat.isSymbolicLink()) {
+        out.set(path.relative(realHome, file), 'symlink');
+        return;
+      }
+      if (!stat.isFile()) return;
+      const hash = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+      out.set(path.relative(realHome, file), `${(stat.mode & 0o777).toString(8)}:${hash}`);
+    } catch {}
+  };
+  const walk = (dir: string): void => {
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(file);
+      else record(file);
+    }
+  };
+  for (const name of realMenuBarStableEntries) {
+    const target = path.join(realMenuBarInstallDir, name);
+    let directory = false;
+    try { directory = fs.lstatSync(target).isDirectory(); } catch { continue; }
+    if (directory) walk(target);
+    else record(target);
+  }
+  record(realMenuBarLaunchAgentPath);
+  return out;
+}
+
+function realMenuBarLaunchdLoaded(): boolean | null {
+  if (process.platform !== 'darwin' || typeof process.getuid !== 'function') return null;
+  try {
+    execFileSync('/bin/launchctl', ['print', `gui/${process.getuid()}/com.sneakoscope.sks-menubar`], {
+      stdio: 'ignore',
+      timeout: 5_000
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const realMenuBarBaseline = snapshotRealMenuBarInstall();
+const realMenuBarLaunchdBaseline = realMenuBarLaunchdLoaded();
+
 const isolatedProcessGroup = process.platform !== 'win32';
 const childEnv: NodeJS.ProcessEnv = {
   ...process.env,
@@ -248,6 +308,13 @@ async function finalize(code: number, signal: NodeJS.Signals | null, spawnError:
   if (signalTimer) clearTimeout(signalTimer);
   await settleChildTree();
   const homeBreaches = diffIsolatedCodexHome(isolatedHomeBaseline, snapshotIsolatedCodexHome());
+  const menubarBreaches = diffIsolatedCodexHome(realMenuBarBaseline, snapshotRealMenuBarInstall());
+  const realMenuBarLaunchdAfter = realMenuBarLaunchdLoaded();
+  if (realMenuBarLaunchdBaseline !== null && realMenuBarLaunchdAfter !== null && realMenuBarLaunchdBaseline !== realMenuBarLaunchdAfter) {
+    menubarBreaches.push(realMenuBarLaunchdBaseline
+      ? 'launchd_service_booted_out:com.sneakoscope.sks-menubar'
+      : 'launchd_service_bootstrapped:com.sneakoscope.sks-menubar');
+  }
   const cleanupError = await cleanup();
   removeSignalHandlers();
   if (spawnError) console.error(`canonical test runner failed: ${spawnError.message}`);
@@ -256,8 +323,12 @@ async function finalize(code: number, signal: NodeJS.Signals | null, spawnError:
     ? new Error(`canonical_test_home_isolation_breach: a test wrote the default Codex home (${homeBreaches.join(', ')})`)
     : null;
   if (breachError) console.error(breachError.message);
+  const menubarBreachError = menubarBreaches.length
+    ? new Error(`canonical_test_menubar_isolation_breach: a test mutated the real SKS Menu Bar install (${menubarBreaches.join(', ')})`)
+    : null;
+  if (menubarBreachError) console.error(menubarBreachError.message);
   let proofError: Error | null = null;
-  const successfulRun = code === 0 && !signal && !forwardedSignal && !spawnError && !cleanupError && !breachError;
+  const successfulRun = code === 0 && !signal && !forwardedSignal && !spawnError && !cleanupError && !breachError && !menubarBreachError;
   if (successfulRun && !allTestsRequested) {
     try {
       const finalAuthorization = releaseAuthorizationSnapshot(root, pkg);
@@ -283,7 +354,7 @@ async function finalize(code: number, signal: NodeJS.Signals | null, spawnError:
   if (!proofCommitted && !allTestsRequested) removeCanonicalTestProof();
   if (forwardedSignal) process.kill(process.pid, forwardedSignal);
   else if (signal) process.kill(process.pid, signal);
-  else process.exitCode = spawnError || cleanupError || breachError || proofError ? 1 : code;
+  else process.exitCode = spawnError || cleanupError || breachError || menubarBreachError || proofError ? 1 : code;
 }
 
 function signalChildTree(signal: NodeJS.Signals): void {

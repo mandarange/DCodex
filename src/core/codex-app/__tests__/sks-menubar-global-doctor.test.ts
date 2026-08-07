@@ -313,6 +313,48 @@ process.exit(1);
   await assert.rejects(fsp.access(launchdDuplicate));
 });
 
+test('menubar duplicate cleanup from a non-user home preserves verified installs outside its root and home', async (t) => {
+  // Process discovery is machine-wide: under an isolated test home the
+  // operator's REAL canonical install surfaces as a verified "duplicate" of
+  // the temp canonical dir. This encodes the invariant that such runs never
+  // terminate or remove anything outside their own root/home.
+  const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-menubar-outside-scope-'));
+  const home = path.join(fixture, 'home');
+  const root = path.join(fixture, 'project');
+  const outside = path.join(fixture, 'operator-real-canonical');
+  const paths = sksMenuBarPaths(home, root);
+  const outsideExecutable = await writeVerifiedMenuBarDuplicate(outside);
+  const pgrep = path.join(fixture, 'fake-pgrep');
+  const ps = path.join(fixture, 'fake-ps');
+  t.after(() => fsp.rm(fixture, { recursive: true, force: true }));
+
+  await fsp.mkdir(paths.install_dir, { recursive: true });
+  await fsp.mkdir(root, { recursive: true });
+  await fsp.writeFile(pgrep, `#!${process.execPath}
+process.stdout.write('701\\n');
+`, { mode: 0o755 });
+  await fsp.writeFile(ps, `#!${process.execPath}
+process.stdout.write(${JSON.stringify(`701 ${outsideExecutable}\n`)});
+`, { mode: 0o755 });
+  const env = {
+    ...process.env,
+    SKS_MENUBAR_TEST_PROCESS_TOOLS: '1',
+    SKS_MENUBAR_PGREP: pgrep,
+    SKS_MENUBAR_PS: ps
+  };
+
+  const executablePaths = await verifiedProjectMenuBarDuplicateExecutablePaths({ paths, root, env });
+  assert.deepEqual(executablePaths, [], 'outside-scope executables must never feed process termination from a non-user home');
+
+  const cleanup = await cleanupProjectMenuBarDuplicates({ paths, root, env });
+  assert.equal(cleanup.ok, true, JSON.stringify(cleanup));
+  assert.deepEqual(cleanup.removed, []);
+  assert.ok(cleanup.preserved.includes(outside), JSON.stringify(cleanup.preserved));
+  assert.ok(cleanup.warnings.includes(`menubar_project_duplicate_outside_scope_preserved:${outside}`));
+  assert.ok(cleanup.warnings.includes('menubar_strict_canonical_only_unmet'));
+  await fsp.access(outsideExecutable);
+});
+
 async function writeVerifiedMenuBarDuplicate(installDir: string): Promise<string> {
   const executable = path.join(installDir, 'SKSMenuBar.app', 'Contents', 'MacOS', 'SKSMenuBar');
   await fsp.mkdir(path.dirname(executable), { recursive: true });
