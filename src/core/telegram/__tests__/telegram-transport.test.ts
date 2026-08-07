@@ -206,6 +206,7 @@ test('liveness receipt is owner-only, doctor-readable and contains no token', as
   assert.equal(read.ok && read.receipt.getme_latency_ms, 0);
   const doctor = await probeTelegram({ receiptPath: file, now });
   assert.equal(doctor.ok, true);
+  assert.equal(doctor.bot_id, 987_654_321);
 });
 
 test('native liveness bot_id round-trips through read and status, remains Doctor-readable, and rejects malformed IDs', async (t) => {
@@ -260,9 +261,11 @@ test('native liveness bot_id round-trips through read and status, remains Doctor
     const doctor = await telegramCommand(['doctor', '--json'], { receiptPath: file }) as {
       ok: boolean;
       status: string;
+      bot_id: number | null;
     };
     assert.equal(doctor.ok, true);
     assert.equal(doctor.status, 'ready');
+    assert.equal(doctor.bot_id, nativeReceipt.bot_id);
   } finally {
     console.log = priorLog;
     process.exitCode = priorExitCode;

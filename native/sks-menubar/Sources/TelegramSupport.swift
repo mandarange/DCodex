@@ -179,6 +179,7 @@ struct TelegramCenterDoctorResponse: Decodable {
     let status: String
     let token_configured: Bool
     let token_source: String
+    let bot_id: Int64?
     let bot_identity_valid: Bool
     let paired_chat_count: Int
     let audit_healthy: Bool

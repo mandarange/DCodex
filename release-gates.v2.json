@@ -704,6 +704,43 @@
       "output_contract": "sks.gate-result.v2"
     },
     {
+      "id": "release:version-truth",
+      "command": "node ./dist/scripts/release-version-truth-check.js",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 60000,
+      "cache": {
+        "enabled": false,
+        "inputs": [
+          "package.json",
+          "package-lock.json",
+          "plugins/sks/.codex-plugin/plugin.json",
+          "src/core/version.ts",
+          "src/core/fsx.ts",
+          "src/bin/sks.ts",
+          "crates/sks-core/Cargo.toml",
+          "crates/sks-core/Cargo.lock",
+          "dist/build-manifest.json",
+          "CHANGELOG.md",
+          "README.md",
+          "src/scripts/release-version-truth-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
       "id": "install-surface:ssot",
       "command": "node ./dist/scripts/install-surface-ssot-check.js",
       "deps": [],
@@ -714,7 +751,7 @@
       "side_effect": "hermetic",
       "timeout_ms": 60000,
       "cache": {
-        "enabled": true,
+        "enabled": false,
         "inputs": [
           "package.json",
           "plugins/sks/.codex-plugin/plugin.json",
@@ -727,7 +764,7 @@
         "report_dir": "per-gate"
       },
       "preset": [
-        "confidence"
+        "release"
       ],
       "output_contract": "sks.gate-result.v2"
     },

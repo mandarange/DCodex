@@ -1,16 +1,16 @@
-# SKS 8.2.0 Release Readiness
+# SKS 8.2.1 Release Readiness
 
 ## Current decision
 
-**SOURCE PREPARED / RELEASE BLOCKED.** The Telegram arbitrary-bot correction
-and 8.2.0 version surfaces are prepared locally. Publication is not authorized
+**SOURCE PREPARED / RELEASE BLOCKED.** The Telegram arbitrary-bot Center
+settings improvement and 8.2.1 version surfaces are prepared locally. Publication is not authorized
 by this state: the tree is not yet a clean promoted release commit, current
 exact-commit receipts do not exist, the user's live BotFather flow has not been
 exercised, and registry mutation remains an operator action.
 
 Earlier SHA- or 8.1.3-bound artifacts are historical only. A version string,
 focused test, configured credential, package dry run, or old green stamp cannot
-authorize 8.2.0.
+authorize 8.2.1.
 
 Evidence labels are intentionally narrow:
 
@@ -24,11 +24,15 @@ The current execution surface is `$sks-naruto` / `sks naruto run`, with
 an operator-run repair command and must not be invoked automatically. Update
 and Control Center views share the `sks.update-status.v3` snapshot.
 
-## 8.2.0 candidate scope
+## 8.2.1 candidate scope
 
 - SKS Center and the CLI accept any user-owned BotFather bot. Setup verifies
   `getMe` and binds the exact returned bot ID; it does not assume a product bot
   name or username.
+- Remote Coding exposes the required BotFather token as an inline secure field,
+  applies it through one verified action, shows the derived active bot ID, and
+  renders a copyable short-lived pairing command. Bot, chat, and user IDs are
+  not editable inputs.
 - Every setup outcome uses the setup response schema. Identity rejection,
   network failure, timeout, and invalid identity have stable secret-free error
   codes; later setup failures retain neutral wording.
@@ -36,7 +40,7 @@ and Control Center views share the `sks.update-status.v3` snapshot.
   the TypeScript reader accepts legacy 8.1.x receipts that omitted those
   optional keys.
 - Package, lockfile, runtime, Rust, README, changelog, performance, and agent
-  bridge version surfaces name 8.2.0.
+  bridge version surfaces name 8.2.1.
 
 These are source claims. They become release claims only after the exact
 candidate commit passes the repository's release flow.
@@ -88,21 +92,21 @@ node ./dist/scripts/release-pack-receipt.js verify
 node ./dist/scripts/release-provenance-check.js --publish
 npm whoami --registry https://registry.npmjs.org/
 npm view sneakoscope maintainers --json --registry https://registry.npmjs.org/
-npm view sneakoscope@8.2.0 version --json --registry https://registry.npmjs.org/
+npm view sneakoscope@8.2.1 version --json --registry https://registry.npmjs.org/
 npm publish --dry-run --json \
   --registry https://registry.npmjs.org/ \
   --tag latest \
   --access public
 ```
 
-Before publication, the version lookup should report that 8.2.0 is not already
+Before publication, the version lookup should report that 8.2.1 is not already
 present. The dry run is not publication. The user performs the actual publish,
 push, tag, workflow dispatch, or approval separately.
 
 ## Real Telegram acceptance
 
 A live arbitrary-bot check requires the user's private token and target Mac.
-After installing the exact 8.2.0 candidate, the operator should save one owned
+After installing the exact 8.2.1 candidate, the operator should save one owned
 BotFather bot in SKS Center, confirm the displayed `getMe` identity, restart
 the resident poller, pair one private chat, and run a bounded `/sks status {}`
 round trip. Redact the token from every artifact. No hermetic test or configured
@@ -144,13 +148,13 @@ node ./dist/scripts/npm-stage-tarball-verifier.js \
   --physical-evidence-run-id <physical-capture-workflow-run-id> \
   --workflow-run-id <stage-workflow-run-id> \
   --local-receipt /absolute/path/to/local-pack-receipt.json \
-  --local-tarball /absolute/path/to/sneakoscope-8.2.0.tgz \
+  --local-tarball /absolute/path/to/sneakoscope-8.2.1.tgz \
   --stage-receipt /absolute/path/to/npm-stage-receipt.json
 ```
 
 The verifier does not approve, reject, publish, tag, or modify a stage.
 
-The final migration matrix includes a `7.6.0 to 8.2.0 upgrade smoke`, covering
+The final migration matrix includes a `7.6.0 to 8.2.1 upgrade smoke`, covering
 installed update finalization, Telegram receipt compatibility, preserved user
 configuration, and the current command surface. Fixture success cannot replace
 the real macOS and Telegram evidence described above.

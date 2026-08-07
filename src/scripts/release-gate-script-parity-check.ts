@@ -102,6 +102,7 @@ export function buildReleaseGateScriptParityReport(): ReleaseGateScriptParityRep
     'typecheck',
     'release:check',
     'release:metadata',
+    'release:version-truth',
     'release:check:affected',
     'release:check:fast',
     'release:check:confidence',

@@ -11,6 +11,7 @@ test('version bump updates every current release and Codex document surface', as
   const files: Record<string, string> = {
     'package.json': '{"name":"fixture","version":"1.2.3"}\n',
     'package-lock.json': '{"name":"fixture","version":"1.2.3","packages":{"":{"version":"1.2.3"}}}\n',
+    'plugins/sks/.codex-plugin/plugin.json': '{"schema_version":"1.0.0","name":"sks","version":"1.2.3"}\n',
     'CHANGELOG.md': '# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- Existing release fix.\n',
     'README.md': 'Current release: **SKS 1.2.3**.\n\n## Naruto In 1.2.3\n',
     'docs/release-readiness.md': [
@@ -79,6 +80,7 @@ test('version bump updates every current release and Codex document surface', as
     assert.equal(result.version, '1.2.4')
 
     const expected: Record<string, RegExp[]> = {
+      'plugins/sks/.codex-plugin/plugin.json': [/"version":"1\.2\.4"/],
       'README.md': [/\*\*SKS 1\.2\.4\*\*/, /## Naruto In 1\.2\.4/],
       'docs/release-readiness.md': [
         /^# SKS 1\.2\.4 Release Readiness$/m,

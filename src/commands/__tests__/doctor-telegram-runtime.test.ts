@@ -42,6 +42,7 @@ test('live getMe merges fake client result with resident receipt state', async (
 
   assert.equal(getMeCalls, 1);
   assert.equal(probe.getme_check_kind, 'live');
+  assert.equal(probe.bot_id, 1);
   assert.equal(probe.bot_identity_valid, true);
   assert.equal(probe.paired_chat_count, 1);
   assert.equal(probe.poller.running, false);
@@ -84,6 +85,7 @@ test('live getMe network failure degrades without escaping the probe', async (t)
   });
   assert.equal(probe.status, 'degraded');
   assert.equal(probe.getme_check_kind, 'live');
+  assert.equal(probe.bot_id, null);
   assert.equal(probe.bot_identity_valid, false);
   assert.ok(probe.blockers.some((blocker) => blocker.startsWith('telegram_getme_failed:')));
 });
@@ -166,6 +168,7 @@ function doctorProbe(running: boolean, kind: 'live' | 'receipt' = 'live'): Teleg
     ok: running,
     status: running ? 'ready' : 'degraded',
     token_configured: true,
+    bot_id: 1,
     bot_identity_valid: true,
     getme_checked_at: '2026-08-01T00:00:00.000Z',
     getme_latency_ms: 7,

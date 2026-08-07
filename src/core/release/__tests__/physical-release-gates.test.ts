@@ -8,7 +8,7 @@ import test from 'node:test'
 import { inspectPhysicalReleaseGates, validatePhysicalReleaseGateInspection } from '../physical-release-gates.js'
 import { writePhysicalReleaseEvidence } from './physical-release-evidence-fixture.js'
 
-const VERSION = '8.0.5'
+const VERSION = String(JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')).version || '')
 const SHA = 'a'.repeat(40)
 
 test('physical release gates bind five real receipts and the complete Desktop Bridge evidence contract', () => {

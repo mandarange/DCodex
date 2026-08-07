@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-06T14:11:17.534Z",
+  "generated_at": "2026-08-07T02:58:42.466Z",
   "git_head_sha": null,
   "source_file_count": 2764,
-  "index_digest": "d9a1feab1fbab498345f064a929161fcc04a10d51493f86ddf6226adbc1f6dab",
+  "index_digest": "95edd6e2885c5860a15c92785f5e3a8f5a32cdb3bfc4586932119f10c5822265",
   "entries": [
     {
       "id": "code:scripts",
@@ -172,7 +172,7 @@
     },
     {
       "id": "code:native-sks-menubar",
-      "text": "native-sks-menubar is a module at native/sks-menubar (55 files, low risk). It has no exported surface in the graph. It has no recorded outbound dependency.",
+      "text": "native-sks-menubar is a module at native/sks-menubar (56 files, low risk). It has no exported surface in the graph. It has no recorded outbound dependency.",
       "citations": [
         {
           "path": "native/sks-menubar/Sources/ProvidersRoutingTruth.swift"
@@ -766,7 +766,7 @@
     },
     {
       "id": "code:core-__tests__",
-      "text": "core-__tests__ is a module at src/core/__tests__ (58 files, low risk). Key exports: COMMAND_CATALOG, CURRENT_CODEX_RELEASE_MANIFEST, CodexLbEnvLoadResult, CompetitorScorecardBaseline, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, and 189 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 24 more.",
+      "text": "core-__tests__ is a module at src/core/__tests__ (57 files, low risk). Key exports: COMMAND_CATALOG, CURRENT_CODEX_RELEASE_MANIFEST, CodexLbEnvLoadResult, CompetitorScorecardBaseline, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, and 188 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 24 more.",
       "citations": [
         {
           "path": "src/core/__tests__/codex-release-manifest-current.test.ts"

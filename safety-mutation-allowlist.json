@@ -5774,8 +5774,8 @@
       "file": "src/scripts/install-surface-ssot-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "3abb56bb81ea8ca090d63b0996b62e4f2e19397cdcf9add310da490e6b3b484a",
-      "callsite_sha256": "8206a1db4c739e37a64eb6b638533c8980bfe6e039989bff98526a545eedc8bc",
+      "scope_contract_sha256": "0ff720cda738bb40b746cfb6e0dcd220c60f0715e86a45983684c492165ebca8",
+      "callsite_sha256": "fa4748494d8f9002b2b241264ca7dfff47053f683f99376700640569f56f0751",
       "occurrence": 1,
       "reason": "src/scripts/install-surface-ssot-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6800,8 +6800,8 @@
       "file": "src/scripts/release-metadata-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "d7e16d46651a403677ba42a4d0fa8fae93eb3382da89807ae631c0aaca0af73d",
-      "callsite_sha256": "14fca0cc154be057ee7eb265a2964e4ff0e00acb676a14a80eaf97bac0c66e54",
+      "scope_contract_sha256": "43c30a77d6ee6f72d29ba26c867224ebd84acc8a2f582dd5aaa3ef38425f45b9",
+      "callsite_sha256": "2bce49c0f1e62a061f50843373ab971754dcac52c77d9389526985d1b6cd2c42",
       "occurrence": 1,
       "reason": "Release metadata validation writes only its fixed versioned JSON report beneath the repository .sneakoscope/reports directory."
     },
@@ -6971,8 +6971,8 @@
       "file": "src/scripts/release-version-truth-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "a9f9fa5d7c3e829e11d0a14ed6ca734735074019a5e5cff4227c0b8a34c06bde",
-      "callsite_sha256": "86d6dba9319b004d478b59a38e5a3666a60b4e31138e971cedcf35e5b129f89c",
+      "scope_contract_sha256": "d000178770a6e6b623216ef99974907d57b51e6a09f4d28ed1d97f4c2244157e",
+      "callsite_sha256": "6df44ead7f72b1019d3004601cc046114808f7253cca459a16098c2675ee68e0",
       "occurrence": 1,
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     },

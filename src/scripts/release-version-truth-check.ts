@@ -9,11 +9,14 @@ const pkg = readJson('package.json');
 const expected = String(pkg.version || '');
 const mismatches = [];
 const warnings = [];
+let checked = 0;
 
 checkJson('package.json', 'version', pkg.version);
 const lock = readJson('package-lock.json');
 checkJson('package-lock.json', 'version', lock.version);
 checkJson('package-lock.json', 'packages[""].version', lock.packages?.['']?.version);
+const plugin = readJson('plugins/sks/.codex-plugin/plugin.json');
+checkJson('plugins/sks/.codex-plugin/plugin.json', 'version', plugin.version);
 checkRegex('src/core/version.ts', /PACKAGE_VERSION\s*=\s*['"]([^'"]+)['"]/, 'PACKAGE_VERSION');
 checkReExportOrRegex('src/core/fsx.ts', /PACKAGE_VERSION\s*}\s*from\s*['"]\.\/version(?:\.js)?['"]/, /PACKAGE_VERSION\s*=\s*['"]([^'"]+)['"]/, 'PACKAGE_VERSION');
 checkReExportOrRegex('src/bin/sks.ts', /PACKAGE_VERSION\s*}\s*from\s*['"]\.\.\/core\/version(?:\.js)?['"]/, /FAST_PACKAGE_VERSION\s*=\s*['"]([^'"]+)['"]/, 'FAST_PACKAGE_VERSION');
@@ -32,6 +35,7 @@ const report = {
   schema: 'sks.release-version-truth.v1',
   ok,
   expected,
+  checked,
   mismatches,
   warnings,
   generated_at: new Date().toISOString()
@@ -41,13 +45,15 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
 
 assertGate(ok, 'release version truth mismatch', { expected, mismatches });
-emitGate('release:version-truth', { version: expected, checked: 13, warnings: warnings.length });
+emitGate('release:version-truth', { version: expected, checked, warnings: warnings.length });
 
 function checkJson(file, field, actual) {
+  checked += 1;
   if (actual !== expected) mismatch(file, field, actual);
 }
 
 function checkRegex(file, re, field) {
+  checked += 1;
   const text = readText(file);
   const match = text.match(re);
   if (!match) mismatch(file, field, null);
@@ -56,11 +62,15 @@ function checkRegex(file, re, field) {
 
 function checkReExportOrRegex(file, reExportRe, literalRe, field) {
   const text = readText(file);
-  if (reExportRe.test(text)) return;
+  if (reExportRe.test(text)) {
+    checked += 1;
+    return;
+  }
   checkRegex(file, literalRe, field);
 }
 
 function checkCargoLock(file, name) {
+  checked += 1;
   const text = readText(file);
   const block = text.split(/\n\[\[package\]\]\n/).find((part) => new RegExp(`name\\s*=\\s*"${escapeRe(name)}"`).test(part));
   const match = block?.match(/version\s*=\s*"([^"]+)"/);
@@ -69,12 +79,14 @@ function checkCargoLock(file, name) {
 }
 
 function checkChangelog() {
+  checked += 1;
   const text = readText('CHANGELOG.md');
   const latest = latestVersionedChangelogSection(text);
   if (latest !== expected) mismatch('CHANGELOG.md', 'latest release section', latest);
 }
 
 function checkReadme() {
+  checked += 1;
   const text = readText('README.md');
   // README renders the banner as `Current release: **SKS 7.1.3**` — the bold wraps `SKS <version>`,
   // not the version alone. Fail closed when the banner is absent so a stale README cannot pass by
@@ -85,6 +97,7 @@ function checkReadme() {
 }
 
 function checkReleaseMetadataScript() {
+  checked += 1;
   const script = String(pkg.scripts?.['release:metadata'] || '');
   if (!script.includes('dist/scripts/release-metadata-check.js')) {
     mismatch('package.json', 'scripts.release:metadata', script || null, 'node ./dist/scripts/release-metadata-check.js');
@@ -92,6 +105,7 @@ function checkReleaseMetadataScript() {
 }
 
 function checkCargoMetadata() {
+  checked += 1;
   const res = spawnSync('cargo', ['metadata', '--no-deps', '--manifest-path', path.join(root, 'crates/sks-core/Cargo.toml'), '--format-version', '1'], {
     cwd: root,
     encoding: 'utf8',

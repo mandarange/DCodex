@@ -28,6 +28,8 @@ export const FORBIDDEN_RECURSIVE_GATES = new Set<string>([
 // Gates that always run on a release check regardless of which files changed.
 export const ALWAYS_ON_GATES = new Set<string>([
   'release:metadata-current',
+  'release:version-truth',
+  'install-surface:ssot',
   'architecture:guard',
   'safety:mutation-callsite-coverage',
   'side-effect:runtime-report',
@@ -44,6 +46,8 @@ export const ALWAYS_ON_GATES = new Set<string>([
 // Gates that must never be skipped when planning for publish.
 export const REQUIRED_FOR_PUBLISH = new Set<string>([
   'release:metadata-current',
+  'release:version-truth',
+  'install-surface:ssot',
   'architecture:guard',
   'safety:mutation-callsite-coverage',
   'side-effect:runtime-report',

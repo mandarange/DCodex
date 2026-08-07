@@ -11,6 +11,7 @@ export interface TelegramDoctorProbe {
   status: 'ready' | 'degraded' | 'not_configured';
   token_configured: boolean;
   token_source?: TelegramTokenSource;
+  bot_id: number | null;
   bot_identity_valid: boolean;
   getme_checked_at: string | null;
   getme_latency_ms: number | null;
@@ -53,13 +54,16 @@ export async function probeTelegram(input: {
     blockers.push(`telegram_token_load_failed:${redactTelegramError(error)}`);
   }
   let identityValid = false;
+  let botId: number | null = null;
   let getMeCheckedAt: string | null = null;
   let getMeLatencyMs: number | null = null;
   if (!tokenConfigured) blockers.push('telegram_token_missing');
   else {
     const started = Date.now();
     try {
-      identityValid = (await input.client.getMe()).is_bot === true;
+      const identity = await input.client.getMe();
+      identityValid = identity.is_bot === true && Number.isSafeInteger(identity.id) && identity.id > 0;
+      botId = identityValid ? identity.id : null;
       if (!identityValid) blockers.push('telegram_getme_not_bot');
     }
     catch (error) { blockers.push(`telegram_getme_failed:${redactTelegramError(error)}`); }
@@ -90,6 +94,7 @@ export async function probeTelegram(input: {
     status: !tokenConfigured ? 'not_configured' : blockers.length ? 'degraded' : 'ready',
     token_configured: tokenConfigured,
     token_source: tokenConfigured ? (receiptProbe?.token_source ?? 'unknown') : 'none',
+    bot_id: botId,
     bot_identity_valid: identityValid,
     getme_checked_at: getMeCheckedAt,
     getme_latency_ms: getMeLatencyMs,
@@ -108,7 +113,7 @@ async function probeTelegramReceipt(receiptPath: string | undefined, now: number
   if (!liveness.ok) {
     return {
       schema: 'sks.telegram-doctor-probe.v1', ok: false, status: 'not_configured',
-      token_configured: false, bot_identity_valid: false, paired_chat_count: 0,
+      token_configured: false, bot_id: null, bot_identity_valid: false, paired_chat_count: 0,
       token_source: 'none',
       audit_healthy: false, audit_last_error: null,
       getme_checked_at: null, getme_latency_ms: null,
@@ -133,6 +138,7 @@ async function probeTelegramReceipt(receiptPath: string | undefined, now: number
     status: !receipt.token_configured ? 'not_configured' : blockers.length ? 'degraded' : 'ready',
     token_configured: receipt.token_configured,
     token_source: receipt.token_source ?? (receipt.token_configured ? 'unknown' : 'none'),
+    bot_id: receipt.bot_id ?? null,
     bot_identity_valid: receipt.bot_identity_valid,
     getme_checked_at: receipt.getme_checked_at ?? null,
     getme_latency_ms: receipt.getme_latency_ms ?? null,

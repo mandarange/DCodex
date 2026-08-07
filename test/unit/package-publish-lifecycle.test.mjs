@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const releaseGates = JSON.parse(fs.readFileSync('release-gates.v2.json', 'utf8'));
+const pluginManifest = JSON.parse(fs.readFileSync('plugins/sks/.codex-plugin/plugin.json', 'utf8'));
 const scripts = pkg.scripts || {};
 const buildManifestWriter = fs.readFileSync('dist/scripts/write-build-manifest.js', 'utf8');
 const distRuntimeCheck = fs.readFileSync('dist/scripts/check-dist-runtime.js', 'utf8');
@@ -14,6 +16,7 @@ const npmrc = fs.readFileSync('.npmrc', 'utf8');
 
 test('publish lifecycle supports official npm publish with prepack post-build verification', () => {
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(pluginManifest.version, pkg.version, 'marketplace plugin version must match package.json');
   assert.equal(pkg.publishConfig?.tag, 'latest');
   assert.match(npmrc, /^tag=latest$/m);
   assert.match(scripts['feature-quality:check'], /--release/);
@@ -49,9 +52,18 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
     );
   }
   const packagedTelegramPage = path.join('dist/native/sks-menubar/Sources', 'RemoteCodingViewController.swift');
+  const packagedTelegramSettings = path.join('dist/native/sks-menubar/Sources', 'RemoteCodingSettingsControls.swift');
   assert.ok(fs.existsSync(packagedTelegramPage), 'published package must include the Telegram Control Center page');
   const telegramPageSource = fs.readFileSync(packagedTelegramPage, 'utf8');
+  const telegramSettingsSource = fs.readFileSync(packagedTelegramSettings, 'utf8');
+  const telegramSurfaceSource = `${telegramPageSource}\n${telegramSettingsSource}`;
   assert.match(telegramPageSource, /Connect with BotFather/);
+  assert.match(telegramSurfaceSource, /NSSecureTextField/);
+  assert.match(telegramSurfaceSource, /sks-center-telegram-bot-token/);
+  assert.match(telegramSurfaceSource, /Verify, Save & Apply/);
+  assert.match(telegramPageSource, /Active Bot/);
+  assert.match(telegramSurfaceSource, /Copy Pairing Command/);
+  assert.match(telegramPageSource, /The token is the only value you enter/);
   assert.match(telegramPageSource, /\["telegram", "setup", "--token-stdin", "--json"\]/);
   assert.match(telegramPageSource, /\["telegram", "pair", "--json"\]/);
   assert.match(telegramPageSource, /\["telegram", "doctor", "--json"\]/);
@@ -125,6 +137,12 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   const closureGate = releaseGates.gates.find((gate) => gate.id === 'publish:runtime-script-closure');
   assert.ok(closureGate, 'publish:runtime-script-closure gate must exist');
   assert.equal(closureGate.command, 'node ./dist/scripts/runtime-script-pack-closure-check.js');
+  for (const id of ['release:version-truth', 'install-surface:ssot']) {
+    const gate = releaseGates.gates.find((candidate) => candidate.id === id);
+    assert.ok(gate, `${id} gate must exist`);
+    assert.ok(gate.preset.includes('release'), `${id} must be part of the full release contract`);
+    assert.equal(gate.cache?.enabled, false, `${id} must not reuse version-neutral cache evidence`);
+  }
   const runtimeManifests = {
     'release-gates.v2.json': 'sks.release-gates.v2',
     'infra-harness-gates.json': 'sks.infra-harness-gates.v1',
@@ -173,6 +191,8 @@ test('npm pack excludes native checkout-only QA surfaces while retaining require
     'dist/native/sks-menubar/Sources/TelegramStateLock.swift',
     'dist/native/sks-menubar/Sources/TelegramTransport.swift',
     'dist/native/sks-menubar/Sources/RemoteCodingViewController.swift',
+    'dist/native/sks-menubar/Sources/RemoteCodingSettingsControls.swift',
+    'dist/scripts/release-version-truth-check.js',
     'dist/scripts/check-publish-tag.js'
   ]) {
     assert.ok(packedPaths.includes(requiredPath), `published package must include ${requiredPath}`);
@@ -201,6 +221,27 @@ test('actual npm publish lifecycle reports repository blockers without misdiagno
   assert.doesNotMatch(result.stderr, /Direct npm publish is disabled/);
   assert.doesNotMatch(buildManifestWriter, /generated_at/);
   assert.match(distRuntimeCheck, /build_manifest_generated_at_non_deterministic/);
+});
+
+test('install-surface version proof fails closed when the marketplace plugin version is absent', () => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-install-surface-'));
+  try {
+    const scriptsDir = path.join(fixture, 'dist', 'scripts');
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    fs.copyFileSync('dist/scripts/install-surface-ssot-check.js', path.join(scriptsDir, 'install-surface-ssot-check.js'));
+    fs.writeFileSync(path.join(fixture, 'package.json'), JSON.stringify({ version: pkg.version }));
+
+    const result = spawnSync(process.execPath, [path.join(scriptsDir, 'install-surface-ssot-check.js')], {
+      cwd: fixture,
+      encoding: 'utf8',
+      env: { ...process.env, HOME: fixture, PATH: '' }
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /marketplace_plugin_version_absent/);
+    assert.match(result.stderr, /"install_ssot": "package\.json#version"/);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
 test('build-dist CommonJS conversion is byte-idempotent across incremental rebuilds', () => {

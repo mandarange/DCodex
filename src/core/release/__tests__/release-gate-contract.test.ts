@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import { evaluateReleaseParallelFullCoverage } from '../../release-parallel-full-coverage.js'
 import { RELEASE_GATE_CONTRACT_IDS, releaseGateContractSnapshot } from '../release-gate-contract.js'
 import { selectReleaseGateClosure, selectReleaseGatePreset } from '../release-gate-dag.js'
+import { buildGateEntry, selectGates } from '../gate-manifest.js'
 
 const INCREMENTAL_ONLY_GATE_IDS = [
   'test:code-index-agent-bridge-regression',
@@ -30,6 +31,8 @@ test('release manifest matches the independent full gate contract exactly', () =
     'publish:packlist-performance',
     'publish:runtime-script-closure',
     'release:metadata-current',
+    'release:version-truth',
+    'install-surface:ssot',
     'docs:truthfulness'
   ]) assert.ok(ids.includes(id), id)
 
@@ -46,11 +49,17 @@ test('full release excludes duplicate canonical suites while incremental selecto
     .filter((gate: any) => Array.isArray(gate.preset) && gate.preset.includes('confidence'))
     .map((gate: any) => String(gate.id))
     .sort()
-  assert.equal(releaseIds.length, 29)
+  assert.equal(releaseIds.length, 31)
   assert.deepEqual(incrementalIds, INCREMENTAL_ONLY_GATE_IDS)
   assert.ok(confidenceOnlyIds.length > 0)
   for (const id of INCREMENTAL_ONLY_GATE_IDS) assert.equal(releaseIds.includes(id), false, id)
   for (const id of confidenceOnlyIds) assert.equal(releaseIds.includes(id), false, id)
+
+  for (const id of ['release:version-truth', 'install-surface:ssot']) {
+    const gate = manifest.gates.find((candidate: any) => candidate.id === id)
+    assert.equal(gate?.cache?.enabled, false, `${id} must never reuse version-neutral cache evidence`)
+    assert.ok(gate?.cache?.inputs?.includes('package.json'), `${id} must bind to package.json`)
+  }
 
   const combinedIds = [...releaseIds, ...incrementalIds].sort()
   for (const preset of ['affected', 'fast']) {
@@ -75,4 +84,20 @@ test('release coverage rejects both removed and uncontracted gates', () => {
   const added = evaluateReleaseParallelFullCoverage([...RELEASE_GATE_CONTRACT_IDS, 'self-authorized:new-gate'])
   assert.equal(added.ok, false)
   assert.deepEqual(added.unexpected_release_gates, ['self-authorized:new-gate'])
+})
+
+test('current-version gates are always-on and mandatory for publish planning', () => {
+  const entries = ['release:version-truth', 'install-surface:ssot'].map(buildGateEntry)
+  for (const entry of entries) {
+    assert.equal(entry.always_on_release, true, entry.id)
+    assert.equal(entry.required_for_publish, true, entry.id)
+  }
+  assert.deepEqual(
+    selectGates(entries, []).selected.map((entry) => entry.id),
+    entries.map((entry) => entry.id)
+  )
+  assert.deepEqual(
+    selectGates(entries, [], { publish: true }).selected.map((entry) => entry.id),
+    entries.map((entry) => entry.id)
+  )
 })

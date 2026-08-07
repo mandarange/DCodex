@@ -53,7 +53,6 @@ const CURRENT_COMPILED_TESTS = new Set([
   'dist/core/__tests__/codex-release-manifest-current.test.js',
   'dist/core/__tests__/release-gate-hermetic-env.test.js',
   'dist/core/__tests__/update-menubar-package-local.test.js',
-  'dist/core/__tests__/update-simulated-upgrade.test.js',
   'dist/core/__tests__/version-manager-current-docs.test.js',
   'dist/core/install/__tests__/installed-package-smoke.test.js',
   'dist/core/perf/__tests__/release-latency-slo.test.js'

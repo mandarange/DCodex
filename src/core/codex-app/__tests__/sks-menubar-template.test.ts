@@ -43,6 +43,7 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
     'ProvidersOpenRouter.swift',
     'ProvidersBridgeCatalog.swift',
     'RemoteCodingViewController.swift',
+    'RemoteCodingSettingsControls.swift',
     'DiagnosticsViewController.swift',
     'SettingsViewController.swift', 'OperationModels.swift', 'ProviderRouteExplanation.swift', 'OperationCoordinator.swift',
     'ProcessClient.swift', 'ProcessExecutionState.swift', 'ProcessIdentityGuard.swift',
@@ -597,6 +598,11 @@ test('Remote Coding page is a secret-safe Telegram control surface with no retir
     path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'RemoteCodingViewController.swift'),
     'utf8'
   );
+  const remoteSettings = fs.readFileSync(
+    path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'RemoteCodingSettingsControls.swift'),
+    'utf8'
+  );
+  const remoteSurface = `${remote}\n${remoteSettings}`;
   const gateway = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'TelegramProcessGateway.swift'), 'utf8');
   const processClient = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProcessClient.swift'), 'utf8');
   const secureEnvelope = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'SecureProcessEnvelope.swift'), 'utf8');
@@ -607,19 +613,35 @@ test('Remote Coding page is a secret-safe Telegram control surface with no retir
   assert.match(sidebar, /case remoteCoding = "Remote Coding"/);
   assert.match(overview, /NativeView\.button\("Remote Coding…"/);
   assert.match(overview, /openSection\?\("Remote Coding"\)/);
-  assert.match(remote, /final class RemoteCodingViewController: NSViewController, ControlCenterPage/);
+  assert.match(remote, /final class RemoteCodingViewController: NSViewController, ControlCenterPage, NSTextFieldDelegate/);
   assert.match(remote, /Telegram Remote Control/);
   assert.match(remote, /Connect with BotFather/);
   assert.match(remote, /Open @BotFather/);
   assert.match(remote, /(?:https:\/\/t\.me\/BotFather|tg:\/\/resolve\?domain=BotFather)/);
-  assert.match(remote, /Enter Bot Token…/);
+  assert.match(remoteSurface, /NSSecureTextField/);
+  assert.match(remoteSurface, /sks-center-telegram-bot-token/);
+  assert.match(remoteSurface, /Paste the complete BotFather HTTP API token/);
+  assert.match(remoteSurface, /Verify, Save & Apply/);
+  assert.match(remoteSurface, /Verify, Replace & Apply/);
+  assert.match(remote, /The token is the only value you enter/);
+  assert.match(remote, /learns chat and user IDs through private-chat pairing/);
+  assert.match(remote, /ControlKit\.keyValueRow\("Active Bot", settingsControls\.selectedBotDetail\)/);
+  assert.match(remote, /ControlKit\.keyValueRow\("Bot Token", settingsControls\.botTokenField\)/);
+  assert.match(remoteSettings, /Bot ID \\\(botID\)/);
   assert.match(remote, /secure: true/);
-  assert.match(remote, /let normalizedToken = token\.trimmingCharacters\(in: \.whitespacesAndNewlines\)[\s\S]*validTokenShape\(normalizedToken\)[\s\S]*saveToken\(normalizedToken,/);
+  assert.match(remoteSettings, /func consumeTokenInput\(\)[\s\S]*botTokenField\.stringValue\.trimmingCharacters\(in: \.whitespacesAndNewlines\)[\s\S]*botTokenField\.stringValue = ""/);
+  assert.match(remote, /let normalizedToken = settingsControls\.consumeTokenInput\(\)[\s\S]*validTokenShape\(normalizedToken\)[\s\S]*saveToken\(normalizedToken, removeWebhook: false\)/);
+  assert.match(remote, /promptForWebhookRemovalToken\(\)[\s\S]*secure: true[\s\S]*saveToken\(normalizedToken, removeWebhook: true\)/);
   assert.match(remote, /\["telegram", "setup", "--token-stdin", "--json"\]/);
   assert.match(remote, /stdin: normalizedToken \+ "\\n"/);
   assert.match(remote, /logOutput: false/);
   assert.match(remote, /Pair a Private Chat/);
   assert.match(remote, /Generate Pairing Code/);
+  assert.match(remoteSettings, /Copy Pairing Command/);
+  assert.match(remoteSettings, /sks-center-telegram-pairing-command/);
+  assert.match(remoteSettings, /pairingCommand = "\/start \\\(code\)"/);
+  assert.match(remoteSettings, /NSPasteboard\.general[\s\S]*setString\(pairingCommand, forType: \.string\)/);
+  assert.match(remote, /chat and user IDs from Telegram; they are never typed into this screen/);
   assert.match(remote, /\["telegram", "pair", "--json"\]/);
   assert.match(remote, /pairButton\.isEnabled = !operationInFlight && tokenConfigured && pollerRunning/);
   assert.match(remote, /Service Status/);
@@ -631,6 +653,7 @@ test('Remote Coding page is a secret-safe Telegram control surface with no retir
   assert.match(remote, /response\?\.partial_success == true[\s\S]*partialSetupRecovery\(response\)/);
   assert.match(telegramSupport, /struct TelegramCenterSetupResponse[\s\S]*let token_source: String\?/);
   assert.match(telegramSupport, /struct TelegramCenterPairResponse[\s\S]*let instruction: String\?[\s\S]*let post_pair_command: String\?[\s\S]*let confirmation_grammar: String\?/);
+  assert.match(telegramSupport, /struct TelegramCenterDoctorResponse[\s\S]*let bot_id: Int64\?/);
   assert.match(remote, /let statusGuidance = instruction\.contains\(postPair\)/);
   assert.match(remote, /After pairing, try \/sks status \{\}/);
   assert.match(remote, /without dropping pending updates/);
@@ -639,6 +662,8 @@ test('Remote Coding page is a secret-safe Telegram control surface with no retir
   assert.doesNotMatch(swift, /\borca\b|onorca|stablyai/i);
   assert.equal((remote.match(/\["telegram", "setup"/g) ?? []).length, 1);
   assert.doesNotMatch(remote, /stringValue\s*=\s*token|NativeView\.(?:detail|title)\(\s*token/);
+  assert.doesNotMatch(remoteSurface, /(?:botID|chatID|senderID|username)(?:Text)?Field\s*[:=]/);
+  assert.doesNotMatch(remoteSurface, /setString\([^\n]*(?:botToken|normalizedToken|token),\s*forType:/);
   assert.match(controlCenter, /RemoteCodingViewController\([\s\S]*processClient: processClient,[\s\S]*telegramService: telegramService/);
   assert.match(gateway, /init\([\s\S]*processClient: ProcessClient,[\s\S]*canonicalProjectRoot: String/);
   assert.equal((gateway.match(/"--project-root", canonicalProjectRoot/g) ?? []).length, 2);

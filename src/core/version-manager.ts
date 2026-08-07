@@ -323,6 +323,10 @@ async function syncSourcePackageVersion(root: any, version: any) {
       replace: (text: string) => text.replace(/export const PACKAGE_VERSION = ['"][^'"]+['"];/, `export const PACKAGE_VERSION = '${version}';`)
     },
     {
+      rel: 'plugins/sks/.codex-plugin/plugin.json',
+      replace: (text: string) => text.replace(/("version"\s*:\s*")[^"]+("(?=\s*[,}]))/, `$1${version}$2`)
+    },
+    {
       rel: 'crates/sks-core/Cargo.toml',
       replace: (text: string) => text.replace(/^version\s*=\s*"[^"]+"/m, `version = "${version}"`)
     },

@@ -90,6 +90,20 @@ test('package metadata changes do not select unrelated Codex-current gates', () 
     preset: ['release'],
     cache: { enabled: true, inputs: ['package.json'] }
   }
+  const versionTruthGate: any = {
+    id: 'release:version-truth',
+    command: 'node version-truth.js',
+    deps: [],
+    preset: ['release'],
+    cache: { enabled: false, inputs: ['package.json'] }
+  }
+  const installSurfaceGate: any = {
+    id: 'install-surface:ssot',
+    command: 'node install-surface.js',
+    deps: [],
+    preset: ['release'],
+    cache: { enabled: false, inputs: ['package.json'] }
+  }
   const codexGate: any = {
     id: 'codex-control:regression',
     command: 'node codex-check.js',
@@ -97,16 +111,43 @@ test('package metadata changes do not select unrelated Codex-current gates', () 
     preset: ['release'],
     cache: { enabled: true, inputs: ['src/core/codex-control/**'] }
   }
-  const gates = [releaseGate, runtimeGate, codexGate]
+  const gates = [releaseGate, runtimeGate, versionTruthGate, installSurfaceGate, codexGate]
   const selected = selectAffectedReleaseGates(process.cwd(), { gates } as any, gates, {
     changedFiles: ['package.json', 'package-lock.json'],
     preset: 'affected'
   })
 
-  assert.deepEqual(selected.selection.selected_gate_ids, [releaseGate.id, runtimeGate.id])
+  assert.deepEqual(selected.selection.selected_gate_ids, [releaseGate.id, runtimeGate.id, versionTruthGate.id, installSurfaceGate.id])
   assert.equal(selected.selection.reasons[releaseGate.id], 'package_metadata_changed')
   assert.equal(selected.selection.reasons[runtimeGate.id], 'package_metadata_changed')
+  assert.equal(selected.selection.reasons[versionTruthGate.id], 'always_keep_core_release_safety')
+  assert.equal(selected.selection.reasons[installSurfaceGate.id], 'always_keep_core_release_safety')
   assert.equal(selected.selection.reasons[codexGate.id], undefined)
+})
+
+test('current-version gates remain selected even when no changed files are reported', () => {
+  const gates: any[] = [
+    {
+      id: 'release:version-truth',
+      command: 'node version-truth.js',
+      deps: [],
+      preset: ['release'],
+      cache: { enabled: false, inputs: ['package.json'] }
+    },
+    {
+      id: 'install-surface:ssot',
+      command: 'node install-surface.js',
+      deps: [],
+      preset: ['release'],
+      cache: { enabled: false, inputs: ['package.json'] }
+    }
+  ]
+  const selected = selectAffectedReleaseGates(process.cwd(), { gates } as any, gates, {
+    changedFiles: [],
+    preset: 'affected'
+  })
+
+  assert.deepEqual(selected.selection.selected_gate_ids, gates.map((gate) => gate.id))
 })
 
 function git(cwd: string, args: string[]) {

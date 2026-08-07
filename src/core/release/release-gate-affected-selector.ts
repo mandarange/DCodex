@@ -3,6 +3,8 @@ import type { ReleaseGateManifestV2, ReleaseGateNode } from './release-gate-node
 
 const ALWAYS_KEEP = new Set([
   'release:proof-truth',
+  'release:version-truth',
+  'install-surface:ssot',
   'typecheck',
   'schema:check'
 ])

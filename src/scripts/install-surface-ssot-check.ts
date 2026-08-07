@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
  * NC-7 / NC-22 / NC-41: install-surface version agreement.
- * Install SSOT is npm sneakoscope@latest (measured). PATH first `sks` and
- * Menu Bar stamp must agree with package.json version of this checkout when
- * those surfaces are present. Marketplace plugin version must match package.
+ * Install SSOT is package.json#version in this checkout. PATH first `sks` and
+ * Menu Bar stamp must agree with it when those surfaces are present.
+ * Marketplace plugin version must always match package.json.
  *
  * This gate fails closed on disagreement among present surfaces. Missing
- * optional surfaces (Menu Bar not installed) are reported, not auto-fail, unless
- * package/plugin disagreement exists.
+ * optional runtime surfaces (PATH CLI or Menu Bar not installed) are reported,
+ * not auto-fail. The repository-owned package/plugin pair fails closed.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,7 +36,7 @@ const pluginVersion = String(plugin?.version || plugin?.packageVersion || '').tr
 if (pluginVersion && packageVersion && pluginVersion !== packageVersion) {
   blockers.push(`marketplace_plugin_version_mismatch:${pluginVersion}!=${packageVersion}`);
 } else if (!pluginVersion) {
-  notes.push('marketplace_plugin_version_absent');
+  blockers.push('marketplace_plugin_version_absent');
 } else {
   notes.push(`marketplace_plugin_version_matches:${pluginVersion}`);
 }
@@ -88,7 +88,7 @@ if (!menubarVersion) {
 const report = {
   schema: 'sks.install-surface-ssot-check.v1',
   ok: blockers.length === 0,
-  install_ssot: 'npm:sneakoscope@latest',
+  install_ssot: 'package.json#version',
   package_version: packageVersion || null,
   plugin_version: pluginVersion || null,
   path_sks_version: pathVersion || null,

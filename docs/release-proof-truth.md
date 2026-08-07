@@ -1,25 +1,27 @@
-# Release Proof Truth — 8.2.0
+# Release Proof Truth — 8.2.1
 
 ## Current assertion
 
-8.2.0 is **SOURCE PREPARED / RELEASE BLOCKED**. The Telegram arbitrary-bot
-fix and 8.2.0 metadata are present in the working tree, but this document does
+8.2.1 is **SOURCE PREPARED / RELEASE BLOCKED**. The Telegram Center settings
+UI improvement and 8.2.1 metadata are present in the working tree, but this document does
 not authorize publication, deployment, a credential change, a Git tag, or a
 push. Exact-commit proof can exist only after the candidate is committed and
 all source-bound gates are regenerated from that clean commit.
 
 All release artifacts bound to 8.1.3 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 8.2.0 evidence.
+must not be renamed, copied, or treated as 8.2.1 evidence.
 
 ## Claim ledger
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
 | A user may select any BotFather bot they own | supported in source and hermetic tests | setup verifies `getMe`, requires `is_bot` and a positive ID, and binds that exact identity; no fixed username is assumed |
+| Center exposes every required user-supplied Telegram value | supported in native source and compiled contract tests | the BotFather token is the only manual input; bot ID is derived from `getMe`, while chat and user IDs are derived through private-chat pairing |
+| Center keeps the active bot and pairing action visible | supported in native source and compiled contract tests | secret-free Doctor status carries the bound bot ID and the page renders a copyable, short-lived `/start` command without exposing the token |
 | Invalid credentials and identity-verification transport failures are distinguishable | supported in source and hermetic tests | stable secret-free errors cover rejection, timeout, network failure, and invalid identity |
 | Native and CLI liveness receipts interoperate | supported in cross-language tests | new Swift receipts encode nullable fields as `null`; TypeScript still accepts 8.1.x receipts that omitted those optional fields |
 | Bot tokens remain secret | supported by source boundaries and tests | tokens enter through secure input/stdin, are not included in receipts, and are not exposed as bot metadata |
-| The reported 8.2.0 package is ready to publish | not proved | requires a clean exact-commit build, release gates, package receipt, provenance, and the operator's final registry checks |
+| The reported 8.2.1 package is ready to publish | not proved | requires a clean exact-commit build, release gates, package receipt, provenance, and the operator's final registry checks |
 | The original user's real bot now connects | not-run-real | no real token or private Telegram state was inspected or mutated during this preparation |
 
 ## Evidence classes
@@ -51,7 +53,7 @@ receipts, liveness files, and logs.
 
 ## Exact-commit release evidence
 
-Before any release claim, regenerate and verify current 8.2.0-bound artifacts
+Before any release claim, regenerate and verify current 8.2.1-bound artifacts
 from the clean handoff commit, including the build manifest, version metadata,
 package proof, pack receipt, release provenance, and release-check stamp. Each
 must bind the exact source digest, Git commit, tarball bytes, and package
@@ -66,7 +68,7 @@ produces current receipts.
 
 The following remain **not-run-real** or **blocked-external**:
 
-- saving a private real BotFather token through the installed 8.2.0 Center;
+- saving a private real BotFather token through the installed 8.2.1 Center;
 - a live `getMe`, webhook inspection, resident poller restart, pairing, and
   private-chat command round trip on the user's target machine;
 - clean-commit full release gates and exact-tarball installed smoke;

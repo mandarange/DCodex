@@ -1,8 +1,7 @@
 import Cocoa
 
-final class RemoteCodingViewController: NSViewController, ControlCenterPage {
+final class RemoteCodingViewController: NSViewController, ControlCenterPage, NSTextFieldDelegate {
     private static let botFatherURL = URL(string: "https://t.me/BotFather")!
-    private static let tokenPattern = #"^\d{5,20}:[A-Za-z0-9_-]{20,128}$"#
 
     private let processClient: ProcessClient
     private let telegramService: TelegramMenuBarService
@@ -10,7 +9,11 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
     private let serviceDetail = NativeView.detail("Reading secret-free Telegram liveness status…")
     private let pairingDetail = NativeView.detail("No pairing code has been issued in this session.")
     private let serviceSpinner = NativeView.spinner(label: "Telegram operation in progress")
-    private lazy var setupButton = NativeView.button("Enter Bot Token…", target: self, action: #selector(enterToken))
+    private lazy var settingsControls = RemoteCodingSettingsControls(
+        target: self,
+        submitTokenAction: #selector(enterToken),
+        copyPairingAction: #selector(copyPairingCommand)
+    )
     private lazy var pairButton = NativeView.button("Generate Pairing Code", target: self, action: #selector(generatePairingCode))
     private lazy var startButton = NativeView.button("Start", target: self, action: #selector(startService))
     private lazy var stopButton = NativeView.button("Stop", target: self, action: #selector(stopService))
@@ -31,7 +34,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
     override func loadView() {
         let botFatherButton = NativeView.button("Open @BotFather", target: self, action: #selector(openBotFather))
         botFatherButton.setAccessibilityHelp("Open the official Telegram BotFather chat in your default handler.")
-        setupButton.setAccessibilityHelp("Enter a BotFather token securely. The token is verified live and stored in the private SKS user secret file.")
+        settingsControls.configure(delegate: self)
         pairButton.setAccessibilityHelp("With Telegram polling running, issue a short-lived, single-use code for pairing one intended private chat.")
         startButton.setAccessibilityHelp("Start Telegram polling for the current SKS companion session after a bot token is configured.")
         stopButton.setAccessibilityHelp("Stop polling for the current companion session without deleting the token or paired chats. A companion relaunch starts it again.")
@@ -47,12 +50,14 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
             views: [
                 NativeView.detail(
                     "1. Create or select any bot you own in @BotFather.  2. Copy that bot's complete HTTP API token.  " +
-                    "3. Choose Enter Bot Token below. SKS binds the identity returned by Telegram getMe; it never assumes a bot name or username."
+                    "3. Paste it below and choose Verify, Save & Apply. The token is the only value you enter: SKS derives the bot ID from Telegram getMe, and learns chat and user IDs through private-chat pairing."
                 ),
                 NativeView.detail(
                     "The token is sent only through process stdin to the canonical SKS setup command, verified with Telegram getMe, and stored in the private user secret file. It is never shown again or written to the SKS action log. Revoke it in BotFather if you suspect exposure."
                 ),
-                NativeView.row([botFatherButton, setupButton])
+                ControlKit.keyValueRow("Active Bot", settingsControls.selectedBotDetail),
+                ControlKit.keyValueRow("Bot Token", settingsControls.botTokenField),
+                NativeView.row([botFatherButton, settingsControls.setupButton])
             ]
         )
 
@@ -61,10 +66,11 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
             subtitle: "Authorize only the intended Telegram account and private chat.",
             views: [
                 NativeView.detail(
-                    "With Telegram polling running, generate a short-lived code, open your new bot from the intended private chat, and send /start followed by that code. Codes are single-use; group chats are rejected. After pairing, try /sks status {}."
+                    "With Telegram polling running, generate a short-lived command, open the selected bot from the intended private chat, and send that command. SKS derives the chat and user IDs from Telegram; they are never typed into this screen. Codes are single-use and group chats are rejected. After pairing, try /sks status {}."
                 ),
+                ControlKit.keyValueRow("Pair Command", settingsControls.pairingCommandField),
                 pairingDetail,
-                pairButton
+                NativeView.row([pairButton, settingsControls.copyPairingButton])
             ]
         )
 
@@ -97,6 +103,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
     }
 
     @objc private func enterToken() {
+        guard !operationInFlight else { return }
         if TelegramPrivateFileStore.operatorEnvironmentOverrideActive() {
             showAttention(
                 "Environment-managed token is active",
@@ -104,31 +111,38 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
             )
             return
         }
-        promptForToken(removeWebhook: false)
+        let normalizedToken = settingsControls.consumeTokenInput()
+        updateControls()
+        guard RemoteCodingSettingsControls.validTokenShape(normalizedToken) else {
+            showAttention(
+                "Token not saved",
+                detail: "That value does not match the BotFather token format. Copy the complete HTTP API token and try again."
+            )
+            return
+        }
+        saveToken(normalizedToken, removeWebhook: false)
     }
 
-    private func promptForToken(removeWebhook: Bool) {
+    private func promptForWebhookRemovalToken() {
         guard !operationInFlight, let window = view.window else { return }
         AlertFactory.textSheet(
             window: window,
-            title: "Enter Telegram Bot Token",
-            message: removeWebhook
-                ? "Paste this selected bot's BotFather token again. With your consent, SKS will remove that bot's existing webhook without dropping pending updates, verify its live identity, and store the token privately."
-                : "Paste the complete HTTP API token for any bot you own in @BotFather. SKS will accept the identity returned by Telegram getMe without assuming a bot name, then store the token privately.",
+            title: "Authorize Telegram Webhook Removal",
+            message: "Paste this selected bot's BotFather token again. With your consent, SKS will remove that bot's existing webhook without dropping pending updates, verify its live identity, and store the token privately.",
             secure: true,
             placeholder: "123456789:BotFatherToken",
-            actionTitle: removeWebhook ? "Remove Webhook & Save" : "Verify & Save"
+            actionTitle: "Remove Webhook & Save"
         ) { [weak self] token in
             guard let self, let token else { return }
             let normalizedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard self.validTokenShape(normalizedToken) else {
+            guard RemoteCodingSettingsControls.validTokenShape(normalizedToken) else {
                 self.showAttention(
                     "Token not saved",
                     detail: "That value does not match the BotFather token format. Copy the complete HTTP API token and try again."
                 )
                 return
             }
-            self.saveToken(normalizedToken, removeWebhook: removeWebhook)
+            self.saveToken(normalizedToken, removeWebhook: true)
         }
     }
 
@@ -150,7 +164,10 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
                   code.range(of: #"^\d{6}-[A-F0-9]{4}$"#, options: .regularExpression) != nil else {
                 self.showAttention(
                     "Pairing code unavailable",
-                    detail: self.publicFailure(result.output, fallback: "SKS could not create a pairing code. Refresh status and try again.")
+                    detail: RemoteCodingSettingsControls.publicFailure(
+                        result.output,
+                        fallback: "SKS could not create a pairing code. Refresh status and try again."
+                    )
                 )
                 return
             }
@@ -160,11 +177,17 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
             let postPair = response.post_pair_command ?? "/sks status {}"
             let confirmation = response.confirmation_grammar ?? "/confirm <nonce>"
             let statusGuidance = instruction.contains(postPair) ? "" : " Then try \(postPair)."
+            self.settingsControls.setPairingCode(code)
             self.pairingDetail.stringValue = "\(instruction)\(expiration)\(statusGuidance) Confirm prompted actions with \(confirmation)."
             self.pairingDetail.setAccessibilityValue(self.pairingDetail.stringValue)
             self.showProgress("Pairing code ready", detail: "Use the displayed code once in the intended private chat.")
             self.refreshStatus(after: 1)
         }
+    }
+
+    @objc private func copyPairingCommand() {
+        guard settingsControls.copyPairingCommand() else { return }
+        showProgress("Pairing command copied", detail: "Paste it once into the intended private chat with the selected bot.")
     }
 
     @objc private func startService() { runLifecycle(.start) }
@@ -217,7 +240,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
 
     private func saveToken(_ token: String, removeWebhook: Bool) {
         let normalizedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard validTokenShape(normalizedToken) else {
+        guard RemoteCodingSettingsControls.validTokenShape(normalizedToken) else {
             showAttention(
                 "Token not saved",
                 detail: "That value does not match the BotFather token format. Copy the complete token and try again."
@@ -261,13 +284,13 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
                 if response?.partial_success == true {
                     self.showAttention(
                         "Telegram setup partially completed",
-                        detail: self.partialSetupRecovery(response)
+                        detail: RemoteCodingSettingsControls.partialSetupRecovery(response)
                     )
                     return
                 }
                 self.showAttention(
                     "Token not saved",
-                    detail: self.publicFailure(
+                    detail: RemoteCodingSettingsControls.publicFailure(
                         result.output,
                         fallback: "Telegram setup could not complete. Check the connection and SKS diagnostics, then try again."
                     )
@@ -280,6 +303,15 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
                     let receipt = try await restart.value
                     self?.endOperation()
                     self?.render(receipt)
+                    self?.settingsControls.renderSelectedBot(
+                        botID: response.bot_id ?? receipt.bot_id,
+                        username: response.bot_username,
+                        configured: true,
+                        identityValid: true
+                    )
+                    if response.bot_state_reset == true {
+                        self?.settingsControls.resetPairingCommand("Generate a new code because the selected bot changed.")
+                    }
                     let selectedBot = response.bot_username.map { "@\($0)" } ?? "The selected bot"
                     self?.showProgress(
                         "Bot verified and connected",
@@ -309,7 +341,7 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
             actionTitle: "Continue"
         ) { [weak self] confirmed in
             guard confirmed else { return }
-            self?.promptForToken(removeWebhook: true)
+            self?.promptForWebhookRemovalToken()
         }
     }
 
@@ -349,8 +381,13 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
     private func render(_ response: TelegramCenterDoctorResponse) {
         tokenConfigured = response.token_configured
         pollerRunning = response.poller.running
+        settingsControls.renderSelectedBot(
+            botID: response.bot_id,
+            configured: response.token_configured,
+            identityValid: response.bot_identity_valid
+        )
         let paired = response.paired_chat_count == 1 ? "1 paired chat" : "\(response.paired_chat_count) paired chats"
-        let source = tokenSourceDescription(response.token_source)
+        let source = RemoteCodingSettingsControls.tokenSourceDescription(response.token_source)
         if response.ok {
             NativeView.setBadge(serviceBadge, text: "Ready", color: .systemGreen)
             serviceDetail.stringValue = "Bot identity verified · \(source) · \(paired) · poller running · audit healthy."
@@ -384,8 +421,13 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
     private func render(_ receipt: TelegramLivenessReceipt) {
         tokenConfigured = receipt.token_configured
         pollerRunning = receipt.running && receipt.poller.running
+        settingsControls.renderSelectedBot(
+            botID: receipt.bot_id,
+            configured: receipt.token_configured,
+            identityValid: receipt.bot_identity_valid
+        )
         let paired = receipt.paired_chat_count == 1 ? "1 paired chat" : "\(receipt.paired_chat_count) paired chats"
-        let source = tokenSourceDescription(receipt.token_source.rawValue)
+        let source = RemoteCodingSettingsControls.tokenSourceDescription(receipt.token_source.rawValue)
         NativeView.setBadge(
             serviceBadge,
             text: pollerRunning ? "Running" : "Stopped",
@@ -424,7 +466,12 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
     }
 
     private func updateControls() {
-        setupButton.isEnabled = !operationInFlight
+        let environmentOverride = TelegramPrivateFileStore.operatorEnvironmentOverrideActive()
+        settingsControls.updateActionControls(
+            operationInFlight: operationInFlight,
+            tokenConfigured: tokenConfigured,
+            environmentOverride: environmentOverride
+        )
         pairButton.isEnabled = !operationInFlight && tokenConfigured && pollerRunning
         startButton.isEnabled = !operationInFlight && tokenConfigured && !pollerRunning
         stopButton.isEnabled = !operationInFlight && pollerRunning
@@ -432,9 +479,10 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
         refreshButton.isEnabled = !operationInFlight
     }
 
-    private func validTokenShape(_ value: String) -> Bool {
-        value.utf8.count <= 1024
-            && value.range(of: Self.tokenPattern, options: .regularExpression) != nil
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField,
+              field === settingsControls.botTokenField else { return }
+        updateControls()
     }
 
     private func decode<T: Decodable>(_ type: T.Type, _ output: String) -> T? {
@@ -442,53 +490,4 @@ final class RemoteCodingViewController: NSViewController, ControlCenterPage {
         return try? JSONDecoder().decode(type, from: data)
     }
 
-    private func publicFailure(_ output: String, fallback: String) -> String {
-        guard let data = output.data(using: .utf8),
-              let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let error = row["error"] as? String else { return fallback }
-        switch error {
-        case "telegram_token_invalid", "telegram_token_stdin_empty":
-            return "That value is not a complete BotFather HTTP API token."
-        case "telegram_token_rejected":
-            return "Telegram rejected this token. In @BotFather, select the bot you want SKS to use and copy that bot's current complete token."
-        case "telegram_identity_verification_timeout":
-            return "Telegram identity verification timed out. Check the network connection and try the selected bot token again."
-        case "telegram_identity_verification_network_failed":
-            return "Telegram identity verification could not reach the Bot API. Check the network connection and try again."
-        case "telegram_identity_verification_failed":
-            return "Telegram returned an invalid bot identity response. Try the selected bot's current token again."
-        case let value where value.contains("401") || value.contains("Unauthorized"):
-            return "Telegram rejected this token. Copy the current token from @BotFather and try again."
-        case let value where value.contains("timeout") || value.contains("network"):
-            return "Telegram identity verification could not complete. Check the network connection and try again."
-        default:
-            return fallback
-        }
-    }
-
-    private func partialSetupRecovery(_ response: TelegramCenterSetupResponse?) -> String {
-        var parts: [String] = []
-        if response?.webhook_removed == true {
-            parts.append("The existing webhook was removed without dropping pending updates.")
-        }
-        if response?.bot_state_reset == true {
-            parts.append("Bot-scoped pairing and poll state were reset safely.")
-        }
-        if response?.token_stored == false {
-            parts.append("The token was not stored; rerun secure setup to finish.")
-        }
-        if let note = response?.recovery?.note, !note.isEmpty { parts.append(note) }
-        return parts.isEmpty
-            ? "Review the secret-free recovery status, then rerun secure setup."
-            : parts.joined(separator: " ")
-    }
-
-    private func tokenSourceDescription(_ source: String) -> String {
-        switch source {
-        case "env": return "operator environment token"
-        case "user_secret_file": return "private token file"
-        case "none": return "no token source"
-        default: return "token source unknown"
-        }
-    }
 }

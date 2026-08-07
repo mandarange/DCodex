@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+
+## [8.2.1] - 2026-08-07
+
+### Fixed
+
+- Put the required BotFather token directly on the SKS Center Remote Coding
+  settings page with one `Verify, Save & Apply` action, while clearing the
+  secure field before the token is sent through the existing stdin-only setup.
+- Show the Telegram-verified active bot ID and a copyable, short-lived
+  `/start` pairing command; bot, chat, and user identities remain derived from
+  Telegram instead of becoming spoofable manual fields.
+- Preserve the verified bot ID through the secret-free Doctor response so the
+  selected bot stays visible after status refreshes and companion restarts.
+- Remove the release-specific 8.0.4-to-8.0.5 simulated upgrade check from the
+  current canonical corpus; retained upgrade fixtures now cover durable
+  compatibility boundaries instead of claiming the current release identity.
+- Make `package.json` the current-release version authority for source,
+  marketplace plugin, and install-surface checks. Both version gates now run
+  uncached in affected, confidence, full-release, and publish planning, and
+  missing plugin metadata fails closed.
+
 ## [8.2.0] - 2026-08-06
 
 ### Fixed
