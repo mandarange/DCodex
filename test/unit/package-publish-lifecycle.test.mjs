@@ -37,47 +37,18 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
       `built package payload must omit native ${checkoutOnlySurface}`
     );
   }
-  for (const file of [
-    'TelegramStateLock.swift',
-    'TelegramPrivateFileSupport.swift',
-    'TelegramPrivateFileStore.swift',
-    'TelegramProcessGateway.swift',
-    'TelegramRuntimeSupport.swift',
-    'TelegramSupport.swift',
-    'TelegramTransport.swift'
-  ]) {
-    assert.ok(
-      fs.existsSync(path.join('dist/native/sks-menubar/Sources', file)),
-      `published package must include native Telegram source ${file}`
-    );
-  }
-  const packagedTelegramPage = path.join('dist/native/sks-menubar/Sources', 'RemoteCodingViewController.swift');
-  const packagedTelegramSettings = path.join('dist/native/sks-menubar/Sources', 'RemoteCodingSettingsControls.swift');
-  assert.ok(fs.existsSync(packagedTelegramPage), 'published package must include the Telegram Control Center page');
-  const telegramPageSource = fs.readFileSync(packagedTelegramPage, 'utf8');
-  const telegramSettingsSource = fs.readFileSync(packagedTelegramSettings, 'utf8');
-  const telegramSurfaceSource = `${telegramPageSource}\n${telegramSettingsSource}`;
-  assert.match(telegramPageSource, /Connect with BotFather/);
-  assert.match(telegramSurfaceSource, /NSSecureTextField/);
-  assert.match(telegramSurfaceSource, /sks-center-telegram-bot-token/);
-  assert.match(telegramSurfaceSource, /Verify, Save & Apply/);
-  assert.match(telegramPageSource, /Active Bot/);
-  assert.match(telegramSurfaceSource, /Copy Pairing Command/);
-  assert.match(telegramPageSource, /Enter that bot's public @username and paste its complete HTTP API token/);
-  assert.match(telegramSettingsSource, /sks-center-telegram-bot-username/);
-  assert.match(telegramPageSource, /\["telegram", "setup", "--token-stdin", "--json"\]/);
-  assert.match(telegramPageSource, /arguments\.append\(contentsOf: \["--expected-bot-username", expectedBotUsername\]\)/);
-  assert.match(telegramPageSource, /\["telegram", "pair", "--json"\]/);
-  assert.match(telegramPageSource, /\["telegram", "doctor", "--json"\]/);
-  assert.doesNotMatch(telegramPageSource, /\borca\b|onorca|stablyai/i);
-  assert.ok(pkg.files.includes('dist'), 'published package must include the built Telegram runtime through dist');
+  const remoteCodingPage = path.join('dist/native/sks-menubar/Sources', 'RemoteCodingViewController.swift');
+  assert.ok(fs.existsSync(remoteCodingPage), 'published package must include the remote companion recommendation');
+  const remoteCodingSource = fs.readFileSync(remoteCodingPage, 'utf8');
+  assert.match(remoteCodingSource, /https:\/\/paseo\.sh\//);
+  assert.match(remoteCodingSource, /https:\/\/paseo\.sh\/docs/);
+  assert.match(remoteCodingSource, /independent open-source project/i);
+  assert.doesNotMatch(remoteCodingSource, /telegram|botfather/i);
+  assert.equal(fs.existsSync(path.join('dist/native/sks-menubar/Sources', 'RemoteCodingSettingsControls.swift')), false);
+  assert.ok(pkg.files.includes('dist'), 'published package must include the built runtime through dist');
   assert.ok(fs.existsSync('dist/core/config-adopt/index.js'));
-  assert.ok(fs.existsSync('dist/core/commands/telegram-command.js'));
-  assert.ok(fs.existsSync('dist/core/telegram'));
-  for (const file of ['access.js', 'client.js', 'confirmation.js', 'doctor.js', 'index.js', 'keychain.js', 'liveness.js', 'poller.js', 'redaction.js', 'types.js']) {
-    assert.ok(fs.existsSync(path.join('dist/core/telegram', file)), `built Telegram runtime must include ${file}`);
-  }
-  assert.equal(fs.existsSync('dist/core/telegram/controller.js'), false, 'published package must not include the retired Telegram controller');
+  assert.equal(fs.existsSync('dist/core/commands/telegram-command.js'), false);
+  assert.equal(fs.existsSync('dist/core/telegram'), false);
   assert.equal(scripts['release:check'], 'npm run release:check:affected');
   assert.match(scripts['release:check:affected'], /--preset affected/);
   assert.match(scripts['release:check:affected'], /release:ensure-build/);
@@ -190,15 +161,13 @@ test('npm pack excludes native checkout-only QA surfaces while retaining require
   }
   for (const requiredPath of [
     'dist/native/sks-menubar/Sources/AppDelegate.swift',
-    'dist/native/sks-menubar/Sources/TelegramStateLock.swift',
-    'dist/native/sks-menubar/Sources/TelegramTransport.swift',
     'dist/native/sks-menubar/Sources/RemoteCodingViewController.swift',
-    'dist/native/sks-menubar/Sources/RemoteCodingSettingsControls.swift',
     'dist/scripts/release-version-truth-check.js',
     'dist/scripts/check-publish-tag.js'
   ]) {
     assert.ok(packedPaths.includes(requiredPath), `published package must include ${requiredPath}`);
   }
+  assert.equal(packedPaths.some((packedPath) => /(?:^|\/)telegram/i.test(packedPath)), false);
 });
 
 test('actual npm publish lifecycle reports repository blockers without misdiagnosing the release stamp', () => {

@@ -51,47 +51,6 @@ enum SecureProcessEnvelope {
                         }
                     }
                 }
-                if sourceSchema == "sks.telegram-setup-command.v1" {
-                    for key in [
-                        "getme_verified", "token_stored", "partial_success",
-                        "storage_attempted", "webhook_removed", "pending_updates_dropped",
-                        "bot_rotated", "bot_state_reset", "restart_required"
-                    ] {
-                        if let value = object[key] as? Bool { envelope[key] = value }
-                    }
-                    if let source = object["token_source"] as? String,
-                       ["env", "user_secret_file", "none", "unchanged"].contains(source) {
-                        envelope["token_source"] = source
-                    }
-                    if let stage = boundedString(object["failure_stage"], limit: 40),
-                       ["getme", "webhook", "storage", "state"].contains(stage) {
-                        envelope["failure_stage"] = stage
-                    }
-                    if let botID = object["bot_id"] as? NSNumber,
-                       botID.int64Value > 0 {
-                        envelope["bot_id"] = botID
-                    }
-                    if let username = boundedString(object["bot_username"], limit: 64),
-                       username.range(of: #"^[A-Za-z0-9_]{5,64}$"#, options: .regularExpression) != nil {
-                        envelope["bot_username"] = username
-                    }
-                    if let expectedUsername = boundedString(object["expected_bot_username"], limit: 64),
-                       expectedUsername.range(of: #"^[A-Za-z0-9_]{5,64}$"#, options: .regularExpression) != nil {
-                        envelope["expected_bot_username"] = expectedUsername
-                    }
-                    if let action = boundedString(object["operator_action"], limit: 480) {
-                        envelope["operator_action"] = action
-                    }
-                    if let recovery = object["recovery"] as? [String: Any] {
-                        var publicRecovery: [String: String] = [:]
-                        for key in ["action", "command", "note"] {
-                            if let value = boundedString(recovery[key], limit: 480) {
-                                publicRecovery[key] = value
-                            }
-                        }
-                        if !publicRecovery.isEmpty { envelope["recovery"] = publicRecovery }
-                    }
-                }
             }
         }
         if !secureOk, envelope["error"] == nil {
@@ -122,12 +81,7 @@ enum SecureProcessEnvelope {
            arguments[2] == "configure" {
             return ["sks.desktop-bridge-command-result.v1"]
         }
-        switch (arguments[0], arguments[1]) {
-        case ("telegram", "setup"):
-            return ["sks.telegram-setup-command.v1"]
-        default:
-            return []
-        }
+        return []
     }
 
     private static func recoveryFields(from object: [String: Any]) -> [String: Any] {

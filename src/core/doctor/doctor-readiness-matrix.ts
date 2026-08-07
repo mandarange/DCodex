@@ -48,11 +48,6 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
   if (input.codex_app_ui?.requires_confirmation === true) blockers.add('codex_app_fast_ui_repair_requires_confirmation')
   if (input.codex_app_ui?.fast_selector === 'repaired') warnings.add('codex_app_fast_selector_repaired_restart_app_if_needed')
   if (input.sks_menubar?.ok === false) warnings.add(`sks_menubar_${input.sks_menubar?.status || 'blocked'}`)
-  const telegramRemote = input.telegram_remote || null
-  if (telegramRemote?.status === 'degraded') {
-    for (const blocker of normalizeList(telegramRemote.blockers)) warnings.add(`telegram_remote:${blocker}`)
-    if (!normalizeList(telegramRemote.blockers).length) warnings.add('telegram_remote_degraded')
-  }
   const codexCurrentAppDoctor = input.codex_current_app_doctor || null
   if (codexCurrentAppDoctor?.ok === false) for (const blocker of normalizeList(codexCurrentAppDoctor.blockers)) warnings.add(blocker)
   for (const warning of normalizeList(codexCurrentAppDoctor?.warnings)) warnings.add(warning)

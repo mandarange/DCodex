@@ -198,8 +198,7 @@ jobs:
           const commandIds = {
             update_5001_directory: 'sks.update.physical',
             single_menubar_process: 'sks.menubar.process-readback',
-            codex_lb_measured_request: 'sks.codex-lb.measured-request',
-            telegram_cellular_e2e: 'sks.telegram.cellular-roundtrip'
+            codex_lb_measured_request: 'sks.codex-lb.measured-request'
           }
           const readEvidenceFile = (relative, label) => {
             if (typeof relative !== 'string' || path.isAbsolute(relative) || relative.includes('\\')) throw new Error(`${label} path is unsafe`)

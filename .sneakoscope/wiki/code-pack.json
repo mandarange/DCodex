@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-07T06:11:36.277Z",
+  "generated_at": "2026-08-07T08:00:24.471Z",
   "git_head_sha": null,
-  "source_file_count": 2764,
-  "index_digest": "198e0d261752550b795eb00fe2a7dc7700f1eb7d842445007ae98a2fb4a0bd9c",
+  "source_file_count": 2734,
+  "index_digest": "df9aade2153a8c1331c5e9f4057ec17862608072d5fe61f7191ba421a868209b",
   "entries": [
     {
       "id": "code:scripts",
@@ -139,7 +139,7 @@
     },
     {
       "id": "code:core-commands",
-      "text": "core-commands is a module at src/core/commands (94 files, low risk). Key exports: ALIGN_GATE_ARTIFACT, ALIGN_LEDGER_ARTIFACT, ALIGN_PLAN_ARTIFACT, ALLOWED_REASONING_EFFORTS, ARTIFACT_FILES, and 698 more. Depends on: cli, commands, core, core-agent-bridge, core-agents, and 44 more.",
+      "text": "core-commands is a module at src/core/commands (93 files, low risk). Key exports: ALIGN_GATE_ARTIFACT, ALIGN_LEDGER_ARTIFACT, ALIGN_PLAN_ARTIFACT, ALLOWED_REASONING_EFFORTS, ARTIFACT_FILES, and 669 more. Depends on: cli, commands, core, core-agent-bridge, core-agents, and 42 more.",
       "citations": [
         {
           "path": "src/core/commands/run-command.ts"
@@ -169,39 +169,6 @@
       "trust_score": 0.8,
       "freshness": "fresh",
       "token_cost": 71
-    },
-    {
-      "id": "code:native-sks-menubar",
-      "text": "native-sks-menubar is a module at native/sks-menubar (56 files, low risk). It has no exported surface in the graph. It has no recorded outbound dependency.",
-      "citations": [
-        {
-          "path": "native/sks-menubar/Sources/ProvidersRoutingTruth.swift"
-        },
-        {
-          "path": "native/sks-menubar/Sources/TelegramPrivateFileSupport.swift"
-        },
-        {
-          "path": "native/sks-menubar/UITests/ArchitectureHardeningRestartQATests.swift"
-        },
-        {
-          "path": "native/sks-menubar/Sources/SidebarItem.swift"
-        },
-        {
-          "path": "native/sks-menubar/Tests/ProvidersCapabilityTruthTests.swift"
-        },
-        {
-          "path": "native/sks-menubar/Sources/ProcessExecutionState.swift"
-        },
-        {
-          "path": "native/sks-menubar/Sources/SettingsViewController.swift"
-        },
-        {
-          "path": "native/sks-menubar/Sources/SecureProcessEnvelope.swift"
-        }
-      ],
-      "trust_score": 0.8,
-      "freshness": "fresh",
-      "token_cost": 39
     },
     {
       "id": "code:core-agents",
@@ -270,8 +237,41 @@
       "token_cost": 72
     },
     {
+      "id": "code:native-sks-menubar",
+      "text": "native-sks-menubar is a module at native/sks-menubar (45 files, low risk). It has no exported surface in the graph. It has no recorded outbound dependency.",
+      "citations": [
+        {
+          "path": "native/sks-menubar/Sources/ProvidersRoutingTruth.swift"
+        },
+        {
+          "path": "native/sks-menubar/UITests/ArchitectureHardeningRestartQATests.swift"
+        },
+        {
+          "path": "native/sks-menubar/Sources/SidebarItem.swift"
+        },
+        {
+          "path": "native/sks-menubar/Tests/ProvidersCapabilityTruthTests.swift"
+        },
+        {
+          "path": "native/sks-menubar/Sources/ProcessExecutionState.swift"
+        },
+        {
+          "path": "native/sks-menubar/Sources/SettingsViewController.swift"
+        },
+        {
+          "path": "native/sks-menubar/Sources/SecureProcessEnvelope.swift"
+        },
+        {
+          "path": "native/sks-menubar/Sources/UpdatesViewController.swift"
+        }
+      ],
+      "trust_score": 0.8,
+      "freshness": "fresh",
+      "token_cost": 39
+    },
+    {
       "id": "code:core-codex-app",
-      "text": "core-codex-app is a module at src/core/codex-app (65 files, low risk). Key exports: CANONICAL_DIRECTIVES, CODEX_APP_FAST_UI_PRESERVATION_SCHEMA, CODEX_APP_FAST_UI_REPAIR_SCHEMA, CODEX_APP_UI_CLOBBER_GUARD_SCHEMA, CODEX_APP_UI_STATE_SNAPSHOT_SCHEMA, and 290 more. Depends on: cli, commands, core, core-agent-guidance, core-agents, and 14 more.",
+      "text": "core-codex-app is a module at src/core/codex-app (64 files, low risk). Key exports: CANONICAL_DIRECTIVES, CODEX_APP_FAST_UI_PRESERVATION_SCHEMA, CODEX_APP_FAST_UI_REPAIR_SCHEMA, CODEX_APP_UI_CLOBBER_GUARD_SCHEMA, CODEX_APP_UI_STATE_SNAPSHOT_SCHEMA, and 290 more. Depends on: cli, commands, core, core-agent-guidance, core-agents, and 14 more.",
       "citations": [
         {
           "path": "src/core/codex-app/menubar/migration.ts"
@@ -535,7 +535,7 @@
     },
     {
       "id": "code:commands",
-      "text": "commands is a module at src/commands (48 files, low risk). Key exports: BridgeCliError, BridgeCommandExecution, BridgeCommandFacade, BridgeCommandIo, BridgeCommandRequest, and 187 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 20 more.",
+      "text": "commands is a module at src/commands (48 files, low risk). Key exports: BridgeCliError, BridgeCommandExecution, BridgeCommandFacade, BridgeCommandIo, BridgeCommandRequest, and 179 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 19 more.",
       "citations": [
         {
           "path": "src/commands/research.ts"
@@ -733,7 +733,7 @@
     },
     {
       "id": "code:test-unit",
-      "text": "test-unit is a module at test/unit (276 files, low risk). Key exports: PNG_1X1_SHA256, acquireAtomicBuildLock, capturedInventory, importDist, mockGeneratedReviewImage, and 6 more. Depends on: scripts, test-helpers.",
+      "text": "test-unit is a module at test/unit (275 files, low risk). Key exports: PNG_1X1_SHA256, acquireAtomicBuildLock, capturedInventory, importDist, mockGeneratedReviewImage, and 6 more. Depends on: scripts, test-helpers.",
       "citations": [
         {
           "path": "test/unit/mad-sks-shell-argv-classifier.test.mjs"
@@ -1174,39 +1174,6 @@
       "trust_score": 0.8,
       "freshness": "fresh",
       "token_cost": 68
-    },
-    {
-      "id": "code:core-telegram",
-      "text": "core-telegram is a module at src/core/telegram (15 files, low risk). Key exports: CommandContractV3, ISOLATED_TEST_HOME, InMemoryTelegramAccessStore, PendingTelegramCommand, PrivateCredentialFileError, and 64 more. Depends on: core, core-__tests__, core-commands, core-safety, core-security.",
-      "citations": [
-        {
-          "path": "src/core/telegram/__tests__/telegram-private-storage.test.ts"
-        },
-        {
-          "path": "src/core/telegram/liveness.ts"
-        },
-        {
-          "path": "src/core/telegram/confirmation.ts"
-        },
-        {
-          "path": "src/core/telegram/__tests__/telegram-state-lock.test.ts"
-        },
-        {
-          "path": "src/core/telegram/client.ts"
-        },
-        {
-          "path": "src/core/telegram/redaction.ts"
-        },
-        {
-          "path": "src/core/telegram/doctor.ts"
-        },
-        {
-          "path": "src/core/telegram/index.ts"
-        }
-      ],
-      "trust_score": 0.8,
-      "freshness": "fresh",
-      "token_cost": 73
     },
     {
       "id": "code:core-verification",
@@ -2026,8 +1993,29 @@
       "trust_score": 0.8,
       "freshness": "fresh",
       "token_cost": 62
+    },
+    {
+      "id": "code:core-config",
+      "text": "core-config is a module at src/core/config (4 files, low risk). Key exports: ChangedOrMissingSecret, ManagedConfigMergeResult, PROTECTED_SECRET_KEYS, PROTECTED_SUPABASE_CONFIG_PATHS, PROTECTED_SUPABASE_ENV_KEYS, and 21 more. Depends on: core, core-text.",
+      "citations": [
+        {
+          "path": "src/core/config/managed-config-merge.ts"
+        },
+        {
+          "path": "src/core/config/supabase-secret-preservation.ts"
+        },
+        {
+          "path": "src/core/config/secret-preservation.ts"
+        },
+        {
+          "path": "src/core/config/config-migration-journal.ts"
+        }
+      ],
+      "trust_score": 0.8,
+      "freshness": "fresh",
+      "token_cost": 64
     }
   ],
   "token_budget": 8000,
-  "total_token_cost": 4580
+  "total_token_cost": 4571
 }

@@ -131,14 +131,14 @@ test('missing physical release receipts block before main is pushed', () => {
     ...GREEN_PREFLIGHT,
     'release-physical-gates-check.js': {
       status: 1,
-      stdout: JSON.stringify({ ok: false, blockers: ['physical_receipt_gate_missing:telegram_cellular_e2e'] })
+      stdout: JSON.stringify({ ok: false, blockers: ['physical_receipt_gate_missing:desktop_bridge_live_evidence'] })
     }
   });
   const { opts } = options({ recorder: rec, opts: { confirm: true } });
   const report = stagePublish(opts);
   assert.equal(report.ok, false);
   assert.ok(report.blockers.includes('stage_physical_release_gates_invalid'));
-  assert.match(report.steps.find((step) => step.id === 'physical_release_gates')?.detail || '', /telegram_cellular_e2e/);
+  assert.match(report.steps.find((step) => step.id === 'physical_release_gates')?.detail || '', /desktop_bridge_live_evidence/);
   assert.ok(!rec.calls.some((call) => call.startsWith('git push')), rec.calls.join('\n'));
 });
 

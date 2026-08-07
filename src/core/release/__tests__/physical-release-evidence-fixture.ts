@@ -204,14 +204,6 @@ export function writePhysicalReleaseEvidence(
       oauth_fallback: false,
       latency_ms: 42
     }),
-    gate(version, sourceCommit, 'telegram_cellular_e2e', 'telegram.json', {
-      network: 'cellular',
-      paired: true,
-      allowlisted: true,
-      typed_command: true,
-      reply_received: true,
-      bot_token_recorded: false
-    }),
     gate(version, sourceCommit, 'desktop_bridge_live_evidence', 'desktop-bridge/release-evidence.json', {
       release_authorizing: true,
       capture_platform: 'darwin',
@@ -277,8 +269,7 @@ export function writePhysicalReleaseEvidence(
             command_id: ({
               update_5001_directory: 'sks.update.physical',
               single_menubar_process: 'sks.menubar.process-readback',
-              codex_lb_measured_request: 'sks.codex-lb.measured-request',
-              telegram_cellular_e2e: 'sks.telegram.cellular-roundtrip'
+              codex_lb_measured_request: 'sks.codex-lb.measured-request'
             } as Record<string, string>)[entry.id],
             invocation_id: invocationId,
             exit_code: 0,
@@ -386,17 +377,7 @@ function producerMeasurement(id: string, version: string): Record<string, unknow
     latency_ms: 42,
     response_sha256: 'f'.repeat(64)
   }
-  return {
-    pairing_id: 'telegram-pairing-001',
-    network_interface_kind: 'cellular',
-    pairing_verified: true,
-    allowlist_match: true,
-    outbound_typed: true,
-    inbound_reply_received: true,
-    outbound_message_sha256: '1'.repeat(64),
-    inbound_reply_sha256: '2'.repeat(64),
-    bot_token_captured: false
-  }
+  throw new Error(`unsupported physical gate fixture: ${id}`)
 }
 
 function writeArtifact(root: string, relativePath: string, bytes: Buffer): void {

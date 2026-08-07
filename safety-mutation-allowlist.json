@@ -500,8 +500,8 @@
       "file": "src/core/codex-control/codex-current-capability.ts",
       "symbol": "generateSchemaProbe",
       "token": "fsp.rm",
-      "scope_contract_sha256": "eb2ad9d29d7844696d8fe14beaa6f239ec5bafaacaa5057131da280fbc11237f",
-      "callsite_sha256": "87455a249fbbb34794e56a6f374b712102d76b623ef28e986453f323c7fa48a4",
+      "scope_contract_sha256": "47fd150222185392a4bfc2d456b68955027397b40941b4a008d05e8f4f207888",
+      "callsite_sha256": "cfdfee77add2a4d124c61d99efb18b9ffc324fafaf2ad9a11a6b8e45f7453c5e",
       "occurrence": 1,
       "reason": "Current Codex schema probe removes only its scoped generated schema output directory before refresh."
     },
@@ -1769,8 +1769,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "chmod",
-      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
-      "callsite_sha256": "cebb552d00ac71172c4a55ff74fca0c961ef05ff188628dfda8f11e690a6b9cf",
+      "scope_contract_sha256": "39884e94169843f1fdca429ac5a68a9726af2cbaf2e1e6003d6ac3d1a86d0475",
+      "callsite_sha256": "df356b89a2ba41cda45f84c263c8f7666ec05bf84a32ff97991ea99d66056536",
       "occurrence": 1,
       "reason": "Installed-package smoke marks only its mkdtemp-owned launchctl stub executable inside the isolated sandbox."
     },
@@ -1778,8 +1778,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "fs.rm",
-      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
-      "callsite_sha256": "d8a13e42f9e3c89ace7925083b51cd5d5ecbe6bd1a147f47ee67cddf8895a1f7",
+      "scope_contract_sha256": "39884e94169843f1fdca429ac5a68a9726af2cbaf2e1e6003d6ac3d1a86d0475",
+      "callsite_sha256": "eec57e2610c5077aa89b67ff20695b9a4870fa25d44fb3b34254e2007ebd930a",
       "occurrence": 1,
       "reason": "Installed-package smoke removes only its mkdtemp-owned npm install fixture in finally."
     },
@@ -1787,8 +1787,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
-      "callsite_sha256": "0f857ff549e4e7d0a3aaadf4eb98f5ae99a132e7500206de9fd624c4fdf5d515",
+      "scope_contract_sha256": "39884e94169843f1fdca429ac5a68a9726af2cbaf2e1e6003d6ac3d1a86d0475",
+      "callsite_sha256": "16bf6bffcd9a84178b8b12f4d80f1490fd5b32b698ef2b1f169f9e108a5eaa1c",
       "occurrence": 1,
       "reason": "Installed-package smoke writes only launchctl and npm configuration fixtures inside its mkdtemp-owned isolated sandbox."
     },
@@ -1796,8 +1796,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
-      "callsite_sha256": "238e4f77e8d3d5bcb9d330708fa5e23c71b272e9a8c48808a9c279ab7a7c9892",
+      "scope_contract_sha256": "39884e94169843f1fdca429ac5a68a9726af2cbaf2e1e6003d6ac3d1a86d0475",
+      "callsite_sha256": "f473461c2d250f9aa31580350ceb68cad2948911a6ef032ce500cc41d8078f1e",
       "occurrence": 1,
       "reason": "Installed-package smoke writes only launchctl and npm configuration fixtures inside its mkdtemp-owned isolated sandbox."
     },
@@ -1805,8 +1805,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
-      "callsite_sha256": "2894b1f5b1dd7b2413cbbcc79904ceec2abd975c1db8891e4d70c3edf5ced9b9",
+      "scope_contract_sha256": "39884e94169843f1fdca429ac5a68a9726af2cbaf2e1e6003d6ac3d1a86d0475",
+      "callsite_sha256": "47a3f8bcd99ab0197d4f70c3b73fc4fcf0a686a2dca1c5527fa974290085c5e9",
       "occurrence": 1,
       "reason": "Installed-package smoke writes only launchctl and npm configuration fixtures inside its mkdtemp-owned isolated sandbox."
     },
@@ -1814,8 +1814,8 @@
       "file": "src/core/install/installed-package-smoke.ts",
       "symbol": "runInstalledPackageSmoke",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "ac494ce8b68dcaec068de70c31b389fb80f01581246ac940d37cd60a6a39f190",
-      "callsite_sha256": "da71c4070a1ee981827d31add70ccf54dd6a9a39684e8eb316cc6d862a760eb8",
+      "scope_contract_sha256": "39884e94169843f1fdca429ac5a68a9726af2cbaf2e1e6003d6ac3d1a86d0475",
+      "callsite_sha256": "2910e03e7e5931077482e4e94efc36d6bd75166ae1b6db8de47059817e61b10d",
       "occurrence": 1,
       "reason": "Installed-package smoke writes only launchctl and npm configuration fixtures inside its mkdtemp-owned isolated sandbox."
     },
@@ -2646,132 +2646,6 @@
       "callsite_sha256": "4a21b89415237357dc8a90f1c4174bdb1185e8a3844358c5abe4f1ed6186ccfb",
       "occurrence": 1,
       "reason": "An explicitly failed workflow or contradictory structured completion removes only the fixed parent-summary artifact in the active mission directory; same-run trustworthy blocked evidence survives untrusted prose."
-    },
-    {
-      "file": "src/core/telegram/keychain.ts",
-      "symbol": "preflightTelegramTokenStorage",
-      "token": "unlink",
-      "scope_contract_sha256": "c7ce7006505768d947ede7afc6a0e69218e8bf9d678ab6402d33dcb6874189d1",
-      "callsite_sha256": "2feee3a0e6fb67295906ffd818b2154b142e1045e4761faff4c34d03b582e9c3",
-      "occurrence": 1,
-      "reason": "Telegram token preflight unlinks only its exclusive random probe after verifying the same regular-file device and inode identity."
-    },
-    {
-      "file": "src/core/telegram/liveness.ts",
-      "symbol": "writeTelegramLivenessReceipt",
-      "token": "chmod",
-      "scope_contract_sha256": "49076407385c5187174f8f4a54105b8407da9e77c36a347e512a2fe4915fbe4a",
-      "callsite_sha256": "068b92c50118b882be1a0824e61717abf757ee72a5340209cde353c4cad845e3",
-      "occurrence": 1,
-      "reason": "Telegram liveness writing applies 0600 only to the receipt immediately after its atomic promotion."
-    },
-    {
-      "file": "src/core/telegram/liveness.ts",
-      "symbol": "writeTelegramLivenessReceipt",
-      "token": "fs.rm",
-      "scope_contract_sha256": "49076407385c5187174f8f4a54105b8407da9e77c36a347e512a2fe4915fbe4a",
-      "callsite_sha256": "9dab4a128df270b6f07af82c63ddccd5112b172646f034ae4abe5eb20e41bf00",
-      "occurrence": 1,
-      "reason": "Telegram liveness cleanup removes only its randomized sibling temporary receipt in the writer finally block."
-    },
-    {
-      "file": "src/core/telegram/liveness.ts",
-      "symbol": "writeTelegramLivenessReceipt",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "49076407385c5187174f8f4a54105b8407da9e77c36a347e512a2fe4915fbe4a",
-      "callsite_sha256": "ec7c2550f9e4fd40f14006d8e49d5fbac3388d545ae9639fa351b5d55c6f50b2",
-      "occurrence": 1,
-      "reason": "Telegram liveness writing exclusively creates an owner-only randomized temporary receipt beside the caller-selected receipt path."
-    },
-    {
-      "file": "src/core/telegram/liveness.ts",
-      "symbol": "writeTelegramLivenessReceipt",
-      "token": "rename",
-      "scope_contract_sha256": "49076407385c5187174f8f4a54105b8407da9e77c36a347e512a2fe4915fbe4a",
-      "callsite_sha256": "c1494e503042c596fe1d37ee408fac84c8e040aeb5ab8d2ec522ca43e2d5a594",
-      "occurrence": 1,
-      "reason": "Telegram liveness writing atomically promotes only its randomized sibling temporary receipt to the caller-selected receipt path."
-    },
-    {
-      "file": "src/core/telegram/state-lock.ts",
-      "symbol": "acquireStateLock",
-      "token": "unlink",
-      "scope_contract_sha256": "30573770165eae8e225754afb4d26cf7a2d947185e312f1397498bd3cf34cbe4",
-      "callsite_sha256": "6e1ee2c8f61de04bce908e10afc9a7365293beed4e977cacfaee82547317fe11",
-      "occurrence": 1,
-      "reason": "Telegram lock acquisition unlinks only its exclusive owner candidate after publication or bounded cleanup of that same candidate."
-    },
-    {
-      "file": "src/core/telegram/state-lock.ts",
-      "symbol": "acquireStateLock",
-      "token": "unlink",
-      "scope_contract_sha256": "30573770165eae8e225754afb4d26cf7a2d947185e312f1397498bd3cf34cbe4",
-      "callsite_sha256": "6e1ee2c8f61de04bce908e10afc9a7365293beed4e977cacfaee82547317fe11",
-      "occurrence": 2,
-      "reason": "Telegram lock acquisition unlinks only its exclusive owner candidate after publication or bounded cleanup of that same candidate."
-    },
-    {
-      "file": "src/core/telegram/state-lock.ts",
-      "symbol": "createOwnerCandidate",
-      "token": "chmod",
-      "scope_contract_sha256": "38ab55aec608aef2e040e1093cfcc68dadbb902ac1c3d0de7029cf201afee5cf",
-      "callsite_sha256": "032fe2819fd1774e688eb7995800a544a8900fd7ec1d8685926d538cbb786df7",
-      "occurrence": 1,
-      "reason": "Telegram lock candidate hardening applies 0600 through the O_NOFOLLOW handle opened with exclusive-create semantics."
-    },
-    {
-      "file": "src/core/telegram/state-lock.ts",
-      "symbol": "createOwnerCandidate",
-      "token": "unlink",
-      "scope_contract_sha256": "38ab55aec608aef2e040e1093cfcc68dadbb902ac1c3d0de7029cf201afee5cf",
-      "callsite_sha256": "0ced494a6a1d961801eee35233e97a507c7cef964ca181dab299f70c6193f327",
-      "occurrence": 1,
-      "reason": "Telegram lock candidate failure cleanup unlinks only the random exclusive-create candidate owned by the current attempt."
-    },
-    {
-      "file": "src/core/telegram/state-lock.ts",
-      "symbol": "joinReclaimBarrier",
-      "token": "unlink",
-      "scope_contract_sha256": "7fdb2de539a7182c2a0ee77d8b1c95afcd253e6722c8f00507797baf22313332",
-      "callsite_sha256": "4e252f701eb761904a531de93b33b1f7f486f973b0315a8c8a579f5745f16779",
-      "occurrence": 1,
-      "reason": "Telegram reclaim join unlinks only its exclusive owner candidate after identity-checked publication or bounded candidate cleanup."
-    },
-    {
-      "file": "src/core/telegram/state-lock.ts",
-      "symbol": "joinReclaimBarrier",
-      "token": "unlink",
-      "scope_contract_sha256": "7fdb2de539a7182c2a0ee77d8b1c95afcd253e6722c8f00507797baf22313332",
-      "callsite_sha256": "4e252f701eb761904a531de93b33b1f7f486f973b0315a8c8a579f5745f16779",
-      "occurrence": 2,
-      "reason": "Telegram reclaim join unlinks only its exclusive owner candidate after identity-checked publication or bounded candidate cleanup."
-    },
-    {
-      "file": "src/core/telegram/state-lock.ts",
-      "symbol": "reclaimDeadStateLock",
-      "token": "unlink",
-      "scope_contract_sha256": "5883339f5e17316ee0bb3bb03d840e93b9bc2e57f976cf8c8a271efca08dfe9f",
-      "callsite_sha256": "75e4ad80b2299d57a296317c3f54926e128f1423ce9659f9158bab8fe2a20ab7",
-      "occurrence": 1,
-      "reason": "Telegram lock reclaim unlinks only a safely inspected matching lock whose recorded owner is dead while the reclaim barrier is held."
-    },
-    {
-      "file": "src/core/telegram/state-lock.ts",
-      "symbol": "settleReclaimBarrier",
-      "token": "unlink",
-      "scope_contract_sha256": "c77b890b4dd0709aeb4cfa17f5e6747bcbc75370aa782450d58a9537b84d33ae",
-      "callsite_sha256": "b5b14e455cfae61bfa43c3b0d9e7ad58fca890bee9c7258c7bfaa187133d1bc2",
-      "occurrence": 1,
-      "reason": "Telegram reclaim settlement unlinks only a safely inspected lock whose recorded owner is dead while participating in the barrier."
-    },
-    {
-      "file": "src/core/telegram/state-lock.ts",
-      "symbol": "unlinkOwnedFile",
-      "token": "unlink",
-      "scope_contract_sha256": "bcbe19e45d77f028d585913083412de72882a07d0232fbdb1d313e60298b2ced",
-      "callsite_sha256": "803c4a8fffe59781961e06a8022dc2c4ca3d891e823369ac0a6f7abf96160caa",
-      "occurrence": 1,
-      "reason": "Telegram lock release unlinks only after exact device, inode, pid, and random-token ownership verification."
     },
     {
       "file": "src/core/triwiki/context-graph/benchmark/fixtures/index.ts",
@@ -5234,8 +5108,8 @@
       "file": "src/scripts/fast-codex-service-tier-proof-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "9e29dc12e9089b638b9bdfa0834e38c0d005da881d19dc8869bba44b3e60d374",
-      "callsite_sha256": "7a0ed37cddd50669dc5772dfbd188f4a759f21c2d52d26647a7daeba50cef3b0",
+      "scope_contract_sha256": "45a60878601406243a669fe0ba24bec8ba12192fe2fc3575f91d43b7ee312533",
+      "callsite_sha256": "5d67aa247d42b8f84d8267a9fc5112f7e364f47b7ace68b29ddf45f11f5603a7",
       "occurrence": 1,
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     },
@@ -5243,8 +5117,8 @@
       "file": "src/scripts/fast-codex-service-tier-proof-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "9e29dc12e9089b638b9bdfa0834e38c0d005da881d19dc8869bba44b3e60d374",
-      "callsite_sha256": "9ce6567997c461730cd9de54ba1b381d8cd845e1e878012daa91daaddf221013",
+      "scope_contract_sha256": "45a60878601406243a669fe0ba24bec8ba12192fe2fc3575f91d43b7ee312533",
+      "callsite_sha256": "e32e8e73383447cc6f1a5c68cb480fca2d57e6d9cc74df5cfbaa7184225a4200",
       "occurrence": 1,
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     },
@@ -5837,8 +5711,8 @@
       "file": "src/scripts/latest-version-guidance-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "4ff9d2e5a7692aa3e27eab3df4cada02cf75ce2fb6899ba62a54314001995d84",
-      "callsite_sha256": "b59f379adb90ae1f3a434b178f0f64006e69345a1c11d4d21e54ed4ff32f37fa",
+      "scope_contract_sha256": "d76914313cfe33b0e1d3b93ba349e9fe7a083c5df317e7666727b8636201b3d2",
+      "callsite_sha256": "6368ed8e56a58b50503dbfc742c0153884d4e83190aa3bd4598627ca021159d0",
       "occurrence": 1,
       "reason": "The latest-version guidance gate writes only its fixed machine-readable report beneath the workspace .sneakoscope reports directory."
     },
@@ -6359,8 +6233,8 @@
       "file": "src/scripts/official-docs-compat-report.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "e4a987987a5e73cc072617c39d226fbe0b95406ab62c06f7458fabc7b8b9d2db",
-      "callsite_sha256": "03d08eadfa9c411864eacb6bc89d5933a8a9e30fb5f7ff3eb308336d20bd5f91",
+      "scope_contract_sha256": "44fbc2a80a3cd3c12020ba30340fec1e3cd01302ab67778a25877ac0f6642d64",
+      "callsite_sha256": "58e5c67a1e3bc99a71e4286d349d629815d679087a73530fc3b2e2abdca42110",
       "occurrence": 1,
       "reason": "Official-docs compatibility report writes only its project-local JSON and Markdown report artifacts."
     },
@@ -6368,8 +6242,8 @@
       "file": "src/scripts/official-docs-compat-report.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "e4a987987a5e73cc072617c39d226fbe0b95406ab62c06f7458fabc7b8b9d2db",
-      "callsite_sha256": "2f267ea1f14afd047387086d28394ab7a5b8f410cba53f896626c8352f339a4e",
+      "scope_contract_sha256": "44fbc2a80a3cd3c12020ba30340fec1e3cd01302ab67778a25877ac0f6642d64",
+      "callsite_sha256": "8942a6d7e96bf4f4ec3b866ca009222afc81b0679b9beba6173cb8763d4bf35c",
       "occurrence": 1,
       "reason": "Official-docs compatibility report writes only its project-local JSON and Markdown report artifacts."
     },
@@ -6386,8 +6260,8 @@
       "file": "src/scripts/packlist-performance-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "d76b6da09fafa7e9e7e53f77dc61c6a5f2352ee6005882cac479a0713b68df40",
-      "callsite_sha256": "116ba124cdc778e044d3fd427a9388b2fe4b9ccd4153e922c5df88d1d2091ba4",
+      "scope_contract_sha256": "0a5a0a10d07011977d3d8aa6433c9cd6c445e5fd2e8a9ea878bbc21d4f14322d",
+      "callsite_sha256": "f433e7b629c6314d373b2195147058962a2f8d15f2000f2a939ed4b33713f85d",
       "occurrence": 1,
       "reason": "src/scripts/packlist-performance-check.ts#runNpmPack writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6395,8 +6269,8 @@
       "file": "src/scripts/packlist-performance-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "d76b6da09fafa7e9e7e53f77dc61c6a5f2352ee6005882cac479a0713b68df40",
-      "callsite_sha256": "f50e53db19eb7a28c11bc8e3d3587dde96a71d8326be1700b49ed77496b5af66",
+      "scope_contract_sha256": "0a5a0a10d07011977d3d8aa6433c9cd6c445e5fd2e8a9ea878bbc21d4f14322d",
+      "callsite_sha256": "731449a20d0deda461b764ab48689cac0031f1c3f93ae4a9cf9b2a826eb55a6f",
       "occurrence": 1,
       "reason": "src/scripts/packlist-performance-check.ts#runNpmPack writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },
@@ -6800,8 +6674,8 @@
       "file": "src/scripts/release-metadata-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "43c30a77d6ee6f72d29ba26c867224ebd84acc8a2f582dd5aaa3ef38425f45b9",
-      "callsite_sha256": "2bce49c0f1e62a061f50843373ab971754dcac52c77d9389526985d1b6cd2c42",
+      "scope_contract_sha256": "d3c11750fc9de542cd292ac9b6e8ac54aa01efdf23ab7caed171a92b9fc19df5",
+      "callsite_sha256": "eced8962b296c25ce68d9edfbd84c399fa7ec1456d27f1f35f7168d9dbdc03dd",
       "occurrence": 1,
       "reason": "Release metadata validation writes only its fixed versioned JSON report beneath the repository .sneakoscope/reports directory."
     },

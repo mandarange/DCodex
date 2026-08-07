@@ -43,15 +43,10 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
     'ProvidersOpenRouter.swift',
     'ProvidersBridgeCatalog.swift',
     'RemoteCodingViewController.swift',
-    'RemoteCodingSettingsControls.swift',
     'DiagnosticsViewController.swift',
     'SettingsViewController.swift', 'OperationModels.swift', 'ProviderRouteExplanation.swift', 'OperationCoordinator.swift',
     'ProcessClient.swift', 'ProcessExecutionState.swift', 'ProcessIdentityGuard.swift',
     'SecureProcessEnvelope.swift', 'SKSKeychainStore.swift',
-    'TelegramStateLock.swift',
-    'TelegramPrivateFileSupport.swift',
-    'TelegramPrivateFileStore.swift', 'TelegramSupport.swift', 'TelegramRuntimeSupport.swift', 'TelegramTransport.swift',
-    'TelegramProcessGateway.swift',
     'NotificationCoordinator.swift', 'AlertFactory.swift',
     'AppIdentity.swift', 'SingletonInstanceGuard.swift'
   ]);
@@ -68,6 +63,11 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
   assert.doesNotMatch(materialized, /MultiProviderRouterControls|ProvidersConnectTest/);
   assert.match(materialized, /One managed Desktop Bridge routes through independent Codex-LB and OpenRouter profiles/);
   assert.match(materialized, /\["bridge", "route", "explain", model, "--json"\]/);
+  assert.match(materialized, /https:\/\/paseo\.sh\//);
+  assert.match(materialized, /https:\/\/paseo\.sh\/docs/);
+  assert.match(materialized, /Paseo \(recommended\)/);
+  assert.match(materialized, /Sneakoscope does not install it, bundle its daemon/);
+  assert.doesNotMatch(materialized, /Telegram|BotFather|TELEGRAM_BOT_TOKEN/);
   assert.doesNotMatch(materialized, /model\.contains\("\/"\) \? model :/);
 });
 
@@ -590,7 +590,7 @@ test('UserNotifications declares all categories/actions, redacts public bodies, 
   assert.doesNotMatch(swift, /display notification|osascript/);
 });
 
-test('Remote Coding page is a secret-safe Telegram control surface with no retired-brand residue', () => {
+test('Remote Coding page recommends Paseo without owning its runtime boundary', () => {
   const swift = source();
   const overview = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'OverviewViewController.swift'), 'utf8');
   const sidebar = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'SidebarItem.swift'), 'utf8');
@@ -598,108 +598,25 @@ test('Remote Coding page is a secret-safe Telegram control surface with no retir
     path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'RemoteCodingViewController.swift'),
     'utf8'
   );
-  const remoteSettings = fs.readFileSync(
-    path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'RemoteCodingSettingsControls.swift'),
-    'utf8'
-  );
-  const remoteSurface = `${remote}\n${remoteSettings}`;
-  const gateway = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'TelegramProcessGateway.swift'), 'utf8');
-  const processClient = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ProcessClient.swift'), 'utf8');
   const secureEnvelope = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'SecureProcessEnvelope.swift'), 'utf8');
-  const privateStore = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'TelegramPrivateFileStore.swift'), 'utf8');
-  const telegramSupport = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'TelegramSupport.swift'), 'utf8');
-  const transport = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'TelegramTransport.swift'), 'utf8');
   const controlCenter = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'ControlCenterWindowController.swift'), 'utf8');
+
   assert.match(sidebar, /case remoteCoding = "Remote Coding"/);
   assert.match(overview, /NativeView\.button\("Remote Coding…"/);
   assert.match(overview, /openSection\?\("Remote Coding"\)/);
-  assert.match(remote, /final class RemoteCodingViewController: NSViewController, ControlCenterPage, NSTextFieldDelegate/);
-  assert.match(remote, /Telegram Remote Control/);
-  assert.match(remote, /Connect with BotFather/);
-  assert.match(remote, /Open @BotFather/);
-  assert.match(remote, /(?:https:\/\/t\.me\/BotFather|tg:\/\/resolve\?domain=BotFather)/);
-  assert.match(remoteSurface, /NSSecureTextField/);
-  assert.match(remoteSurface, /sks-center-telegram-bot-token/);
-  assert.match(remoteSurface, /sks-center-telegram-bot-username/);
-  assert.match(remoteSurface, /Paste the complete BotFather HTTP API token/);
-  assert.match(remoteSurface, /Verify, Save & Apply/);
-  assert.match(remoteSurface, /Verify, Replace & Apply/);
-  assert.match(remote, /Telegram getMe returns the entered username/);
-  assert.match(remote, /learns chat and user IDs through private-chat pairing/);
-  assert.match(remote, /ControlKit\.keyValueRow\("Active Bot", settingsControls\.selectedBotDetail\)/);
-  assert.match(remote, /ControlKit\.keyValueRow\("Bot Username", settingsControls\.botUsernameField\)/);
-  assert.match(remote, /ControlKit\.keyValueRow\("Bot Token", settingsControls\.botTokenField\)/);
-  assert.match(remoteSettings, /Bot ID \\\(botID\)/);
-  assert.match(remote, /secure: true/);
-  assert.match(remoteSettings, /func consumeTokenInput\(\)[\s\S]*botTokenField\.stringValue\.trimmingCharacters\(in: \.whitespacesAndNewlines\)[\s\S]*botTokenField\.stringValue = ""/);
-  assert.match(remoteSettings, /func expectedBotUsernameInput\(\) -> String\?[\s\S]*normalizedBotUsername\(botUsernameField\.stringValue\)/);
-  assert.match(remote, /let expectedBotUsername = settingsControls\.expectedBotUsernameInput\(\)[\s\S]*let normalizedToken = settingsControls\.consumeTokenInput\(\)[\s\S]*saveToken\(normalizedToken, expectedBotUsername: expectedBotUsername, removeWebhook: false\)/);
-  assert.match(remote, /promptForWebhookRemovalToken\(expectedBotUsername: String\)[\s\S]*secure: true[\s\S]*expectedBotUsername: expectedBotUsername,[\s\S]*removeWebhook: true/);
-  assert.match(remote, /\["telegram", "setup", "--token-stdin", "--json"\]/);
-  assert.match(remote, /arguments\.append\(contentsOf: \["--expected-bot-username", expectedBotUsername\]\)/);
-  assert.match(remote, /stdin: normalizedToken \+ "\\n"/);
-  assert.match(remote, /logOutput: true/);
-  assert.match(remote, /Pair a Private Chat/);
-  assert.match(remote, /Generate Pairing Code/);
-  assert.match(remoteSettings, /Copy Pairing Command/);
-  assert.match(remoteSettings, /sks-center-telegram-pairing-command/);
-  assert.match(remoteSettings, /pairingCommand = "\/start \\\(code\)"/);
-  assert.match(remoteSettings, /NSPasteboard\.general[\s\S]*setString\(pairingCommand, forType: \.string\)/);
-  assert.match(remote, /chat and user IDs from Telegram; they are never typed into this screen/);
-  assert.match(remote, /\["telegram", "pair", "--json"\]/);
-  assert.match(remote, /pairButton\.isEnabled = !operationInFlight && tokenConfigured && pollerRunning/);
-  assert.match(remote, /controlTextDidChange[\s\S]*field === settingsControls\.botTokenField \|\| field === settingsControls\.botUsernameField[\s\S]*updateControls\(\)/);
-  assert.match(remote, /Service Status/);
-  assert.match(remote, /\["telegram", "doctor", "--json"\]/);
-  assert.match(remote, /telegram_webhook_configured_remove_consent_required/);
-  assert.match(remote, /arguments\.append\("--remove-webhook"\)/);
-  assert.match(remote, /TelegramPrivateFileStore\.operatorEnvironmentOverrideActive\(\)[\s\S]*arguments\.append\("--operator-env-override-active"\)/);
-  assert.match(remote, /telegram_operator_env_override_active/);
-  assert.match(remote, /response\?\.partial_success == true[\s\S]*partialSetupRecovery\(response\)/);
-  assert.match(telegramSupport, /struct TelegramCenterSetupResponse[\s\S]*let token_source: String\?/);
-  assert.match(telegramSupport, /struct TelegramCenterPairResponse[\s\S]*let instruction: String\?[\s\S]*let post_pair_command: String\?[\s\S]*let confirmation_grammar: String\?/);
-  assert.match(telegramSupport, /struct TelegramCenterDoctorResponse[\s\S]*let bot_id: Int64\?/);
-  assert.match(remote, /let statusGuidance = instruction\.contains\(postPair\)/);
-  assert.match(remote, /After pairing, try \/sks status \{\}/);
-  assert.match(remote, /without dropping pending updates/);
-  assert.match(remote, /AlertFactory\.confirmSheet/);
-  assert.doesNotMatch(remote, /\borca\b|onorca|stablyai/i);
-  assert.doesNotMatch(swift, /\borca\b|onorca|stablyai/i);
-  assert.equal((remote.match(/\["telegram", "setup"/g) ?? []).length, 1);
-  assert.doesNotMatch(remote, /stringValue\s*=\s*token|NativeView\.(?:detail|title)\(\s*token/);
-  assert.doesNotMatch(remoteSurface, /(?:botID|chatID|senderID)(?:Text)?Field\s*[:=]/);
-  assert.doesNotMatch(remoteSurface, /setString\([^\n]*(?:botToken|normalizedToken|token),\s*forType:/);
-  assert.match(controlCenter, /RemoteCodingViewController\([\s\S]*processClient: processClient,[\s\S]*telegramService: telegramService/);
-  assert.match(gateway, /init\([\s\S]*processClient: ProcessClient,[\s\S]*canonicalProjectRoot: String/);
-  assert.equal((gateway.match(/"--project-root", canonicalProjectRoot/g) ?? []).length, 2);
-  assert.match(gateway, /\["name": request\.name, "input": object\]/);
-  assert.doesNotMatch(gateway, /object\["project_root"\]|request\.projectRoot/);
-  assert.match(gateway, /gateway: TelegramProcessCommandGateway\([\s\S]*processClient: processClient,[\s\S]*canonicalProjectRoot: canonicalProjectRoot/);
-  assert.match(processClient, /arguments\.contains\("--token-stdin"\)/);
-  assert.match(secureEnvelope, /case \("telegram", "setup"\):\s*return \["sks\.telegram-setup-command\.v1"\]/);
-  assert.match(secureEnvelope, /sourceSchema == "sks\.telegram-setup-command\.v1"[\s\S]*"getme_verified"[\s\S]*"token_stored"[\s\S]*"partial_success"[\s\S]*"webhook_removed"/);
-  assert.match(secureEnvelope, /\["getme", "webhook", "storage", "state"\]\.contains\(stage\)/);
-  assert.match(secureEnvelope, /object\["expected_bot_username"\][\s\S]*envelope\["expected_bot_username"\]/);
-  assert.match(remoteSettings, /telegram_webhook_inspection_network_failed/);
-  assert.match(remoteSettings, /telegram_bot_username_mismatch/);
-  assert.match(remoteSettings, /telegram_token_storage_preflight_failed/);
-  assert.match(remoteSettings, /telegram_bot_state_bind_failed/);
-  assert.match(secureEnvelope, /\["env", "user_secret_file", "none", "unchanged"\]\.contains\(source\)/);
-  assert.match(secureEnvelope, /for key in \["action", "command", "note"\]/);
-  assert.doesNotMatch(secureEnvelope, /(?:envelope|object)\["(?:storage|token|raw|payload)"\]/);
-  assert.match(privateStore, /func consumePairing[\s\S]*state\.chats = \[AuthorizedChat\([\s\S]*state\.confirmations = \[\][\s\S]*writeStateUnlocked\(state\)/);
-  assert.match(transport, /SKS Telegram control paired\. Try \/sks status \{\}\. Confirm prompted actions with \/confirm <nonce>\./);
-  assert.match(swift, /TelegramRuntimeFactory\.make\([\s\S]*processClient: processClient,[\s\S]*canonicalProjectRoot: AppRuntime\.canonicalProjectRoot/);
-  assert.match(swift, /telegramService\?\.stopAndWait\(timeout: 2\)/);
-  assert.doesNotMatch(swift, /RemoteTelegram|TelegramHub/);
-  for (const removed of [
-    'TelegramHubSupervisor.swift',
-    'RemoteTelegramViewController.swift',
-    'RemoteTelegramCenterState.swift',
-    'RemoteTelegramRendering.swift'
-  ]) {
-    assert.equal(fs.existsSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', removed)), false);
-  }
+  assert.match(remote, /final class RemoteCodingViewController: NSViewController/);
+  assert.match(remote, /https:\/\/paseo\.sh\//);
+  assert.match(remote, /https:\/\/paseo\.sh\/docs/);
+  assert.match(remote, /Paseo \(recommended\)/);
+  assert.match(remote, /independent open-source project/i);
+  assert.match(remote, /Sneakoscope does not install it, bundle its daemon/);
+  assert.match(remote, /setAccessibilityLabel\("Visit Paseo website"\)/);
+  assert.match(remote, /setAccessibilityLabel\("Read Paseo documentation"\)/);
+  assert.match(controlCenter, /\.remoteCoding: RemoteCodingViewController\(\)/);
+  assert.doesNotMatch(remote, /telegram|botfather|NSSecureTextField/i);
+  assert.doesNotMatch(swift, /TelegramRuntimeFactory|telegramService|TELEGRAM_BOT_TOKEN/);
+  assert.doesNotMatch(secureEnvelope, /sks\.telegram|\("telegram", "setup"\)/);
+  assert.equal(fs.existsSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'RemoteCodingSettingsControls.swift')), false);
 });
 
 test('MCP Control Center exposes scoped CRUD, health, OAuth, backups, policy editing, and redacted review without raw secret entry', () => {

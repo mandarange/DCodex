@@ -66,7 +66,6 @@ const packProof = writeNpmPackProof(root, info, packMs);
 const runtimeManifest = JSON.parse(fs.readFileSync(path.join(root, 'runtime-required-scripts.json'), 'utf8'));
 const runtimeScriptClosure = analyzeRuntimeScriptPackClosure(root);
 const customerPayloadForbidden = [
-  'dist/core/telegram/controller.js',
   'dist/core/agents/agent-cleanup-executor.js',
   'dist/core/release/npm-stage-tarball-verifier.js',
   'dist/core/release/npm-stage-tarball-verifier-support.js'

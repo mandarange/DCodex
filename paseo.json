@@ -1,0 +1,25 @@
+{
+  "worktree": {
+    "setup": [
+      "npm ci --ignore-scripts",
+      "npm run build:clean"
+    ]
+  },
+  "scripts": {
+    "build": {
+      "command": "npm run build"
+    },
+    "typecheck": {
+      "command": "npm run typecheck"
+    },
+    "test": {
+      "command": "npm run test"
+    },
+    "release-check": {
+      "command": "npm run release:check:affected"
+    },
+    "release-confidence": {
+      "command": "npm run release:check:confidence"
+    }
+  }
+}

@@ -1,22 +1,23 @@
-# SKS 8.2.2 Release Readiness
+# SKS 8.3.0 Release Readiness
 
 ## Current decision
 
-**SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.** The 8.2.2 source
-candidate combines Telegram arbitrary-bot identity binding with the current,
+**SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.** The 8.3.0 source
+candidate removes the active first-party Telegram surface, recommends the
+independent Paseo project for remote and cross-device use, and preserves the
 runtime-derived Codex contract. A source tag is authorized only after the exact
 candidate commit passes the repository checks and matches `origin/main`.
-Registry publication and a live private BotFather acceptance run remain operator
-actions outside that source-tag decision.
+Registry publication remains an explicit operator action outside that source-tag
+decision.
 
-Earlier SHA- or 8.1.3-bound artifacts are historical only. A version string,
-focused test, configured credential, package dry run, or old green stamp cannot
-authorize 8.2.2.
+Earlier SHA- or 8.2.2-bound artifacts are historical only. A version string,
+focused test, package dry run, or old green stamp cannot authorize 8.3.0.
 
 Evidence labels are intentionally narrow:
 
 - **passed-hermetic** — current local source/build/test evidence only;
-- **not-run-real** — no redacted target-bound live receipt exists; and
+- **not-run-real** — no redacted target-bound live receipt exists for a gate
+  that still requires one; and
 - **blocked-external** — a clean promoted commit, private credential, target
   environment, or operator authority is required.
 
@@ -25,28 +26,27 @@ The current execution surface is `$sks-naruto` / `sks naruto run`, with
 an operator-run repair command and must not be invoked automatically. Update
 and Control Center views share the `sks.update-status.v3` snapshot.
 
-## 8.2.2 candidate scope
+## 8.3.0 candidate scope
 
-- SKS Center and the CLI accept any user-owned BotFather bot. Setup verifies
-  `getMe` and binds the exact returned bot ID; it does not assume a product bot
-  name or username.
-- Remote Coding exposes the required BotFather token as an inline secure field,
-  applies it through one verified action, shows the derived active bot ID, and
-  renders a copyable short-lived pairing command. Bot, chat, and user IDs are
-  not editable inputs.
-- Every setup outcome uses the setup response schema. Identity rejection,
-  network failure, timeout, and invalid identity have stable secret-free error
-  codes; later setup failures retain neutral wording.
-- Native receipts encode absent Telegram liveness values as JSON `null`, while
-  the TypeScript reader accepts legacy 8.1.x receipts that omitted those
-  optional keys.
-- The optional BotFather username is compared with Telegram's verified `getMe`
-  identity and never replaces the authoritative bot ID.
+- The active first-party Telegram command, transport, native poller and settings,
+  feature/package surface, tests, and release requirements are absent. Historical
+  changelog records and guarded retired-state migration code remain historical
+  or upgrade-safety surfaces, not an active integration.
+- `sks telegram` is an ordinary unknown command. Doctor and current feature
+  inventories do not project Telegram readiness or credentials.
+- The root `paseo.json` uses the ordered worktree setup commands
+  `npm ci --ignore-scripts` and `npm run build:clean`, then exposes only the
+  existing build, typecheck, test, affected-release, and confidence-release
+  package scripts.
+- README guidance recommends Paseo desktop first, documents the official
+  headless and Codex launch flows, and keeps installation, authentication,
+  pairing, relay operation, and product support with the independent Paseo
+  project.
 - Codex compatibility derives from the package dependency and the resolved
   runtime's generated App Server schema; MCP list pagination is bounded and
   fail-closed, and superseded static Codex schemas and hook fixtures are absent.
-- Package, lockfile, runtime, Rust, README, changelog, performance, and agent
-  bridge version surfaces name 8.2.2.
+- Package, lockfile, plugin, runtime, Rust, README, changelog, performance, and
+  agent bridge version surfaces name 8.3.0.
 
 These are source claims. They become release claims only after the exact
 candidate commit passes the repository's release flow.
@@ -58,19 +58,14 @@ commit. Retain the command output, but do not treat it as exact-commit release
 proof:
 
 ```sh
-npm run typecheck
+jq -e . paseo.json
+node -e "const p=require('./package.json'),c=require('./paseo.json'); for (const row of Object.values(c.scripts)) { const name=row.command.replace(/^npm run /,''); if (!p.scripts[name]) throw new Error('missing package script: '+name) }"
 npm run build:clean
 node --test --test-concurrency=1 \
-  dist/core/telegram/__tests__/telegram-setup.test.js \
-  dist/core/telegram/__tests__/telegram-private-storage.test.js \
-  dist/core/telegram/__tests__/telegram-state-lock.test.js \
-  dist/core/telegram/__tests__/telegram-transport.test.js \
-  dist/commands/__tests__/doctor-telegram-runtime.test.js \
-  dist/core/codex-app/__tests__/sks-menubar-telegram-runtime.test.js
-node --test --test-concurrency=1 \
-  test/unit/telegram-native-runtime.test.mjs \
-  test/unit/telegram-state-lock-interop.test.mjs \
+  test/unit/removed-telegram-surface.test.mjs \
+  dist/cli/__tests__/command-help-contract.test.js \
   test/unit/package-publish-lifecycle.test.mjs
+npm run typecheck
 npm run release:version-truth
 npm run release:metadata
 npm run changelog:check
@@ -98,25 +93,29 @@ node ./dist/scripts/release-pack-receipt.js verify
 node ./dist/scripts/release-provenance-check.js --publish
 npm whoami --registry https://registry.npmjs.org/
 npm view sneakoscope maintainers --json --registry https://registry.npmjs.org/
-npm view sneakoscope@8.2.2 version --json --registry https://registry.npmjs.org/
+npm view sneakoscope@8.3.0 version --json --registry https://registry.npmjs.org/
 npm publish --dry-run --json \
   --registry https://registry.npmjs.org/ \
   --tag latest \
   --access public
 ```
 
-Before publication, the version lookup should report that 8.2.2 is not already
+Before publication, the version lookup should report that 8.3.0 is not already
 present. The dry run is not publication. The user performs the actual publish,
 push, tag, workflow dispatch, or approval separately.
 
-## Real Telegram acceptance
+## Removed-surface and Paseo contract
 
-A live arbitrary-bot check requires the user's private token and target Mac.
-After installing the exact 8.2.2 candidate, the operator should save one owned
-BotFather bot in SKS Center, confirm the displayed `getMe` identity, restart
-the resident poller, pair one private chat, and run a bounded `/sks status {}`
-round trip. Redact the token from every artifact. No hermetic test or configured
-token flag substitutes for that target-bound receipt.
+8.3.0 has no live Telegram credential, BotFather, pairing, poller, or cellular
+round-trip evidence requirement. Release verification instead proves that the
+active Telegram surface is absent and that the checked-in `paseo.json`, README,
+package scripts, package metadata, Rust metadata, and runtime version agree with
+the 8.3.0 contract.
+
+Paseo installation, daemon health, authentication, pairing, relay availability,
+and cross-device execution are also not Sneakoscope release evidence. Paseo is
+an independent project; this release checks only the repository configuration
+and documentation that Sneakoscope owns.
 
 ## TriWiki source binding
 
@@ -154,13 +153,13 @@ node ./dist/scripts/npm-stage-tarball-verifier.js \
   --physical-evidence-run-id <physical-capture-workflow-run-id> \
   --workflow-run-id <stage-workflow-run-id> \
   --local-receipt /absolute/path/to/local-pack-receipt.json \
-  --local-tarball /absolute/path/to/sneakoscope-8.2.2.tgz \
+  --local-tarball /absolute/path/to/sneakoscope-8.3.0.tgz \
   --stage-receipt /absolute/path/to/npm-stage-receipt.json
 ```
 
 The verifier does not approve, reject, publish, tag, or modify a stage.
 
-The final migration matrix includes a `7.6.0 to 8.2.2 upgrade smoke`, covering
-installed update finalization, Telegram receipt compatibility, preserved user
+The final migration matrix includes a `7.6.0 to 8.3.0 upgrade smoke`, covering
+installed update finalization, guarded retired-state cleanup, preserved user
 configuration, and the current command surface. Fixture success cannot replace
-the real macOS and Telegram evidence described above.
+real macOS evidence required by other protected gates.

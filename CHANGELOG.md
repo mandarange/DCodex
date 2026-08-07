@@ -2,7 +2,30 @@
 
 ## [Unreleased]
 
+## [8.3.0] - 2026-08-07
 
+### Added
+
+- Add a root `paseo.json` that prepares isolated worktrees without install
+  scripts, builds the clean distribution, and exposes the existing build,
+  typecheck, test, affected-release, and confidence-release commands to Paseo.
+
+### Changed
+
+- Recommend the independent [Paseo](https://paseo.sh/) project as the official
+  remote and cross-device companion, with desktop, headless, Codex, and
+  branch-backed worktree guidance while keeping Paseo authentication, relay,
+  and product support outside Sneakoscope.
+- Advance current npm, Rust, runtime, README, and release-document metadata to
+  8.3.0. Publication, tags, pushes, and workflow dispatches remain explicit
+  operator actions after the clean-candidate release checks pass.
+
+### Removed
+
+- Remove the active first-party Telegram command, transport, native poller and
+  settings, tests, package surface, and live BotFather/cellular release-evidence
+  requirement. Historical release notes and guarded retired-state migrations
+  remain as upgrade records.
 
 ## [8.2.2] - 2026-08-07
 

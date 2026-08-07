@@ -8,10 +8,6 @@ import { getCodexInfo } from '../core/codex-adapter.js';
 import { rustInfo } from '../core/rust-accelerator.js';
 import { codexAppIntegrationStatus } from '../core/codex-app.js';
 import { desktopBridgeStatusV3 } from '../core/codex-lb/desktop-controller-v3.js';
-import { probeTelegram, telegramSelfHealAction } from '../core/telegram/doctor.js';
-import { TelegramClient, type TelegramTokenProvider } from '../core/telegram/client.js';
-import { resolveTelegramBotToken } from '../core/telegram/keychain.js';
-import { telegramLivenessPath } from '../core/telegram/liveness.js';
 import { inspectCodexConfigReadability } from '../core/codex/codex-config-readability.js';
 import {
   inspectOAuthCallbackPortConflict,
@@ -29,8 +25,7 @@ import { withSecretPreservationGuard } from '../core/config/config-migration-jou
 import { reconcileDoctorSkills } from '../core/doctor/doctor-skill-reconcile.js';
 import { buildSksMenuBarDoctorPostcheck } from '../core/doctor/sks-menubar-doctor.js';
 import { isUpdateMigrationReceiptCurrent, projectUpdateMigrationReceiptPath, writeProjectUpdateMigrationReceipt } from '../core/update/update-migration-state.js';
-import { inspectSksMenuBarStatus, installSksMenuBar, sksMenuBarPaths, sksMenuBarRestartDeferred } from '../core/codex-app/menubar/index.js';
-import { restartLaunchAgent } from '../core/codex-app/menubar/launch-agent.js';
+import { inspectSksMenuBarStatus, installSksMenuBar, sksMenuBarRestartDeferred } from '../core/codex-app/menubar/index.js';
 import { sweepSksTempDirs } from '../core/retention.js';
 import { detectImagegenCapability } from '../core/imagegen/imagegen-capability.js';
 import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../core/codex-compat/codex-runtime-contract.js';
@@ -245,14 +240,6 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     home,
     processEnv: doctorEnv
   }, { desktopBridgeStatusImpl: deps.desktopBridgeStatusImpl });
-  const telegramRemote = await inspectTelegramRemote({
-    live: true,
-    fix: true,
-    root,
-    home,
-    env: doctorEnv
-  }, deps);
-
   const globalSkillsReady = !(globalSkills as any)?.error
     && (globalSkills as any)?.ok !== false
     && (globalSkills as any)?.core_skill_integrity?.ok !== false;
@@ -295,12 +282,10 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     codex_app_fast_mode: globalFastMode,
     openrouter_provider: desktopBridge.providers?.openrouter || null,
     sks_menubar: menuBar,
-    telegram_remote: telegramRemote,
     desktop_bridge: desktopBridge,
     blockers,
     next_actions: [
       ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : []),
-      ...telegramDoctorOperatorActions(telegramRemote),
       'Run `sks doctor --fix --json` from a specific project directory when project-scoped repair is required.'
     ]
   };
@@ -320,137 +305,12 @@ async function runDoctorGlobalOnlyFix(args: any[] = [], root: string, deps: any 
     console.log(`SKS Doctor global repair: ${result.ok ? 'ok' : 'blocked'}`);
     console.log(`Global skills: ${(result.skills.global as any)?.error ? 'blocked' : 'reconciled'}`);
     console.log(`SKS menu bar: ${(result.sks_menubar as any)?.status || ((result.sks_menubar as any)?.ok ? 'ok' : 'blocked')}`);
-    const telegramOutcome = (result.telegram_remote as any)?.self_heal_outcome;
-    const telegramAction = telegramOutcome?.attempted
-      ? telegramOutcome.action
-      : (result.telegram_remote as any)?.self_heal_action || 'none';
-    console.log(`Telegram Remote: ${(result.telegram_remote as any)?.status || 'unknown'} (self-heal ${telegramAction}${telegramOutcome?.attempted ? `, ${telegramOutcome.recovered ? 'recovered' : 'still degraded'}` : ''})`);
-    const telegramCheckedLine = telegramDoctorCheckedLine(result.telegram_remote);
-    if (telegramCheckedLine) console.log(telegramCheckedLine);
     console.log(`Desktop Bridge: ${result.desktop_bridge.ok ? 'ready' : 'blocked'} (${result.desktop_bridge.status?.readiness?.state || 'unavailable'})`);
     for (const blocker of result.blockers) console.log(`- blocker: ${blocker}`);
     for (const action of result.next_actions) console.log(`- ${action}`);
   }
   if (!result.ok) process.exitCode = 1;
   return result;
-}
-
-export async function inspectTelegramRemote(input: {
-  live?: boolean;
-  fix?: boolean;
-  root?: string;
-  home?: string;
-  env?: NodeJS.ProcessEnv;
-  receiptPath?: string;
-} = {}, deps: {
-  telegramClient?: TelegramClient;
-  telegramTokenProvider?: TelegramTokenProvider;
-  resolveTelegramBotTokenImpl?: typeof resolveTelegramBotToken;
-  probeTelegramImpl?: typeof probeTelegram;
-  restartLaunchAgentImpl?: typeof restartLaunchAgent;
-  telegramReprobeAttempts?: number;
-  telegramReprobeDelayMs?: number;
-  telegramSleepImpl?: (ms: number) => Promise<void>;
-} = {}) {
-  const env = input.env || process.env;
-  const home = path.resolve(input.home || env.HOME || os.homedir());
-  const receiptPath = input.receiptPath || telegramLivenessPath(home);
-  const probeImpl = deps.probeTelegramImpl || probeTelegram;
-  let tokenProvider = deps.telegramTokenProvider;
-  let client = deps.telegramClient;
-  if (input.live && (!tokenProvider || !client)) {
-    const resolveImpl = deps.resolveTelegramBotTokenImpl || resolveTelegramBotToken;
-    let resolvedToken: Promise<string | null> | null = null;
-    tokenProvider ||= {
-      loadToken: () => {
-        resolvedToken ||= Promise.resolve(resolveImpl({ env })).then((result) => result.token);
-        return resolvedToken;
-      }
-    };
-    client ||= new TelegramClient({ tokenProvider });
-  }
-  const runProbe = () => {
-    if (!input.live) return probeImpl({ receiptPath });
-    if (!client || !tokenProvider) throw new Error('telegram_live_probe_dependencies_missing');
-    return probeImpl({ client, tokenProvider, receiptPath });
-  };
-  const before = await runProbe();
-  const action = telegramSelfHealAction(before);
-  if (!input.fix || action !== 'restart_poll' || !before.token_configured || before.paired_chat_count < 1) {
-    return {
-      ...before,
-      self_heal_action: action,
-      self_heal_outcome: {
-        requested: input.fix === true,
-        attempted: false,
-        action,
-        reason: input.fix !== true
-          ? 'report_only'
-          : action !== 'restart_poll'
-            ? 'action_not_restart_poll'
-            : 'telegram_not_configured_or_paired'
-      }
-    };
-  }
-
-  const restartImpl = deps.restartLaunchAgentImpl || restartLaunchAgent;
-  const restart = await restartImpl(sksMenuBarPaths(home, input.root), env).catch((error: unknown) => ({
-    ok: false,
-    error: error instanceof Error ? error.message : String(error)
-  }));
-  const maximumReprobes = Math.max(1, Math.min(deps.telegramReprobeAttempts ?? 3, 5));
-  const reprobeDelayMs = Math.max(0, Math.min(deps.telegramReprobeDelayMs ?? 500, 5_000));
-  const sleepImpl = deps.telegramSleepImpl || ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  let reprobeAttempts = 1;
-  let after = await runProbe();
-  let afterAction = telegramSelfHealAction(after);
-  while (restart?.ok === true && afterAction === 'restart_poll' && reprobeAttempts < maximumReprobes) {
-    await sleepImpl(reprobeDelayMs);
-    after = await runProbe();
-    afterAction = telegramSelfHealAction(after);
-    reprobeAttempts += 1;
-  }
-  return {
-    ...after,
-    self_heal_action: afterAction,
-    self_heal_attempted_action: action,
-    self_heal_before: before,
-    self_heal_outcome: {
-      requested: true,
-      attempted: true,
-      action,
-      after_action: afterAction,
-      restart_ok: restart?.ok === true,
-      reprobe_ok: after.ok,
-      reprobe_attempts: reprobeAttempts,
-      recovered: restart?.ok === true && after.ok && afterAction === 'none',
-      error: restart?.error || null,
-      restart
-    }
-  };
-}
-
-export function telegramDoctorCheckedLine(probe: any, indent = ''): string | null {
-  if (!probe?.getme_checked_at) return null;
-  return `${indent}checked: ${probe.getme_checked_at} (${probe.getme_latency_ms ?? 'unknown'} ms, ${probe.getme_check_kind || 'receipt'})`;
-}
-
-function telegramDoctorOperatorActions(probe: any): string[] {
-  if (!probe || probe.status === 'not_configured') return [];
-  if (probe.self_heal_action === 'restart_poll') {
-    if (probe.self_heal_outcome?.recovered === true) return [];
-    return ['Run `sks menubar restart` to restart the resident Telegram long poller.'];
-  }
-  if (probe.self_heal_action === 'revalidate_token') {
-    return ['Run `sks telegram setup --token-stdin`, then `sks menubar restart`, to revalidate the bot identity.'];
-  }
-  if (probe.self_heal_action === 'operator_remove_webhook') {
-    return ['Remove the Telegram bot webhook through the Bot API, then run `sks menubar restart`; getUpdates and webhooks cannot be active together.'];
-  }
-  if (probe.self_heal_action === 'operator_repair_audit') {
-    return ['Restore owner-only write access to `~/.codex/sks-menubar/logs/telegram-audit.jsonl`, then run `sks menubar restart`.'];
-  }
-  return [];
 }
 
 async function runDoctorJsonFastPath(args: any = [], root: string) {
@@ -479,7 +339,6 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     inspectDoctorDesktopBridgeStatus({ processEnv: process.env })
   ]);
   const oauthCallbackOperatorActions = oauthCallbackDoctorGuidance(oauthCallbackPortDiagnostic);
-  const telegramRemote = await inspectTelegramRemote();
   const ready = {
     schema: 'sks.doctor-readiness-matrix.v2',
     generated_at: nowIso(),
@@ -517,8 +376,7 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     not_counted_as_full_doctor: true,
     next_actions: [
       'Run sks doctor --full --json for deep diagnostics.',
-      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : []),
-      ...telegramDoctorOperatorActions(telegramRemote)
+      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : [])
     ],
     root,
     fast_path: true,
@@ -553,7 +411,6 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
       blockers: [],
       warnings: ['menubar_install_deferred_to_fix_or_full_doctor']
     },
-    telegram_remote: telegramRemote,
     provider_context: {
       schema: 'sks.provider-context.v2',
       generated_at: nowIso(),
@@ -935,12 +792,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     blockers: [err?.message || String(err)],
     warnings: []
   }));
-  const telegramRemote = await inspectTelegramRemote({
-    live: deepDiagnostics || doctorFix,
-    fix: doctorFix,
-    root,
-    env: process.env
-  }, deps);
   const context7Repair = await runDoctorContext7Repair({ root, fix: doctorFix }).catch((err: any) => ({
     schema: 'sks.doctor-context7-repair.v1',
     ok: false,
@@ -1451,7 +1302,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     repair: configRepair,
     codex_app_ui: codexAppUi,
     sks_menubar: sksMenuBar,
-    telegram_remote: telegramRemote,
     codex_current_app_doctor: codexCurrentAppDoctor,
     codex_plugin_inventory: (pluginInventory as any)?.report || null,
     codex_plugin_app_template_policy: pluginPolicy,
@@ -1463,8 +1313,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
       ...((codexStartupRepair as any).manual_actions || []),
       ...((codexConfigSyntaxRepair as any)?.manual_actions || []),
       ...(pluginPolicy?.doctor_warnings || []),
-      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : []),
-      ...telegramDoctorOperatorActions(telegramRemote)
+      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : [])
     ]
   };
   let ready = await writeDoctorReadinessMatrix(root, doctorReadinessInput);
@@ -1582,7 +1431,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     codex_app_ui: codexAppUi,
     openrouter_provider: desktopBridge.providers?.openrouter || null,
     sks_menubar: sksMenuBar,
-    telegram_remote: telegramRemote,
     provider_context: providerContext,
     desktop_bridge: desktopBridge,
     codex_doctor: authoritativeCodexDoctor,
@@ -1771,20 +1619,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   if ((sksMenuBar as any).launch_agent_path) console.log(`  launch agent: ${(sksMenuBar as any).launch_agent_path}`);
   if (Array.isArray((sksMenuBar as any).blockers) && (sksMenuBar as any).blockers.length) console.log(`  blockers: ${(sksMenuBar as any).blockers.join(', ')}`);
   if (Array.isArray((sksMenuBar as any).warnings) && (sksMenuBar as any).warnings.length) console.log(`  warnings: ${(sksMenuBar as any).warnings.join(', ')}`);
-  console.log('Telegram Remote:');
-  console.log(`  status: ${(telegramRemote as any).status || 'unknown'}`);
-  console.log(`  getMe: ${(telegramRemote as any).bot_identity_valid ? 'verified' : (telegramRemote as any).token_configured ? 'invalid' : 'not configured'}`);
-  console.log(`  audit: ${(telegramRemote as any).audit_healthy ? 'healthy' : 'unavailable'}`);
-  const telegramCheckedLine = telegramDoctorCheckedLine(telegramRemote, '  ');
-  if (telegramCheckedLine) console.log(telegramCheckedLine);
-  console.log(`  long poll: ${(telegramRemote as any).poller?.running ? 'running' : 'stopped'}`);
-  const telegramSelfHealOutcome = (telegramRemote as any).self_heal_outcome;
-  const telegramDisplayedAction = telegramSelfHealOutcome?.attempted
-    ? telegramSelfHealOutcome.action
-    : (telegramRemote as any).self_heal_action;
-  if (telegramDisplayedAction && telegramDisplayedAction !== 'none') {
-    console.log(`  self-heal: ${telegramDisplayedAction}${telegramSelfHealOutcome?.attempted ? ` (${telegramSelfHealOutcome.recovered ? 'recovered' : 'attempted, still degraded'})` : ''}`);
-  }
   console.log(`Provider: ${providerContext.provider || 'unknown'} ${providerContext.service_tier || ''} (${providerContext.source || 'unknown'}, ${providerContext.confidence || 'low'})`);
   const imagegenReady = (imagegen as any).auth_readiness;
   if (imagegenReady) {

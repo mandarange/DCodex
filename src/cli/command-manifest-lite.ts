@@ -81,7 +81,6 @@ const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'bridge', summary: 'Manage the single Desktop Bridge runtime, provider profiles, catalog, and routes', maturity: 'beta', skipMigrationGate: true },
   { name: 'menubar', summary: 'Inspect/install/restart/uninstall SKS menu bar', maturity: 'beta', skipMigrationGate: true, allowedDuringActiveRoute: true, diagnostic: true },
   { name: 'remote', summary: 'Inspect official Remote readiness and run the proof-aware SSH stdio worker', maturity: 'beta' },
-  { name: 'telegram', summary: 'Pair and inspect the Telegram remote-control transport', maturity: 'beta', skipMigrationGate: true },
   { name: 'hooks', summary: 'Explain and inspect Codex hooks', maturity: 'beta', skipMigrationGate: true },
   { name: 'mad-sks', summary: 'MAD-SKS scoped permission modifier + SQL-plane execution', maturity: 'beta', mutatesRouteState: true },
   { name: 'auto-review', summary: 'Manage auto-review profile', maturity: 'beta' },
@@ -213,7 +212,6 @@ const COMMAND_CONTRACT_OVERRIDES_LITE = {
     requiredCapabilities: ['proof.stop-gate']
   },
   task: { risk: 'R1', latency: 'long' },
-  telegram: { risk: 'R2', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   trust: {
     risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true,     inputProfile: 'trust', requiredCapabilities: ['proof.trust']
   },

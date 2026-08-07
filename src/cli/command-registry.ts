@@ -304,7 +304,6 @@ const COMMAND_DEFINITIONS = {
   bridge: skipMigrationGate(entry('beta', 'Manage the single Desktop Bridge runtime, provider profiles, catalog, and routes', 'dist/commands/bridge.js', directCommand(() => import('../commands/bridge.js'), 'dist/commands/bridge.js'))),
   menubar: activeRouteDiagnostic(entry('beta', 'Inspect/install/restart/uninstall SKS menu bar', 'dist/core/commands/menubar-command.js', subcommand(() => import('../core/commands/menubar-command.js'), 'menubarCommand', 'dist/core/commands/menubar-command.js', 'status'))),
   remote: entry('beta', 'Inspect official Remote readiness and run the proof-aware SSH stdio worker', 'dist/core/commands/remote-command.js', argsCommand(() => import('../core/commands/remote-command.js'), 'remoteCommand', 'dist/core/commands/remote-command.js')),
-  telegram: skipMigrationGate(entry('beta', 'Pair and inspect the Telegram remote-control transport', 'dist/core/commands/telegram-command.js', argsCommand(() => import('../core/commands/telegram-command.js'), 'telegramCommand', 'dist/core/commands/telegram-command.js'))),
   hooks: skipMigrationGate(entry('beta', 'Explain and inspect Codex hooks', 'dist/commands/hooks.js', directCommand(() => import('../commands/hooks.js'), 'dist/commands/hooks.js'))),
   'mad-sks': routeStateMutator(entry('beta', 'MAD-SKS scoped permission modifier + SQL-plane execution', 'dist/commands/mad-sks.js', directCommand(() => import('../commands/mad-sks.js'), 'dist/commands/mad-sks.js')), ['mad-sks-gate.json']),
   'auto-review': entry('beta', 'Manage auto-review profile', 'dist/commands/auto-review.js', directCommand(() => import('../commands/auto-review.js'), 'dist/commands/auto-review.js')),
@@ -437,7 +436,6 @@ const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(CO
     requiredCapabilities: ['proof.stop-gate']
   },
   task: { risk: 'R1', latency: 'long' },
-  telegram: { risk: 'R2', supportsJson: true, remoteAllowed: false, inputProfile: 'json-only' },
   trust: {
     risk: 'R0', latency: 'fast', supportsJson: true, remoteAllowed: true,     inputProfile: 'trust', requiredCapabilities: ['proof.trust']
   },

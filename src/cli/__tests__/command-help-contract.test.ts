@@ -74,35 +74,12 @@ test('manifest help names the command, its summary, and the help flag', () => {
   assert.match(text, /--help, -h/);
 });
 
-test('config and Telegram CLI surfaces are local-only control commands', () => {
-  for (const name of ['config', 'telegram']) {
-    const entry = COMMAND_MANIFEST_LITE.find((item) => item.name === name);
-    assert.ok(entry, name);
-    assert.equal(entry.remoteAllowed, false, name);
-    assert.equal(entry.supportsJson, true, name);
-    assert.equal(entry.inputProfile, 'json-only', name);
-  }
-});
-
-test('Telegram help routes BotFather setup through stdin and documents private pairing', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-telegram-help-'));
-  execFileSync('git', ['init', '-q', '.'], { cwd });
-  try {
-    const result = runHelp('telegram', '--help', cwd);
-    const stdout = String(result.stdout || '');
-    assert.equal(result.status, 0, String(result.stderr || ''));
-    assert.match(stdout, /@BotFather/);
-    assert.match(stdout, /setup --token-stdin/);
-    assert.match(stdout, /--remove-webhook/);
-    assert.match(stdout, /private (?:Telegram )?(?:chat|account)/i);
-    assert.match(stdout, /sks telegram pair|\bpair\b/);
-    assert.match(stdout, /\/sks status \{\}/);
-    assert.match(stdout, /\/confirm <nonce>/);
-    assert.doesNotMatch(stdout, /\borca\b|onorca|stablyai/i);
-    assert.doesNotMatch(stdout, /--drop-pending-updates/);
-  } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
-  }
+test('config CLI surface is a local-only control command', () => {
+  const entry = COMMAND_MANIFEST_LITE.find((item) => item.name === 'config');
+  assert.ok(entry);
+  assert.equal(entry.remoteAllowed, false);
+  assert.equal(entry.supportsJson, true);
+  assert.equal(entry.inputProfile, 'json-only');
 });
 
 test('every manifest command answers --help with usage and never runs its work', () => {

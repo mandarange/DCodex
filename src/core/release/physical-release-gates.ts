@@ -24,7 +24,6 @@ export const PHYSICAL_RELEASE_GATE_IDS = [
   'update_5001_directory',
   'single_menubar_process',
   'codex_lb_measured_request',
-  'telegram_cellular_e2e',
   'desktop_bridge_live_evidence'
 ] as const
 
@@ -665,7 +664,6 @@ function genericGateCommandId(id: PhysicalReleaseGateId): string {
     update_5001_directory: 'sks.update.physical',
     single_menubar_process: 'sks.menubar.process-readback',
     codex_lb_measured_request: 'sks.codex-lb.measured-request',
-    telegram_cellular_e2e: 'sks.telegram.cellular-roundtrip',
     desktop_bridge_live_evidence: 'sks.desktop-bridge.live-evidence'
   } as const)[id]
 }
@@ -703,19 +701,6 @@ function deriveGenericGateObservations(id: PhysicalReleaseGateId, measurement: a
       auth_class: measurement.auth_class,
       oauth_fallback: measurement.oauth_header_present === true,
       latency_ms: measurement.latency_ms
-    }
-  }
-  if (id === 'telegram_cellular_e2e') {
-    if (!CAPTURE_ID_PATTERN.test(String(measurement?.pairing_id || ''))
-      || !SHA256_PATTERN.test(String(measurement?.outbound_message_sha256 || ''))
-      || !SHA256_PATTERN.test(String(measurement?.inbound_reply_sha256 || ''))) return null
-    return {
-      network: measurement.network_interface_kind,
-      paired: measurement.pairing_verified === true,
-      allowlisted: measurement.allowlist_match === true,
-      typed_command: measurement.outbound_typed === true,
-      reply_received: measurement.inbound_reply_received === true,
-      bot_token_recorded: measurement.bot_token_captured === true
     }
   }
   return null
@@ -784,11 +769,6 @@ function validateObservations(
     if (observations.target_matches_configured !== true) blockers.push(`physical_receipt_observation_invalid:${id}:target`)
     if (observations.auth_class !== 'gateway-key' || observations.oauth_fallback !== false) blockers.push(`physical_receipt_observation_invalid:${id}:auth`)
     if (!Number.isFinite(observations.latency_ms) || observations.latency_ms < 0) blockers.push(`physical_receipt_observation_invalid:${id}:latency`)
-  } else if (id === 'telegram_cellular_e2e') {
-    if (observations.network !== 'cellular') blockers.push(`physical_receipt_observation_invalid:${id}:network`)
-    if (observations.paired !== true || observations.allowlisted !== true) blockers.push(`physical_receipt_observation_invalid:${id}:authorization`)
-    if (observations.typed_command !== true || observations.reply_received !== true) blockers.push(`physical_receipt_observation_invalid:${id}:roundtrip`)
-    if (observations.bot_token_recorded !== false) blockers.push(`physical_receipt_observation_invalid:${id}:secret`)
   } else if (id === 'desktop_bridge_live_evidence') {
     if (observations.release_authorizing !== true
       || observations.capture_platform !== 'darwin'

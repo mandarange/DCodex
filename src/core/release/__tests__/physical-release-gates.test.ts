@@ -11,7 +11,7 @@ import { writePhysicalReleaseEvidence } from './physical-release-evidence-fixtur
 const VERSION = String(JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')).version || '')
 const SHA = 'a'.repeat(40)
 
-test('physical release gates bind five real receipts and the complete Desktop Bridge evidence contract', () => {
+test('physical release gates bind four real receipts and the complete Desktop Bridge evidence contract', () => {
   const { root, attestation } = fixture()
   const report = inspectPhysicalReleaseGates({ root, version: VERSION, sourceCommit: SHA, inspectorPlatform: 'darwin', ...attestation })
   assert.equal(report.ok, true, report.blockers.join(', '))
@@ -19,7 +19,6 @@ test('physical release gates bind five real receipts and the complete Desktop Br
     'update_5001_directory',
     'single_menubar_process',
     'codex_lb_measured_request',
-    'telegram_cellular_e2e',
     'desktop_bridge_live_evidence'
   ])
   assert.deepEqual(report.desktop_bridge_evidence?.providers, ['codex-lb', 'openrouter'])
@@ -170,7 +169,7 @@ test('an attested coherent declaration and matching observation hash is not inde
   const attestation = writePhysicalReleaseEvidence(root, VERSION, SHA, { coherentSelfDeclaration: true })
   const report = inspectPhysicalReleaseGates({ root, version: VERSION, sourceCommit: SHA, inspectorPlatform: 'darwin', ...attestation })
   assert.equal(report.ok, false)
-  for (const id of ['update_5001_directory', 'single_menubar_process', 'codex_lb_measured_request', 'telegram_cellular_e2e']) {
+  for (const id of ['update_5001_directory', 'single_menubar_process', 'codex_lb_measured_request']) {
     assert.ok(report.blockers.includes(`physical_receipt_gate_artifact_contract_invalid:${id}`))
   }
 })

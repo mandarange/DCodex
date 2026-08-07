@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-07T06:11:36.277Z",
+  "generated_at": "2026-08-07T08:00:24.471Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "f65ef26cf6cd21d0076df8156413b1eca8d63395e633e5a6899a66ae154a874b",
-  "snapshot_hash": "798f390b665f826d95142d435d3adb1d27483a2db95a95d3958f3451da02c50d",
-  "source_file_count": 2764,
-  "symbol_count": 21898,
-  "edge_count": 65899,
+  "inventory_digest": "1109a98e976df4b563dd600c0bc4ffccc125353ceb5f6c9745d501e7e44eec9e",
+  "snapshot_hash": "9e3f7190438f9e8ef531e3cd2957894a4be6745f84a3008bd2ebe6c7370a1ff7",
+  "source_file_count": 2734,
+  "symbol_count": 20734,
+  "edge_count": 64332,
   "extractors": [
     {
       "id": "code",
@@ -213,10 +213,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/AppDelegate.swift",
-      "sha256": "f44a624a7867c76b934a63de63e2d878252e4fcdf93fcfa5e8c89bd3b1b5d813",
+      "sha256": "04264ba230d882c151028747e5e5eb12aecbff01f82c8f0cab66ae0589344e09",
       "language": "swift",
-      "lines": 68,
-      "bytes": 3229
+      "lines": 57,
+      "bytes": 2670
     },
     {
       "path": "native/sks-menubar/Sources/AppIdentity.swift",
@@ -227,10 +227,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/ControlCenterWindowController.swift",
-      "sha256": "680859a71c8fc67f6b8403695ff2774b5b924d361e3b5a073601374e32f33049",
+      "sha256": "12ec22785507de7d8395a1943119c6dd642b2b3753d6551f4980e3cc0834d9a2",
       "language": "swift",
-      "lines": 155,
-      "bytes": 7286
+      "lines": 151,
+      "bytes": 7129
     },
     {
       "path": "native/sks-menubar/Sources/ControlKit.swift",
@@ -352,18 +352,11 @@
       "bytes": 19322
     },
     {
-      "path": "native/sks-menubar/Sources/RemoteCodingSettingsControls.swift",
-      "sha256": "9153c851424539943eacce7f526c3ff123346f51a4ca8651bcb6d78d4807b675",
-      "language": "swift",
-      "lines": 215,
-      "bytes": 12569
-    },
-    {
       "path": "native/sks-menubar/Sources/RemoteCodingViewController.swift",
-      "sha256": "15c77b396e60d6c0d61bc9a027fecc5cd15e2e065238fd76b94ce7c3cf538bf8",
+      "sha256": "2c767fda71d8c38f7b944dbf3eed3fa40c465f074fc159df1f0d9774802a0797",
       "language": "swift",
-      "lines": 499,
-      "bytes": 26422
+      "lines": 51,
+      "bytes": 1989
     },
     {
       "path": "native/sks-menubar/Sources/SKSKeychainStore.swift",
@@ -374,10 +367,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/SecureProcessEnvelope.swift",
-      "sha256": "66009ca420e2beb55e7192b4800bf71ff746c9879872b0656eed11b3fc3da039",
+      "sha256": "eef8ad4619794b58206dfcb32730784e5b94df6a3f3a3f9584934c836251bd49",
       "language": "swift",
-      "lines": 230,
-      "bytes": 10723
+      "lines": 184,
+      "bytes": 8089
     },
     {
       "path": "native/sks-menubar/Sources/SettingsViewController.swift",
@@ -406,55 +399,6 @@
       "language": "swift",
       "lines": 377,
       "bytes": 19448
-    },
-    {
-      "path": "native/sks-menubar/Sources/TelegramPrivateFileStore.swift",
-      "sha256": "0734701f1f00cb27c4fa2e65aad5ba4031bb92d95a0de4b005ab27f9d10e4f85",
-      "language": "swift",
-      "lines": 498,
-      "bytes": 19032
-    },
-    {
-      "path": "native/sks-menubar/Sources/TelegramPrivateFileSupport.swift",
-      "sha256": "e675e84eff71f60f66e8ef9177fc6e42bda509f078afb82a3c9fc9cbf065e432",
-      "language": "swift",
-      "lines": 236,
-      "bytes": 10428
-    },
-    {
-      "path": "native/sks-menubar/Sources/TelegramProcessGateway.swift",
-      "sha256": "c50415891e0d720f5e1ae16c94c65dbb06701c9d4f0049454e112ca115caac08",
-      "language": "swift",
-      "lines": 454,
-      "bytes": 19099
-    },
-    {
-      "path": "native/sks-menubar/Sources/TelegramRuntimeSupport.swift",
-      "sha256": "f9edbe1283e3d34a6ed4166146c70b661237beb01ff2316cd0810f7864c356ce",
-      "language": "swift",
-      "lines": 56,
-      "bytes": 2547
-    },
-    {
-      "path": "native/sks-menubar/Sources/TelegramStateLock.swift",
-      "sha256": "f42f1e9e90be6a5a1f2e2a2a9e138c7bbce66fd35239fa8126222da7bc5635ae",
-      "language": "swift",
-      "lines": 448,
-      "bytes": 19269
-    },
-    {
-      "path": "native/sks-menubar/Sources/TelegramSupport.swift",
-      "sha256": "4f1f934110370858aab5248691cff1664a4fe5b4eb7af3131809bbc0a4ac4a5e",
-      "language": "swift",
-      "lines": 246,
-      "bytes": 9616
-    },
-    {
-      "path": "native/sks-menubar/Sources/TelegramTransport.swift",
-      "sha256": "31e058a48ac3215df672a48a9d35f4ed686d3eb97fcd0d8e1fc58fe2b20fff37",
-      "language": "swift",
-      "lines": 499,
-      "bytes": 22597
     },
     {
       "path": "native/sks-menubar/Sources/UpdatesViewController.swift",
@@ -546,27 +490,6 @@
       "language": "swift",
       "lines": 183,
       "bytes": 7608
-    },
-    {
-      "path": "native/sks-menubar/Tests/TelegramRuntimeSmokeTests.swift",
-      "sha256": "6ad22f71be1adc4e0aebccb929aac73a25eac9d6681cb07e2435dc018d95fc31",
-      "language": "swift",
-      "lines": 492,
-      "bytes": 26955
-    },
-    {
-      "path": "native/sks-menubar/Tests/TelegramRuntimeTestSupport.swift",
-      "sha256": "6830e4ac96e6528abd9ea92eff9033b11e2f0474098c64ea0d9f13e0e2744c51",
-      "language": "swift",
-      "lines": 181,
-      "bytes": 6638
-    },
-    {
-      "path": "native/sks-menubar/Tests/TelegramRuntimeTests.swift",
-      "sha256": "5fac658d0d5a252cfce87638669ef5246086471172778e2d92b75f0b8e680750",
-      "language": "swift",
-      "lines": 447,
-      "bytes": 23070
     },
     {
       "path": "native/sks-menubar/UITests/ArchitectureHardeningRestartQATests.swift",
@@ -676,10 +599,10 @@
     },
     {
       "path": "src/cli/__tests__/command-help-contract.test.ts",
-      "sha256": "29721ae6327a057247f49884de1161dd67e499f6ff61e1fbd9d17c59a2950945",
+      "sha256": "372da36646fdce91ca34fbd6729c372d78f5cff58ac69e1a52472736fb18cb67",
       "language": "typescript",
-      "lines": 165,
-      "bytes": 7430
+      "lines": 142,
+      "bytes": 6381
     },
     {
       "path": "src/cli/__tests__/cwd-independence.test.ts",
@@ -775,17 +698,17 @@
     },
     {
       "path": "src/cli/command-manifest-lite.ts",
-      "sha256": "e966de203bda7cbfb9f4cab6091d84e7985787e6e92d6e9c9a2b944c6002f6c3",
+      "sha256": "2f128927a1db83de82983f7fe5e516735627db3ebb0e1c3d548ee3b42c8da6db",
       "language": "typescript",
-      "lines": 335,
-      "bytes": 20356
+      "lines": 333,
+      "bytes": 20125
     },
     {
       "path": "src/cli/command-registry.ts",
-      "sha256": "6db9cd4e0da23e14f1643a3127fc5c42f5bbbba9893342593a50a38028da91ce",
+      "sha256": "f01cc1345d2d75b7e88f051aa0fc36be4525529e0d2ef520618520bcb3403034",
       "language": "typescript",
-      "lines": 491,
-      "bytes": 35174
+      "lines": 489,
+      "bytes": 34803
     },
     {
       "path": "src/cli/commands-fast.ts",
@@ -942,13 +865,6 @@
       "bytes": 1361
     },
     {
-      "path": "src/commands/__tests__/doctor-telegram-runtime.test.ts",
-      "sha256": "a8f12ffae2f92740bf78ca041746e525700f020c3a2d9a30a0e7f4b4ba5f3aca",
-      "language": "typescript",
-      "lines": 183,
-      "bytes": 6665
-    },
-    {
       "path": "src/commands/all-features.ts",
       "sha256": "d37852886ff40608ccf7f8e47291088c5aa05bdbd63997f7265d114dedaeb06f",
       "language": "typescript",
@@ -1062,10 +978,10 @@
     },
     {
       "path": "src/commands/doctor.ts",
-      "sha256": "3c5e35be5c71a837ee81cbbfbce93a8dd89b3cc154799f40fcf33e347c11fa31",
+      "sha256": "75d000f1b04e1011df6463a2ebbeadfc5854d7b39c1dbce12e6e7792d28c6628",
       "language": "typescript",
-      "lines": 1883,
-      "bytes": 97064
+      "lines": 1717,
+      "bytes": 89487
     },
     {
       "path": "src/commands/features.ts",
@@ -1399,10 +1315,10 @@
     },
     {
       "path": "src/core/__tests__/helpers/isolated-test-home.ts",
-      "sha256": "962ac12de7f2bd409f3e419702387ad585ba3063b996c110bb7528adeb4f74a5",
+      "sha256": "8b47b61f7c4d689f5ac6833082bde0b3772268ac8ae0a9e2bf281a0182796b33",
       "language": "typescript",
-      "lines": 32,
-      "bytes": 1457,
+      "lines": 26,
+      "bytes": 1174,
       "purpose": "Import this module FIRST in any test file whose code under test may resolve the default home (os.homedir(), $HOME, $CODEX_HOME). Library paths that drop injected env (e.g. update-migration stages) otherwise write the operator's real ~/.code"
     },
     {
@@ -2530,18 +2446,11 @@
       "bytes": 5463
     },
     {
-      "path": "src/core/codex-app/__tests__/sks-menubar-telegram-runtime.test.ts",
-      "sha256": "cd0ce97ef57d8af70a7bb22693c487f8f23d1a4e60ecc5657430b26e77b63daa",
-      "language": "typescript",
-      "lines": 625,
-      "bytes": 23348
-    },
-    {
       "path": "src/core/codex-app/__tests__/sks-menubar-template.test.ts",
-      "sha256": "f6352a51c6d7a73112ea9237cf63a3128e40e80044dcf669924f3e331657261a",
+      "sha256": "6e9da684a3e04ea608c74a29f3324ec4744fab0e7251575d1b3adee90e5cad84",
       "language": "typescript",
-      "lines": 875,
-      "bytes": 56309
+      "lines": 792,
+      "bytes": 48913
     },
     {
       "path": "src/core/codex-app/codex-agent-role-sync.ts",
@@ -2713,10 +2622,10 @@
     },
     {
       "path": "src/core/codex-app/menubar/constants.ts",
-      "sha256": "e48ce0c4959a427cd34d966746d22351c63ce0b0026f3b09d617fa5e47d674c9",
+      "sha256": "c2660eb14291a694480a72b3a142a148495cd5f56b31b820da31290bf54697a4",
       "language": "typescript",
-      "lines": 61,
-      "bytes": 1804
+      "lines": 53,
+      "bytes": 1537
     },
     {
       "path": "src/core/codex-app/menubar/generation-transaction-journal.ts",
@@ -4979,10 +4888,10 @@
     },
     {
       "path": "src/core/commands/remote-command.ts",
-      "sha256": "6f0d2def4013b3d49ef8167363e87fd3f6e5b4e29a0fbe2d5c3684aec5a6a609",
+      "sha256": "b0fd13c703ef05c56442311e2c30f7355613152a3385f62bb0afaec8134304aa",
       "language": "typescript",
       "lines": 130,
-      "bytes": 5199
+      "bytes": 5190
     },
     {
       "path": "src/core/commands/research-command.ts",
@@ -5074,13 +4983,6 @@
       "language": "typescript",
       "lines": 12,
       "bytes": 604
-    },
-    {
-      "path": "src/core/commands/telegram-command.ts",
-      "sha256": "3460f58a62095aa79fd475a6bf61b4325156a7575a07f3e0c2c71ad6230de595",
-      "language": "typescript",
-      "lines": 563,
-      "bytes": 24488
     },
     {
       "path": "src/core/commands/triwiki-command.ts",
@@ -5396,10 +5298,10 @@
     },
     {
       "path": "src/core/doctor/__tests__/doctor-readiness-matrix.test.ts",
-      "sha256": "19554686f857085ee9422c32240651b1c8a014fe5b04c2950d2eb7327ee8d49e",
+      "sha256": "e5046c06c4c18df6377cc4826513128bca67f00a963900c79324ee7021aee321",
       "language": "typescript",
-      "lines": 297,
-      "bytes": 10123
+      "lines": 284,
+      "bytes": 9688
     },
     {
       "path": "src/core/doctor/__tests__/legacy-global-hook-cleanup.test.ts",
@@ -5599,10 +5501,10 @@
     },
     {
       "path": "src/core/doctor/doctor-readiness-matrix.ts",
-      "sha256": "95d180012cff7e3ffb67fb2033fd5c08d3be7e2c04991e959c7f697aeb3df230",
+      "sha256": "085fbddc09c4e6ca9b035e4f5229b9212757b76b3479c133283cb55a0946467d",
       "language": "typescript",
-      "lines": 355,
-      "bytes": 20507
+      "lines": 350,
+      "bytes": 20195
     },
     {
       "path": "src/core/doctor/doctor-repair-postcheck.ts",
@@ -5860,17 +5762,17 @@
     },
     {
       "path": "src/core/feature-fixtures.ts",
-      "sha256": "00f104cc342f1bdb3882f8fdc9bb2cecbc6f00315eb26c6a65c8a7db59530f65",
+      "sha256": "796cc4ba31c1bdd5c57b853e193e600759422966744dacb05b8a5b04299b0927",
       "language": "typescript",
-      "lines": 372,
-      "bytes": 34318
+      "lines": 368,
+      "bytes": 33978
     },
     {
       "path": "src/core/feature-registry.ts",
-      "sha256": "7f4eea75f9c4e7f437afa343de9b44bb88bd160364ca2ac21f2d595611014886",
+      "sha256": "faaba0be1c711344e5857b7bc3bc671b18ddd494a414d8bb476458fff519207f",
       "language": "typescript",
-      "lines": 1075,
-      "bytes": 53340
+      "lines": 1074,
+      "bytes": 53313
     },
     {
       "path": "src/core/features/feature-completion.ts",
@@ -6627,10 +6529,10 @@
     },
     {
       "path": "src/core/install/installed-package-smoke.ts",
-      "sha256": "0f6aad62621bd9eebd4bbf73f3f27d548786fa3cab52725ecb42e4bcb4247173",
+      "sha256": "1957a70389c638b7c6a3c120eac4092ee23ea399f95192cdc5e8af411a4ff128",
       "language": "typescript",
-      "lines": 675,
-      "bytes": 29666
+      "lines": 674,
+      "bytes": 29552
     },
     {
       "path": "src/core/json-schema-validator.ts",
@@ -7836,10 +7738,10 @@
     },
     {
       "path": "src/core/perf/release-latency-slo.ts",
-      "sha256": "7edbf41cd77574f7e656e2cf2d7d88d7a4f5b2dc274e0028c1de4dac8e276c24",
+      "sha256": "d62fcda1bbc03961966d73ef7cc509cbb9153be7a699301838a60fee9f10d12b",
       "language": "typescript",
-      "lines": 314,
-      "bytes": 16119
+      "lines": 313,
+      "bytes": 15950
     },
     {
       "path": "src/core/permission-gates.ts",
@@ -8658,17 +8560,17 @@
     },
     {
       "path": "src/core/release/__tests__/physical-release-evidence-fixture.ts",
-      "sha256": "3b4a41dd2f359cf194f1cadc5b6219d723ebbb14d0a682d146d9cb35e2b452d6",
+      "sha256": "d85366d7ce4463125f51cccbb786f873b009357aeb3c654cd27ae9d856efe453",
       "language": "typescript",
-      "lines": 536,
-      "bytes": 19645
+      "lines": 517,
+      "bytes": 19065
     },
     {
       "path": "src/core/release/__tests__/physical-release-gates.test.ts",
-      "sha256": "edbc1c268e6bea6eed60e982c0595ea37fc430721cb9ca8d02588e31732cfdb7",
+      "sha256": "2557aa8b6a6e8a9b973168444eed913d8af0a9834b9e28e8e5cd48079cb3183e",
       "language": "typescript",
-      "lines": 196,
-      "bytes": 11995
+      "lines": 195,
+      "bytes": 11941
     },
     {
       "path": "src/core/release/__tests__/publish-preflight.test.ts",
@@ -8925,10 +8827,10 @@
     },
     {
       "path": "src/core/release/physical-release-gates.ts",
-      "sha256": "603d52760e208352a696c3cc4b36fcbc5e5fab624d79f2913f5857615cd797d3",
+      "sha256": "0fc2f5a5f0ec8f567598bfef8328c9f8400e4cb2a3d77949f929fcbc04af7bdc",
       "language": "typescript",
-      "lines": 865,
-      "bytes": 43689
+      "lines": 845,
+      "bytes": 42357
     },
     {
       "path": "src/core/release/publish-preflight.ts",
@@ -9051,10 +8953,10 @@
     },
     {
       "path": "src/core/release/release-pack-receipt.ts",
-      "sha256": "942bbf4c44aaf2b45e8184761a5d2539763e326ebbd6b71ffcec7811571f0280",
+      "sha256": "2631b41911528bd9038e34484e9ad8b9a3064f13779bc210433e2a75229aeed7",
       "language": "typescript",
-      "lines": 554,
-      "bytes": 32308
+      "lines": 553,
+      "bytes": 32255
     },
     {
       "path": "src/core/release/release-pack-tarball.ts",
@@ -9122,7 +9024,7 @@
     },
     {
       "path": "src/core/release/stage-publish.ts",
-      "sha256": "a509c2f0e8349e1c7179f457f59fdfe70943188e6f2d938b0d997ce39d5ab642",
+      "sha256": "470432ea2d666940745df6c17bf46aee5a829779439535b7eeec22a1a92f3604",
       "language": "typescript",
       "lines": 672,
       "bytes": 27410
@@ -10674,111 +10576,6 @@
       "language": "typescript",
       "lines": 213,
       "bytes": 5521
-    },
-    {
-      "path": "src/core/telegram/__tests__/telegram-private-storage.test.ts",
-      "sha256": "ff028acf60ee1ea010248807757028ee6833a738295d6b13a2e0b5675013cadb",
-      "language": "typescript",
-      "lines": 349,
-      "bytes": 12938
-    },
-    {
-      "path": "src/core/telegram/__tests__/telegram-setup.test.ts",
-      "sha256": "7a308431bbc020a5255efd22f29683e96d92b3ad12d36dacb078ebb68d022487",
-      "language": "typescript",
-      "lines": 573,
-      "bytes": 23751
-    },
-    {
-      "path": "src/core/telegram/__tests__/telegram-state-lock.test.ts",
-      "sha256": "bf5d41b5f57079e9b22f789012f9a9988cb0d338291948b70d8b0e20214aafbe",
-      "language": "typescript",
-      "lines": 95,
-      "bytes": 4269
-    },
-    {
-      "path": "src/core/telegram/__tests__/telegram-transport.test.ts",
-      "sha256": "b4c037fb73cfb43081e63454a3d37c2f1d63618c5a4df5edfd530e8077a9d7ae",
-      "language": "typescript",
-      "lines": 420,
-      "bytes": 19760
-    },
-    {
-      "path": "src/core/telegram/access.ts",
-      "sha256": "86a22064c5cc7ef9346cbf7316ce127a6aaba8b2d9a66bbb9ba393538dfae4bf",
-      "language": "typescript",
-      "lines": 85,
-      "bytes": 3150
-    },
-    {
-      "path": "src/core/telegram/client.ts",
-      "sha256": "5e06723048a9d1eee7861cb84a2502e8e7d7fe67314d7e298168abc6920fb36d",
-      "language": "typescript",
-      "lines": 180,
-      "bytes": 7255
-    },
-    {
-      "path": "src/core/telegram/confirmation.ts",
-      "sha256": "ad8c991c4065a777c2ca456faa6fefdc728871f73d672c9d3d25857761318cb6",
-      "language": "typescript",
-      "lines": 53,
-      "bytes": 1929
-    },
-    {
-      "path": "src/core/telegram/doctor.ts",
-      "sha256": "5d2119d9dd2bc78bdcc80ec1adc60e902238061ab0acba1ce305c58c96b1f6fa",
-      "language": "typescript",
-      "lines": 171,
-      "bytes": 7569
-    },
-    {
-      "path": "src/core/telegram/index.ts",
-      "sha256": "7a680cddea1993efaa046700884ab522c153fdf723b6e922a14c0656aec6f9c9",
-      "language": "typescript",
-      "lines": 9,
-      "bytes": 273
-    },
-    {
-      "path": "src/core/telegram/keychain.ts",
-      "sha256": "2cc0f765cc5cdd30bbb0c1113d651154ef2429ad616acd543780daf08a5b47fe",
-      "language": "typescript",
-      "lines": 426,
-      "bytes": 15481
-    },
-    {
-      "path": "src/core/telegram/liveness.ts",
-      "sha256": "05c31b67f57ee1b95cecd92775621e834aa47d5d66b1b2042338f2254ae4345a",
-      "language": "typescript",
-      "lines": 151,
-      "bytes": 7033
-    },
-    {
-      "path": "src/core/telegram/poller.ts",
-      "sha256": "b44b44ea433b5a67bdd37622ae1c7bd94958f67c9c30434f1f4f9c19b7b92a9b",
-      "language": "typescript",
-      "lines": 106,
-      "bytes": 4667
-    },
-    {
-      "path": "src/core/telegram/redaction.ts",
-      "sha256": "d2cd520f42b98483540e2e1ce3bc3d310e47581507d68d96a2039c10968b5b4a",
-      "language": "typescript",
-      "lines": 17,
-      "bytes": 696
-    },
-    {
-      "path": "src/core/telegram/state-lock.ts",
-      "sha256": "f11f0a4f97907495446c95e567c56cdd58ffcbc145e465c00f34d12b94d851c0",
-      "language": "typescript",
-      "lines": 432,
-      "bytes": 17199
-    },
-    {
-      "path": "src/core/telegram/types.ts",
-      "sha256": "33911a1f483066e80635f5d563fe653d0da2ea3baba65de2033aa760e53166a9",
-      "language": "typescript",
-      "lines": 104,
-      "bytes": 2852
     },
     {
       "path": "src/core/text/regex.ts",
@@ -12334,7 +12131,7 @@
     },
     {
       "path": "src/core/version.ts",
-      "sha256": "c1fa4c4830d28a4a12a4a28b88009b6f33297502ec8b74f78f7318caa0fe58e2",
+      "sha256": "42db47e7cc68123cf09a8a1c7f5dd1ce316c411694b8ef7daf186153617f12cd",
       "language": "typescript",
       "lines": 1,
       "bytes": 40
@@ -13609,10 +13406,10 @@
     },
     {
       "path": "src/scripts/docs-truthfulness-check.ts",
-      "sha256": "2f78b7fcd7938ed46a7fef578a8f6b72cadef833afc5a21ea0b66e5d15ec9998",
+      "sha256": "7d2e6a732d61c0e68bc8d772c8defb40ddd49cdddf9b41a4872a40bb73b11129",
       "language": "typescript",
-      "lines": 137,
-      "bytes": 5574,
+      "lines": 119,
+      "bytes": 4901,
       "purpose": "@ts-nocheck"
     },
     {
@@ -14697,10 +14494,10 @@
     },
     {
       "path": "src/scripts/packlist-performance-check.ts",
-      "sha256": "cb3d5fc9edb3c5a90c3cad7076b85d4884919d673415228e80c87fbb7c034a49",
+      "sha256": "57b20ecd7a4e5a32824d225df01196384c9a2e56b64ff9412aa19c03513ae282",
       "language": "typescript",
-      "lines": 177,
-      "bytes": 8127,
+      "lines": 176,
+      "bytes": 8089,
       "purpose": "@ts-nocheck"
     },
     {
@@ -18772,10 +18569,10 @@
     },
     {
       "path": "test/unit/feature-registry.test.mjs",
-      "sha256": "0e0a51d4399f89d258bf4390aa982ef91d0816b52f2728fa32c9346907f51ba0",
+      "sha256": "a6afb8a9430dd1127ab9d1668bea700632b5989da8fea6b1189ab4eb3f1f8ad4",
       "language": "javascript",
       "lines": 140,
-      "bytes": 7402
+      "bytes": 7386
     },
     {
       "path": "test/unit/flagship-proof-graph-validator.test.mjs",
@@ -19167,10 +18964,10 @@
     },
     {
       "path": "test/unit/package-publish-lifecycle.test.mjs",
-      "sha256": "191fa083ff9d441a83aa6bfd91e08fdf1386305376ab5d5a3c18a301762b827c",
+      "sha256": "188a65921d3d034e8edd33b82974316f1d9922ce0ad06cd13ea9519c7535cfeb",
       "language": "javascript",
-      "lines": 273,
-      "bytes": 16395
+      "lines": 242,
+      "bytes": 14534
     },
     {
       "path": "test/unit/parallel-verification-dag.test.mjs",
@@ -19342,10 +19139,10 @@
     },
     {
       "path": "test/unit/release-stage-publish.test.mjs",
-      "sha256": "a53c4aca1fc34da895d6a09327adbcc7a10fef3f5020c640097fdaf49fa5c8d6",
+      "sha256": "8c969544e8ffe6dbec2bbd612b7442f596185e010375c6ab0c18bac1fcc8b4ea",
       "language": "javascript",
       "lines": 399,
-      "bytes": 18107
+      "bytes": 18121
     },
     {
       "path": "test/unit/release-version-sync.test.mjs",
@@ -19353,6 +19150,13 @@
       "language": "javascript",
       "lines": 37,
       "bytes": 1633
+    },
+    {
+      "path": "test/unit/removed-telegram-surface.test.mjs",
+      "sha256": "ef677776fe2d376392f3e455c3f6b2dd2cc4b64899f575763b8b7ae59d173980",
+      "language": "javascript",
+      "lines": 137,
+      "bytes": 4994
     },
     {
       "path": "test/unit/repeated-blocker-stop.test.mjs",
@@ -19584,20 +19388,6 @@
       "language": "javascript",
       "lines": 12,
       "bytes": 744
-    },
-    {
-      "path": "test/unit/telegram-native-runtime.test.mjs",
-      "sha256": "3046251f5c1d320f8ffed10b16baf7c766475e422f2d490372d92c06fc9c8d70",
-      "language": "javascript",
-      "lines": 55,
-      "bytes": 2424
-    },
-    {
-      "path": "test/unit/telegram-state-lock-interop.test.mjs",
-      "sha256": "cac362e142404e0f96e4d099d48b0c6d4469f93978515325864fb4b6ecb64287",
-      "language": "javascript",
-      "lines": 180,
-      "bytes": 8049
     },
     {
       "path": "test/unit/trust-kernel.test.mjs",
@@ -19861,12 +19651,12 @@
     }
   ],
   "edges_by_type": {
-    "calls": 9555,
-    "contains": 25564,
-    "defines": 7602,
-    "imports": 6161,
-    "reexports": 881,
-    "references": 13250,
-    "tests": 2886
+    "calls": 9495,
+    "contains": 24363,
+    "defines": 7529,
+    "imports": 6104,
+    "reexports": 872,
+    "references": 13143,
+    "tests": 2826
   }
 }

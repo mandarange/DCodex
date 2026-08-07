@@ -127,19 +127,6 @@ test('managed Desktop Bridge fails readiness when its active route is blocked', 
   assert.ok(matrix.blockers.includes('codex_lb_auth_rejected'));
 });
 
-test('degraded configured Telegram remote is visible without blocking core CLI readiness', () => {
-  const matrix = buildDoctorReadinessMatrix(readyInput({
-    telegram_remote: {
-      status: 'degraded',
-      blockers: ['telegram_poller_not_running']
-    }
-  }));
-
-  assert.equal(matrix.core_ready, true);
-  assert.equal(matrix.ready, true);
-  assert.ok(matrix.warnings.includes('telegram_remote:telegram_poller_not_running'));
-});
-
 test('guidance scan truncation reaches matrix warnings without blocking readiness', () => {
   const warning = {
     code: 'guidance_scan_truncated',

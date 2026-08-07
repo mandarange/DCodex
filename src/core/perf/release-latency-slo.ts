@@ -257,8 +257,7 @@ let firstStart = DispatchTime.now().uptimeNanoseconds
 status.start()
 let firstMs = Double(DispatchTime.now().uptimeNanoseconds - firstStart) / 1_000_000
 status.stop()
-let telegramService = TelegramRuntimeFactory.make(processClient: processClient, canonicalProjectRoot: AppRuntime.canonicalProjectRoot)
-let control = ControlCenterWindowController(processClient: processClient, operations: operations, notifications: notifications, telegramService: telegramService)
+let control = ControlCenterWindowController(processClient: processClient, operations: operations, notifications: notifications)
 let controlStart = DispatchTime.now().uptimeNanoseconds
 control.show(section: SidebarItem.overview)
 let controlMs = Double(DispatchTime.now().uptimeNanoseconds - controlStart) / 1_000_000

@@ -759,7 +759,7 @@ jobs:
             || guard.physical_proof !== `${releaseRoot}/physical-gates-inspection.json`) throw new Error('main push guard proof path mismatch')
           if (guard.upgrade_proof?.ok !== true || guard.upgrade_proof?.path !== expectedUpgradePath || guard.upgrade_proof?.sha256 !== upgradeSha256 || !Array.isArray(guard.upgrade_proof?.blockers) || guard.upgrade_proof.blockers.length !== 0) throw new Error('main push guard upgrade binding mismatch')
           const physical = JSON.parse(fs.readFileSync('release-handoff/physical-gates-inspection.json', 'utf8'))
-          const expectedPhysicalGates = ['update_5001_directory', 'single_menubar_process', 'codex_lb_measured_request', 'telegram_cellular_e2e', 'desktop_bridge_live_evidence'].sort()
+          const expectedPhysicalGates = ['update_5001_directory', 'single_menubar_process', 'codex_lb_measured_request', 'desktop_bridge_live_evidence'].sort()
           if (physical.schema !== 'sks.release-physical-gates-inspection.v2'
             || physical.ok !== true
             || physical.status !== 'passed'

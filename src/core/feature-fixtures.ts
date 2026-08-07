@@ -39,10 +39,6 @@ const FIXTURES = Object.freeze({
     },
     reason: 'The read-only status command proves the installed Desktop Bridge JSON facade and fail-closed no-fallback routing contract without configuring a provider, starting a service, or reading a plaintext credential.'
   }),
-  'cli-telegram': fixture('execute', 'sks telegram --help', [], 'pass', {
-    quality: 'wiring_only',
-    reason: 'The non-mutating help path proves the installed Telegram command is wired without requiring a bot token, private-file state, resident poller, or network access; transport behavior is covered by focused Telegram tests.'
-  }),
   'cli-mcp': fixture('execute', 'sks mcp config list --scope project --trusted-project --json', [], 'pass', {
     reason: 'Project-scoped MCP inventory is a read-only, hermetic runtime probe when the trusted-project boundary is explicit; mutation, health, auth, and merge behavior remain covered by dedicated tests.'
   }),

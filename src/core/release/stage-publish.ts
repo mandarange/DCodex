@@ -299,7 +299,7 @@ function runPreflight(opts: StagePublishOptions, packageName: string, version: s
     'physical_release_gates',
     physicalReady,
     physicalReady
-      ? 'all five source-bound physical release receipts and live Desktop Bridge artifacts verified on macOS'
+      ? 'all four source-bound physical release receipts and live Desktop Bridge artifacts verified on macOS'
       : compactPhysicalGateFailure(physical, physicalReport),
     physicalReady ? null : 'stage_physical_release_gates_invalid'
   ))

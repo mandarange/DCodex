@@ -22,7 +22,7 @@ Proof-first orchestration for Codex CLI, ChatGPT Desktop, AI coding agents, mult
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-This README documents package **SKS 8.2.2** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
+This README documents package **SKS 8.3.0** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
 
 Use the official latest stable SKS and Codex CLI releases. The Codex compatibility SSOT is always the **current latest stable** host; capability probes measure what that host can actually do. Product docs do not crown a fixed `0.x.y` string as SSOT (release pins and schema directories are measured artifacts for the current package, not a permanent product version claim). Menu Bar / Center induce updates to the latest stable build. Run `sks update-check` for what is installed and read the capability report for what is supported. Install SSOT is npm `sneakoscope@latest`; PATH `sks` and Menu Bar stamped generation must match that version or gates fail. It resolves managed SKS skills from the authoritative global install, preserves a runnable Naruto child slot when `max_threads=2`, and keeps Menu Bar repair transactional so stamped generations remain verifiable. Naruto uses stable opt-in multi-agent V2 when the host exposes it (Codex official multi-agent wrap-only; SKS does not reimplement a parallel runtime). Local code search is mode-separated (`sks search files|text|structure|symbol|context`); `context` is answered by the compiled TriWiki Context Graph (`context-graph.json` is exhaustive authority; `context-pack.json` and managed `AGENTS.md` are bounded projections) — see [docs/architecture/context-graph.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/architecture/context-graph.md) and [docs/PRODUCT-CONTRACT.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/PRODUCT-CONTRACT.md). See [CHANGELOG.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/CHANGELOG.md).
 
@@ -30,7 +30,6 @@ Use the official latest stable SKS and Codex CLI releases. The Codex compatibili
 
 | Problem | 8.2.0 behavior |
 | --- | --- |
-| SKS Center could reject a valid token for a user-selected BotFather bot with only a generic verification message | Setup accepts any bot the user owns, binds the exact `getMe` identity, returns actionable verification failures, and keeps native/CLI liveness receipts schema-compatible. |
 | Overview mixed Menu Bar, installed SKS, and cached registry versions | Each value is labeled by authority, stale or unavailable probes remain explicit, and Refresh forces a bounded update-status refresh. |
 | Naruto stopped creating children after its first wave | The root parent records settled waves, recovers open-thread capacity, rescans the ready DAG, and can launch later direct-child waves under the same workflow run. |
 | Most delegated work drifted to Sol Max | Read-heavy discovery uses Terra Max, ordinary implementation uses Sol High, and Sol Max is reserved for focused high-risk or final judgment slices. |
@@ -72,111 +71,49 @@ The SKS menu bar shows the installed Codex CLI version and latest known version.
 
 **Manage MCP Servers…** opens a native macOS manager for the global `~/.codex/config.toml`. It can add remote URL or local stdio servers, enable/disable existing entries, remove entries after confirmation, and refresh the current state. Mutations are lock-protected, backed up, TOML-validated, and written with mode `0600`; configured environment values and command arguments are never rendered in the list. Changes apply to new Codex sessions. The same plumbing is available through the canonical `sks mcp config list|get|add|edit|duplicate|enable|disable|remove|test|login|logout|backups|restore` surface for diagnostics and automation.
 
-### Remote control: Telegram BotFather integration
+### Recommended remote companion: Paseo
 
-SKS provides a first-party Telegram Bot API transport for the existing
-typed remote-control contract. A bounded outbound `getUpdates` loop runs only
-inside the resident Menu Bar process: it opens no inbound port, tunnel, daemon,
-or public webhook.
+For remote and cross-device coding, Sneakoscope officially recommends
+[Paseo](https://paseo.sh/docs). Start with the Paseo desktop app. For a
+headless machine, install and launch the official CLI:
 
-#### BotFather setup
+```sh
+npm install -g @getpaseo/cli
+paseo
+```
 
-1. In Telegram, open **@BotFather** and create a bot with `/newbot`, or select
-   any existing bot that you own. Copy that bot's token. SKS does not assume a
-   fixed bot name or username: it verifies the token with `getMe` and binds the
-   returned bot identity. Treat the token like a password. Do not place it in
-   a shell command, config file, commit, issue, or screenshot.
-2. On the Mac that runs SKS, open **SKS Center → Remote Coding**, choose
-   **Enter Bot Token…**, and paste the token into the native secure-input
-   sheet. SKS verifies `getMe` and the bot's webhook state before it stores
-   anything. If a webhook is active, the token is not retained and Center asks
-   for explicit consent before removing that webhook without dropping pending
-   updates.
+Install and authenticate Codex CLI before using it through Paseo. Paseo runs
+the existing provider CLI, so your Codex subscription, configuration, skills,
+and MCP servers remain owned by Codex rather than copied into Sneakoscope.
 
-   For a terminal-only setup, use a no-echo `zsh` prompt and pipe the token on
-   standard input; direct interactive TTY input is intentionally rejected:
+From this repository, start Codex in the current workspace with:
 
-   ```sh
-   IFS= read -r -s "sks_telegram_token?BotFather token: "
-   printf '\n'
-   printf '%s\n' "$sks_telegram_token" | sks telegram setup --token-stdin
-   unset sks_telegram_token
-   ```
+```sh
+paseo run --provider codex "Review this repository"
+```
 
-   If that command reports an existing webhook, review the delivery change and
-   repeat the same no-echo flow with `--remove-webhook`. This is explicit
-   consent to stop the old webhook endpoint; SKS always requests
-   `drop_pending_updates=false`. The token travels only on standard input, is
-   verified with Telegram before storage, is never printed, and is stored in
-   the owner-only user secret file. A token supplied by `TELEGRAM_BOT_TOKEN` or
-   `SKS_TELEGRAM_BOT_TOKEN` is also supported for an operator-managed runtime,
-   but environment values can be exposed to other local processes and are not
-   the recommended setup path. SKS Center restarts its resident poller after a
-   successful save; if that restart reports a blocker, resolve it before
-   generating or sending a pairing code.
-3. For terminal-only setup, restart the resident Menu Bar process immediately
-   after setup (and after any webhook removal or token rotation). The poller
-   must be running before it can consume and confirm `/start`:
+For an isolated branch-backed worktree based on `main`, use:
 
-   ```sh
-   sks menubar restart
-   ```
+```sh
+paseo run --new-workspace worktree --worktree-mode branch-off --new-branch paseo-task --base main "Implement the task"
+```
 
-   There is deliberately no `sks telegram start` or `sks telegram stop`:
-   Telegram is not a separate daemon. SKS Center exposes **Start**, **Stop**,
-   and **Restart** for the poller owned by the current resident Menu Bar
-   process. **Stop** preserves the token and pairings and lasts only until that
-   companion is relaunched. To keep Telegram stopped across relaunches, stop or
-   uninstall the entire Menu Bar companion; that also disables its other
-   resident features.
-4. Issue a short-lived pairing code with `sks telegram pair`:
+The committed `paseo.json` prepares each new worktree with
+`npm ci --ignore-scripts` followed by `npm run build:clean`. It also exposes
+these named repository actions through Paseo:
 
-   ```sh
-   sks telegram pair --json
-   ```
+| Paseo script | Repository command |
+| --- | --- |
+| `build` | `npm run build` |
+| `typecheck` | `npm run typecheck` |
+| `test` | `npm run test` |
+| `release-check` | `npm run release:check:affected` |
+| `release-confidence` | `npm run release:check:confidence` |
 
-   From the one intended **private** chat, send the returned
-   `/start <pairing-code>` message to the bot before it expires. Only that
-   private chat/user pair is enrolled. Unpaired chats receive no reply.
-5. After the bot confirms pairing, send a typed command such as:
-
-   ```text
-   /sks status {}
-   ```
-
-   The command grammar is `/sks <command> <JSON object>`; the JSON object may
-   be omitted when the command needs no options. The allowlist is `gates`,
-   `paths`, `pipeline`, `proof`, `search`, `stats`, `status`, `stop-gate`,
-   `trust`, `update-check`, and `validate-artifacts`. If SKS replies with a
-   short-lived confirmation nonce, send the exact `/confirm <nonce>` message
-   once before it expires. Arbitrary prose and free-form shell commands are not
-   executed.
-6. Confirm runtime evidence:
-
-   ```sh
-   sks telegram status --json
-   sks telegram doctor --json
-   sks doctor
-   ```
-
-   `status` reads the secret-free liveness receipt. `telegram doctor` evaluates
-   token presence, the bot identity, pairing, audit health, poller state, and
-   liveness. A ready result requires a real `getMe` check, a paired private
-   chat, and a running poller; a configured token alone is not readiness.
-
-The transport accepts only allowlisted typed commands. It never accepts
-free-form shell input; higher-risk commands require actor-bound two-step
-confirmation and an audit receipt. Telegram long polling and a webhook cannot
-be active together. If Doctor reports a webhook/409 conflict, enter the token
-again in SKS Center and approve webhook removal, or repeat the no-echo CLI
-setup with `--remove-webhook`, then restart the poller. SKS never drops pending
-updates during that transition.
-
-If a token may have leaked, revoke/regenerate it in BotFather, enter the
-replacement through SKS Center (or the no-echo CLI flow), and restart the
-poller. Token rotation and BotFather credential changes are external actions;
-SKS does not publish packages, revoke tokens, or make any other irreversible
-remote change on the operator's behalf.
+Paseo is an independent project, not bundled with or operated by Sneakoscope.
+Sneakoscope maintains only this repository's `paseo.json` and usage guidance;
+Paseo installation, authentication, pairing, relay operation, security, and
+product support remain with Paseo and its official documentation.
 
 ## The Front Door
 
@@ -389,8 +326,8 @@ It shows the current quickstart flow: one-line install, `$sks-plan`, `sks review
 - Native capability repair: `sks doctor --fix` (imagegen/Computer Use/Browser Use), `.sneakoscope/reports/native-capability-readiness.json`
 - Desktop Bridge: `sks bridge status --json`, `sks bridge route explain <model> --json`, and `sks bridge verify --level transport --json` report service, explicit routing, and staged transport truth. A configured profile or catalog is not routing proof, and a missing route never silently falls back.
 - Agent bridge for any agent system: `sks mcp-server`, `sks agent-bridge setup`, `SKS_AGENT_MODE=1` — see [docs/AGENT-BRIDGE.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/AGENT-BRIDGE.md)
-- Release gates: `npm run release:check:affected` for ordinary change-aware verification and `npm run release:check:confidence` for the final local confidence pass. Release claims still require target-bound real evidence for macOS lifecycle, OAuth preservation, both provider profiles, WebSocket protocol/frame truth, and deep artifacts; documentation and fixtures do not satisfy those gates.
-- Direct npm publication: run `npm run release:check:full` (it creates the current clean-HEAD pack receipt), then publish from a clean `main` checkout that exactly matches `origin/main`. The Git release tag may be created afterward, and stage-only physical receipts do not block this direct path. The staged/OIDC workflow still requires all five source-bound physical receipts, exact tag proof, and its authenticated review gates.
+- Release gates: `npm run release:check:affected` for ordinary change-aware verification and `npm run release:check:confidence` for the final local confidence pass. Release claims still require target-bound real evidence for macOS lifecycle, OAuth preservation, both provider profiles, WebSocket protocol/frame truth, and deep artifacts; Paseo installation or pairing is not SKS release evidence, and documentation and fixtures do not satisfy protected gates.
+- Direct npm publication: run `npm run release:check:full` (it creates the current clean-HEAD pack receipt), then publish from a clean `main` checkout that exactly matches `origin/main`. The Git release tag may be created afterward, and stage-only physical receipts do not block this direct path. The staged/OIDC workflow still requires all four source-bound physical receipts, exact tag proof, and its authenticated review gates.
 - Release evidence boundaries: [docs/release-readiness.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/release-readiness.md), [docs/release-proof-truth.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/release-proof-truth.md), and [CHANGELOG.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/CHANGELOG.md). Local configuration, fixtures, and diagnostics are not live release proof.
 - Image generation review routes require Codex App `$imagegen`/`gpt-image-2` evidence with recorded output hashes; direct API fallback and mock fixtures do not satisfy full route gates.
 
@@ -408,7 +345,6 @@ It shows the current quickstart flow: one-line install, `$sks-plan`, `sks review
   - The provider services remain independently operated. SKS never deploys them, changes remote credentials, or silently substitutes one profile for another.
   - Full release proof remains `not-run-real` until fresh target-bound evidence covers the real Desktop service/UI, OAuth preservation, both provider profiles, staged WebSocket verification, and each claimed deep artifact.
   - Update installs stop and verify every prior Menu Bar process before replacement, rebuild the companion from the newly installed SKS package, bootstrap it, and require exactly one running process whose version probe equals the current package version.
-  - Telegram remote control uses one bounded long-poller inside that same Menu Bar process. Release evidence must include a real cellular command/reply round trip; `getMe`, a local fixture, or a configured token alone cannot satisfy the E2E gate.
   - The menubar dropdown's `View Last Log` item opens the most recent background action's log file, so you don't need to keep a Terminal window open to see command output.
   - `Manage MCP Servers…` provides a resizable native table and add/remove/enable/disable controls for global Codex MCP configuration. Secret environment values and command arguments are accepted through native dialogs/stdin but omitted from list output and logs.
   - `sks menubar status --json` reports a `codex_sync` object with `bundle_id`, `codex_running`, and `icon_visible_expected` to show Codex-lifecycle detection state.

@@ -1,77 +1,79 @@
-# Release Proof Truth — 8.2.2
+# Release Proof Truth — 8.3.0
 
 ## Current assertion
 
-8.2.2 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The Telegram Center settings
-UI and runtime-derived Codex contract are present in the candidate, but this document does
+8.3.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
+candidate removes Sneakoscope's active first-party Telegram surface and adds a
+repository-owned Paseo configuration and recommendation, but this document does
 not authorize publication, deployment, a credential change, a Git tag, or a
 push. Exact-commit proof can exist only after the candidate is committed and
 all source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 8.1.3 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 8.2.2 evidence.
+All release artifacts bound to 8.2.2 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 8.3.0 evidence.
 
 ## Claim ledger
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
-| A user may select any BotFather bot they own | supported in source and hermetic tests | setup verifies `getMe`, requires `is_bot` and a positive ID, and binds that exact identity; no fixed username is assumed |
-| Center exposes every required user-supplied Telegram value | supported in native source and compiled contract tests | the BotFather token is the only manual input; bot ID is derived from `getMe`, while chat and user IDs are derived through private-chat pairing |
-| Center keeps the active bot and pairing action visible | supported in native source and compiled contract tests | secret-free Doctor status carries the bound bot ID and the page renders a copyable, short-lived `/start` command without exposing the token |
-| Invalid credentials and identity-verification transport failures are distinguishable | supported in source and hermetic tests | stable secret-free errors cover rejection, timeout, network failure, and invalid identity |
-| Native and CLI liveness receipts interoperate | supported in cross-language tests | new Swift receipts encode nullable fields as `null`; TypeScript still accepts 8.1.x receipts that omitted those optional fields |
-| Bot tokens remain secret | supported by source boundaries and tests | tokens enter through secure input/stdin, are not included in receipts, and are not exposed as bot metadata |
-| The reported 8.2.2 package is ready to publish | not proved | requires a clean exact-commit build, release gates, package receipt, provenance, and the operator's final registry checks |
-| The original user's real bot now connects | not-run-real | no real token or private Telegram state was inspected or mutated during this preparation |
+| The active first-party Telegram surface is absent | passed-hermetic in the integrated working tree; not exact-commit proof | the removed-surface regression, command-help contract, Doctor/feature/package inspection, native Swift compile, and current release gates passed; the dry-run package contained no Telegram path |
+| `paseo.json` is safe and usable by Paseo worktrees | passed-hermetic in the integrated working tree; not exact-commit proof | JSON parsing, the exact ordered setup array, and every named command's package-script target passed |
+| Current docs recommend Paseo without claiming ownership | passed-hermetic in the integrated working tree; not exact-commit proof | manual inspection covered desktop, headless, Codex, local and worktree flows plus the independent-project boundary; the docs-truthfulness gate separately pinned the Paseo URL and Codex provider invocation |
+| All checked version authorities report 8.3.0 | passed-hermetic in the integrated working tree; not exact-commit proof | `release:version-truth` checked 15 package/lock/plugin, TypeScript version and re-export, Rust manifest/lock/metadata, dist manifest, README, changelog, and release-metadata-script surfaces with zero warnings |
+| The reported 8.3.0 package is ready to publish | not proved | requires a clean exact-commit build, release gates, package receipt, provenance, and the operator's final registry checks |
 
 ## Evidence classes
 
 - **passed-hermetic** means a local build, fixture, test, or gate passed for the
   inspected source. It is never proof of a user environment or registry state.
-- **not-run-real** means no redacted, target-bound receipt exists for the real
-  bot, macOS companion, or registry action.
+- **not-run-real** means no redacted, target-bound receipt exists for a macOS,
+  provider, or registry action that still requires one.
 - **blocked-external** means the remaining action requires a clean promoted
   commit, a private credential, a target machine, or explicit operator
   authority.
 
-These classes are not interchangeable. A configured token, process listing,
+These classes are not interchangeable. A configuration file, process listing,
 fixture, or package dry run cannot promote a real-environment row to passed.
 
-## Telegram acceptance boundary
+## Paseo boundary and removed Telegram surface
 
-The setup contract stores a token only after Telegram `getMe` verifies the
-selected bot identity and webhook handling is resolved. A successful identity
-check does not prove later storage, webhook mutation, or poller restart; those
-stages retain their own failures and neutral UI wording. A successful save
-does not prove readiness until the resident Menu Bar poller runs and one
-private chat/user pair is enrolled.
+Paseo is an independent external product. Sneakoscope does not bundle its
+daemon, wrap its CLI, probe its health, own its authentication or relay
+lifecycle, or require a live Paseo session as 8.3.0 release proof. The owned
+contract is limited to the committed `paseo.json` and accurate usage guidance.
 
-No source path is allowed to infer token invalidity from an unrelated setup
-failure. Public bot metadata is limited to a positive numeric ID and a bounded
-sanitized username. Secret values remain excluded from JSON, native UI
-receipts, liveness files, and logs.
+The active Telegram command, transport, Doctor projection, native poller and
+settings, feature/package entries, tests, and release requirements must be
+absent. Historical changelog entries and narrowly scoped retired-state
+migration code remain historical or upgrade-safety records; their presence is
+not evidence of an active integration. No live Telegram, BotFather, pairing,
+poller, or cellular round trip is required for this release.
 
 ## Exact-commit release evidence
 
-Before any release claim, regenerate and verify current 8.2.2-bound artifacts
+Before any release claim, regenerate and verify current 8.3.0-bound artifacts
 from the clean handoff commit, including the build manifest, version metadata,
 package proof, pack receipt, release provenance, and release-check stamp. Each
 must bind the exact source digest, Git commit, tarball bytes, and package
 version required by its schema.
 
-The existing 8.1.3 canonical-test proof, pack receipt, provenance, and stamp
-are stale for this candidate. Local focused tests and a dry-run tarball remain
-preparation evidence only until the repository's clean-commit release flow
-produces current receipts.
+Existing 8.2.2 and earlier canonical-test proofs, pack receipts, provenance, and
+stamps are stale for this candidate. Local focused tests and a dry-run tarball
+remain preparation evidence only until the repository's clean-commit release
+flow produces current receipts.
+
+The integrated working-tree preparation passed `release:check:affected` 35/35
+and `release:check:confidence` 110/110. These results remain hermetic
+pre-commit evidence; they do not promote the dirty tree to exact-commit or
+publication proof.
 
 ## Remaining real and operator evidence
 
 The following remain **not-run-real** or **blocked-external**:
 
-- saving a private real BotFather token through the installed 8.2.2 Center;
-- a live `getMe`, webhook inspection, resident poller restart, pairing, and
-  private-chat command round trip on the user's target machine;
 - clean-commit full release gates and exact-tarball installed smoke;
+- any target-bound macOS, provider, protocol, or deep-artifact evidence still
+  required by the protected release gates;
 - current npm identity, maintainer, registry-version, and dist-tag read-back;
 - npm publication or dist-tag mutation.
 
