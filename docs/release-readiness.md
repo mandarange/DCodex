@@ -48,7 +48,7 @@ and Control Center views share the `sks.update-status.v3` snapshot.
 - Regression tests pin the nested-status decode (compiled Swift truth
   harness), the provider ordering, and the priority defaults; the XCTest
   suite mirrors the same envelope assertions.
-- The 8.3.1 baseline remains in force: resident menu bar observer with
+- The previous release's baseline remains in force: resident menu bar observer with
   `follow_codex_lifecycle`, completed `codex-lb` v1-to-v2 desktop-bridge
   migration, structured repair-receipt validation in SKS Center, full
   ModelInfo-superset catalog rows, the desktop bridge surviving real Codex
