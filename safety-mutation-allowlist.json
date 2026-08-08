@@ -464,8 +464,8 @@
       "file": "src/core/codex-app/menubar/launch-agent.ts",
       "symbol": "removeLaunchAgent",
       "token": "fs.rm",
-      "scope_contract_sha256": "a1ab93cd045d38df057857e9aa91a575a0abe6ff1de2196feac3d50c80275433",
-      "callsite_sha256": "26c37cefc2a81df78551866a4077178fbf1f574164b9fcad5dcf316fc93893e5",
+      "scope_contract_sha256": "9fb48915f1129ea137e5f8857aff34a390ac95c0769570bc1a6f4a475440d20b",
+      "callsite_sha256": "e617eb7757205f3089873a2420dc9e8edd5e72aa8e537a2fc1e9506dd9760732",
       "occurrence": 1,
       "reason": "Menu Bar uninstall removes only the resolved SKS launch-agent file and managed install directory."
     },
@@ -473,8 +473,8 @@
       "file": "src/core/codex-app/menubar/launch-agent.ts",
       "symbol": "removeLaunchAgent",
       "token": "fs.rm",
-      "scope_contract_sha256": "a1ab93cd045d38df057857e9aa91a575a0abe6ff1de2196feac3d50c80275433",
-      "callsite_sha256": "65cc10f8cd12e1ffbab07a6e00f3db81a0b1e2c1d775593654eb2d3677eeda21",
+      "scope_contract_sha256": "9fb48915f1129ea137e5f8857aff34a390ac95c0769570bc1a6f4a475440d20b",
+      "callsite_sha256": "7ec89dbea439b294746d6aad164959912767f5828958030a143157e09db5f552",
       "occurrence": 1,
       "reason": "Menu Bar uninstall removes only the resolved SKS launch-agent file and managed install directory."
     },
@@ -3677,8 +3677,8 @@
       "file": "src/scripts/canonical-test-runner.ts",
       "symbol": "finalize",
       "token": "process.kill",
-      "scope_contract_sha256": "94947dcc242663b399936fb9359a974f4175d8a64a3c99f3094bc0c3aa3e9ed9",
-      "callsite_sha256": "819a94ed8ba4a5cae7f19b91becc4b63c1c5a0153a35fd7b689bdf038598b30a",
+      "scope_contract_sha256": "68ddd8f7915824b4401f22c02a78cdf6832720d7e99d25c936a06fedab51d054",
+      "callsite_sha256": "3821fd475beb48b53e4c1246d3bb01e8c1778c0cad6f7de4b655c15372b0274f",
       "occurrence": 1,
       "reason": "Canonical test cleanup re-raises only a forwarded or observed child signal after the owned test child has closed."
     },
@@ -3686,8 +3686,8 @@
       "file": "src/scripts/canonical-test-runner.ts",
       "symbol": "finalize",
       "token": "process.kill",
-      "scope_contract_sha256": "94947dcc242663b399936fb9359a974f4175d8a64a3c99f3094bc0c3aa3e9ed9",
-      "callsite_sha256": "b90ce876a44d817f86c8e3d95c611c80a862559b5279c596d58050af874a3f46",
+      "scope_contract_sha256": "68ddd8f7915824b4401f22c02a78cdf6832720d7e99d25c936a06fedab51d054",
+      "callsite_sha256": "fc2828501886bcecc7ec7feefc1309126a32c19d08a2eb84703cca17f7d9b650",
       "occurrence": 1,
       "reason": "Canonical test cleanup re-raises only a forwarded or observed child signal after the owned test child has closed."
     },
@@ -3695,8 +3695,8 @@
       "file": "src/scripts/canonical-test-runner.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "a11f16fa8af47a4251aff9f72d1f130a9ecdf8b58a5799dd481976e6836530cf",
-      "callsite_sha256": "90f834cecfaa1dd2ddce37d857e085327bad88ca0644f3a998a81aa4f0fbd321",
+      "scope_contract_sha256": "5bc3a19ea35b211d31ad3f5d7b0d3d0f5a058b013fcf2743772ff0a8bb6e1e8e",
+      "callsite_sha256": "5a0446360cfffaa07a98d1763ae970c20c42f41ee58494e009a37e2b2b676d2f",
       "occurrence": 1,
       "reason": "Canonical test runner seeds files only inside the isolated scratch HOME it created, keeping tests off the operator real home."
     },
@@ -3704,8 +3704,8 @@
       "file": "src/scripts/canonical-test-runner.ts",
       "symbol": "module",
       "token": "codex config write",
-      "scope_contract_sha256": "a11f16fa8af47a4251aff9f72d1f130a9ecdf8b58a5799dd481976e6836530cf",
-      "callsite_sha256": "c088176200a30acfc815de2974acda98e79c0e76e49b3bb03f5ca8b208c16cad",
+      "scope_contract_sha256": "5bc3a19ea35b211d31ad3f5d7b0d3d0f5a058b013fcf2743772ff0a8bb6e1e8e",
+      "callsite_sha256": "ce6832a324b11c1a902c67ca38614834fb0b0a2cc606c39845a4be86084f420e",
       "occurrence": 1,
       "reason": "Canonical test runner writes the sentinel Codex config only into its isolated scratch CODEX_HOME and fails on any unexpected tree change."
     },
@@ -3713,8 +3713,8 @@
       "file": "src/scripts/canonical-test-runner.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "a11f16fa8af47a4251aff9f72d1f130a9ecdf8b58a5799dd481976e6836530cf",
-      "callsite_sha256": "439c0acfaeaa2def70bf690a834c28e7dd9960c8e605da7a55c8cb9f1549743b",
+      "scope_contract_sha256": "5bc3a19ea35b211d31ad3f5d7b0d3d0f5a058b013fcf2743772ff0a8bb6e1e8e",
+      "callsite_sha256": "1df62b13046dd92ce06cde9f03639e2ba07a6f6e0b959ab08e7df5b34802211a",
       "occurrence": 1,
       "reason": "Canonical test runner seeds files only inside the isolated scratch HOME it created, keeping tests off the operator real home."
     },
@@ -7691,8 +7691,8 @@
       "file": "src/core/codex-lb/desktop-bridge-migration/retired-runtime-cleanup.ts",
       "symbol": "cleanupRetiredDesktopBridgeRuntime",
       "token": "unlink",
-      "scope_contract_sha256": "037e218ae4d849306b3bf533466f2019a90103c9a4d48e71a8fa1174fb13043d",
-      "callsite_sha256": "88f3736ef6c59358810f26111e29c153bb93fff04921e771d6227d8806a46762",
+      "scope_contract_sha256": "5c5a770a2c40512c996190723f8cf34efef816ba44fbe4cb2ba8dc902e1eef16",
+      "callsite_sha256": "3e41ca33e26e43b4d9230b8d53dca90c0d3b1f4fd345e48c0d51f1a838bce64a",
       "occurrence": 1,
       "reason": "Retired-runtime migration cleanup unlinks only the fixed SKS runtime filenames derived from the caller-selected home after rejecting symlinks and verifying settings and state schemas."
     },
@@ -7722,6 +7722,15 @@
       "callsite_sha256": "cc2052cc88333205ac2840d4d359a8897fc762699ee3633b48f586da09d45ac5",
       "occurrence": 1,
       "reason": "Physical release inspection atomically promotes only its process-scoped sibling report onto the fixed versioned inspection path."
+    },
+    {
+      "file": "src/scripts/build-dist.ts",
+      "symbol": "removeOrphanedCompiledTests",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "76cb41b884ea3a45b7435493dfc2374b0c909e778236688da2e794b317bcb2dd",
+      "callsite_sha256": "6a956edf16c5f58a2c775a78bf14f670787003b94d3c2c99be320e4dca41f388",
+      "occurrence": 1,
+      "reason": "Build cleanup removes only compiled __tests__ artifacts under dist whose source .ts no longer exists, keeping dist a strict projection of src; targets are derived from the dist walk, never user paths."
     }
   ]
 }
