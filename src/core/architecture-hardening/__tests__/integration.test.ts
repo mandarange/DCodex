@@ -113,11 +113,16 @@ test('Desktop Bridge seam keeps simultaneous provider routes explicit, pinned, i
   assert.equal(lbHeaders.authorization, undefined);
   assert.equal(openRouterHeaders.authorization, `Bearer ${OPENROUTER_SECRET}`);
   assert.equal(openRouterHeaders['x-codex-lb-api-key'], undefined);
+  // codex-lb receives the non-credential Codex session metadata the ChatGPT
+  // backend requires; openrouter never does.
+  assert.equal(lbHeaders['thread-id'], pin.thread_id);
+  assert.equal(lbHeaders['session-id'], pin.thread_id);
+  assert.equal(lbHeaders['x-codex-turn-metadata'], inbound['x-codex-turn-metadata']);
+  assert.equal(openRouterHeaders['thread-id'], undefined);
+  assert.equal(openRouterHeaders['session-id'], undefined);
+  assert.equal(openRouterHeaders['x-codex-turn-metadata'], undefined);
   for (const headers of [lbHeaders, openRouterHeaders]) {
     assert.equal(headers.cookie, undefined);
-    assert.equal(headers['thread-id'], undefined);
-    assert.equal(headers['session-id'], undefined);
-    assert.equal(headers['x-codex-turn-metadata'], undefined);
     assert.doesNotMatch(JSON.stringify(headers), /desktop-oauth-secret|forged-provider-key/);
   }
 

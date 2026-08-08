@@ -264,9 +264,11 @@ test('correct client capability is stripped before upstream while HTTP/SSE binds
     assert.equal(firstArrivedBeforeEnd, true);
     assert.equal(upstreamHeaders.authorization, undefined);
     assert.equal(upstreamHeaders.cookie, undefined);
-    assert.equal(upstreamHeaders['thread-id'], undefined);
-    assert.equal(upstreamHeaders['session-id'], undefined);
-    assert.equal(upstreamHeaders['x-codex-turn-metadata'], undefined);
+    // codex-lb receives the non-credential Codex session metadata the ChatGPT
+    // backend requires; credentials and cookies stay stripped.
+    assert.equal(upstreamHeaders['thread-id'], 'thread-http-1');
+    assert.equal(upstreamHeaders['session-id'], 'thread-http-1');
+    assert.equal(typeof upstreamHeaders['x-codex-turn-metadata'], 'string');
     assert.equal(upstreamHeaders['x-codex-lb-api-key'], 'lb-key-blackbox-secret');
     assert.equal(persistedPins.length, 1);
     assert.deepEqual(persistedPins[0], {

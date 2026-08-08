@@ -153,7 +153,10 @@ function normalizeCodexLbBridgeCatalogModels(
         route_key: `codex-lb:${publicId.toLowerCase()}`,
         ...codexModelInfoFields(publicId, row, {
           tools: row.supports_tools === true || row.supports_tool_choice === true
-        })
+        }),
+        // Authenticated gateway models outrank third-party catalog rows in the
+        // Desktop picker regardless of its sort direction on ties.
+        ...(typeof row.priority === 'number' ? {} : { priority: 100 })
       });
     } catch (error) {
       blockers.push(error instanceof Error ? error.message : `codex_lb_model_catalog_row_invalid:${index}`);

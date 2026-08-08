@@ -8,6 +8,36 @@ final class ProvidersBridgeStatusTests: XCTestCase {
         XCTAssertEqual(status.capabilities?.catalogGeneration, "catalog-gen-2")
     }
 
+    func testNestedStatusWithoutEnvelopeTrioDecodes() throws {
+        var status = ProviderV3Fixture.status()
+        status.removeValue(forKey: "ok")
+        status.removeValue(forKey: "execution_ok")
+        status.removeValue(forKey: "command_summary")
+        let decoded = try DesktopBridgeStatusV3Truth.decode(from: status)
+        XCTAssertEqual(decoded.correlationId, "correlation-1")
+        XCTAssertEqual(decoded.capabilities?.catalogGeneration, "catalog-gen-2")
+    }
+
+    func testEnvelopeTrioRemainsTypeCheckedWhenPresent() {
+        var status = ProviderV3Fixture.status()
+        status["ok"] = "true"
+        XCTAssertThrowsError(try DesktopBridgeStatusV3Truth.decode(from: status))
+
+        status = ProviderV3Fixture.status()
+        status["execution_ok"] = "yes"
+        XCTAssertThrowsError(try DesktopBridgeStatusV3Truth.decode(from: status))
+
+        status = ProviderV3Fixture.status()
+        status["command_summary"] = ""
+        XCTAssertThrowsError(try DesktopBridgeStatusV3Truth.decode(from: status))
+    }
+
+    func testUnknownTopLevelKeyStillRejected() {
+        var status = ProviderV3Fixture.status()
+        status["unexpected_key"] = true
+        XCTAssertThrowsError(try DesktopBridgeStatusV3Truth.decode(from: status))
+    }
+
     func testAggregateStatusRejectsMissingRequiredCatalog() {
         var status = ProviderV3Fixture.status()
         status.removeValue(forKey: "catalog_sync")

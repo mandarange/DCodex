@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+
+## [8.3.2] - 2026-08-08
+
+### Fixed
+
+- SKS Center: the Combined Model Catalog refresh no longer fails with
+  `Capability schema invalid · current Desktop Bridge status missing`. The
+  strict Swift status decoder required the command envelope trio
+  (`ok`/`execution_ok`/`command_summary`) on every
+  `sks.desktop-bridge-status.v3` object, but the status nested inside a
+  command result never carries those envelope keys. The trio is now allowed
+  and type-checked when present, never required — nested and top-level status
+  objects both decode, unknown keys and mistyped envelope values still fail
+  closed.
+- Codex Desktop model picker: codex-lb gateway models (`gpt-5.4`,
+  `gpt-5.4-mini`, `gpt-5.5`, `gpt-5.6-luna`/`-sol`/`-terra`) no longer vanish
+  behind the OpenRouter catalog. Combined catalog rows now sort every codex-lb
+  row before every openrouter row (instead of one alphabetical list keyed by
+  model id), and codex-lb rows default to ModelInfo `priority` 100 (openrouter
+  stays 1; an upstream-provided priority still wins), so gateway models
+  survive picker truncation regardless of the picker's tie-break direction.
+- Both regressions were the same strict-decoder/contract drift class: a
+  consumer-side invariant (envelope keys, alphabetical ordering) silently
+  outlived the producer contract. Regression tests now pin the nested-status
+  decode, the provider ordering, and the priority defaults.
+- Three bridge tests still pinned the pre-8.3.1 header contract (all Codex
+  session metadata stripped) and failed against the shipped behavior. They now
+  pin the real contract: codex-lb receives the non-credential Codex session
+  metadata headers the ChatGPT backend requires, openrouter receives none of
+  them, and credentials/cookies stay stripped for both.
+
 ## [8.3.1] - 2026-08-07
 
 ### Fixed

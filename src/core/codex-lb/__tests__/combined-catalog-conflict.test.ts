@@ -71,6 +71,41 @@ test('R26: ambiguous public IDs are explicit conflicts with no silent provider p
   }]);
 });
 
+test('codex-lb models sort before openrouter rows and default to picker priority 100', async () => {
+  const registry = await registryFixture();
+  const result = buildCombinedBridgeCatalog(registry, {
+    catalogs: {
+      'codex-lb': {
+        provider_id: 'codex-lb' as const,
+        state: 'verified' as const,
+        generation: 'lb-generation',
+        models: { models: [
+          { slug: 'zz-lb-model', display_name: 'LB Last Alphabetically' },
+          { slug: 'aa-lb-pinned', display_name: 'LB Pinned Priority', priority: 7 }
+        ] }
+      },
+      openrouter: {
+        provider_id: 'openrouter' as const,
+        state: 'verified' as const,
+        generation: 'or-generation',
+        models: [{ id: 'aa-or-model', name: 'OR First Alphabetically' }]
+      }
+    },
+    created_at: '2026-08-08T00:00:00.000Z'
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.blockers));
+  // Ordering, not alphabet, decides provider precedence: every codex-lb row
+  // precedes every openrouter row so gateway models survive picker truncation.
+  assert.deepEqual(
+    result.catalog.models.map((model) => `${model.provider_id}:${model.public_id}`),
+    ['codex-lb:aa-lb-pinned', 'codex-lb:zz-lb-model', 'openrouter:aa-or-model']
+  );
+  const byId = new Map(result.catalog.models.map((model) => [model.public_id, model]));
+  assert.equal(byId.get('zz-lb-model')?.priority, 100);
+  assert.equal(byId.get('aa-lb-pinned')?.priority, 7);
+  assert.equal(byId.get('aa-or-model')?.priority, 1);
+});
+
 test('deterministic catalog and route generations ignore observation time and contain no secrets', async () => {
   const registry = await registryFixture();
   const first = buildCombinedBridgeCatalog(registry, {

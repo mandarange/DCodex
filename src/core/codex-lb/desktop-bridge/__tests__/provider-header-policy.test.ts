@@ -33,10 +33,17 @@ test('Codex-LB and OpenRouter policies strip OAuth/cookies and inject only the s
   ]);
   assert.equal(lb.authorization, undefined); assert.equal(lb['x-codex-lb-api-key'], 'lb-only-secret');
   assert.equal(openrouter.authorization, 'Bearer or-only-secret'); assert.equal(openrouter['x-codex-lb-api-key'], undefined);
+  // codex-lb keeps the non-credential Codex session metadata the ChatGPT
+  // backend requires; openrouter never receives any of it.
+  assert.equal(lb['thread-id'], 'thread-1'); assert.equal(lb['session-id'], 'thread-1');
+  assert.equal(lb['x-client-request-id'], 'request-1'); assert.equal(lb['x-codex-window-id'], 'thread-1:0');
+  assert.equal(lb['x-codex-turn-metadata'], inbound['x-codex-turn-metadata']);
+  assert.equal(lb.originator, 'codex_cli_rs');
+  for (const name of ['thread-id', 'session-id', 'x-client-request-id', 'x-codex-window-id', 'x-codex-turn-metadata', 'originator']) {
+    assert.equal(openrouter[name], undefined);
+  }
   for (const headers of [lb, openrouter]) {
-    assert.equal(headers.cookie, undefined); assert.equal(headers['thread-id'], undefined); assert.equal(headers['session-id'], undefined);
-    assert.equal(headers['x-codex-turn-metadata'], undefined); assert.equal(headers['x-client-request-id'], undefined);
-    assert.equal(headers.originator, undefined); assert.equal(headers['user-agent'], undefined); assert.equal(headers['x-remove-me'], undefined);
+    assert.equal(headers.cookie, undefined); assert.equal(headers['user-agent'], undefined); assert.equal(headers['x-remove-me'], undefined);
     assert.doesNotMatch(JSON.stringify(headers), /chatgpt-oauth-secret|chatgpt=session|forged/);
   }
   assert.equal(lb['http-referer'], undefined); assert.equal(openrouter['http-referer'], 'https://client.example');

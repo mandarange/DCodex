@@ -255,8 +255,14 @@ struct DesktopBridgeStatusV3Truth {
     let correlationId: String
     let capabilities: DesktopCapabilityReportV3?
 
+    // The envelope trio (ok/execution_ok/command_summary) exists on top-level
+    // `bridge status` output but NOT on the status object nested inside a
+    // command result, so it is allowed and type-checked — never required.
+    private static let envelopeKeys: Set<String> = ["ok", "execution_ok", "command_summary"]
+
     static func decode(from json: [String: Any]) throws -> DesktopBridgeStatusV3Truth {
-        guard Set(json.keys) == keys,
+        let required = keys.subtracting(envelopeKeys)
+        guard required.isSubset(of: Set(json.keys)), Set(json.keys).isSubset(of: keys),
               json["schema"] as? String == "sks.desktop-bridge-status.v3",
               let checkedAt = nonempty(json["checked_at"]), let correlationId = nonempty(json["correlation_id"]),
               let management = json["management"] as? [String: Any],
@@ -267,8 +273,9 @@ struct DesktopBridgeStatusV3Truth {
               let catalog = json["catalog_sync"] as? [String: Any],
               let readiness = json["readiness"] as? [String: Any],
               json["recovery_actions"] is [String],
-              json["ok"] is Bool, json["execution_ok"] is Bool,
-              nonempty(json["command_summary"]) != nil else {
+              json["ok"] == nil || json["ok"] is Bool,
+              json["execution_ok"] == nil || json["execution_ok"] is Bool,
+              json["command_summary"] == nil || nonempty(json["command_summary"]) != nil else {
             throw ProviderFacadeError.schemaInvalid("desktop_bridge_status_schema_invalid")
         }
         let managed = management["managed"] as? Bool == true
