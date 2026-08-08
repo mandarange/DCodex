@@ -65,6 +65,7 @@
     {
       "canonical_name": "sks-computer-use-fast",
       "trusted_sha256": [
+        "57e4c1d04ae785b0a53711e53210f2ddabd6131041b97edb4b6d99f18b24155e",
         "b270d82e4057934d7f92ed4241d4ae86e22d0a9a08bceba1aa179d7535bda042",
         "b8736b2621398dfc85f7a2ff35d7a2fc728db0dfc0e964de69aebff93b5ed897"
       ]
@@ -79,6 +80,7 @@
     {
       "canonical_name": "sks-cu",
       "trusted_sha256": [
+        "be9a3eb7197483693f354e5f7e5a8eb2c0dc0209597cea53479e2e803ad39479",
         "fc6ed807d0299dd56441738d9388787b1dd857dab9bb4c31a11f7d9b90b424d0",
         "da480ba03208d4888df1e97bbec6d80d608dafad0e33c2b1c72266e1860476a8"
       ]
@@ -148,6 +150,7 @@
     {
       "canonical_name": "sks-from-chat-img",
       "trusted_sha256": [
+        "1cf6b9494829216c27c0778cecd825698c37a6a6dbde67a2a79dd957a32c24cc",
         "be2f0ec42839c0c8ec09c4bfbb99e3c57d6ffe1b8253c2ebbf894200cf8dbf40",
         "583c41f46a7355d8c0c87472ea83573695d04341822eb9adcea822ed3311809f"
       ]

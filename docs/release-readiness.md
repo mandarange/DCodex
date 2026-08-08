@@ -1,17 +1,21 @@
-# SKS 8.3.0 Release Readiness
+# SKS 8.3.1 Release Readiness
 
 ## Current decision
 
-**SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.** The 8.3.0 source
-candidate removes the active first-party Telegram surface, recommends the
-independent Paseo project for remote and cross-device use, and preserves the
-runtime-derived Codex contract. A source tag is authorized only after the exact
-candidate commit passes the repository checks and matches `origin/main`.
+**SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.** The 8.3.1 source
+candidate keeps the menu bar observer launchd-resident across Codex shutdowns,
+completes retired `codex-lb` v1 runtime migration to the unified v2 Desktop
+Bridge, validates structured repair receipts in SKS Center, excludes the
+hosting Codex Desktop app from Computer Use targets, keeps the first-party
+Telegram surface absent, recommends the independent Paseo project for remote
+and cross-device use, and preserves the runtime-derived Codex contract. A
+source tag is authorized only after the exact candidate commit passes the
+repository checks and matches `origin/main`.
 Registry publication remains an explicit operator action outside that source-tag
 decision.
 
-Earlier SHA- or 8.2.2-bound artifacts are historical only. A version string,
-focused test, package dry run, or old green stamp cannot authorize 8.3.0.
+Earlier SHA- or 8.3.0-bound artifacts are historical only. A version string,
+focused test, package dry run, or old green stamp cannot authorize 8.3.1.
 
 Evidence labels are intentionally narrow:
 
@@ -26,8 +30,25 @@ The current execution surface is `$sks-naruto` / `sks naruto run`, with
 an operator-run repair command and must not be invoked automatically. Update
 and Control Center views share the `sks.update-status.v3` snapshot.
 
-## 8.3.0 candidate scope
+## 8.3.1 candidate scope
 
+- The SKS Menu Bar launch agent keeps a resident observer (`KeepAlive`), the
+  legacy `quit_with_codex` preference migrates to `follow_codex_lifecycle`
+  (`sks.sks-menubar-config.v2`), and the menu icon follows Codex visibility
+  without terminating the observer. `Quit SKS Menu` is replaced by
+  `Hide Until Codex Opens`.
+- Retired `codex-lb` desktop-bridge v1 settings/state are accepted as one-time
+  migration input, transferable v1 fields seed the unified v2 settings, and the
+  v1 files plus retired launchd runtime are deleted only after the v2 service
+  verifies as running. launchd bootstrap retries until the previous service
+  instance is fully removed.
+- SKS Center validates the structured `sks.desktop-bridge-command-result.v1`
+  repair receipt, so an exit-code-zero `partial` result is recorded as needing
+  action. Provider capability rows show issues first with an explicit
+  show-all control.
+- Computer Use policy and the scoped operator exclude the hosting Codex
+  Desktop app (`com.openai.codex`); Codex-linked QA uses structured host
+  evidence plus the external native target.
 - The active first-party Telegram command, transport, native poller and settings,
   feature/package surface, tests, and release requirements are absent. Historical
   changelog records and guarded retired-state migration code remain historical
@@ -46,7 +67,7 @@ and Control Center views share the `sks.update-status.v3` snapshot.
   runtime's generated App Server schema; MCP list pagination is bounded and
   fail-closed, and superseded static Codex schemas and hook fixtures are absent.
 - Package, lockfile, plugin, runtime, Rust, README, changelog, performance, and
-  agent bridge version surfaces name 8.3.0.
+  agent bridge version surfaces name 8.3.1.
 
 These are source claims. They become release claims only after the exact
 candidate commit passes the repository's release flow.
@@ -93,24 +114,24 @@ node ./dist/scripts/release-pack-receipt.js verify
 node ./dist/scripts/release-provenance-check.js --publish
 npm whoami --registry https://registry.npmjs.org/
 npm view sneakoscope maintainers --json --registry https://registry.npmjs.org/
-npm view sneakoscope@8.3.0 version --json --registry https://registry.npmjs.org/
+npm view sneakoscope@8.3.1 version --json --registry https://registry.npmjs.org/
 npm publish --dry-run --json \
   --registry https://registry.npmjs.org/ \
   --tag latest \
   --access public
 ```
 
-Before publication, the version lookup should report that 8.3.0 is not already
+Before publication, the version lookup should report that 8.3.1 is not already
 present. The dry run is not publication. The user performs the actual publish,
 push, tag, workflow dispatch, or approval separately.
 
 ## Removed-surface and Paseo contract
 
-8.3.0 has no live Telegram credential, BotFather, pairing, poller, or cellular
+8.3.1 has no live Telegram credential, BotFather, pairing, poller, or cellular
 round-trip evidence requirement. Release verification instead proves that the
 active Telegram surface is absent and that the checked-in `paseo.json`, README,
 package scripts, package metadata, Rust metadata, and runtime version agree with
-the 8.3.0 contract.
+the 8.3.1 contract.
 
 Paseo installation, daemon health, authentication, pairing, relay availability,
 and cross-device execution are also not Sneakoscope release evidence. Paseo is
@@ -153,13 +174,13 @@ node ./dist/scripts/npm-stage-tarball-verifier.js \
   --physical-evidence-run-id <physical-capture-workflow-run-id> \
   --workflow-run-id <stage-workflow-run-id> \
   --local-receipt /absolute/path/to/local-pack-receipt.json \
-  --local-tarball /absolute/path/to/sneakoscope-8.3.0.tgz \
+  --local-tarball /absolute/path/to/sneakoscope-8.3.1.tgz \
   --stage-receipt /absolute/path/to/npm-stage-receipt.json
 ```
 
 The verifier does not approve, reject, publish, tag, or modify a stage.
 
-The final migration matrix includes a `7.6.0 to 8.3.0 upgrade smoke`, covering
+The final migration matrix includes a `7.6.0 to 8.3.1 upgrade smoke`, covering
 installed update finalization, guarded retired-state cleanup, preserved user
 configuration, and the current command surface. Fixture success cannot replace
 real macOS evidence required by other protected gates.

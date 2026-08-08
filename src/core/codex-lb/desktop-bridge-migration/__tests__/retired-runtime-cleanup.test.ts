@@ -15,7 +15,7 @@ function processResult(code: number) {
   return { code, stdout: '', stderr: '', stdoutBytes: 0, stderrBytes: 0, truncated: false, timedOut: false };
 }
 
-async function retiredFixture(t: test.TestContext) {
+async function retiredFixture(t: test.TestContext, schema: 'v1' | 'v2' = 'v2') {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-retired-bridge-'));
   t.after(() => fsp.rm(home, { recursive: true, force: true }));
   const runtime = path.join(home, '.codex', 'sks');
@@ -31,15 +31,45 @@ async function retiredFixture(t: test.TestContext) {
   const plist = path.join(launchAgents, `${RETIRED_LABEL}.plist`);
   const stdout = path.join(logs, 'codex-lb-desktop-bridge.out.log');
   const stderr = path.join(logs, 'codex-lb-desktop-bridge.err.log');
+  const persistedSettings = schema === 'v1'
+    ? {
+        schema: 'sks.codex-lb-desktop-bridge-settings.v1',
+        listen_host: '127.0.0.1',
+        listen_port: 54_321,
+        provider_mode: 'codex-lb',
+        allowed_models: ['gpt-5'],
+        gateway_auth_transport: 'x-codex-lb-api-key',
+        allowed_origins: ['app://codex'],
+        connect_timeout_ms: 10_000,
+        idle_timeout_ms: 300_000,
+        require_session_pin: false,
+      }
+    : { ...current, schema: 'sks.codex-lb-desktop-bridge-settings.v2' };
   await Promise.all([
-    fsp.writeFile(settings, `${JSON.stringify({ ...current, schema: 'sks.codex-lb-desktop-bridge-settings.v2' })}\n`, { mode: 0o600 }),
-    fsp.writeFile(state, '{"schema":"sks.codex-lb-desktop-bridge.v2"}\n', { mode: 0o600 }),
+    fsp.writeFile(settings, `${JSON.stringify(persistedSettings)}\n`, { mode: 0o600 }),
+    fsp.writeFile(state, `{"schema":"sks.codex-lb-desktop-bridge.${schema}"}\n`, { mode: 0o600 }),
     fsp.writeFile(plist, `<plist><string>${RETIRED_LABEL}</string></plist>\n`, { mode: 0o600 }),
     fsp.writeFile(stdout, '', { mode: 0o600 }),
     fsp.writeFile(stderr, '', { mode: 0o600 }),
   ]);
   return { home, files: [settings, state, plist, stdout, stderr] };
 }
+
+test('shipped v1 provider-branded runtime imports only safe listener settings and is removed', async (t) => {
+  const fixture = await retiredFixture(t, 'v1');
+  const run = async () => processResult(1);
+  const prepared = await prepareRetiredDesktopBridgeRuntime({ home: fixture.home, uid: 501, run });
+
+  assert.deepEqual(prepared.settings, {
+    listen_host: '127.0.0.1',
+    listen_port: 54_321,
+    allowed_origins: ['app://codex'],
+    connect_timeout_ms: 10_000,
+    idle_timeout_ms: 300_000,
+  });
+  await cleanupRetiredDesktopBridgeRuntime(prepared);
+  for (const file of fixture.files) await assert.rejects(fsp.stat(file), { code: 'ENOENT' });
+});
 
 test('installed provider-branded bridge is booted out before settings import and owned artifact removal', async (t) => {
   const fixture = await retiredFixture(t);

@@ -4,21 +4,21 @@ import { readJson, runProcess, which, writeJsonAtomic } from '../../fsx.js';
 import type { SksMenuBarConfig } from './types.js';
 
 export async function readMenuBarConfig(configPath: string): Promise<SksMenuBarConfig> {
-  const value = await readJson<Partial<SksMenuBarConfig> | null>(configPath, null);
+  const value = await readJson<(Partial<SksMenuBarConfig> & { quit_with_codex?: boolean }) | null>(configPath, null);
   return {
-    schema: 'sks.sks-menubar-config.v1',
+    schema: 'sks.sks-menubar-config.v2',
     codex_bundle_id: typeof value?.codex_bundle_id === 'string' && value.codex_bundle_id.trim()
       ? value.codex_bundle_id.trim() : null,
-    quit_with_codex: value?.quit_with_codex === true
+    follow_codex_lifecycle: value?.follow_codex_lifecycle === true || value?.quit_with_codex === true
   };
 }
 
 export async function writeDefaultMenuBarConfig(configPath: string, codexBundleId: string | null): Promise<SksMenuBarConfig> {
   const previous = await readMenuBarConfig(configPath);
   const value: SksMenuBarConfig = {
-    schema: 'sks.sks-menubar-config.v1',
+    schema: 'sks.sks-menubar-config.v2',
     codex_bundle_id: codexBundleId || previous.codex_bundle_id,
-    quit_with_codex: previous.quit_with_codex
+    follow_codex_lifecycle: previous.follow_codex_lifecycle
   };
   await writeJsonAtomic(configPath, value);
   return value;

@@ -1,4 +1,4 @@
-import type { BridgeCatalogModel, BridgeProviderId, CatalogSyncState } from '../bridge-contracts.js';
+import type { BridgeCatalogModel, BridgeProviderId, CatalogSyncState, CodexModelInfoRequiredFields } from '../bridge-contracts.js';
 import type { BridgeProviderRegistry } from '../provider-registry.js';
 import {
   canonicalizeBridgeModelId,
@@ -61,7 +61,8 @@ export function normalizeProviderCatalog(input: ProviderCatalogBuildInput): Norm
       supported_in_api: row?.supported_in_api !== false,
       capabilities,
       source_catalog_generation: input.generation || 'unknown',
-      route_key: `openrouter:${publicId}`
+      route_key: `openrouter:${publicId}`,
+      ...codexModelInfoFields(publicId, null, { tools: capabilities.includes('tools') })
     });
   }).filter(isModel);
   if (models.length === 0) blockers.push('openrouter_model_catalog_empty');
@@ -149,7 +150,10 @@ function normalizeCodexLbBridgeCatalogModels(
         supported_in_api: row.supported_in_api !== false,
         capabilities: unique(capabilities).sort(),
         source_catalog_generation: sourceCatalogGeneration,
-        route_key: `codex-lb:${publicId.toLowerCase()}`
+        route_key: `codex-lb:${publicId.toLowerCase()}`,
+        ...codexModelInfoFields(publicId, row, {
+          tools: row.supports_tools === true || row.supports_tool_choice === true
+        })
       });
     } catch (error) {
       blockers.push(error instanceof Error ? error.message : `codex_lb_model_catalog_row_invalid:${index}`);
@@ -176,6 +180,40 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+// Codex serde requires these ModelInfo fields on every catalog row. Upstream
+// values win when the source catalog carries them; otherwise use the defaults
+// the codex-lb fixture environment has proven real Codex CLI parses.
+export function codexModelInfoFields(
+  slug: string,
+  row: Record<string, unknown> | null,
+  fallback: { tools: boolean }
+): CodexModelInfoRequiredFields {
+  const summaries = typeof row?.supports_reasoning_summary_parameter === 'boolean'
+    ? row.supports_reasoning_summary_parameter
+    : row?.supports_reasoning_summaries !== false;
+  return {
+    slug,
+    supported_reasoning_levels: Array.isArray(row?.supported_reasoning_levels)
+      ? row.supported_reasoning_levels.map(String)
+      : [],
+    shell_type: typeof row?.shell_type === 'string' && row.shell_type ? row.shell_type : 'shell_command',
+    visibility: typeof row?.visibility === 'string' && row.visibility ? row.visibility : 'list',
+    priority: typeof row?.priority === 'number' && Number.isFinite(row.priority) ? row.priority : 1,
+    base_instructions: typeof row?.base_instructions === 'string' ? row.base_instructions : '',
+    supports_reasoning_summary_parameter: summaries,
+    support_verbosity: row?.support_verbosity === true,
+    truncation_policy: isPlainObject(row?.truncation_policy)
+      ? row.truncation_policy
+      : { mode: 'tokens', limit: 10_000 },
+    supports_parallel_tool_calls: typeof row?.supports_parallel_tool_calls === 'boolean'
+      ? row.supports_parallel_tool_calls
+      : fallback.tools,
+    experimental_supported_tools: Array.isArray(row?.experimental_supported_tools)
+      ? row.experimental_supported_tools.map(String)
+      : []
+  };
+}
+
 function providerCode(providerId: BridgeProviderId): string {
   return providerId === 'codex-lb' ? 'codex_lb' : 'openrouter';
 }
@@ -192,7 +230,10 @@ function canonicalModel(model: BridgeCatalogModel): BridgeCatalogModel | null {
     supported_in_api: model.supported_in_api !== false,
     capabilities: unique(model.capabilities).sort(),
     source_catalog_generation: String(model.source_catalog_generation || 'unknown'),
-    route_key: `${model.provider_id}:${publicId}`
+    route_key: `${model.provider_id}:${publicId}`,
+    ...codexModelInfoFields(publicId, model as unknown as Record<string, unknown>, {
+      tools: model.capabilities.includes('tools')
+    })
   };
 }
 

@@ -247,7 +247,8 @@ struct DesktopBridgeStatusV3Truth {
     private static let keys: Set<String> = [
         "schema", "checked_at", "correlation_id", "management", "service",
         "http_probe", "websocket_probe", "native_identity", "providers", "routing",
-        "catalog_sync", "capabilities", "readiness", "recovery_actions"
+        "catalog_sync", "capabilities", "readiness", "recovery_actions",
+        "ok", "execution_ok", "command_summary"
     ]
     let raw: [String: Any]
     let checkedAt: String
@@ -265,7 +266,9 @@ struct DesktopBridgeStatusV3Truth {
               let routing = json["routing"] as? [String: Any],
               let catalog = json["catalog_sync"] as? [String: Any],
               let readiness = json["readiness"] as? [String: Any],
-              json["recovery_actions"] is [String] else {
+              json["recovery_actions"] is [String],
+              json["ok"] is Bool, json["execution_ok"] is Bool,
+              nonempty(json["command_summary"]) != nil else {
             throw ProviderFacadeError.schemaInvalid("desktop_bridge_status_schema_invalid")
         }
         let managed = management["managed"] as? Bool == true
@@ -356,6 +359,70 @@ struct DesktopBridgeStatusV3Truth {
     }
 }
 
+struct DesktopBridgeCommandResultTruth: Equatable {
+    private static let keys: Set<String> = [
+        "schema", "operation", "operation_id", "correlation_id", "checked_at", "ok",
+        "execution", "readiness", "status", "result", "recovery_action",
+        "execution_ok", "command_summary"
+    ]
+    let completed: Bool
+    let blockers: [String]
+    let recoveryAction: String?
+
+    static func decode(from json: [String: Any], expectedOperation: String) throws -> DesktopBridgeCommandResultTruth {
+        guard Set(json.keys) == keys,
+              json["schema"] as? String == "sks.desktop-bridge-command-result.v1",
+              json["operation"] as? String == expectedOperation,
+              nonempty(json["operation_id"]) != nil,
+              nonempty(json["correlation_id"]) != nil,
+              nonempty(json["checked_at"]) != nil,
+              let topLevelOK = json["ok"] as? Bool,
+              let execution = json["execution"] as? [String: Any],
+              Set(execution.keys) == ["ok", "status", "blockers"],
+              let executionOK = execution["ok"] as? Bool,
+              let executionStatus = execution["status"] as? String,
+              ["completed", "partial", "failed"].contains(executionStatus),
+              let blockers = execution["blockers"] as? [String],
+              let readiness = json["readiness"] as? [String: Any],
+              Set(readiness.keys) == ["ready", "blockers", "warnings"],
+              readiness["ready"] is Bool,
+              readiness["blockers"] is [String],
+              readiness["warnings"] is [String],
+              (json["status"] is NSNull || json["status"] is [String: Any]),
+              let result = json["result"] as? [String: Any],
+              (json["recovery_action"] is NSNull || json["recovery_action"] is String),
+              json["execution_ok"] as? Bool == executionOK,
+              nonempty(json["command_summary"]) != nil,
+              topLevelOK == executionOK else {
+            throw ProviderFacadeError.schemaInvalid("desktop_bridge_command_result_schema_invalid")
+        }
+        let completed = topLevelOK && executionStatus == "completed" && blockers.isEmpty
+        let partial = topLevelOK && executionStatus == "partial" && !blockers.isEmpty
+        let failed = !topLevelOK && executionStatus == "failed"
+        guard completed || partial || failed else {
+            throw ProviderFacadeError.schemaInvalid("desktop_bridge_command_result_execution_invalid")
+        }
+        if completed && expectedOperation == "repair" {
+            guard let service = result["service"] as? [String: Any],
+                  service["ok"] as? Bool == true,
+                  service["running"] as? Bool == true else {
+                throw ProviderFacadeError.schemaInvalid("desktop_bridge_command_result_service_invalid")
+            }
+        }
+        return DesktopBridgeCommandResultTruth(
+            completed: completed,
+            blockers: blockers,
+            recoveryAction: json["recovery_action"] as? String
+        )
+    }
+
+    private static func nonempty(_ value: Any?) -> String? {
+        guard let string = value as? String else { return nil }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 struct CapabilityDisplayRow: Equatable {
     let scope: CapabilityScope
     let capability: String
@@ -383,5 +450,22 @@ struct CapabilityDisplayRow: Equatable {
     private static func evidenceString(_ value: JSONValue?) -> String? {
         if case .string(let raw)? = value { return raw }
         return nil
+    }
+}
+
+enum CapabilityDisplayFilter {
+    static func rows(_ rows: [CapabilityDisplayRow], showAll: Bool) -> [CapabilityDisplayRow] {
+        showAll ? rows : rows.filter { isIssue($0.state) }
+    }
+
+    static func issueCount(_ rows: [CapabilityDisplayRow]) -> Int {
+        rows.filter { isIssue($0.state) }.count
+    }
+
+    private static func isIssue(_ state: CapabilityProbeState) -> Bool {
+        switch state {
+        case .degraded, .blocked, .failed, .stale: return true
+        case .notAttempted, .running, .verified, .unsupported: return false
+        }
     }
 }

@@ -54,7 +54,9 @@ export function inspectHistoricalDesktopBridgeIntent(configText: string): Histor
   if (markerValues.length > 1) blockers.push('historical_provider_marker_conflict');
   else if (markerValues.length === 1 && !providerMode) blockers.push('historical_provider_marker_invalid');
   if (nativeBridge && compatBridge) blockers.push('historical_desktop_marker_conflict');
-  if (nativeBridge && selectedProvider !== 'openai') blockers.push('historical_native_bridge_selection_mismatch');
+  if (nativeBridge && selectedProvider !== null && selectedProvider !== 'openai') {
+    blockers.push('historical_native_bridge_selection_mismatch');
+  }
   if (compatBridge && selectedProvider !== 'codex-lb') blockers.push('historical_compat_bridge_selection_mismatch');
   if (managedCodexLbSelection && selectedProvider !== 'codex-lb') {
     blockers.push('historical_codex_lb_selection_marker_mismatch');

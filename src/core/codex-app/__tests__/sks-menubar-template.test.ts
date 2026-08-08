@@ -36,6 +36,7 @@ test('SKS Menu Bar uses the required split native source and resource inventory'
   const root = resolvePackagedMenuBarSourceRoot();
   assert.deepEqual([...NATIVE_SOURCE_FILES], [
     'main.swift', 'AppDelegate.swift', 'StatusItemController.swift',
+    'CodexLifecyclePolicy.swift',
     'ControlCenterWindowController.swift', 'SidebarItem.swift', 'ControlKit.swift',
     'OverviewViewController.swift', 'OverviewSummary.swift', 'UpdatesViewController.swift',
     'MCPServersViewController.swift', 'ProvidersViewController.swift', 'ProvidersReliability.swift',
@@ -95,13 +96,15 @@ test('status template resources are distinct valid 18x18 PDFs', () => {
   assert.equal(new Set(digests).size, names.length, 'every status glyph PDF must have a distinct SHA-256');
 });
 
-test('status template keeps Control Center reachable on cold start before Codex launches', () => {
+test('status template keeps a lightweight observer alive and follows Codex visibility without terminating', () => {
   const status = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'StatusItemController.swift'), 'utf8');
-  assert.match(status, /Keep the status item visible on cold start/);
-  assert.match(status, /statusItem\.isVisible = true/);
-  assert.doesNotMatch(status, /statusItem\.isVisible = NSWorkspace\.shared\.runningApplications\.contains/);
-  assert.match(status, /else \{[\s\S]{0,400}self\?\.statusItem\.isVisible = true/);
-  assert.doesNotMatch(status, /else \{ self\?\.statusItem\.isVisible = false \}/);
+  const lifecycle = fs.readFileSync(path.join(resolvePackagedMenuBarSourceRoot(), 'Sources', 'CodexLifecyclePolicy.swift'), 'utf8');
+  assert.match(status, /CodexLifecyclePolicy\.initialVisibility/);
+  assert.match(status, /CodexLifecyclePolicy\.visibilityAfterCodexLaunch/);
+  assert.match(status, /CodexLifecyclePolicy\.visibilityAfterCodexTermination/);
+  assert.match(lifecycle, /follow_codex_lifecycle/);
+  assert.match(status, /Hide Until Codex Opens/);
+  assert.doesNotMatch(status, /NSApplication\.shared\.terminate/);
 });
 
 test('runtime materialization injects paths, version, and optional Codex bundle id without unresolved tokens', () => {
@@ -114,9 +117,8 @@ test('runtime materialization injects paths, version, and optional Codex bundle 
   assert.doesNotMatch(withCodex, /__SKS_[A-Z_]+__/);
   assert.match(withCodex, /NSWorkspace\.didLaunchApplicationNotification/);
   assert.match(withCodex, /NSWorkspace\.didTerminateApplicationNotification/);
-  assert.match(withCodex, /if config\?\["quit_with_codex"\] as\? Bool == true/);
-  assert.match(withCodex, /else \{[\s\S]{0,400}self\?\.statusItem\.isVisible = true/);
-  assert.doesNotMatch(withCodex, /else \{ self\?\.statusItem\.isVisible = false \}/);
+  assert.match(withCodex, /follow_codex_lifecycle/);
+  assert.doesNotMatch(withCodex, /NSApplication\.shared\.terminate/);
   assert.match(withCodex, /applicationShouldHandleReopen\(_ sender: NSApplication, hasVisibleWindows flag: Bool\)/);
   assert.match(withCodex, /controlCenter\?\.show\(section: \.overview\)/);
   assert.match(withCodex, /switch singletonGuard\.acquire\(\)/);
@@ -344,7 +346,7 @@ test('status item is concise and applies the documented integrity-to-healthy pri
   const swift = source();
   for (const item of [
     'Open SKS Control Center…', 'Pending approvals (0)',
-    'Check for Updates', 'Update Codex CLI Now', 'Open Updates…', 'View Last Operation', 'Quit SKS Menu'
+    'Check for Updates', 'Update Codex CLI Now', 'Open Updates…', 'View Last Operation', 'Hide Until Codex Opens'
   ]) assert.match(swift, new RegExp(item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(swift, /\["codex", "update", "--json"\]/);
   assert.match(swift, /openControlCenter\(\.updates\)/);
@@ -438,7 +440,9 @@ test('Providers configures independent bridge profiles through masked stdin with
   assert.match(providers, /ChatGPT OAuth remain(?:s)? unchanged/);
   assert.match(providers, /providerActionInFlight\.contains\(providerId\)/);
   assert.match(providers, /result\.code == 0 && parsed\?\["ok"\] as\? Bool == true/);
-  assert.match(providers, /operations\.begin\(kind: kind, mutationGroup: group/);
+  assert.match(providers, /DesktopBridgeCommandResultTruth\.decode\(from: \$0, expectedOperation: "repair"\)/);
+  assert.match(providers, /result\.code == 0 && truth\?\.completed == true/);
+  assert.match(providers, /state: completed \? \.succeeded : \.failed/);
   assert.match(providers, /ControlCenterPage/);
   assert.match(alertFactory, /placeholderString = placeholder/);
   assert.match(alertFactory, /isEditable = true/);
@@ -570,7 +574,10 @@ test('operation coordinator persists redacted bounded-tail receipts and excludes
   assert.match(swift, /if mutationGroup != nil, activeMutation != nil \{ return nil \}/);
   assert.match(swift, /if activeMutation\?\.id == snapshot\.id \{ activeMutation = nil \}/);
   assert.match(swift, /redact\(command\.joined\(separator: " "\), sensitiveValues: sensitiveValues\)/);
-  assert.match(swift, /64 \* 1024/);
+  // Combined-catalog aware bridge JSON exceeds 64KB; the bounded reader must
+  // stay capped at exactly 1MB so receipts remain bounded without truncating
+  // real routing-aware command results.
+  assert.match(swift, /private let outputLimit = 1024 \* 1024/);
 });
 
 test('UserNotifications declares all categories/actions, redacts public bodies, and surfaces denial without failing operations', () => {

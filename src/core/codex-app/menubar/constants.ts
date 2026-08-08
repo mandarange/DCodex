@@ -7,13 +7,14 @@ export const MENU_ITEMS = [
   'Pending approvals',
   'Check for Updates',
   'View Last Operation',
-  'Quit SKS Menu'
+  'Hide Until Codex Opens'
 ] as const;
 
 export const NATIVE_SOURCE_FILES = [
   'main.swift',
   'AppDelegate.swift',
   'StatusItemController.swift',
+  'CodexLifecyclePolicy.swift',
   'ControlCenterWindowController.swift',
   'SidebarItem.swift',
   'ControlKit.swift',

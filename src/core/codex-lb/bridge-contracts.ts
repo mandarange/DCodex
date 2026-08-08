@@ -205,7 +205,25 @@ export interface BridgeRoutingPolicy {
   changed_at: string;
 }
 
-export interface BridgeCatalogModel {
+// Codex Desktop reads the combined catalog through model_catalog_json and
+// deserializes every model row as its ModelInfo shape. These fields are
+// required by Codex serde; provider rows preserve upstream values when the
+// source catalog carries them and fall back to the fixture-proven defaults.
+export interface CodexModelInfoRequiredFields {
+  slug: string;
+  supported_reasoning_levels: string[];
+  shell_type: string;
+  visibility: string;
+  priority: number;
+  base_instructions: string;
+  supports_reasoning_summary_parameter: boolean;
+  support_verbosity: boolean;
+  truncation_policy: Record<string, unknown>;
+  supports_parallel_tool_calls: boolean;
+  experimental_supported_tools: string[];
+}
+
+export interface BridgeCatalogModel extends CodexModelInfoRequiredFields {
   public_id: string;
   provider_id: BridgeProviderId;
   upstream_model: string;

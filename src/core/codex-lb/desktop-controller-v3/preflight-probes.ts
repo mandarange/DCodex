@@ -52,11 +52,15 @@ export function combinedRoutePolicyProbe(core: ControllerCore, context: ProbeCon
 export function combinedModelRouteProbe(
   core: ControllerCore,
   status: DesktopBridgeStatusV3,
-  context: ProbeContext
+  context: ProbeContext,
+  liveTextResults: readonly CapabilityProbeResultV3[] = []
 ): CapabilityProbeResultV3 {
   const active = activeProviderIds(core);
   const verified = active.length > 0 && active.every((providerId) =>
     Boolean(core.policy && Object.values(core.policy.model_routes).some((route) => route.provider_id === providerId)));
+  const liveRouteProven = verified && active.every((providerId) =>
+    liveTextResults.some((result) => result.scope === `provider:${providerId}`
+      && result.capability === 'text_responses' && result.state === 'verified'));
   return capabilityProbeResultV3({
     ...context,
     capability: 'model_route',
@@ -68,10 +72,11 @@ export function combinedModelRouteProbe(
     blockers: verified ? [] : ['catalog_model_route_missing'],
     retryable: !verified,
     recoveryAction: verified ? null : 'refresh_catalog_or_select_supported_model',
-    source: 'config',
+    source: liveRouteProven ? 'transport' : 'config',
     evidence: {
       active_provider_ids: active,
       route_count: status.catalog_sync.route_count,
+      live_route_proven: liveRouteProven,
       fallback: 'none'
     }
   });
@@ -143,12 +148,18 @@ export function providerAuthProbe(
 export function providerModelRouteProbe(
   core: ControllerCore,
   providerId: BridgeProviderId,
-  context: ProbeContext
+  context: ProbeContext,
+  liveText: CapabilityProbeResultV3 | null = null
 ): CapabilityProbeResultV3 {
   const route = core.policy
     ? Object.entries(core.policy.model_routes).find(([, target]) => target.provider_id === providerId)
     : null;
   const verified = Boolean(route && core.catalogSync.providers[providerId].state === 'verified');
+  const liveRouteProven = Boolean(verified && route && liveText
+    && liveText.capability === 'text_responses'
+    && liveText.scope === `provider:${providerId}`
+    && liveText.state === 'verified'
+    && liveText.evidence.public_model === route[0]);
   return capabilityProbeResultV3({
     ...context,
     capability: 'model_route',
@@ -157,12 +168,13 @@ export function providerModelRouteProbe(
     state: verified ? 'verified' : 'not_attempted',
     retryable: !verified,
     recoveryAction: verified ? null : 'refresh_catalog_or_select_supported_model',
-    source: 'config',
+    source: liveRouteProven ? 'transport' : 'config',
     evidence: {
       provider_id: providerId,
       public_model: route?.[0] || null,
       upstream_model: route?.[1].upstream_model || null,
       catalog_generation: core.policy?.catalog_generation || null,
+      live_route_proven: liveRouteProven,
       fallback: 'none'
     }
   });

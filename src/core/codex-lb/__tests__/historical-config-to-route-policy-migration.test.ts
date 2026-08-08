@@ -113,6 +113,21 @@ test('historical intent: native bridge preserves bearer endpoint intent without 
   assert.doesNotMatch(JSON.stringify(intent), /must-not-escape|CODEX_LB_API_KEY/);
 });
 
+test('historical intent: native bridge accepts omitted OpenAI selection as the Codex default', () => {
+  const config = [
+    '# sks-managed-provider-mode:codex-lb',
+    '# sks-codex-lb-managed-desktop-bridge',
+    `openai_base_url = "${BRIDGE}"`,
+    ...lbTable(false)
+  ].join('\n');
+
+  const intent = inspectHistoricalDesktopBridgeIntent(config);
+
+  assert.deepEqual(intent.blockers, []);
+  assert.equal(intent.providers['codex-lb'].enabled, true);
+  assert.equal(intent.default_provider_id, 'codex-lb');
+});
+
 test('historical intent: dual-auth compatibility preserves custom-header transport', () => {
   const config = [
     '# sks-codex-lb-managed-desktop-compat',

@@ -59,6 +59,7 @@ export function buildBridgeRouteIndex(input: {
     const model: BridgeCatalogModel = {
       ...source,
       public_id: publicId,
+      slug: source.slug || publicId,
       upstream_model: upstream,
       capabilities: unique(source.capabilities).sort(),
       route_key: providerRouteKey(source.provider_id, publicId)

@@ -284,3 +284,32 @@ test('runtime never promotes an unvalidated or rotated OpenRouter credential to 
     /desktop_bridge_provider_credentials_unavailable/
   );
 });
+
+test('launchd bootstrap retries only after the previous service instance is fully removed', async () => {
+  const { bootstrapLaunchdWithRetry } = await import('../desktop-service.js');
+  const calls: string[][] = [];
+  let printsUntilGone = 2;
+  let bootstrapAttempts = 0;
+  const run = async (_cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[0] === 'print') {
+      printsUntilGone -= 1;
+      return { code: printsUntilGone >= 0 ? 0 : 1, stdout: printsUntilGone >= 0 ? 'state = running\npid = 1' : '', stderr: '', stdoutBytes: 0, stderrBytes: 0, truncated: false, timedOut: false };
+    }
+    if (args[0] === 'bootstrap') {
+      assert.equal(printsUntilGone < 0, true, 'bootstrap must wait until launchd reports the service removed');
+      bootstrapAttempts += 1;
+      return { code: bootstrapAttempts === 1 ? 5 : 0, stdout: '', stderr: bootstrapAttempts === 1 ? 'Bootstrap failed: 5: Input/output error' : '', stdoutBytes: 0, stderrBytes: 0, truncated: false, timedOut: false };
+    }
+    return { code: 0, stdout: '', stderr: '', stdoutBytes: 0, stderrBytes: 0, truncated: false, timedOut: false };
+  };
+  const result = await bootstrapLaunchdWithRetry(
+    { platform: 'darwin', run: run as never },
+    'gui/501',
+    'gui/501/com.sneakoscope.desktop-bridge',
+    '/tmp/plist'
+  );
+  assert.equal(result.code, 0);
+  assert.equal(bootstrapAttempts, 2);
+  assert.deepEqual(calls.filter((args) => args[0] === 'bootout').length, 1);
+});

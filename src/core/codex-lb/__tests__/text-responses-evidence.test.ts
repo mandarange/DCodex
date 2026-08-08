@@ -39,3 +39,26 @@ test('a config-only skipped chain is represented as not attempted', () => {
   assert.equal(evidence.state, 'not_attempted')
   assert.equal(evidence.source, 'config')
 })
+
+test('text response validity accepts a completed Codex SSE stream and rejects failed or truncated streams', async () => {
+  const { textResponsePayloadValid } = await import('../desktop-controller-v3/live-probes.js')
+  const sse = 'text/event-stream; charset=utf-8'
+  const completed = [
+    'event: response.created',
+    'data: {"type":"response.created","response":{"id":"resp_1"}}',
+    '',
+    'data: {"type":"response.output_text.done","text":"OK"}',
+    '',
+    'data: {"type":"response.completed","response":{"id":"resp_1"}}',
+    '',
+    'data: [DONE]',
+    ''
+  ].join('\n')
+  assert.equal(textResponsePayloadValid(sse, completed), true)
+  assert.equal(textResponsePayloadValid(sse, completed.replace('response.completed', 'response.in_progress')), false)
+  assert.equal(textResponsePayloadValid(sse, `${completed}\ndata: {"type":"response.failed"}\n`), false)
+  assert.equal(textResponsePayloadValid(sse, 'data: not-json\n\n'), false)
+  assert.equal(textResponsePayloadValid('application/json', '{"object":"response","id":"resp_2"}'), true)
+  assert.equal(textResponsePayloadValid('application/json', 'OK'), false)
+  assert.equal(textResponsePayloadValid(null, ''), false)
+})

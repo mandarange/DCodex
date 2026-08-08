@@ -81,7 +81,8 @@ enum ProviderV3Fixture {
                 "routing": ["policy": ["schema": "sks.bridge-routing-policy.v1", "default_provider_id": "codex-lb", "fallback": "none", "model_routes": [:], "catalog_generation": "catalog-gen-2", "policy_generation": "policy-gen-1", "changed_at": "2026-08-05T14:00:00.000Z"], "selected_model": NSNull(), "selected_route": NSNull(), "session_pin": NSNull(), "fallback": "none", "blockers": [], "warnings": []],
                 "catalog_sync": catalog(), "capabilities": report(),
                 "readiness": ["ready": true, "state": "ready", "bridge_ready": true, "active_routes_ready": true, "combined_catalog_ready": true, "blockers": [], "warnings": []],
-                "recovery_actions": []]
+                "recovery_actions": [],
+                "ok": true, "execution_ok": true, "command_summary": "Desktop Bridge status"]
     }
 }
 

@@ -74,7 +74,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(item("View Last Operation", #selector(viewLastOperation)))
         menu.addItem(item("Retry Last Operation", #selector(retryLastOperation)))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(item("Quit SKS Menu", #selector(quit)))
+        menu.addItem(item("Hide Until Codex Opens", #selector(hideUntilCodexOpens)))
         statusItem.menu = menu
         configureCodexLifecycle()
         refreshLocalState()
@@ -297,25 +297,25 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     private func configureCodexLifecycle() {
         guard let bundle = AppRuntime.codexBundleId else { return }
-        // Keep the status item visible on cold start even when Codex is not
-        // running. Accessory apps have no Dock icon, so hiding before the first
-        // Codex session made Control Center unreachable after install/restart.
-        statusItem.isVisible = true
+        let config = readJson(path: AppRuntime.configPath)
+        let followCodex = CodexLifecyclePolicy.followsCodex(from: config)
+        let codexRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == bundle }
+        statusItem.isVisible = CodexLifecyclePolicy.initialVisibility(
+            followCodex: followCodex,
+            codexRunning: codexRunning
+        )
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication, app.bundleIdentifier == bundle else { return }
-            self?.statusItem.isVisible = true
+            self?.statusItem.isVisible = CodexLifecyclePolicy.visibilityAfterCodexLaunch()
+            self?.refreshLocalState()
         }
         center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication, app.bundleIdentifier == bundle else { return }
             let config = self?.readJson(path: AppRuntime.configPath)
-            if config?["quit_with_codex"] as? Bool == true { NSApplication.shared.terminate(nil) }
-            else {
-                // Provider/proxy/network failure must not strand recovery behind
-                // a hidden accessory app. Keep settings and retry actions alive.
-                self?.statusItem.isVisible = true
-                self?.refreshLocalState()
-            }
+            let followCodex = CodexLifecyclePolicy.followsCodex(from: config)
+            self?.statusItem.isVisible = CodexLifecyclePolicy.visibilityAfterCodexTermination(followCodex: followCodex)
+            self?.refreshLocalState()
         }
     }
 
@@ -373,5 +373,5 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if FileManager.default.fileExists(atPath: AppRuntime.lastActionLogPath) { NSWorkspace.shared.open(URL(fileURLWithPath: AppRuntime.lastActionLogPath)) }
         else { openControlCenter(.overview) }
     }
-    @objc private func quit() { NSApplication.shared.terminate(nil) }
+    @objc private func hideUntilCodexOpens() { statusItem.isVisible = false }
 }

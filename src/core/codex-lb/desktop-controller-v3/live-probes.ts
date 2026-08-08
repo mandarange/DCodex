@@ -19,6 +19,29 @@ import { validateCapabilityDeepEvidenceV2 } from '../trusted-deep-evidence.js';
 import { bridgeClientUrl, providerCode, safeCode, timeoutMs, unique } from './shared.js';
 import type { ControllerCore, DesktopBridgeControllerV3Options, ProbeContext } from './types.js';
 
+// The Codex Desktop ingress answers /responses as an SSE stream even for
+// non-streaming probes. A stream is proof only when it terminates with
+// response.completed; response.failed or error events refute it.
+export function textResponsePayloadValid(contentType: string | null, text: string): boolean {
+  if (/text\/event-stream/i.test(contentType || '')) {
+    let completed = false;
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === '[DONE]') continue;
+      let event: unknown;
+      try { event = JSON.parse(data); } catch { continue; }
+      const type = event && typeof event === 'object' ? (event as { type?: unknown }).type : null;
+      if (type === 'response.failed' || type === 'error') return false;
+      if (type === 'response.completed') completed = true;
+    }
+    return completed;
+  }
+  let payload: unknown = null;
+  try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
+  return payload !== null && typeof payload === 'object';
+}
+
 export async function probeProviderText(
   core: ControllerCore,
   providerId: BridgeProviderId,
@@ -89,9 +112,7 @@ export async function probeProviderText(
     });
     const text = await response.text();
     if (Buffer.byteLength(text) > 4 * 1024 * 1024) throw new Error('provider_text_response_too_large');
-    let payload: unknown = null;
-    try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
-    const valid = response.ok && payload !== null && typeof payload === 'object';
+    const valid = response.ok && textResponsePayloadValid(response.headers.get('content-type'), text);
     const root = valid ? null : `${providerCode(providerId)}_text_response_failed`;
     return capabilityProbeResultV3({
       ...context,

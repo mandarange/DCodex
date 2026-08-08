@@ -153,8 +153,18 @@ final class SKSKeychainStore {
         return SKSKeychainReadResult(state: .available, secret: data)
     }
 
+    /// Status checks query item attributes only. The classic Keychain ACL
+    /// password dialog protects item *data*, not attributes, and it is NOT
+    /// suppressed by LAContext.interactionNotAllowed — so a status check that
+    /// requested kSecReturnData would beach-ball the app behind a system
+    /// password prompt whenever a rebuilt/resigned binary no longer matches
+    /// the stored item's ACL. Attributes-only presence can never prompt.
     func statusNonInteractive(_ credential: SKSKeychainCredential) -> SKSKeychainCredentialState {
-        readNonInteractive(credential).state
+        let result = client.copyMatching(statusQuery(for: credential))
+        guard result.status == errSecSuccess else {
+            return state(for: result.status)
+        }
+        return .available
     }
 
     /// Writing is permitted only after an explicit Center action. Callers cannot
@@ -299,6 +309,16 @@ final class SKSKeychainStore {
             kSecAttrAccount as String: account,
             kSecAttrSynchronizable as String: false
         ]
+    }
+
+    private func statusQuery(for credential: SKSKeychainCredential) -> [String: Any] {
+        var query = identityQuery(for: credential)
+        let authenticationContext = LAContext()
+        authenticationContext.interactionNotAllowed = true
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        query[kSecUseAuthenticationContext as String] = authenticationContext
+        return query
     }
 
     private func readQuery(for credential: SKSKeychainCredential) -> [String: Any] {

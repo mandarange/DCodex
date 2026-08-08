@@ -139,6 +139,11 @@ test('SKS Center recovery contract has no automatic authentication UI path', asy
   assert.match(store, /authenticationContext\.interactionNotAllowed = true/)
   assert.match(store, /guard explicitUserAction else/)
   assert.doesNotMatch(store, /kSecUseAuthenticationUIFail/)
+  // The classic Keychain ACL password prompt protects item data and ignores
+  // interactionNotAllowed, so background status checks must stay attributes-only.
+  assert.match(store, /func statusQuery\(for credential: SKSKeychainCredential\)/)
+  assert.match(store, /statusQuery[\s\S]{0,400}kSecReturnAttributes/)
+  assert.doesNotMatch(store.slice(store.indexOf('func statusQuery'), store.indexOf('func readQuery')), /kSecReturnData/)
   assert.match(providers, /refreshCredentialHealth\(\)/)
   assert.match(providers, /no authentication UI was opened automatically/)
   assert.match(providers, /Reconnect Codex LB credential…/)

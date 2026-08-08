@@ -46,7 +46,8 @@ export async function ensureDesktopBridge(
   let report: DesktopCapabilityReportV3 | null = null;
   if (service.running) report = await verifyDesktopBridgeV3('shallow', options);
   const status = await desktopBridgeStatusV3(options);
-  return commandResult(operation, true, status, { service, catalog_sync: sync, capabilities: report }, [], options);
+  const outcome = desktopBridgeServiceCommandOutcome(service);
+  return commandResult(operation, outcome.ok, status, { service, catalog_sync: sync, capabilities: report }, outcome.blockers, options);
 }
 
 export async function repairDesktopBridge(
@@ -64,7 +65,19 @@ export async function repairDesktopBridge(
   core = await loadCore(options);
   const report = service.running ? await verifyDesktopBridgeV3('shallow', options) : null;
   const status = await desktopBridgeStatusV3(options);
-  return commandResult('repair', true, status, { service, capabilities: report }, [], options);
+  const outcome = desktopBridgeServiceCommandOutcome(service);
+  return commandResult('repair', outcome.ok, status, { service, capabilities: report }, outcome.blockers, options);
+}
+
+export function desktopBridgeServiceCommandOutcome(
+  service: Pick<DesktopBridgeServiceStatus, 'ok' | 'running' | 'blockers'>
+): { ok: boolean; blockers: string[] } {
+  const blockers = [...new Set(stringArray(service.blockers))];
+  const ok = service.ok && service.running && blockers.length === 0;
+  return {
+    ok,
+    blockers: ok ? [] : blockers.length > 0 ? blockers : ['desktop_bridge_service_not_running']
+  };
 }
 
 export async function setDefaultProvider(

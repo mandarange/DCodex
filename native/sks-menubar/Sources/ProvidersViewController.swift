@@ -29,6 +29,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     let capabilityStatus = NativeView.detail("Capabilities have not been verified.")
     let capabilityLastCheckedStatus = NativeView.detail("Last feature check: never")
     let capabilityStack = NSStackView()
+    var capabilityFilterButton: NSButton!
     let routeModelField: NSTextField = {
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
         field.placeholderString = "Select or enter an exact catalog model"
@@ -55,6 +56,7 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     var lastStatusCheckedAt: Date?
     var lastStatusCorrelationId: String?
     var providerEnabled = ["codex-lb": false, "openrouter": false]
+    var showAllCapabilities = false
 
     init(processClient: ProcessClient, operations: OperationCoordinator) {
         self.processClient = processClient; self.operations = operations
@@ -103,7 +105,9 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     }
 
     private func makeCapabilityMatrixCard() -> NSBox {
-        let card = NativeView.card(title: "Capability Matrix", subtitle: "Each row keeps its own scope, route, OAuth requirement, stage, root cause, and allowlisted recovery. Deep-only work not run is not a failure.", views: [capabilityStatus, capabilityLastCheckedStatus, capabilityStack])
+        capabilityFilterButton = NativeView.button("Show All Capabilities", target: self, action: #selector(toggleCapabilityFilter))
+        capabilityFilterButton.setAccessibilityIdentifier("sks-provider-capability-filter")
+        let card = NativeView.card(title: "Capability Matrix", subtitle: "Issues are shown first. Expand the verified and not-attempted rows only when you need the full diagnostic trace.", views: [capabilityStatus, capabilityLastCheckedStatus, ControlKit.actionRow([capabilityFilterButton]), capabilityStack])
         card.setAccessibilityIdentifier("sks-provider-card-capability-matrix")
         return card
     }
@@ -118,17 +122,6 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         if value { providerActionInFlight.insert(providerId) } else { providerActionInFlight.remove(providerId) }
         providerButtons[providerId]?.forEach { $0.isEnabled = !value }
         if providerActionInFlight.isEmpty { globalSpinner.stopAnimation(nil) } else { globalSpinner.startAnimation(nil) }
-    }
-
-    private func run(_ args: [String], title: String, kind: String, group: String?, timeout: TimeInterval = NativeView.mutationTimeout, completion: (() -> Void)? = nil) {
-        guard let snapshot = operations.begin(kind: kind, mutationGroup: group, summary: title) else { providerStatus.stringValue = "Another guarded mutation is running."; return }
-        setBusy(true)
-        _ = operations.update(snapshot, state: .running, stage: "running", progress: nil, summary: title)
-        processClient.run(args, timeout: timeout) { [weak self] result in
-            guard let self = self else { return }; self.setBusy(false)
-            _ = self.operations.update(snapshot, state: result.code == 0 ? .succeeded : .failed, stage: "complete", progress: 1, summary: result.code == 0 ? "\(title) completed" : "\(title) failed")
-            completion?()
-        }
     }
 
     func refresh() {
@@ -234,7 +227,9 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     private func renderCapabilityReport(_ report: DesktopCapabilityReportV3) {
         lastCapabilityReport = report
         capabilityStack.arrangedSubviews.forEach { capabilityStack.removeArrangedSubview($0); $0.removeFromSuperview() }
-        for row in CapabilityDisplayRow.rows(from: report) {
+        let allRows = CapabilityDisplayRow.rows(from: report)
+        let visibleRows = CapabilityDisplayFilter.rows(allRows, showAll: showAllCapabilities)
+        for row in visibleRows {
             let cause = row.rootCause.map { " · root cause \(ProviderSecretRedactor.redact($0))" } ?? ""
             let recoveryAction = row.recoveryAction.flatMap(ProviderRecoveryAction.init(rawValue:))
             let recovery = recoveryAction.map { " · recovery \($0.buttonTitle)" } ?? ""
@@ -250,8 +245,14 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
                 capabilityStack.addArrangedSubview(value)
             }
         }
+        if visibleRows.isEmpty {
+            capabilityStack.addArrangedSubview(NativeView.detail("No capability issues in this report. Show all capabilities to inspect the complete trace."))
+        }
+        capabilityFilterButton.title = showAllCapabilities ? "Show Issues Only" : "Show All Capabilities"
+        capabilityFilterButton.setAccessibilityLabel(capabilityFilterButton.title)
+        let issueCount = CapabilityDisplayFilter.issueCount(allRows)
         let satisfied = report.summary.levelSatisfied
-        capabilityStatus.stringValue = "\(report.requestedLevel.capitalized) diagnostic completed · readiness \(satisfied ? "satisfied" : "needs action") · full deep \(report.summary.fullFeatureVerified ? "verified" : "not verified")"
+        capabilityStatus.stringValue = "\(report.requestedLevel.capitalized) diagnostic completed · \(issueCount) issue\(issueCount == 1 ? "" : "s") · readiness \(satisfied ? "satisfied" : "needs action") · full deep \(report.summary.fullFeatureVerified ? "verified" : "not verified")"
         capabilityStatus.textColor = satisfied ? .systemGreen : .systemOrange
         capabilityLastCheckedStatus.stringValue = "Last feature check: \(report.checkedAt) · report \(report.reportId)"
         renderCatalogStatus(report.catalogSync)
@@ -261,7 +262,40 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         ProviderStatusColor.forState(state.rawValue)
     }
 
-    @objc private func repairDesktopBridge() { run(["bridge", "repair", "--json"], title: "Repair Desktop Bridge", kind: "bridge-repair", group: "codex-config") { [weak self] in self?.refresh() } }
+    @objc private func toggleCapabilityFilter() {
+        showAllCapabilities.toggle()
+        if let report = lastCapabilityReport { renderCapabilityReport(report) }
+    }
+
+    @objc private func repairDesktopBridge() {
+        guard let snapshot = operations.begin(kind: "bridge-repair", mutationGroup: "codex-config", summary: "Repair Desktop Bridge") else {
+            providerStatus.stringValue = "Another guarded mutation is running."
+            return
+        }
+        setBusy(true)
+        providerStatus.stringValue = "Desktop Bridge repair running…"
+        _ = operations.update(snapshot, state: .running, stage: "repairing", progress: nil, summary: "Repair Desktop Bridge")
+        processClient.run(["bridge", "repair", "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
+            guard let self = self else { return }
+            self.setBusy(false)
+            let parsed = self.json(result.output)
+            let truth = parsed.flatMap {
+                try? DesktopBridgeCommandResultTruth.decode(from: $0, expectedOperation: "repair")
+            }
+            let nativeError = parsed.flatMap { row -> String? in
+                row["schema"] as? String == "sks.native-process-error.v1" ? row["error"] as? String : nil
+            }
+            let completed = result.code == 0 && truth?.completed == true
+            let blocker = (truth?.blockers.first ?? nativeError).map(ProviderSecretRedactor.redact)
+            let summary = completed
+                ? "Repair Desktop Bridge completed"
+                : blocker.map { "Repair Desktop Bridge needs action · \($0)" } ?? "Repair Desktop Bridge result schema invalid"
+            _ = self.operations.update(snapshot, state: completed ? .succeeded : .failed, stage: "complete", progress: 1, summary: summary)
+            self.providerStatus.stringValue = summary
+            self.providerStatus.textColor = completed ? .systemGreen : .systemRed
+            self.refresh()
+        }
+    }
 
     @objc private func performRecoveryAction(_ sender: NSButton) {
         let prefix = "sks-provider-recovery-"

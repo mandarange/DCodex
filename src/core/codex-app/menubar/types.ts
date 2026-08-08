@@ -42,9 +42,9 @@ export interface SksMenuBarTargetCheck {
 }
 
 export interface SksMenuBarConfig {
-  schema: 'sks.sks-menubar-config.v1';
+  schema: 'sks.sks-menubar-config.v2';
   codex_bundle_id: string | null;
-  quit_with_codex: boolean;
+  follow_codex_lifecycle: boolean;
 }
 
 export interface SksMenuBarInstallOptions {

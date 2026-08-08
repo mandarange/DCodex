@@ -16,7 +16,9 @@ final class ProcessClient {
     private let actionScript: String
     private let logPath: String
     private let projectRoot: String
-    private let outputLimit = 64 * 1024
+    // Bridge status/repair JSON scales with the combined catalog (395+ models
+    // ≈ 120KB today); 64KB truncated every routing-aware command result.
+    private let outputLimit = 1024 * 1024
     private let processIdentityGuard: ProcessIdentityGuard
     private let ownedProcessRegistry: OwnedProcessRegistry
 

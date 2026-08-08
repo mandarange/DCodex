@@ -9,20 +9,20 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
     }
 
     private let notifications: NotificationCoordinator
-    private let quitWithCodex = NSButton(checkboxWithTitle: "Quit SKS Menu when Codex quits", target: nil, action: nil)
+    private let followCodexLifecycle = NSButton(checkboxWithTitle: "Show SKS Menu only while Codex is running", target: nil, action: nil)
     private let status = NativeView.detail("Settings use the native app configuration file.")
     private var notificationButton: NSButton!
     init(notifications: NotificationCoordinator) { self.notifications = notifications; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { nil }
 
     override func loadView() {
-        quitWithCodex.target = self; quitWithCodex.action = #selector(save)
-        quitWithCodex.setAccessibilityLabel("Quit SKS Menu when Codex quits")
+        followCodexLifecycle.target = self; followCodexLifecycle.action = #selector(save)
+        followCodexLifecycle.setAccessibilityLabel("Show SKS Menu only while Codex is running")
         notificationButton = NativeView.button("Enable Notifications", target: self, action: #selector(enableNotifications))
         let lifecycleCard = NativeView.card(
             title: "Codex lifecycle",
-            subtitle: "Off keeps the menu icon available on cold start and hides it only after a Codex session ends.",
-            views: [quitWithCodex]
+            subtitle: "On keeps a lightweight observer running, hides the icon when Codex is closed, and shows it automatically when Codex opens.",
+            views: [followCodexLifecycle]
         )
         let notificationsCard = NativeView.card(
             title: "Notifications",
@@ -39,13 +39,13 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
         let configResult = readConfig()
         switch configResult {
         case .loaded(let config):
-            quitWithCodex.isEnabled = true
-            quitWithCodex.state = config["quit_with_codex"] as? Bool == true ? .on : .off
+            followCodexLifecycle.isEnabled = true
+            followCodexLifecycle.state = CodexLifecyclePolicy.followsCodex(from: config) ? .on : .off
         case .missing:
-            quitWithCodex.isEnabled = true
-            quitWithCodex.state = .off
+            followCodexLifecycle.isEnabled = true
+            followCodexLifecycle.state = .off
         case .unreadable, .malformed:
-            quitWithCodex.isEnabled = false
+            followCodexLifecycle.isEnabled = false
         }
         if notifications.authorizationDenied {
             notificationButton.title = "Open Notification Settings…"
@@ -89,17 +89,18 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
         case .missing:
             config = [:]
         case .unreadable:
-            quitWithCodex.isEnabled = false
+            followCodexLifecycle.isEnabled = false
             status.stringValue = "Settings were not saved because the existing file cannot be read. No file was overwritten."
             return
         case .malformed:
-            quitWithCodex.isEnabled = false
+            followCodexLifecycle.isEnabled = false
             status.stringValue = "Settings were not saved because the existing file is malformed. No file was overwritten."
             return
         }
-        config["schema"] = "sks.sks-menubar-config.v1"
+        config["schema"] = "sks.sks-menubar-config.v2"
         config["codex_bundle_id"] = AppRuntime.codexBundleId as Any
-        config["quit_with_codex"] = quitWithCodex.state == .on
+        config["follow_codex_lifecycle"] = followCodexLifecycle.state == .on
+        config.removeValue(forKey: "quit_with_codex")
         guard JSONSerialization.isValidJSONObject(config), let data = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted]) else {
             status.stringValue = "Settings could not be encoded."
             return
@@ -116,9 +117,9 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
                 try FileManager.default.moveItem(at: temporary, to: target)
             }
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
-            status.stringValue = quitWithCodex.state == .on
-                ? "Saved. SKS Menu will quit when Codex quits."
-                : "Saved. SKS Menu stays available on cold start; after a Codex session ends it hides until Codex returns."
+            status.stringValue = followCodexLifecycle.state == .on
+                ? "Saved. The observer stays running; the icon follows Codex without quitting."
+                : "Saved. SKS Menu stays visible whether Codex is open or closed."
         } catch {
             try? FileManager.default.removeItem(at: temporary)
             status.stringValue = "Settings could not be saved. Confirm \(directory.path) is writable."

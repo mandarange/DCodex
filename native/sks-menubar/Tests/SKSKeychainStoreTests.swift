@@ -54,6 +54,11 @@ final class SKSKeychainStoreTests: XCTestCase {
         for query in fake.copyQueries {
             let context = query[kSecUseAuthenticationContext as String] as? LAContext
             XCTAssertEqual(context?.interactionNotAllowed, true)
+            XCTAssertNil(
+                query[kSecReturnData as String],
+                "status checks must never request protected item data: the classic Keychain ACL prompt is not suppressed by interactionNotAllowed"
+            )
+            XCTAssertEqual(query[kSecReturnAttributes as String] as? Bool, true)
         }
     }
 

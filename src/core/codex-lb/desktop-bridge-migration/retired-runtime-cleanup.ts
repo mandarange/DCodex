@@ -3,13 +3,26 @@ import path from 'node:path';
 import { runProcess } from '../../fsx.js';
 
 const RETIRED_LAUNCHD_LABEL = 'com.sneakoscope.codex-lb-desktop-bridge';
-const RETIRED_SETTINGS_SCHEMA = 'sks.codex-lb-desktop-bridge-settings.v2';
-const RETIRED_STATE_SCHEMA = 'sks.codex-lb-desktop-bridge.v2';
-const SETTINGS_KEYS = new Set([
+const RETIRED_SETTINGS_V1_SCHEMA = 'sks.codex-lb-desktop-bridge-settings.v1';
+const RETIRED_SETTINGS_V2_SCHEMA = 'sks.codex-lb-desktop-bridge-settings.v2';
+const RETIRED_STATE_SCHEMAS = new Set([
+  'sks.codex-lb-desktop-bridge.v1',
+  'sks.codex-lb-desktop-bridge.v2',
+]);
+const SETTINGS_V1_KEYS = new Set([
+  'schema', 'listen_host', 'listen_port', 'provider_mode', 'allowed_models',
+  'gateway_auth_transport', 'allowed_origins', 'connect_timeout_ms',
+  'idle_timeout_ms', 'catalog_version', 'registered_child_models',
+  'session_pins', 'require_session_pin',
+]);
+const SETTINGS_V2_KEYS = new Set([
   'schema', 'listen_host', 'listen_port', 'provider_registry', 'route_policy',
   'provider_session_pins', 'client_capability_sha256', 'allowed_origins',
   'connect_timeout_ms', 'idle_timeout_ms',
 ]);
+const TRANSFERABLE_V1_KEYS = [
+  'listen_host', 'listen_port', 'allowed_origins', 'connect_timeout_ms', 'idle_timeout_ms',
+] as const;
 
 interface RetiredRuntimePaths {
   settings: string;
@@ -61,14 +74,37 @@ async function readRetiredSettings(file: string): Promise<Record<string, unknown
     throw new Error('desktop_bridge_retired_settings_invalid');
   }
   const row = value as Record<string, unknown>;
-  if (row.schema !== RETIRED_SETTINGS_SCHEMA || Object.keys(row).some((key) => !SETTINGS_KEYS.has(key))) {
+  const allowedKeys = row.schema === RETIRED_SETTINGS_V1_SCHEMA
+    ? SETTINGS_V1_KEYS
+    : row.schema === RETIRED_SETTINGS_V2_SCHEMA
+      ? SETTINGS_V2_KEYS
+      : null;
+  if (!allowedKeys || Object.keys(row).some((key) => !allowedKeys.has(key))) {
     throw new Error('desktop_bridge_retired_settings_invalid');
   }
-  if (/"(?:api_?key|secret|authorization|cookie|access_token|refresh_token)"\s*:/i.test(JSON.stringify(row))) {
+  if (/"(?:api_?key|secret|authorization|cookie|access_token|refresh_token|gatewayKey)"\s*:/i.test(JSON.stringify(row))) {
     throw new Error('desktop_bridge_retired_settings_secret_forbidden');
   }
   const { schema: _schema, ...settings } = row;
-  return settings;
+  if (row.schema === RETIRED_SETTINGS_V2_SCHEMA) return settings;
+  validateTransferableSettings(settings);
+  return Object.fromEntries(TRANSFERABLE_V1_KEYS.map((key) => [key, settings[key]]));
+}
+
+function validateTransferableSettings(settings: Record<string, unknown>): void {
+  const host = settings.listen_host;
+  const port = Number(settings.listen_port);
+  const origins = settings.allowed_origins;
+  const connectTimeout = Number(settings.connect_timeout_ms);
+  const idleTimeout = Number(settings.idle_timeout_ms);
+  if ((host !== '127.0.0.1' && host !== '::1')
+    || !Number.isInteger(port) || port < 49_152 || port > 65_535
+    || !Array.isArray(origins) || origins.length === 0
+    || origins.some((origin) => typeof origin !== 'string' || !origin.trim())
+    || !Number.isFinite(connectTimeout) || connectTimeout < 100 || connectTimeout > 120_000
+    || !Number.isFinite(idleTimeout) || idleTimeout < 1_000 || idleTimeout > 86_400_000) {
+    throw new Error('desktop_bridge_retired_settings_invalid');
+  }
 }
 
 function launchDomain(uid = typeof process.getuid === 'function' ? process.getuid() : 0): string {
@@ -108,11 +144,15 @@ export async function cleanupRetiredDesktopBridgeRuntime(
   if (!preparation.present) return;
   if (await regularFileExists(preparation.paths.settings)) {
     const raw = JSON.parse(await fsp.readFile(preparation.paths.settings, 'utf8')) as Record<string, unknown>;
-    if (raw.schema !== RETIRED_SETTINGS_SCHEMA) throw new Error('desktop_bridge_retired_settings_changed');
+    if (raw.schema !== RETIRED_SETTINGS_V1_SCHEMA && raw.schema !== RETIRED_SETTINGS_V2_SCHEMA) {
+      throw new Error('desktop_bridge_retired_settings_changed');
+    }
   }
   if (await regularFileExists(preparation.paths.state)) {
     const raw = JSON.parse(await fsp.readFile(preparation.paths.state, 'utf8')) as Record<string, unknown>;
-    if (raw.schema !== RETIRED_STATE_SCHEMA) throw new Error('desktop_bridge_retired_state_changed');
+    if (!RETIRED_STATE_SCHEMAS.has(String(raw.schema || ''))) {
+      throw new Error('desktop_bridge_retired_state_changed');
+    }
   }
   for (const file of Object.values(preparation.paths)) {
     if (await regularFileExists(file)) await fsp.unlink(file);

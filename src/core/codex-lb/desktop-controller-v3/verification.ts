@@ -50,6 +50,15 @@ export async function verifyDesktopBridgeV3(
     sessionId,
     attemptId: 1
   } as const;
+  const activeProviders = activeProviderIds(core);
+  const enabledProviders = (['codex-lb', 'openrouter'] as const)
+    .filter((providerId) => core.registry.profiles[providerId].enabled);
+  // Live text probes run first: they exercise the exact model route through
+  // the bridge, so their verified results are the transport-level route proof.
+  const textResults = requestedLevel !== 'shallow'
+    ? await Promise.all(activeProviders.map((providerId) =>
+      probeProviderText(core, providerId, status.service.loopback_origin, probeContext, options)))
+    : [];
   const results: CapabilityProbeResultV3[] = [
     ...runBridgeProbeV3({
       ...probeContext,
@@ -60,23 +69,17 @@ export async function verifyDesktopBridgeV3(
     }),
     nativeIdentityProbe(core, probeContext),
     combinedRoutePolicyProbe(core, probeContext),
-    combinedModelRouteProbe(core, status, probeContext)
+    combinedModelRouteProbe(core, status, probeContext, textResults)
   ];
-  const activeProviders = activeProviderIds(core);
-  const enabledProviders = (['codex-lb', 'openrouter'] as const)
-    .filter((providerId) => core.registry.profiles[providerId].enabled);
   for (const providerId of ['codex-lb', 'openrouter'] as const) {
+    const liveText = textResults.find((result) => result.scope === `provider:${providerId}`) || null;
     results.push(
       providerCredentialProbe(core, providerId, probeContext),
       providerAuthProbe(core, providerId, probeContext),
-      providerModelRouteProbe(core, providerId, probeContext)
+      providerModelRouteProbe(core, providerId, probeContext, liveText)
     );
   }
-  if (requestedLevel !== 'shallow') {
-    const textResults = await Promise.all(activeProviders.map((providerId) =>
-      probeProviderText(core, providerId, status.service.loopback_origin, probeContext, options)));
-    results.push(...textResults);
-  }
+  results.push(...textResults);
   if (requestedLevel === 'deep') {
     const deepResults = await Promise.all(activeProviders.map((providerId) =>
       probeProviderDeep(core, providerId, probeContext, options)));

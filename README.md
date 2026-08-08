@@ -22,13 +22,13 @@ Proof-first orchestration for Codex CLI, ChatGPT Desktop, AI coding agents, mult
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-This README documents package **SKS 8.3.0** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
+This README documents package **SKS 8.3.1** — its own identity, read from `package.json` and subject to release-gate verification, not advice about what to install.
 
 Use the official latest stable SKS and Codex CLI releases. The Codex compatibility SSOT is always the **current latest stable** host; capability probes measure what that host can actually do. Product docs do not crown a fixed `0.x.y` string as SSOT (release pins and schema directories are measured artifacts for the current package, not a permanent product version claim). Menu Bar / Center induce updates to the latest stable build. Run `sks update-check` for what is installed and read the capability report for what is supported. Install SSOT is npm `sneakoscope@latest`; PATH `sks` and Menu Bar stamped generation must match that version or gates fail. It resolves managed SKS skills from the authoritative global install, preserves a runnable Naruto child slot when `max_threads=2`, and keeps Menu Bar repair transactional so stamped generations remain verifiable. Naruto uses stable opt-in multi-agent V2 when the host exposes it (Codex official multi-agent wrap-only; SKS does not reimplement a parallel runtime). Local code search is mode-separated (`sks search files|text|structure|symbol|context`); `context` is answered by the compiled TriWiki Context Graph (`context-graph.json` is exhaustive authority; `context-pack.json` and managed `AGENTS.md` are bounded projections) — see [docs/architecture/context-graph.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/architecture/context-graph.md) and [docs/PRODUCT-CONTRACT.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/docs/PRODUCT-CONTRACT.md). See [CHANGELOG.md](https://github.com/mandarange/Sneakoscope-Codex/blob/main/CHANGELOG.md).
 
-## What 8.2.0 Ships
+## What 8.3.1 Ships
 
-| Problem | 8.2.0 behavior |
+| Problem | 8.3.1 behavior |
 | --- | --- |
 | Overview mixed Menu Bar, installed SKS, and cached registry versions | Each value is labeled by authority, stale or unavailable probes remain explicit, and Refresh forces a bounded update-status refresh. |
 | Naruto stopped creating children after its first wave | The root parent records settled waves, recovers open-thread capacity, rescans the ready DAG, and can launch later direct-child waves under the same workflow run. |
@@ -39,6 +39,8 @@ Use the official latest stable SKS and Codex CLI releases. The Codex compatibili
 | Codex routing was split across legacy provider paths | One local Desktop Bridge is the managed routing runtime; Codex-LB and OpenRouter are simultaneous credential profiles. |
 | Requests could be coupled to a provider mode or weak model heuristic | The combined catalog's explicit route index resolves provider/model pairs with `fallback: none`; missing or ambiguous routes block. |
 | Transport verification was confused with deep evidence | Capability v3 records scope, stage, requested level, execution, and readiness separately; unattempted deep work is not a transport failure. |
+| The Menu Bar could terminate with Codex and miss the next Codex launch | A launchd-resident observer remains alive, follows Codex visibility without terminating, and migrates the legacy quit preference. |
+| A partial Provider repair could look successful because the CLI exited zero | The Center validates the structured command status, records partial repair as needing action, and shows capability issues before verified diagnostic rows. |
 
 ## Install In One Command
 

@@ -2,6 +2,71 @@
 
 ## [Unreleased]
 
+## [8.3.1] - 2026-08-07
+
+### Fixed
+
+- Complete retired `codex-lb` desktop-bridge v1 migration on live machines:
+  launchd bootstrap now waits for the previous service instance to be fully
+  removed and retries, so a transient bootstrap race can no longer fail the
+  repair and strand v1 settings/state/plist files that are deleted only after
+  the unified v2 service verifies as running.
+- Write every combined bridge catalog row as a full Codex ModelInfo superset
+  (`slug`, `supported_reasoning_levels`, `shell_type`, `visibility`,
+  `priority`, `base_instructions`, `supports_reasoning_summary_parameter`,
+  `support_verbosity`, `truncation_policy`, `supports_parallel_tool_calls`,
+  `experimental_supported_tools`), preserving upstream gateway values when
+  present. Codex CLI 0.147 rejected the previous rows
+  (`missing field 'slug'`), which broke `codex features list` and every
+  Desktop feature detection that reads `model_catalog_json`.
+- Accept the Codex ingress SSE stream as live text-response proof: the
+  transport probe now validates a completed `response.completed` event stream
+  instead of rejecting every streaming provider response as failed.
+- Bind provider and combined `model_route` verification to the live text
+  probe that actually exercised the route, so transport-level readiness can be
+  satisfied by real traffic instead of being permanently `not_attempted`.
+- Query Keychain credential health with attributes-only lookups in SKS
+  Center. The classic Keychain ACL password dialog protects item data and is
+  not suppressed by non-interactive LAContext flags, so the previous
+  data-returning status check froze the app behind a system password prompt
+  after any rebuild changed the code signature.
+- Recognize the CLI's `ok`, `execution_ok`, and `command_summary` envelope
+  fields in both SKS Center strict validators (status truth and repair
+  receipt); the status decoder had rejected every live `bridge status` since
+  those fields were added, leaving Provider rows permanently "checking".
+  Native process errors (for example `native_process_timeout`) now surface
+  instead of reporting every non-receipt result as a schema failure.
+- Raise the SKS Center process output limit from 64KB to 1MB: combined-catalog
+  aware bridge results exceed 64KB, so every routing-aware command was
+  truncated into a `native_process_output_limit` failure.
+- Warn (`sks_entry_macos_protected_folder`) when the resolved SKS entry lives
+  under Desktop, Documents, or Downloads: a launchd-spawned Menu Bar has no
+  macOS files-and-folders grant there, and every spawned CLI call would block
+  in the module loader until its timeout. The Desktop Bridge service reports
+  the matching `desktop_bridge_entry_macos_protected_folder` blocker when its
+  launchd entry is affected, and bridge startup now waits up to 15 seconds for
+  the slow-cold-start service state instead of booting a healthy service back
+  out after 4 seconds.
+- Keep a launchd-resident SKS Menu Bar observer alive across Codex shutdowns,
+  migrate the legacy quit preference to non-terminating lifecycle-follow mode,
+  and make the menu icon reappear on the next Codex launch.
+- Accept an omitted top-level `model_provider` as Codex's native OpenAI default
+  when validated SKS desktop-bridge markers are present, instead of blocking
+  Desktop Bridge migration with a false selection mismatch.
+- Validate the structured Desktop Bridge repair receipt in SKS Center so an
+  exit-code-zero `partial` result is recorded as needing action rather than as
+  a successful repair.
+- Exclude the hosting Codex Desktop app (`com.openai.codex`) from Computer Use
+  targets and route Codex-linked QA through structured host evidence plus the
+  external native app under test.
+
+### Changed
+
+- Show actionable capability rows first in Provider settings, with an explicit
+  control for expanding the complete verified/not-attempted diagnostic matrix.
+- Replace the terminal `Quit SKS Menu` action with `Hide Until Codex Opens`, so
+  an intentional hide cannot disable the next-launch observer.
+
 ## [8.3.0] - 2026-08-07
 
 ### Added

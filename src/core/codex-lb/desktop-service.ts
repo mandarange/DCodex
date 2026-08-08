@@ -354,12 +354,19 @@ export async function installAndStartDesktopBridgeService(options: DesktopBridge
   await writeDesktopBridgeLaunchdPlist(paths.launch_agent_path, { executablePath: command.executable, arguments: [...command.arguments, 'bridge', 'serve', '--settings', paths.settings_path, '--json'], stdoutPath: paths.stdout_log_path, stderrPath: paths.stderr_log_path });
   const run = options.run || runProcess; const ctl = options.launchctl || '/bin/launchctl'; const service = launchService(options.uid); const domain = launchDomain(options.uid);
   await run(ctl, ['bootout', service], { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => undefined); await removeStaleState(paths.state_path, options.processExists);
-  const bootstrap = await run(ctl, ['bootstrap', domain, paths.launch_agent_path], { timeoutMs: 10_000, maxOutputBytes: 32 * 1024 }).catch((error) => failedProcess(error));
+  const bootstrap = await bootstrapLaunchdWithRetry(options, domain, service, paths.launch_agent_path);
   if (bootstrap.code !== 0 && !bootstrap.timedOut) return failedStatus(paths, settings, service, 'missing', 'desktop_bridge_launchd_bootstrap_failed');
   await run(ctl, ['kickstart', '-k', service], { timeoutMs: 10_000, maxOutputBytes: 32 * 1024 }).catch(() => undefined);
   const status = await waitForBridge({ ...options, home });
   if (!status.ok) {
     await run(ctl, ['bootout', service], { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => undefined);
+    // A launchd agent has no macOS files-and-folders grant, so an entry under
+    // Desktop/Documents/Downloads blocks node's module loader inside open(2)
+    // and the service never writes its state. Name that condition instead of
+    // leaving only desktop_bridge_state_missing.
+    if (await launchTargetsProtectedFolder([command.executable, ...command.arguments], home)) {
+      return withProtectedFolderBlocker(status);
+    }
     return status;
   }
   try {
@@ -377,9 +384,13 @@ export async function bootstrapExistingDesktopBridgeService(options: DesktopBrid
   if ((options.platform || process.platform) !== 'darwin' || !(await exists(paths.launch_agent_path)) || !(await exists(paths.settings_path))) return desktopBridgeServiceStatus({ ...options, home });
   const run = options.run || runProcess; const ctl = options.launchctl || '/bin/launchctl'; const service = launchService(options.uid);
   await run(ctl, ['bootout', service], { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => undefined);
-  const result = await run(ctl, ['bootstrap', launchDomain(options.uid), paths.launch_agent_path], { timeoutMs: 10_000, maxOutputBytes: 32 * 1024 }).catch((error) => failedProcess(error));
+  const result = await bootstrapLaunchdWithRetry(options, launchDomain(options.uid), service, paths.launch_agent_path);
   if (result.code === 0 || result.timedOut) await run(ctl, ['kickstart', '-k', service], { timeoutMs: 10_000, maxOutputBytes: 32 * 1024 }).catch(() => undefined);
-  return waitForBridge({ ...options, home });
+  const status = await waitForBridge({ ...options, home });
+  if (!status.ok && await launchAgentTargetsProtectedFolder(paths.launch_agent_path, home)) {
+    return withProtectedFolderBlocker(status);
+  }
+  return status;
 }
 
 export async function stopDesktopBridgeService(options: DesktopBridgeServiceOptions & { removePlist?: boolean; removeSettings?: boolean } = {}): Promise<DesktopBridgeServiceStatus> {
@@ -514,8 +525,46 @@ function overridePaths(base: DesktopBridgeServicePaths, options: DesktopBridgeSe
 function launchDomain(uid = typeof process.getuid === 'function' ? process.getuid() : 0): string { return `gui/${uid}`; }
 function launchService(uid?: number): string { return `${launchDomain(uid)}/${DESKTOP_BRIDGE_LAUNCHD_LABEL}`; }
 async function resolveLaunchCommand(options: DesktopBridgeServiceOptions): Promise<{ executable: string; arguments: string[] } | null> { if (options.executablePath) return await exists(path.resolve(options.executablePath)) ? { executable: path.resolve(options.executablePath), arguments: [...(options.executableArguments || [])] } : null; const entry = String(process.argv[1] || ''); if (entry && ['sks', 'sneakoscope'].includes(path.basename(entry).replace(/\.js$/i, '')) && await exists(entry)) return { executable: path.resolve(process.execPath), arguments: [path.resolve(entry)] }; const sks = await which('sks').catch(() => null); return sks ? { executable: path.resolve(sks), arguments: [] } : null; }
+function macosProtectedUserPath(target: string | undefined, home: string): boolean {
+  if (!target) return false;
+  return ['Desktop', 'Documents', 'Downloads']
+    .some((dir) => target.startsWith(`${path.resolve(home, dir)}${path.sep}`));
+}
+
+async function launchTargetsProtectedFolder(targets: readonly string[], home: string): Promise<boolean> {
+  const resolved = await Promise.all(targets.map(async (target) => {
+    try { return await fsp.realpath(target); } catch { return target; }
+  }));
+  return resolved.some((target) => macosProtectedUserPath(target, home));
+}
+
+async function launchAgentTargetsProtectedFolder(plistPath: string, home: string): Promise<boolean> {
+  let text = '';
+  try { text = await fsp.readFile(plistPath, 'utf8'); } catch { return false; }
+  const targets = [...text.matchAll(/<string>([^<]+)<\/string>/g)].map((match) => match[1] as string);
+  return launchTargetsProtectedFolder(targets, home);
+}
+
+function withProtectedFolderBlocker(status: DesktopBridgeServiceStatus): DesktopBridgeServiceStatus {
+  return { ...status, blockers: [...new Set([...status.blockers, 'desktop_bridge_entry_macos_protected_folder'])] };
+}
+
+export async function bootstrapLaunchdWithRetry(options: DesktopBridgeServiceOptions, domain: string, service: string, plistPath: string): Promise<{ code: number | null; timedOut: boolean }> {
+  const run = options.run || runProcess; const ctl = options.launchctl || '/bin/launchctl';
+  let result: { code: number | null; timedOut: boolean } = { code: 1, timedOut: false };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await run(ctl, ['bootout', service], { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => undefined);
+    for (let poll = 0; poll < 20 && (await inspectLaunchd(options, service)).loaded; poll += 1) await delay(100);
+    result = await run(ctl, ['bootstrap', domain, plistPath], { timeoutMs: 10_000, maxOutputBytes: 32 * 1024 }).catch((error) => failedProcess(error));
+    if (result.code === 0 || result.timedOut) return result;
+  }
+  return result;
+}
+
 async function inspectLaunchd(options: DesktopBridgeServiceOptions, service: string): Promise<{ loaded: boolean; running: boolean }> { if ((options.platform || process.platform) !== 'darwin') return { loaded: false, running: false }; const result = await (options.run || runProcess)(options.launchctl || '/bin/launchctl', ['print', service], { timeoutMs: 3_000, maxOutputBytes: 32 * 1024 }).catch(() => null); if (!result || result.code !== 0) return { loaded: false, running: false }; const text = `${result.stdout}\n${result.stderr}`; return { loaded: true, running: /state = running/.test(text) && /pid = \d+/.test(text) }; }
-async function waitForBridge(options: DesktopBridgeServiceOptions): Promise<DesktopBridgeServiceStatus> { let status = await desktopBridgeServiceStatus(options); for (let i = 0; i < 40 && !status.ok; i += 1) { await delay(100); status = await desktopBridgeServiceStatus(options); } return status; }
+// Node cold start for `bridge serve` can exceed several seconds on a loaded
+// machine; giving up early boots the healthy-but-slow service back out.
+async function waitForBridge(options: DesktopBridgeServiceOptions): Promise<DesktopBridgeServiceStatus> { let status = await desktopBridgeServiceStatus(options); for (let i = 0; i < 150 && !status.ok; i += 1) { await delay(100); status = await desktopBridgeServiceStatus(options); } return status; }
 async function removeStaleState(file: string, probe?: (pid: number) => boolean): Promise<void> { const state = await readDesktopBridgeState(file).catch(() => null); if (!state || !(probe || desktopBridgeProcessExists)(state.pid)) await fsp.unlink(file).catch(() => undefined); }
 async function waitForShutdown(handle: DesktopBridgeHandle): Promise<void> { await new Promise<void>((resolve) => { const done = (): void => { process.off('SIGINT', done); process.off('SIGTERM', done); resolve(); }; process.once('SIGINT', done); process.once('SIGTERM', done); handle.server.once('close', done); }); }
 function failedStatus(paths: DesktopBridgeServicePaths, settings: DesktopBridgeServiceSettings, service: string, status: DesktopBridgeServiceStatus['status'], blocker: string): DesktopBridgeServiceStatus { return { schema: DESKTOP_BRIDGE_SERVICE_SCHEMA, ok: false, supported: true, installed: false, loaded: false, running: false, status, service, paths, state: null, settings, expected_config_generation: null, credential_source: null, blockers: [blocker] }; }

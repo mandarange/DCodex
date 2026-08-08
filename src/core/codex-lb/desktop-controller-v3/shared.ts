@@ -164,7 +164,8 @@ export async function persistRuntimeSettings(
   }
   if (!restarted.ok || !restarted.running) {
     await stopAfterFailedRestart(restartOptions, options);
-    throw new Error(restarted.blockers[0] || 'desktop_bridge_restart_failed');
+    const rootCause = restarted.blockers.find((blocker) => blocker === 'desktop_bridge_entry_macos_protected_folder');
+    throw new Error(rootCause || restarted.blockers[0] || 'desktop_bridge_restart_failed');
   }
 }
 

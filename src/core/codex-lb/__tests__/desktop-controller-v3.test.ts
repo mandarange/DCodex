@@ -28,7 +28,10 @@ import {
   type DesktopBridgeServiceStatus
 } from '../desktop-service.js';
 import { activeProviderIds } from '../desktop-controller-v3/shared.js';
-import { unmanageDesktopBridge } from '../desktop-controller-v3/lifecycle-commands.js';
+import {
+  desktopBridgeServiceCommandOutcome,
+  unmanageDesktopBridge
+} from '../desktop-controller-v3/lifecycle-commands.js';
 
 async function fixture(t: test.TestContext) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-desktop-controller-v3-'));
@@ -570,6 +573,17 @@ test('ensure reports catalog readiness blockers instead of returning an empty-su
   assert.equal(result.execution.status, 'partial');
   assert.ok(result.execution.blockers.length > 0);
   assert.equal(result.readiness.ready, false);
+});
+
+test('service lifecycle failure cannot be classified as a completed repair', () => {
+  const service = stoppedService('/tmp/sks-service-outcome');
+  const outcome = desktopBridgeServiceCommandOutcome(service);
+  assert.equal(outcome.ok, false);
+  assert.deepEqual(outcome.blockers, ['desktop_bridge_state_missing']);
+
+  const missingBlocker = desktopBridgeServiceCommandOutcome({ ...service, blockers: [] });
+  assert.equal(missingBlocker.ok, false);
+  assert.deepEqual(missingBlocker.blockers, ['desktop_bridge_service_not_running']);
 });
 
 test('R39/R40/R49: deep controller path runs active-provider probes and validates trusted evidence', async (t) => {

@@ -142,6 +142,16 @@ export async function installSksMenuBar(opts: SksMenuBarInstallOptions = {}): Pr
   targetCheck = await resolveSksEntryForInstall(opts.sksEntry, paths.root);
   if (!targetCheck.exists || !targetCheck.resolved) return blocked('sks_entry_unresolved');
   if (targetCheck.project_local) warnings.push('sks_entry_project_local');
+  // A launchd-spawned Menu Bar has no macOS Desktop/Documents/Downloads TCC
+  // grant, so a CLI entry under one of those folders blocks node's module
+  // loader inside open(2) until the ProcessClient deadline — every Center
+  // action then reads as a timeout. Warn so the operator relocates the entry
+  // (global npm install) or grants Files and Folders access explicitly.
+  const macosProtectedRoots = ['Desktop', 'Documents', 'Downloads']
+    .map((dir) => `${path.join(paths.home, dir)}${path.sep}`);
+  if (targetCheck.resolved && macosProtectedRoots.some((root) => targetCheck.resolved!.startsWith(root))) {
+    warnings.push('sks_entry_macos_protected_folder');
+  }
   const previousActionScript = await readText(paths.action_script_path, '');
   const previousLaunchAgent = await readText(paths.launch_agent_path, '');
   const previousRaw = await readJson<SksMenuBarBuildStamp | SksMenuBarLegacyBuildStampV1 | null>(paths.build_stamp_path, null);
