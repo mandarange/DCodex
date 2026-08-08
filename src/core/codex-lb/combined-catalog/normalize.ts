@@ -47,9 +47,10 @@ export function normalizeProviderCatalog(input: ProviderCatalogBuildInput): Norm
     const upstreamModel = normalizeBridgeUpstreamModelId(sourceId);
     if (!publicId || !upstreamModel) return null;
     const features = row?.features && typeof row.features === 'object' ? row.features : {};
+    const reasoning = features.reasoning === true;
     const capabilities = [
       ...(features.tools === true ? ['tools'] : []),
-      ...(features.reasoning === true ? ['reasoning'] : []),
+      ...(reasoning ? ['reasoning'] : []),
       ...(features.vision === true ? ['vision'] : []),
       ...(features.audio === true ? ['audio'] : [])
     ];
@@ -62,7 +63,13 @@ export function normalizeProviderCatalog(input: ProviderCatalogBuildInput): Norm
       capabilities,
       source_catalog_generation: input.generation || 'unknown',
       route_key: `openrouter:${publicId}`,
-      ...codexModelInfoFields(publicId, null, { tools: capabilities.includes('tools') })
+      ...(reasoning ? { default_reasoning_level: OPENROUTER_DEFAULT_REASONING_LEVEL } : {}),
+      // OpenRouter never serves Codex ModelInfo, so the reasoning ladder is
+      // synthesized from its own capability flag rather than passed through.
+      ...codexModelInfoFields(publicId, {
+        supported_reasoning_levels: reasoning ? openRouterReasoningLevels() : [],
+        supports_reasoning_summary_parameter: reasoning
+      }, { tools: capabilities.includes('tools') })
     });
   }).filter(isModel);
   if (models.length === 0) blockers.push('openrouter_model_catalog_empty');
@@ -143,6 +150,13 @@ function normalizeCodexLbBridgeCatalogModels(
         ...(row.supports_audio === true || row.audio === true ? ['audio'] : [])
       ];
       models.push({
+        // The gateway already serves a complete Codex ModelInfo row (reasoning
+        // levels, service tiers, multi-agent version, tool mode, context
+        // window...). Rebuilding only the required subset silently dropped
+        // every optional field, which is what emptied the Desktop reasoning
+        // selector and hid Fast mode. Preserve the sanitized upstream row and
+        // layer SKS routing identity on top.
+        ...row,
         public_id: publicId,
         provider_id: 'codex-lb',
         upstream_model: publicId,
@@ -157,7 +171,7 @@ function normalizeCodexLbBridgeCatalogModels(
         // Authenticated gateway models outrank third-party catalog rows in the
         // Desktop picker regardless of its sort direction on ties.
         ...(typeof row.priority === 'number' ? {} : { priority: 100 })
-      });
+      } as BridgeCatalogModel);
     } catch (error) {
       blockers.push(error instanceof Error ? error.message : `codex_lb_model_catalog_row_invalid:${index}`);
     }
@@ -183,6 +197,34 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+/**
+ * Reasoning ladder for OpenRouter models that advertise the `reasoning`
+ * parameter. OpenRouter's Responses API accepts the OpenAI effort ladder and
+ * normalizes it per upstream model, so the rungs are fixed rather than derived:
+ * its `supported_parameters` listing reports only that `reasoning` is accepted,
+ * never the available granularity. A live round trip through the desktop bridge
+ * against `z-ai/glm-5.2` answered 200 for every rung, echoed the requested
+ * effort back in `response.created`, and scaled `response.reasoning_text.delta`
+ * with it (none 0, minimal 21, low 22, medium 42, xhigh 50), so the control is
+ * wired end to end and not merely accepted.
+ *
+ * The object shape and descriptions mirror what the codex-lb gateway serves so
+ * the Desktop selector renders both providers identically. Levels are cloned
+ * per row because every catalog row owns its own ModelInfo array.
+ */
+export const OPENROUTER_REASONING_LEVELS: readonly { readonly effort: string; readonly description: string }[] = [
+  { effort: 'low', description: 'Fast responses with lighter reasoning' },
+  { effort: 'medium', description: 'Balances speed and reasoning depth for everyday tasks' },
+  { effort: 'high', description: 'Greater reasoning depth for complex problems' },
+  { effort: 'xhigh', description: 'Extra high reasoning depth for complex problems' }
+];
+
+export const OPENROUTER_DEFAULT_REASONING_LEVEL = 'medium';
+
+function openRouterReasoningLevels(): Record<string, string>[] {
+  return OPENROUTER_REASONING_LEVELS.map((level) => ({ ...level }));
+}
+
 // Codex serde requires these ModelInfo fields on every catalog row. Upstream
 // values win when the source catalog carries them; otherwise use the defaults
 // the codex-lb fixture environment has proven real Codex CLI parses.
@@ -196,8 +238,13 @@ export function codexModelInfoFields(
     : row?.supports_reasoning_summaries !== false;
   return {
     slug,
+    // Codex serves reasoning levels either as plain strings or as objects
+    // carrying the level plus display metadata; both shapes pass through
+    // unchanged so the Desktop selector keeps its own rendering contract.
     supported_reasoning_levels: Array.isArray(row?.supported_reasoning_levels)
-      ? row.supported_reasoning_levels.map(String)
+      ? row.supported_reasoning_levels.map((level) => (
+        level && typeof level === 'object' ? level : String(level)
+      )) as string[]
       : [],
     shell_type: typeof row?.shell_type === 'string' && row.shell_type ? row.shell_type : 'shell_command',
     visibility: typeof row?.visibility === 'string' && row.visibility ? row.visibility : 'list',
@@ -226,6 +273,10 @@ function canonicalModel(model: BridgeCatalogModel): BridgeCatalogModel | null {
   const upstream = normalizeBridgeUpstreamModelId(model.upstream_model);
   if (!publicId || !upstream) return null;
   return {
+    // Preserve upstream Codex ModelInfo metadata; rebuilding only the required
+    // subset here is what emptied the Desktop reasoning selector and hid Fast
+    // mode for gateway models.
+    ...model,
     public_id: publicId,
     provider_id: model.provider_id,
     upstream_model: upstream,

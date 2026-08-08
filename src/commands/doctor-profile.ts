@@ -48,7 +48,7 @@ export function doctorPhaseIdsForProfile(profile: DoctorProfile): string[] {
     'command_alias_cleanup'
   ];
   if (profile === 'migration') return required;
-  const optional = ['supabase_mcp_repair', 'native_capability_repair', 'sks_menubar'];
+  const optional = ['supabase_mcp_repair', 'native_capability_repair', 'sks_menubar', 'desktop_bridge_catalog_repair'];
   if (profile === 'full' || profile === 'capabilities') return ['setup', ...required, ...optional];
   return [...required, ...optional];
 }

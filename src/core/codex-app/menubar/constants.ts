@@ -26,6 +26,7 @@ export const NATIVE_SOURCE_FILES = [
   'ProvidersReliability.swift',
   'ProvidersRoutingTruth.swift',
   'ProvidersOpenRouter.swift',
+  'ProvidersModelExposure.swift',
   'ProvidersBridgeCatalog.swift',
   'RemoteCodingViewController.swift',
   'DiagnosticsViewController.swift',

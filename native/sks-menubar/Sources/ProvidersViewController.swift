@@ -57,6 +57,14 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
     var lastStatusCorrelationId: String?
     var providerEnabled = ["codex-lb": false, "openrouter": false]
     var showAllCapabilities = false
+    let exposureStatus = NativeView.detail("Codex picker exposure has not been read yet.")
+    let exposureSearchField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+    let exposureTable = NSTableView()
+    var exposureApplyButton: NSButton!
+    var exposureRows: [ExposureModelRow] = []
+    var exposurePending: Set<String> = []
+    var exposureQuery = ""
+    var exposureMaxSelected = 64
 
     init(processClient: ProcessClient, operations: OperationCoordinator) {
         self.processClient = processClient; self.operations = operations
@@ -84,12 +92,13 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             makeDesktopBridgeCard(),
             makeProviderCredentialsCard(),
             makeCombinedCatalogCard(),
+            makeModelExposureCard(),
             makeRoutesCard(),
             makeCapabilityMatrixCard()
         ])
     }
 
-    func refreshOnAppear() { refresh() }
+    func refreshOnAppear() { refresh(); refreshModelExposure() }
 
     private func makeDesktopBridgeCard() -> NSBox {
         let repair = NativeView.button("Repair", target: self, action: #selector(repairDesktopBridge))

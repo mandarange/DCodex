@@ -32,6 +32,8 @@ export type BridgeCommandRequest =
   | { operation: 'provider.remove-credential'; provider_id: BridgeProviderId; confirmed: true }
   | { operation: 'catalog.sync' }
   | { operation: 'catalog.status' }
+  | { operation: 'models.list' }
+  | { operation: 'models.select'; public_ids: string[] }
   | { operation: 'route.list' }
   | { operation: 'route.set-default'; provider_id: BridgeProviderId }
   | { operation: 'route.explain'; model: string }
@@ -96,6 +98,8 @@ export function usage(command = 'bridge'): string {
     `       sks ${command} provider validate|enable|disable <codex-lb|openrouter> [--json]`,
     `       sks ${command} provider remove-credential <codex-lb|openrouter> --confirm [--json]`,
     `       sks ${command} catalog sync|status [--json]`,
+    `       sks ${command} models list [--json]`,
+    `       sks ${command} models select --set <public-id,...> [--json]`,
     `       sks ${command} route list [--json]`,
     `       sks ${command} route set-default <codex-lb|openrouter> [--json]`,
     `       sks ${command} route explain <model> [--json]`,
@@ -295,6 +299,23 @@ async function parseInvocation(args: string[], io: BridgeCommandIo): Promise<Par
       label: `Combined catalog ${action}`
     };
   }
+  if (area === 'models') {
+    if (action === 'list' && target === undefined) {
+      allowOnly(parsed, ['--json'], []);
+      return { ...base, request: { operation: 'models.list' }, label: 'Selectable bridge models' };
+    }
+    if (action === 'select') {
+      allowOnly(parsed, ['--json'], ['--set']);
+      // --set takes the complete OpenRouter selection; an empty value clears it.
+      const raw = parsed.values.get('--set') || '';
+      const publicIds = raw.split(',').map((id) => id.trim()).filter(Boolean);
+      return {
+        ...base,
+        request: { operation: 'models.select', public_ids: publicIds },
+        label: 'Select exposed bridge models'
+      };
+    }
+  }
   if (area === 'route') {
     if (action === 'list' && target === undefined) {
       allowOnly(parsed, ['--json'], []);
@@ -346,7 +367,7 @@ function parseArgs(args: string[]): ParsedArgs {
   const booleanOptions = new Set([
     '--json', '--strict', '--require-ready', '--api-key-stdin', '--confirm'
   ]);
-  const valueOptions = new Set(['--level', '--host', '--settings']);
+  const valueOptions = new Set(['--level', '--host', '--settings', '--set']);
   for (let index = 0; index < args.length; index += 1) {
     const value = String(args[index] || '');
     if (!value.startsWith('--')) {

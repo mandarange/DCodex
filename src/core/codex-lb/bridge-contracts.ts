@@ -232,6 +232,13 @@ export interface BridgeCatalogModel extends CodexModelInfoRequiredFields {
   capabilities: string[];
   source_catalog_generation: string;
   route_key: string;
+  /**
+   * Optional upstream Codex ModelInfo fields (service_tiers,
+   * default_reasoning_level, multi_agent_version, context_window, ...) are
+   * preserved verbatim: Codex Desktop reads them straight from
+   * model_catalog_json to build the reasoning selector and Fast mode.
+   */
+  [key: string]: unknown;
 }
 
 export interface BridgeRouteIndex {
@@ -394,6 +401,8 @@ export type DesktopBridgeCommandOperation =
   | 'provider.remove-credential'
   | 'catalog.sync'
   | 'catalog.status'
+  | 'models.list'
+  | 'models.select'
   | 'route.list'
   | 'route.set-default'
   | 'route.explain'

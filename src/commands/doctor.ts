@@ -7,7 +7,7 @@ import { ui as cliUi } from '../cli/cli-theme.js';
 import { getCodexInfo } from '../core/codex-adapter.js';
 import { rustInfo } from '../core/rust-accelerator.js';
 import { codexAppIntegrationStatus } from '../core/codex-app.js';
-import { desktopBridgeStatusV3 } from '../core/codex-lb/desktop-controller-v3.js';
+import { desktopBridgeStatusV3, executeDesktopBridgeCommandV3 } from '../core/codex-lb/desktop-controller-v3.js';
 import { inspectCodexConfigReadability } from '../core/codex/codex-config-readability.js';
 import {
   inspectOAuthCallbackPortConflict,
@@ -1023,6 +1023,40 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
               route_blockers: (doctorNativeCapabilityRepair as any)?.route_blockers || {},
               rollback_evidence: (doctorNativeCapabilityRepair as any)?.secret_preservation_guard || 'native_capability_repair_report'
             } as any)
+          },
+          {
+            id: 'desktop_bridge_catalog_repair',
+            required_for_ready: false,
+            run: async () => {
+              // Doctor previously only PRINTED "action: retry_catalog_sync" while
+              // --fix left the stale catalog in place; a stale combined catalog
+              // blocks the bridge and freezes the Desktop picker generation.
+              const base = {
+                id: 'desktop_bridge_catalog_repair',
+                required_for_ready: false,
+                manual_required: false,
+                warnings: [] as string[],
+                rollback_evidence: 'combined_catalog_previous_generation_preserved'
+              };
+              try {
+                const status: any = await desktopBridgeStatusV3({ home: root, env: process.env });
+                const blockers = (status?.readiness?.blockers || []).map(String);
+                const stale = blockers.filter((blocker: string) => blocker.endsWith('_catalog_stale'));
+                if (!status?.management?.managed || stale.length === 0) {
+                  return { ...base, ok: true, repaired: false, blockers: [] };
+                }
+                const sync: any = await executeDesktopBridgeCommandV3({ operation: 'catalog.sync' }, { home: root, env: process.env });
+                const synced = sync?.ok === true && sync?.execution?.ok === true;
+                return {
+                  ...base,
+                  ok: synced,
+                  repaired: synced,
+                  blockers: synced ? [] : (sync?.execution?.blockers || ['desktop_bridge_catalog_sync_failed']).map(String)
+                };
+              } catch (error: any) {
+                return { ...base, ok: false, repaired: false, blockers: [String(error?.message || 'desktop_bridge_catalog_sync_failed')] };
+              }
+            }
           }
         ].filter((phase) => doctorPhaseIds.includes(phase.id))
       }).catch((err: any) => ({

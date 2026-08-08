@@ -1,4 +1,14 @@
-import { readText } from '../../fsx.js';
+import { readText, writeJsonAtomic } from '../../fsx.js';
+import { readTopLevelTomlString } from '../../codex-app/codex-model-catalog.js';
+import {
+  BRIDGE_MODEL_SELECTION_SCHEMA,
+  MAX_SELECTED_OPENROUTER_MODELS,
+  bridgeAvailableModelsPath,
+  pruneSelection,
+  readBridgeModelSelectionState,
+  type BridgeModelSelection,
+  writeBridgeModelSelection
+} from '../combined-catalog/model-selection.js';
 import { listOpenRouterModels } from '../../providers/openrouter/openrouter-account.js';
 import type { BridgeProviderId, DesktopBridgeCommandResult } from '../bridge-contracts.js';
 import {
@@ -87,7 +97,23 @@ export async function syncCatalogInternal(
   const catalogs = await fetchProviderCatalogs(initialRegistry, rawCredentials, paths, options);
   const credentials = await resolveValidatedCredentials(options, paths);
   const registry = await resolveBridgeProviderRegistry({ home: paths.home, credentials, storedRegistry });
-  const build = buildCombinedBridgeCatalog(registry, { catalogs, created_at: nowIso(options) });
+  const selectionState = await readBridgeModelSelectionState(paths.home, nowIso(options));
+  // First curation run: keep whatever OpenRouter model the operator is already
+  // configured to use, so enabling curation never removes the active model.
+  const selection = selectionState.stored
+    ? selectionState.selection
+    : seedSelectionFromConfiguredModel(selectionState.selection, await readText(paths.configPath, ''));
+  const build = buildCombinedBridgeCatalog(registry, { catalogs, created_at: nowIso(options), selection });
+  if (!selectionState.stored) await writeBridgeModelSelection(paths.home, selection).catch(() => undefined);
+  // The available list is what SKS Center offers for curation; persisting it on
+  // every sync keeps the picker choices in step with what OpenRouter serves.
+  await writeJsonAtomic(bridgeAvailableModelsPath(paths.home), {
+    schema: 'sks.bridge-available-models.v1',
+    updated_at: nowIso(options),
+    openrouter: build.available_openrouter_models
+  }, { mode: 0o600 }).catch(() => undefined);
+  const pruned = pruneSelection(selection, build.available_openrouter_models);
+  if (pruned !== selection) await writeBridgeModelSelection(paths.home, pruned).catch(() => undefined);
   const staging = await stageCombinedBridgeCatalog({
     build,
     catalogPath: paths.catalogPath,
@@ -263,11 +289,14 @@ async function fetchProviderCatalogs(
         home: paths.home,
         validationPath: paths.validationPath
       });
+      // Feed the full upstream ModelInfo rows when the gateway returned them so
+      // reasoning levels, service tiers, and tool mode survive into the catalog.
+      const codexLbModels = result.model_rows.length > 0 ? result.model_rows : result.models;
       return [providerId, {
         provider_id: providerId,
         state: result.ok ? 'verified' : 'failed',
-        generation: result.ok ? sha256Stable({ provider_id: providerId, models: result.models }) : null,
-        models: { models: result.models },
+        generation: result.ok ? sha256Stable({ provider_id: providerId, models: codexLbModels }) : null,
+        models: { models: codexLbModels },
         checked_at: checkedAt,
         expires_at: expiresAt,
         blockers: result.blockers,
@@ -324,4 +353,78 @@ function emptyProviderCatalog(
 function validationFailureState(blockers: readonly string[]): 'rejected' | 'unavailable' {
   return blockers.some((blocker) => /(?:401|403|auth|rejected|invalid_key|unauthorized)/i.test(blocker))
     ? 'rejected' : 'unavailable';
+}
+
+/** Read-only view of every OpenRouter model plus the operator's current picks. */
+export async function listSelectableModels(
+  options: DesktopBridgeControllerV3Options
+): Promise<DesktopBridgeCommandResult> {
+  const paths = controllerPaths(options);
+  const selection = (await readBridgeModelSelectionState(paths.home, nowIso(options))).selection;
+  const available = await readText(bridgeAvailableModelsPath(paths.home), '');
+  let rows: unknown[] = [];
+  try {
+    const parsed = available ? JSON.parse(available) : null;
+    if (parsed && Array.isArray(parsed.openrouter)) rows = parsed.openrouter;
+  } catch { rows = []; }
+  const selected = new Set(selection.openrouter.public_ids);
+  const status = await desktopBridgeStatusV3(options);
+  return commandResult('models.list', true, status, {
+    codex_lb_exposure: 'all',
+    openrouter: {
+      mode: 'selected',
+      selected_count: selection.openrouter.public_ids.length,
+      max_selected: MAX_SELECTED_OPENROUTER_MODELS,
+      available_count: rows.length,
+      models: rows.map((row: any) => ({
+        public_id: String(row?.public_id || ''),
+        display_name: String(row?.display_name || row?.public_id || ''),
+        selected: selected.has(String(row?.public_id || ''))
+      })).filter((row) => row.public_id)
+    }
+  }, rows.length === 0 ? ['bridge_available_models_unknown'] : [], options);
+}
+
+/**
+ * Replaces the OpenRouter selection and rebuilds the active catalog so the
+ * Codex Desktop picker reflects the choice on its next read. codex-lb models
+ * are never filtered.
+ */
+export async function selectExposedModels(
+  publicIds: readonly string[],
+  options: DesktopBridgeControllerV3Options
+): Promise<DesktopBridgeCommandResult> {
+  const paths = controllerPaths(options);
+  const requested = [...new Set(publicIds.map((id) => String(id || '').trim()).filter(Boolean))].sort();
+  if (requested.length > MAX_SELECTED_OPENROUTER_MODELS) {
+    throw new Error('bridge_model_selection_limit_exceeded');
+  }
+  await writeBridgeModelSelection(paths.home, {
+    schema: BRIDGE_MODEL_SELECTION_SCHEMA,
+    updated_at: nowIso(options),
+    openrouter: { mode: 'selected', public_ids: requested }
+  });
+  const sync = await syncCatalogInternal(options);
+  const status = await desktopBridgeStatusV3(options);
+  const activation = sync.activation && typeof sync.activation === 'object'
+    ? sync.activation as Record<string, unknown>
+    : {};
+  return commandResult(
+    'models.select',
+    sync.ok === true,
+    status,
+    { selected_count: requested.length, catalog_sync: sync },
+    sync.ok === true ? [] : stringArray(activation.blockers),
+    options
+  );
+}
+
+/** An OpenRouter public id always carries a vendor prefix (`vendor/model`). */
+function seedSelectionFromConfiguredModel(
+  selection: BridgeModelSelection,
+  configText: string
+): BridgeModelSelection {
+  const configured = readTopLevelTomlString(configText, 'model');
+  if (!configured || !configured.includes('/')) return selection;
+  return { ...selection, openrouter: { mode: 'selected', public_ids: [configured] } };
 }

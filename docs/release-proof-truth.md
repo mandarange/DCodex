@@ -1,8 +1,8 @@
-# Release Proof Truth — 8.3.2
+# Release Proof Truth — 8.3.3
 
 ## Current assertion
 
-8.3.2 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
+8.3.3 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
 candidate fixes two strict-decoder/contract drift regressions — the SKS Center
 Combined Model Catalog refresh rejecting the status object nested inside a
 command result, and the Codex Desktop model picker burying codex-lb gateway
@@ -12,7 +12,7 @@ a Git tag, or a push. Exact-commit proof can exist only after the candidate is
 committed and all source-bound gates are regenerated from that clean commit.
 
 All release artifacts bound to 8.3.1 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 8.3.2 evidence.
+must not be renamed, copied, or treated as 8.3.3 evidence.
 
 ## Claim ledger
 
@@ -21,8 +21,8 @@ must not be renamed, copied, or treated as 8.3.2 evidence.
 | SKS Center decodes the status nested inside a command result | passed-hermetic in the integrated working tree; not exact-commit proof | the envelope trio (`ok`/`execution_ok`/`command_summary`) is allowed and type-checked, never required; the compiled Swift truth harness proves nested decode succeeds, mistyped envelope values fail, and unknown top-level keys stay rejected; a live Refresh recorded "succeeded · Catalog report generated" |
 | codex-lb models precede openrouter rows with picker priority 100 | passed-hermetic in the integrated working tree; not exact-commit proof | `compareModels` orders every codex-lb row before every openrouter row and remains a total order for unknown providers; codex-lb rows default to ModelInfo `priority` 100 with upstream priority winning; the combined-catalog test pins ordering and priorities; user confirmation of the live Desktop picker remains outstanding |
 | Combined catalog rows remain full Codex ModelInfo supersets | passed-hermetic in the integrated working tree; not exact-commit proof | the 8.3.1 superset contract is unchanged; `codex features list` parsed the resynced catalog |
-| All checked version authorities report 8.3.2 | passed-hermetic in the integrated working tree; not exact-commit proof | the version bump synced package/lock/plugin, TypeScript version, Rust manifest/lock, README, changelog, and release-doc surfaces; `release:version-truth` must be re-run from the clean candidate commit |
-| The reported 8.3.2 package is ready to publish | not proved | requires a clean exact-commit build, release gates including the native `codex-sdk:real-smoke` gate (blocked on native ChatGPT quota until credits, an account switch, or 2026-08-14), package receipt, provenance, and the operator's final registry checks |
+| All checked version authorities report 8.3.3 | passed-hermetic in the integrated working tree; not exact-commit proof | the version bump synced package/lock/plugin, TypeScript version, Rust manifest/lock, README, changelog, and release-doc surfaces; `release:version-truth` must be re-run from the clean candidate commit |
+| The reported 8.3.3 package is ready to publish | not proved | requires a clean exact-commit build, release gates including the native `codex-sdk:real-smoke` gate (blocked on native ChatGPT quota until credits, an account switch, or 2026-08-14), package receipt, provenance, and the operator's final registry checks |
 
 ## Evidence classes
 
@@ -41,7 +41,7 @@ fixture, or package dry run cannot promote a real-environment row to passed.
 
 Paseo is an independent external product. Sneakoscope does not bundle its
 daemon, wrap its CLI, probe its health, own its authentication or relay
-lifecycle, or require a live Paseo session as 8.3.2 release proof. The owned
+lifecycle, or require a live Paseo session as 8.3.3 release proof. The owned
 contract is limited to the committed `paseo.json` and accurate usage guidance.
 
 The active Telegram command, transport, Doctor projection, native poller and
@@ -52,7 +52,7 @@ not evidence of an active integration.
 
 ## Exact-commit release evidence
 
-Before any release claim, regenerate and verify current 8.3.2-bound artifacts
+Before any release claim, regenerate and verify current 8.3.3-bound artifacts
 from the clean handoff commit, including the build manifest, version metadata,
 package proof, pack receipt, release provenance, and release-check stamp. Each
 must bind the exact source digest, Git commit, tarball bytes, and package

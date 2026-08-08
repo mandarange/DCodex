@@ -1,22 +1,23 @@
-# SKS 8.3.2 Release Readiness
+# SKS 8.3.3 Release Readiness
 
 ## Current decision
 
-**SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.** The 8.3.2 source
-candidate fixes two strict-decoder/contract drift regressions on top of the
-shipped 8.3.1 baseline: the SKS Center Combined Model Catalog refresh no
-longer rejects the Desktop Bridge status nested inside a command result (the
-envelope trio `ok`/`execution_ok`/`command_summary` is allowed and
-type-checked, never required), and the Codex Desktop model picker no longer
-buries codex-lb gateway models (codex-lb rows sort before openrouter rows and
-default to ModelInfo `priority` 100). Both fixes are pinned by regression
-tests. A source tag is authorized only after the exact candidate commit passes
-the repository checks and matches `origin/main`.
+**SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.** The 8.3.3 source
+candidate makes the Codex Desktop model surface correct and operator-curated on
+top of the shipped 8.3.2 baseline: the combined catalog now preserves the
+gateway's complete Codex ModelInfo row (restoring the reasoning selector and
+Fast mode for Codex-LB models), OpenRouter exposure becomes an explicit
+per-model selection applied from SKS Center or the CLI, `sks doctor --fix`
+repairs a stale catalog instead of only naming the action and no longer strips
+host-owned rows from the global Codex config, and SKS Center's Run Doctor
+button runs the full diagnostic profile instead of the fast read-only path. A
+source tag is authorized only after the exact candidate commit passes the
+repository checks and matches `origin/main`.
 Registry publication remains an explicit operator action outside that source-tag
 decision.
 
-Earlier SHA- or 8.3.1-bound artifacts are historical only. A version string,
-focused test, package dry run, or old green stamp cannot authorize 8.3.2.
+Earlier SHA- or 8.3.2-bound artifacts are historical only. A version string,
+focused test, package dry run, or old green stamp cannot authorize 8.3.3.
 
 Evidence labels are intentionally narrow:
 
@@ -31,8 +32,36 @@ The current execution surface is `$sks-naruto` / `sks naruto run`, with
 an operator-run repair command and must not be invoked automatically. Update
 and Control Center views share the `sks.update-status.v3` snapshot.
 
-## 8.3.2 candidate scope
+## 8.3.3 candidate scope
 
+- The combined bridge catalog preserves the gateway's native Codex ModelInfo
+  rows. The gateway returns both a native `models` array and an
+  OpenAI-compatible `data` array; ModelInfo now wins, object-shaped
+  `supported_reasoning_levels` pass through unchanged, and neither the provider
+  normalizer nor the canonical model builder reconstructs a reduced row. Codex
+  Desktop regains its reasoning selector and Fast service tier for Codex-LB.
+- Reasoning-capable OpenRouter models carry a reasoning ladder. OpenRouter
+  never serves Codex ModelInfo, so those rows had an empty
+  `supported_reasoning_levels` and Codex Desktop showed no reasoning control
+  for them. Rows whose OpenRouter `supported_parameters` advertise `reasoning`
+  now expose `low`/`medium`/`high`/`xhigh` with a `medium` default; rows
+  without reasoning no longer advertise the reasoning summary parameter. The
+  ladder is fixed rather than derived because the OpenRouter listing reports
+  only that `reasoning` is accepted, never its granularity, and a live round
+  trip through the desktop bridge is the evidence that every rung is honoured
+  upstream.
+- Codex picker exposure is operator-curated: every Codex-LB model is always
+  exposed, OpenRouter models are opt-in through `sks bridge models
+  list|select` and the SKS Center "Codex Picker Exposure" card, the first run
+  seeds the OpenRouter model already configured, and selections for models the
+  provider stops serving are pruned.
+- `sks doctor --fix` gains a `desktop_bridge_catalog_repair` phase for
+  `*_catalog_stale`, and its project-local forbidden-key pass no longer
+  resolves onto the global Codex config (which had removed the SKS-managed
+  `openai_base_url` row and the user's `notify` hook).
+- SKS Center's Run Doctor runs `doctor --full --json`; the previous
+  `doctor --json` selected the fast read-only profile and skipped every deep
+  diagnostic.
 - The strict Swift Desktop Bridge status decoder
   (`DesktopBridgeStatusV3Truth`) accepts the `sks.desktop-bridge-status.v3`
   object nested inside a command result, which never carries the command
@@ -72,7 +101,7 @@ and Control Center views share the `sks.update-status.v3` snapshot.
   runtime's generated App Server schema; MCP list pagination is bounded and
   fail-closed, and superseded static Codex schemas and hook fixtures are absent.
 - Package, lockfile, plugin, runtime, Rust, README, changelog, performance, and
-  agent bridge version surfaces name 8.3.2.
+  agent bridge version surfaces name 8.3.3.
 
 These are source claims. They become release claims only after the exact
 candidate commit passes the repository's release flow.
@@ -119,24 +148,24 @@ node ./dist/scripts/release-pack-receipt.js verify
 node ./dist/scripts/release-provenance-check.js --publish
 npm whoami --registry https://registry.npmjs.org/
 npm view sneakoscope maintainers --json --registry https://registry.npmjs.org/
-npm view sneakoscope@8.3.2 version --json --registry https://registry.npmjs.org/
+npm view sneakoscope@8.3.3 version --json --registry https://registry.npmjs.org/
 npm publish --dry-run --json \
   --registry https://registry.npmjs.org/ \
   --tag latest \
   --access public
 ```
 
-Before publication, the version lookup should report that 8.3.2 is not already
+Before publication, the version lookup should report that 8.3.3 is not already
 present. The dry run is not publication. The user performs the actual publish,
 push, tag, workflow dispatch, or approval separately.
 
 ## Removed-surface and Paseo contract
 
-8.3.2 has no live Telegram credential, BotFather, pairing, poller, or cellular
+8.3.3 has no live Telegram credential, BotFather, pairing, poller, or cellular
 round-trip evidence requirement. Release verification instead proves that the
 active Telegram surface is absent and that the checked-in `paseo.json`, README,
 package scripts, package metadata, Rust metadata, and runtime version agree with
-the 8.3.2 contract.
+the 8.3.3 contract.
 
 Paseo installation, daemon health, authentication, pairing, relay availability,
 and cross-device execution are also not Sneakoscope release evidence. Paseo is
@@ -179,13 +208,13 @@ node ./dist/scripts/npm-stage-tarball-verifier.js \
   --physical-evidence-run-id <physical-capture-workflow-run-id> \
   --workflow-run-id <stage-workflow-run-id> \
   --local-receipt /absolute/path/to/local-pack-receipt.json \
-  --local-tarball /absolute/path/to/sneakoscope-8.3.2.tgz \
+  --local-tarball /absolute/path/to/sneakoscope-8.3.3.tgz \
   --stage-receipt /absolute/path/to/npm-stage-receipt.json
 ```
 
 The verifier does not approve, reject, publish, tag, or modify a stage.
 
-The final migration matrix includes a `7.6.0 to 8.3.2 upgrade smoke`, covering
+The final migration matrix includes a `7.6.0 to 8.3.3 upgrade smoke`, covering
 installed update finalization, guarded retired-state cleanup, preserved user
 configuration, and the current command surface. Fixture success cannot replace
 real macOS evidence required by other protected gates.

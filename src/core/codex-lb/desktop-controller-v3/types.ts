@@ -33,6 +33,8 @@ export type DesktopBridgeControllerRequestV3 =
   | { operation: 'provider.remove-credential'; provider_id: BridgeProviderId; confirmed: true }
   | { operation: 'catalog.sync' }
   | { operation: 'catalog.status' }
+  | { operation: 'models.list' }
+  | { operation: 'models.select'; public_ids: readonly string[] }
   | { operation: 'route.list' }
   | { operation: 'route.set-default'; provider_id: BridgeProviderId }
   | { operation: 'route.explain'; model: string }

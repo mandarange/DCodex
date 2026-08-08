@@ -32,10 +32,16 @@ export async function repairCodexAppFastUi(root: string = process.cwd(), input: 
   const home = codexHome(input.codexHome === undefined ? {} : { codexHome: input.codexHome })
   if (input.apply === true) assertTestHomeWriteAllowed(path.join(home, 'config.toml'))
   const before = await snapshotCodexAppUiState(resolvedRoot, { codexHome: home })
+  // When doctor runs with root == $HOME, the "project-local" candidate
+  // resolves to the GLOBAL codex home config; running the project forbidden-key
+  // stripper there deletes the SKS-managed openai_base_url row and the user's
+  // notify hook. The project mode only ever applies to a real project-local
+  // .codex directory distinct from the codex home.
   const candidates = [
     { scope: 'project', file: path.join(resolvedRoot, '.codex', 'config.toml'), mode: 'project_forbidden_keys' },
     { scope: 'codex_home', file: path.join(home, 'config.toml'), mode: 'sks_caused_host_owned_keys' }
-  ]
+  ].filter((candidate) => candidate.mode !== 'project_forbidden_keys'
+    || path.resolve(candidate.file) !== path.resolve(home, 'config.toml'))
   const actions = []
   const detectedProjectLocalForbiddenKeys: string[] = []
   const unsafeReasons: string[] = []

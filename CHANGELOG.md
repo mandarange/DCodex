@@ -3,6 +3,64 @@
 ## [Unreleased]
 
 
+
+## [8.3.3] - 2026-08-08
+
+### Added
+
+- Curate which models reach the Codex Desktop picker. Every Codex-LB gateway
+  model is always exposed; OpenRouter's 400-model directory is now opt-in per
+  model through `sks bridge models list` / `sks bridge models select --set`
+  and a new "Codex Picker Exposure" card in SKS Center (search, checkboxes,
+  Apply). Applying rewrites the active combined catalog immediately. The first
+  run seeds the OpenRouter model already configured in `config.toml`, so
+  enabling curation never removes the model in use, and picks for models the
+  provider stops serving are pruned automatically.
+
+### Fixed
+
+- Preserve the gateway's complete Codex ModelInfo row in the combined catalog.
+  The gateway answers `/models` with both a native `models` array (50 fields:
+  `supported_reasoning_levels`, `service_tiers`, `default_reasoning_level`,
+  `multi_agent_version`, `tool_mode`, `context_window`, ...) and an
+  OpenAI-compatible `data` array (18 fields). SKS read `data` first and then
+  rebuilt only the required subset, so Codex Desktop received rows with an
+  empty reasoning selector and no Fast mode for Codex-LB models. ModelInfo now
+  wins, object-shaped reasoning levels pass through unchanged, and both the
+  provider normalizer and the canonical model builder preserve upstream fields
+  instead of reconstructing them.
+- Give reasoning-capable OpenRouter models a reasoning selector. OpenRouter
+  never serves Codex ModelInfo, so SKS built those rows with an empty
+  `supported_reasoning_levels` and Codex Desktop rendered no reasoning control
+  for them — including `z-ai/glm-5.2`. Rows whose OpenRouter
+  `supported_parameters` advertise `reasoning` now carry the
+  `low`/`medium`/`high`/`xhigh` ladder with a `medium` default, and rows
+  without reasoning stop advertising `supports_reasoning_summary_parameter`.
+  The ladder is fixed rather than derived because OpenRouter's listing reports
+  only that `reasoning` is accepted, never the granularity; a live round trip
+  through the desktop bridge against `z-ai/glm-5.2` answered 200 for every
+  rung, echoed the requested effort back in `response.created`, and scaled
+  `response.reasoning_text.delta` with it (none 0, minimal 21, low 22,
+  medium 42, xhigh 50), so the control is wired end to end.
+- Repair a stale combined catalog in `sks doctor --fix`. Doctor previously only
+  printed `action: retry_catalog_sync` while `--fix` left the stale catalog in
+  place; a new `desktop_bridge_catalog_repair` phase runs the sync when the
+  bridge reports `*_catalog_stale`.
+- Stop `sks doctor --fix` from deleting host-owned rows in the global Codex
+  config. When Doctor ran with the home directory as its root, the
+  project-local forbidden-key stripper resolved to `~/.codex/config.toml` and
+  removed the SKS-managed `openai_base_url` row plus the user's `notify` hook.
+  The project-local pass now applies only to a real project `.codex` directory.
+- Make SKS Center's Run Doctor button actually run Doctor. It invoked
+  `doctor --json`, which selects the fast-readonly profile: every deep
+  diagnostic is skipped and `ok` returns in about a millisecond, so the button
+  looked inert and always reported no blocking issue. It now runs the full
+  profile with a matching timeout.
+
+### Fixed
+
+- Keep release metadata aligned after an explicit SKS version bump advances the package version.
+
 ## [8.3.2] - 2026-08-08
 
 ### Fixed

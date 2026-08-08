@@ -302,8 +302,8 @@
       "file": "src/core/codex-app/codex-app-fast-ui-repair.ts",
       "symbol": "repairCodexAppFastUi",
       "token": "chmod",
-      "scope_contract_sha256": "e29d0b9f1103eda526073b4ca38ca65e2ba20617809e912230e2d3ad7fc0dae6",
-      "callsite_sha256": "13a1a3fdcbf2c6cd6b25b62b763b03c29653e61dbbedc248fdf035a7feb7daf2",
+      "scope_contract_sha256": "88678a9e9f1103f5862b78755d2e2b52e6914275106bb642ca1f8a2cea160f4b",
+      "callsite_sha256": "866d48c21b12b185ff3774924297ef6a2b79a3ce84c4c8cdaac8dccc5a7703dc",
       "occurrence": 1,
       "reason": "Codex App Fast UI repair enforces 0600 only on the same-directory backup it creates before an explicitly applied config repair."
     },
@@ -311,8 +311,8 @@
       "file": "src/core/codex-app/codex-app-fast-ui-repair.ts",
       "symbol": "repairCodexAppFastUi",
       "token": "fs.writeFile",
-      "scope_contract_sha256": "e29d0b9f1103eda526073b4ca38ca65e2ba20617809e912230e2d3ad7fc0dae6",
-      "callsite_sha256": "c3d33fd3983a795dc9a6ef86d9fbab007d2fd7288c5b8e23413abb6385f95b6e",
+      "scope_contract_sha256": "88678a9e9f1103f5862b78755d2e2b52e6914275106bb642ca1f8a2cea160f4b",
+      "callsite_sha256": "1cdb2a065fab9be0993cec6182362565c2485292093c092912a04866cd034b54",
       "occurrence": 1,
       "reason": "Codex App UI repair writes a scoped backup file before applying explicit user-approved repair."
     },

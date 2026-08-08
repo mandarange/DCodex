@@ -180,7 +180,6 @@ enum NativeView {
             .joined(separator: "-")
     }
 }
-
 final class OverviewViewController: NSViewController, ControlCenterPage {
     private let processClient: ProcessClient
     private let operations: OperationCoordinator
@@ -383,7 +382,8 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
         statusSpinner.startAnimation(nil)
         status.stringValue = "Doctor is running…"
         _ = operations.update(operation, state: .running, stage: "running", progress: nil, summary: status.stringValue)
-        processClient.run(["doctor", "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
+        // `doctor --json` alone selects the fast-readonly profile, which skips every deep diagnostic.
+        processClient.run(["doctor", "--full", "--json"], timeout: NativeView.longMutationTimeout) { [weak self] result in
             guard let self = self else { return }
             self.setActionBusy(false)
             self.statusSpinner.stopAnimation(nil)

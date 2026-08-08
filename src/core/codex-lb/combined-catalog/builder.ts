@@ -13,21 +13,39 @@ import {
   routeProviderState
 } from './normalize.js';
 import { compareModels, unique } from './shared.js';
+import {
+  applyBridgeModelSelection,
+  availableModelRows,
+  emptyBridgeModelSelection,
+  type AvailableBridgeModelRow,
+  type BridgeModelSelection
+} from './model-selection.js';
 
 export function buildCombinedBridgeCatalog(
   registry: BridgeProviderRegistry,
   options: {
     readonly catalogs: Record<'codex-lb' | 'openrouter', ProviderCatalogBuildInput>;
     readonly created_at?: string;
+    /**
+     * Curated OpenRouter picks. Omitting it exposes every model: curation is
+     * opt-in and only the desktop-controller sync path supplies a selection,
+     * so callers that never curate keep the full catalog.
+     */
+    readonly selection?: BridgeModelSelection;
   }
-): CombinedCatalogBuildResult {
+): CombinedCatalogBuildResult & { readonly available_openrouter_models: AvailableBridgeModelRow[] } {
   const createdAt = options.created_at || new Date().toISOString();
   const normalized = {
     'codex-lb': normalizeProviderCatalog(options.catalogs['codex-lb']),
     openrouter: normalizeProviderCatalog(options.catalogs.openrouter)
   };
-  const models = [...normalized['codex-lb'].models, ...normalized.openrouter.models]
+  const selection = options.selection || emptyBridgeModelSelection(createdAt);
+  const allModels = [...normalized['codex-lb'].models, ...normalized.openrouter.models]
     .sort(compareModels);
+  const availableOpenRouterModels = availableModelRows(allModels, selection);
+  // The active catalog is what Codex Desktop reads, so it carries every
+  // codex-lb model plus only the OpenRouter models the operator selected.
+  const models = options.selection ? applyBridgeModelSelection(allModels, selection) : allModels;
   const routeBuild = buildBridgeRouteIndex({
     models,
     providers: {
@@ -100,6 +118,7 @@ export function buildCombinedBridgeCatalog(
     route_index: routeBuild.route_index,
     status,
     blockers,
-    warnings: status.warnings
+    warnings: status.warnings,
+    available_openrouter_models: availableOpenRouterModels
   };
 }

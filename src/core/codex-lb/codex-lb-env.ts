@@ -73,6 +73,8 @@ export type CodexLbModelCatalogResult = {
   ok: boolean;
   status: 'ready' | 'blocked';
   models: string[];
+  /** Full upstream ModelInfo rows; empty when the gateway was unreachable. */
+  model_rows: Record<string, unknown>[];
   model_efforts: Record<string, string[]>;
   http_status: number | null;
   blockers: string[];
@@ -216,6 +218,7 @@ export async function readCodexLbModelCatalog(opts: {
       ok: false,
       status: 'blocked',
       models: [],
+      model_rows: [],
       model_efforts: {},
       http_status: null,
       blockers: loaded.missing.length ? loaded.missing.map((item) => `codex_lb_missing:${item}`) : ['codex_lb_not_configured']
@@ -228,6 +231,7 @@ export async function readCodexLbModelCatalog(opts: {
       ok: false,
       status: 'blocked',
       models: [],
+      model_rows: [],
       model_efforts: {},
       http_status: null,
       blockers: [transportBlocker]
@@ -250,6 +254,7 @@ export async function readCodexLbModelCatalog(opts: {
       ok: false,
       status: 'blocked',
       models: [],
+      model_rows: [],
       model_efforts: {},
       http_status: null,
       blockers: [`codex_lb_${safeBridgeErrorCode(error).replace(/^bridge_/, '')}`]
@@ -258,15 +263,17 @@ export async function readCodexLbModelCatalog(opts: {
   try {
     const timeoutMs = Math.max(250, Number(opts.timeoutMs || 5000));
     const modelsUrl = new URL(`${loaded.base_url}/models`);
-    const response = opts.fetchImpl
-      ? await fetchImpl(modelsUrl, {
+    const request = async (url: URL) => (opts.fetchImpl
+      ? await fetchImpl(url, {
         headers: gatewayHeaders,
         redirect: 'error',
         signal: AbortSignal.timeout(timeoutMs)
       })
-      : await requestPinnedCodexLbCatalog(modelsUrl, remote, gatewayHeaders, timeoutMs);
+      : await requestPinnedCodexLbCatalog(url, remote, gatewayHeaders, timeoutMs));
+    const response = await request(modelsUrl);
     const payload = await response.json().catch(() => null);
     const models = normalizeCodexLbModelCatalogPayload(payload);
+    const modelRows = codexLbModelCatalogRows(payload);
     const apiEfforts = normalizeCodexModelEffortCatalogPayload(payload);
     const cachePath = path.join(String(process.env.CODEX_HOME || path.join(os.homedir(), '.codex')), 'models_cache.json');
     const cachePayload = await readJson<any>(cachePath, null).catch(() => null);
@@ -278,6 +285,7 @@ export async function readCodexLbModelCatalog(opts: {
       ok,
       status: ok ? 'ready' : 'blocked',
       models,
+      model_rows: modelRows,
       model_efforts: modelEfforts,
       http_status: response.status,
       blockers: [
@@ -291,6 +299,7 @@ export async function readCodexLbModelCatalog(opts: {
       ok: false,
       status: 'blocked',
       models: [],
+      model_rows: [],
       model_efforts: {},
       http_status: null,
       blockers: ['codex_lb_model_catalog_unavailable']
@@ -371,6 +380,29 @@ export function normalizeCodexLbModelCatalogPayload(payload: any): string[] {
     .map((row: any) => String(row?.id || row?.model || row?.slug || row?.name || '').trim())
     .filter(Boolean);
   return [...new Set<string>(models)];
+}
+
+/**
+ * The gateway serves complete Codex ModelInfo rows (reasoning levels, service
+ * tiers, tool mode, context window...). Collapsing them to slugs discards every
+ * optional field, which empties the Desktop reasoning selector and hides Fast
+ * mode, so the full rows are preserved alongside the slug list.
+ */
+export function codexLbModelCatalogRows(payload: any): Record<string, unknown>[] {
+  // The gateway answers with BOTH `models` (native Codex ModelInfo) and `data`
+  // (OpenAI-compatible listing). `data` carries none of the Desktop metadata,
+  // so ModelInfo wins whenever it is present.
+  const rows = Array.isArray(payload?.models) ? payload.models : Array.isArray(payload?.data) ? payload.data : [];
+  const seen = new Set<string>();
+  const preserved: Record<string, unknown>[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+    const slug = String((row as any).id || (row as any).model || (row as any).slug || (row as any).name || '').trim();
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    preserved.push({ ...(row as Record<string, unknown>), slug });
+  }
+  return preserved;
 }
 
 export function normalizeCodexLbBaseUrl(input: unknown = ''): string {
