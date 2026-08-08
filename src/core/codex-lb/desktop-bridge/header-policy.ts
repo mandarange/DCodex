@@ -12,9 +12,14 @@ const INTERNAL_PREFIX = 'x-sks-';
 const REQUEST_HEADER_ALLOWLIST = new Set([
   'accept', 'accept-encoding', 'cache-control', 'content-encoding', 'content-length', 'content-type',
 ]);
+// Non-credential Codex session metadata the ChatGPT backend requires on
+// /backend-api/codex/responses; dropping these makes the codex-lb gateway's
+// upstream call fail for real Codex CLI traffic. Codex sends both hyphen and
+// underscore spellings across versions.
 const CODEX_LOCAL_HEADERS = new Set([
-  'thread-id', 'session-id', 'x-client-request-id', 'x-codex-installation-id',
-  'x-codex-turn-metadata', 'x-codex-window-id', 'originator',
+  'thread-id', 'thread_id', 'session-id', 'session_id', 'x-client-request-id',
+  'x-codex-installation-id', 'x-codex-turn-metadata', 'x-codex-window-id',
+  'originator', 'openai-beta',
 ]);
 const NEVER_FORWARD_FROM_CLIENT = new Set([
   'authorization', 'cookie', 'forwarded', 'proxy-authorization', 'x-api-key', 'x-codex-lb-api-key',
@@ -61,7 +66,8 @@ export function buildProviderUpstreamHeaders(
   for (const [rawName, rawValue] of Object.entries(inbound)) {
     if (rawValue === undefined) continue;
     const name = rawName.toLowerCase();
-    const providerAllowed = context.providerId === 'openrouter' && OPENROUTER_CLIENT_HEADERS.has(name);
+    const providerAllowed = (context.providerId === 'openrouter' && OPENROUTER_CLIENT_HEADERS.has(name))
+      || (context.providerId === 'codex-lb' && CODEX_LOCAL_HEADERS.has(name));
     if (!REQUEST_HEADER_ALLOWLIST.has(name) && !providerAllowed) continue;
     result[name] = rawValue;
   }

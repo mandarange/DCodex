@@ -130,17 +130,26 @@ function writeBridgeRejection(res: ServerResponse, error: unknown): void {
 }
 
 function writeUpgradeRejection(socket: Duplex, error: unknown): void {
-  if (socket.destroyed) return;
+  // A late async failure (for example an upstream websocket handshake error)
+  // can race the peer closing or a partially-written upgrade response; writing
+  // then raises ERR_STREAM_WRITE_AFTER_END as an unhandled 'error' event and
+  // kills the whole bridge process for every client.
+  socket.on('error', () => undefined);
+  if (socket.destroyed || (socket as { writableEnded?: boolean }).writableEnded) return;
   const code = safeBridgeErrorCode(error);
   const status = rejectionStatus(code);
-  socket.end(
-    `HTTP/1.1 ${status} ${rejectionStatusText(status)}\r\n`
-    + 'Content-Type: application/json\r\n'
-    + 'Cache-Control: no-store\r\n'
-    + 'Connection: close\r\n'
-    + '\r\n'
-    + JSON.stringify({ error: { type: 'sks_bridge_rejection', code, message: code } }),
-  );
+  try {
+    socket.end(
+      `HTTP/1.1 ${status} ${rejectionStatusText(status)}\r\n`
+      + 'Content-Type: application/json\r\n'
+      + 'Cache-Control: no-store\r\n'
+      + 'Connection: close\r\n'
+      + '\r\n'
+      + JSON.stringify({ error: { type: 'sks_bridge_rejection', code, message: code } }),
+    );
+  } catch {
+    socket.destroy();
+  }
 }
 
 function writeDiagnosticHealth(

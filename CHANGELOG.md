@@ -11,6 +11,16 @@
   removed and retries, so a transient bootstrap race can no longer fail the
   repair and strand v1 settings/state/plist files that are deleted only after
   the unified v2 service verifies as running.
+- Survive real Codex CLI 0.147 traffic on the Desktop Bridge: a late
+  websocket-upgrade rejection no longer raises an unhandled
+  ERR_STREAM_WRITE_AFTER_END that killed the bridge process for every client
+  (Codex now falls back cleanly from WebSockets to HTTPS), zstd/gzip/brotli
+  compressed Responses request bodies are decoded before model-route rewriting
+  instead of failing as `bridge_responses_body_invalid_json`, and
+  non-credential Codex session metadata headers (`session_id`, `originator`,
+  `openai-beta`, and variants) are forwarded to the codex-lb gateway so its
+  upstream call no longer fails. Verified end-to-end with a live
+  `codex exec` completing through the bridge and gateway.
 - Write every combined bridge catalog row as a full Codex ModelInfo superset
   (`slug`, `supported_reasoning_levels`, `shell_type`, `visibility`,
   `priority`, `base_instructions`, `supports_reasoning_summary_parameter`,

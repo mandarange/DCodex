@@ -1,6 +1,7 @@
 import http, { type ClientRequest, type IncomingMessage, type ServerResponse } from 'node:http';
 import https from 'node:https';
 import type { Socket } from 'node:net';
+import zlib from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import { buildProviderUpstreamHeaders, rewriteResponseHeaders } from './header-policy.js';
 import { resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader } from './security.js';
@@ -13,6 +14,38 @@ export interface PreparedDesktopBridgeRequest {
   body: Buffer | null;
   route: DesktopBridgeRouteContext;
   credential: DesktopBridgeResolvedCredential;
+  /** True when the bridge decoded a compressed request body and now owns a
+   *  plain-JSON body, so content-encoding must not be forwarded upstream. */
+  contentEncodingStripped?: boolean;
+}
+
+// Codex CLI 0.147 compresses Responses POST bodies (content-encoding: zstd).
+// The bridge must decode before it can rewrite the routed model; the upstream
+// then receives plain JSON with the encoding header removed.
+function decodeBridgeRequestBody(body: Buffer, encoding: string, maximum: number): Buffer {
+  const options = { maxOutputLength: maximum };
+  try {
+    switch (encoding) {
+      case 'gzip':
+      case 'x-gzip':
+        return zlib.gunzipSync(body, options);
+      case 'deflate':
+        try { return zlib.inflateSync(body, options); }
+        catch { return zlib.inflateRawSync(body, options); }
+      case 'br':
+        return zlib.brotliDecompressSync(body, options);
+      case 'zstd': {
+        const zstd = (zlib as unknown as { zstdDecompressSync?: (b: Buffer, o?: object) => Buffer }).zstdDecompressSync;
+        if (!zstd) throw new DesktopBridgeError('bridge_request_encoding_unsupported');
+        return zstd(body, options);
+      }
+      default:
+        throw new DesktopBridgeError('bridge_request_encoding_unsupported');
+    }
+  } catch (error) {
+    if (error instanceof DesktopBridgeError) throw error;
+    throw new DesktopBridgeError('bridge_responses_body_invalid_json');
+  }
 }
 
 function bodyCarriesModel(rawUrl: string | undefined): boolean {
@@ -47,13 +80,22 @@ export async function prepareDesktopBridgeRequest(req: IncomingMessage, config: 
   const pathname = new URL(String(req.url || '/'), 'http://bridge.invalid').pathname;
   let body: Buffer | null = null;
   let payload: Record<string, unknown> | null = null;
+  let contentEncodingStripped = false;
   if (bodyCarriesModel(req.url)) {
-    body = await readBoundedBody(req, config.maxRequestBodyBytes ?? 16 * 1024 * 1024);
+    const maximum = config.maxRequestBodyBytes ?? 16 * 1024 * 1024;
+    body = await readBoundedBody(req, maximum);
+    const encoding = String(req.headers['content-encoding'] || '').trim().toLowerCase();
+    let decoded = body;
+    if (encoding && encoding !== 'identity') {
+      decoded = decodeBridgeRequestBody(body, encoding, maximum);
+      contentEncodingStripped = true;
+    }
     try {
-      const parsed: unknown = JSON.parse(body.toString('utf8'));
+      const parsed: unknown = JSON.parse(decoded.toString('utf8'));
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
       payload = parsed as Record<string, unknown>;
     } catch { throw new DesktopBridgeError('bridge_responses_body_invalid_json'); }
+    if (contentEncodingStripped) body = decoded;
   }
   const headerModel = singleBridgeHeader(req.headers, 'x-sks-model');
   const model = typeof payload?.model === 'string' ? payload.model : headerModel;
@@ -67,7 +109,7 @@ export async function prepareDesktopBridgeRequest(req: IncomingMessage, config: 
     body = Buffer.from(JSON.stringify(payload));
   }
   const credential = await resolveCredential(config, route);
-  return { body, route, credential };
+  return { body, route, credential, contentEncodingStripped };
 }
 
 function connectTimeout(request: ClientRequest, config: PreparedDesktopBridgeConfig): void {
@@ -125,6 +167,7 @@ export async function forwardHttp(
     }, target.host);
     if (request.body) headers['content-length'] = String(request.body.length);
     else delete headers['content-length'];
+    if (request.contentEncodingStripped) delete headers['content-encoding'];
     await new Promise<void>((resolve, reject) => {
       let responseStarted = false; let settled = false;
       const finish = (error?: unknown): void => { if (settled) return; settled = true; error ? reject(error) : resolve(); };
