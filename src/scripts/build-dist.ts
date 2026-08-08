@@ -15,6 +15,7 @@ const distRoot = path.resolve(process.env.SKS_BUILD_OUTPUT_DIR || path.join(root
 
 await fsp.mkdir(distRoot, { recursive: true });
 await removeDistMjs(distRoot);
+await removeOrphanedCompiledTests(distRoot);
 await copyRuntimeConfigFiles();
 await copyNativeMenuBarSources();
 await writeSkillsManifest();
@@ -28,6 +29,25 @@ async function removeDistMjs(dir) {
     const file = path.join(dir, entry.name);
     if (entry.isDirectory()) await removeDistMjs(file);
     else if (entry.isFile() && entry.name.endsWith('.mjs')) await fsp.rm(file, { force: true });
+  }
+}
+
+// Incremental tsc never deletes compiled output whose source was removed;
+// orphaned dist/**/__tests__/*.test.js files fail against current code once
+// the canonical suite globs them, so prune any without a src/**/*.test.ts.
+async function removeOrphanedCompiledTests(dir) {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) await removeOrphanedCompiledTests(file);
+    else if (entry.isFile() && entry.name.endsWith('.test.js') && file.includes(`${path.sep}__tests__${path.sep}`)) {
+      const relative = path.relative(distRoot, file);
+      if (fs.existsSync(path.join(srcRoot, `${relative.slice(0, -'.js'.length)}.ts`))) continue;
+      const stem = file.slice(0, -'.js'.length);
+      for (const target of [file, `${file}.map`, `${stem}.d.ts`, `${stem}.d.ts.map`]) {
+        await fsp.rm(target, { force: true });
+      }
+    }
   }
 }
 

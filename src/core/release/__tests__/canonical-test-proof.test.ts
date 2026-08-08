@@ -36,7 +36,7 @@ test('canonical test proof validates the current package, corpus, and authorizat
     assert.deepEqual(selected.compiled.map((file) => path.basename(file)), ['fixture.test.js'])
     assert.deepEqual(selected.unit.map((file) => path.basename(file)), ['regression-fixture.test.mjs', 'release-fixture.test.mjs'])
     const exhaustive = allCanonicalTestFiles(root)
-    assert.deepEqual(exhaustive.compiled.map((file) => path.basename(file)), ['removed-compat.test.js', 'fixture.test.js'])
+    assert.deepEqual(exhaustive.compiled.map((file) => path.basename(file)), ['fixture.test.js'])
     assert.deepEqual(exhaustive.unit.map((file) => path.basename(file)), [
       'regression-fixture.test.mjs',
       'release-check-stamp.test.mjs',
@@ -99,14 +99,16 @@ async function fixtureRoot(): Promise<string> {
     fsp.mkdir(path.join(root, 'dist', 'core', 'historical', '__tests__'), { recursive: true }),
     fsp.mkdir(path.join(root, 'test', 'unit'), { recursive: true }),
     fsp.mkdir(path.join(root, 'test', 'regression'), { recursive: true }),
-    fsp.mkdir(path.join(root, 'src'), { recursive: true })
+    fsp.mkdir(path.join(root, 'src', 'core', 'release', '__tests__'), { recursive: true })
   ])
   await Promise.all([
     fsp.writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'fixture', version: '1.2.3', files: ['dist', 'src', 'test'] })),
     fsp.writeFile(path.join(root, 'release-gates.v2.json'), '{}'),
     fsp.writeFile(path.join(root, 'infra-harness-gates.json'), '{}'),
     fsp.writeFile(path.join(root, 'src', 'index.ts'), 'export const value = 1\n'),
+    fsp.writeFile(path.join(root, 'src', 'core', 'release', '__tests__', 'fixture.test.ts'), 'export {}\n'),
     fsp.writeFile(path.join(root, 'dist', 'core', 'release', '__tests__', 'fixture.test.js'), 'export {}\n'),
+    // Orphaned compiled test: no src/**/*.test.ts source, so every corpus skips it.
     fsp.writeFile(path.join(root, 'dist', 'core', 'historical', '__tests__', 'removed-compat.test.js'), 'export {}\n'),
     fsp.writeFile(path.join(root, 'test', 'unit', 'release-fixture.test.mjs'), 'export {}\n'),
     fsp.writeFile(path.join(root, 'test', 'unit', 'removed-feature.test.mjs'), 'export {}\n'),

@@ -215,7 +215,7 @@ async function fixtureRoot(prefix: string): Promise<string> {
     // (`dist/core/release/__tests__/**` or CURRENT_COMPILED_TESTS).
     fsp.mkdir(path.join(root, 'dist', 'core', 'release', '__tests__'), { recursive: true }),
     fsp.mkdir(path.join(root, 'test', 'unit'), { recursive: true }),
-    fsp.mkdir(path.join(root, 'src'), { recursive: true })
+    fsp.mkdir(path.join(root, 'src', 'core', 'release', '__tests__'), { recursive: true })
   ]);
   await Promise.all([
     fsp.writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'runner-fixture', version: '1.0.0', files: ['dist', 'src', 'test'] })),
@@ -232,6 +232,8 @@ async function fixtureRoot(prefix: string): Promise<string> {
 async function writeFixtureTests(root: string, compiledSource: string): Promise<void> {
   await Promise.all([
     fsp.writeFile(path.join(root, 'dist', 'core', 'release', '__tests__', 'fixture.test.js'), compiledSource),
+    // Compiled tests only count while their src/**/*.test.ts source exists.
+    fsp.writeFile(path.join(root, 'src', 'core', 'release', '__tests__', 'fixture.test.ts'), compiledSource),
     // Basename must match CURRENT_UNIT_TEST (`release-*.test.mjs`).
     fsp.writeFile(path.join(root, 'test', 'unit', 'release-fixture.test.mjs'), `
       import test from 'node:test';

@@ -86,7 +86,7 @@ export function canonicalTestProofPath(root: string): string {
  */
 export function canonicalTestFiles(root: string): CanonicalTestFiles {
   const compiled = discover(path.join(root, 'dist'), (file) => {
-    if (!file.endsWith('.test.js') || !file.includes(`${path.sep}__tests__${path.sep}`)) return false
+    if (!isCurrentCompiledTest(root, file)) return false
     const relative = repoRelative(root, file)
     return relative.startsWith('dist/core/release/__tests__/') || CURRENT_COMPILED_TESTS.has(relative)
   })
@@ -106,7 +106,7 @@ export function allCanonicalTestFiles(root: string): CanonicalTestFiles {
   unit.push(...discover(path.join(root, 'test', 'regression'), (file) => file.endsWith('.test.mjs')))
   unit.sort()
   return {
-    compiled: discover(path.join(root, 'dist'), (file) => file.endsWith('.test.js') && file.includes(`${path.sep}__tests__${path.sep}`)),
+    compiled: discover(path.join(root, 'dist'), (file) => isCurrentCompiledTest(root, file)),
     unit
   }
 }
@@ -214,6 +214,17 @@ function validCorpus(value: Partial<CanonicalTestCorpus> | null | undefined): bo
 
 function readPackage(root: string): Record<string, any> {
   return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+}
+
+/**
+ * Incremental tsc never deletes compiled output whose source was removed, so
+ * dist can hold orphaned *.test.js files that fail against current code. A
+ * compiled test only counts while its src/**\/*.test.ts source still exists.
+ */
+function isCurrentCompiledTest(root: string, file: string): boolean {
+  if (!file.endsWith('.test.js') || !file.includes(`${path.sep}__tests__${path.sep}`)) return false
+  const relative = path.relative(path.join(root, 'dist'), file)
+  return fs.existsSync(path.join(root, 'src', `${relative.slice(0, -'.js'.length)}.ts`))
 }
 
 function discover(dir: string, accept: (file: string) => boolean): string[] {
