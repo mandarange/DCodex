@@ -303,6 +303,12 @@ export function inspectReleaseUpgradeLaunchctlLog(isolation: ReleaseUpgradeIsola
   }
 }
 
+// The sandbox never talks to real launchd, so this stub *is* what the upgrade
+// under test observes. It therefore has to answer the way launchctl actually
+// answers — a probe reply the product cannot classify makes it fail closed and
+// blocks the upgrade for a reason that does not exist outside the sandbox.
+// `print` for a service that is not loaded must reproduce launchctl's exact
+// wording; the sandbox HOME carries no LaunchAgent, so "absent" is the truth.
 function launchctlStubSource(): string {
   return [
     '#!/bin/sh',
@@ -316,7 +322,7 @@ function launchctlStubSource(): string {
     '      *) printf "forbidden unsetenv [redacted]\\n" >> "$log"; exit 64 ;;',
     '    esac',
     '    ;;',
-    '  print) printf "print\\n" >> "$log"; printf "%s\\n" "sandbox launchctl: service not running" >&2; exit 113 ;;',
+    '  print) printf "print\\n" >> "$log"; printf "Bad request.\\n" >&2; printf "Could not find service \\"%s\\" in domain for user gui: sandbox\\n" "${2:-}" >&2; exit 113 ;;',
     '  bootstrap|bootout|kickstart|setenv|getenv) printf "forbidden %s\\n" "$command_name" >> "$log"; exit 64 ;;',
     '  *) printf "forbidden other\\n" >> "$log"; exit 64 ;;',
     'esac',
