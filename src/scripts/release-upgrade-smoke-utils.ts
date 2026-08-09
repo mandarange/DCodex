@@ -1,6 +1,13 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+// The producer and `inspectMainPushGuard` have to agree on when two recorded
+// paths name one directory, so the rule lives in `src/core` where both can
+// reach it rather than as a copy on each side.
+import {
+  canonicalFilesystemPathSync as canonicalFilesystemPath,
+  sameFilesystemPathSync as samePath
+} from '../core/fsx.js'
 
 export function readRegularFile(file: string, label: string): { bytes: Buffer | null; blockers: string[] } {
   try {
@@ -52,19 +59,7 @@ export function isSubpath(candidate: string, root: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
-export function canonicalFilesystemPath(value: string): string {
-  const resolved = path.resolve(value)
-  try {
-    return fs.realpathSync.native(resolved)
-  } catch {
-    if (process.platform === 'darwin' && resolved.startsWith('/var/')) return `/private${resolved}`
-    return resolved
-  }
-}
-
-export function samePath(left: string | undefined, right: string | undefined): boolean {
-  return Boolean(left && right && canonicalFilesystemPath(left) === canonicalFilesystemPath(right))
-}
+export { canonicalFilesystemPath, samePath }
 
 export function hashBytes(value: Buffer): string {
   return crypto.createHash('sha256').update(value).digest('hex')

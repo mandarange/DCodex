@@ -111,6 +111,28 @@ export async function canonicalFilesystemPath(p: string): Promise<string> {
   return fsp.realpath(resolved).catch(() => resolved);
 }
 
+/**
+ * Synchronous path canonicalization for comparing paths that may no longer
+ * exist — recorded evidence, read back after the directory it described was
+ * removed. `realpath` cannot help there, so on macOS the `/var` → `/private/var`
+ * firmlink is applied by hand: a proof that recorded `/var/folders/…` and a
+ * tool that resolved the same directory to `/private/var/folders/…` are naming
+ * one directory, and a raw string compare would call them different.
+ */
+export function canonicalFilesystemPathSync(value: string): string {
+  const resolved = path.resolve(value);
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    if (process.platform === 'darwin' && resolved.startsWith('/var/')) return `/private${resolved}`;
+    return resolved;
+  }
+}
+
+export function sameFilesystemPathSync(left: string | undefined | null, right: string | undefined | null): boolean {
+  return Boolean(left && right && canonicalFilesystemPathSync(left) === canonicalFilesystemPathSync(right));
+}
+
 export async function sameFilesystemPath(left: string, right: string): Promise<boolean> {
   const [leftCanonical, rightCanonical] = await Promise.all([
     canonicalFilesystemPath(left),

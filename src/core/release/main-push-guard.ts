@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { sameFilesystemPathSync } from '../fsx.js'
 import { readMacosMenubarProof, validateMacosMenubarProofArtifacts } from './macos-menubar-proof.js'
 import { fileSha256, gitOk, gitText, readJson, relative, unique } from './release-proof-io.js'
 import { releaseOriginIdentity } from './release-origin.js'
@@ -362,7 +363,10 @@ function validateDoctorCommandReceipt(
       || binding.matches_stdout !== true
       || binding.schema !== 'sks.doctor-status.v3'
       || binding.ok !== true
-      || binding.root !== isolation.workspace) blockers.push(`doctor_report_binding_invalid:${stage}`)
+      // The doctor resolves its root through realpath, the isolation record
+      // keeps the path it created; on macOS those are the same directory spelled
+      // two ways, and a string compare rejected every proof this smoke produces.
+      || !sameFilesystemPathSync(binding.root, isolation.workspace)) blockers.push(`doctor_report_binding_invalid:${stage}`)
   } else if (stage !== 'target_doctor' && binding.validation_mode === 'pinned_baseline_stdout_only') {
     if (binding.regular_file !== false
       || binding.symlink_refused !== false
