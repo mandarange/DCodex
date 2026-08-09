@@ -1,0 +1,110 @@
+{
+  "schema": "sks.architecture-atlas-baseline.v1",
+  "base_sha": "5fb6fb7024507a71207b4926b3ec7210c2aa65f2",
+  "base_version": "8.3.3",
+  "captured_at": "2026-08-09T04:30:28.661Z",
+  "context_graph_contract_sha256": "21eb94b5bbd585f07e2a5b997b189e4abdb2d6ba6d55d230379877df1fcac6a5",
+  "align_contract_sha256": "c11a82f7b97ba01d3e17b5892d95663b22070a6ff277075a4f571cf962a9da9b",
+  "architecture_guard_sha256": "5158dbe47c7f6a7672659734864765667934bfb37ed1e4ab2b4c42fd193c1bcd",
+  "release_gate_manifest_sha256": "b8da960b2dbd452b07e81b11227b5373482c3797921ec55dd01b946a9250ee60",
+  "code_navigation_manifest": {
+    "snapshot_hash": "a001a5ba85ed1a1d8bb4e976267ba1e08eeccba6e292435f2da6876fc4875256",
+    "source_file_count": 2877,
+    "symbol_count": 21727,
+    "edge_count": 67204
+  },
+  "context_graph_status": {
+    "status": "fresh",
+    "reasons": [],
+    "snapshot_hash": "a001a5ba85ed1a1d8bb4e976267ba1e08eeccba6e292435f2da6876fc4875256",
+    "generated_at": "2026-08-09T04:29:16.204Z",
+    "node_count": 25637,
+    "edge_count": 67204
+  },
+  "baseline_checks": [
+    {
+      "id": "release:check:full",
+      "command": "npm run release:check:full",
+      "result": "pass",
+      "evidence": "exit 0; release-check stamp written (3049 files)"
+    },
+    {
+      "id": "release-check-stamp:verify",
+      "command": "~/.nvm/versions/node/v24.0.2/bin/node ./dist/scripts/release-check-stamp.js verify",
+      "result": "pass",
+      "evidence": "Release check stamp verified (3049 files)",
+      "note": "Must run under the node that npm lifecycle scripts resolve (nvm v24.0.2), because package.json test:release invokes a bare `node`. Verifying under /opt/homebrew/bin/node v25.9.0 false-fails with canonical_test_proof_node_version_mismatch."
+    },
+    {
+      "id": "release-pack-receipt:verify",
+      "command": "~/.nvm/versions/node/v24.0.2/bin/node ./dist/scripts/release-pack-receipt.js verify",
+      "result": "pass",
+      "evidence": "exit 0; blockers []"
+    },
+    {
+      "id": "release:provenance",
+      "command": "~/.nvm/versions/node/v24.0.2/bin/node ./dist/scripts/release-provenance-check.js --publish",
+      "result": "pass",
+      "evidence": "ok true; blockers 0; warnings 1"
+    },
+    {
+      "id": "test:canonical",
+      "command": "npm run test:release",
+      "result": "pass",
+      "evidence": "2824 pass / 0 fail; canonical-test-proof.json node_version v24.0.2"
+    },
+    {
+      "id": "typecheck",
+      "command": "npm run typecheck",
+      "result": "pass",
+      "evidence": "exit 0"
+    },
+    {
+      "id": "release:version-truth",
+      "command": "npm run release:version-truth",
+      "result": "pass",
+      "evidence": "15 surfaces at 8.3.3; warnings 0"
+    },
+    {
+      "id": "release:metadata",
+      "command": "npm run release:metadata",
+      "result": "pass",
+      "evidence": "scripts 24; release_gates 31; docs 9"
+    },
+    {
+      "id": "changelog:check",
+      "command": "npm run changelog:check",
+      "result": "pass",
+      "evidence": "Changelog check passed: 8.3.3"
+    }
+  ],
+  "capture_events": [
+    {
+      "id": "unplanned_align_run_during_capture",
+      "what": "sks align run executed unintentionally during baseline capture, via an unescaped backtick in a double-quoted shell string that became command substitution.",
+      "effect": "The context graph went from stale (dirty_fingerprint_changed, snapshot c822c0c4, 24480 nodes / 64334 edges, generated 2026-08-07) to fresh (snapshot a001a5ba, 25637 nodes / 67204 edges). Two tracked generated artifacts were rewritten: .sneakoscope/wiki/code-navigation-manifest.json and .sneakoscope/wiki/code-pack.json. No source file, no commit, and no branch pointer was touched; HEAD stayed at base_sha.",
+      "disposition": "Kept rather than reverted. git checkout of the two tracked files would restore the pre-align manifest while leaving the regenerated snapshot on disk, which the store reads back as meta_mismatch/corrupt. The resulting fresh graph is also the state the Atlas work needs. The two modified tracked files must land as their own commit before Wave 1 source changes.",
+      "recorded_because": "The work order requires the baseline to disclose rather than hide what happened during capture."
+    }
+  ],
+  "known_preexisting_failures": [
+    {
+      "id": "context_graph_stale_at_base",
+      "owner": "not-this-work-order",
+      "status": "resolved_during_capture",
+      "command": "node --input-type=module -e \"import { contextGraphStatus } from './dist/core/triwiki/context-graph/store/graph-status.js'; console.log(JSON.stringify(await contextGraphStatus(process.cwd())))\"",
+      "output": "{\"status\":\"stale\",\"reasons\":[\"dirty_fingerprint_changed\"],\"repairCommand\":\"sks align run\",\"errorCode\":\"context_graph_stale\",\"snapshotHash\":\"c822c0c4f6582c0f27e2a82e0bd3fb6ab50ee0d63e6a609f2640bd336775dce3\",\"generatedAt\":\"2026-08-07T09:27:05.970Z\",\"nodeCount\":24480,\"edgeCount\":64334}",
+      "note": "The active graph predated the 8.3.3 commit, so the work order's observed counts (2734 files / 20734 symbols / 64334 edges) described the 2026-08-07 snapshot, not base_sha. Resolved by the unplanned align run recorded in capture_events. Atlas preflight must still exercise its stale path (in-memory overlay) rather than assuming a fresh graph, because this condition recurs on every source edit."
+    },
+    {
+      "id": "architecture_check_absent_from_release_dag",
+      "owner": "not-this-work-order",
+      "status": "open",
+      "command": "grep -n \"architecture:check\" release-gates.v2.json",
+      "output": "(no matches)",
+      "note": "architecture:check is the only real file-size budget enforcement and runs solely in .github/workflows/publish-npm.yml. A green release DAG proves nothing about budgets, so Atlas files must be budget-checked explicitly rather than assumed covered."
+    }
+  ],
+  "working_tree_clean": false,
+  "working_tree_note": "Two tracked generated artifacts are modified by the align run recorded in capture_events. No source file is modified."
+}

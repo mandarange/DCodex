@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-08-07T09:27:05.970Z",
+  "generated_at": "2026-08-09T04:29:16.204Z",
   "git_head_sha": null,
-  "source_file_count": 2734,
-  "index_digest": "536ddb9f7e2c9a0f609ce56d979ddcee3611ad8546af59f47743b8e2063c7230",
+  "source_file_count": 2877,
+  "index_digest": "34f8150c890e78f1287525f41a67510687d858599eafefcaf191fd8bbb46cc93",
   "entries": [
     {
       "id": "code:scripts",
@@ -106,7 +106,7 @@
     },
     {
       "id": "code:core-codex-lb",
-      "text": "core-codex-lb is a module at src/core/codex-lb (100 files, low risk). Key exports: ActiveCombinedBridgeCatalogRead, AlreadyMigratedDesktopBridgeUnificationReceipt, AuxiliarySurfacesProbeInputV3, BRIDGE_ACTIVE_GENERATION_FILENAME, BRIDGE_ACTIVE_GENERATION_SCHEMA, and 484 more. Depends on: cli, core, core-__tests__, core-codex-runtime, core-errors, and 4 more.",
+      "text": "core-codex-lb is a module at src/core/codex-lb (103 files, low risk). Key exports: ActiveCombinedBridgeCatalogRead, AlreadyMigratedDesktopBridgeUnificationReceipt, AuxiliarySurfacesProbeInputV3, AvailableBridgeModelRow, BRIDGE_ACTIVE_GENERATION_FILENAME, and 511 more. Depends on: cli, core, core-__tests__, core-codex-app, core-codex-runtime, and 5 more.",
       "citations": [
         {
           "path": "src/core/codex-lb/desktop-bridge/types.ts"
@@ -135,7 +135,7 @@
       ],
       "trust_score": 0.8,
       "freshness": "fresh",
-      "token_cost": 90
+      "token_cost": 89
     },
     {
       "id": "code:core-commands",
@@ -169,6 +169,39 @@
       "trust_score": 0.8,
       "freshness": "fresh",
       "token_cost": 71
+    },
+    {
+      "id": "code:.sks-skill-path-space-7ae0DA-installed package with spaces",
+      "text": ".sks-skill-path-space-7ae0DA-installed package with spaces is a module at .sks-skill-path-space-7ae0DA/installed package with spaces (136 files, low risk). Key exports: APPSHOTS_EVIDENCE_SCHEMA, CLAIM_EVIDENCE_MATRIX_ARTIFACT, CODEX_HISTORY_SEARCH_SCHEMA, COMPLETION_PROOF_SCHEMA, COMPLETION_PROOF_STATUSES, and 389 more. It has no recorded outbound dependency.",
+      "citations": [
+        {
+          "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-schema-enforcer.js"
+        },
+        {
+          "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/selftest-proof-fixtures.js"
+        },
+        {
+          "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/stage-policy.js"
+        },
+        {
+          "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/route-prep.js"
+        },
+        {
+          "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-source-ledger-merge.js"
+        },
+        {
+          "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/pipeline-plan-writer.js"
+        },
+        {
+          "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/__tests__/health-oauth.test.js"
+        },
+        {
+          "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-capability.js"
+        }
+      ],
+      "trust_score": 0.8,
+      "freshness": "fresh",
+      "token_cost": 91
     },
     {
       "id": "code:core-agents",
@@ -238,7 +271,7 @@
     },
     {
       "id": "code:native-sks-menubar",
-      "text": "native-sks-menubar is a module at native/sks-menubar (45 files, low risk). It has no exported surface in the graph. It has no recorded outbound dependency.",
+      "text": "native-sks-menubar is a module at native/sks-menubar (47 files, low risk). Key exports: numberOfRows, tableView. It has no recorded outbound dependency.",
       "citations": [
         {
           "path": "native/sks-menubar/Sources/ProvidersRoutingTruth.swift"
@@ -267,11 +300,11 @@
       ],
       "trust_score": 0.8,
       "freshness": "fresh",
-      "token_cost": 39
+      "token_cost": 38
     },
     {
       "id": "code:core-codex-app",
-      "text": "core-codex-app is a module at src/core/codex-app (64 files, low risk). Key exports: CANONICAL_DIRECTIVES, CODEX_APP_FAST_UI_PRESERVATION_SCHEMA, CODEX_APP_FAST_UI_REPAIR_SCHEMA, CODEX_APP_UI_CLOBBER_GUARD_SCHEMA, CODEX_APP_UI_STATE_SNAPSHOT_SCHEMA, and 290 more. Depends on: cli, commands, core, core-agent-guidance, core-agents, and 14 more.",
+      "text": "core-codex-app is a module at src/core/codex-app (65 files, low risk). Key exports: CANONICAL_DIRECTIVES, CODEX_APP_FAST_UI_PRESERVATION_SCHEMA, CODEX_APP_FAST_UI_REPAIR_SCHEMA, CODEX_APP_UI_CLOBBER_GUARD_SCHEMA, CODEX_APP_UI_STATE_SNAPSHOT_SCHEMA, and 291 more. Depends on: cli, commands, core, core-agent-guidance, core-agents, and 14 more.",
       "citations": [
         {
           "path": "src/core/codex-app/menubar/migration.ts"
@@ -535,7 +568,7 @@
     },
     {
       "id": "code:commands",
-      "text": "commands is a module at src/commands (48 files, low risk). Key exports: BridgeCliError, BridgeCommandExecution, BridgeCommandFacade, BridgeCommandIo, BridgeCommandRequest, and 179 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 19 more.",
+      "text": "commands is a module at src/commands (48 files, low risk). Key exports: BridgeCliError, BridgeCommandExecution, BridgeCommandFacade, BridgeCommandIo, BridgeCommandRequest, and 180 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 19 more.",
       "citations": [
         {
           "path": "src/commands/research.ts"
@@ -766,7 +799,7 @@
     },
     {
       "id": "code:core-__tests__",
-      "text": "core-__tests__ is a module at src/core/__tests__ (57 files, low risk). Key exports: COMMAND_CATALOG, CURRENT_CODEX_RUNTIME_CONTRACT, CodexLbEnvLoadResult, CompetitorScorecardBaseline, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, and 187 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 24 more.",
+      "text": "core-__tests__ is a module at src/core/__tests__ (58 files, low risk). Key exports: CODEX_COMPUTER_USE_ONLY_POLICY, COMMAND_CATALOG, CURRENT_CODEX_RUNTIME_CONTRACT, CodexLbEnvLoadResult, CompetitorScorecardBaseline, and 189 more. Depends on: cli, core, core-agents, core-codex, core-codex-app, and 25 more.",
       "citations": [
         {
           "path": "src/core/__tests__/codex-mode-lock-provenance.test.ts"
@@ -795,7 +828,7 @@
       ],
       "trust_score": 0.8,
       "freshness": "fresh",
-      "token_cost": 78
+      "token_cost": 77
     },
     {
       "id": "code:core-remote",
@@ -1993,29 +2026,8 @@
       "trust_score": 0.8,
       "freshness": "fresh",
       "token_cost": 62
-    },
-    {
-      "id": "code:core-config",
-      "text": "core-config is a module at src/core/config (4 files, low risk). Key exports: ChangedOrMissingSecret, ManagedConfigMergeResult, PROTECTED_SECRET_KEYS, PROTECTED_SUPABASE_CONFIG_PATHS, PROTECTED_SUPABASE_ENV_KEYS, and 21 more. Depends on: core, core-text.",
-      "citations": [
-        {
-          "path": "src/core/config/managed-config-merge.ts"
-        },
-        {
-          "path": "src/core/config/supabase-secret-preservation.ts"
-        },
-        {
-          "path": "src/core/config/secret-preservation.ts"
-        },
-        {
-          "path": "src/core/config/config-migration-journal.ts"
-        }
-      ],
-      "trust_score": 0.8,
-      "freshness": "fresh",
-      "token_cost": 64
     }
   ],
   "token_budget": 8000,
-  "total_token_cost": 4571
+  "total_token_cost": 4595
 }

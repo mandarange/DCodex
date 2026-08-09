@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-07T09:27:05.970Z",
+  "generated_at": "2026-08-09T04:29:16.204Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "99cf0e9ac79f4acf97e713267c11ac2b1f44d440ca46c34c7379ea938d35dd17",
-  "snapshot_hash": "c822c0c4f6582c0f27e2a82e0bd3fb6ab50ee0d63e6a609f2640bd336775dce3",
-  "source_file_count": 2734,
-  "symbol_count": 20734,
-  "edge_count": 64334,
+  "inventory_digest": "d6889593f5db62d14d00c07a194625c17fbd471fb18b200d5551a3b87fdc594e",
+  "snapshot_hash": "a001a5ba85ed1a1d8bb4e976267ba1e08eeccba6e292435f2da6876fc4875256",
+  "source_file_count": 2877,
+  "symbol_count": 21727,
+  "edge_count": 67204,
   "extractors": [
     {
       "id": "code",
@@ -21,6 +21,958 @@
       "language": "shell",
       "lines": 5,
       "bytes": 93
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/config-adopt/config-adopt-command.js",
+      "sha256": "c9205735b739c4ad1b91643bd893eac73079216636e1b6b7c7b3713c2df8bbcc",
+      "language": "javascript",
+      "lines": 35,
+      "bytes": 1280
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/config-adopt/config-adopt.js",
+      "sha256": "779b251e1bfc5e333bf976d3e4c6ab875b4e1d33ffb728824202cd9d1541f2e2",
+      "language": "javascript",
+      "lines": 346,
+      "bytes": 13526
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/config-adopt/index.js",
+      "sha256": "76554b223bc523477b17373c909c2e690999b1dbf5488d5a5bfce8d7a4ee1056",
+      "language": "javascript",
+      "lines": 3,
+      "bytes": 145
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/evaluation.js",
+      "sha256": "124ea3f09b0e05aa79f4c966f708aaa15abeff66147bf03871cf2dd9c160e3ee",
+      "language": "javascript",
+      "lines": 636,
+      "bytes": 35403
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/fsx.js",
+      "sha256": "c1beab9f9c280048c04ff8d326b4e30fdd38e8c4a70c922f2e258d83cc09fffa",
+      "language": "javascript",
+      "lines": 770,
+      "bytes": 27006
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/init/__tests__/legacy-generation-convergence.test.js",
+      "sha256": "896637acf2b9fab6d6844c307e8c07338091a79aa73c2f1117b4c7f8dce36671",
+      "language": "javascript",
+      "lines": 176,
+      "bytes": 8642
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/init/__tests__/managed-skill-metadata-ownership.test.js",
+      "sha256": "bc3debf6ba56f187c5c167bd02cb22be8b6d40bc387772075d09a68101dcba2e",
+      "language": "javascript",
+      "lines": 82,
+      "bytes": 4180
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/init/legacy-generation-convergence.js",
+      "sha256": "61cae75a32e49d3543ebdd25192acd3fbb9c3711be10ae73061ad152b4a4d0b3",
+      "language": "javascript",
+      "lines": 263,
+      "bytes": 11328
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/init/managed-skill-install.js",
+      "sha256": "e1f14e8ba9c3926adc113348fef7230509db000aee43c642d1407649fcef204d",
+      "language": "javascript",
+      "lines": 54,
+      "bytes": 3495
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/init/skills.js",
+      "sha256": "f1348b875bc1fb1770d39406b0de9e4c097c9d490c96e7099cd277c8e243ef27",
+      "language": "javascript",
+      "lines": 1370,
+      "bytes": 112099
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/init/skills/filesystem.js",
+      "sha256": "841adb5cdb0655a0eb0ec50615ec8ac8b621230e874eb6e20c1279fe038a9e46",
+      "language": "javascript",
+      "lines": 89,
+      "bytes": 3438
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/init/skills/inventory.js",
+      "sha256": "76fdd1af66c5b82902ee14b02db84e557534d6e7ae03bfe3a42e3d96573c4c1d",
+      "language": "javascript",
+      "lines": 97,
+      "bytes": 3519
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/init/skills/manifest.js",
+      "sha256": "69f5e7737e4a18af9ce93409752cad670dd01f9b965610fd117cdd3a7795e2fd",
+      "language": "javascript",
+      "lines": 151,
+      "bytes": 7300
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-collaboration-policy.js",
+      "sha256": "d1cb1ae3db5c774c296e395b0ffe2c0f459b6eb21499c06b1b08f6625d63dff8",
+      "language": "javascript",
+      "lines": 92,
+      "bytes": 4673
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-backpressure.js",
+      "sha256": "437aa497ba803d9362f8db0f9249f3ff43b13bece923df9f28eb2f7e03975d9d",
+      "language": "javascript",
+      "lines": 19,
+      "bytes": 736
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-capability.js",
+      "sha256": "b49a2204a23350e68023e026694fba9a894794e3b34aa71b8e1a8aa895d9b669",
+      "language": "javascript",
+      "lines": 28,
+      "bytes": 1111
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-client.js",
+      "sha256": "8d083713818959f2ac752cebab7014d87c99b50981cbf6f14c058556d3585c95",
+      "language": "javascript",
+      "lines": 99,
+      "bytes": 5148
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-context-cache.js",
+      "sha256": "5654c71cc93f661411efccd3eb679efa31c98ee6a0b125ab2a9b1c6e0138b113",
+      "language": "javascript",
+      "lines": 20,
+      "bytes": 743
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-control-adapter.js",
+      "sha256": "380a44de3ba43cc96e9ce4e3b4b75b823f4edfc7a0266451852cb9271cf418db",
+      "language": "javascript",
+      "lines": 100,
+      "bytes": 4549
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-json-repair.js",
+      "sha256": "146764f707ac3a259b76f9c9e8f242db45a03c2519ae9e6666822665949ee8b1",
+      "language": "javascript",
+      "lines": 51,
+      "bytes": 1625
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-metrics.js",
+      "sha256": "54e77008cbe507db06686c7c296050dc19090ba3f798fd396303612c2b3fe3d9",
+      "language": "javascript",
+      "lines": 41,
+      "bytes": 1740
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-ollama-client.js",
+      "sha256": "729baec503cfe3cdf525b02c4743f9dda09cd3f5235715a82a4ca629a45daf15",
+      "language": "javascript",
+      "lines": 66,
+      "bytes": 3135
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-openai-compatible-client.js",
+      "sha256": "4057309ef004fe596b6c3d4c9b17f39bad17f10c96e9cf2d0269548e198b832f",
+      "language": "javascript",
+      "lines": 29,
+      "bytes": 984
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-schema-enforcer.js",
+      "sha256": "c0a3d76d9cf127e2e03cff48e5cd58fea1975933d29273263e43b49846a18974",
+      "language": "javascript",
+      "lines": 14,
+      "bytes": 664
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-llm-smoke.js",
+      "sha256": "be428320652005e84ae76cf9ef0504d628b2646c7b9ecfa60edb755de84f50df",
+      "language": "javascript",
+      "lines": 82,
+      "bytes": 3457
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/local-llm/local-worker-eligibility.js",
+      "sha256": "e281844045be3f47063dc17b18a088452e7373afbcd0776f477d3ae47edf2e7f",
+      "language": "javascript",
+      "lines": 26,
+      "bytes": 1495
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/locks/__tests__/file-lock.test.js",
+      "sha256": "c2d65ce5bcae8172f305c2f619d6c57c3bd297b9ee8739f7c602dfc2da2a9703",
+      "language": "javascript",
+      "lines": 74,
+      "bytes": 3762
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/locks/file-lock.js",
+      "sha256": "c589047ec1a516deff34eacf2431c0bb6908f03026f5709e13912aafd9a0f916",
+      "language": "javascript",
+      "lines": 214,
+      "bytes": 7741
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/__tests__/failure-redaction.test.js",
+      "sha256": "223d2ff25a5a74f4c7fed499232b8ba3c8998a1f63413984bb6f51fdc061d72e",
+      "language": "javascript",
+      "lines": 168,
+      "bytes": 7810
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/__tests__/health-oauth.test.js",
+      "sha256": "efc2e6647a7ed254735345d20b46b07bbb992bae45087faefc4e928740e0772e",
+      "language": "javascript",
+      "lines": 360,
+      "bytes": 17833
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/__tests__/inventory-mutation.test.js",
+      "sha256": "544dd07110d32a7fec6c5f129ecce38d3630f4caf00c66add621aea56afcd87d",
+      "language": "javascript",
+      "lines": 284,
+      "bytes": 15794
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/__tests__/legacy-secret-migration.test.js",
+      "sha256": "636d6bdae84e3fd880670933a5d6d707aae4d429f0f660c0431f4e54a8430fae",
+      "language": "javascript",
+      "lines": 133,
+      "bytes": 7133
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/backup.js",
+      "sha256": "51667c133958d1d64755f3ffc7838adbaa73e1b8c852e6a74f7305f0dcacd976",
+      "language": "javascript",
+      "lines": 100,
+      "bytes": 4939
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/codex-cli-adapter.js",
+      "sha256": "8890f6d2c2421766e410bac7b4f2ea9fa7d26808cf84d87276dd3430b2d86ee2",
+      "language": "javascript",
+      "lines": 163,
+      "bytes": 7224
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/config-reader.js",
+      "sha256": "ee9a0867afdda046d5e9dd5d33059dd3092e22910004a4378acd3cf4c9d8bb58",
+      "language": "javascript",
+      "lines": 145,
+      "bytes": 6640
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/effective-merge.js",
+      "sha256": "bdf94f4bf9131cce31d2a5eec1b0d0d5c4fd8a33e07e31db0522a0d123196701",
+      "language": "javascript",
+      "lines": 24,
+      "bytes": 876
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/guarded-patch.js",
+      "sha256": "e8e4840f6c1274a815e6a1c6e401e40ccda00f88267a6ea5f5a6a4b646412eef",
+      "language": "javascript",
+      "lines": 259,
+      "bytes": 10110
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/health-check.js",
+      "sha256": "fd59afca03d8451636c94805bb9416e2994c5ee73ae8dae341e645137a6897af",
+      "language": "javascript",
+      "lines": 473,
+      "bytes": 22058
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/index.js",
+      "sha256": "c17e1d8fe2e6b1ab503a4450d502e2ad214bbdd0378b88947854656bac9a6899",
+      "language": "javascript",
+      "lines": 14,
+      "bytes": 459
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/inventory.js",
+      "sha256": "d404a79d60300556759e0b86d719b7a3f3a9864af99f0000d0e16b5c06ce5f81",
+      "language": "javascript",
+      "lines": 82,
+      "bytes": 4284
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/mutation.js",
+      "sha256": "45d9ffb0b198bdf53fc3b076eba4dc4bfe0c0fef4d61cc1ae4811b685d7a7ba4",
+      "language": "javascript",
+      "lines": 366,
+      "bytes": 19806
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/oauth.js",
+      "sha256": "d3fd49b41131657aa8d78118be46194558d1fb8a4cde7efed3cfc920d6eb3541",
+      "language": "javascript",
+      "lines": 44,
+      "bytes": 2284
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/redaction.js",
+      "sha256": "0f48afbc363b1a553912599a0746853e5d01f9780f28232b30eee774f7044521",
+      "language": "javascript",
+      "lines": 84,
+      "bytes": 4004
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/restore.js",
+      "sha256": "8072aca4e99e193bbf158a48d0188f07ea66c604456ffa79f9719a90fc522c19",
+      "language": "javascript",
+      "lines": 106,
+      "bytes": 4505
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/scope.js",
+      "sha256": "51f68f4e378252a378ee82afa2ee6dc51340b297f04a309633ce889389761137",
+      "language": "javascript",
+      "lines": 67,
+      "bytes": 3192
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/secret-policy.js",
+      "sha256": "ee0c1379ac5bb5b0870fb4e5c1a2dcaaece71dda53433698b7dd783290e63680",
+      "language": "javascript",
+      "lines": 194,
+      "bytes": 8122
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/mcp-config/types.js",
+      "sha256": "58e55a2690cdb17bab262bcb01a386a671091431ad7f73f13fadcb5a542c7fdf",
+      "language": "javascript",
+      "lines": 8,
+      "bytes": 468
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/memory-summary.js",
+      "sha256": "d8e1caf8abe1ae23f2d3f236011564c3de45428e7d33c3ad58259403318e9e14",
+      "language": "javascript",
+      "lines": 71,
+      "bytes": 3469
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/active-context.js",
+      "sha256": "c79a7636ba24d298b4b5876e617e302c251c1cd6ed810e66ab20c2336066e8ed",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 76
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/agent-stage-policy.js",
+      "sha256": "5e3380e886ae88c59da21e33a13b3db0a5c11949e08a2588e9dd703fb2ba8a75",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 97
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/final-gpt-patch-stage.js",
+      "sha256": "0b20c81b85aa3765ff8e70fcff07228cc28654ea03b210bf966d30db04b3d83e",
+      "language": "javascript",
+      "lines": 47,
+      "bytes": 1690
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/final-gpt-review-stage.js",
+      "sha256": "4f9e7d6a2cdad3568602b72cd4e33088109232a42d730ecaf71e502e3b667a16",
+      "language": "javascript",
+      "lines": 4,
+      "bytes": 187
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/finalize-pipeline-result.js",
+      "sha256": "fdfd09bedc9ba81d365ad713cdc33837346127c03c5b9823331317e5b006bee0",
+      "language": "javascript",
+      "lines": 59,
+      "bytes": 2865
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/gpt-final-required.js",
+      "sha256": "68d64e7602d2dc6a50f7c6637f56b499072b1dd713f31ba06abee5a46a0e1d89",
+      "language": "javascript",
+      "lines": 31,
+      "bytes": 1562
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/pipeline-plan-writer.js",
+      "sha256": "4e7bd67023eb94c922cacc0ffd5ae72f01d1962be61cfa81fef32de9109397bd",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 202
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/plan-schema.js",
+      "sha256": "d2925564bed8d36a7198f60ec66aeef6d7e807cc83c64ae2272682eaabca4ce0",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 110
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/prompt-context-answer.js",
+      "sha256": "feb089d46bc027a3144fff7ca89910ca8d7ac773236381cfd780d62626459c96",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 57
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/prompt-context-computer-use.js",
+      "sha256": "eba5eba78818a398b26aca1cbe1587949ecb65018dbc151070dee75f08ffd2db",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 62
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/prompt-context-dfix.js",
+      "sha256": "79e3f5f390f0f80e12d7444ca1adf6d95f888135fed37dde55a949e6993a26ef",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 56
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/prompt-context.js",
+      "sha256": "99a5dc6a9a3cf0161acc3aa88d8a5db6251de5d15cd8b0858fbdde4a1172aee9",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 140
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/route-prep-db.js",
+      "sha256": "15c4868980365d5327f7b4d578abde5e88c3f9eb15c444eabbe7df897cc06d7e",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 48
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/route-prep-gx.js",
+      "sha256": "15c4868980365d5327f7b4d578abde5e88c3f9eb15c444eabbe7df897cc06d7e",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 48
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/route-prep-image-ux.js",
+      "sha256": "15c4868980365d5327f7b4d578abde5e88c3f9eb15c444eabbe7df897cc06d7e",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 48
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/route-prep-ppt.js",
+      "sha256": "15c4868980365d5327f7b4d578abde5e88c3f9eb15c444eabbe7df897cc06d7e",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 48
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/route-prep-qa.js",
+      "sha256": "15c4868980365d5327f7b4d578abde5e88c3f9eb15c444eabbe7df897cc06d7e",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 48
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/route-prep-research.js",
+      "sha256": "15c4868980365d5327f7b4d578abde5e88c3f9eb15c444eabbe7df897cc06d7e",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 48
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/route-prep.js",
+      "sha256": "e8c4198cc7493356a851f5e2c91b88d83d9956213f3e080a9b2b6786d2543029",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 70
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/stage-policy.js",
+      "sha256": "5e3380e886ae88c59da21e33a13b3db0a5c11949e08a2588e9dd703fb2ba8a75",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 97
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/stop-gate-context7.js",
+      "sha256": "aa765da1ff6a6b846f0773ea36de8bacda4f495fe82997cf254c4d75d408efc4",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 100
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/stop-gate-proof.js",
+      "sha256": "6b82c15b57f6b73248ede5548fd26a892a5988c678f1b94c97abaebcf3fcc0c6",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 66
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/stop-gate-subagents.js",
+      "sha256": "027f8f6283dc00ab6b1f2721b4c38e50d4f9faa90fdc28050f03c6b305a8b37a",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 96
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/stop-gate.js",
+      "sha256": "bf80baba24417c4f5ad02af9d597f673102b21434d9e606c81b740fd0184e477",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 219
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/pipeline/validation.js",
+      "sha256": "2082b1ab87f1c34aad39d7c67699d00c1ffb9ea9c8f48bf6adc39c70caa6aa43",
+      "language": "javascript",
+      "lines": 1,
+      "bytes": 78
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/__tests__/route-adapter-retention.test.js",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "language": "javascript",
+      "lines": 0,
+      "bytes": 0
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/auto-finalize.js",
+      "sha256": "56500d20116bc4727c2da94fbb2339acb1762db696be43a80de95b115cd9950c",
+      "language": "javascript",
+      "lines": 208,
+      "bytes": 10574
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/claim-ledger.js",
+      "sha256": "71940ac8827c891478a28208c5e0ed831e1fc14d0360ea15d6da3f677688be5d",
+      "language": "javascript",
+      "lines": 9,
+      "bytes": 388
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/command-ledger.js",
+      "sha256": "1cc33f0d03377408884c8bcc7363a9bb25c4b24d7852346fcc097e199910abff",
+      "language": "javascript",
+      "lines": 20,
+      "bytes": 784
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/evidence-collector.js",
+      "sha256": "c7d1f10214f8ae4a18a41b5f447144e8a230f1f23f0f53f6d8e9d64ef382ff16",
+      "language": "javascript",
+      "lines": 35,
+      "bytes": 1851
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/file-change-ledger.js",
+      "sha256": "bdf02ce975eb330dad02760f11145ccf280e947b159d7e3260129f8948076c1b",
+      "language": "javascript",
+      "lines": 5,
+      "bytes": 201
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/proof-reader.js",
+      "sha256": "e32e3c4369bd32d70f9ad26e8e09ee92dcb3516580becaef6225c64fd85889c5",
+      "language": "javascript",
+      "lines": 32,
+      "bytes": 1442
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/proof-redaction.test-helper.js",
+      "sha256": "7be31bc1675bbfbde3b8966ffbbc427a6f72a212e55a8f1ad8af49d81346e4d6",
+      "language": "javascript",
+      "lines": 8,
+      "bytes": 257
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/proof-schema.js",
+      "sha256": "6eba781a3ef3a7deec143c2a0f6d078e8d44d029aa6c3df2be6ebb9410826eda",
+      "language": "javascript",
+      "lines": 64,
+      "bytes": 1843
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/proof-writer.js",
+      "sha256": "5cbed7789955e52e3b94d9d7b0d6bfb2022803b03bd167b8e88a85f69b72f96b",
+      "language": "javascript",
+      "lines": 108,
+      "bytes": 5977
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/route-finalizer-fixtures.js",
+      "sha256": "64f3525c11da2d6ed58433f113225e1d1893be8687c5170c8da4928247dc4a17",
+      "language": "javascript",
+      "lines": 21,
+      "bytes": 371
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/route-finalizer-policy.js",
+      "sha256": "d387e8fde950b7cab9d74ea8e786e033dfd964d754eae50a49a3f88a03712721",
+      "language": "javascript",
+      "lines": 12,
+      "bytes": 624
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/route-finalizer.js",
+      "sha256": "ca658ad6a577799b73617bf537c39aaa5c278c9d3df5cce40e28b85309153668",
+      "language": "javascript",
+      "lines": 226,
+      "bytes": 13324
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/route-proof-policy.js",
+      "sha256": "1abad0b694331212f217c47937f7b4dcefd88dada221181bde7cf1289d21411d",
+      "language": "javascript",
+      "lines": 104,
+      "bytes": 3103
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/runtime-evidence-policy.js",
+      "sha256": "5337e022d8f1d5846e58ccf65510d33765b3f1060baa6a69a20835e1bdcc0cde",
+      "language": "javascript",
+      "lines": 185,
+      "bytes": 7946
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/runtime-truth-matrix.js",
+      "sha256": "78dc1a435b1bb3e780940df81bdc87111a08955503b62f8d2587d2c22af3afd3",
+      "language": "javascript",
+      "lines": 220,
+      "bytes": 13005
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/proof/selftest-proof-fixtures.js",
+      "sha256": "40ebaff1731dc2bd4ee17d9e9c2d6ff610d1f1c18c544a41510588309e7669cb",
+      "language": "javascript",
+      "lines": 58,
+      "bytes": 2614
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/__tests__/research-adversarial-review.test.js",
+      "sha256": "3883a6e73c53cbfc16ad138ef5ecb7a495f37217dc4f123f5824d82bc97a146e",
+      "language": "javascript",
+      "lines": 405,
+      "bytes": 23927
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/__tests__/research-canonical-adversarial-validation.test.js",
+      "sha256": "07554881228fe1603c66673dd32675c1fda0d2e755b19cfea1f3295ebbfccddf",
+      "language": "javascript",
+      "lines": 130,
+      "bytes": 9257
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/__tests__/research-claim-integrity.test.js",
+      "sha256": "79699a8513ebdb61b8ba713d3d013eea6ac98bd296a24b8090bd69d89d030530",
+      "language": "javascript",
+      "lines": 371,
+      "bytes": 19657
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/__tests__/research-deadline.test.js",
+      "sha256": "a1efa8de9f41bc4b56772cc2519b64724b50a8125159b38304a94ac2c3ac32f1",
+      "language": "javascript",
+      "lines": 46,
+      "bytes": 1983
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/__tests__/research-source-evidence-fixture.js",
+      "sha256": "53f3d3a0de7fa07d11d8dc070fb560d49c32ae36279e1d74a744b660b75c62b1",
+      "language": "javascript",
+      "lines": 53,
+      "bytes": 2440
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/__tests__/research-source-evidence.test.js",
+      "sha256": "6eff788bebb291d74e956b29a90677b0f9459c6e813f78fdab25113e6d9729df",
+      "language": "javascript",
+      "lines": 94,
+      "bytes": 5392
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/__tests__/research-source-layer-catalog.test.js",
+      "sha256": "b15d16d3d0e7fa27f888e2f3503a2fc2186aa9ed871c0ab1649a46bf27bf7df3",
+      "language": "javascript",
+      "lines": 10,
+      "bytes": 670
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/__tests__/research-source-skill.test.js",
+      "sha256": "a43c088542da63fcb8a51669236a6cdba87f236a7afc750c8542280fc61e69ea",
+      "language": "javascript",
+      "lines": 11,
+      "bytes": 784
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/claim-evidence-matrix.js",
+      "sha256": "ae884370c52a912cad2a14e4f49e214d7af38409934396395532b90478eb8879",
+      "language": "javascript",
+      "lines": 194,
+      "bytes": 10714
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/experiment-plan.js",
+      "sha256": "0be41de4a8056474eaa43b1919a21c63474d56f47aad1dd27e5bc376b25cc8f8",
+      "language": "javascript",
+      "lines": 56,
+      "bytes": 4470
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/falsification.js",
+      "sha256": "30b3b0d901cd724d8b572b4db8e494c7362822a9fa644c946b1bc6e8cda9ba3e",
+      "language": "javascript",
+      "lines": 24,
+      "bytes": 1645
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/implementation-blueprint-densifier.js",
+      "sha256": "d8960e4f78e584072fd309311d1d2030c7d694d4e924b328e8147e172ecdd678",
+      "language": "javascript",
+      "lines": 145,
+      "bytes": 14412
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/implementation-blueprint-markdown.js",
+      "sha256": "52be40ec789a27750ff0673bd901374f10ef0b3d6cdf306631761dac4bcec118",
+      "language": "javascript",
+      "lines": 30,
+      "bytes": 1347
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/implementation-blueprint.js",
+      "sha256": "d0ef9fb7351ffb4fdd46d9c5de52f597b2e683f96827b9c9f7555ce4e6803d1a",
+      "language": "javascript",
+      "lines": 132,
+      "bytes": 7544
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/mock-result.js",
+      "sha256": "ccb7de827a3c38e56f13cf9b85fa639795ed76cb7203227af107ea3de0cfb26c",
+      "language": "javascript",
+      "lines": 516,
+      "bytes": 28586
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/replication-pack.js",
+      "sha256": "304b09a811ad6e2ea8231c62acfdb11d6f143e45ad4a7644b2e86f5c9cc7ae1c",
+      "language": "javascript",
+      "lines": 56,
+      "bytes": 3385
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-adversarial-review.js",
+      "sha256": "f98a2413d2eed53e36c7be12cd9fe0919b9a8610fb7fe73994fdda48a2c6b43b",
+      "language": "javascript",
+      "lines": 1162,
+      "bytes": 66013
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-claim-builder.js",
+      "sha256": "03aa3be455f52045ec4150a6133f372c4e2f381ff496f6af4582dedabc3661b2",
+      "language": "javascript",
+      "lines": 165,
+      "bytes": 9417
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-claim-synthesizer.js",
+      "sha256": "e3d909ac28d7a9f1e069f94ab03df7122fcebde0d233aa4d7535c69c8f0dfe42",
+      "language": "javascript",
+      "lines": 340,
+      "bytes": 18372
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-cycle-runner.js",
+      "sha256": "3c84936ac9892628c6d67a3f4044e989e7e9b77a3e1717b8233509a03ace2ddb",
+      "language": "javascript",
+      "lines": 179,
+      "bytes": 8119
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-falsification-runner.js",
+      "sha256": "8f5f4410b67b67ac58cb9bac083487dd4472607959a057d574da3cd9d134ece8",
+      "language": "javascript",
+      "lines": 173,
+      "bytes": 8915
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-final-reviewer.js",
+      "sha256": "0bd666388012ab776d4adb4c3a88cfbde36f48bf0b041a0f4b2c648bafec3360",
+      "language": "javascript",
+      "lines": 156,
+      "bytes": 9681
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-handoff.js",
+      "sha256": "a8acfc64c32e4ecaa96f2a29d87dfd6d4efc75b9a2046b84f6f77d75de265968",
+      "language": "javascript",
+      "lines": 114,
+      "bytes": 6801
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-plan-markdown.js",
+      "sha256": "b6d4af62ab67692a52de03bf5fa3ff2611eacfd4d611d31ac6b02a23065d252f",
+      "language": "javascript",
+      "lines": 122,
+      "bytes": 8067
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-prompt-contract.js",
+      "sha256": "485ec323d180ef999068601d9b5ab6268349b3a51e3bdc091ec947ecee90c954",
+      "language": "javascript",
+      "lines": 23,
+      "bytes": 1597
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-quality-contract.js",
+      "sha256": "df403d639b485d89b3bd0b98230167ff091e2b81e858af2f153a88875ef95ded",
+      "language": "javascript",
+      "lines": 60,
+      "bytes": 3307
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-realistic-report.js",
+      "sha256": "ff4b306c968ec7096041338a9250bb379de1ea83ba16400bdf7d908a616339e8",
+      "language": "javascript",
+      "lines": 169,
+      "bytes": 21619
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-repetition-detector.js",
+      "sha256": "4592c5790d367374521be67a5b4fbf679de1b5dd04f2c650b756476f4473ff32",
+      "language": "javascript",
+      "lines": 74,
+      "bytes": 3525
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-report-quality.js",
+      "sha256": "b383b929157eebac0faf23df04f25fd3b79b429eff3a91b2a328bd4b51860aa2",
+      "language": "javascript",
+      "lines": 88,
+      "bytes": 3841
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-review-artifact-digest.js",
+      "sha256": "8c2dac8327a607d3b378e4a9c56b9b0f5d34fd9a4adc2f3822588eb5d34f3ce7",
+      "language": "javascript",
+      "lines": 65,
+      "bytes": 2949
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-source-evidence.js",
+      "sha256": "cc766d7eada027178f71d10f0c820a5e54132b1c398db381d91ba2c3e379f95e",
+      "language": "javascript",
+      "lines": 141,
+      "bytes": 7699
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-source-layer-catalog.js",
+      "sha256": "b3b2d37367de5b9768341e5f2ec8ee1ac8fb49ce153960a9f510c3e3047508c5",
+      "language": "javascript",
+      "lines": 67,
+      "bytes": 3934
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-source-ledger-merge.js",
+      "sha256": "b912539fb5b66f22b4047d9c3bace2a46e9e3c91bc78ddf408526027d72aa752",
+      "language": "javascript",
+      "lines": 423,
+      "bytes": 22826
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-source-shards.js",
+      "sha256": "4d2f5bfad2f3ef1067bbf4040ad1675c178ce652b326f460b25c6d32bf3af3e2",
+      "language": "javascript",
+      "lines": 131,
+      "bytes": 7740
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-stage-runner.js",
+      "sha256": "0874c4747c0765e40625fd7ca0e5660847ff678b6a4b56bb05fae639ac23df2e",
+      "language": "javascript",
+      "lines": 538,
+      "bytes": 33891
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-super-search.js",
+      "sha256": "189f7f322ad420cde3cd64519fc9a8538007831cd6f584783869f87789a43719",
+      "language": "javascript",
+      "lines": 187,
+      "bytes": 9490
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-synthesis-prompt.js",
+      "sha256": "751387e541ebf86d3f719c1a1bf83eba37a571eddb38b715419403a7407b451f",
+      "language": "javascript",
+      "lines": 70,
+      "bytes": 3778
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-synthesis-writer.js",
+      "sha256": "4edb427bc5d4821f3ccd6432a3fe5f90e6198e2abc729a570485846e168af353",
+      "language": "javascript",
+      "lines": 288,
+      "bytes": 17853
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/research-work-graph.js",
+      "sha256": "9a7128a339e835363b7bb8af42da0417dedfeab58a8c6400aad2bfa5466ac2b7",
+      "language": "javascript",
+      "lines": 171,
+      "bytes": 8101
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/research/source-quality-report.js",
+      "sha256": "c2a1046a514e14a733db65c4e9591027b8be25ef6dccddcc0cab025edc5a7d50",
+      "language": "javascript",
+      "lines": 114,
+      "bytes": 5090
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/rust-accelerator.js",
+      "sha256": "783bdcd9f5f6c4f59c6ef057250fbef5b9c4d379c37e998240e4cce8e54c1791",
+      "language": "javascript",
+      "lines": 150,
+      "bytes": 6793
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/source-intelligence/appshots-evidence.js",
+      "sha256": "1e5fe2b614fb6c3490f9aeed8dd44efae50f86da569e48de1d48493f42c42c6f",
+      "language": "javascript",
+      "lines": 124,
+      "bytes": 7080
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/source-intelligence/codex-history-search.js",
+      "sha256": "c757b256e9fddcb097b2641b9605cb70617bbba61ee3e51cede3ca779acc4fbb",
+      "language": "javascript",
+      "lines": 70,
+      "bytes": 2856
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/source-intelligence/source-intelligence-policy.js",
+      "sha256": "a14e7170f7eba7973de5b27f76e14457f5640fcdcc9ab3e97ad84d4a389f269a",
+      "language": "javascript",
+      "lines": 93,
+      "bytes": 3997
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/source-intelligence/source-intelligence-proof.js",
+      "sha256": "7d47ed9e34912001fffecd585a7fc5b685aab02a48e736c3159d81df636af6d5",
+      "language": "javascript",
+      "lines": 39,
+      "bytes": 1935
+    },
+    {
+      "path": ".sks-skill-path-space-7ae0DA/installed package with spaces/dist/core/source-intelligence/source-intelligence-runner.js",
+      "sha256": "778fbc7b4e2db7f0f54e9ab7680fc29fe04e24c9421f297b9b1ee2a9219f1760",
+      "language": "javascript",
+      "lines": 143,
+      "bytes": 7427
     },
     {
       "path": "bench/tasks/t01-off-by-one/repo/src/pagination.js",
@@ -226,6 +1178,13 @@
       "bytes": 2438
     },
     {
+      "path": "native/sks-menubar/Sources/CodexLifecyclePolicy.swift",
+      "sha256": "bc42c7ed5999ceb07ed5673bdd79ff7f6bde800cf34e65129023ab91bfb322fc",
+      "language": "swift",
+      "lines": 18,
+      "bytes": 564
+    },
+    {
       "path": "native/sks-menubar/Sources/ControlCenterWindowController.swift",
       "sha256": "12ec22785507de7d8395a1943119c6dd642b2b3753d6551f4980e3cc0834d9a2",
       "language": "swift",
@@ -283,17 +1242,17 @@
     },
     {
       "path": "native/sks-menubar/Sources/OverviewViewController.swift",
-      "sha256": "c160d2fbe82beef64e2967e7b86ef3d8c314d60bd170a3e8ab139761aa3d6471",
+      "sha256": "1d655eeb1ad5a4070193f3f830f0c7a8fa19030857a74d6ae7f6fb439f737f51",
       "language": "swift",
       "lines": 499,
-      "bytes": 25270
+      "bytes": 25386
     },
     {
       "path": "native/sks-menubar/Sources/ProcessClient.swift",
-      "sha256": "f6303a943477c92da4331847958c7eb958285b0e305daf73976f99d63d4d89c2",
+      "sha256": "edf052a370ff03f24eee61c232354f56da7c8763aa42162eee32f11bf04a7e36",
       "language": "swift",
-      "lines": 459,
-      "bytes": 19902
+      "lines": 461,
+      "bytes": 20059
     },
     {
       "path": "native/sks-menubar/Sources/ProcessExecutionState.swift",
@@ -324,6 +1283,13 @@
       "bytes": 9374
     },
     {
+      "path": "native/sks-menubar/Sources/ProvidersModelExposure.swift",
+      "sha256": "da41d34111282b37d239b6b19f129969e311df648d99c75bdecf1e238a91f667",
+      "language": "swift",
+      "lines": 178,
+      "bytes": 9745
+    },
+    {
       "path": "native/sks-menubar/Sources/ProvidersOpenRouter.swift",
       "sha256": "5202380de35fd474aa17a9849ddd849180a9a74d10cd65e9953e50ffc4ab8fd9",
       "language": "swift",
@@ -339,17 +1305,17 @@
     },
     {
       "path": "native/sks-menubar/Sources/ProvidersRoutingTruth.swift",
-      "sha256": "ecf93be68ed83a01b43463be94d19aaced94c1d9379733d26683c3bc5986c034",
+      "sha256": "8b1513bc5aa7957da1503c2bc02fbcb2878ef76a080114ea0b43deced7d0ac64",
       "language": "swift",
-      "lines": 387,
-      "bytes": 19383
+      "lines": 478,
+      "bytes": 23955
     },
     {
       "path": "native/sks-menubar/Sources/ProvidersViewController.swift",
-      "sha256": "b2c26f12827d8372c40af554930d0d11c94178d6c6957a0b7fcde6e14127c298",
+      "sha256": "a4f7a262d4b925cc298fb0e608573317151208a6b296cca63274276fa66b22c0",
       "language": "swift",
-      "lines": 292,
-      "bytes": 19322
+      "lines": 335,
+      "bytes": 21679
     },
     {
       "path": "native/sks-menubar/Sources/RemoteCodingViewController.swift",
@@ -360,10 +1326,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/SKSKeychainStore.swift",
-      "sha256": "5ee086898aab46bc7f56bb31e5e3ceea3415ac1981e0668ea0106fc0f4848c7c",
+      "sha256": "41f6aeaf34731f9a5916c30a4c6b6e2886627a6b868b7a3fdbdf324e6e7091c1",
       "language": "swift",
-      "lines": 344,
-      "bytes": 14103
+      "lines": 364,
+      "bytes": 15183
     },
     {
       "path": "native/sks-menubar/Sources/SecureProcessEnvelope.swift",
@@ -374,10 +1340,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/SettingsViewController.swift",
-      "sha256": "bff69affef30412faf2160d7b8d727497f6da9206c3170e907fe35aade7de779",
+      "sha256": "5a91b3a81a2e21ed095a99de1fb350cf6f3bc81cc357c9c2fbe0dc262523666b",
       "language": "swift",
-      "lines": 143,
-      "bytes": 7148
+      "lines": 144,
+      "bytes": 7354
     },
     {
       "path": "native/sks-menubar/Sources/SidebarItem.swift",
@@ -395,10 +1361,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/StatusItemController.swift",
-      "sha256": "4739ddc0614bbd51fe151e5434ab004b2958b5f9ca9ba495c8d7c25be17b2dce",
+      "sha256": "03b8da952614a0ce2d46a20af41e9fb0f4f2062dc7b9d2dbc96f36d3bff10480",
       "language": "swift",
       "lines": 377,
-      "bytes": 19448
+      "bytes": 19537
     },
     {
       "path": "native/sks-menubar/Sources/UpdatesViewController.swift",
@@ -444,17 +1410,17 @@
     },
     {
       "path": "native/sks-menubar/Tests/ProvidersBridgeStatusTests.swift",
-      "sha256": "8047aee7ca53fa8808f39aeb79e7a149fcbfba48177d14a27b21d6fe4cfd057d",
+      "sha256": "e36454be0ffdb8797a84272f1722d6bcf368b7158777050bb1167f13ca360161",
       "language": "swift",
-      "lines": 69,
-      "bytes": 3197
+      "lines": 99,
+      "bytes": 4463
     },
     {
       "path": "native/sks-menubar/Tests/ProvidersCapabilityTruthTests.swift",
-      "sha256": "6a746feb83a7ed351175d6a698910bdd4ae893b1990aacc215021ccd45f45ca4",
+      "sha256": "9cf0f9f2039c13f0038017144f3c1273ee8bc213e70cda10125c771927c485ee",
       "language": "swift",
-      "lines": 139,
-      "bytes": 9742
+      "lines": 140,
+      "bytes": 9836
     },
     {
       "path": "native/sks-menubar/Tests/ProvidersCatalogSyncTests.swift",
@@ -479,10 +1445,10 @@
     },
     {
       "path": "native/sks-menubar/Tests/SKSKeychainStoreTests.swift",
-      "sha256": "ab22d886b117314feb3571faef739b3b434b1fe4b26bc9ed3343154c267f51f6",
+      "sha256": "516dec6c7183b1bba49eebb2d61d2c19db2c6213002db15ad25f8155dff666c7",
       "language": "swift",
-      "lines": 96,
-      "bytes": 4127
+      "lines": 101,
+      "bytes": 4444
     },
     {
       "path": "native/sks-menubar/Tests/SingletonInstanceGuardTests.swift",
@@ -894,10 +1860,10 @@
     },
     {
       "path": "src/commands/bridge.ts",
-      "sha256": "c1a38f469d3854efdbc36bb04f97584ef67724bc13b39378aa4b02e92c99cc76",
+      "sha256": "dc8d9dd4c2f2b62aaef0bf8c7e1ca82ae399fb02bdf80c8dedb0fcb39ac832c6",
       "language": "typescript",
-      "lines": 410,
-      "bytes": 15481
+      "lines": 431,
+      "bytes": 16392
     },
     {
       "path": "src/commands/code-structure.ts",
@@ -971,17 +1937,17 @@
     },
     {
       "path": "src/commands/doctor-profile.ts",
-      "sha256": "dec43b7a3b677a8b1e92f76ac750877a85c2eed5d63708d0fd048ba8bb2ba777",
+      "sha256": "29507888cd8a76fa99eabdabcafae837374766f52c8d07aa5deb771b22ba2a80",
       "language": "typescript",
       "lines": 92,
-      "bytes": 3633
+      "bytes": 3666
     },
     {
       "path": "src/commands/doctor.ts",
-      "sha256": "75d000f1b04e1011df6463a2ebbeadfc5854d7b39c1dbce12e6e7792d28c6628",
+      "sha256": "08f20c46b44b0a06c00bcdeb223b682da47d597e9da5e5f23eb4c09c1d7f466d",
       "language": "typescript",
-      "lines": 1717,
-      "bytes": 89487
+      "lines": 1751,
+      "bytes": 91374
     },
     {
       "path": "src/commands/features.ts",
@@ -1216,10 +2182,10 @@
     },
     {
       "path": "src/core/__tests__/canonical-test-runner-temp.test.ts",
-      "sha256": "45f891e65d6badf17c508c63e56707cb7be0898b88a34d21a650e9969fceae3a",
+      "sha256": "66fa50161ea2c693d4b5a3861322819801e7da4056b5a3f5863d97ec6c5c82b4",
       "language": "typescript",
-      "lines": 272,
-      "bytes": 12322
+      "lines": 274,
+      "bytes": 12541
     },
     {
       "path": "src/core/__tests__/code-pack-freshness-preflight.test.ts",
@@ -1283,6 +2249,13 @@
       "language": "typescript",
       "lines": 59,
       "bytes": 2522
+    },
+    {
+      "path": "src/core/__tests__/computer-use-host-boundary.test.ts",
+      "sha256": "99fd995052a850bb01084848c3c3cd0df05897a6fe6c7a3fece6fd02f4f649ae",
+      "language": "typescript",
+      "lines": 16,
+      "bytes": 1012
     },
     {
       "path": "src/core/__tests__/context7-client.test.ts",
@@ -2237,10 +3210,10 @@
     },
     {
       "path": "src/core/architecture-hardening/__tests__/integration.test.ts",
-      "sha256": "c1fa8a74aa8e91c036d4ee6903bb128033b1f96f2ddbf632ba21e291d0512a2b",
+      "sha256": "3fad131fa11bee8f3d27854667e8a560d77b1d85d9dcca6b0143c7fb778888cf",
       "language": "typescript",
-      "lines": 245,
-      "bytes": 10089
+      "lines": 250,
+      "bytes": 10433
     },
     {
       "path": "src/core/architecture-hardening/contracts/__tests__/contracts.test.ts",
@@ -2384,17 +3357,24 @@
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-global-doctor.test.ts",
-      "sha256": "fd3b189b1f5aa99e05cd4320e90f1817c4583f124970aeefda7f6910553e995a",
+      "sha256": "27c501bcf95259cefa2269242318710ba8ff363945cc80c538cbd6a711b9a978",
       "language": "typescript",
-      "lines": 325,
-      "bytes": 16650
+      "lines": 367,
+      "bytes": 18798
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-keychain-policy.test.ts",
-      "sha256": "a4add1edfaffa3653e6ec8d83f74b9805a799b6745b89f3b3ecfbfca8a60377f",
+      "sha256": "dd8de1ea91e8e5975f442b110aec8bcef65ab9fe195b7bb9094f5ed75ba093fa",
       "language": "typescript",
-      "lines": 151,
-      "bytes": 7324
+      "lines": 156,
+      "bytes": 7758
+    },
+    {
+      "path": "src/core/codex-app/__tests__/sks-menubar-lifecycle-provider-regression.test.ts",
+      "sha256": "658759b6a875dc11728162e6b72ba3da743f2697dde8f372157c575439d106f9",
+      "language": "typescript",
+      "lines": 233,
+      "bytes": 11939
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-mcp-legacy-secret.test.ts",
@@ -2426,10 +3406,10 @@
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-reliability.test.ts",
-      "sha256": "5ee3b7aa7b30975baa261bd311a44e3c97e3105eccf7db78de58142bcc68a28d",
+      "sha256": "65f77e9c41ec2b51f444778dd6e49f862ef7112b7620f7d03ac99034a11e09dc",
       "language": "typescript",
-      "lines": 922,
-      "bytes": 46360
+      "lines": 932,
+      "bytes": 47075
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-retired-bridge-migration.test.ts",
@@ -2447,10 +3427,10 @@
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-template.test.ts",
-      "sha256": "6e9da684a3e04ea608c74a29f3324ec4744fab0e7251575d1b3adee90e5cad84",
+      "sha256": "3da1d7add06ddf6162f89426f41ef06cc45e91dc819e77b73c2740f4ae2e98b5",
       "language": "typescript",
-      "lines": 792,
-      "bytes": 48913
+      "lines": 800,
+      "bytes": 49409
     },
     {
       "path": "src/core/codex-app/codex-agent-role-sync.ts",
@@ -2482,10 +3462,10 @@
     },
     {
       "path": "src/core/codex-app/codex-app-fast-ui-repair.ts",
-      "sha256": "3144ddfcbd2a78cf744b99cb588b4e42d4c368718d41b4f95e60647d05a515cd",
+      "sha256": "b0ddf374ee19c2e4efb3ff58a41a96dc5c8d627a62162f077c15ba4b79e77c6b",
       "language": "typescript",
-      "lines": 237,
-      "bytes": 11725
+      "lines": 243,
+      "bytes": 12227
     },
     {
       "path": "src/core/codex-app/codex-app-handoff.ts",
@@ -2615,17 +3595,17 @@
     },
     {
       "path": "src/core/codex-app/menubar/config.ts",
-      "sha256": "6dc5a386b84cab4a9c64b83b99e3959c310a2dd29ba53c4f7ad50483d1874b2c",
+      "sha256": "3f038565089da7ff1be48b5024e6e431122a5a50dc9b0d5c2966737c90772875",
       "language": "typescript",
       "lines": 58,
-      "bytes": 3029
+      "bytes": 3126
     },
     {
       "path": "src/core/codex-app/menubar/constants.ts",
-      "sha256": "c2660eb14291a694480a72b3a142a148495cd5f56b31b820da31290bf54697a4",
+      "sha256": "a9c7a221813e8d79104c600f0f2dd929745388d940ed4ff5a604dd96268006e9",
       "language": "typescript",
-      "lines": 53,
-      "bytes": 1537
+      "lines": 55,
+      "bytes": 1612
     },
     {
       "path": "src/core/codex-app/menubar/generation-transaction-journal.ts",
@@ -2643,10 +3623,10 @@
     },
     {
       "path": "src/core/codex-app/menubar/global-install.ts",
-      "sha256": "3afa13cf0f9e3b2bad6c73efaf1e4c3156398ee096b034d17f585d9b8ac5c86b",
+      "sha256": "a78b192196a1014c08bd335dc4793ead6b8c43639e4105ac359d787818f27085",
       "language": "typescript",
-      "lines": 347,
-      "bytes": 14078
+      "lines": 369,
+      "bytes": 15318
     },
     {
       "path": "src/core/codex-app/menubar/index.ts",
@@ -2657,10 +3637,10 @@
     },
     {
       "path": "src/core/codex-app/menubar/installer.ts",
-      "sha256": "c6031a4eeef5daab6446ccb29484dfceb7738f3a05d7569cd86ef58cc9f5fed5",
+      "sha256": "fc56c47108cb1e0d6d8fd0ae885d8498c07d7c451a2269d65004499b961b65b8",
       "language": "typescript",
-      "lines": 449,
-      "bytes": 22677
+      "lines": 467,
+      "bytes": 23893
     },
     {
       "path": "src/core/codex-app/menubar/installer/result.ts",
@@ -2678,10 +3658,10 @@
     },
     {
       "path": "src/core/codex-app/menubar/launch-agent.ts",
-      "sha256": "866f8c8cd0f9b37933f351cfc0b03d83d094883cdba419809e6bd86177da7fc1",
+      "sha256": "5db8e3f00b3bb6f7d3d5926802e70f298aef34e975b0544fcf237b88d580f379",
       "language": "typescript",
-      "lines": 633,
-      "bytes": 27974
+      "lines": 656,
+      "bytes": 29194
     },
     {
       "path": "src/core/codex-app/menubar/migration.ts",
@@ -2706,10 +3686,10 @@
     },
     {
       "path": "src/core/codex-app/menubar/rollback.ts",
-      "sha256": "748e2e4bdc9d90449ef52c0fecf48fb92aedc1d1664a59d67b59ec8337e996ac",
+      "sha256": "fdd5c549bda486b04179e9f8c0edf5c83b40b9b6a6e2cf8d711e8920c2ad3394",
       "language": "typescript",
-      "lines": 476,
-      "bytes": 22823
+      "lines": 491,
+      "bytes": 23591
     },
     {
       "path": "src/core/codex-app/menubar/signature.ts",
@@ -2727,10 +3707,10 @@
     },
     {
       "path": "src/core/codex-app/menubar/types.ts",
-      "sha256": "8702c2593e0af37eff70794471a5dd200c8763040a213f81133dcad17336add3",
+      "sha256": "057704739d8c1b2515dd3c6c29b1165743f5019fba1c9d91fba4ec5f3f0e7b81",
       "language": "typescript",
       "lines": 275,
-      "bytes": 8388
+      "bytes": 8395
     },
     {
       "path": "src/core/codex-app/multi-provider-router-support.ts",
@@ -3373,10 +4353,10 @@
     },
     {
       "path": "src/core/codex-lb/__tests__/combined-catalog-conflict.test.ts",
-      "sha256": "32f78340a955d056d3e9304092bca23ba28758e78654e4a2aee8aec006894de0",
+      "sha256": "ac4e08c6a9041fbb09153d0fcbbb35a3e1bbb14e455e5b959699fd1dc58ebe06",
       "language": "typescript",
-      "lines": 227,
-      "bytes": 10895
+      "lines": 262,
+      "bytes": 12400
     },
     {
       "path": "src/core/codex-lb/__tests__/computer-call-passthrough.test.ts",
@@ -3422,24 +4402,24 @@
     },
     {
       "path": "src/core/codex-lb/__tests__/desktop-controller-v3.test.ts",
-      "sha256": "e503bb8636b684bd62e930c4f611096b647cdb9f858588a71347e4e5cd688c00",
+      "sha256": "9977f39f39ebb55c760cdef7cf2562c79974f33af2c3b23e217eca94aa151927",
       "language": "typescript",
-      "lines": 652,
-      "bytes": 26190
+      "lines": 666,
+      "bytes": 26771
     },
     {
       "path": "src/core/codex-lb/__tests__/desktop-service.test.ts",
-      "sha256": "53366b1bd2c536699de9602987b91a47421e9020189b81ec95e8fd41f0f956ec",
+      "sha256": "18554968a3d0157c3dd61f0c71d61ed5c3f6cea26f04764a6ccb5545d1509df3",
       "language": "typescript",
-      "lines": 286,
-      "bytes": 11998
+      "lines": 315,
+      "bytes": 13462
     },
     {
       "path": "src/core/codex-lb/__tests__/historical-config-to-route-policy-migration.test.ts",
-      "sha256": "f2dc7c112fff4cbbf54ae05ea1866c0a0242a2d7cb6a5dd02ea4bcae331e889e",
+      "sha256": "9d1d920e929474af4ecf54523d178af8667e673f1943351948d43d4c60e3061a",
       "language": "typescript",
-      "lines": 341,
-      "bytes": 14849
+      "lines": 356,
+      "bytes": 15362
     },
     {
       "path": "src/core/codex-lb/__tests__/image-event-passthrough.test.ts",
@@ -3464,10 +4444,10 @@
     },
     {
       "path": "src/core/codex-lb/__tests__/text-responses-evidence.test.ts",
-      "sha256": "4d819ac44920d0fb0ffda8e8d658ec7129484849f2198124489b7ee1b0b9fa44",
+      "sha256": "a0d50e12f870cbe8d5c5a847635493a40ed0a844c4e48e28f0ef8379921ec264",
       "language": "typescript",
-      "lines": 41,
-      "bytes": 1357
+      "lines": 64,
+      "bytes": 2545
     },
     {
       "path": "src/core/codex-lb/__tests__/trusted-deep-evidence.test.ts",
@@ -3478,10 +4458,10 @@
     },
     {
       "path": "src/core/codex-lb/bridge-contracts.ts",
-      "sha256": "6d4b710dbf6baeb56869e7e2d032416d9396aea6b039c1599799008fa44fa592",
+      "sha256": "5fab37624745fe6cf018698111e1623ef5847a1704d003ff2e67707d5b66db3b",
       "language": "typescript",
-      "lines": 431,
-      "bytes": 11059,
+      "lines": 458,
+      "bytes": 12154,
       "purpose": "Sneakoscope 8.1.3 Desktop Bridge public contracts. This module deliberately contains schemas and types only. Runtime behavior is implemented by the config, registry, transport, capability, and controller owners after the schema-freeze check"
     },
     {
@@ -3535,10 +4515,10 @@
     },
     {
       "path": "src/core/codex-lb/codex-lb-env.ts",
-      "sha256": "e97ce752da12ae99b26a7533cd1203d084d93f2210e147a5644ae1f7960910cc",
+      "sha256": "045d82acd84c4365e5bb28f929430b7225be75382c49bd21359cb3fe3df39c78",
       "language": "typescript",
-      "lines": 679,
-      "bytes": 24316
+      "lines": 711,
+      "bytes": 25843
     },
     {
       "path": "src/core/codex-lb/combined-catalog.ts",
@@ -3548,11 +4528,25 @@
       "bytes": 1210
     },
     {
-      "path": "src/core/codex-lb/combined-catalog/builder.ts",
-      "sha256": "2aa40e5e9a7f9bea151cdfecfa634e9fa6caa55833372183f2c59d17ba47fa7a",
+      "path": "src/core/codex-lb/combined-catalog/__tests__/model-selection.test.ts",
+      "sha256": "249758f479a8641ba347b8b3e018b15db6897ac8f8314852337c85916787602c",
       "language": "typescript",
-      "lines": 105,
-      "bytes": 3833
+      "lines": 153,
+      "bytes": 6554
+    },
+    {
+      "path": "src/core/codex-lb/combined-catalog/__tests__/openrouter-reasoning.test.ts",
+      "sha256": "324b4bd87c89193228103f7463f9a57217f64e2cf25202eb71537a2ab737c30c",
+      "language": "typescript",
+      "lines": 108,
+      "bytes": 4586
+    },
+    {
+      "path": "src/core/codex-lb/combined-catalog/builder.ts",
+      "sha256": "b4380391fba46b8a4b6171bddb1cb7d302828239f2de25df23e2ada2cd62f170",
+      "language": "typescript",
+      "lines": 124,
+      "bytes": 4827
     },
     {
       "path": "src/core/codex-lb/combined-catalog/contracts.ts",
@@ -3562,11 +4556,18 @@
       "bytes": 3196
     },
     {
-      "path": "src/core/codex-lb/combined-catalog/normalize.ts",
-      "sha256": "7063280527840be133078391a1a52247ddd0eea3b0a18e3fbf71b6d8141aee7c",
+      "path": "src/core/codex-lb/combined-catalog/model-selection.ts",
+      "sha256": "b9702276cada4247f2a0797309210a955387508d9c7eff1f79f8000818e8c341",
       "language": "typescript",
-      "lines": 201,
-      "bytes": 7692
+      "lines": 117,
+      "bytes": 5107
+    },
+    {
+      "path": "src/core/codex-lb/combined-catalog/normalize.ts",
+      "sha256": "afa76885885d55ea04dfaa52830619be79328921ec3f4d688890ddbe600dde29",
+      "language": "typescript",
+      "lines": 296,
+      "bytes": 12982
     },
     {
       "path": "src/core/codex-lb/combined-catalog/persistence.ts",
@@ -3577,10 +4578,10 @@
     },
     {
       "path": "src/core/codex-lb/combined-catalog/shared.ts",
-      "sha256": "82b43cd0df21fe8665b22251bd4ebc623c6334533c8ef534dd87f00eebffaaaf",
+      "sha256": "b4c17af5c9cbac6029e16f7014f9ca41e3263dd230b8bddbdda8b18d152440a1",
       "language": "typescript",
-      "lines": 16,
-      "bytes": 720
+      "lines": 23,
+      "bytes": 1084
     },
     {
       "path": "src/core/codex-lb/combined-catalog/storage.ts",
@@ -3605,17 +4606,17 @@
     },
     {
       "path": "src/core/codex-lb/desktop-bridge-migration/__tests__/retired-runtime-cleanup.test.ts",
-      "sha256": "854bc7db729b37ade74b1635f6f9aa5a4be4ff0d4b770671dabc9d6ff242e617",
+      "sha256": "fcb33f8f6c2e7df3b1ec08662f87c9442c4000e214625a4989c0f4d630b56cc5",
       "language": "typescript",
-      "lines": 71,
-      "bytes": 3478
+      "lines": 101,
+      "bytes": 4650
     },
     {
       "path": "src/core/codex-lb/desktop-bridge-migration/historical-config.ts",
-      "sha256": "0ee552026e4c9a3cd2c96870d588b3a1eb09bb970c97298fc58d17f920ace3e7",
+      "sha256": "a6c4d5defc02e3bfee9bfb14b69c50acc23d0d2190685ecf6608185a7d781a40",
       "language": "typescript",
-      "lines": 285,
-      "bytes": 12825
+      "lines": 287,
+      "bytes": 12864
     },
     {
       "path": "src/core/codex-lb/desktop-bridge-migration/historical-toml.ts",
@@ -3640,10 +4641,10 @@
     },
     {
       "path": "src/core/codex-lb/desktop-bridge-migration/retired-runtime-cleanup.ts",
-      "sha256": "8f0f2da01101dc64df87ebd983146a5b1417c82f21010d2a16cc317854398fa3",
+      "sha256": "6e19ffdd8e7fb8a16594ba228815aa4fb494bc395eb14caa056deef80689b6e6",
       "language": "typescript",
-      "lines": 120,
-      "bytes": 4992
+      "lines": 160,
+      "bytes": 6806
     },
     {
       "path": "src/core/codex-lb/desktop-bridge-migration/types.ts",
@@ -3661,17 +4662,17 @@
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/__tests__/desktop-bridge-transport.test.ts",
-      "sha256": "d2f675d61f8b8cb49280e961dabbdf962eb7a9fee5aa39dd0435e4d7952e5205",
+      "sha256": "0de770e7dd6a8fe1a4a3d76023de883618b587564a65317b888c1412a41a74dd",
       "language": "typescript",
-      "lines": 677,
-      "bytes": 27585
+      "lines": 679,
+      "bytes": 27746
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/__tests__/provider-header-policy.test.ts",
-      "sha256": "7f1b3098f6d6d34a157ead20f3a6940c96f0bb7d11d6ff6f25b2b70d12fb58a9",
+      "sha256": "0b7ebba2581f5d20adf3f193480aaf93fed3bf806831ba1d669b4059adbae407",
       "language": "typescript",
-      "lines": 129,
-      "bytes": 9546
+      "lines": 136,
+      "bytes": 9926
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/__tests__/route-resolution-no-fallback.test.ts",
@@ -3703,17 +4704,17 @@
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/header-policy.ts",
-      "sha256": "c11428db8ba465620af2247a4f3b5f5689602ca9b7b6e3c22ccd5a6b86ba9f5f",
+      "sha256": "5b770c2e976675fa0c1d222e7da0901f1f548e9871314e592fb47f3d3e6ed1a5",
       "language": "typescript",
-      "lines": 115,
-      "bytes": 5341
+      "lines": 121,
+      "bytes": 5734
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/http-forward.ts",
-      "sha256": "3efac5c1e3110856c70d029356461b9d7176d26fdf7a7980918ec9374e6c9a4d",
+      "sha256": "f14754ea9ccb50da0d873c6b6a1bae430d19732156a8f19c90c34d3d63e27110",
       "language": "typescript",
-      "lines": 162,
-      "bytes": 8615
+      "lines": 205,
+      "bytes": 10548
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/index.ts",
@@ -3745,10 +4746,10 @@
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/server.ts",
-      "sha256": "28bb2b9ef1a9f6ae1a7d4ad69aad61b99b2710af45b03f72b60095d001eeeb40",
+      "sha256": "c891ad1d203423fe873ef0c9da914bbc8064d114d829e367639c9a30587b23bc",
       "language": "typescript",
-      "lines": 343,
-      "bytes": 13284
+      "lines": 352,
+      "bytes": 13732
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/state.ts",
@@ -3773,17 +4774,17 @@
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3.ts",
-      "sha256": "32eb10b1504c437780916551da2d7d9e4220c168d752cc5a5041e6d778b8d535",
+      "sha256": "e11077dc8e6f6ee63240f4616a4238bf80ecfcf166d6b0b1ccf579338854aaf2",
       "language": "typescript",
-      "lines": 107,
-      "bytes": 4672
+      "lines": 109,
+      "bytes": 4906
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/catalog.ts",
-      "sha256": "988b2579bc23f4ff97cd13fffd46208ad9dfd344bf8d98a33c1cf466d88e2871",
+      "sha256": "ddc25cbe1cfca758cda82cb41b1853c71df45e6ab507833a2c0c79cf02b4c9d1",
       "language": "typescript",
-      "lines": 327,
-      "bytes": 12973
+      "lines": 430,
+      "bytes": 17788
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/diagnostics.ts",
@@ -3794,24 +4795,24 @@
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/lifecycle-commands.ts",
-      "sha256": "06d887c0bfe53b55926d9ac2f3591b2c6df56025131fe8aa720a2cff308dc372",
+      "sha256": "f46f278ef029b97ffd2c9ba2ac16d068d2428065b9536d8f723e9d66beaa0716",
       "language": "typescript",
-      "lines": 279,
-      "bytes": 11234
+      "lines": 292,
+      "bytes": 11824
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/live-probes.ts",
-      "sha256": "91a5614cebdf59154a5ce2abff2eff999a43c6afc664017ef00c457c7e2a67b9",
+      "sha256": "6c11373d6416e026461fb89bd32124419b62961cb2e56bec773be0d65a3f3925",
       "language": "typescript",
-      "lines": 343,
-      "bytes": 12549
+      "lines": 364,
+      "bytes": 13542
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/preflight-probes.ts",
-      "sha256": "dbdda27c1f0c11f11c6651ca2db5e9e1a9800973fd0d646c90ae6eef666963b3",
+      "sha256": "9d5f1cfef73d87efc995d41cb2920ff739a7d926e5316012e5800b62958c8c14",
       "language": "typescript",
-      "lines": 169,
-      "bytes": 6671
+      "lines": 181,
+      "bytes": 7411
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/provider-commands.ts",
@@ -3822,10 +4823,10 @@
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/shared.ts",
-      "sha256": "cd1dbf266ff97c9a0209f446a60765455ebddd2c7d80c7ef1a0ed4c92fc23477",
+      "sha256": "8a8aac1e84a835463fe06b3bf5ed492d3e181c6ae294a3c5343fdda35ea5fc90",
       "language": "typescript",
-      "lines": 358,
-      "bytes": 14021
+      "lines": 359,
+      "bytes": 14153
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/status.ts",
@@ -3836,17 +4837,17 @@
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/types.ts",
-      "sha256": "d829bb20216bb33f9c4c23458382725544ae942e3d27d7418559bf0b926b71c3",
+      "sha256": "8c84f4d339e396da9132a5c2abef6c7d731e00841a19368ce376f17954842e6e",
       "language": "typescript",
-      "lines": 123,
-      "bytes": 4983
+      "lines": 125,
+      "bytes": 5082
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/verification.ts",
-      "sha256": "665183ff48fe21968c10ef069164c6a5c70b9e86d6cdb2e9b961a820b60216fe",
+      "sha256": "f014d23f4542c01476d0cd1416b14043a17d36b0d0b0b4b3d00f97e715cad51d",
       "language": "typescript",
-      "lines": 118,
-      "bytes": 4566
+      "lines": 121,
+      "bytes": 4846
     },
     {
       "path": "src/core/codex-lb/desktop-controller.ts",
@@ -3858,10 +4859,10 @@
     },
     {
       "path": "src/core/codex-lb/desktop-service.ts",
-      "sha256": "15010de07c9af3458ab150c050925ea73a4c849e672ae266a830c35668849e2a",
+      "sha256": "8bf75165e82f46931100de1114bdd129537e74427980db749016bf9fb6121f07",
       "language": "typescript",
-      "lines": 525,
-      "bytes": 43309
+      "lines": 574,
+      "bytes": 45999
     },
     {
       "path": "src/core/codex-lb/migration-receipt.ts",
@@ -4012,10 +5013,10 @@
     },
     {
       "path": "src/core/codex-lb/route-index.ts",
-      "sha256": "1d5fc6340102037b068187c6ce8947e4521f59599163ed41a8156c1301fdb4b5",
+      "sha256": "b70bd20b9ab1564ddb41f886644a2f1d25de7519a7368833f364db62b415b529",
       "language": "typescript",
-      "lines": 181,
-      "bytes": 6598
+      "lines": 182,
+      "bytes": 6635
     },
     {
       "path": "src/core/codex-lb/trusted-deep-evidence.ts",
@@ -7182,10 +8183,10 @@
     },
     {
       "path": "src/core/managed-assets/managed-assets-manifest.ts",
-      "sha256": "80c32da68137048d08131acf5865a94e87d33e1b62801de4184a063a692c49f9",
+      "sha256": "87c8069e174f334667923553ec590822ffa02aef661f8570e2b8071f0dd92b17",
       "language": "typescript",
-      "lines": 751,
-      "bytes": 38481
+      "lines": 752,
+      "bytes": 38670
     },
     {
       "path": "src/core/managed-path-safety.ts",
@@ -8503,10 +9504,10 @@
     },
     {
       "path": "src/core/release/__tests__/canonical-test-proof.test.ts",
-      "sha256": "028bc7009ca6b0a44ae2644639498459674b5ef4ff68b08acb366579a9908cdd",
+      "sha256": "b100a5f561ae55d2e2f7272bf575574a6d920c72bc6c0bac7b37e95a971c57f8",
       "language": "typescript",
-      "lines": 127,
-      "bytes": 5910
+      "lines": 129,
+      "bytes": 6110
     },
     {
       "path": "src/core/release/__tests__/doctor-fastpath-report-file.test.ts",
@@ -8679,10 +9680,10 @@
     },
     {
       "path": "src/core/release/canonical-test-proof.ts",
-      "sha256": "3e3dabf20e16ae6d41ed0d978d5e0251d71eb40a5ec75d7ea8a78a954fef5be4",
+      "sha256": "66cb13b766bec23a2ded321b3460038e1e6cb50804ddba9b4225f43ba679274c",
       "language": "typescript",
-      "lines": 241,
-      "bytes": 9550
+      "lines": 252,
+      "bytes": 10027
     },
     {
       "path": "src/core/release/critical-path-ledger.ts",
@@ -9571,10 +10572,10 @@
     },
     {
       "path": "src/core/routes/evidence.ts",
-      "sha256": "30db2c9dec00659c8a23d36e0d711e06aca2ef05df2b078cd9a6b8250feab09a",
+      "sha256": "ef1c7e3bccbdee77f2f6271460959444f849f8fad43f9d58f415a9beb3682472",
       "language": "typescript",
       "lines": 81,
-      "bytes": 7903
+      "bytes": 8224
     },
     {
       "path": "src/core/routes/light-routes.ts",
@@ -12131,7 +13132,7 @@
     },
     {
       "path": "src/core/version.ts",
-      "sha256": "42db47e7cc68123cf09a8a1c7f5dd1ce316c411694b8ef7daf186153617f12cd",
+      "sha256": "57bc2e8da9c846a518102236e922f7b5d5d91d0a24229a38b81aaae815653808",
       "language": "typescript",
       "lines": 1,
       "bytes": 40
@@ -12639,10 +13640,10 @@
     },
     {
       "path": "src/scripts/build-dist.ts",
-      "sha256": "b4cad8dba514e1170cf3870e360e322f99df0fe1073d8e1fe10bd2345711e951",
+      "sha256": "252dcdb6b860d284f45b8ba1380adc3f6b8fb84caa88d033378d64812e52fbc8",
       "language": "typescript",
-      "lines": 186,
-      "bytes": 7255,
+      "lines": 206,
+      "bytes": 8275,
       "purpose": "@ts-nocheck"
     },
     {
@@ -12662,10 +13663,10 @@
     },
     {
       "path": "src/scripts/canonical-test-runner.ts",
-      "sha256": "8c9975ed4bedb5c6342ca3dffe782262c6e394ed3ddf9b23163a2f265f7dac1c",
+      "sha256": "8e935142aa5c655df6c65a7e76dfcd163086647d7379dc90927f9be1616d9308",
       "language": "typescript",
-      "lines": 366,
-      "bytes": 14449
+      "lines": 437,
+      "bytes": 17713
     },
     {
       "path": "src/scripts/certificate-sla-check.ts",
@@ -19651,12 +20652,12 @@
     }
   ],
   "edges_by_type": {
-    "calls": 9496,
-    "contains": 24363,
-    "defines": 7529,
-    "imports": 6104,
-    "reexports": 872,
-    "references": 13144,
-    "tests": 2826
+    "calls": 9911,
+    "contains": 25519,
+    "defines": 7952,
+    "imports": 6345,
+    "reexports": 912,
+    "references": 13622,
+    "tests": 2943
   }
 }
