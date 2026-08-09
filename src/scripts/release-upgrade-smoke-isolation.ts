@@ -295,7 +295,10 @@ export function inspectReleaseUpgradeLaunchctlLog(isolation: ReleaseUpgradeIsola
     return { calls: [], unexpected: [], blockers: ['launchctl_stub_log_missing_or_unreadable'] }
   }
   const calls = text.split(/\r?\n/).map((row) => row.trim()).filter(Boolean)
-  const unexpected = calls.filter((row) => !/^(?:unsetenv (?:CODEX_LB_API_KEY|OPENROUTER_API_KEY)|print)$/.test(row))
+  // A bootout is expected only when the stub already confirmed it named one of
+  // this product's own labels; every other bootout reaches the log redacted as
+  // `forbidden bootout` and stays an unexpected call.
+  const unexpected = calls.filter((row) => !/^(?:unsetenv (?:CODEX_LB_API_KEY|OPENROUTER_API_KEY)|print|bootout (?:com\.sneakoscope\.sks-menubar|com\.sneakoscope\.telegram-hub))$/.test(row))
   return {
     calls,
     unexpected,
@@ -323,7 +326,30 @@ function launchctlStubSource(): string {
     '    esac',
     '    ;;',
     '  print) printf "print\\n" >> "$log"; printf "Bad request.\\n" >&2; printf "Could not find service \\"%s\\" in domain for user gui: sandbox\\n" "${2:-}" >&2; exit 113 ;;',
-    '  bootstrap|bootout|kickstart|setenv|getenv) printf "forbidden %s\\n" "$command_name" >> "$log"; exit 64 ;;',
+    // Replacing an existing install is the whole point of this smoke, and that
+    // path boots out the service it is about to replace. Refusing every bootout
+    // made the upgrade unprovable rather than proving anything. The capability
+    // stays bounded instead: only this product's own labels, and by-plist only
+    // for a plist inside the sandbox HOME. Anything else is still forbidden and
+    // still surfaces as an unexpected call.
+    '  bootout)',
+    '    bootout_target="${2:-}"',
+    '    bootout_plist="${3:-}"',
+    '    bootout_label=""',
+    '    case "$bootout_target" in',
+    '      */com.sneakoscope.sks-menubar) bootout_label="com.sneakoscope.sks-menubar" ;;',
+    '      */com.sneakoscope.telegram-hub) bootout_label="com.sneakoscope.telegram-hub" ;;',
+    '      gui/*)',
+    '        case "$bootout_plist" in',
+    '          "${HOME:-/nonexistent}"/*/com.sneakoscope.sks-menubar.plist) bootout_label="com.sneakoscope.sks-menubar" ;;',
+    '          "${HOME:-/nonexistent}"/*/com.sneakoscope.telegram-hub.plist) bootout_label="com.sneakoscope.telegram-hub" ;;',
+    '        esac',
+    '        ;;',
+    '    esac',
+    '    if [ -n "$bootout_label" ]; then printf "bootout %s\\n" "$bootout_label" >> "$log"; exit 0; fi',
+    '    printf "forbidden bootout [redacted]\\n" >> "$log"; exit 64',
+    '    ;;',
+    '  bootstrap|kickstart|setenv|getenv) printf "forbidden %s\\n" "$command_name" >> "$log"; exit 64 ;;',
     '  *) printf "forbidden other\\n" >> "$log"; exit 64 ;;',
     'esac',
     ''
