@@ -6818,55 +6818,64 @@
       "file": "src/scripts/release-upgrade-smoke-isolation.ts",
       "symbol": "createReleaseUpgradeIsolation",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "fd2c0474c7e1a40d8cd77facb4b7929b1d5f517f1af707395470e412545b5595",
-      "callsite_sha256": "5efc90ab5d002506b3704c6dad676d7a3c40257c9974c7a23f5cf135e44c75f0",
+      "scope_contract_sha256": "b9a44191ddad681957d991a76d735649ca88076a62735b535ab2991ff7ef80ea",
+      "callsite_sha256": "b95d41bfbe3e7dfa91946c9bb9fd22faef21314d52f29c7e83af5c629553ca48",
       "occurrence": 1,
-      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, and log fixtures inside its sandbox."
+      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, ps, and log fixtures inside its sandbox."
     },
     {
       "file": "src/scripts/release-upgrade-smoke-isolation.ts",
       "symbol": "createReleaseUpgradeIsolation",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "fd2c0474c7e1a40d8cd77facb4b7929b1d5f517f1af707395470e412545b5595",
-      "callsite_sha256": "10bbfd3d0191bcc16163c1f3bbb53bb02f7a4f0922895f4d94f8bcb9218f83a4",
+      "scope_contract_sha256": "b9a44191ddad681957d991a76d735649ca88076a62735b535ab2991ff7ef80ea",
+      "callsite_sha256": "ea3850afd276dd438404ec81979116ccf94798463ccae3644d863cfc2502df99",
       "occurrence": 1,
-      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, and log fixtures inside its sandbox."
+      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, ps, and log fixtures inside its sandbox."
     },
     {
       "file": "src/scripts/release-upgrade-smoke-isolation.ts",
       "symbol": "createReleaseUpgradeIsolation",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "fd2c0474c7e1a40d8cd77facb4b7929b1d5f517f1af707395470e412545b5595",
-      "callsite_sha256": "5517615c7ed80699f687df8e797eec465f51dfb560778036b4673b853205650c",
+      "scope_contract_sha256": "b9a44191ddad681957d991a76d735649ca88076a62735b535ab2991ff7ef80ea",
+      "callsite_sha256": "7e23bbf2a77b3f98f4ce163f8eaf8f7a202ddd9b047b17c890d351f880e50b0f",
       "occurrence": 1,
-      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, and log fixtures inside its sandbox."
+      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, ps, and log fixtures inside its sandbox."
     },
     {
       "file": "src/scripts/release-upgrade-smoke-isolation.ts",
       "symbol": "createReleaseUpgradeIsolation",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "fd2c0474c7e1a40d8cd77facb4b7929b1d5f517f1af707395470e412545b5595",
-      "callsite_sha256": "75719e1e76bef6796d2610fb709a2224987703b0128b568951846833b06c0cfa",
+      "scope_contract_sha256": "b9a44191ddad681957d991a76d735649ca88076a62735b535ab2991ff7ef80ea",
+      "callsite_sha256": "ab7d7cddb9922151d9fca5b6df8f6969306c085c44b1ce4b609e02bb07f2a9a7",
       "occurrence": 1,
-      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, and log fixtures inside its sandbox."
+      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, ps, and log fixtures inside its sandbox."
     },
     {
       "file": "src/scripts/release-upgrade-smoke-isolation.ts",
       "symbol": "createReleaseUpgradeIsolation",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "fd2c0474c7e1a40d8cd77facb4b7929b1d5f517f1af707395470e412545b5595",
-      "callsite_sha256": "12b765c8b47f2927179ed73ebb65574ee06630fd34876f35365f4b050fa3502b",
+      "scope_contract_sha256": "b9a44191ddad681957d991a76d735649ca88076a62735b535ab2991ff7ef80ea",
+      "callsite_sha256": "c7b71a8f8b64c7599e37767e919391753d787a23b5459e6e97635009722b273f",
       "occurrence": 1,
-      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, and log fixtures inside its sandbox."
+      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, ps, and log fixtures inside its sandbox."
     },
     {
       "file": "src/scripts/release-upgrade-smoke-isolation.ts",
       "symbol": "createReleaseUpgradeIsolation",
       "token": "fsp.writeFile",
-      "scope_contract_sha256": "fd2c0474c7e1a40d8cd77facb4b7929b1d5f517f1af707395470e412545b5595",
-      "callsite_sha256": "424f324bd5dde43b1b0018697f6089ceaf0ede84d53a8cb7af008757c290dd59",
+      "scope_contract_sha256": "b9a44191ddad681957d991a76d735649ca88076a62735b535ab2991ff7ef80ea",
+      "callsite_sha256": "5524e74658fdd9bcf948aa0694fe11a0bc40fa93eac4f1b6b207cb838aba3dcc",
       "occurrence": 1,
-      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, and log fixtures inside its sandbox."
+      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, ps, and log fixtures inside its sandbox."
+    },
+    {
+      "file": "src/scripts/release-upgrade-smoke-isolation.ts",
+      "symbol": "createReleaseUpgradeIsolation",
+      "token": "fsp.writeFile",
+      "scope_contract_sha256": "b9a44191ddad681957d991a76d735649ca88076a62735b535ab2991ff7ef80ea",
+      "callsite_sha256": "de011aebb25e7969e7b1747e5bffe847a161a5fa0c7ec50d2f81892491c28b5b",
+      "occurrence": 1,
+      "reason": "Upgrade smoke isolation writes only npm, package, launchctl, pgrep, ps, and log fixtures inside its sandbox."
     },
     {
       "file": "src/scripts/release-version-truth-check.ts",

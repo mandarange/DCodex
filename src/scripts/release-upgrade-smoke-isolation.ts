@@ -58,6 +58,8 @@ export async function createReleaseUpgradeIsolation(
     const launchctlSource = launchctlStubSource()
     const pgrepStub = path.join(sandboxBin, 'pgrep')
     const pgrepSource = pgrepStubSource()
+    const psStub = path.join(sandboxBin, 'ps')
+    const psSource = psStubSource()
     await Promise.all([
       home, codexHome, npmCache, npmPrefix, workspace, baselinePackDir, commandReportsDir, sealedInputsDir,
       tempDir, sandboxBin, globalRoot
@@ -68,6 +70,7 @@ export async function createReleaseUpgradeIsolation(
       fsp.writeFile(path.join(workspace, 'package.json'), '{"name":"sks-release-upgrade-smoke","private":true}\n', { mode: 0o600 }),
       fsp.writeFile(launchctlStub, launchctlSource, { mode: 0o700 }),
       fsp.writeFile(pgrepStub, pgrepSource, { mode: 0o700 }),
+      fsp.writeFile(psStub, psSource, { mode: 0o700 }),
       fsp.writeFile(launchctlLog, '', { mode: 0o600 })
     ])
     const prefixBin = process.platform === 'win32' ? npmPrefix : path.join(npmPrefix, 'bin')
@@ -98,8 +101,13 @@ export async function createReleaseUpgradeIsolation(
       // Menu Bar and correctly reports it as a duplicate of the sandbox's. That
       // is a true finding about the host, not about the upgrade, and it made the
       // proof unobtainable on any machine with SKS installed. Scope discovery to
-      // the sandbox through the seam the product already exposes.
+      // the sandbox through the seam the product already exposes. The seam only
+      // opens when this flag is set, so naming the tools without it is silently
+      // ignored and the real host binaries run instead. Both tools are stubbed:
+      // `pgrep` finds the candidates and `ps` resolves the ones it could not.
+      SKS_MENUBAR_TEST_PROCESS_TOOLS: '1',
       SKS_MENUBAR_PGREP: pgrepStub,
+      SKS_MENUBAR_PS: psStub,
       SKS_DISABLE_UPDATE_CHECK: '1',
       SKS_SKIP_SKS_MENUBAR_LAUNCH: '1',
       NO_UPDATE_NOTIFIER: '1',
@@ -328,6 +336,15 @@ export function inspectReleaseUpgradeLaunchctlLog(isolation: ReleaseUpgradeIsola
  * it can never see — or act on — a process outside the sandbox.
  */
 function pgrepStubSource(): string {
+  return [
+    '#!/bin/sh',
+    'exit 1',
+    ''
+  ].join('\n')
+}
+
+/** Same contract as the pgrep stub: it resolves no pid it did not start. */
+function psStubSource(): string {
   return [
     '#!/bin/sh',
     'exit 1',
