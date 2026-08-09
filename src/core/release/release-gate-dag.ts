@@ -10,6 +10,7 @@ import { RELEASE_GATE_NODE_SCHEMA, validateReleaseGateManifest, type ReleaseGate
 import { countReleaseGateResources, defaultReleaseGateBudget, summarizeReleaseGateBudget, type ReleaseGateBudget } from './release-gate-resource-governor.js'
 import { selectAffectedReleaseGates, type ReleaseGateAffectedSelection } from './release-gate-affected-selector.js'
 import { computeTriWikiAffectedGraph, type TriWikiAffectedGraph } from '../triwiki/triwiki-affected-graph.js'
+import { pruneTriWikiProofBank } from '../triwiki/triwiki-proof-bank.js'
 import { executeExtremeSchedule, type ExtremeSchedulerRunReport } from './extreme-parallel-scheduler.js'
 import { computeResourceClassBudget } from './resource-class-budget.js'
 import { guardedProcessKill, guardContextForRoute } from '../safety/mutation-guard.js'
@@ -203,6 +204,10 @@ export async function runReleaseGateDag(input: {
   if (missingSelectedDeps.length) throw new Error(`release_gate_selection_missing_dependencies:${[...new Set(missingSelectedDeps)].sort().join(',')}`)
   const runId = `rg-${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`
   const retentionBefore = await pruneOldReleaseGateRunDirs(root)
+  // Proof cards are reuse evidence, not history: without this the bank grows by
+  // one card per gate per run forever, and every cache lookup parses the whole
+  // backlog before it can answer.
+  const proofBankRetention = pruneTriWikiProofBank(root)
   await sweepSksTempDirs(root, { maxAgeHours: 24 }).catch(() => null)
   const reportDir = path.join(root, '.sneakoscope', 'reports', 'release-gates', runId)
   fs.mkdirSync(reportDir, { recursive: true })
@@ -210,6 +215,7 @@ export async function runReleaseGateDag(input: {
   const affectedGraphFile = path.join(reportDir, 'affected-gate-graph.json')
   const completionCertificateFile = path.join(reportDir, 'completion-certificate.json')
   appendReleaseGateJsonl(timeline, { event: 'retention', phase: 'before_run', ...retentionBefore, at: new Date().toISOString() })
+  appendReleaseGateJsonl(timeline, { event: 'proof_bank_retention', phase: 'before_run', ...proofBankRetention, at: new Date().toISOString() })
   const started = Date.now()
   const slaMs = Math.max(1, Math.floor(Number(input.slaMs || 300000)))
   const pending = new Map(selected.map((gate) => [gate.id, gate]))

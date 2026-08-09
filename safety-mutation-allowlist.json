@@ -2046,33 +2046,6 @@
     },
     {
       "file": "src/core/perf/release-latency-slo.ts",
-      "symbol": "measureNativeMenuBar",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ad4eb5e68be3f40835bc6b083072bbebe7171d9e1e834281166a06a0f38c6e67",
-      "callsite_sha256": "32281a93d0a12c4b90c8f8660d6ea5d60c6c38aae11372d87f266b033301afc3",
-      "occurrence": 1,
-      "reason": "Menu Bar latency measurement writes only cache, build-stamp, and source fixtures under the run-local temp root."
-    },
-    {
-      "file": "src/core/perf/release-latency-slo.ts",
-      "symbol": "measureNativeMenuBar",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ad4eb5e68be3f40835bc6b083072bbebe7171d9e1e834281166a06a0f38c6e67",
-      "callsite_sha256": "91f2501fe0583901af93afe84c654db1a659ab506b33c5315593d4b59477cae1",
-      "occurrence": 1,
-      "reason": "Menu Bar latency measurement writes only cache, build-stamp, and source fixtures under the run-local temp root."
-    },
-    {
-      "file": "src/core/perf/release-latency-slo.ts",
-      "symbol": "measureNativeMenuBar",
-      "token": "fs.writeFile",
-      "scope_contract_sha256": "ad4eb5e68be3f40835bc6b083072bbebe7171d9e1e834281166a06a0f38c6e67",
-      "callsite_sha256": "f4f190282164cf394f09410bfd1d028e14f20751124ebf0cb500af63db3d8c15",
-      "occurrence": 1,
-      "reason": "Menu Bar latency measurement writes only cache, build-stamp, and source fixtures under the run-local temp root."
-    },
-    {
-      "file": "src/core/perf/release-latency-slo.ts",
       "symbol": "measureSshHello",
       "token": "fs.writeFile",
       "scope_contract_sha256": "9d3c6581a327517a32227a30814f8a023290f04c68354c593663dccc4a74ba76",
@@ -2093,10 +2066,73 @@
       "file": "src/core/perf/release-latency-slo.ts",
       "symbol": "runReleaseLatencySlo",
       "token": "fs.rm",
-      "scope_contract_sha256": "73a54a5df28a85cb0fd34e96ae4b018bd6d3ae7a76fcdba1bceb411afc23bf79",
-      "callsite_sha256": "626f1ce2d05302a9303702660d138c727d710a25ddcf9cf2578ece7fb000d569",
+      "scope_contract_sha256": "6a9a8192e9264e5c265146354a4657222b358bcf6559d457be9466561c41538e",
+      "callsite_sha256": "8338c63676d46fc2fe3661ee438d48792b43fb4341750b1f090023dffec455b6",
       "occurrence": 1,
       "reason": "Release latency measurement removes only its mkdtemp-owned fixture root in finally."
+    },
+    {
+      "file": "src/core/perf/release-latency-slo.ts",
+      "symbol": "measureNativeMenuBar",
+      "token": "fs.rm",
+      "scope_contract_sha256": "cba5822f8f8e36c238ae5a2e02adf2654a3d6690d0cd1a3e738f0cd565431b65",
+      "callsite_sha256": "9393ec52ae7d8aae28fe33bb2d03d503205f78d42833011afc323e56ac076068",
+      "occurrence": 1,
+      "reason": "Menu Bar latency measurement resets only the run-local Menu Bar home inside its own build root before measuring."
+    },
+    {
+      "file": "src/core/perf/release-latency-slo.ts",
+      "symbol": "measureNativeMenuBar",
+      "token": "fs.writeFile",
+      "scope_contract_sha256": "cba5822f8f8e36c238ae5a2e02adf2654a3d6690d0cd1a3e738f0cd565431b65",
+      "callsite_sha256": "3d0cbad2730eac5e42d5f89fc2059014723fedd5b6c41dd05f422f2654587aa8",
+      "occurrence": 1,
+      "reason": "Menu Bar latency measurement writes only cache, build-stamp, and Swift source fixtures inside its own build root."
+    },
+    {
+      "file": "src/core/perf/release-latency-slo.ts",
+      "symbol": "measureNativeMenuBar",
+      "token": "fs.writeFile",
+      "scope_contract_sha256": "cba5822f8f8e36c238ae5a2e02adf2654a3d6690d0cd1a3e738f0cd565431b65",
+      "callsite_sha256": "4d974ffe4d34a18eda2bacc963e5607e83f3668c04aa3d8e549ddfa1a0a8c945",
+      "occurrence": 1,
+      "reason": "Menu Bar latency measurement writes only cache, build-stamp, and Swift source fixtures inside its own build root."
+    },
+    {
+      "file": "src/core/perf/release-latency-slo.ts",
+      "symbol": "measureNativeMenuBar",
+      "token": "fs.writeFile",
+      "scope_contract_sha256": "cba5822f8f8e36c238ae5a2e02adf2654a3d6690d0cd1a3e738f0cd565431b65",
+      "callsite_sha256": "682399b38d6ebe13837de12c9bba9e139b8e8933155b7bdb2cd835452e836477",
+      "occurrence": 1,
+      "reason": "Menu Bar latency measurement writes only cache, build-stamp, and Swift source fixtures inside its own build root."
+    },
+    {
+      "file": "src/core/perf/release-latency-slo.ts",
+      "symbol": "buildNativeMenuBarHarness",
+      "token": "fs.rm",
+      "scope_contract_sha256": "abbaf112ae22a3ae04ae812f42d3f2662935f8c814f6c438d3664060468122c1",
+      "callsite_sha256": "0326927ca507944a7de4b57298269c8815190be8ac8f0effc76ec31c529a2e4b",
+      "occurrence": 1,
+      "reason": "Harness build removes only the staged binary it just failed to produce."
+    },
+    {
+      "file": "src/core/perf/release-latency-slo.ts",
+      "symbol": "buildNativeMenuBarHarness",
+      "token": "rename",
+      "scope_contract_sha256": "abbaf112ae22a3ae04ae812f42d3f2662935f8c814f6c438d3664060468122c1",
+      "callsite_sha256": "494ab46346f40097c9b220cddbe3ffb804b4170f0fac60a3f636ec0a1436113b",
+      "occurrence": 1,
+      "reason": "Harness build promotes only its own staged binary onto the content-addressed cache path it computed."
+    },
+    {
+      "file": "src/core/perf/release-latency-slo.ts",
+      "symbol": "pruneNativeHarnessBinaries.callback@305",
+      "token": "fs.rm",
+      "scope_contract_sha256": "18d732f453d19f22d675c4b3e6644d9f133d46565b99ac1eaa9a627c7dd00a5d",
+      "callsite_sha256": "ce90e79469e4f051e1998eeabb0e0797e94134ecd503037855a961a683b16b10",
+      "occurrence": 1,
+      "reason": "Harness cache retention removes only superseded binaries inside its own bin directory, never the one just built."
     },
     {
       "file": "src/core/pipeline-internals/runtime-gates.ts",
@@ -2324,24 +2360,6 @@
       "reason": "Failed stage verification removes only its run-unique temporary review directory."
     },
     {
-      "file": "src/core/release/release-gate-cache-v2.ts",
-      "symbol": "writeCacheRecord",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "88dfb5b3c92b4696b9858697479455b85d79f6027799cdf1bffb562e3349c210",
-      "callsite_sha256": "66cd7d66be817fc80202eb04b9f58b928ac1a48eb5d61727239844e8edfc93c8",
-      "occurrence": 1,
-      "reason": "Release gate cache writer persists scoped cache-hit and reusable proof metadata under the release gate cache directory."
-    },
-    {
-      "file": "src/core/release/release-gate-cache-v2.ts",
-      "symbol": "writeReleaseCacheBridgeReport",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "18173e65f7bc625de8f3a913943b29c1cfbac4d28cd4924613d6ce12c18c6e9d",
-      "callsite_sha256": "4aec6053ecd2340aa92219be677ae4fc04a756b1414cd6b5a714651e3819fadb",
-      "occurrence": 1,
-      "reason": "Release cache bridge writer persists only scoped cache bridge evidence under .sneakoscope/reports."
-    },
-    {
       "file": "src/core/release/release-gate-hermetic-env.ts",
       "symbol": "cleanupReleaseGateHermeticEnv",
       "token": "rmSync",
@@ -2369,15 +2387,6 @@
       "reason": "Release gate report helper writes scoped JSON artifacts for the active release-gate run."
     },
     {
-      "file": "src/core/release/release-pack-content-scanner.ts",
-      "symbol": "scanTarballTextContents",
-      "token": "rmSync",
-      "scope_contract_sha256": "ee3e25f8bcb8c3e46f4d4b81ccc89051c023d70b1d9d29a8f85f2055580f99d0",
-      "callsite_sha256": "2f9d47e9c81cb1a91624584e76d8c6ef0bafb15417eafa98178c9ba18396376c",
-      "occurrence": 1,
-      "reason": "Tarball content scanning removes only its mkdtemp extraction root in finally."
-    },
-    {
       "file": "src/core/release/release-pack-receipt.ts",
       "symbol": "writeReleaseJson",
       "token": "writeFileSync",
@@ -2385,15 +2394,6 @@
       "callsite_sha256": "69ecc81275bf0a642e53dde962e180054005cda9d55a0d9e2fe540f0211e883f",
       "occurrence": 1,
       "reason": "Release receipt writer persists only the caller-selected version-scoped release JSON artifact."
-    },
-    {
-      "file": "src/core/release/release-pack-tarball.ts",
-      "symbol": "tarUnpackedBytes",
-      "token": "rmSync",
-      "scope_contract_sha256": "0e626e1381f39555be44b69fa37d8b91680d4514daa22f0922f8fdefe1bc206c",
-      "callsite_sha256": "51f3902c6683597186ac28ca0e9010618f90393f4015515f13f2edbe3f657c61",
-      "occurrence": 1,
-      "reason": "Unpacked-byte measurement removes only its mkdtemp tar extraction root in finally."
     },
     {
       "file": "src/core/research/research-adversarial-review.ts",
@@ -2844,6 +2844,15 @@
       "callsite_sha256": "8c277ecc48dda9fea80f47c9fd5e4ab164d4a9e581f1bb5395baaad2507e019d",
       "occurrence": 1,
       "reason": "TriWiki proof bank lock writer creates only scoped lock metadata files under the proof-bank lock directory."
+    },
+    {
+      "file": "src/core/triwiki/triwiki-proof-bank.ts",
+      "symbol": "pruneSubjectProofCards",
+      "token": "rmSync",
+      "scope_contract_sha256": "d968ddeb0a3e41bd3459df7bf5cbd4b1ae99fb4f84d277e72ac94f21b2432e7b",
+      "callsite_sha256": "ad43961e2c16b003163b9274931b020c6eac80484cf9d277dc6ac7abcdd958be",
+      "occurrence": 1,
+      "reason": "Proof-bank retention removes only superseded proof cards inside the single subject directory whose lock the caller holds."
     },
     {
       "file": "src/core/triwiki/triwiki-sla-certificate.ts",
@@ -5726,6 +5735,24 @@
       "reason": "The build freshness writer writes only the deterministic stamp beneath the resolved dist output after hashing the release-relevant source snapshot."
     },
     {
+      "file": "src/scripts/lib/ensure-dist-fresh.ts",
+      "symbol": "writeSourceSnapshotCache",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "ba7938ca564c86baf8acd9d5dd038c1188cfc7825eaccb5fd89bbd23ab6b4068",
+      "callsite_sha256": "1f4d124c230218a51d3fe625f2d4b7dcf4b686e1d9205a05e6c3611fb1529cd5",
+      "occurrence": 1,
+      "reason": "Source snapshot cache persists only its own fingerprint and digest through a unique same-directory temporary file."
+    },
+    {
+      "file": "src/scripts/lib/ensure-dist-fresh.ts",
+      "symbol": "writeSourceSnapshotCache",
+      "token": "renameSync",
+      "scope_contract_sha256": "ba7938ca564c86baf8acd9d5dd038c1188cfc7825eaccb5fd89bbd23ab6b4068",
+      "callsite_sha256": "6edee2916ed1289a8dbf180477938d7a0f7c11f6b896aad7505c38f585f5cd53",
+      "occurrence": 1,
+      "reason": "Source snapshot cache promotes only its unique same-directory temporary file onto the fixed .sneakoscope/cache target."
+    },
+    {
       "file": "src/scripts/lib/git-worktree-fixture.ts",
       "symbol": "makeGitFixture",
       "token": "writeFileSync",
@@ -7758,6 +7785,60 @@
       "callsite_sha256": "3cf541cea49e9ecefd7dffdfb547cbdb58d4b08c9eb0ac83f137637719e93bc7",
       "occurrence": 1,
       "reason": "Align staging publisher writes Architecture Map Mermaid views only under the stageWiki architecture-map/views directory."
+    },
+    {
+      "file": "src/core/release/content-digest-cache.ts",
+      "symbol": "writeCache",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "62d6cf024b563e38c9fd1c746c11493a97654e595ea7926a09cbefa5b1e0fb1d",
+      "callsite_sha256": "5bfe0b8b45cc2b18c27b6af4b29f094b03dfab4ccad565a37c98a4febeba3bf2",
+      "occurrence": 1,
+      "reason": "Digest cache persists only its own workspace cache bytes through a unique same-directory temporary file."
+    },
+    {
+      "file": "src/core/release/content-digest-cache.ts",
+      "symbol": "writeCache",
+      "token": "renameSync",
+      "scope_contract_sha256": "62d6cf024b563e38c9fd1c746c11493a97654e595ea7926a09cbefa5b1e0fb1d",
+      "callsite_sha256": "730e1421dfcdbb8127dc10bba80223300866b24e3e342f415fd1deb49252dd51",
+      "occurrence": 1,
+      "reason": "Digest cache promotes only its unique same-directory temporary file onto the fixed .sneakoscope/cache target."
+    },
+    {
+      "file": "src/core/release/release-gate-cache-v2.ts",
+      "symbol": "writeCacheRecord",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "42fdd5218fbe6ba3c9a6069be7d65c5ec9e96ea6527b705057507555b495e630",
+      "callsite_sha256": "a9968aee62a477c7614fbd1c4f24d4f37f1e33f51d37324d3549df500cef90ce",
+      "occurrence": 1,
+      "reason": "Release gate cache writer persists scoped cache-hit and reusable proof metadata under the release gate cache directory."
+    },
+    {
+      "file": "src/core/release/release-gate-cache-v2.ts",
+      "symbol": "writeReleaseCacheBridgeReport",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "90fb7b3b036b67c2ff96954f05d805f93bb112f1f00c1f5094ab15c7e7f219d0",
+      "callsite_sha256": "9f9132c735bb036edf6b2de44223bc36c465ddb009750899312650a4070137d5",
+      "occurrence": 1,
+      "reason": "Release cache bridge writer persists only scoped cache bridge evidence under .sneakoscope/reports."
+    },
+    {
+      "file": "src/core/release/release-pack-content-scanner.ts",
+      "symbol": "computeTarballTextContents",
+      "token": "rmSync",
+      "scope_contract_sha256": "7b52a3bfb0937e0bed37497ca1c9ffc9eced46d60b5677b007bd5fe2e3e8e8f9",
+      "callsite_sha256": "438465b3dfb7ad8377e17a75fbe54438acf945d2bd0cd04b05eebbf6cb202a6d",
+      "occurrence": 1,
+      "reason": "Tarball content scanning removes only its mkdtemp extraction root in finally."
+    },
+    {
+      "file": "src/core/release/release-pack-tarball.ts",
+      "symbol": "computeTarUnpackedBytes",
+      "token": "rmSync",
+      "scope_contract_sha256": "f22180d7920d3ebd495c4231178f310fb5a0f05effe2d98826159a516eb8590f",
+      "callsite_sha256": "7e546b09783d330e07a8c1427d0b666dba051c6f6bb31fa91656864808ccc0ad",
+      "occurrence": 1,
+      "reason": "Unpacked-byte measurement removes only its mkdtemp tar extraction root in finally."
     }
   ]
 }

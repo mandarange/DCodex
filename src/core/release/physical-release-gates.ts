@@ -7,6 +7,7 @@ import {
   inspectDesktopBridgeReleaseEvidence,
   type DesktopBridgeReleaseEvidenceInspection
 } from './desktop-bridge-release-evidence.js'
+import { cloneBuffer, fileIdentity, inspectionKey, memoizeReleaseInspection, toolIdentity } from './release-inspection-memo.js'
 
 export const PHYSICAL_RELEASE_GATES_SCHEMA = 'sks.release-physical-gates.v2'
 export const PHYSICAL_RELEASE_GATES_INSPECTION_SCHEMA = 'sks.release-physical-gates-inspection.v2'
@@ -435,6 +436,35 @@ function verifyGithubArtifactAttestation(input: {
   runId: string
   blockers: string[]
 }): string | null {
+  // Verifying the same archive bytes against the same repo/workflow/digest
+  // always yields the same certificate, so the `gh` spawn is memoized on those
+  // inputs. Blockers are replayed by the caller-visible return contract below.
+  const key = inspectionKey(
+    input.archivePath,
+    fileIdentity(input.archivePath),
+    toolIdentity('gh'),
+    input.repository,
+    input.trustedWorkflow,
+    input.sourceCommit,
+    input.runId
+  )
+  const verdict = memoizeReleaseInspection('github-artifact-attestation', key, () => {
+    const blockers: string[] = []
+    const invocationUri = computeGithubArtifactAttestation({ ...input, blockers })
+    return { invocation_uri: invocationUri, blockers }
+  })
+  input.blockers.push(...verdict.blockers)
+  return verdict.invocation_uri
+}
+
+function computeGithubArtifactAttestation(input: {
+  archivePath: string
+  repository: string
+  trustedWorkflow: string
+  sourceCommit: string
+  runId: string
+  blockers: string[]
+}): string | null {
   const result = spawnSync('gh', [
     'attestation', 'verify', input.archivePath,
     '--repo', input.repository,
@@ -485,6 +515,20 @@ function readBoundArchive(file: string): Buffer | null {
 }
 
 function listArchiveFiles(archivePath: string, blockers: string[]): Map<string, string> | null {
+  const listing = memoizeReleaseInspection(
+    'physical-archive-listing',
+    inspectionKey(archivePath, fileIdentity(archivePath), toolIdentity('tar')),
+    () => {
+      const own: string[] = []
+      const files = computeArchiveFiles(archivePath, own)
+      return { entries: files ? [...files] : null, blockers: own }
+    }
+  )
+  blockers.push(...listing.blockers)
+  return listing.entries ? new Map(listing.entries) : null
+}
+
+function computeArchiveFiles(archivePath: string, blockers: string[]): Map<string, string> | null {
   const result = spawnSync('tar', ['-tzf', archivePath], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
   if (result.status !== 0) {
     blockers.push('physical_evidence_artifact_archive_unreadable')
@@ -508,12 +552,20 @@ function listArchiveFiles(archivePath: string, blockers: string[]): Map<string, 
 }
 
 function readArchiveMember(archivePath: string, member: string, label: string, blockers: string[]): Buffer | null {
-  const result = spawnSync('tar', ['-xOzf', archivePath, member], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 })
-  if (result.status !== 0 || !Buffer.isBuffer(result.stdout)) {
+  const bytes = memoizeReleaseInspection(
+    'physical-archive-member',
+    inspectionKey(archivePath, fileIdentity(archivePath), toolIdentity('tar'), member),
+    () => {
+      const result = spawnSync('tar', ['-xOzf', archivePath, member], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 })
+      return result.status !== 0 || !Buffer.isBuffer(result.stdout) ? null : result.stdout
+    },
+    (value) => (value ? cloneBuffer(value) : null)
+  )
+  if (!bytes) {
     blockers.push(`${label}_unreadable`)
     return null
   }
-  return result.stdout
+  return bytes
 }
 
 function safeArchivePath(value: string): boolean {

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { TriWikiProofCard } from './triwiki-proof-card.js';
 import { TRIWIKI_PROOF_CARD_SCHEMA, classifyTriWikiProofCardSchema, isReusableTriWikiProofCard } from './triwiki-proof-card.js';
-import { triWikiProofIndexPath, updateTriWikiProofIndexEntry } from './triwiki-proof-bank-index.js';
+import { removeTriWikiProofIndexEntries, triWikiProofIndexPath, updateTriWikiProofIndexEntry } from './triwiki-proof-bank-index.js';
 
 export const TRIWIKI_PROOF_BANK_SCHEMA = 'sks.triwiki-proof-bank.v1';
 
@@ -31,8 +31,10 @@ export function writeTriWikiProofCard(root: string, card: TriWikiProofCard, subj
   const dir = path.join(triWikiProofBankDir(root), subjectType, safeId(card.subject_id));
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${safeId(card.proof_id)}.json`);
+  let retiredPaths: string[] = [];
   const written = withSubjectLock(root, subjectType, card.subject_id, () => {
     atomicWriteJson(file, card);
+    retiredPaths = pruneSubjectProofCards(dir, file);
     return file;
   });
   // Keep the reverse index current so summary and graph extraction never have to
@@ -42,8 +44,88 @@ export function writeTriWikiProofCard(root: string, card: TriWikiProofCard, subj
   // A missing index is reported through the update's own status and seeded by
   // the explicit maintenance path (`sks align run`). Failing to index
   // must never lose the proof card that is already durably written.
-  updateTriWikiProofIndexEntry(root, card, written);
+  updateTriWikiProofIndexEntry(root, card, written, { retiredPaths });
   return written;
+}
+
+/**
+ * A subject keeps only its newest generations. Every run writes a card under a
+ * fresh cache key and nothing retired the old ones, so hot gates accumulated
+ * hundreds of cards each — and `readReusableTriWikiProofCard` opens and parses
+ * every one of them on every lookup, which turned proof reuse into a cost that
+ * grew with the repository's age. Dropping an old card can only cost a miss.
+ */
+export function pruneSubjectProofCards(dir: string, keepFile: string, keep = proofCardsPerSubjectLimit()): string[] {
+  let names: string[] = [];
+  try { names = fs.readdirSync(dir); } catch { return []; }
+  const cards = names
+    .filter((name) => name.endsWith('.json') && !name.includes('.corrupt-'))
+    .map((name) => path.join(dir, name))
+    .map((file) => {
+      let mtimeMs = 0;
+      try { mtimeMs = fs.statSync(file).mtimeMs; } catch { return null; }
+      return { file, mtimeMs };
+    })
+    .filter((entry): entry is { file: string; mtimeMs: number } => entry !== null)
+    .sort((left, right) => right.mtimeMs - left.mtimeMs);
+  const removed: string[] = [];
+  for (const entry of cards.slice(Math.max(1, keep))) {
+    if (path.resolve(entry.file) === path.resolve(keepFile)) continue;
+    try {
+      fs.rmSync(entry.file, { force: true });
+      removed.push(entry.file);
+    } catch {}
+  }
+  return removed;
+}
+
+export interface TriWikiProofBankRetention {
+  schema: 'sks.triwiki-proof-bank-retention.v1';
+  keep_per_subject: number;
+  subjects: number;
+  removed_cards: number;
+  removed_index_rows: number;
+}
+
+/**
+ * Sweep every subject down to the retention limit in one pass.
+ *
+ * Write-time pruning alone only reaches subjects that a run happens to touch,
+ * so a bank that already accumulated years of generations would take many runs
+ * to converge — while every lookup keeps paying for the backlog. The release
+ * DAG calls this once per run, alongside its existing report retention.
+ */
+export function pruneTriWikiProofBank(root: string, keep = proofCardsPerSubjectLimit()): TriWikiProofBankRetention {
+  const base = triWikiProofBankDir(root);
+  const report: TriWikiProofBankRetention = {
+    schema: 'sks.triwiki-proof-bank-retention.v1',
+    keep_per_subject: keep,
+    subjects: 0,
+    removed_cards: 0,
+    removed_index_rows: 0
+  };
+  let subjectTypes: fs.Dirent[] = [];
+  try { subjectTypes = fs.readdirSync(base, { withFileTypes: true }); } catch { return report; }
+  const retired: string[] = [];
+  for (const subjectType of subjectTypes) {
+    if (!subjectType.isDirectory() || subjectType.name.startsWith('.')) continue;
+    let subjects: fs.Dirent[] = [];
+    try { subjects = fs.readdirSync(path.join(base, subjectType.name), { withFileTypes: true }); } catch { continue; }
+    for (const subject of subjects) {
+      if (!subject.isDirectory()) continue;
+      report.subjects += 1;
+      const dir = path.join(base, subjectType.name, subject.name);
+      retired.push(...withSubjectLock(root, subjectType.name, subject.name, () => pruneSubjectProofCards(dir, '', keep)));
+    }
+  }
+  report.removed_cards = retired.length;
+  report.removed_index_rows = removeTriWikiProofIndexEntries(root, retired).removed;
+  return report;
+}
+
+export function proofCardsPerSubjectLimit(): number {
+  const configured = Number(process.env.SKS_TRIWIKI_PROOF_CARDS_PER_SUBJECT);
+  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 6;
 }
 
 export function readReusableTriWikiProofCard(input: TriWikiProofBankLookup): { hit: boolean; card: TriWikiProofCard | null; path: string | null; invalidation_reasons: string[] } {

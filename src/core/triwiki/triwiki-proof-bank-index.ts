@@ -174,6 +174,13 @@ export interface TriWikiProofIndexUpdateOptions {
    */
   bootstrap?: 'none' | 'repair' | undefined;
   fs?: TriWikiProofIndexFs | undefined;
+  /**
+   * Absolute paths of proof cards the writer just retired. Their rows are
+   * dropped in the same locked merge, so the manifest can never outlive the
+   * cards it indexes — the manifest is the reason nothing has to walk the
+   * proof bank, and a manifest full of dead rows would reintroduce that cost.
+   */
+  retiredPaths?: readonly string[] | undefined;
 }
 
 export interface TriWikiProofIndexUpdate {
@@ -227,7 +234,10 @@ export function updateTriWikiProofIndexEntry(
     } else {
       return updateFailure(current.status, current.detail);
     }
-    const merged = entries.filter((entry) => entry.path !== record.path);
+    const retired = new Set((options.retiredPaths || [])
+      .map((retiredFile) => triWikiProofCardRelPath(root, retiredFile))
+      .filter((rel): rel is string => Boolean(rel)));
+    const merged = entries.filter((entry) => entry.path !== record.path && !retired.has(entry.path));
     merged.push(record);
     writeTriWikiProofIndexDocument(root, merged);
     return {
@@ -241,6 +251,35 @@ export function updateTriWikiProofIndexEntry(
       repair_entry_point: TRIWIKI_PROOF_INDEX_REPAIR_ENTRY_POINT,
       detail: null
     } satisfies TriWikiProofIndexUpdate;
+  });
+}
+
+/**
+ * Drop manifest rows for cards a retention sweep just removed, in one locked
+ * merge. The per-card update path would rewrite the whole manifest once per
+ * retired card, which is the cost this exists to avoid.
+ */
+export function removeTriWikiProofIndexEntries(
+  root: string,
+  files: readonly string[],
+  options: TriWikiProofIndexReadOptions = {}
+): { ok: boolean; status: TriWikiProofIndexStatus; removed: number; entry_count: number } {
+  const facade = options.fs ?? nodeTriWikiProofIndexFs;
+  const retired = new Set(files
+    .map((file) => triWikiProofCardRelPath(root, file))
+    .filter((rel): rel is string => Boolean(rel)));
+  if (!retired.size) return { ok: true, status: 'ok', removed: 0, entry_count: 0 };
+  return withTriWikiProofIndexLock(root, () => {
+    const current = loadTriWikiProofIndexDocument(root, facade);
+    if (current.status !== 'ok') return { ok: false, status: current.status, removed: 0, entry_count: current.entries.length };
+    const merged = current.entries.filter((entry) => !retired.has(entry.path));
+    if (merged.length !== current.entries.length) writeTriWikiProofIndexDocument(root, merged);
+    return {
+      ok: true,
+      status: 'ok' as TriWikiProofIndexStatus,
+      removed: current.entries.length - merged.length,
+      entry_count: merged.length
+    };
   });
 }
 

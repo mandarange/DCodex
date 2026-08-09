@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from '../fsx.js'
 import { DEFAULT_MAX_PACK_BYTES, DEFAULT_MAX_UNPACKED_BYTES } from './package-size-budget.js'
 import { readCurrentNpmPackGateArtifacts } from './npm-pack-proof.js'
+import { inspectionKey, memoizeReleaseInspection, toolIdentity } from './release-inspection-memo.js'
 import {
   scanTarballTextContents,
   type ReleasePackContentPattern
@@ -283,11 +284,51 @@ export function inspectLocalReleaseSourceState(root: string): {
     blockers.push('npm_pack_untracked_files_present')
   }
 
+  // `git ls-files` plus `npm pack --dry-run` is the expensive tail of this
+  // inspection (npm alone costs seconds), and it is fully determined by the
+  // commit plus the worktree state the two porcelain statuses above already
+  // describe: a tracked edit shows in the first, any untracked entry in the
+  // second, and `dist/**` is excluded from the answer by construction below.
+  const inventory = memoizeReleaseInspection(
+    'npm-pack-source-inventory',
+    inspectionKey(
+      path.resolve(root),
+      head,
+      toolIdentity('git'),
+      toolIdentity('npm'),
+      process.env.SKS_RELEASE_NPM_CACHE || '',
+      String(trackedStatus.status),
+      String(trackedStatus.stdout || ''),
+      String(fullStatus.status),
+      String(fullStatus.stdout || '')
+    ),
+    () => packSourceInventory(root)
+  )
+  const trackedFiles = inventory.tracked_files ? new Set(inventory.tracked_files) : null
+  if (!trackedFiles) blockers.push('npm_pack_tracked_file_inventory_unavailable')
+  const packedFiles = inventory.packed_files
+  if (!packedFiles) blockers.push('npm_pack_dry_run_file_inventory_unavailable')
+  const packEligibleUntracked = trackedFiles && packedFiles
+    ? unique(packedFiles.filter((relative) =>
+      !trackedFiles.has(relative) && !isGeneratedDistPackagePath(relative)
+    )).sort()
+    : []
+  if (packEligibleUntracked.length > 0) blockers.push('npm_pack_eligible_untracked_files_present')
+  return {
+    ok: blockers.length === 0,
+    head,
+    source_tree_sha256: sourceTreeSha256,
+    tracked_changes: trackedChanges,
+    pack_eligible_untracked: packEligibleUntracked,
+    blockers: unique(blockers)
+  }
+}
+
+function packSourceInventory(root: string): { tracked_files: string[] | null; packed_files: string[] | null } {
   const trackedFilesResult = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
   const trackedFiles = trackedFilesResult.status === 0
-    ? new Set(String(trackedFilesResult.stdout || '').split('\0').filter(Boolean).map(normalizePath))
+    ? unique(String(trackedFilesResult.stdout || '').split('\0').filter(Boolean).map(normalizePath))
     : null
-  if (!trackedFiles) blockers.push('npm_pack_tracked_file_inventory_unavailable')
 
   const dryRun = spawnSync('npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], {
     cwd: root,
@@ -307,21 +348,7 @@ export function inspectLocalReleaseSourceState(root: string): {
       packedFiles = null
     }
   }
-  if (!packedFiles) blockers.push('npm_pack_dry_run_file_inventory_unavailable')
-  const packEligibleUntracked = trackedFiles && packedFiles
-    ? unique(packedFiles.filter((relative) =>
-      !trackedFiles.has(relative) && !isGeneratedDistPackagePath(relative)
-    )).sort()
-    : []
-  if (packEligibleUntracked.length > 0) blockers.push('npm_pack_eligible_untracked_files_present')
-  return {
-    ok: blockers.length === 0,
-    head,
-    source_tree_sha256: sourceTreeSha256,
-    tracked_changes: trackedChanges,
-    pack_eligible_untracked: packEligibleUntracked,
-    blockers: unique(blockers)
-  }
+  return { tracked_files: trackedFiles, packed_files: packedFiles }
 }
 
 export function writeReleaseJson(file: string, value: unknown): void {
@@ -540,6 +567,17 @@ function gitHead(root: string): string {
 }
 
 function gitTreeSha256(root: string, commit: string): string {
+  // A commit SHA pins its tree for all time, so this is memoizable without any
+  // freshness question. It is also the single hottest spawn on the guard path:
+  // `git ls-tree -r` over the whole repository, re-run per inspection.
+  return memoizeReleaseInspection(
+    'git-tree-sha256',
+    inspectionKey(path.resolve(root), commit, toolIdentity('git')),
+    () => computeGitTreeSha256(root, commit)
+  )
+}
+
+function computeGitTreeSha256(root: string, commit: string): string {
   if (!/^[a-f0-9]{40}$/i.test(commit)) return ''
   const verified = spawnSync('git', ['rev-parse', '--verify', `${commit}^{commit}`], { cwd: root, encoding: 'utf8' })
   if (verified.status !== 0 || String(verified.stdout || '').trim().toLowerCase() !== commit.toLowerCase()) return ''

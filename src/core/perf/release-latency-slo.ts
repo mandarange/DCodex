@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -63,7 +64,7 @@ export async function runReleaseLatencySlo(
       await capture('ssh_worker_hello', budgetMap, () => measureSshHello(tmp, runs(budgetMap, 'ssh_worker_hello', 5)))
     ]
     const native = platform === 'darwin'
-      ? await measureNativeMenuBar(tmp, budgetMap).catch((error) => nativeFailureMeasurements(budgetMap, error))
+      ? await measureNativeMenuBar(root, budgetMap).catch((error) => nativeFailureMeasurements(budgetMap, error))
       : (['menubar_first_state_render', 'control_center_open'] as ReleaseLatencySloId[]).map((id) => ({
           id,
           budget_p95_ms: budgetMap.get(id)?.budget_p95_ms ?? RELEASE_LATENCY_LIMITS[id],
@@ -185,12 +186,19 @@ async function measureSshHello(tmp: string, count: number) {
 }
 
 async function measureNativeMenuBar(
-  tmp: string,
+  root: string,
   budgets: Map<ReleaseLatencySloId, ReleaseLatencyBudget>
 ): Promise<ReleaseLatencyMeasurement[]> {
+  // The harness build lives at a stable path so the generated Swift (which
+  // bakes these absolute paths in) is byte-identical run to run and the ~9s
+  // `swiftc` link can be reused. This gate is `timing-sensitive`, so it runs
+  // alone and drains the whole DAG first: every second here is a second no
+  // other gate can use. The measured runtime state under `home` is still
+  // rewritten from scratch below, so nothing about the measurement is reused.
+  const tmp = path.join(root, '.sneakoscope', 'cache', 'menubar-latency')
   const sourceDir = path.join(tmp, 'native-sources')
-  const executable = path.join(tmp, 'sks-menubar-latency')
   const home = path.join(tmp, 'native-home')
+  await fs.rm(home, { recursive: true, force: true })
   await Promise.all([sourceDir, home].map((dir) => fs.mkdir(dir, { recursive: true })))
   const cache = path.join(home, '.sneakoscope-global', 'cache', 'update-status.json')
   const cacheSnapshot = emptyUpdateStatus('6.3.0', new Date())
@@ -215,12 +223,9 @@ async function measureNativeMenuBar(
     await fs.writeFile(path.join(sourceDir, source.name), content, { mode: 0o600 })
   }
   const files = sources.map((source) => path.join(sourceDir, source.name))
-  const compileStarted = performance.now()
-  const compile = await runProcess('swiftc', ['-framework', 'Cocoa', '-framework', 'UserNotifications', ...files, '-o', executable], {
-    cwd: tmp, timeoutMs: 90_000, maxOutputBytes: 128 * 1024
-  })
-  const compileMs = round(performance.now() - compileStarted)
-  if (compile.code !== 0) throw new Error(`menubar_latency_compile_failed:${compile.stderr.slice(-400)}`)
+  const build = await buildNativeMenuBarHarness(tmp, files)
+  const executable = build.executable
+  const compileMs = build.compile_duration_ms
   const nativeRuns = Math.max(runs(budgets, 'menubar_first_state_render', 5), runs(budgets, 'control_center_open', 5))
   const first: number[] = []
   const control: number[] = []
@@ -236,7 +241,8 @@ async function measureNativeMenuBar(
     control.push(Number(parsed.control_center_open_ms))
   }
   const evidence = {
-    source_count: sources.length, compile_exit_code: compile.code, compile_duration_ms: compileMs,
+    source_count: sources.length, compile_exit_code: 0, compile_duration_ms: compileMs,
+    compile_reused: build.reused, compile_source_digest: build.source_digest,
     link_frameworks: ['Cocoa', 'UserNotifications'], run_exit_codes: exitCodes,
     cache_based: true, cache_bytes: Buffer.byteLength(JSON.stringify(cacheSnapshot)), controller_prebuilt: true
   }
@@ -244,6 +250,67 @@ async function measureNativeMenuBar(
     evaluateLatencySamples('menubar_first_state_render', budgets.get('menubar_first_state_render')?.budget_p95_ms ?? 250, 'StatusItemController.start:cache_state_render', first, evidence),
     evaluateLatencySamples('control_center_open', budgets.get('control_center_open')?.budget_p95_ms ?? 400, 'ControlCenterWindowController.show:overview', control, evidence)
   ]
+}
+
+/**
+ * Compile the latency harness, reusing a previous binary when the exact Swift
+ * bytes and the exact toolchain already produced one. The key is the source
+ * content plus `swiftc --version`, so a source edit or a toolchain upgrade
+ * always recompiles; nothing about the *measurement* is ever cached.
+ */
+async function buildNativeMenuBarHarness(buildRoot: string, files: string[]): Promise<{
+  executable: string
+  compile_duration_ms: number
+  source_digest: string
+  reused: boolean
+}> {
+  const toolchain = await runProcess('swiftc', ['--version'], { cwd: buildRoot, timeoutMs: 30_000, maxOutputBytes: 32 * 1024 })
+  const digest = createHash('sha256')
+  digest.update(toolchain.code === 0 ? toolchain.stdout : 'swiftc_version_unavailable')
+  digest.update('\0')
+  for (const file of [...files].sort()) {
+    digest.update(path.basename(file))
+    digest.update('\0')
+    digest.update(await fs.readFile(file))
+    digest.update('\0')
+  }
+  const sourceDigest = digest.digest('hex')
+  const binDir = path.join(buildRoot, 'bin')
+  const executable = path.join(binDir, `sks-menubar-latency-${sourceDigest}`)
+  await fs.mkdir(binDir, { recursive: true })
+  if (await pathIsFile(executable)) {
+    return { executable, compile_duration_ms: 0, source_digest: sourceDigest, reused: true }
+  }
+  const staged = `${executable}.${process.pid}.tmp`
+  const compileStarted = performance.now()
+  const compile = await runProcess('swiftc', ['-framework', 'Cocoa', '-framework', 'UserNotifications', ...files, '-o', staged], {
+    cwd: buildRoot, timeoutMs: 90_000, maxOutputBytes: 128 * 1024
+  })
+  const compileMs = round(performance.now() - compileStarted)
+  if (compile.code !== 0) {
+    await fs.rm(staged, { force: true })
+    throw new Error(`menubar_latency_compile_failed:${compile.stderr.slice(-400)}`)
+  }
+  await fs.rename(staged, executable)
+  await pruneNativeHarnessBinaries(binDir, executable)
+  return { executable, compile_duration_ms: compileMs, source_digest: sourceDigest, reused: false }
+}
+
+/** One live binary per source digest; older generations are not evidence. */
+async function pruneNativeHarnessBinaries(binDir: string, keep: string): Promise<void> {
+  const entries = await fs.readdir(binDir).catch(() => [] as string[])
+  await Promise.all(entries
+    .map((name) => path.join(binDir, name))
+    .filter((file) => file !== keep)
+    .map((file) => fs.rm(file, { force: true, recursive: true }).catch(() => undefined)))
+}
+
+async function pathIsFile(file: string): Promise<boolean> {
+  try {
+    return (await fs.stat(file)).isFile()
+  } catch {
+    return false
+  }
 }
 
 function nativeHarnessSource(): string {

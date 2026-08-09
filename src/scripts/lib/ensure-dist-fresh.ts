@@ -13,8 +13,28 @@ const distRoot = path.resolve(process.env.SKS_BUILD_OUTPUT_DIR || path.join(root
 export const distStampPath = path.join(distRoot, '.sks-build-stamp.json');
 export const reportStampPath = path.join(root, '.sneakoscope', 'reports', 'dist-build-stamp.json');
 
+// Reading and hashing every release-relevant source file costs a few hundred
+// milliseconds, and roughly thirty gate processes each pay it before they do
+// any work of their own. The stat fingerprint below (path, size, mtime, inode)
+// changes on every edit, so a cache entry keyed by it can only be reused when
+// the bytes are provably identical; a mismatch always rehashes for real.
+const SOURCE_SNAPSHOT_CACHE = path.join(root, '.sneakoscope', 'cache', 'source-snapshot.json');
+const SOURCE_SNAPSHOT_CACHE_SCHEMA = 'sks.source-snapshot-cache.v1';
+let sourceSnapshotMemo = null;
+
 export function sourceSnapshot() {
   const files = releaseRelevantFiles();
+  const fingerprint = sourceFingerprint(files);
+  if (sourceSnapshotMemo?.fingerprint === fingerprint) {
+    return { digest: sourceSnapshotMemo.digest, file_count: files.length, files };
+  }
+  const cached = readJson(SOURCE_SNAPSHOT_CACHE);
+  if (cached?.schema === SOURCE_SNAPSHOT_CACHE_SCHEMA
+    && cached.fingerprint === fingerprint
+    && /^[a-f0-9]{64}$/.test(String(cached.digest || ''))) {
+    sourceSnapshotMemo = { fingerprint, digest: cached.digest };
+    return { digest: cached.digest, file_count: files.length, files };
+  }
   const hash = crypto.createHash('sha256');
   for (const file of files) {
     const full = path.join(root, file);
@@ -27,7 +47,40 @@ export function sourceSnapshot() {
     hash.update(sha256(buf));
     hash.update('\0');
   }
-  return { digest: hash.digest('hex'), file_count: files.length, files };
+  const digest = hash.digest('hex');
+  sourceSnapshotMemo = { fingerprint, digest };
+  writeSourceSnapshotCache(fingerprint, digest, files.length);
+  return { digest, file_count: files.length, files };
+}
+
+function sourceFingerprint(files) {
+  const hash = crypto.createHash('sha256');
+  for (const file of files) {
+    let stat = null;
+    try {
+      stat = fs.statSync(path.join(root, file));
+    } catch {}
+    if (!stat?.isFile()) continue;
+    hash.update(`${file}\0${stat.size}\0${stat.mtimeMs}\0${stat.ino}\0`);
+  }
+  return hash.digest('hex');
+}
+
+function writeSourceSnapshotCache(fingerprint, digest, fileCount) {
+  try {
+    fs.mkdirSync(path.dirname(SOURCE_SNAPSHOT_CACHE), { recursive: true });
+    const temp = `${SOURCE_SNAPSHOT_CACHE}.${process.pid}.tmp`;
+    fs.writeFileSync(temp, `${JSON.stringify({
+      schema: SOURCE_SNAPSHOT_CACHE_SCHEMA,
+      fingerprint,
+      digest,
+      file_count: fileCount,
+      recorded_at: new Date().toISOString()
+    })}\n`);
+    fs.renameSync(temp, SOURCE_SNAPSHOT_CACHE);
+  } catch {
+    // A read-only or racing workspace only costs the next process a rehash.
+  }
 }
 
 export function currentDistFreshness() {

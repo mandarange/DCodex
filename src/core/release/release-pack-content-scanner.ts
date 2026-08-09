@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileIdentity, inspectionKey, memoizeReleaseInspection, toolIdentity } from './release-inspection-memo.js'
 
 export interface ReleasePackContentPattern {
   kind: string
@@ -48,6 +49,27 @@ export function scanTarballTextContents(
   input: ReleasePackContentScanOptions & { include_allowlisted_count?: false }
 ): ReleasePackContentScanResult
 export function scanTarballTextContents(
+  input: ReleasePackContentScanOptions
+): ReleasePackContentScanResult | ReleasePackContentScanResultWithAllowlist {
+  // Pure in the archive bytes and the scan definition, so the whole definition
+  // goes into the key — patterns, limits, and the source text of the decision
+  // callbacks. An edited pattern or allowlist rule mints a new key and forces a
+  // real scan; it can never replay an older archive's or older policy's verdict.
+  const key = inspectionKey(
+    input.temp_prefix,
+    input.tarball,
+    fileIdentity(input.tarball),
+    toolIdentity('tar'),
+    String(input.max_findings),
+    input.include_allowlisted_count === true ? 'allowlisted' : 'plain',
+    input.patterns.map((pattern) => `${pattern.kind}=${pattern.regex.source}/${pattern.regex.flags}`).join('\0'),
+    String(input.allow_finding || 'no_allowlist'),
+    String(input.finding_blocker)
+  )
+  return memoizeReleaseInspection('tarball-content-scan', key, () => computeTarballTextContents(input))
+}
+
+function computeTarballTextContents(
   input: ReleasePackContentScanOptions
 ): ReleasePackContentScanResult | ReleasePackContentScanResultWithAllowlist {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), input.temp_prefix))

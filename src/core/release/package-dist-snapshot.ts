@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { cachedByFingerprint, statFingerprint } from './content-digest-cache.js'
 
 export interface PackageDistSnapshot {
   digest: string | null
@@ -27,6 +28,10 @@ export function packageDistSnapshot(root: string, pkg: Record<string, any>): Pac
   const included = files
     .filter((file) => packageFileIncluded(`dist/${path.relative(distRoot, file).split(path.sep).join('/')}`, entries))
     .sort()
+  return cachedByFingerprint(root, 'package-dist-snapshot', statFingerprint(root, included), () => computePackageDistSnapshot(distRoot, included))
+}
+
+function computePackageDistSnapshot(distRoot: string, included: readonly string[]): PackageDistSnapshot {
   const hash = crypto.createHash('sha256')
   for (const file of included) {
     const rel = path.relative(distRoot, file).split(path.sep).join('/')
@@ -62,6 +67,11 @@ export function packageFilesSnapshot(root: string, pkg: Record<string, any>): Pa
     }
   }
   const files = [...candidates].filter((file) => packageFileIncluded(file, entries)).sort()
+  const fingerprint = statFingerprint(root, [...missingEntries.map((entry) => `missing:${entry}`), ...files])
+  return cachedByFingerprint(root, 'package-files-snapshot', fingerprint, () => computePackageFilesSnapshot(root, files, missingEntries))
+}
+
+function computePackageFilesSnapshot(root: string, files: readonly string[], missingEntries: string[]): PackageFilesSnapshot {
   const hash = crypto.createHash('sha256')
   for (const entry of missingEntries.sort()) {
     hash.update(entry)
@@ -110,13 +120,26 @@ function packageFileIncluded(file: string, entries: PackageFileEntry[]) {
   return included
 }
 
+// `package.json#files` carries brace groups listing ~150 runtime scripts each.
+// Expanding and compiling them per candidate file meant roughly a million
+// RegExp constructions per snapshot — six seconds, and this snapshot is taken
+// five times per release check. The patterns are fixed, so compile them once.
+const PATTERN_REGEXP_CACHE = new Map<string, RegExp[]>()
+
+function packagePatternRegExps(normalized: string): RegExp[] {
+  const cached = PATTERN_REGEXP_CACHE.get(normalized)
+  if (cached) return cached
+  const compiled = expandBracePatterns(normalized).map((expanded) => globPatternToRegExp(expanded))
+  PATTERN_REGEXP_CACHE.set(normalized, compiled)
+  return compiled
+}
+
 function matchesPackagePattern(file: string, pattern: string) {
   const rel = normalizeRel(file)
   const normalized = normalizeRel(pattern)
   if (!rel || !normalized) return false
   if (!hasGlob(normalized)) return rel === normalized || rel.startsWith(`${normalized}/`)
-  for (const expanded of expandBracePatterns(normalized)) {
-    const re = globPatternToRegExp(expanded)
+  for (const re of packagePatternRegExps(normalized)) {
     if (re.test(rel)) return true
     const parts = rel.split('/')
     parts.pop()

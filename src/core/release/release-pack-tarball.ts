@@ -2,8 +2,16 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileIdentity, inspectionKey, memoizeReleaseInspection, toolIdentity } from './release-inspection-memo.js'
 
+// Every fact below is a pure function of the tarball bytes, so it is memoized
+// on the archive's file identity: one release inspection extracts the same
+// package four times today, and the guard/receipt path repeats all of it.
 export function tarInventory(tarball: string): { files: string[]; blockers: string[] } {
+  return memoizeReleaseInspection('tar-inventory', inspectionKey(tarball, fileIdentity(tarball), toolIdentity('tar')), () => computeTarInventory(tarball))
+}
+
+function computeTarInventory(tarball: string): { files: string[]; blockers: string[] } {
   const result = spawnSync('tar', ['-tzf', tarball], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
   if (result.status !== 0) return { files: [], blockers: ['tarball_inventory_command_failed'] }
   const blockers: string[] = []
@@ -25,6 +33,10 @@ export function tarInventory(tarball: string): { files: string[]; blockers: stri
 }
 
 export function tarPackageJson(tarball: string): Record<string, any> | null {
+  return memoizeReleaseInspection('tar-package-json', inspectionKey(tarball, fileIdentity(tarball), toolIdentity('tar')), () => computeTarPackageJson(tarball))
+}
+
+function computeTarPackageJson(tarball: string): Record<string, any> | null {
   const result = spawnSync('tar', ['-xOzf', tarball, 'package/package.json'], { encoding: 'utf8', maxBuffer: 1024 * 1024 })
   if (result.status !== 0) return null
   try {
@@ -36,6 +48,10 @@ export function tarPackageJson(tarball: string): Record<string, any> | null {
 }
 
 export function tarUnpackedBytes(tarball: string): number {
+  return memoizeReleaseInspection('tar-unpacked-bytes', inspectionKey(tarball, fileIdentity(tarball), toolIdentity('tar')), () => computeTarUnpackedBytes(tarball))
+}
+
+function computeTarUnpackedBytes(tarball: string): number {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-release-pack-unpacked-'))
   try {
     const result = spawnSync('tar', ['-xzf', tarball, '-C', temp], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })

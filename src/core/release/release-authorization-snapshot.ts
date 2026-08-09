@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { cachedByFingerprint, statFingerprint } from './content-digest-cache.js'
 import { packageDistSnapshot, packageFilesSnapshot } from './package-dist-snapshot.js'
 
 export const RELEASE_AUTHORIZATION_SNAPSHOT_KEYS = Object.freeze([
@@ -66,6 +67,10 @@ function releaseGateHash(root: string, pkg: Record<string, any>) {
 
 function releaseSourceSnapshot(root: string) {
   const files = gitFiles(root).filter(releaseRelevant).sort()
+  return cachedByFingerprint(root, 'release-source-snapshot', statFingerprint(root, files), () => computeReleaseSourceSnapshot(root, files))
+}
+
+function computeReleaseSourceSnapshot(root: string, files: readonly string[]) {
   const hash = crypto.createHash('sha256')
   for (const file of files) {
     const full = path.join(root, file)

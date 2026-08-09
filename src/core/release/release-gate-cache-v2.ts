@@ -307,15 +307,24 @@ function writeReleaseCacheBridgeReport(root: string, row: {
   disagreement: string | null
 }): void {
   const file = path.join(root, '.sneakoscope', 'reports', 'release-cache-bridge.json')
-  let parsed: { schema: 'sks.release-cache-bridge.v1'; records: Array<typeof row> } = { schema: 'sks.release-cache-bridge.v1', records: [] }
+  let parsed: { schema: 'sks.release-cache-bridge.v1'; records: Array<typeof row & { recorded_at?: string }> } = { schema: 'sks.release-cache-bridge.v1', records: [] }
   try {
     const existing = JSON.parse(fs.readFileSync(file, 'utf8')) as typeof parsed
     if (existing.schema === parsed.schema && Array.isArray(existing.records)) parsed = existing
   } catch {}
+  // One row per (gate, bridge) is the whole diagnostic value here. Keying rows
+  // by cache_key too made this an append-only log that every gate rewrote in
+  // full, which is why it reached five megabytes. Rows for gates that never run
+  // under the current preset would still linger forever, so the row count is
+  // bounded by recency as well; an undated row predates that stamp and goes first.
+  const stamped = { ...row, recorded_at: new Date().toISOString() }
   parsed.records = [
-    ...parsed.records.filter((item) => item.gate_id !== row.gate_id || item.cache_key !== row.cache_key || item.bridge !== row.bridge),
-    row
-  ].sort((a, b) => `${a.gate_id}:${a.bridge}`.localeCompare(`${b.gate_id}:${b.bridge}`))
+    ...parsed.records.filter((item) => item.gate_id !== row.gate_id || item.bridge !== row.bridge),
+    stamped
+  ]
+    .sort((a, b) => Date.parse(String(b.recorded_at || 0)) - Date.parse(String(a.recorded_at || 0)) || 0)
+    .slice(0, releaseCacheBridgeRecordLimit())
+    .sort((a, b) => `${a.gate_id}:${a.bridge}`.localeCompare(`${b.gate_id}:${b.bridge}`))
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`)
 }
@@ -337,8 +346,40 @@ function writeCacheRecord(file: string, key: string, record: ReleaseGateCacheV2R
   parsed.schema = RELEASE_GATE_CACHE_V2_SCHEMA
   parsed.records ||= {}
   parsed.records[key] = record
+  parsed.records = pruneCacheRecords(parsed.records)
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`)
+}
+
+/**
+ * Every source edit and version bump mints new cache keys, and nothing used to
+ * retire the old ones: this file grew to five figures of dead records, and each
+ * gate re-parsed and rewrote all of them on both the read and the write path.
+ * Dropping the oldest can only ever cost a cache miss, never a false hit.
+ */
+export function pruneCacheRecords(
+  records: Record<string, ReleaseGateCacheV2Record>,
+  keep = releaseGateCacheRecordLimit()
+): Record<string, ReleaseGateCacheV2Record> {
+  const entries = Object.entries(records || {})
+  if (entries.length <= keep) return records
+  const ordered = entries.sort((left, right) => recordedAtMs(right[1]) - recordedAtMs(left[1]))
+  return Object.fromEntries(ordered.slice(0, keep))
+}
+
+export function releaseGateCacheRecordLimit(): number {
+  const configured = Number(process.env.SKS_RELEASE_GATE_CACHE_RECORD_LIMIT)
+  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 600
+}
+
+export function releaseCacheBridgeRecordLimit(): number {
+  const configured = Number(process.env.SKS_RELEASE_CACHE_BRIDGE_RECORD_LIMIT)
+  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 600
+}
+
+function recordedAtMs(record: ReleaseGateCacheV2Record | undefined): number {
+  const parsed = Date.parse(String(record?.recorded_at || ''))
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 function hashFileIfPresent(hash: crypto.Hash, file: string): void {
