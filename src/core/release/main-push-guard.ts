@@ -8,6 +8,7 @@ import { validateFullReleaseStamp } from './release-stamp-proof.js'
 import {
   RELEASE_UPGRADE_BASELINE_SHA256,
   RELEASE_UPGRADE_BASELINE_VERSION,
+  isExpectedReleaseUpgradeLaunchctlCall,
   releaseUpgradeExpectedVersion,
   releaseUpgradeProofFilename
 } from './release-upgrade-baseline.js'
@@ -238,7 +239,7 @@ function validateReleaseUpgradeIsolationAndCommands(report: any, blockers: strin
     || !path.isAbsolute(String(safety?.launchctl_log_path || ''))
     || !lexicalSubpath(String(safety?.launchctl_log_path || ''), sandbox)
     || !Array.isArray(safety?.launchctl_calls)
-    || safety.launchctl_calls.some((call: unknown) => !/^(?:unsetenv (?:CODEX_LB_API_KEY|OPENROUTER_API_KEY)|print)$/.test(String(call)))
+    || safety.launchctl_calls.some((call: unknown) => !isExpectedReleaseUpgradeLaunchctlCall(call))
     || !Array.isArray(safety?.launchctl_unexpected_calls)
     || safety.launchctl_unexpected_calls.length > 0) blockers.push('install_safety_policy_invalid')
 

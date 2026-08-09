@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { isExpectedReleaseUpgradeLaunchctlCall } from '../core/release/release-upgrade-baseline.js'
 import {
   POSTINSTALL_SAFETY_ENV,
   type ReleaseUpgradeIsolation,
@@ -55,6 +56,8 @@ export async function createReleaseUpgradeIsolation(
     const launchctlStub = path.join(sandboxBin, 'launchctl')
     const launchctlLog = path.join(sandbox, 'launchctl-calls.log')
     const launchctlSource = launchctlStubSource()
+    const pgrepStub = path.join(sandboxBin, 'pgrep')
+    const pgrepSource = pgrepStubSource()
     await Promise.all([
       home, codexHome, npmCache, npmPrefix, workspace, baselinePackDir, commandReportsDir, sealedInputsDir,
       tempDir, sandboxBin, globalRoot
@@ -64,6 +67,7 @@ export async function createReleaseUpgradeIsolation(
       fsp.writeFile(npmGlobalConfig, '', { mode: 0o600 }),
       fsp.writeFile(path.join(workspace, 'package.json'), '{"name":"sks-release-upgrade-smoke","private":true}\n', { mode: 0o600 }),
       fsp.writeFile(launchctlStub, launchctlSource, { mode: 0o700 }),
+      fsp.writeFile(pgrepStub, pgrepSource, { mode: 0o700 }),
       fsp.writeFile(launchctlLog, '', { mode: 0o600 })
     ])
     const prefixBin = process.platform === 'win32' ? npmPrefix : path.join(npmPrefix, 'bin')
@@ -89,6 +93,13 @@ export async function createReleaseUpgradeIsolation(
       SKS_RELEASE_UPGRADE_LAUNCHCTL_LOG: launchctlLog,
       SKS_GLOBAL_ROOT: globalRoot,
       SKS_MENUBAR_LAUNCHCTL: launchctlStub,
+      // Process discovery escapes the HOME redirect: the duplicate-install scan
+      // shells out to `pgrep -U <uid>`, which sees the operator's own running
+      // Menu Bar and correctly reports it as a duplicate of the sandbox's. That
+      // is a true finding about the host, not about the upgrade, and it made the
+      // proof unobtainable on any machine with SKS installed. Scope discovery to
+      // the sandbox through the seam the product already exposes.
+      SKS_MENUBAR_PGREP: pgrepStub,
       SKS_DISABLE_UPDATE_CHECK: '1',
       SKS_SKIP_SKS_MENUBAR_LAUNCH: '1',
       NO_UPDATE_NOTIFIER: '1',
@@ -295,10 +306,7 @@ export function inspectReleaseUpgradeLaunchctlLog(isolation: ReleaseUpgradeIsola
     return { calls: [], unexpected: [], blockers: ['launchctl_stub_log_missing_or_unreadable'] }
   }
   const calls = text.split(/\r?\n/).map((row) => row.trim()).filter(Boolean)
-  // A bootout is expected only when the stub already confirmed it named one of
-  // this product's own labels; every other bootout reaches the log redacted as
-  // `forbidden bootout` and stays an unexpected call.
-  const unexpected = calls.filter((row) => !/^(?:unsetenv (?:CODEX_LB_API_KEY|OPENROUTER_API_KEY)|print|bootout (?:com\.sneakoscope\.sks-menubar|com\.sneakoscope\.telegram-hub))$/.test(row))
+  const unexpected = calls.filter((row) => !isExpectedReleaseUpgradeLaunchctlCall(row))
   return {
     calls,
     unexpected,
@@ -312,6 +320,21 @@ export function inspectReleaseUpgradeLaunchctlLog(isolation: ReleaseUpgradeIsola
 // blocks the upgrade for a reason that does not exist outside the sandbox.
 // `print` for a service that is not loaded must reproduce launchctl's exact
 // wording; the sandbox HOME carries no LaunchAgent, so "absent" is the truth.
+/**
+ * `pgrep` for the sandbox: nothing this upgrade installed was ever launched
+ * (`--no-launch`, `SKS_SKIP_SKS_MENUBAR_LAUNCH=1`), so "no process matched" is
+ * the truthful answer. Real pgrep signals that with exit 1 and no output, which
+ * is what the callers already handle. It reports no PID it did not start, and
+ * it can never see — or act on — a process outside the sandbox.
+ */
+function pgrepStubSource(): string {
+  return [
+    '#!/bin/sh',
+    'exit 1',
+    ''
+  ].join('\n')
+}
+
 function launchctlStubSource(): string {
   return [
     '#!/bin/sh',
