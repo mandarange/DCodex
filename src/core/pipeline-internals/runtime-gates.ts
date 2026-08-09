@@ -26,6 +26,8 @@ import {
   ENGINEERING_SANITY_REVIEW_ARTIFACT,
   validateEngineeringSanityReviewArtifact
 } from '../engineering-sanity-review.js';
+import { ARCHITECTURE_MAP_REVIEW_ARTIFACT } from '../architecture-map-review.js';
+import { architectureMapGateStatus } from '../architecture-map-pipeline.js';
 import {
   clarificationStopReason,
   context7Evidence,
@@ -287,6 +289,7 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
     && !completionProofRequired
     && !reflectionRequired
     && state?.engineering_sanity_required !== true
+    && state?.architecture_map_required !== true
     && state?.db_access_review_required !== true) {
     return null;
   }
@@ -298,12 +301,14 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
     && activeGatePreview?.covered_gate === 'official-subagent-evidence';
   const dbAccessPromise = dbAccessReviewGateStatus(root, state, jsonCache);
   const engineeringSanityPromise = engineeringSanityGateStatus(root, state, jsonCache);
+  const architectureMapPromise = architectureMapGateStatus(root, state);
   const context7Promise = state?.context7_required ? hasContext7DocsEvidence(root, state) : Promise.resolve(true);
   const subagentPromise = state?.subagents_required && !activeGateNotApplicable ? hasSubagentEvidence(root, state) : Promise.resolve(true);
   const mistakeRecallPromise = mistakeRecallGateStatus(root, state);
-  const [dbAccess, engineeringSanity, context7Ok, subagentOk, mistakeRecall] = await Promise.all([
+  const [dbAccess, engineeringSanity, architectureMap, context7Ok, subagentOk, mistakeRecall] = await Promise.all([
     dbAccessPromise,
     engineeringSanityPromise,
+    architectureMapPromise,
     context7Promise,
     subagentPromise,
     mistakeRecallPromise
@@ -311,6 +316,7 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
   await resolveRecoveredComplianceBlocker(root, state, {
     [DB_ACCESS_REVIEW_ARTIFACT]: dbAccess.ok,
     [ENGINEERING_SANITY_REVIEW_ARTIFACT]: engineeringSanity.ok,
+    [ARCHITECTURE_MAP_REVIEW_ARTIFACT]: architectureMap.ok,
     'context7-evidence': context7Ok,
     'official-subagent-evidence': subagentOk
   });
@@ -319,6 +325,9 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
   }
   if (!engineeringSanity.ok) {
     return complianceBlock(root, state, `SKS ${state.route_command || state.mode || 'route'} must complete the engineering sanity review before completion. Static candidates are advisory only; inspect added hunks and real callers for SOLID boundaries, N+1/repeated I/O, bounded render/recursion/event/retry/polling behavior, and verification bypasses. Missing: ${(engineeringSanity.blockers || []).join(', ')}.`, { gate: ENGINEERING_SANITY_REVIEW_ARTIFACT, missing: engineeringSanity.blockers });
+  }
+  if (!architectureMap.ok) {
+    return complianceBlock(root, state, `SKS ${state.route_command || state.mode || 'route'} must seal Architecture Map baseline before mutation and produce a passing architecture-map-review before completion. Missing: ${(architectureMap.blockers || []).join(', ')}.`, { gate: ARCHITECTURE_MAP_REVIEW_ARTIFACT, missing: architectureMap.blockers });
   }
   if (state?.context7_required && !context7Ok) {
     return complianceBlock(root, state, `SKS ${state.route_command || state.mode || 'route'} requires Context7 evidence before completion. Use Context7 resolve-library-id, then query-docs, so SKS can record context7-evidence.jsonl.`, { gate: 'context7-evidence' });
@@ -539,6 +548,8 @@ async function markReflectionInvalidatedForGateFailure(root: any, state: any = {
   if (/^(reflection|context7-evidence|official-subagent-evidence|native-session-evidence|no-question|clarification)$/i.test(gate)) return;
   if (/(^|[\\/])?(naruto-gate|stop-gate|work-order-ledger|completion-proof|compliance-loop-guard)(\.json)?$/i.test(gate)) return;
   if (/^work-order-ledger$/i.test(gate) || /^completion-proof$/i.test(gate)) return;
+  // Atlas release/confidence gates — same churn class as naruto-gate.
+  if (/^atlas:/.test(gate) || /^architecture-map:/.test(gate) || /(^|[\\/])?(architecture-atlas-review|architecture-map-review|atlas-gate)(\.json)?$/i.test(gate)) return;
   await setCurrent(root, {
     mission_id: state.mission_id,
     reflection_invalidation_required: true,

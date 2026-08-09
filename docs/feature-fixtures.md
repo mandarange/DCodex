@@ -41,3 +41,5 @@ requires `missing = 0`, zero blocked deterministic mock fixtures, and no
 runtime-capable command or route represented as a documentation-only static
 contract. Do not copy an older release's count snapshot into current readiness
 evidence.
+
+<!-- sks-release-version: 8.4.0 Architecture Map (AMG/ADR) -->

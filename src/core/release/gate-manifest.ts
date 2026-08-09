@@ -88,6 +88,15 @@ function costFor(id: string): GateCost {
 export function affectedGlobsFor(id: string): string[] {
   const prefix = id.split(':')[0]
   switch (prefix) {
+    case 'architecture-map':
+      return [
+        'src/core/triwiki/context-graph/architecture/**',
+        'src/core/triwiki/context-graph/projections/mermaid/**',
+        'src/core/triwiki/context-graph/store/architecture-map-store.ts',
+        'src/scripts/architecture-map-check.ts',
+        'config/architecture-map-policy.v1.json',
+        'package.json'
+      ]
     case 'architecture':
       return ['src/core/safety/ssot-guard.ts', 'src/core/pipeline-internals/runtime-core.ts', 'src/core/pipeline-internals/runtime-gates.ts', 'src/core/commands/naruto-command.ts', 'src/scripts/release-parallel-check.ts', 'src/scripts/architecture-guard-check.ts', 'docs/architecture-ts-rust-boundary.md', 'package.json']
     case 'core-skill':

@@ -1,4 +1,8 @@
-# SKS 8.3.3 Release Readiness
+# SKS 8.4.0 Release Readiness
+
+> Supersedes the 8.3.3 readiness narrative for the Architecture Map (AMG/ADR) release line. Historical 8.3.3 evidence below remains for upgrade context.
+
+# SKS 8.3.3 Release Readiness (historical)
 
 ## Current decision
 
@@ -214,7 +218,7 @@ node ./dist/scripts/npm-stage-tarball-verifier.js \
 
 The verifier does not approve, reject, publish, tag, or modify a stage.
 
-The final migration matrix includes a `7.6.0 to 8.3.3 upgrade smoke`, covering
+The final migration matrix includes a `7.6.0 to 8.4.0 upgrade smoke`, covering
 installed update finalization, guarded retired-state cleanup, preserved user
 configuration, and the current command surface. Fixture success cannot replace
 real macOS evidence required by other protected gates.

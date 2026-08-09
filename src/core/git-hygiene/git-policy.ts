@@ -73,6 +73,8 @@ export const SHARED_MEMORY_TRACK = [
 export const GENERATED_INDEX_IGNORE = [
   '.sneakoscope/wiki/indexes/**/*.json',
   '.sneakoscope/wiki/context-packs/**/*.json',
+  '.sneakoscope/wiki/architecture-map/**',
+  '.sneakoscope/wiki/architecture-map/**/*.mmd',
   '.sneakoscope/wiki/tmp/**'
 ];
 
@@ -110,6 +112,8 @@ export const LOCAL_RUNTIME_IGNORE = [
   '.sneakoscope/wiki/image-wrongness-index.json',
   '.sneakoscope/wiki/visual-anchors.json',
   '.sneakoscope/wiki/last-sweep-report.json',
+  '.sneakoscope/wiki/architecture-map/**',
+  '.sneakoscope/wiki/architecture-map/**/*.mmd',
   '.sneakoscope/**/*.log'
 ];
 

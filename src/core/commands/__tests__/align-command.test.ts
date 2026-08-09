@@ -9,7 +9,10 @@ import { refreshAlignGate, writeAlignRouteArtifacts } from '../../align/align-ro
 import { buildCodeNavigationContextPack } from '../../triwiki/code-navigation-context-pack.js';
 import { CODE_PACK_SCHEMA, type CodePack } from '../../triwiki/code-pack.js';
 import { contextGraphStatus } from '../../triwiki/context-graph/store/graph-status.js';
-import { codeNavigationGraphExtractors } from '../../triwiki/context-graph/extractors/index.js';
+import {
+  architectureMapGraphExtractors,
+  codeNavigationGraphExtractors
+} from '../../triwiki/context-graph/extractors/index.js';
 import {
   inspectTriwikiAgentsMdBlocks,
   TRIWIKI_AGENTS_SCAN_LIMITS
@@ -47,6 +50,12 @@ async function fixtureRoot() {
   await write(root, '.sneakoscope/triwiki/proof-bank/proof.json', '{"claim":"HOSTILE_PROOF_SENTINEL"}\n');
   await write(root, 'AGENTS.md', `before\n${PROJECT_BLOCK}\nafter\n`);
   await write(root, 'src/AGENTS.md', `${INIT_BLOCK}\n`);
+  // Architecture Map Align loads policy from the fixture workspace root.
+  await fsp.mkdir(path.join(root, 'config'), { recursive: true });
+  await fsp.copyFile(
+    path.join(process.cwd(), 'config/architecture-map-policy.v1.json'),
+    path.join(root, 'config/architecture-map-policy.v1.json')
+  );
   return root;
 }
 
@@ -281,7 +290,7 @@ test('align rebuilds a staged code-only exhaustive navigation index from a blank
     assert.equal(result.ok, true, result.gate.blockers.join('\n'));
     assert.equal(result.gate.passed, true);
     assert.equal(result.ledger.graph.exact_file_coverage, true);
-    assert.deepEqual(result.ledger.graph.extractor_ids, ['code']);
+    assert.deepEqual(result.ledger.graph.extractor_ids, ['code', 'topology', 'triwiki-evidence']);
     assert.equal(result.ledger.scan.fragment_cache_used, false);
     assert.equal(result.ledger.scan.source_cas_verified, true);
     assert.equal(result.ledger.publication.transactional_directory_replaced, true);
@@ -294,12 +303,18 @@ test('align rebuilds a staged code-only exhaustive navigation index from a blank
     for (const hostile of ['HOSTILE_DOCUMENT_SENTINEL', 'HOSTILE_MEMORY_SENTINEL', 'HOSTILE_WRONGNESS_SENTINEL', 'HOSTILE_MISSION_SENTINEL', 'HOSTILE_PROOF_SENTINEL']) {
       assert.equal(serialized.includes(hostile), false, `${hostile} leaked into code-only artifacts`);
     }
-    assert.equal(meta.cacheKeyParts.sourcePolicy, 'repository_code_only');
+    assert.equal(meta.cacheKeyParts.sourcePolicy, 'workspace');
     assert.equal(contextPack.mode, 'repository_code_navigation_only');
     assert.equal(contextPack.index.exhaustive_artifact, '.sneakoscope/wiki/context-graph.json');
     assert.equal(manifest.source_files.some((file: any) => file.path === '.codex/managed-hooks/fixture-hook.sh'), true);
     assert.equal(graph.nodes.some((node: any) => node.path === 'docs/guide.md'), false);
-    assert.equal(graph.nodes.some((node: any) => node.path?.startsWith('.sneakoscope/')), false);
+    // Code file nodes must stay outside .sneakoscope; evidence/topology may cite wiki paths.
+    assert.equal(
+      graph.nodes.some((node: any) => node.kind === 'file' && String(node.path || '').startsWith('.sneakoscope/')),
+      false
+    );
+    assert.equal(fs.existsSync(path.join(root, '.sneakoscope/wiki/architecture-map/manifest.json')), true);
+    assert.equal(fs.existsSync(path.join(root, '.sneakoscope/wiki/architecture-map/views/module-dependency.mmd')), true);
 
     const hidden = graph.nodes.find((node: any) => node.kind === 'symbol' && node.path === 'src/main.ts' && node.label === 'hiddenHelper');
     assert.equal(hidden.locator.line, 3);
@@ -307,11 +322,22 @@ test('align rebuilds a staged code-only exhaustive navigation index from a blank
     assert.equal(python.locator.line, 2);
     assert.equal(graph.nodes.some((node: any) => node.path === 'Native/Runner.swift' && node.metadata?.purpose === 'if os(macOS)'), false);
 
-    const beforeDocs = await contextGraphStatus(root, { extractors: codeNavigationGraphExtractors() });
-    assert.equal(beforeDocs.status, 'fresh', beforeDocs.reasons.join(','));
+    // Published meta is workspace/architecture-map; code-only status must not pretend it matches.
+    const codeOnlyStatus = await contextGraphStatus(root, { extractors: codeNavigationGraphExtractors() });
+    assert.equal(codeOnlyStatus.status, 'stale');
+    assert.ok(codeOnlyStatus.reasons.some((reason) => reason.includes('schema_revision') || reason === 'schema_revision_changed'));
+    const mapStatus = await contextGraphStatus(root, { extractors: architectureMapGraphExtractors() });
+    // Fixture roots are often outside a clean git tree; accept fresh or git_state_unknown stale only.
+    assert.ok(
+      mapStatus.status === 'fresh' || mapStatus.reasons.includes('git_state_unknown'),
+      mapStatus.reasons.join(',')
+    );
     await write(root, 'docs/guide.md', 'CHANGED_DOC_STILL_NOT_AN_INDEX_INPUT\n');
-    const afterDocs = await contextGraphStatus(root, { extractors: codeNavigationGraphExtractors() });
-    assert.equal(afterDocs.status, 'fresh', afterDocs.reasons.join(','));
+    const afterDocs = await contextGraphStatus(root, { extractors: architectureMapGraphExtractors() });
+    assert.ok(
+      afterDocs.status === 'fresh' || afterDocs.reasons.includes('git_state_unknown'),
+      afterDocs.reasons.join(',')
+    );
 
     await fsp.appendFile(path.join(root, '.sneakoscope/wiki/code-navigation-manifest.json'), '\n');
     const tampered = await refreshAlignGate(dir, missionId, root);

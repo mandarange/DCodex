@@ -20,9 +20,9 @@ import {
 } from '../triwiki/code-navigation-context-pack.js';
 import {
   CODE_NAVIGATION_FATAL_SKIP_REASONS,
-  CODE_NAVIGATION_LIMITS,
-  inspectCodeNavigationSources
+  CODE_NAVIGATION_LIMITS
 } from '../triwiki/code-navigation-policy.js';
+import type { ContextGraphSkip } from '../triwiki/context-graph/contracts.js';
 import {
   isCodePackProjectionBoundToSnapshot,
   projectCodePackFromGraph,
@@ -36,9 +36,16 @@ import {
 } from '../triwiki/context-graph/contracts.js';
 import { compileContextGraph } from '../triwiki/context-graph/compiler/index.js';
 import { readSourceHashes } from '../triwiki/context-graph/compiler/freshness.js';
-import { codeNavigationGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
+import {
+  ARCHITECTURE_MAP_EXTRACTOR_IDS,
+  architectureMapGraphExtractors
+} from '../triwiki/context-graph/extractors/index.js';
+import { computeContextGraphCacheKey } from '../triwiki/context-graph/compiler/cache-key.js';
+import { walkCodeInventory } from '../triwiki/context-graph/extractors/code/inventory.js';
+import { codeInventoryInputHashes } from '../triwiki/code-navigation-policy.js';
 import { clearContextGraphSnapshotCache } from '../triwiki/context-graph/query/snapshot-cache.js';
 import { withTriWikiStateLock } from '../triwiki/triwiki-cleanup.js';
+import { publishArchitectureMapToStage } from '../triwiki/context-graph/store/architecture-map-store.js';
 import {
   ALIGN_GATE_ARTIFACT,
   ALIGN_LEDGER_ARTIFACT,
@@ -51,6 +58,27 @@ import {
   type AlignLedger,
   type AlignPlan
 } from './align-route.js';
+
+const WIKI_PREFIX = '.sneakoscope/wiki/';
+
+/** Evidence/topology may skip absent optional generated inputs; Align must not treat those as fatal. */
+function isArchitectureMapOptionalSkip(skip: ContextGraphSkip): boolean {
+  const rel = skip.path.replace(/\\/g, '/');
+  if (skip.reason !== 'unreadable' && skip.reason !== 'excluded') return false;
+  if (rel === '.sneakoscope/wiki/context-pack.json') return true;
+  if (rel.startsWith('.sneakoscope/triwiki/proof-bank')) return true;
+  if (rel.startsWith('.sneakoscope/wiki/')) return true;
+  return false;
+}
+
+function isAlignFatalSkip(skip: ContextGraphSkip): boolean {
+  if (!CODE_NAVIGATION_FATAL_SKIP_REASONS.has(skip.reason)) return false;
+  return !isArchitectureMapOptionalSkip(skip);
+}
+
+if (new Set(ALIGN_OUTPUT_ARTIFACTS).size !== ALIGN_OUTPUT_ARTIFACTS.length) {
+  throw new Error('align_output_artifacts_not_unique');
+}
 
 export interface ExecuteCodeNavigationAlignResult {
   ok: boolean;
@@ -196,7 +224,8 @@ async function buildPack(root: string, snapshot: ContextGraphSnapshot, meta: Con
 
 function buildManifest(
   generatedAt: string,
-  inspection: Awaited<ReturnType<typeof inspectCodeNavigationSources>>,
+  inventory: ReturnType<typeof walkCodeInventory>,
+  inventoryDigest: string,
   snapshot: ContextGraphSnapshot
 ): CodeNavigationManifest {
   return {
@@ -204,13 +233,13 @@ function buildManifest(
     generated_at: generatedAt,
     source_policy: 'repository_code_only',
     exhaustive_graph: 'context-graph.json',
-    inventory_digest: inspection.inventoryDigest,
+    inventory_digest: inventoryDigest,
     snapshot_hash: snapshot.snapshotHash,
-    source_file_count: inspection.inventory.files.length,
+    source_file_count: inventory.files.length,
     symbol_count: snapshot.nodes.filter((node) => node.kind === 'symbol').length,
     edge_count: snapshot.edgeCount,
     extractors: snapshot.extractors.map(({ id, revision }) => ({ id, revision })),
-    source_files: inspection.inventory.files.map((file) => ({
+    source_files: inventory.files.map((file) => ({
       path: file.rel,
       sha256: file.hash,
       language: file.language,
@@ -231,12 +260,13 @@ async function validateStaging(input: {
   manifest: CodeNavigationManifest;
 }) {
   for (const artifact of ALIGN_OUTPUT_ARTIFACTS) {
-    const stageFile = path.join(input.stageWiki, path.basename(artifact));
+    if (!artifact.startsWith(WIKI_PREFIX)) return false;
+    const stageFile = path.join(input.stageWiki, artifact.slice(WIKI_PREFIX.length));
     const stat = await fsp.stat(stageFile).catch(() => null);
     if (!stat?.isFile() || stat.size <= 0) return false;
   }
   const meta = await readJson<any>(path.join(input.stageWiki, 'context-graph.meta.json'), null);
-  if (meta?.snapshotHash !== input.snapshot.snapshotHash || meta?.cacheKeyParts?.sourcePolicy !== 'repository_code_only') return false;
+  if (meta?.snapshotHash !== input.snapshot.snapshotHash || meta?.cacheKeyParts?.sourcePolicy !== 'workspace') return false;
   const manifest = await readJson<any>(path.join(input.stageWiki, 'code-navigation-manifest.json'), null);
   if (manifest?.inventory_digest !== input.manifest.inventory_digest || manifest?.source_file_count !== input.manifest.source_file_count) return false;
   const pack = await readJson<any>(path.join(input.stageWiki, 'code-pack.json'), null);
@@ -267,21 +297,35 @@ async function runLocked(
     && plan.acceptance.absent_or_existing_triwiki_supported === true;
   ledger.validation.prior_state_ignored = true;
 
-  const extractorIdentities = codeNavigationGraphExtractors();
-  const inspection = await inspectCodeNavigationSources(root, extractorIdentities, CODE_NAVIGATION_LIMITS);
-  const extractors = codeNavigationGraphExtractors({ preparedInventory: inspection.inventory });
-  ledger.scan.inventory_digest = inspection.inventoryDigest;
-  ledger.scan.source_file_count = inspection.inventory.files.length;
-  ledger.scan.source_bytes = inspection.inventory.files.reduce((sum, file) => sum + file.bytes, 0);
-  ledger.scan.source_lines = inspection.inventory.files.reduce((sum, file) => sum + file.lines, 0);
-  ledger.scan.languages = countsBy(inspection.inventory.files, (file) => file.language);
-  ledger.scan.allowed_exclusions = inspection.inventory.skipped
-    .filter((skip) => !CODE_NAVIGATION_FATAL_SKIP_REASONS.has(skip.reason))
+  const extractorIdentities = architectureMapGraphExtractors();
+  const inventory = walkCodeInventory(root, CODE_NAVIGATION_LIMITS);
+  const inputHashes = codeInventoryInputHashes(inventory);
+  const codeInventoryDigest = crypto
+    .createHash('sha256')
+    .update(
+      Object.entries(inputHashes)
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .map(([relative, hash]) => `${relative}\0${hash}`)
+        .join('\n')
+    )
+    .digest('hex');
+  // Architecture Map Align uses the full workspace cache key so topology/evidence
+  // inputs (gates, manifests, wiki, proofs) participate in freshness.
+  const cacheKey = await computeContextGraphCacheKey({ root, extractors: extractorIdentities });
+  const fatalSkips = inventory.skipped.filter((skip) => isAlignFatalSkip(skip));
+  ledger.scan.inventory_digest = codeInventoryDigest;
+  ledger.scan.source_file_count = inventory.files.length;
+  ledger.scan.source_bytes = inventory.files.reduce((sum, file) => sum + file.bytes, 0);
+  ledger.scan.source_lines = inventory.files.reduce((sum, file) => sum + file.lines, 0);
+  ledger.scan.languages = countsBy(inventory.files, (file) => file.language);
+  ledger.scan.allowed_exclusions = inventory.skipped
+    .filter((skip) => !isAlignFatalSkip(skip))
     .map((skip) => ({ path: skip.path, reason: skip.reason }));
-  ledger.scan.fatal_skips = inspection.fatalSkips.map((skip) => ({ ...skip }));
-  ledger.validation.source_inventory_complete = inspection.fatalSkips.length === 0;
-  if (inspection.fatalSkips.length) throw new Error(`code_navigation_fatal_skips:${inspection.fatalSkips.map((skip) => `${skip.reason}:${skip.path}`).join('|')}`);
+  ledger.scan.fatal_skips = fatalSkips.map((skip) => ({ ...skip }));
+  ledger.validation.source_inventory_complete = fatalSkips.length === 0;
+  if (fatalSkips.length) throw new Error(`code_navigation_fatal_skips:${fatalSkips.map((skip) => `${skip.reason}:${skip.path}`).join('|')}`);
 
+  const extractors = architectureMapGraphExtractors({ preparedInventory: inventory });
   const generatedAt = nowIso();
   const compiled = await compileContextGraph({
     root,
@@ -290,12 +334,12 @@ async function runLocked(
     limits: CODE_NAVIGATION_LIMITS,
     observedAt: generatedAt,
     useFragmentCache: false,
-    cacheKey: inspection.cacheKey,
+    cacheKey,
     persistArtifacts: false,
     useCompileLock: false
   });
   ledger.validation.graph_compile = compiled.ok;
-  const compileFatal = compiled.skipped.filter((skip) => CODE_NAVIGATION_FATAL_SKIP_REASONS.has(skip.reason));
+  const compileFatal = compiled.skipped.filter((skip) => isAlignFatalSkip(skip));
   if (compileFatal.length) ledger.scan.fatal_skips.push(...compileFatal.map((skip) => ({ ...skip })));
   if (!compiled.ok || !compiled.snapshot || !compiled.meta || compileFatal.length) {
     throw new Error(`code_navigation_compile_blocked:${compiled.blockers.concat(compileFatal.map((skip) => `${skip.reason}:${skip.path}`)).join('|')}`);
@@ -310,7 +354,7 @@ async function runLocked(
   ledger.graph.test_nodes = snapshot.nodes.filter((node) => node.kind === 'test').length;
   ledger.graph.edge_count = snapshot.edgeCount;
   ledger.graph.edges_by_type = countsBy(snapshot.edges, (edge) => edge.type);
-  const inventoryPaths = inspection.inventory.files.map((file) => file.rel).sort();
+  const inventoryPaths = inventory.files.map((file) => file.rel).sort();
   const fileNodePaths = snapshot.nodes.filter((node) => node.kind === 'file').map((node) => String(node.path || '')).filter(Boolean).sort();
   const inventorySet = new Set(inventoryPaths);
   const fileNodeSet = new Set(fileNodePaths);
@@ -320,10 +364,16 @@ async function runLocked(
     && ledger.graph.unexpected_files.length === 0
     && fileNodePaths.length === inventoryPaths.length;
   if (!ledger.graph.exact_file_coverage) throw new Error('code_navigation_exact_file_coverage_failed');
-  if (ledger.graph.extractor_ids.length !== 1 || ledger.graph.extractor_ids[0] !== 'code') throw new Error('code_navigation_non_code_extractor_present');
+  const expectedExtractors = [...ARCHITECTURE_MAP_EXTRACTOR_IDS];
+  if (ledger.graph.extractor_ids.length !== expectedExtractors.length
+    || expectedExtractors.some((id, index) => ledger.graph.extractor_ids[index] !== id)) {
+    throw new Error(`code_navigation_architecture_map_extractors_mismatch:${ledger.graph.extractor_ids.join(',')}`);
+  }
   const graphValidation = validateContextGraphSnapshot(snapshot);
   ledger.validation.graph_schema = graphValidation.ok;
-  if (!graphValidation.ok || meta.cacheKeyParts.sourcePolicy !== 'repository_code_only') throw new Error('code_navigation_graph_validation_failed');
+  if (!graphValidation.ok || meta.cacheKeyParts.sourcePolicy !== 'workspace') {
+    throw new Error('code_navigation_graph_validation_failed');
+  }
 
   const pack = await buildPack(root, snapshot, meta, generatedAt);
   const packValidation = await validateCodePack(pack, root);
@@ -343,7 +393,7 @@ async function runLocked(
   const contextValidation = validateCodeNavigationContextPack(contextPack, root);
   ledger.validation.context_pack = contextValidation.ok;
   if (!contextValidation.ok) throw new Error('code_navigation_context_pack_invalid');
-  const manifest = buildManifest(generatedAt, inspection, snapshot);
+  const manifest = buildManifest(generatedAt, inventory, codeInventoryDigest, snapshot);
 
   const stageRoot = path.join(stageBase, `${missionId}-${randomUUID().slice(0, 8)}`);
   const stageWiki = path.join(stageRoot, 'new-wiki');
@@ -360,6 +410,7 @@ async function runLocked(
     await writeJsonAtomic(path.join(stageWiki, 'code-navigation-manifest.json'), manifest);
     await writeJsonAtomic(path.join(stageWiki, 'code-pack.json'), pack);
     await writeJsonAtomic(path.join(stageWiki, 'context-pack.json'), contextPack);
+    await publishArchitectureMapToStage(stageWiki, snapshot, { root, missionId });
     ledger.publication.staged = true;
     ledger.validation.staged_readback = await validateStaging({ stageWiki, root, snapshot, pack, contextPack, manifest });
     if (!ledger.validation.staged_readback) throw new Error('code_navigation_staging_validation_failed');
@@ -398,9 +449,28 @@ async function runLocked(
     ledger.validation.artifact_hashes = Object.keys(ledger.publication.artifact_sha256).length === ALIGN_OUTPUT_ARTIFACTS.length;
 
     await beforeFinalSourceCas?.();
-    const finalInspection = await inspectCodeNavigationSources(root, extractorIdentities, CODE_NAVIGATION_LIMITS);
-    ledger.scan.source_cas_verified = finalInspection.fatalSkips.length === 0
-      && finalInspection.cacheKey.key === inspection.cacheKey.key;
+    const finalInventory = walkCodeInventory(root, CODE_NAVIGATION_LIMITS);
+    const finalFatal = finalInventory.skipped.filter((skip) => isAlignFatalSkip(skip));
+    const finalCacheKey = await computeContextGraphCacheKey({ root, extractors: extractorIdentities });
+    const finalCodeDigest = crypto
+      .createHash('sha256')
+      .update(
+        Object.entries(codeInventoryInputHashes(finalInventory))
+          .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+          .map(([relative, hash]) => `${relative}\0${hash}`)
+          .join('\n')
+      )
+      .digest('hex');
+    // Align rewrites `.sneakoscope/wiki/**`, so CAS compares code + topology inputs only —
+    // not wikiContextHash / git dirty fingerprints that always move during promotion.
+    const casStable =
+      finalCacheKey.parts.tsconfigHash === cacheKey.parts.tsconfigHash
+      && finalCacheKey.parts.commandManifestHash === cacheKey.parts.commandManifestHash
+      && finalCacheKey.parts.gateManifestHash === cacheKey.parts.gateManifestHash
+      && finalCacheKey.parts.schemaRevision === cacheKey.parts.schemaRevision
+      && finalCacheKey.parts.proofIndexHash === cacheKey.parts.proofIndexHash
+      && finalCodeDigest === codeInventoryDigest;
+    ledger.scan.source_cas_verified = finalFatal.length === 0 && casStable;
     if (!ledger.scan.source_cas_verified) throw new Error('code_navigation_source_changed_during_scan');
 
     commitStarted = true;

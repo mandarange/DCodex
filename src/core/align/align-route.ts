@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { nowIso, readJson, writeJsonAtomic } from '../fsx.js';
+import { ARCHITECTURE_MAP_ARTIFACT_RELS } from '../triwiki/context-graph/store/architecture-map-store.js';
 import { CODE_NAVIGATION_LIMITS } from '../triwiki/code-navigation-policy.js';
 
 export const ALIGN_PLAN_ARTIFACT = 'align-plan.json';
@@ -24,7 +25,8 @@ export const ALIGN_OUTPUT_ARTIFACTS = Object.freeze([
   '.sneakoscope/wiki/context-graph.meta.json',
   '.sneakoscope/wiki/code-navigation-manifest.json',
   '.sneakoscope/wiki/code-pack.json',
-  '.sneakoscope/wiki/context-pack.json'
+  '.sneakoscope/wiki/context-pack.json',
+  ...ARCHITECTURE_MAP_ARTIFACT_RELS
 ]);
 
 export interface AlignPlan {
@@ -269,7 +271,11 @@ export function evaluateAlignGate(
     skips: (ledger?.scan.fatal_skips.length ?? 1) === 0,
     coverage: ledger?.graph.exact_file_coverage === true && ledger.graph.missing_files.length === 0 && ledger.graph.unexpected_files.length === 0,
     cas: ledger?.scan.source_cas_verified === true,
-    extractor: ledger?.graph.extractor_ids.length === 1 && ledger.graph.extractor_ids[0] === 'code',
+    extractor: Array.isArray(ledger?.graph.extractor_ids)
+      && ledger.graph.extractor_ids.length === 3
+      && ledger.graph.extractor_ids[0] === 'code'
+      && ledger.graph.extractor_ids[1] === 'topology'
+      && ledger.graph.extractor_ids[2] === 'triwiki-evidence',
     publication: ledger?.publication.staged === true && ledger.publication.transactional_directory_replaced === true,
     artifacts: ledger?.validation.artifact_hashes === true && activeVerification.artifacts,
     projection: ledger?.validation.projection === true && activeVerification.projections,

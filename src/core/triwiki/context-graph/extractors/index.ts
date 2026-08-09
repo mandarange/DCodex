@@ -29,4 +29,19 @@ export function codeNavigationGraphExtractors(options: { preparedInventory?: Cod
   return [createCodeGraphExtractor(options)];
 }
 
+/**
+ * Architecture Map / Align publication registry.
+ *
+ * Extends code navigation with topology (commands/routes/gates/pipelines) and
+ * evidence (claims/proofs) so Mermaid views that need those kinds are falsifiable.
+ * Callers that still require a portable code-only index must keep using
+ * `codeNavigationGraphExtractors()`.
+ */
+export function architectureMapGraphExtractors(options: { preparedInventory?: CodeInventory } = {}): ContextGraphExtractor[] {
+  return [createCodeGraphExtractor(options), createTopologyGraphExtractor(), createEvidenceGraphExtractor()];
+}
+
+/** Sorted extractor ids as persisted on Align ledgers / snapshot.extractors. */
+export const ARCHITECTURE_MAP_EXTRACTOR_IDS = Object.freeze(['code', 'topology', 'triwiki-evidence'] as const);
+
 export { createCodeGraphExtractor, createEvidenceGraphExtractor, createTopologyGraphExtractor };

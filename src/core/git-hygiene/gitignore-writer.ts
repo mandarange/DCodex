@@ -33,6 +33,8 @@ export const GITIGNORE_BLOCK = `# BEGIN ${GIT_HYGIENE_BLOCK}
 # Generated TriWiki indexes and transient context packs
 .sneakoscope/wiki/indexes/
 .sneakoscope/wiki/context-packs/
+.sneakoscope/wiki/architecture-map/
+.sneakoscope/wiki/architecture-map/**
 .sneakoscope/wiki/tmp/
 .sneakoscope/wiki/context-pack.json
 .sneakoscope/wiki/image-assets.json

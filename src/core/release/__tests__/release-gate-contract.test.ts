@@ -49,7 +49,7 @@ test('full release excludes duplicate canonical suites while incremental selecto
     .filter((gate: any) => Array.isArray(gate.preset) && gate.preset.includes('confidence'))
     .map((gate: any) => String(gate.id))
     .sort()
-  assert.equal(releaseIds.length, 31)
+  assert.equal(releaseIds.length, 33)
   assert.deepEqual(incrementalIds, INCREMENTAL_ONLY_GATE_IDS)
   assert.ok(confidenceOnlyIds.length > 0)
   for (const id of INCREMENTAL_ONLY_GATE_IDS) assert.equal(releaseIds.includes(id), false, id)

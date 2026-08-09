@@ -36,3 +36,5 @@ npm run release:check:affected
 
 Missing or ambiguous evidence remains blocked or unverified. SKS never infers
 successful official-thread completion from process counts or UI telemetry.
+
+<!-- sks-release-version: 8.4.0 Architecture Map (AMG/ADR) -->

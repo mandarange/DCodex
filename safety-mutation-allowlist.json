@@ -6665,8 +6665,8 @@
       "file": "src/scripts/release-metadata-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "d3c11750fc9de542cd292ac9b6e8ac54aa01efdf23ab7caed171a92b9fc19df5",
-      "callsite_sha256": "eced8962b296c25ce68d9edfbd84c399fa7ec1456d27f1f35f7168d9dbdc03dd",
+      "scope_contract_sha256": "65cff70e30d50604148f0d7b8cb34ac9ffa232dcacb16d582ac6e5a56ff99e79",
+      "callsite_sha256": "0a9c2453e179b76bd7bb864877c0a8da1a0c863df8fd9d1c7ec12d9c2c891419",
       "occurrence": 1,
       "reason": "Release metadata validation writes only its fixed versioned JSON report beneath the repository .sneakoscope/reports directory."
     },
@@ -7731,6 +7731,33 @@
       "callsite_sha256": "6a956edf16c5f58a2c775a78bf14f670787003b94d3c2c99be320e4dca41f388",
       "occurrence": 1,
       "reason": "Build cleanup removes only compiled __tests__ artifacts under dist whose source .ts no longer exists, keeping dist a strict projection of src; targets are derived from the dist walk, never user paths."
+    },
+    {
+      "file": "src/core/architecture-map-pipeline.ts",
+      "symbol": "writeArchitectureMapCapsule",
+      "token": "fsp.writeFile",
+      "scope_contract_sha256": "3b47fc13a9092f5fc848aa794f26f9da8bb67f15ebe3d840ad3ab991b29cf763",
+      "callsite_sha256": "5a0fd4e0fff5442a7411c9061b71dd051fa66748e7d011460527affbebc92247",
+      "occurrence": 1,
+      "reason": "Architecture Map capsule writer stores only mission-local architecture-capsule.txt under .sneakoscope/missions/<id>/."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/architecture-map-store.ts",
+      "symbol": "writeJson",
+      "token": "fsp.writeFile",
+      "scope_contract_sha256": "22d7fa9b15629adb456d2492b7bd01a99770aacae190006fecd05c81ed5c6a39",
+      "callsite_sha256": "909be373a7f8bf4ee7fa396799c2a8d278cd69bb69faa8c83162122a2deee14c",
+      "occurrence": 1,
+      "reason": "Align staging publisher writes Architecture Map JSON sidecars only under the stageWiki architecture-map directory."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/architecture-map-store.ts",
+      "symbol": "writeText",
+      "token": "fsp.writeFile",
+      "scope_contract_sha256": "397b3321b76768ee9bbd03548ad2f807663f31761faa6bf25c36fec186f04dbe",
+      "callsite_sha256": "3cf541cea49e9ecefd7dffdfb547cbdb58d4b08c9eb0ac83f137637719e93bc7",
+      "occurrence": 1,
+      "reason": "Align staging publisher writes Architecture Map Mermaid views only under the stageWiki architecture-map/views directory."
     }
   ]
 }

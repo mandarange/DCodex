@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sneakoscope.local/schemas/architecture-map-policy.v1.schema.json",
+  "title": "SKS Architecture Map Policy V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "layers", "boundaries", "thresholds", "exceptions"],
+  "properties": {
+    "schema": { "const": "sks.architecture-map-policy.v1" },
+    "version": { "type": "integer", "minimum": 1 },
+    "module_id_source": { "type": "string", "minLength": 1 },
+    "layers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "purpose", "modules"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "purpose": { "type": "string", "minLength": 1 },
+          "modules": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "boundaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "allow"],
+      "properties": {
+        "mode": { "const": "allow-list" },
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "type": "string", "minLength": 1 },
+              "to": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            }
+          }
+        }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_diagram_nodes",
+        "max_diagram_edges",
+        "max_diagram_bytes",
+        "max_module_fan_out",
+        "max_module_fan_in"
+      ],
+      "properties": {
+        "max_diagram_nodes": { "type": "integer", "minimum": 1 },
+        "max_diagram_edges": { "type": "integer", "minimum": 1 },
+        "max_diagram_bytes": { "type": "integer", "minimum": 1 },
+        "max_module_fan_out": { "type": "integer", "minimum": 1 },
+        "max_module_fan_in": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "profiles": { "type": "object", "additionalProperties": true },
+    "absoluteTokenCeiling": { "type": "integer", "minimum": 0 },
+    "globalAtlasMaxBytes": { "type": "integer", "minimum": 1 },
+    "missionArtifactsMaxBytes": { "type": "integer", "minimum": 1 },
+    "accuracyFloors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "changedPathAccounting": { "type": "number", "minimum": 0, "maximum": 1 },
+        "projectionAccounting": { "type": "number", "minimum": 0, "maximum": 1 },
+        "protectedRelationRecall": { "type": "number", "minimum": 0, "maximum": 1 },
+        "eligibleExtractionSuccess": { "type": "number", "minimum": 0, "maximum": 1 },
+        "deterministicHashRuns": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "dependencyRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "effect", "severity"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "effect": { "enum": ["deny", "allow"] },
+          "severity": { "enum": ["blocking", "warning", "info"] },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "viewBudgets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "maxNodes": { "type": "integer", "minimum": 1 },
+          "maxEdges": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "blockingCodes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "exceptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "entries"],
+      "properties": {
+        "mode": { "const": "shrink-only" },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "reason",
+              "edges",
+              "baseline_module_edges",
+              "ceiling_module_edges"
+            ],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "reason": { "type": "string", "minLength": 1 },
+              "edges": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "baseline_module_edges": { "type": "integer", "minimum": 1 },
+              "ceiling_module_edges": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

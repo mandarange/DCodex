@@ -1,0 +1,88 @@
+{
+  "schema": "sks.architecture-map.wave-a.cardinality-receipt.v1",
+  "generated_at": "2026-08-09T06:15:16.616Z",
+  "extractor_ids_contract": [
+    "code",
+    "topology",
+    "triwiki-evidence"
+  ],
+  "extractor_ids": [
+    "code",
+    "topology",
+    "triwiki-evidence"
+  ],
+  "source_policy": "workspace",
+  "snapshot_hash": "e4c39b8d89124ef53e9aae572a41a739ca15f8958b4f546cb157e2e9c74905e6",
+  "node_count": 26973,
+  "edge_count": 70832,
+  "kinds": {
+    "command": 97,
+    "file": 2919,
+    "gate": 156,
+    "module": 118,
+    "pipeline": 30,
+    "proof": 512,
+    "risk_domain": 1,
+    "route": 27,
+    "source": 181,
+    "symbol": 21986,
+    "test": 922,
+    "wiki_claim": 24
+  },
+  "edge_types": {
+    "affected_by": 589,
+    "calls": 9954,
+    "cites": 181,
+    "contains": 25803,
+    "defines": 8057,
+    "depends_on": 78,
+    "derived_from": 1205,
+    "gated_by": 156,
+    "imports": 6398,
+    "owns": 3,
+    "reexports": 912,
+    "references": 13726,
+    "routes_to": 50,
+    "tests": 2997,
+    "verified_by": 723
+  },
+  "view_readiness": [
+    {
+      "view": "project-topology",
+      "status": "ok"
+    },
+    {
+      "view": "module-dependency",
+      "status": "ok"
+    },
+    {
+      "view": "public-surface",
+      "missing": [
+        "schema",
+        "config"
+      ],
+      "present": [
+        "command",
+        "route"
+      ],
+      "status": "partial"
+    },
+    {
+      "view": "ssot-provenance",
+      "status": "ok"
+    },
+    {
+      "view": "runtime-control",
+      "status": "ok"
+    },
+    {
+      "view": "verification-coverage",
+      "status": "ok"
+    },
+    {
+      "view": "risk-domains",
+      "status": "ok"
+    }
+  ],
+  "duration_ms": 8083
+}

@@ -82,7 +82,12 @@ export function normalizeVGraph(vgraph: any = {}) {
     edges,
     invariants: Array.isArray(vgraph.invariants) ? vgraph.invariants : [],
     tests: Array.isArray(vgraph.tests) ? vgraph.tests : [],
-    risks: Array.isArray(vgraph.risks) ? vgraph.risks : []
+    risks: Array.isArray(vgraph.risks) ? vgraph.risks : [],
+    // Conditional on purpose. An unconditional `atlas: ... ?? null` would put
+    // `"atlas":null` into stableJson for every existing cartridge, moving every
+    // vgraphHash and flipping every already-rendered render.svg to
+    // render_svg_stale at driftCartridge:348.
+    ...(vgraph.atlas && typeof vgraph.atlas === 'object' && !Array.isArray(vgraph.atlas) ? { atlas: vgraph.atlas } : {})
   };
 }
 

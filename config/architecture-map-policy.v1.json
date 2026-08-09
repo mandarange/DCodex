@@ -1,0 +1,168 @@
+{
+  "schema": "sks.architecture-map-policy.v1",
+  "version": 1,
+  "module_id_source": "context-graph module node id, as produced by src/core/triwiki/context-graph/extractors/code/modules.ts: the owning directory, capped at depth 3 under src|source|lib and depth 2 elsewhere. Entries below are exact module ids, never globs; a module not named by any layer is unconstrained.",
+  "layers": [
+    {
+      "id": "entrypoint",
+      "purpose": "Process entry. Nothing in the repository imports these modules, so argv arrives here and only leaves downward.",
+      "modules": ["src/bin"]
+    },
+    {
+      "id": "cli_surface",
+      "purpose": "Argument parsing, terminal output, the command registry and the command manifest.",
+      "modules": ["src/cli"]
+    },
+    {
+      "id": "command",
+      "purpose": "One handler per user-facing command, split across a thin dispatch root and the heavier implementations.",
+      "modules": ["src/commands", "src/core/commands"]
+    },
+    {
+      "id": "orchestration",
+      "purpose": "Route classification, pipeline plans, gate profiles and the stop gate.",
+      "modules": [
+        "src/core/pipeline",
+        "src/core/pipeline-internals",
+        "src/core/router",
+        "src/core/routes",
+        "src/core/runtime",
+        "src/core/stop-gate"
+      ]
+    },
+    {
+      "id": "release",
+      "purpose": "Release gate manifest, gate DAG, scheduling and publish contracts.",
+      "modules": ["src/core/release"]
+    },
+    {
+      "id": "knowledge",
+      "purpose": "TriWiki: the context graph, code packs, the proof bank and the wrongness ledger.",
+      "modules": ["src/core/triwiki", "src/core/triwiki-wrongness"]
+    },
+    {
+      "id": "foundation",
+      "purpose": "Domain-free primitives: error shapes, JSON records, file locks, regex helpers.",
+      "modules": ["src/core/errors", "src/core/json", "src/core/locks", "src/core/text"]
+    },
+    {
+      "id": "gate_script",
+      "purpose": "Standalone check executables invoked by npm scripts and the release DAG.",
+      "modules": ["src/scripts", "src/scripts/lib"]
+    }
+  ],
+  "boundaries": {
+    "mode": "allow-list",
+    "allow": [
+      { "from": "entrypoint", "to": ["cli_surface", "command", "orchestration"] },
+      {
+        "from": "cli_surface",
+        "to": ["command", "orchestration", "release", "knowledge", "foundation"]
+      },
+      { "from": "command", "to": ["orchestration", "release", "knowledge", "foundation"] },
+      { "from": "orchestration", "to": ["release", "knowledge", "foundation"] },
+      { "from": "release", "to": ["knowledge", "foundation"] },
+      { "from": "knowledge", "to": ["foundation"] },
+      { "from": "foundation", "to": [] },
+      {
+        "from": "gate_script",
+        "to": ["cli_surface", "command", "orchestration", "release", "knowledge", "foundation"]
+      }
+    ]
+  },
+  "thresholds": {
+    "max_diagram_nodes": 240,
+    "max_diagram_edges": 900,
+    "max_diagram_bytes": 45000,
+    "max_module_fan_out": 56,
+    "max_module_fan_in": 96
+  },
+  "profiles": {
+    "global": { "maxNodes": 240, "maxEdges": 360, "maxLabelChars": 56, "tokenBudget": 0 },
+    "planning": { "maxNodes": 48, "maxEdges": 72, "maxLabelChars": 56, "tokenBudget": 900 },
+    "implementation": { "maxNodes": 64, "maxEdges": 96, "maxLabelChars": 56, "tokenBudget": 1200 },
+    "review": { "maxNodes": 72, "maxEdges": 108, "maxLabelChars": 56, "tokenBudget": 1600 },
+    "protected": { "maxNodes": 96, "maxEdges": 144, "maxLabelChars": 56, "tokenBudget": 2400 }
+  },
+  "absoluteTokenCeiling": 3200,
+  "globalAtlasMaxBytes": 1572864,
+  "missionArtifactsMaxBytes": 358400,
+  "accuracyFloors": {
+    "changedPathAccounting": 1,
+    "projectionAccounting": 1,
+    "protectedRelationRecall": 1,
+    "eligibleExtractionSuccess": 0.995,
+    "deterministicHashRuns": 3
+  },
+  "dependencyRules": [
+    {
+      "id": "boundary-allow-list",
+      "effect": "deny",
+      "severity": "blocking",
+      "description": "Module edges that cross layers outside boundaries.allow (and outside shrink-only exceptions) are forbidden_dependency findings."
+    }
+  ],
+  "viewBudgets": {
+    "project-topology": { "maxNodes": 240, "maxEdges": 360 },
+    "module-dependency": { "maxNodes": 240, "maxEdges": 900 },
+    "public-surface": { "maxNodes": 120, "maxEdges": 180 },
+    "ssot-provenance": { "maxNodes": 96, "maxEdges": 144 },
+    "runtime-control": { "maxNodes": 120, "maxEdges": 180 },
+    "verification-coverage": { "maxNodes": 160, "maxEdges": 240 },
+    "risk-domains": { "maxNodes": 96, "maxEdges": 144 }
+  },
+  "blockingCodes": [
+    "baseline_missing",
+    "baseline_late",
+    "baseline_stale",
+    "baseline_tampered",
+    "graph_stale",
+    "map_parity_failure",
+    "unaccounted_changed_file",
+    "new_cycle",
+    "cycle_expansion",
+    "forbidden_dependency",
+    "layer_skip",
+    "ssot_collision",
+    "authority_bypass",
+    "protected_verification_gap",
+    "insufficient_graph"
+  ],
+  "exceptions": {
+    "mode": "shrink-only",
+    "entries": [
+      {
+        "id": "cli-layer-hosts-shared-surfaces",
+        "reason": "src/cli owns dispatch surface and terminal presentation toolkit; handlers reach up for formatting.",
+        "edges": [
+          "command -> cli_surface",
+          "orchestration -> cli_surface",
+          "knowledge -> cli_surface"
+        ],
+        "baseline_module_edges": 4,
+        "ceiling_module_edges": 4
+      },
+      {
+        "id": "command-layer-hosts-shared-contracts",
+        "reason": "Shared shapes hosted in the command layer rather than below it.",
+        "edges": ["knowledge -> command", "release -> command"],
+        "baseline_module_edges": 2,
+        "ceiling_module_edges": 2
+      },
+      {
+        "id": "release-knowledge-cycle",
+        "reason": "release and triwiki form a real two-module cycle; only the upward half is excepted.",
+        "edges": ["knowledge -> release"],
+        "baseline_module_edges": 1,
+        "ceiling_module_edges": 1
+      },
+      {
+        "id": "script-root-hosts-libraries",
+        "reason": "src/scripts is an entry root but some files are imported as libraries.",
+        "edges": ["cli_surface -> gate_script", "release -> gate_script"],
+        "baseline_module_edges": 2,
+        "ceiling_module_edges": 2
+      }
+    ]
+  }
+}

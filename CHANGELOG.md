@@ -4,6 +4,21 @@
 
 
 
+## [8.4.0] - 2026-08-09
+
+### Added
+
+- Architecture Map: policy-driven Mermaid projections from the compiled context
+  graph, Align publication under `.sneakoscope/wiki/architecture-map/`,
+  read-only `sks triwiki atlas-*` inspection, and
+  `architecture-map:*` release/confidence gates behind
+  `src/scripts/architecture-map-check.ts`.
+
+### Removed
+
+- Provisional `src/core/triwiki/atlas/**` SSOT, `atlas-check.ts`, and `atlas:*`
+  gate ids (replaced by Architecture Map).
+
 ## [8.3.3] - 2026-08-08
 
 ### Added

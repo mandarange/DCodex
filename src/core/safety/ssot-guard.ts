@@ -1,5 +1,6 @@
 import { nowIso } from '../fsx.js'
 import { isRecord } from '../json/records.js'
+import { inventoryAsSsotGuardSources } from './ssot-authority-inventory.js'
 
 export const SSOT_GUARD_SCHEMA = 'sks.ssot-guard.v1'
 export const SSOT_GUARD_ARTIFACT = 'ssot-guard.json'
@@ -60,50 +61,8 @@ export function buildSsotGuard(input: { route?: string | null; mode?: string | n
 }
 
 export function canonicalSsotSources(): SsotGuardSource[] {
-  return [
-    {
-      id: 'route_contract',
-      source: 'decision-contract.json, route prompt, and pipeline-plan.json',
-      authority: 'The sealed user objective, constraints, non-goals, and acceptance criteria define what code may be created.',
-      derived: ['subagent-plan.json', 'subagent-events.jsonl', 'worker inboxes'],
-      rule: 'Do not implement behavior outside the sealed route contract; block with evidence if the requested path cannot be honored.'
-    },
-    {
-      id: 'triwiki_context',
-      source: '.sneakoscope/wiki/context-pack.json',
-      authority: 'TriWiki is the bounded mission context SSOT and must be refreshed or packed, then validated before risky handoffs and final claims.',
-      derived: ['subagent-parent-summary.json', 'subagent-evidence.json', 'reflection.md'],
-      rule: 'Use the latest coordinate+voxel overlay pack; coordinate-only legacy packs are invalid for pipeline decisions.'
-    },
-    {
-      id: 'runtime_source',
-      source: 'src/**/*.ts',
-      authority: 'TypeScript source is the runtime SSOT.',
-      derived: ['dist/**', 'dist/bin/sks.js'],
-      rule: 'Edit source, rebuild derived output, and rely on runtime:ts-source-of-truth plus runtime:dist-parity.'
-    },
-    {
-      id: 'generated_outputs',
-      source: 'source generators, build scripts, and schema definitions',
-      authority: 'Generated files are derived from their generator or schema owner.',
-      derived: ['release-gates.v2.json', 'infra-harness-gates.json', '.sneakoscope/reports/**', 'dist/build-manifest.json'],
-      rule: 'Regenerate derived artifacts instead of hand-editing them as independent truth.'
-    },
-    {
-      id: 'stack_current_docs',
-      source: '.sneakoscope/memory/q2_facts/stack-current-docs.md',
-      authority: 'Current vendor or Context7 docs override model-memory defaults when stack versions or APIs change.',
-      derived: ['implementation notes', 'route evidence'],
-      rule: 'Fetch and record current docs before relying on external package, SDK, API, MCP, or generated-doc behavior that may have changed.'
-    },
-    {
-      id: 'release_gate_manifest',
-      source: 'src/core/release/gate-manifest.ts and src/scripts/release-parallel-check.ts',
-      authority: 'Release gate selection and publish-required status live in the manifest plus the release DAG.',
-      derived: ['.sneakoscope/reports/release-gate-plan.json', '.sneakoscope/reports/gate-policy-audit.json'],
-      rule: 'Publish-blocking guard gates must appear in the DAG, manifest, and package scripts.'
-    }
-  ]
+  // Authority domain strings live in ssot-authority-inventory.ts (single SSOT).
+  return inventoryAsSsotGuardSources().map((row) => ({ ...row }));
 }
 
 export function validateSsotGuardArtifact(value: unknown): { ok: boolean; issues: string[] } {

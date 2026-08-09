@@ -29,3 +29,5 @@ parent instead of launching a nested orchestrator.
 
 Process count and display state never satisfy the completion contract. Official
 model, budget, prompt, and evidence semantics belong in `src/core/subagents/**`.
+
+<!-- sks-release-version: 8.4.0 Architecture Map (AMG/ADR) -->

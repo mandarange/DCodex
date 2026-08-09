@@ -32,6 +32,7 @@ export function defaultManagedPaths() {
     row('.sneakoscope/wiki/summaries', 'tracked shared markdown summaries', false, 'shared_memory', 'tracked'),
     row('.sneakoscope/wiki/indexes', 'ignored regenerated shared-memory indexes', true, 'generated_index', 'ignored'),
     row('.sneakoscope/wiki/context-packs', 'ignored regenerated context-pack snapshots', true, 'generated_index', 'ignored'),
+    row('.sneakoscope/wiki/architecture-map', 'ignored regenerated Architecture Map views', true, 'generated_index', 'ignored'),
     row('.sneakoscope/missions', 'local runtime mission state and proof artifacts', true, 'local_runtime', 'ignored'),
     row('.sneakoscope/reports', 'local runtime reports', true, 'local_runtime', 'ignored'),
     row('.sneakoscope/tmp', 'local temporary runtime files', true, 'local_runtime', 'ignored'),

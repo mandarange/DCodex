@@ -270,3 +270,5 @@ status, tool names, and a receipt hash. The bounded projection carries no raw
 tool arguments, query rows, tokens, credentials, prompts, environment dumps, or
 raw process output. `blockers` is always an array, and the proof fingerprint
 includes the projected optional arrays whenever they are present.
+
+<!-- sks-release-version: 8.4.0 Architecture Map (AMG/ADR) -->

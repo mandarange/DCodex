@@ -68,6 +68,210 @@
       "output_contract": "sks.gate-result.v2"
     },
     {
+      "id": "architecture-map:contract",
+      "command": "node ./dist/scripts/architecture-map-check.js --mode contract",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 120000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/architecture-map-policy.v1.json",
+          "src/core/triwiki/context-graph/architecture/**",
+          "src/core/triwiki/context-graph/projections/mermaid/**",
+          "src/core/triwiki/context-graph/store/architecture-map-store.ts",
+          "src/scripts/architecture-map-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
+      "id": "architecture-map:legacy-closure",
+      "command": "node ./dist/scripts/architecture-map-check.js --mode legacy-closure",
+      "deps": [
+        "architecture-map:contract"
+      ],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 120000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/architecture-map-policy.v1.json",
+          "src/core/triwiki/context-graph/architecture/**",
+          "src/core/triwiki/context-graph/projections/mermaid/**",
+          "src/core/triwiki/context-graph/store/architecture-map-store.ts",
+          "src/scripts/architecture-map-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "release"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
+      "id": "architecture-map:quality",
+      "command": "node ./dist/scripts/architecture-map-check.js --mode quality",
+      "deps": [
+        "architecture-map:contract"
+      ],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 300000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/architecture-map-policy.v1.json",
+          "src/core/triwiki/context-graph/architecture/**",
+          "src/core/triwiki/context-graph/projections/mermaid/**",
+          "src/core/triwiki/context-graph/store/architecture-map-store.ts",
+          "src/scripts/architecture-map-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "confidence"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
+      "id": "architecture-map:performance",
+      "command": "node ./dist/scripts/architecture-map-check.js --mode performance",
+      "deps": [
+        "architecture-map:contract"
+      ],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 300000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/architecture-map-policy.v1.json",
+          "src/core/triwiki/context-graph/architecture/**",
+          "src/core/triwiki/context-graph/projections/mermaid/**",
+          "src/core/triwiki/context-graph/store/architecture-map-store.ts",
+          "src/scripts/architecture-map-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "confidence"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
+      "id": "architecture-map:regression-fixtures",
+      "command": "node ./dist/scripts/architecture-map-check.js --mode regression-fixtures",
+      "deps": [
+        "architecture-map:contract"
+      ],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 300000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/architecture-map-policy.v1.json",
+          "src/core/triwiki/context-graph/architecture/**",
+          "src/core/triwiki/context-graph/projections/mermaid/**",
+          "src/core/triwiki/context-graph/store/architecture-map-store.ts",
+          "src/scripts/architecture-map-check.ts",
+          "test/architecture-map/**",
+          "test/fixtures/architecture-map/**"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "confidence"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
+      "id": "architecture-map:freshness",
+      "command": "node ./dist/scripts/architecture-map-check.js --mode freshness",
+      "deps": [
+        "architecture-map:contract"
+      ],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 120000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/architecture-map-policy.v1.json",
+          "src/core/triwiki/context-graph/architecture/**",
+          "src/core/triwiki/context-graph/projections/mermaid/**",
+          "src/core/triwiki/context-graph/store/architecture-map-store.ts",
+          "src/scripts/architecture-map-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "confidence"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
       "id": "agent:message-bus-reader",
       "command": "node ./dist/scripts/agent-message-bus-reader-check.js",
       "deps": [],

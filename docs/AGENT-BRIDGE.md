@@ -312,3 +312,5 @@ and returns `unknown_command` if invoked.
   `sks doctor --fix` and `sks update` reconcile SKS-owned installed manifests and remove
   retired managed entries; user-authored collisions are preserved in quarantine instead of
   overwritten.
+
+<!-- sks-release-version: 8.4.0 Architecture Map (AMG/ADR) -->

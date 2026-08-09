@@ -1,0 +1,14 @@
+{
+  "schema": "sks.architecture-map-fixture.v1",
+  "fixture": "minimal-ts",
+  "expected_view_ids": [
+    "project-topology",
+    "module-dependency",
+    "public-surface",
+    "ssot-provenance",
+    "runtime-control",
+    "verification-coverage",
+    "risk-domains"
+  ],
+  "expected_finding_codes": []
+}

@@ -56,3 +56,15 @@ export {
   type ContextGraphAttentionRequest,
   type ContextGraphAttentionResult
 } from './attention.js';
+export * as mermaid from './mermaid/index.js';
+export {
+  buildArchitectureMapViews,
+  buildArchitectureMapManifest,
+  buildMermaidView,
+  buildModuleDependencyView,
+  serializeMermaidDocument,
+  GENERATED_HEADER,
+  type ArchitectureMapViewsResult,
+  type ArchitectureMapManifestV1,
+  type MermaidProjectionV1
+} from './mermaid/index.js';

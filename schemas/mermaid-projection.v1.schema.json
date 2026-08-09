@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sneakoscope.local/schemas/mermaid-projection.v1.schema.json",
+  "title": "SKS Mermaid Projection V1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "viewId",
+    "direction",
+    "title",
+    "source",
+    "accounting",
+    "contentHash"
+  ],
+  "properties": {
+    "schema": { "const": "sks.mermaid-projection.v1" },
+    "viewId": { "type": "string", "minLength": 1 },
+    "direction": { "enum": ["LR", "TD"] },
+    "title": { "type": "string", "minLength": 1 },
+    "source": { "type": "string", "minLength": 1 },
+    "accounting": {
+      "type": "object",
+      "required": [
+        "selectedNodeIds",
+        "emittedNodeIds",
+        "omittedNodes",
+        "selectedEdgeIds",
+        "emittedEdgeIds",
+        "omittedEdges"
+      ],
+      "properties": {
+        "selectedNodeIds": { "type": "array", "items": { "type": "string" } },
+        "emittedNodeIds": { "type": "array", "items": { "type": "string" } },
+        "aggregatedNodeMembers": { "type": "object" },
+        "omittedNodes": { "type": "array" },
+        "selectedEdgeIds": { "type": "array", "items": { "type": "string" } },
+        "emittedEdgeIds": { "type": "array", "items": { "type": "string" } },
+        "aggregatedEdgeMembers": { "type": "object" },
+        "omittedEdges": { "type": "array" }
+      }
+    },
+    "contentHash": { "type": "string", "minLength": 1 },
+    "byteLength": { "type": "integer", "minimum": 0 },
+    "omissions": { "type": "array" }
+  }
+}

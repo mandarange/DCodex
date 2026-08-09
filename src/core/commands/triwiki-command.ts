@@ -5,6 +5,7 @@ import { computeTriWikiAffectedGraph } from '../triwiki/triwiki-affected-graph.j
 import { buildTriWikiGateImpactMap } from '../triwiki/triwiki-gate-impact-map.js';
 import { DEFAULT_TRIWIKI_MODULE_CARDS } from '../triwiki/triwiki-module-card.js';
 import { summarizeTriWikiProofBank } from '../triwiki/triwiki-proof-bank.js';
+import { isTriWikiAtlasSubcommand, triwikiAtlasCommand } from './triwiki-atlas-command.js';
 import { isTriWikiGraphSubcommand, triwikiGraphCommand } from './triwiki-graph-command.js';
 
 export async function triwikiCommand(args: string[] = []): Promise<unknown> {
@@ -17,6 +18,14 @@ export async function triwikiCommand(args: string[] = []): Promise<unknown> {
     process.exitCode = answer.ok ? 0 : 2;
     if (json) return printJson(answer.result);
     for (const line of answer.lines) console.log(line);
+    return answer.result;
+  }
+  if (isTriWikiAtlasSubcommand(sub)) {
+    const answer = await triwikiAtlasCommand(root, sub, args.slice(1));
+    process.exitCode = answer.exitCode;
+    if (json) return printJson(answer.result);
+    const stream = answer.ok ? console.log : console.error;
+    for (const line of answer.lines) stream(line);
     return answer.result;
   }
   if (sub === 'index') {
@@ -32,7 +41,9 @@ export async function triwikiCommand(args: string[] = []): Promise<unknown> {
   } else if (sub === 'proof-bank') {
     result = summarizeTriWikiProofBank(root);
   } else {
-    console.error('Usage: sks triwiki index|affected|proof-bank|graph-status|graph-lint|graph-query [--json]');
+    console.error(
+      'Usage: sks triwiki index|affected|proof-bank|graph-status|graph-lint|graph-query|atlas-status|atlas-lint|atlas-list|atlas-show|atlas-why [--json]'
+    );
     process.exitCode = 1;
     return null;
   }

@@ -4,6 +4,8 @@ export const RELEASE_GATE_CONTRACT_SCHEMA = 'sks.release-gate-contract.v1'
 
 export const RELEASE_GATE_CONTRACT_IDS: readonly string[] = Object.freeze([
   'architecture:guard',
+  'architecture-map:contract',
+  'architecture-map:legacy-closure',
   'codex:current:app-server-v2',
   'codex:current:binary-identity',
   'codex:current:capability',
