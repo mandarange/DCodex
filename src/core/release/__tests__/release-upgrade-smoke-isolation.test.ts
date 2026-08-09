@@ -43,25 +43,56 @@ test('isolation routes launchctl and broad postinstall side effects to sandbox-s
       stage: 'stub_print', command: isolation.launchctlStub, args: ['print', 'gui/501/com.sneakoscope.sks-menubar'],
       cwd: isolation.workspace, env: isolation.env, timeoutMs: 5_000
     })
+    // Replacing an existing install boots out the service it replaces, so the
+    // stub accepts that for this product's own labels and refuses every other
+    // target. A foreign label must not even be echoed into the log.
+    const ownBootout = await runReleaseUpgradeCommand({
+      stage: 'stub_bootout_own', command: isolation.launchctlStub, args: ['bootout', 'gui/501/com.sneakoscope.sks-menubar'],
+      cwd: isolation.workspace, env: isolation.env, timeoutMs: 5_000
+    })
+    const foreignBootout = await runReleaseUpgradeCommand({
+      stage: 'stub_bootout_foreign', command: isolation.launchctlStub, args: ['bootout', 'gui/501/com.apple.Finder'],
+      cwd: isolation.workspace, env: isolation.env, timeoutMs: 5_000
+    })
     const secret = 'super-secret-launchctl-value'
     const forbidden = await runReleaseUpgradeCommand({
       stage: 'stub_forbidden_setenv', command: 'launchctl', args: ['setenv', 'OPENAI_API_KEY', secret],
       cwd: isolation.workspace, env: isolation.env, timeoutMs: 5_000
     })
     assert.equal(unsetenv.code, 0)
+    // The stub is what the upgrade under test observes, so an absent service has
+    // to read exactly as launchctl reports one: anything the product cannot
+    // classify makes it fail closed on a condition that exists only in here.
     assert.equal(printed.code, 113)
-    assert.match(printed.stderr, /service not running/)
+    assert.match(printed.stderr, /Bad request\./)
+    assert.match(printed.stderr, /Could not find service/)
+    assert.equal(ownBootout.code, 0)
+    assert.notEqual(foreignBootout.code, 0)
     assert.notEqual(forbidden.code, 0)
     const log = await fs.readFile(isolation.launchctlLog, 'utf8')
     assert.equal(log.includes(secret), false)
+    assert.equal(log.includes('com.apple.Finder'), false)
     assert.deepEqual(log.trim().split('\n'), [
       'unsetenv CODEX_LB_API_KEY',
       'print',
+      'bootout com.sneakoscope.sks-menubar',
+      'forbidden bootout [redacted]',
       'forbidden setenv'
     ])
     const inspected = inspectReleaseUpgradeLaunchctlLog(isolation)
-    assert.deepEqual(inspected.unexpected, ['forbidden setenv'])
+    assert.deepEqual(inspected.unexpected, ['forbidden bootout [redacted]', 'forbidden setenv'])
     assert.ok(inspected.blockers.includes('launchctl_stub_unexpected_call:forbidden setenv'))
+
+    // Process discovery is the other route out of the HOME redirect, and naming
+    // the tools does nothing unless the injection flag is set.
+    assert.equal(isolation.env.SKS_MENUBAR_TEST_PROCESS_TOOLS, '1')
+    assert.equal(path.dirname(String(isolation.env.SKS_MENUBAR_PGREP)), path.dirname(isolation.launchctlStub))
+    assert.equal(path.dirname(String(isolation.env.SKS_MENUBAR_PS)), path.dirname(isolation.launchctlStub))
+    for (const tool of [isolation.env.SKS_MENUBAR_PGREP, isolation.env.SKS_MENUBAR_PS]) {
+      const probe = spawnSync(String(tool), ['-f', 'SKSMenuBar'], { cwd: isolation.workspace, env: isolation.env, encoding: 'utf8' })
+      assert.notEqual(probe.status, 0)
+      assert.equal(probe.stdout.trim(), '')
+    }
   } finally {
     await fs.rm(temp, { recursive: true, force: true })
   }
