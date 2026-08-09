@@ -95,8 +95,15 @@ const swiftCompile = result.actions.includes(`compiled ${NATIVE_SOURCE_FILES.len
 const swiftParse = await swiftParseSmoke(sourcesDir);
 const actionScriptExecutable = await isExecutable(required(result.action_script_path, 'final action script path'));
 const launchAgent = await fs.readFile(required(result.launch_agent_path, 'launch agent path'), 'utf8');
-const launchAgentSafe = !launchAgent.includes('<key>KeepAlive</key>')
-  && !launchAgent.includes('EnvironmentVariables')
+// `KeepAlive` is deliberate — launchd is meant to bring the Menu Bar back if it
+// exits — and has been emitted unconditionally since 8.3.1. This check forbade
+// it, so it contradicted both the installer and the lifecycle regression test
+// that asserts `plist.KeepAlive === true`, and no macOS Menu Bar proof could be
+// sealed on any machine. That test owns the positive assertion; this one keeps
+// the properties it is the only one checking: no environment block (a plist is
+// world-readable, so it must never carry secrets) and an interactive process
+// type (a background type gets no menu bar).
+const launchAgentSafe = !launchAgent.includes('EnvironmentVariables')
   && launchAgent.includes('<key>ProcessType</key>')
   && launchAgent.includes('<string>Interactive</string>');
 
