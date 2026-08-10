@@ -811,7 +811,11 @@ function featureTomlObject(value: unknown): Record<string, unknown> | null {
 }
 
 function hasExactManagedConfigMarker(text: string): boolean {
-  return /^(?:#\s*SKS-MANAGED-CODEX-CONFIG\b|#\s*SKS managed Codex config\b|#\s*sks_managed_(?:body_)?sha256\s*=\s*["'][a-f0-9]{64}["'])/mi.test(text)
+  // Leading whitespace is allowed, matching hasExplicitSksManagedCodexConfigMarker
+  // in codex-config-guard.ts. Without it an indented marker satisfied the guard
+  // but not this proof, so `sks config adopt` and `doctor --fix` could disagree
+  // about the same file forever.
+  return /^\s*(?:#\s*SKS-MANAGED-CODEX-CONFIG\b|#\s*SKS managed Codex config\b|#\s*sks_managed_(?:body_)?sha256\s*=\s*["'][a-f0-9]{64}["'])/mi.test(text)
 }
 
 /**
