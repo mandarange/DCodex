@@ -182,22 +182,33 @@ export function resolveBridgeRequestRoute(
   const sessionId = request.session_id ? canonicalSessionId(request.session_id) : null;
   const pin = sessionId ? pins.find((entry) => entry.thread_id === sessionId) || null : null;
   if (pin && pin.public_model === publicModel) {
-    if (pin.public_model !== publicModel
-      || pin.catalog_generation !== policy.catalog_generation
-      || pin.route_policy_generation !== policy.policy_generation) {
-      throw new DesktopBridgeError('session_pin_route_unavailable');
-    }
+    // A pin exists to keep a thread on its provider, and that is the only thing
+    // worth refusing over. Its generation stamps are bookkeeping: since
+    // `policy_generation` digests the entire route map, any unrelated catalog
+    // churn ages every live pin at once, and rejecting on that alone is what
+    // surfaced as an intermittent `session_pin_route_unavailable` mid-session.
     const current = policy.model_routes[publicModel];
     if (!current || current.provider_id !== pin.provider_id || current.upstream_model !== pin.upstream_model) {
       throw new DesktopBridgeError('session_pin_route_unavailable');
     }
+    const aged = pin.catalog_generation !== policy.catalog_generation
+      || pin.route_policy_generation !== policy.policy_generation;
     return {
       provider_id: pin.provider_id,
       public_model: publicModel,
       upstream_model: pin.upstream_model,
-      catalog_generation: pin.catalog_generation,
-      route_policy_generation: pin.route_policy_generation,
-      session_pin: pin,
+      // Always the live generations: the context is re-checked against the
+      // current policy downstream, so replaying the pin's own stamps here would
+      // fail that check for the very drift this branch just forgave.
+      catalog_generation: policy.catalog_generation,
+      route_policy_generation: policy.policy_generation,
+      session_pin: aged
+        ? {
+            ...pin,
+            catalog_generation: policy.catalog_generation,
+            route_policy_generation: policy.policy_generation,
+          }
+        : pin,
     };
   }
   const route = policy.model_routes[publicModel];

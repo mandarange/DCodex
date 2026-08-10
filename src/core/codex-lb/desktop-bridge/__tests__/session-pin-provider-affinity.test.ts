@@ -53,7 +53,33 @@ test('live forwarding canonicalizes public IDs exactly like route explain while 
   assert.equal(resolved.session_pin?.public_model, 'gpt-5.6');
 });
 
-test('stale and changed same-model session pins fail instead of silently moving providers', () => {
-  assert.throws(() => resolveBridgeRequestRoute(request, { ...policy, policy_generation: 'policy-2' }, [pin]), /session_pin_route_unavailable/);
-  assert.throws(() => resolveBridgeRequestRoute(request, { ...policy, model_routes: { ...policy.model_routes, public: { provider_id: 'codex-lb', upstream_model: 'different' } } }, [pin]), /session_pin_route_unavailable/);
+test('a changed same-model session pin fails instead of silently moving providers', () => {
+  assert.throws(
+    () => resolveBridgeRequestRoute(request, {
+      ...policy,
+      model_routes: { ...policy.model_routes, public: { provider_id: 'codex-lb', upstream_model: 'different' } }
+    }, [pin]),
+    /session_pin_route_unavailable/
+  );
+});
+
+test('an aged session pin whose route is unchanged is re-pinned, not refused', () => {
+  // `policy_generation` digests the whole route map, so a catalog change to any
+  // *other* model ages this pin without touching the route it names. Refusing
+  // there is what made long-lived sessions fail intermittently; the thread is
+  // still owed openrouter/vendor/public, and it still gets exactly that.
+  const aged = resolveBridgeRequestRoute(request, {
+    ...policy,
+    policy_generation: 'policy-2',
+    model_routes: { ...policy.model_routes, alternate: { provider_id: 'codex-lb', upstream_model: 'vendor/alternate-v2' } }
+  }, [pin]);
+
+  assert.equal(aged.provider_id, 'openrouter');
+  assert.equal(aged.upstream_model, 'vendor/public');
+  // The context and the replacement pin both carry the live generations, so the
+  // downstream re-check cannot reject the drift this just forgave.
+  assert.equal(aged.route_policy_generation, 'policy-2');
+  assert.equal(aged.session_pin?.route_policy_generation, 'policy-2');
+  assert.equal(aged.session_pin?.thread_id, 'thread-1');
+  assert.equal(aged.session_pin?.created_at, pin.created_at);
 });

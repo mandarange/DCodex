@@ -64,10 +64,17 @@ export function resolveBridgeRequestRoute(
     return blocked(base, 'catalog_route_index_stale');
   }
 
-  const pin = request.thread_id ? findSessionPin(options.session_pins, request.thread_id) : null;
-  if (pin && canonicalizeBridgeModelId(pin.public_model) === model) {
-    const pinBlocker = validateSessionPin(pin, policy, options.route_index, options.registry);
-    if (pinBlocker) return blocked(base, pinBlocker);
+  const threadPin = request.thread_id ? findSessionPin(options.session_pins, request.thread_id) : null;
+  const pin = threadPin && canonicalizeBridgeModelId(threadPin.public_model) === model ? threadPin : null;
+  // A pin that cannot be replayed exactly as recorded still constrains the
+  // request: the fresh route has to keep the thread on the same provider and
+  // upstream model. `null` here means there is nothing to keep it on.
+  const pinAffinity = pin ? sessionPinAffinity(pin, policy, options.route_index, options.registry) : null;
+  if (pinAffinity === 'unprovable') return blocked(base, 'session_pin_route_unavailable');
+  // The route a stale pin still owes this thread, or null when there is no pin
+  // or the pin was replayed verbatim below.
+  const pinClaim = pinAffinity && pinAffinity !== 'honored' ? pinAffinity : null;
+  if (pin && pinAffinity === 'honored') {
     const route = { provider_id: pin.provider_id, upstream_model: pin.upstream_model } as const;
     const providerBlocker = validateProviderRoute(route, request.requested_endpoint_origin, options.registry, options.route_index);
     if (providerBlocker) return blocked(base, providerBlocker);
@@ -90,6 +97,13 @@ export function resolveBridgeRequestRoute(
   const policyTarget = policy.model_routes[model];
   if (!indexed || !policyTarget) return blocked(base, 'catalog_model_route_missing');
   if (!sameTarget(indexed, policyTarget)) return blocked(base, 'bridge_route_policy_route_index_mismatch');
+  // Stale bookkeeping is not the same as a thread losing its provider.
+  // `policy_generation` digests the entire route map, so any unrelated catalog
+  // churn invalidates every live pin at once — failing outright is what made
+  // that churn surface as an intermittent `session_pin_route_unavailable`.
+  // Re-pin when the fresh route is the one the pin already named; refuse only
+  // when the thread really would move.
+  if (pinClaim && !sameTarget(indexed, pinClaim)) return blocked(base, 'session_pin_route_unavailable');
   const providerBlocker = validateProviderRoute(indexed, request.requested_endpoint_origin, options.registry, options.route_index);
   if (providerBlocker) return blocked(base, providerBlocker);
   const proposedPin = request.thread_id
@@ -115,27 +129,35 @@ export function resolveBridgeRequestRoute(
   };
 }
 
-function validateSessionPin(
+/**
+ * What a session pin still entitles its thread to.
+ *
+ *  - `honored`: the pin matches the live catalog exactly and is replayed as-is.
+ *  - `unprovable`: the pin names a provider or upstream model this resolver
+ *    cannot even compare, so no fresh route can be shown to preserve the
+ *    thread's affinity.
+ *  - a route target: the pin's own bookkeeping is stale, but the thread is
+ *    still owed this exact provider and upstream model. The caller re-pins only
+ *    when the fresh route matches it.
+ */
+function sessionPinAffinity(
   pin: ProviderSessionPin,
   policy: BridgeRoutingPolicy,
   routeIndex: BridgeRouteIndex,
   registry: BridgeProviderRegistry
-): string | null {
-  if (pin.catalog_generation !== policy.catalog_generation
-    || pin.route_policy_generation !== policy.policy_generation) {
-    return 'session_pin_route_unavailable';
-  }
-  if (!isProviderId(pin.provider_id) || !registry.profiles[pin.provider_id]) {
-    return 'session_pin_route_unavailable';
-  }
+): 'honored' | 'unprovable' | BridgeRouteTarget {
+  if (!isProviderId(pin.provider_id) || !registry.profiles[pin.provider_id]) return 'unprovable';
   const model = canonicalizeBridgeModelId(pin.public_model);
   const upstream = normalizeBridgeUpstreamModelId(pin.upstream_model);
-  if (!model || !upstream) return 'session_pin_route_unavailable';
-  const indexed = routeIndex.routes[model] || routeIndex.routes[`${pin.provider_id}:${model}`];
-  if (!indexed || indexed.provider_id !== pin.provider_id || indexed.upstream_model !== upstream) {
-    return 'session_pin_route_unavailable';
+  if (!model || !upstream) return 'unprovable';
+  const claim = { provider_id: pin.provider_id, upstream_model: upstream } as const;
+  if (pin.catalog_generation !== policy.catalog_generation
+    || pin.route_policy_generation !== policy.policy_generation) {
+    return claim;
   }
-  return null;
+  const indexed = routeIndex.routes[model] || routeIndex.routes[`${pin.provider_id}:${model}`];
+  if (!indexed || !sameTarget(indexed, claim)) return claim;
+  return 'honored';
 }
 
 function validateProviderRoute(

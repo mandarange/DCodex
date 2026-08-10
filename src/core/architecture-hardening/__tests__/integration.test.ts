@@ -143,11 +143,21 @@ test('Desktop Bridge seam keeps simultaneous provider routes explicit, pinned, i
     changed_at: '2026-08-06T00:03:00.000Z',
   });
   assert.notEqual(restartedPolicy.catalog_generation, policy.catalog_generation);
-  assert.deepEqual(resolveBridgeRequestRoute({ model: pin.public_model, thread_id: pin.thread_id }, restartedPolicy, {
+  // Rebuilding the catalog mints new generations even when it describes the
+  // same models, so a live pin is aged by a bridge restart it had no part in.
+  // The thread has not lost openrouter, so it keeps it and is re-pinned against
+  // the restarted generations rather than having its request refused.
+  const afterRestart = resolveBridgeRequestRoute({ model: pin.public_model, thread_id: pin.thread_id }, restartedPolicy, {
     route_index: restarted.route_index,
     registry,
     session_pins: [pin],
-  }).blockers, ['session_pin_route_unavailable']);
+    now: () => '2026-08-06T00:04:00.000Z',
+  });
+  assert.deepEqual(afterRestart.blockers, []);
+  assert.equal(afterRestart.route?.provider_id, pin.provider_id);
+  assert.equal(afterRestart.route?.upstream_model, pin.upstream_model);
+  assert.equal(afterRestart.proposed_session_pin?.catalog_generation, restartedPolicy.catalog_generation);
+  assert.equal(afterRestart.proposed_session_pin?.route_policy_generation, restartedPolicy.policy_generation);
   const restartedConfig = bridgeConfig(registrySnapshot(registry, restarted.route_index), restartedPolicy, null);
   assert.notEqual(desktopBridgeConfigGeneration(restartedConfig), desktopBridgeConfigGeneration(firstConfig));
 });

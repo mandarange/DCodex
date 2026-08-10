@@ -135,14 +135,33 @@ test('R44/R28: session pins preserve exact provider generations and stale pins b
   assert.equal(switched.route?.provider_id, 'codex-lb');
   assert.equal(switched.proposed_session_pin?.provider_id, 'codex-lb');
 
+  // `policy_generation` digests the whole route map, so unrelated catalog churn
+  // ages every live pin at once. The thread has not lost its provider, so it is
+  // re-pinned against the current generations instead of failing the request.
   const stalePin = { ...pin, catalog_generation: 'old-generation' };
   const stale = resolveBridgeRequestRoute({ model: 'openrouter-noslash', thread_id: 'thread-1' }, setup.policy, {
     route_index: setup.build.route_index,
     registry: setup.registry,
-    session_pins: [stalePin]
+    session_pins: [stalePin],
+    now: () => '2026-08-05T00:03:00.000Z'
   });
-  assert.equal(stale.ok, false);
-  assert.deepEqual(stale.blockers, ['session_pin_route_unavailable']);
+  assert.equal(stale.ok, true);
+  assert.deepEqual(stale.blockers, []);
+  assert.equal(stale.route?.provider_id, pin.provider_id);
+  assert.equal(stale.route?.upstream_model, pin.upstream_model);
+  assert.equal(stale.proposed_session_pin?.catalog_generation, setup.policy.catalog_generation);
+  assert.equal(stale.proposed_session_pin?.route_policy_generation, setup.policy.policy_generation);
+
+  // A pin whose provider really would change still fails: affinity, not
+  // bookkeeping, is what this blocker exists to protect.
+  const movedPin = { ...pin, provider_id: 'codex-lb' as const, upstream_model: 'vendor/lb-slash-model' };
+  const moved = resolveBridgeRequestRoute({ model: 'openrouter-noslash', thread_id: 'thread-1' }, setup.policy, {
+    route_index: setup.build.route_index,
+    registry: setup.registry,
+    session_pins: [movedPin]
+  });
+  assert.equal(moved.ok, false);
+  assert.deepEqual(moved.blockers, ['session_pin_route_unavailable']);
 
   const staleIndex = resolveBridgeRequestRoute({ model: 'openrouter-noslash' }, setup.policy, {
     route_index: setup.build.route_index,
