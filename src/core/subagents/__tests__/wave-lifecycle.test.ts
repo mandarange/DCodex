@@ -452,3 +452,81 @@ test('wave capacity is enforced from real lifecycle thread membership', () => {
     ['subagent_wave_capacity_exceeded:3/2']
   )
 })
+
+test('a decomposed wider wave is not throttled by the pre-decomposition first_wave', async () => {
+  // `first_wave` is frozen before decomposition and nothing rewrites it. Using it
+  // as the wave capacity throttled every later wave and raised a false
+  // `subagent_wave_capacity_exceeded` the moment the parent opened the wider wave
+  // its own decomposition justified — so maximum parallelism was unreachable.
+  const runId = 'run-wide-wave'
+  // Preparation asked for 4 and froze first_wave at 4; the parent then decomposed
+  // into 8 genuinely independent slices, so the target outgrew the plan.
+  const plan = {
+    schema: 'sks.subagent-plan.v1',
+    workflow_run_id: runId,
+    requested_subagents: 4,
+    requested_subagents_source: 'automatic',
+    first_wave: 4,
+    max_threads: 256,
+    fanout_policy: { automatic_ceiling: 256, mode: 'parent_owned_risk_based' },
+    capacity_controller: { selected_capacity: 4, available_thread_slots: 250 },
+    wave_lifecycle: createSubagentWaveLifecycle({
+      workflowRunId: runId,
+      targetSubagents: 4,
+      countPolicy: 'dynamic_automatic',
+      waveCapacity: 4
+    })
+  }
+  const events = Array.from({ length: 8 }, (_, index) => ({
+    run_id: runId,
+    event_name: 'SubagentStart' as const,
+    thread_id: `thread-${index}`
+  }))
+
+  const roomy = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-wave-wide-'))
+  try {
+    const lifecycle = await refreshSubagentWaveLifecycle(roomy, { plan, events: events as any })
+    assert.ok(lifecycle)
+    assert.equal(lifecycle!.target_subagents, 8)
+    assert.equal(lifecycle!.wave_capacity, 8, 'capacity must follow the decomposed target when the host has slots')
+    assert.deepEqual(
+      subagentCountContractBlockers({ ...plan, wave_lifecycle: lifecycle }),
+      [],
+      'the wider wave the parent decomposed must not be reported as exceeding capacity'
+    )
+  } finally {
+    await fs.rm(roomy, { recursive: true, force: true })
+  }
+
+  // The guard still has teeth: a live thread-slot shortage caps the grown target
+  // rather than letting it open the full 8. It never drops below the wave width
+  // preparation already promised, so an in-flight wave is not retroactively
+  // narrowed.
+  const scarce = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-wave-scarce-'))
+  try {
+    const lifecycle = await refreshSubagentWaveLifecycle(scarce, {
+      plan: { ...plan, capacity_controller: { selected_capacity: 4, available_thread_slots: 3 } },
+      events: events as any
+    })
+    assert.ok(lifecycle)
+    assert.equal(lifecycle!.target_subagents, 8)
+    assert.equal(lifecycle!.wave_capacity, 4)
+  } finally {
+    await fs.rm(scarce, { recursive: true, force: true })
+  }
+
+  // A plan whose target never outgrew its requested count keeps its deliberate
+  // wave staging: capacity stays at the planned width, not the target.
+  const staged = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-wave-staged-'))
+  try {
+    const lifecycle = await refreshSubagentWaveLifecycle(staged, {
+      plan: { ...plan, requested_subagents: 8 },
+      events: events as any
+    })
+    assert.ok(lifecycle)
+    assert.equal(lifecycle!.target_subagents, 8)
+    assert.equal(lifecycle!.wave_capacity, 4)
+  } finally {
+    await fs.rm(staged, { recursive: true, force: true })
+  }
+})

@@ -4,6 +4,37 @@
 
 
 
+## [8.6.1] - 2026-08-10
+
+### Fixed
+
+- Subagents run again. The Desktop Bridge required a request's `thread_id` and
+  `session_id` to be equal, but they are different identifiers that coincide
+  only on a root turn: a spawned agent runs in its own thread inside the
+  parent's session, so Codex sends the child's `thread_id` with the session's
+  unchanged `session_id`. Every subagent request was therefore rejected with
+  `bridge_codex_session_identity_mismatch`, which is why no subagent could
+  start and the parent had nothing to fan out to. Codex 0.147's turn metadata
+  carries `parent_thread_id`, `parent_turn_id`, `forked_from_thread_id` and
+  `subagent_kind` precisely because a thread is not its session; forked and
+  resumed threads diverge the same way, and a WebSocket upgrade carries no turn
+  metadata to tell them apart. Nothing downstream read `session_id` — both
+  callers key the route and the provider pin on `thread_id`, which is correct,
+  and giving each spawned thread its own pin is what lets subagents run in
+  parallel. Cross-source disagreement about the same field remains a hard
+  conflict.
+
+- A decomposed wave is no longer throttled to the pre-decomposition width.
+  `wave_capacity` was pinned to `first_wave`, which is computed once before
+  decomposition from the requested count and never rewritten, while the target
+  was allowed to grow. A parent that decomposed into more independent slices
+  than it originally requested ran them a narrow wave at a time and was told
+  `subagent_wave_capacity_exceeded` for opening the wider wave its own
+  decomposition justified. When the target outgrows the plan the capacity is
+  recomputed against the live thread-slot ledger and the configured thread cap;
+  a plan whose target never grew keeps its deliberate wave staging, and a real
+  slot shortage still throttles.
+
 ## [8.6.0] - 2026-08-10
 
 ### Fixed

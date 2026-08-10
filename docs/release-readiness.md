@@ -1,10 +1,10 @@
-# SKS 8.6.0 Release Readiness
+# SKS 8.6.1 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 
-8.6.0 is a stability candidate on top of shipped 8.4.0, covering the Codex-LB
+8.6.1 is a stability candidate on top of shipped 8.4.0, covering the Codex-LB
 session pin and the Codex config surface that `sks doctor --fix` owns.
 
 A Codex-LB session pin records the catalog and route-policy generations it was
@@ -50,11 +50,24 @@ a mission no longer inherits an architecture-map requirement whose baseline the
 seed had already declined to write — the discarded seed result was the only
 reason four canonical tests could not pass.
 
-With those corrected the canonical suite is green end to end: 2912 of 2912,
+8.6.1 restores the official subagent lane. The Desktop Bridge required a
+request's `thread_id` and `session_id` to be equal, but a spawned agent runs in
+its own thread inside the parent's session, so every subagent request was
+rejected with `bridge_codex_session_identity_mismatch` and no subagent could
+start at all. Only `thread_id` is used downstream — it keys the route and the
+provider pin, and a per-thread pin is what allows subagents to run in parallel.
+Alongside it, `wave_capacity` was pinned to the pre-decomposition `first_wave`,
+so a parent that decomposed into more slices than it first requested was
+throttled to the narrow wave and then told `subagent_wave_capacity_exceeded` for
+opening the wider one; capacity is now recomputed against the live thread-slot
+ledger when the target outgrows the plan, while deliberate wave staging and a
+genuine slot shortage both still throttle.
+
+With those corrected the canonical suite is green end to end: 2914 of 2914,
 zero failures, where 8.5.0 stood at 2870 of 2874.
 
 Regenerated from the candidate commit: the release gate DAG, canonical tests, the
-isolated 7.6.0 to 8.6.0 upgrade smoke, the macOS Menu Bar proof, the pack
+isolated 7.6.0 to 8.6.1 upgrade smoke, the macOS Menu Bar proof, the pack
 receipt, and the release-check stamp. `inspectMainPushGuard` reports
 `physical_proof_requirement_missing` and nothing else; that evidence requires a
 GitHub-attested capture run and cannot be produced locally.

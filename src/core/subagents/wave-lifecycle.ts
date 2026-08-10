@@ -229,11 +229,39 @@ export async function refreshSubagentWaveLifecycle(
         automaticSubagentTargetCap(plan),
         Math.max(requestedTargetSubagents, normalizeCount(existing?.target_subagents), startedCount)
       )
-  const waveCapacity = positiveCount(plan.first_wave)
-    || positiveCount((plan.capacity_controller as Record<string, unknown> | undefined)?.selected_capacity)
+  // `first_wave` is computed once, BEFORE decomposition, from the pre-decomposition
+  // requested count (thread-budget bounds it by `requested_subagents`), and no
+  // runtime path ever rewrites it. Using it as the wave capacity throttled every
+  // later wave to that stale number and raised a false
+  // `subagent_wave_capacity_exceeded:<peak>/<first_wave>` as soon as the parent
+  // opened the wider wave its own decomposition justified — so a mission that
+  // should fan out wide ran a narrow wave at a time instead.
+  //
+  // Capacity is a LIVE question: how many threads the host can run right now.
+  // Bound the grown target by the live thread-slot ledger and the configured
+  // thread cap, keeping the planned figure only as a floor so capacity can never
+  // drop below what preparation already promised.
+  const capacityController = plan.capacity_controller as Record<string, unknown> | undefined
+  const plannedWaveFloor = positiveCount(plan.first_wave)
+    || positiveCount(capacityController?.selected_capacity)
     || positiveCount(existing?.wave_capacity)
     || positiveCount(plan.max_threads)
     || targetSubagents
+  const liveThreadSlots = positiveCount(capacityController?.available_thread_slots)
+  const configuredThreadCap = positiveCount(plan.max_threads) || targetSubagents
+  // Only a target that OUTGREW the plan needs the capacity recomputed. A plan
+  // whose target still matches its requested count chose its wave width
+  // deliberately, and that staging is preserved.
+  const waveCapacity = targetSubagents > planRequestedSubagents
+    ? Math.min(
+      configuredThreadCap,
+      Math.max(
+        plannedWaveFloor,
+        // A live slot count is the accurate constraint, in both directions.
+        liveThreadSlots ? Math.min(liveThreadSlots, targetSubagents) : targetSubagents
+      )
+    )
+    : plannedWaveFloor
   const next = projectLifecycle(existing || createSubagentWaveLifecycle({
     workflowRunId,
     targetSubagents,

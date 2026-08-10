@@ -63,6 +63,55 @@ test('real Codex wire identity resolves to thread pin identity and rejects incon
   });
 });
 
+test('a spawned subagent thread keeps its own pin identity inside the parent session', () => {
+  // The only case that mattered and the only one never covered. A spawned agent
+  // runs in its own thread inside the parent's session, so `thread_id` and
+  // `session_id` legitimately differ; asserting they were equal rejected every
+  // subagent request with `bridge_codex_session_identity_mismatch` and left the
+  // parent unable to fan out at all.
+  const sessionId = '019fd56f-d48f-7942-a560-48ad9ef47223';
+  const childThreadId = '019fd570-1111-7942-a560-48ad9ef47999';
+  const spawned = {
+    'thread-id': childThreadId,
+    'session-id': sessionId,
+    'x-codex-turn-metadata': JSON.stringify({
+      installation_id: 'installation-fixture', session_id: sessionId, thread_id: childThreadId,
+      turn_id: `${childThreadId}:turn`, window_id: `${sessionId}:0`, request_kind: 'turn',
+      parent_thread_id: sessionId, parent_turn_id: `${sessionId}:turn`, subagent_kind: 'thread_spawn',
+      thread_source: 'subagent', sandbox: 'seatbelt', turn_started_at_unix_ms: 1_786_000_000_000,
+    }),
+  };
+  assert.deepEqual(resolveCodexSessionIdentity(spawned), {
+    thread_id: childThreadId, session_id: sessionId,
+  });
+
+  // Distinct children of one session must resolve to distinct pin identities,
+  // or they serialize onto a single route instead of running in parallel.
+  const siblingThreadId = '019fd570-2222-7942-a560-48ad9ef47888';
+  const sibling = resolveCodexSessionIdentity({
+    'thread-id': siblingThreadId,
+    'session-id': sessionId,
+  });
+  assert.equal(sibling.thread_id, siblingThreadId);
+  assert.notEqual(sibling.thread_id, resolveCodexSessionIdentity(spawned).thread_id);
+
+  // A WebSocket upgrade carries no turn metadata, so the bare header pair must
+  // resolve too — that path had no way to tell a child from a root turn.
+  assert.deepEqual(resolveCodexSessionIdentity({ 'thread-id': childThreadId, 'session-id': sessionId }), {
+    thread_id: childThreadId, session_id: sessionId,
+  });
+
+  // The guard that still has value: one field contradicting itself across
+  // sources stays a hard conflict.
+  assert.throws(() => resolveCodexSessionIdentity({
+    ...spawned,
+    'thread-id': '019fd570-3333-7942-a560-48ad9ef47777',
+  }), /bridge_codex_session_identity_conflict/);
+  // A session id with no thread id cannot key a pin and still fails closed.
+  assert.throws(() => resolveCodexSessionIdentity({ 'session-id': sessionId }),
+    /bridge_codex_thread_id_missing/);
+});
+
 async function listen(server: Server, host = '127.0.0.1'): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);

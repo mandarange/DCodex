@@ -129,9 +129,22 @@ export function resolveCodexSessionIdentity(
     clientMetadata?.session_id,
   ], 'session');
   if (sessionId && !threadId) throw new DesktopBridgeError('bridge_codex_thread_id_missing');
-  if (threadId && sessionId && threadId !== sessionId) {
-    throw new DesktopBridgeError('bridge_codex_session_identity_mismatch');
-  }
+  // `thread_id` and `session_id` are DIFFERENT identifiers and coincide only on a
+  // root turn. A spawned agent runs in its own thread inside the parent's
+  // session, so Codex sends the child's `thread_id` with the session's unchanged
+  // `session_id`. Requiring equality therefore rejected EVERY subagent request
+  // with `bridge_codex_session_identity_mismatch`, which is why no subagent
+  // could run. Codex 0.147's turn metadata carries `parent_thread_id`,
+  // `parent_turn_id`, `forked_from_thread_id` and `subagent_kind` precisely
+  // because a thread is not its session; forked and resumed threads diverge the
+  // same way, and a WebSocket upgrade carries no turn metadata to tell them
+  // apart, so there is no shape of this equality that is safe to assert.
+  //
+  // Nothing downstream reads `session_id`: both callers key the route and the
+  // provider pin on `thread_id`, which is correct — affinity belongs to the
+  // thread, and giving each spawned thread its own pin is what lets subagents
+  // run in parallel. Cross-source disagreement about the SAME field is still a
+  // hard conflict (`oneCodexIdentity`), which is the check that has real value.
   return { thread_id: threadId, session_id: sessionId };
 }
 
