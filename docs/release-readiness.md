@@ -1,10 +1,10 @@
-# SKS 8.5.0 Release Readiness
+# SKS 8.6.0 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 
-8.5.0 is a stability candidate on top of shipped 8.4.0, covering the Codex-LB
+8.6.0 is a stability candidate on top of shipped 8.4.0, covering the Codex-LB
 session pin and the Codex config surface that `sks doctor --fix` owns.
 
 A Codex-LB session pin records the catalog and route-policy generations it was
@@ -39,8 +39,22 @@ longer clamped to two workers because its recommended roles end in `_reviewer`,
 and stale `max_concurrent_threads_per_session` totals of 5, 6, and 7 are
 refreshed rather than left pinned while the `[agents]` key migrated to 256.
 
+Three verification surfaces that could not fail are now able to. The doctor
+idempotence gate compared a `changed_files` field nothing in the pipeline ever
+emitted, so it read every run as a clean no-op; phases now report the paths they
+wrote, and the gate fails closed when the field is absent. The doctor postcheck
+was a pure function over the transaction object and ran before two repairs that
+write configs after the transaction closes; both now feed the verdict, and a new
+`config_disk_verification` re-reads both Codex configs after every mutator. And
+a mission no longer inherits an architecture-map requirement whose baseline the
+seed had already declined to write — the discarded seed result was the only
+reason four canonical tests could not pass.
+
+With those corrected the canonical suite is green end to end: 2912 of 2912,
+zero failures, where 8.5.0 stood at 2870 of 2874.
+
 Regenerated from the candidate commit: the release gate DAG, canonical tests, the
-isolated 7.6.0 to 8.5.0 upgrade smoke, the macOS Menu Bar proof, the pack
+isolated 7.6.0 to 8.6.0 upgrade smoke, the macOS Menu Bar proof, the pack
 receipt, and the release-check stamp. `inspectMainPushGuard` reports
 `physical_proof_requirement_missing` and nothing else; that evidence requires a
 GitHub-attested capture run and cannot be produced locally.

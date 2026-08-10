@@ -90,15 +90,22 @@ export interface SeedArchitectureMapBaselineInput {
  * architecture_map_baseline_missing rather than inventing an empty graph.
  */
 /** writePipelinePlan hook: seal baseline when the plan bound Architecture Map. */
+/**
+ * Seed the mission's architecture-map baseline. The result is returned rather
+ * than discarded: the caller must drop the plan binding when the baseline could
+ * not be sealed, or the Stop gate inherits a requirement nothing can satisfy.
+ */
 export async function maybeSeedArchitectureMapForPlan(input: {
   readonly root: string;
   readonly dir: string;
   readonly plan: any;
   readonly missionId?: string;
   readonly taskProfile?: string;
-}): Promise<void> {
-  if (!input.plan?.architecture_map || !input.missionId) return;
-  await seedArchitectureMapBaselineArtifacts({
+}): Promise<{ ok: boolean; reason?: string; baselinePath?: string }> {
+  if (!input.plan?.architecture_map || !input.missionId) {
+    return { ok: false, reason: 'architecture_map_not_planned' };
+  }
+  return seedArchitectureMapBaselineArtifacts({
     root: input.root,
     dir: input.dir,
     missionId: String(input.missionId),

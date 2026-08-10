@@ -4,6 +4,34 @@
 
 
 
+## [8.6.0] - 2026-08-10
+
+### Fixed
+
+- The doctor idempotence gate can finally observe a non-idempotent repair. It
+  compared `changed_files` from two consecutive `doctor --fix` runs, but nothing
+  in the pipeline ever emitted that field, so the gate read every run as a clean
+  no-op and had never once been able to fail. Each fix phase now reports the
+  paths it wrote, the transaction publishes their union, and the gate fails
+  closed when the field is absent instead of treating it as "nothing changed".
+
+- `sks doctor --fix` verifies its work against the files on disk. The postcheck
+  was a pure function over the transaction object — it restated fields the
+  phases had already reported and could only ever agree with them — and it ran
+  *before* `mcp_transport_collision` and `codex_native`, two repairs that write
+  configs after the transaction closes. Both now feed the doctor verdict, and a
+  new `config_disk_verification` re-reads both Codex configs after every mutator,
+  confirming they still parse and that the official subagent lane is still on.
+
+- A mission no longer inherits an architecture-map requirement nothing can
+  satisfy. `maybeSeedArchitectureMapForPlan` discarded its own result, so a
+  project without a compiled context graph got `architecture_map_required: true`
+  for a baseline the seed had just declined to write — and the Stop gate could
+  then only answer `architecture_map_baseline_missing` forever. The binding is
+  now kept only when the baseline was actually sealed, and the plan records the
+  seed's own remediation text when it was not. This is the same single-source
+  rule the sibling engineering-sanity binding already documents.
+
 ## [8.5.0] - 2026-08-10
 
 ### Fixed

@@ -1,8 +1,8 @@
-# Release Proof Truth — 8.5.0
+# Release Proof Truth — 8.6.0
 
 ## Current assertion
 
-8.5.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
+8.6.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
 candidate carries behavioral fixes on top of shipped 8.4.0: a Codex-LB session
 pin is no longer voided by catalog churn it had no part in (which is what made
 `session_pin_route_unavailable` appear intermittently mid-session), and the Codex
@@ -13,7 +13,7 @@ proof can exist only after the candidate is committed and all source-bound gates
 are regenerated from that clean commit.
 
 All release artifacts bound to 8.4.0 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 8.5.0 evidence.
+must not be renamed, copied, or treated as 8.6.0 evidence.
 
 ## Claim ledger
 
@@ -25,9 +25,13 @@ must not be renamed, copied, or treated as 8.5.0 evidence.
 | A blocked `doctor --fix` names its blockers | passed-hermetic | the ten conditions behind the verdict are enumerated into the top-level `blockers`, and a refused config repair carries the manual step in `operator_actions` |
 | SKS only strips Codex feature flags Codex no longer honours | passed-hermetic | `test/unit/codex-feature-flags.test.mjs` runs the vendored Codex 0.147 binary's `features list` and fails if any stripped flag is still live; the assertion was confirmed to bite by injecting `computer_use` |
 | The `[features.multi_agent_v2]` table SKS writes is accepted by Codex | passed-hermetic | the same suite writes the exact table and asserts Codex resolves `multi_agent_v2` to enabled; the struct is `deny_unknown_fields`, so an unknown key would reject the whole config |
-| All checked version authorities report 8.5.0 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, changelog, and release-doc surfaces are bumped together |
-| The reported 8.5.0 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, release-check stamp, and the operator's final registry checks |
-| 8.5.0 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
+| The doctor idempotence gate can observe a mutating second run | passed-hermetic | measured end to end in an isolated HOME: a first `doctor --fix` on a fresh project reports 26 changed files, the second reports 0; the gate now also fails closed when the field is absent, which is how it silently passed before |
+| `doctor --fix` verifies its result against the files on disk | passed-hermetic | `config_disk_verification` runs after every mutator, including the two that write configs once the fix transaction has closed; `test/unit/doctor-config-disk-verification.test.mjs` pins the unparseable and lane-disabled cases and the `agents.enabled = false` false positive |
+| A mission never requires an architecture-map baseline the seed declined to write | passed-hermetic | reproduced: `seedArchitectureMapBaselineArtifacts` returns `ok: false` with remediation text on a root without a compiled context graph; the plan binding is dropped instead of leaving an unsatisfiable Stop gate, and the four canonical tests it blocked now pass |
+| The canonical suite is green | passed-hermetic | 2912 of 2912, zero failures, from the candidate tree |
+| All checked version authorities report 8.6.0 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, changelog, and release-doc surfaces are bumped together |
+| The reported 8.6.0 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, release-check stamp, and the operator's final registry checks |
+| 8.6.0 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
 
 ## Evidence classes
 
@@ -46,7 +50,7 @@ fixture, or package dry run cannot promote a real-environment row to passed.
 
 Paseo is an independent external product. Sneakoscope does not bundle its
 daemon, wrap its CLI, probe its health, own its authentication or relay
-lifecycle, or require a live Paseo session as 8.5.0 release proof. The owned
+lifecycle, or require a live Paseo session as 8.6.0 release proof. The owned
 contract is limited to the committed `paseo.json` and accurate usage guidance.
 
 The active Telegram command, transport, Doctor projection, native poller and
@@ -57,7 +61,7 @@ not evidence of an active integration.
 
 ## Exact-commit release evidence
 
-Before any release claim, regenerate and verify current 8.5.0-bound artifacts
+Before any release claim, regenerate and verify current 8.6.0-bound artifacts
 from the clean handoff commit, including the build manifest, version metadata,
 package proof, pack receipt, release provenance, and release-check stamp. Each
 must bind the exact source digest, Git commit, tarball bytes, and package
@@ -83,7 +87,7 @@ The following remain **not-run-real** or **blocked-external**:
 - npm publication or dist-tag mutation.
 
 Regenerated from the candidate commit, the release gate DAG, canonical tests,
-the isolated 7.6.0→8.5.0 upgrade smoke, and the macOS Menu Bar proof are
+the isolated 7.6.0→8.6.0 upgrade smoke, and the macOS Menu Bar proof are
 **passed-hermetic**; the live `codex-sdk:real-smoke` and Codex core real probes
 report `proven` against the real runtime.
 

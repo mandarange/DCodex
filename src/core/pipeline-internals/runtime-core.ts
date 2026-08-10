@@ -209,6 +209,10 @@ export function buildPipelinePlan(input: any = {}) {
       required: true;
       seeded_at: string;
     },
+    // Set when the stage was planned but its baseline could not be sealed, so
+    // the binding above was cleared rather than left as an unsatisfiable
+    // requirement. Carries the seed's own remediation text.
+    architecture_map_unavailable: null as null | { reason: string },
     invariants,
     proof_field: proof,
     ssot_guard: buildSsotGuard({ route: route?.id || 'SKS', mode: route?.mode || 'SKS', task }),
@@ -247,6 +251,20 @@ export async function writePipelinePlan(dir: any, input: any = {}) {
   }
   if (planStagesArchitectureMap(plan)) {
     plan.architecture_map = createArchitectureMapPlanBinding();
+    // Seed before the plan is written, and only keep the binding if the baseline
+    // was actually sealed. The seed result used to be discarded, so a project
+    // without a compiled context graph got `architecture_map_required: true` for
+    // a baseline nothing could produce — and the Stop gate could then only answer
+    // with the unsatisfiable `architecture_map_baseline_missing` forever. This is
+    // the same single-source rule planStagesEngineeringSanityReview documents:
+    // require the artifact only when this plan seeded it.
+    const seeded = await maybeSeedArchitectureMapForPlan({
+      root, dir, plan, missionId: input.missionId, taskProfile
+    });
+    if (seeded && seeded.ok === false) {
+      plan.architecture_map = null;
+      plan.architecture_map_unavailable = { reason: seeded.reason || 'architecture_map_baseline_unavailable' };
+    }
   }
   await writeJsonAtomic(path.join(dir, PIPELINE_PLAN_ARTIFACT), plan);
   if (plan.engineering_sanity_review) {
@@ -265,9 +283,6 @@ export async function writePipelinePlan(dir: any, input: any = {}) {
       ));
     }
   }
-  await maybeSeedArchitectureMapForPlan({
-    root, dir, plan, missionId: input.missionId, taskProfile
-  });
   return plan;
 }
 

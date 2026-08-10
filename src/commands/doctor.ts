@@ -864,6 +864,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
         phases: [
           {
             id: 'setup',
+            report: () => setupRepair,
             run: async () => ({
               id: 'setup',
               ok: setupRepair !== null,
@@ -874,6 +875,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           },
           {
             id: 'codex_startup_repair',
+            report: () => codexStartupRepair,
             run: async () => ({
               id: 'codex_startup_repair',
               ok: (codexStartupRepair as any)?.ok !== false,
@@ -885,6 +887,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           },
           {
             id: 'startup_config_repair',
+            report: () => startupConfigRepair,
             run: async () => ({
               id: 'startup_config_repair',
               ok: (startupConfigRepair as any)?.ok === true,
@@ -895,6 +898,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           },
           {
             id: 'codex_config_syntax_repair',
+            report: () => codexConfigSyntaxRepair,
             run: async () => ({
               id: 'codex_config_syntax_repair',
               ok: (codexConfigSyntaxRepair as any)?.ok !== false,
@@ -906,6 +910,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           },
           {
             id: 'context7_repair',
+            report: () => context7Repair,
             run: async () => ({
               id: 'context7_repair',
               ok: (context7Repair as any)?.ok !== false,
@@ -917,6 +922,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           },
           {
             id: 'context7_mcp_repair',
+            report: () => context7McpRepair,
             run: async () => ({
               id: 'context7_mcp_repair',
               ok: (context7McpRepair as any)?.ok === true,
@@ -929,6 +935,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           },
           {
             id: 'supabase_mcp_repair',
+            report: () => supabaseMcpRepair,
             required_for_ready: false,
             run: async () => ({
               id: 'supabase_mcp_repair',
@@ -943,6 +950,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           },
           {
             id: 'hook_trust_repair',
+            report: () => hookTrustRepair,
             run: async () => ({
               id: 'hook_trust_repair',
               ok: (hookTrustRepair as any)?.ok !== false,
@@ -956,6 +964,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           },
           {
             id: 'sks_menubar',
+            report: () => sksMenuBar,
             required_for_ready: false,
             run: async () => ({
               id: 'sks_menubar',
@@ -1000,6 +1009,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           },
           {
             id: 'command_alias_cleanup',
+            report: () => commandAliasCleanupBeforeReceipt,
             run: async () => ({
               id: 'command_alias_cleanup',
               ok: (commandAliasCleanupBeforeReceipt as any)?.ok !== false,
@@ -1011,6 +1021,7 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           },
           {
             id: 'native_capability_repair',
+            report: () => doctorNativeCapabilityRepair,
             required_for_ready: false,
             run: async () => ({
               id: 'native_capability_repair',
@@ -1255,6 +1266,24 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
         warnings: []
       }))
     : null;
+  // Runs AFTER every mutator, including the two that write configs once the
+  // fix transaction has already closed. This is the only postcheck that reads
+  // the files back from disk, so it is the only one that can contradict a phase
+  // which reported success.
+  const configDiskVerification = doctorFix
+    ? await (await import('../core/doctor/doctor-repair-postcheck.js')).verifyCodexConfigsOnDisk({ root })
+      .catch((err: any) => ({
+        schema: 'sks.doctor-config-disk-verification.v1' as const,
+        ok: false,
+        project_config_path: '',
+        codex_home_config_path: '',
+        project_config_present: false,
+        codex_home_config_present: false,
+        multi_agent_v2_enabled: null,
+        agents_enabled: null,
+        blockers: [`config_disk_verification_failed:${err?.message || String(err)}`]
+      }))
+    : null;
   const codexAppHarnessMatrix = deepDiagnostics
     ? await buildCodexAppHarnessMatrix({ root, mode: 'read-only' }).catch((err: any) => ({
         schema: 'sks.codex-app-harness-matrix.v1',
@@ -1450,7 +1479,14 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
       .map((blocker) => `official_subagent_config:${String(blocker)}`)),
     ...(doctorProfileRequiresDesktopBridgeReadiness(doctorProfile) && desktopBridge.ok === false
       ? ['desktop_bridge_not_ready']
-      : [])
+      : []),
+    // These two mutate configs after the fix transaction has closed, so nothing
+    // downstream observed their failures: `mcp_transport_collision` was only
+    // console.log'd and `codex_native` only embedded in the `repair` blob.
+    ...((mcpTransportCollisionRepair as any)?.ok === false ? ['mcp_transport_collision_repair_blocked'] : []),
+    ...((codexNativeRepair as any)?.ok === false ? ['codex_native_repair_blocked'] : []),
+    ...(((configDiskVerification as any)?.blockers || []) as any[])
+      .map((blocker) => `config_disk_verification:${String(blocker)}`)
   ];
   const resultOk = resultBlockers.length === 0;
   // Repairs that refuse for a recoverable reason ship the manual step with the
@@ -1505,8 +1541,9 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     supabase_mcp_repair: supabaseMcpRepair,
     doctor_fix_transaction: doctorFixTransaction,
     doctor_fix_postcheck: doctorFixPostcheck,
+    config_disk_verification: configDiskVerification,
     postcheck: doctorFixPostcheck ? {
-      ok: (doctorFixPostcheck as any).ok === true,
+      ok: (doctorFixPostcheck as any).ok === true && (configDiskVerification as any)?.ok !== false,
       pending_manual: (doctorFixPostcheck as any).pending_manual || [],
       required_blockers: (doctorFixPostcheck as any).required_blockers || [],
       optional_warnings: (doctorFixPostcheck as any).optional_warnings || []

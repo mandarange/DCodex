@@ -19,14 +19,66 @@ export interface DoctorFixTransactionPhase {
   completed_at?: string;
   duration_ms?: number;
   rollback_performed?: boolean;
+  /** Paths this phase actually wrote in this run. */
+  changed_files?: string[];
 }
 
 export interface DoctorFixPhaseDefinition {
   id: string;
   required_for_ready?: boolean;
   run: () => Promise<DoctorFixTransactionPhase | void>;
+  /**
+   * The phase's own repair report. `changedFilesFromRepairReport` reads the
+   * written paths out of it, which is what makes the doctor idempotence gate
+   * able to see a second run that was not a no-op.
+   */
+  report?: () => unknown;
   postcheck?: (phase: DoctorFixTransactionPhase) => Promise<Partial<DoctorFixTransactionPhase> | void>;
   rollback?: (phase: DoctorFixTransactionPhase) => Promise<void>;
+}
+
+/**
+ * Keys whose values name a path THIS RUN wrote. Deliberately excludes
+ * `existing`, `preserved`, and `generated_files`, which list managed paths that
+ * were already correct — counting those would make every run look mutating.
+ */
+const CHANGED_PATH_KEYS = Object.freeze([
+  'repaired_paths', 'created_files', 'created', 'updated', 'changed_files',
+  'written_files', 'removed_files', 'removed', 'quarantined', 'backups'
+]);
+
+export function changedFilesFromRepairReport(report: unknown): string[] {
+  const found = new Set<string>();
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > 6 || !value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    const row = value as Record<string, unknown>;
+    for (const key of CHANGED_PATH_KEYS) {
+      const entries = row[key];
+      if (Array.isArray(entries)) {
+        for (const entry of entries) {
+          const text = String(entry || '').trim();
+          if (text) found.add(text);
+        }
+      } else if (typeof entries === 'string' && entries.trim()) {
+        found.add(entries.trim());
+      }
+    }
+    // A backup or a config path is only evidence of a write when the same
+    // report says the write happened.
+    if (row.changed === true || row.applied === true) {
+      for (const key of ['config_path', 'backup_path', 'path', 'file']) {
+        const text = String(row[key] || '').trim();
+        if (text) found.add(text);
+      }
+    }
+    for (const nested of Object.values(row)) walk(nested, depth + 1);
+  };
+  walk(report, 0);
+  return [...found].sort();
 }
 
 export interface DoctorFixTransaction {
@@ -49,10 +101,13 @@ export interface DoctorFixTransaction {
     completed_at: string | null;
     duration_ms: number | null;
     rollback_performed: boolean;
+    changed_files: string[];
   }>;
   postcheck_ok: boolean;
   rollback_performed: boolean;
   mutations_without_rollback: number;
+  /** Union of every path the phases wrote; the idempotence gate reads this. */
+  changed_files: string[];
   raw_secret_values_recorded: false;
   skipped_clean_phases: string[];
   dirty_phases: string[];
@@ -183,7 +238,8 @@ export async function writeDoctorFixTransaction(input: {
     started_at: phase.started_at || null,
     completed_at: phase.completed_at || null,
     duration_ms: Number.isFinite(phase.duration_ms) ? Number(phase.duration_ms) : null,
-    rollback_performed: phase.rollback_performed === true
+    rollback_performed: phase.rollback_performed === true,
+    changed_files: [...new Set(phase.changed_files || [])].sort()
   }));
   const postcheckOk = phases.every((phase) => phase.ok || phase.required_for_ready === false);
   const mutationsWithoutRollback = phases.filter((phase) => phase.required_for_ready && phase.repaired && !phase.rollback_evidence).length;
@@ -197,6 +253,7 @@ export async function writeDoctorFixTransaction(input: {
     postcheck_ok: postcheckOk && mutationsWithoutRollback === 0,
     rollback_performed: input.rollbackPerformed === true,
     mutations_without_rollback: mutationsWithoutRollback,
+    changed_files: [...new Set(phases.flatMap((phase) => phase.changed_files))].sort(),
     raw_secret_values_recorded: false,
     skipped_clean_phases: phases.filter((phase) => phase.warnings.some((warning) => warning.startsWith('dirty_plan_skipped_clean_phase'))).map((phase) => phase.id),
     dirty_phases: input.dirtyPlan?.phases.filter((phase) => phase.status === 'dirty').map((phase) => phase.id) || phases.filter((phase) => !phase.warnings.some((warning) => warning.startsWith('dirty_plan_skipped_clean_phase'))).map((phase) => phase.id),
@@ -236,7 +293,9 @@ function normalizePhase(
     started_at: phase.started_at || fallback.started_at || nowIso(),
     completed_at: phase.completed_at || nowIso(),
     duration_ms: phase.duration_ms ?? Math.max(0, Date.now() - startedMs),
-    rollback_performed: phase.rollback_performed === true
+    rollback_performed: phase.rollback_performed === true,
+    changed_files: phase.changed_files
+      ?? (definition.report ? changedFilesFromRepairReport(definition.report()) : [])
   };
 }
 

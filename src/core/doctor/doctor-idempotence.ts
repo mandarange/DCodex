@@ -35,6 +35,10 @@ export async function runDoctorIdempotence(root: string): Promise<DoctorIdempote
   if (first.exit_code !== 0) blockers.push(`first_doctor_exit_${first.exit_code}`)
   if (second.exit_code !== 0) blockers.push(`second_doctor_exit_${second.exit_code}`)
   if (changedFilesSecond.length > 0) blockers.push('second_doctor_not_noop')
+  // Fail closed on a missing field rather than reading it as "nothing changed".
+  // No part of the pipeline emitted `changed_files` at all, so this gate silently
+  // passed every run and could never observe a non-idempotent repair.
+  if (!reportsChangedFiles(second)) blockers.push('second_doctor_changed_files_unavailable')
 
   const report: DoctorIdempotenceReport = {
     schema: 'sks.doctor-idempotence.v1',
@@ -78,6 +82,16 @@ async function runDoctor(root: string, home: string, codexHome: string): Promise
     blockers,
     parsed
   }
+}
+
+/** True when the doctor run actually reported the field this gate depends on. */
+function reportsChangedFiles(run: DoctorRunSummary & { parsed?: any }): boolean {
+  if (!run.parsed) return false
+  return [
+    run.parsed?.repair?.doctor_transaction?.changed_files,
+    run.parsed?.doctor_fix_transaction?.changed_files,
+    run.parsed?.changed_files
+  ].some((value) => Array.isArray(value))
 }
 
 function extractChangedFiles(run: DoctorRunSummary & { parsed?: any }): string[] {
