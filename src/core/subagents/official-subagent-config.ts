@@ -34,6 +34,14 @@ export const LEGACY_SKS_MAX_THREAD_VALUES = Object.freeze([4, 5, 6, 12])
 export const AGENTS_MAX_CONCURRENT_THREADS_KEY = 'max_concurrent_threads_per_session'
 export const LEGACY_AGENTS_MAX_THREADS_KEY = 'max_threads'
 export const LEGACY_AGENTS_JOB_MAX_RUNTIME_KEY = 'job_max_runtime_seconds'
+/**
+ * In-file ownership proof. Ownership used to rest entirely on the generated-file
+ * inventory in `.sneakoscope/manifest.json`, which is gitignored: losing it made
+ * `configInventoryOwned` false, so the rebuilt manifest omitted the config and
+ * ownership could never be regained. Every SKS-owned write now stamps this
+ * marker so the proof travels inside the file it describes.
+ */
+export const SKS_MANAGED_CODEX_CONFIG_MARKER = '# SKS-MANAGED-CODEX-CONFIG'
 
 export interface OfficialSubagentConfig {
   enabled: boolean
@@ -70,6 +78,11 @@ export interface OfficialSubagentConfigMergeOptions {
   defaultMaxThreads?: number
 }
 
+export interface OfficialSubagentConfigMergeResult {
+  text: string
+  blockers: string[]
+}
+
 export interface OfficialSubagentConfigOwnershipProof {
   owned: boolean
   reasons: string[]
@@ -101,15 +114,30 @@ export function mergeOfficialSubagentConfig(
   text: string = '',
   opts: OfficialSubagentConfigMergeOptions = {}
 ): string {
+  return mergeOfficialSubagentConfigResult(text, opts).text
+}
+
+/**
+ * Merge and report why, if the merge could not be applied. The plain merge
+ * returns its input on failure, which made every caller — `doctor --fix`
+ * included — report a successful repair while changing nothing.
+ */
+export function mergeOfficialSubagentConfigResult(
+  text: string = '',
+  opts: OfficialSubagentConfigMergeOptions = {}
+): OfficialSubagentConfigMergeResult {
   const source = String(text || '')
-  if (!inspectToml(source).ok) return source
+  if (!inspectToml(source).ok) {
+    return { text: source, blockers: ['project_official_subagent_config_toml_parse_failed'] }
+  }
 
   const inherited = parsedToml(opts.inheritedText || '')
   const inheritedAgents = objectValue(inherited?.agents)
   const inheritedFeatures = objectValue(inherited?.features)
   let next = source.trimEnd()
-  if (!next.trim()) next = '# SKS-MANAGED-CODEX-CONFIG'
+  if (!next.trim()) next = SKS_MANAGED_CODEX_CONFIG_MARKER
   if (opts.sksOwned === true) {
+    next = stampManagedConfigMarker(next)
     next = removeExactLegacyManagedAgentBlocks(next)
     next = stripLegacyUnsupportedAgentKeys(next)
   }
@@ -158,11 +186,17 @@ export function mergeOfficialSubagentConfig(
   next = mergeOfficialMultiAgentV2FeatureConfig(next, {
     sksOwned: opts.sksOwned === true,
     inheritedFeatures,
-    maxThreads: readAgentsMaxThreads(next) || targetMaxThreads
+    // Clamp, do not hand a user-supplied value straight to
+    // boundedManagedMaxThreads: it THROWS above the ceiling, and the throw
+    // escaped through doctor --fix and `sks init`, killing the whole Codex
+    // startup-config repair phase. The read path already normalizes the same
+    // over-cap value with a warning, so clamping here matches it.
+    maxThreads: Math.min(readAgentsMaxThreads(next) || targetMaxThreads, HARD_NARUTO_MAX_THREADS)
   })
 
   const merged = ensureTrailingNewline(next)
-  return inspectToml(merged).ok ? merged : source
+  if (inspectToml(merged).ok) return { text: merged, blockers: [] }
+  return { text: source, blockers: ['official_subagent_config_merge_produced_invalid_toml'] }
 }
 
 export function mergeOfficialMultiAgentV2FeatureConfig(
@@ -178,11 +212,25 @@ export function mergeOfficialMultiAgentV2FeatureConfig(
   const inheritedFeatures = objectValue(opts.inheritedFeatures)
   const inheritedMaV2 = featureTomlObject(inheritedFeatures.multi_agent_v2)
   let next = source.trimEnd()
-  if (!next.trim()) next = '# SKS-MANAGED-CODEX-CONFIG'
+  if (!next.trim()) next = SKS_MANAGED_CODEX_CONFIG_MARKER
+
+  // A `features.multi_agent_v2` written as a dotted key
+  // (`features.multi_agent_v2.enabled = true`), inside an inline table, or under
+  // a spaced header is invisible to the line-oriented helpers below. Appending a
+  // `[features.multi_agent_v2]` header on top of one is a TOML redefinition, so
+  // the caller's validity check discarded the WHOLE merge — including the
+  // `[agents]` keys — and returned the input unchanged with no signal. Leave the
+  // declaration alone; `officialSubagentConfigWarnings` names it instead.
+  if (hasUnmanageableMultiAgentV2Declaration(next)) return ensureTrailingNewline(next)
 
   // Prefer the table form so concurrency and spawn model overrides can be set.
   // Boolean `features.multi_agent_v2 = true` alone cannot carry those knobs.
-  if (hasTomlTableKey(next, 'features', 'multi_agent_v2')) {
+  // The boolean's VALUE is carried across the conversion: dropping it turned an
+  // explicit `multi_agent_v2 = false` into `enabled = true`, silently reversing
+  // an opt-out. `codex features disable multi_agent_v2` writes exactly that
+  // boolean, so the reversal hit users who had disabled it the official way.
+  const booleanForm = readTomlTableBoolean(next, 'features', 'multi_agent_v2')
+  if (booleanForm !== null) {
     next = removeTomlTableKey(next, 'features', 'multi_agent_v2')
   }
 
@@ -193,13 +241,14 @@ export function mergeOfficialMultiAgentV2FeatureConfig(
   const targetTotal = Math.max(1, maxThreads + 1)
 
   if (!hasTomlTable(next, 'features.multi_agent_v2')) {
-    if (inheritedMaV2) return ensureTrailingNewline(next)
+    // A converted boolean is a local decision and outranks the inherited table.
+    if (inheritedMaV2 && booleanForm === null) return ensureTrailingNewline(next)
     next = upsertTomlTable(
       next,
       'features.multi_agent_v2',
       [
         '[features.multi_agent_v2]',
-        'enabled = true',
+        `enabled = ${booleanForm === null ? true : booleanForm}`,
         `max_concurrent_threads_per_session = ${targetTotal}`,
         'expose_spawn_agent_model_overrides = true'
       ].join('\n')
@@ -210,7 +259,12 @@ export function mergeOfficialMultiAgentV2FeatureConfig(
   if (opts.sksOwned === true) {
     next = upsertTomlTableKey(next, 'features.multi_agent_v2', 'enabled = true')
     const currentTotal = readTomlTableInteger(next, 'features.multi_agent_v2', 'max_concurrent_threads_per_session')
-    if (currentTotal === DEFAULT_NARUTO_LEGACY_TOTAL_THREADS || currentTotal === null) {
+    // Every legacy total is refreshed, not just 13. `agents` totals were
+    // migrated from all of LEGACY_SKS_MAX_THREAD_VALUES, but only 12+1 was
+    // recognized here — so a config SKS wrote with 4/5/6 children kept its
+    // stale 5/6/7 total forever while the agents key moved to 256, leaving the
+    // two permanently inconsistent and capping v2 far below the agents value.
+    if (currentTotal === null || LEGACY_MANAGED_V2_TOTAL_THREADS.includes(currentTotal)) {
       next = upsertTomlTableKey(
         next,
         'features.multi_agent_v2',
@@ -255,6 +309,11 @@ export function mergeOfficialMultiAgentV2FeatureConfig(
 }
 
 const DEFAULT_NARUTO_LEGACY_TOTAL_THREADS = 13
+/** MA v2 totals SKS itself wrote: one per legacy children count, plus the root. */
+const LEGACY_MANAGED_V2_TOTAL_THREADS = Object.freeze([
+  ...LEGACY_SKS_MAX_THREAD_VALUES.map((value) => value + 1),
+  DEFAULT_NARUTO_LEGACY_TOTAL_THREADS
+])
 
 export async function readOfficialSubagentConfig(
   root: string,
@@ -383,6 +442,9 @@ export function officialSubagentConfigWarnings(text: string = '', inheritedText:
       ? [`official_subagent_max_depth_coerced_to_one:${maxDepth.value}:${maxDepth.source}`]
       : []),
     ...capacityNormalizationWarnings(maxThreads, multiAgentV2),
+    ...(hasUnmanageableMultiAgentV2Declaration(text)
+      ? ['project_multi_agent_v2_declaration_form_unmanaged']
+      : []),
     ...project.legacyWarnings,
     ...inherited.legacyWarnings
   ]
@@ -546,6 +608,12 @@ export function officialSubagentConfigOwnershipProof(input: {
     reasons.push('generated_file_inventory')
   }
   if (hasExactManagedConfigMarker(text)) reasons.push('managed_marker_or_hash')
+  // Configs written before the marker existed carry no in-file proof, so a lost
+  // manifest stranded them as permanently unrepairable. The full managed
+  // `[agents]` key set written alongside a `[features.multi_agent_v2]` table
+  // that names `expose_spawn_agent_model_overrides` is a shape only this writer
+  // produces; `codex features enable multi_agent_v2` writes none of it.
+  if (hasManagedAgentsConfigFingerprint(text)) reasons.push('managed_agents_config_fingerprint')
   if (migrationReceiptProvesManagedMaxThreads(input.migrationReceipt)) {
     reasons.push('migration_receipt:agents.max_concurrent_threads_per_session')
   }
@@ -744,6 +812,47 @@ function featureTomlObject(value: unknown): Record<string, unknown> | null {
 
 function hasExactManagedConfigMarker(text: string): boolean {
   return /^(?:#\s*SKS-MANAGED-CODEX-CONFIG\b|#\s*SKS managed Codex config\b|#\s*sks_managed_(?:body_)?sha256\s*=\s*["'][a-f0-9]{64}["'])/mi.test(text)
+}
+
+/**
+ * Prepend the in-file ownership marker unless it is already present. Idempotent,
+ * and valid in any TOML position because it is a comment.
+ */
+export function stampSksManagedCodexConfigMarker(text: string): string {
+  return stampManagedConfigMarker(text)
+}
+
+function stampManagedConfigMarker(text: string): string {
+  const source = String(text || '')
+  if (hasExactManagedConfigMarker(source)) return source
+  const body = source.replace(/^\n+/, '')
+  return body ? `${SKS_MANAGED_CODEX_CONFIG_MARKER}\n${body}` : SKS_MANAGED_CODEX_CONFIG_MARKER
+}
+
+/** Keys this module writes into `[agents]` on every managed merge. */
+const MANAGED_AGENTS_FINGERPRINT_KEYS = Object.freeze([
+  'enabled',
+  'max_depth',
+  'interrupt_message',
+  'default_subagent_model',
+  'default_subagent_reasoning_effort'
+])
+
+/**
+ * True for a config carrying the exact managed `[agents]` key set this module
+ * writes alongside a `[features.multi_agent_v2]` table naming
+ * `expose_spawn_agent_model_overrides`. Codex never writes that shape, so it
+ * identifies configs SKS generated before it began stamping the marker.
+ */
+export function hasManagedAgentsConfigFingerprint(text: string): boolean {
+  const parsed = parsedToml(text)
+  if (!parsed) return false
+  const agents = objectValue(parsed.agents)
+  if (!MANAGED_AGENTS_FINGERPRINT_KEYS.every((key) => hasOwn(agents, key))) return false
+  if (readAgentsMaxThreadsFromRecord(agents) === undefined) return false
+  if (agents.max_depth !== DEFAULT_OFFICIAL_SUBAGENT_MAX_DEPTH) return false
+  const multiAgentV2 = featureTomlObject(objectValue(parsed.features).multi_agent_v2)
+  return multiAgentV2 !== null && hasOwn(multiAgentV2, 'expose_spawn_agent_model_overrides')
 }
 
 function migrationReceiptProvesManagedMaxThreads(value: unknown): boolean {
@@ -953,10 +1062,42 @@ function upsertDefaultUnlessInherited(
 
 function readTomlTableInteger(text: string, table: string, key: string): number | null {
   const line = tomlTableKeyLine(text, table, key)
-  const match = line?.match(/^\s*[^=]+\s*=\s*([0-9]+)\s*(?:#.*)?$/)
-  if (!match?.[1]) return null
-  const value = Number(match[1])
-  return Number.isSafeInteger(value) ? value : null
+  const raw = line?.match(/^\s*[^=]+\s*=\s*([^#]+?)\s*(?:#.*)?$/)?.[1]
+  return parseTomlInteger(raw)
+}
+
+/**
+ * TOML integers are not just plain decimals. Reading only `[0-9]+` made
+ * `1_6`, `0x10` and `+16` look absent, and the caller then treated an explicit
+ * user value as unset and overwrote it — on a file it had not proven it owned.
+ */
+function parseTomlInteger(raw: string | undefined): number | null {
+  const value = String(raw ?? '').trim().replace(/_/g, '')
+  const match = value.match(/^([+-]?)(?:0x([0-9a-fA-F]+)|0o([0-7]+)|0b([01]+)|([0-9]+))$/)
+  if (!match) return null
+  const magnitude = match[2] !== undefined
+    ? Number.parseInt(match[2], 16)
+    : match[3] !== undefined
+      ? Number.parseInt(match[3], 8)
+      : match[4] !== undefined
+        ? Number.parseInt(match[4], 2)
+        : Number(match[5])
+  const parsed = (match[1] === '-' ? -1 : 1) * magnitude
+  return Number.isSafeInteger(parsed) ? parsed : null
+}
+
+function hasUnmanageableMultiAgentV2Declaration(text: string): boolean {
+  const parsed = parsedToml(text)
+  if (!parsed) return false
+  if (!hasOwn(objectValue(parsed.features), 'multi_agent_v2')) return false
+  return !hasTomlTable(text, 'features.multi_agent_v2')
+    && readTomlTableBoolean(text, 'features', 'multi_agent_v2') === null
+}
+
+function readTomlTableBoolean(text: string, table: string, key: string): boolean | null {
+  const line = tomlTableKeyLine(text, table, key)
+  const match = line?.match(/^\s*[^=]+\s*=\s*(true|false)\s*(?:#.*)?$/)
+  return match?.[1] ? match[1] === 'true' : null
 }
 
 function hasTomlTableKey(text: string, table: string, key: string): boolean {

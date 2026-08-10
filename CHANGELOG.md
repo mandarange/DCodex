@@ -16,6 +16,84 @@
   re-pinned against the live generations, and the blocker is reserved for a pin
   whose provider or upstream model really would change.
 
+- `sks doctor --fix` can repair a project `.codex/config.toml` again. Ownership
+  was proved only by an entry in the gitignored `.sneakoscope/manifest.json`,
+  and `configInventoryOwned` re-listed the config only when ownership already
+  held — so losing the manifest lost ownership permanently and every later run
+  refused with `user_owned_file_without_sks_marker`. Managed writes now stamp
+  `# SKS-MANAGED-CODEX-CONFIG` into the file itself, and a config carrying the
+  exact managed `[agents]` + `[features.multi_agent_v2]` shape proves its own
+  provenance.
+
+- `sks doctor --fix` names why it failed. A blocked run reported `status:
+  "blocked"` with an empty top-level `blockers` array and no operator action, so
+  it exited 1 saying nothing; the ten conditions behind the verdict are now
+  reported individually, and a refused config repair ships the manual step.
+
+- `sks setup` no longer rewrites a project config it has not proved it owns. The
+  write bypassed the ownership guard entirely and left user files half-migrated
+  in a state `doctor --fix` then declined to touch.
+
+- Machine-local Codex keys are no longer lost between the project and home
+  configs. Both guarded writes discarded their results, so a refused home write
+  still stripped the keys out of the project config; the home merge now runs
+  first and the project rewrite is skipped unless it succeeded.
+
+- `sks doctor --fix` stops deleting live Codex feature flags. Nine of the
+  thirteen entries in its removed-flag list — including `computer_use`,
+  `guardian_approval`, `plugins`, and `multi_agent` — are still `stable` in
+  Codex 0.147, and deleting the line restored Codex's default of `true`,
+  silently reversing an explicit `= false`. The list now holds only flags Codex
+  reports as `removed` or does not know, pinned against the vendored binary by
+  `test/unit/codex-feature-flags.test.mjs`.
+
+- An explicit `multi_agent_v2 = false` is preserved. The boolean form was
+  deleted before any ownership or inheritance check and replaced with
+  `enabled = true`, reversing an opt-out written by
+  `codex features disable multi_agent_v2`.
+
+- A `features.multi_agent_v2` declared as a dotted key, an inline table, or
+  under a spaced header no longer voids the whole merge. The rewrite produced a
+  TOML redefinition, and the caller silently returned the original text — so
+  `[agents]` was never written and the repair reported success having changed
+  nothing. Such a declaration is left alone and reported as
+  `project_multi_agent_v2_declaration_form_unmanaged`.
+
+- `agents.max_concurrent_threads_per_session` above the ceiling no longer throws
+  out of the Codex startup-config repair phase, and values written as `1_6`,
+  `0x10`, or `+16` are read instead of being treated as absent and overwritten.
+
+- Stale `[features.multi_agent_v2] max_concurrent_threads_per_session` totals of
+  5, 6, and 7 are refreshed like 13 was, instead of staying pinned while the
+  `[agents]` key migrated to 256.
+
+- `doctor --fix` re-runs a phase when either Codex config changes. No phase
+  hashed the home config and most hashed neither, so a `clean` marker survived
+  config corruption and the repair was skipped.
+
+- The Codex startup postcheck fails when the official subagent lane is off,
+  instead of reporting `ok: true` with `multi_agent_v2` disabled.
+
+- A write mission is no longer clamped to two workers because its recommended
+  roles happen to end in `_reviewer`. The read-only reviewer cap now applies
+  only without explicit write intent.
+
+- The fail-closed config ownership guard no longer treats any config mentioning
+  `multi_agent` as SKS-managed — `codex features enable multi_agent_v2` writes
+  that string.
+
+- Legacy global hook cleanup matches real installations. Its command pattern
+  recognised only this repository's `node ./dist/bin/sks.js` form, so it removed
+  nothing for every global and project install while still reporting `ok`.
+
+- Managed table writes keep the blank line before the next TOML table. Two
+  writers destroyed and re-added it on every pass, so the config never converged
+  and each `doctor` run leaked another backup pair.
+
+- The home Codex config stops accumulating provenance comments. Each apply
+  appended another `# SKS moved machine-local Codex config …` line and removed
+  none; a real home config had reached 58.
+
 ## [8.4.0] - 2026-08-09
 
 ### Added

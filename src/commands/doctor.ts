@@ -1427,16 +1427,38 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     }
   }
   const runtimeReadiness = buildRuntimeReadiness(codexNativeFeatureMatrix as any);
-  const resultOk = ready.ready
-    && (!sksUpdate || (sksUpdate as any).ok !== false)
-    && (!doctorFix || migrationReceiptOwnsReconcile || (skillsReconcile as any)?.convergence?.ok === true)
-    && (commandAliasCleanup as any).ok !== false
-    && (codexStartupRepair as any).ok !== false
-    && (codexConfigSyntaxRepair as any)?.ok !== false
-    && (agentRoleConfigRepair as any).ok !== false
-    && (openRouterProviderRepair as any).ok !== false
-    && ((officialSubagentConfig as any).blockers || []).length === 0
-    && (!doctorProfileRequiresDesktopBridgeReadiness(doctorProfile) || desktopBridge.ok !== false);
+  // `blocked` used to be reported with no top-level `blockers` at all: the ten
+  // conditions below collapsed into one boolean, so a failed `doctor --fix`
+  // exited 1 naming nothing. Each condition now carries the blocker it implies,
+  // and `resultOk` is derived from the list so the two cannot disagree.
+  const resultBlockers = [
+    ...(ready.ready
+      ? []
+      : (Array.isArray((ready as any).blockers) && (ready as any).blockers.length
+        ? (ready as any).blockers.map((blocker: any) => `readiness:${String(blocker)}`)
+        : ['readiness_not_ready'])),
+    ...(sksUpdate && (sksUpdate as any).ok === false ? ['sks_update_blocked'] : []),
+    ...(doctorFix && !migrationReceiptOwnsReconcile && (skillsReconcile as any)?.convergence?.ok !== true
+      ? ['managed_skill_reconcile_not_converged']
+      : []),
+    ...((commandAliasCleanup as any).ok === false ? ['command_alias_cleanup_blocked'] : []),
+    ...((codexStartupRepair as any).ok === false ? ['codex_startup_repair_blocked'] : []),
+    ...((codexConfigSyntaxRepair as any)?.ok === false ? ['codex_config_syntax_repair_blocked'] : []),
+    ...((agentRoleConfigRepair as any).ok === false ? ['agent_role_config_repair_blocked'] : []),
+    ...((openRouterProviderRepair as any).ok === false ? ['openrouter_provider_repair_blocked'] : []),
+    ...((((officialSubagentConfig as any).blockers || []) as any[])
+      .map((blocker) => `official_subagent_config:${String(blocker)}`)),
+    ...(doctorProfileRequiresDesktopBridgeReadiness(doctorProfile) && desktopBridge.ok === false
+      ? ['desktop_bridge_not_ready']
+      : [])
+  ];
+  const resultOk = resultBlockers.length === 0;
+  // Repairs that refuse for a recoverable reason ship the manual step with the
+  // refusal; surface it instead of leaving the operator with a blocker id.
+  const repairOperatorActions = [
+    ...((codexStartupRepair as any)?.config_file_repair?.operator_actions || []),
+    ...((agentRoleConfigRepair as any)?.operator_actions || [])
+  ].map(String).filter(Boolean);
   const result = {
     schema: 'sks.doctor-status.v3',
     elapsed_ms: Date.now() - startedAtMs,
@@ -1451,11 +1473,14 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     not_counted_as_full_doctor: !deepDiagnostics,
     root,
     arg_warnings: argWarnings,
+    blockers: [...new Set(resultBlockers.map(String))],
     warnings: [...oauthCallbackPortDiagnostic.warnings, ...(desktopBridge.warnings || [])],
-    operator_actions: [
+    operator_actions: [...new Set([
       ...oauthCallbackOperatorActions,
-      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : [])
-    ],
+      ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : []),
+      ...repairOperatorActions,
+      ...(resultOk ? [] : ['Each blocker above names a report under .sneakoscope/reports/; re-run `sks doctor --full --json` after resolving them.'])
+    ].map(String).filter(Boolean))],
     node: { ok: Number(process.versions.node.split('.')[0]) >= 20, version: process.version },
     codex,
     oauth_callback_port_diagnostic: oauthCallbackPortDiagnostic,

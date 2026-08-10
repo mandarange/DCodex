@@ -187,6 +187,11 @@ function upsertTomlTable(text: string, table: string, block: string): string {
       break;
     }
   }
+  // Keep the blank separator that precedes the next header: it lives inside
+  // [start, end) and was being swallowed, so this writer and
+  // splitCodexProjectConfigPolicy (which re-adds it) rewrote the managed hook
+  // tables against each other forever. Same fix as init.ts's copy.
+  while (end > start + 1 && !String(lines[end - 1] || '').trim()) end -= 1;
   lines.splice(start, end - start, ...blockLines);
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
 }

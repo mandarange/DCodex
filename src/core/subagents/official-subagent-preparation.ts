@@ -185,6 +185,7 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
     taskProfile,
     suggestedRoles: suggestedAgents,
     goal,
+    requiresWrite: input.readOnly !== true,
     maxThreads: input.maxThreads ?? officialConfig.maxThreads,
     ...(input.hardware ? { hardware: input.hardware } : {}),
     ...(slices.length > 0 ? { independentSliceCount: slices.length } : {})

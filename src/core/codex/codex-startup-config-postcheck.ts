@@ -26,9 +26,19 @@ export async function postcheckCodexStartupConfig(input: {
   const rolePlan = await installOfficialSubagentAgentConfigs(root, { apply: false })
   const tomlSmoke = tomlSyntaxSmoke(text)
   const orphanChildTables = orphanMcpChildTables(text)
+  // `enabled` and `multi_agent_v2.enabled` were reported but gated nothing, so
+  // the postcheck passed on a config where the official subagent lane is off.
+  // Codex resolves `multi_agent_v2 = true` to V2 unconditionally and ignores
+  // `agents.enabled` in that case (verified against Codex 0.147), so
+  // `agents.enabled = false` is only fatal when v2 is also off.
+  const multiAgentV2Disabled = officialConfig.multiAgentV2.enabled === false
   const blockers = [
     ...(!configPresent ? ['project_official_subagent_config_missing'] : []),
     ...(!tomlValidation.ok ? ['project_official_subagent_config_toml_parse_failed'] : []),
+    ...(multiAgentV2Disabled ? ['official_subagent_multi_agent_v2_disabled'] : []),
+    ...(multiAgentV2Disabled && officialConfig.enabled === false
+      ? ['official_subagent_agents_disabled']
+      : []),
     ...officialConfig.blockers.map((item) => `official_subagent_config:${item}`),
     ...rolePlan.missing.map((file) => `missing_official_subagent_agent:${file}`),
     ...rolePlan.stale.map((file) => `stale_official_subagent_agent:${file}`),

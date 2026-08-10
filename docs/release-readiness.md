@@ -4,16 +4,40 @@
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 
-8.5.0 is a single-fix candidate on top of shipped 8.4.0. A Codex-LB session pin
-records the catalog and route-policy generations it was minted under, and both
-resolvers refused any pin whose stamps had moved. `policy_generation` digests the
-entire route map, so an unrelated model appearing or a bridge restart
-regenerating the catalog aged every live pin at once — threads that had never
-been pinned kept working, which is what made `session_pin_route_unavailable` look
-intermittent. A pin now constrains the request to its provider and upstream
-model rather than to its bookkeeping: when the current route still names them the
-thread keeps them and is re-pinned against the live generations, and the blocker
-is retained for a pin that really would move the thread.
+8.5.0 is a stability candidate on top of shipped 8.4.0, covering the Codex-LB
+session pin and the Codex config surface that `sks doctor --fix` owns.
+
+A Codex-LB session pin records the catalog and route-policy generations it was
+minted under, and both resolvers refused any pin whose stamps had moved.
+`policy_generation` digests the entire route map, so an unrelated model appearing
+or a bridge restart regenerating the catalog aged every live pin at once —
+threads that had never been pinned kept working, which is what made
+`session_pin_route_unavailable` look intermittent. A pin now constrains the
+request to its provider and upstream model rather than to its bookkeeping: when
+the current route still names them the thread keeps them and is re-pinned against
+the live generations, and the blocker is retained for a pin that really would
+move the thread.
+
+The config surface carried a self-perpetuating ownership failure. Ownership of a
+project `.codex/config.toml` was proved only by an entry in the gitignored
+`.sneakoscope/manifest.json`, and the entry was re-listed only when ownership
+already held, so losing the manifest lost ownership permanently and every later
+`doctor --fix` refused with `user_owned_file_without_sks_marker` — while
+reporting `status: "blocked"` with an empty top-level `blockers` array. Managed
+writes now stamp the ownership marker into the file, the managed config shape
+proves its own provenance, and a blocked run names each condition behind the
+verdict. Alongside it: `sks setup` no longer rewrites configs it has not proved
+it owns, machine-local keys are no longer dropped between the project and home
+configs when a guarded write is refused, the removed-feature-flag list no longer
+deletes nine flags Codex 0.147 still reports as `stable` (which reverted user
+opt-outs to `true`), and an explicit `multi_agent_v2 = false` survives the merge.
+The removed-flag list is pinned against the vendored Codex binary by
+`test/unit/codex-feature-flags.test.mjs`.
+
+Multi-agent V2 utilization is corrected in two places: a write mission is no
+longer clamped to two workers because its recommended roles end in `_reviewer`,
+and stale `max_concurrent_threads_per_session` totals of 5, 6, and 7 are
+refreshed rather than left pinned while the `[agents]` key migrated to 256.
 
 Regenerated from the candidate commit: the release gate DAG, canonical tests, the
 isolated 7.6.0 to 8.5.0 upgrade smoke, the macOS Menu Bar proof, the pack

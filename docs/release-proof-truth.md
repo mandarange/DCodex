@@ -3,12 +3,14 @@
 ## Current assertion
 
 8.5.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
-candidate carries one behavioral fix on top of shipped 8.4.0: a Codex-LB session
-pin is no longer voided by catalog churn it had no part in, which is what made
-`session_pin_route_unavailable` appear intermittently mid-session. This document
-does not authorize publication, deployment, a credential change, a Git tag, or a
-push. Exact-commit proof can exist only after the candidate is committed and all
-source-bound gates are regenerated from that clean commit.
+candidate carries behavioral fixes on top of shipped 8.4.0: a Codex-LB session
+pin is no longer voided by catalog churn it had no part in (which is what made
+`session_pin_route_unavailable` appear intermittently mid-session), and the Codex
+config surface that `sks doctor --fix` owns no longer refuses, silently no-ops,
+or reverses explicit user settings. This document does not authorize
+publication, deployment, a credential change, a Git tag, or a push. Exact-commit
+proof can exist only after the candidate is committed and all source-bound gates
+are regenerated from that clean commit.
 
 All release artifacts bound to 8.4.0 or an earlier commit are historical. They
 must not be renamed, copied, or treated as 8.5.0 evidence.
@@ -19,6 +21,10 @@ must not be renamed, copied, or treated as 8.5.0 evidence.
 | --- | --- | --- |
 | A session pin survives catalog churn that leaves its route unchanged | passed-hermetic | both resolvers compare the pin against the current route and reissue it against the live generations; pinned by unit, bridge, and architecture-hardening tests, and by a reproduction in which adding one unrelated model changes `policy_generation` |
 | A session pin whose provider or upstream model would change still fails | passed-hermetic | `session_pin_route_unavailable` is retained for that case and for a pin naming a provider or upstream the resolver cannot compare; pinned by the same three suites |
+| `doctor --fix` can repair a managed project config whose `.sneakoscope/manifest.json` is gone | passed-hermetic | reproduced end to end against this repository's own `.codex/config.toml` in an isolated HOME: `config_file_repair.ok` went false to true, ownership resolves from the config's own shape, and the run stamps the durable marker |
+| A blocked `doctor --fix` names its blockers | passed-hermetic | the ten conditions behind the verdict are enumerated into the top-level `blockers`, and a refused config repair carries the manual step in `operator_actions` |
+| SKS only strips Codex feature flags Codex no longer honours | passed-hermetic | `test/unit/codex-feature-flags.test.mjs` runs the vendored Codex 0.147 binary's `features list` and fails if any stripped flag is still live; the assertion was confirmed to bite by injecting `computer_use` |
+| The `[features.multi_agent_v2]` table SKS writes is accepted by Codex | passed-hermetic | the same suite writes the exact table and asserts Codex resolves `multi_agent_v2` to enabled; the struct is `deny_unknown_fields`, so an unknown key would reject the whole config |
 | All checked version authorities report 8.5.0 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, changelog, and release-doc surfaces are bumped together |
 | The reported 8.5.0 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, release-check stamp, and the operator's final registry checks |
 | 8.5.0 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |

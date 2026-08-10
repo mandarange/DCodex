@@ -2588,8 +2588,8 @@
       "file": "src/core/subagents/official-subagent-preparation.ts",
       "symbol": "prepareOfficialSubagentMissionLocked",
       "token": "fsp.rm",
-      "scope_contract_sha256": "ba8a93f95ec308f1417689a39e8ad4a592c9914cb14f55f96cda8ad449239216",
-      "callsite_sha256": "09548ca51e72b97fdc73c9ee24e8fa887ea7d4f5d7576c665cc1a9cce6a20cf1",
+      "scope_contract_sha256": "5c8a39cec08521899309a1947c1c7c010caf9bf2eb22080a49a33ce9037b57fb",
+      "callsite_sha256": "b717e665471a874e3b443e9c90d94b402b9b5b780f1025c8ed7872cdffab5f96",
       "occurrence": 1,
       "reason": "Preparation clears only its target-run staging directory whose fixed prefix and basename are resolved inside the selected mission directory."
     },

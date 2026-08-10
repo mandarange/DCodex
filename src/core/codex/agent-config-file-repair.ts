@@ -2,9 +2,10 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { nowIso, readJson, writeJsonAtomic } from '../fsx.js'
 import {
+  SKS_MANAGED_CODEX_CONFIG_MARKER,
   backupInvalidToml,
   inspectOfficialSubagentToml,
-  mergeOfficialSubagentConfig,
+  mergeOfficialSubagentConfigResult,
   officialSubagentConfigOwnershipProof,
   officialSubagentConfigWarnings,
   readInheritedOfficialSubagentConfigText
@@ -25,10 +26,22 @@ export interface AgentConfigFileRepairReport {
   manual_required: boolean
   blockers: string[]
   warnings: string[]
+  operator_actions: string[]
   ownership_proof: {
     owned: boolean
     reasons: string[]
   }
+}
+
+/**
+ * `user_owned_file_without_sks_marker` names a state, not a remedy, and the
+ * doctor summary drops it. Ship the manual step with the blocker so a refused
+ * repair is recoverable without reading the source.
+ */
+function unmanagedConfigOperatorAction(configPath: string): string {
+  return `Refused to modify ${configPath}: no SKS ownership proof. `
+    + `If SKS owns this file, add the line \`${SKS_MANAGED_CODEX_CONFIG_MARKER}\` as its first line `
+    + 'and re-run `sks doctor --fix`. Otherwise run `sks setup` to regenerate a managed config.'
 }
 
 /**
@@ -77,6 +90,10 @@ export async function repairAgentConfigFileReferences(input: {
         ...(!ownershipProof.owned ? ['user_owned_file_without_sks_marker'] : [])
       ],
       warnings: [],
+      operator_actions: [
+        `${configPath} is not valid TOML; SKS preserved it and wrote a backup. Fix the syntax, then re-run \`sks doctor --fix\`.`,
+        ...(!ownershipProof.owned ? [unmanagedConfigOperatorAction(configPath)] : [])
+      ],
       ownership_proof: ownershipProof
     })
   }
@@ -96,6 +113,7 @@ export async function repairAgentConfigFileReferences(input: {
       manual_required: true,
       blockers: ['user_owned_file_without_sks_marker'],
       warnings: [],
+      operator_actions: [unmanagedConfigOperatorAction(configPath)],
       ownership_proof: ownershipProof
     })
   }
@@ -104,13 +122,14 @@ export async function repairAgentConfigFileReferences(input: {
     ...(input.home ? { home: input.home } : {}),
     ...(input.codexHome ? { codexHome: input.codexHome } : {})
   })
-  const merged = mergeOfficialSubagentConfig(original, {
+  const mergeResult = mergeOfficialSubagentConfigResult(original, {
     sksOwned: ownershipProof.owned,
     inheritedText
   })
+  const merged = mergeResult.text
   const validation = inspectOfficialSubagentToml(merged)
   const warnings = officialSubagentConfigWarnings(merged, inheritedText)
-  const blockers: string[] = []
+  const blockers: string[] = [...mergeResult.blockers]
   let changed = merged !== original
   let writeSucceeded = input.apply !== true
   let backupPath: string | null = null
@@ -146,6 +165,9 @@ export async function repairAgentConfigFileReferences(input: {
     manual_required: blockers.length > 0,
     blockers,
     warnings,
+    operator_actions: blockers.map((blocker) => blocker === 'user_owned_file_without_sks_marker'
+      ? unmanagedConfigOperatorAction(configPath)
+      : `${configPath}: ${blocker}. Re-run \`sks doctor --fix\` after resolving it, or run \`sks setup\` to regenerate a managed config.`),
     ownership_proof: ownershipProof
   }
   return writeReport(input.reportPath, root, report)

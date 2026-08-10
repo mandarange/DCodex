@@ -144,7 +144,12 @@ function legacyGlobalSksHookCommand(value: unknown) {
 function projectSksHookCommand(value: unknown) {
   const command = String(value || '').trim();
   if (/[;&|`$<>\r\n]/.test(command)) return null;
-  return command.match(/^node\s+\.\/dist\/bin\/sks\.js\s+hook\s+([a-z0-9-]+)$/i)?.[1] || null;
+  // `node ./dist/bin/sks.js` is the prefix used only inside this development
+  // repository (see sksCommandPrefix in init.ts). Real installs write `sks` or
+  // `node ./node_modules/sneakoscope/dist/bin/sks.js`, so neither matched and
+  // the cleanup silently removed nothing and still reported ok. The shell
+  // metacharacter reject above is unchanged and still gates every form.
+  return command.match(/^(?:\S*[\\/])?(?:node\s+\S*sks\.js|sks)\s+hook\s+([a-z0-9-]+)$/i)?.[1] || null;
 }
 
 function hookRef(event: string, matcher: unknown, command: string) {

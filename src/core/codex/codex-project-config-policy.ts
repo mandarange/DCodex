@@ -138,20 +138,14 @@ export async function splitCodexProjectConfigPolicy(rootInput: string = process.
   let userConfigPath: string | null = null
   let profileConfigPath: string | null = null
 
-  if (opts.apply && changed) {
-    backupPath = `${configPath}.bak-${Date.now().toString(36)}`
-    await ensureDir(path.dirname(configPath))
-    await fsp.copyFile(configPath, backupPath)
-    await cleanupCodexConfigBackups(configPath, { keepPerTag: 3, maxAgeMs: 30 * 24 * 60 * 60 * 1000 }).catch(() => undefined)
-    await writeCodexConfigGuarded({
-      root,
-      configPath,
-      before: String(original || ''),
-      cause: 'codex-project-config-policy',
-      mutate: () => projectText
-    })
-    actions.push('project_config_rewritten_with_backup')
-  }
+  // The home merge runs BEFORE the project rewrite. Both writes are guarded and
+  // either can be refused; stripping the keys out of the project config first
+  // and only then discovering the home write was refused deleted them outright,
+  // because both results used to be thrown away and `actions` was pushed
+  // unconditionally. Keys now never leave the project config until they have
+  // landed in the home config.
+  const writeBlockers: string[] = []
+  let machineLocalMoved = true
 
   if (opts.apply && split.machine_text.trim()) {
     await ensureDir(codexHome)
@@ -160,15 +154,42 @@ export async function splitCodexProjectConfigPolicy(rootInput: string = process.
     const machineText = preserveExistingGlobalFastModeConfig(String(currentUser || ''), split.machine_text)
     const dedupedUser = removeConfigIds(String(currentUser || ''), configIds(machineText))
     const commentLine = `# SKS moved machine-local Codex config from ${path.relative(root, configPath) || configPath} at ${nowIso()}`
-    const mergedUser = mergeMachineLocalIntoUserConfig(dedupedUser, machineText.trim(), commentLine)
-    await writeCodexConfigGuarded({
+    // Each apply used to append another provenance comment and remove only the
+    // moved KEYS, so the line count grew without bound — 58 of them had piled up
+    // in a real home config. Keep the newest only.
+    const mergedUser = mergeMachineLocalIntoUserConfig(
+      stripSksMovedComments(dedupedUser),
+      machineText.trim(),
+      commentLine
+    )
+    const homeWrite = await writeCodexConfigGuarded({
       root,
       configPath: userConfigPath,
       before: String(currentUser || ''),
       cause: 'codex-project-config-policy-machine-local',
       mutate: () => mergedUser
     })
-    actions.push('machine_local_keys_moved_to_codex_home_config')
+    machineLocalMoved = homeWrite.ok
+    if (homeWrite.ok) actions.push('machine_local_keys_moved_to_codex_home_config')
+    else writeBlockers.push(`machine_local_move_refused:${homeWrite.status}`)
+  }
+
+  if (opts.apply && changed && machineLocalMoved) {
+    backupPath = `${configPath}.bak-${Date.now().toString(36)}`
+    await ensureDir(path.dirname(configPath))
+    await fsp.copyFile(configPath, backupPath)
+    await cleanupCodexConfigBackups(configPath, { keepPerTag: 3, maxAgeMs: 30 * 24 * 60 * 60 * 1000 }).catch(() => undefined)
+    const projectWrite = await writeCodexConfigGuarded({
+      root,
+      configPath,
+      before: String(original || ''),
+      cause: 'codex-project-config-policy',
+      mutate: () => projectText
+    })
+    if (projectWrite.ok) actions.push('project_config_rewritten_with_backup')
+    else writeBlockers.push(`project_config_write_refused:${projectWrite.status}`)
+  } else if (opts.apply && changed) {
+    writeBlockers.push('project_config_rewrite_skipped_machine_local_move_refused')
   }
 
   if (profileName) actions.push('legacy_project_profile_selector_removed')
@@ -179,7 +200,7 @@ export async function splitCodexProjectConfigPolicy(rootInput: string = process.
     root,
     config_path: configPath,
     codex_home: codexHome,
-    ok: parseSmoke.ok && split.blockers.length === 0,
+    ok: parseSmoke.ok && split.blockers.length === 0 && writeBlockers.length === 0,
     changed,
     applied: opts.apply === true,
     backup_path: backupPath,
@@ -197,7 +218,11 @@ export async function splitCodexProjectConfigPolicy(rootInput: string = process.
     deprecated_approval_policy_fixed: split.deprecated_approval_policy_fixed,
     actions,
     parse_smoke: parseSmoke,
-    blockers: [...split.blockers, ...(parseSmoke.ok ? [] : ['project_config_rewrite_parse_smoke_failed'])]
+    blockers: [
+      ...split.blockers,
+      ...writeBlockers,
+      ...(parseSmoke.ok ? [] : ['project_config_rewrite_parse_smoke_failed'])
+    ]
   }
   if (opts.writeReport !== false) await writeJsonAtomic(reportPath, { ...report, report_path: reportPath })
   return report
@@ -230,28 +255,38 @@ export async function repairCodexConfigStructure(configPathInput: string, opts: 
   }
   const hoist = hoistMisplacedMachineLocalKeys(String(original))
   let backupPath: string | null = null
+  // The guard returns a refusal rather than throwing, and its result was
+  // discarded: a refused write still reported `structure_repaired` with
+  // `applied: true` while the file on disk was untouched.
+  let applied = false
+  const writeBlockers: string[] = []
   if (opts.apply && hoist.changed) {
     backupPath = `${configPath}.struct-bak-${Date.now().toString(36)}`
     await ensureDir(path.dirname(configPath))
     await fsp.copyFile(configPath, backupPath)
     await cleanupCodexConfigBackups(configPath, { keepPerTag: 3, maxAgeMs: 30 * 24 * 60 * 60 * 1000 }).catch(() => undefined)
-    await writeCodexConfigGuarded({
+    const guarded = await writeCodexConfigGuarded({
       configPath,
       before: String(original || ''),
       cause: 'codex-config-structure-repair',
       mutate: () => hoist.text
     })
+    applied = guarded.ok
+    if (!guarded.ok) writeBlockers.push(`config_write_guard:${guarded.status}`)
   }
   const parseSmoke = tomlRewriteSmoke(hoist.text)
   return {
     config_path: configPath,
-    ok: parseSmoke.ok,
-    status: hoist.changed ? (opts.apply ? 'structure_repaired' : 'structure_repair_available') : 'structure_ok',
+    ok: parseSmoke.ok && writeBlockers.length === 0,
+    status: hoist.changed
+      ? (applied ? 'structure_repaired' : opts.apply ? 'structure_repair_refused' : 'structure_repair_available')
+      : 'structure_ok',
     changed: hoist.changed,
-    applied: opts.apply === true && hoist.changed,
+    applied,
     hoisted_keys: hoist.hoisted_keys,
     backup_path: backupPath,
-    parse_smoke: parseSmoke
+    parse_smoke: parseSmoke,
+    blockers: writeBlockers
   }
 }
 
@@ -488,12 +523,6 @@ function tomlRewriteSmoke(text: string) {
   }
 }
 
-function profileTableBody(blocks: any[], profile: string) {
-  const block = blocks.find((item) => item.table === `profiles.${profile}`)
-  if (!block) return ''
-  return block.text.split('\n').filter((line: string) => !/^\s*\[/.test(line)).join('\n')
-}
-
 function configIds(text: string) {
   const ids = { keys: new Set<string>(), tables: new Set<string>() }
   for (const block of tomlBlocks(text)) {
@@ -549,6 +578,19 @@ function mergeMachineLocalIntoUserConfig(userText: string, machineText: string, 
     if (trimmed) sections.push(trimmed)
   }
   return normalizeProjectText(sections.join('\n\n'))
+}
+
+/**
+ * Drop previous machine-local move provenance comments. The caller adds a fresh
+ * one, so exactly one survives and the marker other readers look for is kept.
+ */
+function stripSksMovedComments(text: string) {
+  return normalizeProjectText(
+    String(text || '')
+      .split('\n')
+      .filter((line) => !/^\s*#\s*SKS moved machine-local Codex config\b/i.test(line))
+      .join('\n')
+  )
 }
 
 function collectTomlSections(text: string, preamble: string[], tables: string[]) {

@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { prepareRoute } from '../pipeline-internals/runtime-core.js';
 import { COMMAND_CATALOG, routePrompt, routeRequiresSubagents } from '../routes.js';
+import { DEFAULT_AUTOMATIC_SUBAGENT_COUNT } from '../subagents/agent-catalog.js';
 
 test('lightweight Wiki stays missionless even when its prompt contains parallel wording', async () => {
   const prompt = '$Wiki audit all wiki files in parallel';
@@ -95,7 +96,14 @@ test('Naruto App preparation reuses the session mission, isolates each run, and 
     const gate = JSON.parse(await fsp.readFile(path.join(dir, 'naruto-gate.json'), 'utf8'));
     assert.equal(second.mission_id, first.mission_id);
     assert.notEqual(secondPlan.workflow_run_id, firstPlan.workflow_run_id);
-    assert.equal(secondPlan.requested_subagents, 2);
+    // "expands only for explicit --agents" is the claim under test, so assert
+    // the invariant, not a literal: a second automatic run must not change the
+    // count. It previously read 2 because both runs are write missions whose
+    // recommended roles all end in `_reviewer`, and the read-only reviewer cap
+    // clamped them — so the session silently CONTRACTED from the automatic
+    // default to 2 between runs.
+    assert.equal(secondPlan.requested_subagents, firstPlan.requested_subagents);
+    assert.equal(secondPlan.requested_subagents, DEFAULT_AUTOMATIC_SUBAGENT_COUNT);
     assert.equal(secondPlan.requested_subagents_explicit, false);
     assert.equal(secondPlan.session_scope, sessionKey);
     assert.equal(secondPlan.triwiki_attention.source, '.sneakoscope/wiki/context-graph.json');

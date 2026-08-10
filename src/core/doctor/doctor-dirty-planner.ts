@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { MANAGED_ASSET_VERSION } from '../managed-assets/managed-assets-manifest.js';
@@ -127,7 +128,29 @@ function phaseInputHash(root: string, id: string): string {
     if (!fs.existsSync(file)) return { rel, hash: 'missing' };
     return hashSemanticPath(root, rel);
   });
-  return hashJson({ id, package: packageIdentity(), files, env: phaseEnvPresence(id), semantic_state: phaseSemanticState(root, id), phase_schema_version: 2 });
+  // Every phase hashes both Codex configs, not just the ones whose id happens to
+  // match a `phaseInputFiles` branch. Phases that fell through to the default
+  // bucket — codex_config_syntax_repair, command_alias_cleanup, hook_trust_repair,
+  // setup, desktop_bridge_catalog_repair — kept their `clean` marker across any
+  // config edit, so `doctor --fix` skipped the repair that was needed. The home
+  // config was never hashed by any phase; it is absolute, so it cannot go through
+  // `phaseInputFiles` (which joins against root) and gets its own term.
+  return hashJson({
+    id,
+    package: packageIdentity(),
+    files,
+    env: phaseEnvPresence(id),
+    semantic_state: phaseSemanticState(root, id),
+    project_codex_config: hashSemanticPath(root, '.codex/config.toml').hash,
+    codex_home_config: hashFileIfExists(codexHomeConfigPath()),
+    phase_schema_version: 3
+  });
+}
+
+function codexHomeConfigPath(): string {
+  const codexHome = process.env.CODEX_HOME
+    || path.join(process.env.HOME || os.homedir(), '.codex');
+  return path.join(codexHome, 'config.toml');
 }
 
 function phaseInputFiles(id: string): string[] {

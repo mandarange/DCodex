@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { appendJsonl, ensureDir, nowIso, readText, sha256, writeTextAtomic } from '../fsx.js'
 import { diffCodexAppUiSnapshots, snapshotCodexAppUiState } from '../codex-app/codex-app-ui-state-snapshot.js'
 import { cleanupCodexConfigBackups, validateCodexConfigRoundTrip } from './codex-config-toml.js'
+import { hasManagedAgentsConfigFingerprint } from '../subagents/official-subagent-config.js'
 import { escapeRegExp } from '../text/regex.js'
 import { withFileLock } from '../locks/file-lock.js'
 
@@ -689,8 +690,15 @@ export function isProjectCodexConfig(root: string, configPath: string): boolean 
 
 export function hasSksManagedCodexConfigMarker(text: string): boolean {
   const source = String(text || '')
+  // `multi_agent` used to be one of the accepted tokens, which made this
+  // fail-closed guard fail open: `codex features enable multi_agent_v2` writes
+  // that string, so any ordinary Codex config claiming the feature was treated
+  // as SKS-managed and became writable. Every token below is SKS-specific, and
+  // the managed-shape fingerprint covers configs this writer produced before it
+  // began stamping the explicit marker.
   return hasExplicitSksManagedCodexConfigMarker(source)
-    || /(?:SKS managed|Sneakoscope|sneakoscope|sks_|agents\.native_agent|agents\.implementation_worker|multi_agent)/i.test(source)
+    || /(?:SKS managed|Sneakoscope|sneakoscope|sks_|agents\.native_agent|agents\.implementation_worker)/i.test(source)
+    || hasManagedAgentsConfigFingerprint(source)
     || /^\s*model_provider\s*=\s*["']codex-lb["']\s*(?:#.*)?$/mi.test(source)
     || /^\s*default_profile\s*=\s*["']sks-fast-high["']\s*(?:#.*)?$/mi.test(source)
     || /^\s*\[(?:user\.fast_mode|model_providers\.(?:"codex-lb"|codex-lb)|profiles\.(?:"sks-fast-high"|sks-fast-high))\]\s*(?:#.*)?$/mi.test(source)

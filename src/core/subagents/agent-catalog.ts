@@ -128,6 +128,13 @@ export function officialSubagentFanoutPolicy(input: {
   independentSliceCount?: number | null
   maxThreads?: number | null
   hardware?: HardwareCapacityProbeInput | null
+  /**
+   * Explicit write intent. The reviewer cap exists to stop a read-only review
+   * panel from inventing work; a mission that will WRITE was being clamped to
+   * two workers by the same rule, purely because every recommended role
+   * happened to end in `_reviewer`.
+   */
+  requiresWrite?: boolean | null
 } = {}) {
   const countSource = input.requestedSource === 'route_contract'
     ? 'route_contract'
@@ -144,7 +151,8 @@ export function officialSubagentFanoutPolicy(input: {
     ...(input.suggestedRoles === undefined ? {} : { suggestedRoles: input.suggestedRoles }),
     ...(input.independentSliceCount === undefined ? {} : { independentSliceCount: input.independentSliceCount }),
     ...(input.maxThreads === undefined ? {} : { maxThreads: input.maxThreads }),
-    ...(input.hardware === undefined ? {} : { hardware: input.hardware })
+    ...(input.hardware === undefined ? {} : { hardware: input.hardware }),
+    ...(input.requiresWrite === undefined ? {} : { requiresWrite: input.requiresWrite })
   })
   const requested = explicit ? explicitRequested : automatic.count
   const automaticReviewerCeiling = automatic.criticalMultiDomain
@@ -182,6 +190,7 @@ function automaticSubagentFanout(input: {
   independentSliceCount?: number | null
   maxThreads?: number | null
   hardware?: HardwareCapacityProbeInput | null
+  requiresWrite?: boolean | null
 }) {
   const text = normalizeText([input.goal])
   const riskDomains = unique([
@@ -193,7 +202,11 @@ function automaticSubagentFanout(input: {
   const critical = CRITICAL_RISK_RE.test(text)
   const largeScale = LARGE_SCALE_WORK_RE.test(text)
   const criticalMultiDomain = highRisk && critical && riskDomains.length >= 3
+  // Only a mission with no declared write intent gets the reviewer cap. A
+  // single recommended `*_reviewer` role was enough to pin an implementing
+  // mission to two workers AND to make 2 its hard ceiling.
   const reviewerOnly = isReviewerOnlyFanout(input.suggestedRoles || [])
+    && input.requiresWrite !== true
   // Mass/bulk cheap-lane work (broad search, exploration sweeps, typing shards)
   // scales far above the protected strata, but never when reviewer-only or
   // critical multi-domain caps apply.

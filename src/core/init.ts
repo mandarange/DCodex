@@ -11,6 +11,8 @@ import { OFFICIAL_SUBAGENT_REVIEW_POLICY_TEXT } from './official-subagent-review
 import { AWESOME_DESIGN_MD_REFERENCE, CODEX_APP_IMAGE_GENERATION_DOC_URL, CODEX_COMPUTER_USE_ONLY_POLICY, CODEX_IMAGEGEN_REQUIRED_POLICY, CODEX_WEB_VERIFICATION_POLICY, DEFAULT_CODEX_APP_PLUGINS, DESIGN_SYSTEM_SSOT, DOLLAR_COMMANDS, DOLLAR_COMMAND_ALIASES, DOLLAR_SKILL_NAMES, FROM_CHAT_IMG_CHECKLIST_ARTIFACT, FROM_CHAT_IMG_COVERAGE_ARTIFACT, FROM_CHAT_IMG_QA_LOOP_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_ARTIFACT, FROM_CHAT_IMG_TEMP_TRIWIKI_SESSIONS, GETDESIGN_REFERENCE, IMAGEGEN_SOCIAL_SOURCE_POLICY, LEGACY_DOLLAR_SKILL_NAMES, OPENAI_CHATGPT_IMAGES_2_DOC_URL, OPENAI_GPT_IMAGE_2_MODEL_DOC_URL, OPENAI_IMAGE_GENERATION_DOC_URL, PPT_CONDITIONAL_SKILL_ALLOWLIST, PPT_PIPELINE_MCP_ALLOWLIST, PPT_PIPELINE_SKILL_ALLOWLIST, RECOMMENDED_DESIGN_REFERENCES, RECOMMENDED_MCP_SERVERS, RECOMMENDED_SKILLS, RESERVED_CODEX_PLUGIN_SKILL_NAMES, SOLUTION_SCOUT_SKILL_NAME, chatCaptureIntakeText, context7ConfigToml, getdesignReferencePolicyText, imageUxReviewPipelinePolicyText, outcomeRubricPolicyText, pptPipelineAllowlistPolicyText, prefixKnownSksDollarReferences, productDesignPluginPolicyText, sksPrefixedDollarCommand, speedLanePolicyText, stackCurrentDocsPolicyText, triwikiContextTracking, triwikiContextTrackingText, triwikiStagePolicyText } from './routes.js';
 import { SKILL_DREAM_POLICY, skillDreamPolicyText } from './skill-forge.js';
 import { CODEX_HOOK_EVENT_STATE_KEYS } from './codex-compat/codex-hook-events.js';
+import { MANAGED_CODEX_FEATURE_FLAGS, REMOVED_CODEX_FEATURE_FLAGS } from './codex/codex-feature-flags.js';
+import { writeCodexConfigGuarded } from './codex/codex-config-guard.js';
 import { codexCommandHookCurrentHash } from './codex-hooks/codex-hook-hash.js';
 import { buildSksCoreSkillManifest, isCoreSkillName, legacyCoreSkillNames } from './codex-native/core-skill-manifest.js';
 import { syncCoreSkillsIntegrity } from './codex-native/core-skill-integrity.js';
@@ -24,7 +26,8 @@ import {
   officialSubagentConfigOwnershipProof,
   officialSubagentConfigWarnings,
   readInheritedOfficialSubagentConfigText,
-  resolveInheritedOfficialSubagentConfigPath
+  resolveInheritedOfficialSubagentConfigPath,
+  stampSksManagedCodexConfigMarker
 } from './subagents/official-subagent-config.js';
 import { escapeRegExp } from './text/regex.js';
 export { installGlobalSkills, installProjectSkills, installSkills } from './init/skills.js';
@@ -231,6 +234,11 @@ function upsertCodexTrustTomlTable(text: string, table: string, block: string): 
       break;
     }
   }
+  // `end` is the NEXT header, so the blank separator before it sits inside the
+  // spliced span and was destroyed. splitCodexProjectConfigPolicy re-joins
+  // blocks with a blank line, so the two writers undid each other on every run:
+  // the config never converged and each doctor run leaked another backup pair.
+  while (end > start + 1 && !String(lines[end - 1] || '').trim()) end -= 1;
   lines.splice(start, end - start, ...blockLines);
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
 }
@@ -659,20 +667,19 @@ function installPolicy(scope: any, commandPrefix: any) {
 // NEVER force-re-enabled on upgrade: force-writing these reverted a user's
 // `enabled = false` and blanked/broke the Codex App UI (same rationale as the
 // install-helpers path). All are SET-IF-ABSENT below.
-// Only flags present in the current official [features] reference. Flags SKS
-// wrote before the 2026-07 renewal that no longer exist (remote_control,
-// fast_mode_ui, codex_git_commit, computer_use, browser_use, browser_use_external,
-// image_generation, in_app_browser, guardian_approval, tool_suggest, plugins) are
-// stripped below instead.
-const MANAGED_CODEX_FEATURE_FLAGS = ['hooks', 'fast_mode', 'apps'];
-const REMOVED_CODEX_FEATURE_FLAGS = [
-  'remote_control', 'fast_mode_ui', 'codex_git_commit', 'computer_use', 'browser_use',
-  'browser_use_external', 'image_generation', 'in_app_browser', 'guardian_approval',
-  'tool_suggest', 'plugins', 'codex_hooks', 'multi_agent'
-];
+// Seeded and stripped `[features]` keys live in ./codex/codex-feature-flags.js,
+// where a unit test pins them against the vendored Codex binary.
 
 function mergeManagedCodexConfigToml(existingContent: any = '', opts: any = {}) {
   let next = String(existingContent || '').trimEnd();
+  // Stamp ownership into the file itself. `suppress_unstable_features_warning`
+  // below makes the text non-empty, so the merge's own empty-file marker branch
+  // could never fire from here and ownership rested entirely on the gitignored
+  // `.sneakoscope/manifest.json` entry — which `configInventoryOwned` only
+  // re-lists when ownership ALREADY held, making its loss permanent.
+  if (opts.sksOwned === true || opts.configWasFresh === true) {
+    next = stampSksManagedCodexConfigMarker(next);
+  }
   next = removeTomlTableKey(next, 'notice', 'fast_default_opt_out');
   next = removeTomlTableKey(next, 'features', 'codex_hooks');
   next = upsertTopLevelTomlBooleanIfAbsent(next, 'suppress_unstable_features_warning', true);
@@ -961,6 +968,7 @@ function upsertTomlTable(text: any, table: any, block: any) {
       const managedCodexConfig = await mergeGlobalCodexConfigIfAvailable(
         mergeManagedCodexConfigToml(existingCodexConfig, {
           sksOwned: configPreviouslySksOwned,
+          configWasFresh,
           inheritedText: inheritedCodexConfig
         }),
         generatedCodexConfigPath,
@@ -979,16 +987,42 @@ function upsertTomlTable(text: any, table: any, block: any) {
         };
         created.push('.codex/config.toml merge skipped (manual repair required)');
       } else {
-        await writeTextAtomic(generatedCodexConfigPath, managedCodexConfig);
-        codexConfigInstall = {
-          ok: true,
-          status: managedCodexConfig === existingCodexConfig ? 'present' : 'written',
-          config_path: generatedCodexConfigPath,
-          backup_path: null,
-          manual_blockers: [],
-          warnings: officialSubagentConfigWarnings(managedCodexConfig, inheritedCodexConfig)
-        };
-        created.push('.codex/config.toml');
+        // Route through the ownership guard instead of writing straight to
+        // disk. The bare write rewrote configs this same run had proved were
+        // NOT SKS-owned, half-migrating a user's file into a state doctor --fix
+        // then refused to touch. `ownershipVerified` keeps the fresh-install and
+        // proven-owner paths writing exactly as before.
+        const guarded = await writeCodexConfigGuarded({
+          root,
+          configPath: generatedCodexConfigPath,
+          before: existingCodexConfig,
+          cause: 'sks-init-managed-project-config',
+          ownershipVerified: configWasFresh || configPreviouslySksOwned,
+          preserveTextFormatting: true,
+          mutate: () => managedCodexConfig
+        });
+        codexConfigInstall = guarded.ok
+          ? {
+            ok: true,
+            status: managedCodexConfig === existingCodexConfig ? 'present' : 'written',
+            config_path: generatedCodexConfigPath,
+            backup_path: guarded.backup_path,
+            manual_blockers: [],
+            warnings: officialSubagentConfigWarnings(managedCodexConfig, inheritedCodexConfig)
+          }
+          : {
+            ok: false,
+            status: guarded.status,
+            config_path: generatedCodexConfigPath,
+            backup_path: guarded.backup_path,
+            manual_blockers: [`manual_unmanaged_project_codex_config:${guarded.status}`],
+            warnings: [],
+            operator_actions: [
+              `${generatedCodexConfigPath} is not proven SKS-owned, so setup left it unchanged. `
+              + 'Run `sks config adopt` to bring it under management, or delete it and re-run `sks setup`.'
+            ]
+          };
+        created.push(guarded.ok ? '.codex/config.toml' : '.codex/config.toml preserved (user-owned)');
       }
     }
   }
