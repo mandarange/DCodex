@@ -16,8 +16,8 @@ thread keeps them and is re-pinned against the live generations, and the blocker
 is retained for a pin that really would move the thread.
 
 Regenerated from the candidate commit: the release gate DAG, canonical tests, the
-isolated 7.6.0→8.5.0 upgrade smoke, the macOS Menu Bar proof, the pack receipt,
-and the release-check stamp. `inspectMainPushGuard` reports
+isolated 7.6.0 to 8.5.0 upgrade smoke, the macOS Menu Bar proof, the pack
+receipt, and the release-check stamp. `inspectMainPushGuard` reports
 `physical_proof_requirement_missing` and nothing else; that evidence requires a
 GitHub-attested capture run and cannot be produced locally.
 
