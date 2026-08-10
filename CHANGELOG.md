@@ -4,6 +4,18 @@
 
 
 
+## [8.5.0] - 2026-08-10
+
+### Fixed
+
+- Codex-LB session pins survive catalog churn. `policy_generation` digests the
+  entire route map, so an unrelated model appearing or a bridge restart
+  regenerating the catalog aged every live pin at once and surfaced as an
+  intermittent `session_pin_route_unavailable` mid-session. Both resolvers now
+  compare a pin against the current route: the thread keeps its provider and is
+  re-pinned against the live generations, and the blocker is reserved for a pin
+  whose provider or upstream model really would change.
+
 ## [8.4.0] - 2026-08-09
 
 ### Added
@@ -13,6 +25,27 @@
   read-only `sks triwiki atlas-*` inspection, and
   `architecture-map:*` release/confidence gates behind
   `src/scripts/architecture-map-check.ts`.
+
+### Changed
+
+- `npm run release:check:full` runs in roughly half the time (383s → 221s on a
+  10-core host): the expensive release inspections are memoized per process on
+  content-addressed keys, whole-tree digests reuse a stat fingerprint, the Swift
+  latency harness is content-addressed, and the gate cache, cache bridge, and
+  TriWiki proof bank are bounded instead of growing without limit.
+
+### Fixed
+
+- The macOS Menu Bar install check no longer forbids the `KeepAlive` its own
+  installer has emitted since 8.3.1, which had made the macOS Menu Bar release
+  proof impossible to seal on any machine.
+- The isolated upgrade smoke can complete: its sandbox `launchctl` stub answers
+  an absent service the way launchctl does, accepts a bootout of this product's
+  own labels only, and its process-discovery stubs are wired through the
+  injection flag that makes them take effect.
+- `inspectMainPushGuard` compares recorded paths as paths, so a doctor report
+  resolved to `/private/var/...` no longer reads as a different directory from
+  the `/var/...` the sandbox recorded.
 
 ### Removed
 

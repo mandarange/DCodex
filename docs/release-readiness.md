@@ -1,6 +1,31 @@
-# SKS 8.4.0 Release Readiness
+# SKS 8.5.0 Release Readiness
 
-> Supersedes the 8.3.3 readiness narrative for the Architecture Map (AMG/ADR) release line. Historical 8.3.3 evidence below remains for upgrade context.
+## Current decision
+
+**SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
+
+8.5.0 is a single-fix candidate on top of shipped 8.4.0. A Codex-LB session pin
+records the catalog and route-policy generations it was minted under, and both
+resolvers refused any pin whose stamps had moved. `policy_generation` digests the
+entire route map, so an unrelated model appearing or a bridge restart
+regenerating the catalog aged every live pin at once — threads that had never
+been pinned kept working, which is what made `session_pin_route_unavailable` look
+intermittent. A pin now constrains the request to its provider and upstream
+model rather than to its bookkeeping: when the current route still names them the
+thread keeps them and is re-pinned against the live generations, and the blocker
+is retained for a pin that really would move the thread.
+
+Regenerated from the candidate commit: the release gate DAG, canonical tests, the
+isolated 7.6.0→8.5.0 upgrade smoke, the macOS Menu Bar proof, the pack receipt,
+and the release-check stamp. `inspectMainPushGuard` reports
+`physical_proof_requirement_missing` and nothing else; that evidence requires a
+GitHub-attested capture run and cannot be produced locally.
+
+> Supersedes the 8.4.0 and 8.3.3 readiness narratives. Historical evidence below remains for upgrade context.
+
+# SKS 8.4.0 Release Readiness (historical)
+
+> Superseded the 8.3.3 readiness narrative for the Architecture Map (AMG/ADR) release line. Historical 8.3.3 evidence below remains for upgrade context.
 
 # SKS 8.3.3 Release Readiness (historical)
 

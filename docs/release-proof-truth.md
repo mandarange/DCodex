@@ -1,28 +1,27 @@
-# Release Proof Truth — 8.4.0
+# Release Proof Truth — 8.5.0
 
 ## Current assertion
 
-8.3.3 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
-candidate fixes two strict-decoder/contract drift regressions — the SKS Center
-Combined Model Catalog refresh rejecting the status object nested inside a
-command result, and the Codex Desktop model picker burying codex-lb gateway
-models under the OpenRouter catalog — and pins both with regression tests.
-This document does not authorize publication, deployment, a credential change,
-a Git tag, or a push. Exact-commit proof can exist only after the candidate is
-committed and all source-bound gates are regenerated from that clean commit.
+8.5.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
+candidate carries one behavioral fix on top of shipped 8.4.0: a Codex-LB session
+pin is no longer voided by catalog churn it had no part in, which is what made
+`session_pin_route_unavailable` appear intermittently mid-session. This document
+does not authorize publication, deployment, a credential change, a Git tag, or a
+push. Exact-commit proof can exist only after the candidate is committed and all
+source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 8.3.1 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 8.3.3 evidence.
+All release artifacts bound to 8.4.0 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 8.5.0 evidence.
 
 ## Claim ledger
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
-| SKS Center decodes the status nested inside a command result | passed-hermetic in the integrated working tree; not exact-commit proof | the envelope trio (`ok`/`execution_ok`/`command_summary`) is allowed and type-checked, never required; the compiled Swift truth harness proves nested decode succeeds, mistyped envelope values fail, and unknown top-level keys stay rejected; a live Refresh recorded "succeeded · Catalog report generated" |
-| codex-lb models precede openrouter rows with picker priority 100 | passed-hermetic in the integrated working tree; not exact-commit proof | `compareModels` orders every codex-lb row before every openrouter row and remains a total order for unknown providers; codex-lb rows default to ModelInfo `priority` 100 with upstream priority winning; the combined-catalog test pins ordering and priorities; user confirmation of the live Desktop picker remains outstanding |
-| Combined catalog rows remain full Codex ModelInfo supersets | passed-hermetic in the integrated working tree; not exact-commit proof | the 8.3.1 superset contract is unchanged; `codex features list` parsed the resynced catalog |
-| All checked version authorities report 8.3.3 | passed-hermetic in the integrated working tree; not exact-commit proof | the version bump synced package/lock/plugin, TypeScript version, Rust manifest/lock, README, changelog, and release-doc surfaces; `release:version-truth` must be re-run from the clean candidate commit |
-| The reported 8.3.3 package is ready to publish | not proved | requires a clean exact-commit build, release gates including the native `codex-sdk:real-smoke` gate (blocked on native ChatGPT quota until credits, an account switch, or 2026-08-14), package receipt, provenance, and the operator's final registry checks |
+| A session pin survives catalog churn that leaves its route unchanged | passed-hermetic | both resolvers compare the pin against the current route and reissue it against the live generations; pinned by unit, bridge, and architecture-hardening tests, and by a reproduction in which adding one unrelated model changes `policy_generation` |
+| A session pin whose provider or upstream model would change still fails | passed-hermetic | `session_pin_route_unavailable` is retained for that case and for a pin naming a provider or upstream the resolver cannot compare; pinned by the same three suites |
+| All checked version authorities report 8.5.0 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, changelog, and release-doc surfaces are bumped together |
+| The reported 8.5.0 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, release-check stamp, and the operator's final registry checks |
+| 8.5.0 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
 
 ## Evidence classes
 
@@ -41,7 +40,7 @@ fixture, or package dry run cannot promote a real-environment row to passed.
 
 Paseo is an independent external product. Sneakoscope does not bundle its
 daemon, wrap its CLI, probe its health, own its authentication or relay
-lifecycle, or require a live Paseo session as 8.3.3 release proof. The owned
+lifecycle, or require a live Paseo session as 8.5.0 release proof. The owned
 contract is limited to the committed `paseo.json` and accurate usage guidance.
 
 The active Telegram command, transport, Doctor projection, native poller and
@@ -52,13 +51,13 @@ not evidence of an active integration.
 
 ## Exact-commit release evidence
 
-Before any release claim, regenerate and verify current 8.3.3-bound artifacts
+Before any release claim, regenerate and verify current 8.5.0-bound artifacts
 from the clean handoff commit, including the build manifest, version metadata,
 package proof, pack receipt, release provenance, and release-check stamp. Each
 must bind the exact source digest, Git commit, tarball bytes, and package
 version required by its schema.
 
-Existing 8.3.1 and earlier canonical-test proofs, pack receipts, provenance,
+Existing 8.4.0 and earlier canonical-test proofs, pack receipts, provenance,
 and stamps are stale for this candidate. Local focused tests and a dry-run
 tarball remain preparation evidence only until the repository's clean-commit
 release flow produces current receipts.
@@ -67,14 +66,20 @@ release flow produces current receipts.
 
 The following remain **not-run-real** or **blocked-external**:
 
-- clean-commit full release gates and exact-tarball installed smoke, including
-  the release-blocking native `codex-sdk:real-smoke` gate whose isolated
-  native ChatGPT account reports its usage limit resets 2026-08-14;
-- user confirmation that the live Codex Desktop model picker now lists the
-  codex-lb gateway models (the host boundary policy forbids driving
-  `com.openai.codex` directly);
-- current npm identity, maintainer, registry-version, and dist-tag read-back;
+- source-bound physical release evidence. `inspectMainPushGuard` reports
+  `physical_proof_requirement_missing` until the publish workflow produces a
+  GitHub-attested capture run; `gh attestation verify` cannot be satisfied by
+  any local run, so this is the one release requirement no local flow can meet;
+- user confirmation that a live Codex Desktop session keeps its pinned provider
+  across a catalog refresh (the host boundary policy forbids driving
+  `com.openai.codex` directly, so the fix is proved hermetically and by
+  reproduction, not against the running Desktop app);
 - npm publication or dist-tag mutation.
+
+Regenerated from the candidate commit, the release gate DAG, canonical tests,
+the isolated 7.6.0→8.5.0 upgrade smoke, and the macOS Menu Bar proof are
+**passed-hermetic**; the live `codex-sdk:real-smoke` and Codex core real probes
+report `proven` against the real runtime.
 
 The operator owns those credentials and registry mutations. Git promotion is
 allowed only under an explicit user request after exact candidate checks and
