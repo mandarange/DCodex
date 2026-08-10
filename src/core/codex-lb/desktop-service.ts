@@ -12,6 +12,8 @@ import {
   prepareRetiredDesktopBridgeRuntime,
 } from './desktop-bridge-migration/retired-runtime-cleanup.js';
 import { canonicalizeBridgeModelId, normalizeBridgeUpstreamModelId, sha256Stable } from './route-index.js';
+import { desktopBridgeRuntimeVersion, desktopBridgeRuntimeVersionStale } from './desktop-bridge/state.js';
+import { PACKAGE_VERSION } from '../version.js';
 import type { BridgeProviderId, BridgeRoutingPolicy, ProviderSessionPin } from './bridge-contracts.js';
 import {
   DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES, DESKTOP_BRIDGE_LAUNCHD_LABEL, desktopBridgeConfigGeneration,
@@ -321,6 +323,13 @@ export async function desktopBridgeServiceStatus(options: DesktopBridgeServiceOp
   else try { const runtime = await resolveDesktopBridgeRuntimeConfig({ ...options, home, settingsPath: paths.settings_path }); expected = desktopBridgeConfigGeneration(runtime.config); source = runtime.credential_source; sources = runtime.credential_sources; } catch (error) { blockers.push(safeServiceError(error)); }
   const bridge = await getDesktopBridgeStatus({ statePath: paths.state_path, ...(expected ? { expectedConfigGeneration: expected } : {}), ...(options.processExists ? { processExists: options.processExists } : {}) });
   const launchd = await inspectLaunchd(options, service); if (bridge.status !== 'running') blockers.push(bridgeStatusBlocker(bridge)); if (launchd.loaded && !launchd.running) blockers.push('desktop_bridge_launchd_not_running');
+  // A running bridge older than the installed package keeps serving the old
+  // code: upgrading replaces the files on disk but never restarts this
+  // long-lived launchd service. Every bridge fix stayed invisible until a manual
+  // restart, with nothing reporting why.
+  if (bridge.status === 'running' && desktopBridgeRuntimeVersionStale(bridge.state)) {
+    blockers.push(`desktop_bridge_runtime_version_stale:${desktopBridgeRuntimeVersion(bridge.state) || 'pre-8.6.2'}:${PACKAGE_VERSION}`);
+  }
   return { schema: DESKTOP_BRIDGE_SERVICE_SCHEMA, ok: bridge.status === 'running' && blockers.length === 0, supported: true, installed: await exists(paths.launch_agent_path), loaded: launchd.loaded, running: bridge.status === 'running', status: !settings ? 'settings_missing' : blockers.some((b) => b.includes('credential')) ? 'credentials_unavailable' : bridge.status, service, paths, state: bridge.state, settings, expected_config_generation: expected, credential_source: source, credential_sources: sources, blockers: [...new Set(blockers.filter(Boolean))] };
 }
 

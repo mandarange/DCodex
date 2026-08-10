@@ -4,6 +4,42 @@
 
 
 
+## [8.6.2] - 2026-08-11
+
+### Fixed
+
+- A bridge fix now actually reaches the user. The Desktop Bridge is a
+  long-lived launchd service, so upgrading the package replaces the files on
+  disk while the running process keeps executing the code it started with —
+  which is why 8.6.1's subagent fix appeared not to have landed for anyone who
+  upgraded without rebooting the service. Nothing could even detect it: the
+  bridge state recorded no version. The serving process now records
+  `sks_version`, `desktopBridgeServiceStatus` reports
+  `desktop_bridge_runtime_version_stale:<running>:<installed>`, and
+  `sks doctor --fix` restarts a stale bridge. A state written by an older
+  bridge has no version field and is treated as stale, which is exactly the
+  case in the field today.
+
+- Rejected bridge requests are recorded. The bridge emitted a single `started`
+  line in its entire lifetime and nothing when it refused a request, so a bridge
+  rejecting every request looked identical in the logs to one serving them
+  perfectly — diagnosing `bridge_codex_session_identity_mismatch` required
+  reading the source. Refusals now log a structured
+  `sks.desktop_bridge.rejected` line carrying the error code, transport, method
+  and pathname. Never headers, bodies, query strings or credentials: the
+  per-client capability segment is redacted, and a rejection storm is capped at
+  a small per-code burst followed by a periodic summary, so a reconnect loop
+  costs a bounded number of lines.
+
+- `sks doctor` run from the home directory no longer claims the global Codex
+  config. The project root is the working directory, so running from `~` made
+  `<root>/.codex/config.toml` resolve to `~/.codex/config.toml` — the
+  host-owned global config — which the project-config repair then rewrote and,
+  since 8.5.0, stamped the SKS ownership marker into. It is now recognised and
+  skipped with an operator action naming the real fix: run from a project
+  directory. `splitCodexProjectConfigPolicy` already refused this case; the
+  guard is now shared.
+
 ## [8.6.1] - 2026-08-10
 
 ### Fixed

@@ -8,6 +8,9 @@ import { getCodexInfo } from '../core/codex-adapter.js';
 import { rustInfo } from '../core/rust-accelerator.js';
 import { codexAppIntegrationStatus } from '../core/codex-app.js';
 import { desktopBridgeStatusV3, executeDesktopBridgeCommandV3 } from '../core/codex-lb/desktop-controller-v3.js';
+import { bootstrapExistingDesktopBridgeService, desktopBridgeServiceStatus } from '../core/codex-lb/desktop-service.js';
+import { desktopBridgeRuntimeVersion, desktopBridgeRuntimeVersionStale } from '../core/codex-lb/desktop-bridge/state.js';
+import { PACKAGE_VERSION } from '../core/version.js';
 import { inspectCodexConfigReadability } from '../core/codex/codex-config-readability.js';
 import {
   inspectOAuthCallbackPortConflict,
@@ -60,6 +63,44 @@ export {
 
 export function doctorArgWarnings(args: any[] = []): string[] {
   return baseDoctorArgWarnings(args);
+}
+
+/**
+ * Restart a Desktop Bridge whose serving process predates the installed package.
+ *
+ * The bridge is a long-lived launchd service, so `npm i -g sneakoscope@X`
+ * replaces the files on disk while the running process keeps executing the code
+ * it started with. Every bridge-side fix therefore stayed invisible until
+ * someone restarted it by hand, and nothing reported the mismatch.
+ */
+export async function restartStaleDesktopBridgeRuntime(input: {
+  home: string;
+  fix: boolean;
+}): Promise<{ restarted: boolean; warnings: string[]; blockers: string[] }> {
+  // Restarting the service shells out to the real `/bin/launchctl`, which the
+  // sandboxed harnesses deliberately have no seam for. Never reach for it from
+  // an isolated run: a real user environment is the only place it belongs, and
+  // the only place the staleness can actually hurt.
+  if (process.env.SKS_TEST_ISOLATION === '1' || process.env.SKS_RELEASE_UPGRADE_SMOKE === '1') {
+    return { restarted: false, warnings: [], blockers: [] };
+  }
+  const service = await desktopBridgeServiceStatus({ home: input.home }).catch(() => null);
+  if (!service?.running || !desktopBridgeRuntimeVersionStale(service.state)) {
+    return { restarted: false, warnings: [], blockers: [] };
+  }
+  const running = desktopBridgeRuntimeVersion(service.state) || 'pre-8.6.2';
+  if (!input.fix) {
+    return {
+      restarted: false,
+      warnings: [],
+      blockers: [`desktop_bridge_runtime_version_stale:${running}:${PACKAGE_VERSION}`]
+    };
+  }
+  const restarted = await bootstrapExistingDesktopBridgeService({ home: input.home }).catch(() => null);
+  const nowRunning = restarted?.running === true && !desktopBridgeRuntimeVersionStale(restarted.state);
+  return nowRunning
+    ? { restarted: true, warnings: [`desktop_bridge_runtime_restarted:${running}:${PACKAGE_VERSION}`], blockers: [] }
+    : { restarted: false, warnings: [], blockers: [`desktop_bridge_runtime_version_stale:${running}:${PACKAGE_VERSION}`] };
 }
 
 export function deferCommandAliasCleanupToMigrationReceipt(result: any) {
@@ -1050,11 +1091,22 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
                 rollback_evidence: 'combined_catalog_previous_generation_preserved'
               };
               try {
+                // A bridge process older than the installed package keeps serving
+                // the OLD code: upgrading replaces the files on disk and never
+                // restarts this long-lived launchd service, so a shipped bridge
+                // fix looks like it never landed. Restart it before anything else.
+                const restarted = await restartStaleDesktopBridgeRuntime({ home: root, fix: doctorFix });
                 const status: any = await desktopBridgeStatusV3({ home: root, env: process.env });
                 const blockers = (status?.readiness?.blockers || []).map(String);
                 const stale = blockers.filter((blocker: string) => blocker.endsWith('_catalog_stale'));
                 if (!status?.management?.managed || stale.length === 0) {
-                  return { ...base, ok: true, repaired: false, blockers: [] };
+                  return {
+                    ...base,
+                    ok: restarted.blockers.length === 0,
+                    repaired: restarted.restarted,
+                    warnings: restarted.warnings,
+                    blockers: restarted.blockers
+                  };
                 }
                 const sync: any = await executeDesktopBridgeCommandV3({ operation: 'catalog.sync' }, { home: root, env: process.env });
                 const synced = sync?.ok === true && sync?.execution?.ok === true;

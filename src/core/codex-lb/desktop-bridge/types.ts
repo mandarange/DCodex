@@ -146,6 +146,14 @@ export interface DesktopBridgePublicStateV2 {
   provider_credential_generations: Record<BridgeProviderId, string>;
   last_verified_probe_ids: string[];
   config_generation: string;
+  /**
+   * SKS version of the process actually serving. The bridge is a long-lived
+   * launchd service, so upgrading the package replaces the files on disk while
+   * the running process keeps executing the old code — and without this field
+   * nothing could tell. Optional so a state written by an older bridge still
+   * validates; absence is itself treated as "older than the installed package".
+   */
+  sks_version?: string;
 }
 
 export type DesktopBridgePublicState = DesktopBridgePublicStateV2;

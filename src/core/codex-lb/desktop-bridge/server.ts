@@ -4,6 +4,7 @@ import net, { type Server as NetServer, type Socket } from 'node:net';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { forwardHttp, prepareDesktopBridgeRequest } from './http-forward.js';
+import { createDesktopBridgeRejectionLogger } from './rejection-log.js';
 import {
   assertAllowedOrigin,
   assertAllowedPath,
@@ -115,12 +116,22 @@ function rejectionStatusText(status: number): string {
   return 'Bad Request';
 }
 
-function writeBridgeRejection(res: ServerResponse, error: unknown): void {
+const logBridgeRejection = createDesktopBridgeRejectionLogger();
+
+function writeBridgeRejection(res: ServerResponse, error: unknown, req?: IncomingMessage): void {
+  const rejectedCode = safeBridgeErrorCode(error);
+  logBridgeRejection({
+    code: rejectedCode,
+    transport: 'http',
+    method: req?.method,
+    url: req?.url,
+    status: rejectionStatus(rejectedCode),
+  });
   if (res.headersSent) {
     res.destroy(error instanceof Error ? error : undefined);
     return;
   }
-  const code = safeBridgeErrorCode(error);
+  const code = rejectedCode;
   res.writeHead(rejectionStatus(code), {
     'content-type': 'application/json',
     'cache-control': 'no-store',
@@ -129,7 +140,14 @@ function writeBridgeRejection(res: ServerResponse, error: unknown): void {
   res.end(JSON.stringify({ error: { type: 'sks_bridge_rejection', code, message: code } }));
 }
 
-function writeUpgradeRejection(socket: Duplex, error: unknown): void {
+function writeUpgradeRejection(socket: Duplex, error: unknown, req?: IncomingMessage): void {
+  logBridgeRejection({
+    code: safeBridgeErrorCode(error),
+    transport: 'websocket',
+    method: req?.method,
+    url: req?.url,
+    status: rejectionStatus(safeBridgeErrorCode(error)),
+  });
   // A late async failure (for example an upstream websocket handshake error)
   // can race the peer closing or a partially-written upgrade response; writing
   // then raises ERR_STREAM_WRITE_AFTER_END as an unhandled 'error' event and
@@ -262,7 +280,7 @@ export async function startPreparedDesktopBridge(
         res.once('finish', () => {
           if (!req.complete) req.destroy();
         });
-        writeBridgeRejection(res, error);
+        writeBridgeRejection(res, error, req);
       } finally {
         if (admitted) activeRequests -= 1;
       }
@@ -296,9 +314,9 @@ export async function startPreparedDesktopBridge(
         head,
         input,
         `${desktopBridgeListenOrigin(input)}${authenticated.clientBasePath}`,
-      ).catch((error) => writeUpgradeRejection(socket, error));
+      ).catch((error) => writeUpgradeRejection(socket, error, req));
     } catch (error) {
-      writeUpgradeRejection(socket, error);
+      writeUpgradeRejection(socket, error, req);
     }
   });
 

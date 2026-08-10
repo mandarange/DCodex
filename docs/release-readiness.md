@@ -1,10 +1,10 @@
-# SKS 8.6.1 Release Readiness
+# SKS 8.6.2 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 
-8.6.1 is a stability candidate on top of shipped 8.4.0, covering the Codex-LB
+8.6.2 is a stability candidate on top of shipped 8.4.0, covering the Codex-LB
 session pin and the Codex config surface that `sks doctor --fix` owns.
 
 A Codex-LB session pin records the catalog and route-policy generations it was
@@ -63,11 +63,21 @@ opening the wider one; capacity is now recomputed against the live thread-slot
 ledger when the target outgrows the plan, while deliberate wave staging and a
 genuine slot shortage both still throttle.
 
-With those corrected the canonical suite is green end to end: 2914 of 2914,
+A shipped bridge fix could not reach anyone. The Desktop Bridge is a long-lived
+launchd service, so upgrading replaced the files on disk while the running
+process kept executing its original code, and the bridge state recorded no
+version for anything to notice. The serving process now records its version, the
+service status reports a stale runtime, `doctor --fix` restarts it, and refused
+requests are logged — secret-free and rate-limited — where previously the bridge
+emitted one line in its whole lifetime and nothing on rejection. Running
+`sks doctor` from the home directory also no longer lets the project-config
+repair claim the host-owned global Codex config.
+
+With those corrected the canonical suite is green end to end: 2918 of 2918,
 zero failures, where 8.5.0 stood at 2870 of 2874.
 
 Regenerated from the candidate commit: the release gate DAG, canonical tests, the
-isolated 7.6.0 to 8.6.1 upgrade smoke, the macOS Menu Bar proof, the pack
+isolated 7.6.0 to 8.6.2 upgrade smoke, the macOS Menu Bar proof, the pack
 receipt, and the release-check stamp. `inspectMainPushGuard` reports
 `physical_proof_requirement_missing` and nothing else; that evidence requires a
 GitHub-attested capture run and cannot be produced locally.

@@ -10,7 +10,7 @@ import {
   officialSubagentConfigWarnings,
   readInheritedOfficialSubagentConfigText
 } from '../subagents/official-subagent-config.js'
-import { writeCodexConfigGuarded } from './codex-config-guard.js'
+import { isCodexHomeConfigPath, writeCodexConfigGuarded } from './codex-config-guard.js'
 
 export interface AgentConfigFileRepairReport {
   schema: 'sks.agent-config-file-repair.v1'
@@ -58,6 +58,35 @@ export async function repairAgentConfigFileReferences(input: {
 }): Promise<AgentConfigFileRepairReport> {
   const root = path.resolve(input.root)
   const configPath = path.join(root, '.codex', 'config.toml')
+  // Running `sks doctor`/`sks setup` from the home directory makes the project
+  // root the home directory, so this "project config" is really the host-owned
+  // global Codex config. Rewriting it — and, since 8.5.0, stamping the SKS
+  // ownership marker into it — claims a file SKS does not own.
+  if (isCodexHomeConfigPath(configPath, {
+    ...(input.home ? { home: input.home } : {}),
+    ...(input.codexHome ? { codexHome: input.codexHome } : {})
+  })) {
+    return writeReport(input.reportPath, root, {
+      schema: 'sks.agent-config-file-repair.v1',
+      generated_at: nowIso(),
+      ok: true,
+      apply: input.apply === true,
+      config_path: configPath,
+      backup_path: null,
+      repaired_paths: [],
+      created_files: [],
+      removed_unsupported_fields: [],
+      skipped_unmanaged_paths: [configPath],
+      manual_required: false,
+      blockers: [],
+      warnings: ['project_config_is_codex_home_noop'],
+      operator_actions: [
+        `${configPath} is the global Codex config, not a project config — SKS left it untouched. `
+        + 'Run `sks doctor` from a project directory so the project config is repaired instead.'
+      ],
+      ownership_proof: { owned: false, reasons: [] }
+    })
+  }
   const configExists = await fs.stat(configPath).then((stat) => stat.isFile()).catch(() => false)
   const original = configExists ? await fs.readFile(configPath, 'utf8').catch(() => '') : ''
   const manifest = await readJson(path.join(root, '.sneakoscope', 'manifest.json'), null)

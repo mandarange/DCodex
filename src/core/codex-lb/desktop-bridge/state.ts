@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { PACKAGE_VERSION } from '../../version.js';
 import type { BridgeProviderId } from '../bridge-contracts.js';
 import type { DesktopBridgeConfig, DesktopBridgePublicState, DesktopBridgePublicStateV2 } from './types.js';
 import { DESKTOP_BRIDGE_STATE_SCHEMA, DesktopBridgeError } from './types.js';
@@ -43,7 +44,23 @@ export function createDesktopBridgePublicState(config: DesktopBridgeConfig, opti
     provider_registry_generation: registry.generation, route_policy_generation: config.routePolicy.policy_generation,
     catalog_generation: config.routePolicy.catalog_generation, enabled_providers: enabled,
     provider_credential_generations: credentialGenerations, last_verified_probe_ids: [], config_generation: desktopBridgeConfigGeneration(config),
+    sks_version: PACKAGE_VERSION,
   };
+}
+
+/**
+ * The version the running bridge is serving, or null when it predates the field.
+ * A bridge older than the installed package keeps serving the old code until it
+ * is restarted, which is how a shipped bridge fix can appear not to have landed.
+ */
+export function desktopBridgeRuntimeVersion(state: unknown): string | null {
+  const version = (state as { sks_version?: unknown } | null)?.sks_version;
+  return typeof version === 'string' && version.trim() ? version.trim() : null;
+}
+
+export function desktopBridgeRuntimeVersionStale(state: unknown, installed: string = PACKAGE_VERSION): boolean {
+  if (!state) return false;
+  return desktopBridgeRuntimeVersion(state) !== installed;
 }
 
 function isGeneration(value: unknown): boolean { return typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\r\n\0]/.test(value); }

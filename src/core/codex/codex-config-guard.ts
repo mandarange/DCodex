@@ -1,7 +1,8 @@
+import os from 'node:os'
 import path from 'node:path'
 import fsp from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
-import { appendJsonl, ensureDir, nowIso, readText, sha256, writeTextAtomic } from '../fsx.js'
+import { appendJsonl, ensureDir, nowIso, readText, sameFilesystemPathSync, sha256, writeTextAtomic } from '../fsx.js'
 import { diffCodexAppUiSnapshots, snapshotCodexAppUiState } from '../codex-app/codex-app-ui-state-snapshot.js'
 import { cleanupCodexConfigBackups, validateCodexConfigRoundTrip } from './codex-config-toml.js'
 import { hasManagedAgentsConfigFingerprint } from '../subagents/official-subagent-config.js'
@@ -686,6 +687,27 @@ export function ensureTrailingNewline(text: unknown = '') {
 
 export function isProjectCodexConfig(root: string, configPath: string): boolean {
   return path.resolve(configPath) === path.resolve(root, '.codex', 'config.toml')
+}
+
+/**
+ * True when a path that a caller believes is a PROJECT config is really the
+ * global Codex home config.
+ *
+ * `sks doctor` and `sks setup` take the working directory as the project root,
+ * so running either from the home directory makes `<root>/.codex/config.toml`
+ * resolve to `~/.codex/config.toml` — the host-owned global Codex config. The
+ * project-config repairs would then rewrite it, and since 8.5.0 stamp the SKS
+ * ownership marker into it, claiming a file SKS does not own.
+ * `splitCodexProjectConfigPolicy` already refused this case; every other
+ * project-config path has to refuse it too.
+ */
+export function isCodexHomeConfigPath(
+  configPath: string,
+  opts: { home?: string; codexHome?: string } = {}
+): boolean {
+  const home = opts.home || process.env.HOME || os.homedir()
+  const codexHome = opts.codexHome || process.env.CODEX_HOME || path.join(home, '.codex')
+  return sameFilesystemPathSync(path.resolve(configPath), path.resolve(codexHome, 'config.toml'))
 }
 
 export function hasSksManagedCodexConfigMarker(text: string): boolean {
