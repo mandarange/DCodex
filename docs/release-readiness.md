@@ -50,9 +50,9 @@ a mission no longer inherits an architecture-map requirement whose baseline the
 seed had already declined to write — the discarded seed result was the only
 reason four canonical tests could not pass.
 
-8.6.1 restores the official subagent lane. The Desktop Bridge required a
-request's `thread_id` and `session_id` to be equal, but a spawned agent runs in
-its own thread inside the parent's session, so every subagent request was
+This patch restores the official subagent lane. The Desktop Bridge treated a
+request's `thread_id` and `session_id` as one identity, but a spawned agent runs
+in its own thread inside the parent's session, so every subagent request was
 rejected with `bridge_codex_session_identity_mismatch` and no subagent could
 start at all. Only `thread_id` is used downstream — it keys the route and the
 provider pin, and a per-thread pin is what allows subagents to run in parallel.
