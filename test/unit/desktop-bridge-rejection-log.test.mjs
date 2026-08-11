@@ -71,6 +71,19 @@ test('a rejection storm stays bounded and reports what it suppressed', () => {
   assert.equal(parsed().length, before + 1);
 });
 
+test('a generic upstream failure records the underlying cause', () => {
+  // `bridge_upstream_unavailable` is safeBridgeErrorCode's catch-all for any
+  // error that is not a DesktopBridgeError, so on its own it names a symptom
+  // and leaves the operator with nowhere to go. The originating socket error's
+  // own code is appended; those are fixed identifiers carrying no request data.
+  const { log, parsed } = collector();
+  log({ code: 'bridge_upstream_unavailable:ECONNRESET', transport: 'http', method: 'POST', url: '/backend-api/codex/responses' });
+  const row = parsed()[0];
+  assert.equal(row.code, 'bridge_upstream_unavailable:ECONNRESET');
+  assert.equal(row.transport, 'http');
+  assert.equal(row.secret_fields_redacted, true);
+});
+
 test('a failing write never propagates out of the logger', () => {
   const log = createDesktopBridgeRejectionLogger({
     write: () => { throw new Error('EPIPE'); }

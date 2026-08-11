@@ -4,6 +4,35 @@
 
 
 
+## [8.6.5] - 2026-08-11
+
+### Fixed
+
+- `sks doctor --fix` restarts a stale Desktop Bridge again. The restart was
+  handed the PROJECT root where it needed the home directory, so it looked for
+  the bridge under the repository, found nothing, concluded it was not running,
+  and silently did nothing — leaving the long-lived launchd service on its
+  original code while every report said the repair had run. Measured on a real
+  install: a bridge up for 29 hours on pre-8.6.2 code restarted only once the
+  home directory was passed. The restart outcome is also carried through the
+  stale-catalog branch, which is the common case and previously discarded it.
+
+- The last unlogged bridge error path reports its cause. `writeHttpBridgeError`
+  was the fourth error writer in this module and the only one still silent,
+  which is why a reported 502 left nothing in the log at all.
+  `bridge_upstream_unavailable` is additionally the catch-all
+  `safeBridgeErrorCode` returns for anything that is not a bridge error, so it
+  names a symptom rather than a cause; the originating socket error code is now
+  recorded alongside it (`bridge_upstream_unavailable:ECONNRESET`), and those
+  identifiers carry no request data.
+
+- The image route stops recommending a command that cannot fix it.
+  `codex_imagegen_real_output_unverified` means no real image output has ever
+  been observed, which no `sks doctor` run can satisfy, yet the next action told
+  the operator to run `sks doctor --fix --full --yes` — the very command whose
+  own output carries that line. It now states the manual step, matching how the
+  Computer Use and Chrome review routes already report manual readiness.
+
 ## [8.6.4] - 2026-08-11
 
 ### Fixed

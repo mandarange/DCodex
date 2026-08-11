@@ -1095,7 +1095,14 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
                 // the OLD code: upgrading replaces the files on disk and never
                 // restarts this long-lived launchd service, so a shipped bridge
                 // fix looks like it never landed. Restart it before anything else.
-                const restarted = await restartStaleDesktopBridgeRuntime({ home: root, fix: doctorFix });
+                // The bridge lives under the real HOME, never under the project
+                // root. Passing `root` here looked for its settings inside the
+                // repository, found nothing, and returned "not running" — so the
+                // stale-runtime restart silently never happened.
+                const restarted = await restartStaleDesktopBridgeRuntime({
+                  home: path.resolve(process.env.HOME || os.homedir()),
+                  fix: doctorFix,
+                });
                 const status: any = await desktopBridgeStatusV3({ home: root, env: process.env });
                 const blockers = (status?.readiness?.blockers || []).map(String);
                 const stale = blockers.filter((blocker: string) => blocker.endsWith('_catalog_stale'));
@@ -1110,11 +1117,18 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
                 }
                 const sync: any = await executeDesktopBridgeCommandV3({ operation: 'catalog.sync' }, { home: root, env: process.env });
                 const synced = sync?.ok === true && sync?.execution?.ok === true;
+                // Carry the restart outcome through this branch too. A stale
+                // catalog is the common case, and dropping the result here hid
+                // both the restart and any reason it could not happen.
                 return {
                   ...base,
-                  ok: synced,
-                  repaired: synced,
-                  blockers: synced ? [] : (sync?.execution?.blockers || ['desktop_bridge_catalog_sync_failed']).map(String)
+                  ok: synced && restarted.blockers.length === 0,
+                  repaired: synced || restarted.restarted,
+                  warnings: restarted.warnings,
+                  blockers: [
+                    ...(synced ? [] : (sync?.execution?.blockers || ['desktop_bridge_catalog_sync_failed']).map(String)),
+                    ...restarted.blockers
+                  ]
                 };
               } catch (error: any) {
                 return { ...base, ok: false, repaired: false, blockers: [String(error?.message || 'desktop_bridge_catalog_sync_failed')] };

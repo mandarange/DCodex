@@ -343,6 +343,13 @@ function nextActionsForBlockers(blockers: string[]) {
 }
 
 function nextActionForRouteBlocker(scope: string, blocker: string) {
+  // A blocker that means "no real output has ever been observed" cannot be
+  // cleared by any doctor run, so telling the operator to run one — the very
+  // command whose output carries this line — is a loop with no exit. The
+  // capability section already prints the real step; say it here too.
+  if (scope === 'route-image' && /real_output_unverified|not_verified|unverified/.test(blocker)) {
+    return `Image route needs manual readiness (${blocker}): invoke Codex App \`$imagegen\` with gpt-image-2 in a fresh task and record the selected raster output path. No \`sks doctor\` run can satisfy this on its own.`
+  }
   if (scope === 'route-image') return `Repair image route capability (${blocker}): run \`sks doctor --fix --full --yes\`, then verify Codex App/image auth.`
   if (scope === 'route-computer-use') return `Computer Use route needs manual readiness (${blocker}); verify OS/App permissions before using that route.`
   if (scope === 'route-chrome-web-review') return `Chrome/web review route needs manual readiness (${blocker}); enable the Codex Chrome Extension before using signed-in browser review.`

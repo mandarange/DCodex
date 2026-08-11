@@ -4,6 +4,7 @@ import type { Socket } from 'node:net';
 import zlib from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import { buildProviderUpstreamHeaders, rewriteResponseHeaders } from './header-policy.js';
+import { createDesktopBridgeRejectionLogger } from './rejection-log.js';
 import { resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader } from './security.js';
 import { desktopBridgeListenOrigin } from './state.js';
 import { DesktopBridgeError, type DesktopBridgeResolvedCredential, type DesktopBridgeRouteContext, type PreparedDesktopBridgeConfig } from './types.js';
@@ -121,8 +122,31 @@ function connectTimeout(request: ClientRequest, config: PreparedDesktopBridgeCon
   });
 }
 
-function writeHttpBridgeError(res: ServerResponse, error: unknown): void {
+const logHttpRejection = createDesktopBridgeRejectionLogger();
+
+/**
+ * A Node socket failure (ECONNREFUSED, ETIMEDOUT, EPIPE …) is not a
+ * DesktopBridgeError, so `safeBridgeErrorCode` collapses it to the catch-all
+ * `bridge_upstream_unavailable`. That code names a symptom, not a cause, and
+ * this writer logged nothing at all — the third error path in this module to
+ * report a failure the operator then had no way to explain. The originating
+ * error's own code is recorded alongside it; those identifiers are fixed
+ * strings and carry no request data.
+ */
+function underlyingErrorCode(error: unknown): string | null {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^[A-Za-z0-9_]{1,64}$/.test(code) ? code : null;
+}
+
+function writeHttpBridgeError(res: ServerResponse, error: unknown, req?: IncomingMessage): void {
   const code = safeBridgeErrorCode(error);
+  const cause = code === 'bridge_upstream_unavailable' ? underlyingErrorCode(error) : null;
+  logHttpRejection({
+    code: cause ? `${code}:${cause}` : code,
+    transport: 'http',
+    ...(req?.method === undefined ? {} : { method: req.method }),
+    ...(req?.url === undefined ? {} : { url: req.url }),
+  });
   if (res.headersSent) { res.destroy(error instanceof Error ? error : undefined); return; }
   res.writeHead(code.startsWith('catalog_') || code.startsWith('session_') || code.includes('route_') ? 409 : 502, {
     'content-type': 'application/json', 'cache-control': 'no-store', connection: 'close',
@@ -201,5 +225,5 @@ export async function forwardHttp(
       if (request.body) upstream.end(request.body);
       else void pipeline(req, upstream).catch((error) => { if (!responseStarted) finish(error); });
     });
-  } catch (error) { writeHttpBridgeError(res, error); }
+  } catch (error) { writeHttpBridgeError(res, error, req); }
 }
