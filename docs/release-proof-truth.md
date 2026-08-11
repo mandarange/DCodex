@@ -1,8 +1,8 @@
-# Release Proof Truth — 8.6.2
+# Release Proof Truth — 8.6.3
 
 ## Current assertion
 
-8.6.2 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
+8.6.3 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
 candidate carries behavioral fixes on top of shipped 8.4.0: a Codex-LB session
 pin is no longer voided by catalog churn it had no part in (which is what made
 `session_pin_route_unavailable` appear intermittently mid-session), and the Codex
@@ -13,7 +13,7 @@ proof can exist only after the candidate is committed and all source-bound gates
 are regenerated from that clean commit.
 
 All release artifacts bound to 8.4.0 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 8.6.2 evidence.
+must not be renamed, copied, or treated as 8.6.3 evidence.
 
 ## Claim ledger
 
@@ -30,13 +30,14 @@ must not be renamed, copied, or treated as 8.6.2 evidence.
 | A mission never requires an architecture-map baseline the seed declined to write | passed-hermetic | reproduced: `seedArchitectureMapBaselineArtifacts` returns `ok: false` with remediation text on a root without a compiled context graph; the plan binding is dropped instead of leaving an unsatisfiable Stop gate, and the four canonical tests it blocked now pass |
 | A spawned subagent thread resolves to its own pin identity | passed-hermetic | reproduced against the compiled resolver: a child turn carrying the parent's `session_id` with its own `thread_id` was rejected as `bridge_codex_session_identity_mismatch` and now resolves; `desktop-bridge-transport.test.ts` pins the child, sibling, bare-WebSocket-header, same-field-conflict and missing-thread cases |
 | A decomposed wider wave is not throttled by the pre-decomposition plan | passed-hermetic | `wave-lifecycle.test.ts` pins all three arms: a grown target with host slots opens the full wave with no blocker, a live slot shortage still throttles, and a plan whose target never grew keeps its deliberate wave staging |
-| A bridge older than the installed package is detected and restarted | passed-hermetic | measured against the real long-running bridge on the development machine: `sks_version` absent, status reports `desktop_bridge_runtime_version_stale:pre-8.6.2:<installed>`; the restart is skipped under test isolation because it shells out to real launchctl |
+| A bridge older than the installed package is detected and restarted | passed-hermetic | measured against the real long-running bridge on the development machine: `sks_version` absent, status reports `desktop_bridge_runtime_version_stale:pre-8.6.3:<installed>`; the restart is skipped under test isolation because it shells out to real launchctl |
 | A refused bridge request is logged without leaking a secret | passed-hermetic | `test/unit/desktop-bridge-rejection-log.test.mjs` pins that the capability path segment and query string never reach the log, that a storm is capped at a per-code burst plus a summary, and that a failing write cannot take the bridge down |
 | A home-directory root cannot claim the global Codex config | passed-hermetic | reproduced with a host-owned global config: the marker is no longer stamped and the repair reports `project_config_is_codex_home_noop` with the operator action |
-| The canonical suite is green | passed-hermetic | 2918 of 2918, zero failures, from the candidate tree |
-| All checked version authorities report 8.6.2 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, changelog, and release-doc surfaces are bumped together |
-| The reported 8.6.2 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, release-check stamp, and the operator's final registry checks |
-| 8.6.2 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
+| npm publish refuses a missing login before building the tarball | passed-hermetic | reproduced against the real expired token that failed an 8.6.2 publish: preflight now exits 1 with npm_publish_auth_missing_or_expired and names the login step; test/unit/publish-registry-auth.test.mjs pins that pack, dry-run, CI trusted publishing and offline runs all skip the check |
+| The canonical suite is green | passed-hermetic | 2923 of 2923, zero failures, from the candidate tree |
+| All checked version authorities report 8.6.3 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, changelog, and release-doc surfaces are bumped together |
+| The reported 8.6.3 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, release-check stamp, and the operator's final registry checks |
+| 8.6.3 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
 
 ## Evidence classes
 
@@ -55,7 +56,7 @@ fixture, or package dry run cannot promote a real-environment row to passed.
 
 Paseo is an independent external product. Sneakoscope does not bundle its
 daemon, wrap its CLI, probe its health, own its authentication or relay
-lifecycle, or require a live Paseo session as 8.6.2 release proof. The owned
+lifecycle, or require a live Paseo session as 8.6.3 release proof. The owned
 contract is limited to the committed `paseo.json` and accurate usage guidance.
 
 The active Telegram command, transport, Doctor projection, native poller and
@@ -66,7 +67,7 @@ not evidence of an active integration.
 
 ## Exact-commit release evidence
 
-Before any release claim, regenerate and verify current 8.6.2-bound artifacts
+Before any release claim, regenerate and verify current 8.6.3-bound artifacts
 from the clean handoff commit, including the build manifest, version metadata,
 package proof, pack receipt, release provenance, and release-check stamp. Each
 must bind the exact source digest, Git commit, tarball bytes, and package
@@ -92,7 +93,7 @@ The following remain **not-run-real** or **blocked-external**:
 - npm publication or dist-tag mutation.
 
 Regenerated from the candidate commit, the release gate DAG, canonical tests,
-the isolated 7.6.0→8.6.2 upgrade smoke, and the macOS Menu Bar proof are
+the isolated 7.6.0→8.6.3 upgrade smoke, and the macOS Menu Bar proof are
 **passed-hermetic**; the live `codex-sdk:real-smoke` and Codex core real probes
 report `proven` against the real runtime.
 

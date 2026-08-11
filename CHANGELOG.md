@@ -4,9 +4,21 @@
 
 
 
-## [8.6.2] - 2026-08-11
+## [8.6.3] - 2026-08-11
 
 ### Fixed
+
+- `npm publish` fails on a missing login before it builds the tarball, not
+  after. The publish preflight verified that the package was built correctly
+  but never that it could be uploaded, so a run passed every lifecycle stage
+  and then died on the upload. npm answers an unauthorized publish with 404,
+  not 401, so an expired token surfaces as `404 Not Found - PUT` — which reads
+  as "this package does not exist" rather than "you are logged out", and did
+  exactly that on a real release after a 2.7 MB tarball had already been built
+  and streamed. Preflight now checks `npm whoami` and package-maintainer
+  membership first and names the login step. Only a real upload is gated:
+  `npm pack`, `--dry-run`, CI trusted publishing (which has no npm identity)
+  and an explicitly offline run all skip it.
 
 - A bridge fix now actually reaches the user. The Desktop Bridge is a
   long-lived launchd service, so upgrading the package replaces the files on
