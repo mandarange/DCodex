@@ -26,7 +26,6 @@ export interface NarutoConcurrencyGovernorDecision {
   total_work_items: number
   safe_active_workers: number
   headless_workers: number
-  local_llm_parallel: number
   remote_codex_parallel: number
   process_parallel: number
   git_worktree_parallel: number
@@ -48,7 +47,7 @@ export interface NarutoConcurrencyGovernorDecision {
  * Official Codex subagents are host-managed remote threads: local CPU/RAM/fd
  * budgets and an unmeasured default API budget do not cap that lane. A measured
  * external host cap or explicitly configured API budget still applies exactly.
- * Heavy local backends (codex-sdk/process/ollama) are bounded by the remote
+ * Heavy backends (codex-sdk/process) are bounded by the remote
  * API rate-limit budget and 1.5 GB/worker; light lanes (any other backend) skip
  * the remote budget and use 0.5 GB/worker, so they can scale into the hundreds
  * when the real memory/fd/cpu floors below allow it.
@@ -73,7 +72,7 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
   const totalGb = hardware.total_memory_bytes / (1024 * 1024 * 1024)
   const reservedInteractiveGb = Math.max(2, totalGb * 0.2)
   const memoryBudgetGb = Math.max(0.5, freeGb - reservedInteractiveGb)
-  const heavy = backend === 'codex-sdk' || backend === 'process' || backend === 'ollama'
+  const heavy = backend === 'codex-sdk' || backend === 'process'
   const gbPerWorker = heavy
     ? normalizePositiveNumber(process.env.SKS_NARUTO_GB_PER_WORKER, 1.5)
     : normalizePositiveNumber(process.env.SKS_NARUTO_LIGHT_GB_PER_WORKER, 0.5)
@@ -90,7 +89,6 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
     process.env.SKS_NARUTO_GIT_WORKTREE_CAP,
     Math.min(requestedWorkers, processCap)
   )
-  const localLlmParallel = Math.max(1, Math.min(frameBudget, hardware.local_llm_max_parallel_requests))
   const remoteCodexParallel = Math.max(1, Math.min(hardware.remote_api_rate_limit_budget, requestedWorkers, frameBudget))
   const externalCodexHostCap = input.externalCodexHostCap === undefined
     ? null
@@ -98,8 +96,6 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
   const explicitRemoteApiBudget = hardware.remote_api_rate_limit_budget_source !== 'default_unmeasured'
   const backendBudget = officialSubagentLane
     ? explicitRemoteApiBudget ? remoteCodexParallel : frameBudget
-    : backend === 'ollama' || backend === 'local-llm'
-    ? localLlmParallel
     : backend === 'codex-sdk'
       ? Math.min(remoteCodexParallel, processCap)
       : processCap
@@ -178,7 +174,6 @@ export function decideNarutoConcurrency(input: NarutoConcurrencyGovernorInput = 
     total_work_items: totalWorkItems,
     safe_active_workers: safeActiveWorkers,
     headless_workers: officialSubagentLane ? 0 : safeActiveWorkers,
-    local_llm_parallel: localLlmParallel,
     remote_codex_parallel: remoteCodexParallel,
     process_parallel: officialSubagentLane ? frameBudget : processCap,
     git_worktree_parallel: officialSubagentLane ? frameBudget : gitWorktreeCap,

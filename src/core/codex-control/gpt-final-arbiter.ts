@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { nowIso, readJson, writeJsonAtomic } from '../fsx.js'
 import { validateJsonSchemaRecursive } from '../json-schema-validator.js'
-import { evaluateLocalCollaborationFinalGate, resolveLocalCollaborationPolicy } from '../local-llm/local-collaboration-policy.js'
+import { evaluateGptFinalGate } from './gpt-final-gate.js'
 import { runCodexTask } from './codex-control-plane.js'
 import { GPT_FINAL_ARBITER_INPUT_SCHEMA, GPT_FINAL_ARBITER_RESULT_SCHEMA_ID, gptFinalArbiterResultSchema, normalizeGptFinalArbiterResult } from './gpt-final-review-schema.js'
 import { compressGptFinalContext } from './gpt-final-context-compressor.js'
@@ -19,13 +19,9 @@ export async function runGptFinalArbiter(input: GptFinalArbiterInput, opts: {
   const started = Date.now()
   const cwd = path.resolve(opts.cwd || process.cwd())
   const root = path.resolve(opts.mutationLedgerRoot || path.join(cwd, '.sneakoscope', 'tmp', 'gpt-final-arbiter', safeName(input.mission_id || 'mission')))
-  const policy = resolveLocalCollaborationPolicy({ mode: input.local_mode })
   const compressed = compressGptFinalContext(input)
-  if (policy.local_only_draft) {
-    return finalize(root, input, policy, compressed, blockedResult('needs_gpt_final_review', 'Local-only draft mode cannot produce final accepted proof.'), started, opts)
-  }
   if (opts.forceUnavailable || process.env.SKS_GPT_FINAL_ARBITER_UNAVAILABLE === '1') {
-    return finalize(root, input, policy, compressed, blockedResult('gpt_final_arbiter_unavailable', 'GPT final arbiter backend is unavailable.'), started, opts)
+    return finalize(root, input, compressed, blockedResult('gpt_final_arbiter_unavailable', 'GPT final arbiter backend is unavailable.'), started, opts)
   }
   let codexTask: any = null
   let parsed: any = null
@@ -62,7 +58,7 @@ export async function runGptFinalArbiter(input: GptFinalArbiterInput, opts: {
     })
     parsed = parseFinalResponse(codexTask.finalResponse)
   } catch (error: unknown) {
-    return finalize(root, input, policy, compressed, blockedResult('gpt_final_arbiter_unavailable', error instanceof Error ? error.message : String(error)), started, opts)
+    return finalize(root, input, compressed, blockedResult('gpt_final_arbiter_unavailable', error instanceof Error ? error.message : String(error)), started, opts)
   }
   const normalized = normalizeGptFinalArbiterResult(parsed)
   const validation = validateJsonSchemaRecursive(normalized, gptFinalArbiterResultSchema as Record<string, unknown>)
@@ -76,18 +72,15 @@ export async function runGptFinalArbiter(input: GptFinalArbiterInput, opts: {
       ...(validation.ok ? [] : ['gpt_final_result_schema_invalid', ...validation.issues.map((issue) => `schema:${issue}`)])
     ]
   }
-  return finalize(root, input, policy, compressed, result, started, opts, codexTask)
+  return finalize(root, input, compressed, result, started, opts, codexTask)
 }
 
-function finalize(root: string, input: GptFinalArbiterInput, policy: ReturnType<typeof resolveLocalCollaborationPolicy>, compressed: ReturnType<typeof compressGptFinalContext>, result: ReturnType<typeof normalizeGptFinalArbiterResult>, started: number, opts: { writeArtifact?: boolean }, codexTask?: any) {
+function finalize(root: string, input: GptFinalArbiterInput, compressed: ReturnType<typeof compressGptFinalContext>, result: ReturnType<typeof normalizeGptFinalArbiterResult>, started: number, opts: { writeArtifact?: boolean }, codexTask?: any) {
   const latencyMs = Math.max(0, Date.now() - started)
-  const gate = evaluateLocalCollaborationFinalGate({
-    policy,
-    localParticipated: true,
+  const gate = evaluateGptFinalGate({
+    required: true,
     gptFinalStatus: result.status,
-    gptFinalAvailable: !result.blockers.includes('gpt_final_arbiter_unavailable'),
-    gptFinalBackend: codexTask ? 'codex-sdk' : null,
-    applyPatches: false
+    gptFinalAvailable: !result.blockers.includes('gpt_final_arbiter_unavailable')
   })
   const artifact = {
     schema: GPT_FINAL_ARBITER_RUN_SCHEMA,
@@ -96,10 +89,9 @@ function finalize(root: string, input: GptFinalArbiterInput, policy: ReturnType<
     input_schema: input.schema || GPT_FINAL_ARBITER_INPUT_SCHEMA,
     route: input.route,
     mission_id: input.mission_id,
-    local_mode: policy.mode,
     backend: codexTask ? 'codex-sdk' : 'unavailable',
     backend_family: codexTask ? 'remote-gpt' : 'none',
-    local_outputs_count: Array.isArray(input.local_outputs) ? input.local_outputs.length : 0,
+    candidate_outputs_count: Array.isArray(input.candidate_outputs) ? input.candidate_outputs.length : 0,
     proof_pack: compressed.proof_pack,
     latency_budget: {
       ...compressed.latency_budget,
@@ -153,14 +145,13 @@ function parseFinalResponse(value: unknown) {
 
 function buildArbiterPrompt(input: GptFinalArbiterInput, compressed: ReturnType<typeof compressGptFinalContext>) {
   return [
-    'You are the GPT Final Arbiter for an SKS local collaboration run.',
-    'Local model outputs are drafts only. Review the proof pack, candidate diff, patch envelopes, verification results, side effects, mutation ledger, and rollback plan.',
+    'You are the GPT Final Arbiter for an SKS pipeline run.',
+    'Candidate outputs are drafts only. Review the proof pack, candidate diff, patch envelopes, verification results, side effects, mutation ledger, and rollback plan.',
     leanEngineeringCompactText(),
     'Judge the candidate against that directive and the recorded evidence. Reject fabricated substitutes, unsupported complexity, or unsafe changes. Return only the requested structured JSON schema.',
     JSON.stringify({
       route: input.route,
       mission_id: input.mission_id,
-      local_mode: input.local_mode,
       proof_pack: compressed.proof_pack
     })
   ].join('\n')

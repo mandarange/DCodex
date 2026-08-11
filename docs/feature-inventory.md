@@ -67,7 +67,6 @@ Generated from `sks commands --json`, `src/cli/command-registry.ts COMMANDS`, `s
 | `cli-commit` | core-cli | stable | sks commit [--message "msg"] [--json] | mock:pass | wiring_only | none recorded |
 | `cli-commit-and-push` | core-cli | stable | sks commit-and-push [--message "msg"] [--json] | mock:pass | wiring_only | none recorded |
 | `cli-dfix` | core-cli | stable | sks dfix | execute_and_validate_artifacts:pass | runtime_verified | none recorded |
-| `cli-with-local-llm` | core-cli | beta | sks with-local-llm on\|off\|status\|set-model [--json] | execute:pass | runtime_verified | none recorded |
 | `cli-naruto` | proof-route | labs | sks naruto run "task" [--agents N] [--max-threads N] [--trusted-project] [--json] \| sks naruto status\|subagents\|proof [latest\|M-...] [--json] | execute_and_validate_artifacts:pass | runtime_verified | none recorded |
 | `cli-stop-gate` | core-cli | beta | sks stop-gate | static:pass | static_contract | none recorded |
 | `cli-route` | core-cli | beta | sks route | static:pass | static_contract | none recorded |
@@ -123,8 +122,6 @@ Generated from `sks commands --json`, `src/cli/command-registry.ts COMMANDS`, `s
 | `route-fast-mode` | route | stable | $sks-fast-mode<br>$sks-fast-on<br>$sks-fast-off | execute:pass | runtime_verified | none recorded |
 | `route-fast-on` | route | labs | $sks-fast-on | static:pass | wiring_only | none recorded |
 | `route-fast-off` | route | labs | $sks-fast-off | static:pass | wiring_only | none recorded |
-| `route-with-local-llm-on` | route | labs | $sks-with-local-llm-on<br>$sks-with-local-llm-off | static:pass | wiring_only | none recorded |
-| `route-with-local-llm-off` | route | labs | $sks-with-local-llm-off | static:pass | wiring_only | none recorded |
 | `route-naruto` | route | beta | $sks-naruto<br>$sks-work<br>$sks-from-chat-img | execute_and_validate_artifacts:pass | runtime_verified | none recorded |
 | `route-work` | route | labs | $sks-work | static:pass | wiring_only | none recorded |
 | `route-release-review` | route | labs | $sks-release-review | execute_and_validate_artifacts:pass | runtime_verified | none recorded |

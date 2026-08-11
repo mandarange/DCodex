@@ -21,7 +21,6 @@ test('explicit managed dollar/app skills are allowlisted, ordered, and never ref
   const cases = [
     ['$Work implement the fix', ['sks-work']],
     ['$Fast-Off', ['sks-fast-off']],
-    ['$with-local-llm-off', ['sks-with-local-llm-off']],
     ['[$UX-Review](skill://unsafe\nsecret) inspect', ['sks-image-ux-review']],
     ['$Computer-Use inspect native settings', ['sks-computer-use']],
     ['$sks-loop continue the bounded mission', [INVALID_EXPLICIT_MANAGED_SKILL_NAME]],
@@ -78,7 +77,6 @@ test('UserPromptSubmit loads the exact explicit alias and canonical git/release 
     const cases = [
       ['$Work implement one bounded fix', 'sks-work'],
       ['$Fast-Off', 'sks-fast-off'],
-      ['$with-local-llm-off', 'sks-with-local-llm-off'],
       ['$UX-Review inspect this screenshot', 'sks-image-ux-review'],
       ['$Computer-Use inspect native settings', 'sks-computer-use'],
       ['$Release-Review release audit', 'sks-release-review'],

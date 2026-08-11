@@ -6,7 +6,6 @@ import { gptFinalRequiredForPipeline } from './gpt-final-required.js'
 export async function finalizePipelineResult(input: {
   route: string
   missionId: string
-  localParticipated: boolean
   candidateResults: unknown[]
   candidatePatchEnvelopes: unknown[]
   verificationResults: unknown[]
@@ -21,7 +20,6 @@ export async function finalizePipelineResult(input: {
   const cwd = path.resolve(input.cwd || process.cwd())
   const root = path.resolve(input.mutationLedgerRoot || path.join(cwd, '.sneakoscope', 'tmp', 'pipeline-finalize', safeName(input.missionId)))
   const requirement = gptFinalRequiredForPipeline({
-    localParticipated: input.localParticipated,
     candidateResults: input.candidateResults,
     candidatePatchEnvelopes: input.candidatePatchEnvelopes
   })
@@ -32,8 +30,7 @@ export async function finalizePipelineResult(input: {
       schema: 'sks.gpt-final-arbiter-input.v1',
       route: input.route,
       mission_id: input.missionId,
-      local_mode: 'local-parallel-gpt-final',
-      local_outputs: input.candidateResults as any[],
+      candidate_outputs: input.candidateResults as any[],
       candidate_patch_envelopes: input.candidatePatchEnvelopes as any[]
     }, {
       cwd,
@@ -51,7 +48,6 @@ export async function finalizePipelineResult(input: {
     ok: blockers.length === 0,
     route: input.route,
     mission_id: input.missionId,
-    local_participated: requirement.local_participated,
     worktree_participated: requirement.worktree_participated,
     gpt_final_required: requirement.gpt_final_required,
     gpt_final_arbiter: arbiter,

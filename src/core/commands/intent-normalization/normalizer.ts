@@ -82,7 +82,6 @@ function normalizeDollar(token: string): string {
   if (!canonical) throw new Error('intent_dollar_command_unknown');
   const suffix = canonical === '$sks' ? 'root' : canonical.replace(/^\$sks-/, '');
   if (suffix === 'work') return 'naruto';
-  if (suffix === 'with-local-llm-on' || suffix === 'with-local-llm-off') return 'with-local-llm';
   if (suffix === 'fast-on' || suffix === 'fast-off') return 'fast-mode';
   return CLI_NAMES.has(suffix) ? suffix : dollarRouteFallback(suffix);
 }

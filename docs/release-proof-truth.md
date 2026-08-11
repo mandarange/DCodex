@@ -1,19 +1,18 @@
-# Release Proof Truth — 8.6.6
+# Release Proof Truth — 8.7.0
 
 ## Current assertion
 
-8.6.6 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
-candidate carries behavioral fixes on top of shipped 8.4.0: a Codex-LB session
-pin is no longer voided by catalog churn it had no part in (which is what made
-`session_pin_route_unavailable` appear intermittently mid-session), and the Codex
-config surface that `sks doctor --fix` owns no longer refuses, silently no-ops,
-or reverses explicit user settings. This document does not authorize
+8.7.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
+candidate makes `sks doctor --fix` able to clear a stale bridge catalog — four
+independent defects each made the repair a no-op or a lie about its own result —
+and removes Local LLM support in full, which is what makes this a minor rather
+than a patch. This document does not authorize
 publication, deployment, a credential change, a Git tag, or a push. Exact-commit
 proof can exist only after the candidate is committed and all source-bound gates
 are regenerated from that clean commit.
 
-All release artifacts bound to 8.4.0 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 8.6.6 evidence.
+All release artifacts bound to 8.6.6 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 8.7.0 evidence.
 
 ## Claim ledger
 
@@ -42,10 +41,17 @@ must not be renamed, copied, or treated as 8.6.6 evidence.
 | A restart drains in-flight requests before closing sockets | passed-hermetic | shutdown previously destroyed every socket at once; `test/unit/desktop-bridge-shutdown-drain.test.mjs` pins that the grace period is bounded at both ends so neither a live request nor a stuck one decides the outcome |
 | The catalog repair is verified rather than assumed | passed-hermetic | reproduced on two machines: `catalog.sync` failed with its rollback also failing and succeeded on the next attempt; the repair now re-reads the catalog and retries, and reports a catalog that survives both attempts |
 | A failed migration names its cause without leaking request data | passed-hermetic | the originating error code is appended and free-form text is refused; pinned against a message containing a path and a token |
-| The canonical suite is green | passed-hermetic | 2931 of 2931, zero failures, from the candidate tree |
-| All checked version authorities report 8.6.6 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, changelog, and release-doc surfaces are bumped together |
-| The reported 8.6.6 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, release-check stamp, and the operator's final registry checks |
-| 8.6.6 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
+| A provider catalog outlives a working session | passed-hermetic | the 15-minute expiry had no refresher behind it — the running bridge never reads `expires_at` — so every install reported `<provider>_catalog_stale` a quarter of an hour after any sync; measured on the development machine at 10 hours stale while the bridge served traffic normally |
+| The catalog repair addresses the bridge under HOME | passed-hermetic | every bridge path derives from `HOME`; the repair passed the project root, so a doctor run started inside a project found no managed bridge and returned a green check having done nothing |
+| `doctor --fix` reports the bridge as it is after the repair | passed-hermetic | the reported snapshot was taken before the fix transaction, so a successful catalog repair still printed `Desktop Bridge: blocked` listing the blockers it had just cleared |
+| The catalog repair cannot be skipped as clean | passed-hermetic | a catalog lapses with the passage of time, which no phase input hash observes; the phase is now self-guarding and its own first step is a cheap status read that returns immediately when nothing is stale |
+| An inactive provider cannot block bridge readiness | passed-hermetic | readiness demoted its problems to `inactive_provider:<id>:<problem>` and the combined-catalog aggregate promoted the same facts back, so one report carried the identical fact as both a warning and a blocker no `--fix` could clear |
+| Local LLM is removed without stranding GPT Final | passed-hermetic | the arbiter and its acceptance rule survive on the worktree-candidate trigger as `gpt-final:all-pipelines-required`, which is exercised and blocks a worktree candidate with the arbiter unavailable |
+| An installed package still rejects the removed dollar commands | passed-hermetic | that proof was derived from live routes, so deleting the route deleted it; `$with-local-llm-on` and `$with-local-llm-off` are pinned explicitly beside the other removed features and the frozen closure contract is unchanged at 68 probes |
+| The canonical suite is green | passed-hermetic | 2929 of 2929, zero failures, from the candidate tree on a clean build; `build:incremental` leaves orphaned output after a deletion, so the run was repeated against `build:clean` |
+| All checked version authorities report 8.7.0 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, changelog, and release-doc surfaces are bumped together |
+| The reported 8.7.0 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, release-check stamp, and the operator's final registry checks |
+| 8.7.0 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
 
 ## Evidence classes
 
@@ -64,7 +70,7 @@ fixture, or package dry run cannot promote a real-environment row to passed.
 
 Paseo is an independent external product. Sneakoscope does not bundle its
 daemon, wrap its CLI, probe its health, own its authentication or relay
-lifecycle, or require a live Paseo session as 8.6.6 release proof. The owned
+lifecycle, or require a live Paseo session as 8.7.0 release proof. The owned
 contract is limited to the committed `paseo.json` and accurate usage guidance.
 
 The active Telegram command, transport, Doctor projection, native poller and
@@ -75,7 +81,7 @@ not evidence of an active integration.
 
 ## Exact-commit release evidence
 
-Before any release claim, regenerate and verify current 8.6.6-bound artifacts
+Before any release claim, regenerate and verify current 8.7.0-bound artifacts
 from the clean handoff commit, including the build manifest, version metadata,
 package proof, pack receipt, release provenance, and release-check stamp. Each
 must bind the exact source digest, Git commit, tarball bytes, and package
@@ -101,7 +107,7 @@ The following remain **not-run-real** or **blocked-external**:
 - npm publication or dist-tag mutation.
 
 Regenerated from the candidate commit, the release gate DAG, canonical tests,
-the isolated 7.6.0→8.6.6 upgrade smoke, and the macOS Menu Bar proof are
+the isolated 7.6.0→8.7.0 upgrade smoke, and the macOS Menu Bar proof are
 **passed-hermetic**; the live `codex-sdk:real-smoke` and Codex core real probes
 report `proven` against the real runtime.
 

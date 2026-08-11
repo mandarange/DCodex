@@ -49,7 +49,7 @@ This page is the English product-facing projection of those decisions.
 - Install SSOT: npm registry `sneakoscope@latest`. Plugin marketplace is a convenience entry that must yield the same version.
 - Product update channel: `@latest` only (`next`/beta are non-product).
 - SKS induces/checks/fails on host Codex drift; host upgrade execution remains user/Codex responsibility.
-- Fast, Computer Use, imagegen, and other official Codex native surfaces are **consume / bridge / gate only** — SKS does not reimplement them. Local LLM is an opt-in addon outside the core trust-layer contract.
+- Fast, Computer Use, imagegen, and other official Codex native surfaces are **consume / bridge / gate only** — SKS does not reimplement them. Local LLM was an opt-in addon outside the core trust-layer contract and was removed entirely in 8.7.0; workers run on Codex official backends only.
 - Visual product evidence uses official Codex imagegen only (no placeholder/forged images).
 - Multi-agent / Naruto parallel: wrap Codex official multi-agent only; without it the product is incomplete.
 
@@ -86,7 +86,7 @@ This page is the English product-facing projection of those decisions.
 - `sks uninstall` is the product removal path and must fully remove SKS setup/files.
 - SKS product version is a marketing/release identifier, not a strict semver product gate.
 - Trusted-project may default on for local personal repos under operator policy; users must not modify the installed SKS engine; Codex `config.toml` remains user-editable.
-- Internal/optional routes (not core trust-layer completion): SEO/GEO, Design, PPT, GX, Autoresearch, `$sks-research`, Local LLM.
+- Internal/optional routes (not core trust-layer completion): SEO/GEO, Design, PPT, GX, Autoresearch, `$sks-research`.
 - Performance: no product SLA or bench-number promises; measurements are internal/optional.
 - Naruto accepts an oversized persisted thread preference without rewriting it, but uses an effective maximum of 256 child threads and 257 total threads. Explicit CLI values above 256 are rejected; the parent remains outside the child-slot cap.
 - Contributions: welcome via standard PR/issues.

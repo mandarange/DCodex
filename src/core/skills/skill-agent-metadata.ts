@@ -28,8 +28,6 @@ export const EXPLICIT_ONLY_SKS_SKILL_NAMES = Object.freeze([
   'sks-fast-mode',
   'sks-fast-on',
   'sks-fast-off',
-  'sks-with-local-llm-on',
-  'sks-with-local-llm-off'
 ] as const);
 
 const EXPLICIT_ONLY_SKS_SKILL_NAME_SET = new Set<string>(EXPLICIT_ONLY_SKS_SKILL_NAMES);

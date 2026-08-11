@@ -226,7 +226,7 @@
 | NC-14 | DB read-only/인가 계약을 DB 라우트에 한정해 문서화 | R3 | done |
 | NC-15 | SEO/GEO를 제품 계약 밖 내부 도구로 표기·마케팅 약속 금지 유지 | R4 | done |
 | NC-16 | 에이전트 `sks doctor --fix` 금지 절대 계약 표기 통일 | R5 | done |
-| NC-17 | Fast/Computer Use 등: Codex 공식 표면 consume-only; Local LLM은 opt-in 부가; SKS 재구현 금지 | R6 | done |
+| NC-17 | Fast/Computer Use 등: Codex 공식 표면 consume-only; SKS 재구현 금지 (Local LLM은 8.7.0에서 제거) | R6 | done |
 | NC-18 | installed harness 변경은 doctor --fix / 명시적 install·update만 | R7 | done |
 | NC-19 | subagent 중첩 금지 절대 계약을 문서·게이트에 고정 | S1 | done |
 | NC-20 | mission retention: 완료 후 미션 파일 삭제 + “삭제=미완료” 오판 무한루프 방지 | S2 | done |
@@ -326,13 +326,13 @@ Projection: [PRODUCT-CONTRACT.md](PRODUCT-CONTRACT.md).
 - **후속:** 위반을 암시하는 문서/스크립트 제거 또는 경고 → `needs-code` (NC-16).
 - **상태:** `decided`
 
-### R6. Local LLM / Fast / Computer Use 등
+### R6. Fast / Computer Use 등 (구 Local LLM 포함)
 
 - **모순·모호:** 부가 모드인지 핵심인지, SKS 재구현인지 호스트 consume인지.
-- **증거:** P2 native-surface notes; Fast/CU/local-llm skills.
-- **Q→결정:** Local LLM만 제외(부가). 나머지(Fast, Computer Use 등 Codex 공식 제공 표면)는 핵심이나 **SKS가 구현한 형태면 안 되고, Codex가 제공하는 것을 가져다 쓰는 형태**여야 함.
+- **증거:** P2 native-surface notes; Fast/CU skills.
+- **Q→결정:** Local LLM만 제외(부가)였으나 **8.7.0에서 완전 제거**. 나머지(Fast, Computer Use 등 Codex 공식 제공 표면)는 핵심이나 **SKS가 구현한 형태면 안 되고, Codex가 제공하는 것을 가져다 쓰는 형태**여야 함.
 - **확정 계약:**
-  1. **Local LLM**은 핵심 trust-layer 계약 밖의 **opt-in 부가 표면**이다. 꺼져 있어도 핵심 계약은 성립한다.
+  1. **Local LLM**은 핵심 trust-layer 계약 밖의 opt-in 부가 표면이었고, **8.7.0에서 코드·명령·라우트·게이트까지 전부 제거**되었다. 워커는 Codex 공식 백엔드만 사용한다.
   2. **Fast mode, Computer Use, 기타 Codex가 공식적으로 제공하는 native 표면**은 제품이 의존·조율할 수 있는 **핵심 호스트 능력**이다.
   3. 다만 SKS는 이를 **재구현·대체 구현하지 않는다.** 공식 Codex 표면을 **consume / bridge / gate**할 뿐, 평행 구현을 제품 경로로 두지 않는다. (P2: capability probe ≠ SKS가 native surface를 소유·토글한다는 뜻과 정합.)
 - **후속:** 재구현/평행 경로가 있으면 제거 또는 비제품으로 격리; 문서에 consume-only 명시 → `needs-code` (NC-17).

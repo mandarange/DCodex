@@ -105,8 +105,7 @@ async function runCliNegativeSmoke(spec: any) {
       SKS_GLOBAL_ROOT: path.join(tempRoot, 'global-sks'),
       SKS_UPDATE_MIGRATION_GATE_DISABLED: '1',
       SKS_DISABLE_UPDATE_CHECK: '1',
-      SKS_UPDATE_QUIET: '1',
-      SKS_SIMPLE_GIT_LOCAL_LLM: '0'
+      SKS_UPDATE_QUIET: '1'
     }
   })
   const after = await smokeAfter(spec, cwd, home)

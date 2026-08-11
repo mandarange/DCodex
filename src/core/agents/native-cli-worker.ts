@@ -202,7 +202,7 @@ export async function runNativeCliWorker(input: any = {}) {
     structured_output_valid: routed.report?.structured_output_valid === true,
     backend_router_report: routed.report,
     backend_child_process_ids: routed.report.child_process_ids,
-    backend_child_execution: routed.report.child_process_ids.length > 0 || Boolean(routed.report?.sdk_thread_id) || backend === 'fake' || backend === 'ollama',
+    backend_child_execution: routed.report.child_process_ids.length > 0 || Boolean(routed.report?.sdk_thread_id) || backend === 'fake',
     recursion_guard_env: process.env.SKS_DISABLE_ROUTE_RECURSION === '1',
     worker_env: process.env.SKS_AGENT_WORKER === '1',
     fast_mode_report: {

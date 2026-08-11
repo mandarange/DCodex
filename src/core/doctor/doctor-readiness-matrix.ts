@@ -1,6 +1,5 @@
 import path from 'node:path'
 import { nowIso, writeJsonAtomic } from '../fsx.js'
-import { resolveLocalCollaborationPolicy } from '../local-llm/local-collaboration-policy.js'
 
 export const DOCTOR_READINESS_MATRIX_SCHEMA = 'sks.doctor-readiness-matrix.v2'
 const OPTIONAL_ROUTE_SCOPES = new Set(['route-computer-use', 'route-chrome-web-review', 'route-app-handoff', 'route-app-screenshot'])
@@ -67,11 +66,6 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
   if (desktopBridge?.management?.managed === true && desktopBridge?.service?.running !== true) {
     warnings.add('desktop_bridge_service_not_running')
   }
-  const localModel = input.local_model || {}
-  const localStatus = String(localModel.status || (localModel.enabled ? 'enabled_unverified' : 'disabled'))
-  if (localModel.enabled === true && localStatus === 'enabled_unverified') warnings.add('local_llm_enabled_unverified')
-  if (localModel.enabled === true && localStatus === 'degraded') warnings.add('local_llm_degraded')
-  if (localModel.enabled === true && localStatus === 'blocked') warnings.add('local_llm_blocked_worker_tier_disabled')
   const agentRoleConfig = input.agent_role_config || {}
   if (agentRoleConfig.ok === false) blockers.add('agent_role_config_repair_failed')
   if (Array.isArray(agentRoleConfig.missing) && agentRoleConfig.missing.length && agentRoleConfig.apply !== true) warnings.add('agent_role_config_missing_repair_available')
@@ -111,11 +105,6 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
   const repairReadiness = buildRepairReadiness(input)
   for (const blocker of repairReadiness.blockers) blockers.add(blocker)
   for (const warning of repairReadiness.warnings) warnings.add(warning)
-  const localCollaborationPolicy = resolveLocalCollaborationPolicy({ mode: input.local_collaboration?.mode || null })
-  const gptFinalAvailable = input.local_collaboration?.gpt_final_arbiter_available === undefined
-    ? codexBinOk
-    : input.local_collaboration.gpt_final_arbiter_available === true
-  if (localCollaborationPolicy.gpt_final_required && !gptFinalAvailable) blockers.add('gpt_final_arbiter_unavailable')
   const routeBlockers = input.doctor_native_capability?.route_blockers || input.doctor_native_capability?.native_capabilities?.route_blockers || {}
   for (const [scope, list] of Object.entries(routeBlockers)) {
     for (const blocker of Array.isArray(list) ? list : []) {
@@ -185,25 +174,6 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
     center_blockers: [...new Set(centerBlockers)],
     optional_capabilities: buildOptionalCapabilities(input),
     repair_readiness: repairReadiness,
-    local_collaboration: {
-      mode: localCollaborationPolicy.mode,
-      local_backend: input.local_collaboration?.local_backend || localModel.provider || 'ollama',
-      local_model: input.local_collaboration?.local_model || localModel.model || null,
-      final_arbiter: gptFinalAvailable ? 'GPT available' : 'missing',
-      final_apply_allowed: localCollaborationPolicy.gpt_final_required ? gptFinalAvailable : localCollaborationPolicy.mode === 'disabled',
-      blockers: localCollaborationPolicy.gpt_final_required && !gptFinalAvailable ? ['gpt_final_arbiter_unavailable'] : localCollaborationPolicy.blockers
-    },
-    local_llm: {
-      enabled: localModel.enabled === true,
-      status: localStatus,
-      provider: localModel.provider || 'ollama',
-      model: localModel.model || null,
-      endpoint: localModel.endpoint || localModel.base_url || null,
-      last_smoke: localModel.last_smoke || null,
-      final_arbiter: 'GPT required',
-      worker_tier_enabled: localModel.enabled === true && localStatus === 'verified',
-      blockers: normalizeList(localModel.blockers)
-    },
     agent_role_config: agentRoleConfig,
     skills,
     ready: commandReady,

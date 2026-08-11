@@ -2,8 +2,6 @@ import path from 'node:path'
 import { nowIso, readJson, writeJsonAtomic } from '../fsx.js'
 import { buildFixturePatchEnvelopes } from './agent-runner-fake.js'
 import { runProcessAgent } from './agent-runner-process.js'
-import { classifyOllamaWorkerSlice, runOllamaAgent } from './agent-runner-ollama.js'
-import { resolveOllamaWorkerConfig } from './ollama-worker-config.js'
 import { validateAgentWorkerResult } from './agent-worker-pipeline.js'
 import { normalizeAgentPatchEnvelope, type AgentPatchEnvelope } from './agent-patch-schema.js'
 import { runCodexTask } from '../codex-control/codex-control-plane.js'
@@ -34,7 +32,6 @@ export async function runNativeWorkerBackendRouter(input: {
   const pathRoot = path.resolve(input.intake?.cwd || input.intake?.projectRoot || input.agentRoot)
   const requestedBackend = String(input.backend || '')
   let backend = normalizeBackend(requestedBackend)
-  backend = await maybeAutoSelectOllamaBackend(backend, input)
   const narutoRequest = isNarutoWorkerRequest(input)
   const reportRel = path.join(input.workerDirRel, 'worker-backend-router-report.json')
   const startedAt = nowIso()
@@ -85,30 +82,7 @@ export async function runNativeWorkerBackendRouter(input: {
       fixture_patch_envelopes: false,
       verification: { status: processRun.status === 'done' ? 'passed' : 'failed', checks: [...(processRun.verification?.checks || []), 'native-worker-backend-router', 'process-child-execution'] }
     })
-  } else if (backend === 'ollama') {
-    const ollamaRun = await runOllamaAgent(input.agent, input.slice, {
-      ...input.intake,
-      missionId: input.intake.mission_id || input.intake.parent_mission_id || '',
-      agentRoot: root,
-      workerDirRel: input.workerDirRel,
-      cwd: input.intake.cwd || root,
-      route: input.intake.route || '$Naruto',
-      fastMode: input.fastModePolicy.fast_mode,
-      serviceTier: input.fastModePolicy.service_tier
-    })
-    patchEnvelopes = Array.isArray(ollamaRun.patch_envelopes) ? ollamaRun.patch_envelopes : []
-    proofLevel = ollamaRun.status === 'done' ? (patchEnvelopes.length ? 'model_authored' : 'ollama_worker_proven') : 'blocked'
-    result = validateAgentWorkerResult({
-      ...ollamaRun,
-      backend: 'ollama',
-      patch_envelopes: patchEnvelopes,
-      ...(patchEnvelopes.length ? {} : { no_patch_reason: buildNoPatchReason(input, backend) }),
-      model_authored_patch_envelopes: patchEnvelopes.length > 0,
-      fixture_patch_envelopes: false,
-      verification: { status: ollamaRun.status === 'done' ? 'passed' : 'failed', checks: [...(ollamaRun.verification?.checks || []), 'native-worker-backend-router', 'ollama-api-generate'] }
-    })
-  } else if (backend === 'codex-sdk' || backend === 'local-llm') {
-    const localPreferred = backend === 'local-llm'
+  } else if (backend === 'codex-sdk') {
     modelRouting = await resolveWorkerModelRouting(input)
     if (modelRouting.blockers.length) {
       proofLevel = 'blocked'
@@ -144,12 +118,7 @@ export async function runNativeWorkerBackendRouter(input: {
         user_confirmed_full_access: false,
         mad_sks_authorized: input.intake.mad_sks_authorized === true || process.env.SKS_MAD_SKS_ACTIVE === '1'
       },
-      backendPreference: localPreferred ? ['local-llm', 'codex-sdk'] : ['codex-sdk'],
-      allowLocalLlm: localPreferred,
-      ...(localPreferred ? { localLlmPolicy: {
-        mode: 'local_preferred',
-        requiresGptFinal: true
-      } } : {}),
+      backendPreference: ['codex-sdk'],
       mutationLedgerRoot: path.join(root, input.workerDirRel),
       reliabilityPolicy: {
         maxEmptyResultRetries: 1,
@@ -159,14 +128,13 @@ export async function runNativeWorkerBackendRouter(input: {
     outputLastMessagePath = sdkTask.workerResultPath
     const sdkWorkerResult = normalizeSdkWorkerResultPaths(await readJson<any>(sdkTask.workerResultPath, null), input, pathRoot)
     patchEnvelopes = normalizeSdkPatchEnvelopes(sdkWorkerResult?.patch_envelopes || [], input, sdkTask.sdkThreadId, pathRoot)
-    proofLevel = sdkTask.ok ? (patchEnvelopes.length ? 'model_authored' : sdkTask.backend === 'local-llm' ? 'local_llm_worker_proven' : 'codex_sdk_thread_proven') : 'blocked'
+    proofLevel = sdkTask.ok ? (patchEnvelopes.length ? 'model_authored' : 'codex_sdk_thread_proven') : 'blocked'
     const sdkReport = {
       schema: 'sks.codex-sdk-worker-adapter.v1',
       backend: sdkTask.backend,
       backend_family: sdkTask.backend_family,
       sdk_thread_id: sdkTask.sdkThreadId,
       sdk_run_id: sdkTask.sdkRunId,
-      local_llm_proof_path: sdkTask.localLlmProofPath || null,
       stream_event_count: sdkTask.streamEventCount,
       structured_output_valid: sdkTask.structuredOutputValid,
       worker_result_path: sdkTask.workerResultPath,
@@ -184,7 +152,7 @@ export async function runNativeWorkerBackendRouter(input: {
       session_id: input.agent.session_id,
       persona_id: input.agent.persona_id || input.agent.id,
       task_slice_id: input.slice?.id || '',
-      backend: sdkTask.backend === 'local-llm' ? 'local-llm' : 'codex-sdk',
+      backend: 'codex-sdk',
       patch_envelopes: patchEnvelopes,
       ...(patchEnvelopes.length ? {} : { no_patch_reason: buildNoPatchReason(input, sdkTask.backend || backend) }),
       codex_child_report: sdkReport,
@@ -196,18 +164,16 @@ export async function runNativeWorkerBackendRouter(input: {
         path.relative(root, sdkTask.workerResultPath),
         path.join(input.workerDirRel, 'codex-control-proof.json'),
         path.join(input.workerDirRel, 'codex-thread-registry.json'),
-        sdkTask.backend === 'local-llm' ? path.join(input.workerDirRel, 'local-llm-events.jsonl') : path.join(input.workerDirRel, 'codex-sdk-events.jsonl'),
-        ...(sdkTask.localLlmProofPath ? [path.relative(root, sdkTask.localLlmProofPath)] : [])
+        path.join(input.workerDirRel, 'codex-sdk-events.jsonl')
       ])],
       blockers: [...(sdkWorkerResult?.blockers || []), ...sdkTask.blockers],
       verification: {
         status: sdkTask.ok ? 'passed' : 'failed',
         checks: [
           ...(sdkWorkerResult?.verification?.checks || []),
-          sdkTask.backend === 'local-llm' ? 'local-llm-control-plane' : 'codex-sdk-control-plane',
-          sdkTask.backend === 'local-llm' ? 'local-llm-event-stream' : 'codex-sdk-event-stream',
-          sdkTask.backend === 'local-llm' ? 'local-llm-structured-output' : 'codex-sdk-structured-output',
-          ...(sdkTask.backend === 'local-llm' ? ['gpt-final-required-before-acceptance'] : [])
+          'codex-sdk-control-plane',
+          'codex-sdk-event-stream',
+          'codex-sdk-structured-output'
         ]
       }
     })
@@ -242,7 +208,6 @@ export async function runNativeWorkerBackendRouter(input: {
     sdk_run_id: childReports.find((report) => report?.sdk_run_id)?.sdk_run_id || null,
     stream_event_count: Number(childReports.find((report) => report?.stream_event_count)?.stream_event_count || 0),
     structured_output_valid: childReports.some((report) => report?.structured_output_valid === true),
-    ollama_request_ids: patchEnvelopes.map((envelope: AgentPatchEnvelope) => envelope.backend_ollama_request_id).filter(Boolean),
     blockers: result.blockers || []
   }
   await writeJsonAtomic(path.join(root, reportRel), report)
@@ -373,24 +338,6 @@ function normalizeServiceTier(value: unknown): ModelChoice['serviceTier'] | null
   return text === 'standard' ? 'standard' : text === 'fast' || text === 'priority' ? 'fast' : null
 }
 
-async function maybeAutoSelectOllamaBackend(backend: ReturnType<typeof normalizeBackend>, input: {
-  agent: any
-  slice: any
-  intake: any
-}) {
-  if (backend !== 'codex-sdk') return backend
-  if (isNarutoWorkerRequest(input)) return backend
-  if (input.intake?.backend_explicit === true || input.intake?.no_ollama === true) return backend
-  const config = await resolveOllamaWorkerConfig({
-    ollamaEnabled: input.intake?.ollama_enabled === true,
-    model: input.intake?.ollama_model || null,
-    baseUrl: input.intake?.ollama_base_url || null
-  }).catch(() => null)
-  if (!config?.ok || config.enabled !== true || config.status !== 'verified') return backend
-  const policy = classifyOllamaWorkerSlice(input.slice, { route: input.intake?.route, agent: input.agent })
-  return policy.ok ? 'local-llm' : backend
-}
-
 function isNarutoWorkerRequest(input: { agent?: any; intake?: any }): boolean {
   return Boolean(input.agent?.naruto_role) || /\$?naruto/i.test(String(input.intake?.route || ''))
 }
@@ -398,12 +345,11 @@ function isNarutoWorkerRequest(input: { agent?: any; intake?: any }): boolean {
 export function narutoWorkerBackendBlocker(backend: string | null, narutoRequest = true): string | null {
   if (!narutoRequest) return null
   if (backend === 'process') return 'naruto_gpt_5_6_family_only_process_backend_forbidden'
-  if (backend === 'ollama' || backend === 'local-llm') return 'naruto_gpt_5_6_family_only_local_backend_forbidden'
   return null
 }
 
-function normalizeBackend(value: string): 'fake' | 'process' | 'codex-sdk' | 'ollama' | 'local-llm' | null {
-  return value === 'fake' || value === 'process' || value === 'codex-sdk' || value === 'ollama' || value === 'local-llm' ? value : null
+function normalizeBackend(value: string): 'fake' | 'process' | 'codex-sdk' | null {
+  return value === 'fake' || value === 'process' || value === 'codex-sdk' ? value : null
 }
 
 function envelopeOpts(input: any, source: BackendSource, childPid?: number) {

@@ -12,7 +12,6 @@ export type NarutoVerificationNodeKind =
   | 'docs_changelog_check'
   | 'side_effect_check'
   | 'mutation_ledger_check'
-  | 'local_llm_structured_output_check'
 
 export interface NarutoVerificationDag extends VerificationDag {
   schema: 'sks.verification-dag.v1'
@@ -33,7 +32,6 @@ const NODE_KIND_CYCLE: NarutoVerificationNodeKind[] = [
   'docs_changelog_check',
   'side_effect_check',
   'mutation_ledger_check',
-  'local_llm_structured_output_check'
 ]
 
 export function buildNarutoVerificationDag(graph: NarutoWorkGraph, input: { command?: string; cwd?: string } = {}): NarutoVerificationDag {

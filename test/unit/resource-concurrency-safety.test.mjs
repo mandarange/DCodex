@@ -52,8 +52,7 @@ test('governor no longer hard-caps safe workers at four when frame budget allows
       totalMemoryBytes: 32 * 1024 ** 3,
       fileDescriptorLimit: 8192,
       processCount: 100,
-      remoteApiRateLimitBudget: 16,
-      localLlmMaxParallelRequests: 8
+      remoteApiRateLimitBudget: 16
     }
   });
   assert.ok(governed.safe_active_workers > 4);

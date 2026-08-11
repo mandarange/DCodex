@@ -271,23 +271,6 @@ export const ROUTES = [
     examples: ['$Fast-On', '$Fast-Off', '$Fast-Mode status']
   },
   {
-    id: 'LocalModel',
-    command: '$with-local-llm-on',
-    mode: 'LOCAL_MODEL',
-    route: 'local Ollama worker toggle',
-    description: 'Turn the optional local Ollama worker backend on or off. Default off keeps SKS GPT-only; enabled mode lets eligible simple code/collection worker slices use Ollama while GPT/Codex owns strategy, design, review, verification, and integration.',
-    requiredSkills: ['with-local-llm-on', 'honest-mode'],
-    dollarAliases: ['$with-local-llm-off'],
-    appSkillAliases: ['with-local-llm-off'],
-    lifecycle: ['global_local_model_toggle', 'worker_only_policy_status', 'honest_mode'],
-    context7Policy: 'not_required',
-    reasoningPolicy: 'low',
-    stopGate: 'none',
-    coverageExemptReason: 'single boolean project-config toggle, not a code-changing work order',
-    cliEntrypoint: 'sks with-local-llm on|off|status|set-model [--json]',
-    examples: ['$with-local-llm-on', '$with-local-llm-off', 'sks with-local-llm status --json']
-  },
-  {
     id: 'Naruto',
     command: '$Naruto',
     mode: 'NARUTO',
@@ -719,7 +702,6 @@ export const COMMAND_CATALOG = [
   { name: 'auto-review', usage: 'sks auto-review status|enable|start [--high] | sks --Auto-review --high', description: 'Enable Codex automatic approval review and launch the native Codex session with the auto-review profile.' },
   { name: 'dollar-commands', usage: 'sks dollar-commands [--json]', description: 'List Codex App $ commands such as $sks-dfix and $sks-naruto.' },
   { name: 'fast-mode', usage: 'sks fast-mode on|off|status|clear [--project] [--json]', description: 'Toggle the global Codex Desktop GPT-5.6 Fast default used by $sks-fast-on/$sks-fast-off and keep project worker preference in sync; pass --project for project-local only.' },
-  { name: 'with-local-llm', usage: 'sks with-local-llm on|off|status|set-model [--json]', description: 'Toggle the optional local Ollama worker backend used by $sks-with-local-llm-on/$sks-with-local-llm-off and eligible simple worker slices.' },
   { name: 'commit', usage: 'sks commit [--message "msg"] [--json]', description: 'Stage current changes, summarize them, and create a simple git commit without the full SKS pipeline.' },
   { name: 'commit-and-push', usage: 'sks commit-and-push [--message "msg"] [--json]', description: 'Stage current changes, create a simple git commit, and push without the full SKS pipeline.' },
   { name: 'dfix', usage: 'sks dfix', description: 'Explain $sks-dfix ultralight direct-fix mode.' },
@@ -1195,7 +1177,6 @@ const NARUTO_GATE_BYPASS_ROUTE_IDS = new Set([
   'Commit',
   'CommitAndPush',
   'FastMode',
-  'LocalModel',
   'Planner'
 ]);
 

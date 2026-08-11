@@ -14,19 +14,6 @@ export interface CapabilityCard {
 
 export const DEFAULT_CAPABILITY_CARDS: CapabilityCard[] = [
   {
-    id: 'local-llm-worker',
-    tier: 'worker',
-    supports_images: false,
-    supports_write: true,
-    supports_research: false,
-    reliability: 0.78,
-    latency_cost: 1,
-    token_cost: 0,
-    mutation_risk_cost: 2,
-    model_price_cost: 0,
-    queue_pressure_cost: 2
-  },
-  {
     id: 'fast-worker',
     tier: 'worker',
     supports_images: false,

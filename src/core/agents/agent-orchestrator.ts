@@ -44,7 +44,6 @@ import { createNativeCliWorkerRuntimeRecorder } from './native-cli-worker-runtim
 import { writeNativeCliWorkerRuntimeProof } from './native-cli-worker-runtime-proof.js'
 import { writeNoSubagentScalingPolicy } from './no-subagent-scaling-policy.js'
 import { writeOfficialSubagentHelperPolicy } from './official-subagent-helper-policy.js'
-import { resolveLocalCollaborationPolicy, localCollaborationParticipated } from '../local-llm/local-collaboration-policy.js'
 import { runFinalGptReviewStage } from '../pipeline/final-gpt-review-stage.js'
 import { selectFinalGptPatchSource } from '../pipeline/final-gpt-patch-stage.js'
 import { allocateWorkerWorktree, allocateWorkerWorktreesBatch } from '../git/git-worktree-manager.js'
@@ -337,7 +336,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     targetActiveSlots,
     backend,
     backendExplicit: opts.backendExplicit === true,
-    noOllama: opts.noOllama === true,
     route,
     fastModePolicy,
     projectRoot: root
@@ -493,20 +491,16 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
   const officialSubagentHelperPolicy = await writeOfficialSubagentHelperPolicy(ledgerRoot, { nativeProof: nativeCliWorkerRuntimeProof })
   const noSubagentScalingPolicy = await writeNoSubagentScalingPolicy(ledgerRoot, { nativeProof: nativeCliWorkerRuntimeProof, officialSubagentHelperPolicy })
   const fastModePropagation = await writeFastModePropagationProof(ledgerRoot, { policy: fastModePolicy, backend, results })
-  const localCollaborationPolicy = resolveLocalCollaborationPolicy()
-  await writeJsonAtomic(path.join(ledgerRoot, 'local-collaboration-policy.json'), localCollaborationPolicy)
-  const localParticipated = localCollaborationParticipated(results)
   const candidatePatchEnvelopes = results.flatMap((result: any) => Array.isArray(result.patch_envelopes) ? result.patch_envelopes : [])
   const worktreeParticipated = candidatePatchEnvelopes.some((envelope: any) => envelope?.source === 'git-worktree-diff' || envelope?.git_worktree?.worktree_path)
     || results.some((result: any) => result?.git_worktree_diff || result?.git_worktree_checkpoint)
-  const gptFinalRequired = localParticipated || worktreeParticipated
+  const gptFinalRequired = worktreeParticipated
   const gptFinalArbiter = gptFinalRequired
     ? await runFinalGptReviewStage({
       schema: 'sks.gpt-final-arbiter-input.v1',
       route,
       mission_id: missionId,
-      local_mode: localCollaborationPolicy.mode,
-      local_outputs: results.map((result: any) => ({
+      candidate_outputs: results.map((result: any) => ({
         worker_id: result.agent_id,
         backend: result.backend_router_report?.selected_backend || result.backend || backend,
         status: result.status,
@@ -603,7 +597,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     gitWorktreeRuntime,
     triwikiContext,
     selectedCoreSkill,
-    localCollaborationPolicy,
     gptFinalArbiter,
     finalGptPatchStage
   })
@@ -647,7 +640,6 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     fast_mode_policy: fastModePolicy,
     fast_mode_propagation: fastModePropagation,
     git_worktree_runtime: gitWorktreeRuntime,
-    local_collaboration_policy: localCollaborationPolicy,
     gpt_final_arbiter: gptFinalArbiter,
     final_gpt_patch_stage: finalGptPatchStage,
     patch_handoff: patchHandoff,
@@ -1080,7 +1072,7 @@ function sameTournamentGroupEntry(a: any, b: any): boolean {
 function attachNarutoRuntimeProof(result: any, agent: any, slice: any) {
   const controlPlane = result?.codex_child_report || result?.codex_sdk_thread || result?.backend_router_report || null
   const selectedBackend = String(result?.backend_router_report?.selected_backend || result?.backend || '')
-  const actualWorkerControlPlane = selectedBackend === 'codex-sdk' || selectedBackend === 'local-llm'
+  const actualWorkerControlPlane = selectedBackend === 'codex-sdk'
     ? Boolean(controlPlane?.sdk_thread_id || controlPlane?.worker_result_path || result?.codex_child_report?.worker_result_path)
     : false
   result.naruto_runtime = {

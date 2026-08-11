@@ -6,8 +6,7 @@ export interface GptFinalArbiterInput {
   schema?: string
   route: string
   mission_id: string
-  local_mode: string
-  local_outputs?: any[]
+  candidate_outputs?: any[]
   candidate_diff?: string
   candidate_patch_envelopes?: any[]
   verification_results?: any[]
@@ -18,7 +17,7 @@ export interface GptFinalArbiterInput {
 
 export function buildGptFinalProofPack(input: GptFinalArbiterInput, opts: { maxCriticalLogChars?: number } = {}) {
   const maxCriticalLogChars = Math.max(1000, Number(opts.maxCriticalLogChars || 6000))
-  const localOutputs = Array.isArray(input.local_outputs) ? input.local_outputs : []
+  const candidateOutputs = Array.isArray(input.candidate_outputs) ? input.candidate_outputs : []
   const candidatePatchEnvelopes = Array.isArray(input.candidate_patch_envelopes) ? input.candidate_patch_envelopes : []
   const verificationResults = Array.isArray(input.verification_results) ? input.verification_results : []
   const pack = {
@@ -26,15 +25,14 @@ export function buildGptFinalProofPack(input: GptFinalArbiterInput, opts: { maxC
     generated_at: nowIso(),
     route: String(input.route || ''),
     mission_id: String(input.mission_id || ''),
-    local_mode: String(input.local_mode || ''),
-    worker_count: localOutputs.length,
+    worker_count: candidateOutputs.length,
     changed_files: sortedUnique([
       ...candidatePatchEnvelopes.flatMap((envelope) => envelopeChangedFiles(envelope)),
-      ...localOutputs.flatMap((output) => Array.isArray(output?.changed_files) ? output.changed_files.map(String) : [])
+      ...candidateOutputs.flatMap((output) => Array.isArray(output?.changed_files) ? output.changed_files.map(String) : [])
     ]),
-    local_output_summaries: localOutputs.map((output, index) => ({
+    candidate_output_summaries: candidateOutputs.map((output, index) => ({
       worker_id: String(output?.worker_id || output?.agent_id || output?.id || `worker-${index + 1}`),
-      backend: String(output?.backend || 'local-llm'),
+      backend: String(output?.backend || 'unknown'),
       status: String(output?.status || 'unknown'),
       summary: trim(String(output?.summary || ''), 600),
       proof: trim(String(output?.proof || output?.verification?.status || ''), 600),
@@ -54,7 +52,7 @@ export function buildGptFinalProofPack(input: GptFinalArbiterInput, opts: { maxC
     rollback_plan_summary: summarizeObject(input.rollback_plan),
     conflict_map: buildConflictMap(candidatePatchEnvelopes),
     critical_logs_tail: tail(JSON.stringify({
-      local_outputs: localOutputs.map((output) => ({
+      candidate_outputs: candidateOutputs.map((output) => ({
         id: output?.worker_id || output?.agent_id || output?.id,
         blockers: output?.blockers || [],
         unverified: output?.unverified || []
@@ -72,7 +70,7 @@ export function buildGptFinalProofPack(input: GptFinalArbiterInput, opts: { maxC
 export function buildGptFinalLatencyBudgetReport(input: { workerCount: number; tokenBudgetEstimate: number; latencyMs?: number | null }) {
   const workerCount = Math.max(0, Number(input.workerCount || 0))
   const tokenBudgetEstimate = Math.max(0, Number(input.tokenBudgetEstimate || 0))
-  const capAdjustment = tokenBudgetEstimate > 8000 || workerCount > 20 ? 'reduce_local_parallelism_or_pack_size' : 'within_budget'
+  const capAdjustment = tokenBudgetEstimate > 8000 || workerCount > 20 ? 'reduce_worker_parallelism_or_pack_size' : 'within_budget'
   return {
     schema: 'sks.gpt-final-latency-budget.v1',
     generated_at: nowIso(),
@@ -88,7 +86,7 @@ function summarizeEnvelope(envelope: any, index: number) {
   return {
     id: String(envelope?.id || envelope?.patch_id || `patch-${index + 1}`),
     agent_id: String(envelope?.agent_id || 'unknown'),
-    source: String(envelope?.source || 'local-llm'),
+    source: String(envelope?.source || 'unknown'),
     operations: Array.isArray(envelope?.operations) ? envelope.operations.length : 0,
     write_paths: envelopeChangedFiles(envelope),
     lease_id: envelope?.lease_id || envelope?.lease_proof?.lease_id || null,

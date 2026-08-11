@@ -60,8 +60,7 @@ export async function runLoopGptFinalArbiter(input: {
     schema: 'sks.gpt-final-arbiter-input.v1',
     route: '$Loop',
     mission_id: input.plan.mission_id,
-    local_mode: 'local-parallel-gpt-final',
-    local_outputs: input.proofs.map((proof) => ({
+    candidate_outputs: input.proofs.map((proof) => ({
       id: proof.loop_id,
       backend: proof.maker_result.backend || 'loop-worker',
       status: proof.status,

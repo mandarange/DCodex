@@ -9,7 +9,6 @@
     "total_work_items": { "type": "integer", "minimum": 1 },
     "safe_active_workers": { "type": "integer", "minimum": 1 },
     "headless_workers": { "type": "integer", "minimum": 0 },
-    "local_llm_parallel": { "type": "integer", "minimum": 1 },
     "remote_codex_parallel": { "type": "integer", "minimum": 1 },
     "verification_parallel": { "type": "integer", "minimum": 1 },
     "reasons": { "type": "array", "items": { "type": "string" } },

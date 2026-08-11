@@ -278,7 +278,7 @@ export async function evaluateStop(root: any, state: any, payload: any, opts: an
   const reflectionRequired = reflectionRequiredForState(state);
   // engineering_sanity_required / db_access_review_required must be honoured
   // even on routes whose stopGate is 'none' or 'honest_mode' ($SKS, $Fast-Mode,
-  // $with-local-llm-on, $Commit, $Commit-And-Push): they carry real
+  // $Commit, $Commit-And-Push): they carry real
   // code-changing work. Both flags are now set only by pipelinePlanState(),
   // from a plan that actually seeded the artifact, so requiring them here can
   // never demand a file the product did not write.

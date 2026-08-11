@@ -7,9 +7,10 @@ import { assertAgentTerminalSessionsClosed } from './agent-terminal-session.js'
 import { assertAgentSessionGenerationsClosed } from './agent-session-generation.js'
 import { writeFakeRealProofPolicyReport } from '../proof/fake-real-proof-policy.js'
 import { buildRuntimeTruthMatrix, writeRuntimeTruthMatrix } from '../proof/runtime-truth-matrix.js'
-import { evaluateLocalCollaborationFinalGate, localCollaborationParticipated, resolveLocalCollaborationPolicy } from '../local-llm/local-collaboration-policy.js'
+import { evaluateGptFinalGate } from '../codex-control/gpt-final-gate.js'
+import { gptFinalRequiredForPipeline } from '../pipeline/gpt-final-required.js'
 
-export async function writeAgentProofEvidence(root: string, input: { missionId: string; backend: string; route?: string; routeCommand?: string; routeBlackboxKind?: string; requestedWorkItems?: number; minimumWorkItems?: number; targetActiveSlots?: number; realParallel?: boolean; roster?: any; partition?: any; consensus?: any; results?: any[]; cleanup?: any; janitor?: any; trust?: any; wrongness?: any; outputTails?: any; timeoutKill?: any; scheduler?: any; parallelWritePolicy?: any; gitWorktreeRuntime?: any; patchHandoff?: any; strategyGate?: any; nativeCliWorkerRuntimeProof?: any; noSubagentScalingPolicy?: any; officialSubagentHelperPolicy?: any; fastModePolicy?: any; fastModePropagation?: any; triwikiContext?: any; selectedCoreSkill?: any; localCollaborationPolicy?: any; gptFinalArbiter?: any; finalGptPatchStage?: any }) {
+export async function writeAgentProofEvidence(root: string, input: { missionId: string; backend: string; route?: string; routeCommand?: string; routeBlackboxKind?: string; requestedWorkItems?: number; minimumWorkItems?: number; targetActiveSlots?: number; realParallel?: boolean; roster?: any; partition?: any; consensus?: any; results?: any[]; cleanup?: any; janitor?: any; trust?: any; wrongness?: any; outputTails?: any; timeoutKill?: any; scheduler?: any; parallelWritePolicy?: any; gitWorktreeRuntime?: any; patchHandoff?: any; strategyGate?: any; nativeCliWorkerRuntimeProof?: any; noSubagentScalingPolicy?: any; officialSubagentHelperPolicy?: any; fastModePolicy?: any; fastModePropagation?: any; triwikiContext?: any; selectedCoreSkill?: any; gptFinalArbiter?: any; finalGptPatchStage?: any }) {
   const lifecycle = await assertAllAgentSessionsClosed(root)
   const terminal = await assertAgentTerminalSessionsClosed(root)
   const generations = await assertAgentSessionGenerationsClosed(root)
@@ -27,22 +28,18 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
   const patchRollbackProof = await readJson<any>(path.join(root, 'agent-patch-rollback-proof.json'), null)
   const patchProof = await readJson<any>(path.join(root, 'agent-patch-proof.json'), null)
   const patchHandoff = input.patchHandoff || await readJson<any>(path.join(root, 'agent-patch-handoff-runtime.json'), null)
-  const localCollaborationPolicy = input.localCollaborationPolicy || await readJson<any>(path.join(root, 'local-collaboration-policy.json'), null) || resolveLocalCollaborationPolicy()
   const gptFinalArbiter = input.gptFinalArbiter || await readJson<any>(path.join(root, 'gpt-final-arbiter', 'gpt-final-arbiter.json'), null)
   const narutoWorkGraph = await readJson<any>(path.join(root, 'naruto-work-graph.json'), null)
   const narutoRoleDistribution = await readJson<any>(path.join(root, 'naruto-role-distribution.json'), null)
   const narutoConcurrencyGovernor = await readJson<any>(path.join(root, 'naruto-concurrency-governor.json'), null)
   const narutoActivePool = await readJson<any>(path.join(root, 'naruto-active-pool.json'), null)
   const narutoVerificationDag = await readJson<any>(path.join(root, 'naruto-verification-dag.json'), null)
-  const localParticipated = localCollaborationParticipated(input.results || []) || Number(gptFinalArbiter?.local_outputs_count || 0) > 0
+  const gptFinalRequired = gptFinalRequiredForPipeline({ candidateResults: input.results || [] }).gpt_final_required
   const finalGptPatchStage = input.finalGptPatchStage || null
-  const localFinalGate = gptFinalArbiter?.final_gate || evaluateLocalCollaborationFinalGate({
-    policy: localCollaborationPolicy,
-    localParticipated,
+  const gptFinalGate = gptFinalArbiter?.final_gate || evaluateGptFinalGate({
+    required: gptFinalRequired,
     gptFinalStatus: gptFinalArbiter?.result?.status || null,
-    gptFinalAvailable: Boolean(gptFinalArbiter),
-    gptFinalBackend: gptFinalArbiter?.backend || null,
-    applyPatches: parallelWritePolicy?.apply_patches === true
+    gptFinalAvailable: Boolean(gptFinalArbiter)
   })
   const nativeCliWorkerRuntimeProof = input.nativeCliWorkerRuntimeProof || await readJson<any>(path.join(root, 'native-cli-worker-runtime-proof.json'), null)
   const noSubagentScalingPolicy = input.noSubagentScalingPolicy || await readJson<any>(path.join(root, 'no-subagent-scaling-policy.json'), null)
@@ -174,9 +171,9 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
     ...(patchHandoff && !patchApplyOk ? ['patch_apply_not_ok'] : []),
     ...(patchHandoff && !patchVerificationOk ? ['patch_verification_not_ok'] : []),
     ...(patchHandoff && !patchRollbackOk ? ['patch_rollback_not_ok'] : []),
-    ...(localParticipated && localFinalGate.ok !== true ? localFinalGate.blockers || ['gpt_final_arbiter_gate_not_ok'] : []),
-    ...(localParticipated && gptFinalArbiter?.ok !== true ? gptFinalArbiter?.blockers || ['gpt_final_arbiter_not_ok'] : []),
-    ...(localParticipated && finalGptPatchStage?.ok === false ? finalGptPatchStage.blockers || ['final_gpt_patch_stage_not_ok'] : []),
+    ...(gptFinalRequired && gptFinalGate.ok !== true ? gptFinalGate.blockers || ['gpt_final_arbiter_gate_not_ok'] : []),
+    ...(gptFinalRequired && gptFinalArbiter?.ok !== true ? gptFinalArbiter?.blockers || ['gpt_final_arbiter_not_ok'] : []),
+    ...(gptFinalRequired && finalGptPatchStage?.ok === false ? finalGptPatchStage.blockers || ['final_gpt_patch_stage_not_ok'] : []),
     ...(isNarutoRoute && !narutoWorkGraph ? ['naruto_work_graph_missing'] : []),
     ...(isNarutoRoute && narutoWorkGraph?.ok === false ? narutoWorkGraph.blockers || ['naruto_work_graph_not_ok'] : []),
     ...(isNarutoRoute && !narutoRoleDistribution ? ['naruto_role_distribution_missing'] : []),
@@ -239,15 +236,13 @@ export async function writeAgentProofEvidence(root: string, input: { missionId: 
     parallel_write_apply_patches: parallelWritePolicy?.apply_patches === true,
     parallel_write_dry_run_patches: parallelWritePolicy?.dry_run_patches === true,
     parallel_write_max_write_agents: Number(parallelWritePolicy?.max_write_agents || 0),
-    local_collaboration_policy: 'local-collaboration-policy.json',
-    local_collaboration_mode: localCollaborationPolicy.mode || null,
-    local_collaboration_participated: localParticipated,
     gpt_final_arbiter: gptFinalArbiter ? 'gpt-final-arbiter/gpt-final-arbiter.json' : null,
-    gpt_final_status: gptFinalArbiter?.result?.status || (localParticipated ? 'missing' : 'not_required_no_local_outputs'),
+    gpt_final_required: gptFinalRequired,
+    gpt_final_status: gptFinalArbiter?.result?.status || (gptFinalRequired ? 'missing' : 'not_required_no_worktree_candidates'),
     gpt_final_backend: gptFinalArbiter?.backend || null,
-    gpt_final_patch_source: finalGptPatchStage?.final_patch_source || (localParticipated ? 'blocked' : 'not_applicable'),
-    gpt_final_gate_ok: localFinalGate.ok === true,
-    gpt_final_gate: localFinalGate,
+    gpt_final_patch_source: finalGptPatchStage?.final_patch_source || (gptFinalRequired ? 'blocked' : 'not_applicable'),
+    gpt_final_gate_ok: gptFinalGate.ok === true,
+    gpt_final_gate: gptFinalGate,
     naruto_work_graph: narutoWorkGraph ? 'naruto-work-graph.json' : null,
     naruto_total_work_items: Number(narutoWorkGraph?.total_work_items || 0),
     naruto_mixed_work_kinds: narutoWorkGraph?.mixed_work_kinds || [],

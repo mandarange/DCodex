@@ -17,7 +17,6 @@ export function defaultReleaseGateBudget(): ReleaseGateBudget {
     network: 2,
     'browser-real': 1,
     'secret-sensitive': 1,
-    'local-llm-real': Math.max(1, Number(process.env.SKS_LOCAL_LLM_MAX_PARALLEL || 1)),
     'remote-model-real': 2,
     'global-config': 1,
     publish: 1,

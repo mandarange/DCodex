@@ -36,7 +36,6 @@ export async function writeCodexControlProof(root: string, input: {
     output_schema_id: input.task.outputSchemaId,
     worker_result_path: input.result.workerResultPath,
     patch_envelope_path: input.result.patchEnvelopePath || null,
-    local_llm_proof_path: input.result.localLlmProofPath || null,
     python_sdk_proof_path: input.result.pythonSdkProofPath || null,
     sandbox: input.sandbox || null,
     env: input.envProof || null,

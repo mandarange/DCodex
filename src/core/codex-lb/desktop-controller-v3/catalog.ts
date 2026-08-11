@@ -18,6 +18,7 @@ import {
   type CombinedCatalogStagingResult,
   type ProviderCatalogBuildInput
 } from '../combined-catalog.js';
+import { COMBINED_BRIDGE_CATALOG_TTL_MS } from '../combined-catalog/contracts.js';
 import { codexLbEnvPath, codexLbMetadataPath, loadCodexLbEnv, readCodexLbModelCatalog } from '../codex-lb-env.js';
 import {
   bootstrapExistingDesktopBridgeService,
@@ -252,7 +253,7 @@ async function fetchProviderCatalogs(
   options: DesktopBridgeControllerV3Options
 ): Promise<Record<BridgeProviderId, ProviderCatalogBuildInput>> {
   const checkedAt = nowIso(options);
-  const expiresAt = new Date(new Date(checkedAt).getTime() + 15 * 60_000).toISOString();
+  const expiresAt = new Date(new Date(checkedAt).getTime() + COMBINED_BRIDGE_CATALOG_TTL_MS).toISOString();
   const rows = await Promise.all((['codex-lb', 'openrouter'] as const).map(async (providerId) => {
     const profile = registry.profiles[providerId];
     const credential = credentials[providerId];

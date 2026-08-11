@@ -35,8 +35,6 @@ export async function runResearchFalsification(input: {
       source_mutation_allowed: false
     },
     backendPreference: input.backendPreference || ['codex-sdk', 'python-codex-sdk'],
-    allowLocalLlm: false,
-    localLlmPolicy: { mode: 'disabled', requiresGptFinal: true },
     mutationLedgerRoot: path.join(input.dir, 'research', 'falsification-codex-control'),
     reliabilityPolicy: {
       timeoutClass: 'standard',

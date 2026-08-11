@@ -30,6 +30,20 @@ export interface DoctorDirtyPhase {
   runtime_probe_failed: string[];
 }
 
+/**
+ * Phases whose trigger is state that no input hash can observe, and which decide
+ * for themselves whether there is anything to do.
+ *
+ * A provider catalog turns stale with the passage of time — an `expires_at`
+ * moment, not an edit — so nothing this planner hashes ever changes when it
+ * lapses. The clean marker recorded while it was fresh therefore made
+ * `doctor --fix` skip the repair the user was running it for and print a green
+ * check over an expired catalog, run after run. The phase's own first step is a
+ * cheap bridge status read that returns immediately when nothing is stale, so
+ * re-evaluating it every time costs almost nothing and mutates nothing.
+ */
+export const SELF_GUARDING_DOCTOR_PHASES: ReadonlySet<string> = new Set(['desktop_bridge_catalog_repair']);
+
 export function planDoctorDirtyRepair(root: string, phaseIds: string[]): DoctorDirtyPlan {
   const phases = phaseIds.map((id) => {
     const marker = markerPath(root, id);
@@ -37,6 +51,9 @@ export function planDoctorDirtyRepair(root: string, phaseIds: string[]): DoctorD
     const postcheckRequired = phaseRequiresPostcheck(id);
     const markerState = readMarker(marker);
     const runtimeProbeFailed = runtimeProbeFailures(root, id);
+    if (SELF_GUARDING_DOCTOR_PHASES.has(id)) {
+      return { id, status: 'dirty' as const, reason: 'self_guarding_phase', input_hash: inputHash, last_clean_proof_id: markerState?.proof_id || null, postcheck_required: postcheckRequired, postcheck_pending: false, runtime_probe_failed: runtimeProbeFailed };
+    }
     if (!markerState) return { id, status: 'dirty' as const, reason: 'no_clean_marker', input_hash: inputHash, last_clean_proof_id: null, postcheck_required: postcheckRequired, postcheck_pending: false, runtime_probe_failed: runtimeProbeFailed };
     if (markerState.input_hash !== inputHash) {
       return { id, status: 'dirty' as const, reason: 'input_hash_changed', input_hash: inputHash, last_clean_proof_id: markerState.proof_id, postcheck_required: postcheckRequired, postcheck_pending: false, runtime_probe_failed: runtimeProbeFailed };

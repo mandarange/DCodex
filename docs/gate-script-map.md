@@ -63,7 +63,7 @@ release is authorized. Current 8.1.3 classifications live in
 | `image:artifact-path-contract` | `release` | `node ./dist/scripts/image-artifact-path-contract-check.js` | direct |
 | `init-deep:backup-retention` | `release` | `node ./dist/scripts/init-deep-backup-retention-check.js` | direct |
 | `migration:current-surface-e2e` | `release` | `node ./dist/scripts/current-surface-update-e2e-check.js` | direct |
-| `local-collab:all-pipelines-final-gpt` | `release` | `node ./dist/scripts/local-collab-all-pipelines-final-gpt-check.js` | direct |
+| `gpt-final:all-pipelines-required` | `release` | `node ./dist/scripts/gpt-final-all-pipelines-check.js` | direct |
 | `loop-integration-finalizer-check` | `release` | `node ./dist/scripts/loop-integration-finalizer-check.js` | direct |
 | `mad-sks:app-ui-no-mutation` | `release` | `node ./dist/scripts/mad-sks-app-ui-no-mutation-check.js` | direct |
 | `mad:preflight-blocks-unreadable-config` | `release` | `node ./dist/scripts/mad-preflight-blocks-unreadable-config-check.js` | direct |

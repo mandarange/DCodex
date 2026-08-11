@@ -9,7 +9,6 @@ export interface QaLoopBudgetPolicy {
   token_usage_available: boolean
   near_limit: boolean
   remote_model_call_concurrency: number
-  local_llm_draft_preferred: boolean
   final_reviewer_gpt_backed: true
   warnings: string[]
 }
@@ -28,7 +27,6 @@ export function buildQaLoopBudgetPolicy(input: { usage?: CodexAccountUsageSnapsh
     token_usage_available: available,
     near_limit: nearLimit,
     remote_model_call_concurrency: nearLimit ? Math.max(1, Math.min(2, baseBudget)) : baseBudget,
-    local_llm_draft_preferred: nearLimit,
     final_reviewer_gpt_backed: true,
     warnings: available ? [] : ['codex_account_usage_unavailable_no_hard_block']
   }

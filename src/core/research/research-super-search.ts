@@ -112,8 +112,6 @@ function createCodexSourceSearch(input: ResearchSuperSearchShardInput): SuperSea
         source_mutation_allowed: false
       },
       backendPreference: ['codex-sdk', 'python-codex-sdk'],
-      allowLocalLlm: false,
-      localLlmPolicy: { mode: 'disabled', requiresGptFinal: true },
       mutationLedgerRoot: path.join(input.dir, 'research', `cycle-${input.cycle}`, 'super-search-codex-control', input.layer.id, queryId),
       reliabilityPolicy: {
         timeoutClass: 'standard',

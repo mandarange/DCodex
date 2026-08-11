@@ -11,9 +11,7 @@ export function codexRouteCacheKey(input: CodexTaskInput) {
     files: input.inputFiles || [],
     images: (input.inputImages || []).length,
     sandbox: input.sandboxPolicy,
-    allow_local_llm: input.allowLocalLlm === true,
     backend_preference: input.backendPreference || [],
-    local_llm_policy: input.localLlmPolicy || null,
     write_paths: input.requestedScopeContract?.write_paths || [],
     allowed_paths: input.requestedScopeContract?.allowed_paths || []
   }))

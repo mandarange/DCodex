@@ -390,20 +390,6 @@
       ]
     },
     {
-      "canonical_name": "sks-with-local-llm-off",
-      "trusted_sha256": [
-        "4609c43a671c649b2574aebf035e0e8200b29bb893d176567e92f14d2f3aa92c",
-        "86d3a860b438c91c2a5b4cc8ac9c8e7477008f9b689602ddcf14a9e3b759923d"
-      ]
-    },
-    {
-      "canonical_name": "sks-with-local-llm-on",
-      "trusted_sha256": [
-        "11da3f94d77b0f9fe76dee2e99d058cf1495fdc4eaf3e2fb6e43dae66f7d2cd3",
-        "27e1ff08b95428d6b623d06358d5d114ff02673a5c97d8f180dd75859682cd6c"
-      ]
-    },
-    {
       "canonical_name": "sks-work",
       "trusted_sha256": [
         "9619bcbe29fe84853500dbcac169d81915388144cbe677ef4f5831220e3a02d3",

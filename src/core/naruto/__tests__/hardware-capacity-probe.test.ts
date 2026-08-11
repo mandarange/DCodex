@@ -36,7 +36,6 @@ test('remote api rate-limit budget defaults to the conservative floor of 12', ()
     'free_memory_bytes',
     'gpu_available',
     'gpu_vram_mb',
-    'local_llm_max_parallel_requests',
     'node_heap_total_bytes',
     'node_heap_used_bytes',
     'process_count',

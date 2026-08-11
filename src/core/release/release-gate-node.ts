@@ -9,7 +9,6 @@ export const RELEASE_GATE_RESOURCE_CLASSES = [
   'git-worktree',
   'browser-real',
   'secret-sensitive',
-  'local-llm-real',
   'remote-model-real',
   'python',
   'network',

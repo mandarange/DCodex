@@ -75,7 +75,6 @@ export async function withModelCallSlot<T>(input: {
 
 export function defaultModelCallBudget(provider: string): number {
   const text = String(provider || '')
-  if (text === 'local-llm' || text === 'ollama') return envInt('SKS_LOCAL_LLM_MAX_PARALLEL_REQUESTS', 4)
   return envInt('SKS_REMOTE_API_PARALLEL_BUDGET', 3)
 }
 

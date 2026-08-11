@@ -62,9 +62,7 @@
         "fake",
         "process",
         "codex-sdk",
-        "python-codex-sdk",
-        "ollama",
-        "local-llm"
+        "python-codex-sdk"
       ]
     },
     "summary": {
@@ -241,9 +239,6 @@
             "type": "number"
           },
           "backend_sdk_thread_id": {
-            "type": "string"
-          },
-          "backend_ollama_request_id": {
             "type": "string"
           },
           "fast_mode": {

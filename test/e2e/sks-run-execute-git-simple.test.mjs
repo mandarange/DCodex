@@ -25,7 +25,6 @@ test('sks run --execute routes $Commit through deterministic simple git command'
     env: {
       ...process.env,
       SKS_SKIP_NPM_FRESHNESS_CHECK: '1',
-      SKS_OLLAMA_WORKERS: '0'
     }
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -55,7 +54,6 @@ test('sks run --execute keeps clean $Commit on deterministic no_changes path', a
     env: {
       ...process.env,
       SKS_SKIP_NPM_FRESHNESS_CHECK: '1',
-      SKS_OLLAMA_WORKERS: '0'
     }
   });
   assert.equal(result.status, 1, result.stderr || result.stdout);

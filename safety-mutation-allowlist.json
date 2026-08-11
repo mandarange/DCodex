@@ -5432,8 +5432,8 @@
       "file": "src/scripts/high-risk-contracts-check.ts",
       "symbol": "module",
       "token": "writeFileSync",
-      "scope_contract_sha256": "e29dc19cd84a4bacb2095714f384bc9f30796cb5d22f13635aa7f20b5c0ee929",
-      "callsite_sha256": "f359ce1e79b54045a1db46d6d6564b1af5d47657164678348e1d84e9eb72b3e6",
+      "scope_contract_sha256": "182060ee0a4ca78b627e42c645edc9318ee12c26632d846dcfce073738d460fb",
+      "callsite_sha256": "a323f490eb0848accfd53f2dd365bd6d23790a5e2e2150e8c473e38046dcb199",
       "occurrence": 1,
       "reason": "src/scripts/high-risk-contracts-check.ts#module writes only its scoped fixture, generated report, or build artifact; the exact callsite remains release-gated."
     },

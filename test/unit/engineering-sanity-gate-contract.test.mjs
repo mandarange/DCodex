@@ -111,7 +111,7 @@ async function completeEngineeringSanityReview(root, missionId, routeCommand, ba
 for (const [name, prompt] of [
   ['english make', '$SKS make the retry loop bounded'],
   ['korean 개발', '$Fast-Mode 로그인 모듈 개발'],
-  ['korean 수정', '$with-local-llm-on 재시도 루프 수정'],
+  ['korean 수정', '$Fast-On 재시도 루프 수정'],
   ['english fix', '$SKS fix the unbounded retry loop in src/retry.ts']
 ]) {
   test(`lightweight code-changing prompt never requires an unseeded engineering sanity review (${name})`, async (t) => {

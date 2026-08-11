@@ -27,10 +27,10 @@ export const MAX_AGENT_COUNT = 20
 export const DEFAULT_AGENT_CONCURRENCY = DEFAULT_NARUTO_MAX_THREADS
 /** Hard concurrency ceiling shared with the Naruto capacity ledger. */
 export const HARD_AGENT_CONCURRENCY = HARD_NARUTO_MAX_THREADS
-export const AGENT_BACKENDS = ['fake', 'process', 'codex-sdk', 'ollama', 'local-llm'] as const
+export const AGENT_BACKENDS = ['fake', 'process', 'codex-sdk'] as const
 
 export type AgentBackend = typeof AGENT_BACKENDS[number]
-export type AgentExecutionBackend = 'codex-sdk' | 'python-codex-sdk' | 'local-llm' | 'fake'
+export type AgentExecutionBackend = 'codex-sdk' | 'python-codex-sdk' | 'fake'
 export type AgentWorkerPlacement = 'process'
 export type AgentServiceTier = 'fast' | 'standard'
 export type AgentStatus = 'pending' | 'running' | 'closed' | 'blocked' | 'failed'
@@ -135,10 +135,6 @@ export interface AgentRunOptions {
   serviceTier?: AgentServiceTier
   env?: NodeJS.ProcessEnv
   noFast?: boolean
-  ollamaEnabled?: boolean
-  noOllama?: boolean
-  ollamaModel?: string | null
-  ollamaBaseUrl?: string | null
   worktree?: {
     id: string
     path: string

@@ -30,7 +30,7 @@ try {
   assertGate(rejected.result.lean_review?.status === 'rejected', 'unsafe candidate must reject lean review');
   assertGate(rejected.blockers.includes('unsafe_candidate_patch'), 'unsafe rejection blocker must be preserved');
 
-  emitGate('local-collab:gpt-final-arbiter', { approved: approved.result.status, rejected: rejected.result.status });
+  emitGate('gpt-final:arbiter', { approved: approved.result.status, rejected: rejected.result.status });
 } finally {
   restoreEnv(old);
 }
@@ -40,9 +40,8 @@ function fixtureInput(label: string) {
     schema: 'sks.gpt-final-arbiter-input.v1',
     route: '$Naruto',
     mission_id: `M-${label}`,
-    local_mode: 'local-parallel-gpt-final',
-    local_outputs: [
-      { worker_id: 'slot-001/gen-1', backend: 'local-llm', summary: 'candidate patch drafted', patch_envelopes: [], proof: 'local draft' }
+    candidate_outputs: [
+      { worker_id: 'slot-001/gen-1', backend: 'codex-sdk', summary: 'candidate patch drafted', patch_envelopes: [], proof: 'worktree draft' }
     ],
     candidate_diff: 'diff --git a/example.ts b/example.ts',
     candidate_patch_envelopes: [],

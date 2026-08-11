@@ -11,9 +11,6 @@ test('unknown feature fixtures are missing instead of implicit static pass', () 
   assert.equal(skill.status, 'pass');
   assert.equal(skill.quality, 'static_contract');
   assert.equal(fixtureForFeature('cli-update').status, 'pass');
-  assert.equal(fixtureForFeature('cli-with-local-llm').status, 'pass');
-  assert.equal(fixtureForFeature('route-with-local-llm-on').status, 'pass');
-  assert.equal(fixtureForFeature('route-with-local-llm-off').status, 'pass');
 });
 
 test('wrongness release fixture validates without mutating project memory', () => {

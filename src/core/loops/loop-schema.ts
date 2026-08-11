@@ -33,7 +33,7 @@ export interface SksLoopAgentPolicy {
   route: '$Naruto';
   role: 'implementer' | 'researcher' | 'fixer' | 'writer' | 'planner';
   worker_count: number;
-  backend_preference: Array<'codex-sdk' | 'python-codex-sdk' | 'local-llm'>;
+  backend_preference: Array<'codex-sdk' | 'python-codex-sdk'>;
   local_draft_allowed: boolean;
   gpt_final_required: boolean;
 }

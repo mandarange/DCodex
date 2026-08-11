@@ -57,6 +57,10 @@ export const INSTALLED_REQUIRED_DOLLAR_COMMANDS = ['$sks-naruto', '$sks-work'] a
 export const INSTALLED_REMOVED_COMMANDS = ['team', 'mad-db', 'tmux', 'xai', 'swarm', 'agent', 'ralph', 'ui'] as const
 export const INSTALLED_REMOVED_DOLLAR_COMMANDS = Array.from(new Set([
   '$Agent', '$Team', '$MAD-DB', '$Swarm', '$ShadowClone', '$Kagebunshin', '$Ralph',
+  // Local LLM support was removed in full. The rest of this list is derived from
+  // live ROUTES, so deleting the route also deleted the proof that an installed
+  // package rejects its commands; pin them here like every other removed feature.
+  '$with-local-llm-on', '$with-local-llm-off',
   ...LEGACY_DOLLAR_COMMAND_NAMES.filter((command) => command.toLowerCase() !== '$sks'),
   ...LEGACY_DOLLAR_SKILL_NAMES.filter((name) => name !== 'sks').map((name) => `$${name}`)
 ]))

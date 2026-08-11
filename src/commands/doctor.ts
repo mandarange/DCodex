@@ -18,7 +18,6 @@ import {
 } from '../core/codex/oauth-callback-port-diagnostic.js';
 import { inventoryCodexPermissionProfiles } from '../core/codex/codex-permission-profiles.js';
 import { resolveProviderContext } from '../core/provider/provider-context.js';
-import { readLocalModelConfig } from '../core/agents/ollama-worker-config.js';
 import { writeCodexCurrentAppCapabilityArtifacts } from '../core/codex-control/codex-current-app-capability.js';
 import { writeCodexPluginInventoryArtifacts, pluginAppTemplatePolicy } from '../core/codex-plugins/codex-plugin-json.js';
 import { writeMcpPluginInventoryArtifacts } from '../core/mcp/mcp-plugin-inventory.js';
@@ -499,7 +498,6 @@ async function runDoctorJsonFastPath(args: any = [], root: string) {
     doctor_fix_transaction: null,
     doctor_fix_postcheck: null,
     postcheck: null,
-    local_model: null,
     agent_role_config: { schema: 'sks.agent-role-config-repair.v1', ok: true, apply: false, skipped: true, blockers: [] },
     codex_permission_profiles: { skipped: true, reason: 'doctor_json_fast_path_optional_diagnostics_skipped' },
     command_aliases: { schema: 'sks.command-alias-cleanup.v1', ok: true, skipped: true, reason: 'doctor_json_fast_path_no_write' },
@@ -732,7 +730,9 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   const codexApp = deepDiagnostics
     ? await codexAppIntegrationStatus({ codex }).catch((err: any) => ({ ok: false, error: err.message }))
     : { ok: false, skipped: true, warnings: ['codex_app_optional_diagnostic_skipped'] };
-  const desktopBridge = await inspectDoctorDesktopBridgeStatus({
+  // Only the BEFORE picture: a `--fix` run repairs the bridge inside the
+  // transaction further down, and `desktopBridge` is re-read once that closes.
+  const desktopBridgeBeforeFix = await inspectDoctorDesktopBridgeStatus({
     processEnv: process.env
   }, { desktopBridgeStatusImpl: deps.desktopBridgeStatusImpl });
   const providerContext = deepDiagnostics
@@ -1110,11 +1110,18 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
                 // root. Passing `root` here looked for its settings inside the
                 // repository, found nothing, and returned "not running" — so the
                 // stale-runtime restart silently never happened.
+                // Every bridge path is derived from HOME (`<home>/.codex/...`);
+                // a project root is not a home. Reading the status under `root`
+                // found no managed bridge whenever doctor ran from inside a
+                // project — the common case — so the repair concluded there was
+                // nothing to do, returned a green check, and left the stale
+                // catalog untouched on every single `--fix`.
+                const bridgeHome = path.resolve(process.env.HOME || os.homedir());
                 const restarted = await restartStaleDesktopBridgeRuntime({
-                  home: path.resolve(process.env.HOME || os.homedir()),
+                  home: bridgeHome,
                   fix: doctorFix,
                 });
-                const status: any = await desktopBridgeStatusV3({ home: root, env: process.env });
+                const status: any = await desktopBridgeStatusV3({ home: bridgeHome, env: process.env });
                 const blockers = (status?.readiness?.blockers || []).map(String);
                 const stale = blockers.filter((blocker: string) => blocker.endsWith('_catalog_stale'));
                 if (!status?.management?.managed || stale.length === 0) {
@@ -1136,9 +1143,9 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
                 const attempts: string[] = [];
                 let syncedAndVerified = false;
                 for (let attempt = 1; attempt <= CATALOG_REPAIR_MAX_ATTEMPTS; attempt += 1) {
-                  const sync: any = await executeDesktopBridgeCommandV3({ operation: 'catalog.sync' }, { home: root, env: process.env });
+                  const sync: any = await executeDesktopBridgeCommandV3({ operation: 'catalog.sync' }, { home: bridgeHome, env: process.env });
                   const commandOk = sync?.ok === true && sync?.execution?.ok === true;
-                  const after: any = await desktopBridgeStatusV3({ home: root, env: process.env });
+                  const after: any = await desktopBridgeStatusV3({ home: bridgeHome, env: process.env });
                   const stillStale = ((after?.readiness?.blockers || []) as unknown[])
                     .map(String).filter((blocker) => blocker.endsWith('_catalog_stale'));
                   if (commandOk && stillStale.length === 0) { syncedAndVerified = true; break; }
@@ -1186,7 +1193,18 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
       } as any))
     : null;
   const doctorFixPostcheck = doctorFix ? (await import('../core/doctor/doctor-repair-postcheck.js')).doctorRepairPostcheck(doctorFixTransaction as any) : null;
-  const localModel = await readLocalModelConfig().catch(() => null);
+  // Read the bridge again now the repair transaction has closed. Doctor used to
+  // report the snapshot taken BEFORE it, so a `desktop_bridge_catalog_repair`
+  // that succeeded still printed `Desktop Bridge: blocked` listing the very
+  // blockers it had just cleared — from the user's side, indistinguishable from
+  // a repair that never ran, and unchanged no matter how often they re-ran
+  // `--fix`. Everything downstream (report, blockers, printed summary) consumes
+  // this binding.
+  const desktopBridge = doctorFixTransaction
+    ? await inspectDoctorDesktopBridgeStatus({
+      processEnv: process.env
+    }, { desktopBridgeStatusImpl: deps.desktopBridgeStatusImpl })
+    : desktopBridgeBeforeFix;
   const permissionProfiles = await inventoryCodexPermissionProfiles(root, { writeReport: true });
   const startupRoleRepair = (startupConfigRepair as any)?.role_repair;
   const agentRoleConfigRepair = doctorFix && startupRoleRepair
@@ -1452,7 +1470,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     require_legacy_global_hook_cleanup: requireLegacyGlobalHookCleanup,
     require_legacy_generation_convergence: doctorFix && !migrationReceiptOwnsReconcile,
     skills: skillsReconcile,
-    local_model: localModel,
     agent_role_config: agentRoleConfigRepair,
     repair: configRepair,
     codex_app_ui: codexAppUi,
@@ -1640,7 +1657,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
       required_blockers: (doctorFixPostcheck as any).required_blockers || [],
       optional_warnings: (doctorFixPostcheck as any).optional_warnings || []
     } : null,
-    local_model: localModel,
     agent_role_config: agentRoleConfigRepair,
     official_subagent_config: officialSubagentConfig,
     codex_permission_profiles: permissionProfiles,
@@ -1861,16 +1877,6 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
   for (const warning of desktopBridge.warnings || []) console.log(`  warning: ${warning}`);
   for (const blocker of desktopBridge.blockers || []) console.log(`  blocker: ${blocker}`);
   if (!desktopBridge.ok) for (const action of desktopBridge.recovery_actions || []) console.log(`  action: ${action}`);
-  if (localModel) {
-    console.log('Local LLM:');
-    console.log(`  enabled: ${localModel.enabled ? 'yes' : 'no'}`);
-    console.log(`  status: ${localModel.status}`);
-    console.log(`  provider: ${localModel.provider}`);
-    console.log(`  model: ${localModel.model}`);
-    console.log(`  endpoint: ${localModel.base_url}`);
-    console.log(`  last smoke: ${localModel.last_smoke?.ok ? `ok ${localModel.last_smoke.latency_ms || 0}ms ${localModel.last_smoke.tokens_per_second || 0} tok/s` : 'missing'}`);
-    console.log('  final arbiter: GPT required');
-  }
   console.log(`Permissions: config profile and permission profile are tracked separately (${permissionProfiles.codex_config_profile_field}, ${permissionProfiles.codex_permission_profile_field})`);
   console.log('Ready:');
   console.log(`  cli_ready: ${ready.cli_ready ? 'yes' : 'no'}`);

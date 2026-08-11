@@ -2,7 +2,54 @@
 
 ## [Unreleased]
 
+## [8.7.0] - 2026-08-11
 
+### Fixed
+
+- `sks doctor --fix` can finally clear a stale bridge catalog. Four defects
+  compounded into "the fix never fixes it", each one enough on its own:
+
+  - The provider catalog was treated as fresh for **15 minutes**, and nothing
+    refreshes it in the background — the running bridge never reads
+    `expires_at`, and only an explicit `catalog.sync` rewrites it. Doctor synced
+    the catalog, verified it, went green, and a quarter of an hour later the
+    same `<provider>_catalog_stale` blocker was back. Freshness is now a named
+    12-hour contract that outlives a working session.
+  - The repair addressed the wrong home. Every bridge path derives from HOME
+    (`<home>/.codex/…`), but the repair passed the project root, so whenever
+    doctor ran from inside a project — the common case — it found no managed
+    bridge, concluded there was nothing to do, and returned a green check over
+    an untouched stale catalog.
+  - Doctor reported the bridge snapshot taken *before* the repair transaction.
+    A repair that succeeded still printed `Desktop Bridge: blocked` listing the
+    blockers it had just cleared, indistinguishable from one that never ran.
+  - The repair phase could be skipped as "clean". A catalog lapses with the
+    passage of time, which no config hash observes, so the marker written while
+    it was fresh made `--fix` skip the repair the user was running it for.
+
+- An inactive provider no longer blocks bridge readiness. Readiness demoted an
+  unconfigured provider's problems to `inactive_provider:<id>:<problem>`
+  warnings and the combined-catalog aggregate promoted the same facts straight
+  back, so one report carried `warning: inactive_provider:openrouter:
+  openrouter_credential_missing` beside `blocker: openrouter_credential_missing`.
+  Nothing routes to that provider and no `--fix` can invent an API key.
+
+### Removed
+
+- Local LLM support is gone in full: the `with-local-llm` command, the
+  `$with-local-llm-on` / `$with-local-llm-off` routes and skills, the Ollama and
+  MLX worker backends, the local control-plane adapter, the local worker
+  capability card, the `local-llm-real` release-gate resource class, and the
+  local-model config at `~/.sneakoscope/local-model.json`. Workers run on Codex
+  official backends only, and doctor no longer reports a Local LLM section.
+
+  GPT Final survives with a narrower trigger. It existed because local model
+  output was draft material; worktree-derived candidate output still is, so the
+  arbiter, its acceptance rule, and the all-pipelines gate remain — the gate is
+  now `gpt-final:all-pipelines-required`, driven by a worktree candidate rather
+  than a local draft. The local-collaboration policy, its four modes, and the
+  "the arbiter must not itself be local" check are removed with the backend
+  that gave them meaning.
 
 ## [8.6.6] - 2026-08-11
 

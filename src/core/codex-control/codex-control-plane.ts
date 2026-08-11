@@ -16,13 +16,11 @@ export interface RequestedScopeContract {
 export type CodexControlBackend =
   | 'codex-sdk'
   | 'python-codex-sdk'
-  | 'local-llm'
   | 'fake'
 
 export type CodexControlBackendFamily =
   | 'remote-gpt'
   | 'python-sdk'
-  | 'local-llm'
   | 'fake'
 
 export interface CodexTaskInput {
@@ -49,11 +47,6 @@ export interface CodexTaskInput {
     timeoutClass?: 'short' | 'standard' | 'long'
   }
   backendPreference?: CodexControlBackend[]
-  allowLocalLlm?: boolean
-  localLlmPolicy?: {
-    mode: 'worker_only' | 'local_preferred' | 'local_only' | 'disabled'
-    requiresGptFinal: boolean
-  }
   mutationLedgerRoot: string
   model?: string | null
   reasoningEffort?: string | null
@@ -71,7 +64,6 @@ export interface CodexTaskResult {
   structuredOutputValid: boolean
   workerResultPath: string
   patchEnvelopePath?: string | null
-  localLlmProofPath?: string | null
   pythonSdkProofPath?: string | null
   blockers: string[]
   reliabilityShield?: Record<string, unknown>

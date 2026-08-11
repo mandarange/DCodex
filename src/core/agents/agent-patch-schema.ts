@@ -26,7 +26,6 @@ export interface AgentPatchEnvelope {
   worker_process_id?: number
   backend_child_process_id?: number
   backend_sdk_thread_id?: string
-  backend_ollama_request_id?: string
   fast_mode?: boolean
   service_tier?: 'fast' | 'standard'
   lease_id?: string
@@ -106,7 +105,6 @@ export function normalizeAgentPatchEnvelope(input: any): AgentPatchEnvelope {
     ...(hasFiniteNumber(input?.worker_process_id) ? { worker_process_id: Number(input.worker_process_id) } : {}),
     ...(hasFiniteNumber(input?.backend_child_process_id) ? { backend_child_process_id: Number(input.backend_child_process_id) } : {}),
     ...(input?.backend_sdk_thread_id ? { backend_sdk_thread_id: String(input.backend_sdk_thread_id) } : {}),
-    ...(input?.backend_ollama_request_id ? { backend_ollama_request_id: String(input.backend_ollama_request_id) } : {}),
     ...(input?.fast_mode === undefined ? {} : { fast_mode: Boolean(input.fast_mode) }),
     ...(input?.service_tier === 'fast' || input?.service_tier === 'standard' ? { service_tier: input.service_tier } : {}),
     ...(input?.lease_id ? { lease_id: String(input.lease_id) } : {}),
@@ -139,7 +137,7 @@ export function validateAgentPatchEnvelope(envelope: AgentPatchEnvelope): { ok: 
   if (!envelope.lease_id && !envelope.lease_proof?.lease_id) violations.push('lease_id_missing')
   if (!envelope.operations.length) violations.push('operations_missing')
   if (envelope.source && !['fixture', 'model_authored', 'process_generated', 'git-worktree-diff'].includes(envelope.source)) violations.push('source_invalid')
-  if (envelope.source === 'model_authored' && !hasFiniteNumber(envelope.backend_child_process_id) && !envelope.backend_sdk_thread_id && !envelope.backend_ollama_request_id) violations.push('model_authored_backend_proof_missing')
+  if (envelope.source === 'model_authored' && !hasFiniteNumber(envelope.backend_child_process_id) && !envelope.backend_sdk_thread_id) violations.push('model_authored_backend_proof_missing')
   if (envelope.source === 'fixture' && envelope.backend_child_process_id !== undefined) violations.push('fixture_backend_child_process_id_present')
   if (envelope.source === 'git-worktree-diff' && !envelope.git_worktree?.worktree_path) violations.push('git_worktree_metadata_missing')
   for (const operation of envelope.operations) {

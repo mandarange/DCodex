@@ -15,7 +15,6 @@ const limits = {
   trackedFileBytes: Number(process.env.SKS_MAX_TRACKED_FILE_BYTES || 384 * 1024)
 };
 const trackedFileSizeAllowlist = new Set([
-  'docs/sks-local-llm-mode/exports/sks-local-llm-mode-deck.pdf',
   'release-gates.v2.json'
 ]);
 const trackedFileSizeBudgets = new Map([

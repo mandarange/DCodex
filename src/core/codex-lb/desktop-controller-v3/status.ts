@@ -81,6 +81,29 @@ export async function loadCore(options: DesktopBridgeControllerV3Options): Promi
   return { paths, checkedAt, config, credentials, registry, activeCatalog, policy, policyBlockers, service, auth, catalogSync, diagnostic };
 }
 
+/**
+ * A problem that belongs only to an INACTIVE provider is never a readiness
+ * blocker. Readiness demotes such problems to `inactive_provider:<id>:<problem>`
+ * warnings, but the combined catalog aggregates over every ENABLED provider, so
+ * pushing its blockers in wholesale undid that demotion: a provider nothing
+ * routes to came back as a hard blocker, and one report carried the same fact
+ * twice — `warning: inactive_provider:openrouter:openrouter_credential_missing`
+ * beside `blocker: openrouter_credential_missing`. An unconfigured inactive
+ * provider is a setup step the user may never intend to take, so it cannot hold
+ * the bridge unready, and no `doctor --fix` could ever clear it.
+ *
+ * A problem an active provider shares stays a blocker, and aggregate blockers
+ * belonging to no single provider (route conflicts, index staleness) are kept.
+ */
+export function scopeCatalogBlockersToActiveProviders(
+  combinedBlockers: readonly string[],
+  activeProviderProblems: ReadonlySet<string>,
+  inactiveProviderProblems: ReadonlySet<string>
+): string[] {
+  return combinedBlockers.filter((blocker) =>
+    activeProviderProblems.has(blocker) || !inactiveProviderProblems.has(blocker));
+}
+
 export function statusFromCore(
   core: ControllerCore,
   options: DesktopBridgeControllerV3Options
@@ -99,19 +122,29 @@ export function statusFromCore(
   const activeProviders = activeProviderIds(core);
   const activeBlockers: string[] = [];
   const warnings: string[] = [];
+  const activeProviderProblems = new Set<string>();
+  const inactiveProviderProblems = new Set<string>();
   if (managedConfig && !core.service.running) activeBlockers.push(...core.service.blockers);
   if (activeProviders.length === 0) activeBlockers.push('bridge_active_route_not_selected');
   for (const providerId of ['codex-lb', 'openrouter'] as const) {
     const profile = core.registry.profiles[providerId];
     const problems = unique([...profile.blockers, ...core.catalogSync.providers[providerId].blockers]);
-    if (activeProviders.includes(providerId)) activeBlockers.push(...problems);
+    const active = activeProviders.includes(providerId);
+    if (active) activeBlockers.push(...problems);
     else warnings.push(...problems.map((problem) => `inactive_provider:${providerId}:${problem}`));
+    for (const problem of problems) (active ? activeProviderProblems : inactiveProviderProblems).add(problem);
   }
   const activeCatalogReady = activeProviders.length > 0 && activeProviders.every((providerId) =>
     core.catalogSync.providers[providerId].state === 'verified'
       && core.policy
       && Object.values(core.policy.model_routes).some((route) => route.provider_id === providerId));
-  if (!activeCatalogReady) activeBlockers.push(...core.catalogSync.blockers);
+  if (!activeCatalogReady) {
+    activeBlockers.push(...scopeCatalogBlockersToActiveProviders(
+      core.catalogSync.blockers,
+      activeProviderProblems,
+      inactiveProviderProblems
+    ));
+  }
   const oauthConfigured = core.auth.mode === 'chatgpt_oauth' || core.auth.mode === 'mixed';
   if (managedConfig && !oauthConfigured) activeBlockers.push('chatgpt_oauth_required_for_desktop');
   const lastReport = core.diagnostic?.report || null;

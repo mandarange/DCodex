@@ -65,7 +65,7 @@ function input(label) {
     route: '$Naruto',
     mission_id: `M-${label}`,
     local_mode: 'local-parallel-gpt-final',
-    local_outputs: [{ worker_id: 'slot-001/gen-1', backend: 'local-llm', summary: 'draft' }],
+    candidate_outputs: [{ worker_id: 'slot-001/gen-1', backend: 'codex-sdk', summary: 'draft' }],
     candidate_diff: 'diff --git a/x b/x',
     candidate_patch_envelopes: [],
     verification_results: [{ ok: true, status: 'passed' }],

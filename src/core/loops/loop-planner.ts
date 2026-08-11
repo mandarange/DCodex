@@ -156,7 +156,7 @@ function makeNode(input: {
       route: '$Naruto',
       role: input.route === '$Integration' ? 'planner' : input.loopId.includes('docs') ? 'writer' : 'implementer',
       worker_count: makerWorkerCount,
-      backend_preference: ['codex-sdk', 'python-codex-sdk', 'local-llm'],
+      backend_preference: ['codex-sdk', 'python-codex-sdk'],
       local_draft_allowed: input.risk.level !== 'critical',
       gpt_final_required: input.risk.requires_gpt_final
     },

@@ -14,8 +14,6 @@ import { recordCodexThread } from './codex-thread-registry.js'
 import { runWithCodexReliabilityShield } from './codex-reliability-shield.js'
 import { routeCodexTask } from '../router/ultra-router.js'
 import { writeUltraRouterProof } from '../router/router-proof.js'
-import { readLocalModelConfig } from '../agents/ollama-worker-config.js'
-import { runLocalLlmTask } from '../local-llm/local-llm-control-adapter.js'
 import { detectPythonCodexSdkCapability, runPythonCodexSdkTask } from './python-codex-sdk-adapter.js'
 import { defaultModelCallBudget, withModelCallSlot } from './model-call-concurrency.js'
 import {
@@ -31,8 +29,7 @@ export async function runCodexTask(input: CodexTaskInput): Promise<CodexTaskResu
   const routerDecision = routeCodexTask(input)
   const task = { ...input, tier: input.tier || routerDecision.tier, outputSchema: schema }
   await writeUltraRouterProof(root, { task, decision: routerDecision })
-  const selectedBackend = selectCodexControlBackend(task, routerDecision)
-  if (selectedBackend === 'local-llm') return runLocalControlTask(root, task, schema, routerDecision)
+  const selectedBackend = selectCodexControlBackend(task)
   if (selectedBackend === 'python-codex-sdk') return runPythonControlTask(root, task, schema, routerDecision)
   const capability = await detectCodexSdkCapability()
   const sandbox = mapCodexSdkSandboxPolicy(task)
@@ -368,124 +365,16 @@ async function cleanupNativeCodexAuthBridge(bridge: Awaited<ReturnType<typeof pr
   }
 }
 
-async function runLocalControlTask(root: string, task: CodexTaskInput, schema: Record<string, unknown>, routerDecision: unknown) {
-  const config = await readLocalModelConfig()
-  const adapterResult = await withModelCallSlot({
-    root,
-    missionId: task.missionId,
-    provider: 'local-llm',
-    budget: defaultModelCallBudget('local-llm'),
-    slotId: task.slotId || null,
-    generationIndex: task.generationIndex ?? null,
-    sessionId: task.sessionId || null,
-    backend: 'local-llm'
-  }, () => runLocalLlmTask(task, { config, outputSchema: schema }))
-  for (const event of adapterResult.events || []) await appendJsonlBounded(path.join(root, 'local-llm-events.jsonl'), event, 5 * 1024 * 1024)
-  const structuredOutput = adapterResult.structuredOutput
-  const validation = structuredOutput ? validateJsonSchemaRecursive(structuredOutput, schema) : { ok: false, issues: ['structured_output_missing'] }
-  const primaryBlockers = [
-    ...(adapterResult.blockers || []),
-    ...codexControlAdapterFailureBlockers(adapterResult, 'local-llm')
-  ]
-  const runFailed = isRunFailureBlocker(primaryBlockers)
-  const finalBlockers = [
-    ...primaryBlockers,
-    ...(runFailed || (Array.isArray(adapterResult.events) && adapterResult.events.length > 0) ? [] : ['local_llm_event_stream_missing']),
-    ...(runFailed || validation.ok ? [] : ['local_llm_structured_output_invalid', ...validation.issues.map((issue) => `schema:${issue}`)])
-  ]
-  const workerResult = normalizeWorkerResult(structuredOutput, task, finalBlockers, validation.ok, 'local-llm')
-  // Stamp the local-llm request id as backend proof on model-authored patch
-  // envelopes; without it agent-patch-schema rejects every local-llm patch
-  // with model_authored_backend_proof_missing (the model cannot know the id).
-  if (Array.isArray(workerResult.patch_envelopes)) {
-    workerResult.patch_envelopes = workerResult.patch_envelopes.map((envelope: any) => ({
-      ...envelope,
-      backend_ollama_request_id: envelope?.backend_ollama_request_id || adapterResult.requestId
-    }))
-  }
-  const workerResultPath = path.join(root, 'local-llm-worker-result.json')
-  await writeJsonAtomic(workerResultPath, workerResult)
-  const patchEnvelopePath = Array.isArray(workerResult.patch_envelopes) && workerResult.patch_envelopes.length
-    ? path.join(root, 'local-llm-patch-envelope.json')
-    : null
-  if (patchEnvelopePath) {
-    await writeJsonAtomic(patchEnvelopePath, {
-      schema: 'sks.local-llm-patch-envelope.v1',
-      generated_at: nowIso(),
-      ok: true,
-      envelope_count: workerResult.patch_envelopes.length,
-      envelopes: workerResult.patch_envelopes,
-      requires_gpt_final: true
-    })
-  }
-  const localLlmProofPath = path.join(root, 'local-llm-proof.json')
-  await writeJsonAtomic(localLlmProofPath, adapterResult.proof)
-  const result: CodexTaskResult & Record<string, unknown> = {
-    ok: finalBlockers.length === 0,
-    backend: 'local-llm',
-    backend_family: 'local-llm',
-    sdkThreadId: '',
-    sdkRunId: null,
-    streamEventCount: adapterResult.events?.length || 0,
-    structuredOutputValid: validation.ok,
-    workerResultPath,
-    patchEnvelopePath,
-    localLlmProofPath,
-    blockers: finalBlockers,
-    reliabilityShield: {},
-    ultraRouterDecision: routerDecision as Record<string, unknown>,
-    outputSchemaId: task.outputSchemaId,
-    finalResponse: adapterResult.finalResponse || '',
-    eventTypes: (adapterResult.events || []).map((event: any) => String(event?.type || 'unknown')),
-    translatedEventCount: adapterResult.events?.length || 0,
-    localLlmRequestId: adapterResult.requestId
-  }
-  await recordCodexThread(root, {
-    backend: result.backend,
-    backend_family: result.backend_family,
-    route: task.route,
-    mission_id: task.missionId,
-    work_item_id: task.workItemId || null,
-    slot_id: task.slotId || null,
-    generation_index: task.generationIndex ?? null,
-    session_id: task.sessionId || null,
-    sdk_thread_id: null,
-    sdk_run_id: null,
-    local_llm_request_id: adapterResult.requestId,
-    stream_event_count: result.streamEventCount,
-    output_schema_id: task.outputSchemaId,
-    structured_output_valid: result.structuredOutputValid,
-    worker_result_path: result.workerResultPath
-  })
-  await writeCodexControlProof(root, {
-    task,
-    result,
-    capability: config.capability as unknown as Record<string, unknown>,
-    sandbox: { ok: task.sandboxPolicy !== 'full-access', sandbox_policy: task.sandboxPolicy, blockers: task.sandboxPolicy === 'full-access' ? ['local_llm_full_access_blocked'] : [] },
-    envProof: { provider: config.provider, endpoint: config.base_url },
-    config: { provider: config.provider, model: config.model, endpoint: config.base_url, status: config.status },
-    reliabilityShield: null,
-    routerDecision: routerDecision as Record<string, unknown>,
-    translatedEvents: adapterResult.events || []
-  })
-  return result
-}
-
-function selectCodexControlBackend(input: CodexTaskInput, routerDecision: any): 'codex-sdk' | 'python-codex-sdk' | 'local-llm' {
+function selectCodexControlBackend(input: CodexTaskInput): 'codex-sdk' | 'python-codex-sdk' {
   const prefs = Array.isArray(input.backendPreference) ? input.backendPreference : []
   for (const pref of prefs) {
     if (pref === 'python-codex-sdk') return 'python-codex-sdk'
     if (pref === 'codex-sdk') return 'codex-sdk'
-    if (pref === 'local-llm' && input.tier === 'worker') return 'local-llm'
   }
-  if (input.localLlmPolicy?.mode === 'disabled') return 'codex-sdk'
-  if (input.allowLocalLlm === true && input.tier === 'worker' && routerDecision?.selected_profile === 'local-llm-worker') return 'local-llm'
-  if (input.allowLocalLlm === true && input.tier === 'worker' && input.localLlmPolicy?.mode === 'local_only') return 'local-llm'
-  if (input.allowLocalLlm === true && input.tier === 'worker' && input.localLlmPolicy?.mode === 'local_preferred') return 'local-llm'
   return 'codex-sdk'
 }
 
-function normalizeWorkerResult(value: any, input: CodexTaskInput, blockers: string[], structuredOutputValid: boolean, backend: 'codex-sdk' | 'python-codex-sdk' | 'local-llm' = 'codex-sdk') {
+function normalizeWorkerResult(value: any, input: CodexTaskInput, blockers: string[], structuredOutputValid: boolean, backend: 'codex-sdk' | 'python-codex-sdk' = 'codex-sdk') {
   const status = blockers.length ? 'blocked' : normalizeStatus(value?.status)
   return {
     ...value,
@@ -528,8 +417,6 @@ function isRunFailureBlocker(blockers: readonly unknown[]): boolean {
       || text.startsWith('python_codex_sdk_error')
       || text.startsWith('native_codex_auth_bridge_failed')
       || text.startsWith('native_codex_auth_cleanup_failed')
-      || text.startsWith('local_llm_generate_failed')
-      || text.startsWith('local_llm_eligibility_blocked')
       || text.startsWith('desktop_bridge_launch_')
       || text.endsWith('_adapter_reported_failure')
       || text === 'codex_reliability_shield_failed'
@@ -540,7 +427,7 @@ function isRunFailureBlocker(blockers: readonly unknown[]): boolean {
 
 export function codexControlAdapterFailureBlockers(
   adapterResult: any,
-  backend: 'codex-sdk' | 'python-codex-sdk' | 'local-llm'
+  backend: 'codex-sdk' | 'python-codex-sdk'
 ): string[] {
   if (!adapterResult) return []
   const blockers = adapterResult.ok === true ? [] : [`${backend.replaceAll('-', '_')}_adapter_reported_failure`]

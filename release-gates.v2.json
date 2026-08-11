@@ -1533,8 +1533,8 @@
       "output_contract": "sks.gate-result.v2"
     },
     {
-      "id": "local-collab:all-pipelines-final-gpt",
-      "command": "node ./dist/scripts/local-collab-all-pipelines-final-gpt-check.js",
+      "id": "gpt-final:all-pipelines-required",
+      "command": "node ./dist/scripts/gpt-final-all-pipelines-check.js",
       "deps": [],
       "resource": [
         "cpu-light",
@@ -2442,7 +2442,7 @@
         "fast:codex-service-tier-proof",
         "git-collaboration:e2e",
         "git:worktree-diff-envelope",
-        "local-collab:all-pipelines-final-gpt",
+        "gpt-final:all-pipelines-required",
         "mad-sks:app-ui-no-mutation",
         "mad:preflight-blocks-unreadable-config",
         "prompt:placeholder-guard",

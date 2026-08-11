@@ -127,10 +127,8 @@ test('internal Naruto worker routing blocks non-family explicit overrides', asyn
   assert.ok(routing.blockers.includes('naruto_worker_model_outside_gpt_5_6_family'));
 });
 
-test('Naruto rejects local/process backends and conflicting effort/tier overrides', async () => {
+test('Naruto rejects the process backend and conflicting effort/tier overrides', async () => {
   assert.equal(narutoWorkerBackendBlocker('process'), 'naruto_gpt_5_6_family_only_process_backend_forbidden');
-  assert.equal(narutoWorkerBackendBlocker('ollama'), 'naruto_gpt_5_6_family_only_local_backend_forbidden');
-  assert.equal(narutoWorkerBackendBlocker('local-llm'), 'naruto_gpt_5_6_family_only_local_backend_forbidden');
   assert.equal(narutoWorkerBackendBlocker('codex-sdk'), null);
   const routing = await resolveWorkerModelRouting({
     agent: { id: 'naruto_1', role: 'implementer', naruto_role: 'implementer' },

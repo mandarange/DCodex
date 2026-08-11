@@ -9,7 +9,6 @@ export interface HardwareCapacityProbeInput {
   nodeHeapTotalBytes?: number
   processCount?: number
   fileDescriptorLimit?: number
-  localLlmMaxParallelRequests?: number
   remoteApiRateLimitBudget?: number
   gpuAvailable?: boolean
   gpuVramMb?: number
@@ -26,7 +25,6 @@ export interface HardwareCapacityProbe {
   node_heap_total_bytes: number
   process_count: number
   file_descriptor_limit: number
-  local_llm_max_parallel_requests: number
   remote_api_rate_limit_budget: number
   remote_api_rate_limit_budget_source: 'input' | 'environment' | 'default_unmeasured'
   gpu_available: boolean
@@ -53,7 +51,6 @@ export function probeHardwareCapacity(input: HardwareCapacityProbeInput = {}): H
     node_heap_total_bytes: normalizePositiveInt(input.nodeHeapTotalBytes, memory.heapTotal),
     process_count: normalizePositiveInt(input.processCount, 1),
     file_descriptor_limit: normalizePositiveInt(input.fileDescriptorLimit, Number(process.env.SKS_NARUTO_FD_LIMIT) || 256),
-    local_llm_max_parallel_requests: normalizePositiveInt(input.localLlmMaxParallelRequests, Number(process.env.SKS_LOCAL_LLM_MAX_PARALLEL_REQUESTS) || 4),
     // Default 12 is a conservative unmeasured budget, not a discovered provider
     // limit; operators with real rate-limit headroom raise it via
     // SKS_NARUTO_REMOTE_API_PARALLEL_BUDGET

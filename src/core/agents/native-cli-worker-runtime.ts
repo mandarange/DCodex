@@ -18,7 +18,6 @@ export function createNativeCliWorkerRuntimeRecorder(root: string, input: {
   targetActiveSlots: number
   backend: string
   backendExplicit?: boolean
-  noOllama?: boolean
   route: string
   fastModePolicy: FastModePolicy
   projectRoot?: string
@@ -38,8 +37,7 @@ class NativeCliWorkerRuntimeRecorder {
     targetActiveSlots: number
     backend: string
     backendExplicit?: boolean
-    noOllama?: boolean
-    route: string
+      route: string
     fastModePolicy: FastModePolicy
     projectRoot?: string
   }) {}
@@ -69,7 +67,6 @@ class NativeCliWorkerRuntimeRecorder {
       route: this.input.route,
       backend: this.input.backend,
       backend_explicit: this.input.backendExplicit === true,
-      no_ollama: this.input.noOllama === true || ctx.opts.noOllama === true,
       agent_root: this.root,
       main_repo_root: worktree?.main_repo_root || ctx.opts.cwd || packageRoot(),
       cwd: workerCwd,
@@ -82,9 +79,6 @@ class NativeCliWorkerRuntimeRecorder {
       patch_envelope_path: patchRel,
       service_tier: this.input.fastModePolicy.service_tier,
       fast_mode: this.input.fastModePolicy.fast_mode,
-      ollama_enabled: ctx.opts.ollamaEnabled === true || this.input.backend === 'ollama' || this.input.backend === 'local-llm',
-      ollama_model: ctx.opts.ollamaModel || null,
-      ollama_base_url: ctx.opts.ollamaBaseUrl || null,
       source_intelligence_refs: ctx.agent.source_intelligence_refs || null,
       goal_mode_ref: ctx.agent.goal_mode_ref || null,
       strategy_refs: ctx.slice?.strategy_refs || null,

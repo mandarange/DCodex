@@ -106,7 +106,6 @@ const FIXTURES = Object.freeze({
   'cli-stats': fixture('execute', 'sks stats --json', [], 'pass'),
   'cli-dollar-commands': fixture('execute', 'sks dollar-commands --json', [], 'pass'),
   'cli-fast-mode': fixture('execute', 'sks fast-mode status --json', [], 'pass'),
-  'cli-with-local-llm': fixture('execute', 'sks with-local-llm status --json', [], 'pass'),
   'cli-dfix': fixture('execute_and_validate_artifacts', 'sks dfix fixture --json', ['completion-proof.json', 'dfix-gate.json', 'dfix-verification.json'], 'pass'),
   'cli-wiki': fixture('execute_and_validate_artifacts', 'sks wiki image-ingest test/fixtures/images/one-by-one.png --json', [{ path: '.sneakoscope/wiki/image-voxel-ledger.json', schema: 'sks.image-voxel-ledger.v1', require_anchors: false }], 'pass'),
   'cli-wizard': fixture('execute', 'sks wizard', [], 'pass'),
@@ -208,15 +207,6 @@ const FIXTURES = Object.freeze({
   'route-fast-off': fixture('static', '$Fast-Off covered by hermetic fast-mode blackbox toggle test', [], 'pass', {
     quality: 'wiring_only',
     reason: 'Toggle-only dollar-command alias; behavior is covered by the hermetic fast-mode blackbox toggle test suite, not a standalone CLI invocation.'
-  }),
-  'route-local-model': fixture('execute', 'sks with-local-llm status --json', [], 'pass'),
-  'route-with-local-llm-on': fixture('static', '$with-local-llm-on covered by hermetic local-model dollar-command blackbox toggle test', [], 'pass', {
-    quality: 'wiring_only',
-    reason: 'Toggle-only dollar-command alias; behavior is covered by the hermetic local-model dollar-command blackbox toggle test suite, not a standalone CLI invocation.'
-  }),
-  'route-with-local-llm-off': fixture('static', '$with-local-llm-off covered by hermetic local-model dollar-command blackbox toggle test', [], 'pass', {
-    quality: 'wiring_only',
-    reason: 'Toggle-only dollar-command alias; behavior is covered by the hermetic local-model dollar-command blackbox toggle test suite, not a standalone CLI invocation.'
   }),
   'route-help': fixture('static', '$Help lightweight route', [], 'pass', {
     quality: 'wiring_only',

@@ -12,6 +12,22 @@ export const BRIDGE_ROUTE_INDEX_FILENAME = 'sks-bridge-route-index.json' as cons
 export const BRIDGE_ACTIVE_GENERATION_SCHEMA = 'sks.bridge-active-generation.v1' as const;
 export const BRIDGE_ACTIVE_GENERATION_FILENAME = 'sks-bridge-active-generation.json' as const;
 
+/**
+ * How long a synced provider catalog counts as fresh.
+ *
+ * Nothing refreshes this catalog in the background: the running bridge never
+ * reads `expires_at`, and only an explicit `catalog.sync` rewrites it. The
+ * previous unnamed `15 * 60_000` therefore described no refresh cycle at all —
+ * it made every install report `<provider>_catalog_stale` a quarter of an hour
+ * after its last sync and never recover, so `sks doctor --fix` synced the
+ * catalog, verified it was fresh, went green, and the next run showed the
+ * identical blocker. That is the treadmill users hit when a `--fix` "never
+ * fixes" the bridge. A model catalog changes on the order of weeks, so freshness
+ * must at least outlive a working session; an expired one still raises its
+ * blocker and `retry_catalog_sync`.
+ */
+export const COMBINED_BRIDGE_CATALOG_TTL_MS = 12 * 60 * 60 * 1000;
+
 export interface BridgeActiveGenerationPointer {
   readonly schema: typeof BRIDGE_ACTIVE_GENERATION_SCHEMA;
   readonly catalog_generation: string;

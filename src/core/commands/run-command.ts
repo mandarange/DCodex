@@ -482,7 +482,7 @@ async function executeInternalDbRoute(root: string, route: RouteSelection, promp
 }
 
 function isSafeDeterministicRoute(command: string): boolean {
-  return new Set(['$DB', '$Wiki', '$Fast-Mode', '$with-local-llm-on', '$Commit', '$Commit-And-Push']).has(command);
+  return new Set(['$DB', '$Wiki', '$Fast-Mode', '$Commit', '$Commit-And-Push']).has(command);
 }
 
 async function runAutoVerification(root: string, missionId: string): Promise<RunAutoVerification> {
@@ -555,7 +555,6 @@ async function runSks(
     maxOutputBytes: 512 * 1024,
     env: {
       SKS_SKIP_NPM_FRESHNESS_CHECK: '1',
-      SKS_LOCAL_LLM_TOGGLE_ONLY: '1',
       CI: 'true',
       ...(parentMissionId ? { SKS_RUN_PARENT_MISSION_ID: parentMissionId } : {})
     },
@@ -631,7 +630,6 @@ function safeRouteExecutionArgs(route: RouteSelection, prompt: string, { auto = 
   if (route.command === '$SEO-GEO-OPTIMIZER') return ['seo-geo-optimizer', searchVisibilityActionFromPrompt(prompt), '--mode', searchVisibilityModeFromPrompt(prompt), '--target', searchVisibilityTargetFromPrompt(prompt), '--offline', '--json'];
   if (route.command === '$Wiki') return ['wiki', 'refresh', '--json'];
   if (route.command === '$Fast-Mode') return ['fast-mode', fastModeActionFromPrompt(prompt), '--json'];
-  if (route.command === '$with-local-llm-on') return ['with-local-llm', localModelActionFromPrompt(prompt), '--json'];
   if (route.command === '$Commit') return ['commit', '--json'];
   if (route.command === '$Commit-And-Push') return ['commit-and-push', '--json'];
   return null;
@@ -701,26 +699,6 @@ function fastModeActionFromPrompt(prompt = ''): string {
   if (['off', 'disable', 'disabled', 'standard', 'default', 'slow', '끄기', '꺼', '꺼줘'].includes(token) || token.startsWith('끄') || token.startsWith('꺼')) return 'off';
   if (['on', 'enable', 'enabled', 'fast', 'priority', '켜기', '켜', '켜줘'].includes(token) || token.startsWith('켜')) return 'on';
   if (['clear', 'reset', '초기화', '기본'].includes(token) || token.startsWith('초기화')) return 'clear';
-  return 'status';
-}
-
-function localModelActionFromPrompt(prompt = ''): string {
-  const text = String(prompt || '');
-  const lower = text.toLowerCase();
-  if (/\$with-local-llm-off\b/.test(lower)) return 'disable';
-  if (/\$with-local-llm-on\b/.test(lower)) return 'enable';
-  const routeMatch = /\$with-local-llm\b/i.exec(text);
-  if (!routeMatch) return 'status';
-  const afterRoute = text
-    .slice(routeMatch.index + routeMatch[0].length)
-    .replace(/^[\s:=\-]+/, '')
-    .trimStart()
-    .toLowerCase();
-  const token = afterRoute.match(/^[^\s?!.,;:()"'`]+/)?.[0] || '';
-  if (['off', 'disable', 'disabled', '끄기', '꺼', '꺼줘'].includes(token) || token.startsWith('끄') || token.startsWith('꺼')) return 'disable';
-  if (['on', 'enable', 'enabled', '켜기', '켜', '켜줘'].includes(token) || token.startsWith('켜')) return 'enable';
-  if (['model', 'set-model', 'set'].includes(token)) return 'set-model';
-  if (['status', 'state', 'check', '확인', '상태'].includes(token)) return 'status';
   return 'status';
 }
 

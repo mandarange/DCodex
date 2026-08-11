@@ -1,24 +1,18 @@
-import { localCollaborationParticipated } from '../local-llm/local-collaboration-policy.js'
-
 export function gptFinalRequiredForPipeline(input: {
-  localParticipated?: boolean
   candidateResults?: unknown[]
   candidatePatchEnvelopes?: unknown[]
 }) {
-  const localParticipated = input.localParticipated === true
-    || localCollaborationParticipated(Array.isArray(input.candidateResults) ? input.candidateResults : [])
+  // Local LLM support was removed; worktree-derived candidate output is now the
+  // only draft material GPT Final has to approve before it can be applied.
   const worktreeParticipated = worktreeCandidateParticipated(input.candidateResults)
     || worktreeCandidateParticipated(input.candidatePatchEnvelopes)
   return {
     schema: 'sks.gpt-final-required.v1',
-    local_participated: localParticipated,
     worktree_participated: worktreeParticipated,
-    gpt_final_required: localParticipated || worktreeParticipated,
-    reason: localParticipated
-      ? 'local_llm_outputs_are_drafts'
-      : worktreeParticipated
-        ? 'worktree_candidate_outputs_require_gpt_final'
-        : 'no_local_or_worktree_candidate_participation'
+    gpt_final_required: worktreeParticipated,
+    reason: worktreeParticipated
+      ? 'worktree_candidate_outputs_require_gpt_final'
+      : 'no_worktree_candidate_participation'
   }
 }
 

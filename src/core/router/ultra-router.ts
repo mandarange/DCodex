@@ -23,7 +23,7 @@ export function routeCodexTask(input: CodexTaskInput, cards: CapabilityCard[] = 
 
   const classification = classifyCodexTask(input)
   const hardFilters: string[] = []
-  const availableCards = input.allowLocalLlm === true ? cards : cards.filter((card) => card.id !== 'local-llm-worker')
+  const availableCards = cards
   const scored = availableCards.map((card) => {
     const score = scoreCapabilityCard(card, classification)
     if (score === 0) hardFilters.push(card.id)

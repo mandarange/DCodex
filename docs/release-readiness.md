@@ -1,4 +1,64 @@
-# SKS 8.6.6 Release Readiness
+# SKS 8.7.0 Release Readiness
+
+## Current decision
+
+**SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
+
+8.7.0 makes `sks doctor --fix` able to clear a stale bridge catalog, and removes
+Local LLM support in full. The minor bump is the removal: a published CLI
+command, two dollar-command routes, and a release-gate resource class are gone.
+
+Four independent defects compounded into the report users kept sending — a
+`--fix` that runs clean and changes nothing. Each was sufficient on its own. The
+provider catalog was treated as fresh for fifteen minutes with nothing behind it
+to refresh it: the running bridge never reads `expires_at`, and only an explicit
+`catalog.sync` rewrites the file, so doctor synced the catalog, verified it, went
+green, and a quarter of an hour later reported the identical
+`<provider>_catalog_stale` blocker. Freshness is now a named twelve-hour contract
+that outlives a working session. The repair also addressed the wrong home: every
+bridge path derives from `HOME`, but the repair passed the project root, so any
+doctor run started inside a project found no managed bridge, concluded there was
+nothing to do, and returned a green check over an untouched catalog. Doctor then
+reported the bridge snapshot taken *before* the repair transaction, so a repair
+that did succeed still printed `Desktop Bridge: blocked` listing the blockers it
+had just cleared. And the phase could be skipped outright as "clean" — a catalog
+lapses with the passage of time, which no input hash observes, so the marker
+written while it was fresh made `--fix` skip the repair it was invoked for.
+
+An inactive provider no longer holds the bridge unready. Readiness demoted an
+unconfigured provider's problems to `inactive_provider:<id>:<problem>` warnings
+and the combined-catalog aggregate promoted the same facts straight back, so one
+report carried `warning: inactive_provider:openrouter:openrouter_credential_missing`
+beside `blocker: openrouter_credential_missing`. Nothing routes to that provider
+and no `--fix` can invent an API key.
+
+Local LLM is removed: the `with-local-llm` command, the `$with-local-llm-on` and
+`$with-local-llm-off` routes and skills, the Ollama and MLX worker backends, the
+local control-plane adapter, the local worker capability card, the
+`local-llm-real` release-gate resource class, and the machine-local model config.
+Workers run on Codex official backends only. GPT Final survives with a narrower
+trigger: it existed because local model output was draft material, and
+worktree-derived candidate output still is, so the arbiter, its acceptance rule,
+and the all-pipelines gate remain — the gate is now
+`gpt-final:all-pipelines-required`, driven by a worktree candidate. The
+local-collaboration policy, its four modes, and the "the arbiter must not itself
+be local" check are removed with the backend that gave them meaning. An installed
+package still proves it rejects both removed dollar commands: that proof was
+derived from live routes, so deleting the route deleted the proof, and the two
+commands are now pinned explicitly beside the other removed features.
+
+The canonical suite is green end to end: 2929 of 2929, zero failures, against
+2931 of 2931 at 8.6.6 — the difference is deleted local-LLM coverage.
+
+Regenerated from the candidate commit: the release gate DAG, canonical tests, the
+isolated 7.6.0 to 8.7.0 upgrade smoke, the macOS Menu Bar proof, the pack
+receipt, and the release-check stamp. `inspectMainPushGuard` reports
+`physical_proof_requirement_missing` and nothing else; that evidence requires a
+GitHub-attested capture run and cannot be produced locally.
+
+> Supersedes the 8.6.6 readiness narrative. Historical evidence below remains for upgrade context.
+
+# SKS 8.6.6 Release Readiness (historical)
 
 ## Current decision
 

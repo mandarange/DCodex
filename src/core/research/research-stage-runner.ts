@@ -39,7 +39,7 @@ export type ResearchStageKind =
   | 'final_review'
   | 'verification'
 
-export type ResearchStageBackend = 'codex-sdk' | 'python-codex-sdk' | 'local-llm' | 'deterministic' | 'mock'
+export type ResearchStageBackend = 'codex-sdk' | 'python-codex-sdk' | 'deterministic' | 'mock'
 
 export interface ResearchStageResult {
   schema: 'sks.research-stage-result.v1'
@@ -202,7 +202,7 @@ async function runSourceShardStage(input: StageInput, startedAt: string): Promis
     prompt: buildResearchSourceShardPrompt(input.plan, layer),
     outputSchema: researchSourceShardOutputSchema,
     outputArtifact: artifact,
-    backendPreference: input.backend === 'python-codex-sdk' ? ['python-codex-sdk', 'codex-sdk'] : input.backend === 'local-llm' ? ['local-llm', 'codex-sdk'] : ['codex-sdk', 'python-codex-sdk'],
+    backendPreference: input.backend === 'python-codex-sdk' ? ['python-codex-sdk', 'codex-sdk'] : ['codex-sdk', 'python-codex-sdk'],
     timeoutMs: input.timeoutMs,
     ...(input.cycleDeadlineMs === undefined ? {} : { deadlineMs: input.cycleDeadlineMs })
   })
@@ -305,7 +305,7 @@ async function runImplementationBlueprintStage(input: StageInput, startedAt: str
     claimMatrix,
     sourceLedger,
     existingBlueprint,
-    backend: input.backend === 'mock' ? 'deterministic' : input.backend === 'local-llm' ? 'local-llm' : input.backend === 'python-codex-sdk' ? 'python-codex-sdk' : 'codex-sdk'
+    backend: input.backend === 'mock' ? 'deterministic' : input.backend === 'python-codex-sdk' ? 'python-codex-sdk' : 'codex-sdk'
   })
   await writeImplementationBlueprint(input.dir, blueprint)
   await writeTextAtomic(path.join(input.dir, 'implementation-blueprint.md'), renderImplementationBlueprintMarkdown(blueprint))
@@ -444,16 +444,13 @@ export async function runResearchCodexStage(input: {
   prompt: string
   outputSchema: any
   outputArtifact: string
-  backendPreference: Array<'codex-sdk' | 'python-codex-sdk' | 'local-llm'>
+  backendPreference: Array<'codex-sdk' | 'python-codex-sdk'>
   timeoutMs: number
   deadlineMs?: number
 }): Promise<ResearchStageResult> {
   const startedAt = nowIso()
   const stageKind = inferStageKind(input.stage)
   const stageId = String(input.stage?.id || stageKind)
-  if (stageKind === 'final_review' && input.backendPreference.includes('local-llm')) {
-    return baseResult({ ...input, graph: null, cycle: 0, backend: 'local-llm', timeoutMs: input.timeoutMs, mock: false }, startedAt, stageKind, 'blocked', [], ['local_llm_final_review_forbidden'])
-  }
   const result = await runCodexTask({
     route: '$Research',
     tier: 'worker',
@@ -474,8 +471,6 @@ export async function runResearchCodexStage(input: {
       source_mutation_allowed: false
     },
     backendPreference: input.backendPreference as CodexControlBackend[],
-    allowLocalLlm: input.backendPreference.includes('local-llm'),
-    localLlmPolicy: input.backendPreference.includes('local-llm') ? { mode: 'local_preferred', requiresGptFinal: true } : { mode: 'disabled', requiresGptFinal: true },
     mutationLedgerRoot: path.join(input.dir, 'research', 'codex-stage-control', stageId),
     reliabilityPolicy: {
       timeoutClass: 'standard',

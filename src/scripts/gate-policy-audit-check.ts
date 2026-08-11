@@ -24,8 +24,13 @@ const policyCallsiteAllowlist = new Map([
   ['mkdtemp|src/core/mcp-config/codex-cli-adapter.ts|CodexMcpCliAdapter|mkdtemp', 'isolated official CLI transform HOME'],
   ['mkdtemp|src/core/perf/release-latency-slo.ts|runReleaseLatencySlo|mkdtemp', 'run-local latency fixture root'],
   ['mkdtemp|src/core/release/npm-stage-tarball-verifier.ts|verifyNpmStageTarball|mkdtempSync', 'private stage-review transaction root'],
-  ['mkdtemp|src/core/release/release-pack-content-scanner.ts|scanTarballTextContents|mkdtempSync', 'finally-cleaned tar scan root'],
-  ['mkdtemp|src/core/release/release-pack-tarball.ts|tarUnpackedBytes|mkdtempSync', 'finally-cleaned tar inventory root'],
+  // Both of these named the exported wrapper until it was split from its
+  // implementation: the `mkdtempSync` moved into a `compute*` helper, so the keys
+  // stopped matching any callsite and the temp roots they approve went
+  // unapproved. The approvals still hold — each root is removed in a `finally` —
+  // so the symbols are corrected rather than the coverage dropped.
+  ['mkdtemp|src/core/release/release-pack-content-scanner.ts|computeTarballTextContents|mkdtempSync', 'finally-cleaned tar scan root'],
+  ['mkdtemp|src/core/release/release-pack-tarball.ts|computeTarUnpackedBytes|mkdtempSync', 'finally-cleaned tar inventory root'],
   // Gate libraries used to be named `*-check-lib.ts` and were skipped by the
   // filename filter below; the rename to `*-gate-lib.ts` dropped that magic word
   // and exposed their fixture roots. They are gate infrastructure, not product

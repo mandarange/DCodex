@@ -29,7 +29,6 @@ test('automatic fanout keeps undecomposed task hints but exposes the 256 useful-
     processCount: 40,
     fileDescriptorLimit: 64,
     remoteApiRateLimitBudget: 4,
-    localLlmMaxParallelRequests: 4
   }
   const bounded = officialSubagentFanoutPolicy({
     taskProfile: classifyTaskProfile('implement the parser fix'),
@@ -84,7 +83,6 @@ test('automatic fanout keeps undecomposed task hints but exposes the 256 useful-
       processCount: 10,
       fileDescriptorLimit: 4096,
       remoteApiRateLimitBudget: 24,
-      localLlmMaxParallelRequests: 12
     }
   })
   assert.ok(abundant.requested_subagents >= 6)
@@ -253,7 +251,6 @@ test('mass bulk search and exploration goals retain cheap-lane routing without a
     processCount: 40,
     fileDescriptorLimit: 64,
     remoteApiRateLimitBudget: 4,
-    localLlmMaxParallelRequests: 4
   }
   const mass = officialSubagentFanoutPolicy({
     taskProfile: 'parallel-read',
@@ -373,7 +370,6 @@ test('mass wording never lifts reviewer-only or critical multi-domain caps', () 
       processCount: 40,
       fileDescriptorLimit: 64,
       remoteApiRateLimitBudget: 4,
-      localLlmMaxParallelRequests: 4
     },
     maxThreads: 64
   })
@@ -491,7 +487,6 @@ test('mission preparation keeps mass totals reusable across waves and serializes
       processCount: 1,
       fileDescriptorLimit: 16,
       remoteApiRateLimitBudget: 2,
-      localLlmMaxParallelRequests: 2
     }
     const searchDir = path.join(root, '.sneakoscope', 'missions', 'M-search-lane')
     await fs.mkdir(searchDir, { recursive: true })
@@ -552,7 +547,6 @@ test('high explicit fanout feeds the hardware governor into per-wave capacity', 
         processCount: 1,
         fileDescriptorLimit: 16,
         remoteApiRateLimitBudget: 2,
-        localLlmMaxParallelRequests: 2
       }
     })
     assert.equal(prepared.plan.requested_subagents, 200)
