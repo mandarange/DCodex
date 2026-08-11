@@ -4,6 +4,38 @@
 
 
 
+## [8.6.4] - 2026-08-11
+
+### Fixed
+
+- The Codex Responses WebSocket is routable at all. An upgrade carries no
+  request body and no `x-sks-model` — that header is SKS's own and only its
+  probes ever send it — while the HTTP path reads the model from the JSON
+  body. The model was therefore always empty here, `model_routes['']` never
+  resolved, and every WebSocket upgrade through the bridge failed. It went
+  unnoticed because Codex falls back to HTTP and serves the turn anyway, so
+  the only visible trace was the `Reconnecting 1/5 … 5/5` banner at the start
+  of every conversation. Verified against a live configuration: 16 model
+  routes, none keyed by the empty string. A thread's session pin already
+  records the provider and model bound to it, which is exactly the routing
+  decision the upgrade lacks, so a pinned thread now routes. Another thread's
+  pin is never borrowed.
+
+- An unroutable upgrade no longer masquerades as a flaky upstream. A thread
+  nothing has bound yet cannot be routed, and that is a permanent property of
+  the request, so it is answered `501 Not Implemented` with
+  `retryable: false` instead of `502 Bad Gateway` — letting the client fall
+  back immediately rather than spending its whole reconnect budget first.
+
+- Bridge WebSocket refusals say what actually happened. Every failure on this
+  path was reported as `bridge_websocket_upstream_unavailable`, so the one
+  code users ever saw named the one cause usually not responsible, and the
+  path wrote nothing to the bridge log. The real code is now returned and
+  logged. An idle timeout on an established upstream also destroyed the socket
+  with no cause, so a stream that died there reached the client as a bare
+  disconnect with nothing naming the bridge as the party that closed it; it
+  now carries `bridge_websocket_upstream_idle_timeout`.
+
 ## [8.6.3] - 2026-08-11
 
 ### Fixed

@@ -1,10 +1,10 @@
-# SKS 8.6.3 Release Readiness
+# SKS 8.6.4 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 
-8.6.3 is a stability candidate on top of shipped 8.4.0, covering the Codex-LB
+8.6.4 is a stability candidate on top of shipped 8.4.0, covering the Codex-LB
 session pin and the Codex config surface that `sks doctor --fix` owns.
 
 A Codex-LB session pin records the catalog and route-policy generations it was
@@ -75,11 +75,24 @@ repair claim the host-owned global Codex config.
 
 A publish could also fail only at the very end: preflight proved the package was built correctly but never that it could be uploaded, and npm reports an unauthorized upload as a 404 that reads like a missing package. The login is now verified before the tarball is built.
 
-With those corrected the canonical suite is green end to end: 2923 of 2923,
+8.6.4 makes the Codex Responses WebSocket routable at all. An upgrade carries no
+request body and no `x-sks-model` — that header is SKS's own and only its probes
+send it — while the HTTP path reads the model from the JSON body, so the model
+was always empty here and `model_routes['']` never resolved. Every WebSocket
+upgrade through the bridge failed, unnoticed because Codex falls back to HTTP and
+serves the turn anyway; the only visible trace was the reconnect banner at the
+start of every conversation. A thread's session pin already holds that routing
+decision, so a pinned thread now routes, and a thread nothing has bound yet is
+refused as permanently unroutable rather than as a flaky upstream, letting the
+client fall back at once. Refusals on this path also carry their real code and
+reach the log, where every one of them used to be reported as an unavailable
+upstream and recorded nowhere.
+
+With those corrected the canonical suite is green end to end: 2927 of 2927,
 zero failures, where 8.5.0 stood at 2870 of 2874.
 
 Regenerated from the candidate commit: the release gate DAG, canonical tests, the
-isolated 7.6.0 to 8.6.3 upgrade smoke, the macOS Menu Bar proof, the pack
+isolated 7.6.0 to 8.6.4 upgrade smoke, the macOS Menu Bar proof, the pack
 receipt, and the release-check stamp. `inspectMainPushGuard` reports
 `physical_proof_requirement_missing` and nothing else; that evidence requires a
 GitHub-attested capture run and cannot be produced locally.
