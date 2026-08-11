@@ -338,7 +338,7 @@ function sameSessionPin(left: ProviderSessionPin, right: ProviderSessionPin): bo
     && left.route_policy_generation === right.route_policy_generation;
 }
 
-function canonicalSessionId(value: unknown): string {
+export function canonicalSessionId(value: unknown): string {
   const sessionId = typeof value === 'string' ? value.trim() : '';
   if (!sessionId || sessionId.length > 256 || !/^[A-Za-z0-9._:/-]+$/.test(sessionId)) {
     throw new DesktopBridgeError('bridge_session_id_invalid');

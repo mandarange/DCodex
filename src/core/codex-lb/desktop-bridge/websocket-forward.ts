@@ -4,8 +4,9 @@ import tls from 'node:tls';
 import type { IncomingMessage, OutgoingHttpHeaders } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { buildProviderWebSocketHeaders } from './header-policy.js';
+import { createDesktopBridgeRejectionLogger } from './rejection-log.js';
 import { rewriteLocationHeader } from './location-rewrite.js';
-import { resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, singleBridgeHeader } from './security.js';
+import { resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader, canonicalSessionId } from './security.js';
 import { desktopBridgeListenOrigin } from './state.js';
 import {
   DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL,
@@ -67,12 +68,38 @@ function rewriteUpgradeResponseHead(head: Buffer, providerBaseUrl: string, local
   return Buffer.from(`${output.join('\r\n')}\r\n\r\n`, 'latin1');
 }
 
+/** The model this thread is already pinned to, if any. */
+function websocketPinnedModel(threadId: string | null, config: PreparedDesktopBridgeConfig): string | null {
+  if (!threadId) return null;
+  let canonical: string;
+  try { canonical = canonicalSessionId(threadId); } catch { return null; }
+  const pin = config.providerSessionPins.find((entry) => entry.thread_id === canonical);
+  return pin?.public_model || null;
+}
+
 export async function prepareDesktopBridgeWebSocketRequest(req: IncomingMessage, config: PreparedDesktopBridgeConfig): Promise<{
   route: DesktopBridgeRouteContext; credential: DesktopBridgeResolvedCredential; provider: PreparedDesktopBridgeProvider;
 }> {
   const sessionIdentity = resolveCodexSessionIdentity(req.headers);
+  // A WebSocket upgrade carries no request body and no `x-sks-model` (that
+  // header is SKS's own, and only its probes ever send it), while the HTTP path
+  // reads the model from the JSON body. The model was therefore always empty
+  // here, `model_routes['']` never resolved, and EVERY Codex Responses
+  // WebSocket failed — invisibly, because HTTP fallback then served the turn.
+  //
+  // The thread's session pin already records the provider and model bound to
+  // this thread, which is exactly the routing decision the upgrade lacks.
+  const pinnedModel = websocketPinnedModel(sessionIdentity.thread_id, config);
+  const publicModel = singleBridgeHeader(req.headers, 'x-sks-model') || pinnedModel || '';
+  if (!publicModel) {
+    // Nothing has bound this thread yet, so the bridge genuinely cannot route
+    // the upgrade. That is a permanent property of this request, not a flaky
+    // upstream, and saying so is what lets the client fall back to HTTP at once
+    // instead of burning its reconnect budget.
+    throw new DesktopBridgeError('bridge_websocket_route_unresolvable');
+  }
   const route = await resolveAndBindDesktopBridgeRouteContext({
-    public_model: singleBridgeHeader(req.headers, 'x-sks-model') || '',
+    public_model: publicModel,
     session_id: sessionIdentity.thread_id,
     pathname: new URL(req.url || '/', 'http://bridge.invalid').pathname,
     transport: 'websocket', headers: req.headers,
@@ -87,8 +114,48 @@ export async function prepareDesktopBridgeWebSocketRequest(req: IncomingMessage,
   return { route, provider, credential };
 }
 
-function writeUpgradeFailure(client: Duplex): void {
-  if (!client.destroyed) client.end('HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{"error":{"type":"sks_bridge_error","code":"bridge_websocket_upstream_unavailable"}}');
+const logWebSocketRejection = createDesktopBridgeRejectionLogger();
+
+/**
+ * Report why the upgrade failed, rather than calling everything an unavailable
+ * upstream.
+ *
+ * Every failure here — a route that could not be resolved, a credential
+ * generation mismatch, a session identity problem — was reported to Codex as
+ * `bridge_websocket_upstream_unavailable`, so the one code the user ever saw
+ * named the one cause that was usually not responsible. This path also wrote
+ * nothing to the bridge log, so there was no record to check afterwards either.
+ */
+/**
+ * Codes describing a permanent property of the request rather than a transient
+ * upstream condition. A client that retries these is guaranteed to fail again,
+ * so they are answered `501 Not Implemented` — the bridge will never serve a
+ * WebSocket for this request — instead of `502 Bad Gateway`, which invites the
+ * caller to keep trying. Codex spends its whole reconnect budget on a retryable
+ * answer before falling back to HTTP, which is the `Reconnecting 1/5 … 5/5`
+ * banner users saw at the start of every conversation.
+ */
+const PERMANENT_UPGRADE_REFUSALS = new Set([
+  'bridge_websocket_route_unresolvable',
+  'catalog_model_route_missing',
+  'bridge_provider_route_unavailable',
+]);
+
+function writeUpgradeFailure(client: Duplex, error: unknown, req?: IncomingMessage): void {
+  const code = safeBridgeErrorCode(error) || 'bridge_websocket_upstream_unavailable';
+  const permanent = PERMANENT_UPGRADE_REFUSALS.has(code);
+  const status = permanent ? 501 : 502;
+  const reason = permanent ? 'Not Implemented' : 'Bad Gateway';
+  logWebSocketRejection({
+    code,
+    transport: 'websocket',
+    ...(req?.method === undefined ? {} : { method: req.method }),
+    ...(req?.url === undefined ? {} : { url: req.url }),
+    status,
+  });
+  if (client.destroyed) return;
+  client.end(`HTTP/1.1 ${status} ${reason}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n`
+    + JSON.stringify({ error: { type: 'sks_bridge_error', code, retryable: !permanent } }));
 }
 
 export async function forwardWebSocket(
@@ -100,7 +167,7 @@ export async function forwardWebSocket(
 ): Promise<void> {
   let prepared;
   try { prepared = await prepareDesktopBridgeWebSocketRequest(req, config); }
-  catch (error) { writeUpgradeFailure(client); throw error; }
+  catch (error) { writeUpgradeFailure(client, error, req); throw error; }
   const { provider, credential } = prepared;
   const target = resolveDesktopBridgeTarget(req.url, provider.remote);
   const upstream = provider.remote.secure
@@ -110,9 +177,22 @@ export async function forwardWebSocket(
   const requestedProtocol = String(req.headers['sec-websocket-protocol'] || '').split(',')[0]?.trim() || null;
   let connected = false; let response = Buffer.alloc(0);
   const timer = setTimeout(() => upstream.destroy(new DesktopBridgeError('bridge_upstream_connect_timeout')), config.connectTimeoutMs); timer.unref();
-  const fail = (): void => { clearTimeout(timer); if (!connected) writeUpgradeFailure(client); else client.destroy(); };
+  const fail = (error?: unknown): void => { clearTimeout(timer); if (!connected) writeUpgradeFailure(client, error, req); else client.destroy(); };
   const onConnected = (): void => {
-    connected = true; clearTimeout(timer); upstream.setNoDelay(true); upstream.setTimeout(config.idleTimeoutMs, () => upstream.destroy());
+    connected = true; clearTimeout(timer); upstream.setNoDelay(true);
+    // Destroy WITH a cause. This silently tore down an established Responses
+    // WebSocket, so a stream that died here reached the client as a bare
+    // disconnect — "stream disconnected before completion" with nothing on
+    // either side naming the bridge as the party that closed it. The HTTP path
+    // has always attributed its own idle timeout; this one did not.
+    upstream.setTimeout(config.idleTimeoutMs, () => {
+      logWebSocketRejection({
+        code: 'bridge_websocket_upstream_idle_timeout',
+        transport: 'websocket',
+        ...(req.url === undefined ? {} : { url: req.url }),
+      });
+      upstream.destroy(new DesktopBridgeError('bridge_websocket_upstream_idle_timeout'));
+    });
     const headers = buildProviderWebSocketHeaders(req.headers, { providerId: provider.provider_id, authTransport: provider.auth_transport, credential }, target.host);
     upstream.write([`${req.method || 'GET'} ${target.pathname}${target.search} HTTP/1.1`, ...serializeHeaders(headers), '', ''].join('\r\n'));
     if (head.length) upstream.write(head);
@@ -132,7 +212,7 @@ export async function forwardWebSocket(
     upstream.on('data', onData);
   };
   if (provider.remote.secure) upstream.once('secureConnect', onConnected); else upstream.once('connect', onConnected);
-  upstream.once('error', fail); upstream.once('close', () => { clearTimeout(timer); if (!client.destroyed) client.end(); });
+  upstream.once('error', (error) => fail(error)); upstream.once('close', () => { clearTimeout(timer); if (!client.destroyed) client.end(); });
   client.once('error', () => upstream.destroy()); client.once('close', () => upstream.destroy());
 }
 
