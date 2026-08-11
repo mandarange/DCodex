@@ -210,7 +210,33 @@ async function listenExact(server: NetServer, host: DesktopBridgeConfig['listenH
   });
 }
 
-async function closeServer(server: NetServer, sockets: Set<Socket>): Promise<void> {
+/**
+ * How long a shutdown waits for in-flight requests before destroying sockets.
+ *
+ * Shutdown used to destroy every open socket immediately. Anything the bridge
+ * was carrying at that moment died mid-flight, which the client reports as
+ * `error sending request for url …` or `stream disconnected before completion`
+ * while the bridge records `bridge_client_disconnected` — each side blaming the
+ * other for a connection the restart cut. A configuration change restarts the
+ * service (`installAndStartDesktopBridgeService`), so this fires during ordinary
+ * operation, and the longer the request the wider the window: a compaction turn
+ * is exactly the shape that loses this race.
+ */
+export const DESKTOP_BRIDGE_DRAIN_GRACE_MS = 10_000;
+
+async function closeServer(
+  server: NetServer,
+  sockets: Set<Socket>,
+  activeRequests?: () => number,
+): Promise<void> {
+  // Let work in progress finish first; only then take the sockets down. Bounded,
+  // so a stuck request cannot hold a restart open indefinitely.
+  if (activeRequests) {
+    const deadline = Date.now() + DESKTOP_BRIDGE_DRAIN_GRACE_MS;
+    while (activeRequests() > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
   for (const socket of sockets) socket.destroy();
   if (!server.listening) return;
   await new Promise<void>((resolve, reject) => {
@@ -330,7 +356,7 @@ export async function startPreparedDesktopBridge(
   try {
     if (statePath) await writeDesktopBridgeState(statePath, state);
   } catch (error) {
-    await closeServer(server, sockets);
+    await closeServer(server, sockets, () => activeRequests);
     throw error;
   }
 
@@ -350,7 +376,7 @@ export async function startPreparedDesktopBridge(
       if (stopped) return;
       stopped = true;
       if (heartbeat) clearInterval(heartbeat);
-      await closeServer(server, sockets);
+      await closeServer(server, sockets, () => activeRequests);
       if (statePath) await removeDesktopBridgeStateIfOwned(statePath, state);
     },
   };

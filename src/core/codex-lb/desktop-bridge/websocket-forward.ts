@@ -167,7 +167,14 @@ export async function forwardWebSocket(
 ): Promise<void> {
   let prepared;
   try { prepared = await prepareDesktopBridgeWebSocketRequest(req, config); }
-  catch (error) { writeUpgradeFailure(client, error, req); throw error; }
+  catch (error) {
+    // Handled here in full: the refusal is written and logged. Rethrowing sent
+    // the same error on to the server's own upgrade handler, which logged it a
+    // second time under a different status — so one refusal produced two log
+    // lines (501 then 400) and the second one misreported the outcome.
+    writeUpgradeFailure(client, error, req);
+    return;
+  }
   const { provider, credential } = prepared;
   const target = resolveDesktopBridgeTarget(req.url, provider.remote);
   const upstream = provider.remote.secure

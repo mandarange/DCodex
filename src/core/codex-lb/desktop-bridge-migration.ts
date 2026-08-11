@@ -282,13 +282,35 @@ async function migrateDesktopBridgeConfigUnlocked(
       receipt_path: null,
       auth_semantic_identity_preserved: provisional.auth_semantic_identity_preserved,
       blockers: [
-        'desktop_bridge_unification_migration_failed',
+        // The cause used to live only in `error`, which nothing surfaced, so
+        // every failure of this migration reached the operator as the same two
+        // opaque codes and the advertised remedy (`retry_catalog_sync`) gave no
+        // hint whether retrying could possibly help.
+        migrationFailureBlocker(error),
         ...(rollback && !rollback.ok ? ['desktop_bridge_unification_rollback_failed'] : [])
       ],
       ...(rollback ? { rollback } : {}),
       error: errorMessage(error)
     };
   }
+}
+
+/**
+ * `desktop_bridge_unification_migration_failed`, qualified by what actually
+ * went wrong.
+ *
+ * Only a fixed-shape identifier is appended — a Node/`DesktopBridgeError` code
+ * such as `ENOENT` or `EACCES`, or a lowercase `snake_case` message that is
+ * already an error code. Free-form text is never appended: this blocker is
+ * rendered to the operator and written to reports, and an arbitrary message can
+ * carry a path or a value that does not belong there.
+ */
+export function migrationFailureBlocker(error: unknown): string {
+  const base = 'desktop_bridge_unification_migration_failed';
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === 'string' && /^[A-Za-z0-9_]{1,64}$/.test(code)) return `${base}:${code}`;
+  const message = errorMessage(error).trim();
+  return /^[a-z0-9_]{1,64}$/.test(message) ? `${base}:${message}` : base;
 }
 
 function validateConfigTarget(home: string, configPath: string): void {

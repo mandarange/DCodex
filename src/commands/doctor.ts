@@ -103,6 +103,17 @@ export async function restartStaleDesktopBridgeRuntime(input: {
     : { restarted: false, warnings: [], blockers: [`desktop_bridge_runtime_version_stale:${running}:${PACKAGE_VERSION}`] };
 }
 
+/**
+ * Attempts the catalog repair makes before reporting the catalog still stale.
+ *
+ * The desktop-bridge unification migration inside `catalog.sync` fails
+ * intermittently — observed failing (with its own rollback also failing) and
+ * then succeeding on the immediately following attempt, on two machines. Two
+ * attempts is enough to clear that, and small enough that a genuinely broken
+ * catalog is still reported promptly rather than retried in a loop.
+ */
+export const CATALOG_REPAIR_MAX_ATTEMPTS = 2;
+
 export function deferCommandAliasCleanupToMigrationReceipt(result: any) {
   const observedBlockers = Array.isArray(result?.blockers)
     ? result.blockers.map(String).filter(Boolean)
@@ -1115,18 +1126,33 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
                     blockers: restarted.blockers
                   };
                 }
-                const sync: any = await executeDesktopBridgeCommandV3({ operation: 'catalog.sync' }, { home: root, env: process.env });
-                const synced = sync?.ok === true && sync?.execution?.ok === true;
-                // Carry the restart outcome through this branch too. A stale
-                // catalog is the common case, and dropping the result here hid
-                // both the restart and any reason it could not happen.
+                // Sync, then READ THE CATALOG BACK. Trusting the command's own
+                // ok flag reported a repaired catalog that was still stale, and
+                // the unification migration inside it fails intermittently —
+                // observed failing once (its rollback failing too) and then
+                // succeeding on the very next attempt, on two separate
+                // machines. One attempt therefore left users with a stale
+                // catalog and a green check; a bounded retry clears it.
+                const attempts: string[] = [];
+                let syncedAndVerified = false;
+                for (let attempt = 1; attempt <= CATALOG_REPAIR_MAX_ATTEMPTS; attempt += 1) {
+                  const sync: any = await executeDesktopBridgeCommandV3({ operation: 'catalog.sync' }, { home: root, env: process.env });
+                  const commandOk = sync?.ok === true && sync?.execution?.ok === true;
+                  const after: any = await desktopBridgeStatusV3({ home: root, env: process.env });
+                  const stillStale = ((after?.readiness?.blockers || []) as unknown[])
+                    .map(String).filter((blocker) => blocker.endsWith('_catalog_stale'));
+                  if (commandOk && stillStale.length === 0) { syncedAndVerified = true; break; }
+                  attempts.push(`catalog_sync_attempt_${attempt}:${
+                    commandOk ? `still_stale:${stillStale.join(',')}` : (sync?.execution?.blockers || ['failed']).map(String).join(',')
+                  }`);
+                }
                 return {
                   ...base,
-                  ok: synced && restarted.blockers.length === 0,
-                  repaired: synced || restarted.restarted,
-                  warnings: restarted.warnings,
+                  ok: syncedAndVerified && restarted.blockers.length === 0,
+                  repaired: syncedAndVerified || restarted.restarted,
+                  warnings: [...restarted.warnings, ...(syncedAndVerified ? attempts : [])],
                   blockers: [
-                    ...(synced ? [] : (sync?.execution?.blockers || ['desktop_bridge_catalog_sync_failed']).map(String)),
+                    ...(syncedAndVerified ? [] : ['desktop_bridge_catalog_still_stale_after_repair', ...attempts]),
                     ...restarted.blockers
                   ]
                 };

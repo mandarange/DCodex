@@ -4,6 +4,39 @@
 
 
 
+## [8.6.6] - 2026-08-11
+
+### Fixed
+
+- A bridge restart no longer cuts requests it is carrying. Shutdown destroyed
+  every open socket immediately, so anything in flight died mid-request —
+  surfacing to the client as `error sending request for url …` or
+  `stream disconnected before completion` while the bridge recorded
+  `bridge_client_disconnected`, each side blaming the other for a connection
+  the restart had cut. A configuration change restarts the service, so this
+  fired during ordinary operation, and the longer the request the wider the
+  window: a compaction turn is exactly the shape that lost the race. In-flight
+  work now gets a bounded grace period before sockets are taken down.
+
+- The catalog repair verifies its own result and retries. It trusted the sync
+  command's ok flag and reported a repaired catalog that was still stale. The
+  unification migration inside that sync fails intermittently — observed
+  failing, with its own rollback also failing, and then succeeding on the very
+  next attempt, on two separate machines. The catalog is now read back after
+  the sync, a second attempt is made when it is still stale, and a catalog that
+  survives both is reported rather than passed.
+
+- A failed unification migration names its cause. It reached the operator as
+  two opaque codes while the real error was discarded, so the advertised
+  remedy gave no hint whether retrying could help. The failure now carries the
+  originating error code; free-form text is never appended, because this
+  blocker is rendered to the operator and written to reports.
+
+- One refused WebSocket upgrade produces one log line. The refusal was written
+  and logged, then rethrown into the server's own upgrade handler, which
+  logged it again under a different status — so a single refusal appeared
+  twice, the second line misreporting the outcome.
+
 ## [8.6.5] - 2026-08-11
 
 ### Fixed
