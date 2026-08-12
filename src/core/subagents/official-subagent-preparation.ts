@@ -2,7 +2,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { nowIso, randomId, readJson, writeJsonAtomic, writeTextAtomic } from '../fsx.js'
 import { SSOT_GUARD_ARTIFACT, buildSsotGuard, validateSsotGuardArtifact } from '../safety/ssot-guard.js'
-import { classifyTaskProfile } from '../runtime/task-profile.js'
+import { attentionRiskForTask, classifyTaskProfile } from '../runtime/task-profile.js'
 import { chooseVerificationBudget } from '../runtime/verification-budget.js'
 import {
   buildOfficialSubagentPrompt,
@@ -157,11 +157,19 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
           .filter((slice) => slice.readOnly !== true)
           .flatMap((slice) => (Array.isArray(slice.paths) ? slice.paths : []))
       )
+  // Risk is declared, not inferred by the kernel. Without it every mission —
+  // a migration and a wording fix alike — gets the same 2-hop traversal and the
+  // same unreserved fill, so a mission that can break a protected gate is told
+  // about that gate only if it happened to rank. The mapping is the profile's,
+  // not a second judgement formed here: see `attentionRiskForTask`.
   const triwikiAttention = await readBoundedTriwikiAttention(
     input.root,
     triwikiAttentionLimit(taskProfile),
     goal,
-    sliceWriteScopes.length === 0 ? {} : { changedPaths: sliceWriteScopes }
+    {
+      risk: attentionRiskForTask(taskProfile),
+      ...(sliceWriteScopes.length === 0 ? {} : { changedPaths: sliceWriteScopes })
+    }
   )
   const roleModelPreferences = await readRoleModelPreferences({ env: input.env || process.env })
   const roleModelRouting = await readConfiguredCodexModelRoutingContext({ env: input.env || process.env })

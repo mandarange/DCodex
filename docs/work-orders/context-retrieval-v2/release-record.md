@@ -447,6 +447,14 @@ caught by a passing test:
   was read by nothing.
 - **Slice write scopes** were in hand at the subagent preparation call site and
   the attention query got the goal sentence alone.
+- **The attention query's `risk`** was declared, forwarded through two layers,
+  and read at three sites that change the answer — depth, ranking, and
+  protected-gate reservation — while its only production caller passed nothing,
+  holding `taskProfile` the whole time. Every `high-risk` mission traversed
+  exactly as shallowly as a typo fix.
+- **`chooseVerificationBudget`'s `changedFiles`**, **`plan.verification_checks`**,
+  and **`buildPipelinePlan`'s `changedFiles`** — three empty-collection collapses
+  on the subagent path, detailed below.
 
 In each case the component worked, its tests passed, and the data never arrived.
 Unit tests cannot see this class; only an end-to-end measurement against a real
@@ -786,7 +794,66 @@ still be deleted once its importers are gone; the *file* cannot. Recorded as a
 scope fact rather than carried as a task, because "delete the JSON runtime store"
 is in the work order and 9.0.0 will not do it.
 
-## LIVE DEFECT in test selection: the cap is silent
+## Closed: a `high-risk` mission no longer traverses like a typo fix
+
+The attention query's `risk` was declared, forwarded through two layers, read at
+sites that genuinely change the answer, and **never passed by its only production
+caller** — which had `taskProfile` in hand. Tenth instance of the pattern. Now
+fed.
+
+**The trace I handed the lane was wrong, and it checked instead of trusting it.**
+I listed `rank.ts:98` and `pack.ts:120-171` among the read sites; both belong to
+the **v1** engine, which the attention path does not use. I had copied the trace
+from an earlier report without verifying it — the same species of error as
+citing a measurement nobody re-ran. The sites that actually decide a mission's
+answer are `kernel-plan.ts:260` (`maxDepth` 2 → 3), `kernel-fuse.ts:226` (2× risk
+bonus), and `kernel-select.ts:128` (protected-gate reservation before the greedy
+fill). A fourth, `kernel.ts:86`, forces the safety closure that is already on by
+default, so it is inert here.
+
+**The mapping is derived, not restated.** `attentionRiskForTask()` returns
+`gateProfileForTask(profile) === 'full' ? 'high' : 'normal'` — one expression over
+the existing gate table rather than a second table to drift out of sync. Today
+that selects `high-risk` alone, and a test pins the set so a future gate-table
+edit has to consciously accept the retrieval consequence.
+
+**The lane measured a counterfactual and recommended against the broader fix.**
+Running `bounded-work` goals at `risk: 'high'` on the real workspace **replaces 4
+of 6 anchors** — "refactor the context pack writer" drops
+`search-context.ts#handler` and `#usage`, the code the mission would actually
+edit, to make room for three `gate:*` nodes. Escalating ordinary missions is a
+retrieval regression, and it was declined with numbers rather than argued about.
+
+**A test that passed for the wrong reason, caught by its author.** The first
+version used a path-shaped query, and `alpha/aardvark.ts` tokenizes to `alpha`,
+`aardvark`, `ts` — where `ts` is a basename token of *every* `.ts` node, so the
+lexical lane seeded all four nodes at depth 0 and both risk levels returned the
+whole graph. It passed while proving nothing. Rewritten against a bare `imports`
+chain where the depth-3 node is `risk: 'low'` and reached over a non-safety
+relation, so neither the always-on safety closure nor the doubled bonus can
+explain the difference — depth is the only cause. The two mutations (remove the
+wiring; flatten the mapping) fail *different* test sets, so wiring and mapping
+are independently proven.
+
+**The answer does not get bigger, it gets different.** `maxSelected` caps it at
+the anchor limit, so the extra hop buys substitution: generic implementation
+nodes swap for `gate:*` and `pipeline:gates:release`. Token cost across six goals
+**falls**, 1133 → 767, because gate nodes are cheap; peak is 242 against a
+2000-token bound that did not move.
+
+**§4 holds structurally rather than by measurement.**
+`demoteKernelConfidence(confidence, steps)` moves the rung monotonically *down*
+with depth, so a depth-3 discovery is strictly weaker than the same node at depth
+2, and `laneCeilingConfidence` caps lexical and coarse at `text_candidate`
+regardless of risk. Depth cannot promote. Violations held at 3.
+
+Latent and worth a note before someone "cleans it up": **no extractor in this
+repository emits a `conflicts_with` edge**, so the conflict half of
+`kernel-select.ts`'s reservation is unreachable today. Verified — the
+`conflicts_with` occurrences in the tree are work-item fields in naruto,
+research, and loops, not graph edges.
+
+## CLOSED (was LIVE): test selection truncated silently
 
 Found while producing the migration evidence, and **pre-existing in both
 engines** — it is not introduced by the migration.
@@ -808,10 +875,91 @@ v2's CSR bucket order differ. Same count, same completeness, different membershi
 (48 shared of 128, union 176). Not a shrink — but proof the kept set was never
 determined by anything meaningful.
 
-The fix is contained and is **not** raising the cap: emit a reason when it bites,
-and impose a deterministic order (depth, then path) before truncating, so the
-kept set stops depending on index layout. Left as its own change rather than
-folded into a migration.
+### Closed — and the cap was the smallest of five
+
+Two reason strings, `recommended_tests_truncated` and `added_gates_truncated`,
+each named for the **result field the caller reads** rather than for the constant.
+Deliberately *not* folded into `impact_closure_truncated`: that one means the walk
+ran out of budget and the closure is short, which a bigger budget or a repaired
+index fixes. These mean the closure is complete and the answer was cut to fit.
+One shared reason would send a caller to rebuild an index that is fine.
+
+Ordering key `(depth, key, nodeId)`. **Depth first because it is evidence
+strength** — a suite one hop out is named by a `tests` edge on the changed file
+itself; two hops out it is implicated through an intermediary — and because it is
+the one key the layout cannot move, the walk being BFS with first-visit-wins.
+`nodeId` last so the order is *total*: on `11265c98` there are 543 candidate hits
+for 275 distinct paths, so one path really does carry two nodes, and without the
+tiebreak the surviving row's hop chain and provenance would still be decided by
+arrival order even though the surviving path was not. `distinct` is counted
+*before* the limit, so truncation is reported exactly rather than inferred from
+`kept.length === limit` — which is also true of an answer that is complete at
+exactly the cap.
+
+**Gates did not move.** `gates`, `added_gates`, `baseline_gates`,
+`protected_gates`, `skipped_gates` and full `gate_details` — reason paths and
+provenance included — hash-identical across all 7 real diffs. Tests identical on
+6 of 7; on `11265c98` the count and completeness are unchanged (128 of 275) and
+membership moved, 96 shared. That is a *different* comparison from the engine-vs-
+engine 48-shared figure above: this one is old-rule-vs-new-rule on one engine.
+
+Order-dependence, measured: under six deterministic permutations of arrival order
+the **old** rule keeps as few as **66 of 128** in common with itself. The new rule
+is invariant across all six.
+
+**The cap was not raised**, and the evidence a future decision would need is
+recorded instead: it bites on 1 of 7 sampled diffs, and when it bites it drops
+53%.
+
+### Four more of the same defect in the sweep, and three left flagged
+
+The named cap was the one that had been measured. The sweep found four:
+
+- **`maxAddedGates: 64`** — same silent truncation. Unreached today only because
+  the runnable manifest has 33 gates, which is a fact about the manifest and not
+  about this module. Fixed.
+- **The gate-warning cap** (a bare `16`) — same shape, diagnostic rather than
+  selection. 145 of the real graph's 178 gate nodes sit outside the 33-gate
+  release universe; on `9fadd4e2` **129 were reachable, 16 listed, and 113
+  vanished with no signal.** Fixed, but reported in `warnings` rather than
+  `conservative_reasons`, because a suppressed warning does not make the
+  *selection* incomplete.
+- **`maxRecommendationsPerSlice: 24`** in the naruto advisor — arrival-ordered
+  truncation behind fields named `recommended_tests`/`recommended_gates`. Fixed
+  with `recommendations_truncated` and `(depth, kind, id, nodeId)`, `kind` ahead
+  of `id` because `'gate' < 'test'` and **a dropped gate lets an unsafe parallel
+  plan look safe, where a dropped test only costs coverage.**
+- **The new reason would itself have been a field nobody reads.**
+  `release-check-dynamic-execute.ts` emitted `graph_advisory` with `used`,
+  `status` and `added_gates` only. Adding a `conservative_reasons` the release
+  runner drops on the floor would have reproduced this whole build's pattern
+  inside its own fix. Now carried, with both fallback objects seeded so the key
+  is always present.
+
+Two measurements that **retire arguments** rather than restate them:
+`maxProvenancePerHit` cannot bite — the old docstring argued "slack by
+construction" for the edge arm only, and the zero-hop fallback arm was uncovered;
+measured over all 28,660 real nodes, the maximum is **1 provenance row per node**.
+And `maxDepth: 2` should stay silent: depth is the *definition* of the question
+("what must be re-verified within 2 impact hops"), not a budget spent answering
+it, so charging it would mark every run conservative and make the flag
+meaningless.
+
+Three sites are **flagged and not fixed**, with reasons, rather than swept in:
+
+- `context-graph-advisor-scope.ts:174` `maxTaskTokens: 32` truncates a *guess*
+  (identifiers scraped from free text), and a dropped token is indistinguishable
+  from one that resolves to nothing — already reported. A reason here would fire
+  on any long task description and call a heuristic "conservative".
+- `context-graph-advisor.ts:135` `maxSharedPathsPerPair: 12` **cannot flip the
+  verdict** — `parallel_safe` is `!shared.length` and truncation only applies at
+  ≥12 — but the list still reads as "the shared paths" when it is the first 12 of
+  N. Wants a `shared_paths_truncated` pair field, not a conservative reason.
+- `projections/graph-facts.ts:150` discards `walk.truncated` outright, so a hub
+  with >512 one-hop neighbours silently returns a subset into code-pack,
+  module-view and corpus scoring; and `:194-204` grounds a module on the *first*
+  arrival-ordered hit. **This is a live instance of the defect class**, left only
+  because another lane held that file this session.
 
 ## Closed: a 63.66 MB duplicate nobody ever read, and two premises I got backwards
 

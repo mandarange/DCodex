@@ -47,6 +47,7 @@ import {
 } from '../../triwiki/context-graph/query/__tests__/workspace-fixtures.js';
 import { buildGateEntry, selectGates, type GateManifestEntry } from '../../release/gate-manifest.js';
 import {
+  CONTEXT_GRAPH_AFFECTED_CAPS,
   contextGraphAffectedVerification,
   contextGraphAffectedVerificationFromIndex,
   missingContextGraphBaselineGates,
@@ -198,6 +199,76 @@ function edge(from: string, to: string, type: ContextGraphEdgeType, provenancePa
   };
 }
 
+/**
+ * A second, isolated region of the fixture whose only job is to make the two
+ * **output** caps bite.
+ *
+ * The caps used to truncate in adjacency order, so a fixture that merely produced
+ * "more than the cap" would pass either way. The layout here separates the two
+ * orderings that were previously the same thing:
+ *
+ * - Two seeds. `changedFiles` is sorted, so `a-seed` roots the walk first and its
+ *   suites arrive first — and they are deliberately named to sort **last**. Any
+ *   rule that keeps the first N arrivals keeps `zz-*`; the stated order keeps
+ *   `aa-*`. The two answers share nothing.
+ * - Ten suites two hops out, named to sort **before** every one-hop suite. A
+ *   path-only order would seat them ahead of suites the change names directly, so
+ *   they pin the depth key rather than the tiebreak.
+ *
+ * Nothing here touches `src/mod-x`: the region is reachable only from its own
+ * seeds, so the predicate and floor cases above are unaffected by its presence.
+ */
+const CAP_PATHS = {
+  seedFirst: 'src/mod-cap/a-seed.ts',
+  seedSecond: 'src/mod-cap/b-seed.ts',
+  mid: 'src/mod-cap/mid.ts',
+  gateSeedFirst: 'src/mod-cap/gate-a.ts',
+  gateSeedSecond: 'src/mod-cap/gate-b.ts'
+} as const;
+
+const CAP_COUNTS = { arriveFirst: 100, arriveSecond: 100, deeper: 10, gatesFirst: 40, gatesSecond: 40 } as const;
+
+function capSuite(prefix: string, index: number): string {
+  return `src/mod-cap/__tests__/${prefix}-${String(index).padStart(3, '0')}.test.ts`;
+}
+
+function capGateId(prefix: string, index: number): string {
+  return `custom:${prefix}-${String(index).padStart(2, '0')}`;
+}
+
+function capFixture(): { nodes: ContextGraphNode[]; edges: ContextGraphEdge[] } {
+  const nodes: ContextGraphNode[] = [];
+  const edges: ContextGraphEdge[] = [];
+  const fileId = (value: string): string => contextGraphNodeId({ kind: 'file', path: value });
+  const testId = (value: string): string => contextGraphNodeId({ kind: 'test', path: value });
+
+  for (const seed of Object.values(CAP_PATHS)) nodes.push(fileNode(fileId(seed), seed));
+
+  const suites = (prefix: string, count: number, target: string): void => {
+    for (let index = 0; index < count; index += 1) {
+      const suitePath = capSuite(prefix, index);
+      nodes.push(testNode(testId(suitePath), suitePath));
+      edges.push(edge(testId(suitePath), fileId(target), 'tests', suitePath, index + 1));
+    }
+  };
+  suites('zz', CAP_COUNTS.arriveFirst, CAP_PATHS.seedFirst);
+  suites('aa', CAP_COUNTS.arriveSecond, CAP_PATHS.seedSecond);
+  edges.push(edge(fileId(CAP_PATHS.mid), fileId(CAP_PATHS.seedSecond), 'imports', CAP_PATHS.mid, 1));
+  suites('a0', CAP_COUNTS.deeper, CAP_PATHS.mid);
+
+  const gates = (prefix: string, count: number, target: string): void => {
+    for (let index = 0; index < count; index += 1) {
+      const gateId = capGateId(prefix, index);
+      const node = contextGraphNodeId({ kind: 'gate', gateId });
+      nodes.push(gateNode(node, gateId, 'medium', { namespace: 'custom' }));
+      edges.push(edge(node, fileId(target), 'affected_by', 'release-gates.v2.json', 100 + index));
+    }
+  };
+  gates('zg', CAP_COUNTS.gatesFirst, CAP_PATHS.gateSeedFirst);
+  gates('ag', CAP_COUNTS.gatesSecond, CAP_PATHS.gateSeedSecond);
+  return { nodes, edges };
+}
+
 function fixtureSnapshot(): ContextGraphSnapshot {
   const nodes: ContextGraphNode[] = [
     fileNode(IDS.changed, PATHS.changed),
@@ -252,6 +323,9 @@ function fixtureSnapshot(): ContextGraphSnapshot {
     edge(IDS.gatePublishFlag, IDS.changed, 'affected_by', 'release-gates.v2.json', 24),
     edge(IDS.gateAlwaysFlag, IDS.changed, 'affected_by', 'release-gates.v2.json', 25)
   ];
+  const caps = capFixture();
+  nodes.push(...caps.nodes);
+  edges.push(...caps.edges);
   return buildContextGraphSnapshot({
     nodes,
     edges,
@@ -424,6 +498,119 @@ test('a suite reachable only across the seed expansion is still recommended', as
     result.recommended_tests.some((row) => row.path === PATHS.hiddenSuite),
     'the expansion hop is what makes a symbol-level suite reachable'
   );
+});
+
+/**
+ * The cap that decides which tests a release runs, made to say so.
+ *
+ * Measured on the real graph for `11265c98`: 275 suites reachable, walk **not**
+ * truncated, 128 returned, `conservative_reasons` empty. A caller cannot tell that
+ * from a complete answer, and it is the one output of this module that decides
+ * whether a break is caught.
+ */
+test('the suite cap reports itself when it bites', async () => {
+  const result = await run([CAP_PATHS.seedFirst, CAP_PATHS.seedSecond]);
+
+  assert.equal(result.recommended_tests.length, CONTEXT_GRAPH_AFFECTED_CAPS.maxTests);
+  assert.ok(
+    result.conservative_reasons.includes('recommended_tests_truncated'),
+    'a shortened suite list must not read as a complete one'
+  );
+  assert.equal(result.conservative, true);
+  // Not the walk's budget: the closure completed and the *answer* was cut, and the
+  // two send a caller to different places.
+  assert.ok(!result.conservative_reasons.includes('impact_closure_truncated'));
+  assertNeverFewer(result);
+});
+
+/** The control. Without it the assertion above is satisfied by a reason pushed unconditionally. */
+test('a closure that fits under the suite cap is not reported as truncated', async () => {
+  const result = await run([PATHS.changed]);
+
+  assert.ok(result.recommended_tests.length < CONTEXT_GRAPH_AFFECTED_CAPS.maxTests);
+  assert.ok(!result.conservative_reasons.includes('recommended_tests_truncated'));
+});
+
+/**
+ * Which suites survive the cap, and why those.
+ *
+ * `a-seed` sorts first so its suites root the walk and arrive first, and they are
+ * named to sort last. Keeping the first N arrivals returns 100 `zz-*` and 28
+ * `aa-*`; the stated order returns the opposite. The `a0-*` suites sort before
+ * everything and are two hops out, so they separate the depth key from the
+ * alphabetical tiebreak instead of proving both at once.
+ */
+test('the suites the cap keeps are the nearest ones, not the first-arriving ones', async () => {
+  const result = await run([CAP_PATHS.seedFirst, CAP_PATHS.seedSecond]);
+  const paths = result.recommended_tests.map((row) => row.path);
+
+  for (let index = 0; index < CAP_COUNTS.arriveSecond; index += 1) {
+    assert.ok(paths.includes(capSuite('aa', index)), `${capSuite('aa', index)} survived though its seed is walked second`);
+  }
+  const remainder = CONTEXT_GRAPH_AFFECTED_CAPS.maxTests - CAP_COUNTS.arriveSecond;
+  assert.deepEqual(
+    paths.filter((row) => row.includes('/zz-')),
+    Array.from({ length: remainder }, (_, index) => capSuite('zz', index)),
+    'the surviving remainder is the lowest-sorting slice, not the slice that arrived first'
+  );
+  assert.ok(
+    !paths.some((row) => row.includes('/a0-')),
+    'a two-hop suite never displaces a one-hop suite, however early its path sorts'
+  );
+});
+
+/**
+ * The same defect on the gate side of the same function, with the same layout:
+ * `gate-a` is walked first and carries the late-sorting ids.
+ */
+test('the added-gate cap reports itself and keeps the lowest-sorting gate ids', async () => {
+  const universe: GateManifestEntry[] = [
+    ...GATES,
+    ...Array.from({ length: CAP_COUNTS.gatesFirst }, (_, index) => buildGateEntry(capGateId('zg', index))),
+    ...Array.from({ length: CAP_COUNTS.gatesSecond }, (_, index) => buildGateEntry(capGateId('ag', index)))
+  ];
+  const result = contextGraphAffectedVerificationFromIndex(await fixtureReader(), {
+    root: '/workspace-not-read',
+    changedFiles: [CAP_PATHS.gateSeedFirst, CAP_PATHS.gateSeedSecond],
+    gates: universe,
+    graphStatus: 'fresh'
+  });
+
+  assert.equal(result.added_gates.length, CONTEXT_GRAPH_AFFECTED_CAPS.maxAddedGates);
+  assert.ok(result.conservative_reasons.includes('added_gates_truncated'));
+  for (let index = 0; index < CAP_COUNTS.gatesSecond; index += 1) {
+    assert.ok(result.added_gates.includes(capGateId('ag', index)));
+  }
+  assert.deepEqual(
+    result.added_gates.filter((id) => id.startsWith('custom:zg-')),
+    Array.from({ length: CONTEXT_GRAPH_AFFECTED_CAPS.maxAddedGates - CAP_COUNTS.gatesSecond }, (_, index) => capGateId('zg', index))
+  );
+  assertNeverFewer(result);
+});
+
+/**
+ * The third cap in the same function, on a diagnostic rather than a selection.
+ *
+ * 145 of the real graph's 178 gate nodes are outside the 33-gate release universe,
+ * so this list overflows on ordinary diffs — measured at 129 reachable names for
+ * `9fadd4e2`, of which 16 were listed and 113 vanished. The overflow now states its
+ * own size, and it stays in `warnings` because a suppressed warning does not make
+ * the selection incomplete.
+ */
+test('gate names outside the runnable manifest are listed, and the overflow states its own size', async () => {
+  const result = await run([CAP_PATHS.gateSeedFirst, CAP_PATHS.gateSeedSecond]);
+  const reachable = CAP_COUNTS.gatesFirst + CAP_COUNTS.gatesSecond;
+  const suppressed = reachable - CONTEXT_GRAPH_AFFECTED_CAPS.maxGateWarnings;
+
+  assert.equal(result.warnings.length, CONTEXT_GRAPH_AFFECTED_CAPS.maxGateWarnings + 1);
+  assert.equal(
+    result.warnings.at(-1),
+    `${suppressed} further gate names in the context graph are not in the runnable gate manifest and were not listed`
+  );
+  // The universe filter runs before the cap, so an unrunnable gate is a warning
+  // rather than one of the 64 slots.
+  assert.deepEqual(result.added_gates, []);
+  assert.ok(!result.conservative_reasons.includes('added_gates_truncated'));
 });
 
 test('a stale graph keeps the exact selection and refuses to widen or shrink it', async () => {

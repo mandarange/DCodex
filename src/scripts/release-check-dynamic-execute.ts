@@ -39,7 +39,7 @@ const plan = selectGates(manifest.gates, changedFiles, { publish });
 // selector produced it, because the graph is a cache and this is a release path.
 const { contextGraphAffectedVerification } = await importDist('core/verification/context-graph-affected.js');
 const baselineGateIds = plan.selected.map((gate) => gate.id);
-let graphAdvisory = { graph_used: false, added_gates: [], graph_status: 'missing' };
+let graphAdvisory = { graph_used: false, added_gates: [], graph_status: 'missing', conservative_reasons: [] };
 try {
   const advice = await contextGraphAffectedVerification({
     root,
@@ -64,7 +64,7 @@ try {
 } catch (error) {
   // Advisory failure must never block a release plan the exact selector already
   // produced; it is recorded and the plan stands.
-  graphAdvisory = { graph_used: false, added_gates: [], graph_status: 'unavailable', error: String(error).slice(0, 200) };
+  graphAdvisory = { graph_used: false, added_gates: [], graph_status: 'unavailable', conservative_reasons: [], error: String(error).slice(0, 200) };
 }
 
 // Hermetic invariant proofs preserved from the planner (self-prove narrowing).
@@ -181,7 +181,12 @@ emitGate('release:check:dynamic:execute', {
   graph_advisory: {
     used: graphAdvisory.graph_used === true,
     status: graphAdvisory.graph_status,
-    added_gates: graphAdvisory.added_gates
+    added_gates: graphAdvisory.added_gates,
+    // Carried into the receipt so the advisory's own "this answer is short"
+    // signals — `recommended_tests_truncated`, `added_gates_truncated`,
+    // `impact_closure_truncated` — reach a reader. A reason nobody prints is the
+    // same defect as a cap nobody reports.
+    conservative_reasons: graphAdvisory.conservative_reasons ?? []
   }
 });
 

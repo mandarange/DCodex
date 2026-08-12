@@ -111,6 +111,8 @@ export interface SliceState {
   readonly closure: Map<string, ContextWalkHit>;
   readonly writeSet: Set<string>;
   readonly recommendations: NarutoContextGraphRecommendation[];
+  /** More verifiers were reachable than `maxRecommendationsPerSlice` returns. */
+  readonly recommendationsTruncated: boolean;
 }
 
 function nodePathOf(node: ContextGraphNodeView): string | null {
@@ -219,14 +221,34 @@ function closurePaths(cursor: HydrationCursor, walk: ContextWalkResult): Map<str
   return out;
 }
 
+/**
+ * The verifiers a slice's writes would invalidate, capped and **said so**.
+ *
+ * This used to stop at `maxRecommendationsPerSlice` with a bare `break`, so an
+ * advisory that had seen 60 verifiers and returned 24 was indistinguishable from
+ * one that had seen 24 — the same defect `context-graph-affected.ts` carried on
+ * its own `maxTests`. The overflow is now returned to the caller and charged to
+ * `recommendations_truncated`.
+ *
+ * The kept set is ordered `(depth, kind, id, nodeId)` rather than left in walk
+ * arrival order, which is a fact about CSR bucket layout and nothing else:
+ *
+ * - **depth**, because a verifier one hop from the write set is named by a
+ *   relation on the written file itself. The walk is breadth first, so this is the
+ *   shortest hop count and does not move with the layout.
+ * - **kind**, because `'gate' < 'test'`: a dropped gate recommendation lets an
+ *   unsafe parallel plan look safe, and a dropped test only costs coverage. It is
+ *   also the grouping the returned list is sorted into anyway.
+ * - **id** then **nodeId**, so the order is total and stable across machines.
+ */
 function recommendationsFrom(
   reader: ContextIndexReader,
   cursor: HydrationCursor,
   sliceId: string,
   writeSet: ReadonlySet<string>,
   impact: ContextWalkResult
-): NarutoContextGraphRecommendation[] {
-  const out: NarutoContextGraphRecommendation[] = [];
+): { rows: NarutoContextGraphRecommendation[]; truncated: boolean } {
+  const candidates: Array<{ depth: number; kind: 'test' | 'gate'; id: string; nodeId: string; row: NarutoContextGraphRecommendation }> = [];
   for (const hit of impact.hits.values()) {
     const node = cursor.node(hit.node);
     if (node === null) continue;
@@ -234,20 +256,33 @@ function recommendationsFrom(
     if (!isGate && !isTestNode(node)) continue;
     const nodePath = nodePathOf(node);
     if (!nodePath || (!isGate && writeSet.has(nodePath))) continue;
-    out.push({
-      slice_id: sliceId,
-      kind: isGate ? 'gate' : 'test',
-      id: isGate ? node.label : nodePath,
-      path: nodePath,
-      protected: isGate ? isProtectedGateNode(node) : false,
-      risk_domain: isGate ? riskDomainOf(node) : null,
-      reason_path: [...hit.reasonPath],
-      explanation: [...hit.explanation],
-      provenance: narutoAdvisorProvenance(reader, cursor, hit)
+    const kind = isGate ? 'gate' : 'test';
+    const id = isGate ? node.label : nodePath;
+    candidates.push({
+      depth: hit.depth,
+      kind,
+      id,
+      nodeId: hit.nodeId,
+      row: {
+        slice_id: sliceId,
+        kind,
+        id,
+        path: nodePath,
+        protected: isGate ? isProtectedGateNode(node) : false,
+        risk_domain: isGate ? riskDomainOf(node) : null,
+        reason_path: [...hit.reasonPath],
+        explanation: [...hit.explanation],
+        provenance: narutoAdvisorProvenance(reader, cursor, hit)
+      }
     });
-    if (out.length >= NARUTO_ADVISOR_CAPS.maxRecommendationsPerSlice) break;
   }
-  return out.sort((a, b) => (a.kind === b.kind ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.kind < b.kind ? -1 : 1));
+  const text = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  candidates.sort((a, b) => a.depth - b.depth || text(a.kind, b.kind) || text(a.id, b.id) || text(a.nodeId, b.nodeId));
+  const rows = candidates.slice(0, NARUTO_ADVISOR_CAPS.maxRecommendationsPerSlice).map((candidate) => candidate.row);
+  return {
+    rows: rows.sort((a, b) => (a.kind === b.kind ? text(a.id, b.id) : text(a.kind, b.kind))),
+    truncated: candidates.length > NARUTO_ADVISOR_CAPS.maxRecommendationsPerSlice
+  };
 }
 
 /**
@@ -281,6 +316,7 @@ export function buildNarutoSliceState(
 
   const closure = closurePaths(cursor, walk);
   const writeSet = new Set(writePaths);
+  const recommendations = recommendationsFrom(reader, cursor, slice.id, writeSet, impact);
   return {
     scope: {
       slice_id: slice.id,
@@ -292,7 +328,8 @@ export function buildNarutoSliceState(
     },
     closure,
     writeSet,
-    recommendations: recommendationsFrom(reader, cursor, slice.id, writeSet, impact)
+    recommendations: recommendations.rows,
+    recommendationsTruncated: recommendations.truncated
   };
 }
 

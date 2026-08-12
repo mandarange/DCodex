@@ -96,6 +96,58 @@ function edge(from: string, to: string, type: ContextGraphEdgeType, provenancePa
   };
 }
 
+/**
+ * A region whose only job is to overflow `maxRecommendationsPerSlice`.
+ *
+ * `capA` sorts first, so `narutoAdvisorPathList` puts it first and its suites
+ * arrive first — and they are named to sort last. A rule that keeps the first 24
+ * arrivals returns 24 `zz-*` suites and neither gate; the stated order returns
+ * both gates, every `aa-*` suite, and only the lowest-sorting `zz-*` remainder.
+ */
+const CAP_PATHS = { capA: 'src/mod-cap/a-seed.ts', capB: 'src/mod-cap/b-seed.ts' } as const;
+const CAP_COUNTS = { arriveFirst: 24, arriveSecond: 10, gates: 2 } as const;
+const CAP_LIMIT = 24;
+
+function capSuite(prefix: string, index: number): string {
+  return `src/mod-cap/__tests__/${prefix}-${String(index).padStart(3, '0')}.test.ts`;
+}
+
+function capFixture(): { nodes: ContextGraphNode[]; edges: ContextGraphEdge[] } {
+  const nodes: ContextGraphNode[] = [];
+  const edges: ContextGraphEdge[] = [];
+  const fileId = (value: string): string => contextGraphNodeId({ kind: 'file', path: value });
+  const testId = (value: string): string => contextGraphNodeId({ kind: 'test', path: value });
+
+  for (const seed of Object.values(CAP_PATHS)) nodes.push(fileNode(fileId(seed), seed));
+  const suites = (prefix: string, count: number, target: string): void => {
+    for (let index = 0; index < count; index += 1) {
+      const suitePath = capSuite(prefix, index);
+      nodes.push({
+        id: testId(suitePath),
+        kind: 'test',
+        label: path.posix.basename(suitePath),
+        path: suitePath,
+        contentHash: `sha-${suitePath}`,
+        trust: 1,
+        freshness: 'fresh',
+        risk: 'low',
+        tokenCost: 30,
+        metadata: {}
+      });
+      edges.push(edge(testId(suitePath), fileId(target), 'tests', suitePath, index + 1));
+    }
+  };
+  suites('zz', CAP_COUNTS.arriveFirst, CAP_PATHS.capA);
+  suites('aa', CAP_COUNTS.arriveSecond, CAP_PATHS.capB);
+  for (let index = 0; index < CAP_COUNTS.gates; index += 1) {
+    const gateId = `custom:cap-${String(index).padStart(2, '0')}`;
+    const node = contextGraphNodeId({ kind: 'gate', gateId });
+    nodes.push(gateNode(node, gateId, 'medium', { namespace: 'custom' }));
+    edges.push(edge(node, fileId(CAP_PATHS.capB), 'affected_by', 'release-gates.v2.json', 90 + index));
+  }
+  return { nodes, edges };
+}
+
 function fixtureIndex(): ContextIndexReader {
   const nodes: ContextGraphNode[] = [
     fileNode(IDS.a, PATHS.a),
@@ -128,6 +180,9 @@ function fixtureIndex(): ContextIndexReader {
     edge(IDS.gateRelease, IDS.a, 'affected_by', 'release-gates.v2.json', 11),
     edge(IDS.gateLint, IDS.c, 'affected_by', 'release-gates.v2.json', 12)
   ];
+  const caps = capFixture();
+  nodes.push(...caps.nodes);
+  edges.push(...caps.edges);
   // Encoded and reopened rather than handed over as an in-memory structure: the
   // advisory now reads the compact index, and a fixture that skipped the encode
   // would not exercise the string interning or the CSR adjacency it depends on.
@@ -266,6 +321,40 @@ test('a slice whose scope resolves to nothing is never called parallel-safe', ()
   assert.equal(advice.parallel_safe, false);
   assert.equal(advice.pairs[0]?.kind, 'undeclared_write_scope');
   assert.ok(advice.conservative_reasons.includes('slice_scope_unresolved'));
+});
+
+/**
+ * `maxRecommendationsPerSlice` used to stop with a bare `break`, so an advisory
+ * that had seen 36 verifiers and returned 24 looked exactly like one that had seen
+ * 24. It is the same defect `context-graph-affected.ts` carried on `maxTests`, in
+ * the other consumer of the same walk.
+ */
+test('the recommendation cap reports itself and keeps gates before same-distance tests', () => {
+  const advice = advise([{ id: 'S1', writePaths: [CAP_PATHS.capA, CAP_PATHS.capB] }]);
+  const forSlice = <T extends { slice_id: string }>(rows: readonly T[]): T[] => rows.filter((row) => row.slice_id === 'S1');
+  const gates = forSlice(advice.recommended_gates);
+  const tests = forSlice(advice.recommended_tests);
+
+  assert.equal(gates.length + tests.length, CAP_LIMIT);
+  assert.ok(advice.conservative_reasons.includes('recommendations_truncated'), 'a shortened list must not read as a complete one');
+  assert.equal(advice.conservative, true);
+  assert.equal(gates.length, CAP_COUNTS.gates, 'a gate is never dropped in favour of a test at the same distance');
+  const paths = tests.map((row) => row.id).sort();
+  for (let index = 0; index < CAP_COUNTS.arriveSecond; index += 1) {
+    assert.ok(paths.includes(capSuite('aa', index)), `${capSuite('aa', index)} survived though its seed is walked second`);
+  }
+  assert.deepEqual(
+    paths.filter((row) => row.includes('/zz-')),
+    Array.from({ length: CAP_LIMIT - CAP_COUNTS.gates - CAP_COUNTS.arriveSecond }, (_, index) => capSuite('zz', index)),
+    'the surviving remainder is the lowest-sorting slice, not the slice that arrived first'
+  );
+});
+
+/** The control: without it the reason above is satisfied by one pushed unconditionally. */
+test('a slice whose verifiers fit under the cap is not reported as truncated', () => {
+  const advice = advise([{ id: 'S1', writePaths: [PATHS.a] }]);
+
+  assert.ok(!advice.conservative_reasons.includes('recommendations_truncated'));
 });
 
 test('the advisory declares that it decides nothing', () => {

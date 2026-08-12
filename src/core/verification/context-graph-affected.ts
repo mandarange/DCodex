@@ -42,6 +42,12 @@
  *   was unbounded, so an exhausted budget here would be a new way to lose seeds.
  *   It is charged to `impact_closure_truncated`, which marks the run conservative
  *   rather than letting a shorter answer pass as a complete one.
+ * - **The two output caps report themselves and truncate in a stated order.**
+ *   `maxTests` and `maxAddedGates` used to stop with a bare `continue`, so a
+ *   shortened list arrived indistinguishable from a complete one — measured on the
+ *   real graph, 275 reachable suites became 128 with an empty `conservative_reasons`.
+ *   They now charge `recommended_tests_truncated` / `added_gates_truncated`, and the
+ *   set they keep is chosen by `nearestFirst` rather than by adjacency order.
  */
 import {
   CONTEXT_GRAPH_CORRUPT_ERROR,
@@ -76,13 +82,32 @@ export const CONTEXT_GRAPH_AFFECTED_CAPS = {
   maxDepth: 2,
   maxNodesPerWalk: 2048,
   maxEdgesPerWalk: 32768,
+  /**
+   * Suites returned. This one **bites on real diffs** — 275 reachable, 128 kept
+   * on the graph of `11265c98` — so it is reported through
+   * `recommended_tests_truncated` and the kept set is chosen by `nearestFirst`.
+   */
   maxTests: 128,
+  /**
+   * Gates the graph may add. Wider than the runnable release manifest (33 ids),
+   * so nothing has been observed to reach it; it is still reported through
+   * `added_gates_truncated`, because "no diff has hit it yet" is a fact about
+   * today's manifest and not a property of this module.
+   */
   maxAddedGates: 64,
+  /** Distinct unrunnable gate names listed before the rest are counted instead. */
+  maxGateWarnings: 16,
   /**
    * Provenance rows kept per hit. A hop chain crosses at most
    * `maxDepth + 1` edges — the expansion hop plus the reverse hops — so this
    * bound is slack by construction and exists only so the walk helper is not
    * handed an unbounded limit.
+   *
+   * That argument covers the edge arm of `contextWalkProvenance`. Its zero-hop
+   * fallback reads `reader.provenance` instead, which the construction says
+   * nothing about — measured over the real index, every one of 28,660 nodes
+   * carries at most **one** source record, so the fallback is slack by a factor
+   * of 16 and this cap has no reachable way to shorten an answer.
    */
   maxProvenancePerHit: 16
 } as const;
@@ -204,6 +229,59 @@ function isProtectedGateNode(node: ContextGraphNodeView): boolean {
   return node.risk === 'protected' || contextNodeFlag(node, 'requiredForPublish') || contextNodeFlag(node, 'alwaysOnRelease');
 }
 
+interface AffectedCandidate<T> {
+  /** Identity of the answer row: a gate id or a workspace-relative suite path. */
+  readonly key: string;
+  /** Impact hops between the change and this candidate. */
+  readonly depth: number;
+  /** Canonical node id, so the order is total even when one key has two nodes. */
+  readonly nodeId: string;
+  readonly value: T;
+}
+
+/**
+ * Deduplicate, order, and take the first `limit` — nearest first.
+ *
+ * The walk returns everything it reached in **adjacency order**, which is a fact
+ * about how the index stores its CSR buckets and about nothing else. Taking the
+ * first N of that made the kept set a property of the file layout: the v1 engine's
+ * sorted-edge-id order and the v2 bucket order kept different subsets of the same
+ * 275 reachable suites (48 shared of 128, union 176) with the same count and the
+ * same completeness. Nothing meaningful decided which 128 a release ran.
+ *
+ * The key is `(depth, key, nodeId)`:
+ *
+ * - **depth** first because it is the strength of the evidence. A suite one hop
+ *   from the change is named by a `tests` edge on the changed file itself; a suite
+ *   two hops away is implicated through an intermediary. When only N of M fit,
+ *   dropping the *furthest* loses the weakest claim rather than an arbitrary slice.
+ *   It is also the one ordering key the layout cannot move: the walk is breadth
+ *   first with first-visit-wins, so a node's depth is its shortest hop count and is
+ *   identical whichever bucket order reached it.
+ * - **key** — the gate id or the workspace path — because it is what the caller
+ *   consumes, and it is stable across machines, engines and index revisions.
+ * - **nodeId** last so the order is *total*. One path can carry two nodes (a
+ *   `kind: 'test'` node and an `isTest`-flagged file node), and without this the
+ *   surviving row's hop chain and provenance would still be decided by arrival
+ *   order even though the surviving path was not.
+ *
+ * `distinct` is the count *before* the limit, so the caller can report truncation
+ * exactly rather than inferring it from `kept.length === limit` — which is also
+ * true of an answer that happens to be complete at exactly the cap.
+ */
+function nearestFirst<T>(candidates: Array<AffectedCandidate<T>>, limit: number): { kept: T[]; distinct: number } {
+  const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  candidates.sort((a, b) => a.depth - b.depth || compare(a.key, b.key) || compare(a.nodeId, b.nodeId));
+  const kept: T[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (seen.has(candidate.key)) continue;
+    seen.add(candidate.key);
+    if (kept.length < limit) kept.push(candidate.value);
+  }
+  return { kept, distinct: seen.size };
+}
+
 /**
  * Every node at a changed path, with no per-key cap.
  *
@@ -310,7 +388,18 @@ function assemble(
   status: ContextGraphStatusCode,
   snapshotHash: string,
   changedFiles: string[],
-  graph: { details: ContextGraphAffectedGate[]; tests: ContextGraphAffectedTest[]; unresolved: string[]; truncated: boolean; warnings: string[] }
+  graph: {
+    details: ContextGraphAffectedGate[];
+    tests: ContextGraphAffectedTest[];
+    unresolved: string[];
+    /** The impact walk exhausted its node or edge budget. */
+    truncated: boolean;
+    /** More suites were reachable than `maxTests` returns. */
+    testsTruncated: boolean;
+    /** More runnable gates were reachable than `maxAddedGates` returns. */
+    gatesTruncated: boolean;
+    warnings: string[];
+  }
 ): ContextGraphAffectedResult {
   const errorCode = ERROR_BY_STATUS[status];
   const universe = new Map(request.gates.map((entry) => [entry.id, entry] as const));
@@ -354,6 +443,13 @@ function assemble(
   if (request.graphStatus === undefined && !errorCode) conservativeReasons.push('graph_freshness_not_verified');
   if (graph.unresolved.length) conservativeReasons.push('changed_file_not_in_graph');
   if (graph.truncated) conservativeReasons.push('impact_closure_truncated');
+  // Kept distinct from `impact_closure_truncated` on purpose. That one means the
+  // walk ran out of budget and the *closure* is short, which a bigger walk budget
+  // or a repaired graph would fix; these two mean the closure is complete and the
+  // *answer* was cut to fit `maxTests` / `maxAddedGates`. Collapsing them into one
+  // reason would send a caller to rebuild an index that is fine.
+  if (graph.testsTruncated) conservativeReasons.push('recommended_tests_truncated');
+  if (graph.gatesTruncated) conservativeReasons.push('added_gates_truncated');
 
   const chosen = new Set(gates);
   return {
@@ -392,58 +488,96 @@ export function contextGraphAffectedVerificationFromIndex(reader: ContextIndexRe
   const changedFiles = [...new Set(request.changedFiles.map(relativePath).filter((value): value is string => value !== null))].sort();
   const status = request.graphStatus ?? 'fresh';
   if (status !== 'fresh') {
-    return assemble(request, status, reader.snapshotHash, changedFiles, { details: [], tests: [], unresolved: [], truncated: false, warnings: [] });
+    return assemble(request, status, reader.snapshotHash, changedFiles, {
+      details: [], tests: [], unresolved: [], truncated: false, testsTruncated: false, gatesTruncated: false, warnings: []
+    });
   }
 
   const cursor = new HydrationCursor(reader);
   const maxDepth = Math.max(0, request.maxDepth ?? CONTEXT_GRAPH_AFFECTED_CAPS.maxDepth);
   const walk = walkImpactClosure(reader, cursor, changedFiles, maxDepth);
-  const details: ContextGraphAffectedGate[] = [];
-  const tests: ContextGraphAffectedTest[] = [];
-  const warnings: string[] = [];
+  const gateCandidates: Array<AffectedCandidate<ContextGraphAffectedGate>> = [];
+  const testCandidates: Array<AffectedCandidate<ContextGraphAffectedTest>> = [];
+  const unnamedGates = new Set<string>();
   const universe = new Set(request.gates.map((entry) => entry.id));
 
+  // Every reachable hit is turned into a candidate first, and the caps are applied
+  // to the ordered set afterwards. Capping inside the walk is what made the answer
+  // depend on adjacency order, and it also destroyed the count needed to say the
+  // answer was short.
   for (const hit of walk.hits) {
     const node = cursor.node(hit.node);
     if (!node) continue;
     if (node.kind === 'gate') {
-      if (details.length >= CONTEXT_GRAPH_AFFECTED_CAPS.maxAddedGates) continue;
       if (!universe.has(node.label)) {
-        if (warnings.length < 16) warnings.push(`context graph names gate ${node.label}, which is not in the runnable gate manifest`);
+        unnamedGates.add(node.label);
         continue;
       }
       const entry = request.gates.find((row) => row.id === node.label);
-      details.push({
-        gate_id: node.label,
-        tier: entry?.tier ?? null,
-        source: 'context_graph',
-        protected: isProtectedGateNode(node) || (entry ? entry.required_for_publish || entry.always_on_release : false),
-        reason_path: [...hit.reasonPath],
-        explanation: [...hit.explanation],
-        provenance: contextWalkProvenance(reader, cursor, hit, CONTEXT_GRAPH_AFFECTED_CAPS.maxProvenancePerHit)
+      gateCandidates.push({
+        key: node.label,
+        depth: hit.depth,
+        nodeId: hit.nodeId,
+        value: {
+          gate_id: node.label,
+          tier: entry?.tier ?? null,
+          source: 'context_graph',
+          protected: isProtectedGateNode(node) || (entry ? entry.required_for_publish || entry.always_on_release : false),
+          reason_path: [...hit.reasonPath],
+          explanation: [...hit.explanation],
+          provenance: contextWalkProvenance(reader, cursor, hit, CONTEXT_GRAPH_AFFECTED_CAPS.maxProvenancePerHit)
+        }
       });
       continue;
     }
-    if (!isTestNode(node) || tests.length >= CONTEXT_GRAPH_AFFECTED_CAPS.maxTests) continue;
+    if (!isTestNode(node)) continue;
     const testPath = nodePathOf(node);
-    if (!testPath || changedFiles.includes(testPath) || tests.some((row) => row.path === testPath)) continue;
-    tests.push({
-      path: testPath,
-      reason_path: [...hit.reasonPath],
-      explanation: [...hit.explanation],
-      provenance: contextWalkProvenance(reader, cursor, hit, CONTEXT_GRAPH_AFFECTED_CAPS.maxProvenancePerHit)
+    if (!testPath || changedFiles.includes(testPath)) continue;
+    testCandidates.push({
+      key: testPath,
+      depth: hit.depth,
+      nodeId: hit.nodeId,
+      value: {
+        path: testPath,
+        reason_path: [...hit.reasonPath],
+        explanation: [...hit.explanation],
+        provenance: contextWalkProvenance(reader, cursor, hit, CONTEXT_GRAPH_AFFECTED_CAPS.maxProvenancePerHit)
+      }
     });
   }
 
-  details.sort((a, b) => (a.gate_id < b.gate_id ? -1 : a.gate_id > b.gate_id ? 1 : 0));
-  tests.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const gateSelection = nearestFirst(gateCandidates, CONTEXT_GRAPH_AFFECTED_CAPS.maxAddedGates);
+  const testSelection = nearestFirst(testCandidates, CONTEXT_GRAPH_AFFECTED_CAPS.maxTests);
+  const details = gateSelection.kept.sort((a, b) => (a.gate_id < b.gate_id ? -1 : a.gate_id > b.gate_id ? 1 : 0));
+  const tests = testSelection.kept.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return assemble(request, 'fresh', reader.snapshotHash, changedFiles, {
     details,
     tests,
     unresolved: walk.unresolved,
     truncated: walk.truncated,
-    warnings
+    testsTruncated: testSelection.distinct > CONTEXT_GRAPH_AFFECTED_CAPS.maxTests,
+    gatesTruncated: gateSelection.distinct > CONTEXT_GRAPH_AFFECTED_CAPS.maxAddedGates,
+    warnings: unnamedGateWarnings(unnamedGates)
   });
+}
+
+/**
+ * Gate names the graph carries that the runnable manifest does not.
+ *
+ * The list is capped, because 145 of the real graph's 178 gate nodes are outside
+ * the 33-gate release universe and a diff that reaches many of them would bury the
+ * report. A cap on a diagnostic is still a cap, so the overflow states its own size
+ * in the last row rather than vanishing — the same rule the selection caps follow,
+ * charged to `warnings` because a suppressed *warning* does not make the *selection*
+ * incomplete and must not read as though it did.
+ */
+function unnamedGateWarnings(labels: ReadonlySet<string>): string[] {
+  const named = [...labels].sort();
+  const shown = named.slice(0, CONTEXT_GRAPH_AFFECTED_CAPS.maxGateWarnings);
+  const warnings = shown.map((label) => `context graph names gate ${label}, which is not in the runnable gate manifest`);
+  const suppressed = named.length - shown.length;
+  if (suppressed > 0) warnings.push(`${suppressed} further gate names in the context graph are not in the runnable gate manifest and were not listed`);
+  return warnings;
 }
 
 /**
@@ -470,7 +604,7 @@ function statusOfIndexFailure(error: unknown, failure: WorkspaceContextFailure):
 export async function contextGraphAffectedVerification(request: ContextGraphAffectedRequest): Promise<ContextGraphAffectedResult> {
   if (request.reader) return contextGraphAffectedVerificationFromIndex(request.reader, request);
   const changedFiles = [...new Set(request.changedFiles.map(relativePath).filter((value): value is string => value !== null))].sort();
-  const empty = { details: [], tests: [], unresolved: [], truncated: false, warnings: [] };
+  const empty = { details: [], tests: [], unresolved: [], truncated: false, testsTruncated: false, gatesTruncated: false, warnings: [] };
   // A caller that already knows the graph is unusable is answered without
   // opening it: the verdict is the caller's preflight, and re-deriving one here
   // would spawn git on a release path.

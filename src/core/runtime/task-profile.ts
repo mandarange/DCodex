@@ -91,6 +91,36 @@ export function gateProfileForTask(profileOrPrompt: TaskProfile | unknown): Gate
   return TASK_PROFILE_GATE_PROFILES[profile]
 }
 
+/**
+ * The risk a mission declares to a Context Graph query.
+ *
+ * `risk: 'high'` is not a priority hint. It changes three things in the kernel,
+ * and every one of them costs tokens or latency: the traversal depth goes from
+ * the profile's 2 hops to 3, the risk-relevance bonus is doubled, and reachable
+ * protected gates and conflicts are reserved ahead of the greedy fill. The one
+ * fact that justifies paying all three is the same fact: this mission can break
+ * something protected, so its answer must name the gates that guard it.
+ *
+ * That fact is already classified — by `TASK_PROFILE_GATE_PROFILES`, where a
+ * `full` gate profile means the mission must clear the whole verification
+ * battery. The two ends of a mission ask the same question: the gate profile
+ * asks what it must pass, the attention risk asks what its prompt must carry.
+ * So this is *derived* from that table rather than restated beside it, because a
+ * second table is a second opinion about which missions are dangerous and the
+ * two would drift.
+ *
+ * A profile whose gate profile is anything less does not escalate. `bounded-work`
+ * is the ordinary implementation mission and escalating it would make depth 3
+ * the default under a name that says otherwise. `parallel-read` cannot write at
+ * all. `tiny-change` is, by `classifyTaskProfile`'s own construction, the case a
+ * real security or database mutation is never allowed to fall into.
+ * `parallel-write` is broader, not deeper, and that breadth is already served by
+ * a larger anchor limit.
+ */
+export function attentionRiskForTask(profileOrPrompt: TaskProfile | unknown): 'normal' | 'high' {
+  return gateProfileForTask(profileOrPrompt) === 'full' ? 'high' : 'normal'
+}
+
 export function isTaskProfile(value: unknown): value is TaskProfile {
   return TASK_PROFILES.has(String(value || '') as TaskProfile)
 }

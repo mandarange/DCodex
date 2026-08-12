@@ -258,6 +258,14 @@ export function narutoContextGraphAdviceFromIndex(reader: ContextIndexReader, re
     if (!state.scope.seed_node_ids.length && !conservativeReasons.includes('slice_scope_unresolved')) conservativeReasons.push('slice_scope_unresolved');
     if (state.scope.truncated && !conservativeReasons.includes('closure_truncated')) conservativeReasons.push('closure_truncated');
   }
+  // `$task` is checked here and not in the loop above because its recommendations
+  // *are* merged into the answer, unlike its scope, which is reported on its own
+  // `task_scope.truncated` field. A short recommendation list has no such field.
+  for (const state of [taskState, ...states]) {
+    if (state.recommendationsTruncated && !conservativeReasons.includes('recommendations_truncated')) {
+      conservativeReasons.push('recommendations_truncated');
+    }
+  }
 
   return finalize({
     status: 'fresh',
