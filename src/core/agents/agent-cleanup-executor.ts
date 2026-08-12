@@ -55,15 +55,27 @@ export async function runAgentCleanupExecutor(opts: AgentCleanupExecutorOptions)
   const sessionsRaw = await readJson<any>(path.join(agentRoot, 'agent-sessions.json'), { sessions: {} })
   const sessions = normalizeAgentSessionRows(sessionsRaw)
   const sessionById = new Map(sessions.map((row: any) => [String(row.session_id || row.id || row.agent_id || ''), row]))
-  const activeSessionIds = new Set(
-    sessions
-      .filter((row: any) => !isAgentTerminalSessionStatus(row.status || row.lifecycle_state))
-      .map((row: any) => String(row.session_id || row.id || row.agent_id || ''))
-      .filter(Boolean)
-  )
   const now = Date.now()
   const requestedStaleMs = Number(opts.staleMs ?? 30 * 60 * 1000)
   const staleMs = Number.isFinite(requestedStaleMs) ? Math.max(0, requestedStaleMs) : 30 * 60 * 1000
+  /**
+   * "Active" has to mean demonstrably alive, not merely never marked dead.
+   *
+   * A run that crashes leaves every one of its sessions permanently
+   * non-terminal, because the code that would have closed them died with it. On
+   * the old reading those sessions stayed "active" forever, so the processes
+   * they owned were skipped by every later sweep — which is precisely how an
+   * orphaned worker survived until the machine was rebooted. A session whose
+   * heartbeat has gone quiet past the stale window no longer protects its
+   * process from cleanup.
+   */
+  const activeSessionIds = new Set(
+    sessions
+      .filter((row: any) => !isAgentTerminalSessionStatus(row.status || row.lifecycle_state))
+      .filter((row: any) => !sessionHeartbeatIsStale(row, now, staleMs))
+      .map((row: any) => String(row.session_id || row.id || row.agent_id || ''))
+      .filter(Boolean)
+  )
   const projectHash = String(namespace?.root_hash || '')
   const namespaceAuthorized = validProjectNamespaceHash(projectHash)
   const actions: CleanupAction[] = []
@@ -669,4 +681,18 @@ async function waitForProcessesExited(pids: number[], timeoutMs: number) {
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
   return !pids.some(processIsAlive)
+}
+
+/**
+ * A session with no readable heartbeat is treated as stale rather than as
+ * fresh. The alternative — trusting a missing timestamp — is what let a crashed
+ * run's sessions shield their orphans indefinitely.
+ */
+function sessionHeartbeatIsStale(row: any, now: number, staleMs: number): boolean {
+  if (staleMs <= 0) return false
+  const beat = Date.parse(String(
+    row?.heartbeat_at || row?.last_heartbeat_at || row?.updated_at || row?.started_at || ''
+  ))
+  if (!Number.isFinite(beat)) return true
+  return now - beat > staleMs
 }

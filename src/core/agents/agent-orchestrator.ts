@@ -221,7 +221,7 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     partition = applyNarutoWorkGraphToPartition(partition, opts.narutoWorkGraph, roster, targetActiveSlots, prompt)
     augmentVerificationRollbackDagForNaruto(strategyCompiled.verification_rollback_dag, partition.slices)
   }
-  await runAgentJanitor({ missionDir: dir, missionId, projectHash: namespace.root_hash })
+  const preSpawnSweep = await runAgentJanitor({ missionDir: dir, missionId, projectHash: namespace.root_hash, reapOrphanProcesses: true })
   const ledgerRoot = await initializeAgentCentralLedger(dir, { missionId, roster, partition, route, prompt, dynamicScheduler: true })
   // Consult the TriWiki context pack (read-only) before dispatching workers, and
   // persist it as a proof artifact so the kernel proof references the wiki it acted on.
@@ -613,7 +613,7 @@ export async function runNativeAgentOrchestrator(opts: AgentRunOptions = {}): Pr
     backend,
     ledger_root: path.relative(root, ledgerRoot),
     roster,
-    partition: { ok: partition.ok, slice_count: partition.slices.length, lease_count: partition.leases.length, blockers: partition.blockers },
+    partition: { ok: partition.ok, slice_count: partition.slices.length, lease_count: partition.leases.length, blockers: partition.blockers, pre_spawn_reaped: preSpawnSweep.reaped_orphan_processes },
     task_graph: partition.task_graph?.route_work_count_summary || null,
     requested_work_items: partition.task_graph?.desired_work_items || desiredWorkItemCount,
     actual_total_work_items: partition.task_graph?.total_work_items || partition.slices.length,

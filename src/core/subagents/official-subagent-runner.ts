@@ -8,6 +8,7 @@ import {
   NARUTO_PARENT_EFFORT,
   NARUTO_PARENT_MODEL
 } from './model-policy.js'
+import { nextAgentGenerationEnv } from '../agents/agent-recursion-guard.js'
 import {
   inspectDesktopBridgeCliLaunchGuard,
   stripRetiredDirectProviderEnv
@@ -81,6 +82,13 @@ const OFFICIAL_SUBAGENT_CHILD_ENV_ALLOWLIST = Object.freeze([
   'CODEX_INTERNAL_ORIGINATOR',
   'CODEX_SANDBOX_NETWORK_DISABLED',
   'SKS_AGENT_MODE',
+  // The recursion markers must survive the allowlist. This boundary rebuilds the
+  // child environment from scratch, so dropping them handed every spawned Codex
+  // a process that looked like a fresh root session — no marker, no depth, and
+  // therefore no reason for its own hooks to refuse another fan-out.
+  'SKS_AGENT_WORKER',
+  'SKS_DISABLE_ROUTE_RECURSION',
+  'SKS_AGENT_GENERATION_DEPTH',
   'SKS_NARUTO_PARENT_EDGE_ID',
   'SKS_NARUTO_PARENT_LEASE_OWNER',
   'SKS_NARUTO_PARENT_LEASE_GENERATION',
@@ -213,6 +221,9 @@ export function buildOfficialSubagentChildEnv(input: {
     childEnv[providerEnvKey] = source[providerEnvKey]
   }
   childEnv.SKS_NARUTO_STANDALONE_CLI = '0'
+  childEnv.SKS_AGENT_WORKER = '1'
+  childEnv.SKS_DISABLE_ROUTE_RECURSION = '1'
+  Object.assign(childEnv, nextAgentGenerationEnv(source))
   childEnv.SKS_NARUTO_PARENT_LAUNCH = '1'
   if (input.missionId) childEnv.SKS_NARUTO_PARENT_MISSION_ID = input.missionId
   if (input.workflowRunId) childEnv.SKS_NARUTO_PARENT_WORKFLOW_RUN_ID = input.workflowRunId

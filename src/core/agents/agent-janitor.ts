@@ -3,6 +3,7 @@ import path from 'node:path'
 import { exists, nowIso, readJson, writeJsonAtomic } from '../fsx.js'
 import { normalizeAgentSessionRows } from './agent-session-rows.js'
 import { resolveOwnedNamespacePath } from './agent-namespace-safety.js'
+import { runAgentCleanupExecutor } from './agent-cleanup-executor.js'
 
 export interface AgentJanitorReport {
   schema: 'sks.agent-janitor-report.v1'
@@ -19,6 +20,7 @@ export interface AgentJanitorReport {
   slot_generation_cleanup: string[]
   orphan_temp_dirs: string[]
   stale_locks: string[]
+  reaped_orphan_processes: number
   cleaned: string[]
   blockers: string[]
 }
@@ -29,6 +31,16 @@ export async function runAgentJanitor(input: {
   projectHash?: string | null
   staleMs?: number
   cleanup?: boolean
+  /**
+   * Reap the previous run's survivors, not just report them.
+   *
+   * Cleanup used to run only on the way out, which is the one moment it cannot
+   * be relied on: whatever killed the orchestrator killed the cleanup with it.
+   * The workers kept running and every later fan-out added more beside them.
+   * Set before spawning so a run starts from a known slate rather than
+   * competing with the last run's orphans for memory and slots.
+   */
+  reapOrphanProcesses?: boolean
 }): Promise<AgentJanitorReport> {
   const staleMs = input.staleMs ?? 30 * 60 * 1000
   const agentRoot = path.join(input.missionDir, 'agents')
@@ -66,6 +78,13 @@ export async function runAgentJanitor(input: {
   )
   const staleLocks = await scopedStaleLockPaths(namespace?.lock_dir ? [namespace.lock_dir] : [], projectHash, staleMs)
   const cleaned: string[] = []
+  // Namespace-scoped, and it refuses to signal a pid it cannot prove is still
+  // the process it recorded, so this can never reach another project's work.
+  const reaped = input.reapOrphanProcesses
+    ? await runAgentCleanupExecutor({ missionDir: input.missionDir, missionId: input.missionId ?? null, action: 'cleanup', apply: true, staleMs })
+        .then((report: any) => (report?.actions || []).filter((row: any) => row?.kind === 'terminate_process' && row?.status === 'applied').length)
+        .catch(() => 0)
+    : 0
   if (input.cleanup) {
     for (const dir of orphanGenerationDirs) {
       await fsp.rm(path.join(agentRoot, dir), { recursive: true, force: true }).catch(() => {})
@@ -96,6 +115,7 @@ export async function runAgentJanitor(input: {
     slot_generation_cleanup: cleaned.filter((entry) => entry.includes(`${path.sep}sessions${path.sep}`)),
     orphan_temp_dirs: orphanTempDirs,
     stale_locks: staleLocks,
+    reaped_orphan_processes: reaped,
     cleaned,
     blockers,
   }

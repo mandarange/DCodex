@@ -106,8 +106,28 @@ export function agentWorkerHookRecursionDecision(state: any = {}, payload: any =
   }
 }
 
-export function agentWorkerHookContext(state: any = {}, payload: any = {}) {
-  const env = {
+/**
+ * True when this hook is running inside an agent worker.
+ *
+ * The marker is a *process* environment variable: `native-cli-worker-runtime`
+ * sets `SKS_AGENT_WORKER=1` on the worker it spawns, and every descendant
+ * inherits it. Reading only the tool-call payload made this unreachable in
+ * practice — an agent that runs `sks naruto run` through its shell has no
+ * reason to redeclare that variable in the tool input, so the guard returned
+ * false at exactly the moment it was needed and nested fan-out went unbounded.
+ *
+ * Both sources are consulted now. The payload still counts, because a caller
+ * that explicitly declares the worker env for a child is telling the truth
+ * about that child; the ambient environment counts because it is what the
+ * spawner actually set.
+ */
+export function agentWorkerHookContext(
+  state: any = {},
+  payload: any = {},
+  env: NodeJS.ProcessEnv = process.env
+) {
+  const declared = {
+    ...(env || {}),
     ...(payload.env || {}),
     ...(payload.tool_input?.env || {}),
     ...(payload.toolInput?.env || {}),
@@ -115,10 +135,41 @@ export function agentWorkerHookContext(state: any = {}, payload: any = {}) {
     ...(payload.tool?.input?.env || {})
   }
   void state
-  return Boolean(String(env.SKS_AGENT_WORKER || '') === '1'
-    || String(env.SKS_DISABLE_ROUTE_RECURSION || '') === '1'
+  return Boolean(String(declared.SKS_AGENT_WORKER || '') === '1'
+    || String(declared.SKS_DISABLE_ROUTE_RECURSION || '') === '1'
+    || agentGenerationDepth(declared) > 0
     || payload.agent_worker === true
     || payload.agentWorker === true)
+}
+
+/**
+ * How many agent generations deep this process already is.
+ *
+ * A boolean marker only answers "am I inside an agent". It cannot bound how far
+ * nesting goes, and it is lost the moment one boundary forgets to forward it. A
+ * counter degrades safely instead: an unreadable or absent value reads as depth
+ * 0, but every level that does forward it makes the next level harder to reach.
+ */
+export function agentGenerationDepth(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number.parseInt(String(env[AGENT_GENERATION_DEPTH_ENV] || ''), 10)
+  return Number.isFinite(raw) && raw > 0 ? Math.min(raw, MAX_AGENT_GENERATION_DEPTH * 4) : 0
+}
+
+/** Env carrying the nesting depth across every spawn boundary. */
+export const AGENT_GENERATION_DEPTH_ENV = 'SKS_AGENT_GENERATION_DEPTH' as const
+
+/**
+ * One parent and the workers it spawns. A worker that spawns its own fan-out is
+ * the multiplication this guard exists to stop, so depth 2 is already refused.
+ */
+export const MAX_AGENT_GENERATION_DEPTH = 1
+
+export function nextAgentGenerationEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  return { [AGENT_GENERATION_DEPTH_ENV]: String(agentGenerationDepth(env) + 1) }
+}
+
+export function agentGenerationDepthExceeded(env: NodeJS.ProcessEnv = process.env): boolean {
+  return agentGenerationDepth(env) > MAX_AGENT_GENERATION_DEPTH
 }
 
 export function assertNoAgentRecursion(text: unknown) {
