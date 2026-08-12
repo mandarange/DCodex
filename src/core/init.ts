@@ -76,6 +76,14 @@ const SKS_GENERATED_GIT_PATTERNS = [
   '.sneakoscope/wiki/indexes/',
   '.sneakoscope/wiki/context-packs/',
   '.sneakoscope/wiki/tmp/',
+  // The compiled context graph, both eras. This repository's own .gitignore has
+  // carried the v1 filenames by hand since they were introduced, so a fresh
+  // install never had that protection — a tens-of-megabytes generated cache was
+  // one `git add -A` from being committed on every new workspace.
+  '.sneakoscope/wiki/context-graph/',
+  '.sneakoscope/wiki/context-graph.json',
+  '.sneakoscope/wiki/context-graph.meta.json',
+  '.sneakoscope/wiki/context-graph-events.jsonl',
   '.sneakoscope/wiki/context-pack.json',
   '.sneakoscope/wiki/image-assets.json',
   '.sneakoscope/wiki/image-voxel-ledger.json',

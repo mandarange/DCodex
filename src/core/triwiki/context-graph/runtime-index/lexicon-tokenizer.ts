@@ -195,19 +195,20 @@ class TokenSink {
   }
 }
 
+/** Returns whether the run was refused as key material, for the join below. */
 function emitLatinRun(
   run: string,
   sink: TokenSink,
   config: ContextLexiconConfig,
   omissions: MutableLexiconOmissions,
-): void {
+): boolean {
   // Judged on the run, before casing and before splitting. Lowercasing an API
   // key destroys the mixed-case evidence that identifies it, and its camel
   // segments and acronym are just as much of a leak as the key itself, so the
   // whole run is refused rather than each emitted form being re-tested.
   if (looksLikeSecretToken(run, config)) {
     omissions.secretTokens += 1;
-    return;
+    return true;
   }
 
   const lowered = run.toLowerCase();
@@ -217,7 +218,7 @@ function emitLatinRun(
   if (config.preserveExactCase && run !== lowered) sink.push(run);
 
   const segments = splitLatinSegments(run);
-  if (segments.length <= 1) return;
+  if (segments.length <= 1) return false;
   for (const segment of segments) {
     if (segment.length < config.minSegmentLength) continue;
     // A bare number carries no identifier signal — `95` out of `p95` matches
@@ -238,6 +239,7 @@ function emitLatinRun(
   // A one-letter acronym is a stopword with extra steps: it matches everything
   // and ranks nothing.
   if (initials.length >= config.minAcronymLength) sink.push(initials.join(''));
+  return false;
 }
 
 function emitCjkRun(
@@ -275,10 +277,15 @@ function emitRuns(
   config: ContextLexiconConfig,
   omissions: MutableLexiconOmissions,
 ): void {
-  for (const run of runs) {
+  // Which runs were refused as key material, recorded on the way past rather
+  // than recomputed below: the join is built from the run values, so it needs
+  // the verdict `emitLatinRun` already reached about them.
+  const refused = new Array<boolean>(runs.length).fill(false);
+  for (let index = 0; index < runs.length; index += 1) {
+    const run = runs[index] as LexiconRun;
     sink.beginScope();
     if (run.kind === RUN_CJK) emitCjkRun(run.value, sink, config, omissions);
-    else emitLatinRun(run.value, sink, config, omissions);
+    else refused[index] = emitLatinRun(run.value, sink, config, omissions);
   }
   sink.beginScope();
 
@@ -292,6 +299,18 @@ function emitRuns(
     if (current.separator !== '.') continue;
     if (previous.kind !== RUN_LATIN || current.kind !== RUN_LATIN) continue;
     if (current.value.length > config.maxExtensionLength) continue;
+    // The refusal is carried forward rather than re-tested on the joined form,
+    // because the joined form cannot be tested: `looksLikeSecretToken` returns
+    // false for any token holding a non-alphanumeric character, so the `.` makes
+    // `<key>.json` pass `TokenSink.push` unconditionally. Without this a run
+    // refused on its own would be indexed whole the moment a file extension
+    // followed it — lowercased, which is lossless for hex — while the counter
+    // reported a drop that did not happen. The count is the one `push` would
+    // have made had its own test been able to see the token.
+    if (refused[index - 1] || refused[index]) {
+      omissions.secretTokens += 1;
+      continue;
+    }
     sink.push(`${previous.value.toLowerCase()}.${current.value.toLowerCase()}`);
   }
 }

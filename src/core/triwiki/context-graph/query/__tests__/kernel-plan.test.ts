@@ -3,7 +3,7 @@ import test from 'node:test';
 import { CONTEXT_GRAPH_QUERY_PROFILES } from '../../profiles.js';
 import { normalizeLexiconQuery } from '../../runtime-index/lexicon.js';
 import { CONTEXT_GRAPH_LEXICON_CONFIG } from '../ranking-config.js';
-import { fixedKernelClock, resolveQueryPlan } from '../kernel.js';
+import { fixedKernelClock, resolveQueryPlan, runContextKernel } from '../kernel.js';
 import { GATE_ID, KERNEL_PATH, openKernelIndex } from './kernel-fixtures.js';
 
 const clock = fixedKernelClock(1_000);
@@ -90,6 +90,52 @@ test('an unusable focus path is reported rather than silently widening the answe
   const context = resolveQueryPlan(reader, { query: 'kernel', focusPaths: ['/etc/passwd', '../up'] }, { clock });
   assert.deepEqual([...context.focusPaths], []);
   assert.equal(context.omissions.focus_filtered, 2);
+});
+
+/**
+ * A query long enough to hit `maxQueryTerms`. Each word contributes its whole
+ * lowered form, so the distinct-term count is the word count plus the one shared
+ * `alpha` segment — comfortably past the cap without depending on its value.
+ */
+function longQuery(words: number): string {
+  return Array.from({ length: words }, (_unused, index) => `alpha${String(index).padStart(3, '0')}`).join(' ');
+}
+
+test('a query cut at the term cap says so, rather than reporting a complete answer', () => {
+  const reader = openKernelIndex();
+  const words = CONTEXT_GRAPH_LEXICON_CONFIG.maxQueryTerms * 2;
+  const context = resolveQueryPlan(reader, { query: longQuery(words) }, { clock });
+
+  // The bound really fired: fewer terms reached the plan than the user typed.
+  assert.equal(context.terms.length, CONTEXT_GRAPH_LEXICON_CONFIG.maxQueryTerms);
+  assert.equal(context.omissions.query_terms_capped, 1);
+
+  // And it is the lexical and coarse lanes that were narrowed, not the anchor
+  // lane — which re-splits the uncapped normalized form and keeps every word.
+  assert.ok(
+    context.anchorTerms.length > context.terms.length,
+    'the anchor lane is unaffected, so the omission is about the term lanes',
+  );
+
+  // Absence means none: a query inside the cap must not carry the reason at all,
+  // or every answer would report a bound that did not fire.
+  const short = resolveQueryPlan(reader, { query: 'kernel retrieval' }, { clock });
+  assert.equal(short.omissions.query_terms_capped, undefined);
+  assert.ok(short.terms.length < CONTEXT_GRAPH_LEXICON_CONFIG.maxQueryTerms);
+});
+
+test('the capped-query omission reaches the kernel result, where a caller reads it', () => {
+  // The plan's omissions are copied onto the result, which is what
+  // `omissionReasonsOf` projects into `SearchResponse.skipped.reasons`. Asserting
+  // it here rather than only on the plan is the difference between the reason
+  // existing and the reason being reported.
+  const reader = openKernelIndex();
+  const words = CONTEXT_GRAPH_LEXICON_CONFIG.maxQueryTerms * 2;
+  const result = runContextKernel(reader, { query: longQuery(words) }, { clock });
+  assert.equal(result.omissions.query_terms_capped, 1);
+
+  const inside = runContextKernel(reader, { query: 'kernel retrieval' }, { clock });
+  assert.equal(inside.omissions.query_terms_capped, undefined);
 });
 
 test('the plan never reads the wall clock', () => {

@@ -65,6 +65,35 @@ const WIKI_CONTEXT_GIT_EXCLUDED = new Set(
   [...WIKI_CONTEXT_EXCLUDED].map((name) => `${WIKI_CONTEXT_DIR}/${name}`)
 );
 
+/**
+ * Directories under the wiki whose *whole subtree* is a graph artifact.
+ *
+ * The set above matches on basename, which was sufficient while every artifact
+ * was a file sitting directly in the wiki. The CRK2 generation store is a
+ * directory, and the listing recurses: `context-graph/current.json` and every
+ * `generations/<hash>.idx` have basenames nobody thought to exclude, so the
+ * store fed the very hash it is supposed to be invisible to. Measured before the
+ * fix — publishing a generation moved `wikiContextHash`, and republishing the
+ * same content moved it *again*, because the pointer and the generation meta
+ * carry `committedAt` and `operationId`.
+ *
+ * That is worse than a stale key: it is a workspace that reports
+ * `wiki_context_changed` immediately after the align that just made it fresh.
+ * Only `context-graph/context-graph.meta.json` escaped, by basename coincidence
+ * with the v1 file — which is the clearest sign the rule was matching the wrong
+ * thing.
+ */
+const WIKI_CONTEXT_EXCLUDED_DIRS: readonly string[] = Object.freeze(['context-graph/']);
+
+/** True when a wiki-relative path is a graph artifact, by name or by subtree. */
+function isExcludedWikiPath(relative: string, exclude: ReadonlySet<string>): boolean {
+  if (exclude.has(path.posix.basename(relative))) return true;
+  const within = relative.startsWith(`${WIKI_CONTEXT_DIR}/`)
+    ? relative.slice(WIKI_CONTEXT_DIR.length + 1)
+    : relative;
+  return WIKI_CONTEXT_EXCLUDED_DIRS.some((dir) => within.startsWith(dir));
+}
+
 const RELEVANT_EXTENSIONS = new Set([
   '.ts',
   '.tsx',
@@ -187,7 +216,7 @@ async function fingerprintDirectory(
   exclude: ReadonlySet<string> = new Set()
 ): Promise<string> {
   const files = (await listDirectoryFiles(root, relativeDir)).filter(
-    (relative) => !exclude.has(path.posix.basename(relative))
+    (relative) => !isExcludedWikiPath(relative, exclude)
   );
   return fingerprintFiles(root, files);
 }
@@ -242,7 +271,12 @@ export async function readContextGraphGitState(root: string): Promise<ContextGra
   if (!status || status.code !== 0 || status.timedOut || status.truncated) return unknown;
 
   const { tracked, untracked } = parsePorcelain(status.stdout);
-  const relevantTracked = tracked.filter((relative) => !WIKI_CONTEXT_GIT_EXCLUDED.has(relative));
+  // Same rule as the content fingerprint, for the same reason: a workspace that
+  // committed the generation store before it was gitignored would otherwise
+  // report `dirty` forever on an artifact it regenerates on every compile.
+  const relevantTracked = tracked.filter(
+    (relative) => !WIKI_CONTEXT_GIT_EXCLUDED.has(relative) && !isExcludedWikiPath(relative, WIKI_CONTEXT_EXCLUDED)
+  );
   const relevantUntracked = untracked.filter(isRelevant);
   return {
     state: relevantTracked.length === 0 && relevantUntracked.length === 0 ? 'clean' : 'dirty',

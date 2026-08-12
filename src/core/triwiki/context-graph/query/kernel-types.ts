@@ -220,6 +220,12 @@ export interface KernelRequest {
  * that hit its posting cap is a distinct fact from a traversal that hit a visit
  * cap. A bound that is not reported is a recall regression nothing can
  * attribute later.
+ *
+ * `query_terms_capped` is the one bound on the *question* rather than the
+ * answer: past `maxQueryTerms` the plan carries fewer terms than the user typed,
+ * so the lexical and coarse lanes search for less than was asked. It is reported
+ * through the same channel as the rest because "the answer is complete for a
+ * query you did not quite ask" is not something a caller can infer.
  */
 export type KernelOmissionReason =
   | ContextGraphOmissionReason
@@ -227,6 +233,7 @@ export type KernelOmissionReason =
   | 'candidate_budget'
   | 'focus_filtered'
   | 'frontier_budget'
+  | 'query_terms_capped'
   | 'safety_cap'
   | 'unknown_seed';
 

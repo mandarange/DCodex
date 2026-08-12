@@ -105,3 +105,64 @@ test('a retired prev snapshot never moves the cache key, present or reclaimed', 
     removeFixtureRoot(root);
   }
 });
+
+/**
+ * The generation store must be invisible to the key it is built under.
+ *
+ * The exclusion set matches on basename, which was enough while every graph
+ * artifact was a file sitting directly in the wiki. CRK2 made the artifact a
+ * *directory*, and the listing recurses — so `context-graph/current.json` and
+ * every `generations/<hash>.idx` fed the very hash they are supposed to be
+ * invisible to, while `context-graph/context-graph.meta.json` escaped by
+ * basename coincidence with the v1 file.
+ *
+ * The consequence is not a stale key, it is an inverted one: publishing a
+ * generation moved `wikiContextHash`, so the workspace reported
+ * `wiki_context_changed` immediately after the align that had just made it
+ * fresh. The republish case is asserted separately because the pointer and the
+ * generation meta carry `committedAt` and `operationId` — the store is not
+ * byte-stable across two publishes of identical content, so "same content, same
+ * key" is not enough to prove.
+ */
+test('publishing a generation does not move the cache key it was built under', async (t) => {
+  if (!gitAvailable()) {
+    t.skip('git is required to prove a reusable cache key');
+    return;
+  }
+
+  const root = makeFixtureRoot('cg-cache-key-generation-store');
+  try {
+    writeFixtureFile(root, 'package.json', '{"name":"fixture","version":"0.0.0"}\n');
+    writeFixtureFile(root, 'src/a.ts', 'export const A = 1;\n');
+    writeFixtureFile(root, '.sneakoscope/wiki/context-graph.json', '{"nodes":[]}\n');
+    writeFixtureFile(root, '.sneakoscope/wiki/context-graph.meta.json', '{"schema":"v1"}\n');
+    initGitRepo(root);
+
+    const before = await computeContextGraphCacheKey({ root, extractors: EXTRACTORS });
+    assert.equal(before.reusable, true);
+
+    const store = '.sneakoscope/wiki/context-graph';
+    writeFixtureFile(root, `${store}/current.json`, '{"committedAt":"2026-08-13T00:00:00.000Z"}\n');
+    writeFixtureFile(root, `${store}/context-graph.meta.json`, '{"schema":"v2"}\n');
+    writeFixtureFile(root, `${store}/generations/deadbeef.idx`, 'SKSCG2-binary-payload');
+    writeFixtureFile(root, `${store}/generations/deadbeef.meta.json`, '{"operationId":"op-1"}\n');
+    const published = await computeContextGraphCacheKey({ root, extractors: EXTRACTORS });
+
+    assert.equal(published.parts.wikiContextHash, before.parts.wikiContextHash, 'publishing must not move the wiki hash');
+    assert.equal(published.key, before.key, 'publishing must not move the cache key');
+
+    // Same content, new operation id and timestamp: what a republish actually writes.
+    writeFixtureFile(root, `${store}/current.json`, '{"committedAt":"2026-08-13T00:00:09.000Z"}\n');
+    writeFixtureFile(root, `${store}/generations/deadbeef.meta.json`, '{"operationId":"op-2"}\n');
+    const republished = await computeContextGraphCacheKey({ root, extractors: EXTRACTORS });
+    assert.equal(republished.key, before.key, 'a republish must not move the cache key either');
+
+    // The control: a real source edit still moves it, so the exclusion has not
+    // been widened into "nothing under the wiki counts".
+    writeFixtureFile(root, 'src/a.ts', 'export const A = 2;\n');
+    const afterSourceEdit = await computeContextGraphCacheKey({ root, extractors: EXTRACTORS });
+    assert.notEqual(afterSourceEdit.key, before.key, 'a source edit must still move the key');
+  } finally {
+    removeFixtureRoot(root);
+  }
+});

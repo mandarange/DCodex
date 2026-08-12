@@ -9,6 +9,7 @@ import {
   isWorkspaceRelativeLexiconPath,
   lexiconFieldMask,
   looksLikeSecretToken,
+  normalizeLexiconQuery,
   redactMachinePaths,
   tokenizeLexiconField,
 } from '../lexicon.js';
@@ -122,6 +123,55 @@ test('high-entropy tokens are dropped whole, segments and acronym included', () 
   // The camel segments of a key are as much of a leak as the key.
   assert.ok(!tokenized.terms.some((term) => term.includes('akiaj')));
   assert.ok(tokenized.omissions.secretTokens >= 2);
+});
+
+/**
+ * The extension join is the one place a token is assembled *after* the run has
+ * been judged, and `TokenSink.push` cannot re-judge it: `looksLikeSecretToken`
+ * returns `false` for any token holding a non-alphanumeric character, so the `.`
+ * alone is enough to make a joined key pass. Bare runs were already covered;
+ * this is the same "one encoding over" gap that has bitten this release twice.
+ */
+const BASE62_KEY = 'aB3xY7zQ9mN2pL5kR8tW1vC4hJ6gS0dF';
+const HEX_KEY = 'a3f9b21c8d47e60f5a2b9c1d8e7f406a3b5c9d2e';
+
+test('a key with a file extension after it is refused, not joined back into a term', () => {
+  for (const key of [BASE62_KEY, HEX_KEY]) {
+    // Control: the bare run is refused. Without this the case below would also
+    // pass for a fixture whose "key" was never key-shaped in the first place.
+    assert.equal(looksLikeSecretToken(key, CONFIG), true, key);
+    assert.deepEqual([...terms(`plain secret ${key} alone`, FIELD.EVIDENCE)], ['plain', 'secret', 'alone']);
+
+    const joined = tokenizeLexiconField(`${key}.json`, FIELD.EVIDENCE, CONFIG);
+    // Only the extension survives. Lowercasing is lossless for hex and
+    // near-lossless for base62, so a leaked joined term is directly searchable.
+    assert.deepEqual([...joined.terms], ['json'], key);
+    for (const term of joined.terms) {
+      assert.equal(term.includes(key.toLowerCase()), false, `${term} carries ${key}`);
+    }
+    assert.ok(joined.omissions.secretTokens >= 1, 'the drop is counted, not silent');
+  }
+
+  // The query side runs the same emission path with a different sink, so a
+  // pasted key reaching the normalizer must not become a query term either.
+  const query = normalizeLexiconQuery(`${BASE62_KEY}.json`, CONFIG);
+  assert.deepEqual([...query.terms], ['json']);
+});
+
+test('the extension join still produces one term as well as two, on both sides', () => {
+  // The property the join exists for, and the reason the fix is at the join
+  // rather than in `looksLikeSecretToken`: query and document must tokenize
+  // identically or they never meet.
+  const document = terms('see context.ts for detail', FIELD.EVIDENCE);
+  assert.ok(document.includes('context'));
+  assert.ok(document.includes('ts'));
+  assert.ok(document.includes('context.ts'), 'the joined form must survive an ordinary stem');
+
+  const query = normalizeLexiconQuery('context.ts', CONFIG);
+  assert.deepEqual([...query.terms], ['context', 'ts', 'context.ts']);
+  for (const term of query.terms) {
+    assert.ok(document.includes(term), `a query term the document cannot produce: ${term}`);
+  }
 });
 
 test('an ordinary long identifier is not mistaken for a secret', () => {

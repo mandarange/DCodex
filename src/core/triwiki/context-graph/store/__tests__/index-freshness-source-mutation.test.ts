@@ -10,8 +10,11 @@ import {
   type ContextGraphMeta
 } from '../../contracts.js';
 import { computeContextGraphCacheKey } from '../../compiler/cache-key.js';
+import { CONTEXT_INDEX_FORMAT_REVISION } from '../../runtime-index/format.js';
 import { contextGraphMetaPath, contextGraphSnapshotPath } from '../../paths.js';
 import { contextIndexFreshness } from '../index-freshness.js';
+import { contextIndexPointerPath, contextIndexStoreDir } from '../generation-layout.js';
+import { CONTEXT_INDEX_POINTER_SCHEMA } from '../generation-pointer.js';
 import {
   FIXED_OBSERVED_AT,
   commitFixtureChanges,
@@ -68,18 +71,46 @@ function seedWorkspace(prefix: string): Fixture {
 }
 
 /**
+ * The published generation the meta describes. Every case here is about source
+ * freshness, so the pointer is part of the fixture rather than part of any
+ * assertion: without it the verdict is `missing` before a cache key is compared
+ * at all, and none of these tests would be exercising what they name.
+ */
+function publishPointer(root: string, snapshotHash: string): void {
+  fs.mkdirSync(contextIndexStoreDir(root), { recursive: true });
+  fs.writeFileSync(contextIndexPointerPath(root), JSON.stringify({
+    schema: CONTEXT_INDEX_POINTER_SCHEMA,
+    formatRevision: CONTEXT_INDEX_FORMAT_REVISION,
+    snapshotHash,
+    configFingerprint: 'c'.repeat(64),
+    sourceFingerprint: 'd'.repeat(64),
+    generationPath: `.sneakoscope/wiki/context-graph/generations/${snapshotHash}.idx`,
+    previousSnapshotHash: null,
+    indexBytes: 1024,
+    indexChecksum: 'e'.repeat(64),
+    committedAt: FIXED_OBSERVED_AT
+  }), 'utf8');
+}
+
+/**
  * Record the meta for the workspace exactly as it stands, using the cache key
  * the compiler would have recorded. Writing the meta directly — rather than
  * through `writeContextGraphSnapshot` — is the point: no `context-graph.json`
  * ever exists, so nothing in the verdict can have come from one.
  */
 async function recordMeta(fixture: Fixture): Promise<ContextGraphMeta> {
+  const snapshotHash = sha256('fixture-snapshot');
+  // Published before the key is computed, not after: the generation store lives
+  // under `.sneakoscope/wiki`, which `wikiContextHash` fingerprints, so a key
+  // taken before publication would describe a workspace that no longer exists
+  // and every case here would read `stale` for a reason none of them is about.
+  publishPointer(fixture.root, snapshotHash);
   const key = await computeContextGraphCacheKey({ root: fixture.root, extractors: [] });
   assert.equal(key.reusable, true, 'the fixture repository must have a readable git state');
   const meta: ContextGraphMeta = {
     schema: CONTEXT_GRAPH_META_SCHEMA,
     schemaRevision: CONTEXT_GRAPH_SCHEMA_REVISION,
-    snapshotHash: sha256('fixture-snapshot'),
+    snapshotHash,
     previousSnapshotHash: null,
     generatedAt: FIXED_OBSERVED_AT,
     cacheKey: key.key,

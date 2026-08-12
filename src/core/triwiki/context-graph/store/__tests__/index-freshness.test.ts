@@ -149,6 +149,7 @@ test('the v2 preflight establishes freshness without the snapshot on disk at all
     const snapshot = snapshotWith('fresh');
     const meta = metaFor(snapshot);
     await writeContextGraphSnapshot({ root, snapshot, meta });
+    publishPointer(root, snapshot.snapshotHash);
     const options = { cacheKey: keyOf(cleanParts()), verifySources: false } as const;
 
     // Both agree while the snapshot is present.
@@ -174,6 +175,10 @@ test('the two paths reach the same verdict in every state the JSON path can repo
     const snapshot = snapshotWith('equivalence');
     const meta = metaFor(snapshot, { inputHashes: { 'src/a.ts': sourceHash } });
     await writeContextGraphSnapshot({ root, snapshot, meta });
+    // Both artifacts, because the two paths answer about different ones: the
+    // JSON path about `context-graph.json`, this one about the published
+    // generation. An equivalence claim is only meaningful where both exist.
+    publishPointer(root, snapshot.snapshotHash);
 
     // fresh
     const fresh = await bothPaths(root, { cacheKey: keyOf(cleanParts()), verifySources: false });
@@ -217,6 +222,7 @@ test('the two paths agree on a code-only workspace, where the source inventory i
       cacheKeyParts: { ...cleanParts(), sourcePolicy: 'repository_code_only', sourceInventoryHash: sha256('inventory') }
     });
     await writeContextGraphSnapshot({ root, snapshot, meta });
+    publishPointer(root, snapshot.snapshotHash);
 
     const options = { extractors: codeNavigationGraphExtractors(), verifySources: false } as const;
     const both = await bothPaths(root, options);
@@ -237,6 +243,7 @@ test('a workspace with a stale schema revision is stale, not fresh', async () =>
     // `meta.schemaRevision` stands in for `snapshot.schemaRevision`; the
     // compiler writes both from `CONTEXT_GRAPH_SCHEMA_REVISION`.
     await writeContextGraphSnapshot({ root, snapshot, meta: metaFor(snapshot, { schemaRevision: '0.9.0' }) });
+    publishPointer(root, snapshot.snapshotHash);
 
     const status = await contextIndexFreshness(root, { cacheKey: keyOf(cleanParts()), verifySources: false });
     assert.equal(status.status, 'stale');
@@ -265,6 +272,36 @@ test('no meta and no published index is missing; no meta with a published index 
     assert.equal(published.status, 'corrupt');
     assert.equal(published.errorCode, 'context_graph_corrupt');
     assert.deepEqual(published.reasons, ['meta_mismatch']);
+  } finally {
+    removeFixtureRoot(root);
+  }
+});
+
+test('a fresh meta with no published index is missing, not fresh', async () => {
+  // The upgrade shape, not a corner: a build that predates the generation store
+  // writes the snapshot and the meta and no pointer at all, so every workspace
+  // arriving from one starts here. The meta is current, its cache key matches
+  // the working tree exactly, and there are still no index bytes to read — a
+  // `fresh` verdict would tell `search context`, the hooks preflight and
+  // `sks wiki validate` they may answer from a generation that was never
+  // published.
+  const { root } = seedRepo('cgf-unpublished');
+  try {
+    const snapshot = snapshotWith('unpublished');
+    await writeContextGraphSnapshot({ root, snapshot, meta: metaFor(snapshot) });
+    const options = { cacheKey: keyOf(cleanParts()), verifySources: false } as const;
+
+    const unpublished = await contextIndexFreshness(root, options);
+    assert.equal(unpublished.status, 'missing', 'an index that does not exist is never fresh');
+    assert.equal(unpublished.errorCode, 'context_graph_missing');
+    assert.deepEqual(unpublished.reasons, []);
+    assert.equal(unpublished.repairCommand, CONTEXT_GRAPH_REPAIR_COMMAND);
+
+    // The negative control. Publishing the pointer — and changing nothing else —
+    // turns the same workspace fresh, so the verdict above is about the absent
+    // generation and not about some other fault in the fixture.
+    publishPointer(root, snapshot.snapshotHash);
+    assert.equal((await contextIndexFreshness(root, options)).status, 'fresh');
   } finally {
     removeFixtureRoot(root);
   }
@@ -337,6 +374,7 @@ test('a meta whose cache-key parts are absent fails closed', async () => {
     const snapshot = snapshotWith('fail-closed');
     const meta = metaFor(snapshot);
     await writeContextGraphSnapshot({ root, snapshot, meta });
+    publishPointer(root, snapshot.snapshotHash);
     fs.writeFileSync(
       contextGraphMetaPath(root),
       JSON.stringify({ ...meta, cacheKeyParts: {} }),

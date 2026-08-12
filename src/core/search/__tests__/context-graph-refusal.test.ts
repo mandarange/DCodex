@@ -24,6 +24,7 @@ import {
   removeFixtureRoot,
   writeFixtureWorkspace
 } from '../../triwiki/context-graph/query/__tests__/query-fixtures.js';
+import { publishFixtureContextIndex } from '../../triwiki/context-graph/query/__tests__/workspace-fixtures.js';
 
 const SERVICE_SOURCE = 'export function runService(): void {\n  return;\n}\n';
 
@@ -109,6 +110,10 @@ describe('search context refuses instead of degrading', () => {
     try {
       const snapshot = buildFixtureSnapshot();
       await writeFixtureWorkspace(root, snapshot);
+      // A published generation, so the verdict under test is the git-derived one.
+      // Without it the preflight stops at `missing` — correctly, but one refusal
+      // earlier than this case is about, and the stale path would go unexercised.
+      await publishFixtureContextIndex(root, snapshot);
       writeSource(root, 'src/app/service.ts', SERVICE_SOURCE);
 
       const response = await searchContext(contextRequest(root, 'runService'), { cache: false });

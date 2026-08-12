@@ -238,6 +238,15 @@ export function resolveQueryPlan(
   if (normalization.omissions.redactedSpans > 0) {
     warnings.push('an absolute path in the query was redacted before it reached the index');
   }
+  // The query's own truncation. `normalizeLexiconQuery` counts this once per
+  // query when the distinct-term cap fires, and it is the only bound in the
+  // kernel that cuts the question instead of the answer: past `maxQueryTerms`
+  // the lexical and coarse lanes search for strictly less than was typed, while
+  // the anchor lane re-splits the uncapped normalized form and is unaffected.
+  // Dropping the counter here would report that narrower search as a complete
+  // one — `lexicon-contract.ts` names that outcome exactly: a silent bound is a
+  // recall regression nothing can attribute later.
+  addOmission(omissions, 'query_terms_capped', normalization.omissions.cappedFieldTokens);
 
   const shape = classifyShape(anchorShaped, normalization.terms.length, kernelConfig);
   const highRisk = request.risk === 'high';

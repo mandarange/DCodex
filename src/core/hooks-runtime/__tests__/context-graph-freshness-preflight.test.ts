@@ -8,7 +8,9 @@ import { CONTEXT_GRAPH_REPAIR_COMMAND } from '../../triwiki/context-graph/contra
 import type { ContextGraphCacheKeyParts, ContextGraphMeta, ContextGraphStaleReason } from '../../triwiki/context-graph/contracts.js';
 import { contextGraphCacheKey, type ContextGraphCacheKeyResult } from '../../triwiki/context-graph/compiler/cache-key.js';
 import { compileContextGraph } from '../../triwiki/context-graph/compiler/index.js';
+import { publishContextIndexGeneration } from '../../triwiki/context-graph/compiler/publish-index.js';
 import { contextGraphExtractors } from '../../triwiki/context-graph/extractors/index.js';
+import { contextIndexPointerPath } from '../../triwiki/context-graph/store/generation-layout.js';
 import { readContextGraphMeta } from '../../triwiki/context-graph/store/snapshot-store.js';
 import {
   contextGraphFreshnessNoteFor,
@@ -44,12 +46,30 @@ function fingerprint(root: string): Array<[string, string]> {
   return out.sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0));
 }
 
+/**
+ * A workspace in the state a completed `sks align run` leaves behind: compiled,
+ * *and* with the generation published.
+ *
+ * The publish is a separate step here because it is a separate step in
+ * production — `compileContextGraph` writes the snapshot and the meta, and
+ * `publishContextIndexGeneration` is what puts index bytes on disk. A fixture
+ * that stopped after the compile would be asserting freshness for a workspace
+ * with no index in it, which is the one state the preflight exists to refuse.
+ */
 async function buildGraph(root: string): Promise<void> {
   fs.mkdirSync(path.join(root, 'src', 'core'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'core', 'sample.ts'), 'export const sample = 1;\n');
   fs.writeFileSync(path.join(root, 'tsconfig.json'), `${JSON.stringify({ compilerOptions: { strict: true } }, null, 2)}\n`);
   const result = await compileContextGraph({ root, extractors: contextGraphExtractors(), observedAt: '2026-01-01T00:00:00.000Z' });
   assert.equal(result.wrote, true, `fixture compile must write a snapshot (blockers: ${result.blockers.join(',')})`);
+  assert.ok(result.snapshot, 'the fixture compile must produce a snapshot to publish');
+  const published = await publishContextIndexGeneration({
+    root,
+    snapshot: result.snapshot,
+    sourceFingerprint: 'f'.repeat(64),
+    now: '2026-01-01T00:00:00.000Z'
+  });
+  assert.equal(published.committed, true, `fixture publish must commit (reason: ${published.reason ?? 'none'})`);
   normalizeFixtureGitState(root);
 }
 
@@ -250,17 +270,50 @@ test('an absent meta is never quietly fresh', async () => {
     await buildGraph(root);
     fs.rmSync(path.join(root, '.sneakoscope', 'wiki', 'context-graph.meta.json'), { force: true });
 
-    // No meta and no published v2 generation: there is no index for a verdict
-    // to be about, so `missing` is the honest answer and `sks align run` is the
-    // repair either way. The other half of the distinction — an absent meta
-    // *with* a published pointer, which is `corrupt`/`meta_mismatch` — is
-    // covered in `store/__tests__/index-freshness.test.ts`.
+    // A published generation with nothing recording what it contains: the index
+    // is there, so this is damage rather than absence, and the instruction is to
+    // rebuild rather than to build. The mirror case — a meta with no published
+    // generation — is the test below.
     const preflight = await contextGraphFreshnessPreflight(root);
-    assert.equal(preflight.status, 'missing');
+    assert.equal(preflight.status, 'corrupt');
     assert.equal(preflight.usable, false);
-    assert.equal(preflight.error_code, 'context_graph_missing');
+    assert.equal(preflight.error_code, 'context_graph_corrupt');
     const note = contextGraphFreshnessNoteFor(preflight);
-    assert.ok(note?.includes(CONTEXT_GRAPH_REPAIR_COMMAND), 'a missing graph still names its repair');
+    assert.ok(note?.includes(CONTEXT_GRAPH_REPAIR_COMMAND), 'a damaged graph still names its repair');
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('a compiled graph whose generation was never published is not usable', async () => {
+  // The upgrade shape. `compileContextGraph` writes the snapshot and the meta;
+  // publishing the generation is a separate step that only `sks align run`
+  // performs, so a workspace built by an older release arrives with a perfectly
+  // current freshness record and no index bytes at all. `usable` is documented
+  // as "true only for a fully fresh graph; a caller must refuse to answer
+  // otherwise", and the hook path is where that promise is cashed: the neutral
+  // cache key compares the meta's own parts against themselves, so nothing in
+  // the git-derived half can catch this and the artifact check is the only thing
+  // standing between the shape and a confident `usable: true`.
+  const root = workspace();
+  try {
+    await buildGraph(root);
+    fs.rmSync(contextIndexPointerPath(root), { force: true });
+
+    const preflight = await contextGraphFreshnessPreflight(root);
+    assert.equal(preflight.usable, false, 'no index bytes, no answer');
+    assert.equal(preflight.status, 'missing');
+    assert.equal(preflight.error_code, 'context_graph_missing');
+    assert.deepEqual(preflight.reasons, [], 'absence is not staleness; there is nothing to be stale about');
+    const note = contextGraphFreshnessNoteFor(preflight);
+    assert.ok(note?.includes('context_graph_missing'));
+    assert.ok(note?.includes(CONTEXT_GRAPH_REPAIR_COMMAND));
+
+    // Negative control: nothing else about this workspace is wrong. Rebuilding
+    // the same generation makes the identical preflight usable again, so the
+    // verdict above is about the missing pointer and not about the fixture.
+    await buildGraph(root);
+    assert.equal((await contextGraphFreshnessPreflight(root)).usable, true);
   } finally {
     cleanup(root);
   }

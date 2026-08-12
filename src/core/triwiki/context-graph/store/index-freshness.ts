@@ -115,14 +115,18 @@ function statusOf(
 }
 
 /**
- * Which of `missing` / `corrupt` a meta-less workspace is.
+ * Whether a graph exists at all, and which of `missing` / `corrupt` it is.
  *
- * The JSON path distinguishes these with the snapshot: absent is `missing`,
+ * The JSON path answers both from the snapshot: absent is `missing`,
  * present-without-meta is `corrupt`. The v2 analogue of "a graph exists" is the
  * index pointer, which is small and already parsed defensively, so the same
  * distinction survives without the snapshot. Collapsing both to `missing` would
  * tell a user to build a graph that is already there, and collapsing both to
  * `corrupt` would tell a user to rebuild one that was never built.
+ *
+ * This is the *only* evidence either path has that the artifact a verdict is
+ * about is on disk. The freshness record cannot supply it: a meta describes a
+ * generation, and describing one is not publishing one.
  */
 interface ArtifactPresence {
   readonly published: boolean;
@@ -155,12 +159,23 @@ export async function contextIndexFreshness(
   const metaLoad = await readContextGraphMeta(root);
   const presence = await indexPresence(root);
 
+  // Ordering, taken from `graph-status.ts`: missing beats corrupt beats stale.
+  // The JSON path answers `missing` from the snapshot's absence alone, before it
+  // has looked at the meta at all, and the pointer is this path's "a graph
+  // exists". So an unpublished index is `missing` whatever the meta says.
+  //
+  // A meta on its own is a *description* of an index, not one: the freshness
+  // record can be perfectly current, its cache key can match the working tree to
+  // the byte, and there are still no bytes for a caller to read. Reporting that
+  // as `fresh` is the silent downgrade ADR §1 forbids, and it is not a corner —
+  // every workspace upgrading from a build that predates the generation store
+  // starts with exactly this pair of artifacts.
+  if (!presence.published) return statusOf('missing', [], null, null, 0, 0);
+
   if (metaLoad.status === 'missing') {
-    // No freshness record at all. Whether that is "never built" or "built and
-    // then damaged" is what the pointer answers.
-    return presence.published
-      ? statusOf('corrupt', ['meta_mismatch'], null, null, 0, 0)
-      : statusOf('missing', [], null, null, 0, 0);
+    // A generation is published and nothing records what it contains: built and
+    // then damaged, which is a rebuild rather than a first build.
+    return statusOf('corrupt', ['meta_mismatch'], null, null, 0, 0);
   }
   if (metaLoad.status !== 'ok' || !metaLoad.meta) {
     return statusOf('corrupt', ['meta_mismatch'], null, null, 0, 0);
