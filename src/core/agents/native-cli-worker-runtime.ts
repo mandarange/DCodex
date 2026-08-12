@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
-import { ensureDir, exists, nowIso, packageRoot, readJson, writeJsonAtomic } from '../fsx.js'
+import { ensureDir, exists, nowIso, packageRoot, readJson, registerDetachedProcessGroup, terminateProcessTree, writeJsonAtomic } from '../fsx.js'
 import { fastModeEnv, type FastModePolicy } from './fast-mode-policy.js'
 import { validateAgentWorkerResult } from './agent-worker-pipeline.js'
 import { appendParallelRuntimeEvent } from './parallel-runtime-proof.js'
@@ -9,6 +9,10 @@ import { appendAgentMessage } from './agent-message-bus.js'
 import { markLoopWorkerInterrupted, registerLoopActiveWorker } from '../loops/loop-interrupt-registry.js'
 
 export const NATIVE_CLI_WORKER_RUNTIME_SCHEMA = 'sks.native-cli-worker-runtime.v3'
+
+/** Matches the parent-side cap in `official-subagent-runner`. */
+export const NATIVE_CLI_WORKER_DEFAULT_TIMEOUT_MS = 60 * 60 * 1000
+export const NATIVE_CLI_WORKER_TIMEOUT_BLOCKER = 'native_cli_worker_timeout'
 
 type WorkerLifecycleEvent = 'slot_reserved' | 'worker_spawned' | 'heartbeat' | 'worker_completed' | 'worker_failed'
 
@@ -21,6 +25,8 @@ export function createNativeCliWorkerRuntimeRecorder(root: string, input: {
   route: string
   fastModePolicy: FastModePolicy
   projectRoot?: string
+  /** Test seam: overrides the worker entrypoint the recorder spawns. */
+  workerEntrypointPath?: string
 }) {
   return new NativeCliWorkerRuntimeRecorder(root, input)
 }
@@ -40,6 +46,7 @@ class NativeCliWorkerRuntimeRecorder {
       route: string
     fastModePolicy: FastModePolicy
     projectRoot?: string
+    workerEntrypointPath?: string
   }) {}
 
   async initialize() {
@@ -86,7 +93,7 @@ class NativeCliWorkerRuntimeRecorder {
     }
     await writeJsonAtomic(path.join(this.root, intakeRel), intake)
 
-    const workerEntrypoint = await resolveWorkerEntrypointPath()
+    const workerEntrypoint = this.input.workerEntrypointPath || await resolveWorkerEntrypointPath()
     const args = [workerEntrypoint, '--intake', path.join(this.root, intakeRel), '--json']
     const record: any = {
       schema: 'sks.native-cli-worker-session-record.v2',
@@ -142,9 +149,22 @@ class NativeCliWorkerRuntimeRecorder {
         SKS_AGENT_SLOT_ID: String(ctx.agent.slot_id || ''),
         SKS_AGENT_GENERATION_INDEX: String(ctx.agent.generation_index || 1)
       },
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // The worker leads its own process group, so teardown reaches the `codex`
+      // processes it spawns. Signalling the worker pid alone left those children
+      // resident for the life of the machine.
+      detached: process.platform !== 'win32'
     })
-    const removeAbortListener = terminateChildOnAbort(child, ctx.opts?.signal)
+    // Drain before the first await. An unread pipe fills its OS buffer and
+    // blocks the worker mid-write; every await between spawn and pipe was a
+    // window in which a chatty worker could wedge itself with no reader.
+    child.stdout?.pipe(stdout)
+    child.stderr?.pipe(stderr)
+    const unregisterProcessGroup = registerDetachedProcessGroup(child)
+    const supervisor = superviseWorkerChild(child, {
+      timeoutMs: resolveWorkerTimeoutMs(ctx.opts),
+      ...(ctx.opts?.signal ? { signal: ctx.opts.signal as AbortSignal } : {})
+    })
     const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
       child.once('close', (code, signal) => resolve({ code, signal }))
       child.once('error', () => resolve({ code: 1, signal: null }))
@@ -154,43 +174,56 @@ class NativeCliWorkerRuntimeRecorder {
     record.status = 'running'
     if (child.pid) this.active.add(child.pid)
     this.maxObserved = Math.max(this.maxObserved, this.active.size)
-    await this.record(record)
 
-    const loopHandle = await registerLoopWorkerHandle({
-      root: ctx.opts.projectRoot || this.input.projectRoot || ctx.opts.cwd || packageRoot(),
-      env: ctx.opts.env || {},
-      agentId: String(ctx.agent.id || ctx.agent.session_id || 'agent'),
-      sessionId: ctx.agent.session_id || null,
-      pid: child.pid || null
-    })
-    await appendParallelRuntimeEvent(this.root, this.input.missionId, {
-      event_type: 'worker_process_spawned',
-      slot_id: ctx.agent.slot_id || ctx.agent.id || null,
-      generation_index: ctx.agent.generation_index || null,
-      session_id: ctx.agent.session_id || null,
-      pid: child.pid || null,
-      backend: this.input.backend,
-      placement: 'process',
-      worktree_id: worktree?.id || null
-    }).catch(() => undefined)
-    await this.lifecycle(ctx, {
-      eventType: 'worker_spawned',
-      status: 'launching',
-      artifacts: [intakeRel, heartbeatRel, resultRel, stdoutRel, stderrRel],
-      logTail: `pid=${child.pid || 'unknown'}`
-    })
+    let exit: { code: number | null; signal: NodeJS.Signals | null }
+    let loopHandle: Awaited<ReturnType<typeof registerLoopWorkerHandle>> = null
+    try {
+      await this.record(record)
 
-    child.stdout?.pipe(stdout)
-    child.stderr?.pipe(stderr)
-    const exit = await exitPromise
-    removeAbortListener()
-    stdout.end()
-    stderr.end()
-    if (child.pid) this.active.delete(child.pid)
+      loopHandle = await registerLoopWorkerHandle({
+        root: ctx.opts.projectRoot || this.input.projectRoot || ctx.opts.cwd || packageRoot(),
+        env: ctx.opts.env || {},
+        agentId: String(ctx.agent.id || ctx.agent.session_id || 'agent'),
+        sessionId: ctx.agent.session_id || null,
+        pid: child.pid || null
+      })
+      await appendParallelRuntimeEvent(this.root, this.input.missionId, {
+        event_type: 'worker_process_spawned',
+        slot_id: ctx.agent.slot_id || ctx.agent.id || null,
+        generation_index: ctx.agent.generation_index || null,
+        session_id: ctx.agent.session_id || null,
+        pid: child.pid || null,
+        backend: this.input.backend,
+        placement: 'process',
+        worktree_id: worktree?.id || null
+      }).catch(() => undefined)
+      await this.lifecycle(ctx, {
+        eventType: 'worker_spawned',
+        status: 'launching',
+        artifacts: [intakeRel, heartbeatRel, resultRel, stdoutRel, stderrRel],
+        logTail: `pid=${child.pid || 'unknown'}`
+      })
+
+      exit = await exitPromise
+    } finally {
+      // Bookkeeping between spawn and exit can throw — a full disk is enough.
+      // Without this the worker and its whole subtree survived the orchestrator
+      // that was supposed to own them, holding a slot no one could reclaim.
+      supervisor.dispose()
+      await supervisor.terminate()
+      unregisterProcessGroup()
+      stdout.end()
+      stderr.end()
+      if (child.pid) this.active.delete(child.pid)
+    }
     record.closed_at = nowIso()
     record.exit_code = exit.code
     record.signal = exit.signal
     record.status = exit.code === 0 ? 'closed' : 'failed'
+    // A worker killed by the watchdog must never read as a clean close, however
+    // its result file happens to have been left.
+    const timeoutBlockers = supervisor.timedOut ? [NATIVE_CLI_WORKER_TIMEOUT_BLOCKER] : []
+    if (supervisor.timedOut) record.status = 'failed'
     if (loopHandle) {
       await markLoopWorkerInterrupted(
         ctx.opts.projectRoot || this.input.projectRoot || ctx.opts.cwd || packageRoot(),
@@ -202,7 +235,7 @@ class NativeCliWorkerRuntimeRecorder {
 
     const parsed = await readJson<any>(path.join(this.root, resultRel), null).catch(() => null)
     if (!parsed) {
-      record.blockers = ['native_cli_worker_result_missing']
+      record.blockers = [...timeoutBlockers, 'native_cli_worker_result_missing']
       await this.lifecycle(ctx, {
         eventType: 'worker_failed',
         status: 'failed',
@@ -231,6 +264,8 @@ class NativeCliWorkerRuntimeRecorder {
 
     const result = validateAgentWorkerResult({
       ...parsed,
+      ...(timeoutBlockers.length ? { status: 'failed' } : {}),
+      blockers: [...timeoutBlockers, ...(Array.isArray(parsed.blockers) ? parsed.blockers : [])],
       artifacts: [...new Set([...(Array.isArray(parsed.artifacts) ? parsed.artifacts : []), stdoutRel, stderrRel])]
     })
     record.status = result.status === 'done' ? 'closed' : result.status
@@ -335,23 +370,50 @@ class NativeCliWorkerRuntimeRecorder {
   }
 }
 
-function terminateChildOnAbort(child: ReturnType<typeof spawn>, signal?: AbortSignal) {
-  if (!signal) return () => undefined
-  let hardKillTimer: NodeJS.Timeout | null = null
-  const terminate = () => {
-    if (child.exitCode !== null || child.signalCode !== null) return
-    child.kill('SIGTERM')
-    hardKillTimer = setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-    }, 1500)
-    hardKillTimer.unref?.()
+/**
+ * A worker outlives its usefulness in more ways than an abort.
+ *
+ * The previous handler covered exactly one of them, and only ever signalled the
+ * worker pid, so an aborted mission left the `codex` process the worker had
+ * spawned running unattended. A worker that simply stopped making progress —
+ * blocked on an upstream request that never returns after a network drop, say —
+ * was never signalled at all: the orchestrator awaited its exit forever, the
+ * slot never came back, and the resident memory never came back either.
+ *
+ * Teardown now goes through the process group in every case, and the watchdog
+ * bounds how long a silent worker can hold its slot.
+ */
+function superviseWorkerChild(child: ReturnType<typeof spawn>, input: { timeoutMs: number; signal?: AbortSignal }) {
+  let timedOut = false
+  let teardown: Promise<void> | null = null
+  const terminate = (): Promise<void> => {
+    // `terminateProcessTree` signals the negated pid, which the kernel is free
+    // to have recycled once the child is reaped — only ever aim it at a child
+    // that is still running.
+    if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve()
+    teardown = teardown || terminateProcessTree(child.pid, child)
+    return teardown
   }
-  if (signal.aborted) terminate()
-  else signal.addEventListener('abort', terminate, { once: true })
-  return () => {
-    signal.removeEventListener('abort', terminate)
-    if (hardKillTimer) clearTimeout(hardKillTimer)
+  const onAbort = () => { void terminate() }
+  const timer = setTimeout(() => { timedOut = true; void terminate() }, input.timeoutMs)
+  timer.unref?.()
+  if (input.signal) {
+    if (input.signal.aborted) void terminate()
+    else input.signal.addEventListener('abort', onAbort, { once: true })
   }
+  return {
+    get timedOut() { return timedOut },
+    terminate,
+    dispose() {
+      clearTimeout(timer)
+      input.signal?.removeEventListener('abort', onAbort)
+    }
+  }
+}
+
+function resolveWorkerTimeoutMs(opts: any): number {
+  const candidate = Number(opts?.workerTimeoutMs ?? opts?.timeoutMs)
+  return Number.isFinite(candidate) && candidate > 0 ? candidate : NATIVE_CLI_WORKER_DEFAULT_TIMEOUT_MS
 }
 
 async function resolveWorkerEntrypointPath() {

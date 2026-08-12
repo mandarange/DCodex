@@ -726,3 +726,113 @@ test('fixed bridge port collision fails closed without choosing a different port
     await fsp.rm(temp, { recursive: true, force: true });
   }
 });
+
+/**
+ * Serves HTTP/1.1 keep-alive on a raw socket so a test can decide, per request,
+ * whether the far side still remembers the connection.
+ */
+function keepAliveUpstream(onRequest: (input: { servedOnThisSocket: number; socket: Socket }) => 'serve' | 'reset') {
+  const connections: Socket[] = [];
+  let requestsSeen = 0;
+  const server = net.createServer((socket) => {
+    connections.push(socket);
+    let buffered = Buffer.alloc(0);
+    let servedOnThisSocket = 0;
+    socket.on('error', () => undefined);
+    socket.on('data', (chunk: Buffer) => {
+      buffered = Buffer.concat([buffered, chunk]);
+      for (;;) {
+        const headerEnd = buffered.indexOf('\r\n\r\n');
+        if (headerEnd < 0) return;
+        const declared = /content-length:\s*(\d+)/i.exec(buffered.subarray(0, headerEnd).toString('latin1'));
+        const bodyBytes = declared ? Number(declared[1]) : 0;
+        if (buffered.length < headerEnd + 4 + bodyBytes) return;
+        buffered = buffered.subarray(headerEnd + 4 + bodyBytes);
+        requestsSeen += 1;
+        servedOnThisSocket += 1;
+        if (onRequest({ servedOnThisSocket, socket }) === 'reset') {
+          socket.resetAndDestroy();
+          return;
+        }
+        const body = '{"ok":true}';
+        socket.write(`HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: ${body.length}\r\nconnection: keep-alive\r\n\r\n${body}`);
+      }
+    });
+  });
+  return {
+    get connectionCount() { return connections.length; },
+    get requestsSeen() { return requestsSeen; },
+    async listen(): Promise<number> {
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => resolve());
+      });
+      return (server.address() as AddressInfo).port;
+    },
+    async close(): Promise<void> {
+      for (const socket of connections) socket.destroy();
+      if (!server.listening) return;
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    },
+  };
+}
+
+function responsesRequest(port: number) {
+  return request({
+    port,
+    path: '/backend-api/codex/responses',
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...codexSessionHeaders('019fd56f-d48f-7942-a560-48ad9ef4aaaa') },
+    chunks: [Buffer.from(JSON.stringify({ model: PUBLIC_MODEL, input: 'hello' }))],
+  });
+}
+
+test('a pooled upstream socket the network dropped is replayed instead of surfacing as a 502', async () => {
+  // Node keeps upstream sockets alive between requests. A Wi-Fi blip leaves the
+  // pool holding sockets the far side has already forgotten, so the next
+  // request writes into one and is reset — reported to Codex as
+  // `bridge_upstream_unavailable`, a 502 blaming an upstream that is healthy.
+  // Reproduced exactly: the second request on a *reused* socket gets an RST.
+  const upstream = keepAliveUpstream(({ servedOnThisSocket }) => servedOnThisSocket === 2 ? 'reset' : 'serve');
+  const upstreamPort = await upstream.listen();
+  const bridgePort = await selectAvailableDesktopBridgePort('127.0.0.1');
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 'x-codex-lb-api-key'), { writeState: false });
+
+    const first = await responsesRequest(bridgePort);
+    assert.equal(first.status, 200);
+    assert.equal(upstream.connectionCount, 1);
+
+    const afterDrop = await responsesRequest(bridgePort);
+    assert.equal(afterDrop.status, 200, 'a stale pooled socket must not reach the caller as a 502');
+    assert.equal(JSON.parse(afterDrop.body.toString()).ok, true);
+    // The reset arrived on the reused socket; the replay opened a second one.
+    assert.equal(upstream.connectionCount, 2);
+    assert.equal(upstream.requestsSeen, 3);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await upstream.close();
+  }
+});
+
+test('an upstream that rejects on a connection this request opened is reported, not replayed', async () => {
+  // The other half of the rule. Replaying a failure on a socket we just opened
+  // would double every request against a genuinely failing upstream, so the
+  // replay is bound to sockets taken from the pool.
+  const upstream = keepAliveUpstream(() => 'reset');
+  const upstreamPort = await upstream.listen();
+  const bridgePort = await selectAvailableDesktopBridgePort('127.0.0.1');
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 'x-codex-lb-api-key'), { writeState: false });
+    const result = await responsesRequest(bridgePort);
+    assert.equal(result.status, 502);
+    assert.equal(JSON.parse(result.body.toString()).error.code, 'bridge_upstream_unavailable');
+    assert.equal(upstream.requestsSeen, 1, 'a fresh-connection failure must reach upstream exactly once');
+    assert.equal(upstream.connectionCount, 1);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await upstream.close();
+  }
+});

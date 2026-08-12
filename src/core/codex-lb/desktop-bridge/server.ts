@@ -3,7 +3,7 @@ import http, { type Server, type ServerResponse } from 'node:http';
 import net, { type Server as NetServer, type Socket } from 'node:net';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { forwardHttp, prepareDesktopBridgeRequest } from './http-forward.js';
+import { destroyDesktopBridgeUpstreamAgents, forwardHttp, prepareDesktopBridgeRequest } from './http-forward.js';
 import { createDesktopBridgeRejectionLogger } from './rejection-log.js';
 import {
   assertAllowedOrigin,
@@ -377,6 +377,9 @@ export async function startPreparedDesktopBridge(
       stopped = true;
       if (heartbeat) clearInterval(heartbeat);
       await closeServer(server, sockets, () => activeRequests);
+      // Pooled upstream sockets outlive the server that opened them otherwise,
+      // and hold the process alive with them.
+      destroyDesktopBridgeUpstreamAgents();
       if (statePath) await removeDesktopBridgeStateIfOwned(statePath, state);
     },
   };

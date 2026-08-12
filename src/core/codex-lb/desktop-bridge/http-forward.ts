@@ -173,6 +173,62 @@ async function readRedactedUpstreamError(response: IncomingMessage): Promise<Buf
   }));
 }
 
+/**
+ * Node's global agent keeps upstream sockets alive between requests, and a
+ * laptop that loses Wi-Fi for a moment comes back with a pool full of sockets
+ * the kernel on the other side has already forgotten. The next request picks
+ * one, writes into it, and gets ECONNRESET — reported to the caller as
+ * `bridge_upstream_unavailable`, a 502 that names the upstream for a fault that
+ * is entirely local to this pool.
+ *
+ * Owning the agents makes that pool ours to bound and to discard.
+ */
+const upstreamAgents = new Map<string, http.Agent | https.Agent>();
+
+function upstreamAgent(secure: boolean, key: string, idleTimeoutMs: number): http.Agent | https.Agent {
+  const cacheKey = `${secure ? 'https' : 'http'}:${key}`;
+  const existing = upstreamAgents.get(cacheKey);
+  if (existing) return existing;
+  const options = {
+    keepAlive: true,
+    // Below any sane upstream's own idle close, so a socket is retired from
+    // this side before the far side can retire it underneath us.
+    keepAliveMsecs: 15_000,
+    timeout: idleTimeoutMs,
+    maxSockets: 64,
+    maxFreeSockets: 8,
+  };
+  const agent = secure ? new https.Agent(options) : new http.Agent(options);
+  upstreamAgents.set(cacheKey, agent);
+  return agent;
+}
+
+/** Exposed for teardown; a stopped bridge should not hold sockets open. */
+export function destroyDesktopBridgeUpstreamAgents(): void {
+  for (const agent of upstreamAgents.values()) agent.destroy();
+  upstreamAgents.clear();
+}
+
+const STALE_CONNECTION_ERROR_CODES = new Set(['ECONNRESET', 'EPIPE', 'ECONNABORTED']);
+
+/**
+ * True only for a failure that a fresh connection would not have suffered.
+ *
+ * `reusedSocket` is the load-bearing half: on a socket this request opened
+ * itself, ECONNRESET means the upstream really did reject the request, and
+ * replaying it would double a failing call rather than repair a stale one.
+ */
+function isStalePooledSocketFailure(request: ClientRequest, error: unknown): boolean {
+  if (error instanceof DesktopBridgeError) return false;
+  if (request.reusedSocket !== true) return false;
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && STALE_CONNECTION_ERROR_CODES.has(code);
+}
+
+class StalePooledSocketFailure extends Error {
+  constructor(readonly reason: unknown) { super('bridge_upstream_socket_stale'); }
+}
+
 export async function forwardHttp(
   req: IncomingMessage,
   res: ServerResponse,
@@ -192,18 +248,41 @@ export async function forwardHttp(
     if (request.body) headers['content-length'] = String(request.body.length);
     else delete headers['content-length'];
     if (request.contentEncodingStripped) delete headers['content-encoding'];
-    await new Promise<void>((resolve, reject) => {
+    const agent = upstreamAgent(
+      provider.remote.secure,
+      `${provider.remote.address}:${provider.remote.port}`,
+      config.idleTimeoutMs,
+    );
+
+    // A streamed request body is consumed as it is forwarded, so only a
+    // buffered one can be replayed. Every Responses call arrives buffered.
+    const replayable = Buffer.isBuffer(request.body);
+    const attempt = (useFreshConnection: boolean): Promise<void> => new Promise<void>((resolve, reject) => {
       let responseStarted = false; let settled = false;
-      const finish = (error?: unknown): void => { if (settled) return; settled = true; error ? reject(error) : resolve(); };
+      const abort = (): void => { if (!res.writableEnded) upstream.destroy(new DesktopBridgeError('bridge_client_disconnected')); };
+      const finish = (error?: unknown): void => {
+        if (settled) return; settled = true;
+        req.off('aborted', abort); res.off('close', abort);
+        error ? reject(error) : resolve();
+      };
       const upstream = transport.request({
         protocol: target.protocol, hostname: provider.remote.address, family: provider.remote.family,
         port: provider.remote.port, method: req.method, path: `${target.pathname}${target.search}`, headers,
+        // `false` makes Node open a one-shot connection, so a replay can never
+        // draw a second dead socket out of the same pool.
+        agent: useFreshConnection ? false : agent,
         ...(provider.remote.tlsServername ? { servername: provider.remote.tlsServername } : {}),
       });
       connectTimeout(upstream, config);
       upstream.setTimeout(config.idleTimeoutMs, () => upstream.destroy(new DesktopBridgeError('bridge_upstream_idle_timeout')));
-      const abort = (): void => { if (!res.writableEnded) upstream.destroy(new DesktopBridgeError('bridge_client_disconnected')); };
-      req.once('aborted', abort); res.once('close', abort); upstream.once('error', finish);
+      req.once('aborted', abort); res.once('close', abort);
+      upstream.once('error', (error) => {
+        if (!responseStarted && replayable && !useFreshConnection && isStalePooledSocketFailure(upstream, error)) {
+          finish(new StalePooledSocketFailure(error));
+          return;
+        }
+        finish(error);
+      });
       upstream.once('response', (response) => {
         const statusCode = response.statusCode || 502;
         if (statusCode >= 400) {
@@ -225,5 +304,22 @@ export async function forwardHttp(
       if (request.body) upstream.end(request.body);
       else void pipeline(req, upstream).catch((error) => { if (!responseStarted) finish(error); });
     });
-  } catch (error) { writeHttpBridgeError(res, error, req); }
+
+    try {
+      await attempt(false);
+    } catch (error) {
+      if (!(error instanceof StalePooledSocketFailure)) throw error;
+      // One transition kills every idle socket to that host, not just this one.
+      // `destroy` only reaps the free list, so streams in flight are untouched.
+      agent.destroy();
+      upstreamAgents.delete(`${provider.remote.secure ? 'https' : 'http'}:${provider.remote.address}:${provider.remote.port}`);
+      logHttpRejection({
+        code: `bridge_upstream_socket_stale_replayed:${underlyingErrorCode(error.reason) || 'unknown'}`,
+        transport: 'http',
+        ...(req.method === undefined ? {} : { method: req.method }),
+        ...(req.url === undefined ? {} : { url: req.url }),
+      });
+      await attempt(true);
+    }
+  } catch (error) { writeHttpBridgeError(res, error instanceof StalePooledSocketFailure ? error.reason : error, req); }
 }

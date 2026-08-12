@@ -767,7 +767,16 @@ export function runProcess(
   });
 }
 
-async function terminateProcessTree(pid: number | undefined, child: ReturnType<typeof spawn>): Promise<void> {
+/**
+ * Escalating teardown for a spawned process *tree*, not a single pid.
+ *
+ * A worker that spawns its own children is only reapable through its process
+ * group: signalling the leader alone leaves the grandchildren running, and on
+ * this platform an orphaned `codex` holds hundreds of megabytes resident for as
+ * long as the machine is up. Every long-lived spawner must route its teardown
+ * here rather than calling `child.kill` directly.
+ */
+export async function terminateProcessTree(pid: number | undefined, child: ReturnType<typeof spawn>): Promise<void> {
   signalProcessTree(pid, 'SIGTERM', child);
   if (await waitForProcessTreeExit(pid, 1_000)) return;
   signalProcessTree(pid, 'SIGKILL', child);

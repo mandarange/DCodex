@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
-import { ensureDir, nowIso, writeTextAtomic } from '../fsx.js'
+import { ensureDir, nowIso, registerDetachedProcessGroup, writeTextAtomic } from '../fsx.js'
 import { readyVerificationTasks, validateVerificationDag, type VerificationDag } from './verification-dag.js'
 import { VerificationArtifactLock } from './verification-artifact-lock.js'
 import { emptyParallelVerificationResult, type ParallelVerificationResult, type VerificationTask, type VerificationTaskResult } from './verification-result.js'
@@ -83,6 +83,9 @@ export async function runVerificationTask(
   const errChunks: string[] = []
   const result = await new Promise<{ code: number | null; error?: string }>((resolve) => {
     const child = spawn(task.command, { cwd, env: { ...process.env, ...(task.env || {}) }, shell: true, detached: true })
+    // Detached means the group survives the parent unless someone sweeps it.
+    // Registering it makes the pool's tasks die with the run that started them.
+    const unregisterProcessGroup = registerDetachedProcessGroup(child)
     let settled = false
     let timedOut = false
     const timeoutMs = task.timeout_ms || 10 * 60 * 1000
@@ -94,6 +97,7 @@ export async function runVerificationTask(
       clearTimeout(timeout)
       if (killTimeout) clearTimeout(killTimeout)
       if (exitFallback) clearTimeout(exitFallback)
+      unregisterProcessGroup()
       resolve(payload)
     }
     const timeout = setTimeout(() => {
