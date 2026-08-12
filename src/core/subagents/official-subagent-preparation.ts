@@ -144,6 +144,19 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
   const sliceWriteScopes = uniqueStrings(
     slices.flatMap((slice) => (Array.isArray(slice.paths) ? slice.paths : []).map((entry) => String(entry || '').trim()))
   )
+  // The verification budget asks a different question than the attention query.
+  // Attention wants everything the mission touches, read or write; the budget
+  // wants only what the mission will *change*, because that is what has to be
+  // re-verified. A read-only reviewer slice that lists package.json in its scope
+  // would otherwise plan release-grade verification for a mission that changes
+  // nothing, and a wholly read-only mission changes nothing at all.
+  const missionChangeSurface = input.readOnly === true
+    ? []
+    : uniqueStrings(
+        slices
+          .filter((slice) => slice.readOnly !== true)
+          .flatMap((slice) => (Array.isArray(slice.paths) ? slice.paths : []))
+      )
   const triwikiAttention = await readBoundedTriwikiAttention(
     input.root,
     triwikiAttentionLimit(taskProfile),
@@ -244,7 +257,7 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
         }
       : {})
   })
-  const verification = chooseVerificationBudget({ taskProfile, changedFiles: [] })
+  const verification = chooseVerificationBudget({ taskProfile, changedFiles: missionChangeSurface })
   const workflowRunId = String(input.workflowRunId || '').trim()
     || `${mode === 'naruto' ? 'naruto' : 'official'}-${Date.now().toString(36)}-${randomId(8)}`
   const fanoutPolicy = {

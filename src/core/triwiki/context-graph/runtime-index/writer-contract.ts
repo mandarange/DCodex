@@ -20,6 +20,7 @@ import {
   type ContextGraphEdge,
   type ContextGraphEdgeConfidence,
   type ContextGraphFreshness,
+  type ContextGraphMetadataValue,
   type ContextGraphNode,
   type ContextGraphRisk,
   type ContextGraphSnapshot,
@@ -44,8 +45,116 @@ export const CONTEXT_INDEX_NODE_ROW_BYTES = 40;
 export const CONTEXT_INDEX_EDGE_ROW_BYTES = 16;
 export const CONTEXT_INDEX_PROVENANCE_ROW_BYTES = 16;
 export const CONTEXT_INDEX_TERM_ROW_BYTES = 12;
-export const CONTEXT_INDEX_METADATA_ROW_BYTES = 12;
+export const CONTEXT_INDEX_METADATA_ROW_BYTES = 16;
 export const CONTEXT_INDEX_SOURCE_HASH_ROW_BYTES = 8;
+
+// ---------------------------------------------------------------------------
+// The metadata row (format revision 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Field offsets for the metadata row, declared **once** and re-exported by
+ * `reader-layout.ts`.
+ *
+ * Every other row in the file has its offsets duplicated on the reader side, on
+ * the argument that the enum round-trip test guards the copy. This row does not,
+ * because its `type` column is not merely a position: it decides how the `value`
+ * column is *interpreted*, so a writer and a reader that disagreed about where
+ * the tag lives would not read garbage — they would read a plausible value of
+ * the wrong type, which is the exact failure format revision 2 exists to remove.
+ */
+export const CONTEXT_INDEX_METADATA_NODE_AT = 0;
+export const CONTEXT_INDEX_METADATA_KEY_AT = 4;
+export const CONTEXT_INDEX_METADATA_VALUE_AT = 8;
+export const CONTEXT_INDEX_METADATA_TYPE_AT = 12;
+export const CONTEXT_INDEX_METADATA_ORDINAL_AT = 14;
+
+/**
+ * How the row's `value` string is to be read back.
+ *
+ * `value` is **always** a string-table id, whatever the tag says. That is the
+ * security property of this layout rather than a convenience: `reader-validate`
+ * can bound-check the column unconditionally, so a corrupt tag can at worst
+ * produce a wrong-typed value from an in-bounds string, and can never decide
+ * that four bytes are an offset instead of an id.
+ *
+ * It is also why the lexicon survives. The interned text is the value's own
+ * canonical serialization and nothing else — `'kernel'` is interned as
+ * `kernel`, not as `"kernel"` — so a fixture that seeds a lexicon term through a
+ * metadata value still resolves under `termId`. JSON-encoding the value was
+ * tried and reverted for precisely that reason; the tag carries the type so the
+ * text does not have to.
+ */
+export const CONTEXT_INDEX_METADATA_TYPE = {
+  STRING: 0,
+  BOOLEAN: 1,
+  NUMBER: 2,
+  NULL: 3,
+  /** One row per element, `ordinal` carrying its position. */
+  ARRAY_ELEMENT: 4,
+  /** A zero-length array, which has no element to hang a row on. */
+  ARRAY_EMPTY: 5,
+} as const;
+
+export const CONTEXT_INDEX_METADATA_TYPE_COUNT = 6;
+
+/**
+ * `ordinal` is a `u16`, so an array longer than this cannot be addressed. The
+ * writer refuses rather than truncating: a silently shortened array is the
+ * class of loss this revision exists to end.
+ */
+export const CONTEXT_INDEX_METADATA_MAX_ARRAY_LENGTH = 0x10000;
+
+/** One row's worth of a metadata value: the tag, the text to intern, its position. */
+export interface ContextIndexMetadataCell {
+  readonly type: number;
+  readonly text: string;
+  readonly ordinal: number;
+}
+
+/**
+ * The rows one metadata entry becomes.
+ *
+ * Called twice per entry — once to intern, once to emit — so the two passes
+ * cannot disagree about what was interned. A scalar is one row; an array is one
+ * row per element, which is what makes `['a,b', 'c']` distinguishable from
+ * `['a', 'b', 'c']` at all. Revision 1 joined on a comma the value could itself
+ * contain, and nothing downstream could reverse it.
+ */
+export function contextIndexMetadataCells(value: ContextGraphMetadataValue): readonly ContextIndexMetadataCell[] {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return [{ type: CONTEXT_INDEX_METADATA_TYPE.ARRAY_EMPTY, text: '', ordinal: 0 }];
+    if (value.length > CONTEXT_INDEX_METADATA_MAX_ARRAY_LENGTH) refuse('count_limit', { metadataArray: value.length });
+    return value.map((entry, ordinal) => ({
+      type: CONTEXT_INDEX_METADATA_TYPE.ARRAY_ELEMENT,
+      text: String(entry),
+      ordinal,
+    }));
+  }
+  if (value === null) return [{ type: CONTEXT_INDEX_METADATA_TYPE.NULL, text: 'null', ordinal: 0 }];
+  if (typeof value === 'boolean') {
+    return [{ type: CONTEXT_INDEX_METADATA_TYPE.BOOLEAN, text: value ? 'true' : 'false', ordinal: 0 }];
+  }
+  if (typeof value === 'number') {
+    return [{ type: CONTEXT_INDEX_METADATA_TYPE.NUMBER, text: String(value), ordinal: 0 }];
+  }
+  return [{ type: CONTEXT_INDEX_METADATA_TYPE.STRING, text: value, ordinal: 0 }];
+}
+
+/**
+ * The inverse, for scalar tags only — the two array tags are assembled by the
+ * caller, which is the only place that can see a run of rows.
+ *
+ * Total by construction: every branch returns, and no input throws. A tag is
+ * bounds-checked at open, so the only way to reach the fallback is a `STRING`
+ * row, which is what the fallback returns.
+ */
+export function contextIndexMetadataValue(type: number, text: string): string | number | boolean | null {
+  if (type === CONTEXT_INDEX_METADATA_TYPE.BOOLEAN) return text === 'true';
+  if (type === CONTEXT_INDEX_METADATA_TYPE.NUMBER) return Number(text);
+  if (type === CONTEXT_INDEX_METADATA_TYPE.NULL) return null;
+  return text;
+}
 
 /**
  * Every profile bit set: revision 1 reserves the per-edge profile mask without

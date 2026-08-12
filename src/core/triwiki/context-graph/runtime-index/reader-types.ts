@@ -15,6 +15,7 @@ import type {
   ContextGraphEdgeConfidence,
   ContextGraphEdgeType,
   ContextGraphFreshness,
+  ContextGraphMetadata,
   ContextGraphNodeKind,
   ContextGraphRisk,
 } from '../contracts.js';
@@ -104,7 +105,16 @@ export interface ContextGraphNodeView {
   readonly tokenCost: number;
   readonly flags: number;
   readonly group: number;
-  readonly metadata: Readonly<Record<string, string>>;
+  /**
+   * The value types the extractor wrote, not their display text.
+   *
+   * Format revision 1 handed back `Record<string, string>`, so `metadata.isTest
+   * === true` was false for every node in the workspace and nothing said so.
+   * Revision 2's row tag is what makes this the snapshot's own type again — the
+   * same union `ContextGraphNode.metadata` carries, so a predicate written
+   * against a compiled node and one written against a read node agree.
+   */
+  readonly metadata: Readonly<ContextGraphMetadata>;
 }
 
 export interface ContextGraphEdgeView {

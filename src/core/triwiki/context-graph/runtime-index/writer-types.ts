@@ -57,3 +57,22 @@ export interface ProvenanceRow {
   readonly extractorId: number;
 }
 
+/**
+ * One row of the node-metadata section.
+ *
+ * A named record rather than the tuple revision 1 used: with five columns, two
+ * of which are small integers that the type system cannot tell apart, a
+ * positional tuple is a transposition waiting to happen — and transposing `type`
+ * with `ordinal` produces a file that passes every bounds check and decodes to
+ * the wrong types.
+ */
+export interface MetadataRow {
+  readonly node: number;
+  readonly key: number;
+  /** Always a string-table id. The tag says how to read it, never where it is. */
+  readonly value: number;
+  readonly type: number;
+  /** Element position for an array row; 0 for every scalar. */
+  readonly ordinal: number;
+}
+

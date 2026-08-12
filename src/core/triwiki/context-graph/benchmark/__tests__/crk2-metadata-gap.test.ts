@@ -12,11 +12,13 @@ import {
 } from '../crk2-metadata-gap.js';
 
 /**
- * The `todo` on the type-preservation assertion is deliberate and is the whole
- * point of the module: the format-level fix is a 12→16 byte metadata row change
- * that this card does not own, so the gap is reported on every run rather than
- * living in someone's memory. When the row layout lands, the `todo` comes off
- * and this test starts failing until the numbers agree.
+ * These assertions carried a `todo` for one card: the format-level fix was a
+ * 12→16 byte metadata row change that the measuring card did not own, so the gap
+ * was reported on every run rather than living in someone's memory. Format
+ * revision 2 landed the row, the `todo`s came off, and the direction of every
+ * assertion below is now inverted — the corpus must *keep* its types, and a
+ * regression to the string-flattened writer fails here rather than being noticed
+ * downstream by a test selector that quietly got faster.
  */
 
 const OBSERVED_AT = '2026-01-01T00:00:00.000Z';
@@ -48,33 +50,43 @@ test('every declared fixture family compiles to a snapshot the measurement can r
   );
 });
 
-test('a boolean metadata value does not survive the writer, and the count is recorded', async () => {
+test('a boolean metadata value survives the writer, and the count is recorded', async () => {
   const report = summarizeCrk2MetadataGap(await measureFamilies());
 
   // The measurement is only meaningful if the corpus authors the predicates at
   // all. A zero here would mean the fixtures stopped carrying typed metadata and
-  // the gap became invisible rather than fixed.
+  // the gap became invisible rather than fixed — which would make the equality
+  // below pass as `0 === 0` while proving nothing.
   assert.ok(report.booleanTruePredicatesV1 > 0, 'no fixture family authors a `=== true` metadata predicate');
   assert.ok(report.sourcesWithTruePredicates > 0);
 
-  // `String(true)` is `'true'`, so the reader's `Record<string, string>` can
-  // never satisfy `=== true`. Asserted as an equality rather than described in a
-  // comment, so the day the row layout carries a type code this line fails.
-  assert.equal(report.booleanTruePredicatesV2, 0, 'the writer is expected to lose every boolean');
+  // Revision 1 measured 11 lost across 9 families, structurally: `String(true)`
+  // is `'true'` and no `Record<string, string>` can satisfy `=== true`. The row
+  // tag is what makes these two counts the same number.
+  assert.equal(
+    report.booleanTruePredicatesV2,
+    report.booleanTruePredicatesV1,
+    `the writer lost a boolean: ${report.lostKeys.join(',')}`
+  );
 
-  // The consumer-level workaround must recover all of them. If this ever falls
-  // short, `contextNodeFlag` has stopped being a complete workaround and the
-  // format fix is no longer optional.
+  // The consumer-level helper must still recover all of them. It reads both the
+  // boolean and the text spelling, because extractors author the flag both ways;
+  // a helper that recognized only the new spelling would have moved the silent
+  // failure rather than removed it.
   assert.equal(
     report.booleanTruePredicatesViaFlag,
     report.booleanTruePredicatesV1,
-    'contextNodeFlag must recover every predicate the writer loses'
+    'contextNodeFlag must still recover every predicate'
   );
 });
 
-test('metadata values keep their type through the writer', { todo: 'needs the 12->16 byte metadata row (format revision 2)' }, async () => {
+test('metadata values keep their type through the writer', async () => {
   const report = summarizeCrk2MetadataGap(await measureFamilies());
   assert.equal(report.typePreserved, true, `predicates lost: ${report.booleanTruePredicatesV1}, keys: ${report.lostKeys.join(',')}`);
+  // Type preservation is not only about booleans. `lostKeys` also collects the
+  // numbers, nulls and arrays that failed to round-trip, so an implementation
+  // that tagged booleans and left the other four flattened still fails here.
+  assert.deepEqual(report.lostKeys, [], 'every authored metadata type must round-trip');
 });
 
 test('the protected-gate metadata flags cannot be true on an unprotected node', () => {
@@ -103,16 +115,18 @@ test('the protected-gate metadata flags cannot be true on an unprotected node', 
   assert.equal(report.metadataArmUnreachable, true);
 });
 
-test('no fixture family authors a gate protected only by metadata', async () => {
+test('every fixture family preserves its own types, not just the corpus in aggregate', async () => {
   const entries = await measureFamilies();
-  // Stated over the compiled snapshots rather than over the manifest sets, so
-  // the two independent routes to the same conclusion have to agree.
+  // Per family rather than summed. The aggregate can stay whole while one family
+  // loses every predicate and another gains them, and the aggregate is what the
+  // release notes quote — so the finer statement is the one worth asserting.
   assert.ok(entries.length > 0);
   for (const entry of entries) {
     assert.equal(
       entry.loss.booleanTruePredicatesV2,
-      0,
-      `${entry.label} unexpectedly preserved a boolean; the gap may already be fixed`
+      entry.loss.booleanTruePredicatesV1,
+      `${entry.label} lost a boolean the writer used to carry: ${entry.loss.lostKeys.join(',')}`
     );
+    assert.deepEqual(entry.loss.lostKeys, [], `${entry.label} lost a metadata type`);
   }
 });

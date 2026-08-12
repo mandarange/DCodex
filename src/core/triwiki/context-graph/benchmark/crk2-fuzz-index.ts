@@ -302,9 +302,13 @@ export function observeContextIndex(reader: ContextIndexReader): string {
   for (let index = 0; index < reader.nodeCount; index += 1) {
     const view = reader.hydrateNode(index);
     const score = reader.nodeScoreFields(index);
+    // `JSON.stringify` rather than interpolation: format revision 2 gives a
+    // metadata value a type, and interpolation would render `true` and `'true'`
+    // identically — so a mutation that flipped only a row's type tag would
+    // register as inert against the very oracle that exists to catch it.
     const metadata = Object.keys(view.metadata)
       .sort()
-      .map((key) => `${key}=${view.metadata[key] ?? ''}`)
+      .map((key) => `${key}=${JSON.stringify(view.metadata[key] ?? null)}`)
       .join(',');
     parts.push(
       `n${index}:${view.id}|${view.kind}|${view.label}|${view.path ?? ''}|${view.line ?? -1}|${view.column ?? -1}`

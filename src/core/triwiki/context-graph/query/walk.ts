@@ -79,16 +79,24 @@ export interface ContextWalkRequest {
 /**
  * A node's metadata value read as a boolean.
  *
- * The compact writer stores every metadata value through `String(value)`, so the
- * snapshot's real boolean `true` arrives as the *string* `'true'`. Every v1
- * predicate spelled `metadata.isTest === true` therefore goes silently false
- * against a v2 index — dropping test recommendations and demoting protected
- * gates with no error anywhere. One helper rather than a comparison at each call
- * site, because the failure is invisible and the fix has to be total.
+ * Format revision 1 stored every metadata value through `String(value)`, so a
+ * snapshot's real boolean `true` arrived as the *string* `'true'` and every
+ * predicate spelled `metadata.isTest === true` went silently false — dropping
+ * test recommendations and demoting protected gates with no error anywhere.
+ * Revision 2's metadata row tag fixed that at the format, and `true` now arrives
+ * as `true`.
+ *
+ * The string arms stay, and are not vestigial: extractors author this flag both
+ * ways. `topology/gates.ts` writes a real boolean, `crk2-fuzz-index.ts` and
+ * several fixtures write `'true'`, and both are legal `ContextGraphMetadataValue`s
+ * that mean the same thing to a caller. Narrowing this to `=== true` the day the
+ * format was fixed would have moved the silent-false failure from one set of
+ * nodes to another, which is why the helper reads *both* rather than being
+ * retired.
  */
 export function contextNodeFlag(view: ContextGraphNodeView, key: string): boolean {
   const value = view.metadata[key];
-  return value === 'true' || value === '1';
+  return value === true || value === 'true' || value === '1';
 }
 
 /** A walk root at depth 0, with no hop behind it. */

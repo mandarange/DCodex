@@ -211,9 +211,38 @@ test('a file that is not an index is rejected on magic', () => {
   rejects(bytes, 'magic_invalid');
 });
 
-test('an unsupported format revision is rejected and points at an update', () => {
+test('an index from a newer build is rejected and points at an update', () => {
   const error = rejects(buildIndex({ formatRevision: CONTEXT_INDEX_FORMAT_REVISION + 1 }), 'revision_unsupported');
   assert.equal(error.publicCode, 'context_index_format_unsupported');
+  assert.equal(error.repairCommand, 'sks update');
+});
+
+/**
+ * The direction this test covers is the one every existing workspace takes on
+ * upgrade, and it was the one the rule got wrong.
+ *
+ * `context_index_format_unsupported` was written assuming the artifact is always
+ * ahead of the reader, so it always answered `sks update`. When revision 2
+ * shipped, the common case inverted: the build is current and the on-disk index
+ * is stale. Answering `sks update` there names a command that changes nothing
+ * and never mentions the only repair that works, so the user's index stays
+ * unreadable while the tool insists it is up to date. Same public code — the
+ * vocabulary is frozen — different repair.
+ */
+test('an index from an older build is rejected and points at a rebuild, not an update', () => {
+  const error = rejects(buildIndex({ formatRevision: CONTEXT_INDEX_FORMAT_REVISION - 1 }), 'revision_unsupported');
+  assert.equal(error.publicCode, 'context_index_format_unsupported');
+  assert.equal(error.repairCommand, 'sks align run --rebuild-index');
+  assert.notEqual(error.repairCommand, 'sks update', 'the build is already current; updating repairs nothing');
+});
+
+test('a non-revision unsupported-format cause still points at an update', () => {
+  // Bad magic says nothing about which side is stale, so the conservative
+  // instruction stands. Pinned so the direction branch cannot widen past the
+  // one code where the two revisions are actually known.
+  const bytes = buildIndex();
+  bytes[0] = 0x00;
+  const error = rejects(bytes, 'magic_invalid');
   assert.equal(error.repairCommand, 'sks update');
 });
 

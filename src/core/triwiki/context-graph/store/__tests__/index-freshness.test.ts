@@ -16,6 +16,7 @@ import { buildContextGraphSnapshot } from '../../compiler/serialize.js';
 import { contextGraphMetaPath, contextGraphSnapshotPath } from '../../paths.js';
 import { contextIndexPointerPath, contextIndexStoreDir } from '../generation-layout.js';
 import { CONTEXT_INDEX_POINTER_SCHEMA } from '../generation-pointer.js';
+import { CONTEXT_INDEX_FORMAT_REVISION } from '../../runtime-index/format.js';
 import { codeNavigationGraphExtractors } from '../../extractors/index.js';
 import { contextGraphStatus } from '../graph-status.js';
 import { contextIndexFreshness } from '../index-freshness.js';
@@ -126,11 +127,11 @@ async function bothPaths(root: string, options: Parameters<typeof contextIndexFr
   };
 }
 
-function publishPointer(root: string, snapshotHash: string): void {
+function publishPointer(root: string, snapshotHash: string, formatRevision = CONTEXT_INDEX_FORMAT_REVISION): void {
   fs.mkdirSync(contextIndexStoreDir(root), { recursive: true });
   fs.writeFileSync(contextIndexPointerPath(root), JSON.stringify({
     schema: CONTEXT_INDEX_POINTER_SCHEMA,
-    formatRevision: 1,
+    formatRevision,
     snapshotHash,
     configFingerprint: 'c'.repeat(64),
     sourceFingerprint: 'd'.repeat(64),
@@ -296,6 +297,32 @@ test('an unparseable pointer is damage, and damage is never fresh', async () => 
     const status = await contextIndexFreshness(root, { cacheKey: keyOf(cleanParts()), verifySources: false });
     assert.equal(status.status, 'corrupt');
     assert.deepEqual(status.reasons, ['meta_mismatch']);
+  } finally {
+    removeFixtureRoot(root);
+  }
+});
+
+test('a pointer from format revision 1 is damage, not a stale-but-usable index', async () => {
+  // Format revision 2 does not read a revision-1 index, so an upgraded build
+  // meeting one has to say so through this path rather than opening it. The
+  // pointer is otherwise perfectly well formed and agrees with the meta — the
+  // only thing wrong with it is the layout it names — which is exactly the
+  // shape that would read as `fresh` if the revision check were skipped.
+  const { root } = seedRepo('cgf-old-revision');
+  try {
+    const snapshot = snapshotWith('old-revision');
+    await writeContextGraphSnapshot({ root, snapshot, meta: metaFor(snapshot) });
+    publishPointer(root, snapshot.snapshotHash, 1);
+
+    const status = await contextIndexFreshness(root, { cacheKey: keyOf(cleanParts()), verifySources: false });
+    assert.equal(status.status, 'corrupt');
+    assert.equal(status.repairCommand, CONTEXT_GRAPH_REPAIR_COMMAND);
+    // Proof that the revision is what did it: the same pointer at the current
+    // revision is fresh. Without this the case would pass for a workspace that
+    // was broken some other way.
+    publishPointer(root, snapshot.snapshotHash);
+    const healthy = await contextIndexFreshness(root, { cacheKey: keyOf(cleanParts()), verifySources: false });
+    assert.equal(healthy.status, 'fresh');
   } finally {
     removeFixtureRoot(root);
   }

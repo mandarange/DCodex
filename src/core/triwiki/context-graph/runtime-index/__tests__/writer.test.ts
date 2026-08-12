@@ -17,6 +17,7 @@ import {
 } from '../format.js';
 import {
   CONTEXT_INDEX_EDGE_ROW_BYTES,
+  CONTEXT_INDEX_METADATA_ROW_BYTES,
   CONTEXT_INDEX_NODE_FLAG,
   CONTEXT_INDEX_NODE_ROW_BYTES,
   ContextIndexWriterError,
@@ -91,6 +92,59 @@ const CONFIG_HASH = new Uint8Array(32).fill(0x7c);
 
 function write(input: ContextGraphSnapshot) {
   return encodeContextIndex({ snapshot: input, configHash: CONFIG_HASH, schemaRevision: 1 });
+}
+
+function sectionOf(bytes: Uint8Array, kind: number): SectionDescriptor {
+  const header = readContextIndexHeader(bytes);
+  const byKind = validateSectionLayout(bytes, header, readSectionTable(bytes, header));
+  return byKind.get(kind) as SectionDescriptor;
+}
+
+/**
+ * The string table as the file actually holds it.
+ *
+ * Read out of the bytes rather than off the interner, because the claim under
+ * test is about what a *reader* can find: an assertion against the writer's own
+ * in-memory set would pass for an encoding no reader could decode.
+ */
+function internedStrings(bytes: Uint8Array): string[] {
+  const strings = sectionOf(bytes, CONTEXT_INDEX_SECTION.STRING_TABLE);
+  const base = Number(strings.offset);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const blobBase = base + strings.count * 4;
+  const decoder = new TextDecoder();
+  const out: string[] = [];
+  for (let id = 0; id < strings.count; id += 1) {
+    const end = view.getUint32(base + id * 4, true);
+    const start = id === 0 ? 0 : view.getUint32(base + (id - 1) * 4, true);
+    out.push(decoder.decode(bytes.subarray(blobBase + start, blobBase + end)));
+  }
+  return out;
+}
+
+interface MetadataRowView {
+  readonly node: number;
+  readonly key: number;
+  readonly value: number;
+  readonly type: number;
+  readonly ordinal: number;
+}
+
+function metadataRows(bytes: Uint8Array): MetadataRowView[] {
+  const section = sectionOf(bytes, CONTEXT_INDEX_SECTION.NODE_METADATA);
+  const view = new DataView(bytes.buffer, bytes.byteOffset + Number(section.offset), Number(section.length));
+  const rows: MetadataRowView[] = [];
+  for (let row = 0; row < section.count; row += 1) {
+    const at = row * CONTEXT_INDEX_METADATA_ROW_BYTES;
+    rows.push({
+      node: view.getUint32(at, true),
+      key: view.getUint32(at + 4, true),
+      value: view.getUint32(at + 8, true),
+      type: view.getUint16(at + 12, true),
+      ordinal: view.getUint16(at + 14, true),
+    });
+  }
+  return rows;
 }
 
 function captureError(run: () => unknown): ContextIndexWriterError {
@@ -307,11 +361,11 @@ test('outgoing CSR buckets the edge table directly, so `from` is never stored pe
   assert.equal(view.getUint32(12, true), 3);
 });
 
-test('metadata values keep the type the extractor wrote', { todo: 'needs a metadata row type code; see docs/work-orders/context-retrieval-v2/release-record.md' }, async () => {
+test('metadata values keep the type the extractor wrote', async () => {
   // Flattening these to display strings silently broke every consumer asking
   // `metadata.isTest === true`: the boolean arrived as `"true"`, the strict
   // comparison failed, and the node simply stopped being a test node with no
-  // error anywhere. Measured at eleven lost predicate matches across nine
+  // error anywhere. Measured at 949 lost predicate matches across all fourteen
   // benchmark fixture families before this was fixed.
   const { openContextIndex } = await import('../reader.js');
   const written = write(snapshot([
@@ -340,4 +394,60 @@ test('metadata values keep the type the extractor wrote', { todo: 'needs a metad
   // A comma inside a value used to be indistinguishable from the separator.
   const commas = write(snapshot([node('file:bbb', { metadata: { tags: ['a,b', 'c'] } })], []));
   assert.deepEqual(openContextIndex(commas.bytes).hydrateNode(0).metadata.tags, ['a,b', 'c']);
+});
+
+test('a metadata value is interned as its own text, so the lexicon still sees it', () => {
+  // The reverted attempt JSON-encoded the value, which put `"kernel"` in the
+  // string table and left `kernel` out of it, so `termId('kernel')` stopped
+  // resolving and the fixtures that seed lexicon terms *through* metadata went
+  // dark. Asserted over the string table itself rather than through a query:
+  // a query could pass by matching some other field that happens to carry the
+  // same word.
+  const written = write(snapshot([
+    node('file:aaa', { path: 'src/a.ts', metadata: { lexeme: 'kernel', flag: true, count: 7, nothing: null } }),
+  ], []));
+  const strings = internedStrings(written.bytes);
+  assert.ok(strings.includes('kernel'), `the raw string value must be interned: ${strings.join('|')}`);
+  assert.equal(strings.includes('"kernel"'), false, 'a quoted value would be a different term');
+  // The tag carries the type; the text stays the value's own canonical form, so
+  // a boolean and a number are interned exactly as revision 1 interned them.
+  assert.ok(strings.includes('true'));
+  assert.ok(strings.includes('7'));
+  assert.ok(strings.includes('null'));
+});
+
+test('an empty array survives as an empty array, not as an absent key', async () => {
+  // `checkScripts: []` and `deps: []` are authored by the real gate extractor.
+  // One row per element would emit no row at all for these, and the key would
+  // vanish from the reader's view — a different loss than the one being fixed,
+  // introduced by the fix.
+  const { openContextIndex } = await import('../reader.js');
+  const written = write(snapshot([node('file:aaa', { metadata: { deps: [], one: ['solo'] } })], []));
+  const metadata = openContextIndex(written.bytes).hydrateNode(0).metadata;
+  assert.deepEqual(metadata.deps, []);
+  assert.ok(Object.hasOwn(metadata, 'deps'), 'the key must still be present');
+  assert.deepEqual(metadata.one, ['solo'], 'a one-element array is an array, not its element');
+});
+
+test('metadata rows are emitted in the order the reader is allowed to assume', () => {
+  // `metadataOf` binary-searches for a node and walks forward; an array is
+  // appended in row order. Both assumptions are the writer's to keep, and the
+  // reader rejects a file that breaks them — so this asserts the writer emits
+  // what the reader demands rather than trusting that it does.
+  const written = write(snapshot([
+    node('file:bbb', { metadata: { zeta: ['z0', 'z1', 'z2'], alpha: 'a' } }),
+    node('file:aaa', { metadata: { mid: [.../* eight elements */ Array(8).keys()].map((n) => `e${n}`) } }),
+  ], []));
+  const rows = metadataRows(written.bytes);
+  for (let index = 1; index < rows.length; index += 1) {
+    const previous = rows[index - 1] as MetadataRowView;
+    const current = rows[index] as MetadataRowView;
+    const ascends = current.node > previous.node
+      || (current.node === previous.node && current.key > previous.key)
+      || (current.node === previous.node && current.key === previous.key && current.ordinal === previous.ordinal + 1);
+    assert.ok(ascends, `row ${index} does not ascend: ${JSON.stringify({ previous, current })}`);
+  }
+  // Eight elements plus three plus one scalar: every element gets its own row.
+  assert.equal(rows.length, 12);
+  assert.equal(rows.filter((row) => row.ordinal > 0).length, 9);
 });

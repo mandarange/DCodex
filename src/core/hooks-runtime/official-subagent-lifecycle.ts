@@ -39,6 +39,7 @@ import {
   resolveHostCapabilityHookRuntimeBinding,
   type HostCapabilityExecutionEvidence
 } from '../agent-bridge/host-capability-runtime.js';
+import { finalizedVerificationBudget } from '../runtime/verification-budget.js';
 import { observedParentModelMismatch } from './payload-signals.js';
 import { finalizeNarutoTerminalProof } from './naruto-terminal-finalization.js';
 import { subagentSkillAvailabilityRunBlockers } from './subagent-skill-availability.js';
@@ -389,7 +390,16 @@ async function refreshOfficialSubagentCompletionArtifactsLocked(root: any, state
     failed_subagents: evidence.failed_threads,
     agents: officialSubagentRolePlan(),
     verification: {
-      budget: plan.verification?.budget || plan.verification_budget || 'affected',
+      // The plan's budget was chosen before a file changed. The parent has now
+      // reported what the run actually changed, so the forecast is no longer the
+      // best available answer for the finalized summary.
+      budget: finalizedVerificationBudget({
+        plannedBudget: plan.verification?.budget || plan.verification_budget,
+        taskProfile: plan.task_profile,
+        changedFiles: Array.isArray(structuredParentSummary.raw?.changed_files)
+          ? structuredParentSummary.raw.changed_files
+          : []
+      }),
       checks: Array.isArray(plan.verification?.checks)
         ? plan.verification.checks
         : Array.isArray(plan.verification_checks)

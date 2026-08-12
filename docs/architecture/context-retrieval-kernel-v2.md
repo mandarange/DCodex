@@ -42,7 +42,7 @@ byte-identical indexes.
 
 | Artifact | Identifier |
 | --- | --- |
-| Binary index | magic `SKSCG2`, `formatRevision: u16` |
+| Binary index | magic `SKSCG2`, `formatRevision: u16` — **currently `2`** |
 | Operation journal | `sks.context-graph-operation.v2` |
 | Fragment manifest | `sks.context-graph-fragment-manifest.v1` |
 | Index meta | `sks.context-graph-index-meta.v1` |
@@ -52,6 +52,33 @@ byte-identical indexes.
 
 A reader that meets a `formatRevision` it does not implement fails closed with
 `context_index_format_unsupported`. It does not attempt partial reads.
+
+### Revision 2 (2026-08-13, CG2-14): typed metadata, and no backward read
+
+The metadata row goes 12 → 16 bytes, gaining a `u16` type tag and a `u16`
+ordinal. `value` remains **always** a string-table id whatever the tag says —
+that is a security property, not a convenience: a corrupt tag can at worst yield
+a correctly-bounded string read back as the wrong type, and can never cause four
+bytes to be interpreted as an offset.
+
+**A revision-2 reader does not read a revision-1 index, and the refusal is
+deliberate in both directions of skew.** The index is a content-addressed cache
+that `sks align run --rebuild-index` reproduces deterministically, so there is
+nothing to migrate and §6 already declines to treat the previous generation as a
+rollback target. A stride-conditional decoder would turn "which layout am I
+reading" into a per-row question when this section makes it an open-time one —
+and accepting the older revision would not fail visibly, it would walk the
+metadata section at the wrong stride and return a plausible node assembled from
+misaligned columns. `formatRevision` is therefore the first field the pointer
+parser evaluates, before the config fingerprint and before any index byte is
+read.
+
+**A fixed-stride section's `count` and `length` must agree exactly** —
+`count * stride === length`, not merely `<=`. An under-claimed count is invisible
+to the section checksum, which covers `offset..offset+length` and does not care
+how many rows the descriptor says live there; the reader simply stops early and
+answers from a truncated section. This closed a revision-1 hole, not one the row
+widening introduced.
 
 ## 3. Frozen types
 
@@ -157,7 +184,8 @@ Every failure names one command. No error is advisory.
 | --- | --- | --- |
 | `context_index_missing` | No current pointer | `sks align run` |
 | `context_index_stale` | Pointer's snapshot hash ≠ workspace fingerprint | `sks align run` |
-| `context_index_format_unsupported` | `formatRevision` newer than reader | `sks update` |
+| `context_index_format_unsupported` | `formatRevision` **newer** than reader, bad magic, unknown section kind | `sks update` |
+| `context_index_format_unsupported` | `formatRevision` **older** than reader — the build is current, the artifact is stale | `sks align run --rebuild-index` |
 | `context_index_checksum_mismatch` | Section checksum failed | `sks align run --rebuild-index` |
 | `context_index_truncated` | Declared count/offset/length exceeds file | `sks align run --rebuild-index` |
 | `context_index_pointer_meta_divergent` | Pointer and meta disagree on snapshot/config/source fingerprint | `sks align run --rebuild-index` |
@@ -166,6 +194,17 @@ Every failure names one command. No error is advisory.
 Corrupt input is rejected, never repaired in place. There is no best-effort
 byte-salvaging reader — a reader that guesses is a reader whose output nothing
 can attest to.
+
+`context_index_format_unsupported` appears twice on purpose. The code is frozen
+vocabulary and does not split; the **repair** differs by direction, because only
+one of the two directions is fixed by updating. The original rule assumed the
+artifact was always ahead of the reader. Revision 2 inverted the common case:
+on upgrade every existing workspace holds a revision-1 index and a build that is
+already current, and answering `sks update` there names a command that changes
+nothing while never mentioning the repair that works. Both revisions are known
+integers at the refusal site, so the direction is decided from evidence rather
+than assumed. Any *other* unsupported-format cause keeps `sks update`, since bad
+magic says nothing about which side is stale.
 
 The table above is reader-facing: every code tells a user their index is
 damaged and names the command that rebuilds it. The compile side needs one more,

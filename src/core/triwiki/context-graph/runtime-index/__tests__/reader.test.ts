@@ -106,7 +106,9 @@ test('hydrateNode materializes exactly the node the snapshot carried', () => {
   assert.equal(view.freshness, 'fresh');
   assert.equal(view.risk, 'low');
   assert.ok(Math.abs(view.trust - 0.5) < 1e-4);
-  assert.deepEqual({ ...view.metadata }, { language: 'ts', tags: 'core,query' });
+  // `tags` is a `string[]` in the fixture and comes back as one. Revision 1
+  // joined it to `'core,query'`, which is the loss format revision 2 removed.
+  assert.deepEqual({ ...view.metadata }, { language: 'ts', tags: ['core', 'query'] });
   assert.equal(view.line, undefined);
 
   const symbol = reader.hydrateNode(SYMBOL);
@@ -283,5 +285,5 @@ test('the row layouts the reader decodes are the ones the writer declares', () =
   assert.equal(CONTEXT_INDEX_NODE_ROW_BYTES, 40);
   assert.equal(CONTEXT_INDEX_EDGE_ROW_BYTES, 16);
   assert.equal(CONTEXT_INDEX_TERM_ROW_BYTES, 12);
-  assert.equal(CONTEXT_INDEX_METADATA_ROW_BYTES, 12);
+  assert.equal(CONTEXT_INDEX_METADATA_ROW_BYTES, 16);
 });

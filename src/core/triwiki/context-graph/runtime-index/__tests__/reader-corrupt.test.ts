@@ -1,13 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  CONTEXT_INDEX_FORMAT_REVISION,
   CONTEXT_INDEX_HEADER_BYTES,
+  CONTEXT_INDEX_REQUIRED_SECTIONS,
   CONTEXT_INDEX_SECTION,
   ContextIndexFormatError,
   contextIndexChecksum,
   readContextIndexHeader,
   readSectionTable,
 } from '../format.js';
+import {
+  CONTEXT_INDEX_METADATA_ROW_BYTES,
+  CONTEXT_INDEX_METADATA_TYPE,
+  CONTEXT_INDEX_METADATA_TYPE_COUNT,
+} from '../writer.js';
+import { CONTEXT_INDEX_FIXED_STRIDE_SECTIONS } from '../reader-validate.js';
 import {
   ContextIndexReaderError,
   contextIndexFailureOf,
@@ -50,13 +58,30 @@ test('a file that is not an index is rejected on magic', () => {
   rejects(bytes, 'magic_invalid');
 });
 
-test('an index from a newer layout is rejected and points at an update', () => {
+function withFormatRevision(revision: number): Uint8Array {
   const bytes = FIXTURE_BYTES.slice();
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  view.setUint16(8, 2, true);
+  view.setUint16(8, revision, true);
   view.setUint32(100, Number(contextIndexChecksum(bytes, 0, 100) & 0xffffffffn), true);
-  const error = rejects(bytes, 'revision_unsupported');
+  return bytes;
+}
+
+test('an index from a newer layout is rejected and points at an update', () => {
+  const error = rejects(withFormatRevision(CONTEXT_INDEX_FORMAT_REVISION + 1), 'revision_unsupported');
   assert.equal(contextIndexFailureOf(error)?.repairCommand, 'sks update');
+});
+
+test('an index from format revision 1 is rejected rather than read at the wrong stride', () => {
+  // Revision 2 widened the metadata row from 12 to 16 bytes. A reader that
+  // accepted the older revision would not fail visibly — it would walk the
+  // metadata section at the wrong stride and hand back a plausible node whose
+  // metadata was assembled from misaligned columns. So the check fails closed in
+  // *both* directions of skew, and the older direction gets its own case
+  // because "newer than the reader" is the only one §5 spells out.
+  const error = rejects(withFormatRevision(1), 'revision_unsupported');
+  assert.equal(error.detail.found, 1);
+  assert.equal(error.detail.supported, CONTEXT_INDEX_FORMAT_REVISION);
+  assert.ok(contextIndexFailureOf(error)?.repairCommand.startsWith('sks '));
 });
 
 test('a flipped byte anywhere in a section is caught by its checksum', () => {
@@ -124,6 +149,106 @@ test('a metadata row attached to a node that does not exist is rejected', () => 
   });
   rejects(bytes, 'reference_out_of_range');
 });
+
+/**
+ * The metadata row's tag decides how its value is decoded, so the ways it can be
+ * wrong are not the ways an out-of-range reference is wrong: every case below
+ * leaves every offset in bounds and the file still readable. What it corrupts is
+ * the *meaning*, which is exactly what revision 2 added and therefore exactly
+ * what has to be checked at open.
+ */
+test('a metadata tag outside the type enum is rejected rather than decoded as text', () => {
+  const bytes = patchSection(FIXTURE_BYTES, CONTEXT_INDEX_SECTION.NODE_METADATA, (_payload, view) => {
+    view.setUint16(12, CONTEXT_INDEX_METADATA_TYPE_COUNT, true);
+  });
+  const error = rejects(bytes, 'reference_out_of_range');
+  assert.equal(error.detail.exclusiveMax, CONTEXT_INDEX_METADATA_TYPE_COUNT);
+});
+
+test('metadata rows out of node order are rejected, because the reader binary-searches them', () => {
+  // `metadataOf` finds a node's first row by search and then walks forward. An
+  // unsorted section makes it return part of a node's metadata or none of it,
+  // and nothing about that read looks wrong from the outside.
+  const bytes = patchSection(FIXTURE_BYTES, CONTEXT_INDEX_SECTION.NODE_METADATA, (_payload, view) => {
+    view.setUint32(CONTEXT_INDEX_METADATA_ROW_BYTES, 0, true);
+    view.setUint32(0, 3, true);
+  });
+  rejects(bytes, 'csr_not_monotonic');
+});
+
+test('an array with a hole in its ordinals is rejected rather than reassembled around it', () => {
+  // The fixture's `tags: ['core', 'query']` is two element rows at ordinals 0
+  // and 1. Skipping to 2 would leave the reader appending in row order over a
+  // gap it cannot see — a shorter array than the writer wrote, silently.
+  const rows = metadataRowTypes();
+  const second = rows.indexOf(CONTEXT_INDEX_METADATA_TYPE.ARRAY_ELEMENT, 0) + 1;
+  assert.ok(second > 0 && rows[second] === CONTEXT_INDEX_METADATA_TYPE.ARRAY_ELEMENT, 'the fixture must carry an array');
+  const bytes = patchSection(FIXTURE_BYTES, CONTEXT_INDEX_SECTION.NODE_METADATA, (_payload, view) => {
+    view.setUint16(second * CONTEXT_INDEX_METADATA_ROW_BYTES + 14, 2, true);
+  });
+  rejects(bytes, 'csr_not_monotonic');
+});
+
+test('a scalar row claiming a non-zero ordinal is rejected', () => {
+  const rows = metadataRowTypes();
+  const scalar = rows.findIndex((type) => type !== CONTEXT_INDEX_METADATA_TYPE.ARRAY_ELEMENT);
+  assert.ok(scalar >= 0, 'the fixture must carry a scalar metadata value');
+  const bytes = patchSection(FIXTURE_BYTES, CONTEXT_INDEX_SECTION.NODE_METADATA, (_payload, view) => {
+    view.setUint16(scalar * CONTEXT_INDEX_METADATA_ROW_BYTES + 14, 1, true);
+  });
+  rejects(bytes, 'csr_not_monotonic');
+});
+
+test('a section whose row count and byte length disagree is rejected in both directions', () => {
+  // The descriptor describes its own size twice, and until this check existed
+  // only the overflowing direction was caught: a count *smaller* than the bytes
+  // passed everything and simply made the reader stop early — a node quietly
+  // missing a metadata key, or a claim quietly missing its source hash, with the
+  // section checksum still valid because no byte inside the section moved.
+  //
+  // Reproduced against format revision 1 before being closed here: the campaign
+  // found it after the metadata row widened, but the hole is older than that.
+  const header = readContextIndexHeader(FIXTURE_BYTES);
+  const descriptors = readSectionTable(FIXTURE_BYTES, header);
+  let checked = 0;
+  for (const [index, descriptor] of descriptors.entries()) {
+    const stride = CONTEXT_INDEX_FIXED_STRIDE_SECTIONS.find(([kind]) => kind === descriptor.kind)?.[1];
+    if (stride === undefined) continue;
+    checked += 1;
+    // The fixture carries no lexicon, so four of these sections are empty; a
+    // zero-length section can only be over-claimed, which is the direction that
+    // was already caught and is asserted here anyway.
+    for (const count of descriptor.count === 0 ? [1] : [descriptor.count - 1, descriptor.count + 1]) {
+      const bytes = FIXTURE_BYTES.slice();
+      new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+        .setUint32(CONTEXT_INDEX_HEADER_BYTES + index * 32 + 4, count, true);
+      rejects(bytes, 'count_limit_exceeded');
+    }
+  }
+  assert.equal(checked, CONTEXT_INDEX_FIXED_STRIDE_SECTIONS.length, 'every fixed-stride section must be exercised');
+});
+
+test('every required section is either fixed-stride or the string table', () => {
+  // The list is what makes the check total. A section added to the format and
+  // forgotten here would inherit exactly the hole above, silently.
+  const covered = new Set(CONTEXT_INDEX_FIXED_STRIDE_SECTIONS.map(([kind]) => kind));
+  const uncovered = CONTEXT_INDEX_REQUIRED_SECTIONS.filter((kind) => !covered.has(kind));
+  assert.deepEqual(uncovered, [CONTEXT_INDEX_SECTION.STRING_TABLE]);
+});
+
+/** The fixture's metadata tags, in row order, so a case can find a row by kind. */
+function metadataRowTypes(): number[] {
+  const header = readContextIndexHeader(FIXTURE_BYTES);
+  const section = readSectionTable(FIXTURE_BYTES, header)
+    .find((descriptor) => descriptor.kind === CONTEXT_INDEX_SECTION.NODE_METADATA);
+  assert.ok(section);
+  const view = new DataView(FIXTURE_BYTES.buffer, FIXTURE_BYTES.byteOffset + Number(section.offset), Number(section.length));
+  const types: number[] = [];
+  for (let row = 0; row < section.count; row += 1) {
+    types.push(view.getUint16(row * CONTEXT_INDEX_METADATA_ROW_BYTES + 12, true));
+  }
+  return types;
+}
 
 test('a group id that disagrees with the group table is rejected', () => {
   const bytes = patchSection(FIXTURE_BYTES, CONTEXT_INDEX_SECTION.GROUP_TABLE, (_payload, view) => {

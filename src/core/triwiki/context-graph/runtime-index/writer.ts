@@ -28,6 +28,7 @@ import {
   FRESHNESS_CODE,
   NODE_KIND_CODE,
   RISK_CODE,
+  contextIndexMetadataCells,
   isWorkspaceRelativePosixPath,
   refuse,
 } from './writer-contract.js';
@@ -35,11 +36,11 @@ import {
   StringInterner,
   csrOffsets,
   hexToBytes,
+  metadataTable,
   nodeFlags,
   pairTable,
   provenanceTable,
   termTable,
-  tripleTable,
   u32Section,
 } from './writer-tables.js';
 import { assemble } from './writer-assemble.js';
@@ -49,7 +50,7 @@ import {
   encodeContextIndexLane,
   type ContextIndexLexicalBuild,
 } from './writer-lexical.js';
-import type { ContextIndexWriteInput, ContextIndexWriteResult, ProvenanceRow } from './writer-types.js';
+import type { ContextIndexWriteInput, ContextIndexWriteResult, MetadataRow, ProvenanceRow } from './writer-types.js';
 import type { ContextIndexSectionKind } from './format.js';
 
 export * from './writer-contract.js';
@@ -94,9 +95,13 @@ export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexW
       interner.add(node.path);
     }
     if (node.contentHash !== undefined) interner.add(node.contentHash);
+    // A metadata value is interned as its own canonical text and nothing else,
+    // which is what lets a fixture seed a lexicon term through a metadata value:
+    // `{ lexeme: 'kernel' }` interns `kernel`, so `termId('kernel')` resolves.
+    // The type is carried by the row's tag instead — see `writer-contract.ts`.
     for (const [key, value] of Object.entries(node.metadata ?? {})) {
       interner.add(key);
-      interner.add(Array.isArray(value) ? value.join(',') : String(value));
+      for (const cell of contextIndexMetadataCells(value)) interner.add(cell.text);
     }
   }
 
@@ -181,7 +186,7 @@ export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexW
   // 3. Node rows, now that provenance ids exist.
   const nodeBytes = new Uint8Array(nodes.length * CONTEXT_INDEX_NODE_ROW_BYTES);
   const nodeView = new DataView(nodeBytes.buffer);
-  const metadataRows: Array<[number, number, number]> = [];
+  const metadataRows: MetadataRow[] = [];
   nodes.forEach((node, position) => {
     const at = position * CONTEXT_INDEX_NODE_ROW_BYTES;
     nodeView.setUint8(at, NODE_KIND_CODE.get(node.kind) as number);
@@ -199,14 +204,28 @@ export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexW
     nodeView.setUint32(at + 32, position, true);
     nodeView.setUint32(at + 36, interner.idOf(node.id), true);
     for (const [key, value] of Object.entries(node.metadata ?? {})) {
-      metadataRows.push([
-        position,
-        interner.idOf(key),
-        interner.idOf(Array.isArray(value) ? value.join(',') : String(value)),
-      ]);
+      const keyId = interner.idOf(key);
+      for (const cell of contextIndexMetadataCells(value)) {
+        metadataRows.push({
+          node: position,
+          key: keyId,
+          value: interner.idOf(cell.text),
+          type: cell.type,
+          ordinal: cell.ordinal,
+        });
+      }
     }
   });
-  metadataRows.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+  // `(node, key, ordinal)` is unique by construction — `Object.entries` yields
+  // each key once — so this is a total order and the last two terms are
+  // unreachable. They are written anyway: a comparator that ties is a
+  // comparator whose output depends on the engine's sort stability, and the
+  // writer's determinism contract does not get to assume V8.
+  metadataRows.sort((a, b) => a.node - b.node
+    || a.key - b.key
+    || a.ordinal - b.ordinal
+    || a.type - b.type
+    || a.value - b.value);
 
   // 4. Anchor lane tables, then the two dictionary lanes.
   //
@@ -240,7 +259,7 @@ export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexW
   const payloads = new Map<ContextIndexSectionKind, { bytes: Uint8Array; count: number }>([
     [CONTEXT_INDEX_SECTION.STRING_TABLE, { bytes: interner.encode(), count: interner.size }],
     [CONTEXT_INDEX_SECTION.NODE_TABLE, { bytes: nodeBytes, count: nodes.length }],
-    [CONTEXT_INDEX_SECTION.NODE_METADATA, { bytes: tripleTable(metadataRows), count: metadataRows.length }],
+    [CONTEXT_INDEX_SECTION.NODE_METADATA, { bytes: metadataTable(metadataRows), count: metadataRows.length }],
     [CONTEXT_INDEX_SECTION.EDGE_TABLE, { bytes: edgeBytes, count: orderedEdges.length }],
     [CONTEXT_INDEX_SECTION.OUT_CSR_OFFSETS, { bytes: u32Section(outOffsets), count: outOffsets.length }],
     [CONTEXT_INDEX_SECTION.OUT_CSR_EDGES, { bytes: u32Section(orderedEdges.map((_, position) => position)), count: orderedEdges.length }],

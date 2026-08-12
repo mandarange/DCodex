@@ -15,6 +15,16 @@ import { CONTEXT_GRAPH_REBUILD_INDEX_COMMAND, CONTEXT_GRAPH_UPDATE_COMMAND } fro
  * `formatRevision` is a property of the layout, never of the product. A release
  * that does not change the layout must produce byte-identical indexes.
  *
+ * **Revision 2** widens the metadata row from 12 to 16 bytes and adds a type tag
+ * to it, so a boolean an extractor wrote reads back as a boolean. See
+ * `writer-contract.ts` for the row. A revision-2 reader does **not** read a
+ * revision-1 index, in either direction of skew: the index is a content-
+ * addressed cache that `sks align run --rebuild-index` reproduces deterministic-
+ * ally, so there is nothing to migrate, and a stride-conditional decoder would
+ * turn "which layout am I reading" into a per-row question when §2 makes it an
+ * open-time one. `revision_unsupported` is raised before any count in the header
+ * is believed.
+ *
  * Errors carry a code and numeric facts only. The file holds interned strings
  * from the workspace, so echoing any byte of it into an error message would
  * turn a corrupt-index report into a content leak.
@@ -22,7 +32,7 @@ import { CONTEXT_GRAPH_REBUILD_INDEX_COMMAND, CONTEXT_GRAPH_UPDATE_COMMAND } fro
 
 export const CONTEXT_INDEX_MAGIC = Uint8Array.from([0x53, 0x4b, 0x53, 0x43, 0x47, 0x32, 0x00, 0x00]);
 export const CONTEXT_INDEX_MAGIC_BYTES = 8;
-export const CONTEXT_INDEX_FORMAT_REVISION = 1;
+export const CONTEXT_INDEX_FORMAT_REVISION = 2;
 export const CONTEXT_INDEX_HEADER_BYTES = 104;
 export const CONTEXT_INDEX_SECTION_DESCRIPTOR_BYTES = 32;
 export const CONTEXT_INDEX_HASH_BYTES = 32;
@@ -117,6 +127,34 @@ export const CONTEXT_INDEX_REPAIR_COMMAND = CONTEXT_GRAPH_REBUILD_INDEX_COMMAND;
 export const CONTEXT_INDEX_UPDATE_COMMAND = CONTEXT_GRAPH_UPDATE_COMMAND;
 
 /**
+ * An unsupported revision has two directions and only one of them is `sks update`.
+ *
+ * The original rule assumed the artifact was always ahead of the reader — an
+ * index written by a newer build, repaired by upgrading. Revision 2 makes the
+ * opposite case the common one: on upgrade, every existing workspace holds a
+ * revision-1 index and a reader that is already current. Telling that user to
+ * update names a command that will change nothing, and leaves the only real
+ * repair — rebuilding the index — unsaid.
+ *
+ * So the direction decides. Older artifact than reader: rebuild. Newer artifact,
+ * or any other unsupported-format cause (bad magic, unknown section kind), where
+ * nothing here can know the artifact is merely stale: update.
+ */
+function formatRepairCommandFor(
+  code: ContextIndexFormatErrorCode,
+  detail: Record<string, number | bigint>
+): string {
+  if (CONTEXT_INDEX_FORMAT_ERRORS[code] !== 'context_index_format_unsupported') {
+    return CONTEXT_INDEX_REPAIR_COMMAND;
+  }
+  if (code !== 'revision_unsupported') return CONTEXT_INDEX_UPDATE_COMMAND;
+  const found = Number(detail.found);
+  const supported = Number(detail.supported);
+  if (!Number.isFinite(found) || !Number.isFinite(supported)) return CONTEXT_INDEX_UPDATE_COMMAND;
+  return found < supported ? CONTEXT_INDEX_REPAIR_COMMAND : CONTEXT_INDEX_UPDATE_COMMAND;
+}
+
+/**
  * Carries the failing code and integers only.
  *
  * `detail` is typed to numbers on purpose: a `string` field here would sooner
@@ -133,9 +171,7 @@ export class ContextIndexFormatError extends Error {
     this.name = 'ContextIndexFormatError';
     this.code = code;
     this.publicCode = CONTEXT_INDEX_FORMAT_ERRORS[code];
-    this.repairCommand = this.publicCode === 'context_index_format_unsupported'
-      ? CONTEXT_INDEX_UPDATE_COMMAND
-      : CONTEXT_INDEX_REPAIR_COMMAND;
+    this.repairCommand = formatRepairCommandFor(code, detail);
     const numeric: Record<string, number> = {};
     for (const [key, value] of Object.entries(detail)) {
       const asNumber = typeof value === 'bigint' ? Number(value) : value;

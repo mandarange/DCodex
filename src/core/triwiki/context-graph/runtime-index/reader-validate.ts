@@ -28,6 +28,8 @@ import {
 import {
   CONTEXT_INDEX_EDGE_ROW_BYTES,
   CONTEXT_INDEX_METADATA_ROW_BYTES,
+  CONTEXT_INDEX_METADATA_TYPE,
+  CONTEXT_INDEX_METADATA_TYPE_COUNT,
   CONTEXT_INDEX_NODE_ROW_BYTES,
   CONTEXT_INDEX_NO_VALUE,
   CONTEXT_INDEX_PROVENANCE_ROW_BYTES,
@@ -43,6 +45,8 @@ import {
   FRESHNESS_CODES,
   METADATA_KEY_AT,
   METADATA_NODE_AT,
+  METADATA_ORDINAL_AT,
+  METADATA_TYPE_AT,
   METADATA_VALUE_AT,
   NODE_CONTENT_HASH_AT,
   NODE_FRESHNESS_AT,
@@ -71,6 +75,64 @@ import {
  */
 function requireCount(actual: number, expected: number, kind: number): void {
   if (actual !== expected) throw new ContextIndexFormatError('count_limit_exceeded', { kind, actual, expected });
+}
+
+/**
+ * Every fixed-width section, and the width of its row.
+ *
+ * `STRING_TABLE` is the one section absent, because it is the one section whose
+ * length is not a multiple of anything — `validateStringTable` proves its shape
+ * instead. `format.test.ts` asserts that this list plus the string table is the
+ * whole required set, so a section added to the format cannot quietly opt out.
+ */
+export const CONTEXT_INDEX_FIXED_STRIDE_SECTIONS: readonly (readonly [number, number])[] = Object.freeze([
+  [CONTEXT_INDEX_SECTION.NODE_TABLE, CONTEXT_INDEX_NODE_ROW_BYTES],
+  [CONTEXT_INDEX_SECTION.NODE_METADATA, CONTEXT_INDEX_METADATA_ROW_BYTES],
+  [CONTEXT_INDEX_SECTION.EDGE_TABLE, CONTEXT_INDEX_EDGE_ROW_BYTES],
+  [CONTEXT_INDEX_SECTION.OUT_CSR_OFFSETS, 4],
+  [CONTEXT_INDEX_SECTION.OUT_CSR_EDGES, 4],
+  [CONTEXT_INDEX_SECTION.IN_CSR_OFFSETS, 4],
+  [CONTEXT_INDEX_SECTION.IN_CSR_EDGES, 4],
+  [CONTEXT_INDEX_SECTION.EXACT_TERM_TABLE, CONTEXT_INDEX_TERM_ROW_BYTES],
+  [CONTEXT_INDEX_SECTION.EXACT_POSTINGS, 4],
+  [CONTEXT_INDEX_SECTION.BASENAME_TABLE, CONTEXT_INDEX_TERM_ROW_BYTES],
+  [CONTEXT_INDEX_SECTION.BASENAME_POSTINGS, 4],
+  [CONTEXT_INDEX_SECTION.LEXICON_TABLE, CONTEXT_INDEX_TERM_ROW_BYTES],
+  [CONTEXT_INDEX_SECTION.LEXICON_POSTINGS, 4],
+  [CONTEXT_INDEX_SECTION.COARSE_TERM_TABLE, CONTEXT_INDEX_TERM_ROW_BYTES],
+  [CONTEXT_INDEX_SECTION.COARSE_POSTINGS, 4],
+  [CONTEXT_INDEX_SECTION.PROVENANCE_TABLE, CONTEXT_INDEX_PROVENANCE_ROW_BYTES],
+  [CONTEXT_INDEX_SECTION.GROUP_TABLE, 4],
+  [CONTEXT_INDEX_SECTION.CYCLE_TABLE, 4],
+  [CONTEXT_INDEX_SECTION.SOURCE_HASH_TABLE, CONTEXT_INDEX_SOURCE_HASH_ROW_BYTES],
+]);
+
+/**
+ * A section's two descriptions of its own size must agree exactly.
+ *
+ * The descriptor carries both a row `count` and a byte `length`, and until this
+ * check existed only one direction was caught: a count *larger* than the bytes
+ * overflows a later bound and is refused, while a count *smaller* than the bytes
+ * passes every check and simply makes the reader stop early. On the metadata and
+ * source-hash sections that is a node quietly missing a key, or a claim quietly
+ * missing its evidence, with the section checksum still valid — the checksum
+ * covers `offset..offset+length`, and lowering the count does not touch a byte
+ * inside that range.
+ *
+ * Found by the CG2 fuzz campaign, which drew the byte only after the metadata
+ * row widened; the hole itself predates format revision 2 and was reproduced on
+ * revision 1 before being closed here.
+ */
+function requireExactRows(descriptor: SectionDescriptor, stride: number): void {
+  const length = Number(descriptor.length);
+  if (descriptor.count * stride !== length) {
+    throw new ContextIndexFormatError('count_limit_exceeded', {
+      kind: descriptor.kind,
+      count: descriptor.count,
+      stride,
+      length,
+    });
+  }
 }
 
 export function validateContextIndexPayloads(
@@ -103,6 +165,10 @@ export function validateContextIndexPayloads(
     CONTEXT_INDEX_SECTION.EXACT_TERM_TABLE,
   );
 
+  // Before any payload is read: a section whose declared row count disagrees
+  // with its declared byte length is not a section this reader can walk.
+  for (const [kind, stride] of CONTEXT_INDEX_FIXED_STRIDE_SECTIONS) requireExactRows(sectionOf(byKind, kind), stride);
+
   validateStringTable(bytes, strings);
   validateCsrOffsets(bytes, outOffsets, outEdges, header.nodeCount);
   validateCsrOffsets(bytes, inOffsets, inEdges, header.nodeCount);
@@ -126,6 +192,8 @@ export function validateContextIndexPayloads(
   validateReferenceRange(bytes, sourceHashes, CONTEXT_INDEX_SOURCE_HASH_ROW_BYTES, SOURCE_HASH_PATH_AT, stringCount);
   validateReferenceRange(bytes, sourceHashes, CONTEXT_INDEX_SOURCE_HASH_ROW_BYTES, SOURCE_HASH_HASH_AT, stringCount);
 
+  validateMetadataRows(bytes, metadata);
+
   for (const [table, postings] of [
     [CONTEXT_INDEX_SECTION.EXACT_TERM_TABLE, CONTEXT_INDEX_SECTION.EXACT_POSTINGS],
     [CONTEXT_INDEX_SECTION.BASENAME_TABLE, CONTEXT_INDEX_SECTION.BASENAME_POSTINGS],
@@ -136,6 +204,71 @@ export function validateContextIndexPayloads(
   }
 
   validateEnums(bytes, header, nodes, edges, groups, stringCount);
+}
+
+/**
+ * The metadata section's shape, which revision 1 never checked at all.
+ *
+ * Three properties, each of which some read downstream already assumes:
+ *
+ * - **Ascending `(node, key, ordinal)`.** `metadataOf` binary-searches for a
+ *   node and then walks forward until the node changes. An unsorted section
+ *   would make it return part of a node's metadata, or none of it, with nothing
+ *   raised — the same class of silent wrong answer as an unsorted term table.
+ * - **A tag inside the enum.** Decoded straight into a union, exactly like the
+ *   node and edge enums two functions below.
+ * - **Dense array ordinals.** An entry's first row is ordinal 0, and an array
+ *   continues only by exactly one. Without this the reader would have to
+ *   tolerate a hole, and tolerating a hole means guessing at what belonged in
+ *   it — the best-effort salvage ADR §5 forbids.
+ *
+ * One linear pass of three loads per row, on a path that already walks every
+ * node and every edge.
+ */
+function validateMetadataRows(bytes: Uint8Array, metadata: SectionDescriptor): void {
+  if (metadata.count === 0) return;
+  const view = new DataView(bytes.buffer, bytes.byteOffset + Number(metadata.offset), Number(metadata.length));
+  let previousNode = -1;
+  let previousKey = -1;
+  let previousOrdinal = -1;
+  let previousType = -1;
+  for (let row = 0; row < metadata.count; row += 1) {
+    const at = row * CONTEXT_INDEX_METADATA_ROW_BYTES;
+    const node = view.getUint32(at + METADATA_NODE_AT, true);
+    const key = view.getUint32(at + METADATA_KEY_AT, true);
+    const type = view.getUint16(at + METADATA_TYPE_AT, true);
+    const ordinal = view.getUint16(at + METADATA_ORDINAL_AT, true);
+    if (type >= CONTEXT_INDEX_METADATA_TYPE_COUNT) {
+      throw new ContextIndexFormatError('reference_out_of_range', {
+        row,
+        value: type,
+        exclusiveMax: CONTEXT_INDEX_METADATA_TYPE_COUNT,
+      });
+    }
+    const continues = node === previousNode && key === previousKey;
+    const ascends = node > previousNode
+      || (node === previousNode && key > previousKey)
+      || (continues && ordinal > previousOrdinal);
+    if (!ascends) {
+      throw new ContextIndexFormatError('csr_not_monotonic', { row, node, key, ordinal });
+    }
+    if (continues) {
+      // Only an array spans rows, and only one element at a time.
+      if (
+        type !== CONTEXT_INDEX_METADATA_TYPE.ARRAY_ELEMENT
+        || previousType !== CONTEXT_INDEX_METADATA_TYPE.ARRAY_ELEMENT
+        || ordinal !== previousOrdinal + 1
+      ) {
+        throw new ContextIndexFormatError('csr_not_monotonic', { row, type, ordinal, previous: previousOrdinal });
+      }
+    } else if (ordinal !== 0) {
+      throw new ContextIndexFormatError('csr_not_monotonic', { row, ordinal });
+    }
+    previousNode = node;
+    previousKey = key;
+    previousOrdinal = ordinal;
+    previousType = type;
+  }
 }
 
 /**

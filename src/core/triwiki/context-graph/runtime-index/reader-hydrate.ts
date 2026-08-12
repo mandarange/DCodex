@@ -13,6 +13,7 @@ import {
   type ContextGraphEdgeConfidence,
   type ContextGraphEdgeType,
   type ContextGraphFreshness,
+  type ContextGraphMetadata,
   type ContextGraphNodeKind,
   type ContextGraphRisk,
 } from '../contracts.js';
@@ -20,9 +21,11 @@ import { dequantizeTrust } from './format.js';
 import {
   CONTEXT_INDEX_EDGE_ROW_BYTES,
   CONTEXT_INDEX_METADATA_ROW_BYTES,
+  CONTEXT_INDEX_METADATA_TYPE,
   CONTEXT_INDEX_NO_VALUE,
   CONTEXT_INDEX_PROVENANCE_ROW_BYTES,
   CONTEXT_INDEX_SOURCE_HASH_ROW_BYTES,
+  contextIndexMetadataValue,
 } from './writer.js';
 import {
   CONFIDENCE_CODES,
@@ -35,6 +38,7 @@ import {
   FRESHNESS_CODES,
   METADATA_KEY_AT,
   METADATA_NODE_AT,
+  METADATA_TYPE_AT,
   METADATA_VALUE_AT,
   NODE_COLUMN_AT,
   NODE_CONTENT_HASH_AT,
@@ -91,9 +95,17 @@ export function hydrateNodeAt(geometry: ContextIndexGeometry, node: number, at: 
   };
 }
 
-/** Metadata rows are sorted by node, so the run is found by search, not by scan. */
-function metadataOf(geometry: ContextIndexGeometry, node: number): Readonly<Record<string, string>> {
-  const metadata: Record<string, string> = {};
+/**
+ * Metadata rows are sorted by node, so the run is found by search, not by scan.
+ *
+ * Within a node the rows are ascending by `(key, ordinal)`, and `open` proved
+ * that an array's ordinals start at 0 and advance by exactly one — so the array
+ * branch can append in row order without sorting, and cannot leave a hole. That
+ * proof is why this function has no failure mode: it never sees a run it would
+ * have to guess at, because such a file was rejected at open.
+ */
+function metadataOf(geometry: ContextIndexGeometry, node: number): Readonly<ContextGraphMetadata> {
+  const metadata: ContextGraphMetadata = {};
   let low = 0;
   let high = geometry.metadataCount - 1;
   let first = -1;
@@ -114,8 +126,20 @@ function metadataOf(geometry: ContextIndexGeometry, node: number): Readonly<Reco
   for (let row = first; row < geometry.metadataCount; row += 1) {
     const at = geometry.metadataBase + row * CONTEXT_INDEX_METADATA_ROW_BYTES;
     if (geometry.view.getUint32(at + METADATA_NODE_AT, true) !== node) break;
-    metadata[stringAt(geometry, geometry.view.getUint32(at + METADATA_KEY_AT, true))] =
-      stringAt(geometry, geometry.view.getUint32(at + METADATA_VALUE_AT, true));
+    const key = stringAt(geometry, geometry.view.getUint32(at + METADATA_KEY_AT, true));
+    const type = geometry.view.getUint16(at + METADATA_TYPE_AT, true);
+    const text = stringAt(geometry, geometry.view.getUint32(at + METADATA_VALUE_AT, true));
+    if (type === CONTEXT_INDEX_METADATA_TYPE.ARRAY_EMPTY) {
+      metadata[key] = [];
+      continue;
+    }
+    if (type === CONTEXT_INDEX_METADATA_TYPE.ARRAY_ELEMENT) {
+      const run = metadata[key];
+      if (Array.isArray(run)) run.push(text);
+      else metadata[key] = [text];
+      continue;
+    }
+    metadata[key] = contextIndexMetadataValue(type, text);
   }
   return metadata;
 }

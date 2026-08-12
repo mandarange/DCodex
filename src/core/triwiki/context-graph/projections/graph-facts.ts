@@ -215,14 +215,17 @@ export function contextNodeText(view: ContextGraphNodeView, key: string): string
 /**
  * A metadata value read as a number.
  *
- * The counterpart to `contextNodeFlag`: the writer interns `42` as `'42'`, so
- * every v1 predicate spelled `typeof metadata.lines === 'number'` goes silently
- * false against a v2 index and the projected sentence loses a fact it had. The
- * empty-string guard is load-bearing — `Number('')` is `0`, which would report a
+ * The counterpart to `contextNodeFlag`. Format revision 1 interned `42` as
+ * `'42'`, so every predicate spelled `typeof metadata.lines === 'number'` went
+ * silently false and the projected sentence lost a fact it had; revision 2's row
+ * tag restores the number. The text arm stays for the same reason the flag's
+ * does — a metadata value may legitimately be authored as text — and the
+ * empty-string guard stays because `Number('')` is `0`, which would report a
  * file of zero lines as a measured fact rather than as a missing one.
  */
 export function contextNodeCount(view: ContextGraphNodeView, key: string): number | null {
   const raw = view.metadata[key];
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
   if (typeof raw !== 'string' || raw === '') return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;

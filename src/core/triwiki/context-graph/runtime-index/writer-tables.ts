@@ -10,7 +10,12 @@
 import type { ContextGraphNode } from '../contracts.js';
 import { quantizeTrust } from './format.js';
 import {
+  CONTEXT_INDEX_METADATA_KEY_AT,
+  CONTEXT_INDEX_METADATA_NODE_AT,
+  CONTEXT_INDEX_METADATA_ORDINAL_AT,
   CONTEXT_INDEX_METADATA_ROW_BYTES,
+  CONTEXT_INDEX_METADATA_TYPE_AT,
+  CONTEXT_INDEX_METADATA_VALUE_AT,
   CONTEXT_INDEX_NODE_FLAG,
   CONTEXT_INDEX_NO_VALUE,
   CONTEXT_INDEX_PROVENANCE_ROW_BYTES,
@@ -19,7 +24,7 @@ import {
   EVIDENCE_KINDS,
   TEST_OR_GATE_KINDS,
 } from './writer-contract.js';
-import type { ProvenanceRow } from './writer-types.js';
+import type { MetadataRow, ProvenanceRow } from './writer-types.js';
 
 export class StringInterner {
   private readonly values = new Set<string>();
@@ -141,14 +146,24 @@ export function provenanceTable(rows: readonly ProvenanceRow[]): Uint8Array {
   return bytes;
 }
 
-export function tripleTable(rows: readonly (readonly [number, number, number])[]): Uint8Array {
+/**
+ * The node-metadata section: node, key, value, tag, ordinal.
+ *
+ * Written through the contract's named offsets rather than through literals,
+ * because the tag is what tells the reader how to interpret the value — a
+ * one-column skew here would not corrupt visibly, it would hand back a
+ * confidently wrong type.
+ */
+export function metadataTable(rows: readonly MetadataRow[]): Uint8Array {
   const bytes = new Uint8Array(rows.length * CONTEXT_INDEX_METADATA_ROW_BYTES);
   const view = new DataView(bytes.buffer);
   rows.forEach((row, position) => {
     const at = position * CONTEXT_INDEX_METADATA_ROW_BYTES;
-    view.setUint32(at, row[0], true);
-    view.setUint32(at + 4, row[1], true);
-    view.setUint32(at + 8, row[2], true);
+    view.setUint32(at + CONTEXT_INDEX_METADATA_NODE_AT, row.node, true);
+    view.setUint32(at + CONTEXT_INDEX_METADATA_KEY_AT, row.key, true);
+    view.setUint32(at + CONTEXT_INDEX_METADATA_VALUE_AT, row.value, true);
+    view.setUint16(at + CONTEXT_INDEX_METADATA_TYPE_AT, row.type, true);
+    view.setUint16(at + CONTEXT_INDEX_METADATA_ORDINAL_AT, row.ordinal, true);
   });
   return bytes;
 }

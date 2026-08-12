@@ -3,18 +3,22 @@
  * dispositions. Both are here because reasoning about either one produced the
  * wrong answer, and measuring produced the right one.
  *
- * **1. Metadata values lose their type through the writer.** `writer.ts` interns
- * a value as `Array.isArray(value) ? value.join(',') : String(value)` and the
- * reader hands back `Record<string, string>`, so a boolean `true` written by an
- * extractor arrives as the string `"true"` and every consumer asking
- * `metadata.isTest === true` silently stops matching. A string array is joined
- * on a comma the value may itself contain, and no consumer can reverse it. The
- * format-level fix needs a type code in the metadata row — a 12→16 byte layout
- * change — which is not this card's. What is this card's is making the gap a
- * number that reappears on every run, so the fix cannot be forgotten between
- * rounds. `contextNodeFlag` is a consumer-level workaround, not the fix: it
- * works only for call sites that remember to use it, and this module counts how
- * many predicates are lost when one does not.
+ * **1. Metadata values used to lose their type through the writer — fixed in
+ * format revision 2, and still measured.** Revision 1 interned a value as
+ * `Array.isArray(value) ? value.join(',') : String(value)` and the reader handed
+ * back `Record<string, string>`, so a boolean `true` written by an extractor
+ * arrived as the string `"true"` and every consumer asking `metadata.isTest ===
+ * true` silently stopped matching; a string array was joined on a comma the
+ * value could itself contain, unreversibly. Measured at 11 lost predicates
+ * across 9 fixture families. Revision 2's 16-byte metadata row carries a type
+ * tag, and the counts below now have to agree rather than differ.
+ *
+ * The measurement is kept, not deleted, and its assertions were inverted instead.
+ * The failure it guards is invisible by construction — a lost predicate makes a
+ * test selector choose *fewer* tests and the suite run *faster* — so the number
+ * that proves it is absent is worth more than the number that proved it present.
+ * `contextNodeFlag` is kept for the same reason: extractors author these flags
+ * as booleans *and* as text, so the helper reads both.
  *
  * **2. The protected-gate metadata flags are unreachable, not merely untested.**
  * The release record asked for a fixture family exercising a gate protected only
@@ -41,7 +45,7 @@ import { contextNodeFlag } from '../query/index.js';
 import { openContextIndex } from '../runtime-index/reader.js';
 import { encodeContextIndex } from '../runtime-index/writer.js';
 
-/** The metadata value types the contract allows. `string` is the only one that survives. */
+/** The metadata value types the contract allows. Under revision 2, all five survive. */
 export type Crk2MetadataValueType = 'string' | 'boolean' | 'number' | 'null' | 'string_array';
 
 function valueTypeOf(value: ContextGraphMetadataValue): Crk2MetadataValueType {
@@ -59,7 +63,7 @@ export interface Crk2MetadataTypeLoss {
   readonly preserved: Readonly<Record<Crk2MetadataValueType, number>>;
   /** `=== true` predicate matches on the snapshot side. */
   readonly booleanTruePredicatesV1: number;
-  /** The same predicate against the reader's `Record<string, string>`; structurally zero. */
+  /** The same predicate against the reader's view. Structurally zero before revision 2. */
   readonly booleanTruePredicatesV2: number;
   /** The same predicate read through the `contextNodeFlag` workaround. */
   readonly booleanTruePredicatesViaFlag: number;
@@ -116,24 +120,47 @@ export function measureMetadataTypeLoss(snapshot: ContextGraphSnapshot): Crk2Met
       const readBack: unknown = view?.metadata[key];
       // `typeof readBack === typeof value` would call `null` an object and pass;
       // the authored type is what a consumer's predicate is written against.
-      if (type === 'string' && typeof readBack === 'string' && readBack === value) preserved.string += 1;
+      if (type === 'string') {
+        if (typeof readBack === 'string' && readBack === value) preserved.string += 1;
+        else lostKeys.add(key);
+      }
       if (type === 'boolean') {
+        // Both polarities are counted as preserved. Only `true` feeds the
+        // predicate counts, because `=== true` is the predicate the release
+        // record measured — but a writer that turned `false` into `'false'`
+        // would break `!== true` consumers just as silently, so the loss set
+        // sees both.
+        if (readBack === value) preserved.boolean += 1;
+        else lostKeys.add(key);
         if (value === true) {
           booleanTrueV1 += 1;
           if ((readBack as unknown) === true) booleanTrueV2 += 1;
           if (view && contextNodeFlag(view, key)) booleanTrueViaFlag += 1;
-          if ((readBack as unknown) !== true) lostKeys.add(key);
         }
       }
       if (type === 'string_array') {
-        if (Array.isArray(readBack)) preserved.string_array += 1;
+        // Element-wise, not `Array.isArray`. A writer that handed back an array
+        // of the wrong length, or with the elements reordered, would satisfy the
+        // shape check while losing exactly the information the join used to
+        // lose.
+        const authored = value as readonly string[];
+        if (
+          Array.isArray(readBack)
+          && readBack.length === authored.length
+          && authored.every((item, at) => readBack[at] === item)
+        ) preserved.string_array += 1;
         else lostKeys.add(key);
-        if ((value as readonly string[]).some((item) => item.includes(','))) ambiguousArrayJoins += 1;
+        if (authored.some((item) => item.includes(','))) ambiguousArrayJoins += 1;
       }
-      if (type === 'number' && typeof readBack === 'number') preserved.number += 1;
-      if (type === 'null' && readBack === null) preserved.null += 1;
-      if (type === 'number' && typeof readBack !== 'number') lostKeys.add(key);
-      if (type === 'null' && readBack !== null) lostKeys.add(key);
+      if (type === 'number') {
+        if (typeof readBack === 'number' && (readBack === value || (Number.isNaN(readBack) && Number.isNaN(value)))) {
+          preserved.number += 1;
+        } else lostKeys.add(key);
+      }
+      if (type === 'null') {
+        if (readBack === null) preserved.null += 1;
+        else lostKeys.add(key);
+      }
     }
   }
 

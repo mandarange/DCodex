@@ -41,10 +41,24 @@ export const EDGE_FLAGS_AT = 6;
 export const EDGE_PROVENANCE_AT = 8;
 export const EDGE_PROFILE_MASK_AT = 12;
 
-/** Metadata row, 12 bytes, sorted by node. */
-export const METADATA_NODE_AT = 0;
-export const METADATA_KEY_AT = 4;
-export const METADATA_VALUE_AT = 8;
+/**
+ * Metadata row, 16 bytes, sorted by `(node, key, ordinal)`.
+ *
+ * The one row whose offsets are *not* re-derived here. Every other layout above
+ * is a decoding of the writer that the round-trip test guards, and that is
+ * adequate when a skew produces obvious garbage. This row's `type` column
+ * decides how its `value` column is interpreted, so a skew would produce a
+ * plausible value of the wrong type — the exact failure format revision 2 was
+ * cut to remove — which is why the writer's contract is the single declaration
+ * and this module only re-exports it.
+ */
+export {
+  CONTEXT_INDEX_METADATA_NODE_AT as METADATA_NODE_AT,
+  CONTEXT_INDEX_METADATA_KEY_AT as METADATA_KEY_AT,
+  CONTEXT_INDEX_METADATA_VALUE_AT as METADATA_VALUE_AT,
+  CONTEXT_INDEX_METADATA_TYPE_AT as METADATA_TYPE_AT,
+  CONTEXT_INDEX_METADATA_ORDINAL_AT as METADATA_ORDINAL_AT,
+} from './writer-contract.js';
 
 /** Provenance row, 16 bytes. */
 export const PROVENANCE_PATH_AT = 0;

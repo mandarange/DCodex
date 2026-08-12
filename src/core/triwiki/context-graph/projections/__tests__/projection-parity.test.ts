@@ -21,7 +21,11 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { queryWorkspaceContext } from '../../query/index.js';
+import { CONTEXT_GRAPH_SCHEMA, type ContextGraphSnapshot } from '../../contracts.js';
+import { openContextIndex } from '../../runtime-index/reader.js';
+import { encodeContextIndex } from '../../runtime-index/writer.js';
+import { contextNodeFlag, queryWorkspaceContext } from '../../query/index.js';
+import { contextNodeCount, contextNodeText } from '../graph-facts.js';
 import { contextGraphQueryProfile } from '../../profiles.js';
 import { projectContextGraphAnchors, projectContextPackAnchors } from '../anchors.js';
 import { readContextGraphAttention } from '../attention.js';
@@ -160,18 +164,87 @@ test('a stale index is refused with the stale code, not answered from the previo
 /**
  * The two defects the release record names, asserted on this lane's own reads.
  *
- * `isTest` and `exported` are the metadata predicates these six carry, and both
- * arrive as strings from the writer. `contextNodeFlag` is what makes them match;
- * the module label is what still does not resolve.
+ * `isTest` and `exported` are the metadata predicates these six carry. Under
+ * format revision 1 both arrived as strings and `contextNodeFlag` was what made
+ * them match; revision 2's metadata row tag restores the authored type, and the
+ * helper now reads either spelling. The module label is what still does not
+ * resolve.
  */
-test('metadata flags survive the string interning, and the label lane is still absent', async () => {
+/**
+ * The two helpers every projection reads metadata through, against both
+ * spellings, on a real index.
+ *
+ * Format revision 2 gave a metadata value its authored type back, which makes
+ * the *boolean* arm the one that now works — and makes the text arm look
+ * vestigial enough to delete. It is not: `extractors/topology/gates.ts` writes a
+ * real boolean while several fixtures and hand-authored graphs write `'true'`,
+ * and both are legal `ContextGraphMetadataValue`s meaning the same thing. A
+ * helper narrowed to either spelling alone would move the silent-false failure
+ * to the other set of nodes rather than remove it — and nothing else in this
+ * package would notice, which is why the coverage is here rather than implied by
+ * a fixture that happens to author one of the two.
+ */
+test('the metadata helpers read the authored type and the text spelling alike', () => {
+  const node = (id: string, metadata: ContextGraphSnapshot['nodes'][number]['metadata']) => ({
+    id,
+    kind: 'file' as const,
+    label: id,
+    trust: 0.5,
+    freshness: 'fresh' as const,
+    risk: 'low' as const,
+    tokenCost: 10,
+    metadata,
+  });
+  const snapshot: ContextGraphSnapshot = {
+    schema: CONTEXT_GRAPH_SCHEMA,
+    schemaRevision: '1.0.0',
+    snapshotHash: 'a'.repeat(64),
+    nodes: [
+      node('file:src/typed.ts', { exported: true, notExported: false, lines: 42, purpose: 'typed' }),
+      node('file:src/text.ts', { exported: 'true', notExported: 'false', lines: '42', purpose: 'text' }),
+      node('file:src/one.ts', { exported: '1' }),
+    ],
+    edges: [],
+    cycles: [],
+    extractors: [],
+    nodeCount: 3,
+    edgeCount: 0,
+  };
+  const reader = openContextIndex(encodeContextIndex({
+    snapshot,
+    configHash: new Uint8Array(32).fill(0x5a),
+    schemaRevision: 1,
+  }).bytes);
+  // By canonical id, not by insertion order: the writer sorts nodes by id, so
+  // positional indexing here would silently test the wrong node.
+  const byId = (id: string) => reader.hydrateNode(reader.exact(id).node(0));
+  const typed = byId('file:src/typed.ts');
+  const text = byId('file:src/text.ts');
+  const one = byId('file:src/one.ts');
+
+  for (const view of [typed, text, one]) {
+    assert.equal(contextNodeFlag(view, 'exported'), true, `${view.id} lost its exported flag`);
+  }
+  for (const view of [typed, text]) {
+    assert.equal(contextNodeFlag(view, 'notExported'), false, `${view.id} gained a flag it does not carry`);
+    assert.equal(contextNodeCount(view, 'lines'), 42, `${view.id} lost its line count`);
+    assert.equal(contextNodeText(view, 'purpose'), view.id.includes('typed') ? 'typed' : 'text');
+  }
+  // An absent key is absent under either spelling, never a default.
+  assert.equal(contextNodeFlag(typed, 'missing'), false);
+  assert.equal(contextNodeCount(typed, 'missing'), null);
+  assert.equal(contextNodeText(typed, 'missing'), null);
+});
+
+test('metadata flags keep their authored type, and the label lane is still absent', async () => {
   const fixture = await createIndexedProjectionFixture({ fillerModules: 1 });
   try {
     const hub = fixture.cursor.node(fixture.reader.exact(fixture.hubFileNodeId).node(0));
     assert.ok(hub, 'the hub file must resolve by its canonical id');
-    // Measured, not assumed: the writer interned the extractor's boolean as text.
-    assert.equal(hub.metadata.isTest, 'false');
-    assert.equal(typeof hub.metadata.fanIn, 'string');
+    // Measured, not assumed: the extractor writes a boolean and a number, and
+    // both arrive as one. Revision 1 gave `'false'` and a decimal string here.
+    assert.equal(hub.metadata.isTest, false);
+    assert.equal(typeof hub.metadata.fanIn, 'number');
 
     const candidates = rankModuleCandidates(
       fixture.reader,
@@ -181,14 +254,16 @@ test('metadata flags survive the string interning, and the label lane is still a
     );
     const hubModule = candidates.find((candidate) => candidate.node.label === HUB_MODULE_LABEL);
     assert.ok(hubModule);
-    // `exported` is read through `contextNodeFlag`. Compared against `true` it is
-    // always false, and this sentence collapses to "no exported surface".
+    // `exported` is read through `contextNodeFlag`, which reads a boolean and
+    // the text spellings alike. If it ever narrows to one of them, this sentence
+    // collapses to "no exported surface" with nothing raised.
     assert.ok(
       hubModule.text.includes('Key exports:'),
       `the exported-symbol predicate lost its metadata arm: ${hubModule.text}`
     );
-    // `fanIn` and `fileCount` are interned as text too; the headline keeps them
-    // only because they are parsed rather than type-checked.
+    // `fanIn` and `fileCount` reach the headline through `contextNodeCount`,
+    // which must accept the number the format now carries as well as the text it
+    // used to.
     assert.ok(/\d+ files?,/.test(hubModule.text), hubModule.text);
   } finally {
     removeProjectionFixture(fixture.root);

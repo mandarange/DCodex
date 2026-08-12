@@ -48,9 +48,26 @@ export const CONTEXT_INDEX_STORE_REBUILD_COMMAND = CONTEXT_GRAPH_REBUILD_INDEX_C
 export const CONTEXT_INDEX_STORE_ALIGN_COMMAND = CONTEXT_GRAPH_REPAIR_COMMAND;
 export const CONTEXT_INDEX_STORE_UPDATE_COMMAND = CONTEXT_GRAPH_UPDATE_COMMAND;
 
-/** Every failure names exactly one command; no error in this family is advisory (ADR §5). */
-function repairCommandFor(publicCode: string): string {
-  if (publicCode === 'context_index_format_unsupported') return CONTEXT_INDEX_STORE_UPDATE_COMMAND;
+/**
+ * Every failure names exactly one command; no error in this family is advisory
+ * (ADR §5).
+ *
+ * An unsupported revision has two directions and only one of them is
+ * `sks update`. The rule was written when the artifact was always assumed ahead
+ * of the reader — an index from a newer build, repaired by upgrading. Revision 2
+ * makes the opposite case the common one: on upgrade every existing workspace
+ * holds a revision-1 pointer and a build that is already current, and telling
+ * that user to update names a command that will change nothing while leaving the
+ * real repair unsaid. The pointer carries both revisions as integers, so the
+ * direction is known here.
+ */
+function repairCommandFor(publicCode: string, detail: Record<string, number>): string {
+  if (publicCode === 'context_index_format_unsupported') {
+    const found = Number(detail.found);
+    const supported = Number(detail.supported);
+    const artifactIsOlder = Number.isFinite(found) && Number.isFinite(supported) && found < supported;
+    return artifactIsOlder ? CONTEXT_INDEX_STORE_REBUILD_COMMAND : CONTEXT_INDEX_STORE_UPDATE_COMMAND;
+  }
   if (publicCode === 'context_index_missing' || publicCode === 'context_index_stale') {
     return CONTEXT_INDEX_STORE_ALIGN_COMMAND;
   }
@@ -69,11 +86,11 @@ export class ContextIndexStoreError extends Error {
     this.name = 'ContextIndexStoreError';
     this.code = code;
     this.publicCode = CONTEXT_INDEX_STORE_ERRORS[code];
-    this.repairCommand = repairCommandFor(this.publicCode);
     const numeric: Record<string, number> = {};
     for (const [key, value] of Object.entries(detail)) {
       if (Number.isFinite(value)) numeric[key] = value;
     }
+    this.repairCommand = repairCommandFor(this.publicCode, numeric);
     this.detail = Object.freeze(numeric);
   }
 }

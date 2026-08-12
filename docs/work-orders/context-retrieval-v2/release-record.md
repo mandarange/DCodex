@@ -429,7 +429,7 @@ its own change widens.
 
 ## A pattern worth naming: built, wired, tested, and never fed
 
-Six defects in this build share one shape, and none of them could have been
+Ten defects in this build share one shape, and none of them could have been
 caught by a passing test:
 
 - The **lexicon** was built, tested with 50 passing cases, and imported by
@@ -451,6 +451,65 @@ caught by a passing test:
 In each case the component worked, its tests passed, and the data never arrived.
 Unit tests cannot see this class; only an end-to-end measurement against a real
 corpus can, which is the argument for the paired run existing at all.
+
+### The pattern nested inside itself — and a correction to the entry above
+
+**`chooseVerificationBudget({ taskProfile, changedFiles: [] })`** was the seventh:
+a hardcoded empty array in `official-subagent-preparation.ts`. `changedFiles` is
+read three ways — release-surface detection (`package.json`, `CHANGELOG.md`,
+`.github/workflows/`, `src/core/release/`, publish scripts), a `tiny-change`
+split at >1 file, and a breadth escalation at >=8 — so with `[]` the budget
+collapsed to a pure function of `taskProfile`. **`'release'` was unreachable from
+that call site for every mission ever prepared**, and breadth never escalated.
+
+Fixing it surfaced the correction. `OfficialSubagentPreparationInput.slices` **is
+never populated by any production caller** — verified directly: all three
+(`runtime-core.ts:1277`, `:1359`, `naruto-command.ts:385`) omit it, and
+`naruto-command.ts` does not contain the word; only tests pass it. So the budget
+fix is correct and *latent*: it computes from a field that never arrives.
+
+**Which means the sixth entry above is overstated.** Slice write scopes were
+wired into the attention query, and that fix is latent for the same reason — the
+scopes are in hand only when `slices` is supplied, and production never supplies
+it. The defect was real and the fix is right; what neither report said is that
+the data still does not arrive one layer up. A fix for "never fed" that is itself
+never fed is the pattern reproducing inside its own repair, and it is worth more
+than the individual defects: **the shape survives being fixed** unless someone
+follows the value all the way to a production caller.
+
+Behind that one unsupplied input sit slice-safety blockers,
+`independentSliceCount`, `readyDagWidth`/`disjointOwnershipCount`, the prompt
+slice table, the attention seeds, and the verification budget — the largest
+single instance in this build. It is **left deliberately**: populating `slices`
+means SKS decomposing the mission itself rather than the parent doing it, which
+is a product decision and not wiring.
+
+The live half was fixed instead, in `official-subagent-lifecycle.ts:396`. The
+finalizer wrote the *forecast* budget into the completion summary while the
+parent's real, schema-validated `changed_files` sat in scope two lines away.
+`finalizedVerificationBudget` now recomputes from what actually changed and
+**never returns weaker than the plan** — observed breadth may escalate a
+forecast, never relax one. A run that turns out to touch `package.json`
+finalizes as `release` instead of the `affected` it was planned with.
+
+Three further findings on that path, each left with a reason rather than fixed:
+the attention query's `risk` is declared, forwarded, and read in three places
+(traversal depth 2→3, rank bonus, protected-gate reservation) but **never passed
+by its sole production caller**, which has `taskProfile` in hand — so a
+`high-risk` mission traverses exactly as shallowly as a typo fix;
+`plan.verification_checks` is written only as `[]`, so every finalized summary
+reports no checks while the parent's validated rows sit in
+`subagent-parent-summary.json`; and `buildPipelinePlan({ changedFiles })` has the
+same empty-array collapse across ten-plus call sites.
+
+One fix was **written and then reverted**, which is the right call recorded so it
+is not mistaken for an oversight: `naruto-command.ts:549` passes the forecast
+budget into the summary although the parent summary is in scope, but
+`runOfficialSubagentWorkflow` spawns the real `codex` binary and has no injection
+seam, so no join test could have caught it. Shipping it would have been green by
+omission. The consequence to carry: **the two writers of `naruto-summary.json`
+now disagree** — the hook finalizer reports the observed budget, `sks naruto run`
+still reports the forecast.
 
 Facts the 9.0.0 release notes and readiness docs must carry. Recorded as they
 happen, because a release record assembled from memory at the end is a release
@@ -704,17 +763,38 @@ and the v1 engine still read the file. Two now-dead surfaces fall out:
 `context-graph.prev.json` has no production reader at all — written every
 compile, never read back, a byte-identical 63 MB duplicate.
 
-## MUST FIX before 9.0.0: metadata values lose their type
+## RESOLVED (format revision 2): metadata values lose their type
 
-`writer.ts` interns a metadata value as `Array.isArray(value) ? value.join(',') : String(value)`,
-and the reader hands back `Record<string, string>`. So a boolean `true` written
-by an extractor arrives as the string `"true"`, and every consumer asking
-`metadata.isTest === true` silently stops matching. A string array is joined on
-a comma that a value may itself contain, and no consumer can reverse it.
+`writer.ts` interned a metadata value as `Array.isArray(value) ? value.join(',') : String(value)`,
+and the reader handed back `Record<string, string>`. So a boolean `true` written
+by an extractor arrived as the string `"true"`, and every consumer asking
+`metadata.isTest === true` silently stopped matching. A string array was joined
+on a comma that a value may itself contain, and no consumer could reverse it.
 
-Measured across the fourteen benchmark fixture families: **11 predicate matches
-lost across 9 families**, v1 `=== true` count 11, v2 count 0. `isTestNode`'s
-`metadata.isTest === true` arm is dead under v2.
+**Closed by widening the metadata row 12 → 16 bytes** with a `u16` type tag and a
+`u16` ordinal. Six tags: `STRING`, `BOOLEAN`, `NUMBER`, `NULL`, `ARRAY_ELEMENT`,
+`ARRAY_EMPTY`. Arrays become one row per element, so `['a,b','c']` is now
+distinguishable from `['a','b','c']`, and `ARRAY_EMPTY` stops `checkScripts: []`
+from vanishing.
+
+`value` remains **always** a string-table id whatever the tag says. That is the
+security property and not a convenience: a corrupt tag can at worst return an
+in-bounds string read as the wrong type, and can never cause four bytes to be
+taken as an offset.
+
+It is also why this works where the reverted JSON attempt did not. The interned
+text stays the value's own canonical serialization — `{ lexeme: 'kernel' }` still
+interns `kernel`, not `"kernel"` — so scalars intern byte-identically to revision
+1 and the tag carries the type instead of the text. **Recall was unmoved: 0 of 62
+cases changed**, v2 `0.481132`, §4 violations 10/3, floors identical. Verified
+independently on a clean build.
+
+**A number in the previous entry needs correcting.** It recorded "11 predicate
+matches lost across 9 families". Today's corpus measures **949 across 14 of 14
+families**, and the growth predates this change — no extractor or compiler file
+was touched, and the count is snapshot-side. Post-fix, `preserved` equals
+`authored` for every type: string 2521, boolean 1958, number 1849, string_array
+575, null 0.
 
 Two facts that bound the damage, both measured rather than assumed:
 
@@ -729,7 +809,12 @@ Two facts that bound the damage, both measured rather than assumed:
 Where it will bite is `command-route-pipeline-gate` and `test-production-binding`,
 where test files would start reading as write-scope conflicts.
 
-**This orders the remaining work: format revision 2 must land before CG2-15.**
+**This ordered the remaining work, and revision 2 has now cleared it — with one
+caveat that survives.** CG2-15 may migrate `context-graph-affected.ts` safely:
+`metadata.isTest === true` works under the v2 reader. But `requiredForPublish`
+and `alwaysOnRelease` still appear on **zero** fixture nodes, so a green run
+after that migration is *still not evidence those two arms work*. Only `isTest`
+is covered. The original reasoning, kept because it is why the ordering held:
 `verification/context-graph-affected.ts` decides which tests run for a change,
 and all three of its predicates are metadata equality on a boolean —
 `metadata.isTest === true` at line 147, `requiredForPublish === true` and
@@ -747,13 +832,58 @@ would ship that.
 the reader, so it is unaffected. Checked rather than assumed — the two look
 identical at the call site and only the data source separates them.
 
-**Attempted and reverted.** JSON-encoding the value preserves the type, but it
-also quotes strings into the string table, and the kernel fixtures deliberately
-seed lexicon terms *through* metadata values (`metadata: { lexeme: 'kernel' }`),
-so `termId('kernel')` stopped resolving. The correct fix needs a type code in
-the metadata row — a 12→16 byte layout change — which is not something to land
-in a tree with active lanes. The regression test is committed as a `todo` so it
-reports on every run rather than living in someone's memory.
+**Attempted and reverted first.** JSON-encoding the value preserved the type but
+quoted strings into the string table, and the kernel fixtures deliberately seed
+lexicon terms *through* metadata values, so `termId('kernel')` stopped resolving.
+The type code was the recorded correct fix and is what shipped. **Both `todo`
+tests are now plain tests with inverted assertions** — not deleted. The gap test
+asserts `typePreserved` **and** `lostKeys === []`, so an implementation that
+tagged booleans while leaving numbers and arrays flattened still fails.
+
+### Two findings from the mutation pass that outlast the fix
+
+**A revision-1 hole in section validation, found by the fuzz campaign and
+reproduced on the pristine tree before being closed.** `validateReferenceRange`
+bounded only `count * stride > length`, so an *over*-claimed row count was caught
+and an *under*-claimed one silently made the reader stop early — with the section
+checksum still valid, because it covers `offset..offset+length` and does not care
+how many rows the descriptor claims live there. The campaign only drew that byte
+once the new layout shifted its PRNG offsets. Reproduced on `9ea37bab` by
+stashing, so it is recorded as a pre-existing defect rather than mis-attributed
+to the row widening. Closed by requiring `count * stride === length` exactly
+across all 19 fixed-stride sections, with a test asserting the list is complete
+so a future section cannot opt out.
+
+**`contextNodeFlag` and `contextNodeCount` must not be narrowed, and two
+mutations proved no existing test said so.** Narrowing either helper to a single
+spelling survived 294 tests across runtime-index, benchmark, projections, naruto
+and query. Extractors author these both ways — `topology/gates.ts` writes a real
+boolean, several fixtures write `'true'` — so narrowing to one spelling does not
+remove the silent-false failure, it *moves* it to the other set of nodes, which
+is the exact failure this revision exists to end. Now pinned by a
+projection-parity test that builds a real index carrying both spellings. Recorded
+because this is precisely the shape that gets "cleaned up" next round.
+
+### The repair instruction was wrong in the direction every user will take
+
+Shipping revision 2 inverts the common case for `context_index_format_unsupported`.
+The rule assumed the artifact is always *ahead* of the reader — an index from a
+newer build, repaired by upgrading — and answered `sks update` unconditionally.
+On upgrade to 9.0.0, **every existing workspace holds a revision-1 index and a
+build that is already current**, so that answer names a command that changes
+nothing and never mentions the only repair that works. The user's index stays
+unreadable while the tool insists it is up to date.
+
+Fixed in both refusal paths (store pointer and binary reader): the direction is
+decided from the two revisions, which are already carried as integers in
+`detail`. Older artifact → `sks align run --rebuild-index`; newer artifact, or
+any other unsupported-format cause where nothing knows which side is stale →
+`sks update`. The public code does not split; the frozen vocabulary is intact and
+only the repair differs. Mutation-tested: forcing the branch back to `update`
+fails exactly the new test and nothing else. The pre-existing test covered
+`REVISION + 1` only, which is why the inverse went unnoticed — **the test and the
+bug shared an assumption**, the same shape as the base64url guard that was
+measured only against the encoding it had just fixed.
 
 ## Withdrawn: the "unverifiable protected-gate arm" was not a gap
 
