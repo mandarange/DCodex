@@ -23,6 +23,16 @@
  * one-hop dedupe by target — are recorded in `graph-facts.ts`. The candidate
  * shape itself, and the corpus shape for an index with no modules, are in
  * `projection-candidate.ts`.
+ *
+ * ## The one place a bounded walk must not be taken for the whole truth
+ *
+ * "Everything reachable inside the caps" is the right answer for a score and the
+ * wrong one for a stated count. This file is the only projection that states a
+ * count — the module headline's file total — so it is the only one that reads
+ * `ProjectionOneHop.truncated`, and it prefers the compiler's recorded
+ * `fileCount` whenever its own `contains` walk was cut. Every other consumer of
+ * a short list gets a smaller answer rather than a false one; `graph-facts.ts`
+ * records that split and the measurements behind it.
  */
 import type { ContextGraphEdgeType } from '../contracts.js';
 import { profileEdgeWeight, type ContextGraphQueryProfile } from '../profiles.js';
@@ -57,6 +67,8 @@ interface ModuleAccumulator {
   readonly members: ContextGraphNodeView[];
   readonly exports: string[];
   readonly dependsOn: string[];
+  /** The module's own `contains` walk hit a cap, so `members` is a subset. */
+  readonly containsTruncated: boolean;
   relationScore: number;
   fanIn: number;
 }
@@ -71,7 +83,9 @@ function accumulateFile(
 ): void {
   accumulator.members.push(file);
   accumulator.fanIn += contextNodeCount(file, 'fanIn') ?? 0;
-  for (const neighbour of contextOneHopNeighbours(reader, cursor, file.node, file.id, PROJECTION_ALL_EDGE_TYPES)) {
+  // Truncation of a *file's* hop is not consulted: it lowers the module's score
+  // and shortens its export list, which no sentence states as a count.
+  for (const neighbour of contextOneHopNeighbours(reader, cursor, file.node, file.id, PROJECTION_ALL_EDGE_TYPES).neighbours) {
     const weight = profileEdgeWeight(profile, neighbour.type);
     if (weight > 0) accumulator.relationScore += weight;
     const target = neighbour.view;
@@ -93,10 +107,20 @@ function candidateOf(
   const seen = new Set<string>();
   for (const file of files) pushCitation(citations, seen, file);
   if (citations.length === 0) pushCitation(citations, seen, accumulator.module);
+  // The walked count is the module's size only when the walk saw the module.
+  // A `contains` walk that hit a cap knows it listed fewer files than the module
+  // holds, and stating that number in the headline would publish a truncated
+  // answer as a measured fact — in the sentence `index_digest` hashes and
+  // `sks.code-pack.v1` ships. The compiler recorded the real count on the node,
+  // so it wins; `files.length` remains the fallback for a node that has none,
+  // where a short count is still the best fact available.
+  const fileCount = accumulator.containsTruncated
+    ? contextNodeCount(accumulator.module, 'fileCount') ?? files.length
+    : files.length;
   const text = describeContextGraphNode(reader, cursor, accumulator.module, {
     exports: accumulator.exports,
     dependsOn: accumulator.dependsOn,
-    fileCount: files.length
+    fileCount
   });
   const score =
     accumulator.relationScore
@@ -135,10 +159,12 @@ export function rankModuleCandidates(
   // walk is memoized so the ownership pass and the candidate pass share it.
   const owner = new Map<number, ContextGraphNodeView>();
   const contained = new Map<number, ContextGraphNodeView[]>();
+  const truncated = new Set<number>();
   for (const module of modules) {
-    const files = contextOneHopNeighbours(reader, cursor, module.node, module.id, CONTAINS_EDGE_TYPES)
-      .map((neighbour) => neighbour.view);
+    const hop = contextOneHopNeighbours(reader, cursor, module.node, module.id, CONTAINS_EDGE_TYPES);
+    const files = hop.neighbours.map((neighbour) => neighbour.view);
     contained.set(module.node, files);
+    if (hop.truncated) truncated.add(module.node);
     for (const file of files) if (!owner.has(file.node)) owner.set(file.node, module);
   }
 
@@ -149,6 +175,7 @@ export function rankModuleCandidates(
       members: [module],
       exports: [],
       dependsOn: [],
+      containsTruncated: truncated.has(module.node),
       relationScore: 0,
       fanIn: 0
     };

@@ -955,11 +955,68 @@ Three sites are **flagged and not fixed**, with reasons, rather than swept in:
   verdict** — `parallel_safe` is `!shared.length` and truncation only applies at
   ≥12 — but the list still reads as "the shared paths" when it is the first 12 of
   N. Wants a `shared_paths_truncated` pair field, not a conservative reason.
-- `projections/graph-facts.ts:150` discards `walk.truncated` outright, so a hub
-  with >512 one-hop neighbours silently returns a subset into code-pack,
-  module-view and corpus scoring; and `:194-204` grounds a module on the *first*
-  arrival-ordered hit. **This is a live instance of the defect class**, left only
-  because another lane held that file this session.
+- `projections/graph-facts.ts:150` discards `walk.truncated` outright; `:194-204`
+  grounds a module on the first arrival-ordered hit. Now closed — **and half of
+  how I described it was measurably false.** See below.
+
+### Closed, after the premise was measured and half of it failed
+
+**The cap does not bite.** The widest node in this repository is
+`module:src/scripts` at **471 distinct out-neighbours against an effective bound
+of 511**, and `contextOneHopNeighbours` only ever walks `out`. Nodes at or over
+either cap: **0**. So this was a guarantee, not a live loss, and saying otherwise
+would have been the "a bug was biting" story that this record exists to prevent.
+The headroom is 8%, and what closes it is a directory growing.
+
+**The ordering claim I made was wrong.** I wrote that which incident edge grounds
+a module "depends on CSR bucket order". It does not: `writer.ts:75` assigns node
+indices in id order and `:138` sorts every bucket by `(from, to, type, edgeId)`,
+so adjacency order **is** ascending canonical node id by construction. Proven,
+not argued: reversing the snapshot's node and edge arrays and re-publishing
+yields a **byte-identical `.idx`** and identical output at every consumer — 119
+module citations, 119 scores, 119 candidate texts, 119 anchor `source_hash`es,
+244 one-hop orders, zero differences.
+
+The real defect is a **coupling**, which is a better finding than the one I
+reported: the projections' answers were decided by the *writer's* comparator with
+nothing in the projections saying so. A writer re-sorting buckets for locality —
+an obvious future optimization — would move 102 module anchors' `source_hash` and
+119 modules' citations with nothing failing. The fix enforces the order locally
+so the dependency is stated where it is relied on.
+
+**One consumer was genuinely wrong when truncated, and only one.**
+`module-view.ts` stated the *truncated* walk count as the module's file count, in
+text hashed into `index_digest` and shipped as `sks.code-pack.v1`. It now prefers
+the compiler's recorded `fileCount` when the walk was cut, falling back to the
+walk otherwise. The other three call sites are merely smaller — a lower score, a
+shorter citation list — and `contextGroundedProvenance` is conservative by
+construction: a shrunken candidate set yields the same first grounded hit or
+none, never a fabricated hash.
+
+**No reporting channel was built, on evidence.** `sks.code-pack.v1` is a frozen
+wire contract with no reasons field, and `CodePackProjection` is pinned by
+`projection-shape-baseline.ts`, which *rejects added fields*. Decisive: its
+existing shortfall counter `omittedForBudget` is written at
+`code-pack-workspace.ts:102` and **read by no production caller** — verified.
+That is both the precedent and the warning, and it is the twelfth instance of
+this build's pattern. A `truncated` flag on the returned shape with exactly one
+reader was the honest fix. A flag rather than a count, because the caps are
+enforced *inside* `walkContextGraph`, so the distinct total is never reached and
+any number would have been invented.
+
+The ordering key is **canonical node id alone**, not the `(depth, key, nodeId)`
+used for test selection: depth is constant here (every hit is depth-filtered to
+1) and the walk dedupes by node index, so there is exactly one row per target.
+The third key existed there because one path could carry two nodes; that cannot
+happen here.
+
+A mutation worth naming: M4 makes `module-view` *always* prefer recorded
+metadata, and a test fails. That guard stops the fix degenerating into "trust the
+metadata", which would let a stale `fileCount` outrank a walk that actually
+counted.
+
+Recorded limit: `node-summary.ts`'s "and N more" is not completeness-aware. It is
+unreachable at today's 154 `defines`/`reexports` against 511.
 
 ## Closed: a 63.66 MB duplicate nobody ever read, and two premises I got backwards
 

@@ -71,7 +71,10 @@ export function rankFileCandidates(
     const view = cursor.node(node);
     if (view === null || !view.path) continue;
     let relationScore = 0;
-    for (const neighbour of contextOneHopNeighbours(reader, cursor, view.node, view.id, PROJECTION_ALL_EDGE_TYPES)) {
+    // A truncated hop lowers this file's score; it does not make any sentence
+    // this candidate carries false, and `ProjectionCandidate` has no field a
+    // caller reads to learn it. See `graph-facts.ts`.
+    for (const neighbour of contextOneHopNeighbours(reader, cursor, view.node, view.id, PROJECTION_ALL_EDGE_TYPES).neighbours) {
       relationScore += profileEdgeWeight(profile, neighbour.type);
     }
     const citations: CodePackCitation[] = [];

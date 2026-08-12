@@ -72,7 +72,8 @@ export {
   contextOneHopNeighbours,
   projectionFailureCode,
   type ProjectionFailureCode,
-  type ProjectionNeighbour
+  type ProjectionNeighbour,
+  type ProjectionOneHop
 } from './graph-facts.js';
 export * as mermaid from './mermaid/index.js';
 export {

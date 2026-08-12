@@ -55,7 +55,9 @@ function relatedLabels(
   exportedOnly: boolean
 ): string[] {
   const labels: string[] = [];
-  for (const neighbour of contextOneHopNeighbours(reader, cursor, node.node, node.id, types)) {
+  // `truncated` is deliberately not consulted; `graph-facts.ts` records why, and
+  // what would have to change here if the measured headroom ever closed.
+  for (const neighbour of contextOneHopNeighbours(reader, cursor, node.node, node.id, types).neighbours) {
     const target = neighbour.view;
     if (exportedOnly && target.kind === 'symbol' && !contextNodeFlag(target, 'exported')) continue;
     labels.push(target.label);

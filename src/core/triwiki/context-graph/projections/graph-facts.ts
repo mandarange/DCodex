@@ -29,9 +29,49 @@
  *
  * `contextOneHopNeighbours` deduplicates by target, which `outgoingEdges` did
  * not: two edges of different types between the same pair now count once, and
- * the type reported is the first one the walk crossed. That changes a
- * profile-weighted *score* — never which nodes are reachable — and it is written
- * down here rather than discovered later from a moved ranking.
+ * the type reported is the lowest edge-type code between that pair. That changes
+ * a profile-weighted *score* — never which nodes are reachable — and it is
+ * written down here rather than discovered later from a moved ranking.
+ *
+ * ## A one-hop answer says whether it is complete
+ *
+ * The walk reports `truncated` when a cap stopped it, and this file used to drop
+ * that on the floor: a hub past `maxNodes` returned a subset that read exactly
+ * like a complete neighbourhood. It is now carried on `ProjectionOneHop`.
+ *
+ * Measured on the real graph (28,660 nodes / 77,347 edges) the caps have never
+ * been reachable through this function, which only ever walks `out`: the widest
+ * node is `module:src/scripts` at 471 distinct out-neighbours against an
+ * effective bound of 511, and the widest edge scan is the same 471 rows against
+ * 8,192. So the flag is a guarantee, not a repair — but 471 of 511 is 8% of
+ * headroom, and the thing that closes it is a directory growing.
+ *
+ * Which consumers act on it is decided by whether a short list makes a stated
+ * fact *false* or merely makes an answer *smaller*, and only the first kind is
+ * worth a branch:
+ *
+ * - **`module-view.ts` reads it.** The module headline states a file count, and
+ *   a truncated `contains` walk would state the truncated one as the module's
+ *   size. The compiler already records the real count on the node — all 119
+ *   modules carry `fileCount` — so the recorded fact wins whenever the walk is
+ *   short. That sentence is hashed into `index_digest` and shipped as
+ *   `sks.code-pack.v1` entry text.
+ * - **`projection-candidate.ts` and the score arm of `module-view.ts` do not.**
+ *   A short list lowers a profile-weighted score and shortens a citation list.
+ *   Nothing downstream states how many relations were counted, and
+ *   `ProjectionCandidate` has no field a caller reads to learn it — adding one
+ *   would be a channel nobody reads. Widest reachable: 248 out-neighbours.
+ * - **`node-summary.ts` does not, and that is a recorded limit.** `listOf`
+ *   renders "and N more", which a truncated walk would understate. Reaching it
+ *   needs 512 `defines`/`reexports` off one node where the real graph's widest is
+ *   154, and being honest about it means threading completeness through
+ *   `NodeSummaryExtras` for both the direct and the module-aggregated arms — for
+ *   a state no repository has produced. If that headroom closes, the phrasing
+ *   becomes "and at least N more" and the flag threads through `extras`.
+ *
+ * `truncated` is a flag and not a count on purpose: the caps are enforced
+ * *inside* `walkContextGraph`, so the distinct total is never reached and any
+ * number reported here would be invented.
  *
  * ## What each projection lost, and what it kept
  *
@@ -66,6 +106,7 @@ import {
   type ContextGraphEdgeType,
   type ContextGraphNodeKind
 } from '../contracts.js';
+import { compareContextGraphIds } from '../ids.js';
 import type { ContextGraphProvenanceRef } from '../query-types.js';
 import {
   contextWalkProvenance,
@@ -132,12 +173,49 @@ export interface ProjectionNeighbour {
   readonly type: ContextGraphEdgeType;
 }
 
+export interface ProjectionOneHop {
+  /** Deduplicated by target, ascending canonical node id. */
+  readonly neighbours: ProjectionNeighbour[];
+  /**
+   * A node or edge cap stopped the walk, so more neighbours exist than are
+   * listed. How many more is not knowable — see the file header.
+   */
+  readonly truncated: boolean;
+}
+
 /**
- * The nodes one typed hop out of `node`, hydrated.
+ * Depth-1 hits, ordered by canonical node id.
  *
- * Deduplicated by target, in the order the walk reached them — the CSR buckets
- * are written in a fixed order by the compiler, so the same index yields the same
- * neighbours in the same order on every machine.
+ * The walk returns what it reached in *adjacency order*, and every projection in
+ * this package used to take that as its answer. Adjacency order happens to be
+ * ascending node id today, because `runtime-index/writer.ts` assigns node indices
+ * in id order and sorts each CSR bucket by target index — a fact about that
+ * comparator, not about these projections. Reversing the snapshot's node and edge
+ * arrays and re-encoding produces byte-identical bucket order and, measured over
+ * the real graph, identical output at every consumer (244 nodes with 40+
+ * neighbours, 119 module candidates, 119 anchors: 0 differences). So this sort is
+ * a **no-op today and is here to stay one**: a writer that re-sorted buckets for
+ * locality would otherwise move 102 module anchors' `source_hash` and the
+ * citations of 119 module entries, with nothing failing.
+ *
+ * One key is enough, unlike the `(depth, key, nodeId)` rule the affected-gate
+ * selector needs. Depth is constant — every hit here is filtered to depth 1 — and
+ * the walk deduplicates by node index, so there is exactly one row per target and
+ * the canonical node id is already unique. A second key would order nothing.
+ */
+function depthOneHitsById(hits: Iterable<ContextWalkHit>): ContextWalkHit[] {
+  const ordered: ContextWalkHit[] = [];
+  for (const hit of hits) if (hit.depth === 1) ordered.push(hit);
+  return ordered.sort((left, right) => compareContextGraphIds(left.nodeId, right.nodeId));
+}
+
+/**
+ * The nodes one typed hop out of `node`, hydrated, with whether that is all of
+ * them.
+ *
+ * Deduplicated by target and ordered by canonical node id. The completeness flag
+ * is the walk's own, no longer discarded; the file header records which consumers
+ * act on it and why the others do not.
  */
 export function contextOneHopNeighbours(
   reader: ContextIndexReader,
@@ -146,22 +224,21 @@ export function contextOneHopNeighbours(
   nodeId: string,
   edgeTypes: ReadonlySet<ContextGraphEdgeType>,
   caps: ContextWalkCaps = PROJECTION_ONE_HOP_CAPS
-): ProjectionNeighbour[] {
+): ProjectionOneHop {
   const walk = walkContextGraph(reader, cursor, {
     roots: [contextWalkRoot(node, nodeId)],
     direction: 'out',
     edgeTypes,
     caps
   });
-  const out: ProjectionNeighbour[] = [];
-  for (const hit of walk.hits.values()) {
-    if (hit.depth !== 1) continue;
+  const neighbours: ProjectionNeighbour[] = [];
+  for (const hit of depthOneHitsById(walk.hits.values())) {
     const step = hit.explanation[hit.explanation.length - 1];
     const view = cursor.node(hit.node);
     if (step === undefined || view === null) continue;
-    out.push({ view, type: step.type });
+    neighbours.push({ view, type: step.type });
   }
-  return out;
+  return { neighbours, truncated: walk.truncated };
 }
 
 /**
@@ -180,6 +257,22 @@ export const PROJECTION_ALL_EDGE_TYPES: ReadonlySet<ContextGraphEdgeType> = new 
  * identity hashes off every module anchor — a silent downgrade of exactly the
  * thing the trust rule protects. Out-edges before in-edges, and the first
  * direction that yields anything wins, which is the v1 order.
+ *
+ * *Which* incident edge grounds the node is decided by canonical node id, for the
+ * reason `depthOneHitsById` gives. This is not a cosmetic tie-break: the first
+ * returned row's `hash` becomes an anchor's `source_hash` and `claim_hash`, and
+ * the fallback is not rare on the shapes that use it — 162 of the real graph's
+ * 28,660 nodes have no source record of their own (119 modules, 16 gates, a risk
+ * domain, and 26 files that ground nowhere), and 119 of those choose between two
+ * or more grounded neighbours.
+ *
+ * A truncated walk is deliberately not reported. It can only shrink the candidate
+ * set, and a shrunken set yields either the same first grounded hit or none —
+ * fewer provenance rows, never a fabricated one, and an anchor with none scores
+ * trust 0 rather than claiming a hash it did not earn. The failure direction is
+ * conservative, so there is nothing for a caller to repair. Measured: exactly one
+ * node reaches the cap here (`risk:proof-subject/gate`, 512 in-edges) and it
+ * grounds anyway.
  */
 export function contextGroundedProvenance(
   reader: ContextIndexReader,
@@ -197,8 +290,7 @@ export function contextGroundedProvenance(
       edgeTypes: PROJECTION_ALL_EDGE_TYPES,
       caps: PROJECTION_ONE_HOP_CAPS
     });
-    for (const hit of walk.hits.values()) {
-      if (hit.depth !== 1) continue;
+    for (const hit of depthOneHitsById(walk.hits.values())) {
       const refs = contextWalkProvenance(reader, cursor, hit, limit);
       if (refs.length > 0) return refs;
     }
