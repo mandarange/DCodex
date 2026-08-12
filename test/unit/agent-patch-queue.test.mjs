@@ -86,6 +86,42 @@ test('machine feedback excludes recursive worktrees, managed caches, and the exe
   }
 });
 
+/**
+ * The cut has to come after runnability, not before it.
+ *
+ * `selectTests` caps at 20 and `runSelectedTests` only then filters to files it
+ * can execute. While the cap was alphabetical that ordering was not a neutral
+ * sample: runnable tests live under a top-level `test/` tree and unrunnable ones
+ * under per-module `__tests__` directories inside `src/`, and 'src/' sorts before
+ * 'test/', so the cut deterministically kept the ones that cannot run — the
+ * alphabetical order and the runnability split are the same split. Measured on a real four-file
+ * change: 27 related tests, 7 runnable, and the call returned 20 selected and 0
+ * runnable — so `tests.ok` was true having executed nothing, and the patch
+ * queue accepted the patch.
+ *
+ * This fixture reproduces the shape rather than the scale: 20 unrunnable .ts
+ * tests that sort first, and one runnable .mjs that sorts last.
+ */
+test('related test selection keeps the runnable tests when it has to cut', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-machine-feedback-cut-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const unrunnable = Array.from({ length: 20 }, (_, index) => `src/aaa${String(index).padStart(2, '0')}/__tests__/widget.test.ts`);
+  const runnable = 'test/zzz/widget.test.mjs';
+  await Promise.all([...unrunnable, runnable].map(async (file) => {
+    const target = path.join(root, file);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, "import '../../src/widget.js';\n");
+  }));
+
+  const selected = await selectTests(root, ['src/widget.ts']);
+  assert.equal(selected.length, 20, 'the cap still applies');
+  assert.ok(selected.includes(runnable), 'the one runnable test must survive the cut');
+  assert.equal(selected[0], runnable, 'runnable tests come first, so the cut can never drop them all');
+  // Control: within a group the order is still deterministic, not arbitrary.
+  const rest = selected.slice(1);
+  assert.deepEqual(rest, [...rest].sort(), 'unrunnable tests stay alphabetically ordered');
+});
+
 test('machine feedback never falls back to a broad npm test command', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-machine-feedback-bounded-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));

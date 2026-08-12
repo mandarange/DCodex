@@ -51,6 +51,28 @@ export async function runMachineFeedback(root: string, changedFiles: string[], o
   };
 }
 
+/** A test this runner can actually execute: it spawns the file with node. */
+function directlyRunnable(file: string): boolean {
+  return /\.(?:mjs|cjs|js)$/.test(file);
+}
+
+/**
+ * Related tests, runnable ones first.
+ *
+ * The cut used to be `[...out].sort().slice(0, 20)` — alphabetical, and applied
+ * *before* `runSelectedTests` filtered to the files it can execute. That is not
+ * an arbitrary sample: runnable tests live under `test/**` and unrunnable ones
+ * under `src/**\/__tests__/`, and `'src/' < 'test/'`, so the alphabetical cut
+ * deterministically kept the ones that cannot run. Measured on a four-file
+ * change touching the release gates: 27 related tests of which 7 were runnable,
+ * and the combined call returned 20 selected and **0** runnable — including
+ * dropping `release-version-sync.test.mjs`, the regression test for those exact
+ * files. The patch queue then accepted the patch, because `tests.ok` is true
+ * when nothing ran.
+ *
+ * Ordering by runnability before the cut is the whole fix. Within each group the
+ * sort stays alphabetical so the selection is still deterministic.
+ */
 export async function selectTests(root: string, changedFiles: string[]): Promise<string[]> {
   const out = new Set<string>();
   for (const file of changedFiles.map(normalizePath).filter(Boolean)) {
@@ -58,8 +80,14 @@ export async function selectTests(root: string, changedFiles: string[]): Promise
     for (const cand of await globTests(root, base)) out.add(cand);
     for (const cand of await testsImporting(root, file)) out.add(cand);
   }
-  return [...out].sort().slice(0, 20);
+  const ordered = [...out].sort((a, b) => {
+    const byRunnable = Number(directlyRunnable(b)) - Number(directlyRunnable(a));
+    return byRunnable || (a < b ? -1 : a > b ? 1 : 0);
+  });
+  return ordered.slice(0, TEST_SELECTION_LIMIT);
 }
+
+const TEST_SELECTION_LIMIT = 20;
 
 async function runTypecheck(root: string, changedFiles: string[], timeoutMs: number): Promise<FeedbackAxis> {
   if (!changedFiles.some((file) => /\.(?:tsx?|mts|cts)$/.test(file))) return { ok: true, errors: [], skipped_reason: 'no_ts_files_changed' };
@@ -115,7 +143,11 @@ async function runSelectedTests(root: string, changedFiles: string[], timeoutMs:
   const candidates = await selectTests(root, changedFiles);
   if (!candidates.length) return { ok: true, selected: [], failed: [], skipped_reason: 'no_related_tests' };
   const failed: string[] = [];
-  const selected = candidates.filter((file) => /\.(?:mjs|cjs|js)$/.test(file)).slice(0, 10);
+  const runnable = candidates.filter(directlyRunnable);
+  const selected = runnable.slice(0, RUNNABLE_TEST_LIMIT);
+  // A cap that says nothing lets `ok: true` mean "everything related passed"
+  // when it means "the first ten of them did".
+  const dropped = runnable.length - selected.length;
   if (!selected.length) {
     return { ok: true, selected: [], failed: [], skipped_reason: 'no_directly_runnable_tests' };
   }
@@ -127,8 +159,15 @@ async function runSelectedTests(root: string, changedFiles: string[], timeoutMs:
     }
     if (result.code !== 0) failed.push(`${file}: ${summarizeErrors(result.stderr || result.stdout).join(' | ')}`);
   }));
-  return { ok: failed.length === 0, selected, failed: failed.slice(0, 10) };
+  return {
+    ok: failed.length === 0,
+    selected,
+    failed: failed.slice(0, 10),
+    ...(dropped > 0 ? { skipped_reason: `runnable_tests_capped:${dropped}` } : {})
+  };
 }
+
+const RUNNABLE_TEST_LIMIT = 10;
 
 async function globTests(root: string, base: string): Promise<string[]> {
   const currentTest = currentTestPath(root);

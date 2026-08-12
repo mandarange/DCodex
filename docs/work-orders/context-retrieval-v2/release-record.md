@@ -1,5 +1,84 @@
 # CRK2 Release Record
 
+## CG2-16: the integration audit found two blockers nobody had listed
+
+Six independent dimensions, 29 candidate findings, each put through an
+adversarial refuter instructed to default to *refuted* when uncertain. **Six
+survived.** That ratio is the useful part: 23 of 29 plausible-looking findings
+did not survive contact with the code, and shipping them would have sent the
+next person to fix things that were not broken.
+
+Four were release blockers. **Two of the four were in nobody's list, including
+mine** — they came out of dimensions I added for coverage rather than from a
+suspicion.
+
+**The v2 generation store was not gitignored, while the v1 store was.**
+`.gitignore` ignores every v1 artifact by name under the comment *"never source
+truth, so it is never committed"*, and 9.0.0 moves that artifact into
+`.sneakoscope/wiki/context-graph/`, which no rule covered. A 13 MB index, one
+`git add -A` from being committed. It matters more than disk noise: this record
+already accepts that entropy-shaped values reach the published bytes as
+searchable terms — a decision taken for a *local cache*, and not the same
+decision for a file that gets pushed. Fixing it surfaced that the v1 filenames
+were never in `SKS_GENERATED_GIT_PATTERNS` either, so this repository's
+protection was hand-added and **a fresh install never had it.**
+
+**`contextIndexFreshness` reported `fresh` when no v2 index exists.** The
+meta-missing branch consults the pointer; there was no symmetric case for
+meta-present with the pointer absent, so it fell through to a git and cache-key
+check describing the *v1* snapshot. Every workspace upgrading from 8.7.0 starts
+in exactly that state — 8.7.0 has no generation pointer at all — and both
+diagnostic surfaces answered `ok: true`, exit 0, to the one question they exist
+to answer.
+
+**The lexicon secret guard was bypassed by the extension join.** `emitLatinRun`
+refuses a run it judges to be key material; the join then read the *unfiltered*
+run and pushed `<prev>.<cur>`, and `looksLikeSecretToken` returns false for any
+token containing a non-alphanumeric — so the dot made it pass unconditionally
+while `omissions.secretTokens` reported a drop that had not happened. A 40-char
+hex or 32-char base62 secret adjacent to an extension was indexed whole and
+directly searchable. **Third instance of the same blind spot in one release**:
+base64url fixed while standard base64 stayed at its unfixed rate; a revision test
+covering `+1` but not `-1`; and now a security suite exercising bare runs only.
+
+**The generation store fed its own cache key** — found by the audit and hit
+independently by a fix lane as a fixture-ordering problem, from opposite
+directions. `cache-key.ts` declares *"graph artifacts must never feed their own
+cache key"* and matches on basename, which sufficed while every artifact was a
+file in the wiki root; the store is a directory and the listing recurses. Neither
+lane confirmed the production consequence, so it was measured here:
+
+| | `wikiContextHash` |
+| --- | --- |
+| v1-only wiki | `e3b0c442…` — the empty-input hash; every v1 file correctly excluded |
+| after publishing a v2 generation | **moved** |
+| after republishing identical content | **moved again** |
+
+Not a stale key but an inverted one: a workspace reporting `wiki_context_changed`
+immediately after the align that just made it fresh. The republish moves it again
+because the pointer and generation meta carry `committedAt` and `operationId`, so
+the store is not byte-stable across two publishes of the same content. Only
+`context-graph/context-graph.meta.json` escaped, by basename coincidence with the
+v1 file — the clearest sign the rule was matching the wrong thing. Now excluded
+by subtree, and all three hashes return to the empty-input value.
+
+**One non-blocker taken anyway, because it is about tests not running.**
+`machine-feedback.ts` cut related tests to 20 *alphabetically, before* filtering
+to the ones it can execute. That is not a neutral sample: runnable tests live
+under a top-level `test/` tree, unrunnable ones under `__tests__` directories
+inside `src/`, and `'src/' < 'test/'` — so the alphabetical cut and the
+runnability split are **the same split**. Reproduced on a real four-file change:
+27 related tests, 7 runnable, and the call returned **20 selected and 0
+runnable**, dropping `release-version-sync.test.mjs`, the regression test for
+those exact files. `tests.ok` was then true having executed nothing, and the
+patch queue accepted the patch. Ordering by runnability before the cut fixes it;
+the cap now also reports what it dropped. Pre-existing since 2026-07-03 and
+shipping in 8.7.0 already, so it was not a CRK2 blocker — but "the gate passed
+because it ran nothing" is the defect this release is named after.
+
+Recorded with the ratio because a future reader should know the audit's value was
+as much in what it *refuted* as in what it found.
+
 ## CLEARED: v2 recall now exceeds v1
 
 **`v1 0.460692 · v2 0.481132 · v2 ahead by 0.020440`**, over 62 cases and 3
