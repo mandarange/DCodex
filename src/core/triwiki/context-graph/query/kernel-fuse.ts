@@ -218,6 +218,10 @@ export function fuseKernelCandidates(
   const pool = new BoundedTopK(Math.min(table.size, Math.max(1, context.maxSelected) * 4));
 
   const exactPriority = toFixedPoint(kernelConfig.exactAnchorPriority, SCALE);
+  // A second tier, below the exact one. Additive rather than exclusive: a node
+  // the caller resolved *and* named is both, and taking the larger would throw
+  // away one of the two facts.
+  const namePriority = toFixedPoint(kernelConfig.nameAnchorPriority, SCALE);
   const trustBonus = toFixedPoint(config.trustBonus, SCALE);
   const riskMultiplier = context.highRisk ? toFixedPoint(config.highRiskRelevanceMultiplier, SCALE) : SCALE;
   const evidenceBonus = toFixedPoint(config.evidenceCoverageBonus, SCALE);
@@ -265,6 +269,7 @@ export function fuseKernelCandidates(
     if (table.has(slot, CANDIDATE_FLAG.EXACT_SEED)) exactSeedReachable = true;
 
     let score = table.has(slot, CANDIDATE_FLAG.EXACT_SEED) ? exactPriority : 0;
+    if (table.has(slot, CANDIDATE_FLAG.NAME_MATCH)) score += namePriority;
     for (const lane of RETRIEVAL_LANES) {
       const rank = table.rankIn(slot, lane);
       if (rank < 0 || rank >= kernelConfig.rrfRankCap) continue;

@@ -16,7 +16,7 @@ import { codeNavigationGraphExtractors } from '../triwiki/context-graph/extracto
 import { runContextGraphLint } from '../triwiki/context-graph/lint/index.js';
 import { contextGraphQueryProfile } from '../triwiki/context-graph/profiles.js';
 import { queryContextGraph } from '../triwiki/context-graph/query/index.js';
-import { contextGraphStatus } from '../triwiki/context-graph/store/graph-status.js';
+import { contextIndexFreshness } from '../triwiki/context-graph/store/index-freshness.js';
 import { readContextGraphMeta, readContextGraphSnapshot } from '../triwiki/context-graph/store/snapshot-store.js';
 
 export const TRIWIKI_GRAPH_SUBCOMMANDS = ['graph-status', 'graph-lint', 'graph-query'] as const;
@@ -55,7 +55,7 @@ async function graphStatusFast(root: string): Promise<{ result: unknown; ok: boo
 }
 
 async function graphStatus(root: string): Promise<{ result: unknown; ok: boolean; lines: string[] }> {
-  const status = await contextGraphStatus(root, { extractors: codeNavigationGraphExtractors() });
+  const status = await contextIndexFreshness(root, { extractors: codeNavigationGraphExtractors() });
   const meta = await readContextGraphMeta(root);
   const result = {
     schema: 'sks.triwiki-graph-status.v1',

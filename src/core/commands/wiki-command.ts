@@ -26,7 +26,7 @@ import {
   type CodePack
 } from '../triwiki/code-pack.js';
 import { runContextGraphLint } from '../triwiki/context-graph/lint/index.js';
-import { contextGraphStatus } from '../triwiki/context-graph/store/graph-status.js';
+import { contextIndexFreshness } from '../triwiki/context-graph/store/index-freshness.js';
 import { readContextGraphMeta, readContextGraphSnapshot } from '../triwiki/context-graph/store/snapshot-store.js';
 import { codeNavigationGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
 import { CONTEXT_GRAPH_REPAIR_COMMAND } from '../triwiki/context-graph/contracts.js';
@@ -217,7 +217,7 @@ export async function wikiCommand(sub: any, args: any = []) {
  * never repaired here — repair belongs to `sks align run`.
  */
 async function wikiValidateContextGraph(root: string): Promise<{ ok: boolean; status: string; snapshot_hash: string | null; issues: string[] }> {
-  const status = await contextGraphStatus(root, { extractors: codeNavigationGraphExtractors() });
+  const status = await contextIndexFreshness(root, { extractors: codeNavigationGraphExtractors() });
   if (status.status !== 'fresh') {
     return {
       ok: false,

@@ -154,6 +154,23 @@ export interface ContextIndexReader {
 
   exact(term: string, fieldMask?: number): PostingSlice;
   basename(term: string): PostingSlice;
+
+  /**
+   * True when `name` is one of the node's own names: its label, its path's
+   * POSIX basename, or that basename without its final extension.
+   *
+   * An addition to §5.5, and the narrowest one that answers the question. The
+   * ranking path can reach a node's integers but not its text, and the member
+   * that would give it text — `hydrateNode` — is forbidden there. Handing back
+   * a boolean rather than the string is what keeps this from becoming the
+   * `getNode()` §3 removed.
+   *
+   * This is **not** an exact-confidence source. It reports that two strings are
+   * equal, not that an identifier resolved; §4's `exact` belongs to `exact`
+   * and `basename` above, which are keyed by a canonical id and a whole
+   * workspace-relative path. Callers rank on this and never claim on it.
+   */
+  nodeHasName(node: number, name: string): boolean;
   lexical(termIds: readonly number[], plan: ContextIndexQueryBounds): ScoredPostingSlice;
   coarse(termIds: readonly number[], plan: ContextIndexQueryBounds): ScoredPostingSlice;
 

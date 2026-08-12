@@ -1,8 +1,9 @@
 # Context Retrieval Kernel v2 (CRK2)
 
-Status: **accepted, unimplemented**. This is the frozen contract every CG2 card
-builds against. Nothing below is negotiable per-worker; a change here is a change
-to the ADR first.
+Status: **accepted, implemented through CG2-14**. This is the frozen contract
+every CG2 card builds against. Nothing below is negotiable per-worker; a change
+here is a change to the ADR first — see the §4 amendment, which is what that rule
+looks like when it is followed.
 
 CG2-00 measured the starting point on `9fadd4e2` — see
 [baseline-summary.md](../work-orders/context-retrieval-v2/baseline-summary.md).
@@ -109,7 +110,7 @@ scored. The mapping is total and exclusive:
 
 | Lane | Confidence | Rule |
 | --- | --- | --- |
-| `anchor` | `exact` | Stable node ID, exact path, exact label, command/route/pipeline/gate/schema ID, basename, caller-verified seed, focus path |
+| `anchor` | `exact` | Stable node ID, exact path, exact label, command/route/pipeline/gate/schema ID, ~~basename~~ (amended below), caller-verified seed, focus path |
 | `lexical` | `text_candidate` | BM25F match. **A BM25F score alone never yields `exact`**, at any magnitude |
 | `coarse` | `text_candidate` | Same ceiling as lexical |
 | `local_graph` | inherited, demoted one step | A neighbour of an `exact` seed is a candidate, not an exact match |
@@ -117,6 +118,36 @@ scored. The mapping is total and exclusive:
 An unsupported-language result is never promoted to an exact relation. This is
 the rule that the current engine's `korean` and `jargon` cases would otherwise
 be "fixed" by violating.
+
+### Amendment (2026-08-13, CG2-14): a name match is a ranking signal, not a confidence claim
+
+**`basename` is removed from the `anchor`/`exact` row.** A name match — node
+label, path basename, or that basename's stem — may raise a candidate's rank and
+may seed the walk, and it may **not** set `exact`, `file_path`, or
+`exact_definition`. It claims `text_candidate` like any other scored match.
+
+The row was written for a format that carried names, before one did; when
+revision 1 shipped, "basename" was implemented as whole-path and the row went
+untested. Implementing it as written turns out to contradict this section's own
+first sentence — *confidence is a claim about why a node was retrieved, not how
+highly it scored*. A basename does not uniquely identify a node: the benchmark
+carries `basename-index-ts-collision` precisely because `index.ts` names many.
+An `exact` basename would assert exact confidence for every colliding node at
+once, at most one of which the caller meant, which empties `exact` of the
+distinction it exists to draw. A caller-supplied verbatim path stays `exact`
+because the caller resolved it; a name the *engine* matched was resolved by
+nobody.
+
+The narrowing was measured, not assumed. Every case the name lane recovers
+reaches **1.000** must-include recall as a pure ranking signal, and §4 violations
+held at 3 across the change. The conservative reading cost zero recall, so no
+trade was made — which is the only reason it can be recorded as settled rather
+than as a tension.
+
+Left open: an exact **label** match that resolves to exactly one node would
+satisfy the "why" test and could be `exact`. It is not implemented, because
+nothing measured requires it and an unmeasured confidence promotion is the
+failure this section exists to prevent.
 
 ## 5. Errors and repair
 

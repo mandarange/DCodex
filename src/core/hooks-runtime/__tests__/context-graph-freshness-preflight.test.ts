@@ -214,12 +214,21 @@ test('a missing graph is reported with its error code and repair command', async
   }
 });
 
-test('a corrupt snapshot and an absent meta are both reported as corrupt', async () => {
+test('a corrupt meta is reported as corrupt; a corrupt JSON snapshot is inert', async () => {
   const root = workspace();
   try {
     await buildGraph(root);
-    const snapshotFile = path.join(root, '.sneakoscope', 'wiki', 'context-graph.json');
-    fs.writeFileSync(snapshotFile, '{ truncated');
+
+    // This assertion used to read the other way: damaging `context-graph.json`
+    // was what produced `corrupt`. Under ADR §8 that file is retired, and the
+    // preflight no longer parses it, so damaging it cannot move the verdict.
+    // The check did not weaken — it moved onto the artifact the v2 path really
+    // depends on, which is asserted immediately below rather than assumed.
+    fs.writeFileSync(path.join(root, '.sneakoscope', 'wiki', 'context-graph.json'), '{ truncated');
+    assert.equal((await contextGraphFreshnessPreflight(root)).usable, true,
+      'the retired JSON store is not an input to the verdict');
+
+    fs.writeFileSync(path.join(root, '.sneakoscope', 'wiki', 'context-graph.meta.json'), '{ truncated');
     const before = fingerprint(root);
     const corrupt = await contextGraphFreshnessPreflight(root);
     assert.equal(corrupt.status, 'corrupt');
@@ -235,16 +244,23 @@ test('a corrupt snapshot and an absent meta are both reported as corrupt', async
   }
 });
 
-test('a snapshot without its meta is corrupt with meta_mismatch, never quietly fresh', async () => {
+test('an absent meta is never quietly fresh', async () => {
   const root = workspace();
   try {
     await buildGraph(root);
     fs.rmSync(path.join(root, '.sneakoscope', 'wiki', 'context-graph.meta.json'), { force: true });
+
+    // No meta and no published v2 generation: there is no index for a verdict
+    // to be about, so `missing` is the honest answer and `sks align run` is the
+    // repair either way. The other half of the distinction — an absent meta
+    // *with* a published pointer, which is `corrupt`/`meta_mismatch` — is
+    // covered in `store/__tests__/index-freshness.test.ts`.
     const preflight = await contextGraphFreshnessPreflight(root);
-    assert.equal(preflight.status, 'corrupt');
-    assert.deepEqual(preflight.reasons, ['meta_mismatch']);
+    assert.equal(preflight.status, 'missing');
     assert.equal(preflight.usable, false);
-    assert.ok(preflight.snapshot_hash, 'the snapshot hash stays reportable for diagnostics');
+    assert.equal(preflight.error_code, 'context_graph_missing');
+    const note = contextGraphFreshnessNoteFor(preflight);
+    assert.ok(note?.includes(CONTEXT_GRAPH_REPAIR_COMMAND), 'a missing graph still names its repair');
   } finally {
     cleanup(root);
   }

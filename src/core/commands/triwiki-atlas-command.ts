@@ -117,10 +117,14 @@ function countBySeverity(findings: readonly FindingDoc[]): { blocking: number; w
 
 function graphFreshness(root: string, manifest: ManifestDoc | null): 'fresh' | 'stale' | 'missing' {
   if (!manifest) return 'missing';
-  const graphPath = path.join(root, '.sneakoscope', 'wiki', 'context-graph.json');
-  if (!fs.existsSync(graphPath)) return 'missing';
-  const graph = readJsonFile<{ snapshotHash?: string }>(graphPath);
-  const expected = String(graph?.snapshotHash || '');
+  // The snapshot hash comes from the index meta, not from the 58 MB JSON
+  // snapshot. It is the same value, written by the same compile, and ADR §6
+  // makes the meta the authority for it — parsing the whole graph to reach one
+  // field is the cost the v2 store exists to remove.
+  const metaPath = path.join(root, '.sneakoscope', 'wiki', 'context-graph.meta.json');
+  if (!fs.existsSync(metaPath)) return 'missing';
+  const meta = readJsonFile<{ snapshotHash?: string }>(metaPath);
+  const expected = String(meta?.snapshotHash || '');
   const observed = String(manifest.graphHash || manifest.sourceBinding?.graphHash || '');
   if (!expected || !observed) return 'missing';
   return expected === observed ? 'fresh' : 'stale';

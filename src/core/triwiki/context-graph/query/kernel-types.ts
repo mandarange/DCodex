@@ -169,6 +169,12 @@ export const CANDIDATE_FLAG = Object.freeze({
   FOCUS: 1 << 7,
   REVERSE_HOP: 1 << 8,
   PROVIDED: 1 << 9,
+  /**
+   * One of the node's own names — label, basename, or basename stem — is
+   * exactly the query. A ranking fact, never a confidence claim: see
+   * `name-anchors.ts` for why it is a flag rather than a lane.
+   */
+  NAME_MATCH: 1 << 10,
 });
 
 export function hasFlag(flags: number, bit: number): boolean {

@@ -119,6 +119,7 @@ export function traverseKernelGraph(
   const reverseMultiplier = toFixedPoint(config.reverseEdgeMultiplier, SCALE);
   const exactBonus = toFixedPoint(config.exactSeedBonus, SCALE);
   const lexicalBonus = toFixedPoint(config.lexicalSeedBonus, SCALE);
+  const nameBonus = toFixedPoint(config.nameSeedBonus, SCALE);
 
   const frontier = new TraversalFrontier(plan.frontierBudget);
   const top = new TopScores(context.maxSelected);
@@ -128,8 +129,12 @@ export function traverseKernelGraph(
   for (let slot = 0; slot < seedCount; slot += 1) {
     if (!table.has(slot, CANDIDATE_FLAG.SEED)) continue;
     const exact = table.has(slot, CANDIDATE_FLAG.EXACT_SEED);
-    const base = toFixedPoint(contextGraphSeedConfidenceScore(config, table.confidenceOf(slot)), SCALE)
-      + (exact ? exactBonus : lexicalBonus);
+    // Three rungs, and the middle one is the whole reason a named symbol pulls
+    // its file along: the walk's seed strength is what a depth-1 neighbour
+    // inherits, so a name match that only raised its own fused score would rank
+    // the symbol and leave the file exactly where it was.
+    const seedBonus = exact ? exactBonus : table.has(slot, CANDIDATE_FLAG.NAME_MATCH) ? nameBonus : lexicalBonus;
+    const base = toFixedPoint(contextGraphSeedConfidenceScore(config, table.confidenceOf(slot)), SCALE) + seedBonus;
     table.graphScore[slot] = base;
     const node = table.node[slot] as number;
     frontier.push(node, base, 0, 0, node, -1, -1, (table.flags[slot] as number) & CANDIDATE_FLAG.FOCUS);

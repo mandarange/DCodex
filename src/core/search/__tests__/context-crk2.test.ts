@@ -256,6 +256,66 @@ describe('search context answers from the compact index', () => {
     }
   });
 
+  /**
+   * The join, not the mechanism.
+   *
+   * `admitProvidedSeeds` already had passing unit tests while every production
+   * caller dropped the field, so a lane test cannot detect this class. What has
+   * to be asserted here is that a caller's changed path *arrives*: the query
+   * below names neither the path nor anything in that file, so the node can only
+   * be in the answer because the seed reached the kernel.
+   */
+  it('carries a caller-supplied changed path into the answer as a verified anchor', async () => {
+    const workspace = await makeWorkspace('crk2-changed-paths');
+    try {
+      // A query that matches nothing isolates the join: every node below can
+      // only be in the answer because the caller's path reached the anchor lane.
+      const request = contextRequest(workspace.root, 'zzzzqqq');
+      const without = await searchContext(request, { cache: false, status: workspace.status });
+      assert.equal(without.ok, true);
+      assert.deepEqual(without.matches, [], 'the control must find nothing, or the test proves nothing');
+
+      const seeded = await searchContext(request, {
+        cache: false,
+        status: workspace.status,
+        changedPaths: ['src/other/b.ts']
+      });
+      const seedMatch = seeded.matches.find((match) => nodeIdOf(match) === IDS.fileOtherB);
+      assert.ok(seedMatch, 'a caller-resolved changed path must reach the kernel as a seed');
+      assert.equal(seedMatch.confidence, 'file_path');
+      assert.equal(seedMatch.meta?.seed, true);
+      assert.ok(seeded.matches.length > 1, 'the traversal must run from the seed, not stop at it');
+
+      // The same field on the published request shape, which is how an external
+      // caller of `sks.search-provider.v1` supplies it.
+      const viaRequest = await searchContext(
+        { ...request, changedPaths: ['src/other/b.ts'] },
+        { cache: false, status: workspace.status }
+      );
+      assert.ok(viaRequest.matches.some((match) => nodeIdOf(match) === IDS.fileOtherB));
+    } finally {
+      removeFixtureRoot(workspace.root);
+    }
+  });
+
+  it('never lets an unresolvable changed path claim an exact confidence', async () => {
+    const workspace = await makeWorkspace('crk2-changed-unknown');
+    try {
+      const response = await searchContext(contextRequest(workspace.root, 'zzzzqqq'), {
+        cache: false,
+        status: workspace.status,
+        // One path outside the workspace, one that resolves to no node. Neither
+        // may be completed, guessed at, or reported as an exact hit (§4), and an
+        // unresolvable seed must not conjure an answer to a query that has none.
+        changedPaths: ['/etc/passwd', 'src/does/not/exist.ts']
+      });
+      assert.equal(response.ok, true);
+      assert.deepEqual(response.matches, []);
+    } finally {
+      removeFixtureRoot(workspace.root);
+    }
+  });
+
   it('reuses a response only within the generation that produced it', async () => {
     const workspace = await makeWorkspace('crk2-cache');
     try {
@@ -271,6 +331,19 @@ describe('search context answers from the compact index', () => {
       });
       assert.equal(otherProfile.cacheHit, false);
       assert.equal(otherProfile.context?.graph?.profile, 'review');
+
+      // Seeds change the answer, so a cached answer keyed without them would
+      // hand back the unseeded one and silently undo the seed join.
+      const seeded = await searchContext(contextRequest(workspace.root, ANCHOR_QUERY), {
+        status: workspace.status,
+        changedPaths: ['src/legacy/old.ts']
+      });
+      assert.equal(seeded.cacheHit, false);
+      assert.equal(
+        (await searchContext(contextRequest(workspace.root, ANCHOR_QUERY), { status: workspace.status })).cacheHit,
+        true,
+        'the unseeded entry must survive the seeded one rather than being overwritten by it'
+      );
     } finally {
       removeFixtureRoot(workspace.root);
     }

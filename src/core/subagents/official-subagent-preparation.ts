@@ -136,10 +136,19 @@ async function prepareOfficialSubagentMissionLocked(input: OfficialSubagentPrepa
     ...slices.map((slice) => slice.agent || '').filter(Boolean)
   ])
   const officialConfig = await readOfficialSubagentConfig(input.root)
+  // The mission's declared write scopes are the one thing here the goal sentence
+  // does not say and the graph cannot infer. They are passed verbatim: a scope
+  // naming a directory resolves to no file node and is dropped by the kernel as
+  // an unknown seed, which is the correct outcome — nothing completes a partial
+  // path into an exact one.
+  const sliceWriteScopes = uniqueStrings(
+    slices.flatMap((slice) => (Array.isArray(slice.paths) ? slice.paths : []).map((entry) => String(entry || '').trim()))
+  )
   const triwikiAttention = await readBoundedTriwikiAttention(
     input.root,
     triwikiAttentionLimit(taskProfile),
-    goal
+    goal,
+    sliceWriteScopes.length === 0 ? {} : { changedPaths: sliceWriteScopes }
   )
   const roleModelPreferences = await readRoleModelPreferences({ env: input.env || process.env })
   const roleModelRouting = await readConfiguredCodexModelRoutingContext({ env: input.env || process.env })

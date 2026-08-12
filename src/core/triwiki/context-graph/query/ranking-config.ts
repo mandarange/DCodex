@@ -43,6 +43,13 @@ export interface ContextGraphRankingConfig {
   readonly exactSeedBonus: number;
   /** Flat bonus added to a node that entered as a lexical (text) seed. */
   readonly lexicalSeedBonus: number;
+  /**
+   * Flat bonus for a seed the query named exactly (`CANDIDATE_FLAG.NAME_MATCH`).
+   * The midpoint of the two above, and derived rather than fitted: a name match
+   * is stronger evidence than a word overlap and weaker than a resolved
+   * identifier, so it seeds the walk between them.
+   */
+  readonly nameSeedBonus: number;
   /** Upper bound applied to a caller-supplied `seed.score`, so an outside caller cannot dominate ranking. */
   readonly providedSeedScoreCeiling: number;
 
@@ -112,6 +119,7 @@ export const CONTEXT_GRAPH_RANKING_CONFIG: ContextGraphRankingConfig = {
   },
   exactSeedBonus: 4,
   lexicalSeedBonus: 0.5,
+  nameSeedBonus: 2.25,
   providedSeedScoreCeiling: 8,
 
   edgeConfidenceMultiplier: {
@@ -243,6 +251,18 @@ export interface ContextGraphKernelConfig {
    */
   readonly exactAnchorPriority: number;
 
+  /**
+   * Priority added to a candidate the query named exactly. A tier of its own,
+   * placed by the same argument as `exactAnchorPriority` rather than by
+   * measurement: it has to sit above everything RRF, the graph score and the
+   * node bonuses can jointly produce, so that "named by the query" orders ahead
+   * of "scored well"; and it has to sit below `exactAnchorPriority` by more than
+   * that same envelope, so no name match ever overtakes a resolved identifier.
+   * Half of it satisfies both with room to spare — the RRF envelope is bounded
+   * by `Σ laneWeight / (rrfK + 1)`, under 140.
+   */
+  readonly nameAnchorPriority: number;
+
   /** Query terms at or below this count with an anchor-shaped token read as `anchored`. */
   readonly anchoredMaxTerms: number;
   /** Terms above this with no anchor-shaped token read as `natural`. */
@@ -280,6 +300,7 @@ export const CONTEXT_GRAPH_KERNEL_CONFIG: ContextGraphKernelConfig = {
   },
 
   exactAnchorPriority: 1000,
+  nameAnchorPriority: 500,
 
   anchoredMaxTerms: 6,
   naturalMinTerms: 3,

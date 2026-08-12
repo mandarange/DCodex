@@ -14,8 +14,14 @@
  * It used to acquire its own seeds. `context-graph-seeds.ts` resolved paths,
  * symbols and text candidates here, and the engine resolved seeds again on the
  * way in — two seed engines, which is the duplication CRK2 exists to remove. The
- * kernel's anchor lane owns seed resolution now, so this file passes the query
- * and the focus paths and nothing else.
+ * kernel's anchor lane owns seed resolution now, so this file *resolves* nothing.
+ *
+ * It does still **forward** what the caller resolved: `options.changedPaths`
+ * become caller-verified `file_path` seeds. Removing the second resolver was
+ * correct; dropping the caller's own evidence with it was not, and measured as
+ * 57.7% of the v1→v2 must-include recall gap. The distinction is the whole rule:
+ * a path the caller supplied verbatim may claim exact confidence, and nothing
+ * this file derives ever may.
  *
  * ## The one filesystem probe, and why it is still here
  *
@@ -75,6 +81,8 @@ import {
   type ContextGraphQueryProfileName
 } from '../triwiki/context-graph/profiles.js';
 import {
+  changedPathKernelSeeds,
+  changedPathSeeds,
   openWorkspaceContextIndex,
   queryWorkspaceContext,
   sharedContextIndexCache,
@@ -107,6 +115,14 @@ export interface SearchContextOptions {
   /** Use the generation-scoped response cache. Defaults to true. */
   readonly cache?: boolean | undefined;
   readonly risk?: 'normal' | 'high' | undefined;
+  /**
+   * Workspace-relative paths the caller has already resolved — the files in the
+   * diff, the slice's write scope, the paths a fix is about. They enter the
+   * kernel as caller-verified `file_path` seeds and nothing here derives,
+   * completes or guesses one: a path this caller did not supply verbatim must
+   * not claim exact confidence (§4).
+   */
+  readonly changedPaths?: readonly string[] | undefined;
 }
 
 export async function searchContext(req: SearchRequest, options: SearchContextOptions = {}): Promise<SearchResponse> {
@@ -116,7 +132,7 @@ export async function searchContext(req: SearchRequest, options: SearchContextOp
   const query = (req.query || req.pattern || '').trim();
   const why = req.why || 'ai_context';
   const profile = resolveProfile(req, options);
-  const tokenBudget = Math.max(0, options.tokenBudget ?? CONTEXT_GRAPH_TRAVERSAL_CAPS.defaultTokenBudget);
+  const tokenBudget = resolveTokenBudget(req, options);
 
   if (!query) {
     return failure({ started, limits, why, errors: ['missing_context_query'], warnings: [], repair: false });
@@ -186,6 +202,35 @@ function resolveProfile(req: SearchRequest, options: SearchContextOptions): Cont
   return DEFAULT_CONTEXT_GRAPH_QUERY_PROFILE;
 }
 
+/**
+ * `SearchRequest.tokenBudget` is published as "`context` mode only: token budget
+ * for the packed context" and was read by nothing: this mode took the injected
+ * option or the default, so a caller setting the documented field silently got
+ * the default budget. Same precedence as `profile` — the injection seam wins,
+ * then the request, then the cap — because a caller holding both is the one that
+ * ran the preflight.
+ */
+function resolveTokenBudget(req: SearchRequest, options: SearchContextOptions): number {
+  const carried = options.tokenBudget ?? req.tokenBudget;
+  if (typeof carried !== 'number' || !Number.isFinite(carried)) {
+    return CONTEXT_GRAPH_TRAVERSAL_CAPS.defaultTokenBudget;
+  }
+  return Math.max(0, carried);
+}
+
+/**
+ * Changed paths from the injection seam, else from the request.
+ *
+ * Both are the caller's own claim about which files this question is about, so
+ * neither is trusted further than the other: whichever arrives, the kernel
+ * checks that the id exists before the seed can anchor anything, and a path that
+ * resolves to no node is reported as an unknown seed rather than approximated.
+ */
+function resolveChangedPaths(req: SearchRequest, options: SearchContextOptions): readonly string[] {
+  if (options.changedPaths !== undefined) return options.changedPaths;
+  return Array.isArray(req.changedPaths) ? req.changedPaths : [];
+}
+
 /** Locations only. A glob is a filter and cannot anchor a lane (§7.1). */
 function focusPathsOf(patterns: readonly string[] | undefined): string[] {
   const out: string[] = [];
@@ -207,9 +252,18 @@ interface KernelRequestInput {
   options: SearchContextOptions;
 }
 
-/** No `seeds`: the anchor lane resolves them, and a second resolver here is the duplication CRK2 removed. */
+/**
+ * The kernel still resolves every seed the *query* implies — this file does not
+ * re-run the v1 resolver, and that duplication stays removed.
+ *
+ * `seeds` carries only what the query cannot express: paths the caller already
+ * resolved. They are the caller's own evidence, so dropping them is not
+ * simplification but data loss, and it measured as 57.7% of the v1→v2
+ * must-include recall gap.
+ */
 function kernelRequestOf(input: KernelRequestInput): KernelRequest {
   const focusPaths = focusPathsOf(input.req.include);
+  const seeds = changedPathKernelSeeds(resolveChangedPaths(input.req, input.options));
   const caps = CONTEXT_GRAPH_TRAVERSAL_CAPS;
   return {
     query: input.query,
@@ -217,7 +271,8 @@ function kernelRequestOf(input: KernelRequestInput): KernelRequest {
     tokenBudget: input.tokenBudget,
     maxSelected: Math.max(1, Math.min(input.limits.maxMatches, input.options.maxSelected ?? caps.maxSelectedNodes)),
     ...(input.options.risk === undefined ? {} : { risk: input.options.risk }),
-    ...(focusPaths.length === 0 ? {} : { focusPaths })
+    ...(focusPaths.length === 0 ? {} : { focusPaths }),
+    ...(seeds.length === 0 ? {} : { seeds })
   };
 }
 
@@ -270,7 +325,11 @@ function responseCacheKey(input: ResponseCacheKeyInput): string {
     maxSelected: input.options.maxSelected ?? null,
     risk: input.options.risk ?? 'normal',
     include: input.req.include ?? [],
-    exclude: input.req.exclude ?? []
+    exclude: input.req.exclude ?? [],
+    // Seeds change the answer, so they have to change the key. Keyed on the
+    // resolved seed set rather than the raw option, so two callers who differ
+    // only in an unusable path still share one cached answer.
+    changedPaths: changedPathSeeds(resolveChangedPaths(input.req, input.options)).map((seed) => seed.path)
   });
   return `sks.search.context-graph ${crypto.createHash('sha256').update(payload).digest('hex')}`;
 }

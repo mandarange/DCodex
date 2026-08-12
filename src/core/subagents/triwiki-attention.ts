@@ -80,6 +80,12 @@ export interface ReadBoundedTriwikiAttentionOptions extends ContextGraphAttentio
   readonly profile?: ContextGraphQueryProfileName | undefined
   readonly tokenBudget?: number | undefined
   readonly risk?: 'normal' | 'high' | undefined
+  /**
+   * Workspace-relative paths the mission already names — a slice's declared
+   * write scope, the files a fix touches. A goal sentence almost never contains
+   * them, so without this the anchors are chosen from prose alone.
+   */
+  readonly changedPaths?: readonly string[] | undefined
 }
 
 /**
@@ -104,7 +110,8 @@ export async function readBoundedTriwikiAttention(
       limit: anchorLimit,
       profile: options.profile ?? 'implementation',
       tokenBudget,
-      risk: options.risk
+      risk: options.risk,
+      changedPaths: options.changedPaths
     },
     options
   )

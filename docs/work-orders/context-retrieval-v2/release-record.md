@@ -1,55 +1,234 @@
 # CRK2 Release Record
 
-## CUTOVER IS BLOCKED: v2 recall is below v1
+## CLEARED: v2 recall now exceeds v1
 
-First paired run against real engines, 62 cases, 3 repeats:
+**`v1 0.460692 · v2 0.481132 · v2 ahead by 0.020440`**, over 62 cases and 3
+repeats against real engines, re-measured independently on a clean build with
+zero drift. §4 confidence violations held at **10 (v1) / 3 (v2)** across every
+step. Determinism mismatches 0. The failed-floor list is byte-identical to the
+day this record opened.
 
-```
-              mustIncl  recall@k  prot.gate  conflict  reject  p50/p95/p99 ms
-v1              0.461     0.359     0.636      0.000    0/9    0.31/0.59/0.80
-v2              0.338     0.247     0.727      0.667    1/9    0.83/1.82/2.62
+Two lanes closed a gap of 0.122642 without a single tuned threshold:
 
-verdicts: 37 unchanged · 12 recall_regression · 9 rejection_mismatch · 4 improved
-```
+| step | v2 recall | gap to v1 |
+| --- | --: | --: |
+| baseline | 0.338050 | +0.122642 |
+| `changedPaths` seeds wired | 0.408805 | +0.051887 |
+| **name anchoring** | **0.481132** | **−0.020440** |
 
-**v2 finds less than v1 and is slower.** CG2-15 must not cut over on these
-numbers, and no threshold may be moved to make them acceptable.
+The predicted honest ceiling was +0.0723 → 0.4811. It landed on 0.481132. That
+the prediction held to four decimals is the useful part: the gap had been
+attributed correctly before it was closed, so the fix was aimed rather than
+searched for.
 
-The shape is not uniform, and the split is informative: v2 is *better* on the
-safety lanes (protected gate 0.727 vs 0.636, conflict 0.667 vs 0.000 — v1 detects
-no write-scope conflicts at all) and *worse* on general recall. The most likely
-cause is the one another lane measured independently: v1 resolved symbol names
-**structurally**, returning `exact_definition`, while CRK2 has BM25F lanes and
-**no anchor-grade symbol table**. Format revision 1's exact table holds canonical
-node ids only. So a symbol query that v1 answered exactly now goes through BM25F,
-which ranks differently and misses more.
+**Twelve cases moved across both lanes and exactly one moved down** — the
+`review-reverse-dependency` displacement, named and kept rather than netted out.
+The five cases the name lane recovered all went to 1.000, and all 62 v1 rows are
+byte-identical throughout, so the comparison never drifted under its own
+measurement.
 
-That is a coherent functional gap with a known cause, not a mystery — and it is
-the thing to fix before cutover, not to tune around.
+### The original decomposition, kept because it is why the fix was aimed
 
-**A second candidate cause, from the publish run on the real repository:**
-`omissions.cappedPostings` fired **102,635 times** while indexing 28,597 nodes.
-`postingCapPerTerm` is 4,096, so on a graph this size the commonest terms lose
-most of their matches before the query ever runs. That is a recall ceiling built
-into the index rather than into the ranker, and it would not show up on a small
-fixture — which is exactly why the paired run had to be against a real corpus.
+**This is a release gate, not a research target.** `search/context.ts` was moved
+onto the v2 kernel in `d53edb7f`, which is **not** an ancestor of `v8.7.0` — the
+published 8.7.0 still answers `sks search --mode context` from v1, so no user is
+affected today. That is precisely why the number binds: shipping 9.0.0 with the
+v2 search path live and its must-include recall below the v1 it replaces would be
+a *released* retrieval regression on the flagship query path, introduced by the
+release that advertises the new kernel. The gap must close before 9.0.0, or the
+search path must not cut over in it.
 
-Whether the cap or the missing symbol table dominates is unmeasured. Both are
-plausible, they are independent, and fixing one will not reveal the other's size
-unless each is measured on its own. Do that before changing either.
+The original figure was `v1 0.460692 · v2 0.338050 · gap 0.122642`, reproduced
+exactly over 62 cases and 3 repeats against real engines. The gap was decomposed
+by varying one input at a time, and **the hypothesis recorded first was the
+smallest live cause**:
 
-Two caveats on the numbers, both from the lane that produced them:
+| variant (v2 only, one input varied) | v2 mustIncl | share of gap closed |
+| --- | --: | --: |
+| as-is (control) | 0.3381 | 0.0% |
+| + `changedPaths` seeds | 0.4088 | **57.7%** |
+| + anchor-grade structural resolution | 0.4292 | **74.4%** |
+| **+ both** | **0.4811** | **116.7% — v2 ahead of v1** |
+| posting cap 4,096 → 16,777,216 | 0.3381 | **0.0%** |
+| claim-prose change | 0.3381 | **0.0%** |
 
-- **The latency comparison is not like-for-like yet.** v1 answers from an
-  in-process cached index; v2 opens the workspace index per call. The p50 gap is
-  partly measurement setup.
-- **Gold realization is 62/76 (81.6%)**, which caps both engines but not equally.
+**The largest cause was not on the list: `changedPaths` seeds never reach the v2
+engine.** The v1 engine turns them into `file_path` provided seeds; the v2 side
+drops the field. `KernelRequest.seeds` exists and `admitProvidedSeeds` routes a
+`file_path` seed into the anchor lane — and **neither production v2 caller passes
+seeds either** (`search/context.ts:211`, `projections/attention.ts:101`), while
+v1 had an entire seed-acquisition stage. So this is both an instrument asymmetry
+and a live consumer-migration gap, and it is the **fourth** defect in this build
+of the shape "built, wired, tested, and never fed".
 
-**The one case the baseline warned about went the right way.**
-`jargon-naruto-fanout`: v1 recall 0.00 at 0.50 ms → v2 recall **1.00 at 0.51 ms**.
-Same latency, real answer. Five other Korean and jargon cases are still 0.00 on
-both sides, and the `fast_but_empty` verdict fired during the run — so that guard
-is live against real engines rather than only against the stub.
+**Symbol anchoring bounds at +0.0094**, not the headline it was recorded as. The
+recoverable mass is bare label and basename anchoring (+0.0629). Checked
+directly: **0 of the 12 recall regressions lost a target v1 answered at
+`exact_definition`**, and only 2 of 12 held such a seed at all. A further +0.0189
+of the measured ceiling is reachable *only by breaching the §4 confidence
+ceiling* and is therefore not admissible; the honest anchor ceiling is +0.0723.
+
+**The posting cap contributes exactly zero, and structurally cannot do
+otherwise here.** The busiest term in the benchmark graph has 86 postings — 47.6×
+below the 4,096 cap — and lifting the cap to 16.7M left every node id
+byte-identical. On *this repository* the cap does bite: 103,123 postings dropped
+across exactly 14 terms, all frequency stopwords (`src ts core function const …`),
+with 3 of 14 probe queries changing answers. Real, but its recall effect is
+unmeasurable without gold for this repository, and **nothing measured justifies
+moving the cap**.
+
+**Claim prose contributes zero for a reason worth knowing before that lane
+measures itself green:** the benchmark fixture produces no claim or proof nodes
+at all — `compiled.skipped` reports `.sneakoscope/wiki/context-pack.json` as
+`unreadable: missing`. Four evidence-lane gold targets across six cases are
+unrealized and **both engines score 0 on all of them, so they cancel**. Storing
+claim text moves this benchmark by 0.000 until the fixture grows a context pack.
+
+### Three findings that change how the fix must be built
+
+1. **Adding a correct anchor can lose recall.** `review-reverse-dependency` goes
+   0.500 → 0.000 when handed its own legitimate `changedPaths` seed: the anchor
+   displaces a gold node out of top-k. Any seed-join fix must be measured
+   per-case; the mean would have hidden this.
+2. **Anchoring costs confidence-contract compliance.** Injected structural seeds
+   take v2's §4 violations from 3 to 16, against v1's 10. `jargon-align-run-repair`
+   alone produces 12 violations for **zero** recall gain, because v1's resolver
+   turns a three-word jargon query into six `exact_definition` seeds. A label or
+   symbol table needs a query-shape gate, or it will breach §4 while finding
+   nothing.
+3. **Two regressions resist both causes — 0.0315 of the gap.**
+   `focus-path-restricted-answer` (v2's focus filtering is reachability, not path
+   prefix — a documented limitation) and `graph-dependency-cycle` (v1 found both
+   nodes through its `text_candidate` sweep; v2's BM25F ranks them out).
+
+**Do not read a `fast_but_empty` verdict-count change as a retrieval change.**
+Counts drifted 36/1 vs 34/3 between runs whose recall was byte-identical, because
+that verdict is decided on a p95 comparison.
+
+## Closed: the seed join is wired, and it cost exactly one case
+
+`changedPaths` now reaches the v2 kernel as caller-verified `file_path` seeds at
+both production call sites (`search/context.ts`, `projections/attention.ts`) and
+in the benchmark instrument. One resolver — `query/changed-path-seeds.ts`, 91
+lines — serves all three, so the two sides of the comparison cannot drift apart
+on *which* paths become seeds again.
+
+| | before | after |
+| --- | --: | --: |
+| v1 must-include recall | 0.460692 | 0.460692 |
+| **v2 must-include recall** | **0.338050** | **0.408805** |
+| gap | 0.122642 | 0.051887 |
+| v2 recall@k | 0.246541 | 0.329874 |
+| v1 / v2 §4 confidence violations | 10 / 3 | 10 / 3 |
+| determinism mismatches | 0 | 0 |
+
+**+0.070755 = 57.69% of the gap**, matching the predicted 0.4088 exactly.
+Re-measured independently on a separate build: **zero drift across all 62 cases**,
+and the failed-floor list is byte-identical before and after
+(`forbidden_node_zero=2`, `unsupported_language_exact_mislabel_zero=3`), so
+nothing new was mislabelled or leaked. The 3→16 violation blow-up this record
+warned about comes from injected *structural* seeds, not from caller-supplied
+paths — that warning still stands for the anchoring lane.
+
+Seven of 62 cases moved; nothing else changed.
+
+| case | category | v1 | before | after | Δ |
+| --- | --- | --: | --: | --: | --: |
+| **review-reverse-dependency** | review_nl | 0.000 | **0.500** | **0.000** | **−0.500** |
+| review-affected-tests | review_nl | 0.000 | 0.000 | 1.000 | +1.000 |
+| review-high-risk-change | review_nl | 1.000 | 0.000 | 1.000 | +1.000 |
+| graph-high-fan-in-ids | graph_shape | 0.750 | 0.250 | 0.500 | +0.250 |
+| graph-high-fan-out-registry | graph_shape | 0.500 | 0.000 | 0.500 | +0.500 |
+| lifecycle-one-file-incremental | lifecycle | 1.000 | 0.000 | 0.500 | +0.500 |
+| lifecycle-file-rename | lifecycle | 1.000 | 0.000 | 1.000 | +1.000 |
+
+**The cost is named rather than netted out.** `review-reverse-dependency` 0.500 →
+0.000 is finding #1 above reproducing, now attributed rather than inferred:
+`format.ts` enters at rank 0 as the anchor and its own three depth-1 symbols take
+ranks 1–3, pushing gold `generation.ts` from rank 9 — the last slot inside k=10 —
+to rank 12. Both gold nodes are still in the answer; both fall outside k. The
+displacers are the seed and its own children, which for "who depends on X" are
+the least useful nodes in the set. Suppressing them would be an unmeasured
+invention contradicting §7.1 — a caller-verified seed *is* a legitimate anchor,
+and in production "what does this file do" must return the file.
+
+**The response cache key had to change with it.** Seeds change the answer, so a
+cached unseeded response would have silently voided the fix on the second call.
+Keyed on the *resolved* seed set, so two callers differing only in an unusable
+path still share one cached answer.
+
+### Two more of the same shape, found while wiring this one
+
+- `SearchRequest.tokenBudget` is published as "`context` mode only: token budget
+  for the packed context" and was read by nothing — `searchContext` took only the
+  injected option. An external caller setting the documented field silently got
+  the default. Fixed with the same precedence as `profile`.
+- `official-subagent-preparation.ts` held the mission's declared slice write
+  scopes and passed the attention query the goal sentence alone. Fixed.
+- **Reported, not touched** (different subsystem): the same file calls
+  `chooseVerificationBudget({ taskProfile, changedFiles: [] })` — a hardcoded
+  empty array where a real changed-file list belongs.
+
+`search/context-graph-seeds.ts` now has **zero production importers** — only its
+own test. It is on the CG2-15 deletion list.
+
+## Closed: name anchoring, and the confidence line held
+
+The gold nodes were never missing. Every one was already in the returned set,
+below `k` — so this was a ranking gap and it was closed by ranking, not by
+widening what the engine admits.
+
+| case | category | before → after | v1 |
+| --- | --- | --: | --: |
+| `basename-reader-ts` | basename | 0.000 → **1.000** | 1.000 |
+| `snake-fragment-context-graph-smoke` | snake_case_fragment | 0.000 → **1.000** | 1.000 |
+| `basename-index-ts-collision` | basename | 0.333 → **1.000** | 1.000 |
+| `determinism-tie-break-stability` | determinism | 0.333 → **1.000** | 1.000 |
+| `exact-symbol-compile-context-index` | exact_symbol | 0.500 → **1.000** | 1.000 |
+
+Nothing moved down. `recall_regression` verdicts fell 9 → 4, and the four that
+remain are the ones that should: the two documented limitations
+(`focus-path-restricted-answer`, `graph-dependency-cycle`) and two natural-language
+queries the gate refuses on purpose.
+
+**The §4 line held structurally, not by luck.** Nothing in the change calls
+`table.claim`. A name match sets a flag and moves two scores; confidence stays
+whatever the lane assigned. Verified across the corpus: every name-matched
+candidate claims `text_candidate`, the sole exception being one that was *also* a
+genuine whole-path anchor. The gate is `the whole query is one bare token`, and
+over all 43 retrieval cases it produced **zero** matches on every jargon, Korean,
+planning, review and graph-shape query — which is the `jargon-align-run-repair`
+failure (12 violations for zero recall) not being repeated.
+
+Bound worth carrying: candidates come from the post-lane table, so a node whose
+name is the query but whose BM25F rank fell outside `laneTopN` is still
+unreachable. Closing that needs the anchor tables to carry names — a format
+revision, not a tuning change.
+
+### Three more of "built, wired, tested, and never fed" — one of them the lane's own
+
+1. **The lane's own tests passed with half the change deleted.** Six new
+   join-level tests were green with the traversal seed-strength consumer removed;
+   only mutation testing found it. That is this record's recurring pattern
+   appearing *inside the work that was written to fix it*, and it is the argument
+   for mutation-testing a guard rather than counting its assertions. Fixed: the
+   label test now asserts the named symbol's file outranks every merely-scored
+   node (without the bonus it falls to rank 6 of 10).
+2. **`QueryPlan.shape` cannot express query shape.** `classifyShape` counts
+   *tokenizer segments*, so one-word `compileContextIndex` classifies as
+   `natural` (6 segments) and one-word `context_graph_smoke` as `natural` (3),
+   while two-word `CSR adjacency` is also `natural`. Anything gating on `shape`
+   to mean "the caller typed an identifier" is wrong for both classes. This is
+   why the new gate is not built on it.
+3. **`exactAnchorPriority` does nothing at the two call sites that appear to
+   apply it** (`kernel-lanes.ts:114`, `:188`). Verified directly: `contribute()`
+   writes it to `laneScore`, and `scoreIn` — the only reader — has exactly two
+   callers, `kernel-select.ts:113` filling a receipt field and one test
+   assertion. Fusion is pure RRF on *rank*; the real exact priority is the
+   `EXACT_SEED` flag in `kernel-fuse.ts:267`. The constant is not dead, but its
+   use reads as the place ranking priority is applied when it is not — so a
+   future tuner would change it and measure nothing. Same family as the
+   `LaneTelemetry.candidates` misreading already on this record.
 
 ## Korean recall: the cause is one discarded field, not i18n
 
@@ -154,9 +333,103 @@ measuring anything while continuing to report a number. Either the missing data
 reaches the index, or the affected cases are re-specified against ids the
 compiler can produce — as a decision, on the record, not as a cleanup.
 
+## Closed for claim prose: entropy-shaped secrets no longer reach the bytes
+
+Every shape that previously reached the published index now does not — bare
+base62 and hex, JWTs, emails, IPv4 — with retrieval unmoved: 24 of 24 claims
+still retrievable, 240 of 380 prose words, index bytes byte-identical before and
+after the guard. No claim lost text.
+
+Two things about how it was built are worth more than the fix:
+
+**A shape nobody listed was found by measuring rather than by reviewing.** A
+43-character base64url token spends `-` and `_` as payload, so every alphanumeric
+run inside it falls under the 20-character floor and walks past a guard that
+judges runs as they appear. Catch rate was 87.8%. Rejoining the run before
+judging it took that to 99.9% — and the rejoin *shrinks* the false-positive
+surface, because a hyphenated identifier rejoins into something short enough to
+fall below the floor.
+
+**Then the same defect was found again, one encoding over, by the review that
+measured instead of reading.** The rejoin covered `-` and `_` only, which is the
+base64url alphabet. Standard base64 spends `+` `/` `=` the same way, and it sat
+at **87.0% — its unfixed rate**. It survived the fix, its test, and the report
+because the encoding that got tested was the encoding that had just been fixed:
+the fix and its evidence shared one blind spot. Rejoining all five encoding
+characters takes standard base64 to 99.9% with base64url unchanged, and the
+unpunctuated encodings are the control that shows the floor itself was never the
+problem:
+
+| encoding | split on punctuation | rejoined |
+| --- | --: | --: |
+| base62 (no punctuation) | 100.0% | 100.0% |
+| hex (no punctuation) | 100.0% | 100.0% |
+| base64url (`-` `_`) | 87.8% | **99.9%** |
+| base64 (`+` `/` `=`) | 87.0% | **99.9%** |
+
+5,000 random 32-byte secrets per encoding. Reading across `+` and `/` means the
+guard now spans the prose that actually contains them — paths and ratios — so
+`src/core/search/context.ts`, `a/b`, `3/4` and `1/2` are pinned as passing cases
+rather than reasoned about. Cost on this repository's real claim prose: **zero**,
+index bytes byte-identical at 673,877, 24 of 24 claims still carrying text.
+
+The general lesson is the one this record keeps re-learning in a new costume: a
+guard is only proven against the shapes someone thought to generate, so the
+second encoding is not redundancy, it is the test.
+
+**The false positives were left in place deliberately, after checking.** The
+proxy flags four plausible identifiers out of nineteen — CamelCase names of 20+
+characters embedding a number. The instinct was to tune the rule until they
+survived. The lexicon settles it instead: `emitLatinRun` already refuses those
+exact tokens whole, before casing and before splitting, so none was ever
+searchable. Tuning to save them would have bought no recall and put the extractor
+and the index into disagreement — **a token stored but never indexed is exactly
+the leak with a clean-looking search path that this finding is about.** The rule
+now matches the lexicon's by construction, and the false-positive class is pinned
+by a test that names it and states its cost rather than hiding it. Cost on real
+prose: 0 of 24.
+
+Residual, and worth a reviewer's eye:
+
+- The collapse is all-or-nothing, so one flagged identifier costs a claim all its
+  other words (0 occurrences today).
+- A credential under 20 characters or of low entropy is not shape-detectable and
+  is caught only by prefix.
+- **A four-part version string trips the IPv4 rule.** `8.7.0.1` is four octets in
+  range, and nothing distinguishes it from `192.168.10.42` — the module's own
+  comment predicted this and a probe confirms it fires. Measured cost on this
+  repository's claim prose is 0 of 24, and the alternative is a rule that lets a
+  real address through, so it stays. Named here because a release record full of
+  version numbers is exactly where it would first bite.
+
+## System-wide, still open: other extractor metadata reaches the bytes unredacted
+
+Found while closing the claim-text gap, and larger than that gap. Measured over
+eight hostile shapes placed in extractor metadata:
+
+| shape | reaches node | reaches bytes | becomes a term |
+| --- | --- | --- | --- |
+| `sk-proj-…`, `ghp_…`, `AKIA…`, `Bearer …`, `key: value` | no | no | no |
+| absolute / home / UNC / `../` path | no | no | no |
+| bare high-entropy base64 | **yes** | **yes** | no |
+| bare 64-char hex | **yes** | **yes** | no |
+| JWT (`eyJ…`) | **yes** | **yes** | **yes** |
+| email address | **yes** | **yes** | **yes** |
+| IPv4 address | **yes** | **yes** | **yes** |
+
+The extractors redact by a prefix and keyword pattern list with no entropy proxy,
+so an unprefixed key, a JWT, an email or an IP lands verbatim in node metadata
+and therefore in the index string table. The last three are searchable.
+
+This is pre-existing and applies to **every** extractor's `safeText` metadata,
+not only to claims. It is recorded as its own item rather than folded into the
+claim-text work, because fixing it properly touches every extractor and is a
+scheduling decision, not a cleanup. The claim-text lane closes only the exposure
+its own change widens.
+
 ## A pattern worth naming: built, wired, tested, and never fed
 
-Three defects in this build share one shape, and none of them could have been
+Six defects in this build share one shape, and none of them could have been
 caught by a passing test:
 
 - The **lexicon** was built, tested with 50 passing cases, and imported by
@@ -166,6 +439,14 @@ caught by a passing test:
   assertions had been written to match, locking zero recall in as expected.
 - **Claim prose** is extracted, hashed, measured, and discarded, so the evidence
   lane indexes nothing at all.
+- **`changedPaths`** — `KernelRequest.seeds` exists, `admitProvidedSeeds` routes
+  it, and neither production caller nor the benchmark's v2 side passed the field.
+  Worth 57.7% of the recall gap, and it made every published v2 recall figure a
+  comparison between two engines asked different questions.
+- **`SearchRequest.tokenBudget`** is documented in the published request type and
+  was read by nothing.
+- **Slice write scopes** were in hand at the subagent preparation call site and
+  the attention query got the goal sentence alone.
 
 In each case the component worked, its tests passed, and the data never arrived.
 Unit tests cannot see this class; only an end-to-end measurement against a real
@@ -174,6 +455,37 @@ corpus can, which is the argument for the paired run existing at all.
 Facts the 9.0.0 release notes and readiness docs must carry. Recorded as they
 happen, because a release record assembled from memory at the end is a release
 record that omits the inconvenient parts.
+
+## Two rulings, one of which corrects the instructions I gave
+
+**The ADR permitted what the lane refused, and the lane was right.** §4's anchor
+row listed `basename` as `exact`. The lane was instructed to refuse exact for any
+name match and did, leaving doc and implementation disagreeing on paper. Resolved
+in favour of the implementation and the ADR amended, because implementing the row
+as written contradicts §4's own opening sentence: `index.ts` names many nodes —
+the corpus has `basename-index-ts-collision` for exactly this — so an `exact`
+basename would claim exact confidence for several nodes at once, at most one of
+which the caller meant. The row was aspirational for a format that carried names,
+and went untested because revision 1 implemented "basename" as whole-path. The
+narrowing cost **zero recall**: every case the name lane recovers reaches 1.000
+as a ranking signal. Recorded as settled rather than as a tension only because
+nothing was traded away.
+
+**"Existing files are shrink-only" is not the rule, and I asserted it to every
+lane in this build.** Reading `check-architecture.ts` directly:
+`waiverFailureFor` is reached *only* when a file already exceeds a budget
+(`lines >= split_review_lines`, `lines > max_lines`), and shrink-only is the
+policy governing files that carry a waiver in
+`src/generated/architecture-waivers.json`. The binding rules are 450 lines for
+new files — no waiver possible, `new files cannot use architecture waivers` — and
+the per-rule `max_lines` for existing ones. An unwaivered existing file under
+budget may grow.
+
+Nothing shipped wrong because of it: an over-strict constraint fails safe, and
+every lane stayed well inside the real budget. But it is worth correcting rather
+than quietly dropping, because a made-up constraint spends real effort — work
+gets restructured to satisfy a gate that was never going to object — and the next
+reader of this record would otherwise inherit it as fact.
 
 ## A gate was committed red
 
@@ -294,17 +606,103 @@ Two facts that bound the claim, both measured:
   Recall on the most common terms is bounded by `postingCapPerTerm`, and the
   number is reported rather than left to be discovered.
 
-## BLOCKS RETIREMENT: there is no v2 freshness preflight
+## Closed: the freshness class no longer reads the snapshot
 
-`search/context.ts` no longer queries the JSON snapshot, but `contextGraphStatus`
-still parses all 58 MB of it as its first act, because it is the only source of
-git-derived staleness. That was kept deliberately: replacing it with pointer/meta
-integrity alone would let a workspace whose sources changed answer from a stale
-index **with no error**, which is a worse regression than the byte cost.
+**This blocker was half stale when it was written, and the wrong half was the
+alarming one.** `contextIndexFreshness` — `readContextGraphMeta` plus cache-key
+comparison, no snapshot read — already existed, landed in `d53edb7f` alongside
+the kernel. What was missing was not the preflight but its **callers**, and a
+test of the one property the blocker actually cared about *in the shape
+production uses*. A record entry that says "there is no X" when X exists unused
+is worth naming: the two failure modes read identically from the outside, and
+only one of them is a build task.
 
-Until a v2 preflight exists — `readContextGraphMeta` plus cache-key comparison,
-without the snapshot read — the JSON runtime store cannot be deleted and the
-retirement gate cannot pass.
+The measured cost, on this repository (28,660 nodes, 77,347 edges). The 58 MB in
+the original entry was itself wrong — the snapshot is **63,654,542 bytes**, and a
+byte-identical `context-graph.prev.json` sits beside it, so the pair is 127.3 MB.
+The meta the v2 path reads instead is 489,949 bytes.
+
+| Configuration | | JSON path | v2 preflight |
+| --- | --- | --: | --: |
+| **Isolated** (neutral key, no source re-hash) | bytes | 64,144,491 | **489,949** |
+| | wall | 274–377 ms | **1.9–2.5 ms** |
+| | heap | 218 MB | **17.3 MB** |
+| **Realistic** (real git, no supplied key) | bytes | 79,577,962 | **15,923,420** |
+| | wall | 479–667 ms | **186 ms** |
+| **Hooks preflight** (re-hashes 3,740 sources) | bytes | 86,819,814 | **23,654,354** |
+| | heap | 239.8 MB | **16.7 MB** |
+
+Every pair reached the same verdict and the same reason list.
+
+**The honest qualification is in the row the headline would skip.** For the hooks
+caller the wall-clock win is *inside the noise* — 1,611 ms against 1,418–1,785 ms
+— because re-hashing 3,740 recorded sources dominates both sides. The wins there
+are bytes (−63.2 MB) and heap (14×). Wall clock only moves where the parse *was*
+the cost: 274 ms → 2 ms. Quoting the 274→2 figure for every caller would have
+been true of one measurement and false of the deployment.
+
+**A mechanism correction, against the brief this lane was given.**
+`computeSourceInventoryFingerprint` was the mechanism I pointed the lane at, and
+it is the wrong one: it feeds the fragment manifest, and `expectedSourceFingerprint`
+is a *pointer constraint* (`generation-resolve.ts:50`) deciding which generation
+may be served — not whether the workspace moved. Freshness comes from
+`computeContextGraphCacheKey` / `inspectCodeNavigationSources`, both content-hash
+based.
+
+### The test, and why it is not vacuous
+
+`store/__tests__/index-freshness-source-mutation.test.ts`. The existing
+`index-freshness.test.ts` compares the two paths but hands every case a
+**hand-built cache key** and runs with `verifySources: true` — right for an
+equivalence test, wrong here, because it pins as a constant precisely the half
+that has to do the detecting, and **no production caller uses that shape**
+(`search/context.ts` passes `verifySources: false`, which turns the recorded-input
+re-hash off entirely and leaves the cache key as the only thing between a mutated
+workspace and a confident answer).
+
+Two independent falsifications, not one:
+
+- A **deliberately corrupt snapshot** is planted on disk. The JSON path reports
+  `corrupt` for that file, so a preflight still reading it could not return
+  `fresh`. The property is structural rather than argued.
+- The preflight was then **mutated in `dist` into the exact shape this record
+  refused** — pointer/meta integrity with the cache-key comparison removed — and
+  4 of 5 tests failed, the headline one `actual: 'fresh', expected: 'stale'`. The
+  regression reproduced verbatim. The 5th correctly still passed: it documents
+  non-coverage.
+
+### What it does not cover — stated, because a preflight is only as good as its blind spots
+
+1. **mtime-only change with identical bytes** stays `fresh`. Deliberate, asserted.
+2. **New untracked files outside `RELEVANT_EXTENSIONS`** (`.go`, `.java`, `.c`,
+   `.sh`) are invisible. New-file-only: tracked-dirty files are not filtered.
+3. **`MAX_FINGERPRINT_FILES = 2000`** — past 2,000 dirty paths the fingerprint
+   records `truncated:<n>` and stops.
+4. **`MAX_FINGERPRINT_FILE_BYTES = 8 MB`** — a larger file fingerprints as
+   `oversize:<size>`, so a length-preserving edit is invisible.
+5. **`verifySources` sees only *recorded* inputs** (capped at 4,000), so a new
+   file can never raise `source_hash_mismatch` — and it is off in
+   `search/context.ts`.
+6. **`head_changed` can be forgiven** when intervening commits touched only
+   code-pack artifacts. Shared verbatim with the JSON path, not new.
+7. With an unreadable meta the preflight cannot report a `snapshot_hash` for
+   diagnostics, where the JSON path could read it from the snapshot.
+
+### The gate finding that matters more than the migration
+
+The consumer inventory said the deletion gate must run on imports rather than a
+bare grep. That is necessary and **not sufficient**: `triwiki-atlas-command.ts`
+and `architecture-map-check.ts` both read the snapshot through a hand-built
+`path.join(...)` and import nothing from the store. An import-only gate sees
+neither. CG2-14 needs an import check **and** a path-literal read check, failing
+independently. Corrected in the inventory.
+
+**CG2-15 is not unblocked by this** — the freshness class is cleared, which is
+what this blocker asked for, but 4 content readers, 4 compiler write-side sites
+and the v1 engine still read the file. Two now-dead surfaces fall out:
+`contextGraphStatus()` has zero production call sites, and
+`context-graph.prev.json` has no production reader at all — written every
+compile, never read back, a byte-identical 63 MB duplicate.
 
 ## MUST FIX before 9.0.0: metadata values lose their type
 
@@ -330,6 +728,24 @@ Two facts that bound the damage, both measured rather than assumed:
 
 Where it will bite is `command-route-pipeline-gate` and `test-production-binding`,
 where test files would start reading as write-scope conflicts.
+
+**This orders the remaining work: format revision 2 must land before CG2-15.**
+`verification/context-graph-affected.ts` decides which tests run for a change,
+and all three of its predicates are metadata equality on a boolean —
+`metadata.isTest === true` at line 147, `requiredForPublish === true` and
+`alwaysOnRelease === true` at line 151. It still reads the v1 JSON index
+(`loadContextGraphIndex`), so it works today and its tests pass today. The moment
+CG2-15 moves it to the v2 reader, every one of those arms goes silently false:
+the selector stops recognising test nodes and stops recognising release-critical
+ones. It selects *fewer* tests and the run gets *faster*, which is the failure
+presenting as an improvement — the exact risk the consumer inventory named for
+this file. Migrating it on the strength of "it compiles and the suite is green"
+would ship that.
+
+`architecture/metrics.ts:130` reads the same shape (`typeof node.metadata.public
+=== 'boolean'`) but consumes the compiler's in-memory merged nodes rather than
+the reader, so it is unaffected. Checked rather than assumed — the two look
+identical at the call site and only the data source separates them.
 
 **Attempted and reverted.** JSON-encoding the value preserves the type, but it
 also quotes strings into the string table, and the kernel fixtures deliberately

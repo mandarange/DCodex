@@ -4,11 +4,11 @@
  * Answers one question — "is the stored graph usable right now?" — without
  * rebuilding anything, without touching a source file, and without spawning a
  * process on the normal path. The verdict itself is not re-derived here: it is
- * `contextGraphStatus()`, delegated to and reported verbatim.
+ * `contextIndexFreshness()`, delegated to and reported verbatim — the v2
+ * preflight, so the 58 MB JSON snapshot is never parsed to answer this.
  *
- * Spawn discipline. `contextGraphStatus()` computes a cache key when the caller
- * does not supply one, and that computation shells out to git. The preflight
- * therefore always supplies one:
+ * Spawn discipline. `contextIndexFreshness()` computes a cache key when the
+ * caller does not supply one, and that shells out to git. So one is always given:
  *
  *  - Caller-supplied (`cacheKey`): git-derived staleness is evaluated in full.
  *  - Otherwise: a neutral key built from the stored meta's own parts, so the
@@ -32,7 +32,7 @@ import {
   type ContextGraphCacheKeyResult,
   type ExtractorIdentity
 } from '../triwiki/context-graph/compiler/cache-key.js';
-import { contextGraphStatus } from '../triwiki/context-graph/store/graph-status.js';
+import { contextIndexFreshness } from '../triwiki/context-graph/store/index-freshness.js';
 import { readContextGraphMeta } from '../triwiki/context-graph/store/snapshot-store.js';
 import { codeNavigationGraphExtractors } from '../triwiki/context-graph/extractors/index.js';
 
@@ -102,7 +102,7 @@ export interface ContextGraphFreshnessPreflight {
 
 /**
  * Deterministic freshness verdict for the stored graph. Read-only: it opens the
- * snapshot, the meta and (optionally) the recorded inputs, and writes nothing.
+ * index meta and (optionally) the recorded inputs, and writes nothing.
  */
 export async function contextGraphFreshnessPreflight(
   root: string,
@@ -116,7 +116,7 @@ export async function contextGraphFreshnessPreflight(
   const cacheKey = supplied ?? neutralCacheKey(meta?.cacheKeyParts ?? PLACEHOLDER_CACHE_KEY_PARTS);
 
   const recordedSources = meta ? Object.keys(meta.inputHashes ?? {}).length : 0;
-  const status = await contextGraphStatus(root, {
+  const status = await contextIndexFreshness(root, {
     extractors,
     cacheKey,
     verifySources,

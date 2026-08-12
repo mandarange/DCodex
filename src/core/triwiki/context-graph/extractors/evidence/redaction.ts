@@ -39,6 +39,179 @@ export function looksLikeUnsafePath(value: string): boolean {
   return UNSAFE_PATH_PATTERNS.some((pattern) => pattern.test(value));
 }
 
+// ---------------------------------------------------------------------------
+// Free-form prose
+// ---------------------------------------------------------------------------
+
+/**
+ * Shapes that are dangerous to *store* even though the repository redactor does
+ * not name them, matched only in free-form prose (see `safeFreeText`).
+ *
+ * `redactString` is a prefix-and-keyword list: it knows `sk-…`, `ghp_…`, `AKIA…`,
+ * `Bearer …`, `key: value`. That is the right shape for a config value and the
+ * wrong shape for a sentence somebody wrote, where a credential arrives without
+ * its variable name. These three carry no recognisable prefix and are not
+ * entropy-shaped either, so neither the redactor nor the proxy below sees them.
+ */
+const FREE_TEXT_SECRET_PATTERNS: readonly RegExp[] = [
+  // A JWT is three base64url segments and the first always begins `eyJ` — the
+  // base64 of `{"`. It is matched whole because the entropy proxy catches only
+  // its header segment: the payload and signature are usually under the
+  // 20-character floor, and half a token removed is a token leaked.
+  /\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}(?:\.[A-Za-z0-9_-]*)?/,
+  // An address is personal data, and its local part survives tokenization as an
+  // ordinary searchable term — the same failure mode as `/Users/alice`.
+  /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/,
+  // Dotted quad with every octet in range, and not part of a longer dotted
+  // number, so a four-part version string is the only plausible false positive.
+  /(?<![\d.])(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}(?![\d.])/
+];
+
+const SECRET_TOKEN_MIN_LENGTH = 20;
+const SECRET_HEX_MIN_LENGTH = 32;
+
+/**
+ * Entropy by integer counting, deliberately the same rule the runtime index's
+ * `looksLikeSecretToken` applies to a term.
+ *
+ * The approach is reproduced rather than imported: the index layer sits
+ * downstream of this one, and an extractor that imported from `runtime-index/`
+ * would invert that dependency to share thirty lines. Reproducing it also keeps
+ * the two answers *identical* on purpose — a token this layer stores and that
+ * layer then refuses to index is precisely the divergence that put a secret in
+ * the string table while the search path looked clean.
+ *
+ * Integer comparisons only, for the reason that module states: a float entropy
+ * threshold would make "is this indexable" engine-dependent.
+ *
+ * The thresholds and the unit are matched deliberately. That module's
+ * `emitLatinRun` judges a whole alphanumeric run *before* lowercasing and
+ * *before* camel-splitting — "its camel segments and acronym are just as much
+ * of a leak as the key itself" — so this predicate judges the same unit. The
+ * consequence is worth stating plainly: a token this rejects is a token the
+ * index already refused to make searchable, so nothing that was retrievable
+ * becomes unretrievable here. What differs is blast radius, since a caller of
+ * `safeFreeText` drops the whole field rather than one term. Measured on this
+ * repository's own claim prose that costs nothing (0 of 24 claims), and the
+ * false-positive class is narrow enough to name: a CamelCase identifier at
+ * least 20 characters long that embeds a number, such as `Utf8`, `Crk2`,
+ * `Sha256`, `Bm25`. See `evidence-claim-text.test.ts`, which pins it.
+ */
+function tokenLooksLikeKeyMaterial(token: string): boolean {
+  if (token.length < SECRET_TOKEN_MIN_LENGTH) return false;
+  let lower = 0;
+  let upper = 0;
+  let digit = 0;
+  const distinct = new Set<string>();
+  for (const char of token) {
+    distinct.add(char);
+    const code = char.codePointAt(0) as number;
+    if (code >= 0x61 && code <= 0x7a) lower += 1;
+    else if (code >= 0x41 && code <= 0x5a) upper += 1;
+    else if (code >= 0x30 && code <= 0x39) digit += 1;
+    else return false;
+  }
+  // A long run of digits is a number somebody wrote — a byte count, a line
+  // range, a nanosecond timestamp — and would otherwise satisfy the hex rule.
+  if (lower + upper === 0) return false;
+  if (/^[0-9a-fA-F]+$/.test(token) && token.length >= SECRET_HEX_MIN_LENGTH) return true;
+  // Mixed case plus digits plus better than half the characters distinct: an
+  // identifier repeats letters, a random key does not.
+  return lower > 0 && upper > 0 && digit > 0 && distinct.size * 2 >= token.length;
+}
+
+/**
+ * `true` when free-form text carries something that must not be stored: a
+ * key-shaped token the prefix list would miss, a JWT, an address, or an IP.
+ *
+ * Runs of ASCII alphanumerics are the unit, which is the same split the index
+ * tokenizer performs — every ASCII character below 0x80 that is not a letter or
+ * digit is a separator there, so a token this predicate judges is a token that
+ * lane would otherwise have indexed.
+ *
+ * A run is judged after its **encoding punctuation** is removed — `-` `_` `+`
+ * `/` `=`. Those five characters are exactly the ones base64 and base64url
+ * spend as payload, and a 32-byte secret in either encoding is a 43-character
+ * token carrying three or four of them. Split on punctuation alone, it becomes
+ * several runs that are each under the 20-character floor and each individually
+ * innocent, so a floor applied per run never sees the token at all.
+ *
+ * The rates are measured, 5,000 random 32-byte secrets per encoding, and the
+ * unpunctuated encodings are the control that shows the floor itself is sound:
+ *
+ * | encoding | split on punctuation | rejoined |
+ * | --- | --: | --: |
+ * | base62 (no punctuation) | 100.0% | 100.0% |
+ * | hex (no punctuation) | 100.0% | 100.0% |
+ * | base64url (`-` `_`) | 87.8% | **99.9%** |
+ * | base64 (`+` `/` `=`) | 87.0% | **99.9%** |
+ *
+ * Only `-` and `_` were rejoined at first, which closed base64url and left
+ * standard base64 at its unfixed rate — the same defect, one encoding over, and
+ * invisible because the encoding that was tested was the one that got fixed.
+ *
+ * Rejoining *shrinks* the false-positive surface rather than growing it: a name
+ * like `Crk2-Bm25-Fix` is 13 characters once its separators are dropped and
+ * falls below the floor, where each of its parts already did. Checked against
+ * prose carrying paths and ratios — `src/core/search/context.ts`, `a/b testing`,
+ * `the ratio was 3/4` — none of which trips it.
+ */
+export function looksLikeSecretShape(value: string): boolean {
+  if (FREE_TEXT_SECRET_PATTERNS.some((pattern) => pattern.test(value))) return true;
+  for (const run of value.split(/[^A-Za-z0-9_+/=-]+/)) {
+    if (tokenLooksLikeKeyMaterial(run.replace(/[-_+/=]/g, ''))) return true;
+  }
+  return false;
+}
+
+/**
+ * How far into a value the shape scan reads, independent of what is stored.
+ *
+ * Scanning only the stored prefix would leave a credential that straddles the
+ * metadata bound half-stored, and half a credential in the published bytes is a
+ * leaked credential. Scanning is therefore wider than storing, and bounded so a
+ * pathological input cannot turn the scan into the expensive part of extraction.
+ */
+const FREE_TEXT_SCAN_LIMIT = 4096;
+
+export interface SafeFreeText {
+  /** The prose to store, or `null` when nothing may be stored at all. */
+  readonly text: string | null;
+  /** `true` when what survived is not what was declared. Truncation alone is not redaction. */
+  readonly redacted: boolean;
+}
+
+/**
+ * The projection for prose a human wrote, as opposed to a field a manifest
+ * declared. `safeText` is right for the latter and insufficient for the former.
+ *
+ * Two things differ from `safeText`, and both follow from free text being the
+ * place a pasted credential actually turns up:
+ *
+ * - The secret-shape guard above runs, so an unprefixed key, a JWT, an address
+ *   or an IP is caught by shape rather than by variable name.
+ * - A hit collapses the **whole** field. Cutting the offending span out and
+ *   keeping the sentence would publish a partially redacted secret, and it is
+ *   the part that survives that gets indexed.
+ *
+ * This is deliberately not folded into `safeText`. That function projects every
+ * metadata value in the graph, including fields whose legitimate content is
+ * exactly what the entropy proxy is built to catch — a proof card's 64-character
+ * `input_hash`, a content digest, a cache key. Applying the proxy there would
+ * empty those fields across the graph and prove nothing about prose. Callers
+ * therefore opt in, per field, where the value really is free text.
+ */
+export function safeFreeText(value: unknown, maxLength = EVIDENCE_MAX_META_STRING): SafeFreeText {
+  const declared = boundedText(value, FREE_TEXT_SCAN_LIMIT);
+  if (!declared) return { text: null, redacted: false };
+  const scanned = safeText(declared, FREE_TEXT_SCAN_LIMIT);
+  if (!scanned || scanned === EVIDENCE_REDACTED_PATH || looksLikeSecretShape(scanned)) {
+    return { text: null, redacted: true };
+  }
+  const stored = boundedText(scanned, maxLength);
+  return { text: stored || null, redacted: scanned !== declared };
+}
+
 /**
  * Project an arbitrary value into a bounded, redacted metadata string.
  * Unsafe paths collapse to a marker rather than being partially disclosed.

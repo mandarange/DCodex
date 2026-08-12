@@ -20,9 +20,9 @@ import { compileContextGraph } from '../compiler/index.js';
 import { publishContextIndexGeneration } from '../compiler/publish-index.js';
 import { computeSourceInventoryFingerprint } from '../compiler/fragment-manifest.js';
 import { contextGraphExtractors } from '../extractors/index.js';
-import { contextGraphNodeId } from '../ids.js';
-import { isWorkspaceRelativePosixPath } from '../paths.js';
 import {
+  changedPathKernelSeeds,
+  changedPathSnapshotSeeds,
   clearWorkspaceContextIndex,
   loadContextGraphIndex,
   openWorkspaceContextIndex,
@@ -31,7 +31,6 @@ import {
   workspaceContextFailureOf
 } from '../query/index.js';
 import { fixedKernelClock } from '../query/kernel.js';
-import type { ContextGraphSeed } from '../query-types.js';
 import type { Crk2Conflict, Crk2Engine, Crk2EngineRequest, Crk2EngineResult } from './crk2-types.js';
 import { detectWriteScopeConflicts } from './adapters/slice-conflicts.js';
 
@@ -65,22 +64,16 @@ function emptyResult(errorCode: string | null, latencyMs: number, cacheHit = fal
   };
 }
 
-/** `changedPaths` enter as caller-supplied `file_path` seeds and are never promoted. */
-function providedSeeds(changedPaths: readonly string[]): ContextGraphSeed[] {
-  const seeds: ContextGraphSeed[] = [];
-  const seen = new Set<string>();
-  for (const candidate of changedPaths) {
-    if (!isWorkspaceRelativePosixPath(candidate) || seen.has(candidate)) continue;
-    seen.add(candidate);
-    seeds.push({
-      nodeId: contextGraphNodeId({ kind: 'file', path: candidate }),
-      confidence: 'file_path',
-      origin: 'provided',
-      path: candidate
-    });
-  }
-  return seeds;
-}
+/**
+ * `changedPaths` enter as caller-supplied `file_path` seeds and are never promoted.
+ *
+ * Both engines build them from the one shared resolver in
+ * `query/changed-path-seeds.ts`, so the two sides of the comparison cannot drift
+ * apart on *which* paths become seeds. They drifted once already, in the worse
+ * direction: v1 passed this field and v2 dropped it, so every recall figure
+ * published before this fix compared two engines that had been asked different
+ * questions.
+ */
 
 interface CompiledRoot {
   readonly snapshotHash: string;
@@ -168,7 +161,7 @@ export class Crk2V1Engine extends CompilingEngine implements Crk2Engine {
     if (!load.ok || !load.index) {
       return emptyResult(load.errorCode ?? 'adapter_error:index_unavailable', performance.now() - startedAt);
     }
-    const seeds = providedSeeds(request.changedPaths);
+    const seeds = changedPathSnapshotSeeds(request.changedPaths);
     const result = await queryContextGraph(
       {
         root: request.root,
@@ -256,6 +249,10 @@ export class Crk2V2Engine extends CompilingEngine implements Crk2Engine {
       const handle = await openWorkspaceContextIndex(request.root, {
         ...(compiled === null ? {} : { expectedSourceFingerprint: compiled.sourceFingerprint })
       });
+      // The same `changedPaths` v1 receives. Dropping them here was not a v2
+      // behaviour being measured but the harness asking two engines different
+      // questions, which makes every recall delta it publishes unattributable.
+      const seeds = changedPathKernelSeeds(request.changedPaths);
       const answer = await queryWorkspaceContext(
         request.root,
         {
@@ -263,7 +260,8 @@ export class Crk2V2Engine extends CompilingEngine implements Crk2Engine {
           profile: request.profile,
           risk: request.risk,
           tokenBudget: request.tokenBudget,
-          focusPaths: [...request.focusPaths]
+          focusPaths: [...request.focusPaths],
+          ...(seeds.length === 0 ? {} : { seeds })
         },
         { clock: fixedKernelClock(0), index: handle }
       );

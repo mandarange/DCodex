@@ -42,6 +42,7 @@ import {
 import { CandidateTable } from './kernel-candidates.js';
 import { resolveQueryPlan, type KernelPlanOptions } from './kernel-plan.js';
 import { runSeedLanes } from './kernel-lanes.js';
+import { markNameAnchors } from './name-anchors.js';
 import { runSafetyClosure } from './kernel-safety.js';
 import { traverseKernelGraph } from './kernel-traverse.js';
 import { fuseKernelCandidates } from './kernel-fuse.js';
@@ -71,6 +72,11 @@ export function runContextKernel(
   const table = new CandidateTable(context.plan.candidateBudget);
 
   const lanes: LaneTelemetry[] = runSeedLanes(reader, context, request, table);
+  // Between the lanes and the walk, and nowhere else: it reads what the lanes
+  // admitted, and the walk reads the strength it assigns. It is not a fifth
+  // lane — it produces no candidate and claims no confidence, so §4's mapping
+  // over the four lanes stays total and exclusive.
+  markNameAnchors(reader, context, table);
   // The closure and the walk admit into the same table, so their overflow is
   // added separately: `runSeedLanes` has already accounted for the seeding half,
   // and counting the total twice would misreport how much was dropped.
@@ -137,6 +143,7 @@ export {
 export { CandidateTable, NO_EDGE, NO_NODE, NO_SLOT } from './kernel-candidates.js';
 export { TraversalFrontier, type FrontierState } from './kernel-frontier.js';
 export { runAnchorLane, runCoarseLane, runLexicalLane, runSeedLanes } from './kernel-lanes.js';
+export { markNameAnchors, nameAnchorTermOf } from './name-anchors.js';
 export { runSafetyClosure, type SafetyClosureOutcome } from './kernel-safety.js';
 export { traverseKernelGraph, type TraversalOutcome } from './kernel-traverse.js';
 export { fuseKernelCandidates, type FusionResult, type FusionReserves } from './kernel-fuse.js';

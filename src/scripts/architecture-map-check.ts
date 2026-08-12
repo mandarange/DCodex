@@ -325,7 +325,10 @@ async function runFreshness(): Promise<void> {
     sourceBinding?: { graphHash?: string };
   };
   assertGate(manifest.schema === contracts.ARCHITECTURE_MAP_MANIFEST_SCHEMA, 'architecture_map_freshness_schema');
-  const graphRel = '.sneakoscope/wiki/context-graph.json';
+  // The meta carries the same `snapshotHash` the snapshot does, at ~500 KB
+  // instead of ~60 MB, and ADR §6 makes it the authority for that field. This
+  // gate is a freshness comparison, so it has no reason to parse the graph.
+  const graphRel = '.sneakoscope/wiki/context-graph.meta.json';
   assertGate(exists(graphRel), 'architecture_map_freshness_graph_missing', {
     path: graphRel,
     next_action: 'sks align run'

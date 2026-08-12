@@ -63,6 +63,11 @@ async function modeCommand(mode: SearchMode, args: string[]) {
   if (language) request.language = language;
   if (include.length) request.include = include;
   if (exclude.length) request.exclude = exclude;
+  // `--changed` names where to start, `--include` filters what comes back. The
+  // context kernel cannot infer the files a question is about from the question,
+  // so a caller that already knows them has to be able to say so.
+  const changed = readMulti(args, '--changed');
+  if (mode === 'context' && changed.length) request.changedPaths = changed;
   const why = readOption(args, '--why');
   if (why) request.why = why;
   const result = await search(request);
@@ -99,7 +104,7 @@ sks search files <query> [--json]
 sks search text <pattern> [--json] [--ignore-case]
 sks search structure <kind> [name] --language typescript [--json]
 sks search symbol <ident> [--json]
-sks search context <query> [--why reason] [--json]
+sks search context <query> [--changed path]... [--why reason] [--json]
 sks search benchmark --json
 sks search doctor --json`);
 }

@@ -41,6 +41,13 @@ export interface SearchRequest {
   profile?: 'implementation' | 'review' | 'planning' | 'answer';
   /** `context` mode only: token budget for the packed context. */
   tokenBudget?: number;
+  /**
+   * `context` mode only: workspace-relative paths the caller has already
+   * resolved — the files in the diff this question is about. They enter the
+   * retrieval kernel as caller-verified `file_path` seeds, so they name where to
+   * start rather than filtering what comes back (that is `include`).
+   */
+  changedPaths?: string[];
 }
 
 export interface SearchMatch {

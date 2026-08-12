@@ -52,6 +52,7 @@ import {
   type ContextIndexGeometry,
 } from './reader-layout.js';
 import { basenamePostings, exactPostings, mergePostings, termIdOf } from './reader-lookup.js';
+import { contextIndexNameProbe, nodeHasNameAt, type ContextIndexNameProbe } from './reader-names.js';
 import { validateContextIndexPayloads } from './reader-validate.js';
 import type {
   CompactNodeScoreFields,
@@ -104,6 +105,13 @@ class BinaryContextIndexReader implements ContextIndexReader {
   /** Built on the first incoming traversal only: pure-outgoing workloads never pay for it. */
   private edgeSource: Uint32Array | null = null;
 
+  /**
+   * The last name probe, kept so a scan over candidates encodes once instead of
+   * once per node. One entry is enough because a query resolves one name; it is
+   * a memo of a pure function of its argument, so it changes no answer.
+   */
+  private probe: { readonly name: string; readonly bytes: ContextIndexNameProbe } | null = null;
+
   constructor(geometry: ContextIndexGeometry, snapshotHash: string, configHash: string, termCount: number) {
     this.geometry = geometry;
     this.snapshotHash = snapshotHash;
@@ -127,6 +135,14 @@ class BinaryContextIndexReader implements ContextIndexReader {
 
   basename(term: string): PostingSlice {
     return basenamePostings(this.geometry, term);
+  }
+
+  nodeHasName(node: number, name: string): boolean {
+    const at = this.nodeRow(node);
+    if (this.probe === null || this.probe.name !== name) {
+      this.probe = { name, bytes: contextIndexNameProbe(name) };
+    }
+    return nodeHasNameAt(this.geometry, at, this.probe.bytes);
   }
 
   lexical(termIds: readonly number[], plan: ContextIndexQueryBounds): ScoredPostingSlice {

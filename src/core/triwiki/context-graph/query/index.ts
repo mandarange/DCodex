@@ -373,6 +373,12 @@ export {
   runContextKernel,
   type ContextKernelOptions
 } from './kernel.js';
+export {
+  changedPathKernelSeeds,
+  changedPathSeeds,
+  changedPathSnapshotSeeds,
+  type ChangedPathSeed
+} from './changed-path-seeds.js';
 export type {
   ContextKernelResult,
   KernelClock,

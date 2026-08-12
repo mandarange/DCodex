@@ -14,6 +14,7 @@ import { CONTEXT_GRAPH_REPAIR_COMMAND } from '../contracts.js';
 import { contextGraphQueryProfile, type ContextGraphQueryProfileName } from '../profiles.js';
 import {
   HydrationCursor,
+  changedPathKernelSeeds,
   openWorkspaceContextIndex,
   queryWorkspaceContext,
   workspaceContextFailureOf,
@@ -38,6 +39,14 @@ export interface ContextGraphAttentionRequest {
   readonly profile?: ContextGraphQueryProfileName | undefined;
   readonly tokenBudget?: number | undefined;
   readonly risk?: 'normal' | 'high' | undefined;
+  /**
+   * Workspace-relative paths the caller already resolved — a mission's declared
+   * write scope, the files in a diff. A goal sentence rarely names them, and the
+   * kernel cannot infer them from one, so they enter as caller-verified
+   * `file_path` seeds. Nothing here derives a path: §4 gives exact confidence to
+   * what the caller identified, never to what this projection guessed.
+   */
+  readonly changedPaths?: readonly string[] | undefined;
 }
 
 export interface ContextGraphAttentionResult {
@@ -98,7 +107,9 @@ export async function readContextGraphAttention(
     const handle = await openWorkspaceContextIndex(request.root, options);
     cursor = new HydrationCursor(handle.reader);
     const risk = request.risk === undefined ? {} : { risk: request.risk };
-    const kernelRequest = { query: question, profile, tokenBudget, maxSelected: limit, ...risk };
+    const provided = changedPathKernelSeeds(request.changedPaths);
+    const seeds = provided.length === 0 ? {} : { seeds: provided };
+    const kernelRequest = { query: question, profile, tokenBudget, maxSelected: limit, ...risk, ...seeds };
     answer = await queryWorkspaceContext(request.root, kernelRequest, { ...options, index: handle });
   } catch (error: unknown) {
     const failure = workspaceContextFailureOf(error);

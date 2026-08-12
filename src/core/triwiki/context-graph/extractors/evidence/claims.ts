@@ -15,7 +15,7 @@ import {
 } from '../../contracts.js';
 import { contextGraphNodeId, shortDigest } from '../../ids.js';
 import { tryNormalizeGraphPath } from '../../paths.js';
-import { boundedText, safeText } from './redaction.js';
+import { boundedText, safeFreeText, safeText } from './redaction.js';
 import { EvidenceSourceGraph, hasManifestPrefix, manifestHashes, type SourceState } from './sources.js';
 import {
   CONTEXT_PACK_REL,
@@ -280,10 +280,27 @@ function addClaimNode(
     );
   }
 
+  // Claim prose is stored, not merely measured: a claim whose text is only
+  // hashed is a claim no query can reach by anything it actually says, in any
+  // language. It is stored through `safeFreeText` rather than `safeText`
+  // because it is the graph's most free-form string and the one place a pasted
+  // credential or an address plausibly appears — and because redacting it here
+  // rather than downstream is what keeps it out of the *bytes*: the index
+  // writer interns every metadata value verbatim into its string table, so a
+  // value only the tokenizer refuses is still resident in the published index.
+  //
+  // `text_hash` and `text_length` keep measuring the declared prose, so the
+  // difference between `text_length` and the stored text is the visible signal
+  // that the prose was cut; `text_redacted` says it was altered, which the
+  // fragment guard's own `redacted` flag can no longer report once the value
+  // reaches it already clean.
+  const prose = safeFreeText(row.text);
   const metadata: ContextGraphMetadata = {
     claim_id: boundedText(row.claimId, 120),
+    ...(prose.text === null ? {} : { text: prose.text }),
     text_hash: shortDigest(row.text),
     text_length: row.text.length,
+    ...(prose.redacted ? { text_redacted: true } : {}),
     status: boundedText(row.status, 40),
     risk_band: boundedText(row.riskBand, 40),
     authority: boundedText(row.authority, 60),
