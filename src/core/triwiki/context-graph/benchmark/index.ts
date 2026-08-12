@@ -49,6 +49,44 @@ export {
   runContextGraphBenchmark,
   type ContextGraphBenchmarkOptions
 } from './runner.js';
+export * from './crk2-types.js';
+export {
+  CRK2_CASES,
+  CRK2_CORPUS,
+  CRK2_CORPUS_REVISION,
+  CRK2_DEFAULT_K,
+  CRK2_GATE_IDS,
+  CRK2_PROTECTED_GATE_IDS,
+  CRK2_RETRIEVAL_FILES,
+  CRK2_STRUCTURAL_NODE_IDS,
+  crk2CasesByCategory,
+  crk2RetrievalNodeUniverse,
+  validateCrk2Corpus
+} from './crk2-corpus.js';
+export {
+  CRK2_CONFIDENCE_RANK,
+  CRK2_EMPTY_LATENCY,
+  conflictKeyOf,
+  crk2ConfidenceViolations,
+  crk2ConflictRecall,
+  crk2LatencyProfile,
+  crk2MatcherKey,
+  crk2MatcherMatches,
+  crk2ProvenanceCoverage,
+  crk2ResultSignature,
+  crk2SetRecall,
+  evaluateCrk2Case,
+  summarizeCrk2Engine,
+  type Crk2CaseObservation
+} from './crk2-metrics.js';
+export { CRK2_FLOOR_SPECS, crk2FloorCoverageGap, crk2FloorIds, evaluateCrk2Floors } from './crk2-floors.js';
+export {
+  CRK2_DEFAULT_REPEATS,
+  CRK2_DEFAULT_WARMUPS,
+  Crk2ComparisonError,
+  compareRetrievalEngines,
+  type Crk2ComparisonOptions
+} from './crk2-comparison.js';
 export {
   FIXTURE_ABSOLUTE_PATH,
   FIXTURE_SECRET_TOKEN,

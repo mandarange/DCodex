@@ -45,6 +45,8 @@ byte-identical indexes.
 | Operation journal | `sks.context-graph-operation.v2` |
 | Fragment manifest | `sks.context-graph-fragment-manifest.v1` |
 | Index meta | `sks.context-graph-index-meta.v1` |
+| Current pointer | `sks.context-graph-index-pointer.v1` |
+| Identifier lexicon | `sks.context-lexicon.v1` |
 | Baseline artifact | `sks.context-graph-v2-baseline.v1` |
 
 A reader that meets a `formatRevision` it does not implement fails closed with
@@ -134,6 +136,17 @@ Corrupt input is rejected, never repaired in place. There is no best-effort
 byte-salvaging reader — a reader that guesses is a reader whose output nothing
 can attest to.
 
+The table above is reader-facing: every code tells a user their index is
+damaged and names the command that rebuilds it. The compile side needs one more,
+because refusing to *publish* an index is not the same event:
+
+| Code | Meaning | Repair |
+| --- | --- | --- |
+| `context_index_commit_blocked` | The compiler declined to publish — lint failed, a stale writer tried to commit, or another operation holds the pointer | Resolve the reported blocker; the current index is intact and still serving |
+
+Mapping a refusal-to-publish onto a reader code would tell a user to rebuild an
+index that is not damaged — a wrong instruction, not merely an imprecise one.
+
 ## 6. Current pointer and meta
 
 The pointer is small, atomically replaced, and written last.
@@ -144,6 +157,14 @@ The pointer is small, atomically replaced, and written last.
 - Pointer and meta must agree on snapshot hash, config fingerprint, and source
   fingerprint. Divergence is `context_index_pointer_meta_divergent`, not a
   preference for one of them.
+- The pointer is written **last**, which puts meta before it and opens a window
+  where a crash could manufacture a false divergence. Meta is therefore written
+  twice: an immutable per-generation sidecar staged with the index, and the
+  mirror readers use. Recovery re-derives the mirror from the pointed
+  generation's sidecar — deterministic re-derivation from checksum-verified
+  bytes, never a choice between two disagreeing records. If the sidecar is gone,
+  the mirror is left alone and the divergence stays visible.
+  (The work order numbers meta after the pointer; this ADR takes precedence.)
 - Exactly two generations are retained: current and previous. Older generations
   are removed at compile end.
 - **The previous generation is not a rollback target.** It exists for

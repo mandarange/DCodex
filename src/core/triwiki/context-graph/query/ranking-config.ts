@@ -15,6 +15,7 @@ import type {
   ContextGraphRisk
 } from '../contracts.js';
 import type { ContextGraphSeedConfidence } from '../query-types.js';
+import { CONTEXT_LEXICON_SCHEMA, type ContextLexiconConfig } from '../runtime-index/lexicon.js';
 
 export const CONTEXT_GRAPH_RANKING_SCHEMA = 'sks.context-graph-ranking.v1' as const;
 
@@ -152,6 +153,58 @@ export const CONTEXT_GRAPH_RANKING_CONFIG: ContextGraphRankingConfig = {
   maxProvenancePerNode: 6,
   minTokenCost: 1
 };
+
+/**
+ * BM25F tuning for the identifier-aware lexicon.
+ *
+ * These numbers live here rather than beside the tokenizer for the reason
+ * stated at the top of this file: the bounded optimizer may only edit this file
+ * and `profiles.ts`, so a retrieval weight defined anywhere else is a weight
+ * that can never be tuned. The tokenizer owns the *type* and takes the config
+ * as an argument; the import below is type-only, so `runtime-index` keeps no
+ * runtime dependency on `query`.
+ *
+ * Weights follow §6.2 of the work order. Identifier-shaped fields get a low `b`
+ * because a label is not less relevant for being long; prose fields get 0.75.
+ */
+export const CONTEXT_GRAPH_LEXICON_CONFIG: ContextLexiconConfig = Object.freeze({
+  schema: CONTEXT_LEXICON_SCHEMA,
+  fields: Object.freeze([
+    // CANONICAL_ID is deliberately not lexical: §4 of the frozen contract gives
+    // exact confidence to the anchor lane only, and a canonical id reachable by
+    // a fuzzy word overlap is precisely that violation. Weight 0 makes it
+    // structurally unreachable rather than merely discouraged.
+    { weight: 0, lengthNormalization: 0, lexical: false, keepWholeValue: false, pathLike: false },
+    { weight: 4, lengthNormalization: 0.3, lexical: true, keepWholeValue: true, pathLike: false },
+    { weight: 3, lengthNormalization: 0.3, lexical: true, keepWholeValue: false, pathLike: false },
+    { weight: 4, lengthNormalization: 0.3, lexical: true, keepWholeValue: true, pathLike: false },
+    { weight: 3, lengthNormalization: 0.3, lexical: true, keepWholeValue: true, pathLike: true },
+    { weight: 2, lengthNormalization: 0.4, lexical: true, keepWholeValue: false, pathLike: true },
+    { weight: 1.2, lengthNormalization: 0.75, lexical: true, keepWholeValue: false, pathLike: false },
+    { weight: 1, lengthNormalization: 0.75, lexical: true, keepWholeValue: false, pathLike: false },
+    { weight: 0.8, lengthNormalization: 0.5, lexical: true, keepWholeValue: false, pathLike: false }
+  ]),
+  k1: 1.2,
+
+  minSegmentLength: 2,
+  minAcronymLength: 2,
+  maxAcronymSegments: 8,
+  maxExtensionLength: 5,
+  maxTokenLength: 64,
+  maxTokensPerField: 512,
+  preserveExactCase: true,
+
+  cjkNgramSizes: Object.freeze([2, 3]),
+  maxCjkRunLength: 8,
+  maxCjkNgramsPerRun: 64,
+
+  minSecretTokenLength: 20,
+  minHexSecretLength: 32,
+
+  postingCapPerTerm: 4_096,
+  maxTerms: 1 << 20,
+  maxQueryTerms: 64
+});
 
 const EXACT_SEED_CONFIDENCE_SET: ReadonlySet<string> = new Set<string>(CONTEXT_GRAPH_EXACT_SEED_CONFIDENCES);
 
