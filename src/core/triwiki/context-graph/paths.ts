@@ -104,6 +104,12 @@ export function contextGraphMetaPath(root: string): string {
   return path.join(contextGraphDir(root), 'context-graph.meta.json');
 }
 
+/**
+ * Retired artifact. Older builds rotated the outgoing snapshot here and nothing
+ * ever read it back, so the path survives for exactly two jobs: reclaiming the
+ * duplicate a pre-existing workspace still carries, and keeping the name in the
+ * cache-key exclusion set so that duplicate cannot feed the graph's own key.
+ */
 export function contextGraphPrevSnapshotPath(root: string): string {
   return path.join(contextGraphDir(root), 'context-graph.prev.json');
 }
@@ -132,7 +138,11 @@ export function contextPackPath(root: string): string {
   return path.join(contextGraphDir(root), 'context-pack.json');
 }
 
-/** Artifacts the graph writes; every other repository file stays untouched. */
+/**
+ * Artifacts the graph owns; every other repository file stays untouched. The
+ * retired prev snapshot is listed because the graph still removes it, not
+ * because it still writes it.
+ */
 export function contextGraphArtifactPaths(root: string): string[] {
   return [
     contextGraphSnapshotPath(root),

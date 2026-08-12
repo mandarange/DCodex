@@ -4,17 +4,20 @@
  * Three invariants hold here:
  *   1. A write is a rename, so a crash mid-write leaves the previous artifact
  *      byte-intact rather than a half-written one.
- *   2. Exactly one previous generation is kept, and it is only ever returned when
- *      a caller explicitly asks for it. A corrupt current snapshot NEVER silently
- *      resolves to the previous one — it surfaces a blocker naming the repair
- *      command instead.
+ *   2. No previous generation is retained on disk. A corrupt current snapshot has
+ *      nothing to silently resolve to — it surfaces a blocker naming the repair
+ *      command instead. `previousSnapshotHash` still names the generation being
+ *      replaced, because a hash is what every consumer actually wanted; the
+ *      63 MB byte-identical second copy that used to back it had no reader in the
+ *      entire history of this module, so `context-graph.prev.json` is now a
+ *      retired artifact that a commit reclaims rather than rewrites.
  *   3. Nothing written here carries an absolute path: artifact identity is always
  *      expressed workspace-relative.
  */
 import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { ensureDir, sha256, writeJsonAtomic, writeTextAtomic } from '../../../fsx.js';
+import { ensureDir, sha256, writeJsonAtomic } from '../../../fsx.js';
 import {
   CONTEXT_GRAPH_CORRUPT_ERROR,
   CONTEXT_GRAPH_META_SCHEMA,
@@ -120,14 +123,12 @@ async function loadSnapshotFile(root: string, file: string): Promise<ContextGrap
   };
 }
 
-/** Current snapshot. Missing and corrupt are distinct, explicit statuses; neither falls back to prev. */
+/**
+ * Current snapshot. Missing and corrupt are distinct, explicit statuses, and
+ * there is no other generation on disk for either one to fall back to.
+ */
 export function readContextGraphSnapshot(root: string): Promise<ContextGraphSnapshotLoad> {
   return loadSnapshotFile(root, contextGraphSnapshotPath(root));
-}
-
-/** Previous generation, only ever returned to a caller that asked for it by name. */
-export function readContextGraphPrevSnapshot(root: string): Promise<ContextGraphSnapshotLoad> {
-  return loadSnapshotFile(root, contextGraphPrevSnapshotPath(root));
 }
 
 function isMeta(value: unknown): value is ContextGraphMeta {
@@ -203,7 +204,8 @@ export interface WriteContextGraphSnapshotInput {
 export interface WriteContextGraphSnapshotResult {
   wrote: boolean;
   previousSnapshotHash: string | null;
-  rotatedPrevious: boolean;
+  /** `true` when this commit reclaimed a retired `context-graph.prev.json` left by an older build. */
+  reclaimedRetiredPrevious: boolean;
   artifact: string;
 }
 
@@ -219,7 +221,7 @@ export type StagedContextGraphCommitResult =
       status: 'committed';
       wrote: true;
       previousSnapshotHash: string | null;
-      rotatedPrevious: boolean;
+      reclaimedRetiredPrevious: boolean;
       artifact: string;
       currentFileHash: string;
       lock: EvidenceWriterLockReceipt;
@@ -232,11 +234,11 @@ export type StagedContextGraphCommitResult =
     };
 
 /**
- * Commit a snapshot + meta pair. The current generation is rotated to
- * `context-graph.prev.json` first (only when it is itself readable, so a corrupt
- * current file cannot destroy a good previous one), then the snapshot is written,
- * then the meta. A crash between the two leaves a detectable snapshot/meta
- * mismatch, which `contextGraphStatus()` reports as corrupt rather than serving.
+ * Commit a snapshot + meta pair. The hash of the generation being replaced is
+ * read first (only when the current file is itself readable, so a corrupt current
+ * file names no predecessor), then the snapshot is written, then the meta. A crash
+ * between the two leaves a detectable snapshot/meta mismatch, which
+ * `contextGraphStatus()` reports as corrupt rather than serving.
  */
 export async function writeContextGraphSnapshot(
   input: WriteContextGraphSnapshotInput
@@ -254,6 +256,32 @@ export async function writeContextGraphSnapshot(
 export async function contextGraphCurrentFileHash(root: string): Promise<string | null> {
   const raw = await readTextOrNull(contextGraphSnapshotPath(root));
   return raw === null ? null : sha256(raw);
+}
+
+/**
+ * Delete the retired `context-graph.prev.json`.
+ *
+ * Builds before this one rotated the outgoing snapshot into a second file that
+ * nothing ever read back, so every workspace compiled by an older build is
+ * carrying a byte-identical duplicate of a ~63 MB artifact. Stopping the write
+ * alone would leave that duplicate on disk indefinitely — it is gitignored, and
+ * the wiki retention sweep only reaches it under age or count pressure — so the
+ * commit that would once have overwritten it removes it instead.
+ *
+ * Best-effort by construction: the current snapshot is already committed by the
+ * time this runs, and the file being removed is a duplicate of it, so a failure
+ * to reclaim disk can never be a reason to fail a compile.
+ */
+async function reclaimRetiredPrevSnapshot(root: string): Promise<boolean> {
+  const retired = contextGraphPrevSnapshotPath(root);
+  try {
+    const stat = await fsp.lstat(retired);
+    if (!stat.isFile()) return false;
+    await fsp.rm(retired, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function stageAndCommitContextGraphSnapshot(
@@ -290,24 +318,22 @@ export async function stageAndCommitContextGraphSnapshot(
           return { status: 'conflict', wrote: false, blocker: 'context_graph_user_provenance_conflict', artifact };
         }
         let previousSnapshotHash: string | null = null;
-        let rotatedPrevious = false;
         if (currentRaw !== null) {
           try {
             const parsed = JSON.parse(currentRaw) as { snapshotHash?: unknown };
             if (typeof parsed.snapshotHash === 'string' && parsed.snapshotHash) {
               previousSnapshotHash = parsed.snapshotHash;
-              await writeTextAtomic(contextGraphPrevSnapshotPath(root), currentRaw);
-              rotatedPrevious = true;
             }
           } catch {
-            // A corrupt current generation is never promoted to previous.
+            // A corrupt current generation names no predecessor.
           }
         }
         await input.beforeReplace?.();
         await fsp.rename(stagedSnapshot, snapshotFile);
         await fsp.rename(stagedMeta, contextGraphMetaPath(root));
         return {
-          status: 'committed', wrote: true, previousSnapshotHash, rotatedPrevious, artifact,
+          status: 'committed', wrote: true, previousSnapshotHash, artifact,
+          reclaimedRetiredPrevious: await reclaimRetiredPrevSnapshot(root),
           currentFileHash: sha256(await fsp.readFile(snapshotFile, 'utf8')), lock
         };
       }

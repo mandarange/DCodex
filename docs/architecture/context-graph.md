@@ -116,7 +116,6 @@ Storage stays inside the existing `.sneakoscope` boundary:
 ```text
 .sneakoscope/wiki/context-graph.json
 .sneakoscope/wiki/context-graph.meta.json
-.sneakoscope/wiki/context-graph.prev.json      (exactly one generation)
 .sneakoscope/wiki/context-graph-events.jsonl   (bounded append-only)
 .sneakoscope/cache/context-graph/fragments/    (content-hash fragment cache)
 ```

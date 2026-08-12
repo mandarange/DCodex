@@ -678,7 +678,8 @@ only one of them is a build task.
 
 The measured cost, on this repository (28,660 nodes, 77,347 edges). The 58 MB in
 the original entry was itself wrong — the snapshot is **63,654,542 bytes**, and a
-byte-identical `context-graph.prev.json` sits beside it, so the pair is 127.3 MB.
+byte-identical `context-graph.prev.json` sat beside it, so the pair was 127.3 MB
+(that duplicate is now removed — see below; the snapshot itself stays).
 The meta the v2 path reads instead is 489,949 bytes.
 
 | Configuration | | JSON path | v2 preflight |
@@ -761,7 +762,106 @@ what this blocker asked for, but 4 content readers, 4 compiler write-side sites
 and the v1 engine still read the file. Two now-dead surfaces fall out:
 `contextGraphStatus()` has zero production call sites, and
 `context-graph.prev.json` has no production reader at all — written every
-compile, never read back, a byte-identical 63 MB duplicate.
+compile, never read back, a byte-identical 63 MB duplicate. **Now removed; see
+below.**
+
+## BLOCKS 9.0.0 SCOPE: CG2-15 cannot delete the JSON snapshot
+
+The test-selection consumer migrated cleanly and with real evidence (below). The
+other two content readers turned out **not to be migrations at all**, and that
+changes what 9.0.0 can claim.
+
+`runContextGraphLint` asserts properties *of the JSON file's bytes* in 2 of its 8
+rules — `JSON.stringify` array-and-key ordering, and a hash recomputed from that
+serialization. A fixed-stride binary has neither property, and
+`ContextIndexMeta` carries no lint verdict to read instead, because publishing is
+itself refused on lint failure. `architecture-map-pipeline.ts` embeds the whole
+snapshot into a bundle and hashes it into `canonicalHash`, which would require
+materializing 28,660 nodes and 77,347 edges — the exact behaviour ADR §3 removed
+`getNode()` to prevent — and would not hash identically anyway, changing every
+sealed baseline fingerprint.
+
+**Both are contract changes wearing a migration's clothes.** The v1 *engine* can
+still be deleted once its importers are gone; the *file* cannot. Recorded as a
+scope fact rather than carried as a task, because "delete the JSON runtime store"
+is in the work order and 9.0.0 will not do it.
+
+## LIVE DEFECT in test selection: the cap is silent
+
+Found while producing the migration evidence, and **pre-existing in both
+engines** — it is not introduced by the migration.
+
+`context-graph-affected.ts` stops adding tests at `maxTests: 128` with a bare
+`continue`. Every other cap in that file reports itself: a truncated impact
+closure pushes `impact_closure_truncated` into `conservative_reasons`. This one
+pushes nothing.
+
+Measured on the real graph for `commit:11265c98`: **275 test suites are reachable
+and the walk is not truncated. 128 are returned. 147 are dropped and
+`conservative_reasons` is empty** — the caller is told nothing is missing. This
+is the function that decides which tests run for a change, so a silent 53% drop
+is a release-safety hole, and it reads as a complete answer.
+
+The migration also makes it *visible* in a way it was not before: which 128
+survive depends on adjacency traversal order, and v1's sorted-edge-id order and
+v2's CSR bucket order differ. Same count, same completeness, different membership
+(48 shared of 128, union 176). Not a shrink — but proof the kept set was never
+determined by anything meaningful.
+
+The fix is contained and is **not** raising the cap: emit a reason when it bites,
+and impose a deterministic order (depth, then path) before truncating, so the
+kept set stops depending on index layout. Left as its own change rather than
+folded into a migration.
+
+## Closed: a 63.66 MB duplicate nobody ever read, and two premises I got backwards
+
+`context-graph.prev.json` is no longer written. The write and its reader landed
+together in `acf504c2` and **the reader was never called, at any commit in the
+file's history** — checked with `git grep` at every commit `git log -S` reports,
+not by reading the current tree. The incremental compiler's `previousGeneration()`
+read the *current* snapshot; `previousSnapshotHash` in the meta is what every
+consumer actually wanted, and it derives from the current file's bytes. The
+rollback/diff feature the artifact's name implies was never wired.
+
+Measured saving: both files hash identically at 63,654,542 bytes, so **63.66 MB —
+48.6% of `.sneakoscope/wiki`**. Deleting the write alone would have stranded the
+duplicate forever (it is gitignored, and the retention sweep only reaches it
+under age or count pressure), so the commit that used to overwrite it now
+reclaims it, best-effort after the rename so a failed unlink cannot fail a
+compile.
+
+**The repository was already enforcing that nothing may read this file while
+still writing it.** `compiler/__tests__/incremental-json-retirement.test.ts:31`
+carries `/context-graph\.prev\.json/` in its FORBIDDEN list. A guard against
+reading an artifact that is still being produced is a guard that can only ever
+pass — and it did, for the artifact's whole life.
+
+### Two premises of mine were inverted, and the correction is the useful part
+
+**I said `cache-key.ts:49` listed the file as a cache-key input, so removing it
+would change the key and invalidate indexes — and argued this was therefore the
+cheap moment, because revision 2 already forces a rebuild.** It is an
+**exclusion**, not an input: the list is `WIKI_CONTEXT_EXCLUDED`, under the
+comment *"Graph artifacts must never feed their own cache key."* Removing the
+write changes the cache key by exactly nothing, and the timing window I was
+spending did not need to be spent.
+
+The real consequence runs the other way, and the entry was **kept** for it: every
+workspace built before this change still holds a 63 MB leftover, and dropping the
+name would feed that leftover into `wikiContextHash` and into the `gitState`
+clean/dirty decision — moving the cache key on precisely the mid-migration
+population that can least afford it. Nothing stops being detected, since the
+entry only ever suppressed the graph's own output; a control assertion pins that
+an ordinary source edit still moves the key.
+
+**I also paraphrased `snapshot-store.ts:236` as describing a possibly-dead read
+path.** It described the current generation being *rotated to* prev only when the
+current file is itself readable — accurate, live behaviour. The comment was
+right; my reading of it was not.
+
+One residual, reported and left: `contextGraphArtifactPaths` (`paths.ts:141`) has
+zero callers repo-wide. It is the natural home for a workspace-cleanup consumer
+and is currently dead.
 
 ## RESOLVED (format revision 2): metadata values lose their type
 
@@ -809,12 +909,29 @@ Two facts that bound the damage, both measured rather than assumed:
 Where it will bite is `command-route-pipeline-gate` and `test-production-binding`,
 where test files would start reading as write-scope conflicts.
 
-**This ordered the remaining work, and revision 2 has now cleared it — with one
-caveat that survives.** CG2-15 may migrate `context-graph-affected.ts` safely:
-`metadata.isTest === true` works under the v2 reader. But `requiredForPublish`
-and `alwaysOnRelease` still appear on **zero** fixture nodes, so a green run
-after that migration is *still not evidence those two arms work*. Only `isTest`
-is covered. The original reasoning, kept because it is why the ordering held:
+**Done: revision 2 cleared this, and the migration landed with the evidence it
+demanded** — gates identical on 19 of 19 real diffs, zero lost gates, zero lost
+tests. `metadata.isTest === true` works under the v2 reader and is genuinely
+covered by fixtures carrying both spellings.
+
+**The two protected-gate arms were settled asymmetrically, and the asymmetry is
+the point.** `requiredForPublish` and `alwaysOnRelease` are now *predicate-
+verified*: a fixture sets each flag on a gate with `risk: 'high'` and manifest
+entries false, so the metadata arm is the only thing that can answer, plus a
+same-risk control with no flag asserted `protected: false`. Deleting both arms
+fails that test.
+
+They remain *unreachable in production*, which is a different claim and is kept
+separate rather than blurred into "verified". `buildGateNodes` sets
+`requiredForPublish: REQUIRED_FOR_PUBLISH.has(gate.id)` and `risk: gateRisk(...)`
+in one `addNode`, and that same predicate is a disjunct of `isProtectedGate` — so
+the flag being true *implies* `risk === 'protected'`, and `context-graph-v2:quality`
+already reports `protected_metadata_arm_unreachable: true` on the real manifest
+(`requiredForPublish:23`, `alwaysOnRelease:14`, zero counterexamples). No fixture
+was manufactured to make this look covered; that mistake is elsewhere on this
+record and was not repeated.
+
+The original reasoning, kept because it is why the ordering held:
 `verification/context-graph-affected.ts` decides which tests run for a change,
 and all three of its predicates are metadata equality on a boolean —
 `metadata.isTest === true` at line 147, `requiredForPublish === true` and

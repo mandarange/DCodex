@@ -260,9 +260,15 @@ measured baseline they are 108 MB per workspace and cost 175 MB heap to parse.
 
 Retirement policy:
 
-- No production code path reads `context-graph.json` or `context-graph.prev.json`
-  at query time after CG2-15.
-- A gate asserts no JSON runtime reader remains (CG2-14).
+- No production code path reads `context-graph.json` at query time after CG2-15.
+  `context-graph.prev.json` is no longer written at all — it never had a reader
+  at any commit in its history — and the commit that used to overwrite it now
+  reclaims it.
+- A gate asserts no JSON runtime reader remains (CG2-14). It must run **two
+  independent checks**: no production import of a snapshot reader, *and* no
+  production path-literal read of either filename outside the store. An
+  import-only gate misses a hand-built `path.join(...)`, which is how two call
+  sites in this repository were reading the snapshot.
 - The compiler may still *write* human-readable diagnostics; those are outputs,
   not a runtime store, and nothing may read them back into a query.
 

@@ -116,11 +116,52 @@ Two consequences for the deletion list:
 
 - `store/graph-status.ts` — `contextGraphStatus()` has **zero production call
   sites** and is dead production code.
-- `readContextGraphPrevSnapshot` / `context-graph.prev.json` has **no production
-  reader at all**: the file is written every compile and never read back, while
-  costing a byte-identical duplicate of a 63 MB snapshot on disk.
+- `readContextGraphPrevSnapshot` / `context-graph.prev.json` — **removed.** The
+  file was written on every compile and never read back, by anything, since the
+  commit that introduced it: the write and the reader landed together in
+  `acf504c2` and the incremental compiler read the *current* snapshot instead.
+  Both are gone, and the commit that used to overwrite the duplicate now
+  reclaims it, so the leftover is not stranded on already-built workspaces.
+  Measured saving on this repository: **63.66 MB, 48.6% of `.sneakoscope/wiki`**.
+  Its name stays on `WIKI_CONTEXT_EXCLUDED` deliberately — see the release
+  record.
 
-What still reads the snapshot, and why — this is what CG2-15 has left:
+## The four content readers are now one migrated and three blocked
+
+`verification/context-graph-affected.ts` is **migrated** and is the one that
+mattered — it decides which tests run for a change. Evidence is a before/after
+on 19 real diffs through both engines against the same graph, not a passing
+suite: **gates identical in 19 of 19**, recommended tests identical in 17 of 19,
+zero lost gates and zero lost tests anywhere.
+
+The remaining three are **not migrations**, and calling them that would have
+produced a broken cutover:
+
+- **`triwiki-graph-command.ts:83` and `wiki-command.ts:229` (lint).**
+  `runContextGraphLint` is not a graph query: 2 of its 8 rules assert things
+  about *the JSON file's bytes*. `determinismIssues` compares
+  `JSON.stringify(snapshot.nodes)` against a canonical sort — array order and key
+  order — and `hashIssues` recomputes `snapshotHash` from that serialization.
+  Neither property exists in a fixed-stride binary whose integrity is per-section
+  checksums plus pointer/meta fingerprint agreement. Nor is there a recorded
+  verdict to read instead: `ContextIndexMeta` carries no lint field, because
+  `commitContextIndexGeneration` refuses to publish on lint failure — under CRK2,
+  *the index existing and opening* is the verdict. Migrating means writing
+  different assertions, which is a contract change and needs its own card.
+- **`architecture-map-pipeline.ts:123,164`.** `sealBaseline` / `buildAfterReview`
+  embed the **whole snapshot** into `ArchitectureInputBundleV1.graph` and hash it
+  into `canonicalHash`. The reader deliberately offers no bulk enumeration — ADR
+  §3 removed `getNode()` — so this would mean materializing 28,660 nodes and
+  77,347 edges, the exact thing CRK2 exists to stop. And the rebuilt bundle would
+  not hash identically (`ContextGraphNodeView` and `ContextGraphNode` are
+  different shapes), changing every sealed baseline fingerprint. That is a
+  baseline-identity decision, not a migration.
+
+**So the JSON snapshot cannot be deleted in this release.** The v1 *engine* can
+go once its last importers do, but the file itself still has two legitimate
+readers whose contracts have to change first.
+
+What still reads the snapshot, and why:
 
 | Reason | Sites |
 | --- | --- |

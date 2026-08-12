@@ -38,9 +38,13 @@ cost of every JSON-shaped step the work order targets:
 | Edges | ~46,572 | **70,832** |
 | `JSON.parse` | ~80 ms | **119 ms** |
 
-`context-graph.prev.json` adds a further 52.6 MB, so the JSON runtime store is
+`context-graph.prev.json` added a further 52.6 MB, so the JSON runtime store was
 **108 MB on disk** for one workspace. Parsing the current snapshot alone costs
 175 MB heap and 368 MB RSS.
+
+*(Since CG2-15: the `.prev.json` duplicate is no longer written and is reclaimed
+on the next commit — measured at 63.66 MB on the current, larger graph. The
+current snapshot and its parse cost are unchanged.)*
 
 ## Warm query latency
 

@@ -42,7 +42,16 @@ const GATE_MANIFEST_INPUTS = [
 const PROOF_INDEX_DIR = '.sneakoscope/triwiki/proof-bank';
 const WIKI_CONTEXT_DIR = '.sneakoscope/wiki';
 
-/** Graph artifacts must never feed their own cache key. */
+/**
+ * Graph artifacts must never feed their own cache key.
+ *
+ * `context-graph.prev.json` is no longer written, and it stays on this list
+ * anyway: every workspace built before the write was removed still has a copy,
+ * and the entry is what keeps that leftover out of `wikiContextHash` until the
+ * next commit reclaims it. Dropping the name would move the cache key on exactly
+ * the workspaces that are mid-migration, which is the one population that cannot
+ * afford it.
+ */
 const WIKI_CONTEXT_EXCLUDED = new Set([
   'context-graph.json',
   'context-graph.meta.json',

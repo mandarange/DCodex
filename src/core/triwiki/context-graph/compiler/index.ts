@@ -265,8 +265,8 @@ async function compileLocked(
   }
 
   const durationMs = Date.now() - startedAt;
-  // Read before writing: the meta has to name the generation it replaces, and a
-  // second write to fill that field in would rotate the real previous generation away.
+  // Read before writing: the meta has to name the generation it replaces, and
+  // after the commit the only thing on disk is the generation that replaced it.
   const previousSnapshotHash = await readContextGraphSnapshotHash(root);
   const meta: ContextGraphMeta = {
     schema: CONTEXT_GRAPH_META_SCHEMA,

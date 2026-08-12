@@ -13,26 +13,61 @@
  * suites that exercise the changed symbols. Each addition carries the hop chain
  * and the provenance record that produced it.
  *
- * The index is resolved through the query facade, never by reading the snapshot
- * store directly, so this module fails closed on exactly the states the facade
- * does. A missing, corrupt or stale graph never shrinks the answer: the baseline
- * is returned unchanged, the run is marked conservative, and the repair command
- * is surfaced.
+ * The index is resolved through the CRK2 query facade — `openWorkspaceContextIndex`
+ * plus `walkContextGraph` — never by reading a JSON snapshot, so this module fails
+ * closed on exactly the states the facade does. A missing, corrupt or stale graph
+ * never shrinks the answer: the baseline is returned unchanged, the run is marked
+ * conservative, and the repair command is surfaced.
+ *
+ * ## Why the walk surface and not the retrieval kernel
+ *
+ * `runContextKernel` fuses lanes and *selects* a bounded top-K by relevance. This
+ * question has no notion of relevance: every node the impact relations reach has
+ * to be considered, or a suite that would have caught the break is silently not
+ * recommended. `query/walk.ts` exists for exactly that shape and is what this
+ * uses.
+ *
+ * ## Three places where shrinking would be invisible, and what stops it
+ *
+ * - **Seed resolution is uncapped.** `resolveContextSeeds` drops a key matching
+ *   more nodes than its cap, which is right for the Naruto advisory's *label*
+ *   seeds — a name matching 500 nodes is not honest evidence of scope. A changed
+ *   file path is not a guess, so this module reads `reader.basename` directly and
+ *   takes every posting. A cap here would drop tests and read as a speed-up.
+ * - **The metadata predicates widened rather than narrowed.** `contextNodeFlag`
+ *   accepts `true`, `'true'` and `'1'`; the JSON-era predicates were `=== true`
+ *   and matched only the first. Extractors author the flag both ways, so this
+ *   recognises a superset of the nodes the previous reader did — never a subset.
+ * - **The seed expansion is a walk with its own budget.** The JSON-era expansion
+ *   was unbounded, so an exhausted budget here would be a new way to lose seeds.
+ *   It is charged to `impact_closure_truncated`, which marks the run conservative
+ *   rather than letting a shorter answer pass as a complete one.
  */
 import {
   CONTEXT_GRAPH_CORRUPT_ERROR,
   CONTEXT_GRAPH_MISSING_ERROR,
   CONTEXT_GRAPH_REPAIR_COMMAND,
   CONTEXT_GRAPH_STALE_ERROR,
-  type ContextGraphEdge,
-  type ContextGraphNode,
+  type ContextGraphEdgeType,
   type ContextGraphStatusCode
 } from '../triwiki/context-graph/contracts.js';
-import { incomingEdges, outgoingEdges, type ContextGraphIndex } from '../triwiki/context-graph/graph-index.js';
 import { contextGraphPathFromId } from '../triwiki/context-graph/ids.js';
 import { isWorkspaceRelativePosixPath } from '../triwiki/context-graph/paths.js';
 import type { ContextGraphExplanationStep, ContextGraphProvenanceRef } from '../triwiki/context-graph/query-types.js';
-import { loadContextGraphIndex, type ContextGraphLoadErrorCode } from '../triwiki/context-graph/query/index.js';
+import {
+  HydrationCursor,
+  contextNodeFlag,
+  contextWalkProvenance,
+  contextWalkRoot,
+  isMissingWorkspaceContextIndex,
+  openWorkspaceContextIndex,
+  walkContextGraph,
+  workspaceContextFailureOf,
+  type ContextGraphNodeView,
+  type ContextIndexReader,
+  type ContextWalkHit,
+  type WorkspaceContextFailure
+} from '../triwiki/context-graph/query/index.js';
 import { ALWAYS_ON_GATES, selectGates, type GateManifestEntry, type GateTier } from '../release/gate-manifest.js';
 
 export const CONTEXT_GRAPH_AFFECTED_SCHEMA = 'sks.context-graph-affected-verification.v1' as const;
@@ -42,15 +77,22 @@ export const CONTEXT_GRAPH_AFFECTED_CAPS = {
   maxNodesPerWalk: 2048,
   maxEdgesPerWalk: 32768,
   maxTests: 128,
-  maxAddedGates: 64
+  maxAddedGates: 64,
+  /**
+   * Provenance rows kept per hit. A hop chain crosses at most
+   * `maxDepth + 1` edges — the expansion hop plus the reverse hops — so this
+   * bound is slack by construction and exists only so the walk helper is not
+   * handed an unbounded limit.
+   */
+  maxProvenancePerHit: 16
 } as const;
 
 /** Reverse relations that mean "this would have to be re-verified". */
-const IMPACT_EDGE_TYPES: ReadonlySet<string> = new Set([
+const IMPACT_EDGE_TYPES: ReadonlySet<ContextGraphEdgeType> = new Set([
   'imports', 'reexports', 'references', 'calls', 'tests', 'affected_by', 'verified_by', 'gated_by', 'depends_on', 'owns', 'routes_to'
 ]);
 /** Same-file expansion applied to a changed file before the reverse walk. */
-const SEED_EXPANSION_EDGE_TYPES: ReadonlySet<string> = new Set(['defines', 'contains']);
+const SEED_EXPANSION_EDGE_TYPES: ReadonlySet<ContextGraphEdgeType> = new Set(['defines', 'contains']);
 
 export type ContextGraphAffectedGateSource = 'changed_file_selector' | 'always_on' | 'context_graph';
 
@@ -62,8 +104,8 @@ export interface ContextGraphAffectedRequest {
   readonly publish?: boolean;
   /** Gate ids an upstream exact selector already committed to; they always survive. */
   readonly baselineGateIds?: readonly string[];
-  /** Pre-built index. Supplying it makes the whole call pure and I/O-free. */
-  readonly index?: ContextGraphIndex;
+  /** An index the caller already opened. Supplying it makes the whole call pure and I/O-free. */
+  readonly reader?: ContextIndexReader;
   /** Freshness verdict from the caller's preflight; computing it here would spawn git. */
   readonly graphStatus?: ContextGraphStatusCode;
   readonly maxDepth?: number;
@@ -114,13 +156,6 @@ export interface ContextGraphAffectedResult {
   readonly process_spawns: 0;
 }
 
-interface ImpactHit {
-  readonly nodeId: string;
-  readonly depth: number;
-  readonly reasonPath: string[];
-  readonly explanation: ContextGraphExplanationStep[];
-}
-
 const ERROR_BY_STATUS = {
   fresh: null,
   missing: CONTEXT_GRAPH_MISSING_ERROR,
@@ -139,83 +174,123 @@ function relativePath(value: string): string | null {
   return normalized && isWorkspaceRelativePosixPath(normalized) ? normalized : null;
 }
 
-function nodePathOf(node: ContextGraphNode): string | null {
+function nodePathOf(node: ContextGraphNodeView): string | null {
   return node.path ?? contextGraphPathFromId(node.id);
 }
 
-function isTestNode(node: ContextGraphNode): boolean {
-  return node.kind === 'test' || node.metadata.isTest === true;
+function isTestNode(node: ContextGraphNodeView): boolean {
+  return node.kind === 'test' || contextNodeFlag(node, 'isTest');
 }
 
-function isProtectedGateNode(node: ContextGraphNode): boolean {
-  return node.risk === 'protected' || node.metadata.requiredForPublish === true || node.metadata.alwaysOnRelease === true;
+/**
+ * The two metadata arms are **unreachable in production, and that is a fact
+ * about the compiler rather than a gap here.**
+ * `extractors/topology/gates.ts` sets `requiredForPublish`/`alwaysOnRelease` in
+ * the same `addNode` call that sets `risk: gateRisk(...)`, and
+ * `REQUIRED_FOR_PUBLISH.has(id)` is one of `gateRisk`'s disjuncts — so each flag
+ * implies `risk === 'protected'`, the first arm short-circuits, and no gate the
+ * real extractor emits can be protected by metadata alone. The
+ * `context-graph-v2:quality` gate measures exactly that over the real manifest
+ * and would fail if it stopped holding.
+ *
+ * A fixture *can* construct the state by declaring the flag with a non-protected
+ * `risk`, and the suite does, which verifies the predicate rather than the
+ * reachability — they are separate claims and only the first is testable here.
+ * The arms are kept because the invariant lives in another file and nothing
+ * enforces it across the distance, and read through `contextNodeFlag` because a
+ * narrower spelling would move the silent-false failure rather than remove it.
+ */
+function isProtectedGateNode(node: ContextGraphNodeView): boolean {
+  return node.risk === 'protected' || contextNodeFlag(node, 'requiredForPublish') || contextNodeFlag(node, 'alwaysOnRelease');
 }
 
-function impactStep(edge: ContextGraphEdge): ContextGraphExplanationStep {
-  return { edgeId: edge.id, type: edge.type, from: edge.from, to: edge.to, confidence: edge.confidence, path: edge.provenance.path };
-}
-
-function impactProvenance(index: ContextGraphIndex, hit: ImpactHit): ContextGraphProvenanceRef[] {
-  const out: ContextGraphProvenanceRef[] = [];
-  const seen = new Set<string>();
-  for (const step of hit.explanation) {
-    const edge = index.edgesById.get(step.edgeId);
-    if (!edge) continue;
-    const key = `${edge.provenance.path}#${edge.provenance.line ?? 0}#${edge.provenance.hash}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const line = edge.provenance.line;
-    out.push({ path: edge.provenance.path, ...(line === undefined ? {} : { line }), hash: edge.provenance.hash });
+/**
+ * Every node at a changed path, with no per-key cap.
+ *
+ * Deliberately not `resolveContextSeeds`: its `maxPerKey` drops an over-matching
+ * key, which is right for a guessed label and wrong for a changed file. Dropping
+ * a seed here removes the suites that hang off it and the run merely gets faster.
+ */
+function affectedRoots(
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  changedFiles: readonly string[]
+): { roots: ContextWalkHit[]; unresolved: string[] } {
+  const roots: ContextWalkHit[] = [];
+  const seen = new Set<number>();
+  const unresolved: string[] = [];
+  for (const file of changedFiles) {
+    const postings = reader.basename(file);
+    if (postings.length === 0) {
+      unresolved.push(file);
+      continue;
+    }
+    for (let at = 0; at < postings.length; at += 1) {
+      const node = postings.node(at);
+      if (seen.has(node)) continue;
+      seen.add(node);
+      const view = cursor.node(node);
+      if (view !== null) roots.push(contextWalkRoot(node, view.id));
+    }
   }
-  return out;
+  return { roots, unresolved };
+}
+
+/**
+ * Seeds plus the symbols they declare, all at depth 0.
+ *
+ * The expansion hop stays in the reason path but is not charged against the
+ * reverse walk's depth: a file and a symbol it defines are one location, and
+ * spending a hop crossing between them would halve the reach of the impact
+ * closure for every symbol-level suite.
+ */
+function expandAffectedRoots(
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  roots: readonly ContextWalkHit[]
+): { roots: ContextWalkHit[]; truncated: boolean } {
+  const expanded = walkContextGraph(reader, cursor, {
+    roots,
+    direction: 'out',
+    edgeTypes: SEED_EXPANSION_EDGE_TYPES,
+    caps: {
+      maxDepth: 1,
+      maxNodes: CONTEXT_GRAPH_AFFECTED_CAPS.maxNodesPerWalk,
+      maxEdges: CONTEXT_GRAPH_AFFECTED_CAPS.maxEdgesPerWalk
+    }
+  });
+  const out: ContextWalkHit[] = [];
+  for (const hit of expanded.hits.values()) out.push(hit.depth === 0 ? hit : { ...hit, depth: 0 });
+  return { roots: out, truncated: expanded.truncated };
 }
 
 /**
  * Reverse breadth-first walk from the changed files. Bounded by node, edge and
  * depth caps so a hot path stays `O(seeds * fanout)` rather than `O(nodes)`.
  */
-function walkImpactClosure(index: ContextGraphIndex, changedFiles: readonly string[], maxDepth: number): { hits: ImpactHit[]; truncated: boolean; unresolved: string[] } {
-  const seen = new Map<string, ImpactHit>();
-  const queue: ImpactHit[] = [];
-  const unresolved: string[] = [];
-  const enqueue = (hit: ImpactHit): void => {
-    if (seen.has(hit.nodeId) || !index.nodesById.has(hit.nodeId)) return;
-    seen.set(hit.nodeId, hit);
-    queue.push(hit);
+function walkImpactClosure(
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  changedFiles: readonly string[],
+  maxDepth: number
+): { hits: ContextWalkHit[]; truncated: boolean; unresolved: string[] } {
+  const seeds = affectedRoots(reader, cursor, changedFiles);
+  const expanded = expandAffectedRoots(reader, cursor, seeds.roots);
+  const impact = walkContextGraph(reader, cursor, {
+    roots: expanded.roots,
+    direction: 'in',
+    edgeTypes: IMPACT_EDGE_TYPES,
+    caps: {
+      maxDepth,
+      maxNodes: CONTEXT_GRAPH_AFFECTED_CAPS.maxNodesPerWalk,
+      maxEdges: CONTEXT_GRAPH_AFFECTED_CAPS.maxEdgesPerWalk
+    }
+  });
+  return {
+    hits: [...impact.hits.values()],
+    truncated: expanded.truncated || impact.truncated,
+    unresolved: seeds.unresolved
   };
-  for (const file of changedFiles) {
-    const ids = index.nodesByPath.get(file) ?? [];
-    if (!ids.length) {
-      unresolved.push(file);
-      continue;
-    }
-    for (const id of ids) enqueue({ nodeId: id, depth: 0, reasonPath: [id], explanation: [] });
-    // Symbols declared by the changed file are what a suite actually exercises.
-    for (const id of ids) {
-      for (const edge of outgoingEdges(index, id)) {
-        if (!SEED_EXPANSION_EDGE_TYPES.has(edge.type)) continue;
-        enqueue({ nodeId: edge.to, depth: 0, reasonPath: [id, edge.type, edge.to], explanation: [impactStep(edge)] });
-      }
-    }
-  }
-  let edgesVisited = 0;
-  for (let head = 0; head < queue.length; head += 1) {
-    const current = queue[head];
-    if (!current || current.depth >= maxDepth) continue;
-    for (const edge of incomingEdges(index, current.nodeId)) {
-      edgesVisited += 1;
-      if (edgesVisited > CONTEXT_GRAPH_AFFECTED_CAPS.maxEdgesPerWalk) return { hits: [...seen.values()], truncated: true, unresolved };
-      if (!IMPACT_EDGE_TYPES.has(edge.type) || seen.has(edge.from)) continue;
-      if (seen.size >= CONTEXT_GRAPH_AFFECTED_CAPS.maxNodesPerWalk) return { hits: [...seen.values()], truncated: true, unresolved };
-      enqueue({
-        nodeId: edge.from,
-        depth: current.depth + 1,
-        reasonPath: [...current.reasonPath, `<-${edge.type}`, edge.from],
-        explanation: [...current.explanation, impactStep(edge)]
-      });
-    }
-  }
-  return { hits: [...seen.values()], truncated: false, unresolved };
 }
 
 function selectorGate(entry: GateManifestEntry | undefined, gateId: string, source: ContextGraphAffectedGateSource): ContextGraphAffectedGate {
@@ -312,23 +387,24 @@ function assemble(
   };
 }
 
-/** Answer against an index the caller already holds. Pure: no file system access, no process spawn. */
-export function contextGraphAffectedVerificationFromIndex(index: ContextGraphIndex, request: ContextGraphAffectedRequest): ContextGraphAffectedResult {
+/** Answer against an index the caller already opened. Pure: no file system access, no process spawn. */
+export function contextGraphAffectedVerificationFromIndex(reader: ContextIndexReader, request: ContextGraphAffectedRequest): ContextGraphAffectedResult {
   const changedFiles = [...new Set(request.changedFiles.map(relativePath).filter((value): value is string => value !== null))].sort();
   const status = request.graphStatus ?? 'fresh';
   if (status !== 'fresh') {
-    return assemble(request, status, index.snapshot.snapshotHash, changedFiles, { details: [], tests: [], unresolved: [], truncated: false, warnings: [] });
+    return assemble(request, status, reader.snapshotHash, changedFiles, { details: [], tests: [], unresolved: [], truncated: false, warnings: [] });
   }
 
+  const cursor = new HydrationCursor(reader);
   const maxDepth = Math.max(0, request.maxDepth ?? CONTEXT_GRAPH_AFFECTED_CAPS.maxDepth);
-  const walk = walkImpactClosure(index, changedFiles, maxDepth);
+  const walk = walkImpactClosure(reader, cursor, changedFiles, maxDepth);
   const details: ContextGraphAffectedGate[] = [];
   const tests: ContextGraphAffectedTest[] = [];
   const warnings: string[] = [];
   const universe = new Set(request.gates.map((entry) => entry.id));
 
   for (const hit of walk.hits) {
-    const node = index.nodesById.get(hit.nodeId);
+    const node = cursor.node(hit.node);
     if (!node) continue;
     if (node.kind === 'gate') {
       if (details.length >= CONTEXT_GRAPH_AFFECTED_CAPS.maxAddedGates) continue;
@@ -344,7 +420,7 @@ export function contextGraphAffectedVerificationFromIndex(index: ContextGraphInd
         protected: isProtectedGateNode(node) || (entry ? entry.required_for_publish || entry.always_on_release : false),
         reason_path: [...hit.reasonPath],
         explanation: [...hit.explanation],
-        provenance: impactProvenance(index, hit)
+        provenance: contextWalkProvenance(reader, cursor, hit, CONTEXT_GRAPH_AFFECTED_CAPS.maxProvenancePerHit)
       });
       continue;
     }
@@ -355,13 +431,13 @@ export function contextGraphAffectedVerificationFromIndex(index: ContextGraphInd
       path: testPath,
       reason_path: [...hit.reasonPath],
       explanation: [...hit.explanation],
-      provenance: impactProvenance(index, hit)
+      provenance: contextWalkProvenance(reader, cursor, hit, CONTEXT_GRAPH_AFFECTED_CAPS.maxProvenancePerHit)
     });
   }
 
   details.sort((a, b) => (a.gate_id < b.gate_id ? -1 : a.gate_id > b.gate_id ? 1 : 0));
   tests.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return assemble(request, 'fresh', index.snapshot.snapshotHash, changedFiles, {
+  return assemble(request, 'fresh', reader.snapshotHash, changedFiles, {
     details,
     tests,
     unresolved: walk.unresolved,
@@ -370,23 +446,45 @@ export function contextGraphAffectedVerificationFromIndex(index: ContextGraphInd
   });
 }
 
-/** Inverted from `ERROR_BY_STATUS` rather than restated, so the round trip cannot drift. */
-function statusOfLoadError(code: ContextGraphLoadErrorCode | null): ContextGraphStatusCode {
-  return (Object.keys(ERROR_BY_STATUS) as ContextGraphStatusCode[]).find((status) => ERROR_BY_STATUS[status] === code) ?? 'corrupt';
+/**
+ * Project a facade refusal onto this module's three-valued status.
+ *
+ * The store's vocabulary is wider than `ContextGraphStatusCode`, so the mapping
+ * is stated rather than derived: "no index has been built" is `missing`, an index
+ * describing another tree is `stale`, and every other index failure — corrupt
+ * section, unsupported revision, divergent pointer — is `corrupt`. All three
+ * return the exact selector's gates unchanged, so a misfiled code costs a
+ * message, never a gate.
+ */
+function statusOfIndexFailure(error: unknown, failure: WorkspaceContextFailure): ContextGraphStatusCode {
+  if (isMissingWorkspaceContextIndex(error)) return 'missing';
+  return failure.code === 'context_index_stale' ? 'stale' : 'corrupt';
 }
 
 /**
  * Resolve the workspace index through the query facade and answer. An index that
  * is absent, stale or unreadable still returns the exact selector's gates — never
- * fewer — carrying the same public code the facade refused with.
+ * fewer — carrying this module's own public code for the state the facade refused
+ * with.
  */
 export async function contextGraphAffectedVerification(request: ContextGraphAffectedRequest): Promise<ContextGraphAffectedResult> {
-  if (request.index) return contextGraphAffectedVerificationFromIndex(request.index, request);
+  if (request.reader) return contextGraphAffectedVerificationFromIndex(request.reader, request);
   const changedFiles = [...new Set(request.changedFiles.map(relativePath).filter((value): value is string => value !== null))].sort();
-  const verdict = request.graphStatus === undefined ? {} : { status: { status: request.graphStatus } };
-  const load = await loadContextGraphIndex(request.root, verdict);
-  if (load.ok && load.index) return contextGraphAffectedVerificationFromIndex(load.index, request);
-  // `load.warnings` is dropped on purpose: its only reachable value here is
-  // "freshness was not verified", which `assemble` already reports as a reason.
-  return assemble(request, statusOfLoadError(load.errorCode), load.snapshotHash, changedFiles, { details: [], tests: [], unresolved: [], truncated: false, warnings: [] });
+  const empty = { details: [], tests: [], unresolved: [], truncated: false, warnings: [] };
+  // A caller that already knows the graph is unusable is answered without
+  // opening it: the verdict is the caller's preflight, and re-deriving one here
+  // would spawn git on a release path.
+  if (request.graphStatus !== undefined && request.graphStatus !== 'fresh') {
+    return assemble(request, request.graphStatus, '', changedFiles, empty);
+  }
+  try {
+    const handle = await openWorkspaceContextIndex(request.root);
+    return contextGraphAffectedVerificationFromIndex(handle.reader, request);
+  } catch (error: unknown) {
+    const failure = workspaceContextFailureOf(error);
+    // Not an index failure: an unrelated bug reported as a corrupt graph would
+    // send a user to rebuild an index that is fine.
+    if (failure === null) throw error;
+    return assemble(request, statusOfIndexFailure(error, failure), '', changedFiles, empty);
+  }
 }

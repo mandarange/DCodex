@@ -15,7 +15,6 @@ import {
 } from '../../paths.js';
 import {
   readContextGraphMeta,
-  readContextGraphPrevSnapshot,
   readContextGraphSnapshot,
   writeContextGraphSnapshot
 } from '../snapshot-store.js';
@@ -85,7 +84,7 @@ function metaFor(snapshot: ContextGraphSnapshot): ContextGraphMeta {
   };
 }
 
-test('a corrupt current snapshot surfaces a blocker and never resolves to the previous generation', async () => {
+test('a corrupt current snapshot refuses, and no previous generation exists to resolve to', async () => {
   const root = seedRepo('cgs-corrupt');
   try {
     const good = snapshotWith('previous');
@@ -101,9 +100,13 @@ test('a corrupt current snapshot surfaces a blocker and never resolves to the pr
     assert.ok(load.blocker?.includes(CONTEXT_GRAPH_REPAIR_COMMAND), load.blocker ?? '');
     assert.ok(!load.blocker?.includes(root), 'a blocker must never contain an absolute path');
 
-    const prev = await readContextGraphPrevSnapshot(root);
-    assert.equal(prev.status, 'ok');
-    assert.equal(prev.snapshot?.snapshotHash, good.snapshotHash);
+    // The refusal is structural, not a policy the store chooses to apply: after two
+    // commits there is no second generation on disk for any caller to reach for.
+    assert.equal(
+      fs.existsSync(contextGraphPrevSnapshotPath(root)),
+      false,
+      'committing must not leave a previous generation behind'
+    );
 
     const status = await contextGraphStatus(root, { verifySources: false });
     assert.equal(status.status, 'corrupt');
@@ -134,7 +137,7 @@ test('a crash before the rename leaves the existing snapshot byte-intact', async
   }
 });
 
-test('exactly one previous generation is retained', async () => {
+test('no previous generation is retained, but its hash still is', async () => {
   const root = seedRepo('cgs-prev');
   try {
     const first = snapshotWith('v1');
@@ -144,11 +147,44 @@ test('exactly one previous generation is retained', async () => {
     await writeContextGraphSnapshot({ root, snapshot: second, meta: metaFor(second) });
     const result = await writeContextGraphSnapshot({ root, snapshot: third, meta: metaFor(third) });
 
+    // A hash is everything any consumer ever wanted from the previous generation;
+    // the 63 MB second copy that used to carry it had no reader at all.
     assert.equal(result.previousSnapshotHash, second.snapshotHash);
+    assert.equal(result.reclaimedRetiredPrevious, false, 'a clean workspace has nothing to reclaim');
     assert.equal((await readContextGraphSnapshot(root)).snapshot?.snapshotHash, third.snapshotHash);
-    assert.equal((await readContextGraphPrevSnapshot(root)).snapshot?.snapshotHash, second.snapshotHash);
     const entries = fs.readdirSync(path.dirname(contextGraphSnapshotPath(root)));
-    assert.equal(entries.filter((name) => name.startsWith('context-graph.prev')).length, 1);
+    assert.equal(
+      entries.filter((name) => name.startsWith('context-graph.prev')).length,
+      0,
+      `no prev artifact may be written: ${entries.join(',')}`
+    );
+  } finally {
+    removeFixtureRoot(root);
+  }
+});
+
+test('a retired prev snapshot left by an older build is reclaimed by the next commit', async () => {
+  const root = seedRepo('cgs-prev-reclaim');
+  try {
+    const first = snapshotWith('v1');
+    await writeContextGraphSnapshot({ root, snapshot: first, meta: metaFor(first) });
+
+    // What an older build left behind: a byte-identical duplicate of the snapshot.
+    const retired = contextGraphPrevSnapshotPath(root);
+    const committed = fs.readFileSync(contextGraphSnapshotPath(root), 'utf8');
+    fs.writeFileSync(retired, committed, 'utf8');
+    assert.equal(fs.existsSync(retired), true);
+
+    const second = snapshotWith('v2');
+    const result = await writeContextGraphSnapshot({ root, snapshot: second, meta: metaFor(second) });
+
+    assert.equal(result.reclaimedRetiredPrevious, true, 'the duplicate must be reclaimed, not left to rot');
+    assert.equal(fs.existsSync(retired), false);
+    // Reclaiming disk must never cost the commit: the new generation is intact and
+    // still names the one it replaced.
+    assert.equal(result.previousSnapshotHash, first.snapshotHash);
+    assert.equal((await readContextGraphSnapshot(root)).snapshot?.snapshotHash, second.snapshotHash);
+    assert.equal((await readContextGraphMeta(root)).status, 'ok');
   } finally {
     removeFixtureRoot(root);
   }

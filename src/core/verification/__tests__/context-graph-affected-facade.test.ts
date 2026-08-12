@@ -1,13 +1,19 @@
 /**
- * Affected verification, end to end through the query facade.
+ * Affected verification, end to end through the CRK2 query facade.
  *
- * The sibling suite proves the selection logic against an index handed in by the
+ * The sibling suite proves the selection logic against a reader handed in by the
  * caller. This one proves the half that suite cannot reach: the module resolves a
- * real workspace off disk through `query/index.js` and never through the snapshot
- * store, and every way that resolution can fail still returns the exact
- * selector's gates under the public code the facade refused with.
+ * real workspace off disk through `openWorkspaceContextIndex`, and every way that
+ * resolution can fail still returns the exact selector's gates under the status
+ * the facade refused with.
  *
- * "Still returns the exact selector's gates" is the whole point. A selector that
+ * **No workspace here contains `context-graph.json`.** That is the point rather
+ * than tidiness: the only graph on disk is a published binary generation, so a
+ * module that went back to reading the JSON store would report `missing` on the
+ * healthy case and fail the first test. A fixture that wrote both artifacts would
+ * pass either way and prove nothing about which one was read.
+ *
+ * "Still returns the exact selector's gates" is the other half. A selector that
  * quietly returns fewer gates when the index is broken looks like a fast run right
  * up until the release that needed the missing gate, so each failure case asserts
  * the floor rather than only the error code.
@@ -22,10 +28,8 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   CONTEXT_GRAPH_CORRUPT_ERROR,
-  CONTEXT_GRAPH_META_SCHEMA,
   CONTEXT_GRAPH_MISSING_ERROR,
   CONTEXT_GRAPH_REPAIR_COMMAND,
-  CONTEXT_GRAPH_SCHEMA_REVISION,
   CONTEXT_GRAPH_STALE_ERROR,
   type ContextGraphEdge,
   type ContextGraphNode,
@@ -33,7 +37,10 @@ import {
 } from '../../triwiki/context-graph/contracts.js';
 import { buildContextGraphSnapshot } from '../../triwiki/context-graph/compiler/serialize.js';
 import { contextGraphEdgeId, contextGraphNodeId } from '../../triwiki/context-graph/ids.js';
-import { clearContextGraphSnapshotCache } from '../../triwiki/context-graph/query/index.js';
+import {
+  publishFixtureContextIndex,
+  resetContextIndexCache
+} from '../../triwiki/context-graph/query/__tests__/workspace-fixtures.js';
 import { buildGateEntry, selectGates, type GateManifestEntry } from '../../release/gate-manifest.js';
 import {
   contextGraphAffectedVerification,
@@ -83,12 +90,16 @@ function edge(from: string, to: string, type: 'imports' | 'tests' | 'affected_by
   };
 }
 
-function snapshot(): ContextGraphSnapshot {
+/** `salt` changes the node set, so two fixtures encode to genuinely different indexes. */
+function snapshot(salt = ''): ContextGraphSnapshot {
   const nodes = [
     node(IDS.changed, 'file', 'changed.ts', CHANGED),
     node(IDS.dependent, 'file', 'dependent.ts', DEPENDENT),
     node(IDS.suite, 'test', 'changed.test.ts', SUITE),
-    node(IDS.gate, 'gate', 'custom:thing', 'release-gates.v2.json')
+    node(IDS.gate, 'gate', 'custom:thing', 'release-gates.v2.json'),
+    ...(salt
+      ? [node(contextGraphNodeId({ kind: 'file', path: `src/mod-z/${salt}.ts` }), 'file', `${salt}.ts`, `src/mod-z/${salt}.ts`)]
+      : [])
   ];
   const edges = [
     edge(IDS.dependent, IDS.changed, 'imports', DEPENDENT),
@@ -104,37 +115,59 @@ function snapshot(): ContextGraphSnapshot {
   });
 }
 
-function metaFor(stored: ContextGraphSnapshot) {
-  return {
-    schema: CONTEXT_GRAPH_META_SCHEMA,
-    schemaRevision: CONTEXT_GRAPH_SCHEMA_REVISION,
-    snapshotHash: stored.snapshotHash,
-    previousSnapshotHash: null,
-    generatedAt: OBSERVED_AT,
-    cacheKey: `cache-${stored.snapshotHash}`,
-    cacheKeyParts: { sourcePolicy: 'workspace' },
-    inputHashes: {},
-    nodeCount: stored.nodeCount,
-    edgeCount: stored.edgeCount,
-    lint: { ok: true, errors: 0, warnings: 0 },
-    skipped: [],
-    durationMs: 1
-  };
+type WorkspaceShape = 'full' | 'generation_missing' | 'corrupt_generation' | 'foreign_generation' | 'none';
+
+const STORE = ['.sneakoscope', 'wiki', 'context-graph'] as const;
+
+function pointerPath(root: string): string {
+  return path.join(root, ...STORE, 'current.json');
 }
 
-async function workspace(write: 'full' | 'meta_only' | 'corrupt_snapshot' | 'stale_revision' | 'none'): Promise<string> {
+function generationPath(root: string, snapshotHash: string): string {
+  return path.join(root, ...STORE, 'generations', `${snapshotHash}.idx`);
+}
+
+/**
+ * `foreign_generation` needs a second, genuinely different index. It is built in
+ * its own root because the store refuses two different operations on one root —
+ * correctly, since that is two compilers racing on one workspace.
+ */
+async function foreignIndexBytes(): Promise<Uint8Array> {
+  const donor = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-affected-donor-'));
+  try {
+    const other = snapshot('donor');
+    await publishFixtureContextIndex(donor, other);
+    return await fsp.readFile(generationPath(donor, other.snapshotHash));
+  } finally {
+    await fsp.rm(donor, { recursive: true, force: true });
+  }
+}
+
+async function workspace(shape: WorkspaceShape): Promise<string> {
+  resetContextIndexCache();
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-affected-facade-'));
-  if (write === 'none') return root;
-  const wiki = path.join(root, '.sneakoscope', 'wiki');
-  await fsp.mkdir(wiki, { recursive: true });
+  if (shape === 'none') return root;
   const stored = snapshot();
-  await fsp.writeFile(path.join(wiki, 'context-graph.meta.json'), JSON.stringify(metaFor(stored)));
-  if (write === 'meta_only') return root;
-  const body = write === 'stale_revision' ? { ...stored, schemaRevision: '0.9.0' } : stored;
-  await fsp.writeFile(
-    path.join(wiki, 'context-graph.json'),
-    write === 'corrupt_snapshot' ? '{"snapshotHash": ' : JSON.stringify(body)
-  );
+  await publishFixtureContextIndex(root, stored);
+  const generation = generationPath(root, stored.snapshotHash);
+
+  if (shape === 'generation_missing') await fsp.rm(generation);
+  if (shape === 'corrupt_generation') {
+    // Same byte length, so the store's cheap size check passes it through and the
+    // reader is the one that refuses: a checksum failure, not a truncation.
+    const bytes = await fsp.readFile(generation);
+    bytes.fill(0xff, Math.floor(bytes.byteLength / 2), Math.floor(bytes.byteLength / 2) + 64);
+    await fsp.writeFile(generation, bytes);
+  }
+  if (shape === 'foreign_generation') {
+    // An intact index that describes another tree: the pointer's snapshot hash and
+    // the file's own header disagree. `indexBytes` is corrected so the store's size
+    // check does not fire first and mask the state under test.
+    const bytes = await foreignIndexBytes();
+    await fsp.writeFile(generation, bytes);
+    const pointer = JSON.parse(await fsp.readFile(pointerPath(root), 'utf8'));
+    await fsp.writeFile(pointerPath(root), JSON.stringify({ ...pointer, indexBytes: bytes.byteLength }));
+  }
   return root;
 }
 
@@ -158,7 +191,6 @@ function assertNeverFewer(result: ContextGraphAffectedResult, changedFiles: stri
 }
 
 test('a workspace resolved through the facade widens the exact selection and recommends its suites', async () => {
-  clearContextGraphSnapshotCache();
   const root = await workspace('full');
   try {
     const result = await run(root, [CHANGED]);
@@ -167,6 +199,7 @@ test('a workspace resolved through the facade widens the exact selection and rec
     assert.equal(result.graph_used, true);
     assert.equal(result.error_code, null);
     assert.notEqual(result.snapshot_hash, '');
+    assert.equal(result.snapshot_hash, snapshot().snapshotHash, 'the answer names the generation it was read from');
     assertNeverFewer(result, [CHANGED]);
     // The gate hangs off the dependent, two reverse hops from the changed file:
     // reach no glob expresses, which is the only reason this module exists.
@@ -179,7 +212,6 @@ test('a workspace resolved through the facade widens the exact selection and rec
 });
 
 test('a second call reuses the facade cache and answers identically', async () => {
-  clearContextGraphSnapshotCache();
   const root = await workspace('full');
   try {
     const first = await run(root, [CHANGED]);
@@ -193,7 +225,6 @@ test('a second call reuses the facade cache and answers identically', async () =
 });
 
 test('an absent index fails closed as missing and keeps every exact gate', async () => {
-  clearContextGraphSnapshotCache();
   const root = await workspace('none');
   try {
     const result = await run(root, [CHANGED]);
@@ -210,9 +241,8 @@ test('an absent index fails closed as missing and keeps every exact gate', async
   }
 });
 
-test('an unparseable snapshot fails closed as corrupt and keeps every exact gate', async () => {
-  clearContextGraphSnapshotCache();
-  const root = await workspace('corrupt_snapshot');
+test('a damaged generation fails closed as corrupt and keeps every exact gate', async () => {
+  const root = await workspace('corrupt_generation');
   try {
     const result = await run(root, [CHANGED]);
     assert.equal(result.ok, false);
@@ -225,9 +255,8 @@ test('an unparseable snapshot fails closed as corrupt and keeps every exact gate
   }
 });
 
-test('metadata without its snapshot is missing, not a half-answer off the metadata alone', async () => {
-  clearContextGraphSnapshotCache();
-  const root = await workspace('meta_only');
+test('a pointer whose generation vanished is missing, not a half-answer off the pointer alone', async () => {
+  const root = await workspace('generation_missing');
   try {
     const result = await run(root, [CHANGED]);
     assert.equal(result.error_code, CONTEXT_GRAPH_MISSING_ERROR);
@@ -238,9 +267,8 @@ test('metadata without its snapshot is missing, not a half-answer off the metada
   }
 });
 
-test('a snapshot from another schema revision is stale, and stale is not corrupt', async () => {
-  clearContextGraphSnapshotCache();
-  const root = await workspace('stale_revision');
+test('an intact index describing another tree is stale, and stale is not corrupt', async () => {
+  const root = await workspace('foreign_generation');
   try {
     const result = await run(root, [CHANGED]);
     assert.equal(result.graph_status, 'stale');
@@ -253,7 +281,6 @@ test('a snapshot from another schema revision is stale, and stale is not corrupt
 });
 
 test("a caller's stale preflight verdict is honoured without touching the index", async () => {
-  clearContextGraphSnapshotCache();
   const root = await workspace('full');
   try {
     const result = await contextGraphAffectedVerification({
