@@ -25,17 +25,14 @@ import {
 import type { ContextGraphSkip } from '../triwiki/context-graph/contracts.js';
 import {
   isCodePackProjectionBoundToSnapshot,
-  projectCodePackFromGraph,
   validateCodePack,
   type CodePack
 } from '../triwiki/code-pack.js';
 import {
   validateContextGraphSnapshot,
-  type ContextGraphMeta,
   type ContextGraphSnapshot
 } from '../triwiki/context-graph/contracts.js';
 import { compileContextGraph } from '../triwiki/context-graph/compiler/index.js';
-import { readSourceHashes } from '../triwiki/context-graph/compiler/freshness.js';
 import {
   ARCHITECTURE_MAP_EXTRACTOR_IDS,
   architectureMapGraphExtractors
@@ -43,12 +40,19 @@ import {
 import { computeContextGraphCacheKey } from '../triwiki/context-graph/compiler/cache-key.js';
 import { walkCodeInventory } from '../triwiki/context-graph/extractors/code/inventory.js';
 import { codeInventoryInputHashes } from '../triwiki/code-navigation-policy.js';
-import { clearContextGraphSnapshotCache } from '../triwiki/context-graph/query/index.js';
-import { CONTEXT_INDEX_FORMAT_REVISION } from '../triwiki/context-graph/runtime-index/format.js';
-import { encodeContextIndex } from '../triwiki/context-graph/runtime-index/writer.js';
-import { openContextIndex, type ContextIndexReader } from '../triwiki/context-graph/runtime-index/reader.js';
+import {
+  clearContextGraphSnapshotCache,
+  clearWorkspaceContextIndex
+} from '../triwiki/context-graph/query/index.js';
 import { withTriWikiStateLock } from '../triwiki/triwiki-cleanup.js';
 import { publishArchitectureMapToStage } from '../triwiki/context-graph/store/architecture-map-store.js';
+import {
+  alignPendingRoot,
+  alignPendingWiki,
+  alignSourceFingerprint,
+  projectAlignCodePack,
+  publishAlignContextIndex
+} from './align-context-index.js';
 import {
   ALIGN_GATE_ARTIFACT,
   ALIGN_LEDGER_ARTIFACT,
@@ -148,10 +152,6 @@ function difference(left: readonly string[], right: ReadonlySet<string>): string
   return left.filter((value) => !right.has(value)).sort();
 }
 
-function citedPaths(pack: CodePack): string[] {
-  return [...new Set(pack.entries.flatMap((entry) => entry.citations.map((citation) => citation.path)))].sort();
-}
-
 function alignGuard(root: string) {
   const contract = createRequestedScopeContract({
     route: '$sks-align',
@@ -208,52 +208,6 @@ async function fileSha256(file: string): Promise<string> {
 async function writeEvidence(root: string, dir: string, ledger: AlignLedger, missionId: string) {
   await writeJsonAtomic(path.join(dir, ALIGN_LEDGER_ARTIFACT), ledger);
   return (await refreshAlignGate(dir, missionId, root)).gate;
-}
-
-/**
- * Config identity for the in-memory index align projects the pack from.
- *
- * Fixed rather than derived from ambient ranking config: nothing reads this
- * index back, and a value that moved between runs would make two otherwise
- * identical aligns produce different index bytes.
- */
-const ALIGN_PACK_INDEX_CONFIG_HASH: Uint8Array = new Uint8Array(
-  crypto.createHash('sha256').update('sks.code-navigation-align-pack-index.v1').digest()
-);
-
-/**
- * Open the compiled snapshot as a compact index.
- *
- * `projections/code-pack.ts` migrated to the CRK2 reader (CG2-13), and align
- * projects its pack from a snapshot it has just compiled in memory — before any
- * generation is published, so there is nothing for the query facade to open. The
- * encode is therefore done here, and this is the seam align's own migration
- * replaces: once the compiler publishes a generation, the pack is projected from
- * the published reader and this function goes away.
- */
-function openCompiledIndex(snapshot: ContextGraphSnapshot): ContextIndexReader {
-  const encoded = encodeContextIndex({
-    snapshot,
-    configHash: ALIGN_PACK_INDEX_CONFIG_HASH,
-    schemaRevision: CONTEXT_INDEX_FORMAT_REVISION
-  });
-  return openContextIndex(encoded.bytes, { expectedSnapshotHash: snapshot.snapshotHash });
-}
-
-async function buildPack(root: string, snapshot: ContextGraphSnapshot, meta: ContextGraphMeta, generatedAt: string) {
-  const reader = openCompiledIndex(snapshot);
-  const first = projectCodePackFromGraph(root, reader, {
-    generatedAt,
-    gitHeadSha: meta.cacheKeyParts.head,
-    snapshotFreshness: 'fresh'
-  });
-  const observed = await readSourceHashes(root, citedPaths(first.pack));
-  return projectCodePackFromGraph(root, reader, {
-    generatedAt,
-    gitHeadSha: meta.cacheKeyParts.head,
-    snapshotFreshness: 'fresh',
-    observedSourceHashes: observed
-  }).pack;
 }
 
 function buildManifest(
@@ -409,28 +363,13 @@ async function runLocked(
     throw new Error('code_navigation_graph_validation_failed');
   }
 
-  const pack = await buildPack(root, snapshot, meta, generatedAt);
-  const packValidation = await validateCodePack(pack, root);
-  ledger.validation.code_pack = packValidation.ok
-    && pack.source_file_count === inventoryPaths.length
-    && isCodePackProjectionBoundToSnapshot(snapshot.snapshotHash, pack);
-  if (!ledger.validation.code_pack) throw new Error(`code_navigation_code_pack_invalid:${packValidation.issues.join('|')}`);
-  const contextPack = buildCodeNavigationContextPack({
-    root,
-    codePack: pack,
-    snapshotHash: snapshot.snapshotHash,
-    fileCount: inventoryPaths.length,
-    symbolCount: ledger.graph.symbol_nodes,
-    edgeCount: snapshot.edgeCount,
-    extractorRevisions: snapshot.extractors.map(({ id, revision }) => ({ id, revision }))
-  });
-  const contextValidation = validateCodeNavigationContextPack(contextPack, root);
-  ledger.validation.context_pack = contextValidation.ok;
-  if (!contextValidation.ok) throw new Error('code_navigation_context_pack_invalid');
-  const manifest = buildManifest(generatedAt, inventory, codeInventoryDigest, snapshot);
-
   const stageRoot = path.join(stageBase, `${missionId}-${randomUUID().slice(0, 8)}`);
-  const stageWiki = path.join(stageRoot, 'new-wiki');
+  // The staged wiki is the `.sneakoscope/wiki` of a pending workspace root, so the
+  // CRK2 generation store publishes at the workspace-relative paths it will keep
+  // after promotion. See `align-context-index.ts` for why neither publishing into
+  // the live root before the rename nor after it can work.
+  const pendingRoot = alignPendingRoot(stageRoot);
+  const stageWiki = alignPendingWiki(stageRoot);
   const previousRoot = path.join(stageRoot, 'previous');
   const activeWiki = path.join(root, '.sneakoscope', 'wiki');
   const movedPrior: Array<{ surface: PriorSurface; temporary: string }> = [];
@@ -439,6 +378,42 @@ async function runLocked(
   let commitStarted = false;
   try {
     await ensureDir(stageWiki);
+    // The v2 generation is published *before* the pack, because the pack is
+    // projected from the published generation through the query facade. A publish
+    // failure throws here, leaving the live wiki — and its pointer — untouched.
+    const sourceFingerprint = alignSourceFingerprint(inputHashes);
+    const published = await publishAlignContextIndex({
+      pendingRoot,
+      snapshot,
+      sourceFingerprint,
+      fragmentManifestHash: null,
+      lintWarnings: compiled.issues.length
+    });
+    const pack = await projectAlignCodePack({
+      root,
+      pendingRoot,
+      gitHeadSha: meta.cacheKeyParts.head,
+      generatedAt,
+      sourceFingerprint: published.sourceFingerprint
+    });
+    const packValidation = await validateCodePack(pack, root);
+    ledger.validation.code_pack = packValidation.ok
+      && pack.source_file_count === inventoryPaths.length
+      && isCodePackProjectionBoundToSnapshot(snapshot.snapshotHash, pack);
+    if (!ledger.validation.code_pack) throw new Error(`code_navigation_code_pack_invalid:${packValidation.issues.join('|')}`);
+    const contextPack = buildCodeNavigationContextPack({
+      root,
+      codePack: pack,
+      snapshotHash: snapshot.snapshotHash,
+      fileCount: inventoryPaths.length,
+      symbolCount: ledger.graph.symbol_nodes,
+      edgeCount: snapshot.edgeCount,
+      extractorRevisions: snapshot.extractors.map(({ id, revision }) => ({ id, revision }))
+    });
+    const contextValidation = validateCodeNavigationContextPack(contextPack, root);
+    ledger.validation.context_pack = contextValidation.ok;
+    if (!contextValidation.ok) throw new Error('code_navigation_context_pack_invalid');
+    const manifest = buildManifest(generatedAt, inventory, codeInventoryDigest, snapshot);
     await writeJsonAtomic(path.join(stageWiki, 'context-graph.json'), snapshot);
     await writeJsonAtomic(path.join(stageWiki, 'context-graph.meta.json'), meta);
     await writeJsonAtomic(path.join(stageWiki, 'code-navigation-manifest.json'), manifest);
@@ -465,6 +440,9 @@ async function runLocked(
     await guardedRename(guard, stageWiki, activeWiki);
     promoted = true;
     clearContextGraphSnapshotCache();
+    // The published generation moved with the directory, so any reader resident
+    // from before the rename describes a store that no longer exists.
+    clearWorkspaceContextIndex(root);
     ledger.publication.transactional_directory_replaced = true;
     ledger.publication.active_artifacts = [...ALIGN_OUTPUT_ARTIFACTS];
 
@@ -534,6 +512,7 @@ async function runLocked(
           await ensureDir(path.dirname(stageWiki));
           await guardedRename(guard, activeWiki, stageWiki);
           clearContextGraphSnapshotCache();
+          clearWorkspaceContextIndex(root);
         } catch (rollbackError) {
           rollbackFailures.push(`wiki:${String(rollbackError)}`);
         }

@@ -26,6 +26,19 @@ const CONTEXT_GRAPH_GATES = [
 ]
 
 /**
+ * The CG2-14 gates measure the same engine from the other side — index bytes,
+ * corrupt-input rejection, crash recovery. They deliberately share the v1 gates'
+ * affected set: a narrower copy would drift, and the drift would surface as a v2
+ * gate that quietly stops running for a change the v1 gates still cover.
+ */
+const CONTEXT_GRAPH_V2_GATES = [
+  'context-graph-v2:contract',
+  'context-graph-v2:quality',
+  'context-graph-v2:performance',
+  'context-graph-v2:legacy-closure'
+]
+
+/**
  * The `context-graph` globs as they stood on `57d40103`, before any consumer was
  * migrated. Every one of these must still be selectable; the list is never edited
  * down, only appended to.
@@ -54,12 +67,22 @@ function selected(changedFiles: string[]): string[] {
 }
 
 test('every glob the table carried before the consumer migration is still there', () => {
-  for (const id of CONTEXT_GRAPH_GATES) {
+  for (const id of [...CONTEXT_GRAPH_GATES, ...CONTEXT_GRAPH_V2_GATES]) {
     const globs = affectedGlobsFor(id)
     for (const glob of FROZEN_CONTEXT_GRAPH_GLOBS) {
       assert.equal(globs.includes(glob), true, `${id} lost the affected glob ${glob}`)
     }
   }
+})
+
+test('the v2 gates select on the same changes as the v1 gates', () => {
+  // Asserted as set equality rather than "the v2 set is non-empty": a v2 gate
+  // with its own narrower list would pass a non-emptiness check while covering
+  // strictly less than the gates it sits beside.
+  for (const id of CONTEXT_GRAPH_V2_GATES) {
+    assert.deepEqual(affectedGlobsFor(id), affectedGlobsFor('context-graph:contract'), `${id} carries its own glob list`)
+  }
+  assert.equal(affectedGlobsFor('context-graph-v2:contract').includes('src/scripts/context-graph-v2-check.ts'), true)
 })
 
 test('affectedGlobsFor stays reachable from the manifest module its callers import', () => {
@@ -77,6 +100,7 @@ test('every runtime consumer of the context graph selects the gates that prove i
     'src/core/naruto/context-graph-advisor.ts',
     'src/core/verification/context-graph-affected.ts',
     'src/core/align/code-navigation-align.ts',
+    'src/core/align/align-context-index.ts',
     'src/core/commands/wiki-command.ts',
     'src/core/triwiki/context-graph/query/kernel.ts',
     'src/core/triwiki/context-graph/query/hydrate.ts',

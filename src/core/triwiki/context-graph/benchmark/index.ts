@@ -88,6 +88,68 @@ export {
   type Crk2ComparisonOptions
 } from './crk2-comparison.js';
 export {
+  CRK2_FUZZ_DEFAULT_CASES_PER_STRATEGY,
+  CRK2_FUZZ_DEFAULT_SEED,
+  CRK2_FUZZ_STRATEGIES,
+  runContextIndexFuzz,
+  type Crk2FuzzFinding,
+  type Crk2FuzzOptions,
+  type Crk2FuzzReport,
+  type Crk2FuzzStrategy
+} from './crk2-fuzz.js';
+export {
+  FUZZ_CONFIG_HASH,
+  FUZZ_PROBE_TERMS,
+  FUZZ_SNAPSHOT_HASH,
+  fuzzBaseIndexBytes,
+  fuzzBaseSnapshot,
+  observeContextIndex
+} from './crk2-fuzz-index.js';
+export {
+  runCrk2OperationFault,
+  runCrk2OperationFaults,
+  type Crk2FaultOutcome,
+  type Crk2FaultReport,
+  type Crk2FaultSnapshots,
+  type Crk2PointerExpectation
+} from './crk2-fault-operations.js';
+export {
+  CRK2_RESOURCE_DEFAULT_REPEATS,
+  CRK2_RESOURCE_DEFAULT_WARMUPS,
+  crk2LatencyStats,
+  runCrk2ResourceBenchmark,
+  type Crk2IndexOpenMeasurement,
+  type Crk2LatencyStats,
+  type Crk2QueryResourceRow,
+  type Crk2ResourceOptions,
+  type Crk2ResourceQuery,
+  type Crk2ResourceReport,
+  type Crk2ResourceSample
+} from './crk2-resource-runner.js';
+export {
+  CRK2_REPORT_SCHEMA,
+  buildCrk2Report,
+  formatCrk2Report,
+  pooledCi95,
+  type Crk2BeforeAfterRow,
+  type Crk2CoarseVerdict,
+  type Crk2IndexLexiconCounts,
+  type Crk2QueryRow,
+  type Crk2Report,
+  type Crk2SnapshotParseMeasurement
+} from './crk2-report.js';
+export {
+  measureMetadataTypeLoss,
+  measureProtectedGateFlagReachability,
+  summarizeCrk2MetadataGap,
+  type Crk2FlagReachability,
+  type Crk2MetadataGapEntry,
+  type Crk2MetadataGapReport,
+  type Crk2MetadataTypeLoss,
+  type Crk2MetadataValueType,
+  type Crk2ProtectedGateReachability
+} from './crk2-metadata-gap.js';
+export {
   FIXTURE_ABSOLUTE_PATH,
   FIXTURE_SECRET_TOKEN,
   OUTSIDE_SYMLINK_TARGET_TOKEN,

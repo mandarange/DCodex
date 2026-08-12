@@ -32,6 +32,7 @@ import {
   commitContextIndexGeneration,
   stageContextIndexGeneration,
 } from '../../store/generation-commit.js';
+import { CONTEXT_GRAPH_LEXICON_CONFIG } from '../ranking-config.js';
 import { setSharedContextIndexCache } from '../cache.js';
 
 /** Fixed so a fixture's config fingerprint is stable across runs and machines. */
@@ -69,6 +70,12 @@ export async function publishFixtureContextIndex(
     snapshot,
     configHash: FIXTURE_CONFIG_HASH,
     schemaRevision: FIXTURE_SCHEMA_REVISION,
+    // Required, not incidental. `lexicon` is optional with no default, and
+    // omitting it emits four empty dictionary sections — an index whose anchor
+    // lane works and whose lexical and coarse lanes return nothing. A consumer
+    // test built on such a fixture passes while proving that text retrieval is
+    // broken, so the fixture must pass the same config the compiler does.
+    lexicon: CONTEXT_GRAPH_LEXICON_CONFIG,
   });
   const sourceFingerprint =
     options.sourceFingerprint ?? crypto.createHash('sha256').update(snapshot.snapshotHash).digest('hex');

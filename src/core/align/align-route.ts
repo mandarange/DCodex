@@ -23,6 +23,11 @@ export const ALIGN_SOURCE_POLICY = Object.freeze({
 export const ALIGN_OUTPUT_ARTIFACTS = Object.freeze([
   '.sneakoscope/wiki/context-graph.json',
   '.sneakoscope/wiki/context-graph.meta.json',
+  // The CRK2 generation store's pointer and meta mirror. Listed as outputs so the
+  // align gate hashes them after promotion: without them a run that published no
+  // v2 generation would still pass, which is exactly how this seam went unwired.
+  '.sneakoscope/wiki/context-graph/current.json',
+  '.sneakoscope/wiki/context-graph/context-graph.meta.json',
   '.sneakoscope/wiki/code-navigation-manifest.json',
   '.sneakoscope/wiki/code-pack.json',
   '.sneakoscope/wiki/context-pack.json',

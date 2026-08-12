@@ -49,12 +49,16 @@ const FIXTURE_SOURCES = [
   'config/proofs.json'
 ] as const;
 
-/**
- * A path that is a real workspace-relative path in the fixture, which is what
- * format revision 1's basename table is keyed by. See the recall note in
- * `answers a text query` below for why the tests anchor on a path.
- */
+/** Resolves through the anchor lane: the basename table is keyed by whole path. */
 const ANCHOR_QUERY = 'src/other/a.ts';
+
+/**
+ * Resolves only through the lexical lane — it is neither a canonical node id nor
+ * a path, so the anchor lane cannot see it. Keeping both queries is what
+ * separates "the plumbing works" from "text retrieval works": an index built
+ * without a lexicon answers the first and returns nothing for the second.
+ */
+const TEXT_QUERY = 'runService';
 
 function freshStatus(snapshot: ContextGraphSnapshot): ContextGraphStatus {
   return {
@@ -83,10 +87,10 @@ interface Workspace {
 /**
  * A workspace with a published compact index.
  *
- * The v1 JSON snapshot is written too, and that is not vestigial: the freshness
- * preflight still runs through `contextGraphStatus`, which parses it. Removing
- * that dependency is a `store/graph-status.ts` change and is reported as a
- * CG2-15 blocker rather than smuggled in here.
+ * `writeFixtureWorkspace` still runs, but only to give the meta file these tests
+ * inject a status against — the freshness preflight moved to
+ * `store/index-freshness.ts` and no longer parses the JSON snapshot, so nothing
+ * on the query path reads it any more.
  */
 async function makeWorkspace(prefix: string, withSources = true): Promise<Workspace> {
   const root = makeFixtureRoot(prefix);
@@ -132,6 +136,36 @@ describe('search context answers from the compact index', () => {
         assert.ok(Array.isArray(provenance) && provenance.length > 0, 'every match must be grounded');
         for (const ref of provenance) assert.ok(!ref.path.startsWith('/'), 'paths stay workspace-relative');
       }
+    } finally {
+      removeFixtureRoot(workspace.root);
+    }
+  });
+
+  it('answers a text query that no anchor can resolve', async () => {
+    const workspace = await makeWorkspace('crk2-lexical');
+    try {
+      const response = await searchContext(contextRequest(workspace.root, TEXT_QUERY), {
+        cache: false,
+        status: workspace.status
+      });
+
+      assert.equal(response.ok, true);
+      assert.ok(
+        response.matches.length > 0,
+        `"${TEXT_QUERY}" is neither a node id nor a path, so a hit here can only have come from the lexical lane`
+      );
+
+      // §4 is the point of the assertion, not a side note: BM25F is what found
+      // these, and a BM25F score never yields an exact confidence at any
+      // magnitude. If this ever admits `exact_*`, a text match has been promoted
+      // to a relation.
+      for (const match of response.matches) {
+        assert.notEqual(match.confidence, 'exact_definition', nodeIdOf(match));
+        assert.notEqual(match.confidence, 'exact_reference', nodeIdOf(match));
+      }
+      const graph = response.context?.graph;
+      assert.ok(graph);
+      assert.ok(graph.seedCount > 0, 'the lexical lane must have admitted seeds');
     } finally {
       removeFixtureRoot(workspace.root);
     }

@@ -4879,6 +4879,134 @@
       "output_contract": "sks.gate-result.v2"
     },
     {
+      "id": "context-graph-v2:contract",
+      "command": "node ./dist/scripts/context-graph-v2-check.js --mode contract",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 120000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/context-graph-benchmark.json",
+          "src/core/triwiki/context-graph/**",
+          "src/core/release/gate-affected-globs.ts",
+          "src/scripts/context-graph-v2-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "confidence"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
+      "id": "context-graph-v2:quality",
+      "command": "node ./dist/scripts/context-graph-v2-check.js --mode quality",
+      "deps": [
+        "context-graph-v2:contract"
+      ],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 600000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/context-graph-benchmark.json",
+          "src/core/triwiki/context-graph/**",
+          "src/core/release/gate-affected-globs.ts",
+          "src/scripts/context-graph-v2-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "confidence"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
+      "id": "context-graph-v2:performance",
+      "command": "node ./dist/scripts/context-graph-v2-check.js --mode performance",
+      "deps": [
+        "context-graph-v2:contract"
+      ],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 600000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/context-graph-benchmark.json",
+          "src/core/triwiki/context-graph/**",
+          "src/core/release/gate-affected-globs.ts",
+          "src/scripts/context-graph-v2-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "confidence"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
+      "id": "context-graph-v2:legacy-closure",
+      "command": "node ./dist/scripts/context-graph-v2-check.js --mode legacy-closure",
+      "deps": [],
+      "resource": [
+        "cpu-light",
+        "fs-read"
+      ],
+      "side_effect": "hermetic",
+      "timeout_ms": 120000,
+      "cache": {
+        "enabled": true,
+        "inputs": [
+          "package.json",
+          "release-gates.v2.json",
+          "config/context-graph-benchmark.json",
+          "src/core/triwiki/context-graph/**",
+          "src/core/release/gate-affected-globs.ts",
+          "src/scripts/context-graph-v2-check.ts"
+        ]
+      },
+      "isolation": {
+        "home": "temp",
+        "codex_home": "temp",
+        "report_dir": "per-gate"
+      },
+      "preset": [
+        "confidence"
+      ],
+      "output_contract": "sks.gate-result.v2"
+    },
+    {
       "id": "latest-version:guidance",
       "command": "node ./dist/scripts/latest-version-guidance-check.js",
       "deps": [],

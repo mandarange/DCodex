@@ -121,6 +121,17 @@ function isTestNode(node: ContextGraphNodeView): boolean {
   return node.kind === 'test' || contextNodeFlag(node, 'isTest');
 }
 
+/**
+ * The metadata arms are unreachable today, and that is a fact about the compiler
+ * rather than a gap here: `extractors/topology/gates.ts` derives
+ * `requiredForPublish`/`alwaysOnRelease` from the same manifest sets
+ * `isProtectedGate` checks, in the same `addNode` call that sets `risk`, so each
+ * flag implies `risk === 'protected'` and short-circuits first (verified over the
+ * real manifest: 45 ids, zero counterexamples). Recorded because it has already
+ * been mistaken for a coverage gap — no fixture can produce a metadata-only
+ * protected gate. Kept because that invariant lives in another file and nothing
+ * enforces it across the distance. `nonRecursive` gets no arm: it would be born dead.
+ */
 function isProtectedGateNode(node: ContextGraphNodeView): boolean {
   return node.risk === 'protected' || contextNodeFlag(node, 'requiredForPublish') || contextNodeFlag(node, 'alwaysOnRelease');
 }

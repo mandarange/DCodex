@@ -77,6 +77,12 @@ export function affectedGlobsFor(id: string): string[] {
         'src/core/codex-lb-circuit.ts',
         `src/scripts/${prefix}-*.ts`
       ]
+    // The v2 gates measure the same engine from the other side — bytes, corrupt
+    // input, crash recovery — so they share the v1 gates' affected set rather
+    // than carrying a narrower copy of it. A separate list would drift, and the
+    // drift would show up as a v2 gate that stops running for a change the v1
+    // gates still cover.
+    case 'context-graph-v2':
     case 'context-graph':
       // The default `src/scripts/<prefix>-*.ts` glob would only fire when the
       // check script itself moved, so editing the graph engine would skip the
@@ -93,11 +99,17 @@ export function affectedGlobsFor(id: string): string[] {
         'src/core/naruto/context-graph-advisor-scope.ts',
         'src/core/verification/context-graph-affected.ts',
         'src/core/align/code-navigation-align.ts',
+        // The publish seam align runs before it builds its pack. Listed
+        // explicitly because the entry above is an exact path: extracting the
+        // seam into its own file would otherwise have taken it out of the
+        // graph's affected set without any gate noticing.
+        'src/core/align/align-context-index.ts',
         'src/core/commands/wiki-command.ts',
         'src/core/commands/triwiki-graph-command.ts',
         'config/context-graph-benchmark.json',
         'schemas/triwiki/context-graph.schema.json',
         'src/scripts/context-graph-check.ts',
+        'src/scripts/context-graph-v2-check.ts',
         'package.json'
       ]
     case 'latest-version':
