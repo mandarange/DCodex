@@ -19,7 +19,9 @@ import type {
   ContextGraphRisk
 } from '../../triwiki/context-graph/contracts.js';
 import { buildContextGraphSnapshot } from '../../triwiki/context-graph/compiler/serialize.js';
-import { buildContextGraphIndex, type ContextGraphIndex } from '../../triwiki/context-graph/graph-index.js';
+import { encodeContextIndex } from '../../triwiki/context-graph/runtime-index/writer.js';
+import { openContextIndex } from '../../triwiki/context-graph/runtime-index/reader.js';
+import type { ContextIndexReader } from '../../triwiki/context-graph/query/index.js';
 import { contextGraphEdgeId, contextGraphNodeId } from '../../triwiki/context-graph/ids.js';
 import {
   NARUTO_CONTEXT_GRAPH_ADVISOR_AUTHORITY,
@@ -94,7 +96,7 @@ function edge(from: string, to: string, type: ContextGraphEdgeType, provenancePa
   };
 }
 
-function fixtureIndex(): ContextGraphIndex {
+function fixtureIndex(): ContextIndexReader {
   const nodes: ContextGraphNode[] = [
     fileNode(IDS.a, PATHS.a),
     fileNode(IDS.b, PATHS.b),
@@ -126,14 +128,17 @@ function fixtureIndex(): ContextGraphIndex {
     edge(IDS.gateRelease, IDS.a, 'affected_by', 'release-gates.v2.json', 11),
     edge(IDS.gateLint, IDS.c, 'affected_by', 'release-gates.v2.json', 12)
   ];
-  return buildContextGraphIndex(
-    buildContextGraphSnapshot({
-      nodes,
-      edges,
-      cycles: [],
-      extractors: [{ id: 'advisor-fixture', revision: '1.0.0', nodeCount: nodes.length, edgeCount: edges.length, issueCount: 0, skippedCount: 0 }]
-    })
-  );
+  // Encoded and reopened rather than handed over as an in-memory structure: the
+  // advisory now reads the compact index, and a fixture that skipped the encode
+  // would not exercise the string interning or the CSR adjacency it depends on.
+  const snapshot = buildContextGraphSnapshot({
+    nodes,
+    edges,
+    cycles: [],
+    extractors: [{ id: 'advisor-fixture', revision: '1.0.0', nodeCount: nodes.length, edgeCount: edges.length, issueCount: 0, skippedCount: 0 }]
+  });
+  const encoded = encodeContextIndex({ snapshot, configHash: new Uint8Array(32).fill(3), schemaRevision: 1 });
+  return openContextIndex(encoded.bytes, { expectedSnapshotHash: snapshot.snapshotHash });
 }
 
 function advise(slices: NarutoContextGraphSliceInput[], graphStatus: 'fresh' | 'stale' = 'fresh'): NarutoContextGraphAdvice {

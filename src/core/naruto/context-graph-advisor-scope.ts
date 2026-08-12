@@ -4,8 +4,8 @@
  *
  * Split out of `context-graph-advisor.ts` by role — this file knows how to read
  * the graph, that file knows what the advice means. Nothing here mutates
- * anything, spawns a process, or reads a file: every function takes an index the
- * caller already built.
+ * anything, spawns a process, or reads a file: every function takes a reader the
+ * caller already opened, through the query facade.
  *
  * The two closures are deliberately different directions:
  *  - the *write closure* walks dependency edges downward from the paths a slice
@@ -14,12 +14,38 @@
  *    and gates that would have to re-run.
  * A test file is a dependent, never a dependency, so it can never enter a write
  * closure and a shared suite is never reported as a write conflict.
+ *
+ * ## Two things the compact index changed, both reported rather than papered over
+ *
+ * **Label seeds no longer resolve.** Format revision 1 interns an exact table of
+ * canonical node ids and a basename table of workspace-relative paths, and has no
+ * label index at all. So a slice that declared only a symbol name now resolves to
+ * nothing and is reported through `unresolved_seeds`, which makes the advisory
+ * *conservative* — the slice is unproven rather than falsely disjoint. Guessing
+ * the label through BM25F would have kept the old behaviour and violated ADR §4:
+ * a text match is not a relation, and an advisory that guessed its own write
+ * scope would be confidently wrong about which slices can run in parallel.
+ *
+ * **Metadata booleans arrive as strings.** The writer stores every metadata value
+ * through `String(value)`, so `isTest: true` becomes `'true'`. `contextNodeFlag`
+ * normalizes it; without that, `isTestNode` loses its metadata arm entirely and
+ * test files start reading as write-scope conflicts.
  */
-import type { ContextGraphEdge, ContextGraphNode } from '../triwiki/context-graph/contracts.js';
-import { incomingEdges, outgoingEdges, type ContextGraphIndex } from '../triwiki/context-graph/graph-index.js';
 import { contextGraphPathFromId } from '../triwiki/context-graph/ids.js';
 import { isWorkspaceRelativePosixPath } from '../triwiki/context-graph/paths.js';
 import type { ContextGraphExplanationStep, ContextGraphProvenanceRef } from '../triwiki/context-graph/query-types.js';
+import {
+  contextNodeFlag,
+  contextWalkProvenance,
+  contextWalkRoot,
+  resolveContextSeeds,
+  walkContextGraph,
+  HydrationCursor,
+  type ContextGraphNodeView,
+  type ContextIndexReader,
+  type ContextWalkHit,
+  type ContextWalkResult
+} from '../triwiki/context-graph/query/index.js';
 import { normalizeNarutoPath } from './naruto-work-item.js';
 
 export const NARUTO_ADVISOR_CAPS = {
@@ -33,13 +59,19 @@ export const NARUTO_ADVISOR_CAPS = {
 } as const;
 
 /** Downward: what a written file stands on. Conflict detection uses only these. */
-const DEPENDENCY_EDGE_TYPES: ReadonlySet<string> = new Set(['imports', 'reexports', 'depends_on', 'references', 'calls', 'routes_to']);
+const DEPENDENCY_EDGE_TYPES = new Set(['imports', 'reexports', 'depends_on', 'references', 'calls', 'routes_to'] as const);
 /** Upward: what has to be re-verified because it depends on a written file. */
-const IMPACT_EDGE_TYPES: ReadonlySet<string> = new Set([
+const IMPACT_EDGE_TYPES = new Set([
   'imports', 'reexports', 'references', 'calls', 'tests', 'affected_by', 'verified_by', 'gated_by', 'depends_on', 'owns', 'routes_to'
-]);
+] as const);
 /** Same-file expansion applied to a seed before the reverse walk, so symbol-level tests stay reachable. */
-const SEED_EXPANSION_EDGE_TYPES: ReadonlySet<string> = new Set(['defines', 'contains']);
+const SEED_EXPANSION_EDGE_TYPES = new Set(['defines', 'contains'] as const);
+
+const WRITE_CAPS = {
+  maxDepth: NARUTO_ADVISOR_CAPS.maxDepth,
+  maxNodes: NARUTO_ADVISOR_CAPS.maxNodesPerWalk,
+  maxEdges: NARUTO_ADVISOR_CAPS.maxEdgesPerWalk
+} as const;
 
 export interface NarutoAdvisorSliceInput {
   readonly id: string;
@@ -72,42 +104,28 @@ export interface NarutoContextGraphRecommendation {
   readonly provenance: ContextGraphProvenanceRef[];
 }
 
-export interface WalkHit {
-  readonly nodeId: string;
-  readonly depth: number;
-  readonly reasonPath: string[];
-  readonly explanation: ContextGraphExplanationStep[];
-}
+export type WalkHit = ContextWalkHit;
 
 export interface SliceState {
   readonly scope: NarutoContextGraphScope;
-  readonly closure: Map<string, WalkHit>;
+  readonly closure: Map<string, ContextWalkHit>;
   readonly writeSet: Set<string>;
   readonly recommendations: NarutoContextGraphRecommendation[];
 }
 
-interface WalkResult {
-  readonly hits: Map<string, WalkHit>;
-  readonly truncated: boolean;
-}
-
-function explanationStep(edge: ContextGraphEdge): ContextGraphExplanationStep {
-  return { edgeId: edge.id, type: edge.type, from: edge.from, to: edge.to, confidence: edge.confidence, path: edge.provenance.path };
-}
-
-function nodePathOf(node: ContextGraphNode): string | null {
+function nodePathOf(node: ContextGraphNodeView): string | null {
   return node.path ?? contextGraphPathFromId(node.id);
 }
 
-function isTestNode(node: ContextGraphNode): boolean {
-  return node.kind === 'test' || node.metadata.isTest === true;
+function isTestNode(node: ContextGraphNodeView): boolean {
+  return node.kind === 'test' || contextNodeFlag(node, 'isTest');
 }
 
-function isProtectedGateNode(node: ContextGraphNode): boolean {
-  return node.risk === 'protected' || node.metadata.requiredForPublish === true || node.metadata.alwaysOnRelease === true;
+function isProtectedGateNode(node: ContextGraphNodeView): boolean {
+  return node.risk === 'protected' || contextNodeFlag(node, 'requiredForPublish') || contextNodeFlag(node, 'alwaysOnRelease');
 }
 
-function riskDomainOf(node: ContextGraphNode): string | null {
+function riskDomainOf(node: ContextGraphNodeView): string | null {
   if (node.kind === 'risk_domain') return node.label || null;
   if (node.kind !== 'gate') return null;
   const declared = node.metadata.namespace;
@@ -123,89 +141,13 @@ export function narutoAdvisorPathList(values: readonly string[] | undefined): st
   return [...new Set((values ?? []).map(narutoAdvisorWorkspacePath).filter((value): value is string => value !== null))].sort();
 }
 
-function rootHit(nodeId: string): WalkHit {
-  return { nodeId, depth: 0, reasonPath: [nodeId], explanation: [] };
-}
-
-/** Bounded breadth-first walk. Deterministic: the adjacency it reads is already id-sorted. */
-function walkGraph(index: ContextGraphIndex, roots: readonly WalkHit[], direction: 'out' | 'in', types: ReadonlySet<string>, maxDepth: number): WalkResult {
-  const hits = new Map<string, WalkHit>();
-  const queue: WalkHit[] = [];
-  for (const root of roots) {
-    if (hits.has(root.nodeId) || !index.nodesById.has(root.nodeId)) continue;
-    hits.set(root.nodeId, root);
-    queue.push(root);
-  }
-  let edgesVisited = 0;
-  for (let head = 0; head < queue.length; head += 1) {
-    const current = queue[head];
-    if (!current || current.depth >= maxDepth) continue;
-    for (const edge of direction === 'out' ? outgoingEdges(index, current.nodeId) : incomingEdges(index, current.nodeId)) {
-      edgesVisited += 1;
-      if (edgesVisited > NARUTO_ADVISOR_CAPS.maxEdgesPerWalk) return { hits, truncated: true };
-      if (!types.has(edge.type)) continue;
-      const next = direction === 'out' ? edge.to : edge.from;
-      if (hits.has(next) || !index.nodesById.has(next)) continue;
-      if (hits.size >= NARUTO_ADVISOR_CAPS.maxNodesPerWalk) return { hits, truncated: true };
-      const hit: WalkHit = {
-        nodeId: next,
-        depth: current.depth + 1,
-        reasonPath: [...current.reasonPath, direction === 'out' ? edge.type : `<-${edge.type}`, next],
-        explanation: [...current.explanation, explanationStep(edge)]
-      };
-      hits.set(next, hit);
-      queue.push(hit);
-    }
-  }
-  return { hits, truncated: false };
-}
-
 /** Repository truth behind a hop chain. A zero-hop hit falls back to the node's own content hash. */
-export function narutoAdvisorProvenance(index: ContextGraphIndex, hit: WalkHit): ContextGraphProvenanceRef[] {
-  const out: ContextGraphProvenanceRef[] = [];
-  const seen = new Set<string>();
-  for (const step of hit.explanation) {
-    const edge = index.edgesById.get(step.edgeId);
-    if (!edge) continue;
-    const key = `${edge.provenance.path}#${edge.provenance.line ?? 0}#${edge.provenance.hash}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const line = edge.provenance.line;
-    out.push({ path: edge.provenance.path, ...(line === undefined ? {} : { line }), hash: edge.provenance.hash });
-  }
-  if (out.length) return out;
-  const node = index.nodesById.get(hit.nodeId);
-  const nodePath = node ? nodePathOf(node) : null;
-  if (node?.contentHash && nodePath) out.push({ path: nodePath, hash: node.contentHash });
-  return out;
-}
-
-/** Exact-only seed resolution: a token that is not a real path or label is reported, never guessed. */
-function resolveSeedNodes(index: ContextGraphIndex, paths: readonly string[], labels: readonly string[], unresolved: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const push = (id: string): void => {
-    if (!seen.has(id) && index.nodesById.has(id)) {
-      seen.add(id);
-      out.push(id);
-    }
-  };
-  const miss = (value: string): void => {
-    if (value && !unresolved.includes(value)) unresolved.push(value);
-  };
-  for (const raw of paths) {
-    const rel = narutoAdvisorWorkspacePath(raw);
-    const ids = rel ? index.nodesByPath.get(rel) ?? [] : [];
-    if (!ids.length) miss(raw);
-    for (const id of ids) push(id);
-  }
-  for (const label of labels) {
-    const ids = index.nodesByLabel.get(String(label ?? '').toLowerCase()) ?? [];
-    // A label shared by many nodes is too generic to be honest evidence of scope.
-    if (!ids.length || ids.length > NARUTO_ADVISOR_CAPS.maxNodesPerLabel) miss(String(label ?? ''));
-    else for (const id of ids) push(id);
-  }
-  return out;
+export function narutoAdvisorProvenance(
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  hit: ContextWalkHit
+): ContextGraphProvenanceRef[] {
+  return contextWalkProvenance(reader, cursor, hit, NARUTO_ADVISOR_CAPS.maxRecommendationsPerSlice);
 }
 
 /** Identifier-ish and path-ish tokens of free text, so a task description can seed the walk from repository truth. */
@@ -221,37 +163,62 @@ export function narutoAdvisorTaskTokens(text: string): string[] {
   return tokens;
 }
 
-function expandRoots(index: ContextGraphIndex, seeds: readonly string[]): WalkHit[] {
-  const roots: WalkHit[] = seeds.map(rootHit);
-  const seen = new Set(seeds);
-  for (const seed of seeds) {
-    for (const edge of outgoingEdges(index, seed)) {
-      if (!SEED_EXPANSION_EDGE_TYPES.has(edge.type) || seen.has(edge.to)) continue;
-      seen.add(edge.to);
-      roots.push({ nodeId: edge.to, depth: 0, reasonPath: [seed, edge.type, edge.to], explanation: [explanationStep(edge)] });
-      if (roots.length >= NARUTO_ADVISOR_CAPS.maxNodesPerWalk) return roots;
-    }
+function rootsOf(cursor: HydrationCursor, seeds: readonly number[]): ContextWalkHit[] {
+  const roots: ContextWalkHit[] = [];
+  for (const node of seeds) {
+    const view = cursor.node(node);
+    if (view !== null) roots.push(contextWalkRoot(node, view.id));
   }
   return roots;
 }
 
+/**
+ * Seeds plus their same-file neighbours, all at depth 0.
+ *
+ * The expansion hop is kept in the reason path but not charged against the walk's
+ * depth: a symbol and the file that defines it are one location, and spending a
+ * hop to cross between them would halve the reach of the impact closure for
+ * symbol-seeded slices only.
+ */
+function expandRoots(
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  roots: readonly ContextWalkHit[]
+): ContextWalkHit[] {
+  const expanded = walkContextGraph(reader, cursor, {
+    roots,
+    direction: 'out',
+    edgeTypes: SEED_EXPANSION_EDGE_TYPES,
+    caps: { maxDepth: 1, maxNodes: NARUTO_ADVISOR_CAPS.maxNodesPerWalk, maxEdges: NARUTO_ADVISOR_CAPS.maxEdgesPerWalk }
+  });
+  const out: ContextWalkHit[] = [];
+  for (const hit of expanded.hits.values()) out.push(hit.depth === 0 ? hit : { ...hit, depth: 0 });
+  return out;
+}
+
 /** Write closure keyed by workspace path. Test files are excluded: they are dependents, never dependencies. */
-function closurePaths(index: ContextGraphIndex, walk: WalkResult): Map<string, WalkHit> {
-  const out = new Map<string, WalkHit>();
+function closurePaths(cursor: HydrationCursor, walk: ContextWalkResult): Map<string, ContextWalkHit> {
+  const out = new Map<string, ContextWalkHit>();
   for (const hit of walk.hits.values()) {
-    const node = index.nodesById.get(hit.nodeId);
-    if (!node || isTestNode(node)) continue;
+    const node = cursor.node(hit.node);
+    if (node === null || isTestNode(node)) continue;
     const nodePath = nodePathOf(node);
     if (nodePath && !out.has(nodePath)) out.set(nodePath, hit);
   }
   return out;
 }
 
-function recommendationsFrom(index: ContextGraphIndex, sliceId: string, writeSet: ReadonlySet<string>, impact: WalkResult): NarutoContextGraphRecommendation[] {
+function recommendationsFrom(
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  sliceId: string,
+  writeSet: ReadonlySet<string>,
+  impact: ContextWalkResult
+): NarutoContextGraphRecommendation[] {
   const out: NarutoContextGraphRecommendation[] = [];
   for (const hit of impact.hits.values()) {
-    const node = index.nodesById.get(hit.nodeId);
-    if (!node) continue;
+    const node = cursor.node(hit.node);
+    if (node === null) continue;
     const isGate = node.kind === 'gate';
     if (!isGate && !isTestNode(node)) continue;
     const nodePath = nodePathOf(node);
@@ -265,7 +232,7 @@ function recommendationsFrom(index: ContextGraphIndex, sliceId: string, writeSet
       risk_domain: isGate ? riskDomainOf(node) : null,
       reason_path: [...hit.reasonPath],
       explanation: [...hit.explanation],
-      provenance: narutoAdvisorProvenance(index, hit)
+      provenance: narutoAdvisorProvenance(reader, cursor, hit)
     });
     if (out.length >= NARUTO_ADVISOR_CAPS.maxRecommendationsPerSlice) break;
   }
@@ -275,31 +242,46 @@ function recommendationsFrom(index: ContextGraphIndex, sliceId: string, writeSet
 /**
  * Resolve one slice into its seeds, its write closure, and the verifiers its
  * writes would invalidate. A slice that declares neither write paths nor symbols
- * falls back to exact label matches from its own title and the task text; when
- * nothing resolves, the caller must treat the slice as unproven, not as empty.
+ * falls back to exact matches from its own title and the task text; when nothing
+ * resolves, the caller must treat the slice as unproven, not as empty.
  */
-export function buildNarutoSliceState(index: ContextGraphIndex, slice: NarutoAdvisorSliceInput, taskTokens: readonly string[], maxDepth: number): SliceState {
-  const unresolved: string[] = [];
+export function buildNarutoSliceState(
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  slice: NarutoAdvisorSliceInput,
+  taskTokens: readonly string[],
+  maxDepth: number
+): SliceState {
   const writePaths = narutoAdvisorPathList(slice.writePaths);
   const labels = [...(slice.symbols ?? [])];
   if (!writePaths.length && !labels.length) labels.push(...narutoAdvisorTaskTokens(slice.title ?? ''), ...taskTokens);
-  const seeds = resolveSeedNodes(index, writePaths, labels, unresolved);
-  const walk = walkGraph(index, seeds.map(rootHit), 'out', DEPENDENCY_EDGE_TYPES, maxDepth);
-  const impact = walkGraph(index, expandRoots(index, seeds), 'in', IMPACT_EDGE_TYPES, maxDepth);
-  const closure = closurePaths(index, walk);
+
+  const resolution = resolveContextSeeds(reader, writePaths, labels, NARUTO_ADVISOR_CAPS.maxNodesPerLabel);
+  const roots = rootsOf(cursor, resolution.nodes);
+  const caps = { ...WRITE_CAPS, maxDepth: Math.max(0, maxDepth) };
+
+  const walk = walkContextGraph(reader, cursor, { roots, direction: 'out', edgeTypes: DEPENDENCY_EDGE_TYPES, caps });
+  const impact = walkContextGraph(reader, cursor, {
+    roots: expandRoots(reader, cursor, roots),
+    direction: 'in',
+    edgeTypes: IMPACT_EDGE_TYPES,
+    caps
+  });
+
+  const closure = closurePaths(cursor, walk);
   const writeSet = new Set(writePaths);
   return {
     scope: {
       slice_id: slice.id,
-      seed_node_ids: [...seeds].sort(),
+      seed_node_ids: roots.map((root) => root.nodeId).sort(),
       write_paths: writePaths,
       write_closure: [...closure.keys()].sort(),
-      unresolved_seeds: [...new Set(unresolved)].sort(),
+      unresolved_seeds: [...new Set(resolution.unresolved)].sort(),
       truncated: walk.truncated || impact.truncated
     },
     closure,
     writeSet,
-    recommendations: recommendationsFrom(index, slice.id, writeSet, impact)
+    recommendations: recommendationsFrom(reader, cursor, slice.id, writeSet, impact)
   };
 }
 

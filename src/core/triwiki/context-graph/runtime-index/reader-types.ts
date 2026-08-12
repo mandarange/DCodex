@@ -140,6 +140,18 @@ export interface ContextIndexReader {
   /** Real resident byte length of the backing buffer; the cache budgets on this. */
   readonly byteLength: number;
 
+  /**
+   * Resolves a normalized term to the id `lexical`/`coarse` take, or -1 when
+   * the term is not interned.
+   *
+   * The lexical lanes deal in integers so a query never carries a string into
+   * the merge loop, which means something has to cross that boundary once. It
+   * is this, and it is the reader's job rather than the caller's: the id space
+   * is the index's string table, so a caller that derived ids any other way
+   * would be guessing at the file's interning order.
+   */
+  termId(term: string): number;
+
   exact(term: string, fieldMask?: number): PostingSlice;
   basename(term: string): PostingSlice;
   lexical(termIds: readonly number[], plan: ContextIndexQueryBounds): ScoredPostingSlice;

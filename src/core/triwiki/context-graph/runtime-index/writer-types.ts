@@ -3,6 +3,7 @@
  * can share `ProvenanceRow` without importing the encoder.
  */
 import type { ContextGraphSnapshot } from '../contracts.js';
+import type { ContextLexiconConfig, ContextLexiconOmissions } from './lexicon.js';
 
 export interface ContextIndexWriteInput {
   snapshot: ContextGraphSnapshot;
@@ -15,6 +16,27 @@ export interface ContextIndexWriteInput {
   protectedNodeIds?: Iterable<string>;
   /** Node ids whose provenance failed to ground at compile time. */
   invalidatedNodeIds?: Iterable<string>;
+  /**
+   * BM25F tuning for the lexical and coarse lanes. Threaded in rather than
+   * imported, because the values live in `query/ranking-config.ts` — the only
+   * file the bounded optimizer may edit — and a copy of a weight at this call
+   * site would be a weight nothing can tune.
+   *
+   * Omitting it leaves all four dictionary sections empty. That is an absent
+   * lexicon, not a defaulted one: there is deliberately no fallback config
+   * anywhere under `runtime-index/`, so a caller that forgets produces an index
+   * with no lexical lane rather than one tuned by numbers nobody chose.
+   */
+  lexicon?: ContextLexiconConfig;
+}
+
+export interface ContextIndexWriteLexiconResult {
+  termCount: number;
+  postingCount: number;
+  coarseTermCount: number;
+  coarsePostingCount: number;
+  /** Every bound that fired. A silent bound is a recall regression nothing can attribute later. */
+  omissions: ContextLexiconOmissions;
 }
 
 export interface ContextIndexWriteResult {
@@ -24,6 +46,8 @@ export interface ContextIndexWriteResult {
   provenanceCount: number;
   stringCount: number;
   sectionBytes: Readonly<Record<string, number>>;
+  /** `null` when no lexicon config was supplied and the dictionary lanes are empty. */
+  lexicon: ContextIndexWriteLexiconResult | null;
 }
 
 export interface ProvenanceRow {

@@ -64,6 +64,25 @@ function postingsFor(geometry: ContextIndexGeometry, lane: ContextIndexLane, ter
 }
 
 /**
+ * A term id *is* a string-table id, in every lane.
+ *
+ * That is not a shortcut, it is forced from both ends. The writer interns every
+ * term it emits, and the interner assigns ids in UTF-16 code-unit order — the
+ * same order the lexicon builder sorts its term table by. So "ascending string
+ * id" and "ascending term" are the same sequence, which is what makes the
+ * binary search in `termRun` legal and what `validateTermTable` checks at open.
+ * A separate term-id space would have to re-derive that order and could not be
+ * validated against the string table at all.
+ *
+ * Returns -1 for a term the index never saw. Every lane treats a negative id as
+ * a miss, so an unknown query term costs one failed binary search and nothing
+ * else.
+ */
+export function termIdOf(geometry: ContextIndexGeometry, term: string): number {
+  return stringIdOf(geometry, term);
+}
+
+/**
  * Revision 1's exact table holds canonical node ids only, so a mask with no
  * bits set is the only way it can exclude anything. The parameter is honoured
  * rather than ignored: silently dropping a caller's filter is how a lane ends

@@ -2,20 +2,28 @@
  * Node -> pack-entry projection primitives.
  *
  * Every sentence a projected entry carries is assembled from facts that already
- * exist in the snapshot: the node's own fields, its metadata, and the labels of
+ * exist in the index: the node's own fields, its metadata, and the labels of
  * nodes reachable over one graph edge. Nothing here invents a description, and
- * nothing here reads the repository — grounding is the provenance the query
- * engine already attached, and freshness is decided from real source hashes by
- * the caller that owns the file I/O.
+ * nothing here reads the repository — grounding is the provenance hydration
+ * already attached, and freshness is decided from real source hashes by the
+ * caller that owns the file I/O.
+ *
+ * The inputs are now compact-index views (CG2-13): a `ContextGraphNodeView` from
+ * the reader instead of a `ContextGraphNode` off a parsed snapshot, and a bounded
+ * typed walk instead of a materialized adjacency map. Every metadata read goes
+ * through `contextNodeFlag` / `contextNodeText` / `contextNodeCount` — `exported`,
+ * `lines`, `fanIn` and `fileCount` all arrive as strings, and comparing them to a
+ * boolean or a number fails silently. See `graph-facts.ts`.
  */
-import type { ContextGraphFreshness, ContextGraphMetadata, ContextGraphNode } from '../contracts.js';
+import type { ContextGraphEdgeType, ContextGraphFreshness } from '../contracts.js';
 import { CONTEXT_GRAPH_MISSING_SOURCE_HASH } from '../compiler/freshness.js';
-import { outgoingEdges, type ContextGraphIndex } from '../graph-index.js';
+import { contextNodeFlag, type ContextGraphNodeView, type ContextIndexReader, type HydrationCursor } from '../query/index.js';
+import { contextNodeCount, contextNodeText, contextOneHopNeighbours } from './graph-facts.js';
 
 /** Relation types whose targets read as "what this node offers". */
-const EXPORT_EDGE_TYPES: ReadonlySet<string> = new Set(['defines', 'reexports']);
+const EXPORT_EDGE_TYPES: ReadonlySet<ContextGraphEdgeType> = new Set(['defines', 'reexports']);
 /** Relation types whose targets read as "what this node needs". */
-const DEPENDENCY_EDGE_TYPES: ReadonlySet<string> = new Set(['imports', 'depends_on', 'routes_to']);
+const DEPENDENCY_EDGE_TYPES: ReadonlySet<ContextGraphEdgeType> = new Set(['imports', 'depends_on', 'routes_to']);
 
 const MAX_LISTED = 5;
 
@@ -24,20 +32,6 @@ export interface NodeSummaryExtras {
   readonly exports?: readonly string[];
   readonly dependsOn?: readonly string[];
   readonly fileCount?: number;
-}
-
-function metaString(metadata: ContextGraphMetadata, key: string): string | null {
-  const value = metadata[key];
-  return typeof value === 'string' && value ? value : null;
-}
-
-function metaNumber(metadata: ContextGraphMetadata, key: string): number | null {
-  const value = metadata[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function metaBoolean(metadata: ContextGraphMetadata, key: string): boolean {
-  return metadata[key] === true;
 }
 
 function compact(value: string): string {
@@ -52,39 +46,43 @@ function listOf(values: readonly string[]): string {
   return `${shown.join(', ')}${rest > 0 ? `, and ${rest} more` : ''}`;
 }
 
-/** One-hop label collection over a relation family; O(fanout of `node`). */
-function relatedLabels(index: ContextGraphIndex, nodeId: string, types: ReadonlySet<string>, exportedOnly: boolean): string[] {
+/** One-hop label collection over a relation family; bounded by the walk's caps. */
+function relatedLabels(
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  node: ContextGraphNodeView,
+  types: ReadonlySet<ContextGraphEdgeType>,
+  exportedOnly: boolean
+): string[] {
   const labels: string[] = [];
-  for (const edge of outgoingEdges(index, nodeId)) {
-    if (!types.has(edge.type)) continue;
-    const target = index.nodesById.get(edge.to);
-    if (!target) continue;
-    if (exportedOnly && target.kind === 'symbol' && !metaBoolean(target.metadata, 'exported')) continue;
+  for (const neighbour of contextOneHopNeighbours(reader, cursor, node.node, node.id, types)) {
+    const target = neighbour.view;
+    if (exportedOnly && target.kind === 'symbol' && !contextNodeFlag(target, 'exported')) continue;
     labels.push(target.label);
   }
   return labels;
 }
 
-function headline(node: ContextGraphNode, extras: NodeSummaryExtras): string {
+function headline(node: ContextGraphNodeView, extras: NodeSummaryExtras): string {
   const where = node.path ? ` at ${node.path}` : '';
-  const line = node.locator?.line !== undefined ? `:${node.locator.line}` : '';
+  const line = node.line !== undefined ? `:${node.line}` : '';
   switch (node.kind) {
     case 'file': {
-      const language = metaString(node.metadata, 'language') ?? 'source';
-      const purpose = metaString(node.metadata, 'purpose');
-      const lines = metaNumber(node.metadata, 'lines');
-      const fanIn = metaNumber(node.metadata, 'fanIn') ?? 0;
+      const language = contextNodeText(node, 'language') ?? 'source';
+      const purpose = contextNodeText(node, 'purpose');
+      const lines = contextNodeCount(node, 'lines');
+      const fanIn = contextNodeCount(node, 'fanIn') ?? 0;
       const size = lines === null ? '' : `${lines} lines, `;
       return `${node.label} is a ${language} file${where} (${size}fan-in ${fanIn}, ${node.risk} risk).${purpose ? ` Source purpose: ${purpose}.` : ''}`;
     }
     case 'symbol': {
-      const symbolKind = metaString(node.metadata, 'symbolKind') ?? 'symbol';
-      const exported = metaBoolean(node.metadata, 'exported') ? 'exported ' : 'internal ';
+      const symbolKind = contextNodeText(node, 'symbolKind') ?? 'symbol';
+      const exported = contextNodeFlag(node, 'exported') ? 'exported ' : 'internal ';
       return `${node.label} is an ${exported}${symbolKind}${where}${line}.`;
     }
     case 'module': {
-      const dir = metaString(node.metadata, 'dir') ?? node.path ?? node.label;
-      const fileCount = extras.fileCount ?? metaNumber(node.metadata, 'fileCount') ?? 0;
+      const dir = contextNodeText(node, 'dir') ?? node.path ?? node.label;
+      const fileCount = extras.fileCount ?? contextNodeCount(node, 'fileCount') ?? 0;
       return `${node.label} is a module at ${dir} (${fileCount} file${fileCount === 1 ? '' : 's'}, ${node.risk} risk).`;
     }
     case 'test':
@@ -104,12 +102,13 @@ function headline(node: ContextGraphNode, extras: NodeSummaryExtras): string {
  * "the projected content changed" rather than "the process ran again".
  */
 export function describeContextGraphNode(
-  index: ContextGraphIndex,
-  node: ContextGraphNode,
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  node: ContextGraphNodeView,
   extras: NodeSummaryExtras = {}
 ): string {
-  const exports = extras.exports ?? relatedLabels(index, node.id, EXPORT_EDGE_TYPES, true);
-  const dependsOn = extras.dependsOn ?? relatedLabels(index, node.id, DEPENDENCY_EDGE_TYPES, false);
+  const exports = extras.exports ?? relatedLabels(reader, cursor, node, EXPORT_EDGE_TYPES, true);
+  const dependsOn = extras.dependsOn ?? relatedLabels(reader, cursor, node, DEPENDENCY_EDGE_TYPES, false);
   const exportsPart = exports.length > 0 ? `Key exports: ${listOf(exports)}.` : 'It has no exported surface in the graph.';
   const dependsPart = dependsOn.length > 0 ? `Depends on: ${listOf(dependsOn)}.` : 'It has no recorded outbound dependency.';
   return compact(`${headline(node, extras)} ${exportsPart} ${dependsPart}`);
@@ -124,7 +123,7 @@ export function estimateEntryTokenCost(text: string): number {
  * which is the same string the wrongness ledger keys modules by; every other kind
  * carries its full graph node id so the entry can be traced back to one node.
  */
-export function codePackEntryId(node: ContextGraphNode, taken: ReadonlySet<string>): string {
+export function codePackEntryId(node: ContextGraphNodeView, taken: ReadonlySet<string>): string {
   const preferred = node.kind === 'module' ? `code:${node.label}` : `code:${node.id}`;
   if (!taken.has(preferred)) return preferred;
   const fallback = `code:${node.id}`;
@@ -132,15 +131,13 @@ export function codePackEntryId(node: ContextGraphNode, taken: ReadonlySet<strin
 }
 
 /**
- * Freshness for a projected entry.
- *
- * `observedHashes` is the current sha256 of the node's own source path, read by
- * the caller. When it is available it decides the verdict outright; otherwise the
- * compiler's recorded verdict stands. A stale snapshot can only downgrade — it
- * never upgrades a node the compiler already marked stale.
+ * Freshness for a projected entry. `observedHashes` is the current sha256 of the
+ * node's own source path, read by the caller; when available it decides the
+ * verdict outright, otherwise the compiler's recorded verdict stands. A stale
+ * snapshot can only downgrade — never upgrade a node already marked stale.
  */
 export function projectedFreshness(
-  node: ContextGraphNode,
+  node: ContextGraphNodeView,
   snapshotFreshness: 'fresh' | 'stale',
   observedHashes?: Readonly<Record<string, string>> | undefined
 ): ContextGraphFreshness {
@@ -161,7 +158,7 @@ export function projectedFreshness(
  * and by a source that no longer matches the bytes the fact was read from.
  */
 export function projectedTrustScore(
-  node: ContextGraphNode,
+  node: ContextGraphNodeView,
   provenanceCount: number,
   freshness: ContextGraphFreshness
 ): number {

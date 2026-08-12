@@ -18,8 +18,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ensureDir, exists, readJson, writeJsonAtomic } from '../fsx.js';
-import type { ContextGraphSnapshot } from './context-graph/contracts.js';
-import type { ContextGraphIndex } from './context-graph/graph-index.js';
 import {
   buildCodePackFromGraph,
   type BuildCodePackFromGraphOptions
@@ -55,18 +53,19 @@ export function codePackPrevPath(root: string): string {
 }
 
 /**
- * Project a code pack from a compiled Context Graph.
- *
- * `source` is a snapshot or an already-built index; passing the index avoids
- * rebuilding adjacency for a graph the caller already holds. Options carry the
- * query, profile and risk that decide *which* nodes earn the token budget —
- * relevance ranking replaces the old module inventory order.
+ * Whatever the projection accepts, derived rather than spelled out: naming
+ * `ContextGraphSnapshot | ContextGraphIndex` here would keep a retired import
+ * alive in a file that only decides where the pack is written, and would need
+ * editing again when `projections/code-pack.ts` migrates to the compact reader.
  */
-export function buildCodePack(
-  root: string,
-  source: ContextGraphSnapshot | ContextGraphIndex,
-  options: BuildCodePackFromGraphOptions = {}
-): CodePack {
+export type CodePackGraphSource = Parameters<typeof buildCodePackFromGraph>[1];
+
+/**
+ * Project a code pack from a compiled Context Graph. Options carry the query,
+ * profile and risk that decide *which* nodes earn the token budget — relevance
+ * ranking replaces the old module inventory order.
+ */
+export function buildCodePack(root: string, source: CodePackGraphSource, options: BuildCodePackFromGraphOptions = {}): CodePack {
   return buildCodePackFromGraph(root, source, options);
 }
 

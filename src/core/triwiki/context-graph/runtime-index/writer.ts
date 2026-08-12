@@ -23,6 +23,7 @@ import {
   CONTEXT_INDEX_EDGE_ROW_BYTES,
   CONTEXT_INDEX_NODE_ROW_BYTES,
   CONTEXT_INDEX_NO_VALUE,
+  CONTEXT_INDEX_PROFILE_MASK_RESERVED,
   EDGE_TYPE_CODE,
   FRESHNESS_CODE,
   NODE_KIND_CODE,
@@ -42,11 +43,18 @@ import {
   u32Section,
 } from './writer-tables.js';
 import { assemble } from './writer-assemble.js';
+import {
+  EMPTY_CONTEXT_INDEX_LANE,
+  buildContextIndexLexical,
+  encodeContextIndexLane,
+  type ContextIndexLexicalBuild,
+} from './writer-lexical.js';
 import type { ContextIndexWriteInput, ContextIndexWriteResult, ProvenanceRow } from './writer-types.js';
 import type { ContextIndexSectionKind } from './format.js';
 
 export * from './writer-contract.js';
 export * from './writer-types.js';
+export * from './writer-lexical.js';
 export { StringInterner } from './writer-tables.js';
 
 export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexWriteResult {
@@ -102,6 +110,16 @@ export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexW
     interner.add(edge.provenance.hash);
     interner.add(edge.provenance.extractor);
   }
+
+  // The lexicon has to be built before the seal and encoded after it: a term id
+  // *is* a string-table id (see `writer-lexical.ts`), so every term the builder
+  // keeps must be interned alongside the ids, labels and paths above, and the
+  // ids it will be encoded with do not exist until the table is sorted.
+  const lexical: ContextIndexLexicalBuild | null =
+    input.lexicon === undefined ? null : buildContextIndexLexical(nodes, input.lexicon);
+  if (lexical !== null) {
+    for (const term of lexical.terms) interner.add(term);
+  }
   interner.seal();
 
   // 2. Edges in CSR order, so the outgoing bucket is the table itself and
@@ -144,7 +162,13 @@ export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexW
     edgeView.setUint8(at + 5, CONFIDENCE_CODE.get(entry.edge.confidence) as number);
     edgeView.setUint16(at + 6, 0, true);
     edgeView.setUint32(at + 8, provenance, true);
-    edgeView.setUint16(at + 12, 0xffff, true);
+    // Reserved in revision 1, and deliberately not filled. Profile membership
+    // is ranking configuration, and the kernel already excludes an edge with a
+    // single integer test on its type — precomputing the same answer per edge
+    // would buy nothing and would bake a tuning decision into the bytes, so
+    // every profile bit is set and the field excludes nothing. A reader must
+    // not treat it as authoritative until a later revision says otherwise.
+    edgeView.setUint16(at + 12, CONTEXT_INDEX_PROFILE_MASK_RESERVED, true);
     edgeView.setUint16(at + 14, 0, true);
   });
 
@@ -184,8 +208,12 @@ export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexW
   });
   metadataRows.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
 
-  // 4. Anchor lane tables. The lexical and coarse tables are declared empty
-  //    here; CG2-04 fills them without moving this layout.
+  // 4. Anchor lane tables, then the two dictionary lanes.
+  //
+  //    The anchor tables are keyed by whole interned values — a canonical node
+  //    id, a whole workspace-relative path — which is why they alone can carry
+  //    `exact` confidence. The dictionary lanes below are keyed by tokenized
+  //    terms and are `text_candidate` at any score.
   const exact = termTable(nodes.map((node, position) => [interner.idOf(node.id), position] as const));
   const basename = termTable(nodes
     .filter((node) => node.path !== undefined)
@@ -196,6 +224,14 @@ export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexW
     .map((node) => `${interner.idOf(node.path as string)}:${interner.idOf(node.contentHash as string)}`))]
     .sort()
     .map((key) => key.split(':').map(Number) as [number, number]);
+
+  const termIdOf = (term: string): number => interner.idOf(term);
+  const lexiconLane = lexical === null
+    ? EMPTY_CONTEXT_INDEX_LANE
+    : encodeContextIndexLane(lexical.lexical, termIdOf, nodes.length);
+  const coarseLane = lexical === null
+    ? EMPTY_CONTEXT_INDEX_LANE
+    : encodeContextIndexLane(lexical.coarse, termIdOf, nodes.length);
 
   const cycleRows = [...snapshot.cycles]
     .flatMap((cycle) => cycle.nodes.map((id) => nodeIndex.get(id)).filter((value): value is number => value !== undefined))
@@ -214,17 +250,20 @@ export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexW
     [CONTEXT_INDEX_SECTION.EXACT_POSTINGS, { bytes: exact.postings, count: exact.postingCount }],
     [CONTEXT_INDEX_SECTION.BASENAME_TABLE, { bytes: basename.table, count: basename.termCount }],
     [CONTEXT_INDEX_SECTION.BASENAME_POSTINGS, { bytes: basename.postings, count: basename.postingCount }],
-    [CONTEXT_INDEX_SECTION.LEXICON_TABLE, { bytes: new Uint8Array(0), count: 0 }],
-    [CONTEXT_INDEX_SECTION.LEXICON_POSTINGS, { bytes: new Uint8Array(0), count: 0 }],
-    [CONTEXT_INDEX_SECTION.COARSE_TERM_TABLE, { bytes: new Uint8Array(0), count: 0 }],
-    [CONTEXT_INDEX_SECTION.COARSE_POSTINGS, { bytes: new Uint8Array(0), count: 0 }],
+    [CONTEXT_INDEX_SECTION.LEXICON_TABLE, { bytes: lexiconLane.table, count: lexiconLane.termCount }],
+    [CONTEXT_INDEX_SECTION.LEXICON_POSTINGS, { bytes: lexiconLane.postings, count: lexiconLane.postingCount }],
+    [CONTEXT_INDEX_SECTION.COARSE_TERM_TABLE, { bytes: coarseLane.table, count: coarseLane.termCount }],
+    [CONTEXT_INDEX_SECTION.COARSE_POSTINGS, { bytes: coarseLane.postings, count: coarseLane.postingCount }],
     [CONTEXT_INDEX_SECTION.PROVENANCE_TABLE, { bytes: provenanceTable(provenanceRows), count: provenanceRows.length }],
     [CONTEXT_INDEX_SECTION.GROUP_TABLE, { bytes: u32Section(nodes.map((_, position) => position)), count: nodes.length }],
     [CONTEXT_INDEX_SECTION.CYCLE_TABLE, { bytes: u32Section(cycleRows), count: cycleRows.length }],
     [CONTEXT_INDEX_SECTION.SOURCE_HASH_TABLE, { bytes: pairTable(sourceHashRows), count: sourceHashRows.length }],
   ]);
 
-  return assemble(payloads, {
+  // `header.termCount` stays the *exact* table's count: `reader-validate.ts`
+  // checks the two against each other, and widening it to include dictionary
+  // terms would make a healthy index fail that check.
+  const assembled = assemble(payloads, {
     schemaRevision: input.schemaRevision,
     snapshotHash: hexToBytes(snapshot.snapshotHash, 32),
     configHash: input.configHash,
@@ -234,4 +273,17 @@ export function encodeContextIndex(input: ContextIndexWriteInput): ContextIndexW
     provenanceCount: provenanceRows.length,
     stringCount: interner.size,
   });
+
+  return {
+    ...assembled,
+    lexicon: lexical === null
+      ? null
+      : {
+          termCount: lexiconLane.termCount,
+          postingCount: lexiconLane.postingCount,
+          coarseTermCount: coarseLane.termCount,
+          coarsePostingCount: coarseLane.postingCount,
+          omissions: lexical.omissions,
+        },
+  };
 }

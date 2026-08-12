@@ -27,10 +27,17 @@ export {
   type WorkspaceCodePackResult
 } from './code-pack-workspace.js';
 export {
+  codePackFreshnessSources,
+  isCodePackProjectionBoundToSnapshot
+} from './code-pack-entry.js';
+export {
   rankModuleCandidates,
   sortCandidates,
   type ProjectionCandidate
 } from './module-view.js';
+export {
+  rankFileCandidates
+} from './projection-candidate.js';
 export {
   codePackEntryId,
   describeContextGraphNode,
@@ -52,10 +59,21 @@ export {
 export {
   CONTEXT_GRAPH_ATTENTION_TOKEN_BUDGET,
   readContextGraphAttention,
+  type ContextGraphAttentionOptions,
   type ContextGraphAttentionReason,
   type ContextGraphAttentionRequest,
   type ContextGraphAttentionResult
 } from './attention.js';
+export {
+  contextCountOfKind,
+  contextNodeCount,
+  contextNodeText,
+  contextNodesOfKind,
+  contextOneHopNeighbours,
+  projectionFailureCode,
+  type ProjectionFailureCode,
+  type ProjectionNeighbour
+} from './graph-facts.js';
 export * as mermaid from './mermaid/index.js';
 export {
   buildArchitectureMapViews,

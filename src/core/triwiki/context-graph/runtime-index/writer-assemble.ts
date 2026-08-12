@@ -30,7 +30,10 @@ export function assemble(
     provenanceCount: number;
     stringCount: number;
   },
-): ContextIndexWriteResult {
+  // The lexicon summary is not the assembler's to know: it describes a build
+  // that happened before the interner was sealed, and this function only lays
+  // out bytes. The caller attaches it.
+): Omit<ContextIndexWriteResult, 'lexicon'> {
   // Canonical section order is the declaration order of the required list, so
   // two writers cannot disagree about layout while agreeing about content.
   const kinds = CONTEXT_INDEX_REQUIRED_SECTIONS;

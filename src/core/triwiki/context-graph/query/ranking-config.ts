@@ -15,7 +15,11 @@ import type {
   ContextGraphRisk
 } from '../contracts.js';
 import type { ContextGraphSeedConfidence } from '../query-types.js';
+import type { ContextGraphQueryProfileName } from '../profiles.js';
 import { CONTEXT_LEXICON_SCHEMA, type ContextLexiconConfig } from '../runtime-index/lexicon.js';
+// Type-only, and therefore erased: the kernel owns the frozen lane vocabulary
+// and depends on this file for values, so a runtime import here would be a cycle.
+import type { RetrievalLane } from './kernel-types.js';
 
 export const CONTEXT_GRAPH_RANKING_SCHEMA = 'sks.context-graph-ranking.v1' as const;
 
@@ -205,6 +209,91 @@ export const CONTEXT_GRAPH_LEXICON_CONFIG: ContextLexiconConfig = Object.freeze(
   maxTerms: 1 << 20,
   maxQueryTerms: 64
 });
+
+/**
+ * CRK2 kernel tuning: the lane mix, the fusion arithmetic, and every bound the
+ * bounded kernel enforces.
+ *
+ * These are separate from `CONTEXT_GRAPH_RANKING_CONFIG` because that config
+ * describes how a *candidate* scores, while these describe how *lanes* are
+ * mixed and where the kernel stops. They live in this file for the reason
+ * stated at the top of it: a bound written at a call site is a bound the
+ * optimizer cannot see, and CG2-08's caps are exactly the numbers a future
+ * latency regression will want to move.
+ */
+export const CONTEXT_GRAPH_KERNEL_SCHEMA = 'sks.context-kernel-ranking.v1' as const;
+
+export type ContextGraphLaneWeights = Readonly<Record<RetrievalLane, number>>;
+
+export interface ContextGraphKernelConfig {
+  readonly schema: typeof CONTEXT_GRAPH_KERNEL_SCHEMA;
+
+  /** Reciprocal-rank fusion `k`. Larger flattens the difference between ranks. */
+  readonly rrfK: number;
+  /** Ranks past this contribute nothing, so one deep lane cannot outvote a shallow exact one. */
+  readonly rrfRankCap: number;
+  /** Per-lane top-N admitted to fusion (§8.1: lane별 top-N만 fusion에 참여한다). */
+  readonly laneTopN: number;
+  readonly laneWeights: Readonly<Record<ContextGraphQueryProfileName, ContextGraphLaneWeights>>;
+
+  /**
+   * Hard priority added to an anchor-lane candidate. It is deliberately far
+   * above anything RRF can produce: §8.1 calls the exact seed's priority
+   * separate, not merely large, so no accumulation of text ranks may overtake it.
+   */
+  readonly exactAnchorPriority: number;
+
+  /** Query terms at or below this count with an anchor-shaped token read as `anchored`. */
+  readonly anchoredMaxTerms: number;
+  /** Terms above this with no anchor-shaped token read as `natural`. */
+  readonly naturalMinTerms: number;
+  /** Posting cap multiplier applied when the shape leans on text lanes. */
+  readonly textShapePostingMultiplier: number;
+
+  readonly candidateBudget: number;
+  /** Frontier pops allowed before the traversal reports `frontier_budget`. */
+  readonly frontierBudget: number;
+
+  /** Depth of the separate safety BFS. Independent of the relevance depth by design. */
+  readonly safetyMaxDepth: number;
+  readonly safetyMaxVisitedNodes: number;
+  readonly safetyMaxVisitedEdges: number;
+
+  readonly exactSeedReserveSlots: number;
+}
+
+/**
+ * The lane mix from §4.2, which states its cells qualitatively. Four levels are
+ * used so the table stays legible: very high 3.0, high 2.4, medium 1.6, low 0.8.
+ */
+export const CONTEXT_GRAPH_KERNEL_CONFIG: ContextGraphKernelConfig = {
+  schema: CONTEXT_GRAPH_KERNEL_SCHEMA,
+
+  rrfK: 60,
+  rrfRankCap: 64,
+  laneTopN: 64,
+  laneWeights: {
+    implementation: { anchor: 3.0, lexical: 1.6, coarse: 0.8, local_graph: 3.0 },
+    review: { anchor: 2.4, lexical: 0.8, coarse: 1.6, local_graph: 3.0 },
+    planning: { anchor: 1.6, lexical: 1.6, coarse: 2.4, local_graph: 2.4 },
+    answer: { anchor: 1.6, lexical: 2.4, coarse: 2.4, local_graph: 1.6 }
+  },
+
+  exactAnchorPriority: 1000,
+
+  anchoredMaxTerms: 6,
+  naturalMinTerms: 3,
+  textShapePostingMultiplier: 2,
+
+  candidateBudget: 2048,
+  frontierBudget: 8192,
+
+  safetyMaxDepth: 3,
+  safetyMaxVisitedNodes: 2000,
+  safetyMaxVisitedEdges: 10000,
+
+  exactSeedReserveSlots: 1
+};
 
 const EXACT_SEED_CONFIDENCE_SET: ReadonlySet<string> = new Set<string>(CONTEXT_GRAPH_EXACT_SEED_CONFIDENCES);
 

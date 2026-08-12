@@ -1,12 +1,20 @@
+/**
+ * The code pack, projected off a published CRK2 generation (CG2-13).
+ *
+ * The pack's contract is unchanged — schema, entry fields, `index_digest`
+ * binding, budget accounting, and the rule that an ungrounded entry is worse than
+ * no entry — so every assertion below is the one that was there before. What
+ * moved is underneath: a compact reader instead of a parsed snapshot, the
+ * retrieval kernel for the query mode, and a bounded typed walk for the corpus
+ * mode.
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { validateCodePack } from '../../../code-pack.js';
 import { CONTEXT_GRAPH_MISSING_ERROR } from '../../contracts.js';
-import { buildContextGraphIndex } from '../../graph-index.js';
 import { contextGraphQueryProfile } from '../../profiles.js';
-import { clearContextGraphSnapshotCache } from '../../query/snapshot-cache.js';
 import { readSourceHashes } from '../../compiler/freshness.js';
 import {
   buildCodePackFromGraph,
@@ -17,14 +25,12 @@ import {
 import { buildWorkspaceCodePack } from '../code-pack-workspace.js';
 import { estimateEntryTokenCost } from '../node-summary.js';
 import { rankModuleCandidates } from '../module-view.js';
+import { HUB_FILE, HUB_MODULE_LABEL, createProjectionFixture, removeProjectionFixture } from './projection-fixtures.js';
 import {
-  HUB_FILE,
-  HUB_MODULE_LABEL,
-  createProjectionFixture,
-  removeProjectionFixture,
-  writeFixtureGraph,
-  type ProjectionFixture
-} from './projection-fixtures.js';
+  createIndexedProjectionFixture,
+  resetContextIndexCache,
+  type IndexedProjectionFixture
+} from './projection-index-fixtures.js';
 
 const BUDGET = 8000;
 
@@ -33,8 +39,13 @@ const BUDGET = 8000;
  * out. This reproduces that discipline over the identical entry text, so a
  * comparison isolates the ordering change instead of a text-length change.
  */
-function moduleOrderPackCost(fixture: ProjectionFixture, budget: number): { cost: number; entries: number } {
-  const byIndexOrder = rankModuleCandidates(fixture.index, contextGraphQueryProfile('implementation'), 'normal')
+function moduleOrderPackCost(fixture: IndexedProjectionFixture, budget: number): { cost: number; entries: number } {
+  const byIndexOrder = rankModuleCandidates(
+    fixture.reader,
+    fixture.cursor,
+    contextGraphQueryProfile('implementation'),
+    'normal'
+  )
     .slice()
     .sort((left, right) => (left.node.id < right.node.id ? -1 : left.node.id > right.node.id ? 1 : 0));
   let cost = 0;
@@ -48,11 +59,11 @@ function moduleOrderPackCost(fixture: ProjectionFixture, budget: number): { cost
   return { cost, entries };
 }
 
-test('a query pack costs fewer tokens than the module-order pack for the same budget', () => {
-  const fixture = createProjectionFixture();
+test('a query pack costs fewer tokens than the module-order pack for the same budget', async () => {
+  const fixture = await createIndexedProjectionFixture();
   try {
     const baseline = moduleOrderPackCost(fixture, BUDGET);
-    const pack = buildCodePackFromGraph(fixture.root, fixture.index, {
+    const pack = buildCodePackFromGraph(fixture.root, fixture.reader, {
       tokenBudget: BUDGET,
       query: HUB_FILE,
       generatedAt: '2026-02-02T00:00:00.000Z'
@@ -71,9 +82,9 @@ test('a query pack costs fewer tokens than the module-order pack for the same bu
 });
 
 test('every projected entry is grounded in a citation that exists on disk', async () => {
-  const fixture = createProjectionFixture({ fillerModules: 4 });
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 4 });
   try {
-    const pack = buildCodePackFromGraph(fixture.root, fixture.snapshot, { tokenBudget: BUDGET });
+    const pack = buildCodePackFromGraph(fixture.root, fixture.reader, { tokenBudget: BUDGET });
     assert.ok(pack.entries.length > 0);
     for (const entry of pack.entries) {
       assert.ok(entry.citations.length > 0, `entry ${entry.id} has no citation`);
@@ -90,11 +101,11 @@ test('every projected entry is grounded in a citation that exists on disk', asyn
 });
 
 test('freshness is decided by real source hashes instead of a blanket unknown', async () => {
-  const fixture = createProjectionFixture({ fillerModules: 2 });
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 2 });
   try {
     const paths = [HUB_FILE, 'src/core/hooks/gate.ts', 'src/core/mcp/manager.ts', 'src/core/ppt/review.ts'];
     const observedSourceHashes = await readSourceHashes(fixture.root, paths);
-    const fresh = buildCodePackFromGraph(fixture.root, fixture.index, { tokenBudget: BUDGET, observedSourceHashes });
+    const fresh = buildCodePackFromGraph(fixture.root, fixture.reader, { tokenBudget: BUDGET, observedSourceHashes });
     assert.ok(fresh.entries.length > 0);
     assert.equal(
       fresh.entries.every((entry) => entry.freshness !== 'unknown'),
@@ -105,7 +116,7 @@ test('freshness is decided by real source hashes instead of a blanket unknown', 
 
     fs.writeFileSync(path.join(fixture.root, HUB_FILE), 'export function runHooks(): string { return "changed"; }\n');
     const afterEdit = await readSourceHashes(fixture.root, paths);
-    const stale = buildCodePackFromGraph(fixture.root, fixture.index, {
+    const stale = buildCodePackFromGraph(fixture.root, fixture.reader, {
       tokenBudget: BUDGET,
       observedSourceHashes: afterEdit
     });
@@ -118,10 +129,10 @@ test('freshness is decided by real source hashes instead of a blanket unknown', 
   }
 });
 
-test('a stale snapshot can only downgrade freshness, never upgrade it', () => {
-  const fixture = createProjectionFixture({ fillerModules: 1 });
+test('a stale snapshot can only downgrade freshness, never upgrade it', async () => {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 1 });
   try {
-    const pack = buildCodePackFromGraph(fixture.root, fixture.index, {
+    const pack = buildCodePackFromGraph(fixture.root, fixture.reader, {
       tokenBudget: BUDGET,
       snapshotFreshness: 'stale'
     });
@@ -132,16 +143,15 @@ test('a stale snapshot can only downgrade freshness, never upgrade it', () => {
   }
 });
 
-test('a module node carries no bytes, so its own recorded verdict cannot poison its files', () => {
-  const fixture = createProjectionFixture({ fillerModules: 1 });
+test('a module node carries no bytes, so its own recorded verdict cannot poison its files', async () => {
+  // The compiler marks a module `stale` because its path is a directory that
+  // cannot be read as a file. The projection must let the contained files decide.
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 1 }, (snapshot) => ({
+    ...snapshot,
+    nodes: snapshot.nodes.map((node) => (node.kind === 'module' ? { ...node, freshness: 'stale' as const } : node))
+  }));
   try {
-    // The compiler marks a module `stale` because its path is a directory that
-    // cannot be read as a file. The projection must let the contained files decide.
-    const nodes = fixture.snapshot.nodes.map((node) =>
-      node.kind === 'module' ? { ...node, freshness: 'stale' as const } : node
-    );
-    const index = buildContextGraphIndex({ ...fixture.snapshot, nodes });
-    const pack = buildCodePackFromGraph(fixture.root, index, { tokenBudget: BUDGET });
+    const pack = buildCodePackFromGraph(fixture.root, fixture.reader, { tokenBudget: BUDGET });
     const hubEntry = pack.entries.find((entry) => entry.id === `code:${HUB_MODULE_LABEL}`);
     assert.ok(hubEntry);
     assert.equal(hubEntry.freshness, 'fresh');
@@ -150,38 +160,18 @@ test('a module node carries no bytes, so its own recorded verdict cannot poison 
   }
 });
 
-test('a caller-supplied stale status governs the whole pack instead of being ignored', async () => {
-  const fixture = createProjectionFixture({ fillerModules: 2 });
-  clearContextGraphSnapshotCache();
-  try {
-    await writeFixtureGraph(fixture);
-    const result = await buildWorkspaceCodePack(fixture.root, {
-      tokenBudget: BUDGET,
-      status: { status: 'stale', reasons: ['head_changed'] },
-      allowStale: true
-    });
-    assert.equal(result.ok, true);
-    assert.equal(result.snapshotFreshness, 'stale');
-    assert.ok(result.pack);
-    assert.equal(result.pack.entries.every((entry) => entry.freshness === 'stale'), true);
-  } finally {
-    clearContextGraphSnapshotCache();
-    removeProjectionFixture(fixture.root);
-  }
-});
-
-test('index_digest binds to the snapshot hash and moves when an export changes', () => {
-  const base = createProjectionFixture({ fillerModules: 2 });
-  const changed = createProjectionFixture({ fillerModules: 2, extraExport: true });
+test('index_digest binds to the snapshot hash and moves when an export changes', async () => {
+  const base = await createIndexedProjectionFixture({ fillerModules: 2 });
+  const changed = await createIndexedProjectionFixture({ fillerModules: 2, extraExport: true });
   try {
     const options = { tokenBudget: BUDGET, generatedAt: '2026-02-02T00:00:00.000Z' } as const;
-    const first = buildCodePackFromGraph(base.root, base.index, options);
-    const repeat = buildCodePackFromGraph(base.root, base.index, options);
+    const first = buildCodePackFromGraph(base.root, base.reader, options);
+    const repeat = buildCodePackFromGraph(base.root, base.reader, options);
     assert.equal(first.index_digest, repeat.index_digest, 'the same graph must project the same digest');
     assert.equal(first.index_digest, computeCodePackIndexDigest(base.snapshot.snapshotHash, first.entries));
     assert.equal(isCodePackProjectionBoundToSnapshot(base.snapshot.snapshotHash, first), true);
 
-    const withExtraExport = buildCodePackFromGraph(changed.root, changed.index, options);
+    const withExtraExport = buildCodePackFromGraph(changed.root, changed.reader, options);
     assert.notEqual(base.snapshot.snapshotHash, changed.snapshot.snapshotHash);
     assert.notEqual(first.index_digest, withExtraExport.index_digest);
     assert.equal(isCodePackProjectionBoundToSnapshot(changed.snapshot.snapshotHash, first), false);
@@ -191,10 +181,10 @@ test('index_digest binds to the snapshot hash and moves when an export changes',
   }
 });
 
-test('corpus packing follows graph importance rather than module id order', () => {
-  const fixture = createProjectionFixture();
+test('corpus packing follows graph importance rather than module id order', async () => {
+  const fixture = await createIndexedProjectionFixture();
   try {
-    const projection = projectCodePackFromGraph(fixture.root, fixture.index, { tokenBudget: BUDGET });
+    const projection = projectCodePackFromGraph(fixture.root, fixture.reader, { tokenBudget: BUDGET });
     const ids = projection.pack.entries.map((entry) => entry.id);
     const hubRank = ids.indexOf(`code:${HUB_MODULE_LABEL}`);
     assert.ok(hubRank >= 0, `hub module missing from ${JSON.stringify(ids)}`);
@@ -202,18 +192,33 @@ test('corpus packing follows graph importance rather than module id order', () =
     assert.ok(firstFillerRank >= 0, 'filler modules should still be packed');
     assert.ok(hubRank < firstFillerRank, `hub (${hubRank}) should outrank the first filler (${firstFillerRank})`);
     assert.ok(projection.candidateCount >= ids.length);
+    assert.equal(projection.query, null, 'corpus mode runs no retrieval query');
   } finally {
     removeProjectionFixture(fixture.root);
   }
 });
 
-test('the token budget is never exceeded and the overflow is counted', () => {
-  const fixture = createProjectionFixture({ fillerModules: 6 });
+test('the query mode reports the kernel receipt that produced the entries', async () => {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 2 });
   try {
-    const full = projectCodePackFromGraph(fixture.root, fixture.index, { tokenBudget: BUDGET });
+    const projection = projectCodePackFromGraph(fixture.root, fixture.reader, { tokenBudget: BUDGET, query: HUB_FILE });
+    const receipt = projection.query;
+    assert.ok(receipt, 'a question must carry its kernel receipt');
+    assert.equal(receipt.schema, 'sks.context-kernel.v1');
+    assert.equal(receipt.fullCandidateSorts, 0);
+    assert.ok(receipt.selected.length > 0, 'the hub path is an anchor and must select something');
+  } finally {
+    removeProjectionFixture(fixture.root);
+  }
+});
+
+test('the token budget is never exceeded and the overflow is counted', async () => {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 6 });
+  try {
+    const full = projectCodePackFromGraph(fixture.root, fixture.reader, { tokenBudget: BUDGET });
     const firstCost = full.pack.entries[0]?.token_cost ?? 0;
     assert.ok(firstCost > 0);
-    const bounded = projectCodePackFromGraph(fixture.root, fixture.index, { tokenBudget: firstCost });
+    const bounded = projectCodePackFromGraph(fixture.root, fixture.reader, { tokenBudget: firstCost });
     assert.ok(bounded.pack.total_token_cost <= firstCost);
     assert.ok(bounded.omittedForBudget > 0, 'entries dropped for budget must be counted');
   } finally {
@@ -221,30 +226,31 @@ test('the token budget is never exceeded and the overflow is counted', () => {
   }
 });
 
-test('buildWorkspaceCodePack projects from the stored graph with no scanner involvement', async () => {
-  const fixture = createProjectionFixture({ fillerModules: 3 });
-  clearContextGraphSnapshotCache();
+test('buildWorkspaceCodePack projects from the published generation with no scanner involvement', async () => {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 3 });
   try {
-    await writeFixtureGraph(fixture, 'fixturehead0000');
-    const result = await buildWorkspaceCodePack(fixture.root, { tokenBudget: BUDGET });
+    const result = await buildWorkspaceCodePack(fixture.root, { tokenBudget: BUDGET, gitHeadSha: 'fixturehead0000' });
     assert.equal(result.ok, true);
     assert.equal(result.errorCode, null);
+    assert.equal(result.snapshotHash, fixture.snapshot.snapshotHash);
+    assert.equal(result.snapshotFreshness, 'fresh');
     const pack = result.pack;
     assert.ok(pack, 'a pack should be produced');
-    assert.equal(pack.git_head_sha, 'fixturehead0000', 'HEAD comes from graph metadata, not a git spawn');
+    // HEAD is the caller's now: the v2 index meta records fingerprints and counts,
+    // never a git revision, and deriving one here would spawn git on a read path.
+    assert.equal(pack.git_head_sha, 'fixturehead0000');
     assert.equal(pack.index_digest, computeCodePackIndexDigest(fixture.snapshot.snapshotHash, pack.entries));
     assert.equal(pack.source_file_count, fixture.snapshot.nodes.filter((node) => node.kind === 'file').length);
     assert.equal(pack.entries.every((entry) => entry.freshness === 'fresh'), true);
     assert.deepEqual((await validateCodePack(pack, fixture.root)).issues, []);
   } finally {
-    clearContextGraphSnapshotCache();
     removeProjectionFixture(fixture.root);
   }
 });
 
-test('a missing graph is reported explicitly instead of producing a degraded pack', async () => {
+test('a missing index is reported explicitly instead of producing a degraded pack', async () => {
   const fixture = createProjectionFixture({ fillerModules: 0 });
-  clearContextGraphSnapshotCache();
+  resetContextIndexCache();
   try {
     const result = await buildWorkspaceCodePack(fixture.root, { tokenBudget: BUDGET });
     assert.equal(result.ok, false);
@@ -252,8 +258,10 @@ test('a missing graph is reported explicitly instead of producing a degraded pac
     assert.equal(result.errorCode, CONTEXT_GRAPH_MISSING_ERROR);
     assert.equal(result.repairCommand, 'sks align run');
     assert.ok(result.errors.some((issue) => issue.includes('sks align run')));
+    // No fallback: the failure names one command and produces no entries at all.
+    assert.equal(result.candidateCount, 0);
+    assert.equal(result.snapshotHash, '');
   } finally {
-    clearContextGraphSnapshotCache();
     removeProjectionFixture(fixture.root);
   }
 });

@@ -8,101 +8,92 @@
  * profile-weighted incident relations, fan-in, and risk — so the budget is spent
  * on the modules the repository depends on rather than on the ones whose path
  * starts with `a`.
+ *
+ * ## This is a traversal, not a retrieval query (CG2-13)
+ *
+ * A module view is the `contains` closure of every module node plus one hop out
+ * of each contained file. That is a question about graph *shape*, and the
+ * retrieval kernel structurally cannot answer it: the kernel fuses lanes and
+ * selects a bounded top-K, so asking it for "every module" would return the most
+ * relevant few and silently shrink the corpus pack. So this runs on
+ * `walkContextGraph` — no scoring, no selection, everything reachable inside the
+ * caps — and does its own ranking afterwards on facts the walk reported.
+ *
+ * The two v1 behaviours that moved underneath it — string-interned metadata and
+ * one-hop dedupe by target — are recorded in `graph-facts.ts`. The candidate
+ * shape itself, and the corpus shape for an index with no modules, are in
+ * `projection-candidate.ts`.
  */
-import type { ContextGraphNode } from '../contracts.js';
-import { compareContextGraphIds } from '../ids.js';
-import { outgoingEdges, type ContextGraphIndex } from '../graph-index.js';
+import type { ContextGraphEdgeType } from '../contracts.js';
 import { profileEdgeWeight, type ContextGraphQueryProfile } from '../profiles.js';
+import {
+  contextNodeFlag,
+  type ContextGraphNodeView,
+  type ContextIndexReader,
+  type HydrationCursor
+} from '../query/index.js';
+import { PROJECTION_ALL_EDGE_TYPES, contextNodeCount, contextNodesOfKind, contextOneHopNeighbours } from './graph-facts.js';
 import type { CodePackCitation } from './pack-contract.js';
 import { describeContextGraphNode } from './node-summary.js';
+import {
+  pushCitation,
+  rankFileCandidates,
+  riskBonus,
+  sortCandidates,
+  type ProjectionCandidate
+} from './projection-candidate.js';
 
-export interface ProjectionCandidate {
-  readonly node: ContextGraphNode;
-  readonly text: string;
-  readonly citations: CodePackCitation[];
-  /** Nodes whose source bytes decide this entry's freshness. */
-  readonly members: ContextGraphNode[];
-  readonly reasonPath: string[];
-  readonly score: number;
-}
+export { sortCandidates, type ProjectionCandidate } from './projection-candidate.js';
 
-const RISK_RANK: Readonly<Record<string, number>> = { low: 0, medium: 1, high: 2, protected: 3 };
-const MAX_CITATIONS = 8;
+const CONTAINS_EDGE_TYPES: ReadonlySet<ContextGraphEdgeType> = new Set(['contains']);
+const OWNERSHIP_EDGE_TYPES: ReadonlySet<ContextGraphEdgeType> = new Set(['imports', 'depends_on']);
 
-function riskBonus(node: ContextGraphNode, risk: 'normal' | 'high'): number {
-  const rank = RISK_RANK[node.risk] ?? 0;
-  return risk === 'high' ? rank * 2 : rank * 0.75;
-}
-
-function metaNumber(node: ContextGraphNode, key: string): number {
-  const value = node.metadata[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-function isExportedSymbol(node: ContextGraphNode): boolean {
-  return node.kind === 'symbol' && node.metadata.exported === true;
-}
-
-function pushCitation(into: CodePackCitation[], seen: Set<string>, node: ContextGraphNode): void {
-  if (into.length >= MAX_CITATIONS) return;
-  if (!node.path || seen.has(node.path)) return;
-  seen.add(node.path);
-  into.push(
-    node.locator?.line === undefined ? { path: node.path } : { path: node.path, line: node.locator.line }
-  );
+function isExportedSymbol(node: ContextGraphNodeView): boolean {
+  return node.kind === 'symbol' && contextNodeFlag(node, 'exported');
 }
 
 interface ModuleAccumulator {
-  readonly module: ContextGraphNode;
-  readonly members: ContextGraphNode[];
+  readonly module: ContextGraphNodeView;
+  readonly members: ContextGraphNodeView[];
   readonly exports: string[];
   readonly dependsOn: string[];
   relationScore: number;
   fanIn: number;
 }
 
-/** file node id -> owning module node id, built from the module `contains` edges only. */
-function ownerIndex(index: ContextGraphIndex, modules: readonly ContextGraphNode[]): Map<string, string> {
-  const owner = new Map<string, string>();
-  for (const module of modules) {
-    for (const edge of outgoingEdges(index, module.id)) {
-      if (edge.type !== 'contains') continue;
-      if (!owner.has(edge.to)) owner.set(edge.to, module.id);
-    }
-  }
-  return owner;
-}
-
 function accumulateFile(
-  index: ContextGraphIndex,
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
   accumulator: ModuleAccumulator,
-  file: ContextGraphNode,
-  owner: ReadonlyMap<string, string>,
+  file: ContextGraphNodeView,
+  owner: ReadonlyMap<number, ContextGraphNodeView>,
   profile: ContextGraphQueryProfile
 ): void {
   accumulator.members.push(file);
-  accumulator.fanIn += metaNumber(file, 'fanIn');
-  for (const edge of outgoingEdges(index, file.id)) {
-    const weight = profileEdgeWeight(profile, edge.type);
+  accumulator.fanIn += contextNodeCount(file, 'fanIn') ?? 0;
+  for (const neighbour of contextOneHopNeighbours(reader, cursor, file.node, file.id, PROJECTION_ALL_EDGE_TYPES)) {
+    const weight = profileEdgeWeight(profile, neighbour.type);
     if (weight > 0) accumulator.relationScore += weight;
-    const target = index.nodesById.get(edge.to);
-    if (!target) continue;
+    const target = neighbour.view;
     if (isExportedSymbol(target)) accumulator.exports.push(target.label);
-    if (edge.type !== 'imports' && edge.type !== 'depends_on') continue;
-    const ownerId = owner.get(target.id);
-    if (!ownerId || ownerId === accumulator.module.id) continue;
-    const ownerNode = index.nodesById.get(ownerId);
-    if (ownerNode) accumulator.dependsOn.push(ownerNode.label);
+    if (!OWNERSHIP_EDGE_TYPES.has(neighbour.type)) continue;
+    const ownerNode = owner.get(target.node);
+    if (ownerNode && ownerNode.node !== accumulator.module.node) accumulator.dependsOn.push(ownerNode.label);
   }
 }
 
-function candidateOf(index: ContextGraphIndex, accumulator: ModuleAccumulator, risk: 'normal' | 'high'): ProjectionCandidate {
-  const files = accumulator.members.filter((member) => member.id !== accumulator.module.id);
+function candidateOf(
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  accumulator: ModuleAccumulator,
+  risk: 'normal' | 'high'
+): ProjectionCandidate {
+  const files = accumulator.members.filter((member) => member.node !== accumulator.module.node);
   const citations: CodePackCitation[] = [];
   const seen = new Set<string>();
   for (const file of files) pushCitation(citations, seen, file);
   if (citations.length === 0) pushCitation(citations, seen, accumulator.module);
-  const text = describeContextGraphNode(index, accumulator.module, {
+  const text = describeContextGraphNode(reader, cursor, accumulator.module, {
     exports: accumulator.exports,
     dependsOn: accumulator.dependsOn,
     fileCount: files.length
@@ -123,20 +114,34 @@ function candidateOf(index: ContextGraphIndex, accumulator: ModuleAccumulator, r
 }
 
 /**
- * Rank every module in the snapshot. One pass over the module `contains` edges
- * and one pass over the contained files' outgoing edges — no full node scan per
- * candidate, and no process spawn.
+ * Rank every module in the index. One `contains` walk per module, memoized so the
+ * ownership map and the candidate pass share it, then one walk per contained
+ * file — no full node scan per candidate, and no process spawn.
  */
 export function rankModuleCandidates(
-  index: ContextGraphIndex,
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
   profile: ContextGraphQueryProfile,
   risk: 'normal' | 'high'
 ): ProjectionCandidate[] {
-  const modules: ContextGraphNode[] = [];
-  for (const node of index.snapshot.nodes) if (node.kind === 'module') modules.push(node);
-  if (modules.length === 0) return rankFileCandidates(index, profile, risk);
+  const modules: ContextGraphNodeView[] = [];
+  for (const node of contextNodesOfKind(reader, 'module')) {
+    const view = cursor.node(node);
+    if (view !== null) modules.push(view);
+  }
+  if (modules.length === 0) return rankFileCandidates(reader, cursor, profile, risk);
 
-  const owner = ownerIndex(index, modules);
+  // file node -> owning module, built from the module `contains` edges only. The
+  // walk is memoized so the ownership pass and the candidate pass share it.
+  const owner = new Map<number, ContextGraphNodeView>();
+  const contained = new Map<number, ContextGraphNodeView[]>();
+  for (const module of modules) {
+    const files = contextOneHopNeighbours(reader, cursor, module.node, module.id, CONTAINS_EDGE_TYPES)
+      .map((neighbour) => neighbour.view);
+    contained.set(module.node, files);
+    for (const file of files) if (!owner.has(file.node)) owner.set(file.node, module);
+  }
+
   const candidates: ProjectionCandidate[] = [];
   for (const module of modules) {
     const accumulator: ModuleAccumulator = {
@@ -147,44 +152,10 @@ export function rankModuleCandidates(
       relationScore: 0,
       fanIn: 0
     };
-    for (const edge of outgoingEdges(index, module.id)) {
-      if (edge.type !== 'contains') continue;
-      const file = index.nodesById.get(edge.to);
-      if (file) accumulateFile(index, accumulator, file, owner, profile);
+    for (const file of contained.get(module.node) ?? []) {
+      accumulateFile(reader, cursor, accumulator, file, owner, profile);
     }
-    candidates.push(candidateOf(index, accumulator, risk));
+    candidates.push(candidateOf(reader, cursor, accumulator, risk));
   }
   return sortCandidates(candidates);
-}
-
-/** Fallback corpus shape for a snapshot that carries no module boundaries. */
-function rankFileCandidates(
-  index: ContextGraphIndex,
-  profile: ContextGraphQueryProfile,
-  risk: 'normal' | 'high'
-): ProjectionCandidate[] {
-  const candidates: ProjectionCandidate[] = [];
-  for (const node of index.snapshot.nodes) {
-    if (node.kind !== 'file' || !node.path) continue;
-    let relationScore = 0;
-    for (const edge of outgoingEdges(index, node.id)) relationScore += profileEdgeWeight(profile, edge.type);
-    const citations: CodePackCitation[] = [];
-    pushCitation(citations, new Set<string>(), node);
-    if (citations.length === 0) continue;
-    candidates.push({
-      node,
-      text: describeContextGraphNode(index, node),
-      citations,
-      members: [node],
-      reasonPath: [node.id],
-      score: Number((relationScore + 3 * Math.log2(1 + metaNumber(node, 'fanIn')) + riskBonus(node, risk)).toFixed(4))
-    });
-  }
-  return sortCandidates(candidates);
-}
-
-export function sortCandidates(candidates: ProjectionCandidate[]): ProjectionCandidate[] {
-  return candidates.sort(
-    (left, right) => right.score - left.score || compareContextGraphIds(left.node.id, right.node.id)
-  );
 }

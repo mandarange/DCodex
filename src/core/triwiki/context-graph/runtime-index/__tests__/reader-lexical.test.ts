@@ -78,6 +78,35 @@ test('a lexical merge does not depend on the order the caller listed its terms',
   }
 });
 
+test('a caller can go from a query term to a ranked lexical result', () => {
+  // The path the kernel actually walks: term string -> id -> lexical(). Laying
+  // the table with ids resolved from the reader — rather than with literals —
+  // is what proves the two halves share one dictionary. Without this the lanes
+  // typecheck and still cannot be reached from a query.
+  const probe = openContextIndex(FIXTURE_BYTES);
+  const runId = probe.termId('run');
+  const pathId = probe.termId('src/a.ts');
+  assert.ok(runId >= 0 && pathId >= 0, 'both terms are interned by the writer');
+
+  const rows: Array<readonly [number, readonly number[]]> = [
+    [runId, [SYMBOL]],
+    [pathId, [A, B, GATE, SYMBOL]],
+  ];
+  // Term rows must ascend by id; the builder will emit them that way.
+  rows.sort((left, right) => left[0] - right[0]);
+  const reader = readerWithLexicon(rows);
+
+  const ranked = reader.lexical(
+    [reader.termId('run'), reader.termId('src/a.ts')],
+    { postingCapPerTerm: 16, candidateBudget: 16 },
+  );
+  assert.equal(ranked.matchedTerms, 2);
+  assert.equal(ranked.node(0), SYMBOL, 'the node matching both terms ranks first');
+  // An unknown term resolves to -1 and is a miss, never a match on some
+  // neighbouring row.
+  assert.equal(reader.lexical([reader.termId('not-a-term')], { postingCapPerTerm: 16, candidateBudget: 16 }).length, 0);
+});
+
 test('an unsorted term table is rejected, not searched with a broken invariant', () => {
   const built = termTable([[COMMON, [A]], [RARE, [B]]]);
   const bytes = rewriteSections(FIXTURE_BYTES, new Map([

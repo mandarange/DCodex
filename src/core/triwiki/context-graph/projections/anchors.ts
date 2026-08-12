@@ -4,17 +4,26 @@
  * An anchor is a graph node plus the evidence needed to decide whether it may be
  * used as a fact right now: how the query reached it (`reason_path`), where the
  * claim comes from (`provenance`), what it costs to hold (`token_cost`), and how
- * much it can be trusted before its source is hydrated.
- *
- * The trust rule is preserved from the pre-graph attention contract: an anchor
+ * much it can be trusted before its source is hydrated. The trust rule is
+ * preserved from the pre-graph attention contract: an anchor
  * that is not both fresh and above the trust floor keeps no identity hashes and
  * carries an explicit hydrate hint, so a consumer cannot mistake a low-trust
  * summary for a verified fact before opening the cited source.
+ *
+ * Anchoring is exact-only against the compact index (CG2-13), which means
+ * `code:<module-label>` no longer resolves — see `graph-facts.ts` for why that is
+ * reported rather than guessed at.
  */
-import type { ContextGraphFreshness, ContextGraphNode } from '../contracts.js';
-import type { ContextGraphIndex } from '../graph-index.js';
-import type { ContextGraphProvenanceRef, ContextGraphSelectedNode } from '../query-types.js';
-import { CONTEXT_GRAPH_RANKING_CONFIG, groundContextGraphNode } from '../query/index.js';
+import type { ContextGraphFreshness } from '../contracts.js';
+import type { ContextGraphProvenanceRef } from '../query-types.js';
+import {
+  CONTEXT_GRAPH_RANKING_CONFIG,
+  type ContextGraphNodeView,
+  type ContextIndexReader,
+  type HydratedNode,
+  type HydrationCursor
+} from '../query/index.js';
+import { contextGroundedProvenance } from './graph-facts.js';
 
 /** Below this, or when the source is not verified fresh, an anchor is hydrate-only. */
 export const ATTENTION_FACT_TRUST_FLOOR = 0.6;
@@ -37,10 +46,7 @@ export function isFactGradeAnchor(trust: number, freshness: ContextGraphFreshnes
   return freshness === 'fresh' && trust >= ATTENTION_FACT_TRUST_FLOOR;
 }
 
-/**
- * Hint text is assembled only from graph facts: cited workspace-relative paths
- * plus the reasons the anchor is not fact-grade. No prompt text, no tool output.
- */
+/** Graph facts only: cited paths plus why the anchor is not fact-grade. No prompt text. */
 export function attentionHydrateHint(
   provenance: readonly ContextGraphProvenanceRef[],
   trust: number,
@@ -61,7 +67,7 @@ export function attentionHydrateHint(
 
 function anchorOf(
   id: string,
-  node: ContextGraphNode | undefined,
+  contentHash: string | undefined,
   trust: number,
   freshness: ContextGraphFreshness,
   risk: string,
@@ -73,7 +79,7 @@ function anchorOf(
   const firstHash = provenance[0]?.hash ?? null;
   return {
     id,
-    claim_hash: factGrade ? node?.contentHash ?? firstHash : null,
+    claim_hash: factGrade ? contentHash ?? firstHash : null,
     source_hash: factGrade ? firstHash : null,
     hydrate_hint: attentionHydrateHint(provenance, trust, freshness, risk, factGrade),
     reason_path: reasonPath,
@@ -84,13 +90,10 @@ function anchorOf(
   };
 }
 
-/**
- * Project the query engine's selection into attention anchors. Selection order is
- * the query's ranking; this adds no second opinion about relevance.
- */
+/** Kernel-hydrated selection -> anchors. Order is the kernel's; no second opinion here. */
 export function projectContextGraphAnchors(
-  index: ContextGraphIndex,
-  selected: readonly ContextGraphSelectedNode[],
+  cursor: HydrationCursor,
+  selected: readonly HydratedNode[],
   limit: number
 ): ProjectedAttentionAnchor[] {
   const anchors: ProjectedAttentionAnchor[] = [];
@@ -99,38 +102,33 @@ export function projectContextGraphAnchors(
     if (anchors.length >= limit) break;
     if (seen.has(node.nodeId) || node.provenance.length === 0) continue;
     seen.add(node.nodeId);
-    anchors.push(
-      anchorOf(
-        node.nodeId,
-        index.nodesById.get(node.nodeId),
-        node.trust,
-        node.freshness,
-        node.risk,
-        node.tokenCost,
-        [...node.reasonPath],
-        [...node.provenance]
-      )
-    );
+    const contentHash = cursor.node(node.node)?.contentHash;
+    const reasonPath = [...node.reasonPath];
+    const provenance = [...node.provenance];
+    anchors.push(anchorOf(node.nodeId, contentHash, node.trust, node.freshness, node.risk, node.tokenCost, reasonPath, provenance));
   }
   return anchors;
 }
 
 /**
- * Resolve a context-pack anchor id back to the node it names. Code pack entries
- * are `code:<module-label>` or `code:<node-id>`; wiki anchors are already node ids.
+ * Resolve a context-pack anchor id back to the node it names. Exact only: a
+ * canonical node id, bare or under the historical `code:` prefix.
  */
-export function resolveContextGraphAnchorNode(index: ContextGraphIndex, anchorId: string): ContextGraphNode | null {
-  const direct = index.nodesById.get(anchorId);
+export function resolveContextGraphAnchorNode(
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
+  anchorId: string
+): ContextGraphNodeView | null {
+  const direct = firstExact(reader, cursor, anchorId);
   if (direct) return direct;
   if (!anchorId.startsWith('code:')) return null;
-  const rest = anchorId.slice('code:'.length);
-  const byId = index.nodesById.get(rest);
-  if (byId) return byId;
-  for (const candidate of index.nodesByLabel.get(rest.toLowerCase()) ?? []) {
-    const node = index.nodesById.get(candidate);
-    if (node?.kind === 'module') return node;
-  }
-  return null;
+  return firstExact(reader, cursor, anchorId.slice('code:'.length));
+}
+
+function firstExact(reader: ContextIndexReader, cursor: HydrationCursor, term: string): ContextGraphNodeView | null {
+  if (!term) return null;
+  const postings = reader.exact(term);
+  return postings.length === 0 ? null : cursor.node(postings.node(0));
 }
 
 export interface ContextPackAnchorInput {
@@ -146,12 +144,14 @@ export interface ContextPackAnchorInput {
  * borrowing someone else's — an unresolvable anchor is never fact-grade.
  */
 export function projectContextPackAnchors(
-  index: ContextGraphIndex,
+  reader: ContextIndexReader,
+  cursor: HydrationCursor,
   anchors: readonly ContextPackAnchorInput[]
 ): ProjectedAttentionAnchor[] {
+  const limit = Math.max(1, CONTEXT_GRAPH_RANKING_CONFIG.maxProvenancePerNode);
   const out: ProjectedAttentionAnchor[] = [];
   for (const anchor of anchors) {
-    const node = resolveContextGraphAnchorNode(index, anchor.id);
+    const node = resolveContextGraphAnchorNode(reader, cursor, anchor.id);
     if (!node) {
       out.push({
         id: anchor.id,
@@ -166,10 +166,8 @@ export function projectContextPackAnchors(
       });
       continue;
     }
-    const provenance = groundContextGraphNode(index, node, [], CONTEXT_GRAPH_RANKING_CONFIG);
-    out.push(
-      anchorOf(anchor.id, node, node.trust, node.freshness, node.risk, node.tokenCost, [node.id], provenance)
-    );
+    const provenance = contextGroundedProvenance(reader, cursor, node, limit);
+    out.push(anchorOf(anchor.id, node.contentHash, node.trust, node.freshness, node.risk, node.tokenCost, [node.id], provenance));
   }
   return out;
 }

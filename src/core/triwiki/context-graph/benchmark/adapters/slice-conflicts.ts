@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { narutoContextGraphAdviceFromIndex } from '../../../../naruto/context-graph-advisor.js';
-import type { ContextGraphIndex } from '../../graph-index.js';
+import type { ContextIndexReader } from '../../query/index.js';
 import type { ContextGraphBenchmarkConflict } from '../types.js';
 
 export const SLICE_PLAN_REL = '.sneakoscope/naruto/slice-plan.json';
@@ -53,12 +53,12 @@ function readSlicePlan(root: string): SlicePlanRow[] {
  */
 export function detectWriteScopeConflicts(
   root: string,
-  index: ContextGraphIndex,
+  reader: ContextIndexReader,
   task: string
 ): ContextGraphBenchmarkConflict[] {
   const slices = readSlicePlan(root);
   if (slices.length < 2) return [];
-  const advice = narutoContextGraphAdviceFromIndex(index, {
+  const advice = narutoContextGraphAdviceFromIndex(reader, {
     root,
     task,
     slices: slices.map((slice) => ({ id: slice.id, writePaths: [...slice.writeScope] })),

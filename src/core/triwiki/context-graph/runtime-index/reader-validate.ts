@@ -194,9 +194,21 @@ function validateEnums(
     checkOptionalReference(view.getUint32(at + NODE_PATH_AT, true), stringCount, node);
     checkOptionalReference(view.getUint32(at + NODE_CONTENT_HASH_AT, true), stringCount, node);
     // The group is written twice, in the node row and in the group table.
-    // Redundant encodings of one fact are only useful if they are compared.
-    if (view.getUint32(at + NODE_GROUP_AT, true) !== view.getUint32(groupBase + node * 4, true)) {
-      throw new ContextIndexFormatError('section_checksum_mismatch', { kind: CONTEXT_INDEX_SECTION.GROUP_TABLE, node });
+    // Redundant encodings of one fact are only useful if they are compared, and
+    // the failure this catches is a half-applied write — one section updated,
+    // the other not. So the detail carries both values: knowing *which* copy
+    // disagrees is the difference between "the file is damaged" and "a writer
+    // updated one of two encodings", and with the numbers-only rule these two
+    // integers are the only way to say that.
+    const rowGroup = view.getUint32(at + NODE_GROUP_AT, true);
+    const tableGroup = view.getUint32(groupBase + node * 4, true);
+    if (rowGroup !== tableGroup) {
+      throw new ContextIndexFormatError('section_checksum_mismatch', {
+        kind: CONTEXT_INDEX_SECTION.GROUP_TABLE,
+        node,
+        rowGroup,
+        tableGroup,
+      });
     }
   }
   const edgeBase = Number(edges.offset);

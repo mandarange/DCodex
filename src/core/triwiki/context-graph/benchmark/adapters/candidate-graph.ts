@@ -219,10 +219,12 @@ export class CandidateGraphAdapter implements ContextGraphBenchmarkAdapter {
     );
     // Conflicts come from the production Naruto advisory, not from a
     // benchmark-local re-derivation, so the conflict floor measures what
-    // actually protects a parallel wave.
+    // actually protects a parallel wave. The advisory reads the v2 binary index
+    // (CG2-13), so it takes the session's reader rather than the v1 adjacency
+    // index the query path still uses.
     const projection = {
       ...projected,
-      writeScopeConflicts: detectWriteScopeConflicts(query.root, session.index, query.query)
+      writeScopeConflicts: detectWriteScopeConflicts(query.root, session.reader, query.query)
     };
     return {
       run: toCandidateRun(

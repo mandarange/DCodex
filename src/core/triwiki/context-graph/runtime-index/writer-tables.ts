@@ -182,3 +182,4 @@ export function u32Section(values: readonly number[]): Uint8Array {
   values.forEach((value, index) => view.setUint32(index * 4, value >>> 0, true));
   return bytes;
 }
+

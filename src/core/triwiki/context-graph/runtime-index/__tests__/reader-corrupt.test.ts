@@ -129,7 +129,13 @@ test('a group id that disagrees with the group table is rejected', () => {
   const bytes = patchSection(FIXTURE_BYTES, CONTEXT_INDEX_SECTION.GROUP_TABLE, (_payload, view) => {
     view.setUint32(0, FIXTURE_NODES.length - 1, true);
   });
-  rejects(bytes, 'section_checksum_mismatch');
+  const error = rejects(bytes, 'section_checksum_mismatch');
+  // Both copies are reported. Naming only the section would leave a reader
+  // unable to tell a damaged file from a writer that updated one of the two
+  // encodings and not the other.
+  assert.equal(error.detail.node, 0);
+  assert.equal(error.detail.rowGroup, 0);
+  assert.equal(error.detail.tableGroup, FIXTURE_NODES.length - 1);
 });
 
 test('a non-monotonic CSR row is rejected before it can produce a negative run', () => {

@@ -1,3 +1,4 @@
+import { CONTEXT_GRAPH_REBUILD_INDEX_COMMAND } from '../contracts.js';
 /**
  * Schema, field discipline, and phase algebra for the compile operation journal.
  *
@@ -70,7 +71,7 @@ export const CONTEXT_OPERATION_JOURNAL_ERRORS = {
 
 export type ContextOperationJournalErrorCode = keyof typeof CONTEXT_OPERATION_JOURNAL_ERRORS;
 
-export const CONTEXT_OPERATION_JOURNAL_REPAIR_COMMAND = 'sks align run --rebuild-index' as const;
+export const CONTEXT_OPERATION_JOURNAL_REPAIR_COMMAND = CONTEXT_GRAPH_REBUILD_INDEX_COMMAND;
 
 /**
  * Numeric field ids so a rejection can say *which* field failed without ever

@@ -1,3 +1,4 @@
+import { CONTEXT_GRAPH_REBUILD_INDEX_COMMAND, CONTEXT_GRAPH_REPAIR_COMMAND, CONTEXT_GRAPH_UPDATE_COMMAND } from '../contracts.js';
 /**
  * Failure vocabulary for the generation store.
  *
@@ -43,9 +44,9 @@ export const CONTEXT_INDEX_STORE_ERRORS = {
 
 export type ContextIndexStoreErrorCode = keyof typeof CONTEXT_INDEX_STORE_ERRORS;
 
-export const CONTEXT_INDEX_STORE_REBUILD_COMMAND = 'sks align run --rebuild-index' as const;
-export const CONTEXT_INDEX_STORE_ALIGN_COMMAND = 'sks align run' as const;
-export const CONTEXT_INDEX_STORE_UPDATE_COMMAND = 'sks update' as const;
+export const CONTEXT_INDEX_STORE_REBUILD_COMMAND = CONTEXT_GRAPH_REBUILD_INDEX_COMMAND;
+export const CONTEXT_INDEX_STORE_ALIGN_COMMAND = CONTEXT_GRAPH_REPAIR_COMMAND;
+export const CONTEXT_INDEX_STORE_UPDATE_COMMAND = CONTEXT_GRAPH_UPDATE_COMMAND;
 
 /** Every failure names exactly one command; no error in this family is advisory (ADR §5). */
 function repairCommandFor(publicCode: string): string {

@@ -1,7 +1,21 @@
+/**
+ * Attention anchors, projected off a published CRK2 generation (CG2-13).
+ *
+ * The engine under these assertions changed completely — pointer, compact
+ * reader, retrieval kernel, selected-only hydration — so they are written against
+ * the *anchor contract* rather than against the pipeline: provenance that points
+ * at real workspace-relative paths, a reason path, a bounded token cost, and the
+ * trust rule that keeps identity hashes off anything not fact-grade.
+ *
+ * One assertion is deliberately about a loss. Format revision 1 has no label
+ * table, so `code:<module-label>` no longer resolves. That is asserted here as
+ * the current, honest behaviour — an unresolved anchor with no provenance — so
+ * that wiring the lexicon into the writer will fail this test loudly instead of
+ * quietly restoring something nobody was tracking.
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildContextGraphIndex } from '../../graph-index.js';
-import { queryContextGraphSnapshot } from '../../query/index.js';
+import { queryWorkspaceContext } from '../../query/index.js';
 import {
   ATTENTION_FACT_TRUST_FLOOR,
   attentionHydrateHint,
@@ -10,19 +24,24 @@ import {
   projectContextPackAnchors,
   resolveContextGraphAnchorNode
 } from '../anchors.js';
-import { HUB_FILE, HUB_MODULE_LABEL, createProjectionFixture, removeProjectionFixture } from './projection-fixtures.js';
+import { HUB_FILE, HUB_MODULE_LABEL, removeProjectionFixture } from './projection-fixtures.js';
+import { createIndexedProjectionFixture } from './projection-index-fixtures.js';
 
-test('query-selected anchors carry a reason path, provenance and a token cost', () => {
-  const fixture = createProjectionFixture({ fillerModules: 4 });
+function hubModuleId(fixture: { snapshot: { nodes: readonly { id: string; kind: string; label: string }[] } }): string {
+  const module = fixture.snapshot.nodes.find((node) => node.kind === 'module' && node.label === HUB_MODULE_LABEL);
+  assert.ok(module, 'the fixture must carry a hub module node');
+  return module.id;
+}
+
+test('query-selected anchors carry a reason path, provenance and a token cost', async () => {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 4 });
   try {
-    const result = queryContextGraphSnapshot(fixture.index, {
-      root: fixture.root,
-      query: HUB_FILE,
-      profile: 'implementation',
-      tokenBudget: 2000,
-      maxSelected: 8
-    });
-    const anchors = projectContextGraphAnchors(fixture.index, result.selected, 8);
+    const answer = await queryWorkspaceContext(
+      fixture.root,
+      { query: HUB_FILE, profile: 'implementation', tokenBudget: 2000, maxSelected: 8 },
+      { index: fixture.handle }
+    );
+    const anchors = projectContextGraphAnchors(fixture.cursor, answer.hydration.nodes, 8);
     assert.ok(anchors.length > 0, 'the hub query should select anchors');
     assert.ok(anchors.length <= 8);
     for (const anchor of anchors) {
@@ -41,21 +60,18 @@ test('query-selected anchors carry a reason path, provenance and a token cost', 
   }
 });
 
-test('a lower-trust or non-fresh anchor is hydrate-only and keeps no identity hashes', () => {
-  const fixture = createProjectionFixture({ fillerModules: 1 });
+test('a lower-trust or non-fresh anchor is hydrate-only and keeps no identity hashes', async () => {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 1 }, (snapshot) => ({
+    ...snapshot,
+    nodes: snapshot.nodes.map((node) => (node.kind === 'symbol' ? { ...node, trust: 0.2 } : node))
+  }));
   try {
-    const nodes = fixture.snapshot.nodes.map((node) =>
-      node.kind === 'symbol' ? { ...node, trust: 0.2 } : node
+    const answer = await queryWorkspaceContext(
+      fixture.root,
+      { query: HUB_FILE, profile: 'implementation', tokenBudget: 2000, maxSelected: 8 },
+      { index: fixture.handle }
     );
-    const weakened = buildContextGraphIndex({ ...fixture.snapshot, nodes });
-    const result = queryContextGraphSnapshot(weakened, {
-      root: fixture.root,
-      query: HUB_FILE,
-      profile: 'implementation',
-      tokenBudget: 2000,
-      maxSelected: 8
-    });
-    const anchors = projectContextGraphAnchors(weakened, result.selected, 8);
+    const anchors = projectContextGraphAnchors(fixture.cursor, answer.hydration.nodes, 8);
     const weak = anchors.filter((anchor) => !isFactGradeAnchor(anchor.trust_score, anchor.freshness));
     assert.ok(weak.length > 0, 'the weakened symbols should surface as hydrate-only anchors');
     for (const anchor of weak) {
@@ -86,11 +102,12 @@ test('the hydrate hint carries only workspace-relative citations and graph reaso
   assert.ok(ATTENTION_FACT_TRUST_FLOOR > 0 && ATTENTION_FACT_TRUST_FLOOR <= 1);
 });
 
-test('context pack anchors resolve back to graph nodes and gain reason path, provenance and cost', () => {
-  const fixture = createProjectionFixture({ fillerModules: 2 });
+test('context pack anchors resolve back to graph nodes and gain reason path, provenance and cost', async () => {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 2 });
   try {
-    const projected = projectContextPackAnchors(fixture.index, [
-      { id: `code:${HUB_MODULE_LABEL}` },
+    const moduleId = hubModuleId(fixture);
+    const projected = projectContextPackAnchors(fixture.reader, fixture.cursor, [
+      { id: `code:${moduleId}` },
       { id: fixture.hubFileNodeId },
       { id: 'code:not-a-real-module' }
     ]);
@@ -98,9 +115,9 @@ test('context pack anchors resolve back to graph nodes and gain reason path, pro
 
     const moduleAnchor = projected[0];
     assert.ok(moduleAnchor);
-    assert.equal(moduleAnchor.id, `code:${HUB_MODULE_LABEL}`);
+    assert.equal(moduleAnchor.id, `code:${moduleId}`);
     assert.ok(moduleAnchor.provenance.length > 0, 'a resolved module anchor must be grounded');
-    assert.deepEqual(moduleAnchor.reason_path, ['module:src/core/hooks']);
+    assert.deepEqual(moduleAnchor.reason_path, [moduleId]);
     assert.ok(moduleAnchor.token_cost > 0);
 
     const fileAnchor = projected[1];
@@ -121,16 +138,37 @@ test('context pack anchors resolve back to graph nodes and gain reason path, pro
   }
 });
 
-test('anchor ids resolve through both the code-pack form and the raw node id', () => {
-  const fixture = createProjectionFixture({ fillerModules: 1 });
+test('anchor ids resolve through both the code-pack form and the raw node id', async () => {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 1 });
   try {
-    const byLabel = resolveContextGraphAnchorNode(fixture.index, `code:${HUB_MODULE_LABEL}`);
-    assert.equal(byLabel?.kind, 'module');
-    const byNodeId = resolveContextGraphAnchorNode(fixture.index, fixture.hubFileNodeId);
+    const moduleId = hubModuleId(fixture);
+    const byModuleId = resolveContextGraphAnchorNode(fixture.reader, fixture.cursor, `code:${moduleId}`);
+    assert.equal(byModuleId?.kind, 'module');
+    const byNodeId = resolveContextGraphAnchorNode(fixture.reader, fixture.cursor, fixture.hubFileNodeId);
     assert.equal(byNodeId?.path, HUB_FILE);
-    const byPrefixedNodeId = resolveContextGraphAnchorNode(fixture.index, `code:${fixture.hubFileNodeId}`);
+    const byPrefixedNodeId = resolveContextGraphAnchorNode(fixture.reader, fixture.cursor, `code:${fixture.hubFileNodeId}`);
     assert.equal(byPrefixedNodeId?.id, fixture.hubFileNodeId);
-    assert.equal(resolveContextGraphAnchorNode(fixture.index, 'code:nope'), null);
+    assert.equal(resolveContextGraphAnchorNode(fixture.reader, fixture.cursor, 'code:nope'), null);
+  } finally {
+    removeProjectionFixture(fixture.root);
+  }
+});
+
+test('BLOCKED: a bare module label resolves nothing, because revision 1 has no label table', async () => {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 1 });
+  try {
+    // v1 resolved this through `index.nodesByLabel`. The exact table holds
+    // canonical node ids and the basename table holds whole workspace-relative
+    // paths, so a label reaches neither. Reported, never guessed at (ADR §4):
+    // a BM25F match promoted to an anchor would attach one module's provenance
+    // to another module's claim.
+    assert.equal(resolveContextGraphAnchorNode(fixture.reader, fixture.cursor, `code:${HUB_MODULE_LABEL}`), null);
+    const [anchor] = projectContextPackAnchors(fixture.reader, fixture.cursor, [{ id: `code:${HUB_MODULE_LABEL}` }]);
+    assert.ok(anchor);
+    assert.deepEqual(anchor.provenance, []);
+    assert.equal(anchor.claim_hash, null);
+    assert.equal(anchor.trust_score, 0);
+    assert.ok(anchor.hydrate_hint?.includes('graph:unresolved_anchor'));
   } finally {
     removeProjectionFixture(fixture.root);
   }

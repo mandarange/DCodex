@@ -197,3 +197,4 @@ export function sourceHashesOf(geometry: ContextIndexGeometry): readonly Context
   }
   return pairs;
 }
+

@@ -1,3 +1,4 @@
+import { CONTEXT_GRAPH_REBUILD_INDEX_COMMAND, CONTEXT_GRAPH_UPDATE_COMMAND } from '../contracts.js';
 /**
  * SKSCG2 binary index format — header, section table, and the validation that
  * makes an untrusted file safe to read.
@@ -112,8 +113,8 @@ export const CONTEXT_INDEX_FORMAT_ERRORS = {
 
 export type ContextIndexFormatErrorCode = keyof typeof CONTEXT_INDEX_FORMAT_ERRORS;
 
-export const CONTEXT_INDEX_REPAIR_COMMAND = 'sks align run --rebuild-index' as const;
-export const CONTEXT_INDEX_UPDATE_COMMAND = 'sks update' as const;
+export const CONTEXT_INDEX_REPAIR_COMMAND = CONTEXT_GRAPH_REBUILD_INDEX_COMMAND;
+export const CONTEXT_INDEX_UPDATE_COMMAND = CONTEXT_GRAPH_UPDATE_COMMAND;
 
 /**
  * Carries the failing code and integers only.

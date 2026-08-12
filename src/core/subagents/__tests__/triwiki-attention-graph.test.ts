@@ -9,24 +9,30 @@ import {
   extractBoundedTriwikiAttention,
   readBoundedTriwikiAttention
 } from '../triwiki-attention.js';
-import { clearContextGraphSnapshotCache } from '../../triwiki/context-graph/query/snapshot-cache.js';
 import { projectContextPackAnchors } from '../../triwiki/context-graph/projections/anchors.js';
 import {
   HUB_FILE,
-  HUB_MODULE_LABEL,
   createProjectionFixture,
-  removeProjectionFixture,
-  writeFixtureGraph
+  removeProjectionFixture
 } from '../../triwiki/context-graph/projections/__tests__/projection-fixtures.js';
+import {
+  createIndexedProjectionFixture,
+  resetContextIndexCache
+} from '../../triwiki/context-graph/projections/__tests__/projection-index-fixtures.js';
 
-async function withGraphWorkspace<T>(run: (root: string, fixtureHubId: string) => Promise<T>): Promise<T> {
-  const fixture = createProjectionFixture({ fillerModules: 4 });
-  clearContextGraphSnapshotCache();
+/**
+ * The workspace now carries a published CRK2 generation, not a JSON snapshot
+ * (CG2-13). That is the whole point of this file after the migration: this
+ * consumer's wrapper never changed, so only an end-to-end call against a real
+ * index can show that its anchors are still coming from somewhere real.
+ */
+async function withGraphWorkspace<T>(
+  run: (root: string, fixtureHubId: string) => Promise<T>
+): Promise<T> {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 4 });
   try {
-    await writeFixtureGraph(fixture);
     return await run(fixture.root, fixture.hubFileNodeId);
   } finally {
-    clearContextGraphSnapshotCache();
     removeProjectionFixture(fixture.root);
   }
 }
@@ -86,7 +92,7 @@ test('the anchor limit is clamped to the bounded range', async () => {
 
 test('a missing graph is reported explicitly instead of degrading to text matching', async () => {
   const fixture = createProjectionFixture({ fillerModules: 0 });
-  clearContextGraphSnapshotCache();
+  resetContextIndexCache();
   try {
     const attention = await readBoundedTriwikiAttention(fixture.root, 8, HUB_FILE);
     assert.equal(attention.available, false);
@@ -96,15 +102,17 @@ test('a missing graph is reported explicitly instead of degrading to text matchi
     assert.equal(attention.attention_mode, null);
     assert.equal(attention.profile, null);
   } finally {
-    clearContextGraphSnapshotCache();
     removeProjectionFixture(fixture.root);
   }
 });
 
 test('a stale graph is refused rather than answered from a lexical index', async () => {
   await withGraphWorkspace(async (root) => {
+    // Staleness is now the preflight's source fingerprint disagreeing with the
+    // pointer's, which is what "the index describes a tree that has moved" means
+    // when there is no snapshot left to re-hash.
     const attention = await readBoundedTriwikiAttention(root, 8, HUB_FILE, {
-      status: { status: 'stale', reasons: ['source_hash_mismatch'] }
+      expectedSourceFingerprint: 'a-fingerprint-this-workspace-does-not-have'
     });
     assert.equal(attention.available, false);
     assert.equal(attention.reason, 'context_graph_stale');
@@ -139,11 +147,16 @@ test('the retired lexical scorer is not present in the shipped module', () => {
   assert.ok(!shipped.includes('attentionQueryTokens'), 'the query tokenizer must not survive');
 });
 
-test('the context pack projection keeps declared order and carries enriched anchor fields', () => {
-  const fixture = createProjectionFixture({ fillerModules: 2 });
+test('the context pack projection keeps declared order and carries enriched anchor fields', async () => {
+  const fixture = await createIndexedProjectionFixture({ fillerModules: 2 });
   try {
-    const rows = projectContextPackAnchors(fixture.index, [
-      { id: `code:${HUB_MODULE_LABEL}` },
+    // Anchored on canonical node ids. `code:<module-label>` resolved in v1 and
+    // does not against format revision 1, which has no label table — see the
+    // blocked case in `projections/__tests__/anchors.test.ts`.
+    const moduleNode = fixture.snapshot.nodes.find((node) => node.kind === 'module');
+    assert.ok(moduleNode);
+    const rows = projectContextPackAnchors(fixture.reader, fixture.cursor, [
+      { id: `code:${moduleNode.id}` },
       { id: fixture.hubFileNodeId }
     ]);
     const attention = extractBoundedTriwikiAttention({ attention: { mode: 'graph', use_first: rows } }, 5);
@@ -151,7 +164,7 @@ test('the context pack projection keeps declared order and carries enriched anch
     assert.equal(attention.source, '.sneakoscope/wiki/context-pack.json');
     assert.deepEqual(
       attention.anchors.map((anchor) => anchor.id),
-      [`code:${HUB_MODULE_LABEL}`, fixture.hubFileNodeId]
+      [`code:${moduleNode.id}`, fixture.hubFileNodeId]
     );
     for (const anchor of attention.anchors) {
       assert.ok(anchor.provenance.length > 0);

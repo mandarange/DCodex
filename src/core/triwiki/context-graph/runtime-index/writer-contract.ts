@@ -47,6 +47,12 @@ export const CONTEXT_INDEX_TERM_ROW_BYTES = 12;
 export const CONTEXT_INDEX_METADATA_ROW_BYTES = 12;
 export const CONTEXT_INDEX_SOURCE_HASH_ROW_BYTES = 8;
 
+/**
+ * Every profile bit set: revision 1 reserves the per-edge profile mask without
+ * filling it, so it must never be read as an exclusion.
+ */
+export const CONTEXT_INDEX_PROFILE_MASK_RESERVED = 0xffff
+
 /** Sentinel for an absent u32 reference. */
 export const CONTEXT_INDEX_NO_VALUE = 0xffffffff;
 
@@ -80,6 +86,12 @@ export const CONTEXT_INDEX_WRITER_ERRORS = {
   dangling_edge: 'context_index_writer_dangling_edge',
   count_limit: 'context_index_writer_count_limit',
   duplicate_node: 'context_index_writer_duplicate_node',
+  // The lexicon lanes are the one part of the file the writer builds from a
+  // separate module's output, so their cross-table agreements are asserted at
+  // the write site. Reaching the reader instead would surface as
+  // `csr_not_monotonic` — a corruption code for a compiler bug, telling a user
+  // to rebuild a file that would be rebuilt exactly as wrong.
+  lexicon_invariant: 'context_index_writer_lexicon_invariant',
 } as const;
 
 export type ContextIndexWriterErrorCode = keyof typeof CONTEXT_INDEX_WRITER_ERRORS;

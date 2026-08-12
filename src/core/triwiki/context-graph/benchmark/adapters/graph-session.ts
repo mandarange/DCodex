@@ -19,9 +19,11 @@
  */
 import type { ContextGraphExtractionLimits, ContextGraphExtractor, ContextGraphSnapshot } from '../../contracts.js';
 import type { ContextGraphIndex } from '../../graph-index.js';
+import type { ContextIndexReader } from '../../runtime-index/reader.js';
 import { compileContextGraph } from '../../compiler/index.js';
 import { contextGraphExtractors } from '../../extractors/index.js';
 import { clearContextGraphSnapshotCache, loadContextGraphIndex } from '../../query/index.js';
+import { BenchmarkIndexError, buildBenchmarkContextIndex, type BenchmarkContextIndex } from './graph-v2-index.js';
 
 /** Structural facts about the compiled snapshot, measured once per root. */
 export interface ContextGraphSnapshotSafety {
@@ -36,6 +38,18 @@ export interface ContextGraphSnapshotSafety {
 
 export interface ContextGraphSession {
   readonly index: ContextGraphIndex;
+  /**
+   * The v2 binary reader over the same snapshot.
+   *
+   * Non-optional by design. Consumers migrated to CG2-13 take a reader, and a
+   * reader that could be absent would let a consumer answer "nothing found" for
+   * a workspace that has something — which for the conflict consumer means
+   * reporting `conflictRecall = 1.0` while measuring nothing at all. A root that
+   * cannot produce a reader fails to acquire instead.
+   */
+  readonly reader: ContextIndexReader;
+  /** Encoded index size, for the §12.4 byte telemetry. */
+  readonly indexBytes: number;
   readonly safety: ContextGraphSnapshotSafety;
   /** True when the index came from the in-process snapshot cache instead of a parse. */
   readonly cacheHit: boolean;
@@ -103,6 +117,15 @@ function compileFailure(blockers: readonly string[], reason: string | null): Ses
 export class ContextGraphSessionCache {
   private readonly safetyByRoot = new Map<string, ContextGraphSnapshotSafety>();
 
+  /**
+   * The v2 index per root, encoded once on the cold path.
+   *
+   * Memoized beside the safety record rather than rebuilt per query: a warm
+   * iteration must not pay to re-encode, or the cold/warm split stops meaning
+   * what the report says it means.
+   */
+  private readonly indexByRoot = new Map<string, BenchmarkContextIndex>();
+
   private readonly options: ContextGraphSessionOptions;
 
   constructor(options: ContextGraphSessionOptions = {}) {
@@ -117,17 +140,21 @@ export class ContextGraphSessionCache {
   /** Drop the memo and the shared in-process snapshot cache. */
   reset(): void {
     this.safetyByRoot.clear();
+    this.indexByRoot.clear();
     clearContextGraphSnapshotCache();
   }
 
   async acquire(root: string, observedAt: string): Promise<ContextGraphSessionResult> {
     let safety = this.safetyByRoot.get(root);
+    let binary = this.indexByRoot.get(root);
     const compiled = safety === undefined;
-    if (safety === undefined) {
+    if (safety === undefined || binary === undefined) {
       const built = await this.compile(root, observedAt);
       if (!built.ok) return built;
       safety = built.safety;
+      binary = built.index;
       this.safetyByRoot.set(root, safety);
+      this.indexByRoot.set(root, binary);
     }
 
     // `status: fresh` is the caller's preflight verdict. The benchmark just
@@ -142,7 +169,17 @@ export class ContextGraphSessionCache {
         errors: [...load.errors]
       };
     }
-    return { ok: true, session: { index: load.index, safety, cacheHit: load.cacheHit, compiled } };
+    return {
+      ok: true,
+      session: {
+        index: load.index,
+        reader: binary.reader,
+        indexBytes: binary.indexBytes,
+        safety,
+        cacheHit: load.cacheHit,
+        compiled
+      }
+    };
   }
 
   private extractors(): ContextGraphExtractor[] {
@@ -153,7 +190,7 @@ export class ContextGraphSessionCache {
   private async compile(
     root: string,
     observedAt: string
-  ): Promise<{ ok: true; safety: ContextGraphSnapshotSafety } | SessionFailure> {
+  ): Promise<{ ok: true; safety: ContextGraphSnapshotSafety; index: BenchmarkContextIndex } | SessionFailure> {
     const limits = this.options.limits;
     const first = await compileContextGraph({
       root,
@@ -177,6 +214,20 @@ export class ContextGraphSessionCache {
       });
       determinismHash = second.snapshot?.snapshotHash ?? null;
     }
-    return { ok: true, safety: measureSnapshotSafety(first.snapshot, determinismHash) };
+
+    // Encoded from the snapshot just compiled, so this costs an encode and a
+    // validate on the cold path and nothing on the warm one. A refusal here is
+    // returned as a compile failure rather than swallowed: a session without a
+    // reader would hand the conflict consumer nothing to read, and an empty
+    // conflict set from an absent index is indistinguishable from a workspace
+    // that genuinely has no collision.
+    let index: BenchmarkContextIndex;
+    try {
+      index = buildBenchmarkContextIndex(first.snapshot);
+    } catch (error: unknown) {
+      const code = error instanceof BenchmarkIndexError ? error.adapterErrorCode : 'adapter_error:index_build_failed';
+      return { ok: false, errorCode: code, errors: [code] };
+    }
+    return { ok: true, safety: measureSnapshotSafety(first.snapshot, determinismHash), index };
   }
 }

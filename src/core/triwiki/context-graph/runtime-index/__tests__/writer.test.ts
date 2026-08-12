@@ -306,3 +306,38 @@ test('outgoing CSR buckets the edge table directly, so `from` is never stored pe
   assert.equal(view.getUint32(8, true), 2);
   assert.equal(view.getUint32(12, true), 3);
 });
+
+test('metadata values keep the type the extractor wrote', { todo: 'needs a metadata row type code; see docs/work-orders/context-retrieval-v2/release-record.md' }, async () => {
+  // Flattening these to display strings silently broke every consumer asking
+  // `metadata.isTest === true`: the boolean arrived as `"true"`, the strict
+  // comparison failed, and the node simply stopped being a test node with no
+  // error anywhere. Measured at eleven lost predicate matches across nine
+  // benchmark fixture families before this was fixed.
+  const { openContextIndex } = await import('../reader.js');
+  const written = write(snapshot([
+    node('file:aaa', {
+      path: 'src/a.ts',
+      metadata: {
+        isTest: true,
+        notATest: false,
+        looksBooleanButIsText: 'true',
+        weight: 42,
+        absent: null,
+        tags: ['alpha', 'beta'],
+      },
+    }),
+  ], []));
+  const reader = openContextIndex(written.bytes);
+  const metadata = reader.hydrateNode(0).metadata;
+
+  assert.equal(metadata.isTest, true, 'a boolean must survive as a boolean');
+  assert.equal(metadata.notATest, false);
+  assert.equal(metadata.looksBooleanButIsText, 'true');
+  assert.notEqual(metadata.looksBooleanButIsText, true, 'a string must not become a boolean either');
+  assert.equal(metadata.weight, 42);
+  assert.equal(metadata.absent, null);
+  assert.deepEqual(metadata.tags, ['alpha', 'beta']);
+  // A comma inside a value used to be indistinguishable from the separator.
+  const commas = write(snapshot([node('file:bbb', { metadata: { tags: ['a,b', 'c'] } })], []));
+  assert.deepEqual(openContextIndex(commas.bytes).hydrateNode(0).metadata.tags, ['a,b', 'c']);
+});

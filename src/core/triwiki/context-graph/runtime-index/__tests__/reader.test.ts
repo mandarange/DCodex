@@ -73,6 +73,20 @@ test('the basename lane returns every node sharing a path, in node order', () =>
   assert.equal(reader.basename('src/missing.ts').length, 0);
 });
 
+test('a term resolves to the id the scored lanes take, and to -1 when unseen', () => {
+  const reader = openFixture();
+  // The id space is the string table, and the exact lane is keyed by the same
+  // ids — so resolving a term and looking it up must agree, or the lexical
+  // lanes would be searching a different dictionary than the anchor lane.
+  const id = reader.termId('gate:release:proof');
+  assert.ok(id >= 0 && id < reader.stringCount);
+  assert.equal(reader.exact('gate:release:proof').node(0), GATE);
+  assert.equal(reader.termId('never-interned'), -1);
+  // Ids follow the interner's UTF-16 code-unit order, which is what lets a
+  // term table be binary-searched by id.
+  assert.ok(reader.termId('file:src/a.ts') < reader.termId('file:src/b.ts'));
+});
+
 test('a posting index outside the run throws instead of reading the next term', () => {
   const reader = openFixture();
   const hits = reader.exact('file:src/a.ts');

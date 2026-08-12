@@ -43,7 +43,10 @@ import {
 import { computeContextGraphCacheKey } from '../triwiki/context-graph/compiler/cache-key.js';
 import { walkCodeInventory } from '../triwiki/context-graph/extractors/code/inventory.js';
 import { codeInventoryInputHashes } from '../triwiki/code-navigation-policy.js';
-import { clearContextGraphSnapshotCache } from '../triwiki/context-graph/query/snapshot-cache.js';
+import { clearContextGraphSnapshotCache } from '../triwiki/context-graph/query/index.js';
+import { CONTEXT_INDEX_FORMAT_REVISION } from '../triwiki/context-graph/runtime-index/format.js';
+import { encodeContextIndex } from '../triwiki/context-graph/runtime-index/writer.js';
+import { openContextIndex, type ContextIndexReader } from '../triwiki/context-graph/runtime-index/reader.js';
 import { withTriWikiStateLock } from '../triwiki/triwiki-cleanup.js';
 import { publishArchitectureMapToStage } from '../triwiki/context-graph/store/architecture-map-store.js';
 import {
@@ -207,14 +210,45 @@ async function writeEvidence(root: string, dir: string, ledger: AlignLedger, mis
   return (await refreshAlignGate(dir, missionId, root)).gate;
 }
 
+/**
+ * Config identity for the in-memory index align projects the pack from.
+ *
+ * Fixed rather than derived from ambient ranking config: nothing reads this
+ * index back, and a value that moved between runs would make two otherwise
+ * identical aligns produce different index bytes.
+ */
+const ALIGN_PACK_INDEX_CONFIG_HASH: Uint8Array = new Uint8Array(
+  crypto.createHash('sha256').update('sks.code-navigation-align-pack-index.v1').digest()
+);
+
+/**
+ * Open the compiled snapshot as a compact index.
+ *
+ * `projections/code-pack.ts` migrated to the CRK2 reader (CG2-13), and align
+ * projects its pack from a snapshot it has just compiled in memory — before any
+ * generation is published, so there is nothing for the query facade to open. The
+ * encode is therefore done here, and this is the seam align's own migration
+ * replaces: once the compiler publishes a generation, the pack is projected from
+ * the published reader and this function goes away.
+ */
+function openCompiledIndex(snapshot: ContextGraphSnapshot): ContextIndexReader {
+  const encoded = encodeContextIndex({
+    snapshot,
+    configHash: ALIGN_PACK_INDEX_CONFIG_HASH,
+    schemaRevision: CONTEXT_INDEX_FORMAT_REVISION
+  });
+  return openContextIndex(encoded.bytes, { expectedSnapshotHash: snapshot.snapshotHash });
+}
+
 async function buildPack(root: string, snapshot: ContextGraphSnapshot, meta: ContextGraphMeta, generatedAt: string) {
-  const first = projectCodePackFromGraph(root, snapshot, {
+  const reader = openCompiledIndex(snapshot);
+  const first = projectCodePackFromGraph(root, reader, {
     generatedAt,
     gitHeadSha: meta.cacheKeyParts.head,
     snapshotFreshness: 'fresh'
   });
   const observed = await readSourceHashes(root, citedPaths(first.pack));
-  return projectCodePackFromGraph(root, snapshot, {
+  return projectCodePackFromGraph(root, reader, {
     generatedAt,
     gitHeadSha: meta.cacheKeyParts.head,
     snapshotFreshness: 'fresh',

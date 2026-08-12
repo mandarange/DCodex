@@ -16,9 +16,9 @@
 import { CONTEXT_GRAPH_REPAIR_COMMAND } from '../triwiki/context-graph/contracts.js'
 import type { ContextGraphFreshness } from '../triwiki/context-graph/contracts.js'
 import type { ContextGraphQueryProfileName } from '../triwiki/context-graph/profiles.js'
-import type { LoadContextGraphIndexOptions } from '../triwiki/context-graph/query/load.js'
 import {
   readContextGraphAttention,
+  type ContextGraphAttentionOptions,
   type ContextGraphAttentionReason
 } from '../triwiki/context-graph/projections/attention.js'
 import type { ProjectedAttentionAnchor } from '../triwiki/context-graph/projections/anchors.js'
@@ -75,7 +75,7 @@ export interface BoundedTriwikiAttention {
   token_budget: number
 }
 
-export interface ReadBoundedTriwikiAttentionOptions extends LoadContextGraphIndexOptions {
+export interface ReadBoundedTriwikiAttentionOptions extends ContextGraphAttentionOptions {
   /** `implementation` (default) for build work, `answer` for knowledge retrieval. */
   readonly profile?: ContextGraphQueryProfileName | undefined
   readonly tokenBudget?: number | undefined

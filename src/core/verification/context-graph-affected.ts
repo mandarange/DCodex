@@ -13,9 +13,11 @@
  * suites that exercise the changed symbols. Each addition carries the hop chain
  * and the provenance record that produced it.
  *
- * A missing, corrupt or stale graph never shrinks the answer and never silently
- * degrades to text matching: the baseline is returned unchanged, the run is
- * marked conservative, and the repair command is surfaced.
+ * The index is resolved through the query facade, never by reading the snapshot
+ * store directly, so this module fails closed on exactly the states the facade
+ * does. A missing, corrupt or stale graph never shrinks the answer: the baseline
+ * is returned unchanged, the run is marked conservative, and the repair command
+ * is surfaced.
  */
 import {
   CONTEXT_GRAPH_CORRUPT_ERROR,
@@ -26,16 +28,11 @@ import {
   type ContextGraphNode,
   type ContextGraphStatusCode
 } from '../triwiki/context-graph/contracts.js';
-import {
-  buildContextGraphIndex,
-  incomingEdges,
-  outgoingEdges,
-  type ContextGraphIndex
-} from '../triwiki/context-graph/graph-index.js';
+import { incomingEdges, outgoingEdges, type ContextGraphIndex } from '../triwiki/context-graph/graph-index.js';
 import { contextGraphPathFromId } from '../triwiki/context-graph/ids.js';
 import { isWorkspaceRelativePosixPath } from '../triwiki/context-graph/paths.js';
 import type { ContextGraphExplanationStep, ContextGraphProvenanceRef } from '../triwiki/context-graph/query-types.js';
-import { readContextGraphSnapshot } from '../triwiki/context-graph/store/snapshot-store.js';
+import { loadContextGraphIndex, type ContextGraphLoadErrorCode } from '../triwiki/context-graph/query/index.js';
 import { ALWAYS_ON_GATES, selectGates, type GateManifestEntry, type GateTier } from '../release/gate-manifest.js';
 
 export const CONTEXT_GRAPH_AFFECTED_SCHEMA = 'sks.context-graph-affected-verification.v1' as const;
@@ -373,20 +370,23 @@ export function contextGraphAffectedVerificationFromIndex(index: ContextGraphInd
   });
 }
 
+/** Inverted from `ERROR_BY_STATUS` rather than restated, so the round trip cannot drift. */
+function statusOfLoadError(code: ContextGraphLoadErrorCode | null): ContextGraphStatusCode {
+  return (Object.keys(ERROR_BY_STATUS) as ContextGraphStatusCode[]).find((status) => ERROR_BY_STATUS[status] === code) ?? 'corrupt';
+}
+
 /**
- * Resolve the stored snapshot for `request.root` and answer. A snapshot that is
- * absent or unreadable still returns the exact selector's gates — never fewer.
+ * Resolve the workspace index through the query facade and answer. An index that
+ * is absent, stale or unreadable still returns the exact selector's gates — never
+ * fewer — carrying the same public code the facade refused with.
  */
 export async function contextGraphAffectedVerification(request: ContextGraphAffectedRequest): Promise<ContextGraphAffectedResult> {
   if (request.index) return contextGraphAffectedVerificationFromIndex(request.index, request);
   const changedFiles = [...new Set(request.changedFiles.map(relativePath).filter((value): value is string => value !== null))].sort();
-  const empty = { details: [], tests: [], unresolved: [], truncated: false, warnings: [] };
-  if (request.graphStatus && request.graphStatus !== 'fresh') {
-    return assemble(request, request.graphStatus, '', changedFiles, empty);
-  }
-  const load = await readContextGraphSnapshot(request.root);
-  if (load.status !== 'ok' || !load.snapshot) {
-    return assemble(request, load.status === 'missing' ? 'missing' : 'corrupt', '', changedFiles, empty);
-  }
-  return contextGraphAffectedVerificationFromIndex(buildContextGraphIndex(load.snapshot), request);
+  const verdict = request.graphStatus === undefined ? {} : { status: { status: request.graphStatus } };
+  const load = await loadContextGraphIndex(request.root, verdict);
+  if (load.ok && load.index) return contextGraphAffectedVerificationFromIndex(load.index, request);
+  // `load.warnings` is dropped on purpose: its only reachable value here is
+  // "freshness was not verified", which `assemble` already reports as a reason.
+  return assemble(request, statusOfLoadError(load.errorCode), load.snapshotHash, changedFiles, { details: [], tests: [], unresolved: [], truncated: false, warnings: [] });
 }

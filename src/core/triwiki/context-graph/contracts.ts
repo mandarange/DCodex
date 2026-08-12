@@ -20,6 +20,18 @@ export const CONTEXT_GRAPH_CORRUPT_ERROR = 'context_graph_corrupt' as const;
 /** Product SSOT for code-index rebuild (NC-21). `sks wiki refresh --code` aliases here. */
 export const CONTEXT_GRAPH_REPAIR_COMMAND = 'sks align run' as const;
 
+/**
+ * The only definitions of the repair commands, for every layer.
+ *
+ * These strings are instructions a user will type. Restating a literal per
+ * module means a rename fixes some call sites and leaves the rest telling
+ * people to run a command that no longer exists — a wrong instruction, which is
+ * worse than a vague one. `contracts.ts` is above every consumer, so importing
+ * from here cannot create a cycle.
+ */
+export const CONTEXT_GRAPH_REBUILD_INDEX_COMMAND = 'sks align run --rebuild-index' as const;
+export const CONTEXT_GRAPH_UPDATE_COMMAND = 'sks update' as const;
+
 export const CONTEXT_GRAPH_NODE_KINDS = [
   'file',
   'symbol',

@@ -313,3 +313,78 @@ export {
   getCachedContextGraphIndex,
   type ContextGraphSnapshotCacheStats
 } from './snapshot-cache.js';
+
+// ---------------------------------------------------------------------------
+// CRK2 (CG2-13). The compact surface every consumer migrates onto.
+//
+// `verifyHydrationOnDisk` is deliberately absent. `hydrate.ts` does not
+// re-export it either, and that pair of non-re-exports is the whole reason the
+// query path links no filesystem module: strict callers import it from
+// `hydrate-verify.js` directly, and routing it through this barrel would make
+// every consumer of the facade pull `node:fs` in behind it.
+// ---------------------------------------------------------------------------
+export {
+  CONTEXT_WORKSPACE_QUERY_SCHEMA,
+  clearWorkspaceContextIndex,
+  isMissingWorkspaceContextIndex,
+  openWorkspaceContextIndex,
+  queryWorkspaceContext,
+  workspaceContextFailureOf,
+  type OpenWorkspaceContextIndexOptions,
+  type WorkspaceContextAnswer,
+  type WorkspaceContextFailure,
+  type WorkspaceContextIndexHandle,
+  type WorkspaceContextQueryOptions
+} from './workspace.js';
+export {
+  REVERSE_HOP_PREFIX,
+  contextNodeFlag,
+  contextWalkProvenance,
+  contextWalkRoot,
+  resolveContextSeeds,
+  walkContextGraph,
+  type ContextSeedResolution,
+  type ContextWalkCaps,
+  type ContextWalkHit,
+  type ContextWalkRequest,
+  type ContextWalkResult
+} from './walk.js';
+export {
+  ContextIndexCache,
+  CONTEXT_INDEX_CACHE_DEFAULT_BUDGET,
+  contextIndexWorkspaceKey,
+  setSharedContextIndexCache,
+  sharedContextIndexCache,
+  type ContextIndexCacheStats
+} from './cache.js';
+export {
+  CONTEXT_HYDRATION_SCHEMA,
+  contextHydrationCoverage,
+  hydrateSelectedCandidates,
+  withHydrationGrounding,
+  HydrationCursor,
+  type HydratedNode,
+  type HydrationGrounding,
+  type HydrationOmission,
+  type HydrationResult
+} from './hydrate.js';
+export {
+  fixedKernelClock,
+  runContextKernel,
+  type ContextKernelOptions
+} from './kernel.js';
+export type {
+  ContextKernelResult,
+  KernelClock,
+  KernelProvidedSeed,
+  KernelRequest,
+  SelectedCandidate
+} from './kernel-types.js';
+/** Named so consumers have a type without naming a `runtime-index/**` module path. */
+export type {
+  ContextGraphEdgeView,
+  ContextGraphNodeView,
+  ContextIndexReader,
+  EdgeCursor,
+  ProvenanceView
+} from '../runtime-index/reader.js';

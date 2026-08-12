@@ -1,3 +1,4 @@
+import { CONTEXT_GRAPH_REBUILD_INDEX_COMMAND } from '../contracts.js';
 /**
  * Shared vocabulary for the identifier-aware lexicon: field identity, the
  * tuning-surface shape, refusal, and the ordering rule.
@@ -61,7 +62,7 @@ export const CONTEXT_LEXICON_ERRORS = {
 
 export type ContextLexiconErrorCode = keyof typeof CONTEXT_LEXICON_ERRORS;
 
-export const CONTEXT_LEXICON_REPAIR_COMMAND = 'sks align run --rebuild-index' as const;
+export const CONTEXT_LEXICON_REPAIR_COMMAND = CONTEXT_GRAPH_REBUILD_INDEX_COMMAND;
 
 /**
  * Integers only, for the same reason `ContextIndexFormatError` carries integers

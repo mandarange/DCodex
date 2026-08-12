@@ -51,7 +51,7 @@ import {
   toHex,
   type ContextIndexGeometry,
 } from './reader-layout.js';
-import { basenamePostings, exactPostings, mergePostings } from './reader-lookup.js';
+import { basenamePostings, exactPostings, mergePostings, termIdOf } from './reader-lookup.js';
 import { validateContextIndexPayloads } from './reader-validate.js';
 import type {
   CompactNodeScoreFields,
@@ -116,6 +116,10 @@ class BinaryContextIndexReader implements ContextIndexReader {
   }
 
   // -- lookup -------------------------------------------------------------
+
+  termId(term: string): number {
+    return termIdOf(this.geometry, term);
+  }
 
   exact(term: string, fieldMask?: number): PostingSlice {
     return exactPostings(this.geometry, term, fieldMask);
