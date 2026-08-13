@@ -1,57 +1,76 @@
-# Release Proof Truth — 8.7.0
+# Release Proof Truth — 9.0.0
 
 ## Current assertion
 
-8.7.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
-candidate makes `sks doctor --fix` able to clear a stale bridge catalog — four
-independent defects each made the repair a no-op or a lie about its own result —
-and removes Local LLM support in full, which is what makes this a minor rather
-than a patch. This document does not authorize
-publication, deployment, a credential change, a Git tag, or a push. Exact-commit
-proof can exist only after the candidate is committed and all source-bound gates
-are regenerated from that clean commit.
+9.0.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. The
+candidate replaces the context-retrieval engine with the CRK2 binary index and
+takes the on-disk format to revision 2 — the format break is what makes this a
+major. This document does not authorize publication, deployment, a credential
+change, a Git tag, or a push. Exact-commit proof can exist only after the
+candidate is committed and all source-bound gates are regenerated from that
+clean commit.
 
-All release artifacts bound to 8.6.6 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 8.7.0 evidence.
+All release artifacts bound to 8.7.0 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 9.0.0 evidence.
+
+The full engineering record for this candidate — including every measurement
+cited below, the corrections to earlier claims, and the findings that were
+refuted — is `docs/work-orders/context-retrieval-v2/release-record.md`. Where
+this ledger and that record disagree, the record wins; it was written as the
+work happened.
 
 ## Claim ledger
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
-| A session pin survives catalog churn that leaves its route unchanged | passed-hermetic | both resolvers compare the pin against the current route and reissue it against the live generations; pinned by unit, bridge, and architecture-hardening tests, and by a reproduction in which adding one unrelated model changes `policy_generation` |
-| A session pin whose provider or upstream model would change still fails | passed-hermetic | `session_pin_route_unavailable` is retained for that case and for a pin naming a provider or upstream the resolver cannot compare; pinned by the same three suites |
-| `doctor --fix` can repair a managed project config whose `.sneakoscope/manifest.json` is gone | passed-hermetic | reproduced end to end against this repository's own `.codex/config.toml` in an isolated HOME: `config_file_repair.ok` went false to true, ownership resolves from the config's own shape, and the run stamps the durable marker |
-| A blocked `doctor --fix` names its blockers | passed-hermetic | the ten conditions behind the verdict are enumerated into the top-level `blockers`, and a refused config repair carries the manual step in `operator_actions` |
-| SKS only strips Codex feature flags Codex no longer honours | passed-hermetic | `test/unit/codex-feature-flags.test.mjs` runs the vendored Codex 0.147 binary's `features list` and fails if any stripped flag is still live; the assertion was confirmed to bite by injecting `computer_use` |
-| The `[features.multi_agent_v2]` table SKS writes is accepted by Codex | passed-hermetic | the same suite writes the exact table and asserts Codex resolves `multi_agent_v2` to enabled; the struct is `deny_unknown_fields`, so an unknown key would reject the whole config |
-| The doctor idempotence gate can observe a mutating second run | passed-hermetic | measured end to end in an isolated HOME: a first `doctor --fix` on a fresh project reports 26 changed files, the second reports 0; the gate now also fails closed when the field is absent, which is how it silently passed before |
-| `doctor --fix` verifies its result against the files on disk | passed-hermetic | `config_disk_verification` runs after every mutator, including the two that write configs once the fix transaction has closed; `test/unit/doctor-config-disk-verification.test.mjs` pins the unparseable and lane-disabled cases and the `agents.enabled = false` false positive |
-| A mission never requires an architecture-map baseline the seed declined to write | passed-hermetic | reproduced: `seedArchitectureMapBaselineArtifacts` returns `ok: false` with remediation text on a root without a compiled context graph; the plan binding is dropped instead of leaving an unsatisfiable Stop gate, and the four canonical tests it blocked now pass |
-| A spawned subagent thread resolves to its own pin identity | passed-hermetic | reproduced against the compiled resolver: a child turn carrying the parent's `session_id` with its own `thread_id` was rejected as `bridge_codex_session_identity_mismatch` and now resolves; `desktop-bridge-transport.test.ts` pins the child, sibling, bare-WebSocket-header, same-field-conflict and missing-thread cases |
-| A decomposed wider wave is not throttled by the pre-decomposition plan | passed-hermetic | `wave-lifecycle.test.ts` pins all three arms: a grown target with host slots opens the full wave with no blocker, a live slot shortage still throttles, and a plan whose target never grew keeps its deliberate wave staging |
-| A bridge older than the installed package is detected and restarted | passed-hermetic | measured against the real long-running bridge on the development machine: `sks_version` absent, status reports `desktop_bridge_runtime_version_stale:pre-8.6.6:<installed>`; the restart is skipped under test isolation because it shells out to real launchctl |
-| A refused bridge request is logged without leaking a secret | passed-hermetic | `test/unit/desktop-bridge-rejection-log.test.mjs` pins that the capability path segment and query string never reach the log, that a storm is capped at a per-code burst plus a summary, and that a failing write cannot take the bridge down |
-| A home-directory root cannot claim the global Codex config | passed-hermetic | reproduced with a host-owned global config: the marker is no longer stamped and the repair reports `project_config_is_codex_home_noop` with the operator action |
-| npm publish refuses a missing login before building the tarball | passed-hermetic | reproduced against the real expired token that failed an 8.6.2 publish: preflight now exits 1 with npm_publish_auth_missing_or_expired and names the login step; test/unit/publish-registry-auth.test.mjs pins that pack, dry-run, CI trusted publishing and offline runs all skip the check |
-| A pinned thread routes its Responses WebSocket | passed-hermetic | reproduced against the compiled resolver and the live settings (16 model routes, none keyed by the empty string): the upgrade carries no model, so routing came from the thread's session pin; `test/unit/desktop-bridge-websocket-routing.test.mjs` pins the pinned, unpinned, explicit-header and foreign-pin cases |
-| An unroutable upgrade is refused as permanent, not as a bad gateway | passed-hermetic | answered `501 Not Implemented` with `retryable: false`, so a client falls back instead of spending its reconnect budget; the real error code is returned and logged where every failure previously reported an unavailable upstream and recorded nothing |
-| A stale bridge is actually restarted by doctor --fix | passed-hermetic | measured against the real install: the restart resolved the bridge only once the home directory was passed instead of the project root, taking a 29-hour-old pre-8.6.2 process to the installed version with `sks_version` recorded |
-| Every bridge error path records its cause | passed-hermetic | the fourth and last silent writer now logs; triggered live and confirmed `catalog_model_route_missing`, `bridge_websocket_route_unresolvable` (501) and `bridge_responses_body_invalid_json` reach the log with the capability path segment redacted |
-| No remedy points at a command that cannot satisfy it | passed-hermetic | `codex_imagegen_real_output_unverified` states the manual step instead of recommending the doctor run whose own output carries the blocker |
-| A restart drains in-flight requests before closing sockets | passed-hermetic | shutdown previously destroyed every socket at once; `test/unit/desktop-bridge-shutdown-drain.test.mjs` pins that the grace period is bounded at both ends so neither a live request nor a stuck one decides the outcome |
-| The catalog repair is verified rather than assumed | passed-hermetic | reproduced on two machines: `catalog.sync` failed with its rollback also failing and succeeded on the next attempt; the repair now re-reads the catalog and retries, and reports a catalog that survives both attempts |
-| A failed migration names its cause without leaking request data | passed-hermetic | the originating error code is appended and free-form text is refused; pinned against a message containing a path and a token |
-| A provider catalog outlives a working session | passed-hermetic | the 15-minute expiry had no refresher behind it — the running bridge never reads `expires_at` — so every install reported `<provider>_catalog_stale` a quarter of an hour after any sync; measured on the development machine at 10 hours stale while the bridge served traffic normally |
-| The catalog repair addresses the bridge under HOME | passed-hermetic | every bridge path derives from `HOME`; the repair passed the project root, so a doctor run started inside a project found no managed bridge and returned a green check having done nothing |
-| `doctor --fix` reports the bridge as it is after the repair | passed-hermetic | the reported snapshot was taken before the fix transaction, so a successful catalog repair still printed `Desktop Bridge: blocked` listing the blockers it had just cleared |
-| The catalog repair cannot be skipped as clean | passed-hermetic | a catalog lapses with the passage of time, which no phase input hash observes; the phase is now self-guarding and its own first step is a cheap status read that returns immediately when nothing is stale |
-| An inactive provider cannot block bridge readiness | passed-hermetic | readiness demoted its problems to `inactive_provider:<id>:<problem>` and the combined-catalog aggregate promoted the same facts back, so one report carried the identical fact as both a warning and a blocker no `--fix` could clear |
-| Local LLM is removed without stranding GPT Final | passed-hermetic | the arbiter and its acceptance rule survive on the worktree-candidate trigger as `gpt-final:all-pipelines-required`, which is exercised and blocks a worktree candidate with the arbiter unavailable |
-| An installed package still rejects the removed dollar commands | passed-hermetic | that proof was derived from live routes, so deleting the route deleted it; `$with-local-llm-on` and `$with-local-llm-off` are pinned explicitly beside the other removed features and the frozen closure contract is unchanged at 68 probes |
-| The canonical suite is green | passed-hermetic | 2929 of 2929, zero failures, from the candidate tree on a clean build; `build:incremental` leaves orphaned output after a deletion, so the run was repeated against `build:clean` |
-| All checked version authorities report 8.7.0 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, changelog, and release-doc surfaces are bumped together |
-| The reported 8.7.0 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, release-check stamp, and the operator's final registry checks |
-| 8.7.0 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
+| v2 must-include recall exceeds v1 | passed-hermetic | 0.481132 vs 0.460692 over 62 cases, 3 repeats, real engines; re-measured independently on a clean build after every landing with zero per-case drift; the predicted honest ceiling (0.4811) was hit without moving any ranking threshold |
+| The §4 confidence ceiling held through every change | passed-hermetic | violations 10 (v1) / 3 (v2) at every step; name matches claim `text_candidate` structurally (nothing in the change calls `table.claim`), and `demoteKernelConfidence` makes depth monotonically weakening, so deeper traversal cannot promote |
+| Metadata values keep their authored type | passed-hermetic | format revision 2, 16-byte row with type tag and ordinal; both former `todo` tests are plain tests with inverted assertions; `preserved === authored` for all five types across all 14 fixture families; 10 mutations run, the 1 survivor (helper narrowing) closed with a both-spellings test |
+| A revision-1 index is refused with the repair that works | passed-hermetic | refusal happens before any header count is believed; the repair command depends on skew direction — older artifact → `sks align run --rebuild-index`, newer or unknowable → `sks update`; the direction branch is mutation-tested and the pre-existing test's blind spot (`+1` only) is recorded |
+| Freshness answers without the 63 MB parse, and `missing` when no index exists | passed-hermetic | `contextIndexFreshness` verdicts match the JSON path on every measured pair; the meta-present/pointer-absent hole (the exact 8.7.0→9.0.0 upgrade shape) is closed, with the four test sites that asserted the old behaviour named in the record; the preflight was mutated into the refused shape and 4 of 5 tests failed |
+| Caller-supplied changed paths reach the kernel as verified seeds | passed-hermetic | one resolver serves both production call sites and the benchmark; the response cache key includes the resolved seed set; the one case the join costs (`review-reverse-dependency`, −0.500) is named and kept, not netted out |
+| Subagent workers cannot outlive their work | passed-hermetic | process-group teardown on exit/timeout/abort, pre-spawn orphan sweep, stale heartbeats excluded from active sessions, generation-depth guard against recursive spawning; pinned by the worker-runtime, janitor, and orchestrator suites |
+| A stale pooled socket is replayed, not surfaced as 502 | passed-hermetic | replay requires `request.reusedSocket === true` plus ECONNRESET/EPIPE/ECONNABORTED and is one-shot on a fresh connection; pinned by the bridge http-forward suite |
+| Truncating caps report themselves and cut deterministically | passed-hermetic | test selection, added gates, gate warnings, advisor recommendations, and query terms each carry a named reason; kept sets ordered `(depth, key, nodeId)` — invariant under six arrival-order permutations where the old rule kept as few as 66 of 128; gate selection hash-identical across 7 real diffs |
+| Machine feedback runs the runnable related tests | passed-hermetic | the alphabetical pre-filter cut deterministically kept unrunnable tests (`'src/' < 'test/'` is the runnability split); reordered by runnability before the cap, mutation-tested; on the reproducing four-file change the selection went 0 → 7 runnable including the version-sync regression test |
+| Test selection migrated to v2 without shrinking | passed-hermetic | before/after over 19 real diffs: gates and `gate_details` hash-identical 19/19, recommended tests identical 17/19 with the two differences additive or same-count-at-cap; no workspace in the harness contained `context-graph.json`, so a reverted module fails on the first case |
+| Secrets do not reach the index bytes through claim prose or the lexicon | passed-hermetic | entropy guard covers base62/base64/base64url/hex/JWT/email/IPv4 at ≥99.9% on 5,000 random 32-byte secrets per encoding; the extension-join bypass (`<secret>.json` indexed whole while telemetry reported it dropped) is closed with the stem's verdict carried to the join; cost on real claim prose 0 of 24, index bytes byte-identical |
+| The generation store is invisible to git and to its own cache key | passed-hermetic | `.gitignore` and `SKS_GENERATED_GIT_PATTERNS` cover `.sneakoscope/wiki/context-graph/` (fresh installs never had even the v1 protection); cache-key exclusion is by subtree — before the fix, publishing moved `wikiContextHash` and republishing identical content moved it again |
+| The verification budget reacts to what actually changed | passed-hermetic | the hardcoded empty `changedFiles` made `release` unreachable from preparation for every mission ever prepared; the finalizer now recomputes from the parent's reported list and never returns weaker than the plan; both fixes mutation-tested, including against the tempting in-scope variable that would have been wrong |
+| The canonical suite is green | passed-hermetic | 3,474 of 3,474, zero failures, zero todo, on a clean build (2,929 at 8.7.0); the affected release-gate DAG ran strict with 0 blockers at every landing |
+| The integration audit's blockers are closed | passed-hermetic | 29 candidates across six dimensions, 6 survived adversarial refutation, 4 were blockers, all 4 fixed in-tree before this bump; the refuted 23 are recorded so they are not re-derived |
+| All checked version authorities report 9.0.0 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, plugin manifest, Cargo.toml/lock, README banner, changelog, and the rebuilt `dist/build-manifest.json` move together |
+| The reported 9.0.0 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, and release-check stamp regenerated from that commit |
+| 9.0.0 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
+
+## Known limitations shipped deliberately
+
+These are not open defects; each is a measured decision the record explains.
+They are listed here because a limitation that ships unnamed becomes next
+release's "regression".
+
+- **The JSON snapshot file is not deleted.** Two readers remain by design: the
+  lint rules that assert properties of the file's bytes (serialization order, a
+  hash over it) and the architecture-map baseline that embeds and hashes the
+  whole snapshot. Both need contract changes, not migrations. The v1 query
+  engine is unreachable from production search but still present.
+- **`requiredForPublish` / `alwaysOnRelease` are predicate-verified and
+  production-unreachable.** `buildGateNodes` sets the flag and protected risk in
+  one call, so the metadata arms cannot fire on real data; a green run after any
+  future migration is not evidence they work. The quality gate reports
+  `protected_metadata_arm_unreachable: true` so this stays visible.
+- **Two benchmark cases resist both engines** (`focus-path-restricted-answer`,
+  `graph-dependency-cycle`) — documented v2 limitations, not chased.
+- **Four evidence-lane gold targets are unrealized** (62 of 76): the benchmark
+  fixture has no context pack, so both engines score zero there and cancel.
+  Resolving this must not be done by editing gold; it is a recorded decision
+  waiting on a fixture, not a cleanup.
+- **The system-wide extractor metadata entropy gap remains open** for fields
+  other than claim prose (proof hashes and digests are legitimate
+  entropy-shaped content, so the guard is per-field opt-in). Tolerable for a
+  local, gitignored cache — which the store now provably is.
+- **`maxTests: 128` was not raised.** It bites on 1 of 7 sampled real diffs and
+  now reports itself; raising it is an unmeasured decision left on the record.
 
 ## Evidence classes
 
@@ -70,7 +89,7 @@ fixture, or package dry run cannot promote a real-environment row to passed.
 
 Paseo is an independent external product. Sneakoscope does not bundle its
 daemon, wrap its CLI, probe its health, own its authentication or relay
-lifecycle, or require a live Paseo session as 8.7.0 release proof. The owned
+lifecycle, or require a live Paseo session as 9.0.0 release proof. The owned
 contract is limited to the committed `paseo.json` and accurate usage guidance.
 
 The active Telegram command, transport, Doctor projection, native poller and
@@ -81,13 +100,15 @@ not evidence of an active integration.
 
 ## Exact-commit release evidence
 
-Before any release claim, regenerate and verify current 8.7.0-bound artifacts
+Before any release claim, regenerate and verify current 9.0.0-bound artifacts
 from the clean handoff commit, including the build manifest, version metadata,
 package proof, pack receipt, release provenance, and release-check stamp. Each
 must bind the exact source digest, Git commit, tarball bytes, and package
-version required by its schema.
+version required by its schema. The release-check stamp must be produced under
+the lifecycle Node (nvm v24.0.2), not the Homebrew Node, or it fails with a
+false `canonical_test_proof_node_version_mismatch`.
 
-Existing 8.4.0 and earlier canonical-test proofs, pack receipts, provenance,
+Existing 8.7.0 and earlier canonical-test proofs, pack receipts, provenance,
 and stamps are stale for this candidate. Local focused tests and a dry-run
 tarball remain preparation evidence only until the repository's clean-commit
 release flow produces current receipts.
@@ -100,16 +121,12 @@ The following remain **not-run-real** or **blocked-external**:
   `physical_proof_requirement_missing` until the publish workflow produces a
   GitHub-attested capture run; `gh attestation verify` cannot be satisfied by
   any local run, so this is the one release requirement no local flow can meet;
-- user confirmation that a live Codex Desktop session keeps its pinned provider
-  across a catalog refresh (the host boundary policy forbids driving
-  `com.openai.codex` directly, so the fix is proved hermetically and by
-  reproduction, not against the running Desktop app);
+- an upgraded real workspace observed end to end: a machine arriving from
+  8.7.0 should hit exactly one `context_graph_missing` refusal naming
+  `sks align run --rebuild-index`, run it once, and retrieve normally — proved
+  hermetically by the upgrade-shaped freshness tests, not yet witnessed on a
+  user machine;
 - npm publication or dist-tag mutation.
-
-Regenerated from the candidate commit, the release gate DAG, canonical tests,
-the isolated 7.6.0→8.7.0 upgrade smoke, and the macOS Menu Bar proof are
-**passed-hermetic**; the live `codex-sdk:real-smoke` and Codex core real probes
-report `proven` against the real runtime.
 
 The operator owns those credentials and registry mutations. Git promotion is
 allowed only under an explicit user request after exact candidate checks and

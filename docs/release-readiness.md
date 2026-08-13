@@ -1,4 +1,65 @@
-# SKS 8.7.0 Release Readiness
+# SKS 9.0.0 Release Readiness
+
+## Current decision
+
+**SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
+
+9.0.0 replaces the context-retrieval engine. `sks search --mode context` and the
+subagent attention path now answer from a compiled binary index (SKSCG2, format
+revision 2) instead of parsing a 63 MB JSON snapshot per query, and the major
+bump is the format break: a revision-2 reader refuses a revision-1 index, so the
+first context query after upgrading asks for one `sks align run
+--rebuild-index`. Nothing is migrated because there is nothing to migrate — the
+index is a generated cache with a deterministic rebuild.
+
+The number that gates the cutover is recall, and it was held to. v2 must-include
+recall is **0.481132 against v1's 0.460692** over 62 benchmark cases and real
+engines, re-measured independently on clean builds with zero per-case drift, with
+confidence violations at 3 against v1's 10 and zero determinism mismatches. The
+gap was closed by feeding two inputs that were built, wired, tested, and never
+fed — caller-supplied changed paths, and name anchoring gated by query shape —
+not by tuning: no ranking threshold moved, and the predicted ceiling (0.4811)
+was hit to four decimals.
+
+The release's recurring defect class is named in the record and drove most of
+its fixes: **work that silently does not happen behind an answer that reads as
+complete.** Twelve instances of "built, wired, never fed" (a declared field no
+production caller populates) and a family of silent caps (test selection
+truncating alphabetically before filtering to runnable tests, then reporting
+ok; recommendation lists cut in index-layout order; a freshness verdict of
+`fresh` for an index that does not exist; telemetry counting a secret-token drop
+that did not happen). Each fix carries a mutation-tested join-level test,
+because unit tests structurally cannot see this class.
+
+Also in this candidate: subagent worker processes detach into their own process
+group and are torn down tree-wide (the zombie/RAM report), a pre-spawn sweep
+reaps orphans first, a generation-depth guard stops subagents spawning
+subagents, and the desktop bridge replays requests that died on a stale pooled
+socket after a network transition instead of surfacing 502.
+
+**Scope facts recorded rather than smoothed over:** the JSON snapshot file is
+*not* deleted in 9.0.0 — two remaining readers (the byte-level lint rules and
+the architecture-map baseline hash) are contract changes, not migrations, and
+have their own cards. The v1 query engine is unreachable from production search
+but still present. `requiredForPublish`/`alwaysOnRelease` protection arms are
+predicate-verified and unreachable-by-construction; a green run is not evidence
+they fire. The final integration audit (29 candidates, 6 survived adversarial
+refutation) had all four of its blockers fixed in-tree before this bump.
+
+The canonical suite is green end to end: 3,474 of 3,474, zero failures, zero
+todo — against 2,929 at 8.7.0; the growth is CRK2 and the defect-class fixes.
+
+Still to regenerate from the clean candidate commit before any release claim:
+the full release gate DAG, the isolated 7.6.0 to 9.0.0 upgrade smoke, the macOS
+Menu Bar proof, the pack receipt, and the release-check stamp. The affected-scope
+DAG ran strict with zero blockers at every landing in this candidate, which is
+preparation evidence, not exact-commit evidence. The upgrade smoke matters more
+than usually this time: it is the run that witnesses the revision-1 → revision-2
+index refusal and its `sks align run --rebuild-index` repair end to end.
+
+> Supersedes the 8.7.0 readiness narrative. Historical evidence below remains for upgrade context.
+
+# SKS 8.7.0 Release Readiness (historical)
 
 ## Current decision
 

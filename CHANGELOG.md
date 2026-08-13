@@ -2,6 +2,79 @@
 
 ## [Unreleased]
 
+## [9.0.0] - 2026-08-13
+
+The major bump is a binary format break: the context-retrieval index moves to
+SKSCG2 format revision 2, and a revision-2 reader does not read a revision-1
+index. Nothing needs migrating — the index is a generated cache — but the first
+`sks search --mode context` after upgrading will ask for one
+`sks align run --rebuild-index`. Every refusal names that command.
+
+### Added
+
+- **Context Retrieval Kernel v2 (CRK2).** `sks search --mode context` and the
+  subagent attention path now answer from a compiled binary index — string
+  interning, CSR adjacency, a BM25F identifier-aware lexicon, fixed-point
+  scoring — instead of parsing a 63 MB JSON snapshot per query. Freshness is
+  decided from a 0.5 MB meta record: the preflight that read 64 MB in ~275 ms
+  now reads under 2 ms where the parse was the cost, and heap on that path drops
+  about 14×. Measured on the paired benchmark (62 cases, real engines), v2
+  must-include recall is **0.481 against v1's 0.461** with fewer confidence
+  violations (3 vs 10) and zero determinism mismatches.
+- `sks search context --changed <path>` (repeatable): tell the kernel which
+  files a question is about. Caller-supplied paths become verified seeds; the
+  engine never guesses one. Subagent missions feed their declared write scopes
+  through the same join, and `SearchRequest.tokenBudget` — documented but read
+  by nothing — is now honoured.
+- Metadata values keep their type. A boolean an extractor writes reads back as
+  a boolean, arrays survive per element (`['a,b','c']` is no longer the same
+  value as `['a','b','c']`), and empty arrays stop vanishing.
+
+### Changed
+
+- **BREAKING:** the on-disk context index is format revision 2. A revision-1
+  index is refused with `context_index_format_unsupported` and the repair
+  command now depends on the direction of the skew: an index older than the
+  build says `sks align run --rebuild-index` (the previously unconditional
+  `sks update` would have named a command that changes nothing).
+- `context-graph.prev.json` is no longer written. It was a byte-identical
+  63.66 MB duplicate that no code ever read at any commit in its history; the
+  next compile reclaims the leftover copy.
+- Caps that truncate an answer now say so. Test selection, gate recommendations
+  and the advisor report `*_truncated` reasons and cut in a stated, layout-
+  independent order (nearest first) instead of whatever order the index
+  happened to store edges in. The kernel reports `query_terms_capped` when a
+  long query is cut at 64 terms.
+
+### Fixed
+
+- Subagent worker processes no longer outlive their work. Workers detach into
+  their own process group and are torn down tree-wide on exit, timeout, or
+  abort; a pre-spawn sweep reaps orphaned and zombie workers first, stale
+  heartbeats no longer count as active sessions, and a generation-depth guard
+  stops a subagent from spawning subagents of its own.
+- The desktop bridge replays a request that died on a stale pooled socket
+  (Wi-Fi drop, sleep/wake) on a fresh connection instead of surfacing
+  `502 bridge_upstream_unavailable`.
+- The verification budget reacts to what actually changed: a run that touched
+  release surface finalizes as `release` rather than the `affected` it was
+  planned with, and machine feedback runs the runnable related tests instead of
+  cutting the list alphabetically before filtering — a cut that deterministically
+  kept the tests it could not run, reported ok, and accepted the patch.
+- Freshness answers `missing` when the v2 index does not exist — previously a
+  workspace arriving from 8.7.0 heard `fresh` from every diagnostic surface
+  while holding no index at all.
+- The lexicon's secret guard covers joined tokens: a key-shaped string directly
+  followed by a file extension was interned whole and searchable while the
+  telemetry reported it dropped. Claim prose is likewise guarded against bare
+  base62/base64/base64url/hex tokens, JWTs, emails and IPs before it reaches
+  index bytes.
+- The v2 generation store is gitignored (the v1 protection was hand-added to
+  this repository and fresh installs never had it) and excluded from the cache
+  key by subtree — publishing an index no longer moves the very key that
+  decides whether the workspace is stale.
+
+
 ## [8.7.0] - 2026-08-11
 
 ### Fixed
