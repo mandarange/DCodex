@@ -208,23 +208,43 @@ test('the proof index manifest is preferred over a directory scan and marks its 
   }
 });
 
-test('hash-pinned release inputs become derived_from edges only when the file really exists', async () => {
+test('derived inputs link only into the code source inventory; pinned release surfaces never mint file nodes', async () => {
   const root = makeWorkspace();
   try {
+    // Both pinned surfaces exist on disk, and the card also names one source
+    // file and one config file. Only the source-inventory member may become a
+    // `file` node: Align's exact-file-coverage invariant equates snapshot file
+    // nodes with the code inventory, and `.json` / `.toml` are never in it.
     fs.writeFileSync(path.join(root, 'package-lock.json'), '{"lockfileVersion":3}\n');
-    writeProofCard(root, proofCard({ proof_id: 'proof-inputs', subject_id: 'gate-inputs' }));
+    fs.writeFileSync(path.join(root, 'release-gates.v2.json'), '{"schema":"sks.release-gates.v2","gates":[]}\n');
+    fs.mkdirSync(path.join(root, '.codex'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.codex', 'config.toml'), 'model = "demo"\n');
+    writeProofCard(
+      root,
+      proofCard({
+        proof_id: 'proof-inputs',
+        subject_id: 'gate-inputs',
+        input_paths: ['src/a.ts', '.codex/config.toml']
+      })
+    );
 
     const fragment = await runExtractor(root);
     const derived = edgesOfType(fragment, 'derived_from');
-    assert.equal(derived.length, 1, 'release-gates.v2.json is absent so only the lockfile may be linked');
-    assert.equal(derived[0]?.to, 'file:package-lock.json');
+    assert.equal(derived.length, 1, 'only the source-inventory member may be linked');
+    assert.equal(derived[0]?.to, 'file:src/a.ts');
     assert.equal(derived[0]?.confidence, 'manifest');
     assert.equal(derived[0]?.provenance.path, proofNode(fragment, 'proof-inputs').path);
 
-    const lockNode = fragment.nodes.find((node) => node.id === 'file:package-lock.json');
-    assert.ok(lockNode);
-    assert.equal(lockNode.kind, 'file');
-    assert.equal(lockNode.metadata.evidence_stub, true);
+    const sourceNode = fragment.nodes.find((node) => node.id === 'file:src/a.ts');
+    assert.ok(sourceNode);
+    assert.equal(sourceNode.kind, 'file');
+    assert.equal(sourceNode.metadata.evidence_stub, true);
+    for (const outside of ['file:package-lock.json', 'file:release-gates.v2.json', 'file:.codex/config.toml']) {
+      assert.ok(
+        !fragment.nodes.some((node) => node.id === outside),
+        `${outside} is outside the code source inventory and must not be minted`
+      );
+    }
   } finally {
     removeWorkspace(root);
   }

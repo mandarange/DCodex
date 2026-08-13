@@ -96,7 +96,13 @@ test('close failure after a verified frame has one clean-close terminal cause', 
     socket.once('data', (frame: Buffer) => {
       const length = frame[1]! & 0x7f; const mask = frame.subarray(2, 6); const payload = Buffer.alloc(length);
       for (let index = 0; index < length; index += 1) payload[index] = (frame[6 + index] || 0) ^ (mask[index % 4] || 0);
-      socket.write(Buffer.concat([Buffer.from([0x81, length]), payload]), () => socket.destroy());
+      // Destroy on the client's close frame, not in the write callback: an
+      // immediate destroy races the echo's delivery (RST can beat the kernel
+      // buffer), which made this fail one run in three. The close frame is
+      // proof the client already verified the echo, so destroying here still
+      // exercises exactly "close failure after a verified frame".
+      socket.write(Buffer.concat([Buffer.from([0x81, length]), payload]));
+      socket.once('data', () => socket.destroy());
     });
   });
   const port = await listen(server);

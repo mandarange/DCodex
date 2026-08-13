@@ -30,12 +30,6 @@ import { discoverProofRecords, type ProofRecord } from './proof-index.js';
 const MAX_DERIVED_INPUTS = 12;
 const PLACEHOLDER_HASHES: ReadonlySet<string> = new Set(['', 'unknown', 'legacy-missing', 'none', 'null']);
 
-/** Well-known release surfaces a proof card pins by hash rather than by path. */
-const HASH_PINNED_INPUTS: ReadonlyArray<{ field: string; rel: string }> = [
-  { field: 'package_lock_hash', rel: 'package-lock.json' },
-  { field: 'release_gates_hash', rel: 'release-gates.v2.json' }
-];
-
 interface ProofHealth {
   healthy: boolean;
   expired: boolean | null;
@@ -282,6 +276,16 @@ function linkSubject(
   });
 }
 
+/**
+ * Proof-card `input_paths` / `source_paths` become `derived_from` links into the
+ * code graph, so a target must be a code source inventory member: Align's
+ * exact-file-coverage invariant equates snapshot `file` nodes with that
+ * inventory. Hash-pinned release surfaces (`package_lock_hash` →
+ * `package-lock.json`, `release_gates_hash` → `release-gates.v2.json`) are
+ * structurally never members — the walk only ingests source-language files — so
+ * they are no longer materialized as file stubs at all; their hashes stay
+ * readable in the proof card the proof node cites.
+ */
 function linkDerivedInputs(
   builder: EvidenceFragmentBuilder,
   ctx: EvidenceContext,
@@ -289,19 +293,13 @@ function linkDerivedInputs(
   proofNodeId: string
 ): void {
   const raw = record.card as unknown as Record<string, unknown> | null;
-  const candidates: string[] = [];
-  if (raw) {
-    for (const pinned of HASH_PINNED_INPUTS) {
-      const hash = asString(raw[pinned.field]);
-      if (hash && !PLACEHOLDER_HASHES.has(hash)) candidates.push(pinned.rel);
-    }
-    candidates.push(...asStringList(raw.input_paths), ...asStringList(raw.source_paths));
-  }
+  const candidates: string[] = raw ? [...asStringList(raw.input_paths), ...asStringList(raw.source_paths)] : [];
   const seen = new Set<string>();
   for (const candidate of candidates) {
     if (seen.size >= MAX_DERIVED_INPUTS) break;
     const rel = tryNormalizeGraphPath(ctx.root, candidate);
     if (!rel || seen.has(rel)) continue;
+    if (!ctx.sourcePaths.has(rel)) continue;
     const stat = statWorkspaceEntry(ctx.root, rel);
     if (!stat || !stat.isFile()) continue;
     seen.add(rel);

@@ -11,10 +11,16 @@ import type { ContextGraphExtractor } from '../contracts.js';
 import { createCodeGraphExtractor } from './code/index.js';
 import type { CodeInventory } from './code/types.js';
 import { createEvidenceGraphExtractor } from './evidence/index.js';
+import { createSharedSourceInventory } from './source-inventory.js';
 import { createTopologyGraphExtractor } from './topology/index.js';
 
 export function contextGraphExtractors(): ContextGraphExtractor[] {
-  return [createCodeGraphExtractor(), createTopologyGraphExtractor(), createEvidenceGraphExtractor()];
+  const sourceInventory = createSharedSourceInventory();
+  return [
+    createCodeGraphExtractor({ sourceInventory }),
+    createTopologyGraphExtractor({ sourceInventory }),
+    createEvidenceGraphExtractor({ sourceInventory })
+  ];
 }
 
 /**
@@ -38,7 +44,16 @@ export function codeNavigationGraphExtractors(options: { preparedInventory?: Cod
  * `codeNavigationGraphExtractors()`.
  */
 export function architectureMapGraphExtractors(options: { preparedInventory?: CodeInventory } = {}): ContextGraphExtractor[] {
-  return [createCodeGraphExtractor(options), createTopologyGraphExtractor(), createEvidenceGraphExtractor()];
+  // One shared inventory: the code extractor emits file nodes from it, and
+  // topology/evidence consult the same membership before referencing a `file:`
+  // id, so every file node in the merged snapshot stays inside the inventory
+  // that Align's exact-file-coverage invariant is keyed to.
+  const sourceInventory = createSharedSourceInventory(options.preparedInventory ?? null);
+  return [
+    createCodeGraphExtractor({ sourceInventory }),
+    createTopologyGraphExtractor({ sourceInventory }),
+    createEvidenceGraphExtractor({ sourceInventory })
+  ];
 }
 
 /** Sorted extractor ids as persisted on Align ledgers / snapshot.extractors. */

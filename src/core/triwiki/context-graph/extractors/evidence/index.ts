@@ -23,6 +23,7 @@ import { lintWarning } from '../../contracts.js';
 import { extractContextPackEvidence } from './claims.js';
 import { extractProofEvidence } from './proofs.js';
 import { sanitizeEvidenceFragment } from './redaction.js';
+import { createSharedSourceInventory, type SharedSourceInventory } from '../source-inventory.js';
 import {
   CONTEXT_PACK_REL,
   EVIDENCE_EXTRACTOR_ID,
@@ -51,6 +52,8 @@ export class EvidenceGraphExtractor implements ContextGraphExtractor {
 
   readonly revision = EVIDENCE_EXTRACTOR_REVISION;
 
+  constructor(private readonly sourceInventory: SharedSourceInventory = createSharedSourceInventory()) {}
+
   /**
    * `changedPaths` is intentionally not used to narrow the walk: the evidence
    * surface is two bounded artifacts whose claim set is global, so a partial
@@ -58,7 +61,12 @@ export class EvidenceGraphExtractor implements ContextGraphExtractor {
    * The compiler decides whether to reuse a cached fragment instead.
    */
   async extract(input: ContextGraphExtractionInput): Promise<ContextGraphFragment> {
-    const ctx = evidenceContext({ root: input.root, observedAt: input.observedAt, limits: input.limits });
+    const ctx = evidenceContext({
+      root: input.root,
+      observedAt: input.observedAt,
+      limits: input.limits,
+      sourcePaths: this.sourceInventory.sourcePaths(input.root, input.limits)
+    });
     const builder = new EvidenceFragmentBuilder(input.limits, input.observedAt);
     const risks = new RiskDomainRegistry();
 
@@ -79,8 +87,10 @@ export class EvidenceGraphExtractor implements ContextGraphExtractor {
   }
 }
 
-export function createEvidenceGraphExtractor(): ContextGraphExtractor {
-  return new EvidenceGraphExtractor();
+export function createEvidenceGraphExtractor(
+  options: { sourceInventory?: SharedSourceInventory } = {}
+): ContextGraphExtractor {
+  return new EvidenceGraphExtractor(options.sourceInventory ?? createSharedSourceInventory());
 }
 
 /**

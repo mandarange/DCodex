@@ -24,6 +24,7 @@ import { buildModuleContainsEdges, buildModuleNodes, inferModuleBoundaries, modu
 import { buildReferenceEdges } from './references.js';
 import { selectExtractionTargets } from './selection.js';
 import { extractTextDeclarations } from './text-declarations.js';
+import type { SharedSourceInventory } from '../source-inventory.js';
 import { createCodeSourceFile, createResolutionContext } from './ts-config.js';
 import type { CodeInventory, CodeSourceFileRecord, DeclaredSymbol, ModuleFacts, ParsedCodeFile } from './types.js';
 import { CODE_GRAPH_EXTRACTOR_ID, CODE_GRAPH_EXTRACTOR_REVISION, estimateTokenCost } from './types.js';
@@ -62,7 +63,10 @@ export class CodeGraphExtractor implements ContextGraphExtractor {
   readonly id = CODE_GRAPH_EXTRACTOR_ID;
   readonly revision = CODE_GRAPH_EXTRACTOR_REVISION;
 
-  constructor(private readonly preparedInventory: CodeInventory | null = null) {}
+  constructor(
+    private readonly preparedInventory: CodeInventory | null = null,
+    private readonly sourceInventory: SharedSourceInventory | null = null
+  ) {}
 
   async extract(input: ContextGraphExtractionInput): Promise<ContextGraphFragment> {
     const startedAt = Date.now();
@@ -70,7 +74,9 @@ export class CodeGraphExtractor implements ContextGraphExtractor {
     const root = realRoot(input.root);
     const sink = new CodeGraphSink(input.limits, input.observedAt);
 
-    const inventory = this.preparedInventory ?? walkCodeInventory(root, input.limits);
+    const inventory = this.preparedInventory
+      ?? this.sourceInventory?.inventory(root, input.limits)
+      ?? walkCodeInventory(root, input.limits);
     for (const skip of inventory.skipped) sink.addSkip(skip);
 
     const hashes = new Map<string, string>();
@@ -349,8 +355,10 @@ function collectNodeRels(
   return [...rels].sort();
 }
 
-export function createCodeGraphExtractor(options: { preparedInventory?: CodeInventory } = {}): ContextGraphExtractor {
-  return new CodeGraphExtractor(options.preparedInventory ?? null);
+export function createCodeGraphExtractor(
+  options: { preparedInventory?: CodeInventory; sourceInventory?: SharedSourceInventory } = {}
+): ContextGraphExtractor {
+  return new CodeGraphExtractor(options.preparedInventory ?? null, options.sourceInventory ?? null);
 }
 
 export { CODE_GRAPH_EXTRACTOR_ID, CODE_GRAPH_EXTRACTOR_REVISION } from './types.js';

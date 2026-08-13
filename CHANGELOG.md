@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [9.0.4] - 2026-08-13
+
+### Fixed
+
+- `sks align run` works again. 8.4.0 widened align to the topology and
+  evidence extractors while the exact-file-coverage invariant stayed keyed to
+  the code inventory, and those extractors mint `file` nodes for paths the
+  inventory does not hold (gate cache inputs like `package.json` and docs;
+  cited `.codex/config.toml` and `AGENTS.md`) -- 26 poison nodes on this
+  repository alone, and every align since failed with
+  `code_navigation_exact_file_coverage_failed`. On 9.0.x that cascaded: the
+  v2 index can only be rebuilt by align, so context search stayed refused.
+  File nodes now pass through one inventory-membership choke point per
+  extractor family; non-source citations keep their gate metadata and source
+  nodes, so nothing is lost from the graph. The invariant was right and is
+  untouched; the check also moved left into the extractor and compiler suites.
+- The gateway's self-described transient failures stop killing compact tasks.
+  hyper-lab wraps its own upstream faults as `type: upstream_error` but
+  labels them 404, which Codex treats as permanent -- the "remote compact
+  task ... 404" reports after a rate limit. Exactly that self-described
+  signature (404 + upstream_error + no specific code) is corrected to 503
+  with Retry-After: 10 so Codex retries; a genuine not-found carries a
+  different type and passes through untouched.
+
+
 ## [9.0.3] - 2026-08-13
 
 ### Fixed

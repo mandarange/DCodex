@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   CONTEXT_GRAPH_SCHEMA,
   validateContextGraphSnapshot,
@@ -75,6 +77,55 @@ test('a cited claim keeps its trust while an orphan claim is capped and warned',
     assert.ok(derived.length >= 2, 'each cited source should derive from its file node');
     assert.ok(fragment.nodes.some((node) => node.kind === 'file' && node.path === 'src/a.ts'));
     assert.ok(fragment.nodes.some((node) => node.kind === 'risk_domain'));
+  } finally {
+    removeWorkspace(root);
+  }
+});
+
+test('a cited path outside the code source inventory keeps its source node but never mints a file node', async () => {
+  const root = makeWorkspace();
+  try {
+    // `AGENTS.md` and `.codex/config.toml` are real cited artifacts — this is
+    // the exact pair that broke Align in the field — but they are not code
+    // inventory members, so their freshness lives on the `source` node alone.
+    fs.writeFileSync(path.join(root, 'AGENTS.md'), '# agents\n');
+    fs.mkdirSync(path.join(root, '.codex'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.codex', 'config.toml'), 'model = "demo"\n');
+    writeContextPack(root, {
+      claims: [
+        {
+          id: 'doc-claim',
+          text: 'agents doc and codex config back this claim',
+          source_paths: ['AGENTS.md', '.codex/config.toml', 'src/a.ts'],
+          trust_score: 0.9,
+          status: 'supported'
+        }
+      ],
+      entries: [
+        manifestEntry(root, 'AGENTS.md'),
+        manifestEntry(root, '.codex/config.toml'),
+        manifestEntry(root, 'src/a.ts')
+      ]
+    });
+
+    const fragment = await runExtractor(root);
+    const sourcePaths = fragment.nodes
+      .filter((node) => node.kind === 'source')
+      .map((node) => String(node.path ?? ''))
+      .sort();
+    assert.deepEqual(sourcePaths, ['.codex/config.toml', 'AGENTS.md', 'src/a.ts']);
+    for (const source of fragment.nodes.filter((node) => node.kind === 'source')) {
+      assert.equal(source.freshness, 'fresh', `${source.path} is manifest-matched and must stay fresh`);
+    }
+
+    const filePaths = fragment.nodes
+      .filter((node) => node.kind === 'file')
+      .map((node) => String(node.path ?? ''))
+      .sort();
+    assert.deepEqual(filePaths, ['src/a.ts'], 'only the inventory member may carry a backing file node');
+    const derived = edgesOfType(fragment, 'derived_from');
+    assert.equal(derived.length, 1);
+    assert.equal(derived[0]?.to, 'file:src/a.ts');
   } finally {
     removeWorkspace(root);
   }

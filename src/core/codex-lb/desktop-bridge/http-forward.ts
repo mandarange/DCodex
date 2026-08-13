@@ -324,16 +324,30 @@ export async function forwardHttp(
           // produced it. A user report with a cf-ray id was undiagnosable from
           // the bridge log. Status, model, provider and path only; the body may
           // carry upstream detail and is never logged.
-          void readRedactedUpstreamError(response).then(({ body, upstreamCode }) => {
+          void readRedactedUpstreamError(response).then(({ body, upstreamCode, upstreamType }) => {
+            // The gateway wraps its own upstream failures as `type:
+            // "upstream_error"` — its self-description of a transient fault —
+            // but labels them 404, which Codex treats as permanent: the remote
+            // compact task dies instead of retrying, observed as bursts that
+            // self-heal minutes later (conversation-affinity loss on failover).
+            // 404 was always the wrong status for "my upstream failed"; only
+            // this exact self-described signature is corrected to 503 with a
+            // Retry-After. A genuine not-found (invalid_request_error,
+            // response_not_found, model_not_found) carries a different type and
+            // passes through untouched.
+            const transientMislabel = statusCode === 404 && upstreamType === 'upstream_error' && !upstreamCode;
+            const clientStatus = transientMislabel ? 503 : statusCode;
             // Logged after the body parse so the record can carry the upstream's
             // own error code — the one fact a report holding only a status and a
             // cf-ray id cannot supply.
             logHttpRejection({
-              code: upstreamCode ? `bridge_upstream_status_${statusCode}:${upstreamCode}` : `bridge_upstream_status_${statusCode}`,
+              code: transientMislabel
+                ? `bridge_upstream_status_${statusCode}_translated_503`
+                : upstreamCode ? `bridge_upstream_status_${statusCode}:${upstreamCode}` : `bridge_upstream_status_${statusCode}`,
               transport: 'http',
               ...(req.method === undefined ? {} : { method: req.method }),
               ...(req.url === undefined ? {} : { url: req.url }),
-              status: statusCode,
+              status: clientStatus,
               provider_id: provider.provider_id,
               public_model: request.route.public_model,
             });
@@ -341,7 +355,8 @@ export async function forwardHttp(
             const responseHeaders = rewriteResponseHeaders(response.headers, provider.base_url, authenticatedLocalBaseUrl);
             responseHeaders['content-length'] = String(body.length);
             delete responseHeaders['transfer-encoding'];
-            res.writeHead(statusCode, responseHeaders);
+            if (transientMislabel) responseHeaders['retry-after'] = '10';
+            res.writeHead(clientStatus, responseHeaders);
             res.end(body, () => finish());
           }).catch(finish);
           return;

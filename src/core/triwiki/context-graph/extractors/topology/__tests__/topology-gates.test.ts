@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { ContextGraphExtractionInput, ContextGraphFragment } from '../../../contracts.js';
+import { walkCodeInventory } from '../../code/inventory.js';
 import { createTopologyGraphExtractor } from '../index.js';
 import { TOPOLOGY_GLOB_MATCH_CAP } from '../shared.js';
 
@@ -98,8 +99,15 @@ test('a gate manifest becomes gate nodes with check, cache-input, and preset rel
     assert.equal(verified[0]?.provenance.extractor, 'topology');
     assert.equal(fragment.inputHashes['release-gates.v2.json'], manifestHash);
 
+    // `package.json` is a declared cache input but not a code source inventory
+    // member, so it stays on the gate node's metadata and never becomes a file
+    // node: Align equates snapshot file nodes with the code inventory.
     const affected = edgesOfType(fragment, 'affected_by').map((edge) => edge.to).sort();
-    assert.deepEqual(affected, ['file:package.json', 'file:src/core/demo.ts']);
+    assert.deepEqual(affected, ['file:src/core/demo.ts']);
+    assert.ok(
+      !fragment.nodes.some((node) => node.id === 'file:package.json'),
+      'a non-source cache input must not mint a file node'
+    );
 
     const gatedBy = edgesOfType(fragment, 'gated_by');
     assert.equal(gatedBy.length, 1);
@@ -211,6 +219,51 @@ test('cache-input globs reverse-map to real files and over-wide globs stay raw o
     );
     const gateNode = fragment.nodes.find((node) => node.id === 'gate:harness:globs');
     assert.deepEqual(gateNode?.metadata.cacheInputs, ['src/narrow/**', 'src/wide/**']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('every file node stays inside the code source inventory even when the manifest cites config and docs', async () => {
+  const root = makeRoot();
+  try {
+    // All of these exist on disk and are declared cache inputs, but only the
+    // source files are code inventory members. This is the class that broke
+    // Align in the field (`.codex/config.toml`, `AGENTS.md` as file nodes).
+    write(root, 'AGENTS.md', '# agents\n');
+    write(root, '.codex/config.toml', 'model = "demo"\n');
+    write(root, 'package.json', '{"name":"fixture"}\n');
+    write(root, 'src/scripts/demo-check.ts', 'export const demo = 1;\n');
+    write(root, 'src/core/demo.ts', 'export const value = 1;\n');
+    writeGateManifest(root, [
+      gate('release:coverage', {
+        inputs: ['AGENTS.md', '.codex/config.toml', 'package.json', 'src/core/demo.ts']
+      })
+    ]);
+
+    const fragment = await extract(root);
+    assert.deepEqual(errorCodes(fragment), []);
+
+    const inventory = new Set(
+      walkCodeInventory(root, extractionInput(root).limits).files.map((file) => file.rel)
+    );
+    const fileNodes = fragment.nodes.filter((node) => node.kind === 'file');
+    assert.ok(fileNodes.length > 0, 'the inventory-backed cache input must still be linked');
+    for (const node of fileNodes) {
+      assert.ok(
+        inventory.has(String(node.path ?? '')),
+        `file node ${node.id} references a path outside the code source inventory`
+      );
+    }
+
+    const affected = edgesOfType(fragment, 'affected_by').map((edge) => edge.to).sort();
+    assert.deepEqual(affected, ['file:src/core/demo.ts']);
+    const gateNode = fragment.nodes.find((node) => node.id === 'gate:release:coverage');
+    assert.deepEqual(
+      gateNode?.metadata.cacheInputs,
+      ['AGENTS.md', '.codex/config.toml', 'package.json', 'src/core/demo.ts'],
+      'non-source cache inputs must stay recorded on the gate node'
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

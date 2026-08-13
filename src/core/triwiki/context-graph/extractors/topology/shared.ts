@@ -26,7 +26,7 @@ import { ContextGraphPathError, isWorkspaceRelativePosixPath, resolveInsideWorks
 import type { FileInventory } from './globs.js';
 
 export const TOPOLOGY_EXTRACTOR_ID = 'topology';
-export const TOPOLOGY_EXTRACTOR_REVISION = '1.0.0';
+export const TOPOLOGY_EXTRACTOR_REVISION = '1.1.0';
 
 /** Caps that keep one over-wide manifest entry from flooding the snapshot. */
 export const TOPOLOGY_GLOB_MATCH_CAP = 48;
@@ -40,6 +40,14 @@ export interface TopologyContext {
   /** wall-clock budget; phases stop rather than overrun a compile */
   readonly deadline: number;
   readonly files: FileInventory;
+  /**
+   * Code source inventory membership (`walkCodeInventory(root).files[].rel`).
+   * `file` nodes may only reference members: Align's exact-file-coverage
+   * invariant equates snapshot file nodes with this set, so a file node for any
+   * other path (a manifest cache input such as `package.json`, `AGENTS.md`, or
+   * `.codex/config.toml`) poisons every subsequent Align run.
+   */
+  readonly sourcePaths: ReadonlySet<string>;
   readonly nodes: Map<string, ContextGraphNode>;
   readonly edges: Map<string, ContextGraphEdge>;
   readonly issues: ContextGraphLintIssue[];
@@ -60,6 +68,7 @@ export function createTopologyContext(params: {
   observedAt: string;
   limits: ContextGraphExtractionLimits;
   files: FileInventory;
+  sourcePaths: ReadonlySet<string>;
   startedAt: number;
 }): TopologyContext {
   const timeout = Number.isFinite(params.limits.timeoutMs) && params.limits.timeoutMs > 0 ? params.limits.timeoutMs : 0;
@@ -69,6 +78,7 @@ export function createTopologyContext(params: {
     limits: params.limits,
     deadline: params.startedAt + timeout,
     files: params.files,
+    sourcePaths: params.sourcePaths,
     nodes: new Map(),
     edges: new Map(),
     issues: [],
@@ -218,9 +228,17 @@ export function addEdge(ctx: TopologyContext, input: TopologyEdgeInput): boolean
 /**
  * File nodes stay deliberately thin: the code extractor emits the same ids with
  * real symbol/hash detail, and the compiler merges the two by id.
+ *
+ * Membership in the code source inventory is a hard precondition: a manifest may
+ * cite any workspace path (cache inputs such as `package.json` or `AGENTS.md`),
+ * but only inventory members exist as `file` nodes. Everything else stays
+ * represented where the manifest put it — e.g. the gate node's `cacheInputs`
+ * metadata — so no relation is invented and Align's exact-file-coverage
+ * invariant keeps holding by construction.
  */
 export function ensureFileNode(ctx: TopologyContext, relativePath: string, role: string, sourcePath: string): string | null {
   if (!isWorkspaceRelativePosixPath(relativePath)) return null;
+  if (!ctx.sourcePaths.has(relativePath)) return null;
   const id = contextGraphNodeId({ kind: 'file', path: relativePath });
   const classification = ctx.fileClassification.get(relativePath);
   const metadata: ContextGraphMetadata = {

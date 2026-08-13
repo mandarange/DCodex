@@ -261,3 +261,47 @@ test('an upstream error keeps its identifiers and loses its text', async () => {
     await close(upstream);
   }
 });
+
+/**
+ * The gateway's self-described transient ("type": "upstream_error", no code)
+ * mislabelled as 404 is corrected to 503 + Retry-After so Codex retries the
+ * compact task instead of abandoning it. A genuine not-found — a different
+ * type, or any specific code — passes through as the 404 it really is.
+ */
+test('a gateway upstream_error 404 becomes 503 retryable; a real 404 stays 404', async () => {
+  let mode: 'transient' | 'real' = 'transient';
+  const upstream = http.createServer((req, res) => {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(mode === 'transient'
+      ? { error: { type: 'upstream_error', message: 'Upstream request failed' } }
+      : { error: { type: 'invalid_request_error', code: 'response_not_found', message: 'no such response' } }));
+  });
+  const upstreamPort = await listen(upstream);
+  const holder = net.createServer(); const bridgePort = await listen(holder); await close(holder);
+  let bridge: DesktopBridgeHandle | null = null;
+  const call = (): Promise<{ status: number; retryAfter: string | undefined }> => new Promise((resolve, reject) => {
+    const request = http.request({
+      host: '127.0.0.1', port: bridgePort, method: 'POST',
+      path: desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/responses'),
+      headers: { 'content-type': 'application/json', 'x-sks-model': PUBLIC_MODEL },
+    }, (response) => {
+      response.resume();
+      response.on('end', () => resolve({ status: response.statusCode || 0, retryAfter: String(response.headers['retry-after'] || '') || undefined }));
+    });
+    request.once('error', reject);
+    request.end(JSON.stringify({ model: PUBLIC_MODEL, input: 'ping' }));
+  });
+  try {
+    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 2_000), { writeState: false });
+    const transient = await call();
+    assert.equal(transient.status, 503, 'the self-described transient is retryable');
+    assert.equal(transient.retryAfter, '10');
+    mode = 'real';
+    const real = await call();
+    assert.equal(real.status, 404, 'a genuine not-found stays a 404');
+    assert.equal(real.retryAfter, undefined);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await close(upstream);
+  }
+});

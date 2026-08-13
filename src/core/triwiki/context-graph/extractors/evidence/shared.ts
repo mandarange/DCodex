@@ -25,7 +25,7 @@ import { ContextGraphPathError, resolveInsideWorkspace } from '../../paths.js';
 import { safeText } from './redaction.js';
 
 export const EVIDENCE_EXTRACTOR_ID = 'triwiki-evidence';
-export const EVIDENCE_EXTRACTOR_REVISION = '1.0.0';
+export const EVIDENCE_EXTRACTOR_REVISION = '1.1.0';
 
 export const CONTEXT_PACK_REL = '.sneakoscope/wiki/context-pack.json';
 export const PROOF_BANK_REL = '.sneakoscope/triwiki/proof-bank';
@@ -40,19 +40,29 @@ export interface EvidenceContext {
   /** `null` when `observedAt` is unparseable; expiry then resolves to "unknown", never "fresh". */
   readonly now: Date | null;
   readonly limits: ContextGraphExtractionLimits;
+  /**
+   * Code source inventory membership (`walkCodeInventory(root).files[].rel`).
+   * Cited or pinned paths outside it (`AGENTS.md`, `.codex/config.toml`,
+   * `package-lock.json`, …) keep their `source` node — that is where their
+   * freshness lives — but never mint a backing `file` node, because Align's
+   * exact-file-coverage invariant equates snapshot file nodes with this set.
+   */
+  readonly sourcePaths: ReadonlySet<string>;
 }
 
 export function evidenceContext(input: {
   root: string;
   observedAt: string;
   limits: ContextGraphExtractionLimits;
+  sourcePaths: ReadonlySet<string>;
 }): EvidenceContext {
   const parsed = Date.parse(input.observedAt);
   return {
     root: input.root,
     observedAt: input.observedAt,
     now: Number.isFinite(parsed) ? new Date(parsed) : null,
-    limits: input.limits
+    limits: input.limits,
+    sourcePaths: input.sourcePaths
   };
 }
 

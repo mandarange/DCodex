@@ -86,6 +86,10 @@ export function buildGateDependencyEdges(ctx: TopologyContext, gates: readonly T
  * `gate verified_by file`: the manifest command names a built script, and the
  * graph points at the TypeScript source it is built from when that source is
  * really there. A missing implementation is recorded, never invented.
+ *
+ * The returned set feeds `reportUnbackedProtectedGates` and means "the check
+ * implementation exists in this workspace" — edges are additionally gated on
+ * source inventory membership, so membership never decides explainability.
  */
 export function buildGateVerificationEdges(ctx: TopologyContext, gates: readonly TopologyGate[]): Set<string> {
   const verified = new Set<string>();
@@ -102,6 +106,10 @@ export function buildGateVerificationEdges(ctx: TopologyContext, gates: readonly
         recordSkip(ctx, gate.manifestPath, 'excluded', `check implementation ${candidate} is not in this workspace`);
         continue;
       }
+      // The check implementation exists in this workspace, so the gate is
+      // explainable even when the file is not a source inventory member and
+      // therefore gets no `file` node below.
+      verified.add(gate.id);
       const confidence = isGlobPattern(candidate) ? 'derived' : 'manifest';
       for (const match of expansion.matches) {
         if (emitted >= TOPOLOGY_GATE_VERIFIED_CAP) break;
@@ -116,10 +124,7 @@ export function buildGateVerificationEdges(ctx: TopologyContext, gates: readonly
           hash: gate.manifestHash,
           line: gate.line
         });
-        if (added) {
-          emitted += 1;
-          verified.add(gate.id);
-        }
+        if (added) emitted += 1;
       }
     }
   }
@@ -130,6 +135,11 @@ export function buildGateVerificationEdges(ctx: TopologyContext, gates: readonly
  * `gate affected_by file`: every cache input glob is expanded against the real
  * file inventory. Over-wide inputs stay on the gate node as raw globs instead of
  * becoming thousands of low-value edges.
+ *
+ * The returned set feeds `reportUnbackedProtectedGates` and means "at least one
+ * cache input names something real in this workspace" — edges are additionally
+ * gated on source inventory membership, so a gate whose inputs are configs and
+ * manifests stays explained without minting out-of-inventory `file` nodes.
  */
 export function buildGateAffectedEdges(ctx: TopologyContext, gates: readonly TopologyGate[]): Set<string> {
   const affected = new Set<string>();
@@ -141,8 +151,15 @@ export function buildGateAffectedEdges(ctx: TopologyContext, gates: readonly Top
       const expansion = expandGlob(ctx.files, input, TOPOLOGY_GLOB_MATCH_CAP);
       if (expansion.capped) {
         recordSkip(ctx, gate.manifestPath, 'cap_reached', `cache input ${input} matched ${expansion.total} files`);
+        // The over-wide glob stays raw on the gate node; it still proves the
+        // gate cites real workspace inputs.
+        affected.add(gate.id);
         continue;
       }
+      // A cache input that matched anything real in this workspace explains the
+      // gate, even when the match is a config/doc file that — being outside the
+      // code source inventory — must not become a `file` node or an edge.
+      if (expansion.total > 0) affected.add(gate.id);
       for (const match of expansion.matches) {
         if (emitted >= TOPOLOGY_GATE_AFFECTED_CAP) break;
         if (seen.has(match)) continue;
@@ -158,10 +175,7 @@ export function buildGateAffectedEdges(ctx: TopologyContext, gates: readonly Top
           hash: gate.manifestHash,
           line: gate.line
         });
-        if (added) {
-          emitted += 1;
-          affected.add(gate.id);
-        }
+        if (added) emitted += 1;
       }
     }
   }

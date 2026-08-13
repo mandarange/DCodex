@@ -31,6 +31,7 @@ import {
 import type { TopologyPresetPipeline } from './gate-edges.js';
 import { buildGateNodes, collectTopologyGates } from './gates.js';
 import { buildFileInventory } from './globs.js';
+import { createSharedSourceInventory, type SharedSourceInventory } from '../source-inventory.js';
 import { buildRouteGraph } from './routes.js';
 import type { TopologyContext } from './shared.js';
 import {
@@ -91,6 +92,8 @@ export class TopologyGraphExtractor implements ContextGraphExtractor {
 
   readonly revision = TOPOLOGY_EXTRACTOR_REVISION;
 
+  constructor(private readonly sourceInventory: SharedSourceInventory = createSharedSourceInventory()) {}
+
   async extract(input: ContextGraphExtractionInput): Promise<ContextGraphFragment> {
     const startedAt = Date.now();
     const files = buildFileInventory(input.root, input.limits.maxFiles);
@@ -99,6 +102,9 @@ export class TopologyGraphExtractor implements ContextGraphExtractor {
       observedAt: input.observedAt,
       limits: input.limits,
       files,
+      // `file` nodes may only reference code source inventory members; the walk
+      // inventory above stays in use for glob *matching*, which is a wider set.
+      sourcePaths: this.sourceInventory.sourcePaths(input.root, input.limits),
       startedAt
     });
     if (files.truncated) {
@@ -130,8 +136,10 @@ export class TopologyGraphExtractor implements ContextGraphExtractor {
   }
 }
 
-export function createTopologyGraphExtractor(): ContextGraphExtractor {
-  return new TopologyGraphExtractor();
+export function createTopologyGraphExtractor(
+  options: { sourceInventory?: SharedSourceInventory } = {}
+): ContextGraphExtractor {
+  return new TopologyGraphExtractor(options.sourceInventory ?? createSharedSourceInventory());
 }
 
 export { TOPOLOGY_EXTRACTOR_ID, TOPOLOGY_EXTRACTOR_REVISION } from './shared.js';

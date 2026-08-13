@@ -1,10 +1,24 @@
-# SKS 9.0.3 Release Readiness
+# SKS 9.0.4 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 
-9.0.3 stops the bridge from erasing what the gateway actually said. Upstream
+9.0.4 fixes the two remaining field failures. `sks align run` works again: 8.4.0
+widened align to the topology and evidence extractors while the
+exact-file-coverage invariant stayed keyed to the code inventory, and those
+extractors minted `file` nodes for out-of-inventory paths (gate cache inputs,
+cited `.codex/config.toml`/`AGENTS.md`) — 26 poison nodes on this repository,
+every align since failing, and on 9.0.x that cascaded into a context search that
+could never rebuild its index. File nodes now pass one inventory-membership
+choke point per extractor family; the invariant was right and is untouched, and
+the check moved left into the extractor and compiler suites. And the gateway's
+self-described transients stop killing compact tasks: exactly the
+`404 + type: upstream_error + no code` signature is corrected to
+`503 + Retry-After`, so Codex retries instead of abandoning; a genuine
+not-found carries a different type and passes untouched.
+
+9.0.3 stopped the bridge from erasing what the gateway actually said. Upstream
 error bodies are redacted because they can echo request content, but the
 redaction replaced identifiers too, so every upstream failure reached users as
 the same sentence — "Upstream request failed" — and the undiagnosable report was
@@ -77,7 +91,7 @@ subagents, and the desktop bridge replays requests that died on a stale pooled
 socket after a network transition instead of surfacing 502.
 
 **Scope facts recorded rather than smoothed over:** the JSON snapshot file is
-*not* deleted in 9.0.3 — two remaining readers (the byte-level lint rules and
+*not* deleted in 9.0.4 — two remaining readers (the byte-level lint rules and
 the architecture-map baseline hash) are contract changes, not migrations, and
 have their own cards. The v1 query engine is unreachable from production search
 but still present. `requiredForPublish`/`alwaysOnRelease` protection arms are
@@ -89,7 +103,7 @@ The canonical suite is green end to end: 3,474 of 3,474, zero failures, zero
 todo — against 2,929 at 8.7.0; the growth is CRK2 and the defect-class fixes.
 
 Still to regenerate from the clean candidate commit before any release claim:
-the full release gate DAG, the isolated 7.6.0 to 9.0.3 upgrade smoke, the macOS
+the full release gate DAG, the isolated 7.6.0 to 9.0.4 upgrade smoke, the macOS
 Menu Bar proof, the pack receipt, and the release-check stamp. The affected-scope
 DAG ran strict with zero blockers at every landing in this candidate, which is
 preparation evidence, not exact-commit evidence. The upgrade smoke matters more

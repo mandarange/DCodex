@@ -126,7 +126,14 @@ export class EvidenceSourceGraph {
       },
       CONTEXT_PACK_REL
     );
-    if (!isDirectory && (diskHash || manifestHash)) this.linkBackingFile(id, rel, stat, diskHash, manifestHash);
+    // The backing `file` node exists to join the code graph, so it is only
+    // emitted for code source inventory members. Any other cited path — a
+    // config such as `.codex/config.toml`, a doc such as `AGENTS.md` — is fully
+    // represented by the `source` node above (path, hash, freshness): minting a
+    // `file` node for it would break Align's exact-file-coverage invariant.
+    if (!isDirectory && (diskHash || manifestHash) && this.ctx.sourcePaths.has(rel)) {
+      this.linkBackingFile(id, rel, stat, diskHash, manifestHash);
+    }
     const state: SourceState = { id, freshness };
     this.states.set(rel, state);
     return state;
