@@ -1,10 +1,22 @@
-# SKS 9.0.2 Release Readiness
+# SKS 9.0.3 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 
-9.0.2 adds two doctor fixes on top of 9.0.1, from a customer machine that looked
+9.0.3 stops the bridge from erasing what the gateway actually said. Upstream
+error bodies are redacted because they can echo request content, but the
+redaction replaced identifiers too, so every upstream failure reached users as
+the same sentence — "Upstream request failed" — and the undiagnosable report was
+manufactured by the bridge itself. Machine-shaped `error.type`/`error.code` now
+survive into the response and the bridge log; free text still dies at the
+bridge. The recurring "remote compact task 404 after a rate limit" was also
+reproduced against the live gateway: follow-ups on the same
+`previous_response_id` flip from 200 to persistent errors when routing shifts to
+a node that does not hold the conversation — a gateway-side conversation-affinity
+gap, now attributable per-failure from the bridge log.
+
+9.0.2 added two doctor fixes, from a customer machine that looked
 broken and was not. `sks doctor --fix` skips the deep Codex App measurements by
 design, but the console rendered every skipped row as `degraded`/`missing`/
 `optional_missing`/`unavailable` — a wall of red over checks that never ran; a
@@ -65,7 +77,7 @@ subagents, and the desktop bridge replays requests that died on a stale pooled
 socket after a network transition instead of surfacing 502.
 
 **Scope facts recorded rather than smoothed over:** the JSON snapshot file is
-*not* deleted in 9.0.2 — two remaining readers (the byte-level lint rules and
+*not* deleted in 9.0.3 — two remaining readers (the byte-level lint rules and
 the architecture-map baseline hash) are contract changes, not migrations, and
 have their own cards. The v1 query engine is unreachable from production search
 but still present. `requiredForPublish`/`alwaysOnRelease` protection arms are
@@ -77,7 +89,7 @@ The canonical suite is green end to end: 3,474 of 3,474, zero failures, zero
 todo — against 2,929 at 8.7.0; the growth is CRK2 and the defect-class fixes.
 
 Still to regenerate from the clean candidate commit before any release claim:
-the full release gate DAG, the isolated 7.6.0 to 9.0.2 upgrade smoke, the macOS
+the full release gate DAG, the isolated 7.6.0 to 9.0.3 upgrade smoke, the macOS
 Menu Bar proof, the pack receipt, and the release-check stamp. The affected-scope
 DAG ran strict with zero blockers at every landing in this candidate, which is
 preparation evidence, not exact-commit evidence. The upgrade smoke matters more

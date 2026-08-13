@@ -217,3 +217,47 @@ test('the desktop-bridge restage stage skips itself under a test runner', async 
     await fsp.rm(root, { recursive: true, force: true });
   }
 });
+
+/**
+ * The redaction keeps the upstream's error *identifiers* while still killing
+ * its free text. Wholesale replacement erased both, so a gateway saying
+ * "response not found" and one saying "rate limited" reached the user as the
+ * identical sentence — this bridge's own redaction manufactured the
+ * undiagnosable report. `code`/`type` are machine-shaped and carry no request
+ * content; the message, which can echo request content, still dies at the
+ * bridge.
+ */
+test('an upstream error keeps its identifiers and loses its text', async () => {
+  const upstream = http.createServer((req, res) => {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: { type: 'invalid_request_error', code: 'response_not_found', message: 'secret request echo: sk-live-abcdef' } }));
+  });
+  const upstreamPort = await listen(upstream);
+  const holder = net.createServer(); const bridgePort = await listen(holder); await close(holder);
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 2_000), { writeState: false });
+    const body = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+      const request = http.request({
+        host: '127.0.0.1', port: bridgePort, method: 'POST',
+        path: desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/responses'),
+        headers: { 'content-type': 'application/json', 'x-sks-model': PUBLIC_MODEL },
+      }, (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => resolve({ status: response.statusCode || 0, text: Buffer.concat(chunks).toString('utf8') }));
+      });
+      request.once('error', reject);
+      request.end(JSON.stringify({ model: PUBLIC_MODEL, input: 'ping' }));
+    });
+    assert.equal(body.status, 404, 'the status passes through untouched');
+    const parsed = JSON.parse(body.text);
+    assert.equal(parsed.error.upstream_code, 'response_not_found', 'the identifier survives');
+    assert.equal(parsed.error.upstream_type, 'invalid_request_error');
+    assert.equal(body.text.includes('sk-live'), false, 'the free text does not');
+    assert.equal(body.text.includes('secret'), false);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await close(upstream);
+  }
+});

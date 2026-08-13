@@ -1,8 +1,8 @@
-# Release Proof Truth — 9.0.2
+# Release Proof Truth — 9.0.3
 
 ## Current assertion
 
-9.0.2 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
+9.0.3 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
 9.0.0 candidate plus the 9.0.1 bridge fixes (TCP keepalive instead of idle
 destruction on established WebSockets, self-convergence of a supervised bridge
 to the installed package plus an `sks update` restage stage, and bridge-side
@@ -17,7 +17,7 @@ candidate is committed and all source-bound gates are regenerated from that
 clean commit.
 
 All release artifacts bound to 8.7.0 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.0.2 evidence.
+must not be renamed, copied, or treated as 9.0.3 evidence.
 
 The full engineering record for this candidate — including every measurement
 cited below, the corrections to earlier claims, and the findings that were
@@ -33,7 +33,7 @@ work happened.
 | The §4 confidence ceiling held through every change | passed-hermetic | violations 10 (v1) / 3 (v2) at every step; name matches claim `text_candidate` structurally (nothing in the change calls `table.claim`), and `demoteKernelConfidence` makes depth monotonically weakening, so deeper traversal cannot promote |
 | Metadata values keep their authored type | passed-hermetic | format revision 2, 16-byte row with type tag and ordinal; both former `todo` tests are plain tests with inverted assertions; `preserved === authored` for all five types across all 14 fixture families; 10 mutations run, the 1 survivor (helper narrowing) closed with a both-spellings test |
 | A revision-1 index is refused with the repair that works | passed-hermetic | refusal happens before any header count is believed; the repair command depends on skew direction — older artifact → `sks align run --rebuild-index`, newer or unknowable → `sks update`; the direction branch is mutation-tested and the pre-existing test's blind spot (`+1` only) is recorded |
-| Freshness answers without the 63 MB parse, and `missing` when no index exists | passed-hermetic | `contextIndexFreshness` verdicts match the JSON path on every measured pair; the meta-present/pointer-absent hole (the exact 8.7.0→9.0.2 upgrade shape) is closed, with the four test sites that asserted the old behaviour named in the record; the preflight was mutated into the refused shape and 4 of 5 tests failed |
+| Freshness answers without the 63 MB parse, and `missing` when no index exists | passed-hermetic | `contextIndexFreshness` verdicts match the JSON path on every measured pair; the meta-present/pointer-absent hole (the exact 8.7.0→9.0.3 upgrade shape) is closed, with the four test sites that asserted the old behaviour named in the record; the preflight was mutated into the refused shape and 4 of 5 tests failed |
 | Caller-supplied changed paths reach the kernel as verified seeds | passed-hermetic | one resolver serves both production call sites and the benchmark; the response cache key includes the resolved seed set; the one case the join costs (`review-reverse-dependency`, −0.500) is named and kept, not netted out |
 | Subagent workers cannot outlive their work | passed-hermetic | process-group teardown on exit/timeout/abort, pre-spawn orphan sweep, stale heartbeats excluded from active sessions, generation-depth guard against recursive spawning; pinned by the worker-runtime, janitor, and orchestrator suites |
 | A stale pooled socket is replayed, not surfaced as 502 | passed-hermetic | replay requires `request.reusedSocket === true` plus ECONNRESET/EPIPE/ECONNABORTED and is one-shot on a fresh connection; pinned by the bridge http-forward suite |
@@ -47,13 +47,14 @@ work happened.
 | A supervised bridge converges to the installed package | passed-hermetic | the server reads the installed version on a timer and fires once after two consecutive identical mismatches — never on one read (npm writes package.json mid-install), never for an unreadable file; under launchd (`XPC_SERVICE_NAME` or `--supervised`) the handler drains and exits non-zero so `KeepAlive.SuccessfulExit=false` relaunches on the new code; mutation to fire-on-first-read fails the streak test |
 | `sks update` restarts a stale bridge immediately | passed-hermetic | `desktop-bridge-restage` migration stage: `kickstart -k` only (never bootout), gated on a live pid whose recorded version differs, and structurally skipped under `node --test` because launchctl addresses the real gui domain regardless of HOME — the skip is witnessed by a test running under exactly that condition |
 | An upstream error status leaves a bridge-side record | passed-hermetic | 4xx/5xx passthrough now logs status, provider id, public model, and path — catalog-published identifiers only, control characters stripped, bodies never logged; rows without the new fields stay byte-compatible |
+| An upstream error keeps its identifiers and loses its text | passed-hermetic | machine-shaped `error.type`/`error.code` (charset-validated, ≤64 chars) survive redaction into the response body and the log; the free-text message, which can echo request content, is still replaced; join-tested with a secret-bearing upstream body, and the mutation forcing the identifier to null fails exactly that test |
 | A skipped doctor check never renders as a failure | passed-hermetic | every console row fed by a `skipped: true` source says `not measured (run: sks doctor --full)`, never `degraded`/`missing`/`optional_missing`/`unavailable` and never a fake `ok`; a measured check that genuinely fails still renders its failure (control pinned); one legacy test had *encoded* the defect (null → `unavailable`) and was corrected, not deleted |
 | The home directory cannot become a project root | passed-hermetic | a `.sneakoscope`/`.dcodex`/`.git` marker directly in `os.homedir()` is skipped by discovery — `~/.sneakoscope` is the product's own global state dir, so the defect fired on most machines; `sks doctor --fix` from home routes to the existing global-only repair with run-from-your-project guidance; join-tested through the real doctor path and mutation-tested in both halves |
 | The canonical suite is green | passed-hermetic | 3,474 of 3,474, zero failures, zero todo, on a clean build (2,929 at 8.7.0); the affected release-gate DAG ran strict with 0 blockers at every landing |
 | The integration audit's blockers are closed | passed-hermetic | 29 candidates across six dimensions, 6 survived adversarial refutation, 4 were blockers, all 4 fixed in-tree before this bump; the refuted 23 are recorded so they are not re-derived |
-| All checked version authorities report 9.0.2 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, plugin manifest, Cargo.toml/lock, README banner, changelog, and the rebuilt `dist/build-manifest.json` move together |
-| The reported 9.0.2 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, and release-check stamp regenerated from that commit |
-| 9.0.2 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
+| All checked version authorities report 9.0.3 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, plugin manifest, Cargo.toml/lock, README banner, changelog, and the rebuilt `dist/build-manifest.json` move together |
+| The reported 9.0.3 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, and release-check stamp regenerated from that commit |
+| 9.0.3 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
 
 ## Known limitations shipped deliberately
 
@@ -101,7 +102,7 @@ fixture, or package dry run cannot promote a real-environment row to passed.
 
 Paseo is an independent external product. Sneakoscope does not bundle its
 daemon, wrap its CLI, probe its health, own its authentication or relay
-lifecycle, or require a live Paseo session as 9.0.2 release proof. The owned
+lifecycle, or require a live Paseo session as 9.0.3 release proof. The owned
 contract is limited to the committed `paseo.json` and accurate usage guidance.
 
 The active Telegram command, transport, Doctor projection, native poller and
@@ -112,7 +113,7 @@ not evidence of an active integration.
 
 ## Exact-commit release evidence
 
-Before any release claim, regenerate and verify current 9.0.2-bound artifacts
+Before any release claim, regenerate and verify current 9.0.3-bound artifacts
 from the clean handoff commit, including the build manifest, version metadata,
 package proof, pack receipt, release provenance, and release-check stamp. Each
 must bind the exact source digest, Git commit, tarball bytes, and package

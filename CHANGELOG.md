@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [9.0.3] - 2026-08-13
+
+### Fixed
+
+- The bridge stops erasing what the gateway actually said. Upstream error
+  bodies are redacted because they can echo request content -- but the
+  redaction replaced the whole body, identifiers included, so every upstream
+  failure reached the user as the same sentence: "Upstream request failed".
+  A gateway saying "response not found" and one saying "rate limited" were
+  indistinguishable, and the undiagnosable report was manufactured by the
+  bridge itself. Machine-shaped `error.type` and `error.code` identifiers now
+  survive into the response body and the bridge log; the free-text message,
+  which can carry request content, still dies at the bridge.
+
+### Diagnosed
+
+- The "remote compact task ... 404/502 Upstream request failed" reports that
+  follow a rate limit: reproduced against the live gateway -- repeated
+  follow-ups on the same `previous_response_id` flip from 200 to persistent
+  errors when routing shifts to a gateway node that does not hold the
+  conversation. That is a gateway-side conversation-affinity gap (failover
+  without sticky routing); with this release the bridge log finally records
+  which upstream error code each such failure carried.
+
+
 ## [9.0.2] - 2026-08-13
 
 ### Fixed

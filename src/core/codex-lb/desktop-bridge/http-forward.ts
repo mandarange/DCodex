@@ -154,8 +154,15 @@ function writeHttpBridgeError(res: ServerResponse, error: unknown, req?: Incomin
   res.end(JSON.stringify({ error: { type: 'sks_bridge_error', code, message: code } }));
 }
 
-async function readRedactedUpstreamError(response: IncomingMessage): Promise<Buffer> {
+/** An upstream error identifier: bounded, machine-shaped, nothing else survives. */
+function safeUpstreamErrorId(value: unknown): string | null {
+  const text = String(value ?? '').trim();
+  return /^[A-Za-z0-9_.:-]{1,64}$/.test(text) ? text : null;
+}
+
+async function readRedactedUpstreamError(response: IncomingMessage): Promise<{ body: Buffer; upstreamCode: string | null; upstreamType: string | null }> {
   let total = 0;
+  const chunks: Buffer[] = [];
   for await (const raw of response) {
     const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
     total += chunk.length;
@@ -163,14 +170,38 @@ async function readRedactedUpstreamError(response: IncomingMessage): Promise<Buf
       response.destroy();
       break;
     }
+    chunks.push(chunk);
   }
-  return Buffer.from(JSON.stringify({
-    error: {
-      type: 'upstream_error',
-      code: 'bridge_upstream_request_failed',
-      message: 'Upstream request failed'
-    }
-  }));
+  // The free-text message is redacted — an upstream error body can echo request
+  // content — but wholesale replacement went further than that and erased the
+  // *identifiers* too. Every failure then reached the user as the same sentence
+  // ("Upstream request failed"), so a gateway saying "response not found" and
+  // one saying "rate limited" were indistinguishable, and this bridge's own
+  // redaction manufactured the undiagnosable report. Identifier-shaped `type`
+  // and `code` carry no request content; they are extracted, everything else
+  // still dies here.
+  let upstreamCode: string | null = null;
+  let upstreamType: string | null = null;
+  try {
+    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { error?: { type?: unknown; code?: unknown }; detail?: unknown };
+    upstreamCode = safeUpstreamErrorId(parsed?.error?.code) ?? safeUpstreamErrorId(parsed?.detail);
+    upstreamType = safeUpstreamErrorId(parsed?.error?.type);
+  } catch {
+    // Not JSON, or truncated: nothing recoverable without risking content.
+  }
+  return {
+    upstreamCode,
+    upstreamType,
+    body: Buffer.from(JSON.stringify({
+      error: {
+        type: 'upstream_error',
+        code: 'bridge_upstream_request_failed',
+        message: 'Upstream request failed',
+        ...(upstreamType ? { upstream_type: upstreamType } : {}),
+        ...(upstreamCode ? { upstream_code: upstreamCode } : {})
+      }
+    }))
+  };
 }
 
 /**
@@ -293,16 +324,19 @@ export async function forwardHttp(
           // produced it. A user report with a cf-ray id was undiagnosable from
           // the bridge log. Status, model, provider and path only; the body may
           // carry upstream detail and is never logged.
-          logHttpRejection({
-            code: `bridge_upstream_status_${statusCode}`,
-            transport: 'http',
-            ...(req.method === undefined ? {} : { method: req.method }),
-            ...(req.url === undefined ? {} : { url: req.url }),
-            status: statusCode,
-            provider_id: provider.provider_id,
-            public_model: request.route.public_model,
-          });
-          void readRedactedUpstreamError(response).then((body) => {
+          void readRedactedUpstreamError(response).then(({ body, upstreamCode }) => {
+            // Logged after the body parse so the record can carry the upstream's
+            // own error code — the one fact a report holding only a status and a
+            // cf-ray id cannot supply.
+            logHttpRejection({
+              code: upstreamCode ? `bridge_upstream_status_${statusCode}:${upstreamCode}` : `bridge_upstream_status_${statusCode}`,
+              transport: 'http',
+              ...(req.method === undefined ? {} : { method: req.method }),
+              ...(req.url === undefined ? {} : { url: req.url }),
+              status: statusCode,
+              provider_id: provider.provider_id,
+              public_model: request.route.public_model,
+            });
             responseStarted = true;
             const responseHeaders = rewriteResponseHeaders(response.headers, provider.base_url, authenticatedLocalBaseUrl);
             responseHeaders['content-length'] = String(body.length);
