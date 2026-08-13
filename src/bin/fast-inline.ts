@@ -104,10 +104,19 @@ export async function hookUserPromptSubmitPerfInline(): Promise<void> {
 }
 
 function findProjectRootSync(fs: { existsSync(path: string): boolean }, start: string): string | null {
+  // Same judgment as core/fsx findProjectRoot: markers sitting directly in the
+  // home directory are global state (`~/.sneakoscope` IS the global root this
+  // very file reports), never a project. Skipping home keeps `sks root` from
+  // claiming the home directory as a project on every machine with menubar
+  // assets or an update cache in `~/.sneakoscope`.
+  const home = process.env.HOME || process.env.USERPROFILE || null;
+  const homeDir = home ? stripTrailingSlash(home) : null;
   let dir = normalizeStart(start);
   for (;;) {
-    if (fs.existsSync(joinPath(dir, '.sneakoscope'))) return dir;
-    if (fs.existsSync(joinPath(dir, 'AGENTS.md')) && fs.existsSync(joinPath(dir, 'package.json'))) return dir;
+    if (dir !== homeDir) {
+      if (fs.existsSync(joinPath(dir, '.sneakoscope'))) return dir;
+      if (fs.existsSync(joinPath(dir, 'AGENTS.md')) && fs.existsSync(joinPath(dir, 'package.json'))) return dir;
+    }
     const parent = parentDir(dir);
     if (parent === dir) return null;
     dir = parent;

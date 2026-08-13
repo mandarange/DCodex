@@ -1,10 +1,24 @@
-# SKS 9.0.1 Release Readiness
+# SKS 9.0.2 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 
-9.0.1 is the 9.0.0 candidate plus three bridge fixes, shipped the same day the
+9.0.2 adds two doctor fixes on top of 9.0.1, from a customer machine that looked
+broken and was not. `sks doctor --fix` skips the deep Codex App measurements by
+design, but the console rendered every skipped row as `degraded`/`missing`/
+`optional_missing`/`unavailable` — a wall of red over checks that never ran; a
+skipped source now renders `not measured (run: sks doctor --full)`, and a
+measured failure still says so. And the home directory can no longer become a
+project root: `~/.sneakoscope` is the product's own global state directory, so
+discovery was treating most machines' home as a project the moment a command ran
+outside a repo — global installs read as project-local, init-deep aimed at home,
+the Menu Bar target read dirty every run, and Codex config gained a trusted
+`[projects."~"]` entry. A marker directly in home is now skipped (the 8.6.6
+`project_config_is_codex_home_noop` judgment extended to discovery itself), and
+doctor from home runs the global-only repair with a pointer to the project.
+
+9.0.1 was the 9.0.0 candidate plus three bridge fixes, shipped the same day the
 field reported them. A quiet WebSocket is no longer executed by the bridge's own
 idle timer — the "reconnecting" flash on healthy machines — with liveness handed
 to TCP keepalive. A supervised bridge converges to the installed package on its
@@ -51,7 +65,7 @@ subagents, and the desktop bridge replays requests that died on a stale pooled
 socket after a network transition instead of surfacing 502.
 
 **Scope facts recorded rather than smoothed over:** the JSON snapshot file is
-*not* deleted in 9.0.1 — two remaining readers (the byte-level lint rules and
+*not* deleted in 9.0.2 — two remaining readers (the byte-level lint rules and
 the architecture-map baseline hash) are contract changes, not migrations, and
 have their own cards. The v1 query engine is unreachable from production search
 but still present. `requiredForPublish`/`alwaysOnRelease` protection arms are
@@ -63,7 +77,7 @@ The canonical suite is green end to end: 3,474 of 3,474, zero failures, zero
 todo — against 2,929 at 8.7.0; the growth is CRK2 and the defect-class fixes.
 
 Still to regenerate from the clean candidate commit before any release claim:
-the full release gate DAG, the isolated 7.6.0 to 9.0.1 upgrade smoke, the macOS
+the full release gate DAG, the isolated 7.6.0 to 9.0.2 upgrade smoke, the macOS
 Menu Bar proof, the pack receipt, and the release-check stamp. The affected-scope
 DAG ran strict with zero blockers at every landing in this candidate, which is
 preparation evidence, not exact-commit evidence. The upgrade smoke matters more

@@ -17,6 +17,7 @@ import {
 } from '../../dist/core/doctor/doctor-dirty-planner.js';
 
 const DOCTOR_SOURCE = fs.readFileSync('src/commands/doctor.ts', 'utf8');
+const DOCTOR_CONSOLE_SOURCE = fs.readFileSync('src/commands/doctor-console.ts', 'utf8');
 
 test('a problem only an inactive provider has never blocks bridge readiness', () => {
   const scoped = scopeCatalogBlockersToActiveProviders(
@@ -70,10 +71,14 @@ test('doctor reports the bridge as it is AFTER the repair transaction', () => {
   const before = DOCTOR_SOURCE.indexOf('const desktopBridgeBeforeFix =');
   const transaction = DOCTOR_SOURCE.indexOf('const doctorFixTransaction =');
   const after = DOCTOR_SOURCE.indexOf('const desktopBridge = doctorFixTransaction');
-  const printed = DOCTOR_SOURCE.indexOf('`Desktop Bridge: ${desktopBridge.ok');
+  const bound = DOCTOR_SOURCE.lastIndexOf('desktop_bridge: desktopBridge,');
   assert.ok(before > 0 && transaction > before, 'the pre-fix snapshot must be taken before the transaction');
   assert.ok(after > transaction, 'the reported bridge must be re-read after the repair transaction closes');
-  assert.ok(printed > after, 'the printed summary must consume the post-repair snapshot');
+  assert.ok(bound > after, 'the composed result must bind the post-repair snapshot');
+  // The console renderer prints from the composed result — the same object the
+  // JSON view serializes — so the human summary cannot diverge from it.
+  assert.match(DOCTOR_CONSOLE_SOURCE, /const desktopBridge = result\.desktop_bridge/);
+  assert.match(DOCTOR_CONSOLE_SOURCE, /`Desktop Bridge: \$\{desktopBridge\.ok/);
   // Doctor used to report the pre-repair snapshot, so a catalog repair that
   // succeeded still printed `Desktop Bridge: blocked` listing the blockers it
   // had just cleared — from the user's side indistinguishable from a repair

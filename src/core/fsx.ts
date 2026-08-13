@@ -421,15 +421,31 @@ export async function findUp(start: string, names: string[]): Promise<string | n
 
 export async function findProjectRoot(start: string = process.cwd()): Promise<string | null> {
   const resolved = path.resolve(start);
-  const sine = await findUp(resolved, ['.sneakoscope', '.dcodex']);
-  if (sine) {
-    const rootDir = path.dirname(sine);
-    if (rootDir !== path.parse(rootDir).root) return rootDir;
-  }
-  const git = await findUp(resolved, ['.git']);
-  if (git) {
-    const rootDir = path.dirname(git);
-    if (rootDir !== path.parse(rootDir).root) return rootDir;
+  // A marker sitting DIRECTLY in the home directory never makes home a project
+  // root. Home is where global state lives — `~/.sneakoscope` is the product's
+  // own global state dir (menubar assets, update cache, skill quarantine), so
+  // it exists on most machines; treating it as a project marker turned every
+  // run from home into a "project" run and poisoned every downstream
+  // classification (entry locality, init-deep, menubar target checks, Codex
+  // config `[projects]` trust). `project_config_is_codex_home_noop` (8.6.6)
+  // already refuses to let a home-rooted "project" claim the global Codex
+  // config; this extends the same judgment to root discovery itself: skip the
+  // home marker and keep climbing. In practice nothing sits above home short
+  // of the filesystem root — which is refused below too — so discovery
+  // returns null and callers fall back to their non-project behavior.
+  const home = path.resolve(os.homedir());
+  for (const markers of [['.sneakoscope', '.dcodex'], ['.git']]) {
+    let from = resolved;
+    while (true) {
+      const marker = await findUp(from, markers);
+      if (!marker) break;
+      const rootDir = path.dirname(marker);
+      if (rootDir === path.parse(rootDir).root) break;
+      if (rootDir !== home) return rootDir;
+      const parent = path.dirname(rootDir);
+      if (parent === rootDir) break;
+      from = parent;
+    }
   }
   return null;
 }

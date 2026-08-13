@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [9.0.2] - 2026-08-13
+
+### Fixed
+
+- `sks doctor --fix` stops rendering skipped checks as failures. The fix
+  profile deliberately skips the deep Codex App and harness measurements, but
+  the console read the empty results as `degraded`, `missing`,
+  `optional_missing` and `unavailable` — a wall of red over checks that never
+  ran, which users read as breakage on machines that were fine. Every row fed
+  by a skipped source now says `not measured (run: sks doctor --full)`, and a
+  measured check that genuinely fails still says so.
+- The home directory can no longer become a project root. `~/.sneakoscope` is
+  the product's own global state directory, so root discovery treated most
+  machines' home as a project the moment a command ran outside a repo: global
+  npm installs classified as project-local, init-deep attempted against home,
+  the Menu Bar target read dirty on every run and restarted itself, and Codex
+  config gained a trusted `[projects."~"]` entry. A marker directly in home is
+  now skipped — the 8.6.6 `project_config_is_codex_home_noop` judgment
+  extended to discovery itself — and `sks doctor --fix` from home runs the
+  global-only repair with a pointer to run project checks from the project.
+
+
 ## [9.0.1] - 2026-08-13
 
 ### Fixed

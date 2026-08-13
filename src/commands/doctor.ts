@@ -34,11 +34,13 @@ import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../core/codex-compat/codex-runti
 import { formatHarnessConflictReport, scanHarnessConflicts } from '../core/harness-conflicts.js';
 import {
   doctorArgWarnings as baseDoctorArgWarnings,
+  doctorGlobalOnlySelection,
   doctorMenuBarInstallPolicy,
   doctorPhaseIdsForProfile,
   doctorProfileFromArgs,
   doctorProfileRequiresDesktopBridgeReadiness
 } from './doctor-profile.js';
+import { renderDoctorConsoleReport } from './doctor-console.js';
 import {
   buildCodexAppUiDiagnosticFailure, buildRuntimeReadiness,
   captureCodexConfigSnapshot, deferredNativeRepair,
@@ -191,7 +193,12 @@ export async function run(_command: any, args: any = [], deps: any = {}) {
     return report;
   }
   const doctorFix = flag(args, '--fix');
-  const globalOnly = doctorFix && flag(args, '--global-only');
+  const homeDir = path.resolve(deps.home || process.env.HOME || os.homedir());
+  // `--fix` from the home directory reroutes to global-only repair: root
+  // discovery never resolves home as a project, so the cwd fallback root IS
+  // home there, and running project phases against it would misclassify the
+  // user's home folder as an app project.
+  const globalOnly = doctorGlobalOnlySelection({ args, doctorFix, root, home: homeDir }).global_only;
   if (doctorFix) {
     const conflictScan = await scanHarnessConflicts(root);
     if (conflictScan.hard_block) {
@@ -223,9 +230,7 @@ export async function run(_command: any, args: any = [], deps: any = {}) {
   }
   if (!doctorFix && flag(args, '--json') && doctorProfile === 'fast') return runDoctorJsonFastPath(args, root);
   if (doctorFix) {
-    const guardRoot = globalOnly
-      ? path.resolve(deps.home || process.env.HOME || os.homedir())
-      : root;
+    const guardRoot = globalOnly ? homeDir : root;
     return withSecretPreservationGuard(guardRoot, 'doctor-fix', async () => (
       globalOnly
         ? runDoctorGlobalOnlyFix(args, root, deps)
@@ -307,6 +312,7 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
       : [])
   ].map(String).filter(Boolean))];
   const ok = blockers.length === 0;
+  const projectRootAliasDetected = path.resolve(root) === home;
   return {
     schema: 'sks.doctor-status.v3',
     elapsed_ms: Date.now() - startedAtMs,
@@ -317,7 +323,7 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     install_scope: 'global',
     root,
     home,
-    project_root_alias_detected: path.resolve(root) === home,
+    project_root_alias_detected: projectRootAliasDetected,
     no_project_writes_performed: true,
     project_phases_skipped: [
       'project_skills_reconcile',
@@ -336,6 +342,9 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     desktop_bridge: desktopBridge,
     blockers,
     next_actions: [
+      ...(projectRootAliasDetected
+        ? ['Project checks were skipped because this directory is your home folder. Run them from your project: cd <your-project> && sks doctor --fix']
+        : []),
       ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : []),
       'Run `sks doctor --fix --json` from a specific project directory when project-scoped repair is required.'
     ]
@@ -1704,208 +1713,15 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
     if (!result.ok) process.exitCode = 1;
     return;
   }
-  console.log('SKS Doctor');
-  for (const warning of argWarnings) console.log(`Argument warning: ${warning}`);
-  for (const warning of (officialSubagentConfig as any).warnings || []) console.log(`Official subagent warning: ${warning}`);
-  console.log(`Root:      ${root}`);
-  console.log(`Node:      ${result.node.ok ? 'ok' : 'fail'} ${result.node.version}`);
-  console.log(`Codex:     ${codex.bin ? 'ok' : 'missing'} ${codex.version || ''}`);
-  if (oauthCallbackPortDiagnostic.conflict) {
-    const listeners = oauthCallbackPortDiagnostic.listeners
-      .map((listener) => `${listener.command} pid ${listener.pid} ${listener.address}`)
-      .join(', ');
-    console.log(`OAuth callback port 1455: warning (${listeners})`);
-    for (const action of oauthCallbackOperatorActions) console.log(`  action: ${action}`);
-  }
-  const actual = (codexConfig.checks || []).find((check: any) => check.name === 'actual_codex_cli_config_load');
-  console.log('Project config:');
-  console.log(`  node read:       ${ready.codex_config_readable_by_node ? 'ok' : 'failed'}`);
-  console.log(`  codex cli read:  ${ready.codex_config_readable_by_codex_cli ? 'ok' : (actual?.status || 'failed')}`);
-  console.log('Context7 MCP:');
-  console.log(`  transport: ${(context7Repair as any).preferred_transport || 'remote'}`);
-  console.log(`  repair: ${(context7Repair as any).ok ? 'ok' : 'blocked'}`);
-  for (const action of (context7Repair as any).actions || []) console.log(`  - ${action}`);
-  for (const warning of (context7Repair as any).warnings || []) console.log(`  warning: ${warning}`);
-  console.log('Codex startup config:');
-  console.log(`  repair: ${(codexStartupRepair as any).ok ? 'ok' : 'blocked'}`);
-  for (const action of (codexStartupRepair as any).actions || []) console.log(`  - ${action}`);
-  for (const action of (codexStartupRepair as any).manual_actions || []) console.log(`  manual: ${action}`);
-  for (const warning of (codexStartupRepair as any).warnings || []) console.log(`  warning: ${warning}`);
-  if (codexConfigSyntaxRepair) {
-    console.log('Codex config syntax:');
-    console.log(`  repair: ${codexConfigSyntaxRepair.ok ? 'ok' : 'blocked'}`);
-    for (const action of codexConfigSyntaxRepair.actions || []) console.log(`  - ${action}`);
-    for (const action of codexConfigSyntaxRepair.manual_actions || []) console.log(`  manual: ${action}`);
-    for (const warning of codexConfigSyntaxRepair.warnings || []) console.log(`  warning: ${warning}`);
-  }
-  console.log(`  codex doctor:    ${formatCodexDoctorConsoleStatus(authoritativeCodexDoctor)}`);
-  console.log(`Rust acc.: ${rust.mode || (rust.available ? 'rust_accelerated' : 'js_fallback')} ${rust.version || rust.status || ''}`);
-  console.log(`Codex App: ${ready.codex_app_ready ? 'ok' : 'optional_missing'}`);
-  console.log('SKS Runtime Readiness:');
-  console.log(`  Codex Native: ${runtimeReadiness.codex_native}`);
-  console.log(`  Loop Mesh: ${runtimeReadiness.loop_mesh}`);
-  console.log(`  QA Visual: ${runtimeReadiness.qa_visual}`);
-  console.log(`  Research Sources: ${runtimeReadiness.research_sources}`);
-  console.log(`  Image Follow-up: ${runtimeReadiness.image_followup}`);
-  for (const note of runtimeReadiness.notes) console.log(`  ${note}`);
-  if (runtimeReadiness.repair_actions.length) {
-    console.log('Repair actions:');
-    for (const action of runtimeReadiness.repair_actions) console.log(`  - ${action}`);
-  }
-  const nativeCapabilityRows = Array.isArray((doctorNativeCapabilityRepair as any)?.native_capabilities?.capabilities)
-    ? (doctorNativeCapabilityRepair as any).native_capabilities.capabilities
-    : [];
-  console.log('SKS Native Capabilities:');
-  console.log(`  image generation: ${nativeCapabilityStatus(nativeCapabilityRows, 'image_generation', 'repair_required')}`);
-  console.log(`  image follow-up edit: ${nativeCapabilityStatus(nativeCapabilityRows, 'image_followup_edit', 'degraded')}`);
-  console.log(`  computer use: ${nativeCapabilityStatus(nativeCapabilityRows, 'computer_use', 'manual_required')}`);
-  console.log(`  Chrome/web review: ${nativeCapabilityStatus(nativeCapabilityRows, 'chrome_web_review', 'manual_required')}`);
-  console.log(`  app screenshot: ${nativeCapabilityStatus(nativeCapabilityRows, 'codex_app_screenshot', 'degraded')}`);
-  console.log(`  app handoff: ${nativeCapabilityStatus(nativeCapabilityRows, 'app_handoff', 'unavailable')}`);
-  console.log(`  image path exposure: ${nativeCapabilityStatus(nativeCapabilityRows, 'image_path_exposure', 'fallback')}`);
-  const nativeManualActions = uniqueNativeManualActions(nativeCapabilityRows);
-  if (nativeManualActions.length) {
-    console.log('  manual next actions:');
-    for (const action of nativeManualActions) console.log(`    - ${action}`);
-  }
-  console.log('SKS Skills:');
-  console.log(`  core skills: ${doctorSkillStatus((doctorNativeCapabilityRepair as any)?.core_skills)}`);
-  console.log(`  duplicate project skills: ${doctorDedupeStatus((doctorNativeCapabilityRepair as any)?.skill_dedupe)}`);
-  console.log('SKS Current Command Surface:');
-  console.log(`  status: ${(commandAliasCleanup as any).status || ((commandAliasCleanup as any).ok ? 'clean' : 'blocked')}`);
-  console.log(`  canonical commands: ${(commandAliasCleanup as any).canonical_command_count ?? 0}`);
-  const managedRuntimeCleanup = (commandAliasCleanup as any)?.cleanup?.managed_runtime;
-  if (managedRuntimeCleanup) {
-    console.log(`  managed items reconciled: ${managedRuntimeCleanup.removed_managed_artifact_count ?? 0}`);
-    console.log(`  user-authored collisions preserved: ${managedRuntimeCleanup.preserved_user_file_count ?? 0}`);
-  }
-  if ((commandAliasCleanup as any).report_path) console.log(`  report: ${(commandAliasCleanup as any).report_path}`);
-  console.log('Secret preservation:');
-  console.log(`  Supabase keys: ${(doctorNativeCapabilityRepair as any)?.ok === false && String(((doctorNativeCapabilityRepair as any)?.blockers || []).join(' ')).includes('secret_preservation_failed') ? 'blocked' : 'preserved'}`);
-  console.log('  raw secret values: never recorded');
-  console.log(`  migration journal: ${(doctorNativeCapabilityRepair as any)?.secret_preservation_guard || '.sneakoscope/reports/secret-preservation-guard.json'}`);
-  console.log('Codex App Harness:');
-  console.log(`  plugins: ${(codexAppHarnessMatrix as any).app_features?.plugin_json ? 'ok' : 'degraded'}`);
-  console.log(`  hook approval: ${(codexAppHarnessMatrix as any).app_features?.hook_approval_state_detectable ? 'ok' : 'unknown'}`);
-  console.log(`  skills: ${(codexAppHarnessMatrix as any).sks_integrations?.dollar_skills_synced ? 'ok' : 'degraded'}`);
-  console.log(`  agent roles: ${(codexAppHarnessMatrix as any).sks_integrations?.agent_roles_synced ? 'ok' : 'degraded'}`);
-  console.log(`  native agent_type: ${(codexAppHarnessMatrix as any).app_features?.agent_type_supported ? 'ok' : 'fallback message-role'}`);
-  console.log(`  init-deep memory: ${(codexAppHarnessMatrix as any).sks_integrations?.init_deep_available ? 'available' : 'missing'}`);
-  console.log(`  loop mesh app profile: ${(codexAppHarnessMatrix as any).sks_integrations?.loop_mesh_app_profile_available ? 'available' : 'missing'}`);
-  const codexAppUiStatus = codexAppUi as any;
-  console.log('Codex App UI:');
-  console.log(`  fast selector: ${codexAppUi.fast_selector || 'unknown'}`);
-  console.log(`  provider selector: ${codexAppUi.provider_selector || 'unknown'}`);
-  if (Array.isArray(codexAppUiStatus.provider_blockers) && codexAppUiStatus.provider_blockers.length) {
-    console.log(`  provider blockers: ${codexAppUiStatus.provider_blockers.join(', ')}`);
-  }
-  if (Array.isArray(codexAppUiStatus.provider_actions) && codexAppUiStatus.provider_actions.length) {
-    console.log('  provider actions:');
-    for (const action of codexAppUiStatus.provider_actions) console.log(`    - ${action}`);
-  }
-  console.log(`  host-owned config: ${codexAppUi.host_owned_config || 'unknown'}`);
-  if (Array.isArray(codexAppUi.actions) && codexAppUi.actions.some((action: any) => action.changed)) {
-    console.log('  repaired files:');
-    for (const action of codexAppUi.actions.filter((entry: any) => entry.changed)) console.log(`    - ${action.file}${action.backup_path ? ` (backup ${action.backup_path})` : ''}`);
-  }
-  if (codexAppUi.next_action) console.log(`  next action: ${codexAppUi.next_action}`);
-  console.log('SKS Menu Bar:');
-  console.log(`  status: ${(sksMenuBar as any).status || ((sksMenuBar as any).ok ? 'ok' : 'blocked')}`);
-  for (const line of sksMenuBarRunningVersionConsoleLines(sksMenuBar)) console.log(line);
-  const menubarPhase = (doctorFixTransaction as any)?.phases?.find((phase: any) => phase?.id === 'sks_menubar');
-  if (menubarPhase) {
-    const menubarSummary = menubarPhase.ok
-      ? (menubarPhase.repaired ? 'repaired' : 'verified')
-      : `blocked(${(menubarPhase.blockers || []).join(', ') || 'unknown'})`;
-    console.log(`  menubar: ${menubarSummary}`);
-  }
-  if ((sksMenuBar as any).app_path) console.log(`  app: ${(sksMenuBar as any).app_path}`);
-  if ((sksMenuBar as any).launch_agent_path) console.log(`  launch agent: ${(sksMenuBar as any).launch_agent_path}`);
-  if (Array.isArray((sksMenuBar as any).blockers) && (sksMenuBar as any).blockers.length) console.log(`  blockers: ${(sksMenuBar as any).blockers.join(', ')}`);
-  if (Array.isArray((sksMenuBar as any).warnings) && (sksMenuBar as any).warnings.length) console.log(`  warnings: ${(sksMenuBar as any).warnings.join(', ')}`);
-  console.log(`Provider: ${providerContext.provider || 'unknown'} ${providerContext.service_tier || ''} (${providerContext.source || 'unknown'}, ${providerContext.confidence || 'low'})`);
-  const imagegenReady = (imagegen as any).auth_readiness;
-  if (imagegenReady) {
-    const paths = imagegenReady.available_paths?.length ? imagegenReady.available_paths.join(', ') : 'none';
-    console.log(`Image Gen: auth=${imagegenReady.auth_mode} | headless_auto=${imagegenReady.headless_auto_available ? 'available' : 'unavailable'} | paths: ${paths}`);
-    if (!imagegenReady.headless_auto_available) {
-      for (const action of imagegenReady.next_actions || []) console.log(`  - ${action}`);
-    }
-  }
-  console.log(`Image Gen repair: ${nativeCapabilityReadiness.imagegen.status}`);
-  for (const action of (imagegenRepair as any).manual_actions || []) console.log(`  - ${action}`);
-  console.log(`Computer Use repair: ${(computerUseRepair as any).recovered ? 'ok' : (computerUseRepair as any).attempted ? 'blocked' : 'not-needed'}`);
-  for (const action of (computerUseRepair as any).next_actions || []) console.log(`  - ${action}`);
-  console.log(`Browser Use repair: ${(browserUseRepair as any).recovered ? 'ok' : (browserUseRepair as any).attempted ? 'blocked' : 'not-needed'}`);
-  for (const action of (browserUseRepair as any).next_actions || []) console.log(`  - ${action}`);
-  if (mcpTransportCollisionRepair) {
-    const collisionCount = ((mcpTransportCollisionRepair as any).servers || []).filter((s: any) => s.status === 'collision_resolved').length;
-    console.log(`MCP transport collision repair: ${(mcpTransportCollisionRepair as any).ok ? 'ok' : 'blocked'}${collisionCount ? ` (${collisionCount} resolved)` : ''}`);
-  }
-  {
-    const manifestPath = path.join(root, '.sneakoscope', 'agent-bridge', 'manifest.json');
-    const manifestExists = await exists(manifestPath);
-    console.log(`Agent bridge: ${manifestExists ? 'manifest present' : 'not set up'}${manifestExists ? '' : ' — run `sks agent-bridge setup` to publish the manifest and register with an MCP host'}`);
-  }
-  const codexCurrentApp = (codexCurrentAppCapability as any).report || {};
-  console.log('Codex current compatibility:');
-  console.log(`  target: ${CURRENT_CODEX_RUNTIME_CONTRACT.targetTag}`);
-  console.log(`  runtime: ${codex.version || 'unknown'}`);
-  console.log(`  multi-agent mode: ${(codexNativeFeatureMatrix as any).features?.multi_agent_mode?.ok ? 'verified' : 'unverified'}`);
-  console.log(`  rollout budget: ${(codexNativeFeatureMatrix as any).features?.rollout_budget?.ok ? 'verified' : 'unverified'}`);
-  console.log(`  indexed search: ${(codexNativeFeatureMatrix as any).features?.indexed_web_search?.ok ? 'verified' : 'unverified'}`);
-  console.log(`  current time: ${(codexNativeFeatureMatrix as any).features?.current_time_read?.ok ? 'verified' : 'unverified'}`);
-  console.log('Current Codex app features:');
-  console.log(`  /app handoff: ${codexCurrentApp.supports_app_handoff ? 'ok' : 'unavailable'}`);
-  console.log(`  plugin JSON: ${codexCurrentApp.supports_plugin_json ? 'ok' : 'unavailable'}`);
-  console.log(`  image path exposure: ${codexCurrentApp.supports_image_path_exposure ? 'ok' : 'unavailable'}`);
-  console.log(`  OAuth MCP pre-refresh: ${codexCurrentApp.supports_oauth_mcp_prerefresh ? 'ok' : 'unavailable'}`);
-  const plugins = (pluginInventory as any)?.report?.plugins || [];
-  const remoteMcpCount = plugins.flatMap((plugin: any) => plugin.remote_mcp_servers || []).length;
-  const unavailableTemplates = pluginPolicy?.unavailable_app_templates?.length || 0;
-  console.log(`Codex plugins: ${(pluginInventory as any)?.report ? 'ok' : 'warning'}`);
-  console.log(`  Remote MCP servers: ${remoteMcpCount} candidates`);
-  console.log(`  Unavailable app templates: ${unavailableTemplates}`);
-  for (const warning of pluginPolicy?.doctor_warnings || []) console.log(`  warning: ${warning}`);
-  if ((codexCurrentAppDoctor as any)?.fixed?.length) console.log(`  doctor --fix repaired: ${(codexCurrentAppDoctor as any).fixed.join(', ')}`);
-  console.log(`Desktop Bridge: ${desktopBridge.ok ? 'ready' : 'blocked'} (${desktopBridge.status?.readiness?.state || 'unavailable'})`);
-  for (const providerId of ['codex-lb', 'openrouter']) {
-    const provider = desktopBridge.providers?.[providerId];
-    if (!provider) continue;
-    console.log(`  ${providerId}: ${provider.enabled ? 'enabled' : 'disabled'}; credential ${provider.credential?.state || 'unknown'} (${provider.credential?.source || 'none'}); endpoint ${provider.endpoint?.configured ? 'configured' : 'missing'}`);
-  }
-  for (const warning of desktopBridge.warnings || []) console.log(`  warning: ${warning}`);
-  for (const blocker of desktopBridge.blockers || []) console.log(`  blocker: ${blocker}`);
-  if (!desktopBridge.ok) for (const action of desktopBridge.recovery_actions || []) console.log(`  action: ${action}`);
-  console.log(`Permissions: config profile and permission profile are tracked separately (${permissionProfiles.codex_config_profile_field}, ${permissionProfiles.codex_permission_profile_field})`);
-  console.log('Ready:');
-  console.log(`  cli_ready: ${ready.cli_ready ? 'yes' : 'no'}`);
-  console.log(`  mad_ready: ${ready.mad_ready ? 'yes' : 'no'}`);
-  console.log(`  managed_state_current: ${ready.managed_state_current ? 'yes' : 'no'}`);
-  console.log(`  core_ready: ${ready.core_ready ? 'yes' : 'no'}`);
-  console.log(`  center_ready: ${ready.center_ready ? 'yes' : 'no'}${ready.center_attempted ? ' (repair attempted)' : ' (not attempted)'}`);
-  console.log(`  ready:     ${ready.ready ? 'yes' : 'no'}`);
-  if (!ready.ready) {
-    console.log('Primary blocker:');
-    console.log(`  ${ready.primary_blocker || 'unknown'}`);
-  }
-  if (configRepair?.repair_actions?.length) {
-    console.log('What I fixed:');
-    for (const action of configRepair.repair_actions) console.log(`  - ${action.name}: ${action.ok ? 'ok' : 'failed'}`);
-  }
-  if (migrationJournal?.journal_path) {
-    console.log(`Migration journal: ${migrationJournal.journal_path} (${migrationJournal.event_count} events, ${migrationJournal.mutations_without_rollback} without rollback)`);
-  }
-  if (sksUpdate) {
-    console.log(`SKS update: ${(sksUpdate as any).status}${(sksUpdate as any).latest ? ` latest ${(sksUpdate as any).latest}` : ''}${(sksUpdate as any).error ? ` (${(sksUpdate as any).error})` : ''}`);
-  }
-  if (globalSksInstallCleanup) {
-    console.log(`Global SKS installs: kept ${(globalSksInstallCleanup as any).kept?.length ?? 0}, removed ${(globalSksInstallCleanup as any).removed?.filter((entry: any) => entry.ok).length ?? 0}, source repo exempt ${(globalSksInstallCleanup as any).candidates?.filter((entry: any) => entry.source_repo_exempt).length ?? 0}`);
-    if ((globalSksInstallCleanup as any).npm_cache) console.log(`NPM cache cleanup: ${(globalSksInstallCleanup as any).npm_cache.status}`);
-  }
-  if (!ready.ready && ready.next_actions?.length) {
-    console.log('What still needs you:');
-    for (const action of ready.next_actions) console.log(`  - ${action}`);
-  }
+  const agentBridgeManifestExists = await exists(path.join(root, '.sneakoscope', 'agent-bridge', 'manifest.json'));
+  const consoleLines = renderDoctorConsoleReport(result, {
+    oauthCallbackOperatorActions,
+    nativeCapabilityReadiness,
+    agentBridgeManifestExists,
+    codexCurrentAppCapability,
+    pluginInventory,
+    rootIsHome: path.resolve(root) === path.resolve(deps.home || process.env.HOME || os.homedir())
+  });
+  for (const consoleLine of consoleLines) console.log(consoleLine);
   if (!result.ok) process.exitCode = 1;
 }

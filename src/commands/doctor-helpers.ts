@@ -246,8 +246,22 @@ export function buildCodexAppUiDiagnosticFailure(apply: boolean, error: unknown)
   };
 }
 
+/**
+ * The one spelling for a check the selected doctor profile never ran.
+ *
+ * The console renderer used to read a skipped stub's empty fields as
+ * measurements and print `degraded`/`missing`/`optional_missing`/`unavailable`
+ * for work that never happened. A skipped check is not a failure — and not a
+ * success either (`ok` would be the same lie in green) — it is unmeasured.
+ */
+export const DOCTOR_CONSOLE_NOT_MEASURED = 'not measured (run: sks doctor --full)';
+
 export function formatCodexDoctorConsoleStatus(report: any) {
-  if (!report || report.available !== true) return 'unavailable';
+  // No report means the bridge probe was never run for this profile — an
+  // unmeasured check, not an unavailable Codex Doctor. `unavailable` is
+  // reserved for a probe that RAN and found the bridge unusable.
+  if (!report) return DOCTOR_CONSOLE_NOT_MEASURED;
+  if (report.available !== true) return 'unavailable';
   return report.disposition || (report.exit_code === 0 ? 'pass' : 'warn');
 }
 

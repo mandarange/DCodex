@@ -1,7 +1,33 @@
+import path from 'node:path';
 import { flag } from '../cli/args.js';
 import { sksMenuBarRestartDeferred } from '../core/codex-app/menubar/index.js';
 
 export type DoctorProfile = 'fast' | 'fix' | 'migration' | 'full' | 'capabilities';
+
+export type DoctorGlobalOnlyReason = 'explicit_flag' | 'home_is_root';
+
+/**
+ * Decides whether a `doctor --fix` run takes the global-only path.
+ *
+ * Two triggers: the explicit `--global-only` flag, and a resolved project root
+ * that IS the home directory. The home directory is never a project — root
+ * discovery already refuses markers sitting directly in home — so when the
+ * cwd fallback lands doctor on home, running the project phases there would
+ * treat the user's home folder as an app project (init-deep "missing", a
+ * trusted `[projects."~"]` Codex config entry, project reports scattered into
+ * `~/.sneakoscope`). Global repair is the only honest scope for that run.
+ */
+export function doctorGlobalOnlySelection(input: {
+  args: any[];
+  doctorFix: boolean;
+  root: string;
+  home: string;
+}): { global_only: boolean; reason: DoctorGlobalOnlyReason | null } {
+  if (!input.doctorFix) return { global_only: false, reason: null };
+  if (flag(input.args, '--global-only')) return { global_only: true, reason: 'explicit_flag' };
+  if (path.resolve(input.root) === path.resolve(input.home)) return { global_only: true, reason: 'home_is_root' };
+  return { global_only: false, reason: null };
+}
 
 export function doctorProfileFromArgs(args: any[] = [], doctorFix = false): DoctorProfile {
   const explicit = readOption(args, '--profile');
