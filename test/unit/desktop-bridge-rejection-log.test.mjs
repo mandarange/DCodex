@@ -90,3 +90,30 @@ test('a failing write never propagates out of the logger', () => {
   });
   assert.doesNotThrow(() => log({ code: 'bridge_origin_forbidden', transport: 'http' }));
 });
+
+test('an upstream error status carries the model and provider that produced it', () => {
+  // A gateway 4xx passes through to the client untouched; until this event the
+  // bridge kept no record of it, so a user report holding only a cf-ray id was
+  // undiagnosable from this machine. Model and provider ids are
+  // catalog-published names, never secrets — and control characters are
+  // stripped so a hostile id cannot forge extra log lines.
+  const { log, parsed } = collector();
+  log({
+    code: 'bridge_upstream_status_404', transport: 'http', method: 'POST',
+    url: '/backend-api/codex/responses', status: 404,
+    provider_id: 'codex-lb', public_model: 'gpt-daybreak-blue-latest\r\nforged: line'
+  });
+  const row = parsed()[0];
+  assert.equal(row.status, 404);
+  assert.equal(row.provider_id, 'codex-lb');
+  assert.equal(row.public_model, 'gpt-daybreak-blue-latestforged: line');
+  assert.equal(String(row.public_model).includes('\n'), false);
+});
+
+test('rows without provider fields stay byte-compatible with the old shape', () => {
+  const { log, parsed } = collector();
+  log({ code: 'bridge_origin_forbidden', transport: 'http' });
+  const row = parsed()[0];
+  assert.equal('provider_id' in row, false);
+  assert.equal('public_model' in row, false);
+});

@@ -187,19 +187,21 @@ export async function forwardWebSocket(
   const fail = (error?: unknown): void => { clearTimeout(timer); if (!connected) writeUpgradeFailure(client, error, req); else client.destroy(); };
   const onConnected = (): void => {
     connected = true; clearTimeout(timer); upstream.setNoDelay(true);
-    // Destroy WITH a cause. This silently tore down an established Responses
-    // WebSocket, so a stream that died here reached the client as a bare
-    // disconnect — "stream disconnected before completion" with nothing on
-    // either side naming the bridge as the party that closed it. The HTTP path
-    // has always attributed its own idle timeout; this one did not.
-    upstream.setTimeout(config.idleTimeoutMs, () => {
-      logWebSocketRejection({
-        code: 'bridge_websocket_upstream_idle_timeout',
-        transport: 'websocket',
-        ...(req.url === undefined ? {} : { url: req.url }),
-      });
-      upstream.destroy(new DesktopBridgeError('bridge_websocket_upstream_idle_timeout'));
-    });
+    // No idle destruction on an established WebSocket. A tunnel's liveness is
+    // the endpoints' business: Codex keeps one Responses socket per session and
+    // legitimately sends nothing for as long as the user is reading or thinking,
+    // so an idle timer here guaranteed a teardown on every quiet session — the
+    // client's momentary "reconnecting" flash at 예: idle_timeout_ms = 5 minutes,
+    // on a machine where nothing was wrong. (An earlier fix attributed this
+    // teardown instead of leaving it silent; the attribution revealed it should
+    // not happen at all.) Dead peers are the one thing idle destruction actually
+    // caught, and TCP keepalive reaps those without executing healthy-but-quiet
+    // sessions: probes start after 30s of silence and a truly dead peer is torn
+    // down by the OS in bounded time, which then propagates through the existing
+    // close handlers on both legs.
+    upstream.setKeepAlive(true, 30_000);
+    const clientSocket = client as Partial<net.Socket>;
+    if (typeof clientSocket.setKeepAlive === 'function') clientSocket.setKeepAlive(true, 30_000);
     const headers = buildProviderWebSocketHeaders(req.headers, { providerId: provider.provider_id, authTransport: provider.auth_transport, credential }, target.host);
     upstream.write([`${req.method || 'GET'} ${target.pathname}${target.search} HTTP/1.1`, ...serializeHeaders(headers), '', ''].join('\r\n'));
     if (head.length) upstream.write(head);

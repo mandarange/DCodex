@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+## [9.0.1] - 2026-08-13
+
+### Fixed
+
+- The bridge no longer executes a quiet WebSocket. An idle timer destroyed the
+  upstream after `idle_timeout_ms` (5 minutes by default) of silence, so every
+  session where the user read or thought for a while died on a healthy machine
+  and Codex flashed its reconnect banner. Liveness on an established tunnel now
+  belongs to TCP keepalive, which reaps dead peers without killing
+  healthy-but-quiet sessions.
+- The bridge converges to the installed package on its own. It is a launchd
+  service: upgrading replaces the files on disk and never restarts the process,
+  so every bridge fix stayed invisible until someone happened to run
+  `doctor --fix` — users kept reporting bugs that were already fixed, and each
+  report was true of their running process and false of their installed
+  package. A supervised bridge now checks the installed version once a minute
+  and, on two consecutive reads of the same newer version, drains in-flight
+  work and exits for launchd to relaunch on the new code. `sks update` also
+  restarts a stale bridge immediately, as a migration stage.
+- An upstream 4xx/5xx is now recorded. A gateway 404 ("Upstream request
+  failed", cf-ray attached) passed through with no bridge-side record, so a
+  user report holding only a cf-ray id was undiagnosable from the machine that
+  produced it; the bridge log now carries status, provider, public model, and
+  path — never bodies or secrets.
+
+### Removed
+
+- `contextGraphArtifactPaths`, a helper that never had a caller at any commit
+  in its history.
+
+
 ## [9.0.0] - 2026-08-13
 
 The major bump is a binary format break: the context-retrieval index moves to

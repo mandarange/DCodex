@@ -171,6 +171,24 @@ export interface DesktopBridgeStartOptions {
   writeState?: boolean;
   now?: Date;
   pid?: number;
+  /**
+   * Self-convergence for a supervised bridge.
+   *
+   * The bridge is a long-lived launchd service, and upgrading the package
+   * replaces the files on disk without restarting it — so every bridge fix
+   * stayed invisible until someone happened to run a repair. When this option
+   * is supplied, the server periodically reads the installed package version
+   * and, once it observes the same mismatched version twice in a row (never on
+   * a single read: an npm install writes package.json mid-flight), calls
+   * `onSkew` exactly once. The caller decides what convergence means — under
+   * launchd that is drain-and-exit-nonzero, which `KeepAlive.SuccessfulExit =
+   * false` answers by relaunching the service on the new code.
+   */
+  versionSkew?: {
+    readInstalledVersion: () => Promise<string | null>;
+    onSkew: (installedVersion: string) => void;
+    intervalMs?: number;
+  };
 }
 
 export type DesktopBridgeStatus =

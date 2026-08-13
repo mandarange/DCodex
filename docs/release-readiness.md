@@ -1,10 +1,23 @@
-# SKS 9.0.0 Release Readiness
+# SKS 9.0.1 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 
-9.0.0 replaces the context-retrieval engine. `sks search --mode context` and the
+9.0.1 is the 9.0.0 candidate plus three bridge fixes, shipped the same day the
+field reported them. A quiet WebSocket is no longer executed by the bridge's own
+idle timer — the "reconnecting" flash on healthy machines — with liveness handed
+to TCP keepalive. A supervised bridge converges to the installed package on its
+own (drain, exit, launchd relaunch) and `sks update` restarts a stale bridge
+immediately, closing the class where every bridge fix stayed invisible until
+someone ran `doctor --fix`: users kept reporting bugs that were already fixed,
+and each report was true of their running process and false of their installed
+package. And an upstream 4xx/5xx now leaves a bridge-side record (status,
+provider, public model, path — never bodies), so a report holding only a cf-ray
+id stops being undiagnosable. The 9.0.0 narrative below is otherwise unchanged;
+the format break described there is what made 9.0.x a major.
+
+9.0.x replaces the context-retrieval engine. `sks search --mode context` and the
 subagent attention path now answer from a compiled binary index (SKSCG2, format
 revision 2) instead of parsing a 63 MB JSON snapshot per query, and the major
 bump is the format break: a revision-2 reader refuses a revision-1 index, so the
@@ -38,7 +51,7 @@ subagents, and the desktop bridge replays requests that died on a stale pooled
 socket after a network transition instead of surfacing 502.
 
 **Scope facts recorded rather than smoothed over:** the JSON snapshot file is
-*not* deleted in 9.0.0 — two remaining readers (the byte-level lint rules and
+*not* deleted in 9.0.1 — two remaining readers (the byte-level lint rules and
 the architecture-map baseline hash) are contract changes, not migrations, and
 have their own cards. The v1 query engine is unreachable from production search
 but still present. `requiredForPublish`/`alwaysOnRelease` protection arms are
@@ -50,7 +63,7 @@ The canonical suite is green end to end: 3,474 of 3,474, zero failures, zero
 todo — against 2,929 at 8.7.0; the growth is CRK2 and the defect-class fixes.
 
 Still to regenerate from the clean candidate commit before any release claim:
-the full release gate DAG, the isolated 7.6.0 to 9.0.0 upgrade smoke, the macOS
+the full release gate DAG, the isolated 7.6.0 to 9.0.1 upgrade smoke, the macOS
 Menu Bar proof, the pack receipt, and the release-check stamp. The affected-scope
 DAG ran strict with zero blockers at every landing in this candidate, which is
 preparation evidence, not exact-commit evidence. The upgrade smoke matters more

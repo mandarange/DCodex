@@ -208,7 +208,11 @@ async function parseInvocation(args: string[], io: BridgeCommandIo): Promise<Par
     return { ...base, request: { operation: 'status' }, label: 'Desktop Bridge status' };
   }
   if (area === 'serve' && action === undefined) {
-    allowOnly(parsed, ['--json'], ['--settings']);
+    // `--supervised` marks a serve spawned by launchd (its plist passes it), so
+    // the process may exit on version skew and be relaunched on the new code.
+    // It is read straight from process.argv where the skew is handled; here it
+    // only has to be a legal flag.
+    allowOnly(parsed, ['--json', '--supervised'], ['--settings']);
     const settingsPath = parsed.values.get('--settings') || '';
     if (!path.isAbsolute(settingsPath)) {
       throw new BridgeCliError('desktop_bridge_settings_path_must_be_absolute');

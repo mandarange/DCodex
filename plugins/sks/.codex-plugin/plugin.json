@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "name": "sks",
   "display_name": "Sneakoscope Codex",
-  "version": "9.0.0",
+  "version": "9.0.1",
   "description": "Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.",
   "publisher": "mandarange",
   "repository": "https://github.com/mandarange/Sneakoscope-Codex",

@@ -10,6 +10,7 @@ import { enforceRetention } from '../retention.js';
 import { COMMANDS } from '../../cli/command-registry.js';
 import { reconcileLegacyManagedGeneration } from '../init/legacy-generation-convergence.js';
 import { runConfigFastModeNormalizeStage } from './update-migration-state/fast-mode-config.js';
+import { runDesktopBridgeRestageStage } from './update-migration-state/desktop-bridge-restage.js';
 import { runSessionStateSplitStage } from './update-migration-state/session-state-split.js';
 import {
   runHookTrustRefreshStage,
@@ -408,6 +409,11 @@ const UPDATE_MIGRATION_STAGES: UpdateMigrationStageDefinition[] = [
     id: 'receipt-rotation',
     min_from_version: '0.0.0',
     run: runReceiptRotationStage
+  },
+  {
+    id: 'desktop-bridge-restage',
+    min_from_version: '0.0.0',
+    run: runDesktopBridgeRestageStage
   }
 ];
 
@@ -482,7 +488,7 @@ async function runCurrentPublicSurfaceReconcileStage(root: string): Promise<Omit
   };
 }
 
-async function runUpdateMigrationStages(root: string, opts: { fromVersion?: string | null } = {}): Promise<UpdateMigrationStageRun[]> {
+export async function runUpdateMigrationStages(root: string, opts: { fromVersion?: string | null } = {}): Promise<UpdateMigrationStageRun[]> {
   const fromVersion = opts.fromVersion || null;
   const runs: UpdateMigrationStageRun[] = [];
   for (const stage of UPDATE_MIGRATION_STAGES) {

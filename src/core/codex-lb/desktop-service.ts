@@ -3,7 +3,7 @@ import { constants as fsConstants } from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ensureDir, exists, runProcess, which, writeTextAtomic } from '../fsx.js';
+import { ensureDir, exists, packageRoot, runProcess, which, writeTextAtomic } from '../fsx.js';
 import { withFileLock } from '../locks/file-lock.js';
 import { loadCodexLbEnv, type CodexLbEnvLoadResult } from './codex-lb-env.js';
 import { resolveOpenRouterApiKey } from '../providers/openrouter/openrouter-secret-store.js';
@@ -360,7 +360,7 @@ export async function installAndStartDesktopBridgeService(options: DesktopBridge
   const command = await resolveLaunchCommand(options); if (!command) return failedStatus(paths, settings, launchService(options.uid), 'settings_missing', 'desktop_bridge_sks_executable_missing');
   await prepareDesktopBridgeServicePaths(paths);
   await writeDesktopBridgeServiceSettings(paths.settings_path, { ...settings, provider_registry: runtime.config.providerRegistry!, route_policy: runtime.config.routePolicy! });
-  await writeDesktopBridgeLaunchdPlist(paths.launch_agent_path, { executablePath: command.executable, arguments: [...command.arguments, 'bridge', 'serve', '--settings', paths.settings_path, '--json'], stdoutPath: paths.stdout_log_path, stderrPath: paths.stderr_log_path });
+  await writeDesktopBridgeLaunchdPlist(paths.launch_agent_path, { executablePath: command.executable, arguments: [...command.arguments, 'bridge', 'serve', '--settings', paths.settings_path, '--json', '--supervised'], stdoutPath: paths.stdout_log_path, stderrPath: paths.stderr_log_path });
   const run = options.run || runProcess; const ctl = options.launchctl || '/bin/launchctl'; const service = launchService(options.uid); const domain = launchDomain(options.uid);
   await run(ctl, ['bootout', service], { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => undefined); await removeStaleState(paths.state_path, options.processExists);
   const bootstrap = await bootstrapLaunchdWithRetry(options, domain, service, paths.launch_agent_path);
@@ -410,9 +410,56 @@ export async function stopDesktopBridgeService(options: DesktopBridgeServiceOpti
   const status = await desktopBridgeServiceStatus({ ...options, home }); return { ...status, ok: !status.running, blockers: status.running ? ['desktop_bridge_process_still_running'] : [] };
 }
 
+/**
+ * Whether this serve process is supervised by launchd, and may therefore exit
+ * to be relaunched. launchd stamps `XPC_SERVICE_NAME` with the service label on
+ * every process it spawns, and newly written plists also pass `--supervised`
+ * explicitly; either signal counts, so plists written before the flag existed
+ * still converge. A bridge someone runs by hand in a terminal has neither, and
+ * exiting it would kill the bridge with nothing standing by to relaunch it —
+ * that process only ever logs the skew.
+ */
+function desktopBridgeIsSupervised(env: NodeJS.ProcessEnv = process.env, argv: readonly string[] = process.argv): boolean {
+  return env.XPC_SERVICE_NAME === DESKTOP_BRIDGE_LAUNCHD_LABEL || argv.includes('--supervised');
+}
+
+/** The version of the package this process is actually running from, on disk right now. */
+async function installedPackageVersion(): Promise<string | null> {
+  try {
+    const raw = await fsp.readFile(path.join(packageRoot(), 'package.json'), 'utf8');
+    const version = (JSON.parse(raw) as { version?: unknown }).version;
+    return typeof version === 'string' && version.length > 0 ? version : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function serveDesktopBridge(options: DesktopBridgeServiceOptions = {}): Promise<{ schema: 'sks.desktop-bridge-serve.v1'; ok: boolean; status: 'stopped' | 'failed'; state: DesktopBridgePublicState | null; blocker?: string }> {
   let handle: DesktopBridgeHandle | null = null;
-  try { const runtime = await resolveDesktopBridgeRuntimeConfig(options); handle = await startPreparedDesktopBridge(await preflightDesktopBridge(runtime.config), { statePath: runtime.paths.state_path }); process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.started', pid: handle.state.pid, process_generation: handle.state.schema === DESKTOP_BRIDGE_STATE_SCHEMA ? handle.state.process_generation : null, provider_registry_generation: runtime.config.providerRegistry?.generation, route_policy_generation: runtime.config.routePolicy?.policy_generation, secret_fields_redacted: true })}\n`); await waitForShutdown(handle); return { schema: 'sks.desktop-bridge-serve.v1', ok: true, status: 'stopped', state: handle.state }; }
+  try {
+    const runtime = await resolveDesktopBridgeRuntimeConfig(options);
+    const supervised = desktopBridgeIsSupervised();
+    handle = await startPreparedDesktopBridge(await preflightDesktopBridge(runtime.config), {
+      statePath: runtime.paths.state_path,
+      versionSkew: {
+        readInstalledVersion: installedPackageVersion,
+        onSkew: (installedVersion) => {
+          // One line either way, so the log explains the exit — or, unsupervised,
+          // explains why a stale bridge is still serving.
+          process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.version_skew', running: PACKAGE_VERSION, installed: installedVersion, supervised, action: supervised ? 'restarting' : 'logged_only', secret_fields_redacted: true })}\n`);
+          if (!supervised) return;
+          // Drain first (the existing bounded grace), then exit non-zero:
+          // `KeepAlive.SuccessfulExit = false` relaunches only an unsuccessful
+          // exit, and the relaunch is the whole point — launchd brings the
+          // service back on the code that is now on disk.
+          void handle?.stop().catch(() => undefined).finally(() => process.exit(64));
+        },
+      },
+    });
+    process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.started', pid: handle.state.pid, process_generation: handle.state.schema === DESKTOP_BRIDGE_STATE_SCHEMA ? handle.state.process_generation : null, provider_registry_generation: runtime.config.providerRegistry?.generation, route_policy_generation: runtime.config.routePolicy?.policy_generation, secret_fields_redacted: true })}\n`);
+    await waitForShutdown(handle);
+    return { schema: 'sks.desktop-bridge-serve.v1', ok: true, status: 'stopped', state: handle.state };
+  }
   catch (error) { return { schema: 'sks.desktop-bridge-serve.v1', ok: false, status: 'failed', state: handle?.state || null, blocker: safeServiceError(error) }; }
   finally { if (handle) await handle.stop().catch(() => undefined); }
 }

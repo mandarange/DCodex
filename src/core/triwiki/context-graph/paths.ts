@@ -138,16 +138,3 @@ export function contextPackPath(root: string): string {
   return path.join(contextGraphDir(root), 'context-pack.json');
 }
 
-/**
- * Artifacts the graph owns; every other repository file stays untouched. The
- * retired prev snapshot is listed because the graph still removes it, not
- * because it still writes it.
- */
-export function contextGraphArtifactPaths(root: string): string[] {
-  return [
-    contextGraphSnapshotPath(root),
-    contextGraphMetaPath(root),
-    contextGraphPrevSnapshotPath(root),
-    contextGraphEventLogPath(root)
-  ];
-}

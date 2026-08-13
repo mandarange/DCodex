@@ -286,6 +286,22 @@ export async function forwardHttp(
       upstream.once('response', (response) => {
         const statusCode = response.statusCode || 502;
         if (statusCode >= 400) {
+          // The status passes through to the client untouched, but until this
+          // line the bridge kept no record of it — so a gateway 404 ("Upstream
+          // request failed", cf-ray attached) reached the user as an opaque
+          // error with nothing on this machine saying which model and provider
+          // produced it. A user report with a cf-ray id was undiagnosable from
+          // the bridge log. Status, model, provider and path only; the body may
+          // carry upstream detail and is never logged.
+          logHttpRejection({
+            code: `bridge_upstream_status_${statusCode}`,
+            transport: 'http',
+            ...(req.method === undefined ? {} : { method: req.method }),
+            ...(req.url === undefined ? {} : { url: req.url }),
+            status: statusCode,
+            provider_id: provider.provider_id,
+            public_model: request.route.public_model,
+          });
           void readRedactedUpstreamError(response).then((body) => {
             responseStarted = true;
             const responseHeaders = rewriteResponseHeaders(response.headers, provider.base_url, authenticatedLocalBaseUrl);

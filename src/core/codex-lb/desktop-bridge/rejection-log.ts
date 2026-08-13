@@ -34,6 +34,17 @@ export interface DesktopBridgeRejectionEvent {
   readonly method?: string | undefined;
   readonly url?: string | undefined;
   readonly status?: number | undefined;
+  /** Which provider answered. A catalog-published id, never a secret. */
+  readonly provider_id?: string | undefined;
+  /** The public model the request was routed for — the one fact a user report
+   * with only a cf-ray id cannot supply. Catalog-published, never a secret. */
+  readonly public_model?: string | undefined;
+}
+
+/** Catalog-published identifiers: bounded, control-characters stripped, nothing else. */
+function safeCatalogId(value: unknown): string | null {
+  const text = String(value ?? '').replace(/[\r\n\0]/g, '').trim().slice(0, 128);
+  return text.length > 0 ? text : null;
 }
 
 interface CodeWindow {
@@ -116,6 +127,8 @@ export function createDesktopBridgeRejectionLogger(options: {
     windows.set(code, window);
     const pathname = safePathname(event.url);
     const method = safeMethod(event.method);
+    const providerId = safeCatalogId(event.provider_id);
+    const publicModel = safeCatalogId(event.public_model);
     emit({
       event: 'sks.desktop_bridge.rejected',
       code,
@@ -123,6 +136,8 @@ export function createDesktopBridgeRejectionLogger(options: {
       ...(method ? { method } : {}),
       ...(pathname ? { pathname } : {}),
       ...(Number.isInteger(event.status) ? { status: event.status } : {}),
+      ...(providerId ? { provider_id: providerId } : {}),
+      ...(publicModel ? { public_model: publicModel } : {}),
     });
   };
 }

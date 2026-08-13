@@ -30,6 +30,7 @@ import type {
   PreparedDesktopBridgeConfig,
 } from './types.js';
 import { DesktopBridgeError } from './types.js';
+import { PACKAGE_VERSION } from '../../version.js';
 import {
   DESKTOP_BRIDGE_CLIENT_PATH_PREFIX,
   DESKTOP_BRIDGE_DIAGNOSTIC_HEALTH_PATH,
@@ -366,6 +367,26 @@ export async function startPreparedDesktopBridge(
   }, Math.max(1_000, Math.floor(freshnessMs / 3))) : null;
   heartbeat?.unref();
 
+  // Self-convergence: notice that the package on disk has moved past the code
+  // this process is running, and hand the decision to the caller. Two
+  // consecutive reads of the same mismatched version are required — a single
+  // read can land mid-`npm install`, when package.json is torn or transiently
+  // absent — and an unreadable file resets the streak rather than counting
+  // toward it, so a broken install can never trigger a restart loop.
+  let skewCandidate: string | null = null;
+  let skewFired = false;
+  const versionCheck = options.versionSkew ? setInterval(() => {
+    void options.versionSkew!.readInstalledVersion().then((installed) => {
+      if (skewFired) return;
+      if (!installed || installed === PACKAGE_VERSION) { skewCandidate = null; return; }
+      if (skewCandidate !== installed) { skewCandidate = installed; return; }
+      skewFired = true;
+      if (versionCheck) clearInterval(versionCheck);
+      options.versionSkew!.onSkew(installed);
+    }).catch(() => undefined);
+  }, Math.max(1_000, options.versionSkew.intervalMs ?? 60_000)) : null;
+  versionCheck?.unref();
+
   let stopped = false;
   const handle: DesktopBridgeHandle = {
     server,
@@ -376,6 +397,7 @@ export async function startPreparedDesktopBridge(
       if (stopped) return;
       stopped = true;
       if (heartbeat) clearInterval(heartbeat);
+      if (versionCheck) clearInterval(versionCheck);
       await closeServer(server, sockets, () => activeRequests);
       // Pooled upstream sockets outlive the server that opened them otherwise,
       // and hold the process alive with them.
