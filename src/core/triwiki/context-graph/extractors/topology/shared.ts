@@ -28,10 +28,28 @@ import type { FileInventory } from './globs.js';
 export const TOPOLOGY_EXTRACTOR_ID = 'topology';
 export const TOPOLOGY_EXTRACTOR_REVISION = '1.1.0';
 
-/** Caps that keep one over-wide manifest entry from flooding the snapshot. */
+/**
+ * Bounds that keep one over-wide manifest entry from flooding the snapshot.
+ *
+ * `TOPOLOGY_GLOB_MATCH_CAP` is a representation-granularity bound, not a
+ * completeness bound: a cache-input/check glob matching more files than this is
+ * kept whole as raw `cacheInputs`/`checkScripts` metadata on the gate node —
+ * all-or-nothing, never a partial edge set — and reported as a non-fatal
+ * `excluded` skip. Measured basis (this repo, 2026-08-13, 162-gate manifest,
+ * 3411-file inventory): 238 distinct cache-input patterns, 224 expand to <= 48
+ * files; the 14 wider ones are directory globs (`src/**` = 2368 matches) whose
+ * per-file edges are ranking noise by design.
+ *
+ * The per-gate caps bound the total edges one gate may emit. Unlike the glob
+ * cap they would cut mid-expansion, so reaching one is real truncation: it
+ * records a fatal `cap_reached` skip (Align fails closed) instead of silently
+ * dropping edges. Sized from the same measurement with headroom: affected_by
+ * max = 74 inventory files on one gate (`migration:upgrade-safety`) -> 256
+ * (3.4x); verified_by max = 40 (`test:commands-regression`) -> 96 (2.4x).
+ */
 export const TOPOLOGY_GLOB_MATCH_CAP = 48;
-export const TOPOLOGY_GATE_AFFECTED_CAP = 96;
-export const TOPOLOGY_GATE_VERIFIED_CAP = 24;
+export const TOPOLOGY_GATE_AFFECTED_CAP = 256;
+export const TOPOLOGY_GATE_VERIFIED_CAP = 96;
 
 export interface TopologyContext {
   readonly root: string;

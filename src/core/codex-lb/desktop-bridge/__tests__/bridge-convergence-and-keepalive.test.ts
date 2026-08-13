@@ -1,14 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
-import fsp from 'node:fs/promises';
 import http from 'node:http';
 import net, { type AddressInfo } from 'node:net';
-import os from 'node:os';
-import path from 'node:path';
 import test from 'node:test';
 import { startDesktopBridge, stopDesktopBridge, desktopBridgeClientPath, type DesktopBridgeConfig, type DesktopBridgeHandle } from '../index.js';
 import { PACKAGE_VERSION } from '../../../version.js';
-import { runUpdateMigrationStages } from '../../../update/update-migration-state.js';
+import { runDesktopBridgeRestageStage } from '../../../update/update-migration-state/desktop-bridge-restage.js';
 
 const CLIENT_CAPABILITY = Buffer.alloc(32, 0x47).toString('base64url');
 const CLIENT_CAPABILITY_SHA256 = createHash('sha256').update(CLIENT_CAPABILITY).digest('hex');
@@ -204,17 +201,17 @@ test('a bridge running the installed version never sees a skew', async () => {
  * test runs under exactly that condition, so it witnesses the guard directly.
  */
 test('the desktop-bridge restage stage skips itself under a test runner', async () => {
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-bridge-restage-'));
-  try {
-    const runs = await runUpdateMigrationStages(root, { fromVersion: '8.7.0' });
-    const restage = runs.find((run) => run.id === 'desktop-bridge-restage');
-    assert.ok(restage, 'the restage stage must be part of the migration list');
-    assert.equal(restage.ok, true);
-    if (process.platform === 'darwin') {
-      assert.deepEqual(restage.actions, ['desktop_bridge_restage_skipped_under_tests']);
-    }
-  } finally {
-    await fsp.rm(root, { recursive: true, force: true });
+  // Invoked directly rather than through runUpdateMigrationStages: the full
+  // stage list includes stages that write the Codex home (profile-config
+  // migration), which under the canonical runner is the isolated home its
+  // breach guard watches -- running them here tripped
+  // canonical_test_home_isolation_breach. Stage-list membership is covered by
+  // the current-surface update e2e gate, which redirects HOME wholesale; this
+  // test owns exactly one claim, the NODE_TEST_CONTEXT guard.
+  const restage = await runDesktopBridgeRestageStage();
+  assert.equal(restage.ok, true);
+  if (process.platform === 'darwin') {
+    assert.deepEqual(restage.actions, ['desktop_bridge_restage_skipped_under_tests']);
   }
 });
 

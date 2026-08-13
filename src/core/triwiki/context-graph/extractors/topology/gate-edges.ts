@@ -95,24 +95,35 @@ export function buildGateVerificationEdges(ctx: TopologyContext, gates: readonly
   const verified = new Set<string>();
   for (const gate of gates) {
     let emitted = 0;
+    let capped = false;
     for (const candidate of gateCheckCandidates(gate.command)) {
-      if (emitted >= TOPOLOGY_GATE_VERIFIED_CAP) break;
       const expansion = expandGlob(ctx.files, candidate, TOPOLOGY_GLOB_MATCH_CAP);
-      if (expansion.capped) {
-        recordSkip(ctx, gate.manifestPath, 'cap_reached', `check pattern ${candidate} matched ${expansion.total} files`);
-        continue;
-      }
-      if (!expansion.matches.length) {
+      if (!expansion.total) {
         recordSkip(ctx, gate.manifestPath, 'excluded', `check implementation ${candidate} is not in this workspace`);
         continue;
       }
       // The check implementation exists in this workspace, so the gate is
-      // explainable even when the file is not a source inventory member and
-      // therefore gets no `file` node below.
+      // explainable even when the pattern is too wide to expand into edges or
+      // the file is not a source inventory member and gets no `file` node below.
       verified.add(gate.id);
+      if (expansion.capped) {
+        // Complete by design, not truncation: the relation stays whole as
+        // `checkScripts` metadata on the gate node instead of per-file edges.
+        recordSkip(
+          ctx,
+          gate.manifestPath,
+          'excluded',
+          `check pattern ${candidate} matched ${expansion.total} files; kept whole as checkScripts metadata on the gate node`
+        );
+        continue;
+      }
       const confidence = isGlobPattern(candidate) ? 'derived' : 'manifest';
       for (const match of expansion.matches) {
-        if (emitted >= TOPOLOGY_GATE_VERIFIED_CAP) break;
+        if (!ctx.sourcePaths.has(match)) continue;
+        if (emitted >= TOPOLOGY_GATE_VERIFIED_CAP) {
+          capped = true;
+          break;
+        }
         const fileId = ensureFileNode(ctx, match, 'gate_check', gate.manifestPath);
         if (!fileId) continue;
         const added = addEdge(ctx, {
@@ -126,6 +137,17 @@ export function buildGateVerificationEdges(ctx: TopologyContext, gates: readonly
         });
         if (added) emitted += 1;
       }
+      if (capped) break;
+    }
+    if (capped) {
+      // A mid-expansion stop drops edges the manifest evidences, so it must
+      // fail closed instead of shipping a silently partial relation set.
+      recordSkip(
+        ctx,
+        gate.manifestPath,
+        'cap_reached',
+        `gate ${gate.id} hit the verified_by edge cap (${TOPOLOGY_GATE_VERIFIED_CAP}); check relations are missing`
+      );
     }
   }
   return verified;
@@ -145,25 +167,34 @@ export function buildGateAffectedEdges(ctx: TopologyContext, gates: readonly Top
   const affected = new Set<string>();
   for (const gate of gates) {
     let emitted = 0;
+    let capped = false;
     const seen = new Set<string>();
     for (const input of gate.cacheInputs) {
-      if (emitted >= TOPOLOGY_GATE_AFFECTED_CAP) break;
       const expansion = expandGlob(ctx.files, input, TOPOLOGY_GLOB_MATCH_CAP);
+      // A cache input that matched anything real in this workspace explains the
+      // gate, even when it is too wide to expand into edges or matches only
+      // config/doc files that — being outside the code source inventory — must
+      // not become a `file` node or an edge.
+      if (expansion.total > 0) affected.add(gate.id);
       if (expansion.capped) {
-        recordSkip(ctx, gate.manifestPath, 'cap_reached', `cache input ${input} matched ${expansion.total} files`);
-        // The over-wide glob stays raw on the gate node; it still proves the
-        // gate cites real workspace inputs.
-        affected.add(gate.id);
+        // Complete by design, not truncation: the over-wide glob stays whole as
+        // `cacheInputs` metadata on the gate node instead of per-file edges.
+        recordSkip(
+          ctx,
+          gate.manifestPath,
+          'excluded',
+          `cache input ${input} matched ${expansion.total} files; kept whole as cacheInputs metadata on the gate node`
+        );
         continue;
       }
-      // A cache input that matched anything real in this workspace explains the
-      // gate, even when the match is a config/doc file that — being outside the
-      // code source inventory — must not become a `file` node or an edge.
-      if (expansion.total > 0) affected.add(gate.id);
       for (const match of expansion.matches) {
-        if (emitted >= TOPOLOGY_GATE_AFFECTED_CAP) break;
         if (seen.has(match)) continue;
         seen.add(match);
+        if (!ctx.sourcePaths.has(match)) continue;
+        if (emitted >= TOPOLOGY_GATE_AFFECTED_CAP) {
+          capped = true;
+          break;
+        }
         const fileId = ensureFileNode(ctx, match, 'gate_cache_input', gate.manifestPath);
         if (!fileId) continue;
         const added = addEdge(ctx, {
@@ -177,6 +208,17 @@ export function buildGateAffectedEdges(ctx: TopologyContext, gates: readonly Top
         });
         if (added) emitted += 1;
       }
+      if (capped) break;
+    }
+    if (capped) {
+      // A mid-expansion stop drops edges the manifest evidences, so it must
+      // fail closed instead of shipping a silently partial relation set.
+      recordSkip(
+        ctx,
+        gate.manifestPath,
+        'cap_reached',
+        `gate ${gate.id} hit the affected_by edge cap (${TOPOLOGY_GATE_AFFECTED_CAP}); cache-input relations are missing`
+      );
     }
   }
   return affected;

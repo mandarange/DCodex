@@ -211,11 +211,18 @@ test('cache-input globs reverse-map to real files and over-wide globs stay raw o
       !fragment.nodes.some((node) => node.id.startsWith('file:src/wide/')),
       'an over-wide glob must not flood the snapshot with file nodes'
     );
+    // The whole-glob representation is a deliberate, complete one — nothing was
+    // truncated — so it must be observable as `excluded`, never as the fatal
+    // `cap_reached` that Align fails closed on.
     assert.ok(
       fragment.skipped.some(
-        (skip) => skip.reason === 'cap_reached' && String(skip.detail ?? '').includes(`src/wide/** matched ${wide} files`)
+        (skip) => skip.reason === 'excluded' && String(skip.detail ?? '').includes(`src/wide/** matched ${wide} files`)
       ),
-      'the capped glob must be reported'
+      'the over-wide glob must be reported as a non-fatal excluded skip'
+    );
+    assert.ok(
+      !fragment.skipped.some((skip) => skip.reason === 'cap_reached'),
+      'an over-wide glob is a representation decision, not truncation, and must not block Align'
     );
     const gateNode = fragment.nodes.find((node) => node.id === 'gate:harness:globs');
     assert.deepEqual(gateNode?.metadata.cacheInputs, ['src/narrow/**', 'src/wide/**']);

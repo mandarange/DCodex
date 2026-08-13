@@ -134,8 +134,13 @@ function looksHighEntropy(token: string): boolean {
  * no high-entropy run cannot carry key material, so honest names like the
  * `secret:preservation` gate id must not fail the compile. Anything with a
  * random-looking run still goes through the shared secret predicate.
+ *
+ * Exported so the evidence extractor's identity guard applies the exact same
+ * exemption: a proof subject stub for that same gate id must not be refused by
+ * a stricter re-reading of the heuristic (this is what blocked Align once the
+ * proof-record cap stopped hiding the records that reference the gate).
  */
-function isStructuralValue(value: string): boolean {
+export function isStructuralValue(value: string): boolean {
   if (value.length > 512) return false;
   for (const run of value.match(HIGH_ENTROPY_RUN_RE) ?? []) {
     if (looksHighEntropy(run)) return false;

@@ -73,7 +73,15 @@ export interface ProofDiscovery {
   truncated: boolean;
 }
 
-const MAX_PROOF_RECORDS = 512;
+/**
+ * Ceiling on proof records represented in the graph, in index mode and scan
+ * mode alike. Reaching it drops real records, so it stays a fatal `cap_reached`
+ * skip (Align fails closed) rather than a quiet partial graph. Measured basis
+ * (this repo, 2026-08-13): the live proof-bank index carries 880 entries
+ * (~505 KB); 4096 gives ~4.6x headroom while bounding record memory to a few
+ * MB. The index file's byte size is separately bounded by `limits.maxFileBytes`.
+ */
+const MAX_PROOF_RECORDS = 4096;
 const MAX_SCAN_DEPTH = 4;
 const SCAN_EXCLUDED_DIRS: ReadonlySet<string> = new Set(['.locks', 'node_modules', '.git']);
 

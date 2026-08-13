@@ -20,6 +20,7 @@ import {
   type ContextGraphMetadataValue,
   type ContextGraphNode
 } from '../../contracts.js';
+import { isStructuralValue } from '../../lint/rules.js';
 import { isWorkspaceRelativePosixPath } from '../../paths.js';
 
 export const EVIDENCE_REDACTED_PATH = '[redacted-path]';
@@ -301,8 +302,18 @@ interface NodeGuardResult {
   issue: ContextGraphLintIssue | null;
 }
 
+/**
+ * Identity checks share the snapshot lint's structural-value exemption: node
+ * ids and labels are manifest identifiers, and an honest name such as the
+ * `secret:preservation` gate id must not be refused here when the final lint
+ * would accept it. Anything with a high-entropy run is still checked.
+ */
+function identityLooksSecret(value: string): boolean {
+  return !isStructuralValue(value) && containsPlaintextSecret(value);
+}
+
 function guardNode(node: ContextGraphNode, extractor: string): NodeGuardResult {
-  if (containsPlaintextSecret(node.id) || containsPlaintextSecret(node.label)) {
+  if (identityLooksSecret(node.id) || identityLooksSecret(node.label)) {
     return {
       node: null,
       issue: lintError('secret_like_value', 'evidence node identity looks secret-like and was refused', {
@@ -311,7 +322,7 @@ function guardNode(node: ContextGraphNode, extractor: string): NodeGuardResult {
       })
     };
   }
-  if (node.path !== undefined && containsPlaintextSecret(node.path)) {
+  if (node.path !== undefined && identityLooksSecret(node.path)) {
     return {
       node: null,
       issue: lintError('secret_like_value', 'evidence node path looks secret-like and was refused', {

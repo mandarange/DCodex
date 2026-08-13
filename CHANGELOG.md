@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [9.0.5] - 2026-08-13
+
+### Fixed
+
+- `sks align run` completes end to end on real workspaces. Under 9.0.4's
+  coverage fix a second layer surfaced: extractor caps sized before the
+  topology and evidence extractors ever faced real inputs. A 162-gate
+  manifest tripped the per-glob match cap 15 times and an 880-entry proof
+  bank tripped a 512-entry cap, blocking compile fail-closed. Caps are now
+  sized from measurement with stated headroom; an over-wide glob is
+  represented whole on the gate node instead of failing the compile; two
+  per-gate caps that were breaking silently mid-expansion now fail closed;
+  and an honest gate id (gate:secret:preservation) is no longer refused as a
+  secret by the evidence guard -- the snapshot lint's structural exemption is
+  shared instead of duplicated. A real-scale contract test compiles a fixture
+  at or above every measured axis so the next growth is caught in-suite.
+
+
 ## [9.0.4] - 2026-08-13
 
 ### Fixed
