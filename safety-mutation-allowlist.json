@@ -101,15 +101,6 @@
       "reason": "Process lifecycle helper terminates only owned child or process tree during cleanup."
     },
     {
-      "file": "src/core/agents/agent-janitor.ts",
-      "symbol": "runAgentJanitor",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "3edd964b89cd3863b87b99ccf53c878ac41efb95fc4b043104c68df448e14b5f",
-      "callsite_sha256": "4a01c10ae554728c74e531626e2bceb0ae77c88c114d2ff02a5dd1b713298b7f",
-      "occurrence": 1,
-      "reason": "Cleanup/removal path is route-owned, generated, or temporary artifact; exact callsite is audited."
-    },
-    {
       "file": "src/core/evidence/v2/evidence-key.ts",
       "symbol": "ensureProjectId",
       "token": "fsp.writeFile",
@@ -117,15 +108,6 @@
       "callsite_sha256": "9014d571fb71edc4ce73a665e53721c2a995645353295f17bfa4a5e324b04833",
       "occurrence": 1,
       "reason": "Evidence identity writes one 0600 project-id file with exclusive create beneath the caller-resolved project root."
-    },
-    {
-      "file": "src/core/agents/agent-janitor.ts",
-      "symbol": "runAgentJanitor",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "3edd964b89cd3863b87b99ccf53c878ac41efb95fc4b043104c68df448e14b5f",
-      "callsite_sha256": "8f17548385767d6c51ae4412e48fa06de82a24001a29c17f79a754f076b807e6",
-      "occurrence": 1,
-      "reason": "Cleanup/removal path is route-owned, generated, or temporary artifact; exact callsite is audited."
     },
     {
       "file": "src/core/agents/agent-patch-apply-worker.ts",
@@ -2586,15 +2568,6 @@
     },
     {
       "file": "src/core/subagents/official-subagent-preparation.ts",
-      "symbol": "prepareOfficialSubagentMissionLocked",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "5c8a39cec08521899309a1947c1c7c010caf9bf2eb22080a49a33ce9037b57fb",
-      "callsite_sha256": "b717e665471a874e3b443e9c90d94b402b9b5b780f1025c8ed7872cdffab5f96",
-      "occurrence": 1,
-      "reason": "Preparation clears only its target-run staging directory whose fixed prefix and basename are resolved inside the selected mission directory."
-    },
-    {
-      "file": "src/core/subagents/official-subagent-preparation.ts",
       "symbol": "promoteOfficialSubagentPreparationBundle.callback@755",
       "token": "fsp.rm",
       "scope_contract_sha256": "ff31e5a09412d8730a23de257b985dd1eeb7b5339f8201addf30b9af543364e3",
@@ -2700,33 +2673,6 @@
       "callsite_sha256": "9a22b06e18c293ed8967b716cb58c3375b09c769742f7ba5bff05c4eff2c2aed",
       "occurrence": 1,
       "reason": "Fragment cache pruning removes only immediate .json entries enumerated from the fixed SKS-owned Context Graph fragment cache directory."
-    },
-    {
-      "file": "src/core/triwiki/context-graph/store/snapshot-store.ts",
-      "symbol": "stageAndCommitContextGraphSnapshot",
-      "token": "fsp.rm",
-      "scope_contract_sha256": "3b1a2791e9ef744d5c7e7ea538da52394893d7a7d9112dc601cf74c0ec62545b",
-      "callsite_sha256": "4950dd4b82ab7171d927257fa98fa7cadba47d6a565afbf9206ba0f90d3c52d8",
-      "occurrence": 1,
-      "reason": "TriWiki snapshot cleanup removes only the private staging directory created for the current bounded commit attempt."
-    },
-    {
-      "file": "src/core/triwiki/context-graph/store/snapshot-store.ts",
-      "symbol": "stageAndCommitContextGraphSnapshot.run",
-      "token": "rename",
-      "scope_contract_sha256": "a2ed569fa706c1e409a6dc9be4825ececbad8ac8c1296ab5df10f56f472247be",
-      "callsite_sha256": "c6df8f176dfa1ca1f1dfb6bf574ea3dd8de8b4291e2010d88d4c0a9d9638e801",
-      "occurrence": 1,
-      "reason": "TriWiki snapshot promotion renames only validated staged generations while holding the evidence writer lock after expected-current hash verification."
-    },
-    {
-      "file": "src/core/triwiki/context-graph/store/snapshot-store.ts",
-      "symbol": "stageAndCommitContextGraphSnapshot.run",
-      "token": "rename",
-      "scope_contract_sha256": "a2ed569fa706c1e409a6dc9be4825ececbad8ac8c1296ab5df10f56f472247be",
-      "callsite_sha256": "fd5ef1a3853990df5388b2e71ceb7af65d522a8d9a76ce5f831c4cd5c06de43a",
-      "occurrence": 1,
-      "reason": "TriWiki snapshot promotion renames only validated staged generations while holding the evidence writer lock after expected-current hash verification."
     },
     {
       "file": "src/core/triwiki/triwiki-gate-impact-map.ts",
@@ -6644,15 +6590,6 @@
       "reason": "Release cache fixture gate writes only inside a fresh os.tmpdir mkdtemp fixture root to compare version-neutral cache keys."
     },
     {
-      "file": "src/scripts/release-check-dynamic-execute.ts",
-      "symbol": "module",
-      "token": "writeFileSync",
-      "scope_contract_sha256": "9a08e1c7cd1ea1c03871a34a53598246886fbdde98fdba224604db683ab662b9",
-      "callsite_sha256": "25c7e52634fef2c1e1a9447266d72b325391491974cc562293e7830496fd4f86",
-      "occurrence": 1,
-      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
-    },
-    {
       "file": "src/scripts/release-check-dynamic.ts",
       "symbol": "module",
       "token": "writeFileSync",
@@ -7857,6 +7794,186 @@
       "callsite_sha256": "7e546b09783d330e07a8c1427d0b666dba051c6f6bb31fa91656864808ccc0ad",
       "occurrence": 1,
       "reason": "Unpacked-byte measurement removes only its mkdtemp tar extraction root in finally."
+    },
+    {
+      "file": "src/core/agents/agent-janitor.ts",
+      "symbol": "runAgentJanitor",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "e65089c5a86011287a91f1627accce608ac2a4d160dd85aced64c8b0519c3e0c",
+      "callsite_sha256": "6ff9893b46c0e0698676c47f2ea3893a490f9a94f9fe0faf9c65a715666f5273",
+      "occurrence": 1,
+      "reason": "Janitor removes only SKS-owned agent session directories under the agent root it enumerated, after the liveness check classified them orphaned."
+    },
+    {
+      "file": "src/core/agents/agent-janitor.ts",
+      "symbol": "runAgentJanitor",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "e65089c5a86011287a91f1627accce608ac2a4d160dd85aced64c8b0519c3e0c",
+      "callsite_sha256": "60fde9ef493a0ef021e213084a1948391f33f0b3786e17312da34e644518b8ca",
+      "occurrence": 1,
+      "reason": "Janitor removes only SKS-owned agent scratch directories it resolved itself; the pre-spawn sweep path shares the same orphan classification."
+    },
+    {
+      "file": "src/core/subagents/official-subagent-preparation.ts",
+      "symbol": "prepareOfficialSubagentMissionLocked",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "3417b56dac29182527b859893293b825be241a376533188a01fdbfa04a419b84",
+      "callsite_sha256": "f8d35c858202732886c18c60d7f9bc6e396b0d8045d7600829a79d22d7e61295",
+      "occurrence": 1,
+      "reason": "Preparation removes its own staging directory for the mission it is assembling; the path is created by this function and never user content."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/benchmark/fixtures/crk2-workspace.ts",
+      "symbol": "materializeCrk2Workspace",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "7cd51f818d4198c219786cd81c97096a6a7e4ecabb4e01c80302b34627f94cb5",
+      "callsite_sha256": "fc07ba791da85fccdd6e85c18502ed790cb892f968b8790201a19d3d60eb9c82",
+      "occurrence": 1,
+      "reason": "Benchmark fixture materializes hermetic workspace files under a mkdtemp root it created; nothing outside that root is reachable."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/benchmark/fixtures/crk2-workspace.ts",
+      "symbol": "materializeCrk2Workspace.dispose",
+      "token": "rmSync",
+      "scope_contract_sha256": "9c6920b9d22f2ce43f6493db9c179051e21a769548a9387994dea646459dfdca",
+      "callsite_sha256": "79d2fc8fb122bea48dbdcd5029dab509100e5e298eb206a554f904320450928f",
+      "occurrence": 1,
+      "reason": "Benchmark fixture disposes the mkdtemp workspace root it created; the handle is the only owner of that path."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/compiler/fragment-manifest-store.ts",
+      "symbol": "removeContextFragmentManifest",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "f2e8729b392e8cc8b75c3a8ef2b6898247446133e6a848b7db1d99ace1a562eb",
+      "callsite_sha256": "3fc2f1e3d9bf779aced564f80637a67408c5cdb82b666a287ad6b83ecca6d9d5",
+      "occurrence": 1,
+      "reason": "Compiler removes its own fragment manifest under .sneakoscope/cache when invalidating the incremental store; path derived from the store contract."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/compiler/fragment-store.ts",
+      "symbol": "pruneSourceFragmentStore",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "cfd02ce71a3eea1f9c449421cdbb976ac9be294054ca6706e1fc89613ac0dcea",
+      "callsite_sha256": "403bd7f98cf812b97a3f48cd7366fe516de46a1c73a8c6925f2aa94d6947af6a",
+      "occurrence": 1,
+      "reason": "Fragment-store pruning removes only content-hash-named cache files inside the store directory it just listed; generated cache, never source truth."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/generation-io.ts",
+      "symbol": "renameOrRewrite",
+      "token": "rename",
+      "scope_contract_sha256": "a237de26855f40e231afdcb59be839b3f1b1632c8814cd434fbde5766503f046",
+      "callsite_sha256": "444d2a21074a54842189093032bf98eca6513b59748e705e7938cd00d70293cf",
+      "occurrence": 1,
+      "reason": "Generation promote renames a validated staged file to its final store path; both ends live inside the SKS-owned generation store."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/generation-io.ts",
+      "symbol": "renameOrRewrite",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "a237de26855f40e231afdcb59be839b3f1b1632c8814cd434fbde5766503f046",
+      "callsite_sha256": "59776da54e96e2a1479d5fdbda4bf6b6b244dbf6c702ec2029350ed64f9174dc",
+      "occurrence": 1,
+      "reason": "Cross-device rename fallback removes the staged source it just copied into place; the staged path was created by this operation."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/generation-recovery.ts",
+      "symbol": "recoverContextIndexOperation",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "708db4e3b74aa028e945f655305d16182bab893dd074da69ed727055eee1f201",
+      "callsite_sha256": "2c4463b1fa42d3a89b9ff0c1c2947305f3cc17b210fe0b076c05f43016092fac",
+      "occurrence": 1,
+      "reason": "Crash recovery removes the temp index of the interrupted operation named by its journal; the path is journal-derived, inside the store."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/generation-recovery.ts",
+      "symbol": "reconcileContextIndexMeta",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "97aa942dbdffe8a30176a3aa9c209db631a78ed9f765273e39f474751fc58992",
+      "callsite_sha256": "f15d9a9b5633f1ceedc0fb9f64c45aafcc5625fa7b605189dfef37a26b555ab5",
+      "occurrence": 1,
+      "reason": "Meta reconciliation removes a meta record that contradicts the committed pointer, so a stale record cannot attest a generation that is gone."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/generation-retention.ts",
+      "symbol": "pruneContextIndexGenerations",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "2266bcad799d167757599a253c984fad0b1cc41d7fedc85fdb8f4d07c3f40b1c",
+      "callsite_sha256": "32bb555b332131177d56b203393d0ebe3dbdc1740c297f3e235a26736954881d",
+      "occurrence": 1,
+      "reason": "Retention prunes generation files beyond the retention count inside the generations directory it enumerated; content-addressed cache only."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/generation-retention.ts",
+      "symbol": "cleanContextIndexOperation",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "3dd5120ec3e205b29ea279cda7685e74d016fb4672e23294e677c4fb54414d0d",
+      "callsite_sha256": "518b78372943a28b67e48f2e66790e2e70cf22c38ce1138df795f4f60d3ab067",
+      "occurrence": 1,
+      "reason": "Operation cleanup removes the temp index file of a completed or aborted operation; path derived from the operation id, inside the cache."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/operation-journal.ts",
+      "symbol": "removeContextOperationJournalFile",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "3ce715c06f45f2bb4bbaaae4067be8daf11ef0ba421f4090a7ab52ad4e8d4c80",
+      "callsite_sha256": "2a927e728cd4b5af98ff9ee04423132cfc8c29253761b5322f0f214919d5e28c",
+      "occurrence": 1,
+      "reason": "Journal removal deletes the journal file of a finished operation; the journal is SKS-owned bookkeeping under the cache directory."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/snapshot-store.ts",
+      "symbol": "reclaimRetiredPrevSnapshot",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "3a8c2e6fa1a180a731c057abd1d567f321f97f7ab680037e9b562555f6a85d38",
+      "callsite_sha256": "7f6f63db673db297c456e5d83e35ef03c5b092abf07546ebc40228d42e255939",
+      "occurrence": 1,
+      "reason": "Reclaims the retired context-graph.prev.json duplicate this store itself wrote in earlier versions, after the commit that supersedes it; best-effort so a failed unlink cannot fail a compile."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/snapshot-store.ts",
+      "symbol": "stageAndCommitContextGraphSnapshot.run",
+      "token": "rename",
+      "scope_contract_sha256": "f7e6b5dce8652cfc859a04451a5f2aab668d62154275b81712d07fe6556aa2e2",
+      "callsite_sha256": "4d3ea1d63bbdd8808145cbd770d15de1fb54397a0c1a64b8011460dc9b4b3615",
+      "occurrence": 1,
+      "reason": "TriWiki snapshot promotion renames only validated staged generations while holding the evidence writer lock after expected-current hash verification."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/snapshot-store.ts",
+      "symbol": "stageAndCommitContextGraphSnapshot.run",
+      "token": "rename",
+      "scope_contract_sha256": "f7e6b5dce8652cfc859a04451a5f2aab668d62154275b81712d07fe6556aa2e2",
+      "callsite_sha256": "55eeca6de7d111a535df741c1ac1c9e63dbb7f66fd6a82188c71cc0204e3b40d",
+      "occurrence": 1,
+      "reason": "TriWiki snapshot promotion renames only validated staged generations while holding the evidence writer lock after expected-current hash verification."
+    },
+    {
+      "file": "src/core/triwiki/context-graph/store/snapshot-store.ts",
+      "symbol": "stageAndCommitContextGraphSnapshot",
+      "token": "fsp.rm",
+      "scope_contract_sha256": "9e8816133f02e266d5265affaa26a9592dd55449b0ab2da23faefaba883125ca",
+      "callsite_sha256": "a40e48e3eb66c2f6a881152a6aeeb9879b729f82735a9a421811e6634d75f8a7",
+      "occurrence": 1,
+      "reason": "Snapshot commit removes its own staging directory after promotion; the directory was created by this transaction."
+    },
+    {
+      "file": "src/scripts/context-graph-v2-check.ts",
+      "symbol": "runQuality",
+      "token": "rmSync",
+      "scope_contract_sha256": "303628f05fae36bc7a824cb207ee50ea776660801e3b91c176c6f03e7486f804",
+      "callsite_sha256": "757d7b60afb224676a470df7c832bb84c6db3ca12af44ef0cae3a642e936bd22",
+      "occurrence": 1,
+      "reason": "Quality-mode gate disposes the mkdtemp workspace it materialized for the hermetic measurement; nothing outside that root is reachable."
+    },
+    {
+      "file": "src/scripts/release-check-dynamic-execute.ts",
+      "symbol": "module",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "a7e1861e0ea3ef1fa8421c81794114a1134f56671cef595685b10e57e44b4c94",
+      "callsite_sha256": "84c567c47ae9d52da5fe9109886f34c1634c3a3779dc5efea9f7aa7da4a6f7ca",
+      "occurrence": 1,
+      "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
     }
   ]
 }
