@@ -265,13 +265,30 @@ test('an upstream error keeps its identifiers and loses its text', async () => {
  * compact task instead of abandoning it. A genuine not-found — a different
  * type, or any specific code — passes through as the 404 it really is.
  */
-test('a gateway upstream_error 404 becomes 503 retryable; a real 404 stays 404', async () => {
-  let mode: 'transient' | 'real' = 'transient';
+test('a gateway upstream_error 404 is replayed once, then surfaced as 503 retryable', async () => {
+  // The gateway spells its transient in error.code (observed live:
+  // bridge_upstream_status_404:upstream_error), and an affinity miss often
+  // lands on the right node on a second attempt — so the bridge replays the
+  // buffered request once before surfacing anything. Fixture: first call
+  // answers the transient 404, second answers 200 → the client sees 200 and
+  // no error at all. If every attempt fails, the client gets 503 with
+  // Retry-After so Codex keeps the compact task alive. A genuine not-found
+  // (specific code, different type) still passes as the 404 it is.
+  let calls = 0; let mode: 'heal' | 'always404' | 'real' = 'heal';
   const upstream = http.createServer((req, res) => {
+    calls += 1;
+    if (mode === 'real') {
+      res.writeHead(404, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { type: 'invalid_request_error', code: 'response_not_found', message: 'no such response' } }));
+      return;
+    }
+    if (mode === 'heal' && calls >= 2) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
     res.writeHead(404, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(mode === 'transient'
-      ? { error: { type: 'upstream_error', message: 'Upstream request failed' } }
-      : { error: { type: 'invalid_request_error', code: 'response_not_found', message: 'no such response' } }));
+    res.end(JSON.stringify({ error: { code: 'upstream_error', message: 'Upstream request failed' } }));
   });
   const upstreamPort = await listen(upstream);
   const holder = net.createServer(); const bridgePort = await listen(holder); await close(holder);
@@ -290,13 +307,18 @@ test('a gateway upstream_error 404 becomes 503 retryable; a real 404 stays 404',
   });
   try {
     bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 2_000), { writeState: false });
-    const transient = await call();
-    assert.equal(transient.status, 503, 'the self-described transient is retryable');
-    assert.equal(transient.retryAfter, '10');
-    mode = 'real';
+    const healed = await call();
+    assert.equal(healed.status, 200, 'the replay heals the affinity miss invisibly');
+    assert.equal(calls, 2, 'exactly one replay');
+    mode = 'always404'; calls = 0;
+    const exhausted = await call();
+    assert.equal(exhausted.status, 503, 'an unhealed transient surfaces retryable');
+    assert.equal(exhausted.retryAfter, '10');
+    assert.equal(calls, 2, 'still exactly one replay, never a loop');
+    mode = 'real'; calls = 0;
     const real = await call();
     assert.equal(real.status, 404, 'a genuine not-found stays a 404');
-    assert.equal(real.retryAfter, undefined);
+    assert.equal(calls, 1, 'and is never replayed');
   } finally {
     if (bridge) await stopDesktopBridge(bridge);
     await close(upstream);

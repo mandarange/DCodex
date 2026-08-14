@@ -259,6 +259,14 @@ export async function updateCommand(sub: any = 'now', args: any = []) {
   if (result.new_binary) console.log(`New binary: ${result.new_binary}`);
   if (result.new_version) console.log(`New version: ${result.new_version}`);
   if (result.project_receipt) console.log(`Migration receipt: ${result.project_receipt.root} (${result.migration_current ? 'current' : 'not current'})`);
+  // A repair the update could not finish must be NAMED, never left for the
+  // user to discover on the next Doctor run (e.g. a codex-lb catalog that is
+  // still stale after the bridge catalog-repair migration stage).
+  for (const warning of (result.project_receipt?.optional_warnings || [])
+    .filter((entry: string) => String(entry).includes('sks doctor --fix'))
+    .slice(0, 3)) {
+    console.log(`Follow-up: ${warning}`);
+  }
   if (result.sks_menubar) console.log(`SKS menu bar: ${result.sks_menubar.status}${result.sks_menubar.app_path ? ` (${result.sks_menubar.app_path})` : ''}`);
   if (result.operation_receipt_path) console.log(`Operation receipt: ${result.operation_receipt_path}`);
   if (result.rollback?.command) console.log(`Rollback: ${result.rollback.command}`);

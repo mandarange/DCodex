@@ -7,10 +7,8 @@ import { ui as cliUi } from '../cli/cli-theme.js';
 import { getCodexInfo } from '../core/codex-adapter.js';
 import { rustInfo } from '../core/rust-accelerator.js';
 import { codexAppIntegrationStatus } from '../core/codex-app.js';
-import { desktopBridgeStatusV3, executeDesktopBridgeCommandV3 } from '../core/codex-lb/desktop-controller-v3.js';
-import { bootstrapExistingDesktopBridgeService, desktopBridgeServiceStatus } from '../core/codex-lb/desktop-service.js';
-import { desktopBridgeRuntimeVersion, desktopBridgeRuntimeVersionStale } from '../core/codex-lb/desktop-bridge/state.js';
-import { PACKAGE_VERSION } from '../core/version.js';
+import { desktopBridgeStatusV3 } from '../core/codex-lb/desktop-controller-v3.js';
+import { repairDoctorDesktopBridgeCatalog } from '../core/doctor/desktop-bridge-catalog-repair.js';
 import { inspectCodexConfigReadability } from '../core/codex/codex-config-readability.js';
 import {
   inspectOAuthCallbackPortConflict,
@@ -66,54 +64,14 @@ export function doctorArgWarnings(args: any[] = []): string[] {
   return baseDoctorArgWarnings(args);
 }
 
-/**
- * Restart a Desktop Bridge whose serving process predates the installed package.
- *
- * The bridge is a long-lived launchd service, so `npm i -g sneakoscope@X`
- * replaces the files on disk while the running process keeps executing the code
- * it started with. Every bridge-side fix therefore stayed invisible until
- * someone restarted it by hand, and nothing reported the mismatch.
- */
-export async function restartStaleDesktopBridgeRuntime(input: {
-  home: string;
-  fix: boolean;
-}): Promise<{ restarted: boolean; warnings: string[]; blockers: string[] }> {
-  // Restarting the service shells out to the real `/bin/launchctl`, which the
-  // sandboxed harnesses deliberately have no seam for. Never reach for it from
-  // an isolated run: a real user environment is the only place it belongs, and
-  // the only place the staleness can actually hurt.
-  if (process.env.SKS_TEST_ISOLATION === '1' || process.env.SKS_RELEASE_UPGRADE_SMOKE === '1') {
-    return { restarted: false, warnings: [], blockers: [] };
-  }
-  const service = await desktopBridgeServiceStatus({ home: input.home }).catch(() => null);
-  if (!service?.running || !desktopBridgeRuntimeVersionStale(service.state)) {
-    return { restarted: false, warnings: [], blockers: [] };
-  }
-  const running = desktopBridgeRuntimeVersion(service.state) || 'pre-8.6.2';
-  if (!input.fix) {
-    return {
-      restarted: false,
-      warnings: [],
-      blockers: [`desktop_bridge_runtime_version_stale:${running}:${PACKAGE_VERSION}`]
-    };
-  }
-  const restarted = await bootstrapExistingDesktopBridgeService({ home: input.home }).catch(() => null);
-  const nowRunning = restarted?.running === true && !desktopBridgeRuntimeVersionStale(restarted.state);
-  return nowRunning
-    ? { restarted: true, warnings: [`desktop_bridge_runtime_restarted:${running}:${PACKAGE_VERSION}`], blockers: [] }
-    : { restarted: false, warnings: [], blockers: [`desktop_bridge_runtime_version_stale:${running}:${PACKAGE_VERSION}`] };
-}
-
-/**
- * Attempts the catalog repair makes before reporting the catalog still stale.
- *
- * The desktop-bridge unification migration inside `catalog.sync` fails
- * intermittently — observed failing (with its own rollback also failing) and
- * then succeeding on the immediately following attempt, on two machines. Two
- * attempts is enough to clear that, and small enough that a genuinely broken
- * catalog is still reported promptly rather than retried in a loop.
- */
-export const CATALOG_REPAIR_MAX_ATTEMPTS = 2;
+// The Desktop Bridge repair itself lives in core so the project fix
+// transaction, the global-only fix, and the update migration stage all execute
+// the SAME code path; these re-exports keep the historical import surface.
+export {
+  CATALOG_REPAIR_MAX_ATTEMPTS,
+  repairDoctorDesktopBridgeCatalog,
+  restartStaleDesktopBridgeRuntime
+} from '../core/doctor/desktop-bridge-catalog-repair.js';
 
 export function deferCommandAliasCleanupToMigrationReceipt(result: any) {
   const observedBlockers = Array.isArray(result?.blockers)
@@ -278,19 +236,51 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     status: 'failed',
     error: err?.message || String(err)
   }));
-  const menuBar = await installMenuBarImpl({
-    home,
-    root: home,
-    apply: true,
-    launch: !sksMenuBarRestartDeferred(doctorEnv),
-    env: doctorEnv,
-    quiet: flag(args, '--json') || flag(args, '--machine-only')
-  }).catch((err: any) => ({
-    schema: 'sks.codex-app-sks-menubar.v1',
+  // The migration profile owns config/schema convergence only (the update flow
+  // rebuilds and verifies the Menu Bar in its own stages right afterwards), so
+  // it skips the Menu Bar install exactly like the project migration profile.
+  const doctorProfile = doctorProfileFromArgs(args, true);
+  const menuBarPolicy = doctorMenuBarInstallPolicy(args, true, doctorEnv);
+  const menuBar = menuBarPolicy.phase_enabled
+    ? await installMenuBarImpl({
+      home,
+      root: home,
+      apply: true,
+      launch: !sksMenuBarRestartDeferred(doctorEnv),
+      env: doctorEnv,
+      quiet: flag(args, '--json') || flag(args, '--machine-only')
+    }).catch((err: any) => ({
+      schema: 'sks.codex-app-sks-menubar.v1',
+      ok: false,
+      status: 'blocked',
+      blockers: [err?.message || String(err)],
+      warnings: []
+    }))
+    : {
+      schema: 'sks.codex-app-sks-menubar.v1',
+      ok: true,
+      status: 'skipped_by_profile',
+      skipped: true,
+      blockers: [],
+      warnings: [`sks_menubar_phase_skipped_for_profile:${doctorProfile}`]
+    };
+  // 9.0.2 routed home runs here and kept only the bridge STATUS read; the
+  // repair (8.7.0 catalog sync with read-back verification, 8.6.6 stale-runtime
+  // restart) only ran on the project path. The bridge is home-scoped global
+  // state — every bridge path derives from HOME — so a home-rooted `--fix`
+  // reported `codex_lb_catalog_stale` with the remedy `retry_catalog_sync`
+  // while being the one fix run that never executed that remedy. Repair FIRST,
+  // then read the status, so the report is the post-repair snapshot.
+  const desktopBridgeRepairImpl = deps.desktopBridgeRepairImpl || repairDoctorDesktopBridgeCatalog;
+  const desktopBridgeRepair: any = await desktopBridgeRepairImpl({ fix: true }).catch((err: any) => ({
+    id: 'desktop_bridge_catalog_repair',
     ok: false,
-    status: 'blocked',
-    blockers: [err?.message || String(err)],
-    warnings: []
+    repaired: false,
+    required_for_ready: false,
+    manual_required: false,
+    warnings: [],
+    blockers: [`desktop_bridge_catalog_repair_failed:${err?.message || String(err)}`],
+    rollback_evidence: 'combined_catalog_previous_generation_preserved'
   }));
   const desktopBridge = await inspectDoctorDesktopBridgeStatus({
     home,
@@ -302,14 +292,62 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
   const globalFastModeReady = (globalFastMode as any)?.status !== 'failed'
     && (globalFastMode as any)?.ok !== false;
   const menuBarReady = (menuBar as any)?.ok !== false;
-  const blockers = [...new Set([
+  const migrationScopeBlockers = [...new Set([
     ...(!globalSkillsReady ? [`global_skills_reconcile_failed:${(globalSkills as any)?.error || 'core_skill_integrity'}`] : []),
     ...((currentSurface as any)?.ok !== true ? ((currentSurface as any)?.blockers || ['global_current_surface_reconcile_failed']) : []),
-    ...(!globalFastModeReady ? [`global_fast_mode_repair_failed:${(globalFastMode as any)?.error || (globalFastMode as any)?.status || 'unknown'}`] : []),
-    ...(!menuBarReady ? ((menuBar as any)?.blockers || ['sks_menubar_repair_failed']) : []),
+    ...(!globalFastModeReady ? [`global_fast_mode_repair_failed:${(globalFastMode as any)?.error || (globalFastMode as any)?.status || 'unknown'}`] : [])
+  ].map(String).filter(Boolean))];
+  const bridgeBlockers = [...new Set([
+    ...((desktopBridgeRepair as any)?.ok === false
+      ? ((desktopBridgeRepair as any)?.blockers?.length ? (desktopBridgeRepair as any).blockers : ['desktop_bridge_catalog_repair_failed'])
+      : []),
     ...((desktopBridge as any).ok === false
       ? ((desktopBridge as any).blockers || ['desktop_bridge_unavailable'])
       : [])
+  ].map(String).filter(Boolean))];
+  // Same judgment as the project path: the migration profile never gates on
+  // live bridge readiness, so its bridge findings demote to warnings and the
+  // named follow-up below — otherwise the first update after a bridge outage
+  // could never write a current receipt.
+  const bridgeReadinessRequired = doctorProfileRequiresDesktopBridgeReadiness(doctorProfile);
+  // A home-rooted migration doctor is how `sks update` runs from a non-project
+  // directory. It still needs the migration receipt the update's
+  // `project_receipt` stage verifies; home is the honest root for it (the
+  // already-current update path writes the identical home-rooted receipt), and
+  // the receipt's own stages carry the home/global-scoped migrations.
+  let migrationReceipt: any = null;
+  if (doctorProfile === 'migration') {
+    const writeReceiptImpl = deps.writeProjectUpdateMigrationReceiptImpl || writeProjectUpdateMigrationReceipt;
+    migrationReceipt = await writeReceiptImpl({
+      root: home,
+      source: `doctor-${doctorProfile}`,
+      blockers: migrationScopeBlockers,
+      warnings: ['global_only_home_scope_migration_receipt'],
+      ...(migrationScopeBlockers.length ? { status: 'blocked' as const } : {})
+    }).catch((err: any) => ({
+      schema: 'sks.project-migration-receipt.v2',
+      status: 'blocked',
+      sks_version: null,
+      root: home,
+      source: `doctor-${doctorProfile}`,
+      generated_at: new Date().toISOString(),
+      blockers: [`migration_receipt_failed:${err?.message || String(err)}`],
+      warnings: []
+    }));
+  }
+  const migrationReceiptBlockers = migrationReceipt && !isUpdateMigrationReceiptCurrent(migrationReceipt)
+    ? ((migrationReceipt.blockers || []).length ? migrationReceipt.blockers : ['global_migration_receipt_not_current'])
+    : [];
+  const blockers = [...new Set([
+    ...migrationScopeBlockers,
+    ...(!menuBarReady ? ((menuBar as any)?.blockers || ['sks_menubar_repair_failed']) : []),
+    ...(bridgeReadinessRequired ? bridgeBlockers : []),
+    ...migrationReceiptBlockers
+  ].map(String).filter(Boolean))];
+  const warnings = [...new Set([
+    ...(!bridgeReadinessRequired ? bridgeBlockers.map((blocker) => `migration_optional_blocker:${blocker}`) : []),
+    ...((desktopBridgeRepair as any)?.warnings || []),
+    ...((desktopBridge as any)?.warnings || [])
   ].map(String).filter(Boolean))];
   const ok = blockers.length === 0;
   const projectRootAliasDetected = path.resolve(root) === home;
@@ -321,6 +359,7 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
     diagnostic_depth: 'global-only',
     global_only: true,
     install_scope: 'global',
+    doctor_profile: doctorProfile,
     root,
     home,
     project_root_alias_detected: projectRootAliasDetected,
@@ -332,20 +371,26 @@ export async function executeDoctorGlobalOnlyFix(args: any[] = [], root: string,
       'project_supabase_mcp_repair',
       'project_hook_trust_repair',
       'project_command_alias_cleanup',
-      'project_migration_receipt'
+      ...(migrationReceipt ? [] : ['project_migration_receipt'])
     ],
     skills: { global: globalSkills, project: { skipped: true, reason: 'global_only_doctor' } },
     current_public_surface: currentSurface,
     codex_app_fast_mode: globalFastMode,
     openrouter_provider: desktopBridge.providers?.openrouter || null,
     sks_menubar: menuBar,
+    desktop_bridge_repair: desktopBridgeRepair,
     desktop_bridge: desktopBridge,
+    ...(migrationReceipt ? { migration_receipt: migrationReceipt } : {}),
     blockers,
+    warnings,
     next_actions: [
       ...(projectRootAliasDetected
         ? ['Project checks were skipped because this directory is your home folder. Run them from your project: cd <your-project> && sks doctor --fix']
         : []),
       ...((desktopBridge as any).ok === false ? (desktopBridge as any).recovery_actions || [] : []),
+      ...(!bridgeReadinessRequired && bridgeBlockers.length
+        ? ['Desktop Bridge still reports blockers: run `sks doctor --fix` to repair the bridge catalog.']
+        : []),
       'Run `sks doctor --fix --json` from a specific project directory when project-scoped repair is required.'
     ]
   };
@@ -362,10 +407,21 @@ async function runDoctorGlobalOnlyFix(args: any[] = [], root: string, deps: any 
   if (flag(args, '--json')) {
     printJson(result);
   } else {
+    const bridgeRepair: any = (result as any).desktop_bridge_repair;
     console.log(`SKS Doctor global repair: ${result.ok ? 'ok' : 'blocked'}`);
     console.log(`Global skills: ${(result.skills.global as any)?.error ? 'blocked' : 'reconciled'}`);
     console.log(`SKS menu bar: ${(result.sks_menubar as any)?.status || ((result.sks_menubar as any)?.ok ? 'ok' : 'blocked')}`);
+    console.log(`Desktop Bridge repair: ${
+      bridgeRepair?.skipped_reason
+        ? bridgeRepair.skipped_reason
+        : bridgeRepair?.repaired
+          ? 'repaired'
+          : bridgeRepair?.ok === false ? 'failed' : 'nothing_to_repair'
+    }`);
     console.log(`Desktop Bridge: ${result.desktop_bridge.ok ? 'ready' : 'blocked'} (${result.desktop_bridge.status?.readiness?.state || 'unavailable'})`);
+    if ((result as any).migration_receipt) {
+      console.log(`Migration receipt: ${(result as any).migration_receipt.status} (${(result as any).home})`);
+    }
     for (const blocker of result.blockers) console.log(`- blocker: ${blocker}`);
     for (const action of result.next_actions) console.log(`- ${action}`);
   }
@@ -1099,83 +1155,13 @@ async function runDoctor(args: any = [], root: string, doctorFix: boolean, deps:
           {
             id: 'desktop_bridge_catalog_repair',
             required_for_ready: false,
-            run: async () => {
-              // Doctor previously only PRINTED "action: retry_catalog_sync" while
-              // --fix left the stale catalog in place; a stale combined catalog
-              // blocks the bridge and freezes the Desktop picker generation.
-              const base = {
-                id: 'desktop_bridge_catalog_repair',
-                required_for_ready: false,
-                manual_required: false,
-                warnings: [] as string[],
-                rollback_evidence: 'combined_catalog_previous_generation_preserved'
-              };
-              try {
-                // A bridge process older than the installed package keeps serving
-                // the OLD code: upgrading replaces the files on disk and never
-                // restarts this long-lived launchd service, so a shipped bridge
-                // fix looks like it never landed. Restart it before anything else.
-                // The bridge lives under the real HOME, never under the project
-                // root. Passing `root` here looked for its settings inside the
-                // repository, found nothing, and returned "not running" — so the
-                // stale-runtime restart silently never happened.
-                // Every bridge path is derived from HOME (`<home>/.codex/...`);
-                // a project root is not a home. Reading the status under `root`
-                // found no managed bridge whenever doctor ran from inside a
-                // project — the common case — so the repair concluded there was
-                // nothing to do, returned a green check, and left the stale
-                // catalog untouched on every single `--fix`.
-                const bridgeHome = path.resolve(process.env.HOME || os.homedir());
-                const restarted = await restartStaleDesktopBridgeRuntime({
-                  home: bridgeHome,
-                  fix: doctorFix,
-                });
-                const status: any = await desktopBridgeStatusV3({ home: bridgeHome, env: process.env });
-                const blockers = (status?.readiness?.blockers || []).map(String);
-                const stale = blockers.filter((blocker: string) => blocker.endsWith('_catalog_stale'));
-                if (!status?.management?.managed || stale.length === 0) {
-                  return {
-                    ...base,
-                    ok: restarted.blockers.length === 0,
-                    repaired: restarted.restarted,
-                    warnings: restarted.warnings,
-                    blockers: restarted.blockers
-                  };
-                }
-                // Sync, then READ THE CATALOG BACK. Trusting the command's own
-                // ok flag reported a repaired catalog that was still stale, and
-                // the unification migration inside it fails intermittently —
-                // observed failing once (its rollback failing too) and then
-                // succeeding on the very next attempt, on two separate
-                // machines. One attempt therefore left users with a stale
-                // catalog and a green check; a bounded retry clears it.
-                const attempts: string[] = [];
-                let syncedAndVerified = false;
-                for (let attempt = 1; attempt <= CATALOG_REPAIR_MAX_ATTEMPTS; attempt += 1) {
-                  const sync: any = await executeDesktopBridgeCommandV3({ operation: 'catalog.sync' }, { home: bridgeHome, env: process.env });
-                  const commandOk = sync?.ok === true && sync?.execution?.ok === true;
-                  const after: any = await desktopBridgeStatusV3({ home: bridgeHome, env: process.env });
-                  const stillStale = ((after?.readiness?.blockers || []) as unknown[])
-                    .map(String).filter((blocker) => blocker.endsWith('_catalog_stale'));
-                  if (commandOk && stillStale.length === 0) { syncedAndVerified = true; break; }
-                  attempts.push(`catalog_sync_attempt_${attempt}:${
-                    commandOk ? `still_stale:${stillStale.join(',')}` : (sync?.execution?.blockers || ['failed']).map(String).join(',')
-                  }`);
-                }
-                return {
-                  ...base,
-                  ok: syncedAndVerified && restarted.blockers.length === 0,
-                  repaired: syncedAndVerified || restarted.restarted,
-                  warnings: [...restarted.warnings, ...(syncedAndVerified ? attempts : [])],
-                  blockers: [
-                    ...(syncedAndVerified ? [] : ['desktop_bridge_catalog_still_stale_after_repair', ...attempts]),
-                    ...restarted.blockers
-                  ]
-                };
-              } catch (error: any) {
-                return { ...base, ok: false, repaired: false, blockers: [String(error?.message || 'desktop_bridge_catalog_sync_failed')] };
-              }
-            }
+            // Doctor previously only PRINTED "action: retry_catalog_sync" while
+            // --fix left the stale catalog in place; a stale combined catalog
+            // blocks the bridge and freezes the Desktop picker generation. The
+            // repair body lives in core (`repairDoctorDesktopBridgeCatalog`) so
+            // the global-only fix and the update migration stage run the SAME
+            // restart -> sync -> read-back-verify -> bounded-retry sequence.
+            run: async () => repairDoctorDesktopBridgeCatalog({ fix: doctorFix }) as any
           }
         ].filter((phase) => doctorPhaseIds.includes(phase.id))
       }).catch((err: any) => ({

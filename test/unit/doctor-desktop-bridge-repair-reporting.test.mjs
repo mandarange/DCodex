@@ -18,6 +18,9 @@ import {
 
 const DOCTOR_SOURCE = fs.readFileSync('src/commands/doctor.ts', 'utf8');
 const DOCTOR_CONSOLE_SOURCE = fs.readFileSync('src/commands/doctor-console.ts', 'utf8');
+// The repair body moved to core (9.0.6) so the project fix transaction, the
+// global-only fix, and the update migration stage execute the SAME code path.
+const CATALOG_REPAIR_SOURCE = fs.readFileSync('src/core/doctor/desktop-bridge-catalog-repair.ts', 'utf8');
 
 test('a problem only an inactive provider has never blocks bridge readiness', () => {
   const scoped = scopeCatalogBlockersToActiveProviders(
@@ -45,11 +48,11 @@ test('a problem an active provider shares stays a blocker', () => {
 });
 
 function catalogRepairPhaseSource() {
-  const start = DOCTOR_SOURCE.indexOf("id: 'desktop_bridge_catalog_repair'");
+  const start = CATALOG_REPAIR_SOURCE.indexOf("id: 'desktop_bridge_catalog_repair'");
   assert.ok(start > 0, 'the desktop_bridge_catalog_repair phase moved or was renamed');
-  const end = DOCTOR_SOURCE.indexOf('desktop_bridge_catalog_sync_failed', start);
+  const end = CATALOG_REPAIR_SOURCE.indexOf('desktop_bridge_catalog_sync_failed', start);
   assert.ok(end > start, 'the catalog repair phase no longer ends where this test expects');
-  return DOCTOR_SOURCE.slice(start, end);
+  return CATALOG_REPAIR_SOURCE.slice(start, end);
 }
 
 test('the catalog repair addresses the bridge under HOME, never the project root', () => {
@@ -65,6 +68,36 @@ test('the catalog repair addresses the bridge under HOME, never the project root
     4,
     'the restart, the status read, the sync, and the read-back must all address the same resolved home'
   );
+});
+
+test('every --fix entry point executes the one shared bridge repair', () => {
+  // 9.0.2 split the routes: project --fix kept the repair while the home-rooted
+  // global-only fix kept only the STATUS read — reporting `codex_lb_catalog_stale`
+  // with the remedy `retry_catalog_sync` as the one fix run that never executed
+  // that remedy. Both doctor routes and the update migration stage must call the
+  // single core implementation.
+  // The transaction phase is the LAST id occurrence in doctor.ts; the first is
+  // the global-only fix's catch fallback.
+  const phaseWiring = DOCTOR_SOURCE.lastIndexOf("id: 'desktop_bridge_catalog_repair'");
+  assert.ok(phaseWiring > 0, 'the project fix transaction no longer wires the catalog repair phase');
+  const transactionSlice = DOCTOR_SOURCE.slice(phaseWiring, phaseWiring + 900);
+  assert.match(transactionSlice, /repairDoctorDesktopBridgeCatalog\(\{ fix: doctorFix \}\)/);
+  const globalOnly = DOCTOR_SOURCE.slice(
+    DOCTOR_SOURCE.indexOf('export async function executeDoctorGlobalOnlyFix'),
+    DOCTOR_SOURCE.indexOf('async function runDoctorGlobalOnlyFix')
+  );
+  assert.match(
+    globalOnly,
+    /deps\.desktopBridgeRepairImpl \|\| repairDoctorDesktopBridgeCatalog/,
+    'the global-only fix must run the shared bridge repair (injectable for tests)'
+  );
+  // Repair BEFORE the status read: the report must be the post-repair snapshot
+  // (the 8.6.6 lesson — doctor once printed the very blockers it had just cleared).
+  const repairAt = globalOnly.indexOf('desktopBridgeRepairImpl(');
+  const statusAt = globalOnly.indexOf('inspectDoctorDesktopBridgeStatus(');
+  assert.ok(repairAt > 0 && statusAt > repairAt, 'global-only must repair first and report the post-repair status');
+  const migrationStage = fs.readFileSync('src/core/update/update-migration-state/desktop-bridge-catalog-repair-stage.ts', 'utf8');
+  assert.match(migrationStage, /repairDoctorDesktopBridgeCatalog\(\{ fix: true \}\)/);
 });
 
 test('doctor reports the bridge as it is AFTER the repair transaction', () => {

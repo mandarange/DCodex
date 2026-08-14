@@ -335,7 +335,25 @@ export async function forwardHttp(
             // Retry-After. A genuine not-found (invalid_request_error,
             // response_not_found, model_not_found) carries a different type and
             // passes through untouched.
-            const transientMislabel = statusCode === 404 && upstreamType === 'upstream_error' && !upstreamCode;
+            // The gateway spells its self-described transient in the `code`
+            // slot (`error.code: "upstream_error"`), not the `type` slot the
+            // first version of this branch tested — so the translation never
+            // fired and the raw 404 kept reaching Codex. Either slot counts
+            // now; a genuine not-found carries a specific identifier
+            // (`response_not_found`, `model_not_found`) in exactly these slots
+            // and still passes untouched.
+            const transientMislabel = statusCode === 404
+              && (upstreamType === 'upstream_error' || upstreamCode === 'upstream_error');
+            if (transientMislabel && replayable && !useFreshConnection) {
+              // Auto-heal before surfacing anything: the body is buffered, so
+              // the request can be replayed once on a fresh connection — an
+              // affinity miss frequently lands on the right node the second
+              // time. Only if the replay fails too does the client see the
+              // (now retryable) failure.
+              responseStarted = true;
+              finish(new StalePooledSocketFailure(new DesktopBridgeError('bridge_upstream_transient_mislabel')));
+              return;
+            }
             const clientStatus = transientMislabel ? 503 : statusCode;
             // Logged after the body parse so the record can carry the upstream's
             // own error code — the one fact a report holding only a status and a

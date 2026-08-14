@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [9.0.6] - 2026-08-13
+
+### Fixed
+
+- `sks doctor --fix` from the home directory repairs the bridge again. The
+  9.0.2 global-only routing kept the bridge status check but dropped the
+  bridge repair, so a stale codex-lb catalog was reported with a
+  retry_catalog_sync remedy the run itself never executed -- blocked on every
+  re-run. The global-only fix now runs the same catalog repair the project
+  fix uses (sync, read-back verify, one retry, stale-runtime restart) and
+  reports the post-repair snapshot.
+- `sks update` completes from any directory. Since 9.0.2, updating from home
+  installed the new package and then failed its own receipt stage, because
+  the migration doctor rerouted to global-only and never wrote the
+  home-rooted migration receipt. It writes it now, and a new
+  desktop-bridge-catalog-repair migration stage clears a stale catalog during
+  the update itself -- never failing the update, and naming
+  `sks doctor --fix` as a follow-up when the catalog cannot converge. The
+  Swift-mirrored operation stage list is untouched.
+
+
 ## [9.0.5] - 2026-08-13
 
 ### Fixed

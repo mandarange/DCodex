@@ -1,10 +1,12 @@
-# SKS 9.0.5 Release Readiness
+# SKS 9.0.6 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
 
-9.0.5 makes align complete end to end on real workspaces: extractor caps sized before topology/evidence ever faced real inputs (162 gates, 880 proofs) blocked compile fail-closed; they are now sized from measurement with headroom, an over-wide glob is represented whole instead of failing the compile, two silent mid-expansion breaks now fail closed, and the evidence guard shares the snapshot lint's structural exemption instead of refusing an honest gate id. Field-verified: sks align run ok:true, exact coverage, freshness gate cleared.
+9.0.6 restores the two repair paths a home directory broke in 9.0.2: the global-only doctor now runs the real bridge catalog repair (sync, read-back verify, retry, stale-runtime restart) and reports the post-repair snapshot instead of printing a remedy it never executes, and sks update from any directory writes its own home-rooted migration receipt so the update no longer fails after a successful install — with a new self-guarding catalog-repair migration stage and a named follow-up when the catalog cannot converge.
+
+9.0.5 made align complete end to end on real workspaces: extractor caps sized before topology/evidence ever faced real inputs (162 gates, 880 proofs) blocked compile fail-closed; they are now sized from measurement with headroom, an over-wide glob is represented whole instead of failing the compile, two silent mid-expansion breaks now fail closed, and the evidence guard shares the snapshot lint's structural exemption instead of refusing an honest gate id. Field-verified: sks align run ok:true, exact coverage, freshness gate cleared.
 
 9.0.4 fixed the two prior field failures. `sks align run` works again: 8.4.0
 widened align to the topology and evidence extractors while the
@@ -93,7 +95,7 @@ subagents, and the desktop bridge replays requests that died on a stale pooled
 socket after a network transition instead of surfacing 502.
 
 **Scope facts recorded rather than smoothed over:** the JSON snapshot file is
-*not* deleted in 9.0.5 — two remaining readers (the byte-level lint rules and
+*not* deleted in 9.0.6 — two remaining readers (the byte-level lint rules and
 the architecture-map baseline hash) are contract changes, not migrations, and
 have their own cards. The v1 query engine is unreachable from production search
 but still present. `requiredForPublish`/`alwaysOnRelease` protection arms are
@@ -105,7 +107,7 @@ The canonical suite is green end to end: 3,474 of 3,474, zero failures, zero
 todo — against 2,929 at 8.7.0; the growth is CRK2 and the defect-class fixes.
 
 Still to regenerate from the clean candidate commit before any release claim:
-the full release gate DAG, the isolated 7.6.0 to 9.0.5 upgrade smoke, the macOS
+the full release gate DAG, the isolated 7.6.0 to 9.0.6 upgrade smoke, the macOS
 Menu Bar proof, the pack receipt, and the release-check stamp. The affected-scope
 DAG ran strict with zero blockers at every landing in this candidate, which is
 preparation evidence, not exact-commit evidence. The upgrade smoke matters more
