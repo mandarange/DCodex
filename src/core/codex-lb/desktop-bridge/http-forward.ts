@@ -161,9 +161,20 @@ function safeUpstreamErrorId(value: unknown): string | null {
 }
 
 const TRANSIENT_UPSTREAM_STATUSES = new Set([500, 502, 503, 524]);
+const TRANSIENT_UPSTREAM_IDENTIFIERS = new Set(['upstream_error', 'upstream_request_timeout']);
+/** First try plus this many fresh-connection replays. Codex compact treats any leftover 503 as fatal. */
+export const TRANSIENT_UPSTREAM_REPLAY_LIMIT = 3;
+const TRANSIENT_UPSTREAM_REPLAY_BACKOFF_MS = [200, 400, 800] as const;
 
-function isGatewaySelfDescribedTransient(value: string | null): boolean {
-  return value === 'upstream_error';
+function isTransientUpstreamIdentifier(value: string | null): boolean {
+  return Boolean(value && TRANSIENT_UPSTREAM_IDENTIFIERS.has(value));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref();
+  });
 }
 
 /**
@@ -171,18 +182,21 @@ function isGatewaySelfDescribedTransient(value: string | null): boolean {
  * `translated_503` rows: the first translation keyed `type` and "no code",
  * while the gateway puts `upstream_error` in `code`. 9.0.6 checks either slot
  * for 404 only. The same self-described transient also arrives as 502/503/524
- * (and as an empty/HTML body with no identifiers). Those still reached Codex
- * as a permanent-looking "Upstream request failed".
+ * (and as an empty/HTML body with no identifiers), plus
+ * `503:upstream_request_timeout`. Codex compact does not honor Retry-After —
+ * `unexpected status 503 Service Unavailable: Upstream request failed` kills
+ * the remote compact task — so the bridge must absorb these internally.
  */
 function isTransientUpstreamFailure(
   statusCode: number,
   upstreamType: string | null,
   upstreamCode: string | null,
 ): boolean {
-  if (isGatewaySelfDescribedTransient(upstreamType) || isGatewaySelfDescribedTransient(upstreamCode)) {
-    return statusCode === 404 || TRANSIENT_UPSTREAM_STATUSES.has(statusCode);
+  if (statusCode === 429) return false;
+  if (statusCode === 404) {
+    return isTransientUpstreamIdentifier(upstreamType) || isTransientUpstreamIdentifier(upstreamCode);
   }
-  return TRANSIENT_UPSTREAM_STATUSES.has(statusCode) && !upstreamType && !upstreamCode;
+  return TRANSIENT_UPSTREAM_STATUSES.has(statusCode);
 }
 
 function redactedUpstreamClientMessage(statusCode: number, transient: boolean): string {
@@ -324,7 +338,7 @@ export async function forwardHttp(
     // A streamed request body is consumed as it is forwarded, so only a
     // buffered one can be replayed. Every Responses call arrives buffered.
     const replayable = Buffer.isBuffer(request.body);
-    const attempt = (useFreshConnection: boolean): Promise<void> => new Promise<void>((resolve, reject) => {
+    const attempt = (useFreshConnection: boolean, canReplay: boolean): Promise<void> => new Promise<void>((resolve, reject) => {
       let responseStarted = false; let settled = false;
       const abort = (): void => { if (!res.writableEnded) upstream.destroy(new DesktopBridgeError('bridge_client_disconnected')); };
       const finish = (error?: unknown): void => {
@@ -369,14 +383,17 @@ export async function forwardHttp(
             // A genuine not-found (`response_not_found`, `model_not_found`)
             // carries a different identifier and stays 404.
             const transientMislabel = isTransientUpstreamFailure(statusCode, upstreamType, upstreamCode);
-            if (transientMislabel && replayable && !useFreshConnection) {
-              // Auto-heal before surfacing anything: the body is buffered, so
-              // the request can be replayed once on a fresh connection — an
-              // affinity miss frequently lands on the right node the second
-              // time. Only if the replay fails too does the client see the
-              // (now retryable) failure.
+            if (transientMislabel && replayable && canReplay) {
+              // Codex compact treats any leftover 503 as fatal
+              // (`unexpected status 503 … Upstream request failed`) and does
+              // not honor Retry-After. Absorb the transient here and replay
+              // the buffered Responses body on a fresh connection.
               responseStarted = true;
-              finish(new StalePooledSocketFailure(new DesktopBridgeError('bridge_upstream_transient_mislabel')));
+              finish(new StalePooledSocketFailure(new DesktopBridgeError(
+                upstreamCode === 'upstream_request_timeout'
+                  ? 'bridge_upstream_request_timeout'
+                  : 'bridge_upstream_transient_mislabel',
+              )));
               return;
             }
             const clientStatus = transientMislabel ? 503 : statusCode;
@@ -415,21 +432,33 @@ export async function forwardHttp(
       else void pipeline(req, upstream).catch((error) => { if (!responseStarted) finish(error); });
     });
 
-    try {
-      await attempt(false);
-    } catch (error) {
-      if (!(error instanceof StalePooledSocketFailure)) throw error;
-      // One transition kills every idle socket to that host, not just this one.
-      // `destroy` only reaps the free list, so streams in flight are untouched.
-      agent.destroy();
-      upstreamAgents.delete(`${provider.remote.secure ? 'https' : 'http'}:${provider.remote.address}:${provider.remote.port}`);
-      logHttpRejection({
-        code: `bridge_upstream_socket_stale_replayed:${underlyingErrorCode(error.reason) || 'unknown'}`,
-        transport: 'http',
-        ...(req.method === undefined ? {} : { method: req.method }),
-        ...(req.url === undefined ? {} : { url: req.url }),
-      });
-      await attempt(true);
+    let remainingReplays = replayable ? TRANSIENT_UPSTREAM_REPLAY_LIMIT : 0;
+    let useFreshConnection = false;
+    for (;;) {
+      try {
+        await attempt(useFreshConnection, remainingReplays > 0);
+        return;
+      } catch (error) {
+        if (!(error instanceof StalePooledSocketFailure) || remainingReplays <= 0) throw error;
+        remainingReplays -= 1;
+        if (!useFreshConnection) {
+          // One transition kills every idle socket to that host, not just this one.
+          // `destroy` only reaps the free list, so streams in flight are untouched.
+          agent.destroy();
+          upstreamAgents.delete(`${provider.remote.secure ? 'https' : 'http'}:${provider.remote.address}:${provider.remote.port}`);
+        }
+        logHttpRejection({
+          code: `bridge_upstream_socket_stale_replayed:${underlyingErrorCode(error.reason) || 'unknown'}`,
+          transport: 'http',
+          ...(req.method === undefined ? {} : { method: req.method }),
+          ...(req.url === undefined ? {} : { url: req.url }),
+        });
+        useFreshConnection = true;
+        const backoffIndex = TRANSIENT_UPSTREAM_REPLAY_LIMIT - remainingReplays - 1;
+        const backoffMs = TRANSIENT_UPSTREAM_REPLAY_BACKOFF_MS[Math.max(0, backoffIndex)]
+          ?? TRANSIENT_UPSTREAM_REPLAY_BACKOFF_MS[TRANSIENT_UPSTREAM_REPLAY_BACKOFF_MS.length - 1];
+        if (backoffMs) await delay(backoffMs);
+      }
     }
   } catch (error) { writeHttpBridgeError(res, error instanceof StalePooledSocketFailure ? error.reason : error, req); }
 }

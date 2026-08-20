@@ -8,6 +8,7 @@ import { startDesktopBridge, stopDesktopBridge, desktopBridgeClientPath, type De
 import { PACKAGE_VERSION } from '../../../version.js';
 import { runDesktopBridgeRestageStage } from '../../../update/update-migration-state/desktop-bridge-restage.js';
 import { safeEndUpgradeSocket } from '../websocket-forward.js';
+import { TRANSIENT_UPSTREAM_REPLAY_LIMIT } from '../http-forward.js';
 
 const CLIENT_CAPABILITY = Buffer.alloc(32, 0x47).toString('base64url');
 const CLIENT_CAPABILITY_SHA256 = createHash('sha256').update(CLIENT_CAPABILITY).digest('hex');
@@ -265,19 +266,16 @@ test('an upstream error keeps its identifiers and loses its text', async () => {
 
 /**
  * The gateway's self-described transient ("type": "upstream_error", no code)
- * mislabelled as 404 is corrected to 503 + Retry-After so Codex retries the
- * compact task instead of abandoning it. A genuine not-found — a different
- * type, or any specific code — passes through as the 404 it really is.
+ * mislabelled as 404 used to become one 503 that Codex compact treats as
+ * fatal (`unexpected status 503 Service Unavailable: Upstream request failed`).
+ * The bridge now absorbs those transients internally. A genuine not-found —
+ * a different type, or any specific code — still passes through as 404.
  */
-test('a gateway upstream_error 404 is replayed once, then surfaced as 503 retryable', async () => {
+test('a gateway upstream_error 404 is replayed, then surfaced as 503 only after the budget is spent', async () => {
   // The gateway spells its transient in error.code (observed live:
-  // bridge_upstream_status_404:upstream_error), and an affinity miss often
-  // lands on the right node on a second attempt — so the bridge replays the
-  // buffered request once before surfacing anything. Fixture: first call
-  // answers the transient 404, second answers 200 → the client sees 200 and
-  // no error at all. If every attempt fails, the client gets 503 with
-  // Retry-After so Codex keeps the compact task alive. A genuine not-found
-  // (specific code, different type) still passes as the 404 it is.
+  // bridge_upstream_status_404:upstream_error). An affinity miss often
+  // lands on the right node on a later attempt, so the bridge replays the
+  // buffered Responses body before Codex compact can see a 503.
   let calls = 0; let mode: 'heal' | 'always404' | 'real' = 'heal';
   const upstream = http.createServer((req, res) => {
     calls += 1;
@@ -313,12 +311,12 @@ test('a gateway upstream_error 404 is replayed once, then surfaced as 503 retrya
     bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 2_000), { writeState: false });
     const healed = await call();
     assert.equal(healed.status, 200, 'the replay heals the affinity miss invisibly');
-    assert.equal(calls, 2, 'exactly one replay');
+    assert.equal(calls, 2, 'heals on the first replay');
     mode = 'always404'; calls = 0;
     const exhausted = await call();
-    assert.equal(exhausted.status, 503, 'an unhealed transient surfaces retryable');
+    assert.equal(exhausted.status, 503, 'an unhealed transient surfaces only after the budget');
     assert.equal(exhausted.retryAfter, '10');
-    assert.equal(calls, 2, 'still exactly one replay, never a loop');
+    assert.equal(calls, 1 + TRANSIENT_UPSTREAM_REPLAY_LIMIT, 'replays stay bounded');
     mode = 'real'; calls = 0;
     const real = await call();
     assert.equal(real.status, 404, 'a genuine not-found stays a 404');
@@ -349,7 +347,7 @@ function postResponses(bridgePort: number): Promise<{ status: number; retryAfter
   });
 }
 
-test('a gateway upstream_error 502 is replayed once, then surfaced as 503 retryable', async () => {
+test('a gateway upstream_error 502 is replayed until it heals', async () => {
   let calls = 0;
   const upstream = http.createServer((_req, res) => {
     calls += 1;
@@ -375,7 +373,7 @@ test('a gateway upstream_error 502 is replayed once, then surfaced as 503 retrya
   }
 });
 
-test('an unidentified 502 is replayed once, then surfaced without the gateway sentence', async () => {
+test('an unidentified 502 is replayed, then surfaced without the gateway sentence', async () => {
   let calls = 0;
   const upstream = http.createServer((_req, res) => {
     calls += 1;
@@ -390,11 +388,40 @@ test('an unidentified 502 is replayed once, then surfaced without the gateway se
     const exhausted = await postResponses(bridgePort);
     assert.equal(exhausted.status, 503);
     assert.equal(exhausted.retryAfter, '10');
-    assert.equal(calls, 2);
+    assert.equal(calls, 1 + TRANSIENT_UPSTREAM_REPLAY_LIMIT);
     const parsed = JSON.parse(exhausted.text);
     assert.equal(parsed.error.message, 'temporary_upstream_failure');
     assert.equal(exhausted.text.includes('Upstream request failed'), false);
     assert.equal(exhausted.text.includes('Bad Gateway'), false);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await close(upstream);
+  }
+});
+
+test('a compact-shaped 503 timeout heals on a later fresh replay', async () => {
+  let calls = 0;
+  const upstream = http.createServer((_req, res) => {
+    calls += 1;
+    if (calls >= 4) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    res.writeHead(503, { 'content-type': 'application/json', 'cf-ray': 'a2e11c946b6b33ad-LAX' });
+    res.end(JSON.stringify({
+      error: { code: 'upstream_request_timeout', message: 'Upstream request failed' },
+    }));
+  });
+  const upstreamPort = await listen(upstream);
+  const holder = net.createServer(); const bridgePort = await listen(holder); await close(holder);
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 2_000), { writeState: false });
+    const healed = await postResponses(bridgePort);
+    assert.equal(healed.status, 200);
+    assert.equal(calls, 4);
+    assert.equal(healed.text.includes('Upstream request failed'), false);
   } finally {
     if (bridge) await stopDesktopBridge(bridge);
     await close(upstream);

@@ -3,9 +3,10 @@
 ## Current assertion
 
 9.1.1 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is
-9.1.0 plus a stability patch: the desktop bridge heals 502/503/524 gateway
-transients the same way it already healed 404+`upstream_error`, stops showing
-the sentence "Upstream request failed", keeps 429 as `rate_limited`, and no
+9.1.0 plus a stability patch: the desktop bridge absorbs 502/503/524 gateway
+transients (and `upstream_request_timeout`) internally so Codex compact never
+sees a leftover 503 after one miss, stops showing the sentence
+"Upstream request failed", keeps 429 as `rate_limited`, and no
 longer dies on write-after-end during a WebSocket refusal. `sks update`
 quarantines OMX/DCodex harness markers itself and removes only SKS-owned
 retired skills from `~/.cursor/skills` and `~/.claude/skills`. Unnamed hook
@@ -22,7 +23,7 @@ The 9.1.0 ledger below remains for upgrade context. New 9.1.1 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
-| A 502/503/524 gateway transient is replayed once, then 503 | passed-hermetic | same one-shot fresh-connection replay as 404+`upstream_error`; unidentified 502/503/524 bodies included; genuine `response_not_found` stays 404; pinned by the bridge keepalive suite |
+| A 502/503/524 gateway transient is absorbed before Codex compact can see it | passed-hermetic | first try plus 3 fresh-connection replays; `upstream_request_timeout` included; unidentified 502/503/524 bodies included; genuine `response_not_found` stays 404; leftover 503 only after the budget; pinned by the bridge keepalive suite including a 4th-attempt compact-shaped 503 heal |
 | Exhausted upstream errors no longer say "Upstream request failed" | passed-hermetic | 429 → `rate_limited` + Retry-After; transient exhaust → `temporary_upstream_failure`; other 4xx/5xx → `bridge_upstream_request_failed`; identifiers still survive; free text still dies |
 | WebSocket refusal cannot crash the bridge process | passed-hermetic | `safeEndUpgradeSocket` swallows socket errors and refuses to write an already-ended stream; unit-tested on an ended and a destroyed PassThrough |
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |

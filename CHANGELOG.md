@@ -7,13 +7,17 @@
 
 ### Fixed
 
-- The bridge no longer shows every provider fault as "Upstream request failed".
-  Live logs from 9.0.5 had 41,199 `404:upstream_error` rows and zero
+- The bridge no longer shows every provider fault as "Upstream request failed",
+  and it no longer hands Codex compact a leftover 503 after one miss. Live
+  logs from 9.0.5 had 41,199 `404:upstream_error` rows and zero
   `translated_503` rows: the first translation keyed the wrong field, and even
   after 9.0.6 checked either slot it only healed 404. The same gateway
-  self-described transient also arrives as 502/503/524 or as an empty/HTML
-  body. Those statuses now get the same one replay on a fresh connection, then
-  503 + Retry-After. A 429 stays 429 with `rate_limited` and Retry-After.
+  transient also arrives as 502/503/524, `upstream_request_timeout`, or an
+  empty/HTML body. Codex compact treats `unexpected status 503 Service
+  Unavailable: Upstream request failed` as fatal and does not honor
+  Retry-After, so the bridge now absorbs those failures internally — first
+  try plus three fresh-connection replays with short backoff — and only then
+  surfaces 503. A 429 stays 429 with `rate_limited` and Retry-After.
   Exhausted transients say `temporary_upstream_failure`; other 4xx/5xx say
   `bridge_upstream_request_failed`. Identifiers still survive; free text still
   dies at the bridge.
