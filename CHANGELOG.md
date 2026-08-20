@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+
+## [9.1.0] - 2026-08-19
+
+### Added
+
+- `sks codex-app context-1m status|on|off` -- an explicit opt-in for the
+  OpenAI-documented 1M-token context window on GPT-5.6 Sol. `on` writes
+  `model_context_window = 1000000` and `model_auto_compact_token_limit =
+  900000` as top-level keys in `~/.codex/config.toml` (before any `[section]`
+  header, exactly the placement the Codex config loader honors), each stamped
+  with an inline `# sks-codex-context-1m prev=...` ownership marker that
+  records the pre-enable value. `off` restores that previous value -- or
+  removes the key when there was none -- and never deletes a value SKS did not
+  write. Duplicate key declarations and unparseable values fail closed
+  instead of rewriting ambiguous config, and every write goes through the
+  guarded CAS config writer with backup and round-trip validation.
+- SKS Center gains a "Codex 1M Context" card in Settings. The toggle reads
+  its state from `codex-app context-1m status --json` (schema
+  `sks.codex-context-1m.v1`), applies changes under the `codex-config`
+  guarded-mutation group, and reports exactly what happened to Codex.
+- Enabling or disabling restarts Codex Desktop automatically -- but only when
+  it is already running (SKS never launches Codex on its own; when Codex is
+  closed the change simply applies on its next launch). The restart honors
+  `SKS_SKIP_CODEX_APP_RESTART=1` and a `--no-restart` flag, and both surfaces
+  state that only new sessions pick up the change.
+- The toggle surfaces the documented caveats instead of hiding them: a
+  warning when the active model is not `gpt-5.6-sol` (the keys are global and
+  not model-aware, so smaller-window models can overflow), and a note that
+  requests beyond 272K input tokens bill the entire request at the
+  long-context rate.
+
 ## [9.0.6] - 2026-08-13
 
 ### Fixed

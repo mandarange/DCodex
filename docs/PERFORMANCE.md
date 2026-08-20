@@ -1,6 +1,6 @@
 # Sneakoscope Codex performance and leak policy
 
-Sneakoscope Codex 8.3.3 is designed to keep runtime, package size, RAM, and storage bounded.
+Sneakoscope Codex 9.1.0 is designed to keep runtime, package size, RAM, and storage bounded.
 
 ## Speed
 

@@ -8,21 +8,40 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
         case malformed
     }
 
+    private let processClient: ProcessClient
+    private let operations: OperationCoordinator
     private let notifications: NotificationCoordinator
     private let followCodexLifecycle = NSButton(checkboxWithTitle: "Show SKS Menu only while Codex is running", target: nil, action: nil)
     private let status = NativeView.detail("Settings use the native app configuration file.")
+    private let contextStatus = NativeView.detail("Codex 1M context: checking current state…")
     private var notificationButton: NSButton!
-    init(notifications: NotificationCoordinator) { self.notifications = notifications; super.init(nibName: nil, bundle: nil) }
+    private var contextToggleButton: NSButton!
+    private var contextEnabled: Bool?
+    private var contextBusy = false
+    private var contextGeneration = 0
+    init(processClient: ProcessClient, operations: OperationCoordinator, notifications: NotificationCoordinator) {
+        self.processClient = processClient
+        self.operations = operations
+        self.notifications = notifications
+        super.init(nibName: nil, bundle: nil)
+    }
     required init?(coder: NSCoder) { nil }
 
     override func loadView() {
         followCodexLifecycle.target = self; followCodexLifecycle.action = #selector(save)
         followCodexLifecycle.setAccessibilityLabel("Show SKS Menu only while Codex is running")
         notificationButton = NativeView.button("Enable Notifications", target: self, action: #selector(enableNotifications))
+        contextToggleButton = NativeView.button("Enable 1M Context", target: self, action: #selector(toggleContext1m))
+        contextToggleButton.isEnabled = false
         let lifecycleCard = NativeView.card(
             title: "Codex lifecycle",
             subtitle: "On keeps a lightweight observer running, hides the icon when Codex is closed, and shows it automatically when Codex opens.",
             views: [followCodexLifecycle]
+        )
+        let contextCard = NativeView.card(
+            title: "Codex 1M Context",
+            subtitle: "Opt Codex into the documented 1,000,000-token context window for GPT-5.6 Sol (model_context_window = 1000000, model_auto_compact_token_limit = 900000 in ~/.codex/config.toml). Requests beyond 272K input tokens bill the entire request at the long-context rate, only new sessions pick up the change, and Codex restarts automatically when it is running. Off restores the previous value.",
+            views: [NativeView.row([contextToggleButton]), contextStatus]
         )
         let notificationsCard = NativeView.card(
             title: "Notifications",
@@ -31,11 +50,12 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
         )
         view = NativeView.page([
             ControlKit.header("Settings", "These options stay on this Mac. Notification permission and Codex lifecycle behavior never leave the machine."),
-            lifecycleCard, notificationsCard
+            lifecycleCard, contextCard, notificationsCard
         ])
     }
 
     func refreshOnAppear() {
+        refreshContext1m()
         let configResult = readConfig()
         switch configResult {
         case .loaded(let config):
@@ -65,6 +85,101 @@ final class SettingsViewController: NSViewController, ControlCenterPage {
                 status.stringValue = "The settings file is malformed. No option can be changed or overwritten; repair it, then reopen Settings."
             }
         }
+    }
+
+    private func refreshContext1m(preserveStatusText: Bool = false) {
+        contextGeneration += 1
+        let requestGeneration = contextGeneration
+        processClient.run(["codex-app", "context-1m", "status", "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
+            guard let self = self, self.contextGeneration == requestGeneration, !self.contextBusy else { return }
+            guard let json = self.json(result.output),
+                  json["schema"] as? String == "sks.codex-context-1m.v1",
+                  json["ok"] as? Bool == true,
+                  let enabled = json["enabled"] as? Bool else {
+                self.contextEnabled = nil
+                self.contextToggleButton.isEnabled = false
+                if !preserveStatusText {
+                    self.contextStatus.stringValue = "Codex 1M context state unavailable · update SKS, then reopen Settings."
+                    self.contextStatus.textColor = .systemOrange
+                }
+                return
+            }
+            self.contextEnabled = enabled
+            self.contextToggleButton.isEnabled = true
+            self.contextToggleButton.title = enabled ? "Disable 1M Context" : "Enable 1M Context"
+            guard !preserveStatusText else { return }
+            let model = json["model"] as? String
+            var text = enabled
+                ? "Enabled · window 1,000,000 · auto-compact 900,000 · applies to new sessions only."
+                : "Disabled · Codex uses its tuned default context window."
+            var tone: NSColor = enabled ? .systemGreen : .secondaryLabelColor
+            if enabled, let model = model, model != "gpt-5.6-sol" {
+                text += " Active model is \(model); the 1M window is documented for gpt-5.6-sol."
+                tone = .systemOrange
+            }
+            self.contextStatus.stringValue = text
+            self.contextStatus.textColor = tone
+        }
+    }
+
+    @objc private func toggleContext1m() {
+        guard !contextBusy, let enabled = contextEnabled else { return }
+        let verb = enabled ? "off" : "on"
+        guard let snapshot = operations.begin(
+            kind: "codex-context-1m",
+            mutationGroup: "codex-config",
+            summary: enabled ? "Disable Codex 1M context" : "Enable Codex 1M context"
+        ) else {
+            contextStatus.stringValue = "Another guarded mutation is running. Try again after it completes."
+            contextStatus.textColor = .systemOrange
+            return
+        }
+        contextBusy = true
+        contextToggleButton.isEnabled = false
+        contextStatus.stringValue = enabled ? "Disabling 1M context…" : "Enabling 1M context and restarting Codex if it is running…"
+        contextStatus.textColor = .secondaryLabelColor
+        _ = operations.update(snapshot, state: .running, stage: "applying", progress: nil, summary: contextStatus.stringValue)
+        processClient.run(["codex-app", "context-1m", verb, "--json"], timeout: NativeView.mutationTimeout) { [weak self] result in
+            guard let self = self else { return }
+            self.contextBusy = false
+            self.contextToggleButton.isEnabled = true
+            let json = self.json(result.output)
+            let ok = result.code == 0
+                && json?["schema"] as? String == "sks.codex-context-1m.v1"
+                && json?["ok"] as? Bool == true
+            let summary: String
+            if ok {
+                let restart = json?["restart"] as? [String: Any]
+                let applied = verb == "on" ? "1M context enabled" : "1M context disabled"
+                if restart?["status"] as? String == "restarted" {
+                    summary = "\(applied) · Codex restarted — start a new session to apply it."
+                } else if restart?["reason"] as? String == "codex_not_running" {
+                    summary = "\(applied) · Codex is not running — the change applies on its next launch."
+                } else if restart?["reason"] as? String == "config_unchanged" {
+                    summary = "\(applied) · configuration already matched; nothing restarted."
+                } else {
+                    summary = "\(applied) · restart Codex manually, then start a new session."
+                }
+            } else {
+                let blocker = (json?["blockers"] as? [String])?.first
+                summary = blocker.map { "1M context change failed · \($0)" } ?? "1M context change failed · unexpected CLI response."
+            }
+            _ = self.operations.update(snapshot, state: ok ? .succeeded : .failed, stage: "complete", progress: 1, summary: summary)
+            self.contextStatus.stringValue = summary
+            self.contextStatus.textColor = ok ? .systemGreen : .systemRed
+            self.refreshContext1m(preserveStatusText: true)
+        }
+    }
+
+    private func json(_ text: String) -> [String: Any]? {
+        guard let data = text.data(using: .utf8) else { return nil }
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { return object }
+        // Child processes may print banner lines before JSON; prefer the last
+        // top-level object payload, matching the Overview parser.
+        guard let start = text.range(of: "{", options: [.backwards])?.lowerBound else { return nil }
+        let slice = String(text[start...])
+        guard let sliced = slice.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: sliced) as? [String: Any]
     }
 
     @objc private func enableNotifications() {

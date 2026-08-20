@@ -481,6 +481,15 @@ test('Control Center avoids competing Return defaults and protects recovery-sens
   assert.match(settings, /Open Notification Settings…/);
   assert.match(settings, /urlForApplication\(withBundleIdentifier: "com\.apple\.systempreferences"\)/);
 
+  // Codex 1M Context card: schema-gated status readback, guarded mutation via
+  // the codex-config group, and restart messaging that never promises a launch.
+  assert.match(settings, /\["codex-app", "context-1m", "status", "--json"\]/);
+  assert.match(settings, /json\["schema"\] as\? String == "sks\.codex-context-1m\.v1"/);
+  assert.match(settings, /kind: "codex-context-1m"/);
+  assert.match(settings, /mutationGroup: "codex-config"/);
+  assert.match(settings, /Codex is not running — the change applies on its next launch\./);
+  assert.match(settings, /start a new session/);
+
   assert.match(mcp, /private var refreshGeneration = 0/);
   assert.match(mcp, /self\.refreshGeneration == requestGeneration/);
   assert.match(mcp, /No MCP servers are configured in the/);

@@ -30,7 +30,7 @@ final class ControlCenterWindowController: NSWindowController, NSTableViewDataSo
             .providers: ProvidersViewController(processClient: processClient, operations: operations),
             .remoteCoding: RemoteCodingViewController(),
             .diagnostics: DiagnosticsViewController(processClient: processClient, operations: operations),
-            .settings: SettingsViewController(notifications: notifications)
+            .settings: SettingsViewController(processClient: processClient, operations: operations, notifications: notifications)
         ]
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),

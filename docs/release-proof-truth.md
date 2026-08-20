@@ -1,23 +1,22 @@
-# Release Proof Truth — 9.0.6
+# Release Proof Truth — 9.1.0
 
 ## Current assertion
 
-9.0.6 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
-9.0.0 candidate plus the 9.0.1 bridge fixes (TCP keepalive instead of idle
-destruction on established WebSockets, self-convergence of a supervised bridge
-to the installed package plus an `sks update` restage stage, and bridge-side
-recording of upstream 4xx/5xx statuses) and two doctor fixes: skipped checks
-render `not measured` instead of failure spellings, and a marker directly in the
-home directory no longer makes home a project root. The candidate replaces the
-context-retrieval engine with the CRK2 binary index and takes the on-disk format
-to revision 2 — that format break is what made 9.0.x a major. This document does
-not authorize publication, deployment, a credential
-change, a Git tag, or a push. Exact-commit proof can exist only after the
-candidate is committed and all source-bound gates are regenerated from that
-clean commit.
+9.1.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is
+9.0.6 plus one opt-in feature: `sks codex-app context-1m status|on|off` and the
+SKS Center "Codex 1M Context" card, which together manage the OpenAI-documented
+1M-token context window for GPT-5.6 Sol (`model_context_window = 1000000`,
+`model_auto_compact_token_limit = 900000` as top-level keys in
+`~/.codex/config.toml`, inline `# sks-codex-context-1m prev=...` ownership
+markers that record and restore the pre-enable value, guarded CAS writes, and
+an automatic Codex Desktop restart only when Codex is already running). The
+default is unchanged: the keys are absent until an operator enables them. This
+document does not authorize publication, deployment, a credential change, a
+Git tag, or a push. Exact-commit proof can exist only after the candidate is
+committed and all source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 8.7.0 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.0.6 evidence.
+All release artifacts bound to 9.0.6 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 9.1.0 evidence.
 
 The full engineering record for this candidate — including every measurement
 cited below, the corrections to earlier claims, and the findings that were
@@ -55,11 +54,14 @@ work happened.
 | An upstream error keeps its identifiers and loses its text | passed-hermetic | machine-shaped `error.type`/`error.code` (charset-validated, ≤64 chars) survive redaction into the response body and the log; the free-text message, which can echo request content, is still replaced; join-tested with a secret-bearing upstream body, and the mutation forcing the identifier to null fails exactly that test |
 | A skipped doctor check never renders as a failure | passed-hermetic | every console row fed by a `skipped: true` source says `not measured (run: sks doctor --full)`, never `degraded`/`missing`/`optional_missing`/`unavailable` and never a fake `ok`; a measured check that genuinely fails still renders its failure (control pinned); one legacy test had *encoded* the defect (null → `unavailable`) and was corrected, not deleted |
 | The home directory cannot become a project root | passed-hermetic | a `.sneakoscope`/`.dcodex`/`.git` marker directly in `os.homedir()` is skipped by discovery — `~/.sneakoscope` is the product's own global state dir, so the defect fired on most machines; `sks doctor --fix` from home routes to the existing global-only repair with run-from-your-project guidance; join-tested through the real doctor path and mutation-tested in both halves |
-| The canonical suite is green | passed-hermetic | 3,474 of 3,474, zero failures, zero todo, on a clean build (2,929 at 8.7.0); the affected release-gate DAG ran strict with 0 blockers at every landing |
+| The 1M context toggle writes exactly the documented recipe and nothing else | passed-hermetic | `on` upserts the two int keys top-level before the first `[table]` header with inline ownership markers recording the prior value; `off` restores that value or removes the key, and never touches a value without the marker; duplicate declarations and unparseable values fail closed; 12-test suite covers round-trip on a realistic host-config fixture, idempotence, drift detection, and the guard mode-lock stripper leaving the operator's `model` line intact |
+| Enabling 1M context never launches Codex on its own | passed-hermetic | restart is attempted only when `codex-app context-1m on/off` changed the config AND Codex Desktop is already running (osascript bundle-id probe); `codex_not_running`, `config_unchanged`, `--no-restart`, and `SKS_SKIP_CODEX_APP_RESTART=1` all skip without probing or launching; injected-impl tests pin each skip reason and the restart-attempted path |
+| The 1M toggle surfaces the documented caveats | passed-hermetic | a non-`gpt-5.6-sol` active model warns (`codex_context_active_model_not_...`) because the keys are global and not model-aware; both CLI and SKS Center state that only new sessions pick up the change and that >272K-input requests bill the entire request at the long-context rate |
+| The canonical suite is green | passed-hermetic | 3,515 of 3,515 (3,482 canonical + 33 stamp-phase), zero failures, zero skipped, zero todo, on a clean build at the 9.1.0 candidate under the lifecycle Node v24.0.2 (3,474 at 9.0.6); the affected release-gate DAG ran strict with 0 blockers |
 | The integration audit's blockers are closed | passed-hermetic | 29 candidates across six dimensions, 6 survived adversarial refutation, 4 were blockers, all 4 fixed in-tree before this bump; the refuted 23 are recorded so they are not re-derived |
-| All checked version authorities report 9.0.6 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, plugin manifest, Cargo.toml/lock, README banner, changelog, and the rebuilt `dist/build-manifest.json` move together |
-| The reported 9.0.6 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, and release-check stamp regenerated from that commit |
-| 9.0.6 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
+| All checked version authorities report 9.1.0 | requires `release:version-truth` from the clean candidate commit | package, lock, `src/core/version.ts`, plugin manifest, Cargo.toml/lock, README banner, changelog, and the rebuilt `dist/build-manifest.json` move together |
+| The reported 9.1.0 package is ready to publish | not proved | requires a clean exact-commit build, the full release gate DAG, canonical tests, package receipt, provenance, and release-check stamp regenerated from that commit |
+| 9.1.0 physical release evidence exists | not proved | GitHub artifact attestation is producible only by the publish workflow; no local run can create it |
 
 ## Known limitations shipped deliberately
 
@@ -107,7 +109,7 @@ fixture, or package dry run cannot promote a real-environment row to passed.
 
 Paseo is an independent external product. Sneakoscope does not bundle its
 daemon, wrap its CLI, probe its health, own its authentication or relay
-lifecycle, or require a live Paseo session as 9.0.6 release proof. The owned
+lifecycle, or require a live Paseo session as 9.1.0 release proof. The owned
 contract is limited to the committed `paseo.json` and accurate usage guidance.
 
 The active Telegram command, transport, Doctor projection, native poller and
@@ -118,7 +120,7 @@ not evidence of an active integration.
 
 ## Exact-commit release evidence
 
-Before any release claim, regenerate and verify current 9.0.6-bound artifacts
+Before any release claim, regenerate and verify current 9.1.0-bound artifacts
 from the clean handoff commit, including the build manifest, version metadata,
 package proof, pack receipt, release provenance, and release-check stamp. Each
 must bind the exact source digest, Git commit, tarball bytes, and package
@@ -126,7 +128,7 @@ version required by its schema. The release-check stamp must be produced under
 the lifecycle Node (nvm v24.0.2), not the Homebrew Node, or it fails with a
 false `canonical_test_proof_node_version_mismatch`.
 
-Existing 8.7.0 and earlier canonical-test proofs, pack receipts, provenance,
+Existing 9.0.6 and earlier canonical-test proofs, pack receipts, provenance,
 and stamps are stale for this candidate. Local focused tests and a dry-run
 tarball remain preparation evidence only until the repository's clean-commit
 release flow produces current receipts.

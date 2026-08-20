@@ -22,6 +22,29 @@ import type { DesktopBridgeStatusV3 } from '../core/codex-lb/bridge-contracts.js
 export async function run(_command: any, args: any = []) {
   const action = args[0] || 'check';
   if (action === 'restart') return printCodexAppResult(args, await restartCodexApp());
+  if (action === 'context-1m') {
+    const { codexContext1mCommand } = await import('../core/codex-app/codex-context-window.js');
+    const result = await codexContext1mCommand(args.slice(1));
+    if (flag(args, '--json')) {
+      printJson(result);
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
+    console.log(`Codex 1M Context: ${result.enabled ? 'enabled' : 'disabled'}`);
+    console.log(`Config: ${result.config_path}`);
+    console.log(`Model: ${result.model || 'not set'} (documented for ${result.expected_model})`);
+    for (const [key, target] of Object.entries(result.target)) {
+      const state = (result.keys as Record<string, { present: boolean; managed: boolean; value: number | null }>)[key];
+      const detail = state?.present ? `${state.value ?? 'unparsed'}${state.managed ? ' (SKS-managed)' : ''}` : 'not set';
+      console.log(`${key}: ${detail} · target ${target}`);
+    }
+    if (result.restart) console.log(`Restart: ${result.restart.status}${result.restart.reason ? ` (${result.restart.reason})` : ''}`);
+    for (const note of result.notes) console.log(`Note: ${note}`);
+    for (const warning of result.warnings) console.log(`- warning: ${warning}`);
+    for (const blocker of result.blockers) console.log(`- blocker: ${blocker}`);
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
   if (action === 'remote-control' || action === 'remote') return codexAppRemoteControlCommand(args.slice(1));
   if (action === 'harness-matrix') {
     const root = await sksRoot();
@@ -101,7 +124,7 @@ export async function run(_command: any, args: any = []) {
     if (!status.ok) process.exitCode = 1;
     return;
   }
-  console.error('Usage: sks codex-app check|status|restart|harness-matrix|skill-sync|agent-role-sync|init-deep|hook-lifecycle|execution-profile|role-models|set-role-model --role <name> [--provider <id>] --model <catalog-slug> --reasoning <effort>|reset-role-model --role <name>|product-design [--check-only]|ensure-product-design|chrome-extension|pat status|remote-control [--json]');
+  console.error('Usage: sks codex-app check|status|restart|context-1m [status|on|off] [--no-restart]|harness-matrix|skill-sync|agent-role-sync|init-deep|hook-lifecycle|execution-profile|role-models|set-role-model --role <name> [--provider <id>] --model <catalog-slug> --reasoning <effort>|reset-role-model --role <name>|product-design [--check-only]|ensure-product-design|chrome-extension|pat status|remote-control [--json]');
   console.error('Provider routing moved to: sks bridge provider configure|validate|enable; sks bridge catalog sync; sks bridge route set-default.');
   process.exitCode = 1;
 }

@@ -1,8 +1,10 @@
-# SKS 9.0.6 Release Readiness
+# SKS 9.1.0 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
+
+9.1.0 adds one opt-in feature and changes nothing by default: `sks codex-app context-1m status|on|off` plus a "Codex 1M Context" card in SKS Center Settings, managing the OpenAI-documented 1M-token context window for GPT-5.6 Sol. Enable writes `model_context_window = 1000000` and `model_auto_compact_token_limit = 900000` as top-level keys in `~/.codex/config.toml` — before any `[section]` header, the only placement Codex honors — each carrying an inline `# sks-codex-context-1m prev=...` marker that records the pre-enable value; disable restores that value or removes the key, and never deletes a value SKS did not write. Duplicate declarations and unparseable values fail closed, every write goes through the guarded CAS config writer, and Codex Desktop restarts automatically only when it is already running — SKS still never launches Codex on its own; when it is closed the change applies on the next launch. Both surfaces state the documented caveats: only new sessions pick up the change, requests beyond 272K input tokens bill the entire request at the long-context rate, and a non-Sol active model draws a warning because the keys are global and not model-aware.
 
 9.0.6 restores the two repair paths a home directory broke in 9.0.2: the global-only doctor now runs the real bridge catalog repair (sync, read-back verify, retry, stale-runtime restart) and reports the post-repair snapshot instead of printing a remedy it never executes, and sks update from any directory writes its own home-rooted migration receipt so the update no longer fails after a successful install — with a new self-guarding catalog-repair migration stage and a named follow-up when the catalog cannot converge.
 
@@ -107,7 +109,7 @@ The canonical suite is green end to end: 3,474 of 3,474, zero failures, zero
 todo — against 2,929 at 8.7.0; the growth is CRK2 and the defect-class fixes.
 
 Still to regenerate from the clean candidate commit before any release claim:
-the full release gate DAG, the isolated 7.6.0 to 9.0.6 upgrade smoke, the macOS
+the full release gate DAG, the isolated 7.6.0 to 9.1.0 upgrade smoke, the macOS
 Menu Bar proof, the pack receipt, and the release-check stamp. The affected-scope
 DAG ran strict with zero blockers at every landing in this candidate, which is
 preparation evidence, not exact-commit evidence. The upgrade smoke matters more
@@ -450,7 +452,7 @@ node ./dist/scripts/release-pack-receipt.js verify
 node ./dist/scripts/release-provenance-check.js --publish
 npm whoami --registry https://registry.npmjs.org/
 npm view sneakoscope maintainers --json --registry https://registry.npmjs.org/
-npm view sneakoscope@8.3.3 version --json --registry https://registry.npmjs.org/
+npm view sneakoscope@9.1.0 version --json --registry https://registry.npmjs.org/
 npm publish --dry-run --json \
   --registry https://registry.npmjs.org/ \
   --tag latest \
