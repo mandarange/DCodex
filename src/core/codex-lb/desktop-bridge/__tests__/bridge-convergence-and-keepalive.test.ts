@@ -3,9 +3,11 @@ import { createHash, randomBytes } from 'node:crypto';
 import http from 'node:http';
 import net, { type AddressInfo } from 'node:net';
 import test from 'node:test';
+import { PassThrough } from 'node:stream';
 import { startDesktopBridge, stopDesktopBridge, desktopBridgeClientPath, type DesktopBridgeConfig, type DesktopBridgeHandle } from '../index.js';
 import { PACKAGE_VERSION } from '../../../version.js';
 import { runDesktopBridgeRestageStage } from '../../../update/update-migration-state/desktop-bridge-restage.js';
+import { safeEndUpgradeSocket } from '../websocket-forward.js';
 
 const CLIENT_CAPABILITY = Buffer.alloc(32, 0x47).toString('base64url');
 const CLIENT_CAPABILITY_SHA256 = createHash('sha256').update(CLIENT_CAPABILITY).digest('hex');
@@ -253,6 +255,8 @@ test('an upstream error keeps its identifiers and loses its text', async () => {
     assert.equal(parsed.error.upstream_type, 'invalid_request_error');
     assert.equal(body.text.includes('sk-live'), false, 'the free text does not');
     assert.equal(body.text.includes('secret'), false);
+    assert.equal(parsed.error.message, 'bridge_upstream_request_failed');
+    assert.equal(body.text.includes('Upstream request failed'), false);
   } finally {
     if (bridge) await stopDesktopBridge(bridge);
     await close(upstream);
@@ -323,4 +327,108 @@ test('a gateway upstream_error 404 is replayed once, then surfaced as 503 retrya
     if (bridge) await stopDesktopBridge(bridge);
     await close(upstream);
   }
+});
+
+function postResponses(bridgePort: number): Promise<{ status: number; retryAfter: string | undefined; text: string }> {
+  return new Promise((resolve, reject) => {
+    const request = http.request({
+      host: '127.0.0.1', port: bridgePort, method: 'POST',
+      path: desktopBridgeClientPath(CLIENT_CAPABILITY, '/backend-api/codex/responses'),
+      headers: { 'content-type': 'application/json', 'x-sks-model': PUBLIC_MODEL },
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => resolve({
+        status: response.statusCode || 0,
+        retryAfter: String(response.headers['retry-after'] || '') || undefined,
+        text: Buffer.concat(chunks).toString('utf8'),
+      }));
+    });
+    request.once('error', reject);
+    request.end(JSON.stringify({ model: PUBLIC_MODEL, input: 'ping' }));
+  });
+}
+
+test('a gateway upstream_error 502 is replayed once, then surfaced as 503 retryable', async () => {
+  let calls = 0;
+  const upstream = http.createServer((_req, res) => {
+    calls += 1;
+    if (calls >= 2) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    res.writeHead(502, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: { code: 'upstream_error', message: 'Upstream request failed' } }));
+  });
+  const upstreamPort = await listen(upstream);
+  const holder = net.createServer(); const bridgePort = await listen(holder); await close(holder);
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 2_000), { writeState: false });
+    const healed = await postResponses(bridgePort);
+    assert.equal(healed.status, 200);
+    assert.equal(calls, 2);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await close(upstream);
+  }
+});
+
+test('an unidentified 502 is replayed once, then surfaced without the gateway sentence', async () => {
+  let calls = 0;
+  const upstream = http.createServer((_req, res) => {
+    calls += 1;
+    res.writeHead(502, { 'content-type': 'text/html' });
+    res.end('<html>Bad Gateway</html>');
+  });
+  const upstreamPort = await listen(upstream);
+  const holder = net.createServer(); const bridgePort = await listen(holder); await close(holder);
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 2_000), { writeState: false });
+    const exhausted = await postResponses(bridgePort);
+    assert.equal(exhausted.status, 503);
+    assert.equal(exhausted.retryAfter, '10');
+    assert.equal(calls, 2);
+    const parsed = JSON.parse(exhausted.text);
+    assert.equal(parsed.error.message, 'temporary_upstream_failure');
+    assert.equal(exhausted.text.includes('Upstream request failed'), false);
+    assert.equal(exhausted.text.includes('Bad Gateway'), false);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await close(upstream);
+  }
+});
+
+test('a 429 keeps status and becomes rate_limited with Retry-After', async () => {
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(429, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: { code: 'upstream_error', message: 'Upstream request failed' } }));
+  });
+  const upstreamPort = await listen(upstream);
+  const holder = net.createServer(); const bridgePort = await listen(holder); await close(holder);
+  let bridge: DesktopBridgeHandle | null = null;
+  try {
+    bridge = await startDesktopBridge(bridgeConfig(bridgePort, upstreamPort, 2_000), { writeState: false });
+    const limited = await postResponses(bridgePort);
+    assert.equal(limited.status, 429);
+    assert.equal(limited.retryAfter, '10');
+    const parsed = JSON.parse(limited.text);
+    assert.equal(parsed.error.message, 'rate_limited');
+    assert.equal(parsed.error.upstream_code, 'upstream_error');
+    assert.equal(limited.text.includes('Upstream request failed'), false);
+  } finally {
+    if (bridge) await stopDesktopBridge(bridge);
+    await close(upstream);
+  }
+});
+
+test('safeEndUpgradeSocket does not throw after the client already ended', () => {
+  const socket = new PassThrough();
+  socket.end();
+  assert.equal(socket.writableEnded, true);
+  assert.doesNotThrow(() => safeEndUpgradeSocket(socket, 'HTTP/1.1 501 Not Implemented\r\n\r\n'));
+  socket.destroy();
+  assert.doesNotThrow(() => safeEndUpgradeSocket(socket, 'HTTP/1.1 501 Not Implemented\r\n\r\n'));
 });

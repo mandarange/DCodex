@@ -141,6 +141,21 @@ const PERMANENT_UPGRADE_REFUSALS = new Set([
   'bridge_provider_route_unavailable',
 ]);
 
+/**
+ * A late async failure can race the peer closing or a partially-written
+ * upgrade response. Writing then raises ERR_STREAM_WRITE_AFTER_END as an
+ * unhandled 'error' event and kills the whole bridge process.
+ */
+export function safeEndUpgradeSocket(socket: Duplex, payload: string): void {
+  socket.on('error', () => undefined);
+  if (socket.destroyed || (socket as { writableEnded?: boolean }).writableEnded) return;
+  try {
+    socket.end(payload);
+  } catch {
+    socket.destroy();
+  }
+}
+
 function writeUpgradeFailure(client: Duplex, error: unknown, req?: IncomingMessage): void {
   const code = safeBridgeErrorCode(error) || 'bridge_websocket_upstream_unavailable';
   const permanent = PERMANENT_UPGRADE_REFUSALS.has(code);
@@ -153,9 +168,11 @@ function writeUpgradeFailure(client: Duplex, error: unknown, req?: IncomingMessa
     ...(req?.url === undefined ? {} : { url: req.url }),
     status,
   });
-  if (client.destroyed) return;
-  client.end(`HTTP/1.1 ${status} ${reason}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n`
-    + JSON.stringify({ error: { type: 'sks_bridge_error', code, retryable: !permanent } }));
+  safeEndUpgradeSocket(
+    client,
+    `HTTP/1.1 ${status} ${reason}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n`
+      + JSON.stringify({ error: { type: 'sks_bridge_error', code, retryable: !permanent } }),
+  );
 }
 
 export async function forwardWebSocket(

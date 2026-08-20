@@ -337,10 +337,19 @@ export async function installSkills(root: any) {
 }
 
 type RemovedSkillCleanupTarget = {
-  scope: 'global' | 'global-codex' | 'project' | 'project-codex' | 'global-runtime' | 'global-runtime-codex';
+  scope: 'global' | 'global-codex' | 'project' | 'project-codex' | 'global-runtime' | 'global-runtime-codex' | 'global-host-extra';
   ownerRoot: string;
   targetDir: string;
+  /** Host extra dirs (Cursor/Claude) may hold user skills. Only SKS-owned retired names are removed. */
+  managedOnly?: boolean;
 };
+
+function hostExtraRemovedSkillTargets(home: string): RemovedSkillCleanupTarget[] {
+  return [
+    { scope: 'global-host-extra', ownerRoot: home, targetDir: path.join(home, '.cursor', 'skills'), managedOnly: true },
+    { scope: 'global-host-extra', ownerRoot: home, targetDir: path.join(home, '.claude', 'skills'), managedOnly: true },
+  ];
+}
 
 export async function cleanupRemovedSksSkillResidue(opts: {
   root: string;
@@ -357,7 +366,8 @@ export async function cleanupRemovedSksSkillResidue(opts: {
     { scope: 'project', ownerRoot: projectRoot, targetDir: path.join(projectRoot, '.agents', 'skills') },
     { scope: 'project-codex', ownerRoot: projectRoot, targetDir: path.join(projectRoot, '.codex', 'skills') },
     { scope: 'global-runtime', ownerRoot: globalRuntimeRoot, targetDir: path.join(globalRuntimeRoot, '.agents', 'skills') },
-    { scope: 'global-runtime-codex', ownerRoot: globalRuntimeRoot, targetDir: path.join(globalRuntimeRoot, '.codex', 'skills') }
+    { scope: 'global-runtime-codex', ownerRoot: globalRuntimeRoot, targetDir: path.join(globalRuntimeRoot, '.codex', 'skills') },
+    ...hostExtraRemovedSkillTargets(home),
   ];
   if (projectRoot !== home && projectRoot !== globalRuntimeRoot) {
     const scan = await collectNestedProjectRoots(projectRoot, new Set([home, globalRuntimeRoot]));
@@ -495,6 +505,7 @@ async function reconcileRemovedSkillTargets(
         remaining.push(displayPath);
         continue;
       }
+      if (!managed && target.managedOnly) continue;
       detected.push({
         scope: target.scope,
         name,
@@ -522,7 +533,7 @@ async function reconcileRemovedSkillTargets(
       quarantinedManifestCollisions,
       remaining,
       errors
-    });
+    }, { managedOnly: target.managedOnly === true });
     if (fix) await removeEmptySkillParents(target, errors);
   }
 
@@ -590,7 +601,8 @@ async function reconcileRemovedSkillManifests(
     quarantinedManifestCollisions: string[];
     remaining: string[];
     errors: string[];
-  }
+  },
+  opts: { managedOnly?: boolean } = {},
 ): Promise<void> {
   for (const fileName of [SKS_SKILL_MANIFEST_FILE, 'skills-manifest.json']) {
     if (!rowByName.has(fileName)) continue;
@@ -606,6 +618,7 @@ async function reconcileRemovedSkillManifests(
     }
     if (!inspection.exists) continue;
     if (inspection.leafSymlink || !inspection.stat?.isFile()) {
+      if (opts.managedOnly) continue;
       if (fix) {
         try {
           await quarantineSkillDir(target.ownerRoot, manifestPath, fileName, 'removed-skill-manifest-collision');
@@ -633,6 +646,7 @@ async function reconcileRemovedSkillManifests(
       parsed = JSON.parse(text);
     } catch {
       if (!manifestTextContainsRetiredJsonValue(text)) continue;
+      if (opts.managedOnly) continue;
       if (fix) {
         try {
           await quarantineSkillDir(target.ownerRoot, manifestPath, fileName, 'unparseable-removed-skill-manifest-collision');
@@ -650,6 +664,7 @@ async function reconcileRemovedSkillManifests(
     const scrubbed = scrubRemovedSkillManifest(fileName, parsed);
     if (!scrubbed.valid) {
       if (!scrubbed.hasRetiredResidue) continue;
+      if (opts.managedOnly) continue;
       if (fix) {
         try {
           await quarantineSkillDir(target.ownerRoot, manifestPath, fileName, 'unmanaged-removed-skill-manifest-collision');
@@ -905,7 +920,8 @@ async function reconcileSkillsUnlocked(opts: ReconcileSkillsOptions): Promise<Sk
         scope: 'global-runtime-codex',
         ownerRoot: globalRuntimeRoot,
         targetDir: path.join(globalRuntimeRoot, '.codex', 'skills')
-      }
+      },
+      ...hostExtraRemovedSkillTargets(root),
     );
   }
   const removedResidue = await reconcileRemovedSkillTargets(removedResidueTargets, opts.fix);

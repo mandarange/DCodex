@@ -128,7 +128,7 @@ test('R47/R48 security: canonical Codex ingress translates provider paths and ke
       error: {
         type: 'upstream_error',
         code: 'bridge_upstream_request_failed',
-        message: 'Upstream request failed',
+        message: 'bridge_upstream_request_failed',
       },
     });
     assert.doesNotMatch(redacted.body, /sk-sensitive-upstream-key-12345678/);

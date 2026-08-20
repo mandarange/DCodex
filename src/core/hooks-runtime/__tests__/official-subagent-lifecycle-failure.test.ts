@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import {
+  ACTIVE_OFFICIAL_WORKFLOW_IDLE_MS,
+  inspectActiveOfficialSubagentWorkflow,
   officialSubagentLifecycleCaptureBlockers,
   recordOfficialSubagentLifecycleCaptureFailure
 } from '../official-subagent-lifecycle.js';
@@ -75,5 +77,101 @@ test('old workflow capture files do not consume the current run bound', async ()
     );
   } finally {
     await fsp.rm(artifactDir, { recursive: true, force: true });
+  }
+});
+
+async function writeInspectableWorkflow(root: string, input: {
+  missionId: string;
+  runId: string;
+  createdAt: string;
+  openThreads?: number;
+  eventOccurredAt?: string;
+}) {
+  const dir = path.join(root, '.sneakoscope', 'missions', input.missionId);
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(path.join(dir, 'subagent-plan.json'), JSON.stringify({
+    schema: 'sks.subagent-plan.v1',
+    workflow: 'official_codex_subagent',
+    mission_id: input.missionId,
+    workflow_run_id: input.runId,
+    created_at: input.createdAt,
+    wave_lifecycle: {
+      schema: 'sks.subagent-wave-lifecycle.v1',
+      owner: 'root_parent',
+      workflow_run_id: input.runId,
+      open_threads: input.openThreads || 0,
+      updated_at: input.createdAt
+    }
+  }));
+  if (input.eventOccurredAt) {
+    await fsp.writeFile(path.join(dir, 'subagent-events.jsonl'), `${JSON.stringify({
+      schema: 'sks.subagent-event.v1',
+      event_name: 'SubagentStart',
+      thread_id: 'idle-child',
+      run_id: input.runId,
+      occurred_at: input.eventOccurredAt
+    })}\n`);
+  }
+}
+
+test('inspect treats a never-started official workflow as inactive after idle silence', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-stale-never-started-'));
+  const missionId = 'M-stale-never-started';
+  const runId = 'naruto-stale-never-started';
+  const createdAt = new Date(Date.now() - ACTIVE_OFFICIAL_WORKFLOW_IDLE_MS - 60_000).toISOString();
+  try {
+    await writeInspectableWorkflow(root, { missionId, runId, createdAt });
+    const result = await inspectActiveOfficialSubagentWorkflow(root, {
+      mission_id: missionId,
+      official_subagent_run_id: runId
+    }, 'session');
+    assert.equal(result.status, 'inactive');
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('inspect keeps a recently prepared official workflow active', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-fresh-never-started-'));
+  const missionId = 'M-fresh-never-started';
+  const runId = 'naruto-fresh-never-started';
+  const createdAt = new Date().toISOString();
+  try {
+    await writeInspectableWorkflow(root, { missionId, runId, createdAt });
+    const result = await inspectActiveOfficialSubagentWorkflow(root, {
+      mission_id: missionId,
+      official_subagent_run_id: runId
+    }, 'session');
+    assert.deepEqual(result, {
+      status: 'active',
+      missionId,
+      workflowRunId: runId,
+      openThreads: 0
+    });
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('inspect treats leftover open threads as inactive after idle silence', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-stale-open-threads-'));
+  const missionId = 'M-stale-open-threads';
+  const runId = 'naruto-stale-open-threads';
+  const createdAt = new Date(Date.now() - ACTIVE_OFFICIAL_WORKFLOW_IDLE_MS - 60_000).toISOString();
+  try {
+    await writeInspectableWorkflow(root, {
+      missionId,
+      runId,
+      createdAt,
+      openThreads: 1,
+      eventOccurredAt: createdAt
+    });
+    const result = await inspectActiveOfficialSubagentWorkflow(root, {
+      mission_id: missionId,
+      official_subagent_run_id: runId
+    }, 'session');
+    assert.equal(result.status, 'inactive');
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
   }
 });

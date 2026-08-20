@@ -3,7 +3,7 @@ import path from 'node:path';
 import { projectRoot, readJson, writeJsonAtomic, writeTextAtomic, appendJsonl, nowIso, sha256, packageRoot, type JsonData } from './fsx.js';
 import { looksInteractiveCommand, interactiveCommandReason } from './no-question-guard.js';
 import {
-  loadStateForSession,
+  loadOwnedRouteState,
   missionDir,
   sessionStateKey,
   setCurrent,
@@ -143,7 +143,9 @@ export { honestModeGapLines, honestModeLoopbackBudgetExhausted } from './hooks-r
 export { selftestCodexCommitHooks } from './hooks-runtime/codex-commit-hooks-selftest.js';
 async function loadState(root: any, payload: any = {}) {
   const sessionKey = conversationId(payload);
-  if (!explicitConversationId(payload)) return loadStateForSession(root, sessionKey);
+  // cwd/default is only a warning identity. Treating it as a named session made
+  // every hook in the repo inherit one workspace-sticky official workflow.
+  if (!explicitConversationId(payload)) return loadOwnedRouteState(root);
   const hashed = sessionStateKey(sessionKey);
   const sessionState = await readJson(stateFileForSession(root, sessionKey), null).catch(() => null);
   return sessionState ? { ...sessionState, _session_key: sessionState._session_key || hashed } : {};

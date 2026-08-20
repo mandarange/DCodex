@@ -3,6 +3,42 @@
 ## [Unreleased]
 
 
+## [9.1.1] - 2026-08-20
+
+### Fixed
+
+- The bridge no longer shows every provider fault as "Upstream request failed".
+  Live logs from 9.0.5 had 41,199 `404:upstream_error` rows and zero
+  `translated_503` rows: the first translation keyed the wrong field, and even
+  after 9.0.6 checked either slot it only healed 404. The same gateway
+  self-described transient also arrives as 502/503/524 or as an empty/HTML
+  body. Those statuses now get the same one replay on a fresh connection, then
+  503 + Retry-After. A 429 stays 429 with `rate_limited` and Retry-After.
+  Exhausted transients say `temporary_upstream_failure`; other 4xx/5xx say
+  `bridge_upstream_request_failed`. Identifiers still survive; free text still
+  dies at the bridge.
+- WebSocket upgrade refusals no longer crash the bridge process. A late
+  `socket.end` after the client had already gone away raised
+  `ERR_STREAM_WRITE_AFTER_END` as an unhandled error and killed every in-flight
+  HTTP turn (observed in `desktop-bridge.err.log`). Both upgrade writers now
+  swallow socket errors and refuse to write an already-ended stream.
+- A days-old official-subagent mission can no longer capture unrelated later
+  prompts. Two live bindings did that on this workspace: hook payloads without
+  `conversation_id`/`session_id` treated the repo cwd as a named session
+  (`8d4e45613309` here), and `inspectActiveOfficialSubagentWorkflow` stayed
+  `active` forever when the plan was non-terminal — even with zero child
+  threads. Unnamed hooks now load only unowned standalone state, and a
+  workflow with no activity for two hours is inactive so the new prompt can
+  prepare a fresh run.
+
+### Changed
+
+- `sks update` quarantines OMX/DCodex harness markers itself instead of failing
+  the update and asking the user to run `sks conflicts cleanup --yes`.
+- `sks update` also removes SKS-owned retired skills from `~/.cursor/skills`
+  and `~/.claude/skills`. User-authored skills in those directories are left
+  alone, including ones whose names collide with a retired SKS skill.
+
 ## [9.1.0] - 2026-08-19
 
 ### Added

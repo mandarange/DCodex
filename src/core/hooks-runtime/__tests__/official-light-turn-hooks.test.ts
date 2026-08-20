@@ -762,6 +762,72 @@ test('active workflow additions fail closed at bounded prompt and queue limits',
   }
 });
 
+test('a cwd-only hook payload does not queue onto a workspace-sticky official workflow', async () => {
+  const root = await tempRoot('sks-cwd-sticky-workflow-');
+  try {
+    await fsp.mkdir(path.join(root, '.codex'), { recursive: true });
+    await fsp.writeFile(path.join(root, '.codex', 'config.toml'), '[agents]\nmax_threads = 4\nmax_depth = 1\n');
+    await prepareRoute(root, '$Naruto --agents 1 implement the workspace sticky leftover', {}, {
+      sessionKey: root,
+      parentModel: 'gpt-5.6-sol'
+    });
+    const sticky: any = await loadStateForSession(root, root);
+    assert.ok(sticky.official_subagent_run_id);
+
+    const result: any = await evaluateHookPayload('user-prompt-submit', {
+      cwd: root,
+      turn_id: 'unrelated-cursor-turn',
+      prompt: '$Naruto diagnose leftover stale binding and publish the fix'
+    }, { root });
+
+    assert.equal(result.queued_active_workflow_run_id, undefined);
+    assert.doesNotMatch(String(result.additionalContext || result.systemMessage || ''), /queued as an addition/);
+    assert.notEqual(
+      String((await loadStateForSession(root, root)).official_subagent_run_id || ''),
+      String(sticky.official_subagent_run_id)
+    );
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('an idle same-session official workflow does not capture an unrelated later prompt', async () => {
+  const root = await tempRoot('sks-idle-same-session-workflow-');
+  const session = 'idle-same-session-parent';
+  try {
+    await fsp.mkdir(path.join(root, '.codex'), { recursive: true });
+    await fsp.writeFile(path.join(root, '.codex', 'config.toml'), '[agents]\nmax_threads = 4\nmax_depth = 1\n');
+    await prepareRoute(root, '$Naruto --agents 1 implement the idle leftover', {}, {
+      sessionKey: session,
+      parentModel: 'gpt-5.6-sol'
+    });
+    const initialState: any = await loadStateForSession(root, session);
+    const dir = missionDir(root, initialState.mission_id);
+    const staleAt = new Date(Date.now() - (3 * 60 * 60 * 1000)).toISOString();
+    const plan = JSON.parse(await fsp.readFile(path.join(dir, 'subagent-plan.json'), 'utf8'));
+    plan.created_at = staleAt;
+    if (plan.wave_lifecycle) plan.wave_lifecycle.updated_at = staleAt;
+    await fsp.writeFile(path.join(dir, 'subagent-plan.json'), JSON.stringify(plan));
+    const gatePath = path.join(dir, 'naruto-gate.json');
+    const gate = JSON.parse(await fsp.readFile(gatePath, 'utf8'));
+    gate.updated_at = staleAt;
+    await fsp.writeFile(gatePath, JSON.stringify(gate));
+
+    const result: any = await evaluateHookPayload('user-prompt-submit', {
+      conversation_id: session,
+      turn_id: 'later-unrelated-turn',
+      prompt: '$Naruto diagnose leftover idle binding and publish the fix'
+    }, { root });
+
+    assert.equal(result.queued_active_workflow_run_id, undefined);
+    assert.doesNotMatch(String(result.additionalContext || result.systemMessage || ''), /queued as an addition/);
+    const current: any = await loadStateForSession(root, session);
+    assert.notEqual(current.official_subagent_run_id, initialState.official_subagent_run_id);
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
 test('an explicit foreign hook session never inherits the active legacy global mission', async () => {
   const root = await tempRoot('sks-official-hook-session-isolation-');
   const parentSession = 'official-parent-session';

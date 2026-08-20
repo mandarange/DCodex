@@ -11,6 +11,7 @@ import {
 } from '../../managed-assets/managed-assets-manifest.js';
 import { reconcileLegacyManagedGeneration } from '../legacy-generation-convergence.js';
 import { reconcileManagedSkillInstallation } from '../managed-skill-install.js';
+import { cleanupRemovedSksSkillResidue } from '../skills.js';
 
 test('shared convergence removes only proven retired SKS generations across skills, roles, config, and MCP', async () => {
   const fixture = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-legacy-generation-convergence-'));
@@ -144,6 +145,28 @@ test('managed skill install result remains JSON serializable after embedding con
     assert.ok(convergence);
     assert.notStrictEqual(skillInstall, convergence.global_skills);
     assert.doesNotThrow(() => JSON.stringify(skillInstall));
+  } finally {
+    await fsp.rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test('host extra skill dirs lose only SKS-owned retired residue', async () => {
+  const fixtureRoot = path.join(process.cwd(), '.sneakoscope', 'cache');
+  await fsp.mkdir(fixtureRoot, { recursive: true });
+  const fixture = await fsp.mkdtemp(path.join(fixtureRoot, 'sks-host-extra-skill-residue-'));
+  const home = path.join(fixture, 'home');
+  const root = path.join(fixture, 'project');
+  const globalRuntimeRoot = path.join(fixture, 'global-runtime');
+  try {
+    await Promise.all([home, root, globalRuntimeRoot].map((dir) => fsp.mkdir(dir, { recursive: true })));
+    await writeManagedSkill(path.join(home, '.cursor', 'skills', 'sks-loop'), 'sks-loop');
+    await writeUserSkill(path.join(home, '.claude', 'skills', 'loop'), 'loop');
+    await writeUserSkill(path.join(home, '.cursor', 'skills', 'customer-helper'), 'customer-helper');
+    const report = await cleanupRemovedSksSkillResidue({ root, home, globalRuntimeRoot, fix: true });
+    assert.equal(report.ok, true, JSON.stringify(report));
+    await assertMissing(path.join(home, '.cursor', 'skills', 'sks-loop'));
+    assert.equal(await fsp.readFile(path.join(home, '.claude', 'skills', 'loop', 'SKILL.md'), 'utf8'), userSkillText('loop'));
+    assert.equal(await fsp.readFile(path.join(home, '.cursor', 'skills', 'customer-helper', 'SKILL.md'), 'utf8'), userSkillText('customer-helper'));
   } finally {
     await fsp.rm(fixture, { recursive: true, force: true });
   }

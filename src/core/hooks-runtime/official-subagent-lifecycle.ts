@@ -51,11 +51,43 @@ import {
 
 const SUBAGENT_LIFECYCLE_CAPTURE_FAILURE_SCHEMA = 'sks.subagent-lifecycle-capture-failure.v1';
 const MAX_SUBAGENT_LIFECYCLE_CAPTURE_FAILURES = 528;
+/** A workflow with no activity for this long is abandoned, even if the plan is still non-terminal. */
+export const ACTIVE_OFFICIAL_WORKFLOW_IDLE_MS = 2 * 60 * 60 * 1000;
 
 export type ActiveOfficialSubagentWorkflow =
   | { status: 'inactive' }
   | { status: 'invalid'; missionId: string; workflowRunId: string; reason: string }
   | { status: 'active'; missionId: string; workflowRunId: string; openThreads: number };
+
+function parseIsoMs(value: unknown): number {
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function officialWorkflowLastActivityMs(input: {
+  plan?: any;
+  gate?: any;
+  events?: Array<{ occurred_at?: unknown; ts?: unknown }>;
+}): number {
+  const times = [
+    parseIsoMs(input.plan?.created_at),
+    parseIsoMs(input.plan?.updated_at),
+    parseIsoMs(input.plan?.wave_lifecycle?.updated_at),
+    parseIsoMs(input.plan?.wave_lifecycle?.created_at),
+    parseIsoMs(input.gate?.updated_at),
+    parseIsoMs(input.gate?.created_at),
+    ...(input.events || []).map((event) => parseIsoMs(event.occurred_at ?? event.ts))
+  ];
+  return times.reduce((max, value) => (value > max ? value : max), 0);
+}
+
+export function officialWorkflowIsIdle(
+  activityMs: number,
+  nowMs: number = Date.now()
+): boolean {
+  if (activityMs <= 0) return true;
+  return nowMs - activityMs > ACTIVE_OFFICIAL_WORKFLOW_IDLE_MS;
+}
 
 export async function inspectActiveOfficialSubagentWorkflow(
   root: string,
@@ -110,7 +142,13 @@ export async function inspectActiveOfficialSubagentWorkflow(
       if (events.length > 0 && openThreads !== liveThreads.size) {
         return { status: 'invalid', missionId, workflowRunId, reason: 'active_lifecycle_event_mismatch' };
       }
+      if (officialWorkflowIsIdle(officialWorkflowLastActivityMs({ plan, gate, events }))) {
+        return { status: 'inactive' };
+      }
       return { status: 'active', missionId, workflowRunId, openThreads };
+    }
+    if (officialWorkflowIsIdle(officialWorkflowLastActivityMs({ plan, gate, events }))) {
+      return { status: 'inactive' };
     }
     return { status: 'active', missionId, workflowRunId, openThreads: liveThreads.size };
   } catch {

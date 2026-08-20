@@ -160,7 +160,38 @@ function safeUpstreamErrorId(value: unknown): string | null {
   return /^[A-Za-z0-9_.:-]{1,64}$/.test(text) ? text : null;
 }
 
-async function readRedactedUpstreamError(response: IncomingMessage): Promise<{ body: Buffer; upstreamCode: string | null; upstreamType: string | null }> {
+const TRANSIENT_UPSTREAM_STATUSES = new Set([500, 502, 503, 524]);
+
+function isGatewaySelfDescribedTransient(value: string | null): boolean {
+  return value === 'upstream_error';
+}
+
+/**
+ * Live bridge logs on 9.0.5 recorded 41k `404:upstream_error` rows and zero
+ * `translated_503` rows: the first translation keyed `type` and "no code",
+ * while the gateway puts `upstream_error` in `code`. 9.0.6 checks either slot
+ * for 404 only. The same self-described transient also arrives as 502/503/524
+ * (and as an empty/HTML body with no identifiers). Those still reached Codex
+ * as a permanent-looking "Upstream request failed".
+ */
+function isTransientUpstreamFailure(
+  statusCode: number,
+  upstreamType: string | null,
+  upstreamCode: string | null,
+): boolean {
+  if (isGatewaySelfDescribedTransient(upstreamType) || isGatewaySelfDescribedTransient(upstreamCode)) {
+    return statusCode === 404 || TRANSIENT_UPSTREAM_STATUSES.has(statusCode);
+  }
+  return TRANSIENT_UPSTREAM_STATUSES.has(statusCode) && !upstreamType && !upstreamCode;
+}
+
+function redactedUpstreamClientMessage(statusCode: number, transient: boolean): string {
+  if (statusCode === 429) return 'rate_limited';
+  if (transient) return 'temporary_upstream_failure';
+  return 'bridge_upstream_request_failed';
+}
+
+async function readRedactedUpstreamError(response: IncomingMessage): Promise<{ upstreamCode: string | null; upstreamType: string | null }> {
   let total = 0;
   const chunks: Buffer[] = [];
   for await (const raw of response) {
@@ -189,19 +220,24 @@ async function readRedactedUpstreamError(response: IncomingMessage): Promise<{ b
   } catch {
     // Not JSON, or truncated: nothing recoverable without risking content.
   }
-  return {
-    upstreamCode,
-    upstreamType,
-    body: Buffer.from(JSON.stringify({
-      error: {
-        type: 'upstream_error',
-        code: 'bridge_upstream_request_failed',
-        message: 'Upstream request failed',
-        ...(upstreamType ? { upstream_type: upstreamType } : {}),
-        ...(upstreamCode ? { upstream_code: upstreamCode } : {})
-      }
-    }))
-  };
+  return { upstreamCode, upstreamType };
+}
+
+function buildRedactedUpstreamErrorBody(
+  statusCode: number,
+  upstreamCode: string | null,
+  upstreamType: string | null,
+  transient: boolean,
+): Buffer {
+  return Buffer.from(JSON.stringify({
+    error: {
+      type: 'upstream_error',
+      code: 'bridge_upstream_request_failed',
+      message: redactedUpstreamClientMessage(statusCode, transient),
+      ...(upstreamType ? { upstream_type: upstreamType } : {}),
+      ...(upstreamCode ? { upstream_code: upstreamCode } : {}),
+    },
+  }));
 }
 
 /**
@@ -324,26 +360,15 @@ export async function forwardHttp(
           // produced it. A user report with a cf-ray id was undiagnosable from
           // the bridge log. Status, model, provider and path only; the body may
           // carry upstream detail and is never logged.
-          void readRedactedUpstreamError(response).then(({ body, upstreamCode, upstreamType }) => {
-            // The gateway wraps its own upstream failures as `type:
-            // "upstream_error"` — its self-description of a transient fault —
-            // but labels them 404, which Codex treats as permanent: the remote
-            // compact task dies instead of retrying, observed as bursts that
-            // self-heal minutes later (conversation-affinity loss on failover).
-            // 404 was always the wrong status for "my upstream failed"; only
-            // this exact self-described signature is corrected to 503 with a
-            // Retry-After. A genuine not-found (invalid_request_error,
-            // response_not_found, model_not_found) carries a different type and
-            // passes through untouched.
-            // The gateway spells its self-described transient in the `code`
-            // slot (`error.code: "upstream_error"`), not the `type` slot the
-            // first version of this branch tested — so the translation never
-            // fired and the raw 404 kept reaching Codex. Either slot counts
-            // now; a genuine not-found carries a specific identifier
-            // (`response_not_found`, `model_not_found`) in exactly these slots
-            // and still passes untouched.
-            const transientMislabel = statusCode === 404
-              && (upstreamType === 'upstream_error' || upstreamCode === 'upstream_error');
+          void readRedactedUpstreamError(response).then(({ upstreamCode, upstreamType }) => {
+            // The gateway wraps its own upstream failures as `type`/`code`
+            // `upstream_error` but often labels them 404 (or 502/503/524).
+            // Codex treats 404 as permanent, so compact tasks die. Either
+            // identifier slot counts; unidentified 502-class bodies are the
+            // empty/HTML/Cloudflare case and get the same one replay.
+            // A genuine not-found (`response_not_found`, `model_not_found`)
+            // carries a different identifier and stays 404.
+            const transientMislabel = isTransientUpstreamFailure(statusCode, upstreamType, upstreamCode);
             if (transientMislabel && replayable && !useFreshConnection) {
               // Auto-heal before surfacing anything: the body is buffered, so
               // the request can be replayed once on a fresh connection — an
@@ -355,6 +380,7 @@ export async function forwardHttp(
               return;
             }
             const clientStatus = transientMislabel ? 503 : statusCode;
+            const body = buildRedactedUpstreamErrorBody(statusCode, upstreamCode, upstreamType, transientMislabel);
             // Logged after the body parse so the record can carry the upstream's
             // own error code — the one fact a report holding only a status and a
             // cf-ray id cannot supply.
@@ -373,7 +399,8 @@ export async function forwardHttp(
             const responseHeaders = rewriteResponseHeaders(response.headers, provider.base_url, authenticatedLocalBaseUrl);
             responseHeaders['content-length'] = String(body.length);
             delete responseHeaders['transfer-encoding'];
-            if (transientMislabel) responseHeaders['retry-after'] = '10';
+            if (transientMislabel) responseHeaders['retry-after'] = String(responseHeaders['retry-after'] || '10');
+            if (statusCode === 429 && !responseHeaders['retry-after']) responseHeaders['retry-after'] = '10';
             res.writeHead(clientStatus, responseHeaders);
             res.end(body, () => finish());
           }).catch(finish);

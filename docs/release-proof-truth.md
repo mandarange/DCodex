@@ -1,6 +1,37 @@
-# Release Proof Truth — 9.1.0
+# Release Proof Truth — 9.1.1
 
 ## Current assertion
+
+9.1.1 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is
+9.1.0 plus a stability patch: the desktop bridge heals 502/503/524 gateway
+transients the same way it already healed 404+`upstream_error`, stops showing
+the sentence "Upstream request failed", keeps 429 as `rate_limited`, and no
+longer dies on write-after-end during a WebSocket refusal. `sks update`
+quarantines OMX/DCodex harness markers itself and removes only SKS-owned
+retired skills from `~/.cursor/skills` and `~/.claude/skills`. Unnamed hook
+payloads no longer inherit a cwd-sticky official workflow, and an official
+workflow with no activity for two hours stops capturing later prompts. This
+document does not authorize publication, deployment, a credential change, a
+Git tag, or a push. Exact-commit proof can exist only after the candidate is
+committed and all source-bound gates are regenerated from that clean commit.
+
+All release artifacts bound to 9.1.0 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 9.1.1 evidence.
+
+The 9.1.0 ledger below remains for upgrade context. New 9.1.1 claims:
+
+| Claim | Current support | Boundary |
+| --- | --- | --- |
+| A 502/503/524 gateway transient is replayed once, then 503 | passed-hermetic | same one-shot fresh-connection replay as 404+`upstream_error`; unidentified 502/503/524 bodies included; genuine `response_not_found` stays 404; pinned by the bridge keepalive suite |
+| Exhausted upstream errors no longer say "Upstream request failed" | passed-hermetic | 429 → `rate_limited` + Retry-After; transient exhaust → `temporary_upstream_failure`; other 4xx/5xx → `bridge_upstream_request_failed`; identifiers still survive; free text still dies |
+| WebSocket refusal cannot crash the bridge process | passed-hermetic | `safeEndUpgradeSocket` swallows socket errors and refuses to write an already-ended stream; unit-tested on an ended and a destroyed PassThrough |
+| `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
+| Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
+| A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
+| All checked version authorities report 9.1.1 | passed-hermetic | `release:version-truth` 15 surfaces at 9.1.1 after incremental build |
+| The reported 9.1.1 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
+
+## 9.1.0 assertion (historical)
 
 9.1.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is
 9.0.6 plus one opt-in feature: `sks codex-app context-1m status|on|off` and the
@@ -10,10 +41,7 @@ SKS Center "Codex 1M Context" card, which together manage the OpenAI-documented
 `~/.codex/config.toml`, inline `# sks-codex-context-1m prev=...` ownership
 markers that record and restore the pre-enable value, guarded CAS writes, and
 an automatic Codex Desktop restart only when Codex is already running). The
-default is unchanged: the keys are absent until an operator enables them. This
-document does not authorize publication, deployment, a credential change, a
-Git tag, or a push. Exact-commit proof can exist only after the candidate is
-committed and all source-bound gates are regenerated from that clean commit.
+default is unchanged: the keys are absent until an operator enables them.
 
 All release artifacts bound to 9.0.6 or an earlier commit are historical. They
 must not be renamed, copied, or treated as 9.1.0 evidence.

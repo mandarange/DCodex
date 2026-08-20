@@ -36,7 +36,8 @@ export async function scanHarnessConflicts(root: any, opts: any = {}) {
  * Remove OMX/DCodex harness markers from the live Codex surface.
  * Markers are moved out of the active tree (not left in place). A backup copy is kept under
  * `.sneakoscope/quarantine/other-harness/<runId>/` (project or global) before live removal.
- * Only invoked by `sks conflicts cleanup --yes`.
+ * Invoked by `sks conflicts cleanup --yes` and by the `sks update`
+ * `other-harness-cleanup` migration stage.
  */
 export async function cleanupOtherHarnessConflicts(root: any, opts: any = {}) {
   const projectRoot = path.resolve(root || process.cwd());

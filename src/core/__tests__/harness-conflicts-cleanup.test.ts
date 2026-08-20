@@ -1,3 +1,4 @@
+import './helpers/isolated-test-home.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -7,6 +8,7 @@ import {
   cleanupOtherHarnessConflicts,
   scanHarnessConflicts
 } from '../harness-conflicts.js';
+import { runOtherHarnessCleanupStage } from '../update/update-migration-state/simple-stages.js';
 
 const CONFIG_FIXTURE = [
   'model = "keep-me"',
@@ -87,6 +89,19 @@ test('cleanupOtherHarnessConflicts quarantines OMX/DCodex markers and strips con
     assert.equal(second.cleaned.length, 0);
     const afterSecond = await scanHarnessConflicts(root, { home });
     assert.equal(afterSecond.hard_block, false);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('update other-harness stage quarantines conflicts instead of only reporting them', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sks-update-other-harness-'));
+  try {
+    await fs.mkdir(path.join(root, '.omx'), { recursive: true });
+    const result = await runOtherHarnessCleanupStage(root);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.ok(result.actions.includes('other_harness_conflicts_quarantined'));
+    await assert.rejects(fs.access(path.join(root, '.omx')));
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
