@@ -75,6 +75,18 @@ export function affectedGlobsFor(id: string): string[] {
         'package-lock.json',
         'src/core/codex-app.ts',
         'src/core/codex-lb-circuit.ts',
+        'src/core/codex-lb/**',
+        `src/scripts/${prefix}-*.ts`
+      ]
+    case 'desktop-bridge':
+      // The bridge gates audit src/core/codex-lb/desktop-bridge/** — without
+      // this case they fell to the default (their own check scripts only), so
+      // the very code they guard could change without re-firing them.
+      return [
+        'src/core/codex-lb/desktop-bridge/**',
+        'src/core/codex-lb/desktop-service.ts',
+        'src/core/codex-lb/provider-route-policy.ts',
+        'src/core/codex-lb/request-route-resolver.ts',
         `src/scripts/${prefix}-*.ts`
       ]
     // The v2 gates measure the same engine from the other side — bytes, corrupt

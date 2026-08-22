@@ -19,13 +19,25 @@ const BRIDGE = `http://127.0.0.1:47821/__sks/client/${CLIENT_CAPABILITY}/backend
 const LB_KEY = 'sk-clb-preserve-this-value';
 const OR_KEY = 'sk-or-preserve-this-value';
 
-test('OAuth migration preservation requires exact auth.json bytes as well as semantic identity', () => {
+test('OAuth migration preservation keys on account identity, not bytes', () => {
+  // Official identity passthrough means OAuth tokens legitimately rotate while
+  // a sync is in flight: byte drift with the SAME account fingerprint is a
+  // refresh, not a breach. Only an identity change, a mode flip, or an
+  // unverifiable fingerprint still fails the invariant.
   const before = {
     path: '/tmp/auth.json', exists: true, sha256: 'before-bytes', semantic_fingerprint: 'same-account',
     mode: 'chatgpt_oauth' as const, has_refresh_token: true, has_access_token: true, has_api_key: false,
   };
   assert.equal(authSemanticIdentityPreserved(before, { ...before }), true);
-  assert.equal(authSemanticIdentityPreserved(before, { ...before, sha256: 'different-bytes' }), false);
+  assert.equal(authSemanticIdentityPreserved(before, { ...before, sha256: 'different-bytes' }), true);
+  assert.equal(authSemanticIdentityPreserved(before, { ...before, sha256: 'different-bytes', semantic_fingerprint: 'other-account' }), false);
+  assert.equal(authSemanticIdentityPreserved(before, { ...before, semantic_fingerprint: null }), false);
+  assert.equal(authSemanticIdentityPreserved(before, { ...before, mode: 'api_key' as never }), false);
+  assert.equal(authSemanticIdentityPreserved(before, { ...before, exists: false }), false);
+  // Non-OAuth snapshots carry no identity claims: bytes stay the only proof.
+  const apiKey = { ...before, mode: 'api_key' as never, semantic_fingerprint: null };
+  assert.equal(authSemanticIdentityPreserved(apiKey, { ...apiKey }), true);
+  assert.equal(authSemanticIdentityPreserved(apiKey, { ...apiKey, sha256: 'different-bytes' }), false);
 });
 
 async function fixture(t: test.TestContext, config: string) {

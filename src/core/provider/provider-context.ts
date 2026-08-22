@@ -127,7 +127,10 @@ export async function writeProviderContextReport(root: string = process.cwd(), i
 }
 
 function selectedBridgeProvider(status: DesktopBridgeStatusV3 | null): BridgeProviderId | null {
-  return status?.routing.selected_route?.provider_id
+  const selected = status?.routing.selected_route?.provider_id
+  // Official passthrough is not a provider identity: fall through to the
+  // policy default or session pin for provider-context classification.
+  return (selected === 'codex-lb' || selected === 'openrouter' ? selected : null)
     || status?.routing.policy?.default_provider_id
     || status?.routing.session_pin?.provider_id
     || null

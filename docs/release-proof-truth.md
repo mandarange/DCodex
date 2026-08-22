@@ -1,36 +1,44 @@
-# Release Proof Truth — 9.1.1
+# Release Proof Truth — 9.2.0
 
 ## Current assertion
 
-9.1.1 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is
-9.1.0 plus a stability patch: the desktop bridge absorbs 502/503/524 gateway
-transients (and `upstream_request_timeout`) internally so Codex compact never
-sees a leftover 503 after one miss, stops showing the sentence
-"Upstream request failed", keeps 429 as `rate_limited`, and no
-longer dies on write-after-end during a WebSocket refusal. `sks update`
-quarantines OMX/DCodex harness markers itself and removes only SKS-owned
-retired skills from `~/.cursor/skills` and `~/.claude/skills`. Unnamed hook
-payloads no longer inherit a cwd-sticky official workflow, and an official
-workflow with no activity for two hours stops capturing later prompts. This
-document does not authorize publication, deployment, a credential change, a
-Git tag, or a push. Exact-commit proof can exist only after the candidate is
-committed and all source-bound gates are regenerated from that clean commit.
+9.2.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is
+9.1.1 plus the identity-architecture fix behind "auth keeps dropping during
+compaction": official ChatGPT identity passthrough in the Desktop Bridge
+(client credentials forwarded verbatim to the official upstream for everything
+the route policy does not claim for a provider, plus explicit `openai` model
+routes and the `sks bridge route official-models` flip), a cooldown-bounded
+supervised skew restart (the 438-cycle 2026-08-19 storm shape), newest-rotation
+auth write-back for subagents, an identity-keyed (not byte-keyed)
+`authSemanticIdentityPreserved`, timestamped bridge log records, re-firing
+desktop-bridge gates, and the three-replay compact-503 absorber that had been
+committed after the 9.1.1 publish. This document does not authorize
+publication, deployment, a credential change, a Git tag, or a push.
+Exact-commit proof can exist only after the candidate is committed and all
+source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 9.1.0 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.1.1 evidence.
+All release artifacts bound to 9.1.1 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 9.2.0 evidence.
 
-The 9.1.0 ledger below remains for upgrade context. New 9.1.1 claims:
+New 9.2.0 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
+| Official passthrough carries the client identity and never a bridge credential | passed-hermetic | e2e suite: unrouted model, `alpha/search`, explicit `openai` route, and unpinned WS upgrade all reach a mock official upstream with the client's own Authorization + chatgpt-account-id and no `x-codex-lb-api-key`; a provider-routed model in the same bridge still strips the client identity and injects the provider key; header-policy unit tests assert the strip/keep sets both ways |
+| Official error bodies reach Codex verbatim | passed-hermetic | a mock official 401 with `token_expired` detail streams back byte-preserved; provider-routed errors keep the existing redaction; transient official 5xx on buffered Responses bodies still replay (503-then-200 heal pinned) |
+| The official-models flip is deterministic, scoped, and survives syncs | passed-hermetic | `applyOfficialModelPassthrough` rewrites bare `gpt-*`/`o*`/`codex-mini*` ids only — prefixed picks and `codex-auto-review` keep their provider; policy_generation regenerates and self-validates; catalog.ts re-infers the mode from the prior policy so a sync cannot silently revert it; a pre-flip codex-lb session pin is absorbed into passthrough instead of failing the thread |
+| A skew restart that cannot converge is suppressed, not repeated | passed-hermetic | marker records the exact (running, installed) pair; the same pair within 30 minutes logs `suppressed_cooldown` and keeps serving; either version moving restarts immediately; pure-function unit tests pin all four arms |
+| Subagent auth write-back keeps the newest token rotation | passed-hermetic | host-newer/undated conflict resolves ok as `host_newer_kept` with the temp root removed; ours-newer retries the CAS once against the fresh host state, installs the newer rotation, and preserves host-written non-token fields (`refreshed_persisted_after_conflict`); both arms pinned in the native-provider policy suite |
+| Auth preservation keys on identity, not bytes | passed-hermetic | same-fingerprint byte drift preserves; identity change, mode flip, unverifiable fingerprint, and existence change still fail; non-OAuth snapshots keep byte equality; the no-op migration path no longer blocks on `desktop_auth_changed_during_noop` for an identity-preserving refresh |
+| Bridge log records carry wall-clock timestamps | passed-hermetic | every rejection/summary record stamps `at` (ISO) and `started`/`version_skew` records stamp `at` + version fields — the 14.5-hour storm forensics gap |
 | A 502/503/524 gateway transient is absorbed before Codex compact can see it | passed-hermetic | first try plus 3 fresh-connection replays; `upstream_request_timeout` included; unidentified 502/503/524 bodies included; genuine `response_not_found` stays 404; leftover 503 only after the budget; pinned by the bridge keepalive suite including a 4th-attempt compact-shaped 503 heal |
 | Exhausted upstream errors no longer say "Upstream request failed" | passed-hermetic | 429 → `rate_limited` + Retry-After; transient exhaust → `temporary_upstream_failure`; other 4xx/5xx → `bridge_upstream_request_failed`; identifiers still survive; free text still dies |
 | WebSocket refusal cannot crash the bridge process | passed-hermetic | `safeEndUpgradeSocket` swallows socket errors and refuses to write an already-ended stream; unit-tested on an ended and a destroyed PassThrough |
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 9.1.1 | passed-hermetic | `release:version-truth` 15 surfaces at 9.1.1 after incremental build |
-| The reported 9.1.1 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
+| All checked version authorities report 9.2.0 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.0 after incremental build |
+| The reported 9.2.0 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
 
 ## 9.1.0 assertion (historical)
 

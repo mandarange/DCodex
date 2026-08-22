@@ -2,6 +2,7 @@ import type { Server } from 'node:http';
 import type { Socket } from 'node:net';
 import type {
   BridgeProviderId,
+  BridgeRouteTargetId,
   BridgeRoutingPolicy,
   CapabilityRequestedLevel,
   ProviderSessionPin,
@@ -23,6 +24,15 @@ export const DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES = [
   '/api/v1/',
   '/v1/',
 ] as const;
+
+/**
+ * Where official ChatGPT identity passthrough forwards to. The base carries the
+ * `/backend-api/codex` prefix so provider-relative path translation lands on the
+ * same absolute path the client addressed — and non-codex backend-api paths
+ * (files, wham, transcribe, alpha endpoints) pass through verbatim against the
+ * same origin.
+ */
+export const DESKTOP_BRIDGE_OFFICIAL_UPSTREAM_BASE_URL = 'https://chatgpt.com/backend-api/codex' as const;
 
 export type DesktopBridgeProviderAuthTransport =
   | 'x-codex-lb-api-key'
@@ -66,7 +76,7 @@ export interface DesktopBridgeRouteRequest {
 }
 
 export interface DesktopBridgeRouteContext {
-  provider_id: BridgeProviderId;
+  provider_id: BridgeRouteTargetId;
   public_model: string;
   upstream_model: string;
   catalog_generation: string;
@@ -93,6 +103,15 @@ export interface DesktopBridgeConfig {
   providerRegistry: DesktopBridgeProviderRegistrySnapshot;
   routePolicy: BridgeRoutingPolicy;
   providerSessionPins: readonly ProviderSessionPin[];
+  /**
+   * Official ChatGPT identity passthrough. When set, requests the route policy
+   * does not claim for a provider — unknown models, non-Responses backend-api
+   * endpoints, unpinned WebSocket upgrades — and routes explicitly targeting
+   * `openai` are forwarded to this base URL carrying the CLIENT's own
+   * Authorization and account headers instead of a substituted provider key.
+   * Absent/null preserves the legacy fail-closed behavior.
+   */
+  officialPassthrough?: { baseUrl: string } | null;
   resolveRequestRoute?: DesktopBridgeRouteResolver;
   persistProviderSessionPins?: DesktopBridgeSessionPinPersister;
   resolveProviderCredential: DesktopBridgeCredentialResolver;
@@ -127,6 +146,8 @@ export interface PreparedDesktopBridgeProvider extends DesktopBridgeProviderSnap
 
 export interface PreparedDesktopBridgeConfig extends DesktopBridgeConfig {
   providers: Record<BridgeProviderId, PreparedDesktopBridgeProvider>;
+  /** DNS-resolved official passthrough target; null when passthrough is off. */
+  officialRemote?: DesktopBridgeRemoteTarget | null;
 }
 
 export interface DesktopBridgePublicStateV2 {

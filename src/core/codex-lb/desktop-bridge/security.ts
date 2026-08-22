@@ -1,6 +1,6 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
-import type { BridgeProviderId, BridgeRoutingPolicy, ProviderSessionPin } from '../bridge-contracts.js';
+import { BRIDGE_OFFICIAL_ROUTE_ID, type BridgeProviderId, type BridgeRoutingPolicy, type ProviderSessionPin } from '../bridge-contracts.js';
 import {
   canonicalizeBridgeModelId,
   normalizeBridgeUpstreamModelId,
@@ -186,6 +186,27 @@ function canonicalPublicModel(value: unknown): string {
   return model;
 }
 
+export function desktopBridgeOfficialPassthroughEnabled(config: DesktopBridgeConfig | PreparedDesktopBridgeConfig): boolean {
+  return Boolean(config.officialPassthrough?.baseUrl);
+}
+
+/**
+ * A route context that carries the request to the official upstream with the
+ * client's own identity. It never creates or requires a session pin: there is
+ * exactly one official upstream, so thread affinity is inherent, and pins stay
+ * a provider-routing concern.
+ */
+function officialRouteContext(publicModel: string, policy: BridgeRoutingPolicy, upstreamModel?: string): DesktopBridgeRouteContext {
+  return {
+    provider_id: BRIDGE_OFFICIAL_ROUTE_ID,
+    public_model: publicModel,
+    upstream_model: upstreamModel || publicModel,
+    catalog_generation: policy.catalog_generation,
+    route_policy_generation: policy.policy_generation,
+    session_pin: null,
+  };
+}
+
 export function resolveBridgeRequestRoute(
   request: DesktopBridgeRouteRequest,
   policy: BridgeRoutingPolicy,
@@ -226,6 +247,9 @@ export function resolveBridgeRequestRoute(
   }
   const route = policy.model_routes[publicModel];
   if (!route) throw new DesktopBridgeError('catalog_model_route_missing');
+  // An explicit `openai` route means official passthrough: the request keeps
+  // the client's own identity, and no provider pin is minted for the thread.
+  if (route.provider_id === BRIDGE_OFFICIAL_ROUTE_ID) return officialRouteContext(publicModel, policy, route.upstream_model);
   const nextPin = sessionId ? {
     thread_id: sessionId,
     provider_id: route.provider_id,
@@ -250,8 +274,35 @@ export function assertDesktopBridgeRouteContext(
   config: PreparedDesktopBridgeConfig,
 ): DesktopBridgeRouteContext {
   const resolver = config.resolveRequestRoute || resolveBridgeRequestRoute;
-  const route = resolver(request, config.routePolicy, config.providerSessionPins);
   const policy = config.routePolicy;
+  let route: DesktopBridgeRouteContext;
+  try {
+    route = resolver(request, policy, config.providerSessionPins);
+  } catch (error) {
+    // Official fallback: a request the route policy does not claim for a
+    // provider — no model (non-Responses endpoints), an unknown model, or a
+    // stale provider pin whose live route moved to `openai` — passes through
+    // with the client's own identity when passthrough is configured. A pin
+    // failure whose live route still names a provider is a genuine provider
+    // problem and is never absorbed here.
+    if (desktopBridgeOfficialPassthroughEnabled(config)
+      && error instanceof DesktopBridgeError
+      && (error.code === 'catalog_model_route_missing' || error.code === 'session_pin_route_unavailable')) {
+      const model = canonicalizeBridgeModelId(request.public_model) || '';
+      const live = model ? policy.model_routes[model] : undefined;
+      if (!live || live.provider_id === BRIDGE_OFFICIAL_ROUTE_ID) {
+        route = officialRouteContext(model, policy, live?.upstream_model);
+      } else throw error;
+    } else throw error;
+  }
+  if (route.provider_id === BRIDGE_OFFICIAL_ROUTE_ID) {
+    if (!desktopBridgeOfficialPassthroughEnabled(config)) throw new DesktopBridgeError('bridge_official_passthrough_unavailable');
+    if (route.catalog_generation !== policy.catalog_generation || route.route_policy_generation !== policy.policy_generation) {
+      throw new DesktopBridgeError('session_pin_route_unavailable');
+    }
+    if (route.session_pin) throw new DesktopBridgeError('bridge_session_pin_invalid');
+    return route;
+  }
   const expected = policy.model_routes[route.public_model];
   if (!expected || expected.provider_id !== route.provider_id || expected.upstream_model !== route.upstream_model) {
     throw new DesktopBridgeError('catalog_model_route_missing');
@@ -443,9 +494,12 @@ function assertRegistryAndPolicy(config: DesktopBridgeConfig, registry: DesktopB
   if (policy.schema !== 'sks.bridge-routing-policy.v1' || policy.fallback !== 'none' || !policy.catalog_generation || !policy.policy_generation) {
     throw new DesktopBridgeError('bridge_route_policy_invalid');
   }
+  const officialConfigured = desktopBridgeOfficialPassthroughEnabled(config);
   for (const [model, route] of Object.entries(policy.model_routes)) {
+    const routeTargetAllowed = ids.includes(route.provider_id as BridgeProviderId)
+      || (route.provider_id === BRIDGE_OFFICIAL_ROUTE_ID && officialConfigured);
     if (canonicalizeBridgeModelId(model) !== model
-      || !ids.includes(route.provider_id)
+      || !routeTargetAllowed
       || normalizeBridgeUpstreamModelId(route.upstream_model) !== route.upstream_model) {
       throw new DesktopBridgeError('bridge_route_policy_invalid');
     }
@@ -495,6 +549,7 @@ export function validateDesktopBridgeConfig(config: DesktopBridgeConfig): void {
   if (!Array.isArray(config.providerSessionPins)) throw new DesktopBridgeError('bridge_session_pin_invalid');
   if (!/^[a-f0-9]{64}$/.test(config.clientCapabilitySha256)) throw new DesktopBridgeError('bridge_client_capability_invalid');
   if (typeof config.resolveProviderCredential !== 'function') throw new DesktopBridgeError('bridge_provider_credential_resolver_missing');
+  if (config.officialPassthrough) validateRemoteUrl(config.officialPassthrough.baseUrl);
   assertRegistryAndPolicy(config, config.providerRegistry);
   if (!Object.values(config.providerRegistry.providers).some((provider) => provider.enabled)) {
     throw new DesktopBridgeError('bridge_provider_registry_no_enabled_provider');
@@ -510,7 +565,10 @@ export async function prepareDesktopBridgeConfig(config: DesktopBridgeConfig, lo
     return [id, prepared] as const;
   }));
   const providers = Object.fromEntries(entries) as Record<BridgeProviderId, PreparedDesktopBridgeProvider>;
-  return { ...config, providers };
+  const officialRemote = config.officialPassthrough
+    ? await resolveDesktopBridgeRemoteTarget(config.officialPassthrough.baseUrl, lookup)
+    : null;
+  return { ...config, providers, officialRemote };
 }
 
 export function validatePreparedDesktopBridgeConfig(config: PreparedDesktopBridgeConfig): void {

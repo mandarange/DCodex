@@ -3,7 +3,8 @@ import https from 'node:https';
 import type { Socket } from 'node:net';
 import zlib from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
-import { buildProviderUpstreamHeaders, rewriteResponseHeaders } from './header-policy.js';
+import { BRIDGE_OFFICIAL_ROUTE_ID } from '../bridge-contracts.js';
+import { buildOfficialPassthroughHeaders, buildProviderUpstreamHeaders, rewriteResponseHeaders } from './header-policy.js';
 import { createDesktopBridgeRejectionLogger } from './rejection-log.js';
 import { resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader } from './security.js';
 import { desktopBridgeListenOrigin } from './state.js';
@@ -14,7 +15,9 @@ const MAX_UPSTREAM_ERROR_BODY_BYTES = 1024 * 1024;
 export interface PreparedDesktopBridgeRequest {
   body: Buffer | null;
   route: DesktopBridgeRouteContext;
-  credential: DesktopBridgeResolvedCredential;
+  /** Null exactly when the route is official passthrough: the client's own
+   *  Authorization travels, and no bridge credential exists to inject. */
+  credential: DesktopBridgeResolvedCredential | null;
   /** True when the bridge decoded a compressed request body and now owns a
    *  plain-JSON body, so content-encoding must not be forwarded upstream. */
   contentEncodingStripped?: boolean;
@@ -67,6 +70,7 @@ async function readBoundedBody(req: IncomingMessage, maximum: number): Promise<B
 }
 
 async function resolveCredential(config: PreparedDesktopBridgeConfig, route: DesktopBridgeRouteContext): Promise<DesktopBridgeResolvedCredential> {
+  if (route.provider_id === BRIDGE_OFFICIAL_ROUTE_ID) throw new DesktopBridgeError('bridge_provider_route_unavailable');
   const provider = config.providers[route.provider_id];
   if (!provider) throw new DesktopBridgeError('bridge_provider_route_unavailable');
   const credential = await config.resolveProviderCredential(route.provider_id, provider.credential_generation);
@@ -109,7 +113,7 @@ export async function prepareDesktopBridgeRequest(req: IncomingMessage, config: 
     payload.model = route.upstream_model;
     body = Buffer.from(JSON.stringify(payload));
   }
-  const credential = await resolveCredential(config, route);
+  const credential = route.provider_id === BRIDGE_OFFICIAL_ROUTE_ID ? null : await resolveCredential(config, route);
   return { body, route, credential, contentEncodingStripped };
 }
 
@@ -319,19 +323,26 @@ export async function forwardHttp(
 ): Promise<void> {
   try {
     const request = prepared || await prepareDesktopBridgeRequest(req, config);
-    const provider = config.providers[request.route.provider_id];
-    if (!provider) throw new DesktopBridgeError('bridge_provider_route_unavailable');
-    const target = resolveDesktopBridgeTarget(req.url, provider.remote);
-    const transport = provider.remote.secure ? https : http;
-    const headers = buildProviderUpstreamHeaders(req.headers, {
-      providerId: provider.provider_id, authTransport: provider.auth_transport, credential: request.credential,
-    }, target.host);
+    const official = request.route.provider_id === BRIDGE_OFFICIAL_ROUTE_ID;
+    const provider = official ? null : config.providers[request.route.provider_id as Exclude<DesktopBridgeRouteContext['provider_id'], typeof BRIDGE_OFFICIAL_ROUTE_ID>];
+    if (!official && !provider) throw new DesktopBridgeError('bridge_provider_route_unavailable');
+    const remote = official ? config.officialRemote : provider?.remote;
+    if (!remote) throw new DesktopBridgeError('bridge_official_passthrough_unavailable');
+    const upstreamBaseUrl = official ? remote.baseUrl : provider!.base_url;
+    if (!official && !request.credential) throw new DesktopBridgeError('bridge_provider_credential_invalid');
+    const target = resolveDesktopBridgeTarget(req.url, remote);
+    const transport = remote.secure ? https : http;
+    const headers = official
+      ? buildOfficialPassthroughHeaders(req.headers, target.host)
+      : buildProviderUpstreamHeaders(req.headers, {
+        providerId: provider!.provider_id, authTransport: provider!.auth_transport, credential: request.credential!,
+      }, target.host);
     if (request.body) headers['content-length'] = String(request.body.length);
     else delete headers['content-length'];
     if (request.contentEncodingStripped) delete headers['content-encoding'];
     const agent = upstreamAgent(
-      provider.remote.secure,
-      `${provider.remote.address}:${provider.remote.port}`,
+      remote.secure,
+      `${remote.address}:${remote.port}`,
       config.idleTimeoutMs,
     );
 
@@ -347,12 +358,12 @@ export async function forwardHttp(
         error ? reject(error) : resolve();
       };
       const upstream = transport.request({
-        protocol: target.protocol, hostname: provider.remote.address, family: provider.remote.family,
-        port: provider.remote.port, method: req.method, path: `${target.pathname}${target.search}`, headers,
+        protocol: target.protocol, hostname: remote.address, family: remote.family,
+        port: remote.port, method: req.method, path: `${target.pathname}${target.search}`, headers,
         // `false` makes Node open a one-shot connection, so a replay can never
         // draw a second dead socket out of the same pool.
         agent: useFreshConnection ? false : agent,
-        ...(provider.remote.tlsServername ? { servername: provider.remote.tlsServername } : {}),
+        ...(remote.tlsServername ? { servername: remote.tlsServername } : {}),
       });
       connectTimeout(upstream, config);
       upstream.setTimeout(config.idleTimeoutMs, () => upstream.destroy(new DesktopBridgeError('bridge_upstream_idle_timeout')));
@@ -366,6 +377,35 @@ export async function forwardHttp(
       });
       upstream.once('response', (response) => {
         const statusCode = response.statusCode || 502;
+        if (official) {
+          // Official passthrough: the upstream is the operator's own official
+          // backend, so its error bodies stream back VERBATIM — redaction here
+          // would erase quota, plan, and auth detail Codex renders natively.
+          // Status-class transients (500/502/503/524) still get the buffered
+          // replay so a gateway blip cannot kill a compact task.
+          if (statusCode >= 400 && TRANSIENT_UPSTREAM_STATUSES.has(statusCode) && replayable && canReplay) {
+            response.resume();
+            responseStarted = true;
+            finish(new StalePooledSocketFailure(new DesktopBridgeError('bridge_upstream_transient_mislabel')));
+            return;
+          }
+          if (statusCode >= 400) {
+            logHttpRejection({
+              code: `bridge_upstream_status_${statusCode}`,
+              transport: 'http',
+              ...(req.method === undefined ? {} : { method: req.method }),
+              ...(req.url === undefined ? {} : { url: req.url }),
+              status: statusCode,
+              provider_id: BRIDGE_OFFICIAL_ROUTE_ID,
+              public_model: request.route.public_model,
+            });
+          }
+          responseStarted = true;
+          try { res.writeHead(statusCode, rewriteResponseHeaders(response.headers, upstreamBaseUrl, authenticatedLocalBaseUrl)); }
+          catch (error) { response.destroy(error instanceof Error ? error : undefined); finish(error); return; }
+          void pipeline(response, res).then(() => finish(), finish);
+          return;
+        }
         if (statusCode >= 400) {
           // The status passes through to the client untouched, but until this
           // line the bridge kept no record of it — so a gateway 404 ("Upstream
@@ -409,11 +449,11 @@ export async function forwardHttp(
               ...(req.method === undefined ? {} : { method: req.method }),
               ...(req.url === undefined ? {} : { url: req.url }),
               status: clientStatus,
-              provider_id: provider.provider_id,
+              provider_id: provider!.provider_id,
               public_model: request.route.public_model,
             });
             responseStarted = true;
-            const responseHeaders = rewriteResponseHeaders(response.headers, provider.base_url, authenticatedLocalBaseUrl);
+            const responseHeaders = rewriteResponseHeaders(response.headers, upstreamBaseUrl, authenticatedLocalBaseUrl);
             responseHeaders['content-length'] = String(body.length);
             delete responseHeaders['transfer-encoding'];
             if (transientMislabel) responseHeaders['retry-after'] = String(responseHeaders['retry-after'] || '10');
@@ -424,7 +464,7 @@ export async function forwardHttp(
           return;
         }
         responseStarted = true;
-        try { res.writeHead(statusCode, rewriteResponseHeaders(response.headers, provider.base_url, authenticatedLocalBaseUrl)); }
+        try { res.writeHead(statusCode, rewriteResponseHeaders(response.headers, upstreamBaseUrl, authenticatedLocalBaseUrl)); }
         catch (error) { response.destroy(error instanceof Error ? error : undefined); finish(error); return; }
         void pipeline(response, res).then(() => finish(), finish);
       });
@@ -445,7 +485,7 @@ export async function forwardHttp(
           // One transition kills every idle socket to that host, not just this one.
           // `destroy` only reaps the free list, so streams in flight are untouched.
           agent.destroy();
-          upstreamAgents.delete(`${provider.remote.secure ? 'https' : 'http'}:${provider.remote.address}:${provider.remote.port}`);
+          upstreamAgents.delete(`${remote.secure ? 'https' : 'http'}:${remote.address}:${remote.port}`);
         }
         logHttpRejection({
           code: `bridge_upstream_socket_stale_replayed:${underlyingErrorCode(error.reason) || 'unknown'}`,

@@ -12,7 +12,7 @@ import {
 } from '../desktop-service.js';
 import { rollbackDesktopBridgeUnificationReceipt } from '../migration-receipt.js';
 import { resolveBridgeRequestRoute } from '../request-route-resolver.js';
-import { setBridgeRoutingDefault, writeBridgeRoutingPolicy } from '../provider-route-policy.js';
+import { applyOfficialModelPassthrough, buildBridgeRoutingPolicy, setBridgeRoutingDefault, writeBridgeRoutingPolicy } from '../provider-route-policy.js';
 import { syncCatalogInternal } from './catalog.js';
 import {
   commandResult,
@@ -99,6 +99,45 @@ export async function setDefaultProvider(
     true,
     status,
     { provider_id: providerId, policy_generation: policy.policy_generation },
+    [],
+    options
+  );
+}
+
+/**
+ * Flip bare official-family model routes between the gateway and official
+ * identity passthrough. `passthrough` sends those turns to the official
+ * upstream with the operator's own ChatGPT identity — the identity Codex Apps
+ * connector links, conversation affinity, and plan quotas bind to — while
+ * provider-prefixed picks keep their gateway route. `gateway` rebuilds every
+ * route from the active catalog's route index, restoring the legacy behavior.
+ * The mode survives catalog syncs (catalog.ts re-infers it from the policy).
+ */
+export async function setOfficialModelsMode(
+  mode: 'passthrough' | 'gateway',
+  options: DesktopBridgeControllerV3Options
+): Promise<DesktopBridgeCommandResult> {
+  const core = await loadCore(options);
+  if (!core.policy || !core.activeCatalog.ok) throw new Error('bridge_route_policy_missing');
+  const policy = mode === 'passthrough'
+    ? applyOfficialModelPassthrough(core.policy, { mode, changedAt: nowIso(options) })
+    : buildBridgeRoutingPolicy({
+      route_index: core.activeCatalog.route_index,
+      catalog_generation: core.policy.catalog_generation,
+      default_provider_id: core.policy.default_provider_id,
+      changed_at: nowIso(options)
+    });
+  await writeBridgeRoutingPolicy(core.paths.routePolicyPath, policy, core.activeCatalog.route_index);
+  await persistRuntimeSettings({ ...core, policy, policyBlockers: [] }, options);
+  const status = await desktopBridgeStatusV3(options);
+  const officialModels = Object.entries(policy.model_routes)
+    .filter(([, route]) => route.provider_id === 'openai')
+    .map(([model]) => model);
+  return commandResult(
+    'route.official-models',
+    true,
+    status,
+    { mode, official_models: officialModels, policy_generation: policy.policy_generation },
     [],
     options
   );

@@ -93,6 +93,10 @@ export function createDesktopBridgeRejectionLogger(options: {
       write(`${JSON.stringify({
         schema: DESKTOP_BRIDGE_LOG_SCHEMA,
         sks_version: PACKAGE_VERSION,
+        // The 2026-08 restart-storm forensics had to reconstruct 14 hours of
+        // timeline from serve-state blobs because no rejection record carried a
+        // wall clock. Every record now stamps one.
+        at: new Date(now()).toISOString(),
         secret_fields_redacted: true,
         ...payload,
       })}\n`);

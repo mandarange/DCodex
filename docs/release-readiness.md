@@ -1,8 +1,10 @@
-# SKS 9.1.1 Release Readiness
+# SKS 9.2.0 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
+
+9.2.0 fixes the identity architecture that made "auth keeps dropping during compaction" true on real machines. The bridge was a pure provider multiplexer: every request lost its ChatGPT OAuth `Authorization` (and `chatgpt-account-id`) and gained a substituted gateway key, so everything server-side that binds to the operator's ACCOUNT — Codex Apps connector links ("This app connection requires reauthentication", 431 rollout occurrences on this machine), conversation affinity for `previous_response_id`, plan quotas — broke intermittently, and re-authenticating could never fix it because the runtime path kept presenting the other identity. Official identity passthrough now forwards the client's own credentials to the official upstream for everything the route policy does not claim for a provider (unknown models, non-Responses backend-api endpoints such as `alpha/search`, unpinned WebSocket upgrades), official error bodies stream back verbatim, and `sks bridge route official-models passthrough` flips bare official-family models onto the operator's own identity — surviving catalog syncs, absorbing pre-flip gateway pins, and never crossing credentials with provider routes. Alongside it: the supervised skew restart is cooldown-bounded (the 438-cycle, 14.5-hour restart storm of 2026-08-19 can no longer repeat), subagent auth write-back keeps the newest token rotation instead of stranding the host on a dead refresh token, `authSemanticIdentityPreserved` keys on account identity instead of bytes (ending the intermittent catalog.sync aborts on legitimate token refreshes), every bridge log record now carries a timestamp, and the desktop-bridge release gates re-fire on bridge-core changes. Before any release claim, regenerate the isolated 7.6.0 to 9.2.0 upgrade smoke, the full release gate DAG, pack receipt, and release-check stamp from the clean candidate commit.
 
 9.1.1 is a stability patch on 9.1.0. The desktop bridge stops manufacturing the
 user-visible sentence "Upstream request failed", heals 502/503/524 gateway
@@ -10,9 +12,7 @@ transients the same way it already healed 404+`upstream_error`, keeps 429 as a
 rate limit, and no longer dies on a write-after-end during WebSocket refusal.
 `sks update` now quarantines conflicting third-party harness markers and removes
 SKS-owned retired skills from Cursor/Claude host skill directories. 9.1.0's
-opt-in 1M context window is unchanged. Before any release claim, regenerate the
-isolated 7.6.0 to 9.1.1 upgrade smoke, the full release gate DAG, pack receipt,
-and release-check stamp from the clean candidate commit.
+opt-in 1M context window is unchanged.
 
 9.1.0 adds one opt-in feature and changes nothing by default: `sks codex-app context-1m status|on|off` plus a "Codex 1M Context" card in SKS Center Settings, managing the OpenAI-documented 1M-token context window for GPT-5.6 Sol. Enable writes `model_context_window = 1000000` and `model_auto_compact_token_limit = 900000` as top-level keys in `~/.codex/config.toml` — before any `[section]` header, the only placement Codex honors — each carrying an inline `# sks-codex-context-1m prev=...` marker that records the pre-enable value; disable restores that value or removes the key, and never deletes a value SKS did not write. Duplicate declarations and unparseable values fail closed, every write goes through the guarded CAS config writer, and Codex Desktop restarts automatically only when it is already running — SKS still never launches Codex on its own; when it is closed the change applies on the next launch. Both surfaces state the documented caveats: only new sessions pick up the change, requests beyond 272K input tokens bill the entire request at the long-context rate, and a non-Sol active model draws a warning because the keys are global and not model-aware.
 
@@ -462,7 +462,7 @@ node ./dist/scripts/release-pack-receipt.js verify
 node ./dist/scripts/release-provenance-check.js --publish
 npm whoami --registry https://registry.npmjs.org/
 npm view sneakoscope maintainers --json --registry https://registry.npmjs.org/
-npm view sneakoscope@9.1.0 version --json --registry https://registry.npmjs.org/
+npm view sneakoscope@9.2.0 version --json --registry https://registry.npmjs.org/
 npm publish --dry-run --json \
   --registry https://registry.npmjs.org/ \
   --tag latest \

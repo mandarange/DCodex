@@ -18,7 +18,7 @@ const SETTINGS_V1_KEYS = new Set([
 const SETTINGS_V2_KEYS = new Set([
   'schema', 'listen_host', 'listen_port', 'provider_registry', 'route_policy',
   'provider_session_pins', 'client_capability_sha256', 'allowed_origins',
-  'connect_timeout_ms', 'idle_timeout_ms',
+  'connect_timeout_ms', 'idle_timeout_ms', 'official_passthrough',
 ]);
 const TRANSFERABLE_V1_KEYS = [
   'listen_host', 'listen_port', 'allowed_origins', 'connect_timeout_ms', 'idle_timeout_ms',

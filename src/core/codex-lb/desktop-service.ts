@@ -20,6 +20,7 @@ import {
   desktopBridgeLaunchdPlistPath, desktopBridgeProcessExists, desktopBridgeStatePath, getDesktopBridgeStatus,
   preflightDesktopBridge, readDesktopBridgeState, safeBridgeErrorCode, writeDesktopBridgeLaunchdPlist,
   selectAvailableDesktopBridgePort, startPreparedDesktopBridge, DESKTOP_BRIDGE_STATE_SCHEMA,
+  DESKTOP_BRIDGE_OFFICIAL_UPSTREAM_BASE_URL,
   DesktopBridgeError, type DesktopBridgeConfig, type DesktopBridgeCredentialResolver, type DesktopBridgeHandle,
   type DesktopBridgeProviderRegistrySnapshot, type DesktopBridgeProviderSnapshot, type DesktopBridgePublicState,
   type DesktopBridgeRouteResolver, type DesktopBridgeSessionPinPersister, type DesktopBridgeStatus,
@@ -45,6 +46,7 @@ export interface DesktopBridgeServiceSettings {
   allowed_origins: string[];
   connect_timeout_ms: number;
   idle_timeout_ms: number;
+  official_passthrough: { enabled: boolean; base_url: string };
 }
 
 export interface DesktopBridgeServicePaths { settings_path: string; state_path: string; client_capability_path: string; launch_agent_path: string; stdout_log_path: string; stderr_log_path: string; }
@@ -191,7 +193,7 @@ export async function writeDesktopBridgeServiceSettings(file: string, settings: 
 
 async function writeDesktopBridgeServiceSettingsUnlocked(file: string, settings: DesktopBridgeServiceSettings): Promise<void> {
   const validated = validateDesktopBridgeServiceSettings(settings);
-  const persisted = { schema: validated.schema, listen_host: validated.listen_host, listen_port: validated.listen_port, provider_registry: validated.provider_registry, route_policy: validated.route_policy, provider_session_pins: validated.provider_session_pins, client_capability_sha256: validated.client_capability_sha256, allowed_origins: validated.allowed_origins, connect_timeout_ms: validated.connect_timeout_ms, idle_timeout_ms: validated.idle_timeout_ms };
+  const persisted = { schema: validated.schema, listen_host: validated.listen_host, listen_port: validated.listen_port, provider_registry: validated.provider_registry, route_policy: validated.route_policy, provider_session_pins: validated.provider_session_pins, client_capability_sha256: validated.client_capability_sha256, allowed_origins: validated.allowed_origins, connect_timeout_ms: validated.connect_timeout_ms, idle_timeout_ms: validated.idle_timeout_ms, official_passthrough: validated.official_passthrough };
   await writeTextAtomic(file, `${JSON.stringify(persisted, null, 2)}\n`, { mode: 0o600 }); await fsp.chmod(file, 0o600);
 }
 
@@ -271,14 +273,18 @@ export async function resolveDesktopBridgeRuntimeConfig(options: DesktopBridgeSe
   settings = defaultDesktopBridgeServiceSettings({ ...settings, provider_registry: credentials.registry });
   if (!Object.keys(settings.route_policy.model_routes).length) throw new Error('catalog_model_route_missing');
   const enabledRoutes = new Set(Object.values(settings.route_policy.model_routes).map((route) => route.provider_id));
-  if (![...enabledRoutes].some((id) => credentials.registry.providers[id].credential_state === 'ready')) throw new Error('desktop_bridge_provider_credentials_unavailable');
+  const providerRouteIds = [...enabledRoutes].filter((id): id is BridgeProviderId => id === 'codex-lb' || id === 'openrouter');
+  // A policy whose model routes are all official-passthrough serves with the
+  // client's own identity and needs no bridge credential at all.
+  const officialOnly = providerRouteIds.length === 0 && settings.official_passthrough.enabled;
+  if (!officialOnly && !providerRouteIds.some((id) => credentials.registry.providers[id].credential_state === 'ready')) throw new Error('desktop_bridge_provider_credentials_unavailable');
   const persistProviderSessionPins = options.persistProviderSessionPins
     || ((pins: readonly ProviderSessionPin[]) => persistDesktopBridgeSessionPins(
       paths.settings_path,
       settings,
       pins,
     ));
-  const config: DesktopBridgeConfig = { providerRegistry: settings.provider_registry, routePolicy: settings.route_policy, providerSessionPins: settings.provider_session_pins, ...(options.resolveRequestRoute ? { resolveRequestRoute: options.resolveRequestRoute } : {}), persistProviderSessionPins, resolveProviderCredential: credentials.resolver, clientCapabilitySha256: settings.client_capability_sha256, listenHost: settings.listen_host, listenPort: settings.listen_port, allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES, allowedOrigins: settings.allowed_origins, connectTimeoutMs: settings.connect_timeout_ms, idleTimeoutMs: settings.idle_timeout_ms };
+  const config: DesktopBridgeConfig = { providerRegistry: settings.provider_registry, routePolicy: settings.route_policy, providerSessionPins: settings.provider_session_pins, ...(options.resolveRequestRoute ? { resolveRequestRoute: options.resolveRequestRoute } : {}), persistProviderSessionPins, resolveProviderCredential: credentials.resolver, clientCapabilitySha256: settings.client_capability_sha256, listenHost: settings.listen_host, listenPort: settings.listen_port, allowedPathPrefixes: DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES, allowedOrigins: settings.allowed_origins, connectTimeoutMs: settings.connect_timeout_ms, idleTimeoutMs: settings.idle_timeout_ms, officialPassthrough: settings.official_passthrough.enabled ? { baseUrl: settings.official_passthrough.base_url } : null };
   const primary = credentials.sources['codex-lb'] || credentials.sources.openrouter;
   if (!primary) throw new Error('desktop_bridge_provider_credentials_unavailable');
   return { config, settings, loaded_env: credentials.loaded, credential_source: primary, credential_sources: credentials.sources, paths };
@@ -434,29 +440,78 @@ async function installedPackageVersion(): Promise<string | null> {
   }
 }
 
+/**
+ * How long a supervised skew restart is suppressed after a restart that failed
+ * to converge. The 2026-08-19 storm: a 9.0.6 bridge saw installed 9.1.0,
+ * restarted — and launchd brought back 9.0.6 again, every ~100 seconds, 438
+ * times over 14.5 hours, killing every in-flight turn (compaction turns first).
+ * A restart that relaunches the SAME stale version proves restarting cannot
+ * converge right now; retrying it on a timer only multiplies the outage. The
+ * marker records the exact (running, installed) pair, so a genuinely new
+ * install — either side moving — restarts immediately.
+ */
+export const DESKTOP_BRIDGE_SKEW_RESTART_COOLDOWN_MS = 30 * 60_000;
+
+export interface SkewRestartMarker { running: string; installed: string; at: string }
+
+/**
+ * True when a supervised skew restart must be suppressed: the previous restart
+ * recorded exactly this (running, installed) pair recently, so relaunching
+ * demonstrably resolves the same stale code and would only repeat the outage.
+ * Either side moving — a genuinely new install, or a successfully converged
+ * running version — produces a different pair and restarts immediately.
+ */
+export function desktopBridgeSkewRestartSuppressed(
+  marker: SkewRestartMarker | null,
+  running: string,
+  installed: string,
+  nowMs: number,
+): boolean {
+  return Boolean(marker
+    && marker.running === running
+    && marker.installed === installed
+    && nowMs - Date.parse(marker.at) < DESKTOP_BRIDGE_SKEW_RESTART_COOLDOWN_MS);
+}
+
+async function readSkewRestartMarker(file: string): Promise<SkewRestartMarker | null> {
+  try {
+    const parsed = JSON.parse(await fsp.readFile(file, 'utf8')) as Partial<SkewRestartMarker>;
+    if (typeof parsed.running !== 'string' || typeof parsed.installed !== 'string' || !Number.isFinite(Date.parse(String(parsed.at)))) return null;
+    return { running: parsed.running, installed: parsed.installed, at: String(parsed.at) };
+  } catch { return null; }
+}
+
 export async function serveDesktopBridge(options: DesktopBridgeServiceOptions = {}): Promise<{ schema: 'sks.desktop-bridge-serve.v1'; ok: boolean; status: 'stopped' | 'failed'; state: DesktopBridgePublicState | null; blocker?: string }> {
   let handle: DesktopBridgeHandle | null = null;
   try {
     const runtime = await resolveDesktopBridgeRuntimeConfig(options);
     const supervised = desktopBridgeIsSupervised();
+    const skewMarkerPath = path.join(path.dirname(runtime.paths.state_path), 'desktop-bridge-skew-restart.json');
     handle = await startPreparedDesktopBridge(await preflightDesktopBridge(runtime.config), {
       statePath: runtime.paths.state_path,
       versionSkew: {
         readInstalledVersion: installedPackageVersion,
         onSkew: (installedVersion) => {
-          // One line either way, so the log explains the exit — or, unsupervised,
-          // explains why a stale bridge is still serving.
-          process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.version_skew', running: PACKAGE_VERSION, installed: installedVersion, supervised, action: supervised ? 'restarting' : 'logged_only', secret_fields_redacted: true })}\n`);
-          if (!supervised) return;
-          // Drain first (the existing bounded grace), then exit non-zero:
-          // `KeepAlive.SuccessfulExit = false` relaunches only an unsuccessful
-          // exit, and the relaunch is the whole point — launchd brings the
-          // service back on the code that is now on disk.
-          void handle?.stop().catch(() => undefined).finally(() => process.exit(64));
+          void (async () => {
+            const marker = await readSkewRestartMarker(skewMarkerPath);
+            const cooldownActive = desktopBridgeSkewRestartSuppressed(marker, PACKAGE_VERSION, installedVersion, Date.now());
+            const action = !supervised ? 'logged_only' : cooldownActive ? 'suppressed_cooldown' : 'restarting';
+            // One line either way, so the log explains the exit — or, when
+            // suppressed/unsupervised, explains why a stale bridge is serving.
+            process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.version_skew', at: new Date().toISOString(), running: PACKAGE_VERSION, installed: installedVersion, supervised, action, secret_fields_redacted: true })}\n`);
+            if (!supervised || cooldownActive) return;
+            await writeTextAtomic(skewMarkerPath, `${JSON.stringify({ running: PACKAGE_VERSION, installed: installedVersion, at: new Date().toISOString() })}\n`, { mode: 0o600 }).catch(() => undefined);
+            // Drain first (the existing bounded grace), then exit non-zero:
+            // `KeepAlive.SuccessfulExit = false` relaunches only an unsuccessful
+            // exit, and the relaunch is the whole point — launchd brings the
+            // service back on the code that is now on disk.
+            await handle?.stop().catch(() => undefined);
+            process.exit(64);
+          })();
         },
       },
     });
-    process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.started', pid: handle.state.pid, process_generation: handle.state.schema === DESKTOP_BRIDGE_STATE_SCHEMA ? handle.state.process_generation : null, provider_registry_generation: runtime.config.providerRegistry?.generation, route_policy_generation: runtime.config.routePolicy?.policy_generation, secret_fields_redacted: true })}\n`);
+    process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.started', at: new Date().toISOString(), sks_version: PACKAGE_VERSION, pid: handle.state.pid, process_generation: handle.state.schema === DESKTOP_BRIDGE_STATE_SCHEMA ? handle.state.process_generation : null, provider_registry_generation: runtime.config.providerRegistry?.generation, route_policy_generation: runtime.config.routePolicy?.policy_generation, secret_fields_redacted: true })}\n`);
     await waitForShutdown(handle);
     return { schema: 'sks.desktop-bridge-serve.v1', ok: true, status: 'stopped', state: handle.state };
   }
@@ -467,7 +522,7 @@ export async function serveDesktopBridge(options: DesktopBridgeServiceOptions = 
 function validateDesktopBridgeServiceSettings(value: unknown): DesktopBridgeServiceSettings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('desktop_bridge_settings_invalid'); const row = value as Record<string, unknown>;
   const input = row; if (input.schema !== DESKTOP_BRIDGE_SETTINGS_SCHEMA) throw new Error('desktop_bridge_settings_schema_invalid');
-  const allowedKeys = new Set(['schema', 'listen_host', 'listen_port', 'provider_registry', 'route_policy', 'provider_session_pins', 'client_capability_sha256', 'allowed_origins', 'connect_timeout_ms', 'idle_timeout_ms']);
+  const allowedKeys = new Set(['schema', 'listen_host', 'listen_port', 'provider_registry', 'route_policy', 'provider_session_pins', 'client_capability_sha256', 'allowed_origins', 'connect_timeout_ms', 'idle_timeout_ms', 'official_passthrough']);
   if (Object.keys(input).some((key) => !allowedKeys.has(key))) throw new Error('desktop_bridge_settings_unknown_field');
   const serialized = JSON.stringify(input);
   if (/"(?:api_?key|secret|authorization|cookie|access_token|refresh_token|gatewayKey)"\s*:/i.test(serialized) || /Bearer\s+[A-Za-z0-9._~-]{8,}/i.test(serialized)) {
@@ -482,7 +537,27 @@ function validateDesktopBridgeServiceSettings(value: unknown): DesktopBridgeServ
   if (!/^[a-f0-9]{64}$/.test(clientCapabilitySha256)) throw new Error('desktop_bridge_settings_client_capability_invalid');
   const origins = Array.isArray(input.allowed_origins) ? input.allowed_origins.map(String).filter(Boolean) : []; if (!origins.length) throw new Error('desktop_bridge_settings_allowed_origins_empty');
   const connect = Number(input.connect_timeout_ms); const idle = Number(input.idle_timeout_ms); if (!Number.isFinite(connect) || connect < 100 || connect > 120_000) throw new Error('desktop_bridge_settings_connect_timeout_invalid'); if (!Number.isFinite(idle) || idle < 1_000 || idle > 86_400_000) throw new Error('desktop_bridge_settings_idle_timeout_invalid');
-  return { schema: DESKTOP_BRIDGE_SETTINGS_SCHEMA, listen_host: host, listen_port: port, provider_registry: registry, route_policy: policy, provider_session_pins: pins, client_capability_sha256: clientCapabilitySha256, allowed_origins: [...new Set(origins)], connect_timeout_ms: connect, idle_timeout_ms: idle };
+  const officialPassthrough = validateOfficialPassthroughSettings(input.official_passthrough);
+  return { schema: DESKTOP_BRIDGE_SETTINGS_SCHEMA, listen_host: host, listen_port: port, provider_registry: registry, route_policy: policy, provider_session_pins: pins, client_capability_sha256: clientCapabilitySha256, allowed_origins: [...new Set(origins)], connect_timeout_ms: connect, idle_timeout_ms: idle, official_passthrough: officialPassthrough };
+}
+
+/**
+ * Official identity passthrough is ON by default: requests the route policy
+ * does not claim for a provider carry the client's own ChatGPT identity to the
+ * official upstream instead of failing closed. Operators can pin a different
+ * base URL (tests use loopback) or disable it entirely.
+ */
+function validateOfficialPassthroughSettings(value: unknown): { enabled: boolean; base_url: string } {
+  if (value === undefined || value === null) {
+    return { enabled: true, base_url: DESKTOP_BRIDGE_OFFICIAL_UPSTREAM_BASE_URL };
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('desktop_bridge_settings_official_passthrough_invalid');
+  const row = value as Record<string, unknown>;
+  if (Object.keys(row).some((key) => key !== 'enabled' && key !== 'base_url')) throw new Error('desktop_bridge_settings_official_passthrough_invalid');
+  const enabled = row.enabled === true;
+  const baseUrl = typeof row.base_url === 'string' && row.base_url.trim() ? row.base_url.trim() : DESKTOP_BRIDGE_OFFICIAL_UPSTREAM_BASE_URL;
+  try { new URL(baseUrl); } catch { throw new Error('desktop_bridge_settings_official_passthrough_invalid'); }
+  return { enabled, base_url: baseUrl };
 }
 
 function validateProviderSessionPins(value: unknown): ProviderSessionPin[] {

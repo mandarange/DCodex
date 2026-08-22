@@ -9,16 +9,23 @@ type AuthSnapshot = Awaited<ReturnType<typeof captureCodexAuthSnapshot>>;
 
 export function authSemanticIdentityPreserved(before: AuthSnapshot, after: AuthSnapshot): boolean {
   if (before.path !== after.path || before.exists !== after.exists) return false;
-  if (before.sha256 !== after.sha256) return false;
   const beforeIsOAuth = before.mode === 'chatgpt_oauth' || before.mode === 'mixed';
   const afterIsOAuth = after.mode === 'chatgpt_oauth' || after.mode === 'mixed';
   if (beforeIsOAuth || afterIsOAuth) {
+    // What the invariant protects is the ACCOUNT IDENTITY, not the bytes: with
+    // official identity passthrough the OAuth tokens legitimately rotate while
+    // a catalog sync is in flight, and byte-equality turned every such refresh
+    // into an aborted migration (the intermittent catalog.sync failure the
+    // doctor retried around). Same mode + same non-null identity fingerprint
+    // is preservation; only an identity change — or a mode flip — is a breach.
     return beforeIsOAuth
       && afterIsOAuth
       && before.semantic_fingerprint !== null
       && before.semantic_fingerprint === after.semantic_fingerprint;
   }
-  return true;
+  // Non-OAuth (api-key/absent) snapshots carry no identity claims to compare,
+  // so byte equality remains the only available proof.
+  return before.sha256 === after.sha256;
 }
 
 export function buildDesktopBridgeMigrationReceipt(input: {

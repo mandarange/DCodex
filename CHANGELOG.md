@@ -3,6 +3,82 @@
 ## [Unreleased]
 
 
+
+## [9.2.0] - 2026-08-22
+
+### Added
+
+- Official ChatGPT identity passthrough in the Desktop Bridge. The bridge was
+  a pure provider multiplexer: every request had its ChatGPT OAuth
+  `Authorization` stripped (and `chatgpt-account-id` dropped) and a substituted
+  gateway key attached — so everything bound to the operator's own account on
+  the server side broke intermittently. Codex Apps connector calls answered
+  "This app connection requires reauthentication" no matter how many times the
+  app was re-linked (431 occurrences in this machine's August rollouts), and
+  conversation affinity for `previous_response_id` — exactly what a compact
+  task depends on — was left to gateway node luck. Requests the route policy
+  does not claim for a provider now pass through to the official upstream
+  carrying the client's own identity: unknown models, non-Responses
+  `backend-api` endpoints (`alpha/search` answered 400 before; it forwards
+  now), and WebSocket upgrades with no session pin (501
+  `bridge_websocket_route_unresolvable` before; they tunnel now). Official
+  error bodies stream back verbatim — quota, plan, and auth detail Codex
+  renders natively is no longer redacted away — and transient 5xx on buffered
+  Responses bodies still get the fresh-connection replays. Provider routing is
+  untouched: an explicitly routed model still gets the provider credential,
+  and the two identities can never cross (asserted both ways, tested both
+  ways).
+- `sks bridge route official-models <passthrough|gateway>`. `passthrough`
+  rewrites BARE official-family model routes (`gpt-*`, `o*`, `codex-mini*`) to
+  the new `openai` identity route, so ordinary Desktop turns run as the
+  operator's own ChatGPT account; provider-prefixed picks
+  (`codex-lb:gpt-5.6-sol`) and SKS-internal models (`codex-auto-review`) keep
+  their gateway route. `gateway` rebuilds every route from the catalog index.
+  The choice survives catalog syncs and doctor repairs (the sync re-infers it
+  from the policy instead of resetting it), threads pinned to the gateway
+  before a flip are absorbed into passthrough instead of dying with
+  `session_pin_route_unavailable`, and applying restarts the bridge
+  automatically.
+
+### Fixed
+
+- The supervised version-skew restart can no longer storm. On 2026-08-19 a
+  9.0.6 bridge saw installed 9.1.0, restarted — and launchd brought back 9.0.6
+  again, every ~100 seconds, 438 times over 14.5 hours, cutting every
+  in-flight turn (compaction turns, the longest-lived requests, first). A skew
+  restart now records the exact (running, installed) pair; seeing the same
+  pair again within 30 minutes proves restarting cannot converge and is
+  suppressed with `action: "suppressed_cooldown"` instead of repeated. A
+  genuinely new install on either side restarts immediately.
+- Subagent auth write-back no longer discards the newest token rotation. The
+  native auth bridge copies ChatGPT OAuth tokens into a private CODEX_HOME for
+  every `runCodexTask` subagent and CAS-writes refreshed tokens back; on a
+  concurrent host change it previously dropped the refreshed tokens
+  unconditionally — and since refresh tokens rotate, dropping the newer
+  rotation strands the host on a dead refresh token ("refresh token was
+  already used" → forced re-login). The write-back now keeps whichever
+  rotation is newest for the same account: host-newer resolves clean
+  (`host_newer_kept`), ours-newer retries the CAS once against the fresh host
+  state and carries the host's own non-token fields forward.
+- `authSemanticIdentityPreserved` now keys on account identity, not bytes. A
+  legitimate token refresh during a catalog sync failed the byte-equality
+  invariant and aborted the migration — the intermittent `catalog.sync`
+  failure the doctor retried around, and with identity passthrough tokens
+  refresh routinely. Same mode + same non-null identity fingerprint is
+  preservation; an identity change, mode flip, or unverifiable fingerprint
+  still blocks, and non-OAuth snapshots keep byte equality.
+- Every bridge log record carries a wall-clock `at` timestamp and `started`
+  records carry `sks_version`. The August restart-storm forensics had to
+  reconstruct a 14.5-hour timeline from serve-state blobs because no rejection,
+  skew, or start record had a clock.
+- The `desktop-bridge:*` release gates now re-fire when
+  `src/core/codex-lb/desktop-bridge/**` changes (they previously fell to the
+  default affected-glob of their own check scripts), and the `codex*` gates'
+  affected set gains `src/core/codex-lb/**`.
+- Ships the three-fresh-replay compact-503 absorber that was committed to main
+  after the 9.1.1 publish (the published 9.1.1 artifact replays once; the
+  9.1.1 changelog entry above describes the behavior as of this release).
+
 ## [9.1.1] - 2026-08-20
 
 ### Fixed

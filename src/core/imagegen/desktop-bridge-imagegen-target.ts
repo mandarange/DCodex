@@ -55,7 +55,9 @@ export async function resolveDesktopBridgeImagegenTarget(opts: {
   const route = model && policy?.fallback === 'none'
     ? policy.model_routes?.[model] || null
     : null;
-  const provider = route ? status?.providers?.[route.provider_id] || null : null;
+  // Official passthrough routes have no provider profile; bridge imagegen
+  // evidence stays a provider-routed feature.
+  const provider = route && route.provider_id !== 'openai' ? status?.providers?.[route.provider_id] || null : null;
   const providerImagegen = provider?.capabilities?.capabilities?.image_generation || null;
   const blocker = !status || status.schema !== 'sks.desktop-bridge-status.v3'
     ? 'desktop_bridge_status_unavailable'
@@ -87,7 +89,7 @@ export async function resolveDesktopBridgeImagegenTarget(opts: {
     model,
     model_source: model ? 'explicit' : null,
     route: route || null,
-    provider_id: route?.provider_id || null,
+    provider_id: route && route.provider_id !== 'openai' ? route.provider_id : null,
     status_source: injected ? 'injected_fixture' : 'runtime',
     live_evidence_allowed: bridgeVerified && !injected,
     blocker,

@@ -36,6 +36,7 @@ export type BridgeCommandRequest =
   | { operation: 'models.select'; public_ids: string[] }
   | { operation: 'route.list' }
   | { operation: 'route.set-default'; provider_id: BridgeProviderId }
+  | { operation: 'route.official-models'; mode: 'passthrough' | 'gateway' }
   | { operation: 'route.explain'; model: string }
   | { operation: 'unmanage'; confirmed: true }
   | { operation: 'rollback'; receipt_id: string; confirmed: true };
@@ -102,6 +103,7 @@ export function usage(command = 'bridge'): string {
     `       sks ${command} models select --set <public-id,...> [--json]`,
     `       sks ${command} route list [--json]`,
     `       sks ${command} route set-default <codex-lb|openrouter> [--json]`,
+    `       sks ${command} route official-models <passthrough|gateway> [--json]`,
     `       sks ${command} route explain <model> [--json]`,
     `       sks ${command} unmanage --confirm [--json]`,
     `       sks ${command} rollback <receipt-id> --confirm [--json]`,
@@ -332,6 +334,15 @@ async function parseInvocation(args: string[], io: BridgeCommandIo): Promise<Par
         ...base,
         request: { operation: 'route.set-default', provider_id: providerId },
         label: `Default bridge provider set to ${providerId}`
+      };
+    }
+    if (action === 'official-models' && target !== undefined && extra === undefined) {
+      allowOnly(parsed, ['--json'], []);
+      if (target !== 'passthrough' && target !== 'gateway') throw new BridgeCliError('bridge_route_official_models_mode_invalid');
+      return {
+        ...base,
+        request: { operation: 'route.official-models', mode: target },
+        label: `Official models routed via ${target === 'passthrough' ? 'the operator ChatGPT identity' : 'the gateway'}`
       };
     }
     if (action === 'explain' && target !== undefined && extra === undefined) {

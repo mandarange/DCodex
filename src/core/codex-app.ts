@@ -877,7 +877,9 @@ function providerModelUiStatusFromDesktopBridge(status: DesktopBridgeStatusV3) {
     || status.routing.policy?.default_provider_id
     || status.routing.session_pin?.provider_id
     || null;
-  const selectedProfile = selectedProvider ? status.providers[selectedProvider] : null;
+  // Official passthrough routes carry no provider profile: there is no bridge
+  // credential or catalog to report on for the operator's own identity.
+  const selectedProfile = selectedProvider && selectedProvider !== 'openai' ? status.providers[selectedProvider] : null;
   const selectedProviderBlockers = uniqueStrings([
     ...status.readiness.blockers,
     ...status.routing.blockers,

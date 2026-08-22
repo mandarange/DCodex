@@ -76,6 +76,51 @@ export function buildProviderUpstreamHeaders(
   return result;
 }
 
+/**
+ * Headers the bridge must never forward even on official passthrough: its own
+ * credential channels, proxy metadata, and loopback network attribution. The
+ * client's Authorization, cookies, and account headers (chatgpt-account-id)
+ * pass through untouched — official passthrough exists precisely so the
+ * operator's own ChatGPT identity reaches the official upstream, which is what
+ * Codex Apps connector links, conversation affinity, and plan quotas bind to.
+ */
+const OFFICIAL_PASSTHROUGH_STRIP = new Set([
+  'forwarded', 'proxy-authorization', 'x-api-key', 'x-codex-lb-api-key',
+  'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-port', 'x-forwarded-proto', 'x-real-ip',
+  'host',
+]);
+
+export function buildOfficialPassthroughHeaders(inbound: IncomingHttpHeaders, upstreamHost: string): OutgoingHttpHeaders {
+  const result: OutgoingHttpHeaders = {};
+  const dynamic = connectionTokens(inbound);
+  for (const [rawName, rawValue] of Object.entries(inbound)) {
+    if (rawValue === undefined) continue;
+    const name = rawName.toLowerCase();
+    if (HOP_BY_HOP.has(name) || dynamic.has(name)) continue;
+    if (name.startsWith(INTERNAL_PREFIX)) continue;
+    if (OFFICIAL_PASSTHROUGH_STRIP.has(name)) continue;
+    result[name] = rawValue;
+  }
+  result.host = upstreamHost;
+  // Credential non-crossing, asserted both ways: a provider key must never ride
+  // a passthrough request, exactly as the client's token never rides a provider
+  // request.
+  if (result['x-codex-lb-api-key'] !== undefined) throw new DesktopBridgeError('bridge_provider_credential_invalid');
+  return result;
+}
+
+export function buildOfficialPassthroughWebSocketHeaders(inbound: IncomingHttpHeaders, upstreamHost: string): OutgoingHttpHeaders {
+  const result = buildOfficialPassthroughHeaders(inbound, upstreamHost);
+  for (const [rawName, rawValue] of Object.entries(inbound)) {
+    if (rawValue === undefined) continue;
+    const name = rawName.toLowerCase();
+    if (WEBSOCKET_HEADER_ALLOWLIST.has(name)) result[name] = rawValue;
+  }
+  result.connection = 'Upgrade';
+  result.upgrade = 'websocket';
+  return result;
+}
+
 export function buildProviderWebSocketHeaders(
   inbound: IncomingHttpHeaders,
   context: Parameters<typeof buildProviderUpstreamHeaders>[1],

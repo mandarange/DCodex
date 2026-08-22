@@ -11,6 +11,7 @@ import {
   repairDesktopBridge,
   rollbackDesktopBridge,
   setDefaultProvider,
+  setOfficialModelsMode,
   unmanageDesktopBridge
 } from './desktop-controller-v3/lifecycle-commands.js';
 import {
@@ -90,6 +91,7 @@ export async function executeDesktopBridgeCommandV3(
         return commandResult('route.list', true, status, { routing: status.routing }, [], options);
       }
       if (request.operation === 'route.set-default') return setDefaultProvider(request.provider_id, options);
+      if (request.operation === 'route.official-models') return setOfficialModelsMode(request.mode, options);
       if (request.operation === 'route.explain') return explainRoute(request.model, options);
       if (request.operation === 'unmanage') return unmanageDesktopBridge(options);
       return rollbackDesktopBridge(request.receipt_id, options);

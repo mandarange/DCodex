@@ -162,16 +162,59 @@ export async function prepareNativeCodexAuthBridge(
         return result
       }
 
-      await assertSourceAuthUnchanged(sourceAuthCandidate, sourceAuthIdentity, sourceAuthFingerprint)
-      const hostAuth = { ...tempAuth, ...originalApiKeyFields }
-      const hostAuthText = `${JSON.stringify(hostAuth, null, 2)}\n`
-      await writeAuthFileAtomic(sourceAuthCandidate, hostAuthText, async () => {
-        await assertSourceAuthUnchanged(sourceAuthCandidate, sourceAuthIdentity!, sourceAuthFingerprint)
-      })
-      await removeOwnedTempRoot()
-      const result = { ok: true, status: 'cleaned', outcome: 'refreshed_persisted', cleanup_required: false, blockers: [] as string[] }
-      applyCleanupProof(bridgeProof, result)
-      return result
+      try {
+        await assertSourceAuthUnchanged(sourceAuthCandidate, sourceAuthIdentity, sourceAuthFingerprint)
+        const hostAuth = { ...tempAuth, ...originalApiKeyFields }
+        const hostAuthText = `${JSON.stringify(hostAuth, null, 2)}\n`
+        await writeAuthFileAtomic(sourceAuthCandidate, hostAuthText, async () => {
+          await assertSourceAuthUnchanged(sourceAuthCandidate, sourceAuthIdentity!, sourceAuthFingerprint)
+        })
+        await removeOwnedTempRoot()
+        const result = { ok: true, status: 'cleaned', outcome: 'refreshed_persisted', cleanup_required: false, blockers: [] as string[] }
+        applyCleanupProof(bridgeProof, result)
+        return result
+      } catch (error: any) {
+        if (String(error?.message || error) !== 'native_codex_auth_source_conflict') throw error
+        // The host auth.json moved while the subagent ran — almost always
+        // another client's own token refresh. Refresh tokens ROTATE: exactly
+        // one of the two rotations is still alive, and the old behavior
+        // (discard ours unconditionally) stranded the host on a dead refresh
+        // token whenever ours was the newer rotation — the "refresh token was
+        // already used" forced re-login. Keep whichever rotation is newest,
+        // for the same account only.
+        const currentText = await readValidatedAuthFile(sourceAuthCandidate, {
+          requirePrivateMode: true,
+          requireSingleLink: true,
+          errorPrefix: 'native_codex_auth_source'
+        })
+        const currentAuth = parseStrictChatGptAuth(currentText)
+        const sameAccount = String(currentAuth.tokens?.account_id || '') === String(tempAuth.tokens?.account_id || '')
+        const hostRefreshedAt = Date.parse(String(currentAuth.last_refresh || ''))
+        const oursRefreshedAt = Date.parse(String(tempAuth.last_refresh || ''))
+        const hostWins = !sameAccount
+          || !Number.isFinite(oursRefreshedAt)
+          || (Number.isFinite(hostRefreshedAt) && hostRefreshedAt >= oursRefreshedAt)
+        if (hostWins) {
+          await removeOwnedTempRoot()
+          const result = { ok: true, status: 'cleaned', outcome: 'host_newer_kept', cleanup_required: false, blockers: [] as string[] }
+          applyCleanupProof(bridgeProof, result)
+          return result
+        }
+        // Ours is the newer rotation of the same account: retry the CAS once
+        // against the host state just read, carrying the host's own non-token
+        // fields forward so nothing the host wrote meanwhile is lost.
+        const currentStat = await fsp.lstat(sourceAuthCandidate)
+        const retryIdentity = { dev: currentStat.dev, ino: currentStat.ino }
+        const retryFingerprint = fingerprintText(currentText)
+        const mergedAuth = { ...currentAuth, tokens: tempAuth.tokens, last_refresh: tempAuth.last_refresh }
+        await writeAuthFileAtomic(sourceAuthCandidate, `${JSON.stringify(mergedAuth, null, 2)}\n`, async () => {
+          await assertSourceAuthUnchanged(sourceAuthCandidate, retryIdentity, retryFingerprint)
+        })
+        await removeOwnedTempRoot()
+        const result = { ok: true, status: 'cleaned', outcome: 'refreshed_persisted_after_conflict', cleanup_required: false, blockers: [] as string[] }
+        applyCleanupProof(bridgeProof, result)
+        return result
+      }
     } catch (error: any) {
       const reason = String(error?.message || error || 'native_codex_auth_cleanup_failed')
       const outcome = reason === 'native_codex_auth_source_conflict' ? 'source_conflict' : 'failed'

@@ -1,11 +1,12 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type {
-  BridgeProviderId,
-  BridgeRouteIndex,
-  BridgeRouteTarget,
-  BridgeRoutingPolicy
+import {
+  BRIDGE_OFFICIAL_ROUTE_ID,
+  type BridgeProviderId,
+  type BridgeRouteIndex,
+  type BridgeRouteTarget,
+  type BridgeRoutingPolicy
 } from './bridge-contracts.js';
 import {
   canonicalizeBridgeModelId,
@@ -80,6 +81,9 @@ export function validateBridgeRoutingPolicy(
   if (Object.keys(canonical).length !== Object.keys(policy.model_routes).length) blockers.push('bridge_route_policy_model_invalid');
   if (routeIndex) {
     for (const [model, target] of Object.entries(canonical)) {
+      // Official passthrough targets deliberately diverge from the provider
+      // route index: the flip rewrites a provider-indexed model to `openai`.
+      if (target.provider_id === BRIDGE_OFFICIAL_ROUTE_ID) continue;
       const indexed = routeIndex.routes[model];
       if (!indexed || !sameTarget(indexed, target)) blockers.push('bridge_route_policy_route_index_mismatch');
     }
@@ -127,7 +131,7 @@ function canonicalRoutes(routes: Record<string, BridgeRouteTarget>): Record<stri
   for (const [model, target] of Object.entries(routes)) {
     const canonicalModel = canonicalizeBridgeModelId(model);
     const upstreamModel = normalizeBridgeUpstreamModelId(target.upstream_model);
-    if (!canonicalModel || !upstreamModel || !isProviderId(target.provider_id)) continue;
+    if (!canonicalModel || !upstreamModel || !isRouteTargetId(target.provider_id)) continue;
     rows.push([canonicalModel, { provider_id: target.provider_id, upstream_model: upstreamModel }]);
   }
   return Object.fromEntries(rows.sort(([left], [right]) => left.localeCompare(right)));
@@ -135,6 +139,51 @@ function canonicalRoutes(routes: Record<string, BridgeRouteTarget>): Record<stri
 
 function isProviderId(value: unknown): value is BridgeProviderId {
   return value === 'codex-lb' || value === 'openrouter';
+}
+
+function isRouteTargetId(value: unknown): value is BridgeRouteTarget['provider_id'] {
+  return isProviderId(value) || value === BRIDGE_OFFICIAL_ROUTE_ID;
+}
+
+/**
+ * Which BARE official model ids `applyOfficialModelPassthrough` rewrites to the
+ * official identity route. Provider-prefixed spellings (`codex-lb:gpt-5.6-sol`)
+ * are the operator's explicit gateway picks and are never touched; SKS-internal
+ * gateway models (`codex-auto-review`) do not match the official family
+ * pattern and keep their provider route.
+ */
+export const OFFICIAL_MODEL_ID_PATTERN = /^(?:gpt-[0-9]|o[0-9]|codex-mini)/;
+
+/**
+ * Rewrites bare official-family model routes to the `openai` passthrough
+ * target, so those turns carry the operator's own ChatGPT identity — the one
+ * Codex Apps connector links, conversation affinity, and plan quotas are bound
+ * to — instead of a substituted gateway key. Regenerates policy_generation so
+ * the flip is a first-class policy change.
+ */
+export function applyOfficialModelPassthrough(
+  policy: BridgeRoutingPolicy,
+  input: { mode: 'passthrough' | 'gateway'; changedAt?: string } = { mode: 'passthrough' },
+): BridgeRoutingPolicy {
+  if (input.mode === 'gateway') return policy;
+  const routes: Record<string, BridgeRouteTarget> = {};
+  for (const [model, target] of Object.entries(policy.model_routes)) {
+    routes[model] = OFFICIAL_MODEL_ID_PATTERN.test(model) && !model.includes(':')
+      ? { provider_id: BRIDGE_OFFICIAL_ROUTE_ID, upstream_model: model }
+      : target;
+  }
+  const semantic = {
+    default_provider_id: policy.default_provider_id,
+    fallback: 'none' as const,
+    model_routes: canonicalRoutes(routes),
+    catalog_generation: policy.catalog_generation
+  };
+  return {
+    schema: 'sks.bridge-routing-policy.v1',
+    ...semantic,
+    policy_generation: sha256Stable(semantic),
+    changed_at: input.changedAt || new Date().toISOString()
+  };
 }
 
 function sameTarget(left: BridgeRouteTarget, right: BridgeRouteTarget): boolean {

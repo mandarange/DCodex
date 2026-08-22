@@ -289,6 +289,11 @@ test('Codex SDK persists refreshed ChatGPT tokens while keeping host-only API-ke
 })
 
 test('Codex SDK retains refreshed auth when the host source changes concurrently', async () => {
+  // Refresh tokens ROTATE: when the host refreshed while the subagent ran and
+  // neither side carries a newer last_refresh, the host's rotation is the one
+  // an external client is actively using — keeping it is a RESOLVED outcome,
+  // not a blocked one. (The old contract kept the host bytes too, but reported
+  // a blocker and stranded the temp root.)
   const previousCodexHome = process.env.CODEX_HOME
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-native-provider-refresh-conflict-'))
   const nativeCodexHome = path.join(root, 'native-codex-home')
@@ -314,15 +319,64 @@ test('Codex SDK retains refreshed auth when the host source changes concurrently
 
     const cleanup = await bridge.cleanup()
 
-    assert.equal(cleanup.ok, false)
-    assert.equal(cleanup.outcome, 'source_conflict')
-    assert.match(cleanup.blockers.join('\n'), /native_codex_auth_source_conflict/)
-    assert.equal(bridge.proof.cleanup_status, 'blocked')
-    assert.equal(bridge.proof.cleanup_required, true)
-    assert.equal(bridge.proof.recovery_temp_root_retained, true)
+    assert.equal(cleanup.ok, true)
+    assert.equal(cleanup.outcome, 'host_newer_kept')
+    assert.deepEqual(cleanup.blockers, [])
+    assert.equal(bridge.proof.cleanup_status, 'cleaned')
     assert.equal(JSON.parse(await fsp.readFile(sourceAuthPath, 'utf8')).tokens.access_token, 'concurrent-access')
-    assert.equal(JSON.parse(await fsp.readFile(tempAuthPath, 'utf8')).tokens.access_token, 'new-access')
-    assert.equal((await fsp.stat(tempRoot)).isDirectory(), true)
+    await assert.rejects(fsp.stat(tempRoot))
+  } finally {
+    if (previousCodexHome === undefined) delete process.env.CODEX_HOME
+    else process.env.CODEX_HOME = previousCodexHome
+    await fsp.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Codex SDK persists the newer subagent token rotation over a stale concurrent host write', async () => {
+  // The inverse race: the subagent's refresh is the NEWER rotation of the same
+  // account. Discarding it (the pre-9.2.0 behavior) stranded the host on a
+  // dead refresh token — the "refresh token was already used" forced re-login.
+  // The CAS retries once against the freshly read host state and carries the
+  // host's own non-token fields forward.
+  const previousCodexHome = process.env.CODEX_HOME
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-native-provider-refresh-newer-'))
+  const nativeCodexHome = path.join(root, 'native-codex-home')
+  try {
+    await fsp.mkdir(nativeCodexHome, { mode: 0o700 })
+    const sourceAuthPath = path.join(nativeCodexHome, 'auth.json')
+    await fsp.writeFile(sourceAuthPath, `${JSON.stringify({
+      auth_mode: 'chatgpt',
+      tokens: { access_token: 'old-access', refresh_token: 'old-refresh', account_id: 'acct-1' },
+      last_refresh: '2026-08-20T10:00:00.000Z'
+    })}\n`, { mode: 0o600 })
+    process.env.CODEX_HOME = nativeCodexHome
+    const env = buildCodexSdkEnv(taskInput(root))
+    const bridge = await prepareNativeCodexAuthBridge(env.env)
+    const tempRoot = path.dirname(String(env.env.CODEX_HOME))
+    const tempAuthPath = path.join(String(env.env.CODEX_HOME), 'auth.json')
+    const refreshedAuth = JSON.parse(await fsp.readFile(tempAuthPath, 'utf8'))
+    refreshedAuth.tokens = { access_token: 'new-access', refresh_token: 'new-refresh', account_id: 'acct-1' }
+    refreshedAuth.last_refresh = '2026-08-20T12:00:00.000Z'
+    await fsp.writeFile(tempAuthPath, `${JSON.stringify(refreshedAuth, null, 2)}\n`, { mode: 0o600 })
+    // Concurrent host write: an OLDER rotation plus a host-owned api-key field.
+    await fsp.writeFile(sourceAuthPath, `${JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: 'host-key-written-meanwhile',
+      tokens: { access_token: 'concurrent-access', refresh_token: 'concurrent-refresh', account_id: 'acct-1' },
+      last_refresh: '2026-08-20T11:00:00.000Z'
+    })}\n`, { mode: 0o600 })
+
+    const cleanup = await bridge.cleanup()
+
+    assert.equal(cleanup.ok, true)
+    assert.equal(cleanup.outcome, 'refreshed_persisted_after_conflict')
+    assert.deepEqual(cleanup.blockers, [])
+    const persisted = JSON.parse(await fsp.readFile(sourceAuthPath, 'utf8'))
+    assert.equal(persisted.tokens.access_token, 'new-access')
+    assert.equal(persisted.tokens.refresh_token, 'new-refresh')
+    assert.equal(persisted.last_refresh, '2026-08-20T12:00:00.000Z')
+    assert.equal(persisted.OPENAI_API_KEY, 'host-key-written-meanwhile')
+    await assert.rejects(fsp.stat(tempRoot))
   } finally {
     if (previousCodexHome === undefined) delete process.env.CODEX_HOME
     else process.env.CODEX_HOME = previousCodexHome

@@ -40,7 +40,8 @@ import {
   serializeStoredBridgeProviderRegistry,
   type BridgeProviderRegistry
 } from '../provider-registry.js';
-import { buildBridgeRoutingPolicy, readBridgeRoutingPolicy } from '../provider-route-policy.js';
+import { applyOfficialModelPassthrough, buildBridgeRoutingPolicy, readBridgeRoutingPolicy } from '../provider-route-policy.js';
+import { BRIDGE_OFFICIAL_ROUTE_ID } from '../bridge-contracts.js';
 import { sha256Stable } from '../route-index.js';
 import {
   bridgeBaseUrl,
@@ -134,12 +135,21 @@ export async function syncCatalogInternal(
     ? previousDefault
     : historicalDefault && readyProviders.includes(historicalDefault) ? historicalDefault
       : readyProviders.length === 1 ? readyProviders[0] || null : null;
-  const policy = buildBridgeRoutingPolicy({
+  // The official-models mode survives every sync by inference from the prior
+  // policy: once the operator flipped bare official ids to identity
+  // passthrough, a catalog refresh must not silently return them to the
+  // gateway (that reversal is exactly the identity swap that broke Codex Apps
+  // connector links and conversation affinity).
+  const officialModelsMode = priorPolicy.policy
+    && Object.values(priorPolicy.policy.model_routes).some((route) => route.provider_id === BRIDGE_OFFICIAL_ROUTE_ID)
+    ? 'passthrough' as const
+    : 'gateway' as const;
+  const policy = applyOfficialModelPassthrough(buildBridgeRoutingPolicy({
     route_index: build.route_index,
     catalog_generation: build.catalog.generation,
     default_provider_id: defaultProvider,
     changed_at: nowIso(options)
-  });
+  }), { mode: officialModelsMode, changedAt: nowIso(options) });
   let settings: Awaited<ReturnType<typeof resolveDesktopBridgeActivationSettings>>;
   let managedBridgeBaseUrl: string;
   try {

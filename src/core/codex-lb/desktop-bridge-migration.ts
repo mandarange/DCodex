@@ -146,8 +146,12 @@ async function migrateDesktopBridgeConfigUnlocked(
     const authPreserved = authSemanticIdentityPreserved(authBefore, authAfter);
     const configSha = sha256(currentConfig);
     const configUnchanged = await fileSha256OrMissing(configPath) === configSha;
-    const authBytesUnchanged = authBefore.sha256 === authAfter.sha256;
-    if (!authPreserved || !configUnchanged || !authBytesUnchanged) {
+    // Auth BYTES moving under a no-op is a concurrent token refresh, not a
+    // migration effect — this transaction wrote nothing. With official identity
+    // passthrough tokens rotate routinely mid-sync, and blocking on the byte
+    // change was the intermittent catalog.sync failure the doctor retried
+    // around. Only an identity change still blocks.
+    if (!authPreserved || !configUnchanged) {
       return {
         ...baseResult,
         ok: false,
@@ -157,8 +161,7 @@ async function migrateDesktopBridgeConfigUnlocked(
         auth_semantic_identity_preserved: authPreserved,
         blockers: [
           ...(!configUnchanged ? ['desktop_bridge_config_changed_during_noop'] : []),
-          ...(!authPreserved ? ['desktop_oauth_identity_changed'] : []),
-          ...(authPreserved && !authBytesUnchanged ? ['desktop_auth_changed_during_noop'] : [])
+          ...(!authPreserved ? ['desktop_oauth_identity_changed'] : [])
         ]
       };
     }

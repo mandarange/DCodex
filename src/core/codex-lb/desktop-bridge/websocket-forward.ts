@@ -3,10 +3,11 @@ import net from 'node:net';
 import tls from 'node:tls';
 import type { IncomingMessage, OutgoingHttpHeaders } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { buildProviderWebSocketHeaders } from './header-policy.js';
+import { BRIDGE_OFFICIAL_ROUTE_ID } from '../bridge-contracts.js';
+import { buildOfficialPassthroughWebSocketHeaders, buildProviderWebSocketHeaders } from './header-policy.js';
 import { createDesktopBridgeRejectionLogger } from './rejection-log.js';
 import { rewriteLocationHeader } from './location-rewrite.js';
-import { resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader, canonicalSessionId } from './security.js';
+import { desktopBridgeOfficialPassthroughEnabled, resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader, canonicalSessionId } from './security.js';
 import { desktopBridgeListenOrigin } from './state.js';
 import {
   DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL,
@@ -78,7 +79,7 @@ function websocketPinnedModel(threadId: string | null, config: PreparedDesktopBr
 }
 
 export async function prepareDesktopBridgeWebSocketRequest(req: IncomingMessage, config: PreparedDesktopBridgeConfig): Promise<{
-  route: DesktopBridgeRouteContext; credential: DesktopBridgeResolvedCredential; provider: PreparedDesktopBridgeProvider;
+  route: DesktopBridgeRouteContext; credential: DesktopBridgeResolvedCredential | null; provider: PreparedDesktopBridgeProvider | null;
 }> {
   const sessionIdentity = resolveCodexSessionIdentity(req.headers);
   // A WebSocket upgrade carries no request body and no `x-sks-model` (that
@@ -91,11 +92,13 @@ export async function prepareDesktopBridgeWebSocketRequest(req: IncomingMessage,
   // this thread, which is exactly the routing decision the upgrade lacks.
   const pinnedModel = websocketPinnedModel(sessionIdentity.thread_id, config);
   const publicModel = singleBridgeHeader(req.headers, 'x-sks-model') || pinnedModel || '';
-  if (!publicModel) {
+  if (!publicModel && !(desktopBridgeOfficialPassthroughEnabled(config) && config.officialRemote)) {
     // Nothing has bound this thread yet, so the bridge genuinely cannot route
     // the upgrade. That is a permanent property of this request, not a flaky
     // upstream, and saying so is what lets the client fall back to HTTP at once
-    // instead of burning its reconnect budget.
+    // instead of burning its reconnect budget. With official passthrough
+    // configured this case no longer exists: an unpinned upgrade rides through
+    // to the official upstream with the client's own identity.
     throw new DesktopBridgeError('bridge_websocket_route_unresolvable');
   }
   const route = await resolveAndBindDesktopBridgeRouteContext({
@@ -104,6 +107,7 @@ export async function prepareDesktopBridgeWebSocketRequest(req: IncomingMessage,
     pathname: new URL(req.url || '/', 'http://bridge.invalid').pathname,
     transport: 'websocket', headers: req.headers,
   }, config);
+  if (route.provider_id === BRIDGE_OFFICIAL_ROUTE_ID) return { route, provider: null, credential: null };
   const provider = config.providers[route.provider_id];
   if (!provider) throw new DesktopBridgeError('bridge_provider_route_unavailable');
   const credential = await config.resolveProviderCredential(route.provider_id, provider.credential_generation);
@@ -192,11 +196,18 @@ export async function forwardWebSocket(
     writeUpgradeFailure(client, error, req);
     return;
   }
-  const { provider, credential } = prepared;
-  const target = resolveDesktopBridgeTarget(req.url, provider.remote);
-  const upstream = provider.remote.secure
-    ? tls.connect({ host: provider.remote.address, port: provider.remote.port, ...(provider.remote.tlsServername ? { servername: provider.remote.tlsServername } : {}) })
-    : net.connect({ host: provider.remote.address, port: provider.remote.port, family: provider.remote.family });
+  const { provider, credential, route } = prepared;
+  const official = route.provider_id === BRIDGE_OFFICIAL_ROUTE_ID;
+  const remote = official ? config.officialRemote : provider?.remote;
+  if (!remote) {
+    writeUpgradeFailure(client, new DesktopBridgeError(official ? 'bridge_official_passthrough_unavailable' : 'bridge_provider_route_unavailable'), req);
+    return;
+  }
+  const upstreamBaseUrl = official ? remote.baseUrl : provider!.base_url;
+  const target = resolveDesktopBridgeTarget(req.url, remote);
+  const upstream = remote.secure
+    ? tls.connect({ host: remote.address, port: remote.port, ...(remote.tlsServername ? { servername: remote.tlsServername } : {}) })
+    : net.connect({ host: remote.address, port: remote.port, family: remote.family });
   const key = String(req.headers['sec-websocket-key'] || '');
   const requestedProtocol = String(req.headers['sec-websocket-protocol'] || '').split(',')[0]?.trim() || null;
   let connected = false; let response = Buffer.alloc(0);
@@ -219,7 +230,9 @@ export async function forwardWebSocket(
     upstream.setKeepAlive(true, 30_000);
     const clientSocket = client as Partial<net.Socket>;
     if (typeof clientSocket.setKeepAlive === 'function') clientSocket.setKeepAlive(true, 30_000);
-    const headers = buildProviderWebSocketHeaders(req.headers, { providerId: provider.provider_id, authTransport: provider.auth_transport, credential }, target.host);
+    const headers = official
+      ? buildOfficialPassthroughWebSocketHeaders(req.headers, target.host)
+      : buildProviderWebSocketHeaders(req.headers, { providerId: provider!.provider_id, authTransport: provider!.auth_transport, credential: credential! }, target.host);
     upstream.write([`${req.method || 'GET'} ${target.pathname}${target.search} HTTP/1.1`, ...serializeHeaders(headers), '', ''].join('\r\n'));
     if (head.length) upstream.write(head);
     const onData = (chunk: Buffer): void => {
@@ -230,14 +243,14 @@ export async function forwardWebSocket(
       const raw = response.subarray(0, boundary); const remaining = response.subarray(boundary + 4);
       try {
         validateUpgrade(raw, key, requestedProtocol);
-        client.write(rewriteUpgradeResponseHead(raw, provider.base_url, authenticatedLocalBaseUrl));
+        client.write(rewriteUpgradeResponseHead(raw, upstreamBaseUrl, authenticatedLocalBaseUrl));
         if (remaining.length) client.write(remaining);
       } catch (error) { upstream.destroy(error instanceof Error ? error : undefined); return; }
       client.pipe(upstream); upstream.pipe(client);
     };
     upstream.on('data', onData);
   };
-  if (provider.remote.secure) upstream.once('secureConnect', onConnected); else upstream.once('connect', onConnected);
+  if (remote.secure) upstream.once('secureConnect', onConnected); else upstream.once('connect', onConnected);
   upstream.once('error', (error) => fail(error)); upstream.once('close', () => { clearTimeout(timer); if (!client.destroyed) client.end(); });
   client.once('error', () => upstream.destroy()); client.once('close', () => upstream.destroy());
 }

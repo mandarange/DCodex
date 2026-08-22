@@ -96,6 +96,22 @@ export function resolveBridgeRequestRoute(
   const indexed = options.route_index.routes[model];
   const policyTarget = policy.model_routes[model];
   if (!indexed || !policyTarget) return blocked(base, 'catalog_model_route_missing');
+  if (policyTarget.provider_id === 'openai') {
+    // Official identity passthrough: the policy deliberately diverges from the
+    // provider route index for this model. There is no provider endpoint, no
+    // credential, and no pin — the bridge forwards the client's own identity.
+    return {
+      ...base,
+      ok: true,
+      route: policyTarget,
+      endpoint_url: null,
+      source: 'route_index',
+      proposed_session_pin: null,
+      blockers: [],
+      recovery_action: null
+    };
+  }
+  if (indexed.provider_id === 'openai') return blocked(base, 'catalog_route_provider_unknown');
   if (!sameTarget(indexed, policyTarget)) return blocked(base, 'bridge_route_policy_route_index_mismatch');
   // Stale bookkeeping is not the same as a thread losing its provider.
   // `policy_generation` digests the entire route map, so any unrelated catalog
