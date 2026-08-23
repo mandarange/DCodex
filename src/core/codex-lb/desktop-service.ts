@@ -501,7 +501,10 @@ async function autoApplyOfficialModelsAtServe(
   options: DesktopBridgeServiceOptions,
 ): Promise<void> {
   const settings = runtime.settings;
-  const mode = await resolveEffectiveOfficialModelsMode(settings.official_passthrough, { home });
+  const mode = await resolveEffectiveOfficialModelsMode(settings.official_passthrough, {
+    home,
+    codexLbRegistered: desktopBridgeCodexLbRegistered(settings.provider_registry.providers),
+  });
   if (mode !== 'passthrough') return;
   const flipped = applyOfficialModelPassthrough(settings.route_policy, { mode: 'passthrough' });
   if (flipped.policy_generation === settings.route_policy.policy_generation) return;
@@ -604,23 +607,35 @@ function validateOfficialPassthroughSettings(value: unknown): { enabled: boolean
 
 /**
  * The official-models routing mode that should actually be applied right now.
- * Explicit operator choices win unconditionally; 'auto' follows the host's
- * Codex auth mode, so `sks update` (which restarts the bridge) converges a
- * ChatGPT-OAuth machine onto its own identity without a manual flip — and a
- * machine living on gateway/API-key auth stays on the gateway.
+ * Explicit operator choices win unconditionally. 'auto' follows the operator's
+ * ACTIONS: registering and enabling the codex-lb provider IS choosing the
+ * gateway, so selected models keep running through it until the operator
+ * un-registers ("인증을 풀면") — at which point a ChatGPT-OAuth host converges
+ * onto its own official identity on the next bridge start or sync, and a
+ * host with no ChatGPT login stays on the gateway (passthrough would 401).
  */
 export async function resolveEffectiveOfficialModelsMode(
   official: { enabled: boolean; models?: 'auto' | 'passthrough' | 'gateway' } | null | undefined,
-  input: { home: string; authPath?: string },
+  input: { home: string; authPath?: string; codexLbRegistered?: boolean },
 ): Promise<'passthrough' | 'gateway'> {
   if (official && official.enabled === false) return 'gateway';
   const models = official?.models || 'auto';
   if (models === 'passthrough' || models === 'gateway') return models;
+  if (input.codexLbRegistered === true) return 'gateway';
   const snapshot = await captureCodexAuthSnapshot({
     home: input.home,
     ...(input.authPath ? { authPath: input.authPath } : {}),
   }).catch(() => null);
   return snapshot && (snapshot.mode === 'chatgpt_oauth' || snapshot.mode === 'mixed') ? 'passthrough' : 'gateway';
+}
+
+/** True when the codex-lb provider is registered, enabled, and credentialed —
+ *  the operator action `auto` treats as choosing the gateway. */
+export function desktopBridgeCodexLbRegistered(
+  providers: { 'codex-lb'?: { enabled?: boolean; credential_state?: string } } | null | undefined,
+): boolean {
+  const profile = providers?.['codex-lb'];
+  return profile?.enabled === true && profile?.credential_state === 'ready';
 }
 
 function validateProviderSessionPins(value: unknown): ProviderSessionPin[] {

@@ -7,6 +7,18 @@
 
 ## [9.2.1] - 2026-08-23
 
+### Changed
+
+- `auto` official-models routing now follows the operator's ACTIONS, not just
+  the host login. Registering and enabling the codex-lb provider IS choosing
+  the gateway: selected models keep running through it — even on a
+  ChatGPT-OAuth host — until the provider is un-registered, at which point the
+  next bridge start or catalog sync converges bare official models back onto
+  the operator's own identity. OpenRouter model picks were already sticky per
+  model route and stay that way. Explicit
+  `sks bridge route official-models <passthrough|gateway>` pins still beat
+  registration in both directions.
+
 ### Fixed
 
 - A pinned official-models choice actually persists now. Two settings writers

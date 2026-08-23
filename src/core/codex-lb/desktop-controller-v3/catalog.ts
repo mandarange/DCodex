@@ -147,7 +147,13 @@ export async function syncCatalogInternal(
   ).catch(() => null);
   const officialModelsMode = await resolveEffectiveOfficialModelsMode(
     persistedSettings?.official_passthrough,
-    { home: paths.home, authPath: paths.authPath },
+    {
+      home: paths.home,
+      authPath: paths.authPath,
+      // Registering + enabling codex-lb IS the operator choosing the gateway;
+      // un-registering converges a ChatGPT-OAuth host back onto its identity.
+      codexLbRegistered: registry.profiles['codex-lb'].enabled && registry.profiles['codex-lb'].state === 'ready',
+    },
   );
   const policy = applyOfficialModelPassthrough(buildBridgeRoutingPolicy({
     route_index: build.route_index,

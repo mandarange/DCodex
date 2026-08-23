@@ -101,6 +101,14 @@ test('official-models mode defaults to auto and explicit choices are durable', a
     })}\n`, { mode: 0o600 });
     assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: true, models: 'auto' }, { home }), 'passthrough');
     assert.equal(await resolveEffectiveOfficialModelsMode(null, { home }), 'passthrough');
+    // Registering + enabling codex-lb IS choosing the gateway: auto keeps the
+    // registered provider serving even on a ChatGPT-OAuth host, and
+    // un-registering ("인증을 풀면") converges back onto the official identity.
+    assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: true, models: 'auto' }, { home, codexLbRegistered: true }), 'gateway');
+    assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: true, models: 'auto' }, { home, codexLbRegistered: false }), 'passthrough');
+    // An explicit pin still beats registration in both directions.
+    assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: true, models: 'passthrough' }, { home, codexLbRegistered: true }), 'passthrough');
+    assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: true, models: 'gateway' }, { home, codexLbRegistered: false }), 'gateway');
     // API-key auth resolves auto to the gateway (passthrough would 401).
     await fsp.writeFile(path.join(codexHome, 'auth.json'), `${JSON.stringify({
       auth_mode: 'apikey', OPENAI_API_KEY: 'sk-test-not-a-real-key',

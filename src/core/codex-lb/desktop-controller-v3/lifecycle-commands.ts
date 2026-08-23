@@ -133,7 +133,10 @@ export async function setOfficialModelsMode(
     models: mode,
   };
   const effective = mode === 'auto'
-    ? await resolveEffectiveOfficialModelsMode(nextOfficial, { home: core.paths.home })
+    ? await resolveEffectiveOfficialModelsMode(nextOfficial, {
+      home: core.paths.home,
+      codexLbRegistered: core.registry.profiles['codex-lb'].enabled && core.registry.profiles['codex-lb'].state === 'ready',
+    })
     : mode;
   const policy = effective === 'passthrough'
     ? applyOfficialModelPassthrough(core.policy, { mode: 'passthrough', changedAt: nowIso(options) })

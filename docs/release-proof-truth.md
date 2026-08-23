@@ -24,6 +24,7 @@ New 9.2.1/9.2.0 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
+| auto follows the operator actions: codex-lb registered+enabled → gateway; un-registered on a ChatGPT-OAuth host → passthrough; explicit pins beat registration both ways | passed-hermetic | resolver unit tests pin registered/unregistered/pinned arms across real auth.json shapes; both auto-resolution sites (bridge start, catalog sync) pass the live registry state |
 | A pinned official-models choice survives every settings writer | passed-hermetic | defaultDesktopBridgeServiceSettings carries the input field through validation and serializedSettings round-trips it; regression test pins a gateway choice through the sync serializer; machines without a pin keep the auto default |
 
 9.2.0 claims:
