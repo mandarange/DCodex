@@ -37,7 +37,7 @@ export type DesktopBridgeControllerRequestV3 =
   | { operation: 'models.select'; public_ids: readonly string[] }
   | { operation: 'route.list' }
   | { operation: 'route.set-default'; provider_id: BridgeProviderId }
-  | { operation: 'route.official-models'; mode: 'passthrough' | 'gateway' }
+  | { operation: 'route.official-models'; mode: 'passthrough' | 'gateway' | 'auto' }
   | { operation: 'route.explain'; model: string }
   | { operation: 'unmanage'; confirmed: true }
   | { operation: 'rollback'; receipt_id: string; confirmed: true };

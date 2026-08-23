@@ -5,12 +5,16 @@ import { exists, readText } from '../../fsx.js';
 import type { BridgeProviderId, DesktopBridgeCommandResult, DesktopCapabilityReportV3 } from '../bridge-contracts.js';
 import {
   bootstrapExistingDesktopBridgeService,
+  desktopBridgeServicePaths,
   desktopBridgeServiceStatus,
   installAndStartDesktopBridgeService,
+  readDesktopBridgeServiceSettings,
+  resolveEffectiveOfficialModelsMode,
   stopDesktopBridgeService,
   type DesktopBridgeServiceStatus
 } from '../desktop-service.js';
 import { rollbackDesktopBridgeUnificationReceipt } from '../migration-receipt.js';
+import { DESKTOP_BRIDGE_OFFICIAL_UPSTREAM_BASE_URL } from '../desktop-bridge/index.js';
 import { resolveBridgeRequestRoute } from '../request-route-resolver.js';
 import { applyOfficialModelPassthrough, buildBridgeRoutingPolicy, setBridgeRoutingDefault, writeBridgeRoutingPolicy } from '../provider-route-policy.js';
 import { syncCatalogInternal } from './catalog.js';
@@ -105,22 +109,34 @@ export async function setDefaultProvider(
 }
 
 /**
- * Flip bare official-family model routes between the gateway and official
- * identity passthrough. `passthrough` sends those turns to the official
- * upstream with the operator's own ChatGPT identity — the identity Codex Apps
- * connector links, conversation affinity, and plan quotas bind to — while
- * provider-prefixed picks keep their gateway route. `gateway` rebuilds every
- * route from the active catalog's route index, restoring the legacy behavior.
- * The mode survives catalog syncs (catalog.ts re-infers it from the policy).
+ * Set the operator's DURABLE official-models routing choice and apply it now.
+ * `passthrough` sends bare official-family turns to the official upstream with
+ * the operator's own ChatGPT identity — the identity Codex Apps connector
+ * links, conversation affinity, and plan quotas bind to; provider-prefixed
+ * picks keep their gateway route. `gateway` rebuilds every route from the
+ * active catalog's route index and PINS that choice: no update, sync, or
+ * bridge restart will ever flip a deliberate gateway operator. `auto` (the
+ * default) follows the host auth mode and is re-resolved on every bridge
+ * start and catalog sync, so `sks update` converges without a manual flip.
  */
 export async function setOfficialModelsMode(
-  mode: 'passthrough' | 'gateway',
+  mode: 'passthrough' | 'gateway' | 'auto',
   options: DesktopBridgeControllerV3Options
 ): Promise<DesktopBridgeCommandResult> {
   const core = await loadCore(options);
   if (!core.policy || !core.activeCatalog.ok) throw new Error('bridge_route_policy_missing');
-  const policy = mode === 'passthrough'
-    ? applyOfficialModelPassthrough(core.policy, { mode, changedAt: nowIso(options) })
+  const settingsPath = options.settingsPath || desktopBridgeServicePaths(core.paths.home).settings_path;
+  const persisted = await readDesktopBridgeServiceSettings(settingsPath).catch(() => null);
+  const nextOfficial = {
+    enabled: persisted?.official_passthrough?.enabled ?? true,
+    base_url: persisted?.official_passthrough?.base_url || DESKTOP_BRIDGE_OFFICIAL_UPSTREAM_BASE_URL,
+    models: mode,
+  };
+  const effective = mode === 'auto'
+    ? await resolveEffectiveOfficialModelsMode(nextOfficial, { home: core.paths.home })
+    : mode;
+  const policy = effective === 'passthrough'
+    ? applyOfficialModelPassthrough(core.policy, { mode: 'passthrough', changedAt: nowIso(options) })
     : buildBridgeRoutingPolicy({
       route_index: core.activeCatalog.route_index,
       catalog_generation: core.policy.catalog_generation,
@@ -128,7 +144,10 @@ export async function setOfficialModelsMode(
       changed_at: nowIso(options)
     });
   await writeBridgeRoutingPolicy(core.paths.routePolicyPath, policy, core.activeCatalog.route_index);
-  await persistRuntimeSettings({ ...core, policy, policyBlockers: [] }, options);
+  await persistRuntimeSettings({ ...core, policy, policyBlockers: [] }, {
+    ...options,
+    settings: { ...(options.settings || {}), official_passthrough: nextOfficial },
+  });
   const status = await desktopBridgeStatusV3(options);
   const officialModels = Object.entries(policy.model_routes)
     .filter(([, route]) => route.provider_id === 'openai')
@@ -137,7 +156,7 @@ export async function setOfficialModelsMode(
     'route.official-models',
     true,
     status,
-    { mode, official_models: officialModels, policy_generation: policy.policy_generation },
+    { mode, effective_mode: effective, official_models: officialModels, policy_generation: policy.policy_generation },
     [],
     options
   );

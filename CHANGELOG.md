@@ -28,17 +28,24 @@
   untouched: an explicitly routed model still gets the provider credential,
   and the two identities can never cross (asserted both ways, tested both
   ways).
-- `sks bridge route official-models <passthrough|gateway>`. `passthrough`
-  rewrites BARE official-family model routes (`gpt-*`, `o*`, `codex-mini*`) to
-  the new `openai` identity route, so ordinary Desktop turns run as the
-  operator's own ChatGPT account; provider-prefixed picks
-  (`codex-lb:gpt-5.6-sol`) and SKS-internal models (`codex-auto-review`) keep
-  their gateway route. `gateway` rebuilds every route from the catalog index.
-  The choice survives catalog syncs and doctor repairs (the sync re-infers it
-  from the policy instead of resetting it), threads pinned to the gateway
-  before a flip are absorbed into passthrough instead of dying with
-  `session_pin_route_unavailable`, and applying restarts the bridge
-  automatically.
+- Official-models routing follows the operator's auth automatically, and an
+  explicit choice is durable. The default mode is `auto`: on every bridge
+  start (which `sks update` triggers via the restage stage and skew
+  self-convergence) and every catalog sync, a host signed in with ChatGPT
+  OAuth gets its BARE official-family model routes (`gpt-*`, `o*`,
+  `codex-mini*`) rewritten to the `openai` identity route — no manual command
+  — while a host on gateway/API-key auth stays on the gateway (passthrough
+  there would just 401). `sks bridge route official-models
+  <passthrough|gateway|auto>` pins the choice: a deliberate `gateway`
+  operator is NEVER flipped by an update, sync, or restart, and `passthrough`
+  holds even if auth probing fails. Provider-prefixed picks
+  (`codex-lb:gpt-5.6-sol`) and SKS-internal models (`codex-auto-review`)
+  always keep their gateway route, threads pinned to the gateway before a
+  flip are absorbed into passthrough instead of dying with
+  `session_pin_route_unavailable`, and the applied flip is persisted to both
+  the settings and the route-policy file before serving so session pins and
+  status generations stay coherent (log event
+  `official_models_auto_applied`).
 
 ### Fixed
 

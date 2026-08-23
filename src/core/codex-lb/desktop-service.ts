@@ -12,6 +12,8 @@ import {
   prepareRetiredDesktopBridgeRuntime,
 } from './desktop-bridge-migration/retired-runtime-cleanup.js';
 import { canonicalizeBridgeModelId, normalizeBridgeUpstreamModelId, sha256Stable } from './route-index.js';
+import { captureCodexAuthSnapshot } from './desktop-auth-invariant.js';
+import { applyOfficialModelPassthrough, bridgeRoutePolicyPath, writeBridgeRoutingPolicy } from './provider-route-policy.js';
 import { desktopBridgeRuntimeVersion, desktopBridgeRuntimeVersionStale } from './desktop-bridge/state.js';
 import { PACKAGE_VERSION } from '../version.js';
 import type { BridgeProviderId, BridgeRoutingPolicy, ProviderSessionPin } from './bridge-contracts.js';
@@ -46,7 +48,7 @@ export interface DesktopBridgeServiceSettings {
   allowed_origins: string[];
   connect_timeout_ms: number;
   idle_timeout_ms: number;
-  official_passthrough: { enabled: boolean; base_url: string };
+  official_passthrough: { enabled: boolean; base_url: string; models: 'auto' | 'passthrough' | 'gateway' };
 }
 
 export interface DesktopBridgeServicePaths { settings_path: string; state_path: string; client_capability_path: string; launch_agent_path: string; stdout_log_path: string; stderr_log_path: string; }
@@ -481,10 +483,39 @@ async function readSkewRestartMarker(file: string): Promise<SkewRestartMarker | 
   } catch { return null; }
 }
 
+/**
+ * Applies the 'auto' official-models resolution at bridge startup. `sks update`
+ * restarts the bridge (restage stage or skew self-convergence), so a
+ * ChatGPT-OAuth machine converges onto its own identity on the next start
+ * without any manual command — while an explicit `gateway` choice, a disabled
+ * passthrough, or gateway/API-key host auth leaves the policy untouched.
+ * The flipped policy is persisted (settings + route-policy file) before
+ * serving so session-pin persistence and status generations stay coherent.
+ */
+async function autoApplyOfficialModelsAtServe(
+  runtime: Awaited<ReturnType<typeof resolveDesktopBridgeRuntimeConfig>>,
+  home: string,
+  options: DesktopBridgeServiceOptions,
+): Promise<void> {
+  const settings = runtime.settings;
+  const mode = await resolveEffectiveOfficialModelsMode(settings.official_passthrough, { home });
+  if (mode !== 'passthrough') return;
+  const flipped = applyOfficialModelPassthrough(settings.route_policy, { mode: 'passthrough' });
+  if (flipped.policy_generation === settings.route_policy.policy_generation) return;
+  const nextSettings = { ...settings, route_policy: flipped };
+  await writeDesktopBridgeServiceSettings(options.settingsPath || desktopBridgeServicePaths(home).settings_path, nextSettings);
+  await writeBridgeRoutingPolicy(bridgeRoutePolicyPath(path.join(path.resolve(home), '.codex')), flipped).catch(() => undefined);
+  settings.route_policy = flipped;
+  runtime.config.routePolicy = flipped;
+  process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.official_models_auto_applied', at: new Date().toISOString(), sks_version: PACKAGE_VERSION, mode: 'passthrough', policy_generation: flipped.policy_generation, secret_fields_redacted: true })}\n`);
+}
+
 export async function serveDesktopBridge(options: DesktopBridgeServiceOptions = {}): Promise<{ schema: 'sks.desktop-bridge-serve.v1'; ok: boolean; status: 'stopped' | 'failed'; state: DesktopBridgePublicState | null; blocker?: string }> {
   let handle: DesktopBridgeHandle | null = null;
   try {
     const runtime = await resolveDesktopBridgeRuntimeConfig(options);
+    const serveHome = options.home || options.env?.HOME || process.env.HOME || os.homedir();
+    await autoApplyOfficialModelsAtServe(runtime, serveHome, options);
     const supervised = desktopBridgeIsSupervised();
     const skewMarkerPath = path.join(path.dirname(runtime.paths.state_path), 'desktop-bridge-skew-restart.json');
     handle = await startPreparedDesktopBridge(await preflightDesktopBridge(runtime.config), {
@@ -547,17 +578,46 @@ function validateDesktopBridgeServiceSettings(value: unknown): DesktopBridgeServ
  * official upstream instead of failing closed. Operators can pin a different
  * base URL (tests use loopback) or disable it entirely.
  */
-function validateOfficialPassthroughSettings(value: unknown): { enabled: boolean; base_url: string } {
+function validateOfficialPassthroughSettings(value: unknown): { enabled: boolean; base_url: string; models: 'auto' | 'passthrough' | 'gateway' } {
   if (value === undefined || value === null) {
-    return { enabled: true, base_url: DESKTOP_BRIDGE_OFFICIAL_UPSTREAM_BASE_URL };
+    return { enabled: true, base_url: DESKTOP_BRIDGE_OFFICIAL_UPSTREAM_BASE_URL, models: 'auto' };
   }
   if (typeof value !== 'object' || Array.isArray(value)) throw new Error('desktop_bridge_settings_official_passthrough_invalid');
   const row = value as Record<string, unknown>;
-  if (Object.keys(row).some((key) => key !== 'enabled' && key !== 'base_url')) throw new Error('desktop_bridge_settings_official_passthrough_invalid');
+  if (Object.keys(row).some((key) => key !== 'enabled' && key !== 'base_url' && key !== 'models')) throw new Error('desktop_bridge_settings_official_passthrough_invalid');
   const enabled = row.enabled === true;
   const baseUrl = typeof row.base_url === 'string' && row.base_url.trim() ? row.base_url.trim() : DESKTOP_BRIDGE_OFFICIAL_UPSTREAM_BASE_URL;
   try { new URL(baseUrl); } catch { throw new Error('desktop_bridge_settings_official_passthrough_invalid'); }
-  return { enabled, base_url: baseUrl };
+  // `models` is the operator's OFFICIAL-MODELS routing intent. An explicit
+  // choice is durable — a gateway operator's pick must never be flipped by an
+  // update — while 'auto' (the default) follows the host auth mode at
+  // apply-time: ChatGPT OAuth → identity passthrough, anything else → gateway.
+  const models = row.models === 'passthrough' || row.models === 'gateway' || row.models === 'auto'
+    ? row.models
+    : row.models === undefined ? 'auto' as const : null;
+  if (models === null) throw new Error('desktop_bridge_settings_official_passthrough_invalid');
+  return { enabled, base_url: baseUrl, models };
+}
+
+/**
+ * The official-models routing mode that should actually be applied right now.
+ * Explicit operator choices win unconditionally; 'auto' follows the host's
+ * Codex auth mode, so `sks update` (which restarts the bridge) converges a
+ * ChatGPT-OAuth machine onto its own identity without a manual flip — and a
+ * machine living on gateway/API-key auth stays on the gateway.
+ */
+export async function resolveEffectiveOfficialModelsMode(
+  official: { enabled: boolean; models?: 'auto' | 'passthrough' | 'gateway' } | null | undefined,
+  input: { home: string; authPath?: string },
+): Promise<'passthrough' | 'gateway'> {
+  if (official && official.enabled === false) return 'gateway';
+  const models = official?.models || 'auto';
+  if (models === 'passthrough' || models === 'gateway') return models;
+  const snapshot = await captureCodexAuthSnapshot({
+    home: input.home,
+    ...(input.authPath ? { authPath: input.authPath } : {}),
+  }).catch(() => null);
+  return snapshot && (snapshot.mode === 'chatgpt_oauth' || snapshot.mode === 'mixed') ? 'passthrough' : 'gateway';
 }
 
 function validateProviderSessionPins(value: unknown): ProviderSessionPin[] {

@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
+import fsp from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import type { BridgeRoutingPolicy } from '../bridge-contracts.js';
 import { applyOfficialModelPassthrough, OFFICIAL_MODEL_ID_PATTERN, validateBridgeRoutingPolicy } from '../provider-route-policy.js';
-import { desktopBridgeSkewRestartSuppressed, DESKTOP_BRIDGE_SKEW_RESTART_COOLDOWN_MS } from '../desktop-service.js';
+import {
+  defaultDesktopBridgeServiceSettings,
+  desktopBridgeSkewRestartSuppressed,
+  DESKTOP_BRIDGE_SKEW_RESTART_COOLDOWN_MS,
+  resolveEffectiveOfficialModelsMode,
+} from '../desktop-service.js';
 import { buildOfficialPassthroughHeaders, buildOfficialPassthroughWebSocketHeaders } from '../desktop-bridge/header-policy.js';
 import { sha256Stable } from '../route-index.js';
 
@@ -65,6 +73,41 @@ test('a supervised skew restart is suppressed only for the exact recently-restar
   // Cooldown expiry re-allows one attempt.
   assert.equal(desktopBridgeSkewRestartSuppressed(marker, '9.1.1', '9.2.0', now + DESKTOP_BRIDGE_SKEW_RESTART_COOLDOWN_MS), false);
   assert.equal(desktopBridgeSkewRestartSuppressed(null, '9.1.1', '9.2.0', now), false);
+});
+
+test('official-models mode defaults to auto and explicit choices are durable', async () => {
+  // The settings default: no operator choice yet.
+  assert.equal(defaultDesktopBridgeServiceSettings().official_passthrough.models, 'auto');
+
+  const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-official-mode-'));
+  try {
+    const codexHome = path.join(home, '.codex');
+    await fsp.mkdir(codexHome, { recursive: true });
+
+    // Explicit choices win regardless of host auth — a gateway operator's pick
+    // is never flipped by an update, and a passthrough pick needs no auth probe.
+    assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: true, models: 'gateway' }, { home }), 'gateway');
+    assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: true, models: 'passthrough' }, { home }), 'passthrough');
+    // Disabled passthrough can never serve official traffic.
+    assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: false, models: 'passthrough' }, { home }), 'gateway');
+
+    // auto with no auth.json (gateway/API-key era machine) stays on the gateway.
+    assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: true, models: 'auto' }, { home }), 'gateway');
+    // auto with ChatGPT OAuth follows the operator identity.
+    await fsp.writeFile(path.join(codexHome, 'auth.json'), `${JSON.stringify({
+      auth_mode: 'chatgpt',
+      tokens: { access_token: 'a', refresh_token: 'r', id_token: 'i', account_id: 'acct' },
+    })}\n`, { mode: 0o600 });
+    assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: true, models: 'auto' }, { home }), 'passthrough');
+    assert.equal(await resolveEffectiveOfficialModelsMode(null, { home }), 'passthrough');
+    // API-key auth resolves auto to the gateway (passthrough would 401).
+    await fsp.writeFile(path.join(codexHome, 'auth.json'), `${JSON.stringify({
+      auth_mode: 'apikey', OPENAI_API_KEY: 'sk-test-not-a-real-key',
+    })}\n`, { mode: 0o600 });
+    assert.equal(await resolveEffectiveOfficialModelsMode({ enabled: true, models: 'auto' }, { home }), 'gateway');
+  } finally {
+    await fsp.rm(home, { recursive: true, force: true });
+  }
 });
 
 test('official passthrough headers keep the client identity and never a bridge credential', () => {

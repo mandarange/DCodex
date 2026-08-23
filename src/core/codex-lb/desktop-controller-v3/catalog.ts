@@ -24,7 +24,9 @@ import {
   bootstrapExistingDesktopBridgeService,
   desktopBridgeServicePaths,
   desktopBridgeServiceStatus,
-  resolveDesktopBridgeActivationSettings
+  readDesktopBridgeServiceSettings,
+  resolveDesktopBridgeActivationSettings,
+  resolveEffectiveOfficialModelsMode
 } from '../desktop-service.js';
 import { inspectHistoricalDesktopBridgeIntent, migrateDesktopBridgeConfig } from '../desktop-bridge-migration.js';
 import { rollbackDesktopBridgeUnificationReceipt } from '../migration-receipt.js';
@@ -41,7 +43,6 @@ import {
   type BridgeProviderRegistry
 } from '../provider-registry.js';
 import { applyOfficialModelPassthrough, buildBridgeRoutingPolicy, readBridgeRoutingPolicy } from '../provider-route-policy.js';
-import { BRIDGE_OFFICIAL_ROUTE_ID } from '../bridge-contracts.js';
 import { sha256Stable } from '../route-index.js';
 import {
   bridgeBaseUrl,
@@ -135,15 +136,19 @@ export async function syncCatalogInternal(
     ? previousDefault
     : historicalDefault && readyProviders.includes(historicalDefault) ? historicalDefault
       : readyProviders.length === 1 ? readyProviders[0] || null : null;
-  // The official-models mode survives every sync by inference from the prior
-  // policy: once the operator flipped bare official ids to identity
-  // passthrough, a catalog refresh must not silently return them to the
-  // gateway (that reversal is exactly the identity swap that broke Codex Apps
-  // connector links and conversation affinity).
-  const officialModelsMode = priorPolicy.policy
-    && Object.values(priorPolicy.policy.model_routes).some((route) => route.provider_id === BRIDGE_OFFICIAL_ROUTE_ID)
-    ? 'passthrough' as const
-    : 'gateway' as const;
+  // The official-models mode is resolved from the operator's durable choice
+  // (settings.official_passthrough.models), with 'auto' following the host
+  // auth mode — so a catalog refresh can neither silently return a
+  // ChatGPT-OAuth operator's models to the gateway identity (the swap that
+  // broke Codex Apps connector links and conversation affinity) nor flip a
+  // deliberate gateway operator onto passthrough.
+  const persistedSettings = await readDesktopBridgeServiceSettings(
+    desktopBridgeServicePaths(paths.home).settings_path,
+  ).catch(() => null);
+  const officialModelsMode = await resolveEffectiveOfficialModelsMode(
+    persistedSettings?.official_passthrough,
+    { home: paths.home, authPath: paths.authPath },
+  );
   const policy = applyOfficialModelPassthrough(buildBridgeRoutingPolicy({
     route_index: build.route_index,
     catalog_generation: build.catalog.generation,
