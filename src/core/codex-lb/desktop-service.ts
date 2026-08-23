@@ -163,7 +163,10 @@ export function defaultDesktopBridgeServiceSettings(input: Partial<Omit<DesktopB
     schema: DESKTOP_BRIDGE_SETTINGS_SCHEMA, listen_host: input.listen_host || DEFAULT_DESKTOP_BRIDGE_HOST,
     listen_port: input.listen_port ?? DEFAULT_DESKTOP_BRIDGE_PORT, provider_registry: registry, route_policy: policy,
     provider_session_pins: [...(input.provider_session_pins || [])], client_capability_sha256: input.client_capability_sha256 || '0'.repeat(64), allowed_origins: [...(input.allowed_origins || DEFAULT_ALLOWED_ORIGINS)],
-    connect_timeout_ms: input.connect_timeout_ms ?? 10_000, idle_timeout_ms: input.idle_timeout_ms ?? 300_000
+    connect_timeout_ms: input.connect_timeout_ms ?? 10_000, idle_timeout_ms: input.idle_timeout_ms ?? 300_000,
+    // Dropping this here erased the operator's pinned official-models choice on
+    // every settings rebuild; the validator defaults it only when truly absent.
+    ...(input.official_passthrough === undefined ? {} : { official_passthrough: input.official_passthrough })
   });
 }
 

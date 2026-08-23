@@ -4,6 +4,24 @@
 
 
 
+
+## [9.2.1] - 2026-08-23
+
+### Fixed
+
+- A pinned official-models choice actually persists now. Two settings writers
+  enumerated the settings keys and silently dropped `official_passthrough`:
+  `defaultDesktopBridgeServiceSettings` (every settings rebuild, including
+  the very command that sets the pin) and the catalog-sync serializer
+  (`serializedSettings`). The effect was that
+  `sks bridge route official-models gateway` appeared to work but the choice
+  reverted to `auto` on the next rebuild or sync — exactly the durability
+  the setting exists to provide, found by post-publish verification on this
+  machine (the 9.2.0 sync-written settings file lacked the field). Both
+  writers carry the field now, and a regression test round-trips a pinned
+  gateway choice through the serializer. Behavior for machines that never
+  pinned a choice is unchanged (`auto` was re-defaulted on read anyway).
+
 ## [9.2.0] - 2026-08-22
 
 ### Added

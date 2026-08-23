@@ -203,7 +203,10 @@ export function serializedSettings(settings: DesktopBridgeServiceSettings): stri
     client_capability_sha256: settings.client_capability_sha256,
     allowed_origins: settings.allowed_origins,
     connect_timeout_ms: settings.connect_timeout_ms,
-    idle_timeout_ms: settings.idle_timeout_ms
+    idle_timeout_ms: settings.idle_timeout_ms,
+    // Dropping this field here silently erased a pinned official-models
+    // choice on the next catalog sync — the durability the setting exists for.
+    official_passthrough: settings.official_passthrough
   }, null, 2)}\n`;
 }
 

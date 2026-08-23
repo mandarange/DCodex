@@ -1,8 +1,8 @@
-# Release Proof Truth — 9.2.0
+# Release Proof Truth — 9.2.1
 
 ## Current assertion
 
-9.2.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is
+9.2.1 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is 9.2.0 plus one durability fix: the official-models pin (official_passthrough.models) survives settings rebuilds and catalog syncs — two writers dropped the field, found by post-publish verification. 9.2.0 was
 9.1.1 plus the identity-architecture fix behind "auth keeps dropping during
 compaction": official ChatGPT identity passthrough in the Desktop Bridge
 (client credentials forwarded verbatim to the official upstream for everything
@@ -17,10 +17,16 @@ publication, deployment, a credential change, a Git tag, or a push.
 Exact-commit proof can exist only after the candidate is committed and all
 source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 9.1.1 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.2.0 evidence.
+All release artifacts bound to 9.2.0 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 9.2.1 evidence.
 
-New 9.2.0 claims:
+New 9.2.1/9.2.0 claims:
+
+| Claim | Current support | Boundary |
+| --- | --- | --- |
+| A pinned official-models choice survives every settings writer | passed-hermetic | defaultDesktopBridgeServiceSettings carries the input field through validation and serializedSettings round-trips it; regression test pins a gateway choice through the sync serializer; machines without a pin keep the auto default |
+
+9.2.0 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
@@ -37,8 +43,8 @@ New 9.2.0 claims:
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 9.2.0 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.0 after incremental build |
-| The reported 9.2.0 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
+| All checked version authorities report 9.2.1 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.1 after incremental build |
+| The reported 9.2.1 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
 
 ## 9.1.0 assertion (historical)
 

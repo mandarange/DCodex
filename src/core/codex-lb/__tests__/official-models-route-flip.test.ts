@@ -11,6 +11,7 @@ import {
   DESKTOP_BRIDGE_SKEW_RESTART_COOLDOWN_MS,
   resolveEffectiveOfficialModelsMode,
 } from '../desktop-service.js';
+import { serializedSettings } from '../desktop-controller-v3/shared.js';
 import { buildOfficialPassthroughHeaders, buildOfficialPassthroughWebSocketHeaders } from '../desktop-bridge/header-policy.js';
 import { sha256Stable } from '../route-index.js';
 
@@ -108,6 +109,19 @@ test('official-models mode defaults to auto and explicit choices are durable', a
   } finally {
     await fsp.rm(home, { recursive: true, force: true });
   }
+});
+
+test('a pinned official-models choice survives the sync settings serializer', () => {
+  // Field evidence from this machine: the catalog-sync writer (serializedSettings
+  // via migrateDesktopBridgeConfig metadata updates) enumerated settings keys
+  // and silently dropped official_passthrough — so an explicit gateway pin was
+  // erased on the next sync, which is exactly the durability the setting
+  // exists to provide. Every settings writer must round-trip the field.
+  const pinned = defaultDesktopBridgeServiceSettings({
+    official_passthrough: { enabled: true, base_url: 'https://chatgpt.com/backend-api/codex', models: 'gateway' },
+  });
+  const persisted = JSON.parse(serializedSettings(pinned)) as { official_passthrough?: { models?: string } };
+  assert.equal(persisted.official_passthrough?.models, 'gateway');
 });
 
 test('official passthrough headers keep the client identity and never a bridge credential', () => {
