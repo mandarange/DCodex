@@ -1,4 +1,8 @@
-export const PROVIDERS = ['codex-lb', 'openrouter'] as const;
+import { BRIDGE_OFFICIAL_ROUTE_ID, BRIDGE_PROVIDER_IDS } from '../bridge-contracts.js';
+
+export const PROVIDERS = BRIDGE_PROVIDER_IDS;
+/** Registry providers plus the official `openai` identity route (OpenCodex OPENAI_CODEX_PROVIDER_ID). */
+export const ROUTE_TARGET_IDS = [...BRIDGE_PROVIDER_IDS, BRIDGE_OFFICIAL_ROUTE_ID] as const;
 export const LEVELS = new Set(['shallow', 'transport', 'deep']);
 export const PROBE_STATES = new Set([
   'not_attempted', 'running', 'verified', 'degraded', 'blocked', 'failed',

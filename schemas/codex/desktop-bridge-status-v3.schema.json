@@ -204,7 +204,10 @@
       "additionalProperties": false,
       "required": ["provider_id", "upstream_model"],
       "properties": {
-        "provider_id": { "enum": ["codex-lb", "openrouter"] },
+        "provider_id": {
+          "enum": ["codex-lb", "openrouter", "openai"],
+          "description": "Registry providers plus the official ChatGPT identity route. openai is the canonical official id (OpenCodex OPENAI_CODEX_PROVIDER_ID), not a provider profile."
+        },
         "upstream_model": { "$ref": "#/$defs/nonEmptyString" }
       }
     },

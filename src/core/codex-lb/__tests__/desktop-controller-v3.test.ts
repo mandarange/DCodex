@@ -18,9 +18,11 @@ import {
 } from '../trusted-deep-evidence.js';
 import { sha256 } from '../../fsx.js';
 import {
+  assertDesktopBridgeStatusV3,
   validateDesktopBridgeStatusV3,
   validateDesktopCapabilityReportV3
 } from '../bridge-runtime-validation.js';
+import { applyOfficialModelPassthrough } from '../provider-route-policy.js';
 import {
   DESKTOP_BRIDGE_SERVICE_SCHEMA,
   defaultDesktopBridgeServiceSettings,
@@ -169,6 +171,43 @@ test('status is a strict, secret-free observation and never starts network probe
   const serialized = JSON.stringify(status);
   assert.doesNotMatch(serialized, /"(?:api_key|secret|token|authorization|cookie)"\s*:/i);
   assert.doesNotMatch(serialized, /or-ambient-key|lb-secret-/i);
+});
+
+test('status v3 accepts official passthrough routes such as gpt-5.6-luna -> openai', async (t) => {
+  const setup = await fixture(t);
+  const status = await desktopBridgeStatusV3({
+    home: setup.home,
+    env: setup.env,
+    serviceStatusImpl: async () => stoppedService(setup.home),
+    now: () => new Date('2026-08-05T00:00:00.000Z'),
+    id: () => 'official-route-status'
+  });
+  const flipped = applyOfficialModelPassthrough({
+    schema: 'sks.bridge-routing-policy.v1',
+    default_provider_id: 'codex-lb',
+    fallback: 'none',
+    model_routes: {
+      'gpt-5.6-luna': { provider_id: 'codex-lb', upstream_model: 'gpt-5.6-luna' },
+      'gpt-5.6-sol': { provider_id: 'codex-lb', upstream_model: 'gpt-5.6-sol' },
+      'anthropic/claude-sonnet-4.5': { provider_id: 'openrouter', upstream_model: 'anthropic/claude-sonnet-4.5' }
+    },
+    catalog_generation: 'catalog-official-status',
+    policy_generation: 'policy-official-status',
+    changed_at: '2026-08-05T00:00:00.000Z'
+  }, { mode: 'passthrough', changedAt: '2026-08-05T00:00:00.000Z' });
+  const withOfficial = {
+    ...status,
+    routing: {
+      ...status.routing,
+      policy: flipped,
+      selected_model: 'gpt-5.6-luna',
+      selected_route: flipped.model_routes['gpt-5.6-luna']
+    }
+  };
+  const validation = validateDesktopBridgeStatusV3(withOfficial);
+  assert.equal(validation.ok, true, validation.issues.join(','));
+  assert.doesNotMatch(validation.issues.join(','), /gpt-5\.6-luna.*provider_id:enum/);
+  assertDesktopBridgeStatusV3(withOfficial);
 });
 
 test('dormant settings alone do not claim live Desktop Bridge ownership', async (t) => {

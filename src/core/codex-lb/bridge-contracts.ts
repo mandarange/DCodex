@@ -9,12 +9,10 @@
 export const MANAGED_ROUTING_RUNTIME = 'desktop-bridge' as const;
 export const BRIDGE_PROVIDER_IDS = ['codex-lb', 'openrouter'] as const;
 /**
- * Route target for official ChatGPT identity passthrough. Not a provider: it
- * has no registry entry, no credential, and no catalog — the bridge forwards
- * the client's OWN Authorization (and account headers) verbatim to the official
- * upstream. Requests routed here keep the operator's ChatGPT account identity,
- * which is what Codex Apps connector links, conversation affinity, and plan
- * quotas are bound to.
+ * Canonical official ChatGPT/Codex identity route id (`openai`).
+ * Same public id OpenCodex uses as OPENAI_CODEX_PROVIDER_ID for bare official
+ * family models. Not a registry provider: no credential and no catalog row —
+ * the bridge forwards the client's own Authorization to the official upstream.
  */
 export const BRIDGE_OFFICIAL_ROUTE_ID = 'openai' as const;
 

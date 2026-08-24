@@ -3,8 +3,19 @@
 ## [Unreleased]
 
 
+## [9.2.3] - 2026-08-24
+### Fixed
 
-
+- Desktop Bridge status validation now treats `openai` as the canonical
+  official identity route id for bare official-family models such as
+  `gpt-5.6-luna`, matching OpenCodex (`OPENAI_CODEX_PROVIDER_ID` +
+  `isBareOpenAiFamilyModel`). The live route policy already flipped those
+  models onto that target, but the status schema and runtime validator
+  still enumerated only `codex-lb` and `openrouter`, so `sks doctor --fix`
+  and Control Center failed closed with
+  `desktop_bridge_status_schema_invalid:$.routing.policy.model_routes."gpt-5.6-luna".provider_id:enum`.
+  Provider profiles, `default_provider_id`, and session pins stay
+  provider-only; official passthrough is still not a registry provider.
 
 ## [9.2.2] - 2026-08-24
 

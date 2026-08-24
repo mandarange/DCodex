@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import type { BridgeRoutingPolicy } from '../bridge-contracts.js';
 import { applyOfficialModelPassthrough, OFFICIAL_MODEL_ID_PATTERN, validateBridgeRoutingPolicy } from '../provider-route-policy.js';
+import { validateRouting } from '../bridge-runtime-validation/status.js';
 import {
   defaultDesktopBridgeServiceSettings,
   desktopBridgeSkewRestartSuppressed,
@@ -52,6 +53,39 @@ test('official-model flip rewrites bare official ids only and regenerates the po
   assert.deepEqual(validateBridgeRoutingPolicy(flipped), []);
   // Gateway mode is the identity transform.
   assert.equal(applyOfficialModelPassthrough(policy, { mode: 'gateway' }), policy);
+});
+
+test('status routing accepts official openai targets including gpt-5.6-luna', () => {
+  const flipped = applyOfficialModelPassthrough(policyFixture(), {
+    mode: 'passthrough',
+    changedAt: '2026-08-23T01:00:00.000Z',
+  });
+  const issues: string[] = [];
+  validateRouting({
+    policy: flipped,
+    selected_model: 'gpt-5.6-luna',
+    selected_route: flipped.model_routes['gpt-5.6-luna'],
+    session_pin: null,
+    fallback: 'none',
+    blockers: [],
+    warnings: [],
+  }, '$.routing', issues);
+  assert.deepEqual(issues, []);
+  assert.equal(flipped.model_routes['gpt-5.6-luna']!.provider_id, 'openai');
+});
+
+test('status routing still rejects unknown route provider ids', () => {
+  const issues: string[] = [];
+  validateRouting({
+    policy: null,
+    selected_model: 'gpt-5.6-luna',
+    selected_route: { provider_id: 'not-a-provider', upstream_model: 'gpt-5.6-luna' },
+    session_pin: null,
+    fallback: 'none',
+    blockers: [],
+    warnings: [],
+  }, '$.routing', issues);
+  assert.ok(issues.includes('$.routing.selected_route.provider_id:enum'));
 });
 
 test('official model pattern separates official families from SKS-internal ids', () => {

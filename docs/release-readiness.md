@@ -1,4 +1,4 @@
-# SKS 9.2.2 Release Readiness
+# SKS 9.2.3 Release Readiness
 
 ## Current decision
 
@@ -466,7 +466,7 @@ node ./dist/scripts/release-pack-receipt.js verify
 node ./dist/scripts/release-provenance-check.js --publish
 npm whoami --registry https://registry.npmjs.org/
 npm view sneakoscope maintainers --json --registry https://registry.npmjs.org/
-npm view sneakoscope@9.2.2 version --json --registry https://registry.npmjs.org/
+npm view sneakoscope@9.2.3 version --json --registry https://registry.npmjs.org/
 npm publish --dry-run --json \
   --registry https://registry.npmjs.org/ \
   --tag latest \

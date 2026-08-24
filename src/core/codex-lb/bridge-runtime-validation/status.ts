@@ -4,6 +4,7 @@ import { validateCatalogState } from './catalog.js';
 import {
   PROBE_STATES,
   PROVIDERS,
+  ROUTE_TARGET_IDS,
   booleanValue,
   enumValue,
   escapePath,
@@ -244,7 +245,7 @@ function validateRouteTarget(value: unknown, path: string, issues: string[]): vo
   const row = object(value, path, issues);
   if (!row) return;
   exact(row, path, ['provider_id', 'upstream_model'], issues);
-  enumValue(row.provider_id, new Set(PROVIDERS), `${path}.provider_id`, issues);
+  enumValue(row.provider_id, new Set(ROUTE_TARGET_IDS), `${path}.provider_id`, issues);
   nonEmptyString(row.upstream_model, `${path}.upstream_model`, issues);
 }
 
