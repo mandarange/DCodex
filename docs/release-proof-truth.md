@@ -1,8 +1,21 @@
-# Release Proof Truth — 9.2.1
+# Release Proof Truth — 9.2.2
 
 ## Current assertion
 
-9.2.1 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is 9.2.0 plus one durability fix: the official-models pin (official_passthrough.models) survives settings rebuilds and catalog syncs — two writers dropped the field, found by post-publish verification. 9.2.0 was
+9.2.2 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
+published 9.2.1 plus one semantic change: `auto` official-models routing follows
+the operator's registration — codex-lb registered+enabled+credentialed resolves
+`auto` to the gateway even on a ChatGPT-OAuth host, un-registering converges
+back onto the official identity at the next bridge start or catalog sync, and
+explicit pins beat registration in both directions. This change was staged for
+9.2.1, but the registry's 9.2.1 tarball (published 2026-08-23T11:44:38Z, shasum
+`72c37a1a05afda0d777364d56812fb2862947e73`) was built from the pin-persistence
+commit `146e6cc5` — hours before the registration change landed in `0734523a`.
+Verified by downloading the registry tarball: its dist carries the
+`official_passthrough` serializer fix but no `codexLbRegistered` resolution.
+npm forbids republishing a version, so the change ships as 9.2.2.
+
+9.2.1 (published) is 9.2.0 plus one durability fix: the official-models pin (official_passthrough.models) survives settings rebuilds and catalog syncs — two writers dropped the field, found by post-publish verification. 9.2.0 was
 9.1.1 plus the identity-architecture fix behind "auth keeps dropping during
 compaction": official ChatGPT identity passthrough in the Desktop Bridge
 (client credentials forwarded verbatim to the official upstream for everything
@@ -17,14 +30,20 @@ publication, deployment, a credential change, a Git tag, or a push.
 Exact-commit proof can exist only after the candidate is committed and all
 source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 9.2.0 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.2.1 evidence.
+All release artifacts bound to 9.2.1 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 9.2.2 evidence.
 
-New 9.2.1/9.2.0 claims:
+New 9.2.2 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
 | auto follows the operator actions: codex-lb registered+enabled → gateway; un-registered on a ChatGPT-OAuth host → passthrough; explicit pins beat registration both ways | passed-hermetic | resolver unit tests pin registered/unregistered/pinned arms across real auth.json shapes; both auto-resolution sites (bridge start, catalog sync) pass the live registry state |
+| The registry's 9.2.1 does not contain this change | verified-on-registry | the published tarball (shasum 72c37a1a…, built from 146e6cc5) was downloaded and inspected: dist has the official_passthrough serializer fix and zero codexLbRegistered references |
+
+9.2.1 claims (published 2026-08-23T11:44:38Z):
+
+| Claim | Current support | Boundary |
+| --- | --- | --- |
 | A pinned official-models choice survives every settings writer | passed-hermetic | defaultDesktopBridgeServiceSettings carries the input field through validation and serializedSettings round-trips it; regression test pins a gateway choice through the sync serializer; machines without a pin keep the auto default |
 
 9.2.0 claims:
@@ -44,8 +63,8 @@ New 9.2.1/9.2.0 claims:
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 9.2.1 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.1 after incremental build |
-| The reported 9.2.1 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
+| All checked version authorities report 9.2.2 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.2 after incremental build |
+| The reported 9.2.2 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
 
 ## 9.1.0 assertion (historical)
 

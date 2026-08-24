@@ -1,6 +1,6 @@
 [package]
 name = "sks-core"
-version = "9.2.1"
+version = "9.2.2"
 edition = "2021"
 
 [dependencies]

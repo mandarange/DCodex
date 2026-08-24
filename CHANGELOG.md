@@ -5,7 +5,8 @@
 
 
 
-## [9.2.1] - 2026-08-23
+
+## [9.2.2] - 2026-08-24
 
 ### Changed
 
@@ -17,7 +18,15 @@
   the operator's own identity. OpenRouter model picks were already sticky per
   model route and stay that way. Explicit
   `sks bridge route official-models <passthrough|gateway>` pins still beat
-  registration in both directions.
+  registration in both directions. (This change was staged for 9.2.1, but the
+  9.2.1 tarball was published from the pin-persistence commit hours before it
+  landed — npm forbids republishing a version, so it ships here.)
+
+### Fixed
+
+- Keep release metadata aligned after an explicit SKS version bump advances the package version.
+
+## [9.2.1] - 2026-08-23
 
 ### Fixed
 
