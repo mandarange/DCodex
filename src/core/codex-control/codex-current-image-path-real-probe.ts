@@ -5,6 +5,10 @@ import { ensureDir, runProcess, writeBinaryAtomic } from '../fsx.js'
 import { buildImageArtifactPathContract } from '../image/image-artifact-path-contract.js'
 import { codexCurrentCoreProbeTail, skippedCodexCurrentCoreProbe, type CodexCurrentCoreSingleProbe } from './codex-current-core-real-probes.js'
 import { prepareCodexAppServerRuntimeEnv } from './codex-app-server-runtime-env.js'
+import {
+  nativeCodexCurrentCoreProbeEnv,
+  withNativeCodexCurrentCoreExecArgs
+} from './codex-current-core-native-exec.js'
 
 const ONE_BY_ONE_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC',
@@ -66,9 +70,9 @@ export async function runCodexCurrentCoreImageReferencedPathRealProbe(input: {
     `Return compact JSON {"referenced_path":"${inputB.replace(/\\/g, '\\\\')}","saw_image":true}.`,
     'Do not edit files and do not reference any other image path.'
   ].join(' ')
-  const extraArgs = ['-c', 'mcp_servers={}', '--image', inputB, '--skip-git-repo-check', '--ephemeral']
+  const extraArgs = withNativeCodexCurrentCoreExecArgs(['--image', inputB, '--skip-git-repo-check', '--ephemeral'])
   const args = buildCodexExecArgs({ root: tempDir, prompt, outputFile, json: true, extraArgs })
-  const runtimeEnv = await prepareCodexAppServerRuntimeEnv({ env: input.env || process.env })
+  const runtimeEnv = await prepareCodexAppServerRuntimeEnv({ env: nativeCodexCurrentCoreProbeEnv(input.env || process.env) })
   const result = await runCodexExec({
     root: tempDir,
     recoveryRoot: input.root,
@@ -109,6 +113,8 @@ export async function runCodexCurrentCoreImageReferencedPathRealProbe(input: {
       process_exited_successfully: processExitedSuccessfully,
       process_warning: processExitedSuccessfully ? null : 'Codex emitted the referenced path evidence before process timeout/nonzero exit.',
       output_file: outputFile,
+      native_codex_only: true,
+      ignored_user_config: true,
       desktop_bridge_launch_guard: (result as any).desktop_bridge_launch_guard || null,
       contract_blockers: contract.blockers
     },

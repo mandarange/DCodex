@@ -4,6 +4,10 @@ import { buildCodexExecArgs, findCodexBinary, runCodexExec } from '../codex-adap
 import { ensureDir, runProcess, writeJsonAtomic, writeTextAtomic } from '../fsx.js'
 import { codexCurrentCoreProbeTail, skippedCodexCurrentCoreProbe, type CodexCurrentCoreSingleProbe } from './codex-current-core-real-probes.js'
 import { prepareCodexAppServerRuntimeEnv } from './codex-app-server-runtime-env.js'
+import {
+  nativeCodexCurrentCoreProbeEnv,
+  withNativeCodexCurrentCoreExecArgs
+} from './codex-current-core-native-exec.js'
 
 export async function runCodexCurrentCoreWebSearchRealProbe(input: {
   root: string
@@ -26,15 +30,16 @@ export async function runCodexCurrentCoreWebSearchRealProbe(input: {
   await writeTextAtomic(path.join(tempDir, 'README.md'), 'Temporary current Codex web-search real probe workspace.\n')
   const outputFile = path.join(tempDir, 'last-message.txt')
   const prompt = 'In code mode, use standalone web search to find the title of https://example.com. Return JSON {"used_web_search":true,"answer":"...","sources":[...]}.'
-  const args = buildCodexExecArgs({ root: tempDir, prompt, outputFile, json: true, extraArgs: ['-c', 'mcp_servers={}'] })
-  const runtimeEnv = await prepareCodexAppServerRuntimeEnv({ env: input.env || process.env })
+  const extraArgs = withNativeCodexCurrentCoreExecArgs()
+  const args = buildCodexExecArgs({ root: tempDir, prompt, outputFile, json: true, extraArgs })
+  const runtimeEnv = await prepareCodexAppServerRuntimeEnv({ env: nativeCodexCurrentCoreProbeEnv(input.env || process.env) })
   const result = await runCodexExec({
     root: tempDir,
     recoveryRoot: input.root,
     prompt,
     outputFile,
     json: true,
-    extraArgs: ['-c', 'mcp_servers={}'],
+    extraArgs,
     timeoutMs: input.timeoutMs || 120000,
     maxBufferBytes: 512 * 1024,
     stdoutFile: path.join(tempDir, 'codex.stdout.log'),
@@ -83,6 +88,8 @@ export async function runCodexCurrentCoreWebSearchRealProbe(input: {
       process_exited_successfully: processExitedSuccessfully,
       process_warning: processExitedSuccessfully ? null : 'Codex emitted web-search evidence before process timeout/nonzero exit.',
       output_file: outputFile,
+      native_codex_only: true,
+      ignored_user_config: true,
       desktop_bridge_launch_guard: (result as any).desktop_bridge_launch_guard || null
     },
     blockers: ok ? [] : [

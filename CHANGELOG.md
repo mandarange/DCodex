@@ -16,6 +16,11 @@
   `desktop_bridge_status_schema_invalid:$.routing.policy.model_routes."gpt-5.6-luna".provider_id:enum`.
   Provider profiles, `default_provider_id`, and session pins stay
   provider-only; official passthrough is still not a registry provider.
+- Current-core web-search and image-path real probes now ignore host
+  `config.toml` and pin native OpenAI. A down Desktop Bridge /
+  OpenCodex Design B `openai_base_url` loopback no longer fails
+  release-authorizing Codex compatibility checks; Desktop Bridge live
+  evidence stays optional for direct `npm publish`.
 
 ## [9.2.2] - 2026-08-24
 
