@@ -1,19 +1,30 @@
-# Release Proof Truth — 9.2.2
+# Release Proof Truth — 9.2.3
 
 ## Current assertion
 
-9.2.2 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
-published 9.2.1 plus one semantic change: `auto` official-models routing follows
-the operator's registration — codex-lb registered+enabled+credentialed resolves
-`auto` to the gateway even on a ChatGPT-OAuth host, un-registering converges
-back onto the official identity at the next bridge start or catalog sync, and
-explicit pins beat registration in both directions. This change was staged for
-9.2.1, but the registry's 9.2.1 tarball (published 2026-08-23T11:44:38Z, shasum
+9.2.3 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
+published 9.2.2 plus one contract fix: Desktop Bridge status validation accepts
+the canonical official identity route id `openai` for bare official-family
+models such as `gpt-5.6-luna`. The live route policy already flipped those
+models onto that target (the same public id OpenCodex uses as
+`OPENAI_CODEX_PROVIDER_ID`), but the status schema and runtime validator still
+enumerated only `codex-lb` and `openrouter`, so `sks doctor --fix` and Control
+Center failed closed with
+`desktop_bridge_status_schema_invalid:$.routing.policy.model_routes."gpt-5.6-luna".provider_id:enum`.
+Provider profiles, `default_provider_id`, and session pins stay provider-only.
+
+9.2.2 (published) is the published 9.2.1 plus one semantic change: `auto`
+official-models routing follows the operator's registration — codex-lb
+registered+enabled+credentialed resolves `auto` to the gateway even on a
+ChatGPT-OAuth host, un-registering converges back onto the official identity at
+the next bridge start or catalog sync, and explicit pins beat registration in
+both directions. This change was staged for 9.2.1, but the registry's 9.2.1
+tarball (published 2026-08-23T11:44:38Z, shasum
 `72c37a1a05afda0d777364d56812fb2862947e73`) was built from the pin-persistence
 commit `146e6cc5` — hours before the registration change landed in `0734523a`.
 Verified by downloading the registry tarball: its dist carries the
 `official_passthrough` serializer fix but no `codexLbRegistered` resolution.
-npm forbids republishing a version, so the change ships as 9.2.2.
+npm forbids republishing a version, so the change shipped as 9.2.2.
 
 9.2.1 (published) is 9.2.0 plus one durability fix: the official-models pin (official_passthrough.models) survives settings rebuilds and catalog syncs — two writers dropped the field, found by post-publish verification. 9.2.0 was
 9.1.1 plus the identity-architecture fix behind "auth keeps dropping during
@@ -30,10 +41,17 @@ publication, deployment, a credential change, a Git tag, or a push.
 Exact-commit proof can exist only after the candidate is committed and all
 source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 9.2.1 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.2.2 evidence.
+All release artifacts bound to 9.2.2 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 9.2.3 evidence.
 
-New 9.2.2 claims:
+New 9.2.3 claims:
+
+| Claim | Current support | Boundary |
+| --- | --- | --- |
+| Status schema accepts official `openai` route targets including `gpt-5.6-luna` | passed-hermetic | `validateRouting` and `validateDesktopBridgeStatusV3` accept a flipped official-passthrough policy; unknown provider ids still fail `:enum`; official-models-route-flip + desktop-controller-v3 suites pin the exact doctor error path |
+| Provider profiles, default_provider_id, and session pins stay registry-only | passed-hermetic | route-target enum is `codex-lb`/`openrouter`/`openai`; session pin and provider profile enums stay `codex-lb`/`openrouter` |
+
+9.2.2 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
@@ -63,8 +81,8 @@ New 9.2.2 claims:
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 9.2.2 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.2 after incremental build |
-| The reported 9.2.2 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
+| All checked version authorities report 9.2.3 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.3 after incremental build |
+| The reported 9.2.3 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
 
 ## 9.1.0 assertion (historical)
 

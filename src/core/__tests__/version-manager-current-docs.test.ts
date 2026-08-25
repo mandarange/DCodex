@@ -43,9 +43,17 @@ test('version bump updates every current release and Codex document surface', as
       '# Historical native runtime removal happened in 1.2.3.'
     ].join('\n') + '\n',
     'docs/release-proof-truth.md': [
+      '# Release Proof Truth — 1.2.3',
+      '',
+      '## Current assertion',
+      '',
+      '1.2.3 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**.',
       'SKS 1.2.3 release proof truth is current; 1.2.3 proof must additionally show current checks.',
       'SKS 1.2.3 must not claim publication.',
-      'Legacy aliases cannot serve as 1.2.3 evidence.'
+      'Legacy aliases cannot serve as 1.2.3 evidence.',
+      'New 1.2.3 claims:',
+      '| All checked version authorities report 1.2.3 | passed-hermetic | `release:version-truth` 15 surfaces at 1.2.3 after incremental build |',
+      '| The reported 1.2.3 package is ready to publish | not proved | requires a stamp |'
     ].join('\n') + '\n',
     'docs/official-docs-compat.md': [
       'SKS 1.2.3 keeps release-gated behavior current.',
@@ -107,7 +115,16 @@ test('version bump updates every current release and Codex document surface', as
         /`latest` to resolve to 1\.2\.4,/,
         /never replace 1\.2\.4\./
       ],
-      'docs/release-proof-truth.md': [/^SKS 1\.2\.4 release proof truth/m, /1\.2\.4 proof must additionally show/, /^SKS 1\.2\.4 must not claim/m, /1\.2\.4 evidence/],
+      'docs/release-proof-truth.md': [
+        /^# Release Proof Truth — 1\.2\.4$/m,
+        /^New 1\.2\.4 claims:/m,
+        /All checked version authorities report 1\.2\.4/,
+        /The reported 1\.2\.4 package is ready to publish/,
+        /^SKS 1\.2\.4 release proof truth/m,
+        /1\.2\.4 proof must additionally show/,
+        /^SKS 1\.2\.4 must not claim/m,
+        /1\.2\.4 evidence/
+      ],
       'docs/official-docs-compat.md': [/^SKS 1\.2\.4 keeps release-gated behavior/m, /official-docs-compat-1\.2\.4\.json/, /official-docs-compat-1\.2\.4\.md/],
       'docs/codex-cli-compat.md': [/^SKS 1\.2\.4 targets/m, /not release-authorizing for SKS 1\.2\.4/],
       'docs/codex-app.md': [/^SKS 1\.2\.4 targets/m, /^SKS 1\.2\.4 also reports/m],

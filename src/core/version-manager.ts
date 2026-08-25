@@ -365,6 +365,7 @@ async function syncSourcePackageVersion(root: any, version: any) {
         .replace(/^For \d+\.\d+\.\d+, a selected codex-lb/m, `For ${version}, a selected codex-lb`)
         .replace(/^The \d+\.\d+\.\d+ SKS menu bar/m, `The ${version} SKS menu bar`)
         .replace(/the \d+\.\d+\.\d+ to \d+\.\d+\.\d+ upgrade smoke/g, `the ${RELEASE_UPGRADE_BASELINE_VERSION} to ${version} upgrade smoke`)
+        .replace(/to \d+\.\d+\.\d+ upgrade smoke/g, `to ${version} upgrade smoke`)
         .replace(/under the \d+\.\d+\.\d+ release evidence root/g, `under the ${version} release evidence root`)
         .replace(/^Do not cut \d+\.\d+\.\d+ while/m, `Do not cut ${version} while`)
         .replace(/must agree on \d+\.\d+\.\d+\./g, `must agree on ${version}.`)
@@ -378,6 +379,13 @@ async function syncSourcePackageVersion(root: any, version: any) {
     {
       rel: 'docs/release-proof-truth.md',
       replace: (text: string) => text
+        .replace(/^# Release Proof Truth — \d+\.\d+\.\d+\s*$/m, `# Release Proof Truth — ${version}`)
+        .replace(/^(## Current assertion\n\n)\d+\.\d+\.\d+ is \*\*SOURCE TAG CONDITIONAL/m, `$1${version} is **SOURCE TAG CONDITIONAL`)
+        .replace(/^New \d+\.\d+\.\d+ claims:/m, `New ${version} claims:`)
+        .replace(/treated as \d+\.\d+\.\d+ evidence\./, `treated as ${version} evidence.`)
+        .replace(/All checked version authorities report \d+\.\d+\.\d+/, `All checked version authorities report ${version}`)
+        .replace(/The reported \d+\.\d+\.\d+ package is ready to publish/, `The reported ${version} package is ready to publish`)
+        .replace(/`release:version-truth` 15 surfaces at \d+\.\d+\.\d+/, `\`release:version-truth\` 15 surfaces at ${version}`)
         .replace(/^SKS \d+\.\d+\.\d+ release proof truth/m, `SKS ${version} release proof truth`)
         .replace(/^SKS \d+\.\d+\.\d+ must not claim/m, `SKS ${version} must not claim`)
         .replace(/; \d+\.\d+\.\d+ proof must additionally show/g, `; ${version} proof must additionally show`)
