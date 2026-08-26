@@ -2,8 +2,15 @@
 
 ## Current assertion
 
-9.2.4 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
-published 9.2.3 plus the Desktop Bridge service-lifecycle fixes: the launchd
+9.2.4 is **PUBLISHED** (2026-08-26, tag `v9.2.4`, source commit
+`502c83a42784a71747d153783b8d54bb3bbb68fa`). The registry tarball is the tarball
+the release gates verified: `dist.integrity`
+`sha512-PA3hGuc62w2AZgF92uFKiMVf7sIzNWXWTqug35Nh2SL9I3COf/RYq8t7flklhmaXRJwaoknzUldUfcoOcKzspQ==`
+and `dist.unpackedSize` 12293683 equal the local pack receipt byte for byte, and
+the registry's `gitHead` is that same commit — the 9.2.1 failure mode, where the
+published tarball predated the change it was cut for, is excluded by
+measurement rather than by assumption. It is the published 9.2.3 plus the
+Desktop Bridge service-lifecycle fixes: the launchd
 plist has always passed `bridge serve --supervised`, the CLI argument parser had
 never registered that flag, so every launchd start exited immediately with
 `bridge_command_unknown_option`, `KeepAlive { SuccessfulExit: false }` declined
@@ -63,7 +70,8 @@ New 9.2.4 claims:
 | `sks update` revives a Desktop Bridge that is installed but not running | passed-hermetic | the restage stage bootstraps a service with a plist plus settings and no live pid, still kickstarts only a live stale one, leaves a current bridge alone, and never turns a failed recovery into a failed update; tests inject both launchd seams, and the stage entry point still refuses the real `launchctl` under `NODE_TEST_CONTEXT`/`SKS_TEST_ISOLATION` |
 | A launch entry under Desktop/Documents/Downloads is never written into the plist | passed-hermetic | `resolveLaunchCommand` skips protected candidates by realpath (so an `npm link`ed global counts as protected), falls back to the `sks` on PATH, and reports `desktop_bridge_entry_macos_protected_folder` when no runnable entry remains |
 | A past release's upgrade-smoke record is not restamped by a version bump | passed-hermetic | the readiness-doc rewrite is non-global and anchored on the leading current-decision line; the current-docs suite asserts a historical `7.6.0 to 1.1.0 upgrade smoke` line survives a bump |
-| The bridge is serving on an operator machine after installing 9.2.4 | not proved | requires the operator to install the published 9.2.4 and observe `sks bridge status --json` reporting `service.running true` with a listener on the configured loopback port; hermetic launchd fixtures cannot produce that evidence |
+| The published tarball is the tarball the gates verified | verified-on-registry | `npm view sneakoscope@9.2.4` reports `gitHead` 502c83a4 and a `dist.integrity` / `dist.unpackedSize` equal to the local pack receipt for that commit; the tarball was not rebuilt into something the gates never saw |
+| The bridge is serving on an operator machine after installing 9.2.4 | verified-on-machine | measured 2026-08-26 on the maintainer's Mac after `sks update` from the hot-fixed 9.2.3: `sks bridge status --json` run from HOME reports installed/loaded/running true with no blockers; `desktop-bridge-state.json` records `sks_version` 9.2.4 on a new pid (32546, replacing the 9.2.3 process 91038) listening on 127.0.0.1:53451; `launchctl print` shows `state = running` with ProgramArguments `… nvm bin/sks bridge serve --settings … --json --supervised` — the exact argv 9.2.3 exited on, now parsed and served with no local patch. One machine, one macOS version: this is an existence proof for the fixed path, not a fleet claim |
 
 9.2.3 claims (published):
 
