@@ -1,6 +1,6 @@
 # Sneakoscope Codex performance and leak policy
 
-Sneakoscope Codex 9.2.3 is designed to keep runtime, package size, RAM, and storage bounded.
+Sneakoscope Codex 9.2.4 is designed to keep runtime, package size, RAM, and storage bounded.
 
 ## Speed
 

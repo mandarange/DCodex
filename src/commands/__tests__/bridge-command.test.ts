@@ -85,7 +85,7 @@ test('hidden serve entry validates its settings path and bypasses the management
   const settingsPath = '/tmp/desktop-bridge-settings.json';
   const calls: string[] = [];
   const result = await executeBridgeCommand([
-    'serve', '--settings', settingsPath, '--json'
+    'serve', '--settings', settingsPath, '--json', '--supervised'
   ], {
     ...setup,
     serve: async (options) => {

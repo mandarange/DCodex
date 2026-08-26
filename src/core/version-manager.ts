@@ -364,8 +364,13 @@ async function syncSourcePackageVersion(root: any, version: any) {
         .replace(/not represented as current \d+\.\d+\.\d+ completion proof\./g, `not represented as current ${version} completion proof.`)
         .replace(/^For \d+\.\d+\.\d+, a selected codex-lb/m, `For ${version}, a selected codex-lb`)
         .replace(/^The \d+\.\d+\.\d+ SKS menu bar/m, `The ${version} SKS menu bar`)
-        .replace(/the \d+\.\d+\.\d+ to \d+\.\d+\.\d+ upgrade smoke/g, `the ${RELEASE_UPGRADE_BASELINE_VERSION} to ${version} upgrade smoke`)
-        .replace(/to \d+\.\d+\.\d+ upgrade smoke/g, `to ${version} upgrade smoke`)
+        // Only the CURRENT decision, which leads the document. Every later
+        // upgrade-smoke line is a historical record of what an older release
+        // actually ran; a global rewrite restamped "7.6.0 to 8.7.0" as the
+        // version being cut, turning three past records into claims no run ever
+        // produced. Non-global, and anchored on the phrasing the current
+        // decision uses.
+        .replace(/\bthe (isolated )?\d+\.\d+\.\d+ to \d+\.\d+\.\d+ upgrade smoke/, (_match: string, isolated: string | undefined) => `the ${isolated || ''}${RELEASE_UPGRADE_BASELINE_VERSION} to ${version} upgrade smoke`)
         .replace(/under the \d+\.\d+\.\d+ release evidence root/g, `under the ${version} release evidence root`)
         .replace(/^Do not cut \d+\.\d+\.\d+ while/m, `Do not cut ${version} while`)
         .replace(/must agree on \d+\.\d+\.\d+\./g, `must agree on ${version}.`)

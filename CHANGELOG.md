@@ -3,6 +3,37 @@
 ## [Unreleased]
 
 
+
+## [9.2.4] - 2026-08-26
+
+### Fixed
+
+- The Desktop Bridge launchd service starts again. Its plist has always passed
+  `bridge serve --supervised`, but the CLI argument parser never registered
+  `--supervised`, so every launchd start exited immediately with
+  `bridge_command_unknown_option`. `KeepAlive { SuccessfulExit: false }` does not
+  restart a clean exit, the failed activation booted the service out, and Codex
+  reconnected forever against a loopback port nothing was listening on. The CLI
+  option table and the launchd argv are now one module
+  (`src/core/codex-lb/bridge-cli-contract.ts`): per-subcommand allowlists are
+  typed against the parser's own table, and the plist builder refuses to emit an
+  option the parser has not registered.
+- `sks update` now revives a Desktop Bridge that is installed but not running.
+  The restage stage only ever restarted a bridge that was already serving (
+  `launchctl kickstart -k`) and silently skipped a down service, so the one
+  command an operator runs to fix a dead bridge replaced the package and left the
+  service down. A plist plus settings with no live process is now bootstrapped
+  back into launchd. Recovery still never fails the update: an unsuccessful
+  attempt warns and names `sks bridge repair`, matching the catalog-repair stage.
+- `bridge ensure|repair` no longer writes a launchd entry macOS cannot execute.
+  A launchd agent holds no files-and-folders grant, so an entry under
+  Desktop/Documents/Downloads dies inside node's module loader ("Cannot use
+  import statement outside a module") before any bridge code runs. Running the
+  CLI from a checkout in one of those folders pinned exactly that path into the
+  plist; the resolver now skips protected candidates, falls back to the global
+  `sks` on PATH, and reports `desktop_bridge_entry_macos_protected_folder` when
+  no runnable entry is left.
+
 ## [9.2.3] - 2026-08-24
 ### Fixed
 

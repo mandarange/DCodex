@@ -1,9 +1,19 @@
-# Release Proof Truth — 9.2.3
+# Release Proof Truth — 9.2.4
 
 ## Current assertion
 
-9.2.3 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
-published 9.2.2 plus one contract fix: Desktop Bridge status validation accepts
+9.2.4 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
+published 9.2.3 plus the Desktop Bridge service-lifecycle fixes: the launchd
+plist has always passed `bridge serve --supervised`, the CLI argument parser had
+never registered that flag, so every launchd start exited immediately with
+`bridge_command_unknown_option`, `KeepAlive { SuccessfulExit: false }` declined
+to restart a clean exit, and the failed activation booted the service out —
+Codex then reconnected forever against a loopback port nothing was listening on.
+The CLI option table and the launchd argv are now one module, `sks update`
+bootstraps an installed-but-down bridge instead of skipping it, and a launch
+entry under a macOS-protected user folder is never written into the plist.
+
+9.2.3 (published) is the published 9.2.2 plus one contract fix: Desktop Bridge status validation accepts
 the canonical official identity route id `openai` for bare official-family
 models such as `gpt-5.6-luna`. The live route policy already flipped those
 models onto that target (the same public id OpenCodex uses as
@@ -41,10 +51,21 @@ publication, deployment, a credential change, a Git tag, or a push.
 Exact-commit proof can exist only after the candidate is committed and all
 source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 9.2.2 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.2.3 evidence.
+All release artifacts bound to 9.2.3 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 9.2.4 evidence.
 
-New 9.2.3 claims:
+New 9.2.4 claims:
+
+| Claim | Current support | Boundary |
+| --- | --- | --- |
+| The argv launchd passes to `bridge serve` cannot contain an option the CLI rejects | passed-hermetic | one table (`bridge-cli-contract.ts`) backs `parseArgs`, every subcommand allowlist (typed against it, plus a runtime desync assert for the shipped JS), and the plist argv builder, which throws on an unregistered option; the contract suite drives the builder's argv — and the same argv round-tripped through the rendered plist — through the real CLI and asserts `bridge_command_unknown_option` never appears for a registered option |
+| `--supervised` means the same thing to the plist writer and to the runtime | passed-hermetic | one exported constant is written into the plist, registered in the option table, and read by `desktopBridgeIsSupervised`; the suite asserts a process started from the launchd argv reports itself supervised and an argv without the flag does not |
+| `sks update` revives a Desktop Bridge that is installed but not running | passed-hermetic | the restage stage bootstraps a service with a plist plus settings and no live pid, still kickstarts only a live stale one, leaves a current bridge alone, and never turns a failed recovery into a failed update; tests inject both launchd seams, and the stage entry point still refuses the real `launchctl` under `NODE_TEST_CONTEXT`/`SKS_TEST_ISOLATION` |
+| A launch entry under Desktop/Documents/Downloads is never written into the plist | passed-hermetic | `resolveLaunchCommand` skips protected candidates by realpath (so an `npm link`ed global counts as protected), falls back to the `sks` on PATH, and reports `desktop_bridge_entry_macos_protected_folder` when no runnable entry remains |
+| A past release's upgrade-smoke record is not restamped by a version bump | passed-hermetic | the readiness-doc rewrite is non-global and anchored on the leading current-decision line; the current-docs suite asserts a historical `7.6.0 to 1.1.0 upgrade smoke` line survives a bump |
+| The bridge is serving on an operator machine after installing 9.2.4 | not proved | requires the operator to install the published 9.2.4 and observe `sks bridge status --json` reporting `service.running true` with a listener on the configured loopback port; hermetic launchd fixtures cannot produce that evidence |
+
+9.2.3 claims (published):
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
@@ -81,8 +102,8 @@ New 9.2.3 claims:
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 9.2.3 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.3 after incremental build |
-| The reported 9.2.3 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
+| All checked version authorities report 9.2.4 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.4 after incremental build |
+| The reported 9.2.4 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
 
 ## 9.1.0 assertion (historical)
 

@@ -1,8 +1,10 @@
-# SKS 9.2.3 Release Readiness
+# SKS 9.2.4 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
+
+9.2.4 keeps the Desktop Bridge launchd service alive across an update. Its plist has always passed `bridge serve --supervised`, but the CLI argument parser never registered `--supervised`, so every launchd start exited with `bridge_command_unknown_option`; `KeepAlive { SuccessfulExit: false }` does not restart a clean exit, the failed activation booted the service out, and Codex reconnected forever against a loopback port nothing was listening on. The CLI option table and the launchd argv are now one module (`src/core/codex-lb/bridge-cli-contract.ts`) with the subcommand allowlists typed against it; `sks update` bootstraps an installed-but-down bridge instead of silently skipping it, and still never fails an update over bridge readiness; and `bridge ensure|repair` no longer pins a launch entry under Desktop/Documents/Downloads, where a launchd agent has no files-and-folders grant and node cannot even read `package.json`. Live bridge-serving evidence stays operator-owned: only an install of the published 9.2.4 followed by `sks bridge status --json` on the operator's own machine can produce it. Regenerate the isolated 7.6.0 to 9.2.4 upgrade smoke, the full release gate DAG, pack receipt, and release-check stamp from the clean candidate commit.
 
 9.2.3 makes Desktop Bridge status accept the official `openai` identity route for bare official-family models such as `gpt-5.6-luna`, matching OpenCodex `OPENAI_CODEX_PROVIDER_ID`. The live route policy already flipped those models onto that target; the status schema and runtime validator now enumerate `openai` as a route target so `sks doctor --fix` and Control Center no longer fail closed on `provider_id:enum`. Provider profiles stay `codex-lb`/`openrouter` only. Regenerate the isolated 7.6.0 to 9.2.3 upgrade smoke, the full release gate DAG, pack receipt, and release-check stamp from the clean candidate commit.
 
@@ -468,7 +470,7 @@ node ./dist/scripts/release-pack-receipt.js verify
 node ./dist/scripts/release-provenance-check.js --publish
 npm whoami --registry https://registry.npmjs.org/
 npm view sneakoscope maintainers --json --registry https://registry.npmjs.org/
-npm view sneakoscope@9.2.3 version --json --registry https://registry.npmjs.org/
+npm view sneakoscope@9.2.4 version --json --registry https://registry.npmjs.org/
 npm publish --dry-run --json \
   --registry https://registry.npmjs.org/ \
   --tag latest \

@@ -40,7 +40,8 @@ test('version bump updates every current release and Codex document surface', as
       'Completion requires the registry version to be',
       '1.2.3, `latest` to resolve to 1.2.3, integrity to match.',
       'A defect requires a higher version; never replace 1.2.3.',
-      '# Historical native runtime removal happened in 1.2.3.'
+      '# Historical native runtime removal happened in 1.2.3.',
+      'Regenerated for 1.1.0: the isolated 7.6.0 to 1.1.0 upgrade smoke, the macOS Menu Bar proof.'
     ].join('\n') + '\n',
     'docs/release-proof-truth.md': [
       '# Release Proof Truth — 1.2.3',
@@ -134,7 +135,13 @@ test('version bump updates every current release and Codex document surface', as
     for (const [rel, patterns] of Object.entries(expected)) {
       const text = await fsp.readFile(path.join(root, rel), 'utf8')
       for (const pattern of patterns) assert.match(text, pattern, rel)
-      if (rel === 'docs/release-readiness.md') assert.match(text, /Historical native runtime removal happened in 1\.2\.3/)
+      if (rel === 'docs/release-readiness.md') {
+        assert.match(text, /Historical native runtime removal happened in 1\.2\.3/)
+        // A past release's upgrade smoke is a record of what that run actually
+        // covered. Restamping it with the version being cut manufactures
+        // evidence, so only the leading current-decision line may move.
+        assert.match(text, /Regenerated for 1\.1\.0: the isolated 7\.6\.0 to 1\.1\.0 upgrade smoke/)
+      }
       assert.ok(result.synced_files.includes(rel), `${rel} should be reported as synchronized`)
     }
     const changelog = await fsp.readFile(path.join(root, 'CHANGELOG.md'), 'utf8')

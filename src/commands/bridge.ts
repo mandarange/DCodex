@@ -4,6 +4,15 @@ import type {
   BridgeProviderId,
   CapabilityRequestedLevel
 } from '../core/codex-lb/bridge-contracts.js';
+import {
+  BRIDGE_CLI_BOOLEAN_OPTIONS,
+  BRIDGE_CLI_VALUE_OPTIONS,
+  DESKTOP_BRIDGE_SUPERVISED_FLAG,
+  isBridgeCliBooleanOption,
+  isBridgeCliValueOption,
+  type BridgeCliBooleanOption,
+  type BridgeCliValueOption
+} from '../core/codex-lb/bridge-cli-contract.js';
 import { serveDesktopBridge } from '../core/codex-lb/desktop-service.js';
 import {
   BridgeCliError,
@@ -214,7 +223,7 @@ async function parseInvocation(args: string[], io: BridgeCommandIo): Promise<Par
     // the process may exit on version skew and be relaunched on the new code.
     // It is read straight from process.argv where the skew is handled; here it
     // only has to be a legal flag.
-    allowOnly(parsed, ['--json', '--supervised'], ['--settings']);
+    allowOnly(parsed, ['--json', DESKTOP_BRIDGE_SUPERVISED_FLAG], ['--settings']);
     const settingsPath = parsed.values.get('--settings') || '';
     if (!path.isAbsolute(settingsPath)) {
       throw new BridgeCliError('desktop_bridge_settings_path_must_be_absolute');
@@ -379,10 +388,8 @@ function parseArgs(args: string[]): ParsedArgs {
   const positionals: string[] = [];
   const flags = new Set<string>();
   const values = new Map<string, string>();
-  const booleanOptions = new Set([
-    '--json', '--strict', '--require-ready', '--api-key-stdin', '--confirm'
-  ]);
-  const valueOptions = new Set(['--level', '--host', '--settings', '--set']);
+  const booleanOptions = new Set<string>(BRIDGE_CLI_BOOLEAN_OPTIONS);
+  const valueOptions = new Set<string>(BRIDGE_CLI_VALUE_OPTIONS);
   for (let index = 0; index < args.length; index += 1) {
     const value = String(args[index] || '');
     if (!value.startsWith('--')) {
@@ -418,9 +425,26 @@ function rejectSecretArgv(args: string[]): void {
   }
 }
 
-function allowOnly(parsed: ParsedArgs, allowedFlags: string[], allowedValues: string[]): void {
-  const flags = new Set(allowedFlags);
-  const values = new Set(allowedValues);
+/**
+ * Restrict one subcommand to the options it actually takes.
+ *
+ * The allowed names are typed against the shared table, so naming an option the
+ * parser has not registered is a compile error rather than the 9.2.3 outage:
+ * `serve` allowed `--supervised` here while `parseArgs` rejected it first, and
+ * every launchd start died with `bridge_command_unknown_option`. The runtime
+ * check repeats that claim for the shipped JavaScript, where the types are gone.
+ */
+function allowOnly(
+  parsed: ParsedArgs,
+  allowedFlags: readonly BridgeCliBooleanOption[],
+  allowedValues: readonly BridgeCliValueOption[]
+): void {
+  if (allowedFlags.some((entry) => !isBridgeCliBooleanOption(entry))
+    || allowedValues.some((entry) => !isBridgeCliValueOption(entry))) {
+    throw new BridgeCliError('bridge_command_option_table_desynchronized');
+  }
+  const flags = new Set<string>(allowedFlags);
+  const values = new Set<string>(allowedValues);
   if ([...parsed.flags].some((entry) => !flags.has(entry))) {
     throw new BridgeCliError('bridge_command_option_not_allowed');
   }

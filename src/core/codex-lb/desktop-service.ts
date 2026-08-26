@@ -11,6 +11,7 @@ import {
   cleanupRetiredDesktopBridgeRuntime,
   prepareRetiredDesktopBridgeRuntime,
 } from './desktop-bridge-migration/retired-runtime-cleanup.js';
+import { DESKTOP_BRIDGE_SUPERVISED_FLAG, desktopBridgeServeArguments } from './bridge-cli-contract.js';
 import { canonicalizeBridgeModelId, normalizeBridgeUpstreamModelId, sha256Stable } from './route-index.js';
 import { captureCodexAuthSnapshot } from './desktop-auth-invariant.js';
 import { applyOfficialModelPassthrough, bridgeRoutePolicyPath, writeBridgeRoutingPolicy } from './provider-route-policy.js';
@@ -368,10 +369,11 @@ export async function installAndStartDesktopBridgeService(options: DesktopBridge
   });
   let runtime; try { runtime = await resolveDesktopBridgeRuntimeConfig({ ...options, home, settings: settings, settingsPath: paths.settings_path }); await preflightDesktopBridge(runtime.config); }
   catch (error) { return failedStatus(paths, settings, launchService(options.uid), 'credentials_unavailable', safeServiceError(error)); }
-  const command = await resolveLaunchCommand(options); if (!command) return failedStatus(paths, settings, launchService(options.uid), 'settings_missing', 'desktop_bridge_sks_executable_missing');
+  const launch = await resolveLaunchCommand(options, home); const command = launch.command;
+  if (!command) return failedStatus(paths, settings, launchService(options.uid), 'settings_missing', launch.blocker);
   await prepareDesktopBridgeServicePaths(paths);
   await writeDesktopBridgeServiceSettings(paths.settings_path, { ...settings, provider_registry: runtime.config.providerRegistry!, route_policy: runtime.config.routePolicy! });
-  await writeDesktopBridgeLaunchdPlist(paths.launch_agent_path, { executablePath: command.executable, arguments: [...command.arguments, 'bridge', 'serve', '--settings', paths.settings_path, '--json', '--supervised'], stdoutPath: paths.stdout_log_path, stderrPath: paths.stderr_log_path });
+  await writeDesktopBridgeLaunchdPlist(paths.launch_agent_path, { executablePath: command.executable, arguments: [...command.arguments, ...desktopBridgeServeArguments(paths.settings_path)], stdoutPath: paths.stdout_log_path, stderrPath: paths.stderr_log_path });
   const run = options.run || runProcess; const ctl = options.launchctl || '/bin/launchctl'; const service = launchService(options.uid); const domain = launchDomain(options.uid);
   await run(ctl, ['bootout', service], { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 }).catch(() => undefined); await removeStaleState(paths.state_path, options.processExists);
   const bootstrap = await bootstrapLaunchdWithRetry(options, domain, service, paths.launch_agent_path);
@@ -430,8 +432,8 @@ export async function stopDesktopBridgeService(options: DesktopBridgeServiceOpti
  * exiting it would kill the bridge with nothing standing by to relaunch it —
  * that process only ever logs the skew.
  */
-function desktopBridgeIsSupervised(env: NodeJS.ProcessEnv = process.env, argv: readonly string[] = process.argv): boolean {
-  return env.XPC_SERVICE_NAME === DESKTOP_BRIDGE_LAUNCHD_LABEL || argv.includes('--supervised');
+export function desktopBridgeIsSupervised(env: NodeJS.ProcessEnv = process.env, argv: readonly string[] = process.argv): boolean {
+  return env.XPC_SERVICE_NAME === DESKTOP_BRIDGE_LAUNCHD_LABEL || argv.includes(DESKTOP_BRIDGE_SUPERVISED_FLAG);
 }
 
 /** The version of the package this process is actually running from, on disk right now. */
@@ -733,7 +735,49 @@ function normalizeProviderRegistrySnapshot(value: unknown): DesktopBridgeProvide
 function overridePaths(base: DesktopBridgeServicePaths, options: DesktopBridgeServiceOptions): DesktopBridgeServicePaths { return { settings_path: options.settingsPath || base.settings_path, state_path: options.statePath || base.state_path, client_capability_path: options.clientCapabilityPath || base.client_capability_path, launch_agent_path: options.launchAgentPath || base.launch_agent_path, stdout_log_path: options.stdoutLogPath || base.stdout_log_path, stderr_log_path: options.stderrLogPath || base.stderr_log_path }; }
 function launchDomain(uid = typeof process.getuid === 'function' ? process.getuid() : 0): string { return `gui/${uid}`; }
 function launchService(uid?: number): string { return `${launchDomain(uid)}/${DESKTOP_BRIDGE_LAUNCHD_LABEL}`; }
-async function resolveLaunchCommand(options: DesktopBridgeServiceOptions): Promise<{ executable: string; arguments: string[] } | null> { if (options.executablePath) return await exists(path.resolve(options.executablePath)) ? { executable: path.resolve(options.executablePath), arguments: [...(options.executableArguments || [])] } : null; const entry = String(process.argv[1] || ''); if (entry && ['sks', 'sneakoscope'].includes(path.basename(entry).replace(/\.js$/i, '')) && await exists(entry)) return { executable: path.resolve(process.execPath), arguments: [path.resolve(entry)] }; const sks = await which('sks').catch(() => null); return sks ? { executable: path.resolve(sks), arguments: [] } : null; }
+interface LaunchCommandResolution {
+  command: { executable: string; arguments: string[] } | null;
+  blocker: 'desktop_bridge_sks_executable_missing' | 'desktop_bridge_entry_macos_protected_folder';
+}
+
+/**
+ * The interpreter and CLI entry launchd will exec, chosen so the service can
+ * actually start.
+ *
+ * A launchd agent holds no macOS files-and-folders grant, so an entry under
+ * Desktop/Documents/Downloads dies inside node's module loader before any
+ * bridge code runs: `package.json` is unreadable, `"type": "module"` never
+ * applies, and the ESM entry fails with "Cannot use import statement outside a
+ * module". `process.argv[1]` is exactly such a path whenever `bridge
+ * ensure|repair` is run from a checkout on the Desktop, and the plist then
+ * pinned that path for every future start — a repair that installed a service
+ * guaranteed to be dead. A protected candidate is skipped here so the global
+ * `sks` on PATH is used instead, and that fallback is held to the same rule
+ * (an `npm link`ed global resolves back into the checkout).
+ *
+ * An explicit `executablePath` is the caller's own contract and is used
+ * verbatim: an override that is silently ignored is worse than one that fails.
+ */
+async function resolveLaunchCommand(options: DesktopBridgeServiceOptions, home: string): Promise<LaunchCommandResolution> {
+  if (options.executablePath) {
+    return await exists(path.resolve(options.executablePath))
+      ? { command: { executable: path.resolve(options.executablePath), arguments: [...(options.executableArguments || [])] }, blocker: 'desktop_bridge_sks_executable_missing' }
+      : { command: null, blocker: 'desktop_bridge_sks_executable_missing' };
+  }
+  const candidates: { executable: string; arguments: string[] }[] = [];
+  const entry = String(process.argv[1] || '');
+  if (entry && ['sks', 'sneakoscope'].includes(path.basename(entry).replace(/\.js$/i, '')) && await exists(entry)) {
+    candidates.push({ executable: path.resolve(process.execPath), arguments: [path.resolve(entry)] });
+  }
+  const sks = await which('sks').catch(() => null);
+  if (sks) candidates.push({ executable: path.resolve(sks), arguments: [] });
+  let rejectedProtected = false;
+  for (const candidate of candidates) {
+    if (await launchTargetsProtectedFolder([candidate.executable, ...candidate.arguments], home)) { rejectedProtected = true; continue; }
+    return { command: candidate, blocker: 'desktop_bridge_sks_executable_missing' };
+  }
+  return { command: null, blocker: rejectedProtected ? 'desktop_bridge_entry_macos_protected_folder' : 'desktop_bridge_sks_executable_missing' };
+}
 function macosProtectedUserPath(target: string | undefined, home: string): boolean {
   if (!target) return false;
   return ['Desktop', 'Documents', 'Downloads']
