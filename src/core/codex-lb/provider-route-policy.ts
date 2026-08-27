@@ -156,23 +156,34 @@ function isRouteTargetId(value: unknown): value is BridgeRouteTarget['provider_i
 export const OFFICIAL_MODEL_ID_PATTERN = /^(?:gpt-[0-9]|o[0-9]|codex-mini)/;
 
 /**
- * Rewrites bare official-family model routes to the `openai` passthrough
- * target, so those turns carry the operator's own ChatGPT identity — the one
- * Codex Apps connector links, conversation affinity, and plan quotas are bound
- * to — instead of a substituted gateway key. Regenerates policy_generation so
- * the flip is a first-class policy change.
+ * Applies the operator's official-models routing mode to bare official-family
+ * routes, in BOTH directions. `passthrough` rewrites bare official ids to the
+ * `openai` identity route, so those turns carry the operator's own ChatGPT
+ * identity — the one Codex Apps connector links, conversation affinity, and
+ * plan quotas are bound to — instead of a substituted gateway key. `gateway`
+ * restores any bare official id still sitting on `openai` back to the target
+ * its provider-prefixed gateway twin (`codex-lb:<id>`) names, so a stale flip
+ * converges instead of surviving every later start (the 2026-08-27 shape: one
+ * start resolved `auto` off a transient not-ready registry snapshot, flipped
+ * gpt-5.6-* to official OAuth, and the then one-directional apply kept them
+ * there while SKS Center showed a healthy registered gateway). Returns the
+ * policy object unchanged when no route needs rewriting; otherwise regenerates
+ * policy_generation so the change is a first-class policy change.
  */
 export function applyOfficialModelPassthrough(
   policy: BridgeRoutingPolicy,
   input: { mode: 'passthrough' | 'gateway'; changedAt?: string } = { mode: 'passthrough' },
 ): BridgeRoutingPolicy {
-  if (input.mode === 'gateway') return policy;
   const routes: Record<string, BridgeRouteTarget> = {};
+  let changed = false;
   for (const [model, target] of Object.entries(policy.model_routes)) {
-    routes[model] = OFFICIAL_MODEL_ID_PATTERN.test(model) && !model.includes(':')
-      ? { provider_id: BRIDGE_OFFICIAL_ROUTE_ID, upstream_model: model }
-      : target;
+    const next = input.mode === 'passthrough'
+      ? passthroughRouteTarget(model, target)
+      : gatewayRouteTarget(model, target, policy);
+    routes[model] = next;
+    if (next !== target) changed = true;
   }
+  if (!changed) return policy;
   const semantic = {
     default_provider_id: policy.default_provider_id,
     fallback: 'none' as const,
@@ -185,6 +196,32 @@ export function applyOfficialModelPassthrough(
     policy_generation: sha256Stable(semantic),
     changed_at: input.changedAt || new Date().toISOString()
   };
+}
+
+function passthroughRouteTarget(model: string, target: BridgeRouteTarget): BridgeRouteTarget {
+  if (!OFFICIAL_MODEL_ID_PATTERN.test(model) || model.includes(':')) return target;
+  if (target.provider_id === BRIDGE_OFFICIAL_ROUTE_ID && target.upstream_model === model) return target;
+  return { provider_id: BRIDGE_OFFICIAL_ROUTE_ID, upstream_model: model };
+}
+
+/**
+ * The gateway target a flipped bare official id converges back to: the route
+ * its `codex-lb:<id>` twin names. The twin is authored by the same route index
+ * build that authored the bare id (explicit `provider:public_id` keys are
+ * always emitted), so it carries the catalog's real upstream model — including
+ * aliases the flip erased. A bare `openai` route with no twin has no provable
+ * gateway route and is left as the operator's passthrough.
+ */
+function gatewayRouteTarget(
+  model: string,
+  target: BridgeRouteTarget,
+  policy: BridgeRoutingPolicy
+): BridgeRouteTarget {
+  if (target.provider_id !== BRIDGE_OFFICIAL_ROUTE_ID) return target;
+  if (!OFFICIAL_MODEL_ID_PATTERN.test(model) || model.includes(':')) return target;
+  const twin = policy.model_routes[`codex-lb:${model}`];
+  if (!twin || twin.provider_id !== 'codex-lb') return target;
+  return { provider_id: twin.provider_id, upstream_model: twin.upstream_model };
 }
 
 function sameTarget(left: BridgeRouteTarget, right: BridgeRouteTarget): boolean {

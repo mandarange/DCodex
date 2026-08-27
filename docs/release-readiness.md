@@ -1,8 +1,10 @@
-# SKS 9.2.4 Release Readiness
+# SKS 9.2.5 Release Readiness
 
 ## Current decision
 
 **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED.**
+
+9.2.5 puts `gpt-5.6-*` turns back on the registered codex-lb gateway. On 2026-08-27 one 9.2.4 bridge start resolved official-models `auto` off a transient not-ready provider-registry snapshot, flipped the bare `gpt-5.6-*` routes to the official `openai` identity, and persisted that policy; the serve-time apply was one-directional (it only ever flipped TOWARD passthrough), so every later healthy start kept sending `gpt-5.6-sol` through the operator's ChatGPT OAuth while SKS Center showed a ready, registered gateway. `applyOfficialModelPassthrough` gateway mode now un-flips each bare official id to the target its `codex-lb:<id>` twin names, and the serve path applies the resolved mode in both directions, so one bridge restart on 9.2.5 converges the persisted policy back onto the gateway. The release also moves the Codex runtime contract to Codex CLI/SDK 0.150.1 (vendored base instructions byte-identical, feature-flag strip list re-verified against the 0.150.1 table, SDK gates green) and adds the legacy runtime data GC to shared convergence (aged config backups beyond the newest 3, non-active non-rollback bridge generation bundles under an intact active pointer, retired `codex-01xx-*` caches, the superseded v1 chrome-hosts record, and the moved-config marker pile compacted to its newest line). Live routing evidence stays operator-owned: only a bridge restart on the installed 9.2.5 followed by `sks bridge status --json` (bare `gpt-5.6-sol` on `codex-lb`) on the operator's machine can produce it. Regenerate the isolated 7.6.0 to 9.2.5 upgrade smoke, the full release gate DAG, pack receipt, and release-check stamp from the clean candidate commit.
 
 9.2.4 keeps the Desktop Bridge launchd service alive across an update. Its plist has always passed `bridge serve --supervised`, but the CLI argument parser never registered `--supervised`, so every launchd start exited with `bridge_command_unknown_option`; `KeepAlive { SuccessfulExit: false }` does not restart a clean exit, the failed activation booted the service out, and Codex reconnected forever against a loopback port nothing was listening on. The CLI option table and the launchd argv are now one module (`src/core/codex-lb/bridge-cli-contract.ts`) with the subcommand allowlists typed against it; `sks update` bootstraps an installed-but-down bridge instead of silently skipping it, and still never fails an update over bridge readiness; and `bridge ensure|repair` no longer pins a launch entry under Desktop/Documents/Downloads, where a launchd agent has no files-and-folders grant and node cannot even read `package.json`. Live bridge-serving evidence stays operator-owned: only an install of the published 9.2.4 followed by `sks bridge status --json` on the operator's own machine can produce it. Regenerate the isolated 7.6.0 to 9.2.4 upgrade smoke, the full release gate DAG, pack receipt, and release-check stamp from the clean candidate commit. Published 2026-08-26 as `sneakoscope@9.2.4` from commit 502c83a4 (tag `v9.2.4`): the registry tarball's `dist.integrity`, `dist.unpackedSize`, and `gitHead` all equal the local pack receipt for that commit, and the launchd service was then measured serving on the maintainer's Mac — `sks bridge status --json` installed/loaded/running true, no blockers, a new pid on 127.0.0.1:53451, and a plist argv ending in `--json --supervised`.
 
@@ -470,7 +472,7 @@ node ./dist/scripts/release-pack-receipt.js verify
 node ./dist/scripts/release-provenance-check.js --publish
 npm whoami --registry https://registry.npmjs.org/
 npm view sneakoscope maintainers --json --registry https://registry.npmjs.org/
-npm view sneakoscope@9.2.4 version --json --registry https://registry.npmjs.org/
+npm view sneakoscope@9.2.5 version --json --registry https://registry.npmjs.org/
 npm publish --dry-run --json \
   --registry https://registry.npmjs.org/ \
   --tag latest \

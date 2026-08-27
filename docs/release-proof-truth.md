@@ -1,10 +1,25 @@
-# Release Proof Truth — 9.2.4
-
+# Release Proof Truth — 9.2.5
 ## Current assertion
 
-9.2.4 is **PUBLISHED** (2026-08-26, tag `v9.2.4`, source commit
-`502c83a42784a71747d153783b8d54bb3bbb68fa`). The registry tarball is the tarball
-the release gates verified: `dist.integrity`
+9.2.5 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
+published 9.2.4 plus the official-models `auto` convergence fix, the Codex
+0.150.1 runtime contract, and the legacy runtime data GC. The 2026-08-27 field
+shape on this machine: one 9.2.4 bridge start resolved `auto` off a transient
+not-ready provider-registry snapshot (`official_models_auto_applied
+mode=passthrough` at 10:04:38.427Z against registry generation `cca21cfa…`),
+flipped the bare `gpt-5.6-*` routes to the official `openai` identity, and the
+one-directional serve apply preserved that flip across every later healthy
+start — `gpt-5.6-sol` turns left through the operator's ChatGPT OAuth while
+status showed a ready, registered codex-lb. `applyOfficialModelPassthrough`
+gateway mode now un-flips each bare official id to the target its
+`codex-lb:<id>` twin names, the serve path applies the resolved mode in both
+directions and logs which mode it applied, and a passthrough→gateway round
+trip regenerates the original policy generation, so one bridge restart on
+9.2.5 converges the persisted policy back onto the gateway.
+
+9.2.4 (published 2026-08-26, tag `v9.2.4`, source commit
+`502c83a42784a71747d153783b8d54bb3bbb68fa`) remains fully proven: the registry
+tarball is the tarball the release gates verified — `dist.integrity`
 `sha512-PA3hGuc62w2AZgF92uFKiMVf7sIzNWXWTqug35Nh2SL9I3COf/RYq8t7flklhmaXRJwaoknzUldUfcoOcKzspQ==`
 and `dist.unpackedSize` 12293683 equal the local pack receipt byte for byte, and
 the registry's `gitHead` is that same commit — the 9.2.1 failure mode, where the
@@ -59,12 +74,17 @@ Exact-commit proof can exist only after the candidate is committed and all
 source-bound gates are regenerated from that clean commit.
 
 All release artifacts bound to 9.2.3 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.2.4 evidence.
+must not be renamed, copied, or treated as 9.2.5 evidence.
 
-New 9.2.4 claims:
+New 9.2.5 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
+| Official-models `auto` converges to the gateway on a registered host | passed-hermetic | `applyOfficialModelPassthrough({ mode: 'gateway' })` restores each bare-official `openai` route to the target its `codex-lb:<id>` twin names, catalog upstream aliases included; a passthrough→gateway round trip regenerates the original policy generation; twin-less official routes stay passthrough |
+| A stale passthrough flip cannot outlive a healthy bridge start | passed-hermetic | serve-time auto apply computes the converged policy for BOTH resolved modes, persists settings + route-policy file only when the generation moves, and logs which mode it applied; both directions are idempotent, so healthy starts write nothing |
+| The Codex runtime contract tracks 0.150.1 | passed-hermetic | `@openai/codex-sdk` 0.150.1 with the SDK capability and dependency-graph gates green; the feature-flag strip list re-pinned against the vendored 0.150.1 `features list` (strip set unchanged, `multi_agent_mode` now absent rather than `removed`); vendored models-manager base instructions byte-identical to rust-v0.150.1 |
+| Legacy runtime data GC deletes only provable SKS residue | passed-hermetic | exact SKS backup name shapes with the newest 3 kept; bridge generation bundles deleted only under an intact active-generation pointer (no pointer ⇒ keep everything); retired `codex-01xx-*` caches and the superseded chrome-hosts v1 record only; moved-config provenance markers compact to the newest line; inert on a clean machine |
+| `gpt-5.6-sol` routes through codex-lb on the live machine | not proved | requires a bridge restart on the installed 9.2.5 plus `sks bridge status --json` route evidence (bare `gpt-5.6-sol` on `codex-lb`) on the operator's machine |
 | The argv launchd passes to `bridge serve` cannot contain an option the CLI rejects | passed-hermetic | one table (`bridge-cli-contract.ts`) backs `parseArgs`, every subcommand allowlist (typed against it, plus a runtime desync assert for the shipped JS), and the plist argv builder, which throws on an unregistered option; the contract suite drives the builder's argv — and the same argv round-tripped through the rendered plist — through the real CLI and asserts `bridge_command_unknown_option` never appears for a registered option |
 | `--supervised` means the same thing to the plist writer and to the runtime | passed-hermetic | one exported constant is written into the plist, registered in the option table, and read by `desktopBridgeIsSupervised`; the suite asserts a process started from the launchd argv reports itself supervised and an argv without the flag does not |
 | `sks update` revives a Desktop Bridge that is installed but not running | passed-hermetic | the restage stage bootstraps a service with a plist plus settings and no live pid, still kickstarts only a live stale one, leaves a current bridge alone, and never turns a failed recovery into a failed update; tests inject both launchd seams, and the stage entry point still refuses the real `launchctl` under `NODE_TEST_CONTEXT`/`SKS_TEST_ISOLATION` |
@@ -110,8 +130,8 @@ New 9.2.4 claims:
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 9.2.4 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.4 after incremental build |
-| The reported 9.2.4 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
+| All checked version authorities report 9.2.5 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.5 after incremental build |
+| The reported 9.2.5 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
 
 ## 9.1.0 assertion (historical)
 

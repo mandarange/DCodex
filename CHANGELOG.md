@@ -4,6 +4,51 @@
 
 
 
+
+## [9.2.5] - 2026-08-27
+
+### Fixed
+
+- Desktop Bridge official-models `auto` routing converges in BOTH directions at
+  bridge start. Field shape (2026-08-27, this machine): one 9.2.4 start
+  resolved `auto` off a transient not-ready provider-registry snapshot, flipped
+  the bare `gpt-5.6-*` routes to the official `openai` identity, and persisted
+  that policy — and because the serve-time apply only ever flipped TOWARD
+  passthrough, every later healthy start (codex-lb registered, credentialed,
+  settings `auto`) kept sending `gpt-5.6-sol` turns out through the operator's
+  ChatGPT OAuth while SKS Center showed a ready, registered gateway.
+  `applyOfficialModelPassthrough` gateway mode now restores each bare official
+  id still routed to `openai` to the target its `codex-lb:<id>` twin names
+  (catalog upstream aliases included; a twin-less official route is left as
+  passthrough), the serve path applies the resolved mode in both directions and
+  logs which mode it applied, and a passthrough→gateway round trip regenerates
+  the original policy generation.
+
+### Changed
+
+- The Codex runtime contract tracks Codex CLI/SDK 0.150.1
+  (`@openai/codex-sdk` 0.147.0 → 0.150.1). The vendored models-manager base
+  instructions are byte-identical between rust-v0.147.0 and rust-v0.150.1 (the
+  vendoring header now says so); the feature-flag strip list was re-verified
+  against the 0.150.1 `features list` table (`multi_agent_mode` left the table
+  entirely instead of reporting `removed`; the strip set itself is unchanged
+  and every managed flag — `hooks`, `fast_mode`, `apps` — is still stable); and
+  the SDK capability and dependency-graph gates pass on 0.150.1.
+
+### Added
+
+- Legacy runtime data GC inside the shared doctor/init convergence
+  (`sks.legacy-runtime-data-gc.v1`), with deletion authority kept narrow and
+  provable: aged `config.toml.*` backups beyond the newest 3 (exact SKS backup
+  name shapes only), staged bridge catalog generation bundles that are neither
+  the active bundle nor the newest rollback (the active-generation pointer is
+  required proof — without it nothing is deleted), retired `codex-01xx-*`
+  capability/doctor caches whose readers were replaced by `codex-current-*`,
+  and the v1 `chrome-native-hosts.json` record once the v2 record exists. The
+  machine-local `~/.codex/config.toml` also loses the append-per-move
+  `# SKS moved machine-local Codex config` comment pile: the newest provenance
+  line survives, the rest are compacted away.
+
 ## [9.2.4] - 2026-08-26
 
 ### Fixed

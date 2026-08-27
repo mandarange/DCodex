@@ -18,13 +18,14 @@
 export const MANAGED_CODEX_FEATURE_FLAGS = Object.freeze(['hooks', 'fast_mode', 'apps'])
 
 export const REMOVED_CODEX_FEATURE_FLAGS = Object.freeze([
-  // unknown to Codex 0.147
+  // unknown to Codex 0.150.1 (multi_agent_mode was stage `removed` in 0.147
+  // and has since left the table entirely; `multi_agent` itself is stable)
   'fast_mode_ui',
   'codex_hooks',
-  // stage `removed` in Codex 0.147
+  'multi_agent_mode',
+  // stage `removed` in Codex 0.150.1
   'remote_control',
   'codex_git_commit',
   'plugin_hooks',
-  'js_repl',
-  'multi_agent_mode'
+  'js_repl'
 ])

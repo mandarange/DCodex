@@ -12,6 +12,10 @@ import {
   reconcileRetiredManagedResidue,
   type RetiredManagedResidueReport
 } from '../doctor/retired-managed-residue.js';
+import {
+  reconcileLegacyRuntimeData,
+  type LegacyRuntimeDataGcReport
+} from '../doctor/legacy-runtime-data-gc.js';
 import { readJson, readText } from '../fsx.js';
 import { removeMcpServerBlock, mcpServerBlockWithChildren } from '../mcp/mcp-config-preservation.js';
 import { reconcileRetiredSksConfigText } from '../auto-review.js';
@@ -42,6 +46,7 @@ export interface ManagedConfigConvergenceReport {
   rewritten_count: number;
   retired_mcp_block_count: number;
   retired_config_entry_count: number;
+  compacted_marker_line_count: number;
   preserved_user_config_count: number;
   remaining_count: number;
   error_count: number;
@@ -61,6 +66,7 @@ export interface LegacyGenerationConvergenceReport {
   project_skills: SkillConvergenceResult[];
   retired_agent_roles: Awaited<ReturnType<typeof reconcileRetiredAgentRoleResidue>>;
   retired_runtime_scopes: RetiredManagedResidueReport[];
+  runtime_data_gc: LegacyRuntimeDataGcReport;
   managed_configs: ManagedConfigConvergenceReport;
   blockers: string[];
   warnings: string[];
@@ -129,6 +135,12 @@ export async function reconcileLegacyManagedGeneration(input: {
     retiredRuntimeScopes.push(await reconcileRuntimeScope(runtimeRoot, input.fix));
   }
 
+  const runtimeDataGc = await reconcileLegacyRuntimeData({
+    codexHome,
+    stateRoots: runtimeRoots.map((runtimeRoot) => path.join(runtimeRoot, '.sneakoscope')),
+    fix: input.fix
+  });
+
   const managedConfigs = await reconcileManagedConfigs({
     projectRoots,
     home,
@@ -144,6 +156,7 @@ export async function reconcileLegacyManagedGeneration(input: {
     ok: skillsOk
       && retiredAgentRoles.ok
       && runtimeOk
+      && runtimeDataGc.ok
       && managedConfigs.ok
       && blockers.length === 0
       && nested.errorCount === 0,
@@ -155,6 +168,7 @@ export async function reconcileLegacyManagedGeneration(input: {
     project_skills: projectSkills,
     retired_agent_roles: retiredAgentRoles,
     retired_runtime_scopes: retiredRuntimeScopes,
+    runtime_data_gc: runtimeDataGc,
     managed_configs: managedConfigs,
     blockers,
     warnings
@@ -220,6 +234,7 @@ async function reconcileManagedConfigs(input: {
     rewritten_count: 0,
     retired_mcp_block_count: 0,
     retired_config_entry_count: 0,
+    compacted_marker_line_count: 0,
     preserved_user_config_count: 0,
     remaining_count: 0,
     error_count: 0,
@@ -273,7 +288,8 @@ async function reconcileManagedConfigTarget(
   const before = await readText(target.configPath, '');
   const ownership = await managedConfigOwnershipProof(target.ownerRoot, target.configPath, before);
   const retiredConfig = reconcileRetiredSksConfigText(before);
-  let next = retiredConfig.user_authored_conflict && !ownership ? before : retiredConfig.text;
+  const retiredApplied = !(retiredConfig.user_authored_conflict && !ownership);
+  let next = retiredApplied ? retiredConfig.text : before;
   let retiredMcpCount = 0;
   if (ownership) {
     for (const server of RETIRED_SKS_MCP_SERVERS) {
@@ -282,8 +298,13 @@ async function reconcileManagedConfigTarget(
       retiredMcpCount += 1;
     }
   }
-  const retiredConfigCount = next === before ? 0 : retiredConfig.detected_count;
-  const detectedCount = retiredConfigCount + retiredMcpCount;
+  // Provenance markers are SKS-authored by exact signature, so compacting the
+  // append-per-move pile to the newest line needs no wider ownership proof.
+  const compacted = compactSksMovedConfigMarkers(next);
+  const markerCount = compacted.removed_count;
+  next = compacted.text;
+  const retiredConfigCount = retiredApplied && retiredConfig.detected_count > 0 ? retiredConfig.detected_count : 0;
+  const detectedCount = retiredConfigCount + retiredMcpCount + markerCount;
   if (retiredConfig.user_authored_conflict && !ownership) {
     report.preserved_user_config_count += 1;
     report.preserved_user_configs.push(target.configPath);
@@ -292,6 +313,7 @@ async function reconcileManagedConfigTarget(
   report.detected_count += detectedCount;
   report.retired_config_entry_count += retiredConfigCount;
   report.retired_mcp_block_count += retiredMcpCount;
+  report.compacted_marker_line_count += markerCount;
   if (!fix) {
     report.remaining_count += detectedCount;
     return;
@@ -303,8 +325,9 @@ async function reconcileManagedConfigTarget(
   }
   try {
     const normalized = normalizeConfigText(next);
-    const exactRetiredConfigAuthorized = retiredConfig.detected_count > 0
-      && retiredConfig.user_authored_conflict !== true;
+    const exactRetiredConfigAuthorized = (retiredConfig.detected_count > 0
+      && retiredConfig.user_authored_conflict !== true)
+      || markerCount > 0;
     const guarded = await writeCodexConfigGuarded({
       root: target.ownerRoot,
       configPath: target.configPath,
@@ -343,6 +366,23 @@ async function managedConfigOwnershipProof(ownerRoot: string, configPath: string
 function normalizeConfigText(text: string): string {
   const value = String(text || '').trimEnd().replace(/\n{3,}/g, '\n\n');
   return value ? `${value}\n` : '';
+}
+
+const SKS_MOVED_MARKER_LINE = /^\s*#\s*SKS moved machine-local Codex config\b/i;
+
+/**
+ * Collapses the append-per-move provenance comments to the newest one. The
+ * project-config splitter strips prior markers from the PROJECT file before
+ * adding a fresh one, but the machine-local destination accumulated one line
+ * per move (60+ on long-lived machines); only the newest carries information.
+ */
+function compactSksMovedConfigMarkers(text: string): { text: string; removed_count: number } {
+  const lines = String(text || '').split('\n');
+  const markerIndexes = lines.flatMap((line, index) => (SKS_MOVED_MARKER_LINE.test(line) ? [index] : []));
+  if (markerIndexes.length < 2) return { text, removed_count: 0 };
+  const keep = markerIndexes[markerIndexes.length - 1];
+  const kept = lines.filter((line, index) => !SKS_MOVED_MARKER_LINE.test(line) || index === keep);
+  return { text: kept.join('\n'), removed_count: markerIndexes.length - 1 };
 }
 
 function recordConfigError(report: ManagedConfigConvergenceReport, file: string, error: unknown): void {

@@ -489,13 +489,20 @@ async function readSkewRestartMarker(file: string): Promise<SkewRestartMarker | 
 }
 
 /**
- * Applies the 'auto' official-models resolution at bridge startup. `sks update`
- * restarts the bridge (restage stage or skew self-convergence), so a
- * ChatGPT-OAuth machine converges onto its own identity on the next start
- * without any manual command — while an explicit `gateway` choice, a disabled
- * passthrough, or gateway/API-key host auth leaves the policy untouched.
- * The flipped policy is persisted (settings + route-policy file) before
- * serving so session-pin persistence and status generations stay coherent.
+ * Applies the official-models resolution at bridge startup, in BOTH
+ * directions. `sks update` restarts the bridge (restage stage or skew
+ * self-convergence), so a ChatGPT-OAuth machine converges onto its own
+ * identity on the next start without any manual command — and a machine whose
+ * operator chose the gateway (explicitly, or through `auto` by registering
+ * codex-lb) converges BACK onto the gateway route even when an earlier start
+ * flipped the persisted policy to passthrough. The 2026-08-27 field shape this
+ * closes: one start resolved `auto` off a transient not-ready registry
+ * snapshot, flipped gpt-5.6-* to official OAuth, and the then one-directional
+ * apply preserved that flip across every later healthy start — so gpt-5.6-sol
+ * kept leaving through the operator's ChatGPT OAuth while SKS Center showed a
+ * registered, ready codex-lb. The converged policy is persisted (settings +
+ * route-policy file) before serving so session-pin persistence and status
+ * generations stay coherent.
  */
 async function autoApplyOfficialModelsAtServe(
   runtime: Awaited<ReturnType<typeof resolveDesktopBridgeRuntimeConfig>>,
@@ -507,15 +514,14 @@ async function autoApplyOfficialModelsAtServe(
     home,
     codexLbRegistered: desktopBridgeCodexLbRegistered(settings.provider_registry.providers),
   });
-  if (mode !== 'passthrough') return;
-  const flipped = applyOfficialModelPassthrough(settings.route_policy, { mode: 'passthrough' });
-  if (flipped.policy_generation === settings.route_policy.policy_generation) return;
-  const nextSettings = { ...settings, route_policy: flipped };
+  const converged = applyOfficialModelPassthrough(settings.route_policy, { mode });
+  if (converged.policy_generation === settings.route_policy.policy_generation) return;
+  const nextSettings = { ...settings, route_policy: converged };
   await writeDesktopBridgeServiceSettings(options.settingsPath || desktopBridgeServicePaths(home).settings_path, nextSettings);
-  await writeBridgeRoutingPolicy(bridgeRoutePolicyPath(path.join(path.resolve(home), '.codex')), flipped).catch(() => undefined);
-  settings.route_policy = flipped;
-  runtime.config.routePolicy = flipped;
-  process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.official_models_auto_applied', at: new Date().toISOString(), sks_version: PACKAGE_VERSION, mode: 'passthrough', policy_generation: flipped.policy_generation, secret_fields_redacted: true })}\n`);
+  await writeBridgeRoutingPolicy(bridgeRoutePolicyPath(path.join(path.resolve(home), '.codex')), converged).catch(() => undefined);
+  settings.route_policy = converged;
+  runtime.config.routePolicy = converged;
+  process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.official_models_auto_applied', at: new Date().toISOString(), sks_version: PACKAGE_VERSION, mode, policy_generation: converged.policy_generation, secret_fields_redacted: true })}\n`);
 }
 
 export async function serveDesktopBridge(options: DesktopBridgeServiceOptions = {}): Promise<{ schema: 'sks.desktop-bridge-serve.v1'; ok: boolean; status: 'stopped' | 'failed'; state: DesktopBridgePublicState | null; blocker?: string }> {

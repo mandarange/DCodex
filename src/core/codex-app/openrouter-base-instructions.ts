@@ -1,4 +1,5 @@
-// Vendored from openai/codex rust-v0.147.0 (Apache-2.0):
+// Vendored from openai/codex rust-v0.150.1 (Apache-2.0) — byte-identical to
+// the rust-v0.147.0 vendoring this replaced:
 // codex-rs/models-manager/prompt.md — the BASE_INSTRUCTIONS fallback Codex
 // itself applies to models without bundled catalog metadata. SKS stamps this
 // into SKS-managed ModelInfo catalog rows for third-party (OpenRouter) models

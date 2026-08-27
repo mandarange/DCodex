@@ -4,7 +4,15 @@ import { findCodexBinary } from '../codex-adapter.js'
 import { ensureDir, runProcess } from '../fsx.js'
 import { codexCurrentCoreProbeTail, skippedCodexCurrentCoreProbe, type CodexCurrentCoreSingleProbe } from './codex-current-core-real-probes.js'
 
-const CURRENT_COLLAB_TOOLS = ['spawnAgent', 'sendInput', 'resumeAgent', 'wait', 'closeAgent']
+// The CollabAgentTool enum the live app-server v2 schema must carry. Codex
+// 0.148–0.150 grew this set: `sendMessage` (codex queue), `followupTask` and
+// `listAgents` (agents dashboard / "@" task mentions), and `interruptAgent`,
+// which 0.150 REINTRODUCED as a current tool (active-turn interruption) after
+// an earlier retirement — only the snake_case spelling remains legacy.
+const CURRENT_COLLAB_TOOLS = [
+  'spawnAgent', 'sendInput', 'resumeAgent', 'wait', 'closeAgent',
+  'sendMessage', 'followupTask', 'interruptAgent', 'listAgents'
+]
 
 export async function runCodexCurrentCollabAgentToolSchemaRealProbe(input: {
   root: string
@@ -28,7 +36,7 @@ export async function runCodexCurrentCollabAgentToolSchemaRealProbe(input: {
     ? schema.definitions.CollabAgentTool.enum.map(String)
     : []
   const currentNamesPresent = CURRENT_COLLAB_TOOLS.every((name) => tools.includes(name))
-  const legacyInterruptAbsent = !tools.includes('interruptAgent') && !tools.includes('interrupt_agent')
+  const legacyInterruptAbsent = !tools.includes('interrupt_agent')
   const collabItemPresent = JSON.stringify(schema?.definitions?.ThreadItem || {}).includes('collabAgentToolCall')
     || JSON.stringify(schema || {}).includes('collabAgentToolCall')
   const processExitedSuccessfully = (result as any).code === 0

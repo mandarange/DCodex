@@ -7,6 +7,7 @@ import {
   codexCurrentSchemaCachePath,
   detectCodexCurrentCapability
 } from '../codex-current-capability.js';
+import { CURRENT_CODEX_RUNTIME_CONTRACT } from '../../codex-compat/codex-runtime-contract.js';
 import { resolveCodexRuntime } from '../../codex-runtime/resolve-codex-runtime.js';
 
 test('require-real capability probes bypass untrusted schema cache', {
@@ -18,7 +19,10 @@ test('require-real capability probes bypass untrusted schema cache', {
     await fsp.writeFile(codexBin, [
       '#!/bin/sh',
       'if [ "$1" = "--version" ]; then',
-      '  echo "codex-cli 0.147.0"',
+      // The stub must report the CURRENT contract version: capability
+      // detection treats an older CLI as not-current, which is its own
+      // blocker, not the cache-bypass behavior under test.
+      `  echo "codex-cli ${CURRENT_CODEX_RUNTIME_CONTRACT.requiredCliVersion}"`,
       '  exit 0',
       'fi',
       'echo "schema generation intentionally disabled" >&2',

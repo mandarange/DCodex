@@ -19,6 +19,10 @@ import { sha256Stable } from '../route-index.js';
 function policyFixture(): BridgeRoutingPolicy {
   const modelRoutes = {
     'codex-auto-review': { provider_id: 'codex-lb' as const, upstream_model: 'codex-auto-review' },
+    // The route index always emits the explicit `provider:public_id` key next
+    // to an unambiguous bare id, so every bare official id has its gateway
+    // twin — the un-flip depends on that invariant.
+    'codex-lb:gpt-5.6-luna': { provider_id: 'codex-lb' as const, upstream_model: 'gpt-5.6-luna' },
     'codex-lb:gpt-5.6-sol': { provider_id: 'codex-lb' as const, upstream_model: 'gpt-5.6-sol' },
     'gpt-5.6-luna': { provider_id: 'codex-lb' as const, upstream_model: 'gpt-5.6-luna' },
     'gpt-5.6-sol': { provider_id: 'codex-lb' as const, upstream_model: 'gpt-5.6-sol' },
@@ -51,8 +55,56 @@ test('official-model flip rewrites bare official ids only and regenerates the po
   assert.notEqual(flipped.policy_generation, policy.policy_generation);
   // The regenerated policy self-validates: generation matches its semantics.
   assert.deepEqual(validateBridgeRoutingPolicy(flipped), []);
-  // Gateway mode is the identity transform.
+  // Gateway mode with nothing flipped is the identity transform.
   assert.equal(applyOfficialModelPassthrough(policy, { mode: 'gateway' }), policy);
+});
+
+test('gateway mode restores flipped bare official ids to their codex-lb twins', () => {
+  // The 2026-08-27 field shape: a transient not-ready registry snapshot let one
+  // bridge start flip bare official ids to `openai`, and the flip survived
+  // every later healthy start because gateway mode was a pure identity. The
+  // un-flip must converge the persisted policy back onto the operator's
+  // registered gateway.
+  const policy = policyFixture();
+  const flipped = applyOfficialModelPassthrough(policy, { mode: 'passthrough', changedAt: '2026-08-27T10:04:38.000Z' });
+  assert.equal(flipped.model_routes['gpt-5.6-sol']!.provider_id, 'openai');
+  const restored = applyOfficialModelPassthrough(flipped, { mode: 'gateway', changedAt: '2026-08-27T10:05:33.000Z' });
+  assert.equal(restored.model_routes['gpt-5.6-sol']!.provider_id, 'codex-lb');
+  assert.equal(restored.model_routes['gpt-5.6-luna']!.provider_id, 'codex-lb');
+  // Round-trip lands back on the original semantics, generation included.
+  assert.equal(restored.policy_generation, policy.policy_generation);
+  assert.deepEqual(validateBridgeRoutingPolicy(restored), []);
+  // Both directions are idempotent: converging an already-converged policy is
+  // the identity, so serve-time auto apply persists nothing on healthy starts.
+  assert.equal(applyOfficialModelPassthrough(restored, { mode: 'gateway' }), restored);
+  assert.equal(applyOfficialModelPassthrough(flipped, { mode: 'passthrough' }), flipped);
+});
+
+test('gateway mode restores the twin upstream alias and leaves twin-less official routes alone', () => {
+  const modelRoutes = {
+    // The catalog aliases the public id to a different upstream; the flip
+    // erased that alias, so the un-flip must restore it from the twin.
+    'codex-lb:gpt-5.6-sol': { provider_id: 'codex-lb' as const, upstream_model: 'gpt-5.6-sol-internal' },
+    'gpt-5.6-sol': { provider_id: 'openai' as const, upstream_model: 'gpt-5.6-sol' },
+    // No gateway twin: there is no provable gateway route to restore.
+    'o3': { provider_id: 'openai' as const, upstream_model: 'o3' },
+  };
+  const semantic = {
+    default_provider_id: 'codex-lb' as const,
+    fallback: 'none' as const,
+    model_routes: modelRoutes,
+    catalog_generation: 'catalog-generation',
+  };
+  const policy: BridgeRoutingPolicy = {
+    schema: 'sks.bridge-routing-policy.v1',
+    ...semantic,
+    policy_generation: sha256Stable(semantic),
+    changed_at: '2026-08-23T00:00:00.000Z',
+  };
+  const restored = applyOfficialModelPassthrough(policy, { mode: 'gateway' });
+  assert.deepEqual(restored.model_routes['gpt-5.6-sol'], { provider_id: 'codex-lb', upstream_model: 'gpt-5.6-sol-internal' });
+  assert.deepEqual(restored.model_routes['o3'], { provider_id: 'openai', upstream_model: 'o3' });
+  assert.deepEqual(validateBridgeRoutingPolicy(restored), []);
 });
 
 test('status routing accepts official openai targets including gpt-5.6-luna', () => {
