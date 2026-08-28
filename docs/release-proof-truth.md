@@ -1,9 +1,16 @@
 # Release Proof Truth — 9.2.5
 ## Current assertion
 
-9.2.5 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
+9.2.5 (published 2026-08-28, tag `v9.2.5`, source commit
+`a8dd9664e5fa07614819e68584078c3c2bc8d2ff`) is the
 published 9.2.4 plus the official-models `auto` convergence fix, the Codex
-0.150.1 runtime contract, and the legacy runtime data GC. The 2026-08-27 field
+0.150.1 runtime contract, and the legacy runtime data GC. The registry tarball
+is the tarball the release gates verified — `dist.integrity`
+`sha512-s2tnlnHQfbF+HL/7bQtpTa2Mk21DSwqJCHTiSqWYbM71jb5Xxxt6uC7eRdXomd8PNop4/eMtfWE7JYVuZ6gI4g==`,
+`dist.unpackedSize` 12303242, shasum `9174200bb7fc08c2ceb06797efa25c39d58c0e5d`,
+and `gitHead` all equal the local pack receipt for that commit byte for byte,
+and the maintainer's Mac was upgraded from that same gate-verified tarball, so
+the live measurements below are measurements of the published bytes. The 2026-08-27 field
 shape on this machine: one 9.2.4 bridge start resolved `auto` off a transient
 not-ready provider-registry snapshot (`official_models_auto_applied
 mode=passthrough` at 10:04:38.427Z against registry generation `cca21cfa…`),
@@ -84,14 +91,14 @@ New 9.2.5 claims:
 | A stale passthrough flip cannot outlive a healthy bridge start | passed-hermetic | serve-time auto apply computes the converged policy for BOTH resolved modes, persists settings + route-policy file only when the generation moves, and logs which mode it applied; both directions are idempotent, so healthy starts write nothing |
 | The Codex runtime contract tracks 0.150.1 | passed-hermetic | `@openai/codex-sdk` 0.150.1 with the SDK capability and dependency-graph gates green; the feature-flag strip list re-pinned against the vendored 0.150.1 `features list` (strip set unchanged, `multi_agent_mode` now absent rather than `removed`); vendored models-manager base instructions byte-identical to rust-v0.150.1 |
 | Legacy runtime data GC deletes only provable SKS residue | passed-hermetic | exact SKS backup name shapes with the newest 3 kept; bridge generation bundles deleted only under an intact active-generation pointer (no pointer ⇒ keep everything); retired `codex-01xx-*` caches and the superseded chrome-hosts v1 record only; moved-config provenance markers compact to the newest line; inert on a clean machine |
-| `gpt-5.6-sol` routes through codex-lb on the live machine | not proved | requires a bridge restart on the installed 9.2.5 plus `sks bridge status --json` route evidence (bare `gpt-5.6-sol` on `codex-lb`) on the operator's machine |
+| `gpt-5.6-sol` routes through codex-lb on the live machine | verified-on-machine | measured 2026-08-27 on the maintainer's Mac after installing the gate-verified 9.2.5 tarball: the running 9.2.4 bridge's supervised skew check logged `version_skew running 9.2.4 installed 9.2.5 action=restarting` within one 60-second tick and launchd relaunched it as 9.2.5 on a new pid; the 9.2.5 start wrote no `official_models_auto_applied` event against the already-converged policy (both directions idempotent in production); `sks bridge route explain gpt-5.6-sol --json` on the installed 9.2.5 resolves `{provider_id: codex-lb, upstream_model: gpt-5.6-sol}` at the registered gateway endpoint with zero blockers, and the status route table shows bare `gpt-5.6-sol`/`-luna`/`-terra` all on `codex-lb`. One machine, one macOS version: an existence proof for the fixed path, not a fleet claim |
 | The argv launchd passes to `bridge serve` cannot contain an option the CLI rejects | passed-hermetic | one table (`bridge-cli-contract.ts`) backs `parseArgs`, every subcommand allowlist (typed against it, plus a runtime desync assert for the shipped JS), and the plist argv builder, which throws on an unregistered option; the contract suite drives the builder's argv — and the same argv round-tripped through the rendered plist — through the real CLI and asserts `bridge_command_unknown_option` never appears for a registered option |
 | `--supervised` means the same thing to the plist writer and to the runtime | passed-hermetic | one exported constant is written into the plist, registered in the option table, and read by `desktopBridgeIsSupervised`; the suite asserts a process started from the launchd argv reports itself supervised and an argv without the flag does not |
 | `sks update` revives a Desktop Bridge that is installed but not running | passed-hermetic | the restage stage bootstraps a service with a plist plus settings and no live pid, still kickstarts only a live stale one, leaves a current bridge alone, and never turns a failed recovery into a failed update; tests inject both launchd seams, and the stage entry point still refuses the real `launchctl` under `NODE_TEST_CONTEXT`/`SKS_TEST_ISOLATION` |
 | A launch entry under Desktop/Documents/Downloads is never written into the plist | passed-hermetic | `resolveLaunchCommand` skips protected candidates by realpath (so an `npm link`ed global counts as protected), falls back to the `sks` on PATH, and reports `desktop_bridge_entry_macos_protected_folder` when no runnable entry remains |
 | A past release's upgrade-smoke record is not restamped by a version bump | passed-hermetic | the readiness-doc rewrite is non-global and anchored on the leading current-decision line; the current-docs suite asserts a historical `7.6.0 to 1.1.0 upgrade smoke` line survives a bump |
-| The published tarball is the tarball the gates verified | verified-on-registry | `npm view sneakoscope@9.2.4` reports `gitHead` 502c83a4 and a `dist.integrity` / `dist.unpackedSize` equal to the local pack receipt for that commit; the tarball was not rebuilt into something the gates never saw |
-| The bridge is serving on an operator machine after installing 9.2.4 | verified-on-machine | measured 2026-08-26 on the maintainer's Mac after `sks update` from the hot-fixed 9.2.3: `sks bridge status --json` run from HOME reports installed/loaded/running true with no blockers; `desktop-bridge-state.json` records `sks_version` 9.2.4 on a new pid (32546, replacing the 9.2.3 process 91038) listening on 127.0.0.1:53451; `launchctl print` shows `state = running` with ProgramArguments `… nvm bin/sks bridge serve --settings … --json --supervised` — the exact argv 9.2.3 exited on, now parsed and served with no local patch. One machine, one macOS version: this is an existence proof for the fixed path, not a fleet claim |
+| The published 9.2.5 tarball is the tarball the gates verified | verified-on-registry | `npm view sneakoscope@9.2.5` reports `gitHead` a8dd9664 and `dist.integrity` / `dist.unpackedSize` / shasum equal to the local pack receipt for that commit (`sha512-s2tnln…gI4g==`, 12303242, `9174200b…`); `latest` now resolves to 9.2.5; the tarball was not rebuilt into something the gates never saw |
+| The legacy runtime data GC ran on a real machine | verified-on-machine | applied 2026-08-27 on the maintainer's Mac by the shipped convergence: `~/.codex` config backups went from 25+ files to the newest 3, `.sks-bridge-generations` from 5 bundles to active + 1 rollback under the intact active pointer, the retired `codex-0138/0139-*` caches and the superseded v1 chrome-hosts record are gone, and the moved-config marker pile compacted from 60+ lines to the single newest line — with the GC report showing zero errors and the next run detecting nothing (inert on a clean machine) |
 
 9.2.3 claims (published):
 
@@ -131,7 +138,7 @@ New 9.2.5 claims:
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
 | All checked version authorities report 9.2.5 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.5 after incremental build |
-| The reported 9.2.5 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
+| The reported 9.2.5 package is ready to publish | proven-then-published | `npm run release:check:full` exit 0 from the clean release commit `a8dd9664` (canonical 3535/3535 + stamp phase 33/33, real checks green, only the operator-owned physical-evidence gate remaining non-blocking as on 9.2.4); the release-check stamp binds that commit; the pack receipt's tarball was published unmodified (see the registry row above) |
 
 ## 9.1.0 assertion (historical)
 
