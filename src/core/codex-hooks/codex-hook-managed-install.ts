@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { ensureDir, nowIso, readText, writeTextAtomic } from '../fsx.js';
 import { CODEX_HOOK_EVENTS, type CodexHookEventName } from '../codex-compat/codex-hook-events.js';
+import { postToolEvidenceEnabled } from '../verification-profile.js';
 import { buildCodexCommandHookToml, matcherApplies } from './codex-hook-config-writer.js';
 import { readCodexHookActualState } from './codex-hook-actual-discovery.js';
 import { writeTrustedHashStateForHooksFile } from './codex-hook-state-writer.js';
@@ -31,12 +32,15 @@ export async function installManagedCodexHooks(root: string, opts: CodexManagedH
   const scriptPath = path.join(managedDir, 'sks-managed-hook.sh');
   const tomlPath = path.join(managedDir, 'sks-managed-hooks.toml');
   const binCommand = opts.binCommand || 'sks hook';
-  const hooksToml = CODEX_HOOK_EVENTS.map((event) => buildCodexCommandHookToml({
+  // The essential profile installs no PostToolUse hook: it only ever wrote
+  // proof evidence nothing in that profile reads, at one cold process per call.
+  const installedEvents = CODEX_HOOK_EVENTS.filter((event) => event !== 'PostToolUse' || postToolEvidenceEnabled(root));
+  const hooksToml = installedEvents.map((event) => buildCodexCommandHookToml({
     event,
     matcher: matcherApplies(event) ? '*' : null,
     command: `${scriptPath} ${HOOK_SUBCOMMANDS[event] || event}`,
     timeout: event === 'Stop' ? 60 : 30,
-    statusMessage: event === 'Stop' ? 'SKS validating completion proof' : null
+    statusMessage: event === 'Stop' ? 'SKS checking done gate' : null
   })).join('\n');
   const requirementsToml = mergeRequirementsToml(await readText(requirementsPath, ''), {
     managedDir,

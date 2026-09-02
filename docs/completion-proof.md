@@ -1,5 +1,7 @@
 # Completion Proof
 
+> **10.0 (Essential Trust):** in the default `essential` verification profile, Completion Proof is available on request (`sks proof …`) and is **not** a Stop-time requirement — a finished turn finishes. Everything below describes the `strict` profile (`SKS_VERIFICATION_PROFILE=strict`), which keeps the pre-10 behavior. See [essential-trust.md](essential-trust.md).
+
 SKS makes Completion Proof a route-bound completion requirement for serious routes. Serious route finalization writes a valid proof through the central finalizer, and Stop/Honest/HProof-style gates block missing, failed, blocked, invalid, or secret-bearing proof artifacts.
 
 Route finalization also writes a Trust Kernel envelope:

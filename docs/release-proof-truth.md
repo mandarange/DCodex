@@ -1,7 +1,21 @@
-# Release Proof Truth — 9.2.7
+# Release Proof Truth — 10.0.0
 ## Current assertion
 
-9.2.7 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
+10.0.0 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is
+Essential Trust: the published 9.2.6, the never-published 9.2.7 readiness-truth
+fixes, and a verification-profile architecture whose default, `essential`,
+keeps the safety gates and drops the anti-lying rituals — Stop-hook Honest
+Mode / completion-summary wording gates and the gap loopback, Stop-time
+completion proof / reflection / ledger requirements, the per-tool-call
+PostToolUse evidence hook, denial over managed-skill digest drift, refusal of an
+interrupted-tool-output prompt, and the image route's manual real-output proof
+as a readiness blocker. Hooks run through the warm `sksd` daemon with a
+version guard. `strict` is the pre-10 behavior and stays the default inside
+the test harness. See `docs/essential-trust.md`.
+
+9.2.7 (commit `4de781997995ba737dc9d50983ecaea8e455652d`, gate-verified with
+`release:check:full` exit 0, never published — superseded by 10.0.0 before the
+operator published it) is the
 published 9.2.6 plus three readiness-truth fixes found while recording the
 9.2.6 live evidence on this machine: (1) the serving bridge's state heartbeat
 rewrote the whole state document from its in-memory copy every ~100 s, erasing
@@ -125,13 +139,20 @@ publication, deployment, a credential change, a Git tag, or a push.
 Exact-commit proof can exist only after the candidate is committed and all
 source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 9.2.6 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.2.7 evidence.
+All release artifacts bound to 9.2.7 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 10.0.0 evidence.
 
-New 9.2.7 claims:
+New 10.0.0 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
+| The essential profile is the product default and strict is the harness default | passed-hermetic | `resolveVerificationProfile`: env `SKS_VERIFICATION_PROFILE` → project `.sneakoscope/verification-profile.json` → global `verification-profile.json` → `strict` under `NODE_TEST_CONTEXT`/`SKS_TEST_ISOLATION` → `essential`; garbage env falls through; summary names the source |
+| A finished turn finishes | passed-hermetic | Stop hook under `essential` returns `continue` with `essential_profile_stop_accepted` for a plain completion message; the same message under `strict` is still blocked for Honest Mode wording; loop continuation and no-question autonomy are untouched |
+| Skill digest drift and interrupted tool output never stop work in essential | passed-hermetic | prompt-time, post-hoc, and per-tool-call admission blocks are gated on `managedSkillDigestBlocksEnforced`; the quarantine prompt returns `continue` with the recovery advice as context; strict still refuses |
+| PostToolUse is not installed and stale entries converge | passed-hermetic | `managedHookEventNames` omits PostToolUse in essential (10 events in strict); `mergeManagedHooksJson` removes the SKS PostToolUse entry from a legacy hooks.json, keeps a user-authored one, and drops the event when nothing remains; the managed TOML installer filters the same way |
+| Hooks are warm by default and a daemon cannot outlive an update | passed-hermetic | `hookDaemonEnabled`: on unless `SKS_HOOK_DAEMON=0`, off inside the harness unless `=1`; a request carrying a different `sks_version` is answered `sksd_version_mismatch` without reaching the handler and the daemon retires (real-socket test); measured on this machine: ~600 ms cold → ~150 ms warm per hook |
+| `doctor --full` can be `ready` on a real machine | passed-hermetic | `route-image` manual-proof blockers are warnings in essential and blockers in strict (matrix test both ways); the readiness matrix unwraps the doctor bridge wrapper so a blocked bridge fails `core_ready` (matrix test) |
+| The installed 10.0.0 finishes a real Codex turn without a Stop block on the live machine | not proved | requires the installed 10.0.0 hooks on the operator's machine completing a real turn with no Stop `decision: block`, plus `sks doctor --full --json` reporting `ready: true` |
 | The serving process's heartbeat cannot erase the verifier's attestation | passed-hermetic | `refreshDesktopBridgeState(…, { preserveVerifiedProbeIds: true })` adopts the on-disk `last_verified_probe_ids` into the in-memory state before rewriting; the verifier's own refresh still writes exactly what it passes (an empty set clears stale ids); unit-tested against a real state file across verify → heartbeat → verify |
 | Fast `sks doctor --json` names a stranded bridge | passed-hermetic | state file + 256 KB log tail through the import-free `upstream-evidence` module; `desktop_bridge.status` is `log_evidence_clear`, `upstream_unreachable_evidence` (blocker + repair in `blockers`/`recovery_actions`, mirrored into `warnings`/`next_actions`), or `not_checked` with the reason; `ok`/`fast_readonly_ok` unchanged; `doctor:fastpath` gate 64 ms on this machine; no secret store read (sentinel test) |
 | `--fix` and `sks update` finish `ready`, not `degraded` | passed-hermetic | `reverifyTransportIfDegraded` runs one `verify --level transport` when the serving bridge reads `degraded` or was just restarted, under fix only; a ready bridge triggers no probe; the read-only doctor never probes; `desktop_bridge_transport_reverified` / `…_reverify_incomplete:<state>` name the outcome |
@@ -194,8 +215,8 @@ New 9.2.7 claims:
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 9.2.7 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.7 after incremental build |
-| The reported 9.2.7 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, provenance, and the release commit fast-forward pushed to origin main (the prepublish reproducibility preflight refuses `head_not_origin_main`) |
+| All checked version authorities report 10.0.0 | passed-hermetic | `release:version-truth` 15 surfaces at 10.0.0 after incremental build |
+| The reported 10.0.0 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, provenance, and the release commit fast-forward pushed to origin main (the prepublish reproducibility preflight refuses `head_not_origin_main`) |
 
 ## 9.1.0 assertion (historical)
 

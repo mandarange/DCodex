@@ -16,6 +16,7 @@ import { isMadSksRouteState } from './permission-gates.js';
 import { classifyMadSksShellCommand } from './mad-sks/write-guard.js';
 import { activeRouteContext, evaluateStop, prepareRoute, promptPipelineContext as routePipelineContext, recordContext7Evidence, recordSubagentEvidence, routePrompt } from './pipeline.js';
 import { localizedFinalizationReason } from './language-preference.js';
+import { managedSkillDigestBlocksEnforced, postToolEvidenceEnabled, stopFinalizationRitualsEnforced } from './verification-profile.js';
 import { classifyToolError } from './evaluation.js';
 import { dollarCommand, managedSkillNamesForPrompt, stripVisibleDecisionAnswerBlocks } from './routes.js';
 import { coreEngineeringDirectiveReferenceText } from './lean-engineering-policy.js';
@@ -352,19 +353,20 @@ async function hookUserPrompt(root: any, state: any, payload: any, noQuestion: a
     }).catch(() => toolOutputQuarantine);
   }
   if (submittedPrompt && (detectedMissingCallId || toolOutputQuarantine)) {
-    return {
-      decision: 'block',
-      reason: interruptedToolOutputRecoveryBlockReason({
-        callId: detectedMissingCallId || toolOutputQuarantine?.call_id,
-        missionId: state?.mission_id || toolOutputQuarantine?.mission_id
-      })
-    };
+    const reason = interruptedToolOutputRecoveryBlockReason({
+      callId: detectedMissingCallId || toolOutputQuarantine?.call_id,
+      missionId: state?.mission_id || toolOutputQuarantine?.mission_id
+    });
+    // Strict: refuse the prompt until the thread is replaced. Essential: the
+    // model hears the same recovery advice and the user keeps steering.
+    if (stopFinalizationRitualsEnforced(root)) return { decision: 'block', reason };
+    return { continue: true, additionalContext: reason, systemMessage: visibleHookMessage('user-prompt-submit', reason) };
   }
   const parentLaunchMissionId = activeNarutoParentLaunchMissionId();
   if (parentLaunchMissionId) {
     const parentSkillNames = await standaloneParentManagedSkillNames(root, parentLaunchMissionId, state);
     const skillAdmission = await authoritativeSksSkillAdmission(root, parentSkillNames);
-    if (skillAdmission.blocked) return skillAdmission.blocked;
+    if (skillAdmission.blocked && managedSkillDigestBlocksEnforced(root)) return skillAdmission.blocked;
     const parentHostCapability = await claimStandaloneParentHostCapabilityRuntime({
       root,
       missionId: parentLaunchMissionId,
@@ -440,7 +442,7 @@ async function hookUserPrompt(root: any, state: any, payload: any, noQuestion: a
     }
     if (!explicitCommand && !clarificationPending && !madConfirmationPrompt && !activeContinuation && lightRoute?.id === 'Answer') {
       const skillAdmission = await authoritativeSksSkillAdmission(root, lightRoute.requiredSkills || ['answer', 'honest-mode']);
-      if (skillAdmission.blocked) return skillAdmission.blocked;
+      if (skillAdmission.blocked && managedSkillDigestBlocksEnforced(root)) return skillAdmission.blocked;
       const turnId = hookTurnId(payload);
       if (turnId) {
         await armLightTurnStopBypass(root, {
@@ -520,7 +522,7 @@ async function hookUserPrompt(root: any, state: any, payload: any, noQuestion: a
           root,
           selectedSksSkillNamesForActiveState(state)
         );
-        if (activeSkillAdmission.blocked) return activeSkillAdmission.blocked;
+        if (activeSkillAdmission.blocked && managedSkillDigestBlocksEnforced(root)) return activeSkillAdmission.blocked;
         const queued = await queueActiveOfficialWorkflowPrompt({
           root,
           missionId: activeOfficialWorkflow.missionId,
@@ -549,7 +551,7 @@ async function hookUserPrompt(root: any, state: any, payload: any, noQuestion: a
       }
     }
     const skillAdmission = await authoritativeSksSkillAdmission(root, managedSkillNamesForPrompt(route, prompt));
-    if (skillAdmission.blocked) return skillAdmission.blocked;
+    if (skillAdmission.blocked && managedSkillDigestBlocksEnforced(root)) return skillAdmission.blocked;
     const skillContext = skillAdmission.resolution
       ? renderAuthoritativeSksSkillContext(skillAdmission.resolution)
       : '';
@@ -706,11 +708,15 @@ async function hookPreTool(root: any, state: any, payload: any, noQuestion: any,
       if (recovered) skillAvailabilityBlock = await evaluateSkillAvailabilityBlock();
     }
   }
-  if (skillAvailabilityBlock) {
+  // Skill-file provenance is an integrity ritual, not a safety boundary: in
+  // the essential profile a digest drift is repaired or advised, never a
+  // reason to deny every tool call until a human runs `sks doctor --fix`.
+  const digestBlocks = managedSkillDigestBlocksEnforced(root);
+  if (skillAvailabilityBlock && digestBlocks) {
     return { decision: 'block', permissionDecision: 'deny', reason: skillAvailabilityBlock };
   }
   const skillRefresh = await activeAuthoritativeSksSkillRefresh(root, state);
-  if (skillRefresh.blocked) {
+  if (skillRefresh.blocked && digestBlocks) {
     return {
       decision: 'block',
       permissionDecision: 'deny',
@@ -775,12 +781,16 @@ async function parentWaveGuidanceContext(root: any, state: any = {}, sessionKey:
 
 async function hookPostTool(root: any, state: any, payload: any, noQuestion: any, sessionKey: any = null) {
   state = { ...state, _session_key: state?._session_key || sessionKey };
+  // Essential installs no PostToolUse hook at all; a legacy hooks.json that
+  // still fires it keeps only the SQL-plane lifecycle (a DB-safety ledger) and
+  // the host-capability record. The rest is proof evidence nothing consumes.
+  const evidence = postToolEvidenceEnabled(root);
   await Promise.all([
     recordHostCapabilityPostTool(root, state, payload, sessionKey).catch(() => null),
     recordMadSksSqlPlanePostToolLifecycle(root, state, payload).catch(() => null),
-    recordContext7Evidence(root, state, payload).catch(() => null),
-    recordSubagentEvidence(root, state, payload).catch(() => null),
-    toolFailed(payload) ? recordToolErrorTaxonomy(root, state, payload).catch(() => null) : Promise.resolve(null)
+    evidence ? recordContext7Evidence(root, state, payload).catch(() => null) : Promise.resolve(null),
+    evidence ? recordSubagentEvidence(root, state, payload).catch(() => null) : Promise.resolve(null),
+    evidence && toolFailed(payload) ? recordToolErrorTaxonomy(root, state, payload).catch(() => null) : Promise.resolve(null)
   ]);
   if (!noQuestion) return { continue: true };
   if (toolFailed(payload)) {
@@ -1135,6 +1145,13 @@ async function hookStop(root: any, state: any, payload: any, noQuestion: any, se
   }
   if (state?.subagents_required === true) {
     await refreshOfficialSubagentCompletionArtifacts(root, state, last, sessionKey).catch(() => null);
+  }
+  // Essential profile: a finished turn is finished. No Honest Mode wording
+  // gate, no completion-summary regex, no gap loopback, no route proof or
+  // reflection ledger. Loop continuation and no-question autonomy above are
+  // route mechanics, not rituals, and still apply.
+  if (!noQuestion && !stopFinalizationRitualsEnforced(root)) {
+    return { continue: true, action: 'essential_profile_stop_accepted' };
   }
   const routeDecision = await evaluateStop(root, state, payload, { noQuestion });
   if (routeDecision && !successfulAppNarutoStopNeedsVisibleSummary(state, routeDecision)) {

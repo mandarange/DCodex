@@ -18,6 +18,7 @@
     {
       "canonical_name": "sks-answer",
       "trusted_sha256": [
+        "0e461537093215960734aaeafdccb125d2c3ca139dab5db8548d5c0bdd14d652",
         "3056ac543fa074868c7023097fdcb042d7175ab557d8e18cb7d92ce872785452",
         "bc8e2fc157b6c9819d32bb0a41bdf7f599a07693df18b0d80aa0ba103594f6eb"
       ]
@@ -65,6 +66,7 @@
     {
       "canonical_name": "sks-computer-use-fast",
       "trusted_sha256": [
+        "1d191ed0f9490fc320dd17b871ca556fa5835bfb372c38b62f3985e3369f685a",
         "57e4c1d04ae785b0a53711e53210f2ddabd6131041b97edb4b6d99f18b24155e",
         "b270d82e4057934d7f92ed4241d4ae86e22d0a9a08bceba1aa179d7535bda042",
         "b8736b2621398dfc85f7a2ff35d7a2fc728db0dfc0e964de69aebff93b5ed897"
@@ -207,6 +209,7 @@
     {
       "canonical_name": "sks-honest-mode",
       "trusted_sha256": [
+        "4a0722737a837b0de895b7c950da216a8641922e4da53d6b9c1681b957340e82",
         "d1216afadecd4d9c85a2fb54bd31ee77ba45f8071f43bb0e21305c5fcd870095",
         "4543d942cac510b1a23e2e842f944d033087bbc761f6abc4a27d0a015bf22235"
       ]
@@ -283,6 +286,7 @@
     {
       "canonical_name": "sks-pipeline-runner",
       "trusted_sha256": [
+        "66e105773b8e042eec5d5679b97b7cb305cad8d45671034907fbfa728fc4d68a",
         "020ba4da2f96bcda23cee4596b1e790816780178f1917dee748ff4b289cba0e5",
         "ffcbe0ea4b585e3d2886f1d9fa7a3b88706aaf42182fb177b2371b76beb0ddcd"
       ]

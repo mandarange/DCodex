@@ -282,3 +282,72 @@ function readyInput(overrides: Record<string, unknown>) {
     ...overrides
   };
 }
+
+test('essential profile: the image route\'s manual real-output proof is a warning, not a readiness blocker', async () => {
+  const { resetVerificationProfileCache } = await import('../../verification-profile.js');
+  const prior = process.env.SKS_VERIFICATION_PROFILE;
+  const routeInput = () => readyInput({
+    doctor_native_capability: { route_blockers: { 'route-image': ['codex_imagegen_real_output_unverified'] } }
+  });
+  try {
+    process.env.SKS_VERIFICATION_PROFILE = 'essential';
+    resetVerificationProfileCache();
+    const essential = buildDoctorReadinessMatrix(routeInput());
+    assert.equal(essential.core_ready, true);
+    assert.equal(essential.ready, true);
+    assert.ok(essential.warnings.includes('route:route-image:codex_imagegen_real_output_unverified'));
+    assert.equal(essential.blockers.includes('route:route-image:codex_imagegen_real_output_unverified'), false);
+
+    process.env.SKS_VERIFICATION_PROFILE = 'strict';
+    resetVerificationProfileCache();
+    const strict = buildDoctorReadinessMatrix(routeInput());
+    assert.equal(strict.ready, false);
+    assert.ok(strict.blockers.includes('route:route-image:codex_imagegen_real_output_unverified'));
+  } finally {
+    if (prior === undefined) delete process.env.SKS_VERIFICATION_PROFILE; else process.env.SKS_VERIFICATION_PROFILE = prior;
+    resetVerificationProfileCache();
+  }
+});
+
+test('the doctor bridge wrapper is unwrapped, so a blocked bridge fails readiness the way the fixture shape always did', () => {
+  const matrix = buildDoctorReadinessMatrix(readyInput({
+    desktop_bridge: {
+      schema: 'sks.doctor-desktop-bridge.v1',
+      ok: false,
+      managed: true,
+      status: {
+        management: { managed: true },
+        service: { running: true },
+        readiness: { ready: false, blockers: ['codex_lb_auth_rejected'] }
+      }
+    }
+  }));
+  assert.equal(matrix.core_ready, false);
+  assert.ok(matrix.blockers.includes('codex_lb_auth_rejected'));
+});
+
+test('a degraded bridge (serving, catalog ready, transport unverified) warns instead of failing readiness', () => {
+  const matrix = buildDoctorReadinessMatrix(readyInput({
+    desktop_bridge: {
+      schema: 'sks.doctor-desktop-bridge.v1',
+      ok: true,
+      managed: true,
+      status: {
+        management: { managed: true },
+        service: { running: true },
+        readiness: { ready: false, state: 'degraded', blockers: [] }
+      }
+    }
+  }));
+  assert.equal(matrix.core_ready, true);
+  assert.equal(matrix.ready, true);
+  assert.ok(matrix.warnings.includes('desktop_bridge_readiness_degraded:transport_unverified_for_current_process'));
+  assert.equal(matrix.blockers.includes('desktop_bridge_not_ready'), false);
+
+  // A blocked bridge with no named blocker still fails, as before.
+  const blocked = buildDoctorReadinessMatrix(readyInput({
+    desktop_bridge: { status: { management: { managed: true }, service: { running: true }, readiness: { ready: false, state: 'blocked', blockers: [] } } }
+  }));
+  assert.equal(blocked.core_ready, false);
+  assert.ok(blocked.blockers.includes('desktop_bridge_not_ready'));
+});

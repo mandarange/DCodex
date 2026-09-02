@@ -10,4 +10,4 @@ if (!root) {
   process.exit(1);
 }
 
-await startSksdHookDaemon(root, async (name, payload) => evaluateHookPayloadOnce(name, payload, { root }));
+await startSksdHookDaemon(root, async (name, payload) => evaluateHookPayloadOnce(name, payload, { root }), { exitOnRetire: true });

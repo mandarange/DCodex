@@ -1247,8 +1247,8 @@
       "file": "src/core/daemon/sksd-hook-daemon.ts",
       "symbol": "startSksdHookDaemon",
       "token": "fsp.rm",
-      "scope_contract_sha256": "a20d0356afcf248dbbb72b5c2f62b7f6f732f71754f89c604dc8410d96a7a95f",
-      "callsite_sha256": "578d5b446b31f5072dda4cd129f777e701af613464d80a118585422b16538a9f",
+      "scope_contract_sha256": "73e36640ceb3652f9215a969fb58864aa73bcd8aee8976a2ee34fe64027e3d82",
+      "callsite_sha256": "71c4f8b3df07bec8a77060a765f8a2a8c278e86423d7bd8b7556260edabffc83",
       "occurrence": 1,
       "reason": "Hook daemon startup removes only the stale Unix socket path derived from the current project namespace before binding."
     },
@@ -7974,6 +7974,15 @@
       "callsite_sha256": "84c567c47ae9d52da5fe9109886f34c1634c3a3779dc5efea9f7aa7da4a6f7ca",
       "occurrence": 1,
       "reason": "Release/check script writes scoped fixture, report, manifest, or temp artifact; exact callsite is externally audited."
+    },
+    {
+      "file": "src/core/verification-profile.ts",
+      "symbol": "writeVerificationProfile",
+      "token": "writeFileSync",
+      "scope_contract_sha256": "a0fb4b6efc2b906f55bfeae2f6ec9d28f37ca0106c62cd7ebb703b8e948b90aa",
+      "callsite_sha256": "428bde825e815ee3319822c310e7edb9fbfb95e0db74d48a0a5794c9a658a0f1",
+      "occurrence": 1,
+      "reason": "The verification-profile writer creates only the SKS-owned verification-profile.json under the project .sneakoscope directory or the global root, with a fixed schema payload the user asked to set; it never touches user-authored files."
     }
   ]
 }

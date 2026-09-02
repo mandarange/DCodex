@@ -21,10 +21,10 @@ export async function runSks(args: string[]): Promise<void> {
   } else if (args[0] === 'hook' && args[1] === 'user-prompt-submit' && process.env.SKS_PERF_MEASURE === '1') {
     const { hookUserPromptSubmitPerfInline } = await import('./fast-inline.js');
     await hookUserPromptSubmitPerfInline();
-  } else if (args[0] === 'hook' && args[1] && process.env.SKS_HOOK_DAEMON === '1') {
-    // 20차 P2-1: opt-in daemon-accelerated hook path. Default hook behavior
-    // (.codex/hooks.json's actual command) is unchanged until this has been
-    // verified and deliberately turned on.
+  } else if (args[0] === 'hook' && args[1] && (await import('../core/verification-profile.js')).hookDaemonEnabled()) {
+    // Daemon-accelerated hook path: identical decisions, ~150 ms instead of a
+    // ~600 ms cold start per hook. On by default; SKS_HOOK_DAEMON=0 opts out,
+    // and the test harness stays on the cold path so no detached daemon leaks.
     const { hookDaemonInline } = await import('../core/daemon/sksd-hook-dispatch.js');
     await hookDaemonInline(args[1]);
   } else if (args.length === 3 && args[0] === 'naruto' && args[1] === 'help' && args[2] === '--json') {

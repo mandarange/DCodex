@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sha256 } from '../fsx.js';
+import { PACKAGE_VERSION } from '../version.js';
 
 // 20차 P2-1: hook round-trip daemon. `.codex/hooks.json` fires PreToolUse/
 // PostToolUse for every tool call, each spawning a fresh `sks hook <event>`
@@ -27,6 +28,15 @@ export interface SksdHookRequest {
   schema: 'sks.sksd-hook-request.v1';
   name: string;
   payload: unknown;
+  /**
+   * The caller's package version. A daemon outlives `sks update` (it idles
+   * for 30 min and every hook keeps it alive), so without this a freshly
+   * installed SKS would keep evaluating hooks with the old code — the same
+   * stale-long-lived-process failure the Desktop Bridge had. A mismatch makes
+   * the daemon refuse and retire itself; the caller falls back inline and
+   * spawns a daemon on the new code.
+   */
+  sks_version?: string;
 }
 
 export interface SksdHookResponse {
@@ -35,6 +45,8 @@ export interface SksdHookResponse {
   result?: unknown;
   error?: string;
 }
+
+export const SKSD_VERSION_MISMATCH_ERROR = 'sksd_version_mismatch';
 
 // Unix domain socket paths have a ~100 byte limit on macOS/Linux. TMPDIR can
 // itself be a deeply nested hermetic test root, so sockets use a short,
@@ -155,7 +167,11 @@ async function removeStaleSocketPath(socketPath: string): Promise<void> {
 // and exits the process on shutdown) and directly by tests (which own the
 // returned handle's close() instead and must not have this call
 // process.exit — that would kill the test runner).
-export async function startSksdHookDaemon(root: string, handleHook: (name: string, payload: unknown) => Promise<unknown>): Promise<SksdHookDaemonHandle | null> {
+export async function startSksdHookDaemon(
+  root: string,
+  handleHook: (name: string, payload: unknown) => Promise<unknown>,
+  options: { exitOnRetire?: boolean } = {},
+): Promise<SksdHookDaemonHandle | null> {
   const socketPath = sksdSocketPath(root);
   const pidFilePath = sksdPidFilePath(root);
   const runtimeDir = path.dirname(socketPath);
@@ -187,8 +203,13 @@ export async function startSksdHookDaemon(root: string, handleHook: (name: strin
     });
     async function respond(line: string) {
       let response: SksdHookResponse;
+      let retire = false;
       try {
         const request = JSON.parse(line) as SksdHookRequest;
+        if (request.sks_version && request.sks_version !== PACKAGE_VERSION) {
+          retire = true;
+          throw new Error(SKSD_VERSION_MISMATCH_ERROR);
+        }
         const result = await handleHook(request.name, request.payload);
         response = { schema: 'sks.sksd-hook-response.v1', ok: true, result };
       } catch (err: unknown) {
@@ -198,6 +219,14 @@ export async function startSksdHookDaemon(root: string, handleHook: (name: strin
         socket.write(`${JSON.stringify(response)}\n`);
       } catch {}
       socket.end();
+      if (retire) {
+        // The installed package moved past this process; make room for a
+        // daemon running the new code instead of serving stale decisions.
+        // In-process callers (tests) own process exit, so only the detached
+        // entrypoint asks to exit.
+        void close().then(() => { if (options.exitOnRetire) process.exit(0); });
+        return;
+      }
       resetIdleTimer();
     }
     socket.on('error', () => undefined);
@@ -303,7 +332,7 @@ export async function callSksdHookDaemon(root: string, name: string, payload: un
     let buffer = '';
     socket.on('connect', () => {
       clearTimeout(connectTimer);
-      const request: SksdHookRequest = { schema: 'sks.sksd-hook-request.v1', name, payload };
+      const request: SksdHookRequest = { schema: 'sks.sksd-hook-request.v1', name, payload, sks_version: PACKAGE_VERSION };
       socket.write(`${JSON.stringify(request)}\n`);
     });
     socket.on('data', (chunk) => {

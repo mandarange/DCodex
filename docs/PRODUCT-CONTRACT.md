@@ -65,10 +65,12 @@ This page is the English product-facing projection of those decisions.
 
 ## Completion and verification
 
-- Full / high-risk / release completion requires relevant checks or an explicit justification that checks are unnecessary.
-- **Light paths** (relaxed completion): Answer, DFix, and Help/status-class read-only routes. Light completion never substitutes for full-route/release completion.
+- **Verification profile (10.0):** `essential` is the default — safety gates stay, proof rituals do not. `strict` restores the pre-10 behavior (`SKS_VERIFICATION_PROFILE`, `verification-profile.json`). See [essential-trust.md](essential-trust.md).
+- In `essential`, a finished turn finishes: no Honest Mode or completion-summary wording gate, no Stop-time completion proof, reflection, or ledger requirements, no per-tool-call evidence hook, no denial over managed-skill digest drift. `sks proof …` remains available on request.
+- Completion still means saying plainly what was done, what was verified, and what remains; mock, fixture, or capability evidence is never described as a real run.
+- **Light paths** (Answer, DFix, Help/status-class read-only routes) stay light in both profiles.
 - Blocked missions with blockers are correct answers; do not disable safety or forge evidence to look green.
-- Honest Mode: once at the end of batched work; retry only remaining gaps (not every intermediate step).
+- Honest Mode (`strict` only): once at the end of batched work; retry only remaining gaps (not every intermediate step).
 - Release required evidence: **release gates**. Typecheck, focused tests, and package dry-run are recommended, not automatic required substitutes.
 - Release-core review routes (`$sks-review` / security / bugbot): required for release; run near the end once, then gap-only loops.
 - Testing philosophy: main path, meaningful boundaries, credible failures — not low-value matrices or coverage-number goals.

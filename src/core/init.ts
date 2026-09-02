@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { postToolEvidenceEnabled } from './verification-profile.js';
 import fsp from 'node:fs/promises';
 import { ensureDir, readJson, readText, writeJsonAtomic, writeTextAtomic, mergeManagedBlock, nowIso, PACKAGE_VERSION, exists } from './fsx.js';
 import { DEFAULT_RETENTION_POLICY } from './retention.js';
@@ -171,9 +172,23 @@ const MANAGED_HOOKS = {
   Stop: [{ hooks: [{ type: 'command', command: null, hookName: 'stop', statusMessage: 'SKS checking done gate' }] }]
 };
 
-function buildManagedHooks(commandPrefix: any) {
+/**
+ * Events the essential profile does not install. PostToolUse existed to write
+ * proof evidence after every tool call — a second cold process per call whose
+ * output nothing in the essential profile reads.
+ */
+const ESSENTIAL_PROFILE_OMITTED_HOOK_EVENTS = new Set(['PostToolUse']);
+
+export function managedHookEventNames(root?: string | null): string[] {
+  const all = Object.keys(MANAGED_HOOKS);
+  return postToolEvidenceEnabled(root) ? all : all.filter((event) => !ESSENTIAL_PROFILE_OMITTED_HOOK_EVENTS.has(event));
+}
+
+function buildManagedHooks(commandPrefix: any, root?: string | null) {
   const hooks: Record<string, any> = {};
+  const events = new Set(managedHookEventNames(root));
   for (const [eventName, entries] of Object.entries(MANAGED_HOOKS)) {
+    if (!events.has(eventName)) continue;
     hooks[eventName] = entries.map((entry: any) => ({
       ...('matcher' in entry ? { matcher: entry.matcher } : {}),
       hooks: entry.hooks.map(({ hookName, ...hook }: any) => ({
@@ -189,7 +204,7 @@ const CODEX_HOOK_EVENT_KEYS: Record<string, string> = { ...CODEX_HOOK_EVENT_STAT
 
 export function buildManagedHookTrustStateToml(root: string, commandPrefix: string): string {
   const source = path.join(root, '.codex', 'hooks.json');
-  const managed = buildManagedHooks(commandPrefix).hooks;
+  const managed = buildManagedHooks(commandPrefix, root).hooks;
   const blocks: string[] = [];
   for (const [eventName, entries] of Object.entries(managed) as Array<[string, any[]]>) {
     const eventKey = CODEX_HOOK_EVENT_KEYS[eventName] || eventName;
@@ -251,7 +266,7 @@ function upsertCodexTrustTomlTable(text: string, table: string, block: string): 
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
-export function mergeManagedHooksJson(existingContent: any, commandPrefix: any) {
+export function mergeManagedHooksJson(existingContent: any, commandPrefix: any, projectRootDir?: string | null) {
   let root: any = {};
   try {
     root = existingContent?.trim() ? JSON.parse(existingContent) : {};
@@ -259,17 +274,23 @@ export function mergeManagedHooksJson(existingContent: any, commandPrefix: any) 
   } catch {
     root = {};
   }
-  const managed: any = buildManagedHooks(commandPrefix);
+  const managed: any = buildManagedHooks(commandPrefix, projectRootDir);
   const currentHooks = root.hooks && typeof root.hooks === 'object' && !Array.isArray(root.hooks) ? root.hooks : {};
-  const nextHooks = { ...currentHooks };
-  for (const [eventName, managedEntries] of Object.entries(managed.hooks) as Array<[string, any[]]>) {
+  const nextHooks: Record<string, any> = { ...currentHooks };
+  // Every event is re-derived from the current managed set: SKS entries under
+  // an event the profile no longer installs (PostToolUse after the move to
+  // essential) are removed, user-authored entries are kept untouched.
+  for (const eventName of new Set([...Object.keys(currentHooks), ...Object.keys(managed.hooks)])) {
     const existingEntries = Array.isArray(currentHooks[eventName]) ? currentHooks[eventName] : [];
     const preserved: any[] = [];
     for (const entry of existingEntries) {
       const stripped = stripSksManagedHookEntry(entry);
       if (stripped) preserved.push(stripped);
     }
-    nextHooks[eventName] = [...preserved, ...managedEntries];
+    const managedEntries: any[] = Array.isArray(managed.hooks[eventName]) ? managed.hooks[eventName] : [];
+    const merged = [...preserved, ...managedEntries];
+    if (merged.length) nextHooks[eventName] = merged;
+    else if (eventName in nextHooks) delete nextHooks[eventName];
   }
   return `${JSON.stringify({ ...root, hooks: nextHooks }, null, 2)}\n`;
 }
@@ -311,8 +332,8 @@ const AGENTS_BLOCK = [
   '',
   '- Prefer current code, tests, configuration, contracts, and specifications over memory. Use Context7 or official vendor docs when external APIs, SDKs, packages, MCPs, or versions matter.',
   '- Keep TriWiki recall bounded: read the current context pack before a stage, hydrate risky or stale claims from source, refresh after material changes, and validate before handoff or final.',
-  '- Mock, fixture, synthetic, or capability evidence never proves real execution. Completion claims require relevant checks or an explicit justification for why a check is not useful.',
-  '- Final output must summarize the result, verification, and remaining gaps, then run Honest Mode.',
+  '- Mock, fixture, synthetic, or capability evidence never proves real execution. Say what was actually run.',
+  '- Final output states the result, what was verified, and what remains — plainly, once. No ritual sections.',
   '',
   '## Safety',
   '',

@@ -149,7 +149,7 @@ test('version skew fires once, only after two consecutive identical mismatches',
   const upstreamPort = await listen(upstream);
   const holder = net.createServer(); const bridgePort = await listen(holder); await close(holder);
   // null and the current version reset the streak; a changed value restarts it.
-  const reads = [null, '9.9.9', PACKAGE_VERSION, '9.9.9', '10.0.0', '10.0.0', '10.0.0'];
+  const reads = [null, '9.9.9', PACKAGE_VERSION, '9.9.9', '99.0.0', '99.0.0', '99.0.0'];
   let readIndex = 0;
   const skews: string[] = [];
   let bridge: DesktopBridgeHandle | null = null;
@@ -164,7 +164,7 @@ test('version skew fires once, only after two consecutive identical mismatches',
     });
     const deadline = Date.now() + 12_000;
     while (skews.length === 0 && Date.now() < deadline) await sleep(50);
-    assert.deepEqual(skews, ['10.0.0'], 'only the version seen twice in a row may fire');
+    assert.deepEqual(skews, ['99.0.0'], 'only the version seen twice in a row may fire');
     // Give the (cleared) timer room to prove it does not fire again.
     await sleep(1_500);
     assert.equal(skews.length, 1, 'the skew callback fires exactly once');

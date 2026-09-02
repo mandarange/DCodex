@@ -1,8 +1,36 @@
 import path from 'node:path'
 import { nowIso, writeJsonAtomic } from '../fsx.js'
+import { manualProofRoutesBlockReadiness } from '../verification-profile.js'
 
 export const DOCTOR_READINESS_MATRIX_SCHEMA = 'sks.doctor-readiness-matrix.v2'
 const OPTIONAL_ROUTE_SCOPES = new Set(['route-computer-use', 'route-chrome-web-review', 'route-app-handoff', 'route-app-screenshot'])
+/**
+ * Routes whose readiness can only ever be proven by a manual real-output
+ * binding (`codex_imagegen_real_output_unverified` is a hardcoded `false` in
+ * capability detection — no doctor run can clear it). In the strict profile
+ * they still gate `ready`; in the essential profile a capability the user has
+ * not exercised yet is information, not a failed machine — which is also what
+ * turns SKS Center's permanently orange `doctor --full` badge green.
+ */
+const MANUAL_PROOF_ROUTE_SCOPES = new Set(['route-image'])
+
+function optionalRouteScope(scope: string): boolean {
+  if (OPTIONAL_ROUTE_SCOPES.has(scope)) return true
+  return MANUAL_PROOF_ROUTE_SCOPES.has(scope) && !manualProofRoutesBlockReadiness()
+}
+
+/**
+ * The doctor passes its bridge inspection WRAPPER (`{ ok, managed, status, … }`)
+ * as `desktop_bridge`; the readiness fields live one level down in `.status`.
+ * Reading them off the wrapper made this branch dead in production, so
+ * `core_ready` over-reported green for a blocked bridge.
+ */
+function desktopBridgeReadinessView(value: any): any {
+  if (!value || typeof value !== 'object') return null
+  if (value.management || value.readiness) return value
+  const status = value.status
+  return status && typeof status === 'object' && (status.management || status.readiness) ? status : value
+}
 
 export async function writeDoctorReadinessMatrix(root: string, input: any = {}) {
   const matrix = buildDoctorReadinessMatrix(input)
@@ -57,11 +85,18 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
   const codexAppHarness = input.codex_app_harness_matrix || null
   for (const warning of normalizeList(codexAppHarness?.warnings)) warnings.add(warning)
   if (codexAppHarness?.ok === false) for (const blocker of normalizeList(codexAppHarness.blockers)) warnings.add(`codex_app_harness:${blocker}`)
-  const desktopBridge = input.desktop_bridge_status || input.desktop_bridge || null
+  const desktopBridge = desktopBridgeReadinessView(input.desktop_bridge_status || input.desktop_bridge || null)
   if (desktopBridge?.management?.managed === true && desktopBridge?.readiness?.ready !== true) {
     const bridgeBlockers = normalizeList(desktopBridge?.readiness?.blockers)
     for (const blocker of bridgeBlockers) blockers.add(blocker)
-    if (!bridgeBlockers.length) blockers.add('desktop_bridge_not_ready')
+    // `degraded` = serving, catalog ready, no transport diagnostic bound to the
+    // current process yet (every restart starts here). That is "unverified",
+    // not "broken": a warning. Only a blocked bridge, or one that names
+    // blockers, fails readiness.
+    if (!bridgeBlockers.length) {
+      if (desktopBridge?.readiness?.state === 'degraded') warnings.add('desktop_bridge_readiness_degraded:transport_unverified_for_current_process')
+      else blockers.add('desktop_bridge_not_ready')
+    }
   }
   if (desktopBridge?.management?.managed === true && desktopBridge?.service?.running !== true) {
     warnings.add('desktop_bridge_service_not_running')
@@ -109,7 +144,7 @@ export function buildDoctorReadinessMatrix(input: any = {}) {
   for (const [scope, list] of Object.entries(routeBlockers)) {
     for (const blocker of Array.isArray(list) ? list : []) {
       const value = `route:${scope}:${String(blocker)}`
-      if (OPTIONAL_ROUTE_SCOPES.has(String(scope))) warnings.add(value)
+      if (optionalRouteScope(String(scope))) warnings.add(value)
       else blockers.add(value)
     }
   }

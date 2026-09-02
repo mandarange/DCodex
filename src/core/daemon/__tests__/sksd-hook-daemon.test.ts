@@ -169,3 +169,33 @@ test('sksd hook daemon: refuses a symlinked PID claim without touching its targe
   assert.equal(await fsp.readFile(victim, 'utf8'), original);
   assert.equal((await fsp.lstat(pidFilePath)).isSymbolicLink(), true);
 });
+
+test('sksd hook daemon: a request from a different SKS version is refused and retires the daemon', async (t) => {
+  const net = await import('node:net');
+  const { SKSD_VERSION_MISMATCH_ERROR } = await import('../sksd-hook-daemon.js');
+  const root = await tempRoot(t);
+  let handled = 0;
+  const daemon = await startSksdHookDaemon(root, async () => { handled += 1; return { continue: true }; });
+  assert.ok(daemon);
+  try {
+    const raw = await new Promise<any>((resolve, reject) => {
+      const socket = net.createConnection(sksdSocketPath(root));
+      let buffer = '';
+      socket.on('connect', () => socket.write(`${JSON.stringify({ schema: 'sks.sksd-hook-request.v1', name: 'pre-tool', payload: {}, sks_version: '0.0.0-stale-client' })}\n`));
+      socket.on('data', (chunk) => { buffer += chunk.toString('utf8'); });
+      socket.on('close', () => { try { resolve(JSON.parse(buffer.trim())); } catch (error) { reject(error); } });
+      socket.on('error', reject);
+    });
+    assert.equal(raw.ok, false);
+    assert.equal(raw.error, SKSD_VERSION_MISMATCH_ERROR);
+    assert.equal(handled, 0, 'a stale-version request must never reach the handler');
+    // The daemon has retired: the next same-version call falls open so the
+    // caller evaluates inline and spawns a daemon on the new code.
+    for (let attempt = 0; attempt < 20 && (await callSksdHookDaemon(root, 'pre-tool', {})) !== null; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(await callSksdHookDaemon(root, 'pre-tool', {}), null);
+  } finally {
+    await daemon.close();
+  }
+});

@@ -5,6 +5,55 @@
 
 
 
+## [10.0.0] - 2026-09-02
+
+### Changed
+
+- **Essential Trust.** SKS was built when models lied often enough that
+  every completion had to be policed; the rituals became the product's
+  largest cost. 10.0 introduces a verification profile
+  (`src/core/verification-profile.ts`) and makes `essential` the default:
+  safety gates stay, proof rituals go. `strict` restores the pre-10 behavior
+  (`SKS_VERIFICATION_PROFILE=strict`, or
+  `verification-profile.json` under the project's `.sneakoscope/` or the
+  global root). Inside the SKS test harness the default stays `strict` so the
+  existing suite keeps proving the legacy behavior. See
+  `docs/essential-trust.md`.
+- In the essential profile a finished turn finishes: the Stop hook no longer
+  blocks on Honest Mode / completion-summary wording, the honest-gap loopback,
+  or Stop-time completion proof, reflection, work-order, root-cause,
+  engineering-sanity, DB-access-review, or architecture-map ledgers
+  (`essential_profile_stop_accepted`). Loop continuation and no-question
+  autonomy are route mechanics and still apply. `sks proof …` commands remain
+  available on request.
+- Managed-skill digest drift (`content_digest_mismatch`) no longer denies
+  prompts or tool calls in the essential profile — at prompt time, post-hoc,
+  or on every tool call; it is repaired or advised. An interrupted-tool-output
+  prompt is advised instead of refused.
+- The PostToolUse hook is not installed in the essential profile; it wrote
+  proof evidence nothing in that profile reads, at one cold process per tool
+  call. `sks update` / `sks doctor --fix` remove the stale SKS entry from
+  `.codex/hooks.json` and the managed TOML while keeping user-authored hooks.
+- Hooks run through the per-project `sksd` daemon by default (~150 ms per
+  hook instead of a ~600 ms cold start; identical decisions;
+  `SKS_HOOK_DAEMON=0` opts out; the test harness stays cold). Every request
+  carries the caller's package version and a mismatch retires the daemon
+  (`sksd_version_mismatch`) so the next call spawns one on the new code.
+- `sks doctor --full` can now be `ready` on a real machine: the image route's
+  manual real-output proof (`codex_imagegen_real_output_unverified`, a
+  hardcoded `false` in capability detection that no doctor run could clear) is
+  a warning in the essential profile, which also turns SKS Center's
+  permanently orange Overview badge green when the machine is healthy.
+- The managed `AGENTS.md` block and the `$Honest-Mode` / `$Answer` skills drop
+  the "run Honest Mode" ritual; final output states the result, what was
+  verified, and what remains — once.
+
+### Fixed
+
+- The doctor readiness matrix read the Desktop Bridge inspection's WRAPPER
+  object, so its bridge branch was dead in production and `core_ready`
+  over-reported green for a blocked bridge; it now unwraps `.status`.
+
 ## [9.2.7] - 2026-09-02
 
 ### Fixed

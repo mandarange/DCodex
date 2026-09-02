@@ -15,6 +15,7 @@ import {
   renderAuthoritativeSksSkillContext
 } from '../codex-native/sks-skill-paths.js';
 import { resolveManagedSkillSourcesForAdmission } from './managed-skill-admission.js';
+import { managedSkillDigestBlocksEnforced } from '../verification-profile.js';
 import { looksLikeActiveContinuationPrompt } from './naruto-decision-gate.js';
 import {
   extractUserPrompt,
@@ -76,7 +77,10 @@ export async function attachAuthoritativeSksSkillContext(
     : selectedSksSkillNamesForTurn(state, prompt, result);
   if (!skillNames.length) return result;
   const admission = await authoritativeSksSkillAdmission(root, skillNames);
-  if (admission.blocked) return { ...result, ...admission.blocked };
+  // Post-hoc admission is the same digest ritual as the prompt-time check:
+  // strict refuses the turn, essential keeps the turn and simply attaches no
+  // skill context it could not verify.
+  if (admission.blocked) return managedSkillDigestBlocksEnforced(root) ? { ...result, ...admission.blocked } : result;
   const resolution = admission.resolution;
   if (!resolution) return result;
   const skillContext = renderAuthoritativeSksSkillContext(resolution);
@@ -240,7 +244,9 @@ export async function hookActiveSkillContextRefresh(
     return {
       continue: true,
       ...(spawnCompatibility ? { additionalContext: spawnCompatibility } : {}),
-      systemMessage: 'SKS managed skill refresh could not verify the current installation. Do not use a stale skill location; the next active tool call will be denied until the installation is repaired.'
+      systemMessage: managedSkillDigestBlocksEnforced(root)
+        ? 'SKS managed skill refresh could not verify the current installation. Do not use a stale skill location; the next active tool call will be denied until the installation is repaired.'
+        : 'SKS managed skill refresh could not verify the current installation; continuing without unverified skill context. `sks doctor --fix` repairs the installation when convenient.'
     };
   }
   const additionalContext = [spawnCompatibility, refresh.context].filter(Boolean).join('\n\n');
