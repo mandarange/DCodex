@@ -17,6 +17,66 @@ export function rootJsonFastInline(fs: { existsSync(path: string): boolean }, cw
   })}\n`);
 }
 
+/**
+ * The one Desktop Bridge fact the fast path can afford: whether the serving
+ * process's own log shows it dialing an unreachable upstream. State file plus
+ * a bounded log tail — no launchctl, no probes, no secret stores — so SKS
+ * Center's Diagnostics view (which calls exactly `doctor --json`) stops
+ * reporting a bridge that rejects every request as merely "not checked".
+ * The fast contract (`ok: true`, `fast_readonly_ok`) is untouched: evidence
+ * lands in `desktop_bridge` and `warnings`, where the full doctor turns the
+ * same evidence into a blocker.
+ */
+async function fastDesktopBridgeUpstreamEvidence(home: string): Promise<{
+  section: Record<string, unknown>; warnings: string[]; nextActions: string[];
+}> {
+  const notChecked = (reason: string) => ({
+    section: { schema: 'sks.desktop-bridge-fast-status.v1', status: 'not_checked', reason, secret_stores_read: false },
+    warnings: [] as string[], nextActions: [] as string[],
+  });
+  try {
+    const getBuiltinModule = (process as unknown as { getBuiltinModule?: (name: string) => any }).getBuiltinModule;
+    const fs = typeof getBuiltinModule === 'function' ? getBuiltinModule('node:fs') : await import('node:fs');
+    const runtime = joinPath(joinPath(home, '.codex'), 'sks');
+    const statePath = joinPath(runtime, 'desktop-bridge-state.json');
+    if (!fs.existsSync(statePath)) return notChecked('bridge_state_missing');
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { pid?: unknown; started_at?: unknown };
+    const startedAt = typeof state.started_at === 'string' ? state.started_at : null;
+    const logPath = joinPath(joinPath(runtime, 'logs'), 'desktop-bridge.out.log');
+    const { BRIDGE_LOG_TAIL_BYTES, UNREACHABLE_UPSTREAM_RECOVERY_ACTION, detectUnreachableUpstreamEvidence } =
+      await import('../core/codex-lb/desktop-bridge/upstream-evidence.js');
+    let tail = '';
+    if (fs.existsSync(logPath)) {
+      const handle = fs.openSync(logPath, 'r');
+      try {
+        const size = fs.fstatSync(handle).size;
+        const start = Math.max(0, size - BRIDGE_LOG_TAIL_BYTES);
+        const buffer = Buffer.alloc(size - start);
+        fs.readSync(handle, buffer, 0, buffer.length, start);
+        tail = buffer.toString('utf8');
+      } finally { fs.closeSync(handle); }
+    }
+    const code = detectUnreachableUpstreamEvidence(tail, startedAt, Date.now());
+    const blockers = code ? [`desktop_bridge_upstream_unreachable:${code}`] : [];
+    return {
+      section: {
+        schema: 'sks.desktop-bridge-fast-status.v1',
+        status: code ? 'upstream_unreachable_evidence' : 'log_evidence_clear',
+        reason: 'fast_readonly_json_log_evidence',
+        secret_stores_read: false,
+        serving_pid: typeof state.pid === 'number' ? state.pid : null,
+        started_at: startedAt,
+        blockers,
+        recovery_actions: code ? [UNREACHABLE_UPSTREAM_RECOVERY_ACTION] : [],
+      },
+      warnings: blockers,
+      nextActions: code ? [UNREACHABLE_UPSTREAM_RECOVERY_ACTION] : [],
+    };
+  } catch {
+    return notChecked('evidence_read_failed');
+  }
+}
+
 export async function doctorJsonFastInline(input: {
   write?: (text: string) => void
   home?: string
@@ -25,6 +85,9 @@ export async function doctorJsonFastInline(input: {
 } = {}): Promise<void> {
   const startedAt = Date.now();
   const write = input.write || ((text: string) => process.stdout.write(text))
+  const env = input.processEnv || process.env;
+  const home = input.home || env.HOME || env.USERPROFILE || process.cwd();
+  const bridge = await fastDesktopBridgeUpstreamEvidence(home);
   write(`${JSON.stringify({
     schema: 'sks.doctor-status.v3',
     elapsed_ms: Math.max(0, Date.now() - startedAt),
@@ -34,7 +97,7 @@ export async function doctorJsonFastInline(input: {
     deep_diagnostics_skipped: true,
     deep_ok: null,
     not_counted_as_full_doctor: true,
-    next_actions: ['Run sks doctor --full --json for deep diagnostics.'],
+    next_actions: ['Run sks doctor --full --json for deep diagnostics.', ...bridge.nextActions],
     fast_path: true,
     profile: 'fast-readonly',
     root: process.cwd(),
@@ -51,13 +114,8 @@ export async function doctorJsonFastInline(input: {
     },
     doctor_fix_transaction: null,
     blockers: [],
-    warnings: ['fast_readonly_doctor_skipped_optional_deep_diagnostics'],
-    desktop_bridge: {
-      schema: 'sks.desktop-bridge-fast-status.v1',
-      status: 'not_checked',
-      reason: 'fast_readonly_json',
-      secret_stores_read: false
-    }
+    warnings: ['fast_readonly_doctor_skipped_optional_deep_diagnostics', ...bridge.warnings],
+    desktop_bridge: bridge.section
   }, null, 2)}\n`);
 }
 

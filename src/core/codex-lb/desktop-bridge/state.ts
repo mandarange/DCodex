@@ -84,10 +84,19 @@ export async function refreshDesktopBridgeState(
   state: DesktopBridgePublicStateV2,
   now: Date = new Date(),
   freshnessMs = DEFAULT_FRESHNESS_MS,
+  options: { preserveVerifiedProbeIds?: boolean } = {},
 ): Promise<boolean> {
   const current = await readDesktopBridgeState(file).catch(() => null);
   if (!current || current.schema !== DESKTOP_BRIDGE_STATE_SCHEMA || current.pid !== state.pid
     || current.process_generation !== state.process_generation || current.config_generation !== state.config_generation) return false;
+  // `last_verified_probe_ids` is written by the VERIFIER (a `bridge verify`
+  // run), never by the serving process, whose in-memory copy stays at the
+  // empty array it started with. The heartbeat rewrites the whole document, so
+  // without adopting the on-disk ids first every heartbeat erased the
+  // verifier's attestation within one tick — the last transport diagnostic
+  // then failed to bind to this process and readiness sat at `degraded`
+  // forever, on every machine, ~100 seconds after any verify.
+  if (options.preserveVerifiedProbeIds) state.last_verified_probe_ids = [...current.last_verified_probe_ids];
   state.updated_at = now.toISOString();
   state.stale_after = new Date(now.getTime() + freshnessMs).toISOString();
   await writeDesktopBridgeState(file, state);

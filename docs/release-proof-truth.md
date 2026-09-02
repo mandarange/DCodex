@@ -1,9 +1,26 @@
-# Release Proof Truth — 9.2.6
+# Release Proof Truth — 9.2.7
 ## Current assertion
 
+9.2.7 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
+published 9.2.6 plus three readiness-truth fixes found while recording the
+9.2.6 live evidence on this machine: (1) the serving bridge's state heartbeat
+rewrote the whole state document from its in-memory copy every ~100 s, erasing
+the `last_verified_probe_ids` a `bridge verify` had just written, so the
+transport diagnostic never bound to the current process and readiness sat at
+`degraded` — `ready: false` with an empty blocker list, reported ok — on every
+machine; the heartbeat now adopts the on-disk ids. (2) `sks doctor --json`,
+the fast path SKS Center's Diagnostics view calls, emitted a fixed
+`not_checked` bridge stub; it now reads the serving process's own log (state
+file plus bounded tail, no launchctl, no probes, no secret stores) and names
+`desktop_bridge_upstream_unreachable:*` in `desktop_bridge`, `warnings`, and
+`next_actions` while keeping the fast contract. (3) `sks doctor --fix` and the
+`sks update` catalog-repair stage run one transport verify after a restart or
+whenever the bridge reads `degraded`, so a repaired machine finishes `ready`;
+the full doctor names a remaining `degraded` instead of swallowing it.
+
 9.2.6 (published 2026-09-02, tag `v9.2.6`, source commit
-`49f0b46ca291e9dcab612b1096d418fe46ed1c15`) is the published 9.2.5 plus the
-Desktop Bridge upstream re-resolution fix. The registry tarball is the tarball
+`49f0b46ca291e9dcab612b1096d418fe46ed1c15`) remains fully proven: it is the
+published 9.2.5 plus the Desktop Bridge upstream re-resolution fix. The registry tarball is the tarball
 the release gates verified — `dist.integrity`
 `sha512-S6b79RwP8di+Lb9VhwaW9S2w+wY7izcofhDfF4yRqTdP+03/tPzn25Du6Tmiehd1q3wxkpbQCfbuzls4GD5KUg==`,
 `dist.unpackedSize` 12314948, `dist.fileCount` 1738, shasum
@@ -108,13 +125,18 @@ publication, deployment, a credential change, a Git tag, or a push.
 Exact-commit proof can exist only after the candidate is committed and all
 source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 9.2.5 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.2.6 evidence.
+All release artifacts bound to 9.2.6 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 9.2.7 evidence.
 
-New 9.2.6 claims:
+New 9.2.7 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
+| The serving process's heartbeat cannot erase the verifier's attestation | passed-hermetic | `refreshDesktopBridgeState(…, { preserveVerifiedProbeIds: true })` adopts the on-disk `last_verified_probe_ids` into the in-memory state before rewriting; the verifier's own refresh still writes exactly what it passes (an empty set clears stale ids); unit-tested against a real state file across verify → heartbeat → verify |
+| Fast `sks doctor --json` names a stranded bridge | passed-hermetic | state file + 256 KB log tail through the import-free `upstream-evidence` module; `desktop_bridge.status` is `log_evidence_clear`, `upstream_unreachable_evidence` (blocker + repair in `blockers`/`recovery_actions`, mirrored into `warnings`/`next_actions`), or `not_checked` with the reason; `ok`/`fast_readonly_ok` unchanged; `doctor:fastpath` gate 64 ms on this machine; no secret store read (sentinel test) |
+| `--fix` and `sks update` finish `ready`, not `degraded` | passed-hermetic | `reverifyTransportIfDegraded` runs one `verify --level transport` when the serving bridge reads `degraded` or was just restarted, under fix only; a ready bridge triggers no probe; the read-only doctor never probes; `desktop_bridge_transport_reverified` / `…_reverify_incomplete:<state>` name the outcome |
+| Degraded readiness is named, not swallowed | passed-hermetic | `inspectDoctorDesktopBridgeStatus` adds `desktop_bridge_readiness_degraded:transport_unverified_for_current_process` plus the verify command when `ready` is false with no blockers |
+| The maintainer's Mac holds `ready` past a heartbeat tick on 9.2.7 | not proved | requires the installed 9.2.7 bridge and `sks bridge status --json` reporting `readiness.state: ready` more than 100 s after a transport verify |
 | A dead pinned upstream address heals inside the serving process | passed-hermetic | `refreshDesktopBridgeRemoteTarget` re-resolves the shared target in place on `EHOSTUNREACH`/`ENETUNREACH`/`ENETDOWN`/`EHOSTDOWN`/`EADDRNOTAVAIL`/`ECONNREFUSED`/`ETIMEDOUT`/connect timeout/`ERR_TLS_CERT_ALTNAME_INVALID`, steers away from the address that just failed, runs the full private-address and rebinding validation of a fresh start, dedupes concurrent callers, and cools down 5 s; the HTTP path replays the buffered Responses body on a fresh connection and the WebSocket path reconnects once; real-socket e2e: a bridge pinned to `::1` where nothing listens answers 200 (HTTP) and 101 (upgrade) once DNS answers `127.0.0.1`, and the shared pin is durably rewritten |
 | A pin follows DNS without flapping | passed-hermetic | the 5-minute TTL refresh keeps a still-listed address and switches only once it has left the answer set; a fresh pin performs no lookup; a failed or newly-forbidden resolution keeps the existing pin |
 | DNS unavailable at bridge start defers the pin instead of crash-looping the service | passed-hermetic | only `bridge_remote_dns_failed` at prepare yields a deferred pin (`unresolved`, address `0.0.0.0`, named in `deferred_upstreams` on the `started` log line); first use resolves it or answers `bridge_remote_dns_failed`; private-address and rebinding answers still refuse to prepare exactly as before |
@@ -172,8 +194,8 @@ New 9.2.6 claims:
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 9.2.6 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.6 after incremental build |
-| The reported 9.2.6 package is ready to publish | proven-then-published | `npm run release:check:full` exit 0 from the clean release commit `49f0b46c` (canonical 3551/3551 + stamp phase 33/33, real checks green, only the operator-owned physical-evidence gate remaining non-blocking as on 9.2.5); the release-check stamp binds that commit; the prepublish reproducibility preflight refused `head_not_origin_main` until the release commit was fast-forward pushed, then passed on the stamped commit; the pack receipt's tarball was published unmodified (see the registry row above) |
+| All checked version authorities report 9.2.7 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.7 after incremental build |
+| The reported 9.2.7 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, provenance, and the release commit fast-forward pushed to origin main (the prepublish reproducibility preflight refuses `head_not_origin_main`) |
 
 ## 9.1.0 assertion (historical)
 

@@ -114,6 +114,15 @@ export async function inspectDoctorDesktopBridgeStatus(input: any = {}, deps: an
       ? (status.readiness.blockers || []).map(String).filter(Boolean)
       : [];
     const recoveryActions = (status.recovery_actions || []).map(String).filter(Boolean);
+    const warnings = (status.readiness.warnings || []).map(String).filter(Boolean);
+    // `degraded` is "serving, catalog ready, but no transport diagnostic bound
+    // to this process" — readiness.ready is false with an EMPTY blocker list,
+    // so this check reported ok and every surface above it showed green while
+    // the bridge had never been verified since its last restart. Name it.
+    if (expected && status.readiness.ready !== true && status.readiness.state === 'degraded' && blockers.length === 0) {
+      warnings.push('desktop_bridge_readiness_degraded:transport_unverified_for_current_process');
+      recoveryActions.push('Run `sks bridge verify --level transport` (or `sks doctor --fix`, which re-verifies after its repair) to bind a transport diagnostic to the serving bridge.');
+    }
     // Readiness is computed from cached diagnostics and never exercises the
     // upstream, so a serving bridge whose pinned upstream address went dead
     // after a network change reported green here for days. The bridge's own
@@ -136,7 +145,7 @@ export async function inspectDoctorDesktopBridgeStatus(input: any = {}, deps: an
       status,
       providers: status.providers,
       blockers,
-      warnings: (status.readiness.warnings || []).map(String).filter(Boolean),
+      warnings,
       recovery_actions: recoveryActions
     };
   } catch (error: unknown) {

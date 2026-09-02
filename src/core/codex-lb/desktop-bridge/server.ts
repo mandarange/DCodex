@@ -354,7 +354,8 @@ export async function startPreparedDesktopBridge(
 
   const freshnessMs = input.stateFreshnessMs ?? 5 * 60_000;
   const heartbeat = statePath ? setInterval(() => {
-    void refreshDesktopBridgeState(statePath, state, new Date(), freshnessMs).catch(() => undefined);
+    // The verifier owns `last_verified_probe_ids`; a heartbeat only proves liveness.
+    void refreshDesktopBridgeState(statePath, state, new Date(), freshnessMs, { preserveVerifiedProbeIds: true }).catch(() => undefined);
   }, Math.max(1_000, Math.floor(freshnessMs / 3))) : null;
   heartbeat?.unref();
 

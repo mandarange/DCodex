@@ -4,61 +4,10 @@ import path from 'node:path';
 import { desktopBridgeStatusV3, executeDesktopBridgeCommandV3 } from '../codex-lb/desktop-controller-v3.js';
 import { bootstrapExistingDesktopBridgeService, desktopBridgeServicePaths, desktopBridgeServiceStatus } from '../codex-lb/desktop-service.js';
 import { desktopBridgeRuntimeVersion, desktopBridgeRuntimeVersionStale, readDesktopBridgeState } from '../codex-lb/desktop-bridge/state.js';
+import { BRIDGE_LOG_TAIL_BYTES, detectUnreachableUpstreamEvidence } from '../codex-lb/desktop-bridge/upstream-evidence.js';
 import { PACKAGE_VERSION } from '../version.js';
 
-/**
- * How far back a `bridge_upstream_unavailable` rejection in the bridge's own
- * log still counts as evidence that the serving process is dialing a dead
- * pinned address. The pin is resolved once at bridge start, so a network
- * change (VPN flip, Wi-Fi swap, CDN rotation) strands it; recent rejections
- * are the one durable trace of that state, and they are exactly what the
- * operator is looking at when they run doctor. Older entries describe a
- * network the machine may no longer be on.
- */
-export const BRIDGE_UNREACHABLE_EVIDENCE_WINDOW_MS = 10 * 60_000;
-const BRIDGE_LOG_TAIL_BYTES = 256 * 1024;
-const UNREACHABLE_REJECTION_CODE = /^bridge_(?:websocket_)?upstream_unavailable/;
-/**
- * The bridge writes this when it re-resolved a dead pin and dialed the fresh
- * address; a failure after it produces a NEWER unavailable line. So the latest
- * reroute standing after the latest failure means the process already healed
- * itself, and a restart would only interrupt live requests.
- */
-const REROUTED_REJECTION_CODE = /^bridge_upstream_unreachable_rerouted/;
-
-/**
- * Scan a bridge stdout-log tail for upstream-unreachable rejections emitted by
- * the CURRENT serving process within the evidence window. Returns the most
- * recent matching rejection code, or null when the log holds no such evidence
- * — including when the bridge re-resolved its pin after the last failure.
- */
-export function detectUnreachableUpstreamEvidence(
-  logTail: string,
-  startedAt: string | null | undefined,
-  nowMs: number
-): string | null {
-  const startedMs = startedAt ? Date.parse(startedAt) : Number.NaN;
-  const cutoffMs = Math.max(Number.isFinite(startedMs) ? startedMs : 0, nowMs - BRIDGE_UNREACHABLE_EVIDENCE_WINDOW_MS);
-  let latest: { at: number; code: string } | null = null;
-  let latestReroute = Number.NEGATIVE_INFINITY;
-  for (const line of logTail.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('{') || !trimmed.includes('"sks.desktop_bridge.rejected')) continue;
-    let record: { event?: unknown; code?: unknown; at?: unknown };
-    try { record = JSON.parse(trimmed) as typeof record; } catch { continue; }
-    if (record.event !== 'sks.desktop_bridge.rejected' && record.event !== 'sks.desktop_bridge.rejected_summary') continue;
-    const code = typeof record.code === 'string' ? record.code : '';
-    const unreachable = UNREACHABLE_REJECTION_CODE.test(code);
-    const rerouted = !unreachable && REROUTED_REJECTION_CODE.test(code);
-    if (!unreachable && !rerouted) continue;
-    const at = typeof record.at === 'string' ? Date.parse(record.at) : Number.NaN;
-    if (!Number.isFinite(at) || at < cutoffMs) continue;
-    if (rerouted) { latestReroute = Math.max(latestReroute, at); continue; }
-    if (!latest || at > latest.at) latest = { at, code };
-  }
-  if (!latest || latest.at <= latestReroute) return null;
-  return latest.code;
-}
+export { BRIDGE_UNREACHABLE_EVIDENCE_WINDOW_MS, detectUnreachableUpstreamEvidence } from '../codex-lb/desktop-bridge/upstream-evidence.js';
 
 /**
  * Read-only evidence for doctor's status inspection: the serving process's
@@ -251,14 +200,15 @@ export async function repairDoctorDesktopBridgeCatalog(
     const status: any = await statusImpl({ home: bridgeHome, env: process.env });
     const blockers = (status?.readiness?.blockers || []).map(String);
     const stale = blockers.filter((blocker: string) => blocker.endsWith('_catalog_stale'));
+    const reverify = { fix: input.fix, bridgeHome, restarted: restarted.restarted };
     if (!status?.management?.managed || stale.length === 0) {
-      return {
+      return reverifyTransportIfDegraded({
         ...base,
         ok: restarted.blockers.length === 0,
         repaired: restarted.restarted,
         warnings: restarted.warnings,
         blockers: restarted.blockers
-      };
+      }, reverify, statusImpl, executeImpl);
     }
     // Sync, then READ THE CATALOG BACK. Trusting the command's own ok flag
     // reported a repaired catalog that was still stale, and the unification
@@ -279,7 +229,7 @@ export async function repairDoctorDesktopBridgeCatalog(
         commandOk ? `still_stale:${stillStale.join(',')}` : (sync?.execution?.blockers || ['failed']).map(String).join(',')
       }`);
     }
-    return {
+    return reverifyTransportIfDegraded({
       ...base,
       ok: syncedAndVerified && restarted.blockers.length === 0,
       repaired: syncedAndVerified || restarted.restarted,
@@ -288,8 +238,44 @@ export async function repairDoctorDesktopBridgeCatalog(
         ...(syncedAndVerified ? [] : ['desktop_bridge_catalog_still_stale_after_repair', ...attempts]),
         ...restarted.blockers
       ]
-    };
+    }, reverify, statusImpl, executeImpl);
   } catch (error: any) {
     return { ...base, ok: false, repaired: false, blockers: [String(error?.message || 'desktop_bridge_catalog_sync_failed')] };
   }
+}
+
+/**
+ * Bring readiness back to `ready` after the repair, not just to "running".
+ *
+ * Readiness needs a transport-level diagnostic bound to the CURRENT serving
+ * process. A restart — by version skew, by the unreachable-upstream evidence
+ * above, or by `sks update` — produces a new process generation with no such
+ * diagnostic, and nothing in `--fix` or the update ever ran one, so every
+ * repaired machine finished on a truthful-but-alarming `degraded` until
+ * someone happened to run `sks bridge verify --level transport`. Run it here,
+ * under `fix` only: the read-only doctor must not fire live probes. Never a
+ * blocker — the probes' own verdict lands in readiness, which the caller reads.
+ */
+async function reverifyTransportIfDegraded(
+  result: DesktopBridgeCatalogRepairPhaseResult,
+  input: { fix: boolean; bridgeHome: string; restarted: boolean },
+  statusImpl: typeof desktopBridgeStatusV3,
+  executeImpl: typeof executeDesktopBridgeCommandV3
+): Promise<DesktopBridgeCatalogRepairPhaseResult> {
+  if (!input.fix) return result;
+  const before: any = await statusImpl({ home: input.bridgeHome, env: process.env }).catch(() => null);
+  const serving = before?.service?.state === 'ready' || before?.service?.running === true;
+  const degraded = before?.readiness?.state === 'degraded';
+  if (before?.management?.managed !== true || !serving || (!degraded && !input.restarted)) return result;
+  await executeImpl({ operation: 'verify', level: 'transport' }, { home: input.bridgeHome, env: process.env }).catch(() => null);
+  const after: any = await statusImpl({ home: input.bridgeHome, env: process.env }).catch(() => null);
+  const afterState = String(after?.readiness?.state || 'unknown');
+  return {
+    ...result,
+    repaired: result.repaired || (degraded && afterState === 'ready'),
+    warnings: [
+      ...result.warnings,
+      afterState === 'ready' ? 'desktop_bridge_transport_reverified' : `desktop_bridge_transport_reverify_incomplete:${afterState}`
+    ]
+  };
 }

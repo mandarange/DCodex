@@ -5,6 +5,40 @@
 
 
 
+## [9.2.7] - 2026-09-02
+
+### Fixed
+
+- Desktop Bridge readiness no longer decays to `degraded` ~100 seconds after
+  every transport verify. The serving process's state heartbeat rewrote the
+  whole state document from its in-memory copy, whose `last_verified_probe_ids`
+  is always empty (only the verifier ever learns them), so the ids a
+  `sks bridge verify --level transport` had just written were erased on the
+  next tick, the last transport diagnostic never bound to the current process,
+  and readiness sat at `degraded` — `ready: false` with an EMPTY blocker list,
+  which every surface above it read as green. The heartbeat now adopts the
+  on-disk ids before it writes; the verifier's own refresh still writes
+  exactly what it passes.
+- `sks doctor --json` — the fast path SKS Center's Diagnostics view calls —
+  emitted a fixed `not_checked` Desktop Bridge stub. It now reads the serving
+  process's own evidence (state file plus a bounded log tail through the new
+  import-free `upstream-evidence` module; no launchctl, no probes, no secret
+  stores) and reports `desktop_bridge.status` as `log_evidence_clear`,
+  `upstream_unreachable_evidence` (with the blocker and the repair in
+  `blockers`/`recovery_actions`, mirrored into `warnings` and `next_actions`),
+  or `not_checked` with the reason. The fast contract is unchanged: `ok: true`,
+  `fast_readonly_ok`, well inside the 1.2 s gate.
+- `sks doctor --fix` and the `sks update` catalog-repair stage run one
+  transport-level verify after a restart, or whenever the serving bridge reads
+  `degraded`, so a repaired machine finishes `ready` instead of "running but
+  unverified" (`desktop_bridge_transport_reverified` /
+  `desktop_bridge_transport_reverify_incomplete:<state>`). The read-only
+  doctor never fires live probes.
+- The full doctor names a `degraded` bridge instead of swallowing it:
+  `desktop_bridge_readiness_degraded:transport_unverified_for_current_process`
+  as a warning with the verify command, whenever `ready` is false with no
+  blockers.
+
 ## [9.2.6] - 2026-09-02
 
 ### Fixed

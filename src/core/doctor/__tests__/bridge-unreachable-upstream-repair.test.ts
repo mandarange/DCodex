@@ -182,3 +182,43 @@ test('the read-only evidence reader binds the log to the serving process recorde
     await fsp.rm(home, { recursive: true, force: true });
   }
 });
+
+test('--fix re-verifies transport after the repair so a serving bridge leaves `degraded`; read-only never probes', async () => {
+  const { repairDoctorDesktopBridgeCatalog } = await import('../desktop-bridge-catalog-repair.js');
+  const managedStatus = (state: 'degraded' | 'ready') => ({
+    management: { managed: true },
+    service: { state: 'ready', running: true },
+    readiness: { state, ready: state === 'ready', blockers: [] }
+  });
+  const operations: string[] = [];
+  const statuses: string[] = [];
+  let readinessState: 'degraded' | 'ready' = 'degraded';
+  const deps = {
+    restartStaleDesktopBridgeRuntimeImpl: (async () => ({ restarted: false, warnings: [], blockers: [] })) as any,
+    desktopBridgeStatusImpl: (async () => { statuses.push(readinessState); return managedStatus(readinessState); }) as any,
+    executeDesktopBridgeCommandImpl: (async (request: any) => {
+      operations.push(`${request.operation}:${request.level || ''}`);
+      if (request.operation === 'verify') readinessState = 'ready';
+      return { ok: true };
+    }) as any
+  };
+
+  const fixed = await repairDoctorDesktopBridgeCatalog({ fix: true }, deps);
+  assert.deepEqual(operations, ['verify:transport'], 'exactly one transport verify, no catalog sync for a fresh catalog');
+  assert.equal(fixed.ok, true);
+  assert.equal(fixed.repaired, true, 'degraded -> ready counts as a repair');
+  assert.deepEqual(fixed.warnings, ['desktop_bridge_transport_reverified']);
+  assert.deepEqual(fixed.blockers, []);
+
+  // Already ready: nothing to re-verify, no probe fired.
+  operations.length = 0; readinessState = 'ready';
+  const ready = await repairDoctorDesktopBridgeCatalog({ fix: true }, deps);
+  assert.deepEqual(operations, []);
+  assert.deepEqual(ready.warnings, []);
+
+  // Read-only doctor must never fire live probes, degraded or not.
+  operations.length = 0; readinessState = 'degraded';
+  const readOnly = await repairDoctorDesktopBridgeCatalog({ fix: false }, deps);
+  assert.deepEqual(operations, []);
+  assert.deepEqual(readOnly.warnings, []);
+});
