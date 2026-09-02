@@ -138,7 +138,17 @@ export interface DesktopBridgeRemoteTarget {
   address: string;
   family: 4 | 6;
   tlsServername?: string;
+  /**
+   * True when DNS was unavailable at prepare time and the address is a
+   * placeholder: the bridge serves anyway and resolves on first use, so a
+   * login-time network race never crash-loops the service.
+   */
+  unresolved?: boolean;
 }
+
+export type DesktopBridgeLookup = (
+  hostname: string,
+) => Promise<readonly { address: string; family: 4 | 6 }[]>;
 
 export interface PreparedDesktopBridgeProvider extends DesktopBridgeProviderSnapshot {
   remote: DesktopBridgeRemoteTarget;
@@ -148,6 +158,8 @@ export interface PreparedDesktopBridgeConfig extends DesktopBridgeConfig {
   providers: Record<BridgeProviderId, PreparedDesktopBridgeProvider>;
   /** DNS-resolved official passthrough target; null when passthrough is off. */
   officialRemote?: DesktopBridgeRemoteTarget | null;
+  /** Lookup the targets were resolved with; runtime re-resolution reuses it. */
+  remoteLookup?: DesktopBridgeLookup;
 }
 
 export interface DesktopBridgePublicStateV2 {

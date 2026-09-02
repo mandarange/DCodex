@@ -7,7 +7,7 @@ import { BRIDGE_OFFICIAL_ROUTE_ID } from '../bridge-contracts.js';
 import { buildOfficialPassthroughWebSocketHeaders, buildProviderWebSocketHeaders } from './header-policy.js';
 import { createDesktopBridgeRejectionLogger } from './rejection-log.js';
 import { rewriteLocationHeader } from './location-rewrite.js';
-import { desktopBridgeOfficialPassthroughEnabled, resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader, canonicalSessionId } from './security.js';
+import { desktopBridgeOfficialPassthroughEnabled, ensureDesktopBridgeRemoteTarget, isUnreachableUpstreamError, refreshDesktopBridgeRemoteTarget, resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader, canonicalSessionId } from './security.js';
 import { desktopBridgeListenOrigin } from './state.js';
 import {
   DESKTOP_BRIDGE_DIAGNOSTIC_PROTOCOL,
@@ -203,14 +203,23 @@ export async function forwardWebSocket(
     writeUpgradeFailure(client, new DesktopBridgeError(official ? 'bridge_official_passthrough_unavailable' : 'bridge_provider_route_unavailable'), req);
     return;
   }
-  const upstreamBaseUrl = official ? remote.baseUrl : provider!.base_url;
-  const target = resolveDesktopBridgeTarget(req.url, remote);
-  const upstream = remote.secure
-    ? tls.connect({ host: remote.address, port: remote.port, ...(remote.tlsServername ? { servername: remote.tlsServername } : {}) })
-    : net.connect({ host: remote.address, port: remote.port, family: remote.family });
+  const pin = remote;
+  const upstreamBaseUrl = official ? pin.baseUrl : provider!.base_url;
+  const target = resolveDesktopBridgeTarget(req.url, pin);
+  try { await ensureDesktopBridgeRemoteTarget(pin, config.remoteLookup); }
+  catch (error) { writeUpgradeFailure(client, error, req); return; }
   const key = String(req.headers['sec-websocket-key'] || '');
   const requestedProtocol = String(req.headers['sec-websocket-protocol'] || '').split(',')[0]?.trim() || null;
-  let connected = false; let response = Buffer.alloc(0);
+  // An upgrade has sent nothing upstream until the socket connects, so a
+  // connect-phase failure on a dead pin is safely retried once against the
+  // re-resolved address — the same heal the HTTP path gets from its replay.
+  connectUpstreamForUpgrade(1);
+
+  function connectUpstreamForUpgrade(retriesLeft: number): void {
+  const upstream = pin.secure
+    ? tls.connect({ host: pin.address, port: pin.port, ...(pin.tlsServername ? { servername: pin.tlsServername } : {}) })
+    : net.connect({ host: pin.address, port: pin.port, family: pin.family });
+  let connected = false; let retrying = false; let response = Buffer.alloc(0);
   const timer = setTimeout(() => upstream.destroy(new DesktopBridgeError('bridge_upstream_connect_timeout')), config.connectTimeoutMs); timer.unref();
   const fail = (error?: unknown): void => { clearTimeout(timer); if (!connected) writeUpgradeFailure(client, error, req); else client.destroy(); };
   const onConnected = (): void => {
@@ -250,9 +259,33 @@ export async function forwardWebSocket(
     };
     upstream.on('data', onData);
   };
-  if (remote.secure) upstream.once('secureConnect', onConnected); else upstream.once('connect', onConnected);
-  upstream.once('error', (error) => fail(error)); upstream.once('close', () => { clearTimeout(timer); if (!client.destroyed) client.end(); });
+  if (pin.secure) upstream.once('secureConnect', onConnected); else upstream.once('connect', onConnected);
+  upstream.once('error', (error) => {
+    if (!connected && isUnreachableUpstreamError(error)) {
+      // The pinned address is dead. Re-resolve it; with a retry left, dial the
+      // refreshed pin now — otherwise the client's own reconnect lands on it.
+      const refreshed = refreshDesktopBridgeRemoteTarget(pin, config.remoteLookup);
+      if (retriesLeft > 0 && !client.destroyed) {
+        retrying = true; clearTimeout(timer);
+        const cause = (error as { code?: unknown } | null)?.code;
+        logWebSocketRejection({
+          code: `bridge_upstream_unreachable_rerouted:${typeof cause === 'string' && /^[A-Za-z0-9_]{1,64}$/.test(cause) ? cause : 'unknown'}`,
+          transport: 'websocket',
+          ...(req.method === undefined ? {} : { method: req.method }),
+          ...(req.url === undefined ? {} : { url: req.url }),
+        });
+        // The client may have given up while DNS was consulted; dialing on
+        // its behalf then would only write into a destroyed socket.
+        void refreshed.then(() => { if (!client.destroyed) connectUpstreamForUpgrade(retriesLeft - 1); });
+        return;
+      }
+    }
+    fail(error);
+  });
+  // A retried attempt's teardown must not end the client it is retrying for.
+  upstream.once('close', () => { clearTimeout(timer); if (retrying) return; if (!client.destroyed) client.end(); });
   client.once('error', () => upstream.destroy()); client.once('close', () => upstream.destroy());
+  }
 }
 
 function encodeClientFrame(opcode: number, payload: Buffer): Buffer {

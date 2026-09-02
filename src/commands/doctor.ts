@@ -8,7 +8,7 @@ import { getCodexInfo } from '../core/codex-adapter.js';
 import { rustInfo } from '../core/rust-accelerator.js';
 import { codexAppIntegrationStatus } from '../core/codex-app.js';
 import { desktopBridgeStatusV3 } from '../core/codex-lb/desktop-controller-v3.js';
-import { repairDoctorDesktopBridgeCatalog } from '../core/doctor/desktop-bridge-catalog-repair.js';
+import { readDesktopBridgeUnreachableUpstreamEvidence, repairDoctorDesktopBridgeCatalog } from '../core/doctor/desktop-bridge-catalog-repair.js';
 import { inspectCodexConfigReadability } from '../core/codex/codex-config-readability.js';
 import {
   inspectOAuthCallbackPortConflict,
@@ -113,6 +113,20 @@ export async function inspectDoctorDesktopBridgeStatus(input: any = {}, deps: an
     const blockers = expected && status.readiness.ready !== true
       ? (status.readiness.blockers || []).map(String).filter(Boolean)
       : [];
+    const recoveryActions = (status.recovery_actions || []).map(String).filter(Boolean);
+    // Readiness is computed from cached diagnostics and never exercises the
+    // upstream, so a serving bridge whose pinned upstream address went dead
+    // after a network change reported green here for days. The bridge's own
+    // log is the one durable trace of that state; read it (state file + log
+    // tail, nothing live) so a plain doctor names the condition and `--fix`
+    // has a reason to restart the service.
+    if (expected && status.management?.managed === true) {
+      const evidence = await (deps.desktopBridgeUpstreamEvidenceImpl || readDesktopBridgeUnreachableUpstreamEvidence)(home).catch(() => null);
+      if (evidence) {
+        blockers.push(`desktop_bridge_upstream_unreachable:${evidence.code}`);
+        recoveryActions.push('Run `sks doctor --fix` (or `sks bridge repair`) to restart the Desktop Bridge and re-resolve its upstream address.');
+      }
+    }
     return {
       schema: 'sks.doctor-desktop-bridge.v1',
       ok: blockers.length === 0,
@@ -123,7 +137,7 @@ export async function inspectDoctorDesktopBridgeStatus(input: any = {}, deps: an
       providers: status.providers,
       blockers,
       warnings: (status.readiness.warnings || []).map(String).filter(Boolean),
-      recovery_actions: (status.recovery_actions || []).map(String).filter(Boolean)
+      recovery_actions: recoveryActions
     };
   } catch (error: unknown) {
     return {

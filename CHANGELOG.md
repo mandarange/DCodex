@@ -5,6 +5,57 @@
 
 
 
+## [9.2.6] - 2026-09-02
+
+### Fixed
+
+- Desktop Bridge upstream targets are no longer pinned for the life of the
+  serving process. Field shape (2026-09-01, this machine): the bridge resolves
+  each provider's DNS once at start and pins the first answer; a network
+  change after start (VPN flip, Wi-Fi swap, CDN address rotation) left that
+  pin unreachable, every codex-lb request failed as
+  `bridge_upstream_unavailable:EHOSTUNREACH` for days, and nothing — repair,
+  doctor, update, or any readiness surface — detected or healed it short of a
+  manual service restart. Three convergent fixes:
+  - The bridge self-heals at runtime: an unreachable-class connect failure
+    (`EHOSTUNREACH`, `ENETUNREACH`, `ENETDOWN`, `EHOSTDOWN`, `EADDRNOTAVAIL`,
+    `ECONNREFUSED`, `ETIMEDOUT`, connect timeout) re-resolves the target
+    in place — steering away from the address that just failed when the
+    answer set allows it, under the same private-address/rebinding validation
+    as a fresh start, deduped and rate-limited across concurrent requests —
+    and replays a buffered Responses body against the fresh address
+    (`bridge_upstream_unreachable_rerouted:*` in the bridge log). Streamed
+    bodies and WebSocket upgrades cannot replay, but still trigger the
+    re-resolution so the client's own retry reaches a live address.
+  - Pins also re-resolve on a 5-minute TTL before anything fails, keeping a
+    still-listed address stable (a healthy pin never flaps between families)
+    and following DNS only once the pinned address has left the answer set —
+    so CDN and load-balancer rotations stop costing one failed request each.
+    A pinned address that now presents another host's certificate
+    (`ERR_TLS_CERT_ALTNAME_INVALID`) counts as a dead pin too. WebSocket
+    upgrades on a dead pin reconnect once against the refreshed address
+    instead of spending the client's reconnect budget.
+  - DNS being unavailable at bridge start (login before Wi-Fi, a VPN
+    mid-flip) no longer fails preflight. The serve process used to exit
+    non-zero and launchd relaunched it every few seconds until the network
+    came back. The pin is now deferred (`deferred_upstreams` on the
+    `started` log line), the bridge serves, a request while DNS is still down
+    is answered `bridge_remote_dns_failed`, and the first request after DNS
+    returns resolves the pin. Invalid answers (private address, rebinding)
+    still refuse to prepare exactly as before.
+  - `sks doctor` (read-only) surfaces recent `bridge_upstream_unavailable`
+    rejections written by the CURRENT serving process — state file plus log
+    tail, no probes — as a `desktop_bridge_upstream_unreachable:*` blocker
+    with the repair named; a reroute logged after the last failure means the
+    bridge already healed itself and is left alone. `sks doctor --fix`
+    restarts the service on standing evidence (re-resolving every pin).
+  - `sks update` inherits the same detection/restart through its
+    desktop-bridge catalog-repair stage, so an update converges a stranded
+    bridge even when versions already match; the official ChatGPT upstream
+    (`chatgpt.com`) gets every one of these heals as well.
+
+
+
 ## [9.2.5] - 2026-08-27
 
 ### Fixed

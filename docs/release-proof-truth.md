@@ -1,8 +1,28 @@
-# Release Proof Truth — 9.2.5
+# Release Proof Truth — 9.2.6
 ## Current assertion
 
+9.2.6 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
+published 9.2.5 plus the Desktop Bridge upstream re-resolution fix. The
+2026-09-01 field shape on this machine: the bridge started 2026-08-28T05:28Z
+while a VPN was up, resolved the codex-lb gateway's DNS once at prepare time,
+and pinned the first answer for the life of the process; after the network
+changed every codex-lb request was rejected
+`bridge_upstream_unavailable:EHOSTUNREACH` (66 suppressed in one 60-second
+window at 14:18Z alone) while `sks bridge status`, doctor, SKS Center, and the
+update path all reported green — the diagnostics health endpoint never touches
+the upstream, readiness read a cached report, repair restarted only on version
+skew, and nothing consumed the rejections the bridge itself was logging. A
+`launchctl kickstart -k` re-resolved the pin and every transport probe went
+green within a minute. 9.2.6 makes the bridge re-resolve a pin in place on
+unreachable-class connect failures and replay the buffered Responses body
+(WebSocket upgrades reconnect once), re-resolve pins on a 5-minute TTL without
+flapping a still-listed address, defer instead of crash-loop when DNS is down at
+start, and lets `sks doctor` read the serving process's own log to name
+`desktop_bridge_upstream_unreachable:*` — with `--fix` and the `sks update`
+catalog-repair stage restarting the service on standing evidence.
+
 9.2.5 (published 2026-08-28, tag `v9.2.5`, source commit
-`a8dd9664e5fa07614819e68584078c3c2bc8d2ff`) is the
+`a8dd9664e5fa07614819e68584078c3c2bc8d2ff`) remains fully proven: it is the
 published 9.2.4 plus the official-models `auto` convergence fix, the Codex
 0.150.1 runtime contract, and the legacy runtime data GC. The registry tarball
 is the tarball the release gates verified — `dist.integrity`
@@ -80,13 +100,18 @@ publication, deployment, a credential change, a Git tag, or a push.
 Exact-commit proof can exist only after the candidate is committed and all
 source-bound gates are regenerated from that clean commit.
 
-All release artifacts bound to 9.2.3 or an earlier commit are historical. They
-must not be renamed, copied, or treated as 9.2.5 evidence.
+All release artifacts bound to 9.2.5 or an earlier commit are historical. They
+must not be renamed, copied, or treated as 9.2.6 evidence.
 
-New 9.2.5 claims:
+New 9.2.6 claims:
 
 | Claim | Current support | Boundary |
 | --- | --- | --- |
+| A dead pinned upstream address heals inside the serving process | passed-hermetic | `refreshDesktopBridgeRemoteTarget` re-resolves the shared target in place on `EHOSTUNREACH`/`ENETUNREACH`/`ENETDOWN`/`EHOSTDOWN`/`EADDRNOTAVAIL`/`ECONNREFUSED`/`ETIMEDOUT`/connect timeout/`ERR_TLS_CERT_ALTNAME_INVALID`, steers away from the address that just failed, runs the full private-address and rebinding validation of a fresh start, dedupes concurrent callers, and cools down 5 s; the HTTP path replays the buffered Responses body on a fresh connection and the WebSocket path reconnects once; real-socket e2e: a bridge pinned to `::1` where nothing listens answers 200 (HTTP) and 101 (upgrade) once DNS answers `127.0.0.1`, and the shared pin is durably rewritten |
+| A pin follows DNS without flapping | passed-hermetic | the 5-minute TTL refresh keeps a still-listed address and switches only once it has left the answer set; a fresh pin performs no lookup; a failed or newly-forbidden resolution keeps the existing pin |
+| DNS unavailable at bridge start defers the pin instead of crash-looping the service | passed-hermetic | only `bridge_remote_dns_failed` at prepare yields a deferred pin (`unresolved`, address `0.0.0.0`, named in `deferred_upstreams` on the `started` log line); first use resolves it or answers `bridge_remote_dns_failed`; private-address and rebinding answers still refuse to prepare exactly as before |
+| Doctor and update converge a stranded bridge | passed-hermetic | `detectUnreachableUpstreamEvidence` reads `bridge_upstream_unavailable*` rejections written by the CURRENT process (state-file `started_at`, 10-minute window; a newer `bridge_upstream_unreachable_rerouted` line clears the evidence); read-only doctor names `desktop_bridge_upstream_unreachable:*` with the repair; `--fix` and the update catalog-repair stage restart the service on standing evidence; version-stale restart precedence unchanged; harnessed runs never reach `launchctl` |
+| The installed 9.2.6 bridge survives a network change on the live machine | not proved | requires the installed 9.2.6 bridge on the operator's machine to log `bridge_upstream_unreachable_rerouted:*` followed by no `bridge_upstream_unavailable` after a network change, or a `sks doctor --fix` run that restarts a bridge whose log carries the rejections |
 | Official-models `auto` converges to the gateway on a registered host | passed-hermetic | `applyOfficialModelPassthrough({ mode: 'gateway' })` restores each bare-official `openai` route to the target its `codex-lb:<id>` twin names, catalog upstream aliases included; a passthrough→gateway round trip regenerates the original policy generation; twin-less official routes stay passthrough |
 | A stale passthrough flip cannot outlive a healthy bridge start | passed-hermetic | serve-time auto apply computes the converged policy for BOTH resolved modes, persists settings + route-policy file only when the generation moves, and logs which mode it applied; both directions are idempotent, so healthy starts write nothing |
 | The Codex runtime contract tracks 0.150.1 | passed-hermetic | `@openai/codex-sdk` 0.150.1 with the SDK capability and dependency-graph gates green; the feature-flag strip list re-pinned against the vendored 0.150.1 `features list` (strip set unchanged, `multi_agent_mode` now absent rather than `removed`); vendored models-manager base instructions byte-identical to rust-v0.150.1 |
@@ -137,8 +162,8 @@ New 9.2.5 claims:
 | `sks update` quarantines other-harness conflicts | passed-hermetic | `other-harness-cleanup` now calls `cleanupOtherHarnessConflicts` instead of failing closed; from-home update e2e still runs every migration stage |
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
-| All checked version authorities report 9.2.5 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.5 after incremental build |
-| The reported 9.2.5 package is ready to publish | proven-then-published | `npm run release:check:full` exit 0 from the clean release commit `a8dd9664` (canonical 3535/3535 + stamp phase 33/33, real checks green, only the operator-owned physical-evidence gate remaining non-blocking as on 9.2.4); the release-check stamp binds that commit; the pack receipt's tarball was published unmodified (see the registry row above) |
+| All checked version authorities report 9.2.6 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.6 after incremental build |
+| The reported 9.2.6 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
 
 ## 9.1.0 assertion (historical)
 

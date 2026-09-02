@@ -1,46 +1,161 @@
+import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { desktopBridgeStatusV3, executeDesktopBridgeCommandV3 } from '../codex-lb/desktop-controller-v3.js';
-import { bootstrapExistingDesktopBridgeService, desktopBridgeServiceStatus } from '../codex-lb/desktop-service.js';
-import { desktopBridgeRuntimeVersion, desktopBridgeRuntimeVersionStale } from '../codex-lb/desktop-bridge/state.js';
+import { bootstrapExistingDesktopBridgeService, desktopBridgeServicePaths, desktopBridgeServiceStatus } from '../codex-lb/desktop-service.js';
+import { desktopBridgeRuntimeVersion, desktopBridgeRuntimeVersionStale, readDesktopBridgeState } from '../codex-lb/desktop-bridge/state.js';
 import { PACKAGE_VERSION } from '../version.js';
 
 /**
- * Restart a Desktop Bridge whose serving process predates the installed package.
+ * How far back a `bridge_upstream_unavailable` rejection in the bridge's own
+ * log still counts as evidence that the serving process is dialing a dead
+ * pinned address. The pin is resolved once at bridge start, so a network
+ * change (VPN flip, Wi-Fi swap, CDN rotation) strands it; recent rejections
+ * are the one durable trace of that state, and they are exactly what the
+ * operator is looking at when they run doctor. Older entries describe a
+ * network the machine may no longer be on.
+ */
+export const BRIDGE_UNREACHABLE_EVIDENCE_WINDOW_MS = 10 * 60_000;
+const BRIDGE_LOG_TAIL_BYTES = 256 * 1024;
+const UNREACHABLE_REJECTION_CODE = /^bridge_(?:websocket_)?upstream_unavailable/;
+/**
+ * The bridge writes this when it re-resolved a dead pin and dialed the fresh
+ * address; a failure after it produces a NEWER unavailable line. So the latest
+ * reroute standing after the latest failure means the process already healed
+ * itself, and a restart would only interrupt live requests.
+ */
+const REROUTED_REJECTION_CODE = /^bridge_upstream_unreachable_rerouted/;
+
+/**
+ * Scan a bridge stdout-log tail for upstream-unreachable rejections emitted by
+ * the CURRENT serving process within the evidence window. Returns the most
+ * recent matching rejection code, or null when the log holds no such evidence
+ * — including when the bridge re-resolved its pin after the last failure.
+ */
+export function detectUnreachableUpstreamEvidence(
+  logTail: string,
+  startedAt: string | null | undefined,
+  nowMs: number
+): string | null {
+  const startedMs = startedAt ? Date.parse(startedAt) : Number.NaN;
+  const cutoffMs = Math.max(Number.isFinite(startedMs) ? startedMs : 0, nowMs - BRIDGE_UNREACHABLE_EVIDENCE_WINDOW_MS);
+  let latest: { at: number; code: string } | null = null;
+  let latestReroute = Number.NEGATIVE_INFINITY;
+  for (const line of logTail.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{') || !trimmed.includes('"sks.desktop_bridge.rejected')) continue;
+    let record: { event?: unknown; code?: unknown; at?: unknown };
+    try { record = JSON.parse(trimmed) as typeof record; } catch { continue; }
+    if (record.event !== 'sks.desktop_bridge.rejected' && record.event !== 'sks.desktop_bridge.rejected_summary') continue;
+    const code = typeof record.code === 'string' ? record.code : '';
+    const unreachable = UNREACHABLE_REJECTION_CODE.test(code);
+    const rerouted = !unreachable && REROUTED_REJECTION_CODE.test(code);
+    if (!unreachable && !rerouted) continue;
+    const at = typeof record.at === 'string' ? Date.parse(record.at) : Number.NaN;
+    if (!Number.isFinite(at) || at < cutoffMs) continue;
+    if (rerouted) { latestReroute = Math.max(latestReroute, at); continue; }
+    if (!latest || at > latest.at) latest = { at, code };
+  }
+  if (!latest || latest.at <= latestReroute) return null;
+  return latest.code;
+}
+
+/**
+ * Read-only evidence for doctor's status inspection: the serving process's
+ * state file gives its start time, its stdout log gives the rejections. No
+ * launchctl, no probes, no network — so a plain `sks doctor` can name a
+ * stranded bridge instead of reporting a green check.
+ */
+export async function readDesktopBridgeUnreachableUpstreamEvidence(
+  home: string,
+  deps: { readLogTailImpl?: typeof readBridgeLogTail; nowMs?: () => number } = {}
+): Promise<{ code: string; started_at: string } | null> {
+  const paths = desktopBridgeServicePaths(home);
+  const state = await readDesktopBridgeState(paths.state_path).catch(() => null);
+  if (!state) return null;
+  const tail = await (deps.readLogTailImpl || readBridgeLogTail)(paths.stdout_log_path, BRIDGE_LOG_TAIL_BYTES).catch(() => '');
+  const code = detectUnreachableUpstreamEvidence(tail, state.started_at, (deps.nowMs || Date.now)());
+  return code ? { code, started_at: state.started_at } : null;
+}
+
+async function readBridgeLogTail(logPath: string, maxBytes: number): Promise<string> {
+  const handle = await fsp.open(logPath, 'r');
+  try {
+    const { size } = await handle.stat();
+    const start = Math.max(0, size - maxBytes);
+    const buffer = Buffer.alloc(size - start);
+    await handle.read(buffer, 0, buffer.length, start);
+    return buffer.toString('utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
+export interface StaleBridgeRestartDeps {
+  serviceStatusImpl?: typeof desktopBridgeServiceStatus;
+  bootstrapImpl?: typeof bootstrapExistingDesktopBridgeService;
+  readLogTailImpl?: typeof readBridgeLogTail;
+  nowMs?: () => number;
+}
+
+/**
+ * Restart a Desktop Bridge whose serving process predates the installed
+ * package, OR whose own log shows it recently dialing an unreachable upstream.
  *
  * The bridge is a long-lived launchd service, so `npm i -g sneakoscope@X`
  * replaces the files on disk while the running process keeps executing the code
  * it started with. Every bridge-side fix therefore stayed invisible until
  * someone restarted it by hand, and nothing reported the mismatch.
+ *
+ * The unreachable-upstream case is the same shape from the other side: the
+ * serving process pinned its upstream addresses at start, the network changed
+ * underneath it, and every readiness surface stayed green because nothing
+ * consumed the `bridge_upstream_unavailable:EHOSTUNREACH` evidence the bridge
+ * itself was writing. A restart re-resolves the pins; without `fix` the
+ * evidence is at least surfaced as a blocker instead of a green check.
  */
 export async function restartStaleDesktopBridgeRuntime(input: {
   home: string;
   fix: boolean;
-}): Promise<{ restarted: boolean; warnings: string[]; blockers: string[] }> {
+}, deps: StaleBridgeRestartDeps = {}): Promise<{ restarted: boolean; warnings: string[]; blockers: string[] }> {
   // Restarting the service shells out to the real `/bin/launchctl`, which the
   // sandboxed harnesses deliberately have no seam for. Never reach for it from
   // an isolated run: a real user environment is the only place it belongs, and
-  // the only place the staleness can actually hurt.
-  if (process.env.SKS_TEST_ISOLATION === '1' || process.env.SKS_RELEASE_UPGRADE_SMOKE === '1') {
+  // the only place the staleness can actually hurt. Injected impls are the
+  // harness's own seams and stay exercisable.
+  const usingRealImpls = !deps.serviceStatusImpl && !deps.bootstrapImpl && !deps.readLogTailImpl;
+  if (usingRealImpls && (process.env.SKS_TEST_ISOLATION === '1' || process.env.SKS_RELEASE_UPGRADE_SMOKE === '1')) {
     return { restarted: false, warnings: [], blockers: [] };
   }
-  const service = await desktopBridgeServiceStatus({ home: input.home }).catch(() => null);
-  if (!service?.running || !desktopBridgeRuntimeVersionStale(service.state)) {
-    return { restarted: false, warnings: [], blockers: [] };
+  const service = await (deps.serviceStatusImpl || desktopBridgeServiceStatus)({ home: input.home }).catch(() => null);
+  if (!service?.running) return { restarted: false, warnings: [], blockers: [] };
+  const versionStale = desktopBridgeRuntimeVersionStale(service.state);
+  let unreachable: string | null = null;
+  if (!versionStale) {
+    const logPath = service.paths?.stdout_log_path;
+    const tail = logPath
+      ? await (deps.readLogTailImpl || readBridgeLogTail)(logPath, BRIDGE_LOG_TAIL_BYTES).catch(() => '')
+      : '';
+    unreachable = detectUnreachableUpstreamEvidence(tail, service.state?.started_at, (deps.nowMs || Date.now)());
+    if (!unreachable) return { restarted: false, warnings: [], blockers: [] };
   }
   const running = desktopBridgeRuntimeVersion(service.state) || 'pre-8.6.2';
+  const blocker = versionStale
+    ? `desktop_bridge_runtime_version_stale:${running}:${PACKAGE_VERSION}`
+    : `desktop_bridge_upstream_unreachable:${unreachable}`;
   if (!input.fix) {
-    return {
-      restarted: false,
-      warnings: [],
-      blockers: [`desktop_bridge_runtime_version_stale:${running}:${PACKAGE_VERSION}`]
-    };
+    return { restarted: false, warnings: [], blockers: [blocker] };
   }
-  const restarted = await bootstrapExistingDesktopBridgeService({ home: input.home }).catch(() => null);
+  const restarted = await (deps.bootstrapImpl || bootstrapExistingDesktopBridgeService)({ home: input.home }).catch(() => null);
   const nowRunning = restarted?.running === true && !desktopBridgeRuntimeVersionStale(restarted.state);
-  return nowRunning
-    ? { restarted: true, warnings: [`desktop_bridge_runtime_restarted:${running}:${PACKAGE_VERSION}`], blockers: [] }
-    : { restarted: false, warnings: [], blockers: [`desktop_bridge_runtime_version_stale:${running}:${PACKAGE_VERSION}`] };
+  if (!nowRunning) return { restarted: false, warnings: [], blockers: [blocker] };
+  return {
+    restarted: true,
+    warnings: [versionStale
+      ? `desktop_bridge_runtime_restarted:${running}:${PACKAGE_VERSION}`
+      : `desktop_bridge_upstream_unreachable_restarted:${unreachable}`],
+    blockers: []
+  };
 }
 
 /**

@@ -7,6 +7,7 @@ import {
 } from '../route-index.js';
 import type {
   DesktopBridgeConfig,
+  DesktopBridgeLookup,
   DesktopBridgeProviderRegistrySnapshot,
   DesktopBridgeRemoteTarget,
   DesktopBridgeRouteContext,
@@ -20,6 +21,16 @@ const MIN_HIGH_PORT = 49_152;
 const MAX_PORT = 65_535;
 const MAX_SESSION_PINS = 10_000;
 const sessionPinMutationQueues = new WeakMap<PreparedDesktopBridgeConfig, Promise<void>>();
+
+interface RemoteRefreshState {
+  /** When the current pin was last resolved from DNS; null for a deferred pin. */
+  resolvedAt: number | null;
+  /** When a re-resolution was last ATTEMPTED — the cooldown keys on this, not on
+   *  `resolvedAt`, so a pin that dies seconds after start still refreshes at once. */
+  lastRefreshAt: number | null;
+  inflight: Promise<boolean> | null;
+}
+const remoteRefreshStates = new WeakMap<DesktopBridgeRemoteTarget, RemoteRefreshState>();
 
 const FORBIDDEN_REMOTE_ADDRESSES = new net.BlockList();
 FORBIDDEN_REMOTE_ADDRESSES.addSubnet('0.0.0.0', 8, 'ipv4');
@@ -37,9 +48,7 @@ FORBIDDEN_REMOTE_ADDRESSES.addSubnet('fc00::', 7, 'ipv6');
 FORBIDDEN_REMOTE_ADDRESSES.addSubnet('fe80::', 10, 'ipv6');
 FORBIDDEN_REMOTE_ADDRESSES.addSubnet('ff00::', 8, 'ipv6');
 
-export type DesktopBridgeLookup = (
-  hostname: string,
-) => Promise<readonly { address: string; family: 4 | 6 }[]>;
+export type { DesktopBridgeLookup } from './types.js';
 
 export function assertLoopbackPeer(address: string | undefined): void {
   const normalized = String(address || '').replace(/^::ffff:/i, '');
@@ -429,6 +438,7 @@ const defaultLookup: DesktopBridgeLookup = async (hostname) => {
 export async function resolveDesktopBridgeRemoteTarget(
   raw: string,
   lookup: DesktopBridgeLookup = defaultLookup,
+  options: { avoidAddress?: string; preferAddress?: string } = {},
 ): Promise<DesktopBridgeRemoteTarget> {
   const remote = validateRemoteUrl(raw);
   const hostname = stripIpv6Brackets(remote.hostname);
@@ -442,14 +452,156 @@ export async function resolveDesktopBridgeRemoteTarget(
   if (!loopback && addresses.some((row) => FORBIDDEN_REMOTE_ADDRESSES.check(row.address, row.family === 4 ? 'ipv4' : 'ipv6'))) {
     throw new DesktopBridgeError('bridge_remote_dns_private_address');
   }
-  const selected = addresses[0];
+  // Every returned address passed the checks above, so any of them is a valid
+  // pin. `preferAddress` keeps a working pin stable while DNS still lists it
+  // (a periodic re-resolution must not flap between families); `avoidAddress`
+  // steers away from an address that just proved unreachable when the answer
+  // set offers an alternative.
+  const selected = (options.preferAddress ? addresses.find((row) => row.address === options.preferAddress) : undefined)
+    ?? addresses.find((row) => row.address !== options.avoidAddress)
+    ?? addresses[0];
   if (!selected) throw new DesktopBridgeError('bridge_remote_dns_empty');
   const target: DesktopBridgeRemoteTarget = {
     baseUrl: remote.toString().replace(/\/$/, ''), origin: remote.origin, hostname,
     port: Number(remote.port || (remote.protocol === 'https:' ? 443 : 80)), secure: remote.protocol === 'https:',
     address: selected.address, family: selected.family, ...(family ? {} : { tlsServername: hostname }),
   };
+  remoteRefreshStates.set(target, { resolvedAt: Date.now(), lastRefreshAt: null, inflight: null });
   return target;
+}
+
+/**
+ * The target a provider gets when DNS is unavailable at prepare time (login
+ * before Wi-Fi, a VPN mid-flip, a captive portal). Serving with a deferred
+ * pin beats what happened before: the serve process failed preflight, exited
+ * non-zero, and launchd relaunched it every few seconds until the network
+ * came back — a crash loop whose only trace was `bridge_remote_dns_failed`.
+ * Only the DNS-unavailable failure is deferred; an INVALID answer (private
+ * address, rebinding, malformed) still refuses to prepare, exactly as before.
+ */
+function deferredRemoteTarget(remote: URL, hostname: string): DesktopBridgeRemoteTarget {
+  return {
+    baseUrl: remote.toString().replace(/\/$/, ''), origin: remote.origin, hostname,
+    port: Number(remote.port || (remote.protocol === 'https:' ? 443 : 80)), secure: remote.protocol === 'https:',
+    address: '0.0.0.0', family: 4, ...(net.isIP(hostname) ? {} : { tlsServername: hostname }),
+    unresolved: true,
+  };
+}
+
+async function resolveOrDeferRemoteTarget(raw: string, lookup: DesktopBridgeLookup): Promise<DesktopBridgeRemoteTarget> {
+  try {
+    return await resolveDesktopBridgeRemoteTarget(raw, lookup);
+  } catch (error) {
+    if (!(error instanceof DesktopBridgeError) || error.code !== 'bridge_remote_dns_failed') throw error;
+    const remote = validateRemoteUrl(raw);
+    return deferredRemoteTarget(remote, stripIpv6Brackets(remote.hostname));
+  }
+}
+
+/**
+ * Socket-level failures that mean the PINNED ADDRESS cannot be reached at all —
+ * a network change, a VPN flip, or CDN address rotation since the bridge
+ * resolved DNS. They say nothing about the upstream service itself, so the
+ * remedy is re-resolution, never surfacing the error as the provider's fault.
+ * ECONNRESET/EPIPE stay out: those are stale-pooled-socket territory.
+ */
+const UNREACHABLE_UPSTREAM_ERROR_CODES = new Set([
+  'EHOSTUNREACH', 'ENETUNREACH', 'ENETDOWN', 'EHOSTDOWN', 'EADDRNOTAVAIL', 'ECONNREFUSED', 'ETIMEDOUT',
+  // The pinned address answers, but with a certificate for some other host:
+  // the IP has been handed to a different tenant since the bridge resolved it.
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+]);
+
+export function isUnreachableUpstreamError(error: unknown): boolean {
+  if (error instanceof DesktopBridgeError) return error.code === 'bridge_upstream_connect_timeout';
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && UNREACHABLE_UPSTREAM_ERROR_CODES.has(code);
+}
+
+/** Concurrent requests failing on the same dead pin trigger ONE re-resolution. */
+export const REMOTE_REFRESH_COOLDOWN_MS = 5_000;
+/**
+ * A pin older than this is re-resolved on the next use even though nothing
+ * has failed yet: CDN and load-balancer addresses rotate on DNS TTLs of a few
+ * minutes, and a pin that only ever changes on failure serves every rotation
+ * as one failed request first. The lookup is one getaddrinfo per provider per
+ * interval; a still-listed address is kept, so a healthy pin never flaps.
+ */
+export const REMOTE_TARGET_TTL_MS = 5 * 60_000;
+
+export type RemoteRefreshReason = 'unreachable' | 'stale' | 'unresolved';
+
+/**
+ * Re-resolve a remote target IN PLACE. The pin was chosen once at bridge
+ * start; without this, a network change leaves every later request dialing a
+ * dead address until someone restarts the service by hand. Mutating the
+ * shared target object is the point: every forward path reads `remote.address`
+ * per attempt, so one refresh heals all subsequent requests.
+ *
+ * - `unreachable`: the pin just failed — steer away from it when DNS offers an
+ *   alternative (the IPv6-first-with-broken-IPv6 case).
+ * - `stale`: periodic TTL refresh — keep the current address while DNS still
+ *   lists it, switch only when it has disappeared.
+ * - `unresolved`: the pin was deferred at prepare (DNS was down); any answer
+ *   resolves it.
+ *
+ * Validation is the same full `resolveDesktopBridgeRemoteTarget` pass — a
+ * refresh can never widen what a fresh start would accept, and a failed or
+ * newly-forbidden resolution keeps the existing pin (a deferred pin stays
+ * deferred). Returns whether the pinned address changed.
+ */
+export async function refreshDesktopBridgeRemoteTarget(
+  remote: DesktopBridgeRemoteTarget,
+  lookup: DesktopBridgeLookup = defaultLookup,
+  reason: RemoteRefreshReason = 'unreachable',
+): Promise<boolean> {
+  if (net.isIP(remote.hostname)) return false;
+  const state = remoteRefreshStates.get(remote) ?? { resolvedAt: null, lastRefreshAt: null, inflight: null };
+  if (state.inflight) return state.inflight;
+  if (state.lastRefreshAt !== null && Date.now() - state.lastRefreshAt < REMOTE_REFRESH_COOLDOWN_MS) return false;
+  const inflight = (async (): Promise<boolean> => {
+    let resolvedAt = state.resolvedAt;
+    try {
+      const fresh = await resolveDesktopBridgeRemoteTarget(remote.baseUrl, lookup, reason === 'stale'
+        ? { preferAddress: remote.address }
+        : reason === 'unreachable' ? { avoidAddress: remote.address } : {});
+      const changed = remote.unresolved === true || fresh.address !== remote.address || fresh.family !== remote.family;
+      remote.address = fresh.address;
+      remote.family = fresh.family;
+      delete remote.unresolved;
+      resolvedAt = Date.now();
+      return changed;
+    } catch {
+      return false;
+    } finally {
+      remoteRefreshStates.set(remote, { resolvedAt, lastRefreshAt: Date.now(), inflight: null });
+    }
+  })();
+  remoteRefreshStates.set(remote, { ...state, inflight });
+  return inflight;
+}
+
+/**
+ * Make a remote target dialable before a forward path connects to it: resolve
+ * a deferred pin (throwing `bridge_remote_dns_failed` when DNS is still down,
+ * so the client sees the real cause instead of a connect to 0.0.0.0), and
+ * re-resolve a pin older than the TTL. Cheap in the steady state: one Map read.
+ */
+export async function ensureDesktopBridgeRemoteTarget(
+  remote: DesktopBridgeRemoteTarget,
+  lookup: DesktopBridgeLookup = defaultLookup,
+  ttlMs = REMOTE_TARGET_TTL_MS,
+): Promise<void> {
+  if (remote.unresolved) {
+    await refreshDesktopBridgeRemoteTarget(remote, lookup, 'unresolved');
+    if (remote.unresolved) throw new DesktopBridgeError('bridge_remote_dns_failed');
+    return;
+  }
+  if (net.isIP(remote.hostname)) return;
+  const state = remoteRefreshStates.get(remote);
+  if (state?.resolvedAt !== null && state?.resolvedAt !== undefined && Date.now() - state.resolvedAt >= ttlMs) {
+    await refreshDesktopBridgeRemoteTarget(remote, lookup, 'stale');
+  }
 }
 
 async function prepareProvider(provider: PreparedDesktopBridgeProvider, lookup: DesktopBridgeLookup): Promise<PreparedDesktopBridgeProvider> {
@@ -467,7 +619,7 @@ async function prepareProvider(provider: PreparedDesktopBridgeProvider, lookup: 
       },
     };
   }
-  const target = await resolveDesktopBridgeRemoteTarget(provider.base_url, lookup);
+  const target = await resolveOrDeferRemoteTarget(provider.base_url, lookup);
   return { ...provider, base_url: target.baseUrl, remote: target };
 }
 
@@ -566,9 +718,9 @@ export async function prepareDesktopBridgeConfig(config: DesktopBridgeConfig, lo
   }));
   const providers = Object.fromEntries(entries) as Record<BridgeProviderId, PreparedDesktopBridgeProvider>;
   const officialRemote = config.officialPassthrough
-    ? await resolveDesktopBridgeRemoteTarget(config.officialPassthrough.baseUrl, lookup)
+    ? await resolveOrDeferRemoteTarget(config.officialPassthrough.baseUrl, lookup)
     : null;
-  return { ...config, providers, officialRemote };
+  return { ...config, providers, officialRemote, remoteLookup: lookup };
 }
 
 export function validatePreparedDesktopBridgeConfig(config: PreparedDesktopBridgeConfig): void {

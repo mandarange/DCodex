@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { BRIDGE_OFFICIAL_ROUTE_ID } from '../bridge-contracts.js';
 import { buildOfficialPassthroughHeaders, buildProviderUpstreamHeaders, rewriteResponseHeaders } from './header-policy.js';
 import { createDesktopBridgeRejectionLogger } from './rejection-log.js';
-import { resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader } from './security.js';
+import { ensureDesktopBridgeRemoteTarget, isUnreachableUpstreamError, refreshDesktopBridgeRemoteTarget, resolveAndBindDesktopBridgeRouteContext, resolveCodexSessionIdentity, resolveDesktopBridgeTarget, safeBridgeErrorCode, singleBridgeHeader } from './security.js';
 import { desktopBridgeListenOrigin } from './state.js';
 import { DesktopBridgeError, type DesktopBridgeResolvedCredential, type DesktopBridgeRouteContext, type PreparedDesktopBridgeConfig } from './types.js';
 
@@ -314,6 +314,9 @@ class StalePooledSocketFailure extends Error {
   constructor(readonly reason: unknown) { super('bridge_upstream_socket_stale'); }
 }
 
+/** The pinned upstream address is unreachable; re-resolve, then replay. */
+class UnreachableUpstreamFailure extends StalePooledSocketFailure {}
+
 export async function forwardHttp(
   req: IncomingMessage,
   res: ServerResponse,
@@ -330,6 +333,9 @@ export async function forwardHttp(
     if (!remote) throw new DesktopBridgeError('bridge_official_passthrough_unavailable');
     const upstreamBaseUrl = official ? remote.baseUrl : provider!.base_url;
     if (!official && !request.credential) throw new DesktopBridgeError('bridge_provider_credential_invalid');
+    // A deferred pin (DNS was down at start) resolves here or fails as
+    // `bridge_remote_dns_failed`; a pin past its TTL re-resolves before use.
+    await ensureDesktopBridgeRemoteTarget(remote, config.remoteLookup);
     const target = resolveDesktopBridgeTarget(req.url, remote);
     const transport = remote.secure ? https : http;
     const headers = official
@@ -369,6 +375,15 @@ export async function forwardHttp(
       upstream.setTimeout(config.idleTimeoutMs, () => upstream.destroy(new DesktopBridgeError('bridge_upstream_idle_timeout')));
       req.once('aborted', abort); res.once('close', abort);
       upstream.once('error', (error) => {
+        if (!responseStarted && isUnreachableUpstreamError(error)) {
+          if (replayable && canReplay) {
+            finish(new UnreachableUpstreamFailure(error));
+            return;
+          }
+          // A streamed body cannot be replayed, but the dead pin must still be
+          // re-resolved so the client's own retry reaches a live address.
+          void refreshDesktopBridgeRemoteTarget(remote, config.remoteLookup);
+        }
         if (!responseStarted && replayable && !useFreshConnection && isStalePooledSocketFailure(upstream, error)) {
           finish(new StalePooledSocketFailure(error));
           return;
@@ -481,18 +496,35 @@ export async function forwardHttp(
       } catch (error) {
         if (!(error instanceof StalePooledSocketFailure) || remainingReplays <= 0) throw error;
         remainingReplays -= 1;
-        if (!useFreshConnection) {
-          // One transition kills every idle socket to that host, not just this one.
-          // `destroy` only reaps the free list, so streams in flight are untouched.
+        if (error instanceof UnreachableUpstreamFailure) {
+          // The pinned address is dead (network change since the bridge
+          // resolved DNS). Re-resolve before the replay so it dials whatever
+          // the network answers NOW; the mutation is visible to every other
+          // request sharing this remote, so one replay heals the process.
+          const staleAddress = remote.address;
+          await refreshDesktopBridgeRemoteTarget(remote, config.remoteLookup);
           agent.destroy();
-          upstreamAgents.delete(`${remote.secure ? 'https' : 'http'}:${remote.address}:${remote.port}`);
+          upstreamAgents.delete(`${remote.secure ? 'https' : 'http'}:${staleAddress}:${remote.port}`);
+          logHttpRejection({
+            code: `bridge_upstream_unreachable_rerouted:${underlyingErrorCode(error.reason) || 'unknown'}`,
+            transport: 'http',
+            ...(req.method === undefined ? {} : { method: req.method }),
+            ...(req.url === undefined ? {} : { url: req.url }),
+          });
+        } else {
+          if (!useFreshConnection) {
+            // One transition kills every idle socket to that host, not just this one.
+            // `destroy` only reaps the free list, so streams in flight are untouched.
+            agent.destroy();
+            upstreamAgents.delete(`${remote.secure ? 'https' : 'http'}:${remote.address}:${remote.port}`);
+          }
+          logHttpRejection({
+            code: `bridge_upstream_socket_stale_replayed:${underlyingErrorCode(error.reason) || 'unknown'}`,
+            transport: 'http',
+            ...(req.method === undefined ? {} : { method: req.method }),
+            ...(req.url === undefined ? {} : { url: req.url }),
+          });
         }
-        logHttpRejection({
-          code: `bridge_upstream_socket_stale_replayed:${underlyingErrorCode(error.reason) || 'unknown'}`,
-          transport: 'http',
-          ...(req.method === undefined ? {} : { method: req.method }),
-          ...(req.url === undefined ? {} : { url: req.url }),
-        });
         useFreshConnection = true;
         const backoffIndex = TRANSIENT_UPSTREAM_REPLAY_LIMIT - remainingReplays - 1;
         const backoffMs = TRANSIENT_UPSTREAM_REPLAY_BACKOFF_MS[Math.max(0, backoffIndex)]

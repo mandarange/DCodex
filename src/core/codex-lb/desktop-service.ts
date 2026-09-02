@@ -17,7 +17,7 @@ import { captureCodexAuthSnapshot } from './desktop-auth-invariant.js';
 import { applyOfficialModelPassthrough, bridgeRoutePolicyPath, writeBridgeRoutingPolicy } from './provider-route-policy.js';
 import { desktopBridgeRuntimeVersion, desktopBridgeRuntimeVersionStale } from './desktop-bridge/state.js';
 import { PACKAGE_VERSION } from '../version.js';
-import type { BridgeProviderId, BridgeRoutingPolicy, ProviderSessionPin } from './bridge-contracts.js';
+import { BRIDGE_OFFICIAL_ROUTE_ID, type BridgeProviderId, type BridgeRoutingPolicy, type ProviderSessionPin } from './bridge-contracts.js';
 import {
   DESKTOP_BRIDGE_ALLOWED_PATH_PREFIXES, DESKTOP_BRIDGE_LAUNCHD_LABEL, desktopBridgeConfigGeneration,
   desktopBridgeLaunchdPlistPath, desktopBridgeProcessExists, desktopBridgeStatePath, getDesktopBridgeStatus,
@@ -532,7 +532,16 @@ export async function serveDesktopBridge(options: DesktopBridgeServiceOptions = 
     await autoApplyOfficialModelsAtServe(runtime, serveHome, options);
     const supervised = desktopBridgeIsSupervised();
     const skewMarkerPath = path.join(path.dirname(runtime.paths.state_path), 'desktop-bridge-skew-restart.json');
-    handle = await startPreparedDesktopBridge(await preflightDesktopBridge(runtime.config), {
+    const prepared = await preflightDesktopBridge(runtime.config);
+    // DNS was unavailable for these at start (login before the network is up,
+    // a VPN mid-flip): the bridge serves anyway and resolves them on first use.
+    // Named here so the log explains a `bridge_remote_dns_failed` rejection
+    // that follows, instead of the crash loop this used to be.
+    const deferredUpstreams = [
+      ...Object.values(prepared.providers).filter((provider) => provider.enabled && provider.remote.unresolved).map((provider) => provider.provider_id),
+      ...(prepared.officialRemote?.unresolved ? [BRIDGE_OFFICIAL_ROUTE_ID] : []),
+    ];
+    handle = await startPreparedDesktopBridge(prepared, {
       statePath: runtime.paths.state_path,
       versionSkew: {
         readInstalledVersion: installedPackageVersion,
@@ -556,7 +565,7 @@ export async function serveDesktopBridge(options: DesktopBridgeServiceOptions = 
         },
       },
     });
-    process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.started', at: new Date().toISOString(), sks_version: PACKAGE_VERSION, pid: handle.state.pid, process_generation: handle.state.schema === DESKTOP_BRIDGE_STATE_SCHEMA ? handle.state.process_generation : null, provider_registry_generation: runtime.config.providerRegistry?.generation, route_policy_generation: runtime.config.routePolicy?.policy_generation, secret_fields_redacted: true })}\n`);
+    process.stdout.write(`${JSON.stringify({ schema: 'sks.desktop-bridge-log.v2', event: 'sks.desktop_bridge.started', at: new Date().toISOString(), sks_version: PACKAGE_VERSION, pid: handle.state.pid, process_generation: handle.state.schema === DESKTOP_BRIDGE_STATE_SCHEMA ? handle.state.process_generation : null, provider_registry_generation: runtime.config.providerRegistry?.generation, route_policy_generation: runtime.config.routePolicy?.policy_generation, ...(deferredUpstreams.length ? { deferred_upstreams: deferredUpstreams } : {}), secret_fields_redacted: true })}\n`);
     await waitForShutdown(handle);
     return { schema: 'sks.desktop-bridge-serve.v1', ok: true, status: 'stopped', state: handle.state };
   }
