@@ -1,9 +1,17 @@
 # Release Proof Truth — 9.2.6
 ## Current assertion
 
-9.2.6 is **SOURCE TAG CONDITIONAL / NPM PUBLICATION OPERATOR-OWNED**. It is the
-published 9.2.5 plus the Desktop Bridge upstream re-resolution fix. The
-2026-09-01 field shape on this machine: the bridge started 2026-08-28T05:28Z
+9.2.6 (published 2026-09-02, tag `v9.2.6`, source commit
+`49f0b46ca291e9dcab612b1096d418fe46ed1c15`) is the published 9.2.5 plus the
+Desktop Bridge upstream re-resolution fix. The registry tarball is the tarball
+the release gates verified — `dist.integrity`
+`sha512-S6b79RwP8di+Lb9VhwaW9S2w+wY7izcofhDfF4yRqTdP+03/tPzn25Du6Tmiehd1q3wxkpbQCfbuzls4GD5KUg==`,
+`dist.unpackedSize` 12314948, `dist.fileCount` 1738, shasum
+`00c138cf8e4aac208ad61ec5ad3d9d2ac44290aa`, and `gitHead` all equal the local
+pack receipt for that commit byte for byte, and the maintainer's Mac was
+upgraded from that same gate-verified tarball, so the live measurements below
+are measurements of the published bytes. The 2026-09-01 field shape on this
+machine: the bridge started 2026-08-28T05:28Z
 while a VPN was up, resolved the codex-lb gateway's DNS once at prepare time,
 and pinned the first answer for the life of the process; after the network
 changed every codex-lb request was rejected
@@ -111,7 +119,9 @@ New 9.2.6 claims:
 | A pin follows DNS without flapping | passed-hermetic | the 5-minute TTL refresh keeps a still-listed address and switches only once it has left the answer set; a fresh pin performs no lookup; a failed or newly-forbidden resolution keeps the existing pin |
 | DNS unavailable at bridge start defers the pin instead of crash-looping the service | passed-hermetic | only `bridge_remote_dns_failed` at prepare yields a deferred pin (`unresolved`, address `0.0.0.0`, named in `deferred_upstreams` on the `started` log line); first use resolves it or answers `bridge_remote_dns_failed`; private-address and rebinding answers still refuse to prepare exactly as before |
 | Doctor and update converge a stranded bridge | passed-hermetic | `detectUnreachableUpstreamEvidence` reads `bridge_upstream_unavailable*` rejections written by the CURRENT process (state-file `started_at`, 10-minute window; a newer `bridge_upstream_unreachable_rerouted` line clears the evidence); read-only doctor names `desktop_bridge_upstream_unreachable:*` with the repair; `--fix` and the update catalog-repair stage restart the service on standing evidence; version-stale restart precedence unchanged; harnessed runs never reach `launchctl` |
-| The installed 9.2.6 bridge survives a network change on the live machine | not proved | requires the installed 9.2.6 bridge on the operator's machine to log `bridge_upstream_unreachable_rerouted:*` followed by no `bridge_upstream_unavailable` after a network change, or a `sks doctor --fix` run that restarts a bridge whose log carries the rejections |
+| The installed 9.2.6 bridge is serving on the live machine | verified-on-machine | measured 2026-09-02 on the maintainer's Mac after installing the gate-verified 9.2.6 tarball: the global install landed at 06:17:36Z and the bridge log shows a 9.2.6 `started` on a new pid (62482) at 06:18:02.879Z, 26 seconds later, with no `version_skew` line in between (the install-side convergence restarted it before the in-process skew check had to); `sks bridge verify --level transport --json` on the installed 9.2.6 reports `bridge_ready`, `active_routes_ready`, and `transport_level_satisfied` with zero blockers; `sks bridge route explain gpt-5.6-sol --json` resolves `codex-lb`; and the full read-only doctor bridge inspection (`sks doctor --full --json`, `sks.doctor-desktop-bridge.v1`, which now includes the upstream-evidence read) reports `ok: true` with empty `blockers` and `recovery_actions` for the serving pid — no `desktop_bridge_upstream_unreachable` false positive against the healthy log (the fast `sks doctor --json` path does not inspect the bridge at all and says so: `not_checked`/`fast_readonly_json`). One machine, one macOS version |
+| The installed 9.2.6 bridge survives a network change on the live machine | not proved | requires the installed 9.2.6 bridge on the operator's machine to log `bridge_upstream_unreachable_rerouted:*` followed by no `bridge_upstream_unavailable` after a real network change, or a `sks doctor --fix` run that restarts a bridge whose log carries the rejections; the standing proof of the mechanism is the real-socket e2e in `remote-target-refresh.test.ts` (dead `::1` pin → 200 / 101 after DNS answers `127.0.0.1`) |
+| The published 9.2.6 tarball is the tarball the gates verified | verified-on-registry | `npm view sneakoscope@9.2.6` reports `gitHead` 49f0b46c and `dist.integrity` / `dist.unpackedSize` / `dist.fileCount` equal to the local pack receipt for that commit (`sha512-S6b7…KUg==`, 12314948, 1738; registry shasum `00c138cf…`); `latest` now resolves to 9.2.6; the tarball was not rebuilt into something the gates never saw |
 | Official-models `auto` converges to the gateway on a registered host | passed-hermetic | `applyOfficialModelPassthrough({ mode: 'gateway' })` restores each bare-official `openai` route to the target its `codex-lb:<id>` twin names, catalog upstream aliases included; a passthrough→gateway round trip regenerates the original policy generation; twin-less official routes stay passthrough |
 | A stale passthrough flip cannot outlive a healthy bridge start | passed-hermetic | serve-time auto apply computes the converged policy for BOTH resolved modes, persists settings + route-policy file only when the generation moves, and logs which mode it applied; both directions are idempotent, so healthy starts write nothing |
 | The Codex runtime contract tracks 0.150.1 | passed-hermetic | `@openai/codex-sdk` 0.150.1 with the SDK capability and dependency-graph gates green; the feature-flag strip list re-pinned against the vendored 0.150.1 `features list` (strip set unchanged, `multi_agent_mode` now absent rather than `removed`); vendored models-manager base instructions byte-identical to rust-v0.150.1 |
@@ -163,7 +173,7 @@ New 9.2.6 claims:
 | Host extra skill dirs lose only SKS-owned retired residue | passed-hermetic | `~/.cursor/skills` and `~/.claude/skills` remove managed retired names only; user-authored collisions stay in place |
 | A stale or cwd-sticky official workflow cannot capture a later prompt | passed-hermetic | unnamed hooks use `loadOwnedRouteState`; idle > 2h is inactive even with leftover open threads; same-session follow-ups still bind while the run is fresh |
 | All checked version authorities report 9.2.6 | passed-hermetic | `release:version-truth` 15 surfaces at 9.2.6 after incremental build |
-| The reported 9.2.6 package is ready to publish | not proved | requires a clean exact-commit build, `npm run release:check:full` stamp, pack receipt, and provenance |
+| The reported 9.2.6 package is ready to publish | proven-then-published | `npm run release:check:full` exit 0 from the clean release commit `49f0b46c` (canonical 3551/3551 + stamp phase 33/33, real checks green, only the operator-owned physical-evidence gate remaining non-blocking as on 9.2.5); the release-check stamp binds that commit; the prepublish reproducibility preflight refused `head_not_origin_main` until the release commit was fast-forward pushed, then passed on the stamped commit; the pack receipt's tarball was published unmodified (see the registry row above) |
 
 ## 9.1.0 assertion (historical)
 
