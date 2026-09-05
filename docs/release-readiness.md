@@ -1,17 +1,17 @@
-# SKS 10.1.0 Release Readiness
+# SKS 10.1.1 Release Readiness
 
 ## Current release
 
-10.1.0 is the next release candidate. It combines the Astra role defaults and
-runtime cleanup described in [Essential Trust](essential-trust.md) with the
-codex-lb authentication preference, SKS Center improvements, and update
-convergence changes recorded in [the changelog](../CHANGELOG.md).
+10.1.1 is the patch release candidate for the MCP inventory and global agent
+migration fixes recorded in [the changelog](../CHANGELOG.md). Center now gives
+both MCP scopes time to respond and sends the workspace context for effective
+inventory reads. Setup and repair refresh existing managed global roles to
+Astra while preserving user provider and permission overrides.
 
-On 2026-09-05 the public npm registry reported `latest` as 10.0.0, with
-`gitHead` `417a9d9e76547b5daa6176b12330bc126be2e65b`, and returned HTTP 404
-for 10.1.0. That is version availability evidence, not release authorization.
-The release stamp and pack receipt must be generated from the final clean
-10.1.0 commit. Earlier release evidence below remains historical.
+On 2026-09-06 the public npm registry reported `latest` as 10.1.0, with
+`gitHead` `d1d9b3312e72dedef1ce2e72caf6002554b7e1b9`, and returned HTTP 404
+for 10.1.1. Version availability is separate from release authorization.
+The release stamp and pack receipt must bind the final clean 10.1.1 commit.
 
 ## Direct npm publication
 
@@ -73,7 +73,7 @@ release check. Registry publication remains the operator's action.
 
 The following 10.0.0 and earlier records preserve their original claims and
 evidence. Their candidate commands, versions, and pending decisions are not
-the 10.1.0 release procedure. The staged workflow described later is a separate
+the 10.1.1 release procedure. The staged workflow described later is a separate
 publication option; direct `npm publish` does not require its physical receipts.
 
 # SKS 10.0.0 Release Readiness (historical)

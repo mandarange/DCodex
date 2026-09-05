@@ -16,7 +16,7 @@
 Sneakoscope Codex (`sks`) is an open-source trust layer for Codex CLI and ChatGPT Desktop. It coordinates bounded AI coding agents, records machine-verifiable evidence, preserves project memory, and blocks release claims that are not supported by current tests or artifacts. Search visibility outcomes are measured separately; SKS does not promise rankings or traffic.
 <!-- END SKS SEARCH VISIBILITY MARKETING -->
 
-Current package: **SKS 10.1.0**. Install the latest stable release from npm.
+Current package: **SKS 10.1.1**. Install the latest stable release from npm.
 
 [Quick start](#install-in-one-command) · [Commands](#everyday-commands) · [SKS Center](#sks-center-macos) · [Documentation](#documentation) · [Changelog](CHANGELOG.md)
 

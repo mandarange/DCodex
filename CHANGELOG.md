@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [10.1.1] - 2026-09-06
+
 ### Fixed
 
 - Give SKS Center MCP inventory reads enough time to finish both configuration

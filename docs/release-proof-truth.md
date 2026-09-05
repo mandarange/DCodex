@@ -1,8 +1,8 @@
-# Release Proof Truth — 10.1.0
+# Release Proof Truth — 10.1.1
 
 ## Current assertion
 
-10.1.0 is a release candidate. Source changes and version metadata do not
+10.1.1 is a release candidate. Source changes and version metadata do not
 authorize publication. The final clean candidate commit must have a passing
 canonical test proof, full release DAG, required real-check summary, fresh
 dist, and matching release stamp and pack receipt. Direct publication also
@@ -10,16 +10,16 @@ requires clean `main` equal to live `origin/main`, an unpublished version,
 the configured public `latest` dist-tag, and valid maintainer authentication.
 The operator performs the final `npm publish`.
 
-| Claim | Evidence required for 10.1.0 |
+| Claim | Evidence required for 10.1.1 |
 | --- | --- |
 | Version authorities agree | Current `release:version-truth` result after the final build |
-| Auth preference and SKS Center behavior work | Focused routing and native UI checks, with actual desktop evidence distinguished from fixtures |
-| Updates converge through the current maintenance path | Updater regression and migration checks; real installed behavior is a separate observation |
+| Center reads the effective MCP inventory | Native process tests covering delayed output, workspace arguments, and error responses; desktop captures remain separately identified |
+| Existing global roles migrate safely | Tests for Astra/Luna routing, custom homes, missing directories, symlinks, and preservation of user provider/permission settings |
 | The package can be published | Full source-bound stamp, pack receipt, provenance, clean live-origin preflight, authenticated maintainer, and successful lifecycle dry run |
-| 10.1.0 is published | Registry metadata and tarball identity after the operator publishes; no prepublication check proves this |
+| 10.1.1 is published | Registry metadata and tarball identity after the operator publishes; no prepublication check proves this |
 
-The npm registry reported 10.0.0 as `latest` and 10.1.0 as absent on
-2026-09-05. Neither older release receipts nor synthetic fixtures prove
+The npm registry reported 10.1.0 as `latest` and 10.1.1 as absent on
+2026-09-06. Neither older release receipts nor synthetic fixtures prove
 current live behavior. Optional physical and image evidence remains optional
 for the direct path and must retain its measured status. See
 [the current release procedure](release-readiness.md#direct-npm-publication).
@@ -27,7 +27,7 @@ for the direct path and must retain its measured status. See
 ## Historical assertions
 
 Everything below records 10.0.0 or an earlier release. Preserve each original
-version, commit, result, and evidence class; none authorizes 10.1.0.
+version, commit, result, and evidence class; none authorizes 10.1.1.
 
 # Release Proof Truth — 10.0.0 (historical)
 ## 10.0.0 assertion (historical)
