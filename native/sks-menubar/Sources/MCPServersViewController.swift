@@ -335,7 +335,7 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
     private func isWritable(_ row: McpRow) -> Bool { row.managedBy != "plugin" && (row.scope == "global" || row.scope == "project") }
     private func selectedWritableRow() -> McpRow? { guard selectedScope() != "effective", let row = selected()?.row, isWritable(row) else { return nil }; return row }
     private func writableScopeForBackup() -> String? { let scope = selectedScope(); return scope == "global" || scope == "project" ? scope : nil }
-    private func scopeContext(_ scope: String, mutation: Bool) -> [String] { scope == "project" ? projectContext(mutation: mutation) : [] }
+    private func scopeContext(_ scope: String, mutation: Bool) -> [String] { scope == "project" || scope == "effective" ? projectContext(mutation: mutation) : [] }
     private func projectContext(mutation: Bool) -> [String] { var args = ["--project-root", AppRuntime.projectRoot, "--trusted-project"]; if mutation { args.append("--confirm-project") }; return args }
     private func json(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8) else { return nil }

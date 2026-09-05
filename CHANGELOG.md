@@ -6,6 +6,8 @@
 
 - Give SKS Center MCP inventory reads enough time to finish both configuration
   scopes, and show incomplete or rejected responses as unavailable.
+- Pass the selected workspace and its read-only trust context to the Center's
+  effective MCP inventory so it matches Overview instead of falling back to HOME.
 - Refresh existing SKS-owned global agent roles during setup and repair so
   legacy Sol/Terra defaults converge to Astra. Preserve user provider and
   permission overrides, symlinks, and absent global role directories.

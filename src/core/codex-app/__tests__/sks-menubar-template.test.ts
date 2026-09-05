@@ -426,6 +426,11 @@ fixture_root="$(/usr/bin/dirname "$0")"
 case "$1" in
   update) /bin/cat "$fixture_root/update.json" ;;
   mcp)
+    case " $* " in *" --scope effective "*)
+      case " $* " in *" --project-root /tmp "*) ;; *) exit 65 ;; esac
+      case " $* " in *" --trusted-project "*) ;; *) exit 66 ;; esac
+      case " $* " in *" --confirm-project "*) exit 67 ;; esac
+    ;; esac
     /bin/sleep "$(/bin/cat "$fixture_root/delay")"
     /bin/cat "$fixture_root/mcp.json"
     exit "$(/bin/cat "$fixture_root/exit-code")"
