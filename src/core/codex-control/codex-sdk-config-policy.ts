@@ -13,13 +13,14 @@ export interface CodexExecutionPolicy {
 export function buildCodexSdkConfig(input: CodexTaskInput) {
   const model = String(input.model || process.env.SKS_CODEX_MODEL || process.env.CODEX_MODEL || '').trim()
   const serviceTier = String(input.serviceTier || process.env.SKS_SERVICE_TIER || 'fast')
+  const effort = String(input.modelReasoningEffort || input.reasoningEffort || process.env.SKS_CODEX_REASONING || process.env.CODEX_MODEL_REASONING_EFFORT || 'medium')
   const config: Record<string, unknown> = {
     // Internal control-plane work is always native Codex. Ambient proxy
     // credentials are not provider-selection consent.
     model_provider: 'openai',
     forced_login_method: 'chatgpt',
     service_tier: serviceTier === 'standard' ? 'standard' : 'fast',
-    model_reasoning_effort: String(input.modelReasoningEffort || input.reasoningEffort || process.env.SKS_CODEX_REASONING || process.env.CODEX_MODEL_REASONING_EFFORT || 'medium'),
+    model_reasoning_effort: normalizeAstraSdkEffort(model, effort),
     mcp_servers: {},
     sks: {
       route: input.route,
@@ -35,6 +36,12 @@ export function buildCodexSdkConfig(input: CodexTaskInput) {
     config.sks = { ...(config.sks as Record<string, unknown>), no_mcp: true }
   }
   return config
+}
+
+/** Official Astra migration guidance maps the retired none/minimal settings to low. */
+export function normalizeAstraSdkEffort(model: string, effort: string): string {
+  return model.trim().toLowerCase() === 'gpt-6-astra' && ['none', 'minimal'].includes(effort.trim().toLowerCase())
+    ? 'low' : effort
 }
 
 export function buildCodexExecutionPolicy(input: CodexTaskInput): CodexExecutionPolicy {

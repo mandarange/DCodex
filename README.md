@@ -161,6 +161,7 @@ freshness semantics.
 
 - [Product contract](docs/PRODUCT-CONTRACT.md) — supported surfaces and ownership.
 - [Essential Trust](docs/essential-trust.md) — verification profiles and safety boundaries.
+- [Astra guidance](docs/astra-guidance.md) — how SKS applies the official model recommendations.
 - [Agent Bridge](docs/AGENT-BRIDGE.md) — integrate through the CLI or MCP interface.
 - [Release readiness](docs/release-readiness.md) — build, verify, and publish a release.
 - [Release evidence](docs/release-proof-truth.md) — what each verification result proves.

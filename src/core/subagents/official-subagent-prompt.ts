@@ -120,8 +120,9 @@ export function buildOfficialSubagentPrompt(input: {
 
   return `
 Outcome:
-- complete the goal through the bounded slices below; the parent owns decomposition, integration, verification, and the final answer
+- Complete the goal; the parent owns decomposition, integration, verification, and the final answer.
 - do not duplicate delegated work; finish and verify, or stop with blocked/failed evidence without claiming success
+- Honor existing authorization. Avoid redundant checks; keep messages legible and concise.
 
 ${coreEngineeringDirectiveReferenceText()}
 

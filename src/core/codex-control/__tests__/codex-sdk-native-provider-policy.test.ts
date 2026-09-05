@@ -7,6 +7,20 @@ import { buildCodexSdkConfig } from '../codex-sdk-config-policy.js'
 import { buildCodexSdkEnv, prepareNativeCodexAuthBridge } from '../codex-sdk-env-policy.js'
 import type { CodexTaskInput } from '../codex-control-plane.js'
 
+test('Astra SDK configuration migrates retired efforts and preserves supported role settings', () => {
+  const input = taskInput('/tmp/sks-astra-config-test')
+  for (const effort of ['none', 'minimal', 'low', 'medium', 'high', 'max']) {
+    const config = buildCodexSdkConfig({ ...input, model: 'gpt-6-astra', modelReasoningEffort: effort, serviceTier: 'standard' })
+    assert.equal(config.model_reasoning_effort, ['none', 'minimal'].includes(effort) ? 'low' : effort)
+    assert.equal(config.service_tier, 'standard')
+    assert.equal(config.model, 'gpt-6-astra')
+  }
+  const luna = buildCodexSdkConfig({ ...input, model: 'gpt-5.6-luna', modelReasoningEffort: 'max' })
+  assert.equal(luna.model_reasoning_effort, 'max')
+  const custom = buildCodexSdkConfig({ ...input, model: 'custom-astra', modelReasoningEffort: 'none' })
+  assert.equal(custom.model_reasoning_effort, 'none')
+})
+
 test('Codex SDK bridges native auth without inheriting ambient codex-lb or user config', async () => {
   const previous = new Map([
     ['CODEX_HOME', process.env.CODEX_HOME],

@@ -558,17 +558,18 @@ function planNextActions(route: any, task: any, taskProfile: TaskProfile, ambigu
   return actions;
 }
 
-export function promptPipelineContext(prompt: any, route: any = null) {
+export function promptPipelineContext(prompt: any, route: any = null, root = process.cwd()) {
   const cleanPrompt = stripVisibleDecisionAnswerBlocks(prompt);
   route = route || routePrompt(cleanPrompt);
   if (!route) return '';
   const required = routeNeedsContext7(route, cleanPrompt);
   const reasoning = routeReasoning(route, cleanPrompt);
   const directFix = route?.id === 'DFix';
-  if (directFix) return dfixQuickContext(cleanPrompt, route);
+  if (directFix) return dfixQuickContext(cleanPrompt, route, root);
   if (route?.id === 'Answer') return answerOnlyContext(cleanPrompt, route);
   if (route?.id === 'Goal') return goalNativeOnlyContext(cleanPrompt, route);
   if (route?.id === 'ComputerUse') return computerUseFastContext(cleanPrompt, route);
+  const strictFinalization = stopFinalizationRitualsEnforced(root);
   const lines = [
     `SKS skill-first pipeline active. Route: ${route?.command || '$SKS'} (${route?.route || 'general SKS workflow'}).`,
     reasoningInstruction(reasoning),
@@ -576,6 +577,7 @@ export function promptPipelineContext(prompt: any, route: any = null) {
     coreEngineeringDirectiveReferenceText(),
     engineeringSanityPolicyText(),
     'Load only the selected route skills and route-specific instructions; do not inject unrelated route policy.',
+    'Honor authorization already given and infer routine details. If a skill would pause or redirect the work, cite its exact instruction and explain why it applies; keep independent authorized work moving.',
     'Codex native /goal is the only persisted goal owner. Goal persistence must not replace or skip the selected route gates.',
     `When a mission exists, read ${REQUEST_INTAKE_ARTIFACT} as a structured projection of the current request. Preserve the literal request and current code as authority; never let generic intake heuristics replace an explicit requirement.`,
     subagentExecutionPolicyText(route, cleanPrompt),
@@ -583,11 +585,13 @@ export function promptPipelineContext(prompt: any, route: any = null) {
     required ? stackCurrentDocsPolicyText() : '',
     context7RequirementText(required),
     'Do not stop at a plan when implementation was requested; continue until the route gate passes or a hard blocker is honestly recorded.',
-    'Before final answer, include a user-visible completion summary that explains what changed and how it was verified, then run SKS Honest Mode: verify evidence/tests, state gaps, and confirm the goal is genuinely complete.'
+    strictFinalization
+      ? 'Before final answer, include a user-visible completion summary that explains what changed and how it was verified, then run SKS Honest Mode: verify evidence/tests, state gaps, and confirm the goal is genuinely complete.'
+      : 'Report the result, verification, and remaining gaps concisely once. After required checks pass, repeat or expand testing only for new changes, failures, or unresolved concerns.'
   ].filter(Boolean);
   if (hasFromChatImgSignal(cleanPrompt)) lines.push(chatCaptureIntakeText());
-  if (reflectionRequiredForRoute(route)) lines.push(reflectionInstructionText());
-  if (route?.id === 'Naruto') lines.push('Naruto route: prepare subagent-plan.json, delegate independent slices through official Codex worker/expert agent threads, record SubagentStart/SubagentStop events, wait for every requested thread, integrate the parent summary, run scoped verification, and pass naruto-gate.json. Process counts, PID evidence, custom process pools, and verification DAGs are not completion evidence.');
+  if (strictFinalization && reflectionRequiredForRoute(route)) lines.push(reflectionInstructionText());
+  if (route?.id === 'Naruto' && routeRequiresSubagents(route, cleanPrompt)) lines.push('Naruto route: prepare subagent-plan.json, delegate independent slices through official Codex worker/expert agent threads, record SubagentStart/SubagentStop events, wait for every requested thread, integrate the parent summary, run scoped verification, and pass naruto-gate.json. Process counts, PID evidence, custom process pools, and verification DAGs are not completion evidence.');
   if (route?.id === 'PPT') lines.push(`PPT route: before design or PDF work, infer and seal delivery context, audience profile including average age/job/industry, STP strategy, decision context, and at least three pain-point to solution mappings from the prompt, TriWiki/current-code defaults, and conservative policy. Keep the visual system simple, restrained, and information-first; design detail should come from hierarchy, spacing, alignment, rules, and subtle accents rather than decorative overdesign. ${pptPipelineAllowlistPolicyText()} If generated image assets or slide visual critique are needed, actively invoke the loaded imagegen skill through Codex App $imagegen/gpt-image-2 (${CODEX_APP_IMAGE_GENERATION_DOC_URL}), save the selected raster output into the mission assets/review evidence path, and record that real path before build/final. Direct API fallback, placeholders, HTML/CSS stand-ins, and prose-only substitutes do not satisfy the route gate. ${CODEX_IMAGEGEN_REQUIRED_POLICY} Then build source ledger, fact ledger, image asset ledger, storyboard with aha moments, style tokens, editable source HTML under source-html/, PDF artifact, render QA, bounded review ledger/iteration report, PPT-only temporary build file cleanup, and ppt-parallel-report.json so independent strategy/render/file-write phases stay parallel-friendly, then reflection and Honest Mode.`);
   if (route?.id === 'ImageUXReview') lines.push(`Image UX Review route: ${imageUxReviewPipelinePolicyText()} Use ${IMAGE_UX_REVIEW_POLICY_ARTIFACT}, ${IMAGE_UX_REVIEW_SCREEN_INVENTORY_ARTIFACT}, ${IMAGE_UX_REVIEW_GENERATED_REVIEW_LEDGER_ARTIFACT}, ${IMAGE_UX_REVIEW_ISSUE_LEDGER_ARTIFACT}, ${IMAGE_UX_REVIEW_ITERATION_REPORT_ARTIFACT}, and ${IMAGE_UX_REVIEW_GATE_ARTIFACT} as the route evidence set. The route may suggest safe fixes only when the user requested fixing; otherwise report findings and blockers.`);
   if (route?.id === 'AutoResearch') lines.push('AutoResearch route: load autoresearch-loop for experiments and benchmarking. SEO/GEO, discoverability, README, npm, GitHub search visibility, and AI-search visibility should use the first-class $SEO-GEO-OPTIMIZER parent route unless the selected route explicitly needs a child experiment.');
@@ -598,7 +602,7 @@ export function promptPipelineContext(prompt: any, route: any = null) {
   return lines.join('\n');
 }
 
-export function dfixQuickContext(prompt: any, route: any = routePrompt(prompt)) {
+export function dfixQuickContext(prompt: any, route: any = routePrompt(prompt), root = process.cwd()) {
   const task = stripDollarCommand(prompt) || String(prompt || '').trim();
   const routeLabel = route?.command || '$DFix';
   return [
@@ -612,7 +616,9 @@ export function dfixQuickContext(prompt: any, route: any = routePrompt(prompt)) 
     '2. Inspect only the files needed to locate that target.',
     `3. Apply only the listed Direct Fix edit; keep broad implementation routed to Naruto, and for UI/UX micro-edits read design.md when present and use imagegen for any image/logo/raster asset. ${CODEX_IMAGEGEN_REQUIRED_POLICY}`,
     '4. Run only cheap verification when useful, such as syntax check, focused test, or local render smoke.',
-    '5. Final response: start with `DFix 완료 요약:` and include one `DFix 솔직모드:` line with verified / not verified / remaining issue status. Do not create TriWiki/TriFix/reflection/state records and do not enter repeated full-route Honest Mode loops.'
+    stopFinalizationRitualsEnforced(root)
+      ? '5. Final response: start with `DFix 완료 요약:` and include one `DFix 솔직모드:` line with verified / not verified / remaining issue status. Do not create TriWiki/TriFix/reflection/state records and do not enter repeated full-route Honest Mode loops.'
+      : '5. Return the requested content directly for copy or translation. For edits, briefly state the result and checks actually run. Do not add workflow labels or create TriWiki/TriFix/reflection/state records.'
   ].join('\n');
 }
 
@@ -662,7 +668,7 @@ export async function prepareRoute(root: any, prompt: any, state: any = {}, opts
   const madSksAuthorization = hasMadSksSignal(cleanPrompt);
   const task = stripDollarCommand(stripMadSksSignal(cleanPrompt)) || stripMadSksSignal(stripDollarCommand(cleanPrompt)) || String(cleanPrompt || '').trim();
   const explicit = Boolean(dollarCommand(cleanPrompt));
-  if (!route) return { route: null, additionalContext: promptPipelineContext(prompt, null) };
+  if (!route) return { route: null, additionalContext: promptPipelineContext(prompt, null, root) };
   const dreamContext = await routeSkillDreamContext(root, route, task);
   const required = routeNeedsContext7(route, cleanPrompt);
   const reasoning = routeReasoning(route, cleanPrompt);
@@ -673,7 +679,7 @@ export async function prepareRoute(root: any, prompt: any, state: any = {}, opts
       : prepared;
     return withSkillDreamContext(materialized, dreamContext);
   };
-  if (route.id === 'DFix') return finish(await prepareDfixQuickRoute(route, task));
+  if (route.id === 'DFix') return finish(await prepareDfixQuickRoute(root, route, task));
   if (route.id === 'Answer') return finish(await prepareAnswerOnlyRoute(route, task));
   if (route.id === 'ComputerUse') return finish(await prepareComputerUseFastRoute(route, task));
   if (route.id === 'Wiki') return finish(await prepareWikiQuickRoute(route, task));
@@ -704,7 +710,7 @@ export async function prepareRoute(root: any, prompt: any, state: any = {}, opts
   if (explicit || required) return finish(await prepareLightRoute(root, route, task, required, { sessionKey }));
   return finish({
     route,
-    additionalContext: `${promptPipelineContext(prompt, route)}\n\n${reasoningInstruction(reasoning)}\nRequired skills: ${route.requiredSkills.join(', ')}.\nOfficial subagents required: ${subagentsRequired ? 'yes' : 'no'}.`
+    additionalContext: `${promptPipelineContext(prompt, route, root)}\n\n${reasoningInstruction(reasoning)}\nRequired skills: ${route.requiredSkills.join(', ')}.\nOfficial subagents required: ${subagentsRequired ? 'yes' : 'no'}.`
   });
 }
 
@@ -758,10 +764,10 @@ function withSkillDreamContext(result: any, dreamContext: any) {
   return { ...result, additionalContext: `${result.additionalContext || ''}\n\n${dreamContext}`.trim() };
 }
 
-async function prepareDfixQuickRoute(route: any, task: any) {
+async function prepareDfixQuickRoute(root: string, route: any, task: any) {
   return {
     route,
-    additionalContext: dfixQuickContext(task, route)
+    additionalContext: dfixQuickContext(task, route, root)
   };
 }
 
@@ -848,7 +854,7 @@ async function prepareImageUxReview(root: any, route: any, task: any, required: 
     image_ux_review_policy_ready: true,
     ...pipelinePlanState(pipelinePlan)
   }), { sessionKey: opts.sessionKey });
-  return routeContext(route, id, task, required, `Capture or attach source UI screenshots, run Codex App $imagegen/gpt-image-2 to generate annotated review images, extract those generated images into ${IMAGE_UX_REVIEW_ISSUE_LEDGER_ARTIFACT}, then update ${IMAGE_UX_REVIEW_GATE_ARTIFACT}. ${CODEX_IMAGEGEN_REQUIRED_POLICY} Initial gate blockers: ${(artifacts.gate.blockers || []).join(', ') || 'none'}.`);
+  return routeContext(route, id, task, required, `Capture or attach source UI screenshots, run Codex App $imagegen/gpt-image-2 to generate annotated review images, extract those generated images into ${IMAGE_UX_REVIEW_ISSUE_LEDGER_ARTIFACT}, then update ${IMAGE_UX_REVIEW_GATE_ARTIFACT}. ${CODEX_IMAGEGEN_REQUIRED_POLICY} Initial gate blockers: ${(artifacts.gate.blockers || []).join(', ') || 'none'}.`, null, root);
 }
 
 export async function activeRouteContext(root: any, state: any) {
@@ -1001,7 +1007,7 @@ async function prepareClarificationGate(root: any, route: any, task: any, requir
     return {
       route,
       mission_id: id,
-      additionalContext: `${promptPipelineContext(task, route)}
+      additionalContext: `${promptPipelineContext(task, route, root)}
 
 Route contract auto-sealed for ${route.command}: contract answers were inferred from the prompt, TriWiki/current-code defaults, and conservative SKS safety policy.
 Mission: ${id}
@@ -1138,7 +1144,7 @@ async function prepareResearch(root: any, route: any, task: any, required: any, 
   const researchPlan = await writeResearchPlan(dir, task, {});
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
   await setCurrent(root, routeState(id, route, 'RESEARCH_PREPARED', required, { prompt: task, ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
-  return routeContext(route, id, task, required, `Run sks research run latest as a real long-running source-gathering pass, never an automatic mock fallback; do not modify repository source code. Run layered Super Search first and allow only correlated verified-content rows to support real claims. Then run exactly three independent official research_reviewer threads on GPT-6 Astra Max. Any objection requires a mission-local research_synthesizer revision and a fresh three-thread review cycle; do not launch a custom scheduler or debate pool. Keep subagent-plan.json, subagent-events.jsonl, subagent-parent-summary.json, and subagent-evidence.json current, write research-report.md and ${researchPaperArtifactForPlan(researchPlan)}, and pass the adversarial convergence, Honest Mode, and research-gate.json checks.`);
+  return routeContext(route, id, task, required, `Run sks research run latest as a real long-running source-gathering pass, never an automatic mock fallback; do not modify repository source code. Run layered Super Search first and allow only correlated verified-content rows to support real claims. Then run exactly three independent official research_reviewer threads on GPT-6 Astra Max. Any objection requires a mission-local research_synthesizer revision and a fresh three-thread review cycle; do not launch a custom scheduler or debate pool. Keep subagent-plan.json, subagent-events.jsonl, subagent-parent-summary.json, and subagent-evidence.json current, write research-report.md and ${researchPaperArtifactForPlan(researchPlan)}, and pass the adversarial convergence, Honest Mode, and research-gate.json checks.`, null, root);
 }
 
 async function prepareAutoResearch(root: any, route: any, task: any, required: any, opts: any = {}) {
@@ -1148,7 +1154,7 @@ async function prepareAutoResearch(root: any, route: any, task: any, required: a
   await writeJsonAtomic(path.join(dir, 'autoresearch-gate.json'), { passed: false, experiment_ledger_present: true, metric_present: false, keep_or_discard_decision: false, falsification_present: false, honest_conclusion: false, context7_evidence: false });
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
   await setCurrent(root, routeState(id, route, 'AUTORESEARCH_EXPERIMENT_LOOP', required, { prompt: task, ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
-  return routeContext(route, id, task, required, 'Run the smallest useful experiment loop, update experiment-ledger.json, falsify the result, and pass autoresearch-gate.json.');
+  return routeContext(route, id, task, required, 'Run the smallest useful experiment loop, update experiment-ledger.json, falsify the result, and pass autoresearch-gate.json.', null, root);
 }
 
 async function prepareDb(root: any, route: any, task: any, required: any, opts: any = {}) {
@@ -1167,7 +1173,7 @@ async function prepareDb(root: any, route: any, task: any, required: any, opts: 
     db_access_review_required: true,
     ...pipelinePlanState(pipelinePlan)
   }), { sessionKey: opts.sessionKey });
-  return routeContext(route, id, task, required, `Inspect the real DB entry points and callers first, then complete ${DB_ACCESS_REVIEW_ARTIFACT} for canonical adapter/query-helper reuse, pool ownership/acquire/release/shutdown/exhaustion, N+1/repeated I/O, and sensitive transaction integrity. Outside MAD-SKS, do not mutate any database: when a migration is required, finish with exactly one mission-local ${DB_MANUAL_MIGRATION_ARTIFACT} containing active forward SQL and a complete rollback section that remains commented out, record its SHA-256 and manual-apply notice in ${DB_REVIEW_ARTIFACT}, and tell the user to apply it directly. Only an active capability-v2 MAD-SKS SQL-plane may execute through MCP, with independent read-back and final read-only restoration.`);
+  return routeContext(route, id, task, required, `Inspect the real DB entry points and callers first, then complete ${DB_ACCESS_REVIEW_ARTIFACT} for canonical adapter/query-helper reuse, pool ownership/acquire/release/shutdown/exhaustion, N+1/repeated I/O, and sensitive transaction integrity. Outside MAD-SKS, do not mutate any database: when a migration is required, finish with exactly one mission-local ${DB_MANUAL_MIGRATION_ARTIFACT} containing active forward SQL and a complete rollback section that remains commented out, record its SHA-256 and manual-apply notice in ${DB_REVIEW_ARTIFACT}, and tell the user to apply it directly. Only an active capability-v2 MAD-SKS SQL-plane may execute through MCP, with independent read-back and final read-only restoration.`, null, root);
 }
 
 async function prepareMadSksSqlPlane(root: any, route: any, task: any, required: any, opts: any = {}) {
@@ -1209,7 +1215,7 @@ async function prepareMadSksSqlPlane(root: any, route: any, task: any, required:
     stop_gate: 'mad-sks-gate.json',
     ...pipelinePlanState(pipelinePlan)
   }), { sessionKey: opts.sessionKey });
-  return routeContext(route, prepared.mission_id, task, required, `MAD-SKS SQL-plane mission/capability/profile were created atomically for cycle ${prepared.cycle_id}. Inspect the existing canonical DB access and complete ${DB_ACCESS_REVIEW_ARTIFACT} before mutation. Then verify Supabase MCP tool inventory exposes execute_sql and apply_migration, execute the requested SQL immediately through the bound MCP SQL-plane rather than generating a manual migration file, independently read back the postconditions, and finally close the profile/capability and prove normal read-only restoration.`);
+  return routeContext(route, prepared.mission_id, task, required, `MAD-SKS SQL-plane mission/capability/profile were created atomically for cycle ${prepared.cycle_id}. Inspect the existing canonical DB access and complete ${DB_ACCESS_REVIEW_ARTIFACT} before mutation. Then verify Supabase MCP tool inventory exposes execute_sql and apply_migration, execute the requested SQL immediately through the bound MCP SQL-plane rather than generating a manual migration file, independently read back the postconditions, and finally close the profile/capability and prove normal read-only restoration.`, null, root);
 }
 
 async function prepareGx(root: any, route: any, task: any, required: any, opts: any = {}) {
@@ -1217,7 +1223,7 @@ async function prepareGx(root: any, route: any, task: any, required: any, opts: 
   await writeJsonAtomic(path.join(dir, 'gx-gate.json'), { passed: false, vgraph_beta_render: false, validation: false, drift_snapshot: false, context7_evidence: false });
   const pipelinePlan = await writePipelinePlan(dir, { missionId: id, route, task, required, ambiguity: { required: false, status: 'direct_route' } });
   await setCurrent(root, routeState(id, route, 'GX_VALIDATE_REQUIRED', required, { prompt: task, ...pipelinePlanState(pipelinePlan) }), { sessionKey: opts.sessionKey });
-  return routeContext(route, id, task, required, 'Run sks gx init/render/validate/drift/snapshot, then pass gx-gate.json.');
+  return routeContext(route, id, task, required, 'Run sks gx init/render/validate/drift/snapshot, then pass gx-gate.json.', null, root);
 }
 
 async function prepareAlign(root: any, route: any, task: any, required: any, opts: any = {}) {
@@ -1257,7 +1263,7 @@ async function prepareAlign(root: any, route: any, task: any, required: any, opt
     stop_gate: route.stopGate,
     ...pipelinePlanState(pipelinePlan)
   }), { sessionKey: opts.sessionKey });
-  return routeContext(route, id, task, required, alignNextActionText(id));
+  return routeContext(route, id, task, required, alignNextActionText(id), null, root);
 }
 
 async function prepareLightRoute(root: any, route: any, task: any, required: any, opts: any = {}) {
@@ -1277,7 +1283,8 @@ async function prepareLightRoute(root: any, route: any, task: any, required: any
     strictFinalization
       ? 'Load the route skill context, execute the smallest matching action, and finish with Honest Mode.'
       : 'Load the route skill context, execute the smallest matching action, verify it in proportion to risk, and finish directly.',
-    pipelinePlan
+    pipelinePlan,
+    root
   );
 }
 
@@ -1491,7 +1498,7 @@ async function prepareNaruto(root: any, route: any, task: any, required: any, op
     naruto_gate_file: NARUTO_GATE_FILENAME,
     ...pipelinePlanState(pipelinePlan)
   }), { sessionKey: opts.sessionKey });
-  return routeContext(route, id, cleanTask, required, `Use the delegation context below in the current Codex parent session. First replace parent_required with a defensible independent/disjoint decomposition, then spawn and wait for every requested agent thread. Record official events and integrate the parent summary before passing ${NARUTO_GATE_FILENAME}.\n\n${delegationPrompt}`);
+  return routeContext(route, id, cleanTask, required, `Use the delegation context below in the current Codex parent session. First replace parent_required with a defensible independent/disjoint decomposition, then spawn and wait for every requested agent thread. Record official events and integrate the parent summary before passing ${NARUTO_GATE_FILENAME}.\n\n${delegationPrompt}`, null, root);
 }
 
 function officialSubagentOptionsFromTask(task: any): {
@@ -1532,7 +1539,7 @@ function routeState(id: any, route: any, phase: any, context7Required: any, extr
   return { mission_id: id, route: route.id, route_command: route.command, mode: route.mode, phase, context7_required: context7Required, context7_verified: false, subagents_required: subagentsRequired, subagents_verified: !subagentsRequired, native_sessions_required: false, native_sessions_verified: false, reflection_required: route.stopGate !== 'none' && reflectionRequiredForRoute(route), engineering_sanity_required: false, engineering_sanity_scope_base: null, architecture_map_required: false, visible_progress_required: true, context_tracking: 'triwiki', required_skills: route.requiredSkills, stop_gate: route.stopGate, reasoning_effort: reasoning.effort, reasoning_profile: reasoning.profile, reasoning_temporary: false, reasoning_advisory: true, goal_continuation: ambientGoalContinuation(), ...extra };
 }
 
-function routeContext(route: any, id: any, task: any, required: any, next: any, pipelinePlan: any = null) {
+function routeContext(route: any, id: any, task: any, required: any, next: any, pipelinePlan: any = null, root = process.cwd()) {
   const visibleTask = stripVisibleDecisionAnswerBlocks(task);
   const intakeLine = pipelinePlan?.request_intake?.status === 'not_attached'
     ? 'Request intake: not materialized for this lightweight route; use the Task above directly.'
@@ -1540,7 +1547,7 @@ function routeContext(route: any, id: any, task: any, required: any, next: any, 
   return {
     route,
     mission_id: id,
-    additionalContext: `${promptPipelineContext(visibleTask, route)}
+    additionalContext: `${promptPipelineContext(visibleTask, route, root)}
 
 ${route.command} route prepared.
 Mission: ${id}
@@ -1552,7 +1559,7 @@ Stop gate: ${route.stopGate}
 Official subagents: ${routeRequiresSubagents(route, visibleTask) ? 'required for this explicit Naruto/parallel task; use independent disjoint slices, official agent threads, matched SubagentStart/SubagentStop events, and a parent integration summary.' : 'not required by this task profile; keep the work parent-owned unless a concrete independent decomposition emerges.'}
 TriWiki: use only a coordinate+voxel-overlay context pack before each route phase, hydrate low-trust claims during the phase, refresh after new findings or artifact changes, and validate before handoffs/final claims. Coordinate-only packs are invalid and must be refreshed before pipeline decisions.
 Final closeout: every pipeline final answer must summarize what was done, what changed for the user/repo, what was verified, and any remaining gaps.
-${route.stopGate !== 'none' && reflectionRequiredForRoute(route) ? `Reflection: ${reflectionInstructionText()}` : 'Reflection: not required for this route.'}
+${stopFinalizationRitualsEnforced(root) && route.stopGate !== 'none' && reflectionRequiredForRoute(route) ? `Reflection: ${reflectionInstructionText()}` : 'Reflection: not required for this route.'}
 Reasoning hint: ${routeReasoning(route, visibleTask).effort}; preserve the user-selected model, effort, and service tier.
 Goal continuation: ambient /goal overlay may be used for persistence when it helps completion, but route gates remain authoritative.
 Next atomic action: ${next}`

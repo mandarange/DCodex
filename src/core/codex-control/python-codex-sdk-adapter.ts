@@ -3,6 +3,7 @@ import path from 'node:path'
 import { packageRoot, randomId, registerDetachedProcessGroup, runProcess, which } from '../fsx.js'
 import type { CodexTaskInput } from './codex-control-plane.js'
 import { translatePythonCodexSdkEvents } from './python-codex-sdk-event-translator.js'
+import { normalizeAstraSdkEffort } from './codex-sdk-config-policy.js'
 
 export async function detectPythonCodexSdkCapability() {
   const python = await resolvePythonCodexSdkPython()
@@ -60,6 +61,8 @@ export async function runPythonCodexSdkTask(input: CodexTaskInput, opts: {
   }
   const python = opts.pythonBin || cap.python_bin || await which('python3') || 'python3'
   const sessionId = input.sessionId || `sks-${randomId(12)}`
+  const config = opts.config || {}
+  const model = typeof config.model === 'string' ? config.model : ''
   const request = {
     schema: 'sks.python-codex-sdk-request.v1',
     session_id: sessionId,
@@ -67,8 +70,8 @@ export async function runPythonCodexSdkTask(input: CodexTaskInput, opts: {
     thread_policy: input.requestedScopeContract?.resume_thread_id ? 'resume' : 'new',
     sandbox: mapSandbox(input.sandboxPolicy),
     cwd: input.cwd,
-    model: typeof opts.config?.model === 'string' ? opts.config.model : '',
-    model_reasoning_effort: typeof opts.config?.model_reasoning_effort === 'string' ? opts.config.model_reasoning_effort : 'minimal',
+    model,
+    model_reasoning_effort: normalizeAstraSdkEffort(model, typeof config.model_reasoning_effort === 'string' ? config.model_reasoning_effort : 'minimal'),
     prompt: input.prompt,
     output_schema: input.outputSchema || {}
   }

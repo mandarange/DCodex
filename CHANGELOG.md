@@ -4,8 +4,17 @@
 
 ## [10.1.1] - 2026-09-06
 
+### Changed
+
+- Apply official Astra prompting guidance: honor existing authorization, explain
+  skill-induced pauses, keep small tasks parent-owned, and avoid repeated checks.
+- Make essential-mode prompts match the profile: no compulsory reflection or
+  Honest Mode labels; copy and translation responses return the requested content.
+
 ### Fixed
 
+- Map Astra SDK requests using `none` or `minimal` effort to `low`, including the
+  Python adapter, while preserving supported efforts and other models.
 - Give SKS Center MCP inventory reads enough time to finish both configuration
   scopes, and show incomplete or rejected responses as unavailable.
 - Pass the selected workspace and its read-only trust context to the Center's
