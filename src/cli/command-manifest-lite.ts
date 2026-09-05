@@ -137,7 +137,7 @@ const COMMAND_MANIFEST_LITE_BASE = [
   { name: 'perf', summary: 'Run performance checks', maturity: 'beta' },
   { name: 'bench', summary: 'Run core trust-kernel benchmark budgets', maturity: 'beta' },
   { name: 'mcp-server', summary: 'Run a stdio MCP server exposing SKS commands as tools for MCP-capable agent hosts', maturity: 'beta', skipMigrationGate: true, allowedDuringActiveRoute: true },
-  { name: 'agent-bridge', summary: 'Publish the agent-bridge manifest and print host registration snippets for external agent systems', maturity: 'beta', readonly: true, diagnostic: true }
+  { name: 'agent-bridge', summary: 'Register SKS tools or run read-only tools with native Astra async calling', maturity: 'beta', readonly: true, diagnostic: true }
 ] as const satisfies readonly CommandManifestLiteSourceEntry[];
 
 export type CommandNameLite = typeof COMMAND_MANIFEST_LITE_BASE[number]['name'];

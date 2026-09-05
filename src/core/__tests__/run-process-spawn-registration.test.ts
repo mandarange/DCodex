@@ -6,6 +6,42 @@ import fsp from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { runProcess } from '../fsx.js'
 
+test('runProcess never spawns after cancellation', async () => {
+  const controller = new AbortController()
+  controller.abort()
+  const result = await runProcess(process.execPath, ['-e', 'process.exit(0)'], {
+    signal: controller.signal,
+    onSpawn: () => assert.fail('cancelled work must not spawn')
+  })
+  assert.equal(result.aborted, true)
+  assert.equal(result.pid, undefined)
+  assert.equal(result.code, 130)
+})
+
+test('runProcess cancellation reaps the running process tree before returning', { skip: process.platform === 'win32' }, async () => {
+  const controller = new AbortController()
+  let descendant = 0
+  const result = await runProcess(process.execPath, ['-e', [
+    "const {spawn}=require('node:child_process')",
+    "const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'})",
+    "console.log(child.pid)",
+    "setInterval(()=>{},1000)"
+  ].join(';')], {
+    signal: controller.signal,
+    timeoutMs: 5_000,
+    onStdout: chunk => {
+      descendant = Number(chunk.trim())
+      controller.abort()
+    }
+  })
+  assert.equal(result.aborted, true)
+  assert.equal(result.code, 130)
+  assert.equal(result.timedOut, false)
+  assert.ok(descendant > 0)
+  assert.equal(processIsAlive(result.pid!), false)
+  assert.equal(processIsAlive(descendant), false)
+})
+
 test('runProcess completes spawn registration before a POSIX child continues', { skip: process.platform === 'win32' }, async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sks-run-process-spawn-'))
   const registration = path.join(root, 'registered')

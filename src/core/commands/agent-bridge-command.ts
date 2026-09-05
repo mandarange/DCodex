@@ -129,10 +129,22 @@ export async function inspectAgentBridgeHostCapabilities(
   });
 }
 
+export function usage(): string {
+  return [
+    'Usage: sks agent-bridge setup [--trusted-project] [--json]',
+    '       sks agent-bridge async --prompt "task" [--tools status,stats] [--json]',
+    '',
+    'setup: register read-only SKS tools with an external agent host.',
+    'async: run native Astra Async tool calling through the registered Codex-LB bridge.',
+    'Only selected remote-readable R0 tools are exposed; JSON reports observed async behavior.'
+  ].join('\n');
+}
+
 export async function agentBridgeCommand(subcommand: string, args: readonly string[] = []): Promise<unknown> {
   const sub = subcommand || 'setup';
+  if (sub === 'async') return (await import('../agent-bridge/async-command.js')).agentBridgeAsyncCommand(args);
   if (sub !== 'setup') {
-    const result = { ok: false, error: `unknown_subcommand:${sub}`, supported: ['setup'] };
+    const result = { ok: false, error: `unknown_subcommand:${sub}`, supported: ['setup', 'async'] };
     if (flag(args as any, '--json')) console.log(JSON.stringify(result, null, 2));
     else for (const line of renderAgentBridgeBlockedLines([result.error])) console.error(line);
     return result;

@@ -4,6 +4,16 @@
 
 ## [10.1.1] - 2026-09-06
 
+### Added
+
+- Add `sks agent-bridge async` for native Astra Async tool calling through the
+  registered Codex-LB route. Start selected read-only SKS tools during streaming,
+  continue independent model work, and return results on their original call IDs.
+  Bound execution, cancel tool process trees, and report observed async behavior.
+- Prefer a persistent WebSocket for the async command and continue with only new
+  tool results. Use HTTP when connection establishment fails or a completed
+  connection closes; never replay a request interrupted after transmission.
+
 ### Changed
 
 - Apply official Astra prompting guidance: honor existing authorization, explain

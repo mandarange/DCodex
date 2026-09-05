@@ -374,7 +374,7 @@ const COMMAND_DEFINITIONS = {
     allowedDuringActiveRoute: true,
     activeRoutePolicy: 'always'
   }),
-  'agent-bridge': readOnly(entry('beta', 'Publish the agent-bridge manifest and print host registration snippets for external agent systems', 'dist/core/commands/agent-bridge-command.js', subcommand(() => import('../core/commands/agent-bridge-command.js'), 'agentBridgeCommand', 'dist/core/commands/agent-bridge-command.js', 'setup')))
+  'agent-bridge': readOnly(entry('beta', 'Register SKS tools or run read-only tools with native Astra async calling', 'dist/core/commands/agent-bridge-command.js', subcommand(() => import('../core/commands/agent-bridge-command.js'), 'agentBridgeCommand', 'dist/core/commands/agent-bridge-command.js', 'setup')))
 } satisfies Record<string, CommandEntry>;
 
 const COMMANDS_WITH_LEGACY_CONTRACT_OVERRIDES = applyCommandContractOverrides(COMMAND_DEFINITIONS, {

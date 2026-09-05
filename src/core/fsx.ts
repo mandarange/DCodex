@@ -22,6 +22,7 @@ export interface RunProcessOptions {
   envMode?: 'merge' | 'replace';
   input?: string | Buffer;
   timeoutMs?: number;
+  signal?: AbortSignal;
   maxOutputBytes?: number;
   stdoutFile?: string;
   stderrFile?: string;
@@ -40,6 +41,7 @@ export interface RunProcessResult {
   truncated: boolean;
   timedOut: boolean;
   spawnRegistrationFailed?: boolean;
+  aborted?: boolean;
 }
 
 export interface ListFilesOptions {
@@ -660,12 +662,17 @@ export function runProcess(
   args: readonly string[],
   options: RunProcessOptions = {}
 ): Promise<RunProcessResult> {
+  if (options.signal?.aborted) return Promise.resolve({
+    code: 130, stdout: '', stderr: '', stdoutBytes: 0, stderrBytes: 0,
+    truncated: false, timedOut: false, aborted: true,
+  });
   return new Promise<RunProcessResult>((resolve) => {
     const tailBytes = options.maxOutputBytes ?? DEFAULT_PROCESS_TAIL_BYTES;
     const stdoutTail = new TailBuffer(tailBytes);
     const stderrTail = new TailBuffer(tailBytes);
     const timeoutMs = options.timeoutMs ?? DEFAULT_PROCESS_TIMEOUT_MS;
     let killedByTimeout = false;
+    let killedByAbort = false;
     let spawnRegistrationFailed = false;
     let settled = false;
     let processTreeCleanup: Promise<void> | null = null;
@@ -697,6 +704,7 @@ export function runProcess(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      options.signal?.removeEventListener('abort', onAbort);
       await processTreeCleanup;
       unregisterDetachedProcessGroup();
       try {
@@ -719,9 +727,14 @@ export function runProcess(
 
     const timer = setTimeout(() => {
       killedByTimeout = true;
-      processTreeCleanup = terminateProcessTree(child.pid, child);
+      processTreeCleanup ??= terminateProcessTree(child.pid, child);
     }, timeoutMs);
     timer.unref?.();
+    const onAbort = () => {
+      if (settled) return;
+      killedByAbort = true;
+      processTreeCleanup ??= terminateProcessTree(child.pid, child);
+    };
 
     child.stdout?.on('data', (d: Buffer) => {
       stdoutTail.push(d);
@@ -743,12 +756,13 @@ export function runProcess(
         stderrBytes: stderrTail.totalBytesCounted,
         truncated: stdoutTail.truncated || stderrTail.truncated,
         timedOut: killedByTimeout,
+        ...(killedByAbort ? { aborted: true } : {}),
         ...(spawnRegistrationFailed ? { spawnRegistrationFailed: true } : {}),
       })
     );
     child.on('close', (code: number | null) =>
       void finish({
-        code: killedByTimeout ? 124 : code,
+        code: killedByAbort ? 130 : killedByTimeout ? 124 : code,
         pid: child.pid,
         stdout: stdoutTail.text(),
         stderr: stderrTail.text(),
@@ -756,11 +770,15 @@ export function runProcess(
         stderrBytes: stderrTail.totalBytesCounted,
         truncated: stdoutTail.truncated || stderrTail.truncated,
         timedOut: killedByTimeout,
+        ...(killedByAbort ? { aborted: true } : {}),
         ...(spawnRegistrationFailed ? { spawnRegistrationFailed: true } : {}),
       })
     );
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
 
     void (async () => {
+      if (killedByAbort) return;
       if (options.onSpawn) {
         const pid = child.pid;
         if (!pid) {
@@ -772,10 +790,11 @@ export function runProcess(
           await options.onSpawn(pid);
         } catch {
           spawnRegistrationFailed = true;
-          processTreeCleanup = terminateProcessTree(pid, child);
+          processTreeCleanup ??= terminateProcessTree(pid, child);
           await processTreeCleanup;
           return;
         }
+        if (killedByAbort || settled) return;
         if (pausedForSpawnRegistration) child.kill('SIGCONT');
       }
       if (options.input !== undefined && child.stdin) child.stdin.end(options.input);

@@ -48,6 +48,12 @@ sks bootstrap --yes
 The default `essential` profile avoids repetitive completion rituals. `strict`
 adds stronger completion requirements. See [Essential Trust](docs/essential-trust.md).
 
+With Codex-LB connected, `sks agent-bridge async --prompt "Check SKS status while
+explaining what the check covers" --tools status --json` runs native Astra Async
+tool calling with selected read-only SKS tools, using WebSocket first and safe
+HTTP fallback. See [Astra guidance](docs/astra-guidance.md)
+for setup boundaries and reported execution evidence.
+
 ## Everyday commands
 
 Use these inside a Codex conversation:

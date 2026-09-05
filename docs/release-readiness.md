@@ -6,7 +6,9 @@
 migration fixes recorded in [the changelog](../CHANGELOG.md). Center now gives
 both MCP scopes time to respond and sends the workspace context for effective
 inventory reads. Setup and repair refresh existing managed global roles to
-Astra while preserving user provider and permission overrides.
+Astra while preserving user provider and permission overrides. The candidate
+also adds native Astra Async tool calling through `sks agent-bridge async`, with
+persistent WebSocket continuation, bounded tool execution, and safe HTTP fallback.
 
 On 2026-09-06 the public npm registry reported `latest` as 10.1.0, with
 `gitHead` `d1d9b3312e72dedef1ce2e72caf6002554b7e1b9`, and returned HTTP 404

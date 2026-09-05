@@ -755,7 +755,7 @@ export const COMMAND_CATALOG = [
   { name: 'gc', usage: 'sks gc [--dry-run] [--json]', description: 'Compact oversized logs and prune stale runtime artifacts.' },
   { name: 'stats', usage: 'sks stats [--full] [--json]', description: 'Show package and .sneakoscope storage size.' },
   { name: 'mcp-server', usage: 'sks mcp-server [--expose-exec] [--probe]', description: 'Run a modern stateless stdio MCP server exposing SKS read-only commands as tools for any MCP-capable agent host; --expose-exec also exposes non-read-only commands; --probe round-trips server/discover and tools/list, then exits.' },
-  { name: 'agent-bridge', usage: 'sks agent-bridge setup [--trusted-project] [--json]', description: 'Publish the agent-bridge manifest, print host registration snippets (generic MCP host, Codex CLI, non-interactive contract), and run a live non-interactive smoke test; project MCP inventory requires explicit project trust.' }
+  { name: 'agent-bridge', usage: 'sks agent-bridge setup [--trusted-project] [--json] | async --prompt "task" [--tools status,stats] [--json]', description: 'Publish the agent-bridge manifest or run selected read-only SKS tools with native Astra Async tool calling through the registered Codex-LB bridge.' }
 ];
 
 export function routeById(id: any): any {

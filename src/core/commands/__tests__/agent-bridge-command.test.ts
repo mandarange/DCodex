@@ -19,7 +19,7 @@ test('agent-bridge local JSON flag keeps the unknown-subcommand contract byte-co
     assert.deepEqual(result, {
       ok: false,
       error: 'unknown_subcommand:unknown',
-      supported: ['setup']
+      supported: ['setup', 'async']
     });
   } finally {
     console.log = previousLog;
