@@ -211,6 +211,7 @@ async function runDesktopBridgeStructuredOutput(request: {
     }
     const payload = parseStructuredOutputBody(text);
     if (!payload) return bridgeStructuredOutputBlocked('json_parse_failed', 'Desktop Bridge returned no readable JSON.', fixture);
+    if (payload.status && payload.status !== 'completed') return bridgeStructuredOutputBlocked('response_not_completed', String(payload.status), fixture);
     const parsed = (payload as any).output_parsed || parseStructuredOutputPayload(payload);
     if (!parsed || typeof parsed !== 'object') {
       return bridgeStructuredOutputBlocked('json_parse_failed', 'Desktop Bridge output did not contain parsed JSON.', fixture);

@@ -59,3 +59,20 @@ function restoreEnv(name, value) {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
 }
+
+test('bridge callout extraction rejects a steered partial response before ledger validation', async () => {
+  const { root, imagePath } = await tempImageRoot('sks-callout-steered-');
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: 'incomplete', incomplete_details: { reason: 'steered' },
+    output_parsed: { schema: 'sks.image-ux-issue-ledger.v3', issues: [] }
+  }), { status: 200 });
+  try {
+    const result = await extractRealCallouts({ root, generatedImagePath: imagePath }, {
+      desktopBridgeTarget: { endpoint: 'http://127.0.0.1:18765/responses', model: 'gpt-6-astra' }
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.parsed_json_present, false);
+    assert.equal(result.blocker.reason, 'response_not_completed');
+  } finally { globalThis.fetch = previousFetch; }
+});
