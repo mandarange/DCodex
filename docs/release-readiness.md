@@ -30,6 +30,11 @@ Missing or failed required Codex, SDK, or worktree checks block the stamp.
 Optional image-generation and staged physical evidence are reported according
 to their actual coverage and cannot be represented as passed live execution.
 
+Generated navigation projections are local caches and stay out of Git and the
+npm package. After the final checks and dry run, run `sks align run` and
+`sks wiki validate .sneakoscope/wiki/context-pack.json --json` to include the
+latest proof-bank evidence without changing the release commit.
+
 After the checks pass, the authorized maintainer pushes the same candidate
 commit to `main`. Direct publication requires a clean `main` checkout exactly
 matching live `origin/main`; it does not require a pre-existing release tag.

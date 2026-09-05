@@ -178,6 +178,10 @@ id_ed25519
 .sneakoscope/wiki/tmp/
 .sneakoscope/wiki/proof-bank/
 .sneakoscope/wiki/context-pack.json
+# Align regenerates these projections locally with the graph and proof bank.
+.sneakoscope/wiki/code-pack.json
+.sneakoscope/wiki/code-pack.prev.json
+.sneakoscope/wiki/code-navigation-manifest.json
 .sneakoscope/wiki/image-assets.json
 .sneakoscope/wiki/image-voxel-ledger.json
 .sneakoscope/wiki/wrongness-ledger.json

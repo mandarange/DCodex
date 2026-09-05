@@ -85,13 +85,17 @@ test('codePackFreshnessNote stays silent when the pack matches the current HEAD'
   assert.equal(await codePackFreshnessNote(root, { budgetMs: SEMANTIC_TEST_BUDGET_MS }), null);
 });
 
-test('codePackFreshnessNote stays silent after a follow-up commit containing only tracked code-pack metadata', async () => {
+test('codePackFreshnessNote stays silent after a follow-up commit containing only tracked navigation metadata', async () => {
   const { root, head } = await tempRepo();
   await writePack(root, head);
+  await fsp.writeFile(path.join(root, '.sneakoscope/wiki/code-navigation-manifest.json'), '{}\n');
   const git = (args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
-  git(['add', '.sneakoscope/wiki/code-pack.json']);
+  git(['add', '.sneakoscope/wiki/code-pack.json', '.sneakoscope/wiki/code-navigation-manifest.json']);
   git(['commit', '-q', '-m', 'refresh code pack']);
 
+  const inspection = await inspectCodePackHeadFreshness(root, head, { timeoutMs: SEMANTIC_TEST_BUDGET_MS });
+  assert.equal(inspection.fresh, true);
+  assert.equal(inspection.reason, 'metadata_only_history');
   assert.equal(await codePackFreshnessNote(root, { budgetMs: SEMANTIC_TEST_BUDGET_MS }), null);
 });
 

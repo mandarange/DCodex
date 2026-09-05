@@ -4,7 +4,8 @@ import { readJson, runProcess, writeJsonAtomic } from '../fsx.js'
 
 const CODE_PACK_METADATA_PATHS = new Set([
   '.sneakoscope/wiki/code-pack.json',
-  '.sneakoscope/wiki/code-pack.prev.json'
+  '.sneakoscope/wiki/code-pack.prev.json',
+  '.sneakoscope/wiki/code-navigation-manifest.json'
 ])
 const COMMIT_MARKER = '@SKS-CODE-PACK'
 const ADVISORY_CACHE_SCHEMA = 'sks.code-pack-head-freshness-cache.v1'

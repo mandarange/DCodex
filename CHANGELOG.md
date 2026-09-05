@@ -29,6 +29,9 @@
 - Document the direct `npm publish` handoff against the final clean commit,
   with full release proof, package provenance, and maintainer authentication.
   Earlier release records retain their original versions and evidence.
+- Keep generated navigation projections as local caches so refreshing release
+  evidence does not require another release commit. Metadata-only navigation
+  commits in existing projects no longer trigger a false stale-code warning.
 
 ### Fixed
 
