@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-09-05T14:00:07.155Z",
+  "generated_at": "2026-09-05T14:08:25.251Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "8c02ea34b694e7fba4165955438822f5d93bc33944840b7e3ff875f003371aa9",
-  "snapshot_hash": "5231aa346cec3e22970561071fd237322052291fa14d81e9abff0985b02419bf",
+  "inventory_digest": "1b882806622fe521b026a042c8a4acdac4e4d0f3c1542117f6ca95f2b0e99586",
+  "snapshot_hash": "0fbdbb03b6bc27680c0e675b1868c6f701bc20b9ee353bf57d9bc89b366f1370",
   "source_file_count": 3105,
-  "symbol_count": 23662,
-  "edge_count": 79232,
+  "symbol_count": 23679,
+  "edge_count": 79249,
   "extractors": [
     {
       "id": "code",
@@ -1187,10 +1187,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/AuthPriorityState.swift",
-      "sha256": "e45cfcf9d13977eda549874d6897ec5b198a7bb0201795c3a159aafa4f8eb92b",
+      "sha256": "7fedae0188d47f104bd07a59cfef6cb3eeaa3a2fd9488634b92c0fa8578296ef",
       "language": "swift",
-      "lines": 34,
-      "bytes": 1670
+      "lines": 66,
+      "bytes": 3231
     },
     {
       "path": "native/sks-menubar/Sources/CodexLifecyclePolicy.swift",
@@ -1334,10 +1334,10 @@
     },
     {
       "path": "native/sks-menubar/Sources/ProvidersViewController.swift",
-      "sha256": "2ca389ca1050a39e061b8286b078a2f2b874a752eee7832f4e121add312aff09",
+      "sha256": "808de4f6ba12684dbde3b484346db7af9c447cbe30a97873e1aeff14a97a9dab",
       "language": "swift",
-      "lines": 412,
-      "bytes": 26426
+      "lines": 435,
+      "bytes": 27455
     },
     {
       "path": "native/sks-menubar/Sources/RemoteCodingViewController.swift",
@@ -1418,10 +1418,10 @@
     },
     {
       "path": "native/sks-menubar/Tests/AuthPriorityStateTests.swift",
-      "sha256": "6e3876049261bc708595bbad15380b3f0d82bfba6846f3a8681ca3c5816f4a28",
+      "sha256": "317e522c252d5c2cc10b5f4bd40295b3f49d54d1f92d5180e2d274319c65dc79",
       "language": "swift",
-      "lines": 39,
-      "bytes": 1779
+      "lines": 83,
+      "bytes": 4763
     },
     {
       "path": "native/sks-menubar/Tests/OperationCoordinatorTests.swift",
@@ -4572,10 +4572,10 @@
     },
     {
       "path": "src/core/codex-lb/__tests__/desktop-controller-provider-mutation.test.ts",
-      "sha256": "7ec289e12a7615a9cf6cb6ca0e25d22ccb386eb7980831b433ab2a9b99695b00",
+      "sha256": "650a87dfb35b722f42034818c8e5ee490579df7c8e3eb292068077fe7cafd58a",
       "language": "typescript",
-      "lines": 462,
-      "bytes": 20714
+      "lines": 494,
+      "bytes": 22929
     },
     {
       "path": "src/core/codex-lb/__tests__/desktop-controller-v3.test.ts",
@@ -5008,10 +5008,10 @@
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3.ts",
-      "sha256": "56252581eb5202604f1bca604089a7f34df322288e6ff9ad4d665d73e6b1cb7c",
+      "sha256": "54cb3a8c0d6c88b43ef19bb9f885339b11b38582686db8cf8dc61f571b439a5d",
       "language": "typescript",
-      "lines": 117,
-      "bytes": 5396
+      "lines": 118,
+      "bytes": 5515
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/catalog.ts",
@@ -5064,10 +5064,10 @@
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/status.ts",
-      "sha256": "ae0754725bd632f364ce81cdca910ee9d42a4b04f7e67502192800f9ad83d033",
+      "sha256": "43adf6666e939c0c21e4cdeca2a844c82020275fd535ee12924a775e56eb02b1",
       "language": "typescript",
-      "lines": 357,
-      "bytes": 16835
+      "lines": 358,
+      "bytes": 16896
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/types.ts",
@@ -21708,10 +21708,10 @@
     },
     {
       "path": "test/unit/package-publish-lifecycle.test.mjs",
-      "sha256": "066fb82210ad9b0b9b981442034a59db6509fe49753d96a08b83fe7260f66301",
+      "sha256": "47096c0bf9efb46dc8d9f1c93b7b91b1e4ea9bffbec2ae9fe182c8a39a69b3f1",
       "language": "javascript",
       "lines": 241,
-      "bytes": 14484
+      "bytes": 14507
     },
     {
       "path": "test/unit/parallel-verification-dag.test.mjs",
@@ -22411,7 +22411,7 @@
   "edges_by_type": {
     "affected_by": 966,
     "calls": 11128,
-    "contains": 27778,
+    "contains": 27795,
     "defines": 9107,
     "depends_on": 77,
     "gated_by": 160,

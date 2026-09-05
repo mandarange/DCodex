@@ -1,9 +1,9 @@
 {
   "schema": "sks.code-pack.v1",
-  "generated_at": "2026-09-05T14:00:07.155Z",
-  "git_head_sha": "7276aaa92ba500ec1932cbc3404f00fc900a8f3f",
+  "generated_at": "2026-09-05T14:08:25.251Z",
+  "git_head_sha": "4ef2166a2989217980b9b047438fe8ee65f288e9",
   "source_file_count": 3105,
-  "index_digest": "b03bca16f55735d699429a46b6be356220143da18cb1c4c5650fe3e17013af21",
+  "index_digest": "b72e275db55ff6c019b602ed4b5bcef4140a734363ca4215c5640254abf8ee87",
   "entries": [
     {
       "id": "code:core-triwiki",
@@ -138,39 +138,6 @@
       "token_cost": 87
     },
     {
-      "id": "code:core-commands",
-      "text": "core-commands is a module at src/core/commands (94 files, low risk). Key exports: ALIGN_GATE_ARTIFACT, ALIGN_LEDGER_ARTIFACT, ALIGN_PLAN_ARTIFACT, ALLOWED_REASONING_EFFORTS, ARCHITECTURE_MAP_DIR_REL, and 669 more. Depends on: cli, commands, core, core-agent-bridge, core-agents, and 41 more.",
-      "citations": [
-        {
-          "path": "src/core/commands/__tests__/agent-bridge-command.test.ts"
-        },
-        {
-          "path": "src/core/commands/__tests__/align-command.test.ts"
-        },
-        {
-          "path": "src/core/commands/__tests__/gate-result-contract.test.ts"
-        },
-        {
-          "path": "src/core/commands/__tests__/gc-command-help.test.ts"
-        },
-        {
-          "path": "src/core/commands/__tests__/image-ux-review-command-status-gate-verdict.test.ts"
-        },
-        {
-          "path": "src/core/commands/__tests__/image-ux-review-work-order-finalization.test.ts"
-        },
-        {
-          "path": "src/core/commands/__tests__/install-package-command.test.ts"
-        },
-        {
-          "path": "src/core/commands/__tests__/mad-route-preservation.test.ts"
-        }
-      ],
-      "trust_score": 0.8,
-      "freshness": "fresh",
-      "token_cost": 73
-    },
-    {
       "id": "code:native-sks-menubar",
       "text": "native-sks-menubar is a module at native/sks-menubar (51 files, low risk). Key exports: numberOfRows, tableView. It has no recorded outbound dependency.",
       "citations": [
@@ -202,6 +169,39 @@
       "trust_score": 0.8,
       "freshness": "fresh",
       "token_cost": 38
+    },
+    {
+      "id": "code:core-commands",
+      "text": "core-commands is a module at src/core/commands (94 files, low risk). Key exports: ALIGN_GATE_ARTIFACT, ALIGN_LEDGER_ARTIFACT, ALIGN_PLAN_ARTIFACT, ALLOWED_REASONING_EFFORTS, ARCHITECTURE_MAP_DIR_REL, and 669 more. Depends on: cli, commands, core, core-agent-bridge, core-agents, and 41 more.",
+      "citations": [
+        {
+          "path": "src/core/commands/__tests__/agent-bridge-command.test.ts"
+        },
+        {
+          "path": "src/core/commands/__tests__/align-command.test.ts"
+        },
+        {
+          "path": "src/core/commands/__tests__/gate-result-contract.test.ts"
+        },
+        {
+          "path": "src/core/commands/__tests__/gc-command-help.test.ts"
+        },
+        {
+          "path": "src/core/commands/__tests__/image-ux-review-command-status-gate-verdict.test.ts"
+        },
+        {
+          "path": "src/core/commands/__tests__/image-ux-review-work-order-finalization.test.ts"
+        },
+        {
+          "path": "src/core/commands/__tests__/install-package-command.test.ts"
+        },
+        {
+          "path": "src/core/commands/__tests__/mad-route-preservation.test.ts"
+        }
+      ],
+      "trust_score": 0.8,
+      "freshness": "fresh",
+      "token_cost": 73
     },
     {
       "id": "code:.sks-skill-path-space-7ae0DA-installed package with spaces",
