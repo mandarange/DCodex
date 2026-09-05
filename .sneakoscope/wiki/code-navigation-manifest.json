@@ -1,13 +1,13 @@
 {
   "schema": "sks.code-navigation-manifest.v1",
-  "generated_at": "2026-08-13T13:45:11.287Z",
+  "generated_at": "2026-09-05T14:00:07.155Z",
   "source_policy": "repository_code_only",
   "exhaustive_graph": "context-graph.json",
-  "inventory_digest": "a39db7c71a85cee1623822c4c516dd3de89ae9812a8ed359597afd64c1949f9e",
-  "snapshot_hash": "b41f11c25f100e48e4ab43cf5941488a4889d2237a0914b34368dca5ae5012de",
-  "source_file_count": 3099,
-  "symbol_count": 23572,
-  "edge_count": 78873,
+  "inventory_digest": "8c02ea34b694e7fba4165955438822f5d93bc33944840b7e3ff875f003371aa9",
+  "snapshot_hash": "5231aa346cec3e22970561071fd237322052291fa14d81e9abff0985b02419bf",
+  "source_file_count": 3105,
+  "symbol_count": 23662,
+  "edge_count": 79232,
   "extractors": [
     {
       "id": "code",
@@ -1186,6 +1186,13 @@
       "bytes": 2438
     },
     {
+      "path": "native/sks-menubar/Sources/AuthPriorityState.swift",
+      "sha256": "e45cfcf9d13977eda549874d6897ec5b198a7bb0201795c3a159aafa4f8eb92b",
+      "language": "swift",
+      "lines": 34,
+      "bytes": 1670
+    },
+    {
       "path": "native/sks-menubar/Sources/CodexLifecyclePolicy.swift",
       "sha256": "bc42c7ed5999ceb07ed5673bdd79ff7f6bde800cf34e65129023ab91bfb322fc",
       "language": "swift",
@@ -1194,31 +1201,38 @@
     },
     {
       "path": "native/sks-menubar/Sources/ControlCenterWindowController.swift",
-      "sha256": "12ec22785507de7d8395a1943119c6dd642b2b3753d6551f4980e3cc0834d9a2",
+      "sha256": "c7a0bdf87d9c6162f2220bd62fe6c383ea7e9369fe848bc8ba6a779216d2fcec",
       "language": "swift",
       "lines": 151,
-      "bytes": 7129
+      "bytes": 7191
     },
     {
       "path": "native/sks-menubar/Sources/ControlKit.swift",
-      "sha256": "83a29993e7678e5c1448aacfd044aa5b631a6ba855b23999d96dbc32a7b6d4a5",
+      "sha256": "e7855e1a36be2ad2bca4a59bc68b9594b30c34a9191519297412543e8c2e277c",
       "language": "swift",
-      "lines": 113,
-      "bytes": 4867
+      "lines": 112,
+      "bytes": 4811
     },
     {
       "path": "native/sks-menubar/Sources/DiagnosticsViewController.swift",
-      "sha256": "1bb40da2a93c71945013699275e26b7e287b43324f7587d56fcf3dacae726513",
+      "sha256": "1d7936de1a9cfbfc8abf2e3e2a10e95e276a61bb41f23c0441f2be6033e7ac02",
       "language": "swift",
-      "lines": 163,
-      "bytes": 8353
+      "lines": 171,
+      "bytes": 8646
     },
     {
       "path": "native/sks-menubar/Sources/MCPServersViewController.swift",
-      "sha256": "b228b9ee61b7e89a7f365622b7ac7d01d4a96450dbede590ce65d46eab8683b1",
+      "sha256": "604657f433ccea216bb2e46eea92c7f04a4f25d2dd0eaeb7199eea7cabb349da",
       "language": "swift",
       "lines": 498,
-      "bytes": 36789
+      "bytes": 36699
+    },
+    {
+      "path": "native/sks-menubar/Sources/NativeView.swift",
+      "sha256": "3dd9044eb766f2b493356d81842346985881237922746e67a16fdb65b850c01f",
+      "language": "swift",
+      "lines": 226,
+      "bytes": 9886
     },
     {
       "path": "native/sks-menubar/Sources/NotificationCoordinator.swift",
@@ -1243,17 +1257,17 @@
     },
     {
       "path": "native/sks-menubar/Sources/OverviewSummary.swift",
-      "sha256": "88768f7d0e45df7390b1638a86207cb25c60eb69fe23e89e9ee332a763394e5e",
+      "sha256": "cd8e001ad72e8547b3f7b7f624c7b0b432b8f44d940c6391af79793118af57f8",
       "language": "swift",
       "lines": 135,
-      "bytes": 6605
+      "bytes": 6597
     },
     {
       "path": "native/sks-menubar/Sources/OverviewViewController.swift",
-      "sha256": "1d655eeb1ad5a4070193f3f830f0c7a8fa19030857a74d6ae7f6fb439f737f51",
+      "sha256": "34c8a9d002af960a912abcc4bd70310711f33690f4007c6d37cd8fe623ea875a",
       "language": "swift",
-      "lines": 499,
-      "bytes": 25386
+      "lines": 344,
+      "bytes": 18601
     },
     {
       "path": "native/sks-menubar/Sources/ProcessClient.swift",
@@ -1292,17 +1306,17 @@
     },
     {
       "path": "native/sks-menubar/Sources/ProvidersModelExposure.swift",
-      "sha256": "da41d34111282b37d239b6b19f129969e311df648d99c75bdecf1e238a91f667",
+      "sha256": "c8c06b3d3987b94ffa5c82c8713fcc628a5c1a4533584d0e22da6d495952332d",
       "language": "swift",
-      "lines": 178,
-      "bytes": 9745
+      "lines": 183,
+      "bytes": 9894
     },
     {
       "path": "native/sks-menubar/Sources/ProvidersOpenRouter.swift",
-      "sha256": "5202380de35fd474aa17a9849ddd849180a9a74d10cd65e9953e50ffc4ab8fd9",
+      "sha256": "a3a36e59b6adf633207cc31575863199929ec5bf1bed53b06231d96a9d4a1cb2",
       "language": "swift",
-      "lines": 136,
-      "bytes": 10492
+      "lines": 145,
+      "bytes": 11061
     },
     {
       "path": "native/sks-menubar/Sources/ProvidersReliability.swift",
@@ -1313,24 +1327,24 @@
     },
     {
       "path": "native/sks-menubar/Sources/ProvidersRoutingTruth.swift",
-      "sha256": "8b1513bc5aa7957da1503c2bc02fbcb2878ef76a080114ea0b43deced7d0ac64",
+      "sha256": "d9e4af6b3184ab005d1a5b56024c859a6322090612f993287199feb5e45e1112",
       "language": "swift",
-      "lines": 478,
-      "bytes": 23955
+      "lines": 481,
+      "bytes": 24193
     },
     {
       "path": "native/sks-menubar/Sources/ProvidersViewController.swift",
-      "sha256": "a4f7a262d4b925cc298fb0e608573317151208a6b296cca63274276fa66b22c0",
+      "sha256": "2ca389ca1050a39e061b8286b078a2f2b874a752eee7832f4e121add312aff09",
       "language": "swift",
-      "lines": 335,
-      "bytes": 21679
+      "lines": 412,
+      "bytes": 26426
     },
     {
       "path": "native/sks-menubar/Sources/RemoteCodingViewController.swift",
-      "sha256": "2c767fda71d8c38f7b944dbf3eed3fa40c465f074fc159df1f0d9774802a0797",
+      "sha256": "f620494a8b9a32773822065c6db28163aace4a203824028945c0263b812e9ab2",
       "language": "swift",
-      "lines": 51,
-      "bytes": 1989
+      "lines": 49,
+      "bytes": 1732
     },
     {
       "path": "native/sks-menubar/Sources/SKSKeychainStore.swift",
@@ -1348,17 +1362,17 @@
     },
     {
       "path": "native/sks-menubar/Sources/SettingsViewController.swift",
-      "sha256": "5a91b3a81a2e21ed095a99de1fb350cf6f3bc81cc357c9c2fbe0dc262523666b",
+      "sha256": "49d1a84431230380326caf181a8e634b0ce5f1c7f91de6c698cade51a5ce6bdc",
       "language": "swift",
-      "lines": 144,
-      "bytes": 7354
+      "lines": 259,
+      "bytes": 13872
     },
     {
       "path": "native/sks-menubar/Sources/SidebarItem.swift",
-      "sha256": "24c4682e1f1a2d9e8c509e8c55a967768d3197d482d4c14ecc45a4984a779f6b",
+      "sha256": "c9e7c37f645ff77919154967a197d882e0735dd17bddf107f2fc1b20c8cbf748",
       "language": "swift",
-      "lines": 25,
-      "bytes": 806
+      "lines": 27,
+      "bytes": 890
     },
     {
       "path": "native/sks-menubar/Sources/SingletonInstanceGuard.swift",
@@ -1375,11 +1389,18 @@
       "bytes": 19537
     },
     {
-      "path": "native/sks-menubar/Sources/UpdatesViewController.swift",
-      "sha256": "cdebf27e43a1ba53c85cadd40acdf3d54dcd6ca83c157ed0caaebe01e55e3781",
+      "path": "native/sks-menubar/Sources/UpdatesModels.swift",
+      "sha256": "19d038cb8c5b545e4c9cd57df88e031e22da8cba42ed42787b8820945be54c1c",
       "language": "swift",
-      "lines": 463,
-      "bytes": 26211
+      "lines": 8,
+      "bytes": 207
+    },
+    {
+      "path": "native/sks-menubar/Sources/UpdatesViewController.swift",
+      "sha256": "e88f796958b4d6da4c07cb2c9f4c3fee2c5552f7300cf532a7da0bd2c0e5875c",
+      "language": "swift",
+      "lines": 495,
+      "bytes": 27329
     },
     {
       "path": "native/sks-menubar/Sources/main.swift",
@@ -1394,6 +1415,13 @@
       "language": "swift",
       "lines": 26,
       "bytes": 1041
+    },
+    {
+      "path": "native/sks-menubar/Tests/AuthPriorityStateTests.swift",
+      "sha256": "6e3876049261bc708595bbad15380b3f0d82bfba6846f3a8681ca3c5816f4a28",
+      "language": "swift",
+      "lines": 39,
+      "bytes": 1779
     },
     {
       "path": "native/sks-menubar/Tests/OperationCoordinatorTests.swift",
@@ -1418,10 +1446,10 @@
     },
     {
       "path": "native/sks-menubar/Tests/ProvidersBridgeStatusTests.swift",
-      "sha256": "e36454be0ffdb8797a84272f1722d6bcf368b7158777050bb1167f13ca360161",
+      "sha256": "9e15e01451ba5de4d31a667bef453b1635ccef403b7e4ec766c93062e8454fe0",
       "language": "swift",
-      "lines": 99,
-      "bytes": 4463
+      "lines": 107,
+      "bytes": 4908
     },
     {
       "path": "native/sks-menubar/Tests/ProvidersCapabilityTruthTests.swift",
@@ -1538,10 +1566,10 @@
     },
     {
       "path": "src/bin/fast-inline.ts",
-      "sha256": "6f9dd3469eb07062df2bb546b46b02a81109463c915917cb6c35390991862da1",
+      "sha256": "1a5d3b09af2422c11b3f96d354fb0b53ef2ea2a90e20c4054ee8a0027ef90edc",
       "language": "typescript",
-      "lines": 168,
-      "bytes": 6300
+      "lines": 226,
+      "bytes": 9478
     },
     {
       "path": "src/bin/install.ts",
@@ -1552,10 +1580,10 @@
     },
     {
       "path": "src/bin/sks-dispatch.ts",
-      "sha256": "249a9e410ee1b7c5637ae363cb1df4a00e158c73601ff1fa57285234890d09b7",
+      "sha256": "ed6d64e7fec2494375071668d8710419e74eba31ac7a76052f037901d7927ebf",
       "language": "typescript",
       "lines": 48,
-      "bytes": 3104
+      "bytes": 3177
     },
     {
       "path": "src/bin/sks.ts",
@@ -1602,10 +1630,10 @@
     },
     {
       "path": "src/cli/__tests__/router-active-naruto.test.ts",
-      "sha256": "4194aeec1307906cfac2d4a7b0615e0dd23f56e4f9d7e2a1a3f071393072bb2f",
+      "sha256": "ade838e2b8183007fb7c1908e55eadaeea61a7ff10e2908b56e8bb85ce1c69f0",
       "language": "typescript",
-      "lines": 358,
-      "bytes": 16711
+      "lines": 362,
+      "bytes": 17140
     },
     {
       "path": "src/cli/__tests__/router-codex-lb-removed.test.ts",
@@ -1784,10 +1812,10 @@
     },
     {
       "path": "src/cli/router.ts",
-      "sha256": "efa07005ff5e2492158476c48cd16ebf2231d676a76f4b3c1ba8482d672ff3dc",
+      "sha256": "881526eb6a58c710613f24d01a6996a2ac30aa242ae849e79655174406aa1269",
       "language": "typescript",
-      "lines": 440,
-      "bytes": 20891
+      "lines": 460,
+      "bytes": 21889
     },
     {
       "path": "src/cli/super-search-command.ts",
@@ -1798,10 +1826,10 @@
     },
     {
       "path": "src/commands/__tests__/bridge-command.test.ts",
-      "sha256": "c486b3604543d3011f26e4e42d01a467e0e2d4d55d5bb3e4f2519657d5b07144",
+      "sha256": "b773ead968cb031903dfdc474325a72f60f9c25dfe9c5316ab11a6da431a58ad",
       "language": "typescript",
-      "lines": 254,
-      "bytes": 9728
+      "lines": 257,
+      "bytes": 9984
     },
     {
       "path": "src/commands/__tests__/codex-app-capability-status.test.ts",
@@ -1846,6 +1874,13 @@
       "bytes": 4223
     },
     {
+      "path": "src/commands/__tests__/doctor-global-only-bridge-repair.test.ts",
+      "sha256": "22ef3534bff3954c993b8404566bf86c739732147c87f4f59dc56c40fa83753b",
+      "language": "typescript",
+      "lines": 256,
+      "bytes": 11709
+    },
+    {
       "path": "src/commands/__tests__/doctor-profile.test.ts",
       "sha256": "bc8a36b23ee7853002b77db7cfbecb4f351537ef6d7e8c6024a397679f545e25",
       "language": "typescript",
@@ -1882,10 +1917,10 @@
     },
     {
       "path": "src/commands/bridge.ts",
-      "sha256": "7d9aedb94c0d088d6b12d53ba06049949a56adbc06bc51bf604a2b9f1c9afc7b",
+      "sha256": "c69eb869b2ab23f35ef3f5f109c71523355ea99b946c1678beb4c30387810d02",
       "language": "typescript",
-      "lines": 435,
-      "bytes": 16684
+      "lines": 480,
+      "bytes": 18840
     },
     {
       "path": "src/commands/code-structure.ts",
@@ -1896,10 +1931,10 @@
     },
     {
       "path": "src/commands/codex-app.ts",
-      "sha256": "01267b54d5332dcd1536df9e7c6ed5880ac05253294bcbb1747204255a1d8054",
+      "sha256": "13775a4ce6c670e1fb17e4cd344b13c51a970ecd06fa427b77649ebe51736a49",
       "language": "typescript",
-      "lines": 203,
-      "bytes": 10254
+      "lines": 226,
+      "bytes": 11634
     },
     {
       "path": "src/commands/codex-native.ts",
@@ -1973,10 +2008,10 @@
     },
     {
       "path": "src/commands/doctor.ts",
-      "sha256": "fe6da8b07dc4c45049f4b9cc1a177f0a0da3a28b88e7068c1b57b0109bf1422d",
+      "sha256": "f853ad52fecd4d87aeda0bda6ef3e8e772dffbf6912fe7844f8ff92ce783500d",
       "language": "typescript",
-      "lines": 1727,
-      "bytes": 85811
+      "lines": 1736,
+      "bytes": 86010
     },
     {
       "path": "src/commands/features.ts",
@@ -2294,6 +2329,13 @@
       "bytes": 1834
     },
     {
+      "path": "src/core/__tests__/essential-managed-hooks.test.ts",
+      "sha256": "a7a1ef6f18e641df24a355156e1c053d0a3e618a8b7db1856b635c5093948500",
+      "language": "typescript",
+      "lines": 52,
+      "bytes": 2966
+    },
+    {
       "path": "src/core/__tests__/evaluation-token-truth.test.ts",
       "sha256": "a98522c5fcb8e477ce82c695ed31150a58159c5e9f035afd252010ef7322a173",
       "language": "typescript",
@@ -2317,10 +2359,10 @@
     },
     {
       "path": "src/core/__tests__/harness-conflicts-cleanup.test.ts",
-      "sha256": "0e4b07073b8c59353d016a7173d9e7ddbfbe5bfe97abc71e8283acde2db3d028",
+      "sha256": "f0917cc053059995bc84fdb3be85d2faf313772535807ea18271df89feb746ac",
       "language": "typescript",
-      "lines": 93,
-      "bytes": 3644
+      "lines": 108,
+      "bytes": 4385
     },
     {
       "path": "src/core/__tests__/helpers/isolated-test-home.ts",
@@ -2375,17 +2417,17 @@
     },
     {
       "path": "src/core/__tests__/model-router-fail-closed.test.ts",
-      "sha256": "fda79710d3a4cd088a65c0fc2f711731a5a835e3f22c8f317d91b2eb317ad0d5",
+      "sha256": "437784c6edd9e32b781397c955eba6d6c6a98c8e384380604edbad493c947733",
       "language": "typescript",
-      "lines": 61,
-      "bytes": 2293
+      "lines": 71,
+      "bytes": 2610
     },
     {
       "path": "src/core/__tests__/naruto-route-reasoning.test.ts",
-      "sha256": "a7356ab33ee71322cacfc5cc8f0b51493e1c2af1c6e86e6209a9980736b01f97",
+      "sha256": "40494da6c38b4d5be586abe071ed878c91fec17c148a23fb8ff1f68ce7074189",
       "language": "typescript",
-      "lines": 46,
-      "bytes": 1779
+      "lines": 53,
+      "bytes": 2116
     },
     {
       "path": "src/core/__tests__/no-fake-success-policy.test.ts",
@@ -2530,11 +2572,19 @@
     },
     {
       "path": "src/core/__tests__/update-failure-modes.test.ts",
-      "sha256": "49d77753b40c7cbd12b72515b4c6b460d138f8f229e7a3e15d392c840da1486a",
+      "sha256": "b9d6c8587ffbc0b58cbe6781e59e9d0b60c5f1bfda5898e50a9166ff12ba60b6",
       "language": "typescript",
-      "lines": 870,
-      "bytes": 37040,
+      "lines": 909,
+      "bytes": 38957,
       "purpose": "First import: update-migration stages (fastmode normalize, skills install, managed role configs) resolve os.homedir() directly and ignore injected env."
+    },
+    {
+      "path": "src/core/__tests__/update-from-home.test.ts",
+      "sha256": "c0712816a103cd2d0de4cbda24cb0ab4b2c9548ec53adfbb1f989db2b11b303c",
+      "language": "typescript",
+      "lines": 252,
+      "bytes": 13058,
+      "purpose": "First import: update-migration stages (fastmode normalize, skills install, hook trust) resolve os.homedir()/process.env.HOME directly and ignore injected env, so the default home must be redirected before they load."
     },
     {
       "path": "src/core/__tests__/update-menubar-package-local.test.ts",
@@ -2586,11 +2636,18 @@
       "bytes": 3412
     },
     {
-      "path": "src/core/__tests__/version-manager-current-docs.test.ts",
-      "sha256": "7c02998774646f9fc3f9bf569b8afaba263c14c53330d6d45ed295d6385189cc",
+      "path": "src/core/__tests__/verification-profile.test.ts",
+      "sha256": "df5ab55183f8fe9cd9445c1cd31b96a7b2b7fbf342034e0713856ed4b0214e45",
       "language": "typescript",
-      "lines": 130,
-      "bytes": 7116
+      "lines": 63,
+      "bytes": 3508
+    },
+    {
+      "path": "src/core/__tests__/version-manager-current-docs.test.ts",
+      "sha256": "21678f1dd2662f3d12ebe18a9f72ece5e3be90d34d43218c84534c0e299355ae",
+      "language": "typescript",
+      "lines": 154,
+      "bytes": 8238
     },
     {
       "path": "src/core/__tests__/versioning-help-safe.test.ts",
@@ -2728,17 +2785,17 @@
     },
     {
       "path": "src/core/agents/__tests__/agent-roster-official-policy.test.ts",
-      "sha256": "0c9786461ab2eafc4b0dd797f5ecdd0636748ba712d699b44dec69eac7aa0528",
+      "sha256": "f21d2568f33eb0c1805d3f37d7a35eef6f23edfef8f0a8295c5cabc7961beb81",
       "language": "typescript",
       "lines": 14,
-      "bytes": 696
+      "bytes": 701
     },
     {
       "path": "src/core/agents/__tests__/naruto-gpt56-routing.test.ts",
-      "sha256": "e1f5d87b71e6d1d665d7a7904b11a7f716a272806bfde64a43671922b701ce71",
+      "sha256": "66c5738ddca5c60a2901f06e6e5166c8e3fe752ff7f75d6702639b564d730d95",
       "language": "typescript",
-      "lines": 172,
-      "bytes": 9122
+      "lines": 171,
+      "bytes": 9047
     },
     {
       "path": "src/core/agents/__tests__/native-cli-worker-process-reaping.test.ts",
@@ -2746,13 +2803,6 @@
       "language": "typescript",
       "lines": 189,
       "bytes": 8029
-    },
-    {
-      "path": "src/core/agents/__tests__/parallel-production-smoke.test.ts",
-      "sha256": "b919dde883700fc47b36dafc7b3c5cae7af72b360b7a3d73b119c1c0669a9e22",
-      "language": "typescript",
-      "lines": 41,
-      "bytes": 2224
     },
     {
       "path": "src/core/agents/__tests__/parallel-write-runtime-proof.test.ts",
@@ -2812,10 +2862,10 @@
     },
     {
       "path": "src/core/agents/agent-effort-policy.ts",
-      "sha256": "d7cba4ec6bf05c8b2b0df17ede0e1ef34cf8a228c541a5ecdeb29faabb303b64",
+      "sha256": "15cb42619b0d61b74ca0c2196af54fa7259d306d75380cfa1ea0180e6d6078f2",
       "language": "typescript",
       "lines": 324,
-      "bytes": 16153
+      "bytes": 16178
     },
     {
       "path": "src/core/agents/agent-follow-up-work-items.ts",
@@ -2837,13 +2887,6 @@
       "language": "typescript",
       "lines": 48,
       "bytes": 2135
-    },
-    {
-      "path": "src/core/agents/agent-ledger-schemas.ts",
-      "sha256": "46bedebf5c79312954ae6824975cdd7f4de38f7c0aa69210e51e8bdc5f30ea87",
-      "language": "typescript",
-      "lines": 192,
-      "bytes": 7924
     },
     {
       "path": "src/core/agents/agent-lifecycle.ts",
@@ -3154,20 +3197,6 @@
       "bytes": 21603
     },
     {
-      "path": "src/core/agents/parallel-write-fixture.ts",
-      "sha256": "28b429043eae1f8d901213c1581e4244cd8f1be0336c33a31a77070a9e1dc309",
-      "language": "typescript",
-      "lines": 402,
-      "bytes": 18264
-    },
-    {
-      "path": "src/core/agents/real-codex-parallel-proof.ts",
-      "sha256": "614803fa0c7f6c5535e48daf790cc8cbd2687a290fab81b1b596e1f495fff2f7",
-      "language": "typescript",
-      "lines": 137,
-      "bytes": 7586
-    },
-    {
       "path": "src/core/agents/route-collaboration-ledger.ts",
       "sha256": "6f8afc2ded952954a0c5560f80c18ac6a5562b1c0774f3663cb9be49b1041d63",
       "language": "typescript",
@@ -3285,10 +3314,10 @@
     },
     {
       "path": "src/core/align/code-navigation-align.ts",
-      "sha256": "917e34bb0c5d69459b269f822c7629b1c7d2208ce38ec7d81762d827095352f5",
+      "sha256": "7160880355d4598fa8e59b8374fa6bbe7ea4f3a660cbf67166ca26f5c6e6f5ef",
       "language": "typescript",
       "lines": 575,
-      "bytes": 25972
+      "bytes": 25942
     },
     {
       "path": "src/core/architecture-hardening/__tests__/integration.test.ts",
@@ -3385,10 +3414,10 @@
     },
     {
       "path": "src/core/codex-app.ts",
-      "sha256": "d4db35679da617eacd9d81973d4056db36d8712bf85c5abfc97fdc7d47af8acd",
+      "sha256": "e1aef42743c3067fd88bb46c49ff3cd68ae9158191cb61d179df028047b1e07b",
       "language": "typescript",
-      "lines": 1056,
-      "bytes": 54293
+      "lines": 1058,
+      "bytes": 54478
     },
     {
       "path": "src/core/codex-app/__tests__/codex-app-fast-ui-repair.test.ts",
@@ -3410,6 +3439,13 @@
       "language": "typescript",
       "lines": 58,
       "bytes": 2415
+    },
+    {
+      "path": "src/core/codex-app/__tests__/codex-context-window.test.ts",
+      "sha256": "757866d8256219f10ef0a7f6cd18ef97a9ccf531498a34b5dc5129c5d54d16df",
+      "language": "typescript",
+      "lines": 243,
+      "bytes": 11394
     },
     {
       "path": "src/core/codex-app/__tests__/codex-desktop-picker-sync.test.ts",
@@ -3469,10 +3505,10 @@
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-lifecycle-provider-regression.test.ts",
-      "sha256": "658759b6a875dc11728162e6b72ba3da743f2697dde8f372157c575439d106f9",
+      "sha256": "aba64fb72397e36b7a1171e0c73ecee552316434f11c51568ec9922a83cc791c",
       "language": "typescript",
       "lines": 233,
-      "bytes": 11939
+      "bytes": 12109
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-mcp-legacy-secret.test.ts",
@@ -3490,17 +3526,17 @@
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-operation-receipt-runtime.test.ts",
-      "sha256": "233e2c10348a85a0ecb755073381286ab020da3d6b8a834d34f25bbee6f64388",
+      "sha256": "d8ea869cd84e740546b9daf23a4ce0d03d3b58be7329fa206d123df5ffd398e7",
       "language": "typescript",
-      "lines": 578,
-      "bytes": 32929
+      "lines": 580,
+      "bytes": 33068
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-progress-recovery-policy.test.ts",
-      "sha256": "ba6afad3d7b67058d26a7110266075322b7c73ee2bf89b6422337b681893baa1",
+      "sha256": "6c22b43521ef2ee486b895fb5f4a02d82f5847b59d17e1e1a0e02f763496c676",
       "language": "typescript",
-      "lines": 211,
-      "bytes": 9846
+      "lines": 210,
+      "bytes": 9803
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-reliability.test.ts",
@@ -3525,10 +3561,10 @@
     },
     {
       "path": "src/core/codex-app/__tests__/sks-menubar-template.test.ts",
-      "sha256": "3da1d7add06ddf6162f89426f41ef06cc45e91dc819e77b73c2740f4ae2e98b5",
+      "sha256": "1c8ffbd4bea6d98455562f69cba6e7e11b1b5bcf27fb6efce9673c369c90cd92",
       "language": "typescript",
-      "lines": 800,
-      "bytes": 49409
+      "lines": 835,
+      "bytes": 52087
     },
     {
       "path": "src/core/codex-app/codex-agent-role-sync.ts",
@@ -3613,6 +3649,13 @@
       "language": "typescript",
       "lines": 411,
       "bytes": 18330
+    },
+    {
+      "path": "src/core/codex-app/codex-context-window.ts",
+      "sha256": "55689676f3826b34d36b0c9f7300ff20c6f5f247cda4255871ae09576328b916",
+      "language": "typescript",
+      "lines": 284,
+      "bytes": 12115
     },
     {
       "path": "src/core/codex-app/codex-desktop-routing-ownership.ts",
@@ -3700,10 +3743,10 @@
     },
     {
       "path": "src/core/codex-app/menubar/constants.ts",
-      "sha256": "a9c7a221813e8d79104c600f0f2dd929745388d940ed4ff5a604dd96268006e9",
+      "sha256": "6209251d8b80aaded5e514664b25d858b717006c4aa562c6657a9bd19ebeb7a7",
       "language": "typescript",
-      "lines": 55,
-      "bytes": 1612
+      "lines": 58,
+      "bytes": 1688
     },
     {
       "path": "src/core/codex-app/menubar/generation-transaction-journal.ts",
@@ -3819,11 +3862,11 @@
     },
     {
       "path": "src/core/codex-app/openrouter-base-instructions.ts",
-      "sha256": "fadfad1842ad8a512567d0bacd3fe4e140cdbcd20195933e5f0d5c5b04cb84d3",
+      "sha256": "9cd8d1a071f942e09c7bf027d2157afeb32081fa6f83692f2ea14a0181f3123f",
       "language": "typescript",
-      "lines": 7,
-      "bytes": 21943,
-      "purpose": "Vendored from openai/codex rust-v0.147.0 (Apache-2.0): codex-rs/models-manager/prompt.md — the BASE_INSTRUCTIONS fallback Codex itself applies to models without bundled catalog metadata. SKS stamps this into SKS-managed ModelInfo catalog ro"
+      "lines": 8,
+      "bytes": 22010,
+      "purpose": "Vendored from openai/codex rust-v0.150.1 (Apache-2.0) — byte-identical to the rust-v0.147.0 vendoring this replaced: codex-rs/models-manager/prompt.md — the BASE_INSTRUCTIONS fallback Codex itself applies to models without bundled catalog m"
     },
     {
       "path": "src/core/codex-app/openrouter-provider.ts",
@@ -3961,10 +4004,17 @@
     },
     {
       "path": "src/core/codex-control/__tests__/codex-current-capability-cache.test.ts",
-      "sha256": "7dcc4ad5c1fe017c37dc7b13596d3fdb30a19f10f9191742358b16822ef3b348",
+      "sha256": "4ddc03ee16de29e8c1f9dc8ebe68998acecfbca3df9cc10f3b7e7e2aabeeedee",
       "language": "typescript",
-      "lines": 57,
-      "bytes": 2364
+      "lines": 61,
+      "bytes": 2707
+    },
+    {
+      "path": "src/core/codex-control/__tests__/codex-current-core-native-exec.test.ts",
+      "sha256": "cbe0dd0dbc43caba3ebc2670e313e02a022dd927d61da814eb13c5b621a95400",
+      "language": "typescript",
+      "lines": 102,
+      "bytes": 4011
     },
     {
       "path": "src/core/codex-control/__tests__/codex-mediated-launch-runtime-env.test.ts",
@@ -3972,6 +4022,13 @@
       "language": "typescript",
       "lines": 44,
       "bytes": 1614
+    },
+    {
+      "path": "src/core/codex-control/__tests__/codex-model-metadata.test.ts",
+      "sha256": "4aaaaa865ef9fee9ce41d9496916fe8942ab4fb39c6df75d0d5fd752707901fb",
+      "language": "typescript",
+      "lines": 184,
+      "bytes": 7155
     },
     {
       "path": "src/core/codex-control/__tests__/codex-reliability-shield-tool-output.test.ts",
@@ -3982,10 +4039,10 @@
     },
     {
       "path": "src/core/codex-control/__tests__/codex-sdk-native-provider-policy.test.ts",
-      "sha256": "142693f10666597315ac1706c88f1e41383e95d14b6a4536122f45c4b9784748",
+      "sha256": "2ae4823134a84dfb21de36ea55d9cf32d7758f94cf2bda2c767a32e1a0b69350",
       "language": "typescript",
-      "lines": 373,
-      "bytes": 17984
+      "lines": 427,
+      "bytes": 20972
     },
     {
       "path": "src/core/codex-control/__tests__/codex-sdk-runtime-trust.test.ts",
@@ -4059,10 +4116,10 @@
     },
     {
       "path": "src/core/codex-control/codex-current-collab-agent-real-probe.ts",
-      "sha256": "5991f8e530e12e5cc88502a7d40d5f959093350ad6b7d269107d79c138801b45",
+      "sha256": "29c485f70166c27cb0c8a7d9b766d2deab25658c16eb463e2f51a302002b780e",
       "language": "typescript",
-      "lines": 67,
-      "bytes": 3254
+      "lines": 75,
+      "bytes": 3673
     },
     {
       "path": "src/core/codex-control/codex-current-core-capability.ts",
@@ -4070,6 +4127,14 @@
       "language": "typescript",
       "lines": 206,
       "bytes": 11858
+    },
+    {
+      "path": "src/core/codex-control/codex-current-core-native-exec.ts",
+      "sha256": "f7488aca8a6fa0fbd6427a06be94d916a3c4baacaff410dabfb4098f98599ed4",
+      "language": "typescript",
+      "lines": 39,
+      "bytes": 1235,
+      "purpose": "Release-authorizing current-core probes prove Codex CLI compatibility, not Desktop Bridge liveness. Host config may keep OpenCodex Design B / Desktop Bridge `openai_base_url` loopback while `model_provider = \"openai\"`. That selection is all"
     },
     {
       "path": "src/core/codex-control/codex-current-core-probe-runner.ts",
@@ -4122,10 +4187,10 @@
     },
     {
       "path": "src/core/codex-control/codex-current-image-path-real-probe.ts",
-      "sha256": "21e33684561d6a43a6bb442c8f0da4924b8ef8757bef11b4381780b483050df9",
+      "sha256": "56bff873ec98f0eb1bca0754102c49cf196b188f91605bfee94c8a80e2e8ca02",
       "language": "typescript",
-      "lines": 123,
-      "bytes": 5846
+      "lines": 129,
+      "bytes": 6079
     },
     {
       "path": "src/core/codex-control/codex-current-plugin-real-probes.ts",
@@ -4157,10 +4222,10 @@
     },
     {
       "path": "src/core/codex-control/codex-current-web-search-probe.ts",
-      "sha256": "d654b4cc9c79ad87904d5f128160aa3d2e5c68f1bdb7aadeccc0b6a63d51070b",
+      "sha256": "1d923dbe04857def33bfc93760681f552ea0d586a86049df4208e11997f2b97d",
       "language": "typescript",
-      "lines": 94,
-      "bytes": 4794
+      "lines": 101,
+      "bytes": 5020
     },
     {
       "path": "src/core/codex-control/codex-event-translator.ts",
@@ -4178,17 +4243,17 @@
     },
     {
       "path": "src/core/codex-control/codex-model-capabilities.ts",
-      "sha256": "474a62f53da8b208fd76392d94507aa97bfced20a76ee1fe8e0b51707401b889",
+      "sha256": "323355571f0d71b9f50f554f6e4d0a34fe17cad138e012103fc3a34639b34f23",
       "language": "typescript",
       "lines": 73,
       "bytes": 3827
     },
     {
       "path": "src/core/codex-control/codex-model-metadata.ts",
-      "sha256": "bbbb3bfded36289ac5ee0a1c16ea0224217c9165040fb365bc53650f3f01f8f1",
+      "sha256": "c7e02bf234e471e3ba6bb8cf9149dd6fc7b3fbeafdf9b39775c792c972d9a097",
       "language": "typescript",
-      "lines": 113,
-      "bytes": 5359
+      "lines": 217,
+      "bytes": 6793
     },
     {
       "path": "src/core/codex-control/codex-output-schemas.ts",
@@ -4227,10 +4292,10 @@
     },
     {
       "path": "src/core/codex-control/codex-sdk-env-policy.ts",
-      "sha256": "30130d4a7fe159c6b686551afda36560a89711567bfbe1d2577b24e7c88752d8",
+      "sha256": "9c551b04a7fc078c6db93ac88d8f2fab98575cfdd919f7891424bcec895e94ad",
       "language": "typescript",
-      "lines": 511,
-      "bytes": 21546
+      "lines": 554,
+      "bytes": 24241
     },
     {
       "path": "src/core/codex-control/codex-sdk-sandbox-policy.ts",
@@ -4360,10 +4425,10 @@
     },
     {
       "path": "src/core/codex-hooks/codex-hook-managed-install.ts",
-      "sha256": "a5144f68dc55ccaeb0b97a8cd5f5d75ce2bb7bcbb4fa8724240fd7373d1c4912",
+      "sha256": "23a1f368fc379f2aa9afab06e922f8df1003b431906edcab07e4ea325104bb50",
       "language": "typescript",
-      "lines": 117,
-      "bytes": 4678
+      "lines": 121,
+      "bytes": 5015
     },
     {
       "path": "src/core/codex-hooks/codex-hook-official-hash-oracle.ts",
@@ -4478,6 +4543,13 @@
       "bytes": 16625
     },
     {
+      "path": "src/core/codex-lb/__tests__/desktop-bridge-launchd-cli-contract.test.ts",
+      "sha256": "52504393d54631b4b6ff5267f4a38a4e87652161eb1489070dfa8983be84411c",
+      "language": "typescript",
+      "lines": 106,
+      "bytes": 5632
+    },
+    {
       "path": "src/core/codex-lb/__tests__/desktop-bridge-single-runtime-contract.test.ts",
       "sha256": "f6edf65945c0dac459a86d9d838a86591b2044213fab9386d4b875c458a1dcee",
       "language": "typescript",
@@ -4500,17 +4572,17 @@
     },
     {
       "path": "src/core/codex-lb/__tests__/desktop-controller-provider-mutation.test.ts",
-      "sha256": "85da486d42cda47a60422a4223024b10f6289abe7d021ae47c72a45045e27f71",
+      "sha256": "7ec289e12a7615a9cf6cb6ca0e25d22ccb386eb7980831b433ab2a9b99695b00",
       "language": "typescript",
-      "lines": 422,
-      "bytes": 17522
+      "lines": 462,
+      "bytes": 20714
     },
     {
       "path": "src/core/codex-lb/__tests__/desktop-controller-v3.test.ts",
-      "sha256": "9977f39f39ebb55c760cdef7cf2562c79974f33af2c3b23e217eca94aa151927",
+      "sha256": "271d6b7756a3e4b432559852544f42b05b1b5dc057df742e40c863c94816ae92",
       "language": "typescript",
-      "lines": 666,
-      "bytes": 26771
+      "lines": 726,
+      "bytes": 29403
     },
     {
       "path": "src/core/codex-lb/__tests__/desktop-service.test.ts",
@@ -4521,10 +4593,10 @@
     },
     {
       "path": "src/core/codex-lb/__tests__/historical-config-to-route-policy-migration.test.ts",
-      "sha256": "9d1d920e929474af4ecf54523d178af8667e673f1943351948d43d4c60e3061a",
+      "sha256": "ceb6322dce796b4b5bf8e31aa954f7e731935535644b7d791c44d7da4a1edf0a",
       "language": "typescript",
-      "lines": 356,
-      "bytes": 15362
+      "lines": 368,
+      "bytes": 16409
     },
     {
       "path": "src/core/codex-lb/__tests__/image-event-passthrough.test.ts",
@@ -4532,6 +4604,13 @@
       "language": "typescript",
       "lines": 35,
       "bytes": 1173
+    },
+    {
+      "path": "src/core/codex-lb/__tests__/official-models-route-flip.test.ts",
+      "sha256": "62c8151ae490e25ac5ee08aae9a3c8788da7c6b989095f5c14ddb739e2902713",
+      "language": "typescript",
+      "lines": 267,
+      "bytes": 15001
     },
     {
       "path": "src/core/codex-lb/__tests__/provider-route-policy.test.ts",
@@ -4562,19 +4641,26 @@
       "bytes": 4944
     },
     {
-      "path": "src/core/codex-lb/bridge-contracts.ts",
-      "sha256": "5fab37624745fe6cf018698111e1623ef5847a1704d003ff2e67707d5b66db3b",
+      "path": "src/core/codex-lb/bridge-cli-contract.ts",
+      "sha256": "a7c01c86387392d382d9e74b1f9c42e62868416b152e79ebf7c366374d4834b9",
       "language": "typescript",
-      "lines": 458,
-      "bytes": 12154,
+      "lines": 73,
+      "bytes": 3042
+    },
+    {
+      "path": "src/core/codex-lb/bridge-contracts.ts",
+      "sha256": "443e808071c500b59ecc9ee71aba0c60ff013113414dca0099912f895b7c48f4",
+      "language": "typescript",
+      "lines": 477,
+      "bytes": 12873,
       "purpose": "Sneakoscope 8.1.3 Desktop Bridge public contracts. This module deliberately contains schemas and types only. Runtime behavior is implemented by the config, registry, transport, capability, and controller owners after the schema-freeze check"
     },
     {
       "path": "src/core/codex-lb/bridge-runtime-validation.ts",
-      "sha256": "47f06b6a7b4bdf20aa75b056778d5a67743f79248c723df2350244b03d176fe6",
+      "sha256": "4b5d9a12be360d073f324e5d19563e844724d7d93a2f7d93bb50423f5248925e",
       "language": "typescript",
-      "lines": 154,
-      "bytes": 6377
+      "lines": 165,
+      "bytes": 6953
     },
     {
       "path": "src/core/codex-lb/bridge-runtime-validation/capability.ts",
@@ -4592,17 +4678,17 @@
     },
     {
       "path": "src/core/codex-lb/bridge-runtime-validation/shared.ts",
-      "sha256": "5d16ec93028e3b3996790cc7197d6bf7bff9fa5d83ca2ab3adad22617ebf244c",
+      "sha256": "ea3ec8de40f24cb273c4767e33bfd79b4143c9bf55c64c84a62e5580e6a75710",
       "language": "typescript",
-      "lines": 126,
-      "bytes": 4692
+      "lines": 130,
+      "bytes": 4964
     },
     {
       "path": "src/core/codex-lb/bridge-runtime-validation/status.ts",
-      "sha256": "c7e2ccd79d431c6bb2b274b3c3b410d510bc64933f44cda8892f807731935aa0",
+      "sha256": "3d30c929dc744b62c2ed8a497efcd1b69e6ee3ca17c17754f430324ed0ac1b25",
       "language": "typescript",
-      "lines": 267,
-      "bytes": 11866
+      "lines": 268,
+      "bytes": 11893
     },
     {
       "path": "src/core/codex-lb/capability-runner.ts",
@@ -4704,10 +4790,10 @@
     },
     {
       "path": "src/core/codex-lb/desktop-bridge-migration.ts",
-      "sha256": "8d63c5d92ad40b294a307d9e16b4fbe217004bdbf73506cd193200f5f681dbb2",
+      "sha256": "9282c9cb0bd3d4d263aa32ff2279060ce8427052396eea05190cf27707e6543e",
       "language": "typescript",
-      "lines": 321,
-      "bytes": 13336
+      "lines": 324,
+      "bytes": 13510
     },
     {
       "path": "src/core/codex-lb/desktop-bridge-migration/__tests__/retired-runtime-cleanup.test.ts",
@@ -4739,17 +4825,17 @@
     },
     {
       "path": "src/core/codex-lb/desktop-bridge-migration/receipt.ts",
-      "sha256": "790d7b10c60b965bb7ace004e07e39f320756c35e109df959e42b88ec21224f9",
+      "sha256": "36252990297c6f08ec1f33e950a8819f4bfd7527bde9f5572826d6df1ac87b1f",
       "language": "typescript",
-      "lines": 72,
-      "bytes": 2815
+      "lines": 79,
+      "bytes": 3402
     },
     {
       "path": "src/core/codex-lb/desktop-bridge-migration/retired-runtime-cleanup.ts",
-      "sha256": "6e19ffdd8e7fb8a16594ba228815aa4fb494bc395eb14caa056deef80689b6e6",
+      "sha256": "0096e99be50c937d540bc6fd075b3e11a89f38b4a382cbe9266879f3f2c7b53e",
       "language": "typescript",
       "lines": 160,
-      "bytes": 6806
+      "bytes": 6830
     },
     {
       "path": "src/core/codex-lb/desktop-bridge-migration/types.ts",
@@ -4760,10 +4846,10 @@
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/__tests__/bridge-convergence-and-keepalive.test.ts",
-      "sha256": "c3ba8c50b869e57b55cd10f1f4cf233c7cd11a50aa9033495ee77c26e8878248",
+      "sha256": "d9143c1f7f033208cb3632e582b3ec52cf89219297ee05b4cc60a4f7e8188b2a",
       "language": "typescript",
-      "lines": 307,
-      "bytes": 16101
+      "lines": 461,
+      "bytes": 23263
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/__tests__/desktop-bridge-policy.test.ts",
@@ -4780,11 +4866,25 @@
       "bytes": 35297
     },
     {
+      "path": "src/core/codex-lb/desktop-bridge/__tests__/official-passthrough.test.ts",
+      "sha256": "a9c8008941fb6094418e2f9e358ffb5865c013b42b7e096c180e5e42e56fac44",
+      "language": "typescript",
+      "lines": 339,
+      "bytes": 18210
+    },
+    {
       "path": "src/core/codex-lb/desktop-bridge/__tests__/provider-header-policy.test.ts",
-      "sha256": "0b7ebba2581f5d20adf3f193480aaf93fed3bf806831ba1d669b4059adbae407",
+      "sha256": "9489094447827585a556ec4cd4342b1f86c3eda6e3c59cfbc60682efb21e0662",
       "language": "typescript",
       "lines": 136,
-      "bytes": 9926
+      "bytes": 9933
+    },
+    {
+      "path": "src/core/codex-lb/desktop-bridge/__tests__/remote-target-refresh.test.ts",
+      "sha256": "0d02ec9f8ad3495e8315b698b198c56ffef67f8189d2536ee94751288e664896",
+      "language": "typescript",
+      "lines": 371,
+      "bytes": 18725
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/__tests__/route-resolution-no-fallback.test.ts",
@@ -4799,6 +4899,13 @@
       "language": "typescript",
       "lines": 85,
       "bytes": 4335
+    },
+    {
+      "path": "src/core/codex-lb/desktop-bridge/__tests__/state-heartbeat-preserves-verified-probes.test.ts",
+      "sha256": "317b56c2b9314abc870605e5ba8dff769467d4369fb84e8f8ac149b1db08ecae",
+      "language": "typescript",
+      "lines": 87,
+      "bytes": 4620
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/__tests__/websocket-upgrade-and-roundtrip.test.ts",
@@ -4816,17 +4923,17 @@
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/header-policy.ts",
-      "sha256": "5b770c2e976675fa0c1d222e7da0901f1f548e9871314e592fb47f3d3e6ed1a5",
+      "sha256": "51dae9d65ed2b764810ef1d81bf607b1698d7778b21e695837390c7dffdd3e2e",
       "language": "typescript",
-      "lines": 121,
-      "bytes": 5734
+      "lines": 166,
+      "bytes": 7849
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/http-forward.ts",
-      "sha256": "aacec13adfe10fe87473e3eaf310b524a05d28f3d0af60261393cca5cbb0b200",
+      "sha256": "33f16fb96ff8932424e90b8ad7a0006680eccf4a2ff4d39e08841ab6dbe19bb6",
       "language": "typescript",
-      "lines": 390,
-      "bytes": 19851
+      "lines": 536,
+      "bytes": 27710
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/index.ts",
@@ -4851,59 +4958,67 @@
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/rejection-log.ts",
-      "sha256": "222d4741ffa56e1d9a51579a73bc65adec443f6e79144931d60a761855fbd026",
+      "sha256": "ced421df2d89ece6e246e92b6477a21a54ce532fcd3ba19a7003890fea8a7e2a",
       "language": "typescript",
-      "lines": 143,
-      "bytes": 5614
+      "lines": 147,
+      "bytes": 5868
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/security.ts",
-      "sha256": "6f36934b3691c64b701edf90e9792b93ac5f2a26eb5dd0789967600e71f816a5",
+      "sha256": "a70a75cad79a3fccd7535f16b01acbcf9f2b166399f67c655f1843dfbbd3d8a1",
       "language": "typescript",
-      "lines": 550,
-      "bytes": 28502
+      "lines": 763,
+      "bytes": 39691
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/server.ts",
-      "sha256": "e4eba135593ef125f2f1425eea92801a6fabc6ef9c442e50904b5b4eaeec3c40",
+      "sha256": "729d19a9a00b01f349f8946504ce7f1ed19fae12882308778bcf80320edcba19",
       "language": "typescript",
-      "lines": 421,
-      "bytes": 16958
+      "lines": 413,
+      "bytes": 16654
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/state.ts",
-      "sha256": "847b3e13a2b30c86aebd8203fbe6f0d4231cfeee88bf87841f1a42f46e70a9bf",
+      "sha256": "57a27cdbdf372b3101106bf15593a0b65fada3019be8cf7dc35c928475ffcbb4",
       "language": "typescript",
-      "lines": 122,
-      "bytes": 8514
+      "lines": 131,
+      "bytes": 9197
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/types.ts",
-      "sha256": "44b6ec175e4bf0f8454489e699e10cdf32d2476f4faef9e64b7be29cb0a2708a",
+      "sha256": "f9516b0076dfdd78b90f10f12fa63bfc516a15973ddfceadcc1fb4f6b972ce35",
       "language": "typescript",
-      "lines": 225,
-      "bytes": 7523
+      "lines": 258,
+      "bytes": 9131
+    },
+    {
+      "path": "src/core/codex-lb/desktop-bridge/upstream-evidence.ts",
+      "sha256": "636d4a70394a5a1552969588017cef8f57a759f6034a3caa29c1878535ef0d79",
+      "language": "typescript",
+      "lines": 67,
+      "bytes": 3650,
+      "purpose": "Upstream-unreachable evidence, read from the Desktop Bridge's own stdout log. This module is deliberately import-free: the `sks doctor --json` fast path (`src/bin/fast-inline.ts`) loads it under a ~1.2 s budget, and the doctor repair in `sr"
     },
     {
       "path": "src/core/codex-lb/desktop-bridge/websocket-forward.ts",
-      "sha256": "77f92da7083a5cfb7e80a89953d928240c3ed7bbc10a6b00c02a499a8d18014a",
+      "sha256": "f0fdda73d22a96590d2d1edcd8ef466717cd736c94c7850d8f9ed7665ae44bce",
       "language": "typescript",
-      "lines": 347,
-      "bytes": 23734
+      "lines": 410,
+      "bytes": 26969
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3.ts",
-      "sha256": "e11077dc8e6f6ee63240f4616a4238bf80ecfcf166d6b0b1ccf579338854aaf2",
+      "sha256": "56252581eb5202604f1bca604089a7f34df322288e6ff9ad4d665d73e6b1cb7c",
       "language": "typescript",
-      "lines": 109,
-      "bytes": 4906
+      "lines": 117,
+      "bytes": 5396
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/catalog.ts",
-      "sha256": "c00e6c4e2c1b989e5ac02af67550b42a8778b6b4d42fc689f98877fafdcc3b3c",
+      "sha256": "a8a725b72794aa9e1dc1f40a97d1418a5197b4133d621d4cc94bae1a7f5dd6ff",
       "language": "typescript",
-      "lines": 431,
-      "bytes": 17890
+      "lines": 453,
+      "bytes": 19290
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/diagnostics.ts",
@@ -4914,10 +5029,10 @@
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/lifecycle-commands.ts",
-      "sha256": "f46f278ef029b97ffd2c9ba2ac16d068d2428065b9536d8f723e9d66beaa0716",
+      "sha256": "2649519a69de706912f0e43cb80ae8885a49b841e773a38b66d883d52762a64c",
       "language": "typescript",
-      "lines": 292,
-      "bytes": 11824
+      "lines": 382,
+      "bytes": 16561
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/live-probes.ts",
@@ -4942,24 +5057,24 @@
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/shared.ts",
-      "sha256": "8a8aac1e84a835463fe06b3bf5ed492d3e181c6ae294a3c5343fdda35ea5fc90",
+      "sha256": "bd3072ec73793cb122ccebf612f604f18e4cca8f7cf379a54a0905eb4fb68694",
       "language": "typescript",
-      "lines": 359,
-      "bytes": 14153
+      "lines": 363,
+      "bytes": 14433
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/status.ts",
-      "sha256": "672767422ae3f8ffa10ac85a466399680a902c48ca4a144a4b8b0f89ed206e81",
+      "sha256": "ae0754725bd632f364ce81cdca910ee9d42a4b04f7e67502192800f9ad83d033",
       "language": "typescript",
-      "lines": 343,
-      "bytes": 15607
+      "lines": 357,
+      "bytes": 16835
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/types.ts",
-      "sha256": "8c84f4d339e396da9132a5c2abef6c7d731e00841a19368ce376f17954842e6e",
+      "sha256": "b9380c0cb82eddeacbd3830dcb91ab746ae02df462dbf7c5d3dd58a34c51b750",
       "language": "typescript",
-      "lines": 125,
-      "bytes": 5082
+      "lines": 129,
+      "bytes": 5299
     },
     {
       "path": "src/core/codex-lb/desktop-controller-v3/verification.ts",
@@ -4978,10 +5093,10 @@
     },
     {
       "path": "src/core/codex-lb/desktop-service.ts",
-      "sha256": "05d26871c8335fe011a3e3c5abd1a72896974edf039695f70c49325720f68e29",
+      "sha256": "befe0df87c507c5a790da695912b6ee68747e8380e8f142cdafa37f8162b0cd9",
       "language": "typescript",
-      "lines": 630,
-      "bytes": 48940
+      "lines": 850,
+      "bytes": 62687
     },
     {
       "path": "src/core/codex-lb/migration-receipt.ts",
@@ -5118,17 +5233,17 @@
     },
     {
       "path": "src/core/codex-lb/provider-route-policy.ts",
-      "sha256": "23d362aef30e0bd74c039a5f8ce81c2ccbed6144dd50889c30e10d8c8e62af9d",
+      "sha256": "078ba82e8d11a6b58d562fb21ebca967e85ebf2eb4c13e9a5a7dc173ebf0bc87",
       "language": "typescript",
-      "lines": 146,
-      "bytes": 5817
+      "lines": 233,
+      "bytes": 10055
     },
     {
       "path": "src/core/codex-lb/request-route-resolver.ts",
-      "sha256": "be8cb8fdd6e5112333f4e0283ec740c85c052cc70c15b5ed25e99f14d2e8e805",
+      "sha256": "5d6212836b8071839694c176032657978f72c6d987b1fc2b1a39f87e39ec7f7e",
       "language": "typescript",
-      "lines": 248,
-      "bytes": 10684
+      "lines": 269,
+      "bytes": 11931
     },
     {
       "path": "src/core/codex-lb/route-index.ts",
@@ -5280,10 +5395,10 @@
     },
     {
       "path": "src/core/codex-native/core-skill-manifest.ts",
-      "sha256": "24e10175deeed405444959d5694a3e202eae862f1bfbf1a93c614202c5f0a446",
+      "sha256": "ff70828ba874620ed8f1f8a0b2c6f261704ed597ce21e4fb5fc51d9209f4346a",
       "language": "typescript",
       "lines": 325,
-      "bytes": 23388
+      "bytes": 23395
     },
     {
       "path": "src/core/codex-native/managed-skill-generation-lock.ts",
@@ -5378,10 +5493,10 @@
     },
     {
       "path": "src/core/codex/__tests__/fast-inline-oauth-callback.test.ts",
-      "sha256": "da761133ffe7407b578e743d2794c103415869372fb7e15439db625ba73fbefa",
+      "sha256": "c02290b3790235c48aae99902c9053b6f937d44bb136c0243dec2a31a051a145",
       "language": "typescript",
-      "lines": 35,
-      "bytes": 1396
+      "lines": 81,
+      "bytes": 4318
     },
     {
       "path": "src/core/codex/__tests__/oauth-callback-port-diagnostic.test.ts",
@@ -5455,10 +5570,10 @@
     },
     {
       "path": "src/core/codex/codex-feature-flags.ts",
-      "sha256": "133318e41f3c493f34a12544853ac83c0bb6eaf89b9f12c7fc94e6fad3459c40",
+      "sha256": "ce36bda6a39303eb9c74acc092a7eea6019a92855bf61e58e5321599e02b3259",
       "language": "typescript",
-      "lines": 30,
-      "bytes": 1258,
+      "lines": 31,
+      "bytes": 1385,
       "purpose": "The `[features]` keys SKS seeds, and the ones it strips. Stripping is destructive in one direction only: deleting the line for a flag Codex STILL supports restores Codex's own default, which is `true` for every stable flag. The previous han"
     },
     {
@@ -5519,10 +5634,10 @@
     },
     {
       "path": "src/core/commands/__tests__/align-command.test.ts",
-      "sha256": "9bf05b9985ff0899aff15a6db1a06494de891e3ff769737822801c236796849a",
+      "sha256": "1e45ed599afa6699f8ae937c5ce352ae3ffadd504f4d8f0d6a150ba021de321e",
       "language": "typescript",
-      "lines": 370,
-      "bytes": 19863
+      "lines": 386,
+      "bytes": 20761
     },
     {
       "path": "src/core/commands/__tests__/gate-result-contract.test.ts",
@@ -5651,6 +5766,13 @@
       "bytes": 1632
     },
     {
+      "path": "src/core/commands/__tests__/pipeline-session-ownership.test.ts",
+      "sha256": "1ede714f2c67962cbdca269e700720bcf70edf50b1c935d49a0bde8d5e93c52a",
+      "language": "typescript",
+      "lines": 46,
+      "bytes": 2579
+    },
+    {
       "path": "src/core/commands/__tests__/qa-loop-command-status-gate-verdict.test.ts",
       "sha256": "11d20877e13e45a44c127a1aa63ff907b116bd48cf67730f4f6a97da04ec0bc0",
       "language": "typescript",
@@ -5687,10 +5809,10 @@
     },
     {
       "path": "src/core/commands/__tests__/seo-marketing-command.test.ts",
-      "sha256": "b9c7c313d5b67398ecf3daa68df3cdb5f39b4984a10bb6577aff5aac5b37bf4e",
+      "sha256": "dfa0057f85bc9f9e320a0a010cf45599a1d5349a32f6848e418f5d74fb340cfe",
       "language": "typescript",
-      "lines": 82,
-      "bytes": 5048
+      "lines": 85,
+      "bytes": 5285
     },
     {
       "path": "src/core/commands/__tests__/setup-conflict-official-subagents.test.ts",
@@ -5715,10 +5837,10 @@
     },
     {
       "path": "src/core/commands/align-command.ts",
-      "sha256": "5b0d22abed2c1cb83b50b2e7b64e8d043825dcf6df955260bf7c7f72544fe936",
+      "sha256": "42647b39fdb1d13de879c8dbb4c569194a64c1960cc3f6e84d94c08870b21c57",
       "language": "typescript",
-      "lines": 258,
-      "bytes": 11149
+      "lines": 319,
+      "bytes": 13716
     },
     {
       "path": "src/core/commands/autoresearch-command.ts",
@@ -5729,10 +5851,10 @@
     },
     {
       "path": "src/core/commands/basic-cli.ts",
-      "sha256": "e1409030bd85f66122e845894815483e398c75efee23490ff04ea5be375a0ac2",
+      "sha256": "ff4e63a033d2abef0e5b7b376fda1179143a7107e5a03c605e97a5915c0e76cd",
       "language": "typescript",
-      "lines": 690,
-      "bytes": 30194
+      "lines": 698,
+      "bytes": 30630
     },
     {
       "path": "src/core/commands/bench-command.ts",
@@ -5953,10 +6075,10 @@
     },
     {
       "path": "src/core/commands/pipeline-command.ts",
-      "sha256": "dbaba0fb414bc6d91c3d54e41769030578c55fa2631aadffaf3349adba26a84f",
+      "sha256": "6766c40202a9bba4804477349b24ae7e08693e8b29e0c77319d8d93534b9ce1e",
       "language": "typescript",
-      "lines": 84,
-      "bytes": 4035
+      "lines": 86,
+      "bytes": 4192
     },
     {
       "path": "src/core/commands/plan-command.ts",
@@ -6016,10 +6138,10 @@
     },
     {
       "path": "src/core/commands/research-command.ts",
-      "sha256": "b9061dd03019ff7463c3b27cb6ed3d23010a91050cba6790731bdf734860d784",
+      "sha256": "823bb1ed6389e0943734d3aa41afad55cc89f16846c3800ddaf78e33fec5c56b",
       "language": "typescript",
-      "lines": 570,
-      "bytes": 30856
+      "lines": 555,
+      "bytes": 29085
     },
     {
       "path": "src/core/commands/review-command.ts",
@@ -6122,10 +6244,10 @@
     },
     {
       "path": "src/core/commands/triwiki-graph-command.ts",
-      "sha256": "863ae29dc327bb329dff1e44a42a660af892cb942131a5c0b9f03394455d1a69",
+      "sha256": "8ca531ca9eb3f7a3e611906298deaefdadbec31929ecf9b8477462b3c846d7d5",
       "language": "typescript",
       "lines": 192,
-      "bytes": 8294,
+      "bytes": 8276,
       "purpose": "Read-only Context Graph diagnostics for `sks triwiki`. These are inspection surfaces, not build surfaces: nothing here compiles, writes, or repairs the graph. A full rebuild is owned by `sks align run`, and every failure here names that com"
     },
     {
@@ -6151,10 +6273,10 @@
     },
     {
       "path": "src/core/commands/wiki-command.ts",
-      "sha256": "edf5f1f6b76f6703788653b0cf1263acb31ca4162323982815a3c0d8868ce8da",
+      "sha256": "1cd59ea2590c050244f50db0e1901a12b2aaa56defbbe9dde0740c2e40cb5915",
       "language": "typescript",
       "lines": 790,
-      "bytes": 45003
+      "bytes": 44985
     },
     {
       "path": "src/core/commands/wrongness-command.ts",
@@ -6235,10 +6357,10 @@
     },
     {
       "path": "src/core/daemon/__tests__/sksd-hook-daemon.test.ts",
-      "sha256": "d90c0418781a01d355e1e14ffee3695be2ad1c12cffa514d656e6069272f43ca",
+      "sha256": "d9ba3966eee2f7cfa368f2d8b81c9d288216224f18955e1dce65687514226ee6",
       "language": "typescript",
-      "lines": 171,
-      "bytes": 7783
+      "lines": 201,
+      "bytes": 9395
     },
     {
       "path": "src/core/daemon/sksd-client.ts",
@@ -6249,18 +6371,18 @@
     },
     {
       "path": "src/core/daemon/sksd-hook-daemon-entrypoint.ts",
-      "sha256": "27807a3655d6e62f3bf30f61d50f76acc3c3ddb2400ba0662365ff865d8d26a0",
+      "sha256": "6d1785a9f30ef6c8997564c7654e0a3e264cb085165a4910e5f908b0392153a5",
       "language": "typescript",
       "lines": 13,
-      "bytes": 531,
+      "bytes": 555,
       "purpose": "Entrypoint for the detached sksd hook daemon process (spawned by spawnSksdHookDaemonDetached). Not invoked directly by users."
     },
     {
       "path": "src/core/daemon/sksd-hook-daemon.ts",
-      "sha256": "f8ff1fe79a8b042acb241f026301ab7a1b5cbc1fe5734192db01d198ebcde759",
+      "sha256": "70055f3044d03b4bea846edaec18b5e19c5952aec423c3b03e4aa16ffb11bf43",
       "language": "typescript",
-      "lines": 323,
-      "bytes": 12067
+      "lines": 352,
+      "bytes": 13304
     },
     {
       "path": "src/core/daemon/sksd-hook-dispatch.ts",
@@ -6293,10 +6415,10 @@
     },
     {
       "path": "src/core/db-safety.ts",
-      "sha256": "725f5aa33b1fbcdbf1d943f51e472b01a6ee445f05e0f8603b12d5245db1aad1",
+      "sha256": "f489429713af563382552123cd4ef4146f6416f56d542c3b86c59b3c826d0b67",
       "language": "typescript",
-      "lines": 659,
-      "bytes": 34761
+      "lines": 678,
+      "bytes": 35868
     },
     {
       "path": "src/core/decision-contract.ts",
@@ -6397,6 +6519,13 @@
       "bytes": 4736
     },
     {
+      "path": "src/core/doctor/__tests__/bridge-unreachable-upstream-repair.test.ts",
+      "sha256": "5a75e74802283faacf983e563f09be51258e7a279ec25ad2240e180f876ad5a4",
+      "language": "typescript",
+      "lines": 224,
+      "bytes": 11835
+    },
+    {
       "path": "src/core/doctor/__tests__/browser-use-repair.test.ts",
       "sha256": "faccd8ebbf71753c1b3317a33e4043bd12821c1e0bc5ce4d09e3bec96f81cb2a",
       "language": "typescript",
@@ -6427,10 +6556,10 @@
     },
     {
       "path": "src/core/doctor/__tests__/doctor-readiness-matrix.test.ts",
-      "sha256": "e5046c06c4c18df6377cc4826513128bca67f00a963900c79324ee7021aee321",
+      "sha256": "4eb614324e888d4f81a50ac539f3bcf2b9c0f2b3bf579db879fb5277d9330ab8",
       "language": "typescript",
-      "lines": 284,
-      "bytes": 9688
+      "lines": 353,
+      "bytes": 12782
     },
     {
       "path": "src/core/doctor/__tests__/legacy-global-hook-cleanup.test.ts",
@@ -6438,6 +6567,13 @@
       "language": "typescript",
       "lines": 76,
       "bytes": 4073
+    },
+    {
+      "path": "src/core/doctor/__tests__/legacy-runtime-data-gc.test.ts",
+      "sha256": "a0be2d219946d32080df27be9fdc90c24f956f5a0478f2ad2230850f29d00bf4",
+      "language": "typescript",
+      "lines": 171,
+      "bytes": 8624
     },
     {
       "path": "src/core/doctor/__tests__/mcp-transport-collision-repair-generic.test.ts",
@@ -6594,6 +6730,13 @@
       "bytes": 15395
     },
     {
+      "path": "src/core/doctor/desktop-bridge-catalog-repair.ts",
+      "sha256": "7535ff7548a713506847d60de4cd2f8224e58fd45ec684831be2579e915697cc",
+      "language": "typescript",
+      "lines": 281,
+      "bytes": 14324
+    },
+    {
       "path": "src/core/doctor/doctor-codex-startup-repair.ts",
       "sha256": "471eda3dcb6f550e755e7b4bc6feba775826c6cced8f94f32da4224503266d86",
       "language": "typescript",
@@ -6630,10 +6773,10 @@
     },
     {
       "path": "src/core/doctor/doctor-readiness-matrix.ts",
-      "sha256": "9e93017efbc31938ceb9b414bed9c1f264404231b2e2a350b4fd818b5e4a9823",
+      "sha256": "f518c3f02238b8e878f8f4b97131035ce855c55c8abe2871916e61406dd5822d",
       "language": "typescript",
-      "lines": 327,
-      "bytes": 18718
+      "lines": 362,
+      "bytes": 20577
     },
     {
       "path": "src/core/doctor/doctor-repair-postcheck.ts",
@@ -6676,6 +6819,13 @@
       "language": "typescript",
       "lines": 180,
       "bytes": 7851
+    },
+    {
+      "path": "src/core/doctor/legacy-runtime-data-gc.ts",
+      "sha256": "7c7adb9bed0c7ed8cb07ddd97e48e1b83506ec8ebfcc78ad2d60977a28129438",
+      "language": "typescript",
+      "lines": 253,
+      "bytes": 10390
     },
     {
       "path": "src/core/doctor/mcp-transport-collision-repair.ts",
@@ -6855,13 +7005,6 @@
       "bytes": 2470
     },
     {
-      "path": "src/core/evidence/flagship-proof-graph-validator.ts",
-      "sha256": "97f52ad34ee2614ef6ded0e1fa5f4f09c2326b54f114fa1b335d5da2f1e67659",
-      "language": "typescript",
-      "lines": 311,
-      "bytes": 14255
-    },
-    {
       "path": "src/core/evidence/v2/__tests__/evidence-key.test.ts",
       "sha256": "e93ff9ed534abec5f882743eb4be0c5550e42e22bee8ac91b3b6511cb021dedf",
       "language": "typescript",
@@ -6898,10 +7041,10 @@
     },
     {
       "path": "src/core/feature-registry.ts",
-      "sha256": "faaba0be1c711344e5857b7bc3bc671b18ddd494a414d8bb476458fff519207f",
+      "sha256": "047c0f0064fee711880f0c62b6f02f80c32a99ba8579f8c61400a51410a468f4",
       "language": "typescript",
-      "lines": 1074,
-      "bytes": 53313
+      "lines": 1073,
+      "bytes": 53281
     },
     {
       "path": "src/core/features/feature-completion.ts",
@@ -7122,10 +7265,10 @@
     },
     {
       "path": "src/core/harness-conflicts.ts",
-      "sha256": "ae663202c944b50b0af0ac60abff339944657508b872b1af4faea0c147d7b910",
+      "sha256": "03f904f62e291d144c776e559c5ad7e5fbc154a3cb340db58ba2e4d4c66cd8ac",
       "language": "typescript",
-      "lines": 416,
-      "bytes": 16726
+      "lines": 417,
+      "bytes": 16788
     },
     {
       "path": "src/core/harness-guard.ts",
@@ -7136,10 +7279,10 @@
     },
     {
       "path": "src/core/hooks-runtime.ts",
-      "sha256": "ed487403fdd63d8556d331efe873d8214dd408be44a5774b9f5365f9d1cee636",
+      "sha256": "33be0a130a9ab10f308a8ae3e596de5b7b9a72680742c611809b7ad767d6560d",
       "language": "typescript",
-      "lines": 1191,
-      "bytes": 56704
+      "lines": 1210,
+      "bytes": 58576
     },
     {
       "path": "src/core/hooks-runtime/__tests__/context-graph-freshness-preflight.test.ts",
@@ -7147,6 +7290,13 @@
       "language": "typescript",
       "lines": 320,
       "bytes": 15210
+    },
+    {
+      "path": "src/core/hooks-runtime/__tests__/essential-profile-hooks.test.ts",
+      "sha256": "87793c461f7b0eb1c3f16c588c01b2d728f6e24b3ba49202fdcaf50cc83f9cc7",
+      "language": "typescript",
+      "lines": 70,
+      "bytes": 3183
     },
     {
       "path": "src/core/hooks-runtime/__tests__/explicit-route-skill-context.test.ts",
@@ -7208,17 +7358,17 @@
     },
     {
       "path": "src/core/hooks-runtime/__tests__/official-light-turn-hooks.test.ts",
-      "sha256": "ece7127ad3a9fe55e7084c0d4250c30489417f9cf17933422c4496e0255b62a6",
+      "sha256": "831c85ba18b2e73290ea0a273650603f2d78f1ce29d317438f4e0941d03a66c6",
       "language": "typescript",
-      "lines": 1205,
-      "bytes": 56080
+      "lines": 1271,
+      "bytes": 59280
     },
     {
       "path": "src/core/hooks-runtime/__tests__/official-subagent-lifecycle-failure.test.ts",
-      "sha256": "3eecbefdb3c9d11985744b040b925afb491f881dcba9cac5db252f037760f643",
+      "sha256": "2785bd405160eaa06b84ea2eaabda440494550bfc37ad664d135a77a2e6195cf",
       "language": "typescript",
-      "lines": 79,
-      "bytes": 2402
+      "lines": 177,
+      "bytes": 5874
     },
     {
       "path": "src/core/hooks-runtime/__tests__/skill-path-admission-integrity.test.ts",
@@ -7257,10 +7407,10 @@
     },
     {
       "path": "src/core/hooks-runtime/__tests__/skill-path-resume-context.test.ts",
-      "sha256": "cd126e2879d2756510b6cf6e571da36c86417e181818a7d63eafaa03881fc1be",
+      "sha256": "731ceda6afa21eefb00d28a5c62837e95f0256e36f1e3c20f6dc87443448de81",
       "language": "typescript",
-      "lines": 309,
-      "bytes": 13692
+      "lines": 308,
+      "bytes": 13565
     },
     {
       "path": "src/core/hooks-runtime/__tests__/subagent-context-transfer.test.ts",
@@ -7292,18 +7442,18 @@
     },
     {
       "path": "src/core/hooks-runtime/context-graph-freshness-preflight.ts",
-      "sha256": "16065bdd480de2915dac7e556454c3a592c6d85d395005bbccbc0a0ec8a736df",
+      "sha256": "04818245869ddfb649f2432df1ce42fc149e3d0d4866a81694be5681c7e24965",
       "language": "typescript",
       "lines": 210,
-      "bytes": 8946,
+      "bytes": 8928,
       "purpose": "Runtime preflight for the compiled Context Graph. Answers one question — \"is the stored graph usable right now?\" — without rebuilding anything, without touching a source file, and without spawning a process on the normal path. The verdict i"
     },
     {
       "path": "src/core/hooks-runtime/hook-context.ts",
-      "sha256": "2b3dc17829f8138354c5ced4b9a05a9c0866e214b2bd1d3393ff85a5012bb837",
+      "sha256": "b07f56aba37c104401343382345ab8a675daaa6211e3243936831fee284befcf",
       "language": "typescript",
-      "lines": 309,
-      "bytes": 14548
+      "lines": 324,
+      "bytes": 15454
     },
     {
       "path": "src/core/hooks-runtime/hook-invocation-dedupe.ts",
@@ -7357,10 +7507,10 @@
     },
     {
       "path": "src/core/hooks-runtime/official-subagent-lifecycle.ts",
-      "sha256": "ab3587447acfac51a3e6dfd8251641e87a198b483bd877dc20275fd6e9dc8a62",
+      "sha256": "c6ca415bea12faf29d83c59d8e6a082c073c3ff9bb4d7bc1ce5ef21eda82ee0e",
       "language": "typescript",
-      "lines": 645,
-      "bytes": 27399
+      "lines": 683,
+      "bytes": 28806
     },
     {
       "path": "src/core/hooks-runtime/payload-signals.ts",
@@ -7553,10 +7703,10 @@
     },
     {
       "path": "src/core/imagegen/desktop-bridge-imagegen-target.ts",
-      "sha256": "181dd4ddc02664832f3ebc0f74fd3d5902ccecb76ba101669d2a2b134e1a8e4b",
+      "sha256": "ad530ce24d483bc43c67351d4aa55a3f5f148e94b666ca4d457cd864b48267e9",
       "language": "typescript",
-      "lines": 112,
-      "bytes": 5142
+      "lines": 114,
+      "bytes": 5338
     },
     {
       "path": "src/core/imagegen/gpt-image-2-request-validator.ts",
@@ -7596,17 +7746,17 @@
     },
     {
       "path": "src/core/init.ts",
-      "sha256": "094ab3ce8cdc180bd9419b661b3222dbba2a59dc1f0ba408835894bbc5c0ae65",
+      "sha256": "4e779a0b348ecbc650d5b89155234e21c6cd6591ff15167c3bf84c8a0360d363",
       "language": "typescript",
-      "lines": 1180,
-      "bytes": 60476
+      "lines": 1191,
+      "bytes": 60321
     },
     {
       "path": "src/core/init/__tests__/legacy-generation-convergence.test.ts",
-      "sha256": "93cb28801aa98458d8d668c85f5989401b489ec58f07f87cff6fe7ef36d6a6a9",
+      "sha256": "3b63d433caef7d0eb6152b74f69a0a4978d57dcf0686059b37db2f86059b672b",
       "language": "typescript",
-      "lines": 193,
-      "bytes": 8170
+      "lines": 270,
+      "bytes": 12080
     },
     {
       "path": "src/core/init/__tests__/managed-skill-metadata-ownership.test.ts",
@@ -7617,10 +7767,10 @@
     },
     {
       "path": "src/core/init/legacy-generation-convergence.ts",
-      "sha256": "a700ff5d12a5ca70d03f41c278d4ad1506dc7973b2df38d5b57ad63365149b66",
+      "sha256": "ab0aa2fe2040c8434c01eda7eb1ac7d36a892bd0550521a8932186a6dd483bf8",
       "language": "typescript",
-      "lines": 355,
-      "bytes": 13449
+      "lines": 395,
+      "bytes": 15350
     },
     {
       "path": "src/core/init/managed-skill-install.ts",
@@ -7631,10 +7781,10 @@
     },
     {
       "path": "src/core/init/skills.ts",
-      "sha256": "2336a76474de530de586642f931b8be799e6fb48f6ac8d3cdec1c03e6749fee4",
+      "sha256": "083039ff92f44ded50a93332870e99ee0a8ac4932581a57dc1a9c3872f12d239",
       "language": "typescript",
-      "lines": 1582,
-      "bytes": 111535
+      "lines": 1593,
+      "bytes": 110765
     },
     {
       "path": "src/core/init/skills/filesystem.ts",
@@ -8179,10 +8329,10 @@
     },
     {
       "path": "src/core/mad-sks/sql-plane/policy.ts",
-      "sha256": "cf94fe647db2696557f0537ac580acbb0cadf2b574af1727ce00b77fc658bb74",
+      "sha256": "f6e698754f943b336e6f2c98c2b2b9f34251fb6552200b1e68be1c47bacc7766",
       "language": "typescript",
-      "lines": 188,
-      "bytes": 9230
+      "lines": 189,
+      "bytes": 9349
     },
     {
       "path": "src/core/mad-sks/sql-plane/postconditions.ts",
@@ -8228,10 +8378,10 @@
     },
     {
       "path": "src/core/managed-assets/managed-assets-manifest.ts",
-      "sha256": "87c8069e174f334667923553ec590822ffa02aef661f8570e2b8071f0dd92b17",
+      "sha256": "b6bbefd453f822928babbdae4abd6aaed9815bd564e3ac644a35a568f51da514",
       "language": "typescript",
       "lines": 752,
-      "bytes": 38670
+      "bytes": 38704
     },
     {
       "path": "src/core/managed-path-safety.ts",
@@ -8812,6 +8962,13 @@
       "bytes": 4955
     },
     {
+      "path": "src/core/pipeline-internals/__tests__/light-route-artifact-truth.test.ts",
+      "sha256": "13b6a82c64231802174d7dfcb007dc8b16ecdf030cbf92f3e706568911ff62f0",
+      "language": "typescript",
+      "lines": 76,
+      "bytes": 3896
+    },
+    {
       "path": "src/core/pipeline-internals/pipeline-stage-builder.ts",
       "sha256": "8b2108bb731e7f044f666ecb0f895a91e57d1c73d013fa2c06ae22b6b45e4b49",
       "language": "typescript",
@@ -8821,10 +8978,10 @@
     },
     {
       "path": "src/core/pipeline-internals/runtime-core.ts",
-      "sha256": "4a6c2fec1bd77870ebe5beec2b4ed9e03f5b86c08bb44e04d4a8799240d10950",
+      "sha256": "b385b985d9fde4523f282c29c3d27ec2f865b98216f1cce8c26de404a3b2ac90",
       "language": "typescript",
-      "lines": 1813,
-      "bytes": 104350
+      "lines": 1837,
+      "bytes": 105403
     },
     {
       "path": "src/core/pipeline-internals/runtime-gates.ts",
@@ -9340,10 +9497,10 @@
     },
     {
       "path": "src/core/provider/model-router.ts",
-      "sha256": "fe3a95cfb5815a33b1b8b8f4af12daffe9634c1b4e745a29092bf28878418ac1",
+      "sha256": "2e9424d38125ba1a52ae2969c96e7d995f2d0504885b5a7734cceab4afe0a45b",
       "language": "typescript",
-      "lines": 158,
-      "bytes": 7650
+      "lines": 164,
+      "bytes": 7963
     },
     {
       "path": "src/core/provider/provider-badge.ts",
@@ -9354,10 +9511,10 @@
     },
     {
       "path": "src/core/provider/provider-context.ts",
-      "sha256": "de425c6fbe5c1e627d95977bd42bba950fea521a754ffeda2942873661bdbc9c",
+      "sha256": "619b7ff1f64154b54e7b427c755a442b4df97cbdc0003538c56c5a94fa11e74e",
       "language": "typescript",
-      "lines": 150,
-      "bytes": 6173
+      "lines": 153,
+      "bytes": 6411
     },
     {
       "path": "src/core/provider/provider-self-heal.ts",
@@ -9551,17 +9708,17 @@
     },
     {
       "path": "src/core/recallpulse.ts",
-      "sha256": "2edf197b7fd4c086e6ecb9c9e1a30a1780af9f6ee21e497ad6bd87cc13abc391",
+      "sha256": "f94dc4c40344d96ded9f923f0de3373b23c4c008e2777169b88b302f3835024e",
       "language": "typescript",
-      "lines": 993,
-      "bytes": 49045
+      "lines": 950,
+      "bytes": 46136
     },
     {
       "path": "src/core/recallpulse/policy.ts",
-      "sha256": "6a34fa2b072bfcc9991e15b1a5e2ad5eb49347b58c07912a2980af66b6c7b359",
+      "sha256": "0c0dbf3e4d6b651f3896e46c6874b1636f4d92ef2b9e261aecf6bf36a4c480a5",
       "language": "typescript",
-      "lines": 211,
-      "bytes": 10119
+      "lines": 210,
+      "bytes": 9918
     },
     {
       "path": "src/core/release-parallel-full-coverage.ts",
@@ -9679,7 +9836,7 @@
     },
     {
       "path": "src/core/release/__tests__/release-gate-contract.test.ts",
-      "sha256": "88c80fa2644d9ff893afad210b4de2e109c6b83e91abe0ec97e4f36caaeb8a28",
+      "sha256": "278699fc365d4c5c24b54d770ab589113b687a7dbdf5059030dbc683d5a508ea",
       "language": "typescript",
       "lines": 103,
       "bytes": 4522
@@ -9806,25 +9963,18 @@
     },
     {
       "path": "src/core/release/gate-affected-globs.ts",
-      "sha256": "77709d6f0caafaa0301559dcb88a23006cd0e06ab66cd8657f4180707d90e4b1",
+      "sha256": "1b21c0025ca54e21e8302011c7ea921b220fd78788e58210ccb5b3115dfa3aaf",
       "language": "typescript",
-      "lines": 125,
-      "bytes": 6412,
+      "lines": 137,
+      "bytes": 6965,
       "purpose": "Gate id -> the source globs whose change should select that gate. Split out of `gate-manifest.ts` because this table grows every time a gate gains a consumer, and the manifest builder around it does not: keeping them in one file made every "
     },
     {
-      "path": "src/core/release/gate-cache.ts",
-      "sha256": "83e3b4357902965be4a2deca48a70852621d7edd311a5862c01089d825f3af9b",
-      "language": "typescript",
-      "lines": 77,
-      "bytes": 2312
-    },
-    {
       "path": "src/core/release/gate-manifest.ts",
-      "sha256": "a6e9d00891f587c385b8d5972eb43a74c29e84936aad6354480c1484c9d0fb59",
+      "sha256": "6fd1caf5da094051f32e452b4db72568a6b1c54b7e5517957c0330dfd451a43a",
       "language": "typescript",
-      "lines": 155,
-      "bytes": 5237
+      "lines": 152,
+      "bytes": 5142
     },
     {
       "path": "src/core/release/gate-pack-assertion.ts",
@@ -9853,13 +10003,6 @@
       "language": "typescript",
       "lines": 203,
       "bytes": 9114
-    },
-    {
-      "path": "src/core/release/gate-timing.ts",
-      "sha256": "1ac95b15130dfb785aa77338280d76cde7b71cafe225b8d7e4a79e82c1728d7b",
-      "language": "typescript",
-      "lines": 114,
-      "bytes": 4732
     },
     {
       "path": "src/core/release/macos-menubar-proof.ts",
@@ -9983,10 +10126,10 @@
     },
     {
       "path": "src/core/release/release-gate-contract.ts",
-      "sha256": "cca035fae36758c6fbc94e906569992b00e53baf443a4b952186b2d56cb18994",
+      "sha256": "b08942eb9fa1e89defe3324254b4a5b330aed48614414391ae69a3216d884cf7",
       "language": "typescript",
-      "lines": 53,
-      "bytes": 1479
+      "lines": 52,
+      "bytes": 1454
     },
     {
       "path": "src/core/release/release-gate-dag.ts",
@@ -10131,13 +10274,6 @@
       "bytes": 26420
     },
     {
-      "path": "src/core/release/sla-scheduler.ts",
-      "sha256": "31735c6865cbcca308ceec285e72d3cdc9e108d972a408352601ebd445442bdc",
-      "language": "typescript",
-      "lines": 31,
-      "bytes": 1284
-    },
-    {
       "path": "src/core/release/stage-publish.ts",
       "sha256": "470432ea2d666940745df6c17bf46aee5a829779439535b7eeec22a1a92f3604",
       "language": "typescript",
@@ -10272,31 +10408,31 @@
     },
     {
       "path": "src/core/research.ts",
-      "sha256": "ea39eb1e13a356fc1497b10801252a1514399ec56fa410fa248e6d7be522f8de",
+      "sha256": "a80314ec5832a32a69616f1a5ab6aab8d0a92a3aba98d8cf6a7b078fbd18ec89",
       "language": "typescript",
-      "lines": 1183,
-      "bytes": 72649
+      "lines": 1059,
+      "bytes": 64391
     },
     {
       "path": "src/core/research/__tests__/research-adversarial-review.test.ts",
-      "sha256": "77b3323947c7f821b9bc51723570629d6e60f11a8aa18cd5b08ba9a2f9bfc414",
+      "sha256": "e8d39dec2b47ff49ed8dea7a59e869ee90550fb55d62e8b57f602d383b7216e4",
       "language": "typescript",
-      "lines": 433,
-      "bytes": 22357
+      "lines": 451,
+      "bytes": 22962
     },
     {
       "path": "src/core/research/__tests__/research-canonical-adversarial-validation.test.ts",
-      "sha256": "775fc5fb4b410ce472102bd6bcc7fce48c00ee7d1aea95e5f69f61a3c8f1064f",
+      "sha256": "b9108c547d9470e9e6b85a438b4c874e9f22a2a9c8cdc2826cfd72b13900c10b",
       "language": "typescript",
-      "lines": 137,
-      "bytes": 8908
+      "lines": 136,
+      "bytes": 8772
     },
     {
       "path": "src/core/research/__tests__/research-claim-integrity.test.ts",
-      "sha256": "c2bd32c63670913330df23eb6930142e3aacb6ec8e0325111562c32fefdfef19",
+      "sha256": "43780ca33c6d1ec2042d1cbfc69f008eda80ba4dff570d856f4d584a8ed5d6b5",
       "language": "typescript",
-      "lines": 389,
-      "bytes": 18389
+      "lines": 402,
+      "bytes": 19000
     },
     {
       "path": "src/core/research/__tests__/research-deadline.test.ts",
@@ -10356,10 +10492,10 @@
     },
     {
       "path": "src/core/research/implementation-blueprint-densifier.ts",
-      "sha256": "8dd4bf0a0b496a2bfa4d701f7977242e831782f9b7d2e4d3870d03db24f837f9",
+      "sha256": "71866e8909d135102b84e51059007148a159dfffd7536c46f1fc0c853965c049",
       "language": "typescript",
       "lines": 160,
-      "bytes": 14230
+      "bytes": 14265
     },
     {
       "path": "src/core/research/implementation-blueprint-markdown.ts",
@@ -10377,10 +10513,10 @@
     },
     {
       "path": "src/core/research/mock-result.ts",
-      "sha256": "93ece3426cbc1bb6408cb43d942b07c4bd6e1ae4f5d7d8ab4310ea64d71cca46",
+      "sha256": "84b8bd9a8c9a9d9480f92be9f04eb9a33a3b0cbbd6a2ec49535fc010783528c9",
       "language": "typescript",
-      "lines": 517,
-      "bytes": 26230
+      "lines": 477,
+      "bytes": 23980
     },
     {
       "path": "src/core/research/replication-pack.ts",
@@ -10391,10 +10527,10 @@
     },
     {
       "path": "src/core/research/research-adversarial-review.ts",
-      "sha256": "d423110f65be576a1ed5bfb6f06b528fe54cdc39cff6b08662bfab93a6123d48",
+      "sha256": "ea76cdb30f58ebaac65c3b9fbb6b5b29624d5532225b39ae826e402fdee76671",
       "language": "typescript",
-      "lines": 1258,
-      "bytes": 65143
+      "lines": 1212,
+      "bytes": 62311
     },
     {
       "path": "src/core/research/research-claim-builder.ts",
@@ -10405,10 +10541,10 @@
     },
     {
       "path": "src/core/research/research-claim-synthesizer.ts",
-      "sha256": "87baf10d2c766daaf21c2991108c937479b1041125168316a5e6bb0ac1c6f067",
+      "sha256": "5a34761b91d1dfeba93592c7ec389d5febf97537dfa9ed7fd405fcfe58e9b6ae",
       "language": "typescript",
       "lines": 364,
-      "bytes": 17074
+      "bytes": 17104
     },
     {
       "path": "src/core/research/research-cycle-runner.ts",
@@ -10419,10 +10555,10 @@
     },
     {
       "path": "src/core/research/research-falsification-runner.ts",
-      "sha256": "6e28f79f9e6a901e0f6335ab5fd8c712ec9c2a10d453c7ed8f6741212203b071",
+      "sha256": "ad1f1a9df3e4030e83f216fba31d9986a1a5aa6e15c73d08af392c232b89d5ee",
       "language": "typescript",
       "lines": 177,
-      "bytes": 8345
+      "bytes": 8375
     },
     {
       "path": "src/core/research/research-final-reviewer.ts",
@@ -10440,10 +10576,10 @@
     },
     {
       "path": "src/core/research/research-plan-markdown.ts",
-      "sha256": "46cbfb41e6f6eccb36ca058cb2624ed94a45cc41261c56005e8bc75eada64b0f",
+      "sha256": "3c3f7fc31decf1421f0ee0d6c6aba9b5f83d6f5caa6a27addc880a8a2f8ed324",
       "language": "typescript",
       "lines": 116,
-      "bytes": 7718
+      "bytes": 7752
     },
     {
       "path": "src/core/research/research-prompt-contract.ts",
@@ -10517,10 +10653,10 @@
     },
     {
       "path": "src/core/research/research-stage-runner.ts",
-      "sha256": "59867bb17e3243d7720c3ca44ec1543db20d175c2fe76e95d1b96c410c2a33c7",
+      "sha256": "5a8e8678a81913a787e455a1c39c0c14e0ad03693457b9470cfad7152eda1657",
       "language": "typescript",
-      "lines": 627,
-      "bytes": 33984
+      "lines": 607,
+      "bytes": 32242
     },
     {
       "path": "src/core/research/research-super-search.ts",
@@ -10545,10 +10681,10 @@
     },
     {
       "path": "src/core/research/research-work-graph.ts",
-      "sha256": "d419e30c46d1dbe3dfa75de26b2c3a7f416abad7688b3a6a92562abe3f8a5ce6",
+      "sha256": "06e6f90dcb2e18db446f6de9e0e673b975bda49353545143b5b56a1fd8b01aa3",
       "language": "typescript",
-      "lines": 190,
-      "bytes": 7869
+      "lines": 189,
+      "bytes": 7822
     },
     {
       "path": "src/core/research/source-quality-report.ts",
@@ -10637,10 +10773,10 @@
     },
     {
       "path": "src/core/routes.ts",
-      "sha256": "2c940daca2eaff840f729b8ec746abe4ae29b86560ff4bd132985d6b68e8dd8c",
+      "sha256": "52be2c680d934785f7e9e1e73e55aafca3c61931d9fd07b3caa4fdf249f6508c",
       "language": "typescript",
       "lines": 1417,
-      "bytes": 100112
+      "bytes": 99488
     },
     {
       "path": "src/core/routes/__tests__/model-mode-router.test.ts",
@@ -10672,10 +10808,10 @@
     },
     {
       "path": "src/core/routes/dollar-manifest-lite.ts",
-      "sha256": "dde2f92d54124cbb926438a141f0c07e85f318a90d12b28be61562e49f692ef2",
+      "sha256": "90367c4492f0f29da88f570e9fc3e9b3559aa6b9009b5e68eb1900fd5a098629",
       "language": "typescript",
       "lines": 105,
-      "bytes": 10824
+      "bytes": 10412
     },
     {
       "path": "src/core/routes/dollar-prefix.ts",
@@ -10736,10 +10872,10 @@
     },
     {
       "path": "src/core/runtime/task-profile.ts",
-      "sha256": "2c274d3bed15ae117e5f7c79889716e83eeb332729cc351619376337f3bebecd",
+      "sha256": "70557f505f5b91e293e3cc150ac2847185e6c58eaac2eb5b9f039356d9cf2b37",
       "language": "typescript",
       "lines": 158,
-      "bytes": 9130
+      "bytes": 9200
     },
     {
       "path": "src/core/runtime/verification-budget.ts",
@@ -10849,10 +10985,10 @@
     },
     {
       "path": "src/core/search-visibility/__tests__/seo-marketing-minimal-flow.test.ts",
-      "sha256": "b8515be90a06fee6cd758733f2416b026fb4b2ebae1aa442b447d8862d60b998",
+      "sha256": "ce0c8be0318e4e0e2b38191d33f839da5991e23ddcbb6a753129648578e96382",
       "language": "typescript",
-      "lines": 122,
-      "bytes": 6479
+      "lines": 125,
+      "bytes": 6716
     },
     {
       "path": "src/core/search-visibility/__tests__/verifier-http-proof.test.ts",
@@ -10926,10 +11062,10 @@
     },
     {
       "path": "src/core/search-visibility/marketing.ts",
-      "sha256": "40a1a3cf4efc61bf90d968bbd40f84c1702d00d32a93fc827924c4b4155596a7",
+      "sha256": "dcab605b1a8bf2df634b658645bc42f74c1c2ab83608950c2b26ff212160b36c",
       "language": "typescript",
-      "lines": 477,
-      "bytes": 22333
+      "lines": 475,
+      "bytes": 21908
     },
     {
       "path": "src/core/search-visibility/mission.ts",
@@ -11415,17 +11551,17 @@
     },
     {
       "path": "src/core/subagents/__tests__/agent-catalog-fanout.test.ts",
-      "sha256": "2d550ae56e36f140767d35c7c37dd50023a7b5e67349f9a6d6578be0b3afc4ed",
+      "sha256": "5d371c1a5dbdd3ba421b9acc9ae162c39dc77f1314d4df7b7f685b8f07b1d1b7",
       "language": "typescript",
       "lines": 717,
-      "bytes": 29412
+      "bytes": 29422
     },
     {
       "path": "src/core/subagents/__tests__/model-policy.test.ts",
-      "sha256": "5deb3936a8cf85d21554357db6a0623b336c240135ac2d4c672dc570ef2729dc",
+      "sha256": "533a866786e04ed61bd77f42238ddafb9c96a4fe597f1db3aa8a1223f44a87b3",
       "language": "typescript",
-      "lines": 336,
-      "bytes": 14336
+      "lines": 343,
+      "bytes": 14781
     },
     {
       "path": "src/core/subagents/__tests__/naruto-command-parser.test.ts",
@@ -11436,10 +11572,10 @@
     },
     {
       "path": "src/core/subagents/__tests__/naruto-host-credentials.test.ts",
-      "sha256": "bd145f438eb234ed69d2519f0b5120d378ca5cfe818ad25f437dd5dce80b4e94",
+      "sha256": "8930b0f8955467f779a8673a356a84bd55f99b6277392241ada718c297c53c58",
       "language": "typescript",
-      "lines": 175,
-      "bytes": 7824
+      "lines": 184,
+      "bytes": 8206
     },
     {
       "path": "src/core/subagents/__tests__/naruto-proof-projection.test.ts",
@@ -11450,10 +11586,10 @@
     },
     {
       "path": "src/core/subagents/__tests__/official-subagent-config.test.ts",
-      "sha256": "69661c4cfd62d005992fd3999f0b487cabb1b12223058faca7ba211173934842",
+      "sha256": "01c9889a9f8ffff73584fcf22061b975e2ba789bcc8ab2f6f396b2d99bea719b",
       "language": "typescript",
       "lines": 1228,
-      "bytes": 58701
+      "bytes": 58772
     },
     {
       "path": "src/core/subagents/__tests__/official-subagent-env-fixture.ts",
@@ -11464,10 +11600,10 @@
     },
     {
       "path": "src/core/subagents/__tests__/official-subagent-prompt.test.ts",
-      "sha256": "b96c3fba939109967e117fa27cd311976c60f34263983ba3d31340bd818380f6",
+      "sha256": "5c0ca1d3b5f19b7cf43f15d957327433b09701b8b7a22833a450982e6410c4e0",
       "language": "typescript",
       "lines": 410,
-      "bytes": 17183
+      "bytes": 17267
     },
     {
       "path": "src/core/subagents/__tests__/official-subagent-runner-project-mcp.test.ts",
@@ -11478,17 +11614,17 @@
     },
     {
       "path": "src/core/subagents/__tests__/official-subagent-runner.test.ts",
-      "sha256": "2e83b706d4c0403578a9497ca190c42719f6e47fea13e5e2ef7a264406cebd61",
+      "sha256": "1dbd3b949522d27f2764e322ac186644779b498634144cf40507e894dac76311",
       "language": "typescript",
-      "lines": 2155,
-      "bytes": 88157
+      "lines": 2167,
+      "bytes": 88697
     },
     {
       "path": "src/core/subagents/__tests__/role-model-preferences.test.ts",
-      "sha256": "905c2202347db923dd4afeb71932f27cecae738ceb94a893caccbf3de6444b93",
+      "sha256": "4e8c723e0d6b9b2bc5a74a26aa03fe2034fdfd3fba5c2a214b7e1ee960a9f0f6",
       "language": "typescript",
-      "lines": 509,
-      "bytes": 19718
+      "lines": 560,
+      "bytes": 23157
     },
     {
       "path": "src/core/subagents/__tests__/subagent-evidence.test.ts",
@@ -11499,10 +11635,10 @@
     },
     {
       "path": "src/core/subagents/__tests__/task-profile.test.ts",
-      "sha256": "ef9b18b198d4c84cd8881bcab6a533632aec5ced11ed7aa05df1140ef73ecc93",
+      "sha256": "1b59eb79ef83ab9119d003d393e4ffb277f51bc4025947b8a7905e0f8005cd20",
       "language": "typescript",
-      "lines": 81,
-      "bytes": 4946
+      "lines": 95,
+      "bytes": 5612
     },
     {
       "path": "src/core/subagents/__tests__/thread-budget-and-plan.test.ts",
@@ -11557,10 +11693,10 @@
     },
     {
       "path": "src/core/subagents/model-policy.ts",
-      "sha256": "762fc948d7bca021bff8136b3102c35cc8156b3a4c87ef951ea22bc676cad602",
+      "sha256": "a49ebcb000764a6f87a7c70fc59ce6a929c25d8560030ae1c39723dc7b792a00",
       "language": "typescript",
-      "lines": 413,
-      "bytes": 15311
+      "lines": 415,
+      "bytes": 15433
     },
     {
       "path": "src/core/subagents/naruto-command-args.ts",
@@ -11578,17 +11714,17 @@
     },
     {
       "path": "src/core/subagents/naruto-help-contract.ts",
-      "sha256": "58ba27f1e5317df527149efb9a971afd9d5786cce0d57422d26911abbf985ddd",
+      "sha256": "3ce21ee6ac1fdcd8d3e1547101ffacd5bf48c05f350f07a7df0c38155f3c69ca",
       "language": "typescript",
-      "lines": 91,
-      "bytes": 4879
+      "lines": 92,
+      "bytes": 5083
     },
     {
       "path": "src/core/subagents/naruto-host-credentials.ts",
-      "sha256": "65dbdd78fbf16211ca2cf26bfa94307729cd481291b118f50448819810732bc5",
+      "sha256": "5075feac3738331066f4fc3ee031d7d8b16e3577e7463c0dd00fbe5d91b6d741",
       "language": "typescript",
-      "lines": 270,
-      "bytes": 11582,
+      "lines": 271,
+      "bytes": 11701,
       "purpose": "Who authenticates a Naruto subagent run. By default SKS owns the policy: it pins `model_provider=\"openai\"` and `forced_login_method=\"chatgpt\"` so an operator's interactive ChatGPT session is the credential, and the run cannot silently drift"
     },
     {
@@ -11614,31 +11750,31 @@
     },
     {
       "path": "src/core/subagents/official-subagent-preparation.ts",
-      "sha256": "13f6d9ff0cb8a219da5076b2649eed84af57e1607f1a4a57921caee0cf7ed52f",
+      "sha256": "0b164cd77ef1a138af603b417aaac827658e0a39af16c5b461cfd40448d350cd",
       "language": "typescript",
       "lines": 1363,
-      "bytes": 55515
+      "bytes": 55460
     },
     {
       "path": "src/core/subagents/official-subagent-prompt.ts",
-      "sha256": "f941c2916fce2844c51e3151ec5204b7195e454384d66c2d0f9903177149e13b",
+      "sha256": "c93f998d1139098547b0f0967e05cdf9974ed83f08010980834a146120c3b0ec",
       "language": "typescript",
-      "lines": 489,
-      "bytes": 27524
+      "lines": 490,
+      "bytes": 27680
     },
     {
       "path": "src/core/subagents/official-subagent-runner.ts",
-      "sha256": "8c66fc9c74aeafa441bcb52d8a9eef26e910e05df07b20e38db6ba191953f8f1",
+      "sha256": "3e051615e4e5dcf749dfe1413286c23b80989082caf0652e508beb55d2e68a29",
       "language": "typescript",
       "lines": 763,
-      "bytes": 27345
+      "bytes": 27339
     },
     {
       "path": "src/core/subagents/role-model-preferences.ts",
-      "sha256": "e6d4bf1772037d5935dcba36219a5699676090a71dd436c721dd42acd93cced1",
+      "sha256": "5ca75509a958f99cd2b604195644a1b1fd694da930b8c7105cd6da3176bc948c",
       "language": "typescript",
-      "lines": 405,
-      "bytes": 15814
+      "lines": 423,
+      "bytes": 16400
     },
     {
       "path": "src/core/subagents/subagent-evidence.ts",
@@ -12497,10 +12633,10 @@
     },
     {
       "path": "src/core/triwiki/context-graph/compiler/__tests__/cache-key-generated-artifacts.test.ts",
-      "sha256": "1705ae2ab2f9e7907972bf6d738eeab95eb69e223d110d9a43584dbb8c6bfdef",
+      "sha256": "d161660e4e917a391b5d9c19535e272809e95edb957ac49ee45c8af2f13c2ffd",
       "language": "typescript",
-      "lines": 168,
-      "bytes": 8655
+      "lines": 174,
+      "bytes": 9274
     },
     {
       "path": "src/core/triwiki/context-graph/compiler/__tests__/compile-context-graph.test.ts",
@@ -12594,10 +12730,10 @@
     },
     {
       "path": "src/core/triwiki/context-graph/compiler/cache-key.ts",
-      "sha256": "1bd83197b6e4bb1277cd693d3689d7eb3fbdb954fee40c9af0b8963a424af05e",
+      "sha256": "18b790ff20f9ab147b46ddc1f90b62e0a686a76dee61e624c95d730cf9430e57",
       "language": "typescript",
-      "lines": 442,
-      "bytes": 15889,
+      "lines": 448,
+      "bytes": 16193,
       "purpose": "Input fingerprint for the Context Graph cache. The graph is a generated cache, so the only thing that makes a stored snapshot reusable is a byte-level match on everything it was derived from: git state, the manifests that define commands/ro"
     },
     {
@@ -12884,10 +13020,10 @@
     },
     {
       "path": "src/core/triwiki/context-graph/extractors/evidence/index.ts",
-      "sha256": "01ac79d27b5158a02a4b0746e855d28ae8d8ad23131c340852e1edbf0a27d220",
+      "sha256": "e5420a4bfcff908a656d63e6600e8a34a370502a97ae931d851b0244f501b323",
       "language": "typescript",
-      "lines": 120,
-      "bytes": 4841,
+      "lines": 132,
+      "bytes": 5208,
       "purpose": "TriWiki claim / source / proof evidence extractor. Produces the evidence half of the Context Graph: what the project claims, what those claims cite, and which proofs still stand behind a gate. Everything it emits is a generated cache over t"
     },
     {
@@ -12932,10 +13068,10 @@
     },
     {
       "path": "src/core/triwiki/context-graph/extractors/index.ts",
-      "sha256": "f0ad7d41dc318409ef37e738208a8b247ace139ab039c7d471e13a292b249a48",
+      "sha256": "6df4131d26c0d648e3fed7e8080a8a663f6373f95274297e23d86ae17c72f823",
       "language": "typescript",
-      "lines": 62,
-      "bytes": 2963,
+      "lines": 77,
+      "bytes": 3655,
       "purpose": "The extractor registry. The compiler takes extractors as an input rather than importing them, so this is the one place that decides which deterministic extractors make up a snapshot. Order does not matter — the compiler sorts by extractor i"
     },
     {
@@ -14526,10 +14662,17 @@
     },
     {
       "path": "src/core/update-check.ts",
-      "sha256": "5d4cd1eb9f82d093a2d4bf8014bef2ab8ee8e6f3aa17757d60b2781c9973d78a",
+      "sha256": "a3eec31ca927da920fb16a7bba0f6a6c87d6fb5cb424dc7eb514d6a80cc04cc5",
       "language": "typescript",
-      "lines": 2366,
-      "bytes": 93809
+      "lines": 2261,
+      "bytes": 88889
+    },
+    {
+      "path": "src/core/update/__tests__/desktop-bridge-restage-recovery.test.ts",
+      "sha256": "cedc8bd1bb36de9ae8791a36a30959f90dab72b8e8ae85668dcc2b5e66d7b2fb",
+      "language": "typescript",
+      "lines": 168,
+      "bytes": 7629
     },
     {
       "path": "src/core/update/__tests__/installed-cli-resolution.test.ts",
@@ -14537,6 +14680,13 @@
       "language": "typescript",
       "lines": 56,
       "bytes": 2278
+    },
+    {
+      "path": "src/core/update/__tests__/package-local-doctor-report.test.ts",
+      "sha256": "cb2bd929d4f80f8a015c7e3467af4df7b943989322d74a4dc75fd0b753eea5d3",
+      "language": "typescript",
+      "lines": 51,
+      "bytes": 2661
     },
     {
       "path": "src/core/update/installed-cli-resolution.ts",
@@ -14568,17 +14718,31 @@
     },
     {
       "path": "src/core/update/update-migration-state.ts",
-      "sha256": "d39377f6eb377e43df57d194af31f8f60e3b19953a092b11f71950149a13d4f4",
+      "sha256": "4576a82bf6246c89fe4824f1ac13548a66aa2199dea8b0f286daab5531fef472",
       "language": "typescript",
-      "lines": 1799,
-      "bytes": 68955
+      "lines": 1743,
+      "bytes": 65955
+    },
+    {
+      "path": "src/core/update/update-migration-state/current-public-surface-stage.ts",
+      "sha256": "03bee9ae091fe4d776a357696d485b6a69c3b85e8f6d11f6dbbaf09125ab32b1",
+      "language": "typescript",
+      "lines": 76,
+      "bytes": 4093
+    },
+    {
+      "path": "src/core/update/update-migration-state/desktop-bridge-catalog-repair-stage.ts",
+      "sha256": "ccd030eacf4ccc9b259ae45c78534d14d023bb6a8d730a3ad0acd37d0f4d3fb7",
+      "language": "typescript",
+      "lines": 73,
+      "bytes": 3455
     },
     {
       "path": "src/core/update/update-migration-state/desktop-bridge-restage.ts",
-      "sha256": "cc4e7b7a39db12d789a3c747290ab0790cfd8681705d17e13c97dfe831c92bb0",
+      "sha256": "dd40b4c4cbf6d9e81b96f341e19c4e3017f259e4f7d93b8b5b0284987f5ecf18",
       "language": "typescript",
-      "lines": 66,
-      "bytes": 3674
+      "lines": 136,
+      "bytes": 6790
     },
     {
       "path": "src/core/update/update-migration-state/fast-mode-config.ts",
@@ -14596,10 +14760,10 @@
     },
     {
       "path": "src/core/update/update-migration-state/simple-stages.ts",
-      "sha256": "0cc6c652fff729cc5f6f6f697e4b2b07b83fff8b368c84567e50cd37f679eb89",
+      "sha256": "3a9ef04c9bef135276d338d3c431373ad57934be3041d1c9b163fed6f0da8142",
       "language": "typescript",
-      "lines": 51,
-      "bytes": 1710
+      "lines": 57,
+      "bytes": 2206
     },
     {
       "path": "src/core/update/update-notice.ts",
@@ -14610,10 +14774,10 @@
     },
     {
       "path": "src/core/update/update-operation.ts",
-      "sha256": "b82ef95f504bc5fc6c53b725023da5998e8035c95a99f3ee509c3d13219e0d47",
+      "sha256": "36b391f8ad4852396e489450d80287717458f27c493cf0b05bf32ea4eedc692d",
       "language": "typescript",
       "lines": 816,
-      "bytes": 30026
+      "bytes": 30048
     },
     {
       "path": "src/core/update/update-stage-diagnostics.ts",
@@ -14686,6 +14850,13 @@
       "bytes": 203
     },
     {
+      "path": "src/core/verification-profile.ts",
+      "sha256": "153052b5c687309f835f120113540b1a5fa9dc9b54b74ea133df810357d87e90",
+      "language": "typescript",
+      "lines": 165,
+      "bytes": 7823
+    },
+    {
       "path": "src/core/verification/__tests__/context-graph-affected-facade.test.ts",
       "sha256": "e18d846d131621e1695425bb322b67ee2d80c1f7ed81152500c5db71edebc8a4",
       "language": "typescript",
@@ -14703,7 +14874,7 @@
     },
     {
       "path": "src/core/verification/context-graph-affected.ts",
-      "sha256": "fc573f3953b5b2873bea9d1e1c7d989a67245cd7a596b6c28460eb9f7b31549d",
+      "sha256": "8e208504a7949773ce5404eea74191373da15453d4a65e89f85314e623edf166",
       "language": "typescript",
       "lines": 624,
       "bytes": 29158,
@@ -14781,17 +14952,17 @@
     },
     {
       "path": "src/core/version-manager.ts",
-      "sha256": "db1b159f23991559de5dee35c4d217fd24256dca42f9c06ef5d57a1f4a970e74",
+      "sha256": "1a8209ad4ec935b7f14f717fb7b0ab5bfceb3fc394d41baec45e3306414a0097",
       "language": "typescript",
-      "lines": 511,
-      "bytes": 24112
+      "lines": 524,
+      "bytes": 25394
     },
     {
       "path": "src/core/version.ts",
-      "sha256": "63abacd299a7c57d7eed0a6aa3985633167cdffba63283f8527d371c3fabdb88",
+      "sha256": "7975415a0f6cf81d520f708bd3174fbe2de043c41356b3b7fcefae76c0d9080d",
       "language": "typescript",
       "lines": 1,
-      "bytes": 40
+      "bytes": 41
     },
     {
       "path": "src/core/wiki-coordinate.ts",
@@ -15184,10 +15355,10 @@
     },
     {
       "path": "src/scripts/all-feature-deep-completion-check.ts",
-      "sha256": "a9945bb47dc515b6150a70baf78bde161d2cc82841b362b23689d8872ed4c058",
+      "sha256": "cf31279ee67395d8f827b8c75014f1829beb292955178426b27b4b7e90819b1a",
       "language": "typescript",
-      "lines": 47,
-      "bytes": 2242,
+      "lines": 46,
+      "bytes": 2210,
       "purpose": "@ts-nocheck"
     },
     {
@@ -15636,18 +15807,18 @@
     },
     {
       "path": "src/scripts/codex-lb-fixture-env.ts",
-      "sha256": "428bf848a9fe199f93d2f678ad80f30384190c0ff2fd7ff775e93ada766c7f0e",
+      "sha256": "559c70caf4c956055edd58c028d3fe07bc1390434b3b69f1a87695f42fa1d731",
       "language": "typescript",
       "lines": 25,
-      "bytes": 1511,
+      "bytes": 1525,
       "purpose": "@ts-nocheck"
     },
     {
       "path": "src/scripts/codex-native-agent-role-content-check.ts",
-      "sha256": "5155542eebade94fc983c2613e8415f1eca055aa0624085b1f8d990e1fe0550b",
+      "sha256": "efdaf12f43512dd078e68815a17e91a2877d2da399a35dfa1503b4378fdbefec",
       "language": "typescript",
-      "lines": 48,
-      "bytes": 3662
+      "lines": 50,
+      "bytes": 3930
     },
     {
       "path": "src/scripts/codex-native-broker-read-only-check.ts",
@@ -15769,10 +15940,10 @@
     },
     {
       "path": "src/scripts/codex-sdk-backend-router-check.ts",
-      "sha256": "9c4427a0773d1fef6ba983d8a4c18d159a0e97d2841f203fac2c5e2a3047f47d",
+      "sha256": "66dc0c2e0752be33ec9820f672f09e4a4815537515125fad85c178b68adec979",
       "language": "typescript",
-      "lines": 76,
-      "bytes": 3407,
+      "lines": 75,
+      "bytes": 3320,
       "purpose": "@ts-nocheck"
     },
     {
@@ -16079,10 +16250,10 @@
     },
     {
       "path": "src/scripts/docs-truthfulness-check.ts",
-      "sha256": "7d2e6a732d61c0e68bc8d772c8defb40ddd49cdddf9b41a4872a40bb73b11129",
+      "sha256": "ef986b71b673efb2c1831ed9caefd78f6bd6f5d9f54c662587e812aea210ceed",
       "language": "typescript",
-      "lines": 119,
-      "bytes": 4901,
+      "lines": 88,
+      "bytes": 2916,
       "purpose": "@ts-nocheck"
     },
     {
@@ -16216,14 +16387,6 @@
       "purpose": "@ts-nocheck"
     },
     {
-      "path": "src/scripts/evidence-flagship-coverage-check.ts",
-      "sha256": "36ed9cd63c908cca0ef3a1307b5357e55c090abf6b1983d53cf9b6c7e63762b6",
-      "language": "typescript",
-      "lines": 56,
-      "bytes": 2133,
-      "purpose": "@ts-nocheck"
-    },
-    {
       "path": "src/scripts/fake-vs-real-proof-policy-check.ts",
       "sha256": "ed57fae87cc148f6988c228d2e70d5f6b07636254fc3cbe18fa7091ddfde5841",
       "language": "typescript",
@@ -16245,30 +16408,6 @@
       "language": "typescript",
       "lines": 59,
       "bytes": 2323,
-      "purpose": "@ts-nocheck"
-    },
-    {
-      "path": "src/scripts/flagship-proof-graph-v2-check.ts",
-      "sha256": "eea846e47db01d7a87d04b8e9d3667326f4702c33eb3106f84ffb8fc172291eb",
-      "language": "typescript",
-      "lines": 48,
-      "bytes": 1904,
-      "purpose": "@ts-nocheck"
-    },
-    {
-      "path": "src/scripts/flagship-proof-graph-v3-check.ts",
-      "sha256": "80a8b19604894babb23f305fbca3533cf02753908fa1cfd59dd4636cc1b03bc8",
-      "language": "typescript",
-      "lines": 69,
-      "bytes": 3487,
-      "purpose": "@ts-nocheck"
-    },
-    {
-      "path": "src/scripts/flagship-proof-graph-v4-check.ts",
-      "sha256": "ea5d5de11fdc3513a5ca025e8db709de01bc85d317456294b8fe2fec7acf58cf",
-      "language": "typescript",
-      "lines": 61,
-      "bytes": 3005,
       "purpose": "@ts-nocheck"
     },
     {
@@ -16297,10 +16436,10 @@
     },
     {
       "path": "src/scripts/gate-policy-audit-check.ts",
-      "sha256": "e8a00a16b4c1fe25ebb357f9683325dba1de24e6ef8cf9467c7634f8bab20035",
+      "sha256": "1df5f8f63f1e91506cf3fc7cabb1c403a6b8d4260433080908cf56b4f7f940a4",
       "language": "typescript",
-      "lines": 267,
-      "bytes": 15264,
+      "lines": 262,
+      "bytes": 15032,
       "purpose": "@ts-nocheck"
     },
     {
@@ -16677,14 +16816,6 @@
       "language": "typescript",
       "lines": 255,
       "bytes": 11310,
-      "purpose": "@ts-nocheck"
-    },
-    {
-      "path": "src/scripts/lib/real-codex-parallel-proof-fixture.ts",
-      "sha256": "2b20142004a460d454c363f8702a0c1d90e477ec210c97f368da080ecef84b04",
-      "language": "typescript",
-      "lines": 55,
-      "bytes": 2273,
       "purpose": "@ts-nocheck"
     },
     {
@@ -17174,13 +17305,6 @@
       "purpose": "@ts-nocheck"
     },
     {
-      "path": "src/scripts/parallel-production-smoke-check.ts",
-      "sha256": "9797303aeb0bb98993c5486d06f5266b1ae41b31bd7c7d5ffe26e71ca6dcc6da",
-      "language": "typescript",
-      "lines": 23,
-      "bytes": 862
-    },
-    {
       "path": "src/scripts/parallel-verification-engine-check.ts",
       "sha256": "5d626700f309653c15f6780e4aa5539edb46fb05d5abe7a188d102bf301027d5",
       "language": "typescript",
@@ -17601,22 +17725,6 @@
       "purpose": "@ts-nocheck"
     },
     {
-      "path": "src/scripts/release-check-dynamic-execute.ts",
-      "sha256": "67e9ccb46731c75ce78c57b4fbeb5f34c051ccd180ba6f89a8edda591022acd7",
-      "language": "typescript",
-      "lines": 311,
-      "bytes": 12836,
-      "purpose": "@ts-nocheck release:check:dynamic:execute (1.20.2 Area 2). Change-aware gate RUNNER (the plan-only release-check-dynamic.mjs stays as-is). Default = EXECUTE: selects gates whose affected_by globs match changed files (plus always-on), runs e"
-    },
-    {
-      "path": "src/scripts/release-check-dynamic.ts",
-      "sha256": "ff9cd1fc179ae357e4eddced00a6d8cf449faa3804192608b2597393d6a0d44b",
-      "language": "typescript",
-      "lines": 101,
-      "bytes": 5072,
-      "purpose": "@ts-nocheck release:check:dynamic — change-aware gate planner. Runs only P0 always-on gates plus gates whose affected_by globs match the changed files. Real/heavy gates are deferred to release:real-check. Publish mode never skips required_f"
-    },
-    {
       "path": "src/scripts/release-check-stamp.ts",
       "sha256": "308eec3895e26b0b2fcbb64470149208ce4608d8faa3720d763639ee4ba55a0f",
       "language": "typescript",
@@ -17637,14 +17745,6 @@
       "language": "typescript",
       "lines": 7,
       "bytes": 286,
-      "purpose": "@ts-nocheck"
-    },
-    {
-      "path": "src/scripts/release-dynamic-performance-check.ts",
-      "sha256": "894d66d2953085433144d9ca79def52503e12d04cd3dc45871c80285e971fd45",
-      "language": "typescript",
-      "lines": 113,
-      "bytes": 4461,
       "purpose": "@ts-nocheck"
     },
     {
@@ -17675,14 +17775,6 @@
       "language": "typescript",
       "lines": 79,
       "bytes": 5244
-    },
-    {
-      "path": "src/scripts/release-gate-budget-check.ts",
-      "sha256": "189fb4444dcb3e3d98d5f4957f91b13acf77879ce7b51f3fa35954799803f046",
-      "language": "typescript",
-      "lines": 40,
-      "bytes": 2156,
-      "purpose": "@ts-nocheck Gate: release:gate-budget Reports the slowest gates and any gate exceeding its time budget, from the gate result cache. Tolerant of missing timing data (informational on a cold cache). Only a gate exceeding the HARD ceiling is a"
     },
     {
       "path": "src/scripts/release-gate-dag-runner-check.ts",
@@ -17737,10 +17829,10 @@
     },
     {
       "path": "src/scripts/release-metadata-check.ts",
-      "sha256": "540136c7841605bdaf5180ae175acca1b7ea982e0806852e03a0875c4a120b98",
+      "sha256": "042e186f41bcccf73b871051bbd3ac93b9823c535a705f48160fe1bb5704028d",
       "language": "typescript",
-      "lines": 318,
-      "bytes": 23601,
+      "lines": 317,
+      "bytes": 23576,
       "purpose": "@ts-nocheck"
     },
     {
@@ -17798,10 +17890,10 @@
     },
     {
       "path": "src/scripts/release-readiness-report.ts",
-      "sha256": "e1bbc8fff722b28b09721af7e4680d760c66c5930ac644d76759b48693742aa4",
+      "sha256": "c1e046fa825950c818a20b56d3c6b407c0a0aeaf483c8c54b2480a13ed202d50",
       "language": "typescript",
-      "lines": 274,
-      "bytes": 12072,
+      "lines": 273,
+      "bytes": 12008,
       "purpose": "@ts-nocheck"
     },
     {
@@ -18251,10 +18343,10 @@
     },
     {
       "path": "src/scripts/seo-marketing-truthfulness-check.ts",
-      "sha256": "42ef24d5b4cf8224b3ce3f4a4af2ef1a5d5e3f9fc974984931317d0425b8f06c",
+      "sha256": "e178a44af0ffc5ee758b38b8edf68d23775f6c333b2d697e30b00f82242a6add",
       "language": "typescript",
-      "lines": 100,
-      "bytes": 5129,
+      "lines": 101,
+      "bytes": 5189,
       "purpose": "@ts-nocheck"
     },
     {
@@ -18520,10 +18612,10 @@
     },
     {
       "path": "src/scripts/typed-routing-gate-lib.ts",
-      "sha256": "65f3c3de610ec4469080497700d2e53e717d66582f44e05e9f1403d24c8fe566",
+      "sha256": "f8fd61dd1cf429a89952ba7a2701b1e94d043f7a4a92c87eeb0ed546e8c5a43f",
       "language": "typescript",
       "lines": 265,
-      "bytes": 14496
+      "bytes": 14498
     },
     {
       "path": "src/scripts/typescript-migration-report.ts",
@@ -18906,13 +18998,6 @@
       "bytes": 396
     },
     {
-      "path": "test/blackbox/evidence-flagship-coverage-packed.test.mjs",
-      "sha256": "937d0c05a2e571852b4dcdf7781c1805c8f49399373e06ff3f6c97f90f43c20d",
-      "language": "javascript",
-      "lines": 6,
-      "bytes": 213
-    },
-    {
       "path": "test/blackbox/fake-vs-real-proof-packed.test.mjs",
       "sha256": "e6c8c3e87fc2a248df25ecae09eedf39ba6c7b06ef33c11b448745764d67bec7",
       "language": "javascript",
@@ -19158,32 +19243,11 @@
       "bytes": 681
     },
     {
-      "path": "test/blackbox/release-check-dynamic-execute-packed.test.mjs",
-      "sha256": "0632e01de538cb38eaba0ed1e2887d337f354fe708c2f3010999219e04ad4239",
-      "language": "javascript",
-      "lines": 25,
-      "bytes": 1525
-    },
-    {
-      "path": "test/blackbox/release-check-dynamic-packed.test.mjs",
-      "sha256": "2212cc6a235916c03c9183c005fbf3b805db4b1ebaab7ff5a1476af8c717508d",
-      "language": "javascript",
-      "lines": 8,
-      "bytes": 338
-    },
-    {
       "path": "test/blackbox/release-check-stamp-git-commit.test.mjs",
       "sha256": "c42b7fa80df39e3d4f487a6e41d1ec0aa74b635e4178d9ba96d2f255f4d0b444",
       "language": "javascript",
       "lines": 23,
       "bytes": 1079
-    },
-    {
-      "path": "test/blackbox/release-gate-budget-packed.test.mjs",
-      "sha256": "31f36a6ca931be43e826a38c1aa18ec65b65ca57a185bf5281ff991ba7acd1e3",
-      "language": "javascript",
-      "lines": 8,
-      "bytes": 340
     },
     {
       "path": "test/blackbox/release-readiness-packed.test.mjs",
@@ -19488,10 +19552,10 @@
     },
     {
       "path": "test/e2e/route-research-native-agents.test.mjs",
-      "sha256": "4887834f8bbf520e9884a9fd7ab664744c2c3c20e297bf022346b55a9c06c7d9",
+      "sha256": "936c96e86274509f604df9de798c008761acc9234414c7a7113c68e387654929",
       "language": "javascript",
       "lines": 39,
-      "bytes": 2327
+      "bytes": 2382
     },
     {
       "path": "test/e2e/route-research-real-command.test.mjs",
@@ -19814,13 +19878,6 @@
       "language": "javascript",
       "lines": 11,
       "bytes": 470
-    },
-    {
-      "path": "test/integration/evidence-flagship-coverage.test.mjs",
-      "sha256": "b496c7689ffc34cb30142e9fa004caba85b08632c5d14b547a87f655eb42a361",
-      "language": "javascript",
-      "lines": 6,
-      "bytes": 206
     },
     {
       "path": "test/integration/evidence-index-route.test.mjs",
@@ -20404,13 +20461,6 @@
       "bytes": 4230
     },
     {
-      "path": "test/unit/agent-central-ledger-schemas.test.mjs",
-      "sha256": "ee098e4937c269febbd1b6ff161c4e222f215c314884151f796cec1915c8afa3",
-      "language": "javascript",
-      "lines": 36,
-      "bytes": 1140
-    },
-    {
       "path": "test/unit/agent-cleanup-executor-v2.test.mjs",
       "sha256": "e085422943b25d39b5e4989ad6ab665fb88c733bec9eb12da43132065b13f13c",
       "language": "javascript",
@@ -20426,10 +20476,10 @@
     },
     {
       "path": "test/unit/agent-effort-policy.test.mjs",
-      "sha256": "3a8419dd6aef82665ec8a27b679621bf174c2a8fcdb0f35c7923b0a72d159beb",
+      "sha256": "076a429df23dc9bdd2b727090db4e1cc0fc228a8a2c24d2772c954266db965d0",
       "language": "javascript",
       "lines": 134,
-      "bytes": 6201
+      "bytes": 6202
     },
     {
       "path": "test/unit/agent-follow-up-work-items-schema.test.mjs",
@@ -20511,10 +20561,10 @@
     },
     {
       "path": "test/unit/agent-role-config.test.mjs",
-      "sha256": "2afa889aade159e2679cd7cf3cf4ca931a41c2f5ee68d60cebbaf5e6f9dc1ba7",
+      "sha256": "5cab0e175559b928cfef23bb569c952076fd2c2246e5ee42a1e271647c2a0e88",
       "language": "javascript",
-      "lines": 130,
-      "bytes": 7384
+      "lines": 131,
+      "bytes": 7483
     },
     {
       "path": "test/unit/agent-scheduler-proof.test.mjs",
@@ -21059,10 +21109,10 @@
     },
     {
       "path": "test/unit/db-safety-golden.test.mjs",
-      "sha256": "7456044248bb3e66cd5411780b3ef34e199f30372207890b1f98ba9e6248f727",
+      "sha256": "c6f233232b343f1f8bfd6bd8f52bda28ca303f1620281e1345b35272e668e840",
       "language": "javascript",
-      "lines": 142,
-      "bytes": 6678
+      "lines": 213,
+      "bytes": 10249
     },
     {
       "path": "test/unit/db-safety.test.mjs",
@@ -21178,10 +21228,10 @@
     },
     {
       "path": "test/unit/doctor-desktop-bridge-repair-reporting.test.mjs",
-      "sha256": "e4570735b7e5ec385fff706a0452ad0c535e2caac151eb28663c4e93cd22fb78",
+      "sha256": "38ffc93111f948d3ca4155c790ac256a8b54ff4cbf619d323e991b6aa390d3fe",
       "language": "javascript",
-      "lines": 128,
-      "bytes": 6776
+      "lines": 161,
+      "bytes": 9029
     },
     {
       "path": "test/unit/doctor-migration-gate-regression.test.mjs",
@@ -21210,13 +21260,6 @@
       "language": "javascript",
       "lines": 36,
       "bytes": 1482
-    },
-    {
-      "path": "test/unit/evidence-flagship-coverage.test.mjs",
-      "sha256": "a7e9679bfe4bcb29341197d2f4c268f9c9c9e660e70afdbf6ea49c1f31758fd5",
-      "language": "javascript",
-      "lines": 7,
-      "bytes": 422
     },
     {
       "path": "test/unit/evidence-freshness.test.mjs",
@@ -21304,25 +21347,11 @@
       "bytes": 7386
     },
     {
-      "path": "test/unit/flagship-proof-graph-validator.test.mjs",
-      "sha256": "c600ed63c1541dc18e8e139d1d78f4dd22207083dd4f745a3703e104b545f976",
-      "language": "javascript",
-      "lines": 36,
-      "bytes": 1582
-    },
-    {
-      "path": "test/unit/gate-cache-determinism.test.mjs",
-      "sha256": "1338d758b75a5b6d4151c1a6983229e37ac65ce08e8600740848b3727655837f",
-      "language": "javascript",
-      "lines": 57,
-      "bytes": 2052
-    },
-    {
       "path": "test/unit/generated-dollar-skills.test.mjs",
-      "sha256": "fc76d3e02dacd2101437a1bd2de2aa7af66609969a13a2d5a27223ae25175924",
+      "sha256": "c595ce41d2012a16af5fa21419938753caf308ae6cc77925edc5eb9d27383bf8",
       "language": "javascript",
-      "lines": 125,
-      "bytes": 7069
+      "lines": 128,
+      "bytes": 7400
     },
     {
       "path": "test/unit/generation-terminal-no-overwrite.test.mjs",
@@ -21679,10 +21708,10 @@
     },
     {
       "path": "test/unit/package-publish-lifecycle.test.mjs",
-      "sha256": "188a65921d3d034e8edd33b82974316f1d9922ce0ad06cd13ea9519c7535cfeb",
+      "sha256": "066fb82210ad9b0b9b981442034a59db6509fe49753d96a08b83fe7260f66301",
       "language": "javascript",
-      "lines": 242,
-      "bytes": 14534
+      "lines": 241,
+      "bytes": 14484
     },
     {
       "path": "test/unit/parallel-verification-dag.test.mjs",
@@ -21830,6 +21859,13 @@
       "language": "javascript",
       "lines": 61,
       "bytes": 2479
+    },
+    {
+      "path": "test/unit/release-codex-core-native-probes.test.mjs",
+      "sha256": "9e28ea6c556aa6e91454f42507d0f24c7fda109a0842afd7f721b53e8d04297c",
+      "language": "javascript",
+      "lines": 24,
+      "bytes": 1062
     },
     {
       "path": "test/unit/release-gate-cache-version-neutral.test.mjs",
@@ -22373,20 +22409,18 @@
     }
   ],
   "edges_by_type": {
-    "affected_by": 965,
-    "calls": 11018,
-    "cites": 181,
-    "contains": 27672,
-    "defines": 9045,
-    "depends_on": 82,
-    "derived_from": 181,
-    "gated_by": 162,
-    "imports": 7232,
+    "affected_by": 966,
+    "calls": 11128,
+    "contains": 27778,
+    "defines": 9107,
+    "depends_on": 77,
+    "gated_by": 160,
+    "imports": 7316,
     "owns": 3,
-    "reexports": 1264,
-    "references": 16022,
+    "reexports": 1273,
+    "references": 16196,
     "routes_to": 48,
-    "tests": 3899,
+    "tests": 4081,
     "verified_by": 1099
   }
 }
