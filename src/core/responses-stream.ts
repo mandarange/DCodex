@@ -94,7 +94,14 @@ export function hasImageGenerationResult(payload: any): boolean {
 }
 
 export function parseResponsesSsePayload(text: string) {
-  const events = parseResponsesSseEvents(text);
+  const allEvents = parseResponsesSseEvents(text);
+  // A steering continuation has its own response. Never let a predecessor's
+  // completion or output satisfy the current response.
+  let latestStart = -1;
+  for (let index = allEvents.length - 1; index >= 0; index--) {
+    if (allEvents[index]?.type === 'response.created') { latestStart = index; break; }
+  }
+  const events = latestStart > 0 ? allEvents.slice(latestStart) : allEvents;
   if (!events.length) return null;
   const eventTypes = events.map((event) => event?.type || null);
   const failed = events.find((event) => event?.type === 'response.failed' || event?.response?.status === 'failed');
@@ -105,6 +112,10 @@ export function parseResponsesSsePayload(text: string) {
       error: failed?.response?.error || failed?.error || { message: 'responses_sse_failed' },
       events: eventTypes
     };
+  }
+  const terminal = [...events].reverse().find((event) => ['response.completed', 'response.incomplete'].includes(event?.type));
+  if (terminal?.type === 'response.incomplete') {
+    return { ...terminal.response, status: 'incomplete', output: terminal.response?.output || streamedOutputItems(events), events: eventTypes };
   }
   const streamedImage = findStreamedImageOutput(events);
   const recovered = recoveredOutput(streamedOutputItems(events), streamedImage);

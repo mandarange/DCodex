@@ -135,6 +135,18 @@ export function engineeringSanityPolicyText() {
   ].join('\n');
 }
 
+/** Execution guidance for capabilities exposed by the current host, never a capability claim. */
+export function concurrentToolGuidanceText() {
+  return [
+    'Tool execution: use the current host\'s exposed capabilities.',
+    '- Start slow independent reads early with async tools when available; retain their call/job IDs, continue independent work, and wait only when a dependency is needed. Finish required pending work before claiming completion; never replay a completed side effect.',
+    '- Use programmatic tool calling for bounded read/transform batches with known schemas and compact evidence output. Discover deferred tools before starting the program. Keep approvals, adaptive decisions, and native artifact validation direct.',
+    '- Async function/custom tools use direct calls, not programmatic callers; multi-agent API mode must not combine async tools with parallel tool calls. Hosted tools and ordinary Promise concurrency do not imply Responses async support.',
+    '- Apply new user instructions through native steering while preserving completed work and pending tool results. Do not restart the task or resubmit accepted input just because a continuation is pending.',
+    '- Preserve cached request prefixes. Use configuration_update for effort changes only when the host exposes compatible Astra standard single-agent requests, without automatic compaction/truncation; otherwise preserve the selected settings.'
+  ].join('\n');
+}
+
 export function leanEngineeringCompactText() {
   return coreEngineeringDirectiveText();
 }

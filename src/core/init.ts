@@ -7,7 +7,7 @@ import { DEFAULT_DB_SAFETY_POLICY } from './db-safety.js';
 import { isHarnessSourceProject, writeHarnessGuardPolicy } from './harness-guard.js';
 import { repairSksGeneratedArtifacts } from './harness-conflicts.js';
 import { disableVersionGitHook } from './version-manager.js';
-import { coreEngineeringDirectiveReferenceText, coreEngineeringDirectiveText } from './lean-engineering-policy.js';
+import { concurrentToolGuidanceText, coreEngineeringDirectiveReferenceText, coreEngineeringDirectiveText } from './lean-engineering-policy.js';
 import { DEFAULT_CODEX_APP_PLUGINS, DESIGN_SYSTEM_SSOT, DOLLAR_COMMANDS, DOLLAR_SKILL_NAMES, LEGACY_DOLLAR_SKILL_NAMES, PPT_CONDITIONAL_SKILL_ALLOWLIST, PPT_PIPELINE_MCP_ALLOWLIST, PPT_PIPELINE_SKILL_ALLOWLIST, RECOMMENDED_DESIGN_REFERENCES, RECOMMENDED_MCP_SERVERS, RECOMMENDED_SKILLS, context7ConfigToml, prefixKnownSksDollarReferences, sksPrefixedDollarCommand, triwikiContextTracking } from './routes.js';
 import { SKILL_DREAM_POLICY } from './skill-forge.js';
 import { CODEX_HOOK_EVENT_STATE_KEYS } from './codex-compat/codex-hook-events.js';
@@ -320,6 +320,8 @@ const AGENTS_BLOCK = [
   '- If a skill would pause or redirect authorized work, identify its exact file and instruction, explain why it applies, and distinguish requirements from your interpretation. Continue independent authorized work while a necessary answer is pending.',
   '- Run checks proportionate to the changed behavior. After they pass, repeat or broaden only for new changes, failures, or unresolved risks.',
   '- Use concise, concrete language. Put the result first; use lists or tables only when they make the information easier to read. For copy or translation requests, return the requested content without workflow labels.',
+  '',
+  ...concurrentToolGuidanceText().split('\n'),
   '',
   '## Evidence And Context',
   '',

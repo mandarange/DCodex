@@ -576,6 +576,7 @@ export function promptPipelineContext(prompt: any, route: any = null, root = pro
     responseLanguageInstruction(cleanPrompt),
     coreEngineeringDirectiveReferenceText(),
     engineeringSanityPolicyText(),
+    'Apply AGENTS.md Tool execution guidance: overlap independent reads using exposed async or programmatic tools, preserve pending call IDs, and use native steering for new instructions. Do not infer API capabilities from ordinary Promise concurrency.',
     'Load only the selected route skills and route-specific instructions; do not inject unrelated route policy.',
     'Honor authorization already given and infer routine details. If a skill would pause or redirect the work, cite its exact instruction and explain why it applies; keep independent authorized work moving.',
     'Codex native /goal is the only persisted goal owner. Goal persistence must not replace or skip the selected route gates.',

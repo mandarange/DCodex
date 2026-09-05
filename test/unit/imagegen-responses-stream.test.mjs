@@ -120,3 +120,24 @@ test('a failed stream reports the provider error instead of a recovered image', 
   assert.equal(payload.status, 'failed');
   assert.equal(payload.error.message, 'proxy_overloaded');
 });
+
+test('steering keeps incomplete responses incomplete and isolates successor output', () => {
+  const pending = { id: 'fc_async', type: 'function_call', name: 'lookup', async: true, call_id: 'call_original', arguments: '{}' };
+  const prefix = [
+    { type: 'response.created', response: { id: 'resp_old' } },
+    { type: 'response.output_item.done', item: pending },
+    { type: 'response.incomplete', response: { id: 'resp_old', status: 'incomplete', incomplete_details: { reason: 'steered' } } }
+  ];
+  const interrupted = parseResponsesSsePayload(sse(prefix));
+  assert.equal(interrupted.status, 'incomplete');
+  assert.equal(interrupted.incomplete_details.reason, 'steered');
+  assert.equal(interrupted.output[0].call_id, 'call_original');
+  assert.equal(interrupted.output[0].async, true);
+  const successor = parseResponsesSsePayload(sse([...prefix,
+    { type: 'response.created', response: { id: 'resp_new' } },
+    { type: 'response.output_item.done', item: { id: 'msg_new', type: 'message', content: [{ type: 'output_text', text: 'Updated answer' }] } },
+    { type: 'response.completed', response: { id: 'resp_new', status: 'completed', output: [] } }
+  ]));
+  assert.equal(successor.id, 'resp_new');
+  assert.deepEqual(successor.output.map(item => item.id), ['msg_new']);
+});

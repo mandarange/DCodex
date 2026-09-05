@@ -30,7 +30,8 @@ export interface CodexAppServerApprovalPolicy {
   readonly fileChange?: (params: JsonObject) => JsonObject;
   readonly permissions?: (params: JsonObject) => JsonObject;
   readonly toolRequestUserInput?: (params: JsonObject) => JsonObject;
-  readonly dynamicToolCall?: (params: JsonObject) => JsonObject;
+  // Async host execution does not enable model-side Responses async tool calling.
+  readonly dynamicToolCall?: (params: JsonObject, context: { readonly signal: AbortSignal }) => JsonObject | Promise<JsonObject>;
   readonly mcpElicitation?: (params: JsonObject) => JsonObject;
   readonly attestation?: (params: JsonObject) => JsonObject;
   readonly chatgptAuthTokensRefresh?: (params: JsonObject) => JsonObject;
@@ -59,6 +60,8 @@ export interface CodexAppServerV2ClientOptions {
   readonly maxFrameBytes?: number;
   readonly maxNotifications?: number;
   readonly maxNotificationBytes?: number;
+  readonly maxPendingDynamicToolCalls?: number;
+  readonly dynamicToolCallTimeoutMs?: number;
   readonly currentTimeProvider?: () => Date;
   readonly approvalPolicy?: CodexAppServerApprovalPolicy;
 }
@@ -97,6 +100,8 @@ export class CodexAppServerV2Client {
   readonly maxFrameBytes: number;
   readonly maxNotifications: number;
   readonly maxNotificationBytes: number;
+  readonly maxPendingDynamicToolCalls: number;
+  readonly dynamicToolCallTimeoutMs: number;
   readonly currentTimeProvider: () => Date;
   readonly approvalPolicy: CodexAppServerApprovalPolicy;
   child: ChildProcessWithoutNullStreams | null = null;
@@ -107,6 +112,9 @@ export class CodexAppServerV2Client {
   listeners = new Set<(event: JsonObject) => void>();
   stdoutBuffer = '';
   stderr = '';
+  private stopped = false;
+  private processExited = false;
+  private readonly dynamicToolCalls = new Set<{ cancel: () => void }>();
 
   constructor(options: CodexAppServerV2ClientOptions) {
     this.command = options.command;
@@ -121,6 +129,8 @@ export class CodexAppServerV2Client {
       Math.min(64 * 1024 * 1024, options.maxNotificationBytes ?? 4 * 1024 * 1024)
     );
     this.currentTimeProvider = options.currentTimeProvider || (() => new Date());
+    this.maxPendingDynamicToolCalls = boundedInteger(options.maxPendingDynamicToolCalls, 32, 256);
+    this.dynamicToolCallTimeoutMs = boundedInteger(options.dynamicToolCallTimeoutMs, 20_000, 600_000);
     this.approvalPolicy = options.approvalPolicy || {};
   }
 
@@ -236,6 +246,7 @@ export class CodexAppServerV2Client {
   }
 
   start(): void {
+    if (this.stopped || this.processExited) throw new Error('Codex app-server client is closed');
     if (this.child) return;
     this.child = spawn(this.command, [...this.args], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -248,9 +259,15 @@ export class CodexAppServerV2Client {
       this.stderr += chunk.toString('utf8');
       if (this.stderr.length > 64 * 1024) this.stderr = this.stderr.slice(-64 * 1024);
     });
-    this.child.on('error', (err: Error) => this.rejectAll(err, 'transport'));
+    this.child.stdin.on('error', (err: Error) => this.stop(err, 'transport'));
+    this.child.on('error', (err: Error) => this.stop(err, 'transport'));
+    this.child.on('exit', () => {
+      this.processExited = true;
+      this.cancelDynamicToolCalls();
+    });
+    // Drain final stdout responses before rejecting remaining outbound requests.
     this.child.on('close', (code, signal) => {
-      this.rejectAll(
+      this.stop(
         new Error(`Codex app-server exited before response (code ${code ?? signal ?? 'unknown'}). ${this.stderr.trim()}`.trim()),
         'process_exit'
       );
@@ -258,6 +275,7 @@ export class CodexAppServerV2Client {
   }
 
   request(method: string, params: JsonObject): Promise<unknown> {
+    if (this.stopped || this.processExited) return Promise.reject(new CodexAppServerRequestError(method, 'transport', 'Codex app-server client is closed'));
     this.start();
     const id = this.nextId++;
     const message = { jsonrpc: '2.0', id, method, params };
@@ -282,6 +300,7 @@ export class CodexAppServerV2Client {
   }
 
   handleStdout(chunk: Buffer): void {
+    if (this.stopped) return;
     this.stdoutBuffer += chunk.toString('utf8');
     const lines = this.stdoutBuffer.split(/\r?\n/);
     this.stdoutBuffer = lines.pop() || '';
@@ -290,6 +309,7 @@ export class CodexAppServerV2Client {
       return;
     }
     for (const line of lines) {
+      if (this.stopped) return;
       if (!line.trim()) continue;
       if (Buffer.byteLength(line, 'utf8') > this.maxFrameBytes) {
         this.abortProtocol('codex_app_server_frame_too_large');
@@ -301,10 +321,10 @@ export class CodexAppServerV2Client {
       } catch {
         continue;
       }
-      if (message.id !== undefined && this.pending.has(message.id as JsonRpcId)) {
-        this.resolvePending(message);
-      } else if (message.id !== undefined && typeof message.method === 'string') {
+      if (message.id !== undefined && typeof message.method === 'string') {
         void this.respondToServerRequest(message);
+      } else if (message.id !== undefined && this.pending.has(message.id as JsonRpcId)) {
+        this.resolvePending(message);
       } else {
         const event = { ...message, received_at: nowIso() };
         const eventBytes = notificationByteLength(event);
@@ -328,6 +348,7 @@ export class CodexAppServerV2Client {
   }
 
   async respondToServerRequest(message: JsonObject): Promise<void> {
+    if (this.stopped || this.processExited) return;
     const id = message.id as JsonRpcId;
     const method = String(message.method || '');
     try {
@@ -352,7 +373,7 @@ export class CodexAppServerV2Client {
         return;
       }
       if (method === 'item/tool/call') {
-        this.write({ jsonrpc: '2.0', id, result: this.approvalPolicy.dynamicToolCall?.(message.params as JsonObject) || { contentItems: [], success: false } });
+        await this.respondToDynamicToolCall(id, message.params as JsonObject);
         return;
       }
       if (method === 'mcpServer/elicitation/request') {
@@ -414,6 +435,7 @@ export class CodexAppServerV2Client {
   }
 
   async close(): Promise<void> {
+    this.stop(new Error('Codex app-server client is closed'), 'transport');
     if (!this.child) return;
     const child = this.child;
     this.child = null;
@@ -422,14 +444,75 @@ export class CodexAppServerV2Client {
   }
 
   private write(message: JsonObject): void {
+    if (this.stopped || this.processExited) return;
     this.child?.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  private respondToDynamicToolCall(id: JsonRpcId, params: JsonObject): Promise<void> {
+    const handler = this.approvalPolicy.dynamicToolCall;
+    if (!handler) {
+      this.write({ jsonrpc: '2.0', id, result: { contentItems: [], success: false } });
+      return Promise.resolve();
+    }
+    if (this.dynamicToolCalls.size >= this.maxPendingDynamicToolCalls) {
+      this.write({ jsonrpc: '2.0', id, error: { code: -32603, message: 'Codex dynamic tool call capacity exceeded' } });
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      const controller = new AbortController();
+      let completed = false;
+      const finish = (response?: JsonObject): void => {
+        if (completed) return;
+        completed = true;
+        clearTimeout(timer);
+        try {
+          if (response) this.write({ jsonrpc: '2.0', id, ...response });
+        } catch (error) {
+          this.stop(error instanceof Error ? error : new Error(String(error)), 'transport');
+        } finally {
+          resolve();
+        }
+      };
+      const operation = { cancel: () => { finish(); controller.abort(); } };
+      const timer = setTimeout(() => {
+        finish({ error: { code: -32603, message: 'Codex dynamic tool call timed out' } });
+        controller.abort();
+      }, this.dynamicToolCallTimeoutMs);
+      timer.unref?.();
+      this.dynamicToolCalls.add(operation);
+      const settled = (response: JsonObject): void => {
+        this.dynamicToolCalls.delete(operation);
+        finish(response);
+      };
+      try {
+        Promise.resolve(handler(params, { signal: controller.signal })).then(
+          (result) => settled({ result: result || { contentItems: [], success: false } }),
+          (error: unknown) => settled({ error: { code: -32603, message: error instanceof Error ? error.message : String(error) } })
+        );
+      } catch (error) {
+        settled({ error: { code: -32603, message: error instanceof Error ? error.message : String(error) } });
+      }
+      // A timed-out handler keeps its slot until it settles, bounding work even
+      // when the handler ignores cancellation.
+    });
+  }
+
+  private stop(err: Error, kind: Extract<CodexAppServerRequestErrorKind, 'transport' | 'process_exit' | 'protocol_overflow'>): void {
+    this.stopped = true;
+    this.rejectAll(err, kind);
+    this.cancelDynamicToolCalls();
+  }
+
+  private cancelDynamicToolCalls(): void {
+    for (const operation of this.dynamicToolCalls) operation.cancel();
+    this.dynamicToolCalls.clear();
   }
 
   private abortProtocol(code: string): void {
     const child = this.child;
     this.child = null;
     this.stdoutBuffer = '';
-    this.rejectAll(new Error(code), 'protocol_overflow');
+    this.stop(new Error(code), 'protocol_overflow');
     if (!child) return;
     child.stdin.end();
     child.kill('SIGTERM');
@@ -454,6 +537,8 @@ export async function createCodexAppServerV2Client(
     maxFrameBytes?: number;
     maxNotifications?: number;
     maxNotificationBytes?: number;
+    maxPendingDynamicToolCalls?: number;
+    dynamicToolCallTimeoutMs?: number;
     currentTimeProvider?: () => Date;
     approvalPolicy?: CodexAppServerApprovalPolicy;
   } = { command: runtime.identity.realpath, env: runtimeEnv };
@@ -463,6 +548,8 @@ export async function createCodexAppServerV2Client(
   if (options.maxFrameBytes !== undefined) clientOptions.maxFrameBytes = options.maxFrameBytes;
   if (options.maxNotifications !== undefined) clientOptions.maxNotifications = options.maxNotifications;
   if (options.maxNotificationBytes !== undefined) clientOptions.maxNotificationBytes = options.maxNotificationBytes;
+  if (options.maxPendingDynamicToolCalls !== undefined) clientOptions.maxPendingDynamicToolCalls = options.maxPendingDynamicToolCalls;
+  if (options.dynamicToolCallTimeoutMs !== undefined) clientOptions.dynamicToolCallTimeoutMs = options.dynamicToolCallTimeoutMs;
   if (options.currentTimeProvider !== undefined) clientOptions.currentTimeProvider = options.currentTimeProvider;
   if (options.approvalPolicy !== undefined) clientOptions.approvalPolicy = options.approvalPolicy;
   return {
@@ -478,6 +565,10 @@ export function currentTimeResponse(date: Date): CodexAppServerCurrentTime {
     unixTimeMilliseconds: date.getTime(),
     timezone: 'UTC'
   };
+}
+
+function boundedInteger(value: number | undefined, fallback: number, maximum: number): number {
+  return Number.isFinite(value) ? Math.max(1, Math.min(maximum, Math.floor(value!))) : fallback;
 }
 
 function normalizeThreadListParams<T extends object>(params: T): JsonObject {

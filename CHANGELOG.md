@@ -10,11 +10,17 @@
   skill-induced pauses, keep small tasks parent-owned, and avoid repeated checks.
 - Make essential-mode prompts match the profile: no compulsory reflection or
   Honest Mode labels; copy and translation responses return the requested content.
+- Prefer exposed async reads and bounded programmatic batches, preserve pending
+  work during steering, and document compatible effort updates and host limits.
 
 ### Fixed
 
 - Map Astra SDK requests using `none` or `minimal` effort to `low`, including the
   Python adapter, while preserving supported efforts and other models.
+- Await asynchronous App Server tool handlers with bounded capacity, deadlines,
+  cancellation, and original request IDs instead of serializing Promise objects.
+- Keep explicitly incomplete Responses output incomplete and isolate output from
+  a new steering continuation so an earlier response cannot satisfy it.
 - Give SKS Center MCP inventory reads enough time to finish both configuration
   scopes, and show incomplete or rejected responses as unavailable.
 - Pass the selected workspace and its read-only trust context to the Center's

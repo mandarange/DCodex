@@ -337,3 +337,31 @@ test('a valid qualified gateway twin keeps a pinned thread on its account after 
     await close(official.server); await close(provider.server);
   }
 });
+
+test('Astra Responses async definitions and continuation metadata survive the bridge', async () => {
+  const official = recordingUpstream(); const provider = recordingUpstream();
+  const officialPort = await listen(official.server); const providerPort = await listen(provider.server);
+  const bridgePort = await freePort(); let bridge: DesktopBridgeHandle | null = null;
+  try {
+    const config = bridgeConfig(bridgePort, providerPort, officialPort);
+    config.routePolicy.model_routes['codex-lb:gpt-6-astra'] = { provider_id: 'codex-lb', upstream_model: 'gpt-6-astra' };
+    bridge = await startDesktopBridge(config, { writeState: false });
+    const request = {
+      model: 'codex-lb:gpt-6-astra', reasoning: { effort: 'low' },
+      tools: [{ type: 'function', name: 'lookup', async: true, strict: true, parameters: { type: 'object', properties: {}, required: [], additionalProperties: false } }],
+      input: 'Start the lookup and work on an independent part.'
+    };
+    assert.equal((await postJson(bridgePort, '/backend-api/codex/responses', request)).status, 200);
+    assert.deepEqual(JSON.parse(provider.seen[0]!.body), { ...request, model: 'gpt-6-astra' });
+    const continuation = { ...request, previous_response_id: 'resp_latest', input: [
+      { type: 'function_call_output', call_id: 'call_original', output: '{"value":1}' },
+      { type: 'configuration_update', reasoning: { effort: 'high' } },
+      { role: 'user', content: 'Check the result.' }
+    ] };
+    assert.equal((await postJson(bridgePort, '/backend-api/codex/responses', continuation)).status, 200);
+    assert.deepEqual(JSON.parse(provider.seen[1]!.body), { ...continuation, model: 'gpt-6-astra' });
+    assert.equal(provider.seen[1]!.authorization, undefined);
+    assert.equal(provider.seen[1]!.accountId, undefined);
+    assert.equal(official.seen.length, 0);
+  } finally { if (bridge) await stopDesktopBridge(bridge); await close(official.server); await close(provider.server); }
+});

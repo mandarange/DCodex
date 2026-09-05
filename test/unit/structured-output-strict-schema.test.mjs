@@ -59,3 +59,19 @@ test('a mixed-type tuple is left alone rather than silently widened', () => {
   });
   assert.deepEqual(schema.properties.pair.prefixItems, [{ type: 'string' }, { type: 'number' }]);
 });
+
+test('structured extraction rejects a steered incomplete response even when its partial text is valid JSON', async () => {
+  const { runOpenAIStructuredOutput } = await import('../../dist/core/structured-output-adapter.js');
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    id: 'resp_steered', status: 'incomplete', incomplete_details: { reason: 'steered' },
+    output: [{ type: 'message', content: [{ type: 'output_text', text: '{"ok":true}' }] }]
+  }), { status: 200 });
+  try {
+    const result = await runOpenAIStructuredOutput({ model: 'gpt-6-astra', apiKey: 'fixture-key', prompt: 'fixture', schemaName: 'result', jsonSchema: { type: 'object', properties: { ok: { type: 'boolean' } } } });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.parsed_json, null);
+    assert.deepEqual(result.validation.issues, ['response_not_completed']);
+  } finally { globalThis.fetch = original; }
+});

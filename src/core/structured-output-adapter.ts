@@ -130,6 +130,7 @@ export async function runOpenAIStructuredOutput(request: StructuredOutputAdapter
     // `response.completed` with an empty `output`; recover the streamed items.
     const payload = parseStructuredOutputBody(text);
     if (!payload) return blockedResult(model, 'json_parse_failed', 'Responses body was neither JSON nor a readable event stream.', sourceSha);
+    if (payload.status && payload.status !== 'completed') return blockedResult(model, 'response_not_completed', String(payload.status), sourceSha);
     const parsed = (payload as any).output_parsed || parseResponseOutputText(payload);
     if (!parsed || typeof parsed !== 'object') return blockedResult(model, 'json_parse_failed', 'Responses output did not contain parsed JSON.', sourceSha);
     const strictSchema = strictJsonSchemaFormat(request.schemaName, request.jsonSchema).schema;
