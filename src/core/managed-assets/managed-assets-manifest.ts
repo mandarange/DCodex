@@ -641,6 +641,8 @@ export function managedOfficialSubagentRoleOwnsText(text: string, role: ManagedO
   if (!expectedHash) return false
   const separatorIndex = lines.findIndex((line, index) => index > hashIndex && line.trim() === '')
   if (separatorIndex === -1) return false
+  // User TOML before the hashed body is still configuration, not managed metadata.
+  if (lines.slice(0, separatorIndex).some((line) => line.trim() !== '' && !line.trim().startsWith('#'))) return false
   const body = lines.slice(separatorIndex + 1).join('\n')
   return sha256(body) === expectedHash
 }

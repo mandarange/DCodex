@@ -180,8 +180,10 @@ final class OverviewViewController: NSViewController, ControlCenterPage {
         processClient.run([
             "mcp", "config", "list", "--scope", "effective",
             "--project-root", AppRuntime.projectRoot, "--trusted-project", "--json"
-        ], timeout: 3) { [weak self] result in
-            mcp = self?.json(result.output)
+        ], timeout: NativeView.mcpInventoryTimeout) { [weak self] result in
+            if result.code == 0 && !result.timedOut && !result.truncated {
+                mcp = self?.json(result.output)
+            }
             group.leave()
         }
         group.notify(queue: .main) { [weak self] in

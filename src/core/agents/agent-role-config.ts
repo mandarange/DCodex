@@ -18,7 +18,7 @@ import {
   managedOfficialSubagentRoleByName,
   managedOfficialSubagentRoleContent
 } from '../managed-assets/managed-assets-manifest.js'
-import { installOfficialSubagentAgentConfigs } from '../subagents/official-subagent-config.js'
+import { installOfficialSubagentAgentConfigs, refreshGlobalOfficialSubagentAgentConfigs } from '../subagents/official-subagent-config.js'
 
 export const AGENT_ROLE_CONFIG_REPAIR_SCHEMA = 'sks.agent-role-config-repair.v1'
 
@@ -64,12 +64,19 @@ export async function repairAgentRoleConfigs(input: {
     fix: input.apply === true
   })
   const officialRepair = await installOfficialSubagentAgentConfigs(root, { apply: input.apply === true })
+  const globalRepair = path.join(root, '.codex') === codexHome
+    ? null
+    : await refreshGlobalOfficialSubagentAgentConfigs(codexHome, { apply: input.apply === true })
+  const globalPath = (file: string) => path.join(path.dirname(codexHome), file)
   const missing: string[] = [...officialRepair.missing]
-  const stale: string[] = [...officialRepair.stale]
+  const stale: string[] = [...officialRepair.stale, ...(globalRepair?.stale.map(globalPath) || [])]
   const created: string[] = [...officialRepair.created]
-  const repaired: string[] = [...officialRepair.updated]
-  const existing: string[] = [...officialRepair.existing]
-  const manualBlockers: string[] = [...officialRepair.manual_blockers]
+  const repaired: string[] = [...officialRepair.updated, ...(globalRepair?.updated.map(globalPath) || [])]
+  const existing: string[] = [...officialRepair.existing, ...(globalRepair?.existing.map(globalPath) || [])]
+  const manualBlockers: string[] = [
+    ...officialRepair.manual_blockers,
+    ...(globalRepair?.manual_blockers.map((blocker) => `global:${blocker}`) || [])
+  ]
   const requiredFixes = missing.length + stale.length
   const appliedFixes = created.length + repaired.length
   const report = {
@@ -77,20 +84,22 @@ export async function repairAgentRoleConfigs(input: {
     generated_at: nowIso(),
     ok: input.apply
       ? requiredFixes === appliedFixes && manualBlockers.length === 0 && retiredRoleCleanup.ok
-      : manualBlockers.length === 0 && retiredRoleCleanup.ok,
+      : manualBlockers.length === 0 && retiredRoleCleanup.ok && (globalRepair?.stale.length || 0) === 0,
     apply: input.apply === true,
     missing,
     stale,
     existing,
     created,
     repaired,
-    backups: officialRepair.backups,
+    backups: [...officialRepair.backups, ...(globalRepair?.backups.map(globalPath) || [])],
+    global_role_repair: globalRepair,
     manual_blockers: manualBlockers,
     manifest_role_ids: MANAGED_OFFICIAL_SUBAGENT_ROLES.map((role) => role.id),
     retired_role_cleanup: retiredRoleCleanup,
     warnings_suppressed: true,
     blockers: [
       ...manualBlockers,
+      ...(!input.apply ? (globalRepair?.stale.map((file) => `stale_global_official_subagent_agent:${globalPath(file)}`) || []) : []),
       ...(input.apply && requiredFixes !== appliedFixes ? ['agent_role_config_repair_incomplete'] : []),
       ...(!retiredRoleCleanup.ok ? ['retired_agent_role_cleanup_incomplete'] : [])
     ]

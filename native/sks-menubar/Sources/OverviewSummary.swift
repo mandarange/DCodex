@@ -80,6 +80,7 @@ enum OverviewSummary {
 
     private static func validatedMCP(_ value: [String: Any]?) -> [String: Any]? {
         guard value?["schema"] as? String == "sks.mcp-inventory.v2",
+              value?["ok"] as? Bool == true,
               integer(value?["enabled_count"]) != nil,
               integer(value?["failed_count"]) != nil else { return nil }
         return value

@@ -179,7 +179,8 @@ test('Overview renders every release work-order health field from bounded local 
   assert.ok(!overview.includes('installed \\(menu?["installed_version"] as? String ?? "unknown")'));
   assert.doesNotMatch(overview, /Telegram|telegram/);
   assert.match(overview, /"mcp", "config", "list", "--scope", "effective",[\s\S]*"--project-root", AppRuntime\.projectRoot, "--trusted-project", "--json"/);
-  assert.match(overview, /\], timeout: 3\)/);
+  assert.match(overview, /\], timeout: NativeView\.mcpInventoryTimeout\)/);
+  assert.match(swift, /mcpInventoryTimeout: TimeInterval = 25/);
   assert.match(overview, /loadStatus\(forceUpdateRefresh: false\)/);
   assert.match(overview, /loadStatus\(forceUpdateRefresh: true\)/);
   assert.match(overview, /if forceUpdateRefresh \{ updateArguments\.append\("--refresh"\) \}/);
@@ -203,7 +204,7 @@ test('Diagnostics induces Codex CLI updates with a guarded action', () => {
   assert.match(diagnostics, /Codex CLI update available/);
 });
 
-test('Overview summary distinguishes Menu Bar build, installed SKS, cached status, and unavailable probes', (t) => {
+test('Overview summary and MCP refresh distinguish slow inventories from failed or malformed probes', (t) => {
   if (process.platform !== 'darwin') return t.skip('Swift AppKit overview harness is macOS-only');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sks-overview-summary-'));
   const harness = path.join(root, 'OverviewHarness.swift');
@@ -230,9 +231,9 @@ enum AppRuntime {
     static let canonicalProjectRoot = sksCanonicalFilesystemPath(projectRoot)
 }
 
-struct ProcessResult { let code: Int32; let output: String; let truncated: Bool }
-final class ProcessClient {
-    func run(_ arguments: [String], stdin: String? = nil, environment: [String: String] = [:], timeout: TimeInterval? = nil, completion: @escaping (ProcessResult) -> Void) {}
+struct PublicNotificationEvent { let category: String; let title: String; let body: String }
+final class NotificationCoordinator {
+    func send(_ event: PublicNotificationEvent) { preconditionFailure("An inventory read must not send a notification") }
 }
 enum OperationState: String { case succeeded, failed, running }
 enum OperationProgressSignal: String { case evidence, fileChange, testResult, modelResponse, toolResponse, none }
@@ -271,7 +272,15 @@ enum SKSTimestamp { static func date(from value: String) -> Date? { ISO8601DateF
 
 @main
 struct OverviewHarness {
-    static func main() {
+    static func descendants(_ view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+
+    static func labels(_ view: NSView) -> String {
+        descendants(view).compactMap { ($0 as? NSTextField)?.stringValue }.joined(separator: "\\n")
+    }
+
+    static func main() throws {
         let update: [String: Any] = [
             "schema": "sks.update-status.v3",
             "source": "cache",
@@ -313,6 +322,14 @@ struct OverviewHarness {
         precondition(partial.contains("Updates: unavailable"))
         precondition(partial.contains("MCP: unavailable"))
 
+        let inventory: [String: Any] = ["schema": "sks.mcp-inventory.v2", "ok": true, "enabled_count": 12, "failed_count": 0]
+        let configured = OverviewSummary.render(update: update, mcp: inventory, menuBarBuild: "6.2.0", codexRunning: true, operationSummary: "None")
+        precondition(configured.contains("MCP: 12 enabled · 0 failed"))
+        var unreadable = inventory
+        unreadable["ok"] = false
+        let rejected = OverviewSummary.render(update: update, mcp: unreadable, menuBarBuild: "6.2.0", codexRunning: true, operationSummary: "None")
+        precondition(rejected.contains("MCP: unavailable"))
+
         let aheadOfRegistry: [String: Any] = [
             "schema": "sks.update-status.v3",
             "source": "stale",
@@ -328,16 +345,104 @@ struct OverviewHarness {
             menuBarBuild: "7.1.0", codexRunning: true, operationSummary: "None recorded"
         )
         precondition(aheadRendered.contains("SKS install: 7.1.0 · registry last seen 7.0.5"))
+
+        // Exercise the production process runner and both native consumers.
+        let fixtureRoot = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+        func write(_ name: String, _ value: String) throws {
+            try value.write(to: fixtureRoot.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        func json(_ value: [String: Any]) throws -> String {
+            String(data: try JSONSerialization.data(withJSONObject: value), encoding: .utf8)!
+        }
+        try write("update.json", json(update))
+        var listInventory = inventory
+        listInventory["servers"] = (1...12).map {
+            ["name": "fixture-mcp-\\($0)", "scope": "global", "enabled": true, "transport": "stdio"] as [String: Any]
+        }
+        let client = ProcessClient(
+            actionScript: fixtureRoot.appendingPathComponent("action.sh").path,
+            logPath: fixtureRoot.appendingPathComponent("process.log").path,
+            projectRoot: fixtureRoot.path
+        )
+        defer { client.terminateAll() }
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        let overview = OverviewViewController(processClient: client, operations: OperationCoordinator())
+        let mcp = MCPServersViewController(processClient: client, operations: OperationCoordinator(), notifications: NotificationCoordinator())
+        let overviewView = overview.view
+        let mcpView = mcp.view
+        let table = descendants(mcpView).compactMap { $0 as? NSTableView }.first!
+        let mcpRefresh = descendants(mcpView).compactMap { $0 as? NSButton }.first { $0.title == "Refresh" }!
+
+        func refresh(_ output: String, delay: String = "0", exitCode: String = "0") throws {
+            try write("mcp.json", output)
+            try write("delay", delay)
+            try write("exit-code", exitCode)
+            overview.refreshOnAppear()
+            mcp.refreshOnAppear()
+            let deadline = Date().addingTimeInterval(12)
+            func completed() -> Bool {
+                let text = labels(overviewView)
+                return mcpRefresh.isEnabled && (
+                    text.contains("Local checks complete") || text.contains("Status refreshed · attention needed")
+                )
+            }
+            while !completed(), Date() < deadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+            }
+            precondition(completed(), "MCP refresh did not finish: " + labels(overviewView) + labels(mcpView))
+        }
+        func assertUnavailable(_ reason: String) {
+            precondition(labels(overviewView).contains("MCP: unavailable"), reason)
+            precondition(labels(overviewView).contains("Status refreshed · attention needed"), reason)
+            precondition(labels(mcpView).contains("MCP inventory unavailable"), reason)
+            precondition(!labels(mcpView).contains("No MCP servers are configured"), reason)
+            precondition(mcp.numberOfRows(in: table) == 0, reason)
+        }
+
+        // A real four-second child outlives the former three-second Overview deadline.
+        try refresh(json(listInventory), delay: "4")
+        precondition(labels(overviewView).contains("12 enabled · 0 failed"))
+        precondition(labels(overviewView).contains("Local checks complete"))
+        precondition(mcp.numberOfRows(in: table) == 12)
+        precondition(labels(mcpView).contains("12 servers · 12 enabled · 0 need attention"))
+
+        listInventory["ok"] = false
+        try refresh(json(listInventory))
+        assertUnavailable("An explicit inventory error must not look healthy or empty")
+        try refresh("{invalid-json")
+        assertUnavailable("Malformed output must not look healthy or empty")
+        listInventory["ok"] = true
+        try refresh(json(listInventory), exitCode: "1")
+        assertUnavailable("A failed command must not accept a healthy-looking payload")
+        print("native-mcp-delayed-and-failure-regressions-ok")
     }
 }
 `);
     const sourceRoot = path.join(resolvePackagedMenuBarSourceRoot(), 'Sources');
     const overview = path.join(sourceRoot, 'OverviewViewController.swift');
     const summary = path.join(sourceRoot, 'OverviewSummary.swift');
-    const compiled = spawnSync('swiftc', [summary, path.join(sourceRoot, 'NativeView.swift'), overview, harness, '-o', binary], { encoding: 'utf8' });
+    fs.writeFileSync(path.join(root, 'action.sh'), `#!/bin/sh
+fixture_root="$(/usr/bin/dirname "$0")"
+case "$1" in
+  update) /bin/cat "$fixture_root/update.json" ;;
+  mcp)
+    /bin/sleep "$(/bin/cat "$fixture_root/delay")"
+    /bin/cat "$fixture_root/mcp.json"
+    exit "$(/bin/cat "$fixture_root/exit-code")"
+    ;;
+  *) exit 64 ;;
+esac
+`, { mode: 0o755 });
+    const dependencies = [
+      'NativeView.swift', 'MCPServersViewController.swift', 'ControlKit.swift',
+      'AlertFactory.swift', 'AppIdentity.swift', 'ProcessClient.swift',
+      'ProcessExecutionState.swift', 'ProcessIdentityGuard.swift', 'SecureProcessEnvelope.swift'
+    ].map((name) => path.join(sourceRoot, name));
+    const compiled = spawnSync('swiftc', [summary, overview, ...dependencies, harness, '-o', binary], { encoding: 'utf8', timeout: 60_000 });
     assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
-    const executed = spawnSync(binary, [], { encoding: 'utf8' });
+    const executed = spawnSync(binary, [root], { encoding: 'utf8', timeout: 30_000 });
     assert.equal(executed.status, 0, executed.stderr || executed.stdout);
+    assert.match(executed.stdout, /native-mcp-delayed-and-failure-regressions-ok/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

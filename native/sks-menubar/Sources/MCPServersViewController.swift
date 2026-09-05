@@ -64,7 +64,6 @@ private struct McpRow {
 }
 
 private struct McpDraft { let scope: String; let payload: [String: Any] }
-
 final class MCPServersViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, ControlCenterPage {
     private let processClient: ProcessClient
     private let operations: OperationCoordinator
@@ -163,9 +162,11 @@ final class MCPServersViewController: NSViewController, NSTableViewDataSource, N
         let scope = selectedScope()
         status.stringValue = "Loading \(scope) MCP configuration…"
         refreshButton.isEnabled = false
-        processClient.run(["mcp", "config", "list", "--scope", scope] + scopeContext(scope, mutation: false) + ["--json"], timeout: NativeView.statusTimeout) { [weak self] result in
+        processClient.run(["mcp", "config", "list", "--scope", scope] + scopeContext(scope, mutation: false) + ["--json"], timeout: NativeView.mcpInventoryTimeout) { [weak self] result in
             guard let self = self, self.refreshGeneration == requestGeneration else { return }
-            guard let json = self.json(result.output), let servers = json["servers"] as? [[String: Any]] else {
+            guard result.code == 0, !result.timedOut, !result.truncated,
+                  let json = self.json(result.output), json["schema"] as? String == "sks.mcp-inventory.v2",
+                  json["ok"] as? Bool == true, let servers = json["servers"] as? [[String: Any]] else {
                 self.rows = []; self.table.reloadData(); self.status.stringValue = "MCP inventory unavailable. No configuration was changed."
                 self.updateButtons(); return
             }

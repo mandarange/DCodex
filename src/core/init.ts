@@ -1064,7 +1064,7 @@ function upsertTomlTable(text: any, table: any, block: any) {
 
   const { skillInstall, created: skillInstallCreated } = await reconcileManagedSkillInstallation(root, opts.home);
   created.push(...skillInstallCreated);
-  const agentInstall = await installCodexAgents(root);
+  const agentInstall = await installCodexAgents(root, { home: opts.home, codexHome: opts.codexHome });
   created.push(`.codex/agents official subagent catalog (${agentInstall.installed_agents?.length || 0})`);
   if (agentInstall.retired_role_cleanup?.removed_count) created.push(`retired SKS-owned agent role files removed (${agentInstall.retired_role_cleanup.removed_count})`);
   if (agentInstall.retired_role_cleanup?.quarantined_user_collision_count) created.push(`retired role-name user collisions quarantined (${agentInstall.retired_role_cleanup.quarantined_user_collision_count})`);

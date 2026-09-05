@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Give SKS Center MCP inventory reads enough time to finish both configuration
+  scopes, and show incomplete or rejected responses as unavailable.
+- Refresh existing SKS-owned global agent roles during setup and repair so
+  legacy Sol/Terra defaults converge to Astra. Preserve user provider and
+  permission overrides, symlinks, and absent global role directories.
+
 ## [10.1.0] - 2026-09-05
 
 ### Added

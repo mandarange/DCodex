@@ -11,7 +11,7 @@ import {
 } from '../codex-native/managed-skill-generation-lock.js';
 import { dbSafetyGuardSkillText, madSksSqlPlanePolicyText } from '../mad-sks/sql-plane/policy.js';
 import { skillDreamPolicyText } from '../skill-forge.js';
-import { installOfficialSubagentAgentConfigs } from '../subagents/official-subagent-config.js';
+import { installOfficialSubagentAgentConfigs, refreshGlobalOfficialSubagentAgentConfigs } from '../subagents/official-subagent-config.js';
 import { reconcileRetiredAgentRoleResidue } from '../agents/agent-role-config.js';
 import {
   ensureConfinedDirectory,
@@ -1501,10 +1501,20 @@ async function removeDirIfEmpty(dir: any) {
   } catch {}
 }
 
-export async function installCodexAgents(root: any) {
-  const retiredRoleCleanup = await reconcileRetiredAgentRoleResidue({ root, fix: true });
+export async function installCodexAgents(root: any, opts: { home?: string; codexHome?: string; globalRuntimeRoot?: string } = {}) {
+  const retiredRoleCleanup = await reconcileRetiredAgentRoleResidue({ root, ...opts, fix: true });
   const installed = await installOfficialSubagentAgentConfigs(root, { apply: true });
-  return { ...installed, retired_role_cleanup: retiredRoleCleanup };
+  const codexHome = path.resolve(opts.codexHome || process.env.CODEX_HOME || path.join(opts.home || process.env.HOME || os.homedir(), '.codex'));
+  const globalRoles = path.join(path.resolve(root), '.codex') === codexHome
+    ? null
+    : await refreshGlobalOfficialSubagentAgentConfigs(codexHome, { apply: true });
+  return {
+    ...installed,
+    ok: installed.ok && (globalRoles?.ok ?? true),
+    manual_blockers: [...installed.manual_blockers, ...(globalRoles?.manual_blockers.map((blocker) => `global:${blocker}`) || [])],
+    global_role_repair: globalRoles,
+    retired_role_cleanup: retiredRoleCleanup
+  };
 }
 
 export function currentGeneratedFileInventory(skillInstall: any = {}, agentInstall: any = {}, opts: any = {}) {

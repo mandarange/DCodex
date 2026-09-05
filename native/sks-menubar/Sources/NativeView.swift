@@ -55,6 +55,8 @@ final class NativeDisclosure: NSStackView {
 
 enum NativeView {
     static let statusTimeout: TimeInterval = 8
+    // Effective inventory reads global and project scopes; each Codex query is bounded at 10s.
+    static let mcpInventoryTimeout: TimeInterval = 25
     static let mutationTimeout: TimeInterval = 90
     static let longMutationTimeout: TimeInterval = 60 * 60
 

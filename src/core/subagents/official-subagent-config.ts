@@ -472,8 +472,28 @@ export async function installOfficialSubagentAgentConfigs(
   root: string,
   opts: { apply?: boolean } = {}
 ): Promise<OfficialSubagentAgentInstallResult> {
+  return installOfficialSubagentAgentConfigsAt(root, '.codex/agents', opts)
+}
+
+/** Refresh only roles already present in the active global Codex home. */
+export async function refreshGlobalOfficialSubagentAgentConfigs(
+  codexHome: string,
+  opts: { apply?: boolean } = {}
+): Promise<OfficialSubagentAgentInstallResult> {
+  const home = path.resolve(codexHome)
+  return installOfficialSubagentAgentConfigsAt(path.dirname(home), `${path.basename(home)}/agents`, {
+    ...opts,
+    existingOnly: true
+  })
+}
+
+async function installOfficialSubagentAgentConfigsAt(
+  root: string,
+  relativeDir: string,
+  opts: { apply?: boolean; existingOnly?: boolean }
+): Promise<OfficialSubagentAgentInstallResult> {
   const apply = opts.apply !== false
-  const agentsDir = path.join(path.resolve(root), '.codex', 'agents')
+  const agentsDir = path.join(path.resolve(root), relativeDir)
   const missing: string[] = []
   const existing: string[] = []
   const stale: string[] = []
@@ -484,6 +504,18 @@ export async function installOfficialSubagentAgentConfigs(
   const backups: string[] = []
   const manualBlockers: string[] = []
   const generatedFiles: string[] = []
+
+  if (opts.existingOnly) {
+    const stat = await fs.lstat(agentsDir).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null
+      throw error
+    })
+    if (!stat) return {
+      schema: 'sks.official-subagent-agent-install.v1', ok: true, apply,
+      installed_agents: [], missing, existing, stale, created, updated,
+      preserved, invalid, backups, manual_blockers: manualBlockers, generated_files: generatedFiles
+    }
+  }
 
   const agentsInspection = await inspectConfinedPath(root, agentsDir).catch(() => null)
   if (!agentsInspection) {
@@ -511,10 +543,10 @@ export async function installOfficialSubagentAgentConfigs(
       generated_files: generatedFiles
     }
   }
-  if (apply) await ensureConfinedDirectory(root, agentsDir)
+  if (apply && !opts.existingOnly) await ensureConfinedDirectory(root, agentsDir)
   for (const role of MANAGED_OFFICIAL_SUBAGENT_ROLES) {
     const absolute = path.join(agentsDir, role.filename)
-    const relative = `.codex/agents/${role.filename}`
+    const relative = `${relativeDir}/${role.filename}`
     const expected = managedOfficialSubagentRoleContent(role)
     const inspected = await inspectConfinedPath(root, absolute).catch(() => null)
     if (!inspected) {
@@ -523,6 +555,7 @@ export async function installOfficialSubagentAgentConfigs(
       continue
     }
     if (!inspected.exists) {
+      if (opts.existingOnly) continue
       missing.push(role.filename)
       if (apply) {
         await writeTextAtomic(absolute, expected)
@@ -572,7 +605,7 @@ export async function installOfficialSubagentAgentConfigs(
   }
 
   const remainingMissing = apply
-    ? missing.filter((filename) => !created.includes(`.codex/agents/${filename}`))
+    ? missing.filter((filename) => !created.includes(`${relativeDir}/${filename}`))
     : missing
   return {
     schema: 'sks.official-subagent-agent-install.v1',
