@@ -109,7 +109,8 @@ export async function executeDesktopBridgeCommandV3(
       request.operation as DesktopBridgeCommandOperation,
       false,
       status,
-      {},
+      request.operation === 'auth-priority.set' && status?.auth_priority
+        ? { auth_priority: status.auth_priority } : {},
       [blocker],
       options
     ) as DesktopBridgeCommandResult;

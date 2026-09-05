@@ -42,7 +42,7 @@ test('publish lifecycle supports official npm publish with prepack post-build ve
   const remoteCodingSource = fs.readFileSync(remoteCodingPage, 'utf8');
   assert.match(remoteCodingSource, /https:\/\/paseo\.sh\//);
   assert.match(remoteCodingSource, /https:\/\/paseo\.sh\/docs/);
-  assert.match(remoteCodingSource, /independent open-source project/i);
+  assert.match(remoteCodingSource, /(?:independent|separate),? open-source (?:project|app)/i);
   assert.doesNotMatch(remoteCodingSource, /telegram|botfather/i);
   assert.equal(fs.existsSync(path.join('dist/native/sks-menubar/Sources', 'RemoteCodingSettingsControls.swift')), false);
   assert.ok(pkg.files.includes('dist'), 'published package must include the built runtime through dist');

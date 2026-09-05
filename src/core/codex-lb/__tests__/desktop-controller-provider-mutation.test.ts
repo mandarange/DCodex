@@ -158,7 +158,8 @@ function commandOptions(setup: Awaited<ReturnType<typeof fixture>>, restartFails
       id: () => 'provider-mutation'
     },
     events,
-    isRunning: () => running
+    isRunning: () => running,
+    setRestartFailure: (failed: boolean) => { restartFails = failed; }
   };
 }
 
@@ -459,4 +460,35 @@ test('authentication priority persists across controller restarts and restores t
   assert.equal(await fs.readFile(authPath, 'utf8'), authBytes);
   assert.doesNotMatch(JSON.stringify([enabled, status, disabled, settings]), /unchanged-chatgpt-secret|lb-provider-mutation-secret|or-provider-mutation-secret/);
   assert.deepEqual(restarted.events, ['bootstrap']);
+});
+
+
+test('saved authentication priority reports unavailable after restart failure and becomes active after recovery', async (t) => {
+  const setup = await fixture(t, true);
+  const runtime = commandOptions(setup, true);
+  const failed = await executeDesktopBridgeCommandV3({ operation: 'auth-priority.set', enabled: true }, runtime.options);
+  assert.equal(failed.schema, 'sks.desktop-bridge-command-result.v1');
+  if (failed.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(failed.ok, false);
+  assert.deepEqual(failed.execution.blockers, ['injected_provider_restart_failure']);
+  assert.deepEqual(runtime.events, ['bootstrap', 'stop']);
+  assert.equal(runtime.isRunning(), false);
+  const settings = await readDesktopBridgeServiceSettings(desktopBridgeServicePaths(setup.home).settings_path);
+  assert.equal(settings?.auth_priority_enabled, true);
+  const unavailable = { enabled: true, state: 'unavailable', error: 'desktop_bridge_not_running' };
+  assert.deepEqual(failed.status?.auth_priority, unavailable);
+  assert.deepEqual(failed.result.auth_priority, unavailable);
+  const observed = await executeDesktopBridgeCommandV3({ operation: 'auth-priority.status' }, runtime.options);
+  assert.equal(observed.schema, 'sks.desktop-bridge-command-result.v1');
+  if (observed.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.deepEqual(observed.result.auth_priority, unavailable);
+  runtime.setRestartFailure(false);
+  const recovered = await executeDesktopBridgeCommandV3({ operation: 'auth-priority.set', enabled: true }, runtime.options);
+  assert.equal(recovered.schema, 'sks.desktop-bridge-command-result.v1');
+  if (recovered.schema !== 'sks.desktop-bridge-command-result.v1') return;
+  assert.equal(recovered.ok, true, JSON.stringify(recovered));
+  assert.deepEqual(recovered.result.auth_priority, { enabled: true, state: 'active', error: null });
+  assert.equal(runtime.isRunning(), true);
+  assert.deepEqual(runtime.events, ['bootstrap', 'stop', 'bootstrap']);
+  assert.doesNotMatch(JSON.stringify([failed, observed, recovered]), /lb-provider-mutation-secret|or-provider-mutation-secret/);
 });

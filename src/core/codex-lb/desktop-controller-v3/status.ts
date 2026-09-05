@@ -352,6 +352,7 @@ export function authPriorityStatusFromCore(core: ControllerCore): import('../bri
     : profile.state !== 'ready' ? 'codex_lb_route_not_ready'
     : !core.activeCatalog.ok || core.activeCatalog.route_index.providers['codex-lb'].state !== 'ready' || !core.policy || !Object.entries(core.policy.model_routes).some(([model, route]) =>
       /^(?:gpt-[0-9]|o[0-9]|codex-mini)/.test(model) && !model.includes(':') && route.provider_id === 'codex-lb')
-      ? 'codex_lb_eligible_route_missing' : null;
+      ? 'codex_lb_eligible_route_missing'
+      : !core.service.running ? 'desktop_bridge_not_running' : null;
   return { enabled: true, state: error ? 'unavailable' : 'active', error };
 }

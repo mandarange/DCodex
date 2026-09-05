@@ -119,26 +119,33 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
         ])
     }
 
-    func refreshAuthPriority() {
+    func refreshAuthPriority(afterUnconfirmedMutation: Bool = false) {
         guard !authPriorityBusy else { return }
         authPriorityGeneration += 1
         let generation = authPriorityGeneration
         processClient.run(["bridge", "auth-priority", "status", "--json"], timeout: NativeView.statusTimeout) { [weak self] result in
             guard let self = self, !self.authPriorityBusy, generation == self.authPriorityGeneration else { return }
-            guard result.code == 0, !result.truncated,
-                  let payload = self.json(result.output), payload["ok"] as? Bool == true,
+            guard !result.timedOut, !result.truncated,
+                  let payload = self.json(result.output),
                   let priority = AuthPriorityState.decode(payload) else {
+                self.authPriorityEnabled = nil
                 self.authPriorityToggle.isEnabled = false
-                self.authPriorityStatus.stringValue = "Preference unavailable. Reopen Connections to check again."
+                self.authPriorityToggle.isHidden = true
+                self.authPriorityStatus.stringValue = "Saved preference could not be confirmed. Reopen Connections to check again."
                 self.authPriorityStatus.textColor = .systemOrange
                 return
             }
             self.renderAuthPriority(priority)
+            if afterUnconfirmedMutation {
+                self.authPriorityStatus.stringValue += "\nSaved preference rechecked. The earlier operation did not finish normally."
+                self.authPriorityStatus.textColor = .systemOrange
+            }
         }
     }
 
     private func renderAuthPriority(_ state: AuthPriorityState) {
         authPriorityEnabled = state.enabled
+        authPriorityToggle.isHidden = false
         authPriorityToggle.state = state.enabled ? .on : .off
         authPriorityToggle.isEnabled = !busy && !authPriorityBusy
         authPriorityStatus.stringValue = state.message
@@ -162,15 +169,31 @@ final class ProvidersViewController: NSViewController, ControlCenterPage, NSText
             guard let self = self else { return }
             self.authPriorityBusy = false
             let payload = self.json(result.output)
-            let state = payload.flatMap(AuthPriorityState.decode)
-            let succeeded = result.code == 0 && !result.truncated && payload?["ok"] as? Bool == true && state?.enabled == desired
-            _ = self.operations.update(operation, state: succeeded ? .succeeded : .failed, stage: "complete", progress: 1, summary: succeeded ? "Codex-LB preference saved" : "Codex-LB preference could not be saved")
-            if succeeded, let state = state { self.renderAuthPriority(state) }
-            else {
-                self.authPriorityToggle.state = previous ? .on : .off
-                self.authPriorityToggle.isEnabled = !self.busy
-                self.authPriorityStatus.stringValue = "Could not save preference. The previous setting is shown; check the Codex-LB connection and retry."
+            let outcome = AuthPriorityMutationOutcome.resolve(
+                payload: payload, desired: desired,
+                commandSucceeded: result.code == 0 && payload?["ok"] as? Bool == true,
+                responseComplete: !result.truncated && !result.timedOut
+            )
+            let operationState: OperationState
+            switch outcome {
+            case .saved: operationState = .succeeded
+            case .unconfirmed: operationState = .terminalUncertain
+            default: operationState = .failed
+            }
+            _ = self.operations.update(operation, state: operationState, stage: "complete", progress: 1, summary: outcome.operationSummary)
+            if let state = outcome.observedState {
+                self.renderAuthPriority(state)
+                if operationState != .succeeded {
+                    self.authPriorityStatus.stringValue = outcome.operationSummary + "\n" + state.message
+                    self.authPriorityStatus.textColor = .systemOrange
+                }
+            } else {
+                self.authPriorityEnabled = nil
+                self.authPriorityToggle.isEnabled = false
+                self.authPriorityToggle.isHidden = true
+                self.authPriorityStatus.stringValue = "Operation result is uncertain. Checking the saved preference…"
                 self.authPriorityStatus.textColor = .systemOrange
+                self.refreshAuthPriority(afterUnconfirmedMutation: true)
             }
         }
     }

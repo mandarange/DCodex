@@ -8,7 +8,8 @@
 
 - Add a persistent codex-lb authentication-priority setting, exposed through
   `sks bridge auth-priority status|on|off` and SKS Center, with explicit active,
-  off, and unavailable status.
+  off, and unavailable status. Saved preferences remain visible when connection
+  startup fails; uncertain saves are read back before the switch is re-enabled.
 
 ### Changed
 
